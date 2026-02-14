@@ -17,6 +17,14 @@ from geotech_common.soil_properties import (
     spt_to_phi, spt_to_cu, spt_to_relative_density,
     phi_to_Ka, phi_to_Kp, phi_to_K0,
 )
+from geotech_common.soil_profile import (
+    SoilLayer, GroundwaterCondition, SoilProfile, SoilProfileBuilder,
+)
+from geotech_common.engineering_checks import (
+    check_bearing_capacity, check_settlement, check_pile_capacity,
+    check_lateral_pile, check_sheet_pile, check_wave_equation,
+    check_pile_group, check_foundation_selection, check_parameter_consistency,
+)
 
 __all__ = [
     # Units
@@ -30,4 +38,10 @@ __all__ = [
     # Soil properties
     'spt_to_phi', 'spt_to_cu', 'spt_to_relative_density',
     'phi_to_Ka', 'phi_to_Kp', 'phi_to_K0',
+    # Soil profile
+    'SoilLayer', 'GroundwaterCondition', 'SoilProfile', 'SoilProfileBuilder',
+    # Engineering checks
+    'check_bearing_capacity', 'check_settlement', 'check_pile_capacity',
+    'check_lateral_pile', 'check_sheet_pile', 'check_wave_equation',
+    'check_pile_group', 'check_foundation_selection', 'check_parameter_consistency',
 ]
