@@ -1,0 +1,348 @@
+"""
+Cantilever sheet pile wall analysis.
+
+Determines required embedment depth and maximum moment for a cantilever
+wall using the free earth support method (simplified).
+
+All units are SI: kN, kPa, meters.
+
+References:
+    USACE EM 1110-2-2504, Chapter 4
+    USS Steel Sheet Piling Design Manual, Chapter 3
+    Das, "Principles of Foundation Engineering", Chapter 9
+"""
+
+import math
+import warnings
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+import numpy as np
+
+from sheet_pile.earth_pressure import (
+    rankine_Ka, rankine_Kp, active_pressure, passive_pressure,
+    tension_crack_depth,
+)
+from geotech_common.water import GAMMA_W
+
+
+@dataclass
+class WallSoilLayer:
+    """Soil layer for sheet pile wall analysis.
+
+    Parameters
+    ----------
+    thickness : float
+        Layer thickness (m).
+    unit_weight : float
+        Total unit weight (kN/m³).
+    friction_angle : float
+        Drained friction angle (degrees).
+    cohesion : float, optional
+        Cohesion (kPa). Default 0.
+    description : str, optional
+        Layer description.
+    """
+    thickness: float
+    unit_weight: float
+    friction_angle: float = 30.0
+    cohesion: float = 0.0
+    description: str = ""
+
+    def __post_init__(self):
+        if self.thickness <= 0:
+            raise ValueError(f"Layer thickness must be positive, got {self.thickness}")
+        if self.friction_angle < 0 or self.friction_angle > 50:
+            raise ValueError(f"Friction angle must be 0-50, got {self.friction_angle}")
+        if self.cohesion < 0:
+            raise ValueError(f"Cohesion must be non-negative, got {self.cohesion}")
+        if self.cohesion == 0 and self.friction_angle == 0:
+            raise ValueError("Soil must have c > 0 or phi > 0")
+
+
+@dataclass
+class CantileverWallResult:
+    """Results from a cantilever sheet pile wall analysis."""
+    embedment_depth: float = 0.0
+    total_wall_length: float = 0.0
+    max_moment: float = 0.0
+    max_moment_depth: float = 0.0
+    FOS_passive: float = 1.0
+    excavation_depth: float = 0.0
+
+    def summary(self) -> str:
+        lines = [
+            "=" * 60,
+            "  CANTILEVER SHEET PILE WALL RESULTS",
+            "=" * 60,
+            "",
+            f"  Excavation depth:   {self.excavation_depth:.2f} m",
+            f"  Required embedment: {self.embedment_depth:.2f} m",
+            f"  Total wall length:  {self.total_wall_length:.2f} m",
+            f"  FOS on passive:     {self.FOS_passive:.2f}",
+            "",
+            f"  Max bending moment: {self.max_moment:.1f} kN-m/m",
+            f"  at depth:           {self.max_moment_depth:.2f} m below top",
+            "",
+            "=" * 60,
+        ]
+        return "\n".join(lines)
+
+    def to_dict(self):
+        return {
+            "embedment_depth_m": round(self.embedment_depth, 3),
+            "total_wall_length_m": round(self.total_wall_length, 3),
+            "max_moment_kNm_per_m": round(self.max_moment, 1),
+            "max_moment_depth_m": round(self.max_moment_depth, 2),
+            "FOS_passive": round(self.FOS_passive, 2),
+            "excavation_depth_m": round(self.excavation_depth, 2),
+        }
+
+
+def analyze_cantilever(
+    excavation_depth: float,
+    soil_layers: List[WallSoilLayer],
+    gwt_depth_active: Optional[float] = None,
+    gwt_depth_passive: Optional[float] = None,
+    surcharge: float = 0.0,
+    FOS_passive: float = 1.5,
+    gamma_w: float = GAMMA_W,
+    pressure_method: str = "rankine",
+) -> CantileverWallResult:
+    """Analyze a cantilever sheet pile wall.
+
+    Uses the simplified free earth support method:
+    1. Compute active and passive pressure diagrams
+    2. Sum moments about the base to find required embedment D
+    3. Compute maximum moment
+
+    Parameters
+    ----------
+    excavation_depth : float
+        Depth of excavation H (m).
+    soil_layers : list of WallSoilLayer
+        Soil layers from top to bottom (both retained and embedded sides).
+    gwt_depth_active : float, optional
+        GWT depth on the active (retained) side (m from top of wall).
+    gwt_depth_passive : float, optional
+        GWT depth on the passive (excavation) side (m from top of wall).
+        If None, same as active side.
+    surcharge : float, optional
+        Uniform surcharge on the retained side (kPa). Default 0.
+    FOS_passive : float, optional
+        Factor of safety applied to passive resistance. Default 1.5.
+    gamma_w : float, optional
+        Unit weight of water (kN/m³). Default 9.81.
+    pressure_method : str, optional
+        "rankine" (default) or "coulomb".
+
+    Returns
+    -------
+    CantileverWallResult
+    """
+    if excavation_depth <= 0:
+        raise ValueError(f"Excavation depth must be positive, got {excavation_depth}")
+
+    if gwt_depth_passive is None:
+        gwt_depth_passive = gwt_depth_active
+
+    # For a simple single-layer case, we use analytical formulas
+    # For multi-layer, we use numerical integration
+    n_points = 200
+    D_max = excavation_depth * 3  # initial guess: embedment up to 3H
+    total_length = excavation_depth + D_max
+    dz = total_length / n_points
+
+    # Find embedment by iteration
+    D_converged = _find_embedment(
+        excavation_depth, soil_layers, gwt_depth_active, gwt_depth_passive,
+        surcharge, FOS_passive, gamma_w, n_points=500
+    )
+
+    # Apply 20-40% increase per USACE guidance for simplified method
+    D_design = D_converged * 1.2
+
+    total_wall = excavation_depth + D_design
+
+    # Compute maximum moment
+    max_moment, max_moment_depth = _compute_max_moment(
+        excavation_depth, D_design, soil_layers,
+        gwt_depth_active, gwt_depth_passive,
+        surcharge, FOS_passive, gamma_w, n_points=500
+    )
+
+    return CantileverWallResult(
+        embedment_depth=D_design,
+        total_wall_length=total_wall,
+        max_moment=max_moment,
+        max_moment_depth=max_moment_depth,
+        FOS_passive=FOS_passive,
+        excavation_depth=excavation_depth,
+    )
+
+
+def _get_soil_at_depth(depth: float, soil_layers: List[WallSoilLayer]) -> WallSoilLayer:
+    """Get the soil layer at a given depth from top of wall."""
+    z = 0
+    for layer in soil_layers:
+        if z + layer.thickness > depth:
+            return layer
+        z += layer.thickness
+    return soil_layers[-1]
+
+
+def _effective_gamma(depth: float, layer: WallSoilLayer,
+                     gwt_depth: Optional[float], gamma_w: float) -> float:
+    """Get effective unit weight at depth."""
+    if gwt_depth is not None and depth > gwt_depth:
+        return layer.unit_weight - gamma_w
+    return layer.unit_weight
+
+
+def _find_embedment(excavation_depth, soil_layers, gwt_active, gwt_passive,
+                    surcharge, FOS_passive, gamma_w, n_points=500):
+    """Find embedment depth by summing moments about the base."""
+    H = excavation_depth
+
+    # Try embedment depths from 0.5m to 4*H
+    for D_trial in np.linspace(0.5, 4 * H, 200):
+        total_length = H + D_trial
+        dz = total_length / n_points
+
+        # Compute net moment about the wall base
+        moment_active = 0.0
+        moment_passive = 0.0
+
+        sigma_v_active = surcharge
+        sigma_v_passive = 0.0
+
+        for i in range(n_points):
+            z = (i + 0.5) * dz  # depth from top of wall
+            arm = total_length - z  # moment arm from base
+
+            layer = _get_soil_at_depth(z, soil_layers)
+            Ka = rankine_Ka(layer.friction_angle)
+            Kp = rankine_Kp(layer.friction_angle)
+
+            if z <= H:
+                # Above excavation: only active pressure
+                gamma_eff = _effective_gamma(z, layer, gwt_active, gamma_w)
+                sigma_v_at_z = surcharge + _cumulative_stress(z, soil_layers, gwt_active, gamma_w)
+                pa = Ka * sigma_v_at_z - 2 * layer.cohesion * math.sqrt(Ka)
+                pa = max(pa, 0)  # no tension
+                moment_active += pa * dz * arm
+
+                # Water pressure on active side
+                if gwt_active is not None and z > gwt_active:
+                    u_active = gamma_w * (z - gwt_active)
+                    moment_active += u_active * dz * arm
+            else:
+                # Below excavation: active + net passive
+                z_below = z - H  # depth below excavation
+
+                # Active side
+                sigma_v_at_z = surcharge + _cumulative_stress(z, soil_layers, gwt_active, gamma_w)
+                pa = Ka * sigma_v_at_z - 2 * layer.cohesion * math.sqrt(Ka)
+                pa = max(pa, 0)
+                moment_active += pa * dz * arm
+
+                # Passive side (with FOS)
+                sigma_v_passive_z = _cumulative_stress(z_below, soil_layers, gwt_passive, gamma_w)
+                pp = Kp * sigma_v_passive_z + 2 * layer.cohesion * math.sqrt(Kp)
+                pp_reduced = pp / FOS_passive
+                moment_passive += pp_reduced * dz * arm
+
+                # Differential water pressure
+                if gwt_active is not None and z > gwt_active:
+                    u_active = gamma_w * (z - gwt_active)
+                else:
+                    u_active = 0
+                if gwt_passive is not None and z > gwt_passive:
+                    u_passive = gamma_w * (z_below - max(0, gwt_passive - H))
+                else:
+                    u_passive = 0
+                net_water = u_active - u_passive
+                if net_water > 0:
+                    moment_active += net_water * dz * arm
+
+        if moment_passive >= moment_active:
+            return D_trial
+
+    warnings.warn("Embedment depth did not converge; using maximum trial depth")
+    return 4 * H
+
+
+def _cumulative_stress(z: float, soil_layers: List[WallSoilLayer],
+                       gwt_depth: Optional[float], gamma_w: float) -> float:
+    """Compute cumulative vertical effective stress at depth z."""
+    sigma_v = 0.0
+    depth = 0.0
+    for layer in soil_layers:
+        if depth >= z:
+            break
+        dz = min(layer.thickness, z - depth)
+        if gwt_depth is not None and depth + dz > gwt_depth:
+            # Part above GWT, part below
+            above = max(0, gwt_depth - depth)
+            below = dz - above
+            sigma_v += layer.unit_weight * above
+            sigma_v += (layer.unit_weight - gamma_w) * below
+        else:
+            sigma_v += layer.unit_weight * dz
+        depth += layer.thickness
+    return sigma_v
+
+
+def _compute_max_moment(excavation_depth, embedment, soil_layers,
+                        gwt_active, gwt_passive, surcharge,
+                        FOS_passive, gamma_w, n_points=500):
+    """Compute maximum bending moment and its location."""
+    H = excavation_depth
+    total_length = H + embedment
+    dz = total_length / n_points
+
+    # Compute shear force along the wall; moment is max where shear = 0
+    shear = 0.0
+    moment = 0.0
+    max_moment = 0.0
+    max_moment_depth = 0.0
+
+    for i in range(n_points):
+        z = (i + 0.5) * dz
+        layer = _get_soil_at_depth(z, soil_layers)
+        Ka = rankine_Ka(layer.friction_angle)
+        Kp = rankine_Kp(layer.friction_angle)
+
+        net_pressure = 0.0
+        if z <= H:
+            sigma_v = surcharge + _cumulative_stress(z, soil_layers, gwt_active, gamma_w)
+            pa = Ka * sigma_v - 2 * layer.cohesion * math.sqrt(Ka)
+            pa = max(pa, 0)
+            net_pressure = pa
+            if gwt_active is not None and z > gwt_active:
+                net_pressure += gamma_w * (z - gwt_active)
+        else:
+            z_below = z - H
+            sigma_v_a = surcharge + _cumulative_stress(z, soil_layers, gwt_active, gamma_w)
+            pa = Ka * sigma_v_a - 2 * layer.cohesion * math.sqrt(Ka)
+            pa = max(pa, 0)
+
+            sigma_v_p = _cumulative_stress(z_below, soil_layers, gwt_passive, gamma_w)
+            pp = Kp * sigma_v_p + 2 * layer.cohesion * math.sqrt(Kp)
+            pp_reduced = pp / FOS_passive
+
+            net_pressure = pa - pp_reduced
+
+            # Water
+            u_active = gamma_w * max(0, z - (gwt_active or 1e10))
+            u_passive = gamma_w * max(0, z_below - max(0, (gwt_passive or 1e10) - H))
+            net_pressure += u_active - u_passive
+
+        shear += net_pressure * dz
+        moment += shear * dz
+
+        if abs(moment) > abs(max_moment):
+            max_moment = abs(moment)
+            max_moment_depth = z
+
+    return max_moment, max_moment_depth
