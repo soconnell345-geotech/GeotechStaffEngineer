@@ -1307,6 +1307,320 @@ class SoilProfile:
             "is_cohesive": cohesive_thickness > granular_thickness,
         }
 
+    # ── Adapter: Drilled Shaft ─────────────────────────────────────────
+
+    def to_drilled_shaft_input(self, shaft_length: float) -> Dict[str, Any]:
+        """Convert profile to drilled_shaft module input format.
+
+        Builds ShaftSoilLayer dicts for each layer the shaft passes through,
+        clipped to shaft length.  Soil type is classified as "cohesive",
+        "cohesionless", or "rock" based on available parameters.
+
+        Parameters
+        ----------
+        shaft_length : float
+            Total shaft embedment length (m).
+
+        Returns
+        -------
+        dict
+            Keys: "layers" (list of dicts with thickness, soil_type,
+            unit_weight, cu, phi, N60, qu, RQD, description),
+            "gwt_depth" (float or None).
+        """
+        shaft_layers = []
+
+        for layer in self.layers:
+            z_top = layer.top_depth
+            z_bot = min(layer.bottom_depth, shaft_length)
+            if z_top >= shaft_length:
+                break
+            thickness = z_bot - z_top
+            if thickness <= 0:
+                continue
+
+            gamma = layer.gamma if layer.gamma is not None else 18.0
+            soil_type = self._classify_soil_type(layer)
+
+            cu = layer.cu if layer.cu is not None else 0.0
+            phi = layer.phi if layer.phi is not None else 0.0
+            N60 = layer.N60 if layer.N60 is not None else 0.0
+            qu = layer.qu if layer.qu is not None else 0.0
+            RQD = layer.RQD if layer.RQD is not None else 100.0
+
+            # Validate minimum requirements by soil type
+            if soil_type == "cohesive" and cu <= 0:
+                raise ValueError(
+                    f"Layer '{layer.description}' classified as cohesive but cu <= 0. "
+                    "Run fill_missing_from_correlations() first."
+                )
+            if soil_type == "cohesionless" and phi <= 0:
+                raise ValueError(
+                    f"Layer '{layer.description}' classified as cohesionless but phi <= 0. "
+                    "Run fill_missing_from_correlations() first."
+                )
+            if soil_type == "rock" and qu <= 0:
+                raise ValueError(
+                    f"Layer '{layer.description}' classified as rock but qu <= 0."
+                )
+
+            shaft_layers.append({
+                "thickness": thickness,
+                "soil_type": soil_type,
+                "unit_weight": gamma,
+                "cu": cu,
+                "phi": phi,
+                "N60": N60,
+                "qu": qu,
+                "RQD": RQD,
+                "description": layer.description,
+            })
+
+        return {
+            "layers": shaft_layers,
+            "gwt_depth": self.groundwater.depth,
+        }
+
+    @staticmethod
+    def _classify_soil_type(layer: "SoilLayer") -> str:
+        """Classify a SoilLayer as cohesive/cohesionless/rock for drilled shaft."""
+        if layer.is_rock:
+            return "rock"
+        if layer.is_cohesive is True:
+            return "cohesive"
+        if layer.is_cohesive is False:
+            return "cohesionless"
+        # Infer from available data
+        if layer.cu is not None and layer.cu > 0:
+            return "cohesive"
+        if layer.phi is not None and layer.phi > 0:
+            return "cohesionless"
+        raise ValueError(
+            f"Layer '{layer.description}' cannot be classified — "
+            "set is_cohesive, is_rock, or provide cu/phi."
+        )
+
+    # ── Adapter: Retaining Wall ────────────────────────────────────────
+
+    def to_retaining_wall_input(self, wall_height: float,
+                                 surcharge: float = 0.0,
+                                 ) -> Dict[str, Any]:
+        """Convert profile to retaining_walls module input format.
+
+        Uses a weighted average of the soil behind the wall (from surface
+        to wall_height) as the backfill, and the layer at wall_height as the
+        foundation soil.
+
+        Parameters
+        ----------
+        wall_height : float
+            Retained height of the wall (m).
+        surcharge : float, optional
+            Uniform surcharge on backfill (kPa). Default 0.
+
+        Returns
+        -------
+        dict
+            Keys: "gamma_backfill" (float, kN/m³),
+            "phi_backfill" (float, degrees), "c_backfill" (float, kPa),
+            "gamma_foundation" (float, kN/m³),
+            "phi_foundation" (float, degrees),
+            "c_foundation" (float, kPa),
+            "surcharge" (float, kPa).
+        """
+        # Weighted average of backfill properties (surface to wall_height)
+        total_gamma_h = 0.0
+        total_phi_h = 0.0
+        total_c_h = 0.0
+        total_h = 0.0
+
+        for layer in self.layers:
+            z_top = layer.top_depth
+            z_bot = min(layer.bottom_depth, wall_height)
+            if z_top >= wall_height:
+                break
+            h = z_bot - z_top
+            if h <= 0:
+                continue
+
+            gamma = layer.gamma if layer.gamma is not None else 18.0
+            total_gamma_h += gamma * h
+            total_h += h
+
+            if layer.is_cohesive is True and layer.cu is not None:
+                total_c_h += layer.cu * h
+                # For undrained: phi=0, c=cu
+            elif layer.phi is not None and layer.phi > 0:
+                total_phi_h += layer.phi * h
+                if layer.c_prime is not None:
+                    total_c_h += layer.c_prime * h
+            else:
+                raise ValueError(
+                    f"Layer '{layer.description}' has neither cu nor phi — "
+                    "cannot create retaining wall input. "
+                    "Run fill_missing_from_correlations() first."
+                )
+
+        if total_h <= 0:
+            raise ValueError("No layers within wall height range.")
+
+        gamma_backfill = total_gamma_h / total_h
+        phi_backfill = total_phi_h / total_h
+        c_backfill = total_c_h / total_h
+
+        # Foundation soil: layer at or just below wall base
+        foundation_layer = self.layer_at_depth(wall_height)
+        if foundation_layer is None:
+            foundation_layer = self.layers[-1]
+
+        gamma_fdn = foundation_layer.gamma if foundation_layer.gamma is not None else 18.0
+        if foundation_layer.phi is not None and foundation_layer.phi > 0:
+            phi_fdn = foundation_layer.phi
+            c_fdn = foundation_layer.c_prime if foundation_layer.c_prime is not None else 0.0
+        elif foundation_layer.is_cohesive is True and foundation_layer.cu is not None:
+            phi_fdn = 0.0
+            c_fdn = foundation_layer.cu
+        else:
+            phi_fdn = phi_backfill
+            c_fdn = c_backfill
+
+        return {
+            "gamma_backfill": round(gamma_backfill, 1),
+            "phi_backfill": round(phi_backfill, 1),
+            "c_backfill": round(c_backfill, 1),
+            "gamma_foundation": round(gamma_fdn, 1),
+            "phi_foundation": round(phi_fdn, 1),
+            "c_foundation": round(c_fdn, 1),
+            "surcharge": surcharge,
+        }
+
+    # ── Adapter: Seismic Geotechnical ──────────────────────────────────
+
+    def to_seismic_input(self,
+                         amax_g: float = 0.0,
+                         magnitude: float = 7.5,
+                         ) -> Dict[str, Any]:
+        """Convert profile to seismic_geotech module input format.
+
+        Provides data for site classification (N-bar, su-bar for top 30m)
+        and liquefaction evaluation (per-layer N160, fines content, gamma).
+
+        Note: Vs30-based classification requires shear wave velocity data
+        which is not stored on SoilLayer.  If Vs data is available, compute
+        Vs30 externally using seismic_geotech.site_class.compute_vs30().
+
+        Parameters
+        ----------
+        amax_g : float, optional
+            Peak ground acceleration (fraction of g). Default 0 (classification only).
+        magnitude : float, optional
+            Earthquake magnitude for liquefaction. Default 7.5.
+
+        Returns
+        -------
+        dict
+            Keys:
+            - "site_classification": dict with "thicknesses", "N_values",
+              "su_values" (lists for N-bar / su-bar in top 30m)
+            - "liquefaction": dict with "depths", "N160", "FC", "gamma"
+              (parallel lists for each granular layer below GWT)
+            - "amax_g" (float), "magnitude" (float), "gwt_depth" (float)
+        """
+        # ── Site classification data (top 30m) ──
+        n_thicknesses = []
+        n_values = []
+        su_thicknesses = []
+        su_values = []
+
+        for layer in self.layers:
+            z_top = layer.top_depth
+            z_bot = min(layer.bottom_depth, 30.0)
+            if z_top >= 30.0:
+                break
+            h = z_bot - z_top
+            if h <= 0:
+                continue
+
+            # N-bar: use N60 (or N_spt) for granular and mixed soils
+            N = layer.N60 if layer.N60 is not None else layer.N_spt
+            if N is not None and N > 0 and not layer.is_rock:
+                n_thicknesses.append(h)
+                n_values.append(N)
+
+            # su-bar: use cu for cohesive layers
+            if (layer.is_cohesive is True and
+                    layer.cu is not None and layer.cu > 0):
+                su_thicknesses.append(h)
+                su_values.append(layer.cu)
+
+        # ── Liquefaction data (granular layers below GWT) ──
+        liq_depths = []
+        liq_N160 = []
+        liq_FC = []
+        liq_gamma = []
+        gwt = self.groundwater.depth
+
+        for layer in self.layers:
+            # Only evaluate granular layers below or crossing GWT
+            if layer.is_rock:
+                continue
+            if layer.is_cohesive is True:
+                continue
+
+            z_top = max(layer.top_depth, gwt)
+            z_bot = layer.bottom_depth
+            if z_top >= z_bot:
+                continue  # entirely above GWT
+
+            # Use midpoint of saturated portion
+            z_mid = (z_top + z_bot) / 2.0
+            gamma = layer.gamma if layer.gamma is not None else 18.0
+
+            # N160 — prefer explicit, then fall back to N60
+            N160 = layer.N160
+            if N160 is None:
+                N160 = layer.N60 if layer.N60 is not None else layer.N_spt
+            if N160 is None or N160 <= 0:
+                continue  # Can't evaluate without SPT data
+
+            # Fines content: use PI as proxy if available, else assume 5%
+            FC = 5.0  # default for "clean" sand
+            if layer.PI is not None and layer.PI > 0:
+                # Rough estimate: higher PI → more fines
+                FC = min(layer.PI * 2.0, 100.0)
+            elif layer.uscs is not None:
+                # Infer from USCS: SM/ML have more fines
+                uscs_upper = layer.uscs.upper()
+                if uscs_upper in ("SM", "GM", "ML"):
+                    FC = 25.0
+                elif uscs_upper in ("SC", "GC", "MH"):
+                    FC = 40.0
+                elif uscs_upper in ("SP", "GP", "SW", "GW"):
+                    FC = 5.0
+
+            liq_depths.append(z_mid)
+            liq_N160.append(float(N160))
+            liq_FC.append(FC)
+            liq_gamma.append(gamma)
+
+        return {
+            "site_classification": {
+                "n_thicknesses": n_thicknesses,
+                "N_values": n_values,
+                "su_thicknesses": su_thicknesses,
+                "su_values": su_values,
+            },
+            "liquefaction": {
+                "depths": liq_depths,
+                "N160": liq_N160,
+                "FC": liq_FC,
+                "gamma": liq_gamma,
+            },
+            "amax_g": amax_g,
+            "magnitude": magnitude,
+            "gwt_depth": self.groundwater.depth,
+        }
+
 
 # ---------------------------------------------------------------------------
 # SoilProfileBuilder

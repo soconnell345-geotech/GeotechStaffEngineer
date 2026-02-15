@@ -473,3 +473,259 @@ class TestHelperFunctions:
     def test_k_stiff_clay_very_stiff(self):
         k = _estimate_k_stiff_clay(500)
         assert k == 540_000.0
+
+
+# ── TestDrilledShaftAdapter ─────────────────────────────────────────
+
+class TestDrilledShaftAdapter:
+
+    def test_mixed_profile_layers(self):
+        profile = _mixed_profile()
+        data = profile.to_drilled_shaft_input(shaft_length=15.0)
+        layers = data["layers"]
+        assert len(layers) == 3
+        assert layers[0]["soil_type"] == "cohesionless"  # fill
+        assert layers[1]["soil_type"] == "cohesive"      # clay
+        assert layers[2]["soil_type"] == "cohesionless"  # sand
+
+    def test_layer_clipping(self):
+        profile = _mixed_profile()
+        data = profile.to_drilled_shaft_input(shaft_length=6.0)
+        layers = data["layers"]
+        assert len(layers) == 2  # fill + part of clay
+        assert layers[0]["thickness"] == 3.0
+        assert layers[1]["thickness"] == 3.0  # 3-6m clipped
+
+    def test_cohesive_cu_propagated(self):
+        profile = _mixed_profile()
+        data = profile.to_drilled_shaft_input(shaft_length=15.0)
+        clay = data["layers"][1]
+        assert clay["cu"] == 30.0
+        assert clay["soil_type"] == "cohesive"
+
+    def test_rock_layer(self):
+        profile = _profile_with_rock()
+        data = profile.to_drilled_shaft_input(shaft_length=10.0)
+        layers = data["layers"]
+        assert len(layers) == 2
+        assert layers[1]["soil_type"] == "rock"
+        assert layers[1]["qu"] == 5000
+        assert layers[1]["RQD"] == 60
+
+    def test_gwt_depth_passed(self):
+        profile = _mixed_profile()
+        data = profile.to_drilled_shaft_input(shaft_length=15.0)
+        assert data["gwt_depth"] == 2.0
+
+    def test_sand_has_phi(self):
+        profile = _sand_only_profile()
+        data = profile.to_drilled_shaft_input(shaft_length=10.0)
+        assert data["layers"][0]["phi"] == 33
+        assert data["layers"][0]["N60"] == 0.0  # N60 not set, only N_spt
+
+    def test_clay_only(self):
+        profile = _clay_only_profile()
+        data = profile.to_drilled_shaft_input(shaft_length=10.0)
+        assert len(data["layers"]) == 1
+        assert data["layers"][0]["cu"] == 120
+
+
+# ── TestRetainingWallAdapter ────────────────────────────────────────
+
+class TestRetainingWallAdapter:
+
+    def test_sand_backfill(self):
+        profile = _sand_only_profile()
+        data = profile.to_retaining_wall_input(wall_height=5.0)
+        assert data["phi_backfill"] == 33.0
+        assert data["c_backfill"] == 0.0
+        assert data["gamma_backfill"] == 18.5
+
+    def test_mixed_profile_weighted_average(self):
+        profile = _mixed_profile()
+        data = profile.to_retaining_wall_input(wall_height=10.0)
+        # 3m of sand phi=30 + 7m of clay cu=30 (phi=0 for clay)
+        # phi_backfill = (30*3 + 0*7) / 10 = 9.0
+        assert abs(data["phi_backfill"] - 9.0) < 0.2
+        # c_backfill = (0*3 + 30*7) / 10 = 21.0
+        assert abs(data["c_backfill"] - 21.0) < 0.2
+
+    def test_foundation_soil_from_layer_at_base(self):
+        profile = _mixed_profile()
+        data = profile.to_retaining_wall_input(wall_height=5.0)
+        # Foundation is soft clay at 5m depth
+        assert data["phi_foundation"] == 0.0
+        assert data["c_foundation"] == 30.0  # cu
+
+    def test_foundation_sand(self):
+        profile = _mixed_profile()
+        data = profile.to_retaining_wall_input(wall_height=12.0)
+        # Foundation is dense sand layer
+        assert data["phi_foundation"] == 36.0
+        assert data["c_foundation"] == 0.0
+
+    def test_surcharge_passed_through(self):
+        profile = _sand_only_profile()
+        data = profile.to_retaining_wall_input(wall_height=4.0, surcharge=10.0)
+        assert data["surcharge"] == 10.0
+
+    def test_clay_only_wall(self):
+        profile = _clay_only_profile()
+        data = profile.to_retaining_wall_input(wall_height=5.0)
+        assert data["phi_backfill"] == 0.0
+        assert data["c_backfill"] == 120.0
+        assert data["gamma_backfill"] == 19.0
+
+
+# ── TestSeismicAdapter ──────────────────────────────────────────────
+
+class TestSeismicAdapter:
+
+    def test_site_classification_n_values(self):
+        profile = _sand_only_profile()
+        # Sand has N_spt=22, N60 not set — adapter uses N_spt fallback
+        data = profile.to_seismic_input()
+        sc = data["site_classification"]
+        assert len(sc["N_values"]) == 1
+        assert sc["N_values"][0] == 22  # N_spt
+
+    def test_site_classification_su_values(self):
+        profile = _clay_only_profile()
+        data = profile.to_seismic_input()
+        sc = data["site_classification"]
+        assert len(sc["su_values"]) == 1
+        assert sc["su_values"][0] == 120  # cu
+
+    def test_liquefaction_data_below_gwt(self):
+        # Sand below GWT should appear in liquefaction data
+        layers = [
+            SoilLayer(0, 5, "Dry sand", gamma=18.0, phi=30,
+                      is_cohesive=False, N_spt=15, N160=12, uscs="SP"),
+            SoilLayer(5, 15, "Saturated sand", gamma=19.0, phi=33,
+                      is_cohesive=False, N_spt=20, N160=18, uscs="SP"),
+        ]
+        gw = GroundwaterCondition(depth=5.0)
+        profile = SoilProfile(layers=layers, groundwater=gw)
+        data = profile.to_seismic_input(amax_g=0.3, magnitude=7.5)
+
+        liq = data["liquefaction"]
+        assert len(liq["depths"]) == 1  # only saturated sand
+        assert liq["N160"][0] == 18.0
+        assert liq["FC"][0] == 5.0  # SP → clean sand
+
+    def test_cohesive_layers_excluded_from_liquefaction(self):
+        profile = _clay_only_profile()
+        data = profile.to_seismic_input(amax_g=0.2)
+        assert len(data["liquefaction"]["depths"]) == 0
+
+    def test_gwt_depth_and_params_passed(self):
+        profile = _mixed_profile()
+        data = profile.to_seismic_input(amax_g=0.25, magnitude=6.5)
+        assert data["amax_g"] == 0.25
+        assert data["magnitude"] == 6.5
+        assert data["gwt_depth"] == 2.0
+
+    def test_fines_content_from_uscs_sm(self):
+        layers = [
+            SoilLayer(0, 10, "Silty sand", gamma=18.0, phi=28,
+                      is_cohesive=False, N_spt=12, N160=10, uscs="SM"),
+        ]
+        gw = GroundwaterCondition(depth=0.0)
+        profile = SoilProfile(layers=layers, groundwater=gw)
+        data = profile.to_seismic_input(amax_g=0.3)
+        assert data["liquefaction"]["FC"][0] == 25.0  # SM → 25%
+
+    def test_rock_excluded_from_both(self):
+        profile = _profile_with_rock()
+        data = profile.to_seismic_input()
+        # Rock should not be in N-bar or liquefaction
+        assert all(N > 0 for N in data["site_classification"]["N_values"])
+        assert len(data["liquefaction"]["depths"]) == 0
+
+    def test_mixed_profile_n_bar_and_liq(self):
+        profile = _mixed_profile()
+        data = profile.to_seismic_input(amax_g=0.2)
+        sc = data["site_classification"]
+        # Sand has N_spt=35 → in N_values; clay has cu → in su_values
+        assert len(sc["N_values"]) >= 1
+        assert len(sc["su_values"]) == 1
+        assert sc["su_values"][0] == 30.0
+
+
+# ── TestNewAdapterIntegration ───────────────────────────────────────
+
+class TestNewAdapterIntegration:
+
+    def test_drilled_shaft_creates_valid_module_input(self):
+        from drilled_shaft.soil_profile import ShaftSoilLayer, ShaftSoilProfile
+        profile = _mixed_profile()
+        data = profile.to_drilled_shaft_input(shaft_length=15.0)
+
+        layers = [ShaftSoilLayer(**lyr) for lyr in data["layers"]]
+        soil = ShaftSoilProfile(layers=layers, gwt_depth=data["gwt_depth"])
+        assert len(soil.layers) == 3
+        assert soil.total_thickness == 15.0  # clipped from 20 to 15
+
+    def test_drilled_shaft_rock_module_input(self):
+        from drilled_shaft.soil_profile import ShaftSoilLayer, ShaftSoilProfile
+        profile = _profile_with_rock()
+        data = profile.to_drilled_shaft_input(shaft_length=10.0)
+
+        layers = [ShaftSoilLayer(**lyr) for lyr in data["layers"]]
+        soil = ShaftSoilProfile(layers=layers, gwt_depth=data["gwt_depth"])
+        assert soil.layers[-1].soil_type == "rock"
+
+    def test_retaining_wall_cantilever_integration(self):
+        from retaining_walls.geometry import CantileverWallGeometry
+        from retaining_walls.cantilever import analyze_cantilever_wall
+        profile = _sand_only_profile()
+        data = profile.to_retaining_wall_input(wall_height=4.0)
+
+        geom = CantileverWallGeometry(wall_height=4.0, surcharge=data["surcharge"])
+        result = analyze_cantilever_wall(
+            geom,
+            gamma_backfill=data["gamma_backfill"],
+            phi_backfill=data["phi_backfill"],
+            c_backfill=data["c_backfill"],
+            phi_foundation=data["phi_foundation"],
+            c_foundation=data["c_foundation"],
+        )
+        assert result.FOS_sliding > 0
+        assert result.FOS_overturning > 0
+
+    def test_seismic_site_classification_integration(self):
+        from seismic_geotech.site_class import compute_n_bar, classify_site
+        profile = _sand_only_profile()
+        data = profile.to_seismic_input()
+        sc = data["site_classification"]
+
+        if sc["N_values"]:
+            n_bar = compute_n_bar(sc["n_thicknesses"], sc["N_values"])
+            site_class = classify_site(n_bar=n_bar)
+            assert site_class in ("C", "D", "E")
+
+    def test_seismic_liquefaction_integration(self):
+        from seismic_geotech.liquefaction import evaluate_liquefaction
+        layers = [
+            SoilLayer(0, 3, "Dry sand", gamma=18.0, phi=30,
+                      is_cohesive=False, N_spt=15, N160=12, uscs="SP"),
+            SoilLayer(3, 15, "Loose saturated sand", gamma=19.0, phi=28,
+                      is_cohesive=False, N_spt=10, N160=8, uscs="SP"),
+        ]
+        gw = GroundwaterCondition(depth=3.0)
+        profile = SoilProfile(layers=layers, groundwater=gw)
+        data = profile.to_seismic_input(amax_g=0.3, magnitude=7.5)
+
+        liq = data["liquefaction"]
+        if liq["depths"]:
+            results = evaluate_liquefaction(
+                layer_depths=liq["depths"],
+                layer_N160=liq["N160"],
+                layer_FC=liq["FC"],
+                layer_gamma=liq["gamma"],
+                amax_g=data["amax_g"],
+                gwt_depth=data["gwt_depth"],
+                M=data["magnitude"],
+            )
+            assert len(results) == 1
+            assert "FOS_liq" in results[0]
