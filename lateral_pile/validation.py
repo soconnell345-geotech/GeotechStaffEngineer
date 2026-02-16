@@ -26,7 +26,7 @@ References
 import numpy as np
 import pytest
 
-from lateral_pile.pile import Pile
+from lateral_pile.pile import Pile, ReinforcedConcreteSection, rebar_diameter, _HP_SECTIONS
 from lateral_pile.soil import SoilLayer
 from lateral_pile.py_curves import (
     SoftClayMatlock, SoftClayJeanjean, SandAPI, SandReese,
@@ -962,6 +962,309 @@ class TestDataStructures:
             Pile(length=-1, diameter=0.5, E=200e6)
         with pytest.raises(ValueError):
             Pile(length=10, diameter=0.5, thickness=0.3, E=200e6)  # t > r
+
+
+# =============================================================================
+# Test 9: H-Pile section lookup
+# =============================================================================
+
+class TestHPileCreation:
+    """Verify H-pile factory method and section database."""
+
+    def test_strong_axis_I(self):
+        """Strong-axis I for HP14x117 should match AISC value (1220 in^4)."""
+        pile = Pile.from_h_pile("HP14x117", length=20.0, axis='strong')
+        # 1220 in^4 * (0.0254)^4 = 507.8e-6 m^4
+        assert abs(pile.moment_of_inertia - 507.8e-6) / 507.8e-6 < 1e-3
+
+    def test_weak_axis_I(self):
+        """Weak-axis I for HP14x117 should match AISC value (443 in^4)."""
+        pile = Pile.from_h_pile("HP14x117", length=20.0, axis='weak')
+        # 443 in^4 * (0.0254)^4 = 184.4e-6 m^4
+        assert abs(pile.moment_of_inertia - 184.4e-6) / 184.4e-6 < 1e-3
+
+    def test_diameter_is_flange_width(self):
+        """Pile diameter should be set to flange width for p-y curves."""
+        pile = Pile.from_h_pile("HP14x117", length=20.0)
+        bf = _HP_SECTIONS["HP14x117"]["bf"]
+        assert abs(pile.diameter - bf) < 1e-10
+
+    def test_invalid_designation(self):
+        """Unknown HP shape should raise ValueError."""
+        with pytest.raises(ValueError, match="Unknown HP shape"):
+            Pile.from_h_pile("HP99x999", length=20.0)
+
+    def test_invalid_axis(self):
+        """Invalid axis should raise ValueError."""
+        with pytest.raises(ValueError, match="axis must be"):
+            Pile.from_h_pile("HP14x117", length=20.0, axis='diagonal')
+
+    def test_all_designations_load(self):
+        """All 10 HP designations should create valid piles."""
+        for designation in _HP_SECTIONS:
+            pile = Pile.from_h_pile(designation, length=15.0)
+            assert pile.EI > 0
+            assert pile.moment_of_inertia > 0
+
+    def test_strong_greater_than_weak(self):
+        """Strong-axis I should be greater than weak-axis I for all shapes."""
+        for designation in _HP_SECTIONS:
+            strong = Pile.from_h_pile(designation, length=15.0, axis='strong')
+            weak = Pile.from_h_pile(designation, length=15.0, axis='weak')
+            assert strong.moment_of_inertia > weak.moment_of_inertia
+
+
+# =============================================================================
+# Test 10: Composite (concrete-filled pipe) section
+# =============================================================================
+
+class TestFilledPipe:
+    """Verify concrete-filled pipe pile factory."""
+
+    def test_composite_EI_hand_calc(self):
+        """Composite EI should match hand calculation."""
+        import math
+        D = 0.610
+        t = 0.0127
+        E_steel = 200e6
+        fc = 28000.0  # 28 MPa
+
+        r_o = D / 2.0
+        r_i = r_o - t
+        I_steel = math.pi / 4.0 * (r_o**4 - r_i**4)
+        I_concrete = math.pi / 4.0 * r_i**4
+        fc_MPa = fc / 1000.0
+        E_concrete = 4700.0 * math.sqrt(fc_MPa) * 1000.0
+        EI_expected = E_steel * I_steel + E_concrete * I_concrete
+
+        pile = Pile.from_filled_pipe(length=20.0, diameter=D, thickness=t,
+                                     fc=fc)
+        assert abs(pile.EI - EI_expected) / EI_expected < 1e-10
+
+    def test_custom_E_concrete(self):
+        """Custom E_concrete should override f'c-based calculation."""
+        pile_fc = Pile.from_filled_pipe(
+            length=20.0, diameter=0.610, thickness=0.0127, fc=28000.0)
+        pile_custom = Pile.from_filled_pipe(
+            length=20.0, diameter=0.610, thickness=0.0127,
+            E_concrete=30000000.0)
+        # Different E_concrete values should give different EI
+        assert pile_fc.EI != pile_custom.EI
+
+    def test_composite_greater_than_steel_only(self):
+        """Composite EI should exceed steel-only EI for same geometry."""
+        pile_steel = Pile(length=20.0, diameter=0.610, thickness=0.0127,
+                          E=200e6)
+        pile_filled = Pile.from_filled_pipe(
+            length=20.0, diameter=0.610, thickness=0.0127)
+        assert pile_filled.EI > pile_steel.EI
+
+    def test_invalid_thickness(self):
+        """Invalid thickness should raise ValueError."""
+        with pytest.raises(ValueError):
+            Pile.from_filled_pipe(length=20.0, diameter=0.610,
+                                  thickness=0.35)  # t > r
+
+
+# =============================================================================
+# Test 11: Reinforced concrete section and cracked EI
+# =============================================================================
+
+class TestReinforcedConcreteSection:
+    """Verify ReinforcedConcreteSection properties and Branson's equation."""
+
+    def _make_section(self):
+        """Create a standard test section: 900mm drilled shaft."""
+        return ReinforcedConcreteSection(
+            diameter=0.9, fc=35000.0, fy=420000.0,
+            n_bars=12, bar_diameter=0.025400, cover=0.075,
+        )
+
+    def test_Ec(self):
+        """Ec should match ACI 318 formula."""
+        import math
+        rc = self._make_section()
+        fc_MPa = 35000.0 / 1000.0
+        Ec_expected = 4700.0 * math.sqrt(fc_MPa) * 1000.0
+        assert abs(rc.Ec - Ec_expected) / Ec_expected < 1e-10
+
+    def test_Ig(self):
+        """Gross I should match pi/4 * r^4."""
+        import math
+        rc = self._make_section()
+        Ig_expected = math.pi / 4.0 * (0.45)**4
+        assert abs(rc.Ig - Ig_expected) / Ig_expected < 1e-10
+
+    def test_As(self):
+        """Total steel area should be n_bars * pi/4 * db^2."""
+        import math
+        rc = self._make_section()
+        As_expected = 12 * math.pi / 4.0 * 0.025400**2
+        assert abs(rc.As - As_expected) / As_expected < 1e-10
+
+    def test_Mcr(self):
+        """Cracking moment should match fr*Ig/yt."""
+        import math
+        rc = self._make_section()
+        fc_MPa = 35000.0 / 1000.0
+        fr = 0.62 * math.sqrt(fc_MPa) * 1000.0
+        yt = 0.45
+        Ig = math.pi / 4.0 * 0.45**4
+        Mcr_expected = fr * Ig / yt
+        assert abs(rc.Mcr - Mcr_expected) / Mcr_expected < 1e-10
+
+    def test_Icr_less_than_Ig(self):
+        """Cracked I must be less than gross I."""
+        rc = self._make_section()
+        assert rc.Icr < rc.Ig
+
+    def test_Icr_positive(self):
+        """Cracked I must be positive."""
+        rc = self._make_section()
+        assert rc.Icr > 0
+
+    def test_effective_EI_below_cracking(self):
+        """Below cracking moment, effective EI = Ec * Ig."""
+        rc = self._make_section()
+        small_moment = rc.Mcr * 0.5
+        EI_eff = rc.get_effective_EI(small_moment)
+        EI_uncracked = rc.Ec * rc.Ig
+        assert abs(EI_eff - EI_uncracked) / EI_uncracked < 1e-10
+
+    def test_effective_EI_at_large_moment(self):
+        """At very large moment, effective EI approaches Ec * Icr."""
+        rc = self._make_section()
+        large_moment = rc.Mcr * 100.0
+        EI_eff = rc.get_effective_EI(large_moment)
+        EI_cracked = rc.Ec * rc.Icr
+        # Should be very close to Icr (within 1%)
+        assert abs(EI_eff - EI_cracked) / EI_cracked < 0.01
+
+    def test_effective_EI_intermediate(self):
+        """At moderate moment, effective EI is between cracked and gross."""
+        rc = self._make_section()
+        moderate_moment = rc.Mcr * 2.0
+        EI_eff = rc.get_effective_EI(moderate_moment)
+        EI_cracked = rc.Ec * rc.Icr
+        EI_uncracked = rc.Ec * rc.Ig
+        assert EI_cracked < EI_eff < EI_uncracked
+
+    def test_rebar_diameter_lookup(self):
+        """Standard rebar lookup should return correct diameter."""
+        import math
+        d = rebar_diameter("#8")
+        assert abs(d - 0.025400) < 1e-6
+
+    def test_rebar_diameter_invalid(self):
+        """Unknown bar size should raise ValueError."""
+        with pytest.raises(ValueError, match="Unknown rebar size"):
+            rebar_diameter("#99")
+
+    def test_invalid_section_params(self):
+        """Invalid section parameters should raise ValueError."""
+        with pytest.raises(ValueError):
+            ReinforcedConcreteSection(
+                diameter=0.9, fc=35000.0, n_bars=2,  # too few bars
+                bar_diameter=0.025, cover=0.075)
+        with pytest.raises(ValueError):
+            ReinforcedConcreteSection(
+                diameter=0.3, fc=35000.0, n_bars=12,
+                bar_diameter=0.025, cover=0.2)  # cover > radius
+
+
+# =============================================================================
+# Test 12: Cracked-EI full analysis integration
+# =============================================================================
+
+class TestCrackedEIAnalysis:
+    """Verify the cracked-EI outer iteration loop with a full analysis."""
+
+    def _make_rc_analysis(self):
+        """Create a standard RC pile analysis in soft clay."""
+        rc = ReinforcedConcreteSection(
+            diameter=0.9, fc=35000.0, fy=420000.0,
+            n_bars=12, bar_diameter=0.025400, cover=0.075,
+        )
+        pile = Pile.from_rc_section(length=15.0, rc_section=rc)
+        layers = [
+            SoilLayer(
+                top=0.0, bottom=15.0,
+                py_model=SoftClayMatlock(c=50.0, gamma=9.0, eps50=0.01, J=0.5),
+            ),
+        ]
+        return LateralPileAnalysis(pile, layers)
+
+    def test_cracked_analysis_converges(self):
+        """RC analysis with cracked EI should converge."""
+        analysis = self._make_rc_analysis()
+        results = analysis.solve(Vt=200.0)
+        assert results.converged
+
+    def test_ei_iterations_populated(self):
+        """Results should report EI iteration count."""
+        analysis = self._make_rc_analysis()
+        results = analysis.solve(Vt=200.0)
+        assert results.ei_iterations > 0
+
+    def test_EI_profile_in_results(self):
+        """Results should contain the final EI profile."""
+        analysis = self._make_rc_analysis()
+        results = analysis.solve(Vt=200.0)
+        assert results.EI_profile is not None
+        assert len(results.EI_profile) == len(results.z)
+
+    def test_cracked_EI_reduces_stiffness(self):
+        """Cracked analysis should produce lower EI than uncracked at max moment."""
+        rc = ReinforcedConcreteSection(
+            diameter=0.9, fc=35000.0, fy=420000.0,
+            n_bars=12, bar_diameter=0.025400, cover=0.075,
+        )
+        pile = Pile.from_rc_section(length=15.0, rc_section=rc)
+        layers = [
+            SoilLayer(
+                top=0.0, bottom=15.0,
+                py_model=SoftClayMatlock(c=50.0, gamma=9.0, eps50=0.01, J=0.5),
+            ),
+        ]
+        analysis = LateralPileAnalysis(pile, layers)
+        results = analysis.solve(Vt=200.0)
+
+        # EI at high-moment nodes should be less than uncracked EI
+        EI_uncracked = rc.Ec * rc.Ig
+        assert np.min(results.EI_profile) < EI_uncracked
+        # EI at zero-moment nodes should remain at uncracked value
+        assert np.max(results.EI_profile) == pytest.approx(EI_uncracked, rel=1e-6)
+
+    def test_EI_varies_along_pile(self):
+        """EI should vary — nodes with higher moment get lower EI."""
+        analysis = self._make_rc_analysis()
+        results = analysis.solve(Vt=200.0)
+        EI = results.EI_profile
+        # EI should not be uniform (some cracking should occur)
+        assert np.max(EI) > np.min(EI)
+
+    def test_EI_profile_in_to_dict(self):
+        """to_dict() should include EI_profile for RC analyses."""
+        analysis = self._make_rc_analysis()
+        results = analysis.solve(Vt=200.0)
+        d = results.to_dict()
+        assert 'EI_profile_kNm2' in d
+        assert 'ei_iterations' in d
+
+    def test_non_rc_has_no_EI_profile(self):
+        """Standard (non-RC) analysis should not have EI_profile."""
+        pile = Pile(length=20.0, diameter=0.610, thickness=0.0127, E=200e6)
+        layers = [
+            SoilLayer(
+                top=0.0, bottom=20.0,
+                py_model=SandAPI(phi=35.0, gamma=10.0, k=16000.0),
+            ),
+        ]
+        analysis = LateralPileAnalysis(pile, layers)
+        results = analysis.solve(Vt=100.0)
+        assert results.EI_profile is None
+        assert results.ei_iterations == 0
+        assert 'EI_profile_kNm2' not in results.to_dict()
 
 
 if __name__ == '__main__':

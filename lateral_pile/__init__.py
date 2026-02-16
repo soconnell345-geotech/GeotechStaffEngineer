@@ -11,8 +11,11 @@ References:
     - Jeanjean (2009): OTC-20158-MS
 """
 
-from lateral_pile.pile import Pile
+from lateral_pile.pile import Pile, ReinforcedConcreteSection, rebar_diameter
 from lateral_pile.soil import SoilLayer
 from lateral_pile.analysis import LateralPileAnalysis
 
-__all__ = ['Pile', 'SoilLayer', 'LateralPileAnalysis']
+__all__ = [
+    'Pile', 'SoilLayer', 'LateralPileAnalysis',
+    'ReinforcedConcreteSection', 'rebar_diameter',
+]

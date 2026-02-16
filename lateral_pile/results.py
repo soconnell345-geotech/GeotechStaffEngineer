@@ -9,7 +9,8 @@ Matplotlib is optional — plotting methods will raise ImportError with
 a helpful message if matplotlib is not installed.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Optional
 
 import numpy as np
 
@@ -48,6 +49,11 @@ class Results:
         Applied moment (kN-m).
     Q : float
         Applied axial load (kN).
+    EI_profile : numpy.ndarray, optional
+        Final EI values at each node (kN-m^2). Populated when using
+        reinforced concrete sections with cracked-EI iteration.
+    ei_iterations : int
+        Number of outer EI iterations (0 for non-RC piles).
     """
     z: np.ndarray
     deflection: np.ndarray
@@ -63,6 +69,8 @@ class Results:
     Vt: float
     Mt: float
     Q: float
+    EI_profile: Optional[np.ndarray] = field(default=None, repr=False)
+    ei_iterations: int = 0
 
     @property
     def y_top(self) -> float:
@@ -133,11 +141,17 @@ class Results:
             f"Solver iterations:    {self.iterations}",
             f"Converged:            {self.converged}",
         ]
+        if self.ei_iterations > 0:
+            lines.append(f"EI iterations:        {self.ei_iterations}")
+            if self.EI_profile is not None:
+                EI_min = float(np.min(self.EI_profile))
+                EI_max = float(np.max(self.EI_profile))
+                lines.append(f"EI range:             {EI_min:.0f} - {EI_max:.0f} kN-m^2")
         return "\n".join(lines)
 
     def to_dict(self) -> dict:
         """Export results as a dictionary (for JSON serialization)."""
-        return {
+        d = {
             'z': self.z.tolist(),
             'deflection_m': self.deflection.tolist(),
             'slope_rad': self.slope.tolist(),
@@ -152,6 +166,10 @@ class Results:
             'iterations': self.iterations,
             'converged': self.converged,
         }
+        if self.EI_profile is not None:
+            d['EI_profile_kNm2'] = self.EI_profile.tolist()
+            d['ei_iterations'] = self.ei_iterations
+        return d
 
     # ---- Plotting methods ----
 
