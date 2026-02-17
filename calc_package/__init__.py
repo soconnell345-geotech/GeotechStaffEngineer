@@ -2,8 +2,9 @@
 Calculation Package Generator.
 
 Produces professional, Mathcad-style calculation packages as
-self-contained HTML files. Each supported analysis module provides
-a calc_steps.py that defines inputs, equations, and figures.
+self-contained HTML files or LaTeX/PDF documents. Each supported
+analysis module provides a calc_steps.py that defines inputs,
+equations, and figures.
 
 Usage
 -----
@@ -16,12 +17,24 @@ Usage
 >>> analysis = BearingCapacityAnalysis(footing=footing, soil=soil)
 >>> result = analysis.compute()
 >>>
+>>> # HTML output (default)
 >>> html = generate_calc_package(
 ...     module="bearing_capacity",
 ...     result=result,
 ...     analysis=analysis,
 ...     project_name="I-95 Bridge",
 ...     engineer="S. O'Connell",
+... )
+>>>
+>>> # PDF output (requires pdflatex)
+>>> generate_calc_package(
+...     module="bearing_capacity",
+...     result=result,
+...     analysis=analysis,
+...     project_name="I-95 Bridge",
+...     engineer="S. O'Connell",
+...     output_path="calc.pdf",
+...     format="pdf",
 ... )
 """
 
@@ -35,6 +48,8 @@ from calc_package.data_model import (
     TableData,
 )
 from calc_package.renderer import render_html, save_html, figure_to_base64
+from calc_package.latex_renderer import render_latex, save_latex, save_pdf
+from calc_package.equation_converter import unicode_to_latex, escape_latex
 
 
 # Registry of supported modules — populated lazily on first use
@@ -102,13 +117,16 @@ def generate_calc_package(
     company: str = "",
     date: str = "",
     output_path: str = None,
+    format: str = "html",
+    keep_tex: bool = False,
+    compiler: str = "pdflatex",
 ) -> str:
     """Generate a Mathcad-style calculation package.
 
     Parameters
     ----------
     module : str
-        Module name: "bearing_capacity", "lateral_pile", or "slope_stability".
+        Module name (e.g. ``"bearing_capacity"``).
     result : dataclass
         The module's Results object from running the analysis.
     analysis : object, optional
@@ -126,13 +144,24 @@ def generate_calc_package(
     date : str
         Date string. Auto-filled from today if empty.
     output_path : str, optional
-        If provided, saves HTML to this file path.
+        If provided, saves to this file path.
+    format : str
+        Output format: ``"html"`` (default), ``"latex"``, or ``"pdf"``.
+    keep_tex : bool
+        For ``format="pdf"``: keep the .tex source alongside the PDF.
+    compiler : str
+        For ``format="pdf"``: LaTeX compiler (``"pdflatex"`` or ``"xelatex"``).
 
     Returns
     -------
     str
-        Self-contained HTML string.
+        For ``"html"``/``"latex"``: the rendered document string.
+        For ``"pdf"``: the absolute path to the PDF file.
     """
+    # Early validation
+    if format == "pdf" and not output_path:
+        raise ValueError("output_path is required for format='pdf'")
+
     reg = _ensure_registered(module)
 
     # Build sections
@@ -170,7 +199,19 @@ def generate_calc_package(
         references=reg["references"],
     )
 
-    if output_path:
-        save_html(data, output_path)
+    # ── Dispatch by format ──
+    if format == "pdf":
+        if not output_path:
+            raise ValueError("output_path is required for format='pdf'")
+        return save_pdf(data, output_path, keep_tex=keep_tex, compiler=compiler)
 
-    return render_html(data)
+    elif format == "latex":
+        tex = render_latex(data)
+        if output_path:
+            save_latex(data, output_path)
+        return tex
+
+    else:  # html (default)
+        if output_path:
+            save_html(data, output_path)
+        return render_html(data)
