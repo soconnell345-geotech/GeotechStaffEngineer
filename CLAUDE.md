@@ -23,21 +23,21 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`*_agent_foundry.py` in root): 3 functions each (agent/list/describe)
 
-## Module Inventory (790 tests)
+## Module Inventory (948 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
-| bearing_capacity | 37 | Shallow foundations (CBEAR/Vesic/Meyerhof) |
+| bearing_capacity | 45 | Shallow foundations (CBEAR/Vesic/Meyerhof) |
 | settlement | 39 | Consolidation & immediate (CSETT) |
-| axial_pile | 36 | Driven pile capacity (Nordlund/Tomlinson/Beta) |
+| axial_pile | 55 | Driven pile capacity (Nordlund/Tomlinson/Beta) |
 | sheet_pile | 26 | Cantilever/anchored walls (Rankine/Coulomb) |
 | lateral_pile | 58 | Lateral pile (COM624P, 7 p-y models, FD solver) |
-| pile_group | 22 | Rigid cap groups (6-DOF, Converse-Labarre) |
-| wave_equation | 41 | Smith 1-D wave equation (bearing graph, drivability) |
-| drilled_shaft | 41 | GEC-10 alpha/beta/rock socket |
-| seismic_geotech | 58 | Site class, M-O pressures, liquefaction |
-| retaining_walls | 46 | Cantilever + MSE walls (GEC-11) |
-| ground_improvement | 40 | Aggregate piers, wick drains, surcharge, vibro (GEC-13) |
+| pile_group | 72 | Rigid cap groups (6-DOF, Converse-Labarre) |
+| wave_equation | 45 | Smith 1-D wave equation (bearing graph, drivability) |
+| drilled_shaft | 48 | GEC-10 alpha/beta/rock socket |
+| seismic_geotech | 71 | Site class, M-O pressures, liquefaction |
+| retaining_walls | 70 | Cantilever + MSE walls (GEC-11) |
+| ground_improvement | 43 | Aggregate piers, wick drains, surcharge, vibro (GEC-13) |
 | slope_stability | 55 | Fellenius/Bishop/Spencer, circular slip, grid search |
 | downdrag | 53 | Fellenius neutral plane, UFC 3-220-20 downdrag |
 | geotech_common | 238 | SoilProfile (82) + engineering checks (84) + adapters (72) |
