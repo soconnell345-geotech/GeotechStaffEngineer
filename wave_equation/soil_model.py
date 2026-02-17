@@ -24,10 +24,15 @@ class SmithSoilModel:
     """Smith soil resistance model for a single pile segment.
 
     The total resistance at a segment is:
-        R = R_static * (1 + J * v)
+        R = R_static + J * R_ultimate * v
 
-    where R_static is the elasto-plastic static resistance and
-    J * v is the velocity-dependent dynamic component.
+    where R_static is the elasto-plastic static resistance,
+    J is the Smith damping factor, R_ultimate is the ultimate
+    static capacity, and v is the pile segment velocity.
+
+    The damping force (J * R_ultimate * v) is proportional to
+    the ultimate resistance, not the currently mobilized static
+    resistance. This is the standard GRLWEAP/GEC-12 formulation.
 
     Parameters
     ----------
@@ -68,7 +73,16 @@ class SmithSoilModel:
     def total_resistance(self, displacement: float, velocity: float) -> float:
         """Compute total (static + dynamic) soil resistance.
 
-        R = R_static * (1 + J * v)
+        R = R_static + J * R_ultimate * v
+
+        Smith damping: the velocity-dependent damping force is proportional
+        to the *ultimate* static resistance (R_ultimate), not the currently
+        mobilized static resistance. This is the standard GRLWEAP/GEC-12
+        formulation with damping constants from FHWA GEC-12 Table 12-3.
+
+        Damping is only applied during loading (velocity in the direction
+        that compresses the soil spring). During unloading/rebound, only
+        the static resistance acts.
 
         Parameters
         ----------
@@ -83,11 +97,14 @@ class SmithSoilModel:
             Total resistance force (kN).
         """
         R_s = self.static_resistance(displacement)
-        # Dynamic only when moving in same direction as static resistance
+        # Smith damping: R_d = J * R_u * v (proportional to ultimate, not mobilized)
+        # Applied only during loading (velocity same direction as displacement)
         if velocity > 0 and displacement > 0:
-            return R_s * (1.0 + self.damping * velocity)
+            R_d = self.damping * self.R_ultimate * velocity
+            return R_s + R_d
         elif velocity < 0 and displacement < 0:
-            return R_s * (1.0 + self.damping * abs(velocity))
+            R_d = self.damping * self.R_ultimate * abs(velocity)
+            return R_s - R_d  # R_s is negative here; R_d adds to magnitude
         else:
             return R_s
 

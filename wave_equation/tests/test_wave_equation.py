@@ -186,11 +186,76 @@ class TestSoilModel:
         assert R == pytest.approx(100.0, rel=0.01)
 
     def test_dynamic_enhancement(self):
-        """With velocity: R = Rs * (1 + J*v)."""
+        """With velocity: R = R_s + J * R_u * v at full quake."""
         m = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5)
         # At quake displacement with v=2 m/s
+        # R_s = 100 (fully mobilized), R_d = 0.5 * 100 * 2 = 100
         R = m.total_resistance(0.0025, 2.0)
-        assert R == pytest.approx(100 * (1 + 0.5 * 2), rel=0.01)
+        assert R == pytest.approx(100 + 0.5 * 100 * 2, rel=0.01)
+
+    def test_damping_proportional_to_Ru_not_Rs(self):
+        """Smith damping force = J * R_ultimate * v, NOT J * R_static * v.
+
+        This is the GRLWEAP/GEC-12 standard formulation. The damping
+        force is proportional to R_ultimate regardless of how much
+        static resistance has been mobilized.
+
+        At half the quake, R_static = 0.5 * R_u but damping still
+        uses full R_u.
+        """
+        m = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5)
+        d = 0.00125  # half the quake
+        v = 2.0
+
+        R_s = m.static_resistance(d)
+        assert R_s == pytest.approx(50.0, rel=0.01)  # 100 * 0.00125/0.0025
+
+        R_total = m.total_resistance(d, v)
+        # Correct (GRLWEAP): R = R_s + J * R_u * v = 50 + 0.5*100*2 = 150
+        R_expected = R_s + 0.5 * 100 * v  # 50 + 100 = 150
+        assert R_total == pytest.approx(R_expected, rel=0.01)
+
+        # This must NOT equal the old (incorrect) formula: R_s * (1+J*v) = 50*2 = 100
+        R_old_wrong = R_s * (1.0 + 0.5 * v)
+        assert R_total != pytest.approx(R_old_wrong, rel=0.01)
+
+    def test_damping_at_zero_displacement(self):
+        """Damping force is zero when displacement is zero (not yet loaded).
+
+        Per Smith model: damping only during loading (v and d same sign).
+        At d=0 with v>0, condition fails -> R=0.
+        """
+        m = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5)
+        R = m.total_resistance(0.0, 3.0)
+        assert R == pytest.approx(0.0, abs=1e-10)
+
+    def test_damping_beyond_quake(self):
+        """Beyond quake: R = R_u + J * R_u * v = R_u * (1 + J*v).
+
+        When fully mobilized, both old and new formulas agree.
+        """
+        m = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5)
+        d = 0.010  # well beyond quake
+        v = 3.0
+
+        R_total = m.total_resistance(d, v)
+        # R_s = 100 (capped at Ru), R_d = 0.5 * 100 * 3 = 150
+        assert R_total == pytest.approx(100 + 0.5 * 100 * 3, rel=0.01)  # 250
+
+    def test_no_damping_during_rebound(self):
+        """During rebound (v < 0, d > 0), no damping is applied.
+
+        Smith damping is one-directional: only during loading.
+        """
+        m = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5)
+        d = 0.005  # positive displacement (beyond quake)
+        v = -2.0   # rebounding upward
+
+        R_total = m.total_resistance(d, v)
+        R_s = m.static_resistance(d)
+        # Rebound: only static resistance, no damping
+        assert R_total == pytest.approx(R_s, rel=0.01)
+        assert R_total == pytest.approx(100.0, rel=0.01)
 
     def test_zero_resistance(self):
         """Zero Rult gives zero resistance."""

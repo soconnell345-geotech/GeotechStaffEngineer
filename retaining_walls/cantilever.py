@@ -16,7 +16,7 @@ from typing import Dict, Any, Optional
 
 from retaining_walls.geometry import CantileverWallGeometry
 from retaining_walls.earth_pressure import (
-    rankine_Ka, rankine_Kp, coulomb_Ka,
+    rankine_Ka, rankine_Ka_sloped, rankine_Kp, coulomb_Ka,
     horizontal_force_active, horizontal_force_passive,
 )
 from retaining_walls.results import CantileverWallResult
@@ -47,7 +47,7 @@ def _compute_wall_weights(geom: CantileverWallGeometry,
     # Stem (trapezoidal: wider at base)
     # Rectangular part (stem_top thickness)
     W_stem_rect = gamma_concrete * t_stem_top * h_stem
-    x_stem_rect = t_toe + t_stem_base / 2.0
+    x_stem_rect = t_toe + t_stem_top / 2.0
     weights.append((W_stem_rect, x_stem_rect))
 
     # Triangular part of stem taper
@@ -77,10 +77,12 @@ def check_sliding(geom: CantileverWallGeometry,
                   c_foundation: float = 0.0,
                   gamma_concrete: float = 24.0,
                   FOS_required: float = 1.5,
-                  pressure_method: str = "rankine") -> Dict[str, Any]:
+                  pressure_method: str = "rankine",
+                  include_passive: bool = False,
+                  gamma_foundation: float = None) -> Dict[str, Any]:
     """Check sliding stability.
 
-    FOS_sliding = (V * tan(delta_b) + ca * B) / Pa_horizontal
+    FOS_sliding = (V * tan(delta_b) + ca * B + Pp) / Pa_horizontal
 
     Parameters
     ----------
@@ -102,14 +104,22 @@ def check_sliding(geom: CantileverWallGeometry,
         Required FOS. Default 1.5.
     pressure_method : str, optional
         "rankine" or "coulomb". Default "rankine".
+    include_passive : bool, optional
+        If True, include passive resistance Pp in front of wall.
+        If has_shear_key, passive is computed on key_depth;
+        otherwise on base_thickness. Default False.
+    gamma_foundation : float, optional
+        Foundation soil unit weight (kN/m³). If None, uses gamma_backfill.
 
     Returns
     -------
     dict
-        FOS_sliding, driving_force, resisting_force, passes.
+        FOS_sliding, driving_force, resisting_force, Pp_kN_per_m, passes.
     """
     if phi_foundation is None:
         phi_foundation = phi_backfill
+    if gamma_foundation is None:
+        gamma_foundation = gamma_backfill
 
     H = geom.H_active
     B = geom.base_width
@@ -120,7 +130,11 @@ def check_sliding(geom: CantileverWallGeometry,
         Ka = coulomb_Ka(phi_backfill, delta_wall,
                         beta_deg=geom.backfill_slope)
     else:
-        Ka = rankine_Ka(phi_backfill)
+        # Use sloped Rankine Ka when backfill is sloped
+        if geom.backfill_slope > 0:
+            Ka = rankine_Ka_sloped(phi_backfill, geom.backfill_slope)
+        else:
+            Ka = rankine_Ka(phi_backfill)
 
     Pa, _ = horizontal_force_active(gamma_backfill, H, Ka,
                                     c_backfill, geom.surcharge)
@@ -138,6 +152,20 @@ def check_sliding(geom: CantileverWallGeometry,
     ca = 2.0 / 3.0 * c_foundation
 
     resisting = V * math.tan(math.radians(delta_b)) + ca * B
+
+    # Passive resistance (optional)
+    Pp = 0.0
+    if include_passive:
+        Kp = rankine_Kp(phi_foundation)
+        if geom.has_shear_key and geom.key_depth > 0:
+            # Passive resistance on shear key depth
+            D = geom.key_depth
+        else:
+            # Passive resistance on embedment (base_thickness)
+            D = geom.base_thickness
+        Pp = 0.5 * Kp * gamma_foundation * D ** 2
+        resisting += Pp
+
     driving = Pa
 
     FOS = resisting / driving if driving > 0 else 99.9
@@ -146,6 +174,7 @@ def check_sliding(geom: CantileverWallGeometry,
         "FOS_sliding": round(FOS, 3),
         "driving_force_kN_per_m": round(driving, 1),
         "resisting_force_kN_per_m": round(resisting, 1),
+        "Pp_kN_per_m": round(Pp, 1),
         "passes": FOS >= FOS_required,
     }
 
@@ -189,7 +218,10 @@ def check_overturning(geom: CantileverWallGeometry,
         Ka = coulomb_Ka(phi_backfill, delta_wall,
                         beta_deg=geom.backfill_slope)
     else:
-        Ka = rankine_Ka(phi_backfill)
+        if geom.backfill_slope > 0:
+            Ka = rankine_Ka_sloped(phi_backfill, geom.backfill_slope)
+        else:
+            Ka = rankine_Ka(phi_backfill)
 
     Pa, z_Pa = horizontal_force_active(gamma_backfill, H, Ka,
                                        c_backfill, geom.surcharge)
@@ -256,7 +288,10 @@ def check_bearing(geom: CantileverWallGeometry,
         Ka = coulomb_Ka(phi_backfill, delta_wall,
                         beta_deg=geom.backfill_slope)
     else:
-        Ka = rankine_Ka(phi_backfill)
+        if geom.backfill_slope > 0:
+            Ka = rankine_Ka_sloped(phi_backfill, geom.backfill_slope)
+        else:
+            Ka = rankine_Ka(phi_backfill)
 
     Pa, z_Pa = horizontal_force_active(gamma_backfill, H, Ka,
                                        c_backfill, geom.surcharge)
@@ -314,7 +349,9 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
                             gamma_concrete: float = 24.0,
                             FOS_sliding: float = 1.5,
                             FOS_overturning: float = 2.0,
-                            pressure_method: str = "rankine") -> CantileverWallResult:
+                            pressure_method: str = "rankine",
+                            include_passive: bool = False,
+                            gamma_foundation: float = None) -> CantileverWallResult:
     """Run complete cantilever wall stability analysis.
 
     Parameters
@@ -341,6 +378,10 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         Required FOS for overturning. Default 2.0.
     pressure_method : str, optional
         "rankine" or "coulomb". Default "rankine".
+    include_passive : bool, optional
+        If True, include passive resistance in sliding check. Default False.
+    gamma_foundation : float, optional
+        Foundation soil unit weight (kN/m³). If None, uses gamma_backfill.
 
     Returns
     -------
@@ -349,7 +390,7 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
     sliding = check_sliding(
         geom, gamma_backfill, phi_backfill, c_backfill,
         phi_foundation, c_foundation, gamma_concrete,
-        FOS_sliding, pressure_method
+        FOS_sliding, pressure_method, include_passive, gamma_foundation
     )
 
     overturning = check_overturning(

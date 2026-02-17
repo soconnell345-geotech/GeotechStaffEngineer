@@ -28,7 +28,7 @@ from drilled_shaft.soil_profile import ShaftSoilProfile, ShaftSoilLayer
 from drilled_shaft.side_resistance import (
     alpha_cohesive, side_resistance_cohesive,
     beta_cohesionless, side_resistance_cohesionless,
-    side_resistance_rock,
+    side_resistance_rock, PA,
 )
 from drilled_shaft.end_bearing import (
     end_bearing_cohesive, end_bearing_cohesionless, end_bearing_rock,
@@ -159,7 +159,7 @@ class DrillShaftAnalysis:
                 Qs_layer = side_resistance_rock(
                     layer.qu, perimeter, effective_thickness
                 )
-                fs = 1.0 * 1.0 * (layer.qu ** 0.5)
+                fs = 0.65 * (layer.qu * PA) ** 0.5
                 Qs_rock += Qs_layer
                 method_used = "rock socket"
 

@@ -268,11 +268,11 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
 
     soil_items.append(CalcStep(
         title="Dynamic Soil Resistance (Smith Damping)",
-        equation="R_total = R_static \u00d7 (1 + J \u00d7 v)",
-        substitution="J = Smith damping factor, v = pile segment velocity",
+        equation="R_total = R_static + J \u00d7 R_ultimate \u00d7 v",
+        substitution="J = Smith damping factor (s/m), v = pile segment velocity",
         result_name="Model",
-        result_value="Velocity-dependent radiation damping",
-        reference="Smith (1960); WEAP87 Manual, Chapter 4",
+        result_value="Velocity-dependent viscous damping (GRLWEAP/GEC-12)",
+        reference="Smith (1960); FHWA GEC-12, Table 12-3",
     ))
 
     if soil is not None:

@@ -173,6 +173,89 @@ class TestMononobeOkabe:
         Kp_coulomb = coulomb_Kp(30, 15)
         assert abs(KPE - Kp_coulomb) < 0.01
 
+    # ---- Tests with non-zero wall batter (beta) and backfill slope (i) ----
+    # Reference values computed via AASHTO LRFD alpha-form (sin-based) of M-O.
+
+    def test_KAE_battered_wall(self):
+        """phi=30, delta=15, kh=0.2, beta=10 deg wall batter."""
+        KAE = mononobe_okabe_KAE(30, 15, 0.2, beta_deg=10)
+        assert abs(KAE - 0.3799) < 0.001
+
+    def test_KAE_sloping_backfill(self):
+        """phi=30, delta=15, kh=0.2, i=10 deg backfill slope."""
+        KAE = mononobe_okabe_KAE(30, 15, 0.2, i_deg=10)
+        assert abs(KAE - 0.5619) < 0.001
+
+    def test_KAE_battered_and_sloping(self):
+        """phi=30, delta=15, kh=0.2, beta=10, i=5."""
+        KAE = mononobe_okabe_KAE(30, 15, 0.2, beta_deg=10, i_deg=5)
+        assert abs(KAE - 0.4153) < 0.001
+
+    def test_KAE_large_beta(self):
+        """phi=35, delta=20, kh=0.15, beta=15."""
+        KAE = mononobe_okabe_KAE(35, 20, 0.15, beta_deg=15)
+        assert abs(KAE - 0.2375) < 0.001
+
+    def test_KAE_with_kv_beta_i(self):
+        """phi=30, delta=15, kh=0.2, kv=0.1, beta=10, i=5."""
+        KAE = mononobe_okabe_KAE(30, 15, 0.2, kv=0.1, beta_deg=10, i_deg=5)
+        assert abs(KAE - 0.4404) < 0.001
+
+    def test_KPE_battered_wall(self):
+        """phi=30, delta=15, kh=0.2, beta=10."""
+        KPE = mononobe_okabe_KPE(30, 15, 0.2, beta_deg=10)
+        assert abs(KPE - 3.1601) < 0.01
+
+    def test_KPE_sloping_backfill(self):
+        """phi=30, delta=15, kh=0.2, i=10."""
+        KPE = mononobe_okabe_KPE(30, 15, 0.2, i_deg=10)
+        assert abs(KPE - 5.3948) < 0.01
+
+    def test_KPE_battered_and_sloping(self):
+        """phi=30, delta=15, kh=0.2, beta=10, i=5."""
+        KPE = mononobe_okabe_KPE(30, 15, 0.2, beta_deg=10, i_deg=5)
+        assert abs(KPE - 4.1166) < 0.01
+
+    def test_KPE_large_beta(self):
+        """phi=35, delta=20, kh=0.15, beta=15."""
+        KPE = mononobe_okabe_KPE(35, 20, 0.15, beta_deg=15)
+        assert abs(KPE - 5.5431) < 0.01
+
+    def test_KPE_with_kv_beta_i(self):
+        """phi=30, delta=15, kh=0.2, kv=0.1, beta=10, i=5."""
+        KPE = mononobe_okabe_KPE(30, 15, 0.2, kv=0.1, beta_deg=10, i_deg=5)
+        assert abs(KPE - 3.9437) < 0.01
+
+    def test_KAE_zero_kh_battered_equals_coulomb(self):
+        """With kh=0, KAE(beta=10) should equal Coulomb Ka(alpha=100)."""
+        from sheet_pile.earth_pressure import coulomb_Ka
+        for beta_d in [5, 10, 15]:
+            KAE = mononobe_okabe_KAE(30, 15, 0.0, beta_deg=beta_d)
+            Ka_c = coulomb_Ka(30, 15, alpha_deg=90 + beta_d)
+            assert abs(KAE - Ka_c) < 0.001, (
+                f"beta={beta_d}: KAE={KAE:.4f} != Ka_coulomb={Ka_c:.4f}"
+            )
+
+    def test_KPE_zero_kh_battered_equals_coulomb(self):
+        """With kh=0, KPE(beta=10) should equal Coulomb Kp(alpha=100)."""
+        from sheet_pile.earth_pressure import coulomb_Kp
+        for beta_d in [5, 10, 15]:
+            KPE = mononobe_okabe_KPE(30, 15, 0.0, beta_deg=beta_d)
+            Kp_c = coulomb_Kp(30, 15, alpha_deg=90 + beta_d)
+            assert abs(KPE - Kp_c) < 0.01, (
+                f"beta={beta_d}: KPE={KPE:.4f} != Kp_coulomb={Kp_c:.4f}"
+            )
+
+    def test_KAE_zero_kh_sloping_equals_coulomb(self):
+        """With kh=0, KAE(i=10) should equal Coulomb Ka(beta=10)."""
+        from sheet_pile.earth_pressure import coulomb_Ka
+        for i_d in [5, 10]:
+            KAE = mononobe_okabe_KAE(30, 15, 0.0, i_deg=i_d)
+            Ka_c = coulomb_Ka(30, 15, beta_deg=i_d)
+            assert abs(KAE - Ka_c) < 0.001, (
+                f"i={i_d}: KAE={KAE:.4f} != Ka_coulomb={Ka_c:.4f}"
+            )
+
 
 class TestSeismicPressure:
     def test_increment_positive(self):

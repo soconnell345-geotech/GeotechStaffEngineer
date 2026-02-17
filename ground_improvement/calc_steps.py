@@ -238,18 +238,18 @@ def _steps_aggregate_piers(result, analysis) -> List[CalcSection]:
     ))
 
     # -- Section 3: Composite Modulus ---------------------------------
-    E_c = analysis.get("E_column", 80000.0)
     E_s = analysis.get("E_soil", 5000.0)
 
     srf_items.append(CalcStep(
         title="Composite Modulus of Improved Ground",
-        equation="E_comp = a_s \u00d7 E_c + (1 - a_s) \u00d7 E_s",
-        substitution=(f"E_comp = {a_s:.4f} \u00d7 {E_c:.0f} "
-                      f"+ (1 - {a_s:.4f}) \u00d7 {E_s:.0f}"),
+        equation="E_comp = E_s \u00d7 [1 + a_s \u00d7 (n - 1)]",
+        substitution=(f"E_comp = {E_s:.0f} \u00d7 "
+                      f"[1 + {a_s:.4f} \u00d7 ({n:.1f} - 1)]"),
         result_name="E_comp",
         result_value=f"{r.composite_modulus_kPa:.0f}",
         result_unit="kPa",
-        reference="GEC-13, Eq. 7-3",
+        reference="Priebe (1995); GEC-13 unit-cell model",
+        notes="Consistent with SRF: E_comp = E_s / SRF.",
     ))
 
     sections.append(CalcSection(

@@ -17,6 +17,7 @@ import numpy as np
 from pile_group.pile_layout import GroupPile, create_rectangular_layout
 from pile_group.group_efficiency import (
     converse_labarre, block_failure_capacity, p_multiplier,
+    group_settlement_equivalent_raft,
 )
 from pile_group.rigid_cap import (
     GroupLoad, PileGroupResult,
@@ -123,6 +124,238 @@ class TestGroupEfficiency:
         """At 5D+ spacing, all rows get pm=1.0."""
         for row in [1, 2, 3]:
             assert p_multiplier(row, 5.0) == 1.0
+
+    def test_converse_labarre_capped_at_1(self):
+        """Efficiency must never exceed 1.0 (AASHTO LRFD 10.7.2.3)."""
+        # Very wide spacing -> formula approaches 1.0 but should not exceed it
+        Eg = converse_labarre(2, 2, 0.01, 100.0)
+        assert Eg <= 1.0
+        assert Eg == pytest.approx(1.0, abs=0.001)
+
+    def test_converse_labarre_symmetric(self):
+        """Formula is symmetric: swapping rows/cols gives same result."""
+        Eg_3x5 = converse_labarre(3, 5, 0.356, 1.07)
+        Eg_5x3 = converse_labarre(5, 3, 0.356, 1.07)
+        assert Eg_3x5 == pytest.approx(Eg_5x3, abs=1e-10)
+
+    def test_converse_labarre_hand_calc_2x2(self):
+        """2x2 group with arctan = 18.3 deg -> Eg ≈ 0.80 (textbook example)."""
+        # arctan(d/s) = 18.3 deg => d/s = tan(18.3 deg) => s/d ≈ 3.024
+        # Use d=0.3, s = 0.3 * 3.024 = 0.9072
+        d = 0.3
+        theta_target = 18.3
+        s = d / math.tan(math.radians(theta_target))
+        Eg = converse_labarre(2, 2, d, s)
+        # Eg = 1 - 18.3/(90*2*2) * [2*1 + 2*1] = 1 - 18.3/360 * 4 = 0.797
+        assert Eg == pytest.approx(0.797, abs=0.01)
+
+    def test_converse_labarre_3x3_exact(self):
+        """3x3, D=0.3m, s=1.5m: exact Eg = 1 - arctan(0.2)*12/(90*9)."""
+        theta = math.degrees(math.atan(0.3 / 1.5))  # 11.31 deg
+        expected = 1.0 - theta / (90 * 3 * 3) * (3 * 2 + 3 * 2)
+        Eg = converse_labarre(3, 3, 0.3, 1.5)
+        assert Eg == pytest.approx(expected, abs=1e-10)
+
+    def test_converse_labarre_raises_negative_spacing(self):
+        """Negative spacing should raise ValueError."""
+        with pytest.raises(ValueError):
+            converse_labarre(3, 3, 0.3, -1.0)
+
+    def test_converse_labarre_raises_zero_diameter(self):
+        """Zero diameter should raise ValueError."""
+        with pytest.raises(ValueError):
+            converse_labarre(3, 3, 0.0, 1.0)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TEST 2B: Group Settlement — Equivalent Raft Method
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestGroupSettlement:
+    """Tests for group_settlement_equivalent_raft (FHWA GEC-12 Sec 9.8)."""
+
+    def test_raft_dimensions_3x4(self):
+        """Bg = (n_cols-1)*s + d, Lg = (n_rows-1)*s + d."""
+        result = group_settlement_equivalent_raft(
+            n_rows=3, n_cols=4, spacing=1.5, pile_diameter=0.3,
+            pile_length=15.0, load_kN=2000, soil_modulus_kPa=30000,
+        )
+        # Bg = (4-1)*1.5 + 0.3 = 4.8 m
+        # Lg = (3-1)*1.5 + 0.3 = 3.3 m
+        assert result["Bg_m"] == pytest.approx(4.8, abs=0.01)
+        assert result["Lg_m"] == pytest.approx(3.3, abs=0.01)
+
+    def test_raft_depth_two_thirds_L(self):
+        """Equivalent raft at depth 2/3 * L."""
+        result = group_settlement_equivalent_raft(
+            n_rows=3, n_cols=3, spacing=1.5, pile_diameter=0.3,
+            pile_length=15.0, load_kN=2000, soil_modulus_kPa=30000,
+        )
+        assert result["raft_depth_m"] == pytest.approx(10.0, abs=0.01)
+
+    def test_raft_depth_different_length(self):
+        """Raft depth = 2/3 * 24 = 16 m."""
+        result = group_settlement_equivalent_raft(
+            n_rows=2, n_cols=2, spacing=1.5, pile_diameter=0.3,
+            pile_length=24.0, load_kN=1000, soil_modulus_kPa=20000,
+        )
+        assert result["raft_depth_m"] == pytest.approx(16.0, abs=0.01)
+
+    def test_influence_depth_5Bg(self):
+        """Influence depth = 5 * Bg."""
+        result = group_settlement_equivalent_raft(
+            n_rows=3, n_cols=4, spacing=1.5, pile_diameter=0.3,
+            pile_length=15.0, load_kN=2000, soil_modulus_kPa=30000,
+        )
+        Bg = 4.8
+        assert result["influence_depth_m"] == pytest.approx(5 * Bg, abs=0.01)
+
+    def test_max_stress_at_raft(self):
+        """Stress at z=0: Q / (Bg * Lg)."""
+        result = group_settlement_equivalent_raft(
+            n_rows=3, n_cols=4, spacing=1.5, pile_diameter=0.3,
+            pile_length=15.0, load_kN=2000, soil_modulus_kPa=30000,
+        )
+        expected = 2000 / (4.8 * 3.3)
+        assert result["max_stress_kPa"] == pytest.approx(expected, abs=0.1)
+
+    def test_settlement_positive(self):
+        """Settlement should be positive for downward load."""
+        result = group_settlement_equivalent_raft(
+            n_rows=3, n_cols=3, spacing=1.5, pile_diameter=0.3,
+            pile_length=15.0, load_kN=2000, soil_modulus_kPa=30000,
+        )
+        assert result["settlement_m"] > 0
+        assert result["settlement_mm"] > 0
+
+    def test_settlement_increases_with_load(self):
+        """Doubling load should double settlement (linear elastic)."""
+        r1 = group_settlement_equivalent_raft(
+            n_rows=3, n_cols=3, spacing=1.5, pile_diameter=0.3,
+            pile_length=15.0, load_kN=1000, soil_modulus_kPa=30000,
+        )
+        r2 = group_settlement_equivalent_raft(
+            n_rows=3, n_cols=3, spacing=1.5, pile_diameter=0.3,
+            pile_length=15.0, load_kN=2000, soil_modulus_kPa=30000,
+        )
+        assert r2["settlement_mm"] == pytest.approx(
+            2 * r1["settlement_mm"], rel=0.01,
+        )
+
+    def test_settlement_decreases_with_stiffer_soil(self):
+        """Higher modulus -> less settlement."""
+        r_soft = group_settlement_equivalent_raft(
+            n_rows=3, n_cols=3, spacing=1.5, pile_diameter=0.3,
+            pile_length=15.0, load_kN=2000, soil_modulus_kPa=15000,
+        )
+        r_stiff = group_settlement_equivalent_raft(
+            n_rows=3, n_cols=3, spacing=1.5, pile_diameter=0.3,
+            pile_length=15.0, load_kN=2000, soil_modulus_kPa=60000,
+        )
+        assert r_stiff["settlement_mm"] < r_soft["settlement_mm"]
+
+    def test_settlement_mm_consistent(self):
+        """settlement_mm should equal settlement_m * 1000."""
+        result = group_settlement_equivalent_raft(
+            n_rows=3, n_cols=3, spacing=1.5, pile_diameter=0.3,
+            pile_length=15.0, load_kN=2000, soil_modulus_kPa=30000,
+        )
+        assert result["settlement_mm"] == pytest.approx(
+            result["settlement_m"] * 1000, abs=0.01,
+        )
+
+    def test_single_pile_raft_equals_diameter(self):
+        """1x1 group: Bg = Lg = pile diameter."""
+        result = group_settlement_equivalent_raft(
+            n_rows=1, n_cols=1, spacing=1.0, pile_diameter=0.5,
+            pile_length=10.0, load_kN=500, soil_modulus_kPa=25000,
+        )
+        assert result["Bg_m"] == pytest.approx(0.5, abs=0.01)
+        assert result["Lg_m"] == pytest.approx(0.5, abs=0.01)
+
+    def test_hand_calc_settlement(self):
+        """Hand-calculated settlement for 2x2 group.
+
+        Bg = Lg = (2-1)*1.5 + 0.3 = 1.8 m
+        Q = 1000 kN, Es = 20000 kPa
+        Influence depth = 5 * 1.8 = 9.0 m
+        Using 1 sublayer (midpoint at z=4.5):
+            delta_sigma = 1000 / ((1.8+4.5)*(1.8+4.5)) = 1000 / 39.69 = 25.19 kPa
+            S = 25.19 * 9.0 / 20000 = 0.01134 m = 11.34 mm
+        """
+        result = group_settlement_equivalent_raft(
+            n_rows=2, n_cols=2, spacing=1.5, pile_diameter=0.3,
+            pile_length=12.0, load_kN=1000, soil_modulus_kPa=20000,
+            num_sublayers=1,
+        )
+        # With 1 sublayer, midpoint at z = 4.5 m
+        Bg = 1.8
+        Lg = 1.8
+        z_mid = 4.5
+        delta_sigma = 1000 / ((Bg + z_mid) * (Lg + z_mid))
+        expected = delta_sigma * 9.0 / 20000 * 1000  # mm
+        assert result["settlement_mm"] == pytest.approx(expected, rel=0.01)
+
+    def test_raises_negative_load(self):
+        """Negative load should raise ValueError."""
+        with pytest.raises(ValueError, match="Load must be positive"):
+            group_settlement_equivalent_raft(
+                n_rows=3, n_cols=3, spacing=1.5, pile_diameter=0.3,
+                pile_length=15.0, load_kN=-100, soil_modulus_kPa=30000,
+            )
+
+    def test_raises_zero_modulus(self):
+        """Zero modulus should raise ValueError."""
+        with pytest.raises(ValueError, match="Soil modulus must be positive"):
+            group_settlement_equivalent_raft(
+                n_rows=3, n_cols=3, spacing=1.5, pile_diameter=0.3,
+                pile_length=15.0, load_kN=1000, soil_modulus_kPa=0,
+            )
+
+    def test_raises_zero_pile_length(self):
+        """Zero pile length should raise ValueError."""
+        with pytest.raises(ValueError, match="Pile length must be positive"):
+            group_settlement_equivalent_raft(
+                n_rows=3, n_cols=3, spacing=1.5, pile_diameter=0.3,
+                pile_length=0, load_kN=1000, soil_modulus_kPa=30000,
+            )
+
+    def test_more_sublayers_converges(self):
+        """More sublayers should converge — 100 vs 10 differ by < 5%."""
+        r10 = group_settlement_equivalent_raft(
+            n_rows=3, n_cols=3, spacing=1.5, pile_diameter=0.3,
+            pile_length=15.0, load_kN=2000, soil_modulus_kPa=30000,
+            num_sublayers=10,
+        )
+        r100 = group_settlement_equivalent_raft(
+            n_rows=3, n_cols=3, spacing=1.5, pile_diameter=0.3,
+            pile_length=15.0, load_kN=2000, soil_modulus_kPa=30000,
+            num_sublayers=100,
+        )
+        assert r10["settlement_mm"] == pytest.approx(
+            r100["settlement_mm"], rel=0.05,
+        )
+
+    def test_2v1h_stress_distribution(self):
+        """Verify 2V:1H stress distribution: at depth z, area = (Bg+z)*(Lg+z)."""
+        # This is implicit in the formula, but verify by checking that
+        # settlement with 1 sublayer at midpoint uses correct stress.
+        n_rows, n_cols = 3, 3
+        s, d, L = 2.0, 0.4, 20.0
+        Q, Es = 3000, 40000
+        Bg = (n_cols - 1) * s + d  # 4.4
+        Lg = (n_rows - 1) * s + d  # 4.4
+        depth = 5 * Bg  # 22.0
+
+        result = group_settlement_equivalent_raft(
+            n_rows=n_rows, n_cols=n_cols, spacing=s, pile_diameter=d,
+            pile_length=L, load_kN=Q, soil_modulus_kPa=Es,
+            num_sublayers=1,
+        )
+        z_mid = depth / 2  # 11.0
+        expected_stress = Q / ((Bg + z_mid) * (Lg + z_mid))
+        expected_settle = expected_stress * depth / Es * 1000  # mm
+        assert result["settlement_mm"] == pytest.approx(expected_settle, rel=0.01)
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -23,6 +23,45 @@ from sheet_pile.earth_pressure import (
 )
 
 
+def rankine_Ka_sloped(phi_deg: float, beta_deg: float) -> float:
+    """Rankine active earth pressure coefficient for sloped backfill.
+
+    Ka = cos(beta) * [cos(beta) - sqrt(cos²(beta) - cos²(phi))]
+                    / [cos(beta) + sqrt(cos²(beta) - cos²(phi))]
+
+    Reduces to tan²(45 - phi/2) when beta = 0.
+
+    Parameters
+    ----------
+    phi_deg : float
+        Soil friction angle (degrees).
+    beta_deg : float
+        Backfill slope angle (degrees). Must be < phi_deg.
+
+    Returns
+    -------
+    float
+        Active earth pressure coefficient Ka.
+
+    References
+    ----------
+    Das, B.M., Principles of Foundation Engineering, Eq 7.18
+    """
+    if beta_deg <= 0:
+        return rankine_Ka(phi_deg)
+    if beta_deg >= phi_deg:
+        raise ValueError(
+            f"Backfill slope ({beta_deg}°) must be less than phi ({phi_deg}°)"
+        )
+    phi = math.radians(phi_deg)
+    beta = math.radians(beta_deg)
+    cos_beta = math.cos(beta)
+    cos_phi = math.cos(phi)
+    sqrt_term = math.sqrt(cos_beta ** 2 - cos_phi ** 2)
+    Ka = cos_beta * (cos_beta - sqrt_term) / (cos_beta + sqrt_term)
+    return Ka
+
+
 def horizontal_force_active(gamma: float, H: float, Ka: float,
                             c: float = 0.0, q: float = 0.0) -> Tuple[float, float]:
     """Resultant active horizontal force and its location.

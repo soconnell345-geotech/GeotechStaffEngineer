@@ -54,16 +54,18 @@ def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
         return 1.7 - (0.5 / 6.0) * z
 
 
-def F_star_metallic(z: float) -> float:
-    """Pullout resistance factor F* for metallic reinforcement.
+def F_star_metallic(z: float, phi_backfill: float = 34.0) -> float:
+    """Pullout resistance factor F* for ribbed metallic strips.
 
-    F* varies from 2.0 at surface to 0.67*tan(phi) at depth.
-    Simplified: F* = max(2.0 - z * 0.217, 0.67 * tan(34°))
+    F* varies linearly from 2.0 at z=0 to tan(phi) at z>=6m
+    per GEC-11 Figure 4-11.
 
     Parameters
     ----------
     z : float
         Depth below top of wall (m).
+    phi_backfill : float, optional
+        Backfill friction angle (degrees). Default 34.
 
     Returns
     -------
@@ -75,7 +77,8 @@ def F_star_metallic(z: float) -> float:
     FHWA GEC-11, Figure 4-11 (for ribbed steel strips)
     """
     F_star_surface = 2.0
-    F_star_deep = 0.67 * math.tan(math.radians(34))  # ~0.45
+    # At depth >= 6m, F* = tan(phi) for ribbed metallic strips (GEC-11 Fig 4-11)
+    F_star_deep = math.tan(math.radians(phi_backfill))
 
     if z <= 0:
         return F_star_surface
@@ -122,10 +125,11 @@ def pullout_resistance(z: float, gamma_backfill: float,
                        Le: float, F_star: float,
                        alpha_pullout: float = 1.0,
                        C: float = 2.0,
-                       q_surcharge: float = 0.0) -> float:
+                       q_surcharge: float = 0.0,
+                       Rc: float = 1.0) -> float:
     """Pullout resistance of reinforcement at depth z.
 
-    Pr = F* * alpha * sigma_v' * Le * C
+    Pr = F* * alpha * sigma_v' * Le * C * Rc
 
     Parameters
     ----------
@@ -144,6 +148,9 @@ def pullout_resistance(z: float, gamma_backfill: float,
         C=2 for strips/grids (top and bottom surface). Default 2.
     q_surcharge : float, optional
         Surcharge (kPa). Default 0.
+    Rc : float, optional
+        Coverage ratio (b/Sh for strips, 1.0 for continuous grids).
+        Default 1.0.
 
     Returns
     -------
@@ -151,7 +158,7 @@ def pullout_resistance(z: float, gamma_backfill: float,
         Pullout resistance Pr (kN/m width).
     """
     sigma_v = gamma_backfill * z + q_surcharge
-    return F_star * alpha_pullout * sigma_v * Le * C
+    return F_star * alpha_pullout * sigma_v * Le * C * Rc
 
 
 def check_internal_stability(
@@ -205,13 +212,14 @@ def check_internal_stability(
 
         # Pullout resistance
         if reinforcement.is_metallic:
-            F_star = F_star_metallic(z)
+            F_star = F_star_metallic(z, phi_backfill)
         else:
             F_star = 0.67 * math.tan(math.radians(phi_backfill))
 
         Pr = pullout_resistance(
             z, gamma_backfill, Le, F_star,
-            q_surcharge=geom.surcharge
+            q_surcharge=geom.surcharge,
+            Rc=reinforcement.coverage_ratio,
         )
 
         # FOS checks
@@ -246,6 +254,8 @@ def check_external_stability(
     q_allowable: float = None,
     FOS_sliding_req: float = 1.5,
     FOS_overturning_req: float = 2.0,
+    phi_retained: float = None,
+    gamma_retained: float = None,
 ) -> Dict[str, Any]:
     """Check external stability of MSE wall as rigid block.
 
@@ -254,9 +264,9 @@ def check_external_stability(
     geom : MSEWallGeometry
         Wall geometry.
     gamma_backfill : float
-        Backfill unit weight (kN/m³).
+        Reinforced fill unit weight (kN/m³).
     phi_backfill : float
-        Backfill friction angle (degrees).
+        Reinforced fill friction angle (degrees).
     gamma_foundation : float
         Foundation soil unit weight (kN/m³).
     phi_foundation : float
@@ -269,6 +279,10 @@ def check_external_stability(
         Required sliding FOS. Default 1.5.
     FOS_overturning_req : float, optional
         Required overturning FOS. Default 2.0.
+    phi_retained : float, optional
+        Retained soil friction angle (degrees). If None, uses phi_backfill.
+    gamma_retained : float, optional
+        Retained soil unit weight (kN/m³). If None, uses gamma_backfill.
 
     Returns
     -------
@@ -276,16 +290,22 @@ def check_external_stability(
     """
     H = geom.wall_height
     L = geom.reinforcement_length
-    Ka = rankine_Ka(phi_backfill)
+
+    # Use retained fill properties for external active pressure if provided
+    phi_ext = phi_retained if phi_retained is not None else phi_backfill
+    gamma_ext = gamma_retained if gamma_retained is not None else gamma_backfill
+
+    Ka = rankine_Ka(phi_ext)
 
     # Active force from retained soil behind reinforced zone
-    Pa, z_Pa = horizontal_force_active(gamma_backfill, H, Ka, q=geom.surcharge)
+    Pa, z_Pa = horizontal_force_active(gamma_ext, H, Ka, q=geom.surcharge)
 
-    # Weight of reinforced block
+    # Weight of reinforced block (uses reinforced fill properties)
     W = gamma_backfill * H * L + geom.surcharge * L
 
-    # Sliding
-    delta_b = 2.0 / 3.0 * phi_foundation
+    # Sliding: soil-on-soil interface, use min(phi_backfill, phi_foundation)
+    # per GEC-11 Section 4.3 (no 2/3 reduction for soil-on-soil)
+    delta_b = min(phi_backfill, phi_foundation)
     ca = 2.0 / 3.0 * c_foundation
     R_sliding = W * math.tan(math.radians(delta_b)) + ca * L
     FOS_sliding = R_sliding / Pa if Pa > 0 else 99.9
@@ -331,6 +351,8 @@ def analyze_mse_wall(
     phi_foundation: float = None,
     c_foundation: float = 0.0,
     q_allowable: float = None,
+    phi_retained: float = None,
+    gamma_retained: float = None,
 ) -> MSEWallResult:
     """Run complete MSE wall analysis.
 
@@ -339,9 +361,9 @@ def analyze_mse_wall(
     geom : MSEWallGeometry
         Wall geometry.
     gamma_backfill : float
-        Backfill unit weight (kN/m³).
+        Reinforced fill unit weight (kN/m³).
     phi_backfill : float
-        Backfill friction angle (degrees).
+        Reinforced fill friction angle (degrees).
     reinforcement : Reinforcement
         Reinforcement properties.
     gamma_foundation : float, optional
@@ -352,6 +374,10 @@ def analyze_mse_wall(
         Foundation cohesion (kPa). Default 0.
     q_allowable : float, optional
         Allowable bearing pressure (kPa). Default None.
+    phi_retained : float, optional
+        Retained soil friction angle (degrees). If None, uses phi_backfill.
+    gamma_retained : float, optional
+        Retained soil unit weight (kN/m³). If None, uses gamma_backfill.
 
     Returns
     -------
@@ -365,7 +391,8 @@ def analyze_mse_wall(
     external = check_external_stability(
         geom, gamma_backfill, phi_backfill,
         gamma_foundation, phi_foundation, c_foundation,
-        q_allowable,
+        q_allowable, phi_retained=phi_retained,
+        gamma_retained=gamma_retained,
     )
 
     internal = check_internal_stability(

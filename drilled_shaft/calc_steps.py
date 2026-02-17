@@ -228,7 +228,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         method_steps.append(CalcStep(
             title="Beta Method (Cohesionless Soils)",
             equation=(
-                "\u03b2 = 1.5 - 0.245\u00d7\u221az, clamped to [0.25, 1.2]\n"
+                "\u03b2 = 1.5 - 0.245\u00d7\u221a(z\u00d73.281), clamped to [0.25, 1.2]\n"
                 "f_s = \u03b2 \u00d7 \u03c3'_v, capped at 200 kPa\n"
                 "Q_s = f_s \u00d7 P \u00d7 \u0394z"
             ),
@@ -242,9 +242,9 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         method_steps.append(CalcStep(
             title="Rock Socket Method",
             equation=(
-                "f_s = C \u00d7 \u03b1_E \u00d7 \u221aq_u\n"
+                "f_s = C \u00d7 \u03b1_E \u00d7 \u221a(q_u \u00d7 p_a)\n"
                 "Q_s = f_s \u00d7 P_socket \u00d7 \u0394z\n"
-                "where C = roughness factor, \u03b1_E = rock mass reduction"
+                "where C = roughness factor (default 0.65), \u03b1_E = rock mass reduction, p_a = 101.325 kPa"
             ),
             substitution="",
             result_name="",
@@ -333,7 +333,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 layer_items.append(CalcStep(
                     title=f"Layer {i}: {desc} ({z_top:.1f}-{z_bot:.1f} m) -- Rock Socket",
                     equation=(
-                        f"f_s = C \u00d7 \u03b1_E \u00d7 \u221aq_u\n"
+                        f"f_s = C \u00d7 \u03b1_E \u00d7 \u221a(q_u \u00d7 p_a)\n"
                         f"Q_s = f_s \u00d7 P_socket \u00d7 \u0394z"
                     ),
                     substitution=(

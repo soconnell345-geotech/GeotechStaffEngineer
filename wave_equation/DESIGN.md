@@ -27,6 +27,6 @@ analyze_drivability(hammer, pile, soil_profile, ...) -> DrivabilityResult
 
 ## Key Notes
 - Time step automatically chosen for Courant stability
-- Smith damping: R = R_static * (1 + J*v) where J = damping factor
+- Smith damping: R = R_static + J * R_ultimate * v where J = damping factor (s/m)
 - Quake: elastic limit of soil spring (typically 2.5mm shaft, 2.5-5mm toe)
 - 41 tests

@@ -41,6 +41,16 @@ class PileSection:
         For round piles, equals width.
     E : float, optional
         Young's modulus (kPa). Default: 200e6 for steel, 25e6 for concrete.
+    tip_area_plugged : float, optional
+        Full cross-section tip area for plugged analysis (m²).
+        Only set for open-ended pipe piles. None for other pile types.
+    inner_perimeter : float, optional
+        Inner perimeter for open-ended pipe piles (m).
+        Used for inside skin friction in unplugged analysis.
+    outer_diameter : float, optional
+        Outside diameter (m). Set for pipe piles.
+    closed_end : bool, optional
+        Whether pile tip is closed. Default True.
     """
     name: str
     pile_type: str
@@ -50,6 +60,10 @@ class PileSection:
     width: float
     depth: Optional[float] = None
     E: float = 200e6  # kPa, default steel
+    tip_area_plugged: Optional[float] = None
+    inner_perimeter: Optional[float] = None
+    outer_diameter: Optional[float] = None
+    closed_end: bool = True
 
     def __post_init__(self):
         if self.depth is None:
@@ -83,12 +97,18 @@ def make_pipe_pile(diameter: float, thickness: float,
     r_inner = r_outer - thickness
     steel_area = math.pi * (r_outer**2 - r_inner**2)
     perimeter = math.pi * diameter
+    inner_diameter = diameter - 2 * thickness
+
     if closed_end:
         tip_area = math.pi * r_outer**2
         ptype = "pipe_closed"
+        tip_area_plugged = None
+        inner_perim = None
     else:
-        tip_area = steel_area  # annular ring for open-ended
+        tip_area = steel_area  # annular ring for unplugged
+        tip_area_plugged = math.pi * r_outer**2  # full area for plugged
         ptype = "pipe_open"
+        inner_perim = math.pi * inner_diameter
 
     d_in = diameter / 0.0254  # convert to inches for name
     t_in = thickness / 0.0254
@@ -98,6 +118,10 @@ def make_pipe_pile(diameter: float, thickness: float,
         name=name, pile_type=ptype,
         area=steel_area, perimeter=perimeter,
         tip_area=tip_area, width=diameter, E=E,
+        tip_area_plugged=tip_area_plugged,
+        inner_perimeter=inner_perim,
+        outer_diameter=diameter,
+        closed_end=closed_end,
     )
 
 

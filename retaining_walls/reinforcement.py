@@ -31,6 +31,10 @@ class Reinforcement:
         Yield strength of steel (kPa). Default 0 (not metallic).
     thickness : float, optional
         Strip/grid thickness (m). Default 0.
+    coverage_ratio : float, optional
+        Coverage ratio Rc = b/Sh (strip width / horizontal spacing).
+        For metallic strips, typically 0.10-0.15.
+        For continuous geogrids, Rc = 1.0 (default).
     """
     name: str
     type: str
@@ -38,6 +42,7 @@ class Reinforcement:
     width: float = 0.05
     Fy: float = 0.0
     thickness: float = 0.0
+    coverage_ratio: float = 1.0
 
     def __post_init__(self):
         valid_types = ("metallic_strip", "metallic_grid", "geosynthetic")
@@ -52,6 +57,9 @@ class Reinforcement:
 
 
 # Built-in reinforcement types
+# NOTE: For metallic strips, coverage_ratio Rc = b/Sh must be set by
+# the user based on horizontal spacing. Typical values: 0.10-0.15.
+# Default Rc=1.0 is conservative (overestimates pullout resistance).
 RIBBED_STEEL_STRIP_75x4 = Reinforcement(
     name="Ribbed Steel Strip 75x4mm",
     type="metallic_strip",
@@ -59,6 +67,7 @@ RIBBED_STEEL_STRIP_75x4 = Reinforcement(
     width=0.075,
     Fy=450000.0,
     thickness=0.004,
+    coverage_ratio=1.0,  # User should set Rc = b/Sh for actual design
 )
 
 WELDED_WIRE_GRID_W11 = Reinforcement(

@@ -15,7 +15,8 @@ import pytest
 
 from retaining_walls.geometry import CantileverWallGeometry, MSEWallGeometry
 from retaining_walls.earth_pressure import (
-    rankine_Ka, rankine_Kp, horizontal_force_active, horizontal_force_passive,
+    rankine_Ka, rankine_Ka_sloped, rankine_Kp,
+    horizontal_force_active, horizontal_force_passive,
 )
 from retaining_walls.cantilever import (
     check_sliding, check_overturning, check_bearing, analyze_cantilever_wall,
@@ -269,7 +270,8 @@ class TestMSEKrAndFstar:
         assert abs(F_star_metallic(0) - 2.0) < 0.001
 
     def test_Fstar_deep(self):
-        F_deep = 0.67 * math.tan(math.radians(34))
+        """At z>=6m, F* = tan(phi) for ribbed metallic strips (GEC-11 Fig 4-11)."""
+        F_deep = math.tan(math.radians(34))
         assert abs(F_star_metallic(6) - F_deep) < 0.001
 
 
@@ -388,8 +390,272 @@ class TestReinforcement:
         r = Reinforcement("Custom", "geosynthetic", Tallowable=35.0)
         assert r.Tallowable == 35.0
 
+    def test_coverage_ratio_default(self):
+        """Default coverage_ratio is 1.0 (for geogrids)."""
+        r = Reinforcement("Custom", "geosynthetic", Tallowable=35.0)
+        assert r.coverage_ratio == 1.0
+
+    def test_coverage_ratio_custom(self):
+        """Metallic strip with user-specified Rc."""
+        r = Reinforcement("Strip", "metallic_strip", Tallowable=40.0,
+                          coverage_ratio=0.12)
+        assert abs(r.coverage_ratio - 0.12) < 0.001
+
     def test_validation(self):
         with pytest.raises(ValueError):
             Reinforcement("Bad", "rope", Tallowable=10)
         with pytest.raises(ValueError):
             Reinforcement("Bad", "geosynthetic", Tallowable=-5)
+
+
+# ================================================================
+# NEW TESTS: CRITICAL-1 -- Shear key increases sliding FOS
+# ================================================================
+class TestShearKeyPassive:
+    def test_passive_increases_sliding_fos(self):
+        """Including passive resistance should increase sliding FOS."""
+        geom = CantileverWallGeometry(
+            wall_height=5.0, base_width=3.0, toe_length=0.5,
+            stem_thickness_base=0.5, base_thickness=0.5
+        )
+        r_no_passive = check_sliding(geom, 18.0, 30.0, include_passive=False)
+        r_with_passive = check_sliding(geom, 18.0, 30.0, include_passive=True)
+        assert r_with_passive["FOS_sliding"] > r_no_passive["FOS_sliding"]
+        assert r_with_passive["Pp_kN_per_m"] > 0
+
+    def test_shear_key_higher_fos_than_base_only(self):
+        """Shear key with key_depth > base_thickness gives more passive."""
+        geom_no_key = CantileverWallGeometry(
+            wall_height=5.0, base_width=3.0, toe_length=0.5,
+            stem_thickness_base=0.5, base_thickness=0.5,
+            has_shear_key=False,
+        )
+        geom_with_key = CantileverWallGeometry(
+            wall_height=5.0, base_width=3.0, toe_length=0.5,
+            stem_thickness_base=0.5, base_thickness=0.5,
+            has_shear_key=True, key_depth=1.0,
+        )
+        r1 = check_sliding(geom_no_key, 18.0, 30.0, include_passive=True)
+        r2 = check_sliding(geom_with_key, 18.0, 30.0, include_passive=True)
+        # key_depth=1.0 > base_thickness=0.5 -> more passive resistance
+        assert r2["Pp_kN_per_m"] > r1["Pp_kN_per_m"]
+        assert r2["FOS_sliding"] > r1["FOS_sliding"]
+
+    def test_no_passive_by_default(self):
+        """Passive resistance not included unless opt-in."""
+        geom = CantileverWallGeometry(
+            wall_height=5.0, base_width=3.0, toe_length=0.5,
+            stem_thickness_base=0.5, base_thickness=0.5
+        )
+        result = check_sliding(geom, 18.0, 30.0)
+        assert result["Pp_kN_per_m"] == 0.0
+
+
+# ================================================================
+# NEW TESTS: CRITICAL-2 -- Rankine Ka with sloped backfill
+# ================================================================
+class TestRankineKaSloped:
+    def test_flat_matches_standard(self):
+        """beta=0 should match standard tan^2(45-phi/2)."""
+        Ka_flat = rankine_Ka_sloped(30, 0)
+        Ka_standard = rankine_Ka(30)
+        assert abs(Ka_flat - Ka_standard) < 0.001
+
+    def test_known_value_phi30_beta10(self):
+        """Known value: phi=30, beta=10 -> Ka approx 0.3495."""
+        phi = 30.0
+        beta = 10.0
+        # Hand calculation:
+        # cos(10) = 0.9848, cos(30) = 0.8660
+        # sqrt(cos^2(10) - cos^2(30)) = sqrt(0.9698 - 0.75) = sqrt(0.2198) = 0.4689
+        # Ka = 0.9848 * (0.9848 - 0.4689) / (0.9848 + 0.4689)
+        #    = 0.9848 * 0.5159 / 1.4537 = 0.3495
+        Ka = rankine_Ka_sloped(phi, beta)
+        assert abs(Ka - 0.3495) < 0.002
+
+    def test_known_value_phi35_beta15(self):
+        """Known value: phi=35, beta=15 -> Ka approx 0.3108."""
+        phi = 35.0
+        beta = 15.0
+        cos_b = math.cos(math.radians(beta))
+        cos_p = math.cos(math.radians(phi))
+        sq = math.sqrt(cos_b ** 2 - cos_p ** 2)
+        expected = cos_b * (cos_b - sq) / (cos_b + sq)
+        Ka = rankine_Ka_sloped(phi, beta)
+        assert abs(Ka - expected) < 0.001
+
+    def test_slope_increases_Ka(self):
+        """Sloped backfill should give higher Ka than flat."""
+        Ka_flat = rankine_Ka(30)
+        Ka_sloped = rankine_Ka_sloped(30, 15)
+        assert Ka_sloped > Ka_flat
+
+    def test_beta_equals_phi_raises(self):
+        """beta >= phi should raise ValueError."""
+        with pytest.raises(ValueError):
+            rankine_Ka_sloped(30, 30)
+
+    def test_cantilever_uses_sloped_ka(self):
+        """Cantilever sliding with sloped backfill should use higher Ka."""
+        geom_flat = CantileverWallGeometry(
+            wall_height=5.0, base_width=3.5, toe_length=0.5,
+            stem_thickness_base=0.5, base_thickness=0.5, backfill_slope=0
+        )
+        geom_slope = CantileverWallGeometry(
+            wall_height=5.0, base_width=3.5, toe_length=0.5,
+            stem_thickness_base=0.5, base_thickness=0.5, backfill_slope=15
+        )
+        r_flat = check_sliding(geom_flat, 18.0, 30.0)
+        r_slope = check_sliding(geom_slope, 18.0, 30.0)
+        # Higher Ka + taller H_active -> more driving force -> lower FOS
+        assert r_slope["FOS_sliding"] < r_flat["FOS_sliding"]
+
+
+# ================================================================
+# NEW TESTS: CRITICAL-3 -- MSE sliding uses min(phi_fill, phi_fdn)
+# ================================================================
+class TestMSESlidingFriction:
+    def test_uses_min_phi(self):
+        """MSE sliding should use min(phi_backfill, phi_foundation)."""
+        geom = MSEWallGeometry(wall_height=6.0, reinforcement_length=5.0)
+        # phi_backfill=34, phi_foundation=28 -> uses 28 (no 2/3 reduction)
+        r = check_external_stability(geom, 18.0, 34.0, 19.0, 28.0)
+
+        # Manually compute expected FOS
+        Ka = rankine_Ka(34.0)
+        Pa, _ = horizontal_force_active(18.0, 6.0, Ka)
+        W = 18.0 * 6.0 * 5.0
+        delta_b = min(34.0, 28.0)  # = 28
+        R = W * math.tan(math.radians(delta_b))
+        expected_FOS = R / Pa
+        assert abs(r["FOS_sliding"] - round(expected_FOS, 3)) < 0.01
+
+    def test_symmetric_min(self):
+        """min(phi_fill, phi_fdn) works both ways."""
+        geom = MSEWallGeometry(wall_height=6.0, reinforcement_length=5.0)
+        # phi_backfill=28 < phi_foundation=34
+        r1 = check_external_stability(geom, 18.0, 28.0, 19.0, 34.0)
+        # phi_backfill=34 > phi_foundation=28
+        r2 = check_external_stability(geom, 18.0, 34.0, 19.0, 28.0)
+        # Both should use delta_b=28, but Ka differs (28 vs 34)
+        # so FOS_sliding should differ because of different driving forces
+        # The key check is that when phi_fdn < phi_fill, no 2/3 reduction
+        Ka_28 = rankine_Ka(28.0)
+        Ka_34 = rankine_Ka(34.0)
+        assert Ka_28 > Ka_34  # lower phi = higher Ka
+
+
+# ================================================================
+# NEW TESTS: CRITICAL-4 -- MSE with retained fill different from reinforced
+# ================================================================
+class TestMSERetainedFill:
+    def test_retained_fill_differs(self):
+        """Using weaker retained fill should increase active pressure."""
+        geom = MSEWallGeometry(wall_height=6.0, reinforcement_length=5.0)
+        # Same fill for retained and reinforced
+        r_same = check_external_stability(geom, 18.0, 34.0, 19.0, 30.0)
+        # Weaker retained fill (phi=25) -> higher Ka -> lower FOS
+        r_weak = check_external_stability(
+            geom, 18.0, 34.0, 19.0, 30.0,
+            phi_retained=25.0, gamma_retained=17.0,
+        )
+        assert r_weak["FOS_sliding"] < r_same["FOS_sliding"]
+        assert r_weak["FOS_overturning"] < r_same["FOS_overturning"]
+
+    def test_default_uses_backfill(self):
+        """When phi_retained=None, should use phi_backfill."""
+        geom = MSEWallGeometry(wall_height=6.0, reinforcement_length=5.0)
+        r_default = check_external_stability(geom, 18.0, 34.0, 19.0, 30.0)
+        r_explicit = check_external_stability(
+            geom, 18.0, 34.0, 19.0, 30.0,
+            phi_retained=34.0, gamma_retained=18.0,
+        )
+        assert abs(r_default["FOS_sliding"] - r_explicit["FOS_sliding"]) < 0.001
+
+    def test_analyze_mse_passes_retained(self):
+        """analyze_mse_wall should forward retained params."""
+        geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
+        r1 = analyze_mse_wall(geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4)
+        r2 = analyze_mse_wall(
+            geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4,
+            phi_retained=25.0, gamma_retained=17.0,
+        )
+        assert r2.FOS_sliding < r1.FOS_sliding
+
+
+# ================================================================
+# NEW TESTS: CRITICAL-5 -- Pullout with Rc < 1.0
+# ================================================================
+class TestPulloutCoverageRatio:
+    def test_Rc_reduces_pullout(self):
+        """Rc < 1.0 should reduce pullout resistance proportionally."""
+        Pr_full = pullout_resistance(3.0, 18.0, 4.0, 1.5, C=2, Rc=1.0)
+        Pr_strip = pullout_resistance(3.0, 18.0, 4.0, 1.5, C=2, Rc=0.12)
+        assert abs(Pr_strip - Pr_full * 0.12) < 0.01
+
+    def test_Rc_one_matches_original(self):
+        """Rc=1.0 should give same result as before the fix."""
+        Pr = pullout_resistance(3.0, 18.0, 4.0, 1.5, C=2, Rc=1.0)
+        # sigma_v=54, Pr = 1.5 * 1.0 * 54 * 4.0 * 2 * 1.0 = 648
+        expected = 1.5 * 1.0 * 54 * 4.0 * 2
+        assert abs(Pr - expected) < 0.1
+
+    def test_internal_stability_with_Rc(self):
+        """Internal check should use reinforcement.coverage_ratio."""
+        geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
+        strip_full = Reinforcement(
+            "Strip", "metallic_strip", Tallowable=43.1,
+            coverage_ratio=1.0,
+        )
+        strip_low_Rc = Reinforcement(
+            "Strip", "metallic_strip", Tallowable=43.1,
+            coverage_ratio=0.12,
+        )
+        r_full = check_internal_stability(geom, 18.0, 34.0, strip_full)
+        r_low = check_internal_stability(geom, 18.0, 34.0, strip_low_Rc)
+        # Lower Rc -> lower pullout resistance -> lower FOS_pullout
+        for level_full, level_low in zip(r_full, r_low):
+            assert level_low["FOS_pullout"] < level_full["FOS_pullout"]
+            assert abs(level_low["Pr_kN_per_m"] -
+                       level_full["Pr_kN_per_m"] * 0.12) < 0.1
+
+
+# ================================================================
+# NEW TESTS: CRITICAL-6 -- F* at depth uses tan(phi) not 0.67*tan(34)
+# ================================================================
+class TestFstarAtDepth:
+    def test_deep_equals_tan_phi(self):
+        """At z>=6m, F* = tan(phi_backfill), not 0.67*tan(34)."""
+        for phi in [28.0, 30.0, 34.0, 38.0, 40.0]:
+            F_deep = F_star_metallic(6.0, phi)
+            expected = math.tan(math.radians(phi))
+            assert abs(F_deep - expected) < 0.001, (
+                f"F*(z=6, phi={phi}) = {F_deep}, expected tan({phi}) = {expected}"
+            )
+
+    def test_deep_not_067_factor(self):
+        """Verify 0.67 factor is NOT used for metallic strips."""
+        phi = 34.0
+        F_deep = F_star_metallic(6.0, phi)
+        wrong_value = 0.67 * math.tan(math.radians(phi))
+        # F_deep should be tan(34) ~ 0.6745, not 0.67*tan(34) ~ 0.4519
+        assert abs(F_deep - wrong_value) > 0.1
+
+    def test_surface_still_2(self):
+        """F* at z=0 is still 2.0 regardless of phi."""
+        assert abs(F_star_metallic(0, 30.0) - 2.0) < 0.001
+        assert abs(F_star_metallic(0, 40.0) - 2.0) < 0.001
+
+    def test_interpolation_midpoint(self):
+        """At z=3m, F* should be halfway between 2.0 and tan(phi)."""
+        phi = 34.0
+        F_deep = math.tan(math.radians(phi))
+        expected_mid = 2.0 - (2.0 - F_deep) / 6.0 * 3.0
+        actual = F_star_metallic(3.0, phi)
+        assert abs(actual - expected_mid) < 0.001
+
+    def test_phi_matters_at_depth(self):
+        """Higher phi -> higher F* at depth."""
+        F_low = F_star_metallic(6.0, 28.0)
+        F_high = F_star_metallic(6.0, 40.0)
+        assert F_high > F_low

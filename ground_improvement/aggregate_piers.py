@@ -80,27 +80,40 @@ def settlement_reduction_factor(as_ratio: float, n: float) -> float:
     return 1.0 / (1.0 + as_ratio * (n - 1.0))
 
 
-def composite_modulus(as_ratio: float, E_column: float,
-                      E_soil: float) -> float:
+def composite_modulus(as_ratio: float, E_soil: float,
+                      n: float) -> float:
     """Compute composite modulus of improved ground.
 
-    E_comp = as * Ec + (1 - as) * Es
+    E_comp = Es * [1 + as * (n - 1)]
+
+    Derived from the unit-cell equal-strain model: the settlement
+    reduction factor SRF = 1 / [1 + as*(n-1)] equals Es / E_comp,
+    so E_comp = Es / SRF = Es * [1 + as*(n-1)].
+
+    This is the composite modulus consistent with the Priebe settlement
+    reduction factor.  It differs from the simple Voigt weighted average
+    (as*Ec + (1-as)*Es), which is only correct when the stress
+    concentration ratio equals the modular ratio (n = Ec/Es).
 
     Parameters
     ----------
     as_ratio : float
         Area replacement ratio.
-    E_column : float
-        Modulus of column material (kPa).
     E_soil : float
         Modulus of surrounding soil (kPa).
+    n : float
+        Stress concentration ratio (typically 3-8).
 
     Returns
     -------
     float
         Composite modulus (kPa).
+
+    References
+    ----------
+    Priebe (1995); FHWA GEC-13 unit-cell model.
     """
-    return as_ratio * E_column + (1.0 - as_ratio) * E_soil
+    return E_soil * (1.0 + as_ratio * (n - 1.0))
 
 
 def improved_bearing_capacity(q_unreinforced: float, as_ratio: float,
@@ -202,7 +215,7 @@ def analyze_aggregate_piers(
         )
 
     srf = settlement_reduction_factor(as_ratio, n)
-    E_comp = composite_modulus(as_ratio, E_column, E_soil)
+    E_comp = composite_modulus(as_ratio, E_soil, n)
 
     q_improved = 0.0
     if q_unreinforced > 0:

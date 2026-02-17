@@ -82,7 +82,10 @@ def side_resistance_cohesive(cu: float, shaft_perimeter: float,
 def beta_cohesionless(z: float) -> float:
     """Beta factor for side resistance in cohesionless soil per GEC-10.
 
-    beta = 1.5 - 0.245 * sqrt(z), clamped to [0.25, 1.2]
+    beta = 1.5 - 0.245 * sqrt(z_ft), clamped to [0.25, 1.2]
+
+    The original O'Neill & Reese (1999) formula uses z in feet.
+    This implementation converts internally: z_ft = z_m * 3.28084.
 
     Parameters
     ----------
@@ -97,8 +100,9 @@ def beta_cohesionless(z: float) -> float:
     References
     ----------
     Brown et al. (2010), GEC-10 Section 13.3.3.3
+    O'Neill & Reese (1999), FHWA-RD-99-049
     """
-    beta = 1.5 - 0.245 * math.sqrt(max(z, 0))
+    beta = 1.5 - 0.245 * math.sqrt(max(z, 0) * 3.28084)
     return max(0.25, min(beta, 1.2))
 
 
@@ -132,11 +136,13 @@ def side_resistance_cohesionless(sigma_v: float, beta: float,
 
 def side_resistance_rock(qu: float, shaft_perimeter: float,
                          segment_thickness: float,
-                         C: float = 1.0, alpha_E: float = 1.0) -> float:
+                         C: float = 0.65, alpha_E: float = 1.0) -> float:
     """Side resistance for a rock socket segment.
 
-    fs = C * alpha_E * sqrt(qu)
-    Qs = fs * perimeter * thickness
+    fs = C * alpha_E * sqrt(qu * pa)
+
+    Equivalent to: qs = C * alpha_E * pa * sqrt(qu / pa)
+    where pa = 101.325 kPa (atmospheric pressure).
 
     Parameters
     ----------
@@ -147,8 +153,8 @@ def side_resistance_rock(qu: float, shaft_perimeter: float,
     segment_thickness : float
         Socket segment height (m).
     C : float, optional
-        Socket roughness factor. Default 1.0 (rough socket).
-        Use 0.65 for smooth socket.
+        Socket roughness/fitting coefficient. Default 0.65
+        (Horvath & Kenney base coefficient per GEC-10).
     alpha_E : float, optional
         Rock mass reduction factor for jointing. Default 1.0 (intact).
 
@@ -159,7 +165,8 @@ def side_resistance_rock(qu: float, shaft_perimeter: float,
 
     References
     ----------
-    Horvath & Kenney (1979); O'Neill et al. (1996) IGM method
+    Horvath & Kenney (1979); GEC-10 Section 13.3.3.4 (Eq. 13-15);
+    AASHTO LRFD Section 10.8.3.5.4b-1
     """
-    fs = C * alpha_E * math.sqrt(qu)
+    fs = C * alpha_E * math.sqrt(qu * PA)
     return fs * shaft_perimeter * segment_thickness

@@ -23,7 +23,7 @@ class AggregatePierResult:
     stress_concentration_ratio : float
         n = sigma_c / sigma_s.
     composite_modulus_kPa : float
-        E_comp = as*Ec + (1-as)*Es.
+        E_comp = Es * [1 + as*(n-1)].
     settlement_reduction_factor : float
         SRF = 1 / (1 + as*(n-1)).
     improved_bearing_kPa : float

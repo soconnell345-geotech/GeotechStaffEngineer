@@ -168,7 +168,7 @@ def skin_friction_cohesionless(phi_deg: float, sigma_v: float,
     Kd = nordlund_Kd(phi_deg, omega_deg)
     CF = nordlund_CF(delta_deg / phi_deg if phi_deg > 0 else 0.75)
 
-    fs = Kd * CF * sigma_v * math.sin(delta_rad + omega_rad)
+    fs = Kd * CF * sigma_v * math.sin(delta_rad + omega_rad) / math.cos(omega_rad)
     return fs * pile_perimeter * layer_thickness
 
 
@@ -242,6 +242,37 @@ def alpha_t_factor(Db_ratio: float) -> float:
         return 1.0
 
 
+def _limiting_tip_resistance(phi_deg: float) -> float:
+    """Limiting unit tip resistance q_L from GEC-12 Figure 7-15 (Meyerhof, 1976).
+
+    Piecewise linear interpolation of the chart values.
+
+    Parameters
+    ----------
+    phi_deg : float
+        Soil friction angle at pile tip (degrees).
+
+    Returns
+    -------
+    float
+        Limiting unit tip resistance q_L (kPa).
+
+    References
+    ----------
+    FHWA GEC-12, Figure 7-15 (after Meyerhof, 1976).
+    """
+    # Chart data points: (phi_deg, q_L in kPa)
+    _phi_values = [26, 28, 30, 32, 34, 36, 38, 40]
+    _ql_values = [5000, 7000, 10000, 11000, 12000, 14000, 16500, 19000]
+
+    if phi_deg < 26:
+        return 3000.0  # conservative minimum for low phi
+    if phi_deg > 40:
+        return 19000.0  # cap at phi=40
+
+    return float(np.interp(phi_deg, _phi_values, _ql_values))
+
+
 def end_bearing_cohesionless(phi_deg: float, sigma_v_tip: float,
                               tip_area: float,
                               pile_depth: float,
@@ -280,10 +311,8 @@ def end_bearing_cohesionless(phi_deg: float, sigma_v_tip: float,
 
     qt = at * Nq * sigma_v_tip
 
-    # Limiting tip resistance (Meyerhof, 1976)
-    # qt_limit ≈ Nq' * tan(phi) * 1000 kPa (approximate from charts)
-    qt_limit = Nq * math.tan(math.radians(phi_deg)) * 50  # simplified limit
-    qt_limit = max(qt_limit, 2000)  # minimum 2000 kPa
+    # Limiting tip resistance from GEC-12 Figure 7-15 (Meyerhof, 1976)
+    qt_limit = _limiting_tip_resistance(phi_deg)
 
     qt = min(qt, qt_limit)
     return qt * tip_area

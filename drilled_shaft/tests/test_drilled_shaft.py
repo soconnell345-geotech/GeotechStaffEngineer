@@ -144,9 +144,10 @@ class TestBetaMethod:
         assert beta_cohesionless(0) == 1.2
 
     def test_moderate_depth(self):
-        """At z=4m, beta = 1.5 - 0.245*2 = 1.01."""
+        """At z=4m (13.1 ft), beta = 1.5 - 0.245*sqrt(13.1) = 0.612."""
         beta = beta_cohesionless(4.0)
-        assert abs(beta - 1.01) < 0.01
+        expected = 1.5 - 0.245 * math.sqrt(4.0 * 3.28084)
+        assert abs(beta - expected) < 0.001
 
     def test_deep(self):
         """At very deep, beta clamped to 0.25."""
@@ -169,23 +170,43 @@ class TestBetaMethod:
         expected = 80.0 * 3.14 * 2.0
         assert abs(Qs - expected) < 0.1
 
+    def test_beta_at_5m(self):
+        """At z=5m (16.4ft), beta = 1.5 - 0.245*sqrt(16.4) = 0.508."""
+        beta = beta_cohesionless(5.0)
+        expected = 1.5 - 0.245 * math.sqrt(5.0 * 3.28084)
+        assert abs(beta - expected) < 0.001
+
+    def test_beta_at_10m_clamped(self):
+        """At z=10m (32.8ft), raw beta < 0.25, clamped to 0.25."""
+        beta = beta_cohesionless(10.0)
+        assert beta == 0.25
+
+    def test_beta_matches_imperial(self):
+        """SI formula must produce same result as imperial formula."""
+        for z_m in [1.0, 2.0, 3.0, 5.0, 7.5]:
+            z_ft = z_m * 3.28084
+            beta_imperial = max(0.25, min(1.5 - 0.245 * math.sqrt(z_ft), 1.2))
+            beta_si = beta_cohesionless(z_m)
+            assert abs(beta_si - beta_imperial) < 1e-6, \
+                f"Mismatch at z={z_m}m: SI={beta_si:.6f} vs imperial={beta_imperial:.6f}"
+
 
 # ================================================================
 # Rock socket
 # ================================================================
 class TestRockSocket:
-    def test_rough_socket(self):
-        """fs = C * sqrt(qu), C=1.0 for rough."""
+    def test_explicit_C_1(self):
+        """fs = C * alpha_E * sqrt(qu * pa), with explicit C=1.0."""
         qu = 10000  # 10 MPa
         Qs = side_resistance_rock(qu, 3.14, 2.0, C=1.0)
-        expected = math.sqrt(10000) * 3.14 * 2.0
+        expected = 1.0 * math.sqrt(10000 * PA) * 3.14 * 2.0
         assert abs(Qs - expected) < 0.1
 
-    def test_smooth_socket(self):
-        """C = 0.65 for smooth socket."""
+    def test_explicit_C_065(self):
+        """C = 0.65 with atmospheric pressure normalization."""
         qu = 10000
         Qs = side_resistance_rock(qu, 3.14, 2.0, C=0.65)
-        expected = 0.65 * math.sqrt(10000) * 3.14 * 2.0
+        expected = 0.65 * math.sqrt(10000 * PA) * 3.14 * 2.0
         assert abs(Qs - expected) < 0.1
 
     def test_alpha_E_reduction(self):
@@ -198,6 +219,36 @@ class TestRockSocket:
     def test_zero_length(self):
         Qs = side_resistance_rock(10000, 3.14, 0.0)
         assert Qs == 0.0
+
+    def test_default_C_is_065(self):
+        """Default C parameter should be 0.65 per GEC-10."""
+        qu = 10000
+        Qs_default = side_resistance_rock(qu, 3.14, 2.0)
+        Qs_explicit = side_resistance_rock(qu, 3.14, 2.0, C=0.65)
+        assert abs(Qs_default - Qs_explicit) < 0.001
+
+    def test_rock_socket_uses_pa(self):
+        """Formula must include atmospheric pressure normalization."""
+        qu = 10000  # kPa
+        Qs = side_resistance_rock(qu, 1.0, 1.0)  # unit perimeter, unit thickness
+        expected_fs = 0.65 * math.sqrt(10000 * PA)
+        assert abs(Qs - expected_fs) < 0.1
+
+    def test_rock_socket_known_value(self):
+        """Hand calc: qu=5000, C=0.65, alpha_E=1.0.
+        fs = 0.65 * sqrt(5000 * 101.325) = 0.65 * 711.78 = 462.66 kPa.
+        """
+        qu = 5000
+        Qs = side_resistance_rock(qu, 1.0, 1.0)
+        expected_fs = 0.65 * math.sqrt(5000 * PA)
+        assert abs(Qs - expected_fs) < 0.1
+
+    def test_explicit_C_override(self):
+        """User can still pass C=1.0 to override default."""
+        qu = 10000
+        Qs = side_resistance_rock(qu, 1.0, 1.0, C=1.0)
+        expected_fs = 1.0 * math.sqrt(10000 * PA)
+        assert abs(Qs - expected_fs) < 0.1
 
 
 # ================================================================

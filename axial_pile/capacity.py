@@ -165,7 +165,43 @@ class AxialPileAnalysis:
         else:
             Qt = end_bearing_cohesive(tip_layer.cohesion, self.pile.tip_area)
 
-        Q_ultimate = total_Qs + Qt
+        # Open-ended pipe pile plugging analysis (GEC-12 Section 7.2.1.4)
+        # Governing capacity = lesser of plugged and unplugged
+        if not self.pile.closed_end and self.pile.tip_area_plugged is not None:
+            Qt_unplugged = Qt  # already computed with annulus tip area
+
+            # Compute inside skin friction for unplugged case
+            # Uses same unit friction as outside, applied to inner perimeter
+            Qs_inside = self._compute_inside_skin_friction()
+            Q_unplugged = total_Qs + Qt_unplugged + Qs_inside
+
+            # Plugged case: full tip area, outside skin friction only
+            if self.method == "beta":
+                Qt_plugged = end_bearing_beta(
+                    sigma_v_tip, Nt, self.pile.tip_area_plugged
+                )
+            elif tip_layer.soil_type == "cohesionless":
+                Qt_plugged = end_bearing_cohesionless(
+                    tip_layer.friction_angle, sigma_v_tip,
+                    self.pile.tip_area_plugged, self.pile_length, self.pile.width
+                )
+            else:
+                Qt_plugged = end_bearing_cohesive(
+                    tip_layer.cohesion, self.pile.tip_area_plugged
+                )
+            Q_plugged = total_Qs + Qt_plugged
+
+            # Governing = lesser of plugged and unplugged
+            if Q_plugged <= Q_unplugged:
+                Q_ultimate = Q_plugged
+                Qt = Qt_plugged
+            else:
+                Q_ultimate = Q_unplugged
+                Qt = Qt_unplugged
+                total_Qs = total_Qs + Qs_inside
+        else:
+            Q_ultimate = total_Qs + Qt
+
         Q_allowable = Q_ultimate / self.factor_of_safety
 
         # Uplift (tension) capacity: skin friction only, typically 75% of compression
@@ -186,6 +222,66 @@ class AxialPileAnalysis:
             layer_breakdown=layer_results,
             sigma_v_tip=sigma_v_tip,
         )
+
+    def _compute_inside_skin_friction(self) -> float:
+        """Compute inside skin friction for open-ended pipe pile (unplugged).
+
+        Uses same unit friction as outside, applied to inner perimeter
+        over the embedded length.
+
+        Returns
+        -------
+        float
+            Inside skin friction (kN).
+        """
+        inner_perim = self.pile.inner_perimeter
+        if inner_perim is None or inner_perim <= 0:
+            return 0.0
+
+        Qs_inside = 0.0
+        current_depth = 0.0
+
+        for layer in self.soil.layers:
+            layer_top = current_depth
+            layer_bottom = current_depth + layer.thickness
+            current_depth = layer_bottom
+
+            if layer_top >= self.pile_length:
+                break
+
+            z_top = layer_top
+            z_bottom = min(layer_bottom, self.pile_length)
+            thickness_in_pile = z_bottom - z_top
+            if thickness_in_pile <= 0:
+                continue
+
+            z_center = (z_top + z_bottom) / 2
+            sigma_v = self.soil.effective_stress_at_depth(z_center)
+
+            if self.method == "beta":
+                phi = layer.friction_angle if layer.soil_type == "cohesionless" else 25.0
+                beta = beta_from_phi(phi)
+                Qs_layer = skin_friction_beta(
+                    sigma_v, beta, inner_perim, thickness_in_pile
+                )
+            elif layer.soil_type == "cohesionless":
+                pile_mat = "concrete" if "concrete" in self.pile.pile_type else "steel"
+                Qs_layer = skin_friction_cohesionless(
+                    layer.friction_angle, sigma_v,
+                    inner_perim, thickness_in_pile,
+                    pile_material=pile_mat,
+                    delta_phi_ratio=layer.delta_phi_ratio,
+                )
+            else:
+                pile_type = "concrete" if "concrete" in self.pile.pile_type else "steel"
+                Qs_layer = skin_friction_cohesive(
+                    layer.cohesion, inner_perim,
+                    thickness_in_pile, pile_type=pile_type,
+                )
+
+            Qs_inside += Qs_layer
+
+        return Qs_inside
 
     def capacity_vs_depth(self, depth_min: float = 3.0,
                           depth_max: Optional[float] = None,

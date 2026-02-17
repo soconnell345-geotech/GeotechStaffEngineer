@@ -231,26 +231,40 @@ def depth_factors(phi_deg: float, Df: float, B: float,
 
     References
     ----------
-    Vesic/Hansen: FHWA GEC-6 Table 6-3.
+    Depth parameter k (Hansen, 1970; FHWA GEC-6 Table 6-3):
         If Df/B <= 1:  k = Df/B
         If Df/B > 1:   k = arctan(Df/B) (radians)
+        k is used by both Vesic and Meyerhof methods to bound depth
+        factors for deeply embedded footings (Das, 2019).
+
+    Vesic/Hansen: FHWA GEC-6 Table 6-3.
         dq = 1 + 2*tan(phi)*(1-sin(phi))² * k
         dc = dq - (1-dq)/(Nc*tan(phi))   for phi > 0
         dc = 1 + 0.4*k                    for phi = 0
         dgamma = 1.0
+
+    Meyerhof (1963):
+        dc = 1 + 0.2*sqrt(Kp) * k
+        dq = dg = 1 + 0.1*sqrt(Kp) * k   for phi > 10
+        dq = dg = 1.0                     for phi <= 10
     """
     if B <= 0:
         raise ValueError(f"Footing width B must be positive, got {B}")
 
     DfoverB = Df / B
 
+    # Depth parameter k (Hansen, 1970; FHWA GEC-6 Table 6-3):
+    #   k = Df/B           for Df/B <= 1
+    #   k = arctan(Df/B)   for Df/B > 1  (radians)
+    # Applied to both Vesic and Meyerhof methods to bound depth factors
+    # for deeply embedded footings.
+    if DfoverB <= 1.0:
+        k = DfoverB
+    else:
+        k = math.atan(DfoverB)  # radians
+
     method = method.lower()
     if method == "vesic":
-        if DfoverB <= 1.0:
-            k = DfoverB
-        else:
-            k = math.atan(DfoverB)  # radians
-
         phi = math.radians(phi_deg)
 
         if phi_deg == 0:
@@ -259,16 +273,15 @@ def depth_factors(phi_deg: float, Df: float, B: float,
         else:
             dq = 1.0 + 2.0 * math.tan(phi) * (1.0 - math.sin(phi)) ** 2 * k
             Nc = bearing_capacity_Nc(phi_deg)
-            Nq = bearing_capacity_Nq(phi_deg)
             dc = dq - (1.0 - dq) / (Nc * math.tan(phi))
 
         dg = 1.0  # Vesic: dgamma = 1.0 always
 
     elif method == "meyerhof":
         Kp = math.tan(math.pi / 4 + math.radians(phi_deg) / 2) ** 2
-        dc = 1.0 + 0.2 * math.sqrt(Kp) * (Df / B)
+        dc = 1.0 + 0.2 * math.sqrt(Kp) * k
         if phi_deg > 10:
-            dq = 1.0 + 0.1 * math.sqrt(Kp) * (Df / B)
+            dq = 1.0 + 0.1 * math.sqrt(Kp) * k
             dg = dq
         else:
             dq = 1.0

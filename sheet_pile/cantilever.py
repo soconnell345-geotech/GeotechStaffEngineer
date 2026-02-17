@@ -20,8 +20,8 @@ from typing import List, Optional
 import numpy as np
 
 from sheet_pile.earth_pressure import (
-    rankine_Ka, rankine_Kp, active_pressure, passive_pressure,
-    tension_crack_depth,
+    rankine_Ka, rankine_Kp, coulomb_Ka, coulomb_Kp,
+    active_pressure, passive_pressure, tension_crack_depth,
 )
 from geotech_common.water import GAMMA_W
 
@@ -156,7 +156,7 @@ def analyze_cantilever(
     # Find embedment by iteration
     D_converged = _find_embedment(
         excavation_depth, soil_layers, gwt_depth_active, gwt_depth_passive,
-        surcharge, FOS_passive, gamma_w, n_points=500
+        surcharge, FOS_passive, gamma_w, pressure_method, n_points=500
     )
 
     # Apply 20-40% increase per USACE guidance for simplified method
@@ -168,7 +168,7 @@ def analyze_cantilever(
     max_moment, max_moment_depth = _compute_max_moment(
         excavation_depth, D_design, soil_layers,
         gwt_depth_active, gwt_depth_passive,
-        surcharge, FOS_passive, gamma_w, n_points=500
+        surcharge, FOS_passive, gamma_w, pressure_method, n_points=500
     )
 
     return CantileverWallResult(
@@ -179,6 +179,13 @@ def analyze_cantilever(
         FOS_passive=FOS_passive,
         excavation_depth=excavation_depth,
     )
+
+
+def _compute_Ka_Kp(phi_deg: float, method: str = "rankine"):
+    """Compute Ka, Kp using the specified method."""
+    if method == "coulomb":
+        return coulomb_Ka(phi_deg), coulomb_Kp(phi_deg)
+    return rankine_Ka(phi_deg), rankine_Kp(phi_deg)
 
 
 def _get_soil_at_depth(depth: float, soil_layers: List[WallSoilLayer]) -> WallSoilLayer:
@@ -200,7 +207,8 @@ def _effective_gamma(depth: float, layer: WallSoilLayer,
 
 
 def _find_embedment(excavation_depth, soil_layers, gwt_active, gwt_passive,
-                    surcharge, FOS_passive, gamma_w, n_points=500):
+                    surcharge, FOS_passive, gamma_w,
+                    pressure_method="rankine", n_points=500):
     """Find embedment depth by summing moments about the base."""
     H = excavation_depth
 
@@ -221,8 +229,7 @@ def _find_embedment(excavation_depth, soil_layers, gwt_active, gwt_passive,
             arm = total_length - z  # moment arm from base
 
             layer = _get_soil_at_depth(z, soil_layers)
-            Ka = rankine_Ka(layer.friction_angle)
-            Kp = rankine_Kp(layer.friction_angle)
+            Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method)
 
             if z <= H:
                 # Above excavation: only active pressure
@@ -247,8 +254,9 @@ def _find_embedment(excavation_depth, soil_layers, gwt_active, gwt_passive,
                 moment_active += pa * dz * arm
 
                 # Passive side (with FOS)
-                sigma_v_passive_z = _cumulative_stress(z_below, soil_layers, gwt_passive, gamma_w)
-                pp = Kp * sigma_v_passive_z + 2 * layer.cohesion * math.sqrt(Kp)
+                layer_passive = _get_soil_at_depth(z, soil_layers)
+                sigma_v_passive_z = _cumulative_stress_passive(z_below, H, soil_layers, gwt_passive, gamma_w)
+                pp = Kp * sigma_v_passive_z + 2 * layer_passive.cohesion * math.sqrt(Kp)
                 pp_reduced = pp / FOS_passive
                 moment_passive += pp_reduced * dz * arm
 
@@ -293,9 +301,94 @@ def _cumulative_stress(z: float, soil_layers: List[WallSoilLayer],
     return sigma_v
 
 
+def _cumulative_stress_passive(z_below_exc: float, excavation_depth: float,
+                               soil_layers: List[WallSoilLayer],
+                               gwt_depth: Optional[float],
+                               gamma_w: float) -> float:
+    """Compute vertical effective stress on the passive side below excavation.
+
+    Unlike _cumulative_stress which starts from the ground surface,
+    this starts accumulating from the excavation depth downward using
+    the soil layers that actually exist at that depth.
+
+    Parameters
+    ----------
+    z_below_exc : float
+        Depth below the excavation line (m).
+    excavation_depth : float
+        Depth of excavation from top of wall (m).
+    soil_layers : list of WallSoilLayer
+        Soil layers from top to bottom.
+    gwt_depth : float or None
+        GWT depth on the passive side (m from top of wall).
+    gamma_w : float
+        Unit weight of water.
+    """
+    # Absolute depth from the top of the wall
+    z_abs = excavation_depth + z_below_exc
+    # GWT depth below the excavation line (passive side reference)
+    gwt_below_exc = None
+    if gwt_depth is not None:
+        gwt_below_exc = max(0.0, gwt_depth - excavation_depth)
+
+    # Walk through soil layers to find where the excavation depth falls,
+    # then accumulate stress from there
+    sigma_v = 0.0
+    depth = 0.0
+    for layer in soil_layers:
+        layer_top = depth
+        layer_bot = depth + layer.thickness
+        depth = layer_bot
+
+        if layer_bot <= excavation_depth:
+            continue  # skip layers entirely above excavation
+
+        # The portion of this layer that is below the excavation
+        start = max(layer_top, excavation_depth)
+        end = min(layer_bot, z_abs)
+        if start >= end:
+            continue
+
+        # Depth below excavation for this segment
+        seg_top_below = start - excavation_depth
+        seg_bot_below = end - excavation_depth
+
+        dz_seg = seg_bot_below - seg_top_below
+        if gwt_below_exc is not None and seg_bot_below > gwt_below_exc:
+            above = max(0.0, gwt_below_exc - seg_top_below)
+            below = dz_seg - above
+            sigma_v += layer.unit_weight * above
+            sigma_v += (layer.unit_weight - gamma_w) * below
+        else:
+            sigma_v += layer.unit_weight * dz_seg
+
+        if layer_bot >= z_abs:
+            break
+
+    # If z_abs extends beyond all defined layers, use the last layer
+    if depth < z_abs and soil_layers:
+        last = soil_layers[-1]
+        remaining = z_abs - max(depth, excavation_depth)
+        if remaining > 0:
+            if gwt_below_exc is not None:
+                depth_below = max(depth, excavation_depth) - excavation_depth
+                if depth_below < gwt_below_exc:
+                    above = min(remaining, gwt_below_exc - depth_below)
+                    below = remaining - above
+                    sigma_v += last.unit_weight * above
+                    sigma_v += (last.unit_weight - gamma_w) * below
+                else:
+                    sigma_v += (last.unit_weight - gamma_w) * remaining
+            else:
+                sigma_v += last.unit_weight * remaining
+
+    return sigma_v
+
+
 def _compute_max_moment(excavation_depth, embedment, soil_layers,
                         gwt_active, gwt_passive, surcharge,
-                        FOS_passive, gamma_w, n_points=500):
+                        FOS_passive, gamma_w,
+                        pressure_method="rankine", n_points=500):
     """Compute maximum bending moment and its location."""
     H = excavation_depth
     total_length = H + embedment
@@ -310,8 +403,7 @@ def _compute_max_moment(excavation_depth, embedment, soil_layers,
     for i in range(n_points):
         z = (i + 0.5) * dz
         layer = _get_soil_at_depth(z, soil_layers)
-        Ka = rankine_Ka(layer.friction_angle)
-        Kp = rankine_Kp(layer.friction_angle)
+        Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method)
 
         net_pressure = 0.0
         if z <= H:
@@ -327,7 +419,7 @@ def _compute_max_moment(excavation_depth, embedment, soil_layers,
             pa = Ka * sigma_v_a - 2 * layer.cohesion * math.sqrt(Ka)
             pa = max(pa, 0)
 
-            sigma_v_p = _cumulative_stress(z_below, soil_layers, gwt_passive, gamma_w)
+            sigma_v_p = _cumulative_stress_passive(z_below, H, soil_layers, gwt_passive, gamma_w)
             pp = Kp * sigma_v_p + 2 * layer.cohesion * math.sqrt(Kp)
             pp_reduced = pp / FOS_passive
 

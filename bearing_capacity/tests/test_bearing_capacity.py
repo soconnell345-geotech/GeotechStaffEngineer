@@ -154,6 +154,101 @@ class TestCorrectionFactors:
         # dq = 1 + 2*0.5774*0.25*1.107 = 1 + 0.320 = 1.320
         assert dq == pytest.approx(1.320, rel=0.01)
 
+    def test_vesic_depth_factors_deep_phi25(self):
+        """Vesic depth factors for phi=25, Df/B=3: verify arctan formula."""
+        dc, dq, dg = depth_factors(25, Df=6.0, B=2.0, method="vesic")
+        # k = arctan(3.0) = 1.2490 rad
+        # 2*tan(25)*(1-sin(25))^2 = 2*0.4663*(1-0.4226)^2 = 2*0.4663*0.3334 = 0.3109
+        # dq = 1 + 0.3109*1.2490 = 1.3883
+        # Nc = 20.72
+        # dc = dq - (1-dq)/(Nc*tan(25)) = 1.3883 - (-0.3883)/(20.72*0.4663)
+        #    = 1.3883 + 0.3883/9.658 = 1.3883 + 0.0402 = 1.4285
+        assert dq == pytest.approx(1.388, rel=0.01)
+        assert dc == pytest.approx(1.428, rel=0.01)
+        assert dg == 1.0
+
+    def test_vesic_depth_factors_deep_phi0(self):
+        """Vesic depth factors for phi=0, Df/B=2: arctan formula for dc."""
+        dc, dq, dg = depth_factors(0, Df=4.0, B=2.0, method="vesic")
+        # k = arctan(2.0) = 1.1071 rad
+        # dc = 1 + 0.4*1.1071 = 1.4429
+        assert dc == pytest.approx(1.443, rel=0.01)
+        assert dq == 1.0
+        assert dg == 1.0
+
+    def test_vesic_depth_factors_deep_phi0_very_deep(self):
+        """Vesic dc for phi=0, Df/B=10: arctan bounds the depth factor."""
+        dc, dq, dg = depth_factors(0, Df=20.0, B=2.0, method="vesic")
+        # k = arctan(10) = 1.4711 rad
+        # dc = 1 + 0.4*1.4711 = 1.5884
+        # Maximum possible dc (as Df/B -> inf): 1 + 0.4*pi/2 = 1.6283
+        assert dc == pytest.approx(1.588, rel=0.01)
+        assert dc < 1.0 + 0.4 * (math.pi / 2) + 0.001  # bounded by arctan limit
+
+    def test_meyerhof_depth_factors_shallow(self):
+        """Meyerhof depth factors for Df/B <= 1 (phi=30)."""
+        dc, dq, dg = depth_factors(30, Df=1.0, B=2.0, method="meyerhof")
+        # Df/B = 0.5, k = 0.5
+        # Kp = tan(60)^2 = 3.0, sqrt(Kp) = 1.7321
+        # dc = 1 + 0.2*1.7321*0.5 = 1.1732
+        # dq = dg = 1 + 0.1*1.7321*0.5 = 1.0866
+        assert dc == pytest.approx(1.173, rel=0.01)
+        assert dq == pytest.approx(1.087, rel=0.01)
+        assert dg == pytest.approx(dq, rel=1e-6)
+
+    def test_meyerhof_depth_factors_deep_arctan(self):
+        """Meyerhof depth factors for Df/B > 1: must use arctan(Df/B).
+
+        This is the critical fix: without arctan, Meyerhof depth factors
+        grow without bound for deep embedment, producing unrealistic results.
+        """
+        dc, dq, dg = depth_factors(30, Df=4.0, B=2.0, method="meyerhof")
+        # Df/B = 2.0, k = arctan(2.0) = 1.1071 rad
+        # Kp = 3.0, sqrt(Kp) = 1.7321
+        # dc = 1 + 0.2*1.7321*1.1071 = 1 + 0.3835 = 1.3835
+        # dq = dg = 1 + 0.1*1.7321*1.1071 = 1 + 0.1918 = 1.1918
+        assert dc == pytest.approx(1.384, rel=0.01)
+        assert dq == pytest.approx(1.192, rel=0.01)
+        assert dg == pytest.approx(dq, rel=1e-6)
+
+    def test_meyerhof_depth_factors_bounded(self):
+        """Meyerhof depth factors must be bounded for very deep embedment.
+
+        arctan(Df/B) -> pi/2 as Df/B -> inf, so:
+          dc_max = 1 + 0.2*sqrt(Kp)*pi/2
+          dq_max = 1 + 0.1*sqrt(Kp)*pi/2
+        For phi=30: dc_max ~ 1.545, dq_max ~ 1.272
+        Without the arctan fix, Df/B=10 would give dc=4.46 (unbounded!).
+        """
+        dc, dq, dg = depth_factors(30, Df=20.0, B=2.0, method="meyerhof")
+        # Df/B = 10, k = arctan(10) = 1.4711 rad
+        k_max = math.pi / 2  # arctan limit as Df/B -> inf
+        sqrt_Kp = math.sqrt(3.0)  # phi=30
+        dc_theoretical_max = 1.0 + 0.2 * sqrt_Kp * k_max
+        dq_theoretical_max = 1.0 + 0.1 * sqrt_Kp * k_max
+        assert dc < dc_theoretical_max + 0.001
+        assert dq < dq_theoretical_max + 0.001
+        # With arctan: dc ~ 1.51, dq ~ 1.25
+        # Without arctan fix: dc would be 4.46, dq would be 2.73 (WRONG)
+        assert dc < 2.0, "Meyerhof dc must be bounded (arctan transition)"
+        assert dq < 2.0, "Meyerhof dq must be bounded (arctan transition)"
+
+    def test_depth_factors_dgamma_always_one_vesic(self):
+        """Vesic dgamma = 1.0 for all Df/B ratios."""
+        for ratio in [0, 0.5, 1.0, 2.0, 5.0]:
+            _, _, dg = depth_factors(30, Df=ratio * 2.0, B=2.0, method="vesic")
+            assert dg == 1.0, f"Vesic dgamma must be 1.0 at Df/B={ratio}"
+
+    def test_depth_factors_increase_with_embedment(self):
+        """dq should increase (or stay constant) as Df/B increases."""
+        prev_dq = 0
+        for ratio in [0, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0]:
+            _, dq, _ = depth_factors(30, Df=ratio * 2.0, B=2.0, method="vesic")
+            assert dq >= prev_dq, (
+                f"Vesic dq should not decrease: dq({ratio})={dq:.4f} < prev={prev_dq:.4f}"
+            )
+            prev_dq = dq
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # TEST 3: Footing Data Structure

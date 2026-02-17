@@ -19,9 +19,10 @@ from typing import List, Optional
 
 import numpy as np
 
-from sheet_pile.earth_pressure import rankine_Ka, rankine_Kp
+from sheet_pile.earth_pressure import rankine_Ka, rankine_Kp  # kept for backward compat
 from sheet_pile.cantilever import (
-    WallSoilLayer, _get_soil_at_depth, _cumulative_stress, _effective_gamma,
+    WallSoilLayer, _get_soil_at_depth, _cumulative_stress,
+    _cumulative_stress_passive, _effective_gamma, _compute_Ka_Kp,
 )
 from geotech_common.water import GAMMA_W
 
@@ -79,6 +80,7 @@ def analyze_anchored(
     surcharge: float = 0.0,
     FOS_passive: float = 1.5,
     gamma_w: float = GAMMA_W,
+    pressure_method: str = "rankine",
 ) -> AnchoredWallResult:
     """Analyze an anchored sheet pile wall (free earth support method).
 
@@ -136,8 +138,7 @@ def analyze_anchored(
             arm = z - anchor_depth  # moment arm from anchor
 
             layer = _get_soil_at_depth(z, soil_layers)
-            Ka = rankine_Ka(layer.friction_angle)
-            Kp = rankine_Kp(layer.friction_angle)
+            Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method)
 
             if z <= H:
                 sigma_v = surcharge + _cumulative_stress(z, soil_layers, gwt_depth_active, gamma_w)
@@ -153,7 +154,7 @@ def analyze_anchored(
                 pa = Ka * sigma_v_a - 2 * layer.cohesion * math.sqrt(Ka)
                 pa = max(pa, 0)
 
-                sigma_v_p = _cumulative_stress(z_below, soil_layers, gwt_depth_passive, gamma_w)
+                sigma_v_p = _cumulative_stress_passive(z_below, H, soil_layers, gwt_depth_passive, gamma_w)
                 pp = Kp * sigma_v_p + 2 * layer.cohesion * math.sqrt(Kp)
                 pp_reduced = pp / FOS_passive
 
@@ -176,7 +177,7 @@ def analyze_anchored(
         D_found = 4 * H
         warnings.warn("Anchored wall embedment did not converge")
 
-    D_design = D_found * 1.2
+    D_design = D_found  # No increase for anchored walls (free earth support)
     total_wall = H + D_design
 
     # Compute anchor force from horizontal equilibrium
@@ -187,8 +188,7 @@ def analyze_anchored(
     for i in range(n_points):
         z = (i + 0.5) * dz
         layer = _get_soil_at_depth(z, soil_layers)
-        Ka = rankine_Ka(layer.friction_angle)
-        Kp = rankine_Kp(layer.friction_angle)
+        Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method)
 
         if z <= H:
             sigma_v = surcharge + _cumulative_stress(z, soil_layers, gwt_depth_active, gamma_w)
@@ -204,7 +204,7 @@ def analyze_anchored(
             pa = max(pa, 0)
             total_active_force += pa * dz
 
-            sigma_v_p = _cumulative_stress(z_below, soil_layers, gwt_depth_passive, gamma_w)
+            sigma_v_p = _cumulative_stress_passive(z_below, H, soil_layers, gwt_depth_passive, gamma_w)
             pp = Kp * sigma_v_p + 2 * layer.cohesion * math.sqrt(Kp)
             total_passive_force += (pp / FOS_passive) * dz
 
@@ -224,7 +224,7 @@ def analyze_anchored(
     for i in range(n_points):
         z = (i + 0.5) * dz
         layer = _get_soil_at_depth(z, soil_layers)
-        Ka = rankine_Ka(layer.friction_angle)
+        Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method)
 
         net_p = 0.0
         if z <= H:

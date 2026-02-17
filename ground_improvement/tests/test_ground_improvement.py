@@ -79,11 +79,35 @@ class TestAggregatePiers:
         assert 0.7 < srf < 0.8  # sanity check
 
     def test_composite_modulus(self):
-        """E_comp = as*Ec + (1-as)*Es."""
-        E_comp = composite_modulus(0.1, 80000, 5000)
-        expected = 0.1 * 80000 + 0.9 * 5000
+        """E_comp = Es * [1 + as*(n-1)], consistent with Priebe SRF."""
+        # as=0.1, Es=5000, n=5  =>  E_comp = 5000*(1 + 0.1*4) = 7000
+        E_comp = composite_modulus(0.1, 5000, 5.0)
+        expected = 5000.0 * (1.0 + 0.1 * 4.0)
         assert E_comp == pytest.approx(expected, rel=1e-6)
-        assert E_comp == pytest.approx(12500.0)
+        assert E_comp == pytest.approx(7000.0)
+
+    def test_composite_modulus_consistency_with_srf(self):
+        """E_comp = Es / SRF: composite modulus and SRF must be consistent."""
+        as_ratio = 0.15
+        n = 6.0
+        Es = 4000.0
+
+        srf = settlement_reduction_factor(as_ratio, n)
+        E_comp = composite_modulus(as_ratio, Es, n)
+
+        # E_comp should equal Es / SRF
+        assert E_comp == pytest.approx(Es / srf, rel=1e-10)
+
+    def test_composite_modulus_n_equals_1(self):
+        """When n=1 (no improvement), E_comp = Es."""
+        E_comp = composite_modulus(0.2, 5000, 1.0)
+        assert E_comp == pytest.approx(5000.0, rel=1e-10)
+
+    def test_composite_modulus_increases_with_n(self):
+        """Higher n gives higher E_comp (more improvement)."""
+        E_low = composite_modulus(0.1, 5000, 3.0)
+        E_high = composite_modulus(0.1, 5000, 8.0)
+        assert E_high > E_low > 5000.0
 
     def test_improved_bearing(self):
         """q_improved = q_unr * (1 + as*(n-1))."""
@@ -112,6 +136,10 @@ class TestAggregatePiers:
             result.settlement_reduction_factor * 80.0, rel=1e-4
         )
         assert result.pattern == "triangular"
+        # Composite modulus must be consistent with SRF: E_comp = Es / SRF
+        assert result.composite_modulus_kPa == pytest.approx(
+            5000.0 / result.settlement_reduction_factor, rel=1e-4
+        )
         # summary and to_dict work
         assert "AGGREGATE PIER" in result.summary()
         assert "area_replacement_ratio" in result.to_dict()

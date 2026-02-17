@@ -69,12 +69,12 @@ def mononobe_okabe_KAE(phi_deg: float, delta_deg: float, kh: float,
     cos_theta = math.cos(theta)
     cos_beta = math.cos(beta)
 
-    num = math.cos(phi - theta - beta) ** 2
+    num = math.cos(phi + beta - theta) ** 2
 
     sin_pd = math.sin(phi + delta)
     sin_pti = math.sin(phi - theta - i)
-    cos_dbt = math.cos(delta + beta + theta)
-    cos_ib = math.cos(i - beta)
+    cos_dbt = math.cos(delta + theta - beta)
+    cos_ib = math.cos(i + beta)
 
     if cos_dbt * cos_ib <= 0:
         raise ValueError("Invalid geometry for M-O calculation")
@@ -129,8 +129,8 @@ def mononobe_okabe_KPE(phi_deg: float, delta_deg: float, kh: float,
 
     sin_pd = math.sin(phi + delta)
     sin_pti = math.sin(phi - theta + i)
-    cos_dbt = math.cos(delta - beta + theta)
-    cos_ib = math.cos(i - beta)
+    cos_dbt = math.cos(delta - theta + beta)
+    cos_ib = math.cos(i + beta)
 
     if cos_dbt * cos_ib <= 0:
         raise ValueError("Invalid geometry for M-O passive calculation")

@@ -270,7 +270,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         theta = math.degrees(math.atan(pile_diameter / spacing))
         m, n = n_rows, n_cols
         Eg = 1.0 - theta / (90.0 * m * n) * (n * (m - 1) + m * (n - 1))
-        Eg = max(Eg, 0.0)
+        Eg = min(max(Eg, 0.0), 1.0)
 
         efficiency_items.append(CalcStep(
             title="Converse-Labarre Group Efficiency",
