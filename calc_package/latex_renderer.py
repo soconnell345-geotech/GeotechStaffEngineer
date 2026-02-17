@@ -69,7 +69,9 @@ def _prepare_item(item):
         ns.equation_latex = unicode_to_latex(item.equation)
         ns.substitution_latex = unicode_to_latex(item.substitution)
         ns.result_name_latex = unicode_to_latex(item.result_name)
-        ns.result_value = escape_latex(str(item.result_value))
+        # result_value is placed inside $...$ by the template, so use
+        # unicode_to_latex (math-mode safe), not escape_latex (text-mode).
+        ns.result_value = unicode_to_latex(str(item.result_value))
         ns.result_unit = escape_latex(item.result_unit)
         ns.reference = escape_latex(item.reference)
         ns.notes = escape_latex(item.notes)
@@ -89,10 +91,23 @@ def _prepare_item(item):
     elif itype in ("input_table", "table"):
         ns.title = escape_latex(getattr(item, "title", ""))
         ns.headers = [escape_latex(str(h)) for h in item.headers]
-        ns.rows = [
-            [escape_latex(str(cell)) for cell in row]
-            for row in item.rows
-        ]
+        if itype == "input_table":
+            # Input table: [Description, Symbol, Value, Unit]
+            # Symbol column (index 1) is wrapped in $...$ by the template,
+            # so it must use unicode_to_latex (math-mode), not escape_latex.
+            ns.rows = []
+            for row in item.rows:
+                ns.rows.append([
+                    escape_latex(str(row[0])),           # Description (text)
+                    unicode_to_latex(str(row[1])),       # Symbol (math-mode)
+                    escape_latex(str(row[2])),           # Value (text)
+                    escape_latex(str(row[3])),           # Unit (text)
+                ])
+        else:
+            ns.rows = [
+                [escape_latex(str(cell)) for cell in row]
+                for row in item.rows
+            ]
         ns.notes = escape_latex(getattr(item, "notes", ""))
         # Column spec for longtable
         ncols = len(item.headers)

@@ -22,11 +22,15 @@ _CHAR_MAP = {
     "\u03b3": r"\gamma ",
     "\u03b4": r"\delta ",
     "\u03b5": r"\varepsilon ",
+    "\u03b7": r"\eta ",
     "\u03b8": r"\theta ",
+    "\u03bb": r"\lambda ",
+    "\u03bc": r"\mu ",
     "\u03bd": r"\nu ",
     "\u03c0": r"\pi ",
     "\u03c1": r"\rho ",
     "\u03c3": r"\sigma ",
+    "\u03c4": r"\tau ",
     "\u03c6": r"\varphi ",
     "\u03c9": r"\omega ",
     # Greek uppercase
@@ -89,34 +93,50 @@ def unicode_to_latex(text: str) -> str:
 
     s = text
 
-    # 1. Direct Unicode character substitution
+    # 1. Subscripts FIRST (before Unicode substitution, while _ positions
+    #    are unambiguous). This prevents double-subscript errors like
+    #    m_α_i → m_\alpha _{i} (two subscripts on m).
+    #    Instead: m_α_i → m_{α_i} → m_{\alpha _{i}} (nested, valid).
+    #    Multi-char subscripts: _word → _{word}
+    s = re.sub(r"_([A-Za-z0-9\u0370-\u03FF][A-Za-z0-9\u0370-\u03FF_,]+)(?![}])",
+               r"_{\1}", s)
+    # Single-char subscripts: _X → _{X} (including Greek chars)
+    s = re.sub(r"_([A-Za-z0-9\u0370-\u03FF])(?![A-Za-z0-9\u0370-\u03FF_{])",
+               r"_{\1}", s)
+
+    # 2. Combine consecutive Unicode subscript digits into a single group
+    #    e.g. ₁₀ → _{10} instead of _{1}_{0} (double subscript error)
+    _SUBSCRIPT_DIGITS = {
+        "\u2080": "0", "\u2081": "1", "\u2082": "2", "\u2083": "3",
+        "\u2084": "4", "\u2085": "5", "\u2086": "6", "\u2087": "7",
+        "\u2088": "8", "\u2089": "9",
+    }
+    _sub_pattern = "[" + "".join(_SUBSCRIPT_DIGITS.keys()) + "]"
+
+    def _replace_sub_group(m):
+        return "_{" + "".join(_SUBSCRIPT_DIGITS[ch] for ch in m.group(0)) + "}"
+
+    s = re.sub(_sub_pattern + "{2,}", _replace_sub_group, s)
+    # Single subscript digits (still handled by _CHAR_MAP below)
+
+    # 3. Direct Unicode character substitution
     for char, latex in _CHAR_MAP.items():
         s = s.replace(char, latex)
 
-    # 2. Square root: \SQRT(...) → \sqrt{...}
+    # 4. Square root: \SQRT(...) → \sqrt{...}
     #    Also handle \SQRT followed by a single token (no parens)
     s = re.sub(r"\\SQRT\(([^)]*)\)", r"\\sqrt{\1}", s)
     # \SQRT followed by a single alphanumeric token like \SQRTKa
     s = re.sub(r"\\SQRT([A-Za-z_][A-Za-z0-9_]*)", r"\\sqrt{\1}", s)
 
-    # 3. Math function names: add backslash before recognized names
+    # 5. Math function names: add backslash before recognized names
     #    Must be careful not to double-backslash already-converted names
-    #    Match word boundary before function name followed by ( or ^
     for fn in ("arctan", "arcsin", "tan", "sin", "cos", "exp", "log", "ln",
                "min", "max"):
         # Only add backslash if not already preceded by one
         s = re.sub(r"(?<!\\)\b(" + fn + r")\b", r"\\\1", s)
 
-    # 4. Subscripts: X_word → X_{word} for multi-char subscripts
-    #    Single-char subscripts like N_q are already valid LaTeX,
-    #    but wrapping in braces is harmless and consistent.
-    #    Handle things like q_ult, σ'_v0, K_ae, etc.
-    #    Skip if already braced: X_{...}
-    s = re.sub(r"_([A-Za-z0-9][A-Za-z0-9,]+)(?![}])", r"_{\1}", s)
-    # Single-char subscripts too, for consistency
-    s = re.sub(r"_([A-Za-z0-9])(?![A-Za-z0-9{])", r"_{\1}", s)
-
-    # 5. Multi-line: \n → \\ for LaTeX line breaks
+    # 6. Multi-line: \n → \\ for LaTeX line breaks
     s = s.replace("\n", r" \\ ")
 
     return s.strip()
@@ -161,12 +181,29 @@ def escape_latex(text: str) -> str:
         "\u03b3": r"$\gamma$",
         "\u03b1": r"$\alpha$",
         "\u03b2": r"$\beta$",
+        "\u03b5": r"$\varepsilon$",
+        "\u03b7": r"$\eta$",
+        "\u03b8": r"$\theta$",
+        "\u03bb": r"$\lambda$",
+        "\u03bc": r"$\mu$",
+        "\u03bd": r"$\nu$",
         "\u03c3": r"$\sigma$",
         "\u03b4": r"$\delta$",
+        "\u03c4": r"$\tau$",
+        "\u03c9": r"$\omega$",
+        "\u03c1": r"$\rho$",
         "\u0394": r"$\Delta$",
+        "\u03a3": r"$\Sigma$",
         "\u03c0": r"$\pi$",
         "\u00b0": r"$^\circ$",
+        "\u00b2": r"$^2$",
+        "\u00b3": r"$^3$",
+        "\u2074": r"$^4$",
         "\u2032": r"$'$",
+        "\u00d7": r"$\times$",
+        "\u2264": r"$\leq$",
+        "\u2265": r"$\geq$",
+        "\u221a": r"$\sqrt{}$",
     }
     for char, repl in _TEXT_CHARS.items():
         s = s.replace(char, repl)

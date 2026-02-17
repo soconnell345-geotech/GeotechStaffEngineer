@@ -14,6 +14,9 @@ DM7Eqs/references/*.png
 
 # Generated test artifacts
 lateral_pile_test_plot.png
+fig_*.png
+sample_calc_package.html
+sample_calc_package.tex
 
 # Build instruction prompts (not needed in repo)
 geotech_modules_2_through_7_prompt.md
