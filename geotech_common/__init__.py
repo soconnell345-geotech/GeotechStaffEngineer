@@ -24,6 +24,7 @@ from geotech_common.engineering_checks import (
     check_bearing_capacity, check_settlement, check_pile_capacity,
     check_lateral_pile, check_sheet_pile, check_wave_equation,
     check_pile_group, check_foundation_selection, check_parameter_consistency,
+    check_slope_stability,
 )
 
 __all__ = [
@@ -44,4 +45,5 @@ __all__ = [
     'check_bearing_capacity', 'check_settlement', 'check_pile_capacity',
     'check_lateral_pile', 'check_sheet_pile', 'check_wave_equation',
     'check_pile_group', 'check_foundation_selection', 'check_parameter_consistency',
+    'check_slope_stability',
 ]

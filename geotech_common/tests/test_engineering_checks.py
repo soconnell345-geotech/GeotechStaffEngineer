@@ -11,6 +11,7 @@ Test classes:
     TestCheckPileGroup          - Pile group checks
     TestCheckFoundationSelection - Cross-module foundation selection advice
     TestCheckParameterConsistency - Soil parameter consistency checks
+    TestCheckSlopeStability       - Slope stability FOS checks
 """
 
 import pytest
@@ -25,6 +26,7 @@ from geotech_common.engineering_checks import (
     check_pile_group,
     check_foundation_selection,
     check_parameter_consistency,
+    check_slope_stability,
 )
 from geotech_common.soil_profile import SoilLayer, GroundwaterCondition, SoilProfile
 
@@ -534,4 +536,61 @@ class TestCheckParameterConsistency:
 
     def test_none_inputs(self):
         w = check_parameter_consistency()
+        assert len(w) == 0
+
+
+# ── TestCheckSlopeStability ───────────────────────────────────────
+
+class TestCheckSlopeStability:
+
+    def test_stable_no_warnings(self):
+        """FOS well above required, bishop, >= 30 slices -> no warnings."""
+        w = check_slope_stability(FOS=2.0, is_stable=True, FOS_required=1.5,
+                                  method="bishop", n_slices=30)
+        assert len(w) == 0
+
+    def test_fos_below_one_critical(self):
+        """FOS < 1.0 -> CRITICAL."""
+        w = check_slope_stability(FOS=0.85, is_stable=False)
+        assert _has(w, "CRITICAL", "failure")
+
+    def test_fos_below_required_warning(self):
+        """1.0 <= FOS < FOS_required -> WARNING marginal."""
+        w = check_slope_stability(FOS=1.2, is_stable=False, FOS_required=1.5)
+        assert _has(w, "WARNING", "marginal")
+
+    def test_fos_way_above_required_info(self):
+        """FOS > 3x FOS_required -> INFO overdesigned."""
+        w = check_slope_stability(FOS=5.0, is_stable=True, FOS_required=1.5)
+        assert _has(w, "INFO", "overdesigned")
+
+    def test_seismic_low_fos_critical(self):
+        """Seismic kh>0, FOS < 1.1 -> CRITICAL."""
+        w = check_slope_stability(FOS=1.05, is_stable=True, FOS_required=1.0,
+                                  has_seismic=True, kh=0.15)
+        assert _has(w, "CRITICAL", "seismic")
+
+    def test_low_n_slices_info(self):
+        """n_slices < 20 -> INFO discretization."""
+        w = check_slope_stability(FOS=1.8, is_stable=True, n_slices=10)
+        assert _has(w, "INFO", "slices")
+
+    def test_fellenius_only_info(self):
+        """Fellenius alone with no FOS_bishop -> INFO recommendation."""
+        w = check_slope_stability(FOS=1.8, is_stable=True,
+                                  method="fellenius", FOS_bishop=None)
+        assert _has(w, "INFO", "Fellenius")
+
+    def test_fellenius_bishop_divergence_info(self):
+        """Large difference between Fellenius and Bishop -> INFO."""
+        w = check_slope_stability(FOS=1.5, is_stable=True,
+                                  FOS_fellenius=1.2, FOS_bishop=1.5)
+        # 0.3/1.5 = 20% > 15%
+        assert _has(w, "INFO", "divergence")
+
+    def test_clean_bishop_result(self):
+        """Bishop, good FOS, 30 slices, both methods comparable -> no warnings."""
+        w = check_slope_stability(FOS=1.8, is_stable=True, FOS_required=1.5,
+                                  method="bishop", n_slices=30,
+                                  FOS_fellenius=1.7, FOS_bishop=1.8)
         assert len(w) == 0

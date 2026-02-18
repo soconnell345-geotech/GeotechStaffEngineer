@@ -1017,3 +1017,100 @@ def check_parameter_consistency(
                         )
 
     return warnings
+
+
+# ── Slope Stability Checks ────────────────────────────────────────
+
+def check_slope_stability(
+    FOS: float,
+    is_stable: bool,
+    FOS_required: float = 1.5,
+    method: str = "bishop",
+    has_seismic: bool = False,
+    n_slices: int = 30,
+    FOS_fellenius: float = None,
+    FOS_bishop: float = None,
+    kh: float = 0.0,
+) -> List[str]:
+    """Check slope stability analysis results for issues.
+
+    Parameters
+    ----------
+    FOS : float
+        Computed factor of safety.
+    is_stable : bool
+        Whether FOS >= FOS_required.
+    FOS_required : float
+        Minimum required FOS (default 1.5).
+    method : str
+        Analysis method used ('fellenius', 'bishop', 'spencer').
+    has_seismic : bool
+        Whether seismic loading was applied.
+    n_slices : int
+        Number of slices used in analysis.
+    FOS_fellenius : float, optional
+        Fellenius FOS if comparison was run.
+    FOS_bishop : float, optional
+        Bishop FOS if comparison was run.
+    kh : float
+        Horizontal seismic coefficient.
+
+    Returns
+    -------
+    List[str]
+        Warnings prefixed with CRITICAL / WARNING / INFO.
+    """
+    warnings: List[str] = []
+
+    # 1. FOS < 1.0 — failure
+    if FOS < 1.0:
+        warnings.append(
+            f"CRITICAL: FOS = {FOS:.3f} — slope failure predicted (FOS < 1.0)"
+        )
+    # 2. FOS marginal (>= 1.0 but below required)
+    elif FOS < FOS_required:
+        warnings.append(
+            f"WARNING: FOS = {FOS:.3f} is below required FOS of {FOS_required:.2f}"
+            " — marginal stability"
+        )
+
+    # 3. Overdesigned
+    if FOS > 3.0 * FOS_required:
+        warnings.append(
+            f"INFO: FOS = {FOS:.3f} is much higher than required ({FOS_required:.2f})"
+            " — slope may be overdesigned or slip surface is not critical"
+        )
+
+    # 4. Seismic with low FOS
+    if has_seismic and FOS < 1.1:
+        warnings.append(
+            f"CRITICAL: Seismic FOS = {FOS:.3f} (kh={kh:.3f}) is below 1.1"
+            " — seismic slope failure risk"
+        )
+
+    # 5. Low slice count
+    if n_slices < 20:
+        warnings.append(
+            f"INFO: Only {n_slices} slices used"
+            " — consider using >= 20-30 for accuracy"
+        )
+
+    # 6. Fellenius alone
+    if method.lower() == "fellenius" and FOS_bishop is None:
+        warnings.append(
+            "INFO: Fellenius method alone is less accurate"
+            " — recommend Bishop or Spencer for comparison"
+        )
+
+    # 7. Fellenius vs Bishop divergence
+    if (FOS_fellenius is not None and FOS_bishop is not None
+            and FOS_bishop > 0):
+        divergence = abs(FOS_fellenius - FOS_bishop) / FOS_bishop
+        if divergence > 0.15:
+            warnings.append(
+                f"INFO: Fellenius FOS ({FOS_fellenius:.3f}) differs from"
+                f" Bishop ({FOS_bishop:.3f}) by {divergence:.0%}"
+                " — large divergence may indicate complex geometry"
+            )
+
+    return warnings

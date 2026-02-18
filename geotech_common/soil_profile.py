@@ -1621,6 +1621,80 @@ class SoilProfile:
             "gwt_depth": self.groundwater.depth,
         }
 
+    # ── Adapter: Slope Stability ──────────────────────────────────────
+
+    def to_slope_stability_input(
+        self,
+        ground_elevation: float = 0.0,
+    ) -> Dict[str, Any]:
+        """Convert profile to slope_stability module input format.
+
+        Maps SoilLayer depth-based data to elevation-based SlopeSoilLayer dicts.
+        Depth-to-elevation conversion: elevation = ground_elevation - depth.
+
+        For cohesive layers with cu > 0: analysis_mode = "undrained" (phi=0).
+        For granular layers with phi > 0: analysis_mode = "drained" (cu=0).
+
+        Parameters
+        ----------
+        ground_elevation : float
+            Elevation of ground surface (m). Default 0.0.
+
+        Returns
+        -------
+        dict
+            Keys:
+            - "soil_layers" : list of dicts suitable for SlopeSoilLayer(**d)
+            - "gwt_elevation" : float or None
+        """
+        slope_layers = []
+
+        for layer in self.layers:
+            top_elev = ground_elevation - layer.top_depth
+            bot_elev = ground_elevation - layer.bottom_depth
+            gamma = layer.gamma if layer.gamma is not None else 18.0
+            gamma_sat = layer.gamma_sat if layer.gamma_sat is not None else gamma
+
+            if layer.is_cohesive is True and layer.cu is not None and layer.cu > 0:
+                slope_layers.append({
+                    "name": layer.description,
+                    "top_elevation": top_elev,
+                    "bottom_elevation": bot_elev,
+                    "gamma": gamma,
+                    "gamma_sat": gamma_sat,
+                    "phi": 0.0,
+                    "c_prime": 0.0,
+                    "cu": layer.cu,
+                    "analysis_mode": "undrained",
+                })
+            elif layer.phi is not None and layer.phi > 0:
+                c_prime = layer.c_prime if layer.c_prime is not None else 0.0
+                slope_layers.append({
+                    "name": layer.description,
+                    "top_elevation": top_elev,
+                    "bottom_elevation": bot_elev,
+                    "gamma": gamma,
+                    "gamma_sat": gamma_sat,
+                    "phi": layer.phi,
+                    "c_prime": c_prime,
+                    "cu": 0.0,
+                    "analysis_mode": "drained",
+                })
+            else:
+                raise ValueError(
+                    f"Layer '{layer.description}' has neither cu nor phi — "
+                    "cannot create slope stability input"
+                )
+
+        gwt_elevation = None
+        if self.groundwater.depth < self.total_depth:
+            gwt_elevation = ground_elevation - self.groundwater.depth
+
+        return {
+            "soil_layers": slope_layers,
+            "gwt_elevation": gwt_elevation,
+        }
+
 
 # ---------------------------------------------------------------------------
 # SoilProfileBuilder

@@ -9,6 +9,7 @@ Test classes:
     TestSheetPileAdapter         - to_sheet_pile_input
     TestPileGroupAdapter         - to_pile_group_input
     TestAdapterIntegration       - Round-trip: adapters produce valid module input
+    TestSlopeStabilityAdapter    - to_slope_stability_input
 """
 
 import pytest
@@ -729,3 +730,133 @@ class TestNewAdapterIntegration:
             )
             assert len(results) == 1
             assert "FOS_liq" in results[0]
+
+
+# ── TestSlopeStabilityAdapter ─────────────────────────────────────
+
+class TestSlopeStabilityAdapter:
+
+    def test_mixed_profile_layers(self):
+        """3-layer mixed profile produces correct SlopeSoilLayer dicts."""
+        profile = _mixed_profile()
+        data = profile.to_slope_stability_input(ground_elevation=10.0)
+        layers = data["soil_layers"]
+        assert len(layers) == 3
+        # Fill: drained (phi=30, no cu)
+        assert layers[0]["analysis_mode"] == "drained"
+        assert layers[0]["phi"] == 30
+        assert layers[0]["cu"] == 0.0
+        # Clay: undrained (cu=30, phi=0)
+        assert layers[1]["analysis_mode"] == "undrained"
+        assert layers[1]["cu"] == 30
+        assert layers[1]["phi"] == 0.0
+        # Sand: drained (phi=36)
+        assert layers[2]["analysis_mode"] == "drained"
+        assert layers[2]["phi"] == 36
+
+    def test_depth_to_elevation_conversion(self):
+        """Depths convert correctly to elevations."""
+        profile = _mixed_profile()
+        data = profile.to_slope_stability_input(ground_elevation=10.0)
+        layers = data["soil_layers"]
+        # Layer 0: top_depth=0 -> elev=10, bottom_depth=3 -> elev=7
+        assert layers[0]["top_elevation"] == 10.0
+        assert layers[0]["bottom_elevation"] == 7.0
+        # Layer 1: top_depth=3 -> elev=7, bottom_depth=10 -> elev=0
+        assert layers[1]["top_elevation"] == 7.0
+        assert layers[1]["bottom_elevation"] == 0.0
+        # Layer 2: top_depth=10 -> elev=0, bottom_depth=20 -> elev=-10
+        assert layers[2]["top_elevation"] == 0.0
+        assert layers[2]["bottom_elevation"] == -10.0
+
+    def test_zero_ground_elevation(self):
+        """Default ground_elevation=0 makes elevations = -depth."""
+        profile = _mixed_profile()
+        data = profile.to_slope_stability_input(ground_elevation=0.0)
+        layers = data["soil_layers"]
+        assert layers[0]["top_elevation"] == 0.0
+        assert layers[0]["bottom_elevation"] == -3.0
+
+    def test_gwt_elevation_conversion(self):
+        """GWT depth converts to elevation correctly."""
+        profile = _mixed_profile()  # gwt=2m
+        data = profile.to_slope_stability_input(ground_elevation=10.0)
+        assert data["gwt_elevation"] == 8.0  # 10 - 2 = 8
+
+    def test_gwt_none_when_below_profile(self):
+        """GWT below profile depth -> gwt_elevation is None."""
+        layers = [SoilLayer(0, 5, "Sand", gamma=18.0, phi=30)]
+        gw = GroundwaterCondition(depth=10.0)
+        profile = SoilProfile(layers=layers, groundwater=gw)
+        data = profile.to_slope_stability_input(ground_elevation=5.0)
+        assert data["gwt_elevation"] is None  # 10 > 5 = total_depth
+
+    def test_gamma_sat_passed_through(self):
+        """gamma_sat from SoilLayer propagates to output."""
+        profile = _mixed_profile()
+        data = profile.to_slope_stability_input(ground_elevation=0.0)
+        assert data["soil_layers"][0]["gamma_sat"] == 19.5
+        assert data["soil_layers"][1]["gamma_sat"] == 17.0
+
+    def test_cohesive_layer_undrained(self):
+        """Cohesive layer with cu -> undrained, phi=0."""
+        profile = _clay_only_profile()
+        data = profile.to_slope_stability_input(ground_elevation=0.0)
+        layer = data["soil_layers"][0]
+        assert layer["analysis_mode"] == "undrained"
+        assert layer["cu"] == 120
+        assert layer["phi"] == 0.0
+
+    def test_granular_layer_drained(self):
+        """Granular layer with phi -> drained, cu=0."""
+        profile = _sand_only_profile()
+        data = profile.to_slope_stability_input(ground_elevation=0.0)
+        layer = data["soil_layers"][0]
+        assert layer["analysis_mode"] == "drained"
+        assert layer["phi"] == 33
+        assert layer["cu"] == 0.0
+
+    def test_c_prime_propagated(self):
+        """c_prime from SoilLayer goes into drained layer output."""
+        layers = [SoilLayer(0, 10, "Silty sand", gamma=18.0, phi=28,
+                            c_prime=5.0, is_cohesive=False)]
+        gw = GroundwaterCondition(depth=5.0)
+        profile = SoilProfile(layers=layers, groundwater=gw)
+        data = profile.to_slope_stability_input(ground_elevation=0.0)
+        assert data["soil_layers"][0]["c_prime"] == 5.0
+
+    def test_missing_strength_raises(self):
+        """Layer with no cu and no phi raises ValueError."""
+        layers = [SoilLayer(0, 10, "Unknown", gamma=18.0)]
+        profile = SoilProfile(layers=layers,
+                              groundwater=GroundwaterCondition(depth=5.0))
+        with pytest.raises(ValueError, match="neither cu nor phi"):
+            profile.to_slope_stability_input()
+
+    def test_layer_names_from_descriptions(self):
+        """Layer names come from SoilLayer.description."""
+        profile = _mixed_profile()
+        data = profile.to_slope_stability_input()
+        assert data["soil_layers"][0]["name"] == "Sandy fill (SM)"
+        assert data["soil_layers"][1]["name"] == "Soft gray clay (CH)"
+
+    def test_integration_creates_valid_slope_layers(self):
+        """Adapter output can construct SlopeSoilLayer objects."""
+        from slope_stability.geometry import SlopeSoilLayer, SlopeGeometry
+        profile = _mixed_profile()
+        data = profile.to_slope_stability_input(ground_elevation=10.0)
+
+        slope_layers = [SlopeSoilLayer(**d) for d in data["soil_layers"]]
+        assert len(slope_layers) == 3
+        assert slope_layers[0].analysis_mode == "drained"
+        assert slope_layers[1].analysis_mode == "undrained"
+
+        surface = [(0, 10), (20, 10), (30, 5), (50, 5)]
+        gwt_elev = data["gwt_elevation"]
+        gwt_pts = [(0, gwt_elev), (50, gwt_elev)] if gwt_elev is not None else None
+        geom = SlopeGeometry(
+            surface_points=surface,
+            soil_layers=slope_layers,
+            gwt_points=gwt_pts,
+        )
+        assert geom is not None
