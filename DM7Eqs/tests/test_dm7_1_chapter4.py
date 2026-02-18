@@ -811,3 +811,105 @@ class TestShaftHorizontalPressureClay:
     def test_z_negative_raises(self):
         with pytest.raises(ValueError, match="z must be positive"):
             shaft_horizontal_pressure_clay(60.0, -20.0, 200.0)
+
+
+# ===================================================================
+# table_4_3_trench_fill  (Table 4-3)
+# Returns dict with K and mu_prime for trench fill material types
+# ===================================================================
+
+class TestTable43TrenchFill:
+
+    def test_granular(self):
+        result = table_4_3_trench_fill("granular_no_cohesion")
+        assert result["K"] == pytest.approx(0.165, rel=1e-4)
+        assert result["mu_prime"] == pytest.approx(0.700, rel=1e-4)
+
+    def test_saturated_clay(self):
+        result = table_4_3_trench_fill("saturated_clay")
+        assert result["K"] == pytest.approx(0.110, rel=1e-4)
+        assert result["mu_prime"] == pytest.approx(0.260, rel=1e-4)
+
+    def test_ordinary_clay(self):
+        result = table_4_3_trench_fill("ordinary_clay")
+        assert result["K"] == pytest.approx(0.130, rel=1e-4)
+        assert result["mu_prime"] == pytest.approx(0.400, rel=1e-4)
+
+    def test_returns_copy(self):
+        # Modifying returned dict doesn't affect source
+        result1 = table_4_3_trench_fill("sand_gravel")
+        result1["K"] = 999.0
+        result2 = table_4_3_trench_fill("sand_gravel")
+        assert result2["K"] == pytest.approx(0.150, rel=1e-4)
+
+    def test_case_insensitive(self):
+        # Case insensitive lookup
+        result = table_4_3_trench_fill("Sand_Gravel")
+        assert result["K"] == pytest.approx(0.150, rel=1e-4)
+        assert result["mu_prime"] == pytest.approx(0.500, rel=1e-4)
+
+    def test_unknown_raises(self):
+        with pytest.raises(ValueError, match="Unknown fill_type"):
+            table_4_3_trench_fill("gravel")
+
+
+# ===================================================================
+# table_4_9_tunnel_behavior  (Table 4-9)
+# Returns description string for tunnel behavior based on N_crit range
+# ===================================================================
+
+class TestTable49TunnelBehavior:
+
+    def test_low_range(self):
+        result = table_4_9_tunnel_behavior("1-2")
+        assert "Stable" in result or "stable" in result
+
+    def test_high_range(self):
+        result = table_4_9_tunnel_behavior(">7")
+        assert "Very severe" in result or "very severe" in result
+
+    def test_middle(self):
+        result = table_4_9_tunnel_behavior("4-5")
+        assert "face support" in result or "Face support" in result
+
+    def test_unknown_raises(self):
+        with pytest.raises(ValueError, match="Unknown N_crit_range"):
+            table_4_9_tunnel_behavior("0-1")
+
+
+# ===========================================================================
+# INTEGRATION: table_4_3 → trench_load_coefficient → rigid_pipe_trench_load
+# ===========================================================================
+
+class TestTable43Integration:
+    """Chain table_4_3_trench_fill → trench_load_coefficient → rigid_pipe_trench_load."""
+
+    def test_granular_fill_pipeline(self):
+        # Typical: 3m deep trench, 1m wide, granular fill, gamma=18 kN/m3
+        props = table_4_3_trench_fill("granular_no_cohesion")
+        C_d = trench_load_coefficient(3.0, 1.0, props["K"], props["mu_prime"])
+        # C_d = (1 - exp(-2*0.165*0.700*3.0/1.0)) / (2*0.165*0.700)
+        #     = (1 - exp(-0.693)) / 0.231 = (1 - 0.500) / 0.231 = 2.165
+        assert C_d > 0.0
+        assert C_d < 10.0  # physically reasonable
+        load = rigid_pipe_trench_load(C_d, 18.0, 1.0)
+        # Wc = C_d * gamma * Bd^2 = 2.165 * 18 * 1 = 38.97 kN/m
+        assert load > 0.0
+        assert load == pytest.approx(C_d * 18.0 * 1.0, rel=1e-6)
+
+    def test_saturated_clay_fill(self):
+        # Saturated clay: K=0.110, mu'=0.260
+        props = table_4_3_trench_fill("saturated_clay")
+        C_d = trench_load_coefficient(5.0, 2.0, props["K"], props["mu_prime"])
+        # Higher trench, wider => C_d should be moderate
+        assert C_d > 0.0
+        # Verify C_d is less than H/Bd (free-field limit)
+        assert C_d < 5.0 / 2.0
+
+    def test_all_fill_types_produce_valid_Cd(self):
+        # All 5 fill types should give valid C_d for same geometry
+        for fill in ["granular_no_cohesion", "sand_gravel", "saturated_topsoil",
+                      "ordinary_clay", "saturated_clay"]:
+            props = table_4_3_trench_fill(fill)
+            C_d = trench_load_coefficient(4.0, 1.5, props["K"], props["mu_prime"])
+            assert 0.0 < C_d < 4.0 / 1.5, f"Failed for {fill}: C_d={C_d}"

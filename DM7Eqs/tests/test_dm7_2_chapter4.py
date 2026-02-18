@@ -1299,3 +1299,111 @@ class TestCrossFunctionConsistency:
         sigma_h = horizontal_earth_pressure_with_surcharge(gamma_eq, z, K, 0.0)
         expected = K * gamma * z
         assert sigma_h == pytest.approx(expected, rel=1e-4)
+
+
+# ===========================================================================
+# Figure 4-36: figure_4_36_moment_reduction
+# ===========================================================================
+
+class TestFigure436MomentReduction:
+
+    def test_dense_very_stiff(self):
+        # log_rho = -3.5, dense_sand => Md/Mmax = 1.00
+        result = figure_4_36_moment_reduction(-3.5, "dense_sand")
+        assert result == pytest.approx(1.00, rel=1e-2)
+
+    def test_dense_flexible(self):
+        # log_rho = 0.0, dense_sand => Md/Mmax = 0.30
+        result = figure_4_36_moment_reduction(0.0, "dense_sand")
+        assert result == pytest.approx(0.30, rel=1e-2)
+
+    def test_medium_very_stiff(self):
+        # log_rho = -3.5, medium_sand => Md/Mmax = 1.00
+        result = figure_4_36_moment_reduction(-3.5, "medium_sand")
+        assert result == pytest.approx(1.00, rel=1e-2)
+
+    def test_medium_flexible(self):
+        # log_rho = 0.0, medium_sand => Md/Mmax = 0.38
+        result = figure_4_36_moment_reduction(0.0, "medium_sand")
+        assert result == pytest.approx(0.38, rel=1e-2)
+
+    def test_loose_flexible(self):
+        # log_rho = 0.0, loose_sand => Md/Mmax = 0.52
+        result = figure_4_36_moment_reduction(0.0, "loose_sand")
+        assert result == pytest.approx(0.52, rel=1e-2)
+
+    def test_interpolated(self):
+        # log_rho = -1.5, dense_sand => interpolate between 1.00 and 0.30
+        # Expected value around 0.62
+        result = figure_4_36_moment_reduction(-1.5, "dense_sand")
+        assert result == pytest.approx(0.62, rel=1e-2)
+
+    def test_clamped_low(self):
+        # log_rho = -5.0 (below min -3.5), any soil type => clamped to 1.00
+        result = figure_4_36_moment_reduction(-5.0, "medium_sand")
+        assert result == pytest.approx(1.00, rel=1e-2)
+
+    def test_clamped_high(self):
+        # log_rho = 1.0 (above max 0.0), dense_sand => clamped to 0.30
+        result = figure_4_36_moment_reduction(1.0, "dense_sand")
+        assert result == pytest.approx(0.30, rel=1e-2)
+
+    def test_unknown_soil_raises(self):
+        with pytest.raises(ValueError, match="Unknown soil_type"):
+            figure_4_36_moment_reduction(-1.0, "clay")
+
+
+# ===========================================================================
+# INTEGRATION: figure_4_36 + relative_flexibility_anchored_bulkhead
+# ===========================================================================
+
+class TestFigure436Integration:
+    """Chain relative_flexibility_anchored_bulkhead → figure_4_36."""
+
+    def test_steel_sheet_pile_dense_sand(self):
+        # Typical: H=15ft, D=10ft, E=29e6 psi, I=38.6 in^4/ft
+        rho = relative_flexibility_anchored_bulkhead(15.0, 10.0, 29e6, 38.6)
+        log_rho = math.log10(rho)
+        Md_ratio = figure_4_36_moment_reduction(log_rho, "dense_sand")
+        # Md/Mmax should be between 0 and 1
+        assert 0.0 < Md_ratio <= 1.0
+
+    def test_flexible_wall_more_reduction(self):
+        # More flexible wall (lower EI) → higher rho → more moment reduction
+        rho_stiff = relative_flexibility_anchored_bulkhead(10.0, 8.0, 29e6, 100.0)
+        rho_flex = relative_flexibility_anchored_bulkhead(10.0, 8.0, 29e6, 10.0)
+        assert rho_flex > rho_stiff
+        ratio_stiff = figure_4_36_moment_reduction(math.log10(rho_stiff), "medium_sand")
+        ratio_flex = figure_4_36_moment_reduction(math.log10(rho_flex), "medium_sand")
+        # More flexible → lower ratio (more reduction)
+        assert ratio_flex <= ratio_stiff
+
+    def test_dense_more_reduction_than_loose(self):
+        # Same rho: dense sand allows more reduction than loose
+        log_rho = -1.5
+        dense = figure_4_36_moment_reduction(log_rho, "dense_sand")
+        loose = figure_4_36_moment_reduction(log_rho, "loose_sand")
+        assert dense <= loose
+
+
+# ===========================================================================
+# Plot function smoke tests
+# ===========================================================================
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as _plt
+
+
+class TestPlotFigure436:
+    """Smoke tests for plot_figure_4_36 (Rowe moment reduction curves)."""
+
+    def test_no_query(self):
+        ax = plot_figure_4_36(show=False)
+        assert isinstance(ax, matplotlib.axes.Axes)
+        _plt.close("all")
+
+    def test_query_point(self):
+        ax = plot_figure_4_36(log_rho=-2.0, soil_type="medium_sand", show=False)
+        assert isinstance(ax, matplotlib.axes.Axes)
+        _plt.close("all")

@@ -104,3 +104,49 @@ class AxialPileResult:
         if self.Q_uplift is not None:
             d["Q_uplift_kN"] = round(self.Q_uplift, 1)
         return d
+
+    def plot_load_transfer(self, ax=None, show=True, **kwargs):
+        """Plot cumulative load transfer vs depth.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to plot on. If None, creates a new figure.
+        show : bool
+            Whether to call plt.show(). Default True.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        if not self.layer_breakdown:
+            raise ValueError("No layer breakdown data available.")
+        from geotech_common.plotting import get_pyplot, setup_engineering_plot
+        plt = get_pyplot()
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(6, 8))
+
+        depths = [0.0]
+        loads = [0.0]
+        cumulative = 0.0
+        for layer in self.layer_breakdown:
+            depths.append(layer['depth_top_m'])
+            loads.append(cumulative)
+            cumulative += layer['skin_friction_kN']
+            depths.append(layer['depth_bottom_m'])
+            loads.append(cumulative)
+        # Tip resistance
+        depths.append(self.pile_length)
+        loads.append(cumulative + self.Q_tip)
+
+        ax.plot(loads, depths, 'b-', linewidth=2, **kwargs)
+        ax.axhline(y=self.pile_length, color='brown', linestyle='--',
+                   linewidth=0.8, label='Pile Tip')
+        ax.invert_yaxis()
+        setup_engineering_plot(ax, "Axial Load Transfer",
+                              "Cumulative Capacity (kN)", "Depth (m)")
+        ax.legend()
+        if show:
+            plt.tight_layout()
+            plt.show()
+        return ax

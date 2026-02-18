@@ -1621,6 +1621,89 @@ class SoilProfile:
             "gwt_depth": self.groundwater.depth,
         }
 
+    # ── Adapter: groundhog LogPlot ────────────────────────────────────
+
+    def to_groundhog_profile(self):
+        """Convert to a groundhog SoilProfile for plotting with LogPlot.
+
+        Returns a groundhog ``SoilProfile`` object with columns for
+        'Depth from [m]', 'Depth to [m]', 'Soil type', 'Total unit weight [kN/m3]',
+        plus any available strength and index parameters.
+
+        Returns
+        -------
+        groundhog.general.soilprofile.SoilProfile
+            A groundhog SoilProfile ready for LogPlot visualization.
+
+        Raises
+        ------
+        ImportError
+            If groundhog is not installed.
+        """
+        try:
+            from groundhog.general.soilprofile import SoilProfile as GHProfile
+        except ImportError:
+            raise ImportError(
+                "groundhog is required for this adapter. "
+                "Install with: pip install groundhog"
+            )
+
+        rows = []
+        for layer in self.layers:
+            row = {
+                'Depth from [m]': layer.top_depth,
+                'Depth to [m]': layer.bottom_depth,
+                'Soil type': _soil_type_label(layer),
+                'Total unit weight [kN/m3]': layer.gamma,
+            }
+            if layer.cu is not None:
+                row['Undrained shear strength [kPa]'] = layer.cu
+            if layer.phi is not None:
+                row['Friction angle [deg]'] = layer.phi
+            if layer.N_spt is not None:
+                row['SPT N-value [-]'] = layer.N_spt
+            if layer.qc is not None:
+                row['qc [kPa]'] = layer.qc
+            if layer.Es is not None:
+                row['Elastic modulus [kPa]'] = layer.Es
+            if layer.Cc is not None:
+                row['Cc [-]'] = layer.Cc
+            rows.append(row)
+
+        return GHProfile(rows)
+
+    def to_logplot(self, n_panels: int = 1, **kwargs):
+        """Create a groundhog LogPlot from this profile.
+
+        Parameters
+        ----------
+        n_panels : int
+            Number of parameter panels to show (default 1).
+        **kwargs
+            Passed to ``LogPlot.__init__()``.
+
+        Returns
+        -------
+        groundhog.general.plotting.LogPlot
+            A LogPlot instance with the soil profile loaded.
+
+        Raises
+        ------
+        ImportError
+            If groundhog is not installed.
+        """
+        try:
+            from groundhog.general.plotting import LogPlot
+        except ImportError:
+            raise ImportError(
+                "groundhog is required for this adapter. "
+                "Install with: pip install groundhog"
+            )
+
+        gh_profile = self.to_groundhog_profile()
+        logplot = LogPlot(gh_profile, no_panels=n_panels, **kwargs)
+        return logplot
+
     # ── Adapter: Slope Stability ──────────────────────────────────────
 
     def to_slope_stability_input(
@@ -1904,6 +1987,23 @@ class SoilProfileBuilder:
 
 _COHESIVE_USCS = {"CH", "CL", "MH", "ML", "OL", "OH", "PT", "CL-ML"}
 _GRANULAR_USCS = {"GW", "GP", "GM", "GC", "SW", "SP", "SM", "SC"}
+
+
+def _soil_type_label(layer: SoilLayer) -> str:
+    """Map a SoilLayer to a short label for groundhog LogPlot display."""
+    if layer.is_rock:
+        return "Rock"
+    if layer.uscs is not None:
+        uscs = layer.uscs.upper().strip()
+        if uscs in _COHESIVE_USCS:
+            return "Clay"
+        if uscs in _GRANULAR_USCS:
+            return "Sand"
+    if layer.is_cohesive is True:
+        return "Clay"
+    if layer.is_cohesive is False:
+        return "Sand"
+    return "Mixed"
 
 
 def _infer_cohesive_from_uscs(uscs: str) -> Optional[bool]:

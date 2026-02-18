@@ -1807,3 +1807,146 @@ def relative_flexibility_anchored_bulkhead(
     if I <= 0.0:
         raise ValueError("I must be positive.")
     return (H + D) ** 4 / (E * I)
+
+
+# ===========================================================================
+# PRIVATE HELPER
+# ===========================================================================
+
+def _linterp(x: float, xp: list, fp: list) -> float:
+    """Pure-Python piecewise linear interpolation."""
+    if x <= xp[0]:
+        return fp[0]
+    if x >= xp[-1]:
+        return fp[-1]
+    for i in range(len(xp) - 1):
+        if xp[i] <= x <= xp[i + 1]:
+            t = (x - xp[i]) / (xp[i + 1] - xp[i])
+            return fp[i] + t * (fp[i + 1] - fp[i])
+    return fp[-1]
+
+
+# ===========================================================================
+# FIGURE 4-36: Rowe (1952) Moment Reduction for Anchored Bulkheads
+# ===========================================================================
+
+# Digitised from Figure 4-36.  x-axis = log10(rho), y-axis = Md/Mmax.
+# Three curves for different soil densities below dredge line.
+
+_FIG_4_36_LOG_RHO = [-3.5, -3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0]
+
+_FIG_4_36_DENSE_SAND = [1.00, 1.00, 0.95, 0.82, 0.62, 0.46, 0.35, 0.30]
+_FIG_4_36_MEDIUM_SAND = [1.00, 1.00, 0.97, 0.88, 0.72, 0.56, 0.45, 0.38]
+_FIG_4_36_LOOSE_SAND = [1.00, 1.00, 1.00, 0.95, 0.85, 0.72, 0.60, 0.52]
+
+_FIG_4_36_CURVES = {
+    "dense_sand": _FIG_4_36_DENSE_SAND,
+    "medium_sand": _FIG_4_36_MEDIUM_SAND,
+    "loose_sand": _FIG_4_36_LOOSE_SAND,
+}
+
+
+def figure_4_36_moment_reduction(log_rho: float, soil_type: str) -> float:
+    """Rowe (1952) moment reduction factor for anchored bulkheads
+    (Figure 4-36).
+
+    Returns the ratio of design moment to theoretical free-earth-support
+    moment (Md / Mmax) as a function of log10(rho), where rho is the
+    relative flexibility from ``relative_flexibility_anchored_bulkhead``
+    (Equation 4-31).
+
+    Moment reduction applies ONLY for walls penetrating into sands of
+    medium density or better.  Do NOT apply for fine-grained soils or
+    loose sands (use loose_sand conservatively if needed).
+
+    Parameters
+    ----------
+    log_rho : float
+        Logarithm (base 10) of the relative flexibility rho.
+        Typical range: -3.5 to 0.0.
+    soil_type : str
+        Soil below the dredge line: ``"dense_sand"``,
+        ``"medium_sand"``, or ``"loose_sand"``.
+
+    Returns
+    -------
+    float
+        Moment reduction ratio Md/Mmax (dimensionless, 0 to 1).
+
+    Raises
+    ------
+    ValueError
+        If *soil_type* is not recognised.
+
+    References
+    ----------
+    UFC 3-220-20, 16 Jan 2025, Chapter 4, Figure 4-36, p. 236.
+    Rowe, P.W. (1952).
+    """
+    key = soil_type.lower().strip()
+    if key not in _FIG_4_36_CURVES:
+        raise ValueError(
+            f"Unknown soil_type '{soil_type}'. "
+            f"Choose from: {list(_FIG_4_36_CURVES.keys())}"
+        )
+    return _linterp(log_rho, _FIG_4_36_LOG_RHO, _FIG_4_36_CURVES[key])
+
+
+def plot_figure_4_36(log_rho=None, soil_type=None, ax=None, show=True,
+                      **kwargs):
+    """Reproduce UFC Figure 4-36: Rowe Moment Reduction Charts.
+
+    Plots the three Rowe (1952) moment reduction curves for dense,
+    medium, and loose sand.
+
+    Parameters
+    ----------
+    log_rho : float, optional
+        log10(rho) query point.
+    soil_type : str, optional
+        Which curve to mark: "dense_sand", "medium_sand", "loose_sand".
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on.
+    show : bool, optional
+        If True, calls plt.show().
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
+    from geotech_common.plotting import get_pyplot, setup_engineering_plot
+    plt = get_pyplot()
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 6))
+
+    # Smooth interpolated curves
+    lr_smooth = [i * 0.05 - 4.0 for i in range(0, 101)]  # -4.0 to 1.0
+    colors = {'dense_sand': '#1f77b4', 'medium_sand': '#ff7f0e',
+              'loose_sand': '#2ca02c'}
+    labels = {'dense_sand': 'Dense Sand', 'medium_sand': 'Medium Sand',
+              'loose_sand': 'Loose Sand'}
+
+    for stype, curve_data in _FIG_4_36_CURVES.items():
+        vals = [figure_4_36_moment_reduction(lr, stype) for lr in lr_smooth]
+        ax.plot(lr_smooth, vals, '-', color=colors[stype], linewidth=1.5,
+                label=labels[stype])
+        ax.plot(_FIG_4_36_LOG_RHO, curve_data, 'o', color=colors[stype],
+                markersize=5)
+
+    # Query point
+    if log_rho is not None and soil_type is not None:
+        key = soil_type.lower().strip()
+        ratio_q = figure_4_36_moment_reduction(log_rho, key)
+        ax.plot(log_rho, ratio_q, 's', color='red', markersize=10, zorder=5,
+                label=f'log(ρ)={log_rho:.2f} → Md/Mmax={ratio_q:.3f}')
+        ax.axhline(ratio_q, color='red', linestyle=':', alpha=0.4)
+        ax.axvline(log_rho, color='red', linestyle=':', alpha=0.4)
+
+    ax.legend(fontsize=8)
+    setup_engineering_plot(
+        ax, 'Figure 4-36: Rowe Moment Reduction',
+        'log₁₀(ρ)', 'Md / Mmax')
+    if show:
+        plt.tight_layout()
+        plt.show()
+    return ax

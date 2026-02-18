@@ -995,3 +995,108 @@ def shaft_horizontal_pressure_clay(
     if z <= 0.0:
         raise ValueError("z must be positive.")
     return gamma_eff * z - s_u
+
+
+# ===========================================================================
+# TABLE 4-3: Trench Fill Properties (K and mu')
+# ===========================================================================
+
+_TABLE_4_3_TRENCH_FILL = {
+    "granular_no_cohesion": {"K": 0.165, "mu_prime": 0.700},
+    "sand_gravel": {"K": 0.150, "mu_prime": 0.500},
+    "saturated_topsoil": {"K": 0.150, "mu_prime": 0.400},
+    "ordinary_clay": {"K": 0.130, "mu_prime": 0.400},
+    "saturated_clay": {"K": 0.110, "mu_prime": 0.260},
+}
+
+
+def table_4_3_trench_fill(fill_type: str) -> dict:
+    """Lateral earth pressure coefficient and friction for trench fill
+    (Table 4-3).
+
+    Returns *K* (lateral earth pressure coefficient) and *mu_prime*
+    (coefficient of friction between fill and trench walls) for use
+    with Equation 4-7 (``trench_load_coefficient``).
+
+    Parameters
+    ----------
+    fill_type : str
+        One of ``"granular_no_cohesion"``, ``"sand_gravel"``,
+        ``"saturated_topsoil"``, ``"ordinary_clay"``,
+        ``"saturated_clay"``.
+
+    Returns
+    -------
+    dict
+        ``{"K": float, "mu_prime": float}``.
+
+    Raises
+    ------
+    ValueError
+        If *fill_type* is not recognised.
+
+    References
+    ----------
+    UFC 3-220-10, Soil Mechanics, 1 Feb 2022, Change 1, 11 Mar 2025,
+    Chapter 4, Table 4-3, p. 194.
+    """
+    key = fill_type.lower().strip()
+    if key not in _TABLE_4_3_TRENCH_FILL:
+        raise ValueError(
+            f"Unknown fill_type '{fill_type}'. "
+            f"Choose from: {list(_TABLE_4_3_TRENCH_FILL.keys())}"
+        )
+    return dict(_TABLE_4_3_TRENCH_FILL[key])
+
+
+# ===========================================================================
+# TABLE 4-9: Ground Behavior for Tunnels in Fine-Grained Soil
+# ===========================================================================
+
+_TABLE_4_9_TUNNEL_BEHAVIOR = {
+    "1-2": "Stable; negligible ground movement.",
+    "2-3": "Stable; small creep movements.",
+    "3-4": "Significant creep; may require face support.",
+    "4-5": "Creep may become excessive; face support required.",
+    "5-6": "Ground squeeze; substantial support needed.",
+    "6-7": "Severe squeeze; heavy support or compressed air.",
+    ">7": "Very severe squeeze; special measures required.",
+}
+
+
+def table_4_9_tunnel_behavior(N_crit_range: str) -> str:
+    """Ground behavior description from undrained stability factor
+    (Table 4-9).
+
+    Returns a qualitative description of expected tunnel ground behavior
+    based on the undrained stability factor range from
+    ``undrained_stability_factor`` (Equation 4-10).
+
+    Parameters
+    ----------
+    N_crit_range : str
+        Stability factor range, one of ``"1-2"``, ``"2-3"``, ``"3-4"``,
+        ``"4-5"``, ``"5-6"``, ``"6-7"``, ``">7"``.
+
+    Returns
+    -------
+    str
+        Description of expected ground behavior.
+
+    Raises
+    ------
+    ValueError
+        If *N_crit_range* is not recognised.
+
+    References
+    ----------
+    UFC 3-220-10, Soil Mechanics, 1 Feb 2022, Change 1, 11 Mar 2025,
+    Chapter 4, Table 4-9, p. 203.
+    """
+    key = N_crit_range.strip()
+    if key not in _TABLE_4_9_TUNNEL_BEHAVIOR:
+        raise ValueError(
+            f"Unknown N_crit_range '{N_crit_range}'. "
+            f"Choose from: {list(_TABLE_4_9_TUNNEL_BEHAVIOR.keys())}"
+        )
+    return _TABLE_4_9_TUNNEL_BEHAVIOR[key]

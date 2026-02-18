@@ -2034,3 +2034,97 @@ def test_hansen_k_raises_zero_B():
     from geotech.dm7_2.chapter5 import _hansen_k
     with pytest.raises(ValueError, match="B must be positive"):
         _hansen_k(4.0, 0.0)
+
+
+# ===========================================================================
+# INTEGRATION: figure_5_18 + modified_Nc_rectangular_layered_clay
+# ===========================================================================
+
+class TestFigure518Integration:
+    """Chain figure_5_18a/b → modified_Nc_rectangular_layered_clay."""
+
+    def test_strip_to_rect_interpolation(self):
+        # Get Nc for strip and circular, then compute rectangular
+        Nc_s = figure_5_18a_Ncm_strip(0.5, 0.5)
+        Nc_c = figure_5_18b_Ncm_circular(0.5, 0.5)
+        Nc_r = modified_Nc_rectangular_layered_clay(Nc_s, Nc_c, 2.0, 4.0)
+        # B/L = 0.5, so Nc_r = Nc_c + (1-0.5)*(Nc_s - Nc_c) = average
+        assert Nc_r == pytest.approx(Nc_c + 0.5 * (Nc_s - Nc_c), rel=1e-4)
+
+    def test_square_equals_circular(self):
+        # For B/L = 1 (square), Nc_r should equal Nc_c
+        Nc_s = figure_5_18a_Ncm_strip(2.0, 1.0)
+        Nc_c = figure_5_18b_Ncm_circular(2.0, 1.0)
+        Nc_r = modified_Nc_rectangular_layered_clay(Nc_s, Nc_c, 3.0, 3.0)
+        assert Nc_r == pytest.approx(Nc_c, rel=1e-4)
+
+    def test_strip_limit(self):
+        # For B/L → 0 (very long strip), Nc_r → Nc_s
+        Nc_s = figure_5_18a_Ncm_strip(1.5, 0.75)
+        Nc_c = figure_5_18b_Ncm_circular(1.5, 0.75)
+        Nc_r = modified_Nc_rectangular_layered_clay(Nc_s, Nc_c, 1.0, 100.0)
+        assert Nc_r == pytest.approx(Nc_s, rel=0.02)
+
+    def test_uniform_soil_gives_standard_Nc(self):
+        # cu2/cu1 = 1.0 → uniform clay, Nc,m ≈ 5.14 (strip) or 6.05 (circular)
+        Nc_strip = figure_5_18a_Ncm_strip(1.0, 0.5)
+        Nc_circ = figure_5_18b_Ncm_circular(1.0, 0.5)
+        assert Nc_strip == pytest.approx(5.14, rel=0.02)
+        assert Nc_circ == pytest.approx(6.05, rel=0.02)
+
+    def test_weaker_lower_layer_reduces_Nc(self):
+        # cu2/cu1 < 1 → weaker lower layer → Nc < standard
+        Nc_weak = figure_5_18a_Ncm_strip(0.4, 0.5)
+        Nc_uniform = figure_5_18a_Ncm_strip(1.0, 0.5)
+        assert Nc_weak < Nc_uniform
+
+    def test_stronger_lower_layer_increases_Nc(self):
+        # cu2/cu1 > 1 → stronger lower layer → Nc > standard
+        Nc_strong = figure_5_18a_Ncm_strip(3.0, 0.5)
+        Nc_uniform = figure_5_18a_Ncm_strip(1.0, 0.5)
+        assert Nc_strong > Nc_uniform
+
+    def test_deep_layer_converges_to_uniform(self):
+        # As H/B increases (upper layer very thick), Nc,m → standard Nc
+        Nc_shallow = figure_5_18a_Ncm_strip(0.4, 0.25)
+        Nc_deep = figure_5_18a_Ncm_strip(0.4, 2.0)
+        Nc_uniform = 5.14
+        # Deep: should be closer to 5.14 than shallow
+        assert abs(Nc_deep - Nc_uniform) < abs(Nc_shallow - Nc_uniform)
+
+
+# ===========================================================================
+# Plot function smoke tests
+# ===========================================================================
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as _plt
+
+
+class TestPlotFigure518a:
+    """Smoke tests for plot_figure_5_18a (strip footing Nc,m curves)."""
+
+    def test_no_query(self):
+        ax = plot_figure_5_18a(show=False)
+        assert isinstance(ax, matplotlib.axes.Axes)
+        _plt.close("all")
+
+    def test_query_point(self):
+        ax = plot_figure_5_18a(cu2_over_cu1=0.5, H_over_B=0.5, show=False)
+        assert isinstance(ax, matplotlib.axes.Axes)
+        _plt.close("all")
+
+
+class TestPlotFigure518b:
+    """Smoke tests for plot_figure_5_18b (circular footing Nc,m curves)."""
+
+    def test_no_query(self):
+        ax = plot_figure_5_18b(show=False)
+        assert isinstance(ax, matplotlib.axes.Axes)
+        _plt.close("all")
+
+    def test_query_point(self):
+        ax = plot_figure_5_18b(cu2_over_cu1=2.0, H_over_B=1.0, show=False)
+        assert isinstance(ax, matplotlib.axes.Axes)
+        _plt.close("all")

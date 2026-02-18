@@ -2508,3 +2508,361 @@ def drag_force_check(
     """
     demand = 1.25 * Q_d + 1.10 * (Q_np - Q_d)
     return demand <= P_r
+
+
+# ===========================================================================
+# PRIVATE HELPER
+# ===========================================================================
+
+def _linterp(x: float, xp: list, fp: list) -> float:
+    """Pure-Python piecewise linear interpolation."""
+    if x <= xp[0]:
+        return fp[0]
+    if x >= xp[-1]:
+        return fp[-1]
+    for i in range(len(xp) - 1):
+        if xp[i] <= x <= xp[i + 1]:
+            t = (x - xp[i]) / (xp[i + 1] - xp[i])
+            return fp[i] + t * (fp[i + 1] - fp[i])
+    return fp[-1]
+
+
+# ===========================================================================
+# TABLE 6-18: Vesic Strain Factor F_nu
+# ===========================================================================
+
+_TABLE_6_18_NU = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+_TABLE_6_18_FNU = [1.00, 0.95, 0.90, 0.82, 0.69, 0.50]
+
+
+def table_6_18_Fnu(poisson_ratio: float) -> float:
+    """Vesic strain factor F_nu from Poisson's ratio (Table 6-18).
+
+    Returns the strain factor used in ``volumetric_strain``
+    (Equation 6-26) to estimate volumetric strain near the pile base.
+
+    Parameters
+    ----------
+    poisson_ratio : float
+        Poisson's ratio of the soil (0 to 0.5).
+
+    Returns
+    -------
+    float
+        Strain factor F_nu (dimensionless).
+
+    Raises
+    ------
+    ValueError
+        If *poisson_ratio* is outside [0, 0.5].
+
+    References
+    ----------
+    UFC 3-220-20, 16 Jan 2025, Chapter 6, Table 6-18, p. 461.
+    """
+    if poisson_ratio < 0.0 or poisson_ratio > 0.5:
+        raise ValueError("poisson_ratio must be in [0, 0.5].")
+    return _linterp(poisson_ratio, _TABLE_6_18_NU, _TABLE_6_18_FNU)
+
+
+# ===========================================================================
+# TABLES 6-21 / 6-22 / 6-23: LCPC Method Factors
+# ===========================================================================
+
+_TABLE_6_21_KS = {
+    ("soft_clay", "driven_concrete"): 50,
+    ("soft_clay", "driven_steel_closed"): 50,
+    ("soft_clay", "driven_steel_open"): 50,
+    ("soft_clay", "bored"): 75,
+    ("stiff_clay", "driven_concrete"): 40,
+    ("stiff_clay", "driven_steel_closed"): 40,
+    ("stiff_clay", "driven_steel_open"): 80,
+    ("stiff_clay", "bored"): 60,
+    ("loose_sand", "driven_concrete"): 60,
+    ("loose_sand", "driven_steel_closed"): 60,
+    ("loose_sand", "driven_steel_open"): 120,
+    ("loose_sand", "bored"): 100,
+    ("medium_sand", "driven_concrete"): 100,
+    ("medium_sand", "driven_steel_closed"): 100,
+    ("medium_sand", "driven_steel_open"): 200,
+    ("medium_sand", "bored"): 150,
+    ("dense_sand", "driven_concrete"): 150,
+    ("dense_sand", "driven_steel_closed"): 150,
+    ("dense_sand", "driven_steel_open"): 200,
+    ("dense_sand", "bored"): 200,
+    ("chalk", "driven_concrete"): 100,
+    ("chalk", "driven_steel_closed"): 100,
+    ("chalk", "driven_steel_open"): 120,
+    ("chalk", "bored"): 60,
+    ("marl_limestone", "driven_concrete"): 60,
+    ("marl_limestone", "driven_steel_closed"): 60,
+    ("marl_limestone", "driven_steel_open"): 80,
+    ("marl_limestone", "bored"): 60,
+}
+
+
+def table_6_21_ks(soil_type: str, pile_type: str) -> float:
+    """LCPC side resistance factor k_s (Table 6-21).
+
+    Returns the side resistance factor for use with
+    ``lcpc_unit_shaft_resistance`` (Equation 6-32).
+
+    Parameters
+    ----------
+    soil_type : str
+        One of ``"soft_clay"``, ``"stiff_clay"``, ``"loose_sand"``,
+        ``"medium_sand"``, ``"dense_sand"``, ``"chalk"``,
+        ``"marl_limestone"``.
+    pile_type : str
+        One of ``"driven_concrete"``, ``"driven_steel_closed"``,
+        ``"driven_steel_open"``, ``"bored"``.
+
+    Returns
+    -------
+    float
+        Side resistance factor k_s (dimensionless).
+
+    Raises
+    ------
+    ValueError
+        If the combination is not recognised.
+
+    References
+    ----------
+    UFC 3-220-20, 16 Jan 2025, Chapter 6, Table 6-21, p. 464.
+    """
+    key = (soil_type.lower().strip(), pile_type.lower().strip())
+    if key not in _TABLE_6_21_KS:
+        raise ValueError(
+            f"Unknown combination soil_type='{soil_type}', "
+            f"pile_type='{pile_type}'."
+        )
+    return float(_TABLE_6_21_KS[key])
+
+
+_TABLE_6_22_FP = {
+    ("soft_clay", "driven_concrete"): 15.0,
+    ("soft_clay", "driven_steel_closed"): 15.0,
+    ("soft_clay", "driven_steel_open"): 15.0,
+    ("soft_clay", "bored"): 15.0,
+    ("stiff_clay", "driven_concrete"): 40.0,
+    ("stiff_clay", "driven_steel_closed"): 40.0,
+    ("stiff_clay", "driven_steel_open"): 40.0,
+    ("stiff_clay", "bored"): 40.0,
+    ("loose_sand", "driven_concrete"): 35.0,
+    ("loose_sand", "driven_steel_closed"): 35.0,
+    ("loose_sand", "driven_steel_open"): 35.0,
+    ("loose_sand", "bored"): 35.0,
+    ("medium_sand", "driven_concrete"): 80.0,
+    ("medium_sand", "driven_steel_closed"): 80.0,
+    ("medium_sand", "driven_steel_open"): 80.0,
+    ("medium_sand", "bored"): 80.0,
+    ("dense_sand", "driven_concrete"): 120.0,
+    ("dense_sand", "driven_steel_closed"): 120.0,
+    ("dense_sand", "driven_steel_open"): 120.0,
+    ("dense_sand", "bored"): 120.0,
+    ("chalk", "driven_concrete"): 40.0,
+    ("chalk", "driven_steel_closed"): 40.0,
+    ("chalk", "driven_steel_open"): 40.0,
+    ("chalk", "bored"): 40.0,
+    ("marl_limestone", "driven_concrete"): 40.0,
+    ("marl_limestone", "driven_steel_closed"): 40.0,
+    ("marl_limestone", "driven_steel_open"): 40.0,
+    ("marl_limestone", "bored"): 40.0,
+}
+
+
+def table_6_22_fp(soil_type: str, pile_type: str) -> float:
+    """LCPC maximum unit side resistance f_p (Table 6-22).
+
+    Returns the limiting unit side resistance (kPa) for use with
+    ``lcpc_unit_shaft_resistance`` (Equation 6-32).
+
+    Parameters
+    ----------
+    soil_type : str
+        Same keys as ``table_6_21_ks``.
+    pile_type : str
+        Same keys as ``table_6_21_ks``.
+
+    Returns
+    -------
+    float
+        Maximum unit side resistance f_p (kPa).
+
+    Raises
+    ------
+    ValueError
+        If the combination is not recognised.
+
+    References
+    ----------
+    UFC 3-220-20, 16 Jan 2025, Chapter 6, Table 6-22, p. 464.
+    """
+    key = (soil_type.lower().strip(), pile_type.lower().strip())
+    if key not in _TABLE_6_22_FP:
+        raise ValueError(
+            f"Unknown combination soil_type='{soil_type}', "
+            f"pile_type='{pile_type}'."
+        )
+    return _TABLE_6_22_FP[key]
+
+
+_TABLE_6_23_KT = {
+    ("soft_clay", "driven"): 10,
+    ("soft_clay", "bored"): 10,
+    ("stiff_clay", "driven"): 15,
+    ("stiff_clay", "bored"): 15,
+    ("loose_sand", "driven"): 40,
+    ("loose_sand", "bored"): 20,
+    ("medium_sand", "driven"): 80,
+    ("medium_sand", "bored"): 40,
+    ("dense_sand", "driven"): 120,
+    ("dense_sand", "bored"): 80,
+    ("chalk", "driven"): 20,
+    ("chalk", "bored"): 20,
+    ("marl_limestone", "driven"): 40,
+    ("marl_limestone", "bored"): 40,
+}
+
+
+def table_6_23_kt(soil_type: str, pile_type: str) -> float:
+    """LCPC base bearing factor k_t (Table 6-23).
+
+    Returns the base bearing factor for use with
+    ``lcpc_unit_base_resistance`` (Equation 6-33).
+
+    Parameters
+    ----------
+    soil_type : str
+        Same keys as ``table_6_21_ks``.
+    pile_type : str
+        ``"driven"`` or ``"bored"``.
+
+    Returns
+    -------
+    float
+        Base bearing factor k_t (dimensionless).
+
+    Raises
+    ------
+    ValueError
+        If the combination is not recognised.
+
+    References
+    ----------
+    UFC 3-220-20, 16 Jan 2025, Chapter 6, Table 6-23, p. 464.
+    """
+    key = (soil_type.lower().strip(), pile_type.lower().strip())
+    if key not in _TABLE_6_23_KT:
+        raise ValueError(
+            f"Unknown combination soil_type='{soil_type}', "
+            f"pile_type='{pile_type}'."
+        )
+    return float(_TABLE_6_23_KT[key])
+
+
+# ===========================================================================
+# TABLE 6-36: CLM Deflection Constants (a, n)
+# ===========================================================================
+
+_TABLE_6_36_CLM = {
+    ("clay", "free", "deflection_from_load"): {"a": 0.0075, "n": 1.85},
+    ("clay", "fixed", "deflection_from_load"): {"a": 0.0052, "n": 1.82},
+    ("clay", "free", "deflection_from_moment"): {"a": 0.031, "n": 1.88},
+    ("clay", "fixed", "deflection_from_moment"): {"a": 0.0090, "n": 1.46},
+    ("sand", "free", "deflection_from_load"): {"a": 0.0038, "n": 2.10},
+    ("sand", "fixed", "deflection_from_load"): {"a": 0.0021, "n": 2.15},
+    ("sand", "free", "deflection_from_moment"): {"a": 0.015, "n": 2.10},
+    ("sand", "fixed", "deflection_from_moment"): {"a": 0.0042, "n": 1.69},
+}
+
+
+def table_6_36_clm(
+    soil_type: str, head_condition: str, quantity: str
+) -> dict:
+    """CLM deflection constants a and n (Table 6-36).
+
+    Returns the empirical constants for Equations 6-66 through 6-69.
+
+    Parameters
+    ----------
+    soil_type : str
+        ``"clay"`` or ``"sand"``.
+    head_condition : str
+        ``"free"`` or ``"fixed"``.
+    quantity : str
+        ``"deflection_from_load"`` or ``"deflection_from_moment"``.
+
+    Returns
+    -------
+    dict
+        ``{"a": float, "n": float}``.
+
+    Raises
+    ------
+    ValueError
+        If the combination is not recognised.
+
+    References
+    ----------
+    UFC 3-220-20, 16 Jan 2025, Chapter 6, Table 6-36, p. 500.
+    """
+    key = (
+        soil_type.lower().strip(),
+        head_condition.lower().strip(),
+        quantity.lower().strip(),
+    )
+    if key not in _TABLE_6_36_CLM:
+        raise ValueError(
+            f"Unknown combination soil_type='{soil_type}', "
+            f"head_condition='{head_condition}', quantity='{quantity}'."
+        )
+    return dict(_TABLE_6_36_CLM[key])
+
+
+# ===========================================================================
+# TABLE 6-37: CLM Maximum Moment Constants (a, n)
+# ===========================================================================
+
+_TABLE_6_37_CLM = {
+    ("clay", "free"): {"a": 0.55, "n": 0.72},
+    ("clay", "fixed"): {"a": 0.47, "n": 0.71},
+    ("sand", "free"): {"a": 0.57, "n": 0.82},
+    ("sand", "fixed"): {"a": 0.40, "n": 0.82},
+}
+
+
+def table_6_37_clm(soil_type: str, head_condition: str) -> dict:
+    """CLM maximum moment constants a and n (Table 6-37).
+
+    Returns the empirical constants for Equation 6-70.
+
+    Parameters
+    ----------
+    soil_type : str
+        ``"clay"`` or ``"sand"``.
+    head_condition : str
+        ``"free"`` or ``"fixed"``.
+
+    Returns
+    -------
+    dict
+        ``{"a": float, "n": float}``.
+
+    Raises
+    ------
+    ValueError
+        If the combination is not recognised.
+
+    References
+    ----------
+    UFC 3-220-20, 16 Jan 2025, Chapter 6, Table 6-37, p. 501.
+    """
+    key = (soil_type.lower().strip(), head_condition.lower().strip())
+    if key not in _TABLE_6_37_CLM:
+        raise ValueError(
+            f"Unknown combination soil_type='{soil_type}', "
+            f"head_condition='{head_condition}'."
+        )
+    return dict(_TABLE_6_37_CLM[key])

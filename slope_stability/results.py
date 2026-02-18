@@ -219,6 +219,36 @@ class SearchResult:
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
+    def plot_fos_contour(self, ax=None, show=True, **kwargs):
+        """Plot FOS at each trial circle center as a scatter/contour.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        if not self.grid_fos:
+            raise ValueError("No grid FOS data available for plotting.")
+        from geotech_common.plotting import get_pyplot, setup_engineering_plot
+        plt = get_pyplot()
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8, 6))
+        xc_vals = [g['xc'] for g in self.grid_fos]
+        yc_vals = [g['yc'] for g in self.grid_fos]
+        fos_vals = [g['FOS'] for g in self.grid_fos]
+        sc = ax.scatter(xc_vals, yc_vals, c=fos_vals, cmap='RdYlGn',
+                        edgecolors='black', linewidth=0.5, s=60, **kwargs)
+        plt.colorbar(sc, ax=ax, label='Factor of Safety')
+        if self.critical:
+            ax.plot(self.critical.xc, self.critical.yc, 'r*', markersize=15,
+                    markeredgecolor='black', label=f'Critical (FOS={self.critical.FOS:.3f})')
+            ax.legend()
+        setup_engineering_plot(ax, "Critical Surface Search",
+                              "Circle Center X (m)", "Circle Center Y (m)")
+        if show:
+            plt.tight_layout()
+            plt.show()
+        return ax
+
     def to_dict(self) -> Dict[str, Any]:
         d = {"n_surfaces_evaluated": self.n_surfaces_evaluated}
         if self.critical:

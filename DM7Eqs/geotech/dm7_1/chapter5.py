@@ -11,7 +11,7 @@ Reference:
 """
 
 import math
-from typing import List
+from typing import List, Tuple
 
 
 # ---------------------------------------------------------------------------
@@ -1496,3 +1496,556 @@ def required_drain_diameter(ch: float, t: float, Tr: float) -> float:
     if t < 0.0:
         raise ValueError("t must be non-negative.")
     return math.sqrt(ch * t / Tr)
+
+
+# ===========================================================================
+# PRIVATE HELPER: Linear Interpolation
+# ===========================================================================
+
+def _linterp(x: float, xp: list, fp: list) -> float:
+    """Pure-Python piecewise linear interpolation (like numpy.interp).
+
+    Parameters
+    ----------
+    x : float
+        Query point.
+    xp : list of float
+        Breakpoints in ascending order.
+    fp : list of float
+        Function values at each breakpoint (same length as *xp*).
+
+    Returns
+    -------
+    float
+        Interpolated value, clamped at the endpoint values for
+        out-of-range queries.
+    """
+    if x <= xp[0]:
+        return fp[0]
+    if x >= xp[-1]:
+        return fp[-1]
+    for i in range(len(xp) - 1):
+        if xp[i] <= x <= xp[i + 1]:
+            t = (x - xp[i]) / (xp[i + 1] - xp[i])
+            return fp[i] + t * (fp[i + 1] - fp[i])
+    return fp[-1]  # pragma: no cover
+
+
+# ===========================================================================
+# FIGURE 5-16: Average Degree of Consolidation vs Time Factor
+# ===========================================================================
+
+def figure_5_16_U_from_Tv(Tv: float) -> float:
+    """Average degree of consolidation from the time factor (Figure 5-16).
+
+    Uses the Terzaghi (1943) closed-form solution for one-dimensional
+    consolidation with an initially uniform excess pore-pressure
+    distribution and double drainage.
+
+    For U < 60 %:
+
+    .. math::
+        T_v = \\frac{\\pi}{4}\\left(\\frac{U}{100}\\right)^2
+
+    For U >= 60 %:
+
+    .. math::
+        T_v = -0.9332\\,\\log_{10}(1 - U/100) - 0.0851
+
+    This function inverts those relationships to return U given Tv.
+
+    Parameters
+    ----------
+    Tv : float
+        Time factor (dimensionless, >= 0).
+
+    Returns
+    -------
+    float
+        Average degree of consolidation U (percent, 0 to ~100).
+
+    Raises
+    ------
+    ValueError
+        If *Tv* is negative.
+
+    References
+    ----------
+    UFC 3-220-10, Soil Mechanics, 1 Feb 2022, Change 1, 11 Mar 2025,
+    Chapter 5, Figure 5-16, p. 279.
+    Terzaghi, K. (1943). Theoretical Soil Mechanics.
+    """
+    if Tv < 0.0:
+        raise ValueError("Tv must be non-negative.")
+    # Transition point: U = 60 % → Tv_60 = pi/4 * 0.36 = 0.2827
+    Tv_60 = math.pi / 4.0 * 0.36
+    if Tv <= Tv_60:
+        # U/100 = sqrt(4*Tv/pi)
+        return 100.0 * math.sqrt(4.0 * Tv / math.pi)
+    else:
+        # Tv = -0.9332*log10(1 - U/100) - 0.0851
+        # log10(1 - U/100) = -(Tv + 0.0851) / 0.9332
+        val = 10.0 ** (-(Tv + 0.0851) / 0.9332)
+        U = 100.0 * (1.0 - val)
+        return min(U, 100.0)
+
+
+def figure_5_16_Tv_from_U(U: float) -> float:
+    """Time factor from average degree of consolidation (Figure 5-16).
+
+    Forward evaluation of the Terzaghi (1943) closed-form relationships.
+
+    Parameters
+    ----------
+    U : float
+        Average degree of consolidation (percent, 0 to < 100).
+
+    Returns
+    -------
+    float
+        Time factor Tv (dimensionless).
+
+    Raises
+    ------
+    ValueError
+        If *U* is not in the range [0, 100).
+
+    References
+    ----------
+    UFC 3-220-10, Soil Mechanics, 1 Feb 2022, Change 1, 11 Mar 2025,
+    Chapter 5, Figure 5-16, p. 279.
+    Terzaghi, K. (1943). Theoretical Soil Mechanics.
+    """
+    if U < 0.0 or U >= 100.0:
+        raise ValueError("U must be in the range [0, 100).")
+    if U < 60.0:
+        return math.pi / 4.0 * (U / 100.0) ** 2
+    else:
+        return -0.9332 * math.log10(1.0 - U / 100.0) - 0.0851
+
+
+# ===========================================================================
+# FIGURE 5-30/31: Convenience Wrapper for Radial Time Factor
+# ===========================================================================
+
+def figure_5_30_Tr(
+    Ur: float, n: float, Fs: float = 0.0, Fr: float = 0.0,
+    approximate: bool = True
+) -> float:
+    """Radial time factor Tr from Figures 5-30 / 5-31.
+
+    Convenience wrapper that computes the drain spacing factor Fn
+    (Equation 5-23), then evaluates the analytical expression for Tr
+    (Equation 5-22) in a single call.
+
+    Parameters
+    ----------
+    Ur : float
+        Desired degree of radial consolidation (decimal, 0 to < 1).
+    n : float
+        Ratio of effective drainage diameter (dc) to drain diameter (dw).
+    Fs : float, optional
+        Smear factor (default 0).
+    Fr : float, optional
+        Well resistance factor (default 0).
+    approximate : bool, optional
+        Whether to use the approximate Fn formula (default True).
+
+    Returns
+    -------
+    float
+        Radial time factor Tr (dimensionless).
+
+    References
+    ----------
+    UFC 3-220-10, Soil Mechanics, 1 Feb 2022, Change 1, 11 Mar 2025,
+    Chapter 5, Figures 5-30 / 5-31, pp. 303-304.
+    """
+    Fn = drain_spacing_factor(n, approximate=approximate)
+    return time_factor_radial(Ur, Fn, Fs, Fr)
+
+
+# ===========================================================================
+# TABLE 5-6: Secondary Compression Ratio Calpha/Cc
+# ===========================================================================
+
+_TABLE_5_6_CALPHA_CC = {
+    "inorganic_clays_silts": 0.04,
+    "organic_clays_silts": 0.05,
+    "peat": 0.06,
+    "granular": 0.02,
+}
+
+
+def table_5_6_Calpha_Cc(soil_type: str) -> float:
+    """Typical ratio of secondary compression index to compression index
+    (Table 5-6).
+
+    Parameters
+    ----------
+    soil_type : str
+        One of ``"inorganic_clays_silts"``, ``"organic_clays_silts"``,
+        ``"peat"``, or ``"granular"``.
+
+    Returns
+    -------
+    float
+        Typical Calpha / Cc ratio (dimensionless).
+
+    Raises
+    ------
+    ValueError
+        If *soil_type* is not recognised.
+
+    References
+    ----------
+    UFC 3-220-10, Soil Mechanics, 1 Feb 2022, Change 1, 11 Mar 2025,
+    Chapter 5, Table 5-6, p. 281.
+    Mesri & Godlewski (1977).
+    """
+    key = soil_type.lower().strip()
+    if key not in _TABLE_5_6_CALPHA_CC:
+        raise ValueError(
+            f"Unknown soil_type '{soil_type}'. "
+            f"Choose from: {list(_TABLE_5_6_CALPHA_CC.keys())}"
+        )
+    return _TABLE_5_6_CALPHA_CC[key]
+
+
+# ===========================================================================
+# FIGURE 5-6: Immediate Settlement Influence Factors (Janbu et al. 1956)
+# ===========================================================================
+
+# mu0: embedment correction factor vs D/B
+_FIG_5_6_DB = [0.0, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0]
+_FIG_5_6_MU0 = [1.00, 0.92, 0.87, 0.83, 0.78, 0.70, 0.62]
+
+
+def figure_5_6_mu0(D_over_B: float) -> float:
+    """Embedment influence factor mu0 from Figure 5-6.
+
+    Janbu, Bjerrum, and Kjaernsli (1956) correction factor that
+    accounts for the depth of foundation embedment.
+
+    Parameters
+    ----------
+    D_over_B : float
+        Ratio of foundation embedment depth to width (>= 0).
+
+    Returns
+    -------
+    float
+        Influence factor mu0 (dimensionless, <= 1.0).
+
+    Raises
+    ------
+    ValueError
+        If *D_over_B* is negative.
+
+    References
+    ----------
+    UFC 3-220-10, Soil Mechanics, 1 Feb 2022, Change 1, 11 Mar 2025,
+    Chapter 5, Figure 5-6, p. 264.
+    Janbu, Bjerrum & Kjaernsli (1956).
+    """
+    if D_over_B < 0.0:
+        raise ValueError("D_over_B must be non-negative.")
+    return _linterp(D_over_B, _FIG_5_6_DB, _FIG_5_6_MU0)
+
+
+# mu1: geometry + Poisson's ratio influence factor
+# Family of curves for different Poisson's ratios.  Each sub-list is
+# indexed by L/B for a fixed H/B.
+# Data digitised from Figure 5-6 (Janbu et al. 1956).
+
+_FIG_5_6_LB = [1.0, 2.0, 5.0, 10.0, 20.0]  # L/B breakpoints
+_FIG_5_6_HB = [0.5, 1.0, 2.0, 5.0, 10.0, 20.0]  # H/B breakpoints
+
+# mu1 values for nu = 0.5 (undrained) at each (H/B, L/B)
+_FIG_5_6_MU1_05 = [
+    [0.35, 0.39, 0.41, 0.42, 0.42],   # H/B = 0.5
+    [0.56, 0.65, 0.72, 0.73, 0.74],   # H/B = 1.0
+    [0.72, 0.88, 1.04, 1.10, 1.12],   # H/B = 2.0
+    [0.82, 1.04, 1.36, 1.52, 1.60],   # H/B = 5.0
+    [0.85, 1.10, 1.50, 1.75, 1.90],   # H/B = 10.0
+    [0.87, 1.12, 1.56, 1.85, 2.04],   # H/B = 20.0
+]
+
+# mu1 values for nu = 0.3 at each (H/B, L/B)
+_FIG_5_6_MU1_03 = [
+    [0.48, 0.54, 0.57, 0.58, 0.58],   # H/B = 0.5
+    [0.70, 0.82, 0.90, 0.92, 0.93],   # H/B = 1.0
+    [0.86, 1.06, 1.26, 1.34, 1.37],   # H/B = 2.0
+    [0.96, 1.24, 1.63, 1.83, 1.93],   # H/B = 5.0
+    [1.00, 1.30, 1.78, 2.08, 2.26],   # H/B = 10.0
+    [1.02, 1.34, 1.84, 2.20, 2.44],   # H/B = 20.0
+]
+
+# mu1 values for nu = 0.0 at each (H/B, L/B)
+_FIG_5_6_MU1_00 = [
+    [0.60, 0.68, 0.72, 0.73, 0.73],   # H/B = 0.5
+    [0.85, 1.00, 1.10, 1.13, 1.14],   # H/B = 1.0
+    [1.00, 1.24, 1.49, 1.59, 1.63],   # H/B = 2.0
+    [1.10, 1.42, 1.90, 2.14, 2.27],   # H/B = 5.0
+    [1.14, 1.50, 2.06, 2.42, 2.64],   # H/B = 10.0
+    [1.16, 1.54, 2.14, 2.56, 2.84],   # H/B = 20.0
+]
+
+_FIG_5_6_NU_KEYS = [0.0, 0.3, 0.5]
+_FIG_5_6_MU1_ALL = [_FIG_5_6_MU1_00, _FIG_5_6_MU1_03, _FIG_5_6_MU1_05]
+
+
+def figure_5_6_mu1(
+    H_over_B: float, L_over_B: float, nu: float = 0.3
+) -> float:
+    """Geometry/Poisson's ratio influence factor mu1 from Figure 5-6.
+
+    Janbu, Bjerrum, and Kjaernsli (1956) settlement influence factor
+    that accounts for foundation geometry (H/B, L/B) and soil
+    Poisson's ratio.
+
+    Parameters
+    ----------
+    H_over_B : float
+        Ratio of compressible layer thickness to foundation width (> 0).
+    L_over_B : float
+        Ratio of foundation length to width (>= 1.0).
+    nu : float, optional
+        Poisson's ratio (0.0 to 0.5).  Default is 0.3.
+
+    Returns
+    -------
+    float
+        Influence factor mu1 (dimensionless).
+
+    Raises
+    ------
+    ValueError
+        If *H_over_B* or *L_over_B* is not positive, or *nu* is
+        outside [0, 0.5].
+
+    References
+    ----------
+    UFC 3-220-10, Soil Mechanics, 1 Feb 2022, Change 1, 11 Mar 2025,
+    Chapter 5, Figure 5-6, p. 264.
+    Janbu, Bjerrum & Kjaernsli (1956).
+    """
+    if H_over_B <= 0.0:
+        raise ValueError("H_over_B must be positive.")
+    if L_over_B < 1.0:
+        raise ValueError("L_over_B must be >= 1.0.")
+    if nu < 0.0 or nu > 0.5:
+        raise ValueError("nu must be in [0, 0.5].")
+
+    def _interp_grid(grid: list) -> float:
+        """Bilinear interpolation on H/B and L/B."""
+        # Interpolate each H/B row at the query L/B
+        row_vals = [_linterp(L_over_B, _FIG_5_6_LB, row) for row in grid]
+        # Then interpolate across H/B
+        return _linterp(H_over_B, _FIG_5_6_HB, row_vals)
+
+    # Interpolate between nu tables
+    if nu <= 0.0:
+        return _interp_grid(_FIG_5_6_MU1_00)
+    if nu >= 0.5:
+        return _interp_grid(_FIG_5_6_MU1_05)
+
+    # Linearly interpolate between the two bracketing nu grids
+    nu_keys = _FIG_5_6_NU_KEYS
+    for i in range(len(nu_keys) - 1):
+        if nu_keys[i] <= nu <= nu_keys[i + 1]:
+            v0 = _interp_grid(_FIG_5_6_MU1_ALL[i])
+            v1 = _interp_grid(_FIG_5_6_MU1_ALL[i + 1])
+            t = (nu - nu_keys[i]) / (nu_keys[i + 1] - nu_keys[i])
+            return v0 + t * (v1 - v0)
+    return _interp_grid(_FIG_5_6_MU1_03)  # pragma: no cover
+
+
+# ===========================================================================
+# PLOT FUNCTIONS: Reproduce UFC Figures from Digitised Data
+# ===========================================================================
+
+def plot_figure_5_16(Tv=None, U=None, ax=None, show=True, **kwargs):
+    """Reproduce UFC Figure 5-16: Average Degree of Consolidation vs Tv.
+
+    Plots the Terzaghi (1943) consolidation curve from analytical
+    equations.  Optionally highlights a query point.
+
+    Parameters
+    ----------
+    Tv : float, optional
+        Time factor query point.  Computes and marks the corresponding U.
+    U : float, optional
+        Degree of consolidation (%) query point.  Computes and marks
+        the corresponding Tv.  Ignored if *Tv* is also provided.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on.  Creates a new figure if None.
+    show : bool, optional
+        If True, calls plt.show().  Default True.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
+    from geotech_common.plotting import get_pyplot, setup_engineering_plot
+    plt = get_pyplot()
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 6))
+
+    # Generate smooth analytical curve
+    u_vals = [i * 0.5 for i in range(0, 199)]  # 0 to 99.0 %
+    tv_vals = [figure_5_16_Tv_from_U(u) for u in u_vals]
+    ax.plot(tv_vals, u_vals, 'b-', linewidth=1.5, label='Terzaghi (1943)')
+
+    # Mark known reference points
+    ref_U = [10, 20, 30, 40, 50, 60, 70, 80, 90]
+    ref_Tv = [figure_5_16_Tv_from_U(u) for u in ref_U]
+    ax.plot(ref_Tv, ref_U, 'ko', markersize=4, label='Reference points')
+
+    # Query point
+    if Tv is not None:
+        u_q = figure_5_16_U_from_Tv(Tv)
+        ax.plot(Tv, u_q, 's', color='red', markersize=10, zorder=5,
+                label=f'Tv={Tv:.3f} → U={u_q:.1f}%')
+        ax.axhline(u_q, color='red', linestyle=':', alpha=0.4)
+        ax.axvline(Tv, color='red', linestyle=':', alpha=0.4)
+    elif U is not None:
+        tv_q = figure_5_16_Tv_from_U(U)
+        ax.plot(tv_q, U, 's', color='red', markersize=10, zorder=5,
+                label=f'U={U:.1f}% → Tv={tv_q:.3f}')
+        ax.axhline(U, color='red', linestyle=':', alpha=0.4)
+        ax.axvline(tv_q, color='red', linestyle=':', alpha=0.4)
+
+    ax.legend(fontsize=8)
+    setup_engineering_plot(
+        ax, 'Figure 5-16: Average Degree of Consolidation',
+        'Time Factor, Tv', 'Average Degree of Consolidation, U (%)')
+    if show:
+        plt.tight_layout()
+        plt.show()
+    return ax
+
+
+def plot_figure_5_6_mu0(D_over_B=None, ax=None, show=True, **kwargs):
+    """Reproduce UFC Figure 5-6 (mu0): Embedment Influence Factor.
+
+    Plots the Janbu et al. (1956) embedment correction factor mu0
+    versus D/B from the digitised data points.
+
+    Parameters
+    ----------
+    D_over_B : float, optional
+        Query point.  If provided, highlights the interpolated mu0.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on.
+    show : bool, optional
+        If True, calls plt.show().
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
+    from geotech_common.plotting import get_pyplot, setup_engineering_plot
+    plt = get_pyplot()
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 5))
+
+    # Smooth interpolated curve
+    db_smooth = [i * 0.2 for i in range(0, 101)]  # 0 to 20
+    mu0_smooth = [figure_5_6_mu0(db) for db in db_smooth]
+    ax.plot(db_smooth, mu0_smooth, 'b-', linewidth=1.5,
+            label='Janbu et al. (1956)')
+
+    # Digitised data points
+    ax.plot(_FIG_5_6_DB, _FIG_5_6_MU0, 'ko', markersize=6,
+            label='Digitised points')
+
+    # Query point
+    if D_over_B is not None:
+        mu0_q = figure_5_6_mu0(D_over_B)
+        ax.plot(D_over_B, mu0_q, 's', color='red', markersize=10, zorder=5,
+                label=f'D/B={D_over_B:.2f} → μ₀={mu0_q:.3f}')
+        ax.axhline(mu0_q, color='red', linestyle=':', alpha=0.4)
+        ax.axvline(D_over_B, color='red', linestyle=':', alpha=0.4)
+
+    ax.legend(fontsize=8)
+    setup_engineering_plot(
+        ax, 'Figure 5-6: Embedment Influence Factor, μ₀',
+        'D / B', 'μ₀')
+    if show:
+        plt.tight_layout()
+        plt.show()
+    return ax
+
+
+def plot_figure_5_6_mu1(H_over_B=None, L_over_B=None, nu=0.3,
+                         ax=None, show=True, **kwargs):
+    """Reproduce UFC Figure 5-6 (mu1): Geometry Influence Factor.
+
+    Plots mu1 vs H/B for each L/B value at the specified Poisson's
+    ratio.  Shows one family of curves.
+
+    Parameters
+    ----------
+    H_over_B : float, optional
+        Query H/B.  If provided together with *L_over_B*, highlights
+        the interpolated mu1 on the plot.
+    L_over_B : float, optional
+        Query L/B.  Required if *H_over_B* is given.
+    nu : float, optional
+        Poisson's ratio to plot (0.0, 0.3, or 0.5).  Default 0.3.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on.
+    show : bool, optional
+        If True, calls plt.show().
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
+    from geotech_common.plotting import get_pyplot, setup_engineering_plot
+    plt = get_pyplot()
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 6))
+
+    # Select the grid for the requested nu
+    if nu <= 0.15:
+        grid = _FIG_5_6_MU1_00
+        nu_label = '0.0'
+    elif nu >= 0.4:
+        grid = _FIG_5_6_MU1_05
+        nu_label = '0.5'
+    else:
+        grid = _FIG_5_6_MU1_03
+        nu_label = '0.3'
+
+    # Plot one curve per L/B
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+    hb_smooth = [i * 0.2 for i in range(1, 101)]  # 0.2 to 20
+    for j, lb in enumerate(_FIG_5_6_LB):
+        # Extract column j (this L/B) across all H/B rows
+        col_vals = [grid[k][j] for k in range(len(_FIG_5_6_HB))]
+        # Smooth interpolation along H/B axis
+        mu1_curve = [_linterp(hb, _FIG_5_6_HB, col_vals) for hb in hb_smooth]
+        ax.plot(hb_smooth, mu1_curve, '-', color=colors[j % len(colors)],
+                linewidth=1.5, label=f'L/B = {lb:.0f}')
+        # Data point markers
+        ax.plot(_FIG_5_6_HB, col_vals, 'o', color=colors[j % len(colors)],
+                markersize=5)
+
+    # Query point
+    if H_over_B is not None and L_over_B is not None:
+        mu1_q = figure_5_6_mu1(H_over_B, L_over_B, nu)
+        ax.plot(H_over_B, mu1_q, 's', color='red', markersize=10, zorder=5,
+                label=f'H/B={H_over_B:.1f}, L/B={L_over_B:.1f} → μ₁={mu1_q:.3f}')
+        ax.axhline(mu1_q, color='red', linestyle=':', alpha=0.4)
+        ax.axvline(H_over_B, color='red', linestyle=':', alpha=0.4)
+
+    ax.legend(fontsize=8, loc='upper left')
+    setup_engineering_plot(
+        ax, f'Figure 5-6: Geometry Influence Factor, μ₁ (ν = {nu_label})',
+        'H / B', 'μ₁')
+    if show:
+        plt.tight_layout()
+        plt.show()
+    return ax

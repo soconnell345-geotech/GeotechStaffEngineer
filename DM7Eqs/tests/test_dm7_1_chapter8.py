@@ -1414,3 +1414,282 @@ class TestShearWaveVelocitySpt:
     def test_z_negative_raises(self):
         with pytest.raises(ValueError, match="z must be positive"):
             shear_wave_velocity_spt(80.0, 20.0, 0.33, z=-1.0)
+
+
+# ============================================================================
+# TABLE 8-6: table_8_6_stark_hussain
+# ============================================================================
+
+
+class TestTable86StarkHussain:
+    """Tests for Table 8-6: Stark & Hussain coefficients."""
+
+    def test_lt_20_50kpa(self):
+        # lt_20, 50_kPa: c0=35.2
+        result = table_8_6_stark_hussain("lt_20", "50_kPa")
+        assert result["c0"] == pytest.approx(35.2, rel=1e-4)
+
+    def test_gt_50_400kpa(self):
+        # gt_50, 400_kPa: c0=44.1
+        result = table_8_6_stark_hussain("gt_50", "400_kPa")
+        assert result["c0"] == pytest.approx(44.1, rel=1e-4)
+
+    def test_20_to_50_100kpa(self):
+        # 20_to_50, 100_kPa: returns dict with 4 keys
+        result = table_8_6_stark_hussain("20_to_50", "100_kPa")
+        assert len(result) == 4
+        assert "c0" in result
+        assert "c1" in result
+        assert "c2" in result
+        assert "c3" in result
+
+    def test_returns_copy(self):
+        # Modifying returned dict doesn't affect source
+        result1 = table_8_6_stark_hussain("lt_20", "50_kPa")
+        original_c0 = result1["c0"]
+        result1["c0"] = 999.0
+        result2 = table_8_6_stark_hussain("lt_20", "50_kPa")
+        assert result2["c0"] == pytest.approx(original_c0, rel=1e-4)
+
+    def test_unknown_cf_raises(self):
+        with pytest.raises(ValueError, match="Unknown combination"):
+            table_8_6_stark_hussain("lt_10", "50_kPa")
+
+    def test_unknown_sigma_raises(self):
+        with pytest.raises(ValueError, match="Unknown combination"):
+            table_8_6_stark_hussain("lt_20", "200_kPa")
+
+
+# ============================================================================
+# TABLE 8-9: table_8_9_shansep_m
+# ============================================================================
+
+
+class TestTable89ShansepM:
+    """Tests for Table 8-9: SHANSEP exponent m."""
+
+    def test_dss(self):
+        # DSS: m=0.80
+        assert table_8_9_shansep_m("dss") == pytest.approx(0.80, rel=1e-4)
+
+    def test_ciuc(self):
+        # CIUC: m=0.85
+        assert table_8_9_shansep_m("ciuc") == pytest.approx(0.85, rel=1e-4)
+
+    def test_ck0ue(self):
+        # CK0UE: m=0.70
+        assert table_8_9_shansep_m("ck0ue") == pytest.approx(0.70, rel=1e-4)
+
+    def test_case_insensitive(self):
+        # "DSS" (uppercase) should work
+        assert table_8_9_shansep_m("DSS") == pytest.approx(0.80, rel=1e-4)
+
+    def test_unknown_raises(self):
+        with pytest.raises(ValueError, match="Unknown test_type"):
+            table_8_9_shansep_m("unknown_test")
+
+
+# ============================================================================
+# TABLE 8-24: table_8_24_cbr_dcp
+# ============================================================================
+
+
+class TestTable824CbrDcp:
+    """Tests for Table 8-24: CBR-DCP correlation coefficients."""
+
+    def test_webster(self):
+        # webster_1992: a=292.0, x=-1.12
+        result = table_8_24_cbr_dcp("webster_1992")
+        assert result["a"] == pytest.approx(292.0, rel=1e-4)
+        assert result["x"] == pytest.approx(-1.12, rel=1e-4)
+
+    def test_chua(self):
+        # chua_1988: a=3370.0, x=-1.51
+        result = table_8_24_cbr_dcp("chua_1988")
+        assert result["a"] == pytest.approx(3370.0, rel=1e-4)
+        assert result["x"] == pytest.approx(-1.51, rel=1e-4)
+
+    def test_returns_copy(self):
+        # Modifying returned dict doesn't affect source
+        result1 = table_8_24_cbr_dcp("webster_1992")
+        original_a = result1["a"]
+        result1["a"] = 999.0
+        result2 = table_8_24_cbr_dcp("webster_1992")
+        assert result2["a"] == pytest.approx(original_a, rel=1e-4)
+
+    def test_unknown_raises(self):
+        with pytest.raises(ValueError, match="Unknown source"):
+            table_8_24_cbr_dcp("unknown_source")
+
+
+# ============================================================================
+# FIGURE 8-46: figure_8_46_f
+# ============================================================================
+
+
+class TestFigure846F:
+    """Tests for Figure 8-46: Stroud f-coefficient."""
+
+    def test_at_10(self):
+        # PI=10: f=500.0
+        assert figure_8_46_f(10.0) == pytest.approx(500.0, rel=1e-4)
+
+    def test_at_80(self):
+        # PI=80: f=175.0
+        assert figure_8_46_f(80.0) == pytest.approx(175.0, rel=1e-4)
+
+    def test_interpolated_35(self):
+        # PI=35: midpoint between 30→300 and 40→250 = 275
+        # Linear interpolation: f = 300 + (35-30)/(40-30)*(250-300) = 300 - 25 = 275
+        assert figure_8_46_f(35.0) == pytest.approx(275.0, rel=1e-2)
+
+    def test_clamped_low(self):
+        # PI=5 (below range): should clamp to f=500.0
+        assert figure_8_46_f(5.0) == pytest.approx(500.0, rel=1e-4)
+
+    def test_clamped_high(self):
+        # PI=100 (above range): should clamp to f=175.0
+        assert figure_8_46_f(100.0) == pytest.approx(175.0, rel=1e-4)
+
+    def test_negative_raises(self):
+        with pytest.raises(ValueError, match="pi must be non-negative"):
+            figure_8_46_f(-1.0)
+
+
+# ===========================================================================
+# INTEGRATION & PUBLISHED REFERENCE VALUES
+# ===========================================================================
+
+class TestTable86Integration:
+    """Chain table_8_6 → residual_friction_angle_stark_hussain."""
+
+    def test_lt20_50kpa_ll60(self):
+        # Clay fraction < 20%, sigma_n = 50 kPa, LL=60%
+        coeffs = table_8_6_stark_hussain("lt_20", "50_kPa")
+        phi_r = residual_friction_angle_stark_hussain(
+            60.0, coeffs["c0"], coeffs["c1"], coeffs["c2"], coeffs["c3"]
+        )
+        # phi_r should be a reasonable residual angle (5-35 degrees)
+        assert 5.0 < phi_r < 35.0
+
+    def test_gt50_400kpa_ll80(self):
+        # High clay fraction, high stress, LL=80
+        coeffs = table_8_6_stark_hussain("gt_50", "400_kPa")
+        phi_r = residual_friction_angle_stark_hussain(
+            80.0, coeffs["c0"], coeffs["c1"], coeffs["c2"], coeffs["c3"]
+        )
+        # Higher clay fraction + higher LL = lower residual angle
+        assert 3.0 < phi_r < 35.0
+
+    def test_increasing_ll_decreases_phi_r(self):
+        # For same clay fraction/stress, increasing LL should decrease phi_r
+        coeffs = table_8_6_stark_hussain("20_to_50", "100_kPa")
+        phi_30 = residual_friction_angle_stark_hussain(
+            30.0, coeffs["c0"], coeffs["c1"], coeffs["c2"], coeffs["c3"]
+        )
+        phi_80 = residual_friction_angle_stark_hussain(
+            80.0, coeffs["c0"], coeffs["c1"], coeffs["c2"], coeffs["c3"]
+        )
+        assert phi_80 < phi_30
+
+
+class TestTable89Integration:
+    """Chain table_8_9 → undrained_strength_ratio_oc."""
+
+    def test_dss_ocr4(self):
+        # DSS test, OCR=4: su/sv_oc = 0.23 * 4^0.8
+        m = table_8_9_shansep_m("DSS")
+        su_ratio = undrained_strength_ratio_oc(0.23, 4.0, m)
+        # 0.23 * 4^0.8 = 0.23 * 3.031 = 0.697
+        assert su_ratio == pytest.approx(0.23 * 4.0 ** 0.8, rel=1e-4)
+
+    def test_ciuc_vs_dss(self):
+        # CIUC (m=0.85) should give higher ratio than DSS (m=0.80)
+        # for same su/sv_nc and OCR>1
+        m_ciuc = table_8_9_shansep_m("CIUC")
+        m_dss = table_8_9_shansep_m("DSS")
+        su_ciuc = undrained_strength_ratio_oc(0.23, 5.0, m_ciuc)
+        su_dss = undrained_strength_ratio_oc(0.23, 5.0, m_dss)
+        assert su_ciuc > su_dss  # higher m → higher ratio for OCR > 1
+
+    def test_published_m_values(self):
+        # Ladd & DeGroot (2004) published values
+        assert table_8_9_shansep_m("DSS") == pytest.approx(0.80, rel=1e-4)
+        assert table_8_9_shansep_m("CIUC") == pytest.approx(0.85, rel=1e-4)
+        assert table_8_9_shansep_m("CK0UE") == pytest.approx(0.70, rel=1e-4)
+
+
+class TestTable824Integration:
+    """Chain table_8_24 → cbr_from_dcp_power."""
+
+    def test_webster_dcp10(self):
+        # Webster (1992): CBR = 292 * DCP^(-1.12), DCP=10 mm/blow
+        coeffs = table_8_24_cbr_dcp("webster_1992")
+        cbr = cbr_from_dcp_power(coeffs["a"], 10.0, coeffs["x"])
+        # 292 * 10^(-1.12) = 292 / 13.18 = 22.15
+        expected = 292.0 * 10.0 ** (-1.12)
+        assert cbr == pytest.approx(expected, rel=1e-4)
+
+    def test_webster_dcp25(self):
+        # DCP=25 mm/blow
+        coeffs = table_8_24_cbr_dcp("webster_1992")
+        cbr = cbr_from_dcp_power(coeffs["a"], 25.0, coeffs["x"])
+        expected = 292.0 * 25.0 ** (-1.12)
+        assert cbr == pytest.approx(expected, rel=1e-4)
+
+    def test_published_webster_formula(self):
+        # Published: CBR = 292 * DCP^(-1.12)
+        coeffs = table_8_24_cbr_dcp("webster_1992")
+        assert coeffs["a"] == pytest.approx(292.0, rel=1e-4)
+        assert coeffs["x"] == pytest.approx(-1.12, rel=1e-4)
+
+    def test_all_sources_give_positive_cbr(self):
+        # For DCP=15 mm/blow, all sources should give positive CBR
+        for source in ["webster_1992", "ese_2006", "livneh_2000",
+                        "harrison_1987", "chua_1988", "pen_2002"]:
+            coeffs = table_8_24_cbr_dcp(source)
+            cbr = cbr_from_dcp_power(coeffs["a"], 15.0, coeffs["x"])
+            assert cbr > 0.0, f"Negative CBR for {source}: {cbr}"
+
+
+class TestFigure846Integration:
+    """Chain figure_8_46_f → constrained_modulus_spt."""
+
+    def test_pi20_n15(self):
+        # PI=20, N=15, Pa=101.3 kPa
+        f = figure_8_46_f(20.0)
+        M_ds = constrained_modulus_spt(f, 15.0, 101.3)
+        # M = 400 * 15 * 101.3 = 607,800 kPa
+        assert M_ds == pytest.approx(f * 15.0 * 101.3, rel=1e-6)
+        assert M_ds > 0.0
+
+    def test_higher_pi_lower_modulus(self):
+        # Higher PI → lower f → lower constrained modulus
+        f_low_pi = figure_8_46_f(15.0)
+        f_high_pi = figure_8_46_f(60.0)
+        M_low = constrained_modulus_spt(f_low_pi, 20.0, 101.3)
+        M_high = constrained_modulus_spt(f_high_pi, 20.0, 101.3)
+        assert M_high < M_low
+
+
+# ===========================================================================
+# Plot function smoke tests
+# ===========================================================================
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as _plt
+
+
+class TestPlotFigure846:
+    """Smoke tests for plot_figure_8_46 (f vs PI curve)."""
+
+    def test_no_query(self):
+        ax = plot_figure_8_46(show=False)
+        assert isinstance(ax, matplotlib.axes.Axes)
+        _plt.close("all")
+
+    def test_query_point(self):
+        ax = plot_figure_8_46(PI=30.0, show=False)
+        assert isinstance(ax, matplotlib.axes.Axes)
+        _plt.close("all")

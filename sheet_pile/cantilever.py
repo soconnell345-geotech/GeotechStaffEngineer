@@ -88,6 +88,48 @@ class CantileverWallResult:
         ]
         return "\n".join(lines)
 
+    def plot_wall_diagram(self, ax=None, show=True):
+        """Plot schematic wall diagram with excavation and embedment zones.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        from geotech_common.plotting import get_pyplot, setup_engineering_plot
+        plt = get_pyplot()
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(6, 8))
+        H = self.excavation_depth
+        D = self.embedment_depth
+        # Wall line
+        ax.plot([0, 0], [0, H + D], 'k-', linewidth=3, label='Wall')
+        # Excavation zone
+        ax.fill_betweenx([0, H], -0.5, 0, color='lightyellow', alpha=0.5)
+        ax.annotate('Excavation', xy=(-0.25, H / 2), ha='center',
+                    fontsize=9, fontstyle='italic')
+        # Embedment zone
+        ax.fill_betweenx([H, H + D], -0.5, 0.5, color='tan', alpha=0.4)
+        ax.annotate('Embedment', xy=(0.25, H + D / 2), ha='center',
+                    fontsize=9, fontstyle='italic')
+        # Retained soil
+        ax.fill_betweenx([0, H + D], 0, 0.5, color='burlywood', alpha=0.3,
+                         label='Retained Soil')
+        # Excavation level
+        ax.axhline(y=H, color='blue', linestyle='--', linewidth=1,
+                   label=f'Excavation ({H:.1f} m)')
+        # Max moment location
+        if self.max_moment_depth > 0:
+            ax.plot(0, self.max_moment_depth, 'ro', markersize=8,
+                    label=f'Max Moment ({self.max_moment:.0f} kN-m/m)')
+        ax.invert_yaxis()
+        setup_engineering_plot(ax, "Sheet Pile Wall Diagram",
+                              "", "Depth (m)")
+        ax.legend(fontsize=8, loc='lower right')
+        if show:
+            plt.tight_layout()
+            plt.show()
+        return ax
+
     def to_dict(self):
         return {
             "embedment_depth_m": round(self.embedment_depth, 3),

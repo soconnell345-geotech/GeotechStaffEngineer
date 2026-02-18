@@ -1048,3 +1048,367 @@ class TestRequiredDrainDiameter:
     def test_t_negative_raises(self):
         with pytest.raises(ValueError, match="t must be non-negative"):
             required_drain_diameter(0.5, -10.0, 0.2)
+
+
+# ===========================================================================
+# Figure 5-16  U from Tv
+# ===========================================================================
+
+class TestFigure516UFromTv:
+    """Tests for Figure 5-16: U from Tv conversion."""
+
+    def test_Tv_zero(self):
+        # Tv=0 => U=0
+        assert figure_5_16_U_from_Tv(0.0) == pytest.approx(0.0, rel=1e-4)
+
+    def test_Tv_small(self):
+        # Tv=0.0078 => U≈10%
+        # pi/4 * 0.1^2 = 0.7854 * 0.01 = 0.007854
+        assert figure_5_16_U_from_Tv(0.0078) == pytest.approx(10.0, rel=1e-2)
+
+    def test_Tv_at_transition(self):
+        # Tv = pi/4 * 0.36 ≈ 0.2827 => U≈60%
+        Tv = math.pi / 4.0 * 0.36
+        assert figure_5_16_U_from_Tv(Tv) == pytest.approx(60.0, rel=1e-2)
+
+    def test_Tv_large(self):
+        # Tv=0.848 => U≈90%
+        # -0.9332*log10(1-0.9) - 0.0851 = -0.9332*log10(0.1) - 0.0851
+        # = -0.9332*(-1) - 0.0851 = 0.9332 - 0.0851 = 0.8481
+        assert figure_5_16_U_from_Tv(0.848) == pytest.approx(90.0, rel=1e-2)
+
+    def test_Tv_very_large(self):
+        # Tv=2.0 => U close to 100
+        result = figure_5_16_U_from_Tv(2.0)
+        assert result > 99.0
+        assert result < 100.0
+
+    def test_negative_raises(self):
+        with pytest.raises(ValueError):
+            figure_5_16_U_from_Tv(-0.1)
+
+
+# ===========================================================================
+# Figure 5-16  Tv from U
+# ===========================================================================
+
+class TestFigure516TvFromU:
+    """Tests for Figure 5-16: Tv from U conversion."""
+
+    def test_U_zero(self):
+        # U=0 => Tv=0
+        assert figure_5_16_Tv_from_U(0.0) == pytest.approx(0.0, rel=1e-4)
+
+    def test_U_50(self):
+        # U=50% => Tv = pi/4 * 0.5^2 = 0.7854 * 0.25 = 0.1963
+        expected = math.pi / 4.0 * 0.25
+        assert figure_5_16_Tv_from_U(50.0) == pytest.approx(expected, rel=1e-4)
+
+    def test_U_60(self):
+        # U=60% is the transition point, uses the >= 60 branch
+        # Tv = -0.9332*log10(1-0.6) - 0.0851 = -0.9332*log10(0.4) - 0.0851
+        expected = -0.9332 * math.log10(0.4) - 0.0851
+        assert figure_5_16_Tv_from_U(60.0) == pytest.approx(expected, rel=1e-4)
+
+    def test_U_90(self):
+        # U=90% => Tv = -0.9332*log10(1-0.9) - 0.0851 = 0.848
+        expected = -0.9332 * math.log10(0.1) - 0.0851
+        assert figure_5_16_Tv_from_U(90.0) == pytest.approx(expected, rel=1e-2)
+
+    def test_round_trip(self):
+        # Tv -> U -> Tv should recover original Tv
+        Tv_original = 0.5
+        U_intermediate = figure_5_16_U_from_Tv(Tv_original)
+        Tv_recovered = figure_5_16_Tv_from_U(U_intermediate)
+        assert Tv_recovered == pytest.approx(Tv_original, rel=1e-2)
+
+    def test_U_100_raises(self):
+        with pytest.raises(ValueError):
+            figure_5_16_Tv_from_U(100.0)
+
+    def test_negative_raises(self):
+        with pytest.raises(ValueError):
+            figure_5_16_Tv_from_U(-5.0)
+
+
+# ===========================================================================
+# Figure 5-30  Tr convenience wrapper
+# ===========================================================================
+
+class TestFigure530Tr:
+    """Tests for Figure 5-30: Tr convenience wrapper."""
+
+    def test_basic(self):
+        # Ur=0.9 (decimal), n=20, Fs=0, Fr=0
+        # Fn = ln(20) - 0.75 ≈ 2.2457
+        # Tr = Fn/8 * ln(1/(1-0.9)) = 2.2457/8 * ln(10) ≈ 0.647
+        Fn = math.log(20.0) - 0.75
+        expected = Fn * (1.0 / 8.0) * math.log(1.0 / (1.0 - 0.9))
+        assert figure_5_30_Tr(0.9, 20.0) == pytest.approx(expected, rel=1e-2)
+
+    def test_with_smear(self):
+        # With smear factor, result should be larger
+        Tr_no_smear = figure_5_30_Tr(0.8, 15.0, Fs=0.0, Fr=0.0)
+        Tr_with_smear = figure_5_30_Tr(0.8, 15.0, Fs=0.5, Fr=0.0)
+        assert Tr_with_smear > Tr_no_smear
+
+    def test_Ur_out_of_range_raises(self):
+        with pytest.raises(ValueError):
+            figure_5_30_Tr(1.0, 20.0)
+
+
+# ===========================================================================
+# Table 5-6  C_alpha/Cc ratio
+# ===========================================================================
+
+class TestTable56CalphaCc:
+    """Tests for Table 5-6: C_alpha/Cc ratio by soil type."""
+
+    def test_inorganic(self):
+        assert table_5_6_Calpha_Cc("inorganic_clays_silts") == pytest.approx(0.04, rel=1e-4)
+
+    def test_peat(self):
+        assert table_5_6_Calpha_Cc("peat") == pytest.approx(0.06, rel=1e-4)
+
+    def test_granular(self):
+        assert table_5_6_Calpha_Cc("granular") == pytest.approx(0.02, rel=1e-4)
+
+    def test_case_insensitive(self):
+        assert table_5_6_Calpha_Cc("Inorganic_Clays_Silts") == pytest.approx(0.04, rel=1e-4)
+
+    def test_unknown_raises(self):
+        with pytest.raises(ValueError):
+            table_5_6_Calpha_Cc("unknown_soil")
+
+
+# ===========================================================================
+# Figure 5-6  mu0 (depth correction factor)
+# ===========================================================================
+
+class TestFigure56Mu0:
+    """Tests for Figure 5-6: mu0 depth correction factor."""
+
+    def test_surface(self):
+        # D/B=0 => mu0=1.0
+        assert figure_5_6_mu0(0.0) == pytest.approx(1.0, rel=1e-4)
+
+    def test_at_1(self):
+        # D/B=1 => mu0=0.92
+        assert figure_5_6_mu0(1.0) == pytest.approx(0.92, rel=1e-2)
+
+    def test_interpolated(self):
+        # D/B=0.5 => approx 0.96 (midpoint of 1.0 and 0.92)
+        assert figure_5_6_mu0(0.5) == pytest.approx(0.96, rel=1e-2)
+
+    def test_deep(self):
+        # D/B=20 => mu0=0.62
+        assert figure_5_6_mu0(20.0) == pytest.approx(0.62, rel=1e-2)
+
+    def test_clamped(self):
+        # D/B=30 => clamped to D/B=20 value of 0.62
+        assert figure_5_6_mu0(30.0) == pytest.approx(0.62, rel=1e-2)
+
+    def test_negative_raises(self):
+        with pytest.raises(ValueError):
+            figure_5_6_mu0(-0.5)
+
+
+# ===========================================================================
+# Figure 5-6  mu1 (shape/rigidity factor)
+# ===========================================================================
+
+class TestFigure56Mu1:
+    """Tests for Figure 5-6: mu1 shape/rigidity factor."""
+
+    def test_at_grid_point(self):
+        # H/B=1, L/B=1, nu=0.3 => mu1=0.70
+        assert figure_5_6_mu1(1.0, 1.0, nu=0.3) == pytest.approx(0.70, rel=1e-2)
+
+    def test_at_grid_point_nu0(self):
+        # H/B=1, L/B=1, nu=0.0 => mu1=0.85
+        assert figure_5_6_mu1(1.0, 1.0, nu=0.0) == pytest.approx(0.85, rel=1e-2)
+
+    def test_at_grid_point_nu05(self):
+        # H/B=1, L/B=1, nu=0.5 => mu1=0.56
+        assert figure_5_6_mu1(1.0, 1.0, nu=0.5) == pytest.approx(0.56, rel=1e-2)
+
+    def test_interpolated(self):
+        # H/B=1.5, L/B=3 => between known values, check reasonable range
+        result = figure_5_6_mu1(1.5, 3.0, nu=0.3)
+        assert result > 0.5
+        assert result < 2.0
+
+    def test_HB_negative_raises(self):
+        with pytest.raises(ValueError):
+            figure_5_6_mu1(-0.5, 2.0, nu=0.3)
+
+    def test_LB_below_1_raises(self):
+        with pytest.raises(ValueError):
+            figure_5_6_mu1(1.0, 0.5, nu=0.3)
+
+    def test_nu_out_of_range_raises(self):
+        with pytest.raises(ValueError):
+            figure_5_6_mu1(1.0, 2.0, nu=0.6)
+
+
+# ===========================================================================
+# INTEGRATION & PUBLISHED REFERENCE VALUES
+# ===========================================================================
+
+class TestFigure516PublishedValues:
+    """Validate against Terzaghi (1943) exact theoretical values."""
+
+    def test_U10_Tv(self):
+        # U=10%: Tv = pi/4 * 0.01 = 0.00785
+        Tv = figure_5_16_Tv_from_U(10.0)
+        assert Tv == pytest.approx(math.pi / 4.0 * 0.01, rel=1e-4)
+
+    def test_U20_Tv(self):
+        # U=20%: Tv = pi/4 * 0.04 = 0.0314
+        Tv = figure_5_16_Tv_from_U(20.0)
+        assert Tv == pytest.approx(math.pi / 4.0 * 0.04, rel=1e-4)
+
+    def test_U50_published(self):
+        # Published: Tv = 0.197 at U=50%
+        Tv = figure_5_16_Tv_from_U(50.0)
+        assert Tv == pytest.approx(0.197, abs=0.001)
+
+    def test_U90_published(self):
+        # Published: Tv = 0.848 at U=90%
+        Tv = figure_5_16_Tv_from_U(90.0)
+        assert Tv == pytest.approx(0.848, abs=0.001)
+
+    def test_roundtrip_multiple_values(self):
+        # Round-trip: Tv -> U -> Tv for various points
+        for Tv_in in [0.01, 0.05, 0.1, 0.2, 0.5, 0.8, 1.0, 1.5]:
+            U = figure_5_16_U_from_Tv(Tv_in)
+            if U < 100.0:
+                Tv_out = figure_5_16_Tv_from_U(U)
+                assert Tv_out == pytest.approx(Tv_in, rel=1e-2), \
+                    f"Round-trip failed at Tv={Tv_in}: U={U}, Tv_out={Tv_out}"
+
+    def test_monotonically_increasing(self):
+        # U should be monotonically increasing with Tv
+        prev_U = 0.0
+        for Tv in [0.01, 0.05, 0.1, 0.2, 0.3, 0.5, 0.8, 1.0, 1.5, 2.0]:
+            U = figure_5_16_U_from_Tv(Tv)
+            assert U >= prev_U, f"Non-monotonic: U({Tv})={U} < prev={prev_U}"
+            prev_U = U
+
+
+class TestFigure56Integration:
+    """Chain figure_5_6_mu0/mu1 → immediate_settlement."""
+
+    def test_surface_square_footing(self):
+        # Surface footing (D/B=0): mu0=1.0
+        # Square (L/B=1), H/B=2, nu=0.3: mu1 from grid
+        mu0 = figure_5_6_mu0(0.0)
+        mu1 = figure_5_6_mu1(2.0, 1.0, nu=0.3)
+        assert mu0 == pytest.approx(1.0, rel=1e-4)
+        # Settlement: s = q0*B/Es * mu0 * mu1
+        s = immediate_settlement(100.0, 2.0, 10000.0, mu0, mu1)
+        # s = 100*2/10000 * 1.0 * mu1 = 0.02 * mu1
+        assert s == pytest.approx(0.02 * mu1, rel=1e-6)
+        assert s > 0.0
+
+    def test_embedded_footing_reduces_settlement(self):
+        # Deeper embedment should reduce settlement (mu0 decreases)
+        mu1 = figure_5_6_mu1(5.0, 2.0, nu=0.3)
+        s_surface = immediate_settlement(100.0, 2.0, 10000.0,
+                                         figure_5_6_mu0(0.0), mu1)
+        s_embedded = immediate_settlement(100.0, 2.0, 10000.0,
+                                          figure_5_6_mu0(5.0), mu1)
+        assert s_embedded < s_surface
+
+    def test_undrained_vs_drained_settlement(self):
+        # Undrained (nu=0.5) should give less settlement than drained (nu=0.0)
+        mu0 = figure_5_6_mu0(1.0)
+        mu1_undrained = figure_5_6_mu1(5.0, 2.0, nu=0.5)
+        mu1_drained = figure_5_6_mu1(5.0, 2.0, nu=0.0)
+        assert mu1_undrained < mu1_drained
+
+
+class TestFigure530Integration:
+    """Chain figure_5_30_Tr → required_drain_diameter."""
+
+    def test_drain_design(self):
+        # Design: achieve 90% radial consolidation
+        # ch = 5 m²/year, t = 1 year, n=20
+        Tr = figure_5_30_Tr(0.9, 20.0)
+        assert Tr > 0.0
+        dc = required_drain_diameter(5.0, 1.0, Tr)
+        # dc = sqrt(ch*t/Tr) = sqrt(5/Tr)
+        assert dc == pytest.approx(math.sqrt(5.0 / Tr), rel=1e-6)
+        assert dc > 0.0  # physically reasonable diameter
+        assert dc < 10.0  # not ridiculously large
+
+
+class TestTable56Integration:
+    """Chain table_5_6_Calpha_Cc → surcharge_degree_of_consolidation_with_secondary."""
+
+    def test_organic_clay_surcharge(self):
+        # Organic clay: Calpha/Cc = 0.05
+        ratio = table_5_6_Calpha_Cc("organic_clays_silts")
+        assert ratio == pytest.approx(0.05, rel=1e-4)
+        # Use in surcharge calculation
+        U = surcharge_degree_of_consolidation_with_secondary(
+            qf=100.0, sigma_z0=200.0, qs=50.0,
+            C_alpha_over_Cc=ratio, t=365.0, tp=100.0
+        )
+        assert 0.0 < U < 1.0  # valid consolidation degree
+
+
+# ===========================================================================
+# Plot function smoke tests
+# ===========================================================================
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as _plt
+
+
+class TestPlotFigure516:
+    """Smoke tests for plot_figure_5_16 (Terzaghi consolidation curve)."""
+
+    def test_no_query(self):
+        ax = plot_figure_5_16(show=False)
+        assert isinstance(ax, matplotlib.axes.Axes)
+        _plt.close("all")
+
+    def test_query_Tv(self):
+        ax = plot_figure_5_16(Tv=0.2, show=False)
+        assert isinstance(ax, matplotlib.axes.Axes)
+        _plt.close("all")
+
+    def test_query_U(self):
+        ax = plot_figure_5_16(U=50.0, show=False)
+        assert isinstance(ax, matplotlib.axes.Axes)
+        _plt.close("all")
+
+
+class TestPlotFigure56Mu0:
+    """Smoke tests for plot_figure_5_6_mu0 (Janbu mu0 curve)."""
+
+    def test_no_query(self):
+        ax = plot_figure_5_6_mu0(show=False)
+        assert isinstance(ax, matplotlib.axes.Axes)
+        _plt.close("all")
+
+    def test_query_point(self):
+        ax = plot_figure_5_6_mu0(D_over_B=5.0, show=False)
+        assert isinstance(ax, matplotlib.axes.Axes)
+        _plt.close("all")
+
+
+class TestPlotFigure56Mu1:
+    """Smoke tests for plot_figure_5_6_mu1 (Janbu mu1 family of curves)."""
+
+    def test_no_query(self):
+        ax = plot_figure_5_6_mu1(show=False)
+        assert isinstance(ax, matplotlib.axes.Axes)
+        _plt.close("all")
+
+    def test_query_point(self):
+        ax = plot_figure_5_6_mu1(H_over_B=5.0, L_over_B=2.0, nu=0.3, show=False)
+        assert isinstance(ax, matplotlib.axes.Axes)
+        _plt.close("all")

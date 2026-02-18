@@ -91,6 +91,37 @@ class CantileverWallResult:
             "base_width_m": self.base_width,
         }
 
+    def plot_stability_summary(self, ax=None, show=True):
+        """Plot FOS bar chart for sliding, overturning, and bearing.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        from geotech_common.plotting import get_pyplot, setup_engineering_plot
+        plt = get_pyplot()
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8, 5))
+        labels = ['Sliding', 'Overturning', 'Bearing']
+        values = [self.FOS_sliding, self.FOS_overturning, self.FOS_bearing]
+        passes = [self.passes_sliding, self.passes_overturning,
+                  self.passes_bearing]
+        colors = ['green' if p else 'red' for p in passes]
+        bars = ax.bar(labels, values, color=colors, alpha=0.7,
+                      edgecolor='black')
+        for bar, val in zip(bars, values):
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.05,
+                    f'{val:.2f}', ha='center', va='bottom', fontsize=10)
+        ax.axhline(y=1.0, color='red', linestyle='--', linewidth=1,
+                   label='FOS = 1.0')
+        setup_engineering_plot(ax, "Retaining Wall Stability",
+                              "", "Factor of Safety")
+        ax.legend()
+        if show:
+            plt.tight_layout()
+            plt.show()
+        return ax
+
 
 @dataclass
 class MSEWallResult:

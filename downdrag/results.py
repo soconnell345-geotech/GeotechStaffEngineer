@@ -168,3 +168,74 @@ class DowndragResult:
         if self.settlement_ok is not None:
             d['settlement_ok'] = self.settlement_ok
         return d
+
+    def plot_axial_load(self, ax=None, show=True, **kwargs):
+        """Plot axial load Q(z) vs depth with neutral plane.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        from geotech_common.plotting import get_pyplot, setup_engineering_plot
+        plt = get_pyplot()
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(6, 8))
+        ax.plot(self.axial_load, self.z, 'b-', linewidth=2, **kwargs)
+        ax.axhline(y=self.neutral_plane_depth, color='r', linestyle='--',
+                   linewidth=1.5,
+                   label=f'Neutral Plane ({self.neutral_plane_depth:.1f} m)')
+        ax.invert_yaxis()
+        setup_engineering_plot(ax, "Axial Load Distribution",
+                              "Axial Load Q(z) (kN)", "Depth (m)")
+        ax.legend()
+        if show:
+            plt.tight_layout()
+            plt.show()
+        return ax
+
+    def plot_settlement(self, ax=None, show=True, **kwargs):
+        """Plot soil settlement profile vs depth with pile settlement.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        from geotech_common.plotting import get_pyplot, setup_engineering_plot
+        plt = get_pyplot()
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(6, 8))
+        ax.plot(self.soil_settlement_profile * 1000, self.z, 'g-',
+                linewidth=2, label='Soil settlement', **kwargs)
+        ax.axvline(x=self.pile_settlement * 1000, color='b', linestyle='--',
+                   linewidth=1.5,
+                   label=f'Pile settlement ({self.pile_settlement*1000:.1f} mm)')
+        ax.axhline(y=self.neutral_plane_depth, color='r', linestyle=':',
+                   linewidth=1, label='Neutral Plane')
+        ax.invert_yaxis()
+        setup_engineering_plot(ax, "Settlement Profile",
+                              "Settlement (mm)", "Depth (m)")
+        ax.legend(fontsize=8)
+        if show:
+            plt.tight_layout()
+            plt.show()
+        return ax
+
+    def plot_neutral_plane(self, show=True):
+        """Plot combined neutral plane diagram (load + settlement).
+
+        Returns
+        -------
+        tuple of (fig, axes)
+        """
+        from geotech_common.plotting import get_pyplot
+        plt = get_pyplot()
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 8), sharey=True)
+        self.plot_axial_load(ax=ax1, show=False)
+        self.plot_settlement(ax=ax2, show=False)
+        ax2.set_ylabel('')
+        fig.suptitle('Downdrag Neutral Plane Analysis', fontsize=13,
+                     fontweight='bold')
+        plt.tight_layout()
+        if show:
+            plt.show()
+        return fig, (ax1, ax2)

@@ -113,6 +113,38 @@ class PileGroupResult:
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
+    def plot_pile_layout(self, ax=None, show=True, **kwargs):
+        """Plot plan view of pile group with piles colored by utilization.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        if not self.pile_forces:
+            raise ValueError("No pile force data available for plotting.")
+        from geotech_common.plotting import get_pyplot, setup_engineering_plot
+        plt = get_pyplot()
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8, 8))
+        xs = [pf['x_m'] for pf in self.pile_forces]
+        ys = [pf['y_m'] for pf in self.pile_forces]
+        utils = [pf.get('utilization', 0) for pf in self.pile_forces]
+        labels = [pf.get('label', '') for pf in self.pile_forces]
+        sc = ax.scatter(xs, ys, c=utils, cmap='RdYlGn_r', edgecolors='black',
+                        linewidth=1, s=200, vmin=0, vmax=max(max(utils), 1.0),
+                        **kwargs)
+        plt.colorbar(sc, ax=ax, label='Utilization Ratio')
+        for x, y, lbl in zip(xs, ys, labels):
+            ax.annotate(lbl, (x, y), textcoords='offset points',
+                        xytext=(0, 10), ha='center', fontsize=8)
+        ax.set_aspect('equal')
+        setup_engineering_plot(ax, "Pile Group Layout",
+                              "X (m)", "Y (m)")
+        if show:
+            plt.tight_layout()
+            plt.show()
+        return ax
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "n_piles": self.n_piles,

@@ -2170,3 +2170,268 @@ def shear_wave_velocity_spt(
     if z <= 0.0:
         raise ValueError("z must be positive.")
     return b * n ** x * z ** y
+
+
+# ===========================================================================
+# PRIVATE HELPER
+# ===========================================================================
+
+def _linterp(x: float, xp: list, fp: list) -> float:
+    """Pure-Python piecewise linear interpolation."""
+    if x <= xp[0]:
+        return fp[0]
+    if x >= xp[-1]:
+        return fp[-1]
+    for i in range(len(xp) - 1):
+        if xp[i] <= x <= xp[i + 1]:
+            t = (x - xp[i]) / (xp[i + 1] - xp[i])
+            return fp[i] + t * (fp[i + 1] - fp[i])
+    return fp[-1]
+
+
+# ===========================================================================
+# TABLE 8-6: Stark & Hussain (2013) Coefficients
+# ===========================================================================
+
+_TABLE_8_6_STARK_HUSSAIN = {
+    ("lt_20", "50_kpa"):  {"c0": 35.2, "c1": -0.1440, "c2": 0.000564, "c3": -0.00000116},
+    ("lt_20", "100_kpa"): {"c0": 33.4, "c1": -0.1330, "c2": 0.000495, "c3": -0.00000092},
+    ("lt_20", "400_kpa"): {"c0": 35.3, "c1": -0.1460, "c2": 0.000567, "c3": -0.00000115},
+    ("20_to_50", "50_kpa"):  {"c0": 42.8, "c1": -0.2980, "c2": 0.001390, "c3": -0.00000251},
+    ("20_to_50", "100_kpa"): {"c0": 38.5, "c1": -0.2220, "c2": 0.000880, "c3": -0.00000137},
+    ("20_to_50", "400_kpa"): {"c0": 38.8, "c1": -0.2330, "c2": 0.001010, "c3": -0.00000168},
+    ("gt_50", "50_kpa"):  {"c0": 53.5, "c1": -0.6100, "c2": 0.004060, "c3": -0.00000925},
+    ("gt_50", "100_kpa"): {"c0": 49.2, "c1": -0.4820, "c2": 0.002870, "c3": -0.00000600},
+    ("gt_50", "400_kpa"): {"c0": 44.1, "c1": -0.3400, "c2": 0.001780, "c3": -0.00000345},
+}
+
+
+def table_8_6_stark_hussain(cf_range: str, sigma_n_range: str) -> dict:
+    """Stark & Hussain (2013) polynomial coefficients for residual
+    friction angle (Table 8-6).
+
+    Returns the four coefficients (C0, C1, C2, C3) for use with
+    ``residual_friction_angle_stark_hussain`` (Equation 8-17).
+
+    Parameters
+    ----------
+    cf_range : str
+        Clay fraction range: ``"lt_20"`` (< 20 %), ``"20_to_50"``
+        (20-50 %), or ``"gt_50"`` (> 50 %).
+    sigma_n_range : str
+        Effective normal stress level: ``"50_kPa"``, ``"100_kPa"``,
+        or ``"400_kPa"``.
+
+    Returns
+    -------
+    dict
+        ``{"c0": float, "c1": float, "c2": float, "c3": float}``.
+
+    Raises
+    ------
+    ValueError
+        If the combination is not recognised.
+
+    References
+    ----------
+    UFC 3-220-10, Soil Mechanics, 1 Feb 2022, Change 1, 11 Mar 2025,
+    Chapter 8, Table 8-6, p. 453.
+    Stark & Hussain (2013).
+    """
+    key = (cf_range.lower().strip(), sigma_n_range.lower().strip())
+    if key not in _TABLE_8_6_STARK_HUSSAIN:
+        raise ValueError(
+            f"Unknown combination cf_range='{cf_range}', "
+            f"sigma_n_range='{sigma_n_range}'."
+        )
+    return dict(_TABLE_8_6_STARK_HUSSAIN[key])
+
+
+# ===========================================================================
+# TABLE 8-9: SHANSEP Exponent m
+# ===========================================================================
+
+_TABLE_8_9_SHANSEP_M = {
+    "ciuc": 0.85,
+    "ck0uc": 0.80,
+    "dss": 0.80,
+    "ck0ue": 0.70,
+    "field_vane": 0.85,
+}
+
+
+def table_8_9_shansep_m(test_type: str) -> float:
+    """SHANSEP exponent m for undrained strength ratio (Table 8-9).
+
+    Returns the semi-empirical exponent *m* for use with
+    ``undrained_strength_ratio_oc`` (Equation 8-20).
+
+    Parameters
+    ----------
+    test_type : str
+        One of ``"CIUC"``, ``"CK0UC"``, ``"DSS"``, ``"CK0UE"``,
+        ``"field_vane"``.
+
+    Returns
+    -------
+    float
+        Exponent m (dimensionless).
+
+    Raises
+    ------
+    ValueError
+        If *test_type* is not recognised.
+
+    References
+    ----------
+    UFC 3-220-10, Soil Mechanics, 1 Feb 2022, Change 1, 11 Mar 2025,
+    Chapter 8, Table 8-9, p. 460.
+    """
+    key = test_type.lower().strip()
+    if key not in _TABLE_8_9_SHANSEP_M:
+        raise ValueError(
+            f"Unknown test_type '{test_type}'. "
+            f"Choose from: {list(_TABLE_8_9_SHANSEP_M.keys())}"
+        )
+    return _TABLE_8_9_SHANSEP_M[key]
+
+
+# ===========================================================================
+# TABLE 8-24: CBR-DCP Correlation Coefficients
+# ===========================================================================
+
+_TABLE_8_24_CBR_DCP = {
+    "webster_1992":  {"a": 292.0, "x": -1.12},
+    "ese_2006":      {"a": 17.6, "x": -0.64},
+    "livneh_2000":   {"a": 327.0, "x": -0.78},
+    "harrison_1987": {"a": 1620.0, "x": -2.10},
+    "chua_1988":     {"a": 3370.0, "x": -1.51},
+    "pen_2002":      {"a": 146.0, "x": -0.70},
+}
+
+
+def table_8_24_cbr_dcp(source: str) -> dict:
+    """CBR-DCP power-law correlation coefficients (Table 8-24).
+
+    Returns the empirical coefficient *a* and exponent *x* for use
+    with ``cbr_from_dcp_power`` (Equation 8-37).
+
+    Parameters
+    ----------
+    source : str
+        Correlation source name: ``"webster_1992"``, ``"ese_2006"``,
+        ``"livneh_2000"``, ``"harrison_1987"``, ``"chua_1988"``,
+        or ``"pen_2002"``.
+
+    Returns
+    -------
+    dict
+        ``{"a": float, "x": float}``.
+
+    Raises
+    ------
+    ValueError
+        If *source* is not recognised.
+
+    References
+    ----------
+    UFC 3-220-10, Soil Mechanics, 1 Feb 2022, Change 1, 11 Mar 2025,
+    Chapter 8, Table 8-24, p. 492.
+    """
+    key = source.lower().strip()
+    if key not in _TABLE_8_24_CBR_DCP:
+        raise ValueError(
+            f"Unknown source '{source}'. "
+            f"Choose from: {list(_TABLE_8_24_CBR_DCP.keys())}"
+        )
+    return dict(_TABLE_8_24_CBR_DCP[key])
+
+
+# ===========================================================================
+# FIGURE 8-46: Stroud (1974) f-coefficient for Constrained Modulus
+# ===========================================================================
+
+# Digitised from Figure 8-46 (f vs PI)
+_FIG_8_46_PI = [10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, 60.0, 80.0]
+_FIG_8_46_F  = [500.0, 450.0, 400.0, 350.0, 300.0, 250.0, 225.0, 200.0, 175.0]
+
+
+def figure_8_46_f(pi: float) -> float:
+    """Stroud (1974) f-coefficient from plasticity index (Figure 8-46).
+
+    Returns the empirical coefficient *f* for use with
+    ``constrained_modulus_spt`` (Equation 8-30).
+
+    Parameters
+    ----------
+    pi : float
+        Plasticity index (%).  Typically 10 to 80.
+
+    Returns
+    -------
+    float
+        Coefficient f (dimensionless).
+
+    Raises
+    ------
+    ValueError
+        If *pi* is negative.
+
+    References
+    ----------
+    UFC 3-220-10, Soil Mechanics, 1 Feb 2022, Change 1, 11 Mar 2025,
+    Chapter 8, Figure 8-46, p. 477.
+    Stroud, M.A. (1974).
+    """
+    if pi < 0.0:
+        raise ValueError("pi must be non-negative.")
+    return _linterp(pi, _FIG_8_46_PI, _FIG_8_46_F)
+
+
+def plot_figure_8_46(PI=None, ax=None, show=True, **kwargs):
+    """Reproduce UFC Figure 8-46: Stroud f-coefficient vs Plasticity Index.
+
+    Parameters
+    ----------
+    PI : float, optional
+        Plasticity index query point.  If provided, highlights the
+        interpolated f value.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on.
+    show : bool, optional
+        If True, calls plt.show().
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
+    from geotech_common.plotting import get_pyplot, setup_engineering_plot
+    plt = get_pyplot()
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 5))
+
+    # Smooth interpolated curve
+    pi_smooth = [i * 1.0 for i in range(5, 86)]
+    f_smooth = [figure_8_46_f(p) for p in pi_smooth]
+    ax.plot(pi_smooth, f_smooth, 'b-', linewidth=1.5, label='Stroud (1974)')
+
+    # Digitised data points
+    ax.plot(_FIG_8_46_PI, _FIG_8_46_F, 'ko', markersize=6,
+            label='Digitised points')
+
+    # Query point
+    if PI is not None:
+        f_q = figure_8_46_f(PI)
+        ax.plot(PI, f_q, 's', color='red', markersize=10, zorder=5,
+                label=f'PI={PI:.0f} → f={f_q:.0f}')
+        ax.axhline(f_q, color='red', linestyle=':', alpha=0.4)
+        ax.axvline(PI, color='red', linestyle=':', alpha=0.4)
+
+    ax.legend(fontsize=8)
+    setup_engineering_plot(
+        ax, 'Figure 8-46: Stroud f-Coefficient',
+        'Plasticity Index, PI (%)', 'f (dimensionless)')
+    if show:
+        plt.tight_layout()
+        plt.show()
+    return ax

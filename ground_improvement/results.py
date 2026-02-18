@@ -167,6 +167,33 @@ class WickDrainResult:
         ]
         return "\n".join(lines)
 
+    def plot_consolidation(self, ax=None, show=True, **kwargs):
+        """Plot degree of consolidation vs time.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        if not self.time_settlement_curve:
+            raise ValueError("No time-consolidation data available.")
+        from geotech_common.plotting import get_pyplot, setup_engineering_plot
+        plt = get_pyplot()
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8, 5))
+        times = [t for t, u in self.time_settlement_curve]
+        u_vals = [u for t, u in self.time_settlement_curve]
+        ax.plot(times, u_vals, 'b-o', markersize=3, linewidth=2, **kwargs)
+        ax.axhline(y=self.U_total_percent, color='r', linestyle='--',
+                   linewidth=1,
+                   label=f'U at t={self.time_years:.2f} yr ({self.U_total_percent:.1f}%)')
+        setup_engineering_plot(ax, "Wick Drain Consolidation",
+                              "Time (years)", "Degree of Consolidation (%)")
+        ax.legend()
+        if show:
+            plt.tight_layout()
+            plt.show()
+        return ax
+
     def to_dict(self) -> Dict[str, Any]:
         d = {
             "drain_spacing_m": round(self.drain_spacing_m, 2),
@@ -243,6 +270,36 @@ class SurchargeResult:
         lines.append("")
         lines.append("=" * 60)
         return "\n".join(lines)
+
+    def plot_consolidation(self, ax=None, show=True, **kwargs):
+        """Plot settlement vs time.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        if not self.time_settlement_curve:
+            raise ValueError("No time-settlement data available.")
+        from geotech_common.plotting import get_pyplot, setup_engineering_plot
+        plt = get_pyplot()
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8, 5))
+        times = [t for t, s in self.time_settlement_curve]
+        settlements = [s for t, s in self.time_settlement_curve]
+        ax.plot(times, settlements, 'b-o', markersize=3, linewidth=2, **kwargs)
+        ax.axhline(y=self.settlement_ultimate_mm, color='gray', linestyle=':',
+                   linewidth=1, label=f'Ultimate ({self.settlement_ultimate_mm:.0f} mm)')
+        ax.axhline(y=self.settlement_at_target_mm, color='r', linestyle='--',
+                   linewidth=1,
+                   label=f'Target U={self.target_U_percent:.0f}% ({self.settlement_at_target_mm:.0f} mm)')
+        ax.invert_yaxis()
+        setup_engineering_plot(ax, "Surcharge Settlement vs Time",
+                              "Time (years)", "Settlement (mm)")
+        ax.legend(fontsize=8)
+        if show:
+            plt.tight_layout()
+            plt.show()
+        return ax
 
     def to_dict(self) -> Dict[str, Any]:
         d = {

@@ -414,6 +414,35 @@ def get_figures(result, analysis) -> List[FigureData]:
         except ImportError:
             pass
 
+    # DM7 Reference Figure: Terzaghi consolidation curve (when time-rate used)
+    if result.time_settlement_curve is not None and analysis.cv is not None:
+        try:
+            import sys
+            sys.path.insert(0, "DM7Eqs")
+            from geotech.dm7_1.chapter5 import plot_figure_5_16
+            from calc_package.dm7_figures import dm7_figure
+
+            # Compute Tv at 50% consolidation as a representative query point
+            from settlement.time_rate import time_factor as compute_Tv
+            Hdr = analysis._get_Hdr()
+            # Use time at 50% consolidation as the query point
+            from settlement.time_rate import time_for_consolidation
+            t50 = time_for_consolidation(50.0, analysis.cv, Hdr)
+            Tv50 = compute_Tv(analysis.cv, t50, Hdr)
+
+            figures.append(dm7_figure(
+                plot_figure_5_16,
+                Tv=Tv50,
+                caption=(
+                    f"UFC Figure 5-16: Average degree of consolidation vs time "
+                    f"factor. Tv = {Tv50:.3f} at U = 50% "
+                    f"(cv = {analysis.cv:.4f} m\u00b2/yr, "
+                    f"Hdr = {Hdr:.2f} m, t\u2085\u2080 = {t50:.1f} yr)."
+                ),
+            ))
+        except (ImportError, Exception):
+            pass
+
     return figures
 
 

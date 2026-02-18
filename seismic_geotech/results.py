@@ -236,3 +236,62 @@ class LiquefactionResult:
             "critical_depth_m": self.critical_depth,
             "layer_results": self.layer_results,
         }
+
+    def plot_fos_profile(self, ax=None, show=True, **kwargs):
+        """Plot liquefaction FOS vs depth.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        if not self.layer_results:
+            raise ValueError("No layer results available.")
+        from geotech_common.plotting import get_pyplot, setup_engineering_plot
+        plt = get_pyplot()
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(6, 8))
+        depths = [r['depth_m'] for r in self.layer_results]
+        fos_vals = [r['FOS_liq'] for r in self.layer_results]
+        colors = ['red' if r['liquefiable'] else 'green'
+                  for r in self.layer_results]
+        ax.scatter(fos_vals, depths, c=colors, zorder=5, s=50, **kwargs)
+        ax.plot(fos_vals, depths, 'k-', linewidth=0.5, alpha=0.5)
+        ax.axvline(x=1.0, color='red', linestyle='--', linewidth=1.5,
+                   label='FOS = 1.0')
+        ax.invert_yaxis()
+        setup_engineering_plot(
+            ax,
+            f"Liquefaction FOS (PGA={self.amax_g:.3f}g, M={self.magnitude:.1f})",
+            "Factor of Safety", "Depth (m)")
+        ax.legend()
+        if show:
+            plt.tight_layout()
+            plt.show()
+        return ax
+
+    def plot_csr_crr(self, ax=None, show=True, **kwargs):
+        """Plot CSR and CRR vs depth.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        if not self.layer_results:
+            raise ValueError("No layer results available.")
+        from geotech_common.plotting import get_pyplot, setup_engineering_plot
+        plt = get_pyplot()
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(6, 8))
+        depths = [r['depth_m'] for r in self.layer_results]
+        csr = [r['CSR'] for r in self.layer_results]
+        crr = [r['CRR'] for r in self.layer_results]
+        ax.plot(csr, depths, 'r-o', linewidth=1.5, markersize=5, label='CSR')
+        ax.plot(crr, depths, 'g-s', linewidth=1.5, markersize=5, label='CRR')
+        ax.invert_yaxis()
+        setup_engineering_plot(ax, "CSR vs CRR Profile",
+                              "Cyclic Stress Ratio", "Depth (m)")
+        ax.legend()
+        if show:
+            plt.tight_layout()
+            plt.show()
+        return ax

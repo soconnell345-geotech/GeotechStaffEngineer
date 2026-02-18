@@ -2731,3 +2731,258 @@ def local_shear_vesic(
         math.atan(R * math.tan(math.radians(phi_prime_deg)))
     )
     return (c_star, phi_star)
+
+
+# ===========================================================================
+# PRIVATE HELPER
+# ===========================================================================
+
+def _linterp(x: float, xp: list, fp: list) -> float:
+    """Pure-Python piecewise linear interpolation."""
+    if x <= xp[0]:
+        return fp[0]
+    if x >= xp[-1]:
+        return fp[-1]
+    for i in range(len(xp) - 1):
+        if xp[i] <= x <= xp[i + 1]:
+            t = (x - xp[i]) / (xp[i + 1] - xp[i])
+            return fp[i] + t * (fp[i + 1] - fp[i])
+    return fp[-1]
+
+
+# ===========================================================================
+# FIGURE 5-18: Modified Nc for Layered Clay (Brown & Meyerhof 1969)
+# ===========================================================================
+
+# Digitised from Figure 5-18.
+# x-axis: H/B (depth of upper layer / foundation width)
+# y-axis: Nc,m (modified bearing capacity factor)
+# Curves parameterised by cu2/cu1 (strength ratio lower/upper layer).
+
+_FIG_5_18_HB = [0.0, 0.25, 0.50, 0.75, 1.00, 1.50, 2.00]
+
+# --- Figure 5-18(a): Strip footing ---
+# cu2/cu1 values and corresponding Nc,m curves
+_FIG_5_18A_CU_RATIO = [0.2, 0.4, 0.6, 0.8, 1.0, 1.5, 2.0, 3.0, 5.0]
+_FIG_5_18A_NCM = [
+    [1.0, 1.5, 2.2, 3.0, 3.8, 4.8, 5.14],   # cu2/cu1 = 0.2
+    [2.1, 2.6, 3.2, 3.8, 4.3, 4.9, 5.14],   # cu2/cu1 = 0.4
+    [3.1, 3.5, 3.9, 4.3, 4.6, 5.0, 5.14],   # cu2/cu1 = 0.6
+    [4.1, 4.3, 4.6, 4.8, 5.0, 5.1, 5.14],   # cu2/cu1 = 0.8
+    [5.14, 5.14, 5.14, 5.14, 5.14, 5.14, 5.14],  # cu2/cu1 = 1.0 (uniform)
+    [6.2, 6.0, 5.7, 5.5, 5.4, 5.2, 5.14],   # cu2/cu1 = 1.5
+    [7.2, 6.7, 6.2, 5.8, 5.5, 5.3, 5.14],   # cu2/cu1 = 2.0
+    [8.6, 7.8, 7.0, 6.3, 5.8, 5.3, 5.14],   # cu2/cu1 = 3.0
+    [10.2, 9.2, 8.0, 7.0, 6.2, 5.5, 5.14],  # cu2/cu1 = 5.0
+]
+
+# --- Figure 5-18(b): Circular footing ---
+_FIG_5_18B_CU_RATIO = [0.2, 0.4, 0.6, 0.8, 1.0, 1.5, 2.0, 3.0, 5.0]
+_FIG_5_18B_NCM = [
+    [1.2, 1.8, 2.7, 3.6, 4.5, 5.6, 6.05],   # cu2/cu1 = 0.2
+    [2.5, 3.1, 3.8, 4.5, 5.1, 5.8, 6.05],   # cu2/cu1 = 0.4
+    [3.6, 4.1, 4.6, 5.1, 5.4, 5.9, 6.05],   # cu2/cu1 = 0.6
+    [4.8, 5.1, 5.4, 5.6, 5.8, 6.0, 6.05],   # cu2/cu1 = 0.8
+    [6.05, 6.05, 6.05, 6.05, 6.05, 6.05, 6.05],  # cu2/cu1 = 1.0
+    [7.3, 7.0, 6.7, 6.4, 6.3, 6.1, 6.05],   # cu2/cu1 = 1.5
+    [8.5, 7.9, 7.3, 6.8, 6.5, 6.2, 6.05],   # cu2/cu1 = 2.0
+    [10.2, 9.2, 8.2, 7.4, 6.8, 6.3, 6.05],  # cu2/cu1 = 3.0
+    [12.2, 10.8, 9.4, 8.2, 7.2, 6.5, 6.05], # cu2/cu1 = 5.0
+]
+
+
+def figure_5_18a_Ncm_strip(cu2_over_cu1: float, H_over_B: float) -> float:
+    """Modified Nc for strip footing on layered clay (Figure 5-18a).
+
+    Brown & Meyerhof (1969) chart providing the modified bearing
+    capacity factor for a strip footing on a two-layer clay profile.
+
+    Parameters
+    ----------
+    cu2_over_cu1 : float
+        Ratio of undrained shear strength in lower layer to upper
+        layer (dimensionless, > 0).
+    H_over_B : float
+        Ratio of upper layer thickness to foundation width
+        (dimensionless, >= 0).
+
+    Returns
+    -------
+    float
+        Modified bearing capacity factor Nc,m for strip footing
+        (dimensionless).
+
+    Raises
+    ------
+    ValueError
+        If *cu2_over_cu1* is not positive or *H_over_B* is negative.
+
+    References
+    ----------
+    UFC 3-220-20, Foundations, 16 Jan 2025, Chapter 5,
+    Figure 5-18(a), p. 309.
+    Brown & Meyerhof (1969).
+    """
+    if cu2_over_cu1 <= 0.0:
+        raise ValueError("cu2_over_cu1 must be positive.")
+    if H_over_B < 0.0:
+        raise ValueError("H_over_B must be non-negative.")
+    # Interpolate each cu-ratio curve at query H/B, then interpolate across cu-ratio
+    row_vals = [_linterp(H_over_B, _FIG_5_18_HB, row) for row in _FIG_5_18A_NCM]
+    return _linterp(cu2_over_cu1, _FIG_5_18A_CU_RATIO, row_vals)
+
+
+def figure_5_18b_Ncm_circular(cu2_over_cu1: float, H_over_B: float) -> float:
+    """Modified Nc for circular footing on layered clay (Figure 5-18b).
+
+    Brown & Meyerhof (1969) chart providing the modified bearing
+    capacity factor for a circular footing on a two-layer clay profile.
+
+    Parameters
+    ----------
+    cu2_over_cu1 : float
+        Ratio of undrained shear strength in lower layer to upper
+        layer (dimensionless, > 0).
+    H_over_B : float
+        Ratio of upper layer thickness to foundation diameter
+        (dimensionless, >= 0).
+
+    Returns
+    -------
+    float
+        Modified bearing capacity factor Nc,m for circular footing
+        (dimensionless).
+
+    Raises
+    ------
+    ValueError
+        If *cu2_over_cu1* is not positive or *H_over_B* is negative.
+
+    References
+    ----------
+    UFC 3-220-20, Foundations, 16 Jan 2025, Chapter 5,
+    Figure 5-18(b), p. 309.
+    Brown & Meyerhof (1969).
+    """
+    if cu2_over_cu1 <= 0.0:
+        raise ValueError("cu2_over_cu1 must be positive.")
+    if H_over_B < 0.0:
+        raise ValueError("H_over_B must be non-negative.")
+    row_vals = [_linterp(H_over_B, _FIG_5_18_HB, row) for row in _FIG_5_18B_NCM]
+    return _linterp(cu2_over_cu1, _FIG_5_18B_CU_RATIO, row_vals)
+
+
+def plot_figure_5_18a(cu2_over_cu1=None, H_over_B=None, ax=None,
+                       show=True, **kwargs):
+    """Reproduce UFC Figure 5-18(a): Modified Nc for Strip Footing.
+
+    Plots Brown & Meyerhof (1969) curves of Nc,m vs H/B for each
+    cu2/cu1 ratio, for a strip footing on layered clay.
+
+    Parameters
+    ----------
+    cu2_over_cu1 : float, optional
+        Strength ratio query point.
+    H_over_B : float, optional
+        Depth ratio query point.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on.
+    show : bool, optional
+        If True, calls plt.show().
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
+    from geotech_common.plotting import get_pyplot, setup_engineering_plot
+    plt = get_pyplot()
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 6))
+
+    # Plot one curve per cu2/cu1 ratio
+    colors = plt.cm.viridis([i / (len(_FIG_5_18A_CU_RATIO) - 1)
+                             for i in range(len(_FIG_5_18A_CU_RATIO))])
+    hb_smooth = [i * 0.02 for i in range(0, 101)]  # 0 to 2.0
+
+    for idx, cr in enumerate(_FIG_5_18A_CU_RATIO):
+        ncm_curve = [figure_5_18a_Ncm_strip(cr, hb) for hb in hb_smooth]
+        ax.plot(hb_smooth, ncm_curve, '-', color=colors[idx], linewidth=1.5,
+                label=f'cu₂/cu₁ = {cr}')
+        ax.plot(_FIG_5_18_HB, _FIG_5_18A_NCM[idx], 'o', color=colors[idx],
+                markersize=4)
+
+    # Query point
+    if cu2_over_cu1 is not None and H_over_B is not None:
+        ncm_q = figure_5_18a_Ncm_strip(cu2_over_cu1, H_over_B)
+        ax.plot(H_over_B, ncm_q, 's', color='red', markersize=10, zorder=5,
+                label=f'cu₂/cu₁={cu2_over_cu1:.1f}, H/B={H_over_B:.2f}'
+                      f' → Nc,m={ncm_q:.2f}')
+        ax.axhline(ncm_q, color='red', linestyle=':', alpha=0.4)
+        ax.axvline(H_over_B, color='red', linestyle=':', alpha=0.4)
+
+    ax.legend(fontsize=7, loc='upper right', ncol=2)
+    setup_engineering_plot(
+        ax, 'Figure 5-18(a): Modified Nc — Strip Footing (Layered Clay)',
+        'H / B', 'Modified Bearing Capacity Factor, Nc,m')
+    if show:
+        plt.tight_layout()
+        plt.show()
+    return ax
+
+
+def plot_figure_5_18b(cu2_over_cu1=None, H_over_B=None, ax=None,
+                       show=True, **kwargs):
+    """Reproduce UFC Figure 5-18(b): Modified Nc for Circular Footing.
+
+    Plots Brown & Meyerhof (1969) curves of Nc,m vs H/B for each
+    cu2/cu1 ratio, for a circular footing on layered clay.
+
+    Parameters
+    ----------
+    cu2_over_cu1 : float, optional
+        Strength ratio query point.
+    H_over_B : float, optional
+        Depth ratio query point.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on.
+    show : bool, optional
+        If True, calls plt.show().
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
+    from geotech_common.plotting import get_pyplot, setup_engineering_plot
+    plt = get_pyplot()
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 6))
+
+    # Plot one curve per cu2/cu1 ratio
+    colors = plt.cm.viridis([i / (len(_FIG_5_18B_CU_RATIO) - 1)
+                             for i in range(len(_FIG_5_18B_CU_RATIO))])
+    hb_smooth = [i * 0.02 for i in range(0, 101)]  # 0 to 2.0
+
+    for idx, cr in enumerate(_FIG_5_18B_CU_RATIO):
+        ncm_curve = [figure_5_18b_Ncm_circular(cr, hb) for hb in hb_smooth]
+        ax.plot(hb_smooth, ncm_curve, '-', color=colors[idx], linewidth=1.5,
+                label=f'cu₂/cu₁ = {cr}')
+        ax.plot(_FIG_5_18_HB, _FIG_5_18B_NCM[idx], 'o', color=colors[idx],
+                markersize=4)
+
+    # Query point
+    if cu2_over_cu1 is not None and H_over_B is not None:
+        ncm_q = figure_5_18b_Ncm_circular(cu2_over_cu1, H_over_B)
+        ax.plot(H_over_B, ncm_q, 's', color='red', markersize=10, zorder=5,
+                label=f'cu₂/cu₁={cu2_over_cu1:.1f}, H/B={H_over_B:.2f}'
+                      f' → Nc,m={ncm_q:.2f}')
+        ax.axhline(ncm_q, color='red', linestyle=':', alpha=0.4)
+        ax.axvline(H_over_B, color='red', linestyle=':', alpha=0.4)
+
+    ax.legend(fontsize=7, loc='upper right', ncol=2)
+    setup_engineering_plot(
+        ax, 'Figure 5-18(b): Modified Nc — Circular Footing (Layered Clay)',
+        'H / B', 'Modified Bearing Capacity Factor, Nc,m')
+    if show:
+        plt.tight_layout()
+        plt.show()
+    return ax

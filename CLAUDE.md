@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`*_agent_foundry.py` in root): 3 functions each (agent/list/describe)
 
-## Module Inventory (948 tests)
+## Module Inventory (994 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -40,9 +40,9 @@ Key conventions:
 | ground_improvement | 43 | Aggregate piers, wick drains, surcharge, vibro (GEC-13) |
 | slope_stability | 55 | Fellenius/Bishop/Spencer, circular slip, grid search |
 | downdrag | 53 | Fellenius neutral plane, UFC 3-220-20 downdrag |
-| geotech_common | 238 | SoilProfile (82) + engineering checks (84) + adapters (72) |
+| geotech_common | 284 | SoilProfile (82) + checks (93) + adapters (89) + plots (21) |
 
-Other components: groundhog_agent (90 methods), DM7Eqs (354 functions, 1852 tests)
+Other components: groundhog_agent (90 methods), DM7Eqs (382 functions, 2008 tests)
 
 ## Working on a Module
 

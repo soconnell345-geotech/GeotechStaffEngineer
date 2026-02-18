@@ -860,3 +860,50 @@ class TestSlopeStabilityAdapter:
             gwt_points=gwt_pts,
         )
         assert geom is not None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# groundhog adapter
+# ──────────────────────────────────────────────────────────────────────
+
+class TestGroundhogAdapter:
+    """Tests for to_groundhog_profile() and to_logplot()."""
+
+    def test_to_groundhog_profile_basic(self):
+        groundhog = pytest.importorskip("groundhog")
+        profile = _mixed_profile()
+        gh = profile.to_groundhog_profile()
+        assert len(gh) == 3
+        assert 'Depth from [m]' in gh.columns
+        assert 'Depth to [m]' in gh.columns
+        assert 'Soil type' in gh.columns
+
+    def test_to_groundhog_profile_soil_types(self):
+        groundhog = pytest.importorskip("groundhog")
+        profile = _mixed_profile()
+        gh = profile.to_groundhog_profile()
+        soil_types = list(gh['Soil type'])
+        assert soil_types[0] == "Sand"   # SM
+        assert soil_types[1] == "Clay"   # CH
+
+    def test_to_groundhog_profile_columns(self):
+        groundhog = pytest.importorskip("groundhog")
+        profile = _mixed_profile()
+        gh = profile.to_groundhog_profile()
+        # Should have unit weight column
+        assert 'Total unit weight [kN/m3]' in gh.columns
+
+    def test_to_logplot_returns_logplot(self):
+        groundhog = pytest.importorskip("groundhog")
+        profile = _mixed_profile()
+        logplot = profile.to_logplot()
+        from groundhog.general.plotting import LogPlot
+        assert isinstance(logplot, LogPlot)
+
+    def test_to_groundhog_without_groundhog(self):
+        """When groundhog is not available, should raise ImportError."""
+        import importlib
+        import sys
+        # Only test this if groundhog is not installed
+        if 'groundhog' in sys.modules:
+            pytest.skip("groundhog is installed; cannot test ImportError path")

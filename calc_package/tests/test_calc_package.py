@@ -360,3 +360,75 @@ class TestSlopeStabilityIntegration:
         assert "FOS" in html
         assert "data:image/png;base64" in html
         assert "Slip" in html or "slip" in html
+
+
+# ── DM7 figure helper tests ────────────────────────────────────
+
+class TestDm7FigureHelper:
+    """Tests for calc_package.dm7_figures.dm7_figure utility."""
+
+    def test_figure_516_no_query(self):
+        """dm7_figure wraps plot_figure_5_16 into FigureData."""
+        pytest.importorskip("matplotlib")
+        import sys
+        sys.path.insert(0, "DM7Eqs")
+        from geotech.dm7_1.chapter5 import plot_figure_5_16
+        from calc_package.dm7_figures import dm7_figure
+        import base64
+
+        fd = dm7_figure(plot_figure_5_16, caption="Test caption")
+        assert isinstance(fd, FigureData)
+        assert fd.caption == "Test caption"
+        assert len(fd.image_base64) > 100
+        # Verify valid PNG
+        decoded = base64.b64decode(fd.image_base64)
+        assert decoded[:4] == b'\x89PNG'
+
+    def test_figure_516_with_query(self):
+        """dm7_figure passes query params through to plot function."""
+        pytest.importorskip("matplotlib")
+        import sys
+        sys.path.insert(0, "DM7Eqs")
+        from geotech.dm7_1.chapter5 import plot_figure_5_16
+        from calc_package.dm7_figures import dm7_figure
+
+        fd = dm7_figure(plot_figure_5_16, Tv=0.2,
+                        caption="Tv=0.2 lookup")
+        assert isinstance(fd, FigureData)
+        assert fd.width_percent == 85
+
+    def test_auto_title_from_docstring(self):
+        """Title auto-extracted from plot function docstring."""
+        pytest.importorskip("matplotlib")
+        import sys
+        sys.path.insert(0, "DM7Eqs")
+        from geotech.dm7_1.chapter8 import plot_figure_8_46
+        from calc_package.dm7_figures import dm7_figure
+
+        fd = dm7_figure(plot_figure_8_46, title=None)
+        assert "8-46" in fd.title or "8_46" in fd.title
+
+    def test_custom_title(self):
+        """Explicit title overrides docstring extraction."""
+        pytest.importorskip("matplotlib")
+        import sys
+        sys.path.insert(0, "DM7Eqs")
+        from geotech.dm7_1.chapter8 import plot_figure_8_46
+        from calc_package.dm7_figures import dm7_figure
+
+        fd = dm7_figure(plot_figure_8_46, title="My Custom Title")
+        assert fd.title == "My Custom Title"
+
+    def test_figure_436_with_query(self):
+        """Rowe moment reduction figure with query point."""
+        pytest.importorskip("matplotlib")
+        import sys
+        sys.path.insert(0, "DM7Eqs")
+        from geotech.dm7_2.chapter4 import plot_figure_4_36
+        from calc_package.dm7_figures import dm7_figure
+
+        fd = dm7_figure(plot_figure_4_36, log_rho=-2.0,
+                        soil_type="dense_sand",
+                        caption="Rowe reduction for dense sand")
+        assert isinstance(fd, FigureData)
+        assert "dense sand" in fd.caption
