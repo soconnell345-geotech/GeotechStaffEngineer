@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-16 analysis modules + groundhog wrapper + DM7 equations.
+17 analysis modules + groundhog wrapper + OpenSees agent + DM7 equations.
 
 ## Architecture Patterns
 
@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`*_agent_foundry.py` in root): 3 functions each (agent/list/describe)
 
-## Module Inventory (994 tests)
+## Module Inventory (1100 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -41,6 +41,7 @@ Key conventions:
 | slope_stability | 55 | Fellenius/Bishop/Spencer, circular slip, grid search |
 | downdrag | 53 | Fellenius neutral plane, UFC 3-220-20 downdrag |
 | geotech_common | 284 | SoilProfile (82) + checks (93) + adapters (89) + plots (21) |
+| opensees_agent | 106 | PM4Sand cyclic DSS, BNWF lateral pile, 1D site response |
 
 Other components: groundhog_agent (90 methods), DM7Eqs (382 functions, 2008 tests)
 
@@ -49,7 +50,7 @@ Other components: groundhog_agent (90 methods), DM7Eqs (382 functions, 2008 test
 1. Read the module's `DESIGN.md` first for theory and conventions
 2. Read `__init__.py` for the public API
 3. Run that module's tests: `pytest module_name/ -v`
-4. Full regression: `pytest bearing_capacity/ settlement/ axial_pile/ sheet_pile/ lateral_pile/validation.py pile_group/ wave_equation/ geotech_common/ drilled_shaft/ seismic_geotech/ retaining_walls/ ground_improvement/ slope_stability/ downdrag/ -q`
+4. Full regression: `pytest bearing_capacity/ settlement/ axial_pile/ sheet_pile/ lateral_pile/validation.py pile_group/ wave_equation/ geotech_common/ drilled_shaft/ seismic_geotech/ retaining_walls/ ground_improvement/ slope_stability/ downdrag/ opensees_agent/ -q`
 
 ## Environment
 
