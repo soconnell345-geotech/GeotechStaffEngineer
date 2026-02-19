@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-19 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + DM7 equations.
+21 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + DM7 equations.
 
 ## Architecture Patterns
 
@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`*_agent_foundry.py` in root): 3 functions each (agent/list/describe)
 
-## Module Inventory (1241 tests)
+## Module Inventory (1345 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -44,6 +44,8 @@ Key conventions:
 | opensees_agent | 106 | PM4Sand cyclic DSS, BNWF lateral pile, 1D site response |
 | pystrata_agent | ~57 | 1D EQL site response (SHAKE-type, Darendeli/Menq/custom) |
 | seismic_signals | 74 | Earthquake signal processing (eqsig/pyrotd) |
+| liquepy_agent | 59 | CPT-based liquefaction triggering (B&I 2014, LPI, LSN, LDI) |
+| pygef_agent | 45 | CPT/borehole file parser (GEF/BRO-XML) |
 
 Other components: groundhog_agent (90 methods), DM7Eqs (382 functions, 2008 tests)
 
@@ -52,7 +54,7 @@ Other components: groundhog_agent (90 methods), DM7Eqs (382 functions, 2008 test
 1. Read the module's `DESIGN.md` first for theory and conventions
 2. Read `__init__.py` for the public API
 3. Run that module's tests: `pytest module_name/ -v`
-4. Full regression: `pytest bearing_capacity/ settlement/ axial_pile/ sheet_pile/ lateral_pile/validation.py pile_group/ wave_equation/ geotech_common/ drilled_shaft/ seismic_geotech/ retaining_walls/ ground_improvement/ slope_stability/ downdrag/ opensees_agent/ pystrata_agent/ seismic_signals_agent/ -q`
+4. Full regression: `pytest bearing_capacity/ settlement/ axial_pile/ sheet_pile/ lateral_pile/validation.py pile_group/ wave_equation/ geotech_common/ drilled_shaft/ seismic_geotech/ retaining_walls/ ground_improvement/ slope_stability/ downdrag/ opensees_agent/ pystrata_agent/ seismic_signals_agent/ liquepy_agent/ pygef_agent/ -q`
 
 ## Environment
 
