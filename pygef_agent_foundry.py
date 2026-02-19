@@ -90,25 +90,38 @@ METHOD_INFO = {
         "brief": "Parse a CPT file (GEF or BRO-XML) into standardized arrays.",
         "description": (
             "Reads a CPT file in GEF (Dutch Geotechnical Exchange Format) or "
-            "BRO-XML format. Extracts cone resistance, sleeve friction, pore "
-            "pressure, and friction ratio. Converts all pressures from MPa to kPa."
+            "BRO-XML format. Extracts cone resistance (qc), sleeve friction (fs), "
+            "pore pressure (u2), and friction ratio (Rf). All pressures are "
+            "converted from the source file's MPa to kPa. Depths are in meters "
+            "below ground surface. Only GEF and BRO-XML formats are supported "
+            "(not CSV or other text formats). The output arrays can be passed "
+            "directly to liquepy_agent for liquefaction triggering analysis."
         ),
-        "reference": "GEF format spec; BRO-XML schema",
+        "reference": "GEF format spec (Dutch); BRO-XML schema (Netherlands PDOK)",
         "parameters": {
-            "file_path": {"type": "str", "required": True, "description": "Path to CPT file (.gef or .xml)."},
-            "engine": {"type": "str", "required": False, "default": "auto", "description": "'auto', 'gef', or 'xml'."},
-            "index": {"type": "int", "required": False, "default": 0, "description": "Record index for multi-record XML files."},
+            "file_path": {"type": "str", "required": True,
+                          "description": "Local filesystem path to CPT file (.gef or .xml). Absolute or relative path."},
+            "engine": {"type": "str", "required": False, "default": "auto",
+                       "choices": ["auto", "gef", "xml"],
+                       "description": "Parser engine. 'auto' detects format from file header. Use 'gef' for .gef files, 'xml' for BRO-XML."},
+            "index": {"type": "int", "required": False, "default": 0, "range": ">= 0",
+                      "description": "Zero-based record index. Only needed for BRO-XML files that contain multiple CPT records. Use 0 for single-record files and all GEF files."},
         },
         "returns": {
-            "n_points": "Number of data points.",
-            "alias": "Test ID or filename.",
-            "final_depth_m": "Final penetration depth (m).",
-            "gwl_m": "Groundwater level (m below surface).",
-            "depth_m": "Depth array (m).",
-            "q_c_kPa": "Cone tip resistance array (kPa).",
-            "f_s_kPa": "Sleeve friction array (kPa).",
-            "u_2_kPa": "Pore pressure u2 array (kPa).",
-            "Rf_pct": "Friction ratio array (%).",
+            "n_points": "Number of CPT data points (readings).",
+            "alias": "Test ID from file header (e.g. 'CPT-01'), or filename if not specified.",
+            "final_depth_m": "Maximum penetration depth (m below ground surface).",
+            "predrilled_depth_m": "Pre-excavated depth before CPT start (m). 0 if not pre-drilled.",
+            "gwl_m": "Groundwater level (m below surface). null if not recorded in file.",
+            "x": "X coordinate (easting) from file header. null if not recorded.",
+            "y": "Y coordinate (northing) from file header. null if not recorded.",
+            "srs_name": "Spatial reference system (e.g. 'urn:ogc:def:crs:EPSG::28992' for Dutch RD New).",
+            "available_columns": "List of column names present in the source file (e.g. ['penetrationLength', 'coneResistance', ...]).",
+            "depth_m": "Array of depths below ground surface (m). Always present.",
+            "q_c_kPa": "Array of cone tip resistance values (kPa). Always present. Converted from MPa.",
+            "f_s_kPa": "Array of sleeve friction values (kPa). Present if file has localFriction column. Converted from MPa.",
+            "u_2_kPa": "Array of pore pressure u2 values (kPa). Present if file has porePressureU2 column. Converted from MPa.",
+            "Rf_pct": "Array of friction ratio values (%). Present if file has frictionRatio column.",
         },
     },
     "parse_bore": {
@@ -116,20 +129,31 @@ METHOD_INFO = {
         "brief": "Parse a borehole file (GEF or BRO-XML) into layer descriptions.",
         "description": (
             "Reads a borehole file in GEF or BRO-XML format. Extracts layer "
-            "boundaries, geotechnical soil names, and soil codes."
+            "boundaries, geotechnical soil names (Dutch classification), and "
+            "soil codes. Only GEF and BRO-XML formats are supported. GEF bore "
+            "files use Dutch soil classification codes (e.g. 'Zs1' = slightly "
+            "silty sand, 'Kz' = sandy clay) which are translated to full Dutch "
+            "soil names by pygef."
         ),
-        "reference": "GEF format spec; BRO-XML schema",
+        "reference": "GEF format spec (Dutch); BRO-XML schema; NEN 5104 classification",
         "parameters": {
-            "file_path": {"type": "str", "required": True, "description": "Path to borehole file (.gef or .xml)."},
-            "engine": {"type": "str", "required": False, "default": "auto", "description": "'auto', 'gef', or 'xml'."},
-            "index": {"type": "int", "required": False, "default": 0, "description": "Record index for multi-record XML files."},
+            "file_path": {"type": "str", "required": True,
+                          "description": "Local filesystem path to borehole file (.gef or .xml). Absolute or relative path."},
+            "engine": {"type": "str", "required": False, "default": "auto",
+                       "choices": ["auto", "gef", "xml"],
+                       "description": "Parser engine. 'auto' detects format from file header."},
+            "index": {"type": "int", "required": False, "default": 0, "range": ">= 0",
+                      "description": "Zero-based record index for multi-record XML files."},
         },
         "returns": {
-            "n_layers": "Number of soil layers.",
-            "alias": "Borehole ID or filename.",
-            "final_depth_m": "Total bore depth (m).",
-            "gwl_m": "Groundwater level (m below surface).",
-            "layers": "List of layers with top_m, bottom_m, soil_name, soil_code.",
+            "n_layers": "Number of soil layers in the borehole log.",
+            "alias": "Borehole ID from file header (e.g. 'BH-01'), or filename if not specified.",
+            "final_depth_m": "Total bore depth (m below ground surface).",
+            "gwl_m": "Groundwater level (m below surface). null if not recorded.",
+            "x": "X coordinate (easting). null if not recorded.",
+            "y": "Y coordinate (northing). null if not recorded.",
+            "srs_name": "Spatial reference system.",
+            "layers": "List of layer objects, each with: top_m (upper boundary depth), bottom_m (lower boundary depth), soil_name (Dutch geotechnical name), soil_code (NEN 5104 code if available).",
         },
     },
 }
