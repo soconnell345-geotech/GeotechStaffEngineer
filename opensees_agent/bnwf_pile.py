@@ -34,11 +34,12 @@ _PY_MODEL_MAP = {
     "api_sand": "SandAPI",
     "reese_sand": "SandReese",
     "weak_rock": "WeakRock",
+    "liquefied_sand": "SandLiquefied",
 }
 
 # Which models are "clay" (soilType=1) vs "sand" (soilType=2) for PySimple1
 _CLAY_MODELS = {"matlock", "jeanjean", "stiff_clay_below_wt", "stiff_clay_above_wt"}
-_SAND_MODELS = {"api_sand", "reese_sand"}
+_SAND_MODELS = {"api_sand", "reese_sand", "liquefied_sand"}
 
 
 def _validate_bnwf_inputs(pile_length, pile_diameter, wall_thickness, E_pile,
@@ -99,6 +100,7 @@ def _build_py_model(layer_dict):
     from lateral_pile.py_curves import (
         SoftClayMatlock, SoftClayJeanjean, StiffClayBelowWT,
         StiffClayAboveWT, SandAPI, SandReese, WeakRock,
+        SandLiquefied,
     )
 
     class_map = {
@@ -109,6 +111,7 @@ def _build_py_model(layer_dict):
         "SandAPI": SandAPI,
         "SandReese": SandReese,
         "WeakRock": WeakRock,
+        "SandLiquefied": SandLiquefied,
     }
 
     model_name = layer_dict["py_model"].lower().strip()

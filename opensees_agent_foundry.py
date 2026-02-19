@@ -104,8 +104,9 @@ METHOD_INFO = {
                 "description": (
                     "Soil layers. Each dict must have: top (m), bottom (m), "
                     "py_model (str: 'matlock', 'jeanjean', 'stiff_clay_below_wt', "
-                    "'stiff_clay_above_wt', 'api_sand', 'reese_sand', 'weak_rock'), "
-                    "plus model-specific params (phi, gamma, k, su/c, eps50, etc.)."
+                    "'stiff_clay_above_wt', 'api_sand', 'reese_sand', 'weak_rock', "
+                    "'liquefied_sand'), plus model-specific params (phi, gamma, k, "
+                    "su/c, eps50, etc.). liquefied_sand requires only 'diameter'."
                 ),
             },
             "lateral_load": {

@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`*_agent_foundry.py` in root): 3 functions each (agent/list/describe)
 
-## Module Inventory (1100 tests)
+## Module Inventory (1108 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -31,7 +31,7 @@ Key conventions:
 | settlement | 39 | Consolidation & immediate (CSETT) |
 | axial_pile | 55 | Driven pile capacity (Nordlund/Tomlinson/Beta) |
 | sheet_pile | 26 | Cantilever/anchored walls (Rankine/Coulomb) |
-| lateral_pile | 58 | Lateral pile (COM624P, 7 p-y models, FD solver) |
+| lateral_pile | 66 | Lateral pile (COM624P, 8 p-y models, FD solver) |
 | pile_group | 72 | Rigid cap groups (6-DOF, Converse-Labarre) |
 | wave_equation | 45 | Smith 1-D wave equation (bearing graph, drivability) |
 | drilled_shaft | 48 | GEC-10 alpha/beta/rock socket |

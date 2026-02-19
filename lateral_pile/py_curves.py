@@ -1027,3 +1027,131 @@ class WeakRock:
         y_array = np.linspace(0, y_max, n_points)
         p_array = np.array([self.get_p(y, z, b) for y in y_array])
         return y_array, p_array
+
+
+# =============================================================================
+# 7. Liquefied Sand — Rollins et al. (2005)
+# =============================================================================
+
+@dataclass
+class SandLiquefied:
+    """p-y curves for liquefied sand per Rollins et al. (2005).
+
+    Concave-up formulation for piles in fully liquefied sand, based on
+    full-scale blast-induced liquefaction tests.  The curve is very soft
+    (near-zero initial stiffness) and caps at y = 150 mm.
+
+    No soil strength parameters are needed — the model is purely empirical.
+
+    p = A * (B * y)^C * pd       for y < 0.15 m
+    p = pu                        for y >= 0.15 m
+
+    where:
+        A = 3e-7 * (z + 1)^6.05
+        B = 2.8  * (z + 1)^0.11
+        C = 2.85 * (z + 1)^-0.41
+        pd = 3.81 * ln(D) + 5.6     (diameter correction)
+
+    Parameters
+    ----------
+    diameter : float
+        Pile diameter (m).  Valid range: 0.3 to 2.6 m.
+
+    References
+    ----------
+    Rollins, K.M., Gerber, T.M., Lane, J.D., & Ashford, S.A. (2005).
+    "Lateral Resistance of a Full-Scale Pile Group in Liquefied Sand."
+    J. Geotech. Geoenviron. Eng., 131(1), 115-125.
+    """
+    diameter: float
+
+    def __post_init__(self):
+        if self.diameter <= 0:
+            raise ValueError(f"diameter must be positive, got {self.diameter}")
+        if self.diameter < 0.3 or self.diameter > 2.6:
+            warnings.warn(
+                f"SandLiquefied: diameter {self.diameter} m outside validated "
+                f"range (0.3-2.6 m). Results may be unreliable.")
+
+    # --- Internal coefficients ---
+
+    @staticmethod
+    def _coeff_A(z: float) -> float:
+        return 3.0e-7 * (z + 1.0) ** 6.05
+
+    @staticmethod
+    def _coeff_B(z: float) -> float:
+        return 2.8 * (z + 1.0) ** 0.11
+
+    @staticmethod
+    def _coeff_C(z: float) -> float:
+        return 2.85 * (z + 1.0) ** (-0.41)
+
+    def _pd(self) -> float:
+        """Diameter correction factor."""
+        return 3.81 * math.log(self.diameter) + 5.6
+
+    # --- Public interface (duck-typing, matches all other models) ---
+
+    def get_pu(self, z: float, b: float) -> float:
+        """Ultimate resistance at depth z (at y = 0.15 m cap).
+
+        Parameters
+        ----------
+        z : float
+            Depth below ground surface (m).
+        b : float
+            Pile diameter (m).  Not used directly; uses self.diameter.
+        """
+        if z <= 0:
+            return 0.0
+        A = self._coeff_A(z)
+        B = self._coeff_B(z)
+        C = self._coeff_C(z)
+        pd = self._pd()
+        return A * (B * 0.15) ** C * pd
+
+    def get_p(self, y: float, z: float, b: float) -> float:
+        """Compute soil resistance for liquefied sand.
+
+        Parameters
+        ----------
+        y : float
+            Lateral deflection (m).
+        z : float
+            Depth below ground surface (m).
+        b : float
+            Pile diameter (m).
+        """
+        if z <= 0:
+            return 0.0
+
+        sign = _safe_sign(y)
+        y_abs = abs(y)
+        if y_abs == 0:
+            return 0.0
+
+        pu = self.get_pu(z, b)
+
+        # Cap at 150 mm deflection
+        if y_abs >= 0.15:
+            return sign * pu
+
+        A = self._coeff_A(z)
+        B = self._coeff_B(z)
+        C = self._coeff_C(z)
+        pd = self._pd()
+
+        p = A * (B * y_abs) ** C * pd
+        return sign * min(p, pu)
+
+    def get_py_curve(self, z: float, b: float, n_points: int = 50,
+                     y_max_factor: float = None) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate a complete p-y curve at depth z.
+
+        Default y_max = 0.20 m (past the 0.15 m cap) to show the plateau.
+        """
+        y_max = 0.20 if y_max_factor is None else y_max_factor * b / 60.0
+        y_array = np.linspace(0, y_max, n_points)
+        p_array = np.array([self.get_p(y, z, b) for y in y_array])
+        return y_array, p_array

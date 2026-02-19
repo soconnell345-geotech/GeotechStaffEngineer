@@ -30,7 +30,7 @@ from lateral_pile.pile import Pile, ReinforcedConcreteSection, rebar_diameter, _
 from lateral_pile.soil import SoilLayer
 from lateral_pile.py_curves import (
     SoftClayMatlock, SoftClayJeanjean, SandAPI, SandReese,
-    StiffClayBelowWT, StiffClayAboveWT, WeakRock,
+    StiffClayBelowWT, StiffClayAboveWT, WeakRock, SandLiquefied,
 )
 from lateral_pile.solver import solve_lateral_pile, hetenyi_solution
 from lateral_pile.analysis import LateralPileAnalysis
@@ -337,6 +337,75 @@ class TestPYCurves:
 
         # Antisymmetry
         assert abs(model.get_p(0.01, z, b) + model.get_p(-0.01, z, b)) < 1e-10
+
+    def test_liquefied_sand_pu_increases_with_depth(self):
+        """Liquefied sand pu should increase with depth."""
+        model = SandLiquefied(diameter=0.6)
+        pu_1 = model.get_pu(1.0, 0.6)
+        pu_5 = model.get_pu(5.0, 0.6)
+        assert pu_5 > pu_1 > 0
+
+    def test_liquefied_sand_concave_up_shape(self):
+        """Liquefied sand curve should be concave-up (stiffness increases)."""
+        model = SandLiquefied(diameter=0.6)
+        z, b = 3.0, 0.6
+        # Secant stiffness should increase with deflection (concave-up)
+        p1 = model.get_p(0.02, z, b)
+        p2 = model.get_p(0.10, z, b)
+        secant_1 = p1 / 0.02
+        secant_2 = p2 / 0.10
+        assert secant_2 > secant_1
+
+    def test_liquefied_sand_cap_at_150mm(self):
+        """Resistance should cap at y = 0.15 m."""
+        model = SandLiquefied(diameter=0.6)
+        z, b = 5.0, 0.6
+        pu = model.get_pu(z, b)
+        p_at_150 = model.get_p(0.15, z, b)
+        p_at_200 = model.get_p(0.20, z, b)
+        assert abs(p_at_150 - pu) < 1e-10
+        assert abs(p_at_200 - pu) < 1e-10
+
+    def test_liquefied_sand_antisymmetry(self):
+        """p(-y) should equal -p(y)."""
+        model = SandLiquefied(diameter=0.6)
+        p_pos = model.get_p(0.05, 3.0, 0.6)
+        p_neg = model.get_p(-0.05, 3.0, 0.6)
+        assert abs(p_pos + p_neg) < 1e-10
+
+    def test_liquefied_sand_surface_zero(self):
+        """At z=0, resistance should be zero."""
+        model = SandLiquefied(diameter=0.6)
+        assert model.get_p(0.05, 0.0, 0.6) == 0.0
+        assert model.get_pu(0.0, 0.6) == 0.0
+
+    def test_liquefied_sand_very_soft(self):
+        """Liquefied sand should be much softer than intact API sand."""
+        liq = SandLiquefied(diameter=0.6)
+        intact = SandAPI(phi=35.0, gamma=10.0, k=16000.0)
+        z, b = 3.0, 0.6
+        p_liq = liq.get_p(0.05, z, b)
+        p_intact = intact.get_p(0.05, z, b)
+        # Liquefied should be at least 10x softer
+        assert p_liq < p_intact / 10.0
+
+    def test_liquefied_sand_diameter_effect(self):
+        """Larger diameter should give higher resistance (pd correction)."""
+        small = SandLiquefied(diameter=0.3)
+        large = SandLiquefied(diameter=1.0)
+        z, b = 3.0, 0.6
+        assert large.get_pu(z, b) > small.get_pu(z, b)
+
+    def test_liquefied_sand_get_py_curve(self):
+        """get_py_curve should return arrays of correct shape."""
+        model = SandLiquefied(diameter=0.6)
+        y_arr, p_arr = model.get_py_curve(3.0, 0.6, n_points=30)
+        assert len(y_arr) == 30
+        assert len(p_arr) == 30
+        assert y_arr[0] == 0.0
+        assert p_arr[0] == 0.0
+        # All positive for positive y
+        assert all(p >= 0 for p in p_arr)
 
 
 # =============================================================================

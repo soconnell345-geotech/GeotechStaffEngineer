@@ -2,7 +2,7 @@
 
 ## Purpose
 Finite-difference beam-on-nonlinear-foundation solver for laterally loaded
-piles. Implements 7 p-y curve models and matches COM624P published results.
+piles. Implements 8 p-y curve models and matches COM624P published results.
 
 ## References
 - Matlock (1970) — soft clay p-y curves
@@ -10,12 +10,13 @@ piles. Implements 7 p-y curve models and matches COM624P published results.
 - API RP2A (2000) — sand simplified p-y
 - Reese (1975) — stiff clay below/above water table
 - Jeanjean (2009) — soft clay updated model
+- Rollins et al. (2005) — liquefied sand p-y curves
 - COM624P User Manual (Wang & Reese 1993)
 
 ## Files
 - `pile.py` — Pile dataclass (solid/pipe, variable EI sections)
 - `soil.py` — SoilLayer with p-y model interface, layer validation
-- `py_curves.py` — 7 models: Matlock, Jeanjean, StiffClayBelowWT, StiffClayAboveWT, SandReese, SandAPI, WeakRock
+- `py_curves.py` — 8 models: Matlock, Jeanjean, StiffClayBelowWT, StiffClayAboveWT, SandReese, SandAPI, WeakRock, SandLiquefied
 - `solver.py` — FD beam-column solver
 - `analysis.py` — LateralPileAnalysis orchestrator class
 - `results.py` — Results container with matplotlib plotting
@@ -42,4 +43,4 @@ results.summary()
 - COM624P Example 1 (Sabine River): 0.3% match to published 34.3mm
 - Hetenyi closed-form: <2% error
 - Force/moment equilibrium: <0.01% error
-- 58 tests (in validation.py, not tests/ subfolder)
+- 66 tests (in validation.py, not tests/ subfolder)
