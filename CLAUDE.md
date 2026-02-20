@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-27 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + DM7 equations.
+30 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + geolysis agent + pystra agent + pydiggs agent + DM7 equations.
 
 ## Architecture Patterns
 
@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`*_agent_foundry.py` in root): 3 functions each (agent/list/describe)
 
-## Module Inventory (1596 tests)
+## Module Inventory (1735 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -52,6 +52,9 @@ Key conventions:
 | salib_agent | 35 | Sobol & Morris sensitivity analysis |
 | pyseismosoil_agent | 41 | MKZ/HH nonlinear soil curve calibration + Vs profiles |
 | swprocess_agent | 30 | MASW surface wave dispersion analysis |
+| geolysis_agent | 65 | USCS/AASHTO soil classification + SPT corrections + bearing capacity |
+| pystra_agent | 43 | FORM/SORM/Monte Carlo structural reliability analysis |
+| pydiggs_agent | 31 | DIGGS 2.6 XML schema and dictionary validation |
 
 Other components: groundhog_agent (90 methods), DM7Eqs (382 functions, 2008 tests)
 
@@ -60,7 +63,7 @@ Other components: groundhog_agent (90 methods), DM7Eqs (382 functions, 2008 test
 1. Read the module's `DESIGN.md` first for theory and conventions
 2. Read `__init__.py` for the public API
 3. Run that module's tests: `pytest module_name/ -v`
-4. Full regression: `pytest bearing_capacity/ settlement/ axial_pile/ sheet_pile/ lateral_pile/validation.py pile_group/ wave_equation/ geotech_common/ drilled_shaft/ seismic_geotech/ retaining_walls/ ground_improvement/ slope_stability/ downdrag/ opensees_agent/ pystrata_agent/ seismic_signals_agent/ liquepy_agent/ pygef_agent/ hvsrpy_agent/ gstools_agent/ ags4_agent/ salib_agent/ pyseismosoil_agent/ swprocess_agent/ -q`
+4. Full regression: `pytest bearing_capacity/ settlement/ axial_pile/ sheet_pile/ lateral_pile/validation.py pile_group/ wave_equation/ geotech_common/ drilled_shaft/ seismic_geotech/ retaining_walls/ ground_improvement/ slope_stability/ downdrag/ opensees_agent/ pystrata_agent/ seismic_signals_agent/ liquepy_agent/ pygef_agent/ hvsrpy_agent/ gstools_agent/ ags4_agent/ salib_agent/ pyseismosoil_agent/ swprocess_agent/ geolysis_agent/ pystra_agent/ pydiggs_agent/ -q`
 
 ## Environment
 
