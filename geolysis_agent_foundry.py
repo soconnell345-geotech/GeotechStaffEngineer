@@ -145,6 +145,22 @@ METHOD_INFO = {
             "fines": "Fines content (%).",
             "sand": "Sand content (%).",
         },
+        "related": {
+            "classify_aashto": "Also classify using AASHTO system.",
+            "correct_spt": "Correct SPT N-values for the classified soil.",
+            "bearing_capacity_agent.bearing_capacity_analysis": "Use classification to select appropriate strength parameters.",
+        },
+        "typical_workflow": (
+            "1. Classify soil (this method)\n"
+            "2. Also classify AASHTO if needed for highway projects (classify_aashto)\n"
+            "3. Correct SPT N-values (correct_spt)\n"
+            "4. Use corrected N-value for bearing capacity or settlement"
+        ),
+        "common_mistakes": [
+            "Omitting fines content — required for proper classification.",
+            "Not providing d_10/d_30/d_60 for coarse-grained soils — needed for Cu/Cc gradation check.",
+            "Setting liquid_limit=0 and plastic_limit=0 for non-plastic soils — this is correct behavior.",
+        ],
     },
     "classify_aashto": {
         "category": "Classification",

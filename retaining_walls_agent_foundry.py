@@ -11,7 +11,12 @@ Covers cantilever retaining walls and MSE (Mechanically Stabilized Earth) walls.
 
 import json
 import math
-from functions.api import function
+try:
+    from functions.api import function
+except ImportError:
+    def function(fn):
+        fn.__wrapped__ = fn
+        return fn
 
 from retaining_walls.geometry import CantileverWallGeometry, MSEWallGeometry
 from retaining_walls.cantilever import analyze_cantilever_wall
@@ -222,6 +227,24 @@ METHOD_INFO = {
             "in_middle_third": "True if resultant is within middle third.",
             "geometry": "Auto-sized wall geometry details.",
         },
+        "related": {
+            "seismic_geotech_agent.seismic_earth_pressure": "Get seismic KAE for M-O analysis.",
+            "bearing_capacity_agent.bearing_capacity_analysis": "Check bearing under wall base.",
+            "slope_stability_agent.analyze_slope": "Global stability check for tall walls.",
+            "sheet_pile_agent.cantilever_wall": "Alternative: sheet pile wall for excavation support.",
+        },
+        "typical_workflow": (
+            "1. Define wall geometry and backfill properties\n"
+            "2. Run cantilever_wall for external stability (this method)\n"
+            "3. Check bearing capacity under base (bearing_capacity_agent)\n"
+            "4. If seismic: get KAE (seismic_geotech_agent.seismic_earth_pressure)\n"
+            "5. For tall walls: check global stability (slope_stability_agent)"
+        ),
+        "common_mistakes": [
+            "Forgetting phi_foundation — defaults to phi_backfill if omitted.",
+            "Setting base_width too narrow — typical rule of thumb is base_width ≈ 0.6-0.7 * wall_height.",
+            "Omitting stem_thickness_base — auto-sized but should be checked for structural adequacy.",
+        ],
     },
     "mse_wall": {
         "category": "MSE Wall",

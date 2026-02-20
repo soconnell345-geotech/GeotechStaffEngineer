@@ -12,7 +12,12 @@ Implements the Fellenius unified neutral plane method with UFC 3-220-20 coverage
 import json
 import math
 import numpy as np
-from functions.api import function
+try:
+    from functions.api import function
+except ImportError:
+    def function(fn):
+        fn.__wrapped__ = fn
+        return fn
 
 from downdrag.soil import DowndragSoilLayer, DowndragSoilProfile
 from downdrag.analysis import DowndragAnalysis
@@ -234,6 +239,21 @@ METHOD_INFO = {
             "geotechnical_ok": "True if Q_dead <= total_resistance. Dragload correctly excluded per Fellenius/AASHTO.",
             "settlement_ok": "True if pile_settlement <= allowable. Present only if allowable_settlement provided.",
         },
+        "related": {
+            "axial_pile_agent.axial_pile_capacity": "Compute pile capacity before checking downdrag.",
+            "settlement_agent.consolidation_settlement": "Estimate settlement causing downdrag.",
+        },
+        "typical_workflow": (
+            "1. Compute pile capacity (axial_pile_agent.axial_pile_capacity)\n"
+            "2. Run downdrag analysis (this method)\n"
+            "3. Check design_load + dragload < Q_geotechnical at neutral plane\n"
+            "4. Check settlement at neutral plane is acceptable"
+        ),
+        "common_mistakes": [
+            "Settling cohesive layers MUST have Cc/e0 or C_ec parameters for neutral plane calculation.",
+            "Mark layers as settling=True only if they will consolidate (e.g., under new fill).",
+            "Q_dead is the dead load only — do not include live load for downdrag check.",
+        ],
     },
 }
 

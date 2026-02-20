@@ -12,7 +12,12 @@ Covers Nordlund, Tomlinson alpha, and Beta methods for driven piles.
 import json
 import math
 import numpy as np
-from functions.api import function
+try:
+    from functions.api import function
+except ImportError:
+    def function(fn):
+        fn.__wrapped__ = fn
+        return fn
 
 from axial_pile.pile_types import (
     PileSection, make_pipe_pile, make_concrete_pile, make_h_pile,
@@ -196,6 +201,25 @@ METHOD_INFO = {
             "Q_allowable_kN": "Allowable capacity (kN).",
             "layer_breakdown": "Per-layer skin friction details.",
         },
+        "related": {
+            "pile_group_agent.group_efficiency": "Compute group reduction for pile groups.",
+            "pile_group_agent.pile_group_simple": "Distribute loads across a pile group.",
+            "downdrag_agent.downdrag_analysis": "Check downdrag if settling soils are present.",
+            "wave_equation_agent.bearing_graph": "Generate blow count vs capacity for driving.",
+            "drilled_shaft_agent.drilled_shaft_capacity": "Alternative: drilled shaft (not driven).",
+        },
+        "typical_workflow": (
+            "1. Select pile type and section (make_pile_section)\n"
+            "2. Compute single pile capacity (this method)\n"
+            "3. Check group efficiency (pile_group_agent.group_efficiency)\n"
+            "4. If settling soils: check downdrag (downdrag_agent.downdrag_analysis)\n"
+            "5. Generate bearing graph for driving (wave_equation_agent.bearing_graph)"
+        ),
+        "common_mistakes": [
+            "Forgetting gwt_depth — effective stress is critical for skin friction in sand.",
+            "Using cohesion for sand layers or friction_angle for clay — match soil_type to parameters.",
+            "H-pile requires 'designation' (e.g. 'HP14x89'), not diameter/width.",
+        ],
     },
     "capacity_vs_depth": {
         "category": "Axial Capacity",

@@ -183,6 +183,21 @@ METHOD_INFO = {
             "spacing_ratio_n": "n = de/dw (equivalent diameter of drain zone / drain diameter).",
             "F_n": "Drain spacing function F(n) used in Barron/Hansbo equation.",
         },
+        "related": {
+            "settlement_agent.consolidation_settlement": "Compute how much settlement to accelerate.",
+            "design_drain_spacing": "Optimize drain spacing for target consolidation.",
+            "surcharge_preloading": "Combine with surcharge for faster consolidation.",
+        },
+        "typical_workflow": (
+            "1. Compute consolidation settlement (settlement_agent.consolidation_settlement)\n"
+            "2. If settlement too large or too slow, design wick drains (this method)\n"
+            "3. Optimize spacing (design_drain_spacing)\n"
+            "4. Consider surcharge preloading to reduce post-construction settlement"
+        ),
+        "common_mistakes": [
+            "Using cv (vertical) instead of ch (horizontal) for drain consolidation — ch is typically 2-5x cv.",
+            "Hdr is the drainage path, not the full clay thickness — for double drainage, Hdr = thickness/2.",
+        ],
     },
     "design_drain_spacing": {
         "category": "Drainage",

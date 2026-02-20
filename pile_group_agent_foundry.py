@@ -13,7 +13,12 @@ group efficiency (Converse-Labarre), and block failure.
 import json
 import math
 import numpy as np
-from functions.api import function
+try:
+    from functions.api import function
+except ImportError:
+    def function(fn):
+        fn.__wrapped__ = fn
+        return fn
 
 from pile_group.pile_layout import GroupPile, create_rectangular_layout
 from pile_group.group_efficiency import (
@@ -202,6 +207,21 @@ METHOD_INFO = {
             "max_tension_kN": "Maximum tension in any pile (kN).",
             "max_utilization": "Maximum utilization ratio.",
         },
+        "related": {
+            "group_efficiency": "Compute group reduction factor.",
+            "pile_group_6dof": "Full 6-DOF analysis with lateral loads.",
+            "axial_pile_agent.axial_pile_capacity": "Get single pile capacity first.",
+        },
+        "typical_workflow": (
+            "1. Compute single pile capacity (axial_pile_agent.axial_pile_capacity)\n"
+            "2. Compute group efficiency (group_efficiency)\n"
+            "3. Distribute loads (this method)\n"
+            "4. Check max pile load < Q_allowable * efficiency"
+        ),
+        "common_mistakes": [
+            "Forgetting to apply group efficiency — group capacity is NOT n_piles * Q_single.",
+            "Mx and My must match the coordinate system — Mx causes variation in y-direction.",
+        ],
     },
     "pile_group_6dof": {
         "category": "Pile Group Analysis",

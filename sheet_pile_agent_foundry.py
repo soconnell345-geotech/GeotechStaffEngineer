@@ -13,7 +13,12 @@ free earth support method with Rankine or Coulomb pressures.
 import json
 import math
 import numpy as np
-from functions.api import function
+try:
+    from functions.api import function
+except ImportError:
+    def function(fn):
+        fn.__wrapped__ = fn
+        return fn
 
 from sheet_pile.earth_pressure import (
     rankine_Ka, rankine_Kp, coulomb_Ka, coulomb_Kp, K0,
@@ -139,6 +144,14 @@ METHOD_INFO = {
             "max_moment_kNm_per_m": "Maximum bending moment (kN-m/m of wall).",
             "max_moment_depth_m": "Depth of max moment from wall top (m).",
         },
+        "related": {
+            "anchored_wall": "Alternative: anchored sheet pile for deeper excavations.",
+            "retaining_walls_agent.cantilever_wall": "Alternative: concrete cantilever wall.",
+        },
+        "common_mistakes": [
+            "FOS_passive is applied to passive resistance only — typical value is 1.5-2.0.",
+            "Layers must extend below the excavation depth for passive resistance.",
+        ],
     },
     "anchored_wall": {
         "category": "Sheet Pile Walls",

@@ -12,7 +12,12 @@ Covers GEC-10 alpha/beta/rock socket methods for drilled shafts.
 import json
 import math
 import numpy as np
-from functions.api import function
+try:
+    from functions.api import function
+except ImportError:
+    def function(fn):
+        fn.__wrapped__ = fn
+        return fn
 
 from drilled_shaft.shaft import DrillShaft
 from drilled_shaft.soil_profile import ShaftSoilLayer, ShaftSoilProfile
@@ -196,6 +201,22 @@ METHOD_INFO = {
             "Q_side_rock_kN": "Side resistance from rock layers (kN).",
             "layer_breakdown": "Per-layer details: depth, soil type, method, fs, side_resistance.",
         },
+        "related": {
+            "lrfd_capacity": "Apply LRFD resistance factors to this capacity.",
+            "capacity_vs_depth": "Optimize shaft length with capacity-depth curve.",
+            "axial_pile_agent.axial_pile_capacity": "Alternative: driven pile capacity.",
+        },
+        "typical_workflow": (
+            "1. Select shaft diameter and length\n"
+            "2. Compute capacity (this method)\n"
+            "3. Apply LRFD factors (lrfd_capacity)\n"
+            "4. Check settlement if needed (settlement_agent)"
+        ),
+        "common_mistakes": [
+            "Using cohesion instead of cu for clay layers — drilled shaft uses 'cu' parameter.",
+            "Forgetting gwt_depth — affects effective stress for beta method in sand.",
+            "Sand layers need both phi and N60 for the beta method.",
+        ],
     },
     "capacity_vs_depth": {
         "category": "Drilled Shaft Capacity",

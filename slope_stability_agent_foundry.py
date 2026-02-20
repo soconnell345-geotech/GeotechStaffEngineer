@@ -13,7 +13,12 @@ circular slip surface analysis and critical surface grid search.
 import json
 import math
 import numpy as np
-from functions.api import function
+try:
+    from functions.api import function
+except ImportError:
+    def function(fn):
+        fn.__wrapped__ = fn
+        return fn
 
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
 from slope_stability.analysis import analyze_slope, search_critical_surface
@@ -215,6 +220,22 @@ METHOD_INFO = {
             "theta_spencer_deg": "Spencer interslice angle (if Spencer used).",
             "slice_data": "Per-slice data (if include_slice_data=true).",
         },
+        "related": {
+            "search_critical_surface": "Find the critical circle with minimum FOS.",
+            "ground_improvement_agent.feasibility": "If FOS too low, check improvement options.",
+            "seismic_geotech_agent.seismic_earth_pressure": "Get seismic coefficients for pseudo-static analysis.",
+        },
+        "typical_workflow": (
+            "1. Define slope geometry (surface_points) and soil layers\n"
+            "2. Analyze a known circle (this method) or search for critical (search_critical_surface)\n"
+            "3. If FOS < 1.5, consider ground improvement or geometry changes\n"
+            "4. For seismic: add kh parameter for pseudo-static analysis"
+        ),
+        "common_mistakes": [
+            "Surface points must define the ground surface from left to right — x values must increase.",
+            "Soil layers use top_elevation and bottom_elevation, not thickness.",
+            "The circle (xc, yc, radius) must intersect the slope — if it doesn't, results are meaningless.",
+        ],
     },
     "search_critical_surface": {
         "category": "Slope Stability",

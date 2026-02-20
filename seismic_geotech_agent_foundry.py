@@ -12,7 +12,12 @@ liquefaction triggering, and post-liquefaction residual strength.
 
 import json
 import math
-from functions.api import function
+try:
+    from functions.api import function
+except ImportError:
+    def function(fn):
+        fn.__wrapped__ = fn
+        return fn
 
 from seismic_geotech.site_class import (
     compute_vs30, compute_n_bar, compute_su_bar,
@@ -265,6 +270,23 @@ METHOD_INFO = {
             "SDS_g": "Design spectral acceleration at short period (Fa*Ss).",
             "SD1_g": "Design spectral acceleration at 1.0s (Fv*S1).",
         },
+        "related": {
+            "seismic_earth_pressure": "Use site coefficients to determine kh for seismic earth pressure.",
+            "liquefaction_evaluation": "Use site coefficients and PGA for liquefaction analysis.",
+            "pystrata_agent.eql_site_response": "Detailed 1D site response for site-specific analysis.",
+            "hvsrpy_agent.hvsr_analysis": "Field measurement for site period / f0.",
+        },
+        "typical_workflow": (
+            "1. Determine site class from Vs30, SPT, or su data (this method)\n"
+            "2. Get Fa, Fv coefficients for design spectrum\n"
+            "3. Compute SDS = 2/3 * Fa * Ss, SD1 = 2/3 * Fv * S1\n"
+            "4. Check liquefaction if site is susceptible (liquefaction_evaluation)\n"
+            "5. Get seismic earth pressures for retaining structures (seismic_earth_pressure)"
+        ),
+        "common_mistakes": [
+            "Providing Vs30 without Ss and S1 — site class is determined, but coefficients Fa/Fv won't be computed.",
+            "Using N_bar (average SPT) when Vs30 is available — Vs30 is the preferred method.",
+        ],
     },
     "seismic_earth_pressure": {
         "category": "Seismic Earth Pressure",

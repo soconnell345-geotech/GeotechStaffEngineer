@@ -12,7 +12,12 @@ Implements COM624P p-y curve methods with 7 soil models and finite-difference so
 import json
 import math
 import numpy as np
-from functions.api import function
+try:
+    from functions.api import function
+except ImportError:
+    def function(fn):
+        fn.__wrapped__ = fn
+        return fn
 
 from lateral_pile.pile import Pile, PileSection, ReinforcedConcreteSection, rebar_diameter
 from lateral_pile.soil import SoilLayer

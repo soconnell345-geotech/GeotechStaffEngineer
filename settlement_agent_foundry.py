@@ -13,7 +13,12 @@ and combined settlement analyses with time-rate curves.
 import json
 import math
 import numpy as np
-from functions.api import function
+try:
+    from functions.api import function
+except ImportError:
+    def function(fn):
+        fn.__wrapped__ = fn
+        return fn
 
 from settlement.immediate import elastic_settlement, SchmertmannLayer, schmertmann_settlement
 from settlement.consolidation import (
@@ -247,6 +252,20 @@ METHOD_INFO = {
             "immediate_settlement_m": "Settlement in meters.",
             "immediate_settlement_mm": "Settlement in millimeters.",
         },
+        "related": {
+            "bearing_capacity_agent.bearing_capacity_analysis": "Get q_allowable first, then use as q_net here.",
+            "schmertmann_settlement": "Better method for granular soils.",
+            "combined_settlement_analysis": "Full analysis with both immediate + consolidation.",
+        },
+        "typical_workflow": (
+            "1. Compute q_allowable (bearing_capacity_agent.bearing_capacity_analysis)\n"
+            "2. Use q_allowable as q_net for elastic settlement\n"
+            "3. Check settlement < 25 mm (typical limit for structures)"
+        ),
+        "common_mistakes": [
+            "Using Es in MPa instead of kPa — Es should be in kPa (e.g., 10000 kPa, not 10 MPa).",
+            "Confusing q_net with total applied pressure — q_net = q_applied - q_overburden.",
+        ],
     },
     "schmertmann_settlement": {
         "category": "Immediate Settlement",
@@ -269,6 +288,15 @@ METHOD_INFO = {
             "schmertmann_settlement_m": "Settlement in meters.",
             "schmertmann_settlement_mm": "Settlement in millimeters.",
         },
+        "related": {
+            "elastic_settlement": "Simpler elastic method for preliminary estimates.",
+            "combined_settlement_analysis": "Full analysis including consolidation.",
+        },
+        "common_mistakes": [
+            "Layers must have depth_top and depth_bottom (not thickness).",
+            "Es per layer is in kPa, not MPa.",
+            "q_overburden is the overburden at the footing base level, not at the layer depth.",
+        ],
     },
     "consolidation_settlement": {
         "category": "Consolidation",
@@ -297,6 +325,22 @@ METHOD_INFO = {
             "consolidation_settlement_mm": "Total consolidation settlement (mm).",
             "layer_breakdown": "Per-layer settlement details.",
         },
+        "related": {
+            "ground_improvement_agent.wick_drains": "Accelerate consolidation with wick drains.",
+            "ground_improvement_agent.surcharge_preloading": "Pre-load to reduce post-construction settlement.",
+            "combined_settlement_analysis": "Add immediate + secondary components.",
+        },
+        "typical_workflow": (
+            "1. Define clay layer properties (e0, Cc, Cr, sigma_v0)\n"
+            "2. Compute delta_sigma from bearing_capacity or fill loading\n"
+            "3. Run consolidation_settlement\n"
+            "4. If settlement too large, consider ground_improvement_agent.wick_drains"
+        ),
+        "common_mistakes": [
+            "Omitting sigma_p for OC clay — if sigma_p is omitted, clay is treated as normally consolidated.",
+            "Using delta_sigma = total applied pressure instead of net (subtract overburden if footing is embedded).",
+            "Each layer needs thickness, depth_to_center, e0, Cc, Cr, and sigma_v0.",
+        ],
     },
     "combined_settlement_analysis": {
         "category": "Combined Analysis",
@@ -332,6 +376,11 @@ METHOD_INFO = {
             "secondary_mm": "Secondary settlement (mm).",
             "total_mm": "Total settlement (mm).",
             "time_settlement_curve": "Time-settlement data points.",
+        },
+        "related": {
+            "elastic_settlement": "Run immediate component only.",
+            "consolidation_settlement": "Run consolidation component only.",
+            "calc_package_agent.settlement_package": "Generate PDF calculation package.",
         },
     },
 }

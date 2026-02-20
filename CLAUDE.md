@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`*_agent_foundry.py` in root): 3 functions each (agent/list/describe)
 
-## Module Inventory (1735 tests)
+## Module Inventory (1735 module tests + 121 foundry harness tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -56,14 +56,29 @@ Key conventions:
 | pystra_agent | 43 | FORM/SORM/Monte Carlo structural reliability analysis |
 | pydiggs_agent | 31 | DIGGS 2.6 XML schema and dictionary validation |
 
-Other components: groundhog_agent (90 methods), DM7Eqs (382 functions, 2008 tests)
+Other components: groundhog_agent (90 methods), DM7Eqs (382 functions, 2008 tests), foundry_test_harness (121 tests)
+
+## Foundry Test Harness
+
+`foundry_test_harness/` validates the 30+ Foundry agent functions via JSON-in/JSON-out:
+
+| File | Tests | Purpose |
+|------|-------|---------|
+| test_tier1_textbook.py | 58 | Individual functions vs textbook/published answers |
+| test_tier2_workflows.py | 14 | Multi-function engineering workflows (e.g., classify → SPT → bearing → settlement) |
+| test_tier3_crosscheck.py | 10 | Cross-agent consistency (same problem, different agents) |
+| test_tier4_error_handling.py | 39 | Bad JSON, unknown methods, missing params, invalid values |
+
+Supporting files: `harness.py` (FoundryAgentHarness class), `scenarios.py` (reusable problem definitions)
+
+Run: `pytest foundry_test_harness/ -v`
 
 ## Working on a Module
 
 1. Read the module's `DESIGN.md` first for theory and conventions
 2. Read `__init__.py` for the public API
 3. Run that module's tests: `pytest module_name/ -v`
-4. Full regression: `pytest bearing_capacity/ settlement/ axial_pile/ sheet_pile/ lateral_pile/validation.py pile_group/ wave_equation/ geotech_common/ drilled_shaft/ seismic_geotech/ retaining_walls/ ground_improvement/ slope_stability/ downdrag/ opensees_agent/ pystrata_agent/ seismic_signals_agent/ liquepy_agent/ pygef_agent/ hvsrpy_agent/ gstools_agent/ ags4_agent/ salib_agent/ pyseismosoil_agent/ swprocess_agent/ geolysis_agent/ pystra_agent/ pydiggs_agent/ -q`
+4. Full regression: `pytest bearing_capacity/ settlement/ axial_pile/ sheet_pile/ lateral_pile/validation.py pile_group/ wave_equation/ geotech_common/ drilled_shaft/ seismic_geotech/ retaining_walls/ ground_improvement/ slope_stability/ downdrag/ opensees_agent/ pystrata_agent/ seismic_signals_agent/ liquepy_agent/ pygef_agent/ hvsrpy_agent/ gstools_agent/ ags4_agent/ salib_agent/ pyseismosoil_agent/ swprocess_agent/ geolysis_agent/ pystra_agent/ pydiggs_agent/ foundry_test_harness/ -q`
 
 ## Environment
 

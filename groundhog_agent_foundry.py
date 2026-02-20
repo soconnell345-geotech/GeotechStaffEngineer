@@ -17,7 +17,12 @@ FOUNDRY SETUP:
 import json
 import math
 import numpy as np
-from functions.api import function
+try:
+    from functions.api import function
+except ImportError:
+    def function(fn):
+        fn.__wrapped__ = fn
+        return fn
 
 # --- Phase Relations ---
 from groundhog.siteinvestigation.classification.phaserelations import (

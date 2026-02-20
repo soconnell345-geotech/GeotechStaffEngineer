@@ -23,7 +23,12 @@ import inspect
 import typing
 
 import numpy as np
-from functions.api import function
+try:
+    from functions.api import function
+except ImportError:
+    def function(fn):
+        fn.__wrapped__ = fn
+        return fn
 
 # ---------------------------------------------------------------------------
 # Add DM7Eqs to path so 'from geotech.dm7_X...' works

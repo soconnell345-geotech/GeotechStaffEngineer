@@ -13,7 +13,12 @@ drivability study, and hammer database lookup.
 import json
 import math
 import numpy as np
-from functions.api import function
+try:
+    from functions.api import function
+except ImportError:
+    def function(fn):
+        fn.__wrapped__ = fn
+        return fn
 
 from wave_equation.hammer import Hammer, get_hammer, list_hammers
 from wave_equation.cushion import Cushion, make_cushion_from_properties
@@ -291,6 +296,22 @@ METHOD_INFO = {
             "max_comp_stresses_kPa": "Max compression stress at each Rult.",
             "max_tens_stresses_kPa": "Max tension stress at each Rult.",
         },
+        "related": {
+            "drivability": "Check driving stresses at multiple depths.",
+            "single_blow": "Detailed single-blow analysis at a specific resistance.",
+            "axial_pile_agent.axial_pile_capacity": "Get target capacity for the bearing graph.",
+        },
+        "typical_workflow": (
+            "1. Compute required pile capacity (axial_pile_agent.axial_pile_capacity)\n"
+            "2. Generate bearing graph (this method) — maps resistance to blow count\n"
+            "3. Find blow count at design capacity\n"
+            "4. Run drivability to check stresses during driving"
+        ),
+        "common_mistakes": [
+            "R_min and R_max must bracket the design capacity — set R_min < Q_ult < R_max.",
+            "pile_area is cross-sectional area in m2, not diameter.",
+            "skin_fraction typically 0.4-0.8 for most soils.",
+        ],
     },
     "drivability": {
         "category": "Wave Equation",
