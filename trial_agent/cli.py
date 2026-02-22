@@ -14,6 +14,12 @@ import json
 import sys
 import os
 
+# Fix Windows console encoding for Unicode (Greek letters, etc.)
+if sys.stdout.encoding != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
+if sys.stderr.encoding != "utf-8":
+    sys.stderr.reconfigure(encoding="utf-8")
+
 # Ensure project root is on the path so foundry agents can be imported
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -25,9 +31,10 @@ from trial_agent.agent_registry import (
     call_agent, list_methods, describe_method, list_agents,
 )
 
-# Model to use — Sonnet for cost efficiency during testing
-MODEL = "claude-sonnet-4-20250514"
+# Model to use — Sonnet 4.5 for best speed/cost balance
+MODEL = "claude-sonnet-4-5-20250929"
 MAX_TOKENS = 4096
+MAX_TOOL_ROUNDS = 8  # Prevent runaway exploration
 
 
 def dispatch_tool(tool_name: str, tool_input: dict) -> dict:
@@ -59,10 +66,22 @@ def _truncate(text: str, max_len: int = 500) -> str:
     return text[:max_len] + "..."
 
 
+def _make_system_with_cache(text: str) -> list:
+    """Wrap system prompt with cache_control for prompt caching."""
+    return [
+        {
+            "type": "text",
+            "text": text,
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
+
+
 def run_conversation():
     """Run an interactive conversation with the Geotech Staff Engineer agent."""
-    client = anthropic.Anthropic()
+    client = anthropic.Anthropic(timeout=120.0)
     messages = []
+    system = _make_system_with_cache(SYSTEM_PROMPT)
 
     print("=" * 60)
     print("  Geotech Staff Engineer Agent")
@@ -97,7 +116,7 @@ def run_conversation():
             response = client.messages.create(
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
-                system=SYSTEM_PROMPT,
+                system=system,
                 tools=TOOLS,
                 messages=messages,
             )
@@ -107,7 +126,13 @@ def run_conversation():
             continue
 
         # Process response — may contain tool_use blocks that need resolution
+        tool_round = 0
         while response.stop_reason == "tool_use":
+            tool_round += 1
+            if tool_round > MAX_TOOL_ROUNDS:
+                print(f"\n  [Reached {MAX_TOOL_ROUNDS} tool rounds, stopping]")
+                break
+
             # Collect tool results
             tool_results = []
             for block in response.content:
@@ -137,7 +162,7 @@ def run_conversation():
                 response = client.messages.create(
                     model=MODEL,
                     max_tokens=MAX_TOKENS,
-                    system=SYSTEM_PROMPT,
+                    system=system,
                     tools=TOOLS,
                     messages=messages,
                 )
