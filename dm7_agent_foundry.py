@@ -10,15 +10,13 @@ Register these three functions as tools in AIP Agent Studio:
   3. dm7_describe_method - Get detailed parameter docs for a specific equation
 
 FOUNDRY SETUP:
-  - Place the DM7Eqs/geotech package in the code repository
+  - Requires geotech-references submodule (pip install -e geotech-references/)
   - These functions accept and return JSON strings for LLM compatibility
   - No external dependencies beyond numpy and scipy
 """
 
 import json
 import math
-import sys
-import os
 import inspect
 import typing
 
@@ -31,31 +29,24 @@ except ImportError:
         return fn
 
 # ---------------------------------------------------------------------------
-# Add DM7Eqs to path so 'from geotech.dm7_X...' works
+# Import all DM7 chapter modules from geotech-references submodule
 # ---------------------------------------------------------------------------
-_dm7_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "DM7Eqs")
-if _dm7_root not in sys.path:
-    sys.path.insert(0, _dm7_root)
+from geotech_references.dm7_1 import chapter1 as dm7_1_ch1
+from geotech_references.dm7_1 import chapter2 as dm7_1_ch2
+from geotech_references.dm7_1 import chapter3 as dm7_1_ch3
+from geotech_references.dm7_1 import chapter4 as dm7_1_ch4
+from geotech_references.dm7_1 import chapter5 as dm7_1_ch5
+from geotech_references.dm7_1 import chapter6 as dm7_1_ch6
+from geotech_references.dm7_1 import chapter7 as dm7_1_ch7
+from geotech_references.dm7_1 import chapter8 as dm7_1_ch8
 
-# ---------------------------------------------------------------------------
-# Import all DM7 chapter modules
-# ---------------------------------------------------------------------------
-from geotech.dm7_1 import chapter1 as dm7_1_ch1
-from geotech.dm7_1 import chapter2 as dm7_1_ch2
-from geotech.dm7_1 import chapter3 as dm7_1_ch3
-from geotech.dm7_1 import chapter4 as dm7_1_ch4
-from geotech.dm7_1 import chapter5 as dm7_1_ch5
-from geotech.dm7_1 import chapter6 as dm7_1_ch6
-from geotech.dm7_1 import chapter7 as dm7_1_ch7
-from geotech.dm7_1 import chapter8 as dm7_1_ch8
-
-from geotech.dm7_2 import prologue as dm7_2_pro
-from geotech.dm7_2 import chapter2 as dm7_2_ch2
-from geotech.dm7_2 import chapter3 as dm7_2_ch3
-from geotech.dm7_2 import chapter4 as dm7_2_ch4
-from geotech.dm7_2 import chapter5 as dm7_2_ch5
-from geotech.dm7_2 import chapter6 as dm7_2_ch6
-from geotech.dm7_2 import chapter7 as dm7_2_ch7
+from geotech_references.dm7_2 import prologue as dm7_2_pro
+from geotech_references.dm7_2 import chapter2 as dm7_2_ch2
+from geotech_references.dm7_2 import chapter3 as dm7_2_ch3
+from geotech_references.dm7_2 import chapter4 as dm7_2_ch4
+from geotech_references.dm7_2 import chapter5 as dm7_2_ch5
+from geotech_references.dm7_2 import chapter6 as dm7_2_ch6
+from geotech_references.dm7_2 import chapter7 as dm7_2_ch7
 
 
 # ---------------------------------------------------------------------------

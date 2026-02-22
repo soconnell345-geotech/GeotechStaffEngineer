@@ -28,8 +28,9 @@ search_critical_surface(geom, x_range, y_range, nx, ny, ...) -> SearchResult
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`
   directly, because `sin(alpha)` can be negative for L-to-R slopes
-- **Seismic arm**: `(z_centroid - yc)` NOT `(yc - z_centroid)` so seismic
-  adds to driving in same direction as gravity
+- **Seismic moment**: computed separately from gravity driving, then
+  `driving = abs(gravity) + abs(seismic)` so seismic always increases
+  driving regardless of slope direction (L-to-R vs R-to-L)
 - **Spencer m_alpha**: `cos(alpha - theta) + sin(alpha - theta)*tan(phi')/F`
   (reduces to Bishop when theta=0)
 

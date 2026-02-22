@@ -1,0 +1,3 @@
+[submodule "geotech-references"]
+	path = geotech-references
+	url = https://github.com/soconnell345-geotech/geotech-references.git

@@ -53,6 +53,9 @@ def fellenius_fos(slices: List[Slice],
     resisting = 0.0
     driving = 0.0
 
+    gravity_driving = 0.0
+    seismic_driving = 0.0
+
     for s in slices:
         phi_rad = math.radians(s.phi)
         dl = s.base_length
@@ -64,16 +67,15 @@ def fellenius_fos(slices: List[Slice],
 
         # Driving moment about circle center:
         # Moment arm = (x_mid - xc), equivalent to R*sin(alpha)
-        driving += W * (s.x_mid - slip.xc) / slip.radius
+        gravity_driving += W * (s.x_mid - slip.xc) / slip.radius
 
         # Seismic: horizontal force * vertical arm about center
-        # Use (z_centroid - yc) so seismic adds to driving in same direction as gravity
         if s.seismic_force != 0:
-            driving += s.seismic_force * (s.z_centroid - slip.yc) / slip.radius
+            seismic_driving += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
 
-    # Driving can be negative for clockwise rotation (slope down L-to-R)
-    # FOS is always positive: use absolute value
-    driving = abs(driving)
+    # Driving = gravity magnitude + seismic magnitude.
+    # Separated so seismic always increases driving regardless of slope direction.
+    driving = abs(gravity_driving) + abs(seismic_driving)
     if driving <= 0:
         return _FOS_MAX
 
@@ -123,15 +125,16 @@ def bishop_fos(slices: List[Slice],
 
     # Precompute driving sum (denominator — independent of FOS)
     # Use moment-arm formulation: W*(x_mid - xc)/R for numerical stability
-    driving = 0.0
+    gravity_driving = 0.0
+    seismic_driving = 0.0
     for s in slices:
         W = s.weight + s.surcharge_force
-        driving += W * (s.x_mid - slip.xc) / slip.radius
+        gravity_driving += W * (s.x_mid - slip.xc) / slip.radius
         if s.seismic_force != 0:
-            driving += s.seismic_force * (s.z_centroid - slip.yc) / slip.radius
+            seismic_driving += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
 
-    # FOS is always positive: use absolute value of driving moment
-    driving = abs(driving)
+    # Separated so seismic always increases driving regardless of slope direction
+    driving = abs(gravity_driving) + abs(seismic_driving)
     if driving <= 0:
         return _FOS_MAX
 
@@ -212,13 +215,15 @@ def spencer_fos(slices: List[Slice],
         return (_FOS_MAX, 0.0)
 
     # Precompute driving moment (independent of theta and FOS)
-    driving_moment = 0.0
+    gravity_moment = 0.0
+    seismic_moment = 0.0
     for s in slices:
         W = s.weight + s.surcharge_force
-        driving_moment += W * (s.x_mid - slip.xc) / slip.radius
+        gravity_moment += W * (s.x_mid - slip.xc) / slip.radius
         if s.seismic_force != 0:
-            driving_moment += s.seismic_force * (s.z_centroid - slip.yc) / slip.radius
-    driving_moment = abs(driving_moment)
+            seismic_moment += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
+    # Separated so seismic always increases driving regardless of slope direction
+    driving_moment = abs(gravity_moment) + abs(seismic_moment)
     if driving_moment <= 0:
         return (_FOS_MAX, 0.0)
 

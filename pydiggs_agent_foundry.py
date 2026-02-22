@@ -86,7 +86,7 @@ def pydiggs_list_methods(category: Optional[str] = None) -> list[dict]:
     """
     methods = list(METHODS.values())
 
-    if category is not None:
+    if category is not None and category != "":
         methods = [m for m in methods if m["category"] == category]
 
     return methods

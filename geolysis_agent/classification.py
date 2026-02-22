@@ -108,6 +108,11 @@ def classify_uscs(
     """
     _validate_uscs_inputs(liquid_limit, plastic_limit, fines, sand, d_10, d_30, d_60)
 
+    # geolysis crashes if sand=None for coarse-grained soils (fines <= 50%).
+    # Default sand to (100 - fines) when not provided and fines is known.
+    if sand is None and fines is not None:
+        sand = 100.0 - fines
+
     soil_classifier = import_soil_classifier()
 
     # geolysis expects None for missing values

@@ -17,11 +17,12 @@ import plotly.graph_objects as go
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 MODULE_META = [
+    # Core analysis modules
     ("bearing_capacity",   "Shallow foundations (CBEAR/Vesic/Meyerhof)",                "Foundations"),
     ("settlement",         "Consolidation & immediate (CSETT)",                          "Foundations"),
     ("axial_pile",         "Driven pile capacity (Nordlund/Tomlinson/Beta)",              "Piles"),
     ("sheet_pile",         "Cantilever/anchored walls (Rankine/Coulomb)",                 "Walls"),
-    ("lateral_pile",       "Lateral pile (COM624P, 7 p-y models, FD solver)",             "Piles"),
+    ("lateral_pile",       "Lateral pile (COM624P, 8 p-y models, FD solver)",             "Piles"),
     ("pile_group",         "Rigid cap groups (6-DOF, Converse-Labarre)",                  "Piles"),
     ("wave_equation",      "Smith 1-D wave equation (bearing graph, drivability)",        "Piles"),
     ("drilled_shaft",      "GEC-10 alpha/beta/rock socket",                               "Piles"),
@@ -31,6 +32,21 @@ MODULE_META = [
     ("slope_stability",    "Fellenius/Bishop/Spencer, circular slip, grid search",        "Ground"),
     ("downdrag",           "Fellenius neutral plane, UFC 3-220-20 downdrag",              "Piles"),
     ("geotech_common",     "SoilProfile + engineering checks + adapters",                 "Common"),
+    # Library wrapper agents
+    ("opensees_agent",     "PM4Sand cyclic DSS, BNWF lateral pile, 1D site response",    "Library"),
+    ("pystrata_agent",     "1D EQL site response (SHAKE-type, Darendeli/Menq)",           "Library"),
+    ("seismic_signals_agent", "Earthquake signal processing (eqsig/pyrotd)",              "Library"),
+    ("liquepy_agent",      "CPT-based liquefaction triggering (B&I 2014)",                "Library"),
+    ("pygef_agent",        "CPT/borehole file parser (GEF/BRO-XML)",                     "Data"),
+    ("hvsrpy_agent",       "HVSR site characterization from ambient noise",              "Advanced"),
+    ("gstools_agent",      "Geostatistical kriging, variogram fitting, random fields",   "Advanced"),
+    ("ags4_agent",         "AGS4 geotechnical data format reader/validator",              "Data"),
+    ("salib_agent",        "Sobol & Morris sensitivity analysis",                        "Advanced"),
+    ("pyseismosoil_agent", "MKZ/HH nonlinear soil curve calibration + Vs profiles",      "Library"),
+    ("swprocess_agent",    "MASW surface wave dispersion analysis",                      "Advanced"),
+    ("geolysis_agent",     "USCS/AASHTO classification + SPT corrections + bearing",     "Data"),
+    ("pystra_agent",       "FORM/SORM/Monte Carlo structural reliability",               "Advanced"),
+    ("pydiggs_agent",      "DIGGS 2.6 XML schema and dictionary validation",             "Data"),
 ]
 
 CATEGORY_COLORS = {
@@ -40,6 +56,9 @@ CATEGORY_COLORS = {
     "Seismic":    "#f472b6",
     "Ground":     "#34d399",
     "Common":     "#94a3b8",
+    "Library":    "#a78bfa",
+    "Data":       "#fbbf24",
+    "Advanced":   "#f43f5e",
 }
 
 
@@ -135,11 +154,12 @@ def gather_stats():
         "modules": modules,
         "foundry": foundry,
         "foundry_names": foundry_module_names,
-        "dm7": {"lines": dm7_lines, "files": dm7_files, "tests": 1852, "functions": 354},
+        "dm7": {"lines": dm7_lines, "files": dm7_files, "tests": 2008, "functions": 382},
+        "foundry_harness_tests": 121,
         "total_lines": total_lines,
         "total_files": total_files,
         "module_tests": module_tests,
-        "total_tests": module_tests + 1852,
+        "total_tests": module_tests + 121 + 2008,
         "git_commits": git_commits,
     }
 
@@ -234,9 +254,9 @@ def build_layout(data):
     # --- Test breakdown pie ---
     pie_fig = go.Figure()
     pie_fig.add_trace(go.Pie(
-        labels=["Module Tests", "DM7 Tests"],
-        values=[data["module_tests"], data["dm7"]["tests"]],
-        marker=dict(colors=[ACCENT, ACCENT2]),
+        labels=["Module Tests", "Foundry Harness", "DM7 Tests"],
+        values=[data["module_tests"], data["foundry_harness_tests"], data["dm7"]["tests"]],
+        marker=dict(colors=[ACCENT, ACCENT4, ACCENT2]),
         textinfo="label+value",
         textfont=dict(size=14, color=TEXT),
         hole=0.5,
@@ -394,8 +414,8 @@ def build_layout(data):
                         html.Th("Count", style={**th_style, "textAlign": "right"}),
                     ])),
                     html.Tbody([
-                        html.Tr([html.Td("Functions", style={"padding": "0.55rem 0.75rem"}), html.Td("354", style={"padding": "0.55rem 0.75rem", "textAlign": "right"})]),
-                        html.Tr([html.Td("Tests", style={"padding": "0.55rem 0.75rem"}), html.Td("1,852", style={"padding": "0.55rem 0.75rem", "textAlign": "right"})]),
+                        html.Tr([html.Td("Functions", style={"padding": "0.55rem 0.75rem"}), html.Td("382", style={"padding": "0.55rem 0.75rem", "textAlign": "right"})]),
+                        html.Tr([html.Td("Tests", style={"padding": "0.55rem 0.75rem"}), html.Td("2,008", style={"padding": "0.55rem 0.75rem", "textAlign": "right"})]),
                         html.Tr([html.Td("Python files", style={"padding": "0.55rem 0.75rem"}), html.Td(str(data["dm7"]["files"]), style={"padding": "0.55rem 0.75rem", "textAlign": "right"})]),
                         html.Tr([html.Td("Lines of code", style={"padding": "0.55rem 0.75rem"}), html.Td(f"{data['dm7']['lines']:,}", style={"padding": "0.55rem 0.75rem", "textAlign": "right"})]),
                     ]),

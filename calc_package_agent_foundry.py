@@ -1150,7 +1150,7 @@ def calc_package_list_methods(category: str = "all") -> str:
     """
     methods = []
     for name, info in METHOD_INFO.items():
-        if category == "all" or info["category"] == category:
+        if not category or category == "all" or info["category"] == category:
             methods.append({
                 "method": name,
                 "category": info["category"],

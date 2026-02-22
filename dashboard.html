@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+Ok<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -113,16 +113,16 @@
   .bar-chart {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.4rem;
   }
   .bar-row {
     display: grid;
-    grid-template-columns: 160px 1fr 50px;
+    grid-template-columns: 170px 1fr 50px;
     align-items: center;
     gap: 0.75rem;
   }
   .bar-label {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     text-align: right;
     color: var(--text-dim);
     white-space: nowrap;
@@ -130,7 +130,7 @@
   .bar-track {
     background: rgba(255,255,255,0.05);
     border-radius: 6px;
-    height: 24px;
+    height: 20px;
     overflow: hidden;
   }
   .bar-fill {
@@ -140,7 +140,7 @@
     min-width: 4px;
   }
   .bar-value {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     font-weight: 600;
     color: var(--text);
   }
@@ -193,9 +193,16 @@
     font-weight: 600;
   }
   .badge-pass { background: rgba(34,197,94,0.15); color: var(--green); }
-  .badge-none { background: rgba(239,68,68,0.15); color: var(--red); }
+  .cat-badge {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    opacity: 0.9;
+  }
 
-  /* Full-width module table */
+  /* Full-width sections */
   .full-width {
     margin-bottom: 2rem;
   }
@@ -210,13 +217,152 @@
     border-top: 1px solid var(--card-border);
   }
 
-  /* Lines of code chart uses different colors per category */
+  /* Bar chart color classes */
   .color-foundations { background: linear-gradient(90deg, #38bdf8, #0ea5e9); }
   .color-piles { background: linear-gradient(90deg, #818cf8, #6366f1); }
   .color-walls { background: linear-gradient(90deg, #fb923c, #f97316); }
   .color-seismic { background: linear-gradient(90deg, #f472b6, #ec4899); }
   .color-ground { background: linear-gradient(90deg, #34d399, #10b981); }
   .color-common { background: linear-gradient(90deg, #94a3b8, #64748b); }
+  .color-library { background: linear-gradient(90deg, #a78bfa, #8b5cf6); }
+  .color-data { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
+
+  /* Architecture diagram */
+  .arch-diagram {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 2rem 1rem;
+  }
+  .arch-box {
+    border: 2px solid;
+    border-radius: 10px;
+    padding: 0.8rem 1.5rem;
+    text-align: center;
+    font-weight: 600;
+    font-size: 0.95rem;
+    min-width: 260px;
+  }
+  .arch-arrow {
+    color: var(--text-dim);
+    font-size: 1.5rem;
+    line-height: 1;
+  }
+  .arch-row {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .arch-box-sm {
+    border: 1.5px solid;
+    border-radius: 8px;
+    padding: 0.6rem 1.2rem;
+    text-align: center;
+    font-weight: 500;
+    font-size: 0.85rem;
+  }
+  .arch-connector {
+    display: flex;
+    gap: 0;
+    justify-content: center;
+    align-items: flex-start;
+  }
+  .arch-line-v {
+    width: 2px;
+    height: 24px;
+    background: var(--text-dim);
+  }
+  .arch-line-h {
+    display: flex;
+    align-items: flex-start;
+  }
+  .arch-branch {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    padding-top: 24px;
+  }
+  .arch-branch::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 2px;
+    height: 24px;
+    background: var(--text-dim);
+  }
+  .arch-branches {
+    display: flex;
+    gap: 2rem;
+    position: relative;
+    padding-top: 24px;
+  }
+  .arch-branches::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: calc(50% - 1px);
+    width: 2px;
+    height: 24px;
+    background: var(--text-dim);
+  }
+  .arch-branches::after {
+    content: '';
+    position: absolute;
+    top: 24px;
+    left: 15%;
+    right: 15%;
+    height: 2px;
+    background: var(--text-dim);
+  }
+  .arch-leaf {
+    position: relative;
+    padding-top: 24px;
+  }
+  .arch-leaf::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 2px;
+    height: 24px;
+    background: var(--text-dim);
+  }
+
+  /* Capability cards */
+  .cap-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+  .cap-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    padding: 1.2rem;
+    border-left: 4px solid;
+  }
+  .cap-card h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+  .cap-card ul {
+    list-style: none;
+    padding: 0;
+  }
+  .cap-card li {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    padding: 0.15rem 0;
+  }
+  .cap-card li::before {
+    content: '\2022';
+    margin-right: 0.5rem;
+    color: inherit;
+  }
 </style>
 </head>
 <body>
@@ -224,55 +370,116 @@
 <div class="header">
   <h1>GeotechStaffEngineer</h1>
   <div class="subtitle">Python toolkit for LLM-based geotechnical engineering agents</div>
-  <div class="date">Dashboard generated Feb 16, 2026 &middot; 20 commits &middot; Started Feb 13, 2026</div>
+  <div class="date">Dashboard generated Feb 22, 2026 &middot; 41 commits &middot; Started Feb 13, 2026</div>
 </div>
 
 <!-- Top-level stats -->
 <div class="stats-row">
   <div class="stat-card">
-    <div class="stat-value">16</div>
+    <div class="stat-value">30</div>
     <div class="stat-label">Analysis Modules</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value">2,642</div>
+    <div class="stat-value">3,864</div>
     <div class="stat-label">Total Tests</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value">69,285</div>
+    <div class="stat-value">120,434</div>
     <div class="stat-label">Lines of Python</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value">172</div>
+    <div class="stat-value">333</div>
     <div class="stat-label">Python Files</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value">12</div>
+    <div class="stat-value">30</div>
     <div class="stat-label">Foundry Agents</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value">354</div>
+    <div class="stat-value">382</div>
     <div class="stat-label">DM7 Functions</div>
+  </div>
+</div>
+
+<!-- Architecture Diagram -->
+<div class="chart-section">
+  <div class="section-title"><span class="dot" style="background:var(--accent2)"></span> System Architecture</div>
+  <div class="arch-diagram">
+    <div class="arch-box" style="border-color: var(--accent); color: var(--accent);">
+      User Question
+    </div>
+    <div class="arch-arrow">&darr;</div>
+    <div class="arch-box" style="border-color: var(--accent2); color: var(--accent2);">
+      Claude API (tool_use)
+    </div>
+    <div class="arch-arrow">&darr;</div>
+    <div class="arch-box" style="border-color: var(--accent3); color: var(--accent3); min-width: 320px;">
+      Trial Agent &mdash; 3 meta-tools
+      <div style="font-size:0.75rem; color:var(--text-dim); font-weight:400; margin-top:0.3rem;">
+        call_agent &middot; list_methods &middot; describe_method
+      </div>
+    </div>
+    <div class="arch-arrow">&darr;</div>
+    <div class="arch-box" style="border-color: var(--accent4); color: var(--accent4);">
+      30 Foundry Agents (JSON-in / JSON-out)
+    </div>
+    <div style="display:flex; justify-content:center; gap:0; margin-top:-2px;">
+      <div style="width:2px; height:30px; background:var(--text-dim);"></div>
+    </div>
+    <div style="display:flex; justify-content:center; position:relative; width:80%; max-width:700px;">
+      <div style="position:absolute; top:0; left:15%; right:15%; height:2px; background:var(--text-dim);"></div>
+      <div style="display:flex; justify-content:space-between; width:70%; padding-top:2px;">
+        <div style="width:2px; height:24px; background:var(--text-dim);"></div>
+        <div style="width:2px; height:24px; background:var(--text-dim);"></div>
+        <div style="width:2px; height:24px; background:var(--text-dim);"></div>
+      </div>
+    </div>
+    <div class="arch-row" style="margin-top:-2px;">
+      <div class="arch-box-sm" style="border-color: var(--accent); color: var(--accent);">
+        Core Modules<br><span style="font-size:0.75rem; color:var(--text-dim);">13 analysis engines</span>
+      </div>
+      <div class="arch-box-sm" style="border-color: #a78bfa; color: #a78bfa;">
+        Library Agents<br><span style="font-size:0.75rem; color:var(--text-dim);">16 wrapped libraries</span>
+      </div>
+      <div class="arch-box-sm" style="border-color: var(--accent4); color: var(--accent4);">
+        DM7 Equations<br><span style="font-size:0.75rem; color:var(--text-dim);">382 lookup functions</span>
+      </div>
+    </div>
   </div>
 </div>
 
 <!-- Test count bar chart -->
 <div class="chart-section">
-  <div class="section-title"><span class="dot" style="background:var(--accent3)"></span> Tests by Module</div>
+  <div class="section-title"><span class="dot" style="background:var(--accent3)"></span> Tests by Module (28 modules)</div>
   <div class="bar-chart">
-    <div class="bar-row"><span class="bar-label">geotech_common</span><div class="bar-track"><div class="bar-fill color-common" style="width:100%"></div></div><span class="bar-value">238</span></div>
-    <div class="bar-row"><span class="bar-label">lateral_pile</span><div class="bar-track"><div class="bar-fill color-piles" style="width:24.4%"></div></div><span class="bar-value">58</span></div>
-    <div class="bar-row"><span class="bar-label">seismic_geotech</span><div class="bar-track"><div class="bar-fill color-seismic" style="width:24.4%"></div></div><span class="bar-value">58</span></div>
-    <div class="bar-row"><span class="bar-label">slope_stability</span><div class="bar-track"><div class="bar-fill color-ground" style="width:23.1%"></div></div><span class="bar-value">55</span></div>
-    <div class="bar-row"><span class="bar-label">downdrag</span><div class="bar-track"><div class="bar-fill color-piles" style="width:22.3%"></div></div><span class="bar-value">53</span></div>
-    <div class="bar-row"><span class="bar-label">retaining_walls</span><div class="bar-track"><div class="bar-fill color-walls" style="width:19.3%"></div></div><span class="bar-value">46</span></div>
-    <div class="bar-row"><span class="bar-label">wave_equation</span><div class="bar-track"><div class="bar-fill color-piles" style="width:17.2%"></div></div><span class="bar-value">41</span></div>
-    <div class="bar-row"><span class="bar-label">drilled_shaft</span><div class="bar-track"><div class="bar-fill color-piles" style="width:17.2%"></div></div><span class="bar-value">41</span></div>
-    <div class="bar-row"><span class="bar-label">ground_improvement</span><div class="bar-track"><div class="bar-fill color-ground" style="width:16.8%"></div></div><span class="bar-value">40</span></div>
-    <div class="bar-row"><span class="bar-label">settlement</span><div class="bar-track"><div class="bar-fill color-foundations" style="width:16.4%"></div></div><span class="bar-value">39</span></div>
-    <div class="bar-row"><span class="bar-label">bearing_capacity</span><div class="bar-track"><div class="bar-fill color-foundations" style="width:15.5%"></div></div><span class="bar-value">37</span></div>
-    <div class="bar-row"><span class="bar-label">axial_pile</span><div class="bar-track"><div class="bar-fill color-piles" style="width:15.1%"></div></div><span class="bar-value">36</span></div>
-    <div class="bar-row"><span class="bar-label">sheet_pile</span><div class="bar-track"><div class="bar-fill color-walls" style="width:10.9%"></div></div><span class="bar-value">26</span></div>
-    <div class="bar-row"><span class="bar-label">pile_group</span><div class="bar-track"><div class="bar-fill color-piles" style="width:9.2%"></div></div><span class="bar-value">22</span></div>
+    <div class="bar-row"><span class="bar-label">geotech_common</span><div class="bar-track"><div class="bar-fill color-common" style="width:100%"></div></div><span class="bar-value">285</span></div>
+    <div class="bar-row"><span class="bar-label">opensees_agent</span><div class="bar-track"><div class="bar-fill color-seismic" style="width:40.4%"></div></div><span class="bar-value">115</span></div>
+    <div class="bar-row"><span class="bar-label">lateral_pile</span><div class="bar-track"><div class="bar-fill color-piles" style="width:31.2%"></div></div><span class="bar-value">89</span></div>
+    <div class="bar-row"><span class="bar-label">seismic_signals</span><div class="bar-track"><div class="bar-fill color-seismic" style="width:26.0%"></div></div><span class="bar-value">74</span></div>
+    <div class="bar-row"><span class="bar-label">pile_group</span><div class="bar-track"><div class="bar-fill color-piles" style="width:25.3%"></div></div><span class="bar-value">72</span></div>
+    <div class="bar-row"><span class="bar-label">seismic_geotech</span><div class="bar-track"><div class="bar-fill color-seismic" style="width:24.9%"></div></div><span class="bar-value">71</span></div>
+    <div class="bar-row"><span class="bar-label">retaining_walls</span><div class="bar-track"><div class="bar-fill color-walls" style="width:24.6%"></div></div><span class="bar-value">70</span></div>
+    <div class="bar-row"><span class="bar-label">gstools_agent</span><div class="bar-track"><div class="bar-fill color-library" style="width:24.2%"></div></div><span class="bar-value">69</span></div>
+    <div class="bar-row"><span class="bar-label">geolysis_agent</span><div class="bar-track"><div class="bar-fill color-data" style="width:22.8%"></div></div><span class="bar-value">65</span></div>
+    <div class="bar-row"><span class="bar-label">pystrata_agent</span><div class="bar-track"><div class="bar-fill color-seismic" style="width:21.1%"></div></div><span class="bar-value">60</span></div>
+    <div class="bar-row"><span class="bar-label">liquepy_agent</span><div class="bar-track"><div class="bar-fill color-seismic" style="width:20.7%"></div></div><span class="bar-value">59</span></div>
+    <div class="bar-row"><span class="bar-label">slope_stability</span><div class="bar-track"><div class="bar-fill color-ground" style="width:19.3%"></div></div><span class="bar-value">55</span></div>
+    <div class="bar-row"><span class="bar-label">axial_pile</span><div class="bar-track"><div class="bar-fill color-piles" style="width:19.3%"></div></div><span class="bar-value">55</span></div>
+    <div class="bar-row"><span class="bar-label">downdrag</span><div class="bar-track"><div class="bar-fill color-piles" style="width:18.6%"></div></div><span class="bar-value">53</span></div>
+    <div class="bar-row"><span class="bar-label">drilled_shaft</span><div class="bar-track"><div class="bar-fill color-piles" style="width:16.8%"></div></div><span class="bar-value">48</span></div>
+    <div class="bar-row"><span class="bar-label">bearing_capacity</span><div class="bar-track"><div class="bar-fill color-foundations" style="width:15.8%"></div></div><span class="bar-value">45</span></div>
+    <div class="bar-row"><span class="bar-label">wave_equation</span><div class="bar-track"><div class="bar-fill color-piles" style="width:15.8%"></div></div><span class="bar-value">45</span></div>
+    <div class="bar-row"><span class="bar-label">pygef_agent</span><div class="bar-track"><div class="bar-fill color-data" style="width:15.8%"></div></div><span class="bar-value">45</span></div>
+    <div class="bar-row"><span class="bar-label">pystra_agent</span><div class="bar-track"><div class="bar-fill color-library" style="width:15.1%"></div></div><span class="bar-value">43</span></div>
+    <div class="bar-row"><span class="bar-label">ground_improvement</span><div class="bar-track"><div class="bar-fill color-ground" style="width:15.1%"></div></div><span class="bar-value">43</span></div>
+    <div class="bar-row"><span class="bar-label">pyseismosoil_agent</span><div class="bar-track"><div class="bar-fill color-seismic" style="width:14.4%"></div></div><span class="bar-value">41</span></div>
+    <div class="bar-row"><span class="bar-label">settlement</span><div class="bar-track"><div class="bar-fill color-foundations" style="width:13.7%"></div></div><span class="bar-value">39</span></div>
+    <div class="bar-row"><span class="bar-label">ags4_agent</span><div class="bar-track"><div class="bar-fill color-data" style="width:13.7%"></div></div><span class="bar-value">39</span></div>
+    <div class="bar-row"><span class="bar-label">hvsrpy_agent</span><div class="bar-track"><div class="bar-fill color-library" style="width:13.0%"></div></div><span class="bar-value">37</span></div>
+    <div class="bar-row"><span class="bar-label">salib_agent</span><div class="bar-track"><div class="bar-fill color-library" style="width:12.3%"></div></div><span class="bar-value">35</span></div>
+    <div class="bar-row"><span class="bar-label">pydiggs_agent</span><div class="bar-track"><div class="bar-fill color-data" style="width:10.9%"></div></div><span class="bar-value">31</span></div>
+    <div class="bar-row"><span class="bar-label">swprocess_agent</span><div class="bar-track"><div class="bar-fill color-library" style="width:10.5%"></div></div><span class="bar-value">30</span></div>
+    <div class="bar-row"><span class="bar-label">sheet_pile</span><div class="bar-track"><div class="bar-fill color-walls" style="width:9.1%"></div></div><span class="bar-value">26</span></div>
   </div>
 </div>
 
@@ -280,20 +487,34 @@
 <div class="chart-section">
   <div class="section-title"><span class="dot" style="background:var(--accent2)"></span> Lines of Code by Module</div>
   <div class="bar-chart">
-    <div class="bar-row"><span class="bar-label">geotech_common</span><div class="bar-track"><div class="bar-fill color-common" style="width:100%"></div></div><span class="bar-value">5,719</span></div>
-    <div class="bar-row"><span class="bar-label">lateral_pile</span><div class="bar-track"><div class="bar-fill color-piles" style="width:72.0%"></div></div><span class="bar-value">4,120</span></div>
-    <div class="bar-row"><span class="bar-label">ground_improvement</span><div class="bar-track"><div class="bar-fill color-ground" style="width:45.1%"></div></div><span class="bar-value">2,579</span></div>
-    <div class="bar-row"><span class="bar-label">slope_stability</span><div class="bar-track"><div class="bar-fill color-ground" style="width:40.8%"></div></div><span class="bar-value">2,336</span></div>
-    <div class="bar-row"><span class="bar-label">downdrag</span><div class="bar-track"><div class="bar-fill color-piles" style="width:39.8%"></div></div><span class="bar-value">2,277</span></div>
-    <div class="bar-row"><span class="bar-label">bearing_capacity</span><div class="bar-track"><div class="bar-fill color-foundations" style="width:33.6%"></div></div><span class="bar-value">1,921</span></div>
-    <div class="bar-row"><span class="bar-label">wave_equation</span><div class="bar-track"><div class="bar-fill color-piles" style="width:33.0%"></div></div><span class="bar-value">1,885</span></div>
-    <div class="bar-row"><span class="bar-label">settlement</span><div class="bar-track"><div class="bar-fill color-foundations" style="width:31.4%"></div></div><span class="bar-value">1,795</span></div>
-    <div class="bar-row"><span class="bar-label">retaining_walls</span><div class="bar-track"><div class="bar-fill color-walls" style="width:29.7%"></div></div><span class="bar-value">1,696</span></div>
-    <div class="bar-row"><span class="bar-label">axial_pile</span><div class="bar-track"><div class="bar-fill color-piles" style="width:29.2%"></div></div><span class="bar-value">1,669</span></div>
-    <div class="bar-row"><span class="bar-label">seismic_geotech</span><div class="bar-track"><div class="bar-fill color-seismic" style="width:25.6%"></div></div><span class="bar-value">1,463</span></div>
-    <div class="bar-row"><span class="bar-label">drilled_shaft</span><div class="bar-track"><div class="bar-fill color-piles" style="width:25.1%"></div></div><span class="bar-value">1,437</span></div>
-    <div class="bar-row"><span class="bar-label">sheet_pile</span><div class="bar-track"><div class="bar-fill color-walls" style="width:20.5%"></div></div><span class="bar-value">1,174</span></div>
-    <div class="bar-row"><span class="bar-label">pile_group</span><div class="bar-track"><div class="bar-fill color-piles" style="width:15.8%"></div></div><span class="bar-value">902</span></div>
+    <div class="bar-row"><span class="bar-label">geotech_common</span><div class="bar-track"><div class="bar-fill color-common" style="width:100%"></div></div><span class="bar-value">6,560</span></div>
+    <div class="bar-row"><span class="bar-label">lateral_pile</span><div class="bar-track"><div class="bar-fill color-piles" style="width:70.0%"></div></div><span class="bar-value">4,592</span></div>
+    <div class="bar-row"><span class="bar-label">ground_improvement</span><div class="bar-track"><div class="bar-fill color-ground" style="width:59.3%"></div></div><span class="bar-value">3,891</span></div>
+    <div class="bar-row"><span class="bar-label">opensees_agent</span><div class="bar-track"><div class="bar-fill color-seismic" style="width:55.3%"></div></div><span class="bar-value">3,630</span></div>
+    <div class="bar-row"><span class="bar-label">retaining_walls</span><div class="bar-track"><div class="bar-fill color-walls" style="width:53.2%"></div></div><span class="bar-value">3,487</span></div>
+    <div class="bar-row"><span class="bar-label">downdrag</span><div class="bar-track"><div class="bar-fill color-piles" style="width:46.4%"></div></div><span class="bar-value">3,045</span></div>
+    <div class="bar-row"><span class="bar-label">wave_equation</span><div class="bar-track"><div class="bar-fill color-piles" style="width:44.4%"></div></div><span class="bar-value">2,914</span></div>
+    <div class="bar-row"><span class="bar-label">slope_stability</span><div class="bar-track"><div class="bar-fill color-ground" style="width:43.5%"></div></div><span class="bar-value">2,851</span></div>
+    <div class="bar-row"><span class="bar-label">seismic_geotech</span><div class="bar-track"><div class="bar-fill color-seismic" style="width:40.6%"></div></div><span class="bar-value">2,666</span></div>
+    <div class="bar-row"><span class="bar-label">axial_pile</span><div class="bar-track"><div class="bar-fill color-piles" style="width:40.1%"></div></div><span class="bar-value">2,631</span></div>
+    <div class="bar-row"><span class="bar-label">bearing_capacity</span><div class="bar-track"><div class="bar-fill color-foundations" style="width:39.7%"></div></div><span class="bar-value">2,603</span></div>
+    <div class="bar-row"><span class="bar-label">settlement</span><div class="bar-track"><div class="bar-fill color-foundations" style="width:38.1%"></div></div><span class="bar-value">2,501</span></div>
+    <div class="bar-row"><span class="bar-label">drilled_shaft</span><div class="bar-track"><div class="bar-fill color-piles" style="width:36.2%"></div></div><span class="bar-value">2,375</span></div>
+    <div class="bar-row"><span class="bar-label">pile_group</span><div class="bar-track"><div class="bar-fill color-piles" style="width:35.3%"></div></div><span class="bar-value">2,314</span></div>
+    <div class="bar-row"><span class="bar-label">sheet_pile</span><div class="bar-track"><div class="bar-fill color-walls" style="width:33.1%"></div></div><span class="bar-value">2,169</span></div>
+    <div class="bar-row"><span class="bar-label">seismic_signals</span><div class="bar-track"><div class="bar-fill color-seismic" style="width:28.2%"></div></div><span class="bar-value">1,853</span></div>
+    <div class="bar-row"><span class="bar-label">pystra_agent</span><div class="bar-track"><div class="bar-fill color-library" style="width:27.0%"></div></div><span class="bar-value">1,770</span></div>
+    <div class="bar-row"><span class="bar-label">geolysis_agent</span><div class="bar-track"><div class="bar-fill color-data" style="width:26.9%"></div></div><span class="bar-value">1,768</span></div>
+    <div class="bar-row"><span class="bar-label">pystrata_agent</span><div class="bar-track"><div class="bar-fill color-seismic" style="width:22.0%"></div></div><span class="bar-value">1,440</span></div>
+    <div class="bar-row"><span class="bar-label">gstools_agent</span><div class="bar-track"><div class="bar-fill color-library" style="width:21.4%"></div></div><span class="bar-value">1,402</span></div>
+    <div class="bar-row"><span class="bar-label">liquepy_agent</span><div class="bar-track"><div class="bar-fill color-seismic" style="width:20.9%"></div></div><span class="bar-value">1,372</span></div>
+    <div class="bar-row"><span class="bar-label">pygef_agent</span><div class="bar-track"><div class="bar-fill color-data" style="width:15.0%"></div></div><span class="bar-value">983</span></div>
+    <div class="bar-row"><span class="bar-label">salib_agent</span><div class="bar-track"><div class="bar-fill color-library" style="width:13.9%"></div></div><span class="bar-value">909</span></div>
+    <div class="bar-row"><span class="bar-label">pydiggs_agent</span><div class="bar-track"><div class="bar-fill color-data" style="width:13.6%"></div></div><span class="bar-value">894</span></div>
+    <div class="bar-row"><span class="bar-label">hvsrpy_agent</span><div class="bar-track"><div class="bar-fill color-library" style="width:12.5%"></div></div><span class="bar-value">821</span></div>
+    <div class="bar-row"><span class="bar-label">pyseismosoil_agent</span><div class="bar-track"><div class="bar-fill color-seismic" style="width:11.4%"></div></div><span class="bar-value">749</span></div>
+    <div class="bar-row"><span class="bar-label">ags4_agent</span><div class="bar-track"><div class="bar-fill color-data" style="width:10.1%"></div></div><span class="bar-value">665</span></div>
+    <div class="bar-row"><span class="bar-label">swprocess_agent</span><div class="bar-track"><div class="bar-fill color-library" style="width:9.6%"></div></div><span class="bar-value">627</span></div>
   </div>
 </div>
 
@@ -302,31 +523,46 @@
   <div class="section-title"><span class="dot" style="background:var(--accent)"></span> Module Inventory</div>
   <table>
     <thead>
-      <tr><th>Module</th><th>Purpose</th><th style="text-align:right">Tests</th><th style="text-align:right">Lines</th><th style="text-align:right">Files</th><th style="text-align:center">Foundry Agent</th></tr>
+      <tr><th>Module</th><th>Category</th><th>Purpose</th><th style="text-align:right">Tests</th><th style="text-align:right">Lines</th><th style="text-align:right">Files</th></tr>
     </thead>
     <tbody>
-      <tr><td class="mono">bearing_capacity</td><td>Shallow foundations (CBEAR/Vesic/Meyerhof)</td><td style="text-align:right">37</td><td style="text-align:right">1,921</td><td style="text-align:right">8</td><td style="text-align:center"><span class="badge badge-pass">Yes</span></td></tr>
-      <tr><td class="mono">settlement</td><td>Consolidation &amp; immediate (CSETT)</td><td style="text-align:right">39</td><td style="text-align:right">1,795</td><td style="text-align:right">10</td><td style="text-align:center"><span class="badge badge-pass">Yes</span></td></tr>
-      <tr><td class="mono">axial_pile</td><td>Driven pile capacity (Nordlund/Tomlinson/Beta)</td><td style="text-align:right">36</td><td style="text-align:right">1,669</td><td style="text-align:right">10</td><td style="text-align:center"><span class="badge badge-pass">Yes</span></td></tr>
-      <tr><td class="mono">sheet_pile</td><td>Cantilever/anchored walls (Rankine/Coulomb)</td><td style="text-align:right">26</td><td style="text-align:right">1,174</td><td style="text-align:right">6</td><td style="text-align:center"><span class="badge badge-pass">Yes</span></td></tr>
-      <tr><td class="mono">lateral_pile</td><td>Lateral pile (COM624P, 7 p-y models, FD solver)</td><td style="text-align:right">58</td><td style="text-align:right">4,120</td><td style="text-align:right">8</td><td style="text-align:center"><span class="badge badge-none">No</span></td></tr>
-      <tr><td class="mono">pile_group</td><td>Rigid cap groups (6-DOF, Converse-Labarre)</td><td style="text-align:right">22</td><td style="text-align:right">902</td><td style="text-align:right">6</td><td style="text-align:center"><span class="badge badge-pass">Yes</span></td></tr>
-      <tr><td class="mono">wave_equation</td><td>Smith 1-D wave equation (bearing graph, drivability)</td><td style="text-align:right">41</td><td style="text-align:right">1,885</td><td style="text-align:right">11</td><td style="text-align:center"><span class="badge badge-pass">Yes</span></td></tr>
-      <tr><td class="mono">drilled_shaft</td><td>GEC-10 alpha/beta/rock socket</td><td style="text-align:right">41</td><td style="text-align:right">1,437</td><td style="text-align:right">10</td><td style="text-align:center"><span class="badge badge-pass">Yes</span></td></tr>
-      <tr><td class="mono">seismic_geotech</td><td>Site class, M-O pressures, liquefaction</td><td style="text-align:right">58</td><td style="text-align:right">1,463</td><td style="text-align:right">8</td><td style="text-align:center"><span class="badge badge-pass">Yes</span></td></tr>
-      <tr><td class="mono">retaining_walls</td><td>Cantilever + MSE walls (GEC-11)</td><td style="text-align:right">46</td><td style="text-align:right">1,696</td><td style="text-align:right">9</td><td style="text-align:center"><span class="badge badge-pass">Yes</span></td></tr>
-      <tr><td class="mono">ground_improvement</td><td>Aggregate piers, wick drains, surcharge, vibro (GEC-13)</td><td style="text-align:right">40</td><td style="text-align:right">2,579</td><td style="text-align:right">9</td><td style="text-align:center"><span class="badge badge-none">No</span></td></tr>
-      <tr><td class="mono">slope_stability</td><td>Fellenius/Bishop/Spencer, circular slip, grid search</td><td style="text-align:right">55</td><td style="text-align:right">2,336</td><td style="text-align:right">10</td><td style="text-align:center"><span class="badge badge-none">No</span></td></tr>
-      <tr><td class="mono">downdrag</td><td>Fellenius neutral plane, UFC 3-220-20 downdrag</td><td style="text-align:right">53</td><td style="text-align:right">2,277</td><td style="text-align:right">6</td><td style="text-align:center"><span class="badge badge-pass">Yes</span></td></tr>
-      <tr><td class="mono">geotech_common</td><td>SoilProfile + engineering checks + adapters</td><td style="text-align:right">238</td><td style="text-align:right">5,719</td><td style="text-align:right">12</td><td style="text-align:center"><span style="color:var(--text-dim)">&mdash;</span></td></tr>
+      <!-- Core Analysis Modules -->
+      <tr><td class="mono">bearing_capacity</td><td><span class="cat-badge" style="background:rgba(56,189,248,0.15); color:#38bdf8;">Foundations</span></td><td>Shallow foundations (CBEAR/Vesic/Meyerhof)</td><td style="text-align:right">45</td><td style="text-align:right">2,603</td><td style="text-align:right">9</td></tr>
+      <tr><td class="mono">settlement</td><td><span class="cat-badge" style="background:rgba(56,189,248,0.15); color:#38bdf8;">Foundations</span></td><td>Consolidation &amp; immediate (CSETT)</td><td style="text-align:right">39</td><td style="text-align:right">2,501</td><td style="text-align:right">11</td></tr>
+      <tr><td class="mono">axial_pile</td><td><span class="cat-badge" style="background:rgba(129,140,248,0.15); color:#818cf8;">Deep Fdn</span></td><td>Driven pile capacity (Nordlund/Tomlinson/Beta)</td><td style="text-align:right">55</td><td style="text-align:right">2,631</td><td style="text-align:right">11</td></tr>
+      <tr><td class="mono">lateral_pile</td><td><span class="cat-badge" style="background:rgba(129,140,248,0.15); color:#818cf8;">Deep Fdn</span></td><td>Lateral pile (COM624P, 8 p-y models, FD solver)</td><td style="text-align:right">89</td><td style="text-align:right">4,592</td><td style="text-align:right">9</td></tr>
+      <tr><td class="mono">pile_group</td><td><span class="cat-badge" style="background:rgba(129,140,248,0.15); color:#818cf8;">Deep Fdn</span></td><td>Rigid cap groups (6-DOF, Converse-Labarre)</td><td style="text-align:right">72</td><td style="text-align:right">2,314</td><td style="text-align:right">8</td></tr>
+      <tr><td class="mono">wave_equation</td><td><span class="cat-badge" style="background:rgba(129,140,248,0.15); color:#818cf8;">Deep Fdn</span></td><td>Smith 1-D wave equation (bearing graph, drivability)</td><td style="text-align:right">45</td><td style="text-align:right">2,914</td><td style="text-align:right">12</td></tr>
+      <tr><td class="mono">drilled_shaft</td><td><span class="cat-badge" style="background:rgba(129,140,248,0.15); color:#818cf8;">Deep Fdn</span></td><td>GEC-10 alpha/beta/rock socket</td><td style="text-align:right">48</td><td style="text-align:right">2,375</td><td style="text-align:right">11</td></tr>
+      <tr><td class="mono">downdrag</td><td><span class="cat-badge" style="background:rgba(129,140,248,0.15); color:#818cf8;">Deep Fdn</span></td><td>Fellenius neutral plane, UFC 3-220-20 downdrag</td><td style="text-align:right">53</td><td style="text-align:right">3,045</td><td style="text-align:right">7</td></tr>
+      <tr><td class="mono">sheet_pile</td><td><span class="cat-badge" style="background:rgba(251,146,60,0.15); color:#fb923c;">Walls</span></td><td>Cantilever/anchored walls (Rankine/Coulomb)</td><td style="text-align:right">26</td><td style="text-align:right">2,169</td><td style="text-align:right">7</td></tr>
+      <tr><td class="mono">retaining_walls</td><td><span class="cat-badge" style="background:rgba(251,146,60,0.15); color:#fb923c;">Walls</span></td><td>Cantilever + MSE walls (GEC-11)</td><td style="text-align:right">70</td><td style="text-align:right">3,487</td><td style="text-align:right">10</td></tr>
+      <tr><td class="mono">seismic_geotech</td><td><span class="cat-badge" style="background:rgba(244,114,182,0.15); color:#f472b6;">Seismic</span></td><td>Site class, M-O pressures, liquefaction</td><td style="text-align:right">71</td><td style="text-align:right">2,666</td><td style="text-align:right">9</td></tr>
+      <tr><td class="mono">ground_improvement</td><td><span class="cat-badge" style="background:rgba(52,211,153,0.15); color:#34d399;">Ground</span></td><td>Aggregate piers, wick drains, surcharge, vibro (GEC-13)</td><td style="text-align:right">43</td><td style="text-align:right">3,891</td><td style="text-align:right">10</td></tr>
+      <tr><td class="mono">slope_stability</td><td><span class="cat-badge" style="background:rgba(52,211,153,0.15); color:#34d399;">Ground</span></td><td>Fellenius/Bishop/Spencer, circular slip, grid search</td><td style="text-align:right">55</td><td style="text-align:right">2,851</td><td style="text-align:right">11</td></tr>
+      <tr><td class="mono">geotech_common</td><td><span class="cat-badge" style="background:rgba(148,163,184,0.15); color:#94a3b8;">Common</span></td><td>SoilProfile + engineering checks + adapters</td><td style="text-align:right">285</td><td style="text-align:right">6,560</td><td style="text-align:right">13</td></tr>
+      <!-- Library Wrapper Agents -->
+      <tr><td class="mono">opensees_agent</td><td><span class="cat-badge" style="background:rgba(244,114,182,0.15); color:#f472b6;">Seismic</span></td><td>PM4Sand cyclic DSS, BNWF lateral pile, 1D site response</td><td style="text-align:right">115</td><td style="text-align:right">3,630</td><td style="text-align:right">9</td></tr>
+      <tr><td class="mono">pystrata_agent</td><td><span class="cat-badge" style="background:rgba(244,114,182,0.15); color:#f472b6;">Seismic</span></td><td>1D EQL site response (SHAKE-type, Darendeli/Menq)</td><td style="text-align:right">60</td><td style="text-align:right">1,440</td><td style="text-align:right">6</td></tr>
+      <tr><td class="mono">seismic_signals</td><td><span class="cat-badge" style="background:rgba(244,114,182,0.15); color:#f472b6;">Seismic</span></td><td>Earthquake signal processing (eqsig/pyrotd)</td><td style="text-align:right">74</td><td style="text-align:right">1,853</td><td style="text-align:right">9</td></tr>
+      <tr><td class="mono">liquepy_agent</td><td><span class="cat-badge" style="background:rgba(244,114,182,0.15); color:#f472b6;">Seismic</span></td><td>CPT-based liquefaction triggering (B&amp;I 2014)</td><td style="text-align:right">59</td><td style="text-align:right">1,372</td><td style="text-align:right">7</td></tr>
+      <tr><td class="mono">pyseismosoil_agent</td><td><span class="cat-badge" style="background:rgba(244,114,182,0.15); color:#f472b6;">Seismic</span></td><td>MKZ/HH nonlinear soil curve calibration + Vs profiles</td><td style="text-align:right">41</td><td style="text-align:right">749</td><td style="text-align:right">6</td></tr>
+      <tr><td class="mono">pygef_agent</td><td><span class="cat-badge" style="background:rgba(251,191,36,0.15); color:#fbbf24;">Data</span></td><td>CPT/borehole file parser (GEF/BRO-XML)</td><td style="text-align:right">45</td><td style="text-align:right">983</td><td style="text-align:right">7</td></tr>
+      <tr><td class="mono">ags4_agent</td><td><span class="cat-badge" style="background:rgba(251,191,36,0.15); color:#fbbf24;">Data</span></td><td>AGS4 geotechnical data format reader/validator</td><td style="text-align:right">39</td><td style="text-align:right">665</td><td style="text-align:right">6</td></tr>
+      <tr><td class="mono">pydiggs_agent</td><td><span class="cat-badge" style="background:rgba(251,191,36,0.15); color:#fbbf24;">Data</span></td><td>DIGGS 2.6 XML schema and dictionary validation</td><td style="text-align:right">31</td><td style="text-align:right">894</td><td style="text-align:right">6</td></tr>
+      <tr><td class="mono">geolysis_agent</td><td><span class="cat-badge" style="background:rgba(251,191,36,0.15); color:#fbbf24;">Data</span></td><td>USCS/AASHTO classification + SPT corrections + bearing</td><td style="text-align:right">65</td><td style="text-align:right">1,768</td><td style="text-align:right">8</td></tr>
+      <tr><td class="mono">gstools_agent</td><td><span class="cat-badge" style="background:rgba(167,139,250,0.15); color:#a78bfa;">Advanced</span></td><td>Geostatistical kriging, variogram fitting, random fields</td><td style="text-align:right">69</td><td style="text-align:right">1,402</td><td style="text-align:right">8</td></tr>
+      <tr><td class="mono">salib_agent</td><td><span class="cat-badge" style="background:rgba(167,139,250,0.15); color:#a78bfa;">Advanced</span></td><td>Sobol &amp; Morris sensitivity analysis</td><td style="text-align:right">35</td><td style="text-align:right">909</td><td style="text-align:right">6</td></tr>
+      <tr><td class="mono">pystra_agent</td><td><span class="cat-badge" style="background:rgba(167,139,250,0.15); color:#a78bfa;">Advanced</span></td><td>FORM/SORM/Monte Carlo structural reliability</td><td style="text-align:right">43</td><td style="text-align:right">1,770</td><td style="text-align:right">6</td></tr>
+      <tr><td class="mono">hvsrpy_agent</td><td><span class="cat-badge" style="background:rgba(167,139,250,0.15); color:#a78bfa;">Advanced</span></td><td>HVSR site characterization from ambient noise</td><td style="text-align:right">37</td><td style="text-align:right">821</td><td style="text-align:right">6</td></tr>
+      <tr><td class="mono">swprocess_agent</td><td><span class="cat-badge" style="background:rgba(167,139,250,0.15); color:#a78bfa;">Advanced</span></td><td>MASW surface wave dispersion analysis</td><td style="text-align:right">30</td><td style="text-align:right">627</td><td style="text-align:right">6</td></tr>
     </tbody>
     <tfoot>
       <tr style="border-top: 2px solid var(--card-border);">
-        <td><strong>Module Total</strong></td><td></td>
-        <td style="text-align:right"><strong>790</strong></td>
-        <td style="text-align:right"><strong>30,973</strong></td>
-        <td style="text-align:right"><strong>123</strong></td>
-        <td></td>
+        <td><strong>28 Modules</strong></td><td></td><td></td>
+        <td style="text-align:right"><strong>1,759</strong></td>
+        <td style="text-align:right"><strong>63,482</strong></td>
+        <td style="text-align:right"><strong>234</strong></td>
       </tr>
     </tfoot>
   </table>
@@ -335,29 +571,47 @@
 <!-- Two-column: Foundry Agents & DM7 -->
 <div class="two-col">
   <div class="table-card">
-    <div class="section-title"><span class="dot" style="background:var(--accent4)"></span> Foundry Agent Wrappers</div>
+    <div class="section-title"><span class="dot" style="background:var(--accent4)"></span> Foundry Agent Wrappers (30)</div>
     <table>
       <thead>
         <tr><th>Agent</th><th style="text-align:right">Lines</th></tr>
       </thead>
       <tbody>
-        <tr><td class="mono">groundhog_agent</td><td style="text-align:right">1,210</td></tr>
-        <tr><td class="mono">seismic_geotech_agent</td><td style="text-align:right">445</td></tr>
-        <tr><td class="mono">dm7_agent</td><td style="text-align:right">431</td></tr>
-        <tr><td class="mono">settlement_agent</td><td style="text-align:right">411</td></tr>
-        <tr><td class="mono">wave_equation_agent</td><td style="text-align:right">405</td></tr>
-        <tr><td class="mono">retaining_walls_agent</td><td style="text-align:right">352</td></tr>
-        <tr><td class="mono">pile_group_agent</td><td style="text-align:right">331</td></tr>
-        <tr><td class="mono">drilled_shaft_agent</td><td style="text-align:right">330</td></tr>
-        <tr><td class="mono">axial_pile_agent</td><td style="text-align:right">316</td></tr>
-        <tr><td class="mono">downdrag_agent</td><td style="text-align:right">313</td></tr>
-        <tr><td class="mono">bearing_capacity_agent</td><td style="text-align:right">261</td></tr>
-        <tr><td class="mono">sheet_pile_agent</td><td style="text-align:right">241</td></tr>
+        <tr><td class="mono">groundhog_agent</td><td style="text-align:right">1,215</td></tr>
+        <tr><td class="mono">calc_package_agent</td><td style="text-align:right">1,177</td></tr>
+        <tr><td class="mono">lateral_pile_agent</td><td style="text-align:right">520</td></tr>
+        <tr><td class="mono">geolysis_agent</td><td style="text-align:right">476</td></tr>
+        <tr><td class="mono">seismic_geotech_agent</td><td style="text-align:right">467</td></tr>
+        <tr><td class="mono">settlement_agent</td><td style="text-align:right">460</td></tr>
+        <tr><td class="mono">ground_improvement_agent</td><td style="text-align:right">458</td></tr>
+        <tr><td class="mono">opensees_agent</td><td style="text-align:right">440</td></tr>
+        <tr><td class="mono">dm7_agent</td><td style="text-align:right">436</td></tr>
+        <tr><td class="mono">wave_equation_agent</td><td style="text-align:right">426</td></tr>
+        <tr><td class="mono">seismic_signals_agent</td><td style="text-align:right">403</td></tr>
+        <tr><td class="mono">retaining_walls_agent</td><td style="text-align:right">375</td></tr>
+        <tr><td class="mono">slope_stability_agent</td><td style="text-align:right">353</td></tr>
+        <tr><td class="mono">pile_group_agent</td><td style="text-align:right">351</td></tr>
+        <tr><td class="mono">drilled_shaft_agent</td><td style="text-align:right">351</td></tr>
+        <tr><td class="mono">axial_pile_agent</td><td style="text-align:right">340</td></tr>
+        <tr><td class="mono">gstools_agent</td><td style="text-align:right">337</td></tr>
+        <tr><td class="mono">downdrag_agent</td><td style="text-align:right">333</td></tr>
+        <tr><td class="mono">pystra_agent</td><td style="text-align:right">318</td></tr>
+        <tr><td class="mono">salib_agent</td><td style="text-align:right">317</td></tr>
+        <tr><td class="mono">pystrata_agent</td><td style="text-align:right">313</td></tr>
+        <tr><td class="mono">bearing_capacity_agent</td><td style="text-align:right">291</td></tr>
+        <tr><td class="mono">liquepy_agent</td><td style="text-align:right">285</td></tr>
+        <tr><td class="mono">sheet_pile_agent</td><td style="text-align:right">254</td></tr>
+        <tr><td class="mono">pygef_agent</td><td style="text-align:right">254</td></tr>
+        <tr><td class="mono">pyseismosoil_agent</td><td style="text-align:right">232</td></tr>
+        <tr><td class="mono">hvsrpy_agent</td><td style="text-align:right">229</td></tr>
+        <tr><td class="mono">ags4_agent</td><td style="text-align:right">207</td></tr>
+        <tr><td class="mono">swprocess_agent</td><td style="text-align:right">207</td></tr>
+        <tr><td class="mono">pydiggs_agent</td><td style="text-align:right">163</td></tr>
       </tbody>
       <tfoot>
         <tr style="border-top: 2px solid var(--card-border);">
-          <td><strong>12 Agents</strong></td>
-          <td style="text-align:right"><strong>5,046</strong></td>
+          <td><strong>30 Agents</strong></td>
+          <td style="text-align:right"><strong>11,988</strong></td>
         </tr>
       </tfoot>
     </table>
@@ -370,46 +624,61 @@
         <tr><th>Metric</th><th style="text-align:right">Count</th></tr>
       </thead>
       <tbody>
-        <tr><td>Functions</td><td style="text-align:right">354</td></tr>
-        <tr><td>Tests</td><td style="text-align:right">1,852</td></tr>
+        <tr><td>Functions</td><td style="text-align:right">382</td></tr>
+        <tr><td>Tests</td><td style="text-align:right">2,008</td></tr>
         <tr><td>Python files</td><td style="text-align:right">34</td></tr>
         <tr><td>Lines of code</td><td style="text-align:right">29,625</td></tr>
       </tbody>
     </table>
-    <div style="margin-top: 1.5rem;">
-      <div class="section-title" style="font-size:1rem;"><span class="dot" style="background:var(--accent3)"></span> Missing Foundry Agents</div>
+
+    <div style="margin-top: 2rem;">
+      <div class="section-title" style="font-size:1rem;"><span class="dot" style="background:var(--accent3)"></span> Foundry Test Harness</div>
       <table>
-        <thead><tr><th>Module</th><th>Status</th></tr></thead>
+        <thead><tr><th>Tier</th><th style="text-align:right">Tests</th></tr></thead>
         <tbody>
-          <tr><td class="mono">lateral_pile</td><td style="color:var(--text-dim)">Not yet built</td></tr>
-          <tr><td class="mono">ground_improvement</td><td style="color:var(--text-dim)">Not yet built</td></tr>
-          <tr><td class="mono">slope_stability</td><td style="color:var(--text-dim)">Not yet built</td></tr>
+          <tr><td>Tier 1 &mdash; Textbook answers</td><td style="text-align:right">58</td></tr>
+          <tr><td>Tier 2 &mdash; Multi-step workflows</td><td style="text-align:right">14</td></tr>
+          <tr><td>Tier 3 &mdash; Cross-agent consistency</td><td style="text-align:right">10</td></tr>
+          <tr><td>Tier 4 &mdash; Error handling</td><td style="text-align:right">39</td></tr>
         </tbody>
+        <tfoot>
+          <tr style="border-top: 2px solid var(--card-border);">
+            <td><strong>Total</strong></td>
+            <td style="text-align:right"><strong>121</strong></td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   </div>
 </div>
 
-<!-- Test breakdown donut-style summary -->
+<!-- Test breakdown -->
 <div class="chart-section">
   <div class="section-title"><span class="dot" style="background:var(--accent3)"></span> Test Coverage Breakdown</div>
-  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap:1rem; text-align:center;">
+  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap:1rem; text-align:center;">
     <div>
-      <div style="font-size:2rem; font-weight:700; color:var(--accent);">790</div>
+      <div style="font-size:2rem; font-weight:700; color:var(--accent);">1,735</div>
       <div style="color:var(--text-dim); font-size:0.85rem;">Module Tests</div>
       <div style="margin-top:0.5rem; height:6px; background:rgba(255,255,255,0.05); border-radius:3px;">
-        <div style="width:29.9%; height:100%; background:var(--accent); border-radius:3px;"></div>
+        <div style="width:44.9%; height:100%; background:var(--accent); border-radius:3px;"></div>
       </div>
     </div>
     <div>
-      <div style="font-size:2rem; font-weight:700; color:var(--accent2);">1,852</div>
+      <div style="font-size:2rem; font-weight:700; color:var(--accent4);">121</div>
+      <div style="color:var(--text-dim); font-size:0.85rem;">Foundry Harness Tests</div>
+      <div style="margin-top:0.5rem; height:6px; background:rgba(255,255,255,0.05); border-radius:3px;">
+        <div style="width:3.1%; height:100%; background:var(--accent4); border-radius:3px;"></div>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:2rem; font-weight:700; color:var(--accent2);">2,008</div>
       <div style="color:var(--text-dim); font-size:0.85rem;">DM7 Tests</div>
       <div style="margin-top:0.5rem; height:6px; background:rgba(255,255,255,0.05); border-radius:3px;">
-        <div style="width:70.1%; height:100%; background:var(--accent2); border-radius:3px;"></div>
+        <div style="width:52.0%; height:100%; background:var(--accent2); border-radius:3px;"></div>
       </div>
     </div>
     <div>
-      <div style="font-size:2rem; font-weight:700; color:var(--accent3);">2,642</div>
+      <div style="font-size:2rem; font-weight:700; color:var(--accent3);">3,864</div>
       <div style="color:var(--text-dim); font-size:0.85rem;">Total Tests</div>
       <div style="margin-top:0.5rem; height:6px; background:rgba(255,255,255,0.05); border-radius:3px;">
         <div style="width:100%; height:100%; background:var(--accent3); border-radius:3px;"></div>
@@ -418,8 +687,94 @@
   </div>
 </div>
 
+<!-- Capability Workflow Cards -->
+<div class="chart-section">
+  <div class="section-title"><span class="dot" style="background:var(--accent4)"></span> Engineering Capabilities</div>
+  <div class="cap-grid">
+    <div class="cap-card" style="border-left-color: #38bdf8;">
+      <h3 style="color:#38bdf8;">Foundations</h3>
+      <ul>
+        <li>Bearing capacity (Vesic, Meyerhof, Hansen)</li>
+        <li>Settlement (elastic, consolidation, Schmertmann)</li>
+        <li>Soil classification (USCS, AASHTO)</li>
+        <li>SPT corrections (N60, N1_60)</li>
+      </ul>
+    </div>
+    <div class="cap-card" style="border-left-color: #818cf8;">
+      <h3 style="color:#818cf8;">Deep Foundations</h3>
+      <ul>
+        <li>Axial pile capacity (Nordlund, Tomlinson, Beta)</li>
+        <li>Drilled shafts (GEC-10 alpha/beta/rock socket)</li>
+        <li>Lateral pile analysis (COM624P, 8 p-y models)</li>
+        <li>Pile groups (6-DOF, Converse-Labarre)</li>
+        <li>Wave equation (Smith 1-D, drivability)</li>
+        <li>Downdrag / negative skin friction</li>
+      </ul>
+    </div>
+    <div class="cap-card" style="border-left-color: #fb923c;">
+      <h3 style="color:#fb923c;">Earth Retention</h3>
+      <ul>
+        <li>Sheet pile walls (cantilever, anchored)</li>
+        <li>Retaining walls (cantilever, MSE / GEC-11)</li>
+        <li>Lateral earth pressures (Rankine, Coulomb)</li>
+        <li>Sliding, overturning, bearing checks</li>
+      </ul>
+    </div>
+    <div class="cap-card" style="border-left-color: #f472b6;">
+      <h3 style="color:#f472b6;">Seismic &amp; Dynamics</h3>
+      <ul>
+        <li>Site response (EQL via pyStrata, NL via OpenSees)</li>
+        <li>Liquefaction triggering (SPT &amp; CPT-based)</li>
+        <li>Mononobe-Okabe seismic pressures</li>
+        <li>Ground motion processing (eqsig, pyrotd)</li>
+        <li>PM4Sand constitutive model (DSS)</li>
+        <li>Nonlinear soil curves (MKZ/HH calibration)</li>
+      </ul>
+    </div>
+    <div class="cap-card" style="border-left-color: #34d399;">
+      <h3 style="color:#34d399;">Ground Improvement &amp; Slopes</h3>
+      <ul>
+        <li>Wick drains / PVD consolidation</li>
+        <li>Stone columns / aggregate piers</li>
+        <li>Surcharge preloading, vibro-compaction</li>
+        <li>Slope stability (Fellenius/Bishop/Spencer)</li>
+        <li>Circular slip surface grid search</li>
+      </ul>
+    </div>
+    <div class="cap-card" style="border-left-color: #fbbf24;">
+      <h3 style="color:#fbbf24;">Geotechnical Data</h3>
+      <ul>
+        <li>AGS4 data format reading &amp; validation</li>
+        <li>DIGGS 2.6 XML schema validation</li>
+        <li>GEF / BRO-XML file parsing (CPT, borehole)</li>
+        <li>DM7 lookup tables &amp; figures (382 functions)</li>
+      </ul>
+    </div>
+    <div class="cap-card" style="border-left-color: #a78bfa;">
+      <h3 style="color:#a78bfa;">Advanced Analysis</h3>
+      <ul>
+        <li>Geostatistics (kriging, variograms, random fields)</li>
+        <li>Sensitivity analysis (Sobol, Morris)</li>
+        <li>Structural reliability (FORM/SORM/Monte Carlo)</li>
+        <li>HVSR site characterization</li>
+        <li>MASW surface wave dispersion</li>
+      </ul>
+    </div>
+    <div class="cap-card" style="border-left-color: #94a3b8;">
+      <h3 style="color:#94a3b8;">Infrastructure</h3>
+      <ul>
+        <li>SoilProfile data model &amp; adapters</li>
+        <li>30 Foundry agents (JSON-in/JSON-out)</li>
+        <li>4-tier test harness (121 tests)</li>
+        <li>Trial agent (Claude API tool_use)</li>
+        <li>groundhog library (90 methods)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
 <div class="footer">
-  GeotechStaffEngineer &middot; Built with Claude Code &middot; 20 commits &middot; Feb 13 &ndash; 16, 2026
+  GeotechStaffEngineer &middot; Built with Claude Code &middot; 41 commits &middot; Feb 13 &ndash; 22, 2026
 </div>
 
 </body>

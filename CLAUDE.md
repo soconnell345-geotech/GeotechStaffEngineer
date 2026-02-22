@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-30 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + geolysis agent + pystra agent + pydiggs agent + DM7 equations.
+30 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + geolysis agent + pystra agent + pydiggs agent + DM7 equations + trial_agent (Claude API tool_use integration).
 
 ## Architecture Patterns
 
@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`*_agent_foundry.py` in root): 3 functions each (agent/list/describe)
 
-## Module Inventory (1735 module tests + 121 foundry harness tests)
+## Module Inventory (1735 module + 121 harness + 2008 DM7 = 3864 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -56,7 +56,7 @@ Key conventions:
 | pystra_agent | 43 | FORM/SORM/Monte Carlo structural reliability analysis |
 | pydiggs_agent | 31 | DIGGS 2.6 XML schema and dictionary validation |
 
-Other components: groundhog_agent (90 methods), DM7Eqs (382 functions, 2008 tests), foundry_test_harness (121 tests)
+Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 functions, 2008 tests), foundry_test_harness (121 tests), trial_agent (100 tests)
 
 ## Foundry Test Harness
 
@@ -73,15 +73,40 @@ Supporting files: `harness.py` (FoundryAgentHarness class), `scenarios.py` (reus
 
 Run: `pytest foundry_test_harness/ -v`
 
+## Trial Agent (Claude API Integration)
+
+`trial_agent/` uses the Claude API `tool_use` feature to give Claude direct access to all 30 Foundry agents. The agent receives 3 meta-tools:
+
+- `call_agent(agent, method, params)` — Route to any of the 30 Foundry agent functions
+- `list_methods(agent, category)` — Discover available methods for an agent
+- `describe_method(agent, method)` — Get parameter details and usage info
+
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Package init |
+| `__main__.py` | Entry point for `python -m trial_agent` |
+| `cli.py` | CLI interface for interactive queries |
+| `system_prompt.py` | Engineering system prompt for Claude |
+| `agent_registry.py` | Maps agent names to Foundry functions |
+| `tools.py` | Tool definitions for Claude API |
+| `test_run.py` | 10-question trial run |
+| `test_run_30.py` | 30-question trial run |
+| `test_run_60.py` | 60-question trial run |
+| `test_run_100.py` | 100-question comprehensive trial |
+| `analyze_descriptions.py` | Utility to analyze method descriptions |
+
+Note: Trial agent tests require a valid `ANTHROPIC_API_KEY` and incur API costs. They are not included in the standard regression command.
+
 ## Working on a Module
 
 1. Read the module's `DESIGN.md` first for theory and conventions
 2. Read `__init__.py` for the public API
 3. Run that module's tests: `pytest module_name/ -v`
-4. Full regression: `pytest bearing_capacity/ settlement/ axial_pile/ sheet_pile/ lateral_pile/validation.py pile_group/ wave_equation/ geotech_common/ drilled_shaft/ seismic_geotech/ retaining_walls/ ground_improvement/ slope_stability/ downdrag/ opensees_agent/ pystrata_agent/ seismic_signals_agent/ liquepy_agent/ pygef_agent/ hvsrpy_agent/ gstools_agent/ ags4_agent/ salib_agent/ pyseismosoil_agent/ swprocess_agent/ geolysis_agent/ pystra_agent/ pydiggs_agent/ foundry_test_harness/ -q`
+4. Full regression: `pytest bearing_capacity/ settlement/ axial_pile/ sheet_pile/ lateral_pile/validation.py pile_group/ wave_equation/ geotech_common/ drilled_shaft/ seismic_geotech/ retaining_walls/ ground_improvement/ slope_stability/ downdrag/ opensees_agent/ pystrata_agent/ seismic_signals_agent/ liquepy_agent/ pygef_agent/ hvsrpy_agent/ gstools_agent/ ags4_agent/ salib_agent/ pyseismosoil_agent/ swprocess_agent/ geolysis_agent/ pystra_agent/ pydiggs_agent/ foundry_test_harness/ geotech-references/tests/ -q`
 
 ## Environment
 
 - Windows 11, Python 3.14.3, venv at `.venv/`
 - Git repo: github.com/soconnell345-geotech/GeotechStaffEngineer (private)
+- Git submodule: `geotech-references/` → github.com/soconnell345-geotech/geotech-references (DM7 + future GEC refs)
 - numpy >=2.0: use `np.trapezoid` (was `np.trapz`)
