@@ -21,3 +21,6 @@ sample_calc_package.tex
 # Build instruction prompts (not needed in repo)
 geotech_modules_2_through_7_prompt.md
 geotech_modules_instruction.md
+dist/
+*.egg-info/
+build/
