@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GeotechStaffEngineer — AI-Powered Geotechnical Analysis Platform</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #334155;
+    --accent: #3b82f6;
+    --accent2: #8b5cf6;
+    --accent3: #06b6d4;
+    --green: #10b981;
+    --orange: #f59e0b;
+    --red: #ef4444;
+    --pink: #ec4899;
+    --text: #f1f5f9;
+    --text2: #94a3b8;
+    --border: #475569;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  .page {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 40px 32px;
+  }
+
+  /* ── Hero ─────────────────────────────────────── */
+  .hero {
+    text-align: center;
+    padding: 60px 0 28px;
+    position: relative;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -80px; left: 50%;
+    transform: translateX(-50%);
+    width: 800px; height: 600px;
+    background: radial-gradient(circle, rgba(59,130,246,0.10) 0%, rgba(139,92,246,0.06) 40%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero h1 {
+    font-size: 3rem;
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    background: linear-gradient(135deg, var(--accent), var(--accent2), var(--accent3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 12px;
+  }
+  .hero .subtitle {
+    font-size: 1.2rem;
+    color: var(--text2);
+    max-width: 800px;
+    margin: 0 auto 12px;
+  }
+  .hero .tagline {
+    font-size: 0.9rem;
+    color: var(--text2);
+    opacity: 0.7;
+    margin-bottom: 40px;
+  }
+
+  /* ── Big Stat Bar ────────────────────────────── */
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    flex-wrap: wrap;
+    margin-bottom: 60px;
+  }
+  .stat {
+    text-align: center;
+    min-width: 100px;
+  }
+  .stat .number {
+    font-size: 2.8rem;
+    font-weight: 900;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .label {
+    font-size: 0.78rem;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 6px;
+  }
+  .stat:nth-child(1) .number { color: var(--accent); }
+  .stat:nth-child(2) .number { color: var(--accent2); }
+  .stat:nth-child(3) .number { color: var(--accent3); }
+  .stat:nth-child(4) .number { color: var(--green); }
+  .stat:nth-child(5) .number { color: var(--orange); }
+  .stat:nth-child(6) .number { color: var(--pink); }
+
+  /* ── Section titles ──────────────────────────── */
+  .section-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 24px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--surface2);
+  }
+
+  /* ── Architecture ────────────────────────────── */
+  .arch { margin-bottom: 60px; }
+
+  .arch-diagram {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    position: relative;
+  }
+  .arch-layer {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px 28px;
+    margin-bottom: 12px;
+    position: relative;
+  }
+  .arch-layer::after {
+    content: '';
+    position: absolute;
+    bottom: -13px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    height: 12px;
+    background: var(--accent);
+  }
+  .arch-layer:last-child::after { display: none; }
+
+  .layer-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 8px;
+  }
+  .layer-content {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+  }
+  .layer-chip {
+    font-size: 0.78rem;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-weight: 500;
+  }
+  .chip-blue { background: rgba(59,130,246,0.15); color: var(--accent); }
+  .chip-purple { background: rgba(139,92,246,0.15); color: var(--accent2); }
+  .chip-cyan { background: rgba(6,182,212,0.15); color: var(--accent3); }
+  .chip-green { background: rgba(16,185,129,0.15); color: var(--green); }
+  .chip-orange { background: rgba(245,158,11,0.15); color: var(--orange); }
+  .chip-pink { background: rgba(236,72,153,0.15); color: var(--pink); }
+
+  .layer-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 99px;
+    margin-left: 4px;
+  }
+
+  /* ── Domain Grid ─────────────────────────────── */
+  .domains { margin-bottom: 60px; }
+  .domain-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+  .domain-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .domain-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .domain-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+  }
+  .domain-card h3 {
+    font-size: 1rem;
+    font-weight: 700;
+  }
+  .badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 99px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+  .badge-blue { background: rgba(59,130,246,0.15); color: var(--accent); }
+  .badge-purple { background: rgba(139,92,246,0.15); color: var(--accent2); }
+  .badge-cyan { background: rgba(6,182,212,0.15); color: var(--accent3); }
+  .badge-green { background: rgba(16,185,129,0.15); color: var(--green); }
+  .badge-orange { background: rgba(245,158,11,0.15); color: var(--orange); }
+  .badge-pink { background: rgba(236,72,153,0.15); color: var(--pink); }
+
+  .domain-card .desc {
+    font-size: 0.82rem;
+    color: var(--text2);
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+  .domain-stats {
+    display: flex;
+    gap: 12px;
+    font-size: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .domain-stat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .dot-blue { background: var(--accent); }
+  .dot-green { background: var(--green); }
+  .dot-purple { background: var(--accent2); }
+  .dot-cyan { background: var(--accent3); }
+  .dot-orange { background: var(--orange); }
+
+  /* ── Domain group headers ──────────────────── */
+  .domain-group {
+    margin-bottom: 36px;
+  }
+  .domain-group-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 14px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .domain-group-title .accent-bar {
+    width: 4px;
+    height: 20px;
+    border-radius: 2px;
+    display: inline-block;
+  }
+
+  /* ── How It Works ────────────────────────────── */
+  .how-it-works { margin-bottom: 60px; }
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  @media (max-width: 860px) {
+    .steps { grid-template-columns: 1fr; }
+  }
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 24px;
+  }
+  .step-number {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 1rem;
+    margin-bottom: 14px;
+  }
+  .step:nth-child(1) .step-number { background: rgba(59,130,246,0.2); color: var(--accent); }
+  .step:nth-child(2) .step-number { background: rgba(139,92,246,0.2); color: var(--accent2); }
+  .step:nth-child(3) .step-number { background: rgba(16,185,129,0.2); color: var(--green); }
+  .step h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .step p {
+    font-size: 0.85rem;
+    color: var(--text2);
+    margin-bottom: 14px;
+  }
+  .step code {
+    display: block;
+    background: var(--bg);
+    border: 1px solid var(--surface2);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.75rem;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--text2);
+  }
+  .step code .kw { color: var(--accent2); }
+  .step code .fn { color: var(--accent); }
+  .step code .str { color: var(--green); }
+  .step code .cm { color: #64748b; }
+
+  /* ── Workflow Example ──────────────────────── */
+  .workflow { margin-bottom: 60px; }
+  .workflow-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .workflow-header {
+    padding: 14px 24px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    font-size: 0.92rem;
+  }
+  .workflow-body { padding: 24px; }
+  .wf-exchange {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 16px;
+    align-items: start;
+    margin-bottom: 20px;
+  }
+  .wf-exchange:last-child { margin-bottom: 0; }
+  .wf-role {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 3px 10px;
+    border-radius: 4px;
+    margin-top: 2px;
+    white-space: nowrap;
+  }
+  .wf-role.user { background: rgba(59,130,246,0.15); color: var(--accent); }
+  .wf-role.agent { background: rgba(16,185,129,0.15); color: var(--green); }
+  .wf-role.tool { background: rgba(139,92,246,0.15); color: var(--accent2); }
+  .wf-content {
+    font-size: 0.85rem;
+    line-height: 1.6;
+  }
+  .wf-content code {
+    background: var(--bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  .wf-content .result {
+    background: var(--bg);
+    border: 1px solid var(--surface2);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-top: 6px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--text2);
+  }
+
+  /* ── Coverage Table ──────────────────────────── */
+  .coverage { margin-bottom: 60px; }
+  .coverage table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  .coverage th {
+    text-align: left;
+    padding: 10px 14px;
+    background: var(--surface2);
+    font-weight: 600;
+    border-bottom: 2px solid var(--border);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .coverage td {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--surface2);
+    color: var(--text2);
+  }
+  .coverage tr:hover td {
+    background: var(--surface);
+    color: var(--text);
+  }
+  .coverage td:first-child {
+    font-weight: 600;
+    color: var(--text);
+  }
+  .coverage .num {
+    text-align: center;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .coverage .check {
+    text-align: center;
+    color: var(--green);
+  }
+  .coverage .total-row td {
+    font-weight: 700;
+    border-top: 2px solid var(--border);
+    color: var(--text);
+  }
+
+  /* ── Why This Matters ──────────────────────── */
+  .value-prop { margin-bottom: 60px; }
+  .value-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  @media (max-width: 860px) {
+    .value-grid { grid-template-columns: 1fr; }
+  }
+  .value-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 24px;
+  }
+  .value-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    font-weight: 800;
+    margin-bottom: 14px;
+  }
+  .value-card h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .value-card p {
+    font-size: 0.85rem;
+    color: var(--text2);
+    line-height: 1.6;
+  }
+
+  /* ── Integration Section ─────────────────── */
+  .integrations { margin-bottom: 60px; }
+  .integration-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+  @media (max-width: 700px) {
+    .integration-grid { grid-template-columns: 1fr; }
+  }
+  .integration-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+  }
+  .integration-card h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .integration-card .int-desc {
+    font-size: 0.85rem;
+    color: var(--text2);
+    margin-bottom: 14px;
+    line-height: 1.6;
+  }
+  .integration-card .int-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 0.78rem;
+    flex-wrap: wrap;
+  }
+  .integration-card .int-stat {
+    font-weight: 600;
+  }
+
+  /* ── Footer ────────────────────────────────── */
+  .footer {
+    text-align: center;
+    padding: 32px 0;
+    color: var(--text2);
+    font-size: 0.82rem;
+    border-top: 1px solid var(--surface2);
+  }
+  .footer a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  /* ── Responsive ────────────────────────────── */
+  @media (max-width: 700px) {
+    .hero h1 { font-size: 2rem; }
+    .stats { gap: 20px; }
+    .stat .number { font-size: 2rem; }
+    .domain-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- ═══════════════════════════════════════════
+       HERO
+       ═══════════════════════════════════════════ -->
+  <div class="hero">
+    <h1>GeotechStaffEngineer</h1>
+    <p class="subtitle">
+      An AI-powered geotechnical analysis platform: 30 computation modules,
+      8 digitized FHWA/NAVFAC references, and a unified agent interface &mdash;
+      every calculation callable as a tool by an LLM on Palantir Foundry.
+    </p>
+    <p class="tagline">Python &bull; SI Units &bull; JSON In / JSON Out &bull; Foundry-Ready</p>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       KEY STATS
+       ═══════════════════════════════════════════ -->
+  <div class="stats">
+    <div class="stat">
+      <div class="number">30</div>
+      <div class="label">Analysis Modules</div>
+    </div>
+    <div class="stat">
+      <div class="number">8</div>
+      <div class="label">Reference Libraries</div>
+    </div>
+    <div class="stat">
+      <div class="number">900+</div>
+      <div class="label">Callable Methods</div>
+    </div>
+    <div class="stat">
+      <div class="number">4,666</div>
+      <div class="label">Automated Tests</div>
+    </div>
+    <div class="stat">
+      <div class="number">38</div>
+      <div class="label">Foundry Agents</div>
+    </div>
+    <div class="stat">
+      <div class="number">121</div>
+      <div class="label">Integration Tests</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       ARCHITECTURE
+       ═══════════════════════════════════════════ -->
+  <div class="arch">
+    <h2 class="section-title">Architecture</h2>
+
+    <div class="arch-diagram">
+      <div class="arch-layer" style="border-color: var(--accent);">
+        <div class="layer-label" style="color: var(--accent);">User Layer</div>
+        <div class="layer-content">
+          <span class="layer-chip chip-blue">Natural Language Question</span>
+          <span style="color: var(--text2); font-size: 0.85rem;">&rarr;</span>
+          <span class="layer-chip chip-blue">Palantir Foundry AIP</span>
+          <span style="color: var(--text2); font-size: 0.85rem;">or</span>
+          <span class="layer-chip chip-blue">Claude API (Trial Agent)</span>
+        </div>
+      </div>
+
+      <div class="arch-layer" style="border-color: var(--accent2);">
+        <div class="layer-label" style="color: var(--accent2);">Agent Layer &mdash; 38 Foundry Agents</div>
+        <div class="layer-content">
+          <span class="layer-chip chip-purple">call_agent(agent, method, params)</span>
+          <span class="layer-chip chip-purple">list_methods(agent, category)</span>
+          <span class="layer-chip chip-purple">describe_method(agent, method)</span>
+        </div>
+      </div>
+
+      <div class="arch-layer" style="border-color: var(--accent3);">
+        <div class="layer-label" style="color: var(--accent3);">Computation Layer &mdash; 30 Analysis Modules</div>
+        <div class="layer-content">
+          <span class="layer-chip chip-cyan">Bearing Capacity</span>
+          <span class="layer-chip chip-cyan">Settlement</span>
+          <span class="layer-chip chip-cyan">Axial Pile</span>
+          <span class="layer-chip chip-cyan">Lateral Pile</span>
+          <span class="layer-chip chip-cyan">Pile Group</span>
+          <span class="layer-chip chip-cyan">Drilled Shaft</span>
+          <span class="layer-chip chip-cyan">Wave Equation</span>
+          <span class="layer-chip chip-cyan">Slope Stability</span>
+          <span class="layer-chip chip-cyan">Retaining Walls</span>
+          <span class="layer-chip chip-cyan">Seismic</span>
+          <span class="layer-chip chip-cyan">+ 20 more</span>
+        </div>
+      </div>
+
+      <div class="arch-layer" style="border-color: var(--green);">
+        <div class="layer-label" style="color: var(--green);">Reference Layer &mdash; 8 Digitized Standards</div>
+        <div class="layer-content">
+          <span class="layer-chip chip-green">DM7 (382 eqs)</span>
+          <span class="layer-chip chip-green">GEC-6</span>
+          <span class="layer-chip chip-green">GEC-7</span>
+          <span class="layer-chip chip-green">GEC-10</span>
+          <span class="layer-chip chip-green">GEC-11</span>
+          <span class="layer-chip chip-green">GEC-12</span>
+          <span class="layer-chip chip-green">GEC-13</span>
+          <span class="layer-chip chip-green">Micropile</span>
+        </div>
+      </div>
+
+      <div class="arch-layer" style="border-color: var(--orange); margin-bottom: 0;">
+        <div class="layer-label" style="color: var(--orange);">Validation Layer</div>
+        <div class="layer-content">
+          <span class="layer-chip chip-orange">4,666 Pytest Tests</span>
+          <span class="layer-chip chip-orange">121 Foundry Integration Tests</span>
+          <span class="layer-chip chip-orange">4-Tier Harness (Textbook &rarr; Workflow &rarr; Cross-check &rarr; Error)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       HOW THE AGENT WORKS
+       ═══════════════════════════════════════════ -->
+  <div class="how-it-works">
+    <h2 class="section-title">How the Agent Works</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-number">1</div>
+        <h3>Discover</h3>
+        <p>The LLM browses available methods across all 38 agents by category to find the right function.</p>
+        <code><span class="fn">list_methods</span>(<span class="str">"bearing_capacity"</span>)
+<span class="cm">// Returns: bearing_capacity_analysis,</span>
+<span class="cm">//   bearing_capacity_factors, ...</span>
+
+<span class="fn">list_methods</span>(<span class="str">"axial_pile"</span>, <span class="str">"nordlund"</span>)
+<span class="cm">// Returns: nordlund_pile_capacity</span></code>
+      </div>
+      <div class="step">
+        <div class="step-number">2</div>
+        <h3>Inspect</h3>
+        <p>Gets full parameter documentation &mdash; types, ranges, defaults, units, and related methods.</p>
+        <code><span class="fn">describe_method</span>(
+  <span class="str">"bearing_capacity"</span>,
+  <span class="str">"bearing_capacity_analysis"</span>
+)
+<span class="cm">// parameters, typical_workflow,</span>
+<span class="cm">// common_mistakes, related []</span></code>
+      </div>
+      <div class="step">
+        <div class="step-number">3</div>
+        <h3>Execute</h3>
+        <p>Calls the function with JSON parameters and gets a structured engineering result.</p>
+        <code><span class="fn">call_agent</span>(
+  <span class="str">"bearing_capacity"</span>,
+  <span class="str">"bearing_capacity_analysis"</span>,
+  {<span class="str">"B"</span>: 2.0, <span class="str">"L"</span>: 3.0,
+   <span class="str">"D"</span>: 1.5, <span class="str">"phi"</span>: 30, ...}
+)
+<span class="cm">// q_ultimate_kPa: 1284.5</span></code>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       ANALYSIS MODULES
+       ═══════════════════════════════════════════ -->
+  <div class="domains">
+    <h2 class="section-title">Analysis Modules &mdash; 30 Computation Engines</h2>
+
+    <!-- Foundations -->
+    <div class="domain-group">
+      <div class="domain-group-title">
+        <span class="accent-bar" style="background: var(--accent);"></span>
+        Foundations
+      </div>
+      <div class="domain-grid">
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Bearing Capacity</h3>
+            <span class="badge badge-blue">45 tests</span>
+          </div>
+          <div class="desc">Shallow foundation bearing capacity via CBEAR, Vesic, and Meyerhof methods. Shape, depth, and inclination correction factors.</div>
+          <div class="domain-stats">
+            <div class="domain-stat"><span class="dot dot-blue"></span> Vesic / Meyerhof</div>
+            <div class="domain-stat"><span class="dot dot-green"></span> CBEAR validated</div>
+          </div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Settlement</h3>
+            <span class="badge badge-blue">39 tests</span>
+          </div>
+          <div class="desc">Consolidation and immediate settlement via CSETT methods, Schmertmann CPT-based, and elastic theory.</div>
+          <div class="domain-stats">
+            <div class="domain-stat"><span class="dot dot-blue"></span> Consolidation</div>
+            <div class="domain-stat"><span class="dot dot-green"></span> Schmertmann</div>
+          </div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Drilled Shaft</h3>
+            <span class="badge badge-blue">48 tests</span>
+          </div>
+          <div class="desc">GEC-10 alpha method, beta method, and rock socket design. O'Neill &amp; Reese side resistance and tip bearing.</div>
+          <div class="domain-stats">
+            <div class="domain-stat"><span class="dot dot-blue"></span> GEC-10</div>
+            <div class="domain-stat"><span class="dot dot-green"></span> LRFD</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Deep Foundations -->
+    <div class="domain-group">
+      <div class="domain-group-title">
+        <span class="accent-bar" style="background: var(--accent2);"></span>
+        Deep Foundations
+      </div>
+      <div class="domain-grid">
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Axial Pile</h3>
+            <span class="badge badge-purple">55 tests</span>
+          </div>
+          <div class="desc">Driven pile capacity via Nordlund, Tomlinson alpha, and beta methods. Pipe, concrete, and H-pile types supported.</div>
+          <div class="domain-stats">
+            <div class="domain-stat"><span class="dot dot-purple"></span> 3 methods</div>
+            <div class="domain-stat"><span class="dot dot-green"></span> 3 pile types</div>
+          </div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Lateral Pile</h3>
+            <span class="badge badge-purple">66 tests</span>
+          </div>
+          <div class="desc">COM624P-style lateral analysis with 8 p-y curve models. Finite-difference solver for deflection, moment, and shear.</div>
+          <div class="domain-stats">
+            <div class="domain-stat"><span class="dot dot-purple"></span> 8 p-y models</div>
+            <div class="domain-stat"><span class="dot dot-green"></span> FD solver</div>
+          </div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Pile Group</h3>
+            <span class="badge badge-purple">72 tests</span>
+          </div>
+          <div class="desc">Rigid-cap group analysis with 6-DOF load distribution, Converse-Labarre efficiency, and elastic settlement.</div>
+          <div class="domain-stats">
+            <div class="domain-stat"><span class="dot dot-purple"></span> 6-DOF</div>
+            <div class="domain-stat"><span class="dot dot-green"></span> Converse-Labarre</div>
+          </div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Wave Equation</h3>
+            <span class="badge badge-purple">45 tests</span>
+          </div>
+          <div class="desc">Smith 1-D wave equation analysis: bearing graph generation, drivability assessment, and stress checks.</div>
+          <div class="domain-stats">
+            <div class="domain-stat"><span class="dot dot-purple"></span> Smith model</div>
+            <div class="domain-stat"><span class="dot dot-green"></span> Drivability</div>
+          </div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Downdrag</h3>
+            <span class="badge badge-purple">53 tests</span>
+          </div>
+          <div class="desc">Fellenius neutral plane method and UFC 3-220-20 downdrag. Settling soil consolidation and dragload computation.</div>
+          <div class="domain-stats">
+            <div class="domain-stat"><span class="dot dot-purple"></span> Neutral plane</div>
+            <div class="domain-stat"><span class="dot dot-green"></span> Fellenius</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Earth Retention & Slopes -->
+    <div class="domain-group">
+      <div class="domain-group-title">
+        <span class="accent-bar" style="background: var(--accent3);"></span>
+        Earth Retention &amp; Slopes
+      </div>
+      <div class="domain-grid">
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Sheet Pile</h3>
+            <span class="badge badge-cyan">26 tests</span>
+          </div>
+          <div class="desc">Cantilever and anchored sheet pile walls via Rankine and Coulomb earth pressure theories.</div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Retaining Walls</h3>
+            <span class="badge badge-cyan">70 tests</span>
+          </div>
+          <div class="desc">Cantilever and MSE wall design per GEC-11. Sliding, overturning, and bearing stability checks.</div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Slope Stability</h3>
+            <span class="badge badge-cyan">55 tests</span>
+          </div>
+          <div class="desc">Fellenius, Bishop, and Spencer methods. Circular slip surface analysis with grid search optimization.</div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Ground Improvement</h3>
+            <span class="badge badge-cyan">43 tests</span>
+          </div>
+          <div class="desc">Aggregate piers, wick drains, vibro-compaction, surcharge preloading, and stone columns per GEC-13.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Seismic & Dynamics -->
+    <div class="domain-group">
+      <div class="domain-group-title">
+        <span class="accent-bar" style="background: var(--green);"></span>
+        Seismic &amp; Dynamics
+      </div>
+      <div class="domain-grid">
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Seismic Geotech</h3>
+            <span class="badge badge-green">71 tests</span>
+          </div>
+          <div class="desc">Site classification, Mononobe-Okabe pressures, simplified liquefaction triggering, and residual strength.</div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>OpenSees Agent</h3>
+            <span class="badge badge-green">106 tests</span>
+          </div>
+          <div class="desc">PM4Sand cyclic DSS simulation, BNWF lateral pile analysis, and 1-D nonlinear site response via OpenSeesPy.</div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>pyStrata Agent</h3>
+            <span class="badge badge-green">57 tests</span>
+          </div>
+          <div class="desc">1-D equivalent-linear site response (SHAKE-type). Darendeli, Menq, and custom modulus reduction curves.</div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Seismic Signals</h3>
+            <span class="badge badge-green">74 tests</span>
+          </div>
+          <div class="desc">Earthquake signal processing via eqsig and pyrotd. Response spectra, Arias intensity, and duration metrics.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Field Data & Classification -->
+    <div class="domain-group">
+      <div class="domain-group-title">
+        <span class="accent-bar" style="background: var(--orange);"></span>
+        Field Data, Classification &amp; Statistics
+      </div>
+      <div class="domain-grid">
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>LiquePy Agent</h3>
+            <span class="badge badge-orange">59 tests</span>
+          </div>
+          <div class="desc">CPT-based liquefaction triggering (Boulanger &amp; Idriss 2014). LPI, LSN, LDI indices.</div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>PyGEF Agent</h3>
+            <span class="badge badge-orange">45 tests</span>
+          </div>
+          <div class="desc">CPT and borehole file parser for GEF and BRO-XML formats.</div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>HVSRPY Agent</h3>
+            <span class="badge badge-orange">37 tests</span>
+          </div>
+          <div class="desc">HVSR site characterization from ambient noise recordings. Peak frequency and amplification.</div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Geolysis Agent</h3>
+            <span class="badge badge-orange">65 tests</span>
+          </div>
+          <div class="desc">USCS/AASHTO soil classification, SPT energy corrections (N60, N1_60), and bearing capacity.</div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>AGS4 Agent</h3>
+            <span class="badge badge-orange">39 tests</span>
+          </div>
+          <div class="desc">AGS4 geotechnical data format reader and validator.</div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>PyDIGGS Agent</h3>
+            <span class="badge badge-orange">31 tests</span>
+          </div>
+          <div class="desc">DIGGS 2.6 XML schema and dictionary validation.</div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>GSTools Agent</h3>
+            <span class="badge badge-orange">69 tests</span>
+          </div>
+          <div class="desc">Geostatistical kriging, variogram fitting, and random field generation.</div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>SALib Agent</h3>
+            <span class="badge badge-orange">35 tests</span>
+          </div>
+          <div class="desc">Sobol and Morris sensitivity analysis for geotechnical parameter studies.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Advanced & Specialized -->
+    <div class="domain-group">
+      <div class="domain-group-title">
+        <span class="accent-bar" style="background: var(--pink);"></span>
+        Advanced &amp; Specialized
+      </div>
+      <div class="domain-grid">
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>PySeismoSoil Agent</h3>
+            <span class="badge badge-pink">41 tests</span>
+          </div>
+          <div class="desc">MKZ/HH nonlinear soil curve calibration, Vs profile management, and site response input preparation.</div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>SWProcess Agent</h3>
+            <span class="badge badge-pink">30 tests</span>
+          </div>
+          <div class="desc">MASW surface wave dispersion curve processing and inversion.</div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Pystra Agent</h3>
+            <span class="badge badge-pink">43 tests</span>
+          </div>
+          <div class="desc">FORM, SORM, and Monte Carlo structural reliability analysis for geotechnical limit states.</div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Groundhog Agent</h3>
+            <span class="badge badge-pink">91 methods</span>
+          </div>
+          <div class="desc">Wrapper for the groundhog library: 91 methods spanning phase relations, SPT/CPT correlations, bearing capacity, consolidation, earth pressure, and more.</div>
+          <div class="domain-stats">
+            <div class="domain-stat"><span class="dot dot-purple"></span> 11 categories</div>
+          </div>
+        </div>
+        <div class="domain-card">
+          <div class="domain-header">
+            <h3>Geotech Common</h3>
+            <span class="badge badge-pink">284 tests</span>
+          </div>
+          <div class="desc">Shared infrastructure: SoilProfile data model (82 tests), engineering checks (93), module adapters (89), plotting utilities (21).</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       REFERENCE LIBRARY
+       ═══════════════════════════════════════════ -->
+  <div class="coverage">
+    <h2 class="section-title">Digitized Reference Library &mdash; 505 Methods, 2,810 Tests</h2>
+    <p style="color: var(--text2); font-size: 0.88rem; margin-bottom: 20px;">
+      Every design table, figure, and equation from 7 FHWA references and NAVFAC DM7
+      is digitized and validated. Full-text retrieval with keyword search across 403 structured sections.
+    </p>
+    <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Reference</th>
+          <th>Topic</th>
+          <th class="num">Tables</th>
+          <th class="num">Figures</th>
+          <th class="num">Text</th>
+          <th class="num">Tests</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>NAVFAC DM7</td>
+          <td>Soil Mechanics &amp; Foundations (15 chapters)</td>
+          <td class="num">180+</td>
+          <td class="num">200+</td>
+          <td class="num">&mdash;</td>
+          <td class="num">2,008</td>
+        </tr>
+        <tr>
+          <td>GEC-6</td>
+          <td>Shallow Foundations</td>
+          <td class="num">9</td>
+          <td class="num">4</td>
+          <td class="check">127 sec</td>
+          <td class="num">121</td>
+        </tr>
+        <tr>
+          <td>GEC-7</td>
+          <td>Soil Nail Walls</td>
+          <td class="num">13</td>
+          <td class="num">2</td>
+          <td class="check">37 sec</td>
+          <td class="num">101</td>
+        </tr>
+        <tr>
+          <td>GEC-10</td>
+          <td>Drilled Shafts</td>
+          <td class="num">6</td>
+          <td class="num">4</td>
+          <td class="check">45 sec</td>
+          <td class="num">175</td>
+        </tr>
+        <tr>
+          <td>GEC-11</td>
+          <td>MSE Walls &amp; Slopes</td>
+          <td class="num">15</td>
+          <td class="num">2</td>
+          <td class="num">&mdash;</td>
+          <td class="num">130</td>
+        </tr>
+        <tr>
+          <td>GEC-12</td>
+          <td>Driven Piles</td>
+          <td class="num">8</td>
+          <td class="num">8</td>
+          <td class="check">109 sec</td>
+          <td class="num">147</td>
+        </tr>
+        <tr>
+          <td>GEC-13</td>
+          <td>Ground Modification</td>
+          <td class="num">6</td>
+          <td class="num">4</td>
+          <td class="check">50 sec</td>
+          <td class="num">105</td>
+        </tr>
+        <tr>
+          <td>Micropile</td>
+          <td>Micropile Design &amp; Construction</td>
+          <td class="num">13</td>
+          <td class="num">1</td>
+          <td class="check">35 sec</td>
+          <td class="num">108</td>
+        </tr>
+        <tr class="total-row">
+          <td>Total</td>
+          <td></td>
+          <td class="num">250+</td>
+          <td class="num">225+</td>
+          <td class="check">403 sec</td>
+          <td class="num">2,810</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       EXAMPLE WORKFLOW
+       ═══════════════════════════════════════════ -->
+  <div class="workflow">
+    <h2 class="section-title">Example: Multi-Agent Pile Foundation Design</h2>
+    <div class="workflow-box">
+      <div class="workflow-header">Agent Conversation &mdash; Autonomous Tool Selection Across Multiple Modules</div>
+      <div class="workflow-body">
+
+        <div class="wf-exchange">
+          <span class="wf-role user">User</span>
+          <div class="wf-content">
+            I have a 16-inch steel pipe pile driven 18 m into medium-dense sand (phi=32, gamma=18.5 kN/m3). The site is in Seismic Site Class D with PGA=0.35g. Check the axial capacity, lateral response to a 90 kN load, and whether the sand might liquefy.
+          </div>
+        </div>
+
+        <div class="wf-exchange">
+          <span class="wf-role tool">Tool 1</span>
+          <div class="wf-content">
+            <code>call_agent("axial_pile", "axial_pile_capacity", {"method": "nordlund", "pile_type": "pipe", ...})</code>
+            <div class="result">{ "Q_ultimate_kN": 2847, "Q_skin_kN": 1923, "Q_tip_kN": 924, "Q_allowable_kN": 1139 }</div>
+          </div>
+        </div>
+
+        <div class="wf-exchange">
+          <span class="wf-role tool">Tool 2</span>
+          <div class="wf-content">
+            <code>call_agent("lateral_pile", "lateral_pile_analysis", {"py_model": "SandAPI", "H_kN": 90, ...})</code>
+            <div class="result">{ "y_top_mm": 8.3, "M_max_kNm": 214, "depth_max_moment_m": 4.2 }</div>
+          </div>
+        </div>
+
+        <div class="wf-exchange">
+          <span class="wf-role tool">Tool 3</span>
+          <div class="wf-content">
+            <code>call_agent("seismic_geotech", "simplified_liquefaction", {"N160": 18, "M": 7.5, "PGA": 0.35, ...})</code>
+            <div class="result">{ "min_FOS_liq": 1.24, "liquefiable": false }</div>
+          </div>
+        </div>
+
+        <div class="wf-exchange">
+          <span class="wf-role agent">Agent</span>
+          <div class="wf-content">
+            <strong>Summary:</strong> The 16" pipe pile has an ultimate axial capacity of <strong>2,847 kN</strong> (allowable 1,139 kN at FOS=2.5). Under the 90 kN lateral load, the top deflection is <strong>8.3 mm</strong> with maximum moment of 214 kN-m at 4.2 m depth. The site sand has a liquefaction FOS of <strong>1.24</strong> &mdash; marginally safe but I recommend checking with CPT-based triggering for confirmation. All three analyses used peer-reviewed, code-compliant methods.
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       INTEGRATIONS
+       ═══════════════════════════════════════════ -->
+  <div class="integrations">
+    <h2 class="section-title">Integration &amp; Quality Assurance</h2>
+    <div class="integration-grid">
+      <div class="integration-card">
+        <h3>Trial Agent (Claude API)</h3>
+        <div class="int-desc">
+          Full integration with the Claude API <code>tool_use</code> feature. Three meta-tools
+          (<code>call_agent</code>, <code>list_methods</code>, <code>describe_method</code>)
+          give Claude direct access to all 30 agents. 100-question trial runs validated end-to-end.
+        </div>
+        <div class="int-stats">
+          <span class="int-stat" style="color: var(--accent);">30 agents routed</span>
+          <span class="int-stat" style="color: var(--green);">100-question trials</span>
+        </div>
+      </div>
+      <div class="integration-card">
+        <h3>Foundry Test Harness</h3>
+        <div class="int-desc">
+          4-tier test harness validates the complete JSON-in / JSON-out agent path:
+          individual functions vs textbook answers, multi-step workflows,
+          cross-agent consistency, and comprehensive error handling.
+        </div>
+        <div class="int-stats">
+          <span class="int-stat" style="color: var(--accent2);">121 integration tests</span>
+          <span class="int-stat" style="color: var(--orange);">4 tiers</span>
+        </div>
+      </div>
+      <div class="integration-card">
+        <h3>Calc Package Generator</h3>
+        <div class="int-desc">
+          Automatically generates formatted engineering calculation packages for
+          13 analysis types &mdash; ready for PE review and project documentation.
+        </div>
+        <div class="int-stats">
+          <span class="int-stat" style="color: var(--accent3);">13 package types</span>
+          <span class="int-stat" style="color: var(--green);">PE-review ready</span>
+        </div>
+      </div>
+      <div class="integration-card">
+        <h3>SoilProfile Adapters</h3>
+        <div class="int-desc">
+          A unified <code>SoilProfile</code> data model bridges all analysis modules.
+          89 adapter tests ensure any soil profile can flow into bearing capacity,
+          settlement, pile capacity, and seismic analyses without data wrangling.
+        </div>
+        <div class="int-stats">
+          <span class="int-stat" style="color: var(--pink);">284 total tests</span>
+          <span class="int-stat" style="color: var(--accent);">89 adapters</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       WHY THIS MATTERS
+       ═══════════════════════════════════════════ -->
+  <div class="value-prop">
+    <h2 class="section-title">Why This Matters</h2>
+    <div class="value-grid">
+      <div class="value-card">
+        <div class="value-icon" style="background: rgba(239,68,68,0.15); color: var(--red);">!</div>
+        <h3>The Problem</h3>
+        <p>Geotechnical analysis requires dozens of specialized methods spread across thick manuals and legacy software. Engineers spend hours on repetitive calculations, and LLMs hallucinate engineering values without access to validated source data.</p>
+      </div>
+      <div class="value-card">
+        <div class="value-icon" style="background: rgba(59,130,246,0.15); color: var(--accent);">&#x2713;</div>
+        <h3>The Solution</h3>
+        <p>30 peer-reviewed computation modules and 505 digitized reference lookups &mdash; all exposed as callable tools. The agent selects the right method, executes with validated code, and returns structured results with source citations. No guessing, no hallucination.</p>
+      </div>
+      <div class="value-card">
+        <div class="value-icon" style="background: rgba(16,185,129,0.15); color: var(--green);">&#x2605;</div>
+        <h3>The Impact</h3>
+        <p>Complex multi-step analyses in minutes instead of hours. Every result traceable to a specific method and reference. 4,666 automated tests ensure correctness. Consistent, auditable, and ready for PE review on every project.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       MODULE COVERAGE SUMMARY
+       ═══════════════════════════════════════════ -->
+  <div class="coverage">
+    <h2 class="section-title">Complete Module Test Coverage</h2>
+    <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>Domain</th>
+          <th class="num">Tests</th>
+          <th>Key Methods</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>bearing_capacity</td><td>Shallow Foundations</td><td class="num">45</td><td>Vesic, Meyerhof, CBEAR</td></tr>
+        <tr><td>settlement</td><td>Settlement</td><td class="num">39</td><td>Consolidation, Schmertmann, Elastic</td></tr>
+        <tr><td>axial_pile</td><td>Driven Piles</td><td class="num">55</td><td>Nordlund, Tomlinson, Beta</td></tr>
+        <tr><td>lateral_pile</td><td>Lateral Loading</td><td class="num">66</td><td>8 p-y models, FD solver</td></tr>
+        <tr><td>pile_group</td><td>Group Effects</td><td class="num">72</td><td>6-DOF, Converse-Labarre</td></tr>
+        <tr><td>wave_equation</td><td>Pile Driving</td><td class="num">45</td><td>Smith model, Drivability</td></tr>
+        <tr><td>drilled_shaft</td><td>Drilled Shafts</td><td class="num">48</td><td>Alpha, Beta, Rock Socket</td></tr>
+        <tr><td>downdrag</td><td>Downdrag</td><td class="num">53</td><td>Neutral Plane, UFC 3-220</td></tr>
+        <tr><td>sheet_pile</td><td>Sheet Piles</td><td class="num">26</td><td>Cantilever, Anchored</td></tr>
+        <tr><td>retaining_walls</td><td>Retaining Walls</td><td class="num">70</td><td>Cantilever, MSE (GEC-11)</td></tr>
+        <tr><td>slope_stability</td><td>Slopes</td><td class="num">55</td><td>Bishop, Spencer, Fellenius</td></tr>
+        <tr><td>ground_improvement</td><td>Ground Improvement</td><td class="num">43</td><td>Piers, Drains, Vibro (GEC-13)</td></tr>
+        <tr><td>seismic_geotech</td><td>Seismic</td><td class="num">71</td><td>Liquefaction, M-O, Site Class</td></tr>
+        <tr><td>opensees_agent</td><td>Numerical Modeling</td><td class="num">106</td><td>PM4Sand, BNWF, Site Response</td></tr>
+        <tr><td>pystrata_agent</td><td>Site Response</td><td class="num">57</td><td>EQL (SHAKE-type)</td></tr>
+        <tr><td>seismic_signals</td><td>Signal Processing</td><td class="num">74</td><td>Response Spectra, Arias, RotD</td></tr>
+        <tr><td>liquepy_agent</td><td>Liquefaction (CPT)</td><td class="num">59</td><td>B&amp;I 2014, LPI, LSN, LDI</td></tr>
+        <tr><td>pygef_agent</td><td>File Parsing</td><td class="num">45</td><td>GEF, BRO-XML</td></tr>
+        <tr><td>hvsrpy_agent</td><td>Site Characterization</td><td class="num">37</td><td>HVSR, f0, Amplification</td></tr>
+        <tr><td>gstools_agent</td><td>Geostatistics</td><td class="num">69</td><td>Kriging, Variograms, Random Fields</td></tr>
+        <tr><td>ags4_agent</td><td>Data Standards</td><td class="num">39</td><td>AGS4 Read/Validate</td></tr>
+        <tr><td>salib_agent</td><td>Sensitivity</td><td class="num">35</td><td>Sobol, Morris</td></tr>
+        <tr><td>pyseismosoil_agent</td><td>Soil Curves</td><td class="num">41</td><td>MKZ, HH Calibration</td></tr>
+        <tr><td>swprocess_agent</td><td>Surface Waves</td><td class="num">30</td><td>MASW Dispersion</td></tr>
+        <tr><td>geolysis_agent</td><td>Classification</td><td class="num">65</td><td>USCS, AASHTO, SPT Corrections</td></tr>
+        <tr><td>pystra_agent</td><td>Reliability</td><td class="num">43</td><td>FORM, SORM, Monte Carlo</td></tr>
+        <tr><td>pydiggs_agent</td><td>Data Standards</td><td class="num">31</td><td>DIGGS 2.6 XML</td></tr>
+        <tr><td>geotech_common</td><td>Shared Infrastructure</td><td class="num">284</td><td>SoilProfile, Adapters, Checks</td></tr>
+        <tr class="total-row">
+          <td>Module Total</td>
+          <td></td>
+          <td class="num">1,735</td>
+          <td></td>
+        </tr>
+        <tr><td>Reference Library</td><td>DM7 + 7 FHWA GECs</td><td class="num">2,810</td><td>382 DM7 + 95 GEC/Micropile + Text</td></tr>
+        <tr><td>Foundry Harness</td><td>Integration Testing</td><td class="num">121</td><td>4-Tier Validation</td></tr>
+        <tr class="total-row">
+          <td>Grand Total</td>
+          <td></td>
+          <td class="num">4,666</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       FOOTER
+       ═══════════════════════════════════════════ -->
+  <div class="footer">
+    Built by Sean O'Connell &mdash; GeotechStaffEngineer v3.0 &mdash; February 2026<br>
+    <span style="opacity: 0.6; font-size: 0.75rem;">Python &bull; All Units SI &bull; Palantir Foundry &bull; Claude API</span>
+  </div>
+
+</div>
+
+</body>
+</html>
