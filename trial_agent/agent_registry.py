@@ -1,5 +1,5 @@
 """
-Master registry of all 30 Foundry agents with lazy-loading dispatch.
+Master registry of all 38 Foundry agents with lazy-loading dispatch.
 
 Agents are imported on first use, not at startup, to avoid scipy.optimize
 import hangs on Python 3.14 / scipy 1.17 and to speed up CLI startup.
@@ -162,6 +162,42 @@ _AGENT_SPECS = {
         "module": "pydiggs_agent_foundry",
         "funcs": ("pydiggs_agent", "pydiggs_list_methods", "pydiggs_describe_method"),
         "brief": "DIGGS 2.6 XML schema and dictionary validation",
+    },
+    # --- FHWA/NAVFAC Reference Library Agents (from geotech-references submodule) ---
+    "gec6": {
+        "module": "agents.gec6_agent",
+        "funcs": ("gec6_agent", "gec6_list_methods", "gec6_describe_method"),
+        "brief": "GEC-6 Shallow Foundations reference tables, figures, and text",
+    },
+    "gec7": {
+        "module": "agents.gec7_agent",
+        "funcs": ("gec7_agent", "gec7_list_methods", "gec7_describe_method"),
+        "brief": "GEC-7 Soil Nail Walls reference tables, figures, and text",
+    },
+    "gec10": {
+        "module": "agents.gec10_agent",
+        "funcs": ("gec10_agent", "gec10_list_methods", "gec10_describe_method"),
+        "brief": "GEC-10 Drilled Shafts reference tables, figures, and text",
+    },
+    "gec11": {
+        "module": "agents.gec11_agent",
+        "funcs": ("gec11_agent", "gec11_list_methods", "gec11_describe_method"),
+        "brief": "GEC-11 MSE Walls & Slopes reference tables and figures",
+    },
+    "gec12": {
+        "module": "agents.gec12_agent",
+        "funcs": ("gec12_agent", "gec12_list_methods", "gec12_describe_method"),
+        "brief": "GEC-12 Driven Piles reference tables, figures, and text",
+    },
+    "gec13": {
+        "module": "agents.gec13_agent",
+        "funcs": ("gec13_agent", "gec13_list_methods", "gec13_describe_method"),
+        "brief": "GEC-13 Ground Modification reference tables, figures, and text",
+    },
+    "micropile": {
+        "module": "agents.micropile_agent",
+        "funcs": ("micropile_agent", "micropile_list_methods", "micropile_describe_method"),
+        "brief": "Micropile Design (FHWA-NHI-05-039) tables, figures, and text",
     },
 }
 

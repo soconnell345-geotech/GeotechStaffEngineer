@@ -1,7 +1,7 @@
 """
 Claude tool_use schema definitions for the 3 meta-tools.
 
-These tools allow Claude to interact with all 30 geotechnical agents
+These tools allow Claude to interact with all 37 geotechnical agents
 through a unified interface: call_agent, list_methods, describe_method.
 """
 
@@ -14,7 +14,7 @@ TOOLS = [
     {
         "name": "call_agent",
         "description": (
-            "Execute a geotechnical calculation using one of the 30 specialized agents. "
+            "Execute a geotechnical calculation or reference lookup using one of the 37 specialized agents. "
             "Pass the agent name, method name, and a parameters object. "
             "Returns a JSON object with calculation results, or an error message. "
             "IMPORTANT: Always call describe_method first for any method you haven't "
