@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`*_agent_foundry.py` in root): 3 functions each (agent/list/describe)
 
-## Module Inventory (1735 module + 121 harness + 2008 DM7 = 3864 tests)
+## Module Inventory (1735 module + 121 harness + 2810 ref = 4666 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -56,7 +56,7 @@ Key conventions:
 | pystra_agent | 43 | FORM/SORM/Monte Carlo structural reliability analysis |
 | pydiggs_agent | 31 | DIGGS 2.6 XML schema and dictionary validation |
 
-Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 functions, 2008 tests), foundry_test_harness (121 tests), trial_agent (100 tests)
+Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile functions, 2810 tests), foundry_test_harness (121 tests), trial_agent (100 tests)
 
 ## Foundry Test Harness
 
