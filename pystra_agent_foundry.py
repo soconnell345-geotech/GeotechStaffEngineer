@@ -14,7 +14,15 @@ FOUNDRY SETUP:
 import json
 from typing import Optional
 
+try:
+    from functions.api import function
+except ImportError:
+    def function(fn):
+        fn.__wrapped__ = fn
+        return fn
 
+
+@function
 def pystra_list_methods(category: Optional[str] = None) -> list:
     """
     List all available pystra agent methods.
@@ -62,6 +70,7 @@ def pystra_list_methods(category: Optional[str] = None) -> list:
     return methods
 
 
+@function
 def pystra_describe_method(method: str) -> dict:
     """
     Get detailed metadata for a specific method.
@@ -194,6 +203,7 @@ def pystra_describe_method(method: str) -> dict:
     return descriptions[method]
 
 
+@function
 def pystra_agent(method: str, params_json: str) -> dict:
     """
     Execute a pystra reliability analysis method.

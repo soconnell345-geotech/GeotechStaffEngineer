@@ -11,6 +11,13 @@ FOUNDRY SETUP:
 import json
 from typing import Optional
 
+try:
+    from functions.api import function
+except ImportError:
+    def function(fn):
+        fn.__wrapped__ = fn
+        return fn
+
 from pydiggs_agent import (
     has_pydiggs,
     validate_diggs_schema,
@@ -78,6 +85,7 @@ METHODS = {
 }
 
 
+@function
 def pydiggs_list_methods(category: Optional[str] = None) -> list[dict]:
     """
     List available pydiggs agent methods.
@@ -96,6 +104,7 @@ def pydiggs_list_methods(category: Optional[str] = None) -> list[dict]:
     return methods
 
 
+@function
 def pydiggs_describe_method(method: str) -> dict:
     """
     Get detailed documentation for a specific method.
@@ -112,6 +121,7 @@ def pydiggs_describe_method(method: str) -> dict:
     return METHODS[method]
 
 
+@function
 def pydiggs_agent(method: str, params_json: str) -> str:
     """
     Execute a pydiggs agent method.
