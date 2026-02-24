@@ -8,6 +8,10 @@ Register these three functions as tools in AIP Agent Studio:
 
 Covers site classification, Mononobe-Okabe seismic pressures,
 liquefaction triggering, and post-liquefaction residual strength.
+
+FOUNDRY SETUP:
+  - pip install geotech-staff-engineer (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json

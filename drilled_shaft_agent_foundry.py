@@ -7,6 +7,10 @@ Register these three functions as tools in AIP Agent Studio:
   3. drilled_shaft_describe_method - Get detailed parameter docs
 
 Covers GEC-10 alpha/beta/rock socket methods for drilled shafts.
+
+FOUNDRY SETUP:
+  - pip install geotech-staff-engineer (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json

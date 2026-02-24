@@ -7,6 +7,10 @@ Register these three functions as tools in AIP Agent Studio:
   3. retaining_walls_describe_method - Get detailed parameter docs
 
 Covers cantilever retaining walls and MSE (Mechanically Stabilized Earth) walls.
+
+FOUNDRY SETUP:
+  - pip install geotech-staff-engineer (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json

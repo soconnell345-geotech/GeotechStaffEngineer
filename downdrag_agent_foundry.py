@@ -7,6 +7,10 @@ Register these three functions as tools in AIP Agent Studio:
   3. downdrag_describe_method - Get detailed parameter docs
 
 Implements the Fellenius unified neutral plane method with UFC 3-220-20 coverage.
+
+FOUNDRY SETUP:
+  - pip install geotech-staff-engineer (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json

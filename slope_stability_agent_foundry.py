@@ -8,6 +8,10 @@ Register these three functions as tools in AIP Agent Studio:
 
 Implements limit equilibrium methods (Fellenius/Bishop/Spencer) with
 circular slip surface analysis and critical surface grid search.
+
+FOUNDRY SETUP:
+  - pip install geotech-staff-engineer (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json

@@ -10,9 +10,8 @@ Register these three functions as tools in AIP Agent Studio:
   3. dm7_describe_method - Get detailed parameter docs for a specific equation
 
 FOUNDRY SETUP:
-  - Requires geotech-references submodule (pip install -e geotech-references/)
+  - pip install geotech-staff-engineer (PyPI — includes geotech-references)
   - These functions accept and return JSON strings for LLM compatibility
-  - No external dependencies beyond numpy and scipy
 """
 
 import json
@@ -29,7 +28,7 @@ except ImportError:
         return fn
 
 # ---------------------------------------------------------------------------
-# Import all DM7 chapter modules from geotech-references submodule
+# Import all DM7 chapter modules from geotech-references package
 # ---------------------------------------------------------------------------
 from geotech_references.dm7_1 import chapter1 as dm7_1_ch1
 from geotech_references.dm7_1 import chapter2 as dm7_1_ch2

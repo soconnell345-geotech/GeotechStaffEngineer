@@ -7,11 +7,8 @@ Register these three functions as tools in AIP Agent Studio:
   3. seismic_signals_describe_method - Get detailed docs for a specific method
 
 FOUNDRY SETUP:
-  - Add 'eqsig' and/or 'pyrotd' to your conda_recipe/meta.yaml dependencies
-  - These functions accept and return JSON strings for maximum LLM compatibility
-  - The LLM should call seismic_signals_list_methods first, then
-    seismic_signals_describe_method for parameter details, then
-    seismic_signals_agent to run the analysis
+  - pip install geotech-staff-engineer[seismic-signals] (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json

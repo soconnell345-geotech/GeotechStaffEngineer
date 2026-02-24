@@ -7,10 +7,8 @@ Register these three functions as tools in AIP Agent Studio:
   3. opensees_describe_method - Get detailed docs for a specific method
 
 FOUNDRY SETUP:
-  - Add 'openseespy' to your conda_recipe/meta.yaml dependencies
-  - These functions accept and return JSON strings for maximum LLM compatibility
-  - The LLM should call opensees_list_methods first, then opensees_describe_method
-    for parameter details, then opensees_agent to run the analysis
+  - pip install geotech-staff-engineer[opensees] (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json

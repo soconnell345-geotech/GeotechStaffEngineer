@@ -7,9 +7,8 @@ Register these three functions as tools in AIP Agent Studio:
   3. pygef_describe_method - Get detailed parameter docs
 
 FOUNDRY SETUP:
+  - pip install geotech-staff-engineer[pygef] (PyPI)
   - These functions accept and return JSON strings for LLM compatibility
-  - Requires pygef (pip install pygef) for file parsing
-  - Metadata functions work without pygef installed
 """
 
 import json

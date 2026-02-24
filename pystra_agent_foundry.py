@@ -5,6 +5,10 @@ Exposes three functions for LLM tool discovery:
 - pystra_agent(method, params_json) — Execute a reliability analysis
 - pystra_list_methods(category) — List available methods
 - pystra_describe_method(method) — Get method metadata
+
+FOUNDRY SETUP:
+  - pip install geotech-staff-engineer[pystra] (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json

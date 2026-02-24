@@ -7,8 +7,8 @@ Register these three functions as tools in AIP Agent Studio:
   3. ags4_describe_method - Get detailed parameter docs
 
 FOUNDRY SETUP:
+  - pip install geotech-staff-engineer[ags4] (PyPI)
   - These functions accept and return JSON strings for LLM compatibility
-  - Requires python-ags4 (pip install python-ags4)
 """
 
 import json

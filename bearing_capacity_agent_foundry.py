@@ -7,8 +7,8 @@ Register these three functions as tools in AIP Agent Studio:
   3. bearing_capacity_describe_method - Get detailed parameter docs
 
 FOUNDRY SETUP:
+  - pip install geotech-staff-engineer (PyPI)
   - These functions accept and return JSON strings for LLM compatibility
-  - No external dependencies beyond numpy (no groundhog needed)
 """
 
 import json

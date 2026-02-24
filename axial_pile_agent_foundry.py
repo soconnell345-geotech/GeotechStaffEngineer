@@ -7,6 +7,10 @@ Register these three functions as tools in AIP Agent Studio:
   3. axial_pile_describe_method - Get detailed parameter docs
 
 Covers Nordlund, Tomlinson alpha, and Beta methods for driven piles.
+
+FOUNDRY SETUP:
+  - pip install geotech-staff-engineer (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json

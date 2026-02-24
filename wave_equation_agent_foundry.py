@@ -8,6 +8,10 @@ Register these three functions as tools in AIP Agent Studio:
 
 Covers Smith 1-D wave equation: single blow, bearing graph,
 drivability study, and hammer database lookup.
+
+FOUNDRY SETUP:
+  - pip install geotech-staff-engineer (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json

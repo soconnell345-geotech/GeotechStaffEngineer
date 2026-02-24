@@ -8,6 +8,10 @@ Register these three functions as tools in AIP Agent Studio:
 
 Covers cantilever and anchored sheet pile wall design using
 free earth support method with Rankine or Coulomb pressures.
+
+FOUNDRY SETUP:
+  - pip install geotech-staff-engineer (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json

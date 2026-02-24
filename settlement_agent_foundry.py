@@ -8,6 +8,10 @@ Register these three functions as tools in AIP Agent Studio:
 
 Covers elastic, Schmertmann, consolidation, secondary compression,
 and combined settlement analyses with time-rate curves.
+
+FOUNDRY SETUP:
+  - pip install geotech-staff-engineer (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json

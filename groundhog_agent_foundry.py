@@ -8,10 +8,8 @@ Register these three functions as tools in AIP Agent Studio:
   3. groundhog_describe_method - Get detailed docs for a specific method
 
 FOUNDRY SETUP:
-  - Add 'groundhog' to your conda_recipe/meta.yaml dependencies
-  - These functions accept and return JSON strings for maximum LLM compatibility
-  - The LLM should call groundhog_list_methods first, then groundhog_describe_method
-    for parameter details, then groundhog_agent to run the calculation
+  - pip install geotech-staff-engineer[groundhog] (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json

@@ -7,9 +7,8 @@ Register these three functions as tools in AIP Agent Studio:
   3. liquepy_describe_method - Get detailed parameter docs
 
 FOUNDRY SETUP:
+  - pip install geotech-staff-engineer[liquepy] (PyPI)
   - These functions accept and return JSON strings for LLM compatibility
-  - Requires liquepy (pip install liquepy) for analysis execution
-  - Metadata functions work without liquepy installed
 """
 
 import json

@@ -7,10 +7,8 @@ Register these three functions as tools in AIP Agent Studio:
   3. pystrata_describe_method - Get detailed docs for a specific method
 
 FOUNDRY SETUP:
-  - Add 'pystrata' to your conda_recipe/meta.yaml dependencies
-  - These functions accept and return JSON strings for maximum LLM compatibility
-  - The LLM should call pystrata_list_methods first, then pystrata_describe_method
-    for parameter details, then pystrata_agent to run the analysis
+  - pip install geotech-staff-engineer[pystrata] (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json

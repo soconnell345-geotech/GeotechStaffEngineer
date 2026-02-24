@@ -8,6 +8,10 @@ Register these three functions as tools in AIP Agent Studio:
 
 Covers rigid cap pile group analysis (simplified and 6-DOF),
 group efficiency (Converse-Labarre), and block failure.
+
+FOUNDRY SETUP:
+  - pip install geotech-staff-engineer (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json

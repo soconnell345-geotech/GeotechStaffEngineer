@@ -2,6 +2,10 @@
 Foundry agent wrapper for pydiggs_agent module.
 
 Provides LLM-friendly JSON interface to DIGGS XML validation functions.
+
+FOUNDRY SETUP:
+  - pip install geotech-staff-engineer[pydiggs] (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json

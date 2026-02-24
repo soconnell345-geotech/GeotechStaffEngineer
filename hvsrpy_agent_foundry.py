@@ -7,8 +7,8 @@ Register these three functions as tools in AIP Agent Studio:
   3. hvsrpy_describe_method - Get detailed parameter docs
 
 FOUNDRY SETUP:
+  - pip install geotech-staff-engineer[hvsrpy] (PyPI)
   - These functions accept and return JSON strings for LLM compatibility
-  - Requires hvsrpy (pip install hvsrpy)
 """
 
 import json

@@ -7,6 +7,10 @@ Register these three functions as tools in AIP Agent Studio:
   3. lateral_pile_describe_method - Get detailed parameter docs
 
 Implements COM624P p-y curve methods with 7 soil models and finite-difference solver.
+
+FOUNDRY SETUP:
+  - pip install geotech-staff-engineer (PyPI)
+  - These functions accept and return JSON strings for LLM compatibility
 """
 
 import json
