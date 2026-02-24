@@ -1,5 +1,5 @@
 """
-Master registry of all 40 Foundry agents with lazy-loading dispatch.
+Master registry of all 44 Foundry agents with lazy-loading dispatch.
 
 Agents are imported on first use, not at startup, to avoid scipy.optimize
 import hangs on Python 3.14 / scipy 1.17 and to speed up CLI startup.
@@ -208,6 +208,26 @@ _AGENT_SPECS = {
         "module": "agents.noaa_frost_agent",
         "funcs": ("noaa_frost_agent", "noaa_frost_list_methods", "noaa_frost_describe_method"),
         "brief": "NOAA frost depth (Stefan/Berggren) and soil thermal properties",
+    },
+    "ufc_backfill": {
+        "module": "agents.ufc_backfill_agent",
+        "funcs": ("ufc_backfill_agent", "ufc_backfill_list_methods", "ufc_backfill_describe_method"),
+        "brief": "UFC 3-220-04N backfill compaction, material classification, filter criteria",
+    },
+    "ufc_dewatering": {
+        "module": "agents.ufc_dewatering_agent",
+        "funcs": ("ufc_dewatering_agent", "ufc_dewatering_list_methods", "ufc_dewatering_describe_method"),
+        "brief": "UFC 3-220-05 dewatering well flow (Thiem/Dupuit), method selection",
+    },
+    "ufc_expansive": {
+        "module": "agents.ufc_expansive_agent",
+        "funcs": ("ufc_expansive_agent", "ufc_expansive_list_methods", "ufc_expansive_describe_method"),
+        "brief": "UFC 3-220-07 expansive soil swell potential, heave, foundation selection",
+    },
+    "ufc_pavement": {
+        "module": "agents.ufc_pavement_agent",
+        "funcs": ("ufc_pavement_agent", "ufc_pavement_list_methods", "ufc_pavement_describe_method"),
+        "brief": "UFC 3-260-02 CBR pavement design, frost susceptibility, aircraft loads",
     },
 }
 
