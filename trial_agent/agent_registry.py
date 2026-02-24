@@ -1,5 +1,5 @@
 """
-Master registry of all 38 Foundry agents with lazy-loading dispatch.
+Master registry of all 40 Foundry agents with lazy-loading dispatch.
 
 Agents are imported on first use, not at startup, to avoid scipy.optimize
 import hangs on Python 3.14 / scipy 1.17 and to speed up CLI startup.
@@ -198,6 +198,16 @@ _AGENT_SPECS = {
         "module": "agents.micropile_agent",
         "funcs": ("micropile_agent", "micropile_list_methods", "micropile_describe_method"),
         "brief": "Micropile Design (FHWA-NHI-05-039) tables, figures, and text",
+    },
+    "fema_p2192": {
+        "module": "agents.fema_p2192_agent",
+        "funcs": ("fema_p2192_agent", "fema_p2192_list_methods", "fema_p2192_describe_method"),
+        "brief": "FEMA P-2192 SDC determination, ASCE 7-22 site class, Fa/Fv coefficients",
+    },
+    "noaa_frost": {
+        "module": "agents.noaa_frost_agent",
+        "funcs": ("noaa_frost_agent", "noaa_frost_list_methods", "noaa_frost_describe_method"),
+        "brief": "NOAA frost depth (Stefan/Berggren) and soil thermal properties",
     },
 }
 

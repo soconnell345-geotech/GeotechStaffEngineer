@@ -56,7 +56,7 @@ Key conventions:
 | pystra_agent | 43 | FORM/SORM/Monte Carlo structural reliability analysis |
 | pydiggs_agent | 31 | DIGGS 2.6 XML schema and dictionary validation |
 
-Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile functions, 2810 tests), foundry_test_harness (121 tests), trial_agent (100 tests)
+Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA functions, 3028 tests), foundry_test_harness (121 tests), trial_agent (100 tests)
 
 ## Foundry Test Harness
 
