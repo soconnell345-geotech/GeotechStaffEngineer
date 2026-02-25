@@ -21,7 +21,7 @@ Key conventions:
 - **Dict-based I/O** for LLM agents: analyze_*() returns dataclass, .to_dict() for JSON
 - **No cross-module imports** between analysis modules (geotech_common is the exception)
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
-- **Foundry wrappers** (`*_agent_foundry.py` in root): 3 functions each (agent/list/describe)
+- **Foundry wrappers**: 29 root-level `*_agent_foundry.py` + 14 submodule `agents/*.py` = 43 total agents, 3 functions each (agent/list/describe)
 
 ## Module Inventory (1735 module + 121 harness + 2810 ref = 4666 tests)
 
@@ -60,7 +60,7 @@ Other components: groundhog_agent (90 methods), geotech-references submodule (38
 
 ## Foundry Test Harness
 
-`foundry_test_harness/` validates the 30+ Foundry agent functions via JSON-in/JSON-out:
+`foundry_test_harness/` validates the 43 Foundry agent functions via JSON-in/JSON-out:
 
 | File | Tests | Purpose |
 |------|-------|---------|
@@ -75,9 +75,9 @@ Run: `pytest foundry_test_harness/ -v`
 
 ## Trial Agent (Claude API Integration)
 
-`trial_agent/` uses the Claude API `tool_use` feature to give Claude direct access to all 30 Foundry agents. The agent receives 3 meta-tools:
+`trial_agent/` uses the Claude API `tool_use` feature to give Claude direct access to all 43 Foundry agents. The agent receives 3 meta-tools:
 
-- `call_agent(agent, method, params)` — Route to any of the 30 Foundry agent functions
+- `call_agent(agent, method, params)` — Route to any of the 43 Foundry agent functions
 - `list_methods(agent, category)` — Discover available methods for an agent
 - `describe_method(agent, method)` — Get parameter details and usage info
 
