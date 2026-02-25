@@ -20,59 +20,59 @@ import math
 from foundry_test_harness.harness import FoundryAgentHarness, AgentError
 from foundry_test_harness import scenarios as S
 
-from bearing_capacity_agent_foundry import (
+from foundry.bearing_capacity_agent_foundry import (
     bearing_capacity_agent, bearing_capacity_list_methods,
     bearing_capacity_describe_method,
 )
-from settlement_agent_foundry import (
+from foundry.settlement_agent_foundry import (
     settlement_agent, settlement_list_methods,
     settlement_describe_method,
 )
-from axial_pile_agent_foundry import (
+from foundry.axial_pile_agent_foundry import (
     axial_pile_agent, axial_pile_list_methods,
     axial_pile_describe_method,
 )
-from drilled_shaft_agent_foundry import (
+from foundry.drilled_shaft_agent_foundry import (
     drilled_shaft_agent, drilled_shaft_list_methods,
     drilled_shaft_describe_method,
 )
-from seismic_geotech_agent_foundry import (
+from foundry.seismic_geotech_agent_foundry import (
     seismic_geotech_agent, seismic_geotech_list_methods,
     seismic_geotech_describe_method,
 )
-from retaining_walls_agent_foundry import (
+from foundry.retaining_walls_agent_foundry import (
     retaining_walls_agent, retaining_walls_list_methods,
     retaining_walls_describe_method,
 )
-from sheet_pile_agent_foundry import (
+from foundry.sheet_pile_agent_foundry import (
     sheet_pile_agent, sheet_pile_list_methods,
     sheet_pile_describe_method,
 )
-from slope_stability_agent_foundry import (
+from foundry.slope_stability_agent_foundry import (
     slope_stability_agent, slope_stability_list_methods,
     slope_stability_describe_method,
 )
-from geolysis_agent_foundry import (
+from foundry.geolysis_agent_foundry import (
     geolysis_agent, geolysis_list_methods,
     geolysis_describe_method,
 )
-from ground_improvement_agent_foundry import (
+from foundry.ground_improvement_agent_foundry import (
     ground_improvement_agent, ground_improvement_list_methods,
     ground_improvement_describe_method,
 )
-from wave_equation_agent_foundry import (
+from foundry.wave_equation_agent_foundry import (
     wave_equation_agent, wave_equation_list_methods,
     wave_equation_describe_method,
 )
-from pile_group_agent_foundry import (
+from foundry.pile_group_agent_foundry import (
     pile_group_agent, pile_group_list_methods,
     pile_group_describe_method,
 )
-from downdrag_agent_foundry import (
+from foundry.downdrag_agent_foundry import (
     downdrag_agent, downdrag_list_methods,
     downdrag_describe_method,
 )
-from pystra_agent_foundry import (
+from foundry.pystra_agent_foundry import (
     pystra_agent, pystra_list_methods,
     pystra_describe_method,
 )

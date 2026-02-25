@@ -289,45 +289,45 @@ class TestFoundryMetadata:
     """Test Foundry agent metadata functions (no liquepy needed)."""
 
     def test_list_methods_all(self):
-        from liquepy_agent_foundry import liquepy_list_methods
+        from foundry.liquepy_agent_foundry import liquepy_list_methods
         result = json.loads(liquepy_list_methods(""))
         assert "Triggering" in result or "Correlations" in result
 
     def test_list_methods_triggering(self):
-        from liquepy_agent_foundry import liquepy_list_methods
+        from foundry.liquepy_agent_foundry import liquepy_list_methods
         result = json.loads(liquepy_list_methods("Triggering"))
         assert "Triggering" in result
         assert "cpt_liquefaction" in result["Triggering"]
 
     def test_list_methods_bad_category(self):
-        from liquepy_agent_foundry import liquepy_list_methods
+        from foundry.liquepy_agent_foundry import liquepy_list_methods
         result = json.loads(liquepy_list_methods("nonexistent"))
         assert "error" in result
 
     def test_describe_cpt_liquefaction(self):
-        from liquepy_agent_foundry import liquepy_describe_method
+        from foundry.liquepy_agent_foundry import liquepy_describe_method
         result = json.loads(liquepy_describe_method("cpt_liquefaction"))
         assert "parameters" in result
         assert "depth" in result["parameters"]
 
     def test_describe_field_correlations(self):
-        from liquepy_agent_foundry import liquepy_describe_method
+        from foundry.liquepy_agent_foundry import liquepy_describe_method
         result = json.loads(liquepy_describe_method("field_correlations"))
         assert "parameters" in result
         assert "vs_method" in result["parameters"]
 
     def test_describe_unknown_method(self):
-        from liquepy_agent_foundry import liquepy_describe_method
+        from foundry.liquepy_agent_foundry import liquepy_describe_method
         result = json.loads(liquepy_describe_method("nonexistent"))
         assert "error" in result
 
     def test_agent_invalid_json(self):
-        from liquepy_agent_foundry import liquepy_agent
+        from foundry.liquepy_agent_foundry import liquepy_agent
         result = json.loads(liquepy_agent("cpt_liquefaction", "not json"))
         assert "error" in result
 
     def test_agent_unknown_method(self):
-        from liquepy_agent_foundry import liquepy_agent
+        from foundry.liquepy_agent_foundry import liquepy_agent
         result = json.loads(liquepy_agent("nonexistent", "{}"))
         assert "error" in result
 
@@ -453,7 +453,7 @@ class TestCPTLiquefactionIntegration:
         assert r_high.min_fos <= r_low.min_fos
 
     def test_foundry_agent_runs(self):
-        from liquepy_agent_foundry import liquepy_agent
+        from foundry.liquepy_agent_foundry import liquepy_agent
         depth, q_c, f_s, u_2 = _make_cpt_arrays(n=20)
         params = {
             "depth": depth.tolist(),
@@ -544,7 +544,7 @@ class TestFieldCorrelationsIntegration:
         assert isinstance(s, str)
 
     def test_foundry_agent_runs(self):
-        from liquepy_agent_foundry import liquepy_agent
+        from foundry.liquepy_agent_foundry import liquepy_agent
         depth, q_c, f_s, u_2 = _make_cpt_arrays(n=20)
         params = {
             "depth": depth.tolist(),

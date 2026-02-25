@@ -11,23 +11,23 @@ import pytest
 
 from foundry_test_harness.harness import FoundryAgentHarness, AgentError
 
-from bearing_capacity_agent_foundry import (
+from foundry.bearing_capacity_agent_foundry import (
     bearing_capacity_agent, bearing_capacity_list_methods,
     bearing_capacity_describe_method,
 )
-from settlement_agent_foundry import settlement_agent
-from axial_pile_agent_foundry import axial_pile_agent
-from drilled_shaft_agent_foundry import drilled_shaft_agent
-from seismic_geotech_agent_foundry import seismic_geotech_agent
-from retaining_walls_agent_foundry import retaining_walls_agent
-from sheet_pile_agent_foundry import sheet_pile_agent
-from slope_stability_agent_foundry import slope_stability_agent
-from geolysis_agent_foundry import geolysis_agent
-from ground_improvement_agent_foundry import ground_improvement_agent
-from wave_equation_agent_foundry import wave_equation_agent
-from pile_group_agent_foundry import pile_group_agent
-from downdrag_agent_foundry import downdrag_agent
-from pystra_agent_foundry import pystra_agent
+from foundry.settlement_agent_foundry import settlement_agent
+from foundry.axial_pile_agent_foundry import axial_pile_agent
+from foundry.drilled_shaft_agent_foundry import drilled_shaft_agent
+from foundry.seismic_geotech_agent_foundry import seismic_geotech_agent
+from foundry.retaining_walls_agent_foundry import retaining_walls_agent
+from foundry.sheet_pile_agent_foundry import sheet_pile_agent
+from foundry.slope_stability_agent_foundry import slope_stability_agent
+from foundry.geolysis_agent_foundry import geolysis_agent
+from foundry.ground_improvement_agent_foundry import ground_improvement_agent
+from foundry.wave_equation_agent_foundry import wave_equation_agent
+from foundry.pile_group_agent_foundry import pile_group_agent
+from foundry.downdrag_agent_foundry import downdrag_agent
+from foundry.pystra_agent_foundry import pystra_agent
 
 H = FoundryAgentHarness()
 

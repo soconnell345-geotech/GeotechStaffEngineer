@@ -214,45 +214,45 @@ class TestUtilities:
 class TestFoundryMetadata:
 
     def test_list_methods_all(self):
-        from pyseismosoil_agent_foundry import pyseismosoil_list_methods
+        from foundry.pyseismosoil_agent_foundry import pyseismosoil_list_methods
         result = json.loads(pyseismosoil_list_methods(""))
         assert "Soil Curves" in result
         assert "Vs Profile" in result
 
     def test_list_methods_filtered(self):
-        from pyseismosoil_agent_foundry import pyseismosoil_list_methods
+        from foundry.pyseismosoil_agent_foundry import pyseismosoil_list_methods
         result = json.loads(pyseismosoil_list_methods("Soil Curves"))
         assert "generate_curves" in result["Soil Curves"]
 
     def test_list_methods_bad_category(self):
-        from pyseismosoil_agent_foundry import pyseismosoil_list_methods
+        from foundry.pyseismosoil_agent_foundry import pyseismosoil_list_methods
         result = json.loads(pyseismosoil_list_methods("nonexistent"))
         assert "error" in result
 
     def test_describe_curves(self):
-        from pyseismosoil_agent_foundry import pyseismosoil_describe_method
+        from foundry.pyseismosoil_agent_foundry import pyseismosoil_describe_method
         result = json.loads(pyseismosoil_describe_method("generate_curves"))
         assert "parameters" in result
         assert "model" in result["parameters"]
 
     def test_describe_profile(self):
-        from pyseismosoil_agent_foundry import pyseismosoil_describe_method
+        from foundry.pyseismosoil_agent_foundry import pyseismosoil_describe_method
         result = json.loads(pyseismosoil_describe_method("analyze_vs_profile"))
         assert "parameters" in result
         assert "thicknesses" in result["parameters"]
 
     def test_describe_unknown(self):
-        from pyseismosoil_agent_foundry import pyseismosoil_describe_method
+        from foundry.pyseismosoil_agent_foundry import pyseismosoil_describe_method
         result = json.loads(pyseismosoil_describe_method("nonexistent"))
         assert "error" in result
 
     def test_agent_invalid_json(self):
-        from pyseismosoil_agent_foundry import pyseismosoil_agent
+        from foundry.pyseismosoil_agent_foundry import pyseismosoil_agent
         result = json.loads(pyseismosoil_agent("generate_curves", "not json"))
         assert "error" in result
 
     def test_agent_unknown_method(self):
-        from pyseismosoil_agent_foundry import pyseismosoil_agent
+        from foundry.pyseismosoil_agent_foundry import pyseismosoil_agent
         result = json.loads(pyseismosoil_agent("nonexistent", "{}"))
         assert "error" in result
 
@@ -377,7 +377,7 @@ class TestVsProfileIntegration:
 class TestFoundryIntegration:
 
     def test_foundry_curves(self):
-        from pyseismosoil_agent_foundry import pyseismosoil_agent
+        from foundry.pyseismosoil_agent_foundry import pyseismosoil_agent
         params = {
             "model": "MKZ",
             "params": {"gamma_ref": 0.05, "beta": 1.0, "s": 0.919, "Gmax": 50000},
@@ -389,7 +389,7 @@ class TestFoundryIntegration:
         assert "G_Gmax" in result
 
     def test_foundry_profile(self):
-        from pyseismosoil_agent_foundry import pyseismosoil_agent
+        from foundry.pyseismosoil_agent_foundry import pyseismosoil_agent
         params = {
             "thicknesses": [5, 5, 10, 0],
             "vs_values": [150, 200, 300, 400],

@@ -244,43 +244,43 @@ class TestFoundryMetadata:
     """Test Foundry agent metadata functions (no pygef needed)."""
 
     def test_list_methods_all(self):
-        from pygef_agent_foundry import pygef_list_methods
+        from foundry.pygef_agent_foundry import pygef_list_methods
         result = json.loads(pygef_list_methods(""))
         assert "File Parsing" in result
 
     def test_list_methods_parsing(self):
-        from pygef_agent_foundry import pygef_list_methods
+        from foundry.pygef_agent_foundry import pygef_list_methods
         result = json.loads(pygef_list_methods("File Parsing"))
         assert "parse_cpt" in result["File Parsing"]
 
     def test_list_methods_bad_category(self):
-        from pygef_agent_foundry import pygef_list_methods
+        from foundry.pygef_agent_foundry import pygef_list_methods
         result = json.loads(pygef_list_methods("nonexistent"))
         assert "error" in result
 
     def test_describe_parse_cpt(self):
-        from pygef_agent_foundry import pygef_describe_method
+        from foundry.pygef_agent_foundry import pygef_describe_method
         result = json.loads(pygef_describe_method("parse_cpt"))
         assert "parameters" in result
         assert "file_path" in result["parameters"]
 
     def test_describe_parse_bore(self):
-        from pygef_agent_foundry import pygef_describe_method
+        from foundry.pygef_agent_foundry import pygef_describe_method
         result = json.loads(pygef_describe_method("parse_bore"))
         assert "parameters" in result
 
     def test_describe_unknown_method(self):
-        from pygef_agent_foundry import pygef_describe_method
+        from foundry.pygef_agent_foundry import pygef_describe_method
         result = json.loads(pygef_describe_method("nonexistent"))
         assert "error" in result
 
     def test_agent_invalid_json(self):
-        from pygef_agent_foundry import pygef_agent
+        from foundry.pygef_agent_foundry import pygef_agent
         result = json.loads(pygef_agent("parse_cpt", "not json"))
         assert "error" in result
 
     def test_agent_unknown_method(self):
-        from pygef_agent_foundry import pygef_agent
+        from foundry.pygef_agent_foundry import pygef_agent
         result = json.loads(pygef_agent("nonexistent", "{}"))
         assert "error" in result
 
@@ -350,7 +350,7 @@ class TestCPTParsingIntegration:
         assert r.n_points == 10
 
     def test_foundry_agent_parse_cpt(self):
-        from pygef_agent_foundry import pygef_agent
+        from foundry.pygef_agent_foundry import pygef_agent
         params = {"file_path": SAMPLE_CPT}
         result = json.loads(pygef_agent("parse_cpt", json.dumps(params)))
         assert "error" not in result
@@ -399,7 +399,7 @@ class TestBoreParsingIntegration:
         assert len(d["layers"]) == 4
 
     def test_foundry_agent_parse_bore(self):
-        from pygef_agent_foundry import pygef_agent
+        from foundry.pygef_agent_foundry import pygef_agent
         params = {"file_path": SAMPLE_BORE}
         result = json.loads(pygef_agent("parse_bore", json.dumps(params)))
         assert "error" not in result

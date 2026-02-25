@@ -268,7 +268,7 @@ class TestFoundryMetadata:
 
     def setup_method(self):
         """Import Foundry functions."""
-        from geolysis_agent_foundry import (
+        from foundry.geolysis_agent_foundry import (
             geolysis_list_methods,
             geolysis_describe_method,
         )
@@ -603,7 +603,7 @@ class TestFoundryIntegration:
 
     def setup_method(self):
         """Import Foundry agent."""
-        from geolysis_agent_foundry import geolysis_agent
+        from foundry.geolysis_agent_foundry import geolysis_agent
         self.agent = geolysis_agent
 
     def test_classify_uscs_via_foundry(self):

@@ -370,7 +370,7 @@ class TestPystrataUtils:
 class TestFoundryAgentMetadata:
 
     def test_list_methods_all(self):
-        import pystrata_agent_foundry as paf
+        import foundry.pystrata_agent_foundry as paf
         result = json.loads(paf.pystrata_list_methods.__wrapped__(""))
         assert "Site Response" in result
         methods = result["Site Response"]
@@ -378,19 +378,19 @@ class TestFoundryAgentMetadata:
         assert "linear_site_response" in methods
 
     def test_list_methods_filter(self):
-        import pystrata_agent_foundry as paf
+        import foundry.pystrata_agent_foundry as paf
         result = json.loads(
             paf.pystrata_list_methods.__wrapped__("Site Response"))
         assert "Site Response" in result
 
     def test_list_methods_unknown_category(self):
-        import pystrata_agent_foundry as paf
+        import foundry.pystrata_agent_foundry as paf
         result = json.loads(
             paf.pystrata_list_methods.__wrapped__("Nonexistent"))
         assert "error" in result
 
     def test_describe_eql_method(self):
-        import pystrata_agent_foundry as paf
+        import foundry.pystrata_agent_foundry as paf
         result = json.loads(
             paf.pystrata_describe_method.__wrapped__("eql_site_response"))
         assert "category" in result
@@ -399,26 +399,26 @@ class TestFoundryAgentMetadata:
         assert "layers" in result["parameters"]
 
     def test_describe_linear_method(self):
-        import pystrata_agent_foundry as paf
+        import foundry.pystrata_agent_foundry as paf
         result = json.loads(
             paf.pystrata_describe_method.__wrapped__("linear_site_response"))
         assert "category" in result
 
     def test_describe_unknown_method(self):
-        import pystrata_agent_foundry as paf
+        import foundry.pystrata_agent_foundry as paf
         result = json.loads(
             paf.pystrata_describe_method.__wrapped__("nonexistent"))
         assert "error" in result
 
     def test_agent_invalid_json(self):
-        import pystrata_agent_foundry as paf
+        import foundry.pystrata_agent_foundry as paf
         result = json.loads(
             paf.pystrata_agent.__wrapped__("eql_site_response", "not json"))
         assert "error" in result
         assert "Invalid" in result["error"]
 
     def test_agent_unknown_method(self):
-        import pystrata_agent_foundry as paf
+        import foundry.pystrata_agent_foundry as paf
         result = json.loads(
             paf.pystrata_agent.__wrapped__("nonexistent", "{}"))
         assert "error" in result
@@ -426,14 +426,14 @@ class TestFoundryAgentMetadata:
 
     def test_agent_validation_error(self):
         """Validation errors should be caught before pystrata import check."""
-        import pystrata_agent_foundry as paf
+        import foundry.pystrata_agent_foundry as paf
         result = json.loads(
             paf.pystrata_agent.__wrapped__(
                 "eql_site_response", '{"layers": []}'))
         assert "error" in result
 
     def test_parameters_have_required_fields(self):
-        import pystrata_agent_foundry as paf
+        import foundry.pystrata_agent_foundry as paf
         for method_name in ("eql_site_response", "linear_site_response"):
             info = json.loads(
                 paf.pystrata_describe_method.__wrapped__(method_name))

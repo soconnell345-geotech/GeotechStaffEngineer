@@ -212,39 +212,39 @@ class TestUtilities:
 class TestFoundryMetadata:
 
     def test_list_methods_all(self):
-        from swprocess_agent_foundry import swprocess_list_methods
+        from foundry.swprocess_agent_foundry import swprocess_list_methods
         result = json.loads(swprocess_list_methods(""))
         assert "MASW" in result
 
     def test_list_methods_filtered(self):
-        from swprocess_agent_foundry import swprocess_list_methods
+        from foundry.swprocess_agent_foundry import swprocess_list_methods
         result = json.loads(swprocess_list_methods("MASW"))
         assert "analyze_masw" in result["MASW"]
 
     def test_list_methods_bad_category(self):
-        from swprocess_agent_foundry import swprocess_list_methods
+        from foundry.swprocess_agent_foundry import swprocess_list_methods
         result = json.loads(swprocess_list_methods("nonexistent"))
         assert "error" in result
 
     def test_describe_masw(self):
-        from swprocess_agent_foundry import swprocess_describe_method
+        from foundry.swprocess_agent_foundry import swprocess_describe_method
         result = json.loads(swprocess_describe_method("analyze_masw"))
         assert "parameters" in result
         assert "traces" in result["parameters"]
         assert "offsets" in result["parameters"]
 
     def test_describe_unknown(self):
-        from swprocess_agent_foundry import swprocess_describe_method
+        from foundry.swprocess_agent_foundry import swprocess_describe_method
         result = json.loads(swprocess_describe_method("nonexistent"))
         assert "error" in result
 
     def test_agent_invalid_json(self):
-        from swprocess_agent_foundry import swprocess_agent
+        from foundry.swprocess_agent_foundry import swprocess_agent
         result = json.loads(swprocess_agent("analyze_masw", "not json"))
         assert "error" in result
 
     def test_agent_unknown_method(self):
-        from swprocess_agent_foundry import swprocess_agent
+        from foundry.swprocess_agent_foundry import swprocess_agent
         result = json.loads(swprocess_agent("nonexistent", "{}"))
         assert "error" in result
 
@@ -318,7 +318,7 @@ class TestFoundryIntegration:
 
     def test_foundry_masw(self):
         traces, offsets, dt = _make_synthetic_masw(nsensors=6)
-        from swprocess_agent_foundry import swprocess_agent
+        from foundry.swprocess_agent_foundry import swprocess_agent
         params = {
             "traces": [t.tolist() for t in traces],
             "offsets": offsets,

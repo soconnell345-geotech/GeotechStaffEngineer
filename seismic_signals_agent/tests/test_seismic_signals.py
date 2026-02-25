@@ -406,63 +406,63 @@ class TestSignalUtils:
 
 class TestFoundryMetadata:
     def test_list_methods_all(self):
-        import seismic_signals_agent_foundry as saf
+        import foundry.seismic_signals_agent_foundry as saf
         result = json.loads(saf.seismic_signals_list_methods.__wrapped__(""))
         assert "Response Spectrum" in result
         assert "Intensity Measures" in result
 
     def test_list_methods_filtered(self):
-        import seismic_signals_agent_foundry as saf
+        import foundry.seismic_signals_agent_foundry as saf
         result = json.loads(saf.seismic_signals_list_methods.__wrapped__(
             "Response Spectrum"))
         assert "Response Spectrum" in result
         assert "Intensity Measures" not in result
 
     def test_list_methods_bad_category(self):
-        import seismic_signals_agent_foundry as saf
+        import foundry.seismic_signals_agent_foundry as saf
         result = json.loads(saf.seismic_signals_list_methods.__wrapped__(
             "Nonexistent"))
         assert "error" in result
 
     def test_describe_response_spectrum(self):
-        import seismic_signals_agent_foundry as saf
+        import foundry.seismic_signals_agent_foundry as saf
         result = json.loads(saf.seismic_signals_describe_method.__wrapped__(
             "response_spectrum"))
         assert "parameters" in result
         assert "damping" in result["parameters"]
 
     def test_describe_intensity_measures(self):
-        import seismic_signals_agent_foundry as saf
+        import foundry.seismic_signals_agent_foundry as saf
         result = json.loads(saf.seismic_signals_describe_method.__wrapped__(
             "intensity_measures"))
         assert "Arias" in result["description"]
 
     def test_describe_rotd_spectrum(self):
-        import seismic_signals_agent_foundry as saf
+        import foundry.seismic_signals_agent_foundry as saf
         result = json.loads(saf.seismic_signals_describe_method.__wrapped__(
             "rotd_spectrum"))
         assert "RotD" in result["description"]
 
     def test_describe_signal_processing(self):
-        import seismic_signals_agent_foundry as saf
+        import foundry.seismic_signals_agent_foundry as saf
         result = json.loads(saf.seismic_signals_describe_method.__wrapped__(
             "signal_processing"))
         assert "bandpass" in result["parameters"]
 
     def test_describe_unknown_method(self):
-        import seismic_signals_agent_foundry as saf
+        import foundry.seismic_signals_agent_foundry as saf
         result = json.loads(saf.seismic_signals_describe_method.__wrapped__(
             "nonexistent"))
         assert "error" in result
 
     def test_agent_invalid_json(self):
-        import seismic_signals_agent_foundry as saf
+        import foundry.seismic_signals_agent_foundry as saf
         result = json.loads(saf.seismic_signals_agent.__wrapped__(
             "response_spectrum", "not valid json"))
         assert "error" in result
 
     def test_agent_unknown_method(self):
-        import seismic_signals_agent_foundry as saf
+        import foundry.seismic_signals_agent_foundry as saf
         result = json.loads(saf.seismic_signals_agent.__wrapped__(
             "nonexistent", "{}"))
         assert "error" in result

@@ -227,44 +227,44 @@ class TestUtilities:
 class TestFoundryMetadata:
 
     def test_list_methods_all(self):
-        from salib_agent_foundry import salib_list_methods
+        from foundry.salib_agent_foundry import salib_list_methods
         result = json.loads(salib_list_methods(""))
         assert "Sobol" in result
         assert "Morris" in result
 
     def test_list_methods_filtered(self):
-        from salib_agent_foundry import salib_list_methods
+        from foundry.salib_agent_foundry import salib_list_methods
         result = json.loads(salib_list_methods("Sobol"))
         assert "sobol_analyze" in result["Sobol"]
 
     def test_list_methods_bad_category(self):
-        from salib_agent_foundry import salib_list_methods
+        from foundry.salib_agent_foundry import salib_list_methods
         result = json.loads(salib_list_methods("nonexistent"))
         assert "error" in result
 
     def test_describe_sobol(self):
-        from salib_agent_foundry import salib_describe_method
+        from foundry.salib_agent_foundry import salib_describe_method
         result = json.loads(salib_describe_method("sobol_analyze"))
         assert "parameters" in result
         assert "var_names" in result["parameters"]
 
     def test_describe_morris(self):
-        from salib_agent_foundry import salib_describe_method
+        from foundry.salib_agent_foundry import salib_describe_method
         result = json.loads(salib_describe_method("morris_analyze"))
         assert "parameters" in result
 
     def test_describe_unknown(self):
-        from salib_agent_foundry import salib_describe_method
+        from foundry.salib_agent_foundry import salib_describe_method
         result = json.loads(salib_describe_method("nonexistent"))
         assert "error" in result
 
     def test_agent_invalid_json(self):
-        from salib_agent_foundry import salib_agent
+        from foundry.salib_agent_foundry import salib_agent
         result = json.loads(salib_agent("sobol_analyze", "not json"))
         assert "error" in result
 
     def test_agent_unknown_method(self):
-        from salib_agent_foundry import salib_agent
+        from foundry.salib_agent_foundry import salib_agent
         result = json.loads(salib_agent("nonexistent", "{}"))
         assert "error" in result
 
@@ -381,7 +381,7 @@ class TestMorrisIntegration:
 class TestFoundryIntegration:
 
     def test_foundry_sobol(self):
-        from salib_agent_foundry import salib_agent
+        from foundry.salib_agent_foundry import salib_agent
         params = {
             "var_names": ["x1", "x2", "x3"],
             "bounds": [[-3.14, 3.14], [-3.14, 3.14], [-3.14, 3.14]],
@@ -394,7 +394,7 @@ class TestFoundryIntegration:
         assert len(result["S1"]) == 3
 
     def test_foundry_morris(self):
-        from salib_agent_foundry import salib_agent
+        from foundry.salib_agent_foundry import salib_agent
         params = {
             "var_names": ["x1", "x2", "x3"],
             "bounds": [[-3.14, 3.14], [-3.14, 3.14], [-3.14, 3.14]],

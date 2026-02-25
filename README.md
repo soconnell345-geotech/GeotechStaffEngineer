@@ -21,11 +21,11 @@ pip install geotech-staff-engineer[plot,groundhog,opensees]
 from bearing_capacity import Footing, SoilLayer, BearingSoilProfile, BearingCapacityAnalysis
 
 footing = Footing(width=2.0, length=10.0, depth=1.5, shape="strip")
-layer = SoilLayer(phi_deg=30.0, c_kPa=10.0, gamma_kNm3=18.0, thickness_m=10.0)
-profile = BearingSoilProfile(layers=[layer], gwt_depth_m=5.0)
+layer = SoilLayer(friction_angle=30.0, cohesion=10.0, unit_weight=18.0, thickness=10.0)
+profile = BearingSoilProfile(layer1=layer, gwt_depth=5.0)
 
 analysis = BearingCapacityAnalysis(footing=footing, soil=profile)
-result = analysis.calculate()
+result = analysis.compute()
 print(result.summary())
 ```
 

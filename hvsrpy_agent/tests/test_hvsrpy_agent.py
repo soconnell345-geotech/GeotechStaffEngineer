@@ -206,22 +206,22 @@ class TestFoundryMetadata:
     """Test Foundry agent metadata functions (no hvsrpy needed)."""
 
     def test_list_methods_all(self):
-        from hvsrpy_agent_foundry import hvsrpy_list_methods
+        from foundry.hvsrpy_agent_foundry import hvsrpy_list_methods
         result = json.loads(hvsrpy_list_methods(""))
         assert "HVSR Analysis" in result
 
     def test_list_methods_filtered(self):
-        from hvsrpy_agent_foundry import hvsrpy_list_methods
+        from foundry.hvsrpy_agent_foundry import hvsrpy_list_methods
         result = json.loads(hvsrpy_list_methods("HVSR Analysis"))
         assert "analyze_hvsr" in result["HVSR Analysis"]
 
     def test_list_methods_bad_category(self):
-        from hvsrpy_agent_foundry import hvsrpy_list_methods
+        from foundry.hvsrpy_agent_foundry import hvsrpy_list_methods
         result = json.loads(hvsrpy_list_methods("nonexistent"))
         assert "error" in result
 
     def test_describe_analyze_hvsr(self):
-        from hvsrpy_agent_foundry import hvsrpy_describe_method
+        from foundry.hvsrpy_agent_foundry import hvsrpy_describe_method
         result = json.loads(hvsrpy_describe_method("analyze_hvsr"))
         assert "parameters" in result
         assert "ns" in result["parameters"]
@@ -229,17 +229,17 @@ class TestFoundryMetadata:
         assert "vt" in result["parameters"]
 
     def test_describe_unknown_method(self):
-        from hvsrpy_agent_foundry import hvsrpy_describe_method
+        from foundry.hvsrpy_agent_foundry import hvsrpy_describe_method
         result = json.loads(hvsrpy_describe_method("nonexistent"))
         assert "error" in result
 
     def test_agent_invalid_json(self):
-        from hvsrpy_agent_foundry import hvsrpy_agent
+        from foundry.hvsrpy_agent_foundry import hvsrpy_agent
         result = json.loads(hvsrpy_agent("analyze_hvsr", "not json"))
         assert "error" in result
 
     def test_agent_unknown_method(self):
-        from hvsrpy_agent_foundry import hvsrpy_agent
+        from foundry.hvsrpy_agent_foundry import hvsrpy_agent
         result = json.loads(hvsrpy_agent("nonexistent", "{}"))
         assert "error" in result
 
@@ -355,7 +355,7 @@ class TestHvsrIntegration:
 
     def test_foundry_agent_analyze_hvsr(self):
         ns, ew, vt, dt = _make_synthetic_recording()
-        from hvsrpy_agent_foundry import hvsrpy_agent
+        from foundry.hvsrpy_agent_foundry import hvsrpy_agent
         params = {
             "ns": ns.tolist(),
             "ew": ew.tolist(),

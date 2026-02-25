@@ -405,24 +405,24 @@ class TestUtilities:
 class TestFoundryMetadata:
 
     def test_list_methods_all(self):
-        from gstools_agent_foundry import gstools_list_methods
+        from foundry.gstools_agent_foundry import gstools_list_methods
         result = json.loads(gstools_list_methods(""))
         assert "Kriging" in result
         assert "Variogram" in result
         assert "Random Field" in result
 
     def test_list_methods_filtered(self):
-        from gstools_agent_foundry import gstools_list_methods
+        from foundry.gstools_agent_foundry import gstools_list_methods
         result = json.loads(gstools_list_methods("Kriging"))
         assert "kriging" in result["Kriging"]
 
     def test_list_methods_bad_category(self):
-        from gstools_agent_foundry import gstools_list_methods
+        from foundry.gstools_agent_foundry import gstools_list_methods
         result = json.loads(gstools_list_methods("nonexistent"))
         assert "error" in result
 
     def test_describe_kriging(self):
-        from gstools_agent_foundry import gstools_describe_method
+        from foundry.gstools_agent_foundry import gstools_describe_method
         result = json.loads(gstools_describe_method("kriging"))
         assert "parameters" in result
         assert "x" in result["parameters"]
@@ -430,29 +430,29 @@ class TestFoundryMetadata:
         assert "values" in result["parameters"]
 
     def test_describe_variogram(self):
-        from gstools_agent_foundry import gstools_describe_method
+        from foundry.gstools_agent_foundry import gstools_describe_method
         result = json.loads(gstools_describe_method("variogram"))
         assert "parameters" in result
         assert "n_bins" in result["parameters"]
 
     def test_describe_random_field(self):
-        from gstools_agent_foundry import gstools_describe_method
+        from foundry.gstools_agent_foundry import gstools_describe_method
         result = json.loads(gstools_describe_method("random_field"))
         assert "parameters" in result
         assert "seed" in result["parameters"]
 
     def test_describe_unknown(self):
-        from gstools_agent_foundry import gstools_describe_method
+        from foundry.gstools_agent_foundry import gstools_describe_method
         result = json.loads(gstools_describe_method("nonexistent"))
         assert "error" in result
 
     def test_agent_invalid_json(self):
-        from gstools_agent_foundry import gstools_agent
+        from foundry.gstools_agent_foundry import gstools_agent
         result = json.loads(gstools_agent("kriging", "not json"))
         assert "error" in result
 
     def test_agent_unknown_method(self):
-        from gstools_agent_foundry import gstools_agent
+        from foundry.gstools_agent_foundry import gstools_agent
         result = json.loads(gstools_agent("nonexistent", "{}"))
         assert "error" in result
 
@@ -653,7 +653,7 @@ class TestFoundryIntegration:
 
     def test_foundry_kriging(self):
         x, y, values = _make_synthetic_data(n=20)
-        from gstools_agent_foundry import gstools_agent
+        from foundry.gstools_agent_foundry import gstools_agent
         params = {
             "x": x.tolist(),
             "y": y.tolist(),
@@ -668,7 +668,7 @@ class TestFoundryIntegration:
 
     def test_foundry_variogram(self):
         x, y, values = _make_synthetic_data(n=30)
-        from gstools_agent_foundry import gstools_agent
+        from foundry.gstools_agent_foundry import gstools_agent
         params = {
             "x": x.tolist(),
             "y": y.tolist(),
@@ -680,7 +680,7 @@ class TestFoundryIntegration:
         assert "bin_center" in result
 
     def test_foundry_random_field(self):
-        from gstools_agent_foundry import gstools_agent
+        from foundry.gstools_agent_foundry import gstools_agent
         params = {
             "n_x": 10,
             "n_y": 10,

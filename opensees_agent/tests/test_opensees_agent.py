@@ -551,24 +551,24 @@ class TestFoundryAgentMetadata:
 
     def test_list_methods_all(self):
         # Import the function but skip the @function decorator
-        import opensees_agent_foundry as oaf
+        import foundry.opensees_agent_foundry as oaf
         result = json.loads(oaf.opensees_list_methods.__wrapped__(""))
         assert "Cyclic Element Tests" in result
         assert "pm4sand_cyclic_dss" in result["Cyclic Element Tests"]
 
     def test_list_methods_filter(self):
-        import opensees_agent_foundry as oaf
+        import foundry.opensees_agent_foundry as oaf
         result = json.loads(oaf.opensees_list_methods.__wrapped__(
             "Cyclic Element Tests"))
         assert "Cyclic Element Tests" in result
 
     def test_list_methods_unknown_category(self):
-        import opensees_agent_foundry as oaf
+        import foundry.opensees_agent_foundry as oaf
         result = json.loads(oaf.opensees_list_methods.__wrapped__("Nonexistent"))
         assert "error" in result
 
     def test_describe_method(self):
-        import opensees_agent_foundry as oaf
+        import foundry.opensees_agent_foundry as oaf
         result = json.loads(oaf.opensees_describe_method.__wrapped__(
             "pm4sand_cyclic_dss"))
         assert "category" in result
@@ -577,32 +577,32 @@ class TestFoundryAgentMetadata:
         assert result["parameters"]["Dr"]["required"] is True
 
     def test_describe_unknown_method(self):
-        import opensees_agent_foundry as oaf
+        import foundry.opensees_agent_foundry as oaf
         result = json.loads(oaf.opensees_describe_method.__wrapped__("bogus"))
         assert "error" in result
 
     def test_agent_invalid_json(self):
-        import opensees_agent_foundry as oaf
+        import foundry.opensees_agent_foundry as oaf
         result = json.loads(oaf.opensees_agent.__wrapped__(
             "pm4sand_cyclic_dss", "not json"))
         assert "error" in result
         assert "Invalid parameters_json" in result["error"]
 
     def test_agent_unknown_method(self):
-        import opensees_agent_foundry as oaf
+        import foundry.opensees_agent_foundry as oaf
         result = json.loads(oaf.opensees_agent.__wrapped__(
             "bogus_method", "{}"))
         assert "error" in result
         assert "Unknown method" in result["error"]
 
     def test_list_methods_includes_bnwf(self):
-        import opensees_agent_foundry as oaf
+        import foundry.opensees_agent_foundry as oaf
         result = json.loads(oaf.opensees_list_methods.__wrapped__(""))
         assert "Lateral Pile" in result
         assert "bnwf_lateral_pile" in result["Lateral Pile"]
 
     def test_describe_bnwf(self):
-        import opensees_agent_foundry as oaf
+        import foundry.opensees_agent_foundry as oaf
         result = json.loads(oaf.opensees_describe_method.__wrapped__(
             "bnwf_lateral_pile"))
         assert "category" in result
@@ -612,13 +612,13 @@ class TestFoundryAgentMetadata:
         assert "layers" in result["parameters"]
 
     def test_list_methods_includes_site_response(self):
-        import opensees_agent_foundry as oaf
+        import foundry.opensees_agent_foundry as oaf
         result = json.loads(oaf.opensees_list_methods.__wrapped__(""))
         assert "Site Response" in result
         assert "site_response_1d" in result["Site Response"]
 
     def test_describe_site_response(self):
-        import opensees_agent_foundry as oaf
+        import foundry.opensees_agent_foundry as oaf
         result = json.loads(oaf.opensees_describe_method.__wrapped__(
             "site_response_1d"))
         assert result["category"] == "Site Response"
@@ -626,7 +626,7 @@ class TestFoundryAgentMetadata:
         assert "pga_surface_g" in result["returns"]
 
     def test_list_methods_filter_site_response(self):
-        import opensees_agent_foundry as oaf
+        import foundry.opensees_agent_foundry as oaf
         result = json.loads(oaf.opensees_list_methods.__wrapped__(
             "Site Response"))
         assert "Site Response" in result

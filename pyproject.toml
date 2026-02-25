@@ -108,6 +108,7 @@ include = [
 exclude = [
     "*.tests",
     "*.tests.*",
+    "foundry*",
     "trial_agent*",
     "foundry_test_harness*",
     "docs*",

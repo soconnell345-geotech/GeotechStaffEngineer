@@ -1,5 +1,5 @@
 """
-Master registry of all 44 Foundry agents with lazy-loading dispatch.
+Master registry of all 43 Foundry agents with lazy-loading dispatch.
 
 Agents are imported on first use, not at startup, to avoid scipy.optimize
 import hangs on Python 3.14 / scipy 1.17 and to speed up CLI startup.
@@ -14,77 +14,77 @@ import importlib
 
 _AGENT_SPECS = {
     "bearing_capacity": {
-        "module": "bearing_capacity_agent_foundry",
+        "module": "foundry.bearing_capacity_agent_foundry",
         "funcs": ("bearing_capacity_agent", "bearing_capacity_list_methods", "bearing_capacity_describe_method"),
         "brief": "Shallow foundation bearing capacity (Vesic/Meyerhof/Hansen)",
     },
     "settlement": {
-        "module": "settlement_agent_foundry",
+        "module": "foundry.settlement_agent_foundry",
         "funcs": ("settlement_agent", "settlement_list_methods", "settlement_describe_method"),
         "brief": "Foundation settlement (elastic, Schmertmann, consolidation)",
     },
     "axial_pile": {
-        "module": "axial_pile_agent_foundry",
+        "module": "foundry.axial_pile_agent_foundry",
         "funcs": ("axial_pile_agent", "axial_pile_list_methods", "axial_pile_describe_method"),
         "brief": "Driven pile axial capacity (Nordlund/Tomlinson/Beta)",
     },
     "sheet_pile": {
-        "module": "sheet_pile_agent_foundry",
+        "module": "foundry.sheet_pile_agent_foundry",
         "funcs": ("sheet_pile_agent", "sheet_pile_list_methods", "sheet_pile_describe_method"),
         "brief": "Sheet pile walls (cantilever and anchored)",
     },
     "lateral_pile": {
-        "module": "lateral_pile_agent_foundry",
+        "module": "foundry.lateral_pile_agent_foundry",
         "funcs": ("lateral_pile_agent", "lateral_pile_list_methods", "lateral_pile_describe_method"),
         "brief": "Lateral pile analysis (COM624P, 8 p-y models, FD solver)",
     },
     "pile_group": {
-        "module": "pile_group_agent_foundry",
+        "module": "foundry.pile_group_agent_foundry",
         "funcs": ("pile_group_agent", "pile_group_list_methods", "pile_group_describe_method"),
         "brief": "Pile group analysis (rigid cap, 6-DOF, Converse-Labarre)",
     },
     "wave_equation": {
-        "module": "wave_equation_agent_foundry",
+        "module": "foundry.wave_equation_agent_foundry",
         "funcs": ("wave_equation_agent", "wave_equation_list_methods", "wave_equation_describe_method"),
         "brief": "Smith 1-D wave equation (bearing graph, drivability)",
     },
     "drilled_shaft": {
-        "module": "drilled_shaft_agent_foundry",
+        "module": "foundry.drilled_shaft_agent_foundry",
         "funcs": ("drilled_shaft_agent", "drilled_shaft_list_methods", "drilled_shaft_describe_method"),
         "brief": "Drilled shaft capacity (GEC-10 alpha/beta/rock socket, LRFD)",
     },
     "seismic_geotech": {
-        "module": "seismic_geotech_agent_foundry",
+        "module": "foundry.seismic_geotech_agent_foundry",
         "funcs": ("seismic_geotech_agent", "seismic_geotech_list_methods", "seismic_geotech_describe_method"),
         "brief": "Seismic evaluation (site class, M-O pressure, liquefaction)",
     },
     "retaining_walls": {
-        "module": "retaining_walls_agent_foundry",
+        "module": "foundry.retaining_walls_agent_foundry",
         "funcs": ("retaining_walls_agent", "retaining_walls_list_methods", "retaining_walls_describe_method"),
         "brief": "Retaining walls (cantilever + MSE, GEC-11)",
     },
     "ground_improvement": {
-        "module": "ground_improvement_agent_foundry",
+        "module": "foundry.ground_improvement_agent_foundry",
         "funcs": ("ground_improvement_agent", "ground_improvement_list_methods", "ground_improvement_describe_method"),
         "brief": "Ground improvement (aggregate piers, wick drains, vibro)",
     },
     "slope_stability": {
-        "module": "slope_stability_agent_foundry",
+        "module": "foundry.slope_stability_agent_foundry",
         "funcs": ("slope_stability_agent", "slope_stability_list_methods", "slope_stability_describe_method"),
         "brief": "Slope stability (Fellenius/Bishop/Spencer, grid search)",
     },
     "downdrag": {
-        "module": "downdrag_agent_foundry",
+        "module": "foundry.downdrag_agent_foundry",
         "funcs": ("downdrag_agent", "downdrag_list_methods", "downdrag_describe_method"),
         "brief": "Pile downdrag (Fellenius neutral plane, UFC 3-220-20)",
     },
     "geolysis": {
-        "module": "geolysis_agent_foundry",
+        "module": "foundry.geolysis_agent_foundry",
         "funcs": ("geolysis_agent", "geolysis_list_methods", "geolysis_describe_method"),
         "brief": "Soil classification (USCS/AASHTO) + SPT corrections + quick BC",
     },
     "groundhog": {
-        "module": "groundhog_agent_foundry",
+        "module": "foundry.groundhog_agent_foundry",
         "funcs": ("groundhog_agent", "groundhog_list_methods", "groundhog_describe_method"),
         "brief": "90 correlations: phase relations, SPT/CPT, earth pressure, etc.",
     },
@@ -94,72 +94,72 @@ _AGENT_SPECS = {
         "brief": "382 NAVFAC DM7 equations (UFC 3-220-10 and 3-220-20)",
     },
     "calc_package": {
-        "module": "calc_package_agent_foundry",
+        "module": "foundry.calc_package_agent_foundry",
         "funcs": ("calc_package_agent", "calc_package_list_methods", "calc_package_describe_method"),
         "brief": "Generate HTML/PDF calculation packages",
     },
     "opensees": {
-        "module": "opensees_agent_foundry",
+        "module": "foundry.opensees_agent_foundry",
         "funcs": ("opensees_agent", "opensees_list_methods", "opensees_describe_method"),
         "brief": "OpenSees FEM (PM4Sand DSS, BNWF pile, 1D site response)",
     },
     "pystrata": {
-        "module": "pystrata_agent_foundry",
+        "module": "foundry.pystrata_agent_foundry",
         "funcs": ("pystrata_agent", "pystrata_list_methods", "pystrata_describe_method"),
         "brief": "1D EQL site response (SHAKE-type, Darendeli/Menq)",
     },
     "seismic_signals": {
-        "module": "seismic_signals_agent_foundry",
+        "module": "foundry.seismic_signals_agent_foundry",
         "funcs": ("seismic_signals_agent", "seismic_signals_list_methods", "seismic_signals_describe_method"),
         "brief": "Earthquake signal processing (response spectra, RotD50/100)",
     },
     "liquepy": {
-        "module": "liquepy_agent_foundry",
+        "module": "foundry.liquepy_agent_foundry",
         "funcs": ("liquepy_agent", "liquepy_list_methods", "liquepy_describe_method"),
         "brief": "CPT-based liquefaction triggering (Boulanger & Idriss 2014)",
     },
     "pygef": {
-        "module": "pygef_agent_foundry",
+        "module": "foundry.pygef_agent_foundry",
         "funcs": ("pygef_agent", "pygef_list_methods", "pygef_describe_method"),
         "brief": "CPT/borehole file parser (GEF and BRO-XML formats)",
     },
     "hvsrpy": {
-        "module": "hvsrpy_agent_foundry",
+        "module": "foundry.hvsrpy_agent_foundry",
         "funcs": ("hvsrpy_agent", "hvsrpy_list_methods", "hvsrpy_describe_method"),
         "brief": "HVSR site characterization from ambient noise",
     },
     "gstools": {
-        "module": "gstools_agent_foundry",
+        "module": "foundry.gstools_agent_foundry",
         "funcs": ("gstools_agent", "gstools_list_methods", "gstools_describe_method"),
         "brief": "Geostatistics: kriging, variogram fitting, random fields",
     },
     "ags4": {
-        "module": "ags4_agent_foundry",
+        "module": "foundry.ags4_agent_foundry",
         "funcs": ("ags4_agent", "ags4_list_methods", "ags4_describe_method"),
         "brief": "AGS4 geotechnical data format reader/validator",
     },
     "salib": {
-        "module": "salib_agent_foundry",
+        "module": "foundry.salib_agent_foundry",
         "funcs": ("salib_agent", "salib_list_methods", "salib_describe_method"),
         "brief": "Sensitivity analysis (Sobol and Morris methods)",
     },
     "pyseismosoil": {
-        "module": "pyseismosoil_agent_foundry",
+        "module": "foundry.pyseismosoil_agent_foundry",
         "funcs": ("pyseismosoil_agent", "pyseismosoil_list_methods", "pyseismosoil_describe_method"),
         "brief": "Nonlinear soil curve calibration (MKZ/HH) + Vs profiles",
     },
     "swprocess": {
-        "module": "swprocess_agent_foundry",
+        "module": "foundry.swprocess_agent_foundry",
         "funcs": ("swprocess_agent", "swprocess_list_methods", "swprocess_describe_method"),
         "brief": "MASW surface wave dispersion analysis",
     },
     "pystra": {
-        "module": "pystra_agent_foundry",
+        "module": "foundry.pystra_agent_foundry",
         "funcs": ("pystra_agent", "pystra_list_methods", "pystra_describe_method"),
         "brief": "Structural reliability (FORM/SORM/Monte Carlo)",
     },
     "pydiggs": {
-        "module": "pydiggs_agent_foundry",
+        "module": "foundry.pydiggs_agent_foundry",
         "funcs": ("pydiggs_agent", "pydiggs_list_methods", "pydiggs_describe_method"),
         "brief": "DIGGS 2.6 XML schema and dictionary validation",
     },

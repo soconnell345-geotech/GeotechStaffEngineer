@@ -379,7 +379,7 @@ class TestFoundryMetadata:
 
     def test_list_methods_all(self):
         """Test listing all methods."""
-        from pydiggs_agent_foundry import pydiggs_list_methods
+        from foundry.pydiggs_agent_foundry import pydiggs_list_methods
 
         methods = pydiggs_list_methods()
         assert isinstance(methods, list)
@@ -391,7 +391,7 @@ class TestFoundryMetadata:
 
     def test_list_methods_filtered(self):
         """Test listing methods by category."""
-        from pydiggs_agent_foundry import pydiggs_list_methods
+        from foundry.pydiggs_agent_foundry import pydiggs_list_methods
 
         methods = pydiggs_list_methods(category="Validation")
         assert len(methods) == 2
@@ -401,14 +401,14 @@ class TestFoundryMetadata:
 
     def test_list_methods_invalid_category(self):
         """Test listing methods with unknown category returns empty."""
-        from pydiggs_agent_foundry import pydiggs_list_methods
+        from foundry.pydiggs_agent_foundry import pydiggs_list_methods
 
         methods = pydiggs_list_methods(category="NonExistent")
         assert methods == []
 
     def test_describe_validate_schema(self):
         """Test describing validate_schema method."""
-        from pydiggs_agent_foundry import pydiggs_describe_method
+        from foundry.pydiggs_agent_foundry import pydiggs_describe_method
 
         desc = pydiggs_describe_method("validate_schema")
         assert desc["name"] == "validate_schema"
@@ -419,7 +419,7 @@ class TestFoundryMetadata:
 
     def test_describe_validate_dictionary(self):
         """Test describing validate_dictionary method."""
-        from pydiggs_agent_foundry import pydiggs_describe_method
+        from foundry.pydiggs_agent_foundry import pydiggs_describe_method
 
         desc = pydiggs_describe_method("validate_dictionary")
         assert desc["name"] == "validate_dictionary"
@@ -427,21 +427,21 @@ class TestFoundryMetadata:
 
     def test_describe_unknown_method(self):
         """Test describing unknown method returns error."""
-        from pydiggs_agent_foundry import pydiggs_describe_method
+        from foundry.pydiggs_agent_foundry import pydiggs_describe_method
 
         desc = pydiggs_describe_method("unknown_method")
         assert "error" in desc
 
     def test_agent_invalid_json(self):
         """Test agent with invalid JSON raises error."""
-        from pydiggs_agent_foundry import pydiggs_agent
+        from foundry.pydiggs_agent_foundry import pydiggs_agent
 
         with pytest.raises(json.JSONDecodeError):
             pydiggs_agent("validate_schema", "not json")
 
     def test_agent_unknown_method(self):
         """Test agent with unknown method returns error JSON."""
-        from pydiggs_agent_foundry import pydiggs_agent
+        from foundry.pydiggs_agent_foundry import pydiggs_agent
 
         result_json = pydiggs_agent("unknown_method", "{}")
         result = json.loads(result_json)
@@ -454,7 +454,7 @@ class TestFoundryIntegration:
 
     def test_agent_validate_schema(self):
         """Test validate_schema via Foundry agent."""
-        from pydiggs_agent_foundry import pydiggs_agent
+        from foundry.pydiggs_agent_foundry import pydiggs_agent
 
         params = {
             "content": VALID_DIGGS_26_XML,
@@ -468,7 +468,7 @@ class TestFoundryIntegration:
 
     def test_agent_validate_dictionary(self):
         """Test validate_dictionary via Foundry agent."""
-        from pydiggs_agent_foundry import pydiggs_agent
+        from foundry.pydiggs_agent_foundry import pydiggs_agent
 
         params = {"content": VALID_DIGGS_26_XML}
         result_json = pydiggs_agent("validate_dictionary", json.dumps(params))

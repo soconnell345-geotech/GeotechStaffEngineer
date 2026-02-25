@@ -13,17 +13,17 @@ import pytest
 from foundry_test_harness.harness import FoundryAgentHarness, AgentError
 from foundry_test_harness import scenarios as S
 
-from bearing_capacity_agent_foundry import bearing_capacity_agent
-from settlement_agent_foundry import settlement_agent
-from axial_pile_agent_foundry import axial_pile_agent
-from drilled_shaft_agent_foundry import drilled_shaft_agent
-from seismic_geotech_agent_foundry import seismic_geotech_agent
-from retaining_walls_agent_foundry import retaining_walls_agent
-from slope_stability_agent_foundry import slope_stability_agent
-from geolysis_agent_foundry import geolysis_agent
-from ground_improvement_agent_foundry import ground_improvement_agent
-from pile_group_agent_foundry import pile_group_agent
-from wave_equation_agent_foundry import wave_equation_agent
+from foundry.bearing_capacity_agent_foundry import bearing_capacity_agent
+from foundry.settlement_agent_foundry import settlement_agent
+from foundry.axial_pile_agent_foundry import axial_pile_agent
+from foundry.drilled_shaft_agent_foundry import drilled_shaft_agent
+from foundry.seismic_geotech_agent_foundry import seismic_geotech_agent
+from foundry.retaining_walls_agent_foundry import retaining_walls_agent
+from foundry.slope_stability_agent_foundry import slope_stability_agent
+from foundry.geolysis_agent_foundry import geolysis_agent
+from foundry.ground_improvement_agent_foundry import ground_improvement_agent
+from foundry.pile_group_agent_foundry import pile_group_agent
+from foundry.wave_equation_agent_foundry import wave_equation_agent
 
 H = FoundryAgentHarness()
 

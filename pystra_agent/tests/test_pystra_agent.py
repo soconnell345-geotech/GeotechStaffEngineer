@@ -314,7 +314,7 @@ def foundry_agent():
     if root not in sys.path:
         sys.path.insert(0, root)
 
-    from pystra_agent_foundry import (
+    from foundry.pystra_agent_foundry import (
         pystra_list_methods,
         pystra_describe_method,
         pystra_agent,

@@ -222,44 +222,44 @@ class TestUtilities:
 class TestFoundryMetadata:
 
     def test_list_methods_all(self):
-        from ags4_agent_foundry import ags4_list_methods
+        from foundry.ags4_agent_foundry import ags4_list_methods
         result = json.loads(ags4_list_methods(""))
         assert "Data Import" in result
         assert "Validation" in result
 
     def test_list_methods_filtered(self):
-        from ags4_agent_foundry import ags4_list_methods
+        from foundry.ags4_agent_foundry import ags4_list_methods
         result = json.loads(ags4_list_methods("Data Import"))
         assert "read_ags4" in result["Data Import"]
 
     def test_list_methods_bad_category(self):
-        from ags4_agent_foundry import ags4_list_methods
+        from foundry.ags4_agent_foundry import ags4_list_methods
         result = json.loads(ags4_list_methods("nonexistent"))
         assert "error" in result
 
     def test_describe_read(self):
-        from ags4_agent_foundry import ags4_describe_method
+        from foundry.ags4_agent_foundry import ags4_describe_method
         result = json.loads(ags4_describe_method("read_ags4"))
         assert "parameters" in result
         assert "filepath" in result["parameters"]
 
     def test_describe_validate(self):
-        from ags4_agent_foundry import ags4_describe_method
+        from foundry.ags4_agent_foundry import ags4_describe_method
         result = json.loads(ags4_describe_method("validate_ags4"))
         assert "parameters" in result
 
     def test_describe_unknown(self):
-        from ags4_agent_foundry import ags4_describe_method
+        from foundry.ags4_agent_foundry import ags4_describe_method
         result = json.loads(ags4_describe_method("nonexistent"))
         assert "error" in result
 
     def test_agent_invalid_json(self):
-        from ags4_agent_foundry import ags4_agent
+        from foundry.ags4_agent_foundry import ags4_agent
         result = json.loads(ags4_agent("read_ags4", "not json"))
         assert "error" in result
 
     def test_agent_unknown_method(self):
-        from ags4_agent_foundry import ags4_agent
+        from foundry.ags4_agent_foundry import ags4_agent
         result = json.loads(ags4_agent("nonexistent", "{}"))
         assert "error" in result
 
@@ -343,7 +343,7 @@ class TestValidateIntegration:
 class TestFoundryIntegration:
 
     def test_foundry_read(self):
-        from ags4_agent_foundry import ags4_agent
+        from foundry.ags4_agent_foundry import ags4_agent
         params = {"content": SAMPLE_AGS4}
         result = json.loads(ags4_agent("read_ags4", json.dumps(params)))
         assert "error" not in result
@@ -351,7 +351,7 @@ class TestFoundryIntegration:
         assert "PROJ" in result["group_names"]
 
     def test_foundry_validate(self):
-        from ags4_agent_foundry import ags4_agent
+        from foundry.ags4_agent_foundry import ags4_agent
         params = {"content": SAMPLE_AGS4}
         result = json.loads(ags4_agent("validate_ags4", json.dumps(params)))
         assert "error" not in result

@@ -11,12 +11,12 @@ import pytest
 from foundry_test_harness.harness import FoundryAgentHarness, AgentError
 from foundry_test_harness import scenarios as S
 
-from bearing_capacity_agent_foundry import bearing_capacity_agent
-from settlement_agent_foundry import settlement_agent
-from axial_pile_agent_foundry import axial_pile_agent
-from seismic_geotech_agent_foundry import seismic_geotech_agent
-from geolysis_agent_foundry import geolysis_agent
-from groundhog_agent_foundry import groundhog_agent
+from foundry.bearing_capacity_agent_foundry import bearing_capacity_agent
+from foundry.settlement_agent_foundry import settlement_agent
+from foundry.axial_pile_agent_foundry import axial_pile_agent
+from foundry.seismic_geotech_agent_foundry import seismic_geotech_agent
+from foundry.geolysis_agent_foundry import geolysis_agent
+from foundry.groundhog_agent_foundry import groundhog_agent
 
 H = FoundryAgentHarness()
 
