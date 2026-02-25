@@ -1,5 +1,5 @@
 """
-Master registry of all 43 Foundry agents with lazy-loading dispatch.
+Master registry of all 44 Foundry agents with lazy-loading dispatch.
 
 Agents are imported on first use, not at startup, to avoid scipy.optimize
 import hangs on Python 3.14 / scipy 1.17 and to speed up CLI startup.
@@ -32,6 +32,11 @@ _AGENT_SPECS = {
         "module": "foundry.sheet_pile_agent_foundry",
         "funcs": ("sheet_pile_agent", "sheet_pile_list_methods", "sheet_pile_describe_method"),
         "brief": "Sheet pile walls (cantilever and anchored)",
+    },
+    "soe": {
+        "module": "foundry.soe_agent_foundry",
+        "funcs": ("soe_agent", "soe_list_methods", "soe_describe_method"),
+        "brief": "Support of excavation (braced/cantilever walls, stability, anchors)",
     },
     "lateral_pile": {
         "module": "foundry.lateral_pile_agent_foundry",

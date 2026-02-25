@@ -76,6 +76,10 @@ from foundry.pystra_agent_foundry import (
     pystra_agent, pystra_list_methods,
     pystra_describe_method,
 )
+from foundry.soe_agent_foundry import (
+    soe_agent, soe_list_methods,
+    soe_describe_method,
+)
 
 H = FoundryAgentHarness()
 
@@ -665,6 +669,81 @@ class TestReliability:
 
 
 # ============================================================================
+# SOE (Support of Excavation)
+# ============================================================================
+
+class TestSOE:
+    """SOE validation — Terzaghi-Peck braced excavation."""
+
+    def test_braced_sand_brace_loads(self):
+        """2-level braced excavation in sand: brace loads should be positive."""
+        r = H.call(soe_agent, "braced_excavation",
+                    S.SOE_BRACED_SAND["params"])
+        assert r["n_support_levels"] == 2
+        assert r["max_moment_kNm_per_m"] > 0
+        assert len(r["support_reactions"]) == 2
+        for rxn in r["support_reactions"]:
+            assert rxn["load_kN_per_m"] > 0
+
+    def test_braced_sand_apparent_pressure(self):
+        """Apparent pressure for sand should be 0.65*Ka*gamma*H."""
+        r = H.call(soe_agent, "apparent_pressure", {
+            "excavation_depth": 10.0,
+            "layers": [
+                {"thickness": 20.0, "unit_weight": 18.0,
+                 "friction_angle": 30.0, "soil_type": "sand"}
+            ],
+        })
+        # Ka for phi=30 ≈ 0.333, p = 0.65*0.333*18*10 ≈ 39 kPa
+        assert r["type"] == "sand"
+        assert r["max_pressure_kPa"] == pytest.approx(39.0, rel=0.05)
+
+    def test_cantilever_excavation(self):
+        """Cantilever wall: embedment and moment should be positive."""
+        r = H.call(soe_agent, "cantilever_excavation",
+                    S.SOE_CANTILEVER_SAND["params"])
+        assert r["required_embedment_m"] > 0
+        assert r["max_moment_kNm_per_m"] > 0
+        assert r["total_wall_length_m"] > 3.0
+
+    def test_basal_heave_check(self):
+        """Basal heave in clay should return FOS and pass/fail."""
+        r = H.call(soe_agent, "check_basal_heave", {
+            "H": 8.0,
+            "cu": 50.0,
+            "gamma": 18.0,
+            "q_surcharge": 10.0,
+            "method": "terzaghi",
+        })
+        assert r["FOS"] > 0
+        assert "passes" in r
+
+    def test_ground_anchor_design(self):
+        """Ground anchor design should return lengths and tendon info."""
+        r = H.call(soe_agent, "design_ground_anchor", {
+            "design_load_kN": 400.0,
+            "anchor_depth": 5.0,
+            "excavation_depth": 10.0,
+            "phi_deg": 30.0,
+            "soil_type": "sand_medium",
+            "anchor_angle_deg": 15.0,
+        })
+        assert r["unbonded_length_m"] > 0
+        assert r["bond_length_m"] > 0
+        assert r["total_length_m"] > r["unbonded_length_m"]
+        assert r["tendon"]["n_strands"] >= 1 or "bar_diameter_mm" in r["tendon"]
+
+    def test_select_wall_section(self):
+        """Section selection should return a valid HP/sheet pile section."""
+        r = H.call(soe_agent, "select_wall_section", {
+            "required_Sx_cm3": 500.0,
+            "section_type": "hp",
+        })
+        assert r["name"] != ""
+        assert r["Sx_cm3"] >= 500.0
+
+
+# ============================================================================
 # Metadata / Discovery
 # ============================================================================
 
@@ -700,6 +779,8 @@ class TestMetadata:
          "downdrag_analysis"),
         (pystra_list_methods, pystra_describe_method,
          "form_analysis"),
+        (soe_list_methods, soe_describe_method,
+         "braced_excavation"),
     ])
     def test_list_and_describe(self, list_func, describe_func, sample_method):
         """List methods returns categories; describe returns parameters."""

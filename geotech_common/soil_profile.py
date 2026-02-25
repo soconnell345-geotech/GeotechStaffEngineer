@@ -1246,6 +1246,91 @@ class SoilProfile:
             "excavation_depth": excavation_depth,
         }
 
+    # ── Adapter: SOE (Support of Excavation) ────────────────────────
+
+    def to_soe_input(self, excavation_depth: float,
+                     support_depths: Optional[List[float]] = None,
+                     support_type: str = "strut",
+                     support_spacing: float = 3.0,
+                     surcharge: float = 10.0) -> Dict[str, Any]:
+        """Convert profile to soe module input format.
+
+        Builds SOEWallLayer dicts for all layers and optional SupportLevel
+        dicts for a multi-level braced excavation.
+
+        Parameters
+        ----------
+        excavation_depth : float
+            Excavation depth (m).
+        support_depths : list of float, optional
+            Depths (m) of support levels. None = cantilever (no supports).
+        support_type : str
+            Default support type ("strut", "anchor", "raker").
+        support_spacing : float
+            Horizontal spacing of supports (m).
+        surcharge : float
+            Surface surcharge (kPa), default 10.
+
+        Returns
+        -------
+        dict
+            Keys: "excavation_depth", "layers" (list of SOEWallLayer dicts),
+            "supports" (list of SupportLevel dicts), "surcharge",
+            "gwt_depth".
+        """
+        soe_layers = []
+        for layer in self.layers:
+            gamma = layer.gamma if layer.gamma is not None else 18.0
+            phi = layer.phi if layer.phi is not None else 0.0
+            c = 0.0
+            soil_type = "sand"
+
+            if layer.is_cohesive is True and layer.cu is not None:
+                c = layer.cu
+                if phi == 0:
+                    phi = 0.0  # Total stress analysis
+                # Classify clay type based on cu
+                if c < 25.0:
+                    soil_type = "soft_clay"
+                else:
+                    soil_type = "stiff_clay"
+            elif layer.c_prime is not None:
+                c = layer.c_prime
+
+            # Need at least phi or c > 0
+            if phi == 0 and c == 0:
+                raise ValueError(
+                    f"Layer '{layer.description}' has neither phi nor cu/c' — "
+                    "cannot create SOE input. "
+                    "Run fill_missing_from_correlations() first."
+                )
+
+            soe_layers.append({
+                "thickness": layer.thickness,
+                "unit_weight": gamma,
+                "friction_angle": phi,
+                "cohesion": c,
+                "soil_type": soil_type,
+                "description": layer.description,
+            })
+
+        supports = []
+        if support_depths:
+            for depth in sorted(support_depths):
+                supports.append({
+                    "depth": depth,
+                    "support_type": support_type,
+                    "spacing": support_spacing,
+                })
+
+        return {
+            "excavation_depth": excavation_depth,
+            "layers": soe_layers,
+            "supports": supports,
+            "surcharge": surcharge,
+            "gwt_depth": self.gwt_depth,
+        }
+
     # ── Adapter: Pile Group ───────────────────────────────────────────
 
     def to_pile_group_input(self, pile_length: float,

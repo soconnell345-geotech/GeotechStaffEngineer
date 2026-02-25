@@ -255,6 +255,48 @@ CANTILEVER_SHEET_PILE = {
 
 
 # ============================================================================
+# SOE (Support of Excavation) Scenarios
+# ============================================================================
+
+SOE_BRACED_SAND = {
+    "description": "2-level braced excavation in sand (Terzaghi-Peck)",
+    "params": {
+        "excavation_depth": 10.0,
+        "layers": [
+            {
+                "thickness": 20.0,
+                "unit_weight": 18.0,
+                "friction_angle": 30.0,
+                "cohesion": 0.0,
+                "soil_type": "sand",
+            }
+        ],
+        "supports": [
+            {"depth": 2.0, "support_type": "strut", "spacing": 3.0},
+            {"depth": 6.0, "support_type": "strut", "spacing": 3.0},
+        ],
+        "surcharge": 10.0,
+    },
+}
+
+SOE_CANTILEVER_SAND = {
+    "description": "Cantilever excavation wall in sand",
+    "params": {
+        "excavation_depth": 3.0,
+        "layers": [
+            {
+                "thickness": 15.0,
+                "unit_weight": 18.0,
+                "friction_angle": 30.0,
+                "cohesion": 0.0,
+                "soil_type": "sand",
+            }
+        ],
+    },
+}
+
+
+# ============================================================================
 # Slope Stability Scenarios
 # ============================================================================
 

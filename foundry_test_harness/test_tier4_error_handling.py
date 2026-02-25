@@ -28,6 +28,7 @@ from foundry.wave_equation_agent_foundry import wave_equation_agent
 from foundry.pile_group_agent_foundry import pile_group_agent
 from foundry.downdrag_agent_foundry import downdrag_agent
 from foundry.pystra_agent_foundry import pystra_agent
+from foundry.soe_agent_foundry import soe_agent
 
 H = FoundryAgentHarness()
 
@@ -47,6 +48,7 @@ ALL_AGENTS = [
     pile_group_agent,
     downdrag_agent,
     pystra_agent,
+    soe_agent,
 ]
 
 

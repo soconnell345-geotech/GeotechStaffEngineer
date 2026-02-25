@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-30 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + geolysis agent + pystra agent + pydiggs agent + DM7 equations + trial_agent (Claude API tool_use integration).
+31 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + geolysis agent + pystra agent + pydiggs agent + DM7 equations + trial_agent (Claude API tool_use integration).
 
 ## Architecture Patterns
 
@@ -21,9 +21,9 @@ Key conventions:
 - **Dict-based I/O** for LLM agents: analyze_*() returns dataclass, .to_dict() for JSON
 - **No cross-module imports** between analysis modules (geotech_common is the exception)
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
-- **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 29 + 14 = 43 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
+- **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 30 + 14 = 44 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (1735 module + 121 harness + 2810 ref = 4666 tests)
+## Module Inventory (1846 module + 130 harness + 2810 ref = 4786 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -31,6 +31,7 @@ Key conventions:
 | settlement | 39 | Consolidation & immediate (CSETT) |
 | axial_pile | 55 | Driven pile capacity (Nordlund/Tomlinson/Beta) |
 | sheet_pile | 26 | Cantilever/anchored walls (Rankine/Coulomb) |
+| soe | 111 | Support of excavation (braced/cantilever, stability, anchors) |
 | lateral_pile | 66 | Lateral pile (COM624P, 8 p-y models, FD solver) |
 | pile_group | 72 | Rigid cap groups (6-DOF, Converse-Labarre) |
 | wave_equation | 45 | Smith 1-D wave equation (bearing graph, drivability) |
@@ -56,18 +57,18 @@ Key conventions:
 | pystra_agent | 43 | FORM/SORM/Monte Carlo structural reliability analysis |
 | pydiggs_agent | 31 | DIGGS 2.6 XML schema and dictionary validation |
 
-Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3299 tests), foundry_test_harness (121 tests), trial_agent (100 tests)
+Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3299 tests), foundry_test_harness (130 tests), trial_agent (100 tests)
 
 ## Foundry Test Harness
 
-`foundry_test_harness/` validates the 43 Foundry agent functions via JSON-in/JSON-out:
+`foundry_test_harness/` validates the 44 Foundry agent functions via JSON-in/JSON-out:
 
 | File | Tests | Purpose |
 |------|-------|---------|
-| test_tier1_textbook.py | 58 | Individual functions vs textbook/published answers |
+| test_tier1_textbook.py | 66 | Individual functions vs textbook/published answers |
 | test_tier2_workflows.py | 14 | Multi-function engineering workflows (e.g., classify → SPT → bearing → settlement) |
 | test_tier3_crosscheck.py | 10 | Cross-agent consistency (same problem, different agents) |
-| test_tier4_error_handling.py | 39 | Bad JSON, unknown methods, missing params, invalid values |
+| test_tier4_error_handling.py | 41 | Bad JSON, unknown methods, missing params, invalid values |
 
 Supporting files: `harness.py` (FoundryAgentHarness class), `scenarios.py` (reusable problem definitions)
 
@@ -75,9 +76,9 @@ Run: `pytest foundry_test_harness/ -v`
 
 ## Trial Agent (Claude API Integration)
 
-`trial_agent/` uses the Claude API `tool_use` feature to give Claude direct access to all 43 Foundry agents. The agent receives 3 meta-tools:
+`trial_agent/` uses the Claude API `tool_use` feature to give Claude direct access to all 44 Foundry agents. The agent receives 3 meta-tools:
 
-- `call_agent(agent, method, params)` — Route to any of the 43 Foundry agent functions
+- `call_agent(agent, method, params)` — Route to any of the 44 Foundry agent functions
 - `list_methods(agent, category)` — Discover available methods for an agent
 - `describe_method(agent, method)` — Get parameter details and usage info
 
@@ -86,7 +87,7 @@ Run: `pytest foundry_test_harness/ -v`
 | `__init__.py` | Package init |
 | `__main__.py` | Entry point for `python -m trial_agent` |
 | `cli.py` | CLI interface for interactive queries |
-| `system_prompt.py` | **Primary agent prompt** — the canonical system prompt for all 43 agents |
+| `system_prompt.py` | **Primary agent prompt** — the canonical system prompt for all 44 agents |
 | `agent_registry.py` | Maps agent names to Foundry functions |
 | `tools.py` | Tool definitions for Claude API |
 | `test_run.py` | 10-question trial run |
@@ -102,7 +103,7 @@ Note: Trial agent tests require a valid `ANTHROPIC_API_KEY` and incur API costs.
 1. Read the module's `DESIGN.md` first for theory and conventions
 2. Read `__init__.py` for the public API
 3. Run that module's tests: `pytest module_name/ -v`
-4. Full regression: `pytest bearing_capacity/ settlement/ axial_pile/ sheet_pile/ lateral_pile/validation.py pile_group/ wave_equation/ geotech_common/ drilled_shaft/ seismic_geotech/ retaining_walls/ ground_improvement/ slope_stability/ downdrag/ opensees_agent/ pystrata_agent/ seismic_signals_agent/ liquepy_agent/ pygef_agent/ hvsrpy_agent/ gstools_agent/ ags4_agent/ salib_agent/ pyseismosoil_agent/ swprocess_agent/ geolysis_agent/ pystra_agent/ pydiggs_agent/ foundry_test_harness/ geotech-references/tests/ -q`
+4. Full regression: `pytest bearing_capacity/ settlement/ axial_pile/ sheet_pile/ soe/ lateral_pile/validation.py pile_group/ wave_equation/ geotech_common/ drilled_shaft/ seismic_geotech/ retaining_walls/ ground_improvement/ slope_stability/ downdrag/ opensees_agent/ pystrata_agent/ seismic_signals_agent/ liquepy_agent/ pygef_agent/ hvsrpy_agent/ gstools_agent/ ags4_agent/ salib_agent/ pyseismosoil_agent/ swprocess_agent/ geolysis_agent/ pystra_agent/ pydiggs_agent/ foundry_test_harness/ geotech-references/tests/ -q`
 
 ## Environment
 

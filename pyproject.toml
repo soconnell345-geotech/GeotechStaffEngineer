@@ -79,6 +79,7 @@ include = [
     "settlement*",
     "axial_pile*",
     "sheet_pile*",
+    "soe*",
     "lateral_pile*",
     "pile_group*",
     "wave_equation*",
@@ -124,7 +125,7 @@ calc_package = ["templates/*.html", "templates/*.tex"]
 
 [tool.pytest.ini_options]
 testpaths = [
-    "bearing_capacity", "settlement", "axial_pile", "sheet_pile",
+    "bearing_capacity", "settlement", "axial_pile", "sheet_pile", "soe",
     "lateral_pile", "pile_group", "wave_equation", "drilled_shaft",
     "seismic_geotech", "retaining_walls", "ground_improvement",
     "slope_stability", "downdrag", "geotech_common",
