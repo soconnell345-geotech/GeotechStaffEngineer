@@ -86,7 +86,7 @@ METHODS = {
 
 
 @function
-def pydiggs_list_methods(category: Optional[str] = None) -> list[dict]:
+def pydiggs_list_methods(category: Optional[str] = None) -> str:
     """
     List available pydiggs agent methods.
 
@@ -94,18 +94,18 @@ def pydiggs_list_methods(category: Optional[str] = None) -> list[dict]:
         category: Filter by category (e.g., "Validation"), or None for all
 
     Returns:
-        List of method metadata dictionaries
+        JSON string with list of method metadata dictionaries
     """
     methods = list(METHODS.values())
 
     if category is not None and category != "":
         methods = [m for m in methods if m["category"] == category]
 
-    return methods
+    return json.dumps(methods)
 
 
 @function
-def pydiggs_describe_method(method: str) -> dict:
+def pydiggs_describe_method(method: str) -> str:
     """
     Get detailed documentation for a specific method.
 
@@ -113,12 +113,12 @@ def pydiggs_describe_method(method: str) -> dict:
         method: Method name (e.g., "validate_schema")
 
     Returns:
-        Method metadata dictionary, or error dict if method not found
+        JSON string with method metadata, or error if method not found
     """
     if method not in METHODS:
-        return {"error": f"Unknown method: {method}"}
+        return json.dumps({"error": f"Unknown method: {method}"})
 
-    return METHODS[method]
+    return json.dumps(METHODS[method])
 
 
 @function

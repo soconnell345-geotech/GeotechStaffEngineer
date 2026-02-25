@@ -381,7 +381,7 @@ class TestFoundryMetadata:
         """Test listing all methods."""
         from foundry.pydiggs_agent_foundry import pydiggs_list_methods
 
-        methods = pydiggs_list_methods()
+        methods = json.loads(pydiggs_list_methods())
         assert isinstance(methods, list)
         assert len(methods) == 2
 
@@ -393,24 +393,24 @@ class TestFoundryMetadata:
         """Test listing methods by category."""
         from foundry.pydiggs_agent_foundry import pydiggs_list_methods
 
-        methods = pydiggs_list_methods(category="Validation")
+        methods = json.loads(pydiggs_list_methods(category="Validation"))
         assert len(methods) == 2
 
-        methods = pydiggs_list_methods(category="Other")
+        methods = json.loads(pydiggs_list_methods(category="Other"))
         assert len(methods) == 0
 
     def test_list_methods_invalid_category(self):
         """Test listing methods with unknown category returns empty."""
         from foundry.pydiggs_agent_foundry import pydiggs_list_methods
 
-        methods = pydiggs_list_methods(category="NonExistent")
+        methods = json.loads(pydiggs_list_methods(category="NonExistent"))
         assert methods == []
 
     def test_describe_validate_schema(self):
         """Test describing validate_schema method."""
         from foundry.pydiggs_agent_foundry import pydiggs_describe_method
 
-        desc = pydiggs_describe_method("validate_schema")
+        desc = json.loads(pydiggs_describe_method("validate_schema"))
         assert desc["name"] == "validate_schema"
         assert desc["category"] == "Validation"
         assert "description" in desc
@@ -421,7 +421,7 @@ class TestFoundryMetadata:
         """Test describing validate_dictionary method."""
         from foundry.pydiggs_agent_foundry import pydiggs_describe_method
 
-        desc = pydiggs_describe_method("validate_dictionary")
+        desc = json.loads(pydiggs_describe_method("validate_dictionary"))
         assert desc["name"] == "validate_dictionary"
         assert desc["category"] == "Validation"
 
@@ -429,7 +429,7 @@ class TestFoundryMetadata:
         """Test describing unknown method returns error."""
         from foundry.pydiggs_agent_foundry import pydiggs_describe_method
 
-        desc = pydiggs_describe_method("unknown_method")
+        desc = json.loads(pydiggs_describe_method("unknown_method"))
         assert "error" in desc
 
     def test_agent_invalid_json(self):

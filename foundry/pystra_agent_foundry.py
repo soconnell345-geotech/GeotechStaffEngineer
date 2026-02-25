@@ -23,7 +23,7 @@ except ImportError:
 
 
 @function
-def pystra_list_methods(category: Optional[str] = None) -> list:
+def pystra_list_methods(category: Optional[str] = None) -> str:
     """
     List all available pystra agent methods.
 
@@ -31,8 +31,7 @@ def pystra_list_methods(category: Optional[str] = None) -> list:
         category: Optional category filter (e.g., "Reliability")
 
     Returns:
-        List of dicts with method metadata:
-        [{"name": str, "category": str, "description": str}, ...]
+        JSON string with list of method metadata dicts.
     """
     methods = [
         {
@@ -67,11 +66,11 @@ def pystra_list_methods(category: Optional[str] = None) -> list:
     if category:
         methods = [m for m in methods if m["category"].lower() == category.lower()]
 
-    return methods
+    return json.dumps(methods)
 
 
 @function
-def pystra_describe_method(method: str) -> dict:
+def pystra_describe_method(method: str) -> str:
     """
     Get detailed metadata for a specific method.
 
@@ -198,13 +197,13 @@ def pystra_describe_method(method: str) -> dict:
 
     if method not in descriptions:
         available = ", ".join(descriptions.keys())
-        raise ValueError(f"Unknown method '{method}'. Available: {available}")
+        return json.dumps({"error": f"Unknown method '{method}'. Available: {available}"})
 
-    return descriptions[method]
+    return json.dumps(descriptions[method])
 
 
 @function
-def pystra_agent(method: str, params_json: str) -> dict:
+def pystra_agent(method: str, params_json: str) -> str:
     """
     Execute a pystra reliability analysis method.
 
@@ -230,22 +229,22 @@ def pystra_agent(method: str, params_json: str) -> dict:
     try:
         params = json.loads(params_json)
     except json.JSONDecodeError as e:
-        return {"error": f"Invalid JSON: {str(e)}"}
+        return json.dumps({"error": f"Invalid JSON: {str(e)}"})
 
     # Validate method name
     valid_methods = {"form_analysis", "sorm_analysis", "monte_carlo_analysis"}
     if method not in valid_methods:
-        return {"error": f"Unknown method '{method}'. Valid: {', '.join(valid_methods)}"}
+        return json.dumps({"error": f"Unknown method '{method}'. Valid: {', '.join(valid_methods)}"})
 
     # Check if pystra is available
     from pystra_agent import has_pystra
     if not has_pystra():
-        return {
+        return json.dumps({
             "error": (
                 "pystra is not installed. Install via: pip install pystra. "
                 "Note: pystra requires numpy and scipy."
             )
-        }
+        })
 
     # Import analysis functions (only after confirming pystra is available)
     from pystra_agent import analyze_form, analyze_sorm, analyze_monte_carlo
@@ -256,9 +255,9 @@ def pystra_agent(method: str, params_json: str) -> dict:
     correlation = params.get("correlation")
 
     if not variables:
-        return {"error": "Missing required parameter 'variables'"}
+        return json.dumps({"error": "Missing required parameter 'variables'"})
     if not limit_state:
-        return {"error": "Missing required parameter 'limit_state'"}
+        return json.dumps({"error": "Missing required parameter 'limit_state'"})
 
     # Execute requested method
     try:
@@ -285,11 +284,11 @@ def pystra_agent(method: str, params_json: str) -> dict:
                 correlation=correlation,
             )
 
-        # Convert result to dict and return
-        return result.to_dict()
+        # Convert result to dict and return as JSON
+        return json.dumps(result.to_dict(), default=str)
 
     except Exception as e:
-        return {"error": f"{method} failed: {str(e)}"}
+        return json.dumps({"error": f"{method} failed: {str(e)}"})
 
 
 # ============================================================================

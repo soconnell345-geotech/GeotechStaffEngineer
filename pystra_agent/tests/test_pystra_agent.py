@@ -328,7 +328,7 @@ class TestFoundryMetadata:
     def test_list_methods_all(self, foundry_agent):
         """list_methods() should return all methods."""
         list_methods, _, _ = foundry_agent
-        methods = list_methods()
+        methods = json.loads(list_methods())
         assert isinstance(methods, list)
         assert len(methods) == 3
         names = [m["name"] for m in methods]
@@ -339,13 +339,13 @@ class TestFoundryMetadata:
     def test_list_methods_by_category(self, foundry_agent):
         """list_methods(category) should filter by category."""
         list_methods, _, _ = foundry_agent
-        methods = list_methods(category="Reliability")
+        methods = json.loads(list_methods(category="Reliability"))
         assert len(methods) == 3
 
     def test_describe_form_analysis(self, foundry_agent):
         """describe_method('form_analysis') should return metadata."""
         _, describe_method, _ = foundry_agent
-        desc = describe_method("form_analysis")
+        desc = json.loads(describe_method("form_analysis"))
         assert isinstance(desc, dict)
         assert desc["name"] == "form_analysis"
         assert "FORM" in desc["description"] or "First Order" in desc["description"]
@@ -354,14 +354,14 @@ class TestFoundryMetadata:
     def test_describe_sorm_analysis(self, foundry_agent):
         """describe_method('sorm_analysis') should return metadata."""
         _, describe_method, _ = foundry_agent
-        desc = describe_method("sorm_analysis")
+        desc = json.loads(describe_method("sorm_analysis"))
         assert desc["name"] == "sorm_analysis"
         assert "SORM" in desc["description"] or "Second Order" in desc["description"]
 
     def test_describe_monte_carlo_analysis(self, foundry_agent):
         """describe_method('monte_carlo_analysis') should return metadata."""
         _, describe_method, _ = foundry_agent
-        desc = describe_method("monte_carlo_analysis")
+        desc = json.loads(describe_method("monte_carlo_analysis"))
         assert desc["name"] == "monte_carlo_analysis"
         assert "Monte Carlo" in desc["description"]
         assert "n_samples" in desc["parameters"]
@@ -369,7 +369,7 @@ class TestFoundryMetadata:
     def test_agent_invalid_json(self, foundry_agent):
         """Agent should handle invalid JSON gracefully."""
         _, _, agent = foundry_agent
-        result = agent("form_analysis", "not valid json")
+        result = json.loads(agent("form_analysis", "not valid json"))
         assert "error" in result
 
     def test_agent_unknown_method(self, foundry_agent):
@@ -379,7 +379,7 @@ class TestFoundryMetadata:
             "variables": [{"name": "R", "dist": "normal", "mean": 100, "stdv": 10}],
             "limit_state": "R",
         })
-        result = agent("unknown_method", params)
+        result = json.loads(agent("unknown_method", params))
         assert "error" in result
 
 
@@ -545,7 +545,7 @@ class TestFoundryIntegration:
             ],
             "limit_state": "R - S",
         }
-        result = agent("form_analysis", json.dumps(params))
+        result = json.loads(agent("form_analysis", json.dumps(params)))
 
         assert "error" not in result
         assert "beta" in result
@@ -564,7 +564,7 @@ class TestFoundryIntegration:
             "limit_state": "R - S",
             "n_samples": 10000,
         }
-        result = agent("monte_carlo_analysis", json.dumps(params))
+        result = json.loads(agent("monte_carlo_analysis", json.dumps(params)))
 
         assert "error" not in result
         assert "beta" in result
