@@ -89,7 +89,7 @@ _AGENT_SPECS = {
         "brief": "90 correlations: phase relations, SPT/CPT, earth pressure, etc.",
     },
     "dm7": {
-        "module": "dm7_agent_foundry",
+        "module": "agents.dm7_agent",
         "funcs": ("dm7_agent", "dm7_list_methods", "dm7_describe_method"),
         "brief": "382 NAVFAC DM7 equations (UFC 3-220-10 and 3-220-20)",
     },
