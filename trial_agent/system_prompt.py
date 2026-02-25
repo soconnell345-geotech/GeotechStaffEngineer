@@ -1,7 +1,7 @@
 """
 System prompt for the Geotech Staff Engineer agent.
 
-Extends the original geotech_modules_system_prompt.txt to cover all 30 agents
+Extends the original geotech_modules_system_prompt.txt to cover all 43 agents
 and describe the 3 meta-tool interface (call_agent, list_methods, describe_method).
 """
 

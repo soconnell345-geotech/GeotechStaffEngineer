@@ -86,7 +86,7 @@ Run: `pytest foundry_test_harness/ -v`
 | `__init__.py` | Package init |
 | `__main__.py` | Entry point for `python -m trial_agent` |
 | `cli.py` | CLI interface for interactive queries |
-| `system_prompt.py` | Engineering system prompt for Claude |
+| `system_prompt.py` | **Primary agent prompt** — the canonical system prompt for all 43 agents |
 | `agent_registry.py` | Maps agent names to Foundry functions |
 | `tools.py` | Tool definitions for Claude API |
 | `test_run.py` | 10-question trial run |
