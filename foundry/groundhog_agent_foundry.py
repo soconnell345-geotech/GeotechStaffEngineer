@@ -22,259 +22,223 @@ except ImportError:
         fn.__wrapped__ = fn
         return fn
 
-# --- Phase Relations ---
-from groundhog.siteinvestigation.classification.phaserelations import (
-    voidratio_porosity,
-    porosity_voidratio,
-    saturation_watercontent,
-    bulkunitweight,
-    dryunitweight_watercontent,
-    voidratio_drydensity,
-    bulkunitweight_dryunitweight,
-    relative_density,
-    voidratio_bulkunitweight,
-    unitweight_watercontent_saturated,
-    density_unitweight,
-    unitweight_density,
-    watercontent_voidratio,
-    voidratio_watercontent,
-)
-
-# --- SPT Correlations ---
-from groundhog.siteinvestigation.insitutests.spt_correlations import (
-    overburdencorrection_spt_liaowhitman,
-    spt_N60_correction,
-    relativedensity_spt_kulhawymayne,
-    undrainedshearstrength_spt_salgado,
-    frictionangle_spt_kulhawymayne,
-    relativedensityclass_spt_terzaghipeck,
-    overburdencorrection_spt_ISO,
-    frictionangle_spt_PHT,
-    youngsmodulus_spt_AASHTO,
-    undrainedshearstrengthclass_spt_terzaghipeck,
-)
-
-# --- CPT Correlations ---
-from groundhog.siteinvestigation.insitutests.pcpt_correlations import (
-    pcpt_normalisations,
-    ic_soilclass_robertson,
-    behaviourindex_pcpt_robertsonwride,
-    gmax_sand_rixstokoe,
-    gmax_clay_maynerix,
-    relativedensity_ncsand_baldi,
-    relativedensity_ocsand_baldi,
-    relativedensity_sand_jamiolkowski,
-    frictionangle_sand_kulhawymayne,
-    undrainedshearstrength_clay_radlunne,
-    ocr_cpt_lunne,
-    sensitivity_frictionratio_lunne,
-    unitweight_mayne,
-    vs_ic_robertsoncabal,
-    k0_sand_mayne,
-    constrainedmodulus_pcpt_robertson,
-)
-
-# --- Bearing Capacity ---
-from groundhog.shallowfoundations.capacity import (
-    nq_frictionangle_sand,
-    ngamma_frictionangle_vesic,
-    ngamma_frictionangle_meyerhof,
-    ngamma_frictionangle_davisbooker,
-    verticalcapacity_undrained_api,
-    verticalcapacity_drained_api,
-    slidingcapacity_undrained_api,
-    slidingcapacity_drained_api,
-    effectivearea_rectangle_api,
-    effectivearea_circle_api,
-)
-
-# --- Consolidation & Settlement ---
-from groundhog.consolidation.dissipation.onedimensionalconsolidation import (
-    consolidation_degree,
-)
-from groundhog.shallowfoundations.settlement import (
-    primaryconsolidationsettlement_nc,
-    primaryconsolidationsettlement_oc,
-    consolidationsettlement_mv,
-)
-from groundhog.consolidation.groundwaterflow.pumpingtests import (
-    hydraulicconductivity_unconfinedaquifer,
-)
-
-# --- Stress Distribution ---
-from groundhog.shallowfoundations.stressdistribution import (
-    stresses_pointload,
-    stresses_stripload,
-    stresses_circle,
-    stresses_rectangle,
-)
-
-# --- Earth Pressure ---
-from groundhog.excavations.basic import (
-    earthpressurecoefficients_frictionangle,
-    earthpressurecoefficients_poncelet,
-    earthpressurecoefficients_rankine,
-)
-
-# --- Soil Classification ---
-from groundhog.siteinvestigation.classification.categories import (
-    relativedensity_categories,
-    su_categories,
-    uscs_categories,
-    samplequality_voidratio_lunne,
-)
-
-# --- Deep Foundations ---
-from groundhog.deepfoundations.axialcapacity.skinfriction import (
-    API_unit_shaft_friction_sand_rp2geo,
-    API_unit_shaft_friction_clay,
-    unitskinfriction_sand_almhamre,
-    unitskinfriction_clay_almhamre,
-)
-from groundhog.deepfoundations.axialcapacity.endbearing import (
-    API_unit_end_bearing_clay,
-    API_unit_end_bearing_sand_rp2geo,
-    unitendbearing_sand_almhamre,
-    unitendbearing_clay_almhamre,
-)
-
-# --- Soil Dynamics & Liquefaction ---
-from groundhog.soildynamics.soilproperties import (
-    modulusreduction_plasticity_ishibashi,
-    gmax_shearwavevelocity,
-    dampingratio_sandgravel_seed,
-)
-from groundhog.soildynamics.liquefaction import (
-    cyclicstressratio_moss,
-    liquefaction_robertsonfear,
-    cyclicstressratio_youd,
-)
-
-# --- Soil Correlations ---
-from groundhog.siteinvestigation.correlations.cohesionless import (
-    gmax_sand_hardinblack,
-    permeability_d10_hazen,
-    hssmall_parameters_sand,
-    stress_dilatancy_bolton,
-)
-from groundhog.siteinvestigation.correlations.cohesive import (
-    compressionindex_watercontent_koppula,
-    frictionangle_plasticityindex,
-    cv_liquidlimit_usnavy,
-    gmax_plasticityocr_andersen,
-    k0_plasticity_kenney,
-)
-from groundhog.siteinvestigation.correlations.general import (
-    k0_frictionangle_mesri,
-)
-
-
 # ---------------------------------------------------------------------------
-# Method registry: maps method name -> groundhog function
+# Lazy loading: groundhog imports are deferred to avoid triggering the
+# groundhog -> pyproj import chain at module-scan time (Foundry's
+# discoverPythonFunctions imports every .py file to find @function decorators).
 # ---------------------------------------------------------------------------
-METHOD_REGISTRY = {
-    # Phase Relations
-    "voidratio_from_porosity": voidratio_porosity,
-    "porosity_from_voidratio": porosity_voidratio,
-    "saturation_from_watercontent": saturation_watercontent,
-    "bulk_unit_weight": bulkunitweight,
-    "dry_unit_weight": dryunitweight_watercontent,
-    "voidratio_from_dry_density": voidratio_drydensity,
-    "bulk_unit_weight_from_dry": bulkunitweight_dryunitweight,
-    "relative_density": relative_density,
-    "voidratio_from_bulk_unit_weight": voidratio_bulkunitweight,
-    "unit_weight_saturated": unitweight_watercontent_saturated,
-    "density_from_unit_weight": density_unitweight,
-    "unit_weight_from_density": unitweight_density,
-    "watercontent_from_voidratio": watercontent_voidratio,
-    "voidratio_from_watercontent": voidratio_watercontent,
-    # SPT Correlations
-    "spt_overburden_correction_liaowhitman": overburdencorrection_spt_liaowhitman,
-    "spt_N60_correction": spt_N60_correction,
-    "spt_relative_density_kulhawymayne": relativedensity_spt_kulhawymayne,
-    "spt_undrained_shear_strength_salgado": undrainedshearstrength_spt_salgado,
-    "spt_friction_angle_kulhawymayne": frictionangle_spt_kulhawymayne,
-    "spt_relative_density_class": relativedensityclass_spt_terzaghipeck,
-    "spt_overburden_correction_iso": overburdencorrection_spt_ISO,
-    "spt_friction_angle_pht": frictionangle_spt_PHT,
-    "spt_youngs_modulus_aashto": youngsmodulus_spt_AASHTO,
-    "spt_consistency_class": undrainedshearstrengthclass_spt_terzaghipeck,
-    # CPT Correlations
-    "cpt_normalisations": pcpt_normalisations,
-    "cpt_soil_class_robertson": ic_soilclass_robertson,
-    "cpt_behaviour_index": behaviourindex_pcpt_robertsonwride,
-    "cpt_gmax_sand": gmax_sand_rixstokoe,
-    "cpt_gmax_clay": gmax_clay_maynerix,
-    "cpt_relative_density_nc_sand": relativedensity_ncsand_baldi,
-    "cpt_relative_density_oc_sand": relativedensity_ocsand_baldi,
-    "cpt_relative_density_jamiolkowski": relativedensity_sand_jamiolkowski,
-    "cpt_friction_angle_sand": frictionangle_sand_kulhawymayne,
-    "cpt_undrained_shear_strength": undrainedshearstrength_clay_radlunne,
-    "cpt_ocr": ocr_cpt_lunne,
-    "cpt_sensitivity": sensitivity_frictionratio_lunne,
-    "cpt_unit_weight": unitweight_mayne,
-    "cpt_shear_wave_velocity": vs_ic_robertsoncabal,
-    "cpt_k0_sand": k0_sand_mayne,
-    "cpt_constrained_modulus": constrainedmodulus_pcpt_robertson,
-    # Bearing Capacity
-    "bearing_capacity_nq": nq_frictionangle_sand,
-    "bearing_capacity_ngamma_vesic": ngamma_frictionangle_vesic,
-    "bearing_capacity_ngamma_meyerhof": ngamma_frictionangle_meyerhof,
-    "bearing_capacity_ngamma_davisbooker": ngamma_frictionangle_davisbooker,
-    "bearing_capacity_undrained_api": verticalcapacity_undrained_api,
-    "bearing_capacity_drained_api": verticalcapacity_drained_api,
-    "sliding_capacity_undrained_api": slidingcapacity_undrained_api,
-    "sliding_capacity_drained_api": slidingcapacity_drained_api,
-    "effective_area_rectangle": effectivearea_rectangle_api,
-    "effective_area_circle": effectivearea_circle_api,
-    # Consolidation & Settlement
-    "consolidation_degree": consolidation_degree,
-    "primary_consolidation_settlement_nc": primaryconsolidationsettlement_nc,
-    "primary_consolidation_settlement_oc": primaryconsolidationsettlement_oc,
-    "consolidation_settlement_mv": consolidationsettlement_mv,
-    "hydraulic_conductivity_unconfined": hydraulicconductivity_unconfinedaquifer,
-    # Stress Distribution
-    "stress_pointload": stresses_pointload,
-    "stress_stripload": stresses_stripload,
-    "stress_circle": stresses_circle,
-    "stress_rectangle": stresses_rectangle,
-    # Earth Pressure
-    "earth_pressure_basic": earthpressurecoefficients_frictionangle,
-    "earth_pressure_poncelet": earthpressurecoefficients_poncelet,
-    "earth_pressure_rankine": earthpressurecoefficients_rankine,
-    # Soil Classification
-    "relative_density_category": relativedensity_categories,
-    "su_category": su_categories,
-    "uscs_description": uscs_categories,
-    "sample_quality_lunne": samplequality_voidratio_lunne,
-    # Deep Foundations
-    "pile_shaft_friction_api_sand": API_unit_shaft_friction_sand_rp2geo,
-    "pile_shaft_friction_api_clay": API_unit_shaft_friction_clay,
-    "pile_shaft_friction_almhamre_sand": unitskinfriction_sand_almhamre,
-    "pile_shaft_friction_almhamre_clay": unitskinfriction_clay_almhamre,
-    "pile_end_bearing_api_clay": API_unit_end_bearing_clay,
-    "pile_end_bearing_api_sand": API_unit_end_bearing_sand_rp2geo,
-    "pile_end_bearing_almhamre_sand": unitendbearing_sand_almhamre,
-    "pile_end_bearing_almhamre_clay": unitendbearing_clay_almhamre,
-    # Soil Dynamics & Liquefaction
-    "modulus_reduction_ishibashi": modulusreduction_plasticity_ishibashi,
-    "gmax_from_shear_wave_velocity": gmax_shearwavevelocity,
-    "damping_ratio_seed": dampingratio_sandgravel_seed,
-    "cyclic_stress_ratio_moss": cyclicstressratio_moss,
-    "cyclic_stress_ratio_youd": cyclicstressratio_youd,
-    "liquefaction_robertson_fear": liquefaction_robertsonfear,
-    # Soil Correlations
-    "gmax_sand_hardin_black": gmax_sand_hardinblack,
-    "permeability_hazen": permeability_d10_hazen,
-    "hssmall_parameters_sand": hssmall_parameters_sand,
-    "stress_dilatancy_bolton": stress_dilatancy_bolton,
-    "compression_index_koppula": compressionindex_watercontent_koppula,
-    "friction_angle_from_pi": frictionangle_plasticityindex,
-    "cv_from_liquid_limit": cv_liquidlimit_usnavy,
-    "gmax_clay_andersen": gmax_plasticityocr_andersen,
-    "k0_from_plasticity": k0_plasticity_kenney,
-    "k0_from_friction_angle": k0_frictionangle_mesri,
-}
+
+_METHOD_REGISTRY = None  # populated on first call
+
+
+def _load_registry():
+    """Import all groundhog functions and build the method registry.
+
+    Called once on the first groundhog_agent() invocation. All groundhog
+    imports happen here so that Foundry can discover the @function decorators
+    without pulling in the full groundhog dependency tree.
+    """
+    global _METHOD_REGISTRY
+    if _METHOD_REGISTRY is not None:
+        return _METHOD_REGISTRY
+
+    # --- Phase Relations ---
+    from groundhog.siteinvestigation.classification.phaserelations import (
+        voidratio_porosity, porosity_voidratio, saturation_watercontent,
+        bulkunitweight, dryunitweight_watercontent, voidratio_drydensity,
+        bulkunitweight_dryunitweight, relative_density, voidratio_bulkunitweight,
+        unitweight_watercontent_saturated, density_unitweight, unitweight_density,
+        watercontent_voidratio, voidratio_watercontent,
+    )
+    # --- SPT Correlations ---
+    from groundhog.siteinvestigation.insitutests.spt_correlations import (
+        overburdencorrection_spt_liaowhitman, spt_N60_correction,
+        relativedensity_spt_kulhawymayne, undrainedshearstrength_spt_salgado,
+        frictionangle_spt_kulhawymayne, relativedensityclass_spt_terzaghipeck,
+        overburdencorrection_spt_ISO, frictionangle_spt_PHT,
+        youngsmodulus_spt_AASHTO, undrainedshearstrengthclass_spt_terzaghipeck,
+    )
+    # --- CPT Correlations ---
+    from groundhog.siteinvestigation.insitutests.pcpt_correlations import (
+        pcpt_normalisations, ic_soilclass_robertson,
+        behaviourindex_pcpt_robertsonwride, gmax_sand_rixstokoe,
+        gmax_clay_maynerix, relativedensity_ncsand_baldi,
+        relativedensity_ocsand_baldi, relativedensity_sand_jamiolkowski,
+        frictionangle_sand_kulhawymayne, undrainedshearstrength_clay_radlunne,
+        ocr_cpt_lunne, sensitivity_frictionratio_lunne, unitweight_mayne,
+        vs_ic_robertsoncabal, k0_sand_mayne, constrainedmodulus_pcpt_robertson,
+    )
+    # --- Bearing Capacity ---
+    from groundhog.shallowfoundations.capacity import (
+        nq_frictionangle_sand, ngamma_frictionangle_vesic,
+        ngamma_frictionangle_meyerhof, ngamma_frictionangle_davisbooker,
+        verticalcapacity_undrained_api, verticalcapacity_drained_api,
+        slidingcapacity_undrained_api, slidingcapacity_drained_api,
+        effectivearea_rectangle_api, effectivearea_circle_api,
+    )
+    # --- Consolidation & Settlement ---
+    from groundhog.consolidation.dissipation.onedimensionalconsolidation import (
+        consolidation_degree,
+    )
+    from groundhog.shallowfoundations.settlement import (
+        primaryconsolidationsettlement_nc, primaryconsolidationsettlement_oc,
+        consolidationsettlement_mv,
+    )
+    from groundhog.consolidation.groundwaterflow.pumpingtests import (
+        hydraulicconductivity_unconfinedaquifer,
+    )
+    # --- Stress Distribution ---
+    from groundhog.shallowfoundations.stressdistribution import (
+        stresses_pointload, stresses_stripload, stresses_circle,
+        stresses_rectangle,
+    )
+    # --- Earth Pressure ---
+    from groundhog.excavations.basic import (
+        earthpressurecoefficients_frictionangle,
+        earthpressurecoefficients_poncelet,
+        earthpressurecoefficients_rankine,
+    )
+    # --- Soil Classification ---
+    from groundhog.siteinvestigation.classification.categories import (
+        relativedensity_categories, su_categories, uscs_categories,
+        samplequality_voidratio_lunne,
+    )
+    # --- Deep Foundations ---
+    from groundhog.deepfoundations.axialcapacity.skinfriction import (
+        API_unit_shaft_friction_sand_rp2geo, API_unit_shaft_friction_clay,
+        unitskinfriction_sand_almhamre, unitskinfriction_clay_almhamre,
+    )
+    from groundhog.deepfoundations.axialcapacity.endbearing import (
+        API_unit_end_bearing_clay, API_unit_end_bearing_sand_rp2geo,
+        unitendbearing_sand_almhamre, unitendbearing_clay_almhamre,
+    )
+    # --- Soil Dynamics & Liquefaction ---
+    from groundhog.soildynamics.soilproperties import (
+        modulusreduction_plasticity_ishibashi, gmax_shearwavevelocity,
+        dampingratio_sandgravel_seed,
+    )
+    from groundhog.soildynamics.liquefaction import (
+        cyclicstressratio_moss, liquefaction_robertsonfear,
+        cyclicstressratio_youd,
+    )
+    # --- Soil Correlations ---
+    from groundhog.siteinvestigation.correlations.cohesionless import (
+        gmax_sand_hardinblack, permeability_d10_hazen,
+        hssmall_parameters_sand, stress_dilatancy_bolton,
+    )
+    from groundhog.siteinvestigation.correlations.cohesive import (
+        compressionindex_watercontent_koppula, frictionangle_plasticityindex,
+        cv_liquidlimit_usnavy, gmax_plasticityocr_andersen,
+        k0_plasticity_kenney,
+    )
+    from groundhog.siteinvestigation.correlations.general import (
+        k0_frictionangle_mesri,
+    )
+
+    _METHOD_REGISTRY = {
+        # Phase Relations
+        "voidratio_from_porosity": voidratio_porosity,
+        "porosity_from_voidratio": porosity_voidratio,
+        "saturation_from_watercontent": saturation_watercontent,
+        "bulk_unit_weight": bulkunitweight,
+        "dry_unit_weight": dryunitweight_watercontent,
+        "voidratio_from_dry_density": voidratio_drydensity,
+        "bulk_unit_weight_from_dry": bulkunitweight_dryunitweight,
+        "relative_density": relative_density,
+        "voidratio_from_bulk_unit_weight": voidratio_bulkunitweight,
+        "unit_weight_saturated": unitweight_watercontent_saturated,
+        "density_from_unit_weight": density_unitweight,
+        "unit_weight_from_density": unitweight_density,
+        "watercontent_from_voidratio": watercontent_voidratio,
+        "voidratio_from_watercontent": voidratio_watercontent,
+        # SPT Correlations
+        "spt_overburden_correction_liaowhitman": overburdencorrection_spt_liaowhitman,
+        "spt_N60_correction": spt_N60_correction,
+        "spt_relative_density_kulhawymayne": relativedensity_spt_kulhawymayne,
+        "spt_undrained_shear_strength_salgado": undrainedshearstrength_spt_salgado,
+        "spt_friction_angle_kulhawymayne": frictionangle_spt_kulhawymayne,
+        "spt_relative_density_class": relativedensityclass_spt_terzaghipeck,
+        "spt_overburden_correction_iso": overburdencorrection_spt_ISO,
+        "spt_friction_angle_pht": frictionangle_spt_PHT,
+        "spt_youngs_modulus_aashto": youngsmodulus_spt_AASHTO,
+        "spt_consistency_class": undrainedshearstrengthclass_spt_terzaghipeck,
+        # CPT Correlations
+        "cpt_normalisations": pcpt_normalisations,
+        "cpt_soil_class_robertson": ic_soilclass_robertson,
+        "cpt_behaviour_index": behaviourindex_pcpt_robertsonwride,
+        "cpt_gmax_sand": gmax_sand_rixstokoe,
+        "cpt_gmax_clay": gmax_clay_maynerix,
+        "cpt_relative_density_nc_sand": relativedensity_ncsand_baldi,
+        "cpt_relative_density_oc_sand": relativedensity_ocsand_baldi,
+        "cpt_relative_density_jamiolkowski": relativedensity_sand_jamiolkowski,
+        "cpt_friction_angle_sand": frictionangle_sand_kulhawymayne,
+        "cpt_undrained_shear_strength": undrainedshearstrength_clay_radlunne,
+        "cpt_ocr": ocr_cpt_lunne,
+        "cpt_sensitivity": sensitivity_frictionratio_lunne,
+        "cpt_unit_weight": unitweight_mayne,
+        "cpt_shear_wave_velocity": vs_ic_robertsoncabal,
+        "cpt_k0_sand": k0_sand_mayne,
+        "cpt_constrained_modulus": constrainedmodulus_pcpt_robertson,
+        # Bearing Capacity
+        "bearing_capacity_nq": nq_frictionangle_sand,
+        "bearing_capacity_ngamma_vesic": ngamma_frictionangle_vesic,
+        "bearing_capacity_ngamma_meyerhof": ngamma_frictionangle_meyerhof,
+        "bearing_capacity_ngamma_davisbooker": ngamma_frictionangle_davisbooker,
+        "bearing_capacity_undrained_api": verticalcapacity_undrained_api,
+        "bearing_capacity_drained_api": verticalcapacity_drained_api,
+        "sliding_capacity_undrained_api": slidingcapacity_undrained_api,
+        "sliding_capacity_drained_api": slidingcapacity_drained_api,
+        "effective_area_rectangle": effectivearea_rectangle_api,
+        "effective_area_circle": effectivearea_circle_api,
+        # Consolidation & Settlement
+        "consolidation_degree": consolidation_degree,
+        "primary_consolidation_settlement_nc": primaryconsolidationsettlement_nc,
+        "primary_consolidation_settlement_oc": primaryconsolidationsettlement_oc,
+        "consolidation_settlement_mv": consolidationsettlement_mv,
+        "hydraulic_conductivity_unconfined": hydraulicconductivity_unconfinedaquifer,
+        # Stress Distribution
+        "stress_pointload": stresses_pointload,
+        "stress_stripload": stresses_stripload,
+        "stress_circle": stresses_circle,
+        "stress_rectangle": stresses_rectangle,
+        # Earth Pressure
+        "earth_pressure_basic": earthpressurecoefficients_frictionangle,
+        "earth_pressure_poncelet": earthpressurecoefficients_poncelet,
+        "earth_pressure_rankine": earthpressurecoefficients_rankine,
+        # Soil Classification
+        "relative_density_category": relativedensity_categories,
+        "su_category": su_categories,
+        "uscs_description": uscs_categories,
+        "sample_quality_lunne": samplequality_voidratio_lunne,
+        # Deep Foundations
+        "pile_shaft_friction_api_sand": API_unit_shaft_friction_sand_rp2geo,
+        "pile_shaft_friction_api_clay": API_unit_shaft_friction_clay,
+        "pile_shaft_friction_almhamre_sand": unitskinfriction_sand_almhamre,
+        "pile_shaft_friction_almhamre_clay": unitskinfriction_clay_almhamre,
+        "pile_end_bearing_api_clay": API_unit_end_bearing_clay,
+        "pile_end_bearing_api_sand": API_unit_end_bearing_sand_rp2geo,
+        "pile_end_bearing_almhamre_sand": unitendbearing_sand_almhamre,
+        "pile_end_bearing_almhamre_clay": unitendbearing_clay_almhamre,
+        # Soil Dynamics & Liquefaction
+        "modulus_reduction_ishibashi": modulusreduction_plasticity_ishibashi,
+        "gmax_from_shear_wave_velocity": gmax_shearwavevelocity,
+        "damping_ratio_seed": dampingratio_sandgravel_seed,
+        "cyclic_stress_ratio_moss": cyclicstressratio_moss,
+        "cyclic_stress_ratio_youd": cyclicstressratio_youd,
+        "liquefaction_robertson_fear": liquefaction_robertsonfear,
+        # Soil Correlations
+        "gmax_sand_hardin_black": gmax_sand_hardinblack,
+        "permeability_hazen": permeability_d10_hazen,
+        "hssmall_parameters_sand": hssmall_parameters_sand,
+        "stress_dilatancy_bolton": stress_dilatancy_bolton,
+        "compression_index_koppula": compressionindex_watercontent_koppula,
+        "friction_angle_from_pi": frictionangle_plasticityindex,
+        "cv_from_liquid_limit": cv_liquidlimit_usnavy,
+        "gmax_clay_andersen": gmax_plasticityocr_andersen,
+        "k0_from_plasticity": k0_plasticity_kenney,
+        "k0_from_friction_angle": k0_frictionangle_mesri,
+    }
+    return _METHOD_REGISTRY
 
 
 # ---------------------------------------------------------------------------
@@ -1148,11 +1112,12 @@ def groundhog_agent(method: str, parameters_json: str) -> str:
     except (json.JSONDecodeError, TypeError) as e:
         return json.dumps({"error": f"Invalid parameters_json: {str(e)}"})
 
-    if method not in METHOD_REGISTRY:
-        available = ", ".join(sorted(METHOD_REGISTRY.keys()))
+    registry = _load_registry()
+    if method not in registry:
+        available = ", ".join(sorted(registry.keys()))
         return json.dumps({"error": f"Unknown method '{method}'. Available methods: {available}"})
 
-    func = METHOD_REGISTRY[method]
+    func = registry[method]
 
     try:
         raw_result = func(**parameters)
