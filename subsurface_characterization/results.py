@@ -61,16 +61,29 @@ class PlotResult:
         lines.append("")
         return "\n".join(lines)
 
-    def to_dict(self) -> dict:
-        """Convert to JSON-serializable dict (includes HTML for transport)."""
+    def to_dict(self, output_format: str = "html") -> dict:
+        """Convert to JSON-serializable dict.
+
+        Parameters
+        ----------
+        output_format : str
+            'html' (default): full self-contained HTML in "html" key (~MB).
+            'json': compact Plotly JSON in "figure_json" key (~KB).
+            'metadata': no figure data, just metadata.
+        """
         d = {
             "plot_type": self.plot_type,
             "title": self.title,
             "n_investigations": self.n_investigations,
             "n_data_points": self.n_data_points,
             "parameters": self.parameters,
-            "html": self.to_html(),
         }
+        if output_format == "html":
+            d["html"] = self.to_html()
+        elif output_format == "json" and self.figure is not None:
+            d["figure_json"] = self.figure.to_json()
+        # 'metadata' omits figure data entirely
+
         if self.trend_results:
             d["trend_results"] = [
                 t.to_dict() if hasattr(t, "to_dict") else str(t)

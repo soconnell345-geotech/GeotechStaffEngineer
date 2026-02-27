@@ -1,0 +1,55 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SUBMODULE_PAT }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install core package
+        run: |
+          pip install --upgrade pip
+          pip install -e .
+          pip install -e geotech-references/
+          pip install pytest
+
+      - name: Install optional dependencies
+        # Install what we can; some packages may fail on certain platforms.
+        # Agent tests skip gracefully when their package is missing.
+        run: |
+          pip install matplotlib plotly jinja2 || true
+          pip install groundhog || true
+          pip install pystrata || true
+          pip install eqsig pyrotd || true
+          pip install liquepy || true
+          pip install pygef || true
+          pip install hvsrpy || true
+          pip install gstools || true
+          pip install python-ags4 || true
+          pip install SALib || true
+          pip install PySeismoSoil || true
+          pip install swprocess || true
+          pip install geolysis || true
+          pip install pystra || true
+          pip install pydiggs || true
+
+      - name: Run tests
+        run: pytest -q --tb=short

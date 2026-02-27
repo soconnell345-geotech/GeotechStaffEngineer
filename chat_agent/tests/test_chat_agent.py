@@ -20,6 +20,7 @@ from chat_agent.agent import (
     dispatch_tool,
     _truncate,
 )
+from trial_agent.agent_registry import AGENT_NAMES
 
 
 # ===================================================================
@@ -257,16 +258,17 @@ class TestAgentLoop:
 
     def test_single_tool_call_round(self):
         """Model calls one tool, then gives final answer."""
+        n = len(AGENT_NAMES)
         chat_fn = make_scripted_chat([
             # Round 1: list_agents tool call
             'Thought: Let me see what agents are available.\n\n'
             '<tool_call>\n{"tool_name": "list_agents"}\n</tool_call>',
             # Round 2: final answer (no tool call)
-            'There are 45 agents available covering geotechnical engineering.',
+            f'There are {n} agents available covering geotechnical engineering.',
         ])
         agent = GeotechChatAgent(chat_fn=chat_fn)
         result = agent.ask("What agents are available?")
-        assert "45" in result.answer
+        assert str(n) in result.answer
         assert result.rounds == 2
         assert len(result.tool_calls) == 1
         assert result.tool_calls[0]["tool_name"] == "list_agents"
@@ -426,7 +428,7 @@ class TestDispatch:
         result = json.loads(result_str)
         assert "bearing_capacity" in result
         assert "settlement" in result
-        assert len(result) == 45
+        assert len(result) == len(AGENT_NAMES)
 
     def test_dispatch_list_methods_real(self):
         """Test dispatch with real agent_registry for list_methods."""

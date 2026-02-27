@@ -105,6 +105,7 @@ include = [
     "geolysis_agent*",
     "pystra_agent*",
     "pydiggs_agent*",
+    "subsurface_characterization*",
 ]
 exclude = [
     "*.tests",
@@ -124,6 +125,7 @@ py-modules = ["groundhog_agent"]
 calc_package = ["templates/*.html", "templates/*.tex"]
 
 [tool.pytest.ini_options]
+python_files = ["test_*.py", "validation.py"]
 testpaths = [
     "bearing_capacity", "settlement", "axial_pile", "sheet_pile", "soe",
     "lateral_pile", "pile_group", "wave_equation", "drilled_shaft",
@@ -133,5 +135,8 @@ testpaths = [
     "liquepy_agent", "pygef_agent", "hvsrpy_agent", "gstools_agent",
     "ags4_agent", "salib_agent", "pyseismosoil_agent", "swprocess_agent",
     "geolysis_agent", "pystra_agent", "pydiggs_agent",
+    "subsurface_characterization",
+    "chat_agent",
     "foundry_test_harness",
+    "geotech-references/tests",
 ]

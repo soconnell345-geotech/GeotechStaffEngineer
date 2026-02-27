@@ -80,6 +80,10 @@ from foundry.soe_agent_foundry import (
     soe_agent, soe_list_methods,
     soe_describe_method,
 )
+from foundry.subsurface_char_agent_foundry import (
+    subsurface_char_agent, subsurface_char_list_methods,
+    subsurface_char_describe_method,
+)
 
 H = FoundryAgentHarness()
 
@@ -747,6 +751,113 @@ class TestSOE:
 # Metadata / Discovery
 # ============================================================================
 
+# ============================================================================
+# Subsurface Characterization
+# ============================================================================
+
+class TestSubsurfaceChar:
+    """Subsurface characterization agent: data loading, DIGGS parsing, trend analysis."""
+
+    def test_load_site_basic(self):
+        """Load a site from dict through the JSON agent path."""
+        site_data = {
+            "project_name": "Harness Test",
+            "investigations": [
+                {
+                    "investigation_id": "B-1",
+                    "investigation_type": "boring",
+                    "x": 100, "y": 200,
+                    "elevation_m": 10,
+                    "total_depth_m": 15,
+                    "measurements": [
+                        {"depth_m": 1.5, "parameter": "N_spt", "value": 8},
+                        {"depth_m": 3.0, "parameter": "N_spt", "value": 12},
+                        {"depth_m": 6.0, "parameter": "N_spt", "value": 20},
+                    ],
+                    "lithology": [
+                        {"top_depth_m": 0, "bottom_depth_m": 5, "description": "Fill", "uscs": "SM"},
+                        {"top_depth_m": 5, "bottom_depth_m": 15, "description": "Sand", "uscs": "SP"},
+                    ],
+                },
+            ],
+        }
+        result = H.call(subsurface_char_agent, "load_site", {"data": site_data})
+        assert result["n_investigations"] == 1
+        assert result["project_name"] == "Harness Test"
+
+    def test_compute_trend_from_arrays(self):
+        """Compute linear trend from raw depth/value arrays."""
+        result = H.call(subsurface_char_agent, "compute_trend", {
+            "depths": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "values": [5, 8, 10, 14, 16, 19, 22, 25, 27, 30],
+            "trend_type": "linear",
+            "parameter": "N_spt",
+        })
+        assert result["n_points"] == 10
+        assert result["r_squared"] > 0.95
+        assert result["slope"] > 0
+
+    def test_parse_diggs_xml(self):
+        """Parse a minimal DIGGS XML through the agent path."""
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Diggs xmlns="http://diggsml.org/schemas/2.6"
+       xmlns:gml="http://www.opengis.net/gml/3.2"
+       xmlns:xlink="http://www.w3.org/1999/xlink">
+  <Project><gml:name>Harness Test</gml:name></Project>
+  <Borehole gml:id="BH1">
+    <gml:name>B-1</gml:name>
+    <referencePoint><gml:Point><gml:pos>100.0 200.0 10.0</gml:pos></gml:Point></referencePoint>
+    <totalMeasuredDepth>15.0</totalMeasuredDepth>
+  </Borehole>
+  <DrivenPenetrationTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>3.0</depth>
+    <blowCount>12</blowCount>
+  </DrivenPenetrationTest>
+</Diggs>"""
+        result = H.call(subsurface_char_agent, "parse_diggs", {"content": xml})
+        assert result["n_investigations"] == 1
+        assert result["n_measurements"] == 1
+        assert result["project_name"] == "Harness Test"
+
+    def test_plot_parameter_returns_html(self):
+        """Plot method returns dict with 'html' key containing Plotly HTML."""
+        site_data = {
+            "project_name": "Plot Test",
+            "investigations": [
+                {
+                    "investigation_id": "B-1",
+                    "investigation_type": "boring",
+                    "x": 100, "y": 200,
+                    "elevation_m": 10,
+                    "total_depth_m": 15,
+                    "measurements": [
+                        {"depth_m": 1.5, "parameter": "N_spt", "value": 8},
+                        {"depth_m": 4.5, "parameter": "N_spt", "value": 15},
+                        {"depth_m": 9.0, "parameter": "N_spt", "value": 30},
+                    ],
+                },
+            ],
+        }
+        result = H.call(subsurface_char_agent, "plot_parameter_vs_depth", {
+            "site_data": site_data,
+            "parameter": "N_spt",
+        })
+        assert "html" in result
+        assert "plotly" in result["html"].lower()
+        assert result["n_data_points"] == 3
+
+    def test_unknown_method_error(self):
+        """Unknown method returns error."""
+        with pytest.raises(AgentError, match="Unknown method"):
+            H.call(subsurface_char_agent, "nonexistent_method", {})
+
+    def test_invalid_json_error(self):
+        """Malformed JSON returns error."""
+        result = H.call_raw(subsurface_char_agent, "load_site", "not valid json{{{")
+        assert "error" in result
+
+
 class TestMetadata:
     """Every agent's list_methods and describe_method should work."""
 
@@ -781,6 +892,8 @@ class TestMetadata:
          "form_analysis"),
         (soe_list_methods, soe_describe_method,
          "braced_excavation"),
+        (subsurface_char_list_methods, subsurface_char_describe_method,
+         "parse_diggs"),
     ])
     def test_list_and_describe(self, list_func, describe_func, sample_method):
         """List methods returns categories; describe returns parameters."""

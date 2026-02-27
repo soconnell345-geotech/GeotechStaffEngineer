@@ -1,5 +1,5 @@
 """
-Master registry of all 45 Foundry agents with lazy-loading dispatch.
+Master registry of all Foundry agents with lazy-loading dispatch.
 
 Agents are imported on first use, not at startup, to avoid scipy.optimize
 import hangs on Python 3.14 / scipy 1.17 and to speed up CLI startup.

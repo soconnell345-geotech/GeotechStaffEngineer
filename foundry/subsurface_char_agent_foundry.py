@@ -41,41 +41,46 @@ def _run_load_site(params):
 def _run_plot_parameter_vs_depth(params):
     from subsurface_characterization import load_site_from_dict, plot_parameter_vs_depth
     data = params.pop("site_data", {})
+    output_format = params.pop("output_format", "html")
     site = load_site_from_dict(data)
     result = plot_parameter_vs_depth(site, **params)
-    return result.to_dict()
+    return result.to_dict(output_format=output_format)
 
 
 def _run_plot_atterberg_limits(params):
     from subsurface_characterization import load_site_from_dict, plot_atterberg_limits
     data = params.pop("site_data", {})
+    output_format = params.pop("output_format", "html")
     site = load_site_from_dict(data)
     result = plot_atterberg_limits(site, **params)
-    return result.to_dict()
+    return result.to_dict(output_format=output_format)
 
 
 def _run_plot_multi_parameter(params):
     from subsurface_characterization import load_site_from_dict, plot_multi_parameter
     data = params.pop("site_data", {})
+    output_format = params.pop("output_format", "html")
     site = load_site_from_dict(data)
     result = plot_multi_parameter(site, **params)
-    return result.to_dict()
+    return result.to_dict(output_format=output_format)
 
 
 def _run_plot_plan_view(params):
     from subsurface_characterization import load_site_from_dict, plot_plan_view
     data = params.pop("site_data", {})
+    output_format = params.pop("output_format", "html")
     site = load_site_from_dict(data)
     result = plot_plan_view(site, **params)
-    return result.to_dict()
+    return result.to_dict(output_format=output_format)
 
 
 def _run_plot_cross_section(params):
     from subsurface_characterization import load_site_from_dict, plot_cross_section
     data = params.pop("site_data", {})
+    output_format = params.pop("output_format", "html")
     site = load_site_from_dict(data)
     result = plot_cross_section(site, **params)
-    return result.to_dict()
+    return result.to_dict(output_format=output_format)
 
 
 def _run_compute_trend(params):
