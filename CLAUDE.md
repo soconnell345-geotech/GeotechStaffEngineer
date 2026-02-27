@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-31 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + geolysis agent + pystra agent + pydiggs agent + DM7 equations + trial_agent (Claude API tool_use integration) + chat_agent (ReAct agent for text-only chat functions).
+32 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + geolysis agent + pystra agent + pydiggs agent + subsurface characterization + DM7 equations + trial_agent (Claude API tool_use integration) + chat_agent (ReAct agent for text-only chat functions).
 
 ## Architecture Patterns
 
@@ -21,9 +21,9 @@ Key conventions:
 - **Dict-based I/O** for LLM agents: analyze_*() returns dataclass, .to_dict() for JSON
 - **No cross-module imports** between analysis modules (geotech_common is the exception)
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
-- **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 30 + 14 = 44 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
+- **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 31 + 14 = 45 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (1888 module + 130 harness + 2810 ref = 4828 tests)
+## Module Inventory (1989 module + 130 harness + 2810 ref = 4929 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -56,12 +56,13 @@ Key conventions:
 | geolysis_agent | 65 | USCS/AASHTO soil classification + SPT corrections + bearing capacity |
 | pystra_agent | 43 | FORM/SORM/Monte Carlo structural reliability analysis |
 | pydiggs_agent | 31 | DIGGS 2.6 XML schema and dictionary validation |
+| subsurface_characterization | 101 | Subsurface data visualization (DIGGS parser, Plotly plots, trend stats) |
 
 Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3299 tests), foundry_test_harness (130 tests), trial_agent (100 tests), chat_agent (42 tests)
 
 ## Foundry Test Harness
 
-`foundry_test_harness/` validates the 44 Foundry agent functions via JSON-in/JSON-out:
+`foundry_test_harness/` validates the 45 Foundry agent functions via JSON-in/JSON-out:
 
 | File | Tests | Purpose |
 |------|-------|---------|
@@ -76,9 +77,9 @@ Run: `pytest foundry_test_harness/ -v`
 
 ## Trial Agent (Claude API Integration)
 
-`trial_agent/` uses the Claude API `tool_use` feature to give Claude direct access to all 44 Foundry agents. The agent receives 3 meta-tools:
+`trial_agent/` uses the Claude API `tool_use` feature to give Claude direct access to all 45 Foundry agents. The agent receives 3 meta-tools:
 
-- `call_agent(agent, method, params)` — Route to any of the 44 Foundry agent functions
+- `call_agent(agent, method, params)` — Route to any of the 45 Foundry agent functions
 - `list_methods(agent, category)` — Discover available methods for an agent
 - `describe_method(agent, method)` — Get parameter details and usage info
 
@@ -87,7 +88,7 @@ Run: `pytest foundry_test_harness/ -v`
 | `__init__.py` | Package init |
 | `__main__.py` | Entry point for `python -m trial_agent` |
 | `cli.py` | CLI interface for interactive queries |
-| `system_prompt.py` | **Primary agent prompt** — the canonical system prompt for all 44 agents |
+| `system_prompt.py` | **Primary agent prompt** — the canonical system prompt for all 45 agents |
 | `agent_registry.py` | Maps agent names to Foundry functions |
 | `tools.py` | Tool definitions for Claude API |
 | `test_run.py` | 10-question trial run |
@@ -100,7 +101,7 @@ Note: Trial agent tests require a valid `ANTHROPIC_API_KEY` and incur API costs.
 
 ## Chat Agent (Text-Only LLM Integration)
 
-`chat_agent/` is a ReAct agent that gives any text-in/text-out chat function access to all 44 Foundry agents via `<tool_call>` tag parsing. Designed for Databricks notebooks using `fh_prompter.chat()`. No new dependencies — reuses `trial_agent/agent_registry.py` and `trial_agent/system_prompt.py`.
+`chat_agent/` is a ReAct agent that gives any text-in/text-out chat function access to all 45 Foundry agents via `<tool_call>` tag parsing. Designed for Databricks notebooks using `fh_prompter.chat()`. No new dependencies — reuses `trial_agent/agent_registry.py` and `trial_agent/system_prompt.py`.
 
 | File | Purpose |
 |------|---------|
@@ -132,7 +133,7 @@ Run: `pytest chat_agent/ -v`
 1. Read the module's `DESIGN.md` first for theory and conventions
 2. Read `__init__.py` for the public API
 3. Run that module's tests: `pytest module_name/ -v`
-4. Full regression: `pytest bearing_capacity/ settlement/ axial_pile/ sheet_pile/ soe/ lateral_pile/validation.py pile_group/ wave_equation/ geotech_common/ drilled_shaft/ seismic_geotech/ retaining_walls/ ground_improvement/ slope_stability/ downdrag/ opensees_agent/ pystrata_agent/ seismic_signals_agent/ liquepy_agent/ pygef_agent/ hvsrpy_agent/ gstools_agent/ ags4_agent/ salib_agent/ pyseismosoil_agent/ swprocess_agent/ geolysis_agent/ pystra_agent/ pydiggs_agent/ chat_agent/ foundry_test_harness/ geotech-references/tests/ -q`
+4. Full regression: `pytest bearing_capacity/ settlement/ axial_pile/ sheet_pile/ soe/ lateral_pile/validation.py pile_group/ wave_equation/ geotech_common/ drilled_shaft/ seismic_geotech/ retaining_walls/ ground_improvement/ slope_stability/ downdrag/ opensees_agent/ pystrata_agent/ seismic_signals_agent/ liquepy_agent/ pygef_agent/ hvsrpy_agent/ gstools_agent/ ags4_agent/ salib_agent/ pyseismosoil_agent/ swprocess_agent/ geolysis_agent/ pystra_agent/ pydiggs_agent/ subsurface_characterization/ chat_agent/ foundry_test_harness/ geotech-references/tests/ -q`
 
 ## Environment
 

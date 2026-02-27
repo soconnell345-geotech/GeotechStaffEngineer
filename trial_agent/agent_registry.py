@@ -1,5 +1,5 @@
 """
-Master registry of all 44 Foundry agents with lazy-loading dispatch.
+Master registry of all 45 Foundry agents with lazy-loading dispatch.
 
 Agents are imported on first use, not at startup, to avoid scipy.optimize
 import hangs on Python 3.14 / scipy 1.17 and to speed up CLI startup.
@@ -167,6 +167,11 @@ _AGENT_SPECS = {
         "module": "foundry.pydiggs_agent_foundry",
         "funcs": ("pydiggs_agent", "pydiggs_list_methods", "pydiggs_describe_method"),
         "brief": "DIGGS 2.6 XML schema and dictionary validation",
+    },
+    "subsurface_char": {
+        "module": "foundry.subsurface_char_agent_foundry",
+        "funcs": ("subsurface_char_agent", "subsurface_char_list_methods", "subsurface_char_describe_method"),
+        "brief": "Subsurface characterization: DIGGS parser, site model, interactive Plotly visualizations",
     },
     # --- FHWA/NAVFAC Reference Library Agents (from geotech-references submodule) ---
     "gec6": {

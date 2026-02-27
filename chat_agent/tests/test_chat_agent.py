@@ -262,11 +262,11 @@ class TestAgentLoop:
             'Thought: Let me see what agents are available.\n\n'
             '<tool_call>\n{"tool_name": "list_agents"}\n</tool_call>',
             # Round 2: final answer (no tool call)
-            'There are 44 agents available covering geotechnical engineering.',
+            'There are 45 agents available covering geotechnical engineering.',
         ])
         agent = GeotechChatAgent(chat_fn=chat_fn)
         result = agent.ask("What agents are available?")
-        assert "44" in result.answer
+        assert "45" in result.answer
         assert result.rounds == 2
         assert len(result.tool_calls) == 1
         assert result.tool_calls[0]["tool_name"] == "list_agents"
@@ -426,7 +426,7 @@ class TestDispatch:
         result = json.loads(result_str)
         assert "bearing_capacity" in result
         assert "settlement" in result
-        assert len(result) == 44
+        assert len(result) == 45
 
     def test_dispatch_list_methods_real(self):
         """Test dispatch with real agent_registry for list_methods."""

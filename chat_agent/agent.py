@@ -122,7 +122,7 @@ class AgentResult:
 # ---------------------------------------------------------------------------
 
 class GeotechChatAgent:
-    """ReAct agent that gives a text-only chat function access to 44 agents.
+    """ReAct agent that gives a text-only chat function access to 45 agents.
 
     Args:
         chat_fn: Function with signature (prompt, system_prompt, temp) -> str.
