@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (2051 module + 137 harness + 3299 ref = 5487 tests)
+## Module Inventory (2051 module + 142 harness + 3299 ref = 5492 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -59,7 +59,7 @@ Key conventions:
 | subsurface_characterization | 101 | Subsurface data visualization (DIGGS parser, Plotly plots, trend stats) |
 | wind_loads | 62 | ASCE 7-22 wind loads on freestanding walls and fences (Ch 29.3) |
 
-Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3299 tests), foundry_test_harness (137 tests), trial_agent (100 tests), chat_agent (42 tests)
+Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3299 tests), foundry_test_harness (142 tests), trial_agent (100 tests), chat_agent (42 tests)
 
 ## Foundry Test Harness
 
