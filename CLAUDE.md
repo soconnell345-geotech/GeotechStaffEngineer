@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-32 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + geolysis agent + pystra agent + pydiggs agent + subsurface characterization + DM7 equations + trial_agent (Claude API tool_use integration) + chat_agent (ReAct agent for text-only chat functions).
+33 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + geolysis agent + pystra agent + pydiggs agent + subsurface characterization + wind loads (ASCE 7-22) + DM7 equations + trial_agent (Claude API tool_use integration) + chat_agent (ReAct agent for text-only chat functions).
 
 ## Architecture Patterns
 
@@ -21,9 +21,9 @@ Key conventions:
 - **Dict-based I/O** for LLM agents: analyze_*() returns dataclass, .to_dict() for JSON
 - **No cross-module imports** between analysis modules (geotech_common is the exception)
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
-- **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 31 + 14 = 45 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
+- **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (1989 module + 137 harness + 3299 ref = 5425 tests)
+## Module Inventory (2051 module + 137 harness + 3299 ref = 5487 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -57,6 +57,7 @@ Key conventions:
 | pystra_agent | 43 | FORM/SORM/Monte Carlo structural reliability analysis |
 | pydiggs_agent | 31 | DIGGS 2.6 XML schema and dictionary validation |
 | subsurface_characterization | 101 | Subsurface data visualization (DIGGS parser, Plotly plots, trend stats) |
+| wind_loads | 62 | ASCE 7-22 wind loads on freestanding walls and fences (Ch 29.3) |
 
 Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3299 tests), foundry_test_harness (137 tests), trial_agent (100 tests), chat_agent (42 tests)
 

@@ -173,6 +173,11 @@ _AGENT_SPECS = {
         "funcs": ("subsurface_char_agent", "subsurface_char_list_methods", "subsurface_char_describe_method"),
         "brief": "Subsurface characterization: DIGGS parser, site model, interactive Plotly visualizations",
     },
+    "wind_loads": {
+        "module": "foundry.wind_loads_agent_foundry",
+        "funcs": ("wind_loads_agent", "wind_loads_list_methods", "wind_loads_describe_method"),
+        "brief": "ASCE 7-22 wind loads on freestanding walls and fences (Ch 29.3)",
+    },
     # --- FHWA/NAVFAC Reference Library Agents (from geotech-references submodule) ---
     "gec6": {
         "module": "agents.gec6_agent",

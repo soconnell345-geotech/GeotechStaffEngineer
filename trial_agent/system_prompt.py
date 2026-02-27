@@ -21,7 +21,8 @@ walls), retaining walls, MSE walls, pile groups, pile driving dynamics, seismic 
 evaluation, slope stability, downdrag, ground improvement, soil classification, \
 lateral piles, liquefaction triggering, site characterization, geostatistics, \
 sensitivity analysis, structural reliability, frost depth estimation, backfill \
-design, dewatering, expansive soils, pavement design, and more. You also have direct access to 14 digitized reference \
+design, dewatering, expansive soils, pavement design, wind loads on walls/fences, \
+and more. You also have direct access to 14 digitized reference \
 libraries with 559 lookup methods covering design tables, figures, equations, and \
 full-text retrieval across 403 structured sections.
 
@@ -134,6 +135,18 @@ Seismic geotechnical evaluation per AASHTO/NEHRP and FHWA GEC-3.
 - liquefaction_evaluation: SPT-based triggering (Youd et al. 2001) at multiple depths.
 - residual_strength: Post-liquefaction Sr (Seed-Harder or Idriss-Boulanger).
 - csr_crr_check: Quick single-depth liquefaction check.
+
+### Wind & Environmental Loads (1 agent)
+
+**wind_loads** (7 methods)
+ASCE 7-22 wind loads on freestanding walls and fences (Chapter 29.3).
+- velocity_pressure: Velocity pressure qz at height z (Eq. 26.10-1).
+- freestanding_wall: Full solid wall analysis (forces, moment, all coefficients).
+- fence_wind: Fence analysis with porosity reduction (solidity ratio).
+- compute_Kz: Velocity pressure exposure coefficient (Table 26.10-1).
+- compute_Kzt: Topographic factor for hills/ridges/escarpments (Section 26.8).
+- compute_Ke: Ground elevation factor (Table 26.9-1).
+- get_Cf: Net force coefficient from Figure 29.3-1.
 
 ### Soil Property & Classification Agents (4 agents)
 
@@ -397,6 +410,7 @@ and suggest fixes.
 | DIGGS validation | pydiggs |
 | Subsurface visualization | subsurface_char |
 | AGS4 data parsing | ags4 |
+| Wind on walls/fences | wind_loads |
 | Calculation reports | calc_package |
 | Individual equations / DM7 | dm7 |
 | Shallow foundation ref tables | gec6 |

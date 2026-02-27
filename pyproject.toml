@@ -106,6 +106,7 @@ include = [
     "pystra_agent*",
     "pydiggs_agent*",
     "subsurface_characterization*",
+    "wind_loads*",
 ]
 exclude = [
     "*.tests",
@@ -136,6 +137,7 @@ testpaths = [
     "ags4_agent", "salib_agent", "pyseismosoil_agent", "swprocess_agent",
     "geolysis_agent", "pystra_agent", "pydiggs_agent",
     "subsurface_characterization",
+    "wind_loads",
     "chat_agent",
     "foundry_test_harness",
     "geotech-references/tests",

@@ -84,6 +84,10 @@ from foundry.subsurface_char_agent_foundry import (
     subsurface_char_agent, subsurface_char_list_methods,
     subsurface_char_describe_method,
 )
+from foundry.wind_loads_agent_foundry import (
+    wind_loads_agent, wind_loads_list_methods,
+    wind_loads_describe_method,
+)
 
 H = FoundryAgentHarness()
 
@@ -894,6 +898,8 @@ class TestMetadata:
          "braced_excavation"),
         (subsurface_char_list_methods, subsurface_char_describe_method,
          "parse_diggs"),
+        (wind_loads_list_methods, wind_loads_describe_method,
+         "freestanding_wall"),
     ])
     def test_list_and_describe(self, list_func, describe_func, sample_method):
         """List methods returns categories; describe returns parameters."""
@@ -902,3 +908,50 @@ class TestMetadata:
 
         desc = H.describe(describe_func, sample_method)
         assert "parameters" in desc or "description" in desc
+
+
+# ============================================================================
+# Wind Loads (ASCE 7-22)
+# ============================================================================
+
+class TestWindLoads:
+    """Wind loads validation against ASCE 7-22 hand calculations."""
+
+    def test_velocity_pressure_exp_c(self):
+        """V=50 m/s, z=10m, Exp C — Kz≈0.98, qz≈1278 Pa."""
+        r = H.call(wind_loads_agent, "velocity_pressure", {
+            "V": 50, "z": 10, "exposure_category": "C"
+        })
+        assert 1200 < r["qz_Pa"] < 1400
+        assert 0.95 < r["Kz"] < 1.05
+
+    def test_freestanding_wall_forces(self):
+        """V=50 m/s, s=3m, B=20m, Exp C — total force ~90 kN."""
+        r = H.call(wind_loads_agent, "freestanding_wall", {
+            "V": 50, "wall_height": 3, "wall_length": 20,
+            "exposure_category": "C"
+        })
+        assert 70 < r["total_force_kN"] < 110
+        assert r["force_per_unit_length_kN_m"] > 0
+        assert r["overturning_moment_kNm_per_m"] > 0
+        assert r["Cf"] > 1.0
+
+    def test_fence_porosity_reduction(self):
+        """Fence with solidity 0.5 has ~half the force of solid wall."""
+        r_solid = H.call(wind_loads_agent, "fence_wind", {
+            "V": 50, "fence_height": 3, "fence_length": 10,
+            "solidity_ratio": 1.0, "exposure_category": "C"
+        })
+        r_porous = H.call(wind_loads_agent, "fence_wind", {
+            "V": 50, "fence_height": 3, "fence_length": 10,
+            "solidity_ratio": 0.5, "exposure_category": "C"
+        })
+        ratio = r_porous["total_force_kN"] / r_solid["total_force_kN"]
+        assert ratio == pytest.approx(0.5, rel=0.02)
+
+    def test_compute_Kz_table_value(self):
+        """Kz at z=4.6m, Exp B should be 0.57 per Table 26.10-1."""
+        r = H.call(wind_loads_agent, "compute_Kz", {
+            "z": 4.6, "exposure_category": "B"
+        })
+        assert r["Kz"] == pytest.approx(0.57, abs=0.01)
