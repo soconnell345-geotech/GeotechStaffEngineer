@@ -63,27 +63,33 @@ def analyze_slope(geom: SlopeGeometry,
     x_entry, x_exit = slip.find_entry_exit(geom)
     slices = build_slices(geom, slip, n_slices)
 
+    # Compute nail contributions if nails are defined
+    nail_contribs = None
+    if geom.nails:
+        from slope_stability.nails import compute_all_nail_contributions
+        nail_contribs = compute_all_nail_contributions(geom.nails, xc, yc, radius)
+
     # Primary FOS
     theta_spencer = None
     if method == "fellenius":
-        fos = fellenius_fos(slices, slip)
+        fos = fellenius_fos(slices, slip, nail_contributions=nail_contribs)
         method_name = "Fellenius"
     elif method == "spencer":
-        fos, theta = spencer_fos(slices, slip)
+        fos, theta = spencer_fos(slices, slip, nail_contributions=nail_contribs)
         theta_spencer = theta
         method_name = "Spencer"
     else:
-        fos = bishop_fos(slices, slip)
+        fos = bishop_fos(slices, slip, nail_contributions=nail_contribs)
         method_name = "Bishop"
 
     # Comparison FOS values
     fos_fellenius = None
     fos_bishop = None
     if compare_methods:
-        fos_fellenius = fellenius_fos(slices, slip)
-        fos_bishop = bishop_fos(slices, slip)
+        fos_fellenius = fellenius_fos(slices, slip, nail_contributions=nail_contribs)
+        fos_bishop = bishop_fos(slices, slip, nail_contributions=nail_contribs)
         if theta_spencer is None:
-            fos_sp, theta = spencer_fos(slices, slip)
+            fos_sp, theta = spencer_fos(slices, slip, nail_contributions=nail_contribs)
             theta_spencer = theta
 
     # Slice data for plotting
@@ -106,6 +112,14 @@ def analyze_slope(geom: SlopeGeometry,
             for s in slices
         ]
 
+    # Nail summary fields
+    n_nails_active = 0
+    nail_resisting_kN_per_m = 0.0
+    if nail_contribs:
+        from slope_stability.nails import total_nail_resisting
+        n_nails_active = len(nail_contribs)
+        nail_resisting_kN_per_m = total_nail_resisting(nail_contribs)
+
     return SlopeStabilityResult(
         FOS=fos,
         method=method_name,
@@ -123,6 +137,8 @@ def analyze_slope(geom: SlopeGeometry,
         has_seismic=geom.kh > 0,
         kh=geom.kh,
         slice_data=slice_data,
+        n_nails_active=n_nails_active,
+        nail_resisting_kN_per_m=nail_resisting_kN_per_m,
     )
 
 

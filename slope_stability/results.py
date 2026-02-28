@@ -124,6 +124,8 @@ class SlopeStabilityResult:
     has_seismic: bool = False
     kh: float = 0.0
     slice_data: Optional[List[SliceData]] = None
+    n_nails_active: int = 0
+    nail_resisting_kN_per_m: float = 0.0
 
     def summary(self) -> str:
         status = "STABLE" if self.is_stable else "UNSTABLE"
@@ -152,6 +154,9 @@ class SlopeStabilityResult:
             lines.append(f"  FOS (Bishop):     {self.FOS_bishop:.3f}")
         if self.theta_spencer is not None:
             lines.append(f"  Spencer theta:    {self.theta_spencer:.2f} deg")
+        if self.n_nails_active > 0:
+            lines.append(f"  Nails active:     {self.n_nails_active}")
+            lines.append(f"  Nail resisting:   {self.nail_resisting_kN_per_m:.1f} kN/m")
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -178,6 +183,9 @@ class SlopeStabilityResult:
             d["theta_spencer_deg"] = round(self.theta_spencer, 2)
         if self.slice_data is not None:
             d["slice_data"] = [s.to_dict() for s in self.slice_data]
+        if self.n_nails_active > 0:
+            d["n_nails_active"] = self.n_nails_active
+            d["nail_resisting_kN_per_m"] = round(self.nail_resisting_kN_per_m, 2)
         return d
 
 

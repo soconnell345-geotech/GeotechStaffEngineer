@@ -48,6 +48,7 @@ swprocess = ["swprocess>=0.3"]
 geolysis = ["geolysis>=0.4"]
 pystra = ["pystra>=1.3"]
 pydiggs = ["pydiggs>=0.1"]
+dxf = ["ezdxf>=1.4"]
 full = [
     "matplotlib>=3.8",
     "jinja2>=3.1",
@@ -107,6 +108,7 @@ include = [
     "pydiggs_agent*",
     "subsurface_characterization*",
     "wind_loads*",
+    "dxf_import*",
 ]
 exclude = [
     "*.tests",
@@ -138,6 +140,7 @@ testpaths = [
     "geolysis_agent", "pystra_agent", "pydiggs_agent",
     "subsurface_characterization",
     "wind_loads",
+    "dxf_import",
     "chat_agent",
     "foundry_test_harness",
     "geotech-references/tests",

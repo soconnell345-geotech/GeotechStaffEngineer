@@ -32,15 +32,23 @@ def _compute_fos(geom: SlopeGeometry,
         if len(slices) < 3:
             return _FOS_MAX
 
+        # Compute nail contributions if nails are defined
+        nail_contribs = None
+        if geom.nails:
+            from slope_stability.nails import compute_all_nail_contributions
+            nail_contribs = compute_all_nail_contributions(
+                geom.nails, slip.xc, slip.yc, slip.radius
+            )
+
         if method == "fellenius":
-            return fellenius_fos(slices, slip)
+            return fellenius_fos(slices, slip, nail_contributions=nail_contribs)
         elif method == "bishop":
-            return bishop_fos(slices, slip)
+            return bishop_fos(slices, slip, nail_contributions=nail_contribs)
         elif method == "spencer":
-            fos, _ = spencer_fos(slices, slip)
+            fos, _ = spencer_fos(slices, slip, nail_contributions=nail_contribs)
             return fos
         else:
-            return bishop_fos(slices, slip)
+            return bishop_fos(slices, slip, nail_contributions=nail_contribs)
     except (ValueError, ZeroDivisionError, RuntimeError):
         return _FOS_MAX
 

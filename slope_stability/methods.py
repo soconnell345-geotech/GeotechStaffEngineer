@@ -21,13 +21,15 @@ from typing import List, Tuple, Optional
 
 from slope_stability.slices import Slice
 from slope_stability.slip_surface import CircularSlipSurface
+from slope_stability.nails import NailContribution, total_nail_resisting, nail_force_components
 
 
 _FOS_MAX = 999.9  # sentinel for zero or negative driving
 
 
 def fellenius_fos(slices: List[Slice],
-                  slip: CircularSlipSurface) -> float:
+                  slip: CircularSlipSurface,
+                  nail_contributions: Optional[List[NailContribution]] = None) -> float:
     """Ordinary Method of Slices (Fellenius) factor of safety.
 
     FOS = sum[c'*dl + (W*cos(alpha) - u*dl)*tan(phi')] /
@@ -79,14 +81,20 @@ def fellenius_fos(slices: List[Slice],
     if driving <= 0:
         return _FOS_MAX
 
-    return resisting / driving
+    # Add nail resisting contribution
+    nail_resist = 0.0
+    if nail_contributions:
+        nail_resist = total_nail_resisting(nail_contributions)
+
+    return (resisting + nail_resist) / driving
 
 
 def bishop_fos(slices: List[Slice],
                slip: CircularSlipSurface,
                tol: float = 1e-4,
                max_iter: int = 50,
-               fos_initial: Optional[float] = None) -> float:
+               fos_initial: Optional[float] = None,
+               nail_contributions: Optional[List[NailContribution]] = None) -> float:
     """Bishop's Simplified Method factor of safety.
 
     FOS = sum[(c'*b + (W - u*b)*tan(phi')) / m_alpha] /
@@ -118,8 +126,13 @@ def bishop_fos(slices: List[Slice],
     - Most commonly used method in practice
     - Typically converges in 5-10 iterations
     """
+    # Nail resisting contribution (moment-based, same for all Bishop iterations)
+    nail_resist = 0.0
+    if nail_contributions:
+        nail_resist = total_nail_resisting(nail_contributions)
+
     if fos_initial is None:
-        fos_initial = fellenius_fos(slices, slip)
+        fos_initial = fellenius_fos(slices, slip, nail_contributions)
         if fos_initial >= _FOS_MAX:
             fos_initial = 1.5
 
@@ -154,7 +167,7 @@ def bishop_fos(slices: List[Slice],
             numerator = s.c * b + (W - s.pore_pressure * b) * tan_phi
             resisting += numerator / m_alpha
 
-        fos_new = resisting / driving
+        fos_new = (resisting + nail_resist) / driving
         if abs(fos_new - fos) < tol:
             return fos_new
         fos = fos_new
@@ -169,7 +182,8 @@ def bishop_fos(slices: List[Slice],
 def spencer_fos(slices: List[Slice],
                 slip: CircularSlipSurface,
                 tol: float = 1e-4,
-                max_iter: int = 100) -> Tuple[float, float]:
+                max_iter: int = 100,
+                nail_contributions: Optional[List[NailContribution]] = None) -> Tuple[float, float]:
     """Spencer's Method factor of safety.
 
     Satisfies both force and moment equilibrium simultaneously.
@@ -209,8 +223,16 @@ def spencer_fos(slices: List[Slice],
     Spencer (1967), Geotechnique, Vol. 17, pp. 11-26
     xslope formulation: m_alpha = cos(alpha-theta) + sin(alpha-theta)*tan(phi')/F
     """
+    # Nail contributions
+    nail_resist_moment = 0.0
+    nail_fh = 0.0
+    nail_fv = 0.0
+    if nail_contributions:
+        nail_resist_moment = total_nail_resisting(nail_contributions)
+        nail_fh, nail_fv = nail_force_components(nail_contributions)
+
     # Get Bishop FOS as starting guess
-    fos_guess = bishop_fos(slices, slip)
+    fos_guess = bishop_fos(slices, slip, nail_contributions=nail_contributions)
     if fos_guess >= _FOS_MAX:
         return (_FOS_MAX, 0.0)
 
@@ -252,7 +274,7 @@ def spencer_fos(slices: List[Slice],
 
                 resisting += (s.c * b + (W - s.pore_pressure * b) * tan_phi) / m_alpha
 
-            fos_new = resisting / driving_moment
+            fos_new = (resisting + nail_resist_moment) / driving_moment
             if abs(fos_new - fos_m) < tol * 0.1:
                 return fos_new
             fos_m = fos_new
@@ -294,6 +316,11 @@ def spencer_fos(slices: List[Slice],
                 if s.seismic_force != 0:
                     n_alpha = cos_a - sin_a * tan_theta
                     total_drive += s.seismic_force * n_alpha
+
+            # Nail force contributions: horizontal resists driving
+            total_resist += nail_fh
+            # Nail vertical force adds to driving (acts like extra weight)
+            total_drive -= nail_fv * tan_theta  # vertical component effect on horizontal equilibrium
 
             total_drive = abs(total_drive)
             if total_drive <= 0:

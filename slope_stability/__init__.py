@@ -24,6 +24,7 @@ from slope_stability.analysis import analyze_slope, search_critical_surface
 from slope_stability.results import (
     SlopeStabilityResult, SliceData, SearchResult,
 )
+from slope_stability.nails import SoilNail, NailContribution
 
 __all__ = [
     'SlopeGeometry', 'SlopeSoilLayer',
@@ -33,4 +34,5 @@ __all__ = [
     'grid_search', 'optimize_radius',
     'analyze_slope', 'search_critical_surface',
     'SlopeStabilityResult', 'SliceData', 'SearchResult',
+    'SoilNail', 'NailContribution',
 ]

@@ -9,10 +9,15 @@ References:
     Abramson et al. (2002) — Slope Stability and Stabilization Methods
 """
 
+from __future__ import annotations
+
 import math
 import warnings
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from slope_stability.nails import SoilNail
 
 
 @dataclass
@@ -118,6 +123,8 @@ class SlopeGeometry:
         Elevation at which reinforcement force acts (m).
     kh : float
         Horizontal seismic coefficient. Default 0 (no seismic).
+    nails : list of SoilNail, optional
+        Soil nails for reinforcement. Default None (no nails).
     """
     surface_points: List[Tuple[float, float]]
     soil_layers: List[SlopeSoilLayer]
@@ -127,6 +134,7 @@ class SlopeGeometry:
     reinforcement_force: float = 0.0
     reinforcement_elevation: Optional[float] = None
     kh: float = 0.0
+    nails: Optional[List[SoilNail]] = None
 
     def __post_init__(self):
         if len(self.surface_points) < 2:

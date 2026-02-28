@@ -25,6 +25,7 @@ except ImportError:
         return fn
 
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
+from slope_stability.nails import SoilNail
 from slope_stability.analysis import analyze_slope, search_critical_surface
 
 
@@ -85,6 +86,23 @@ def _build_geometry(params: dict) -> SlopeGeometry:
     if params.get("surcharge_x_range") is not None:
         surcharge_x_range = tuple(params["surcharge_x_range"])
 
+    # Soil nails
+    nails = None
+    if params.get("nails"):
+        nails = []
+        for nd in params["nails"]:
+            nails.append(SoilNail(
+                x_head=nd["x_head"],
+                z_head=nd["z_head"],
+                length=nd["length"],
+                inclination=nd.get("inclination", 15.0),
+                bar_diameter=nd.get("bar_diameter", 25.0),
+                drill_hole_diameter=nd.get("drill_hole_diameter", 150.0),
+                fy=nd.get("fy", 420.0),
+                bond_stress=nd.get("bond_stress", 100.0),
+                spacing_h=nd.get("spacing_h", 1.5),
+            ))
+
     return SlopeGeometry(
         surface_points=surface_points,
         soil_layers=soil_layers,
@@ -94,6 +112,7 @@ def _build_geometry(params: dict) -> SlopeGeometry:
         reinforcement_force=params.get("reinforcement_force", 0.0),
         reinforcement_elevation=params.get("reinforcement_elevation"),
         kh=params.get("kh", 0.0),
+        nails=nails,
     )
 
 
@@ -206,6 +225,17 @@ METHOD_INFO = {
                                     "description": "Horizontal reinforcement force (kN/m)."},
             "reinforcement_elevation": {"type": "float", "required": False,
                                         "description": "Elevation of reinforcement (m)."},
+            "nails": {
+                "type": "array", "required": False,
+                "description": (
+                    "Soil nails for reinforcement (FHWA GEC-7). Array of objects, each with: "
+                    "x_head (float, m), z_head (float, m), length (float, m), "
+                    "inclination (float, degrees below horizontal, default 15), "
+                    "bar_diameter (float, mm, default 25), drill_hole_diameter (float, mm, default 150), "
+                    "fy (float, MPa, default 420), bond_stress (float, kPa, default 100), "
+                    "spacing_h (float, m, default 1.5)."
+                ),
+            },
         },
         "returns": {
             "FOS": "Factor of safety.",
@@ -223,6 +253,8 @@ METHOD_INFO = {
             "FOS_bishop": "Bishop FOS (if compare_methods=true).",
             "theta_spencer_deg": "Spencer interslice angle (if Spencer used).",
             "slice_data": "Per-slice data (if include_slice_data=true).",
+            "n_nails_active": "Number of nails that intersect the slip surface.",
+            "nail_resisting_kN_per_m": "Total nail resisting force equivalent (kN/m).",
         },
         "related": {
             "search_critical_surface": "Find the critical circle with minimum FOS.",
@@ -274,6 +306,8 @@ METHOD_INFO = {
                           "description": "Same as analyze_slope."},
             "kh": {"type": "float", "required": False, "default": 0.0,
                    "description": "Same as analyze_slope."},
+            "nails": {"type": "array", "required": False,
+                      "description": "Same as analyze_slope."},
         },
         "returns": {
             "n_surfaces_evaluated": "Total number of trial surfaces.",

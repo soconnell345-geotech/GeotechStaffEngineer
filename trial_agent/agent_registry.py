@@ -178,6 +178,11 @@ _AGENT_SPECS = {
         "funcs": ("wind_loads_agent", "wind_loads_list_methods", "wind_loads_describe_method"),
         "brief": "ASCE 7-22 wind loads on freestanding walls and fences (Ch 29.3)",
     },
+    "dxf_import": {
+        "module": "foundry.dxf_import_agent_foundry",
+        "funcs": ("dxf_import_agent", "dxf_import_list_methods", "dxf_import_describe_method"),
+        "brief": "DXF CAD import for slope stability (discover layers, parse geometry, build SlopeGeometry)",
+    },
     # --- FHWA/NAVFAC Reference Library Agents (from geotech-references submodule) ---
     "gec6": {
         "module": "agents.gec6_agent",
