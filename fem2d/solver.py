@@ -107,7 +107,11 @@ def _do_return_mapping(mp, sigma_trial, elem_state_e):
 def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
                     t=1.0, n_steps=10, max_iter=100, tol=1e-5,
                     beam_elements=None, rotation_dof_map=None,
-                    pore_pressures=None):
+                    pore_pressures=None,
+                    active_elements=None, active_beams=None,
+                    u_init=None, sigma_init=None, strain_init=None,
+                    state_init=None, surface_loads=None,
+                    return_state=False):
     """Solve a nonlinear (MC/HS) problem with Newton-Raphson.
 
     Uses incremental gravity loading with full Newton-Raphson iteration.
@@ -133,6 +137,16 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
     pore_pressures : (n_nodes,) array, optional — nodal pore pressures.
         When provided, adds pore pressure equivalent forces to F_ext.
         Constitutive model sees effective stress (total - pore pressure).
+    active_elements : set of int, optional — soil element indices to include.
+        None means all elements are active.
+    active_beams : set of int, optional — beam element indices to include.
+        None means all beams are active (if beam_elements provided).
+    u_init : (n_dof,) array, optional — initial displacements (staged construction).
+    sigma_init : (n_elem, 3) array, optional — initial stresses.
+    strain_init : (n_elem, 3) array, optional — initial strains.
+    state_init : list of dict, optional — initial HS element states.
+    surface_loads : list of (edges, qx, qy), optional — surface tractions.
+    return_state : bool — if True, return 5-tuple including elem_state list.
 
     Returns
     -------
@@ -140,17 +154,26 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
     u : (n_dof,) array — displacements.
     stresses : (n_elements, 3) array — element stresses.
     strains : (n_elements, 3) array — element strains.
+    elem_state : list (only when return_state=True) — per-element HS states.
     """
-    from fem2d.assembly import assemble_gravity, apply_bcs_penalty
+    from fem2d.assembly import (
+        assemble_gravity, assemble_surface_load, apply_bcs_penalty,
+    )
 
-    n_nodes = len(nodes)
+    n_nodes_count = len(nodes)
     n_elem = len(elements)
+
+    # Convert active sets
+    if active_elements is not None:
+        active_elements = set(active_elements)
+    if active_beams is not None:
+        active_beams = set(active_beams)
 
     # Total DOFs: translational + rotation (if beams present)
     if beam_elements and rotation_dof_map:
-        n_dof = 2 * n_nodes + len(rotation_dof_map)
+        n_dof = 2 * n_nodes_count + len(rotation_dof_map)
     else:
-        n_dof = 2 * n_nodes
+        n_dof = 2 * n_nodes_count
 
     # Expand material properties
     if len(material_props) < n_elem:
@@ -173,15 +196,21 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
         elem_data.append((B, A))
 
     # Full gravity load (soil elements)
-    F_gravity_soil = assemble_gravity(nodes, elements, gamma, t)
+    F_gravity_soil = assemble_gravity(
+        nodes, elements, gamma, t, active_elements=active_elements)
     # Add pore pressure equivalent forces
     if pore_pressures is not None:
         from fem2d.porewater import pore_pressure_force
         F_gravity_soil = F_gravity_soil + pore_pressure_force(
-            nodes, elements, pore_pressures, t)
+            nodes, elements, pore_pressures, t,
+            active_elements=active_elements)
+    # Add surface loads
+    if surface_loads:
+        for edges, qx, qy in surface_loads:
+            F_gravity_soil += assemble_surface_load(nodes, edges, qx, qy, t)
     # Extend to full DOF size if beams present
     F_gravity = np.zeros(n_dof)
-    F_gravity[:2 * n_nodes] = F_gravity_soil
+    F_gravity[:2 * n_nodes_count] = F_gravity_soil
 
     # Add beam gravity if present
     if beam_elements and rotation_dof_map:
@@ -191,29 +220,45 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
         )
         from fem2d.elements import beam2d_stiffness, beam2d_internal_forces
         F_beam_grav = assemble_beam_gravity(
-            nodes, beam_elements, rotation_dof_map, n_dof)
+            nodes, beam_elements, rotation_dof_map, n_dof,
+            active_beams=active_beams)
         F_gravity += F_beam_grav
 
     F_ext_norm = np.linalg.norm(F_gravity)
     if F_ext_norm < 1e-30:
-        return True, np.zeros(n_dof), np.zeros((n_elem, 3)), np.zeros((n_elem, 3))
+        result = (True, np.zeros(n_dof), np.zeros((n_elem, 3)),
+                  np.zeros((n_elem, 3)))
+        if return_state:
+            return result + ([None] * n_elem,)
+        return result
 
-    # Initialize state
-    u = np.zeros(n_dof)
-    sigma_gp = np.zeros((n_elem, 3))
-    epsilon_gp = np.zeros((n_elem, 3))
+    # Initialize state — use provided initial values or zeros
+    u = np.array(u_init, dtype=float) if u_init is not None else np.zeros(n_dof)
+    sigma_gp = np.array(sigma_init, dtype=float) if sigma_init is not None else np.zeros((n_elem, 3))
+    epsilon_gp = np.array(strain_init, dtype=float) if strain_init is not None else np.zeros((n_elem, 3))
 
     # HS per-element state
     has_hs = any(mp.get('model') == 'hs' for mp in material_props)
-    elem_state = [None] * n_elem
+    if state_init is not None:
+        elem_state = list(state_init)
+    else:
+        elem_state = [None] * n_elem
     if has_hs:
         for e in range(n_elem):
-            if material_props[e].get('model') == 'hs':
+            if material_props[e].get('model') == 'hs' and elem_state[e] is None:
                 elem_state[e] = {
                     'gamma_p_s': 0.0,
                     'sigma_prev': np.zeros(3),
                     'loading': True,
                 }
+
+    # When initial state is provided (staged construction), apply full load
+    # directly — don't ramp incrementally. The initial state already
+    # represents equilibrium from the previous phase.
+    if u_init is not None:
+        n_steps_actual = 1
+    else:
+        n_steps_actual = n_steps
 
     # Penalty for BCs
     penalty = 1e20
@@ -228,10 +273,22 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
         for n in bc_nodes.get(key, []):
             bc_dofs.add(2 * n)
 
+    # Constrain floating DOFs: nodes not connected to any active element
+    # get zero-displacement BCs to prevent singular stiffness matrix.
+    if active_elements is not None:
+        active_nodes = set()
+        for e in active_elements:
+            for ni in elements[e]:
+                active_nodes.add(int(ni))
+        for ni in range(n_nodes_count):
+            if ni not in active_nodes:
+                bc_dofs.add(2 * ni)
+                bc_dofs.add(2 * ni + 1)
+
     converged_overall = True
 
-    for step in range(1, n_steps + 1):
-        F_ext = (step / n_steps) * F_gravity
+    for step in range(1, n_steps_actual + 1):
+        F_ext = (step / n_steps_actual) * F_gravity
 
         for iteration in range(max_iter):
             # Assemble internal forces and tangent stiffness
@@ -240,6 +297,9 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
             tentative_states = [None] * n_elem
 
             for e in range(n_elem):
+                if active_elements is not None and e not in active_elements:
+                    continue
+
                 B, A = elem_data[e]
                 conn = elements[e]
                 dofs = element_dofs(conn)
@@ -291,7 +351,9 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
                     beam2d_stiffness as _b2d_K,
                     beam2d_internal_forces as _b2d_f,
                 )
-                for beam in beam_elements:
+                for idx, beam in enumerate(beam_elements):
+                    if active_beams is not None and idx not in active_beams:
+                        continue
                     coords_ij = np.array([
                         nodes[beam.node_i], nodes[beam.node_j]])
                     K_beam, _, _ = _b2d_K(coords_ij, beam.EA, beam.EI)
@@ -358,6 +420,9 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
 
         # Update converged state
         for e in range(n_elem):
+            if active_elements is not None and e not in active_elements:
+                continue
+
             B, A = elem_data[e]
             conn = elements[e]
             dofs = element_dofs(conn)
@@ -391,4 +456,6 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
     stresses = sigma_gp.copy()
     strains = epsilon_gp.copy()
 
+    if return_state:
+        return converged_overall, u, stresses, strains, list(elem_state)
     return converged_overall, u, stresses, strains

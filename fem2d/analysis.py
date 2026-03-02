@@ -5,10 +5,13 @@ Provides the public API:
 - analyze_gravity() — elastic gravity loading
 - analyze_foundation() — strip load on elastic half-space
 - analyze_slope_srm() — slope stability via Strength Reduction Method
+- analyze_staged() — staged construction (multi-phase)
 """
 
 import math
 import numpy as np
+from dataclasses import dataclass, field
+from typing import Any, List, Optional
 
 from fem2d.mesh import (
     generate_rect_mesh, generate_slope_mesh, detect_boundary_nodes,
@@ -17,7 +20,7 @@ from fem2d.mesh import (
 from fem2d.materials import elastic_D
 from fem2d.solver import solve_elastic, solve_nonlinear
 from fem2d.srm import strength_reduction
-from fem2d.results import FEMResult
+from fem2d.results import FEMResult, PhaseResult, StagedConstructionResult
 
 
 def analyze_gravity(width, depth, gamma, E, nu, nx=20, ny=10, t=1.0):
@@ -509,6 +512,282 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
         displacements=result_dict['displacements'],
         pore_pressures=result_dict['pore_pressures'],
         settlements=result_dict['settlements'],
+    )
+
+
+@dataclass
+class ConstructionPhase:
+    """Definition of one construction phase.
+
+    Attributes
+    ----------
+    name : str — descriptive phase name.
+    active_soil_groups : list of str — group names to activate.
+    active_beam_ids : list of int, optional — beam indices to activate.
+        None means no beams active in this phase.
+    surface_loads : list of (edges, qx, qy), optional.
+    gwt : float, (M,2) array, or None — groundwater table for this phase.
+        None means no pore pressures.
+    n_steps : int — gravity load increments for this phase.
+    reset_displacements : bool — zero u at start of this phase.
+    """
+    name: str = "Phase"
+    active_soil_groups: List[str] = field(default_factory=list)
+    active_beam_ids: Optional[List[int]] = None
+    surface_loads: Optional[List] = None
+    gwt: Any = None
+    n_steps: int = 5
+    reset_displacements: bool = False
+
+
+def assign_element_groups(nodes, elements, regions):
+    """Assign elements to named groups by centroid bounding box.
+
+    Parameters
+    ----------
+    nodes : (n_nodes, 2) array
+    elements : (n_elements, 3 or 4) array — connectivity.
+    regions : dict of str -> dict with keys 'x_min','x_max','y_min','y_max'.
+
+    Returns
+    -------
+    groups : dict of str -> list of int (element indices).
+        Elements matching no region go into '_default'.
+    """
+    nodes = np.asarray(nodes)
+    elements = np.asarray(elements)
+    n_elem = len(elements)
+
+    # Compute centroids
+    centroids = np.zeros((n_elem, 2))
+    for e in range(n_elem):
+        centroids[e] = nodes[elements[e]].mean(axis=0)
+
+    groups = {name: [] for name in regions}
+    groups['_default'] = []
+    assigned = set()
+
+    for name, bbox in regions.items():
+        x_min = bbox.get('x_min', -np.inf)
+        x_max = bbox.get('x_max', np.inf)
+        y_min = bbox.get('y_min', -np.inf)
+        y_max = bbox.get('y_max', np.inf)
+        for e in range(n_elem):
+            cx, cy = centroids[e]
+            if x_min <= cx <= x_max and y_min <= cy <= y_max:
+                groups[name].append(e)
+                assigned.add(e)
+
+    # Unassigned elements go to _default
+    for e in range(n_elem):
+        if e not in assigned:
+            groups['_default'].append(e)
+
+    return groups
+
+
+def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
+                   element_groups, phases, beam_elements=None,
+                   t=1.0, max_iter=100, tol=1e-5, gamma_w=9.81):
+    """Staged construction analysis.
+
+    Solves a sequence of construction phases. Each phase activates a
+    subset of soil element groups and (optionally) beam elements.
+    Displacements, stresses, and strains carry forward cumulatively.
+
+    Parameters
+    ----------
+    nodes : (n_nodes, 2) array
+    elements : (n_elements, 3) array — CST connectivity.
+    material_props : list of dict — per-element material properties.
+    gamma : float or (n_elements,) array — unit weight.
+    bc_nodes : dict from detect_boundary_nodes().
+    element_groups : dict of str -> list of int — from assign_element_groups().
+    phases : list of ConstructionPhase
+    beam_elements : list of BeamElement, optional
+    t : float — thickness.
+    max_iter : int — max NR iterations per step.
+    tol : float — convergence tolerance.
+    gamma_w : float — unit weight of water.
+
+    Returns
+    -------
+    StagedConstructionResult
+    """
+    from fem2d.assembly import (
+        build_rotation_dof_map, beam_element_dofs,
+    )
+    from fem2d.results import BeamForceResult
+
+    nodes = np.asarray(nodes, dtype=float)
+    elements = np.asarray(elements, dtype=int)
+    n_nodes_count = len(nodes)
+    n_elem = len(elements)
+
+    # Expand material properties
+    if len(material_props) < n_elem:
+        material_props = list(material_props) + \
+            [material_props[-1]] * (n_elem - len(material_props))
+
+    # Build rotation DOF map if beams present
+    rotation_dof_map = None
+    n_dof_total = 2 * n_nodes_count
+    if beam_elements:
+        rotation_dof_map, n_dof_total = build_rotation_dof_map(
+            n_nodes_count, beam_elements)
+
+    # Initialize cumulative state
+    u = np.zeros(n_dof_total)
+    sigma = np.zeros((n_elem, 3))
+    strain = np.zeros((n_elem, 3))
+    elem_state = [None] * n_elem
+
+    phase_results = []
+    all_converged = True
+
+    for pi, phase in enumerate(phases):
+        # 1. Compute active elements from group names
+        active_elems = set()
+        for group_name in phase.active_soil_groups:
+            if group_name in element_groups:
+                active_elems.update(element_groups[group_name])
+
+        # 2. Compute active beams
+        active_bms = None
+        if phase.active_beam_ids is not None:
+            active_bms = set(phase.active_beam_ids)
+
+        # 3. Compute pore pressures if gwt provided
+        pp = None
+        if phase.gwt is not None:
+            from fem2d.porewater import compute_pore_pressures
+            pp = compute_pore_pressures(nodes, phase.gwt, gamma_w)
+
+        # 4. Reset displacements if requested
+        if phase.reset_displacements:
+            u = np.zeros(n_dof_total)
+
+        # 5. Handle empty active elements gracefully
+        if len(active_elems) == 0:
+            pr = PhaseResult(
+                phase_name=phase.name,
+                phase_index=pi,
+                n_active_elements=0,
+                n_active_beams=len(active_bms) if active_bms else 0,
+                converged=True,
+                displacements=u[:2 * n_nodes_count].copy(),
+                stresses=sigma.copy(),
+                strains=strain.copy(),
+            )
+            phase_results.append(pr)
+            continue
+
+        # 6. Call solve_nonlinear with cumulative state
+        result = solve_nonlinear(
+            nodes, elements, material_props, gamma, bc_nodes,
+            t=t, n_steps=phase.n_steps, max_iter=max_iter, tol=tol,
+            beam_elements=beam_elements,
+            rotation_dof_map=rotation_dof_map,
+            pore_pressures=pp,
+            active_elements=active_elems,
+            active_beams=active_bms,
+            u_init=u, sigma_init=sigma, strain_init=strain,
+            state_init=elem_state,
+            surface_loads=phase.surface_loads,
+            return_state=True,
+        )
+
+        converged, u_new, sigma_new, strain_new, state_new = result
+
+        # 7. Update cumulative state
+        u = u_new
+        sigma = sigma_new
+        strain = strain_new
+        elem_state = state_new
+
+        # 8. Extract beam forces for active beams
+        beam_force_results = []
+        n_active_beams = 0
+        if beam_elements and active_bms:
+            from fem2d.elements import beam2d_internal_forces
+            n_active_beams = len(active_bms)
+            for idx in sorted(active_bms):
+                if idx >= len(beam_elements):
+                    continue
+                beam = beam_elements[idx]
+                coords_ij = np.array([
+                    nodes[beam.node_i], nodes[beam.node_j]])
+                bdofs = beam_element_dofs(
+                    beam.node_i, beam.node_j, rotation_dof_map)
+                u_beam = u[bdofs]
+                forces = beam2d_internal_forces(
+                    coords_ij, beam.EA, beam.EI, u_beam)
+                beam_force_results.append(BeamForceResult(
+                    element_index=idx,
+                    node_i=beam.node_i, node_j=beam.node_j,
+                    axial_i=forces['axial_i'],
+                    shear_i=forces['shear_i'],
+                    moment_i=forces['moment_i'],
+                    axial_j=forces['axial_j'],
+                    shear_j=forces['shear_j'],
+                    moment_j=forces['moment_j'],
+                    length=forces['length'],
+                ))
+
+        # 9. Build PhaseResult
+        u_trans = u[:2 * n_nodes_count]
+        ux = u_trans[0::2]
+        uy = u_trans[1::2]
+        disp_mag = np.sqrt(ux**2 + uy**2)
+
+        pr = PhaseResult(
+            phase_name=phase.name,
+            phase_index=pi,
+            n_active_elements=len(active_elems),
+            n_active_beams=n_active_beams,
+            converged=converged,
+            max_displacement_m=float(disp_mag.max()),
+            max_displacement_x_m=float(np.abs(ux).max()),
+            max_displacement_y_m=float(np.abs(uy).max()),
+            displacements=u_trans.copy(),
+            stresses=sigma.copy(),
+            strains=strain.copy(),
+        )
+
+        # Stress statistics from active elements only
+        active_list = sorted(active_elems)
+        if len(active_list) > 0:
+            active_stresses = sigma[active_list]
+            pr.max_sigma_xx_kPa = float(np.max(np.abs(active_stresses[:, 0])))
+            pr.max_sigma_yy_kPa = float(np.max(active_stresses[:, 1]))
+            pr.min_sigma_yy_kPa = float(np.min(active_stresses[:, 1]))
+            pr.max_tau_xy_kPa = float(np.max(np.abs(active_stresses[:, 2])))
+
+        if beam_force_results:
+            pr.n_beam_elements = len(beam_force_results)
+            pr.beam_forces = beam_force_results
+            pr.max_beam_moment_kNm_per_m = max(
+                max(abs(bf.moment_i), abs(bf.moment_j))
+                for bf in beam_force_results)
+            pr.max_beam_shear_kN_per_m = max(
+                max(abs(bf.shear_i), abs(bf.shear_j))
+                for bf in beam_force_results)
+
+        phase_results.append(pr)
+
+        # 10. Break if not converged
+        if not converged:
+            all_converged = False
+            break
+
+    return StagedConstructionResult(
+        n_phases=len(phase_results),
+        n_nodes=n_nodes_count,
+        n_elements=n_elem,
+        converged=all_converged,
+        phases=phase_results,
+        nodes=nodes,
+        elements=elements,
     )
 
 

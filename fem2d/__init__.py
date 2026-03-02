@@ -22,6 +22,7 @@ High-level API:
     analyze_excavation()     — braced excavation with wall
     analyze_seepage()        — steady-state seepage analysis
     analyze_consolidation()  — coupled Biot consolidation
+    analyze_staged()         — staged construction (multi-phase)
 
 References:
     Griffiths & Lane (1999) — Slope stability by finite elements
@@ -39,10 +40,14 @@ from fem2d.analysis import (
     analyze_excavation,
     analyze_seepage,
     analyze_consolidation,
+    analyze_staged,
     create_wall_elements,
+    ConstructionPhase,
+    assign_element_groups,
 )
 from fem2d.results import (
     FEMResult, BeamForceResult, SeepageResult, ConsolidationResult,
+    PhaseResult, StagedConstructionResult,
 )
 from fem2d.materials import (
     elastic_D, mc_return_mapping, drucker_prager_params,
@@ -81,9 +86,11 @@ __all__ = [
     # High-level API
     'analyze_gravity', 'analyze_foundation', 'analyze_slope_srm',
     'analyze_excavation', 'analyze_seepage', 'analyze_consolidation',
-    'create_wall_elements',
+    'analyze_staged', 'create_wall_elements',
+    'ConstructionPhase', 'assign_element_groups',
     # Results
     'FEMResult', 'BeamForceResult', 'SeepageResult', 'ConsolidationResult',
+    'PhaseResult', 'StagedConstructionResult',
     # Materials
     'elastic_D', 'mc_return_mapping', 'drucker_prager_params',
     'hs_return_mapping',

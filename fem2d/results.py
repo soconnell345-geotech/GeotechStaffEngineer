@@ -299,3 +299,160 @@ class FEMResult:
             if self.beam_forces:
                 d["beam_forces"] = [bf.to_dict() for bf in self.beam_forces]
         return d
+
+
+@dataclass
+class PhaseResult:
+    """Results from one phase of a staged construction analysis.
+
+    Attributes
+    ----------
+    phase_name : str
+    phase_index : int
+    n_active_elements : int
+    n_active_beams : int
+    converged : bool
+    max_displacement_m : float
+    max_displacement_x_m : float
+    max_displacement_y_m : float
+    max_sigma_xx_kPa : float
+    max_sigma_yy_kPa : float
+    max_tau_xy_kPa : float
+    min_sigma_yy_kPa : float
+    n_beam_elements : int
+    max_beam_moment_kNm_per_m : float
+    max_beam_shear_kN_per_m : float
+    """
+    phase_name: str = "Phase"
+    phase_index: int = 0
+    n_active_elements: int = 0
+    n_active_beams: int = 0
+    converged: bool = True
+    max_displacement_m: float = 0.0
+    max_displacement_x_m: float = 0.0
+    max_displacement_y_m: float = 0.0
+    max_sigma_xx_kPa: float = 0.0
+    max_sigma_yy_kPa: float = 0.0
+    max_tau_xy_kPa: float = 0.0
+    min_sigma_yy_kPa: float = 0.0
+    n_beam_elements: int = 0
+    max_beam_moment_kNm_per_m: float = 0.0
+    max_beam_shear_kN_per_m: float = 0.0
+    beam_forces: Optional[List] = field(default=None, repr=False)
+
+    # Raw arrays (not serialized to dict)
+    displacements: Optional[np.ndarray] = field(default=None, repr=False)
+    stresses: Optional[np.ndarray] = field(default=None, repr=False)
+    strains: Optional[np.ndarray] = field(default=None, repr=False)
+
+    def summary(self) -> str:
+        lines = [
+            f"  Phase {self.phase_index}: {self.phase_name}",
+            f"    Active elements: {self.n_active_elements}"
+            f", beams: {self.n_active_beams}",
+            f"    Converged: {self.converged}",
+            f"    Max displacement: {self.max_displacement_m:.4f} m",
+            f"    sigma_yy range: {self.min_sigma_yy_kPa:.1f} to "
+            f"{self.max_sigma_yy_kPa:.1f} kPa",
+        ]
+        if self.n_beam_elements > 0:
+            lines.append(
+                f"    Max moment: {self.max_beam_moment_kNm_per_m:.2f}"
+                f" kN*m/m")
+        return "\n".join(lines)
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = {
+            "phase_name": self.phase_name,
+            "phase_index": self.phase_index,
+            "n_active_elements": self.n_active_elements,
+            "n_active_beams": self.n_active_beams,
+            "converged": self.converged,
+            "max_displacement_m": round(self.max_displacement_m, 6),
+            "max_displacement_x_m": round(self.max_displacement_x_m, 6),
+            "max_displacement_y_m": round(self.max_displacement_y_m, 6),
+            "max_sigma_xx_kPa": round(self.max_sigma_xx_kPa, 2),
+            "max_sigma_yy_kPa": round(self.max_sigma_yy_kPa, 2),
+            "min_sigma_yy_kPa": round(self.min_sigma_yy_kPa, 2),
+            "max_tau_xy_kPa": round(self.max_tau_xy_kPa, 2),
+        }
+        if self.n_beam_elements > 0:
+            d["n_beam_elements"] = self.n_beam_elements
+            d["max_beam_moment_kNm_per_m"] = round(
+                self.max_beam_moment_kNm_per_m, 2)
+            d["max_beam_shear_kN_per_m"] = round(
+                self.max_beam_shear_kN_per_m, 2)
+            if self.beam_forces:
+                d["beam_forces"] = [bf.to_dict() for bf in self.beam_forces]
+        return d
+
+
+@dataclass
+class StagedConstructionResult:
+    """Container for all phases of a staged construction analysis.
+
+    Attributes
+    ----------
+    n_phases : int
+    n_nodes : int
+    n_elements : int
+    converged : bool — True if all phases converged.
+    phases : list of PhaseResult
+    """
+    n_phases: int = 0
+    n_nodes: int = 0
+    n_elements: int = 0
+    converged: bool = True
+    phases: List[PhaseResult] = field(default_factory=list)
+
+    # Shared mesh (not serialized)
+    nodes: Optional[np.ndarray] = field(default=None, repr=False)
+    elements: Optional[np.ndarray] = field(default=None, repr=False)
+
+    def get_phase(self, key):
+        """Get a phase by name (str) or index (int).
+
+        Parameters
+        ----------
+        key : str or int — phase name or 0-based index.
+
+        Returns
+        -------
+        PhaseResult
+
+        Raises
+        ------
+        KeyError / IndexError if not found.
+        """
+        if isinstance(key, int):
+            return self.phases[key]
+        for p in self.phases:
+            if p.phase_name == key:
+                return p
+        raise KeyError(f"Phase '{key}' not found")
+
+    def summary(self) -> str:
+        lines = [
+            "=" * 60,
+            "  STAGED CONSTRUCTION RESULTS",
+            "=" * 60,
+            "",
+            f"  Mesh: {self.n_nodes} nodes, {self.n_elements} elements",
+            f"  Phases: {self.n_phases}",
+            f"  All converged: {self.converged}",
+            "",
+        ]
+        for p in self.phases:
+            lines.append(p.summary())
+            lines.append("")
+        lines.append("=" * 60)
+        return "\n".join(lines)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "n_phases": self.n_phases,
+            "n_nodes": self.n_nodes,
+            "n_elements": self.n_elements,
+            "converged": self.converged,
+            "phases": [p.to_dict() for p in self.phases],
+        }

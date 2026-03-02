@@ -42,7 +42,7 @@ def element_dofs(conn):
 # Assembly
 # ---------------------------------------------------------------------------
 
-def assemble_stiffness(nodes, elements, D, t=1.0):
+def assemble_stiffness(nodes, elements, D, t=1.0, active_elements=None):
     """Assemble global stiffness matrix (sparse CSR).
 
     Parameters
@@ -52,6 +52,8 @@ def assemble_stiffness(nodes, elements, D, t=1.0):
     D : (3, 3) array or list of (3, 3) arrays — constitutive matrix.
         If a list, D[e] is used for element e.
     t : float — thickness.
+    active_elements : set of int, optional — element indices to include.
+        None means all elements are active.
 
     Returns
     -------
@@ -61,8 +63,12 @@ def assemble_stiffness(nodes, elements, D, t=1.0):
     rows, cols, vals = [], [], []
 
     D_is_list = isinstance(D, (list, np.ndarray)) and np.ndim(D) == 3
+    if active_elements is not None:
+        active_elements = set(active_elements)
 
     for e in range(len(elements)):
+        if active_elements is not None and e not in active_elements:
+            continue
         conn = elements[e]
         coords = nodes[conn]
         De = D[e] if D_is_list else D
@@ -85,7 +91,7 @@ def assemble_stiffness(nodes, elements, D, t=1.0):
     return K.tocsr()
 
 
-def assemble_gravity(nodes, elements, gamma, t=1.0):
+def assemble_gravity(nodes, elements, gamma, t=1.0, active_elements=None):
     """Assemble gravity body force vector.
 
     Parameters
@@ -95,6 +101,8 @@ def assemble_gravity(nodes, elements, gamma, t=1.0):
     gamma : float or (n_elements,) array — unit weight (kN/m³).
         If array, gamma[e] is used for element e.
     t : float
+    active_elements : set of int, optional — element indices to include.
+        None means all elements are active.
 
     Returns
     -------
@@ -104,8 +112,12 @@ def assemble_gravity(nodes, elements, gamma, t=1.0):
     F = np.zeros(n_dof)
 
     gamma_is_array = hasattr(gamma, '__len__')
+    if active_elements is not None:
+        active_elements = set(active_elements)
 
     for e in range(len(elements)):
+        if active_elements is not None and e not in active_elements:
+            continue
         conn = elements[e]
         coords = nodes[conn]
         g = gamma[e] if gamma_is_array else gamma
@@ -336,7 +348,7 @@ def beam_element_dofs(node_i, node_j, rotation_dof_map):
 
 
 def assemble_beam_stiffness(nodes, beam_elements, rotation_dof_map,
-                            n_dof_total):
+                            n_dof_total, active_beams=None):
     """Assemble global stiffness from beam elements.
 
     Parameters
@@ -345,6 +357,8 @@ def assemble_beam_stiffness(nodes, beam_elements, rotation_dof_map,
     beam_elements : list of BeamElement
     rotation_dof_map : dict — {node_id: rotation_dof_index}.
     n_dof_total : int — total system DOFs.
+    active_beams : set of int, optional — beam indices to include.
+        None means all beams are active.
 
     Returns
     -------
@@ -352,8 +366,13 @@ def assemble_beam_stiffness(nodes, beam_elements, rotation_dof_map,
     """
     from fem2d.elements import beam2d_stiffness
 
+    if active_beams is not None:
+        active_beams = set(active_beams)
+
     rows, cols, vals = [], [], []
-    for beam in beam_elements:
+    for idx, beam in enumerate(beam_elements):
+        if active_beams is not None and idx not in active_beams:
+            continue
         coords_ij = np.array([nodes[beam.node_i], nodes[beam.node_j]])
         K_e, _, _ = beam2d_stiffness(coords_ij, beam.EA, beam.EI)
         dofs = beam_element_dofs(beam.node_i, beam.node_j, rotation_dof_map)
@@ -368,7 +387,7 @@ def assemble_beam_stiffness(nodes, beam_elements, rotation_dof_map,
 
 
 def assemble_beam_gravity(nodes, beam_elements, rotation_dof_map,
-                          n_dof_total):
+                          n_dof_total, active_beams=None):
     """Assemble gravity load from beam self-weight.
 
     Distributes weight_per_m as consistent nodal forces (half to each node,
@@ -380,13 +399,20 @@ def assemble_beam_gravity(nodes, beam_elements, rotation_dof_map,
     beam_elements : list of BeamElement
     rotation_dof_map : dict
     n_dof_total : int
+    active_beams : set of int, optional — beam indices to include.
+        None means all beams are active.
 
     Returns
     -------
     F : (n_dof_total,) array
     """
+    if active_beams is not None:
+        active_beams = set(active_beams)
+
     F = np.zeros(n_dof_total)
-    for beam in beam_elements:
+    for idx, beam in enumerate(beam_elements):
+        if active_beams is not None and idx not in active_beams:
+            continue
         if beam.weight_per_m <= 0.0:
             continue
         dx = nodes[beam.node_j, 0] - nodes[beam.node_i, 0]

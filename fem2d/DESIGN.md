@@ -157,6 +157,63 @@ Staggered algorithm per time step Δt:
 
 Implicit backward Euler → unconditionally stable for any Δt.
 
+### Staged Construction
+
+Plaxis-style multi-phase analysis where each phase activates/deactivates
+soil element groups, beam elements, and loads. Cumulative state carries
+forward between phases.
+
+**Phase data model** (`ConstructionPhase`):
+- `name`: descriptive label
+- `active_soil_groups`: list of group names to activate
+- `active_beam_ids`: beam indices to include (None = no beams)
+- `surface_loads`: list of (edges, qx, qy) tractions
+- `gwt`: groundwater table (float, polyline, or None)
+- `n_steps`: gravity load increments
+- `reset_displacements`: zero u at phase start (keeps stress/strain)
+
+**Element group assignment** (`assign_element_groups()`):
+- Groups defined by bounding box regions (x_min, x_max, y_min, y_max)
+- Elements assigned by centroid location
+- Unassigned elements go to `'_default'` group
+
+**Active element filtering**:
+- Inactive elements contribute zero stiffness and zero gravity
+- Assembly functions (`assemble_stiffness`, `assemble_gravity`, etc.) accept
+  `active_elements` parameter — inactive elements are skipped in the loop
+- NR iteration skips inactive elements for internal force and tangent
+- Beam filtering via `active_beams` parameter on beam assembly functions
+
+**Cumulative state carryover**:
+- Each phase starts from previous phase's u, sigma, strain, elem_state
+- `solve_nonlinear()` accepts `u_init`, `sigma_init`, `strain_init`, `state_init`
+- HS hardening state preserved across phases
+- `reset_displacements=True` zeros u but keeps stress/strain (useful for
+  construction reference levels)
+
+**Delta gravity loading**:
+- Each phase applies full gravity for its active elements from scratch
+  (incremental via n_steps), with initial state from previous phase
+- Newly activated elements start contributing gravity in their phase
+- Deactivated elements are simply skipped (no unloading of previous stress)
+
+**Typical workflow**:
+```python
+groups = assign_element_groups(nodes, elements, {
+    'soil': {'x_min': 0, 'x_max': 20, 'y_min': -10, 'y_max': 0},
+    'excavation': {'x_min': 5, 'x_max': 15, 'y_min': -3, 'y_max': 0},
+})
+
+phases = [
+    ConstructionPhase(name="Initial gravity", active_soil_groups=['soil', 'excavation']),
+    ConstructionPhase(name="Excavate", active_soil_groups=['soil'],
+                      active_beam_ids=[0, 1, 2]),
+]
+
+result = analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
+                        element_groups=groups, phases=phases)
+```
+
 ## Sign Conventions
 
 - **Compression positive** in soil mechanics convention
@@ -178,15 +235,17 @@ fem2d/
   srm.py               # Strength Reduction Method (with pore pressure support)
   porewater.py         # Pore pressures, seepage, Biot consolidation
   analysis.py          # High-level API: gravity, foundation, slope SRM,
-                       #   excavation, seepage, consolidation
+                       #   excavation, seepage, consolidation, staged construction
   results.py           # FEMResult, BeamForceResult, SeepageResult,
-                       #   ConsolidationResult with summary()/to_dict()
+                       #   ConsolidationResult, PhaseResult,
+                       #   StagedConstructionResult with summary()/to_dict()
   DESIGN.md
   tests/
     test_fem2d.py             # 89 core module tests
     test_cross_validation.py  # 15 cross-validation tests
     test_hs_beams.py          # 55 HS model + beam element tests
     test_groundwater.py       # ~50 groundwater/seepage/consolidation tests
+    test_staged.py            # ~45 staged construction tests
 ```
 
 ## References

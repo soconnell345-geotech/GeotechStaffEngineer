@@ -134,7 +134,8 @@ def effective_stress_correction(sigma_total_3, u_pore):
     return np.asarray(sigma_total_3) - u_pore * _M_VOIGT
 
 
-def pore_pressure_force(nodes, elements, nodal_pp, t=1.0):
+def pore_pressure_force(nodes, elements, nodal_pp, t=1.0,
+                        active_elements=None):
     """Assemble equivalent nodal force vector from pore pressures.
 
     For each CST element:
@@ -147,6 +148,8 @@ def pore_pressure_force(nodes, elements, nodal_pp, t=1.0):
     elements : (n_elements, 3) array — CST connectivity.
     nodal_pp : (n_nodes,) array — nodal pore pressures.
     t : float — thickness.
+    active_elements : set of int, optional — element indices to include.
+        None means all elements are active.
 
     Returns
     -------
@@ -158,7 +161,12 @@ def pore_pressure_force(nodes, elements, nodal_pp, t=1.0):
     n_dof = 2 * len(nodes)
     F_pp = np.zeros(n_dof)
 
+    if active_elements is not None:
+        active_elements = set(active_elements)
+
     for e in range(len(elements)):
+        if active_elements is not None and e not in active_elements:
+            continue
         conn = elements[e]
         coords = nodes[conn]
         B, A = cst_B(coords)
