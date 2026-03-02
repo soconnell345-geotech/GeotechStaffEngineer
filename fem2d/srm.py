@@ -21,7 +21,8 @@ from fem2d.mesh import detect_boundary_nodes
 
 def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
                        t=1.0, srf_range=(0.5, 3.0), tol=0.02,
-                       n_load_steps=10, max_nr_iter=100, nr_tol=1e-5):
+                       n_load_steps=10, max_nr_iter=100, nr_tol=1e-5,
+                       pore_pressures=None):
     """Find slope stability FOS using the Strength Reduction Method.
 
     Parameters
@@ -39,6 +40,9 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
     n_load_steps : int — gravity load increments per SRF trial.
     max_nr_iter : int — max Newton-Raphson iterations.
     nr_tol : float — NR convergence tolerance.
+    pore_pressures : (n_nodes,) array, optional — nodal pore pressures.
+        Pore pressures remain unchanged during strength reduction
+        (only c and phi are reduced).
 
     Returns
     -------
@@ -66,7 +70,6 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
             rp = dict(mp)
             c_orig = mp.get('c', 0.0)
             phi_orig = mp.get('phi', 0.0)
-            psi_orig = mp.get('psi', 0.0)
 
             rp['c'] = c_orig / srf
             if phi_orig > 0:
@@ -75,11 +78,13 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
             else:
                 rp['phi'] = 0.0
             rp['psi'] = 0.0  # Zero dilation for SRM
+            # HS: stiffness params (E50_ref, Eur_ref, m, p_ref, R_f) unchanged
             reduced_props.append(rp)
 
         converged, u, stresses, strains = solve_nonlinear(
             nodes, elements, reduced_props, gamma, bc_nodes,
-            t=t, n_steps=n_load_steps, max_iter=max_nr_iter, tol=nr_tol)
+            t=t, n_steps=n_load_steps, max_iter=max_nr_iter, tol=nr_tol,
+            pore_pressures=pore_pressures)
         return converged, u, stresses
 
     n_trials = 0

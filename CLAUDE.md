@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 33 + 14 = 47 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (2231 module + 142 harness + 3299 ref = 5672 tests)
+## Module Inventory (2485 module + 142 harness + 3299 ref = 5926 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -39,7 +39,7 @@ Key conventions:
 | seismic_geotech | 71 | Site class, M-O pressures, liquefaction |
 | retaining_walls | 70 | Cantilever + MSE walls (GEC-11) |
 | ground_improvement | 43 | Aggregate piers, wick drains, surcharge, vibro (GEC-13) |
-| slope_stability | 55 | Fellenius/Bishop/Spencer, circular slip, grid search |
+| slope_stability | 109 | Fellenius/Bishop/Spencer, circular slip, grid search, soil nails |
 | downdrag | 53 | Fellenius neutral plane, UFC 3-220-20 downdrag |
 | geotech_common | 284 | SoilProfile (82) + checks (93) + adapters (89) + plots (21) |
 | opensees_agent | 106 | PM4Sand cyclic DSS, BNWF lateral pile, 1D site response |
@@ -59,9 +59,18 @@ Key conventions:
 | subsurface_characterization | 101 | Subsurface data visualization (DIGGS parser, Plotly plots, trend stats) |
 | wind_loads | 62 | ASCE 7-22 wind loads on freestanding walls and fences (Ch 29.3) |
 | dxf_import | 76 | DXF CAD import for slope stability (discover layers, parse geometry, build SlopeGeometry) |
-| fem2d | 104 | 2D plane-strain FEM (CST/Q4 elements, Mohr-Coulomb, Newton-Raphson, SRM slope FOS) |
+| fem2d | 208 | 2D plane-strain FEM (CST/Q4/beam, MC/HS, SRM, excavation, pore pressures, seepage, consolidation) |
 
 Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3299 tests), foundry_test_harness (142 tests), trial_agent (100 tests), chat_agent (42 tests)
+
+## GUIs (Plotly Dash)
+
+| GUI | Port | Purpose |
+|-----|------|---------|
+| `slope_stability_gui.py` | 8051 | Slope stability: geometry, soil layers, GWT, soil nails, Bishop/Spencer grid search |
+| `fem2d_gui.py` | 8055 | 2D FEM: gravity, foundation, slope SRM, excavation, seepage, consolidation |
+
+Run: `python slope_stability_gui.py` or `python fem2d_gui.py` — opens browser automatically.
 
 ## Foundry Test Harness
 

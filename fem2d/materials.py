@@ -183,6 +183,160 @@ def mc_return_mapping(sigma_trial_3, E, nu, c, phi_deg, psi_deg=0.0,
 
 
 # ---------------------------------------------------------------------------
+# Hardening Soil model (shear hardening, Schanz et al. 1999)
+# ---------------------------------------------------------------------------
+
+def _inplane_principals(sigma_3):
+    """Compute in-plane principal stresses from [sxx, syy, txy].
+
+    Returns (s1, s2) with s1 >= s2 (algebraic ordering, tension-positive).
+    """
+    sxx, syy, txy = sigma_3
+    p = (sxx + syy) / 2.0
+    R = math.sqrt(((sxx - syy) / 2.0) ** 2 + txy ** 2)
+    return p + R, p - R
+
+
+def hs_return_mapping(sigma_trial_3, state, E50_ref, Eur_ref, m, p_ref,
+                      R_f, nu, c, phi_deg, psi_deg=0.0):
+    """Hardening Soil return mapping for plane strain (shear hardening only).
+
+    Hyperbolic deviatoric response with stress-dependent stiffness and
+    Mohr-Coulomb failure envelope.  Unload/reload uses the stiffer E_ur.
+
+    Theory: Schanz, Vermeer & Bonnier (1999).
+
+    Parameters
+    ----------
+    sigma_trial_3 : (3,) array — trial stress [sigma_xx, sigma_yy, tau_xy].
+    state : dict — internal state variables.
+        'gamma_p_s' : float — accumulated plastic shear strain.
+        'sigma_prev' : (3,) array — stress at end of last converged step.
+        'loading' : bool — True if primary loading in previous step.
+    E50_ref : float — secant stiffness at 50% strength at p_ref (kPa).
+    Eur_ref : float — unload/reload stiffness at p_ref (kPa).
+    m : float — power-law exponent for stress dependency (typically 0.5-1.0).
+    p_ref : float — reference confining pressure (kPa, positive).
+    R_f : float — failure ratio q_f/q_a (typically 0.9).
+    nu : float — Poisson's ratio.
+    c : float — cohesion (kPa).
+    phi_deg : float — friction angle (degrees).
+    psi_deg : float — dilation angle (degrees), default 0.
+
+    Returns
+    -------
+    sigma_new : (3,) array — returned stress.
+    D_tang : (3, 3) array — tangent modulus.
+    yielded : bool — True if MC failure was reached.
+    state_new : dict — updated state variables.
+    """
+    phi = math.radians(phi_deg)
+    sin_phi = math.sin(phi)
+    cos_phi = math.cos(phi)
+
+    # --- Confining stress (minor principal, compression-positive) ---
+    s1, s2 = _inplane_principals(sigma_trial_3)
+    # In tension-positive convention, confining = most compressive = min
+    sigma3_comp = -min(s1, s2)  # convert to compression-positive for HS eqs
+    if sigma3_comp < 0.0:
+        sigma3_comp = 0.0  # clamp to zero if in tension
+
+    # --- Stress-dependent stiffness ---
+    denom = c * cos_phi + p_ref * sin_phi
+    if denom < 1e-10:
+        denom = 1e-10
+    numer = c * cos_phi + sigma3_comp * sin_phi
+    if numer < 1e-10:
+        numer = 1e-10
+    stress_ratio = (numer / denom) ** m
+
+    E_50 = max(E50_ref * stress_ratio, E50_ref * 0.01)
+    E_ur = max(Eur_ref * stress_ratio, Eur_ref * 0.01)
+
+    # --- Deviatoric stress and failure ---
+    sxx, syy, txy = sigma_trial_3
+    p_mean = (sxx + syy) / 2.0
+    q = math.sqrt(((sxx - syy) / 2.0) ** 2 + txy ** 2)
+
+    # MC failure deviatoric stress (tension-positive Mohr circle):
+    # q_f = c*cos(phi) - p*sin(phi)  (this is the MC yield: f = q - q_f)
+    q_f = c * cos_phi - p_mean * sin_phi
+    if q_f < 1e-10:
+        q_f = 1e-10
+
+    # Asymptotic deviatoric stress
+    q_a = q_f / max(R_f, 0.01)
+
+    # --- Detect loading vs unloading ---
+    sigma_prev = state.get('sigma_prev', np.zeros(3))
+    sxx_p, syy_p, txy_p = sigma_prev
+    q_prev = math.sqrt(((sxx_p - syy_p) / 2.0) ** 2 + txy_p ** 2)
+    gamma_p_s = state.get('gamma_p_s', 0.0)
+
+    is_loading = q >= q_prev - 1e-10
+
+    # --- Build tangent stiffness ---
+    if is_loading and q > 1e-10:
+        # Primary loading: hyperbolic tangent
+        # E_t = E_50 * (1 - R_f * q / q_f)^2
+        ratio = R_f * q / q_f
+        if ratio >= 1.0:
+            # At or beyond failure — use very soft tangent
+            E_t = E_50 * 0.001
+        else:
+            E_t = E_50 * (1.0 - ratio) ** 2
+        E_t = max(E_t, E_50 * 0.001)  # floor
+
+        # Update plastic shear strain
+        # eps_s = q_a * q / (E_50 * (q_a - q))  for q < q_a
+        if q < q_a - 1e-10:
+            eps_s_total = q_a * q / (E_50 * (q_a - q))
+        else:
+            eps_s_total = q_a / E_50 * 10.0  # cap
+        eps_s_elastic = q / E_ur
+        gamma_p_s_new = max(eps_s_total - eps_s_elastic, gamma_p_s)
+    else:
+        # Unload/reload: use E_ur (stiffer)
+        E_t = E_ur
+        gamma_p_s_new = gamma_p_s
+
+    # Build D-matrix with effective tangent modulus
+    D_tang = _build_D_planestrain(E_t, nu)
+
+    # --- Check MC failure — if exceeded, return to yield surface ---
+    f_trial = q + p_mean * sin_phi - c * cos_phi
+    if f_trial > 0.0:
+        sigma_new, D_ep, _ = mc_return_mapping(
+            sigma_trial_3, E_ur, nu, c, phi_deg, psi_deg)
+        state_new = {
+            'gamma_p_s': gamma_p_s_new,
+            'sigma_prev': sigma_new.copy(),
+            'loading': is_loading,
+        }
+        return sigma_new, D_ep, True, state_new
+
+    # Elastic / sub-yield
+    state_new = {
+        'gamma_p_s': gamma_p_s_new,
+        'sigma_prev': sigma_trial_3.copy(),
+        'loading': is_loading,
+    }
+    return sigma_trial_3.copy(), D_tang, False, state_new
+
+
+def _build_D_planestrain(E, nu):
+    """Build plane-strain D-matrix (3x3) from E and nu."""
+    if E < 1e-10:
+        E = 1e-10
+    c = E / ((1.0 + nu) * (1.0 - 2.0 * nu))
+    return c * np.array([
+        [1.0 - nu, nu, 0.0],
+        [nu, 1.0 - nu, 0.0],
+        [0.0, 0.0, (1.0 - 2.0 * nu) / 2.0],
+    ])
+
+
+# ---------------------------------------------------------------------------
 # Drucker-Prager (plane-strain matching)
 # ---------------------------------------------------------------------------
 

@@ -2,13 +2,41 @@
 Finite element formulations for 2D plane-strain analysis.
 
 Provides CST (3-node constant strain triangle) and Q4 (4-node
-isoparametric quadrilateral) element stiffness and force routines.
+isoparametric quadrilateral) element stiffness and force routines,
+plus Euler-Bernoulli beam elements for structural members.
 
-All elements use the DOF ordering: [u1, v1, u2, v2, ...].
-Node numbering is counter-clockwise.
+All soil elements use DOF ordering: [u1, v1, u2, v2, ...].
+Beam elements use: [ui, vi, theta_i, uj, vj, theta_j].
+Node numbering is counter-clockwise for 2D elements.
 """
 
+import math
+from dataclasses import dataclass
+
 import numpy as np
+
+
+# ---------------------------------------------------------------------------
+# Beam element dataclass
+# ---------------------------------------------------------------------------
+
+@dataclass
+class BeamElement:
+    """2D Euler-Bernoulli beam element.
+
+    Parameters
+    ----------
+    node_i : int — start node index.
+    node_j : int — end node index.
+    EA : float — axial stiffness (kN).
+    EI : float — flexural stiffness (kN·m²).
+    weight_per_m : float — self-weight per unit length (kN/m). Default 0.
+    """
+    node_i: int
+    node_j: int
+    EA: float
+    EI: float
+    weight_per_m: float = 0.0
 
 # 2×2 Gauss quadrature points and weights
 _GP = 1.0 / np.sqrt(3.0)
@@ -233,3 +261,118 @@ def q4_stress(coords, D, u_e):
     epsilon = B @ u_e
     sigma = D @ epsilon
     return sigma, epsilon
+
+
+# ---------------------------------------------------------------------------
+# 2D Euler-Bernoulli beam element
+# ---------------------------------------------------------------------------
+
+def beam2d_stiffness(coords_ij, EA, EI):
+    """Element stiffness matrix for a 2-node Euler-Bernoulli beam.
+
+    DOF ordering: [ui, vi, theta_i, uj, vj, theta_j].
+
+    Parameters
+    ----------
+    coords_ij : (2, 2) array — [[xi, yi], [xj, yj]].
+    EA : float — axial stiffness (kN).
+    EI : float — flexural stiffness (kN*m^2).
+
+    Returns
+    -------
+    K_global : (6, 6) array — stiffness in global coordinates.
+    T : (6, 6) array — transformation matrix (local → global).
+    L : float — element length.
+    """
+    dx = coords_ij[1, 0] - coords_ij[0, 0]
+    dy = coords_ij[1, 1] - coords_ij[0, 1]
+    L = math.sqrt(dx ** 2 + dy ** 2)
+    c = dx / L  # cos(alpha)
+    s = dy / L  # sin(alpha)
+
+    # Local stiffness: axial + bending
+    k_a = EA / L
+    k1 = 12.0 * EI / L ** 3
+    k2 = 6.0 * EI / L ** 2
+    k3 = 4.0 * EI / L
+    k4 = 2.0 * EI / L
+
+    K_local = np.array([
+        [ k_a,   0,    0,  -k_a,   0,    0  ],
+        [  0,   k1,   k2,    0,  -k1,   k2  ],
+        [  0,   k2,   k3,    0,  -k2,   k4  ],
+        [-k_a,   0,    0,   k_a,   0,    0  ],
+        [  0,  -k1,  -k2,    0,   k1,  -k2  ],
+        [  0,   k2,   k4,    0,  -k2,   k3  ],
+    ])
+
+    # Rotation transformation: local → global
+    T = np.array([
+        [ c,  s,  0,  0,  0,  0],
+        [-s,  c,  0,  0,  0,  0],
+        [ 0,  0,  1,  0,  0,  0],
+        [ 0,  0,  0,  c,  s,  0],
+        [ 0,  0,  0, -s,  c,  0],
+        [ 0,  0,  0,  0,  0,  1],
+    ])
+
+    K_global = T.T @ K_local @ T
+    return K_global, T, L
+
+
+def beam2d_internal_forces(coords_ij, EA, EI, u_beam_6):
+    """Compute internal forces for a 2-node beam element.
+
+    Parameters
+    ----------
+    coords_ij : (2, 2) array — [[xi, yi], [xj, yj]].
+    EA : float — axial stiffness.
+    EI : float — flexural stiffness.
+    u_beam_6 : (6,) array — beam DOF displacements [ui, vi, thi, uj, vj, thj].
+
+    Returns
+    -------
+    dict with keys:
+        'axial_i', 'shear_i', 'moment_i' — forces at node i.
+        'axial_j', 'shear_j', 'moment_j' — forces at node j.
+        'length' — element length.
+    """
+    K_global, T, L = beam2d_stiffness(coords_ij, EA, EI)
+
+    # Global forces
+    f_global = K_global @ u_beam_6
+
+    # Transform to local for axial/shear/moment
+    u_local = T @ u_beam_6
+    dx = coords_ij[1, 0] - coords_ij[0, 0]
+    dy = coords_ij[1, 1] - coords_ij[0, 1]
+    c = dx / L
+    s = dy / L
+
+    # Local stiffness for internal forces
+    k_a = EA / L
+    k1 = 12.0 * EI / L ** 3
+    k2 = 6.0 * EI / L ** 2
+    k3 = 4.0 * EI / L
+    k4 = 2.0 * EI / L
+
+    K_local = np.array([
+        [ k_a,   0,    0,  -k_a,   0,    0  ],
+        [  0,   k1,   k2,    0,  -k1,   k2  ],
+        [  0,   k2,   k3,    0,  -k2,   k4  ],
+        [-k_a,   0,    0,   k_a,   0,    0  ],
+        [  0,  -k1,  -k2,    0,   k1,  -k2  ],
+        [  0,   k2,   k4,    0,  -k2,   k3  ],
+    ])
+
+    f_local = K_local @ u_local
+
+    return {
+        'axial_i': float(f_local[0]),
+        'shear_i': float(f_local[1]),
+        'moment_i': float(f_local[2]),
+        'axial_j': float(f_local[3]),
+        'shear_j': float(f_local[4]),
+        'moment_j': float(f_local[5]),
+        'length': float(L),
+    }

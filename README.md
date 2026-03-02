@@ -1,6 +1,6 @@
 # GeotechStaffEngineer
 
-Python toolkit for LLM-based geotechnical engineering agents. 30 analysis modules covering foundations, piles, slopes, seismic analysis, ground improvement, and more.
+Python toolkit for LLM-based geotechnical engineering agents. 35 analysis modules covering foundations, piles, slopes, seismic analysis, ground improvement, FEM, and more.
 
 ## Installation
 
@@ -33,7 +33,7 @@ print(result.summary())
 
 All units are SI (meters, kPa, kN, degrees). Every module returns dataclasses with `.summary()` and `.to_dict()` methods for easy LLM integration.
 
-### Core Analysis (15 modules)
+### Core Analysis (20 modules)
 
 | Module | Purpose |
 |--------|---------|
@@ -41,6 +41,7 @@ All units are SI (meters, kPa, kN, degrees). Every module returns dataclasses wi
 | `settlement` | Consolidation and immediate settlement |
 | `axial_pile` | Driven pile capacity — Nordlund, Tomlinson, Beta |
 | `sheet_pile` | Cantilever and anchored sheet pile walls |
+| `soe` | Support of excavation — braced/cantilever walls, stability, ground anchors |
 | `lateral_pile` | Lateral pile analysis — COM624P, 8 p-y models |
 | `pile_group` | Rigid-cap pile groups — 6-DOF, efficiency factors |
 | `wave_equation` | Smith 1-D wave equation — bearing graph, drivability |
@@ -48,10 +49,14 @@ All units are SI (meters, kPa, kN, degrees). Every module returns dataclasses wi
 | `seismic_geotech` | Site classification, M-O pressures, liquefaction |
 | `retaining_walls` | Cantilever and MSE retaining walls |
 | `ground_improvement` | Aggregate piers, wick drains, vibro-compaction |
-| `slope_stability` | Fellenius, Bishop, Spencer — circular slip surfaces |
+| `slope_stability` | Fellenius, Bishop, Spencer — circular slip, soil nails |
 | `downdrag` | Neutral plane method, dragload estimation |
 | `geotech_common` | Shared soil profile, adapters, plotting utilities |
 | `calc_package` | Calculation package report generation |
+| `subsurface_characterization` | DIGGS parser, Plotly visualizations, trend stats |
+| `wind_loads` | ASCE 7-22 wind on freestanding walls and fences |
+| `dxf_import` | DXF CAD import for slope stability geometry |
+| `fem2d` | 2D plane-strain FEM — CST/Q4/beam, MC/HS, SRM, seepage, consolidation |
 
 ### Library Wrapper Agents (15 modules)
 
@@ -75,6 +80,17 @@ Each agent wraps a third-party geotechnical library with a dict-based API for LL
 | `pydiggs_agent` | pydiggs | DIGGS 2.6 XML validation |
 | `groundhog_agent` | groundhog | Site investigation and soil mechanics |
 
+## GUIs
+
+Interactive browser-based GUIs built with Plotly Dash:
+
+| GUI | Command | Purpose |
+|-----|---------|---------|
+| `slope_stability_gui.py` | `python slope_stability_gui.py` | Slope stability analysis with live preview |
+| `fem2d_gui.py` | `python fem2d_gui.py` | 2D FEM analysis — gravity, foundation, SRM, excavation, seepage, consolidation |
+
+Requires `pip install geotech-staff-engineer[gui]` for Dash and Plotly dependencies.
+
 ## Optional Extras
 
 | Extra | Libraries |
@@ -96,6 +112,8 @@ Each agent wraps a third-party geotechnical library with a dict-based API for LL
 | `geolysis` | geolysis |
 | `pystra` | pystra |
 | `pydiggs` | pydiggs |
+| `dxf` | ezdxf |
+| `gui` | dash, plotly |
 | `full` | All of the above |
 
 ## Related Package

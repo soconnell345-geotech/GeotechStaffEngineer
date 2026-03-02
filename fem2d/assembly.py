@@ -281,6 +281,124 @@ def recover_element_stresses(nodes, elements, D, u):
     return stresses, strains
 
 
+# ---------------------------------------------------------------------------
+# Beam element DOF mapping and assembly
+# ---------------------------------------------------------------------------
+
+def build_rotation_dof_map(n_nodes, beam_elements):
+    """Build mapping from node IDs to rotation DOF indices.
+
+    Rotation DOFs are numbered starting at 2*n_nodes, after all
+    translational DOFs, so soil-only problems are unaffected.
+
+    Parameters
+    ----------
+    n_nodes : int — total number of nodes.
+    beam_elements : list of BeamElement — beam elements.
+
+    Returns
+    -------
+    rotation_dof_map : dict — {node_id: global_dof_index}.
+    n_dof_total : int — total DOFs (translational + rotational).
+    """
+    beam_node_set = set()
+    for b in beam_elements:
+        beam_node_set.add(b.node_i)
+        beam_node_set.add(b.node_j)
+
+    rotation_dof_map = {}
+    next_dof = 2 * n_nodes
+    for node_id in sorted(beam_node_set):
+        rotation_dof_map[node_id] = next_dof
+        next_dof += 1
+
+    return rotation_dof_map, next_dof
+
+
+def beam_element_dofs(node_i, node_j, rotation_dof_map):
+    """Get global DOF indices for a beam element.
+
+    Returns DOFs in order: [ui, vi, theta_i, uj, vj, theta_j].
+
+    Parameters
+    ----------
+    node_i, node_j : int — node indices.
+    rotation_dof_map : dict — from build_rotation_dof_map().
+
+    Returns
+    -------
+    dofs : (6,) int array
+    """
+    return np.array([
+        2 * node_i, 2 * node_i + 1, rotation_dof_map[node_i],
+        2 * node_j, 2 * node_j + 1, rotation_dof_map[node_j],
+    ], dtype=int)
+
+
+def assemble_beam_stiffness(nodes, beam_elements, rotation_dof_map,
+                            n_dof_total):
+    """Assemble global stiffness from beam elements.
+
+    Parameters
+    ----------
+    nodes : (n_nodes, 2) array
+    beam_elements : list of BeamElement
+    rotation_dof_map : dict — {node_id: rotation_dof_index}.
+    n_dof_total : int — total system DOFs.
+
+    Returns
+    -------
+    K_beam : sparse CSR matrix (n_dof_total × n_dof_total)
+    """
+    from fem2d.elements import beam2d_stiffness
+
+    rows, cols, vals = [], [], []
+    for beam in beam_elements:
+        coords_ij = np.array([nodes[beam.node_i], nodes[beam.node_j]])
+        K_e, _, _ = beam2d_stiffness(coords_ij, beam.EA, beam.EI)
+        dofs = beam_element_dofs(beam.node_i, beam.node_j, rotation_dof_map)
+        for i in range(6):
+            for j in range(6):
+                rows.append(dofs[i])
+                cols.append(dofs[j])
+                vals.append(K_e[i, j])
+
+    K = coo_matrix((vals, (rows, cols)), shape=(n_dof_total, n_dof_total))
+    return K.tocsr()
+
+
+def assemble_beam_gravity(nodes, beam_elements, rotation_dof_map,
+                          n_dof_total):
+    """Assemble gravity load from beam self-weight.
+
+    Distributes weight_per_m as consistent nodal forces (half to each node,
+    applied in the -y direction).
+
+    Parameters
+    ----------
+    nodes : (n_nodes, 2) array
+    beam_elements : list of BeamElement
+    rotation_dof_map : dict
+    n_dof_total : int
+
+    Returns
+    -------
+    F : (n_dof_total,) array
+    """
+    F = np.zeros(n_dof_total)
+    for beam in beam_elements:
+        if beam.weight_per_m <= 0.0:
+            continue
+        dx = nodes[beam.node_j, 0] - nodes[beam.node_i, 0]
+        dy = nodes[beam.node_j, 1] - nodes[beam.node_i, 1]
+        L = np.sqrt(dx ** 2 + dy ** 2)
+        w_total = beam.weight_per_m * L
+        # Half to each node, downward
+        F[2 * beam.node_i + 1] -= w_total / 2.0
+        F[2 * beam.node_j + 1] -= w_total / 2.0
+    return F
+
+
 def nodal_stresses(nodes, elements, element_stresses):
     """Average element stresses to nodes.
 
