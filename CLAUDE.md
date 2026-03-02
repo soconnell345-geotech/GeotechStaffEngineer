@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-35 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + geolysis agent + pystra agent + pydiggs agent + subsurface characterization + wind loads (ASCE 7-22) + DXF import + fem2d (2D plane-strain FEM with staged construction) + DM7 equations + trial_agent (Claude API tool_use integration) + chat_agent (ReAct agent for text-only chat functions).
+35 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + geolysis agent + pystra agent + pydiggs agent + subsurface characterization + wind loads (ASCE 7-22) + DXF import + PDF import + fem2d (2D plane-strain FEM with staged construction) + DM7 equations + trial_agent (Claude API tool_use integration) + chat_agent (ReAct agent for text-only chat functions) + funhouse_agent (engine-agnostic agent with vision).
 
 ## Architecture Patterns
 
@@ -21,9 +21,9 @@ Key conventions:
 - **Dict-based I/O** for LLM agents: analyze_*() returns dataclass, .to_dict() for JSON
 - **No cross-module imports** between analysis modules (geotech_common is the exception)
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
-- **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 33 + 14 = 47 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
+- **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (2526 module + 142 harness + 3299 ref = 5967 tests)
+## Module Inventory (2635 module + 142 harness + 3299 ref = 6076 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -58,10 +58,11 @@ Key conventions:
 | pydiggs_agent | 31 | DIGGS 2.6 XML schema and dictionary validation |
 | subsurface_characterization | 101 | Subsurface data visualization (DIGGS parser, Plotly plots, trend stats) |
 | wind_loads | 62 | ASCE 7-22 wind loads on freestanding walls and fences (Ch 29.3) |
-| dxf_import | 76 | DXF CAD import for slope stability (discover layers, parse geometry, build SlopeGeometry) |
+| dxf_import | 97 | DXF CAD import for slope stability + FEM (discover layers, parse geometry, build SlopeGeometry/FEM inputs) |
+| pdf_import | 56 | PDF cross-section import (PyMuPDF vector extraction, LLM vision extraction, geometry conversion) |
 | fem2d | 249 | 2D plane-strain FEM (CST/Q4/beam, MC/HS, SRM, excavation, pore pressures, seepage, consolidation, staged construction) |
 
-Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3299 tests), foundry_test_harness (142 tests), trial_agent (100 tests), chat_agent (42 tests)
+Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3299 tests), foundry_test_harness (142 tests), trial_agent (100 tests), chat_agent (42 tests), funhouse_agent (32 tests)
 
 ## GUIs (Plotly Dash)
 
@@ -139,6 +140,54 @@ agent.reset()
 ```
 
 Run: `pytest chat_agent/ -v`
+
+## PDF Import (Cross-Section Geometry Extraction)
+
+`pdf_import/` extracts cross-section geometry from PDF drawings using two methods:
+
+1. **Vector extraction** — PyMuPDF `page.get_drawings()` for exact geometry
+2. **Vision extraction** — LLM image analysis via pluggable `image_fn`
+
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Exports + `to_dxf_parse_result()` adapter |
+| `results.py` | `PdfParseResult` dataclass (mirrors DxfParseResult fields) |
+| `extractor.py` | PyMuPDF vector path extraction + `discover_pdf_content()` |
+| `vision.py` | LLM vision extraction + JSON parsing |
+| `tests/` | 56 tests (programmatic PDFs + mock vision functions) |
+
+Workflow: `discover_pdf_content()` → `extract_vector_geometry()` → `to_dxf_parse_result()` → `build_slope_geometry()` / `build_fem_inputs()`
+
+Requires: `PyMuPDF >= 1.23` (optional: `pip install geotech-staff-engineer[pdf]`)
+
+Run: `pytest pdf_import/ -v`
+
+## Funhouse Agent (Engine-Agnostic Geotechnical Agent)
+
+`funhouse_agent/` provides an engine-agnostic geotechnical agent with text + vision capabilities. Works with any AI backend satisfying the `GenAIEngine` protocol.
+
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Exports: `GeotechAgent`, `GenAIEngine`, `ClaudeEngine`, `AgentResult` |
+| `engine.py` | `GenAIEngine` Protocol + `ClaudeEngine` adapter |
+| `agent.py` | `GeotechAgent` class (ReAct loop + vision dispatch) |
+| `vision_tools.py` | Vision tool definitions and dispatch |
+| `tests/` | 32 tests (mock engines, no API key needed) |
+
+Usage:
+```python
+from funhouse_agent import GeotechAgent, ClaudeEngine
+
+# With PrompterAPI (Databricks) — works natively
+agent = GeotechAgent(genai_engine=prompter_api)
+
+# With Claude
+agent = GeotechAgent(genai_engine=ClaudeEngine())
+
+result = agent.ask("Calculate bearing capacity of 2m footing, phi=30")
+```
+
+Run: `pytest funhouse_agent/ -v`
 
 ## Working on a Module
 

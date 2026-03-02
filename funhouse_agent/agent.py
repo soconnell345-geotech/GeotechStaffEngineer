@@ -1,0 +1,254 @@
+"""
+GeotechAgent — engine-agnostic geotechnical agent with text + vision.
+
+Wraps GeotechChatAgent with dependency-injected AI engine and adds
+vision tool dispatch for image/PDF analysis.
+"""
+
+import json
+import time
+from typing import Callable, Dict, Optional
+
+from chat_agent.agent import (
+    AgentResult, ConversationHistory, dispatch_tool, _truncate,
+)
+from chat_agent.parser import parse_response
+from chat_agent.react_prompt import build_system_prompt
+
+from funhouse_agent.vision_tools import (
+    EXTENDED_TOOLS, VISION_TOOL_DESCRIPTIONS,
+    dispatch_vision_tool,
+)
+
+
+def _build_agent_system_prompt() -> str:
+    """Build system prompt with vision tool extensions."""
+    base = build_system_prompt()
+    return base + "\n\n" + VISION_TOOL_DESCRIPTIONS
+
+
+class GeotechAgent:
+    """Engine-agnostic geotechnical agent with text + vision capabilities.
+
+    Uses dependency injection: any AI backend satisfying the GenAIEngine
+    protocol can power this agent. PrompterAPI works natively; Claude
+    uses the ClaudeEngine adapter.
+
+    Parameters
+    ----------
+    genai_engine : GenAIEngine
+        AI backend providing chat() and optionally analyze_image().
+    max_rounds : int
+        Maximum ReAct loop iterations.
+    temperature : float
+        Sampling temperature for the engine.
+    verbose : bool
+        Print each round's action to stdout.
+    on_tool_call : callable, optional
+        Callback(tool_name, arguments, result_str) for logging.
+    """
+
+    def __init__(
+        self,
+        genai_engine,
+        max_rounds: int = 10,
+        temperature: float = 0.1,
+        verbose: bool = False,
+        on_tool_call: Optional[Callable] = None,
+    ):
+        self._engine = genai_engine
+        self._max_rounds = max_rounds
+        self._temperature = temperature
+        self._verbose = verbose
+        self._on_tool_call = on_tool_call
+        self._system_prompt = _build_agent_system_prompt()
+        self._history = ConversationHistory()
+        self._attachments: Dict[str, bytes] = {}
+        self._max_result_chars = 8000
+
+    def ask(self, question: str) -> AgentResult:
+        """Run the ReAct loop for a user question.
+
+        Uses the extended tool set (standard + vision) and dispatches
+        vision tools to the engine's analyze_image() method.
+
+        Returns AgentResult with the final answer, tool call log, and timing.
+        """
+        t0 = time.time()
+        self._history.add_user(question)
+
+        tool_log = []
+        rounds = 0
+
+        for rounds in range(1, self._max_rounds + 1):
+            prompt = self._history.format_prompt()
+            response = self._engine.chat(
+                prompt, self._system_prompt, self._temperature
+            )
+
+            try:
+                parsed = parse_response(response, valid_tools=EXTENDED_TOOLS)
+            except ValueError as e:
+                self._history.add_assistant(response)
+                error_msg = json.dumps({"error": f"Parse error: {e}"})
+                self._history.add_tool_result(error_msg)
+                if self._verbose:
+                    print(f"  Round {rounds}: PARSE ERROR — {e}")
+                continue
+
+            if parsed.tool_call is None:
+                self._history.add_assistant(response)
+                if self._verbose:
+                    print(f"  Round {rounds}: FINAL ANSWER")
+                return AgentResult(
+                    answer=response.strip(),
+                    tool_calls=tool_log,
+                    rounds=rounds,
+                    total_time_s=time.time() - t0,
+                    conversation_turns=len(self._history),
+                )
+
+            tc = parsed.tool_call
+            if self._verbose:
+                print(f"  Round {rounds}: {tc.tool_name}("
+                      f"{json.dumps(tc.arguments, default=str)[:120]})")
+
+            # Dispatch: vision tools or standard tools
+            if tc.tool_name in ("analyze_image", "analyze_pdf_page"):
+                result_str = dispatch_vision_tool(
+                    tc.tool_name, tc.arguments,
+                    self._engine, self._attachments,
+                )
+            else:
+                result_str = dispatch_tool(tc)
+
+            result_str = _truncate(result_str, self._max_result_chars)
+
+            log_entry = {
+                "round": rounds,
+                "tool_name": tc.tool_name,
+                "arguments": tc.arguments,
+                "result_preview": result_str[:200],
+            }
+            tool_log.append(log_entry)
+
+            if self._on_tool_call:
+                self._on_tool_call(tc.tool_name, tc.arguments, result_str)
+
+            self._history.add_assistant(response)
+            self._history.add_tool_result(result_str)
+
+        if self._verbose:
+            print(f"  Max rounds ({self._max_rounds}) reached")
+        return AgentResult(
+            answer=(
+                f"[Reached maximum of {self._max_rounds} tool rounds. "
+                f"Partial analysis above may be incomplete.]"
+            ),
+            tool_calls=tool_log,
+            rounds=rounds,
+            total_time_s=time.time() - t0,
+            conversation_turns=len(self._history),
+        )
+
+    def add_attachment(self, key: str, data: bytes) -> None:
+        """Attach image/PDF bytes for vision tool calls.
+
+        Parameters
+        ----------
+        key : str
+            Identifier for the attachment (referenced in tool calls).
+        data : bytes
+            File content (image or PDF).
+        """
+        self._attachments[key] = data
+
+    def extract_geometry_from_image(
+        self, image_bytes: bytes, prompt: str = None,
+    ):
+        """Extract geometry from image using engine's vision.
+
+        Parameters
+        ----------
+        image_bytes : bytes
+            Image content (PNG, JPEG, etc.).
+        prompt : str, optional
+            Custom extraction prompt.
+
+        Returns
+        -------
+        PdfParseResult
+            Extracted geometry.
+        """
+        from pdf_import.vision import extract_geometry_vision
+        return extract_geometry_vision(
+            image_fn=self._engine.analyze_image,
+            content=image_bytes,
+            custom_prompt=prompt,
+        )
+
+    def extract_geometry_from_pdf(self, pdf_bytes: bytes, page: int = 0):
+        """Extract geometry from PDF page using engine's vision.
+
+        Parameters
+        ----------
+        pdf_bytes : bytes
+            PDF file content.
+        page : int
+            Page number (0-indexed).
+
+        Returns
+        -------
+        PdfParseResult
+            Extracted geometry.
+        """
+        from pdf_import.vision import extract_geometry_vision
+        return extract_geometry_vision(
+            image_fn=self._engine.analyze_image,
+            content=pdf_bytes,
+            page=page,
+        )
+
+    def analyze_pdf_report(self, pdf_bytes: bytes, prompt: str = None) -> str:
+        """Render PDF pages and analyze via engine's vision.
+
+        Parameters
+        ----------
+        pdf_bytes : bytes
+            PDF file content.
+        prompt : str, optional
+            Analysis prompt.
+
+        Returns
+        -------
+        str
+            Engine's analysis text.
+        """
+        from pdf_import.vision import _render_pdf_page
+        image_bytes = _render_pdf_page(content=pdf_bytes, page=0)
+        return self._engine.analyze_image(
+            image_bytes,
+            prompt or "Analyze this geotechnical report page.",
+        )
+
+    def reset(self) -> None:
+        """Clear conversation history and attachments."""
+        self._history.clear()
+        self._attachments.clear()
+
+    @property
+    def has_vision(self) -> bool:
+        """Check if the engine supports vision."""
+        return hasattr(self._engine, "analyze_image") and callable(
+            getattr(self._engine, "analyze_image", None)
+        )
+
+    @property
+    def history(self) -> ConversationHistory:
+        """Access the conversation history."""
+        return self._history
+
+    @property
+    def attachments(self) -> Dict[str, bytes]:
+        """Access current attachments."""
+        return dict(self._attachments)

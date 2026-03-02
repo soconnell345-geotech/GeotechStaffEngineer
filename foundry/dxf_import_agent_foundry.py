@@ -123,6 +123,59 @@ def _run_build_slope_geometry(params):
     return result
 
 
+def _run_build_fem_inputs(params):
+    from dxf_import import build_fem_inputs, FEMSoilPropertyAssignment
+    from dxf_import.results import DxfParseResult
+    # Reconstruct DxfParseResult from dict
+    pr_dict = params.get("parse_result", {})
+    surface_points = [
+        (p["x"], p["z"]) for p in pr_dict.get("surface_points", [])
+    ]
+    boundary_profiles = {}
+    for name, pts in pr_dict.get("boundary_profiles", {}).items():
+        boundary_profiles[name] = [(p["x"], p["z"]) for p in pts]
+    gwt_points = None
+    if "gwt_points" in pr_dict and pr_dict["gwt_points"]:
+        gwt_points = [(p["x"], p["z"]) for p in pr_dict["gwt_points"]]
+    parse_result = DxfParseResult(
+        surface_points=surface_points,
+        boundary_profiles=boundary_profiles,
+        gwt_points=gwt_points,
+        units_used=pr_dict.get("units_used", "m"),
+    )
+    # Build FEM soil properties
+    soil_props = []
+    for sp_dict in params.get("soil_properties", []):
+        soil_props.append(FEMSoilPropertyAssignment(
+            name=sp_dict.get("name", ""),
+            gamma=sp_dict.get("gamma", 18.0),
+            phi=sp_dict.get("phi", 0.0),
+            c=sp_dict.get("c", 0.0),
+            E=sp_dict.get("E", 30000.0),
+            nu=sp_dict.get("nu", 0.3),
+            psi=sp_dict.get("psi", 0.0),
+            model=sp_dict.get("model", "mc"),
+            hs_params=sp_dict.get("hs_params"),
+        ))
+    result = build_fem_inputs(parse_result, soil_props)
+    # Serialize for JSON
+    out = {
+        "surface_points": [
+            {"x": round(x, 4), "z": round(z, 4)}
+            for x, z in result["surface_points"]
+        ],
+        "n_layers": len(result["soil_layers"]),
+        "layers": result["soil_layers"],
+        "has_gwt": result["gwt"] is not None,
+        "n_boundary_polylines": len(result["boundary_polylines"]),
+    }
+    # Round layer elevations
+    for lyr in out["layers"]:
+        lyr["top_elevation"] = round(lyr["top_elevation"], 3)
+        lyr["bottom_elevation"] = round(lyr["bottom_elevation"], 3)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -131,6 +184,7 @@ METHOD_REGISTRY = {
     "discover_layers": _run_discover_layers,
     "parse_geometry": _run_parse_geometry,
     "build_slope_geometry": _run_build_slope_geometry,
+    "build_fem_inputs": _run_build_fem_inputs,
 }
 
 METHOD_INFO = {
@@ -217,6 +271,40 @@ METHOD_INFO = {
             "boundary_profiles": "Dict of soil_name → [{x, z}] arrays.",
             "gwt_points": "GWT profile [{x, z}] or null.",
             "nail_lines": "List of {x_head, z_head, x_tip, z_tip} dicts.",
+        },
+    },
+    "build_fem_inputs": {
+        "category": "Conversion",
+        "brief": "Convert DXF geometry to fem2d FEM input format.",
+        "description": (
+            "Takes a parse_geometry result and user-supplied soil properties "
+            "(gamma, phi, c, E, nu, psi, model) to create fem2d input dicts. "
+            "Output includes surface_points, soil_layers with stiffness parameters, "
+            "gwt array, and boundary polylines for assign_layers_by_polylines()."
+        ),
+        "parameters": {
+            "parse_result": {
+                "type": "dict", "required": True,
+                "description": "Output from parse_geometry (surface_points, boundary_profiles, etc.).",
+            },
+            "soil_properties": {
+                "type": "list", "required": True,
+                "description": (
+                    "List of dicts with: name, gamma, phi, c, E, nu, psi, model, "
+                    "hs_params. Names must match boundary soil names."
+                ),
+            },
+        },
+        "returns": {
+            "surface_points": "Surface profile [{x, z}].",
+            "n_layers": "Number of soil layers.",
+            "layers": "Layer details (name, elevations, stiffness, strength).",
+            "has_gwt": "Whether GWT is present.",
+            "n_boundary_polylines": "Number of boundary polylines for mesh assignment.",
+        },
+        "related": {
+            "fem2d.analyze_slope_srm": "Run FEM slope stability analysis.",
+            "fem2d.analyze_gravity": "Run gravity loading analysis.",
         },
     },
     "build_slope_geometry": {

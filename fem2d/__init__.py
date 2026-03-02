@@ -61,6 +61,7 @@ from fem2d.elements import (
 from fem2d.mesh import (
     generate_rect_mesh, generate_slope_mesh, generate_polygon_mesh,
     detect_boundary_nodes, assign_layers_by_elevation,
+    assign_layers_by_polylines,
     points_in_polygon, triangle_quality,
 )
 from fem2d.assembly import (
@@ -101,6 +102,7 @@ __all__ = [
     # Mesh
     'generate_rect_mesh', 'generate_slope_mesh', 'generate_polygon_mesh',
     'detect_boundary_nodes', 'assign_layers_by_elevation',
+    'assign_layers_by_polylines',
     'points_in_polygon', 'triangle_quality',
     # Assembly
     'assemble_stiffness', 'assemble_gravity', 'assemble_surface_load',

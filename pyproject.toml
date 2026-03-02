@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geotech-staff-engineer"
-version = "3.1.0"
-description = "Python toolkit for LLM-based geotechnical engineering agents — 35 analysis modules covering foundations, piles, slopes, seismic, FEM, and more"
+version = "3.2.0"
+description = "Python toolkit for LLM-based geotechnical engineering agents — 37 analysis modules covering foundations, piles, slopes, seismic, FEM, PDF/DXF import, and more"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -49,6 +49,7 @@ geolysis = ["geolysis>=0.4"]
 pystra = ["pystra>=1.3"]
 pydiggs = ["pydiggs>=0.1"]
 dxf = ["ezdxf>=1.4"]
+pdf = ["PyMuPDF>=1.23"]
 gui = ["dash>=2.14", "plotly>=5.18"]
 full = [
     "matplotlib>=3.8",
@@ -70,6 +71,7 @@ full = [
     "pystra>=1.3",
     "pydiggs>=0.1",
     "ezdxf>=1.4",
+    "PyMuPDF>=1.23",
     "dash>=2.14",
     "plotly>=5.18",
 ]
@@ -113,7 +115,10 @@ include = [
     "subsurface_characterization*",
     "wind_loads*",
     "dxf_import*",
+    "pdf_import*",
     "fem2d*",
+    "funhouse_agent*",
+    "chat_agent*",
 ]
 exclude = [
     "*.tests",
@@ -146,8 +151,10 @@ testpaths = [
     "subsurface_characterization",
     "wind_loads",
     "dxf_import",
+    "pdf_import",
     "fem2d",
     "chat_agent",
+    "funhouse_agent",
     "foundry_test_harness",
     "geotech-references/tests",
 ]

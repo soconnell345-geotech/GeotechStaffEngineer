@@ -22,14 +22,19 @@ from dxf_import.results import (
 )
 from dxf_import.discovery import discover_layers
 from dxf_import.parser import LayerMapping, parse_dxf_geometry
-from dxf_import.converter import SoilPropertyAssignment, build_slope_geometry
+from dxf_import.converter import (
+    SoilPropertyAssignment, build_slope_geometry,
+    FEMSoilPropertyAssignment, build_fem_inputs,
+)
 
 __all__ = [
     'discover_layers',
     'parse_dxf_geometry',
     'build_slope_geometry',
+    'build_fem_inputs',
     'LayerMapping',
     'SoilPropertyAssignment',
+    'FEMSoilPropertyAssignment',
     'LayerInfo',
     'DxfDiscoveryResult',
     'DxfParseResult',

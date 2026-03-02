@@ -181,7 +181,12 @@ _AGENT_SPECS = {
     "dxf_import": {
         "module": "foundry.dxf_import_agent_foundry",
         "funcs": ("dxf_import_agent", "dxf_import_list_methods", "dxf_import_describe_method"),
-        "brief": "DXF CAD import for slope stability (discover layers, parse geometry, build SlopeGeometry)",
+        "brief": "DXF CAD import for slope stability and FEM (discover layers, parse geometry, build inputs)",
+    },
+    "pdf_import": {
+        "module": "foundry.pdf_import_agent_foundry",
+        "funcs": ("pdf_import_agent", "pdf_import_list_methods", "pdf_import_describe_method"),
+        "brief": "PDF cross-section import (vector extraction, vision extraction, geometry conversion)",
     },
     # --- FHWA/NAVFAC Reference Library Agents (from geotech-references submodule) ---
     "gec6": {

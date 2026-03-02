@@ -33,12 +33,21 @@ class ParseResult:
     full_text: str
 
 
-def parse_response(text: str) -> ParseResult:
+def parse_response(text: str, valid_tools: set = None) -> ParseResult:
     """Parse an LLM response for a <tool_call> tag.
+
+    Parameters
+    ----------
+    text : str
+        LLM response text.
+    valid_tools : set, optional
+        Allowed tool names. Defaults to VALID_TOOLS if not provided.
 
     Returns ParseResult with tool_call=None if no tag found (final answer).
     Raises ValueError for malformed JSON or invalid tool_name.
     """
+    allowed = valid_tools if valid_tools is not None else VALID_TOOLS
+
     match = _TOOL_CALL_RE.search(text)
     if not match:
         return ParseResult(tool_call=None, full_text=text)
@@ -58,10 +67,10 @@ def parse_response(text: str) -> ParseResult:
     tool_name = payload.get("tool_name")
     if not tool_name:
         raise ValueError("Missing 'tool_name' in tool call JSON")
-    if tool_name not in VALID_TOOLS:
+    if tool_name not in allowed:
         raise ValueError(
             f"Invalid tool_name '{tool_name}'. "
-            f"Must be one of: {sorted(VALID_TOOLS)}"
+            f"Must be one of: {sorted(allowed)}"
         )
 
     # Extract arguments (everything except tool_name)
