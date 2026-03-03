@@ -1,4 +1,13 @@
-"""Slope stability analysis panel."""
+"""Slope stability analysis panel.
+
+Updated for Phase 5 of slope stability overhaul:
+- Removed FOS_required input
+- Added convergence tolerance control
+- Added surface type selector (Circular / Non-circular)
+- Added entry/exit x-range limits
+- Added slice visualization on cross-section
+- Removed soil nails section
+"""
 
 import math
 import traceback
@@ -14,6 +23,8 @@ from qt_panels.common import (
 from slope_stability import (
     SlopeGeometry, SlopeSoilLayer, analyze_slope, search_critical_surface,
 )
+from slope_stability.slices import build_slices
+from slope_stability.slip_surface import CircularSlipSurface
 
 
 class SlopeStabilityPanel(QWidget):
@@ -24,6 +35,7 @@ class SlopeStabilityPanel(QWidget):
         self._status = status_bar
         self._last_geom = None
         self._last_result = None
+        self._last_slices = None
         self._build_ui()
 
     def _build_ui(self):
@@ -118,32 +130,80 @@ class SlopeStabilityPanel(QWidget):
         # Analysis settings
         ag = QGroupBox("Analysis Settings")
         al = QFormLayout()
+        self.surface_type_cb = QComboBox()
+        self.surface_type_cb.addItems(["Circular", "Non-circular (Spencer)"])
+        self.surface_type_cb.currentIndexChanged.connect(
+            self._on_surface_type_changed)
         self.method_cb = QComboBox()
         self.method_cb.addItems(["bishop", "spencer", "fellenius"])
         self.nslices_sb = QSpinBox(value=30, minimum=5, maximum=100)
-        self.fos_req_sb = QDoubleSpinBox(value=1.5, minimum=1.0, maximum=5.0,
-                                         singleStep=0.1, decimals=2)
+        self.tol_sb = QDoubleSpinBox(value=0.0001, minimum=0.000001,
+                                      maximum=0.01, singleStep=0.0001,
+                                      decimals=6)
         self.compare_cb = QCheckBox("Compare all methods")
         self.compare_cb.setChecked(True)
+        self.show_slices_cb = QCheckBox("Show slices on plot")
+        self.show_slices_cb.setChecked(True)
         self.kh_sb = QDoubleSpinBox(value=0.0, minimum=0.0, maximum=0.5,
                                     singleStep=0.05, decimals=3)
+        al.addRow("Surface Type:", self.surface_type_cb)
         al.addRow("Method:", self.method_cb)
         al.addRow("Slices:", self.nslices_sb)
-        al.addRow("Required FOS:", self.fos_req_sb)
+        al.addRow("Tolerance:", self.tol_sb)
         al.addRow("", self.compare_cb)
+        al.addRow("", self.show_slices_cb)
         al.addRow("Seismic kh:", self.kh_sb)
         ag.setLayout(al)
         form.addWidget(ag)
 
-        # Grid search settings
-        srch = QGroupBox("Grid Search")
+        # Grid search settings (circular)
+        self.srch_group = QGroupBox("Grid Search (Circular)")
         srchl = QFormLayout()
         self.nx_sb = QSpinBox(value=10, minimum=3, maximum=30)
         self.ny_sb = QSpinBox(value=10, minimum=3, maximum=30)
         srchl.addRow("Grid NX:", self.nx_sb)
         srchl.addRow("Grid NY:", self.ny_sb)
-        srch.setLayout(srchl)
-        form.addWidget(srch)
+        self.srch_group.setLayout(srchl)
+        form.addWidget(self.srch_group)
+
+        # Noncircular search settings
+        self.nc_group = QGroupBox("Noncircular Search")
+        ncl = QFormLayout()
+        self.n_trials_sb = QSpinBox(value=500, minimum=50, maximum=5000,
+                                     singleStep=100)
+        self.n_points_sb = QSpinBox(value=5, minimum=3, maximum=10)
+        ncl.addRow("Trials:", self.n_trials_sb)
+        ncl.addRow("Polyline pts:", self.n_points_sb)
+        self.nc_group.setLayout(ncl)
+        self.nc_group.setVisible(False)
+        form.addWidget(self.nc_group)
+
+        # Entry/exit limits
+        self.limits_group = QGroupBox("Entry/Exit Limits")
+        lim_layout = QVBoxLayout()
+        self.limits_check = QCheckBox("Limit entry/exit x-range")
+        self.limits_check.setChecked(False)
+        lim_form = QFormLayout()
+        self.entry_min_sb = QDoubleSpinBox(value=0.0, minimum=-1000,
+                                            maximum=1000, decimals=1)
+        self.entry_max_sb = QDoubleSpinBox(value=15.0, minimum=-1000,
+                                            maximum=1000, decimals=1)
+        self.exit_min_sb = QDoubleSpinBox(value=25.0, minimum=-1000,
+                                           maximum=1000, decimals=1)
+        self.exit_max_sb = QDoubleSpinBox(value=50.0, minimum=-1000,
+                                           maximum=1000, decimals=1)
+        lim_form.addRow("Entry x min:", self.entry_min_sb)
+        lim_form.addRow("Entry x max:", self.entry_max_sb)
+        lim_form.addRow("Exit x min:", self.exit_min_sb)
+        lim_form.addRow("Exit x max:", self.exit_max_sb)
+        self.limits_form_widget = QWidget()
+        self.limits_form_widget.setLayout(lim_form)
+        self.limits_form_widget.setVisible(False)
+        self.limits_check.toggled.connect(self.limits_form_widget.setVisible)
+        lim_layout.addWidget(self.limits_check)
+        lim_layout.addWidget(self.limits_form_widget)
+        self.limits_group.setLayout(lim_layout)
+        form.addWidget(self.limits_group)
 
         # Buttons
         btn_layout = QHBoxLayout()
@@ -170,6 +230,15 @@ class SlopeStabilityPanel(QWidget):
 
         # Draw initial geometry
         self._plot_geometry_only()
+
+    def _on_surface_type_changed(self, idx):
+        is_circular = (idx == 0)
+        self.srch_group.setVisible(is_circular)
+        self.nc_group.setVisible(not is_circular)
+        # Method selector only for circular; noncircular always uses Spencer
+        self.method_cb.setEnabled(is_circular)
+        if not is_circular:
+            self.method_cb.setCurrentText("spencer")
 
     # --- Table helpers ---
     @staticmethod
@@ -250,51 +319,84 @@ class SlopeStabilityPanel(QWidget):
             geom = self._build_geometry()
             self._last_geom = geom
 
-            search_result = search_critical_surface(
-                geom,
+            is_noncircular = self.surface_type_cb.currentIndex() == 1
+            surface_type = "noncircular" if is_noncircular else "circular"
+            tol = self.tol_sb.value()
+
+            # Entry/exit limits
+            x_entry_range = None
+            x_exit_range = None
+            if self.limits_check.isChecked():
+                x_entry_range = (self.entry_min_sb.value(),
+                                 self.entry_max_sb.value())
+                x_exit_range = (self.exit_min_sb.value(),
+                                self.exit_max_sb.value())
+
+            search_kwargs = dict(
                 nx=self.nx_sb.value(),
                 ny=self.ny_sb.value(),
                 method=self.method_cb.currentText(),
                 n_slices=self.nslices_sb.value(),
-                FOS_required=self.fos_req_sb.value(),
+                tol=tol,
+                surface_type=surface_type,
+                x_entry_range=x_entry_range,
+                x_exit_range=x_exit_range,
             )
+            if is_noncircular:
+                search_kwargs["n_trials"] = self.n_trials_sb.value()
+                search_kwargs["n_points"] = self.n_points_sb.value()
+
+            search_result = search_critical_surface(geom, **search_kwargs)
 
             if search_result.critical is None:
                 self.results_text.setText("No valid slip surfaces found.")
-                self._status.showMessage("Search complete — no valid surfaces")
+                self._status.showMessage("Search complete - no valid surfaces")
                 return
 
-            # Compare methods on the critical surface
+            # Build slices for visualization
             crit = search_result.critical
+            self._last_slices = None
+            if crit.radius > 0:
+                try:
+                    slip = CircularSlipSurface(crit.xc, crit.yc, crit.radius)
+                    self._last_slices = build_slices(
+                        geom, slip, self.nslices_sb.value())
+                except (ValueError, ZeroDivisionError):
+                    pass
+
+            # Compare methods on the critical surface
             compare_text = ""
-            if self.compare_cb.isChecked():
+            if self.compare_cb.isChecked() and crit.radius > 0:
                 r_comp = analyze_slope(
                     geom, crit.xc, crit.yc, crit.radius,
                     method=self.method_cb.currentText(),
                     n_slices=self.nslices_sb.value(),
-                    FOS_required=self.fos_req_sb.value(),
+                    tol=tol,
                     compare_methods=True,
                 )
                 compare_text = (
                     f"\n  Method Comparison (critical surface):\n"
                     f"    Fellenius: {r_comp.FOS_fellenius:.3f}\n"
-                    f"    Bishop:   {r_comp.FOS_bishop:.3f}\n"
                 )
+                if r_comp.FOS_bishop is not None:
+                    compare_text += (
+                        f"    Bishop:   {r_comp.FOS_bishop:.3f}\n"
+                    )
                 if r_comp.theta_spencer is not None:
                     compare_text += (
                         f"    Spencer:  {r_comp.FOS:.3f} "
                         f"(theta={r_comp.theta_spencer:.1f} deg)\n"
                     )
 
-            self._last_result = search_result.critical
+            self._last_result = crit
             self.results_text.setText(
                 search_result.summary() + compare_text
             )
-            self._plot_result(geom, search_result.critical)
+            self._plot_result(geom, crit)
             self._status.showMessage(
                 f"Critical FOS = {crit.FOS:.3f} "
-                f"({crit.method}, {search_result.n_surfaces_evaluated} surfaces)",
-                15000)
+                f"({crit.method}, {search_result.n_surfaces_evaluated} "
+                f"surfaces)", 15000)
 
         except Exception as e:
             self.results_text.setText(f"ERROR:\n{traceback.format_exc()}")
@@ -343,15 +445,17 @@ class SlopeStabilityPanel(QWidget):
                     linestyle="--", marker="v", markersize=6,
                     label="GWT", zorder=4)
 
-        # Slip circle
+        # Slip circle / surface
         if result is not None:
-            theta = np.linspace(0, 2 * math.pi, 200)
-            cx = result.xc + result.radius * np.cos(theta)
-            cy = result.yc + result.radius * np.sin(theta)
-            ax.plot(cx, cy, color=SLIP_COLOR, linewidth=2,
-                    linestyle="-", zorder=5, label="Slip circle")
-            ax.plot(result.xc, result.yc, "x", color=SLIP_COLOR,
-                    markersize=10, markeredgewidth=2, zorder=6)
+            if result.radius > 0:
+                # Circular slip surface
+                theta = np.linspace(0, 2 * math.pi, 200)
+                cx = result.xc + result.radius * np.cos(theta)
+                cy = result.yc + result.radius * np.sin(theta)
+                ax.plot(cx, cy, color=SLIP_COLOR, linewidth=2,
+                        linestyle="-", zorder=5, label="Slip circle")
+                ax.plot(result.xc, result.yc, "x", color=SLIP_COLOR,
+                        markersize=10, markeredgewidth=2, zorder=6)
 
             # Entry/exit markers
             ax.plot(result.x_entry, np.interp(result.x_entry, surface_x,
@@ -359,12 +463,19 @@ class SlopeStabilityPanel(QWidget):
             ax.plot(result.x_exit, np.interp(result.x_exit, surface_x,
                     surface_z), "o", color=SLIP_COLOR, markersize=8, zorder=6)
 
+            # Slice visualization
+            if (self.show_slices_cb.isChecked() and
+                    self._last_slices is not None):
+                for s in self._last_slices:
+                    ax.plot([s.x_mid, s.x_mid], [s.z_base, s.z_top],
+                            color="#666666", linewidth=0.5, alpha=0.6,
+                            zorder=3)
+
             # FOS label
-            status = "STABLE" if result.is_stable else "UNSTABLE"
-            fos_color = "#4CAF50" if result.is_stable else "#D32F2F"
+            fos_color = "#4CAF50" if result.FOS >= 1.0 else "#D32F2F"
             ax.text(
                 0.98, 0.95,
-                f"FOS = {result.FOS:.3f}\n{result.method} [{status}]",
+                f"FOS = {result.FOS:.3f}\n{result.method}",
                 transform=ax.transAxes, fontsize=14, fontweight="bold",
                 ha="right", va="top", color=fos_color,
                 bbox=dict(boxstyle="round,pad=0.4", facecolor="white",
@@ -408,13 +519,22 @@ class SlopeStabilityPanel(QWidget):
             "layers": layers,
             "gwt_enabled": self.gwt_check.isChecked(),
             "gwt_points": gwt,
+            "surface_type": self.surface_type_cb.currentIndex(),
             "method": self.method_cb.currentText(),
             "n_slices": self.nslices_sb.value(),
-            "fos_required": self.fos_req_sb.value(),
+            "tol": self.tol_sb.value(),
             "compare": self.compare_cb.isChecked(),
+            "show_slices": self.show_slices_cb.isChecked(),
             "kh": self.kh_sb.value(),
             "nx": self.nx_sb.value(),
             "ny": self.ny_sb.value(),
+            "n_trials": self.n_trials_sb.value(),
+            "n_points": self.n_points_sb.value(),
+            "limits_enabled": self.limits_check.isChecked(),
+            "entry_min": self.entry_min_sb.value(),
+            "entry_max": self.entry_max_sb.value(),
+            "exit_min": self.exit_min_sb.value(),
+            "exit_max": self.exit_max_sb.value(),
             "results_text": self.results_text.toPlainText(),
         }
 
@@ -435,12 +555,22 @@ class SlopeStabilityPanel(QWidget):
         for i, (x, z) in enumerate(gwt_pts):
             self.gwt_table.setItem(i, 0, QTableWidgetItem(str(x)))
             self.gwt_table.setItem(i, 1, QTableWidgetItem(str(z)))
+        self.surface_type_cb.setCurrentIndex(
+            state.get("surface_type", 0))
         self.method_cb.setCurrentText(state.get("method", "bishop"))
         self.nslices_sb.setValue(state.get("n_slices", 30))
-        self.fos_req_sb.setValue(state.get("fos_required", 1.5))
+        self.tol_sb.setValue(state.get("tol", 0.0001))
         self.compare_cb.setChecked(state.get("compare", True))
+        self.show_slices_cb.setChecked(state.get("show_slices", True))
         self.kh_sb.setValue(state.get("kh", 0.0))
         self.nx_sb.setValue(state.get("nx", 10))
         self.ny_sb.setValue(state.get("ny", 10))
+        self.n_trials_sb.setValue(state.get("n_trials", 500))
+        self.n_points_sb.setValue(state.get("n_points", 5))
+        self.limits_check.setChecked(state.get("limits_enabled", False))
+        self.entry_min_sb.setValue(state.get("entry_min", 0.0))
+        self.entry_max_sb.setValue(state.get("entry_max", 15.0))
+        self.exit_min_sb.setValue(state.get("exit_min", 25.0))
+        self.exit_max_sb.setValue(state.get("exit_max", 50.0))
         if state.get("results_text"):
             self.results_text.setText(state["results_text"])

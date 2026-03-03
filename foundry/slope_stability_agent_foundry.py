@@ -7,7 +7,7 @@ Register these three functions as tools in AIP Agent Studio:
   3. slope_stability_describe_method - Get detailed parameter docs
 
 Implements limit equilibrium methods (Fellenius/Bishop/Spencer) with
-circular slip surface analysis and critical surface grid search.
+circular and noncircular slip surface analysis and critical surface search.
 
 FOUNDRY SETUP:
   - pip install geotech-staff-engineer (PyPI)
@@ -25,7 +25,6 @@ except ImportError:
         return fn
 
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
-from slope_stability.nails import SoilNail
 from slope_stability.analysis import analyze_slope, search_critical_surface
 
 
@@ -86,23 +85,6 @@ def _build_geometry(params: dict) -> SlopeGeometry:
     if params.get("surcharge_x_range") is not None:
         surcharge_x_range = tuple(params["surcharge_x_range"])
 
-    # Soil nails
-    nails = None
-    if params.get("nails"):
-        nails = []
-        for nd in params["nails"]:
-            nails.append(SoilNail(
-                x_head=nd["x_head"],
-                z_head=nd["z_head"],
-                length=nd["length"],
-                inclination=nd.get("inclination", 15.0),
-                bar_diameter=nd.get("bar_diameter", 25.0),
-                drill_hole_diameter=nd.get("drill_hole_diameter", 150.0),
-                fy=nd.get("fy", 420.0),
-                bond_stress=nd.get("bond_stress", 100.0),
-                spacing_h=nd.get("spacing_h", 1.5),
-            ))
-
     return SlopeGeometry(
         surface_points=surface_points,
         soil_layers=soil_layers,
@@ -112,7 +94,6 @@ def _build_geometry(params: dict) -> SlopeGeometry:
         reinforcement_force=params.get("reinforcement_force", 0.0),
         reinforcement_elevation=params.get("reinforcement_elevation"),
         kh=params.get("kh", 0.0),
-        nails=nails,
     )
 
 
@@ -122,14 +103,23 @@ def _build_geometry(params: dict) -> SlopeGeometry:
 
 def _run_analyze_slope(params: dict) -> dict:
     geom = _build_geometry(params)
+
+    # Build slip_surface if polyline points provided
+    slip_surface = None
+    if params.get("slip_points") is not None:
+        from slope_stability.slip_surface import PolylineSlipSurface
+        points = [tuple(pt) for pt in params["slip_points"]]
+        slip_surface = PolylineSlipSurface(points=points)
+
     result = analyze_slope(
         geom=geom,
-        xc=params["xc"],
-        yc=params["yc"],
-        radius=params["radius"],
+        xc=params.get("xc"),
+        yc=params.get("yc"),
+        radius=params.get("radius"),
+        slip_surface=slip_surface,
         method=params.get("method", "bishop"),
         n_slices=params.get("n_slices", 30),
-        FOS_required=params.get("FOS_required", 1.5),
+        tol=params.get("tol", 1e-4),
         include_slice_data=params.get("include_slice_data", False),
         compare_methods=params.get("compare_methods", False),
     )
@@ -147,6 +137,14 @@ def _run_search_critical_surface(params: dict) -> dict:
     if params.get("y_range") is not None:
         y_range = tuple(params["y_range"])
 
+    x_entry_range = None
+    if params.get("x_entry_range") is not None:
+        x_entry_range = tuple(params["x_entry_range"])
+
+    x_exit_range = None
+    if params.get("x_exit_range") is not None:
+        x_exit_range = tuple(params["x_exit_range"])
+
     result = search_critical_surface(
         geom=geom,
         x_range=x_range,
@@ -155,7 +153,13 @@ def _run_search_critical_surface(params: dict) -> dict:
         ny=params.get("ny", 10),
         method=params.get("method", "bishop"),
         n_slices=params.get("n_slices", 30),
-        FOS_required=params.get("FOS_required", 1.5),
+        tol=params.get("tol", 1e-4),
+        surface_type=params.get("surface_type", "circular"),
+        x_entry_range=x_entry_range,
+        x_exit_range=x_exit_range,
+        n_trials=params.get("n_trials", 500),
+        n_points=params.get("n_points", 5),
+        seed=params.get("seed"),
     )
     return result.to_dict()
 
@@ -174,31 +178,41 @@ METHOD_INFO = {
         "category": "Slope Stability",
         "brief": "Single slip surface analysis using Fellenius, Bishop, or Spencer method.",
         "description": (
-            "Analyzes a circular slip surface at a specified center (xc, yc) and radius R "
-            "using the method of slices. Returns factor of safety (FOS), entry/exit points, "
-            "and optionally per-slice data and comparison across all three methods."
+            "Analyzes a circular or noncircular slip surface using the method of slices. "
+            "For circular: specify center (xc, yc) and radius. "
+            "For noncircular: provide slip_points as a polyline. "
+            "Returns factor of safety (FOS), entry/exit points, "
+            "and optionally per-slice data and comparison across methods."
         ),
         "reference": (
             "Fellenius (1927); Bishop (1955) Geotechnique Vol.5; "
             "Spencer (1967) Geotechnique Vol.17; Duncan, Wright & Brandon (2014)"
         ),
         "parameters": {
-            "xc": {"type": "float", "required": True,
-                   "description": "Circle center x-coordinate (m)."},
-            "yc": {"type": "float", "required": True,
-                   "description": "Circle center elevation (m)."},
-            "radius": {"type": "float", "required": True,
-                       "description": "Circle radius (m)."},
+            "xc": {"type": "float", "required": False,
+                   "description": "Circle center x-coordinate (m). Required for circular."},
+            "yc": {"type": "float", "required": False,
+                   "description": "Circle center elevation (m). Required for circular."},
+            "radius": {"type": "float", "required": False,
+                       "description": "Circle radius (m). Required for circular."},
+            "slip_points": {
+                "type": "array", "required": False,
+                "description": (
+                    "Noncircular slip surface as [[x1,z1], [x2,z2], ...]. "
+                    "x-values must be monotonically increasing. "
+                    "If provided, xc/yc/radius are ignored. Spencer's method is used."
+                ),
+            },
             "method": {"type": "str", "required": False, "default": "bishop",
-                       "description": "'fellenius', 'bishop', or 'spencer'."},
+                       "description": "'fellenius', 'bishop', or 'spencer'. Bishop is circular only."},
             "n_slices": {"type": "int", "required": False, "default": 30,
                          "description": "Number of slices."},
-            "FOS_required": {"type": "float", "required": False, "default": 1.5,
-                             "description": "Minimum required FOS for pass/fail."},
+            "tol": {"type": "float", "required": False, "default": 0.0001,
+                    "description": "Convergence tolerance for iterative methods."},
             "include_slice_data": {"type": "bool", "required": False, "default": False,
                                    "description": "Include per-slice breakdown."},
             "compare_methods": {"type": "bool", "required": False, "default": False,
-                                "description": "Compute FOS for all three methods."},
+                                "description": "Compute FOS for all applicable methods."},
             "surface_points": {
                 "type": "array", "required": True,
                 "description": "Ground surface as [[x, z], ...] sorted left-to-right."},
@@ -225,36 +239,22 @@ METHOD_INFO = {
                                     "description": "Horizontal reinforcement force (kN/m)."},
             "reinforcement_elevation": {"type": "float", "required": False,
                                         "description": "Elevation of reinforcement (m)."},
-            "nails": {
-                "type": "array", "required": False,
-                "description": (
-                    "Soil nails for reinforcement (FHWA GEC-7). Array of objects, each with: "
-                    "x_head (float, m), z_head (float, m), length (float, m), "
-                    "inclination (float, degrees below horizontal, default 15), "
-                    "bar_diameter (float, mm, default 25), drill_hole_diameter (float, mm, default 150), "
-                    "fy (float, MPa, default 420), bond_stress (float, kPa, default 100), "
-                    "spacing_h (float, m, default 1.5)."
-                ),
-            },
         },
         "returns": {
             "FOS": "Factor of safety.",
             "method": "Method name used.",
-            "is_stable": "True if FOS >= FOS_required.",
-            "xc_m": "Circle center x (m).",
-            "yc_m": "Circle center y (m).",
-            "radius_m": "Circle radius (m).",
+            "xc_m": "Circle center x (m). 0 for noncircular.",
+            "yc_m": "Circle center y (m). 0 for noncircular.",
+            "radius_m": "Circle radius (m). 0 for noncircular.",
             "x_entry_m": "Slip surface entry x (m).",
             "x_exit_m": "Slip surface exit x (m).",
             "n_slices": "Number of slices used.",
             "has_seismic": "Whether seismic load was applied.",
             "kh": "Seismic coefficient.",
             "FOS_fellenius": "Fellenius FOS (if compare_methods=true).",
-            "FOS_bishop": "Bishop FOS (if compare_methods=true).",
+            "FOS_bishop": "Bishop FOS (if compare_methods=true, circular only).",
             "theta_spencer_deg": "Spencer interslice angle (if Spencer used).",
             "slice_data": "Per-slice data (if include_slice_data=true).",
-            "n_nails_active": "Number of nails that intersect the slip surface.",
-            "nail_resisting_kN_per_m": "Total nail resisting force equivalent (kN/m).",
         },
         "related": {
             "search_critical_surface": "Find the critical circle with minimum FOS.",
@@ -265,37 +265,53 @@ METHOD_INFO = {
             "1. Define slope geometry (surface_points) and soil layers\n"
             "2. Analyze a known circle (this method) or search for critical (search_critical_surface)\n"
             "3. If FOS < 1.5, consider ground improvement or geometry changes\n"
-            "4. For seismic: add kh parameter for pseudo-static analysis"
+            "4. For seismic: add kh parameter for pseudo-static analysis\n"
+            "5. For noncircular: provide slip_points instead of xc/yc/radius"
         ),
         "common_mistakes": [
-            "Surface points must define the ground surface from left to right — x values must increase.",
+            "Surface points must define the ground surface from left to right - x values must increase.",
             "Soil layers use top_elevation and bottom_elevation, not thickness.",
-            "The circle (xc, yc, radius) must intersect the slope — if it doesn't, results are meaningless.",
+            "The circle (xc, yc, radius) must intersect the slope.",
+            "Bishop's method only works for circular surfaces. Use Spencer for noncircular.",
+            "For noncircular, provide slip_points as monotonically increasing x-coordinates.",
         ],
     },
     "search_critical_surface": {
         "category": "Slope Stability",
-        "brief": "Grid search for the critical slip surface (minimum FOS).",
+        "brief": "Search for the critical slip surface (minimum FOS).",
         "description": (
-            "Searches a grid of circle centers (xc, yc) and optimizes the radius "
-            "at each center to find the minimum factor of safety."
+            "For circular: grid search of circle centers (xc, yc) with radius optimization. "
+            "For noncircular: random polyline search with Spencer's method. "
+            "Supports entry/exit x-range constraints."
         ),
         "reference": "Duncan, Wright & Brandon (2014) Chapter 14",
         "parameters": {
+            "surface_type": {"type": "str", "required": False, "default": "circular",
+                             "description": "'circular' or 'noncircular'."},
             "x_range": {"type": "array", "required": False,
-                        "description": "[x_min, x_max] for center search. Auto if omitted."},
+                        "description": "[x_min, x_max] for center search (circular). Auto if omitted."},
             "y_range": {"type": "array", "required": False,
-                        "description": "[y_min, y_max] for center search. Auto if omitted."},
+                        "description": "[y_min, y_max] for center search (circular). Auto if omitted."},
             "nx": {"type": "int", "required": False, "default": 10,
-                   "description": "Number of x grid points."},
+                   "description": "Number of x grid points (circular)."},
             "ny": {"type": "int", "required": False, "default": 10,
-                   "description": "Number of y grid points."},
+                   "description": "Number of y grid points (circular)."},
             "method": {"type": "str", "required": False, "default": "bishop",
-                       "description": "'fellenius', 'bishop', or 'spencer'."},
+                       "description": "'fellenius', 'bishop', or 'spencer'. Noncircular uses Spencer."},
             "n_slices": {"type": "int", "required": False, "default": 30,
                          "description": "Number of slices per analysis."},
-            "FOS_required": {"type": "float", "required": False, "default": 1.5,
-                             "description": "Required FOS for pass/fail."},
+            "tol": {"type": "float", "required": False, "default": 0.0001,
+                    "description": "Convergence tolerance for iterative methods."},
+            "x_entry_range": {"type": "array", "required": False,
+                              "description": "[x_min, x_max] for allowed slip entry."},
+            "x_exit_range": {"type": "array", "required": False,
+                             "description": "[x_min, x_max] for allowed slip exit."},
+            "n_trials": {"type": "int", "required": False, "default": 500,
+                         "description": "Number of random trials (noncircular)."},
+            "n_points": {"type": "int", "required": False, "default": 5,
+                         "description": "Polyline vertices (noncircular)."},
+            "seed": {"type": "int", "required": False,
+                     "description": "Random seed for noncircular search reproducibility."},
             "surface_points": {"type": "array", "required": True,
                                "description": "Same as analyze_slope."},
             "soil_layers": {"type": "array", "required": True,
@@ -306,12 +322,13 @@ METHOD_INFO = {
                           "description": "Same as analyze_slope."},
             "kh": {"type": "float", "required": False, "default": 0.0,
                    "description": "Same as analyze_slope."},
-            "nails": {"type": "array", "required": False,
-                      "description": "Same as analyze_slope."},
         },
         "returns": {
             "n_surfaces_evaluated": "Total number of trial surfaces.",
             "critical": "Dict with FOS, method, circle geometry for the minimum FOS surface.",
+        },
+        "related": {
+            "analyze_slope": "Analyze a specific slip surface after finding it with search.",
         },
     },
 }
@@ -327,7 +344,7 @@ def slope_stability_agent(method: str, parameters_json: str) -> str:
     Slope stability analysis calculator.
 
     Analyzes slope stability using limit equilibrium methods (Fellenius,
-    Bishop, Spencer) with circular slip surfaces.
+    Bishop, Spencer) with circular and noncircular slip surfaces.
 
     Parameters:
         method: The calculation method name. Use slope_stability_list_methods() to see options.

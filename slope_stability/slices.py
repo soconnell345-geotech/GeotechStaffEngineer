@@ -15,7 +15,6 @@ from typing import List, Optional
 
 from geotech_common.water import GAMMA_W
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
-from slope_stability.slip_surface import CircularSlipSurface
 
 
 @dataclass
@@ -78,7 +77,7 @@ class Slice:
 
 
 def build_slices(geom: SlopeGeometry,
-                 slip: CircularSlipSurface,
+                 slip,
                  n_slices: int = 30) -> List[Slice]:
     """Discretize the sliding mass into vertical slices.
 
@@ -86,8 +85,9 @@ def build_slices(geom: SlopeGeometry,
     ----------
     geom : SlopeGeometry
         Slope geometry with surface, layers, and water table.
-    slip : CircularSlipSurface
-        Trial slip surface.
+    slip : CircularSlipSurface or PolylineSlipSurface
+        Trial slip surface (duck-typed — must have slip_elevation_at,
+        tangent_angle_at, and find_entry_exit methods).
     n_slices : int
         Number of slices. Default 30.
 
@@ -116,6 +116,14 @@ def build_slices(geom: SlopeGeometry,
         height = z_top - z_base
         if height <= 0:
             continue
+
+        # Fix empty-space bug: skip slices where slip surface is below
+        # all soil layers (cutting through empty space)
+        if geom.layer_at_elevation(z_base) is None:
+            # Check if z_base is below the lowest soil layer
+            min_layer_bot = min(L.bottom_elevation for L in geom.soil_layers)
+            if z_base < min_layer_bot:
+                continue
 
         alpha = slip.tangent_angle_at(x_mid)
         cos_alpha = math.cos(alpha)

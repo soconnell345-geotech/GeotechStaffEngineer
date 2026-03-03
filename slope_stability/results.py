@@ -89,10 +89,6 @@ class SlopeStabilityResult:
         Slip surface entry x-coordinate (m).
     x_exit : float
         Slip surface exit x-coordinate (m).
-    is_stable : bool
-        True if FOS >= FOS_required.
-    FOS_required : float
-        Minimum required FOS.
     theta_spencer : float or None
         Interslice force angle from Spencer (degrees).
     FOS_fellenius : float or None
@@ -115,8 +111,6 @@ class SlopeStabilityResult:
     radius: float = 0.0
     x_entry: float = 0.0
     x_exit: float = 0.0
-    is_stable: bool = False
-    FOS_required: float = 1.5
     theta_spencer: Optional[float] = None
     FOS_fellenius: Optional[float] = None
     FOS_bishop: Optional[float] = None
@@ -124,19 +118,15 @@ class SlopeStabilityResult:
     has_seismic: bool = False
     kh: float = 0.0
     slice_data: Optional[List[SliceData]] = None
-    n_nails_active: int = 0
-    nail_resisting_kN_per_m: float = 0.0
 
     def summary(self) -> str:
-        status = "STABLE" if self.is_stable else "UNSTABLE"
         lines = [
             "=" * 60,
             "  SLOPE STABILITY ANALYSIS RESULTS",
             "=" * 60,
             "",
             f"  Method:           {self.method}",
-            f"  Factor of Safety: {self.FOS:.3f}  [{status}]",
-            f"  Required FOS:     {self.FOS_required:.2f}",
+            f"  Factor of Safety: {self.FOS:.3f}",
             "",
             f"  Critical Circle:",
             f"    Center (xc, yc) = ({self.xc:.2f}, {self.yc:.2f}) m",
@@ -154,9 +144,6 @@ class SlopeStabilityResult:
             lines.append(f"  FOS (Bishop):     {self.FOS_bishop:.3f}")
         if self.theta_spencer is not None:
             lines.append(f"  Spencer theta:    {self.theta_spencer:.2f} deg")
-        if self.n_nails_active > 0:
-            lines.append(f"  Nails active:     {self.n_nails_active}")
-            lines.append(f"  Nail resisting:   {self.nail_resisting_kN_per_m:.1f} kN/m")
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -164,8 +151,6 @@ class SlopeStabilityResult:
         d = {
             "FOS": round(self.FOS, 4),
             "method": self.method,
-            "is_stable": self.is_stable,
-            "FOS_required": self.FOS_required,
             "xc_m": round(self.xc, 2),
             "yc_m": round(self.yc, 2),
             "radius_m": round(self.radius, 2),
@@ -183,9 +168,6 @@ class SlopeStabilityResult:
             d["theta_spencer_deg"] = round(self.theta_spencer, 2)
         if self.slice_data is not None:
             d["slice_data"] = [s.to_dict() for s in self.slice_data]
-        if self.n_nails_active > 0:
-            d["n_nails_active"] = self.n_nails_active
-            d["nail_resisting_kN_per_m"] = round(self.nail_resisting_kN_per_m, 2)
         return d
 
 
@@ -222,8 +204,6 @@ class SearchResult:
                 f"({self.critical.xc:.2f}, {self.critical.yc:.2f}), "
                 f"R={self.critical.radius:.2f} m"
             )
-            status = "STABLE" if self.critical.is_stable else "UNSTABLE"
-            lines.append(f"  Assessment:        {status}")
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 

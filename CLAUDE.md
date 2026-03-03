@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (2635 module + 142 harness + 3299 ref = 6076 tests)
+## Module Inventory (2693 module + 142 harness + 3299 ref = 6134 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -39,7 +39,7 @@ Key conventions:
 | seismic_geotech | 71 | Site class, M-O pressures, liquefaction |
 | retaining_walls | 70 | Cantilever + MSE walls (GEC-11) |
 | ground_improvement | 43 | Aggregate piers, wick drains, surcharge, vibro (GEC-13) |
-| slope_stability | 109 | Fellenius/Bishop/Spencer, circular slip, grid search, soil nails |
+| slope_stability | 139+17skip | Fellenius/Bishop/Spencer, circular+noncircular, grid/random search, Duncan verification |
 | downdrag | 53 | Fellenius neutral plane, UFC 3-220-20 downdrag |
 | geotech_common | 284 | SoilProfile (82) + checks (93) + adapters (89) + plots (21) |
 | opensees_agent | 106 | PM4Sand cyclic DSS, BNWF lateral pile, 1D site response |
@@ -64,14 +64,23 @@ Key conventions:
 
 Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3299 tests), foundry_test_harness (142 tests), trial_agent (100 tests), chat_agent (42 tests), funhouse_agent (32 tests)
 
-## GUIs (Plotly Dash)
+## GUIs
 
+### Plotly Dash (browser-based)
 | GUI | Port | Purpose |
 |-----|------|---------|
-| `slope_stability_gui.py` | 8051 | Slope stability: geometry, soil layers, GWT, soil nails, Bishop/Spencer grid search |
+| `slope_stability_gui.py` | 8051 | Slope stability: geometry, soil layers, GWT, Bishop/Spencer grid search |
 | `fem2d_gui.py` | 8055 | 2D FEM: gravity, foundation, slope SRM, excavation, seepage, consolidation |
 
 Run: `python slope_stability_gui.py` or `python fem2d_gui.py` — opens browser automatically.
+
+### Qt Desktop (PyQt5/PySide2)
+| GUI | Purpose |
+|-----|---------|
+| `geotech_qt_gui.py` | Main app: Bearing Capacity, Settlement, FEM 2D tabs |
+| `slope_stability_qt.py` | Standalone slope stability: circular/noncircular, entry/exit limits, slice visualization |
+
+Run: `python geotech_qt_gui.py` or `python slope_stability_qt.py`
 
 ## Foundry Test Harness
 

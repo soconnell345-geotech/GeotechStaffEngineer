@@ -24,3 +24,6 @@ geotech_modules_instruction.md
 dist/
 *.egg-info/
 build/
+
+# Copyrighted reference materials — not for distribution
+Duncan book excerpts/

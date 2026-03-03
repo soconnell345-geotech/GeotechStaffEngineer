@@ -6,6 +6,10 @@ Three methods in order of rigor:
 2. Bishop's Simplified — moment + vertical force equilibrium, iterative
 3. Spencer — full force + moment equilibrium, two-variable iteration
 
+Spencer supports both circular and noncircular slip surfaces.
+Bishop and Fellenius require circular surfaces (moment equilibrium
+about circle center).
+
 All units SI: kPa, kN/m, degrees, meters.
 
 References:
@@ -20,27 +24,29 @@ import warnings
 from typing import List, Tuple, Optional
 
 from slope_stability.slices import Slice
-from slope_stability.slip_surface import CircularSlipSurface
-from slope_stability.nails import NailContribution, total_nail_resisting, nail_force_components
 
 
 _FOS_MAX = 999.9  # sentinel for zero or negative driving
 
 
 def fellenius_fos(slices: List[Slice],
-                  slip: CircularSlipSurface,
-                  nail_contributions: Optional[List[NailContribution]] = None) -> float:
+                  slip) -> float:
     """Ordinary Method of Slices (Fellenius) factor of safety.
 
-    FOS = sum[c'*dl + (W*cos(alpha) - u*dl)*tan(phi')] /
-          sum[W*sin(alpha) + kh*W*(yc - z_centroid)/R]
+    For circular surfaces:
+        FOS = sum[c'*dl + (W*cos(alpha) - u*dl)*tan(phi')] /
+              sum[W*(x_mid-xc)/R + kh*W*(yc-z_centroid)/R]
+
+    For noncircular surfaces:
+        FOS = sum[c'*dl + (W*cos(alpha) - u*dl)*tan(phi')] /
+              sum[W*sin(alpha) + kh*W*cos(alpha)]
 
     Parameters
     ----------
     slices : list of Slice
         Slice data from build_slices().
-    slip : CircularSlipSurface
-        Circle geometry (for seismic moment arms).
+    slip : CircularSlipSurface or PolylineSlipSurface
+        Slip surface geometry.
 
     Returns
     -------
@@ -53,7 +59,7 @@ def fellenius_fos(slices: List[Slice],
     No iteration required. Used as initial guess for Bishop.
     """
     resisting = 0.0
-    driving = 0.0
+    is_circular = getattr(slip, 'is_circular', True)
 
     gravity_driving = 0.0
     seismic_driving = 0.0
@@ -67,13 +73,16 @@ def fellenius_fos(slices: List[Slice],
         N_prime = W * math.cos(s.alpha) - s.pore_pressure * dl
         resisting += s.c * dl + max(N_prime, 0.0) * math.tan(phi_rad)
 
-        # Driving moment about circle center:
-        # Moment arm = (x_mid - xc), equivalent to R*sin(alpha)
-        gravity_driving += W * (s.x_mid - slip.xc) / slip.radius
-
-        # Seismic: horizontal force * vertical arm about center
-        if s.seismic_force != 0:
-            seismic_driving += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
+        if is_circular:
+            # Circular: moment-arm formulation W*(x_mid - xc)/R
+            gravity_driving += W * (s.x_mid - slip.xc) / slip.radius
+            if s.seismic_force != 0:
+                seismic_driving += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
+        else:
+            # Noncircular: use W*sin(alpha) directly
+            gravity_driving += W * math.sin(s.alpha)
+            if s.seismic_force != 0:
+                seismic_driving += s.seismic_force * math.cos(s.alpha)
 
     # Driving = gravity magnitude + seismic magnitude.
     # Separated so seismic always increases driving regardless of slope direction.
@@ -81,21 +90,18 @@ def fellenius_fos(slices: List[Slice],
     if driving <= 0:
         return _FOS_MAX
 
-    # Add nail resisting contribution
-    nail_resist = 0.0
-    if nail_contributions:
-        nail_resist = total_nail_resisting(nail_contributions)
-
-    return (resisting + nail_resist) / driving
+    return resisting / driving
 
 
 def bishop_fos(slices: List[Slice],
-               slip: CircularSlipSurface,
+               slip,
                tol: float = 1e-4,
                max_iter: int = 50,
-               fos_initial: Optional[float] = None,
-               nail_contributions: Optional[List[NailContribution]] = None) -> float:
+               fos_initial: Optional[float] = None) -> float:
     """Bishop's Simplified Method factor of safety.
+
+    Requires circular slip surfaces only (moment equilibrium about
+    circle center).
 
     FOS = sum[(c'*b + (W - u*b)*tan(phi')) / m_alpha] /
           sum[W*sin(alpha)]
@@ -107,7 +113,7 @@ def bishop_fos(slices: List[Slice],
     slices : list of Slice
         Slice data from build_slices().
     slip : CircularSlipSurface
-        Circle geometry.
+        Circle geometry. Must be circular.
     tol : float
         Convergence tolerance on FOS. Default 1e-4.
     max_iter : int
@@ -120,19 +126,25 @@ def bishop_fos(slices: List[Slice],
     float
         Factor of safety.
 
+    Raises
+    ------
+    ValueError
+        If slip surface is not circular.
+
     Notes
     -----
     - Satisfies moment equilibrium and vertical force equilibrium
     - Most commonly used method in practice
     - Typically converges in 5-10 iterations
     """
-    # Nail resisting contribution (moment-based, same for all Bishop iterations)
-    nail_resist = 0.0
-    if nail_contributions:
-        nail_resist = total_nail_resisting(nail_contributions)
+    if not getattr(slip, 'is_circular', True):
+        raise ValueError(
+            "Bishop's method requires a circular slip surface. "
+            "Use Spencer's method for noncircular surfaces."
+        )
 
     if fos_initial is None:
-        fos_initial = fellenius_fos(slices, slip, nail_contributions)
+        fos_initial = fellenius_fos(slices, slip)
         if fos_initial >= _FOS_MAX:
             fos_initial = 1.5
 
@@ -167,7 +179,7 @@ def bishop_fos(slices: List[Slice],
             numerator = s.c * b + (W - s.pore_pressure * b) * tan_phi
             resisting += numerator / m_alpha
 
-        fos_new = (resisting + nail_resist) / driving
+        fos_new = resisting / driving
         if abs(fos_new - fos) < tol:
             return fos_new
         fos = fos_new
@@ -180,29 +192,23 @@ def bishop_fos(slices: List[Slice],
 
 
 def spencer_fos(slices: List[Slice],
-                slip: CircularSlipSurface,
+                slip,
                 tol: float = 1e-4,
-                max_iter: int = 100,
-                nail_contributions: Optional[List[NailContribution]] = None) -> Tuple[float, float]:
+                max_iter: int = 100) -> Tuple[float, float]:
     """Spencer's Method factor of safety.
 
     Satisfies both force and moment equilibrium simultaneously.
     Assumes interslice forces inclined at constant angle theta.
 
-    Finds (FOS, theta) such that FOS_moment(theta) = FOS_force(theta).
-
-    Both equations use Spencer's m_alpha:
-        m_alpha = cos(alpha - theta) + sin(alpha - theta)*tan(phi')/FOS
-
-    When theta=0 this reduces to Bishop. For c-phi soils, the converged
-    theta is typically non-zero (±5-15°).
+    Works for both circular and noncircular slip surfaces.
+    For noncircular surfaces, this is the primary recommended method.
 
     Parameters
     ----------
     slices : list of Slice
         Slice data from build_slices().
-    slip : CircularSlipSurface
-        Circle geometry.
+    slip : CircularSlipSurface or PolylineSlipSurface
+        Slip surface geometry (circular or noncircular).
     tol : float
         Convergence tolerance. Default 1e-4.
     max_iter : int
@@ -215,48 +221,48 @@ def spencer_fos(slices: List[Slice],
 
     Notes
     -----
-    Algorithm: secant method to find theta where FOS_m(theta) = FOS_f(theta).
-    For circular surfaces, Spencer is typically within 2-5% of Bishop.
+    For circular surfaces: uses moment-arm formulation (same as existing code).
+    For noncircular surfaces: uses force-based formulation with W*sin(alpha)
+    for driving. The secant iteration on theta finds where FOS_moment = FOS_force.
 
     References
     ----------
     Spencer (1967), Geotechnique, Vol. 17, pp. 11-26
-    xslope formulation: m_alpha = cos(alpha-theta) + sin(alpha-theta)*tan(phi')/F
+    Duncan, Wright & Brandon (2014), Chapter 7
     """
-    # Nail contributions
-    nail_resist_moment = 0.0
-    nail_fh = 0.0
-    nail_fv = 0.0
-    if nail_contributions:
-        nail_resist_moment = total_nail_resisting(nail_contributions)
-        nail_fh, nail_fv = nail_force_components(nail_contributions)
+    is_circular = getattr(slip, 'is_circular', True)
 
-    # Get Bishop FOS as starting guess
-    fos_guess = bishop_fos(slices, slip, nail_contributions=nail_contributions)
+    # Get initial FOS guess from Fellenius
+    fos_guess = fellenius_fos(slices, slip)
     if fos_guess >= _FOS_MAX:
-        return (_FOS_MAX, 0.0)
+        fos_guess = 1.5
 
-    # Precompute driving moment (independent of theta and FOS)
-    gravity_moment = 0.0
-    seismic_moment = 0.0
-    for s in slices:
-        W = s.weight + s.surcharge_force
-        gravity_moment += W * (s.x_mid - slip.xc) / slip.radius
-        if s.seismic_force != 0:
-            seismic_moment += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
-    # Separated so seismic always increases driving regardless of slope direction
-    driving_moment = abs(gravity_moment) + abs(seismic_moment)
+    # Precompute driving moment
+    if is_circular:
+        gravity_moment = 0.0
+        seismic_moment = 0.0
+        for s in slices:
+            W = s.weight + s.surcharge_force
+            gravity_moment += W * (s.x_mid - slip.xc) / slip.radius
+            if s.seismic_force != 0:
+                seismic_moment += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
+        driving_moment = abs(gravity_moment) + abs(seismic_moment)
+    else:
+        # Noncircular: use W*sin(alpha) for driving
+        gravity_moment = 0.0
+        seismic_moment = 0.0
+        for s in slices:
+            W = s.weight + s.surcharge_force
+            gravity_moment += W * math.sin(s.alpha)
+            if s.seismic_force != 0:
+                seismic_moment += s.seismic_force * math.cos(s.alpha)
+        driving_moment = abs(gravity_moment) + abs(seismic_moment)
+
     if driving_moment <= 0:
         return (_FOS_MAX, 0.0)
 
     def _fos_moment(theta_rad, fos_est):
-        """Moment equilibrium FOS for given theta.
-
-        Fm = sum[(c'*b + (W - u*b)*tan(phi')) / m_alpha] / sum[W*sin(alpha)]
-
-        where m_alpha = cos(alpha - theta) + sin(alpha - theta)*tan(phi')/Fm
-        (Spencer's m_alpha, NOT Bishop's).
-        """
+        """Moment equilibrium FOS for given theta."""
         fos_m = fos_est
         for _ in range(50):
             resisting = 0.0
@@ -274,20 +280,14 @@ def spencer_fos(slices: List[Slice],
 
                 resisting += (s.c * b + (W - s.pore_pressure * b) * tan_phi) / m_alpha
 
-            fos_new = (resisting + nail_resist_moment) / driving_moment
+            fos_new = resisting / driving_moment
             if abs(fos_new - fos_m) < tol * 0.1:
                 return fos_new
             fos_m = fos_new
         return fos_m
 
     def _fos_force(theta_rad, fos_est):
-        """Force equilibrium FOS for given theta.
-
-        Ff = sum[(c'*b + (W - u*b)*tan(phi')) / m_alpha] / sum[W*d_alpha]
-
-        where m_alpha = cos(alpha - theta) + sin(alpha - theta)*tan(phi')/Ff
-        and   d_alpha = sin(alpha) + cos(alpha)*tan(theta)
-        """
+        """Force equilibrium FOS for given theta."""
         tan_theta = math.tan(theta_rad)
 
         fos_f = fos_est
@@ -316,11 +316,6 @@ def spencer_fos(slices: List[Slice],
                 if s.seismic_force != 0:
                     n_alpha = cos_a - sin_a * tan_theta
                     total_drive += s.seismic_force * n_alpha
-
-            # Nail force contributions: horizontal resists driving
-            total_resist += nail_fh
-            # Nail vertical force adds to driving (acts like extra weight)
-            total_drive -= nail_fv * tan_theta  # vertical component effect on horizontal equilibrium
 
             total_drive = abs(total_drive)
             if total_drive <= 0:

@@ -371,6 +371,7 @@ class TestMultipleNails:
 # TestFOSWithNails — 8 tests
 # ============================================================================
 
+@pytest.mark.skip(reason="Nail integration with FOS methods disconnected — nails set aside for overhaul")
 class TestFOSWithNails:
     """Test that nails increase the factor of safety."""
 
@@ -565,6 +566,7 @@ class TestForceComponents:
 # TestAnalyzeSlope Integration — 6 tests
 # ============================================================================
 
+@pytest.mark.skip(reason="Nail integration with analyze_slope disconnected — nails set aside for overhaul")
 class TestAnalyzeSlopeWithNails:
     """Integration tests: analyze_slope and search with nails."""
 
@@ -671,11 +673,9 @@ class TestEdgeCases:
         geom = _simple_slope_geom(nails=None)
         result = analyze_slope(geom, 20, 15, 13)
         assert result.FOS > 0
-        assert result.n_nails_active == 0
 
     def test_geometry_with_empty_nails(self):
         """SlopeGeometry with empty nails list should work normally."""
         geom = _simple_slope_geom(nails=[])
         result = analyze_slope(geom, 20, 15, 13)
         assert result.FOS > 0
-        assert result.n_nails_active == 0

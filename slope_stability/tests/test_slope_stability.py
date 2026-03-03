@@ -23,7 +23,7 @@ from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
 from slope_stability.slip_surface import CircularSlipSurface
 from slope_stability.slices import Slice, build_slices
 from slope_stability.methods import fellenius_fos, bishop_fos, spencer_fos
-from slope_stability.search import optimize_radius, grid_search
+from slope_stability.search import optimize_radius, grid_search, search_noncircular
 from slope_stability.analysis import analyze_slope, search_critical_surface
 from slope_stability.results import SlopeStabilityResult, SliceData, SearchResult
 
@@ -516,29 +516,29 @@ class TestResults:
         summary = result.summary()
         assert "Bishop" in summary
         assert "Factor of Safety" in summary
-        assert "STABLE" in summary or "UNSTABLE" in summary
 
     def test_to_dict_keys(self):
         """SlopeStabilityResult.to_dict() has expected keys."""
         geom = _simple_slope_geom()
         result = analyze_slope(geom, xc=20, yc=15, radius=13)
         d = result.to_dict()
-        expected_keys = {"FOS", "method", "is_stable", "FOS_required",
+        expected_keys = {"FOS", "method",
                          "xc_m", "yc_m", "radius_m", "x_entry_m",
                          "x_exit_m", "n_slices", "has_seismic", "kh"}
         assert expected_keys.issubset(d.keys())
+        # Removed fields should not be present
+        assert "is_stable" not in d
+        assert "FOS_required" not in d
 
-    def test_pass_fail_flag(self):
-        """is_stable reflects FOS vs FOS_required correctly."""
+    def test_tol_parameter(self):
+        """analyze_slope accepts tol parameter and passes to iterative methods."""
         geom = _simple_slope_geom()
-        # With default FOS_required=1.5 and known high FOS
-        result = analyze_slope(geom, xc=20, yc=15, radius=13,
-                               FOS_required=1.0)
-        assert result.is_stable is True
-
-        result2 = analyze_slope(geom, xc=20, yc=15, radius=13,
-                                FOS_required=100.0)
-        assert result2.is_stable is False
+        result_default = analyze_slope(geom, xc=20, yc=15, radius=13)
+        result_tight = analyze_slope(geom, xc=20, yc=15, radius=13, tol=1e-6)
+        # Both should produce reasonable FOS; tight tolerance may differ slightly
+        assert 0.5 < result_default.FOS < 10.0
+        assert 0.5 < result_tight.FOS < 10.0
+        assert abs(result_default.FOS - result_tight.FOS) < 0.01
 
 
 # ============================================================================
@@ -738,3 +738,308 @@ class TestSurcharge:
         # effect depends on geometry; just verify both are reasonable
         assert 0.5 < fos_full < 10.0
         assert 0.5 < fos_partial < 10.0
+
+
+# ============================================================================
+# TestPolylineSlipSurface — 8 tests
+# ============================================================================
+
+from slope_stability.slip_surface import PolylineSlipSurface
+
+
+class TestPolylineSlipSurface:
+    """Test PolylineSlipSurface geometry and duck typing."""
+
+    def test_is_circular_false(self):
+        """PolylineSlipSurface.is_circular is False."""
+        poly = PolylineSlipSurface(points=[(5, 4), (15, 1), (25, 0), (35, 3)])
+        assert poly.is_circular is False
+
+    def test_circular_is_circular_true(self):
+        """CircularSlipSurface.is_circular is True."""
+        circ = CircularSlipSurface(xc=20, yc=15, radius=13)
+        assert circ.is_circular is True
+
+    def test_slip_elevation_interpolation(self):
+        """Linear interpolation between polyline points."""
+        poly = PolylineSlipSurface(points=[(0, 4), (10, 0), (20, 2)])
+        # At x=5: midpoint of (0,4)-(10,0) → z = 2.0
+        z = poly.slip_elevation_at(5.0)
+        assert abs(z - 2.0) < 0.01
+
+    def test_slip_elevation_outside_range(self):
+        """Returns None outside polyline x-range."""
+        poly = PolylineSlipSurface(points=[(5, 4), (15, 1)])
+        assert poly.slip_elevation_at(3.0) is None
+        assert poly.slip_elevation_at(20.0) is None
+
+    def test_tangent_angle(self):
+        """Tangent angle matches segment slope."""
+        poly = PolylineSlipSurface(points=[(0, 0), (10, 5), (20, 5)])
+        # First segment: rise 5 over run 10 → alpha = atan(5/10) = 26.57°
+        alpha = poly.tangent_angle_at(5.0)
+        expected = math.atan2(5, 10)
+        assert abs(alpha - expected) < 0.01
+        # Second segment: flat → alpha = 0
+        alpha2 = poly.tangent_angle_at(15.0)
+        assert abs(alpha2) < 0.01
+
+    def test_find_entry_exit(self):
+        """Entry and exit points found for polyline below ground surface."""
+        geom = _simple_slope_geom()
+        # Polyline that enters the slope face and exits at the toe
+        poly = PolylineSlipSurface(
+            points=[(8, 9), (15, 2), (20, 0.5), (28, -1), (33, 1)]
+        )
+        x_entry, x_exit = poly.find_entry_exit(geom)
+        assert x_entry < x_exit
+        # Entry should be near crest, exit near toe
+        assert 7 < x_entry < 20
+        assert 20 < x_exit < 40
+
+    def test_validation_min_points(self):
+        """At least 2 points required."""
+        with pytest.raises(ValueError, match="at least 2"):
+            PolylineSlipSurface(points=[(5, 4)])
+
+    def test_validation_monotonic_x(self):
+        """x-coordinates must be monotonically increasing."""
+        with pytest.raises(ValueError, match="monotonically"):
+            PolylineSlipSurface(points=[(10, 4), (5, 1), (15, 2)])
+
+
+# ============================================================================
+# TestNoncircularSpencer — 7 tests
+# ============================================================================
+
+
+class TestNoncircularSpencer:
+    """Test Spencer's method with noncircular (polyline) slip surfaces."""
+
+    def _poly_slip(self):
+        """Polyline that cuts through the standard 2:1 slope."""
+        return PolylineSlipSurface(
+            points=[(8, 9), (15, 2), (20, 1), (25, 0.5), (32, 1)]
+        )
+
+    def test_spencer_noncircular_reasonable_fos(self):
+        """Spencer on noncircular surface gives reasonable FOS."""
+        geom = _simple_slope_geom()
+        slip = self._poly_slip()
+        slices = build_slices(geom, slip, 30)
+        fos, theta = spencer_fos(slices, slip)
+        assert 0.3 < fos < 10.0
+        assert -45 < theta < 45
+
+    def test_fellenius_noncircular_reasonable(self):
+        """Fellenius works on noncircular surface."""
+        geom = _simple_slope_geom()
+        slip = self._poly_slip()
+        slices = build_slices(geom, slip, 30)
+        fos = fellenius_fos(slices, slip)
+        assert 0.3 < fos < 10.0
+
+    def test_bishop_rejects_noncircular(self):
+        """Bishop raises ValueError for noncircular surfaces."""
+        geom = _simple_slope_geom()
+        slip = self._poly_slip()
+        slices = build_slices(geom, slip, 30)
+        with pytest.raises(ValueError, match="circular"):
+            bishop_fos(slices, slip)
+
+    def test_analyze_slope_with_slip_surface(self):
+        """analyze_slope accepts slip_surface parameter directly."""
+        geom = _simple_slope_geom()
+        slip = self._poly_slip()
+        result = analyze_slope(geom, slip_surface=slip, method="spencer")
+        assert result.method == "Spencer"
+        assert 0.3 < result.FOS < 10.0
+        assert result.theta_spencer is not None
+
+    def test_analyze_slope_noncircular_auto_spencer(self):
+        """analyze_slope auto-switches to Spencer for noncircular + bishop."""
+        geom = _simple_slope_geom()
+        slip = self._poly_slip()
+        # method="bishop" but noncircular → should auto-switch to Spencer
+        result = analyze_slope(geom, slip_surface=slip, method="bishop")
+        assert result.method == "Spencer"
+
+    def test_spencer_noncircular_geq_fellenius(self):
+        """Spencer FOS >= Fellenius FOS for noncircular surfaces."""
+        geom = _simple_slope_geom()
+        slip = self._poly_slip()
+        slices = build_slices(geom, slip, 30)
+        fos_f = fellenius_fos(slices, slip)
+        fos_s, _ = spencer_fos(slices, slip)
+        assert fos_s >= fos_f - 0.05
+
+    def test_compare_methods_noncircular(self):
+        """compare_methods on noncircular gives Fellenius + Spencer but not Bishop."""
+        geom = _simple_slope_geom()
+        slip = self._poly_slip()
+        result = analyze_slope(geom, slip_surface=slip, method="spencer",
+                               compare_methods=True)
+        assert result.FOS_fellenius is not None
+        assert result.FOS_bishop is None  # Bishop can't do noncircular
+        assert result.theta_spencer is not None
+
+
+# ============================================================================
+# TestEntryExitLimits — 6 tests
+# ============================================================================
+
+
+class TestEntryExitLimits:
+    """Test entry/exit x-range filtering on circular search."""
+
+    def test_grid_search_with_entry_range(self):
+        """grid_search respects x_entry_range constraint."""
+        geom = _simple_slope_geom()
+        result = grid_search(geom, x_range=(10, 25), y_range=(12, 25),
+                             nx=5, ny=5, x_entry_range=(5, 15))
+        assert result.critical is not None
+        assert result.critical.x_entry >= 5.0
+        assert result.critical.x_entry <= 15.0
+
+    def test_grid_search_with_exit_range(self):
+        """grid_search respects x_exit_range constraint."""
+        geom = _simple_slope_geom()
+        result = grid_search(geom, x_range=(10, 25), y_range=(12, 25),
+                             nx=5, ny=5, x_exit_range=(25, 40))
+        assert result.critical is not None
+        assert result.critical.x_exit >= 25.0
+        assert result.critical.x_exit <= 40.0
+
+    def test_grid_search_both_ranges(self):
+        """grid_search with both entry and exit constraints."""
+        geom = _simple_slope_geom()
+        result = grid_search(geom, x_range=(10, 25), y_range=(12, 25),
+                             nx=5, ny=5,
+                             x_entry_range=(5, 15), x_exit_range=(25, 40))
+        assert result.critical is not None
+        assert result.critical.x_entry >= 5.0
+        assert result.critical.x_exit >= 25.0
+
+    def test_optimize_radius_with_entry_range(self):
+        """optimize_radius respects entry range filter."""
+        geom = _simple_slope_geom()
+        # Tight entry range — should still find a valid radius
+        r_opt, fos_opt = optimize_radius(geom, xc=20, yc=15,
+                                          x_entry_range=(8, 14))
+        assert r_opt > 0
+        assert fos_opt < 999.0
+
+    def test_impossible_range_gives_max_fos(self):
+        """Impossible entry range yields no valid surface (FOS = MAX)."""
+        geom = _simple_slope_geom()
+        # Entry range far from slope — no circle can satisfy this
+        r_opt, fos_opt = optimize_radius(geom, xc=20, yc=15,
+                                          x_entry_range=(40, 45))
+        assert fos_opt >= 999.0
+
+    def test_search_critical_surface_with_ranges(self):
+        """search_critical_surface passes entry/exit ranges through."""
+        geom = _simple_slope_geom()
+        result = search_critical_surface(geom, nx=5, ny=5,
+                                          x_entry_range=(5, 15),
+                                          x_exit_range=(25, 40))
+        assert result.critical is not None
+        assert result.critical.x_entry >= 5.0
+        assert result.critical.x_exit >= 25.0
+
+
+# ============================================================================
+# TestNoncircularSearch — 7 tests
+# ============================================================================
+
+
+class TestNoncircularSearch:
+    """Test noncircular (polyline) slip surface search."""
+
+    def test_search_noncircular_basic(self):
+        """search_noncircular finds a critical surface."""
+        geom = _simple_slope_geom()
+        result = search_noncircular(
+            geom,
+            x_entry_range=(5, 15),
+            x_exit_range=(25, 40),
+            n_trials=50,
+            n_points=5,
+            seed=42,
+        )
+        assert result.critical is not None
+        assert 0.3 < result.critical.FOS < 20.0
+        assert result.n_surfaces_evaluated > 0
+
+    def test_search_noncircular_uses_spencer(self):
+        """Noncircular search always uses Spencer's method."""
+        geom = _simple_slope_geom()
+        result = search_noncircular(
+            geom,
+            x_entry_range=(5, 15),
+            x_exit_range=(25, 40),
+            n_trials=30,
+            seed=42,
+        )
+        assert result.critical is not None
+        assert result.critical.method == "Spencer"
+
+    def test_search_noncircular_reproducible(self):
+        """Same seed produces same result."""
+        geom = _simple_slope_geom()
+        kwargs = dict(x_entry_range=(5, 15), x_exit_range=(25, 40),
+                      n_trials=30, seed=123)
+        r1 = search_noncircular(geom, **kwargs)
+        r2 = search_noncircular(geom, **kwargs)
+        if r1.critical and r2.critical:
+            assert abs(r1.critical.FOS - r2.critical.FOS) < 0.001
+
+    def test_search_noncircular_more_trials_better(self):
+        """More trials should find FOS <= fewer trials (or close)."""
+        geom = _simple_slope_geom()
+        r_few = search_noncircular(geom, x_entry_range=(5, 15),
+                                    x_exit_range=(25, 40),
+                                    n_trials=20, seed=42)
+        r_many = search_noncircular(geom, x_entry_range=(5, 15),
+                                     x_exit_range=(25, 40),
+                                     n_trials=200, seed=42)
+        if r_few.critical and r_many.critical:
+            # More trials ≤ fewer trials + small margin
+            assert r_many.critical.FOS <= r_few.critical.FOS + 0.3
+
+    def test_search_critical_surface_noncircular(self):
+        """search_critical_surface with surface_type='noncircular'."""
+        geom = _simple_slope_geom()
+        result = search_critical_surface(
+            geom,
+            surface_type="noncircular",
+            n_trials=50,
+            seed=42,
+        )
+        assert result.critical is not None
+        assert result.critical.method == "Spencer"
+
+    def test_search_noncircular_grid_fos_populated(self):
+        """grid_fos list is populated for noncircular search."""
+        geom = _simple_slope_geom()
+        result = search_noncircular(
+            geom,
+            x_entry_range=(5, 15),
+            x_exit_range=(25, 40),
+            n_trials=30,
+            seed=42,
+        )
+        assert len(result.grid_fos) == result.n_surfaces_evaluated
+
+    def test_search_noncircular_n_points(self):
+        """Varying n_points controls polyline complexity."""
+        geom = _simple_slope_geom()
+        # Both should produce valid results regardless of n_points
+        r3 = search_noncircular(geom, x_entry_range=(5, 15),
+                                 x_exit_range=(25, 40),
+                                 n_trials=30, n_points=3, seed=42)
+        r7 = search_noncircular(geom, x_entry_range=(5, 15),
+                                 x_exit_range=(25, 40),
+                                 n_trials=30, n_points=7, seed=42)
+        assert r3.critical is not None
+        assert r7.critical is not None

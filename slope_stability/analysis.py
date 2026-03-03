@@ -16,19 +16,20 @@ from slope_stability.geometry import SlopeGeometry
 from slope_stability.slip_surface import CircularSlipSurface
 from slope_stability.slices import build_slices
 from slope_stability.methods import fellenius_fos, bishop_fos, spencer_fos
-from slope_stability.search import grid_search
+from slope_stability.search import grid_search, search_noncircular
 from slope_stability.results import (
     SlopeStabilityResult, SliceData, SearchResult,
 )
 
 
 def analyze_slope(geom: SlopeGeometry,
-                  xc: float,
-                  yc: float,
-                  radius: float,
+                  xc: float = None,
+                  yc: float = None,
+                  radius: float = None,
+                  slip_surface=None,
                   method: str = "bishop",
                   n_slices: int = 30,
-                  FOS_required: float = 1.5,
+                  tol: float = 1e-4,
                   include_slice_data: bool = False,
                   compare_methods: bool = False,
                   ) -> SlopeStabilityResult:
@@ -38,58 +39,76 @@ def analyze_slope(geom: SlopeGeometry,
     ----------
     geom : SlopeGeometry
         Complete slope definition.
-    xc : float
-        Circle center x-coordinate (m).
-    yc : float
+    xc : float, optional
+        Circle center x-coordinate (m). Used with yc/radius for circular.
+    yc : float, optional
         Circle center z-coordinate / elevation (m).
-    radius : float
+    radius : float, optional
         Circle radius (m).
+    slip_surface : CircularSlipSurface or PolylineSlipSurface, optional
+        Explicit slip surface object. If provided, xc/yc/radius are ignored.
     method : str
         'fellenius', 'bishop', or 'spencer'. Default 'bishop'.
     n_slices : int
         Number of slices. Default 30.
-    FOS_required : float
-        Minimum required FOS for pass/fail. Default 1.5.
+    tol : float
+        Convergence tolerance for iterative methods. Default 1e-4.
     include_slice_data : bool
         If True, include per-slice breakdown in results.
     compare_methods : bool
         If True, compute FOS for all three methods.
+        For noncircular surfaces, only Fellenius and Spencer are compared
+        (Bishop requires circular).
 
     Returns
     -------
     SlopeStabilityResult
     """
-    slip = CircularSlipSurface(xc, yc, radius)
+    # Build slip surface from either explicit object or xc/yc/radius
+    if slip_surface is not None:
+        slip = slip_surface
+    else:
+        if xc is None or yc is None or radius is None:
+            raise ValueError(
+                "Either provide slip_surface or all of xc, yc, radius"
+            )
+        slip = CircularSlipSurface(xc, yc, radius)
+
+    is_circular = getattr(slip, 'is_circular', True)
     x_entry, x_exit = slip.find_entry_exit(geom)
     slices = build_slices(geom, slip, n_slices)
 
-    # Compute nail contributions if nails are defined
-    nail_contribs = None
-    if geom.nails:
-        from slope_stability.nails import compute_all_nail_contributions
-        nail_contribs = compute_all_nail_contributions(geom.nails, xc, yc, radius)
+    # For result: store circle params if circular, zeros otherwise
+    r_xc = slip.xc if is_circular else 0.0
+    r_yc = slip.yc if is_circular else 0.0
+    r_radius = slip.radius if is_circular else 0.0
+
+    # For noncircular, force Spencer (Bishop doesn't work)
+    if not is_circular and method == "bishop":
+        method = "spencer"
 
     # Primary FOS
     theta_spencer = None
     if method == "fellenius":
-        fos = fellenius_fos(slices, slip, nail_contributions=nail_contribs)
+        fos = fellenius_fos(slices, slip)
         method_name = "Fellenius"
     elif method == "spencer":
-        fos, theta = spencer_fos(slices, slip, nail_contributions=nail_contribs)
+        fos, theta = spencer_fos(slices, slip, tol=tol)
         theta_spencer = theta
         method_name = "Spencer"
     else:
-        fos = bishop_fos(slices, slip, nail_contributions=nail_contribs)
+        fos = bishop_fos(slices, slip, tol=tol)
         method_name = "Bishop"
 
     # Comparison FOS values
     fos_fellenius = None
     fos_bishop = None
     if compare_methods:
-        fos_fellenius = fellenius_fos(slices, slip, nail_contributions=nail_contribs)
-        fos_bishop = bishop_fos(slices, slip, nail_contributions=nail_contribs)
+        fos_fellenius = fellenius_fos(slices, slip)
+        if is_circular:
+            fos_bishop = bishop_fos(slices, slip, tol=tol)
         if theta_spencer is None:
-            fos_sp, theta = spencer_fos(slices, slip, nail_contributions=nail_contribs)
+            fos_sp, theta = spencer_fos(slices, slip, tol=tol)
             theta_spencer = theta
 
     # Slice data for plotting
@@ -112,24 +131,14 @@ def analyze_slope(geom: SlopeGeometry,
             for s in slices
         ]
 
-    # Nail summary fields
-    n_nails_active = 0
-    nail_resisting_kN_per_m = 0.0
-    if nail_contribs:
-        from slope_stability.nails import total_nail_resisting
-        n_nails_active = len(nail_contribs)
-        nail_resisting_kN_per_m = total_nail_resisting(nail_contribs)
-
     return SlopeStabilityResult(
         FOS=fos,
         method=method_name,
-        xc=xc,
-        yc=yc,
-        radius=radius,
+        xc=r_xc,
+        yc=r_yc,
+        radius=r_radius,
         x_entry=x_entry,
         x_exit=x_exit,
-        is_stable=fos >= FOS_required,
-        FOS_required=FOS_required,
         theta_spencer=theta_spencer,
         FOS_fellenius=fos_fellenius,
         FOS_bishop=fos_bishop,
@@ -137,8 +146,6 @@ def analyze_slope(geom: SlopeGeometry,
         has_seismic=geom.kh > 0,
         kh=geom.kh,
         slice_data=slice_data,
-        n_nails_active=n_nails_active,
-        nail_resisting_kN_per_m=nail_resisting_kN_per_m,
     )
 
 
@@ -150,7 +157,13 @@ def search_critical_surface(
     ny: int = 10,
     method: str = "bishop",
     n_slices: int = 30,
-    FOS_required: float = 1.5,
+    tol: float = 1e-4,
+    surface_type: str = "circular",
+    x_entry_range: Tuple[float, float] = None,
+    x_exit_range: Tuple[float, float] = None,
+    n_trials: int = 500,
+    n_points: int = 5,
+    seed: Optional[int] = None,
 ) -> SearchResult:
     """Search for the critical slip surface (minimum FOS).
 
@@ -161,23 +174,55 @@ def search_critical_surface(
     geom : SlopeGeometry
         Slope definition.
     x_range : (float, float), optional
-        Circle center x search range.
+        Circle center x search range (circular only).
     y_range : (float, float), optional
-        Circle center y search range.
+        Circle center y search range (circular only).
     nx, ny : int
         Grid resolution. Default 10x10.
     method : str
         FOS method. Default 'bishop'.
     n_slices : int
         Number of slices per analysis.
-    FOS_required : float
-        Required FOS for pass/fail.
+    tol : float
+        Convergence tolerance for iterative methods. Default 1e-4.
+    surface_type : str
+        'circular' (default) or 'noncircular'.
+    x_entry_range : (float, float), optional
+        Allowed entry x-coordinate range.
+    x_exit_range : (float, float), optional
+        Allowed exit x-coordinate range.
+    n_trials : int
+        Number of random trials for noncircular search. Default 500.
+    n_points : int
+        Number of polyline vertices for noncircular search. Default 5.
+    seed : int, optional
+        Random seed for noncircular search reproducibility.
 
     Returns
     -------
     SearchResult
     """
-    # Auto-compute search bounds
+    if surface_type == "noncircular":
+        # Auto-compute entry/exit ranges from slope geometry if not provided
+        x_min = geom.surface_points[0][0]
+        x_max = geom.surface_points[-1][0]
+        if x_entry_range is None:
+            x_entry_range = (x_min, x_min + (x_max - x_min) * 0.4)
+        if x_exit_range is None:
+            x_exit_range = (x_min + (x_max - x_min) * 0.6, x_max)
+
+        return search_noncircular(
+            geom,
+            x_entry_range=x_entry_range,
+            x_exit_range=x_exit_range,
+            n_trials=n_trials,
+            n_points=n_points,
+            n_slices=n_slices,
+            tol=tol,
+            seed=seed,
+        )
+
+    # Circular search
     if x_range is None:
         x_min = geom.surface_points[0][0]
         x_max = geom.surface_points[-1][0]
@@ -189,11 +234,8 @@ def search_critical_surface(
         slope_height = z_max - z_min
         y_range = (z_max + 1.0, z_max + 2.0 * slope_height)
 
-    result = grid_search(geom, x_range, y_range, nx, ny, method, n_slices)
-
-    # Set pass/fail on critical result
-    if result.critical is not None:
-        result.critical.FOS_required = FOS_required
-        result.critical.is_stable = result.critical.FOS >= FOS_required
+    result = grid_search(geom, x_range, y_range, nx, ny, method, n_slices,
+                         tol=tol, x_entry_range=x_entry_range,
+                         x_exit_range=x_exit_range)
 
     return result

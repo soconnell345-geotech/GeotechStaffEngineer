@@ -16,23 +16,21 @@ References:
 """
 
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
-from slope_stability.slip_surface import CircularSlipSurface
+from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurface
 from slope_stability.slices import Slice, build_slices
 from slope_stability.methods import fellenius_fos, bishop_fos, spencer_fos
-from slope_stability.search import grid_search, optimize_radius
+from slope_stability.search import grid_search, optimize_radius, search_noncircular
 from slope_stability.analysis import analyze_slope, search_critical_surface
 from slope_stability.results import (
     SlopeStabilityResult, SliceData, SearchResult,
 )
-from slope_stability.nails import SoilNail, NailContribution
 
 __all__ = [
     'SlopeGeometry', 'SlopeSoilLayer',
-    'CircularSlipSurface',
+    'CircularSlipSurface', 'PolylineSlipSurface',
     'Slice', 'build_slices',
     'fellenius_fos', 'bishop_fos', 'spencer_fos',
-    'grid_search', 'optimize_radius',
+    'grid_search', 'optimize_radius', 'search_noncircular',
     'analyze_slope', 'search_critical_surface',
     'SlopeStabilityResult', 'SliceData', 'SearchResult',
-    'SoilNail', 'NailContribution',
 ]

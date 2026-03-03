@@ -1,17 +1,14 @@
 """
-GeotechStaffEngineer — Desktop Qt Application
+Slope Stability Analysis — Standalone Qt Application
 
-Portable geotechnical analysis GUI.  Copy this file + the project source
-to any PC with Python + PyQt5/PySide2 + numpy + scipy + matplotlib.
+Limit equilibrium slope stability with Bishop, Spencer, and Fellenius
+methods. Supports circular and noncircular slip surfaces.
 
-Setup on work PC:
+Setup:
     1. Copy the GeotechStaffEngineer/ folder to your PC
-    2. Edit SOURCE_PATH below if running from a different location
-    3. Run:  python geotech_qt_gui.py
-       Or:   open in Spyder and press F5
+    2. Run:  python slope_stability_qt.py
 
 Requires: PyQt5 (or PySide2), numpy, scipy, matplotlib
-          (all included in Anaconda)
 """
 
 import sys
@@ -20,10 +17,9 @@ import json
 import datetime
 
 # ---------------------------------------------------------------------------
-# Source path — edit this if the project lives somewhere else on your PC
+# Source path
 # ---------------------------------------------------------------------------
 SOURCE_PATH = os.path.dirname(os.path.abspath(__file__))
-# SOURCE_PATH = r"C:\Users\YourName\Documents\GeotechStaffEngineer"
 
 if SOURCE_PATH not in sys.path:
     sys.path.insert(0, SOURCE_PATH)
@@ -32,30 +28,20 @@ if SOURCE_PATH not in sys.path:
         sys.path.insert(0, refs_path)
 
 # ---------------------------------------------------------------------------
-# Qt panels package — all panels, constants, and widgets
-# ---------------------------------------------------------------------------
-from qt_panels import (
-    APP_NAME, APP_VERSION, STYLESHEET,
-    BearingCapacityPanel,
-    SettlementPanel, FEM2DPanel,
-)
+from qt_panels import APP_NAME, APP_VERSION, STYLESHEET
+from qt_panels.slope_stability_panel import SlopeStabilityPanel
 from qt_panels.common import (
-    QApplication, QMainWindow, QTabWidget, QStatusBar,
+    QApplication, QMainWindow, QStatusBar,
     QAction, QMessageBox, QFileDialog,
 )
 
 
-# ===========================================================================
-# MAIN WINDOW
-# ===========================================================================
-class MainWindow(QMainWindow):
-    """Main application window with tabbed analysis panels."""
-
-    TAB_NAMES = ["Bearing Capacity", "Settlement", "FEM 2D"]
+class SlopeStabilityWindow(QMainWindow):
+    """Standalone slope stability analysis window."""
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"{APP_NAME}  v{APP_VERSION}")
+        self.setWindowTitle(f"Slope Stability  -  {APP_NAME}  v{APP_VERSION}")
         self.resize(1400, 900)
 
         # Status bar
@@ -89,43 +75,25 @@ class MainWindow(QMainWindow):
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
 
-        # Tab widget
-        # Note: Slope Stability is now a standalone app (slope_stability_qt.py)
-        self.tabs = QTabWidget()
-        self.tabs.addTab(
-            BearingCapacityPanel(self.status_bar), "Bearing Capacity")
-        self.tabs.addTab(
-            SettlementPanel(self.status_bar), "Settlement")
-        self.tabs.addTab(
-            FEM2DPanel(self.status_bar), "FEM 2D")
-        self.setCentralWidget(self.tabs)
-
-    def _current_panel(self):
-        return self.tabs.currentWidget()
+        # Central panel
+        self.panel = SlopeStabilityPanel(self.status_bar)
+        self.setCentralWidget(self.panel)
 
     def _save_project(self):
-        panel = self._current_panel()
-        if not hasattr(panel, "get_state"):
-            self.status_bar.showMessage("Save not supported for this tab")
-            return
         path, _ = QFileDialog.getSaveFileName(
             self, "Save Results", "",
             "GeotechStaffEngineer Files (*.gse);;All Files (*)")
         if not path:
             return
         try:
-            state = panel.get_state()
-            tab_name = self.tabs.tabText(self.tabs.currentIndex())
+            state = self.panel.get_state()
             doc = {
                 "app": APP_NAME,
                 "version": APP_VERSION,
-                "tab": tab_name,
+                "tab": "Slope Stability",
                 "inputs": state,
                 "timestamp": datetime.datetime.now().isoformat(),
             }
-            # Add analysis_type for FEM2D
-            if isinstance(panel, FEM2DPanel):
-                doc["analysis_type"] = panel.type_cb.currentText()
             with open(path, "w") as f:
                 json.dump(doc, f, indent=2, default=str)
             self.status_bar.showMessage(f"Saved to {path}", 10000)
@@ -141,22 +109,14 @@ class MainWindow(QMainWindow):
         try:
             with open(path, "r") as f:
                 doc = json.load(f)
-            tab_name = doc.get("tab", "")
-            # Switch to the correct tab
-            for i in range(self.tabs.count()):
-                if self.tabs.tabText(i) == tab_name:
-                    self.tabs.setCurrentIndex(i)
-                    break
-            panel = self._current_panel()
-            if hasattr(panel, "set_state") and "inputs" in doc:
-                panel.set_state(doc["inputs"])
+            if "inputs" in doc:
+                self.panel.set_state(doc["inputs"])
             self.status_bar.showMessage(f"Loaded from {path}", 10000)
         except Exception as e:
             QMessageBox.warning(self, "Load Error", str(e))
 
     def _export_png(self):
-        panel = self._current_panel()
-        canvas = getattr(panel, "canvas", None)
+        canvas = getattr(self.panel, "canvas", None)
         if canvas is None:
             self.status_bar.showMessage("No plot to export")
             return
@@ -174,34 +134,32 @@ class MainWindow(QMainWindow):
     def _show_about(self):
         QMessageBox.about(
             self,
-            f"About {APP_NAME}",
-            f"<h2>{APP_NAME}</h2>"
-            f"<p>Version {APP_VERSION}</p>"
-            f"<p>Python toolkit for geotechnical engineering analysis.</p>"
-            f"<p>37 analysis modules covering foundations, piles, slopes, "
-            f"seismic, FEM, and more.</p>"
-            f"<p><b>Modules available:</b> bearing_capacity, settlement, "
-            f"slope_stability, axial_pile, lateral_pile, sheet_pile, soe, "
-            f"pile_group, drilled_shaft, retaining_walls, ground_improvement, "
-            f"seismic_geotech, fem2d, wind_loads, ...</p>"
+            "About Slope Stability",
+            f"<h2>Slope Stability Analysis</h2>"
+            f"<p>{APP_NAME} v{APP_VERSION}</p>"
+            f"<p>Limit equilibrium analysis using:</p>"
+            f"<ul>"
+            f"<li>Fellenius (Ordinary Method of Slices)</li>"
+            f"<li>Bishop's Simplified Method</li>"
+            f"<li>Spencer's Method (circular + noncircular)</li>"
+            f"</ul>"
+            f"<p>Circular and noncircular slip surface search with "
+            f"entry/exit range constraints.</p>"
             f"<hr>"
+            f"<p>References: Duncan, Wright & Brandon (2014)</p>"
             f"<p>&copy; 2026 Sean O'Connell</p>",
         )
 
 
-# ===========================================================================
-# Entry point
-# ===========================================================================
 def main():
     app = QApplication.instance() or QApplication(sys.argv)
-    app.setApplicationName(APP_NAME)
+    app.setApplicationName(f"{APP_NAME} - Slope Stability")
     app.setStyle("Fusion")
     app.setStyleSheet(STYLESHEET)
 
-    window = MainWindow()
+    window = SlopeStabilityWindow()
     window.show()
 
-    # If running inside Spyder or Jupyter, don't block with exec_()
     if "SPY_PYTHONPATH" in os.environ or "JPY_PARENT_PID" in os.environ:
         return window
     else:
