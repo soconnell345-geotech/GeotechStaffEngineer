@@ -20,7 +20,7 @@ from chat_agent.agent import (
     dispatch_tool,
     _truncate,
 )
-from trial_agent.agent_registry import AGENT_NAMES
+from chat_agent.agent_registry import AGENT_NAMES
 
 
 # ===================================================================

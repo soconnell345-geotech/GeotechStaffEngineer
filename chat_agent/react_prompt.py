@@ -2,10 +2,10 @@
 ReAct system prompt builder for text-based chat agents.
 
 Combines ReAct protocol instructions with the canonical SYSTEM_PROMPT
-from trial_agent.system_prompt.
+from chat_agent.system_prompt.
 """
 
-from trial_agent.system_prompt import SYSTEM_PROMPT
+from chat_agent.system_prompt import SYSTEM_PROMPT
 
 REACT_PREFIX = """\
 You are a geotechnical engineering assistant that uses tools to answer questions.

@@ -12,7 +12,7 @@ from typing import Callable, Optional
 
 from chat_agent.parser import parse_response, ToolCall
 from chat_agent.react_prompt import build_system_prompt
-from trial_agent.agent_registry import (
+from chat_agent.agent_registry import (
     call_agent,
     list_methods,
     describe_method,
