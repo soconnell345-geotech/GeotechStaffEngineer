@@ -221,6 +221,9 @@ class FEMResult:
     max_beam_shear_kN_per_m: float = 0.0
     beam_forces: Optional[List] = field(default=None, repr=False)
 
+    # Strut results
+    strut_forces: Optional[List[Dict]] = field(default=None, repr=False)
+
     # Raw arrays (not serialized to dict)
     nodes: Optional[np.ndarray] = field(default=None, repr=False)
     elements: Optional[np.ndarray] = field(default=None, repr=False)
@@ -263,6 +266,13 @@ class FEMResult:
                 f"    Max moment: {self.max_beam_moment_kNm_per_m:.2f} kN*m/m",
                 f"    Max shear: {self.max_beam_shear_kN_per_m:.2f} kN/m",
             ])
+        if self.strut_forces:
+            lines.extend(["", "  Struts:"])
+            for sf in self.strut_forces:
+                lines.append(
+                    f"    Depth {sf['depth_m']:.1f} m: "
+                    f"F = {sf['force_kN_per_m']:.2f} kN/m "
+                    f"(k = {sf['stiffness_kN_per_m']:.0f} kN/m/m)")
         if self.warnings:
             lines.append("")
             for w in self.warnings:
@@ -298,6 +308,8 @@ class FEMResult:
                 self.max_beam_shear_kN_per_m, 2)
             if self.beam_forces:
                 d["beam_forces"] = [bf.to_dict() for bf in self.beam_forces]
+        if self.strut_forces:
+            d["strut_forces"] = self.strut_forces
         return d
 
 

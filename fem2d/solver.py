@@ -111,7 +111,7 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
                     active_elements=None, active_beams=None,
                     u_init=None, sigma_init=None, strain_init=None,
                     state_init=None, surface_loads=None,
-                    return_state=False):
+                    return_state=False, strut_springs=None):
     """Solve a nonlinear (MC/HS) problem with Newton-Raphson.
 
     Uses incremental gravity loading with full Newton-Raphson iteration.
@@ -147,6 +147,10 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
     state_init : list of dict, optional — initial HS element states.
     surface_loads : list of (edges, qx, qy), optional — surface tractions.
     return_state : bool — if True, return 5-tuple including elem_state list.
+    strut_springs : list of (node_id, stiffness), optional
+        Horizontal spring supports. Each tuple is (node_id, k) where k is
+        added to the horizontal DOF (2*node_id) diagonal of the stiffness
+        matrix each NR iteration.
 
     Returns
     -------
@@ -370,6 +374,17 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
                             rows.append(bdofs[i])
                             cols.append(bdofs[j])
                             vals.append(K_beam[i, j])
+
+            # Add strut spring contributions
+            if strut_springs:
+                for node_id, s_k in strut_springs:
+                    hdof = 2 * node_id
+                    # Internal force: F = k * u
+                    F_int[hdof] += s_k * u[hdof]
+                    # Tangent stiffness: K diagonal
+                    rows.append(hdof)
+                    cols.append(hdof)
+                    vals.append(s_k)
 
             # Build tangent stiffness
             K_T = coo_matrix((vals, (rows, cols)),

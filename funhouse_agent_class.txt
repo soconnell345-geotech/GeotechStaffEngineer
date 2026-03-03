@@ -1,0 +1,1571 @@
+​import base64
+import ssl
+from typing import Generator, Union, List, Optional, Dict, Any
+import spnego
+import httpx
+from httpx import Auth, Request, Client, Response
+from openai import OpenAI, APIError
+try:
+    from openai import AzureOpenAI
+except ImportError:
+    # Fallback for older versions - AzureOpenAI might not be available
+    AzureOpenAI = None
+try:
+    from openai import AzureOpenAI
+except ImportError:
+    # Fallback for older versions of openai package
+    AzureOpenAI = None
+import contextvars
+from functools import wraps
+import time
+import io
+import os
+import math
+import json
+from pydub import AudioSegment
+from tqdm import tqdm
+import warnings
+# fitz (PyMuPDF) is imported lazily when needed to avoid requiring it for all imports
+from pathlib import Path
+import requests
+from funhouse.config import FunhouseConfig, FunhouseConfigError
+from funhouse.logging import FunhouseLogger
+from funhouse.logging.funhouse_session_service import FunhouseSessionService
+from funhouse.admin.budget import check_budget
+from funhouse.services.embeddings import LocalEmbeddingService
+
+# Context variable for tracking active logging
+is_logging_active = contextvars.ContextVar('is_logging_active', default=False)
+
+# [ExHttpNtlmAuth, flatten_dict, wrap_openai_method, wrap_all_openai_methods unchanged]
+class ExHttpNtlmAuth(Auth):
+    """HTTP NTLM Authentication Handler for HTTPX."""
+    def __init__(self, username: str, password: str, send_cbt: bool = True) -> None:
+        self.username = username
+        self.password = password
+        self.send_cbt = send_cbt
+
+    def auth_flow(self, request: Request) -> Generator[Request, Response, None]:
+        """Perform NTLM authentication flow for HTTPX requests.
+        
+        Args:
+            request: The HTTP request to authenticate.
+        
+        Yields:
+            Request: Authenticated request objects during the NTLM handshake.
+        """
+        client = spnego.client(self.username, self.password, protocol="ntlm")
+        negotiate_message = base64.b64encode(client.step()).decode("ascii")
+        request.headers["Authorization"] = f"NTLM {negotiate_message}"
+        response = yield request
+        if response.headers.get("set-cookie"):
+            request.headers["Cookie"] = response.headers.get("set-cookie")
+        auth_header_value = response.headers.get("www-authenticate", "")
+        ntlm_header_value = next((s.strip() for s in auth_header_value.split(",") if s.startswith("NTLM")), None)
+        if ntlm_header_value:
+            val = base64.b64decode(ntlm_header_value[5:].encode())
+            authenticate_message = base64.b64encode(client.step(val)).decode("ascii")
+            request.headers["Authorization"] = f"NTLM {authenticate_message}"
+            yield request
+
+def flatten_dict(d, parent_key='', sep='_'):
+    """Flatten a nested dictionary into a single-level dictionary."""
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+def wrap_openai_method(method, logger):
+    """Wrap an OpenAI method to log usage metrics."""
+    if hasattr(method, '_is_wrapped') and method._is_wrapped:
+        return method
+    @wraps(method)
+    def wrapped(*args, **kwargs):
+        """Wrapped OpenAI method that logs usage metrics.
+        
+        Args:
+            *args: Positional arguments passed to the method.
+            **kwargs: Keyword arguments passed to the method.
+        
+        Returns:
+            The method's response, with usage metrics logged.
+        """
+        if is_logging_active.get():
+            return method(*args, **kwargs)
+        token = is_logging_active.set(True)
+        try:
+            if kwargs.get("stream", False):
+                kwargs["collect_usage"] = True
+            response = method(*args, **kwargs)
+            if hasattr(response, 'usage') and response.usage:
+                metrics = flatten_dict(dict(response.usage))
+                model = getattr(response, 'model', kwargs.get('model', None))
+                obj_type = type(response).__name__.split('.')[-1]
+                if model:
+                    metrics['model'] = model
+                if obj_type:
+                    metrics['object'] = obj_type
+                logger.meter_log(service="Prompter", operation=obj_type, metrics=metrics)
+            return response
+        finally:
+            is_logging_active.reset(token)
+    wrapped._is_wrapped = True
+    return wrapped
+
+def wrap_all_openai_methods(obj, logger, parent_name=''):
+    """Recursively wrap all callable methods of an OpenAI client for logging."""
+    for attr_name in dir(obj):
+        if attr_name.startswith('_'):
+            continue
+        try:
+            attr = getattr(obj, attr_name)
+        except AttributeError:
+            continue
+        if callable(attr) and not (hasattr(attr, '_is_wrapped') and attr._is_wrapped):
+            setattr(obj, attr_name, wrap_openai_method(attr, logger))
+        elif hasattr(attr, '__dict__'):
+            wrap_all_openai_methods(attr, logger, parent_name=attr_name)
+
+
+class GrokBackend:
+    """Grok API backend for PrompterAPI - uses X.AI API directly."""
+    
+    def __init__(self, api_key: str, chat_model: str = "grok-3", embeddings_model: str = "grok-embedding", logger=None):
+        """
+        Initialize Grok backend using X.AI API.
+        
+        Args:
+            api_key: Grok API key (X.AI format: xai-...)
+            chat_model: Chat model name (default: "grok-3", can use "grok-2", etc.)
+            embeddings_model: Embeddings model name (default: "grok-embedding")
+            logger: Logger instance
+        """
+        self.api_key = api_key
+        self.chat_model = chat_model
+        self.embeddings_model = embeddings_model
+        # X.AI API endpoint
+        self.base_url = "https://api.x.ai/v1"
+        self.logger = logger or FunhouseLogger.get_instance()
+        
+    def chat_completion(self, messages: List[Dict[str, str]], model: Optional[str] = None, 
+                       temperature: float = 0, response_format: Optional[Dict] = None, max_tokens: Optional[int] = None, 
+                       top_p: Optional[float] = None, **kwargs) -> Dict:
+        """
+        Make a chat completion request to Grok/Groq API.
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            model: Model name (overrides default)
+            temperature: Temperature setting (0-2, default: 0). Higher values increase randomness.
+            response_format: Response format dict (for JSON mode)
+            max_tokens: Maximum tokens to generate (default: None, uses API default)
+            top_p: Nucleus sampling parameter (0-1). If None, API uses default. Lower values make output more focused.
+            **kwargs: Additional parameters
+            
+        Returns:
+            Response dict with 'choices' containing the completion
+        """
+        model = model or self.chat_model
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": False
+        }
+        
+        # Add max_tokens if provided (important for high temperature to prevent very long responses)
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        
+        # Add top_p if provided (works with temperature to control randomness)
+        if top_p is not None:
+            payload["top_p"] = top_p
+        
+        # Handle response_format for JSON mode
+        if response_format:
+            if response_format.get("type") == "json_object":
+                payload["response_format"] = {"type": "json_object"}
+            # Note: Some APIs may not support json_schema, so we'll use json_object as fallback
+            elif response_format.get("type") == "json_schema":
+                payload["response_format"] = {"type": "json_object"}
+                self.logger.warning("API doesn't support json_schema, using json_object instead")
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+        
+        try:
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=120
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"X.AI Grok API error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_data = e.response.json()
+                    error_msg = error_data.get("error", {}).get("message", str(e))
+                    raise Exception(f"X.AI Grok API error ({e.response.status_code}): {error_msg}")
+                except:
+                    pass
+            raise
+    
+    def embeddings_create(self, input: Union[str, List[str]], model: Optional[str] = None) -> Dict:
+        """
+        Create embeddings using Grok API.
+        
+        Note: X.AI API may not support embeddings endpoint. This method will raise an error
+        if embeddings are not available. For embeddings, consider using the Prompter backend
+        or a different service.
+        
+        Args:
+            input: Text or list of texts to embed
+            model: Model name (overrides default)
+            
+        Returns:
+            Response dict with 'data' containing embeddings
+            
+        Raises:
+            Exception: If embeddings endpoint is not available or request fails
+        """
+        model = model or self.embeddings_model
+        payload = {
+            "model": model,
+            "input": input
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+        
+        try:
+            response = requests.post(
+                f"{self.base_url}/embeddings",
+                headers=headers,
+                json=payload,
+                timeout=120
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            if hasattr(e, 'response') and e.response is not None and e.response.status_code == 404:
+                raise Exception(
+                    f"X.AI Grok API does not support embeddings endpoint. "
+                    f"Use Prompter backend or a different service for embeddings."
+                )
+            self.logger.error(f"X.AI Grok embeddings API error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_data = e.response.json()
+                    error_msg = error_data.get("error", {}).get("message", str(e))
+                    raise Exception(f"X.AI Grok embeddings API error ({e.response.status_code}): {error_msg}")
+                except:
+                    pass
+            raise
+
+
+class AzureOpenAIBackend:
+    """Azure OpenAI backend for PrompterAPI - uses Azure OpenAI API directly."""
+    
+    def __init__(self, api_key: str, endpoint: str, chat_model: str = "gpt-4o-mini", embeddings_model: str = "text-embedding-3-small", api_version: str = "2024-12-01-preview", logger=None):
+        """
+        Initialize Azure OpenAI backend.
+        
+        Args:
+            api_key: Azure OpenAI API key
+            endpoint: Azure OpenAI endpoint URL (e.g., "https://funhouse-openai.openai.azure.com/")
+            chat_model: Deployment name for chat model (NOT the model name like "gpt-4o-mini", 
+                       but the deployment name you created in Azure portal, e.g., "gpt-4o-mini-deployment")
+            embeddings_model: Deployment name for embeddings model (NOT the model name, 
+                             but the deployment name you created in Azure portal)
+            api_version: API version to use (default: "2024-12-01-preview")
+            logger: Logger instance
+            
+        Note:
+            Azure OpenAI uses deployment names in the API path, not model names. You must use
+            the exact deployment name you created when deploying the model in Azure portal.
+            Common deployment names might be: "gpt-4o-mini", "gpt-4", "text-embedding-ada-002", etc.
+            Check your Azure portal to find your actual deployment names.
+        """
+        self.api_key = api_key
+        self.endpoint = endpoint.rstrip('/')  # Remove trailing slash if present
+        self.chat_model = chat_model
+        self.embeddings_model = embeddings_model
+        self.api_version = api_version
+        self.logger = logger or FunhouseLogger.get_instance()
+        
+    def chat_completion(self, messages: List[Dict[str, str]], model: Optional[str] = None, 
+                       temperature: float = 0, response_format: Optional[Dict] = None, max_tokens: Optional[int] = None, 
+                       top_p: Optional[float] = None, **kwargs) -> Dict:
+        """
+        Make a chat completion request to Azure OpenAI API.
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            model: Model name (overrides default)
+            temperature: Temperature setting (0-2, default: 0)
+            response_format: Response format dict (for JSON mode, supports both json_object and json_schema)
+            max_tokens: Maximum tokens to generate (default: None, uses API default)
+            top_p: Nucleus sampling parameter (0-1). If None, API uses default.
+            **kwargs: Additional parameters
+            
+        Returns:
+            Response dict with 'choices' containing the completion
+        """
+        model = model or self.chat_model
+        # Azure OpenAI doesn't need "model" in payload when deployment is in URL path
+        payload = {
+            "messages": messages,
+            "temperature": temperature,
+            "stream": False
+        }
+        
+        # Add max_tokens if provided
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        
+        # Add top_p if provided
+        if top_p is not None:
+            payload["top_p"] = top_p
+        
+        # Handle response_format - Azure OpenAI supports both json_object and json_schema
+        if response_format:
+            if response_format.get("type") == "json_object":
+                payload["response_format"] = {"type": "json_object"}
+            elif response_format.get("type") == "json_schema":
+                # Azure OpenAI supports json_schema with the schema definition
+                payload["response_format"] = response_format
+        
+        headers = {
+            "Content-Type": "application/json",
+            "api-key": self.api_key
+        }
+        
+        # Azure OpenAI uses deployment name in the path, not model name
+        # The endpoint format is: https://{resource}.openai.azure.com/openai/deployments/{deployment}/chat/completions?api-version={version}
+        url = f"{self.endpoint}/openai/deployments/{model}/chat/completions"
+        params = {"api-version": self.api_version}
+        
+        try:
+            response = requests.post(
+                url,
+                headers=headers,
+                json=payload,
+                params=params,
+                timeout=120
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Azure OpenAI API error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_data = e.response.json()
+                    error_msg = error_data.get("error", {}).get("message", str(e))
+                    # Add helpful message for 404 errors (deployment not found)
+                    if e.response.status_code == 404:
+                        error_msg += f"\n\nNote: 404 errors usually mean the deployment name '{model}' doesn't exist. "
+                        error_msg += "Azure OpenAI requires the deployment name (not the model name) that you created in Azure portal. "
+                        error_msg += f"Check your Azure portal for available deployments at: {self.endpoint}"
+                    raise Exception(f"Azure OpenAI API error ({e.response.status_code}): {error_msg}")
+                except:
+                    pass
+            raise
+    
+    def embeddings_create(self, input: Union[str, List[str]], model: Optional[str] = None) -> Dict:
+        """
+        Create embeddings using Azure OpenAI API.
+        
+        Args:
+            input: Text or list of texts to embed
+            model: Model name (overrides default)
+            
+        Returns:
+            Response dict with 'data' containing embeddings
+        """
+        model = model or self.embeddings_model
+        # Azure OpenAI doesn't need "model" in payload when deployment is in URL path
+        payload = {
+            "input": input
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "api-key": self.api_key
+        }
+        
+        # Azure OpenAI embeddings endpoint
+        url = f"{self.endpoint}/openai/deployments/{model}/embeddings"
+        params = {"api-version": self.api_version}
+        
+        try:
+            response = requests.post(
+                url,
+                headers=headers,
+                json=payload,
+                params=params,
+                timeout=120
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Azure OpenAI embeddings API error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_data = e.response.json()
+                    error_msg = error_data.get("error", {}).get("message", str(e))
+                    raise Exception(f"Azure OpenAI embeddings API error ({e.response.status_code}): {error_msg}")
+                except:
+                    pass
+            raise
+
+
+class PrompterAPI:
+    """Integrates Azure OpenAI services for text generation, embeddings, and more."""
+   
+    def __init__(
+        self,
+        config: Optional[FunhouseConfig] = None,
+        config_path: Optional[str] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        base_url: Optional[str] = None,
+        chat_model: Optional[str] = None,
+        embeddings_model: Optional[str] = None,
+        verify: Union[str, bool, ssl.SSLContext] = None,
+        max_retries: int = None,
+        backend: Optional[str] = None,
+        api_key: Optional[str] = None
+    ):
+        """
+        Initialize PrompterAPI instance.
+
+        Args:
+            config: Optional FunhouseConfig instance for configuration.
+            config_path: Optional path to a JSON config file (used if config is None).
+            username: Optional username for NTLM authentication (overrides config if provided).
+            password: Optional password for NTLM authentication (overrides config if provided).
+            base_url: Optional base URL for the API (overrides config if provided).
+            chat_model: Optional chat model name (overrides config if provided).
+            embeddings_model: Optional embeddings model name (overrides config if provided).
+            verify: SSL verification setting (overrides config if provided).
+            max_retries: Maximum retries for API calls (overrides config if provided).
+            backend: Backend to use - "grok", "openai", or "prompter". Auto-detection uses "grok" if GROK/GROQ keys set, "openai" if Azure keys set, else "prompter".
+            api_key: API key for Grok or Azure OpenAI backend (overrides env vars if provided).
+
+        Raises:
+            ValueError: If required values are missing after checking direct params and config.
+            FunhouseConfigError: If configuration is invalid or missing required keys (but singleton load failures are handled gracefully).
+            TypeError: If config is not a FunhouseConfig instance.
+        """
+        # Validate config parameter
+        if config is not None and not isinstance(config, FunhouseConfig):
+            raise TypeError(f"config must be a FunhouseConfig instance, got {type(config).__name__}")
+        # Load config: explicit config > config_path > singleton (default) > None
+        self.config = config
+        if self.config is None:
+            if config_path is not None:
+                self.config = FunhouseConfig.get_instance(config_path)
+            else:
+                try:
+                    self.config = FunhouseConfig.get_instance() # Attempt singleton load from default location
+                except FunhouseConfigError as e:
+                    self.logger = FunhouseLogger.get_instance() # Early logger for error
+                    self.logger.warning(f"Failed to load default config singleton: {e}. Falling back to direct params only.")
+                    self.config = None
+        # Helper to get value: direct param > config > default (None for required fields)
+        def get_value(key, direct_value, default=None):
+            """Get configuration value with fallback priority: direct > config > default.
+            
+            Args:
+                key: Configuration key path.
+                direct_value: Directly provided value (highest priority).
+                default: Default value to use if config lookup fails.
+            
+            Returns:
+                Configuration value, or default if not found.
+            """
+            if direct_value is not None:
+                return direct_value
+            elif self.config:
+                try:
+                    value = self.config.get(key)
+                    # If config returns None, use default instead
+                    return value if value is not None else default
+                except FunhouseConfigError:
+                    return default
+            return default
+        # Determine backend (grok, openai, or prompter)
+        if backend is None:
+            # Auto-detect: check for Grok API key first, then Azure OpenAI
+            grok_key = api_key or os.getenv("GROQ_API_KEY") or os.getenv("GROK_API_KEY")
+            if grok_key:
+                backend = "grok"
+            else:
+                # Check for Azure OpenAI credentials
+                azure_openai_key = os.getenv("AZURE_OPENAI_API_KEY")
+                azure_openai_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+                if azure_openai_key and azure_openai_endpoint:
+                    backend = "openai"
+                else:
+                    backend = get_value("services.prompter.backend", None, "prompter")
+        
+        self.backend = backend.lower()
+        self.logger = FunhouseLogger.get_instance()
+        
+        # Read local embedding configuration
+        self.force_local_embeddings = get_value("services.prompter.force_local_embeddings", None, False)
+        self.local_embedding_provider = get_value("services.prompter.local_embedding_provider", None, "auto")
+        self._spacy_model = get_value("services.prompter.spacy_model", None, "en_core_web_md")
+        # Local embedding service is lazily initialized on first use (avoids Spacy import/warning at PrompterAPI init)
+        self._local_embedding_service = None
+        
+        # Initialize based on backend
+        if self.backend == "grok":
+            # Grok backend - use API key
+            grok_key = api_key or os.getenv("GROQ_API_KEY") or os.getenv("GROK_API_KEY")
+            if not grok_key:
+                raise FunhouseConfigError(
+                    "Grok backend requires API key. Set GROQ_API_KEY or GROK_API_KEY environment variable, "
+                    "or pass api_key parameter."
+                )
+            
+            # Default models for Grok (X.AI)
+            self.chat_model = get_value("services.prompter.chat_model", chat_model, "grok-3")
+            self.embeddings_model = get_value("services.prompter.embeddings_model", embeddings_model, "grok-embedding")
+            self.current_username = get_value("session.user_name", None, "unknown_user")
+            
+            # Initialize Grok backend
+            self.grok_backend = GrokBackend(
+                api_key=grok_key,
+                chat_model=self.chat_model,
+                embeddings_model=self.embeddings_model,
+                logger=self.logger
+            )
+            # Local embedding service already initialized above
+            self.client = None  # Not used for Grok
+            self.azure_openai_backend = None  # Not used for Grok
+            self.logger.info(f"PrompterAPI initialized with Grok backend (model: {self.chat_model})")
+            
+        elif self.backend == "openai":
+            # Azure OpenAI backend - use API key and endpoint
+            azure_openai_key = api_key or os.getenv("AZURE_OPENAI_API_KEY")
+            azure_openai_endpoint = get_value("services.prompter.azure_openai.endpoint", base_url, os.getenv("AZURE_OPENAI_ENDPOINT"))
+            # Get API version - use default if not specified
+            azure_openai_api_version = get_value("services.prompter.azure_openai.api_version", None, "2024-12-01-preview")
+            if not azure_openai_api_version:
+                azure_openai_api_version = "2024-12-01-preview"  # Ensure we always have a version
+            
+            if not azure_openai_key:
+                raise FunhouseConfigError(
+                    "Azure OpenAI backend requires API key. Set AZURE_OPENAI_API_KEY environment variable, "
+                    "or pass api_key parameter."
+                )
+            if not azure_openai_endpoint:
+                raise FunhouseConfigError(
+                    "Azure OpenAI backend requires endpoint. Set AZURE_OPENAI_ENDPOINT environment variable, "
+                    "or pass base_url parameter, or set services.prompter.azure_openai.endpoint in config."
+                )
+            
+            # Default models for Azure OpenAI
+            self.chat_model = get_value("services.prompter.chat_model", chat_model, "gpt-4o-mini")
+            self.embeddings_model = get_value("services.prompter.embeddings_model", embeddings_model, "text-embedding-3-small")
+            self.current_username = get_value("session.user_name", None, "unknown_user")
+            
+            # Initialize Azure OpenAI backend
+            self.azure_openai_backend = AzureOpenAIBackend(
+                api_key=azure_openai_key,
+                endpoint=azure_openai_endpoint,
+                chat_model=self.chat_model,
+                embeddings_model=self.embeddings_model,
+                api_version=azure_openai_api_version,
+                logger=self.logger
+            )
+            self.grok_backend = None  # Not used for Azure OpenAI
+            # Local embedding service already initialized above (available if force_local_embeddings is True)
+            
+            # Create AzureOpenAI client for direct access (similar to Prompter backend)
+            try:
+                if AzureOpenAI:
+                    self.client = AzureOpenAI(
+                        api_key=azure_openai_key,
+                        api_version=azure_openai_api_version,
+                        azure_endpoint=azure_openai_endpoint.rstrip('/')
+                    )
+                    wrap_all_openai_methods(self.client, self.logger)
+                    self.logger.info(f"AzureOpenAI client created for direct access")
+                else:
+                    self.client = None
+                    self.logger.warning("AzureOpenAI class not available. Use fh_prompter.chat() method instead of fh_prompter.client")
+            except Exception as e:
+                self.logger.warning(f"Failed to create AzureOpenAI client: {e}. Use fh_prompter.chat() method instead.")
+                self.client = None
+            
+            self.logger.info(f"PrompterAPI initialized with Azure OpenAI backend (endpoint: {azure_openai_endpoint}, model: {self.chat_model})")
+            
+        else:
+            # Prompter backend - use NTLM auth
+            self.username = get_value("services.prompter.username", username)
+            self.password = get_value("services.prompter.password", password)
+            self.base_url = get_value("services.prompter.base_url", base_url, "https://dsaaiapi.cfa.state.sbu/api/v1")
+            self.chat_model = get_value("services.prompter.chat_model", chat_model)
+            self.embeddings_model = get_value("services.prompter.embeddings_model", embeddings_model)
+            self.verify = get_value("services.prompter.verify", verify, True)
+            self.max_retries = get_value("services.prompter.max_retries", max_retries, 1)
+            self.current_username = get_value("session.user_name", None, "unknown_user")
+            
+            # Validate required fields for Prompter backend
+            if not all([self.username, self.password, self.base_url]):
+                raise FunhouseConfigError("Missing required configuration: username, password, or base_url")
+            
+            self.grok_backend = None  # Not used for Prompter
+            # Local embedding service already initialized above (available if force_local_embeddings is True)
+            # Set defaults for models if still None, with warnings
+            if self.chat_model is None:
+                warnings.warn(
+                    "Chat model not provided via direct param or config. "
+                    "Using default model 'funhouse-gpt-4o-mini-20240718'.",
+                    UserWarning
+                )
+                self.chat_model = "funhouse-gpt-4o-mini-20240718"
+            if self.embeddings_model is None:
+                warnings.warn(
+                    "Embeddings model not provided via direct param or config. "
+                    "Using default model 'FUNHOUSE-EMBEDDING-ADA-002'.",
+                    UserWarning
+                )
+                self.embeddings_model = "FUNHOUSE-EMBEDDING-ADA-002"
+            
+            # Initialize authentication and client for Prompter backend
+            try:
+                self.auth = ExHttpNtlmAuth(self.username, self.password)
+                self.http_client = Client(auth=self.auth, verify=self.verify, max_redirects=2, timeout=120.0)
+                self.client = OpenAI(
+                    http_client=self.http_client,
+                    base_url=self.base_url,
+                    api_key="PrompterOpenAI-Databricks",
+                    max_retries=self.max_retries
+                )
+                wrap_all_openai_methods(self.client, self.logger)
+                self.logger.info(f"PrompterAPI initialized successfully with Prompter backend (base_url: {self.base_url})")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize PrompterAPI: {e}")
+                raise
+
+    def __repr__(self) -> str:
+        """Return a string representation of the PrompterAPI instance."""
+        if self.backend == "grok":
+            return f"PrompterAPI(backend='grok', chat_model='{self.chat_model}', embeddings_model='{self.embeddings_model}')"
+        elif self.backend == "openai":
+            endpoint_display = self.azure_openai_backend.endpoint if hasattr(self, 'azure_openai_backend') else 'N/A'
+            return f"PrompterAPI(backend='openai', endpoint='{endpoint_display}', chat_model='{self.chat_model}', embeddings_model='{self.embeddings_model}')"
+        else:
+            base_url_display = self.base_url if hasattr(self, 'base_url') else 'N/A'
+            return f"PrompterAPI(backend='prompter', base_url='{base_url_display}', chat_model='{self.chat_model}', embeddings_model='{self.embeddings_model}')"
+
+    @property
+    def local_embedding_service(self) -> LocalEmbeddingService:
+        """Lazily initialize LocalEmbeddingService on first access (avoids Spacy import at PrompterAPI init)."""
+        if self._local_embedding_service is None:
+            self._local_embedding_service = LocalEmbeddingService(
+                spacy_model=self._spacy_model,
+                logger=self.logger
+            )
+        return self._local_embedding_service
+
+    @check_budget()
+    def chat(self, user: Union[str, List[dict]], system: str = "You are a helpful assistant.", 
+             temperature: float = 0, return_raw: bool = False, rate_limit_retry: bool = True, 
+             model: Optional[str] = None, response_format: Optional[dict] = None, 
+             structured_response: bool = False, output_format: str = 'text', 
+             max_tokens: Optional[int] = None, top_p: Optional[float] = None) -> Union[str, dict, list, None]:
+        """
+        Generate a chat response using the specified or default model.
+
+        Args:
+            user: User input as a string or list of dicts (e.g., [{"type": "text", "text": str}, {"type": "image_url", ...}]).
+            system: System prompt (default: "You are a helpful assistant.").
+            temperature: Controls randomness (default: 0). Range 0-2. For Grok, consider also adjusting top_p.
+            return_raw: Return raw response object if True (default: False).
+            rate_limit_retry: Retry on rate limit errors (default: True).
+            model: Optional model name to override the default chat model.
+            response_format: Optional dict for response format (e.g. {"type": "json_object"} or {"type": "json_schema", "json_schema": {...}}).
+            structured_response: If True, defaults to JSON schema mode unless response_format is provided (default: False).
+            output_format: The desired output format: 'text' (default), 'html', or 'markdown'.
+            max_tokens: Maximum tokens to generate. Recommended 2000-4000 for normal use.
+            top_p: Nucleus sampling (0-1). Lower = more focused, higher = more diverse. If None, API default.
+
+        Returns:
+            str, dict, list, or None: Chat response (str for text, dict/list for JSON/structured) or None if failed/refused/budget exceeded.
+        """
+        model = model or self.chat_model
+        max_retries = 20
+        initial_delay = 3.0
+
+        # Calculate rough token estimate
+        if isinstance(user, str):
+            rough_tokens = (len(user) + len(system)) // 4  # Approximate tokens for English text
+        elif isinstance(user, list):
+            rough_tokens = sum(len(item.get("text", "")) for item in user if isinstance(item, dict) and "text" in item) // 4
+            rough_tokens += len(system) // 4
+        else:
+            self.logger.error(f"Unsupported user input type: {type(user)}")
+            raise ValueError("user must be a string or list of dicts")
+
+        context_limit = 128_000  # Assuming 128k for gpt-4o-mini based models
+        if rough_tokens > context_limit:
+            self.logger.error(f"Estimated input too long: ~{rough_tokens} tokens > {context_limit} limit")
+            return None
+
+        # Adjust system prompt for output_format
+        if output_format.lower() == 'html':
+            system += "\nOutput your entire response as valid, self-contained HTML only, without any additional text, explanations, or markdown backticks. The HTML should be ready to render directly via displayHTML."
+        elif output_format.lower() == 'markdown':
+            system += "\nOutput your entire response as valid Markdown only, without any additional text, explanations, or code block backticks. The Markdown should be ready to render directly via print_markdown."
+        elif output_format.lower() != 'text':
+            raise ValueError(f"Unsupported output_format: {output_format}. Use 'text', 'html', or 'markdown'.")
+
+        # Handle conflicts with response_format and structured_response
+        if (structured_response or (response_format and response_format.get('type', '').startswith('json'))) and output_format.lower() != 'text':
+            self.logger.warning("JSON response_format conflicts with HTML/Markdown output_format; defaulting to JSON (text mode).")
+            output_format = 'text'
+
+        # Set response_format for structured_response
+        if structured_response and not response_format:
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "response",
+                    "strict": True,
+                    "schema": {
+                        "type": "array",
+                        "items": {"type": "string"}
+                    }
+                }
+            }
+
+        extra_query = None
+        if response_format and response_format.get('type') == 'json_schema':
+            extra_query = {"api-version": "2024-08-01-preview"}
+
+        # Use appropriate backend
+        if self.backend == "grok":
+            # Grok backend
+            messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user if isinstance(user, str) else str(user)}
+            ]
+            try:
+                response_dict = self.grok_backend.chat_completion(
+                    messages=messages,
+                    model=model,
+                    temperature=temperature,
+                    response_format=response_format,
+                    max_tokens=max_tokens,
+                    top_p=top_p
+                )
+                # Convert X.AI response to OpenAI-like format for compatibility
+                # X.AI returns the same format as OpenAI, so we can use it directly
+                # Create a simple wrapper to match the expected interface
+                class GrokResponse:
+                    """Response wrapper for Grok chat completion responses.
+                    
+                    Attributes:
+                        choices: List of GrokChoice objects.
+                        usage: Usage metrics dictionary.
+                        model: Model name used for the completion.
+                    """
+                    def __init__(self, data):
+                        self._data = data
+                        self.choices = [GrokChoice(data)]
+                        self.usage = data.get("usage", {})
+                        self.model = data.get("model", model)
+                class GrokChoice:
+                    """Wrapper for a single Grok completion choice.
+                    
+                    Attributes:
+                        message: GrokMessage object containing the response content.
+                    """
+                    def __init__(self, data):
+                        self.message = GrokMessage(data)
+                class GrokMessage:
+                    """Wrapper for Grok message content.
+                    
+                    Attributes:
+                        content: The message content text.
+                        refusal: Optional refusal reason if the message was refused.
+                    """
+                    def __init__(self, data):
+                        choice = data["choices"][0] if data.get("choices") else {}
+                        message = choice.get("message", {})
+                        self.content = message.get("content", "")
+                        self.refusal = message.get("refusal")
+                response = GrokResponse(response_dict)
+                
+                # Log usage metrics for Grok (similar to OpenAI logging)
+                if hasattr(response, 'usage') and response.usage:
+                    metrics = flatten_dict(dict(response.usage))
+                    model_name = getattr(response, 'model', model)
+                    if model_name:
+                        metrics['model'] = model_name
+                    metrics['object'] = 'ChatCompletion'
+                    self.logger.meter_log(service="Prompter", operation="ChatCompletion", metrics=metrics)
+            except Exception as e:
+                self.logger.error(f"Failed to generate chat response with Grok: {e}")
+                return None
+        elif self.backend == "openai":
+            # Azure OpenAI backend
+            messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user if isinstance(user, str) else str(user)}
+            ]
+            try:
+                response_dict = self.azure_openai_backend.chat_completion(
+                    messages=messages,
+                    model=model,
+                    temperature=temperature,
+                    response_format=response_format,
+                    max_tokens=max_tokens,
+                    top_p=top_p
+                )
+                # Azure OpenAI returns the same format as OpenAI, so we can use it directly
+                # Create a simple wrapper to match the expected interface
+                class AzureOpenAIResponse:
+                    """Response wrapper for Azure OpenAI chat completion responses.
+                    
+                    Attributes:
+                        choices: List of AzureOpenAIChoice objects.
+                        usage: Usage metrics dictionary.
+                        model: Model name used for the completion.
+                    """
+                    def __init__(self, data):
+                        self._data = data
+                        self.choices = [AzureOpenAIChoice(data)]
+                        self.usage = data.get("usage", {})
+                        self.model = data.get("model", model)
+                class AzureOpenAIChoice:
+                    """Wrapper for a single Azure OpenAI completion choice.
+                    
+                    Attributes:
+                        message: AzureOpenAIMessage object containing the response content.
+                    """
+                    def __init__(self, data):
+                        self.message = AzureOpenAIMessage(data)
+                class AzureOpenAIMessage:
+                    """Wrapper for Azure OpenAI message content.
+                    
+                    Attributes:
+                        content: The message content text.
+                        refusal: Optional refusal reason if the message was refused.
+                    """
+                    def __init__(self, data):
+                        choice = data["choices"][0] if data.get("choices") else {}
+                        message = choice.get("message", {})
+                        self.content = message.get("content", "")
+                        self.refusal = message.get("refusal")
+                response = AzureOpenAIResponse(response_dict)
+                
+                # Log usage metrics for Azure OpenAI (similar to OpenAI logging)
+                if hasattr(response, 'usage') and response.usage:
+                    metrics = flatten_dict(dict(response.usage))
+                    model_name = getattr(response, 'model', model)
+                    if model_name:
+                        metrics['model'] = model_name
+                    metrics['object'] = 'ChatCompletion'
+                    self.logger.meter_log(service="Prompter", operation="ChatCompletion", metrics=metrics)
+            except Exception as e:
+                self.logger.error(f"Failed to generate chat response with Azure OpenAI: {e}")
+                return None
+        else:
+            # Prompter backend (original implementation)
+            for attempt in range(max_retries + 1 if rate_limit_retry else 1):
+                try:
+                    create_kwargs = {
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": user}
+                        ],
+                        "temperature": temperature,
+                    }
+                    if response_format:
+                        create_kwargs["response_format"] = response_format
+                    if extra_query:
+                        create_kwargs["extra_query"] = extra_query
+                    response = self.client.chat.completions.create(**create_kwargs)
+                    self.logger.info(f"Chat response received: {response}")
+                    break  # Success, exit retry loop
+                except APIError as e:
+                    if rate_limit_retry and e.status_code == 429 and attempt < max_retries:
+                        wait_time = initial_delay * (2 ** attempt)
+                        self.logger.warning(f"429 error on attempt {attempt + 1} (chat/genai). Retrying in {wait_time} seconds...")
+                        time.sleep(wait_time)
+                    else:
+                        self.logger.error(f"Failed to generate chat response: {e}")
+                        return None
+                except Exception as e:
+                    self.logger.error(f"Unexpected error in chat method: {e}")
+                    return None
+            else:
+                # All retries failed
+                return None
+        
+        # Process response (common for both backends)
+        if response is None:
+            return None
+        if return_raw:
+            return response
+        message = response.choices[0].message
+        if getattr(message, 'refusal', None):
+            self.logger.warning(f"Model refused the request: {message.refusal}")
+            return None
+        content = message.content
+        if response_format and response_format.get("type", "").startswith("json") and content:
+            try:
+                parsed = json.loads(content)
+                return parsed
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Failed to parse JSON response: {e}")
+                return content if isinstance(content, str) else None
+        return content
+
+    @check_budget()
+    def get_embedding(self, text: Union[str, List[str]], return_raw: bool = False, batch_size: int = 5,
+                     rate_limit_retry: bool = True, model: Optional[str] = None, local: Optional[str] = None) -> Union[list, List[list], None]:
+        """Generate embeddings for text using the configured backend.
+        
+        Args:
+            text: Single text string or list of text strings to embed.
+            return_raw: If True, returns raw response objects; if False, returns embedding vectors.
+            batch_size: Number of texts to process in each batch (for rate limiting).
+            rate_limit_retry: If True, automatically retries on rate limit errors.
+            model: Model name to use (overrides default embeddings_model).
+            local: Optional provider to force local embeddings ("spacy", "nltk", "auto", or None).
+                If provided, overrides config. If None, uses config or backend default.
+        
+        Returns:
+            For single text: list of floats (embedding vector) or None on error.
+            For list of texts: list of lists of floats (one embedding per text) or None on error.
+            If return_raw=True, returns raw response objects instead.
+        """
+        model = model or self.embeddings_model
+        max_retries = 20
+        initial_delay = 3.0
+        
+        # Determine if we should use local embeddings
+        # Priority: 1) local parameter, 2) force_local_embeddings config, 3) backend == "grok"
+        use_local = False
+        local_provider = "auto"
+        if local is not None:
+            use_local = True
+            local_provider = local
+        elif self.force_local_embeddings:
+            use_local = True
+            local_provider = self.local_embedding_provider
+        elif self.backend == "grok":
+            use_local = True
+            local_provider = self.local_embedding_provider
+        
+        try:
+            if isinstance(text, str):
+                char_count = len(text)
+                typical_limit = 8192
+                self.logger.info(f"Embedding {char_count} characters. Typical limit: {typical_limit} characters.")
+                if char_count > typical_limit:
+                    self.logger.warning(f"Text exceeds embedding limit of {typical_limit} characters.")
+                
+                # Use local embeddings if configured
+                if use_local:
+                    self.logger.info(f"Using local embedding service (provider: {local_provider})")
+                    try:
+                        embedding = self.local_embedding_service.generate_embedding(text, provider=local_provider)
+                        # Create a response-like object for compatibility
+                        class LocalEmbeddingResponse:
+                            """Response wrapper for local embedding responses.
+                            
+                            Attributes:
+                                data: List of LocalEmbeddingItem objects.
+                            """
+                            def __init__(self, embedding_list):
+                                self.data = [LocalEmbeddingItem(embedding_list)]
+                        class LocalEmbeddingItem:
+                            """Wrapper for a single local embedding item.
+                            
+                            Attributes:
+                                embedding: List of floats representing the embedding vector.
+                            """
+                            def __init__(self, emb):
+                                self.embedding = emb
+                        response = LocalEmbeddingResponse(embedding)
+                        self.logger.info(f"Generated local embedding (dimension: {len(embedding)})")
+                        if return_raw:
+                            return response
+                        return response.data[0].embedding
+                    except Exception as e:
+                        self.logger.error(f"Failed to generate local embedding: {e}")
+                        # If local embedding fails and we have an API backend, fall back to API embeddings
+                        if self.backend in ["openai", "grok"]:
+                            self.logger.warning(f"Local embedding failed ({e}), falling back to API-based embeddings")
+                            use_local = False  # Fall through to API embedding code below
+                        else:
+                            return None
+                
+                # Use appropriate backend (API-based embeddings) if local failed or not configured
+                # Note: If use_local was True but failed, we set it to False above to fall through here
+                if (not use_local or local_embedding_failed) and self.backend == "openai":
+                    # Azure OpenAI backend
+                    for attempt in range(max_retries + 1 if rate_limit_retry else 1):
+                        try:
+                            # Use the embeddings model (not chat model) for embeddings
+                            embedding_model = model or self.embeddings_model or "text-embedding-3-small"
+                            response_dict = self.azure_openai_backend.embeddings_create(input=text, model=embedding_model)
+                            # Convert to OpenAI-like response object
+                            class AzureOpenAIEmbeddingResponse:
+                                """Response wrapper for Azure OpenAI embedding responses.
+                                
+                                Attributes:
+                                    data: List of AzureOpenAIEmbeddingItem objects.
+                                """
+                                def __init__(self, data):
+                                    self.data = [AzureOpenAIEmbeddingItem(item) for item in data.get("data", [])]
+                            class AzureOpenAIEmbeddingItem:
+                                """Wrapper for a single Azure OpenAI embedding item.
+                                
+                                Attributes:
+                                    embedding: List of floats representing the embedding vector.
+                                """
+                                def __init__(self, item):
+                                    self.embedding = item.get("embedding", [])
+                            response = AzureOpenAIEmbeddingResponse(response_dict)
+                            self.logger.info(f"Single text embedding response: {response}")
+                            if return_raw:
+                                return response
+                            return response.data[0].embedding
+                        except Exception as e:
+                            if rate_limit_retry and attempt < max_retries:
+                                wait_time = initial_delay * (2 ** attempt)
+                                self.logger.warning(f"Error on attempt {attempt + 1}. Retrying in {wait_time} seconds...")
+                                time.sleep(wait_time)
+                            else:
+                                self.logger.error(f"Failed to generate embedding: {e}")
+                                return None
+                else:
+                    # Prompter backend
+                    for attempt in range(max_retries + 1 if rate_limit_retry else 1):
+                        try:
+                            response = self.client.embeddings.create(input=text, model=model)
+                            self.logger.info(f"Single text embedding response: {response}")
+                            if return_raw:
+                                return response
+                            return response.data[0].embedding
+                        except APIError as e:
+                            if rate_limit_retry and e.status_code == 429 and attempt < max_retries:
+                                wait_time = initial_delay * (2 ** attempt)
+                                self.logger.warning(f"429 error on attempt {attempt + 1} (embedding). Retrying in {wait_time} seconds...")
+                                time.sleep(wait_time)
+                            else:
+                                self.logger.error(f"Failed to generate embedding: {e}")
+                                return None
+                        except Exception as e:
+                            self.logger.error(f"Unexpected error in single text embedding: {e}")
+                            return None
+                
+                # Common processing for all backends
+                if response is None:
+                    return None
+                if return_raw:
+                    return response
+                return response.data[0].embedding
+            else:
+                total_chars = sum(len(t) for t in text)
+                typical_limit = 8192
+                self.logger.info(f"Embedding {total_chars} characters across {len(text)} texts. Typical limit: {typical_limit}.")
+                if total_chars / len(text) > typical_limit:
+                    self.logger.warning(f"Average text length exceeds embedding limit of {typical_limit} characters.")
+                embeddings = []
+                raw_responses = []
+                for i in range(0, len(text), batch_size):
+                    batch = text[i:i + batch_size]
+                    batch_chars = sum(len(t) for t in batch)
+                    self.logger.info(f"Processing batch {i//batch_size + 1}: {len(batch)} texts, {batch_chars} characters.")
+                    
+                    # Use local embeddings if configured
+                    batch_local_failed = False
+                    if use_local:
+                        self.logger.info(f"Using local embedding service (provider: {local_provider}) for batch {i//batch_size + 1}")
+                        try:
+                            batch_embeddings = self.local_embedding_service.generate_embeddings(batch, provider=local_provider)
+                            
+                            # Create a response-like object for compatibility
+                            class LocalEmbeddingResponse:
+                                """Response wrapper for local embedding responses for batch processing.
+                                
+                                Attributes:
+                                    data: List of LocalEmbeddingItem objects.
+                                """
+                                def __init__(self, embedding_list):
+                                    self.data = [LocalEmbeddingItem(emb) for emb in embedding_list]
+                            class LocalEmbeddingItem:
+                                """Wrapper for a single local embedding item in batch processing.
+                                
+                                Attributes:
+                                    embedding: List of floats representing the embedding vector.
+                                """
+                                def __init__(self, emb):
+                                    self.embedding = emb
+                            response = LocalEmbeddingResponse(batch_embeddings)
+                            self.logger.info(f"Generated {len(batch_embeddings)} local embeddings for batch {i//batch_size + 1}")
+                            if return_raw:
+                                raw_responses.extend(response.data)
+                            else:
+                                embeddings.extend(batch_embeddings)
+                            continue
+                        except Exception as e:
+                            self.logger.error(f"Failed to generate local embeddings for batch {i//batch_size + 1}: {e}")
+                            # If local embedding fails and we have an API backend, fall back to API embeddings
+                            if self.backend in ["openai", "grok"]:
+                                self.logger.warning(f"Local embedding failed for batch ({e}), falling back to API-based embeddings")
+                                batch_local_failed = True
+                                use_local = False  # Fall through to API embedding code below for this batch
+                            else:
+                                embeddings.extend([None] * len(batch))
+                                continue
+                    
+                    # Use appropriate backend (API-based embeddings) if local failed or not configured
+                    # Note: If use_local was True but failed, we set it to False above to fall through here
+                    if (not use_local or batch_local_failed) and self.backend == "openai":
+                        # Azure OpenAI backend
+                        for attempt in range(max_retries + 1 if rate_limit_retry else 1):
+                            try:
+                                # Use the embeddings model (not chat model) for embeddings
+                                embedding_model = model or self.embeddings_model or "text-embedding-3-small"
+                                response_dict = self.azure_openai_backend.embeddings_create(input=batch, model=embedding_model)
+                                # Convert to OpenAI-like response object
+                                class AzureOpenAIEmbeddingResponse:
+                                    """Response wrapper for Azure OpenAI embedding responses for batch processing.
+                                    
+                                    Attributes:
+                                        data: List of AzureOpenAIEmbeddingItem objects.
+                                    """
+                                    def __init__(self, data):
+                                        self.data = [AzureOpenAIEmbeddingItem(item) for item in data.get("data", [])]
+                                class AzureOpenAIEmbeddingItem:
+                                    """Wrapper for a single Azure OpenAI embedding item in batch processing.
+                                    
+                                    Attributes:
+                                        embedding: List of floats representing the embedding vector.
+                                    """
+                                    def __init__(self, item):
+                                        self.embedding = item.get("embedding", [])
+                                response = AzureOpenAIEmbeddingResponse(response_dict)
+                                self.logger.info(f"Batch {i//batch_size + 1} response: {response}")
+                                if return_raw:
+                                    raw_responses.extend(response.data)
+                                else:
+                                    batch_embeddings = [r.embedding for r in response.data]
+                                    embeddings.extend(batch_embeddings)
+                                self.logger.info(f"Processed batch {i//batch_size + 1}: {len(batch)} texts.")
+                                break
+                            except Exception as e:
+                                if rate_limit_retry and attempt < max_retries:
+                                    wait_time = initial_delay * (2 ** attempt)
+                                    self.logger.warning(f"Error on attempt {attempt + 1} for batch {i//batch_size + 1}. Retrying in {wait_time} seconds...")
+                                    time.sleep(wait_time)
+                                else:
+                                    self.logger.error(f"Failed to generate embeddings for batch {i//batch_size + 1}: {e}")
+                                    embeddings.extend([None] * len(batch))
+                                    break
+                    else:
+                        # Prompter backend
+                        for attempt in range(max_retries + 1 if rate_limit_retry else 1):
+                            try:
+                                response = self.client.embeddings.create(input=batch, model=model)
+                                self.logger.info(f"Batch {i//batch_size + 1} response: {response}")
+                                if return_raw:
+                                    raw_responses.extend(response.data)
+                                else:
+                                    batch_embeddings = [r.embedding for r in response.data]
+                                    embeddings.extend(batch_embeddings)
+                                self.logger.info(f"Processed batch {i//batch_size + 1}: {len(batch)} texts.")
+                                break
+                            except APIError as e:
+                                if rate_limit_retry and e.status_code == 429 and attempt < max_retries:
+                                    wait_time = initial_delay * (2 ** attempt)
+                                    self.logger.warning(f"429 error on attempt {attempt + 1} (embedding batch {i//batch_size + 1}). Retrying in {wait_time} seconds...")
+                                    time.sleep(wait_time)
+                                else:
+                                    self.logger.error(f"Failed to generate embeddings for batch {i//batch_size + 1}: {e}")
+                                    embeddings.extend([None] * len(batch))
+                                    break
+                            except Exception as e:
+                                self.logger.error(f"Unexpected error for batch {i//batch_size + 1}: {e}")
+                                embeddings.extend([None] * len(batch))
+                                break
+                return raw_responses if return_raw else embeddings
+        except Exception as e:
+            self.logger.error(f"Error generating embeddings: {e}")
+            return None
+
+    @check_budget()
+    def get_embeddings(self, text: Union[str, List[str]], return_raw: bool = False, batch_size: int = 5,
+                      rate_limit_retry: bool = True, model: Optional[str] = None, local: Optional[str] = None) -> Union[list, List[list], None]:
+        """Alias for get_embedding with model override option."""
+        return self.get_embedding(text=text, return_raw=return_raw, batch_size=batch_size,
+                                rate_limit_retry=rate_limit_retry, model=model, local=local)
+
+    def get_openai_instance(self):
+        """Return the OpenAI client instance."""
+        return self.client
+
+    @check_budget()
+    def analyze_image(self, image_input: Union[bytes, str], user_prompt: str = None,
+                     temperature: float = 0.0, rate_limit_retry: bool = True, model: Optional[str] = None) -> str:
+        if not user_prompt:
+            user_prompt = "Extract text from this image"
+        if isinstance(image_input, str):
+            image_path = Path(image_input).resolve()
+            if not image_path.exists():
+                self.logger.error(f"Image file not found: {image_path}")
+                raise ValueError(
+                    f"Image file does not exist: {image_path}. "
+                    "Ensure the file is in the current working directory or provide an absolute path."
+                )
+            with image_path.open("rb") as f:
+                image_bytes = f.read()
+        else:
+            image_bytes = image_input
+        b64_img = base64.b64encode(image_bytes).decode("utf-8")
+        system_instructions = (
+            "You are an assistant that extracts text from images faithfully. "
+            "Ignore page numbers, headers, or footers. Return only the main body of the text."
+        )
+        image_payload = {
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{b64_img}"},
+        }
+        user_message = [{"type": "text", "text": user_prompt}, image_payload]
+        model = model or self.chat_model
+        max_retries = 20
+        initial_delay = 3.0
+        for attempt in range(max_retries + 1 if rate_limit_retry else 1):
+            try:
+                response = self.client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system_instructions},
+                        {"role": "user", "content": user_message},
+                    ],
+                    temperature=temperature,
+                )
+                self.logger.info(f"Image analysis response: {response}")
+                return response.choices[0].message.content
+            except APIError as e:
+                if rate_limit_retry and e.status_code == 429 and attempt < max_retries:
+                    wait_time = initial_delay * (2 ** attempt)
+                    self.logger.warning(f"429 error on attempt {attempt + 1} (image analysis). Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    self.logger.error(f"Failed to analyze image: {e}")
+                    return ""
+            except Exception as e:
+                self.logger.error(f"Unexpected error in analyze_image: {e}")
+                return ""
+
+    @check_budget()
+    def analyze_pdf(self, pdf_input: Union[bytes, str], page_prompt: str = "Extract text from this page",
+                    final_prompt: str = "Summarize all these pages into one cohesive summary:",
+                    pages: str = None, temperature: float = 0.0, rate_limit_retry: bool = True,
+                    model: Optional[str] = None) -> str:
+        """Analyze a PDF by extracting text from pages and optionally summarizing.
+        
+        Args:
+            pdf_input: PDF file path (str) or PDF bytes.
+            page_prompt: Prompt to use for each page extraction. Defaults to "Extract text from this page".
+            final_prompt: Prompt to use for final summarization of all pages.
+            pages: Page specification string (e.g., "1-3,5,7-10" for pages 1-3, 5, and 7-10).
+                   If None, processes all pages.
+            temperature: Sampling temperature (0.0 = deterministic, higher = more creative).
+            rate_limit_retry: If True, automatically retries on rate limit errors.
+            model: Model name to use (overrides default chat_model).
+        
+        Returns:
+            Combined text from all pages, optionally summarized based on final_prompt.
+            Returns empty string on error.
+        
+        Raises:
+            ValueError: If PDF file path is provided but file doesn't exist.
+            ImportError: If PyMuPDF (fitz) is not installed.
+        """
+        if isinstance(pdf_input, str):
+            pdf_path = Path(pdf_input).resolve()
+            if not pdf_path.exists():
+                self.logger.error(f"PDF file not found: {pdf_path}")
+                raise ValueError(
+                    f"PDF file does not exist: {pdf_path}. "
+                    "Ensure the file is in the current working directory or provide an absolute path."
+                )
+            try:
+                import fitz
+            except ImportError:
+                raise ImportError("PyMuPDF (fitz) is required for PDF processing. Install it with: pip install pymupdf")
+            doc = fitz.open(pdf_path)
+        else:
+            try:
+                import fitz
+            except ImportError:
+                raise ImportError("PyMuPDF (fitz) is required for PDF processing. Install it with: pip install pymupdf")
+            doc = fitz.open(stream=pdf_input, filetype="pdf")
+        total_pages = len(doc)
+        def parse_pages(pages_str: str) -> List[int]:
+            """Parse page specification string into list of 0-indexed page indices.
+            
+            Args:
+                pages_str: Page specification (e.g., "1-3,5,7-10").
+            
+            Returns:
+                Sorted list of 0-indexed page indices.
+            """
+            page_indices = []
+            for chunk in pages_str.split(","):
+                chunk = chunk.strip()
+                if "-" in chunk:
+                    start_str, end_str = chunk.split("-", 1)
+                    start, end = int(start_str), int(end_str)
+                    for p in range(start, end + 1):
+                        if 1 <= p <= total_pages:
+                            page_indices.append(p - 1)
+                else:
+                    p = int(chunk)
+                    if 1 <= p <= total_pages:
+                        page_indices.append(p - 1)
+            return sorted(set(page_indices))
+        page_indices = parse_pages(pages) if pages else list(range(total_pages))
+        page_summaries = []
+        for page_index in page_indices:
+            page = doc[page_index]
+            pix = page.get_pixmap(dpi=100)
+            page_bytes = pix.tobytes("png")
+            text_for_page = self.analyze_image(
+                image_input=page_bytes,
+                user_prompt=page_prompt,
+                temperature=temperature,
+                rate_limit_retry=rate_limit_retry,
+                model=model
+            )
+            page_summaries.append(text_for_page)
+        combined_pages_text = "\n\n".join(f"Page {i+1}:\n{text}" for i, text in enumerate(page_summaries))
+        final_summary_prompt = f"{final_prompt}\n\n{combined_pages_text}"
+        overall_summary = self.chat(
+            user=final_summary_prompt,
+            system="You are a helpful assistant. Summarize the following page extracts collectively.",
+            temperature=temperature,
+            rate_limit_retry=rate_limit_retry,
+            model=model
+        )
+        doc.close()
+        return overall_summary
+
+    @check_budget()
+    def transcribe_audio(self, audio_input: Union[str, bytes], rate_limit_retry: bool = True) -> str:
+        """Transcribe audio to text using the Prompter backend.
+        
+        Args:
+            audio_input: Audio file path (str) or audio bytes.
+            rate_limit_retry: If True, automatically retries on rate limit errors.
+        
+        Returns:
+            Transcribed text as a string.
+        
+        Raises:
+            ValueError: If backend is not 'prompter' or if audio file path is provided but file doesn't exist.
+            AttributeError: If PrompterAPI is missing required attributes for transcription.
+        """
+        # transcribe_audio only works with the Prompter backend
+        if self.backend != "prompter":
+            raise ValueError(
+                f"transcribe_audio() is only available with the 'prompter' backend. "
+                f"Current backend is '{self.backend}'. "
+                f"Please initialize PrompterAPI with backend='prompter' or ensure you're using the Prompter service."
+            )
+        if not hasattr(self, 'base_url') or not hasattr(self, 'http_client'):
+            raise AttributeError(
+                "PrompterAPI is missing required attributes 'base_url' or 'http_client' for transcription. "
+                "This may indicate an initialization issue. Please ensure PrompterAPI is initialized with the 'prompter' backend."
+            )
+        audio_data = audio_input
+        if isinstance(audio_input, str):
+            audio_path = Path(audio_input).resolve()
+            if not audio_path.exists():
+                self.logger.error(f"Audio file not found: {audio_path}")
+                raise ValueError(
+                    f"Audio file does not exist: {audio_path}. "
+                    "Ensure the file is in the current working directory or provide an absolute path."
+                )
+            try:
+                with audio_path.open("rb") as f:
+                    audio_data = f.read()
+                self.logger.debug(f"Read {len(audio_data)} bytes from {audio_input}")
+            except Exception as e:
+                self.logger.error(f"Failed to read audio file {audio_input}: {e}")
+                return ""
+        max_size = 10 * 1024 * 1024
+        input_size = len(audio_data)
+        self.logger.debug(f"Input audio size: {input_size} bytes")
+        try:
+            audio = AudioSegment.from_file(io.BytesIO(audio_data))
+            total_duration_ms = len(audio)
+            total_duration_seconds = total_duration_ms / 1000.0
+            total_duration_hours = total_duration_seconds / 3600.0
+            self.logger.debug(f"Total audio duration: {total_duration_hours:.4f} hours ({total_duration_seconds:.2f} seconds)")
+        except Exception as e:
+            self.logger.error(f"Failed to calculate audio duration: {e}")
+            return ""
+        endpoint = "/funhouse-whisper-001/audio/translations"
+        api_version = "2024-12-01-preview"
+        max_retries = 10
+        initial_delay = 3.0
+        chunk_duration_ms = 5 * 60 * 1000
+        transcriptions = []
+        request_url = f"{self.base_url}{endpoint}?api-version={api_version}"
+        self.logger.debug(f"Checking endpoint: {request_url}")
+        try:
+            response = self.http_client.get(request_url, timeout=10.0)
+            self.logger.debug(f"Endpoint check response: status={response.status_code}, body={response.text[:200]}")
+        except Exception as e:
+            self.logger.warning(f"Endpoint check failed: {e}. Proceeding with transcription, but server may be unreachable.")
+        if input_size > max_size:
+            self.logger.warning("This file is larger than 10MB. Processing in 5-minute chunks to avoid size limits.")
+            num_chunks = math.ceil(total_duration_ms / chunk_duration_ms)
+            total_duration_processed_hours = 0.0
+            for i in tqdm(range(num_chunks), desc="Transcribing audio chunks", unit="chunk"):
+                start_ms = i * chunk_duration_ms
+                end_ms = min((i + 1) * chunk_duration_ms, total_duration_ms)
+                start_min = (start_ms / 1000.0) / 60.0
+                end_min = (end_ms / 1000.0) / 60.0
+                self.logger.info(f"Transcribing {start_min:.1f}-{end_min:.1f} minutes")
+                try:
+                    audio_chunk = audio[start_ms:end_ms]
+                    chunk_io = io.BytesIO()
+                    audio_chunk.export(chunk_io, format="mp3", bitrate="16k")
+                    chunk_data = chunk_io.getvalue()
+                    chunk_io.close()
+                    self.logger.debug(f"Chunk {i+1} size: {len(chunk_data)} bytes")
+                    files = {"File": ("audio.mp3", io.BytesIO(chunk_data), "audio/mpeg")}
+                    self.logger.debug(f"Sending request to: {request_url}")
+                    for attempt in range(max_retries + 1 if rate_limit_retry else 1):
+                        try:
+                            response = self.http_client.post(
+                                request_url,
+                                files=files,
+                                params={"api-version": api_version}
+                            )
+                            response.raise_for_status()
+                            response_data = response.json()
+                            self.logger.debug(f"Whisper API response for chunk {i+1}: {response_data}")
+                            transcription = response_data.get("transcription") or response_data.get("text", "")
+                            transcriptions.append(transcription)
+                            chunk_duration_seconds = (end_ms - start_ms) / 1000.0
+                            total_duration_processed_hours += chunk_duration_seconds / 3600.0
+                            break
+                        except httpx.HTTPStatusError as e:
+                            if e.response.status_code == 404:
+                                self.logger.error(
+                                    f"Failed to transcribe chunk {i+1}: 404 Not Found. "
+                                    f"Endpoint '{request_url}' may be incorrect or the model 'funhouse-whisper-001' is not deployed."
+                                )
+                                return " ".join(transcriptions) if transcriptions else ""
+                            if rate_limit_retry and e.response.status_code == 429 and attempt < max_retries:
+                                wait_time = initial_delay * (2 ** attempt)
+                                self.logger.warning(f"429 error on attempt {attempt + 1} (PDF chunk {i+1}). Retrying in {wait_time} seconds...")
+                                time.sleep(wait_time)
+                            else:
+                                self.logger.error(f"Failed to transcribe chunk {i+1}: {e}")
+                                return " ".join(transcriptions) if transcriptions else ""
+                        except httpx.ReadTimeout as e:
+                            if rate_limit_retry and attempt < max_retries:
+                                wait_time = initial_delay * (2 ** attempt)
+                                self.logger.warning(f"Timeout on attempt {attempt + 1} for chunk {i+1}: {e}. Retrying in {wait_time} seconds...")
+                                time.sleep(wait_time)
+                            else:
+                                self.logger.error(f"Failed to transcribe chunk {i+1} after retries: {e}")
+                                return " ".join(transcriptions) if transcriptions else ""
+                        except Exception as e:
+                            self.logger.error(f"Unexpected error in transcribe_audio for chunk {i+1}: {e}")
+                            return " ".join(transcriptions) if transcriptions else ""
+                except Exception as e:
+                    self.logger.error(f"Failed to process chunk {i+1}: {e}")
+                    return " ".join(transcriptions) if transcriptions else ""
+            self.logger.meter_log(
+                service="Prompter",
+                operation="whisper",
+                metrics={"duration": total_duration_processed_hours, "model": "whisper"},
+                additional_details=None
+            )
+            return " ".join(transcriptions)
+        else:
+            try:
+                # Always convert to MP3 for consistency
+                audio_io = io.BytesIO()
+                audio.export(audio_io, format="mp3", bitrate="16k")
+                audio_data = audio_io.getvalue()
+                audio_io.close()
+                self.logger.debug(f"Converted audio to MP3: {len(audio_data)} bytes")
+            except Exception as e:
+                self.logger.error(f"Failed to convert audio to MP3: {e}")
+                return ""
+            
+            files = {"File": ("audio.mp3", io.BytesIO(audio_data), "audio/mpeg")}
+            self.logger.debug(f"Sending request to: {request_url}")
+            for attempt in range(max_retries + 1 if rate_limit_retry else 1):
+                try:
+                    response = self.http_client.post(
+                        request_url,
+                        files=files,
+                        params={"api-version": api_version}
+                    )
+                    response.raise_for_status()
+                    response_data = response.json()
+                    self.logger.debug(f"Whisper API response: {response_data}")
+                    transcription = response_data.get("transcription") or response_data.get("text", "")
+                    self.logger.meter_log(
+                        service="Prompter",
+                        operation="whisper",
+                        metrics={"duration": total_duration_hours, "model": "whisper"},
+                        additional_details=None
+                    )
+                    return transcription
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 404:
+                        self.logger.error(
+                            f"Failed to transcribe audio: 404 Not Found. "
+                            f"Endpoint '{request_url}' may be incorrect or the model 'funhouse-whisper-001' is not deployed."
+                        )
+                        return ""
+                    if rate_limit_retry and e.response.status_code == 429 and attempt < max_retries:
+                        wait_time = initial_delay * (2 ** attempt)
+                        self.logger.warning(f"429 error on attempt {attempt + 1} (transcription). Retrying in {wait_time} seconds...")
+                        time.sleep(wait_time)
+                    else:
+                        self.logger.error(f"Failed to transcribe audio: {e}")
+                        return ""
+                except httpx.ReadTimeout as e:
+                    if rate_limit_retry and attempt < max_retries:
+                        wait_time = initial_delay * (2 ** attempt)
+                        self.logger.warning(f"Timeout on attempt {attempt + 1}: {e}. Retrying in {wait_time} seconds...")
+                        time.sleep(wait_time)
+                    else:
+                        self.logger.error(f"Failed to transcribe audio after retries: {e}")
+                        return ""
+                except Exception as e:
+                    self.logger.error(f"Unexpected error in transcribe_audio: {e}")
+                    return ""

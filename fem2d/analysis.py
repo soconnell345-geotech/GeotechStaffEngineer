@@ -101,7 +101,8 @@ def analyze_foundation(B, q, depth, E, nu, gamma=0.0, nx=30, ny=15, t=1.0):
 def analyze_slope_srm(surface_points, soil_layers, depth=None,
                       nx=30, ny=15, x_extend=None,
                       srf_tol=0.02, n_load_steps=10, t=1.0,
-                      gwt=None, gamma_w=9.81):
+                      gwt=None, gamma_w=9.81,
+                      max_iter=100, tol=1e-5):
     """Slope stability FOS via Strength Reduction Method.
 
     Parameters
@@ -172,6 +173,7 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
     srm_result = strength_reduction(
         nodes, elements, material_props, gamma_arr, bc_nodes,
         t=t, tol=srf_tol, n_load_steps=n_load_steps,
+        max_nr_iter=max_iter, nr_tol=tol,
         pore_pressures=pp)
 
     result = _build_result(
@@ -236,7 +238,8 @@ def create_wall_elements(nodes, x_wall, y_top, y_bottom, EA, EI,
 
 def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
                        wall_EA, nx=30, ny=15, t=1.0, n_steps=10,
-                       gwt=None, gamma_w=9.81):
+                       gwt=None, gamma_w=9.81, struts=None,
+                       max_iter=100, tol=1e-5):
     """Analyze a braced excavation with a sheet pile wall.
 
     Creates a rectangular domain with a vertical wall on the left side
@@ -257,10 +260,15 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
     gwt : float, (M,2) array, or (n_nodes,) array, optional
         Groundwater table. See compute_pore_pressures() for formats.
     gamma_w : float — unit weight of water (kN/m^3). Default 9.81.
+    struts : list of dict, optional
+        Horizontal strut supports. Each dict: {'depth': float (m below surface),
+        'stiffness': float (kN/m/m)}. Adds spring stiffness at wall nodes.
+    max_iter : int — maximum Newton-Raphson iterations per step.
+    tol : float — convergence tolerance.
 
     Returns
     -------
-    FEMResult with beam force results.
+    FEMResult with beam force results and optional strut forces.
     """
     from fem2d.elements import BeamElement, beam2d_internal_forces
     from fem2d.assembly import (
@@ -334,7 +342,8 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
         # Fallback: no wall nodes found, run without beams
         converged, u, stresses, strains = solve_nonlinear(
             nodes, elements, material_props, gamma_arr, bc_nodes,
-            t=t, n_steps=n_steps, pore_pressures=pp)
+            t=t, n_steps=n_steps, max_iter=max_iter, tol=tol,
+            pore_pressures=pp)
         return _build_result(nodes, elements, u, stresses, strains,
                              analysis_type="excavation")
 
@@ -342,11 +351,32 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
     rotation_dof_map, n_dof_total = build_rotation_dof_map(
         len(nodes), beam_elems)
 
+    # Build strut spring list: [(node_id, stiffness), ...]
+    strut_node_map = []
+    if struts:
+        for strut in struts:
+            s_depth = strut['depth']
+            s_k = strut['stiffness']
+            if s_k <= 0:
+                continue
+            # Find wall node closest to y = -s_depth on the wall line (x≈0)
+            target_y = -s_depth
+            best_node = None
+            best_dist = float('inf')
+            for nid in wall_nodes:
+                dist = abs(nodes[nid, 1] - target_y)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_node = nid
+            if best_node is not None:
+                strut_node_map.append((best_node, s_k))
+
     converged, u, stresses, strains = solve_nonlinear(
         nodes, elements, material_props, gamma_arr, bc_nodes,
-        t=t, n_steps=n_steps,
+        t=t, n_steps=n_steps, max_iter=max_iter, tol=tol,
         beam_elements=beam_elems, rotation_dof_map=rotation_dof_map,
-        pore_pressures=pp)
+        pore_pressures=pp,
+        strut_springs=strut_node_map if strut_node_map else None)
 
     result = _build_result(nodes, elements,
                            u[:2 * len(nodes)],  # translational DOFs only
@@ -380,6 +410,20 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
         result.max_beam_shear_kN_per_m = max(
             max(abs(bf.shear_i), abs(bf.shear_j))
             for bf in beam_force_results)
+
+    # Extract strut forces: F = k * u_horizontal
+    if strut_node_map:
+        strut_force_results = []
+        for node_id, s_k in strut_node_map:
+            u_horiz = u[2 * node_id]  # horizontal DOF
+            force = s_k * u_horiz
+            strut_force_results.append({
+                'depth_m': float(-nodes[node_id, 1]),
+                'stiffness_kN_per_m': float(s_k),
+                'force_kN_per_m': float(force),
+                'node_id': int(node_id),
+            })
+        result.strut_forces = strut_force_results
 
     return result
 
