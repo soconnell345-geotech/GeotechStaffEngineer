@@ -379,3 +379,308 @@ def diggs_25a_xml():
     <blowCount>12</blowCount>
   </DrivenPenetrationTest>
 </Diggs>"""
+
+
+# ---------------------------------------------------------------------------
+# DIGGS XML fixtures for new test types
+# ---------------------------------------------------------------------------
+
+_DIGGS_HEADER = """<?xml version="1.0" encoding="UTF-8"?>
+<Diggs xmlns="http://diggsml.org/schemas/2.6"
+       xmlns:gml="http://www.opengis.net/gml/3.2"
+       xmlns:xlink="http://www.w3.org/1999/xlink">
+  <Project><gml:name>Test Project</gml:name></Project>
+  <Borehole gml:id="BH1">
+    <gml:name>B-1</gml:name>
+    <totalMeasuredDepth>20.0</totalMeasuredDepth>
+  </Borehole>"""
+
+_DIGGS_HEADER_TWO_BORINGS = """<?xml version="1.0" encoding="UTF-8"?>
+<Diggs xmlns="http://diggsml.org/schemas/2.6"
+       xmlns:gml="http://www.opengis.net/gml/3.2"
+       xmlns:xlink="http://www.w3.org/1999/xlink">
+  <Project><gml:name>Test Project</gml:name></Project>
+  <Borehole gml:id="BH1">
+    <gml:name>B-1</gml:name>
+    <totalMeasuredDepth>20.0</totalMeasuredDepth>
+  </Borehole>
+  <Borehole gml:id="BH2">
+    <gml:name>B-2</gml:name>
+    <totalMeasuredDepth>15.0</totalMeasuredDepth>
+  </Borehole>"""
+
+_DIGGS_FOOTER = "\n</Diggs>"
+
+
+@pytest.fixture
+def cpt_diggs_xml():
+    """DIGGS XML with StaticConePenetrationTest (single-depth elements)."""
+    return _DIGGS_HEADER + """
+  <StaticConePenetrationTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>1.0</depth>
+    <coneResistance>2500</coneResistance>
+    <sleeveFriction>35</sleeveFriction>
+    <porePressure>50</porePressure>
+    <frictionRatio>1.4</frictionRatio>
+  </StaticConePenetrationTest>
+  <StaticConePenetrationTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>2.0</depth>
+    <coneResistance>4800</coneResistance>
+    <sleeveFriction>60</sleeveFriction>
+    <porePressure>110</porePressure>
+    <frictionRatio>1.25</frictionRatio>
+  </StaticConePenetrationTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def cpt_nested_diggs_xml():
+    """DIGGS XML with nested ConePenetrationReading elements."""
+    return _DIGGS_HEADER + """
+  <StaticConePenetrationTest>
+    <investigationRef xlink:href="#BH1"/>
+    <ConePenetrationReading>
+      <depth>0.5</depth>
+      <coneResistance>1200</coneResistance>
+      <sleeveFriction>18</sleeveFriction>
+    </ConePenetrationReading>
+    <ConePenetrationReading>
+      <depth>1.0</depth>
+      <coneResistance>2400</coneResistance>
+      <sleeveFriction>30</sleeveFriction>
+    </ConePenetrationReading>
+    <ConePenetrationReading>
+      <depth>1.5</depth>
+      <coneResistance>3600</coneResistance>
+      <sleeveFriction>42</sleeveFriction>
+    </ConePenetrationReading>
+  </StaticConePenetrationTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def vane_diggs_xml():
+    """DIGGS XML with InsituVaneTest."""
+    return _DIGGS_HEADER + """
+  <InsituVaneTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>5.0</depth>
+    <peakShearStrength>45</peakShearStrength>
+    <remoldedShearStrength>9</remoldedShearStrength>
+    <sensitivity>5</sensitivity>
+  </InsituVaneTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def vane_computed_st_xml():
+    """Vane test without explicit sensitivity — should be computed."""
+    return _DIGGS_HEADER + """
+  <InsituVaneTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>4.0</depth>
+    <peakShearStrength>60</peakShearStrength>
+    <remoldedShearStrength>10</remoldedShearStrength>
+  </InsituVaneTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def consolidation_diggs_xml():
+    """DIGGS XML with ConsolidationTest."""
+    return _DIGGS_HEADER + """
+  <ConsolidationTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>6.0</depth>
+    <initialVoidRatio>0.95</initialVoidRatio>
+    <compressionIndex>0.35</compressionIndex>
+    <recompressionIndex>0.06</recompressionIndex>
+    <preconsolidationPressure>120</preconsolidationPressure>
+  </ConsolidationTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def triaxial_uu_diggs_xml():
+    """DIGGS XML with TriaxialTest (UU — cu only)."""
+    return _DIGGS_HEADER + """
+  <TriaxialTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>5.0</depth>
+    <undrainedShearStrength>75</undrainedShearStrength>
+  </TriaxialTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def triaxial_cd_diggs_xml():
+    """DIGGS XML with TriaxialTest (CD — phi and c)."""
+    return _DIGGS_HEADER + """
+  <TriaxialTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>8.0</depth>
+    <frictionAngle>32</frictionAngle>
+    <cohesion>5</cohesion>
+  </TriaxialTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def direct_shear_diggs_xml():
+    """DIGGS XML with DirectShearTest."""
+    return _DIGGS_HEADER + """
+  <DirectShearTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>3.0</depth>
+    <frictionAngle>28</frictionAngle>
+    <cohesion>10</cohesion>
+  </DirectShearTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def ucs_diggs_xml():
+    """DIGGS XML with UnconfinedCompressiveStrengthTest."""
+    return _DIGGS_HEADER + """
+  <UnconfinedCompressiveStrengthTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>4.0</depth>
+    <compressiveStrength>150</compressiveStrength>
+  </UnconfinedCompressiveStrengthTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def point_load_diggs_xml():
+    """DIGGS XML with PointLoadTest."""
+    return _DIGGS_HEADER + """
+  <PointLoadTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>12.0</depth>
+    <pointLoadIndex>3.5</pointLoadIndex>
+  </PointLoadTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def specific_gravity_diggs_xml():
+    """DIGGS XML with SpecificGravityTest."""
+    return _DIGGS_HEADER + """
+  <SpecificGravityTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>5.0</depth>
+    <specificGravity>2.68</specificGravity>
+  </SpecificGravityTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def gradation_diggs_xml():
+    """DIGGS XML with ParticleSizeAnalysis."""
+    return _DIGGS_HEADER + """
+  <ParticleSizeAnalysis>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>3.0</depth>
+    <percentGravel>15</percentGravel>
+    <percentSand>55</percentSand>
+    <percentFines>30</percentFines>
+    <D10>0.002</D10>
+    <D30>0.05</D30>
+    <D60>0.5</D60>
+  </ParticleSizeAnalysis>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def gradation_alt_tag_xml():
+    """DIGGS XML with MaterialGradationTest (alternate tag)."""
+    return _DIGGS_HEADER + """
+  <MaterialGradationTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>6.0</depth>
+    <percentGravel>40</percentGravel>
+    <percentSand>45</percentSand>
+    <percentFines>15</percentFines>
+  </MaterialGradationTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def permeability_diggs_xml():
+    """DIGGS XML with LabPermeabilityTest."""
+    return _DIGGS_HEADER + """
+  <LabPermeabilityTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>7.0</depth>
+    <permeability>1.5e-8</permeability>
+  </LabPermeabilityTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def compaction_diggs_xml():
+    """DIGGS XML with LabCompactionTest."""
+    return _DIGGS_HEADER + """
+  <LabCompactionTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>2.0</depth>
+    <maxDryDensity>19.5</maxDryDensity>
+    <optimumMoistureContent>12.5</optimumMoistureContent>
+  </LabCompactionTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def dynamic_probe_diggs_xml():
+    """DIGGS XML with DynamicProbeTest."""
+    return _DIGGS_HEADER + """
+  <DynamicProbeTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>3.0</depth>
+    <blowCount>18</blowCount>
+  </DynamicProbeTest>
+  <DynamicProbeTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>6.0</depth>
+    <blowCount>25</blowCount>
+  </DynamicProbeTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def pressuremeter_diggs_xml():
+    """DIGGS XML with PressuremeterTest."""
+    return _DIGGS_HEADER + """
+  <PressuremeterTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>8.0</depth>
+    <pressureMeterModulus>15000</pressureMeterModulus>
+    <limitPressure>1200</limitPressure>
+  </PressuremeterTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def dmt_diggs_xml():
+    """DIGGS XML with FlatPlateDilatometerTest."""
+    return _DIGGS_HEADER + """
+  <FlatPlateDilatometerTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>5.0</depth>
+    <dilatometerModulus>22000</dilatometerModulus>
+    <materialIndex>1.8</materialIndex>
+    <horizontalStressIndex>4.5</horizontalStressIndex>
+  </FlatPlateDilatometerTest>""" + _DIGGS_FOOTER
+
+
+@pytest.fixture
+def multi_boring_xlink_xml():
+    """DIGGS XML with two borings and tests associated via xlink."""
+    return _DIGGS_HEADER_TWO_BORINGS + """
+  <InsituVaneTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>5.0</depth>
+    <peakShearStrength>40</peakShearStrength>
+  </InsituVaneTest>
+  <InsituVaneTest>
+    <investigationRef xlink:href="#BH2"/>
+    <depth>6.0</depth>
+    <peakShearStrength>55</peakShearStrength>
+  </InsituVaneTest>
+  <ConsolidationTest>
+    <investigationRef xlink:href="#BH2"/>
+    <depth>7.0</depth>
+    <compressionIndex>0.40</compressionIndex>
+    <preconsolidationPressure>150</preconsolidationPressure>
+  </ConsolidationTest>
+  <StaticConePenetrationTest>
+    <investigationRef xlink:href="#BH1"/>
+    <depth>3.0</depth>
+    <coneResistance>5000</coneResistance>
+    <sleeveFriction>70</sleeveFriction>
+  </StaticConePenetrationTest>""" + _DIGGS_FOOTER

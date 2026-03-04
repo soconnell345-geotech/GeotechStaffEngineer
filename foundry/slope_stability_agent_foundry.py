@@ -254,7 +254,13 @@ METHOD_INFO = {
             "FOS_fellenius": "Fellenius FOS (if compare_methods=true).",
             "FOS_bishop": "Bishop FOS (if compare_methods=true, circular only).",
             "theta_spencer_deg": "Spencer interslice angle (if Spencer used).",
-            "slice_data": "Per-slice data (if include_slice_data=true).",
+            "slice_data": "Per-slice data (if include_slice_data=true). "
+                         "Each slice includes: x_mid_m, z_top_m, z_base_m, "
+                         "width_m, height_m, alpha_deg, weight_kN_per_m, "
+                         "pore_pressure_kPa, c_kPa, phi_deg, base_length_m, "
+                         "normal_stress_kPa (effective normal), "
+                         "shear_stress_kPa (mobilized shear), "
+                         "shear_resistance_kPa (available resistance).",
         },
         "related": {
             "search_critical_surface": "Find the critical circle with minimum FOS.",

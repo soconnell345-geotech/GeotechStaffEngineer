@@ -14,7 +14,7 @@ from typing import Optional, Tuple
 
 from slope_stability.geometry import SlopeGeometry
 from slope_stability.slip_surface import CircularSlipSurface
-from slope_stability.slices import build_slices
+from slope_stability.slices import build_slices, compute_slice_forces
 from slope_stability.methods import fellenius_fos, bishop_fos, spencer_fos
 from slope_stability.search import grid_search, search_noncircular
 from slope_stability.results import (
@@ -114,8 +114,14 @@ def analyze_slope(geom: SlopeGeometry,
     # Slice data for plotting
     slice_data = None
     if include_slice_data:
-        slice_data = [
-            SliceData(
+        slice_data = []
+        for s in slices:
+            sf = compute_slice_forces(s)
+            dl = s.base_length
+            sigma_n = sf.N_prime / dl if dl > 0 else 0.0
+            tau_mob = sf.S_mobilized / dl if dl > 0 else 0.0
+            tau_avail = sf.T_available / dl if dl > 0 else 0.0
+            slice_data.append(SliceData(
                 x_mid=s.x_mid,
                 z_top=s.z_top,
                 z_base=s.z_base,
@@ -127,9 +133,10 @@ def analyze_slope(geom: SlopeGeometry,
                 c=s.c,
                 phi=s.phi,
                 base_length=s.base_length,
-            )
-            for s in slices
-        ]
+                normal_stress_kPa=sigma_n,
+                shear_stress_kPa=tau_mob,
+                shear_resistance_kPa=tau_avail,
+            ))
 
     return SlopeStabilityResult(
         FOS=fos,

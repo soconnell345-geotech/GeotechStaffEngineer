@@ -1043,3 +1043,82 @@ class TestNoncircularSearch:
                                  n_trials=30, n_points=7, seed=42)
         assert r3.critical is not None
         assert r7.critical is not None
+
+
+# ============================================================================
+# TestContactStresses — 5 tests
+# ============================================================================
+
+class TestContactStresses:
+    """Test contact stress computation on slice bases."""
+
+    def test_slice_data_has_stresses(self):
+        """Stress fields are populated when include_slice_data=True."""
+        geom = _simple_slope_geom()
+        result = analyze_slope(geom, xc=20, yc=15, radius=13,
+                               include_slice_data=True)
+        assert result.slice_data is not None
+        for sd in result.slice_data:
+            assert hasattr(sd, 'normal_stress_kPa')
+            assert hasattr(sd, 'shear_stress_kPa')
+            assert hasattr(sd, 'shear_resistance_kPa')
+
+    def test_stress_values_sensible(self):
+        """Normal stress and shear resistance are non-negative for stable slope.
+        Mobilized shear can be negative (passive zone)."""
+        geom = _simple_slope_geom(c_prime=20.0, phi=30.0)
+        result = analyze_slope(geom, xc=20, yc=15, radius=13,
+                               include_slice_data=True)
+        for sd in result.slice_data:
+            assert sd.normal_stress_kPa >= 0.0, (
+                f"Negative normal stress at x={sd.x_mid:.2f}")
+            assert sd.shear_resistance_kPa >= 0.0, (
+                f"Negative shear resistance at x={sd.x_mid:.2f}")
+
+    def test_stress_equilibrium(self):
+        """Sum of mobilized shear ≈ sum of resistance / FOS (Fellenius)."""
+        geom = _simple_slope_geom()
+        result = analyze_slope(geom, xc=20, yc=15, radius=13,
+                               method="fellenius",
+                               include_slice_data=True)
+        total_mob = abs(sum(sd.shear_stress_kPa * sd.base_length
+                            for sd in result.slice_data))
+        total_avail = sum(sd.shear_resistance_kPa * sd.base_length
+                          for sd in result.slice_data)
+        # FOS = T_avail / |S_mob|  =>  |S_mob| ≈ T_avail / FOS
+        expected_mob = total_avail / result.FOS
+        assert abs(total_mob - expected_mob) / max(total_mob, 1.0) < 0.05, (
+            f"Equilibrium check: |mob|={total_mob:.1f}, "
+            f"avail/FOS={expected_mob:.1f}")
+
+    def test_stress_zero_without_slice_data(self):
+        """No stresses when include_slice_data=False (default)."""
+        geom = _simple_slope_geom()
+        result = analyze_slope(geom, xc=20, yc=15, radius=13)
+        assert result.slice_data is None
+
+    def test_noncircular_stresses(self):
+        """Contact stresses work for polyline slip surfaces."""
+        from slope_stability.slip_surface import PolylineSlipSurface
+        geom = _simple_slope_geom()
+        pts = [(10, 8), (15, 5), (20, 3), (25, 2), (30, 0)]
+        slip = PolylineSlipSurface(pts)
+        result = analyze_slope(geom, slip_surface=slip, method="spencer",
+                               include_slice_data=True)
+        assert result.slice_data is not None
+        assert len(result.slice_data) > 0
+        # At least some slices should have non-zero stress
+        has_stress = any(sd.normal_stress_kPa > 0 for sd in result.slice_data)
+        assert has_stress, "No slices with positive normal stress"
+
+    def test_stresses_in_to_dict(self):
+        """Stress fields appear in to_dict() output."""
+        geom = _simple_slope_geom()
+        result = analyze_slope(geom, xc=20, yc=15, radius=13,
+                               include_slice_data=True)
+        d = result.to_dict()
+        assert "slice_data" in d
+        sd0 = d["slice_data"][0]
+        assert "normal_stress_kPa" in sd0
+        assert "shear_stress_kPa" in sd0
+        assert "shear_resistance_kPa" in sd0

@@ -31,7 +31,13 @@ STANDARD_PARAMETERS = {
     "cu_kPa", "phi_deg", "qu_kPa", "RQD_pct",
     "gamma_kNm3", "wn_pct", "LL_pct", "PL_pct", "PI_pct",
     "e0", "Cc", "Cr", "sigma_p_kPa",
-    "Su_vane_kPa", "pocket_pen_kPa",
+    "Su_vane_kPa", "Su_vane_remolded_kPa", "St", "pocket_pen_kPa",
+    "c_kPa", "Gs", "Is50_MPa", "k_m_per_s",
+    "pct_gravel", "pct_sand", "pct_fines", "D10_mm", "D30_mm", "D60_mm",
+    "gamma_max_kNm3", "wn_opt_pct",
+    "N_dp",
+    "E_pmt_kPa", "p_limit_kPa",
+    "ED_kPa", "ID_dmt", "KD_dmt",
 }
 
 

@@ -111,13 +111,19 @@ Flexible GWT input:
 
 Sign convention:
 - Pore pressure u > 0 below GWT, u = 0 above
-- Effective stress: σ' = σ_total - u × m  where m = [1, 1, 0]^T
-- In tension-positive convention: subtracting positive u makes compression
-  more negative = more confining in effective stress sense
+- Effective stress: σ' = σ_total + u × m  where m = [1, 1, 0]^T
+- In tension-positive convention: adding positive u makes effective stress
+  less compressive (less negative) = less confining pressure = lower strength
+- Total from effective: σ_total = σ' − u × m
 
 Implementation:
-- Pore pressures act as equivalent nodal forces: F_pp = Σ t·A·B^T·m·u_avg
-- In NR loop: constitutive model sees effective stress (total - pore pressure)
+- Elastic solver: pore pressure forces F_pp = Σ t·A·B^T·m·u_avg added to F_ext
+  (buoyant loading, no effective stress conversion needed)
+- Nonlinear solver: F_pp added to F_ext alongside gravity, both ramped together
+  during incremental loading. Solver works entirely in effective stress —
+  constitutive model (MC/HS) sees effective stress, internal forces use
+  effective stress. Equilibrium: B^T·σ' = F_gravity + F_pp.
+  No total↔effective conversion needed in the NR loop.
 - SRM: pore pressures unchanged during strength reduction (only c and φ reduced)
 
 ### Steady-State Seepage
@@ -139,8 +145,8 @@ Post-processing:
 
 ### Coupled Biot Consolidation
 
-Staggered (sequential) scheme for Biot's consolidation equations:
-- **Equilibrium**: K·u + Q·p = F_ext
+Staggered (sequential) scheme for Biot's consolidation equations (tension-positive):
+- **Equilibrium**: K·u = F_ext + Q·p
 - **Continuity**: Q^T·du/dt + S·dp/dt + H·p = q
 
 Coupling matrix Q: maps pore pressure DOFs to displacement DOFs

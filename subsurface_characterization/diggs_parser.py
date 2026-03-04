@@ -2,7 +2,10 @@
 DIGGS 2.6 XML parser → SiteModel.
 
 Uses xml.etree.ElementTree (stdlib). Auto-detects 2.6 vs 2.5.a namespace.
-Extracts borings, lithology, SPT, Atterberg limits, moisture content, GWL.
+Extracts borings, lithology, and 18 test types: SPT, Atterberg limits,
+moisture content, GWL, CPT, vane shear, consolidation, triaxial, direct
+shear, UCS, point load, specific gravity, gradation, permeability,
+compaction, dynamic probe, pressuremeter, and DMT.
 Resolves xlink:href references to associate tests with borings.
 
 Functions
@@ -107,6 +110,23 @@ def parse_diggs(
     _parse_atterberg_tests(root, ns_map, investigations, gml_id_map, warnings)
     _parse_moisture_tests(root, ns_map, investigations, gml_id_map, warnings)
     _parse_water_levels(root, ns_map, investigations, gml_id_map, warnings)
+    # Tier 1
+    _parse_cpt_tests(root, ns_map, investigations, gml_id_map, warnings)
+    _parse_vane_tests(root, ns_map, investigations, gml_id_map, warnings)
+    _parse_consolidation_tests(root, ns_map, investigations, gml_id_map, warnings)
+    _parse_triaxial_tests(root, ns_map, investigations, gml_id_map, warnings)
+    _parse_direct_shear_tests(root, ns_map, investigations, gml_id_map, warnings)
+    _parse_ucs_tests(root, ns_map, investigations, gml_id_map, warnings)
+    # Tier 2
+    _parse_point_load_tests(root, ns_map, investigations, gml_id_map, warnings)
+    _parse_specific_gravity_tests(root, ns_map, investigations, gml_id_map, warnings)
+    _parse_gradation_tests(root, ns_map, investigations, gml_id_map, warnings)
+    _parse_permeability_tests(root, ns_map, investigations, gml_id_map, warnings)
+    _parse_compaction_tests(root, ns_map, investigations, gml_id_map, warnings)
+    _parse_dynamic_probe_tests(root, ns_map, investigations, gml_id_map, warnings)
+    # Tier 3
+    _parse_pressuremeter_tests(root, ns_map, investigations, gml_id_map, warnings)
+    _parse_dmt_tests(root, ns_map, investigations, gml_id_map, warnings)
 
     # Count totals
     n_measurements = sum(len(inv.measurements) for inv in investigations.values())
@@ -389,3 +409,498 @@ def _parse_water_levels(root, ns_map, investigations, gml_id_map, warnings):
 
         if depth > 0:
             investigations[inv_id].gwl_depth_m = depth
+
+
+# ---------------------------------------------------------------------------
+# Tier 1 parsers
+# ---------------------------------------------------------------------------
+
+def _resolve_inv(elem, ns_map, investigations, gml_id_map):
+    """Resolve investigation ID from element, return None if not found."""
+    inv_id = _resolve_xlink(elem, ns_map, gml_id_map)
+    if not inv_id or inv_id not in investigations:
+        if len(investigations) == 1:
+            return list(investigations.keys())[0]
+        return None
+    return inv_id
+
+
+def _parse_cpt_tests(root, ns_map, investigations, gml_id_map, warnings):
+    """Parse StaticConePenetrationTest (CPT/CPTu) elements."""
+    for elem in _findall(root, ".//diggs:StaticConePenetrationTest", ns_map):
+        inv_id = _resolve_inv(elem, ns_map, investigations, gml_id_map)
+        if not inv_id:
+            continue
+
+        # Try nested readings first (multiple depths within one element)
+        readings = _findall(elem, ".//diggs:ConePenetrationReading", ns_map)
+        if readings:
+            for rdg in readings:
+                depth = _float_text(rdg, "diggs:depth", ns_map)
+                _add_cpt_reading(rdg, ns_map, investigations[inv_id], depth)
+        else:
+            # Single-depth element
+            depth = _float_text(elem, "diggs:depth", ns_map)
+            if depth == 0.0:
+                depth = _float_text(elem, "diggs:testDepth", ns_map)
+            _add_cpt_reading(elem, ns_map, investigations[inv_id], depth)
+
+
+def _add_cpt_reading(elem, ns_map, inv, depth):
+    """Add CPT measurements from a reading element."""
+    qc = _float_text(elem, "diggs:coneResistance", ns_map)
+    if qc == 0.0:
+        qc = _float_text(elem, "diggs:qc", ns_map)
+    fs = _float_text(elem, "diggs:sleeveFriction", ns_map)
+    if fs == 0.0:
+        fs = _float_text(elem, "diggs:fs", ns_map)
+    u2 = _float_text(elem, "diggs:porePressure", ns_map)
+    if u2 == 0.0:
+        u2 = _float_text(elem, "diggs:u2", ns_map)
+    rf = _float_text(elem, "diggs:frictionRatio", ns_map)
+    if rf == 0.0:
+        rf = _float_text(elem, "diggs:Rf", ns_map)
+
+    if qc > 0:
+        inv.measurements.append(PointMeasurement(
+            depth_m=depth, parameter="qc_kPa", value=qc,
+            source="field", test_type="CPTu",
+        ))
+    if fs > 0:
+        inv.measurements.append(PointMeasurement(
+            depth_m=depth, parameter="fs_kPa", value=fs,
+            source="field", test_type="CPTu",
+        ))
+    if u2 != 0.0:
+        inv.measurements.append(PointMeasurement(
+            depth_m=depth, parameter="u2_kPa", value=u2,
+            source="field", test_type="CPTu",
+        ))
+    if rf > 0:
+        inv.measurements.append(PointMeasurement(
+            depth_m=depth, parameter="Rf_pct", value=rf,
+            source="field", test_type="CPTu",
+        ))
+
+
+def _parse_vane_tests(root, ns_map, investigations, gml_id_map, warnings):
+    """Parse InsituVaneTest (field vane shear) elements."""
+    for elem in _findall(root, ".//diggs:InsituVaneTest", ns_map):
+        inv_id = _resolve_inv(elem, ns_map, investigations, gml_id_map)
+        if not inv_id:
+            continue
+
+        depth = _float_text(elem, "diggs:depth", ns_map)
+        if depth == 0.0:
+            depth = _float_text(elem, "diggs:testDepth", ns_map)
+
+        su_peak = _float_text(elem, "diggs:peakShearStrength", ns_map)
+        if su_peak == 0.0:
+            su_peak = _float_text(elem, "diggs:undrainedShearStrength", ns_map)
+        su_rem = _float_text(elem, "diggs:remoldedShearStrength", ns_map)
+        sensitivity = _float_text(elem, "diggs:sensitivity", ns_map)
+
+        inv = investigations[inv_id]
+        if su_peak > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="Su_vane_kPa", value=su_peak,
+                source="field", test_type="vane_shear",
+            ))
+        if su_rem > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="Su_vane_remolded_kPa", value=su_rem,
+                source="field", test_type="vane_shear",
+            ))
+        if sensitivity > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="St", value=sensitivity,
+                source="field", test_type="vane_shear",
+            ))
+        elif su_peak > 0 and su_rem > 0:
+            # Compute sensitivity if not given directly
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="St", value=su_peak / su_rem,
+                source="field", test_type="vane_shear",
+            ))
+
+
+def _parse_consolidation_tests(root, ns_map, investigations, gml_id_map, warnings):
+    """Parse ConsolidationTest elements (Cc, Cr, sigma_p, e0)."""
+    for elem in _findall(root, ".//diggs:ConsolidationTest", ns_map):
+        inv_id = _resolve_inv(elem, ns_map, investigations, gml_id_map)
+        if not inv_id:
+            continue
+
+        depth = _float_text(elem, "diggs:depth", ns_map)
+        if depth == 0.0:
+            depth = _float_text(elem, "diggs:testDepth", ns_map)
+
+        e0 = _float_text(elem, "diggs:initialVoidRatio", ns_map)
+        if e0 == 0.0:
+            e0 = _float_text(elem, "diggs:e0", ns_map)
+        cc = _float_text(elem, "diggs:compressionIndex", ns_map)
+        if cc == 0.0:
+            cc = _float_text(elem, "diggs:Cc", ns_map)
+        cr = _float_text(elem, "diggs:recompressionIndex", ns_map)
+        if cr == 0.0:
+            cr = _float_text(elem, "diggs:Cr", ns_map)
+        sigma_p = _float_text(elem, "diggs:preconsolidationPressure", ns_map)
+        if sigma_p == 0.0:
+            sigma_p = _float_text(elem, "diggs:sigmaP", ns_map)
+
+        inv = investigations[inv_id]
+        if e0 > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="e0", value=e0,
+                source="lab", test_type="consolidation",
+            ))
+        if cc > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="Cc", value=cc,
+                source="lab", test_type="consolidation",
+            ))
+        if cr > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="Cr", value=cr,
+                source="lab", test_type="consolidation",
+            ))
+        if sigma_p > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="sigma_p_kPa", value=sigma_p,
+                source="lab", test_type="consolidation",
+            ))
+
+
+def _parse_triaxial_tests(root, ns_map, investigations, gml_id_map, warnings):
+    """Parse TriaxialTest elements (cu or phi from peak strengths)."""
+    for elem in _findall(root, ".//diggs:TriaxialTest", ns_map):
+        inv_id = _resolve_inv(elem, ns_map, investigations, gml_id_map)
+        if not inv_id:
+            continue
+
+        depth = _float_text(elem, "diggs:depth", ns_map)
+        if depth == 0.0:
+            depth = _float_text(elem, "diggs:testDepth", ns_map)
+
+        cu = _float_text(elem, "diggs:undrainedShearStrength", ns_map)
+        if cu == 0.0:
+            cu = _float_text(elem, "diggs:cu", ns_map)
+        phi = _float_text(elem, "diggs:frictionAngle", ns_map)
+        if phi == 0.0:
+            phi = _float_text(elem, "diggs:phi", ns_map)
+        cohesion = _float_text(elem, "diggs:cohesion", ns_map)
+        if cohesion == 0.0:
+            cohesion = _float_text(elem, "diggs:c", ns_map)
+
+        inv = investigations[inv_id]
+        if cu > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="cu_kPa", value=cu,
+                source="lab", test_type="triaxial",
+            ))
+        if phi > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="phi_deg", value=phi,
+                source="lab", test_type="triaxial",
+            ))
+        if cohesion > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="c_kPa", value=cohesion,
+                source="lab", test_type="triaxial",
+            ))
+
+
+def _parse_direct_shear_tests(root, ns_map, investigations, gml_id_map, warnings):
+    """Parse DirectShearTest elements (phi, c peak/residual)."""
+    for elem in _findall(root, ".//diggs:DirectShearTest", ns_map):
+        inv_id = _resolve_inv(elem, ns_map, investigations, gml_id_map)
+        if not inv_id:
+            continue
+
+        depth = _float_text(elem, "diggs:depth", ns_map)
+        if depth == 0.0:
+            depth = _float_text(elem, "diggs:testDepth", ns_map)
+
+        phi = _float_text(elem, "diggs:frictionAngle", ns_map)
+        if phi == 0.0:
+            phi = _float_text(elem, "diggs:peakFrictionAngle", ns_map)
+        if phi == 0.0:
+            phi = _float_text(elem, "diggs:phi", ns_map)
+        cohesion = _float_text(elem, "diggs:cohesion", ns_map)
+        if cohesion == 0.0:
+            cohesion = _float_text(elem, "diggs:peakCohesion", ns_map)
+        if cohesion == 0.0:
+            cohesion = _float_text(elem, "diggs:c", ns_map)
+
+        inv = investigations[inv_id]
+        if phi > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="phi_deg", value=phi,
+                source="lab", test_type="direct_shear",
+            ))
+        if cohesion > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="c_kPa", value=cohesion,
+                source="lab", test_type="direct_shear",
+            ))
+
+
+def _parse_ucs_tests(root, ns_map, investigations, gml_id_map, warnings):
+    """Parse UnconfinedCompressiveStrengthTest elements."""
+    for elem in _findall(root, ".//diggs:UnconfinedCompressiveStrengthTest", ns_map):
+        inv_id = _resolve_inv(elem, ns_map, investigations, gml_id_map)
+        if not inv_id:
+            continue
+
+        depth = _float_text(elem, "diggs:depth", ns_map)
+        if depth == 0.0:
+            depth = _float_text(elem, "diggs:testDepth", ns_map)
+
+        qu = _float_text(elem, "diggs:compressiveStrength", ns_map)
+        if qu == 0.0:
+            qu = _float_text(elem, "diggs:qu", ns_map)
+
+        if qu > 0:
+            investigations[inv_id].measurements.append(PointMeasurement(
+                depth_m=depth, parameter="qu_kPa", value=qu,
+                source="lab", test_type="UCS",
+            ))
+
+
+# ---------------------------------------------------------------------------
+# Tier 2 parsers
+# ---------------------------------------------------------------------------
+
+def _parse_point_load_tests(root, ns_map, investigations, gml_id_map, warnings):
+    """Parse PointLoadTest elements (Is50)."""
+    for elem in _findall(root, ".//diggs:PointLoadTest", ns_map):
+        inv_id = _resolve_inv(elem, ns_map, investigations, gml_id_map)
+        if not inv_id:
+            continue
+
+        depth = _float_text(elem, "diggs:depth", ns_map)
+        if depth == 0.0:
+            depth = _float_text(elem, "diggs:testDepth", ns_map)
+
+        is50 = _float_text(elem, "diggs:pointLoadIndex", ns_map)
+        if is50 == 0.0:
+            is50 = _float_text(elem, "diggs:Is50", ns_map)
+
+        if is50 > 0:
+            investigations[inv_id].measurements.append(PointMeasurement(
+                depth_m=depth, parameter="Is50_MPa", value=is50,
+                source="lab", test_type="point_load",
+            ))
+
+
+def _parse_specific_gravity_tests(root, ns_map, investigations, gml_id_map, warnings):
+    """Parse SpecificGravityTest elements."""
+    for elem in _findall(root, ".//diggs:SpecificGravityTest", ns_map):
+        inv_id = _resolve_inv(elem, ns_map, investigations, gml_id_map)
+        if not inv_id:
+            continue
+
+        depth = _float_text(elem, "diggs:depth", ns_map)
+        if depth == 0.0:
+            depth = _float_text(elem, "diggs:testDepth", ns_map)
+
+        gs = _float_text(elem, "diggs:specificGravity", ns_map)
+        if gs == 0.0:
+            gs = _float_text(elem, "diggs:Gs", ns_map)
+
+        if gs > 0:
+            investigations[inv_id].measurements.append(PointMeasurement(
+                depth_m=depth, parameter="Gs", value=gs,
+                source="lab", test_type="specific_gravity",
+            ))
+
+
+def _parse_gradation_tests(root, ns_map, investigations, gml_id_map, warnings):
+    """Parse ParticleSizeAnalysis / MaterialGradationTest elements."""
+    tag_names = [
+        ".//diggs:ParticleSizeAnalysis",
+        ".//diggs:MaterialGradationTest",
+    ]
+    for tag in tag_names:
+        for elem in _findall(root, tag, ns_map):
+            inv_id = _resolve_inv(elem, ns_map, investigations, gml_id_map)
+            if not inv_id:
+                continue
+
+            depth = _float_text(elem, "diggs:depth", ns_map)
+            if depth == 0.0:
+                depth = _float_text(elem, "diggs:testDepth", ns_map)
+
+            inv = investigations[inv_id]
+            params = {
+                "pct_gravel": ["diggs:percentGravel", "diggs:gravel"],
+                "pct_sand": ["diggs:percentSand", "diggs:sand"],
+                "pct_fines": ["diggs:percentFines", "diggs:fines"],
+                "D10_mm": ["diggs:D10", "diggs:d10"],
+                "D30_mm": ["diggs:D30", "diggs:d30"],
+                "D60_mm": ["diggs:D60", "diggs:d60"],
+            }
+            for param_name, xml_tags in params.items():
+                val = 0.0
+                for xt in xml_tags:
+                    val = _float_text(elem, xt, ns_map)
+                    if val != 0.0:
+                        break
+                if val > 0:
+                    inv.measurements.append(PointMeasurement(
+                        depth_m=depth, parameter=param_name, value=val,
+                        source="lab", test_type="gradation",
+                    ))
+
+
+def _parse_permeability_tests(root, ns_map, investigations, gml_id_map, warnings):
+    """Parse LabPermeabilityTest elements."""
+    for elem in _findall(root, ".//diggs:LabPermeabilityTest", ns_map):
+        inv_id = _resolve_inv(elem, ns_map, investigations, gml_id_map)
+        if not inv_id:
+            continue
+
+        depth = _float_text(elem, "diggs:depth", ns_map)
+        if depth == 0.0:
+            depth = _float_text(elem, "diggs:testDepth", ns_map)
+
+        k = _float_text(elem, "diggs:permeability", ns_map)
+        if k == 0.0:
+            k = _float_text(elem, "diggs:hydraulicConductivity", ns_map)
+        if k == 0.0:
+            k = _float_text(elem, "diggs:k", ns_map)
+
+        if k > 0:
+            investigations[inv_id].measurements.append(PointMeasurement(
+                depth_m=depth, parameter="k_m_per_s", value=k,
+                source="lab", test_type="permeability",
+            ))
+
+
+def _parse_compaction_tests(root, ns_map, investigations, gml_id_map, warnings):
+    """Parse LabCompactionTest (Proctor) elements."""
+    for elem in _findall(root, ".//diggs:LabCompactionTest", ns_map):
+        inv_id = _resolve_inv(elem, ns_map, investigations, gml_id_map)
+        if not inv_id:
+            continue
+
+        depth = _float_text(elem, "diggs:depth", ns_map)
+        if depth == 0.0:
+            depth = _float_text(elem, "diggs:testDepth", ns_map)
+
+        gamma_max = _float_text(elem, "diggs:maxDryDensity", ns_map)
+        if gamma_max == 0.0:
+            gamma_max = _float_text(elem, "diggs:maximumDryUnitWeight", ns_map)
+        wn_opt = _float_text(elem, "diggs:optimumMoistureContent", ns_map)
+        if wn_opt == 0.0:
+            wn_opt = _float_text(elem, "diggs:optimumWaterContent", ns_map)
+
+        inv = investigations[inv_id]
+        if gamma_max > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="gamma_max_kNm3", value=gamma_max,
+                source="lab", test_type="compaction",
+            ))
+        if wn_opt > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="wn_opt_pct", value=wn_opt,
+                source="lab", test_type="compaction",
+            ))
+
+
+def _parse_dynamic_probe_tests(root, ns_map, investigations, gml_id_map, warnings):
+    """Parse DynamicProbeTest elements."""
+    for elem in _findall(root, ".//diggs:DynamicProbeTest", ns_map):
+        inv_id = _resolve_inv(elem, ns_map, investigations, gml_id_map)
+        if not inv_id:
+            continue
+
+        depth = _float_text(elem, "diggs:depth", ns_map)
+        if depth == 0.0:
+            depth = _float_text(elem, "diggs:testDepth", ns_map)
+
+        n_dp = _float_text(elem, "diggs:blowCount", ns_map)
+        if n_dp == 0.0:
+            n_dp = _float_text(elem, "diggs:nValue", ns_map)
+
+        if depth > 0 or n_dp > 0:
+            investigations[inv_id].measurements.append(PointMeasurement(
+                depth_m=depth, parameter="N_dp", value=n_dp,
+                source="field", test_type="dynamic_probe",
+            ))
+
+
+# ---------------------------------------------------------------------------
+# Tier 3 parsers
+# ---------------------------------------------------------------------------
+
+def _parse_pressuremeter_tests(root, ns_map, investigations, gml_id_map, warnings):
+    """Parse PressuremeterTest elements (E_pmt, p_limit)."""
+    for elem in _findall(root, ".//diggs:PressuremeterTest", ns_map):
+        inv_id = _resolve_inv(elem, ns_map, investigations, gml_id_map)
+        if not inv_id:
+            continue
+
+        depth = _float_text(elem, "diggs:depth", ns_map)
+        if depth == 0.0:
+            depth = _float_text(elem, "diggs:testDepth", ns_map)
+
+        e_pmt = _float_text(elem, "diggs:pressureMeterModulus", ns_map)
+        if e_pmt == 0.0:
+            e_pmt = _float_text(elem, "diggs:modulus", ns_map)
+        if e_pmt == 0.0:
+            e_pmt = _float_text(elem, "diggs:Epmt", ns_map)
+        p_limit = _float_text(elem, "diggs:limitPressure", ns_map)
+        if p_limit == 0.0:
+            p_limit = _float_text(elem, "diggs:pLimit", ns_map)
+
+        inv = investigations[inv_id]
+        if e_pmt > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="E_pmt_kPa", value=e_pmt,
+                source="field", test_type="pressuremeter",
+            ))
+        if p_limit > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="p_limit_kPa", value=p_limit,
+                source="field", test_type="pressuremeter",
+            ))
+
+
+def _parse_dmt_tests(root, ns_map, investigations, gml_id_map, warnings):
+    """Parse FlatPlateDilatometerTest (DMT) elements."""
+    for elem in _findall(root, ".//diggs:FlatPlateDilatometerTest", ns_map):
+        inv_id = _resolve_inv(elem, ns_map, investigations, gml_id_map)
+        if not inv_id:
+            continue
+
+        depth = _float_text(elem, "diggs:depth", ns_map)
+        if depth == 0.0:
+            depth = _float_text(elem, "diggs:testDepth", ns_map)
+
+        ed = _float_text(elem, "diggs:dilatometerModulus", ns_map)
+        if ed == 0.0:
+            ed = _float_text(elem, "diggs:ED", ns_map)
+        id_dmt = _float_text(elem, "diggs:materialIndex", ns_map)
+        if id_dmt == 0.0:
+            id_dmt = _float_text(elem, "diggs:ID", ns_map)
+        kd = _float_text(elem, "diggs:horizontalStressIndex", ns_map)
+        if kd == 0.0:
+            kd = _float_text(elem, "diggs:KD", ns_map)
+
+        inv = investigations[inv_id]
+        if ed > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="ED_kPa", value=ed,
+                source="field", test_type="DMT",
+            ))
+        if id_dmt > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="ID_dmt", value=id_dmt,
+                source="field", test_type="DMT",
+            ))
+        if kd > 0:
+            inv.measurements.append(PointMeasurement(
+                depth_m=depth, parameter="KD_dmt", value=kd,
+                source="field", test_type="DMT",
+            ))
