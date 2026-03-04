@@ -20,6 +20,36 @@ if TYPE_CHECKING:
     from slope_stability.nails import SoilNail
 
 
+def _interp_polyline(points, x):
+    """Linearly interpolate a polyline at x with constant extrapolation.
+
+    Parameters
+    ----------
+    points : list of (float, float)
+        Polyline as (x, z) pairs, sorted by x.
+    x : float
+        Query x-coordinate.
+
+    Returns
+    -------
+    float
+        Interpolated z value.
+    """
+    if not points:
+        raise ValueError("Empty polyline")
+    if x <= points[0][0]:
+        return points[0][1]
+    if x >= points[-1][0]:
+        return points[-1][1]
+    for i in range(len(points) - 1):
+        x0, z0 = points[i]
+        x1, z1 = points[i + 1]
+        if x0 <= x <= x1:
+            t = (x - x0) / (x1 - x0) if x1 != x0 else 0.0
+            return z0 + t * (z1 - z0)
+    return points[-1][1]
+
+
 @dataclass
 class SlopeSoilLayer:
     """A soil layer within the slope, defined by elevation boundaries.
@@ -45,6 +75,10 @@ class SlopeSoilLayer:
     analysis_mode : str
         'drained' (uses c', phi') or 'undrained' (uses cu, phi=0).
         Default 'drained'.
+    bottom_boundary_points : list of (float, float), optional
+        Non-horizontal bottom boundary as (x, z) polyline, sorted by x.
+        When set, bottom_at(x) interpolates this polyline instead of
+        using the flat bottom_elevation.
     """
     name: str
     top_elevation: float
@@ -55,13 +89,15 @@ class SlopeSoilLayer:
     c_prime: float = 0.0
     cu: float = 0.0
     analysis_mode: str = "drained"
+    bottom_boundary_points: Optional[List[Tuple[float, float]]] = None
 
     def __post_init__(self):
-        if self.bottom_elevation >= self.top_elevation:
-            raise ValueError(
-                f"Layer '{self.name}': bottom_elevation ({self.bottom_elevation}) "
-                f"must be less than top_elevation ({self.top_elevation})"
-            )
+        if self.bottom_boundary_points is None:
+            if self.bottom_elevation >= self.top_elevation:
+                raise ValueError(
+                    f"Layer '{self.name}': bottom_elevation ({self.bottom_elevation}) "
+                    f"must be less than top_elevation ({self.top_elevation})"
+                )
         if self.gamma <= 0:
             raise ValueError(
                 f"Layer '{self.name}': gamma must be positive, got {self.gamma}"
@@ -97,6 +133,16 @@ class SlopeSoilLayer:
         if self.analysis_mode == "undrained":
             return (self.cu, 0.0)
         return (self.c_prime, self.phi)
+
+    def bottom_at(self, x):
+        """Bottom elevation at x. Uses polyline if set, else flat bottom_elevation."""
+        if self.bottom_boundary_points is not None:
+            return _interp_polyline(self.bottom_boundary_points, x)
+        return self.bottom_elevation
+
+    def top_at(self, x):
+        """Top elevation at x. Returns flat top_elevation (surface clipping done in slices)."""
+        return self.top_elevation
 
 
 @dataclass
@@ -194,6 +240,20 @@ class SlopeGeometry:
         """
         for layer in self.soil_layers:
             if layer.bottom_elevation <= z <= layer.top_elevation:
+                return layer
+        return None
+
+    def layer_at_point(self, x: float, z: float) -> Optional[SlopeSoilLayer]:
+        """Return the soil layer containing point (x, z).
+
+        Uses position-dependent boundaries when layers have
+        bottom_boundary_points set. Falls back to flat elevations.
+        Returns None if outside all layers.
+        """
+        for layer in self.soil_layers:
+            top_z = layer.top_at(x)
+            bot_z = layer.bottom_at(x)
+            if bot_z <= z <= top_z:
                 return layer
         return None
 

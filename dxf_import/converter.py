@@ -152,6 +152,9 @@ def build_slope_geometry(
                 cu=sp.cu,
                 analysis_mode=sp.analysis_mode,
             ))
+            # Attach first boundary polyline as bottom
+            first_boundary_sorted = sorted(first_boundary, key=lambda p: p[0])
+            soil_layers[-1].bottom_boundary_points = first_boundary_sorted
 
         # Middle and bottom layers
         for i, bname in enumerate(boundary_names):
@@ -182,6 +185,9 @@ def build_slope_geometry(
                 cu=sp.cu,
                 analysis_mode=sp.analysis_mode,
             ))
+            # Attach polyline boundary if available
+            boundary_pts_sorted = sorted(boundary_pts, key=lambda p: p[0])
+            soil_layers[-1].bottom_boundary_points = boundary_pts_sorted
 
     # --- GWT ---
     gwt_points = parse_result.gwt_points

@@ -12,7 +12,7 @@ try:
         QSpinBox, QComboBox, QPushButton, QTextEdit, QSplitter,
         QStatusBar, QAction, QMessageBox, QTableWidget, QTableWidgetItem,
         QHeaderView, QCheckBox, QFrame, QSizePolicy, QScrollArea,
-        QFileDialog, QStackedWidget,
+        QFileDialog, QStackedWidget, QDialog, QDialogButtonBox,
     )
     from PyQt5.QtCore import Qt
     from PyQt5.QtGui import QFont
@@ -23,7 +23,7 @@ except ImportError:
         QSpinBox, QComboBox, QPushButton, QTextEdit, QSplitter,
         QStatusBar, QAction, QMessageBox, QTableWidget, QTableWidgetItem,
         QHeaderView, QCheckBox, QFrame, QSizePolicy, QScrollArea,
-        QFileDialog, QStackedWidget,
+        QFileDialog, QStackedWidget, QDialog, QDialogButtonBox,
     )
     from PySide2.QtCore import Qt
     from PySide2.QtGui import QFont

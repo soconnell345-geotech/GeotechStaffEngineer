@@ -76,6 +76,80 @@ class Slice:
     z_centroid: float = 0.0
 
 
+@dataclass
+class SliceForces:
+    """Computed forces on a single slice (Fellenius decomposition).
+
+    All forces per unit width of slope (kN/m).
+
+    Attributes
+    ----------
+    W : float
+        Total weight including surcharge (kN/m).
+    N_prime : float
+        Effective normal force on base = W*cos(alpha) - U (kN/m).
+        Clamped to zero if tensile.
+    S_mobilized : float
+        Driving shear = W*sin(alpha) (kN/m).
+    T_available : float
+        Available shear resistance = c*dl + N'*tan(phi) (kN/m).
+    U : float
+        Pore water force on base = u*dl (kN/m).
+    surcharge : float
+        Vertical surcharge force (kN/m).
+    seismic : float
+        Horizontal seismic force (kN/m).
+    alpha_deg : float
+        Base inclination angle (degrees).
+    """
+    W: float
+    N_prime: float
+    S_mobilized: float
+    T_available: float
+    U: float
+    surcharge: float
+    seismic: float
+    alpha_deg: float
+
+
+def compute_slice_forces(s: Slice) -> SliceForces:
+    """Compute Fellenius-style forces acting on a single slice.
+
+    Parameters
+    ----------
+    s : Slice
+        Slice with geometry and strength data from build_slices().
+
+    Returns
+    -------
+    SliceForces
+        All computed forces on the slice.
+    """
+    alpha_rad = s.alpha
+    alpha_deg = math.degrees(alpha_rad)
+
+    W = s.weight + s.surcharge_force
+    U = s.pore_pressure * s.base_length
+    N_prime = W * math.cos(alpha_rad) - U
+    if N_prime < 0.0:
+        N_prime = 0.0
+
+    S_mobilized = W * math.sin(alpha_rad)
+    phi_rad = math.radians(s.phi)
+    T_available = s.c * s.base_length + N_prime * math.tan(phi_rad)
+
+    return SliceForces(
+        W=W,
+        N_prime=N_prime,
+        S_mobilized=S_mobilized,
+        T_available=T_available,
+        U=U,
+        surcharge=s.surcharge_force,
+        seismic=s.seismic_force,
+        alpha_deg=alpha_deg,
+    )
+
+
 def build_slices(geom: SlopeGeometry,
                  slip,
                  n_slices: int = 30) -> List[Slice]:
@@ -119,9 +193,9 @@ def build_slices(geom: SlopeGeometry,
 
         # Fix empty-space bug: skip slices where slip surface is below
         # all soil layers (cutting through empty space)
-        if geom.layer_at_elevation(z_base) is None:
+        if geom.layer_at_point(x_mid, z_base) is None:
             # Check if z_base is below the lowest soil layer
-            min_layer_bot = min(L.bottom_elevation for L in geom.soil_layers)
+            min_layer_bot = min(L.bottom_at(x_mid) for L in geom.soil_layers)
             if z_base < min_layer_bot:
                 continue
 
@@ -141,7 +215,7 @@ def build_slices(geom: SlopeGeometry,
         pore_pressure = _pore_pressure_at_base(z_base, gwt_elev)
 
         # Strength parameters from layer at base midpoint
-        base_layer = geom.layer_at_elevation(z_base)
+        base_layer = geom.layer_at_point(x_mid, z_base)
         if base_layer is not None:
             c, phi = base_layer.shear_strength_params
         else:
@@ -195,8 +269,8 @@ def _compute_slice_weight(geom: SlopeGeometry,
     # Collect layers that overlap with (z_base, z_top)
     for layer in geom.soil_layers:
         # Clip layer to slice elevation range
-        lay_top = min(layer.top_elevation, z_top)
-        lay_bot = max(layer.bottom_elevation, z_base)
+        lay_top = min(layer.top_at(x_mid), z_top)
+        lay_bot = max(layer.bottom_at(x_mid), z_base)
 
         if lay_top <= lay_bot:
             continue

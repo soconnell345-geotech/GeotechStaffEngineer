@@ -17,13 +17,14 @@ from qt_panels.common import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QGroupBox,
     QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QCheckBox,
     QScrollArea, QSplitter, QTableWidget, QTableWidgetItem, QHeaderView, Qt,
+    QFileDialog, QMessageBox,
     MplCanvas, make_results_box, NavigationToolbar2QT,
     LAYER_COLORS, GWT_COLOR, SLIP_COLOR, SURFACE_COLOR,
 )
 from slope_stability import (
     SlopeGeometry, SlopeSoilLayer, analyze_slope, search_critical_surface,
 )
-from slope_stability.slices import build_slices
+from slope_stability.slices import build_slices, compute_slice_forces
 from slope_stability.slip_surface import CircularSlipSurface
 
 
@@ -47,6 +48,12 @@ class SlopeStabilityPanel(QWidget):
         scroll.setMaximumWidth(420)
         form_widget = QWidget()
         form = QVBoxLayout(form_widget)
+
+        # Import DXF button
+        self.import_dxf_btn = QPushButton("Import DXF...")
+        self.import_dxf_btn.setObjectName("secondary")
+        self.import_dxf_btn.clicked.connect(self._import_dxf)
+        form.addWidget(self.import_dxf_btn)
 
         # Surface points table
         sg = QGroupBox("Surface Profile (x, z)")
@@ -235,6 +242,95 @@ class SlopeStabilityPanel(QWidget):
         outer.addWidget(right_splitter, 1)
 
         # Draw initial geometry
+        self._plot_geometry_only()
+
+    # --- DXF Import ---
+    def _import_dxf(self):
+        """Open a DXF file, show mapping dialog, populate geometry."""
+        try:
+            from dxf_import import discover_layers, parse_dxf_geometry, build_slope_geometry
+        except ImportError:
+            QMessageBox.warning(
+                self, "Missing Dependency",
+                "DXF import requires ezdxf.\n"
+                "Install with: pip install ezdxf")
+            return
+
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Open DXF File", "",
+            "DXF Files (*.dxf);;All Files (*)")
+        if not filepath:
+            return
+
+        try:
+            discovery = discover_layers(filepath)
+            if not discovery.layers:
+                QMessageBox.warning(
+                    self, "Empty DXF",
+                    "No layers with entities found in this DXF file.")
+                return
+
+            from qt_panels.dxf_import_dialog import DxfLayerMappingDialog
+            dlg = DxfLayerMappingDialog(self, discovery, mode="slope")
+            if dlg.exec_() != dlg.Accepted:
+                return
+
+            mapping, soil_properties, nail_defaults, units, flip_y = (
+                dlg.get_results())
+
+            parse_result = parse_dxf_geometry(
+                filepath, mapping, units=units, flip_y=flip_y)
+
+            geom = build_slope_geometry(
+                parse_result, soil_properties, nail_defaults)
+
+            self._populate_from_geometry(geom)
+            self._status.showMessage(
+                f"DXF imported: {len(geom.surface_points)} surface pts, "
+                f"{len(geom.soil_layers)} layers", 10000)
+
+        except Exception as e:
+            QMessageBox.critical(
+                self, "DXF Import Error", str(e))
+
+    def _populate_from_geometry(self, geom):
+        """Fill surface, layers, and GWT tables from a SlopeGeometry."""
+        # Surface points
+        self.surface_table.setRowCount(len(geom.surface_points))
+        for i, (x, z) in enumerate(geom.surface_points):
+            self.surface_table.setItem(
+                i, 0, QTableWidgetItem(f"{x:.2f}"))
+            self.surface_table.setItem(
+                i, 1, QTableWidgetItem(f"{z:.2f}"))
+
+        # Soil layers
+        self.layers_table.setRowCount(len(geom.soil_layers))
+        for i, layer in enumerate(geom.soil_layers):
+            vals = [
+                layer.name,
+                f"{layer.top_elevation:.2f}",
+                f"{layer.bottom_elevation:.2f}",
+                f"{layer.gamma:.1f}",
+                f"{layer.phi:.1f}",
+                f"{layer.c_prime:.1f}",
+                layer.analysis_mode,
+            ]
+            for j, val in enumerate(vals):
+                self.layers_table.setItem(i, j, QTableWidgetItem(val))
+
+        # GWT
+        if geom.gwt_points:
+            self.gwt_check.setChecked(True)
+            self.gwt_table.setRowCount(len(geom.gwt_points))
+            for i, (x, z) in enumerate(geom.gwt_points):
+                self.gwt_table.setItem(
+                    i, 0, QTableWidgetItem(f"{x:.2f}"))
+                self.gwt_table.setItem(
+                    i, 1, QTableWidgetItem(f"{z:.2f}"))
+        else:
+            self.gwt_check.setChecked(False)
+
+        # Redraw
         self._plot_geometry_only()
 
     def _on_surface_type_changed(self, idx):
@@ -429,12 +525,16 @@ class SlopeStabilityPanel(QWidget):
                                 key=lambda la: la.top_elevation)
         for i, layer in enumerate(sorted_layers):
             color = LAYER_COLORS[i % len(LAYER_COLORS)]
-            bot = layer.bottom_elevation
-            top = layer.top_elevation
             x_fill = np.linspace(x_min, x_max, 200)
+            if layer.bottom_boundary_points is not None:
+                bpts_x = [p[0] for p in layer.bottom_boundary_points]
+                bpts_z = [p[1] for p in layer.bottom_boundary_points]
+                z_bot_fill = np.interp(x_fill, bpts_x, bpts_z)
+            else:
+                z_bot_fill = np.full_like(x_fill, layer.bottom_elevation)
             z_top_fill = np.clip(
-                np.interp(x_fill, surface_x, surface_z), bot, top)
-            z_bot_fill = np.full_like(x_fill, bot)
+                np.interp(x_fill, surface_x, surface_z),
+                z_bot_fill, layer.top_elevation)
             ax.fill_between(x_fill, z_bot_fill, z_top_fill,
                              color=color, alpha=0.6,
                              label=f"{layer.name} (\u03c6={layer.phi}\u00b0)")
@@ -469,13 +569,16 @@ class SlopeStabilityPanel(QWidget):
             ax.plot(result.x_exit, np.interp(result.x_exit, surface_x,
                     surface_z), "o", color=SLIP_COLOR, markersize=8, zorder=6)
 
-            # Slice visualization
+            # Slice visualization (pickable for force polygon)
+            self._slice_artists = {}
             if (self.show_slices_cb.isChecked() and
                     self._last_slices is not None):
-                for s in self._last_slices:
-                    ax.plot([s.x_mid, s.x_mid], [s.z_base, s.z_top],
-                            color="#666666", linewidth=0.5, alpha=0.6,
-                            zorder=3)
+                for idx, s in enumerate(self._last_slices):
+                    line, = ax.plot(
+                        [s.x_mid, s.x_mid], [s.z_base, s.z_top],
+                        color="#666666", linewidth=1.0, alpha=0.6,
+                        zorder=3, picker=5)
+                    self._slice_artists[line] = idx
 
             # FOS label
             fos_color = "#4CAF50" if result.FOS >= 1.0 else "#D32F2F"
@@ -500,10 +603,180 @@ class SlopeStabilityPanel(QWidget):
         ax.set_title("Slope Stability Analysis", fontweight="bold")
         ax.legend(loc="upper left", fontsize=8, framealpha=0.9)
         ax.grid(True, alpha=0.3)
+
+        # Connect pick event for slice force polygon
+        if hasattr(self, '_pick_cid') and self._pick_cid is not None:
+            self.canvas.mpl_disconnect(self._pick_cid)
+        self._pick_cid = self.canvas.mpl_connect(
+            'pick_event', self._on_slice_pick)
+        self._highlight_patch = None
+
         self.canvas.draw()
 
     def _plot_result(self, geom, result):
         self._plot_cross_section(geom, result)
+
+    # --- Slice force polygon ---
+    def _on_slice_pick(self, event):
+        """Handle click on a slice line — show force polygon popup."""
+        artist = event.artist
+        if not hasattr(self, '_slice_artists'):
+            return
+        idx = self._slice_artists.get(artist)
+        if idx is None or self._last_slices is None:
+            return
+
+        s = self._last_slices[idx]
+        forces = compute_slice_forces(s)
+
+        # Highlight the picked slice on main plot
+        ax = self.canvas.axes
+        if self._highlight_patch is not None:
+            try:
+                self._highlight_patch.remove()
+            except ValueError:
+                pass
+        from matplotlib.patches import Polygon as MplPolygon
+        verts = [
+            (s.x_left, s.z_base), (s.x_left, s.z_top),
+            (s.x_right, s.z_top), (s.x_right, s.z_base),
+        ]
+        self._highlight_patch = MplPolygon(
+            verts, closed=True, facecolor="yellow", alpha=0.5,
+            edgecolor="orange", linewidth=2, zorder=8)
+        ax.add_patch(self._highlight_patch)
+        self.canvas.draw()
+
+        # Open force polygon popup
+        self._plot_force_polygon(idx, s, forces)
+
+    def _plot_force_polygon(self, idx, s, forces):
+        """Open a popup matplotlib window with the slice free-body diagram."""
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(1, 1, figsize=(6, 7))
+        fig.canvas.manager.set_window_title(
+            f"Slice {idx + 1} Free Body Diagram")
+
+        alpha = s.alpha
+        cx = s.x_mid
+        cz = s.z_centroid
+
+        # Draw slice outline (tilted rectangle)
+        hw = s.width / 2.0
+        hh = s.height / 2.0
+        corners = [
+            (-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh),
+        ]
+        # Shift to centroid position (no rotation for clarity)
+        xs = [cx + c[0] for c in corners] + [cx + corners[0][0]]
+        zs = [cz + c[1] for c in corners] + [cz + corners[0][1]]
+        ax.fill(xs[:-1], zs[:-1], color="#e6d4a0", alpha=0.6,
+                edgecolor="black", linewidth=1.5)
+        ax.plot(xs, zs, color="black", linewidth=1.5)
+
+        # Draw base line (tilted)
+        base_cx = cx
+        base_cz = s.z_base
+        bl2 = s.base_length / 2.0
+        bx1 = base_cx - bl2 * math.cos(alpha)
+        bz1 = base_cz - bl2 * math.sin(alpha)
+        bx2 = base_cx + bl2 * math.cos(alpha)
+        bz2 = base_cz + bl2 * math.sin(alpha)
+        ax.plot([bx1, bx2], [bz1, bz2], color="#8B4513", linewidth=3,
+                zorder=5)
+
+        # Helper: draw force arrow
+        def _arrow(x0, z0, dx, dz, color, label, ha="left", va="bottom"):
+            scale = s.height * 0.4 / max(abs(forces.W), 1e-6)
+            adx = dx * scale
+            adz = dz * scale
+            ax.annotate(
+                "", xy=(x0 + adx, z0 + adz), xytext=(x0, z0),
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=2.5,
+                                mutation_scale=15),
+                zorder=10,
+            )
+            ax.text(
+                x0 + adx * 1.15, z0 + adz * 1.15,
+                f"{label}\n{abs(math.sqrt(dx**2 + dz**2)):.1f} kN/m",
+                fontsize=9, color=color, fontweight="bold",
+                ha=ha, va=va, zorder=11,
+            )
+
+        # W: weight downward from centroid
+        _arrow(cx, cz, 0, -forces.W, "#1565C0", "W",
+               ha="right", va="top")
+
+        # N': normal to base, into soil
+        n_dx = -math.sin(alpha)
+        n_dz = -math.cos(alpha)
+        _arrow(base_cx, base_cz, n_dx * forces.N_prime,
+               n_dz * forces.N_prime, "#2E7D32", "N'",
+               ha="right", va="top")
+
+        # S: along base in driving direction
+        s_dx = math.cos(alpha)
+        s_dz = math.sin(alpha)
+        if forces.S_mobilized < 0:
+            s_dx, s_dz = -s_dx, -s_dz
+        _arrow(base_cx, base_cz, s_dx * abs(forces.S_mobilized),
+               s_dz * abs(forces.S_mobilized), "#D32F2F", "S",
+               ha="left", va="bottom")
+
+        # T: along base, resisting (opposite to S)
+        t_dx = -math.cos(alpha)
+        t_dz = -math.sin(alpha)
+        if forces.S_mobilized < 0:
+            t_dx, t_dz = -t_dx, -t_dz
+        _arrow(base_cx, base_cz, t_dx * forces.T_available,
+               t_dz * forces.T_available, "#1B5E20", "T",
+               ha="right", va="top")
+
+        # U: pore water force (normal to base, upward)
+        if forces.U > 0.1:
+            u_dx = math.sin(alpha)
+            u_dz = math.cos(alpha)
+            _arrow(base_cx, base_cz, u_dx * forces.U,
+                   u_dz * forces.U, "#00BCD4", "U",
+                   ha="left", va="bottom")
+
+        # Seismic: horizontal
+        if abs(forces.seismic) > 0.1:
+            _arrow(cx, cz, forces.seismic, 0, "#FF9800", "kh*W",
+                   ha="left", va="bottom")
+
+        # Info text box
+        info = (
+            f"Slice {idx + 1}\n"
+            f"x_mid = {s.x_mid:.2f} m\n"
+            f"alpha = {forces.alpha_deg:.1f} deg\n"
+            f"c = {s.c:.1f} kPa, phi = {s.phi:.1f} deg\n"
+            f"u = {s.pore_pressure:.1f} kPa\n"
+            f"dl = {s.base_length:.3f} m\n"
+            f"\n"
+            f"W = {forces.W:.1f} kN/m\n"
+            f"N' = {forces.N_prime:.1f} kN/m\n"
+            f"S = {forces.S_mobilized:.1f} kN/m\n"
+            f"T = {forces.T_available:.1f} kN/m\n"
+            f"U = {forces.U:.1f} kN/m"
+        )
+        ax.text(
+            0.02, 0.98, info, transform=ax.transAxes,
+            fontsize=9, fontfamily="monospace",
+            verticalalignment="top",
+            bbox=dict(boxstyle="round,pad=0.5", facecolor="white",
+                      edgecolor="#666", alpha=0.95),
+            zorder=12,
+        )
+
+        ax.set_aspect("equal")
+        ax.set_xlabel("x (m)")
+        ax.set_ylabel("Elevation (m)")
+        ax.set_title(f"Slice {idx + 1} Free Body Diagram", fontweight="bold")
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        plt.show(block=False)
 
     def get_state(self):
         surface = self._read_surface()

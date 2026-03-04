@@ -120,6 +120,56 @@ class FootingDesignPanel(QWidget):
         ag.setLayout(al)
         form.addWidget(ag)
 
+        # Concrete design group (ACI 318-19)
+        cg = QGroupBox("Concrete Design (ACI 318)")
+        cl = QVBoxLayout()
+        self.concrete_cb = QCheckBox("Enable concrete design")
+        self.concrete_cb.setChecked(False)
+        self.concrete_form_widget = QWidget()
+        cf = QFormLayout(self.concrete_form_widget)
+
+        self.col_load_sb = QDoubleSpinBox(
+            value=1000, minimum=1, maximum=100000,
+            singleStep=100, decimals=0, suffix=" kN")
+        self.col_width_sb = QDoubleSpinBox(
+            value=0.4, minimum=0.1, maximum=5.0,
+            singleStep=0.05, decimals=2, suffix=" m")
+        self.col_depth_sb = QDoubleSpinBox(
+            value=0.4, minimum=0.1, maximum=5.0,
+            singleStep=0.05, decimals=2, suffix=" m")
+        self.ftg_thick_sb = QDoubleSpinBox(
+            value=0.5, minimum=0.15, maximum=3.0,
+            singleStep=0.05, decimals=2, suffix=" m")
+        self.fc_sb = QDoubleSpinBox(
+            value=28.0, minimum=17.0, maximum=70.0,
+            singleStep=1.0, decimals=1, suffix=" MPa")
+        self.fy_sb = QDoubleSpinBox(
+            value=420.0, minimum=250.0, maximum=700.0,
+            singleStep=10.0, decimals=0, suffix=" MPa")
+        self.cover_sb = QDoubleSpinBox(
+            value=75.0, minimum=25.0, maximum=150.0,
+            singleStep=5.0, decimals=0, suffix=" mm")
+        self.bar_size_cb = QComboBox()
+        self.bar_size_cb.addItems([
+            "#4", "#5", "#6", "#7", "#8", "#9", "#10", "#11"])
+        self.bar_size_cb.setCurrentText("#8")
+
+        cf.addRow("Column Pu:", self.col_load_sb)
+        cf.addRow("Column width:", self.col_width_sb)
+        cf.addRow("Column depth:", self.col_depth_sb)
+        cf.addRow("Footing thickness h:", self.ftg_thick_sb)
+        cf.addRow("f'c:", self.fc_sb)
+        cf.addRow("fy:", self.fy_sb)
+        cf.addRow("Cover:", self.cover_sb)
+        cf.addRow("Bar size:", self.bar_size_cb)
+
+        self.concrete_form_widget.setVisible(False)
+        self.concrete_cb.toggled.connect(self.concrete_form_widget.setVisible)
+        cl.addWidget(self.concrete_cb)
+        cl.addWidget(self.concrete_form_widget)
+        cg.setLayout(cl)
+        form.addWidget(cg)
+
         # Run button
         self.run_btn = QPushButton("Analyze")
         self.run_btn.clicked.connect(self._run_analysis)
@@ -272,6 +322,26 @@ class FootingDesignPanel(QWidget):
                 "D": D,
             }
 
+            # --- Concrete design (if enabled) ---
+            concrete_result = None
+            if self.concrete_cb.isChecked():
+                from bearing_capacity.concrete_design import (
+                    design_concrete_footing,
+                )
+                concrete_result = design_concrete_footing(
+                    P_kN=self.col_load_sb.value(),
+                    B_m=B,
+                    L_m=L_val,
+                    h_m=self.ftg_thick_sb.value(),
+                    fc_MPa=self.fc_sb.value(),
+                    fy_MPa=self.fy_sb.value(),
+                    col_b_m=self.col_width_sb.value(),
+                    col_d_m=self.col_depth_sb.value(),
+                    cover_mm=self.cover_sb.value(),
+                    bar_size=self.bar_size_cb.currentText(),
+                )
+                self._last_results["concrete"] = concrete_result
+
             # --- Build results text ---
             vesic = bc_results["vesic"]
             lines = self._format_results(
@@ -279,10 +349,13 @@ class FootingDesignPanel(QWidget):
                 s_elastic, s_schmertmann, schmertmann_note,
                 s_meyerhof_spt, meyerhof_note,
             )
+            if concrete_result is not None:
+                lines.append("")
+                lines.append(concrete_result.summary())
             self.results_text.setText("\n".join(lines))
 
             # Plot bearing capacity diagram (use Vesic result for visualization)
-            self._plot_result(vesic, bc_results)
+            self._plot_result(vesic, bc_results, concrete_result)
 
             self._status.showMessage(
                 f"q_ult: {vesic.q_ultimate:,.0f} kPa (Vesic), "
@@ -424,10 +497,17 @@ class FootingDesignPanel(QWidget):
     # ------------------------------------------------------------------
     # Plotting
     # ------------------------------------------------------------------
-    def _plot_result(self, vesic_result, bc_results):
-        """Plot bearing capacity diagram + method comparison bar."""
-        ax = self.canvas.axes
-        ax.clear()
+    def _plot_result(self, vesic_result, bc_results, concrete_result=None):
+        """Plot bearing capacity diagram + optional concrete plan view."""
+        fig = self.canvas.fig
+        fig.clear()
+
+        if concrete_result is not None:
+            ax = fig.add_subplot(1, 2, 1)
+            ax2 = fig.add_subplot(1, 2, 2)
+        else:
+            ax = fig.add_subplot(1, 1, 1)
+            ax2 = None
 
         B = self.width_sb.value()
         D = self.depth_sb.value()
@@ -518,10 +598,89 @@ class FootingDesignPanel(QWidget):
         ax.set_aspect("equal")
         ax.set_xlabel("Distance (m)")
         ax.set_ylabel("Elevation (m)")
-        ax.set_title("Footing Design — Bearing Capacity", fontweight="bold")
+        ax.set_title("Bearing Capacity", fontweight="bold")
         ax.legend(loc="lower right", fontsize=8)
         ax.grid(True, alpha=0.3)
+
+        # Concrete plan view
+        if ax2 is not None and concrete_result is not None:
+            self._plot_concrete_plan(ax2, concrete_result)
+
+        fig.tight_layout()
         self.canvas.draw()
+
+    def _plot_concrete_plan(self, ax, cr):
+        """Draw plan-view concrete design check on the given axes."""
+        B = cr.B_m
+        L = cr.L_m
+        d = cr.d_m
+        col_b = cr.col_b_m
+        col_d = cr.col_d_m
+
+        # Footing outline
+        ax.add_patch(mpatches.Rectangle(
+            (-B / 2, -L / 2), B, L,
+            facecolor="#e0e0e0", edgecolor="black", linewidth=2))
+
+        # Column outline (filled)
+        ax.add_patch(mpatches.Rectangle(
+            (-col_b / 2, -col_d / 2), col_b, col_d,
+            facecolor="#757575", edgecolor="black", linewidth=2, zorder=4))
+        ax.text(0, 0, "COL", ha="center", va="center",
+                fontsize=8, fontweight="bold", color="white", zorder=5)
+
+        # One-way shear critical section (at d from column face, both sides)
+        ow_color = "#4CAF50" if cr.oneway_ok else "#D32F2F"
+        ow_x = col_b / 2 + d
+        ax.plot([ow_x, ow_x], [-L / 2, L / 2],
+                color=ow_color, linewidth=2, linestyle="--",
+                label=f"1-way ({('OK' if cr.oneway_ok else 'FAIL')})")
+        ax.plot([-ow_x, -ow_x], [-L / 2, L / 2],
+                color=ow_color, linewidth=2, linestyle="--")
+
+        # Two-way shear critical perimeter (at d/2 from column face)
+        tw_color = "#1976D2" if cr.twoway_ok else "#D32F2F"
+        tw_bx = col_b / 2 + d / 2
+        tw_by = col_d / 2 + d / 2
+        ax.add_patch(mpatches.Rectangle(
+            (-tw_bx, -tw_by), 2 * tw_bx, 2 * tw_by,
+            facecolor="none", edgecolor=tw_color, linewidth=2,
+            linestyle=":",
+            label=f"2-way ({('OK' if cr.twoway_ok else 'FAIL')})"))
+
+        # Rebar lines (along B direction)
+        n = cr.n_bars
+        cover_m = self.cover_sb.value() / 1000.0
+        if n > 1:
+            y_start = -L / 2 + cover_m
+            y_end = L / 2 - cover_m
+            spacing_m = cr.spacing_mm / 1000.0
+            for i in range(n):
+                x = -B / 2 + cover_m + i * spacing_m
+                if x > B / 2 - cover_m:
+                    break
+                ax.plot([x, x], [y_start, y_end],
+                        color="#FF5722", linewidth=0.8, alpha=0.7)
+
+        # Labels
+        ax.set_xlim(-B / 2 - 0.2, B / 2 + 0.2)
+        ax.set_ylim(-L / 2 - 0.2, L / 2 + 0.2)
+        ax.set_aspect("equal")
+        ax.set_xlabel("B direction (m)")
+        ax.set_ylabel("L direction (m)")
+        ax.set_title("Concrete Design — Plan View", fontweight="bold")
+        ax.legend(loc="upper right", fontsize=7)
+        ax.grid(True, alpha=0.3)
+
+        # Rebar info text
+        ax.text(
+            0.02, 0.02,
+            f"{cr.n_bars} {cr.bar_size} @ {cr.spacing_mm:.0f} mm\n"
+            f"As = {cr.As_provided_mm2:.0f} mm\u00b2",
+            transform=ax.transAxes, fontsize=8,
+            verticalalignment="bottom",
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
+                      alpha=0.9))
 
     # ------------------------------------------------------------------
     # State save / load
@@ -544,6 +703,15 @@ class FootingDesignPanel(QWidget):
             "spt_enabled": self.spt_cb.isChecked(),
             "spt_n": self.spt_n_sb.value(),
             "fs": self.fs_sb.value(),
+            "concrete_enabled": self.concrete_cb.isChecked(),
+            "col_load": self.col_load_sb.value(),
+            "col_width": self.col_width_sb.value(),
+            "col_depth": self.col_depth_sb.value(),
+            "ftg_thick": self.ftg_thick_sb.value(),
+            "fc": self.fc_sb.value(),
+            "fy": self.fy_sb.value(),
+            "cover": self.cover_sb.value(),
+            "bar_size": self.bar_size_cb.currentText(),
             "results_text": self.results_text.toPlainText(),
         }
 
@@ -564,5 +732,15 @@ class FootingDesignPanel(QWidget):
         self.spt_cb.setChecked(state.get("spt_enabled", False))
         self.spt_n_sb.setValue(state.get("spt_n", 20))
         self.fs_sb.setValue(state.get("fs", 3.0))
+        self.concrete_cb.setChecked(state.get("concrete_enabled", False))
+        self.col_load_sb.setValue(state.get("col_load", 1000))
+        self.col_width_sb.setValue(state.get("col_width", 0.4))
+        self.col_depth_sb.setValue(state.get("col_depth", 0.4))
+        self.ftg_thick_sb.setValue(state.get("ftg_thick", 0.5))
+        self.fc_sb.setValue(state.get("fc", 28.0))
+        self.fy_sb.setValue(state.get("fy", 420.0))
+        self.cover_sb.setValue(state.get("cover", 75.0))
+        if state.get("bar_size"):
+            self.bar_size_cb.setCurrentText(state["bar_size"])
         if state.get("results_text"):
             self.results_text.setText(state["results_text"])

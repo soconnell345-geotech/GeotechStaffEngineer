@@ -9,6 +9,7 @@ from qt_panels.common import (
     QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QCheckBox,
     QScrollArea, QSplitter, QStackedWidget, QTabWidget,
     QTableWidget, QTableWidgetItem, QHeaderView, Qt,
+    QFileDialog, QMessageBox,
     MplCanvas, make_results_box, NavigationToolbar2QT,
     MESH_PRESETS, LAYER_COLORS,
 )
@@ -17,6 +18,10 @@ from fem2d import (
     analyze_excavation, analyze_seepage, analyze_consolidation,
     generate_rect_mesh, generate_slope_mesh,
     detect_boundary_nodes,
+)
+from fem2d.analysis import (
+    ConstructionPhase, assign_element_groups, analyze_staged,
+    create_wall_elements,
 )
 
 
@@ -51,14 +56,24 @@ class FEM2DPanel(QWidget):
         ("Final Displacement Y", "final_disp_y"),
         ("Final Pore Pressure", "final_pp"),
     ]
+    FIELDS_STAGED = [
+        ("Displacement Magnitude", "disp_mag"),
+        ("Displacement X", "disp_x"),
+        ("Displacement Y", "disp_y"),
+        ("Stress \u03c3xx", "sigma_xx"),
+        ("Stress \u03c3yy", "sigma_yy"),
+        ("Shear \u03c4xy", "tau_xy"),
+        ("Phase Summary", "phase_summary"),
+    ]
 
     def __init__(self, status_bar):
         super().__init__()
         self._status = status_bar
         self._last_result = None
-        self._last_result_type = None  # 'fem', 'seepage', 'consolidation'
+        self._last_result_type = None  # 'fem', 'seepage', 'consolidation', 'staged'
         self._last_mesh = None  # (nodes, elements) for consolidation/preview
         self._preview_mesh = None  # (nodes, elements, layer_ids, bc_nodes)
+        self._imported_boundary_polylines = None  # from DXF import
         self._build_ui()
 
     # =======================================================================
@@ -124,6 +139,15 @@ class FEM2DPanel(QWidget):
         self.scale_sb.setMaximumWidth(80)
         self.scale_sb.valueChanged.connect(self._replot)
         field_row.addWidget(self.scale_sb)
+        # Phase selector (hidden until staged results)
+        self.phase_label = QLabel("Phase:")
+        self.phase_label.setVisible(False)
+        field_row.addWidget(self.phase_label)
+        self.phase_cb = QComboBox()
+        self.phase_cb.setVisible(False)
+        self.phase_cb.setMinimumWidth(120)
+        self.phase_cb.currentIndexChanged.connect(self._replot)
+        field_row.addWidget(self.phase_cb)
         right_layout.addLayout(field_row)
 
         right_splitter = QSplitter(Qt.Vertical)
@@ -156,11 +180,18 @@ class FEM2DPanel(QWidget):
         self.type_cb.addItems([
             "Gravity", "Foundation", "Slope SRM",
             "Excavation", "Seepage", "Consolidation",
+            "Staged Construction",
         ])
         self.type_cb.currentIndexChanged.connect(self._on_type_changed)
         tl.addWidget(self.type_cb)
         type_grp.setLayout(tl)
         form.addWidget(type_grp)
+
+        # Import DXF button
+        self.import_dxf_btn = QPushButton("Import DXF...")
+        self.import_dxf_btn.setObjectName("secondary")
+        self.import_dxf_btn.clicked.connect(self._import_dxf)
+        form.addWidget(self.import_dxf_btn)
 
         # Domain & Mesh
         dom_grp = QGroupBox("Domain && Mesh")
@@ -267,6 +298,40 @@ class FEM2DPanel(QWidget):
         soil_lay.addLayout(btn_row)
         soil_grp.setLayout(soil_lay)
         form.addWidget(soil_grp)
+
+        # Layer boundaries (polylines) — checkable group
+        self.poly_grp = QGroupBox("Layer Boundaries (Polylines)")
+        self.poly_grp.setCheckable(True)
+        self.poly_grp.setChecked(False)
+        poly_lay = QVBoxLayout()
+        poly_lay.addWidget(QLabel(
+            "Define non-horizontal layer boundaries as polylines.\n"
+            "Auto-populated from DXF import."))
+        self.poly_boundary_cb = QComboBox()
+        self.poly_boundary_cb.currentIndexChanged.connect(
+            self._on_poly_boundary_changed)
+        poly_lay.addWidget(self.poly_boundary_cb)
+        self.poly_table = QTableWidget(0, 2)
+        self.poly_table.setHorizontalHeaderLabels(["x (m)", "z (m)"])
+        self.poly_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch)
+        self.poly_table.setMaximumHeight(120)
+        poly_lay.addWidget(self.poly_table)
+        poly_btns = QHBoxLayout()
+        poly_add = QPushButton("+")
+        poly_add.setMaximumWidth(40)
+        poly_add.clicked.connect(self._add_poly_point)
+        poly_rem = QPushButton("\u2013")
+        poly_rem.setMaximumWidth(40)
+        poly_rem.setObjectName("secondary")
+        poly_rem.clicked.connect(self._remove_poly_point)
+        poly_btns.addWidget(poly_add)
+        poly_btns.addWidget(poly_rem)
+        poly_btns.addStretch()
+        poly_lay.addLayout(poly_btns)
+        self.poly_grp.setLayout(poly_lay)
+        form.addWidget(self.poly_grp)
+        self._poly_data = {}  # {boundary_name: [(x,z), ...]}
 
         form.addStretch()
         self.input_tabs.addTab(tab, "Model")
@@ -505,6 +570,115 @@ class FEM2DPanel(QWidget):
         con_l.addRow("", self.con_log_cb)
         self.stack.addWidget(con_w)
 
+        # 6: Staged Construction
+        staged_w = QWidget()
+        staged_l = QVBoxLayout(staged_w)
+
+        # Element Groups table
+        staged_l.addWidget(QLabel("Element Groups:"))
+        self.groups_table = QTableWidget(2, 5)
+        self.groups_table.setHorizontalHeaderLabels([
+            "Name", "x_min", "x_max", "y_min", "y_max"])
+        self.groups_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch)
+        self.groups_table.setMaximumHeight(120)
+        # Default groups
+        for i, (name, xmin, xmax, ymin, ymax) in enumerate([
+            ("retained", "-20", "0", "-15", "0"),
+            ("excavated", "0", "10", "-5", "0"),
+        ]):
+            for j, v in enumerate([name, xmin, xmax, ymin, ymax]):
+                self.groups_table.setItem(i, j, QTableWidgetItem(v))
+        grp_btns = QHBoxLayout()
+        grp_add = QPushButton("+")
+        grp_add.setMaximumWidth(40)
+        grp_add.clicked.connect(self._add_group_row)
+        grp_rem = QPushButton("\u2013")
+        grp_rem.setMaximumWidth(40)
+        grp_rem.setObjectName("secondary")
+        grp_rem.clicked.connect(self._remove_group_row)
+        self.preview_groups_btn = QPushButton("Preview Groups")
+        self.preview_groups_btn.setObjectName("secondary")
+        self.preview_groups_btn.clicked.connect(self._preview_groups)
+        grp_btns.addWidget(grp_add)
+        grp_btns.addWidget(grp_rem)
+        grp_btns.addWidget(self.preview_groups_btn)
+        grp_btns.addStretch()
+        staged_l.addWidget(self.groups_table)
+        staged_l.addLayout(grp_btns)
+
+        # Wall definition (checkable)
+        self.wall_grp = QGroupBox("Wall Elements")
+        self.wall_grp.setCheckable(True)
+        self.wall_grp.setChecked(True)
+        wall_lay = QFormLayout()
+        self.stg_wall_x = QDoubleSpinBox()
+        self.stg_wall_x.setRange(-200, 200)
+        self.stg_wall_x.setValue(0.0)
+        self.stg_wall_x.setDecimals(1)
+        self.stg_wall_x.setSuffix(" m")
+        self.stg_wall_top = QDoubleSpinBox()
+        self.stg_wall_top.setRange(-200, 200)
+        self.stg_wall_top.setValue(0.0)
+        self.stg_wall_top.setDecimals(1)
+        self.stg_wall_top.setSuffix(" m")
+        self.stg_wall_bot = QDoubleSpinBox()
+        self.stg_wall_bot.setRange(-200, 200)
+        self.stg_wall_bot.setValue(-10.0)
+        self.stg_wall_bot.setDecimals(1)
+        self.stg_wall_bot.setSuffix(" m")
+        self.stg_wall_EI = QDoubleSpinBox()
+        self.stg_wall_EI.setRange(100, 1e8)
+        self.stg_wall_EI.setValue(50000)
+        self.stg_wall_EI.setDecimals(0)
+        self.stg_wall_EI.setSuffix(" kNm\u00b2/m")
+        self.stg_wall_EA = QDoubleSpinBox()
+        self.stg_wall_EA.setRange(1e3, 1e10)
+        self.stg_wall_EA.setValue(5e6)
+        self.stg_wall_EA.setDecimals(0)
+        self.stg_wall_EA.setSuffix(" kN/m")
+        wall_lay.addRow("Wall x:", self.stg_wall_x)
+        wall_lay.addRow("Wall top:", self.stg_wall_top)
+        wall_lay.addRow("Wall bottom:", self.stg_wall_bot)
+        wall_lay.addRow("EI:", self.stg_wall_EI)
+        wall_lay.addRow("EA:", self.stg_wall_EA)
+        self.wall_grp.setLayout(wall_lay)
+        staged_l.addWidget(self.wall_grp)
+
+        # Phase table
+        staged_l.addWidget(QLabel("Construction Phases:"))
+        self.phase_table = QTableWidget(3, 6)
+        self.phase_table.setHorizontalHeaderLabels([
+            "Name", "Active Groups", "Beams?",
+            "GWT (m)", "Steps", "Reset u?"])
+        self.phase_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch)
+        self.phase_table.setMaximumHeight(140)
+        # Default phases
+        default_phases = [
+            ("Initial", "retained,excavated,_default", "No", "", "5", "No"),
+            ("Excavation", "retained,_default", "Yes", "", "5", "Yes"),
+            ("Dewatering", "retained,_default", "Yes", "-8", "5", "No"),
+        ]
+        for i, vals in enumerate(default_phases):
+            for j, v in enumerate(vals):
+                self.phase_table.setItem(i, j, QTableWidgetItem(v))
+        phase_btns = QHBoxLayout()
+        phase_add = QPushButton("+")
+        phase_add.setMaximumWidth(40)
+        phase_add.clicked.connect(self._add_phase_row)
+        phase_rem = QPushButton("\u2013")
+        phase_rem.setMaximumWidth(40)
+        phase_rem.setObjectName("secondary")
+        phase_rem.clicked.connect(self._remove_phase_row)
+        phase_btns.addWidget(phase_add)
+        phase_btns.addWidget(phase_rem)
+        phase_btns.addStretch()
+        staged_l.addWidget(self.phase_table)
+        staged_l.addLayout(phase_btns)
+
+        self.stack.addWidget(staged_w)
+
         form.addWidget(self.stack)
 
         # Solver settings
@@ -611,6 +785,195 @@ class FEM2DPanel(QWidget):
         if row >= 0 and self.strut_table.rowCount() > 1:
             self.strut_table.removeRow(row)
 
+    def _add_group_row(self):
+        r = self.groups_table.rowCount()
+        self.groups_table.insertRow(r)
+        defaults = [f"group_{r}", "-10", "10", "-10", "0"]
+        for j, v in enumerate(defaults):
+            self.groups_table.setItem(r, j, QTableWidgetItem(v))
+
+    def _remove_group_row(self):
+        row = self.groups_table.currentRow()
+        if row >= 0 and self.groups_table.rowCount() > 1:
+            self.groups_table.removeRow(row)
+
+    def _add_phase_row(self):
+        r = self.phase_table.rowCount()
+        self.phase_table.insertRow(r)
+        defaults = [f"Phase {r + 1}", "_default", "No", "", "5", "No"]
+        for j, v in enumerate(defaults):
+            self.phase_table.setItem(r, j, QTableWidgetItem(v))
+
+    def _remove_phase_row(self):
+        row = self.phase_table.currentRow()
+        if row >= 0 and self.phase_table.rowCount() > 1:
+            self.phase_table.removeRow(row)
+
+    def _add_poly_point(self):
+        r = self.poly_table.rowCount()
+        self.poly_table.insertRow(r)
+        self.poly_table.setItem(r, 0, QTableWidgetItem("0"))
+        self.poly_table.setItem(r, 1, QTableWidgetItem("0"))
+
+    def _remove_poly_point(self):
+        row = self.poly_table.currentRow()
+        if row >= 0:
+            self.poly_table.removeRow(row)
+
+    def _on_poly_boundary_changed(self, idx):
+        """Save current table, load selected boundary's points."""
+        # Save current
+        self._save_current_poly()
+        # Load new
+        name = self.poly_boundary_cb.currentText()
+        pts = self._poly_data.get(name, [])
+        self.poly_table.setRowCount(len(pts))
+        for i, (x, z) in enumerate(pts):
+            self.poly_table.setItem(i, 0, QTableWidgetItem(f"{x:.2f}"))
+            self.poly_table.setItem(i, 1, QTableWidgetItem(f"{z:.2f}"))
+
+    def _save_current_poly(self):
+        """Save current poly_table contents to _poly_data."""
+        name = self.poly_boundary_cb.currentText()
+        if not name:
+            return
+        pts = []
+        for r in range(self.poly_table.rowCount()):
+            x_item = self.poly_table.item(r, 0)
+            z_item = self.poly_table.item(r, 1)
+            if x_item and z_item:
+                try:
+                    pts.append((float(x_item.text()), float(z_item.text())))
+                except ValueError:
+                    pass
+        self._poly_data[name] = pts
+
+    def _read_layer_polylines(self):
+        """Return list of (N,2) numpy arrays from polyline boundary data."""
+        import numpy as np
+        self._save_current_poly()
+        polylines = []
+        for i in range(self.poly_boundary_cb.count()):
+            name = self.poly_boundary_cb.itemText(i)
+            pts = self._poly_data.get(name, [])
+            if pts:
+                sorted_pts = sorted(pts, key=lambda p: p[0])
+                polylines.append(np.array(sorted_pts, dtype=float))
+        return polylines if polylines else None
+
+    def _read_element_groups(self):
+        """Return dict of {group_name: {x_min, x_max, y_min, y_max}}."""
+        regions = {}
+        for i in range(self.groups_table.rowCount()):
+            vals = []
+            for j in range(self.groups_table.columnCount()):
+                item = self.groups_table.item(i, j)
+                vals.append(item.text() if item else "")
+            if not vals[0]:
+                continue
+            try:
+                regions[vals[0]] = {
+                    'x_min': float(vals[1]), 'x_max': float(vals[2]),
+                    'y_min': float(vals[3]), 'y_max': float(vals[4]),
+                }
+            except (ValueError, IndexError):
+                pass
+        return regions
+
+    def _read_phases(self):
+        """Return list of ConstructionPhase from phase table."""
+        phases = []
+        for i in range(self.phase_table.rowCount()):
+            vals = []
+            for j in range(self.phase_table.columnCount()):
+                item = self.phase_table.item(i, j)
+                vals.append(item.text().strip() if item else "")
+            if not vals[0]:
+                continue
+            name = vals[0]
+            active_groups = [g.strip() for g in vals[1].split(",")
+                            if g.strip()]
+            beams = vals[2].lower() in ("yes", "true", "1")
+            gwt_str = vals[3]
+            gwt = float(gwt_str) if gwt_str else None
+            n_steps = int(vals[4]) if vals[4] else 5
+            reset_u = vals[5].lower() in ("yes", "true", "1")
+
+            beam_ids = None
+            if beams:
+                beam_ids = list(range(100))  # all beams
+
+            phases.append(ConstructionPhase(
+                name=name,
+                active_soil_groups=active_groups,
+                active_beam_ids=beam_ids,
+                gwt=gwt,
+                n_steps=n_steps,
+                reset_displacements=reset_u,
+            ))
+        return phases
+
+    def _preview_groups(self):
+        """Generate mesh and color elements by group assignment."""
+        try:
+            self._status.showMessage("Previewing element groups...")
+            QApplication.processEvents()
+
+            nodes, elements = self._generate_mesh_for_preview()
+            regions = self._read_element_groups()
+            groups = assign_element_groups(nodes, elements, regions)
+
+            # Build color array
+            import numpy as np
+            group_names = list(regions.keys()) + ['_default']
+            n_elem = len(elements)
+            colors = ['#cccccc'] * n_elem
+            for gi, gname in enumerate(group_names):
+                color = LAYER_COLORS[gi % len(LAYER_COLORS)]
+                for eidx in groups.get(gname, []):
+                    colors[eidx] = color
+
+            # Plot
+            self.canvas.fig.clear()
+            ax = self.canvas.fig.add_subplot(111)
+            self.canvas.axes = ax
+
+            from matplotlib.collections import PolyCollection
+            verts = [nodes[tri] for tri in elements]
+            pc = PolyCollection(verts, facecolors=colors,
+                                edgecolors='#555555', linewidths=0.3,
+                                alpha=0.7)
+            ax.add_collection(pc)
+
+            # Legend
+            import matplotlib.patches as mpatches
+            patches = []
+            for gi, gname in enumerate(group_names):
+                color = LAYER_COLORS[gi % len(LAYER_COLORS)]
+                n = len(groups.get(gname, []))
+                patches.append(mpatches.Patch(
+                    color=color, label=f"{gname} ({n})"))
+            ax.legend(handles=patches, loc="upper right", fontsize=8)
+
+            x = nodes[:, 0]
+            y = nodes[:, 1]
+            ax.set_xlim(x.min() - 0.5, x.max() + 0.5)
+            ax.set_ylim(y.min() - 0.5, y.max() + 0.5)
+            ax.set_aspect("equal")
+            ax.set_xlabel("X (m)")
+            ax.set_ylabel("Y (m)")
+            ax.set_title("Element Group Preview", fontweight="bold")
+            ax.grid(True, alpha=0.2)
+            self.canvas.fig.tight_layout()
+            self.canvas.draw()
+
+            total = sum(len(v) for v in groups.values())
+            self._status.showMessage(
+                f"Groups: {len(regions)} defined, {total} elements", 10000)
+
+        except Exception as e:
+            self._status.showMessage(f"Group preview error: {e}", 10000)
+
     def _read_struts(self):
         """Return list of strut dicts from strut table."""
         struts = []
@@ -631,6 +994,115 @@ class FEM2DPanel(QWidget):
     # =======================================================================
     # TYPE / MATERIAL CHANGE HANDLERS
     # =======================================================================
+    # --- DXF Import ---
+    def _import_dxf(self):
+        """Open a DXF file, show mapping dialog, populate FEM inputs."""
+        try:
+            from dxf_import import discover_layers, parse_dxf_geometry, build_fem_inputs
+        except ImportError:
+            QMessageBox.warning(
+                self, "Missing Dependency",
+                "DXF import requires ezdxf.\n"
+                "Install with: pip install ezdxf")
+            return
+
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Open DXF File", "",
+            "DXF Files (*.dxf);;All Files (*)")
+        if not filepath:
+            return
+
+        try:
+            from dxf_import import discover_layers
+            discovery = discover_layers(filepath)
+            if not discovery.layers:
+                QMessageBox.warning(
+                    self, "Empty DXF",
+                    "No layers with entities found in this DXF file.")
+                return
+
+            from qt_panels.dxf_import_dialog import DxfLayerMappingDialog
+            dlg = DxfLayerMappingDialog(self, discovery, mode="fem")
+            if dlg.exec_() != dlg.Accepted:
+                return
+
+            mapping, soil_properties, _, units, flip_y = dlg.get_results()
+
+            parse_result = parse_dxf_geometry(
+                filepath, mapping, units=units, flip_y=flip_y)
+
+            fem_inputs = build_fem_inputs(parse_result, soil_properties)
+
+            self._populate_from_fem_inputs(fem_inputs)
+            self._status.showMessage(
+                f"DXF imported: {len(fem_inputs['soil_layers'])} layers",
+                10000)
+
+        except Exception as e:
+            QMessageBox.critical(self, "DXF Import Error", str(e))
+
+    def _populate_from_fem_inputs(self, fem_inputs):
+        """Fill soil table and domain from DXF-derived FEM inputs."""
+        layers = fem_inputs["soil_layers"]
+        surface = fem_inputs.get("surface_points", [])
+
+        # Store boundary polylines for non-horizontal layer support
+        self._imported_boundary_polylines = fem_inputs.get(
+            "boundary_polylines")
+
+        # Populate polyline boundary controls
+        if self._imported_boundary_polylines:
+            self.poly_grp.setChecked(True)
+            self.poly_boundary_cb.blockSignals(True)
+            self.poly_boundary_cb.clear()
+            self._poly_data = {}
+            for idx, poly in enumerate(self._imported_boundary_polylines):
+                name = f"Boundary {idx + 1}"
+                if idx < len(layers):
+                    name = layers[idx].get("name", name)
+                self.poly_boundary_cb.addItem(name)
+                self._poly_data[name] = [
+                    (float(p[0]), float(p[1])) for p in poly]
+            self.poly_boundary_cb.blockSignals(False)
+            # Show first boundary
+            if self.poly_boundary_cb.count() > 0:
+                self._on_poly_boundary_changed(0)
+
+        # Estimate domain from surface points
+        if surface:
+            xs = [p[0] for p in surface]
+            zs = [p[1] for p in surface]
+            width = max(xs) - min(xs)
+            z_max = max(zs)
+            z_min = min(zs)
+            # Extend below lowest layer
+            if layers:
+                bot = min(l.get("bottom_elevation", -10) for l in layers)
+            else:
+                bot = z_min - 10
+            depth = z_max - bot
+            self.dom_w.setValue(width * 1.5)
+            self.dom_d.setValue(depth * 1.2)
+
+        # Fill soil table
+        self.soil_table.setRowCount(len(layers))
+        for i, sl in enumerate(layers):
+            top = sl.get("top_elevation", 0)
+            bot = sl.get("bottom_elevation", -10)
+            thickness = top - bot
+            vals = [
+                sl.get("name", f"Layer {i + 1}"),
+                f"{thickness:.1f}",
+                f"{sl.get('E', 30000):.0f}",
+                f"{sl.get('nu', 0.3):.2f}",
+                f"{sl.get('gamma', 18):.1f}",
+                f"{sl.get('c', 0):.1f}",
+                f"{sl.get('phi', 0):.1f}",
+                f"{sl.get('psi', 0):.1f}",
+            ]
+            for j, v in enumerate(vals):
+                self.soil_table.setItem(i, j, QTableWidgetItem(v))
+
     def _on_material_model_changed(self, idx):
         self.hs_group.setVisible(idx == 1)
 
@@ -638,6 +1110,12 @@ class FEM2DPanel(QWidget):
         self.stack.setCurrentIndex(idx)
         self._update_field_options()
         self._update_solver_visibility()
+        # Show/hide phase selector
+        is_staged = self.type_cb.currentText() == "Staged Construction"
+        self.phase_label.setVisible(
+            is_staged and self._last_result_type == "staged")
+        self.phase_cb.setVisible(
+            is_staged and self._last_result_type == "staged")
 
     def _update_solver_visibility(self):
         """Show SRF tolerance only for Slope SRM analysis."""
@@ -655,6 +1133,8 @@ class FEM2DPanel(QWidget):
             fields = self.FIELDS_CONSOLIDATION
         elif atype == "Slope SRM":
             fields = self.FIELDS_MECHANICAL_SRM
+        elif atype == "Staged Construction":
+            fields = self.FIELDS_STAGED
         else:
             fields = self.FIELDS_MECHANICAL
         for label, key in fields:
@@ -946,6 +1426,7 @@ class FEM2DPanel(QWidget):
                 gwt = None
                 if self.srm_gwt_cb.isChecked():
                     gwt = self.srm_gwt_elev.value()
+                lp = self._read_layer_polylines() if self.poly_grp.isChecked() else None
                 result = analyze_slope_srm(
                     surface_points=surface_points,
                     soil_layers=soil_layers,
@@ -954,6 +1435,7 @@ class FEM2DPanel(QWidget):
                     n_load_steps=sp["n_steps"],
                     max_iter=sp["max_iter"],
                     tol=sp["tol"],
+                    layer_polylines=lp,
                 )
                 self._last_result = result
                 self._last_result_type = "fem"
@@ -964,6 +1446,7 @@ class FEM2DPanel(QWidget):
                 exc_gwt = None
                 if self.exc_gwt_cb.isChecked():
                     exc_gwt = self.exc_gwt_elev.value()
+                lp = self._read_layer_polylines() if self.poly_grp.isChecked() else None
                 result = analyze_excavation(
                     width=self.exc_width.value(),
                     depth=self.exc_depth.value(),
@@ -977,6 +1460,7 @@ class FEM2DPanel(QWidget):
                     tol=sp["tol"],
                     struts=struts if struts else None,
                     gwt=exc_gwt,
+                    layer_polylines=lp,
                 )
                 self._last_result = result
                 self._last_result_type = "fem"
@@ -1019,6 +1503,94 @@ class FEM2DPanel(QWidget):
                 )
                 self._last_result = result
                 self._last_result_type = "consolidation"
+
+            elif atype == "Staged Construction":
+                width = self.dom_w.value()
+                depth = self.dom_d.value()
+                nodes, elements = generate_rect_mesh(
+                    0, width, -depth, 0, nx, ny)
+                bc_nodes = detect_boundary_nodes(nodes)
+
+                # Assign layers
+                lp = self._read_layer_polylines() if self.poly_grp.isChecked() else None
+                if lp:
+                    from fem2d.mesh import assign_layers_by_polylines
+                    layer_ids = assign_layers_by_polylines(
+                        nodes, elements, lp)
+                elif len(soil_layers) > 1:
+                    from fem2d.mesh import assign_layers_by_elevation
+                    layer_bottoms = [sl['bottom_elevation']
+                                     for sl in soil_layers]
+                    layer_ids = assign_layers_by_elevation(
+                        nodes, elements, layer_bottoms)
+                else:
+                    layer_ids = np.zeros(len(elements), dtype=int)
+
+                # Build material properties
+                material_props = []
+                gamma_arr = np.zeros(len(elements))
+                for e in range(len(elements)):
+                    lid = min(layer_ids[e], len(soil_layers) - 1)
+                    sl = soil_layers[lid]
+                    mp = {
+                        'E': sl.get('E', 30000),
+                        'nu': sl.get('nu', 0.3),
+                        'c': sl.get('c', 0),
+                        'phi': sl.get('phi', 0),
+                        'psi': sl.get('psi', 0),
+                        'gamma': sl.get('gamma', 18),
+                    }
+                    if sl.get('model') == 'hs':
+                        mp['model'] = 'hs'
+                        for key in ('E50_ref', 'Eur_ref', 'm', 'p_ref', 'R_f'):
+                            mp[key] = sl[key]
+                    material_props.append(mp)
+                    gamma_arr[e] = mp['gamma']
+
+                # Element groups
+                regions = self._read_element_groups()
+                element_groups = assign_element_groups(
+                    nodes, elements, regions)
+
+                # Wall elements
+                beam_elems = None
+                if self.wall_grp.isChecked():
+                    dx_mesh = width / nx
+                    wall_tol = max(dx_mesh * 0.6, 0.5)
+                    beam_elems, _ = create_wall_elements(
+                        nodes,
+                        x_wall=self.stg_wall_x.value(),
+                        y_top=self.stg_wall_top.value(),
+                        y_bottom=self.stg_wall_bot.value(),
+                        EA=self.stg_wall_EA.value(),
+                        EI=self.stg_wall_EI.value(),
+                        tol=wall_tol)
+                    if not beam_elems:
+                        beam_elems = None
+
+                # Phases
+                phases = self._read_phases()
+
+                result = analyze_staged(
+                    nodes, elements, material_props, gamma_arr,
+                    bc_nodes, element_groups, phases,
+                    beam_elements=beam_elems,
+                    max_iter=sp["max_iter"], tol=sp["tol"])
+
+                self._last_result = result
+                self._last_result_type = "staged"
+                self._last_mesh = (nodes, elements)
+
+                # Populate phase selector
+                self.phase_cb.blockSignals(True)
+                self.phase_cb.clear()
+                for pr in result.phases:
+                    self.phase_cb.addItem(pr.phase_name)
+                self.phase_cb.blockSignals(False)
+                self.phase_label.setVisible(True)
+                self.phase_cb.setVisible(True)
+                if result.phases:
+                    self.phase_cb.setCurrentIndex(len(result.phases) - 1)
 
             # Display results
             self.results_text.setText(result.summary())
@@ -1081,6 +1653,8 @@ class FEM2DPanel(QWidget):
             self._plot_seepage(ax, self._last_result, field_key)
         elif self._last_result_type == "consolidation":
             self._plot_consolidation(ax, self._last_result, field_key)
+        elif self._last_result_type == "staged":
+            self._plot_staged(ax, self._last_result, field_key)
 
         self.canvas.fig.tight_layout()
         self.canvas.draw()
@@ -1310,6 +1884,114 @@ class FEM2DPanel(QWidget):
                          fontweight="bold")
             ax.grid(True, alpha=0.2)
 
+    def _plot_staged(self, ax, result, field):
+        """Plot staged construction results — per-phase contours or summary."""
+        if not result.phases:
+            ax.text(0.5, 0.5, "No phase results", transform=ax.transAxes,
+                    ha="center", va="center", fontsize=12)
+            return
+
+        if field == "phase_summary":
+            # Bar chart of max displacement per phase
+            names = [p.phase_name for p in result.phases]
+            disp = [p.max_displacement_m * 1000 for p in result.phases]
+            colors_list = ['#4CAF50' if p.converged else '#D32F2F'
+                           for p in result.phases]
+            bars = ax.bar(range(len(names)), disp, color=colors_list,
+                          edgecolor='#333333', linewidth=0.5)
+            ax.set_xticks(range(len(names)))
+            ax.set_xticklabels(names, rotation=30, ha="right", fontsize=9)
+            ax.set_ylabel("Max Displacement (mm)")
+            ax.set_title("Staged Construction \u2014 Phase Summary",
+                         fontweight="bold")
+            ax.grid(True, alpha=0.3, axis='y')
+            # Annotate bars
+            for bar, d, phase in zip(bars, disp, result.phases):
+                label = f"{d:.1f}"
+                if not phase.converged:
+                    label += " !"
+                ax.text(bar.get_x() + bar.get_width() / 2,
+                        bar.get_height() + max(disp) * 0.02,
+                        label, ha='center', va='bottom', fontsize=8)
+            return
+
+        # Per-phase contour plot
+        phase_idx = self.phase_cb.currentIndex()
+        if phase_idx < 0 or phase_idx >= len(result.phases):
+            phase_idx = len(result.phases) - 1
+        phase = result.phases[phase_idx]
+
+        nodes = result.nodes
+        elements = result.elements
+        x = nodes[:, 0]
+        y = nodes[:, 1]
+
+        disp = phase.displacements
+        ux = disp[0::2]
+        uy = disp[1::2]
+
+        if field == "disp_mag":
+            values = np.sqrt(ux**2 + uy**2)
+            label = "Displacement Magnitude (m)"
+            per_node = True
+        elif field == "disp_x":
+            values = ux
+            label = "Displacement X (m)"
+            per_node = True
+        elif field == "disp_y":
+            values = uy
+            label = "Displacement Y (m)"
+            per_node = True
+        elif field == "sigma_xx":
+            values = phase.stresses[:, 0]
+            label = "Stress \u03c3xx (kPa)"
+            per_node = False
+        elif field == "sigma_yy":
+            values = phase.stresses[:, 1]
+            label = "Stress \u03c3yy (kPa)"
+            per_node = False
+        elif field == "tau_xy":
+            values = phase.stresses[:, 2]
+            label = "Shear \u03c4xy (kPa)"
+            per_node = False
+        else:
+            return
+
+        if per_node:
+            tc = ax.tripcolor(x, y, elements, values,
+                              cmap="RdYlBu_r", shading="gouraud")
+        else:
+            tc = ax.tripcolor(x, y, elements, facecolors=values,
+                              cmap="RdYlBu_r")
+        self.canvas.fig.colorbar(tc, ax=ax, label=label, shrink=0.8)
+
+        # Deformed mesh overlay
+        if self.deformed_cb.isChecked():
+            scale = self.scale_sb.value()
+            x_def = x + ux * scale
+            y_def = y + uy * scale
+            ax.triplot(x_def, y_def, elements,
+                       color="k", linewidth=0.3, alpha=0.5)
+
+        # Phase info badge
+        conv_text = "Converged" if phase.converged else "NOT CONVERGED"
+        conv_color = "#4CAF50" if phase.converged else "#D32F2F"
+        info = (f"{phase.phase_name}\n"
+                f"{phase.n_active_elements} elements\n"
+                f"max u = {phase.max_displacement_m * 1000:.1f} mm\n"
+                f"{conv_text}")
+        ax.text(0.02, 0.98, info, transform=ax.transAxes,
+                fontsize=9, va="top",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
+                          edgecolor=conv_color, alpha=0.9))
+
+        ax.set_aspect("equal")
+        ax.set_xlabel("X (m)")
+        ax.set_ylabel("Y (m)")
+        ax.set_title(f"Staged Construction \u2014 {phase.phase_name}",
+                     fontweight="bold")
+        ax.grid(True, alpha=0.2)
+
     # =======================================================================
     # STATE SAVE / LOAD
     # =======================================================================
@@ -1388,6 +2070,33 @@ class FEM2DPanel(QWidget):
         state["con_t_end"] = self.con_t_end.value()
         state["con_n_steps"] = self.con_n_steps.value()
         state["con_log"] = self.con_log_cb.isChecked()
+        # Polyline boundaries
+        self._save_current_poly()
+        state["poly_enabled"] = self.poly_grp.isChecked()
+        state["poly_data"] = {k: list(v) for k, v in self._poly_data.items()}
+        # Staged construction
+        groups_rows = []
+        for i in range(self.groups_table.rowCount()):
+            row = []
+            for j in range(self.groups_table.columnCount()):
+                item = self.groups_table.item(i, j)
+                row.append(item.text() if item else "")
+            groups_rows.append(row)
+        state["groups_rows"] = groups_rows
+        phase_rows = []
+        for i in range(self.phase_table.rowCount()):
+            row = []
+            for j in range(self.phase_table.columnCount()):
+                item = self.phase_table.item(i, j)
+                row.append(item.text() if item else "")
+            phase_rows.append(row)
+        state["phase_rows"] = phase_rows
+        state["wall_enabled"] = self.wall_grp.isChecked()
+        state["stg_wall_x"] = self.stg_wall_x.value()
+        state["stg_wall_top"] = self.stg_wall_top.value()
+        state["stg_wall_bot"] = self.stg_wall_bot.value()
+        state["stg_wall_EI"] = self.stg_wall_EI.value()
+        state["stg_wall_EA"] = self.stg_wall_EA.value()
         return state
 
     def set_state(self, state):
@@ -1471,5 +2180,41 @@ class FEM2DPanel(QWidget):
         self.con_t_end.setValue(state.get("con_t_end", 365.0))
         self.con_n_steps.setValue(state.get("con_n_steps", 20))
         self.con_log_cb.setChecked(state.get("con_log", True))
+        # Polyline boundaries
+        poly_data = state.get("poly_data", {})
+        if poly_data:
+            self.poly_grp.setChecked(state.get("poly_enabled", False))
+            self.poly_boundary_cb.blockSignals(True)
+            self.poly_boundary_cb.clear()
+            self._poly_data = {}
+            for name, pts in poly_data.items():
+                self.poly_boundary_cb.addItem(name)
+                self._poly_data[name] = [tuple(p) for p in pts]
+            self.poly_boundary_cb.blockSignals(False)
+            if self.poly_boundary_cb.count() > 0:
+                self._on_poly_boundary_changed(0)
+        # Staged construction
+        groups_rows = state.get("groups_rows", [])
+        if groups_rows:
+            self.groups_table.setRowCount(len(groups_rows))
+            for i, row in enumerate(groups_rows):
+                for j, val in enumerate(row):
+                    if j < self.groups_table.columnCount():
+                        self.groups_table.setItem(
+                            i, j, QTableWidgetItem(str(val)))
+        phase_rows = state.get("phase_rows", [])
+        if phase_rows:
+            self.phase_table.setRowCount(len(phase_rows))
+            for i, row in enumerate(phase_rows):
+                for j, val in enumerate(row):
+                    if j < self.phase_table.columnCount():
+                        self.phase_table.setItem(
+                            i, j, QTableWidgetItem(str(val)))
+        self.wall_grp.setChecked(state.get("wall_enabled", True))
+        self.stg_wall_x.setValue(state.get("stg_wall_x", 0.0))
+        self.stg_wall_top.setValue(state.get("stg_wall_top", 0.0))
+        self.stg_wall_bot.setValue(state.get("stg_wall_bot", -10.0))
+        self.stg_wall_EI.setValue(state.get("stg_wall_EI", 50000))
+        self.stg_wall_EA.setValue(state.get("stg_wall_EA", 5e6))
         if state.get("results_text"):
             self.results_text.setText(state["results_text"])

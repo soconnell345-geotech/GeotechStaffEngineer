@@ -102,7 +102,8 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
                       nx=30, ny=15, x_extend=None,
                       srf_tol=0.02, n_load_steps=10, t=1.0,
                       gwt=None, gamma_w=9.81,
-                      max_iter=100, tol=1e-5):
+                      max_iter=100, tol=1e-5,
+                      layer_polylines=None):
     """Slope stability FOS via Strength Reduction Method.
 
     Parameters
@@ -142,8 +143,12 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
     bc_nodes = detect_boundary_nodes(nodes)
 
     # Assign layers to elements
-    layer_bottoms = [sl['bottom_elevation'] for sl in soil_layers]
-    layer_ids = assign_layers_by_elevation(nodes, elements, layer_bottoms)
+    if layer_polylines:
+        from fem2d.mesh import assign_layers_by_polylines
+        layer_ids = assign_layers_by_polylines(nodes, elements, layer_polylines)
+    else:
+        layer_bottoms = [sl['bottom_elevation'] for sl in soil_layers]
+        layer_ids = assign_layers_by_elevation(nodes, elements, layer_bottoms)
 
     # Build per-element material properties and gamma array
     material_props = []
@@ -240,7 +245,8 @@ def create_wall_elements(nodes, x_wall, y_top, y_bottom, EA, EI,
 def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
                        wall_EA, nx=30, ny=15, t=1.0, n_steps=10,
                        gwt=None, gamma_w=9.81, struts=None,
-                       max_iter=100, tol=1e-5):
+                       max_iter=100, tol=1e-5,
+                       layer_polylines=None):
     """Analyze a braced excavation with a sheet pile wall.
 
     Creates a rectangular domain with a vertical wall on the left side
@@ -289,7 +295,10 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
     bc_nodes = detect_boundary_nodes(nodes)
 
     # Assign layers
-    if len(soil_layers) > 1:
+    if layer_polylines:
+        from fem2d.mesh import assign_layers_by_polylines
+        layer_ids = assign_layers_by_polylines(nodes, elements, layer_polylines)
+    elif len(soil_layers) > 1:
         layer_bottoms = [sl['bottom_elevation'] for sl in soil_layers]
         layer_ids = assign_layers_by_elevation(nodes, elements, layer_bottoms)
     else:
@@ -473,7 +482,8 @@ def analyze_seepage(nodes, elements, k, head_bcs, t=1.0, gamma_w=9.81):
 
 def analyze_consolidation(width, depth, soil_layers, k, load_q,
                           time_points, gwt=0.0, gamma_w=9.81,
-                          nx=10, ny=20, t=1.0, n_w=2.2e6):
+                          nx=10, ny=20, t=1.0, n_w=2.2e6,
+                          layer_polylines=None):
     """1D-like consolidation of a loaded soil column.
 
     Sets up rectangular domain, applies surface load, tracks
@@ -505,7 +515,10 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
     bc_nodes = detect_boundary_nodes(nodes)
 
     # Assign layers
-    if len(soil_layers) > 1:
+    if layer_polylines:
+        from fem2d.mesh import assign_layers_by_polylines
+        layer_ids = assign_layers_by_polylines(nodes, elements, layer_polylines)
+    elif len(soil_layers) > 1:
         layer_bottoms = [sl['bottom_elevation'] for sl in soil_layers]
         layer_ids = assign_layers_by_elevation(nodes, elements, layer_bottoms)
     else:
