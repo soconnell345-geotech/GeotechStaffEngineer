@@ -344,3 +344,175 @@ class TestHistoryManagement:
         assert len(agent.history) > 0
         agent.reset()
         assert len(agent.history) == 0
+
+
+# ---------------------------------------------------------------------------
+# Tests: save_file tool
+# ---------------------------------------------------------------------------
+
+class TestSaveFileTool:
+    """Tests for the save_file tool via ReAct dispatch."""
+
+    def test_save_file_default_local(self, tmp_path):
+        """save_file with default save_fn writes to local filesystem."""
+        out = tmp_path / "report.html"
+        engine = MockEngine(responses=[
+            '<tool_call>\n'
+            '{"tool_name": "save_file", '
+            f'"path": "{out}", '
+            '"content": "<html><body>Report</body></html>"}\n'
+            '</tool_call>',
+            "File saved successfully.",
+        ])
+        agent = GeotechAgent(genai_engine=engine)
+        result = agent.ask("Save a report")
+        assert result.rounds == 2
+        assert result.tool_calls[0]["tool_name"] == "save_file"
+        assert out.exists()
+        assert "<html>" in out.read_text()
+
+    def test_save_file_custom_save_fn(self):
+        """save_fn injection routes through the custom function."""
+        saved = {}
+
+        def mock_save(path, content):
+            saved[path] = content
+            return f"/dbfs/{path}"
+
+        engine = MockEngine(responses=[
+            '<tool_call>\n'
+            '{"tool_name": "save_file", '
+            '"path": "output/report.html", '
+            '"content": "hello"}\n'
+            '</tool_call>',
+            "Done.",
+        ])
+        agent = GeotechAgent(genai_engine=engine, save_fn=mock_save)
+        agent.ask("Save it")
+        assert "output/report.html" in saved
+        assert saved["output/report.html"] == "hello"
+
+    def test_save_file_base64_binary(self, tmp_path):
+        """Base64-encoded content is decoded before saving."""
+        import base64
+        raw = b"\x89PNG\r\n\x1a\nfake png"
+        b64 = base64.b64encode(raw).decode()
+        out = tmp_path / "plot.png"
+        engine = MockEngine(responses=[
+            '<tool_call>\n'
+            '{"tool_name": "save_file", '
+            f'"path": "{out}", '
+            f'"content": "{b64}", '
+            '"encoding": "base64"}\n'
+            '</tool_call>',
+            "Saved plot.",
+        ])
+        agent = GeotechAgent(genai_engine=engine)
+        agent.ask("Save the plot")
+        assert out.exists()
+        assert out.read_bytes() == raw
+
+    def test_save_file_missing_path(self):
+        """Missing path returns an error in the tool result."""
+        engine = MockEngine(responses=[
+            '<tool_call>\n'
+            '{"tool_name": "save_file", '
+            '"content": "data"}\n'
+            '</tool_call>',
+            "Error noted.",
+        ])
+        agent = GeotechAgent(genai_engine=engine)
+        result = agent.ask("Save without path")
+        assert result.rounds == 2
+
+    def test_save_file_missing_content(self):
+        """Missing content returns an error in the tool result."""
+        engine = MockEngine(responses=[
+            '<tool_call>\n'
+            '{"tool_name": "save_file", '
+            '"path": "out.txt"}\n'
+            '</tool_call>',
+            "Error noted.",
+        ])
+        agent = GeotechAgent(genai_engine=engine)
+        result = agent.ask("Save without content")
+        assert result.rounds == 2
+
+    def test_save_file_creates_directories(self, tmp_path):
+        """Nested directories are created automatically."""
+        out = tmp_path / "deep" / "nested" / "dir" / "report.html"
+        engine = MockEngine(responses=[
+            '<tool_call>\n'
+            '{"tool_name": "save_file", '
+            f'"path": "{out}", '
+            '"content": "nested report"}\n'
+            '</tool_call>',
+            "Done.",
+        ])
+        agent = GeotechAgent(genai_engine=engine)
+        agent.ask("Save nested")
+        assert out.exists()
+        assert out.read_text() == "nested report"
+
+    def test_save_file_invalid_base64(self):
+        """Invalid base64 returns an error, not a crash."""
+        engine = MockEngine(responses=[
+            '<tool_call>\n'
+            '{"tool_name": "save_file", '
+            '"path": "out.pdf", '
+            '"content": "not-valid-base64!!!", '
+            '"encoding": "base64"}\n'
+            '</tool_call>',
+            "Error noted.",
+        ])
+        agent = GeotechAgent(genai_engine=engine)
+        result = agent.ask("Bad base64")
+        assert result.rounds == 2
+
+    def test_save_fn_error_returns_json_error(self):
+        """If save_fn raises, the error is returned as JSON, not re-raised."""
+        def bad_save(path, content):
+            raise PermissionError("Access denied")
+
+        engine = MockEngine(responses=[
+            '<tool_call>\n'
+            '{"tool_name": "save_file", '
+            '"path": "out.txt", '
+            '"content": "data"}\n'
+            '</tool_call>',
+            "Permission error noted.",
+        ])
+        agent = GeotechAgent(genai_engine=engine, save_fn=bad_save)
+        result = agent.ask("Try to save")
+        assert result.rounds == 2
+
+    def test_extended_tools_include_save_file(self):
+        """save_file is in the extended tool set."""
+        assert "save_file" in EXTENDED_TOOLS
+
+    def test_save_file_callback_fires(self):
+        """on_tool_call callback fires for save_file."""
+        calls = []
+
+        def callback(name, args, result):
+            calls.append(name)
+
+        saved = {}
+
+        def mock_save(path, content):
+            saved[path] = content
+            return path
+
+        engine = MockEngine(responses=[
+            '<tool_call>\n'
+            '{"tool_name": "save_file", '
+            '"path": "out.txt", '
+            '"content": "data"}\n'
+            '</tool_call>',
+            "Done.",
+        ])
+        agent = GeotechAgent(
+            genai_engine=engine, save_fn=mock_save, on_tool_call=callback,
+        )
+        agent.ask("Save it")
+        assert "save_file" in calls

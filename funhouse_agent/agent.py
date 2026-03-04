@@ -17,7 +17,7 @@ from chat_agent.react_prompt import build_system_prompt
 
 from funhouse_agent.vision_tools import (
     EXTENDED_TOOLS, VISION_TOOL_DESCRIPTIONS,
-    dispatch_vision_tool,
+    dispatch_extended_tool, _default_save_fn,
 )
 
 
@@ -38,6 +38,10 @@ class GeotechAgent:
     ----------
     genai_engine : GenAIEngine
         AI backend providing chat() and optionally analyze_image().
+    save_fn : callable, optional
+        File save function ``(path: str, content: bytes | str) -> str``.
+        Returns the saved file path. Defaults to local filesystem write.
+        Inject a custom function for DBFS, Unity Catalog Volumes, S3, etc.
     max_rounds : int
         Maximum ReAct loop iterations.
     temperature : float
@@ -51,12 +55,14 @@ class GeotechAgent:
     def __init__(
         self,
         genai_engine,
+        save_fn: Optional[Callable] = None,
         max_rounds: int = 10,
         temperature: float = 0.1,
         verbose: bool = False,
         on_tool_call: Optional[Callable] = None,
     ):
         self._engine = genai_engine
+        self._save_fn = save_fn or _default_save_fn
         self._max_rounds = max_rounds
         self._temperature = temperature
         self._verbose = verbose
@@ -113,11 +119,13 @@ class GeotechAgent:
                 print(f"  Round {rounds}: {tc.tool_name}("
                       f"{json.dumps(tc.arguments, default=str)[:120]})")
 
-            # Dispatch: vision tools or standard tools
-            if tc.tool_name in ("analyze_image", "analyze_pdf_page"):
-                result_str = dispatch_vision_tool(
+            # Dispatch: extended tools (vision/save) or standard tools
+            if tc.tool_name in ("analyze_image", "analyze_pdf_page",
+                                "save_file"):
+                result_str = dispatch_extended_tool(
                     tc.tool_name, tc.arguments,
                     self._engine, self._attachments,
+                    save_fn=self._save_fn,
                 )
             else:
                 result_str = dispatch_tool(tc)
