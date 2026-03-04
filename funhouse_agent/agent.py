@@ -13,7 +13,7 @@ from chat_agent.agent import (
     AgentResult, ConversationHistory, dispatch_tool, _truncate,
 )
 from chat_agent.parser import parse_response
-from chat_agent.react_prompt import build_system_prompt
+from chat_agent.react_prompt import build_system_prompt_compact
 
 from funhouse_agent.vision_tools import (
     EXTENDED_TOOLS, VISION_TOOL_DESCRIPTIONS,
@@ -22,8 +22,13 @@ from funhouse_agent.vision_tools import (
 
 
 def _build_agent_system_prompt() -> str:
-    """Build system prompt with vision tool extensions."""
-    base = build_system_prompt()
+    """Build system prompt with vision tool extensions.
+
+    Uses the compact prompt (Quick Reference table only) to reduce context
+    bloat. The agent discovers detailed agent/method info at runtime via
+    list_agents, list_methods, and describe_method tools.
+    """
+    base = build_system_prompt_compact()
     return base + "\n\n" + VISION_TOOL_DESCRIPTIONS
 
 
