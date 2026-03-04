@@ -32,13 +32,33 @@ engine = ClaudeEngine(
 )
 ```
 
-### Databricks PrompterAPI
+### Databricks / Funhouse PrompterAPI
 
 PrompterAPI satisfies the GenAIEngine interface natively — no adapter needed.
+It uses the OpenAI API under the hood (Prompter NTLM backend, Azure OpenAI,
+or Grok/X.AI depending on configuration).
 
 ```python
-agent = GeotechAgent(genai_engine=prompter_api)
+from funhouse.prompter import PrompterAPI
+
+# Default: auto-detects backend from config/env vars
+fh_prompter = PrompterAPI()
+
+# Or specify backend explicitly
+fh_prompter = PrompterAPI(backend="openai", api_key="...", base_url="...")
+fh_prompter = PrompterAPI(backend="grok", api_key="xai-...")
+
+# Pass directly as the engine — chat(), analyze_image(), get_embedding() all match
+agent = GeotechAgent(genai_engine=fh_prompter)
 ```
+
+**PrompterAPI methods used by GeotechAgent:**
+
+| Method | Signature | Notes |
+|--------|-----------|-------|
+| `chat()` | `(user, system, temperature) -> str` | Returns `None` on failure (handled gracefully) |
+| `analyze_image()` | `(image_input: bytes\|str, user_prompt) -> str` | Vision via base64 + OpenAI multimodal |
+| `get_embedding()` | `(text) -> list` | Optional, not used by ReAct loop |
 
 ### Custom Engine
 

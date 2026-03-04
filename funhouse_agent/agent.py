@@ -97,6 +97,15 @@ class GeotechAgent:
                 prompt, self._system_prompt, self._temperature
             )
 
+            # Guard against None responses (e.g., PrompterAPI returns None on failure)
+            if response is None:
+                self._history.add_assistant("")
+                self._history.add_tool_result(
+                    json.dumps({"error": "Engine returned no response"}))
+                if self._verbose:
+                    print(f"  Round {rounds}: ENGINE RETURNED None")
+                continue
+
             try:
                 parsed = parse_response(response, valid_tools=EXTENDED_TOOLS)
             except ValueError as e:

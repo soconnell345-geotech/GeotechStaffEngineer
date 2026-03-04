@@ -356,10 +356,11 @@ class TestSaveFileTool:
     def test_save_file_default_local(self, tmp_path):
         """save_file with default save_fn writes to local filesystem."""
         out = tmp_path / "report.html"
+        out_escaped = str(out).replace("\\", "/")
         engine = MockEngine(responses=[
             '<tool_call>\n'
             '{"tool_name": "save_file", '
-            f'"path": "{out}", '
+            f'"path": "{out_escaped}", '
             '"content": "<html><body>Report</body></html>"}\n'
             '</tool_call>',
             "File saved successfully.",
@@ -398,10 +399,11 @@ class TestSaveFileTool:
         raw = b"\x89PNG\r\n\x1a\nfake png"
         b64 = base64.b64encode(raw).decode()
         out = tmp_path / "plot.png"
+        out_escaped = str(out).replace("\\", "/")
         engine = MockEngine(responses=[
             '<tool_call>\n'
             '{"tool_name": "save_file", '
-            f'"path": "{out}", '
+            f'"path": "{out_escaped}", '
             f'"content": "{b64}", '
             '"encoding": "base64"}\n'
             '</tool_call>',
@@ -441,10 +443,11 @@ class TestSaveFileTool:
     def test_save_file_creates_directories(self, tmp_path):
         """Nested directories are created automatically."""
         out = tmp_path / "deep" / "nested" / "dir" / "report.html"
+        out_escaped = str(out).replace("\\", "/")
         engine = MockEngine(responses=[
             '<tool_call>\n'
             '{"tool_name": "save_file", '
-            f'"path": "{out}", '
+            f'"path": "{out_escaped}", '
             '"content": "nested report"}\n'
             '</tool_call>',
             "Done.",
