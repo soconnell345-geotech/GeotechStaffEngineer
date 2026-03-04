@@ -1,4 +1,4 @@
-"""FEM 2D analysis panel — 6 analysis types."""
+"""FEM 2D analysis panel — tabbed layout with mesh preview."""
 
 import math
 import traceback
@@ -7,20 +7,21 @@ import numpy as np
 from qt_panels.common import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QGroupBox,
     QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QCheckBox,
-    QScrollArea, QSplitter, QStackedWidget,
+    QScrollArea, QSplitter, QStackedWidget, QTabWidget,
     QTableWidget, QTableWidgetItem, QHeaderView, Qt,
     MplCanvas, make_results_box,
-    MESH_PRESETS,
+    MESH_PRESETS, LAYER_COLORS,
 )
 from fem2d import (
     analyze_gravity, analyze_foundation, analyze_slope_srm,
     analyze_excavation, analyze_seepage, analyze_consolidation,
-    generate_rect_mesh,
+    generate_rect_mesh, generate_slope_mesh,
+    detect_boundary_nodes,
 )
 
 
 class FEM2DPanel(QWidget):
-    """2D Finite Element analysis — 6 analysis types."""
+    """2D Finite Element analysis — tabbed layout with mesh preview."""
 
     FIELDS_MECHANICAL = [
         ("Displacement Magnitude", "disp_mag"),
@@ -29,6 +30,15 @@ class FEM2DPanel(QWidget):
         ("Stress \u03c3xx", "sigma_xx"),
         ("Stress \u03c3yy", "sigma_yy"),
         ("Shear \u03c4xy", "tau_xy"),
+    ]
+    FIELDS_MECHANICAL_SRM = [
+        ("Displacement Magnitude", "disp_mag"),
+        ("Displacement X", "disp_x"),
+        ("Displacement Y", "disp_y"),
+        ("Stress \u03c3xx", "sigma_xx"),
+        ("Stress \u03c3yy", "sigma_yy"),
+        ("Shear \u03c4xy", "tau_xy"),
+        ("FOS vs Displacement", "fos_vs_disp"),
     ]
     FIELDS_SEEPAGE = [
         ("Total Head", "head"),
@@ -47,18 +57,91 @@ class FEM2DPanel(QWidget):
         self._status = status_bar
         self._last_result = None
         self._last_result_type = None  # 'fem', 'seepage', 'consolidation'
-        self._last_mesh = None  # (nodes, elements) for consolidation
+        self._last_mesh = None  # (nodes, elements) for consolidation/preview
+        self._preview_mesh = None  # (nodes, elements, layer_ids, bc_nodes)
         self._build_ui()
 
+    # =======================================================================
+    # UI CONSTRUCTION
+    # =======================================================================
     def _build_ui(self):
         outer = QHBoxLayout(self)
 
-        # --- Left: inputs (scrollable) ---
+        # --- Left: tabbed input sidebar ---
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.input_tabs = QTabWidget()
+        self.input_tabs.setMaximumWidth(440)
+
+        # Tab 1: Model Setup
+        self._build_model_tab()
+        # Tab 2: Analysis
+        self._build_analysis_tab()
+        # Tab 3: Mesh & BCs
+        self._build_mesh_tab()
+
+        left_layout.addWidget(self.input_tabs, 1)
+
+        # Buttons row (always visible, outside tabs)
+        btn_row = QHBoxLayout()
+        self.preview_btn = QPushButton("Preview Mesh")
+        self.preview_btn.clicked.connect(self._preview_mesh_action)
+        self.preview_btn.setObjectName("secondary")
+        btn_row.addWidget(self.preview_btn)
+        self.run_btn = QPushButton("Analyze")
+        self.run_btn.clicked.connect(self._run_analysis)
+        btn_row.addWidget(self.run_btn)
+        left_layout.addLayout(btn_row)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setMaximumWidth(420)
-        form_widget = QWidget()
-        form = QVBoxLayout(form_widget)
+        scroll.setMaximumWidth(460)
+        scroll.setWidget(left_widget)
+        outer.addWidget(scroll)
+
+        # --- Right: field selector + plot + results ---
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+
+        # Field selector row
+        field_row = QHBoxLayout()
+        field_row.addWidget(QLabel("Field:"))
+        self.field_cb = QComboBox()
+        self._update_field_options()
+        self.field_cb.currentIndexChanged.connect(self._replot)
+        field_row.addWidget(self.field_cb, 1)
+        self.deformed_cb = QCheckBox("Deformed")
+        self.deformed_cb.toggled.connect(self._replot)
+        field_row.addWidget(self.deformed_cb)
+        field_row.addWidget(QLabel("Scale:"))
+        self.scale_sb = QDoubleSpinBox()
+        self.scale_sb.setRange(0.1, 10000)
+        self.scale_sb.setValue(1.0)
+        self.scale_sb.setSingleStep(1)
+        self.scale_sb.setDecimals(1)
+        self.scale_sb.setMaximumWidth(80)
+        self.scale_sb.valueChanged.connect(self._replot)
+        field_row.addWidget(self.scale_sb)
+        right_layout.addLayout(field_row)
+
+        right_splitter = QSplitter(Qt.Vertical)
+        self.canvas = MplCanvas(width=8, height=6)
+        right_splitter.addWidget(self.canvas)
+        self.results_text = make_results_box()
+        right_splitter.addWidget(self.results_text)
+        right_splitter.setSizes([500, 200])
+        right_layout.addWidget(right_splitter)
+
+        outer.addWidget(right_widget, 1)
+
+    # -------------------------------------------------------------------
+    # Tab 1: Model Setup
+    # -------------------------------------------------------------------
+    def _build_model_tab(self):
+        tab = QWidget()
+        form = QVBoxLayout(tab)
 
         # Analysis type selector
         type_grp = QGroupBox("Analysis Type")
@@ -159,7 +242,7 @@ class FEM2DPanel(QWidget):
         ])
         self.soil_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.Stretch)
-        self.soil_table.setMaximumHeight(130)
+        self.soil_table.setMaximumHeight(160)
         defaults = ["Clay", "10", "30000", "0.3", "18", "25", "20", "0"]
         for j, v in enumerate(defaults):
             self.soil_table.setItem(0, j, QTableWidgetItem(v))
@@ -178,6 +261,16 @@ class FEM2DPanel(QWidget):
         soil_lay.addLayout(btn_row)
         soil_grp.setLayout(soil_lay)
         form.addWidget(soil_grp)
+
+        form.addStretch()
+        self.input_tabs.addTab(tab, "Model")
+
+    # -------------------------------------------------------------------
+    # Tab 2: Analysis
+    # -------------------------------------------------------------------
+    def _build_analysis_tab(self):
+        tab = QWidget()
+        form = QVBoxLayout(tab)
 
         # Stacked widget for type-specific inputs
         self.stack = QStackedWidget()
@@ -438,51 +531,56 @@ class FEM2DPanel(QWidget):
         self._update_solver_visibility()
         form.addWidget(solver_grp)
 
-        # Run button
-        self.run_btn = QPushButton("Analyze")
-        self.run_btn.clicked.connect(self._run_analysis)
-        form.addWidget(self.run_btn)
+        form.addStretch()
+        self.input_tabs.addTab(tab, "Analysis")
+
+    # -------------------------------------------------------------------
+    # Tab 3: Mesh & Boundary Conditions
+    # -------------------------------------------------------------------
+    def _build_mesh_tab(self):
+        tab = QWidget()
+        form = QVBoxLayout(tab)
+
+        # Boundary conditions
+        bc_grp = QGroupBox("Boundary Conditions")
+        bc_lay = QFormLayout()
+
+        self.bc_left = QComboBox()
+        self.bc_left.addItems(["Roller (ux=0)", "Fixed (ux=uy=0)", "Free"])
+        self.bc_left.setCurrentIndex(0)
+        self.bc_right = QComboBox()
+        self.bc_right.addItems(["Roller (ux=0)", "Fixed (ux=uy=0)", "Free"])
+        self.bc_right.setCurrentIndex(0)
+        self.bc_bottom = QComboBox()
+        self.bc_bottom.addItems(["Fixed (ux=uy=0)", "Roller (uy=0)", "Free"])
+        self.bc_bottom.setCurrentIndex(0)
+        self.bc_top = QComboBox()
+        self.bc_top.addItems(["Free", "Roller (uy=0)", "Fixed (ux=uy=0)"])
+        self.bc_top.setCurrentIndex(0)
+
+        bc_lay.addRow("Left edge:", self.bc_left)
+        bc_lay.addRow("Right edge:", self.bc_right)
+        bc_lay.addRow("Bottom edge:", self.bc_bottom)
+        bc_lay.addRow("Top edge:", self.bc_top)
+        bc_grp.setLayout(bc_lay)
+        form.addWidget(bc_grp)
+
+        # Mesh quality display
+        mesh_info_grp = QGroupBox("Mesh Info")
+        mesh_info_lay = QVBoxLayout()
+        self.mesh_info_label = QLabel(
+            "Click 'Preview Mesh' to generate and inspect the mesh.")
+        self.mesh_info_label.setWordWrap(True)
+        mesh_info_lay.addWidget(self.mesh_info_label)
+        mesh_info_grp.setLayout(mesh_info_lay)
+        form.addWidget(mesh_info_grp)
 
         form.addStretch()
-        scroll.setWidget(form_widget)
-        outer.addWidget(scroll)
+        self.input_tabs.addTab(tab, "Mesh && BCs")
 
-        # --- Right: field selector + plot + results ---
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-
-        # Field selector row
-        field_row = QHBoxLayout()
-        field_row.addWidget(QLabel("Field:"))
-        self.field_cb = QComboBox()
-        self._update_field_options()
-        self.field_cb.currentIndexChanged.connect(self._replot)
-        field_row.addWidget(self.field_cb, 1)
-        self.deformed_cb = QCheckBox("Deformed")
-        self.deformed_cb.toggled.connect(self._replot)
-        field_row.addWidget(self.deformed_cb)
-        field_row.addWidget(QLabel("Scale:"))
-        self.scale_sb = QDoubleSpinBox()
-        self.scale_sb.setRange(0.1, 10000)
-        self.scale_sb.setValue(1.0)
-        self.scale_sb.setSingleStep(1)
-        self.scale_sb.setDecimals(1)
-        self.scale_sb.setMaximumWidth(80)
-        self.scale_sb.valueChanged.connect(self._replot)
-        field_row.addWidget(self.scale_sb)
-        right_layout.addLayout(field_row)
-
-        right_splitter = QSplitter(Qt.Vertical)
-        self.canvas = MplCanvas(width=8, height=6)
-        right_splitter.addWidget(self.canvas)
-        self.results_text = make_results_box()
-        right_splitter.addWidget(self.results_text)
-        right_splitter.setSizes([500, 200])
-        right_layout.addWidget(right_splitter)
-
-        outer.addWidget(right_widget, 1)
-
-    # --- Table helpers ---
+    # =======================================================================
+    # TABLE HELPERS
+    # =======================================================================
     def _add_soil_row(self):
         r = self.soil_table.rowCount()
         self.soil_table.insertRow(r)
@@ -524,10 +622,12 @@ class FEM2DPanel(QWidget):
                     pass
         return struts
 
+    # =======================================================================
+    # TYPE / MATERIAL CHANGE HANDLERS
+    # =======================================================================
     def _on_material_model_changed(self, idx):
-        self.hs_group.setVisible(idx == 1)  # Show HS params for "Hardening Soil"
+        self.hs_group.setVisible(idx == 1)
 
-    # --- Type-change handler ---
     def _on_type_changed(self, idx):
         self.stack.setCurrentIndex(idx)
         self._update_field_options()
@@ -547,13 +647,17 @@ class FEM2DPanel(QWidget):
             fields = self.FIELDS_SEEPAGE
         elif atype == "Consolidation":
             fields = self.FIELDS_CONSOLIDATION
+        elif atype == "Slope SRM":
+            fields = self.FIELDS_MECHANICAL_SRM
         else:
             fields = self.FIELDS_MECHANICAL
         for label, key in fields:
             self.field_cb.addItem(label, key)
         self.field_cb.blockSignals(False)
 
-    # --- Read soil table ---
+    # =======================================================================
+    # INPUT READERS
+    # =======================================================================
     def _read_soil_layers(self):
         """Return list of dicts for fem2d functions."""
         layers = []
@@ -605,7 +709,191 @@ class FEM2DPanel(QWidget):
             "n_steps": 10, "max_iter": 100, "tol": 1e-5, "srf_tol": 0.02,
         }
 
-    # --- Run analysis ---
+    def _build_custom_bc_nodes(self, nodes):
+        """Build bc_nodes dict from the boundary condition dropdowns."""
+        tol = 0.01
+        x = nodes[:, 0]
+        y = nodes[:, 1]
+        x_min, x_max = x.min(), x.max()
+        y_min, y_max = y.min(), y.max()
+
+        fixed_xy = set()
+        fixed_x = set()
+        fixed_y = set()
+
+        left_nodes = set(np.where(np.abs(x - x_min) < tol)[0])
+        right_nodes = set(np.where(np.abs(x - x_max) < tol)[0])
+        bottom_nodes = set(np.where(np.abs(y - y_min) < tol)[0])
+        top_nodes = set(np.where(np.abs(y - y_max) < tol)[0])
+
+        # Left edge
+        bc_left = self.bc_left.currentText()
+        if "Fixed" in bc_left:
+            fixed_xy |= left_nodes
+        elif "Roller" in bc_left:
+            fixed_x |= left_nodes
+
+        # Right edge
+        bc_right = self.bc_right.currentText()
+        if "Fixed" in bc_right:
+            fixed_xy |= right_nodes
+        elif "Roller" in bc_right:
+            fixed_x |= right_nodes
+
+        # Bottom edge
+        bc_bottom = self.bc_bottom.currentText()
+        if "Fixed" in bc_bottom:
+            fixed_xy |= bottom_nodes
+        elif "Roller" in bc_bottom:
+            fixed_y |= bottom_nodes
+
+        # Top edge
+        bc_top = self.bc_top.currentText()
+        if "Fixed" in bc_top:
+            fixed_xy |= top_nodes
+        elif "Roller" in bc_top:
+            fixed_y |= top_nodes
+
+        return {
+            'fixed_base': sorted(fixed_xy),
+            'roller_left': sorted(fixed_x - fixed_xy),
+            'roller_right': sorted(fixed_y - fixed_xy),
+        }
+
+    # =======================================================================
+    # MESH PREVIEW
+    # =======================================================================
+    def _generate_mesh_for_preview(self):
+        """Generate mesh based on current settings; return (nodes, elements)."""
+        atype = self.type_cb.currentText()
+        nx, ny = MESH_PRESETS[self.mesh_cb.currentText()]
+
+        if atype == "Slope SRM":
+            H = self.srm_height.value()
+            angle = self.srm_angle.value()
+            crest = self.srm_crest.value()
+            dx = H / math.tan(math.radians(angle))
+            surface_points = [
+                (0, H), (crest, H),
+                (crest + dx, 0),
+                (crest + dx + crest, 0),
+            ]
+            nodes, elements = generate_slope_mesh(
+                surface_points, depth=H + 5, nx=nx, ny=ny)
+        else:
+            width = self.dom_w.value()
+            depth = self.dom_d.value()
+            nodes, elements = generate_rect_mesh(
+                0, width, -depth, 0, nx, ny)
+        return nodes, elements
+
+    def _preview_mesh_action(self):
+        """Generate and display mesh preview."""
+        try:
+            self._status.showMessage("Generating mesh preview...")
+            QApplication.processEvents()
+
+            nodes, elements = self._generate_mesh_for_preview()
+            bc_nodes = self._build_custom_bc_nodes(nodes)
+
+            # Assign layer colors by element centroid elevation
+            soil_layers = self._read_soil_layers()
+            n_elem = len(elements)
+            layer_ids = np.zeros(n_elem, dtype=int)
+            layer_bottoms = [sl["bottom_elevation"] for sl in soil_layers]
+            for e_idx in range(n_elem):
+                tri = elements[e_idx]
+                cy = np.mean(nodes[tri, 1])
+                for li, bot in enumerate(layer_bottoms):
+                    if cy >= bot:
+                        layer_ids[e_idx] = li
+                        break
+                else:
+                    layer_ids[e_idx] = len(layer_bottoms) - 1
+
+            self._preview_mesh = (nodes, elements, layer_ids, bc_nodes)
+
+            # Mesh quality
+            from fem2d import triangle_quality
+            quality = triangle_quality(nodes, elements)
+            min_angle = float(np.min(quality['min_angles']))
+            max_ar = float(np.max(quality['aspect_ratios']))
+
+            info = (
+                f"Nodes: {len(nodes)}\n"
+                f"Elements: {len(elements)}\n"
+                f"Min angle: {min_angle:.1f}\u00b0\n"
+                f"Max aspect ratio: {max_ar:.1f}\n"
+                f"Fixed nodes: {len(bc_nodes.get('fixed_base', []))}\n"
+                f"Roller nodes: {len(bc_nodes.get('roller_left', [])) + len(bc_nodes.get('roller_right', []))}"
+            )
+            self.mesh_info_label.setText(info)
+
+            # Plot the mesh preview
+            self._plot_mesh_preview()
+            self._status.showMessage(
+                f"Mesh: {len(nodes)} nodes, {len(elements)} elements", 10000)
+
+        except Exception as e:
+            self.mesh_info_label.setText(f"Error: {e}")
+            self._status.showMessage(f"Mesh error: {e}", 10000)
+
+    def _plot_mesh_preview(self):
+        """Plot mesh with layer colors and boundary nodes."""
+        if self._preview_mesh is None:
+            return
+        nodes, elements, layer_ids, bc_nodes = self._preview_mesh
+        x = nodes[:, 0]
+        y = nodes[:, 1]
+
+        self.canvas.fig.clear()
+        ax = self.canvas.fig.add_subplot(111)
+        self.canvas.axes = ax
+
+        # Color elements by layer
+        n_layers = int(layer_ids.max()) + 1
+        colors = []
+        for li in layer_ids:
+            colors.append(LAYER_COLORS[li % len(LAYER_COLORS)])
+
+        # Draw filled triangles
+        from matplotlib.collections import PolyCollection
+        verts = []
+        for tri in elements:
+            verts.append(nodes[tri])
+        pc = PolyCollection(verts, facecolors=colors,
+                            edgecolors='#555555', linewidths=0.3, alpha=0.7)
+        ax.add_collection(pc)
+
+        # Boundary nodes
+        fixed = bc_nodes.get('fixed_base', [])
+        roller_x = bc_nodes.get('roller_left', [])
+        roller_y = bc_nodes.get('roller_right', [])
+        if fixed:
+            ax.plot(x[fixed], y[fixed], 's', color='#D32F2F',
+                    markersize=4, label='Fixed', zorder=5)
+        if roller_x:
+            ax.plot(x[roller_x], y[roller_x], '^', color='#1976D2',
+                    markersize=4, label='Roller X', zorder=5)
+        if roller_y:
+            ax.plot(x[roller_y], y[roller_y], 'v', color='#388E3C',
+                    markersize=4, label='Roller Y', zorder=5)
+
+        ax.set_xlim(x.min() - 0.5, x.max() + 0.5)
+        ax.set_ylim(y.min() - 0.5, y.max() + 0.5)
+        ax.set_aspect("equal")
+        ax.set_xlabel("X (m)")
+        ax.set_ylabel("Y (m)")
+        ax.set_title("Mesh Preview", fontweight="bold")
+        ax.legend(loc="upper right", fontsize=8)
+        ax.grid(True, alpha=0.2)
+
+        self.canvas.fig.tight_layout()
+        self.canvas.draw()
+
+    # =======================================================================
+    # RUN ANALYSIS
+    # =======================================================================
     def _run_analysis(self):
         try:
             self._status.showMessage("Running FEM analysis...")
@@ -763,7 +1051,9 @@ class FEM2DPanel(QWidget):
                 head_bcs.append((int(n), h))
         return head_bcs
 
-    # --- Plotting ---
+    # =======================================================================
+    # PLOTTING
+    # =======================================================================
     def _replot(self):
         """Redraw the plot with the current field selection."""
         if self._last_result is None:
@@ -777,7 +1067,10 @@ class FEM2DPanel(QWidget):
         self.canvas.axes = ax
 
         if self._last_result_type == "fem":
-            self._plot_fem(ax, self._last_result, field_key)
+            if field_key == "fos_vs_disp":
+                self._plot_fos_vs_disp(ax, self._last_result)
+            else:
+                self._plot_fem(ax, self._last_result, field_key)
         elif self._last_result_type == "seepage":
             self._plot_seepage(ax, self._last_result, field_key)
         elif self._last_result_type == "consolidation":
@@ -865,6 +1158,52 @@ class FEM2DPanel(QWidget):
         ax.set_title(f"FEM 2D \u2014 {self.type_cb.currentText()}",
                      fontweight="bold")
         ax.grid(True, alpha=0.2)
+
+    def _plot_fos_vs_disp(self, ax, result):
+        """Plot SRF vs max displacement from SRM convergence history."""
+        history = getattr(result, 'srf_history', None)
+        if not history:
+            ax.text(0.5, 0.5, "No SRF history available\n"
+                    "(run Slope SRM analysis first)",
+                    transform=ax.transAxes, ha="center", va="center",
+                    fontsize=12)
+            return
+
+        srf_vals = [h['srf'] for h in history]
+        disp_vals = [h['max_disp_m'] * 1000 for h in history]  # m -> mm
+        conv_vals = [h['converged'] for h in history]
+
+        # Sort by SRF for clean line
+        pairs = sorted(zip(srf_vals, disp_vals, conv_vals))
+        srf_sorted = [p[0] for p in pairs]
+        disp_sorted = [p[1] for p in pairs]
+        conv_sorted = [p[2] for p in pairs]
+
+        # Plot converged points
+        srf_c = [s for s, c in zip(srf_sorted, conv_sorted) if c]
+        disp_c = [d for d, c in zip(disp_sorted, conv_sorted) if c]
+        srf_nc = [s for s, c in zip(srf_sorted, conv_sorted) if not c]
+        disp_nc = [d for d, c in zip(disp_sorted, conv_sorted) if not c]
+
+        if srf_c:
+            ax.plot(srf_c, disp_c, 'b-o', markersize=5, label="Converged",
+                    zorder=3)
+        if srf_nc:
+            ax.plot(srf_nc, disp_nc, 'rx', markersize=8, markeredgewidth=2,
+                    label="Failed", zorder=4)
+
+        # FOS line
+        if result.FOS is not None:
+            fos_color = "#4CAF50" if result.FOS >= 1.5 else "#D32F2F"
+            ax.axvline(result.FOS, color=fos_color, linestyle='--',
+                       linewidth=2, label=f"FOS = {result.FOS:.3f}", zorder=2)
+
+        ax.set_xlabel("Strength Reduction Factor (SRF)")
+        ax.set_ylabel("Max Displacement (mm)")
+        ax.set_title("FOS vs Displacement \u2014 Strength Reduction",
+                     fontweight="bold")
+        ax.legend(loc="upper left", fontsize=9)
+        ax.grid(True, alpha=0.3)
 
     def _plot_seepage(self, ax, result, field):
         """Contour plot for seepage results."""
@@ -965,7 +1304,9 @@ class FEM2DPanel(QWidget):
                          fontweight="bold")
             ax.grid(True, alpha=0.2)
 
-    # --- State save/load ---
+    # =======================================================================
+    # STATE SAVE / LOAD
+    # =======================================================================
     def get_state(self):
         state = {
             "analysis_type": self.type_cb.currentText(),
@@ -996,6 +1337,11 @@ class FEM2DPanel(QWidget):
         state["solver_maxiter"] = self.solver_maxiter.value()
         state["solver_tol"] = self.solver_tol.currentText()
         state["solver_srf_tol"] = self.solver_srf_tol.value()
+        # Boundary conditions
+        state["bc_left"] = self.bc_left.currentText()
+        state["bc_right"] = self.bc_right.currentText()
+        state["bc_bottom"] = self.bc_bottom.currentText()
+        state["bc_top"] = self.bc_top.currentText()
         # Type-specific
         state["fnd_q"] = self.fnd_q.value()
         state["fnd_B"] = self.fnd_B.value()
@@ -1066,6 +1412,19 @@ class FEM2DPanel(QWidget):
         self.solver_maxiter.setValue(state.get("solver_maxiter", 100))
         self.solver_tol.setCurrentText(state.get("solver_tol", "1e-5"))
         self.solver_srf_tol.setValue(state.get("solver_srf_tol", 0.02))
+        # Boundary conditions
+        bc_left = state.get("bc_left", "Roller (ux=0)")
+        if bc_left:
+            self.bc_left.setCurrentText(bc_left)
+        bc_right = state.get("bc_right", "Roller (ux=0)")
+        if bc_right:
+            self.bc_right.setCurrentText(bc_right)
+        bc_bottom = state.get("bc_bottom", "Fixed (ux=uy=0)")
+        if bc_bottom:
+            self.bc_bottom.setCurrentText(bc_bottom)
+        bc_top = state.get("bc_top", "Free")
+        if bc_top:
+            self.bc_top.setCurrentText(bc_top)
         # Type-specific
         self.fnd_q.setValue(state.get("fnd_q", 100.0))
         self.fnd_B.setValue(state.get("fnd_B", 2.0))

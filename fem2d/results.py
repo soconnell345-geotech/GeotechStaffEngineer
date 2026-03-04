@@ -221,6 +221,9 @@ class FEMResult:
     max_beam_shear_kN_per_m: float = 0.0
     beam_forces: Optional[List] = field(default=None, repr=False)
 
+    # SRM convergence history (SRF vs displacement)
+    srf_history: Optional[List[Dict]] = field(default=None, repr=False)
+
     # Strut results
     strut_forces: Optional[List[Dict]] = field(default=None, repr=False)
 

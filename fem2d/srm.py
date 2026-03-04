@@ -52,6 +52,9 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
         'u_failure': (n_dof,) array — displacements at last converged SRF.
         'stresses_failure': (n_elements, 3) array.
         'n_srf_trials': int — number of SRF evaluations.
+        'srf_history': list of dict — SRF trial history for FOS vs
+            displacement plots. Each dict has 'srf', 'max_disp_m',
+            'converged'.
     """
     if bc_nodes is None:
         bc_nodes = detect_boundary_nodes(nodes)
@@ -88,6 +91,13 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
         return converged, u, stresses
 
     n_trials = 0
+    srf_history = []
+
+    def _max_disp(u):
+        """Max displacement magnitude from DOF vector."""
+        ux = u[0::2]
+        uy = u[1::2]
+        return float(np.max(np.sqrt(ux**2 + uy**2)))
 
     # Phase 1: bracket failure by incrementing SRF
     srf_low = srf_range[0]
@@ -96,6 +106,11 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
     # Verify lower bound converges
     n_trials += 1
     conv_low, u_low, s_low = _try_srf(srf_low)
+    srf_history.append({
+        'srf': srf_low,
+        'max_disp_m': _max_disp(u_low) if conv_low else 0.0,
+        'converged': conv_low,
+    })
     if not conv_low:
         return {
             'FOS': srf_low,
@@ -103,6 +118,7 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
             'u_failure': np.zeros(2 * len(nodes)),
             'stresses_failure': np.zeros((n_elem, 3)),
             'n_srf_trials': n_trials,
+            'srf_history': srf_history,
         }
 
     # Increment from 1.0 upward to find non-convergence
@@ -115,6 +131,11 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
     while srf <= srf_high:
         n_trials += 1
         conv, u, s = _try_srf(srf)
+        srf_history.append({
+            'srf': srf,
+            'max_disp_m': _max_disp(u) if conv else _max_disp(last_conv_u) * 2,
+            'converged': conv,
+        })
         if conv:
             last_conv_srf = srf
             last_conv_u = u
@@ -133,6 +154,7 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
             'u_failure': last_conv_u,
             'stresses_failure': last_conv_s,
             'n_srf_trials': n_trials,
+            'srf_history': srf_history,
         }
 
     # Phase 2: bisection to refine FOS
@@ -140,6 +162,11 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
         srf_mid = (srf_low + srf_high) / 2.0
         n_trials += 1
         conv, u, s = _try_srf(srf_mid)
+        srf_history.append({
+            'srf': srf_mid,
+            'max_disp_m': _max_disp(u) if conv else _max_disp(last_conv_u) * 2,
+            'converged': conv,
+        })
         if conv:
             srf_low = srf_mid
             last_conv_u = u
@@ -155,4 +182,5 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
         'u_failure': last_conv_u,
         'stresses_failure': last_conv_s,
         'n_srf_trials': n_trials,
+        'srf_history': srf_history,
     }

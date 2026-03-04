@@ -79,8 +79,9 @@ Run: `python slope_stability_gui.py` or `python fem2d_gui.py` — opens browser 
 |-----|---------|
 | `geotech_qt_gui.py` | Main app: Bearing Capacity, Settlement, FEM 2D tabs |
 | `slope_stability_qt.py` | Standalone slope stability: circular/noncircular, entry/exit limits, slice visualization |
+| `fem2d_qt.py` | Standalone FEM 2D: tabbed inputs, mesh preview, BC controls, FOS vs displacement |
 
-Run: `python geotech_qt_gui.py` or `python slope_stability_qt.py`
+Run: `python geotech_qt_gui.py` or `python slope_stability_qt.py` or `python fem2d_qt.py`
 
 ## Foundry Test Harness
 

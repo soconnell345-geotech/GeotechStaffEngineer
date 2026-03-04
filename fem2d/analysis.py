@@ -183,6 +183,7 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
     result.FOS = srm_result['FOS']
     result.converged = srm_result['converged']
     result.n_srf_trials = srm_result['n_srf_trials']
+    result.srf_history = srm_result.get('srf_history')
     return result
 
 
