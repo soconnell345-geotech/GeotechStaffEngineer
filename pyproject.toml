@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geotech-staff-engineer"
-version = "3.3.0"
+version = "3.4.0"
 description = "Python toolkit for LLM-based geotechnical engineering agents — 37 analysis modules covering foundations, piles, slopes, seismic, FEM, PDF/DXF import, and more"
 readme = "README.md"
 license = "MIT"
@@ -138,6 +138,9 @@ py-modules = ["groundhog_agent"]
 calc_package = ["templates/*.html", "templates/*.tex"]
 
 [tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
 python_files = ["test_*.py", "validation.py"]
 testpaths = [
     "bearing_capacity", "settlement", "axial_pile", "sheet_pile", "soe",
