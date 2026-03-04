@@ -36,11 +36,10 @@ if SOURCE_PATH not in sys.path:
 # ---------------------------------------------------------------------------
 from qt_panels import (
     APP_NAME, APP_VERSION, STYLESHEET,
-    BearingCapacityPanel,
-    SettlementPanel,
+    FootingDesignPanel,
 )
 from qt_panels.common import (
-    QApplication, QMainWindow, QTabWidget, QStatusBar,
+    QApplication, QMainWindow, QStatusBar,
     QAction, QMessageBox, QFileDialog,
 )
 
@@ -51,7 +50,7 @@ from qt_panels.common import (
 class MainWindow(QMainWindow):
     """Main application window with tabbed analysis panels."""
 
-    TAB_NAMES = ["Bearing Capacity", "Settlement"]
+    TAB_NAMES = ["Footing Design"]
 
     def __init__(self):
         super().__init__()
@@ -89,35 +88,23 @@ class MainWindow(QMainWindow):
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
 
-        # Tab widget
+        # Central panel
         # Note: Slope Stability → slope_stability_qt.py, FEM 2D → fem2d_qt.py
-        self.tabs = QTabWidget()
-        self.tabs.addTab(
-            BearingCapacityPanel(self.status_bar), "Bearing Capacity")
-        self.tabs.addTab(
-            SettlementPanel(self.status_bar), "Settlement")
-        self.setCentralWidget(self.tabs)
-
-    def _current_panel(self):
-        return self.tabs.currentWidget()
+        self.panel = FootingDesignPanel(self.status_bar)
+        self.setCentralWidget(self.panel)
 
     def _save_project(self):
-        panel = self._current_panel()
-        if not hasattr(panel, "get_state"):
-            self.status_bar.showMessage("Save not supported for this tab")
-            return
         path, _ = QFileDialog.getSaveFileName(
             self, "Save Results", "",
             "GeotechStaffEngineer Files (*.gse);;All Files (*)")
         if not path:
             return
         try:
-            state = panel.get_state()
-            tab_name = self.tabs.tabText(self.tabs.currentIndex())
+            state = self.panel.get_state()
             doc = {
                 "app": APP_NAME,
                 "version": APP_VERSION,
-                "tab": tab_name,
+                "tab": "Footing Design",
                 "inputs": state,
                 "timestamp": datetime.datetime.now().isoformat(),
             }
@@ -136,22 +123,14 @@ class MainWindow(QMainWindow):
         try:
             with open(path, "r") as f:
                 doc = json.load(f)
-            tab_name = doc.get("tab", "")
-            # Switch to the correct tab
-            for i in range(self.tabs.count()):
-                if self.tabs.tabText(i) == tab_name:
-                    self.tabs.setCurrentIndex(i)
-                    break
-            panel = self._current_panel()
-            if hasattr(panel, "set_state") and "inputs" in doc:
-                panel.set_state(doc["inputs"])
+            if "inputs" in doc:
+                self.panel.set_state(doc["inputs"])
             self.status_bar.showMessage(f"Loaded from {path}", 10000)
         except Exception as e:
             QMessageBox.warning(self, "Load Error", str(e))
 
     def _export_png(self):
-        panel = self._current_panel()
-        canvas = getattr(panel, "canvas", None)
+        canvas = getattr(self.panel, "canvas", None)
         if canvas is None:
             self.status_bar.showMessage("No plot to export")
             return
