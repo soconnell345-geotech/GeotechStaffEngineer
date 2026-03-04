@@ -33,7 +33,9 @@ except ImportError:
 # ---------------------------------------------------------------------------
 import matplotlib
 matplotlib.use("Qt5Agg")
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+from matplotlib.backends.backend_qt5agg import (
+    FigureCanvasQTAgg, NavigationToolbar2QT,
+)
 from matplotlib.figure import Figure
 import matplotlib.patches as mpatches
 

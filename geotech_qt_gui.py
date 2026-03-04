@@ -37,7 +37,7 @@ if SOURCE_PATH not in sys.path:
 from qt_panels import (
     APP_NAME, APP_VERSION, STYLESHEET,
     BearingCapacityPanel,
-    SettlementPanel, FEM2DPanel,
+    SettlementPanel,
 )
 from qt_panels.common import (
     QApplication, QMainWindow, QTabWidget, QStatusBar,
@@ -51,7 +51,7 @@ from qt_panels.common import (
 class MainWindow(QMainWindow):
     """Main application window with tabbed analysis panels."""
 
-    TAB_NAMES = ["Bearing Capacity", "Settlement", "FEM 2D"]
+    TAB_NAMES = ["Bearing Capacity", "Settlement"]
 
     def __init__(self):
         super().__init__()
@@ -90,14 +90,12 @@ class MainWindow(QMainWindow):
         help_menu.addAction(about_action)
 
         # Tab widget
-        # Note: Slope Stability is now a standalone app (slope_stability_qt.py)
+        # Note: Slope Stability → slope_stability_qt.py, FEM 2D → fem2d_qt.py
         self.tabs = QTabWidget()
         self.tabs.addTab(
             BearingCapacityPanel(self.status_bar), "Bearing Capacity")
         self.tabs.addTab(
             SettlementPanel(self.status_bar), "Settlement")
-        self.tabs.addTab(
-            FEM2DPanel(self.status_bar), "FEM 2D")
         self.setCentralWidget(self.tabs)
 
     def _current_panel(self):
@@ -123,9 +121,6 @@ class MainWindow(QMainWindow):
                 "inputs": state,
                 "timestamp": datetime.datetime.now().isoformat(),
             }
-            # Add analysis_type for FEM2D
-            if isinstance(panel, FEM2DPanel):
-                doc["analysis_type"] = panel.type_cb.currentText()
             with open(path, "w") as f:
                 json.dump(doc, f, indent=2, default=str)
             self.status_bar.showMessage(f"Saved to {path}", 10000)

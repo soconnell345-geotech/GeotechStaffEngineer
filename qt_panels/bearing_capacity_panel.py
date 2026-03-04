@@ -8,7 +8,7 @@ from qt_panels.common import (
     QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QGroupBox,
     QDoubleSpinBox, QComboBox, QPushButton, QCheckBox,
     QScrollArea, QSplitter, Qt,
-    MplCanvas, make_results_box,
+    MplCanvas, make_results_box, NavigationToolbar2QT,
     GWT_COLOR, SLIP_COLOR,
     mpatches,
 )
@@ -100,8 +100,14 @@ class BearingCapacityPanel(QWidget):
         # --- Right: plot + results ---
         right_splitter = QSplitter(Qt.Vertical)
 
+        canvas_widget = QWidget()
+        canvas_layout = QVBoxLayout(canvas_widget)
+        canvas_layout.setContentsMargins(0, 0, 0, 0)
         self.canvas = MplCanvas(width=7, height=4)
-        right_splitter.addWidget(self.canvas)
+        self.toolbar = NavigationToolbar2QT(self.canvas, canvas_widget)
+        canvas_layout.addWidget(self.toolbar)
+        canvas_layout.addWidget(self.canvas)
+        right_splitter.addWidget(canvas_widget)
 
         self.results_text = make_results_box()
         right_splitter.addWidget(self.results_text)

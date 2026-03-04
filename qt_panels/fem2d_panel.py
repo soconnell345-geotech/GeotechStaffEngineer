@@ -9,7 +9,7 @@ from qt_panels.common import (
     QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QCheckBox,
     QScrollArea, QSplitter, QStackedWidget, QTabWidget,
     QTableWidget, QTableWidgetItem, QHeaderView, Qt,
-    MplCanvas, make_results_box,
+    MplCanvas, make_results_box, NavigationToolbar2QT,
     MESH_PRESETS, LAYER_COLORS,
 )
 from fem2d import (
@@ -127,8 +127,14 @@ class FEM2DPanel(QWidget):
         right_layout.addLayout(field_row)
 
         right_splitter = QSplitter(Qt.Vertical)
+        canvas_widget = QWidget()
+        canvas_layout = QVBoxLayout(canvas_widget)
+        canvas_layout.setContentsMargins(0, 0, 0, 0)
         self.canvas = MplCanvas(width=8, height=6)
-        right_splitter.addWidget(self.canvas)
+        self.toolbar = NavigationToolbar2QT(self.canvas, canvas_widget)
+        canvas_layout.addWidget(self.toolbar)
+        canvas_layout.addWidget(self.canvas)
+        right_splitter.addWidget(canvas_widget)
         self.results_text = make_results_box()
         right_splitter.addWidget(self.results_text)
         right_splitter.setSizes([500, 200])
