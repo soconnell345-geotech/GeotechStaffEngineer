@@ -40,6 +40,13 @@ class SliceData:
         Friction angle at base (degrees).
     base_length : float
         Length of slice base dl (m).
+    normal_stress_kPa : float
+        Effective normal stress on base = N' / dl (kPa).
+    shear_stress_kPa : float
+        Mobilized shear stress on base = S_mobilized / dl (kPa).
+        Positive = driving (base slopes downhill), negative = resisting.
+    shear_resistance_kPa : float
+        Available shear resistance on base = T_available / dl (kPa).
     """
     x_mid: float = 0.0
     z_top: float = 0.0
@@ -52,6 +59,9 @@ class SliceData:
     c: float = 0.0
     phi: float = 0.0
     base_length: float = 0.0
+    normal_stress_kPa: float = 0.0
+    shear_stress_kPa: float = 0.0
+    shear_resistance_kPa: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -66,6 +76,9 @@ class SliceData:
             "c_kPa": round(self.c, 1),
             "phi_deg": round(self.phi, 1),
             "base_length_m": round(self.base_length, 3),
+            "normal_stress_kPa": round(self.normal_stress_kPa, 2),
+            "shear_stress_kPa": round(self.shear_stress_kPa, 2),
+            "shear_resistance_kPa": round(self.shear_resistance_kPa, 2),
         }
 
 
@@ -146,6 +159,50 @@ class SlopeStabilityResult:
             lines.append(f"  Spencer theta:    {self.theta_spencer:.2f} deg")
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
+
+    def plot_slip_surface_stresses(self, ax=None, show=True, **kwargs):
+        """Plot contact stresses along the slip surface.
+
+        Shows effective normal stress, mobilized shear stress, and
+        available shear resistance vs distance along the slip surface.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        if not self.slice_data:
+            raise ValueError("No slice data available. "
+                             "Use include_slice_data=True in analyze_slope().")
+        from geotech_common.plotting import get_pyplot, setup_engineering_plot
+        plt = get_pyplot()
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(10, 5))
+
+        # Cumulative arc length along slip surface
+        dist = []
+        cumulative = 0.0
+        for sd in self.slice_data:
+            cumulative += sd.base_length
+            dist.append(cumulative - sd.base_length / 2.0)
+
+        sigma_n = [sd.normal_stress_kPa for sd in self.slice_data]
+        tau_mob = [sd.shear_stress_kPa for sd in self.slice_data]
+        tau_avail = [sd.shear_resistance_kPa for sd in self.slice_data]
+
+        ax.plot(dist, sigma_n, 'b-o', markersize=3, linewidth=1.5,
+                label="$\\sigma'_n$ (effective normal)")
+        ax.plot(dist, tau_mob, 'r--s', markersize=3, linewidth=1.5,
+                label="$\\tau_{mob}$ (mobilized shear)")
+        ax.plot(dist, tau_avail, 'g-^', markersize=3, linewidth=1.5,
+                label="$\\tau_{avail}$ (shear resistance)")
+
+        ax.legend(fontsize=9)
+        setup_engineering_plot(ax, f"Contact Stresses Along Slip Surface (FOS={self.FOS:.3f})",
+                              "Distance Along Slip Surface (m)", "Stress (kPa)")
+        if show:
+            plt.tight_layout()
+            plt.show()
+        return ax
 
     def to_dict(self) -> Dict[str, Any]:
         d = {

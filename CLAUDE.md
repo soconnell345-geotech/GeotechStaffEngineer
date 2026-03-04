@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (2693 module + 142 harness + 3299 ref = 6134 tests)
+## Module Inventory (2792 module + 142 harness + 3299 ref = 6233 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -39,7 +39,7 @@ Key conventions:
 | seismic_geotech | 71 | Site class, M-O pressures, liquefaction |
 | retaining_walls | 70 | Cantilever + MSE walls (GEC-11) |
 | ground_improvement | 43 | Aggregate piers, wick drains, surcharge, vibro (GEC-13) |
-| slope_stability | 139+17skip | Fellenius/Bishop/Spencer, circular+noncircular, grid/random search, Duncan verification |
+| slope_stability | 169+17skip | Fellenius/Bishop/Spencer, circular+noncircular, grid/random search, contact stresses, Duncan verification |
 | downdrag | 53 | Fellenius neutral plane, UFC 3-220-20 downdrag |
 | geotech_common | 284 | SoilProfile (82) + checks (93) + adapters (89) + plots (21) |
 | opensees_agent | 106 | PM4Sand cyclic DSS, BNWF lateral pile, 1D site response |
@@ -56,11 +56,11 @@ Key conventions:
 | geolysis_agent | 65 | USCS/AASHTO soil classification + SPT corrections + bearing capacity |
 | pystra_agent | 43 | FORM/SORM/Monte Carlo structural reliability analysis |
 | pydiggs_agent | 31 | DIGGS 2.6 XML schema and dictionary validation |
-| subsurface_characterization | 101 | Subsurface data visualization (DIGGS parser, Plotly plots, trend stats) |
+| subsurface_characterization | 145 | Subsurface data visualization (DIGGS parser w/ 20 test types, Plotly plots, trend stats) |
 | wind_loads | 62 | ASCE 7-22 wind loads on freestanding walls and fences (Ch 29.3) |
 | dxf_import | 97 | DXF CAD import for slope stability + FEM (discover layers, parse geometry, build SlopeGeometry/FEM inputs) |
 | pdf_import | 56 | PDF cross-section import (PyMuPDF vector extraction, LLM vision extraction, geometry conversion) |
-| fem2d | 249 | 2D plane-strain FEM (CST/Q4/beam, MC/HS, SRM, excavation, pore pressures, seepage, consolidation, staged construction) |
+| fem2d | 271 | 2D plane-strain FEM (CST/Q4/beam, MC/HS, SRM, excavation, pore pressures, seepage, consolidation, staged construction) |
 
 Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3299 tests), foundry_test_harness (142 tests), trial_agent (100 tests), chat_agent (42 tests), funhouse_agent (32 tests)
 
@@ -78,7 +78,7 @@ Run: `python slope_stability_gui.py` or `python fem2d_gui.py` — opens browser 
 | GUI | Purpose |
 |-----|---------|
 | `geotech_qt_gui.py` | Main app: Bearing Capacity, Settlement, FEM 2D tabs |
-| `slope_stability_qt.py` | Standalone slope stability: circular/noncircular, entry/exit limits, slice visualization |
+| `slope_stability_qt.py` | Standalone slope stability: circular/noncircular, entry/exit limits, slice visualization, contact stress plot |
 | `fem2d_qt.py` | Standalone FEM 2D: tabbed inputs, mesh preview, BC controls, FOS vs displacement |
 
 Run: `python geotech_qt_gui.py` or `python slope_stability_qt.py` or `python fem2d_qt.py`

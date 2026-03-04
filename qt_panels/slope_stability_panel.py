@@ -16,7 +16,7 @@ import numpy as np
 from qt_panels.common import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QGroupBox,
     QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QCheckBox,
-    QScrollArea, QSplitter, QTableWidget, QTableWidgetItem, QHeaderView, Qt,
+    QScrollArea, QSplitter, QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, Qt,
     QFileDialog, QMessageBox,
     MplCanvas, make_results_box, NavigationToolbar2QT,
     LAYER_COLORS, GWT_COLOR, SLIP_COLOR, SURFACE_COLOR,
@@ -226,14 +226,30 @@ class SlopeStabilityPanel(QWidget):
         # --- Right: plot + results ---
         right_splitter = QSplitter(Qt.Vertical)
 
-        canvas_widget = QWidget()
-        canvas_layout = QVBoxLayout(canvas_widget)
-        canvas_layout.setContentsMargins(0, 0, 0, 0)
+        self.plot_tabs = QTabWidget()
+
+        # Tab 1: Cross-Section
+        cs_widget = QWidget()
+        cs_layout = QVBoxLayout(cs_widget)
+        cs_layout.setContentsMargins(0, 0, 0, 0)
         self.canvas = MplCanvas(width=8, height=5)
-        self.toolbar = NavigationToolbar2QT(self.canvas, canvas_widget)
-        canvas_layout.addWidget(self.toolbar)
-        canvas_layout.addWidget(self.canvas)
-        right_splitter.addWidget(canvas_widget)
+        self.toolbar = NavigationToolbar2QT(self.canvas, cs_widget)
+        cs_layout.addWidget(self.toolbar)
+        cs_layout.addWidget(self.canvas)
+        self.plot_tabs.addTab(cs_widget, "Cross-Section")
+
+        # Tab 2: Stress Distribution
+        stress_widget = QWidget()
+        stress_layout = QVBoxLayout(stress_widget)
+        stress_layout.setContentsMargins(0, 0, 0, 0)
+        self.stress_canvas = MplCanvas(width=8, height=5)
+        self.stress_toolbar = NavigationToolbar2QT(
+            self.stress_canvas, stress_widget)
+        stress_layout.addWidget(self.stress_toolbar)
+        stress_layout.addWidget(self.stress_canvas)
+        self.plot_tabs.addTab(stress_widget, "Stress Distribution")
+
+        right_splitter.addWidget(self.plot_tabs)
 
         self.results_text = make_results_box()
         right_splitter.addWidget(self.results_text)
@@ -509,6 +525,7 @@ class SlopeStabilityPanel(QWidget):
         try:
             geom = self._build_geometry()
             self._plot_cross_section(geom)
+            self._plot_stress_distribution(geom, None)
         except Exception:
             pass
 
@@ -615,6 +632,51 @@ class SlopeStabilityPanel(QWidget):
 
     def _plot_result(self, geom, result):
         self._plot_cross_section(geom, result)
+        self._plot_stress_distribution(geom, result)
+
+    def _plot_stress_distribution(self, geom, result):
+        """Plot contact stresses along the slip surface on the stress tab."""
+        ax = self.stress_canvas.axes
+        ax.clear()
+
+        if self._last_slices is None or result is None:
+            ax.text(0.5, 0.5, "Run analysis to see stress distribution",
+                    transform=ax.transAxes, ha='center', va='center',
+                    fontsize=12, color='#888888')
+            self.stress_canvas.draw()
+            return
+
+        # Compute stresses from slices
+        dist = []
+        sigma_n = []
+        tau_mob = []
+        tau_avail = []
+        cumulative = 0.0
+        for s in self._last_slices:
+            sf = compute_slice_forces(s)
+            dl = s.base_length
+            cumulative += dl
+            dist.append(cumulative - dl / 2.0)
+            sigma_n.append(sf.N_prime / dl if dl > 0 else 0.0)
+            tau_mob.append(sf.S_mobilized / dl if dl > 0 else 0.0)
+            tau_avail.append(sf.T_available / dl if dl > 0 else 0.0)
+
+        ax.plot(dist, sigma_n, 'b-o', markersize=3, linewidth=1.5,
+                label="$\\sigma'_n$ (effective normal)")
+        ax.plot(dist, tau_mob, 'r--s', markersize=3, linewidth=1.5,
+                label="$\\tau_{mob}$ (mobilized shear)")
+        ax.plot(dist, tau_avail, 'g-^', markersize=3, linewidth=1.5,
+                label="$\\tau_{avail}$ (shear resistance)")
+        ax.axhline(y=0, color='black', linewidth=0.5, alpha=0.3)
+
+        ax.legend(fontsize=9, loc='upper right')
+        ax.set_xlabel("Distance Along Slip Surface (m)")
+        ax.set_ylabel("Stress (kPa)")
+        ax.set_title(
+            f"Contact Stresses (FOS={result.FOS:.3f}, {result.method})",
+            fontweight="bold")
+        ax.grid(True, alpha=0.3)
+        self.stress_canvas.draw()
 
     # --- Slice force polygon ---
     def _on_slice_pick(self, event):

@@ -8,11 +8,12 @@ Provides:
 - Steady-state seepage solver (Laplace equation, CST flow elements)
 - Coupled Biot consolidation (staggered scheme)
 
-Sign convention (matches existing tension-positive code):
+Sign convention (tension-positive code):
     Compression = negative sigma
     Pore pressure u > 0 below GWT
-    Effective stress: sigma' = sigma - u * m  where m = [1, 1, 0]^T
-    (subtracting positive u makes compression more negative = more confining)
+    Effective stress: sigma' = sigma + u * m  where m = [1, 1, 0]^T
+    (adding positive u makes effective stress less compressive = less confining)
+    Total from effective: sigma_total = sigma' - u * m
 
 References:
     Biot (1941) — General theory of three-dimensional consolidation
@@ -118,9 +119,13 @@ def element_pore_pressures(nodes, elements, nodal_pp):
 
 
 def effective_stress_correction(sigma_total_3, u_pore):
-    """Convert total stress to effective stress.
+    """Convert total stress to effective stress (tension-positive).
 
-    sigma_eff = sigma_total - u * m  where m = [1, 1, 0]^T
+    sigma_eff = sigma_total + u * m  where m = [1, 1, 0]^T
+
+    In tension-positive convention, compression is negative. Adding
+    positive u makes effective stress less compressive (less negative),
+    i.e. lower confining pressure → lower shear strength.
 
     Parameters
     ----------
@@ -131,7 +136,7 @@ def effective_stress_correction(sigma_total_3, u_pore):
     -------
     (3,) array — effective stress.
     """
-    return np.asarray(sigma_total_3) - u_pore * _M_VOIGT
+    return np.asarray(sigma_total_3) + u_pore * _M_VOIGT
 
 
 def pore_pressure_force(nodes, elements, nodal_pp, t=1.0,

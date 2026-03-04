@@ -329,3 +329,40 @@ class TestGroundImprovementPlot:
         result = SurchargeResult()
         with pytest.raises(ValueError):
             result.plot_consolidation(show=False)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# slope_stability — contact stress plot
+# ──────────────────────────────────────────────────────────────────────
+
+class TestSlopeStabilityStressPlot:
+    def _make_result(self):
+        from slope_stability import analyze_slope
+        from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
+        layer = SlopeSoilLayer(
+            name="Soil", top_elevation=10.0, bottom_elevation=-10.0,
+            gamma=18.0, gamma_sat=20.0, phi=25.0, c_prime=10.0,
+        )
+        geom = SlopeGeometry(
+            surface_points=[(0, 10), (10, 10), (30, 0), (50, 0)],
+            soil_layers=[layer],
+        )
+        return analyze_slope(geom, xc=20, yc=15, radius=13,
+                             include_slice_data=True)
+
+    def test_plot_slip_surface_stresses_runs(self):
+        result = self._make_result()
+        ax = result.plot_slip_surface_stresses(show=False)
+        assert ax is not None
+
+    def test_plot_slip_surface_stresses_with_ax(self):
+        result = self._make_result()
+        fig, ax = plt_mod.subplots()
+        returned_ax = result.plot_slip_surface_stresses(ax=ax, show=False)
+        assert returned_ax is ax
+
+    def test_plot_slip_surface_stresses_no_data(self):
+        from slope_stability.results import SlopeStabilityResult
+        result = SlopeStabilityResult(FOS=1.5, method="Bishop")
+        with pytest.raises(ValueError):
+            result.plot_slip_surface_stresses(show=False)

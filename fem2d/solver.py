@@ -135,8 +135,8 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
     beam_elements : list of BeamElement, optional — structural beam elements.
     rotation_dof_map : dict, optional — {node_id: rotation_dof_index}.
     pore_pressures : (n_nodes,) array, optional — nodal pore pressures.
-        When provided, adds pore pressure equivalent forces to F_ext.
-        Constitutive model sees effective stress (total - pore pressure).
+        When provided, adds pore pressure equivalent forces (buoyancy)
+        to F_ext and solver works entirely in effective stress.
     active_elements : set of int, optional — soil element indices to include.
         None means all elements are active.
     active_beams : set of int, optional — beam element indices to include.
@@ -185,9 +185,9 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
             [material_props[-1]] * (n_elem - len(material_props))
 
     # Pre-compute element pore pressures (centroidal average)
-    if pore_pressures is not None:
+    has_pp = pore_pressures is not None
+    if has_pp:
         from fem2d.porewater import element_pore_pressures as _elem_pp
-        from fem2d.porewater import effective_stress_correction as _eff_corr
         pp_elem = _elem_pp(nodes, elements, pore_pressures)
     else:
         pp_elem = None
@@ -199,15 +199,16 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
         B, A = cst_B(coords)
         elem_data.append((B, A))
 
-    # Full gravity load (soil elements)
+    # Full gravity load (soil elements) + pore pressure force (buoyancy).
+    # Both are ramped together during incremental loading. The nonlinear
+    # solver works in effective stress throughout: constitutive model sees
+    # effective stress, internal forces use effective stress.
     F_gravity_soil = assemble_gravity(
         nodes, elements, gamma, t, active_elements=active_elements)
-    # Add pore pressure equivalent forces
-    if pore_pressures is not None:
+    if has_pp:
         from fem2d.porewater import pore_pressure_force
         F_gravity_soil = F_gravity_soil + pore_pressure_force(
-            nodes, elements, pore_pressures, t,
-            active_elements=active_elements)
+            nodes, elements, pore_pressures, t)
     # Add surface loads
     if surface_loads:
         for edges, qx, qy in surface_loads:
@@ -314,28 +315,17 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
                 eps = B @ u_e
                 d_eps = eps - epsilon_gp[e]
 
-                # Trial stress (total)
+                # Trial stress (effective — sigma_gp stores effective stress)
                 D_e = elastic_D(mp['E'], mp['nu'])
                 sigma_trial = sigma_gp[e] + D_e @ d_eps
 
-                # Convert to effective stress for return mapping
-                if pp_elem is not None:
-                    sigma_trial_eff = _eff_corr(sigma_trial, pp_elem[e])
-                else:
-                    sigma_trial_eff = sigma_trial
-
                 # Return mapping on effective stress
-                sigma_new_eff, D_ep, _, state_new = _do_return_mapping(
-                    mp, sigma_trial_eff, elem_state[e])
+                sigma_new, D_ep, _, state_new = _do_return_mapping(
+                    mp, sigma_trial, elem_state[e])
                 tentative_states[e] = state_new
 
-                # Store total stress (add back pore pressure)
-                if pp_elem is not None:
-                    sigma_new = sigma_new_eff + pp_elem[e] * np.array([1., 1., 0.])
-                else:
-                    sigma_new = sigma_new_eff
-
-                # Internal force: f_int_e = t * A * B^T * sigma (total)
+                # Internal force from effective stress
+                # (F_ext includes F_pp, so equilibrium: B^T σ' = F_grav + F_pp)
                 f_int_e = t * A * (B.T @ sigma_new)
                 F_int[dofs] += f_int_e
 
@@ -448,22 +438,10 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
             D_e = elastic_D(mp['E'], mp['nu'])
             sigma_trial = sigma_gp[e] + D_e @ d_eps
 
-            # Effective stress for return mapping
-            if pp_elem is not None:
-                sigma_trial_eff = _eff_corr(sigma_trial, pp_elem[e])
-            else:
-                sigma_trial_eff = sigma_trial
+            sigma_new, _, _, state_new = _do_return_mapping(
+                mp, sigma_trial, elem_state[e])
 
-            sigma_new_eff, _, _, state_new = _do_return_mapping(
-                mp, sigma_trial_eff, elem_state[e])
-
-            # Store total stress
-            if pp_elem is not None:
-                sigma_new = sigma_new_eff + pp_elem[e] * np.array([1., 1., 0.])
-            else:
-                sigma_new = sigma_new_eff
-
-            sigma_gp[e] = sigma_new
+            sigma_gp[e] = sigma_new  # effective stress
             epsilon_gp[e] = eps
             if state_new is not None:
                 elem_state[e] = state_new

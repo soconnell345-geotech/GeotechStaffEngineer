@@ -108,13 +108,13 @@ class TestElementPorePressures:
 class TestEffectiveStressCorrection:
     """Test effective_stress_correction()."""
 
-    def test_simple_subtraction(self):
+    def test_tension_positive_addition(self):
         from fem2d.porewater import effective_stress_correction
         sigma_total = np.array([-100.0, -200.0, 50.0])  # [sx, sy, txy]
         u_pore = 50.0
         sigma_eff = effective_stress_correction(sigma_total, u_pore)
-        # sigma' = sigma - u*[1,1,0]
-        np.testing.assert_allclose(sigma_eff, [-150.0, -250.0, 50.0])
+        # sigma' = sigma + u*[1,1,0] (tension-positive: less compressive)
+        np.testing.assert_allclose(sigma_eff, [-50.0, -150.0, 50.0])
 
     def test_zero_pore_pressure(self):
         from fem2d.porewater import effective_stress_correction
