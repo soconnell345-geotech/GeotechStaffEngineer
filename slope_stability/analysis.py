@@ -16,7 +16,10 @@ from slope_stability.geometry import SlopeGeometry
 from slope_stability.slip_surface import CircularSlipSurface
 from slope_stability.slices import build_slices, compute_slice_forces
 from slope_stability.methods import fellenius_fos, bishop_fos, spencer_fos
-from slope_stability.search import grid_search, search_noncircular
+from slope_stability.search import (
+    grid_search, search_noncircular,
+    search_pso, search_weak_layer_biased, search_entry_exit,
+)
 from slope_stability.results import (
     SlopeStabilityResult, SliceData, SearchResult,
 )
@@ -211,15 +214,15 @@ def search_critical_surface(
     -------
     SearchResult
     """
-    if surface_type == "noncircular":
-        # Auto-compute entry/exit ranges from slope geometry if not provided
-        x_min = geom.surface_points[0][0]
-        x_max = geom.surface_points[-1][0]
-        if x_entry_range is None:
-            x_entry_range = (x_min, x_min + (x_max - x_min) * 0.4)
-        if x_exit_range is None:
-            x_exit_range = (x_min + (x_max - x_min) * 0.6, x_max)
+    # Auto-compute entry/exit ranges from slope geometry if not provided
+    x_min_geo = geom.surface_points[0][0]
+    x_max_geo = geom.surface_points[-1][0]
+    if x_entry_range is None:
+        x_entry_range = (x_min_geo, x_min_geo + (x_max_geo - x_min_geo) * 0.4)
+    if x_exit_range is None:
+        x_exit_range = (x_min_geo + (x_max_geo - x_min_geo) * 0.6, x_max_geo)
 
+    if surface_type == "noncircular":
         return search_noncircular(
             geom,
             x_entry_range=x_entry_range,
@@ -229,6 +232,43 @@ def search_critical_surface(
             n_slices=n_slices,
             tol=tol,
             seed=seed,
+        )
+
+    if surface_type == "pso":
+        return search_pso(
+            geom,
+            x_entry_range=x_entry_range,
+            x_exit_range=x_exit_range,
+            n_particles=max(nx * ny, 30),
+            n_iterations=n_trials // max(nx * ny, 30) if n_trials > 30 else 50,
+            n_points=n_points,
+            n_slices=n_slices,
+            tol=tol,
+            seed=seed,
+        )
+
+    if surface_type == "weak_layer":
+        return search_weak_layer_biased(
+            geom,
+            x_entry_range=x_entry_range,
+            x_exit_range=x_exit_range,
+            n_trials=n_trials,
+            n_points=n_points,
+            n_slices=n_slices,
+            tol=tol,
+            seed=seed,
+        )
+
+    if surface_type == "entry_exit":
+        return search_entry_exit(
+            geom,
+            x_entry_range=x_entry_range,
+            x_exit_range=x_exit_range,
+            n_entry=nx,
+            n_exit=ny,
+            method=method,
+            n_slices=n_slices,
+            tol=tol,
         )
 
     # Circular search

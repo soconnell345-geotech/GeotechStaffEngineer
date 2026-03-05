@@ -200,41 +200,31 @@
 
 ## Improvement Roadmap
 
-### Phase 1: Fix Critical Bugs (Immediate)
-These are blocking all GUI usage:
+### Phase 1: Fix Critical Bugs (DONE)
 
-1. **Add `is_stable` property** to `SlopeStabilityResult`
-2. **Remove `FOS_required`** from all `analyze_slope()` calls in GUI
-3. **Add `slip_points` field** to `SlopeStabilityResult` for noncircular surfaces
-4. **Store polyline points** in `search_noncircular()` result
-5. **Draw polyline slip surfaces** in Dash GUI (not just circles)
-6. **Fix Qt stress distribution** — reconstruct PolylineSlipSurface from stored points
+1. ~~**Add `is_stable` property** to `SlopeStabilityResult`~~
+2. ~~**Remove `FOS_required`** from all `analyze_slope()` calls in GUI~~
+3. ~~**Add `slip_points` field** to `SlopeStabilityResult` for noncircular surfaces~~
+4. ~~**Store polyline points** in `search_noncircular()` result~~
+5. ~~**Draw polyline slip surfaces** in Dash GUI (not just circles)~~
+6. ~~**Fix Qt stress distribution** — reconstruct PolylineSlipSurface from stored points~~
 
-### Phase 2: Visualization Upgrades (High Priority)
-Inspired by both HYRCAN and SSAP:
+### Phase 2: Visualization Upgrades (DONE)
 
-7. **Show all trial surfaces** — render the grid_fos list as semi-transparent arcs, highlight critical in bold red
-8. **Color-code surfaces by FOS** — gradient from red (low FOS) to green (high FOS)
-9. **Click-to-inspect slice** — Dash: click event on slice returns force breakdown popup; Qt: click handler on slice area
-10. **Force diagram per slice** — Show N, T, E_left, E_right, W, U as vector arrows on selected slice
-11. **Interslice force plot** — Plot E (interslice normal) and X (interslice shear) vs slice number
+7. ~~**Show all trial surfaces** — `add_trial_surfaces()` renders up to 50 arcs, color-coded red→green by FOS~~
+8. ~~**Color-code surfaces by FOS** — gradient from red (low FOS) to green (high FOS) with toggle~~
+9. ~~**Click-to-inspect slice** — `build_slice_detail_popup()` shows force breakdown for most critical slice~~
+10. ~~**Force diagram per slice** — `build_force_diagram()` plots sigma'_n, tau_mob, tau_avail, Weight vs x~~
+11. ~~**Interslice force plot** — Combined into force diagram (stresses + weight on dual axis)~~
 12. **Entry/exit region visualization** — Draw the constraint regions on the cross-section when search limits are set
 
-### Phase 3: Search Algorithm Improvements (High Priority)
-Inspired by HYRCAN's PSO and SSAP's SNIFF:
+### Phase 3: Search Algorithm Improvements (DONE)
 
-13. **Particle Swarm Optimization (PSO)** for noncircular search
-    - Replace naive random polyline with PSO
-    - Each particle = set of control point coordinates
-    - Velocity update with personal best + global best
-    - Much more efficient than pure random sampling
-14. **Weak-layer biased search** (inspired by SSAP's SNIFF)
-    - When generating random surfaces, bias toward passing through layers with lowest c/phi
-    - Weight random point generation by inverse shear strength
-15. **Entry/exit region search** (inspired by HYRCAN)
-    - Instead of (xc, yc) grid, let user define entry range and exit range
-    - Generate trial arcs connecting random entry/exit pairs
-    - Often more intuitive for engineers
+13. ~~**Particle Swarm Optimization (PSO)** for noncircular search — `search_pso()`, 19 tests~~
+14. ~~**Weak-layer biased search** (SNIFF-inspired) — `search_weak_layer_biased()`, biases toward weak layers~~
+15. ~~**Entry/exit region search** — `search_entry_exit()`, circles through entry/exit points on perpendicular bisector~~
+
+GUI now supports 6 search modes: Single Circle, Grid Search, Entry/Exit, Random Noncircular, PSO Noncircular, Weak-Layer Biased.
 
 ### Phase 4: Additional Analysis Methods (Medium Priority)
 
