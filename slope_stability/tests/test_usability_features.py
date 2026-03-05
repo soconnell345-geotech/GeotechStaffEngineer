@@ -23,7 +23,7 @@ from slope_stability.results import SlopeStabilityResult
 def _simple_geom(**kw):
     layer_keys = {'phi', 'c_prime', 'gamma', 'ru', 'cu', 'analysis_mode', 'gamma_sat'}
     layers_kw = {k: v for k, v in kw.items() if k in layer_keys}
-    geom_keys = {'gwt_points', 'kh'}
+    geom_keys = {'gwt_points', 'kh', 'tension_crack_depth', 'tension_crack_water_depth'}
     geom_kw = {k: v for k, v in kw.items() if k in geom_keys}
     layer = SlopeSoilLayer(
         'Fill', 10, -5,
@@ -322,3 +322,159 @@ class TestCombined:
         )
         r = analyze_slope(geom, 20, 15, 16)
         assert r.FOS > 0
+
+
+# ===================================================================
+# Tension Crack
+# ===================================================================
+
+class TestTensionCrack:
+
+    def test_reduces_fos(self):
+        """Tension crack should reduce FOS by removing resistance."""
+        fos_dry = analyze_slope(_simple_geom(), 20, 15, 16).FOS
+        fos_crack = analyze_slope(
+            _simple_geom(tension_crack_depth=3.0), 20, 15, 16).FOS
+        assert fos_crack < fos_dry
+
+    def test_zero_depth_no_effect(self):
+        """Zero crack depth = no change."""
+        r1 = analyze_slope(_simple_geom(tension_crack_depth=0.0), 20, 15, 16)
+        r2 = analyze_slope(_simple_geom(), 20, 15, 16)
+        assert abs(r1.FOS - r2.FOS) < 0.001
+
+    def test_water_further_reduces_fos(self):
+        """Water-filled crack should reduce FOS more than dry crack."""
+        fos_dry_crack = analyze_slope(
+            _simple_geom(tension_crack_depth=3.0), 20, 15, 16).FOS
+        fos_wet_crack = analyze_slope(
+            _simple_geom(tension_crack_depth=3.0,
+                         tension_crack_water_depth=3.0), 20, 15, 16).FOS
+        assert fos_wet_crack < fos_dry_crack
+
+    def test_partial_water(self):
+        """Partially filled crack: water < crack depth."""
+        fos_half = analyze_slope(
+            _simple_geom(tension_crack_depth=4.0,
+                         tension_crack_water_depth=2.0), 20, 15, 16).FOS
+        fos_full = analyze_slope(
+            _simple_geom(tension_crack_depth=4.0,
+                         tension_crack_water_depth=4.0), 20, 15, 16).FOS
+        assert fos_full < fos_half
+
+    def test_slices_marked_in_crack(self):
+        """Slices in crack zone should have c=0, phi=0."""
+        geom = _simple_geom(tension_crack_depth=3.0)
+        r = analyze_slope(geom, 20, 15, 16, include_slice_data=True)
+        cracked = [s for s in r.slice_data if s.in_tension_crack]
+        assert len(cracked) > 0
+        for s in cracked:
+            assert s.c == 0.0
+            assert s.phi == 0.0
+
+    def test_positive_fos(self):
+        """FOS should still be positive even with large crack."""
+        r = analyze_slope(
+            _simple_geom(tension_crack_depth=5.0,
+                         tension_crack_water_depth=5.0), 20, 15, 16)
+        assert r.FOS > 0
+
+    def test_result_stores_crack_info(self):
+        """Result should report crack depth and water depth."""
+        r = analyze_slope(
+            _simple_geom(tension_crack_depth=3.0,
+                         tension_crack_water_depth=2.0), 20, 15, 16)
+        assert r.tension_crack_depth == 3.0
+        assert r.tension_crack_water_depth == 2.0
+
+    def test_to_dict_includes_crack(self):
+        """to_dict should include crack info."""
+        r = analyze_slope(
+            _simple_geom(tension_crack_depth=3.0), 20, 15, 16)
+        d = r.to_dict()
+        assert d["tension_crack_depth_m"] == 3.0
+
+    def test_summary_includes_crack(self):
+        """summary() should mention tension crack."""
+        r = analyze_slope(
+            _simple_geom(tension_crack_depth=3.0,
+                         tension_crack_water_depth=2.0), 20, 15, 16)
+        s = r.summary()
+        assert "Tension crack" in s
+        assert "Crack water" in s
+
+    def test_with_all_methods(self):
+        """Crack should work with all 4 methods."""
+        geom = _simple_geom(tension_crack_depth=3.0,
+                            tension_crack_water_depth=2.0)
+        for method in ['fellenius', 'bishop', 'spencer', 'morgenstern_price']:
+            r = analyze_slope(geom, 20, 15, 16, method=method)
+            assert r.FOS > 0, f"Method {method} failed with crack"
+
+    def test_crack_with_seismic(self):
+        """Tension crack + seismic loading together."""
+        fos_crack = analyze_slope(
+            _simple_geom(tension_crack_depth=3.0), 20, 15, 16).FOS
+        fos_both = analyze_slope(
+            _simple_geom(tension_crack_depth=3.0, kh=0.1), 20, 15, 16).FOS
+        assert fos_both < fos_crack
+
+    def test_crack_with_ru(self):
+        """Tension crack + Ru together."""
+        fos_crack = analyze_slope(
+            _simple_geom(tension_crack_depth=3.0), 20, 15, 16).FOS
+        fos_both = analyze_slope(
+            _simple_geom(tension_crack_depth=3.0, ru=0.3), 20, 15, 16).FOS
+        assert fos_both < fos_crack
+
+    def test_crack_with_gwt(self):
+        """Tension crack + GWT together."""
+        fos_crack = analyze_slope(
+            _simple_geom(tension_crack_depth=3.0), 20, 15, 16).FOS
+        fos_both = analyze_slope(
+            _simple_geom(tension_crack_depth=3.0,
+                         gwt_points=[(0, 8), (50, -1)]), 20, 15, 16).FOS
+        assert fos_both < fos_crack
+
+    def test_water_clamped_to_crack_depth(self):
+        """Water depth should be clamped to crack depth."""
+        geom = _simple_geom(tension_crack_depth=3.0,
+                            tension_crack_water_depth=10.0)
+        assert geom.tension_crack_water_depth == 3.0
+
+    def test_noncircular_with_crack(self):
+        """Tension crack should work with noncircular surfaces."""
+        poly = PolylineSlipSurface(points=[(5, 10), (15, 5), (25, 0), (35, 0)])
+        geom = _simple_geom(tension_crack_depth=2.0)
+        r = analyze_slope(geom, slip_surface=poly, method='spencer')
+        assert r.FOS > 0
+
+    def test_monotonic_with_depth(self):
+        """Deeper crack should give lower FOS."""
+        fos_prev = float('inf')
+        for depth in [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]:
+            fos = analyze_slope(
+                _simple_geom(tension_crack_depth=depth), 20, 15, 16).FOS
+            assert fos <= fos_prev + 0.01, \
+                f"FOS should decrease with deeper crack: depth={depth}"
+            fos_prev = fos
+
+    def test_compare_methods_with_crack(self):
+        """Multi-method comparison with tension crack."""
+        r = analyze_slope(
+            _simple_geom(tension_crack_depth=3.0,
+                         tension_crack_water_depth=2.0),
+            20, 15, 16, method='bishop', compare_methods=True)
+        assert r.FOS_fellenius is not None
+        assert r.FOS_bishop is not None
+        assert r.FOS_morgenstern_price is not None
+
+    def test_validation_negative_depth(self):
+        """Negative crack depth should raise ValueError."""
+        with pytest.raises(ValueError):
+            _simple_geom(tension_crack_depth=-1.0)
+
+    def test_validation_negative_water(self):
+        """Negative water depth should raise ValueError."""
+        with pytest.raises(ValueError):
+            _simple_geom(tension_crack_water_depth=-1.0)

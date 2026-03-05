@@ -151,6 +151,7 @@ def analyze_slope(geom: SlopeGeometry,
                 normal_stress_kPa=sigma_n,
                 shear_stress_kPa=tau_mob,
                 shear_resistance_kPa=tau_avail,
+                in_tension_crack=s.in_tension_crack,
             ))
 
     return SlopeStabilityResult(
@@ -171,6 +172,8 @@ def analyze_slope(geom: SlopeGeometry,
         kh=geom.kh,
         slice_data=slice_data,
         slip_points=r_slip_points,
+        tension_crack_depth=geom.tension_crack_depth,
+        tension_crack_water_depth=geom.tension_crack_water_depth,
     )
 
 

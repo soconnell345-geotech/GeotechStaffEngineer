@@ -62,9 +62,10 @@ class SliceData:
     normal_stress_kPa: float = 0.0
     shear_stress_kPa: float = 0.0
     shear_resistance_kPa: float = 0.0
+    in_tension_crack: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "x_mid_m": round(self.x_mid, 3),
             "z_top_m": round(self.z_top, 3),
             "z_base_m": round(self.z_base, 3),
@@ -80,6 +81,9 @@ class SliceData:
             "shear_stress_kPa": round(self.shear_stress_kPa, 2),
             "shear_resistance_kPa": round(self.shear_resistance_kPa, 2),
         }
+        if self.in_tension_crack:
+            d["in_tension_crack"] = True
+        return d
 
 
 @dataclass
@@ -134,6 +138,8 @@ class SlopeStabilityResult:
     kh: float = 0.0
     slice_data: Optional[List[SliceData]] = None
     slip_points: Optional[List[Tuple[float, float]]] = None
+    tension_crack_depth: float = 0.0
+    tension_crack_water_depth: float = 0.0
 
     @property
     def is_circular(self) -> bool:
@@ -171,6 +177,10 @@ class SlopeStabilityResult:
         ])
         if self.has_seismic:
             lines.append(f"  Seismic kh:       {self.kh:.3f}")
+        if self.tension_crack_depth > 0:
+            lines.append(f"  Tension crack:    {self.tension_crack_depth:.2f} m deep")
+            if self.tension_crack_water_depth > 0:
+                lines.append(f"  Crack water:      {self.tension_crack_water_depth:.2f} m")
         if self.FOS_fellenius is not None:
             lines.append(f"  FOS (Fellenius):  {self.FOS_fellenius:.3f}")
         if self.FOS_bishop is not None and self.method != "Bishop":
@@ -243,6 +253,9 @@ class SlopeStabilityResult:
             "has_seismic": self.has_seismic,
             "kh": self.kh,
         }
+        if self.tension_crack_depth > 0:
+            d["tension_crack_depth_m"] = round(self.tension_crack_depth, 2)
+            d["tension_crack_water_depth_m"] = round(self.tension_crack_water_depth, 2)
         if self.slip_points is not None:
             d["slip_points"] = [
                 (round(x, 3), round(z, 3)) for x, z in self.slip_points

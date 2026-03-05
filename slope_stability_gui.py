@@ -131,6 +131,7 @@ def _safe_float(val, default=0.0):
 
 def _build_geometry(surface_data, layers_data, gwt_enabled, gwt_data,
                     surcharge, surcharge_start, surcharge_end, kh,
+                    crack_depth=0, crack_water=0,
                     nails_enabled=False, nails_data=None,
                     nail_bar_dia=25, nail_ddh=150, nail_fy=420,
                     nail_bond=100, nail_spacing=1.5):
@@ -215,6 +216,8 @@ def _build_geometry(surface_data, layers_data, gwt_enabled, gwt_data,
         q_range = (s_start, s_end)
 
     kh_val = max(0.0, _safe_float(kh, 0))
+    crack_d = max(0.0, _safe_float(crack_depth, 0))
+    crack_w = max(0.0, _safe_float(crack_water, 0))
 
     # Soil nails
     nails = None
@@ -245,6 +248,8 @@ def _build_geometry(surface_data, layers_data, gwt_enabled, gwt_data,
             surcharge_x_range=q_range,
             kh=kh_val,
             nails=nails,
+            tension_crack_depth=crack_d,
+            tension_crack_water_depth=crack_w,
         )
         return geom, None
     except ValueError as e:
@@ -356,6 +361,32 @@ def build_cross_section(geom, result=None, entry_exit_ranges=None):
                 fill="toself", fillcolor=color,
                 line=dict(color=edge_color, width=1.5, dash="dot"),
                 name=label,
+                hoverinfo="name",
+            ))
+
+    # ── Tension crack ──────────────────────────────────────────
+    if geom.tension_crack_depth > 0 and result is not None:
+        # Draw the crack at the entry point as a vertical line
+        x_crack = result.x_entry
+        z_surf = geom.ground_elevation_at(x_crack)
+        z_crack_base = z_surf - geom.tension_crack_depth
+        fig.add_trace(go.Scatter(
+            x=[x_crack, x_crack],
+            y=[z_crack_base, z_surf],
+            mode="lines",
+            line=dict(color="#b91c1c", width=3, dash="solid"),
+            name=f"Tension Crack ({geom.tension_crack_depth:.1f}m)",
+            hoverinfo="name",
+        ))
+        # If water-filled, show water level in crack
+        if geom.tension_crack_water_depth > 0:
+            z_water_top = z_crack_base + geom.tension_crack_water_depth
+            fig.add_trace(go.Scatter(
+                x=[x_crack, x_crack],
+                y=[z_crack_base, z_water_top],
+                mode="lines",
+                line=dict(color="#2563eb", width=4),
+                name=f"Crack Water ({geom.tension_crack_water_depth:.1f}m)",
                 hoverinfo="name",
             ))
 
@@ -709,6 +740,10 @@ def build_results_summary(result):
     ])
     if result.has_seismic:
         rows.append(("Seismic kh", f"{result.kh:.3f}"))
+    if result.tension_crack_depth > 0:
+        rows.append(("Tension Crack", f"{result.tension_crack_depth:.1f} m"))
+        if result.tension_crack_water_depth > 0:
+            rows.append(("Crack Water", f"{result.tension_crack_water_depth:.1f} m"))
 
     return html.Table([
         html.Tbody([
@@ -1269,6 +1304,15 @@ app.layout = html.Div([
                     html.Label("Seismic kh", style=LABEL_STYLE),
                     dcc.Input(id="input-kh", type="number", value=0,
                               min=0, max=1, step=0.01, style=INPUT_STYLE),
+
+                    html.Hr(style={"margin": "10px 0", "borderColor": "#e2e8f0"}),
+
+                    html.Label("Tension Crack Depth (m)", style=LABEL_STYLE),
+                    dcc.Input(id="input-crack-depth", type="number", value=0,
+                              min=0, step=0.5, style=INPUT_STYLE),
+                    html.Label("Crack Water Depth (m)", style=LABEL_STYLE),
+                    dcc.Input(id="input-crack-water", type="number", value=0,
+                              min=0, step=0.5, style=INPUT_STYLE),
                 ], style={"marginTop": "6px"}),
             ], open=False, style=SECTION_STYLE),
 
@@ -1798,6 +1842,8 @@ def auto_populate_bounds(mode, surface_data):
      State("input-surcharge-start", "value"),
      State("input-surcharge-end", "value"),
      State("input-kh", "value"),
+     State("input-crack-depth", "value"),
+     State("input-crack-water", "value"),
      State("nail-toggle", "value"),
      State("nail-table", "data"),
      State("input-nail-bar-dia", "value"),
@@ -1830,6 +1876,7 @@ def auto_populate_bounds(mode, surface_data):
 def run_analysis(n_clicks,
                  surface_data, layers_data, gwt_toggle, gwt_data,
                  surcharge, surcharge_start, surcharge_end, kh,
+                 crack_depth, crack_water,
                  nail_toggle, nail_data,
                  nail_bar_dia, nail_ddh, nail_fy, nail_bond, nail_spacing,
                  method, mode,
@@ -1853,6 +1900,7 @@ def run_analysis(n_clicks,
     geom, err = _build_geometry(
         surface_data, layers_data, gwt_on, gwt_data,
         surcharge, surcharge_start, surcharge_end, kh,
+        crack_depth=crack_depth, crack_water=crack_water,
         nails_enabled=nail_on, nails_data=nail_data,
         nail_bar_dia=nail_bar_dia, nail_ddh=nail_ddh,
         nail_fy=nail_fy, nail_bond=nail_bond, nail_spacing=nail_spacing,

@@ -182,6 +182,8 @@ class SlopeGeometry:
     reinforcement_elevation: Optional[float] = None
     kh: float = 0.0
     nails: Optional[List[SoilNail]] = None
+    tension_crack_depth: float = 0.0
+    tension_crack_water_depth: float = 0.0
 
     def __post_init__(self):
         if len(self.surface_points) < 2:
@@ -195,6 +197,12 @@ class SlopeGeometry:
             raise ValueError(f"kh must be non-negative, got {self.kh}")
         if self.surcharge < 0:
             raise ValueError(f"surcharge must be non-negative, got {self.surcharge}")
+        if self.tension_crack_depth < 0:
+            raise ValueError(f"tension_crack_depth must be non-negative, got {self.tension_crack_depth}")
+        if self.tension_crack_water_depth < 0:
+            raise ValueError(f"tension_crack_water_depth must be non-negative, got {self.tension_crack_water_depth}")
+        if self.tension_crack_water_depth > self.tension_crack_depth:
+            self.tension_crack_water_depth = self.tension_crack_depth
 
     def ground_elevation_at(self, x: float) -> float:
         """Linearly interpolate ground surface elevation at x.

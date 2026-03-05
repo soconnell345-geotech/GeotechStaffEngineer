@@ -90,6 +90,7 @@ def fellenius_fos(slices: List[Slice],
 
     gravity_driving = 0.0
     seismic_driving = 0.0
+    crack_water_driving = 0.0
 
     for s in slices:
         phi_rad = math.radians(s.phi)
@@ -105,15 +106,19 @@ def fellenius_fos(slices: List[Slice],
             gravity_driving += W * (s.x_mid - slip.xc) / slip.radius
             if s.seismic_force != 0:
                 seismic_driving += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
+            if s.crack_water_force != 0:
+                crack_water_driving += s.crack_water_force * (slip.yc - s.crack_water_z) / slip.radius
         else:
             # Noncircular: use W*sin(alpha) directly
             gravity_driving += W * math.sin(s.alpha)
             if s.seismic_force != 0:
                 seismic_driving += s.seismic_force * math.cos(s.alpha)
+            if s.crack_water_force != 0:
+                crack_water_driving += s.crack_water_force * math.cos(s.alpha)
 
-    # Driving = gravity magnitude + seismic magnitude.
+    # Driving = gravity magnitude + seismic magnitude + crack water.
     # Separated so seismic always increases driving regardless of slope direction.
-    driving = abs(gravity_driving) + abs(seismic_driving)
+    driving = abs(gravity_driving) + abs(seismic_driving) + abs(crack_water_driving)
     if driving <= 0:
         return _FOS_MAX
 
@@ -179,14 +184,17 @@ def bishop_fos(slices: List[Slice],
     # Use moment-arm formulation: W*(x_mid - xc)/R for numerical stability
     gravity_driving = 0.0
     seismic_driving = 0.0
+    crack_water_driving = 0.0
     for s in slices:
         W = s.weight + s.surcharge_force
         gravity_driving += W * (s.x_mid - slip.xc) / slip.radius
         if s.seismic_force != 0:
             seismic_driving += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
+        if s.crack_water_force != 0:
+            crack_water_driving += s.crack_water_force * (slip.yc - s.crack_water_z) / slip.radius
 
     # Separated so seismic always increases driving regardless of slope direction
-    driving = abs(gravity_driving) + abs(seismic_driving)
+    driving = abs(gravity_driving) + abs(seismic_driving) + abs(crack_water_driving)
     if driving <= 0:
         return _FOS_MAX
 
@@ -268,22 +276,28 @@ def spencer_fos(slices: List[Slice],
     if is_circular:
         gravity_moment = 0.0
         seismic_moment = 0.0
+        crack_water_moment = 0.0
         for s in slices:
             W = s.weight + s.surcharge_force
             gravity_moment += W * (s.x_mid - slip.xc) / slip.radius
             if s.seismic_force != 0:
                 seismic_moment += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
-        driving_moment = abs(gravity_moment) + abs(seismic_moment)
+            if s.crack_water_force != 0:
+                crack_water_moment += s.crack_water_force * (slip.yc - s.crack_water_z) / slip.radius
+        driving_moment = abs(gravity_moment) + abs(seismic_moment) + abs(crack_water_moment)
     else:
         # Noncircular: use W*sin(alpha) for driving
         gravity_moment = 0.0
         seismic_moment = 0.0
+        crack_water_moment = 0.0
         for s in slices:
             W = s.weight + s.surcharge_force
             gravity_moment += W * math.sin(s.alpha)
             if s.seismic_force != 0:
                 seismic_moment += s.seismic_force * math.cos(s.alpha)
-        driving_moment = abs(gravity_moment) + abs(seismic_moment)
+            if s.crack_water_force != 0:
+                crack_water_moment += s.crack_water_force * math.cos(s.alpha)
+        driving_moment = abs(gravity_moment) + abs(seismic_moment) + abs(crack_water_moment)
 
     if driving_moment <= 0:
         return (_FOS_MAX, 0.0)
@@ -343,6 +357,8 @@ def spencer_fos(slices: List[Slice],
                 if s.seismic_force != 0:
                     n_alpha = cos_a - sin_a * tan_theta
                     total_drive += s.seismic_force * n_alpha
+                if s.crack_water_force != 0:
+                    total_drive += s.crack_water_force
 
             total_drive = abs(total_drive)
             if total_drive <= 0:
@@ -453,21 +469,27 @@ def morgenstern_price_fos(slices: List[Slice],
     if is_circular:
         gravity_driving = 0.0
         seismic_driving = 0.0
+        crack_water_driving = 0.0
         for s in slices:
             W = s.weight + s.surcharge_force
             gravity_driving += W * (s.x_mid - slip.xc) / slip.radius
             if s.seismic_force != 0:
                 seismic_driving += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
-        driving_moment = abs(gravity_driving) + abs(seismic_driving)
+            if s.crack_water_force != 0:
+                crack_water_driving += s.crack_water_force * (slip.yc - s.crack_water_z) / slip.radius
+        driving_moment = abs(gravity_driving) + abs(seismic_driving) + abs(crack_water_driving)
     else:
         gravity_driving = 0.0
         seismic_driving = 0.0
+        crack_water_driving = 0.0
         for s in slices:
             W = s.weight + s.surcharge_force
             gravity_driving += W * math.sin(s.alpha)
             if s.seismic_force != 0:
                 seismic_driving += s.seismic_force * math.cos(s.alpha)
-        driving_moment = abs(gravity_driving) + abs(seismic_driving)
+            if s.crack_water_force != 0:
+                crack_water_driving += s.crack_water_force * math.cos(s.alpha)
+        driving_moment = abs(gravity_driving) + abs(seismic_driving) + abs(crack_water_driving)
 
     if driving_moment <= 0:
         return (_FOS_MAX, 0.0)
@@ -541,6 +563,8 @@ def morgenstern_price_fos(slices: List[Slice],
                 if s.seismic_force != 0:
                     n_alpha = cos_a - sin_a * tan_theta
                     total_drive += s.seismic_force * n_alpha
+                if s.crack_water_force != 0:
+                    total_drive += s.crack_water_force
 
             total_drive = abs(total_drive)
             if total_drive <= 0:
