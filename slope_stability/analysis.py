@@ -82,6 +82,7 @@ def analyze_slope(geom: SlopeGeometry,
     r_xc = slip.xc if is_circular else 0.0
     r_yc = slip.yc if is_circular else 0.0
     r_radius = slip.radius if is_circular else 0.0
+    r_slip_points = None if is_circular else list(slip.points)
 
     # For noncircular, force Spencer (Bishop doesn't work)
     if not is_circular and method == "bishop":
@@ -153,6 +154,7 @@ def analyze_slope(geom: SlopeGeometry,
         has_seismic=geom.kh > 0,
         kh=geom.kh,
         slice_data=slice_data,
+        slip_points=r_slip_points,
     )
 
 

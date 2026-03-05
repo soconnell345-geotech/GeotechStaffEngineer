@@ -410,6 +410,7 @@ def search_noncircular(
                 n_slices=len(slices),
                 has_seismic=geom.kh > 0,
                 kh=geom.kh,
+                slip_points=list(best_slip.points),
             )
         except ValueError:
             pass

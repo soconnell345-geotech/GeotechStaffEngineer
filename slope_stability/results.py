@@ -9,7 +9,7 @@ All units SI: meters, kPa, kN/m, degrees.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 
 @dataclass
@@ -131,6 +131,17 @@ class SlopeStabilityResult:
     has_seismic: bool = False
     kh: float = 0.0
     slice_data: Optional[List[SliceData]] = None
+    slip_points: Optional[List[Tuple[float, float]]] = None
+
+    @property
+    def is_circular(self) -> bool:
+        """True if this result represents a circular slip surface."""
+        return self.radius > 0
+
+    @property
+    def is_stable(self) -> bool:
+        """True if FOS >= 1.0."""
+        return self.FOS >= 1.0
 
     def summary(self) -> str:
         lines = [
@@ -141,14 +152,21 @@ class SlopeStabilityResult:
             f"  Method:           {self.method}",
             f"  Factor of Safety: {self.FOS:.3f}",
             "",
-            f"  Critical Circle:",
-            f"    Center (xc, yc) = ({self.xc:.2f}, {self.yc:.2f}) m",
-            f"    Radius R        = {self.radius:.2f} m",
+        ]
+        if self.is_circular:
+            lines.extend([
+                f"  Critical Circle:",
+                f"    Center (xc, yc) = ({self.xc:.2f}, {self.yc:.2f}) m",
+                f"    Radius R        = {self.radius:.2f} m",
+            ])
+        else:
+            lines.append(f"  Slip Surface:     Noncircular ({len(self.slip_points or [])} points)")
+        lines.extend([
             f"    Entry x         = {self.x_entry:.2f} m",
             f"    Exit x          = {self.x_exit:.2f} m",
             "",
             f"  Slices: {self.n_slices}",
-        ]
+        ])
         if self.has_seismic:
             lines.append(f"  Seismic kh:       {self.kh:.3f}")
         if self.FOS_fellenius is not None:
@@ -207,7 +225,9 @@ class SlopeStabilityResult:
     def to_dict(self) -> Dict[str, Any]:
         d = {
             "FOS": round(self.FOS, 4),
+            "is_stable": self.is_stable,
             "method": self.method,
+            "surface_type": "circular" if self.is_circular else "noncircular",
             "xc_m": round(self.xc, 2),
             "yc_m": round(self.yc, 2),
             "radius_m": round(self.radius, 2),
@@ -217,6 +237,10 @@ class SlopeStabilityResult:
             "has_seismic": self.has_seismic,
             "kh": self.kh,
         }
+        if self.slip_points is not None:
+            d["slip_points"] = [
+                (round(x, 3), round(z, 3)) for x, z in self.slip_points
+            ]
         if self.FOS_fellenius is not None:
             d["FOS_fellenius"] = round(self.FOS_fellenius, 4)
         if self.FOS_bishop is not None:
@@ -256,11 +280,17 @@ class SearchResult:
         if self.critical:
             lines.append(f"  Minimum FOS:       {self.critical.FOS:.3f}")
             lines.append(f"  Method:            {self.critical.method}")
-            lines.append(
-                f"  Critical circle:   "
-                f"({self.critical.xc:.2f}, {self.critical.yc:.2f}), "
-                f"R={self.critical.radius:.2f} m"
-            )
+            if self.critical.is_circular:
+                lines.append(
+                    f"  Critical circle:   "
+                    f"({self.critical.xc:.2f}, {self.critical.yc:.2f}), "
+                    f"R={self.critical.radius:.2f} m"
+                )
+            else:
+                lines.append(
+                    f"  Critical surface:  Noncircular "
+                    f"({len(self.critical.slip_points or [])} points)"
+                )
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 

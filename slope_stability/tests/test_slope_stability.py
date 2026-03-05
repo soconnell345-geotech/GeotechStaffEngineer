@@ -522,13 +522,14 @@ class TestResults:
         geom = _simple_slope_geom()
         result = analyze_slope(geom, xc=20, yc=15, radius=13)
         d = result.to_dict()
-        expected_keys = {"FOS", "method",
+        expected_keys = {"FOS", "method", "is_stable", "surface_type",
                          "xc_m", "yc_m", "radius_m", "x_entry_m",
                          "x_exit_m", "n_slices", "has_seismic", "kh"}
         assert expected_keys.issubset(d.keys())
-        # Removed fields should not be present
-        assert "is_stable" not in d
         assert "FOS_required" not in d
+        # is_stable should reflect FOS >= 1.0
+        assert d["is_stable"] == (d["FOS"] >= 1.0)
+        assert d["surface_type"] == "circular"
 
     def test_tol_parameter(self):
         """analyze_slope accepts tol parameter and passes to iterative methods."""

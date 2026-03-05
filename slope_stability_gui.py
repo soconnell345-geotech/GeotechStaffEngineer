@@ -356,42 +356,53 @@ def build_cross_section(geom, result=None):
                 showlegend=False,
             ))
 
-    # ── Slip circle + result overlays ────────────────────────────
+    # ── Slip surface + result overlays ────────────────────────────
     if result is not None:
-        # Slip circle arc (lower arc between entry/exit)
-        theta = np.linspace(0, 2 * np.pi, 720)
-        cx = result.xc + result.radius * np.cos(theta)
-        cz = result.yc + result.radius * np.sin(theta)
+        if result.is_circular:
+            # Slip circle arc (lower arc between entry/exit)
+            theta = np.linspace(0, 2 * np.pi, 720)
+            cx = result.xc + result.radius * np.cos(theta)
+            cz = result.yc + result.radius * np.sin(theta)
 
-        # Mask: within entry-exit x range and below center
-        mask = (
-            (cx >= result.x_entry - 0.3) &
-            (cx <= result.x_exit + 0.3) &
-            (cz <= result.yc)
-        )
-        arc_x = np.where(mask, cx, np.nan)
-        arc_z = np.where(mask, cz, np.nan)
+            # Mask: within entry-exit x range and below center
+            mask = (
+                (cx >= result.x_entry - 0.3) &
+                (cx <= result.x_exit + 0.3) &
+                (cz <= result.yc)
+            )
+            arc_x = np.where(mask, cx, np.nan)
+            arc_z = np.where(mask, cz, np.nan)
 
-        fig.add_trace(go.Scatter(
-            x=arc_x.tolist(), y=arc_z.tolist(),
-            mode="lines",
-            line=dict(color="red", width=3),
-            name=f"Slip Circle (FOS={result.FOS:.3f})",
-            connectgaps=False,
-        ))
+            fig.add_trace(go.Scatter(
+                x=arc_x.tolist(), y=arc_z.tolist(),
+                mode="lines",
+                line=dict(color="red", width=3),
+                name=f"Slip Circle (FOS={result.FOS:.3f})",
+                connectgaps=False,
+            ))
 
-        # Circle center marker
-        fig.add_trace(go.Scatter(
-            x=[result.xc], y=[result.yc],
-            mode="markers+text",
-            marker=dict(symbol="cross-thin", size=14, color="red",
-                        line=dict(width=2, color="red")),
-            text=[f"({result.xc:.1f}, {result.yc:.1f})"],
-            textposition="top right",
-            textfont=dict(size=10, color="red"),
-            name="Circle Center",
-            showlegend=False,
-        ))
+            # Circle center marker
+            fig.add_trace(go.Scatter(
+                x=[result.xc], y=[result.yc],
+                mode="markers+text",
+                marker=dict(symbol="cross-thin", size=14, color="red",
+                            line=dict(width=2, color="red")),
+                text=[f"({result.xc:.1f}, {result.yc:.1f})"],
+                textposition="top right",
+                textfont=dict(size=10, color="red"),
+                name="Circle Center",
+                showlegend=False,
+            ))
+        elif result.slip_points:
+            # Noncircular polyline slip surface
+            fig.add_trace(go.Scatter(
+                x=[p[0] for p in result.slip_points],
+                y=[p[1] for p in result.slip_points],
+                mode="lines+markers",
+                line=dict(color="red", width=3),
+                marker=dict(size=5, color="red"),
+                name=f"Slip Surface (FOS={result.FOS:.3f})",
+            ))
 
         # Entry / exit markers
         z_entry = geom.ground_elevation_at(result.x_entry)
@@ -546,17 +557,19 @@ def build_results_summary(result):
         return html.Div()
     rows = [
         ("Method", result.method),
-        ("Circle Center", f"({result.xc:.2f}, {result.yc:.2f}) m"),
-        ("Radius", f"{result.radius:.2f} m"),
+    ]
+    if result.is_circular:
+        rows.append(("Circle Center", f"({result.xc:.2f}, {result.yc:.2f}) m"))
+        rows.append(("Radius", f"{result.radius:.2f} m"))
+    else:
+        rows.append(("Surface Type", "Noncircular"))
+    rows.extend([
         ("Entry x", f"{result.x_entry:.2f} m"),
         ("Exit x", f"{result.x_exit:.2f} m"),
         ("Slices", str(result.n_slices)),
-    ]
+    ])
     if result.has_seismic:
         rows.append(("Seismic kh", f"{result.kh:.3f}"))
-    if result.n_nails_active > 0:
-        rows.append(("Nails Active", str(result.n_nails_active)))
-        rows.append(("Nail Resisting", f"{result.nail_resisting_kN_per_m:.1f} kN/m"))
 
     return html.Table([
         html.Tbody([
@@ -1499,7 +1512,6 @@ def run_analysis(n_clicks,
                 geom, xc_v, yc_v, r_v,
                 method=method,
                 n_slices=n_sl,
-                FOS_required=fos_r,
                 include_slice_data=True,
                 compare_methods=do_compare,
             )
@@ -1523,7 +1535,6 @@ def run_analysis(n_clicks,
                 ny=ny_v,
                 method=method,
                 n_slices=n_sl,
-                FOS_required=fos_r,
             )
 
             if search_res.critical is None:
@@ -1538,7 +1549,6 @@ def run_analysis(n_clicks,
                 search_res.critical.radius,
                 method=method,
                 n_slices=n_sl,
-                FOS_required=fos_r,
                 include_slice_data=True,
                 compare_methods=do_compare,
             )
