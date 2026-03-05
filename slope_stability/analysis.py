@@ -15,7 +15,9 @@ from typing import Optional, Tuple
 from slope_stability.geometry import SlopeGeometry
 from slope_stability.slip_surface import CircularSlipSurface
 from slope_stability.slices import build_slices, compute_slice_forces
-from slope_stability.methods import fellenius_fos, bishop_fos, spencer_fos
+from slope_stability.methods import (
+    fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
+)
 from slope_stability.search import (
     grid_search, search_noncircular,
     search_pso, search_weak_layer_biased, search_entry_exit,
@@ -51,7 +53,7 @@ def analyze_slope(geom: SlopeGeometry,
     slip_surface : CircularSlipSurface or PolylineSlipSurface, optional
         Explicit slip surface object. If provided, xc/yc/radius are ignored.
     method : str
-        'fellenius', 'bishop', or 'spencer'. Default 'bishop'.
+        'fellenius', 'bishop', 'spencer', or 'morgenstern_price'. Default 'bishop'.
     n_slices : int
         Number of slices. Default 30.
     tol : float
@@ -93,6 +95,8 @@ def analyze_slope(geom: SlopeGeometry,
 
     # Primary FOS
     theta_spencer = None
+    fos_mp = None
+    lambda_mp = None
     if method == "fellenius":
         fos = fellenius_fos(slices, slip)
         method_name = "Fellenius"
@@ -100,6 +104,11 @@ def analyze_slope(geom: SlopeGeometry,
         fos, theta = spencer_fos(slices, slip, tol=tol)
         theta_spencer = theta
         method_name = "Spencer"
+    elif method == "morgenstern_price":
+        fos, lam = morgenstern_price_fos(slices, slip, tol=tol)
+        fos_mp = fos
+        lambda_mp = lam
+        method_name = "Morgenstern-Price"
     else:
         fos = bishop_fos(slices, slip, tol=tol)
         method_name = "Bishop"
@@ -114,6 +123,8 @@ def analyze_slope(geom: SlopeGeometry,
         if theta_spencer is None:
             fos_sp, theta = spencer_fos(slices, slip, tol=tol)
             theta_spencer = theta
+        if fos_mp is None:
+            fos_mp, lambda_mp = morgenstern_price_fos(slices, slip, tol=tol)
 
     # Slice data for plotting
     slice_data = None
@@ -153,6 +164,8 @@ def analyze_slope(geom: SlopeGeometry,
         theta_spencer=theta_spencer,
         FOS_fellenius=fos_fellenius,
         FOS_bishop=fos_bishop,
+        FOS_morgenstern_price=fos_mp,
+        lambda_mp=lambda_mp,
         n_slices=len(slices),
         has_seismic=geom.kh > 0,
         kh=geom.kh,

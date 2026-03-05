@@ -218,6 +218,11 @@ def build_slices(geom: SlopeGeometry,
         base_layer = geom.layer_at_point(x_mid, z_base)
         if base_layer is not None:
             c, phi = base_layer.shear_strength_params
+            # Apply Ru if no GWT pore pressure and layer has Ru > 0
+            if pore_pressure <= 0 and base_layer.ru > 0:
+                # u = Ru * gamma * h  where h = overburden depth
+                overburden_h = z_top - z_base
+                pore_pressure = base_layer.ru * base_layer.gamma * overburden_h
         else:
             # Fallback: use bottom-most layer
             c, phi = geom.soil_layers[-1].shear_strength_params

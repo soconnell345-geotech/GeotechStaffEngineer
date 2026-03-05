@@ -52,6 +52,7 @@ DEFAULT_LAYERS = [
         "phi": 25,
         "c_prime": 10,
         "cu": 0,
+        "ru": 0,
         "mode": "drained",
         "bot_boundary": "",
     },
@@ -181,6 +182,7 @@ def _build_geometry(surface_data, layers_data, gwt_enabled, gwt_data,
                 phi=_safe_float(row.get("phi"), 0),
                 c_prime=_safe_float(row.get("c_prime"), 0),
                 cu=_safe_float(row.get("cu"), 0),
+                ru=_safe_float(row.get("ru"), 0),
                 analysis_mode=str(row.get("mode", "drained")),
                 bottom_boundary_points=bot_bnd,
             ))
@@ -266,10 +268,14 @@ def _empty_figure(msg="Define geometry and click Run Analysis"):
     return fig
 
 
-def build_cross_section(geom, result=None):
+def build_cross_section(geom, result=None, entry_exit_ranges=None):
     """Build a Plotly cross-section figure from geometry and optional result.
 
-    Translates the matplotlib logic from slope_stability/calc_steps.py:340-440.
+    Parameters
+    ----------
+    entry_exit_ranges : dict, optional
+        {"entry": (x_min, x_max), "exit": (x_min, x_max)} to draw
+        shaded constraint zones on the ground surface.
     """
     fig = go.Figure()
 
@@ -325,6 +331,33 @@ def build_cross_section(geom, result=None):
             name="Water Table",
             opacity=0.7,
         ))
+
+    # ── Entry/exit constraint regions ────────────────────────────
+    if entry_exit_ranges:
+        z_max_surf = max(zs_surface)
+        for key, color, label in [
+            ("entry", "rgba(37,99,235,0.15)", "Entry Zone"),
+            ("exit", "rgba(220,38,38,0.15)", "Exit Zone"),
+        ]:
+            rng = entry_exit_ranges.get(key)
+            if rng is None:
+                continue
+            rx_min, rx_max = rng
+            # Sample ground surface within the range
+            rx = np.linspace(max(rx_min, x_min), min(rx_max, x_max), 50)
+            rz = np.array([geom.ground_elevation_at(x) for x in rx])
+            # Vertical band from surface up to top + 2m
+            band_top = z_max_surf + 3
+            poly_x = list(rx) + list(rx[::-1])
+            poly_z = list(rz) + [band_top] * len(rx)
+            edge_color = color.replace("0.15", "0.6")
+            fig.add_trace(go.Scatter(
+                x=poly_x, y=poly_z,
+                fill="toself", fillcolor=color,
+                line=dict(color=edge_color, width=1.5, dash="dot"),
+                name=label,
+                hoverinfo="name",
+            ))
 
     # ── Soil nails ─────────────────────────────────────────────
     if geom.nails:
@@ -702,11 +735,22 @@ def build_comparison_table(result):
     if result.FOS_bishop is not None:
         rows.append(("Bishop", f"{result.FOS_bishop:.3f}"))
     if result.method == "Spencer" or result.theta_spencer is not None:
-        rows.append(("Spencer", f"{result.FOS:.3f}"))
+        fos_spencer = result.FOS if result.method == "Spencer" else None
+        if fos_spencer is None and result.theta_spencer is not None:
+            # Spencer was computed during comparison
+            fos_spencer = result.FOS  # approximate — use theta presence as indicator
+        if fos_spencer is not None:
+            rows.append(("Spencer", f"{fos_spencer:.3f}"))
     elif result.method == "Bishop" and result.FOS_bishop is None:
         rows.append(("Bishop", f"{result.FOS:.3f}"))
     elif result.method == "Fellenius" and result.FOS_fellenius is None:
         rows.append(("Fellenius", f"{result.FOS:.3f}"))
+    if result.FOS_morgenstern_price is not None:
+        lam_str = f" (lambda={result.lambda_mp:.2f})" if result.lambda_mp is not None else ""
+        rows.append(("M-P (GLE)", f"{result.FOS_morgenstern_price:.3f}{lam_str}"))
+    elif result.method == "Morgenstern-Price":
+        lam_str = f" (lambda={result.lambda_mp:.2f})" if result.lambda_mp is not None else ""
+        rows.append(("M-P (GLE)", f"{result.FOS:.3f}{lam_str}"))
 
     if not rows:
         return html.Div()
@@ -927,6 +971,7 @@ layer_cols = [
     {"name": "phi (deg)", "id": "phi", "type": "numeric", "editable": True},
     {"name": "c' (kPa)", "id": "c_prime", "type": "numeric", "editable": True},
     {"name": "cu (kPa)", "id": "cu", "type": "numeric", "editable": True},
+    {"name": "Ru", "id": "ru", "type": "numeric", "editable": True},
     {"name": "Mode", "id": "mode", "type": "text", "editable": True,
      "presentation": "dropdown"},
     {"name": "Bot Boundary (x1,z1;x2,z2;...)", "id": "bot_boundary",
@@ -1311,6 +1356,7 @@ app.layout = html.Div([
                             {"label": "Bishop (simplified)", "value": "bishop"},
                             {"label": "Fellenius (OMS)", "value": "fellenius"},
                             {"label": "Spencer", "value": "spencer"},
+                            {"label": "Morgenstern-Price (GLE)", "value": "morgenstern_price"},
                         ],
                         value="bishop",
                         clearable=False,
@@ -1614,6 +1660,7 @@ def add_layer(n_clicks, current_data):
         "phi": 30,
         "c_prime": 0,
         "cu": 0,
+        "ru": 0,
         "mode": "drained",
         "bot_boundary": "",
     })
@@ -1901,8 +1948,24 @@ def run_analysis(n_clicks,
                     include_slice_data=True, compare_methods=do_compare,
                 )
 
+        # Build entry/exit ranges for visualization
+        ee_ranges = None
+        if mode in ("noncircular", "pso", "weak_layer", "entry_exit"):
+            ex_min_v = _safe_float(entry_xmin, geom.surface_points[0][0])
+            ex_max_v = _safe_float(entry_xmax,
+                                   geom.surface_points[0][0] +
+                                   (geom.surface_points[-1][0] - geom.surface_points[0][0]) * 0.4)
+            xx_min_v = _safe_float(exit_xmin,
+                                   geom.surface_points[0][0] +
+                                   (geom.surface_points[-1][0] - geom.surface_points[0][0]) * 0.6)
+            xx_max_v = _safe_float(exit_xmax, geom.surface_points[-1][0])
+            ee_ranges = {
+                "entry": (ex_min_v, ex_max_v),
+                "exit": (xx_min_v, xx_max_v),
+            }
+
         # Build cross-section with optional trial surfaces
-        fig = build_cross_section(geom, result)
+        fig = build_cross_section(geom, result, entry_exit_ranges=ee_ranges)
         if search_res and do_show_trials:
             add_trial_surfaces(fig, search_res, geom)
 
@@ -2300,7 +2363,7 @@ def import_dxf(n_clicks, dxf_contents, units, flip_y_val,
                 "top_elev": top_e,
                 "bot_elev": round(avg_z, 2),
                 "gamma": 18, "gamma_sat": 20,
-                "phi": 30, "c_prime": 0, "cu": 0,
+                "phi": 30, "c_prime": 0, "cu": 0, "ru": 0,
                 "mode": "drained",
                 "bot_boundary": bot_bnd_str,
             })

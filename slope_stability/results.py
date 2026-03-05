@@ -127,6 +127,8 @@ class SlopeStabilityResult:
     theta_spencer: Optional[float] = None
     FOS_fellenius: Optional[float] = None
     FOS_bishop: Optional[float] = None
+    FOS_morgenstern_price: Optional[float] = None
+    lambda_mp: Optional[float] = None
     n_slices: int = 0
     has_seismic: bool = False
     kh: float = 0.0
@@ -175,6 +177,10 @@ class SlopeStabilityResult:
             lines.append(f"  FOS (Bishop):     {self.FOS_bishop:.3f}")
         if self.theta_spencer is not None:
             lines.append(f"  Spencer theta:    {self.theta_spencer:.2f} deg")
+        if self.FOS_morgenstern_price is not None and self.method != "Morgenstern-Price":
+            lines.append(f"  FOS (M-P):        {self.FOS_morgenstern_price:.3f}")
+        if self.lambda_mp is not None:
+            lines.append(f"  M-P lambda:       {self.lambda_mp:.3f}")
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -247,6 +253,10 @@ class SlopeStabilityResult:
             d["FOS_bishop"] = round(self.FOS_bishop, 4)
         if self.theta_spencer is not None:
             d["theta_spencer_deg"] = round(self.theta_spencer, 2)
+        if self.FOS_morgenstern_price is not None:
+            d["FOS_morgenstern_price"] = round(self.FOS_morgenstern_price, 4)
+        if self.lambda_mp is not None:
+            d["lambda_mp"] = round(self.lambda_mp, 4)
         if self.slice_data is not None:
             d["slice_data"] = [s.to_dict() for s in self.slice_data]
         return d

@@ -89,6 +89,7 @@ class SlopeSoilLayer:
     c_prime: float = 0.0
     cu: float = 0.0
     analysis_mode: str = "drained"
+    ru: float = 0.0
     bottom_boundary_points: Optional[List[Tuple[float, float]]] = None
 
     def __post_init__(self):
