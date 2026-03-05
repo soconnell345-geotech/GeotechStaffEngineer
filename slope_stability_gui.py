@@ -32,6 +32,7 @@ from slope_stability import (
 
 LAYER_COLORS = [
     "#f5e6c8", "#d4a574", "#a0c4a0", "#c8b4a0", "#e6d4a0",
+    "#b8c4d0", "#d0b8a0", "#a8d4b8", "#c4a8c4", "#d4c8a8",
 ]
 
 DEFAULT_SURFACE = [
@@ -52,6 +53,7 @@ DEFAULT_LAYERS = [
         "c_prime": 10,
         "cu": 0,
         "mode": "drained",
+        "bot_boundary": "",
     },
 ]
 
@@ -152,6 +154,24 @@ def _build_geometry(surface_data, layers_data, gwt_enabled, gwt_data,
     try:
         layers = []
         for row in (layers_data or []):
+            # Parse optional bottom boundary points: "x1,z1;x2,z2;..."
+            bot_bnd = None
+            bot_bnd_str = str(row.get("bot_boundary", "") or "").strip()
+            if bot_bnd_str:
+                try:
+                    bot_bnd = []
+                    for pair in bot_bnd_str.split(";"):
+                        pair = pair.strip()
+                        if not pair:
+                            continue
+                        parts = pair.split(",")
+                        bot_bnd.append((float(parts[0]), float(parts[1])))
+                    bot_bnd.sort(key=lambda p: p[0])
+                    if len(bot_bnd) < 2:
+                        bot_bnd = None
+                except (ValueError, IndexError):
+                    bot_bnd = None
+
             layers.append(SlopeSoilLayer(
                 name=str(row.get("name", "Layer")),
                 top_elevation=_safe_float(row.get("top_elev"), 10),
@@ -162,6 +182,7 @@ def _build_geometry(surface_data, layers_data, gwt_enabled, gwt_data,
                 c_prime=_safe_float(row.get("c_prime"), 0),
                 cu=_safe_float(row.get("cu"), 0),
                 analysis_mode=str(row.get("mode", "drained")),
+                bottom_boundary_points=bot_bnd,
             ))
         if not layers:
             return None, "Need at least 1 soil layer."
@@ -264,7 +285,7 @@ def build_cross_section(geom, result=None):
             min(geom.ground_elevation_at(x), layer.top_elevation)
             for x in x_fill
         ])
-        z_bot = np.full_like(x_fill, layer.bottom_elevation)
+        z_bot = np.array([layer.bottom_at(x) for x in x_fill])
         mask = z_top > z_bot
         if not np.any(mask):
             continue
@@ -436,6 +457,30 @@ def build_cross_section(geom, result=None):
                 name="Slices",
                 showlegend=False,
                 connectgaps=False,
+            ))
+
+            # Clickable slice midpoint markers (invisible, for click-to-inspect)
+            mid_x = [s.x_mid for s in result.slice_data]
+            mid_z = [(s.z_top + s.z_base) / 2.0 for s in result.slice_data]
+            hover_text = [
+                f"Slice {i+1}<br>x={s.x_mid:.2f} m<br>"
+                f"sigma'_n={s.normal_stress_kPa:.1f} kPa<br>"
+                f"tau_mob={s.shear_stress_kPa:.1f} kPa<br>"
+                f"tau_avail={s.shear_resistance_kPa:.1f} kPa<br>"
+                f"W={s.weight:.1f} kN/m"
+                for i, s in enumerate(result.slice_data)
+            ]
+            custom_data = list(range(len(result.slice_data)))
+            fig.add_trace(go.Scatter(
+                x=mid_x, y=mid_z,
+                mode="markers",
+                marker=dict(size=18, color="rgba(0,0,0,0)",
+                            line=dict(width=0)),
+                hoverinfo="text",
+                hovertext=hover_text,
+                customdata=custom_data,
+                name="Slice Markers",
+                showlegend=False,
             ))
 
     # ── Layout ───────────────────────────────────────────────────
@@ -884,6 +929,8 @@ layer_cols = [
     {"name": "cu (kPa)", "id": "cu", "type": "numeric", "editable": True},
     {"name": "Mode", "id": "mode", "type": "text", "editable": True,
      "presentation": "dropdown"},
+    {"name": "Bot Boundary (x1,z1;x2,z2;...)", "id": "bot_boundary",
+     "type": "text", "editable": True},
 ]
 
 gwt_cols = [
@@ -1548,7 +1595,7 @@ def modify_surface(add_clicks, reset_clicks, current_data):
 )
 def add_layer(n_clicks, current_data):
     data = list(current_data or [])
-    if len(data) >= 5:
+    if len(data) >= 10:
         raise PreventUpdate
     # Default new layer below the last one
     if data:
@@ -1568,6 +1615,7 @@ def add_layer(n_clicks, current_data):
         "c_prime": 0,
         "cu": 0,
         "mode": "drained",
+        "bot_boundary": "",
     })
     return data
 
@@ -1692,7 +1740,8 @@ def auto_populate_bounds(mode, surface_data):
      Output("force-diagram", "figure"),
      Output("slice-detail-container", "children"),
      Output("slice-data-container", "children"),
-     Output("error-msg", "children")],
+     Output("error-msg", "children"),
+     Output("analysis-result-store", "data")],
     Input("btn-run", "n_clicks"),
     [State("surface-table", "data"),
      State("layers-table", "data"),
@@ -1744,12 +1793,12 @@ def run_analysis(n_clicks,
     if not n_clicks:
         raise PreventUpdate
 
-    # 11 outputs
+    # 12 outputs
     empty_outputs = (
         _empty_figure(), build_fos_badge(None), html.Div(), html.Div(),
         {"display": "none"}, _empty_figure(""),
         {"display": "none"}, _empty_figure(""),
-        html.Div(), html.Div(), "",
+        html.Div(), html.Div(), "", None,
     )
 
     gwt_on = "on" in (gwt_toggle or [])
@@ -1762,7 +1811,7 @@ def run_analysis(n_clicks,
         nail_fy=nail_fy, nail_bond=nail_bond, nail_spacing=nail_spacing,
     )
     if geom is None:
-        return (*empty_outputs[:10], err)
+        return (*empty_outputs[:10], err, None)
 
     n_sl = int(_safe_float(n_slices, 30))
     do_compare = "on" in (compare or [])
@@ -1776,7 +1825,7 @@ def run_analysis(n_clicks,
             yc_v = _safe_float(yc, 15)
             r_v = _safe_float(radius, 13)
             if r_v <= 0:
-                return (*empty_outputs[:10], "Radius must be positive.")
+                return (*empty_outputs[:10], "Radius must be positive.", None)
 
             result = analyze_slope(
                 geom, xc_v, yc_v, r_v,
@@ -1832,7 +1881,8 @@ def run_analysis(n_clicks,
 
             if search_res is None or search_res.critical is None:
                 return (*empty_outputs[:10],
-                        "No valid slip surfaces found. Try adjusting search bounds.")
+                        "No valid slip surfaces found. Try adjusting search bounds.",
+                        None)
 
             # Re-run on critical surface with slice data + comparison
             crit = search_res.critical
@@ -1888,16 +1938,127 @@ def run_analysis(n_clicks,
                         min_idx = i
             slice_detail = build_slice_detail_popup(result, min_idx)
 
+        # Store slice data for click-to-inspect callback
+        result_store = None
+        if result.slice_data:
+            result_store = {
+                "FOS": result.FOS,
+                "method": result.method,
+                "slices": [s.to_dict() for s in result.slice_data],
+            }
+
         return (fig, badge, summary, comp_table,
                 heatmap_style, heatmap_fig,
                 force_style, force_fig,
-                slice_detail, slice_table, "")
+                slice_detail, slice_table, "", result_store)
 
     except ValueError as e:
-        return (*empty_outputs[:10], f"Analysis error: {e}")
+        return (*empty_outputs[:10], f"Analysis error: {e}", None)
     except Exception as e:
         tb = traceback.format_exc()
-        return (*empty_outputs[:10], f"Unexpected error: {e}\n{tb}")
+        return (*empty_outputs[:10], f"Unexpected error: {e}\n{tb}", None)
+
+
+# Callback 8: Click-to-inspect slice on cross-section or force diagram
+@app.callback(
+    Output("slice-detail-container", "children", allow_duplicate=True),
+    [Input("cross-section", "clickData"),
+     Input("force-diagram", "clickData")],
+    State("analysis-result-store", "data"),
+    prevent_initial_call=True,
+)
+def inspect_slice(cs_click, fd_click, result_data):
+    """Update slice detail card when user clicks on cross-section or force diagram."""
+    if result_data is None:
+        raise PreventUpdate
+
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+
+    trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
+
+    click_data = cs_click if trigger_id == "cross-section" else fd_click
+    if click_data is None:
+        raise PreventUpdate
+
+    # Extract slice index from click
+    point = click_data["points"][0]
+    slice_idx = None
+
+    if trigger_id == "cross-section":
+        # Check if click was on a slice marker (has customdata)
+        if "customdata" in point:
+            slice_idx = int(point["customdata"])
+        else:
+            # Find nearest slice by x coordinate
+            click_x = point.get("x")
+            if click_x is not None and result_data.get("slices"):
+                min_dist = float("inf")
+                for i, s in enumerate(result_data["slices"]):
+                    dist = abs(s["x_mid_m"] - click_x)
+                    if dist < min_dist:
+                        min_dist = dist
+                        slice_idx = i
+    elif trigger_id == "force-diagram":
+        # Force diagram x-axis is x_mid — find nearest slice
+        click_x = point.get("x")
+        if click_x is not None and result_data.get("slices"):
+            min_dist = float("inf")
+            for i, s in enumerate(result_data["slices"]):
+                dist = abs(s["x_mid_m"] - click_x)
+                if dist < min_dist:
+                    min_dist = dist
+                    slice_idx = i
+
+    if slice_idx is None or slice_idx < 0 or slice_idx >= len(result_data["slices"]):
+        raise PreventUpdate
+
+    s = result_data["slices"][slice_idx]
+    rows = [
+        ("Slice #", str(slice_idx + 1)),
+        ("x_mid", f"{s['x_mid_m']:.2f} m"),
+        ("z_top / z_base", f"{s['z_top_m']:.2f} / {s['z_base_m']:.2f} m"),
+        ("Height", f"{s['height_m']:.2f} m"),
+        ("Width", f"{s['width_m']:.3f} m"),
+        ("Base angle", f"{s['alpha_deg']:.1f} deg"),
+        ("Base length", f"{s['base_length_m']:.3f} m"),
+        ("Weight W", f"{s['weight_kN_per_m']:.1f} kN/m"),
+        ("Pore pressure u", f"{s['pore_pressure_kPa']:.1f} kPa"),
+        ("c' / phi'", f"{s['c_kPa']:.1f} kPa / {s['phi_deg']:.1f} deg"),
+        ("sigma'_n", f"{s['normal_stress_kPa']:.2f} kPa"),
+        ("tau_mob", f"{s['shear_stress_kPa']:.2f} kPa"),
+        ("tau_avail", f"{s['shear_resistance_kPa']:.2f} kPa"),
+    ]
+
+    tau_mob = s["shear_stress_kPa"]
+    tau_avail = s["shear_resistance_kPa"]
+    if abs(tau_mob) > 0.01:
+        local_fos = tau_avail / tau_mob
+        if local_fos < 100:
+            rows.append(("Local FOS", f"{local_fos:.2f}"))
+
+    td_l = {"fontWeight": "600", "padding": "2px 8px 2px 0", "color": "#475569",
+            "fontSize": "0.82rem", "whiteSpace": "nowrap"}
+    td_r = {"padding": "2px 0", "fontSize": "0.82rem"}
+
+    return html.Div([
+        html.Div(f"Slice {slice_idx + 1} Details (click any slice to inspect)", style={
+            "fontWeight": "700", "fontSize": "0.9rem", "color": "#1e293b",
+            "marginBottom": "6px", "borderBottom": "2px solid #e2e8f0",
+            "paddingBottom": "4px",
+        }),
+        html.Table([
+            html.Tbody([
+                html.Tr([html.Td(lbl, style=td_l), html.Td(val, style=td_r)])
+                for lbl, val in rows
+            ]),
+        ], style={"borderCollapse": "collapse"}),
+    ], style={
+        "background": "#f8fafc", "border": "1px solid #e2e8f0",
+        "borderRadius": "8px", "padding": "10px",
+        "marginTop": "8px",
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -2129,6 +2290,11 @@ def import_dxf(n_clicks, dxf_contents, units, flip_y_val,
                 prev_zs = [z for _, z in prev_pts]
                 top_e = round(sum(prev_zs) / len(prev_zs), 2) if prev_zs else 0
 
+            # Encode boundary points as "x1,z1;x2,z2;..." string
+            bot_bnd_str = ";".join(
+                f"{round(x, 2)},{round(z, 2)}" for x, z in bnd_pts
+            ) if bnd_pts and len(bnd_pts) >= 2 else ""
+
             layers_data.append({
                 "name": soil_name,
                 "top_elev": top_e,
@@ -2136,6 +2302,7 @@ def import_dxf(n_clicks, dxf_contents, units, flip_y_val,
                 "gamma": 18, "gamma_sat": 20,
                 "phi": 30, "c_prime": 0, "cu": 0,
                 "mode": "drained",
+                "bot_boundary": bot_bnd_str,
             })
     else:
         # No boundaries — single layer from surface max to surface min - 5
@@ -2149,6 +2316,7 @@ def import_dxf(n_clicks, dxf_contents, units, flip_y_val,
             "gamma": 18, "gamma_sat": 20,
             "phi": 30, "c_prime": 0, "cu": 0,
             "mode": "drained",
+            "bot_boundary": "",
         })
 
     # --- GWT ---
