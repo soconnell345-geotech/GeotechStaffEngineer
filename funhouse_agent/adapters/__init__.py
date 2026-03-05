@@ -113,4 +113,8 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.geolysis",
         "brief": "Soil classification (USCS/AASHTO) + SPT corrections + bearing capacity",
     },
+    "dxf_export": {
+        "adapter": "funhouse_agent.adapters.dxf_export",
+        "brief": "Export cross-section geometry to DXF file format",
+    },
 }

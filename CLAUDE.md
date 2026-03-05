@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-35 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + geolysis agent + pystra agent + pydiggs agent + subsurface characterization + wind loads (ASCE 7-22) + DXF import + PDF import + fem2d (2D plane-strain FEM with staged construction) + DM7 equations + trial_agent (Claude API tool_use integration) + chat_agent (ReAct agent for text-only chat functions) + funhouse_agent (engine-agnostic agent with vision).
+37 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + geolysis agent + pystra agent + pydiggs agent + subsurface characterization + wind loads (ASCE 7-22) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM with staged construction) + fdm2d (2D explicit Lagrangian FDM, FLAC-style) + DM7 equations + trial_agent (Claude API tool_use integration) + chat_agent (ReAct agent for text-only chat functions) + funhouse_agent (engine-agnostic agent with vision).
 
 ## Architecture Patterns
 
@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (2792 module + 142 harness + 3299 ref = 6233 tests)
+## Module Inventory (2873 module + 142 harness + 3299 ref = 6314 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -59,8 +59,10 @@ Key conventions:
 | subsurface_characterization | 145 | Subsurface data visualization (DIGGS parser w/ 20 test types, Plotly plots, trend stats) |
 | wind_loads | 62 | ASCE 7-22 wind loads on freestanding walls and fences (Ch 29.3) |
 | dxf_import | 97 | DXF CAD import for slope stability + FEM (discover layers, parse geometry, build SlopeGeometry/FEM inputs) |
+| dxf_export | 40 | DXF export for cross-section geometry (surface, boundaries, GWT, nails, annotations) |
 | pdf_import | 56 | PDF cross-section import (PyMuPDF vector extraction, LLM vision extraction, geometry conversion) |
 | fem2d | 271 | 2D plane-strain FEM (CST/Q4/beam, MC/HS, SRM, excavation, pore pressures, seepage, consolidation, staged construction) |
+| fdm2d | 81 | 2D explicit Lagrangian FDM (FLAC-style, quad zones, mixed discretization, MC, dynamic relaxation) |
 
 Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3299 tests), foundry_test_harness (142 tests), trial_agent (100 tests), chat_agent (42 tests), funhouse_agent (42 tests)
 
