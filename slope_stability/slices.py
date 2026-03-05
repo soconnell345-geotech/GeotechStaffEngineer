@@ -178,8 +178,10 @@ def build_slices(geom: SlopeGeometry,
     x_entry, x_exit = slip.find_entry_exit(geom)
     dx = (x_exit - x_entry) / n_slices
 
-    # Tension crack: compute crack base elevation at entry
+    # Tension crack: compute crack base elevation at entry.
+    # Only slices in the entry half of the slip surface can be in the crack.
     crack_base_elev = None
+    x_midpoint = (x_entry + x_exit) / 2.0
     if geom.tension_crack_depth > 0:
         z_surface_entry = geom.ground_elevation_at(x_entry)
         crack_base_elev = z_surface_entry - geom.tension_crack_depth
@@ -236,10 +238,13 @@ def build_slices(geom: SlopeGeometry,
             # Fallback: use bottom-most layer
             c, phi = geom.soil_layers[-1].shear_strength_params
 
-        # Tension crack: slices where base is above crack bottom have
-        # no shear resistance (open crack face)
+        # Tension crack: slices near the entry where base is above crack
+        # bottom have no shear resistance (open crack face).
+        # x-position guard prevents marking exit-side slices on flat surfaces.
         in_crack = False
-        if crack_base_elev is not None and z_base >= crack_base_elev:
+        if (crack_base_elev is not None
+                and z_base >= crack_base_elev
+                and x_mid <= x_midpoint):
             in_crack = True
             c = 0.0
             phi = 0.0

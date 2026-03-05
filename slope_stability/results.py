@@ -95,13 +95,13 @@ class SlopeStabilityResult:
     FOS : float
         Factor of safety.
     method : str
-        Analysis method ('Fellenius', 'Bishop', 'Spencer').
+        Analysis method ('Fellenius', 'Bishop', 'Spencer', 'Morgenstern-Price').
     xc : float
-        Circle center x-coordinate (m).
+        Circle center x-coordinate (m). 0 for noncircular.
     yc : float
-        Circle center z-coordinate / elevation (m).
+        Circle center z-coordinate / elevation (m). 0 for noncircular.
     radius : float
-        Circle radius (m).
+        Circle radius (m). 0 for noncircular.
     x_entry : float
         Slip surface entry x-coordinate (m).
     x_exit : float
@@ -111,7 +111,13 @@ class SlopeStabilityResult:
     FOS_fellenius : float or None
         Fellenius FOS for comparison.
     FOS_bishop : float or None
-        Bishop FOS for comparison.
+        Bishop FOS for comparison (circular only).
+    FOS_spencer : float or None
+        Spencer FOS for comparison.
+    FOS_morgenstern_price : float or None
+        Morgenstern-Price FOS for comparison.
+    lambda_mp : float or None
+        Morgenstern-Price interslice force scaling factor.
     n_slices : int
         Number of slices used.
     has_seismic : bool
@@ -120,6 +126,12 @@ class SlopeStabilityResult:
         Horizontal seismic coefficient.
     slice_data : list of SliceData or None
         Per-slice breakdown.
+    slip_points : list of (float, float) or None
+        Noncircular slip surface points. None for circular.
+    tension_crack_depth : float
+        Depth of tension crack (m). 0 = no crack.
+    tension_crack_water_depth : float
+        Depth of water in tension crack (m). 0 = dry.
     """
     FOS: float = 0.0
     method: str = ""
@@ -131,6 +143,7 @@ class SlopeStabilityResult:
     theta_spencer: Optional[float] = None
     FOS_fellenius: Optional[float] = None
     FOS_bishop: Optional[float] = None
+    FOS_spencer: Optional[float] = None
     FOS_morgenstern_price: Optional[float] = None
     lambda_mp: Optional[float] = None
     n_slices: int = 0
@@ -185,6 +198,8 @@ class SlopeStabilityResult:
             lines.append(f"  FOS (Fellenius):  {self.FOS_fellenius:.3f}")
         if self.FOS_bishop is not None and self.method != "Bishop":
             lines.append(f"  FOS (Bishop):     {self.FOS_bishop:.3f}")
+        if self.FOS_spencer is not None and self.method != "Spencer":
+            lines.append(f"  FOS (Spencer):    {self.FOS_spencer:.3f}")
         if self.theta_spencer is not None:
             lines.append(f"  Spencer theta:    {self.theta_spencer:.2f} deg")
         if self.FOS_morgenstern_price is not None and self.method != "Morgenstern-Price":
@@ -264,6 +279,8 @@ class SlopeStabilityResult:
             d["FOS_fellenius"] = round(self.FOS_fellenius, 4)
         if self.FOS_bishop is not None:
             d["FOS_bishop"] = round(self.FOS_bishop, 4)
+        if self.FOS_spencer is not None:
+            d["FOS_spencer"] = round(self.FOS_spencer, 4)
         if self.theta_spencer is not None:
             d["theta_spencer_deg"] = round(self.theta_spencer, 2)
         if self.FOS_morgenstern_price is not None:

@@ -761,7 +761,7 @@ def build_results_summary(result):
 
 
 def build_comparison_table(result):
-    """Return an HTML table comparing Fellenius/Bishop/Spencer FOS."""
+    """Return an HTML table comparing all method FOS values."""
     if result is None:
         return html.Div()
     rows = []
@@ -769,23 +769,12 @@ def build_comparison_table(result):
         rows.append(("Fellenius", f"{result.FOS_fellenius:.3f}"))
     if result.FOS_bishop is not None:
         rows.append(("Bishop", f"{result.FOS_bishop:.3f}"))
-    if result.method == "Spencer" or result.theta_spencer is not None:
-        fos_spencer = result.FOS if result.method == "Spencer" else None
-        if fos_spencer is None and result.theta_spencer is not None:
-            # Spencer was computed during comparison
-            fos_spencer = result.FOS  # approximate — use theta presence as indicator
-        if fos_spencer is not None:
-            rows.append(("Spencer", f"{fos_spencer:.3f}"))
-    elif result.method == "Bishop" and result.FOS_bishop is None:
-        rows.append(("Bishop", f"{result.FOS:.3f}"))
-    elif result.method == "Fellenius" and result.FOS_fellenius is None:
-        rows.append(("Fellenius", f"{result.FOS:.3f}"))
+    if result.FOS_spencer is not None:
+        theta_str = f" (theta={result.theta_spencer:.1f} deg)" if result.theta_spencer is not None else ""
+        rows.append(("Spencer", f"{result.FOS_spencer:.3f}{theta_str}"))
     if result.FOS_morgenstern_price is not None:
         lam_str = f" (lambda={result.lambda_mp:.2f})" if result.lambda_mp is not None else ""
         rows.append(("M-P (GLE)", f"{result.FOS_morgenstern_price:.3f}{lam_str}"))
-    elif result.method == "Morgenstern-Price":
-        lam_str = f" (lambda={result.lambda_mp:.2f})" if result.lambda_mp is not None else ""
-        rows.append(("M-P (GLE)", f"{result.FOS:.3f}{lam_str}"))
 
     if not rows:
         return html.Div()

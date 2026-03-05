@@ -243,6 +243,7 @@ class TestMultiMethodComparison:
                           method='bishop', compare_methods=True)
         assert r.FOS_fellenius is not None
         assert r.FOS_bishop is not None
+        assert r.FOS_spencer is not None
         assert r.theta_spencer is not None
         assert r.FOS_morgenstern_price is not None
         assert r.lambda_mp is not None
@@ -253,19 +254,22 @@ class TestMultiMethodComparison:
                           method='spencer', compare_methods=True)
         assert r.FOS_fellenius is not None
         assert r.FOS_bishop is None
+        assert r.FOS_spencer is not None
         assert r.FOS_morgenstern_price is not None
 
-    def test_to_dict_includes_mp(self):
+    def test_to_dict_includes_all(self):
         r = analyze_slope(_simple_geom(), 20, 15, 16,
                           method='bishop', compare_methods=True)
         d = r.to_dict()
+        assert 'FOS_spencer' in d
         assert 'FOS_morgenstern_price' in d
         assert 'lambda_mp' in d
 
-    def test_summary_includes_mp(self):
+    def test_summary_includes_comparison(self):
         r = analyze_slope(_simple_geom(), 20, 15, 16,
                           method='bishop', compare_methods=True)
         s = r.summary()
+        assert 'Spencer' in s
         assert 'M-P' in s or 'lambda' in s
 
     def test_result_store_serializable(self):

@@ -358,7 +358,8 @@ def spencer_fos(slices: List[Slice],
                     n_alpha = cos_a - sin_a * tan_theta
                     total_drive += s.seismic_force * n_alpha
                 if s.crack_water_force != 0:
-                    total_drive += s.crack_water_force
+                    n_alpha = cos_a - sin_a * tan_theta
+                    total_drive += s.crack_water_force * n_alpha
 
             total_drive = abs(total_drive)
             if total_drive <= 0:
@@ -564,7 +565,8 @@ def morgenstern_price_fos(slices: List[Slice],
                     n_alpha = cos_a - sin_a * tan_theta
                     total_drive += s.seismic_force * n_alpha
                 if s.crack_water_force != 0:
-                    total_drive += s.crack_water_force
+                    n_alpha = cos_a - sin_a * tan_theta
+                    total_drive += s.crack_water_force * n_alpha
 
             total_drive = abs(total_drive)
             if total_drive <= 0:

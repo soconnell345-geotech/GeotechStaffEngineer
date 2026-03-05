@@ -61,9 +61,9 @@ def analyze_slope(geom: SlopeGeometry,
     include_slice_data : bool
         If True, include per-slice breakdown in results.
     compare_methods : bool
-        If True, compute FOS for all three methods.
-        For noncircular surfaces, only Fellenius and Spencer are compared
-        (Bishop requires circular).
+        If True, compute FOS for all four methods (Fellenius, Bishop,
+        Spencer, Morgenstern-Price). For noncircular surfaces, Bishop
+        is skipped (requires circular).
 
     Returns
     -------
@@ -95,6 +95,7 @@ def analyze_slope(geom: SlopeGeometry,
 
     # Primary FOS
     theta_spencer = None
+    fos_spencer = None
     fos_mp = None
     lambda_mp = None
     if method == "fellenius":
@@ -102,6 +103,7 @@ def analyze_slope(geom: SlopeGeometry,
         method_name = "Fellenius"
     elif method == "spencer":
         fos, theta = spencer_fos(slices, slip, tol=tol)
+        fos_spencer = fos
         theta_spencer = theta
         method_name = "Spencer"
     elif method == "morgenstern_price":
@@ -120,8 +122,9 @@ def analyze_slope(geom: SlopeGeometry,
         fos_fellenius = fellenius_fos(slices, slip)
         if is_circular:
             fos_bishop = bishop_fos(slices, slip, tol=tol)
-        if theta_spencer is None:
+        if fos_spencer is None:
             fos_sp, theta = spencer_fos(slices, slip, tol=tol)
+            fos_spencer = fos_sp
             theta_spencer = theta
         if fos_mp is None:
             fos_mp, lambda_mp = morgenstern_price_fos(slices, slip, tol=tol)
@@ -165,6 +168,7 @@ def analyze_slope(geom: SlopeGeometry,
         theta_spencer=theta_spencer,
         FOS_fellenius=fos_fellenius,
         FOS_bishop=fos_bishop,
+        FOS_spencer=fos_spencer,
         FOS_morgenstern_price=fos_mp,
         lambda_mp=lambda_mp,
         n_slices=len(slices),

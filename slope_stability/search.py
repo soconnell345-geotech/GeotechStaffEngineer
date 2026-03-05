@@ -22,7 +22,7 @@ from typing import List, Tuple, Optional, Dict, Any
 from slope_stability.geometry import SlopeGeometry
 from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurface
 from slope_stability.slices import build_slices
-from slope_stability.methods import fellenius_fos, bishop_fos, spencer_fos
+from slope_stability.methods import fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos
 from slope_stability.results import SearchResult, SlopeStabilityResult
 
 
@@ -50,6 +50,8 @@ def _compute_fos(geom: SlopeGeometry,
                 fos = bishop_fos(slices, slip, tol=tol)
         elif method == "spencer":
             fos, _ = spencer_fos(slices, slip, tol=tol)
+        elif method == "morgenstern_price":
+            fos, _ = morgenstern_price_fos(slices, slip, tol=tol)
         else:
             fos = bishop_fos(slices, slip, tol=tol)
 
