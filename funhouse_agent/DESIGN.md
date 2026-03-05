@@ -18,10 +18,15 @@ GenAIEngine (Protocol)
 └── Future        — Any chat+vision provider
 
 GeotechAgent
-├── Uses GeotechChatAgent internally for ReAct loop
-├── Adds vision tools via engine.analyze_image()
+├── Self-contained ReAct loop (own dispatch, own system prompt)
+├── 16 adapter modules bridging flat JSON → analysis module APIs
+├── Vision tools via engine.analyze_image()
 ├── Attachments dict for image/PDF data
 └── Extended tool dispatch (standard + vision tools)
+
+Dispatch Chain:
+  agent.py → dispatch.py → adapters/<module>.py → analysis modules
+  (No dependency on foundry/ files — those are Palantir Foundry artifacts)
 ```
 
 ## Key Design: Dependency Injection
@@ -65,6 +70,22 @@ agent = GeotechAgent(genai_engine=prompter_api,
 agent = GeotechAgent(genai_engine=prompter_api)  # default save_fn works
 ```
 
+## Adapter Layer
+
+Each adapter in `adapters/` bridges flat JSON dicts (what LLMs produce) to
+structured Python objects (Footing, SoilLayer, SlopeGeometry, etc.) needed by
+analysis modules. Three patterns:
+
+1. **Builder + construction** (most modules) — helper functions build objects from dict
+2. **Direct passthrough** — `module_fn(**params)` when signatures match
+3. **Inline pop + passthrough** — `params.pop()` for special args, pass rest through
+
+Each adapter exports:
+- `METHOD_REGISTRY`: `{method_name: callable}` — the execution functions
+- `METHOD_INFO`: `{method_name: {category, brief, parameters, returns}}` — LLM docs
+
+Adapters are lazy-loaded: `dispatch.py` only imports an adapter when first called.
+
 ## Extended Tools
 
 Beyond the standard 4 ReAct tools:
@@ -72,10 +93,10 @@ Beyond the standard 4 ReAct tools:
 - `analyze_pdf_page` — render PDF page and analyze
 - `save_file` — save content to a file (calc packages, HTML, PDF, plots)
 
-These are dispatched within the agent's ReAct loop, not through the
-standard Foundry agent registry.
+These are dispatched within the agent's ReAct loop, separate from the
+standard geotechnical tool dispatch.
 
 ## References
 
-- chat_agent/agent.py — GeotechChatAgent base implementation
+- chat_agent/agent.py — AgentResult, ConversationHistory (data structures only)
 - chat_agent/parser.py — ToolCall parsing with extensible valid_tools

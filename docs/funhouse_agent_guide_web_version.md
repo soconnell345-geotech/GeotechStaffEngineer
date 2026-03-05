@@ -2,7 +2,10 @@
 
 Engine-agnostic geotechnical AI agent with text + vision capabilities.
 Works with any AI backend (PrompterAPI, Claude, custom). Provides access
-to all 48 Foundry geotechnical agents plus vision tools for images and PDFs.
+to 16 geotechnical analysis modules plus vision tools for images and PDFs.
+
+Fully self-contained — dispatches directly to analysis modules via an
+internal adapter layer. No dependency on `foundry/` files or Palantir Foundry.
 
 ## Quick Start
 
@@ -90,7 +93,7 @@ agent = GeotechAgent(
 
 ### ask(question) -> AgentResult
 
-Run a multi-step analysis. The agent discovers and calls Foundry tools automatically.
+Run a multi-step analysis. The agent discovers and calls analysis modules automatically.
 
 ```python
 result = agent.ask("Calculate settlement of a 3m footing on clay")
@@ -166,10 +169,31 @@ The agent uses these tools automatically during the ReAct loop:
 
 | Tool | Purpose |
 |------|---------|
-| `call_agent(agent, method, params)` | Execute any Foundry geotechnical function |
-| `list_agents()` | List all 48 available agents |
-| `list_methods(agent, category)` | List methods for an agent |
+| `call_agent(agent, method, params)` | Execute a geotechnical calculation |
+| `list_agents()` | List all 16 available analysis modules |
+| `list_methods(agent, category)` | List methods for a module |
 | `describe_method(agent, method)` | Get parameter details |
+
+### Available Modules (16)
+
+| Module | Description |
+|--------|-------------|
+| `bearing_capacity` | Shallow foundation bearing capacity (Vesic/Meyerhof/Hansen) |
+| `settlement` | Foundation settlement (elastic, Schmertmann, consolidation) |
+| `slope_stability` | Slope stability (Fellenius/Bishop/Spencer, circular+noncircular) |
+| `seismic_geotech` | Seismic evaluation (site class, M-O pressure, liquefaction) |
+| `retaining_walls` | Retaining walls (cantilever + MSE, GEC-11) |
+| `axial_pile` | Driven pile axial capacity (Nordlund/Tomlinson/Beta) |
+| `drilled_shaft` | Drilled shaft capacity (GEC-10 alpha/beta/rock socket) |
+| `sheet_pile` | Sheet pile walls (cantilever and anchored) |
+| `lateral_pile` | Lateral pile analysis (COM624P, 8 p-y models, FD solver) |
+| `pile_group` | Pile group analysis (rigid cap, 6-DOF, Converse-Labarre) |
+| `ground_improvement` | Ground improvement (aggregate piers, wick drains, vibro) |
+| `wave_equation` | Smith 1-D wave equation (bearing graph, drivability) |
+| `downdrag` | Pile downdrag (Fellenius neutral plane, UFC 3-220-20) |
+| `wind_loads` | ASCE 7-22 wind loads on freestanding walls and fences |
+| `soe` | Support of excavation (braced/cantilever, stability, anchors) |
+| `geolysis` | Soil classification (USCS/AASHTO) + SPT corrections |
 
 ### Vision Tools
 
@@ -254,6 +278,21 @@ agent = GeotechAgent(
 - **Max rounds reached**: Agent returns best answer so far
 - **Malformed tool calls**: Agent recovers and retries
 
+## Architecture
+
+The funhouse agent has its own self-contained dispatch layer that routes
+tool calls directly to analysis modules. It does NOT use the `foundry/`
+files (which are Palantir Foundry deployment artifacts, excluded from pip).
+
+```
+User Question → GeotechAgent.ask()
+  → LLM generates <tool_call> → parser extracts ToolCall
+  → funhouse_agent/dispatch.py routes to adapter
+  → funhouse_agent/adapters/<module>.py converts flat dict → structured objects
+  → analysis module computes → result dict returned to LLM
+  → LLM formulates final answer
+```
+
 ## Files
 
 ```
@@ -261,8 +300,14 @@ funhouse_agent/
   __init__.py          # Exports: GeotechAgent, GenAIEngine, ClaudeEngine, AgentResult
   agent.py             # GeotechAgent class (ReAct loop + vision dispatch)
   engine.py            # GenAIEngine Protocol + ClaudeEngine adapter
+  dispatch.py          # Tool dispatch — routes to adapters (not foundry)
+  system_prompt.py     # Self-contained system prompt (16 modules)
   vision_tools.py      # Vision tool definitions and dispatch
   DESIGN.md            # Architecture and design decisions
+  adapters/
+    __init__.py        # MODULE_REGISTRY + clean_value/clean_result helpers
+    bearing_capacity.py, settlement.py, slope_stability.py, ...
+    (16 adapter modules — one per analysis module)
   tests/
-    test_agent.py      # 32 tests (mock engines, no API key needed)
+    test_agent.py      # 42 tests (mock engines, no API key needed)
 ```

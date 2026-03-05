@@ -9,10 +9,11 @@ import json
 import os
 from typing import Any, Callable, Dict, Optional
 
-from chat_agent.parser import VALID_TOOLS
+# Standard 4 ReAct tools (defined locally to avoid foundry import chain)
+STANDARD_TOOLS = {"call_agent", "list_methods", "describe_method", "list_agents"}
 
 # Standard tools + vision + output extensions
-EXTENDED_TOOLS = VALID_TOOLS | {
+EXTENDED_TOOLS = STANDARD_TOOLS | {
     "analyze_image",
     "analyze_pdf_page",
     "save_file",

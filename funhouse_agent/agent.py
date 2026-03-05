@@ -1,19 +1,19 @@
 """
 GeotechAgent — engine-agnostic geotechnical agent with text + vision.
 
-Wraps GeotechChatAgent with dependency-injected AI engine and adds
-vision tool dispatch for image/PDF analysis.
+Self-contained dispatch: routes tool calls through funhouse_agent/adapters/
+which import directly from analysis modules. No dependency on foundry/ files.
 """
 
 import json
 import time
 from typing import Callable, Dict, Optional
 
-from chat_agent.agent import (
-    AgentResult, ConversationHistory, dispatch_tool, _truncate,
-)
+from chat_agent.agent import AgentResult, ConversationHistory, _truncate
 from chat_agent.parser import parse_response
-from chat_agent.react_prompt import build_system_prompt_compact
+
+from funhouse_agent.dispatch import dispatch_tool
+from funhouse_agent.system_prompt import build_system_prompt
 
 from funhouse_agent.vision_tools import (
     EXTENDED_TOOLS, VISION_TOOL_DESCRIPTIONS,
@@ -24,11 +24,10 @@ from funhouse_agent.vision_tools import (
 def _build_agent_system_prompt() -> str:
     """Build system prompt with vision tool extensions.
 
-    Uses the compact prompt (Quick Reference table only) to reduce context
-    bloat. The agent discovers detailed agent/method info at runtime via
-    list_agents, list_methods, and describe_method tools.
+    Uses the funhouse-specific module catalog (16 adapter modules) plus
+    vision tool descriptions.
     """
-    base = build_system_prompt_compact()
+    base = build_system_prompt()
     return base + "\n\n" + VISION_TOOL_DESCRIPTIONS
 
 
