@@ -19,6 +19,7 @@ from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
 from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurface
 from slope_stability.slices import Slice, build_slices
 from slope_stability.methods import fellenius_fos, bishop_fos, spencer_fos
+from slope_stability.nails import SoilNail
 from slope_stability.search import (
     grid_search, optimize_radius, search_noncircular,
     search_pso, search_weak_layer_biased, search_entry_exit,
@@ -29,7 +30,7 @@ from slope_stability.results import (
 )
 
 __all__ = [
-    'SlopeGeometry', 'SlopeSoilLayer',
+    'SlopeGeometry', 'SlopeSoilLayer', 'SoilNail',
     'CircularSlipSurface', 'PolylineSlipSurface',
     'Slice', 'build_slices',
     'fellenius_fos', 'bishop_fos', 'spencer_fos',
