@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (2873 module + 142 harness + 3299 ref = 6314 tests)
+## Module Inventory (2847 module + 142 harness + 3384 ref = 6373 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -41,9 +41,9 @@ Key conventions:
 | ground_improvement | 43 | Aggregate piers, wick drains, surcharge, vibro (GEC-13) |
 | slope_stability | 169+17skip | Fellenius/Bishop/Spencer, circular+noncircular, grid/random search, contact stresses, Duncan verification |
 | downdrag | 53 | Fellenius neutral plane, UFC 3-220-20 downdrag |
-| geotech_common | 284 | SoilProfile (82) + checks (93) + adapters (89) + plots (21) |
+| geotech_common | 288 | SoilProfile (82) + checks (93) + adapters (89) + plots (21) |
 | opensees_agent | 106 | PM4Sand cyclic DSS, BNWF lateral pile, 1D site response |
-| pystrata_agent | ~57 | 1D EQL site response (SHAKE-type, Darendeli/Menq/custom) |
+| pystrata_agent | 60 | 1D EQL site response (SHAKE-type, Darendeli/Menq/custom) |
 | seismic_signals | 74 | Earthquake signal processing (eqsig/pyrotd) |
 | liquepy_agent | 59 | CPT-based liquefaction triggering (B&I 2014, LPI, LSN, LDI) |
 | pygef_agent | 45 | CPT/borehole file parser (GEF/BRO-XML) |
@@ -59,12 +59,12 @@ Key conventions:
 | subsurface_characterization | 145 | Subsurface data visualization (DIGGS parser w/ 20 test types, Plotly plots, trend stats) |
 | wind_loads | 62 | ASCE 7-22 wind loads on freestanding walls and fences (Ch 29.3) |
 | dxf_import | 97 | DXF CAD import for slope stability + FEM (discover layers, parse geometry, build SlopeGeometry/FEM inputs) |
-| dxf_export | 40 | DXF export for cross-section geometry (surface, boundaries, GWT, nails, annotations) |
+| dxf_export | 37 | DXF export for cross-section geometry (surface, boundaries, GWT, nails, annotations) |
 | pdf_import | 56 | PDF cross-section import (PyMuPDF vector extraction, LLM vision extraction, geometry conversion) |
 | fem2d | 271 | 2D plane-strain FEM (CST/Q4/beam, MC/HS, SRM, excavation, pore pressures, seepage, consolidation, staged construction) |
 | fdm2d | 81 | 2D explicit Lagrangian FDM (FLAC-style, quad zones, mixed discretization, MC, dynamic relaxation) |
 
-Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3299 tests), foundry_test_harness (142 tests), trial_agent (100 tests), chat_agent (42 tests), funhouse_agent (42 tests)
+Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3384 tests), foundry_test_harness (142 tests), trial_agent (100 tests), chat_agent (42 tests), funhouse_agent (42 tests)
 
 ## GUIs
 
@@ -176,7 +176,7 @@ Run: `pytest pdf_import/ -v`
 
 ## Funhouse Agent (Engine-Agnostic Geotechnical Agent)
 
-`funhouse_agent/` provides an engine-agnostic geotechnical agent with text + vision capabilities. Works with any AI backend satisfying the `GenAIEngine` protocol. Self-contained dispatch layer routes tool calls directly to 16 analysis modules via internal adapters — no dependency on `foundry/` files.
+`funhouse_agent/` provides an engine-agnostic geotechnical agent with text + vision capabilities. Works with any AI backend satisfying the `GenAIEngine` protocol. Self-contained dispatch layer routes tool calls directly to 17 analysis modules via internal adapters — no dependency on `foundry/` files.
 
 | File | Purpose |
 |------|---------|
@@ -184,9 +184,9 @@ Run: `pytest pdf_import/ -v`
 | `engine.py` | `GenAIEngine` Protocol + `ClaudeEngine` adapter |
 | `agent.py` | `GeotechAgent` class (ReAct loop + vision dispatch) |
 | `dispatch.py` | Tool dispatch — routes to adapters (not foundry) |
-| `system_prompt.py` | Self-contained system prompt (16 modules) |
+| `system_prompt.py` | Self-contained system prompt (17 modules) |
 | `vision_tools.py` | Vision tool definitions and dispatch |
-| `adapters/` | 16 adapter modules bridging flat JSON → analysis module APIs |
+| `adapters/` | 17 adapter modules bridging flat JSON → analysis module APIs |
 | `tests/` | 42 tests (mock engines, no API key needed) |
 
 Usage:
