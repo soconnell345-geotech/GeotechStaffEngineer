@@ -23,7 +23,7 @@ from dash.exceptions import PreventUpdate
 
 from slope_stability import (
     SlopeGeometry, SlopeSoilLayer, SoilNail, analyze_slope,
-    search_critical_surface,
+    search_critical_surface, CircularSlipSurface,
 )
 
 # ---------------------------------------------------------------------------
@@ -32,6 +32,7 @@ from slope_stability import (
 
 LAYER_COLORS = [
     "#f5e6c8", "#d4a574", "#a0c4a0", "#c8b4a0", "#e6d4a0",
+    "#b8c4d0", "#d0b8a0", "#a8d4b8", "#c4a8c4", "#d4c8a8",
 ]
 
 DEFAULT_SURFACE = [
@@ -51,7 +52,9 @@ DEFAULT_LAYERS = [
         "phi": 25,
         "c_prime": 10,
         "cu": 0,
+        "ru": 0,
         "mode": "drained",
+        "bot_boundary": "",
     },
 ]
 
@@ -128,6 +131,7 @@ def _safe_float(val, default=0.0):
 
 def _build_geometry(surface_data, layers_data, gwt_enabled, gwt_data,
                     surcharge, surcharge_start, surcharge_end, kh,
+                    crack_depth=0, crack_water=0,
                     nails_enabled=False, nails_data=None,
                     nail_bar_dia=25, nail_ddh=150, nail_fy=420,
                     nail_bond=100, nail_spacing=1.5):
@@ -152,6 +156,24 @@ def _build_geometry(surface_data, layers_data, gwt_enabled, gwt_data,
     try:
         layers = []
         for row in (layers_data or []):
+            # Parse optional bottom boundary points: "x1,z1;x2,z2;..."
+            bot_bnd = None
+            bot_bnd_str = str(row.get("bot_boundary", "") or "").strip()
+            if bot_bnd_str:
+                try:
+                    bot_bnd = []
+                    for pair in bot_bnd_str.split(";"):
+                        pair = pair.strip()
+                        if not pair:
+                            continue
+                        parts = pair.split(",")
+                        bot_bnd.append((float(parts[0]), float(parts[1])))
+                    bot_bnd.sort(key=lambda p: p[0])
+                    if len(bot_bnd) < 2:
+                        bot_bnd = None
+                except (ValueError, IndexError):
+                    bot_bnd = None
+
             layers.append(SlopeSoilLayer(
                 name=str(row.get("name", "Layer")),
                 top_elevation=_safe_float(row.get("top_elev"), 10),
@@ -161,7 +183,9 @@ def _build_geometry(surface_data, layers_data, gwt_enabled, gwt_data,
                 phi=_safe_float(row.get("phi"), 0),
                 c_prime=_safe_float(row.get("c_prime"), 0),
                 cu=_safe_float(row.get("cu"), 0),
+                ru=_safe_float(row.get("ru"), 0),
                 analysis_mode=str(row.get("mode", "drained")),
+                bottom_boundary_points=bot_bnd,
             ))
         if not layers:
             return None, "Need at least 1 soil layer."
@@ -192,6 +216,8 @@ def _build_geometry(surface_data, layers_data, gwt_enabled, gwt_data,
         q_range = (s_start, s_end)
 
     kh_val = max(0.0, _safe_float(kh, 0))
+    crack_d = max(0.0, _safe_float(crack_depth, 0))
+    crack_w = max(0.0, _safe_float(crack_water, 0))
 
     # Soil nails
     nails = None
@@ -222,6 +248,8 @@ def _build_geometry(surface_data, layers_data, gwt_enabled, gwt_data,
             surcharge_x_range=q_range,
             kh=kh_val,
             nails=nails,
+            tension_crack_depth=crack_d,
+            tension_crack_water_depth=crack_w,
         )
         return geom, None
     except ValueError as e:
@@ -245,10 +273,14 @@ def _empty_figure(msg="Define geometry and click Run Analysis"):
     return fig
 
 
-def build_cross_section(geom, result=None):
+def build_cross_section(geom, result=None, entry_exit_ranges=None):
     """Build a Plotly cross-section figure from geometry and optional result.
 
-    Translates the matplotlib logic from slope_stability/calc_steps.py:340-440.
+    Parameters
+    ----------
+    entry_exit_ranges : dict, optional
+        {"entry": (x_min, x_max), "exit": (x_min, x_max)} to draw
+        shaded constraint zones on the ground surface.
     """
     fig = go.Figure()
 
@@ -264,7 +296,7 @@ def build_cross_section(geom, result=None):
             min(geom.ground_elevation_at(x), layer.top_elevation)
             for x in x_fill
         ])
-        z_bot = np.full_like(x_fill, layer.bottom_elevation)
+        z_bot = np.array([layer.bottom_at(x) for x in x_fill])
         mask = z_top > z_bot
         if not np.any(mask):
             continue
@@ -304,6 +336,59 @@ def build_cross_section(geom, result=None):
             name="Water Table",
             opacity=0.7,
         ))
+
+    # ── Entry/exit constraint regions ────────────────────────────
+    if entry_exit_ranges:
+        z_max_surf = max(zs_surface)
+        for key, color, label in [
+            ("entry", "rgba(37,99,235,0.15)", "Entry Zone"),
+            ("exit", "rgba(220,38,38,0.15)", "Exit Zone"),
+        ]:
+            rng = entry_exit_ranges.get(key)
+            if rng is None:
+                continue
+            rx_min, rx_max = rng
+            # Sample ground surface within the range
+            rx = np.linspace(max(rx_min, x_min), min(rx_max, x_max), 50)
+            rz = np.array([geom.ground_elevation_at(x) for x in rx])
+            # Vertical band from surface up to top + 2m
+            band_top = z_max_surf + 3
+            poly_x = list(rx) + list(rx[::-1])
+            poly_z = list(rz) + [band_top] * len(rx)
+            edge_color = color.replace("0.15", "0.6")
+            fig.add_trace(go.Scatter(
+                x=poly_x, y=poly_z,
+                fill="toself", fillcolor=color,
+                line=dict(color=edge_color, width=1.5, dash="dot"),
+                name=label,
+                hoverinfo="name",
+            ))
+
+    # ── Tension crack ──────────────────────────────────────────
+    if geom.tension_crack_depth > 0 and result is not None:
+        # Draw the crack at the entry point as a vertical line
+        x_crack = result.x_entry
+        z_surf = geom.ground_elevation_at(x_crack)
+        z_crack_base = z_surf - geom.tension_crack_depth
+        fig.add_trace(go.Scatter(
+            x=[x_crack, x_crack],
+            y=[z_crack_base, z_surf],
+            mode="lines",
+            line=dict(color="#b91c1c", width=3, dash="solid"),
+            name=f"Tension Crack ({geom.tension_crack_depth:.1f}m)",
+            hoverinfo="name",
+        ))
+        # If water-filled, show water level in crack
+        if geom.tension_crack_water_depth > 0:
+            z_water_top = z_crack_base + geom.tension_crack_water_depth
+            fig.add_trace(go.Scatter(
+                x=[x_crack, x_crack],
+                y=[z_crack_base, z_water_top],
+                mode="lines",
+                line=dict(color="#2563eb", width=4),
+                name=f"Crack Water ({geom.tension_crack_water_depth:.1f}m)",
+                hoverinfo="name",
+            ))
 
     # ── Soil nails ─────────────────────────────────────────────
     if geom.nails:
@@ -356,42 +441,53 @@ def build_cross_section(geom, result=None):
                 showlegend=False,
             ))
 
-    # ── Slip circle + result overlays ────────────────────────────
+    # ── Slip surface + result overlays ────────────────────────────
     if result is not None:
-        # Slip circle arc (lower arc between entry/exit)
-        theta = np.linspace(0, 2 * np.pi, 720)
-        cx = result.xc + result.radius * np.cos(theta)
-        cz = result.yc + result.radius * np.sin(theta)
+        if result.is_circular:
+            # Slip circle arc (lower arc between entry/exit)
+            theta = np.linspace(0, 2 * np.pi, 720)
+            cx = result.xc + result.radius * np.cos(theta)
+            cz = result.yc + result.radius * np.sin(theta)
 
-        # Mask: within entry-exit x range and below center
-        mask = (
-            (cx >= result.x_entry - 0.3) &
-            (cx <= result.x_exit + 0.3) &
-            (cz <= result.yc)
-        )
-        arc_x = np.where(mask, cx, np.nan)
-        arc_z = np.where(mask, cz, np.nan)
+            # Mask: within entry-exit x range and below center
+            mask = (
+                (cx >= result.x_entry - 0.3) &
+                (cx <= result.x_exit + 0.3) &
+                (cz <= result.yc)
+            )
+            arc_x = np.where(mask, cx, np.nan)
+            arc_z = np.where(mask, cz, np.nan)
 
-        fig.add_trace(go.Scatter(
-            x=arc_x.tolist(), y=arc_z.tolist(),
-            mode="lines",
-            line=dict(color="red", width=3),
-            name=f"Slip Circle (FOS={result.FOS:.3f})",
-            connectgaps=False,
-        ))
+            fig.add_trace(go.Scatter(
+                x=arc_x.tolist(), y=arc_z.tolist(),
+                mode="lines",
+                line=dict(color="red", width=3),
+                name=f"Slip Circle (FOS={result.FOS:.3f})",
+                connectgaps=False,
+            ))
 
-        # Circle center marker
-        fig.add_trace(go.Scatter(
-            x=[result.xc], y=[result.yc],
-            mode="markers+text",
-            marker=dict(symbol="cross-thin", size=14, color="red",
-                        line=dict(width=2, color="red")),
-            text=[f"({result.xc:.1f}, {result.yc:.1f})"],
-            textposition="top right",
-            textfont=dict(size=10, color="red"),
-            name="Circle Center",
-            showlegend=False,
-        ))
+            # Circle center marker
+            fig.add_trace(go.Scatter(
+                x=[result.xc], y=[result.yc],
+                mode="markers+text",
+                marker=dict(symbol="cross-thin", size=14, color="red",
+                            line=dict(width=2, color="red")),
+                text=[f"({result.xc:.1f}, {result.yc:.1f})"],
+                textposition="top right",
+                textfont=dict(size=10, color="red"),
+                name="Circle Center",
+                showlegend=False,
+            ))
+        elif result.slip_points:
+            # Noncircular polyline slip surface
+            fig.add_trace(go.Scatter(
+                x=[p[0] for p in result.slip_points],
+                y=[p[1] for p in result.slip_points],
+                mode="lines+markers",
+                line=dict(color="red", width=3),
+                marker=dict(size=5, color="red"),
+                name=f"Slip Surface (FOS={result.FOS:.3f})",
+            ))
 
         # Entry / exit markers
         z_entry = geom.ground_elevation_at(result.x_entry)
@@ -427,6 +523,30 @@ def build_cross_section(geom, result=None):
                 connectgaps=False,
             ))
 
+            # Clickable slice midpoint markers (invisible, for click-to-inspect)
+            mid_x = [s.x_mid for s in result.slice_data]
+            mid_z = [(s.z_top + s.z_base) / 2.0 for s in result.slice_data]
+            hover_text = [
+                f"Slice {i+1}<br>x={s.x_mid:.2f} m<br>"
+                f"sigma'_n={s.normal_stress_kPa:.1f} kPa<br>"
+                f"tau_mob={s.shear_stress_kPa:.1f} kPa<br>"
+                f"tau_avail={s.shear_resistance_kPa:.1f} kPa<br>"
+                f"W={s.weight:.1f} kN/m"
+                for i, s in enumerate(result.slice_data)
+            ]
+            custom_data = list(range(len(result.slice_data)))
+            fig.add_trace(go.Scatter(
+                x=mid_x, y=mid_z,
+                mode="markers",
+                marker=dict(size=18, color="rgba(0,0,0,0)",
+                            line=dict(width=0)),
+                hoverinfo="text",
+                hovertext=hover_text,
+                customdata=custom_data,
+                name="Slice Markers",
+                showlegend=False,
+            ))
+
     # ── Layout ───────────────────────────────────────────────────
     # Axis padding
     z_min_surf = min(zs_surface)
@@ -458,6 +578,67 @@ def build_cross_section(geom, result=None):
         title=dict(text="Slope Cross-Section", font=dict(size=14)),
     )
     return fig
+
+
+def add_trial_surfaces(fig, search_result, geom, max_surfaces=50):
+    """Overlay trial slip surfaces on the cross-section, color-coded by FOS.
+
+    Shows the top trial surfaces sorted by FOS, from red (low) to green (high).
+    The critical surface is drawn bold red on top.
+    """
+    if not search_result or not search_result.grid_fos:
+        return
+
+    # Filter valid surfaces and sort by FOS
+    valid = [g for g in search_result.grid_fos if g["FOS"] < 500]
+    if not valid:
+        return
+    valid.sort(key=lambda g: g["FOS"])
+    displayed = valid[:max_surfaces]
+
+    fos_min = displayed[0]["FOS"]
+    fos_max = displayed[-1]["FOS"] if len(displayed) > 1 else fos_min + 1
+    fos_range = max(fos_max - fos_min, 0.01)
+
+    for g in displayed:
+        fos = g["FOS"]
+        # Color interpolation: red (low FOS) -> yellow -> green (high FOS)
+        t = min(1.0, max(0.0, (fos - fos_min) / fos_range))
+        r = int(255 * (1 - t))
+        gr = int(255 * t)
+        color = f"rgba({r},{gr},0,0.3)"
+
+        if g["R"] > 0:
+            # Circular: draw arc
+            xc, yc, radius = g["xc"], g["yc"], g["R"]
+            slip = CircularSlipSurface(xc, yc, radius)
+            try:
+                x_en, x_ex = slip.find_entry_exit(geom)
+            except (ValueError, RuntimeError):
+                continue
+            theta = np.linspace(0, 2 * np.pi, 180)
+            cx = xc + radius * np.cos(theta)
+            cz = yc + radius * np.sin(theta)
+            mask = (cx >= x_en - 0.3) & (cx <= x_ex + 0.3) & (cz <= yc)
+            arc_x = np.where(mask, cx, np.nan)
+            arc_z = np.where(mask, cz, np.nan)
+            fig.add_trace(go.Scatter(
+                x=arc_x.tolist(), y=arc_z.tolist(),
+                mode="lines",
+                line=dict(color=color, width=1.2),
+                hoverinfo="text",
+                text=f"FOS={fos:.3f}",
+                showlegend=False,
+                connectgaps=False,
+            ))
+
+    # Add a dummy trace for the legend
+    fig.add_trace(go.Scatter(
+        x=[None], y=[None],
+        mode="lines",
+        line=dict(color="rgba(200,100,0,0.5)", width=1.5),
+        name=f"Trial Surfaces ({len(displayed)})",
+    ))
 
 
 def build_search_heatmap(search_result):
@@ -546,17 +727,23 @@ def build_results_summary(result):
         return html.Div()
     rows = [
         ("Method", result.method),
-        ("Circle Center", f"({result.xc:.2f}, {result.yc:.2f}) m"),
-        ("Radius", f"{result.radius:.2f} m"),
+    ]
+    if result.is_circular:
+        rows.append(("Circle Center", f"({result.xc:.2f}, {result.yc:.2f}) m"))
+        rows.append(("Radius", f"{result.radius:.2f} m"))
+    else:
+        rows.append(("Surface Type", "Noncircular"))
+    rows.extend([
         ("Entry x", f"{result.x_entry:.2f} m"),
         ("Exit x", f"{result.x_exit:.2f} m"),
         ("Slices", str(result.n_slices)),
-    ]
+    ])
     if result.has_seismic:
         rows.append(("Seismic kh", f"{result.kh:.3f}"))
-    if result.n_nails_active > 0:
-        rows.append(("Nails Active", str(result.n_nails_active)))
-        rows.append(("Nail Resisting", f"{result.nail_resisting_kN_per_m:.1f} kN/m"))
+    if result.tension_crack_depth > 0:
+        rows.append(("Tension Crack", f"{result.tension_crack_depth:.1f} m"))
+        if result.tension_crack_water_depth > 0:
+            rows.append(("Crack Water", f"{result.tension_crack_water_depth:.1f} m"))
 
     return html.Table([
         html.Tbody([
@@ -574,7 +761,7 @@ def build_results_summary(result):
 
 
 def build_comparison_table(result):
-    """Return an HTML table comparing Fellenius/Bishop/Spencer FOS."""
+    """Return an HTML table comparing all method FOS values."""
     if result is None:
         return html.Div()
     rows = []
@@ -582,12 +769,12 @@ def build_comparison_table(result):
         rows.append(("Fellenius", f"{result.FOS_fellenius:.3f}"))
     if result.FOS_bishop is not None:
         rows.append(("Bishop", f"{result.FOS_bishop:.3f}"))
-    if result.method == "Spencer" or result.theta_spencer is not None:
-        rows.append(("Spencer", f"{result.FOS:.3f}"))
-    elif result.method == "Bishop" and result.FOS_bishop is None:
-        rows.append(("Bishop", f"{result.FOS:.3f}"))
-    elif result.method == "Fellenius" and result.FOS_fellenius is None:
-        rows.append(("Fellenius", f"{result.FOS:.3f}"))
+    if result.FOS_spencer is not None:
+        theta_str = f" (theta={result.theta_spencer:.1f} deg)" if result.theta_spencer is not None else ""
+        rows.append(("Spencer", f"{result.FOS_spencer:.3f}{theta_str}"))
+    if result.FOS_morgenstern_price is not None:
+        lam_str = f" (lambda={result.lambda_mp:.2f})" if result.lambda_mp is not None else ""
+        rows.append(("M-P (GLE)", f"{result.FOS_morgenstern_price:.3f}{lam_str}"))
 
     if not rows:
         return html.Div()
@@ -667,6 +854,124 @@ def build_slice_table(result):
     ], style={"marginTop": "12px"})
 
 
+def build_force_diagram(result):
+    """Build a Plotly figure showing slice forces along the slip surface."""
+    if result is None or not result.slice_data:
+        return _empty_figure("Run analysis with slice data to see force diagram")
+
+    slices = result.slice_data
+    # Use x_mid as the position axis
+    x_vals = [s.x_mid for s in slices]
+
+    fig = go.Figure()
+
+    # Normal stress
+    fig.add_trace(go.Scatter(
+        x=x_vals,
+        y=[s.normal_stress_kPa for s in slices],
+        mode="lines+markers",
+        line=dict(color="#2563eb", width=2),
+        marker=dict(size=4),
+        name="sigma'_n (eff. normal)",
+    ))
+
+    # Mobilized shear
+    fig.add_trace(go.Scatter(
+        x=x_vals,
+        y=[s.shear_stress_kPa for s in slices],
+        mode="lines+markers",
+        line=dict(color="#dc2626", width=2, dash="dash"),
+        marker=dict(size=4, symbol="square"),
+        name="tau_mob (driving)",
+    ))
+
+    # Available shear resistance
+    fig.add_trace(go.Scatter(
+        x=x_vals,
+        y=[s.shear_resistance_kPa for s in slices],
+        mode="lines+markers",
+        line=dict(color="#16a34a", width=2),
+        marker=dict(size=4, symbol="triangle-up"),
+        name="tau_avail (resistance)",
+    ))
+
+    # Weight per slice (secondary axis via annotation)
+    fig.add_trace(go.Scatter(
+        x=x_vals,
+        y=[s.weight for s in slices],
+        mode="lines+markers",
+        line=dict(color="#9333ea", width=1.5, dash="dot"),
+        marker=dict(size=3),
+        name="Weight (kN/m)",
+        yaxis="y2",
+    ))
+
+    fig.update_layout(
+        template="plotly_white",
+        title=f"Slice Force Diagram (FOS={result.FOS:.3f})",
+        xaxis_title="x position (m)",
+        yaxis=dict(title="Stress (kPa)"),
+        yaxis2=dict(title="Weight (kN/m)", overlaying="y", side="right",
+                    showgrid=False),
+        height=350,
+        margin=dict(l=60, r=60, t=50, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                    xanchor="left", x=0, font=dict(size=9)),
+    )
+    return fig
+
+
+def build_slice_detail_popup(result, click_idx):
+    """Build an HTML detail view for a clicked slice."""
+    if result is None or not result.slice_data:
+        return html.Div()
+    if click_idx is None or click_idx < 0 or click_idx >= len(result.slice_data):
+        return html.Div()
+
+    s = result.slice_data[click_idx]
+    rows = [
+        ("Slice #", str(click_idx + 1)),
+        ("x_mid", f"{s.x_mid:.2f} m"),
+        ("z_top / z_base", f"{s.z_top:.2f} / {s.z_base:.2f} m"),
+        ("Height", f"{s.height:.2f} m"),
+        ("Width", f"{s.width:.3f} m"),
+        ("Base angle", f"{s.alpha_deg:.1f} deg"),
+        ("Base length", f"{s.base_length:.3f} m"),
+        ("Weight W", f"{s.weight:.1f} kN/m"),
+        ("Pore pressure u", f"{s.pore_pressure:.1f} kPa"),
+        ("c' / phi'", f"{s.c:.1f} kPa / {s.phi:.1f} deg"),
+        ("sigma'_n", f"{s.normal_stress_kPa:.2f} kPa"),
+        ("tau_mob", f"{s.shear_stress_kPa:.2f} kPa"),
+        ("tau_avail", f"{s.shear_resistance_kPa:.2f} kPa"),
+    ]
+
+    local_fos = s.shear_resistance_kPa / s.shear_stress_kPa if abs(s.shear_stress_kPa) > 0.01 else float('inf')
+    if local_fos < 100:
+        rows.append(("Local FOS", f"{local_fos:.2f}"))
+
+    td_l = {"fontWeight": "600", "padding": "2px 8px 2px 0", "color": "#475569",
+            "fontSize": "0.82rem", "whiteSpace": "nowrap"}
+    td_r = {"padding": "2px 0", "fontSize": "0.82rem"}
+
+    return html.Div([
+        html.Div(f"Slice {click_idx + 1} Details", style={
+            "fontWeight": "700", "fontSize": "0.9rem", "color": "#1e293b",
+            "marginBottom": "6px", "borderBottom": "2px solid #e2e8f0",
+            "paddingBottom": "4px",
+        }),
+        html.Table([
+            html.Tbody([
+                html.Tr([html.Td(lbl, style=td_l), html.Td(val, style=td_r)])
+                for lbl, val in rows
+            ]),
+        ], style={"borderCollapse": "collapse"}),
+    ], style={
+        "background": "#f8fafc", "border": "1px solid #e2e8f0",
+        "borderRadius": "8px", "padding": "10px",
+        "marginTop": "8px",
+    })
+
+
 # ---------------------------------------------------------------------------
 # Dash App
 # ---------------------------------------------------------------------------
@@ -690,8 +995,11 @@ layer_cols = [
     {"name": "phi (deg)", "id": "phi", "type": "numeric", "editable": True},
     {"name": "c' (kPa)", "id": "c_prime", "type": "numeric", "editable": True},
     {"name": "cu (kPa)", "id": "cu", "type": "numeric", "editable": True},
+    {"name": "Ru", "id": "ru", "type": "numeric", "editable": True},
     {"name": "Mode", "id": "mode", "type": "text", "editable": True,
      "presentation": "dropdown"},
+    {"name": "Bot Boundary (x1,z1;x2,z2;...)", "id": "bot_boundary",
+     "type": "text", "editable": True},
 ]
 
 gwt_cols = [
@@ -985,6 +1293,15 @@ app.layout = html.Div([
                     html.Label("Seismic kh", style=LABEL_STYLE),
                     dcc.Input(id="input-kh", type="number", value=0,
                               min=0, max=1, step=0.01, style=INPUT_STYLE),
+
+                    html.Hr(style={"margin": "10px 0", "borderColor": "#e2e8f0"}),
+
+                    html.Label("Tension Crack Depth (m)", style=LABEL_STYLE),
+                    dcc.Input(id="input-crack-depth", type="number", value=0,
+                              min=0, step=0.5, style=INPUT_STYLE),
+                    html.Label("Crack Water Depth (m)", style=LABEL_STYLE),
+                    dcc.Input(id="input-crack-water", type="number", value=0,
+                              min=0, step=0.5, style=INPUT_STYLE),
                 ], style={"marginTop": "6px"}),
             ], open=False, style=SECTION_STYLE),
 
@@ -1072,6 +1389,7 @@ app.layout = html.Div([
                             {"label": "Bishop (simplified)", "value": "bishop"},
                             {"label": "Fellenius (OMS)", "value": "fellenius"},
                             {"label": "Spencer", "value": "spencer"},
+                            {"label": "Morgenstern-Price (GLE)", "value": "morgenstern_price"},
                         ],
                         value="bishop",
                         clearable=False,
@@ -1079,16 +1397,19 @@ app.layout = html.Div([
                     ),
 
                     html.Label("Search Mode", style=LABEL_STYLE),
-                    dcc.RadioItems(
+                    dcc.Dropdown(
                         id="radio-mode",
                         options=[
                             {"label": "Single Circle", "value": "single"},
-                            {"label": "Grid Search", "value": "search"},
+                            {"label": "Grid Search (circular)", "value": "search"},
+                            {"label": "Entry/Exit (circular)", "value": "entry_exit"},
+                            {"label": "Random Noncircular", "value": "noncircular"},
+                            {"label": "PSO Noncircular", "value": "pso"},
+                            {"label": "Weak-Layer Biased", "value": "weak_layer"},
                         ],
                         value="single",
-                        inline=True,
+                        clearable=False,
                         style={"fontSize": "0.85rem", "marginBottom": "10px"},
-                        labelStyle={"marginRight": "14px"},
                     ),
 
                     # -- Single circle inputs --
@@ -1112,7 +1433,7 @@ app.layout = html.Div([
                         ], style={"display": "flex"}),
                     ]),
 
-                    # -- Grid search inputs --
+                    # -- Grid search inputs (center grid) --
                     html.Div(id="search-inputs", children=[
                         html.Div([
                             html.Div([
@@ -1152,6 +1473,43 @@ app.layout = html.Div([
                         ], style={"display": "flex"}),
                     ], style={"display": "none"}),
 
+                    # -- Entry/exit range inputs (noncircular, PSO, weak-layer, entry/exit) --
+                    html.Div(id="entry-exit-inputs", children=[
+                        html.Div("Entry/Exit Ranges", style={
+                            "fontWeight": "600", "fontSize": "0.82rem",
+                            "color": "#475569", "marginBottom": "4px",
+                        }),
+                        html.Div([
+                            html.Div([
+                                html.Label("Entry x_min", style=LABEL_STYLE),
+                                dcc.Input(id="input-entry-xmin", type="number",
+                                          style=INPUT_STYLE),
+                            ], style={"flex": "1", "marginRight": "6px"}),
+                            html.Div([
+                                html.Label("Entry x_max", style=LABEL_STYLE),
+                                dcc.Input(id="input-entry-xmax", type="number",
+                                          style=INPUT_STYLE),
+                            ], style={"flex": "1"}),
+                        ], style={"display": "flex", "marginBottom": "6px"}),
+                        html.Div([
+                            html.Div([
+                                html.Label("Exit x_min", style=LABEL_STYLE),
+                                dcc.Input(id="input-exit-xmin", type="number",
+                                          style=INPUT_STYLE),
+                            ], style={"flex": "1", "marginRight": "6px"}),
+                            html.Div([
+                                html.Label("Exit x_max", style=LABEL_STYLE),
+                                dcc.Input(id="input-exit-xmax", type="number",
+                                          style=INPUT_STYLE),
+                            ], style={"flex": "1"}),
+                        ], style={"display": "flex", "marginBottom": "6px"}),
+                        html.Div([
+                            html.Label("N trials", style=LABEL_STYLE),
+                            dcc.Input(id="input-ntrials", type="number",
+                                      value=500, min=10, max=5000, style=INPUT_STYLE),
+                        ], style={"marginBottom": "6px"}),
+                    ], style={"display": "none"}),
+
                     html.Hr(style={"margin": "10px 0", "borderColor": "#e2e8f0"}),
 
                     html.Div([
@@ -1171,6 +1529,13 @@ app.layout = html.Div([
                         id="chk-compare",
                         options=[{"label": " Compare All Methods", "value": "on"}],
                         value=[],
+                        style={"fontSize": "0.85rem", "marginBottom": "6px"},
+                    ),
+
+                    dcc.Checklist(
+                        id="chk-show-trials",
+                        options=[{"label": " Show Trial Surfaces", "value": "on"}],
+                        value=["on"],
                         style={"fontSize": "0.85rem", "marginBottom": "12px"},
                     ),
 
@@ -1213,8 +1578,21 @@ app.layout = html.Div([
                           config={"displayModeBar": True}),
             ], style={"display": "none"}),
 
+            # Force diagram (hidden until analysis)
+            html.Div(id="force-diagram-container", children=[
+                dcc.Graph(id="force-diagram", figure=_empty_figure(""),
+                          config={"displayModeBar": True}),
+            ], style={"display": "none", "padding": "0 8px"}),
+
+            # Slice detail popup (click-to-inspect)
+            html.Div(id="slice-detail-container", style={"padding": "0 16px"}),
+
             # Slice data table
             html.Div(id="slice-data-container", style={"padding": "0 16px"}),
+
+            # Hidden stores for search result data
+            dcc.Store(id="search-result-store"),
+            dcc.Store(id="analysis-result-store"),
 
         ], style={
             "flex": "1",
@@ -1296,7 +1674,7 @@ def modify_surface(add_clicks, reset_clicks, current_data):
 )
 def add_layer(n_clicks, current_data):
     data = list(current_data or [])
-    if len(data) >= 5:
+    if len(data) >= 10:
         raise PreventUpdate
     # Default new layer below the last one
     if data:
@@ -1315,7 +1693,9 @@ def add_layer(n_clicks, current_data):
         "phi": 30,
         "c_prime": 0,
         "cu": 0,
+        "ru": 0,
         "mode": "drained",
+        "bot_boundary": "",
     })
     return data
 
@@ -1369,6 +1749,7 @@ def modify_nails(add_clicks, reset_clicks, current_data):
 @app.callback(
     [Output("single-inputs", "style"),
      Output("search-inputs", "style"),
+     Output("entry-exit-inputs", "style"),
      Output("gwt-section", "style"),
      Output("nail-section", "style")],
     [Input("radio-mode", "value"),
@@ -1378,9 +1759,11 @@ def modify_nails(add_clicks, reset_clicks, current_data):
 def toggle_mode(mode, gwt_toggle, nail_toggle):
     single_vis = {"display": "block"} if mode == "single" else {"display": "none"}
     search_vis = {"display": "block"} if mode == "search" else {"display": "none"}
+    # Entry/exit inputs for noncircular, PSO, weak-layer, and entry/exit modes
+    entry_exit_vis = {"display": "block"} if mode in ("noncircular", "pso", "weak_layer", "entry_exit") else {"display": "none"}
     gwt_vis = {"display": "block"} if "on" in (gwt_toggle or []) else {"display": "none"}
     nail_vis = {"display": "block"} if "on" in (nail_toggle or []) else {"display": "none"}
-    return single_vis, search_vis, gwt_vis, nail_vis
+    return single_vis, search_vis, entry_exit_vis, gwt_vis, nail_vis
 
 
 # Callback 7: Auto-populate search bounds from geometry
@@ -1388,13 +1771,17 @@ def toggle_mode(mode, gwt_toggle, nail_toggle):
     [Output("input-x-min", "value"),
      Output("input-x-max", "value"),
      Output("input-y-min", "value"),
-     Output("input-y-max", "value")],
+     Output("input-y-max", "value"),
+     Output("input-entry-xmin", "value"),
+     Output("input-entry-xmax", "value"),
+     Output("input-exit-xmin", "value"),
+     Output("input-exit-xmax", "value")],
     Input("radio-mode", "value"),
     State("surface-table", "data"),
     prevent_initial_call=True,
 )
 def auto_populate_bounds(mode, surface_data):
-    if mode != "search":
+    if mode == "single":
         raise PreventUpdate
     if not surface_data:
         raise PreventUpdate
@@ -1403,12 +1790,22 @@ def auto_populate_bounds(mode, surface_data):
     x_min, x_max = min(xs), max(xs)
     z_min, z_max = min(zs), max(zs)
     slope_height = z_max - z_min
-    return (
-        round(x_min, 1),
-        round(x_max, 1),
-        round(z_max + 1, 1),
-        round(z_max + 2 * slope_height, 1),
-    )
+    span = x_max - x_min
+
+    # Grid search bounds
+    grid_xmin = round(x_min, 1)
+    grid_xmax = round(x_max, 1)
+    grid_ymin = round(z_max + 1, 1)
+    grid_ymax = round(z_max + 2 * slope_height, 1)
+
+    # Entry/exit ranges
+    entry_xmin = round(x_min, 1)
+    entry_xmax = round(x_min + span * 0.4, 1)
+    exit_xmin = round(x_min + span * 0.6, 1)
+    exit_xmax = round(x_max, 1)
+
+    return (grid_xmin, grid_xmax, grid_ymin, grid_ymax,
+            entry_xmin, entry_xmax, exit_xmin, exit_xmax)
 
 
 # Callback 6: MAIN ANALYSIS — the core callback
@@ -1419,8 +1816,12 @@ def auto_populate_bounds(mode, surface_data):
      Output("comparison-table", "children"),
      Output("heatmap-container", "style"),
      Output("search-heatmap", "figure"),
+     Output("force-diagram-container", "style"),
+     Output("force-diagram", "figure"),
+     Output("slice-detail-container", "children"),
      Output("slice-data-container", "children"),
-     Output("error-msg", "children")],
+     Output("error-msg", "children"),
+     Output("analysis-result-store", "data")],
     Input("btn-run", "n_clicks"),
     [State("surface-table", "data"),
      State("layers-table", "data"),
@@ -1430,6 +1831,8 @@ def auto_populate_bounds(mode, surface_data):
      State("input-surcharge-start", "value"),
      State("input-surcharge-end", "value"),
      State("input-kh", "value"),
+     State("input-crack-depth", "value"),
+     State("input-crack-water", "value"),
      State("nail-toggle", "value"),
      State("nail-table", "data"),
      State("input-nail-bar-dia", "value"),
@@ -1450,25 +1853,35 @@ def auto_populate_bounds(mode, surface_data):
      State("input-ny", "value"),
      State("input-nslices", "value"),
      State("input-fos-req", "value"),
-     State("chk-compare", "value")],
+     State("chk-compare", "value"),
+     State("chk-show-trials", "value"),
+     State("input-entry-xmin", "value"),
+     State("input-entry-xmax", "value"),
+     State("input-exit-xmin", "value"),
+     State("input-exit-xmax", "value"),
+     State("input-ntrials", "value")],
     prevent_initial_call=True,
 )
 def run_analysis(n_clicks,
                  surface_data, layers_data, gwt_toggle, gwt_data,
                  surcharge, surcharge_start, surcharge_end, kh,
+                 crack_depth, crack_water,
                  nail_toggle, nail_data,
                  nail_bar_dia, nail_ddh, nail_fy, nail_bond, nail_spacing,
                  method, mode,
                  xc, yc, radius,
                  x_min, x_max, y_min, y_max, nx, ny,
-                 n_slices, fos_req, compare):
+                 n_slices, fos_req, compare, show_trials,
+                 entry_xmin, entry_xmax, exit_xmin, exit_xmax, n_trials):
     if not n_clicks:
         raise PreventUpdate
 
-    # Defaults for empty outputs
+    # 12 outputs
     empty_outputs = (
         _empty_figure(), build_fos_badge(None), html.Div(), html.Div(),
-        {"display": "none"}, _empty_figure(""), html.Div(), "",
+        {"display": "none"}, _empty_figure(""),
+        {"display": "none"}, _empty_figure(""),
+        html.Div(), html.Div(), "", None,
     )
 
     gwt_on = "on" in (gwt_toggle or [])
@@ -1476,76 +1889,134 @@ def run_analysis(n_clicks,
     geom, err = _build_geometry(
         surface_data, layers_data, gwt_on, gwt_data,
         surcharge, surcharge_start, surcharge_end, kh,
+        crack_depth=crack_depth, crack_water=crack_water,
         nails_enabled=nail_on, nails_data=nail_data,
         nail_bar_dia=nail_bar_dia, nail_ddh=nail_ddh,
         nail_fy=nail_fy, nail_bond=nail_bond, nail_spacing=nail_spacing,
     )
     if geom is None:
-        return (*empty_outputs[:7], err)
+        return (*empty_outputs[:10], err, None)
 
     n_sl = int(_safe_float(n_slices, 30))
-    fos_r = _safe_float(fos_req, 1.5)
     do_compare = "on" in (compare or [])
+    do_show_trials = "on" in (show_trials or [])
 
     try:
+        search_res = None
+
         if mode == "single":
             xc_v = _safe_float(xc, 20)
             yc_v = _safe_float(yc, 15)
             r_v = _safe_float(radius, 13)
             if r_v <= 0:
-                return (*empty_outputs[:7], "Radius must be positive.")
+                return (*empty_outputs[:10], "Radius must be positive.", None)
 
             result = analyze_slope(
                 geom, xc_v, yc_v, r_v,
                 method=method,
                 n_slices=n_sl,
-                FOS_required=fos_r,
                 include_slice_data=True,
                 compare_methods=do_compare,
             )
-
-            fig = build_cross_section(geom, result)
-            heatmap_style = {"display": "none"}
-            heatmap_fig = _empty_figure("")
 
         else:
-            # Grid search
-            xr = (_safe_float(x_min, 5), _safe_float(x_max, 35))
-            yr = (_safe_float(y_min, 11), _safe_float(y_max, 25))
-            nx_v = max(3, int(_safe_float(nx, 10)))
-            ny_v = max(3, int(_safe_float(ny, 10)))
+            # Determine search type and parameters
+            if mode == "search":
+                # Grid search (circular)
+                xr = (_safe_float(x_min, 5), _safe_float(x_max, 35))
+                yr = (_safe_float(y_min, 11), _safe_float(y_max, 25))
+                nx_v = max(3, int(_safe_float(nx, 10)))
+                ny_v = max(3, int(_safe_float(ny, 10)))
 
-            search_res = search_critical_surface(
-                geom,
-                x_range=xr,
-                y_range=yr,
-                nx=nx_v,
-                ny=ny_v,
-                method=method,
-                n_slices=n_sl,
-                FOS_required=fos_r,
-            )
+                search_res = search_critical_surface(
+                    geom, x_range=xr, y_range=yr,
+                    nx=nx_v, ny=ny_v, method=method, n_slices=n_sl,
+                )
 
-            if search_res.critical is None:
-                return (*empty_outputs[:7],
-                        "No valid slip surfaces found. Try adjusting search bounds.")
+            elif mode in ("noncircular", "pso", "weak_layer", "entry_exit"):
+                # All these use entry/exit ranges
+                ex_min = _safe_float(entry_xmin, geom.surface_points[0][0])
+                ex_max = _safe_float(entry_xmax,
+                                     geom.surface_points[0][0] +
+                                     (geom.surface_points[-1][0] - geom.surface_points[0][0]) * 0.4)
+                xx_min = _safe_float(exit_xmin,
+                                     geom.surface_points[0][0] +
+                                     (geom.surface_points[-1][0] - geom.surface_points[0][0]) * 0.6)
+                xx_max = _safe_float(exit_xmax, geom.surface_points[-1][0])
+                nt = int(_safe_float(n_trials, 500))
+
+                if mode == "entry_exit":
+                    nx_v = max(3, int(_safe_float(nx, 10)))
+                    ny_v = max(3, int(_safe_float(ny, 10)))
+                    search_res = search_critical_surface(
+                        geom, surface_type="entry_exit",
+                        x_entry_range=(ex_min, ex_max),
+                        x_exit_range=(xx_min, xx_max),
+                        nx=nx_v, ny=ny_v,
+                        method=method, n_slices=n_sl,
+                    )
+                else:
+                    search_res = search_critical_surface(
+                        geom, surface_type=mode,
+                        x_entry_range=(ex_min, ex_max),
+                        x_exit_range=(xx_min, xx_max),
+                        n_trials=nt, method=method, n_slices=n_sl,
+                    )
+
+            if search_res is None or search_res.critical is None:
+                return (*empty_outputs[:10],
+                        "No valid slip surfaces found. Try adjusting search bounds.",
+                        None)
 
             # Re-run on critical surface with slice data + comparison
-            result = analyze_slope(
-                geom,
-                search_res.critical.xc,
-                search_res.critical.yc,
-                search_res.critical.radius,
-                method=method,
-                n_slices=n_sl,
-                FOS_required=fos_r,
-                include_slice_data=True,
-                compare_methods=do_compare,
-            )
+            crit = search_res.critical
+            if crit.is_circular:
+                result = analyze_slope(
+                    geom, crit.xc, crit.yc, crit.radius,
+                    method=method, n_slices=n_sl,
+                    include_slice_data=True, compare_methods=do_compare,
+                )
+            else:
+                from slope_stability import PolylineSlipSurface
+                slip = PolylineSlipSurface(points=crit.slip_points)
+                result = analyze_slope(
+                    geom, slip_surface=slip,
+                    method="spencer", n_slices=n_sl,
+                    include_slice_data=True, compare_methods=do_compare,
+                )
 
-            fig = build_cross_section(geom, result)
+        # Build entry/exit ranges for visualization
+        ee_ranges = None
+        if mode in ("noncircular", "pso", "weak_layer", "entry_exit"):
+            ex_min_v = _safe_float(entry_xmin, geom.surface_points[0][0])
+            ex_max_v = _safe_float(entry_xmax,
+                                   geom.surface_points[0][0] +
+                                   (geom.surface_points[-1][0] - geom.surface_points[0][0]) * 0.4)
+            xx_min_v = _safe_float(exit_xmin,
+                                   geom.surface_points[0][0] +
+                                   (geom.surface_points[-1][0] - geom.surface_points[0][0]) * 0.6)
+            xx_max_v = _safe_float(exit_xmax, geom.surface_points[-1][0])
+            ee_ranges = {
+                "entry": (ex_min_v, ex_max_v),
+                "exit": (xx_min_v, xx_max_v),
+            }
+
+        # Build cross-section with optional trial surfaces
+        fig = build_cross_section(geom, result, entry_exit_ranges=ee_ranges)
+        if search_res and do_show_trials:
+            add_trial_surfaces(fig, search_res, geom)
+
+        # Heatmap
+        if search_res:
             heatmap_fig = build_search_heatmap(search_res)
             heatmap_style = {"display": "block"}
+        else:
+            heatmap_fig = _empty_figure("")
+            heatmap_style = {"display": "none"}
+
+        # Force diagram
+        force_fig = build_force_diagram(result)
+        force_style = {"display": "block", "padding": "0 8px"}
 
         # Build output components
         badge = build_fos_badge(result)
@@ -1553,13 +2024,141 @@ def run_analysis(n_clicks,
         comp_table = build_comparison_table(result) if do_compare else html.Div()
         slice_table = build_slice_table(result)
 
-        return fig, badge, summary, comp_table, heatmap_style, heatmap_fig, slice_table, ""
+        # Slice detail: show the most critical slice by default
+        slice_detail = html.Div()
+        if result.slice_data:
+            # Find slice with lowest local FOS
+            min_idx = 0
+            min_local = float('inf')
+            for i, s in enumerate(result.slice_data):
+                if abs(s.shear_stress_kPa) > 0.01:
+                    local = s.shear_resistance_kPa / s.shear_stress_kPa
+                    if local < min_local:
+                        min_local = local
+                        min_idx = i
+            slice_detail = build_slice_detail_popup(result, min_idx)
+
+        # Store slice data for click-to-inspect callback
+        result_store = None
+        if result.slice_data:
+            result_store = {
+                "FOS": result.FOS,
+                "method": result.method,
+                "slices": [s.to_dict() for s in result.slice_data],
+            }
+
+        return (fig, badge, summary, comp_table,
+                heatmap_style, heatmap_fig,
+                force_style, force_fig,
+                slice_detail, slice_table, "", result_store)
 
     except ValueError as e:
-        return (*empty_outputs[:7], f"Analysis error: {e}")
+        return (*empty_outputs[:10], f"Analysis error: {e}", None)
     except Exception as e:
         tb = traceback.format_exc()
-        return (*empty_outputs[:7], f"Unexpected error: {e}\n{tb}")
+        return (*empty_outputs[:10], f"Unexpected error: {e}\n{tb}", None)
+
+
+# Callback 8: Click-to-inspect slice on cross-section or force diagram
+@app.callback(
+    Output("slice-detail-container", "children", allow_duplicate=True),
+    [Input("cross-section", "clickData"),
+     Input("force-diagram", "clickData")],
+    State("analysis-result-store", "data"),
+    prevent_initial_call=True,
+)
+def inspect_slice(cs_click, fd_click, result_data):
+    """Update slice detail card when user clicks on cross-section or force diagram."""
+    if result_data is None:
+        raise PreventUpdate
+
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+
+    trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
+
+    click_data = cs_click if trigger_id == "cross-section" else fd_click
+    if click_data is None:
+        raise PreventUpdate
+
+    # Extract slice index from click
+    point = click_data["points"][0]
+    slice_idx = None
+
+    if trigger_id == "cross-section":
+        # Check if click was on a slice marker (has customdata)
+        if "customdata" in point:
+            slice_idx = int(point["customdata"])
+        else:
+            # Find nearest slice by x coordinate
+            click_x = point.get("x")
+            if click_x is not None and result_data.get("slices"):
+                min_dist = float("inf")
+                for i, s in enumerate(result_data["slices"]):
+                    dist = abs(s["x_mid_m"] - click_x)
+                    if dist < min_dist:
+                        min_dist = dist
+                        slice_idx = i
+    elif trigger_id == "force-diagram":
+        # Force diagram x-axis is x_mid — find nearest slice
+        click_x = point.get("x")
+        if click_x is not None and result_data.get("slices"):
+            min_dist = float("inf")
+            for i, s in enumerate(result_data["slices"]):
+                dist = abs(s["x_mid_m"] - click_x)
+                if dist < min_dist:
+                    min_dist = dist
+                    slice_idx = i
+
+    if slice_idx is None or slice_idx < 0 or slice_idx >= len(result_data["slices"]):
+        raise PreventUpdate
+
+    s = result_data["slices"][slice_idx]
+    rows = [
+        ("Slice #", str(slice_idx + 1)),
+        ("x_mid", f"{s['x_mid_m']:.2f} m"),
+        ("z_top / z_base", f"{s['z_top_m']:.2f} / {s['z_base_m']:.2f} m"),
+        ("Height", f"{s['height_m']:.2f} m"),
+        ("Width", f"{s['width_m']:.3f} m"),
+        ("Base angle", f"{s['alpha_deg']:.1f} deg"),
+        ("Base length", f"{s['base_length_m']:.3f} m"),
+        ("Weight W", f"{s['weight_kN_per_m']:.1f} kN/m"),
+        ("Pore pressure u", f"{s['pore_pressure_kPa']:.1f} kPa"),
+        ("c' / phi'", f"{s['c_kPa']:.1f} kPa / {s['phi_deg']:.1f} deg"),
+        ("sigma'_n", f"{s['normal_stress_kPa']:.2f} kPa"),
+        ("tau_mob", f"{s['shear_stress_kPa']:.2f} kPa"),
+        ("tau_avail", f"{s['shear_resistance_kPa']:.2f} kPa"),
+    ]
+
+    tau_mob = s["shear_stress_kPa"]
+    tau_avail = s["shear_resistance_kPa"]
+    if abs(tau_mob) > 0.01:
+        local_fos = tau_avail / tau_mob
+        if local_fos < 100:
+            rows.append(("Local FOS", f"{local_fos:.2f}"))
+
+    td_l = {"fontWeight": "600", "padding": "2px 8px 2px 0", "color": "#475569",
+            "fontSize": "0.82rem", "whiteSpace": "nowrap"}
+    td_r = {"padding": "2px 0", "fontSize": "0.82rem"}
+
+    return html.Div([
+        html.Div(f"Slice {slice_idx + 1} Details (click any slice to inspect)", style={
+            "fontWeight": "700", "fontSize": "0.9rem", "color": "#1e293b",
+            "marginBottom": "6px", "borderBottom": "2px solid #e2e8f0",
+            "paddingBottom": "4px",
+        }),
+        html.Table([
+            html.Tbody([
+                html.Tr([html.Td(lbl, style=td_l), html.Td(val, style=td_r)])
+                for lbl, val in rows
+            ]),
+        ], style={"borderCollapse": "collapse"}),
+    ], style={
+        "background": "#f8fafc", "border": "1px solid #e2e8f0",
+        "borderRadius": "8px", "padding": "10px",
+        "marginTop": "8px",
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -1791,13 +2390,19 @@ def import_dxf(n_clicks, dxf_contents, units, flip_y_val,
                 prev_zs = [z for _, z in prev_pts]
                 top_e = round(sum(prev_zs) / len(prev_zs), 2) if prev_zs else 0
 
+            # Encode boundary points as "x1,z1;x2,z2;..." string
+            bot_bnd_str = ";".join(
+                f"{round(x, 2)},{round(z, 2)}" for x, z in bnd_pts
+            ) if bnd_pts and len(bnd_pts) >= 2 else ""
+
             layers_data.append({
                 "name": soil_name,
                 "top_elev": top_e,
                 "bot_elev": round(avg_z, 2),
                 "gamma": 18, "gamma_sat": 20,
-                "phi": 30, "c_prime": 0, "cu": 0,
+                "phi": 30, "c_prime": 0, "cu": 0, "ru": 0,
                 "mode": "drained",
+                "bot_boundary": bot_bnd_str,
             })
     else:
         # No boundaries — single layer from surface max to surface min - 5
@@ -1811,6 +2416,7 @@ def import_dxf(n_clicks, dxf_contents, units, flip_y_val,
             "gamma": 18, "gamma_sat": 20,
             "phi": 30, "c_prime": 0, "cu": 0,
             "mode": "drained",
+            "bot_boundary": "",
         })
 
     # --- GWT ---

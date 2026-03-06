@@ -25,7 +25,7 @@ from slope_stability import (
     SlopeGeometry, SlopeSoilLayer, analyze_slope, search_critical_surface,
 )
 from slope_stability.slices import build_slices, compute_slice_forces
-from slope_stability.slip_surface import CircularSlipSurface
+from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurface
 
 
 class SlopeStabilityPanel(QWidget):
@@ -474,17 +474,22 @@ class SlopeStabilityPanel(QWidget):
             # Build slices for visualization
             crit = search_result.critical
             self._last_slices = None
-            if crit.radius > 0:
-                try:
+            try:
+                if crit.is_circular:
                     slip = CircularSlipSurface(crit.xc, crit.yc, crit.radius)
+                elif crit.slip_points:
+                    slip = PolylineSlipSurface(points=crit.slip_points)
+                else:
+                    slip = None
+                if slip is not None:
                     self._last_slices = build_slices(
                         geom, slip, self.nslices_sb.value())
-                except (ValueError, ZeroDivisionError):
-                    pass
+            except (ValueError, ZeroDivisionError):
+                pass
 
             # Compare methods on the critical surface
             compare_text = ""
-            if self.compare_cb.isChecked() and crit.radius > 0:
+            if self.compare_cb.isChecked() and crit.is_circular:
                 r_comp = analyze_slope(
                     geom, crit.xc, crit.yc, crit.radius,
                     method=self.method_cb.currentText(),
@@ -570,7 +575,7 @@ class SlopeStabilityPanel(QWidget):
 
         # Slip circle / surface
         if result is not None:
-            if result.radius > 0:
+            if result.is_circular:
                 # Circular slip surface
                 theta = np.linspace(0, 2 * math.pi, 200)
                 cx = result.xc + result.radius * np.cos(theta)
@@ -579,6 +584,13 @@ class SlopeStabilityPanel(QWidget):
                         linestyle="-", zorder=5, label="Slip circle")
                 ax.plot(result.xc, result.yc, "x", color=SLIP_COLOR,
                         markersize=10, markeredgewidth=2, zorder=6)
+            elif result.slip_points:
+                # Noncircular polyline slip surface
+                sp_x = [p[0] for p in result.slip_points]
+                sp_z = [p[1] for p in result.slip_points]
+                ax.plot(sp_x, sp_z, color=SLIP_COLOR, linewidth=2,
+                        linestyle="-", marker="o", markersize=4,
+                        zorder=5, label="Slip surface")
 
             # Entry/exit markers
             ax.plot(result.x_entry, np.interp(result.x_entry, surface_x,

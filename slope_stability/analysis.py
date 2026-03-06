@@ -15,8 +15,13 @@ from typing import Optional, Tuple
 from slope_stability.geometry import SlopeGeometry
 from slope_stability.slip_surface import CircularSlipSurface
 from slope_stability.slices import build_slices, compute_slice_forces
-from slope_stability.methods import fellenius_fos, bishop_fos, spencer_fos
-from slope_stability.search import grid_search, search_noncircular
+from slope_stability.methods import (
+    fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
+)
+from slope_stability.search import (
+    grid_search, search_noncircular,
+    search_pso, search_weak_layer_biased, search_entry_exit,
+)
 from slope_stability.results import (
     SlopeStabilityResult, SliceData, SearchResult,
 )
@@ -48,7 +53,7 @@ def analyze_slope(geom: SlopeGeometry,
     slip_surface : CircularSlipSurface or PolylineSlipSurface, optional
         Explicit slip surface object. If provided, xc/yc/radius are ignored.
     method : str
-        'fellenius', 'bishop', or 'spencer'. Default 'bishop'.
+        'fellenius', 'bishop', 'spencer', or 'morgenstern_price'. Default 'bishop'.
     n_slices : int
         Number of slices. Default 30.
     tol : float
@@ -56,9 +61,9 @@ def analyze_slope(geom: SlopeGeometry,
     include_slice_data : bool
         If True, include per-slice breakdown in results.
     compare_methods : bool
-        If True, compute FOS for all three methods.
-        For noncircular surfaces, only Fellenius and Spencer are compared
-        (Bishop requires circular).
+        If True, compute FOS for all four methods (Fellenius, Bishop,
+        Spencer, Morgenstern-Price). For noncircular surfaces, Bishop
+        is skipped (requires circular).
 
     Returns
     -------
@@ -82,6 +87,7 @@ def analyze_slope(geom: SlopeGeometry,
     r_xc = slip.xc if is_circular else 0.0
     r_yc = slip.yc if is_circular else 0.0
     r_radius = slip.radius if is_circular else 0.0
+    r_slip_points = None if is_circular else list(slip.points)
 
     # For noncircular, force Spencer (Bishop doesn't work)
     if not is_circular and method == "bishop":
@@ -89,13 +95,22 @@ def analyze_slope(geom: SlopeGeometry,
 
     # Primary FOS
     theta_spencer = None
+    fos_spencer = None
+    fos_mp = None
+    lambda_mp = None
     if method == "fellenius":
         fos = fellenius_fos(slices, slip)
         method_name = "Fellenius"
     elif method == "spencer":
         fos, theta = spencer_fos(slices, slip, tol=tol)
+        fos_spencer = fos
         theta_spencer = theta
         method_name = "Spencer"
+    elif method == "morgenstern_price":
+        fos, lam = morgenstern_price_fos(slices, slip, tol=tol)
+        fos_mp = fos
+        lambda_mp = lam
+        method_name = "Morgenstern-Price"
     else:
         fos = bishop_fos(slices, slip, tol=tol)
         method_name = "Bishop"
@@ -107,9 +122,12 @@ def analyze_slope(geom: SlopeGeometry,
         fos_fellenius = fellenius_fos(slices, slip)
         if is_circular:
             fos_bishop = bishop_fos(slices, slip, tol=tol)
-        if theta_spencer is None:
+        if fos_spencer is None:
             fos_sp, theta = spencer_fos(slices, slip, tol=tol)
+            fos_spencer = fos_sp
             theta_spencer = theta
+        if fos_mp is None:
+            fos_mp, lambda_mp = morgenstern_price_fos(slices, slip, tol=tol)
 
     # Slice data for plotting
     slice_data = None
@@ -136,6 +154,7 @@ def analyze_slope(geom: SlopeGeometry,
                 normal_stress_kPa=sigma_n,
                 shear_stress_kPa=tau_mob,
                 shear_resistance_kPa=tau_avail,
+                in_tension_crack=s.in_tension_crack,
             ))
 
     return SlopeStabilityResult(
@@ -149,10 +168,16 @@ def analyze_slope(geom: SlopeGeometry,
         theta_spencer=theta_spencer,
         FOS_fellenius=fos_fellenius,
         FOS_bishop=fos_bishop,
+        FOS_spencer=fos_spencer,
+        FOS_morgenstern_price=fos_mp,
+        lambda_mp=lambda_mp,
         n_slices=len(slices),
         has_seismic=geom.kh > 0,
         kh=geom.kh,
         slice_data=slice_data,
+        slip_points=r_slip_points,
+        tension_crack_depth=geom.tension_crack_depth,
+        tension_crack_water_depth=geom.tension_crack_water_depth,
     )
 
 
@@ -209,15 +234,15 @@ def search_critical_surface(
     -------
     SearchResult
     """
-    if surface_type == "noncircular":
-        # Auto-compute entry/exit ranges from slope geometry if not provided
-        x_min = geom.surface_points[0][0]
-        x_max = geom.surface_points[-1][0]
-        if x_entry_range is None:
-            x_entry_range = (x_min, x_min + (x_max - x_min) * 0.4)
-        if x_exit_range is None:
-            x_exit_range = (x_min + (x_max - x_min) * 0.6, x_max)
+    # Auto-compute entry/exit ranges from slope geometry if not provided
+    x_min_geo = geom.surface_points[0][0]
+    x_max_geo = geom.surface_points[-1][0]
+    if x_entry_range is None:
+        x_entry_range = (x_min_geo, x_min_geo + (x_max_geo - x_min_geo) * 0.4)
+    if x_exit_range is None:
+        x_exit_range = (x_min_geo + (x_max_geo - x_min_geo) * 0.6, x_max_geo)
 
+    if surface_type == "noncircular":
         return search_noncircular(
             geom,
             x_entry_range=x_entry_range,
@@ -227,6 +252,43 @@ def search_critical_surface(
             n_slices=n_slices,
             tol=tol,
             seed=seed,
+        )
+
+    if surface_type == "pso":
+        return search_pso(
+            geom,
+            x_entry_range=x_entry_range,
+            x_exit_range=x_exit_range,
+            n_particles=max(nx * ny, 30),
+            n_iterations=n_trials // max(nx * ny, 30) if n_trials > 30 else 50,
+            n_points=n_points,
+            n_slices=n_slices,
+            tol=tol,
+            seed=seed,
+        )
+
+    if surface_type == "weak_layer":
+        return search_weak_layer_biased(
+            geom,
+            x_entry_range=x_entry_range,
+            x_exit_range=x_exit_range,
+            n_trials=n_trials,
+            n_points=n_points,
+            n_slices=n_slices,
+            tol=tol,
+            seed=seed,
+        )
+
+    if surface_type == "entry_exit":
+        return search_entry_exit(
+            geom,
+            x_entry_range=x_entry_range,
+            x_exit_range=x_exit_range,
+            n_entry=nx,
+            n_exit=ny,
+            method=method,
+            n_slices=n_slices,
+            tol=tol,
         )
 
     # Circular search

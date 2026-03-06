@@ -74,6 +74,9 @@ class Slice:
     surcharge_force: float = 0.0
     seismic_force: float = 0.0
     z_centroid: float = 0.0
+    in_tension_crack: bool = False
+    crack_water_force: float = 0.0
+    crack_water_z: float = 0.0
 
 
 @dataclass
@@ -175,6 +178,14 @@ def build_slices(geom: SlopeGeometry,
     x_entry, x_exit = slip.find_entry_exit(geom)
     dx = (x_exit - x_entry) / n_slices
 
+    # Tension crack: compute crack base elevation at entry.
+    # Only slices in the entry half of the slip surface can be in the crack.
+    crack_base_elev = None
+    x_midpoint = (x_entry + x_exit) / 2.0
+    if geom.tension_crack_depth > 0:
+        z_surface_entry = geom.ground_elevation_at(x_entry)
+        crack_base_elev = z_surface_entry - geom.tension_crack_depth
+
     slices = []
     for i in range(n_slices):
         x_left = x_entry + i * dx
@@ -218,9 +229,25 @@ def build_slices(geom: SlopeGeometry,
         base_layer = geom.layer_at_point(x_mid, z_base)
         if base_layer is not None:
             c, phi = base_layer.shear_strength_params
+            # Apply Ru if no GWT pore pressure and layer has Ru > 0
+            if pore_pressure <= 0 and base_layer.ru > 0:
+                # u = Ru * gamma * h  where h = overburden depth
+                overburden_h = z_top - z_base
+                pore_pressure = base_layer.ru * base_layer.gamma * overburden_h
         else:
             # Fallback: use bottom-most layer
             c, phi = geom.soil_layers[-1].shear_strength_params
+
+        # Tension crack: slices near the entry where base is above crack
+        # bottom have no shear resistance (open crack face).
+        # x-position guard prevents marking exit-side slices on flat surfaces.
+        in_crack = False
+        if (crack_base_elev is not None
+                and z_base >= crack_base_elev
+                and x_mid <= x_midpoint):
+            in_crack = True
+            c = 0.0
+            phi = 0.0
 
         # Surcharge
         surcharge_force = geom.surcharge_at(x_mid) * width
@@ -248,7 +275,26 @@ def build_slices(geom: SlopeGeometry,
             surcharge_force=surcharge_force,
             seismic_force=seismic_force,
             z_centroid=z_centroid,
+            in_tension_crack=in_crack,
         ))
+
+    # Tension crack water force: applied to the first non-cracked slice
+    # F_w = 0.5 * gamma_w * z_w^2, acting at z_w/3 above crack base
+    if crack_base_elev is not None and geom.tension_crack_water_depth > 0 and slices:
+        z_w = geom.tension_crack_water_depth
+        crack_water_f = 0.5 * GAMMA_W * z_w ** 2
+        crack_water_elev = crack_base_elev + z_w / 3.0
+        # Apply to first non-cracked slice (or last cracked if all cracked)
+        target = None
+        for s in slices:
+            if not s.in_tension_crack:
+                target = s
+                break
+        if target is None and slices:
+            target = slices[-1]
+        if target is not None:
+            target.crack_water_force = crack_water_f
+            target.crack_water_z = crack_water_elev
 
     return slices
 

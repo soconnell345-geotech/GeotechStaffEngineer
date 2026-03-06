@@ -9,7 +9,7 @@ All units SI: meters, kPa, kN/m, degrees.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 
 @dataclass
@@ -62,9 +62,10 @@ class SliceData:
     normal_stress_kPa: float = 0.0
     shear_stress_kPa: float = 0.0
     shear_resistance_kPa: float = 0.0
+    in_tension_crack: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "x_mid_m": round(self.x_mid, 3),
             "z_top_m": round(self.z_top, 3),
             "z_base_m": round(self.z_base, 3),
@@ -80,6 +81,9 @@ class SliceData:
             "shear_stress_kPa": round(self.shear_stress_kPa, 2),
             "shear_resistance_kPa": round(self.shear_resistance_kPa, 2),
         }
+        if self.in_tension_crack:
+            d["in_tension_crack"] = True
+        return d
 
 
 @dataclass
@@ -91,13 +95,13 @@ class SlopeStabilityResult:
     FOS : float
         Factor of safety.
     method : str
-        Analysis method ('Fellenius', 'Bishop', 'Spencer').
+        Analysis method ('Fellenius', 'Bishop', 'Spencer', 'Morgenstern-Price').
     xc : float
-        Circle center x-coordinate (m).
+        Circle center x-coordinate (m). 0 for noncircular.
     yc : float
-        Circle center z-coordinate / elevation (m).
+        Circle center z-coordinate / elevation (m). 0 for noncircular.
     radius : float
-        Circle radius (m).
+        Circle radius (m). 0 for noncircular.
     x_entry : float
         Slip surface entry x-coordinate (m).
     x_exit : float
@@ -107,7 +111,13 @@ class SlopeStabilityResult:
     FOS_fellenius : float or None
         Fellenius FOS for comparison.
     FOS_bishop : float or None
-        Bishop FOS for comparison.
+        Bishop FOS for comparison (circular only).
+    FOS_spencer : float or None
+        Spencer FOS for comparison.
+    FOS_morgenstern_price : float or None
+        Morgenstern-Price FOS for comparison.
+    lambda_mp : float or None
+        Morgenstern-Price interslice force scaling factor.
     n_slices : int
         Number of slices used.
     has_seismic : bool
@@ -116,6 +126,12 @@ class SlopeStabilityResult:
         Horizontal seismic coefficient.
     slice_data : list of SliceData or None
         Per-slice breakdown.
+    slip_points : list of (float, float) or None
+        Noncircular slip surface points. None for circular.
+    tension_crack_depth : float
+        Depth of tension crack (m). 0 = no crack.
+    tension_crack_water_depth : float
+        Depth of water in tension crack (m). 0 = dry.
     """
     FOS: float = 0.0
     method: str = ""
@@ -127,10 +143,26 @@ class SlopeStabilityResult:
     theta_spencer: Optional[float] = None
     FOS_fellenius: Optional[float] = None
     FOS_bishop: Optional[float] = None
+    FOS_spencer: Optional[float] = None
+    FOS_morgenstern_price: Optional[float] = None
+    lambda_mp: Optional[float] = None
     n_slices: int = 0
     has_seismic: bool = False
     kh: float = 0.0
     slice_data: Optional[List[SliceData]] = None
+    slip_points: Optional[List[Tuple[float, float]]] = None
+    tension_crack_depth: float = 0.0
+    tension_crack_water_depth: float = 0.0
+
+    @property
+    def is_circular(self) -> bool:
+        """True if this result represents a circular slip surface."""
+        return self.radius > 0
+
+    @property
+    def is_stable(self) -> bool:
+        """True if FOS >= 1.0."""
+        return self.FOS >= 1.0
 
     def summary(self) -> str:
         lines = [
@@ -141,22 +173,39 @@ class SlopeStabilityResult:
             f"  Method:           {self.method}",
             f"  Factor of Safety: {self.FOS:.3f}",
             "",
-            f"  Critical Circle:",
-            f"    Center (xc, yc) = ({self.xc:.2f}, {self.yc:.2f}) m",
-            f"    Radius R        = {self.radius:.2f} m",
+        ]
+        if self.is_circular:
+            lines.extend([
+                f"  Critical Circle:",
+                f"    Center (xc, yc) = ({self.xc:.2f}, {self.yc:.2f}) m",
+                f"    Radius R        = {self.radius:.2f} m",
+            ])
+        else:
+            lines.append(f"  Slip Surface:     Noncircular ({len(self.slip_points or [])} points)")
+        lines.extend([
             f"    Entry x         = {self.x_entry:.2f} m",
             f"    Exit x          = {self.x_exit:.2f} m",
             "",
             f"  Slices: {self.n_slices}",
-        ]
+        ])
         if self.has_seismic:
             lines.append(f"  Seismic kh:       {self.kh:.3f}")
+        if self.tension_crack_depth > 0:
+            lines.append(f"  Tension crack:    {self.tension_crack_depth:.2f} m deep")
+            if self.tension_crack_water_depth > 0:
+                lines.append(f"  Crack water:      {self.tension_crack_water_depth:.2f} m")
         if self.FOS_fellenius is not None:
             lines.append(f"  FOS (Fellenius):  {self.FOS_fellenius:.3f}")
         if self.FOS_bishop is not None and self.method != "Bishop":
             lines.append(f"  FOS (Bishop):     {self.FOS_bishop:.3f}")
+        if self.FOS_spencer is not None and self.method != "Spencer":
+            lines.append(f"  FOS (Spencer):    {self.FOS_spencer:.3f}")
         if self.theta_spencer is not None:
             lines.append(f"  Spencer theta:    {self.theta_spencer:.2f} deg")
+        if self.FOS_morgenstern_price is not None and self.method != "Morgenstern-Price":
+            lines.append(f"  FOS (M-P):        {self.FOS_morgenstern_price:.3f}")
+        if self.lambda_mp is not None:
+            lines.append(f"  M-P lambda:       {self.lambda_mp:.3f}")
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -207,7 +256,9 @@ class SlopeStabilityResult:
     def to_dict(self) -> Dict[str, Any]:
         d = {
             "FOS": round(self.FOS, 4),
+            "is_stable": self.is_stable,
             "method": self.method,
+            "surface_type": "circular" if self.is_circular else "noncircular",
             "xc_m": round(self.xc, 2),
             "yc_m": round(self.yc, 2),
             "radius_m": round(self.radius, 2),
@@ -217,12 +268,25 @@ class SlopeStabilityResult:
             "has_seismic": self.has_seismic,
             "kh": self.kh,
         }
+        if self.tension_crack_depth > 0:
+            d["tension_crack_depth_m"] = round(self.tension_crack_depth, 2)
+            d["tension_crack_water_depth_m"] = round(self.tension_crack_water_depth, 2)
+        if self.slip_points is not None:
+            d["slip_points"] = [
+                (round(x, 3), round(z, 3)) for x, z in self.slip_points
+            ]
         if self.FOS_fellenius is not None:
             d["FOS_fellenius"] = round(self.FOS_fellenius, 4)
         if self.FOS_bishop is not None:
             d["FOS_bishop"] = round(self.FOS_bishop, 4)
+        if self.FOS_spencer is not None:
+            d["FOS_spencer"] = round(self.FOS_spencer, 4)
         if self.theta_spencer is not None:
             d["theta_spencer_deg"] = round(self.theta_spencer, 2)
+        if self.FOS_morgenstern_price is not None:
+            d["FOS_morgenstern_price"] = round(self.FOS_morgenstern_price, 4)
+        if self.lambda_mp is not None:
+            d["lambda_mp"] = round(self.lambda_mp, 4)
         if self.slice_data is not None:
             d["slice_data"] = [s.to_dict() for s in self.slice_data]
         return d
@@ -256,11 +320,17 @@ class SearchResult:
         if self.critical:
             lines.append(f"  Minimum FOS:       {self.critical.FOS:.3f}")
             lines.append(f"  Method:            {self.critical.method}")
-            lines.append(
-                f"  Critical circle:   "
-                f"({self.critical.xc:.2f}, {self.critical.yc:.2f}), "
-                f"R={self.critical.radius:.2f} m"
-            )
+            if self.critical.is_circular:
+                lines.append(
+                    f"  Critical circle:   "
+                    f"({self.critical.xc:.2f}, {self.critical.yc:.2f}), "
+                    f"R={self.critical.radius:.2f} m"
+                )
+            else:
+                lines.append(
+                    f"  Critical surface:  Noncircular "
+                    f"({len(self.critical.slip_points or [])} points)"
+                )
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
