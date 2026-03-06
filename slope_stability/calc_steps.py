@@ -56,13 +56,15 @@ def get_input_summary(result, analysis) -> List[InputItem]:
     """
     geom = analysis["geom"]
 
+    FOS_required = analysis.get("FOS_required", 1.5)
+
     items = [
         InputItem("Method", "Analysis method", result.method, ""),
         InputItem("x_c", "Circle center x", f"{result.xc:.2f}", "m"),
         InputItem("y_c", "Circle center y (elev.)", f"{result.yc:.2f}", "m"),
         InputItem("R", "Circle radius", f"{result.radius:.2f}", "m"),
         InputItem("N", "Number of slices", result.n_slices, ""),
-        InputItem("FOS_req", "Required FOS", result.FOS_required, ""),
+        InputItem("FOS_req", "Required FOS", FOS_required, ""),
     ]
 
     if result.has_seismic:
@@ -265,15 +267,17 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         sections.append(CalcSection(title="Slice Data", items=[slice_table]))
 
     # ── Stability Check ─────────────────────────────────────────
+    FOS_required = analysis.get("FOS_required", 1.5)
+    is_stable = result.FOS >= FOS_required
     check_items = [
         CheckItem(
             description="Slope stability adequacy",
-            demand=result.FOS_required,
+            demand=FOS_required,
             demand_label="FOS_required",
             capacity=result.FOS,
             capacity_label="FOS_computed",
             unit="",
-            passes=result.is_stable,
+            passes=is_stable,
         ),
     ]
     sections.append(CalcSection(title="Stability Check", items=check_items))
@@ -421,8 +425,9 @@ def _plot_slip_circle(result, geom):
                     'k-', linewidth=0.3, alpha=0.4)
 
     # FOS annotation box
-    status = "STABLE" if result.is_stable else "UNSTABLE"
-    status_color = '#16a34a' if result.is_stable else '#dc2626'
+    is_stable = result.FOS >= 1.5  # default check for plot annotation
+    status = "STABLE" if is_stable else "UNSTABLE"
+    status_color = '#16a34a' if is_stable else '#dc2626'
     ax.text(0.02, 0.98,
             f"FOS = {result.FOS:.3f} ({result.method})\n[{status}]",
             transform=ax.transAxes, fontsize=10, fontweight='bold',

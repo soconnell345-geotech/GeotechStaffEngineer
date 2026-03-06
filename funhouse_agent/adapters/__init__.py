@@ -117,4 +117,8 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.dxf_export",
         "brief": "Export cross-section geometry to DXF file format",
     },
+    "calc_package": {
+        "adapter": "funhouse_agent.adapters.calc_package",
+        "brief": "Generate Mathcad-style calc packages (HTML/LaTeX/PDF) for 13 analysis modules",
+    },
 }

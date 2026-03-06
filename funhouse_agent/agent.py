@@ -6,6 +6,7 @@ which import directly from analysis modules. No dependency on foundry/ files.
 """
 
 import json
+import re
 import time
 from typing import Callable, Dict, Optional
 
@@ -19,6 +20,31 @@ from funhouse_agent.vision_tools import (
     EXTENDED_TOOLS, VISION_TOOL_DESCRIPTIONS,
     dispatch_extended_tool, _default_save_fn,
 )
+
+# Patterns that indicate the LLM is planning to use a tool but hasn't yet
+_REASONING_PATTERNS = re.compile(
+    r"(?:^|\n)\s*(?:Thought|I need to|I'll need to|Let me|I should|"
+    r"I'll use|First,? (?:let me|I)|I will|To (?:do|answer|calculate|"
+    r"estimate|analyze|solve|determine))",
+    re.IGNORECASE,
+)
+
+# Max number of "nudge" continuations per ask() call
+_MAX_CONTINUATIONS = 2
+
+
+def _looks_like_reasoning(text: str) -> bool:
+    """Return True if text looks like an intermediate thought, not a final answer.
+
+    Heuristic: the response matches planning language patterns AND is
+    short enough that it is unlikely to be a substantive final answer.
+    """
+    stripped = text.strip()
+    if len(stripped) > 1500:
+        return False  # long responses are likely real answers
+    if _REASONING_PATTERNS.search(stripped):
+        return True
+    return False
 
 
 def _build_agent_system_prompt() -> str:
@@ -89,6 +115,7 @@ class GeotechAgent:
 
         tool_log = []
         rounds = 0
+        continuations = 0  # track nudge attempts for incomplete thoughts
 
         for rounds in range(1, self._max_rounds + 1):
             prompt = self._history.format_prompt()
@@ -116,6 +143,23 @@ class GeotechAgent:
                 continue
 
             if parsed.tool_call is None:
+                # Check if this is an incomplete thought rather than a real answer.
+                # On follow-up questions the LLM sometimes emits only a planning
+                # step ("Thought: I need to...") without a <tool_call>.  Feed it
+                # back with a nudge so the model can continue.
+                if (continuations < _MAX_CONTINUATIONS
+                        and _looks_like_reasoning(response)):
+                    continuations += 1
+                    self._history.add_assistant(response)
+                    self._history.add_tool_result(json.dumps({
+                        "note": "Continue with a <tool_call> or provide "
+                                "your final answer."
+                    }))
+                    if self._verbose:
+                        print(f"  Round {rounds}: CONTINUATION NUDGE "
+                              f"({continuations}/{_MAX_CONTINUATIONS})")
+                    continue
+
                 self._history.add_assistant(response)
                 if self._verbose:
                     print(f"  Round {rounds}: FINAL ANSWER")
