@@ -19,7 +19,7 @@ GenAIEngine (Protocol)
 
 GeotechAgent
 ├── Self-contained ReAct loop (own dispatch, own system prompt)
-├── 16 adapter modules bridging flat JSON → analysis module APIs
+├── 18 adapter modules bridging flat JSON → analysis module APIs
 ├── Vision tools via engine.analyze_image()
 ├── Attachments dict for image/PDF data
 └── Extended tool dispatch (standard + vision tools)
@@ -95,6 +95,18 @@ Beyond the standard 4 ReAct tools:
 
 These are dispatched within the agent's ReAct loop, separate from the
 standard geotechnical tool dispatch.
+
+## Notebook Chat (notebook.py)
+
+`NotebookChat` wraps a `GeotechAgent` with ipywidgets for Jupyter/Databricks.
+Injects into `agent._on_tool_call` to capture tool calls and detect output files
+(from `save_file` and `calc_package` adapter results). Uses `HTML` widgets for
+styled chat history with collapsible `<details>` for tool calls.
+
+Import explicitly to avoid pulling ipywidgets for non-notebook users:
+```python
+from funhouse_agent.notebook import NotebookChat
+```
 
 ## References
 

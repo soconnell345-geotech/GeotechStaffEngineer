@@ -2,7 +2,7 @@
 
 Engine-agnostic geotechnical AI agent with text + vision capabilities.
 Works with any AI backend (PrompterAPI, Claude, custom). Provides access
-to 16 geotechnical analysis modules plus vision tools for images and PDFs.
+to 18 geotechnical analysis modules plus vision tools for images and PDFs.
 
 Fully self-contained — dispatches directly to analysis modules via an
 internal adapter layer. No dependency on `foundry/` files or Palantir Foundry.
@@ -170,11 +170,11 @@ The agent uses these tools automatically during the ReAct loop:
 | Tool | Purpose |
 |------|---------|
 | `call_agent(agent, method, params)` | Execute a geotechnical calculation |
-| `list_agents()` | List all 16 available analysis modules |
+| `list_agents()` | List all 18 available analysis modules |
 | `list_methods(agent, category)` | List methods for a module |
 | `describe_method(agent, method)` | Get parameter details |
 
-### Available Modules (16)
+### Available Modules (18)
 
 | Module | Description |
 |--------|-------------|
@@ -194,6 +194,8 @@ The agent uses these tools automatically during the ReAct loop:
 | `wind_loads` | ASCE 7-22 wind loads on freestanding walls and fences |
 | `soe` | Support of excavation (braced/cantilever, stability, anchors) |
 | `geolysis` | Soil classification (USCS/AASHTO) + SPT corrections |
+| `dxf_export` | DXF export for cross-section geometry |
+| `calc_package` | Generate Mathcad-style calc packages (HTML/LaTeX/PDF) for 13 modules |
 
 ### Vision Tools
 
@@ -271,6 +273,38 @@ agent = GeotechAgent(
 )
 ```
 
+## Notebook Chat (ipywidgets)
+
+Interactive chat interface for Jupyter/Databricks notebooks using ipywidgets.
+
+```python
+from funhouse_agent import GeotechAgent
+from funhouse_agent.notebook import NotebookChat
+
+agent = GeotechAgent(genai_engine=prompter_api)
+chat = NotebookChat(agent)
+chat.display()
+```
+
+Features:
+- Text input with Send/Reset buttons (Enter key to send)
+- Scrollable chat history with styled messages and collapsible tool calls
+- File upload widget + `chat.attach(path)` for loading files from DBFS/workspace
+- Output file detection and display for calc packages
+- Token/stats tracking bar
+- `chat.output_files` — list of produced file paths
+- `chat.preview_file(path)` — inline HTML calc package display
+
+```python
+# Attach files programmatically (easier than widget in Databricks)
+chat.attach("/dbfs/project/site_plan.png")
+chat.attach("/dbfs/project/report.pdf", key="geotech_report")
+
+# After running queries
+chat.output_files          # list of calc package paths
+chat.preview_file(path)    # render HTML inline
+```
+
 ## Error Handling
 
 - **Missing attachment**: Error fed back to agent, which reports it gracefully
@@ -301,27 +335,23 @@ funhouse_agent/
   agent.py             # GeotechAgent class (ReAct loop + vision dispatch)
   engine.py            # GenAIEngine Protocol + ClaudeEngine adapter
   dispatch.py          # Tool dispatch — routes to adapters (not foundry)
-  system_prompt.py     # Self-contained system prompt (16 modules)
+  system_prompt.py     # Self-contained system prompt (18 modules)
   vision_tools.py      # Vision tool definitions and dispatch
+  notebook.py          # NotebookChat — ipywidgets chat interface
   DESIGN.md            # Architecture and design decisions
   adapters/
     __init__.py        # MODULE_REGISTRY + clean_value/clean_result helpers
-    bearing_capacity.py
-    settlement.py
-    slope_stability.py
-    seismic_geotech.py
-    retaining_walls.py
-    axial_pile.py
-    drilled_shaft.py
-    sheet_pile.py
-    lateral_pile.py
-    pile_group.py
-    ground_improvement.py
-    wave_equation.py
-    downdrag.py
-    wind_loads.py
-    soe.py
-    geolysis.py
+    bearing_capacity.py, settlement.py, slope_stability.py,
+    seismic_geotech.py, retaining_walls.py, axial_pile.py,
+    drilled_shaft.py, sheet_pile.py, lateral_pile.py,
+    pile_group.py, ground_improvement.py, wave_equation.py,
+    downdrag.py, wind_loads.py, soe.py, geolysis.py,
+    dxf_export.py, calc_package.py
+    (18 adapter modules — one per analysis module)
   tests/
-    test_agent.py      # 42 tests (mock engines, no API key needed)
+    test_agent.py               # 35 agent tests
+    test_engine.py              # 6 engine tests
+    test_calc_package_adapter.py # 24 calc package tests
+    test_notebook.py            # 38 notebook widget tests
+    (106 total — mock engines, no API key needed)
 ```
