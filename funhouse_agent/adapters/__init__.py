@@ -193,4 +193,61 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.subsurface_adapter",
         "brief": "Subsurface data visualization (parameter vs depth, Atterberg limits, trends)",
     },
+    # --- geotech-references agents (14 reference modules) ---
+    "dm7": {
+        "adapter": "funhouse_agent.adapters.dm7_adapter",
+        "brief": "NAVFAC DM7 equations (340+): soil classification, stresses, settlement, seepage, foundations",
+    },
+    "gec6": {
+        "adapter": "funhouse_agent.adapters.gec6_adapter",
+        "brief": "GEC-6 shallow foundations reference (FHWA-SA-02-054, tables/figures/text)",
+    },
+    "gec7": {
+        "adapter": "funhouse_agent.adapters.gec7_adapter",
+        "brief": "GEC-7 soil nail walls reference (FHWA-NHI-14-007, tables/figures/text)",
+    },
+    "gec10": {
+        "adapter": "funhouse_agent.adapters.gec10_adapter",
+        "brief": "GEC-10 drilled shafts reference (FHWA-NHI-10-016, tables/figures/text)",
+    },
+    "gec11": {
+        "adapter": "funhouse_agent.adapters.gec11_adapter",
+        "brief": "GEC-11 MSE walls & reinforced soil slopes (FHWA-NHI-10-024, tables/figures/text)",
+    },
+    "gec12": {
+        "adapter": "funhouse_agent.adapters.gec12_adapter",
+        "brief": "GEC-12 driven piles reference (FHWA-NHI-16-009, tables/figures/text)",
+    },
+    "gec13": {
+        "adapter": "funhouse_agent.adapters.gec13_adapter",
+        "brief": "GEC-13 ground modification reference (FHWA-NHI-16-027, tables/figures/text)",
+    },
+    "micropile": {
+        "adapter": "funhouse_agent.adapters.micropile_adapter",
+        "brief": "Micropile design reference (FHWA-NHI-05-039, bond stress/tables/text)",
+    },
+    "fema_p2192": {
+        "adapter": "funhouse_agent.adapters.fema_adapter",
+        "brief": "FEMA P-2192 seismic design category, site class, Fa/Fv coefficients",
+    },
+    "noaa_frost": {
+        "adapter": "funhouse_agent.adapters.noaa_frost_adapter",
+        "brief": "NOAA frost depth equations (Stefan/Berggren) and soil thermal properties",
+    },
+    "ufc_backfill": {
+        "adapter": "funhouse_agent.adapters.ufc_backfill_adapter",
+        "brief": "UFC 3-220-04N backfill design (compaction, filter criteria, drainage)",
+    },
+    "ufc_dewatering": {
+        "adapter": "funhouse_agent.adapters.ufc_dewatering_adapter",
+        "brief": "UFC 3-220-05 dewatering (Thiem, Dupuit, Sichardt, superposition)",
+    },
+    "ufc_expansive": {
+        "adapter": "funhouse_agent.adapters.ufc_expansive_adapter",
+        "brief": "UFC 3-220-07 expansive soils (swell potential, heave, pier design)",
+    },
+    "ufc_pavement": {
+        "adapter": "funhouse_agent.adapters.ufc_pavement_adapter",
+        "brief": "UFC 3-260-02 airfield pavement design (CBR, thickness, ESWL)",
+    },
 }
