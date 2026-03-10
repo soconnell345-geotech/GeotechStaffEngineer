@@ -1,6 +1,6 @@
 """System prompt for the funhouse_agent — self-contained, no foundry dependency.
 
-Lists only the 16 analysis modules available through the adapter layer.
+Lists the 18 analysis modules available through the adapter layer.
 """
 
 from funhouse_agent.adapters import MODULE_REGISTRY
@@ -23,7 +23,7 @@ give a final answer (with no tool call).
 
 ## Available Tools
 
-You have 4 tools:
+You have 7 tools (4 standard + 3 extended for vision and file output):
 
 ### 1. list_agents
 List all available analysis modules with brief descriptions.

@@ -180,21 +180,21 @@ The agent uses these tools automatically during the ReAct loop:
 |--------|-------------|
 | `bearing_capacity` | Shallow foundation bearing capacity (Vesic/Meyerhof/Hansen) |
 | `settlement` | Foundation settlement (elastic, Schmertmann, consolidation) |
-| `slope_stability` | Slope stability (Fellenius/Bishop/Spencer, circular+noncircular) |
+| `slope_stability` | Slope stability (Fellenius/Bishop/Spencer, circular+noncircular, grid search) |
 | `seismic_geotech` | Seismic evaluation (site class, M-O pressure, liquefaction) |
 | `retaining_walls` | Retaining walls (cantilever + MSE, GEC-11) |
 | `axial_pile` | Driven pile axial capacity (Nordlund/Tomlinson/Beta) |
-| `drilled_shaft` | Drilled shaft capacity (GEC-10 alpha/beta/rock socket) |
+| `drilled_shaft` | Drilled shaft capacity (GEC-10 alpha/beta/rock socket, LRFD) |
 | `sheet_pile` | Sheet pile walls (cantilever and anchored) |
 | `lateral_pile` | Lateral pile analysis (COM624P, 8 p-y models, FD solver) |
 | `pile_group` | Pile group analysis (rigid cap, 6-DOF, Converse-Labarre) |
-| `ground_improvement` | Ground improvement (aggregate piers, wick drains, vibro) |
+| `ground_improvement` | Ground improvement (aggregate piers, wick drains, vibro, GEC-13) |
 | `wave_equation` | Smith 1-D wave equation (bearing graph, drivability) |
 | `downdrag` | Pile downdrag (Fellenius neutral plane, UFC 3-220-20) |
-| `wind_loads` | ASCE 7-22 wind loads on freestanding walls and fences |
-| `soe` | Support of excavation (braced/cantilever, stability, anchors) |
-| `geolysis` | Soil classification (USCS/AASHTO) + SPT corrections |
-| `dxf_export` | DXF export for cross-section geometry |
+| `wind_loads` | ASCE 7-22 wind loads on freestanding walls and fences (Ch 29.3) |
+| `soe` | Support of excavation (braced/cantilever walls, stability, anchors) |
+| `geolysis` | Soil classification (USCS/AASHTO) + SPT corrections + bearing capacity |
+| `dxf_export` | Export cross-section geometry to DXF file format |
 | `calc_package` | Generate Mathcad-style calc packages (HTML/LaTeX/PDF) for 13 modules |
 
 ### Vision Tools
@@ -333,6 +333,7 @@ User Question → GeotechAgent.ask()
 funhouse_agent/
   __init__.py          # Exports: GeotechAgent, GenAIEngine, ClaudeEngine, AgentResult
   agent.py             # GeotechAgent class (ReAct loop + vision dispatch)
+  react_support.py     # AgentResult, ConversationHistory, ToolCall parser (self-contained)
   engine.py            # GenAIEngine Protocol + ClaudeEngine adapter
   dispatch.py          # Tool dispatch — routes to adapters (not foundry)
   system_prompt.py     # Self-contained system prompt (18 modules)
@@ -350,7 +351,7 @@ funhouse_agent/
     (18 adapter modules — one per analysis module)
   tests/
     test_agent.py               # 35 agent tests
-    test_engine.py              # 6 engine tests
+    test_engine.py              # 9 engine tests
     test_calc_package_adapter.py # 24 calc package tests
     test_notebook.py            # 38 notebook widget tests
     (106 total — mock engines, no API key needed)

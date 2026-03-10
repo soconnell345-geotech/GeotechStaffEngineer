@@ -1,7 +1,7 @@
 """Funhouse agent tool dispatch — routes tool calls to analysis modules.
 
-Provides the same 4-tool interface as chat_agent but dispatches directly
-to analysis modules via adapter functions. No dependency on foundry/ files.
+Dispatches directly to analysis modules via adapter functions.
+No dependency on foundry/ files.
 
 Tools:
     list_agents()                       → available modules
@@ -118,11 +118,7 @@ def call_agent(agent_name: str, method: str, parameters: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def dispatch_tool(tool_call) -> str:
-    """Route a parsed ToolCall to the adapter registry and return JSON string.
-
-    Same interface as chat_agent.agent.dispatch_tool, but routes through
-    the adapter layer instead of foundry/ files.
-    """
+    """Route a parsed ToolCall to the adapter registry and return JSON string."""
     name = tool_call.tool_name
     args = tool_call.arguments
 
