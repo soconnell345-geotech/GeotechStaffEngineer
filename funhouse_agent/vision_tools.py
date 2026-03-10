@@ -37,17 +37,17 @@ Render a PDF page and analyze it using vision.
 ```
 
 ### 7. save_file
-Save content to a file (calc packages, HTML reports, Plotly figures, etc.).
-Content can be text (str) or base64-encoded binary. Returns the saved file path.
+Save raw text or data to a file. Returns the saved file path.
+For formatted calculation documents, use the `calc_package` module instead.
 ```
 <tool_call>
-{"tool_name": "save_file", "path": "output/bearing_capacity_report.html", "content": "<html>...</html>"}
+{"tool_name": "save_file", "path": "output/data.csv", "content": "x,y\n1,2\n3,4"}
 </tool_call>
 ```
-For binary content (e.g. PDF), set encoding to "base64":
+For binary content, set encoding to "base64":
 ```
 <tool_call>
-{"tool_name": "save_file", "path": "output/report.pdf", "content": "JVBERi0xLjQ...", "encoding": "base64"}
+{"tool_name": "save_file", "path": "output/image.png", "content": "iVBORw0KGgo...", "encoding": "base64"}
 </tool_call>
 ```
 """

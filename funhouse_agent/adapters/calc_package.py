@@ -835,7 +835,9 @@ _COMMON_PARAMS = {
     "output_path": {"type": "str", "required": False,
                     "description": "File path to save output. Auto-generated if omitted."},
     "format": {"type": "str", "required": False, "default": "html",
-               "description": "Output format: html, latex, or pdf."},
+               "description": "Output format: 'html' (recommended, self-contained with embedded CSS), "
+                              "'latex' (raw .tex source), or 'pdf' (requires pdflatex installed). "
+                              "HTML is always available; PDF requires a LaTeX compiler on the system."},
 }
 
 _COMMON_RETURNS = {

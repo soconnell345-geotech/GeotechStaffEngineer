@@ -66,6 +66,12 @@ Execute a calculation. Pass agent_name, method, and parameters.
 5. When you have the result, present a clear engineering summary with values and units.
 6. If a tool returns an error, explain it and try to fix the issue.
 7. All units are SI: meters, kPa, kN, kN/m3, degrees.
+8. **Calc packages**: To generate formatted calculation documents, use the `calc_package` \
+module via call_agent — NOT save_file. The calc_package module runs the analysis AND \
+generates a professional Mathcad-style document in one step. Set `"format": "html"` \
+(recommended, always available) or `"format": "pdf"` (requires LaTeX on the system). \
+Do NOT try to write document content yourself via save_file — always use calc_package.
+9. **save_file** is for saving raw text/data files, NOT for generating reports or documents.
 
 """
 
