@@ -1,0 +1,314 @@
+{
+  "description": "Funhouse agent integration test scenarios. Each scenario has a sequence of questions with expected engineering checks.",
+  "scenarios": [
+    {
+      "id": "BC-01",
+      "title": "Bearing Capacity - Strip Footing on Sand",
+      "questions": [
+        {
+          "text": "Calculate the ultimate and allowable bearing capacity of a 2m wide strip footing embedded 1.5m deep in sand with friction angle 30 degrees and unit weight 18 kN/m3. Use Vesic method with FOS=3.",
+          "expect_tools": ["describe_method", "call_agent"],
+          "expect_module": "bearing_capacity",
+          "checks": {
+            "must_contain": ["q_ultimate", "q_allowable", "Nc", "Nq", "Ngamma"],
+            "value_ranges": {
+              "q_ultimate_kPa": [200, 600],
+              "q_allowable_kPa": [60, 200]
+            }
+          }
+        },
+        {
+          "text": "Now what if the groundwater table is at the surface? How does that change the bearing capacity?",
+          "expect_tools": ["call_agent"],
+          "expect_module": "bearing_capacity",
+          "checks": {
+            "must_contain": ["groundwater", "reduce"],
+            "logic": "q_ultimate should decrease compared to previous answer"
+          }
+        }
+      ]
+    },
+    {
+      "id": "BC-02",
+      "title": "Bearing Capacity - Square Footing on Clay",
+      "questions": [
+        {
+          "text": "What is the bearing capacity of a 3m x 3m square footing at 2m depth in clay with cu=50 kPa and unit weight 19 kN/m3? Compare Vesic and Meyerhof methods.",
+          "expect_tools": ["call_agent"],
+          "expect_module": "bearing_capacity",
+          "checks": {
+            "must_contain": ["Vesic", "Meyerhof"],
+            "value_ranges": {
+              "q_ultimate_kPa": [300, 700]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "SET-01",
+      "title": "Settlement - Elastic + Consolidation",
+      "questions": [
+        {
+          "text": "Estimate the immediate elastic settlement of a 3m square footing carrying 200 kPa net pressure on soil with Es=15000 kPa and Poisson ratio 0.3.",
+          "expect_tools": ["call_agent"],
+          "expect_module": "settlement",
+          "checks": {
+            "must_contain": ["settlement", "mm"],
+            "value_ranges": {
+              "immediate_settlement_mm": [10, 80]
+            }
+          }
+        },
+        {
+          "text": "Now add a 5m thick normally consolidated clay layer below with Cc=0.3, e0=1.0, and initial effective stress 80 kPa. What is the total consolidation settlement?",
+          "expect_tools": ["call_agent"],
+          "expect_module": "settlement",
+          "checks": {
+            "must_contain": ["consolidation", "settlement"],
+            "value_ranges": {
+              "consolidation_settlement_mm": [20, 300]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "SLOPE-01",
+      "title": "Slope Stability - Simple Embankment",
+      "questions": [
+        {
+          "text": "Analyze the stability of a 10m high 2H:1V slope in homogeneous clay with c=25 kPa, phi=10 degrees, gamma=18 kN/m3. Use Bishop method with a circular slip surface centered at x=5, y=15 with radius 18m. The ground surface goes from (0,10) to (20,10) to (40,0) to (60,0).",
+          "expect_tools": ["call_agent"],
+          "expect_module": "slope_stability",
+          "checks": {
+            "must_contain": ["FOS", "Bishop"],
+            "value_ranges": {
+              "FOS": [0.5, 3.0]
+            }
+          }
+        },
+        {
+          "text": "Search for the critical circular slip surface using a grid search. What is the minimum factor of safety?",
+          "expect_tools": ["call_agent"],
+          "expect_module": "slope_stability",
+          "checks": {
+            "must_contain": ["minimum", "FOS", "critical"],
+            "value_ranges": {
+              "min_FOS": [0.5, 3.0]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "PILE-01",
+      "title": "Driven Pile Capacity in Layered Soil",
+      "questions": [
+        {
+          "text": "Calculate the axial capacity of a 15m long, 0.4m diameter closed-end steel pipe pile driven through 5m of soft clay (cu=30 kPa, gamma=17 kN/m3) into 10m of medium dense sand (phi=32, gamma=19 kN/m3). GWT at 2m depth.",
+          "expect_tools": ["describe_method", "call_agent"],
+          "expect_module": "axial_pile",
+          "checks": {
+            "must_contain": ["Q_ultimate", "skin", "tip"],
+            "value_ranges": {
+              "Q_ultimate_kN": [300, 3000]
+            }
+          }
+        },
+        {
+          "text": "Generate a capacity vs depth curve for this pile from 5m to 20m.",
+          "expect_tools": ["call_agent"],
+          "expect_module": "axial_pile",
+          "checks": {
+            "must_contain": ["depth", "capacity"],
+            "logic": "capacity should generally increase with depth"
+          }
+        }
+      ]
+    },
+    {
+      "id": "SEISMIC-01",
+      "title": "Seismic Site Classification and Liquefaction",
+      "questions": [
+        {
+          "text": "Classify a site with average shear wave velocity Vs30=250 m/s. What are the site coefficients for Ss=1.0g and S1=0.4g?",
+          "expect_tools": ["call_agent"],
+          "expect_module": "seismic_geotech",
+          "checks": {
+            "must_contain": ["site_class", "D", "Fa", "Fv"],
+            "logic": "Vs30=250 should classify as Site Class D"
+          }
+        },
+        {
+          "text": "Evaluate liquefaction triggering for a sand layer at 5m depth with N160=12, fines content 15%, unit weight 19 kN/m3, PGA=0.3g, M=7.5, GWT at 2m.",
+          "expect_tools": ["call_agent"],
+          "expect_module": "seismic_geotech",
+          "checks": {
+            "must_contain": ["CSR", "CRR", "FOS"],
+            "logic": "low N160 with high PGA likely liquefiable"
+          }
+        }
+      ]
+    },
+    {
+      "id": "RW-01",
+      "title": "Cantilever Retaining Wall Design",
+      "questions": [
+        {
+          "text": "Check the stability of a 6m high cantilever retaining wall with base width 4m, toe length 1m, stem thickness 0.5m, and base thickness 0.6m. Backfill: phi=32 degrees, gamma=18 kN/m3. Foundation soil: phi=35, gamma=20.",
+          "expect_tools": ["call_agent"],
+          "expect_module": "retaining_walls",
+          "checks": {
+            "must_contain": ["sliding", "overturning"],
+            "value_ranges": {
+              "FOS_sliding": [0.8, 4.0],
+              "FOS_overturning": [1.0, 6.0]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "SOE-01",
+      "title": "Braced Excavation Analysis",
+      "questions": [
+        {
+          "text": "Analyze a 10m deep braced excavation in soft clay (cu=40 kPa, gamma=18 kN/m3) with struts at 3m and 7m depth. Check basal heave stability.",
+          "expect_tools": ["call_agent"],
+          "expect_module": "soe",
+          "checks": {
+            "must_contain": ["support", "basal heave", "FOS"],
+            "logic": "should identify stability concerns in soft clay"
+          }
+        }
+      ]
+    },
+    {
+      "id": "CALC-01",
+      "title": "Bearing Capacity HTML Calc Package",
+      "questions": [
+        {
+          "text": "Generate an HTML calculation package for a bearing capacity analysis of a 2.5m square footing at 1.5m depth in sand with phi=35, gamma=18.5 kN/m3. Project name: 'Highway Bridge B-42', project number 'P2024-001', engineer 'S. O'Connell'. Save to output/bc_test.html.",
+          "expect_tools": ["call_agent"],
+          "expect_module": "calc_package",
+          "checks": {
+            "must_contain": ["calc package", "html", "output"],
+            "output_file": "output/bc_test.html",
+            "logic": "should produce a real HTML file with formatted calculations"
+          }
+        }
+      ]
+    },
+    {
+      "id": "CALC-02",
+      "title": "Settlement PDF Calc Package",
+      "questions": [
+        {
+          "text": "Generate a PDF calculation package for settlement analysis of a 4m square footing with 150 kPa applied pressure. Immediate settlement using elastic method with Es=20000 kPa. Project: 'Warehouse Foundation WF-7', number 'P2024-002'. Save to output/settlement_test.pdf.",
+          "expect_tools": ["call_agent"],
+          "expect_module": "calc_package",
+          "checks": {
+            "must_contain": ["settlement", "pdf"],
+            "output_file": "output/settlement_test.pdf",
+            "logic": "should produce real PDF via LaTeX (or report LaTeX not available)"
+          }
+        }
+      ]
+    },
+    {
+      "id": "CALC-03",
+      "title": "Slope Stability HTML Calc Package",
+      "questions": [
+        {
+          "text": "Create an HTML calc package for slope stability analysis of an 8m high, 2.5H:1V slope in clay with c=30 kPa, phi=12 degrees, gamma=17.5 kN/m3. Use Bishop method. Surface from (0,8) to (20,8) to (40,0) to (60,0). Project: 'Levee Segment LS-3', number 'P2024-003'. Save to output/slope_test.html.",
+          "expect_tools": ["call_agent"],
+          "expect_module": "calc_package",
+          "checks": {
+            "must_contain": ["slope", "html", "FOS"],
+            "output_file": "output/slope_test.html",
+            "logic": "should include cross-section figure in the calc package"
+          }
+        }
+      ]
+    },
+    {
+      "id": "CALC-04",
+      "title": "Axial Pile HTML Calc Package",
+      "questions": [
+        {
+          "text": "Create an HTML calc package for a driven pile analysis. 12m long, 0.35m diameter closed-end pipe pile in sand with phi=30, gamma=18 kN/m3. Project: 'Pier Foundation PF-12', number 'P2024-004'. Save to output/pile_test.html.",
+          "expect_tools": ["call_agent"],
+          "expect_module": "calc_package",
+          "checks": {
+            "must_contain": ["pile", "html", "capacity"],
+            "output_file": "output/pile_test.html"
+          }
+        }
+      ]
+    },
+    {
+      "id": "MULTI-01",
+      "title": "Multi-Module Workflow: Foundation Design",
+      "questions": [
+        {
+          "text": "I need to design a foundation for a column load of 800 kN. The site has medium dense sand with phi=32, gamma=18 kN/m3, and Es=25000 kPa at a depth of 1.5m. First, what size square footing do I need for a factor of safety of 3?",
+          "expect_tools": ["call_agent"],
+          "expect_module": "bearing_capacity",
+          "checks": {
+            "must_contain": ["footing", "width"],
+            "logic": "should recommend a footing size that gives FOS>=3 for 800 kN"
+          }
+        },
+        {
+          "text": "Using that footing size, estimate the immediate settlement. Is it within the 25mm limit?",
+          "expect_tools": ["call_agent"],
+          "expect_module": "settlement",
+          "checks": {
+            "must_contain": ["settlement", "mm"],
+            "logic": "should use the footing from the previous answer and check against 25mm"
+          }
+        },
+        {
+          "text": "Now generate an HTML calc package for the bearing capacity analysis with project name 'Column C-14 Foundation' and save to output/foundation_bc.html.",
+          "expect_tools": ["call_agent"],
+          "expect_module": "calc_package",
+          "checks": {
+            "output_file": "output/foundation_bc.html",
+            "logic": "should use same parameters from the earlier bearing capacity analysis"
+          }
+        }
+      ]
+    },
+    {
+      "id": "WAVE-01",
+      "title": "Wave Equation Bearing Graph",
+      "questions": [
+        {
+          "text": "Generate a bearing graph for a 15m long steel pipe pile (area 0.012 m2) using a Delmag D30-32 hammer. Skin friction is 50% of total capacity. Show resistance from 200 to 2000 kN.",
+          "expect_tools": ["call_agent"],
+          "expect_module": "wave_equation",
+          "checks": {
+            "must_contain": ["blow", "resistance", "bearing graph"],
+            "logic": "blow count should increase with resistance"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GI-01",
+      "title": "Ground Improvement Feasibility",
+      "questions": [
+        {
+          "text": "I have a site with soft clay (fines content 80%) that needs improvement to 8m depth. What ground improvement methods are feasible? Then analyze wick drain consolidation with ch=2.5 m2/yr at 1.5m triangular spacing over 6 months.",
+          "expect_tools": ["call_agent"],
+          "expect_module": "ground_improvement",
+          "checks": {
+            "must_contain": ["feasib", "wick drain", "consolidation"],
+            "logic": "should recommend PVDs for soft clay; consolidation degree should be partial at 6 months"
+          }
+        }
+      ]
+    }
+  ]
+}
