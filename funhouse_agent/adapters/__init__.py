@@ -121,4 +121,76 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.calc_package",
         "brief": "Generate Mathcad-style calc packages (HTML/LaTeX/PDF) for 13 analysis modules",
     },
+    "pyseismosoil": {
+        "adapter": "funhouse_agent.adapters.pyseismosoil_adapter",
+        "brief": "Nonlinear soil curve generation (MKZ/HH) and Vs profile site characterization",
+    },
+    "pystra": {
+        "adapter": "funhouse_agent.adapters.pystra_adapter",
+        "brief": "Structural reliability analysis (FORM/SORM/Monte Carlo)",
+    },
+    "salib": {
+        "adapter": "funhouse_agent.adapters.salib_adapter",
+        "brief": "Sensitivity analysis (Sobol variance-based and Morris screening)",
+    },
+    "pygef": {
+        "adapter": "funhouse_agent.adapters.pygef_adapter",
+        "brief": "CPT and borehole file parser (GEF/BRO-XML via pygef)",
+    },
+    "dxf_import": {
+        "adapter": "funhouse_agent.adapters.dxf_import_adapter",
+        "brief": "DXF CAD import for slope stability + FEM (discover, parse, build geometry)",
+    },
+    "pdf_import": {
+        "adapter": "funhouse_agent.adapters.pdf_import_adapter",
+        "brief": "PDF cross-section import (PyMuPDF vector extraction, content discovery)",
+    },
+    "ags4": {
+        "adapter": "funhouse_agent.adapters.ags4_adapter",
+        "brief": "AGS4 geotechnical data format reader and validator",
+    },
+    "pydiggs": {
+        "adapter": "funhouse_agent.adapters.pydiggs_adapter",
+        "brief": "DIGGS 2.6 XML schema and dictionary validation",
+    },
+    "opensees": {
+        "adapter": "funhouse_agent.adapters.opensees_adapter",
+        "brief": "OpenSees FE analyses (PM4Sand DSS, BNWF lateral pile, 1D site response)",
+    },
+    "pystrata": {
+        "adapter": "funhouse_agent.adapters.pystrata_adapter",
+        "brief": "1D site response (equivalent-linear and linear elastic, SHAKE-type)",
+    },
+    "liquepy": {
+        "adapter": "funhouse_agent.adapters.liquepy_adapter",
+        "brief": "CPT-based liquefaction triggering and field correlations (Boulanger & Idriss 2014)",
+    },
+    "seismic_signals": {
+        "adapter": "funhouse_agent.adapters.seismic_signals_adapter",
+        "brief": "Earthquake signal processing (response spectra, intensity measures, RotD, filtering)",
+    },
+    "fem2d": {
+        "adapter": "funhouse_agent.adapters.fem2d_adapter",
+        "brief": "2D plane-strain FEM (gravity, foundation, slope SRM, excavation, seepage, consolidation, staged)",
+    },
+    "fdm2d": {
+        "adapter": "funhouse_agent.adapters.fdm2d_adapter",
+        "brief": "2D explicit Lagrangian FDM, FLAC-style (gravity, foundation)",
+    },
+    "gstools": {
+        "adapter": "funhouse_agent.adapters.gstools_adapter",
+        "brief": "Geostatistical kriging, variogram fitting, and random field generation",
+    },
+    "hvsrpy": {
+        "adapter": "funhouse_agent.adapters.hvsrpy_adapter",
+        "brief": "HVSR site characterization from ambient noise (resonant frequency, amplification)",
+    },
+    "swprocess": {
+        "adapter": "funhouse_agent.adapters.swprocess_adapter",
+        "brief": "MASW surface wave dispersion analysis",
+    },
+    "subsurface": {
+        "adapter": "funhouse_agent.adapters.subsurface_adapter",
+        "brief": "Subsurface data visualization (parameter vs depth, Atterberg limits, trends)",
+    },
 }

@@ -1,6 +1,6 @@
 """System prompt for the funhouse_agent — self-contained, no foundry dependency.
 
-Lists the 18 analysis modules available through the adapter layer.
+Lists all analysis modules available through the adapter layer.
 """
 
 from funhouse_agent.adapters import MODULE_REGISTRY
