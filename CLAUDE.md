@@ -123,7 +123,7 @@ Run: `pytest pdf_import/ -v`
 
 ## Funhouse Agent (Engine-Agnostic Geotechnical Agent)
 
-`funhouse_agent/` provides an engine-agnostic geotechnical agent with text + vision capabilities. Works with any AI backend satisfying the `GenAIEngine` protocol. Self-contained dispatch layer routes tool calls directly to 18 analysis modules via internal adapters — no dependency on `foundry/` files.
+`funhouse_agent/` provides an engine-agnostic geotechnical agent with text + vision capabilities. Works with any AI backend satisfying the `GenAIEngine` protocol. Self-contained dispatch layer routes tool calls directly to 36 analysis modules (~121 methods) via internal adapters — no dependency on `foundry/` files.
 
 | File | Purpose |
 |------|---------|
@@ -131,10 +131,10 @@ Run: `pytest pdf_import/ -v`
 | `engine.py` | `GenAIEngine` Protocol + `ClaudeEngine` adapter |
 | `agent.py` | `GeotechAgent` class (ReAct loop + vision dispatch) |
 | `dispatch.py` | Tool dispatch — routes to adapters (not foundry) |
-| `system_prompt.py` | Self-contained system prompt (18 modules) |
+| `system_prompt.py` | Self-contained system prompt (36 modules) |
 | `vision_tools.py` | Vision tool definitions and dispatch |
 | `notebook.py` | `NotebookChat` — ipywidgets chat interface for Jupyter/Databricks |
-| `adapters/` | 18 adapter modules bridging flat JSON → analysis module APIs |
+| `adapters/` | 36 adapter modules bridging flat JSON → analysis module APIs |
 | `tests/` | 106 tests (mock engines, no API key needed) |
 
 Usage:
