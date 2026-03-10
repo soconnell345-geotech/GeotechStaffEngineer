@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geotech-staff-engineer"
-version = "3.7.0"
+version = "3.7.1"
 description = "Python toolkit for LLM-based geotechnical engineering agents — 37 analysis modules covering foundations, piles, slopes, seismic, FEM, PDF/DXF import, and more"
 readme = "README.md"
 license = "MIT"
