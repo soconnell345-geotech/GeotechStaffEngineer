@@ -9,7 +9,7 @@ import pytest
 from funhouse_agent.agent import GeotechAgent
 from funhouse_agent.engine import GenAIEngine
 from funhouse_agent.vision_tools import EXTENDED_TOOLS
-from chat_agent.agent import AgentResult
+from funhouse_agent.react_support import AgentResult
 
 
 # ---------------------------------------------------------------------------
@@ -302,8 +302,8 @@ class TestEngineSwapping:
 
 class TestExtendedTools:
     def test_extended_tools_include_standard(self):
-        from chat_agent.parser import VALID_TOOLS
-        for tool in VALID_TOOLS:
+        standard_tools = {"call_agent", "list_methods", "describe_method", "list_agents"}
+        for tool in standard_tools:
             assert tool in EXTENDED_TOOLS
 
     def test_extended_tools_include_vision(self):

@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-37 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + geolysis agent + pystra agent + pydiggs agent + subsurface characterization + wind loads (ASCE 7-22) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM with staged construction) + fdm2d (2D explicit Lagrangian FDM, FLAC-style) + DM7 equations + trial_agent (Claude API tool_use integration) + chat_agent (ReAct agent for text-only chat functions) + funhouse_agent (engine-agnostic agent with vision).
+37 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + geolysis agent + pystra agent + pydiggs agent + subsurface characterization + wind loads (ASCE 7-22) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM with staged construction) + fdm2d (2D explicit Lagrangian FDM, FLAC-style) + DM7 equations + funhouse_agent (engine-agnostic agent with vision).
 
 ## Architecture Patterns
 
@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (2977 module + 142 harness + 3384 ref = 6503 tests)
+## Module Inventory (2935 module + 142 harness + 3384 ref = 6461 tests)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -64,7 +64,7 @@ Key conventions:
 | fem2d | 271 | 2D plane-strain FEM (CST/Q4/beam, MC/HS, SRM, excavation, pore pressures, seepage, consolidation, staged construction) |
 | fdm2d | 81 | 2D explicit Lagrangian FDM (FLAC-style, quad zones, mixed discretization, MC, dynamic relaxation) |
 
-Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3384 tests), foundry_test_harness (142 tests), trial_agent (100 tests), chat_agent (42 tests), funhouse_agent (106 tests)
+Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3384 tests), foundry_test_harness (142 tests), funhouse_agent (106 tests)
 
 ## GUIs
 
@@ -99,59 +99,6 @@ Run: `python geotech_qt_gui.py` or `python slope_stability_qt.py` or `python fem
 Supporting files: `harness.py` (FoundryAgentHarness class), `scenarios.py` (reusable problem definitions)
 
 Run: `pytest foundry_test_harness/ -v`
-
-## Trial Agent (Claude API Integration)
-
-`trial_agent/` uses the Claude API `tool_use` feature to give Claude direct access to all Foundry agents. The agent receives 3 meta-tools:
-
-- `call_agent(agent, method, params)` — Route to any Foundry agent function
-- `list_methods(agent, category)` — Discover available methods for an agent
-- `describe_method(agent, method)` — Get parameter details and usage info
-
-| File | Purpose |
-|------|---------|
-| `__init__.py` | Package init |
-| `__main__.py` | Entry point for `python -m trial_agent` |
-| `cli.py` | CLI interface for interactive queries |
-| `system_prompt.py` | **Primary agent prompt** — the canonical system prompt (dynamic agent count) |
-| `agent_registry.py` | Maps agent names to Foundry functions |
-| `tools.py` | Tool definitions for Claude API |
-| `test_run.py` | 10-question trial run |
-| `test_run_30.py` | 30-question trial run |
-| `test_run_60.py` | 60-question trial run |
-| `test_run_100.py` | 100-question comprehensive trial |
-| `analyze_descriptions.py` | Utility to analyze method descriptions |
-
-Note: Trial agent tests require a valid `ANTHROPIC_API_KEY` and incur API costs. They are not included in the standard regression command.
-
-## Chat Agent (Text-Only LLM Integration)
-
-`chat_agent/` is a ReAct agent that gives any text-in/text-out chat function access to all Foundry agents via `<tool_call>` tag parsing. Designed for Databricks notebooks using `fh_prompter.chat()`. No new dependencies — reuses `trial_agent/agent_registry.py` and `trial_agent/system_prompt.py`.
-
-| File | Purpose |
-|------|---------|
-| `__init__.py` | Exports: `GeotechChatAgent`, `AgentResult`, `parse_response`, `ToolCall`, `build_system_prompt` |
-| `parser.py` | Parse `<tool_call>JSON</tool_call>` tags from LLM text responses |
-| `react_prompt.py` | ReAct protocol instructions + canonical system prompt |
-| `agent.py` | `GeotechChatAgent` class (ReAct loop), `ConversationHistory`, `dispatch_tool()` |
-| `tests/test_chat_agent.py` | 42 tests (all use mock chat functions, no API key needed) |
-
-Usage:
-```python
-from chat_agent import GeotechChatAgent
-
-agent = GeotechChatAgent(chat_fn=fh_prompter.chat, verbose=True)
-result = agent.ask("Calculate bearing capacity of a 2m footing, phi=30")
-print(result.answer)
-
-# Follow-up (sees prior context)
-result2 = agent.ask("Now estimate settlement")
-
-# Start fresh
-agent.reset()
-```
-
-Run: `pytest chat_agent/ -v`
 
 ## PDF Import (Cross-Section Geometry Extraction)
 

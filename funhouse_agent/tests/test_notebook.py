@@ -84,7 +84,7 @@ class TestStats:
         assert "Last:" not in html  # no result yet
 
     def test_stats_with_result(self):
-        from chat_agent.agent import AgentResult
+        from funhouse_agent.react_support import AgentResult
 
         result = AgentResult(
             answer="x", tool_calls=[], rounds=3,

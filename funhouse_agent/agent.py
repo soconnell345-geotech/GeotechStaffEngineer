@@ -10,8 +10,9 @@ import re
 import time
 from typing import Callable, Dict, Optional
 
-from chat_agent.agent import AgentResult, ConversationHistory, _truncate
-from chat_agent.parser import parse_response
+from funhouse_agent.react_support import (
+    AgentResult, ConversationHistory, _truncate, parse_response,
+)
 
 from funhouse_agent.dispatch import dispatch_tool
 from funhouse_agent.system_prompt import build_system_prompt

@@ -23,7 +23,7 @@ Usage:
 
 from funhouse_agent.engine import GenAIEngine, ClaudeEngine
 from funhouse_agent.agent import GeotechAgent
-from chat_agent.agent import AgentResult
+from funhouse_agent.react_support import AgentResult
 
 __all__ = [
     "GeotechAgent",

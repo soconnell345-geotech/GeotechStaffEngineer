@@ -110,5 +110,4 @@ from funhouse_agent.notebook import NotebookChat
 
 ## References
 
-- chat_agent/agent.py — AgentResult, ConversationHistory (data structures only)
-- chat_agent/parser.py — ToolCall parsing with extensible valid_tools
+- funhouse_agent/react_support.py — AgentResult, ConversationHistory, ToolCall parsing (self-contained)
