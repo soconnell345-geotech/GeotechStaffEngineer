@@ -1058,6 +1058,7 @@ app.layout = html.Div([
 
         # ────────── SIDEBAR ──────────────────────────────────────
         html.Div([
+          html.Div([
 
             # ── DXF Import ────────────────────────────────────────
             html.Details([
@@ -1539,23 +1540,37 @@ app.layout = html.Div([
                         style={"fontSize": "0.85rem", "marginBottom": "12px"},
                     ),
 
-                    html.Button("Run Analysis", id="btn-run",
-                                style=BTN_PRIMARY),
-
                 ], style={"marginTop": "6px"}),
             ], open=True, style=SECTION_STYLE),
 
-            # Error message area
-            html.Div(id="error-msg", style={
-                "marginTop": "10px", "color": "#dc2626", "fontSize": "0.85rem",
-            }),
+          ], style={
+              "flex": "1",
+              "minHeight": "0",
+              "padding": "12px 14px",
+              "overflowY": "auto",
+              "background": "#ffffff",
+          }),
+
+          # Sticky button + error at bottom of sidebar
+          html.Div([
+              html.Div(id="error-msg", style={
+                  "color": "#dc2626", "fontSize": "0.85rem",
+                  "minHeight": "0px",
+              }),
+              html.Button("Run Analysis", id="btn-run",
+                          style=BTN_PRIMARY),
+          ], style={
+              "padding": "10px 14px",
+              "borderTop": "1px solid #e2e8f0",
+              "background": "#ffffff",
+          }),
 
         ], style={
             "width": SIDEBAR_W, "minWidth": SIDEBAR_W,
-            "padding": "12px 14px",
             "borderRight": "1px solid #e2e8f0",
-            "overflowY": "auto",
-            "height": "calc(100vh - 55px)",
+            "height": "100%",
+            "display": "flex",
+            "flexDirection": "column",
             "background": "#ffffff",
         }),
 
@@ -1597,11 +1612,11 @@ app.layout = html.Div([
         ], style={
             "flex": "1",
             "overflowY": "auto",
-            "height": "calc(100vh - 55px)",
+            "height": "100%",
             "padding": "8px 0",
         }),
 
-    ], style={"display": "flex"}),
+    ], style={"display": "flex", "height": "calc(100vh - 55px)", "overflow": "hidden"}),
 
 ], style={
     "fontFamily": "Segoe UI, system-ui, -apple-system, sans-serif",
