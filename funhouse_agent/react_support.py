@@ -52,6 +52,13 @@ def parse_response(text: str, valid_tools: set = None) -> ParseResult:
     """
     match = _TOOL_CALL_RE.search(text)
     if not match:
+        # Check for truncated tool call (opening tag but no closing tag,
+        # typically caused by max_tokens cutting the response mid-call)
+        if "<tool_call>" in text:
+            raise ValueError(
+                "Truncated tool call — response was cut off before "
+                "</tool_call>. Please retry the tool call."
+            )
         return ParseResult(tool_call=None, full_text=text)
 
     raw_json = match.group(1).strip()
@@ -144,6 +151,7 @@ class AgentResult:
     rounds: int = 0
     total_time_s: float = 0.0
     conversation_turns: int = 0
+    errors: list[dict] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

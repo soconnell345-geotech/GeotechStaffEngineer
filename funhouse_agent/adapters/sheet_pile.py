@@ -1,8 +1,7 @@
 """Sheet pile adapter — cantilever and anchored wall analysis."""
 
-from sheet_pile.soil import WallSoilLayer
-from sheet_pile.cantilever_wall import analyze_cantilever
-from sheet_pile.anchored_wall import analyze_anchored
+from sheet_pile.cantilever import WallSoilLayer, analyze_cantilever
+from sheet_pile.anchored import analyze_anchored
 
 
 def _build_soil_layers(params):

@@ -19,7 +19,7 @@ GenAIEngine (Protocol)
 
 GeotechAgent
 ├── Self-contained ReAct loop (own dispatch, own system prompt)
-├── 18 adapter modules bridging flat JSON → analysis module APIs
+├── 50 adapter modules (36 analysis + 14 reference) bridging flat JSON → module APIs
 ├── Vision tools via engine.analyze_image()
 ├── Attachments dict for image/PDF data
 └── Extended tool dispatch (standard + vision tools)

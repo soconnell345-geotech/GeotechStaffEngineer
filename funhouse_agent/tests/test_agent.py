@@ -128,6 +128,26 @@ class TestTextReact:
         result = agent.ask("What?")
         assert "42" in result.answer
 
+    def test_truncated_tool_call_recovery(self):
+        """Model starts <tool_call> but max_tokens cuts it off.
+
+        Should NOT be treated as a final answer — the agent should feed
+        the error back and let the model retry.
+        """
+        engine = MockEngine(responses=[
+            # Round 1: truncated — opening tag, no closing tag
+            'Thought: I need to list agents.\n\n<tool_call>\n'
+            '{"tool_name": "list_agents"',
+            # Round 2: model retries successfully
+            '<tool_call>\n{"tool_name": "list_agents"}\n</tool_call>',
+            # Round 3: final answer
+            "There are 50 modules available.",
+        ])
+        agent = GeotechAgent(genai_engine=engine)
+        result = agent.ask("What modules are available?")
+        assert "50 modules" in result.answer
+        assert result.rounds == 3
+
     def test_verbose_mode(self, capsys):
         engine = MockEngine(responses=["The answer is 7."])
         agent = GeotechAgent(genai_engine=engine, verbose=True)

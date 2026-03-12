@@ -2,7 +2,7 @@
 
 Engine-agnostic geotechnical AI agent with text + vision capabilities.
 Works with any AI backend (PrompterAPI, Claude, custom). Provides access
-to 18 geotechnical analysis modules plus vision tools for images and PDFs.
+to **50 geotechnical modules** (~901 methods) plus vision tools for images and PDFs.
 
 Fully self-contained — dispatches directly to analysis modules via an
 internal adapter layer. No dependency on `foundry/` files or Palantir Foundry.
@@ -170,11 +170,13 @@ The agent uses these tools automatically during the ReAct loop:
 | Tool | Purpose |
 |------|---------|
 | `call_agent(agent, method, params)` | Execute a geotechnical calculation |
-| `list_agents()` | List all 18 available analysis modules |
+| `list_agents()` | List all 50 available modules |
 | `list_methods(agent, category)` | List methods for a module |
 | `describe_method(agent, method)` | Get parameter details |
 
-### Available Modules (18)
+### Available Modules (50)
+
+#### Core Analysis (18)
 
 | Module | Description |
 |--------|-------------|
@@ -196,6 +198,63 @@ The agent uses these tools automatically during the ReAct loop:
 | `geolysis` | Soil classification (USCS/AASHTO) + SPT corrections + bearing capacity |
 | `dxf_export` | Export cross-section geometry to DXF file format |
 | `calc_package` | Generate Mathcad-style calc packages (HTML/LaTeX/PDF) for 13 modules |
+
+#### External Library Adapters (7)
+
+| Module | Description |
+|--------|-------------|
+| `opensees` | OpenSees FE analyses (PM4Sand DSS, BNWF lateral pile, 1D site response) |
+| `pystrata` | 1D site response (equivalent-linear and linear elastic, SHAKE-type) |
+| `liquepy` | CPT-based liquefaction triggering (Boulanger & Idriss 2014) |
+| `seismic_signals` | Earthquake signal processing (response spectra, intensity measures, RotD) |
+| `pyseismosoil` | Nonlinear soil curve generation (MKZ/HH) and Vs profile characterization |
+| `pystra` | Structural reliability analysis (FORM/SORM/Monte Carlo) |
+| `salib` | Sensitivity analysis (Sobol variance-based and Morris screening) |
+
+#### File/Data Import Adapters (5)
+
+| Module | Description |
+|--------|-------------|
+| `pygef` | CPT and borehole file parser (GEF/BRO-XML) |
+| `dxf_import` | DXF CAD import for slope stability + FEM |
+| `pdf_import` | PDF cross-section import (PyMuPDF vector extraction) |
+| `ags4` | AGS4 geotechnical data format reader and validator |
+| `pydiggs` | DIGGS 2.6 XML schema and dictionary validation |
+
+#### FEM/FDM & Visualization (3)
+
+| Module | Description |
+|--------|-------------|
+| `fem2d` | 2D plane-strain FEM (gravity, foundation, slope SRM, excavation, seepage, consolidation) |
+| `fdm2d` | 2D explicit Lagrangian FDM, FLAC-style |
+| `subsurface` | Subsurface data visualization (parameter vs depth, Atterberg limits, trends) |
+
+#### Additional Analysis (3)
+
+| Module | Description |
+|--------|-------------|
+| `gstools` | Geostatistical kriging, variogram fitting, and random field generation |
+| `hvsrpy` | HVSR site characterization from ambient noise |
+| `swprocess` | MASW surface wave dispersion analysis |
+
+#### Geotech-References (14)
+
+| Module | Description |
+|--------|-------------|
+| `dm7` | NAVFAC DM7 equations (340+): soil classification, stresses, settlement, seepage, foundations |
+| `gec6` | GEC-6 shallow foundations reference (tables/figures/text retrieval) |
+| `gec7` | GEC-7 soil nail walls reference (tables/figures/text retrieval) |
+| `gec10` | GEC-10 drilled shafts reference (tables/figures/text retrieval) |
+| `gec11` | GEC-11 MSE walls & reinforced soil slopes (tables/figures/text retrieval) |
+| `gec12` | GEC-12 driven piles reference (tables/figures/text retrieval) |
+| `gec13` | GEC-13 ground modification reference (tables/figures/text retrieval) |
+| `micropile` | Micropile design reference (bond stress/tables/text retrieval) |
+| `fema_p2192` | FEMA P-2192 seismic design category, site class, Fa/Fv coefficients |
+| `noaa_frost` | NOAA frost depth equations (Stefan/Berggren) and soil thermal properties |
+| `ufc_backfill` | UFC 3-220-04N backfill design (compaction, filter criteria, drainage) |
+| `ufc_dewatering` | UFC 3-220-05 dewatering (Thiem, Dupuit, Sichardt, superposition) |
+| `ufc_expansive` | UFC 3-220-07 expansive soils (swell potential, heave, pier design) |
+| `ufc_pavement` | UFC 3-260-02 airfield pavement design (CBR, thickness, ESWL) |
 
 ### Vision Tools
 
@@ -336,23 +395,30 @@ funhouse_agent/
   react_support.py     # AgentResult, ConversationHistory, ToolCall parser (self-contained)
   engine.py            # GenAIEngine Protocol + ClaudeEngine adapter
   dispatch.py          # Tool dispatch — routes to adapters (not foundry)
-  system_prompt.py     # Self-contained system prompt (18 modules)
+  system_prompt.py     # Self-contained system prompt (50 modules)
   vision_tools.py      # Vision tool definitions and dispatch
   notebook.py          # NotebookChat — ipywidgets chat interface
   DESIGN.md            # Architecture and design decisions
   adapters/
-    __init__.py        # MODULE_REGISTRY + clean_value/clean_result helpers
-    bearing_capacity.py, settlement.py, slope_stability.py,
-    seismic_geotech.py, retaining_walls.py, axial_pile.py,
-    drilled_shaft.py, sheet_pile.py, lateral_pile.py,
-    pile_group.py, ground_improvement.py, wave_equation.py,
-    downdrag.py, wind_loads.py, soe.py, geolysis.py,
-    dxf_export.py, calc_package.py
-    (18 adapter modules — one per analysis module)
+    __init__.py              # MODULE_REGISTRY (50 modules) + clean_value/clean_result
+    _reference_common.py     # Shared factory for 14 reference adapters
+    bearing_capacity.py ... soe.py, geolysis.py, dxf_export.py, calc_package.py
+    opensees_adapter.py ... salib_adapter.py        # 7 external library adapters
+    pygef_adapter.py ... pydiggs_adapter.py         # 5 file/data import adapters
+    fem2d_adapter.py, fdm2d_adapter.py, subsurface_adapter.py  # FEM/FDM/viz
+    gstools_adapter.py, hvsrpy_adapter.py, swprocess_adapter.py  # additional
+    dm7_adapter.py                                  # DM7 (340+ methods, collision handling)
+    gec6_adapter.py ... micropile_adapter.py        # 7 GEC/micropile adapters
+    fema_adapter.py, noaa_frost_adapter.py          # FEMA + NOAA
+    ufc_backfill_adapter.py ... ufc_pavement_adapter.py  # 4 UFC adapters
+    (50 adapter modules total)
   tests/
     test_agent.py               # 35 agent tests
     test_engine.py              # 9 engine tests
     test_calc_package_adapter.py # 24 calc package tests
     test_notebook.py            # 38 notebook widget tests
-    (106 total — mock engines, no API key needed)
+    test_new_adapters.py        # 104 Phase 1-2 adapter tests
+    test_phase34_adapters.py    # 45 Phase 3-4 adapter tests
+    test_reference_adapters.py  # 163 reference adapter tests
+    (418 total — mock engines, no API key needed)
 ```

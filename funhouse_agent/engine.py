@@ -96,7 +96,7 @@ class ClaudeEngine:
         self,
         api_key=None,
         model="claude-sonnet-4-6",
-        max_tokens=4096,
+        max_tokens=8192,
     ):
         try:
             from anthropic import Anthropic
