@@ -697,16 +697,18 @@ def build_search_heatmap(search_result):
 # HTML builders for results
 # ---------------------------------------------------------------------------
 
-def build_fos_badge(result):
-    """Return a styled FOS badge div."""
+def build_fos_badge(result, fos_req=1.5):
+    """Return a styled FOS badge div with optional FOS_req reference."""
     if result is None:
         return html.Div("--", style={
             "fontSize": "1.5rem", "color": "#94a3b8", "textAlign": "center",
         })
-    color = "#16a34a" if result.is_stable else "#dc2626"
-    label = "STABLE" if result.is_stable else "UNSTABLE"
-    bg = "rgba(22,163,74,0.1)" if result.is_stable else "rgba(220,38,38,0.1)"
-    return html.Div([
+    fos_req = fos_req if fos_req and fos_req > 0 else 1.0
+    passes = result.FOS >= fos_req
+    color = "#16a34a" if passes else "#dc2626"
+    label = "ADEQUATE" if passes else "INADEQUATE"
+    bg = "rgba(22,163,74,0.1)" if passes else "rgba(220,38,38,0.1)"
+    children = [
         html.Div(f"FOS = {result.FOS:.3f}", style={
             "fontSize": "2rem", "fontWeight": "700", "color": color,
         }),
@@ -714,7 +716,11 @@ def build_fos_badge(result):
             "fontSize": "0.85rem", "fontWeight": "600", "color": color,
             "letterSpacing": "0.1em",
         }),
-    ], style={
+        html.Div(f"Required: {fos_req:.2f}", style={
+            "fontSize": "0.75rem", "color": "#64748b", "marginTop": "4px",
+        }),
+    ]
+    return html.Div(children, style={
         "textAlign": "center", "padding": "10px",
         "background": bg, "borderRadius": "8px",
         "border": f"2px solid {color}",
@@ -2034,7 +2040,7 @@ def run_analysis(n_clicks,
         force_style = {"display": "block", "padding": "0 8px"}
 
         # Build output components
-        badge = build_fos_badge(result)
+        badge = build_fos_badge(result, fos_req=fos_req)
         summary = build_results_summary(result)
         comp_table = build_comparison_table(result) if do_compare else html.Div()
         slice_table = build_slice_table(result)
