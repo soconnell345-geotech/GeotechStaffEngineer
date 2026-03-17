@@ -31,13 +31,3 @@ __all__ = [
     "ClaudeEngine",
     "AgentResult",
 ]
-
-
-def ChatApp(agent, **kwargs):
-    """Lazy import of Panel chat interface.
-
-    Returns a :class:`funhouse_agent.panel_chat.ChatApp` instance.
-    Requires: ``pip install panel``
-    """
-    from funhouse_agent.panel_chat import ChatApp as _ChatApp
-    return _ChatApp(agent, **kwargs)
