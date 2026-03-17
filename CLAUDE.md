@@ -134,6 +134,7 @@ Run: `pytest pdf_import/ -v`
 | `system_prompt.py` | Self-contained system prompt (50 modules) |
 | `vision_tools.py` | Vision tool definitions and dispatch |
 | `notebook.py` | `NotebookChat` — ipywidgets chat interface for Jupyter/Databricks |
+| `panel_chat.py` | `ChatApp` — Panel chat interface (browser + notebook inline) |
 | `adapters/` | 50 adapter modules (36 analysis + 14 reference) bridging flat JSON → module APIs |
 | `tests/` | 106 tests (mock engines, no API key needed) |
 
@@ -153,6 +154,12 @@ result = agent.ask("Calculate bearing capacity of 2m footing, phi=30")
 from funhouse_agent.notebook import NotebookChat
 chat = NotebookChat(agent)
 chat.display()
+
+# Panel chat UI (standalone or Databricks inline)
+from funhouse_agent.panel_chat import ChatApp
+chat = ChatApp(agent)
+chat.show(port=8052)       # standalone browser
+# chat.panel()             # inline in Databricks notebook
 ```
 
 Run: `pytest funhouse_agent/ -v`

@@ -96,17 +96,37 @@ Beyond the standard 4 ReAct tools:
 These are dispatched within the agent's ReAct loop, separate from the
 standard geotechnical tool dispatch.
 
-## Notebook Chat (notebook.py)
+## Chat Interfaces
 
-`NotebookChat` wraps a `GeotechAgent` with ipywidgets for Jupyter/Databricks.
-Injects into `agent._on_tool_call` to capture tool calls and detect output files
-(from `save_file` and `calc_package` adapter results). Uses `HTML` widgets for
+Two chat UIs are available. Both inject into `agent._on_tool_call` to capture
+tool calls and detect output files (from `save_file` and `calc_package` adapter
+results). Import explicitly to avoid pulling GUI dependencies for headless use.
+
+### NotebookChat (notebook.py) — ipywidgets
+
+Lightweight ipywidgets wrapper for Jupyter/Databricks. Uses `HTML` widgets for
 styled chat history with collapsible `<details>` for tool calls.
 
-Import explicitly to avoid pulling ipywidgets for non-notebook users:
 ```python
 from funhouse_agent.notebook import NotebookChat
+chat = NotebookChat(agent)
+chat.display()
 ```
+
+### ChatApp (panel_chat.py) — Panel
+
+Browser-based chat UI using Panel's `ChatInterface`. Supports standalone mode
+and inline Databricks notebook display. Features: file upload for vision
+attachments, collapsible tool call details, stats bar, reset.
+
+```python
+from funhouse_agent.panel_chat import ChatApp
+chat = ChatApp(agent)
+chat.show(port=8052)    # standalone browser
+chat.panel()            # inline in Databricks notebook (after pn.extension())
+```
+
+Requires: `pip install panel`
 
 ## References
 
