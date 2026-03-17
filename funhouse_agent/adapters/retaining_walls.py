@@ -1,7 +1,8 @@
 """Retaining walls adapter — cantilever + MSE wall analysis."""
 
 from retaining_walls.geometry import CantileverWallGeometry, MSEWallGeometry
-from retaining_walls.analysis import analyze_cantilever_wall, analyze_mse_wall
+from retaining_walls.cantilever import analyze_cantilever_wall
+from retaining_walls.mse import analyze_mse_wall
 from retaining_walls.reinforcement import (
     Reinforcement, RIBBED_STEEL_STRIP_75x4, WELDED_WIRE_GRID_W11,
     GEOGRID_UX1600, GEOGRID_UX1700,

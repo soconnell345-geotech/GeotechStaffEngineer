@@ -64,7 +64,7 @@ Key conventions:
 | fem2d | 271 | 2D plane-strain FEM (CST/Q4/beam, MC/HS, SRM, excavation, pore pressures, seepage, consolidation, staged construction) |
 | fdm2d | 81 | 2D explicit Lagrangian FDM (FLAC-style, quad zones, mixed discretization, MC, dynamic relaxation) |
 
-Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3384 tests), foundry_test_harness (142 tests), funhouse_agent (106 tests)
+Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3384 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 = 418 tests)
 
 ## GUIs
 
@@ -123,7 +123,7 @@ Run: `pytest pdf_import/ -v`
 
 ## Funhouse Agent (Engine-Agnostic Geotechnical Agent)
 
-`funhouse_agent/` provides an engine-agnostic geotechnical agent with text + vision capabilities. Works with any AI backend satisfying the `GenAIEngine` protocol. Self-contained dispatch layer routes tool calls directly to 18 analysis modules via internal adapters — no dependency on `foundry/` files.
+`funhouse_agent/` provides an engine-agnostic geotechnical agent with text + vision capabilities. Works with any AI backend satisfying the `GenAIEngine` protocol. Self-contained dispatch layer routes tool calls directly to 50 modules (~901 methods) via internal adapters — no dependency on `foundry/` files. Includes 36 analysis module adapters + 14 geotech-references adapters (DM7 340+ equations, 7 GEC/micropile references with text retrieval, FEMA P-2192, NOAA frost, 4 UFC standards).
 
 | File | Purpose |
 |------|---------|
@@ -131,10 +131,10 @@ Run: `pytest pdf_import/ -v`
 | `engine.py` | `GenAIEngine` Protocol + `ClaudeEngine` adapter |
 | `agent.py` | `GeotechAgent` class (ReAct loop + vision dispatch) |
 | `dispatch.py` | Tool dispatch — routes to adapters (not foundry) |
-| `system_prompt.py` | Self-contained system prompt (18 modules) |
+| `system_prompt.py` | Self-contained system prompt (50 modules) |
 | `vision_tools.py` | Vision tool definitions and dispatch |
 | `notebook.py` | `NotebookChat` — ipywidgets chat interface for Jupyter/Databricks |
-| `adapters/` | 18 adapter modules bridging flat JSON → analysis module APIs |
+| `adapters/` | 50 adapter modules (36 analysis + 14 reference) bridging flat JSON → module APIs |
 | `tests/` | 106 tests (mock engines, no API key needed) |
 
 Usage:

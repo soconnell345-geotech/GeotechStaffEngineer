@@ -19,7 +19,7 @@ GenAIEngine (Protocol)
 
 GeotechAgent
 ├── Self-contained ReAct loop (own dispatch, own system prompt)
-├── 18 adapter modules bridging flat JSON → analysis module APIs
+├── 50 adapter modules (36 analysis + 14 reference) bridging flat JSON → module APIs
 ├── Vision tools via engine.analyze_image()
 ├── Attachments dict for image/PDF data
 └── Extended tool dispatch (standard + vision tools)
@@ -106,7 +106,15 @@ styled chat history with collapsible `<details>` for tool calls.
 Import explicitly to avoid pulling ipywidgets for non-notebook users:
 ```python
 from funhouse_agent.notebook import NotebookChat
+chat = NotebookChat(agent)
+chat.display()
 ```
+
+**Note:** Panel (`pn.chat.ChatInterface`) and Gradio (`gr.ChatInterface`) were
+evaluated as alternative chat UIs (Mar 2026). Gradio is blocked on the org
+network. Panel installs but its Bokeh JS bundle fails to load in the locked-down
+Funhouse/Databricks environment — widgets render as blank. ipywidgets is the
+only framework that works reliably in Funhouse.
 
 ## References
 

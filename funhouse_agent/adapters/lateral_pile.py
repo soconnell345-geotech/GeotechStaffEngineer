@@ -1,7 +1,7 @@
 """Lateral pile adapter — COM624P, 8 p-y models, FD solver."""
 
 from lateral_pile import Pile, ReinforcedConcreteSection, rebar_diameter, SoilLayer, LateralPileAnalysis
-from lateral_pile.py_models import (
+from lateral_pile.py_curves import (
     SoftClayMatlock, StiffClayBelowWT, StiffClayAboveWT, SoftClayJeanjean,
     SandReese, SandAPI, WeakRock,
 )

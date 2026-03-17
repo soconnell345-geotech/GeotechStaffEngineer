@@ -87,15 +87,17 @@ class SlopeStabilityPanel(QWidget):
         # Soil layers table
         lg = QGroupBox("Soil Layers")
         ll = QVBoxLayout()
-        self.layers_table = QTableWidget(1, 7)
+        self.layers_table = QTableWidget(1, 10)
         self.layers_table.setHorizontalHeaderLabels([
             "Name", "Top (m)", "Bot (m)", "\u03b3 (kN/m\u00b3)",
-            "\u03c6 (deg)", "c' (kPa)", "Mode",
+            "\u03b3_sat", "\u03c6 (deg)", "c' (kPa)",
+            "cu (kPa)", "Ru", "Mode",
         ])
         self.layers_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.Stretch)
         self.layers_table.setMaximumHeight(130)
-        defaults = ["Fill", "10", "-5", "18", "25", "10", "drained"]
+        defaults = ["Fill", "10", "-5", "18", "20", "25", "10",
+                     "0", "0", "drained"]
         for j, val in enumerate(defaults):
             self.layers_table.setItem(0, j, QTableWidgetItem(val))
         btn_row2 = QHBoxLayout()
@@ -134,6 +136,42 @@ class SlopeStabilityPanel(QWidget):
         wg.setLayout(wl)
         form.addWidget(wg)
 
+        # Surcharge
+        sq = QGroupBox("Surcharge")
+        sql = QFormLayout()
+        self.surcharge_sb = QDoubleSpinBox(value=0.0, minimum=0.0,
+                                            maximum=10000, singleStep=5,
+                                            decimals=1, suffix=" kPa")
+        self.surcharge_x_check = QCheckBox("Limit x-range")
+        self.surcharge_x_min = QDoubleSpinBox(value=0.0, minimum=-1000,
+                                               maximum=1000, decimals=1)
+        self.surcharge_x_max = QDoubleSpinBox(value=50.0, minimum=-1000,
+                                               maximum=1000, decimals=1)
+        self.surcharge_x_min.setVisible(False)
+        self.surcharge_x_max.setVisible(False)
+        self.surcharge_x_check.toggled.connect(self.surcharge_x_min.setVisible)
+        self.surcharge_x_check.toggled.connect(self.surcharge_x_max.setVisible)
+        sql.addRow("q (kPa):", self.surcharge_sb)
+        sql.addRow("", self.surcharge_x_check)
+        sql.addRow("x start:", self.surcharge_x_min)
+        sql.addRow("x end:", self.surcharge_x_max)
+        sq.setLayout(sql)
+        form.addWidget(sq)
+
+        # Tension Crack
+        tg = QGroupBox("Tension Crack")
+        tgl = QFormLayout()
+        self.tc_depth_sb = QDoubleSpinBox(value=0.0, minimum=0.0,
+                                           maximum=100, singleStep=0.5,
+                                           decimals=2, suffix=" m")
+        self.tc_water_sb = QDoubleSpinBox(value=0.0, minimum=0.0,
+                                           maximum=100, singleStep=0.5,
+                                           decimals=2, suffix=" m")
+        tgl.addRow("Crack depth:", self.tc_depth_sb)
+        tgl.addRow("Water in crack:", self.tc_water_sb)
+        tg.setLayout(tgl)
+        form.addWidget(tg)
+
         # Analysis settings
         ag = QGroupBox("Analysis Settings")
         al = QFormLayout()
@@ -142,7 +180,8 @@ class SlopeStabilityPanel(QWidget):
         self.surface_type_cb.currentIndexChanged.connect(
             self._on_surface_type_changed)
         self.method_cb = QComboBox()
-        self.method_cb.addItems(["bishop", "spencer", "fellenius"])
+        self.method_cb.addItems(["bishop", "spencer", "fellenius",
+                                 "morgenstern_price"])
         self.nslices_sb = QSpinBox(value=30, minimum=5, maximum=100)
         self.tol_sb = QDoubleSpinBox(value=0.0001, minimum=0.000001,
                                       maximum=0.01, singleStep=0.0001,
@@ -319,7 +358,7 @@ class SlopeStabilityPanel(QWidget):
             self.surface_table.setItem(
                 i, 1, QTableWidgetItem(f"{z:.2f}"))
 
-        # Soil layers
+        # Soil layers (10 columns)
         self.layers_table.setRowCount(len(geom.soil_layers))
         for i, layer in enumerate(geom.soil_layers):
             vals = [
@@ -327,8 +366,11 @@ class SlopeStabilityPanel(QWidget):
                 f"{layer.top_elevation:.2f}",
                 f"{layer.bottom_elevation:.2f}",
                 f"{layer.gamma:.1f}",
+                f"{layer.gamma_sat:.1f}" if layer.gamma_sat else "",
                 f"{layer.phi:.1f}",
                 f"{layer.c_prime:.1f}",
+                f"{layer.cu:.1f}",
+                f"{layer.ru:.2f}" if layer.ru else "0",
                 layer.analysis_mode,
             ]
             for j, val in enumerate(vals):
@@ -345,6 +387,19 @@ class SlopeStabilityPanel(QWidget):
                     i, 1, QTableWidgetItem(f"{z:.2f}"))
         else:
             self.gwt_check.setChecked(False)
+
+        # Surcharge
+        self.surcharge_sb.setValue(geom.surcharge)
+        if geom.surcharge_x_range:
+            self.surcharge_x_check.setChecked(True)
+            self.surcharge_x_min.setValue(geom.surcharge_x_range[0])
+            self.surcharge_x_max.setValue(geom.surcharge_x_range[1])
+        else:
+            self.surcharge_x_check.setChecked(False)
+
+        # Tension crack
+        self.tc_depth_sb.setValue(geom.tension_crack_depth)
+        self.tc_water_sb.setValue(geom.tension_crack_water_depth)
 
         # Redraw
         self._plot_geometry_only()
@@ -372,7 +427,8 @@ class SlopeStabilityPanel(QWidget):
     def _add_layer_row(self):
         r = self.layers_table.rowCount()
         self.layers_table.insertRow(r)
-        defaults = [f"Layer {r + 1}", "0", "-10", "18", "30", "5", "drained"]
+        defaults = [f"Layer {r + 1}", "0", "-10", "18", "20",
+                     "30", "5", "0", "0", "drained"]
         for j, val in enumerate(defaults):
             self.layers_table.setItem(r, j, QTableWidgetItem(val))
 
@@ -395,14 +451,20 @@ class SlopeStabilityPanel(QWidget):
                 vals.append(item.text() if item else "")
             if not vals[0]:
                 continue
+            gamma_sat_val = float(vals[4]) if vals[4] else None
+            cu_val = float(vals[7]) if vals[7] else 0.0
+            ru_val = float(vals[8]) if vals[8] else 0.0
             layers.append(SlopeSoilLayer(
                 name=vals[0],
                 top_elevation=float(vals[1]),
                 bottom_elevation=float(vals[2]),
                 gamma=float(vals[3]),
-                phi=float(vals[4]),
-                c_prime=float(vals[5]),
-                analysis_mode=vals[6] if vals[6] else "drained",
+                gamma_sat=gamma_sat_val,
+                phi=float(vals[5]),
+                c_prime=float(vals[6]),
+                cu=cu_val,
+                ru=ru_val,
+                analysis_mode=vals[9] if vals[9] else "drained",
             ))
         return layers
 
@@ -421,10 +483,18 @@ class SlopeStabilityPanel(QWidget):
         surface = self._read_surface()
         layers = self._read_layers()
         gwt = self._read_gwt()
+        surcharge_x_range = None
+        if self.surcharge_x_check.isChecked():
+            surcharge_x_range = (self.surcharge_x_min.value(),
+                                 self.surcharge_x_max.value())
         return SlopeGeometry(
             surface_points=surface,
             soil_layers=layers,
             gwt_points=gwt,
+            surcharge=self.surcharge_sb.value(),
+            surcharge_x_range=surcharge_x_range,
+            tension_crack_depth=self.tc_depth_sb.value(),
+            tension_crack_water_depth=self.tc_water_sb.value(),
             kh=self.kh_sb.value(),
         )
 
@@ -505,11 +575,24 @@ class SlopeStabilityPanel(QWidget):
                     compare_text += (
                         f"    Bishop:   {r_comp.FOS_bishop:.3f}\n"
                     )
-                if r_comp.theta_spencer is not None:
+                if r_comp.FOS_spencer is not None:
                     compare_text += (
-                        f"    Spencer:  {r_comp.FOS:.3f} "
-                        f"(theta={r_comp.theta_spencer:.1f} deg)\n"
+                        f"    Spencer:  {r_comp.FOS_spencer:.3f}"
                     )
+                    if r_comp.theta_spencer is not None:
+                        compare_text += (
+                            f" (theta={r_comp.theta_spencer:.1f} deg)"
+                        )
+                    compare_text += "\n"
+                if r_comp.FOS_morgenstern_price is not None:
+                    compare_text += (
+                        f"    M-Price:  {r_comp.FOS_morgenstern_price:.3f}"
+                    )
+                    if r_comp.lambda_mp is not None:
+                        compare_text += (
+                            f" (lambda={r_comp.lambda_mp:.3f})"
+                        )
+                    compare_text += "\n"
 
             self._last_result = crit
             self.results_text.setText(
@@ -576,11 +659,18 @@ class SlopeStabilityPanel(QWidget):
         # Slip circle / surface
         if result is not None:
             if result.is_circular:
-                # Circular slip surface
-                theta = np.linspace(0, 2 * math.pi, 200)
+                # Circular slip surface — arc between entry/exit, below center
+                theta = np.linspace(0, 2 * math.pi, 720)
                 cx = result.xc + result.radius * np.cos(theta)
                 cy = result.yc + result.radius * np.sin(theta)
-                ax.plot(cx, cy, color=SLIP_COLOR, linewidth=2,
+                mask = (
+                    (cx >= result.x_entry - 0.3) &
+                    (cx <= result.x_exit + 0.3) &
+                    (cy <= result.yc)
+                )
+                arc_x = np.where(mask, cx, np.nan)
+                arc_y = np.where(mask, cy, np.nan)
+                ax.plot(arc_x, arc_y, color=SLIP_COLOR, linewidth=2,
                         linestyle="-", zorder=5, label="Slip circle")
                 ax.plot(result.xc, result.yc, "x", color=SLIP_COLOR,
                         markersize=10, markeredgewidth=2, zorder=6)
@@ -872,6 +962,12 @@ class SlopeStabilityPanel(QWidget):
             "layers": layers,
             "gwt_enabled": self.gwt_check.isChecked(),
             "gwt_points": gwt,
+            "surcharge": self.surcharge_sb.value(),
+            "surcharge_x_limited": self.surcharge_x_check.isChecked(),
+            "surcharge_x_min": self.surcharge_x_min.value(),
+            "surcharge_x_max": self.surcharge_x_max.value(),
+            "tc_depth": self.tc_depth_sb.value(),
+            "tc_water": self.tc_water_sb.value(),
             "surface_type": self.surface_type_cb.currentIndex(),
             "method": self.method_cb.currentText(),
             "n_slices": self.nslices_sb.value(),
@@ -908,6 +1004,13 @@ class SlopeStabilityPanel(QWidget):
         for i, (x, z) in enumerate(gwt_pts):
             self.gwt_table.setItem(i, 0, QTableWidgetItem(str(x)))
             self.gwt_table.setItem(i, 1, QTableWidgetItem(str(z)))
+        self.surcharge_sb.setValue(state.get("surcharge", 0.0))
+        self.surcharge_x_check.setChecked(
+            state.get("surcharge_x_limited", False))
+        self.surcharge_x_min.setValue(state.get("surcharge_x_min", 0.0))
+        self.surcharge_x_max.setValue(state.get("surcharge_x_max", 50.0))
+        self.tc_depth_sb.setValue(state.get("tc_depth", 0.0))
+        self.tc_water_sb.setValue(state.get("tc_water", 0.0))
         self.surface_type_cb.setCurrentIndex(
             state.get("surface_type", 0))
         self.method_cb.setCurrentText(state.get("method", "bishop"))

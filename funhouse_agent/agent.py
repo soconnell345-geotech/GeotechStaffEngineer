@@ -16,6 +16,7 @@ from funhouse_agent.react_support import (
 
 from funhouse_agent.dispatch import dispatch_tool
 from funhouse_agent.system_prompt import build_system_prompt
+from funhouse_agent.reviewer import run_review, needs_revision
 
 from funhouse_agent.vision_tools import (
     EXTENDED_TOOLS, VISION_TOOL_DESCRIPTIONS,
@@ -51,7 +52,7 @@ def _looks_like_reasoning(text: str) -> bool:
 def _build_agent_system_prompt() -> str:
     """Build system prompt with vision tool extensions.
 
-    Uses the funhouse-specific module catalog (16 adapter modules) plus
+    Uses the funhouse-specific module catalog (50 adapter modules) plus
     vision tool descriptions.
     """
     base = build_system_prompt()
@@ -81,6 +82,11 @@ class GeotechAgent:
         Print each round's action to stdout.
     on_tool_call : callable, optional
         Callback(tool_name, arguments, result_str) for logging.
+    review : bool
+        Enable the reviewer agent, which checks computation results
+        against reference standards (DM7, GECs, UFCs) after the primary
+        agent produces its final answer. Adds latency but improves
+        engineering rigor.
     """
 
     def __init__(
@@ -91,6 +97,7 @@ class GeotechAgent:
         temperature: float = 0.1,
         verbose: bool = False,
         on_tool_call: Optional[Callable] = None,
+        review: bool = False,
     ):
         self._engine = genai_engine
         self._save_fn = save_fn or _default_save_fn
@@ -98,6 +105,7 @@ class GeotechAgent:
         self._temperature = temperature
         self._verbose = verbose
         self._on_tool_call = on_tool_call
+        self._review_enabled = review
         self._system_prompt = _build_agent_system_prompt()
         self._history = ConversationHistory()
         self._attachments: Dict[str, bytes] = {}
@@ -115,6 +123,7 @@ class GeotechAgent:
         self._history.add_user(question)
 
         tool_log = []
+        error_log = []
         rounds = 0
         continuations = 0  # track nudge attempts for incomplete thoughts
 
@@ -126,6 +135,9 @@ class GeotechAgent:
 
             # Guard against None responses (e.g., PrompterAPI returns None on failure)
             if response is None:
+                err = {"round": rounds, "type": "engine",
+                       "message": "Engine returned no response"}
+                error_log.append(err)
                 self._history.add_assistant("")
                 self._history.add_tool_result(
                     json.dumps({"error": "Engine returned no response"}))
@@ -136,6 +148,9 @@ class GeotechAgent:
             try:
                 parsed = parse_response(response, valid_tools=EXTENDED_TOOLS)
             except ValueError as e:
+                err = {"round": rounds, "type": "parse",
+                       "message": str(e)}
+                error_log.append(err)
                 self._history.add_assistant(response)
                 error_msg = json.dumps({"error": f"Parse error: {e}"})
                 self._history.add_tool_result(error_msg)
@@ -164,12 +179,17 @@ class GeotechAgent:
                 self._history.add_assistant(response)
                 if self._verbose:
                     print(f"  Round {rounds}: FINAL ANSWER")
+                final_answer = response.strip()
+                final_answer = self._run_review_cycle(
+                    question, final_answer, tool_log, rounds,
+                )
                 return AgentResult(
-                    answer=response.strip(),
+                    answer=final_answer,
                     tool_calls=tool_log,
                     rounds=rounds,
                     total_time_s=time.time() - t0,
                     conversation_turns=len(self._history),
+                    errors=error_log,
                 )
 
             tc = parsed.tool_call
@@ -189,6 +209,20 @@ class GeotechAgent:
                 result_str = dispatch_tool(tc)
 
             result_str = _truncate(result_str, self._max_result_chars)
+
+            # Check for dispatch errors and log them
+            try:
+                result_data = json.loads(result_str)
+                if isinstance(result_data, dict) and "error" in result_data:
+                    err = {"round": rounds, "type": "dispatch",
+                           "tool": tc.tool_name,
+                           "arguments": tc.arguments,
+                           "message": result_data["error"]}
+                    error_log.append(err)
+                    if self._verbose:
+                        print(f"    DISPATCH ERROR: {result_data['error'][:120]}")
+            except (json.JSONDecodeError, TypeError):
+                pass  # non-JSON result is fine
 
             log_entry = {
                 "round": rounds,
@@ -215,7 +249,60 @@ class GeotechAgent:
             rounds=rounds,
             total_time_s=time.time() - t0,
             conversation_turns=len(self._history),
+            errors=error_log,
         )
+
+    def _run_review_cycle(
+        self, question: str, answer: str, tool_log: list,
+        rounds_used: int,
+    ) -> str:
+        """Run the reviewer agent and optionally revise the answer.
+
+        Returns the final answer text (original, revised, or with review
+        appended).
+        """
+        if not self._review_enabled:
+            return answer
+
+        if self._verbose:
+            print("  Running reviewer agent...")
+
+        review_text = run_review(
+            engine=self._engine,
+            question=question,
+            answer=answer,
+            tool_log=tool_log,
+            temperature=self._temperature,
+            verbose=self._verbose,
+        )
+
+        if review_text is None:
+            return answer  # no computations to review
+
+        if needs_revision(review_text):
+            if self._verbose:
+                print("  Reviewer requested revisions — sending back to "
+                      "primary agent...")
+            # Feed the review back to the primary agent for one revision
+            self._history.add_user(
+                f"A senior reviewer checked your work and found issues. "
+                f"Please revise your answer based on their feedback:\n\n"
+                f"{review_text}"
+            )
+            prompt = self._history.format_prompt()
+            revised = self._engine.chat(
+                prompt, self._system_prompt, self._temperature
+            )
+            if revised:
+                self._history.add_assistant(revised)
+                return (
+                    f"{revised.strip()}\n\n"
+                    f"---\n\n"
+                    f"**Reviewer Notes:**\n{review_text}"
+                )
+
+        # PASS or FLAG — append review notes to the answer
+        return f"{answer}\n\n---\n\n**Reviewer Notes:**\n{review_text}"
 
     def add_attachment(self, key: str, data: bytes) -> None:
         """Attach image/PDF bytes for vision tool calls.
