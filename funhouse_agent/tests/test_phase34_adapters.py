@@ -364,7 +364,7 @@ class TestSubsurfaceMethodInfo:
 
     def test_method_count(self):
         from funhouse_agent.adapters.subsurface_adapter import METHOD_INFO
-        assert len(METHOD_INFO) == 5
+        assert len(METHOD_INFO) == 8
 
 
 class TestSubsurfaceDispatch:
@@ -376,11 +376,14 @@ class TestSubsurfaceDispatch:
         for cat_methods in methods.values():
             all_methods.extend(cat_methods.keys())
         assert "load_site" in all_methods
+        assert "parse_diggs" in all_methods
         assert "plot_parameter_vs_depth" in all_methods
         assert "plot_atterberg_limits" in all_methods
         assert "plot_multi_parameter" in all_methods
+        assert "plot_plan_view" in all_methods
+        assert "plot_cross_section" in all_methods
         assert "compute_trend" in all_methods
-        assert len(all_methods) == 5
+        assert len(all_methods) == 8
 
     def test_describe_method_load_site(self):
         from funhouse_agent.dispatch import describe_method

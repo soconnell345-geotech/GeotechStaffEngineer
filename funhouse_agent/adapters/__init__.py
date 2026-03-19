@@ -191,7 +191,7 @@ MODULE_REGISTRY = {
     },
     "subsurface": {
         "adapter": "funhouse_agent.adapters.subsurface_adapter",
-        "brief": "Subsurface data visualization (parameter vs depth, Atterberg limits, trends)",
+        "brief": "Subsurface data visualization — DIGGS XML ingestion, parameter vs depth, Atterberg limits, plan view, cross-section, trends",
     },
     # --- geotech-references agents (14 reference modules) ---
     "dm7": {

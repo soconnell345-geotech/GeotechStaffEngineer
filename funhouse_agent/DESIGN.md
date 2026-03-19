@@ -79,12 +79,34 @@ analysis modules. Three patterns:
 1. **Builder + construction** (most modules) — helper functions build objects from dict
 2. **Direct passthrough** — `module_fn(**params)` when signatures match
 3. **Inline pop + passthrough** — `params.pop()` for special args, pass rest through
+4. **Parse + cache** (subsurface) — `parse_diggs` parses a file, caches the
+   `SiteModel` in a module-level dict, and returns a `site_key`. Subsequent
+   plot calls reference the cached site by key instead of re-sending the full
+   data dict, keeping tool call payloads small.
 
 Each adapter exports:
 - `METHOD_REGISTRY`: `{method_name: callable}` — the execution functions
 - `METHOD_INFO`: `{method_name: {category, brief, parameters, returns}}` — LLM docs
 
 Adapters are lazy-loaded: `dispatch.py` only imports an adapter when first called.
+
+### Subsurface Adapter (8 methods)
+
+`subsurface_adapter.py` provides DIGGS XML ingestion and all visualization:
+
+| Method | Purpose |
+|--------|---------|
+| `parse_diggs` | Parse DIGGS 2.6/2.5.a XML → cached SiteModel, returns `site_key` + summary |
+| `load_site` | Load site from nested dict → cached SiteModel, returns `site_key` |
+| `plot_parameter_vs_depth` | Scatter plot of any parameter vs depth (Plotly) |
+| `plot_atterberg_limits` | LL-PL bracket plot with natural moisture overlay |
+| `plot_multi_parameter` | Side-by-side subplots with shared depth axis |
+| `plot_plan_view` | Map of investigation locations |
+| `plot_cross_section` | Lithology column profile along a transect |
+| `compute_trend` | Linear/log-linear regression with R², COV |
+
+All plot methods accept `site_key` (preferred, from cache) or `site_data` (dict).
+Set `output_format: "html"` to get a renderable Plotly figure.
 
 ## Extended Tools
 
