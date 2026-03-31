@@ -64,7 +64,7 @@ Key conventions:
 | fem2d | 271 | 2D plane-strain FEM (CST/Q4/beam, MC/HS, SRM, excavation, pore pressures, seepage, consolidation, staged construction) |
 | fdm2d | 81 | 2D explicit Lagrangian FDM (FLAC-style, quad zones, mixed discretization, MC, dynamic relaxation) |
 
-Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3384 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 + 25 = 443 tests)
+Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3384 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 + 25 + 31 = 474 tests)
 
 ## GUIs
 
@@ -127,11 +127,12 @@ Run: `pytest pdf_import/ -v`
 
 | File | Purpose |
 |------|---------|
-| `__init__.py` | Exports: `GeotechAgent`, `GenAIEngine`, `ClaudeEngine`, `AgentResult` |
-| `engine.py` | `GenAIEngine` Protocol + `ClaudeEngine` adapter |
+| `__init__.py` | Exports: `GeotechAgent`, `GenAIEngine`, `ClaudeEngine`, `NativeToolEngine`, `AgentResult` |
+| `engine.py` | `GenAIEngine` Protocol + `ClaudeEngine` adapter + `NativeToolEngine` (OpenAI native tool calling) |
 | `agent.py` | `GeotechAgent` class (ReAct loop + vision dispatch) |
 | `dispatch.py` | Tool dispatch — routes to adapters (not foundry) |
 | `system_prompt.py` | Self-contained system prompt (50 modules) |
+| `native_tools.py` | OpenAI tool schemas + dispatch for NativeToolEngine |
 | `vision_tools.py` | Vision tool definitions and dispatch |
 | `notebook.py` | `NotebookChat` — ipywidgets chat interface for Jupyter/Databricks |
 | `adapters/` | 50 adapter modules (36 analysis + 14 reference) bridging flat JSON → module APIs |
@@ -139,10 +140,13 @@ Run: `pytest pdf_import/ -v`
 
 Usage:
 ```python
-from funhouse_agent import GeotechAgent, ClaudeEngine
+from funhouse_agent import GeotechAgent, ClaudeEngine, NativeToolEngine
 
-# With PrompterAPI (Databricks) — works natively
-agent = GeotechAgent(genai_engine=prompter_api)
+# With PrompterAPI (Databricks) — native OpenAI tool calling (recommended)
+agent = GeotechAgent(genai_engine=NativeToolEngine(fh_prompter))
+
+# With PrompterAPI — text-based ReAct (legacy, may not work with newer GPT models)
+agent = GeotechAgent(genai_engine=fh_prompter)
 
 # With Claude
 agent = GeotechAgent(genai_engine=ClaudeEngine())

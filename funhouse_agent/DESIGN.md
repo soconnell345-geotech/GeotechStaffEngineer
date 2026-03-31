@@ -13,12 +13,15 @@ text generation and optional vision capabilities. Designed for:
 
 ```
 GenAIEngine (Protocol)
-├── PrompterAPI   — Databricks (satisfies interface natively)
-├── ClaudeEngine  — Anthropic SDK adapter
-└── Future        — Any chat+vision provider
+├── PrompterAPI      — Databricks (text-based ReAct, satisfies interface natively)
+├── ClaudeEngine     — Anthropic SDK adapter (text-based ReAct)
+├── NativeToolEngine — Wraps PrompterAPI.client for OpenAI-native tool calling
+└── Future           — Any chat+vision provider
 
 GeotechAgent
-├── Self-contained ReAct loop (own dispatch, own system prompt)
+├── Two tool-calling modes (auto-detected from engine type):
+│   ├── Text-based ReAct  — <tool_call> XML parsing (ClaudeEngine, PrompterAPI.chat)
+│   └── Native tool calling — OpenAI `tools` parameter (NativeToolEngine)
 ├── 50 adapter modules (36 analysis + 14 reference) bridging flat JSON → module APIs
 ├── Vision tools via engine.analyze_image()
 ├── Attachments dict for image/PDF data
@@ -40,6 +43,31 @@ This means:
 - No hard dependency on dbutils or any storage SDK
 - PrompterAPI works with zero wrapping
 - Tests use mock engines and mock save functions — no API keys needed
+
+## Native Tool Calling (NativeToolEngine)
+
+Newer GPT models behind PrompterAPI require tools to be registered via the
+OpenAI `tools` API parameter rather than described in the system prompt.
+`NativeToolEngine` wraps `fh_prompter.client` (the raw OpenAI SDK client)
+and enables native function calling:
+
+```python
+from funhouse_agent import GeotechAgent, NativeToolEngine
+
+engine = NativeToolEngine(fh_prompter)           # reads model from prompter
+engine = NativeToolEngine(fh_prompter, model="gpt-4o-mini")  # or override
+agent  = GeotechAgent(genai_engine=engine)
+result = agent.ask("Calculate bearing capacity ...")
+```
+
+Key properties:
+- **Model read at call time** — changing `fh_prompter.chat_model` takes
+  effect immediately, no library update needed.
+- **Auto-detected** — `GeotechAgent` checks for `engine.native_tool_calling`
+  and switches to the native loop automatically.
+- **Same adapters** — dispatches to the same 50 adapter modules; only the
+  conversation format changes (OpenAI messages + `tool_calls` vs text XML).
+- **NotebookChat compatible** — `_on_tool_call` hook fires for each tool call.
 
 ## Engine Interface (duck-typed)
 

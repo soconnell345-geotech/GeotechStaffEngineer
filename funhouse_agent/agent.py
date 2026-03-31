@@ -3,6 +3,18 @@ GeotechAgent — engine-agnostic geotechnical agent with text + vision.
 
 Self-contained dispatch: routes tool calls through funhouse_agent/adapters/
 which import directly from analysis modules. No dependency on foundry/ files.
+
+Supports two tool-calling modes:
+
+* **Text-based ReAct** (default) — LLM outputs ``<tool_call>`` XML tags that
+  are parsed from the response text.  Works with any GenAIEngine backend
+  (PrompterAPI.chat(), ClaudeEngine, etc.).
+
+* **Native tool calling** — activated automatically when the engine has a
+  ``native_tool_calling`` attribute (i.e. :class:`NativeToolEngine`).  Uses
+  the OpenAI ``tools`` parameter so the model invokes functions through the
+  API's built-in mechanism, avoiding the "tools haven't been configured on
+  the back end" error from newer GPT models.
 """
 
 import json
@@ -59,6 +71,27 @@ def _build_agent_system_prompt() -> str:
     return base + "\n\n" + VISION_TOOL_DESCRIPTIONS
 
 
+def _build_native_system_prompt() -> str:
+    """Build system prompt for native tool calling (no ReAct XML sections).
+
+    Strips the ReAct Protocol, Available Tools, and Rules sections that
+    describe the ``<tool_call>`` text format — those are replaced by
+    OpenAI-native ``tools`` parameter.  Keeps domain guidance, DIGGS
+    workflow, and module catalog.
+    """
+    base = build_system_prompt()
+    # Remove "## ReAct Protocol" through "## Rules" (inclusive of Rules body)
+    base = re.sub(
+        r"## ReAct Protocol.*?(?=## Module Catalog|\Z)",
+        "",
+        base,
+        flags=re.DOTALL,
+    )
+    # Remove the text-based vision tool descriptions (they're in OPENAI_TOOLS)
+    # Just keep domain guidance clean.
+    return base.strip()
+
+
 class GeotechAgent:
     """Engine-agnostic geotechnical agent with text + vision capabilities.
 
@@ -106,19 +139,33 @@ class GeotechAgent:
         self._verbose = verbose
         self._on_tool_call = on_tool_call
         self._review_enabled = review
-        self._system_prompt = _build_agent_system_prompt()
+        self._is_native = getattr(genai_engine, "native_tool_calling", False)
+        if self._is_native:
+            self._system_prompt = _build_native_system_prompt()
+        else:
+            self._system_prompt = _build_agent_system_prompt()
         self._history = ConversationHistory()
         self._attachments: Dict[str, bytes] = {}
         self._max_result_chars = 8000
 
     def ask(self, question: str) -> AgentResult:
-        """Run the ReAct loop for a user question.
+        """Run the tool-calling loop for a user question.
 
-        Uses the extended tool set (standard + vision) and dispatches
-        vision tools to the engine's analyze_image() method.
+        Automatically selects the right loop:
+
+        * **Native** (NativeToolEngine) — OpenAI ``tools`` parameter with
+          structured ``tool_calls`` responses.
+        * **ReAct** (all other engines) — text-based ``<tool_call>`` XML
+          parsing.
 
         Returns AgentResult with the final answer, tool call log, and timing.
         """
+        if self._is_native:
+            return self._ask_native(question)
+        return self._ask_react(question)
+
+    def _ask_react(self, question: str) -> AgentResult:
+        """Text-based ReAct loop (original implementation)."""
         t0 = time.time()
         self._history.add_user(question)
 
@@ -238,6 +285,167 @@ class GeotechAgent:
             self._history.add_assistant(response)
             self._history.add_tool_result(result_str)
 
+        if self._verbose:
+            print(f"  Max rounds ({self._max_rounds}) reached")
+        return AgentResult(
+            answer=(
+                f"[Reached maximum of {self._max_rounds} tool rounds. "
+                f"Partial analysis above may be incomplete.]"
+            ),
+            tool_calls=tool_log,
+            rounds=rounds,
+            total_time_s=time.time() - t0,
+            conversation_turns=len(self._history),
+            errors=error_log,
+        )
+
+    def _ask_native(self, question: str) -> AgentResult:
+        """Native OpenAI tool-calling loop.
+
+        Uses the ``tools`` parameter on the OpenAI SDK so the model
+        invokes functions through the API's built-in mechanism.
+        Conversation state is maintained as an OpenAI messages list.
+        """
+        from funhouse_agent.native_tools import (
+            OPENAI_TOOLS, dispatch_native_tool,
+        )
+
+        t0 = time.time()
+
+        # Also track in ConversationHistory for reviewer / NotebookChat
+        self._history.add_user(question)
+
+        # Build OpenAI messages list
+        messages = [
+            {"role": "system", "content": self._system_prompt},
+            {"role": "user", "content": question},
+        ]
+
+        tool_log = []
+        error_log = []
+        rounds = 0
+
+        for rounds in range(1, self._max_rounds + 1):
+            kwargs = {
+                "model": self._engine.model,
+                "messages": messages,
+                "tools": OPENAI_TOOLS,
+                "tool_choice": "auto",
+                "temperature": self._temperature,
+            }
+            if getattr(self._engine, "_max_tokens", None) is not None:
+                kwargs["max_tokens"] = self._engine._max_tokens
+
+            try:
+                response = self._engine.client.chat.completions.create(
+                    **kwargs
+                )
+            except Exception as exc:
+                err = {
+                    "round": rounds,
+                    "type": "engine",
+                    "message": f"{type(exc).__name__}: {exc}",
+                }
+                error_log.append(err)
+                if self._verbose:
+                    print(f"  Round {rounds}: ENGINE ERROR — {exc}")
+                break
+
+            msg = response.choices[0].message
+
+            # No tool calls → final answer
+            if not msg.tool_calls:
+                final_answer = msg.content or ""
+                self._history.add_assistant(final_answer)
+                if self._verbose:
+                    print(f"  Round {rounds}: FINAL ANSWER")
+
+                final_answer = self._run_review_cycle(
+                    question, final_answer, tool_log, rounds,
+                )
+                return AgentResult(
+                    answer=final_answer,
+                    tool_calls=tool_log,
+                    rounds=rounds,
+                    total_time_s=time.time() - t0,
+                    conversation_turns=len(self._history),
+                    errors=error_log,
+                )
+
+            # Append the assistant message (with tool_calls) to history
+            messages.append(msg)
+
+            # Process each tool call in this response
+            for tc in msg.tool_calls:
+                fn_name = tc.function.name
+                try:
+                    fn_args = json.loads(tc.function.arguments)
+                except (json.JSONDecodeError, TypeError):
+                    fn_args = {}
+
+                if self._verbose:
+                    args_preview = json.dumps(fn_args, default=str)[:120]
+                    print(f"  Round {rounds}: {fn_name}({args_preview})")
+
+                result_str = dispatch_native_tool(
+                    name=fn_name,
+                    arguments=fn_args,
+                    engine=self._engine,
+                    attachments=self._attachments,
+                    save_fn=self._save_fn,
+                )
+                result_str = _truncate(result_str, self._max_result_chars)
+
+                # Check for dispatch errors
+                try:
+                    result_data = json.loads(result_str)
+                    if isinstance(result_data, dict) and "error" in result_data:
+                        err = {
+                            "round": rounds,
+                            "type": "dispatch",
+                            "tool": fn_name,
+                            "arguments": fn_args,
+                            "message": result_data["error"],
+                        }
+                        error_log.append(err)
+                        if self._verbose:
+                            print(
+                                f"    DISPATCH ERROR: "
+                                f"{result_data['error'][:120]}"
+                            )
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+                # Log the tool call
+                log_entry = {
+                    "round": rounds,
+                    "tool_name": fn_name,
+                    "arguments": fn_args,
+                    "result_preview": result_str[:200],
+                }
+                tool_log.append(log_entry)
+
+                # Fire the on_tool_call hook (NotebookChat uses this)
+                if self._on_tool_call:
+                    self._on_tool_call(fn_name, fn_args, result_str)
+
+                # Append tool result as a "tool" role message
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result_str,
+                })
+
+            # Also track in ConversationHistory for reviewer
+            summary = ", ".join(
+                tc.function.name for tc in msg.tool_calls
+            )
+            self._history.add_assistant(f"[Tool calls: {summary}]")
+            self._history.add_tool_result(
+                f"[{len(msg.tool_calls)} tool result(s) returned]"
+            )
+
+        # Max rounds exhausted
         if self._verbose:
             print(f"  Max rounds ({self._max_rounds}) reached")
         return AgentResult(
