@@ -59,17 +59,22 @@ def make_engine(engine_name: str):
     if engine_name == "claude":
         from funhouse_agent import ClaudeEngine
         return ClaudeEngine()
-    elif engine_name == "prompter":
+    elif engine_name in ("native", "prompter"):
         # Import from funhouse environment
         try:
             from funhouse.prompter import PrompterAPI
-            return PrompterAPI()
+            prompter = PrompterAPI()
         except ImportError:
             print("ERROR: funhouse.prompter not available.")
             print("  Install the funhouse package or use --engine claude")
             sys.exit(1)
+        if engine_name == "native":
+            from funhouse_agent import NativeToolEngine
+            return NativeToolEngine(prompter)
+        return prompter
     else:
-        print(f"ERROR: Unknown engine '{engine_name}'. Use 'claude' or 'prompter'.")
+        print(f"ERROR: Unknown engine '{engine_name}'. "
+              "Use 'native', 'prompter', or 'claude'.")
         sys.exit(1)
 
 
@@ -254,8 +259,8 @@ def main():
         description="Run funhouse_agent integration test scenarios"
     )
     parser.add_argument(
-        "--engine", default="prompter", choices=["prompter", "claude"],
-        help="AI engine backend (default: prompter)"
+        "--engine", default="native", choices=["native", "prompter", "claude"],
+        help="AI engine backend (default: native)"
     )
     parser.add_argument(
         "--scenario", default=None,
