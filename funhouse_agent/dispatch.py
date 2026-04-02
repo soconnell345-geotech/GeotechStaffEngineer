@@ -80,7 +80,37 @@ def describe_method(agent_name: str, method: str) -> dict:
     return mod.METHOD_INFO[method]
 
 
-def call_agent(agent_name: str, method: str, parameters: dict) -> dict:
+def _resolve_attachment(parameters: dict, attachments: dict) -> dict:
+    """If parameters contains attachment_key, decode it to content.
+
+    Bridges the widget/file-upload attachment system to adapters that
+    accept text content (e.g. parse_diggs with DIGGS XML).
+    """
+    key = parameters.get("attachment_key")
+    if not key or not attachments:
+        return parameters
+    if key not in attachments:
+        available = sorted(attachments.keys()) or ["(none)"]
+        raise KeyError(
+            f"attachment_key '{key}' not found. Available: {available}"
+        )
+    raw = attachments[key]
+    if isinstance(raw, (bytes, bytearray)):
+        content = raw.decode("utf-8", errors="replace")
+    else:
+        content = str(raw)
+    params = dict(parameters)
+    params["content"] = content
+    params.pop("attachment_key")
+    return params
+
+
+def call_agent(
+    agent_name: str,
+    method: str,
+    parameters: dict,
+    attachments: dict = None,
+) -> dict:
     """Execute a geotechnical calculation.
 
     Parameters
@@ -91,6 +121,10 @@ def call_agent(agent_name: str, method: str, parameters: dict) -> dict:
         Method name within that module.
     parameters : dict
         Flat dict of parameters.
+    attachments : dict, optional
+        Agent attachments ({key: bytes}).  If parameters contains an
+        ``attachment_key``, the corresponding bytes are decoded to text
+        and injected as ``content`` before calling the adapter.
 
     Returns
     -------
@@ -107,6 +141,8 @@ def call_agent(agent_name: str, method: str, parameters: dict) -> dict:
         available = sorted(mod.METHOD_REGISTRY.keys())
         return {"error": f"Unknown method '{method}'. Available: {available}"}
     try:
+        if attachments and "attachment_key" in parameters:
+            parameters = _resolve_attachment(parameters, attachments)
         result = mod.METHOD_REGISTRY[method](parameters)
         return result
     except Exception as e:
@@ -117,7 +153,7 @@ def call_agent(agent_name: str, method: str, parameters: dict) -> dict:
 # ToolCall dispatch — drop-in replacement for chat_agent.agent.dispatch_tool
 # ---------------------------------------------------------------------------
 
-def dispatch_tool(tool_call) -> str:
+def dispatch_tool(tool_call, attachments: dict = None) -> str:
     """Route a parsed ToolCall to the adapter registry and return JSON string."""
     name = tool_call.tool_name
     args = tool_call.arguments
@@ -127,6 +163,7 @@ def dispatch_tool(tool_call) -> str:
             agent_name=args.get("agent_name", ""),
             method=args.get("method", ""),
             parameters=args.get("parameters", {}),
+            attachments=attachments,
         )
     elif name == "list_methods":
         result = list_methods(

@@ -155,7 +155,7 @@ class NotebookChat:
         )
 
         self._upload = widgets.FileUpload(
-            accept=".png,.jpg,.jpeg,.pdf,.tif,.tiff",
+            accept=".png,.jpg,.jpeg,.pdf,.tif,.tiff,.xml,.diggs",
             multiple=True,
             description="Attach",
             layout=widgets.Layout(width="auto"),

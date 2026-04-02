@@ -491,3 +491,59 @@ class TestEndToEnd:
             "site_key": key, "output_format": "metadata",
         })
         assert "error" not in r4
+
+
+# ---------------------------------------------------------------------------
+# Attachment-based DIGGS ingestion
+# ---------------------------------------------------------------------------
+
+class TestAttachmentKey:
+    """Test parse_diggs via attachment_key (widget upload path)."""
+
+    def test_parse_diggs_via_attachment(self):
+        """attachment_key decodes bytes to XML and parses successfully."""
+        attachments = {"site.xml": SINGLE_BORING_XML.encode("utf-8")}
+        result = call_agent(
+            "subsurface", "parse_diggs",
+            {"attachment_key": "site.xml"},
+            attachments=attachments,
+        )
+        assert "error" not in result
+        assert result["n_investigations"] >= 1
+        assert "site_key" in result
+
+    def test_parse_diggs_attachment_then_plot(self):
+        """Full flow: upload → parse → plot via site_key."""
+        attachments = {"borings.xml": MULTI_BORING_XML.encode("utf-8")}
+        r1 = call_agent(
+            "subsurface", "parse_diggs",
+            {"attachment_key": "borings.xml"},
+            attachments=attachments,
+        )
+        assert "error" not in r1
+        key = r1["site_key"]
+
+        r2 = call_agent("subsurface", "plot_plan_view", {
+            "site_key": key, "output_format": "metadata",
+        })
+        assert "error" not in r2
+
+    def test_attachment_key_missing(self):
+        """Missing attachment_key returns a clear error."""
+        result = call_agent(
+            "subsurface", "parse_diggs",
+            {"attachment_key": "nonexistent.xml"},
+            attachments={"other.xml": b"<xml/>"},
+        )
+        assert "error" in result
+        assert "nonexistent.xml" in result["error"]
+
+    def test_attachment_key_no_attachments(self):
+        """attachment_key with no attachments falls through to normal parse."""
+        # No attachments dict → attachment_key stays in params,
+        # parse_diggs gets no file_path or content → should error
+        result = call_agent(
+            "subsurface", "parse_diggs",
+            {"attachment_key": "site.xml"},
+        )
+        assert "error" in result

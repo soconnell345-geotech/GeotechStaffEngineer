@@ -254,7 +254,7 @@ class GeotechAgent:
                     save_fn=self._save_fn,
                 )
             else:
-                result_str = dispatch_tool(tc)
+                result_str = dispatch_tool(tc, attachments=self._attachments)
 
             result_str = _truncate(result_str, self._max_result_chars)
 

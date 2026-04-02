@@ -271,11 +271,19 @@ def dispatch_native_tool(
         )
 
     if name == "call_agent":
+        # LLMs sometimes flatten method parameters to the top level instead
+        # of nesting them inside "parameters".  Auto-nest any extra keys.
+        _CALL_AGENT_KEYS = {"agent_name", "method", "parameters"}
+        params = dict(arguments.get("parameters", {}))
+        extras = {k: v for k, v in arguments.items() if k not in _CALL_AGENT_KEYS}
+        if extras:
+            params.update(extras)
         return json.dumps(
             call_agent(
                 agent_name=arguments.get("agent_name", ""),
                 method=arguments.get("method", ""),
-                parameters=arguments.get("parameters", {}),
+                parameters=params,
+                attachments=attachments,
             ),
             default=str,
         )

@@ -235,8 +235,9 @@ METHOD_INFO = {
         "category": "Subsurface Characterization",
         "brief": "Parse DIGGS 2.6/2.5.a XML into site model. Returns site_key for use in subsequent plot calls.",
         "parameters": {
-            "file_path": {"type": "str", "required": False, "description": "Path to DIGGS XML file. Provide file_path or content, not both."},
+            "file_path": {"type": "str", "required": False, "description": "Path to DIGGS XML file (DBFS, workspace, or local). Provide file_path, content, or attachment_key."},
             "content": {"type": "str", "required": False, "description": "DIGGS XML as string."},
+            "attachment_key": {"type": "str", "required": False, "description": "Key of a DIGGS file uploaded via the chat widget. The file bytes are decoded to XML automatically."},
         },
         "returns": {
             "site_key": "Key to reference this site in subsequent calls (plot_*, compute_trend).",

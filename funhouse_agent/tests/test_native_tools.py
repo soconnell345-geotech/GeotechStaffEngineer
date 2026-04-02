@@ -189,6 +189,44 @@ class TestDispatchNativeTool:
         ))
         assert "error" not in result
 
+    def test_call_agent_flattened_params(self):
+        """LLM puts method params at top level instead of inside 'parameters'."""
+        result = json.loads(dispatch_native_tool(
+            "call_agent",
+            {
+                "agent_name": "bearing_capacity",
+                "method": "bearing_capacity_analysis",
+                "width": 2.0,
+                "length": 2.0,
+                "depth": 1.5,
+                "shape": "square",
+                "friction_angle": 30,
+                "unit_weight": 18.0,
+                "cohesion": 0,
+            },
+        ))
+        assert "error" not in result
+
+    def test_call_agent_mixed_params(self):
+        """LLM sends some params nested, some flattened — both get merged."""
+        result = json.loads(dispatch_native_tool(
+            "call_agent",
+            {
+                "agent_name": "bearing_capacity",
+                "method": "bearing_capacity_analysis",
+                "parameters": {
+                    "width": 2.0,
+                    "length": 2.0,
+                    "depth": 1.5,
+                    "shape": "square",
+                },
+                "friction_angle": 30,
+                "unit_weight": 18.0,
+                "cohesion": 0,
+            },
+        ))
+        assert "error" not in result
+
     def test_call_agent_bad_module(self):
         result = json.loads(dispatch_native_tool(
             "call_agent",

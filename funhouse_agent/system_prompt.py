@@ -50,7 +50,8 @@ methods taken from literature (e.g., "Meyerhof (1963)", "Schmertmann (1978)", \
 When the user provides a DIGGS XML file, use the `subsurface` module to ingest \
 and visualize it:
 
-1. Call `parse_diggs` with the file path — this returns a `site_key` and a \
+1. Call `parse_diggs` with the file path, or with `attachment_key` if the user \
+uploaded the file via the chat widget — this returns a `site_key` and a \
 summary of investigations, measurements, and available parameters.
 2. Use the `site_key` in subsequent plot calls (`plot_parameter_vs_depth`, \
 `plot_plan_view`, `plot_cross_section`, `plot_atterberg_limits`, \
