@@ -459,3 +459,63 @@ class TestParallelToolCalls:
         assert len(result.tool_calls) == 2
         assert result.tool_calls[0]["tool_name"] == "list_agents"
         assert result.tool_calls[1]["tool_name"] == "list_methods"
+
+
+# ---------------------------------------------------------------------------
+# Tests: Multi-turn conversation persistence
+# ---------------------------------------------------------------------------
+
+class TestConversationPersistence:
+    def test_follow_up_retains_context(self):
+        """Second ask() should include messages from the first ask()."""
+        prompter = MockPrompter([
+            # Q1: tool call then answer
+            _make_tool_response("list_agents", {}, call_id="call_q1"),
+            _make_final_response("There are 50 modules."),
+            # Q2: direct answer (follow-up)
+            _make_final_response("Yes, bearing_capacity was in that list."),
+        ])
+        engine = NativeToolEngine(prompter)
+        agent = GeotechAgent(genai_engine=engine)
+
+        r1 = agent.ask("What modules do you have?")
+        assert "50" in r1.answer
+
+        r2 = agent.ask("Was bearing capacity in there?")
+        assert "bearing_capacity" in r2.answer
+
+        # The third API call (Q2) should contain full history:
+        # system + user Q1 + assistant tool_call + tool result + assistant answer + user Q2
+        calls = prompter.client.chat.completions.calls
+        assert len(calls) == 3  # Q1 round1, Q1 round2, Q2
+        q2_messages = calls[2]["messages"]
+        # Should have more than just system + user (i.e., prior turns present)
+        user_msgs = [
+            m for m in q2_messages
+            if isinstance(m, dict) and m.get("role") == "user"
+        ]
+        assert len(user_msgs) == 2  # Q1 and Q2
+
+    def test_reset_clears_native_messages(self):
+        """reset() should clear conversation so next ask() starts fresh."""
+        prompter = MockPrompter([
+            _make_final_response("Answer to Q1."),
+            _make_final_response("Answer to Q2."),
+        ])
+        engine = NativeToolEngine(prompter)
+        agent = GeotechAgent(genai_engine=engine)
+
+        agent.ask("Q1")
+        agent.reset()
+        agent.ask("Q2")
+
+        # After reset, Q2's API call should have only system + user (no Q1)
+        calls = prompter.client.chat.completions.calls
+        assert len(calls) == 2
+        q2_messages = calls[1]["messages"]
+        user_msgs = [
+            m for m in q2_messages
+            if isinstance(m, dict) and m.get("role") == "user"
+        ]
+        assert len(user_msgs) == 1
+        assert user_msgs[0]["content"] == "Q2"

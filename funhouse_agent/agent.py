@@ -145,6 +145,7 @@ class GeotechAgent:
         else:
             self._system_prompt = _build_agent_system_prompt()
         self._history = ConversationHistory()
+        self._native_messages: list = []  # persistent messages for native path
         self._attachments: Dict[str, bytes] = {}
         self._max_result_chars = 8000
 
@@ -315,11 +316,13 @@ class GeotechAgent:
         # Also track in ConversationHistory for reviewer / NotebookChat
         self._history.add_user(question)
 
-        # Build OpenAI messages list
-        messages = [
-            {"role": "system", "content": self._system_prompt},
-            {"role": "user", "content": question},
-        ]
+        # Persistent messages list — carries conversation across ask() calls
+        if not self._native_messages:
+            self._native_messages.append(
+                {"role": "system", "content": self._system_prompt}
+            )
+        self._native_messages.append({"role": "user", "content": question})
+        messages = self._native_messages
 
         tool_log = []
         error_log = []
@@ -595,6 +598,7 @@ class GeotechAgent:
     def reset(self) -> None:
         """Clear conversation history and attachments."""
         self._history.clear()
+        self._native_messages.clear()
         self._attachments.clear()
 
     @property
