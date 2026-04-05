@@ -62,7 +62,25 @@ def _run_lateral_pile_analysis(params):
     return result.to_dict()
 
 
-METHOD_REGISTRY = {"lateral_pile_analysis": _run_lateral_pile_analysis}
+def _run_get_py_curve(params):
+    py_model = _build_py_model(params)
+    z = params.get("z", 5.0)
+    b = params.get("pile_diameter", 0.6)
+    n_points = params.get("n_points", 50)
+    y_arr, p_arr = py_model.get_py_curve(z=z, b=b, n_points=n_points)
+    return {
+        "model": params["model"],
+        "z_m": z,
+        "pile_diameter_m": b,
+        "y_m": y_arr.tolist(),
+        "p_kN_per_m": p_arr.tolist(),
+    }
+
+
+METHOD_REGISTRY = {
+    "lateral_pile_analysis": _run_lateral_pile_analysis,
+    "get_py_curve": _run_get_py_curve,
+}
 
 METHOD_INFO = {
     "lateral_pile_analysis": {
@@ -78,5 +96,23 @@ METHOD_INFO = {
             "head_condition": {"type": "str", "required": False, "default": "free", "description": "free or fixed."},
         },
         "returns": {"max_deflection_mm": "Maximum deflection.", "max_moment_kNm": "Maximum bending moment.", "max_shear_kN": "Maximum shear."},
+    },
+    "get_py_curve": {
+        "category": "Lateral Pile",
+        "brief": "Extract a single p-y curve at a given depth for any soil model.",
+        "parameters": {
+            "model": {"type": "str", "required": True, "description": "P-y model: SoftClayMatlock/StiffClayBelowWT/StiffClayAboveWT/SoftClayJeanjean/SandReese/SandAPI/WeakRock."},
+            "z": {"type": "float", "required": False, "default": 5.0, "description": "Depth (m)."},
+            "pile_diameter": {"type": "float", "required": False, "default": 0.6, "description": "Pile diameter (m)."},
+            "n_points": {"type": "int", "required": False, "default": 50, "description": "Points on curve."},
+            "c": {"type": "float", "required": False, "description": "Undrained shear strength (kPa). For clay models."},
+            "gamma": {"type": "float", "required": False, "description": "Effective unit weight (kN/m3)."},
+            "eps50": {"type": "float", "required": False, "description": "Strain at 50% deviator stress. For clay."},
+            "phi": {"type": "float", "required": False, "description": "Friction angle (deg). For sand."},
+            "k": {"type": "float", "required": False, "description": "Initial subgrade modulus (kN/m3). For sand."},
+            "qu": {"type": "float", "required": False, "description": "UCS (kPa). For WeakRock."},
+            "Er": {"type": "float", "required": False, "description": "Rock mass modulus (kPa). For WeakRock."},
+        },
+        "returns": {"y_m": "Deflection array (m).", "p_kN_per_m": "Soil resistance array (kN/m)."},
     },
 }

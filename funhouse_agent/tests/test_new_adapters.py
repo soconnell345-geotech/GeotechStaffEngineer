@@ -371,7 +371,7 @@ class TestPystraMethodInfo:
     def test_expected_methods(self):
         from funhouse_agent.adapters.pystra_adapter import METHOD_INFO
         assert set(METHOD_INFO.keys()) == {
-            "form_reliability", "sorm_reliability", "monte_carlo_reliability",
+            "form_analysis", "sorm_analysis", "monte_carlo_analysis",
         }
 
 
@@ -384,7 +384,7 @@ class TestPystraDispatch:
 
     def test_describe_method(self):
         from funhouse_agent.dispatch import describe_method
-        info = describe_method("pystra", "form_reliability")
+        info = describe_method("pystra", "form_analysis")
         assert "parameters" in info
         assert "variables" in info["parameters"]
         assert "limit_state" in info["parameters"]
@@ -399,7 +399,7 @@ class TestPystraCalls:
     def test_form_not_installed(self):
         with patch("pystra_agent.has_pystra", return_value=False):
             from funhouse_agent.dispatch import call_agent
-            result = call_agent("pystra", "form_reliability", {
+            result = call_agent("pystra", "form_analysis", {
                 "variables": self._VARIABLES, "limit_state": "R - S",
             })
             assert "error" in result
@@ -408,7 +408,7 @@ class TestPystraCalls:
     def test_sorm_not_installed(self):
         with patch("pystra_agent.has_pystra", return_value=False):
             from funhouse_agent.dispatch import call_agent
-            result = call_agent("pystra", "sorm_reliability", {
+            result = call_agent("pystra", "sorm_analysis", {
                 "variables": self._VARIABLES, "limit_state": "R - S",
             })
             assert "error" in result
@@ -416,7 +416,7 @@ class TestPystraCalls:
     def test_monte_carlo_not_installed(self):
         with patch("pystra_agent.has_pystra", return_value=False):
             from funhouse_agent.dispatch import call_agent
-            result = call_agent("pystra", "monte_carlo_reliability", {
+            result = call_agent("pystra", "monte_carlo_analysis", {
                 "variables": self._VARIABLES, "limit_state": "R - S",
                 "n_samples": 1000,
             })
@@ -425,7 +425,7 @@ class TestPystraCalls:
     def test_form_actual(self):
         """Test actual FORM call — succeeds if pystra installed."""
         from funhouse_agent.dispatch import call_agent
-        result = call_agent("pystra", "form_reliability", {
+        result = call_agent("pystra", "form_analysis", {
             "variables": self._VARIABLES, "limit_state": "R - S",
         })
         if "error" not in result:
@@ -530,7 +530,7 @@ class TestPygefMethodInfo:
 
     def test_expected_methods(self):
         from funhouse_agent.adapters.pygef_adapter import METHOD_INFO
-        assert set(METHOD_INFO.keys()) == {"parse_cpt", "parse_borehole"}
+        assert set(METHOD_INFO.keys()) == {"parse_cpt", "parse_bore"}
 
 
 class TestPygefDispatch:
@@ -557,10 +557,10 @@ class TestPygefCalls:
             assert "error" in result
             assert "not installed" in result["error"].lower()
 
-    def test_parse_borehole_not_installed(self):
+    def test_parse_bore_not_installed(self):
         with patch("pygef_agent.has_pygef", return_value=False):
             from funhouse_agent.dispatch import call_agent
-            result = call_agent("pygef", "parse_borehole", {
+            result = call_agent("pygef", "parse_bore", {
                 "file_path": "test.gef",
             })
             assert "error" in result
@@ -677,7 +677,7 @@ class TestDxfImportMethodInfo:
     def test_expected_methods(self):
         from funhouse_agent.adapters.dxf_import_adapter import METHOD_INFO
         assert set(METHOD_INFO.keys()) == {
-            "discover_layers", "parse_dxf_geometry",
+            "discover_layers", "parse_geometry",
             "build_slope_geometry", "build_fem_inputs",
         }
 
@@ -697,7 +697,7 @@ class TestDxfImportDispatch:
 
     def test_describe_method_parse(self):
         from funhouse_agent.dispatch import describe_method
-        info = describe_method("dxf_import", "parse_dxf_geometry")
+        info = describe_method("dxf_import", "parse_geometry")
         assert "parameters" in info
         assert "layer_mapping" in info["parameters"]
 
@@ -723,8 +723,8 @@ class TestDxfImportCalls:
             assert result["n_layers"] == 3
             assert result["n_total_entities"] == 42
 
-    def test_parse_dxf_geometry_mocked(self):
-        """Mock dxf_import.parse_dxf_geometry to test adapter wiring."""
+    def test_parse_geometry_mocked(self):
+        """Mock dxf_import.parse_geometry to test adapter wiring."""
         mock_result = MagicMock()
         mock_result.to_dict.return_value = {
             "surface_points": [{"x": 0, "z": 10}, {"x": 20, "z": 5}],
@@ -737,7 +737,7 @@ class TestDxfImportCalls:
             with patch("dxf_import.LayerMapping") as mock_lm:
                 mock_lm.return_value = MagicMock()
                 from funhouse_agent.dispatch import call_agent
-                result = call_agent("dxf_import", "parse_dxf_geometry", {
+                result = call_agent("dxf_import", "parse_geometry", {
                     "file_path": "test.dxf",
                     "layer_mapping": {"surface": "SURFACE", "soil_boundaries": {}},
                 })
@@ -803,6 +803,7 @@ class TestPdfImportMethodInfo:
         from funhouse_agent.adapters.pdf_import_adapter import METHOD_INFO
         assert set(METHOD_INFO.keys()) == {
             "discover_pdf_content", "extract_vector_geometry",
+            "build_slope_geometry", "build_fem_inputs",
         }
 
 
@@ -811,7 +812,7 @@ class TestPdfImportDispatch:
         from funhouse_agent.dispatch import list_methods
         result = list_methods("pdf_import")
         total = sum(len(v) for v in result.values())
-        assert total == 2
+        assert total == 4
 
     def test_describe_method_discover(self):
         from funhouse_agent.dispatch import describe_method

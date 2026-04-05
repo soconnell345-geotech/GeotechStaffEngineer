@@ -30,11 +30,11 @@ def _run_hvsr_analysis(params: dict) -> dict:
 
 
 METHOD_REGISTRY = {
-    "hvsr_analysis": _run_hvsr_analysis,
+    "analyze_hvsr": _run_hvsr_analysis,
 }
 
 METHOD_INFO = {
-    "hvsr_analysis": {
+    "analyze_hvsr": {
         "category": "Site Characterization",
         "brief": "Compute HVSR from 3-component seismograms to identify site resonant frequency and amplification.",
         "parameters": {

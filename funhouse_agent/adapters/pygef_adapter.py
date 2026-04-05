@@ -41,7 +41,7 @@ def _run_parse_borehole(params):
 
 METHOD_REGISTRY = {
     "parse_cpt": _run_parse_cpt,
-    "parse_borehole": _run_parse_borehole,
+    "parse_bore": _run_parse_borehole,
 }
 
 METHOD_INFO = {
@@ -65,7 +65,7 @@ METHOD_INFO = {
             "Rf_pct": "Friction ratio array (%).",
         },
     },
-    "parse_borehole": {
+    "parse_bore": {
         "category": "File Import",
         "brief": "Parse a borehole file (GEF or BRO-XML) into layer descriptions.",
         "parameters": {

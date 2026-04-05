@@ -152,7 +152,7 @@ def _run_build_fem_inputs(params):
 
 METHOD_REGISTRY = {
     "discover_layers": _run_discover_layers,
-    "parse_dxf_geometry": _run_parse_dxf_geometry,
+    "parse_geometry": _run_parse_dxf_geometry,
     "build_slope_geometry": _run_build_slope_geometry,
     "build_fem_inputs": _run_build_fem_inputs,
 }
@@ -171,7 +171,7 @@ METHOD_INFO = {
             "layers": "List of layer info dicts (name, n_entities, entity_types, sample_texts, bbox).",
         },
     },
-    "parse_dxf_geometry": {
+    "parse_geometry": {
         "category": "DXF Import",
         "brief": "Extract slope geometry coordinates from mapped DXF layers.",
         "parameters": {

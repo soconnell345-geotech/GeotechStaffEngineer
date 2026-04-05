@@ -1,6 +1,7 @@
-"""Drilled shaft adapter — GEC-10 alpha/beta/rock socket capacity."""
+"""Drilled shaft adapter — GEC-10 alpha/beta/rock socket capacity + LRFD."""
 
 from drilled_shaft import DrillShaft, ShaftSoilLayer, ShaftSoilProfile, DrillShaftAnalysis
+from drilled_shaft.lrfd import apply_lrfd, RESISTANCE_FACTORS
 
 
 def _build_shaft(params):
@@ -37,9 +38,27 @@ def _run_capacity_vs_depth(params):
     return {"capacity_vs_depth": curve}
 
 
+def _run_lrfd_capacity(params):
+    shaft = _build_shaft(params)
+    soil = _build_soil_profile(params)
+    analysis = DrillShaftAnalysis(shaft=shaft, soil=soil, factor_of_safety=1.0)
+    result = analysis.compute()
+    tip_soil_type = params.get("tip_soil_type", "cohesive")
+    lrfd = apply_lrfd(result, tip_soil_type)
+    output = result.to_dict()
+    output["lrfd"] = lrfd
+    return output
+
+
+def _run_get_resistance_factors(params):
+    return {"resistance_factors": RESISTANCE_FACTORS}
+
+
 METHOD_REGISTRY = {
     "drilled_shaft_capacity": _run_drilled_shaft_capacity,
     "capacity_vs_depth": _run_capacity_vs_depth,
+    "lrfd_capacity": _run_lrfd_capacity,
+    "get_resistance_factors": _run_get_resistance_factors,
 }
 
 METHOD_INFO = {
@@ -63,5 +82,23 @@ METHOD_INFO = {
             "layers": {"type": "array", "required": True, "description": "Soil layers."},
         },
         "returns": {"capacity_vs_depth": "List of {depth, Q_ult, Q_skin, Q_tip} dicts."},
+    },
+    "lrfd_capacity": {
+        "category": "Drilled Shaft",
+        "brief": "Drilled shaft capacity with AASHTO LRFD resistance factors.",
+        "parameters": {
+            "diameter": {"type": "float", "required": True, "description": "Shaft diameter (m)."},
+            "shaft_length": {"type": "float", "required": True, "description": "Shaft length (m)."},
+            "layers": {"type": "array", "required": True, "description": "Soil layers (same as drilled_shaft_capacity)."},
+            "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
+            "tip_soil_type": {"type": "str", "required": False, "default": "cohesive", "description": "'cohesive', 'cohesionless', or 'rock' at shaft tip."},
+        },
+        "returns": {"Q_ultimate_kN": "Unfactored ultimate capacity.", "lrfd": "Factored resistances by component."},
+    },
+    "get_resistance_factors": {
+        "category": "Drilled Shaft",
+        "brief": "AASHTO LRFD resistance factors for drilled shaft design.",
+        "parameters": {},
+        "returns": {"resistance_factors": "Dict of component → phi factor."},
     },
 }

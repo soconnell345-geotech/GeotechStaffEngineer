@@ -48,9 +48,22 @@ def _run_capacity_vs_depth(params):
     return {"capacity_vs_depth": curve}
 
 
+def _run_make_pile_section(params):
+    pile = _build_pile(params)
+    return {
+        "name": pile.name,
+        "pile_type": pile.pile_type,
+        "area_m2": round(pile.area, 6),
+        "perimeter_m": round(pile.perimeter, 4),
+        "tip_area_m2": round(pile.tip_area, 6),
+        "width_m": round(pile.width, 4),
+    }
+
+
 METHOD_REGISTRY = {
     "axial_pile_capacity": _run_axial_pile_capacity,
     "capacity_vs_depth": _run_capacity_vs_depth,
+    "make_pile_section": _run_make_pile_section,
 }
 
 METHOD_INFO = {
@@ -80,5 +93,17 @@ METHOD_INFO = {
             "depth_max": {"type": "float", "required": False, "description": "Max depth (m)."},
         },
         "returns": {"capacity_vs_depth": "List of {depth, Q_ult, Q_skin, Q_tip} dicts."},
+    },
+    "make_pile_section": {
+        "category": "Axial Pile",
+        "brief": "Create a pile section and return its geometric properties.",
+        "parameters": {
+            "pile_type": {"type": "str", "required": True, "description": "pipe_closed/pipe_open/concrete_square/concrete_circular/h_pile."},
+            "diameter": {"type": "float", "required": False, "description": "Pile diameter (m) for pipe piles."},
+            "wall_thickness": {"type": "float", "required": False, "description": "Pipe wall thickness (m)."},
+            "width": {"type": "float", "required": False, "description": "Side dimension (m) for concrete piles."},
+            "designation": {"type": "str", "required": False, "description": "H-pile designation (e.g., 'HP14x117')."},
+        },
+        "returns": {"name": "Pile section name.", "area_m2": "Cross-sectional area.", "perimeter_m": "Perimeter.", "tip_area_m2": "Tip area.", "width_m": "Width."},
     },
 }

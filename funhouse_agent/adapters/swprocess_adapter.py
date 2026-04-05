@@ -23,11 +23,11 @@ def _run_masw_dispersion(params: dict) -> dict:
 
 
 METHOD_REGISTRY = {
-    "masw_dispersion": _run_masw_dispersion,
+    "analyze_masw": _run_masw_dispersion,
 }
 
 METHOD_INFO = {
-    "masw_dispersion": {
+    "analyze_masw": {
         "category": "Site Characterization",
         "brief": "MASW surface wave dispersion analysis from multi-channel seismic data.",
         "parameters": {

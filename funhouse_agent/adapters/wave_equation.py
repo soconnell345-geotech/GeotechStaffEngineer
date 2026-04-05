@@ -63,13 +63,64 @@ def _run_list_hammers(params):
     return {"hammers": hammers}
 
 
+def _run_single_blow(params):
+    hammer = _build_hammer(params)
+    cushion = _build_cushion(params)
+    pile = discretize_pile(
+        length=params["pile_length"], area=params["pile_area"],
+        elastic_modulus=params.get("pile_E", 200e6),
+        segment_length=params.get("segment_length", 1.0),
+        unit_weight_material=params.get("pile_unit_weight", 78.5),
+    )
+    soil = SoilSetup(
+        R_total=params["R_total"],
+        skin_fraction=params.get("skin_fraction", 0.5),
+        quake_side=params.get("quake_side", 0.0025),
+        quake_toe=params.get("quake_toe", 0.0025),
+        damping_side=params.get("damping_side", 0.16),
+        damping_toe=params.get("damping_toe", 0.50),
+    )
+    result = simulate_blow(
+        hammer, cushion, pile, soil,
+        helmet_weight=params.get("helmet_weight", 5.0),
+    )
+    perm_set = result.permanent_set
+    blow_count = round(1.0 / perm_set, 1) if perm_set > 0 else float("inf")
+    return {
+        "permanent_set_mm": round(perm_set * 1000, 3),
+        "blow_count_per_m": blow_count,
+        "max_pile_stress_MPa": round(result.max_compressive_stress / 1000, 2),
+        "max_tension_stress_MPa": round(result.max_tensile_stress / 1000, 2),
+        "max_pile_force_kN": round(result.max_compressive_force, 1),
+        "energy_transfer_pct": round(result.energy_transfer * 100, 1),
+    }
+
+
 METHOD_REGISTRY = {
+    "single_blow": _run_single_blow,
     "bearing_graph": _run_bearing_graph,
     "drivability": _run_drivability,
     "list_available_hammers": _run_list_hammers,
 }
 
 METHOD_INFO = {
+    "single_blow": {
+        "category": "Wave Equation",
+        "brief": "Simulate a single hammer blow — set, stress, blow count.",
+        "parameters": {
+            "hammer_name": {"type": "str", "required": False, "description": "Hammer name (use list_available_hammers)."},
+            "pile_length": {"type": "float", "required": True, "description": "Pile length (m)."},
+            "pile_area": {"type": "float", "required": True, "description": "Pile area (m2)."},
+            "R_total": {"type": "float", "required": True, "description": "Total soil resistance (kN)."},
+            "skin_fraction": {"type": "float", "required": False, "default": 0.5, "description": "Skin friction fraction."},
+        },
+        "returns": {
+            "permanent_set_mm": "Pile penetration per blow (mm).",
+            "blow_count_per_m": "Blows per meter.",
+            "max_pile_stress_MPa": "Max compressive stress (MPa).",
+            "max_tension_stress_MPa": "Max tensile stress (MPa).",
+        },
+    },
     "bearing_graph": {
         "category": "Wave Equation",
         "brief": "Generate bearing capacity vs blow count graph.",

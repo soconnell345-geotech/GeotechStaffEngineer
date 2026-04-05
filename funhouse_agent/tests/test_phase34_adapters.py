@@ -274,12 +274,12 @@ class TestHvsrpyDispatch:
         all_methods = []
         for cat_methods in methods.values():
             all_methods.extend(cat_methods.keys())
-        assert "hvsr_analysis" in all_methods
+        assert "analyze_hvsr" in all_methods
         assert len(all_methods) == 1
 
     def test_describe_method(self):
         from funhouse_agent.dispatch import describe_method
-        info = describe_method("hvsrpy", "hvsr_analysis")
+        info = describe_method("hvsrpy", "analyze_hvsr")
         assert "parameters" in info
         assert "ns" in info["parameters"]
         assert "ew" in info["parameters"]
@@ -291,7 +291,7 @@ class TestHvsrpyCalls:
     def test_hvsr_missing_or_unavailable(self):
         """call_agent with empty params returns error (dep missing or param error)."""
         from funhouse_agent.dispatch import call_agent
-        result = call_agent("hvsrpy", "hvsr_analysis", {})
+        result = call_agent("hvsrpy", "analyze_hvsr", {})
         assert "error" in result
 
 
@@ -325,12 +325,12 @@ class TestSwprocessDispatch:
         all_methods = []
         for cat_methods in methods.values():
             all_methods.extend(cat_methods.keys())
-        assert "masw_dispersion" in all_methods
+        assert "analyze_masw" in all_methods
         assert len(all_methods) == 1
 
     def test_describe_method(self):
         from funhouse_agent.dispatch import describe_method
-        info = describe_method("swprocess", "masw_dispersion")
+        info = describe_method("swprocess", "analyze_masw")
         assert "parameters" in info
         assert "traces" in info["parameters"]
         assert "offsets" in info["parameters"]
@@ -341,7 +341,7 @@ class TestSwprocessCalls:
     def test_masw_missing_or_unavailable(self):
         """call_agent with empty params returns error (dep missing or param error)."""
         from funhouse_agent.dispatch import call_agent
-        result = call_agent("swprocess", "masw_dispersion", {})
+        result = call_agent("swprocess", "analyze_masw", {})
         assert "error" in result
 
 

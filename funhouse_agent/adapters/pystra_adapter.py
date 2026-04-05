@@ -47,13 +47,13 @@ def _run_monte_carlo_reliability(params: dict) -> dict:
 
 
 METHOD_REGISTRY = {
-    "form_reliability": _run_form_reliability,
-    "sorm_reliability": _run_sorm_reliability,
-    "monte_carlo_reliability": _run_monte_carlo_reliability,
+    "form_analysis": _run_form_reliability,
+    "sorm_analysis": _run_sorm_reliability,
+    "monte_carlo_analysis": _run_monte_carlo_reliability,
 }
 
 METHOD_INFO = {
-    "form_reliability": {
+    "form_analysis": {
         "category": "Reliability",
         "brief": "First Order Reliability Method (FORM) — find design point and reliability index.",
         "parameters": {
@@ -84,7 +84,7 @@ METHOD_INFO = {
             "n_variables": "Number of random variables.",
         },
     },
-    "sorm_reliability": {
+    "sorm_analysis": {
         "category": "Reliability",
         "brief": "Second Order Reliability Method (SORM) — improved probability with curvature correction.",
         "parameters": {
@@ -118,7 +118,7 @@ METHOD_INFO = {
             "n_variables": "Number of random variables.",
         },
     },
-    "monte_carlo_reliability": {
+    "monte_carlo_analysis": {
         "category": "Reliability",
         "brief": "Crude Monte Carlo reliability analysis — estimate failure probability by random sampling.",
         "parameters": {
