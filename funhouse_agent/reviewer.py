@@ -124,18 +124,9 @@ def _build_review_prompt(question: str, answer: str,
     )
 
 
-def _filter_tool_call(tool_call):
-    """Block tool calls to non-reference modules. Returns error string or None."""
-    if tool_call.tool_name != "call_agent":
-        return None  # list_agents, list_methods, describe_method are fine
-    agent_name = tool_call.arguments.get("agent_name", "")
-    if agent_name not in REFERENCE_MODULES:
-        return json.dumps({
-            "error": f"Reviewer can only access reference modules. "
-                     f"'{agent_name}' is a computation module. "
-                     f"Available references: {sorted(REFERENCE_MODULES)}"
-        })
-    return None
+"""Reviewer scoping is enforced at the dispatcher via ``allowed_agents``;
+the reviewer only ever sees REFERENCE_MODULES in list_agents/list_methods,
+and call_agent refuses non-reference modules with a standard error."""
 
 
 def run_review(
@@ -212,16 +203,7 @@ def run_review(
             print(f"  Reviewer round {rnd}: {tc.tool_name}("
                   f"{json.dumps(tc.arguments, default=str)[:120]})")
 
-        # Block non-reference modules
-        blocked = _filter_tool_call(tc)
-        if blocked:
-            history.add_assistant(response)
-            history.add_tool_result(blocked)
-            if verbose:
-                print(f"  Reviewer round {rnd}: BLOCKED — non-reference module")
-            continue
-
-        result_str = dispatch_tool(tc)
+        result_str = dispatch_tool(tc, allowed_agents=REFERENCE_MODULES)
         result_str = _truncate(result_str, max_result_chars)
 
         history.add_assistant(response)

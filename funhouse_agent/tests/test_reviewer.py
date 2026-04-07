@@ -9,7 +9,10 @@ import pytest
 from funhouse_agent.agent import GeotechAgent
 from funhouse_agent.reviewer import (
     run_review, needs_revision, _has_computations, _build_review_prompt,
-    _filter_tool_call, REFERENCE_MODULES, REVIEWER_SYSTEM_PROMPT,
+    REFERENCE_MODULES, REVIEWER_SYSTEM_PROMPT,
+)
+from funhouse_agent.dispatch import (
+    list_agents, list_methods, call_agent, dispatch_tool,
 )
 from funhouse_agent.react_support import ToolCall
 
@@ -51,41 +54,48 @@ class TestNeedsRevision:
         assert needs_revision("REVIEW_STATUS: REVISE\n\nFix this.") is True
 
 
-class TestFilterToolCall:
-    def test_list_methods_allowed(self):
-        tc = ToolCall(
-            tool_name="list_methods",
-            arguments={"agent_name": "dm7"},
-            raw_json="", reasoning="",
-        )
-        assert _filter_tool_call(tc) is None
+class TestAllowedAgentsScoping:
+    """Reviewer scoping is enforced at the dispatcher via allowed_agents."""
 
-    def test_reference_module_allowed(self):
+    def test_list_agents_unscoped_sees_all(self):
+        agents = list_agents()
+        assert len(agents) > len(REFERENCE_MODULES)
+        assert "bearing_capacity" in agents
+
+    def test_list_agents_scoped_to_references(self):
+        agents = list_agents(allowed_agents=REFERENCE_MODULES)
+        assert set(agents.keys()) == REFERENCE_MODULES
+        assert "bearing_capacity" not in agents
+
+    def test_list_methods_scoped_blocks_computation_module(self):
+        result = list_methods("bearing_capacity",
+                              allowed_agents=REFERENCE_MODULES)
+        assert "error" in result
+
+    def test_list_methods_scoped_allows_reference_module(self):
+        result = list_methods("gec7", allowed_agents=REFERENCE_MODULES)
+        assert "error" not in result
+
+    def test_call_agent_scoped_blocks_computation_module(self):
+        result = call_agent("bearing_capacity", "vesic", {},
+                            allowed_agents=REFERENCE_MODULES)
+        assert "error" in result
+
+    def test_dispatch_tool_passes_allowed_agents(self):
         tc = ToolCall(
             tool_name="call_agent",
-            arguments={"agent_name": "dm7", "method": "some_func"},
+            arguments={"agent_name": "bearing_capacity",
+                       "method": "vesic", "parameters": {}},
             raw_json="", reasoning="",
         )
-        assert _filter_tool_call(tc) is None
+        result_str = dispatch_tool(tc, allowed_agents=REFERENCE_MODULES)
+        result = json.loads(result_str)
+        assert "error" in result
 
-    def test_computation_module_blocked(self):
-        tc = ToolCall(
-            tool_name="call_agent",
-            arguments={"agent_name": "bearing_capacity", "method": "vesic"},
-            raw_json="", reasoning="",
-        )
-        result = _filter_tool_call(tc)
-        assert result is not None
-        assert "computation module" in result
-
-    def test_all_reference_modules_allowed(self):
+    def test_all_reference_modules_visible_when_scoped(self):
+        agents = list_agents(allowed_agents=REFERENCE_MODULES)
         for mod in REFERENCE_MODULES:
-            tc = ToolCall(
-                tool_name="call_agent",
-                arguments={"agent_name": mod},
-                raw_json="", reasoning="",
-            )
-            assert _filter_tool_call(tc) is None
+            assert mod in agents
 
 
 class TestBuildReviewPrompt:

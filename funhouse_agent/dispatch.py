@@ -41,15 +41,41 @@ def _load_adapter(agent_name: str):
 AGENT_NAMES = sorted(MODULE_REGISTRY.keys())
 
 
-def list_agents() -> dict:
-    """List all available analysis modules with brief descriptions."""
-    return {name: spec["brief"] for name, spec in MODULE_REGISTRY.items()}
+def _scoped_names(allowed_agents):
+    """Return the visible agent names given an optional whitelist."""
+    if allowed_agents is None:
+        return AGENT_NAMES
+    return sorted(name for name in MODULE_REGISTRY if name in allowed_agents)
 
 
-def list_methods(agent_name: str, category: str = "") -> dict:
-    """List available methods for a specific module."""
+def _is_visible(agent_name: str, allowed_agents) -> bool:
     if agent_name not in MODULE_REGISTRY:
-        return {"error": f"Unknown module '{agent_name}'. Available: {AGENT_NAMES}"}
+        return False
+    if allowed_agents is None:
+        return True
+    return agent_name in allowed_agents
+
+
+def list_agents(allowed_agents=None) -> dict:
+    """List available analysis modules with brief descriptions.
+
+    If ``allowed_agents`` is provided, only those modules are returned —
+    used by the reviewer agent to scope its view to reference modules only.
+    """
+    return {
+        name: spec["brief"]
+        for name, spec in MODULE_REGISTRY.items()
+        if allowed_agents is None or name in allowed_agents
+    }
+
+
+def list_methods(agent_name: str, category: str = "", allowed_agents=None) -> dict:
+    """List available methods for a specific module."""
+    if not _is_visible(agent_name, allowed_agents):
+        return {
+            "error": f"Unknown module '{agent_name}'. "
+                     f"Available: {_scoped_names(allowed_agents)}"
+        }
     try:
         mod = _load_adapter(agent_name)
     except Exception as e:
@@ -66,10 +92,13 @@ def list_methods(agent_name: str, category: str = "") -> dict:
     return result
 
 
-def describe_method(agent_name: str, method: str) -> dict:
+def describe_method(agent_name: str, method: str, allowed_agents=None) -> dict:
     """Get full parameter documentation for a method."""
-    if agent_name not in MODULE_REGISTRY:
-        return {"error": f"Unknown module '{agent_name}'. Available: {AGENT_NAMES}"}
+    if not _is_visible(agent_name, allowed_agents):
+        return {
+            "error": f"Unknown module '{agent_name}'. "
+                     f"Available: {_scoped_names(allowed_agents)}"
+        }
     try:
         mod = _load_adapter(agent_name)
     except Exception as e:
@@ -110,6 +139,7 @@ def call_agent(
     method: str,
     parameters: dict,
     attachments: dict = None,
+    allowed_agents=None,
 ) -> dict:
     """Execute a geotechnical calculation.
 
@@ -131,8 +161,11 @@ def call_agent(
     dict
         Calculation results or {"error": "..."}.
     """
-    if agent_name not in MODULE_REGISTRY:
-        return {"error": f"Unknown module '{agent_name}'. Available: {AGENT_NAMES}"}
+    if not _is_visible(agent_name, allowed_agents):
+        return {
+            "error": f"Unknown module '{agent_name}'. "
+                     f"Available: {_scoped_names(allowed_agents)}"
+        }
     try:
         mod = _load_adapter(agent_name)
     except Exception as e:
@@ -153,8 +186,21 @@ def call_agent(
 # ToolCall dispatch — drop-in replacement for chat_agent.agent.dispatch_tool
 # ---------------------------------------------------------------------------
 
-def dispatch_tool(tool_call, attachments: dict = None) -> str:
-    """Route a parsed ToolCall to the adapter registry and return JSON string."""
+def dispatch_tool(tool_call, attachments: dict = None, allowed_agents=None) -> str:
+    """Route a parsed ToolCall to the adapter registry and return JSON string.
+
+    Parameters
+    ----------
+    tool_call : ToolCall
+        Parsed tool call from the LLM.
+    attachments : dict, optional
+        Agent attachments ({key: bytes}).
+    allowed_agents : iterable of str, optional
+        Whitelist of agent names. If provided, modules outside this set are
+        invisible to ``list_agents`` / ``list_methods`` / ``describe_method``
+        and refused by ``call_agent``. Used by the reviewer agent to scope
+        its tool surface to reference modules only.
+    """
     name = tool_call.tool_name
     args = tool_call.arguments
 
@@ -164,19 +210,22 @@ def dispatch_tool(tool_call, attachments: dict = None) -> str:
             method=args.get("method", ""),
             parameters=args.get("parameters", {}),
             attachments=attachments,
+            allowed_agents=allowed_agents,
         )
     elif name == "list_methods":
         result = list_methods(
             agent_name=args.get("agent_name", ""),
             category=args.get("category", ""),
+            allowed_agents=allowed_agents,
         )
     elif name == "describe_method":
         result = describe_method(
             agent_name=args.get("agent_name", ""),
             method=args.get("method", ""),
+            allowed_agents=allowed_agents,
         )
     elif name == "list_agents":
-        result = list_agents()
+        result = list_agents(allowed_agents=allowed_agents)
     else:
         result = {"error": f"Unknown tool '{name}'"}
 
