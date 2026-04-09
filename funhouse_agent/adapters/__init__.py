@@ -193,7 +193,11 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.subsurface_adapter",
         "brief": "Subsurface data visualization — DIGGS XML ingestion, parameter vs depth, Atterberg limits, plan view, cross-section, trends",
     },
-    # --- geotech-references agents (14 reference modules) ---
+    # --- geotech-references agents (14 reference modules + cross-reference DB) ---
+    "reference_db": {
+        "adapter": "funhouse_agent.adapters.reference_db_adapter",
+        "brief": "Cross-reference FTS5 search over all structured chapter text (DM7 + GEC + micropile). Use first to scope, then drill in via reference_get.",
+    },
     "dm7": {
         "adapter": "funhouse_agent.adapters.dm7_adapter",
         "brief": "NAVFAC DM7 equations (340+): soil classification, stresses, settlement, seepage, foundations",

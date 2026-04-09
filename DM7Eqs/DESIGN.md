@@ -1,13 +1,16 @@
-# DM7Eqs — NAVFAC Design Manual 7 Equations
+# DM7Eqs — UFC 3-220-10 / 3-220-20 Equations
 
 ## Purpose
-354 LLM-callable functions implementing equations from NAVFAC DM7.01
-(Soil Mechanics) and DM7.02 (Foundations & Earth Structures), organized
-by chapter.
+354 LLM-callable functions implementing equations from UFC 3-220-10
+(Soil Mechanics, the UFC successor to NAVFAC DM 7.01) and UFC 3-220-20
+(Foundations & Earth Structures, the UFC successor to NAVFAC DM 7.02),
+organized by chapter. The package directories are still named `dm7_1`
+and `dm7_2` for historical reasons; the actual digitized source is the
+current UFC editions, not the 1986 NAVFAC manuals.
 
 ## References
-- NAVFAC DM 7.01 — Soil Mechanics (1986)
-- NAVFAC DM 7.02 — Foundations and Earth Structures (1986)
+- UFC 3-220-10 — Soil Mechanics (2022, with Change 1, 11 Mar 2025)
+- UFC 3-220-20 — Foundations and Earth Structures (2025)
 
 ## Structure
 ```

@@ -20,6 +20,7 @@ from funhouse_agent.dispatch import dispatch_tool
 
 # Reference-only modules — the reviewer cannot run computations
 REFERENCE_MODULES = {
+    "reference_db",
     "dm7", "gec6", "gec7", "gec10", "gec11", "gec12", "gec13",
     "micropile", "fema_p2192", "noaa_frost",
     "ufc_backfill", "ufc_dewatering", "ufc_expansive", "ufc_pavement",
