@@ -16,6 +16,7 @@ STANDARD_TOOLS = {"call_agent", "list_methods", "describe_method", "list_agents"
 EXTENDED_TOOLS = STANDARD_TOOLS | {
     "analyze_image",
     "analyze_pdf_page",
+    "read_reference_figure",
     "save_file",
 }
 
@@ -36,7 +37,19 @@ Render a PDF page and analyze it using vision.
 </tool_call>
 ```
 
-### 7. save_file
+### 7. read_reference_figure
+Render a digitized reference figure (e.g. a DM7 design chart) and read a value
+off it with vision. Find the figure first with `call_agent` →
+`figure_db.figure_search`, then pass its `reference` + `figure_number` here with
+a `prompt` describing the value(s) you need. Returns a chart read-off **estimate**
+— verify it against a closed-form/digitized method where one exists.
+```
+<tool_call>
+{"tool_name": "read_reference_figure", "reference": "dm7_2", "figure_number": "4-12", "prompt": "Read Kp for phi'=35 deg, theta=10 deg, delta/phi=0.66"}
+</tool_call>
+```
+
+### 8. save_file
 Save raw text or data to a file. Returns the saved file path.
 For formatted calculation documents, use the `calc_package` module instead.
 ```
@@ -104,6 +117,8 @@ def dispatch_extended_tool(
         return _dispatch_analyze_image(arguments, engine, attachments)
     elif tool_name == "analyze_pdf_page":
         return _dispatch_analyze_pdf_page(arguments, engine, attachments)
+    elif tool_name == "read_reference_figure":
+        return _dispatch_read_reference_figure(arguments, engine)
     elif tool_name == "save_file":
         return _dispatch_save_file(arguments, save_fn or _default_save_fn)
     else:
@@ -170,6 +185,82 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
         })
     except Exception as e:
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
+
+
+_READ_OFF_NOTE = (
+    "Value(s) are a vision read-off estimate from the chart — accurate to a few "
+    "percent on linear axes, looser on log axes or dense curve families. Verify "
+    "against a closed-form or digitized method where one exists."
+)
+
+
+def _dispatch_read_reference_figure(arguments, engine):
+    """Render a catalogued reference figure and read value(s) off it via vision."""
+    reference = arguments.get("reference", "")
+    figure_number = arguments.get("figure_number", "")
+    question = arguments.get("prompt", "") or "Read the relevant value(s) from this chart."
+
+    if not reference or not figure_number:
+        return json.dumps({
+            "error": "Both 'reference' and 'figure_number' are required "
+                     "(find them via figure_db.figure_search)."
+        })
+
+    # Resolve the figure to its source PDF page.
+    try:
+        from geotech_references import _figures_db
+        rec = _figures_db.figure_get(reference, figure_number)
+        pdf_abs, page_idx = _figures_db.resolve_pdf(reference, figure_number)
+    except KeyError as e:
+        return json.dumps({"error": f"Figure not found: {e}"})
+    except FileNotFoundError as e:
+        return json.dumps({"error": str(e)})
+    except Exception as e:
+        return json.dumps({"error": f"{type(e).__name__}: {e}"})
+
+    # Render the page at high DPI for legible curves/labels.
+    try:
+        from pdf_import.vision import _render_pdf_page
+        image_bytes = _render_pdf_page(filepath=str(pdf_abs), page=page_idx, dpi=220)
+    except ImportError:
+        return json.dumps({
+            "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
+        })
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+
+    full_prompt = (
+        f"This image is a rendered page from {reference} containing Figure "
+        f"{rec['figure_number']}: \"{rec['caption']}\".\n\n"
+        "Read the requested value(s) off this engineering chart:\n"
+        f"1. Locate Figure {rec['figure_number']} on the page; ignore other "
+        "figures and body text.\n"
+        "2. Identify the axes (note any logarithmic scales) and the family of "
+        "curves and what parameter distinguishes them.\n"
+        "3. For the requested inputs, select the correct curve (interpolating "
+        "between curves where needed) and read the value at the right axis "
+        "position.\n"
+        "4. Report the value(s) clearly, state which curve/axis you used, and "
+        "flag that this is a chart read-off estimate.\n\n"
+        f"Request: {question}"
+    )
+
+    try:
+        result = engine.analyze_image(image_bytes, full_prompt)
+    except (NotImplementedError, AttributeError) as e:
+        return json.dumps({"error": f"Vision not available on this engine: {e}"})
+    except Exception as e:
+        return json.dumps({"error": f"{type(e).__name__}: {e}"})
+
+    return json.dumps({
+        "reference": reference,
+        "figure_number": rec["figure_number"],
+        "caption": rec["caption"],
+        "pdf_page_index": page_idx,
+        "page_estimated": rec.get("page_estimated", False),
+        "analysis": result,
+        "note": _READ_OFF_NOTE,
+    })
 
 
 def _dispatch_save_file(arguments, save_fn):

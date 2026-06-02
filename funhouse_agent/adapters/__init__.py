@@ -198,6 +198,10 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.reference_db_adapter",
         "brief": "Cross-reference FTS5 search over all structured chapter text (DM7 + GEC + micropile). Use first to scope, then drill in via reference_get.",
     },
+    "figure_db": {
+        "adapter": "funhouse_agent.adapters.figure_db_adapter",
+        "brief": "FTS5 search over the digitized figure catalogs (DM7 charts/figures). Find a chart by meaning, then read a value off it with the read_reference_figure vision tool.",
+    },
     "dm7": {
         "adapter": "funhouse_agent.adapters.dm7_adapter",
         "brief": "NAVFAC DM7 equations (340+): soil classification, stresses, settlement, seepage, foundations",

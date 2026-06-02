@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (2935 module + 142 harness + 3384 ref = 6461 tests)
+## Module Inventory (2935 module + 142 harness + 3529 ref; full `pytest -q` = 6933 passed, 47 skipped)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -64,7 +64,7 @@ Key conventions:
 | fem2d | 271 | 2D plane-strain FEM (CST/Q4/beam, MC/HS, SRM, excavation, pore pressures, seepage, consolidation, staged construction) |
 | fdm2d | 81 | 2D explicit Lagrangian FDM (FLAC-style, quad zones, mixed discretization, MC, dynamic relaxation) |
 
-Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions, 3384 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 + 25 + 31 = 474 tests)
+Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions + DM7 figure catalogs, 3529 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 + 25 + 31 + 5 = 479 tests)
 
 ## GUIs
 
@@ -123,7 +123,7 @@ Run: `pytest pdf_import/ -v`
 
 ## Funhouse Agent (Engine-Agnostic Geotechnical Agent)
 
-`funhouse_agent/` provides an engine-agnostic geotechnical agent with text + vision capabilities. Works with any AI backend satisfying the `GenAIEngine` protocol. Self-contained dispatch layer routes tool calls directly to 50 modules (~901 methods) via internal adapters — no dependency on `foundry/` files. Includes 36 analysis module adapters + 14 geotech-references adapters (DM7 340+ equations, 7 GEC/micropile references with text retrieval, FEMA P-2192, NOAA frost, 4 UFC standards).
+`funhouse_agent/` provides an engine-agnostic geotechnical agent with text + vision capabilities. Works with any AI backend satisfying the `GenAIEngine` protocol. Self-contained dispatch layer routes tool calls directly to 52 modules (~900+ methods) via internal adapters — no dependency on `foundry/` files. Includes 36 analysis module adapters + 16 geotech-references adapters (DM7 340+ equations, 7 GEC/micropile references with text retrieval, FEMA P-2192, NOAA frost, 4 UFC standards, the cross-reference text-search DB `reference_db`, and the figure-catalog search DB `figure_db` — which pairs with the `read_reference_figure` vision tool to find an engineering chart by meaning and read a value off it).
 
 | File | Purpose |
 |------|---------|
@@ -133,9 +133,9 @@ Run: `pytest pdf_import/ -v`
 | `dispatch.py` | Tool dispatch — routes to adapters (not foundry) |
 | `system_prompt.py` | Self-contained system prompt (50 modules) |
 | `native_tools.py` | OpenAI tool schemas + dispatch for NativeToolEngine |
-| `vision_tools.py` | Vision tool definitions and dispatch |
+| `vision_tools.py` | Vision tools: `analyze_image`, `analyze_pdf_page`, `read_reference_figure` (render a catalogued figure + read a value off it), `save_file` |
 | `notebook.py` | `NotebookChat` — ipywidgets chat interface for Jupyter/Databricks |
-| `adapters/` | 50 adapter modules (36 analysis + 14 reference) bridging flat JSON → module APIs |
+| `adapters/` | 52 adapter modules (36 analysis + 16 reference) bridging flat JSON → module APIs |
 | `tests/` | 106 tests (mock engines, no API key needed) |
 
 Usage:
