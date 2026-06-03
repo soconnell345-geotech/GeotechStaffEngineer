@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geotech-staff-engineer"
-version = "4.6.0"
+version = "4.6.1"
 description = "Python toolkit for LLM-based geotechnical engineering agents — 37 analysis modules covering foundations, piles, slopes, seismic, FEM, PDF/DXF import, and more"
 readme = "README.md"
 license = "MIT"
@@ -36,7 +36,7 @@ calc = ["jinja2>=3.1"]
 groundhog = ["groundhog>=0.11"]
 opensees = ["openseespy>=3.6"]
 pystrata = ["pystrata>=0.5"]
-seismic-signals = ["eqsig>=1.3", "pyrotd>=0.6"]
+seismic-signals = ["eqsig>=1.2", "pyrotd>=0.6"]
 liquepy = ["liquepy>=0.3"]
 pygef = ["pygef>=0.10"]
 hvsrpy = ["hvsrpy>=2.0"]
@@ -57,7 +57,7 @@ full = [
     "groundhog>=0.11",
     "openseespy>=3.6",
     "pystrata>=0.5",
-    "eqsig>=1.3",
+    "eqsig>=1.2",
     "pyrotd>=0.6",
     "liquepy>=0.3",
     "pygef>=0.10",

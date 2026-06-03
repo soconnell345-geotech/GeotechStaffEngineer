@@ -375,8 +375,27 @@ class GeotechAgent:
                     errors=error_log,
                 )
 
-            # Append the assistant message (with tool_calls) to history
-            messages.append(msg)
+            # Append the assistant message (with tool_calls) back to the
+            # conversation.  Build an explicit dict rather than re-sending the
+            # raw SDK message object: through the Databricks/Prompter proxy a
+            # full pydantic dump can carry null fields (function_call, refusal,
+            # audio, annotations) that some servers reject.  Explicit dicts are
+            # proxy-safe and keep every message in the list a plain dict.
+            messages.append({
+                "role": "assistant",
+                "content": msg.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": getattr(tc, "type", "function") or "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in msg.tool_calls
+                ],
+            })
 
             # Process each tool call in this response
             for tc in msg.tool_calls:

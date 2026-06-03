@@ -60,12 +60,14 @@ def make_engine(engine_name: str):
         from funhouse_agent import ClaudeEngine
         return ClaudeEngine()
     elif engine_name in ("native", "prompter"):
-        # Import from funhouse environment
+        # Import from funhouse environment.  PrompterAPI is exposed at the
+        # package top level (lazy attr) — there is no ``funhouse.prompter``
+        # module, so importing that path silently failed before.
         try:
-            from funhouse.prompter import PrompterAPI
+            from funhouse import PrompterAPI
             prompter = PrompterAPI()
         except ImportError:
-            print("ERROR: funhouse.prompter not available.")
+            print("ERROR: funhouse package not available.")
             print("  Install the funhouse package or use --engine claude")
             sys.exit(1)
         if engine_name == "native":

@@ -37,7 +37,7 @@ def has_opensees() -> bool:
     try:
         import openseespy.opensees  # noqa: F401
         return True
-    except ImportError:
+    except (ImportError, RuntimeError):
         return False
 
 

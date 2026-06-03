@@ -21,7 +21,13 @@ Usage:
     result = agent.ask("Calculate bearing capacity of 2m footing, phi=30")
 """
 
-from funhouse_agent.engine import GenAIEngine, ClaudeEngine, NativeToolEngine
+from funhouse_agent.engine import (
+    GenAIEngine,
+    ClaudeEngine,
+    NativeToolEngine,
+    PrompterBridgeEngine,
+    USING_SDK_ENGINES,
+)
 from funhouse_agent.agent import GeotechAgent
 from funhouse_agent.react_support import AgentResult
 
@@ -30,5 +36,7 @@ __all__ = [
     "GenAIEngine",
     "ClaudeEngine",
     "NativeToolEngine",
+    "PrompterBridgeEngine",
+    "USING_SDK_ENGINES",
     "AgentResult",
 ]

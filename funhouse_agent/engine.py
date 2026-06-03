@@ -296,3 +296,84 @@ class NativeToolEngine:
     def get_embedding(self, text) -> list:
         """Delegate embeddings to the PrompterAPI."""
         return self._prompter.get_embedding(text)
+
+
+class PrompterBridgeEngine:
+    """Wrap a PrompterAPI via its high-level ``chat`` / ``analyze_image`` /
+    ``get_embedding`` methods, preserving Funhouse budget, logging, and backend
+    routing.
+
+    Unlike :class:`NativeToolEngine`, this does **not** expose a raw OpenAI
+    ``client``, so it cannot drive multi-turn native tool-calling loops — use it
+    for plain chat / vision only (e.g. the reviewer agent or non-tool backends
+    such as Grok where ``prompter.client`` is ``None``).
+
+    This is a local fallback that mirrors
+    ``funhouse.services.prompter.engine.PrompterBridgeEngine``.  When the
+    Funhouse SDK is installed (Databricks), the official version is preferred —
+    see the hybrid binding at the bottom of this module.
+    """
+
+    native_tool_calling = False
+    uses_prompter_api = True
+
+    def __init__(self, prompter):
+        self._prompter = prompter
+
+    @property
+    def prompter(self):
+        """The wrapped PrompterAPI instance."""
+        return self._prompter
+
+    def chat(
+        self,
+        user: str,
+        system: str = "You are a helpful assistant.",
+        temperature: float = 0,
+    ) -> str:
+        out = self._prompter.chat(
+            user=user, system=system, temperature=temperature
+        )
+        if out is None:
+            return ""
+        return out if isinstance(out, str) else str(out)
+
+    def analyze_image(
+        self,
+        image_input,
+        user_prompt: str = "Describe this image.",
+    ) -> str:
+        return self._prompter.analyze_image(image_input, user_prompt=user_prompt)
+
+    def get_embedding(self, text) -> list:
+        out = self._prompter.get_embedding(text)
+        if out is None:
+            raise RuntimeError("PrompterAPI.get_embedding returned None")
+        return out
+
+
+# ---------------------------------------------------------------------------
+# Hybrid engine resolution
+# ---------------------------------------------------------------------------
+# Prefer the official Funhouse SDK engine layer when it is importable (e.g. in
+# Databricks, where ``funhouse`` is preinstalled).  The SDK's NativeToolEngine
+# is a drop-in for GeotechAgent — it exposes the same ``native_tool_calling``,
+# ``client``, ``model`` and ``_max_tokens`` surface — and adds a ``client is
+# None`` guard the local copy lacks.  When ``funhouse`` is absent (this dev box
+# / CI), the local classes defined above stay in effect, so the package still
+# imports and the mock test-suite passes unchanged.
+
+USING_SDK_ENGINES = False
+try:
+    from funhouse.services.prompter.engine import (
+        NativeToolEngine as _SDKNativeToolEngine,
+        PrompterBridgeEngine as _SDKPrompterBridgeEngine,
+    )
+
+    NativeToolEngine = _SDKNativeToolEngine  # noqa: F811  (intentional override)
+    PrompterBridgeEngine = _SDKPrompterBridgeEngine  # noqa: F811
+    USING_SDK_ENGINES = True
+except Exception:
+    # funhouse not installed, or too old to ship the engine layer — keep the
+    # local fallback classes defined above.
+    pass
