@@ -94,6 +94,12 @@ def extract_method_info(func, category: str, reference: str) -> dict:
     sig = inspect.signature(func)
     params = {}
     for pname, p in sig.parameters.items():
+        # Skip *args / **kwargs catch-alls: they are not real parameters and
+        # must never be advertised (a VAR_KEYWORD has no default, so it would
+        # otherwise be reported as a required parameter).
+        if p.kind in (inspect.Parameter.VAR_KEYWORD,
+                      inspect.Parameter.VAR_POSITIONAL):
+            continue
         pinfo: dict = {
             "type": param_type_str(p.annotation),
             "required": p.default is inspect.Parameter.empty,

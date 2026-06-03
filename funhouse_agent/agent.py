@@ -247,7 +247,7 @@ class GeotechAgent:
 
             # Dispatch: extended tools (vision/save) or standard tools
             if tc.tool_name in ("analyze_image", "analyze_pdf_page",
-                                "save_file"):
+                                "read_reference_figure", "save_file"):
                 result_str = dispatch_extended_tool(
                     tc.tool_name, tc.arguments,
                     self._engine, self._attachments,

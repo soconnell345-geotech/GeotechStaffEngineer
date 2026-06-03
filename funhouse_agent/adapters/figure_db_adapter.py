@@ -24,7 +24,7 @@ def _build():
     from geotech_references import _figures_db
 
     def figure_search(query: str, reference: str = "",
-                      chapter: int = 0, limit: int = 5) -> list:
+                      chapter: int = 0, limit: int = 5, **kwargs) -> list:
         """Full-text search the figure catalog by caption and concept.
 
         Captions use notation (``KA``/``KP``); the index also carries concept
@@ -50,13 +50,38 @@ def _build():
         list
             Ranked hits, each with ``reference``, ``reference_title``,
             ``figure_number``, ``caption``, ``chapter``, ``pdf_page_index``,
-            ``printed_page``.
+            ``printed_page``, and a ``read_value`` next-step instruction: a
+            chart value must be read off the rendered figure via
+            ``read_reference_figure``, never inferred from the caption or memory.
         """
+        # Models commonly guess a different name for the result cap; accept the
+        # usual ones rather than hard-failing the call on an unknown kwarg.
+        for alt in ("top_k", "k", "n", "max_results", "top", "num_results"):
+            if kwargs.get(alt):
+                try:
+                    limit = int(kwargs[alt])
+                except (TypeError, ValueError):
+                    pass
         ref = reference if reference else None
         ch = int(chapter) if chapter else None
-        return _figures_db.figure_search(
+        hits = _figures_db.figure_search(
             query, reference=ref, chapter=ch, limit=int(limit)
         )
+        # Starve the shortcut: a number that lives in a chart must come from the
+        # rendered image, not this caption or the model's training memory. The
+        # search result only *identifies* the figure; it carries no values. So
+        # signpost every real hit with the exact next call, making the vision
+        # read-off the path of least resistance.
+        for hit in hits:
+            if isinstance(hit, dict) and hit.get("figure_number") and "error" not in hit:
+                hit["read_value"] = (
+                    "To read a numeric value off this chart, call "
+                    f"read_reference_figure(reference='{hit['reference']}', "
+                    f"figure_number='{hit['figure_number']}', "
+                    "prompt='<value(s) needed>'). Do NOT report a chart value "
+                    "from this caption or from memory."
+                )
+        return hits
 
     def figure_get(reference: str, figure_number: str) -> dict:
         """Fetch the full catalog row for one figure.

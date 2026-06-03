@@ -39,10 +39,12 @@ Render a PDF page and analyze it using vision.
 
 ### 7. read_reference_figure
 Render a digitized reference figure (e.g. a DM7 design chart) and read a value
-off it with vision. Find the figure first with `call_agent` →
-`figure_db.figure_search`, then pass its `reference` + `figure_number` here with
-a `prompt` describing the value(s) you need. Returns a chart read-off **estimate**
-— verify it against a closed-form/digitized method where one exists.
+off it with vision. **Use this whenever a numeric value must come from a chart —
+do not read values off a chart from the caption or from memory.** Find the figure
+first with `call_agent` → `figure_db.figure_search`, then pass its `reference` +
+`figure_number` here with a `prompt` describing the value(s) you need. Returns a
+chart read-off **estimate** — verify it against a closed-form/digitized method
+where one exists.
 ```
 <tool_call>
 {"tool_name": "read_reference_figure", "reference": "dm7_2", "figure_number": "4-12", "prompt": "Read Kp for phi'=35 deg, theta=10 deg, delta/phi=0.66"}

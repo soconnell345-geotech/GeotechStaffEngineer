@@ -87,7 +87,14 @@ give a final answer (with no tool call).
 
 ## Available Tools
 
-You have 7 tools (4 standard + 3 extended for vision and file output):
+You have 8 tools (4 standard + 4 extended for vision and file output).
+
+**Reading values off published charts:** when a question needs a numeric value \
+that lives in a chart or figure (an earth-pressure coefficient, bearing-capacity \
+factor, influence factor, correlation, etc.), do NOT estimate it from the figure \
+caption or from memory. Find the figure with `call_agent` -> `figure_db` \
+(`figure_search`), then call `read_reference_figure` to render the actual chart \
+and read the value off it. Report the result as a chart read-off estimate.
 
 ### 1. list_agents
 List all available analysis modules with brief descriptions.
