@@ -17,8 +17,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # geotech-references is a PUBLIC submodule, so the default GITHUB_TOKEN
+          # can fetch it. The old `token: ${{ secrets.SUBMODULE_PAT }}` line broke
+          # checkout (empty/invalid secret -> 401) on every run since March 2026.
           submodules: recursive
-          token: ${{ secrets.SUBMODULE_PAT }}
 
       - uses: actions/setup-python@v5
         with:
