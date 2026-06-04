@@ -1,0 +1,1283 @@
+{
+  "foundations": {
+    "bearing_capacity": {
+      "n_questions": 4,
+      "n_with_errors": 3,
+      "classes": {
+        "ergonomics:method-name": 3
+      },
+      "errors": [
+        "Unknown method 'terzaghi_general'. Available: ['bearing_capacity_analysis', 'bearing_capacity_factors']",
+        "Unknown method 'vesic_general'. Available: ['bearing_capacity_analysis', 'bearing_capacity_factors']",
+        "Unknown method 'two_layer_clay_terzaghi'. Available: ['bearing_capacity_analysis', 'bearing_capacity_factors']"
+      ],
+      "questions": [
+        {
+          "id": "BC-1",
+          "rounds": 4,
+          "tools": [
+            "list_methods",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 0,
+          "exception": null
+        },
+        {
+          "id": "BC-2",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        },
+        {
+          "id": "BC-3",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        },
+        {
+          "id": "BC-4",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        }
+      ]
+    },
+    "downdrag": {
+      "n_questions": 2,
+      "n_with_errors": 2,
+      "classes": {
+        "ergonomics:method-name": 2,
+        "ergonomics:enum-value": 2,
+        "possible-bug": 1
+      },
+      "errors": [
+        "Unknown method 'fellenius_neutral_plane'. Available: ['downdrag_analysis']",
+        "ValueError: soil_type must be one of ('cohesionless', 'cohesive'), got 'clay'",
+        "Unknown method 'ufc_3_220_20'. Available: ['downdrag_analysis']",
+        "ValueError: soil_type must be one of ('cohesionless', 'cohesive'), got 'settling_fill'",
+        "ValueError: Cohesionless settling layer must have E_s > 0"
+      ],
+      "questions": [
+        {
+          "id": "DD-1",
+          "rounds": 6,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent",
+            "call_agent"
+          ],
+          "n_errors": 2,
+          "exception": null
+        },
+        {
+          "id": "DD-2",
+          "rounds": 6,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent",
+            "call_agent"
+          ],
+          "n_errors": 3,
+          "exception": null
+        }
+      ]
+    },
+    "ground_improvement": {
+      "n_questions": 2,
+      "n_with_errors": 2,
+      "classes": {
+        "possible-bug": 6,
+        "ergonomics:method-name": 1
+      },
+      "errors": [
+        "TypeError: analyze_aggregate_piers() got an unexpected keyword argument 'area_replacement_ratio'",
+        "Unknown method 'wick_drain_spacing'. Available: ['aggregate_piers', 'design_drain_spacing', 'feasibility', 'surcharge_preloading', 'vibro_compaction', 'wick_dra",
+        "TypeError: analyze_wick_drains() got an unexpected keyword argument 'drain_spacing'"
+      ],
+      "questions": [
+        {
+          "id": "GI-1",
+          "rounds": 7,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "describe_method",
+            "call_agent",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 2,
+          "exception": null
+        },
+        {
+          "id": "GI-2",
+          "rounds": 8,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "describe_method",
+            "describe_method",
+            "call_agent",
+            "describe_method",
+            "call_agent",
+            "call_agent",
+            "call_agent"
+          ],
+          "n_errors": 5,
+          "exception": null
+        }
+      ]
+    },
+    "retaining_walls": {
+      "n_questions": 3,
+      "n_with_errors": 1,
+      "classes": {
+        "ergonomics:module-name": 1,
+        "ergonomics:method-name": 1,
+        "possible-bug": 2
+      },
+      "errors": [
+        "Unknown module 'earth_pressure'. Available: ['ags4', 'axial_pile', 'bearing_capacity', 'calc_package', 'dm7', 'downdrag', 'drilled_shaft', 'dxf_export', 'dxf_im",
+        "Unknown method 'active_earth_pressure'. Available: ['Nc_star_FHWA_from_Ir', 'Nc_star_FHWA_from_su', 'aashto_group_index', 'aashto_group_index_a2', 'active_earth",
+        "TypeError: rankine_active_pressure_coefficient() got an unexpected keyword argument 'phi'",
+        "TypeError: coulomb_active_earth_pressure() got an unexpected keyword argument 'phi'"
+      ],
+      "questions": [
+        {
+          "id": "RW-1",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 0,
+          "exception": null
+        },
+        {
+          "id": "RW-2",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        },
+        {
+          "id": "RW-3",
+          "rounds": 9,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "list_methods",
+            "describe_method",
+            "call_agent",
+            "call_agent",
+            "describe_method",
+            "describe_method",
+            "describe_method",
+            "call_agent",
+            "call_agent"
+          ],
+          "n_errors": 4,
+          "exception": null
+        }
+      ]
+    },
+    "settlement": {
+      "n_questions": 4,
+      "n_with_errors": 2,
+      "classes": {
+        "ergonomics:method-name": 1,
+        "ergonomics:module-name": 1
+      },
+      "errors": [
+        "Unknown method 'elastic_rectangular_footing'. Available: ['combined_settlement_analysis', 'consolidation_settlement', 'elastic_settlement', 'schmertmann_settlem",
+        "Unknown module 'consolidation'. Available: ['ags4', 'axial_pile', 'bearing_capacity', 'calc_package', 'dm7', 'downdrag', 'drilled_shaft', 'dxf_export', 'dxf_imp"
+      ],
+      "questions": [
+        {
+          "id": "SE-1",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 0,
+          "exception": null
+        },
+        {
+          "id": "SE-2",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 0,
+          "exception": null
+        },
+        {
+          "id": "SE-3",
+          "rounds": 6,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        },
+        {
+          "id": "SE-4",
+          "rounds": 2,
+          "tools": [
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        }
+      ]
+    },
+    "wind_loads": {
+      "n_questions": 1,
+      "n_with_errors": 0,
+      "classes": {},
+      "errors": [],
+      "questions": [
+        {
+          "id": "WL-1",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    }
+  },
+  "deep-foundations": {
+    "axial_pile": {
+      "n_questions": 4,
+      "n_with_errors": 4,
+      "classes": {
+        "ergonomics:param-name": 4,
+        "ergonomics:enum-value": 3,
+        "ergonomics:method-name": 3,
+        "possible-bug": 1
+      },
+      "errors": [
+        "KeyError: 'width'",
+        "ValueError: soil_type must be 'cohesionless' or 'cohesive', got 'sand'",
+        "Unknown method 'alpha_method'. Available: ['capacity_vs_depth', 'drilled_shaft_capacity', 'get_resistance_factors', 'lrfd_capacity']",
+        "ValueError: Unknown pile_type 'driven_steel_pipe_open'.",
+        "KeyError: 'diameter'",
+        "KeyError: 'wall_thickness'",
+        "Unknown method 'pile_uplift_sand'. Available: ['bearing_capacity_analysis', 'bearing_capacity_factors']",
+        "Unknown method 'beta_method'. Available: ['axial_pile_capacity', 'capacity_vs_depth', 'make_pile_section']"
+      ],
+      "questions": [
+        {
+          "id": "AP-1",
+          "rounds": 7,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "describe_method",
+            "call_agent",
+            "call_agent",
+            "call_agent"
+          ],
+          "n_errors": 2,
+          "exception": null
+        },
+        {
+          "id": "AP-2",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        },
+        {
+          "id": "AP-3",
+          "rounds": 11,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "describe_method",
+            "call_agent",
+            "describe_method",
+            "describe_method",
+            "call_agent",
+            "call_agent",
+            "call_agent",
+            "call_agent"
+          ],
+          "n_errors": 4,
+          "exception": null
+        },
+        {
+          "id": "AP-4",
+          "rounds": 10,
+          "tools": [
+            "list_methods",
+            "describe_method",
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent",
+            "describe_method",
+            "call_agent",
+            "call_agent"
+          ],
+          "n_errors": 4,
+          "exception": null
+        }
+      ]
+    },
+    "drilled_shaft": {
+      "n_questions": 3,
+      "n_with_errors": 2,
+      "classes": {
+        "ergonomics:module-name": 1,
+        "ergonomics:method-name": 1
+      },
+      "errors": [
+        "Unknown module 'deep_foundation'. Available: ['ags4', 'axial_pile', 'bearing_capacity', 'calc_package', 'dm7', 'downdrag', 'drilled_shaft', 'dxf_export', 'dxf_i",
+        "Unknown method 'rock_socket_capacity'. Available: ['capacity_vs_depth', 'drilled_shaft_capacity', 'get_resistance_factors', 'lrfd_capacity']"
+      ],
+      "questions": [
+        {
+          "id": "DS-1",
+          "rounds": 5,
+          "tools": [
+            "list_methods",
+            "list_methods",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        },
+        {
+          "id": "DS-2",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 0,
+          "exception": null
+        },
+        {
+          "id": "DS-3",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        }
+      ]
+    },
+    "lateral_pile": {
+      "n_questions": 2,
+      "n_with_errors": 1,
+      "classes": {
+        "ergonomics:param-name": 1
+      },
+      "errors": [
+        "KeyError: 'k'"
+      ],
+      "questions": [
+        {
+          "id": "LP-1",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        },
+        {
+          "id": "LP-2",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    },
+    "pile_group": {
+      "n_questions": 2,
+      "n_with_errors": 1,
+      "classes": {
+        "ergonomics:method-name": 2
+      },
+      "errors": [
+        "Unknown method 'clay_block_failure'. Available: ['group_efficiency', 'pile_group_6dof', 'pile_group_simple']",
+        "Unknown method 'alpha_method'. Available: ['axial_pile_capacity', 'capacity_vs_depth', 'make_pile_section']"
+      ],
+      "questions": [
+        {
+          "id": "PG-1",
+          "rounds": 7,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 2,
+          "exception": null
+        },
+        {
+          "id": "PG-2",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    },
+    "wave_equation": {
+      "n_questions": 2,
+      "n_with_errors": 0,
+      "classes": {},
+      "errors": [],
+      "questions": [
+        {
+          "id": "WE-1",
+          "rounds": 6,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "describe_method",
+            "call_agent",
+            "call_agent"
+          ],
+          "n_errors": 0,
+          "exception": null
+        },
+        {
+          "id": "WE-2",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    }
+  },
+  "earth-retention": {
+    "sheet_pile": {
+      "n_questions": 2,
+      "n_with_errors": 2,
+      "classes": {
+        "ergonomics:method-name": 1,
+        "ergonomics:module-name": 2,
+        "ergonomics:param-name": 1
+      },
+      "errors": [
+        "Unknown method 'cantilever_rankine'. Available: ['anchored_wall', 'cantilever_wall']",
+        "Unknown module 'earth_pressure'. Available: ['ags4', 'axial_pile', 'bearing_capacity', 'calc_package', 'dm7', 'downdrag', 'drilled_shaft', 'dxf_export', 'dxf_im",
+        "Unknown module 'retaining_wall'. Available: ['ags4', 'axial_pile', 'bearing_capacity', 'calc_package', 'dm7', 'downdrag', 'drilled_shaft', 'dxf_export', 'dxf_im",
+        "KeyError: 'unit_weight'"
+      ],
+      "questions": [
+        {
+          "id": "SP-1",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        },
+        {
+          "id": "SP-2",
+          "rounds": 7,
+          "tools": [
+            "list_methods",
+            "list_methods",
+            "list_methods",
+            "list_methods",
+            "describe_method",
+            "call_agent",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 3,
+          "exception": null
+        }
+      ]
+    },
+    "soe": {
+      "n_questions": 3,
+      "n_with_errors": 2,
+      "classes": {
+        "ergonomics:param-name": 1,
+        "ergonomics:method-name": 2
+      },
+      "errors": [
+        "KeyError: 'thickness'",
+        "Unknown method 'basal_heave_fos'. Available: ['bearing_capacity_analysis', 'bearing_capacity_factors']",
+        "Unknown method 'basal_heave_fos'. Available: ['apparent_pressure', 'braced_excavation', 'cantilever_excavation', 'check_basal_heave', 'check_bottom_blowout', 'c"
+      ],
+      "questions": [
+        {
+          "id": "SOE-1",
+          "rounds": 8,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "describe_method",
+            "describe_method",
+            "call_agent",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        },
+        {
+          "id": "SOE-2",
+          "rounds": 4,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "list_methods"
+          ],
+          "n_errors": 0,
+          "exception": null
+        },
+        {
+          "id": "SOE-3",
+          "rounds": 7,
+          "tools": [
+            "list_methods",
+            "describe_method",
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 2,
+          "exception": null
+        }
+      ]
+    }
+  },
+  "slope-fem": {
+    "fdm2d": {
+      "n_questions": 1,
+      "n_with_errors": 1,
+      "classes": {
+        "ergonomics:method-name": 1
+      },
+      "errors": [
+        "Unknown method 'embankment_settlement'. Available: ['fdm2d_foundation', 'fdm2d_gravity']"
+      ],
+      "questions": [
+        {
+          "id": "FDM-1",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        }
+      ]
+    },
+    "fem2d": {
+      "n_questions": 2,
+      "n_with_errors": 2,
+      "classes": {
+        "ergonomics:method-name": 2
+      },
+      "errors": [
+        "Unknown method 'strip_footing_srm'. Available: ['fem2d_consolidation', 'fem2d_excavation', 'fem2d_foundation', 'fem2d_gravity', 'fem2d_seepage', 'fem2d_slope_sr",
+        "Unknown method 'slope_strength_reduction'. Available: ['fem2d_consolidation', 'fem2d_excavation', 'fem2d_foundation', 'fem2d_gravity', 'fem2d_seepage', 'fem2d_s"
+      ],
+      "questions": [
+        {
+          "id": "FEM-1",
+          "rounds": 4,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method"
+          ],
+          "n_errors": 1,
+          "exception": null
+        },
+        {
+          "id": "FEM-2",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        }
+      ]
+    },
+    "slope_stability": {
+      "n_questions": 3,
+      "n_with_errors": 3,
+      "classes": {
+        "ergonomics:param-name": 2,
+        "ergonomics:method-name": 1,
+        "input-geometry": 3
+      },
+      "errors": [
+        "KeyError: 'name'",
+        "Unknown method 'simple_slope'. Available: ['analyze_slope', 'search_critical_surface']",
+        "ValueError: Circle (xc=6.00, yc=-4.00, R=12.00) does not intersect the ground surface at 2 points (found 0 crossing(s))",
+        "ValueError: Circle (xc=6.00, yc=0.00, R=10.00) does not intersect the ground surface at 2 points (found 0 crossing(s))",
+        "ValueError: Circle (xc=0.00, yc=0.00, R=10.00) does not intersect the ground surface at 2 points (found 1 crossing(s))"
+      ],
+      "questions": [
+        {
+          "id": "SS-1",
+          "rounds": 6,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "describe_method",
+            "call_agent",
+            "describe_method"
+          ],
+          "n_errors": 1,
+          "exception": null
+        },
+        {
+          "id": "SS-2",
+          "rounds": 9,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent",
+            "call_agent",
+            "call_agent",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 4,
+          "exception": null
+        },
+        {
+          "id": "SS-3",
+          "rounds": 7,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "describe_method",
+            "call_agent",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        }
+      ]
+    }
+  },
+  "seismic": {
+    "liquepy_agent": {
+      "n_questions": 1,
+      "n_with_errors": 1,
+      "classes": {
+        "ergonomics:method-name": 1,
+        "possible-bug": 1
+      },
+      "errors": [
+        "Unknown method 'cpt_bi2014'. Available: ['cpt_liquefaction', 'field_correlations']",
+        "ValueError: liquepy is not installed. Install with: pip install liquepy"
+      ],
+      "questions": [
+        {
+          "id": "LQ-1",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 2,
+          "exception": null
+        }
+      ]
+    },
+    "opensees_agent": {
+      "n_questions": 1,
+      "n_with_errors": 1,
+      "classes": {
+        "ergonomics:method-name": 1,
+        "possible-bug": 1
+      },
+      "errors": [
+        "Unknown method 'equivalent_linear'. Available: ['eql_site_response', 'linear_site_response']",
+        "ValueError: pystrata is not installed. Install with: pip install pystrata"
+      ],
+      "questions": [
+        {
+          "id": "OS-1",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 2,
+          "exception": null
+        }
+      ]
+    },
+    "pyseismosoil_agent": {
+      "n_questions": 1,
+      "n_with_errors": 1,
+      "classes": {
+        "ergonomics:method-name": 1,
+        "other": 1
+      },
+      "errors": [
+        "Unknown method 'mkz_curve'. Available: ['analyze_vs_profile', 'generate_curves']",
+        "PySeismoSoil is not installed. Install via: pip install PySeismoSoil"
+      ],
+      "questions": [
+        {
+          "id": "PSS-1",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 2,
+          "exception": null
+        }
+      ]
+    },
+    "pystrata_agent": {
+      "n_questions": 1,
+      "n_with_errors": 1,
+      "classes": {
+        "ergonomics:method-name": 1,
+        "possible-bug": 1
+      },
+      "errors": [
+        "Unknown method 'equivalent_linear_1d'. Available: ['eql_site_response', 'linear_site_response']",
+        "ValueError: pystrata is not installed. Install with: pip install pystrata"
+      ],
+      "questions": [
+        {
+          "id": "PST-1",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 2,
+          "exception": null
+        }
+      ]
+    },
+    "seismic_geotech": {
+      "n_questions": 3,
+      "n_with_errors": 1,
+      "classes": {
+        "ergonomics:module-name": 1
+      },
+      "errors": [
+        "Unknown module 'earth_pressure'. Available: ['ags4', 'axial_pile', 'bearing_capacity', 'calc_package', 'dm7', 'downdrag', 'drilled_shaft', 'dxf_export', 'dxf_im"
+      ],
+      "questions": [
+        {
+          "id": "SG-1",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        },
+        {
+          "id": "SG-2",
+          "rounds": 4,
+          "tools": [
+            "list_methods",
+            "list_methods",
+            "describe_method"
+          ],
+          "n_errors": 1,
+          "exception": null
+        },
+        {
+          "id": "SG-3",
+          "rounds": 3,
+          "tools": [
+            "list_agents",
+            "list_methods"
+          ],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    },
+    "seismic_signals_agent": {
+      "n_questions": 1,
+      "n_with_errors": 1,
+      "classes": {
+        "possible-bug": 1
+      },
+      "errors": [
+        "ValueError: eqsig is not installed. Install with: pip install eqsig"
+      ],
+      "questions": [
+        {
+          "id": "SS2-1",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "list_methods",
+            "describe_method",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        }
+      ]
+    }
+  },
+  "characterization": {
+    "ags4_agent": {
+      "n_questions": 1,
+      "n_with_errors": 0,
+      "classes": {},
+      "errors": [],
+      "questions": [
+        {
+          "id": "AGS-1",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    },
+    "geolysis": {
+      "n_questions": 2,
+      "n_with_errors": 1,
+      "classes": {
+        "ergonomics:module-name": 1,
+        "ergonomics:method-name": 1,
+        "possible-bug": 5
+      },
+      "errors": [
+        "Unknown module 'generic_correlations'. Available: ['ags4', 'axial_pile', 'bearing_capacity', 'calc_package', 'dm7', 'downdrag', 'drilled_shaft', 'dxf_export', '",
+        "Unknown method 'spt_corrections'. Available: ['allowable_bc_spt', 'classify_aashto', 'classify_uscs', 'correct_spt', 'ultimate_bc']",
+        "TypeError: correct_spt() got an unexpected keyword argument 'N_raw'",
+        "TypeError: correct_spt() got an unexpected keyword argument 'n_field'",
+        "TypeError: allowable_bc_spt() got an unexpected keyword argument 'n60'"
+      ],
+      "questions": [
+        {
+          "id": "GL-1",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        },
+        {
+          "id": "GL-2",
+          "rounds": 10,
+          "tools": [
+            "list_agents",
+            "call_agent",
+            "call_agent",
+            "call_agent",
+            "describe_method",
+            "describe_method",
+            "call_agent",
+            "call_agent",
+            "describe_method",
+            "call_agent",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 7,
+          "exception": null
+        }
+      ]
+    },
+    "gstools_agent": {
+      "n_questions": 1,
+      "n_with_errors": 0,
+      "classes": {},
+      "errors": [],
+      "questions": [
+        {
+          "id": "GS-1",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    },
+    "hvsrpy_agent": {
+      "n_questions": 1,
+      "n_with_errors": 0,
+      "classes": {},
+      "errors": [],
+      "questions": [
+        {
+          "id": "HV-1",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    },
+    "pydiggs_agent": {
+      "n_questions": 1,
+      "n_with_errors": 0,
+      "classes": {},
+      "errors": [],
+      "questions": [
+        {
+          "id": "DIGGS-1",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    },
+    "pygef_agent": {
+      "n_questions": 1,
+      "n_with_errors": 0,
+      "classes": {},
+      "errors": [],
+      "questions": [
+        {
+          "id": "PGEF-1",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    },
+    "pystra_agent": {
+      "n_questions": 1,
+      "n_with_errors": 1,
+      "classes": {
+        "ergonomics:method-name": 1,
+        "other": 1
+      },
+      "errors": [
+        "Unknown method 'form_two_variable_normal'. Available: ['form_analysis', 'monte_carlo_analysis', 'sorm_analysis']",
+        "pystra is not installed. Install via: pip install pystra"
+      ],
+      "questions": [
+        {
+          "id": "PS-1",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 2,
+          "exception": null
+        }
+      ]
+    },
+    "salib_agent": {
+      "n_questions": 1,
+      "n_with_errors": 1,
+      "classes": {
+        "ergonomics:method-name": 2,
+        "other": 1
+      },
+      "errors": [
+        "Unknown method 'sobol_bearing_capacity'. Available: ['morris_analyze', 'morris_sample', 'sobol_analyze', 'sobol_sample']",
+        "Unknown method 'vesic_general'. Available: ['bearing_capacity_analysis', 'bearing_capacity_factors']",
+        "SALib is not installed. Install via: pip install SALib"
+      ],
+      "questions": [
+        {
+          "id": "SA-1",
+          "rounds": 6,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "describe_method",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 3,
+          "exception": null
+        }
+      ]
+    },
+    "subsurface_characterization": {
+      "n_questions": 1,
+      "n_with_errors": 0,
+      "classes": {},
+      "errors": [],
+      "questions": [
+        {
+          "id": "SUB-1",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    },
+    "swprocess_agent": {
+      "n_questions": 1,
+      "n_with_errors": 0,
+      "classes": {},
+      "errors": [],
+      "questions": [
+        {
+          "id": "SW-1",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    }
+  },
+  "io-cad": {
+    "dxf_export": {
+      "n_questions": 1,
+      "n_with_errors": 0,
+      "classes": {},
+      "errors": [],
+      "questions": [
+        {
+          "id": "DXFE-1",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    },
+    "dxf_import": {
+      "n_questions": 1,
+      "n_with_errors": 0,
+      "classes": {},
+      "errors": [],
+      "questions": [
+        {
+          "id": "DXFI-1",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    },
+    "pdf_import": {
+      "n_questions": 1,
+      "n_with_errors": 0,
+      "classes": {},
+      "errors": [],
+      "questions": [
+        {
+          "id": "PDF-1",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    }
+  },
+  "references": {
+    "dm7": {
+      "n_questions": 1,
+      "n_with_errors": 1,
+      "classes": {
+        "ergonomics:method-name": 1
+      },
+      "errors": [
+        "Unknown method 'bearing_capacity_factors'. Available: ['Nc_star_FHWA_from_Ir', 'Nc_star_FHWA_from_su', 'aashto_group_index', 'aashto_group_index_a2', 'active_ea"
+      ],
+      "questions": [
+        {
+          "id": "DM7-1",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "describe_method",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        }
+      ]
+    },
+    "gec10": {
+      "n_questions": 1,
+      "n_with_errors": 0,
+      "classes": {},
+      "errors": [],
+      "questions": [
+        {
+          "id": "GEC10-1",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    },
+    "gec11": {
+      "n_questions": 1,
+      "n_with_errors": 0,
+      "classes": {},
+      "errors": [],
+      "questions": [
+        {
+          "id": "GEC11-1",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    },
+    "micropile": {
+      "n_questions": 1,
+      "n_with_errors": 0,
+      "classes": {},
+      "errors": [],
+      "questions": [
+        {
+          "id": "MP-1",
+          "rounds": 1,
+          "tools": [],
+          "n_errors": 0,
+          "exception": null
+        }
+      ]
+    },
+    "reference_db": {
+      "n_questions": 1,
+      "n_with_errors": 1,
+      "classes": {
+        "possible-bug": 1
+      },
+      "errors": [
+        "TypeError: _build.<locals>.reference_search() got an unexpected keyword argument 'max_results'"
+      ],
+      "questions": [
+        {
+          "id": "REFDB-1",
+          "rounds": 5,
+          "tools": [
+            "list_agents",
+            "call_agent",
+            "describe_method",
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        }
+      ]
+    }
+  },
+  "unassigned": {
+    "geotech_common": {
+      "n_questions": 1,
+      "n_with_errors": 1,
+      "classes": {
+        "ergonomics:module-name": 1
+      },
+      "errors": [
+        "Unknown module 'stress_distribution'. Available: ['ags4', 'axial_pile', 'bearing_capacity', 'calc_package', 'dm7', 'downdrag', 'drilled_shaft', 'dxf_export', 'd"
+      ],
+      "questions": [
+        {
+          "id": "GC-1",
+          "rounds": 2,
+          "tools": [
+            "call_agent"
+          ],
+          "n_errors": 1,
+          "exception": null
+        }
+      ]
+    }
+  }
+}
