@@ -54,6 +54,7 @@ jobs:
           pip install pydiggs || true
           pip install ezdxf || true
           pip install PyMuPDF || true
+          pip install pyproj || true   # groundhog imports pyproj at runtime; foundry tier3 needs it
 
       - name: Run tests
         run: pytest -q --tb=short
