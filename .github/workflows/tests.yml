@@ -52,6 +52,8 @@ jobs:
           pip install geolysis || true
           pip install pystra || true
           pip install pydiggs || true
+          pip install ezdxf || true
+          pip install PyMuPDF || true
 
       - name: Run tests
         run: pytest -q --tb=short

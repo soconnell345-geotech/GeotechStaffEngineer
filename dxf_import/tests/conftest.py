@@ -5,10 +5,20 @@ All DXF test files are created in-memory using ezdxf — no external files neede
 Each fixture writes a DXF file to tmp_path and returns its path.
 """
 
+import importlib.util
 import math
+
 import pytest
 
-ezdxf = pytest.importorskip("ezdxf")
+# ezdxf is an optional dependency. Calling pytest.importorskip() at the top of a
+# *conftest* (rather than a test module) raises Skipped during conftest loading,
+# which aborts the entire pytest session with exit code 1 — that is what broke CI
+# on every run. Instead, skip just this directory's tests when ezdxf is absent.
+if importlib.util.find_spec("ezdxf") is not None:
+    import ezdxf
+else:
+    ezdxf = None
+    collect_ignore_glob = ["test_*.py"]
 
 
 @pytest.fixture
