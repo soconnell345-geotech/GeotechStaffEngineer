@@ -229,6 +229,23 @@ Run: `pytest funhouse_agent/ -v`
       embeddings remain rejected.)
 - [ ] **P7 — (deferred) Figure cropping.** Full-page render is robust; revisit only if
       multi-figure pages hurt read-off accuracy.
+- [ ] **P8 — Figure catalogs are not packaged (PyPI/Databricks).** In
+      `geotech-references/pyproject.toml`, `[tool.setuptools.package-data]` is
+      `geotech_references = ["*/text/*.json"]`, which ships `<ref>/text/*.json` (chapter
+      text) but NOT `<ref>/figures_catalog.json` (one level up). After a clean PyPI
+      install, `figure_search`/`figure_get` return zero figures. Fix: add
+      `"*/figures_catalog.json"` to that `package-data` list (small JSONs, safe to ship),
+      then bump the `geotech-references` version.
+- [ ] **P9 — Source PDFs aren't packaged; read-off needs PDF staging on Databricks.**
+      PDFs live at `geotech-references/docs/` (sibling of the package, not in
+      `packages.find`/`package-data`, no `MANIFEST.in`) and are large (DM7 vols 42 + 51 MB;
+      full `docs/` ~350 MB) — impractical for PyPI. Also `_figures_db.resolve_pdf()`
+      resolves `_REPO_ROOT/<pdf_path>` with `_REPO_ROOT = <package>.parent`, which becomes
+      `site-packages/docs/...` in a wheel install (won't exist). For Databricks: stage the
+      PDFs on DBFS / a Unity Catalog volume / object storage and add a configurable base
+      path (env var or arg) so `read_reference_figure` resolves there instead of the
+      repo-relative `docs/`. Net: `figure_search` is one line from working on PyPI;
+      `read_reference_figure` needs a deliberate PDF-location override.
 
 ### Gotchas the next team MUST know
 - **Uncommitted entanglement in `agent.py` & `system_prompt.py`.** These two files carry
