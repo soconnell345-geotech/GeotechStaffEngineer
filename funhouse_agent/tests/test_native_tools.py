@@ -434,7 +434,10 @@ class TestGeotechAgentNative:
         calls = prompter.client.chat.completions.calls
         assert len(calls) == 1
         assert "tools" in calls[0]
-        assert len(calls[0]["tools"]) == 7
+        # 7 base tools + consult_references (reference_mode defaults to "anytime")
+        tool_names = {t["function"]["name"] for t in calls[0]["tools"]}
+        assert len(calls[0]["tools"]) == 8
+        assert "consult_references" in tool_names
         assert calls[0]["tool_choice"] == "auto"
 
     def test_model_name_passed_to_client(self):
@@ -557,3 +560,78 @@ class TestConversationPersistence:
         ]
         assert len(user_msgs) == 1
         assert user_msgs[0]["content"] == "Q2"
+
+
+# ---------------------------------------------------------------------------
+# Tests: reference consult tool + reference_mode
+# ---------------------------------------------------------------------------
+
+class TestReferenceConsult:
+    def _names(self, call):
+        return {t["function"]["name"] for t in call["tools"]}
+
+    def test_anytime_offers_consult_and_scopes_primary(self):
+        prompter = MockPrompter([_make_final_response("Answer.")])
+        agent = GeotechAgent(genai_engine=NativeToolEngine(prompter))  # default anytime
+        agent.ask("Hi")
+        names = self._names(prompter.client.chat.completions.calls[0])
+        assert "consult_references" in names
+        # primary is scoped off the reference modules
+        assert "| dm7 |" not in agent._system_prompt
+        assert "| bearing_capacity |" in agent._system_prompt
+
+    def test_off_no_consult_and_direct_references(self):
+        prompter = MockPrompter([_make_final_response("Answer.")])
+        agent = GeotechAgent(genai_engine=NativeToolEngine(prompter),
+                             reference_mode="off")
+        agent.ask("Hi")
+        names = self._names(prompter.client.chat.completions.calls[0])
+        assert "consult_references" not in names
+        assert len(names) == 7
+        # legacy: references stay directly available
+        assert agent._allowed_agents is None
+        assert "| dm7 |" in agent._system_prompt
+
+    def test_after_calc_gating(self):
+        prompter = MockPrompter([
+            _make_tool_response(
+                "call_agent",
+                {"agent_name": "bearing_capacity",
+                 "method": "bearing_capacity_factors",
+                 "parameters": {"friction_angle": 30}},
+            ),
+            _make_final_response("Done."),
+        ])
+        agent = GeotechAgent(genai_engine=NativeToolEngine(prompter),
+                             reference_mode="after_calc")
+        agent.ask("compute factors")
+        calls = prompter.client.chat.completions.calls
+        assert "consult_references" not in self._names(calls[0])  # before any calc
+        assert "consult_references" in self._names(calls[1])       # after call_agent
+
+    def test_consult_dispatch_runs_sub_agent(self):
+        # response[0]: primary calls consult_references
+        # response[1]: consult sub-agent's final answer
+        # response[2]: primary's final answer
+        prompter = MockPrompter([
+            _make_tool_response("consult_references",
+                                {"question": "Required FS for bearing?"}),
+            _make_final_response("Per UFC 3-220-01, use FS = 3."),
+            _make_final_response("The reference requires FS = 3."),
+        ])
+        agent = GeotechAgent(genai_engine=NativeToolEngine(prompter))
+        result = agent.ask("What factor of safety should I use?")
+        assert "FS = 3" in result.answer
+        assert any(tc["tool_name"] == "consult_references"
+                   for tc in result.tool_calls)
+
+    def test_consultant_is_reference_scoped_no_recursion(self):
+        from funhouse_agent.dispatch import REFERENCE_MODULES
+        prompter = MockPrompter([_make_final_response("Cited answer.")])
+        from funhouse_agent.reviewer import consult_references
+        answer = consult_references(NativeToolEngine(prompter), "What is DM7?")
+        assert answer == "Cited answer."
+        # the consultant's tool list must NOT include consult_references
+        names = {t["function"]["name"]
+                 for t in prompter.client.chat.completions.calls[0]["tools"]}
+        assert "consult_references" not in names

@@ -71,7 +71,7 @@ METHOD_INFO = {
             "width": {"type": "float", "required": True, "description": "Footing width B (m)."},
             "length": {"type": "float", "required": False, "description": "Footing length L (m). Omit for strip."},
             "depth": {"type": "float", "required": False, "default": 0.0, "description": "Embedment depth Df (m)."},
-            "shape": {"type": "str", "required": False, "default": "strip", "description": "strip/square/rectangular/circular."},
+            "shape": {"type": "str", "required": False, "default": "strip", "allowed_values": ["strip", "square", "rectangular", "circular"], "description": "Footing shape."},
             "cohesion": {"type": "float", "required": False, "default": 0.0, "description": "Soil cohesion c (kPa)."},
             "friction_angle": {"type": "float", "required": False, "default": 0.0, "description": "Friction angle phi (degrees)."},
             "unit_weight": {"type": "float", "required": True, "description": "Soil unit weight gamma (kN/m3)."},
@@ -81,7 +81,7 @@ METHOD_INFO = {
             "layer2_unit_weight": {"type": "float", "required": False, "description": "Second layer gamma (kN/m3). Triggers 2-layer analysis."},
             "layer1_thickness": {"type": "float", "required": False, "description": "First layer thickness (m) for 2-layer."},
             "factor_of_safety": {"type": "float", "required": False, "default": 3.0, "description": "Factor of safety."},
-            "factor_method": {"type": "str", "required": False, "default": "vesic", "description": "vesic/meyerhof/hansen."},
+            "factor_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "hansen"], "description": "Bearing-capacity-factor method."},
         },
         "returns": {
             "q_ultimate_kPa": "Ultimate bearing capacity.",
@@ -94,7 +94,7 @@ METHOD_INFO = {
         "brief": "Quick lookup of Nc, Nq, Ngamma for a given friction angle.",
         "parameters": {
             "friction_angle": {"type": "float", "required": True, "description": "Friction angle phi (degrees, 0-50)."},
-            "method": {"type": "str", "required": False, "default": "vesic", "description": "vesic/meyerhof/hansen."},
+            "method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "hansen"], "description": "Ngamma method."},
         },
         "returns": {"Nc": "Cohesion factor.", "Nq": "Overburden factor.", "Ngamma": "Unit weight factor."},
     },

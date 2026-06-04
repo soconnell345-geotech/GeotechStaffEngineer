@@ -214,6 +214,41 @@ OPENAI_TOOLS = [
 # Tool names that are dispatched via vision_tools (not dispatch.py)
 EXTENDED_TOOL_NAMES = {"analyze_image", "analyze_pdf_page", "save_file"}
 
+# Consult-references tool — added to the primary's tool list conditionally
+# (per the agent's ``reference_mode``), NOT part of OPENAI_TOOLS. It routes a
+# question to the reference consult sub-agent rather than exposing the reference
+# modules on the primary's surface.
+CONSULT_REFERENCES_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "consult_references",
+        "description": (
+            "Ask the geotechnical reference librarian a question. It searches "
+            "the design references (NAVFAC DM7, the FHWA GEC series, UFC, "
+            "micropile, FEMA, NOAA — chapter text, tables, equations, and "
+            "figure charts) and returns a cited answer. Use it whenever you "
+            "need a code provision, a recommended method, a parameter range, a "
+            "required factor of safety, or a value read off a design chart. You "
+            "do NOT have the reference modules directly — this tool is the only "
+            "way to reach them."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": (
+                        "The reference question, with enough context (soil "
+                        "type, condition, and exactly what value or provision "
+                        "you need)."
+                    ),
+                },
+            },
+            "required": ["question"],
+        },
+    },
+}
+
 
 # ---------------------------------------------------------------------------
 # Dispatch
@@ -225,6 +260,7 @@ def dispatch_native_tool(
     engine=None,
     attachments: Optional[Dict[str, bytes]] = None,
     save_fn: Optional[Callable] = None,
+    allowed_agents=None,
 ) -> str:
     """Execute a native tool call and return a JSON string result.
 
@@ -250,13 +286,14 @@ def dispatch_native_tool(
         JSON string result.
     """
     if name == "list_agents":
-        return json.dumps(list_agents(), default=str)
+        return json.dumps(list_agents(allowed_agents=allowed_agents), default=str)
 
     if name == "list_methods":
         return json.dumps(
             list_methods(
                 agent_name=arguments.get("agent_name", ""),
                 category=arguments.get("category", ""),
+                allowed_agents=allowed_agents,
             ),
             default=str,
         )
@@ -266,6 +303,7 @@ def dispatch_native_tool(
             describe_method(
                 agent_name=arguments.get("agent_name", ""),
                 method=arguments.get("method", ""),
+                allowed_agents=allowed_agents,
             ),
             default=str,
         )
@@ -284,6 +322,7 @@ def dispatch_native_tool(
                 method=arguments.get("method", ""),
                 parameters=params,
                 attachments=attachments,
+                allowed_agents=allowed_agents,
             ),
             default=str,
         )

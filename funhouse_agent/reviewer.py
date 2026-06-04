@@ -16,15 +16,10 @@ from typing import Optional
 from funhouse_agent.react_support import (
     ConversationHistory, _truncate, parse_response,
 )
-from funhouse_agent.dispatch import dispatch_tool
+from funhouse_agent.dispatch import dispatch_tool, REFERENCE_MODULES
 
-# Reference-only modules — the reviewer cannot run computations
-REFERENCE_MODULES = {
-    "reference_db",
-    "dm7", "gec6", "gec7", "gec10", "gec11", "gec12", "gec13",
-    "micropile", "fema_p2192", "noaa_frost",
-    "ufc_backfill", "ufc_dewatering", "ufc_expansive", "ufc_pavement",
-}
+# REFERENCE_MODULES (reference-only modules the reviewer/consultant may call) is
+# the single shared set defined in dispatch.py.
 
 # Tools the reviewer is allowed to use
 REVIEWER_TOOLS = {"call_agent", "list_methods", "describe_method", "list_agents"}
@@ -220,3 +215,48 @@ def needs_revision(review_text: str) -> bool:
     if review_text is None:
         return False
     return "REVIEW_STATUS: REVISE" in review_text
+
+
+CONSULTANT_FRAMING = (
+    "You are acting as a geotechnical REFERENCE LIBRARIAN. Using ONLY the "
+    "reference lookup tools available to you (NAVFAC DM7, the FHWA GEC series, "
+    "UFC, micropile, FEMA, NOAA — via chapter-text search, table/equation "
+    "lookups, and figure search), answer the question below. CITE the specific "
+    "reference and section/table/figure number for every value or statement. If "
+    "a value lives in a design chart, find it with figure_search and read it off "
+    "with read_reference_figure (never infer chart values from memory). Do NOT "
+    "perform engineering calculations — reference lookup only.\n\nQuestion: "
+)
+
+
+def consult_references(
+    engine,
+    question: str,
+    max_rounds: int = 6,
+    temperature: float = 0.1,
+    verbose: bool = False,
+) -> str:
+    """Answer a reference question via a reference-scoped sub-agent.
+
+    Spins up a :class:`GeotechAgent` restricted (via ``allowed_agents``) to the
+    reference modules, with ``reference_mode="off"`` so it cannot recurse into
+    another consult. This lets the primary agent offload reference lookups
+    instead of carrying the 21-module reference surface itself. Uses the same
+    engine as the primary, so it gets native tool calling automatically.
+
+    Returns the consultant's cited answer text.
+    """
+    # Local import avoids a circular import (agent.py imports this module).
+    from funhouse_agent.agent import GeotechAgent
+
+    sub = GeotechAgent(
+        genai_engine=engine,
+        allowed_agents=REFERENCE_MODULES,
+        reference_mode="off",          # no nested consult → no recursion
+        review=False,
+        max_rounds=max_rounds,
+        temperature=temperature,
+        verbose=verbose,
+    )
+    result = sub.ask(CONSULTANT_FRAMING + question)
+    return result.answer

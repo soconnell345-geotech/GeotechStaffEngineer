@@ -41,6 +41,24 @@ def _load_adapter(agent_name: str):
 AGENT_NAMES = sorted(MODULE_REGISTRY.keys())
 
 
+# Reference modules: the geotech-references agents plus the cross-reference and
+# figure-catalog search DBs. The primary agent never calls these directly — all
+# reference access is routed through the consult sub-agent (see reviewer.py and
+# the consult_references tool). Add any NEW reference module here so it stays off
+# the primary agent's direct tool surface.
+REFERENCE_MODULES = frozenset({
+    "reference_db", "figure_db",
+    "dm7",
+    "gec4", "gec5", "gec6", "gec7", "gec8", "gec9",
+    "gec10", "gec11", "gec12", "gec13", "gec14",
+    "micropile", "fema_p2192", "noaa_frost",
+    "ufc_backfill", "ufc_dewatering", "ufc_expansive", "ufc_pavement",
+})
+
+# Analysis (computation) modules: everything the primary agent may call directly.
+ANALYSIS_MODULES = frozenset(MODULE_REGISTRY) - REFERENCE_MODULES
+
+
 def _scoped_names(allowed_agents):
     """Return the visible agent names given an optional whitelist."""
     if allowed_agents is None:

@@ -61,17 +61,17 @@ def _looks_like_reasoning(text: str) -> bool:
     return False
 
 
-def _build_agent_system_prompt() -> str:
+def _build_agent_system_prompt(allowed_agents=None) -> str:
     """Build system prompt with vision tool extensions.
 
-    Uses the funhouse-specific module catalog (50 adapter modules) plus
-    vision tool descriptions.
+    Uses the funhouse-specific module catalog (optionally scoped to
+    ``allowed_agents``) plus vision tool descriptions.
     """
-    base = build_system_prompt()
+    base = build_system_prompt(allowed_agents)
     return base + "\n\n" + VISION_TOOL_DESCRIPTIONS
 
 
-def _build_native_system_prompt() -> str:
+def _build_native_system_prompt(allowed_agents=None) -> str:
     """Build system prompt for native tool calling (no ReAct XML sections).
 
     Strips the ReAct Protocol, Available Tools, and Rules sections that
@@ -79,10 +79,10 @@ def _build_native_system_prompt() -> str:
     OpenAI-native ``tools`` parameter.  Keeps domain guidance, DIGGS
     workflow, and module catalog.
     """
-    base = build_system_prompt()
+    base = build_system_prompt(allowed_agents)
     # Remove "## ReAct Protocol" through "## Rules" (inclusive of Rules body)
     base = re.sub(
-        r"## ReAct Protocol.*?(?=## Module Catalog|\Z)",
+        r"## ReAct Protocol.*?(?=## Available Modules|\Z)",
         "",
         base,
         flags=re.DOTALL,
@@ -90,6 +90,24 @@ def _build_native_system_prompt() -> str:
     # Remove the text-based vision tool descriptions (they're in OPENAI_TOOLS)
     # Just keep domain guidance clean.
     return base.strip()
+
+
+# Text-mode (ReAct) description of the consult tool, appended to the primary's
+# system prompt when reference_mode != "off". The native path advertises the
+# tool via the OpenAI tools parameter instead (CONSULT_REFERENCES_TOOL).
+CONSULT_TEXT_DESCRIPTION = (
+    "\n\n### consult_references\n"
+    "Ask the reference librarian a question (NAVFAC DM7, FHWA GEC series, UFC, "
+    "micropile, FEMA, NOAA — text, tables, figures). Returns a cited answer. You "
+    "do NOT have the reference modules directly; this is the only way to reach "
+    "them.\n"
+    "```\n"
+    "<tool_call>\n"
+    '{"tool_name": "consult_references", "question": "Per GEC-10, what alpha for '
+    'drilled-shaft side resistance in clay with su=80 kPa?"}\n'
+    "</tool_call>\n"
+    "```\n"
+)
 
 
 class GeotechAgent:
@@ -131,6 +149,8 @@ class GeotechAgent:
         verbose: bool = False,
         on_tool_call: Optional[Callable] = None,
         review: bool = False,
+        allowed_agents=None,
+        reference_mode: str = "anytime",
     ):
         self._engine = genai_engine
         self._save_fn = save_fn or _default_save_fn
@@ -139,11 +159,32 @@ class GeotechAgent:
         self._verbose = verbose
         self._on_tool_call = on_tool_call
         self._review_enabled = review
+        # How the primary reaches the reference modules:
+        #   "off"        — legacy: reference modules stay directly callable, no consult.
+        #   "after_calc" — consult_references offered once a calculation has run.
+        #   "anytime"    — consult_references always offered (default).
+        # In the consult modes the primary is scoped OFF the reference modules
+        # (all reference access goes through the consult sub-agent), keeping its
+        # tool surface small.
+        self._reference_mode = (
+            reference_mode
+            if reference_mode in ("off", "after_calc", "anytime")
+            else "anytime"
+        )
+        # Optional whitelist of module names this agent may call directly. An
+        # explicit value (e.g. the consultant's REFERENCE_MODULES) is respected;
+        # otherwise a consult mode auto-scopes the primary to the analysis modules.
+        if allowed_agents is None and self._reference_mode != "off":
+            from funhouse_agent.dispatch import ANALYSIS_MODULES
+            allowed_agents = ANALYSIS_MODULES
+        self._allowed_agents = allowed_agents
         self._is_native = getattr(genai_engine, "native_tool_calling", False)
         if self._is_native:
-            self._system_prompt = _build_native_system_prompt()
+            self._system_prompt = _build_native_system_prompt(allowed_agents)
         else:
-            self._system_prompt = _build_agent_system_prompt()
+            self._system_prompt = _build_agent_system_prompt(allowed_agents)
+            if self._reference_mode != "off":
+                self._system_prompt += CONSULT_TEXT_DESCRIPTION
         self._history = ConversationHistory()
         self._native_messages: list = []  # persistent messages for native path
         self._attachments: Dict[str, bytes] = {}
@@ -194,7 +235,11 @@ class GeotechAgent:
                 continue
 
             try:
-                parsed = parse_response(response, valid_tools=EXTENDED_TOOLS)
+                valid = EXTENDED_TOOLS | (
+                    {"consult_references"}
+                    if self._reference_mode != "off" else set()
+                )
+                parsed = parse_response(response, valid_tools=valid)
             except ValueError as e:
                 err = {"round": rounds, "type": "parse",
                        "message": str(e)}
@@ -245,16 +290,21 @@ class GeotechAgent:
                 print(f"  Round {rounds}: {tc.tool_name}("
                       f"{json.dumps(tc.arguments, default=str)[:120]})")
 
-            # Dispatch: extended tools (vision/save) or standard tools
-            if tc.tool_name in ("analyze_image", "analyze_pdf_page",
-                                "read_reference_figure", "save_file"):
+            # Dispatch: consult sub-agent, extended tools (vision/save), or standard
+            if tc.tool_name == "consult_references":
+                result_str = self._dispatch_consult(tc.arguments)
+            elif tc.tool_name in ("analyze_image", "analyze_pdf_page",
+                                  "read_reference_figure", "save_file"):
                 result_str = dispatch_extended_tool(
                     tc.tool_name, tc.arguments,
                     self._engine, self._attachments,
                     save_fn=self._save_fn,
                 )
             else:
-                result_str = dispatch_tool(tc, attachments=self._attachments)
+                result_str = dispatch_tool(
+                    tc, attachments=self._attachments,
+                    allowed_agents=self._allowed_agents,
+                )
 
             result_str = _truncate(result_str, self._max_result_chars)
 
@@ -300,6 +350,40 @@ class GeotechAgent:
             errors=error_log,
         )
 
+    def _consult_offered(self, calc_done: bool) -> bool:
+        """Whether consult_references is currently available, per reference_mode."""
+        if self._reference_mode == "anytime":
+            return True
+        if self._reference_mode == "after_calc":
+            return calc_done
+        return False  # "off"
+
+    def _native_tool_list(self, calc_done: bool) -> list:
+        """The OpenAI tools list: OPENAI_TOOLS plus consult_references when offered."""
+        from funhouse_agent.native_tools import (
+            OPENAI_TOOLS, CONSULT_REFERENCES_TOOL,
+        )
+        tools = list(OPENAI_TOOLS)
+        if self._consult_offered(calc_done):
+            tools.append(CONSULT_REFERENCES_TOOL)
+        return tools
+
+    def _dispatch_consult(self, fn_args: dict) -> str:
+        """Run the reference consult sub-agent; return its answer as a JSON string."""
+        from funhouse_agent.reviewer import consult_references
+        question = (fn_args or {}).get("question", "")
+        if not question:
+            return json.dumps(
+                {"error": "consult_references requires a 'question' argument."}
+            )
+        if self._verbose:
+            print(f"    consult_references: {question[:100]}")
+        answer = consult_references(
+            self._engine, question,
+            temperature=self._temperature, verbose=self._verbose,
+        )
+        return json.dumps({"reference_answer": answer}, default=str)
+
     def _ask_native(self, question: str) -> AgentResult:
         """Native OpenAI tool-calling loop.
 
@@ -327,12 +411,13 @@ class GeotechAgent:
         tool_log = []
         error_log = []
         rounds = 0
+        calc_done = False  # gates consult_references in "after_calc" mode
 
         for rounds in range(1, self._max_rounds + 1):
             kwargs = {
                 "model": self._engine.model,
                 "messages": messages,
-                "tools": OPENAI_TOOLS,
+                "tools": self._native_tool_list(calc_done),
                 "tool_choice": "auto",
                 "temperature": self._temperature,
             }
@@ -409,13 +494,19 @@ class GeotechAgent:
                     args_preview = json.dumps(fn_args, default=str)[:120]
                     print(f"  Round {rounds}: {fn_name}({args_preview})")
 
-                result_str = dispatch_native_tool(
-                    name=fn_name,
-                    arguments=fn_args,
-                    engine=self._engine,
-                    attachments=self._attachments,
-                    save_fn=self._save_fn,
-                )
+                if fn_name == "consult_references":
+                    result_str = self._dispatch_consult(fn_args)
+                else:
+                    result_str = dispatch_native_tool(
+                        name=fn_name,
+                        arguments=fn_args,
+                        engine=self._engine,
+                        attachments=self._attachments,
+                        save_fn=self._save_fn,
+                        allowed_agents=self._allowed_agents,
+                    )
+                    if fn_name == "call_agent":
+                        calc_done = True
                 result_str = _truncate(result_str, self._max_result_chars)
 
                 # Check for dispatch errors

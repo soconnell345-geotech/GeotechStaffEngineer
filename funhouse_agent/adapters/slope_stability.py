@@ -71,15 +71,15 @@ METHOD_REGISTRY = {
 METHOD_INFO = {
     "analyze_slope": {
         "category": "Slope Stability",
-        "brief": "Single slip surface analysis (Fellenius/Bishop/Spencer). Circular or noncircular.",
+        "brief": "Analyze ONE specified slip surface (Fellenius/Bishop/Spencer). Requires a trial circle (xc/yc/radius) or slip_points. If you do NOT already have a specific trial surface, use search_critical_surface instead — it auto-finds the critical surface and avoids 'circle does not intersect the ground surface' errors.",
         "parameters": {
             "surface_points": {"type": "array", "required": True, "description": "Ground surface as [[x,y], ...] array."},
-            "soil_layers": {"type": "array", "required": True, "description": "Array of {name, top_elevation, bottom_elevation, gamma, phi, c_prime, analysis_mode} dicts."},
+            "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {name, top_elevation, bottom_elevation, gamma, phi, c_prime, cu, analysis_mode}. analysis_mode must be 'drained' (uses phi + c_prime) or 'undrained' (uses cu)."},
             "xc": {"type": "float", "required": False, "description": "Circle center x (m). Required for circular."},
             "yc": {"type": "float", "required": False, "description": "Circle center y (m). Required for circular."},
             "radius": {"type": "float", "required": False, "description": "Circle radius (m). Required for circular."},
             "slip_points": {"type": "array", "required": False, "description": "Polyline slip surface [[x,y],...] for noncircular. Use instead of xc/yc/radius."},
-            "method": {"type": "str", "required": False, "default": "bishop", "description": "fellenius/bishop/spencer."},
+            "method": {"type": "str", "required": False, "default": "bishop", "allowed_values": ["fellenius", "bishop", "spencer"], "description": "Limit-equilibrium method."},
             "gwt_points": {"type": "array", "required": False, "description": "Groundwater table [[x,y],...]."},
             "include_slice_data": {"type": "bool", "required": False, "default": False, "description": "Include per-slice forces and stresses."},
             "compare_methods": {"type": "bool", "required": False, "default": False, "description": "Compare all 3 methods."},
@@ -92,12 +92,12 @@ METHOD_INFO = {
         "parameters": {
             "surface_points": {"type": "array", "required": True, "description": "Ground surface [[x,y],...]."},
             "soil_layers": {"type": "array", "required": True, "description": "Array of soil layer dicts."},
-            "surface_type": {"type": "str", "required": False, "default": "circular", "description": "circular or noncircular."},
+            "surface_type": {"type": "str", "required": False, "default": "circular", "allowed_values": ["circular", "noncircular"], "description": "Slip surface type."},
             "x_range": {"type": "array", "required": False, "description": "[xmin, xmax] for circle center search."},
             "y_range": {"type": "array", "required": False, "description": "[ymin, ymax] for circle center search."},
             "nx": {"type": "int", "required": False, "default": 10, "description": "Grid divisions in x."},
             "ny": {"type": "int", "required": False, "default": 10, "description": "Grid divisions in y."},
-            "method": {"type": "str", "required": False, "default": "bishop", "description": "fellenius/bishop/spencer."},
+            "method": {"type": "str", "required": False, "default": "bishop", "allowed_values": ["fellenius", "bishop", "spencer"], "description": "Limit-equilibrium method."},
             "n_trials": {"type": "int", "required": False, "default": 500, "description": "Random trials for noncircular search."},
         },
         "returns": {"min_FOS": "Minimum factor of safety found.", "critical": "Critical surface parameters.", "n_surfaces_evaluated": "Number of surfaces checked."},

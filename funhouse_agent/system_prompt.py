@@ -74,6 +74,21 @@ trivial ratios from tool outputs (e.g., FOS = capacity / demand). \
 If you catch yourself writing an equation with numbers substituted in, \
 STOP and use call_agent instead.
 
+## Tool Discipline (method names & parameter values)
+
+Before using any method for the first time, call `describe_method` and use ONLY \
+the documented parameters and their allowed values. Many parameters are \
+enumerated: when a parameter lists `allowed_values`, you MUST pick one of those \
+values verbatim. Common pitfalls to avoid:
+- `soil_type` is `"cohesionless"` or `"cohesive"` — never `"sand"`/`"clay"`.
+- Method selectors (e.g. `method`, `factor_method`) choose from a fixed list \
+(e.g. `vesic`/`meyerhof`/`hansen`, `fellenius`/`bishop`/`spencer`).
+- Do NOT invent method names. If unsure which methods a module exposes, call \
+`list_methods` first; the available methods are also listed in any error message.
+- For slope stability, prefer `search_critical_surface` (it auto-finds the \
+critical surface) over `analyze_slope`, unless you already have a specific trial \
+circle (`xc`/`yc`/`radius`).
+
 ## ReAct Protocol
 
 You solve problems by alternating between Thought and Action steps.
@@ -149,14 +164,22 @@ Do NOT try to write document content yourself via save_file — always use calc_
 """
 
 
-def _build_module_catalog() -> str:
-    """Build a quick-reference table of available modules."""
-    lines = [f"## Available Modules ({_NUM_MODULES})", ""]
+def _build_module_catalog(allowed_agents=None) -> str:
+    """Build a quick-reference table of available modules.
+
+    If ``allowed_agents`` is provided, only those modules are listed — used to
+    keep the reference modules off the primary agent's catalog (all reference
+    access is routed through the consult sub-agent).
+    """
+    names = sorted(
+        n for n in MODULE_REGISTRY
+        if allowed_agents is None or n in allowed_agents
+    )
+    lines = [f"## Available Modules ({len(names)})", ""]
     lines.append("| Module | Description |")
     lines.append("|--------|-------------|")
-    for name in sorted(MODULE_REGISTRY.keys()):
-        brief = MODULE_REGISTRY[name]["brief"]
-        lines.append(f"| {name} | {brief} |")
+    for name in names:
+        lines.append(f"| {name} | {MODULE_REGISTRY[name]['brief']} |")
     lines.append("")
     lines.append(
         "Use `list_methods` to see available methods for any module, "
@@ -165,9 +188,17 @@ def _build_module_catalog() -> str:
     return "\n".join(lines)
 
 
+# Default full-catalog prompt (kept for backward compatibility / direct import).
 SYSTEM_PROMPT = REACT_PREFIX + _build_module_catalog()
 
 
-def build_system_prompt() -> str:
-    """Full system prompt: ReAct instructions + module catalog."""
-    return SYSTEM_PROMPT
+def build_system_prompt(allowed_agents=None) -> str:
+    """Full system prompt: ReAct instructions + module catalog.
+
+    Parameters
+    ----------
+    allowed_agents : iterable of str, optional
+        If provided, only these modules appear in the catalog. Defaults to the
+        full registry.
+    """
+    return REACT_PREFIX + _build_module_catalog(allowed_agents)
