@@ -127,10 +127,11 @@ Run: `pytest pdf_import/ -v`
 
 | File | Purpose |
 |------|---------|
-| `__init__.py` | Exports: `GeotechAgent`, `GenAIEngine`, `ClaudeEngine`, `NativeToolEngine`, `AgentResult` |
-| `engine.py` | `GenAIEngine` Protocol + `ClaudeEngine` adapter + `NativeToolEngine` (OpenAI native tool calling) |
-| `agent.py` | `GeotechAgent` class (ReAct loop + vision dispatch) |
-| `dispatch.py` | Tool dispatch — routes to adapters (not foundry) |
+| `__init__.py` | Exports: `GeotechAgent`, `GenAIEngine`, `ClaudeEngine`, `NativeToolEngine`, `PrompterBridgeEngine`, `USING_SDK_ENGINES`, `AgentResult` |
+| `engine.py` | `GenAIEngine` Protocol + engines. **Hybrid**: prefers the Funhouse SDK's `funhouse.services.prompter.engine` (`NativeToolEngine`/`PrompterBridgeEngine`) when importable, falls back to local classes (`USING_SDK_ENGINES` flag). Local `ClaudeEngine` retained. |
+| `agent.py` | `GeotechAgent` (native + text-ReAct loops, vision dispatch, `allowed_agents` scoping, `reference_mode` + `consult_references`) |
+| `dispatch.py` | Tool dispatch + shared `REFERENCE_MODULES`/`ANALYSIS_MODULES` constants + `allowed_agents` scoping |
+| `reviewer.py` | Reference consult sub-agent (`consult_references`) + legacy post-hoc reviewer (`run_review`/`needs_revision`) |
 | `system_prompt.py` | Self-contained system prompt (50 modules) |
 | `native_tools.py` | OpenAI tool schemas + dispatch for NativeToolEngine |
 | `vision_tools.py` | Vision tools: `analyze_image`, `analyze_pdf_page`, `read_reference_figure` (render a catalogued figure + read a value off it), `save_file` |
@@ -160,6 +161,52 @@ chat.display()
 ```
 
 Run: `pytest funhouse_agent/ -v`
+
+### Reference consult-agent (`reference_mode`)
+
+The primary agent no longer calls the 21 reference modules directly — reference access is routed
+through a single `consult_references` tool backed by a **reference-scoped sub-agent** (a
+`GeotechAgent` restricted to `REFERENCE_MODULES` via `allowed_agents`, generalized from
+`reviewer.py`; uses the same engine, so it gets native tool calling). `GeotechAgent(reference_mode=...)`:
+- `"anytime"` (**default**) — `consult_references` always offered; the primary is auto-scoped to
+  the analysis modules (`ANALYSIS_MODULES`), shrinking its tool surface (which cut method/module-
+  name guessing in live testing).
+- `"after_calc"` — `consult_references` offered only after a `call_agent` has run this `ask()`.
+- `"off"` — legacy: the reference modules stay directly callable, no consult tool.
+
+`allowed_agents` (new `GeotechAgent` param) scopes the system-prompt catalog AND
+`list_agents`/`list_methods`/`describe_method`/`call_agent`. `REFERENCE_MODULES` (21) and
+`ANALYSIS_MODULES` (36) are shared constants in `dispatch.py`. The consultant holds `figure_db` +
+`read_reference_figure`, so it does figure read-off too. Verified live in Databricks (5.1 deployment).
+
+## Module-Improvement Agent Team
+
+A standing, domain-organized agent team improves the 37 analysis modules over time, fed by the
+agent test-suite feedback and other tasks. Claude Code teammates are ephemeral, so the team's
+identity and memory live as **version-controlled files**:
+
+- `.claude/agents/geotech-team-lead.md` — the team-lead playbook (run by the main session):
+  triage feedback, maintain the board, dispatch specialists, review every diff, gate on tests,
+  serialize `geotech_common` edits.
+- `.claude/agents/geotech-module-specialist.md` — the reusable specialist (spawn one per domain,
+  named by domain, e.g. `seismic`): reads its ledger → edits its module + adapter → runs
+  `pytest <module>/ -v` → updates its ledger → returns a diff (does NOT commit; the lead reviews).
+- `module_work/BOARD.md` — backlog + status across all domains; the single source of truth, with
+  the triaged feedback categories and the 28-clean / 40-recovered / 0-failed agent-suite baseline.
+- `module_work/<domain>.md` — per-domain progress ledgers (owned modules, reference map, backlog,
+  log). A specialist reads its ledger at task start and updates it at the end.
+- `module_work/triage_feedback.py` + `module_feedback.json` — turn a Databricks
+  `geotech_test_suite_results.json` run into per-domain/per-module work orders.
+- `funhouse_agent/geotech_test_suite.json` + `funhouse_agent/smoke_test_native.py` — the
+  68-question eval set and the Databricks smoke/probe script that generate the feedback.
+
+Domains (in the board): foundations, deep-foundations, earth-retention, slope-fem, seismic,
+characterization, io-cad, references, common (lead-serialized).
+
+**Status: module-fix work is PINNED.** Phase 0 ergonomics (METHOD_INFO `allowed_values`, the
+system-prompt Tool Discipline nudge, the native-catalog fix) is done; per-module fixes are paused
+behind the reference-agent + figure work. Resume from `module_work/BOARD.md`. `.claude/agents/` is
+committed (the repo `.gitignore` was changed to `.claude/*` + `!.claude/agents/`).
 
 ## HANDOFF — Figure Read-Off: Status & Remaining Work
 
@@ -209,14 +256,19 @@ Run: `pytest funhouse_agent/ -v`
       prompt: a tool error MUST be retried with corrected args or reported — never
       reported as success. Consider a loop-level guard that blocks a final answer
       contradicting an error result.
-- [ ] **P2 — Wire figure read-off into the reviewer.** `funhouse_agent/reviewer.py`
-      `REFERENCE_MODULES` lacks `figure_db`, and `REVIEWER_TOOLS` exposes only the 4
-      standard ReAct tools (it cannot render). Add `figure_db` + `read_reference_figure`
-      so the second-pass checker can verify chart-derived numbers against the actual chart.
-- [ ] **P3 — Roll the catalog recipe out beyond DM7.** Catalog/read-off is piloted on
-      `dm7_1`/`dm7_2` only. Run `geotech-references/scripts/build_figure_catalog.py` per
-      reference (GEC 4–14, micropile, pavements, UFC) → produces `<ref>/figures_catalog.json`,
-      which `geotech_references/_figures_db.py` picks up automatically.
+- [~] **P2 — Partially addressed by the reference consult-agent.** The shared `REFERENCE_MODULES`
+      set (now in `dispatch.py`) DOES include `figure_db`, and the consult sub-agent runs a full
+      `GeotechAgent`, so it can `read_reference_figure`. Only the legacy post-hoc `reviewer.py`
+      (`review=True`) still lacks `figure_db`/`read_reference_figure` — wire it there too if used.
+- [x] **P3 — DONE (2026-06-03): catalog recipe rolled out to ALL 15 references** (2491 figures):
+      DM7 (dm7_1/2) + GEC 4–14 + micropile + ufc_pavement. `build_figure_catalog.py` was
+      generalized to handle dot/dash/spaced-dash ids, heading + heading-less (dotted-leader
+      density) + no-List-of-Figures (body-caption extraction) + sequential "Figure N" numbering
+      (manifest `"figure_numbering":"sequential"`) + multi-volume (manifest `"volumes"` list →
+      per-figure `pdf_path`). `body_start` is derived from the LoF span, so a manifest needs only a
+      `pdf_path` (or `volumes`). Released in geotech-references 1.2.3 / geotech-staff-engineer 4.6.3.
+      Quality: most ≥94%; gec_8 37% and gec_11 42% are partial (correct figures, offset-estimated
+      pages, flagged `page_estimated`).
 - [ ] **P4 — (conditional) Hard/deterministic backstop.** Only if Medium proves
       insufficient in practice: a deterministic auto-render for detected chart-value
       questions. Do not build pre-emptively.
@@ -229,30 +281,19 @@ Run: `pytest funhouse_agent/ -v`
       embeddings remain rejected.)
 - [ ] **P7 — (deferred) Figure cropping.** Full-page render is robust; revisit only if
       multi-figure pages hurt read-off accuracy.
-- [ ] **P8 — Figure catalogs are not packaged (PyPI/Databricks).** In
-      `geotech-references/pyproject.toml`, `[tool.setuptools.package-data]` is
-      `geotech_references = ["*/text/*.json"]`, which ships `<ref>/text/*.json` (chapter
-      text) but NOT `<ref>/figures_catalog.json` (one level up). After a clean PyPI
-      install, `figure_search`/`figure_get` return zero figures. Fix: add
-      `"*/figures_catalog.json"` to that `package-data` list (small JSONs, safe to ship),
-      then bump the `geotech-references` version.
-- [ ] **P9 — Source PDFs aren't packaged; read-off needs PDF staging on Databricks.**
-      PDFs live at `geotech-references/docs/` (sibling of the package, not in
-      `packages.find`/`package-data`, no `MANIFEST.in`) and are large (DM7 vols 42 + 51 MB;
-      full `docs/` ~350 MB) — impractical for PyPI. Also `_figures_db.resolve_pdf()`
-      resolves `_REPO_ROOT/<pdf_path>` with `_REPO_ROOT = <package>.parent`, which becomes
-      `site-packages/docs/...` in a wheel install (won't exist). For Databricks: stage the
-      PDFs on DBFS / a Unity Catalog volume / object storage and add a configurable base
-      path (env var or arg) so `read_reference_figure` resolves there instead of the
-      repo-relative `docs/`. Net: `figure_search` is one line from working on PyPI;
-      `read_reference_figure` needs a deliberate PDF-location override.
+- [x] **P8 — DONE: figure catalogs are packaged.** `"*/figures_catalog.json"` added to
+      `geotech-references/pyproject.toml` `[tool.setuptools.package-data]`. So `figure_search`/
+      `figure_get` work from a clean install. Released 1.2.1+.
+- [x] **P9 — DONE: configurable PDF location.** `_figures_db.resolve_pdf()` now honors the
+      `GEOTECH_REFERENCES_DOCS` env var (folder holding the source PDFs), falling back to the
+      repo-relative `docs/`. On Databricks: copy a `docs/` folder of PDFs in and set that env var.
+      PDFs are still NOT shipped in the wheel (large + license). Released 1.2.1+.
 
 ### Gotchas the next team MUST know
-- **Uncommitted entanglement in `agent.py` & `system_prompt.py`.** These two files carry
-  the user's UNCOMMITTED native-tool-calling work that was deliberately left out of
-  `fef450c`: a `## Module Catalog`→`## Available Modules` regex fix (`agent.py`) and a
-  "Tool Discipline (method names & parameter values)" section (`system_prompt.py`). **Do
-  not clobber or accidentally commit these** without the user's intent.
+- **(RESOLVED 2026-06-03) The native-tool-calling work in `agent.py` & `system_prompt.py` is now
+  COMMITTED** (`b163750`): the `## Available Modules` regex fix, the Tool Discipline section, and
+  the reference consult-agent (`reference_mode`, `allowed_agents` scoping, `consult_references`).
+  Confirmed working live in Databricks on the 5.1 deployment; released in 4.6.2/4.6.3.
 - **Active adapter-generation churn.** `funhouse_agent/adapters/` is modified by a
   background process during sessions (new `gec*_adapter.py`, `ufc_pavement_adapter.py`,
   `adapters/__init__.py`, `tests/test_reference_adapters.py`, `module_work/`). Method
