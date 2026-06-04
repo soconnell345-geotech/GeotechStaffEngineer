@@ -1,4 +1,4 @@
-"""Tests for geotech-references adapter modules (14 reference agents).
+"""Tests for geotech-references adapter modules (reference agents).
 
 Covers:
 - Registry completeness (METHOD_REGISTRY keys == METHOD_INFO keys)
@@ -14,17 +14,23 @@ from funhouse_agent.adapters import MODULE_REGISTRY
 
 
 # ──────────────────────────────────────────────────────────────────────
-# All 14 reference modules
+# All reference modules
 # ──────────────────────────────────────────────────────────────────────
 
 REFERENCE_MODULES = [
-    "dm7", "gec6", "gec7", "gec10", "gec11", "gec12", "gec13",
+    "dm7",
+    "gec4", "gec5", "gec6", "gec7", "gec8", "gec9",
+    "gec10", "gec11", "gec12", "gec13", "gec14",
     "micropile", "fema_p2192", "noaa_frost",
     "ufc_backfill", "ufc_dewatering", "ufc_expansive", "ufc_pavement",
 ]
 
 # Modules with text retrieval (retrieve_section, search_sections, etc.)
-TEXT_MODULES = ["gec6", "gec7", "gec10", "gec11", "gec12", "gec13", "micropile"]
+TEXT_MODULES = [
+    "gec4", "gec5", "gec6", "gec7", "gec8", "gec9",
+    "gec10", "gec11", "gec12", "gec13", "gec14",
+    "micropile",
+]
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -258,7 +264,7 @@ class TestUFCPavement:
     def test_method_count(self):
         methods = list_methods("ufc_pavement")
         total = sum(len(v) for v in methods.values())
-        assert total == 9
+        assert total == 11  # 3 equations + 8 tables (UFC 3-250-01 roads)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -267,11 +273,16 @@ class TestUFCPavement:
 
 class TestGECMethodCounts:
     @pytest.mark.parametrize("module_name,expected_min", [
+        ("gec4", 10),   # 6 tables + 4 text retrieval
+        ("gec5", 4),    # text retrieval only
         ("gec6", 15),
+        ("gec8", 9),    # 3 equations + 2 tables + 4 text retrieval
+        ("gec9", 9),    # 5 tables + 4 text retrieval
         ("gec10", 12),
         ("gec11", 19),
         ("gec12", 18),
         ("gec13", 12),
+        ("gec14", 4),   # text retrieval only
         ("micropile", 16),
     ])
     def test_minimum_methods(self, module_name, expected_min):

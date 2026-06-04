@@ -193,7 +193,7 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.subsurface_adapter",
         "brief": "Subsurface data visualization — DIGGS XML ingestion, parameter vs depth, Atterberg limits, plan view, cross-section, trends",
     },
-    # --- geotech-references agents (14 reference modules + cross-reference DB) ---
+    # --- geotech-references agents (reference modules + cross-reference DB) ---
     "reference_db": {
         "adapter": "funhouse_agent.adapters.reference_db_adapter",
         "brief": "Cross-reference FTS5 search over all structured chapter text (DM7 + GEC + micropile). Use first to scope, then drill in via reference_get.",
@@ -206,6 +206,14 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.dm7_adapter",
         "brief": "NAVFAC DM7 equations (340+): soil classification, stresses, settlement, seepage, foundations",
     },
+    "gec4": {
+        "adapter": "funhouse_agent.adapters.gec4_adapter",
+        "brief": "GEC-4 ground anchors reference (FHWA-IF-99-015, 1999): bond stresses, anchor load transfer, corrosion protection, anchored wall design (ASD)",
+    },
+    "gec5": {
+        "adapter": "funhouse_agent.adapters.gec5_adapter",
+        "brief": "GEC-5 geotechnical site characterization (FHWA NHI-16-072, 2017): investigation planning, soil/rock classification, strength, consolidation, stiffness, hazards",
+    },
     "gec6": {
         "adapter": "funhouse_agent.adapters.gec6_adapter",
         "brief": "GEC-6 shallow foundations reference (FHWA-SA-02-054, tables/figures/text)",
@@ -214,9 +222,17 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.gec7_adapter",
         "brief": "GEC-7 soil nail walls reference (FHWA-NHI-14-007, tables/figures/text)",
     },
+    "gec8": {
+        "adapter": "funhouse_agent.adapters.gec8_adapter",
+        "brief": "GEC-8 CFA pile design (FHWA-HIF-07-03, 2007): DD pile capacity (NeSmith), ASD design, grout volume factor, p-multipliers, group efficiency",
+    },
+    "gec9": {
+        "adapter": "funhouse_agent.adapters.gec9_adapter",
+        "brief": "GEC-9 laterally loaded piles (FHWA-HIF-18-031, 2018): lateral resistance factors, p-multipliers, p-y parameters for stiff clay and sand",
+    },
     "gec10": {
         "adapter": "funhouse_agent.adapters.gec10_adapter",
-        "brief": "GEC-10 drilled shafts reference (FHWA-NHI-10-016, tables/figures/text)",
+        "brief": "GEC-10 drilled shafts reference (FHWA-NHI-18-024, tables/figures/text)",
     },
     "gec11": {
         "adapter": "funhouse_agent.adapters.gec11_adapter",
@@ -229,6 +245,10 @@ MODULE_REGISTRY = {
     "gec13": {
         "adapter": "funhouse_agent.adapters.gec13_adapter",
         "brief": "GEC-13 ground modification reference (FHWA-NHI-16-027, tables/figures/text)",
+    },
+    "gec14": {
+        "adapter": "funhouse_agent.adapters.gec14_adapter",
+        "brief": "GEC-14 QA for geotechnical reporting documents (FHWA-HIF-17-016, 2016): GRD types, ACMs/ADMs, QA process, checklists",
     },
     "micropile": {
         "adapter": "funhouse_agent.adapters.micropile_adapter",
@@ -256,6 +276,6 @@ MODULE_REGISTRY = {
     },
     "ufc_pavement": {
         "adapter": "funhouse_agent.adapters.ufc_pavement_adapter",
-        "brief": "UFC 3-260-02 airfield pavement design (CBR, thickness, ESWL)",
+        "brief": "UFC 3-250-01 roads/parking pavement design (subgrade categories, frost classification, equivalency factors, minimum thickness, k-subgrade)",
     },
 }

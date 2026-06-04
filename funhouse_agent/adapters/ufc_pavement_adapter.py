@@ -1,4 +1,4 @@
-"""UFC 3-260-02 reference adapter — Pavement Design for Airfields."""
+"""UFC 3-250-01 reference adapter — Pavement Design for Roads and Parking Areas (2016)."""
 
 from funhouse_agent.adapters._reference_common import build_lookup_registry
 
@@ -6,8 +6,8 @@ from funhouse_agent.adapters._reference_common import build_lookup_registry
 def _build():
     from geotech_references.ufc_pavement import equations, tables
     return build_lookup_registry([
-        (equations, "UFC Pavement Equations", "UFC 3-260-02"),
-        (tables, "UFC Pavement Tables", "UFC 3-260-02"),
+        (equations, "UFC Pavement Equations", "UFC 3-250-01"),
+        (tables, "UFC Pavement Tables", "UFC 3-250-01"),
     ])
 
 
