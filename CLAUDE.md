@@ -161,6 +161,94 @@ chat.display()
 
 Run: `pytest funhouse_agent/ -v`
 
+## HANDOFF — Figure Read-Off: Status & Remaining Work
+
+> Handoff note for the next team (agentic pickup). The figure retrieval + vision
+> read-off feature is **built, working, and committed**; what remains is listed
+> as a TODO with priorities. Read this whole section before touching the figure
+> subsystem, `reviewer.py`, `agent.py`, or `system_prompt.py`.
+
+### Done (committed `fef450c` on `master`, pushed)
+- **Autonomy gap CLOSED** — the agent now finds a chart via `figure_db.figure_search`
+  **and renders + reads it** with `read_reference_figure`, instead of answering chart
+  values from the caption + model memory. Verified live: DM7.2 **Figure 4-12**, passive
+  coefficient **Kp ≈ 5.3** (correct ≈ 5.5; it previously confabulated ≈ 9.0 from memory).
+- **The fix = "starve-the-shortcut signpost" (the agentic option, see below).** Each
+  `figure_search` hit now carries a `read_value` next-step instruction pointing at
+  `read_reference_figure` and forbidding from-caption/from-memory values. The search
+  result identifies the figure but exposes no values to guess from, so the vision read-off
+  is the path of least resistance. (`funhouse_agent/adapters/figure_db_adapter.py`)
+- **Param robustness** — `figure_search` tolerates common result-cap aliases
+  (`top_k`/`k`/`n`/`max_results`/…) instead of hard-crashing on an unexpected kwarg; and
+  `extract_method_info` (`adapters/_reference_common.py`) no longer advertises
+  `**kwargs`/`*args` catch-alls as required parameters.
+- Routing fix (`read_reference_figure` in the agent dispatch tuple), strengthened tool #7
+  wording, a local `ClaudeEngine` runner `funhouse_agent/run_local.py`, offline adapter
+  tests (`tests/test_figure_db_adapter.py`), and an opt-in live end-to-end test
+  (`tests/test_live_figure_readoff.py`, formerly `xfail`).
+
+### Design context (why it's built this way)
+- **Architecture: find-with-text, read-with-pixels.** Retrieve figures lexically (SQLite
+  FTS5 over captions + chapter-cross-linked descriptions), then hand the *actual rendered
+  page* to a vision model to read values. CLIP-style **image embeddings were rejected** —
+  poor fit for axis-labeled line charts. Do not pursue image embeddings.
+- **Autonomy approaches weighed:** *Soft* (prompt-only — rejected, unreliable); **Medium
+  (agentic retrieval + starve-the-shortcut — CHOSEN)**; *Hard* (deterministic auto-render —
+  rejected: discards the agent's judgment and over-fires the costly vision call on any
+  question that merely mentions a figure). Medium keeps the agent *reasoning* while making
+  the from-memory shortcut useless. **Caveat:** Medium makes cheating useless, not
+  impossible — if the agent is ever still seen reporting chart values without rendering,
+  escalate to the Hard backstop (TODO P4).
+
+### TODO — remaining work (prioritized)
+- [ ] **P1 — Hallucination-on-tool-error (concerning, general, NOT figure-specific).**
+      When a tool call errors, the ReAct loop may **fabricate success** instead of
+      retrying/reporting. Observed: after a failed `figure_search`, the agent invented
+      "Figure 3-5, score 19.0" and wrote *"the search and figure read both completed
+      successfully."* Fix in the ReAct loop (`funhouse_agent/agent.py`) and/or system
+      prompt: a tool error MUST be retried with corrected args or reported — never
+      reported as success. Consider a loop-level guard that blocks a final answer
+      contradicting an error result.
+- [ ] **P2 — Wire figure read-off into the reviewer.** `funhouse_agent/reviewer.py`
+      `REFERENCE_MODULES` lacks `figure_db`, and `REVIEWER_TOOLS` exposes only the 4
+      standard ReAct tools (it cannot render). Add `figure_db` + `read_reference_figure`
+      so the second-pass checker can verify chart-derived numbers against the actual chart.
+- [ ] **P3 — Roll the catalog recipe out beyond DM7.** Catalog/read-off is piloted on
+      `dm7_1`/`dm7_2` only. Run `geotech-references/scripts/build_figure_catalog.py` per
+      reference (GEC 4–14, micropile, pavements, UFC) → produces `<ref>/figures_catalog.json`,
+      which `geotech_references/_figures_db.py` picks up automatically.
+- [ ] **P4 — (conditional) Hard/deterministic backstop.** Only if Medium proves
+      insufficient in practice: a deterministic auto-render for detected chart-value
+      questions. Do not build pre-emptively.
+- [ ] **P5 — (optional) Lazy description enrichment.** On first read of a figure, capture
+      a one-line semantic description + axis/variable list and write it back into
+      `figures_catalog.json` to improve future `figure_search` recall at zero bulk cost.
+      Planned in the original design, not built.
+- [ ] **P6 — (deferred) Text embeddings for recall.** Only if FTS5 lexical recall proves
+      insufficient: text-embed the descriptions via `GenAIEngine.get_embedding()`. (Image
+      embeddings remain rejected.)
+- [ ] **P7 — (deferred) Figure cropping.** Full-page render is robust; revisit only if
+      multi-figure pages hurt read-off accuracy.
+
+### Gotchas the next team MUST know
+- **Uncommitted entanglement in `agent.py` & `system_prompt.py`.** These two files carry
+  the user's UNCOMMITTED native-tool-calling work that was deliberately left out of
+  `fef450c`: a `## Module Catalog`→`## Available Modules` regex fix (`agent.py`) and a
+  "Tool Discipline (method names & parameter values)" section (`system_prompt.py`). **Do
+  not clobber or accidentally commit these** without the user's intent.
+- **Active adapter-generation churn.** `funhouse_agent/adapters/` is modified by a
+  background process during sessions (new `gec*_adapter.py`, `ufc_pavement_adapter.py`,
+  `adapters/__init__.py`, `tests/test_reference_adapters.py`, `module_work/`). Method
+  counts can flip mid-run. **Stage by exact path and verify `git diff --cached` before
+  committing.**
+- **`geotech_references` is an editable install** (`pip install -e geotech-references/`),
+  so reference/figure changes are live from source.
+- **Live verification (opt-in, costs API).** Set `RUN_LIVE_TESTS=1` and provide
+  `ANTHROPIC_API_KEY` (shell env or Windows *User* env), then:
+  `.venv/Scripts/python -m pytest funhouse_agent/tests/test_live_figure_readoff.py -v -s`,
+  or `.venv/Scripts/python -m funhouse_agent.run_local --demo`. The key is read at runtime
+  from the Windows User env — never pass it through chat/transcripts.
+
 ## Working on a Module
 
 1. Read the module's `DESIGN.md` first for theory and conventions
