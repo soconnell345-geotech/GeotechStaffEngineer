@@ -199,9 +199,6 @@ _CURATED_ALIASES = {
     # ufc_pavement
     "table_10_1_k_subgrade": ["modulus_subgrade_reaction"],
     "table_7_1_base_design_cbr": ["base_course_design_cbr"],
-    # fema_p2192
-    "table_11_6_1_sdc_short_period": ["sdc_from_sds"],
-    "table_11_6_2_sdc_one_second": ["sdc_from_sd1"],
 }
 
 

@@ -21,8 +21,8 @@ REFERENCE_MODULES = [
     "dm7",
     "gec4", "gec5", "gec6", "gec7", "gec8", "gec9",
     "gec10", "gec11", "gec12", "gec13", "gec14",
-    "micropile", "fema_p2192", "noaa_frost",
-    "ufc_backfill", "ufc_dewatering", "ufc_expansive", "ufc_pavement",
+    "micropile",
+    "ufc_backfill", "ufc_expansive", "ufc_pavement",
 ]
 
 # Modules with text retrieval (retrieve_section, search_sections, etc.)
@@ -173,52 +173,6 @@ class TestDM7:
 
 
 # ──────────────────────────────────────────────────────────────────────
-# FEMA P-2192 specific tests
-# ──────────────────────────────────────────────────────────────────────
-
-class TestFEMA:
-    def test_method_count(self):
-        methods = list_methods("fema_p2192")
-        total = sum(len(v) for v in methods.values())
-        assert total == 10
-
-    def test_site_class(self):
-        """Test determining seismic site class from Vs30."""
-        # Find the site class method
-        methods = list_methods("fema_p2192")
-        all_methods = {}
-        for cat_methods in methods.values():
-            all_methods.update(cat_methods)
-
-        # Look for a site class method
-        site_class_methods = [m for m in all_methods if "site_class" in m.lower()]
-        if site_class_methods:
-            desc = describe_method("fema_p2192", site_class_methods[0])
-            assert "parameters" in desc
-
-
-# ──────────────────────────────────────────────────────────────────────
-# NOAA Frost specific tests
-# ──────────────────────────────────────────────────────────────────────
-
-class TestNOAAFrost:
-    def test_method_count(self):
-        methods = list_methods("noaa_frost")
-        total = sum(len(v) for v in methods.values())
-        assert total == 9
-
-    def test_stefan_frost_depth(self):
-        result = call_agent("noaa_frost", "stefan_frost_depth_m", {
-            "freezing_index_degC_days": 500.0,
-            "k_frozen_W_per_mK": 1.5,
-            "L_J_per_m3": 100000.0,
-        })
-        assert "error" not in result
-        assert "result" in result
-        assert result["result"] > 0
-
-
-# ──────────────────────────────────────────────────────────────────────
 # GEC-7 specific tests
 # ──────────────────────────────────────────────────────────────────────
 
@@ -244,13 +198,6 @@ class TestUFCBackfill:
         methods = list_methods("ufc_backfill")
         total = sum(len(v) for v in methods.values())
         assert total == 8
-
-
-class TestUFCDewatering:
-    def test_method_count(self):
-        methods = list_methods("ufc_dewatering")
-        total = sum(len(v) for v in methods.values())
-        assert total == 9
 
 
 class TestUFCExpansive:

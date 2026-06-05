@@ -254,21 +254,9 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.micropile_adapter",
         "brief": "Micropile design reference (FHWA-NHI-05-039, bond stress/tables/text)",
     },
-    "fema_p2192": {
-        "adapter": "funhouse_agent.adapters.fema_adapter",
-        "brief": "FEMA P-2192 seismic design category, site class, Fa/Fv coefficients",
-    },
-    "noaa_frost": {
-        "adapter": "funhouse_agent.adapters.noaa_frost_adapter",
-        "brief": "NOAA frost depth equations (Stefan/Berggren) and soil thermal properties",
-    },
     "ufc_backfill": {
         "adapter": "funhouse_agent.adapters.ufc_backfill_adapter",
         "brief": "UFC 3-220-04N backfill design (compaction, filter criteria, drainage)",
-    },
-    "ufc_dewatering": {
-        "adapter": "funhouse_agent.adapters.ufc_dewatering_adapter",
-        "brief": "UFC 3-220-05 dewatering (Thiem, Dupuit, Sichardt, superposition)",
     },
     "ufc_expansive": {
         "adapter": "funhouse_agent.adapters.ufc_expansive_adapter",

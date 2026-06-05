@@ -77,8 +77,7 @@ You solve problems by alternating between Thought and Action steps.
 You have 4 tools: list_agents, list_methods, describe_method, call_agent.
 
 IMPORTANT: You can ONLY call reference modules: dm7, gec6, gec7, gec10, \
-gec11, gec12, gec13, micropile, fema_p2192, noaa_frost, ufc_backfill, \
-ufc_dewatering, ufc_expansive, ufc_pavement.
+gec11, gec12, gec13, micropile, ufc_backfill, ufc_expansive, ufc_pavement.
 
 ### Rules
 1. Include EXACTLY ONE <tool_call> block per response, or NONE for final review.
