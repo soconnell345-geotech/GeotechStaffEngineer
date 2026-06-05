@@ -26,13 +26,20 @@ Method: for each estimated figure, find its true page by caption/label search in
 source PDF (see figure-catalog-builder). One worker per reference for the big two.
 
 ## Workstream 3 — new references from orphan/added PDFs (full pipeline)
-Each = structured chapter-text JSON + python lookups + figure catalog + registry wiring
-in BOTH repos. Large; decompose per reference / per chapter.
-- California Trenching and Shoring Manual  ← `docs/California Trenching and Shoring Manual.pdf`
-  (SOE / shoring reference)
-- FHWA-NHI-05-037 Geotechnical Aspects of Pavements ← `docs/FHWA-NHI-05-037 - Geotech Pavements.pdf`
-- FEMA P-2082 (2020 NEHRP Provisions) ← `geotech-references/fema_2020-nehrp-provisions_part-1-and-part-2.pdf`
-  (replaces the deleted, incorrect fema_p2192; MOVE the PDF into `docs/` first)
+Each = structured chapter-text JSON + python lookups + figure catalog + registry wiring in BOTH repos.
+- ✅ FEMA P-2082 (2020 NEHRP Provisions) — `fema_p2082` module. Site classes BC/CD/DE (BC baseline),
+  Fa/Fv removed (USGS geodatabase), 19 figs 100%, 86 tests. submodule 1612e6a / parent 0ed7248.
+- ✅ California Trenching & Shoring (`california_trenching`) — 15 tables, 16 eqns, 7 chapters,
+  177 figs 100%, 83 tests. submodule c1fb7ce / parent 8483b31.
+- ✅ FHWA-NHI-05-037 Geotechnical Aspects of Pavements (`fhwa_pavements`) — 14 tables, 11 eqns,
+  3 geotech chapters (4/5/7), 177 figs 100%, 89 tests. Resilient modulus Mr (default by AASHTO/USCS
+  class + CBR/R-value/DCP/plasticity correlations + stress-dependent granular + seasonal/backcalc),
+  CBR, soil-as-pavement-material, drainage mi/Cd + permeability, frost F1-F4, swell, stabilization/
+  geosynthetics, compaction. Distinct from ufc_pavement (UFC 3-250-01). submodule c0552e7.
+
+## fdm2d hang fix (analysis module, from the funhouse run)
+✅ Wall-clock guard (max_seconds, default 30s) on the explicit solver so it can't grind ~20 min on a
+non-converging case. parent d5e4362. Plus a runner-side per-question signal.alarm timeout for the suite.
 
 ## Sequencing
 DEL (registries) must commit before Workstream-3 new modules touch the same registries.

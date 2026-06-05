@@ -274,4 +274,8 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.california_trenching_adapter",
         "brief": "California (Caltrans) Trenching and Shoring Manual: temporary excavation support. Cal/OSHA Type A/B/C soil classification + maximum allowable slopes (A 3/4:1, B 1:1, C 1-1/2:1), Rankine/Coulomb/Bell earth pressure coefficients, apparent active coefficient (>=0.25), log-spiral passive Kp (Caquot-Kerisel), apparent earth pressure (AEP) envelopes for braced/anchored walls, soldier-pile arching, bottom-heave FS. US customary units (psf, pcf, tsf, ft)",
     },
+    "fhwa_pavements": {
+        "adapter": "funhouse_agent.adapters.fhwa_pavements_adapter",
+        "brief": "FHWA-NHI-05-037 Geotechnical Aspects of Pavements (the broad GEOTECH-aspects pavement reference, distinct from UFC 3-250-01 roads/parking design): resilient modulus Mr (default values by AASHTO/USCS soil class, Mr from CBR/R-value/DCP/plasticity, stress-dependent granular Mr, seasonal + backcalc-to-design adjustment), typical CBR by soil class, soil suitability as a pavement material, drainage modifier mi / coefficient Cd and permeability, frost-susceptibility F1-F4, swell potential, lime/cement/asphalt stabilization, compaction. US customary units (Mr in psi, CBR/R in %)",
+    },
 }

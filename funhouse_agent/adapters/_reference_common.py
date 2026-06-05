@@ -199,6 +199,22 @@ _CURATED_ALIASES = {
     # ufc_pavement
     "table_10_1_k_subgrade": ["modulus_subgrade_reaction"],
     "table_7_1_base_design_cbr": ["base_course_design_cbr"],
+    # fhwa_pavements (Geotechnical Aspects of Pavements, FHWA-NHI-05-037)
+    "table_5_35_default_resilient_modulus": ["default_resilient_modulus",
+                                             "typical_resilient_modulus",
+                                             "resilient_modulus_by_soil_class"],
+    "table_5_34_resilient_modulus_correlations": ["resilient_modulus_correlations"],
+    "table_5_28_typical_cbr": ["typical_cbr_values", "cbr_by_soil_class"],
+    "table_4_14_soil_as_pavement_material": ["soil_suitability_as_subgrade",
+                                             "soil_as_pavement_material"],
+    "table_7_12_frost_susceptibility": ["frost_susceptibility_classification"],
+    "table_5_49_drainage_modifier_mi": ["drainage_modifier_flexible"],
+    "table_5_50_drainage_coefficient_cd": ["drainage_coefficient_rigid"],
+    "table_5_56_permeability_soils": ["soil_permeability",
+                                      "hydraulic_conductivity_soils"],
+    "table_5_57_permeability_highway_materials": ["highway_material_permeability"],
+    "table_7_17_swell_potential_ll_pi": ["swell_potential_from_atterberg"],
+    "table_5_18_compaction_aashto": ["compaction_by_aashto_class"],
 }
 
 
