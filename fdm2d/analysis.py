@@ -91,7 +91,7 @@ def _build_result(nodes, zones, displacements, stresses, velocities,
 
 def analyze_gravity(width, depth, gamma, E, nu, nx=10, ny=10, t=1.0,
                     c=0.0, phi=0.0, psi=0.0,
-                    max_steps=100000, tol=1e-5, damping=0.8):
+                    max_steps=100000, tol=1e-5, damping=0.8, max_seconds=30.0):
     """Elastic/MC gravity analysis of a rectangular soil column.
 
     Parameters
@@ -131,7 +131,7 @@ def analyze_gravity(width, depth, gamma, E, nu, nx=10, ny=10, t=1.0,
     result = solve_explicit(
         nodes, zones, sub_tris, B_all, areas, material_props,
         gamma, bc_fixed, bc_values, mass, len(nodes), t,
-        max_steps=max_steps, tol=tol, damping=damping)
+        max_steps=max_steps, tol=tol, damping=damping, max_seconds=max_seconds)
 
     converged, pos, disp, stresses, vel, n_steps, fr, history = result
 
@@ -143,7 +143,7 @@ def analyze_gravity(width, depth, gamma, E, nu, nx=10, ny=10, t=1.0,
 def analyze_foundation(B, q, depth, E, nu, gamma=0.0,
                        nx=20, ny=10, t=1.0,
                        c=0.0, phi=0.0, psi=0.0,
-                       max_steps=100000, tol=1e-5, damping=0.8):
+                       max_steps=100000, tol=1e-5, damping=0.8, max_seconds=30.0):
     """Elastic analysis of a strip foundation on a half-space.
 
     Parameters
@@ -204,7 +204,7 @@ def analyze_foundation(B, q, depth, E, nu, gamma=0.0,
         nodes, zones, sub_tris, B_all, areas, material_props,
         gamma, bc_fixed, bc_values, mass, len(nodes), t,
         max_steps=max_steps, tol=tol, damping=damping,
-        surface_loads=surface_loads)
+        surface_loads=surface_loads, max_seconds=max_seconds)
 
     converged, pos, disp, stresses, vel, n_steps, fr, history = result
 

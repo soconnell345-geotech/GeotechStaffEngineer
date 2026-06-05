@@ -8,6 +8,8 @@ No global stiffness matrix — all operations are element-by-element.
 """
 
 import math
+import time
+
 import numpy as np
 
 from fdm2d.materials import elastic_D, bulk_shear_moduli, wave_speed, mc_return_mapping
@@ -67,7 +69,7 @@ def solve_explicit(nodes, zones, sub_tris, B_all, areas, material_props,
                    gamma, bc_fixed, bc_values, mass, n_gp, t=1.0,
                    max_steps=100000, tol=1e-5, damping=0.8,
                    report_interval=1000, surface_loads=None,
-                   dt=None):
+                   dt=None, max_seconds=30.0):
     """Explicit time-stepping solver with local damping.
 
     Steps each iteration:
@@ -152,6 +154,8 @@ def solve_explicit(nodes, zones, sub_tris, B_all, areas, material_props,
 
     history = []
     force_ratio = 1.0
+    t_start = time.perf_counter()
+    n_done = max_steps
 
     for step in range(max_steps):
         # 1. Strain rates from velocities
@@ -209,6 +213,13 @@ def solve_explicit(nodes, zones, sub_tris, B_all, areas, material_props,
                 return (True, pos, disp, stresses, vel,
                         step + 1, force_ratio, history)
 
-    # Did not converge
+            # Wall-clock guard: bail out gracefully on a runaway explicit solve
+            # (FLAC-style relaxation can need >>1e5 steps) instead of hanging for
+            # many minutes. Returns converged=False with the steps actually run.
+            if time.perf_counter() - t_start > max_seconds:
+                n_done = step + 1
+                break
+
+    # Did not converge (max_steps or the wall-clock cap reached)
     disp = pos - nodes
-    return False, pos, disp, stresses, vel, max_steps, force_ratio, history
+    return False, pos, disp, stresses, vel, n_done, force_ratio, history
