@@ -25,8 +25,13 @@ DOMAINS = {
                          "hvsrpy_agent", "swprocess_agent", "gstools_agent",
                          "subsurface_characterization", "salib_agent", "pystra_agent"],
     "io-cad": ["dxf_import", "dxf_export", "pdf_import"],
-    "references": ["dm7", "gec6", "gec7", "gec10", "gec11", "gec12", "gec13",
-                   "micropile", "fema_p2192", "noaa_frost", "reference_db"],
+    "references": ["dm7",
+                   "gec4", "gec5", "gec6", "gec7", "gec8", "gec9",
+                   "gec10", "gec11", "gec12", "gec13", "gec14",
+                   "micropile",
+                   "ufc_backfill", "ufc_expansive", "ufc_pavement",
+                   "fema_p2082", "california_trenching", "fhwa_pavements",
+                   "reference_db", "figure_db"],
 }
 MOD_TO_DOMAIN = {m: d for d, mods in DOMAINS.items() for m in mods}
 
