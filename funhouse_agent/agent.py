@@ -378,8 +378,12 @@ class GeotechAgent:
             )
         if self._verbose:
             print(f"    consult_references: {question[:100]}")
+        # Give the consultant the primary's full round budget — reference
+        # discovery (list -> describe -> call, plus recovering from a wrong
+        # method-name guess) routinely needs more than the old default of 6,
+        # which silently truncated lookups (e.g. micropile Table 5-3 bond).
         answer = consult_references(
-            self._engine, question,
+            self._engine, question, max_rounds=self._max_rounds,
             temperature=self._temperature, verbose=self._verbose,
         )
         return json.dumps({"reference_answer": answer}, default=str)

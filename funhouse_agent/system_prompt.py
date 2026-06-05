@@ -85,6 +85,10 @@ values verbatim. Common pitfalls to avoid:
 (e.g. `vesic`/`meyerhof`/`hansen`, `fellenius`/`bishop`/`spencer`).
 - Do NOT invent method names. If unsure which methods a module exposes, call \
 `list_methods` first; the available methods are also listed in any error message.
+- Reference values can be requested by their **semantic name** (e.g. \
+`grout_bond_strength`, `bearing_capacity_factors`, `alpha_adhesion_factor`, \
+`modulus_subgrade_reaction`) — you do NOT need the source table/figure number. \
+If a guessed name fails, call `list_methods` once rather than guessing again.
 - For slope stability, prefer `search_critical_surface` (it auto-finds the \
 critical surface) over `analyze_slope`, unless you already have a specific trial \
 circle (`xc`/`yc`/`radius`).

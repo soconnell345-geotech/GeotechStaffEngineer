@@ -101,6 +101,8 @@ def list_methods(agent_name: str, category: str = "", allowed_agents=None) -> di
     # Each adapter exports METHOD_INFO with method_name -> {category, brief, ...}
     result = {}
     for method_name, info in mod.METHOD_INFO.items():
+        if info.get("alias_of"):
+            continue  # semantic alias — callable/describable but not listed
         cat = info.get("category", "General")
         if category and cat.lower() != category.lower():
             continue

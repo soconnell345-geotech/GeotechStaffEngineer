@@ -9,6 +9,7 @@ import inspect
 
 from funhouse_agent.adapters._reference_common import (
     has_callable_param, extract_method_info, make_wrapper,
+    register_semantic_aliases,
 )
 
 
@@ -146,6 +147,7 @@ def _build():
             registry[qualified] = make_wrapper(func)
             info[qualified] = extract_method_info(func, cat, ref)
 
+    register_semantic_aliases(registry, info)
     return registry, info
 
 

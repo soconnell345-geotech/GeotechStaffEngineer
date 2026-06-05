@@ -232,7 +232,7 @@ CONSULTANT_FRAMING = (
 def consult_references(
     engine,
     question: str,
-    max_rounds: int = 6,
+    max_rounds: int = 10,
     temperature: float = 0.1,
     verbose: bool = False,
 ) -> str:

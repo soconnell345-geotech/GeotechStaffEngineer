@@ -6,6 +6,7 @@ provides a factory so each adapter is ~15 lines.
 """
 
 import inspect
+import re
 import typing
 
 import numpy as np
@@ -146,6 +147,107 @@ def make_wrapper(func):
 
 
 # ---------------------------------------------------------------------------
+# Semantic aliases for document-id-prefixed methods
+# ---------------------------------------------------------------------------
+#
+# Reference lookups are named after the source artifact (``table_5_3_alpha_bond``,
+# ``figure_10_6_alpha_clay``, ``equation_10_21_rock_socket_side``). An LLM can't
+# know the table/figure number, so it either guesses a clean semantic name (which
+# doesn't match) or burns rounds calling ``list_methods``. We register guessable
+# aliases so the name an engineer/model reaches for resolves directly.
+
+# Tokens that carry no semantic meaning (table/figure numbers, appendix ids like
+# ``4a`` / ``a1``, and ``to`` in multi-figure ranges like ``7_10_to_13``).
+_ID_TOKEN = re.compile(r"^(\d+[a-z]?|[a-z]\d+|to)$")
+_ALIAS_PREFIXES = ("plot_figure", "table", "figure", "equation")
+
+# Curated aliases for high-value lookups where the mechanically-stripped name is
+# still not what a model reaches for. canonical_name -> [extra aliases].
+_CURATED_ALIASES = {
+    # micropile
+    "table_5_3_alpha_bond": ["grout_bond_strength"],
+    "table_5_9_soil_modulus_k_sand": ["py_soil_modulus_sand"],
+    "table_5_10_soil_modulus_k_clay": ["py_soil_modulus_clay"],
+    "table_5_4_group_efficiency": ["group_efficiency_factor"],
+    # gec13 (ground modification)
+    "table_10_1_micropile_bond_stress": ["micropile_grout_bond_strength",
+                                         "grout_bond_strength"],
+    "table_9_2_nail_bond_strength": ["soil_nail_bond_strength"],
+    "figure_5_5_settlement_improvement": ["settlement_improvement_factor"],
+    # gec10 (drilled shafts)
+    "figure_10_6_alpha_clay": ["alpha_adhesion_factor"],
+    "table_10_2_nc_base_clay": ["bearing_capacity_factor_nc"],
+    # gec12 (driven piles / Nordlund)
+    "figure_7_18_adhesion_factor": ["adhesion_factor_alpha"],
+    "figure_7_16b_nq": ["nordlund_nq_factor"],
+    "figure_7_10_to_13_kd": ["nordlund_kd"],
+    "table_7_1_resistance_factor_static": ["phi_static_analysis"],
+    "table_7_2_resistance_factor_field": ["phi_field_method"],
+    # gec11 (MSE walls)
+    "table_4_7_internal_resistance": ["internal_stability_resistance_factors"],
+    "table_4_5_external_resistance": ["external_stability_resistance_factors"],
+    # gec7 (soil nails)
+    "table_5_resistance_factors": ["soil_nail_resistance_factors",
+                                   "lrfd_resistance_factors"],
+    "table_4_4a_bond_strength_coarse": ["soil_nail_bond_strength_coarse"],
+    "table_4_4b_bond_strength_fine": ["soil_nail_bond_strength_fine"],
+    "table_4_5_bond_strength_rock": ["soil_nail_bond_strength_rock"],
+    # gec4 (ground anchors)
+    "table_7_bond_stress_cohesive": ["anchor_bond_stress_cohesive"],
+    "table_7_bond_stress_cohesionless": ["anchor_bond_stress_cohesionless"],
+    "table_7_bond_stress_rock": ["anchor_bond_stress_rock"],
+    # ufc_pavement
+    "table_10_1_k_subgrade": ["modulus_subgrade_reaction"],
+    "table_7_1_base_design_cbr": ["base_course_design_cbr"],
+    # fema_p2192
+    "table_11_6_1_sdc_short_period": ["sdc_from_sds"],
+    "table_11_6_2_sdc_one_second": ["sdc_from_sd1"],
+}
+
+
+def _mechanical_alias(name: str) -> str:
+    """Strip a leading table_/figure_/equation_ document-number prefix.
+
+    ``table_5_3_alpha_bond`` -> ``alpha_bond``; ``figure_7_10_to_13_kd`` -> ``kd``.
+    Returns '' if the name has no such prefix or nothing semantic remains.
+    """
+    for pre in _ALIAS_PREFIXES:
+        if name.startswith(pre + "_"):
+            tokens = name[len(pre) + 1:].split("_")
+            i = 0
+            while i < len(tokens) and _ID_TOKEN.match(tokens[i]):
+                i += 1
+            return "_".join(tokens[i:])
+    return ""
+
+
+def register_semantic_aliases(registry: dict, info: dict) -> tuple:
+    """Add guessable semantic aliases for document-id-prefixed methods.
+
+    Each alias points at the same callable and METHOD_INFO as its canonical
+    method but carries an ``alias_of`` marker, so it is callable/describable yet
+    hidden from ``list_methods`` (which keeps the listing canonical). An alias is
+    added only if it does not collide with an existing method or earlier alias.
+    """
+    def _add(alias: str, canonical: str) -> None:
+        if not alias or alias in registry:
+            return
+        registry[alias] = registry[canonical]
+        ai = dict(info[canonical])
+        ai["alias_of"] = canonical
+        ai["brief"] = f"{ai.get('brief', '').rstrip('.')} (alias of {canonical})."
+        info[alias] = ai
+
+    for name in list(registry):
+        if info.get(name, {}).get("alias_of"):
+            continue  # never alias an alias
+        _add(_mechanical_alias(name), name)
+        for curated in _CURATED_ALIASES.get(name, []):
+            _add(curated, name)
+    return registry, info
+
+
+# ---------------------------------------------------------------------------
 # Registry factory
 # ---------------------------------------------------------------------------
 
@@ -175,6 +277,7 @@ def build_lookup_registry(lookup_modules, *, skip_callable=False):
                 continue
             registry[name] = make_wrapper(func)
             info[name] = extract_method_info(func, category, reference)
+    register_semantic_aliases(registry, info)
     return registry, info
 
 
