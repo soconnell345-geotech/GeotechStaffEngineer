@@ -231,12 +231,28 @@ def _dispatch_read_reference_figure(arguments, engine):
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
-    full_prompt = (
-        f"This image is a rendered page from {reference} containing Figure "
-        f"{rec['figure_number']}: \"{rec['caption']}\".\n\n"
-        "Read the requested value(s) off this engineering chart:\n"
+    # Some catalog pages are estimated (not caption-confirmed); warn the vision
+    # model so it verifies the figure is present instead of reading a wrong page.
+    estimated = rec.get("page_estimated")
+    locate_clause = "that should contain" if estimated else "containing"
+    est_caveat = (
+        f" NOTE: the page for Figure {rec['figure_number']} was located by "
+        "ESTIMATE and may be off by a page or two."
+        if estimated else ""
+    )
+    step_one = (
+        f"1. FIRST confirm Figure {rec['figure_number']} actually appears on this "
+        "page. If it does NOT, say so plainly and do not read a value — report "
+        "that the page lookup was estimated and an adjacent page should be tried.\n"
+        if estimated else
         f"1. Locate Figure {rec['figure_number']} on the page; ignore other "
         "figures and body text.\n"
+    )
+    full_prompt = (
+        f"This image is a rendered page from {reference} {locate_clause} Figure "
+        f"{rec['figure_number']}: \"{rec['caption']}\".{est_caveat}\n\n"
+        "Read the requested value(s) off this engineering chart:\n"
+        + step_one +
         "2. Identify the axes (note any logarithmic scales) and the family of "
         "curves and what parameter distinguishes them.\n"
         "3. For the requested inputs, select the correct curve (interpolating "
