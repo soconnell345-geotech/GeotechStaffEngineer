@@ -270,4 +270,8 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.fema_p2082_adapter",
         "brief": "FEMA P-2082 (2020 NEHRP Provisions) seismic site design: REVISED site classification (Vs30 -> Site Class A/B/BC/C/CD/D/DE/E/F, with new intermediate classes BC/CD/DE), SDS/SD1, two-period design spectrum, Seismic Design Category, Risk Category",
     },
+    "california_trenching": {
+        "adapter": "funhouse_agent.adapters.california_trenching_adapter",
+        "brief": "California (Caltrans) Trenching and Shoring Manual: temporary excavation support. Cal/OSHA Type A/B/C soil classification + maximum allowable slopes (A 3/4:1, B 1:1, C 1-1/2:1), Rankine/Coulomb/Bell earth pressure coefficients, apparent active coefficient (>=0.25), log-spiral passive Kp (Caquot-Kerisel), apparent earth pressure (AEP) envelopes for braced/anchored walls, soldier-pile arching, bottom-heave FS. US customary units (psf, pcf, tsf, ft)",
+    },
 }
