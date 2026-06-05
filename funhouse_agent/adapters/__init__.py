@@ -266,4 +266,8 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.ufc_pavement_adapter",
         "brief": "UFC 3-250-01 roads/parking pavement design (subgrade categories, frost classification, equivalency factors, minimum thickness, k-subgrade)",
     },
+    "fema_p2082": {
+        "adapter": "funhouse_agent.adapters.fema_p2082_adapter",
+        "brief": "FEMA P-2082 (2020 NEHRP Provisions) seismic site design: REVISED site classification (Vs30 -> Site Class A/B/BC/C/CD/D/DE/E/F, with new intermediate classes BC/CD/DE), SDS/SD1, two-period design spectrum, Seismic Design Category, Risk Category",
+    },
 }

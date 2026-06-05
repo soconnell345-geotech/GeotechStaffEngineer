@@ -53,6 +53,7 @@ REFERENCE_MODULES = frozenset({
     "gec10", "gec11", "gec12", "gec13", "gec14",
     "micropile",
     "ufc_backfill", "ufc_expansive", "ufc_pavement",
+    "fema_p2082",
 })
 
 # Analysis (computation) modules: everything the primary agent may call directly.
