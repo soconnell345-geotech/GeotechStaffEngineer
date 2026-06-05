@@ -172,11 +172,41 @@ _SELECTOR_PARAMS = {"method", "factor_method", "analysis_method",
 # blind enum routing (a value advertised on a "factors" helper would otherwise
 # mis-route a full-analysis request).
 _METHOD_ALIASES = {
+    # --- foundations / settlement ---
+    # Bearing-capacity factor methods the agent guesses as method names. The
+    # full analysis takes a ``factor_method`` selector; inject it where the
+    # guess names a specific theory, else route to the default-vesic analysis.
+    ("bearing_capacity", "vesic"):
+        ("bearing_capacity_analysis", {"factor_method": "vesic"}),
+    ("bearing_capacity", "vesic_footing"):
+        ("bearing_capacity_analysis", {"factor_method": "vesic"}),
+    # terzaghi/two-layer aren't separate factor methods — the full analysis
+    # covers them (two-layer via the layer2_* params), default factor_method.
+    ("bearing_capacity", "terzaghi"): "bearing_capacity_analysis",
+    ("bearing_capacity", "two_layer_clay"): "bearing_capacity_analysis",
     ("settlement", "consolidation"): "consolidation_settlement",
     ("settlement", "elastic_foundation"): "elastic_settlement",
+    # --- deep foundations ---
+    # Drilled-shaft theory names → the one full analysis (alpha/beta/rock
+    # socket are auto-selected per layer soil_type, not a method choice).
+    ("drilled_shaft", "alpha_method"): "drilled_shaft_capacity",
+    ("drilled_shaft", "beta_method"): "drilled_shaft_capacity",
+    ("drilled_shaft", "rock_socket_capacity"): "drilled_shaft_capacity",
+    ("drilled_shaft", "single_shaft_capacity"): "drilled_shaft_capacity",
+    ("axial_pile", "beta_method"): "axial_pile_capacity",
+    ("downdrag", "fellenius_neutral_plane"): "downdrag_analysis",
+    # --- slope / FEM-FDM ---
     ("fem2d", "slope_strength_reduction"): "fem2d_slope_srm",
-    ("fem2d", "bearing_capacity_strip"): "fem2d_foundation",
     ("fdm2d", "embankment_settlement"): "fdm2d_foundation",
+    # --- other analysis modules ---
+    ("wind_loads", "freestanding_wall_asce7_22"): "freestanding_wall",
+    ("liquepy", "cpt_boulanger_idriss_2014"): "cpt_liquefaction",
+    ("salib", "sobol_sensitivity"): "sobol_sample",
+    ("pystrata", "equivalent_linear"): "eql_site_response",
+    ("pyseismosoil", "mkz_backbone"): "generate_curves",
+    ("gstools", "fit_variogram"): "variogram",
+    ("ags4", "read_and_validate"): "read_ags4",
+    ("dxf_export", "export_cross_section"): "export_geometry_to_dxf",
 }
 
 
