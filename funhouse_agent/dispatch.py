@@ -11,6 +11,7 @@ Tools:
 """
 
 import json
+import difflib
 import importlib
 
 from funhouse_agent.adapters import MODULE_REGISTRY
@@ -155,6 +156,62 @@ def _resolve_attachment(parameters: dict, attachments: dict) -> dict:
     return params
 
 
+# ---------------------------------------------------------------------------
+# Smart method resolution — cut the agent's method-name guessing
+# ---------------------------------------------------------------------------
+# Params that select a sub-method by VALUE; the agent often guesses the value as
+# if it were the method NAME (e.g. call_agent('bearing_capacity', 'vesic', ...)).
+_SELECTOR_PARAMS = {"method", "factor_method", "analysis_method",
+                    "correlation", "formula", "approach"}
+
+# Curated aliases for method names the agent commonly guesses (sourced from the
+# agent test-suite triage; module_work/module_feedback.json). Keyed by
+# (agent_name, guessed_name_lower); value is the real method name, or a
+# (real_method, {param: value}) tuple when a selector value must be injected.
+# Every entry must be verified to resolve to the CORRECT method/result — no
+# blind enum routing (a value advertised on a "factors" helper would otherwise
+# mis-route a full-analysis request).
+_METHOD_ALIASES = {
+    ("settlement", "consolidation"): "consolidation_settlement",
+    ("settlement", "elastic_foundation"): "elastic_settlement",
+    ("fem2d", "slope_strength_reduction"): "fem2d_slope_srm",
+    ("fem2d", "bearing_capacity_strip"): "fem2d_foundation",
+    ("fdm2d", "embankment_settlement"): "fdm2d_foundation",
+}
+
+
+def _selector_value_candidates(mod, name: str):
+    """Methods whose selector param advertises ``name`` as an allowed value."""
+    target = name.strip().lower()
+    hits = []
+    for m, info in mod.METHOD_INFO.items():
+        if info.get("alias_of"):
+            continue
+        for p, pinfo in (info.get("parameters") or {}).items():
+            if p in _SELECTOR_PARAMS and any(
+                    str(v).lower() == target
+                    for v in (pinfo.get("allowed_values") or [])):
+                hits.append((m, p))
+                break
+    return hits
+
+
+def _resolve_unknown_method(mod, agent_name: str, method: str, parameters: dict):
+    """Resolve a guessed method via the curated alias map.
+
+    Returns ``(real_method, new_params)`` or ``None``.  Only curated (verified)
+    aliases route automatically; selector-value guesses are surfaced as a
+    directive error instead (see call_agent), never auto-routed.
+    """
+    entry = _METHOD_ALIASES.get((agent_name, method.strip().lower()))
+    if entry is None:
+        return None
+    real, inject = (entry, {}) if isinstance(entry, str) else entry
+    if real in mod.METHOD_REGISTRY:
+        return real, {**parameters, **(inject or {})}
+    return None
+
+
 def call_agent(
     agent_name: str,
     method: str,
@@ -192,8 +249,22 @@ def call_agent(
     except Exception as e:
         return {"error": f"Failed to load module '{agent_name}': {e}"}
     if method not in mod.METHOD_REGISTRY:
-        available = sorted(mod.METHOD_REGISTRY.keys())
-        return {"error": f"Unknown method '{method}'. Available: {available}"}
+        resolved = _resolve_unknown_method(mod, agent_name, method, parameters)
+        if resolved is not None:
+            method, parameters = resolved
+        else:
+            available = sorted(k for k, v in mod.METHOD_INFO.items()
+                               if not v.get("alias_of"))
+            cands = _selector_value_candidates(mod, method)
+            if cands:
+                opts = ", ".join(f"{m}({p}='{method}')" for m, p in cands)
+                return {"error": f"'{method}' is a value for a selector "
+                                 f"parameter, not a method name — call: {opts}. "
+                                 f"Available methods: {available}"}
+            near = difflib.get_close_matches(method, available, n=3, cutoff=0.5)
+            hint = f" Did you mean: {near}?" if near else ""
+            return {"error": f"Unknown method '{method}'.{hint} "
+                             f"Available: {available}"}
     try:
         if attachments and "attachment_key" in parameters:
             parameters = _resolve_attachment(parameters, attachments)
