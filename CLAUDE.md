@@ -208,6 +208,27 @@ system-prompt Tool Discipline nudge, the native-catalog fix) is done; per-module
 behind the reference-agent + figure work. Resume from `module_work/BOARD.md`. `.claude/agents/` is
 committed (the repo `.gitignore` was changed to `.claude/*` + `!.claude/agents/`).
 
+## Reference-Layer Build Work (figure catalogs + new references)
+
+A separate ongoing effort builds/QCs the geotech-references library. Infrastructure:
+- `.claude/agents/figure-catalog-builder.md` — reusable subagent that drives any catalog's
+  `page_estimated → 0` (finds each figure's true PDF page via caption/footer/List-of-Figures
+  search) and builds catalogs for new references; can fan out one worker per reference.
+- `reference_work/BOARD.md` — running ledger of the reference build/QC backlog + status.
+
+**Working model (user preference, 2026-06-05): autonomous, milestone-level — NOT per-step.**
+Drive the multi-agent work to completion; pick sensible defaults for ordering / which-first and
+proceed without asking; commit + push freely as milestones land; report at milestones. The user
+reviews this module in big batches (~weekly), not step-by-step. **No version bumps / PyPI
+publishes until the user explicitly says so.** Still surface genuinely consequential / irreversible
+decisions. See memory `feedback-reference-layer-autonomy`.
+
+**Done 2026-06-05:** semantic method aliases (~141 reference methods, `_reference_common.py`) +
+consult round-budget fix; deleted `noaa_frost`/`ufc_dewatering`/`fema_p2192`; built `ufc_backfill`/
+`ufc_expansive` figure catalogs; **ALL figure catalogs at 100% page accuracy** (`page_estimated=0`).
+**In progress:** new references from orphan/added PDFs — California Trenching & Shoring, FHWA-NHI-05-037
+Geotech Pavements, FEMA P-2082 (2020 NEHRP) — full pipeline, FEMA-first.
+
 ## HANDOFF — Figure Read-Off: Status & Remaining Work
 
 > Handoff note for the next team (agentic pickup). The figure retrieval + vision
