@@ -19,6 +19,7 @@ from funhouse_agent.deep.agent import (
 )
 from funhouse_agent.deep.prompt import build_domain_prompt
 from funhouse_agent.deep.tools import make_core_tools, make_vision_tools
+from funhouse_agent.deep.vision_engine import LangChainVisionEngine
 
 __all__ = [
     "build_deep_agent",
@@ -28,4 +29,5 @@ __all__ = [
     "build_domain_prompt",
     "make_core_tools",
     "make_vision_tools",
+    "LangChainVisionEngine",
 ]

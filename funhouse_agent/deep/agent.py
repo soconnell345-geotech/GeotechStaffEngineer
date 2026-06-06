@@ -33,6 +33,7 @@ from funhouse_agent.reviewer import CONSULTANT_FRAMING, REVIEWER_SYSTEM_PROMPT
 
 from funhouse_agent.deep.prompt import build_domain_prompt
 from funhouse_agent.deep.tools import make_core_tools, make_vision_tools
+from funhouse_agent.deep.vision_engine import LangChainVisionEngine
 
 
 # ---------------------------------------------------------------------------
@@ -154,8 +155,15 @@ def build_deep_agent(
         filesystem write.
     engine : GenAIEngine, optional
         Vision engine for ``analyze_image`` / ``analyze_pdf_page`` /
-        ``read_reference_figure``. ``None`` is fine for offline construction
-        (those tools return a clear error if invoked without an engine).
+        ``read_reference_figure``. If ``None`` AND ``model`` is a chat-model
+        object (not a ``"provider:model"`` string), it is default-wrapped with
+        :class:`~funhouse_agent.deep.vision_engine.LangChainVisionEngine` so the
+        vision tools route through the SAME model object — one model drives both
+        text and vision, no separate Anthropic/OpenAI SDK client needed. Pass an
+        explicit ``engine`` (a Funhouse engine / ``ClaudeEngine`` /
+        ``NativeToolEngine``) to override; it is used unchanged. ``None`` with a
+        string ``model`` leaves vision unwired (those tools return a clear error
+        if invoked).
     attachments : dict, optional
         ``{key: bytes}`` of attached files for the vision tools.
     **kwargs
@@ -169,6 +177,13 @@ def build_deep_agent(
     """
     if allowed_agents is None:
         allowed_agents = ANALYSIS_MODULES
+
+    # Default-wrap the model for vision when no explicit engine is given and the
+    # model is a chat-model object (not a "provider:model" string). This lets a
+    # single model object satisfy both text and vision; an explicit engine
+    # (Funhouse engine / ClaudeEngine / NativeToolEngine) is used unchanged.
+    if engine is None and not isinstance(model, str):
+        engine = LangChainVisionEngine(model)
 
     tools = build_primary_tools(
         allowed_agents=allowed_agents,
