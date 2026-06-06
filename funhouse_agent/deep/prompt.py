@@ -16,7 +16,40 @@ import re
 from funhouse_agent.system_prompt import build_system_prompt
 
 
-def build_domain_prompt(allowed_agents=None) -> str:
+# Capability nudges for the deepagents-native planning + filesystem features.
+# These are ON by default in deepagents (TodoListMiddleware + FilesystemMiddleware),
+# so the model just needs to be told to use them well. Kept terse on purpose.
+_PLANNING_AND_SCRATCH_SECTION = """\
+## Working Style
+
+- **Plan multi-step jobs with `write_todos`.** When a request needs several
+  analyses or a chain of methods (e.g. classify -> SPT correction -> bearing ->
+  settlement), or asks you to run several methods and compare them, open a todo
+  list first, then keep it updated — mark each item done as you finish it. Skip
+  it for a single one-shot calculation.
+- **Use the scratch filesystem to stay organized.** You have `write_file` /
+  `read_file` / `edit_file` / `ls`. Stash intermediate results, large tool
+  outputs (e.g. a full method dump or a long reference excerpt), and tables you
+  will reuse, instead of re-deriving or re-quoting them. These scratch files
+  live only for the current session."""
+
+_MEMORY_SECTION = """\
+- **`/memories/` persists across sessions.** Files you write under `/memories/`
+  survive after this conversation ends (everything else is wiped). Use it for
+  durable project context — the agreed soil profile, design groundwater table,
+  governing load cases, and signed-off design parameters. Do not put transient
+  scratch work there.
+- **Your durable memory file is `/memories/AGENTS.md`.** Its contents are loaded
+  for you automatically at the start of every session, shown in the
+  `<agent_memory>` block. So: **save durable project context by writing or
+  updating `/memories/AGENTS.md`** (create it if absent; append/merge rather than
+  overwrite good notes). Other `/memories/*` files persist too but are NOT
+  auto-loaded — if `<agent_memory>` is empty yet you expect prior project context,
+  run `ls /memories/` and `read_file` the relevant ones before asking the user to
+  repeat themselves."""
+
+
+def build_domain_prompt(allowed_agents=None, *, memory_enabled: bool = False) -> str:
     """Return the domain system prompt with the ReAct XML sections stripped.
 
     Parameters
@@ -24,13 +57,19 @@ def build_domain_prompt(allowed_agents=None) -> str:
     allowed_agents : iterable of str, optional
         If provided, only these modules appear in the catalog (same scoping as
         ``build_system_prompt``). Defaults to the full registry.
+    memory_enabled : bool, optional
+        When ``True``, append a short note telling the agent that ``/memories/``
+        persists across sessions (only meaningful when the agent is built with a
+        store / ``enable_memory``). Defaults to ``False``.
 
     Returns
     -------
     str
         The system prompt for ``create_deep_agent``: domain guidance + DIGGS
         workflow + tool discipline + module catalog, with the
-        ``## ReAct Protocol`` through ``## Rules`` sections removed.
+        ``## ReAct Protocol`` through ``## Rules`` sections removed, plus a
+        concise note nudging the deepagents-native planning + scratch filesystem
+        (and persistent ``/memories/`` when enabled).
     """
     base = build_system_prompt(allowed_agents)
     # Remove "## ReAct Protocol" through the start of "## Available Modules"
@@ -42,7 +81,12 @@ def build_domain_prompt(allowed_agents=None) -> str:
         base,
         flags=re.DOTALL,
     )
-    return base.strip()
+    base = base.strip()
+
+    section = _PLANNING_AND_SCRATCH_SECTION
+    if memory_enabled:
+        section = section + "\n" + _MEMORY_SECTION
+    return base + "\n\n" + section
 
 
 __all__ = ["build_domain_prompt"]

@@ -27,6 +27,8 @@ Sub-agents follow the ``SubAgent`` TypedDict
 from typing import Callable, Optional
 
 from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+from deepagents.middleware import SummarizationMiddleware
 
 from funhouse_agent.dispatch import ANALYSIS_MODULES, REFERENCE_MODULES
 from funhouse_agent.reviewer import CONSULTANT_FRAMING, REVIEWER_SYSTEM_PROMPT
@@ -34,6 +36,159 @@ from funhouse_agent.reviewer import CONSULTANT_FRAMING, REVIEWER_SYSTEM_PROMPT
 from funhouse_agent.deep.prompt import build_domain_prompt
 from funhouse_agent.deep.tools import make_core_tools, make_vision_tools
 from funhouse_agent.deep.vision_engine import LangChainVisionEngine
+
+
+# ---------------------------------------------------------------------------
+# Phase-3 capability wiring (persistent memory + summarization)
+# ---------------------------------------------------------------------------
+
+#: Filesystem route prefix that the agent's persistent ``/memories/`` files live
+#: under. Everything else stays in ephemeral per-thread state.
+MEMORIES_ROUTE = "/memories/"
+
+#: The durable project-context note the agent is nudged to maintain. It is
+#: declared as a deepagents ``memory=`` source so its contents are loaded into
+#: the system prompt at the start of every thread (cross-session), and it lives
+#: under ``/memories/`` so it is also writable/persistent via the store.
+MEMORIES_AGENTS_FILE = f"{MEMORIES_ROUTE}AGENTS.md"
+
+
+def _memories_namespace(_runtime) -> tuple:
+    """Namespace factory for the ``/memories/`` :class:`StoreBackend`.
+
+    Returns a fixed ``("memories",)`` namespace so every thread that shares the
+    same store reads and writes the SAME persistent memory bucket. A fixed
+    namespace (rather than the deprecated legacy ``assistant_id`` detection) is
+    what makes ``/memories/`` durable *across* sessions: thread 1 can write a
+    fact and thread 2 can read it back.
+    """
+    return ("memories",)
+
+
+def build_memory_backend(store=None):
+    """Build the :class:`CompositeBackend` that routes ``/memories/`` to a store.
+
+    Parameters
+    ----------
+    store : BaseStore, optional
+        A LangGraph store. When given, it is bound directly onto the
+        :class:`StoreBackend` so the backend works both inside graph execution
+        AND when called directly (e.g. the cross-session round-trip test). When
+        ``None``, the :class:`StoreBackend` resolves the store at call time via
+        ``get_store()`` — i.e. the ``store=`` handed to ``create_deep_agent``.
+
+    Returns
+    -------
+    CompositeBackend
+        ``default=StateBackend()`` (ephemeral scratch files, per-thread) with a
+        single route ``{"/memories/": StoreBackend(...)}`` (persistent,
+        cross-thread). Normal scratch paths (``/notes.md`` etc.) stay in state;
+        only paths under ``/memories/`` hit the store.
+    """
+    return CompositeBackend(
+        default=StateBackend(),
+        routes={
+            MEMORIES_ROUTE: StoreBackend(store=store, namespace=_memories_namespace),
+        },
+    )
+
+
+class GeotechSummarizationMiddleware(SummarizationMiddleware):
+    """Our explicitly-configured summarization middleware.
+
+    ``create_deep_agent`` ALREADY auto-attaches a deepagents
+    ``SummarizationMiddleware`` (with model-aware default thresholds), and
+    LangChain's ``create_agent`` rejects two middleware that report the same
+    ``.name``. The deepagents impl reports ``name == "SummarizationMiddleware"``
+    for the exact base class but falls back to ``type(self).__name__`` for
+    subclasses — so subclassing is the supported way to add a *second*,
+    custom-tuned summarizer without colliding with the built-in one. Both share
+    the ``_summarization_event`` state key and the same backend, so they
+    interoperate; ours fires at whichever trigger we configure.
+    """
+
+
+#: Sentinel meaning "pick a trigger based on the model" — see
+#: :func:`_resolve_summarization_trigger`.
+_AUTO_SUMMARIZATION_TRIGGER = None
+_DEFAULT_SUMMARIZATION_KEEP = ("messages", 8)
+
+#: Fraction-of-context trigger used when the model publishes its input window.
+_SUMMARIZATION_FRACTION = 0.8
+#: Absolute-token fallback for models with no published context window.
+_SUMMARIZATION_TOKENS_FALLBACK = 170_000
+
+
+def _model_has_token_profile(model) -> bool:
+    """True if ``model`` exposes ``max_input_tokens`` in its profile.
+
+    Fraction-based summarization triggers (``("fraction", f)``) require the
+    model to publish ``max_input_tokens``; without it the LangChain summarizer
+    raises at construction. Real chat models (e.g. ``ChatAnthropic``) publish a
+    profile; fakes/strings do not.
+    """
+    profile = getattr(model, "profile", None)
+    return (
+        isinstance(profile, dict)
+        and isinstance(profile.get("max_input_tokens"), int)
+    )
+
+
+def _resolve_summarization_trigger(trigger, model):
+    """Resolve the summarization trigger for ``model``.
+
+    Honors an explicit ``trigger``. For the ``_AUTO_SUMMARIZATION_TRIGGER``
+    sentinel, returns a fraction-of-context trigger when the model publishes its
+    input window, otherwise an absolute-token fallback — mirroring deepagents'
+    own model-aware defaulting so a profile-less model (string spec or a fake
+    test model) never blows up on a fractional trigger.
+    """
+    if trigger is not _AUTO_SUMMARIZATION_TRIGGER:
+        return trigger
+    if _model_has_token_profile(model):
+        return ("fraction", _SUMMARIZATION_FRACTION)
+    return ("tokens", _SUMMARIZATION_TOKENS_FALLBACK)
+
+
+def build_summarization_middleware(
+    model,
+    *,
+    backend=None,
+    trigger=_AUTO_SUMMARIZATION_TRIGGER,
+    keep=_DEFAULT_SUMMARIZATION_KEEP,
+):
+    """Build the custom-tuned :class:`GeotechSummarizationMiddleware`.
+
+    Parameters
+    ----------
+    model : BaseChatModel
+        Model that writes the summaries. (A ``"provider:model"`` string is
+        resolved by deepagents internally.)
+    backend : BackendProtocol, optional
+        Backend the summarizer offloads evicted history to (so it can be
+        re-read via ``read_file``). Defaults to an ephemeral
+        :class:`StateBackend` when not given.
+    trigger : ContextSize, optional
+        When to summarize; see :func:`_resolve_summarization_trigger`. Defaults
+        to the model-aware auto trigger.
+    keep : ContextSize, optional
+        How much recent history to preserve verbatim. Defaults to
+        ``("messages", 8)``.
+
+    Returns
+    -------
+    GeotechSummarizationMiddleware
+        A distinctly-named summarizer that can be appended to
+        ``create_deep_agent(middleware=...)`` without colliding with the
+        built-in one.
+    """
+    summ_backend = backend if backend is not None else StateBackend()
+    return GeotechSummarizationMiddleware(
+        model=model,
+        backend=summ_backend,
+        trigger=_resolve_summarization_trigger(trigger, model),
+        keep=keep,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -129,9 +284,23 @@ def build_deep_agent(
     save_fn: Optional[Callable] = None,
     engine=None,
     attachments=None,
+    store=None,
+    checkpointer=None,
+    enable_memory: bool = False,
+    enable_summarization: bool = False,
+    summarization_model=None,
+    summarization_trigger=_AUTO_SUMMARIZATION_TRIGGER,
+    summarization_keep=_DEFAULT_SUMMARIZATION_KEEP,
     **kwargs,
 ):
     """Construct the deepagents port of the geotech agent.
+
+    By default this agent already has — courtesy of deepagents — *planning*
+    (the ``write_todos`` tool, via ``TodoListMiddleware``) and an in-thread
+    *scratch filesystem* (``ls`` / ``read_file`` / ``write_file`` /
+    ``edit_file``, via ``FilesystemMiddleware`` on an ephemeral
+    :class:`StateBackend`). Those are ON with no configuration. The Phase-3
+    parameters below add the *cross-session* and *durability* capabilities.
 
     Parameters
     ----------
@@ -166,17 +335,71 @@ def build_deep_agent(
         if invoked).
     attachments : dict, optional
         ``{key: bytes}`` of attached files for the vision tools.
+    store : BaseStore, optional
+        A LangGraph store (e.g. ``InMemoryStore`` / a Postgres store) for
+        cross-session / persistent memory. Passing a store turns ``enable_memory``
+        on automatically — files the agent writes under ``/memories/`` are routed
+        to this store and therefore survive across threads, while ordinary scratch
+        files stay ephemeral in per-thread state. Forwarded to
+        ``create_deep_agent(store=...)``.
+    checkpointer : Checkpointer, optional
+        A LangGraph checkpointer (e.g. ``InMemorySaver`` / a Postgres saver) for
+        durable, resumable threads. With a checkpointer, an interrupted run can be
+        resumed and a thread's full state (messages, todos, scratch files) is
+        persisted under its ``thread_id``. Forwarded to
+        ``create_deep_agent(checkpointer=...)``.
+    enable_memory : bool
+        Turn on the persistent ``/memories/`` filesystem route. When on (or when a
+        ``store`` is given), the filesystem backend becomes
+        ``CompositeBackend(default=StateBackend(), routes={"/memories/":
+        StoreBackend()})`` and a deepagents ``memory=[/memories/AGENTS.md]`` source
+        is registered so any durable project context the agent has saved is loaded
+        into the system prompt at the start of every thread. Requires a ``store``
+        at runtime for the route to actually persist (``create_deep_agent`` wires
+        the store into ``StoreBackend`` via ``get_store()``). Defaults to ``False``.
+    enable_summarization : bool
+        Append a second, explicitly-configured
+        :class:`GeotechSummarizationMiddleware` so long sessions auto-compact at
+        our chosen threshold. NOTE: deepagents already attaches a summarizer with
+        model-aware defaults; this adds a custom-tuned one alongside it (they share
+        state and cannot collide because the subclass reports a distinct name).
+        Defaults to ``False``.
+    summarization_model : str | BaseChatModel, optional
+        Model used to *write* the summaries when ``enable_summarization`` is on.
+        Defaults to the primary ``model``. (If ``model`` is a ``"provider:model"``
+        string, that string is used as-is.)
+    summarization_trigger : ContextSize, optional
+        When to summarize. Defaults to auto: ``("fraction", 0.8)`` (compact at
+        ~80% of the model's input window) when the model publishes its window,
+        else an absolute ``("tokens", 170000)`` fallback for profile-less models
+        (string specs / fakes) so construction never fails.
+    summarization_keep : ContextSize
+        How much recent history to keep verbatim after a summarization. Defaults
+        to ``("messages", 8)`` so the latest exchanges survive intact.
     **kwargs
-        Forwarded verbatim to ``create_deep_agent`` (e.g. ``checkpointer``,
-        ``name``, ``debug``).
+        Forwarded verbatim to ``create_deep_agent`` (e.g. ``name``, ``debug``,
+        ``permissions``).
 
     Returns
     -------
     CompiledStateGraph
         The compiled deep agent.
+
+    Notes
+    -----
+    With NO Phase-3 arguments this builds exactly as before: no ``store``, no
+    ``checkpointer``, the default ephemeral ``StateBackend`` filesystem, and only
+    the deepagents-default summarizer. Planning (``write_todos``) and the scratch
+    filesystem tools are present regardless because deepagents attaches them by
+    default.
     """
     if allowed_agents is None:
         allowed_agents = ANALYSIS_MODULES
+
+    # A store implies persistent memory: there is no point handing in a store
+    # without routing /memories/ to it.
+    if store is not None:
+        enable_memory = True
 
     # Default-wrap the model for vision when no explicit engine is given and the
     # model is a chat-model object (not a "provider:model" string). This lets a
@@ -192,7 +415,7 @@ def build_deep_agent(
         save_fn=save_fn,
     )
 
-    system_prompt = build_domain_prompt(allowed_agents)
+    system_prompt = build_domain_prompt(allowed_agents, memory_enabled=enable_memory)
 
     subagents = []
     if reference_mode != "off":
@@ -203,13 +426,117 @@ def build_deep_agent(
         )
         subagents.append(build_reviewer_subagent())
 
+    # ----- Phase-3: persistent /memories/ backend + memory= source -----
+    create_kwargs = dict(kwargs)
+    backend = None
+    if enable_memory:
+        backend = build_memory_backend(store=store)
+        # Register the durable AGENTS.md as a deepagents memory source so its
+        # contents load into the system prompt at the start of every thread.
+        # (`memory=` may already be in kwargs; respect an explicit override.)
+        create_kwargs.setdefault("memory", [MEMORIES_AGENTS_FILE])
+        create_kwargs["backend"] = backend
+
+    # ----- Phase-3: explicit summarization middleware -----
+    middleware = list(create_kwargs.pop("middleware", []) or [])
+    if enable_summarization:
+        middleware.append(
+            build_summarization_middleware(
+                summarization_model if summarization_model is not None else model,
+                backend=backend,
+                trigger=summarization_trigger,
+                keep=summarization_keep,
+            )
+        )
+    if middleware:
+        create_kwargs["middleware"] = middleware
+
+    if store is not None:
+        create_kwargs["store"] = store
+    if checkpointer is not None:
+        create_kwargs["checkpointer"] = checkpointer
+
     return create_deep_agent(
         model=model,
         tools=tools,
         system_prompt=system_prompt,
         subagents=subagents,
-        **kwargs,
+        **create_kwargs,
     )
+
+
+def run_memory_demo(model, store, checkpointer=None, *, verbose: bool = True) -> bool:
+    """Prove cross-session ``/memories/`` persistence end-to-end (REAL model).
+
+    Builds a memory-enabled agent on ``model`` + ``store`` and runs TWO separate
+    threads:
+
+    * **Thread 1** is told a durable fact and asked to save it under
+      ``/memories/`` (e.g. ``write_file('/memories/AGENTS.md', ...)``).
+    * **Thread 2** — a *new* ``thread_id`` sharing the SAME ``store`` — is asked
+      to recall the fact. Because ``/memories/`` is store-backed, thread 2 can
+      read what thread 1 wrote even though the two threads share no message
+      history.
+
+    .. warning::
+       This makes REAL LLM API calls. It is NOT part of the offline suite and is
+       never executed by it — it exists so a notebook / live run can confirm the
+       agent actually *uses* ``/memories/`` across sessions (the offline tests
+       only prove the backend round-trip and the wiring).
+
+    Parameters
+    ----------
+    model : BaseChatModel
+        A real tool-calling chat model.
+    store : BaseStore
+        A LangGraph store shared across both threads (e.g. ``InMemoryStore``).
+    checkpointer : Checkpointer, optional
+        Optional durable checkpointer for the threads.
+    verbose : bool
+        Print the recall answer.
+
+    Returns
+    -------
+    bool
+        ``True`` if thread 2's answer references the fact saved in thread 1.
+    """
+    agent = build_deep_agent(
+        model=model, store=store, checkpointer=checkpointer, enable_memory=True,
+    )
+    fact = "The project design groundwater table is at 3.5 m below grade."
+    keyword = "3.5"
+
+    agent.invoke(
+        {"messages": [{"role": "user", "content": (
+            f"Remember this for the whole project and save it to your memory: {fact}"
+        )}]},
+        config={"configurable": {"thread_id": "demo-thread-1"}},
+    )
+
+    result = agent.invoke(
+        {"messages": [{"role": "user", "content": (
+            "What is the project design groundwater table depth? "
+            "Check your memory if needed."
+        )}]},
+        config={"configurable": {"thread_id": "demo-thread-2"}},
+    )
+
+    messages = result.get("messages", []) if isinstance(result, dict) else []
+    final = ""
+    for m in reversed(messages):
+        content = getattr(m, "content", "")
+        text = content if isinstance(content, str) else "".join(
+            b.get("text", "") if isinstance(b, dict) else str(b) for b in (content or [])
+        )
+        if text.strip():
+            final = text
+            break
+
+    recalled = keyword in final
+    if verbose:
+        print("Thread-2 recall answer:", final)
+        print("RESULT:", "PASS" if recalled else "FAIL")
+    return recalled
 
 
 __all__ = [
@@ -217,4 +544,10 @@ __all__ = [
     "build_primary_tools",
     "build_references_subagent",
     "build_reviewer_subagent",
+    "build_memory_backend",
+    "build_summarization_middleware",
+    "run_memory_demo",
+    "GeotechSummarizationMiddleware",
+    "MEMORIES_ROUTE",
+    "MEMORIES_AGENTS_FILE",
 ]
