@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (2935 module + 142 harness + 3529 ref; full `pytest -q` = 6933 passed, 47 skipped)
+## Module Inventory (57 modules = 36 analysis + 21 reference, + foundry harness; reference layer fully QC'd, all figure catalogs 100% page-accurate)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -223,11 +223,28 @@ reviews this module in big batches (~weekly), not step-by-step. **No version bum
 publishes until the user explicitly says so.** Still surface genuinely consequential / irreversible
 decisions. See memory `feedback-reference-layer-autonomy`.
 
-**Done 2026-06-05:** semantic method aliases (~141 reference methods, `_reference_common.py`) +
-consult round-budget fix; deleted `noaa_frost`/`ufc_dewatering`/`fema_p2192`; built `ufc_backfill`/
-`ufc_expansive` figure catalogs; **ALL figure catalogs at 100% page accuracy** (`page_estimated=0`).
-**In progress:** new references from orphan/added PDFs — California Trenching & Shoring, FHWA-NHI-05-037
-Geotech Pavements, FEMA P-2082 (2020 NEHRP) — full pipeline, FEMA-first.
+**Done (2026-06-05, released as geotech-references 1.2.5 / geotech-staff-engineer 4.6.5):**
+- Deleted low-value/incorrect refs: `noaa_frost`, `ufc_dewatering`, `fema_p2192`.
+- Built `ufc_backfill` + `ufc_expansive` figure catalogs; **ALL 20 figure catalogs at 100% page
+  accuracy** (`page_estimated=0`).
+- Three NEW references, full pipeline (text JSON + python lookups + figure catalog + tests +
+  registry wiring in both repos): **`fema_p2082`** (FEMA P-2082 / 2020 NEHRP — site classes
+  BC/CD/DE with BC baseline, Fa/Fv removed), **`california_trenching`** (Caltrans T&S Manual —
+  shoring/excavation), **`fhwa_pavements`** (FHWA-NHI-05-037 — Mr/CBR/frost/drainage; distinct
+  from `ufc_pavement`). Reference layer is now **21 modules** (`dispatch.REFERENCE_MODULES`).
+- **Deep QC** (4-agent fan-out) found & fixed 3 critical + 4 major content/functional errors
+  (incl. a broken figure `pdf_path` that disabled vision for 2 refs, and the FEMA Ch-19 SSI
+  equations that a build agent had mis-reconstructed); ~640 reference methods verified 0-bug.
+- **Ergonomics:** semantic aliases for reference methods (`_reference_common.register_semantic_aliases`)
+  + consult round-budget fix; **smart method resolution + analysis-method aliases** in `dispatch.py`
+  (`_METHOD_ALIASES`, selector-value directives, fuzzy did-you-mean) driven by the agent-suite triage
+  (`module_work/module_feedback.json`); **`fdm2d` wall-clock guard** (no multi-minute solves).
+
+**Open backlog (handed off, not done):** ~23 per-module param-name/value bugs (`module_feedback.json`);
+module-*selection* mis-routing (e.g. Rankine guessed on the wrong module) and coverage gaps
+(`retaining_walls` has no earth-pressure-coefficient method; `fem2d` no footing-SRM method).
+`ufc_expansive` has ~22 more figures behind an OCR pass (scanned PDF). The weekend QC routine's
+gec_6/7/12/13 chapter-text edits are a separate uncommitted workstream.
 
 ## HANDOFF — Figure Read-Off: Status & Remaining Work
 
