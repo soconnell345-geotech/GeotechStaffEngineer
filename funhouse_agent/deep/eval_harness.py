@@ -723,6 +723,130 @@ def run_ab(
 
 
 # ===========================================================================
+# Single-agent v2 suite runner (the owner's OWN model — no v1, no A/B)
+# ===========================================================================
+
+def run_suite(
+    model,
+    *,
+    questions: Optional[list[dict]] = None,
+    limit: Optional[int] = None,
+    out: Optional[Path] = None,
+    verbose: bool = True,
+) -> dict:
+    """Run the whole suite through ONE v2 deepagents agent on the owner's model.
+
+    This is the Funhouse-friendly, **v2-only** runner: it takes the owner's OWN
+    LangChain chat model (e.g. a
+    :class:`~funhouse_agent.deep.databricks_bridge.PrompterChatModel` on
+    ``funhouse-gpt-high``, or a ``ChatAnthropic``), builds the deep agent ONCE,
+    and runs every suite question through it — no Claude key, no v1
+    ``ClaudeEngine``, and no A/B second agent. It reuses the SAME
+    :func:`_run_one` + :func:`_v2_to_qa` path the A/B runner uses, so the trace
+    extraction, error flagging, and :class:`QAResult` shape match exactly.
+
+    Correctness is NOT auto-scored (the suite carries no expected answers — see
+    :func:`score_correctness`); the owner reads the answers in the markdown
+    review file (:func:`render_suite_markdown`) and judges quality by eye, the
+    way they did with the v4.6.4 run. The returned ``metrics`` are the v2
+    *process* metrics (P1 hallucination rate, tool-error rate, rounds, latency,
+    tokens) via :func:`score_run`.
+
+    Parameters
+    ----------
+    model : str | BaseChatModel
+        A LangChain chat model (or a ``"provider:model"`` string) that drives
+        the deep agent. The owner passes their Funhouse model here, e.g.
+        ``PrompterChatModel(prompter=fh_prompter, model="funhouse-gpt-high")``.
+        Using it makes REAL API calls on the owner's budget.
+    questions : list of dict, optional
+        Suite questions (``{id, module, complexity, question}``). When ``None``
+        (the default) the packaged suite is loaded via :func:`load_suite`. A
+        small explicit list is a test seam that bypasses the loader.
+    limit : int, optional
+        Run only the first ``limit`` questions (a cheap subset). ``None`` runs
+        all of them.
+    out : Path, optional
+        When given, write BOTH a results JSON (here) and a readable markdown
+        review file at ``<out>.md`` (see :func:`write_suite_results`).
+    verbose : bool
+        Print a one-line run header and a ``[i/N] <id> (<module>)`` progress
+        line per question (so a long Funhouse run shows progress — Databricks
+        buffers stdout, which is fine).
+
+    Returns
+    -------
+    dict
+        ``{"model": <str>, "n": N, "results": [qa.to_dict(), ...],
+        "metrics": score_run(results, questions)}``. ``results`` are
+        :class:`QAResult` dicts (one per question).
+    """
+    if questions is None:
+        questions = load_suite()
+    if limit is not None:
+        questions = questions[:limit]
+
+    model_label = model if isinstance(model, str) else type(model).__name__
+    model_id = getattr(model, "model", None) or getattr(model, "model_name", None)
+    if model_id and not isinstance(model, str):
+        model_label = f"{model_label}({model_id})"
+
+    if verbose:
+        n = len(questions)
+        print(
+            f"Running {n} question(s) through v2 (deepagents) on "
+            f"{model_label} — REAL API calls"
+        )
+
+    # Build the v2 agent ONCE — the owner's model drives both text and (via the
+    # default LangChainVisionEngine wrap inside build_deep_agent) vision.
+    from funhouse_agent.deep.agent import build_deep_agent
+    agent = build_deep_agent(model=model)
+
+    qas: list[QAResult] = []
+    texts: list[str] = []
+    for i, q in enumerate(questions, 1):
+        qid = q.get("id", f"Q{i}")
+        module = q.get("module", "?")
+        text = q.get("question", "")
+        if verbose:
+            print(f"[{i}/{len(questions)}] {qid} ({module})")
+        # _run_one already catches a crashing ask and records it on the QAResult
+        # (so one failure does not abort the whole run); the per-question try is
+        # belt-and-suspenders against anything _run_one itself might raise.
+        try:
+            qa = _run_one(agent, text, _v2_to_qa, qid, module, "v2")
+        except Exception as exc:  # pragma: no cover - defensive
+            qa = QAResult(qid=qid, module=module, agent="v2",
+                          exception=f"{type(exc).__name__}: {exc}")
+        qas.append(qa)
+        texts.append(text)
+
+    # Fold the question text into each result dict (QAResult itself does not
+    # carry it) so the markdown review can show the question above its answer.
+    results = []
+    for qa, text in zip(qas, texts):
+        d = qa.to_dict()
+        d["question"] = text
+        results.append(d)
+    suite_result = {
+        "model": model_label,
+        "n": len(qas),
+        "results": results,
+        "metrics": score_run(qas, questions),
+    }
+
+    if out is not None:
+        paths = write_suite_results(suite_result, Path(out))
+        if verbose:
+            print(f"\nWrote results JSON: {paths['json']}")
+            if paths["markdown"]:
+                print(f"Wrote markdown review: {paths['markdown']}")
+
+    return suite_result
+
+
+# ===========================================================================
 # Markdown A/B summary table
 # ===========================================================================
 
@@ -867,6 +991,172 @@ def write_results(ab: dict, out_path: Path, *, markdown: bool = True) -> dict:
         md_path = out_path.with_suffix(out_path.suffix + ".md")
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(table + "\n")
+    return {"json": str(out_path), "markdown": str(md_path) if md_path else None}
+
+
+# ===========================================================================
+# Single-agent (v2-only) markdown review renderer + writer
+# ===========================================================================
+
+def _trace_summary(trace: list) -> str:
+    """Compact ``agent.method`` summary of the tool calls in one trace.
+
+    ``trace`` is a list of either :class:`ToolCallRecord` objects or their dict
+    form (``{name, args, errored, note}``), so this works on both a live
+    :class:`QAResult` and a re-loaded ``to_dict`` payload. A ``call_agent`` is
+    rendered as ``<agent_name>.<method>`` from its args (the meaningful unit for
+    the owner); any other tool is rendered by its bare name. An errored call is
+    suffixed with ``[errored]``.
+    """
+    parts = []
+    for tc in trace:
+        if isinstance(tc, dict):
+            name = tc.get("name", "?")
+            args = tc.get("args", {}) or {}
+            errored = bool(tc.get("errored"))
+        else:
+            name = getattr(tc, "name", "?")
+            args = getattr(tc, "args", {}) or {}
+            errored = bool(getattr(tc, "errored", False))
+        if name in ("call_agent", "describe_method", "list_methods") and isinstance(args, dict):
+            agent_name = args.get("agent_name") or args.get("agent") or ""
+            method = args.get("method") or ""
+            label = ".".join(p for p in (agent_name, method) if p) or name
+        else:
+            label = name
+        if errored:
+            label += " [errored]"
+        parts.append(label)
+    return ", ".join(parts) if parts else "(none)"
+
+
+def render_suite_markdown(suite_result: dict) -> str:
+    """Render a single v2 run as a top-to-bottom human review document.
+
+    This is the file the owner skims to judge answer QUALITY (correctness is NOT
+    auto-scored — stated once at the top, like the A/B table). The layout:
+
+    * a short metrics header (n, P1 hallucination rate, tool-error rate, avg
+      rounds / latency / tokens), then
+    * **per question** — the id + module, the question text, the agent's final
+      answer, and a compact ``tools used: <agent.method>, ...`` line plus any
+      ``errors:`` line.
+
+    Parameters
+    ----------
+    suite_result : dict
+        The dict returned by :func:`run_suite` (``{model, n, results,
+        metrics}``). ``results`` are :class:`QAResult` dicts.
+
+    Returns
+    -------
+    str
+        A markdown review document.
+    """
+    model = suite_result.get("model", "n/a")
+    n = suite_result.get("n", len(suite_result.get("results", [])))
+    m = suite_result.get("metrics", {}) or {}
+    results = suite_result.get("results", []) or []
+
+    lines = [
+        "# v2 (deepagents) suite review",
+        "",
+        f"Model: `{model}`  |  Questions: {n}",
+        "",
+        "Correctness is **not auto-scored** from this suite "
+        "(`geotech_test_suite.json` carries no expected answers). Read each "
+        "answer below and judge its quality by eye. The metrics below are "
+        "process/behavior metrics, not a correctness score.",
+        "",
+        "## Run metrics",
+        "",
+        f"- Questions: {m.get('n_questions', n)}",
+        f"- P1 hallucination-on-error rate: {_fmt(m.get('p1_hallucination_rate'), 'pct')} "
+        f"({_fmt(m.get('p1_count'), 'int')} question(s))",
+        f"- Tool-error rate (q with >=1 error): {_fmt(m.get('tool_error_rate'), 'pct')}",
+        f"- Errors per question (mean): {_fmt(m.get('errors_per_question'), 'num')}",
+        f"- Exception rate: {_fmt(m.get('exception_rate'), 'pct')}",
+        f"- Avg rounds: {_fmt(m.get('avg_rounds'), 'num')}",
+        f"- Avg latency (s): {_fmt(m.get('avg_latency_s'), 'num')}",
+        f"- Total tokens: {_fmt(m.get('total_tokens'), 'int')}",
+        f"- Avg tokens / question: {_fmt(m.get('avg_tokens'), 'num')}",
+        "",
+        "## Answers",
+        "",
+    ]
+
+    for i, r in enumerate(results, 1):
+        qid = r.get("qid", f"Q{i}")
+        module = r.get("module", "?")
+        question = r.get("question", "")
+        answer = (r.get("answer", "") or "").strip()
+        trace = r.get("trace", []) or []
+        errors = r.get("errors", []) or []
+        exception = r.get("exception")
+
+        lines.append(f"### {i}. {qid} ({module})")
+        lines.append("")
+        if question:
+            lines.append(f"**Question:** {question}")
+            lines.append("")
+        lines.append("**Answer:**")
+        lines.append("")
+        lines.append(answer if answer else "_(no answer produced)_")
+        lines.append("")
+        lines.append(f"_tools used: {_trace_summary(trace)}_")
+        if exception:
+            lines.append("")
+            lines.append(f"_exception: {exception}_")
+        elif errors:
+            notes = []
+            for e in errors:
+                if isinstance(e, dict):
+                    notes.append(str(e.get("message") or e.get("type") or e))
+                else:
+                    notes.append(str(e))
+            lines.append("")
+            lines.append(f"_errors: {'; '.join(notes)}_")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def write_suite_results(suite_result: dict, out_path: Path, *,
+                        markdown: bool = True) -> dict:
+    """Write a single-agent run's results JSON + a readable markdown review.
+
+    Mirrors :func:`write_results` (the A/B writer) conventions for the SINGLE-
+    agent case: the JSON goes to ``out_path`` (with the rendered markdown folded
+    in under ``"markdown_review"``), and the human review doc is written next to
+    it as ``<out_path>.md`` when ``markdown`` is True.
+
+    Parameters
+    ----------
+    suite_result : dict
+        The :func:`run_suite` result.
+    out_path : Path
+        Destination for the JSON. The markdown review is written next to it as
+        ``<out_path>.md`` when ``markdown`` is True.
+    markdown : bool
+        Also write the sibling ``.md`` review. Defaults to True.
+
+    Returns
+    -------
+    dict
+        ``{"json": str, "markdown": str|None}`` of the paths written.
+    """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    review = render_suite_markdown(suite_result)
+    payload = dict(suite_result)
+    payload["markdown_review"] = review
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, default=str)
+    md_path = None
+    if markdown:
+        md_path = out_path.with_suffix(out_path.suffix + ".md")
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write(review + "\n")
     return {"json": str(out_path), "markdown": str(md_path) if md_path else None}
 
 
@@ -1032,6 +1322,12 @@ def main(argv=None) -> int:
              "pipeline. Default-safe.",
     )
     parser.add_argument(
+        "--suite-only", action="store_true",
+        help="Run the v2-ONLY suite runner (run_suite) on a local Anthropic "
+             "ChatAnthropic model — no v1, no A/B. For local testing of the "
+             "Funhouse-friendly single-agent path. Spends real Anthropic budget.",
+    )
+    parser.add_argument(
         "--yes", action="store_true",
         help="Skip the live-run cost confirmation prompt (for non-interactive "
              "use). Ignored under --dry-run.",
@@ -1046,6 +1342,33 @@ def main(argv=None) -> int:
 
     questions = load_suite()
     n = len(questions) if args.limit is None else min(args.limit, len(questions))
+
+    # ----- v2-only suite runner (local Anthropic model) -----
+    if args.suite_only:
+        print("=" * 70)
+        print("LIVE v2-ONLY SUITE RUN — spends REAL Anthropic API budget.")
+        print(f"  Questions: {n}  (single agent, v2 deepagents only)")
+        print(f"  Model: {args.model}")
+        print("=" * 70)
+        if not args.yes:
+            try:
+                resp = input("Proceed with the LIVE run? [y/N] ").strip().lower()
+            except EOFError:
+                resp = ""
+            if resp not in ("y", "yes"):
+                print("Aborted. (Use --dry-run for an offline pipeline test.)")
+                return 1
+        try:
+            from langchain_anthropic import ChatAnthropic
+        except ImportError as e:  # pragma: no cover - env-dependent
+            raise SystemExit(
+                "langchain_anthropic is required for --suite-only: "
+                f"{e}\n  pip install langchain-anthropic"
+            )
+        model = ChatAnthropic(model=args.model, max_tokens=4096, temperature=0)
+        suite_result = run_suite(model, limit=args.limit, out=Path(args.out))
+        print("\n" + render_suite_markdown(suite_result))
+        return 0
 
     if args.dry_run:
         print(f"[DRY RUN] OFFLINE stub agents — no API. {n} question(s).")

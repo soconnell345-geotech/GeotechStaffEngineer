@@ -20,6 +20,11 @@ from funhouse_agent.deep.agent import (
     build_references_subagent,
     build_reviewer_subagent,
 )
+from funhouse_agent.deep.eval_harness import (
+    render_suite_markdown,
+    run_suite,
+    write_suite_results,
+)
 from funhouse_agent.deep.notebook import DeepNotebookChat
 from funhouse_agent.deep.prompt import build_domain_prompt
 from funhouse_agent.deep.selfcheck import run_selfcheck
@@ -37,4 +42,7 @@ __all__ = [
     "LangChainVisionEngine",
     "DeepNotebookChat",
     "run_selfcheck",
+    "run_suite",
+    "render_suite_markdown",
+    "write_suite_results",
 ]
