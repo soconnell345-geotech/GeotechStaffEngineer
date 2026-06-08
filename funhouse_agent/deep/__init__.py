@@ -22,6 +22,7 @@ from funhouse_agent.deep.agent import (
 )
 from funhouse_agent.deep.notebook import DeepNotebookChat
 from funhouse_agent.deep.prompt import build_domain_prompt
+from funhouse_agent.deep.selfcheck import run_selfcheck
 from funhouse_agent.deep.tools import make_core_tools, make_vision_tools
 from funhouse_agent.deep.vision_engine import LangChainVisionEngine
 
@@ -35,4 +36,5 @@ __all__ = [
     "make_vision_tools",
     "LangChainVisionEngine",
     "DeepNotebookChat",
+    "run_selfcheck",
 ]
