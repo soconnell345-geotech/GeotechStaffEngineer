@@ -339,6 +339,51 @@ def _is_tool_message(msg: Any) -> bool:
     )
 
 
+def _sum_callback_tokens(callback_usage: Any) -> int:
+    """Sum ``total_tokens`` across a ``UsageMetadataCallbackHandler`` dict.
+
+    The callback aggregates per model name
+    (``{model_name: {"input_tokens", "output_tokens", "total_tokens"}}``) and —
+    because sub-agent model calls propagate through the LangGraph run's
+    callbacks — that dict already includes the references/reviewer sub-agent
+    spend. Returns ``0`` when the callback recorded nothing (e.g. a backend that
+    exposes no usage), so a turn with no usage simply adds nothing.
+    """
+    if not callback_usage:
+        return 0
+    total = 0
+    for um in callback_usage.values():
+        if isinstance(um, dict):
+            t = um.get("total_tokens")
+            if t:
+                total += int(t)
+            else:
+                total += int(um.get("input_tokens", 0) or 0)
+                total += int(um.get("output_tokens", 0) or 0)
+    return total
+
+
+def _format_token_line(turn_tokens: int, conversation_total: int) -> str:
+    """Format the per-answer token line shown under each agent reply.
+
+    Parameters
+    ----------
+    turn_tokens : int
+        Tokens spent on THIS turn (all model calls, sub-agents included).
+    conversation_total : int
+        Running cumulative total for the whole conversation.
+
+    Returns
+    -------
+    str
+        ``"tokens this turn: 18,432 | conversation total: 142,907"``.
+    """
+    return (
+        f"tokens this turn: {turn_tokens:,} | "
+        f"conversation total: {conversation_total:,}"
+    )
+
+
 def _entry_to_plain(entry: dict) -> str:
     """Render a transcript entry dict to a plain-text line (stdout fallback)."""
     kind = entry.get("kind")
@@ -414,6 +459,12 @@ class DeepNotebookChat:
         # Rendered transcript entries (for the widget HTML render).
         self._transcript: list[dict] = []
         self._is_processing = False
+        # Running cumulative token total for the WHOLE conversation (summed
+        # across every turn, every model call — sub-agents included — via the
+        # usage-metadata callback). The owner watches this to catch a runaway
+        # conversation (one hit 800k tokens).
+        self._total_tokens = 0
+        self._last_turn_tokens = 0
 
         # Widgets are built lazily on .display() so importing this module and
         # using ask_and_print() never requires ipywidgets.
@@ -473,6 +524,16 @@ class DeepNotebookChat:
         """The running client-side message history (live reference)."""
         return self._messages
 
+    @property
+    def total_tokens(self) -> int:
+        """Running cumulative token total for the whole conversation.
+
+        Summed across every turn and every model call (sub-agents included) via
+        the usage-metadata callback. ``0`` before the first turn or after
+        :meth:`reset`.
+        """
+        return self._total_tokens
+
     def reset(self) -> str:
         """Clear the conversation and start a fresh thread.
 
@@ -488,6 +549,8 @@ class DeepNotebookChat:
         self._messages = []
         self._transcript = []
         self._thread_id = uuid4().hex
+        self._total_tokens = 0
+        self._last_turn_tokens = 0
         if self._container is not None:
             self._refresh_transcript()
             self._update_status("")
@@ -513,22 +576,33 @@ class DeepNotebookChat:
         """The LangGraph config carrying the thread id."""
         return {"configurable": {"thread_id": self._thread_id}}
 
-    def _stream_items(self, question: str):
+    def _stream_items(self, question: str, *, config: Optional[dict] = None):
         """Yield ``(mode, chunk)`` items for one user turn.
 
         Appends the user message to the client-side history, then streams the
         agent over the FULL message list with
-        ``stream_mode=["updates", "messages"]`` and the thread-id config.
+        ``stream_mode=["updates", "messages"]`` and the thread-id config. A
+        ``config`` override (carrying the usage-metadata callback) is used when
+        given so the stream's token usage is captured.
         """
         self._messages.append({"role": "user", "content": question})
         yield from self._agent.stream(
             {"messages": self._messages},
-            config=self._config(),
+            config=config if config is not None else self._config(),
             stream_mode=["updates", "messages"],
         )
 
     def _run_stream(self, question: str, on_entry, on_token):
         """Drive one turn, dispatching rendered entries to callbacks.
+
+        The whole stream runs under a
+        :func:`~langchain_core.callbacks.get_usage_metadata_callback` so this
+        turn's token total — aggregated across EVERY model call in the run,
+        sub-agents included — is captured and folded into the running
+        conversation total (:attr:`total_tokens`). Streaming is preserved: the
+        callback aggregates regardless of streaming, so it is read AFTER the
+        stream completes. If the callback is unavailable for any reason the turn
+        still streams normally (token tracking simply adds nothing).
 
         Parameters
         ----------
@@ -545,16 +619,26 @@ class DeepNotebookChat:
         str
             The concatenated final assistant answer text.
         """
+        from langchain_core.callbacks import get_usage_metadata_callback
+
         answer_parts: list[str] = []
-        for mode, chunk in self._stream_items(question):
-            for entry in _format_update(
-                mode, chunk, max_result_chars=self._max_result_chars
-            ):
-                if entry["kind"] == "token":
-                    answer_parts.append(entry["text"])
-                    on_token(entry["text"])
-                else:
-                    on_entry(entry)
+        with get_usage_metadata_callback() as cb:
+            config = dict(self._config())
+            config["callbacks"] = [cb]
+            for mode, chunk in self._stream_items(question, config=config):
+                for entry in _format_update(
+                    mode, chunk, max_result_chars=self._max_result_chars
+                ):
+                    if entry["kind"] == "token":
+                        answer_parts.append(entry["text"])
+                        on_token(entry["text"])
+                    else:
+                        on_entry(entry)
+            # Read after the stream fully drains (callback aggregates regardless
+            # of streaming). dict() snapshots the handler's per-model totals.
+            turn_tokens = _sum_callback_tokens(dict(cb.usage_metadata))
+        self._total_tokens += turn_tokens
+        self._last_turn_tokens = turn_tokens
         final = "".join(answer_parts)
         # Record the assistant turn in the client-side history so the next send
         # replays it (continuity without a checkpointer).
@@ -616,6 +700,8 @@ class DeepNotebookChat:
             _emit("")  # newline after the streamed answer
         elif final:
             _emit(f"Agent: {final}")
+        # A small running-token line under the answer (this turn + conversation).
+        _emit(_format_token_line(self._last_turn_tokens, self._total_tokens))
         try:
             out.flush()
         except Exception:
@@ -704,7 +790,13 @@ class DeepNotebookChat:
             final = self._run_stream(question, on_entry, on_token)
             if not final:
                 bubble["text"] = "(no answer text)"
-                self._refresh_transcript()
+            # A small running-token line under this answer.
+            self._transcript.append({
+                "kind": "tokens",
+                "text": _format_token_line(self._last_turn_tokens,
+                                           self._total_tokens),
+            })
+            self._refresh_transcript()
         except Exception as exc:  # surface errors in the transcript, don't raise
             self._transcript.append({
                 "kind": "error",
@@ -765,6 +857,10 @@ class DeepNotebookChat:
                 parts.append(
                     f'<div class="dnb-result">{_escape(text)}</div>'
                 )
+            elif kind == "tokens":
+                parts.append(
+                    f'<div class="dnb-tokens">{_escape(text)}</div>'
+                )
             elif kind == "error":
                 parts.append(
                     f'<div class="dnb-error">{_escape(text)}</div>'
@@ -788,6 +884,8 @@ _TRANSCRIPT_CSS = """<style>
             white-space:pre-wrap}
 .dnb-error{background:#ffebee;color:#b71c1c;font-size:12px;
            margin:6px 0;padding:6px 12px;border-radius:6px}
+.dnb-tokens{color:#888;font-size:11px;font-family:monospace;
+            margin:1px 0 6px 16px}
 </style>"""
 
 
@@ -796,4 +894,6 @@ __all__ = [
     "_format_update",
     "_format_tool_call",
     "_render_todos",
+    "_format_token_line",
+    "_sum_callback_tokens",
 ]

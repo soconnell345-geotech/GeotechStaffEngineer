@@ -319,7 +319,11 @@ def test_ask_and_print_returns_answer_and_prints_activity():
     # assistant reply is appended too) + thread-id config + both stream modes.
     streamed_msgs = stub.last_input["messages"]
     assert {"role": "user", "content": "Bearing capacity?"} in streamed_msgs
-    assert stub.last_config == {"configurable": {"thread_id": "t1"}}
+    # The thread-id config is preserved; a usage-metadata callback is now also
+    # attached so the turn's token total is captured (see DeepNotebookChat token
+    # tracking). The exact callback object is internal, so just assert its shape.
+    assert stub.last_config["configurable"] == {"thread_id": "t1"}
+    assert len(stub.last_config["callbacks"]) == 1
     assert set(stub.last_stream_mode) == {"updates", "messages"}
 
 

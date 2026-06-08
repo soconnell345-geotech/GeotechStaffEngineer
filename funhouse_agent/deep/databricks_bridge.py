@@ -302,10 +302,24 @@ class PrompterChatModel(BaseChatModel):
         generation_info = {
             "finish_reason": _FINISH_REASON_MAP.get(finish_reason, finish_reason),
         }
+        # ``model_name`` flows into ``AIMessage.response_metadata`` and is REQUIRED
+        # by ``UsageMetadataCallbackHandler`` — it only records a message's usage
+        # when BOTH ``usage_metadata`` AND ``response_metadata["model_name"]`` are
+        # present (see langchain_core.callbacks.usage). Without it the callback
+        # aggregator silently drops this call's tokens.
+        model_name = getattr(response, "model", None) or request.get("model")
+        if model_name:
+            generation_info["model_name"] = model_name
+
         # Surface token usage when the proxy returns it.
         usage = getattr(response, "usage", None)
         if usage is not None:
             generation_info["usage"] = _usage_to_dict(usage)
+            # ALSO set the LangChain ``usage_metadata`` so the standard
+            # aggregators (``_v2_usage`` and ``get_usage_metadata_callback``) see
+            # this call's tokens — the proxy path previously set only the
+            # generation_info ``usage`` blob, which those aggregators ignore.
+            ai_message.usage_metadata = _to_usage_metadata(usage)
 
         generation = ChatGeneration(
             message=ai_message,
@@ -365,6 +379,65 @@ def _usage_to_dict(usage) -> dict:
         if val is not None:
             out[key] = val
     return out
+
+
+def _usage_field(usage, key: str):
+    """Read ``key`` off an OpenAI-style usage object OR plain dict, else None."""
+    if isinstance(usage, dict):
+        return usage.get(key)
+    return getattr(usage, key, None)
+
+
+def _to_usage_metadata(usage) -> Optional[dict]:
+    """Map an OpenAI-style usage object/dict to LangChain's ``UsageMetadata`` shape.
+
+    LangChain's :class:`~langchain_core.messages.ai.UsageMetadata` is
+    ``{"input_tokens", "output_tokens", "total_tokens"}``. OpenAI reports
+    ``prompt_tokens`` / ``completion_tokens`` / ``total_tokens``; the Funhouse
+    proxy MAY report only a combined ``total_tokens`` with no in/out split.
+
+    Parameters
+    ----------
+    usage : object or dict or None
+        An OpenAI-style usage object (attributes) or dict, or ``None``.
+
+    Returns
+    -------
+    dict or None
+        ``{"input_tokens", "output_tokens", "total_tokens"}`` covering all the
+        cases below, or ``None`` when no usage information is available at all:
+
+        * ``prompt_tokens`` -> ``input_tokens``, ``completion_tokens`` ->
+          ``output_tokens``, ``total_tokens`` -> ``total_tokens``.
+        * If a split (prompt/completion) is present but no total, the total is
+          computed as ``input + output``.
+        * If ONLY a combined total is available (no prompt/completion), the
+          owner cares about the TOTAL, so set ``input_tokens = total``,
+          ``output_tokens = 0``, ``total_tokens = total`` — this way any
+          aggregator that sums ``input + output`` still yields the correct
+          TOTAL (the in/out split is best-effort, the total is authoritative).
+    """
+    if usage is None:
+        return None
+
+    prompt = _usage_field(usage, "prompt_tokens")
+    completion = _usage_field(usage, "completion_tokens")
+    total = _usage_field(usage, "total_tokens")
+
+    has_split = prompt is not None or completion is not None
+    if has_split:
+        inp = int(prompt or 0)
+        out = int(completion or 0)
+        tot = int(total) if total is not None else inp + out
+        return {"input_tokens": inp, "output_tokens": out, "total_tokens": tot}
+
+    if total is not None:
+        # Combined-total-only (the Funhouse proxy case): preserve the TOTAL while
+        # keeping any input+output aggregator correct.
+        tot = int(total)
+        return {"input_tokens": tot, "output_tokens": 0, "total_tokens": tot}
+
+    return None
 
 
 __all__ = ["PrompterChatModel"]

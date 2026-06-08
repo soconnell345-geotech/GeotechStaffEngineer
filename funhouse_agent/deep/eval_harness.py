@@ -168,11 +168,34 @@ class QAResult:
         """True if ANY tool call errored or the error log is non-empty."""
         return self.n_tool_errors > 0 or bool(self.errors)
 
+    @property
+    def total_tokens(self) -> Optional[int]:
+        """The authoritative TOTAL token spend for this question, or ``None``.
+
+        Reads ``usage["total_tokens"]`` (set from the callback aggregator on the
+        v2 path — sub-agents included — falling back to the trace-summed usage).
+        ``None`` when the backend exposes no usage (e.g. the v1 ClaudeEngine).
+        """
+        if isinstance(self.usage, dict):
+            tot = self.usage.get("total_tokens")
+            return int(tot) if tot is not None else None
+        return None
+
     def to_dict(self) -> dict:
         """JSON-serializable dict (mirrors docs/geotech_test_suite_results.json)."""
         d = asdict(self)
         d["n_tool_errors"] = self.n_tool_errors
         d["has_tool_error"] = self.has_tool_error
+        # Surface the authoritative per-question token total (and split, when the
+        # backend provides one) at the top level so JSON/markdown consumers do
+        # not have to dig into ``usage``.
+        d["total_tokens"] = self.total_tokens
+        if isinstance(self.usage, dict):
+            d["input_tokens"] = self.usage.get("input_tokens")
+            d["output_tokens"] = self.usage.get("output_tokens")
+        else:
+            d["input_tokens"] = None
+            d["output_tokens"] = None
         return d
 
 
@@ -310,6 +333,44 @@ def _v2_usage(messages) -> Optional[dict]:
         return None
     if tot == 0:
         tot = inp + out
+    return {"input_tokens": inp, "output_tokens": out, "total_tokens": tot}
+
+
+def _sum_callback_usage(callback_usage) -> Optional[dict]:
+    """Sum a ``UsageMetadataCallbackHandler.usage_metadata`` dict to one total.
+
+    The callback aggregates per model name:
+    ``{model_name: {"input_tokens", "output_tokens", "total_tokens", ...}}``.
+    Because a deepagents run fans out to sub-agents (references / reviewer) that
+    may use the SAME or a DIFFERENT model, and ALL of their model calls propagate
+    through the LangGraph run's callbacks, this single dict already includes the
+    sub-agent spend. We sum across every model entry to get the run total.
+
+    Parameters
+    ----------
+    callback_usage : dict or None
+        ``cb.usage_metadata`` from :func:`get_usage_metadata_callback`.
+
+    Returns
+    -------
+    dict or None
+        ``{"input_tokens", "output_tokens", "total_tokens"}`` summed across all
+        models, or ``None`` if the callback recorded nothing (so the caller can
+        fall back to the trace-derived usage and never regress).
+    """
+    if not callback_usage:
+        return None
+    inp = out = tot = 0
+    for um in callback_usage.values():
+        if not isinstance(um, dict):
+            continue
+        inp += int(um.get("input_tokens", 0) or 0)
+        out += int(um.get("output_tokens", 0) or 0)
+        tot += int(um.get("total_tokens", 0) or 0)
+    if tot == 0:
+        tot = inp + out
+    if tot == 0 and inp == 0 and out == 0:
+        return None
     return {"input_tokens": inp, "output_tokens": out, "total_tokens": tot}
 
 
@@ -590,8 +651,10 @@ def score_run(
         ``n_questions``, ``p1_hallucination_rate`` (+ ``p1_count``),
         ``tool_error_rate`` (questions with >=1 tool error / n),
         ``errors_per_question`` (mean tool errors), ``exception_rate``,
-        ``avg_rounds``, ``avg_latency_s``, ``total_tokens`` / ``avg_tokens``
-        (``None`` if no usage), and the nested ``correctness`` block.
+        ``avg_rounds``, ``avg_latency_s``, ``total_tokens`` / ``avg_tokens`` /
+        ``max_total_tokens`` (``None`` if no usage — ``max_total_tokens`` is the
+        single most expensive question, so a runaway is visible), and the nested
+        ``correctness`` block.
     """
     n = len(qas)
     if n == 0:
@@ -602,8 +665,11 @@ def score_run(
     n_exception = sum(1 for q in qas if q.exception)
     total_tool_errors = sum(q.n_tool_errors for q in qas)
 
-    usages = [q.usage for q in qas if q.usage]
-    total_tokens = sum(u.get("total_tokens", 0) for u in usages) if usages else None
+    # Per-question totals (authoritative; the callback-aggregated total when v2,
+    # else the trace-summed usage). Only count questions that exposed usage.
+    per_q_totals = [q.total_tokens for q in qas if q.total_tokens is not None]
+    total_tokens = sum(per_q_totals) if per_q_totals else None
+    max_total_tokens = max(per_q_totals) if per_q_totals else None
 
     return {
         "n_questions": n,
@@ -616,7 +682,8 @@ def score_run(
         "avg_rounds": _mean([q.rounds for q in qas]),
         "avg_latency_s": _mean([q.latency_s for q in qas]),
         "total_tokens": total_tokens,
-        "avg_tokens": (total_tokens / len(usages)) if usages else None,
+        "avg_tokens": (total_tokens / len(per_q_totals)) if per_q_totals else None,
+        "max_total_tokens": max_total_tokens,
         "correctness": score_correctness(qas, questions, judge_fn=judge_fn),
     }
 
@@ -631,26 +698,53 @@ def _run_one(agent, question: str, adapter, qid: str, module: str,
 
     ``ask_kind`` selects how the agent is invoked:
 
-    * ``"v1"`` — ``agent.ask(question) -> AgentResult``.
-    * ``"v2"`` — ``agent.invoke({"messages": [...]}) -> {"messages": [...]}``.
+    * ``"v1"`` — ``agent.ask(question) -> AgentResult``. Takes NO callbacks, so
+      token usage stays ``None`` (the v1 ``ClaudeEngine`` exposes none).
+    * ``"v2"`` — ``agent.invoke({"messages": [...]}) -> {"messages": [...]}``,
+      wrapped in :func:`get_usage_metadata_callback` so the per-question TOTAL
+      tokens are aggregated across EVERY model call in the LangGraph run —
+      including the references/reviewer **sub-agents**, whose calls propagate
+      through the run's callbacks. That authoritative total is written onto the
+      QAResult's ``usage`` (preferring it over the trace-summed
+      :func:`_v2_usage`); if the callback recorded nothing, the trace-derived
+      usage is left untouched so nothing regresses.
 
     A hard exception is caught and recorded on the QAResult (it does NOT abort
     the whole A/B run).
     """
     t0 = time.time()
-    try:
-        if ask_kind == "v1":
+    if ask_kind == "v1":
+        # v1 path: no callbacks (the .ask interface does not accept a config).
+        try:
             raw = agent.ask(question)
-        else:
+            latency = time.time() - t0
+            return adapter(qid, module, raw, latency, exception=None)
+        except Exception as exc:  # a crashing ask must not kill the run
+            latency = time.time() - t0
+            return adapter(qid, module, None, latency,
+                           exception=f"{type(exc).__name__}: {exc}")
+
+    # v2/LangGraph path: aggregate usage across ALL model calls (sub-agents too)
+    # via the callback, and pass it through ``config={"callbacks": [cb]}``.
+    from langchain_core.callbacks import get_usage_metadata_callback
+    try:
+        with get_usage_metadata_callback() as cb:
             raw = agent.invoke(
-                {"messages": [{"role": "user", "content": question}]}
+                {"messages": [{"role": "user", "content": question}]},
+                config={"callbacks": [cb]},
             )
+            callback_usage = _sum_callback_usage(dict(cb.usage_metadata))
         latency = time.time() - t0
-        return adapter(qid, module, raw, latency, exception=None)
-    except Exception as exc:  # a crashing ask must not kill the run
+        qa = adapter(qid, module, raw, latency, exception=None)
+    except Exception as exc:  # a crashing invoke must not kill the run
         latency = time.time() - t0
         return adapter(qid, module, None, latency,
                        exception=f"{type(exc).__name__}: {exc}")
+    # Prefer the callback total (sub-agents included); fall back to the trace-
+    # summed usage that the adapter already set, so nothing regresses.
+    if callback_usage is not None:
+        qa.usage = callback_usage
+    return qa
 
 
 def run_ab(
@@ -805,12 +899,11 @@ def run_suite(
 
     qas: list[QAResult] = []
     texts: list[str] = []
+    cumulative_tokens = 0
     for i, q in enumerate(questions, 1):
         qid = q.get("id", f"Q{i}")
         module = q.get("module", "?")
         text = q.get("question", "")
-        if verbose:
-            print(f"[{i}/{len(questions)}] {qid} ({module})")
         # _run_one already catches a crashing ask and records it on the QAResult
         # (so one failure does not abort the whole run); the per-question try is
         # belt-and-suspenders against anything _run_one itself might raise.
@@ -819,6 +912,16 @@ def run_suite(
         except Exception as exc:  # pragma: no cover - defensive
             qa = QAResult(qid=qid, module=module, agent="v2",
                           exception=f"{type(exc).__name__}: {exc}")
+        if verbose:
+            # Show this question's token spend AND the running cumulative total so
+            # a long Funhouse run surfaces a runaway question as it happens.
+            tok = qa.total_tokens
+            if tok is not None:
+                cumulative_tokens += tok
+                tok_note = f"  +{tok:,} tok  (cumulative {cumulative_tokens:,})"
+            else:
+                tok_note = "  (tokens n/a)"
+            print(f"[{i}/{len(questions)}] {qid} ({module}){tok_note}")
         qas.append(qa)
         texts.append(text)
 
@@ -858,9 +961,30 @@ def _fmt(value, kind: str = "num") -> str:
         return f"{100 * value:.1f}%"
     if kind == "int":
         return f"{int(round(value))}"
+    if kind == "tok":
+        # Token counts read better with thousands separators.
+        return f"{int(round(value)):,}"
     if kind == "num":
         return f"{value:.2f}"
     return str(value)
+
+
+def _fmt_tokens(result: dict) -> str:
+    """Render one result's per-question token line value.
+
+    ``"18,432"`` when only a total is known, or ``"18,432 (12,000 in / 6,432
+    out)"`` when BOTH the input and output split are nonzero (a split is only
+    meaningful when the backend reports one — the Funhouse total-only path zeroes
+    ``output_tokens``, so the split is hidden). Returns ``"n/a"`` when no total.
+    """
+    total = result.get("total_tokens")
+    if total is None:
+        return "n/a"
+    inp = result.get("input_tokens") or 0
+    out = result.get("output_tokens") or 0
+    if inp and out:
+        return f"{int(total):,} ({int(inp):,} in / {int(out):,} out)"
+    return f"{int(total):,}"
 
 
 def _delta(v1, v2, kind: str = "num", lower_is_better: bool = True) -> str:
@@ -879,6 +1003,9 @@ def _delta(v1, v2, kind: str = "num", lower_is_better: bool = True) -> str:
         negligible = abs(100 * d) < 0.05
     elif kind == "int":
         body = f"{int(round(d)):+d}"
+        negligible = round(d) == 0
+    elif kind == "tok":
+        body = f"{int(round(d)):+,}"
         negligible = round(d) == 0
     else:
         body = f"{d:+.2f}"
@@ -915,8 +1042,9 @@ def render_markdown_table(ab: dict) -> str:
         ("Exception rate", "exception_rate", "pct", True),
         ("Avg rounds", "avg_rounds", "num", True),
         ("Avg latency (s)", "avg_latency_s", "num", True),
-        ("Total tokens", "total_tokens", "int", True),
-        ("Avg tokens / question", "avg_tokens", "num", True),
+        ("Total tokens", "total_tokens", "tok", True),
+        ("Avg tokens / question", "avg_tokens", "tok", True),
+        ("Max tokens (one question)", "max_total_tokens", "tok", True),
     ]
 
     lines = [
@@ -1078,8 +1206,9 @@ def render_suite_markdown(suite_result: dict) -> str:
         f"- Exception rate: {_fmt(m.get('exception_rate'), 'pct')}",
         f"- Avg rounds: {_fmt(m.get('avg_rounds'), 'num')}",
         f"- Avg latency (s): {_fmt(m.get('avg_latency_s'), 'num')}",
-        f"- Total tokens: {_fmt(m.get('total_tokens'), 'int')}",
-        f"- Avg tokens / question: {_fmt(m.get('avg_tokens'), 'num')}",
+        f"- Total tokens: {_fmt(m.get('total_tokens'), 'tok')}",
+        f"- Avg tokens / question: {_fmt(m.get('avg_tokens'), 'tok')}",
+        f"- Max tokens (one question): {_fmt(m.get('max_total_tokens'), 'tok')}",
         "",
         "## Answers",
         "",
@@ -1103,6 +1232,7 @@ def render_suite_markdown(suite_result: dict) -> str:
         lines.append("")
         lines.append(answer if answer else "_(no answer produced)_")
         lines.append("")
+        lines.append(f"_tokens: {_fmt_tokens(r)}_")
         lines.append(f"_tools used: {_trace_summary(trace)}_")
         if exception:
             lines.append("")
