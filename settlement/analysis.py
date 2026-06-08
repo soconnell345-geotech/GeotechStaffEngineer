@@ -16,7 +16,10 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-from settlement.immediate import elastic_settlement, schmertmann_settlement, SchmertmannLayer
+from settlement.immediate import (
+    elastic_settlement, schmertmann_settlement, SchmertmannLayer,
+    elastic_influence_factor,
+)
 from settlement.consolidation import (
     ConsolidationLayer, consolidation_settlement_layer, total_consolidation_settlement,
 )
@@ -102,6 +105,8 @@ class SettlementAnalysis:
     nu: float = 0.3
     schmertmann_layers: Optional[List[SchmertmannLayer]] = None
     time_years_schmertmann: float = 0.0
+    gamma_soil: Optional[float] = None  # for Schmertmann Izp sigma'_vp at peak depth
+    Iw_immediate: Optional[float] = None  # elastic influence factor override
 
     # Consolidation parameters
     consolidation_layers: Optional[List[ConsolidationLayer]] = None
@@ -173,8 +178,11 @@ class SettlementAnalysis:
         if self.immediate_method == "elastic":
             if self.Es_immediate is None or self.Es_immediate <= 0:
                 return 0.0
+            Iw = self.Iw_immediate
+            if Iw is None:
+                Iw = elastic_influence_factor(self.footing_shape, self.L, self.B)
             return elastic_settlement(q_net, self.B, self.Es_immediate,
-                                       self.nu)
+                                       self.nu, Iw=Iw)
         elif self.immediate_method == "schmertmann":
             if self.schmertmann_layers is None:
                 return 0.0
@@ -183,7 +191,8 @@ class SettlementAnalysis:
                 self.schmertmann_layers,
                 footing_shape=self.footing_shape,
                 time_years=self.time_years_schmertmann,
-                L=self.L
+                L=self.L,
+                gamma_soil=self.gamma_soil,
             )
         else:
             raise ValueError(

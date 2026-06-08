@@ -360,6 +360,19 @@ class TestTimeIntegration:
         result = simulate_blow(h, c, p, s_zero)
         assert result.permanent_set > 0.05  # > 50 mm
 
+    def test_permanent_set_excludes_toe_quake(self):
+        """Permanent set is the peak toe penetration minus the toe's elastic
+        rebound (the toe quake), not the peak itself (WE-1)."""
+        import numpy as np
+        h, c, p, s = self._make_system(800)  # hard driving: quake matters most
+        result = simulate_blow(h, c, p, s)
+        peak_toe = float(np.asarray(result.pile_toe_displacement).max())
+        # Permanent set must be strictly below the peak penetration ...
+        assert result.permanent_set < peak_toe
+        # ... by the toe quake (the recovered elastic rebound).
+        assert (peak_toe - result.permanent_set) == pytest.approx(
+            s.quake_toe, abs=5e-4)
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # TEST 6: Bearing Graph

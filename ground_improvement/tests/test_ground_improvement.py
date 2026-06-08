@@ -162,9 +162,10 @@ class TestWickDrainTheory:
     """
 
     def test_equivalent_drain_diameter(self):
-        """dw = (a+b)/pi for standard 100mm x 4mm PVD."""
+        """dw = 2(a+b)/pi (Hansbo) for a standard 100mm x 4mm PVD ~= 0.066 m."""
         dw = equivalent_drain_diameter(0.1, 0.004)
-        assert dw == pytest.approx((0.1 + 0.004) / math.pi, rel=1e-6)
+        assert dw == pytest.approx(2.0 * (0.1 + 0.004) / math.pi, rel=1e-6)
+        assert dw == pytest.approx(0.0662, abs=1e-3)
 
     def test_influence_diameter_triangular(self):
         """de = 1.05*s for triangular."""

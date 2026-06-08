@@ -42,12 +42,18 @@ class WallSoilLayer:
         Cohesion (kPa). Default 0.
     description : str, optional
         Layer description.
+    wall_friction_deg : float, optional
+        Wall friction angle delta (degrees), used only by the Coulomb pressure
+        method. Default 0 (smooth wall -> Coulomb reduces to Rankine). A nonzero
+        value lowers the active coefficient and raises the passive coefficient.
+        Must be in [0, friction_angle].
     """
     thickness: float
     unit_weight: float
     friction_angle: float = 30.0
     cohesion: float = 0.0
     description: str = ""
+    wall_friction_deg: float = 0.0
 
     def __post_init__(self):
         if self.thickness <= 0:
@@ -58,6 +64,10 @@ class WallSoilLayer:
             raise ValueError(f"Cohesion must be non-negative, got {self.cohesion}")
         if self.cohesion == 0 and self.friction_angle == 0:
             raise ValueError("Soil must have c > 0 or phi > 0")
+        if self.wall_friction_deg < 0 or self.wall_friction_deg > self.friction_angle:
+            raise ValueError(
+                "Wall friction delta must be in [0, phi="
+                f"{self.friction_angle}], got {self.wall_friction_deg}")
 
 
 @dataclass
@@ -223,10 +233,18 @@ def analyze_cantilever(
     )
 
 
-def _compute_Ka_Kp(phi_deg: float, method: str = "rankine"):
-    """Compute Ka, Kp using the specified method."""
+def _compute_Ka_Kp(phi_deg: float, method: str = "rankine",
+                   delta_deg: float = 0.0):
+    """Compute Ka, Kp using the specified method.
+
+    For method="coulomb", delta_deg is the wall friction angle (default 0 — a
+    smooth wall, for which Coulomb reduces to Rankine). A nonzero delta lowers
+    the active coefficient and raises the passive coefficient. Rankine ignores
+    wall friction.
+    """
     if method == "coulomb":
-        return coulomb_Ka(phi_deg), coulomb_Kp(phi_deg)
+        return (coulomb_Ka(phi_deg, delta_deg=delta_deg),
+                coulomb_Kp(phi_deg, delta_deg=delta_deg))
     return rankine_Ka(phi_deg), rankine_Kp(phi_deg)
 
 
@@ -271,7 +289,7 @@ def _find_embedment(excavation_depth, soil_layers, gwt_active, gwt_passive,
             arm = total_length - z  # moment arm from base
 
             layer = _get_soil_at_depth(z, soil_layers)
-            Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method)
+            Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method, layer.wall_friction_deg)
 
             if z <= H:
                 # Above excavation: only active pressure
@@ -445,7 +463,7 @@ def _compute_max_moment(excavation_depth, embedment, soil_layers,
     for i in range(n_points):
         z = (i + 0.5) * dz
         layer = _get_soil_at_depth(z, soil_layers)
-        Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method)
+        Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method, layer.wall_friction_deg)
 
         net_pressure = 0.0
         if z <= H:

@@ -31,8 +31,11 @@ def beta_from_phi(phi_deg: float, OCR: float = 1.0,
     OCR : float, optional
         Overconsolidation ratio. Default 1.0 (NC soil).
     method : str, optional
-        "fellenius" (default): beta = (1-sin(phi))*tan(phi) for NC
-        "burland": beta = K0 * tan(phi') * OCR^0.5
+        "fellenius" (default): beta = (1-sin(phi))*tan(phi). Normally-
+            consolidated closed form; OCR is NOT used (a warning is issued if
+            OCR != 1 — use "burland" for overconsolidated soils).
+        "burland": beta = (1-sin(phi))*sqrt(OCR)*tan(phi). OCR-enhanced K0
+            (Burland 1973; Mayne & Kulhawy 1982).
 
     Returns
     -------
@@ -51,12 +54,23 @@ def beta_from_phi(phi_deg: float, OCR: float = 1.0,
     method = method.lower()
 
     if method == "fellenius":
-        # Fellenius (1991): beta = (1 - sin(phi)) * tan(phi)
-        K0 = 1.0 - math.sin(phi_rad)
-        beta = K0 * math.tan(phi_rad) * OCR**0.5
+        # Fellenius (1991) normally-consolidated closed form:
+        #   beta = (1 - sin(phi)) * tan(phi)   [K0 = 1 - sin(phi), delta = phi]
+        # This NC form does not use OCR; use method="burland" for an
+        # OCR-enhanced beta in overconsolidated soils.
+        if OCR != 1.0:
+            warnings.warn(
+                f"The Fellenius NC beta form ignores OCR (got OCR={OCR}). "
+                "Use method='burland' for an OCR-enhanced beta in "
+                "overconsolidated soils.",
+                stacklevel=2,
+            )
+        beta = (1.0 - math.sin(phi_rad)) * math.tan(phi_rad)
     elif method == "burland":
-        K0 = 1.0 - math.sin(phi_rad)
-        beta = K0 * math.tan(phi_rad) * OCR**0.5
+        # Burland (1973) with the Mayne & Kulhawy (1982) OCR enhancement:
+        #   K0 = (1 - sin(phi)) * sqrt(OCR);  beta = K0 * tan(phi)
+        K0 = (1.0 - math.sin(phi_rad)) * OCR**0.5
+        beta = K0 * math.tan(phi_rad)
     else:
         raise ValueError(f"Unknown method '{method}'. Options: 'fellenius', 'burland'")
 

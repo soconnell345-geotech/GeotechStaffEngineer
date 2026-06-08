@@ -18,6 +18,7 @@ References:
 """
 
 import math
+import warnings
 from typing import Tuple
 
 
@@ -297,6 +298,26 @@ def depth_factors(phi_deg: float, Df: float, B: float,
 # INCLINATION FACTORS  ic, iq, igamma
 # ═══════════════════════════════════════════════════════════════════════
 
+def _meyerhof_inclination_factors(phi_deg: float,
+                                  beta_deg: float) -> Tuple[float, float, float]:
+    """Angle-based (Meyerhof, 1963) load inclination factors.
+
+    These depend only on the load inclination angle ``beta`` (and ``phi`` for
+    ``ig``), not on the H/V force ratio, so they remain usable when the vertical
+    load is unknown.
+
+        ic = iq = (1 - beta/90)^2
+        ig = (1 - beta/phi)^2   (phi > 0; clamped >= 0), else 1.0
+    """
+    ic = (1.0 - beta_deg / 90.0) ** 2
+    iq = ic
+    if phi_deg > 0:
+        ig = max((1.0 - beta_deg / phi_deg) ** 2, 0.0)
+    else:
+        ig = 1.0
+    return ic, iq, ig
+
+
 def inclination_factors(phi_deg: float, beta_deg: float, c: float,
                         B: float, L: float, V: float,
                         method: str = "vesic") -> Tuple[float, float, float]:
@@ -337,7 +358,22 @@ def inclination_factors(phi_deg: float, beta_deg: float, c: float,
 
     method = method.lower()
     if method == "vesic":
-        # Vesic (1975) formulation
+        # The Vesic (1975) factors are written in terms of the actual horizontal
+        # (H) and vertical (V) load components, not the inclination angle alone.
+        # With no vertical load supplied we cannot form the H/V ratio, so the
+        # inclination would silently vanish (H = V*tan(beta) = 0, giving i = 1).
+        # Fall back to the angle-based Meyerhof factors — and warn — so a
+        # specified load_inclination still reduces capacity.
+        if V <= 0:
+            warnings.warn(
+                "Vesic inclination factors need a positive vertical_load (V) to "
+                f"form the H/V ratio; got V={V}. Using angle-based Meyerhof "
+                "inclination factors instead so load_inclination still applies "
+                "(pass vertical_load for the full Vesic formulation).",
+                stacklevel=2,
+            )
+            return _meyerhof_inclination_factors(phi_deg, beta_deg)
+
         # H = V * tan(beta) = horizontal component
         H = V * math.tan(beta)
         Af = B * L  # footing base area
@@ -363,13 +399,7 @@ def inclination_factors(phi_deg: float, beta_deg: float, c: float,
             ic = iq - (1.0 - iq) / (Nc * math.tan(phi))
 
     elif method == "meyerhof":
-        ic = (1.0 - beta_deg / 90.0) ** 2
-        iq = ic
-        if phi_deg > 0:
-            ig = (1.0 - beta_deg / phi_deg) ** 2
-            ig = max(ig, 0.0)
-        else:
-            ig = 1.0
+        ic, iq, ig = _meyerhof_inclination_factors(phi_deg, beta_deg)
 
     else:
         raise ValueError(f"Unknown inclination method '{method}'. Options: 'vesic', 'meyerhof'")

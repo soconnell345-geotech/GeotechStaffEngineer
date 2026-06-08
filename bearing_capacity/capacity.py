@@ -8,7 +8,8 @@ and two-layer soil systems.
 References:
     FHWA GEC-6 (FHWA-IF-02-054), Chapter 6
     FHWA-SA-94-034 (CBEAR User's Guide)
-    Meyerhof & Hanna (1978) — Two-layer bearing capacity
+    NAVFAC DM-7.01 Ch. 4 / Bowles 5th ed. Sec. 4-7 — Two-layer load-spread method
+    Meyerhof & Hanna (1978) — Two-layer punching shear (recognized alternative)
 """
 
 import math
@@ -179,32 +180,55 @@ class BearingCapacityAnalysis:
     def _compute_two_layer(self) -> BearingCapacityResult:
         """Compute bearing capacity for a two-layer soil profile.
 
-        Uses the Meyerhof & Hanna (1978) approach:
-        - Computes bearing capacity of each layer as if it were semi-infinite
-        - Applies correction based on the relative strength and layer geometry
-        - Result is bounded between the two single-layer solutions
+        Uses the load-spread (projected-area) method. The footing bears within
+        the upper layer; the capacity is governed by the smaller of the
+        upper-layer (semi-infinite) capacity and the capacity controlled by the
+        lower layer reached through the upper layer.
+
+        * **Stronger-over-weaker** (``q_top >= q_bottom``): the net footing
+          pressure spreads 2V:1H through the competent upper layer to a larger
+          area at the top of the weak layer, which must carry the spread
+          pressure. As the upper layer thickens the spread area grows and the
+          upper layer governs (``-> q_top``); as it thins the weak layer governs
+          (``-> q_bottom``).
+        * **Weaker-over-stronger** (``q_top < q_bottom``): the weak upper layer
+          governs when thick; as it thins (``H < B``) the stronger lower layer
+          contributes, so capacity is taken as a bounded transition from
+          ``q_top`` (at ``H >= B``) up to ``q_bottom`` (as ``H -> 0``). This
+          branch is a bounded engineering estimate, not a closed-form solution.
+
+        ``layer1.thickness`` is interpreted as the upper-layer thickness *below
+        the footing base* (``H``). The result is always bounded between the two
+        single-layer capacities. The reported term/factor breakdown is the
+        bearing (upper) layer's, proportionally scaled so the three terms sum to
+        the two-layer ``q_ultimate``.
 
         References
         ----------
-        Meyerhof & Hanna (1978), Canadian Geotechnical Journal, Vol. 15, No. 4.
-        FHWA GEC-6, Section 6.5.
+        NAVFAC DM-7.01, Ch. 4 (load spread through a stronger stratum);
+        Bowles, "Foundation Analysis and Design," 5th ed., Sec. 4-7.
+        Meyerhof & Hanna (1978), Canadian Geotechnical Journal 15(4) — the
+        punching-shear alternative (requires the K_s punching-shear chart).
         """
         layer1 = self.soil.layer1
         layer2 = self.soil.layer2
-        H = layer1.thickness  # thickness of upper layer below footing
+        H = layer1.thickness  # upper-layer thickness BELOW the footing base (m)
 
         B = self.footing.B_for_factors
         L = self.footing.L_for_factors
         Df = self.footing.depth
 
-        # Bearing capacity of bottom layer (as if footing directly on it)
+        # Upper layer treated as semi-infinite (footing bears at Df within it)
+        result_top = self._compute_single_layer()
+        qt = result_top.q_ultimate
+
+        # Lower layer beneath the same footing (reference capacity)
         soil_bottom = BearingSoilProfile(layer1=SoilLayer(
             cohesion=layer2.cohesion,
             friction_angle=layer2.friction_angle,
             unit_weight=layer2.unit_weight,
         ), gwt_depth=self.soil.gwt_depth)
-
-        analysis_bottom = BearingCapacityAnalysis(
+        result_bottom = BearingCapacityAnalysis(
             footing=self.footing,
             soil=soil_bottom,
             load_inclination=self.load_inclination,
@@ -213,66 +237,43 @@ class BearingCapacityAnalysis:
             factor_of_safety=self.factor_of_safety,
             ngamma_method=self.ngamma_method,
             factor_method=self.factor_method,
-        )
-        result_bottom = analysis_bottom._compute_single_layer()
+        )._compute_single_layer()
         qb = result_bottom.q_ultimate
 
-        # Bearing capacity of top layer (as if semi-infinite)
-        soil_top = BearingSoilProfile(layer1=SoilLayer(
-            cohesion=layer1.cohesion,
-            friction_angle=layer1.friction_angle,
-            unit_weight=layer1.unit_weight,
-        ), gwt_depth=self.soil.gwt_depth)
+        q_ovb = result_top.q_overburden  # effective overburden at footing base (kPa)
+        q_lo = min(qt, qb)
+        q_hi = max(qt, qb)
 
-        analysis_top = BearingCapacityAnalysis(
-            footing=self.footing,
-            soil=soil_top,
-            load_inclination=self.load_inclination,
-            ground_slope=self.ground_slope,
-            vertical_load=self.vertical_load,
-            factor_of_safety=self.factor_of_safety,
-            ngamma_method=self.ngamma_method,
-            factor_method=self.factor_method,
-        )
-        result_top = analysis_top._compute_single_layer()
-        qt = result_top.q_ultimate
-
-        # Meyerhof & Hanna correction
-        # For strong-over-weak: qult is limited by punching through
-        # For weak-over-strong: qult approaches the stronger bottom layer
-        # Modified bearing capacity:
-        #   q_ult = qt + (qb - qt) * (1 - H²/(B*H_max))
-        #   where H_max = B (maximum influence depth)
-        # Bounded: qt <= qult <= qb (for weak-over-strong)
-        #          qb <= qult <= qt (for strong-over-weak)
-
-        if H >= B:
-            # Upper layer is thick enough; use top layer capacity
-            q_ultimate = qt
+        if qt >= qb:
+            # Stronger over weaker: 2V:1H load spread through the upper layer.
+            # The net footing pressure at the base spreads to an area
+            # (B+H)(L+H) at the top of the weak layer, which limits the net
+            # pressure it can carry to its own net capacity (qb - overburden).
+            qb_net = max(qb - result_bottom.q_overburden, 0.0)
+            spread = ((B + H) * (L + H)) / (B * L)
+            q_ultimate = qb_net * spread + q_ovb
         else:
-            # Interpolate between top and bottom layer capacities
-            # Punching coefficient approach (simplified Meyerhof & Hanna)
-            ratio = H / B
-            if qt >= qb:
-                # Strong over weak: punching shear failure possible
-                # Ks is a punching shear coefficient (depends on q1/q2 ratio)
-                q1_over_q2 = qb / qt if qt > 0 else 0
-                # Simplified: linear interpolation weighted by H/B
-                q_ultimate = qb + (qt - qb) * ratio
-                # Upper bound: cannot exceed top layer capacity
-                q_ultimate = min(q_ultimate, qt)
+            # Weaker over stronger: bounded transition q_top (H>=B) -> q_bottom (H->0).
+            if H >= B:
+                q_ultimate = qt
             else:
-                # Weak over strong: projection through weak layer
-                q_ultimate = qt + (qb - qt) * ratio
-                # Upper bound: cannot exceed bottom layer capacity
-                q_ultimate = min(q_ultimate, qb)
+                q_ultimate = qt + (qb - qt) * (1.0 - H / B)
+
+        # Always bounded between the two single-layer capacities.
+        q_ultimate = min(max(q_ultimate, q_lo), q_hi)
 
         q_allowable = q_ultimate / self.factor_of_safety
-        q = self.soil.overburden_pressure(Df)
-        q_net = q_ultimate - q
+        q_net = q_ultimate - q_ovb
 
-        # Return result with top layer factors for reference
+        # Self-consistent breakdown: report the bearing (upper) layer's factors,
+        # with the term breakdown proportionally scaled so the three terms sum
+        # to the two-layer q_ultimate (the combined mechanism is punching/spread,
+        # not a single general-shear equation, so attribution is proportional).
         result = result_top
+        scale = q_ultimate / qt if qt > 0 else 0.0
+        result.term_cohesion *= scale
+        result.term_overburden *= scale
+        result.term_selfweight *= scale
         result.q_ultimate = q_ultimate
         result.q_allowable = q_allowable
         result.q_net = q_net

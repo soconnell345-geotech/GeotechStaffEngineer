@@ -246,10 +246,19 @@ class TestBetaMethod:
         assert beta == pytest.approx(expected, rel=1e-4)
 
     def test_beta_OC_higher(self):
-        """OC soil should have higher beta than NC."""
-        beta_nc = beta_from_phi(30, OCR=1.0)
-        beta_oc = beta_from_phi(30, OCR=4.0)
+        """OC soil should have higher beta than NC (Burland OCR enhancement)."""
+        beta_nc = beta_from_phi(30, OCR=1.0, method="burland")
+        beta_oc = beta_from_phi(30, OCR=4.0, method="burland")
         assert beta_oc > beta_nc
+
+    def test_beta_fellenius_ignores_OCR_burland_does_not(self):
+        """fellenius (NC) and burland (OCR-aware) must differ for OC soils."""
+        beta_f_nc = beta_from_phi(25, OCR=1.0, method="fellenius")
+        with pytest.warns(UserWarning):
+            beta_f_oc = beta_from_phi(25, OCR=4.0, method="fellenius")
+        beta_b_oc = beta_from_phi(25, OCR=4.0, method="burland")
+        assert beta_f_oc == pytest.approx(beta_f_nc)  # fellenius ignores OCR
+        assert beta_b_oc > beta_f_oc                   # burland enhances with OCR
 
     def test_Nt_increases_with_phi(self):
         """Nt should increase with phi."""

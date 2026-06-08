@@ -188,6 +188,7 @@ def simulate_blow(
     max_tens_force = 0.0
     max_comp_stress = 0.0
     max_tens_stress = 0.0
+    max_toe_disp = 0.0  # peak toe penetration, for the permanent-set calc
 
     # Output storage
     n_store = n_steps // store_interval + 1
@@ -268,6 +269,10 @@ def simulate_blow(
         vel += accel * dt
         disp += vel * dt
 
+        # Track the peak toe penetration (for the permanent-set computation)
+        if disp[n] > max_toe_disp:
+            max_toe_disp = disp[n]
+
         # Cushion check: pile head must track with head force
         # Also track the first pile spring force for stress
         if n > 0:
@@ -289,11 +294,14 @@ def simulate_blow(
         if step > 100 and np.all(vel[1:] < 0.01) and vel[0] < 0:
             break
 
-    # Permanent set = final toe displacement minus elastic rebound
-    # Elastic rebound = sum of (R_static / k) for all springs
-    permanent_set = float(disp[n])
-    if permanent_set < 0:
-        permanent_set = 0.0
+    # Permanent set per blow = peak toe penetration minus the toe's elastic
+    # rebound. The elasto-plastic toe spring recovers its quake on unloading, so
+    # the residual (plastic) penetration of the pile point is
+    #     set = max(D_max,toe - Q_toe, 0).
+    # Without subtracting the toe quake the set is overestimated and the blow
+    # count (1/set) underestimated — unconservative on a bearing graph.
+    # (Smith, 1960; FHWA GEC-12, Hannigan et al.)
+    permanent_set = max(float(max_toe_disp) - toe_model.quake, 0.0)
 
     # Trim stored arrays
     time_arr = time_arr[:store_idx]

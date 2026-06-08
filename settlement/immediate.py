@@ -63,6 +63,43 @@ def elastic_settlement(q: float, B: float, Es: float,
     return q * B * (1.0 - nu**2) / Es * Iw
 
 
+def elastic_influence_factor(shape: str = "square",
+                             L: float = 1.0, B: float = 1.0) -> float:
+    """Influence factor Iw for the elastic settlement of a flexible footing.
+
+    Settlement at the CENTER of a uniformly loaded flexible rectangle on an
+    elastic half-space (Schleicher, 1926):
+
+        Iw = (2/pi) * [ m*ln((1+sqrt(1+m^2))/m) + ln(m+sqrt(1+m^2)) ],  m = L/B
+
+    This gives Iw = 1.12 for a square (verified) and grows with L/B (~2.5 at
+    L/B = 10). A circular footing uses Iw = 1.0. Rigid footings settle roughly
+    7-15% less than the flexible center; supply an explicit Iw if a rigid value
+    is required.
+
+    Parameters
+    ----------
+    shape : str
+        "circular"/"circle" -> 1.0; otherwise rectangular (square when L == B).
+    L, B : float
+        Footing length and width (m); the ratio L/B (>= 1) drives the factor.
+
+    References
+    ----------
+    Schleicher (1926); Timoshenko & Goodier, "Theory of Elasticity";
+    Bowles, "Foundation Analysis and Design," 5th ed.
+    """
+    if (shape or "").lower() in ("circular", "circle"):
+        return 1.0
+    if B <= 0:
+        raise ValueError(f"Footing width B must be positive, got {B}")
+    m = max(L / B, 1.0)
+    return (2.0 / math.pi) * (
+        m * math.log((1.0 + math.sqrt(1.0 + m * m)) / m)
+        + math.log(m + math.sqrt(1.0 + m * m))
+    )
+
+
 @dataclass
 class SchmertmannLayer:
     """A sublayer for Schmertmann's method.
@@ -102,7 +139,8 @@ def schmertmann_settlement(q_net: float, q0: float, B: float,
                            layers: List[SchmertmannLayer],
                            footing_shape: str = "square",
                            time_years: float = 0.0,
-                           L: Optional[float] = None) -> float:
+                           L: Optional[float] = None,
+                           gamma_soil: Optional[float] = None) -> float:
     """Schmertmann's improved method (1978) for immediate settlement.
 
     Se = C1 * C2 * C3 * delta_q * SUM(Iz/Es * dz)
@@ -127,6 +165,12 @@ def schmertmann_settlement(q_net: float, q0: float, B: float,
         Default 0 (no creep).
     L : float, optional
         Footing length (m). If provided and L/B > 10, treat as strip.
+    gamma_soil : float, optional
+        Effective soil unit weight (kN/m^3) used to evaluate the effective
+        overburden at the peak-influence depth for the peak strain-influence
+        factor Izp = 0.5 + 0.1*sqrt(delta_q/sigma'_vp). If None, sigma'_vp
+        falls back to q0 (the overburden at the footing base) -- an
+        approximation.
 
     Returns
     -------
@@ -160,41 +204,41 @@ def schmertmann_settlement(q_net: float, q0: float, B: float,
     else:
         C2 = 1.0
 
-    # C3: shape correction (Terzaghi et al., 1996 addition)
-    # C3 = 1.03 - 0.03*(L/B) >= 0.73, but simplify for square vs strip
-    if is_strip:
-        C3 = 0.73  # for L/B -> infinity
-    elif L is not None:
-        C3 = 1.03 - 0.03 * (L / B)
-        C3 = max(C3, 0.73)
-    else:
-        C3 = 1.0  # square/circular
+    # Schmertmann's method applies C1 (embedment) and C2 (creep) only. The
+    # footing-shape effect is captured by selecting the axisymmetric vs
+    # plane-strain strain-influence diagram below, so NO separate shape factor
+    # is applied. (The previous "C3 = 1.03 - 0.03*L/B" double-counted shape and
+    # has been removed -- SET-2.)
+    C3 = 1.0
 
-    # Strain influence factor Iz
+    # Strain-influence diagram geometry (Schmertmann 1978): axisymmetric
+    # (square/circular) peaks at z = B/2 and dies out at 2B; plane-strain
+    # (strip) peaks at z = B and dies out at 4B. Iz at the footing base is 0.1
+    # (axisymmetric) or 0.2 (plane strain).
     if is_strip:
-        z_peak = B  # peak at depth B below footing
-        Iz_peak = 0.5 + 0.1 * math.sqrt(q_net / q0) if q0 > 0 else 0.5
-        Iz_peak = min(Iz_peak, 1.0)
-        z_max = 4.0 * B  # influence extends to 4B
+        z_peak = B
+        z_max = 4.0 * B
+        Iz_0 = 0.2
     else:
-        z_peak = 0.5 * B  # peak at depth B/2 below footing
-        Iz_peak = 0.5 + 0.1 * math.sqrt(q_net / q0) if q0 > 0 else 0.5
-        Iz_peak = min(Iz_peak, 1.0)
-        z_max = 2.0 * B  # influence extends to 2B
+        z_peak = 0.5 * B
+        z_max = 2.0 * B
+        Iz_0 = 0.1
+
+    # Peak strain influence factor Izp = 0.5 + 0.1*sqrt(delta_q / sigma'_vp),
+    # where sigma'_vp is the effective overburden at the PEAK-influence depth
+    # (z_peak below the footing base) -- not at the base (SET-1). Use
+    # q0 + gamma*z_peak when the unit weight is supplied; otherwise q0.
+    sigma_vp = q0 + gamma_soil * z_peak if gamma_soil is not None else q0
+    Iz_peak = 0.5 + 0.1 * math.sqrt(q_net / sigma_vp) if sigma_vp > 0 else 0.5
+    Iz_peak = min(Iz_peak, 1.0)
 
     def strain_influence(z: float) -> float:
         """Triangular strain influence factor Iz at depth z below footing."""
         if z <= 0 or z >= z_max:
             return 0.0
         if z <= z_peak:
-            # Linear increase from Iz=0.1 at z=0 to Iz_peak at z_peak
-            # (Schmertmann 1978 starts at Iz=0.1 at z=0 for square,
-            #  Iz=0.2 at z=0 for strip)
-            Iz_0 = 0.2 if is_strip else 0.1
             return Iz_0 + (Iz_peak - Iz_0) * z / z_peak
-        else:
-            # Linear decrease from Iz_peak at z_peak to 0 at z_max
-            return Iz_peak * (z_max - z) / (z_max - z_peak)
+        return Iz_peak * (z_max - z) / (z_max - z_peak)
 
     # Summation: SUM(Iz/Es * dz) over all sublayers
     total = 0.0

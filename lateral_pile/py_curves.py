@@ -758,7 +758,24 @@ class SandReese:
         return pus, pud
 
     def get_p(self, y: float, z: float, b: float) -> float:
-        """Compute soil resistance using Reese sand three-part curve."""
+        """Compute soil resistance using the Reese (1974) sand p-y curve.
+
+        Three-part construction: an initial linear branch with slope k*z, a
+        1/3-power parabolic softening branch, and the ultimate plateau
+        p_ult = A * min(pus, pud) reached at yu = 3b/80 (Reese 1974). The
+        returned resistance is the lower envelope of the three branches, which
+        is monotonic, concave, and continuous.
+
+        Notes
+        -----
+        The full Reese (1974) construction additionally fixes an intermediate
+        m-point (pm = B*pu) from the B-factor charts and derives a variable
+        parabola exponent. This implementation anchors the softening parabola
+        at the ultimate point with a 1/3-power exponent -- a recognized,
+        chart-free simplification. For the smooth API / O'Neill & Murchison
+        equivalent, use ``SandAPI``. (Previously this method was bilinear
+        despite the three-part docstring -- LP-1.)
+        """
         if z <= 0:
             return 0.0
 
@@ -770,47 +787,35 @@ class SandReese:
         pus, pud = self.get_pu(z, b)
         pu = min(pus, pud)
 
-        # Adjustment factor
-        if self.loading == 'static':
-            if pus <= pud:  # shallow
-                A = max(0.9, 3.0 - 0.8 * z / b)
-            else:
-                A = 0.88  # deep, static
-        else:
-            A = 0.9  # cyclic
+        # Adjustment factor A (COM624P): static A = max(0.9, 3 - 0.8 z/b),
+        # cyclic A = 0.9.
+        A = 0.9 if self.loading == 'cyclic' else max(0.9, 3.0 - 0.8 * z / b)
+        p_ult = A * pu
 
-        ps = A * pu
-
-        # Initial slope
-        k_init = self.k * z
-
-        if k_init <= 0:
+        k_init = self.k * z  # initial slope (kN/m of resistance per m deflection)
+        if k_init <= 0 or p_ult <= 0:
             return 0.0
 
-        # Compute ym and pm for the parabolic transition
-        # yu at ultimate
-        yu = ps / k_init if k_init > 0 else b / 60.0
+        # Deflection at ultimate resistance (Reese 1974).
+        yu = 3.0 * b / 80.0
 
-        # Three-part curve: linear, parabolic, constant
+        # Lower envelope of: initial linear, 1/3-power softening parabola
+        # (passing through the ultimate point at yu), and the ultimate plateau.
         p_linear = k_init * y_abs
-
-        if p_linear <= ps:
-            p = p_linear
-        else:
-            p = ps
+        p_parabola = p_ult * (y_abs / yu) ** (1.0 / 3.0) if yu > 0 else p_ult
+        p = min(p_linear, p_parabola, p_ult)
 
         return sign * p
 
     def get_py_curve(self, z: float, b: float, n_points: int = 50,
                      y_max_factor: float = 5.0) -> Tuple[np.ndarray, np.ndarray]:
-        """Generate a complete p-y curve at depth z."""
-        y_max = y_max_factor * b / 60.0  # rough estimate
-        if z > 0:
-            pus, pud = self.get_pu(z, b)
-            pu = min(pus, pud)
-            k_init = self.k * z
-            if k_init > 0:
-                y_max = max(y_max, 3.0 * pu / k_init)
+        """Generate a complete p-y curve at depth z.
+
+        ``y_max`` defaults to ``y_max_factor * yu`` (``yu = 3b/80``) so the
+        plateau beyond ultimate is captured.
+        """
+        yu = 3.0 * b / 80.0
+        y_max = max(y_max_factor, 1.0) * yu
         y_array = np.linspace(0, y_max, n_points)
         p_array = np.array([self.get_p(y, z, b) for y in y_array])
         return y_array, p_array

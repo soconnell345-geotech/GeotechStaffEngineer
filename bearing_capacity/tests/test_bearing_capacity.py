@@ -686,5 +686,115 @@ class TestMethodComparison:
         assert 0.5 < ratio < 2.0
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# TEST 13: Load Inclination Factors (BC-2)
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestInclinationFactors:
+    """A specified load inclination must reduce capacity even when no explicit
+    vertical load is supplied (regression for BC-2: Vesic i-factors used to
+    silently vanish at vertical_load=0)."""
+
+    def test_inclination_without_V_warns_and_reduces(self):
+        footing = Footing(width=2.0, depth=1.0, shape="square")
+        soil = BearingSoilProfile(layer1=SoilLayer(friction_angle=30, unit_weight=18.0))
+        vertical = BearingCapacityAnalysis(footing=footing, soil=soil).compute()
+        with pytest.warns(UserWarning):
+            inclined = BearingCapacityAnalysis(
+                footing=footing, soil=soil, load_inclination=15.0
+            ).compute()
+        assert inclined.q_ultimate < vertical.q_ultimate
+        assert inclined.ic < 1.0
+        assert inclined.igamma < 1.0
+
+    def test_inclination_factors_fall_back_to_meyerhof_when_no_V(self):
+        from bearing_capacity.factors import (
+            inclination_factors, _meyerhof_inclination_factors,
+        )
+        with pytest.warns(UserWarning):
+            ic, iq, ig = inclination_factors(
+                30, 15, c=0.0, B=2.0, L=2.0, V=0.0, method="vesic"
+            )
+        mic, miq, mig = _meyerhof_inclination_factors(30, 15)
+        assert ic == pytest.approx(mic)
+        assert iq == pytest.approx(miq)
+        assert ig == pytest.approx(mig)
+
+    def test_vesic_inclination_with_vertical_load(self):
+        """With V>0 the full Vesic formulation runs and reduces capacity."""
+        footing = Footing(width=2.0, depth=1.0, shape="square")
+        soil = BearingSoilProfile(layer1=SoilLayer(friction_angle=30, unit_weight=18.0))
+        base = BearingCapacityAnalysis(
+            footing=footing, soil=soil, vertical_load=500.0
+        ).compute()
+        inclined = BearingCapacityAnalysis(
+            footing=footing, soil=soil, load_inclination=10.0, vertical_load=500.0
+        ).compute()
+        assert inclined.q_ultimate < base.q_ultimate
+        assert inclined.iq < 1.0
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TEST 14: Two-Layer Load-Spread Method (BC-1)
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestTwoLayerLoadSpread:
+    """Load-spread two-layer method: correct H-dependence, bounding, and a
+    self-consistent term breakdown (regression for BC-1)."""
+
+    @staticmethod
+    def _weak_over_strong(H):
+        return BearingSoilProfile(
+            layer1=SoilLayer(cohesion=25.0, friction_angle=0, unit_weight=17.0,
+                             thickness=H),
+            layer2=SoilLayer(friction_angle=35, unit_weight=19.0),
+        )
+
+    @staticmethod
+    def _strong_over_weak(H):
+        return BearingSoilProfile(
+            layer1=SoilLayer(friction_angle=35, unit_weight=19.0, thickness=H),
+            layer2=SoilLayer(cohesion=30.0, friction_angle=0, unit_weight=17.0),
+        )
+
+    def test_weak_over_strong_thins_toward_strong_layer(self):
+        """Thin weak top layer -> capacity nearer the strong lower layer.
+
+        The old code had this trend backwards.
+        """
+        footing = Footing(width=2.0, depth=1.0, shape="square")
+        thin = BearingCapacityAnalysis(
+            footing=footing, soil=self._weak_over_strong(0.2)).compute()
+        thick = BearingCapacityAnalysis(
+            footing=footing, soil=self._weak_over_strong(3.0)).compute()
+        # Lower (strong) layer is stronger than the weak upper layer here
+        assert thin.q_lower_layer > thin.q_upper_layer
+        # Thin weak layer must give HIGHER capacity than a thick weak layer
+        assert thin.q_ultimate > thick.q_ultimate
+        # Thick weak layer is governed by the weak upper layer
+        assert thick.q_ultimate == pytest.approx(thick.q_upper_layer, rel=1e-6)
+
+    def test_strong_over_weak_thickens_toward_strong_layer(self):
+        footing = Footing(width=2.0, depth=1.0, shape="square")
+        thin = BearingCapacityAnalysis(
+            footing=footing, soil=self._strong_over_weak(0.3)).compute()
+        thick = BearingCapacityAnalysis(
+            footing=footing, soil=self._strong_over_weak(3.0)).compute()
+        assert thick.q_ultimate > thin.q_ultimate
+        for r in (thin, thick):
+            lo = min(r.q_upper_layer, r.q_lower_layer)
+            hi = max(r.q_upper_layer, r.q_lower_layer)
+            assert lo - 1e-6 <= r.q_ultimate <= hi + 1e-6
+
+    def test_two_layer_breakdown_sums_to_qult(self):
+        """Two-layer term breakdown must sum to q_ultimate (BC-1 consistency)."""
+        footing = Footing(width=2.0, depth=1.0, shape="square")
+        result = BearingCapacityAnalysis(
+            footing=footing, soil=self._strong_over_weak(1.0)).compute()
+        total = (result.term_cohesion + result.term_overburden
+                 + result.term_selfweight)
+        assert total == pytest.approx(result.q_ultimate, rel=1e-6)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

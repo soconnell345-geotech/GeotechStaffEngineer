@@ -28,7 +28,10 @@ from ground_improvement.results import WickDrainResult
 def equivalent_drain_diameter(width: float, thickness: float) -> float:
     """Compute equivalent circular diameter for a band-shaped PVD.
 
-    dw = (a + b) / pi
+    Perimeter-equivalent diameter (Hansbo, 1979/1981):
+        dw = 2 * (a + b) / pi
+    so the equivalent circle has the same perimeter as the band drain. For a
+    standard 100 mm x 4 mm PVD this gives dw ~= 0.066 m.
 
     Parameters
     ----------
@@ -44,7 +47,7 @@ def equivalent_drain_diameter(width: float, thickness: float) -> float:
     """
     if width <= 0 or thickness <= 0:
         raise ValueError(f"Drain dimensions must be positive, got width={width}, thickness={thickness}")
-    return (width + thickness) / math.pi
+    return 2.0 * (width + thickness) / math.pi
 
 
 def influence_diameter(spacing: float, pattern: str = "triangular") -> float:

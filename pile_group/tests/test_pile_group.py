@@ -457,6 +457,27 @@ class TestSixDofAnalysis:
         d = result.to_dict()
         assert d["n_piles"] == 4
 
+    def test_vertical_group_lateral_load_raises(self):
+        """A vertical group with no lateral stiffness must NOT silently drop an
+        applied lateral load -- it should raise (PG-3)."""
+        piles = [GroupPile(x, y, axial_stiffness=50000)
+                 for x in (-1.0, 1.0) for y in (-1.0, 1.0)]
+        load = GroupLoad(Vx=100.0)
+        with pytest.raises(ValueError, match="lateral"):
+            analyze_group_6dof(piles, load)
+
+    def test_vertical_group_axial_moment_no_lateral_stiffness(self):
+        """A vertical group with no lateral springs still solves axial + moment
+        loading: the unsupported lateral DOFs are condensed, not dropped."""
+        piles = [GroupPile(x, y, axial_stiffness=50000)
+                 for x in (-1.0, 1.0) for y in (-1.0, 1.0)]
+        load = GroupLoad(Vz=400.0, My=200.0)
+        result = analyze_group_6dof(piles, load)  # must not raise
+        assert result.n_piles == 4
+        # My produces differential axial forces across the group.
+        axials = [pf['axial_kN'] for pf in result.pile_forces]
+        assert max(axials) > min(axials)
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

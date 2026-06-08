@@ -253,7 +253,16 @@ def analyze_group_6dof(
 
     Assembles a 6x6 group stiffness matrix from individual pile
     contributions (transformed to global coordinates), solves for
-    cap displacements, then back-calculates individual pile forces.
+    cap displacements, then back-calculates individual pile axial forces.
+
+    The formulation models axial pile springs with eccentricity-based moment
+    resistance plus in-plane lateral springs. The force<->rotation coupling
+    that batter introduces between the translational and moment DOFs (kxz/kyz)
+    is not assembled, so for heavily battered groups under combined load a full
+    CPGA-style coupled analysis is preferred. If the group has no stiffness to
+    resist an applied lateral force or torsion (e.g. vertical piles with no
+    lateral_stiffness), a ``ValueError`` is raised rather than silently
+    dropping that load.
 
     Parameters
     ----------
@@ -301,22 +310,30 @@ def analyze_group_6dof(
         x = pile.x
         y = pile.y
 
-        # Direct stiffness terms
+        # Direct translational stiffness terms
         K_group[0, 0] += kxx  # Vx -> dx
         K_group[1, 1] += kyy  # Vy -> dy
         K_group[2, 2] += kzz  # Vz -> dz
 
-        # Coupling: force-rotation and moment-translation
-        K_group[0, 4] += kxz * 0  # simplified
-        K_group[1, 3] += kyz * 0  # simplified
+        # In-plane translational coupling from skew-battered piles (this term
+        # was computed but never assembled -- PG-1).
+        K_group[0, 1] += kxy
+        K_group[1, 0] += kxy
 
-        # Moment stiffness from pile eccentricity
-        # Mx causes rotation about X -> pile at y gets axial force
+        # NOTE (PG-1 limitation): the force<->rotation coupling that batter
+        # introduces between the translational DOFs and the moment DOFs (the
+        # kxz/kyz terms) is NOT assembled here -- this formulation captures the
+        # axial-eccentricity moment resistance plus in-plane translation. For
+        # heavily battered groups under combined load, a full CPGA-style coupled
+        # formulation is required. (These terms were previously written as
+        # "kxz * 0" / "kyz * 0", i.e. silently dropped.)
+
+        # Moment stiffness from axial pile eccentricity
         K_group[3, 3] += kzz * y**2  # Mx -> rx
         K_group[4, 4] += kzz * x**2  # My -> ry
         K_group[5, 5] += kxx * y**2 + kyy * x**2  # Mz -> rz
 
-        # Cross-coupling
+        # Vertical-moment cross-coupling (axial eccentricity)
         K_group[2, 3] += kzz * y  # Vz-rx
         K_group[3, 2] += kzz * y
         K_group[2, 4] += kzz * x  # Vz-ry
@@ -327,13 +344,37 @@ def analyze_group_6dof(
     # Load vector
     F = np.array([load.Vx, load.Vy, load.Vz, load.Mx, load.My, load.Mz])
 
-    # Solve for displacements
-    try:
-        U = np.linalg.solve(K_group, F)
-    except np.linalg.LinAlgError:
-        # Singular matrix — likely no lateral stiffness or other issue
-        # Fall back to simplified method
-        return analyze_vertical_group_simple(piles, load)
+    # Some groups have no stiffness in certain DOFs (e.g. a purely vertical
+    # group with no lateral springs has zero resistance in dx, dy and rz). Do
+    # NOT silently drop loads applied to those DOFs (PG-3): identify the
+    # unsupported DOFs, raise if any of them is loaded, and statically condense
+    # the unloaded free DOFs (their displacement is taken as zero, which is
+    # exact here because vertical piles introduce no coupling into those DOFs).
+    dof_names = ['Vx', 'Vy', 'Vz', 'Mx', 'My', 'Mz']
+    diag = np.abs(np.diag(K_group))
+    tol = 1e-9 * max(diag.max(), 1.0)
+    supported = diag > tol
+    unsupported_loaded = (~supported) & (np.abs(F) > tol)
+    if np.any(unsupported_loaded):
+        bad = [dof_names[i] for i in range(6) if unsupported_loaded[i]]
+        raise ValueError(
+            "The pile group has no stiffness to resist the applied "
+            f"{', '.join(bad)}: vertical piles with no lateral_stiffness cannot "
+            "carry lateral force or torsion. Provide lateral_stiffness and/or "
+            "battered piles (or use analyze_vertical_group_simple for "
+            "axial-only loading)."
+        )
+
+    U = np.zeros(6)
+    idx = np.where(supported)[0]
+    if idx.size:
+        try:
+            U[idx] = np.linalg.solve(K_group[np.ix_(idx, idx)], F[idx])
+        except np.linalg.LinAlgError as exc:
+            raise ValueError(
+                "Pile group stiffness matrix is singular; check the pile "
+                "layout and stiffnesses."
+            ) from exc
 
     dx, dy, dz, rx, ry, rz = U
 

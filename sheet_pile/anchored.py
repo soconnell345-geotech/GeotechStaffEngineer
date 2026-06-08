@@ -138,7 +138,7 @@ def analyze_anchored(
             arm = z - anchor_depth  # moment arm from anchor
 
             layer = _get_soil_at_depth(z, soil_layers)
-            Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method)
+            Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method, layer.wall_friction_deg)
 
             if z <= H:
                 sigma_v = surcharge + _cumulative_stress(z, soil_layers, gwt_depth_active, gamma_w)
@@ -188,7 +188,7 @@ def analyze_anchored(
     for i in range(n_points):
         z = (i + 0.5) * dz
         layer = _get_soil_at_depth(z, soil_layers)
-        Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method)
+        Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method, layer.wall_friction_deg)
 
         if z <= H:
             sigma_v = surcharge + _cumulative_stress(z, soil_layers, gwt_depth_active, gamma_w)
@@ -224,7 +224,7 @@ def analyze_anchored(
     for i in range(n_points):
         z = (i + 0.5) * dz
         layer = _get_soil_at_depth(z, soil_layers)
-        Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method)
+        Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method, layer.wall_friction_deg)
 
         net_p = 0.0
         if z <= H:

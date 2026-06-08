@@ -70,6 +70,26 @@ class TestEarthPressureCoefficients:
         Ka_c = coulomb_Ka(30, delta_deg=15)
         assert Ka_c < Ka_r
 
+    def test_coulomb_Kp_no_friction_vertical_equals_rankine(self):
+        """Coulomb Kp (delta=0, vertical wall) must reduce to Rankine Kp."""
+        for phi in [20, 25, 30, 35]:
+            assert coulomb_Kp(phi, delta_deg=0, alpha_deg=90) == pytest.approx(
+                rankine_Kp(phi), rel=0.01)
+
+    def test_coulomb_Kp_inclined_wall_numerator_sign(self):
+        """Passive numerator must be sin^2(alpha-phi), not sin^2(alpha+phi) (SP-1)."""
+        phi, alpha, delta, beta = 30.0, 70.0, 0.0, 0.0
+        Kp = coulomb_Kp(phi, delta_deg=delta, alpha_deg=alpha, beta_deg=beta)
+        a, p, d, b = (math.radians(alpha), math.radians(phi),
+                      math.radians(delta), math.radians(beta))
+        denom = (math.sin(a) ** 2 * math.sin(a + d)
+                 * (1 - math.sqrt(math.sin(p + d) * math.sin(p + b)
+                                  / (math.sin(a + d) * math.sin(a + b)))) ** 2)
+        correct = math.sin(a - p) ** 2 / denom
+        wrong = math.sin(a + p) ** 2 / denom
+        assert Kp == pytest.approx(correct, rel=1e-9)
+        assert abs(correct - wrong) > 1e-3  # the sign genuinely matters here
+
     def test_Ka_decreases_with_phi(self):
         """Ka should decrease as phi increases."""
         prev = 2.0
@@ -270,6 +290,36 @@ class TestSoilLayerValidation:
     def test_zero_strength(self):
         with pytest.raises(ValueError, match="c > 0 or phi > 0"):
             WallSoilLayer(5, 18.0, friction_angle=0, cohesion=0)
+
+    def test_wall_friction_above_phi_rejected(self):
+        with pytest.raises(ValueError, match="Wall friction"):
+            WallSoilLayer(5.0, 18.0, friction_angle=30, wall_friction_deg=40)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TEST 6: Coulomb Wall Friction at the Analysis Level (SP-2)
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestCoulombWallFriction:
+    """The 'coulomb' pressure method must respond to wall friction instead of
+    being a silent duplicate of Rankine (regression for SP-2)."""
+
+    def test_coulomb_smooth_wall_equals_rankine(self):
+        """delta=0 (smooth wall): coulomb result matches rankine."""
+        layers = [WallSoilLayer(20.0, 18.0, friction_angle=32.0)]
+        r_rank = analyze_cantilever(4.0, layers, pressure_method="rankine")
+        r_coul = analyze_cantilever(4.0, layers, pressure_method="coulomb")
+        assert r_coul.embedment_depth == pytest.approx(
+            r_rank.embedment_depth, rel=1e-6)
+
+    def test_wall_friction_reduces_embedment(self):
+        """Nonzero wall friction lowers active / raises passive -> less embedment."""
+        smooth = [WallSoilLayer(20.0, 18.0, friction_angle=32.0)]
+        rough = [WallSoilLayer(20.0, 18.0, friction_angle=32.0,
+                               wall_friction_deg=20.0)]
+        r_rank = analyze_cantilever(4.0, smooth, pressure_method="rankine")
+        r_coul = analyze_cantilever(4.0, rough, pressure_method="coulomb")
+        assert r_coul.embedment_depth < r_rank.embedment_depth
 
 
 if __name__ == "__main__":

@@ -278,15 +278,30 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
             reference="Coulomb (1776)",
         ))
     else:
-        Ka = math.tan(math.radians(45 - phi / 2)) ** 2
-        ep_items.append(CalcStep(
-            title="Rankine Active Earth Pressure Coefficient",
-            equation="K_a = tan\u00b2(45\u00b0 - \u03c6/2)",
-            substitution=f"K_a = tan\u00b2(45\u00b0 - {phi:.1f}\u00b0/2)",
-            result_name="K_a",
-            result_value=f"{Ka:.4f}",
-            reference="Rankine (1857)",
-        ))
+        Ka = _Ka_value(phi, method, geom)
+        if geom.backfill_slope > 0:
+            ep_items.append(CalcStep(
+                title="Rankine Active Earth Pressure Coefficient (sloped backfill)",
+                equation=(
+                    "K_a = cos\u03b2 \u00d7 (cos\u03b2 - \u221a(cos\u00b2\u03b2 - "
+                    "cos\u00b2\u03c6)) / (cos\u03b2 + \u221a(cos\u00b2\u03b2 - cos\u00b2\u03c6))"
+                ),
+                substitution=(
+                    f"\u03c6 = {phi:.1f}\u00b0, \u03b2 = {geom.backfill_slope:.1f}\u00b0"
+                ),
+                result_name="K_a",
+                result_value=f"{Ka:.4f}",
+                reference="Rankine (1857), sloped backfill",
+            ))
+        else:
+            ep_items.append(CalcStep(
+                title="Rankine Active Earth Pressure Coefficient",
+                equation="K_a = tan\u00b2(45\u00b0 - \u03c6/2)",
+                substitution=f"K_a = tan\u00b2(45\u00b0 - {phi:.1f}\u00b0/2)",
+                result_name="K_a",
+                result_value=f"{Ka:.4f}",
+                reference="Rankine (1857)",
+            ))
 
     # Active height
     H = geom.H_active
@@ -993,13 +1008,24 @@ def get_figures(result, analysis) -> List[FigureData]:
 # ═══════════════════════════════════════════════════════════════════
 
 def _Ka_value(phi, method, geom):
-    """Compute Ka using the appropriate method."""
+    """Compute Ka exactly as the cantilever analysis does, so the rendered calc
+    package matches the analysis.
+
+    Mirrors retaining_walls.cantilever: Coulomb uses wall friction delta = 2/3*phi
+    with the backfill slope; Rankine uses the sloped coefficient when the
+    backfill slopes and the level coefficient otherwise. (Previously this always
+    returned the level Rankine value, so the package disagreed with the analysis
+    for sloped backfills — CS-1.)
+    """
+    from retaining_walls.earth_pressure import (
+        rankine_Ka, rankine_Ka_sloped, coulomb_Ka,
+    )
     if method == "coulomb":
-        from retaining_walls.earth_pressure import coulomb_Ka
-        delta = 2.0 / 3.0 * phi
+        delta = 2.0 / 3.0 * phi  # matches analysis delta_wall
         return coulomb_Ka(phi, delta, beta_deg=geom.backfill_slope)
-    else:
-        return math.tan(math.radians(45 - phi / 2)) ** 2
+    if geom.backfill_slope > 0:
+        return rankine_Ka_sloped(phi, geom.backfill_slope)
+    return rankine_Ka(phi)
 
 
 def _plot_cantilever_section(result, analysis):

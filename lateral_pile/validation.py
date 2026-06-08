@@ -306,6 +306,36 @@ class TestPYCurves:
         model = SandAPI(phi=35.0, gamma=10.0, k=16000.0)
         assert model.get_p(0.01, 0.0, 0.6) == 0.0
 
+    def test_sand_reese_three_part_curve(self):
+        """SandReese must be a genuine 3-part curve (linear -> parabola ->
+        plateau), not bilinear (LP-1)."""
+        model = SandReese(phi=35.0, gamma=9.0, k=22000.0, loading='static')
+        z, b = 3.0, 0.6
+        yu = 3.0 * b / 80.0
+        pus, pud = model.get_pu(z, b)
+        A = max(0.9, 3.0 - 0.8 * z / b)
+        p_ult = A * min(pus, pud)
+
+        # Plateau reached at yu and held beyond.
+        assert model.get_p(yu, z, b) == pytest.approx(p_ult, rel=1e-9)
+        assert model.get_p(2.0 * yu, z, b) == pytest.approx(p_ult, rel=1e-9)
+
+        # Parabolic softening at 0.5*yu: at most the 1/3-power value and below
+        # the plateau (a bilinear curve would still be on its initial line here).
+        p_half = model.get_p(0.5 * yu, z, b)
+        assert p_half <= p_ult * (0.5 ** (1.0 / 3.0)) + 1e-9
+        assert p_half < p_ult
+
+        # Monotonic, with a genuine intermediate-stiffness region (interior
+        # slopes strictly between 0 and the initial slope k*z) -- a bilinear
+        # curve would have none.
+        y, p = model.get_py_curve(z, b, n_points=200)
+        assert np.all(np.diff(p) >= -1e-9)
+        slopes = np.diff(p) / np.diff(y)
+        interior = slopes[1:-1]
+        k_init = 22000.0 * z
+        assert np.sum((interior > 1e-6) & (interior < 0.5 * k_init)) >= 3
+
     def test_stiff_clay_below_wt_basics(self):
         """StiffClayBelowWT should produce reasonable results."""
         model = StiffClayBelowWT(c=100.0, gamma=9.0, eps50=0.005, ks=270000.0)

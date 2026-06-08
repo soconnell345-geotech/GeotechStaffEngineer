@@ -469,5 +469,66 @@ class TestDasConsolidation:
         assert t == pytest.approx(expected, rel=0.01)
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# TEST 9: QC fixes — Schmertmann Izp / C3 + elastic Iw (SET-1/2/3)
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestSettlementQCFixes:
+    """Regression tests for SET-1 (Izp at peak depth), SET-2 (no spurious C3
+    shape factor), and SET-3 (shape-based elastic influence factor)."""
+
+    def test_elastic_influence_factor_square(self):
+        from settlement.immediate import elastic_influence_factor
+        # Schleicher flexible-center square = 1.12
+        assert elastic_influence_factor("square", 2.0, 2.0) == pytest.approx(
+            1.122, abs=0.005)
+
+    def test_elastic_influence_factor_circle_and_aspect(self):
+        from settlement.immediate import elastic_influence_factor
+        assert elastic_influence_factor("circular", 1.0, 1.0) == pytest.approx(1.0)
+        Iw_sq = elastic_influence_factor("rectangular", 2.0, 2.0)
+        Iw_long = elastic_influence_factor("rectangular", 20.0, 2.0)  # L/B = 10
+        assert Iw_long > Iw_sq  # influence factor grows with L/B
+
+    def test_analysis_applies_shape_influence_factor(self):
+        """SET-3: the elastic method must apply a shape Iw, not a flat 1.0."""
+        from settlement.analysis import SettlementAnalysis
+        from settlement.immediate import (
+            elastic_settlement, elastic_influence_factor,
+        )
+        a = SettlementAnalysis(
+            q_applied=150, q_overburden=20, B=2.0, L=2.0,
+            footing_shape="square",
+            immediate_method="elastic", Es_immediate=10000, nu=0.3,
+        )
+        r = a.compute()
+        Iw = elastic_influence_factor("square", 2.0, 2.0)
+        expected = elastic_settlement(130, 2.0, 10000, nu=0.3, Iw=Iw)
+        assert r.immediate == pytest.approx(expected, rel=1e-9)
+        # ... and that is NOT the old Iw=1.0 result
+        assert r.immediate != pytest.approx(
+            elastic_settlement(130, 2.0, 10000, nu=0.3, Iw=1.0), rel=1e-3)
+
+    def test_schmertmann_Izp_uses_peak_overburden(self):
+        """SET-1: supplying gamma_soil raises sigma'_vp at the peak depth, which
+        lowers Izp and hence the settlement."""
+        layers = [SchmertmannLayer(0, 4, 10000)]
+        Se_base = schmertmann_settlement(100, 20, 2.0, layers,
+                                         footing_shape="square")
+        Se_gamma = schmertmann_settlement(100, 20, 2.0, layers,
+                                          footing_shape="square", gamma_soil=18.0)
+        assert Se_gamma < Se_base
+
+    def test_schmertmann_strip_not_reduced_by_C3(self):
+        """SET-2: with the spurious C3 removed, a strip (plane-strain diagram)
+        settles more than a square, not less."""
+        layers = [SchmertmannLayer(0, 8, 10000)]
+        Se_strip = schmertmann_settlement(100, 20, 2.0, layers,
+                                          footing_shape="strip")
+        Se_square = schmertmann_settlement(100, 20, 2.0, layers,
+                                           footing_shape="square")
+        assert Se_strip > Se_square
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

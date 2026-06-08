@@ -584,6 +584,39 @@ class TestMSERetainedFill:
 
 
 # ================================================================
+# NEW TESTS: CS-1 -- calc_steps Ka must match the analysis Ka
+# ================================================================
+class TestCalcStepsKaMatchesAnalysis:
+    """The rendered calc package must use the same Ka the analysis used,
+    including sloped Rankine backfills (regression for CS-1)."""
+
+    def test_Ka_value_sloped_rankine_matches_analysis(self):
+        from retaining_walls.calc_steps import _Ka_value
+        geom = CantileverWallGeometry(wall_height=6.0, backfill_slope=15)
+        phi = 32.0
+        # Rankine + sloped backfill: calc_steps must use the sloped coefficient
+        assert _Ka_value(phi, "rankine", geom) == pytest.approx(
+            rankine_Ka_sloped(phi, geom.backfill_slope), rel=1e-9)
+        # ... which is NOT the level value the buggy code used to return
+        assert _Ka_value(phi, "rankine", geom) != pytest.approx(
+            rankine_Ka(phi), rel=1e-3)
+
+    def test_Ka_value_level_rankine(self):
+        from retaining_walls.calc_steps import _Ka_value
+        geom = CantileverWallGeometry(wall_height=6.0, backfill_slope=0)
+        assert _Ka_value(30.0, "rankine", geom) == pytest.approx(
+            rankine_Ka(30.0), rel=1e-9)
+
+    def test_Ka_value_coulomb_matches_analysis_delta(self):
+        from retaining_walls.calc_steps import _Ka_value
+        from retaining_walls.earth_pressure import coulomb_Ka
+        geom = CantileverWallGeometry(wall_height=6.0, backfill_slope=10)
+        phi = 32.0
+        expected = coulomb_Ka(phi, 2.0 / 3.0 * phi, beta_deg=geom.backfill_slope)
+        assert _Ka_value(phi, "coulomb", geom) == pytest.approx(expected, rel=1e-9)
+
+
+# ================================================================
 # NEW TESTS: CRITICAL-5 -- Pullout with Rc < 1.0
 # ================================================================
 class TestPulloutCoverageRatio:

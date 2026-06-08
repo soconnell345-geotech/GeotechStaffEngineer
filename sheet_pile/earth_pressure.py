@@ -144,7 +144,11 @@ def coulomb_Kp(phi_deg: float, delta_deg: float = 0.0,
     alpha = math.radians(alpha_deg)
     beta = math.radians(beta_deg)
 
-    num = math.sin(alpha + phi) ** 2
+    # Passive numerator uses sin^2(alpha - phi) (note the sign: the passive
+    # failure geometry flips phi relative to the active case). For a vertical
+    # wall (alpha = 90 deg) sin(alpha - phi) = sin(alpha + phi) = cos(phi), so
+    # the sign only matters for inclined walls.
+    num = math.sin(alpha - phi) ** 2
     term1 = math.sin(alpha) ** 2 * math.sin(alpha + delta)
     term2 = math.sin(phi + delta) * math.sin(phi + beta)
     term3 = math.sin(alpha + delta) * math.sin(alpha + beta)
