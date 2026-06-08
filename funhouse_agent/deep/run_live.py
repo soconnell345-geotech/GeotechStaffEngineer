@@ -27,7 +27,7 @@ Backends
         from funhouse_agent.deep.databricks_bridge import PrompterChatModel
         from funhouse_agent.deep.run_live import run
 
-        model = PrompterChatModel(prompter=fh_prompter)   # fh_prompter = PrompterAPI(...)
+        model = PrompterChatModel(prompter=fh_prompter, model="funhouse-gpt-high")
         run(model)
 
     ``build_deep_agent`` default-wraps the model for vision, so a single
@@ -238,7 +238,8 @@ def main(argv=None) -> int:
             "    from funhouse_agent.deep.databricks_bridge import "
             "PrompterChatModel\n"
             "    from funhouse_agent.deep.run_live import run\n\n"
-            "    model = PrompterChatModel(prompter=fh_prompter)\n"
+            "    model = PrompterChatModel(prompter=fh_prompter, "
+            "model='funhouse-gpt-high')\n"
             "    run(model)\n",
             file=sys.stderr,
         )

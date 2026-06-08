@@ -14,7 +14,7 @@ Construct it in a Databricks notebook with an already-initialized PrompterAPI::
     from funhouse_agent.deep.databricks_bridge import PrompterChatModel
     from funhouse_agent.deep.agent import build_deep_agent
 
-    model = PrompterChatModel(prompter=fh_prompter)   # fh_prompter = PrompterAPI(...)
+    model = PrompterChatModel(prompter=fh_prompter, model="funhouse-gpt-high")
     agent = build_deep_agent(model=model)
     result = agent.invoke({"messages": [{"role": "user", "content": "..."}]})
 
@@ -205,7 +205,9 @@ class PrompterChatModel(BaseChatModel):
     prompter: Any = Field(default=None, exclude=True)
     model: Optional[str] = None
     max_tokens: Optional[int] = None
-    temperature: float = 0.0
+    # Optional so ``temperature=None`` can OMIT the param (GPT-5 / reasoning
+    # tiers that reject a fixed temperature). Defaults to 0.0 for determinism.
+    temperature: Optional[float] = 0.0
     # OpenAI-schema tool dicts captured by bind_tools; replayed each call.
     openai_tools: Optional[list] = Field(default=None, exclude=True)
     tool_choice: Any = None
@@ -254,8 +256,14 @@ class PrompterChatModel(BaseChatModel):
         request: dict = {
             "model": kwargs.get("model") or self._active_model,
             "messages": openai_messages,
-            "temperature": kwargs.get("temperature", self.temperature),
         }
+        # Some models (e.g. GPT-5 / reasoning tiers such as ``funhouse-gpt-high``)
+        # reject a non-default ``temperature``. ``temperature=None`` omits it so
+        # the model uses its own default; ``_create_with_param_fallback`` also
+        # strips it automatically if the API still complains.
+        temperature = kwargs.get("temperature", self.temperature)
+        if temperature is not None:
+            request["temperature"] = temperature
 
         tools = kwargs.get("tools") or self.openai_tools
         if tools:
@@ -285,7 +293,7 @@ class PrompterChatModel(BaseChatModel):
         if stop:
             request["stop"] = stop
 
-        response = self.prompter.client.chat.completions.create(**request)
+        response = self._create_with_param_fallback(request)
 
         choice = response.choices[0]
         ai_message = _openai_message_to_ai_message(choice.message)
@@ -304,6 +312,47 @@ class PrompterChatModel(BaseChatModel):
             generation_info=generation_info,
         )
         return ChatResult(generations=[generation])
+
+    def _create_with_param_fallback(self, request: dict):
+        """Call the OpenAI-compatible client, retrying ONCE if the model rejects
+        a parameter.
+
+        The first attempt sends the request as-is (the known-good path for
+        OpenAI/Anthropic via the proxy). If it fails with a parameter error —
+        e.g. a GPT-5 / reasoning model (``funhouse-gpt-high``) that rejects
+        ``temperature`` or wants ``max_completion_tokens`` instead of
+        ``max_tokens`` — the offending parameter is dropped/renamed and the call
+        is retried once. Any other error (or a second failure) propagates.
+        """
+        create = self.prompter.client.chat.completions.create
+        try:
+            return create(**request)
+        except Exception as exc:  # noqa: BLE001 - inspect + selectively retry
+            adjusted = _adjust_request_for_param_error(request, str(exc))
+            if adjusted is None:
+                raise
+            return create(**adjusted)
+
+
+def _adjust_request_for_param_error(request: dict, message: str):
+    """Return a retry request with the offending parameter removed/renamed, or
+    ``None`` if the error does not look parameter-related.
+
+    Handles the two common modern-model quirks: a rejected ``temperature``
+    (dropped) and ``max_tokens`` that must be ``max_completion_tokens``
+    (renamed). Detection is a substring match on the lower-cased error message.
+    """
+    low = (message or "").lower()
+    new = dict(request)
+    changed = False
+    if "temperature" in low and "temperature" in new:
+        new.pop("temperature", None)
+        changed = True
+    if (("max_completion_tokens" in low or "max_tokens" in low)
+            and "max_tokens" in new):
+        new["max_completion_tokens"] = new.pop("max_tokens")
+        changed = True
+    return new if changed else None
 
 
 def _usage_to_dict(usage) -> dict:

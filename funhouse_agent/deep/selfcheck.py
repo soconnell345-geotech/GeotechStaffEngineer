@@ -18,7 +18,7 @@ Notebook usage (Funhouse / Databricks)::
     from funhouse_agent.deep.databricks_bridge import PrompterChatModel
     from funhouse_agent.deep.selfcheck import run_selfcheck
 
-    model = PrompterChatModel(prompter=fh_prompter)   # your existing PrompterAPI
+    model = PrompterChatModel(prompter=fh_prompter, model="funhouse-gpt-high")
     run_selfcheck(model)               # ~3 model calls (a few cents)
 
 Local CLI (with ``ANTHROPIC_API_KEY`` set)::
@@ -176,7 +176,8 @@ def main(argv=None) -> int:
             "    from funhouse_agent.deep.databricks_bridge import "
             "PrompterChatModel\n"
             "    from funhouse_agent.deep.selfcheck import run_selfcheck\n\n"
-            "    model = PrompterChatModel(prompter=fh_prompter)\n"
+            "    model = PrompterChatModel(prompter=fh_prompter, "
+            "model='funhouse-gpt-high')\n"
             "    run_selfcheck(model)\n",
             file=sys.stderr,
         )
