@@ -164,3 +164,130 @@ Command: `.venv/Scripts/python.exe -m pytest -q` (worktree root on sys.path firs
 - **GUI retirement**: Dash (`slope_stability_gui.py`, `fem2d_gui.py`) + Qt
   (`geotech_qt_gui.py`, `slope_stability_qt.py`, `fem2d_qt.py`, `qt_panels/`) +
   the `gui` optional-dep.
+
+---
+
+# Consolidation Phase 2a — Changes Manifest
+
+Authoritative record of Phase 2a (contained retirements) of the module-consolidation
+effort. Executed on branch `scope-consolidation` in the `scope-consol` worktree,
+stacked on the Phase 1 commit `99fde72`, 2026-06-09. Three independent retirements,
+one commit each.
+
+## Task A (#10) — Retire the GUIs (Dash + Qt); analysis modules stay
+
+The underlying `slope_stability/` and `fem2d/` analysis modules are KEPT intact —
+only the GUI front-ends were removed.
+
+Deleted (front-ends + artifacts):
+- Dash: `slope_stability_gui.py`, `fem2d_gui.py`, `dashboard_app.py`, `dashboard.html`.
+- Qt: `geotech_qt_gui.py`, `slope_stability_qt.py`, `fem2d_qt.py`, `qt_panels/` (whole dir, 8 files).
+- GUI image artifacts at repo root: `slope_gui_screenshot.png`, `slope_gui_screenshot2.png`,
+  `slope_gui_cropped.png`.
+
+De-wired:
+- **`pyproject.toml`**: removed the `gui` optional-dependency (`dash>=2.14`, `plotly>=5.18`)
+  and the two `dash`/`plotly` lines from the `full` extra.
+- **`README.md`**: removed the "GUIs" section (Plotly Dash table) and the `gui` row from
+  the Optional Extras table.
+- **`CLAUDE.md`**: removed the "GUIs" section (Plotly Dash + Qt Desktop tables).
+- **`slope_stability/DESIGN.md`**: removed the trailing "Qt GUI" section (referenced
+  `slope_stability_qt.py` + `qt_panels/`).
+- `main.py` is a stub (PyCharm sample) — no GUI references; no change.
+- Remaining GUI-name mentions live only in the historical ledgers
+  (`CONSOLIDATION_PLAN.md`, this file's Phase 1 section) — records, not live wiring.
+
+## Task B (#11) — Migrate DM7Eqs's figure consumers, then DELETE DM7Eqs/
+
+`DM7Eqs/`'s public equations are a byte-identical strict subset of the installed
+`geotech_references` package (already a runtime dependency; DM7Eqs was excluded from
+the wheel). A few KEPT files still consumed it via a
+`sys.path.insert(0,"DM7Eqs"); from geotech.dm7_X.chapterN import ...` hack.
+
+Consumers migrated (`from geotech.dm7_* ...` → `from geotech_references.dm7_* ...`,
+sys.path hack dropped):
+- **`settlement/calc_steps.py`**: `plot_figure_5_16` (`dm7_1.chapter5`).
+- **`calc_package/tests/test_calc_package.py`**: `plot_figure_5_16` (`dm7_1.chapter5`),
+  `plot_figure_8_46` (`dm7_1.chapter8`), `plot_figure_4_36` (`dm7_2.chapter4`) —
+  5 test methods updated.
+- (`dashboard_app.py` was a fourth consumer but it was deleted in Task A — skipped.)
+
+**Import-resolution check (repo venv) — PASSED.** Before deleting DM7Eqs:
+```
+from geotech_references.dm7_1.chapter5 import plot_figure_5_16
+from geotech_references.dm7_1.chapter8 import plot_figure_8_46
+from geotech_references.dm7_2.chapter4 import plot_figure_4_36
+-> ok
+```
+All three names resolved in `geotech_references` with no renaming needed, and the 5
+migrated `TestDm7FigureHelper` tests passed against the package (PNG output verified).
+
+Then:
+- Deleted **`DM7Eqs/`** in full (the `geotech/` package: `dm7_1/` ch1-8 + `dm7_2/`
+  ch2-7 + prologue, and its `tests/` 1852-test suite).
+- **`pyproject.toml`**: removed the `"DM7Eqs*"` entry from
+  `[tool.setuptools.packages.find]` `exclude`.
+- **`.gitignore`**: removed the `DM7Eqs/references/*.pdf`, `DM7Eqs/eq_*.png`,
+  `DM7Eqs/references/*.png` ignore lines.
+- **`CLAUDE.md`**: dropped the stale "+ DM7 equations" from the intro module list
+  (the DM7 equations now live solely in the `geotech-references` submodule, which the
+  Other-components line already documents).
+
+## Task C (#6) — Retire ONLY the OpenSees BNWF lateral-pile pathway
+
+`opensees_agent/` REMAINS fully functional for **1D site response + PM4Sand cyclic
+DSS**. Only its redundant BNWF lateral-pile capability was removed — the native
+`lateral_pile` module (COM624P-style FD solver, 8 p-y models) already covers lateral
+piles, and the BNWF code only re-sampled `lateral_pile`'s own p-y curves into OpenSees
+`PySimple1` springs (no unique physics; monotonic only).
+
+opensees_agent:
+- Deleted **`opensees_agent/bnwf_pile.py`**.
+- **`results.py`**: removed the `BNWFPileResult` dataclass (kept `PM4SandDSSResult`,
+  `SiteResponseResult`).
+- **`__init__.py`**: dropped `analyze_bnwf_pile` + `BNWFPileResult` exports and the
+  BNWF docstring/reference lines.
+- **`tests/test_opensees_agent.py`**: removed all BNWF tests — `TestBNWFPileResult`,
+  `TestBNWFPileResultPlots`, `TestBNWFPileValidation`, `TestBNWFBuildPyModel`,
+  `TestBNWFPileIntegration`, the two Foundry-metadata BNWF tests, and the
+  `bnwf_pile`/`BNWFPileResult` imports. Kept all PM4Sand + site-response tests.
+- **`DESIGN.md`**: replaced the BNWF section with a note pointing to native
+  `lateral_pile`; trimmed the architecture tree + testing-strategy lines.
+
+Agent layer:
+- **`funhouse_agent/adapters/opensees_adapter.py`**: removed `_run_bnwf_lateral_pile`,
+  its `METHOD_REGISTRY` + `METHOD_INFO` entries; opensees now exposes 2 methods.
+- **`funhouse_agent/adapters/__init__.py`**: opensees `brief` no longer lists BNWF.
+- **`funhouse_agent/tests/test_new_adapters.py`**: opensees expected-methods set + the
+  `list_methods` total updated 3 → 2; dropped `test_bnwf_not_installed`.
+- **`foundry/opensees_agent_foundry.py`**: removed `_run_bnwf_pile`, its registry +
+  `METHOD_INFO` entries; trimmed agent/list-methods docstrings + category example.
+- **No change needed** in `funhouse_agent/dispatch.py`, `system_prompt.py`,
+  `native_tools.py` — the module catalog/counts are derived from `MODULE_REGISTRY` at
+  runtime, no opensees BNWF alias existed, and `native_tools` has only generic schemas.
+  `foundry_test_harness/` had no BNWF scenarios.
+
+Docs: removed BNWF / opensees-lateral-pile mentions from `README.md`, `CLAUDE.md`,
+`docs/funhouse_agent_guide.md`, `docs/agent_showcase.html` (kept the
+site-response/PM4Sand descriptions, and the native `lateral_pile` "Lateral Pile"
+mentions which are a different, KEPT module).
+
+**Confirmed: `opensees_agent` still supports site response + PM4Sand** — post-edit the
+module exports `analyze_pm4sand_dss`, `analyze_site_response`, `PM4SandDSSResult`,
+`SiteResponseResult`; adapter + foundry registries = `{pm4sand_cyclic_dss,
+site_response_1d}`; the PM4Sand + site-response test classes pass.
+
+## Test results (Phase 2a)
+
+Repo venv (`.venv/Scripts/python.exe -m pytest`), worktree root.
+
+- Per-task gates (run as each task landed):
+  - Task B: `calc_package settlement` → **144 passed, 3 skipped**.
+  - Task C: `opensees_agent funhouse_agent/tests/test_new_adapters.py` →
+    **173 passed, 6 skipped** (skips = openseespy-not-installed Tier 2 + matplotlib).
+- Full targeted suite:
+  `opensees_agent settlement calc_package funhouse_agent foundry_test_harness
+  slope_stability fem2d` → see commit-time run (all green; no failures introduced).
+- The known pre-existing failure in
+  `seismic_geotech/.../TestMononobeOkabe::test_KPE_zero_kh_battered_equals_coulomb`
+  is on the branch base and was NOT run here (not in the targeted set).
