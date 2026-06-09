@@ -5,7 +5,7 @@ Covers:
 - gstools_adapter (3 methods, has_gstools guard)
 - hvsrpy_adapter (1 method, has_hvsrpy guard)
 - swprocess_adapter (1 method, has_swprocess guard)
-- subsurface_adapter (5 methods, no external dep)
+- subsurface_adapter (14 methods: 8 native + 6 folded format adapters)
 
 Each adapter gets:
 - TestXxxMethodInfo: METHOD_INFO/REGISTRY key match, required fields
@@ -289,7 +289,8 @@ class TestSubsurfaceMethodInfo:
 
     def test_method_count(self):
         from funhouse_agent.adapters.subsurface_adapter import METHOD_INFO
-        assert len(METHOD_INFO) == 8
+        # 8 native + 6 folded format-adapter methods (pygef/ags4/pydiggs)
+        assert len(METHOD_INFO) == 14
 
 
 class TestSubsurfaceDispatch:
@@ -308,7 +309,11 @@ class TestSubsurfaceDispatch:
         assert "plot_plan_view" in all_methods
         assert "plot_cross_section" in all_methods
         assert "compute_trend" in all_methods
-        assert len(all_methods) == 8
+        # Folded-in format adapters (CONSOLIDATION_CHANGES.md #3)
+        assert "parse_cpt" in all_methods
+        assert "read_ags4" in all_methods
+        assert "validate_diggs_schema" in all_methods
+        assert len(all_methods) == 14
 
     def test_describe_method_load_site(self):
         from funhouse_agent.dispatch import describe_method

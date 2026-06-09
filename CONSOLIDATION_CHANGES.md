@@ -398,3 +398,185 @@ Repo venv (`.venv/Scripts/python.exe -m pytest`), worktree root.
   commit-time run below. The known pre-existing
   `TestMononobeOkabe::test_KPE_zero_kh_battered_equals_coulomb` failure is the only
   red and is NOT from this work.
+
+---
+
+# Consolidation #3 — merge pygef / ags4 / pydiggs into subsurface_characterization
+
+Authoritative record of consolidation task #3. Executed on branch
+`scope-consolidation` in the `scope-consol` worktree, stacked on `311d2d8`,
+2026-06-09. Make `subsurface_characterization` the single data-I/O home and fold
+the three thin parser/validator wrapper modules into it as optional,
+dependency-backed **format adapters**, then remove the three standalone modules.
+
+## What moved where (new submodule layout)
+
+A new `subsurface_characterization/formats/` subpackage holds the folded code
+(parsing/validation logic preserved verbatim — only import paths changed; result
+dataclasses moved intact):
+
+| New file | Folded from | Public API |
+|----------|-------------|------------|
+| `formats/gef.py` | `pygef_agent/{pygef_utils,cpt_parser,bore_parser}.py` | `parse_cpt_file`, `parse_bore_file`, `has_pygef` (+ `import_pygef`, validators) |
+| `formats/gef_results.py` | `pygef_agent/results.py` | `CPTParseResult`, `BoreParseResult` |
+| `formats/ags4.py` | `ags4_agent/{ags4_reader,ags4_utils}.py` | `read_ags4`, `validate_ags4`, `has_ags4` (+ `import_ags4`) |
+| `formats/ags4_results.py` | `ags4_agent/results.py` | `AGS4ReadResult`, `AGS4ValidationResult` |
+| `formats/diggs_validation.py` | `pydiggs_agent/{diggs_validation,pydiggs_utils}.py` | `validate_diggs_schema`, `validate_diggs_dictionary`, `has_pydiggs` (+ schema/dict path helpers) |
+| `formats/diggs_validation_results.py` | `pydiggs_agent/results.py` | `DiggValidationResult` |
+| `formats/__init__.py` | (new) | re-exports all of the above |
+
+Each adapter keeps its **lazy optional-import / `has_*` guard intact** — importing
+the names is cheap; the heavy third-party lib (`pygef` / `python-ags4` / `pydiggs`)
+is imported only when a parse/validate function actually runs, and a clear error is
+raised if absent. The native `parse_diggs` DIGGS *data extraction* (custom
+`xml.etree` parser, no external dep) is unchanged and remains the primary DIGGS
+path; `formats.diggs_validation` is the *validation* path (pydiggs).
+
+## Exports
+
+- **`subsurface_characterization/__init__.py`**: now re-exports all 15
+  format-adapter names (functions + `has_*` + result classes) and lists them in
+  `__all__`; module docstring reframed as "the single data-I/O home … plus optional
+  format adapters". `csv_loader.py` docstrings updated (the `load_cpt_to_investigation`
+  bridge now references the GEF adapter; the function is duck-typed, unchanged).
+
+## Agent layer (funhouse_agent)
+
+- **`adapters/subsurface_adapter.py`**: extended to expose ALL methods — the 8
+  existing (parse_diggs/load_site/5 plots/compute_trend) PLUS the 6 folded
+  format-adapter methods: `parse_cpt`, `parse_bore` (File Import), `read_ags4`
+  (File Import), `validate_ags4`, `validate_diggs_schema`,
+  `validate_diggs_dictionary` (File Validation). Each `_run_*` carries the
+  `has_*()` guard returning the "not installed" error dict. `METHOD_REGISTRY` +
+  `METHOD_INFO` both updated (14 methods, keys match). The `subsurface` registry
+  brief rewritten to advertise the consolidated ingest+validate+visualize surface.
+- **`adapters/__init__.py`**: removed the `pygef`, `ags4`, `pydiggs` entries from
+  `MODULE_REGISTRY` (registry 54 → 51). `ANALYSIS_MODULES`/`REFERENCE_MODULES`
+  derive from the registry, so they updated automatically.
+- **`adapters/`** — deleted `pygef_adapter.py`, `ags4_adapter.py`,
+  `pydiggs_adapter.py`.
+- **`dispatch.py`**: the `("ags4","read_and_validate")→read_ags4` curated alias was
+  re-keyed to `("subsurface","read_and_validate")` so the guess still resolves on
+  the new home.
+- **No change needed** in `system_prompt.py` / `native_tools.py` — module catalog +
+  counts are derived from `MODULE_REGISTRY` at runtime, and `native_tools` has only
+  generic schemas.
+
+## Tests migrated
+
+The three test files moved into `subsurface_characterization/tests/`, imports
+re-pointed to the new module paths. The **library-self-skip behavior is kept**
+(`requires_*`/`skipif(not has_*())`). The Foundry-metadata/Foundry-integration test
+classes were dropped (their `foundry/*_foundry.py` targets are deleted standalone
+Foundry files, never part of the pip package). The pygef sample data
+(`sample_cpt.gef`, `sample_bore.gef`) was copied alongside.
+
+| New test file | From | Tests |
+|---------------|------|-------|
+| `tests/test_formats_gef.py` | `pygef_agent/tests/test_pygef_agent.py` | dataclass defaults, plot smoke, input validation, util, CPT/bore integration (+ a new SiteModel-bridge test) |
+| `tests/test_formats_ags4.py` | `ags4_agent/tests/test_ags4_agent.py` | read/validate dataclass defaults, input validation, util, read/validate integration |
+| `tests/test_formats_diggs_validation.py` | `pydiggs_agent/tests/test_pydiggs_agent.py` | result dataclass, input validation, util, schema/dictionary/result integration |
+
+Updated funhouse tests for the new shape:
+- `tests/test_new_adapters.py`: replaced the Pygef/Ags4/Pydiggs sections with
+  `TestSubsurfaceFormatAdapter*` (dispatch describe + has_* guard paths against the
+  `subsurface` module); dropped pygef/ags4/pydiggs from the registered-adapters
+  parametrize; header "11 adapters" → "8".
+- `tests/test_phase34_adapters.py` + `tests/test_subsurface_adapter.py`: subsurface
+  expected-methods set + `list_methods` total 8 → 14.
+- `tests/test_method_name_aliases.py`: `("ags4",…)` routing case → `("subsurface",…)`.
+- `geotech_test_suite.json`: the PGEF-1 / AGS-1 / DIGGS-1 eval questions' `module`
+  field re-pointed to `subsurface_characterization` (questions unchanged).
+
+## Removed (3 standalone module dirs)
+
+Deleted in full: `pygef_agent/`, `ags4_agent/`, `pydiggs_agent/` (each: module dir
++ tests). Confirmed gone from the worktree; no live `import pygef_agent` /
+`ags4_agent` / `pydiggs_agent` references remain anywhere (grep clean).
+
+## Packaging / build (pyproject.toml)
+
+- `[project] description`: "32 analysis modules" → "29".
+- `[project.optional-dependencies]`: the optional libs stay installable. Added a
+  consolidated **`subsurface = ["pygef>=0.10","python-ags4>=0.5","pydiggs>=0.1"]`**
+  extra; kept `pygef` / `ags4` / `pydiggs` as backward-compat aliases. The `full`
+  extra still lists all three libs (unchanged).
+- `[tool.setuptools.packages.find] include`: dropped `pygef_agent*`, `ags4_agent*`,
+  `pydiggs_agent*` (the existing `subsurface_characterization*` glob already covers
+  the new `formats` submodule).
+- `[tool.pytest.ini_options] testpaths`: dropped the 3 entries (those tests now live
+  under `subsurface_characterization`).
+
+## De-wiring (foundry, docs, ledgers)
+
+- **`foundry/`** — deleted `pygef_agent_foundry.py`, `ags4_agent_foundry.py`,
+  `pydiggs_agent_foundry.py`. `foundry/__init__.py` is a docstring-only marker (no
+  registry) — no change. `subsurface_char_agent_foundry.py` left as-is (its existing
+  method set is the visualization API; the folded data-I/O is exposed via the
+  funhouse `subsurface` adapter, which is the live agent surface).
+- **`foundry_test_harness/`** — no pygef/ags4/pydiggs scenarios or references (grep
+  clean); no change.
+- **`README.md`** — intro "32" → "29"; `subsurface_characterization` Core-Analysis
+  row rewritten to list the folded adapters; dropped the 3 Library-Wrapper-Agent rows
+  (→ "10 modules") with a folded-in note; Optional-Extras table gains a `subsurface`
+  row and marks `pygef`/`ags4`/`pydiggs` as aliases.
+- **`CLAUDE.md`** — intro module list; inventory table (dropped the 3 rows;
+  subsurface row rewritten, test-count bumped to 231); inventory header
+  "53 = 32 + 21" → "50 = 29 + 21"; funhouse adapter-count lines de-specified;
+  "improves the 32 analysis modules" → "29".
+- **`docs/funhouse_agent_guide.md`** — "Available Modules (46)" → "(43)";
+  "File/Data Import Adapters (5)" → "(2)" (dropped pygef/ags4/pydiggs rows, added a
+  folded-in note); `subsurface` row rewritten; adapters-tree comment updated;
+  `list_agents()`/MODULE_REGISTRY count references de-specified.
+- **`docs/funhouse_agent_expansion_plan.md`** — Phase-2 note annotated with the #3
+  fold (historical text kept).
+- **`docs/agent_showcase.html`** — replaced the 3 table rows with one
+  `subsurface_characterization` row.
+- **`subsurface_characterization/DESIGN.md`** — input-format table updated; added a
+  "Format adapters (`formats/` subpackage)" section.
+- **`module_work/BOARD.md`** + **`triage_feedback.py`** — characterization-domain
+  roster trimmed (the 3 names removed; subsurface annotated as their new home).
+
+## Left as-is (regenerable artifacts / historical records — NOT live wiring)
+
+- **`docs/geotech_test_suite_results.json`**, **`module_work/module_feedback.json`**
+  — captured Databricks eval-run outputs (point-in-time data snapshots).
+- **`.github/workflows/tests.yml`** — keeps the best-effort
+  `pip install pygef/python-ags4/pydiggs || true` lines: the libs remain installable
+  and the migrated integration tests need them in CI (they self-skip otherwise).
+
+## Optional libs present? Tests ran vs skipped
+
+All three optional libs ARE installed in the repo venv (`pygef`, `python_ags4`,
+`pydiggs` all import), so the migrated Tier-2 integration tests **ran** (not
+skipped) — they self-skip only when the lib is absent.
+
+## Test results (#3)
+
+Command (worktree root on sys.path first):
+`.venv/Scripts/python.exe -m pytest subsurface_characterization funhouse_agent foundry_test_harness -q`
+
+- **914 passed, 5 skipped, 0 failed** (~77 s). The 5 skips are pre-existing
+  optional-dep skips unrelated to this work.
+- The migrated format tests run green: `test_formats_gef.py` (+integration),
+  `test_formats_ags4.py` (+integration), `test_formats_diggs_validation.py`
+  (+integration) — 86 tests, all ran (libs present).
+- The known pre-existing `seismic_geotech/...TestMononobeOkabe::
+  test_KPE_zero_kh_battered_equals_coulomb` failure is on the branch base and is NOT
+  in this targeted set (not run here).
+
+## Judgment calls
+
+- **`formats/` submodule layout**: kept each adapter's result dataclasses in a
+  sibling `*_results.py` (mirrors the original `results.py` split) so the parsing
+  modules import cleanly and the result types are independently importable.
+- **Extras**: added a consolidated `subsurface` extra but KEPT the per-library
+  `pygef`/`ags4`/`pydiggs` extra names as aliases (backward compatibility for anyone
+  pinning them) — and the libs stay in `full`.
+- **Foundry**: deleted the 3 standalone `*_foundry.py` files but did NOT add the
+  folded methods to `subsurface_char_agent_foundry.py` — those Foundry files are
+  out-of-package deployment artifacts; the live agent surface (funhouse `subsurface`
+  adapter) already exposes the 6 folded methods.
+- **Foundry test classes**: dropped them when migrating (their targets are the
+  deleted Foundry files), keeping every dataclass/validation/utility/integration
+  test.

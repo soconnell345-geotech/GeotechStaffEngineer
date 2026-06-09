@@ -1,8 +1,10 @@
 """
-Tests for pydiggs_agent module.
+Tests for the DIGGS validation format adapter.
 
-Tier 1: No pydiggs required (~18 tests)
-Tier 2: Requires pydiggs (~12 tests)
+(Folded in from the former pydiggs_agent module; see CONSOLIDATION_CHANGES.md #3.)
+
+Tier 1: No pydiggs required
+Tier 2: Requires pydiggs
 """
 
 import json
@@ -12,8 +14,10 @@ import matplotlib
 matplotlib.use('Agg')
 import pytest
 
-from pydiggs_agent import has_pydiggs
-from pydiggs_agent.results import DiggValidationResult
+from subsurface_characterization.formats.diggs_validation import has_pydiggs
+from subsurface_characterization.formats.diggs_validation_results import (
+    DiggValidationResult,
+)
 
 
 # Test XML samples
@@ -161,7 +165,7 @@ class TestInputValidation:
         if not has_pydiggs():
             pytest.skip("pydiggs not installed")
 
-        from pydiggs_agent import validate_diggs_schema
+        from subsurface_characterization.formats.diggs_validation import validate_diggs_schema
 
         with pytest.raises(ValueError, match="Either filepath or content must be provided"):
             validate_diggs_schema()
@@ -171,7 +175,7 @@ class TestInputValidation:
         if not has_pydiggs():
             pytest.skip("pydiggs not installed")
 
-        from pydiggs_agent import validate_diggs_schema
+        from subsurface_characterization.formats.diggs_validation import validate_diggs_schema
 
         with pytest.raises(ValueError, match="Only one of filepath or content"):
             validate_diggs_schema(filepath="test.xml", content="<xml/>")
@@ -181,7 +185,7 @@ class TestInputValidation:
         if not has_pydiggs():
             pytest.skip("pydiggs not installed")
 
-        from pydiggs_agent import validate_diggs_schema
+        from subsurface_characterization.formats.diggs_validation import validate_diggs_schema
 
         with pytest.raises(ValueError, match="Invalid schema version"):
             validate_diggs_schema(content="<xml/>", schema_version="3.0")
@@ -206,7 +210,7 @@ class TestSchemaValidation:
 
     def test_validate_valid_xml(self):
         """Test validation of valid DIGGS 2.6 XML."""
-        from pydiggs_agent import validate_diggs_schema
+        from subsurface_characterization.formats.diggs_validation import validate_diggs_schema
 
         result = validate_diggs_schema(content=VALID_DIGGS_26_XML)
         assert result.source == "content"
@@ -218,7 +222,7 @@ class TestSchemaValidation:
 
     def test_validate_invalid_xml(self):
         """Test validation of invalid DIGGS XML."""
-        from pydiggs_agent import validate_diggs_schema
+        from subsurface_characterization.formats.diggs_validation import validate_diggs_schema
 
         result = validate_diggs_schema(content=INVALID_DIGGS_XML)
         assert result.source == "content"
@@ -229,7 +233,7 @@ class TestSchemaValidation:
 
     def test_validate_syntax_error(self):
         """Test validation of XML with syntax errors."""
-        from pydiggs_agent import validate_diggs_schema
+        from subsurface_characterization.formats.diggs_validation import validate_diggs_schema
 
         result = validate_diggs_schema(content=SYNTAX_ERROR_XML)
         assert result.source == "content"
@@ -239,7 +243,7 @@ class TestSchemaValidation:
 
     def test_validate_schema_25a(self):
         """Test validation with DIGGS 2.5.a schema."""
-        from pydiggs_agent import validate_diggs_schema
+        from subsurface_characterization.formats.diggs_validation import validate_diggs_schema
 
         # Use valid 2.6 XML but validate against 2.5.a
         # This should fail because namespaces differ
@@ -254,7 +258,7 @@ class TestSchemaValidation:
 
     def test_validate_from_file(self):
         """Test validation from file path."""
-        from pydiggs_agent import validate_diggs_schema
+        from subsurface_characterization.formats.diggs_validation import validate_diggs_schema
 
         # Write valid XML to temp file
         with tempfile.NamedTemporaryFile(
@@ -276,7 +280,7 @@ class TestSchemaValidation:
 
     def test_temp_file_cleanup(self):
         """Test that temp files are cleaned up after content validation."""
-        from pydiggs_agent import validate_diggs_schema
+        from subsurface_characterization.formats.diggs_validation import validate_diggs_schema
 
         # Get temp directory
         temp_dir = tempfile.gettempdir()
@@ -306,7 +310,7 @@ class TestDictionaryValidation:
 
     def test_validate_from_content(self):
         """Test dictionary validation from content string."""
-        from pydiggs_agent import validate_diggs_dictionary
+        from subsurface_characterization.formats.diggs_validation import validate_diggs_dictionary
 
         # Valid DIGGS XML should have valid property classes
         result = validate_diggs_dictionary(content=VALID_DIGGS_26_XML)
@@ -317,7 +321,7 @@ class TestDictionaryValidation:
 
     def test_validate_from_file(self):
         """Test dictionary validation from file path."""
-        from pydiggs_agent import validate_diggs_dictionary
+        from subsurface_characterization.formats.diggs_validation import validate_diggs_dictionary
 
         # Write valid XML to temp file
         with tempfile.NamedTemporaryFile(
@@ -343,7 +347,7 @@ class TestResultIntegration:
 
     def test_to_dict_after_validation(self):
         """Test to_dict JSON serialization after real validation."""
-        from pydiggs_agent import validate_diggs_schema
+        from subsurface_characterization.formats.diggs_validation import validate_diggs_schema
 
         result = validate_diggs_schema(content=VALID_DIGGS_26_XML)
         d = result.to_dict()
@@ -359,7 +363,7 @@ class TestResultIntegration:
 
     def test_summary_contains_error_info(self):
         """Test that summary includes error details for invalid XML."""
-        from pydiggs_agent import validate_diggs_schema
+        from subsurface_characterization.formats.diggs_validation import validate_diggs_schema
 
         result = validate_diggs_schema(content=INVALID_DIGGS_XML)
         summary = result.summary()
@@ -368,111 +372,3 @@ class TestResultIntegration:
             assert "Valid: False" in summary
             assert "Number of Errors:" in summary
             assert result.n_errors > 0
-
-
-# ============================================================================
-# Foundry Agent Tests
-# ============================================================================
-
-class TestFoundryMetadata:
-    """Test Foundry agent metadata functions (Tier 1)."""
-
-    def test_list_methods_all(self):
-        """Test listing all methods."""
-        from foundry.pydiggs_agent_foundry import pydiggs_list_methods
-
-        methods = json.loads(pydiggs_list_methods())
-        assert isinstance(methods, list)
-        assert len(methods) == 2
-
-        method_names = [m["name"] for m in methods]
-        assert "validate_schema" in method_names
-        assert "validate_dictionary" in method_names
-
-    def test_list_methods_filtered(self):
-        """Test listing methods by category."""
-        from foundry.pydiggs_agent_foundry import pydiggs_list_methods
-
-        methods = json.loads(pydiggs_list_methods(category="Validation"))
-        assert len(methods) == 2
-
-        methods = json.loads(pydiggs_list_methods(category="Other"))
-        assert len(methods) == 0
-
-    def test_list_methods_invalid_category(self):
-        """Test listing methods with unknown category returns empty."""
-        from foundry.pydiggs_agent_foundry import pydiggs_list_methods
-
-        methods = json.loads(pydiggs_list_methods(category="NonExistent"))
-        assert methods == []
-
-    def test_describe_validate_schema(self):
-        """Test describing validate_schema method."""
-        from foundry.pydiggs_agent_foundry import pydiggs_describe_method
-
-        desc = json.loads(pydiggs_describe_method("validate_schema"))
-        assert desc["name"] == "validate_schema"
-        assert desc["category"] == "Validation"
-        assert "description" in desc
-        assert "parameters" in desc
-        assert "returns" in desc
-
-    def test_describe_validate_dictionary(self):
-        """Test describing validate_dictionary method."""
-        from foundry.pydiggs_agent_foundry import pydiggs_describe_method
-
-        desc = json.loads(pydiggs_describe_method("validate_dictionary"))
-        assert desc["name"] == "validate_dictionary"
-        assert desc["category"] == "Validation"
-
-    def test_describe_unknown_method(self):
-        """Test describing unknown method returns error."""
-        from foundry.pydiggs_agent_foundry import pydiggs_describe_method
-
-        desc = json.loads(pydiggs_describe_method("unknown_method"))
-        assert "error" in desc
-
-    def test_agent_invalid_json(self):
-        """Test agent with invalid JSON raises error."""
-        from foundry.pydiggs_agent_foundry import pydiggs_agent
-
-        with pytest.raises(json.JSONDecodeError):
-            pydiggs_agent("validate_schema", "not json")
-
-    def test_agent_unknown_method(self):
-        """Test agent with unknown method returns error JSON."""
-        from foundry.pydiggs_agent_foundry import pydiggs_agent
-
-        result_json = pydiggs_agent("unknown_method", "{}")
-        result = json.loads(result_json)
-        assert "error" in result
-
-
-@pytest.mark.skipif(not has_pydiggs(), reason="pydiggs not installed")
-class TestFoundryIntegration:
-    """Test Foundry agent integration (Tier 2)."""
-
-    def test_agent_validate_schema(self):
-        """Test validate_schema via Foundry agent."""
-        from foundry.pydiggs_agent_foundry import pydiggs_agent
-
-        params = {
-            "content": VALID_DIGGS_26_XML,
-            "schema_version": "2.6"
-        }
-        result_json = pydiggs_agent("validate_schema", json.dumps(params))
-        result = json.loads(result_json)
-
-        assert result["check_type"] == "schema"
-        assert result["is_valid"] is True
-
-    def test_agent_validate_dictionary(self):
-        """Test validate_dictionary via Foundry agent."""
-        from foundry.pydiggs_agent_foundry import pydiggs_agent
-
-        params = {"content": VALID_DIGGS_26_XML}
-        result_json = pydiggs_agent("validate_dictionary", json.dumps(params))
-        result = json.loads(result_json)
-
-        assert result["check_type"] == "dictionary"
-        assert isinstance(result["is_valid"], bool)

@@ -1,5 +1,5 @@
 """
-Result dataclasses for AGS4 agent.
+Result dataclasses for the AGS4 format adapter (python-ags4-backed).
 """
 
 from dataclasses import dataclass, field

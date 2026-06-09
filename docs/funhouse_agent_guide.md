@@ -170,11 +170,11 @@ The agent uses these tools automatically during the ReAct loop:
 | Tool | Purpose |
 |------|---------|
 | `call_agent(agent, method, params)` | Execute a geotechnical calculation |
-| `list_agents()` | List all 46 available modules |
+| `list_agents()` | List all available modules |
 | `list_methods(agent, category)` | List methods for a module |
 | `describe_method(agent, method)` | Get parameter details |
 
-### Available Modules (46)
+### Available Modules (43)
 
 #### Core Analysis (17)
 
@@ -208,22 +208,23 @@ The agent uses these tools automatically during the ReAct loop:
 | `pystra` | Structural reliability analysis (FORM/SORM/Monte Carlo) |
 | `salib` | Sensitivity analysis (Sobol variance-based and Morris screening) |
 
-#### File/Data Import Adapters (5)
+#### File/Data Import Adapters (2)
 
 | Module | Description |
 |--------|-------------|
-| `pygef` | CPT and borehole file parser (GEF/BRO-XML) |
 | `dxf_import` | DXF CAD import for slope stability + FEM |
 | `pdf_import` | PDF cross-section import (PyMuPDF vector extraction) |
-| `ags4` | AGS4 geotechnical data format reader and validator |
-| `pydiggs` | DIGGS 2.6 XML schema and dictionary validation |
+
+> GEF/BRO-XML CPT & borehole parsing (pygef), AGS4 read/validate (python-ags4),
+> and DIGGS schema/dictionary validation (pydiggs) were folded into the
+> `subsurface` adapter as format-adapter methods — see below.
 
 #### FEM & Visualization (2)
 
 | Module | Description |
 |--------|-------------|
 | `fem2d` | 2D plane-strain FEM (gravity, foundation, slope SRM, excavation, seepage, consolidation) |
-| `subsurface` | Subsurface data visualization (parameter vs depth, Atterberg limits, trends) |
+| `subsurface` | Subsurface data I/O — DIGGS parse + Plotly viz (parameter vs depth, Atterberg, trends) + folded format adapters: GEF/BRO-XML CPT/borehole parse (pygef), AGS4 read/validate (python-ags4), DIGGS schema/dictionary validation (pydiggs) |
 
 #### Additional Analysis (3)
 
@@ -396,12 +397,14 @@ funhouse_agent/
   notebook.py          # NotebookChat — ipywidgets chat interface
   DESIGN.md            # Architecture and design decisions
   adapters/
-    __init__.py              # MODULE_REGISTRY (46 modules) + clean_value/clean_result
+    __init__.py              # MODULE_REGISTRY + clean_value/clean_result
     _reference_common.py     # Shared factory for 14 reference adapters
     bearing_capacity.py ... soe.py, dxf_export.py, calc_package.py
-    opensees_adapter.py ... salib_adapter.py        # 6 external library adapters
-    pygef_adapter.py ... pydiggs_adapter.py         # 5 file/data import adapters
-    fem2d_adapter.py, subsurface_adapter.py  # FEM/viz
+    opensees_adapter.py ... salib_adapter.py        # external library adapters
+    dxf_import_adapter.py, pdf_import_adapter.py     # file/data import adapters
+    fem2d_adapter.py, subsurface_adapter.py  # FEM/viz (subsurface also holds the
+                                             #   folded pygef/ags4/pydiggs format
+                                             #   adapters as methods)
     gstools_adapter.py, hvsrpy_adapter.py, swprocess_adapter.py  # additional
     dm7_adapter.py                                  # DM7 (340+ methods, collision handling)
     gec6_adapter.py ... micropile_adapter.py        # 7 GEC/micropile adapters

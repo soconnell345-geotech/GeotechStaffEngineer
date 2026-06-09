@@ -19,7 +19,7 @@ fixing tool ergonomics + real per-module issues. Re-run after each batch to meas
 | earth-retention | `earth-retention.md` | sheet_pile, soe |
 | slope-fem | `slope-fem.md` | slope_stability, fem2d |
 | seismic | `seismic.md` | seismic_geotech, pystrata_agent, opensees_agent, liquepy_agent, seismic_signals_agent |
-| characterization | `characterization.md` | pygef_agent, ags4_agent, pydiggs_agent, hvsrpy_agent, swprocess_agent, gstools_agent, subsurface_characterization, salib_agent, pystra_agent |
+| characterization | `characterization.md` | subsurface_characterization (now also holds the folded GEF/AGS4/DIGGS-validation format adapters), hvsrpy_agent, swprocess_agent, gstools_agent, salib_agent, pystra_agent |
 | io-cad | `io-cad.md` | dxf_import, dxf_export, pdf_import |
 | references | `references.md` | dm7, gec6/7/10/11/12/13, micropile, fema_p2192, noaa_frost, ufc_* , reference_db |
 | common (lead-serialized) | — | geotech_common |

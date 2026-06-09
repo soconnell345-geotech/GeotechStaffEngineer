@@ -211,6 +211,10 @@ class TestMethodInfo:
             "plot_parameter_vs_depth", "plot_atterberg_limits",
             "plot_multi_parameter", "plot_plan_view", "plot_cross_section",
             "compute_trend",
+            # Folded-in format adapters (pygef / ags4 / pydiggs) — see
+            # CONSOLIDATION_CHANGES.md #3.
+            "parse_cpt", "parse_bore", "read_ags4", "validate_ags4",
+            "validate_diggs_schema", "validate_diggs_dictionary",
         }
         assert set(METHOD_INFO.keys()) == expected
 
@@ -223,7 +227,8 @@ class TestDispatch:
     def test_list_methods(self):
         result = list_methods("subsurface")
         total = sum(len(v) for v in result.values())
-        assert total == 8
+        # 8 native + 6 folded-in format-adapter methods (pygef/ags4/pydiggs)
+        assert total == 14
 
     def test_describe_parse_diggs(self):
         info = describe_method("subsurface", "parse_diggs")

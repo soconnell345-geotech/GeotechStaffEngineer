@@ -41,7 +41,7 @@ ROUTING_CASES = [
     ("salib", "sobol_sensitivity", "sobol_sample", None),
     ("pystrata", "equivalent_linear", "eql_site_response", None),
     ("gstools", "fit_variogram", "variogram", None),
-    ("ags4", "read_and_validate", "read_ags4", None),
+    ("subsurface", "read_and_validate", "read_ags4", None),
     ("dxf_export", "export_cross_section", "export_geometry_to_dxf", None),
 ]
 

@@ -213,7 +213,9 @@ _METHOD_ALIASES = {
     ("salib", "sobol_sensitivity"): "sobol_sample",
     ("pystrata", "equivalent_linear"): "eql_site_response",
     ("gstools", "fit_variogram"): "variogram",
-    ("ags4", "read_and_validate"): "read_ags4",
+    # subsurface_characterization is the single data-I/O home; the former
+    # pygef/ags4/pydiggs modules are folded in as format-adapter methods.
+    ("subsurface", "read_and_validate"): "read_ags4",
     ("dxf_export", "export_cross_section"): "export_geometry_to_dxf",
 }
 

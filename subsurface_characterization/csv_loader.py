@@ -4,7 +4,7 @@ CSV and dict loaders for SiteModel.
 Provides three entry points:
 - load_site_from_dict : Create SiteModel from nested dict structure
 - load_site_from_csv : Create SiteModel from CSV file paths
-- load_cpt_to_investigation : Bridge pygef_agent CPTParseResult to Investigation
+- load_cpt_to_investigation : Bridge a GEF-adapter CPTParseResult to Investigation
 """
 
 from __future__ import annotations
@@ -127,12 +127,13 @@ def load_site_from_csv(
 
 
 def load_cpt_to_investigation(cpt_result) -> Investigation:
-    """Bridge pygef_agent CPTParseResult to Investigation.
+    """Bridge a CPTParseResult to Investigation.
 
     Parameters
     ----------
     cpt_result : CPTParseResult
-        Parsed CPT data from pygef_agent.
+        Parsed CPT data from the GEF/BRO-XML format adapter
+        (``subsurface_characterization.formats.gef.parse_cpt_file``).
 
     Returns
     -------

@@ -1,15 +1,19 @@
 """
-Tests for ags4_agent — AGS4 data format reader/validator.
+Tests for the AGS4 format adapter — AGS4 data format reader/validator.
 
-Tier 1: No python-ags4 required (result dataclasses, validation, utilities, Foundry metadata)
+(Folded in from the former ags4_agent module; see CONSOLIDATION_CHANGES.md #3.)
+
+Tier 1: No python-ags4 required (result dataclasses, validation, utilities)
 Tier 2: Requires python-ags4 (integration tests with sample AGS4 data)
 """
 
 import json
 import pytest
 
-from ags4_agent.ags4_utils import has_ags4
-from ags4_agent.results import AGS4ReadResult, AGS4ValidationResult
+from subsurface_characterization.formats.ags4 import has_ags4
+from subsurface_characterization.formats.ags4_results import (
+    AGS4ReadResult, AGS4ValidationResult,
+)
 
 requires_ags4 = pytest.mark.skipif(
     not has_ags4(), reason="python-ags4 not installed"
@@ -175,32 +179,32 @@ class TestAGS4ValidationResultDefaults:
 class TestInputValidation:
 
     def test_no_filepath_or_content(self):
-        from ags4_agent.ags4_reader import read_ags4
+        from subsurface_characterization.formats.ags4 import read_ags4
         with pytest.raises(ValueError, match="Either filepath or content"):
             read_ags4()
 
     def test_both_filepath_and_content(self):
-        from ags4_agent.ags4_reader import read_ags4
+        from subsurface_characterization.formats.ags4 import read_ags4
         with pytest.raises(ValueError, match="Provide either"):
             read_ags4(filepath="test.ags", content="data")
 
     def test_validate_no_input(self):
-        from ags4_agent.ags4_reader import validate_ags4
+        from subsurface_characterization.formats.ags4 import validate_ags4
         with pytest.raises(ValueError, match="Either filepath or content"):
             validate_ags4()
 
     def test_validate_both_inputs(self):
-        from ags4_agent.ags4_reader import validate_ags4
+        from subsurface_characterization.formats.ags4 import validate_ags4
         with pytest.raises(ValueError, match="Provide either"):
             validate_ags4(filepath="test.ags", content="data")
 
     def test_empty_content(self):
-        from ags4_agent.ags4_reader import _validate_read_inputs
+        from subsurface_characterization.formats.ags4 import _validate_read_inputs
         with pytest.raises(ValueError, match="non-empty"):
             _validate_read_inputs("", is_content=True)
 
     def test_empty_filepath(self):
-        from ags4_agent.ags4_reader import _validate_read_inputs
+        from subsurface_characterization.formats.ags4 import _validate_read_inputs
         with pytest.raises(ValueError, match="non-empty"):
             _validate_read_inputs("", is_content=False)
 
@@ -216,55 +220,6 @@ class TestUtilities:
 
 
 # =====================================================================
-# Tier 1: Foundry metadata
-# =====================================================================
-
-class TestFoundryMetadata:
-
-    def test_list_methods_all(self):
-        from foundry.ags4_agent_foundry import ags4_list_methods
-        result = json.loads(ags4_list_methods(""))
-        assert "Data Import" in result
-        assert "Validation" in result
-
-    def test_list_methods_filtered(self):
-        from foundry.ags4_agent_foundry import ags4_list_methods
-        result = json.loads(ags4_list_methods("Data Import"))
-        assert "read_ags4" in result["Data Import"]
-
-    def test_list_methods_bad_category(self):
-        from foundry.ags4_agent_foundry import ags4_list_methods
-        result = json.loads(ags4_list_methods("nonexistent"))
-        assert "error" in result
-
-    def test_describe_read(self):
-        from foundry.ags4_agent_foundry import ags4_describe_method
-        result = json.loads(ags4_describe_method("read_ags4"))
-        assert "parameters" in result
-        assert "filepath" in result["parameters"]
-
-    def test_describe_validate(self):
-        from foundry.ags4_agent_foundry import ags4_describe_method
-        result = json.loads(ags4_describe_method("validate_ags4"))
-        assert "parameters" in result
-
-    def test_describe_unknown(self):
-        from foundry.ags4_agent_foundry import ags4_describe_method
-        result = json.loads(ags4_describe_method("nonexistent"))
-        assert "error" in result
-
-    def test_agent_invalid_json(self):
-        from foundry.ags4_agent_foundry import ags4_agent
-        result = json.loads(ags4_agent("read_ags4", "not json"))
-        assert "error" in result
-
-    def test_agent_unknown_method(self):
-        from foundry.ags4_agent_foundry import ags4_agent
-        result = json.loads(ags4_agent("nonexistent", "{}"))
-        assert "error" in result
-
-
-# =====================================================================
 # Tier 2: Read integration (requires python-ags4)
 # =====================================================================
 
@@ -272,7 +227,7 @@ class TestFoundryMetadata:
 class TestReadIntegration:
 
     def test_read_from_content(self):
-        from ags4_agent import read_ags4
+        from subsurface_characterization.formats.ags4 import read_ags4
         r = read_ags4(content=SAMPLE_AGS4)
         assert r.n_groups == 3
         assert "PROJ" in r.group_names
@@ -280,32 +235,32 @@ class TestReadIntegration:
         assert "ISPT" in r.group_names
 
     def test_read_row_counts(self):
-        from ags4_agent import read_ags4
+        from subsurface_characterization.formats.ags4 import read_ags4
         r = read_ags4(content=SAMPLE_AGS4)
         assert r.group_row_counts["PROJ"] == 1
         assert r.group_row_counts["HOLE"] == 2
         assert r.group_row_counts["ISPT"] == 5
 
     def test_read_includes_tables(self):
-        from ags4_agent import read_ags4
+        from subsurface_characterization.formats.ags4 import read_ags4
         r = read_ags4(content=SAMPLE_AGS4, include_data=True)
         assert r.tables is not None
         assert "PROJ" in r.tables
         assert len(r.tables["PROJ"]) > 0
 
     def test_read_excludes_tables(self):
-        from ags4_agent import read_ags4
+        from subsurface_characterization.formats.ags4 import read_ags4
         r = read_ags4(content=SAMPLE_AGS4, include_data=False)
         assert r.tables is None
 
     def test_read_to_dict_json_serializable(self):
-        from ags4_agent import read_ags4
+        from subsurface_characterization.formats.ags4 import read_ags4
         r = read_ags4(content=SAMPLE_AGS4)
         s = json.dumps(r.to_dict(), default=str)
         assert isinstance(s, str)
 
     def test_read_source_name_string(self):
-        from ags4_agent import read_ags4
+        from subsurface_characterization.formats.ags4 import read_ags4
         r = read_ags4(content=SAMPLE_AGS4)
         assert r.filepath == "<string>"
 
@@ -318,41 +273,18 @@ class TestReadIntegration:
 class TestValidateIntegration:
 
     def test_validate_from_content(self):
-        from ags4_agent import validate_ags4
+        from subsurface_characterization.formats.ags4 import validate_ags4
         r = validate_ags4(content=SAMPLE_AGS4)
         assert isinstance(r.n_errors, int)
         assert isinstance(r.is_valid, bool)
 
     def test_validate_to_dict_json_serializable(self):
-        from ags4_agent import validate_ags4
+        from subsurface_characterization.formats.ags4 import validate_ags4
         r = validate_ags4(content=SAMPLE_AGS4)
         s = json.dumps(r.to_dict(), default=str)
         assert isinstance(s, str)
 
     def test_validate_source_name(self):
-        from ags4_agent import validate_ags4
+        from subsurface_characterization.formats.ags4 import validate_ags4
         r = validate_ags4(content=SAMPLE_AGS4)
         assert r.filepath == "<string>"
-
-
-# =====================================================================
-# Tier 2: Foundry integration (requires python-ags4)
-# =====================================================================
-
-@requires_ags4
-class TestFoundryIntegration:
-
-    def test_foundry_read(self):
-        from foundry.ags4_agent_foundry import ags4_agent
-        params = {"content": SAMPLE_AGS4}
-        result = json.loads(ags4_agent("read_ags4", json.dumps(params)))
-        assert "error" not in result
-        assert result["n_groups"] == 3
-        assert "PROJ" in result["group_names"]
-
-    def test_foundry_validate(self):
-        from foundry.ags4_agent_foundry import ags4_agent
-        params = {"content": SAMPLE_AGS4}
-        result = json.loads(ags4_agent("validate_ags4", json.dumps(params)))
-        assert "error" not in result
-        assert "is_valid" in result

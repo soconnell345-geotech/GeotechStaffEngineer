@@ -1,5 +1,5 @@
 """
-Result dataclasses for pygef agent.
+Result dataclasses for the GEF / BRO-XML format adapter (pygef-backed).
 
 Two result types:
 - CPTParseResult: Parsed CPT data with arrays in kPa and standard columns

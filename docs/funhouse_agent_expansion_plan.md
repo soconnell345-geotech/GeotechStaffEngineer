@@ -25,6 +25,8 @@ optional dependency guards, and mock-based tests.
 ## Phase 2 — File/Data Import Adapters ✅
 
 5 modules added: `pygef`, `dxf_import`, `pdf_import`, `ags4`, `pydiggs`.
+(Consolidation #3: `pygef`/`ags4`/`pydiggs` were later folded into the
+`subsurface` adapter as format-adapter methods — see `CONSOLIDATION_CHANGES.md`.)
 
 File parsing via attachment mechanism or direct path input.
 

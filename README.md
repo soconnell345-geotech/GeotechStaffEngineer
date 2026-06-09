@@ -1,6 +1,6 @@
 # GeotechStaffEngineer
 
-Python toolkit for LLM-based geotechnical engineering agents. 32 analysis modules covering foundations, piles, slopes, seismic analysis, ground improvement, FEM, and more.
+Python toolkit for LLM-based geotechnical engineering agents. 29 analysis modules covering foundations, piles, slopes, seismic analysis, ground improvement, FEM, and more.
 
 ## Installation
 
@@ -53,11 +53,11 @@ All units are SI (meters, kPa, kN, degrees). Every module returns dataclasses wi
 | `downdrag` | Neutral plane method, dragload estimation |
 | `geotech_common` | Shared soil profile, adapters, plotting utilities |
 | `calc_package` | Calculation package report generation |
-| `subsurface_characterization` | DIGGS parser, Plotly visualizations, trend stats |
+| `subsurface_characterization` | Subsurface data I/O: DIGGS parser + Plotly visualizations + trend stats, plus optional format adapters for GEF/BRO-XML CPT/borehole (pygef), AGS4 (python-ags4), and DIGGS schema/dictionary validation (pydiggs) |
 | `dxf_import` | DXF CAD import for slope stability geometry |
 | `fem2d` | 2D plane-strain FEM — CST/Q4/beam, MC/HS, SRM, seepage, consolidation |
 
-### Library Wrapper Agents (13 modules)
+### Library Wrapper Agents (10 modules)
 
 Each agent wraps a third-party geotechnical library with a dict-based API for LLM tool use.
 
@@ -67,15 +67,18 @@ Each agent wraps a third-party geotechnical library with a dict-based API for LL
 | `pystrata_agent` | pystrata | 1D equivalent-linear site response |
 | `seismic_signals_agent` | eqsig + pyrotd | Earthquake signal processing |
 | `liquepy_agent` | liquepy | Boulanger & Idriss (2014) liquefaction triggering — CPT (LPI/LSN/LDI) and SPT |
-| `pygef_agent` | pygef | GEF/BRO-XML CPT and borehole parsing |
 | `hvsrpy_agent` | hvsrpy | HVSR site characterization |
 | `gstools_agent` | gstools | Geostatistical kriging and random fields |
-| `ags4_agent` | python-ags4 | AGS4 data format reading and validation |
 | `salib_agent` | SALib | Sobol and Morris sensitivity analysis |
 | `swprocess_agent` | swprocess | MASW surface wave dispersion |
 | `pystra_agent` | pystra | FORM/SORM/Monte Carlo reliability |
-| `pydiggs_agent` | pydiggs | DIGGS 2.6 XML validation |
 | `groundhog_agent` | groundhog | Site investigation and soil mechanics |
+
+> The former `pygef_agent` (pygef), `ags4_agent` (python-ags4), and `pydiggs_agent`
+> (pydiggs) library wrappers were folded into `subsurface_characterization` as
+> optional, dependency-backed format adapters — one module now covers
+> ingest + validate + visualize across DIGGS, GEF/BRO-XML, and AGS4. Their optional
+> dependencies remain installable (see Optional Extras).
 
 ## Optional Extras
 
@@ -88,14 +91,15 @@ Each agent wraps a third-party geotechnical library with a dict-based API for LL
 | `pystrata` | pystrata |
 | `seismic-signals` | eqsig, pyrotd |
 | `liquepy` | liquepy |
-| `pygef` | pygef |
 | `hvsrpy` | hvsrpy |
 | `gstools` | gstools |
-| `ags4` | python-ags4 |
 | `salib` | SALib |
 | `swprocess` | swprocess |
 | `pystra` | pystra |
-| `pydiggs` | pydiggs |
+| `subsurface` | pygef, python-ags4, pydiggs (subsurface_characterization format adapters) |
+| `pygef` | pygef (alias) |
+| `ags4` | python-ags4 (alias) |
+| `pydiggs` | pydiggs (alias) |
 | `dxf` | ezdxf |
 | `full` | All of the above |
 

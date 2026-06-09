@@ -1,17 +1,120 @@
 """
-DIGGS XML validation functions.
+DIGGS XML validation format adapter (pydiggs-backed).
 
-These functions wrap the pydiggs validator class to provide validation of DIGGS XML
-files against XSD schemas and DIGGS dictionaries.
+Provides validation functions for DIGGS (Data Interchange for Geotechnical and
+Geoenvironmental Specialists) XML files. Wraps the optional ``pydiggs`` library for
+schema and dictionary validation.
+
+``pydiggs`` is an OPTIONAL dependency. Use ``has_pydiggs()`` to check availability
+at runtime; the validation functions raise a clear ImportError if it is missing.
+
+Public API
+----------
+validate_diggs_schema() - Validate DIGGS XML against XSD schema
+validate_diggs_dictionary() - Validate DIGGS propertyClass values against dictionary
+DiggValidationResult - Result dataclass with summary() and to_dict()
+has_pydiggs() - Check if pydiggs is installed
+
+Note: this is the *validation* adapter (pydiggs). For DIGGS *data extraction* into a
+SiteModel, use ``subsurface_characterization.parse_diggs`` (native parser, no
+external dependency).
+
+Example
+-------
+>>> from subsurface_characterization.formats import validate_diggs_schema, has_pydiggs
+>>> if has_pydiggs():
+...     result = validate_diggs_schema(filepath="report.xml")
+...     print(result.summary())
 """
 
 import os
 import tempfile
 from typing import Optional
 
-from pydiggs_agent.pydiggs_utils import has_pydiggs, get_schema_path, get_dictionary_path
-from pydiggs_agent.results import DiggValidationResult
+from subsurface_characterization.formats.diggs_validation_results import (
+    DiggValidationResult,
+)
 
+
+# ---------------------------------------------------------------------------
+# Optional-dependency guards
+# ---------------------------------------------------------------------------
+
+def has_pydiggs() -> bool:
+    """
+    Check if pydiggs is installed.
+
+    Returns:
+        bool: True if pydiggs is available, False otherwise
+    """
+    try:
+        import pydiggs  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def get_schema_path(version: str = "2.6") -> str:
+    """
+    Get the path to the bundled DIGGS schema file.
+
+    Args:
+        version: Schema version ("2.6" or "2.5.a")
+
+    Returns:
+        Absolute path to the schema XSD file
+
+    Raises:
+        ImportError: If pydiggs is not installed
+        ValueError: If schema version is not supported
+    """
+    if not has_pydiggs():
+        raise ImportError("pydiggs is not installed")
+
+    import pydiggs
+
+    pydiggs_dir = os.path.dirname(pydiggs.__file__)
+
+    if version == "2.6":
+        schema_path = os.path.join(pydiggs_dir, "schemas", "diggs-schema-2.6", "Diggs.xsd")
+    elif version == "2.5.a":
+        schema_path = os.path.join(pydiggs_dir, "schemas", "diggs-schema-2.5.a", "Complete.xsd")
+    else:
+        raise ValueError(f"Unsupported schema version: {version}. Use '2.6' or '2.5.a'")
+
+    if not os.path.exists(schema_path):
+        raise FileNotFoundError(f"Schema file not found: {schema_path}")
+
+    return schema_path
+
+
+def get_dictionary_path() -> str:
+    """
+    Get the path to the bundled DIGGS dictionary file.
+
+    Returns:
+        Absolute path to the properties.xml dictionary file
+
+    Raises:
+        ImportError: If pydiggs is not installed
+    """
+    if not has_pydiggs():
+        raise ImportError("pydiggs is not installed")
+
+    import pydiggs
+
+    pydiggs_dir = os.path.dirname(pydiggs.__file__)
+    dict_path = os.path.join(pydiggs_dir, "dictionaries", "properties.xml")
+
+    if not os.path.exists(dict_path):
+        raise FileNotFoundError(f"Dictionary file not found: {dict_path}")
+
+    return dict_path
+
+
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
 
 def validate_diggs_schema(
     filepath: Optional[str] = None,

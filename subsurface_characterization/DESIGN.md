@@ -30,10 +30,22 @@ All populate the same SiteModel:
 
 | Format | Loader | Notes |
 |--------|--------|-------|
-| DIGGS 2.6/2.5.a XML | `parse_diggs()` | Custom `xml.etree` parser (pydiggs is validation-only) |
+| DIGGS 2.6/2.5.a XML | `parse_diggs()` | Custom `xml.etree` parser (the folded DIGGS-validation adapter is validation-only) |
 | Nested dict | `load_site_from_dict()` | Direct Python dict structure |
 | CSV files | `load_site_from_csv()` | Borings + measurements + optional lithology |
-| pygef CPTParseResult | `load_cpt_to_investigation()` | Bridge from `pygef_agent` |
+| CPTParseResult | `load_cpt_to_investigation()` | Bridge from the GEF/BRO-XML format adapter (`formats.gef.parse_cpt_file`) |
+
+### Format adapters (`formats/` subpackage)
+
+Optional, dependency-backed file ingest/validation folded in from the former
+`pygef_agent` / `ags4_agent` / `pydiggs_agent` modules (see `CONSOLIDATION_CHANGES.md`
+#3). Each lazily imports its third-party lib and exposes a `has_*()` guard:
+
+| Adapter | Library | Public functions |
+|---------|---------|------------------|
+| `formats.gef` | pygef | `parse_cpt_file`, `parse_bore_file`, `has_pygef` |
+| `formats.ags4` | python-ags4 | `read_ags4`, `validate_ags4`, `has_ags4` |
+| `formats.diggs_validation` | pydiggs | `validate_diggs_schema`, `validate_diggs_dictionary`, `has_pydiggs` |
 
 ### Visualizations
 

@@ -1,5 +1,5 @@
 """
-Result dataclasses for pydiggs_agent module.
+Result dataclass for the DIGGS validation format adapter (pydiggs-backed).
 """
 
 from dataclasses import dataclass, field

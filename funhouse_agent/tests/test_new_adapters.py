@@ -1,9 +1,13 @@
 """Tests for Phase 1 + Phase 2 funhouse_agent adapters.
 
-Covers 11 adapters:
+Covers 8 adapters:
 - opensees, pystrata, liquepy, seismic_signals (has_* guards, raise ValueError)
-- pystra, salib, pygef, ags4, pydiggs (has_* guards, return error dict)
+- pystra, salib (has_* guards, return error dict)
 - dxf_import, pdf_import (no guard, external deps mocked)
+
+The former pygef / ags4 / pydiggs adapters were folded into the ``subsurface``
+adapter as format-adapter methods (CONSOLIDATION_CHANGES.md #3) — their dispatch
+behavior is exercised here against the ``subsurface`` module.
 
 Each adapter has:
 - TestXxxMethodInfo  — METHOD_INFO/REGISTRY key match, required fields
@@ -433,147 +437,87 @@ class TestSalibCalls:
 
 
 # ============================================================================
-# 8. pygef_adapter — 2 methods, has_pygef guard (returns error dict)
+# 8-10. Folded format adapters (pygef / ags4 / pydiggs) now live on the
+#       ``subsurface`` adapter as format-adapter methods. Exercise their
+#       dispatch + has_* guards against the subsurface module.
 # ============================================================================
 
-class TestPygefMethodInfo:
+class TestSubsurfaceFormatAdapterInfo:
     def test_keys_match(self):
-        from funhouse_agent.adapters.pygef_adapter import METHOD_INFO, METHOD_REGISTRY
+        from funhouse_agent.adapters.subsurface_adapter import (
+            METHOD_INFO, METHOD_REGISTRY,
+        )
         assert_method_info_complete(METHOD_INFO, METHOD_REGISTRY)
 
-    def test_expected_methods(self):
-        from funhouse_agent.adapters.pygef_adapter import METHOD_INFO
-        assert set(METHOD_INFO.keys()) == {"parse_cpt", "parse_bore"}
+    def test_folded_methods_present(self):
+        from funhouse_agent.adapters.subsurface_adapter import METHOD_INFO
+        folded = {
+            "parse_cpt", "parse_bore", "read_ags4", "validate_ags4",
+            "validate_diggs_schema", "validate_diggs_dictionary",
+        }
+        assert folded <= set(METHOD_INFO.keys())
 
 
-class TestPygefDispatch:
-    def test_list_methods(self):
-        from funhouse_agent.dispatch import list_methods
-        result = list_methods("pygef")
-        total = sum(len(v) for v in result.values())
-        assert total == 2
-
-    def test_describe_method(self):
+class TestSubsurfaceFormatAdapterDispatch:
+    def test_describe_parse_cpt(self):
         from funhouse_agent.dispatch import describe_method
-        info = describe_method("pygef", "parse_cpt")
+        info = describe_method("subsurface", "parse_cpt")
+        assert "parameters" in info
+        assert "file_path" in info["parameters"]
+
+    def test_describe_read_ags4(self):
+        from funhouse_agent.dispatch import describe_method
+        info = describe_method("subsurface", "read_ags4")
+        assert "parameters" in info
+        assert "file_path" in info["parameters"]
+
+    def test_describe_validate_diggs_schema(self):
+        from funhouse_agent.dispatch import describe_method
+        info = describe_method("subsurface", "validate_diggs_schema")
         assert "parameters" in info
         assert "file_path" in info["parameters"]
 
 
-class TestPygefCalls:
+class TestSubsurfaceFormatAdapterCalls:
     def test_parse_cpt_not_installed(self):
-        with patch("pygef_agent.has_pygef", return_value=False):
+        with patch("subsurface_characterization.formats.gef.has_pygef", return_value=False):
             from funhouse_agent.dispatch import call_agent
-            result = call_agent("pygef", "parse_cpt", {
-                "file_path": "test.gef",
-            })
+            result = call_agent("subsurface", "parse_cpt", {"file_path": "test.gef"})
             assert "error" in result
             assert "not installed" in result["error"].lower()
 
     def test_parse_bore_not_installed(self):
-        with patch("pygef_agent.has_pygef", return_value=False):
+        with patch("subsurface_characterization.formats.gef.has_pygef", return_value=False):
             from funhouse_agent.dispatch import call_agent
-            result = call_agent("pygef", "parse_bore", {
-                "file_path": "test.gef",
-            })
+            result = call_agent("subsurface", "parse_bore", {"file_path": "test.gef"})
             assert "error" in result
             assert "not installed" in result["error"].lower()
 
-
-# ============================================================================
-# 9. ags4_adapter — 2 methods, has_ags4 guard (returns error dict)
-# ============================================================================
-
-class TestAgs4MethodInfo:
-    def test_keys_match(self):
-        from funhouse_agent.adapters.ags4_adapter import METHOD_INFO, METHOD_REGISTRY
-        assert_method_info_complete(METHOD_INFO, METHOD_REGISTRY)
-
-    def test_expected_methods(self):
-        from funhouse_agent.adapters.ags4_adapter import METHOD_INFO
-        assert set(METHOD_INFO.keys()) == {"read_ags4", "validate_ags4"}
-
-
-class TestAgs4Dispatch:
-    def test_list_methods(self):
-        from funhouse_agent.dispatch import list_methods
-        result = list_methods("ags4")
-        total = sum(len(v) for v in result.values())
-        assert total == 2
-
-    def test_describe_method(self):
-        from funhouse_agent.dispatch import describe_method
-        info = describe_method("ags4", "read_ags4")
-        assert "parameters" in info
-        assert "file_path" in info["parameters"]
-
-
-class TestAgs4Calls:
     def test_read_ags4_not_installed(self):
-        with patch("ags4_agent.has_ags4", return_value=False):
+        with patch("subsurface_characterization.formats.ags4.has_ags4", return_value=False):
             from funhouse_agent.dispatch import call_agent
-            result = call_agent("ags4", "read_ags4", {
-                "file_path": "test.ags",
-            })
+            result = call_agent("subsurface", "read_ags4", {"file_path": "test.ags"})
             assert "error" in result
             assert "not installed" in result["error"].lower()
 
     def test_validate_ags4_not_installed(self):
-        with patch("ags4_agent.has_ags4", return_value=False):
+        with patch("subsurface_characterization.formats.ags4.has_ags4", return_value=False):
             from funhouse_agent.dispatch import call_agent
-            result = call_agent("ags4", "validate_ags4", {
-                "file_path": "test.ags",
-            })
+            result = call_agent("subsurface", "validate_ags4", {"file_path": "test.ags"})
             assert "error" in result
             assert "not installed" in result["error"].lower()
 
-
-# ============================================================================
-# 10. pydiggs_adapter — 2 methods, has_pydiggs guard (returns error dict)
-# ============================================================================
-
-class TestPydiggsMethodInfo:
-    def test_keys_match(self):
-        from funhouse_agent.adapters.pydiggs_adapter import METHOD_INFO, METHOD_REGISTRY
-        assert_method_info_complete(METHOD_INFO, METHOD_REGISTRY)
-
-    def test_expected_methods(self):
-        from funhouse_agent.adapters.pydiggs_adapter import METHOD_INFO
-        assert set(METHOD_INFO.keys()) == {
-            "validate_diggs_schema", "validate_diggs_dictionary",
-        }
-
-
-class TestPydiggsDispatch:
-    def test_list_methods(self):
-        from funhouse_agent.dispatch import list_methods
-        result = list_methods("pydiggs")
-        total = sum(len(v) for v in result.values())
-        assert total == 2
-
-    def test_describe_method(self):
-        from funhouse_agent.dispatch import describe_method
-        info = describe_method("pydiggs", "validate_diggs_schema")
-        assert "parameters" in info
-        assert "file_path" in info["parameters"]
-
-
-class TestPydiggsCalls:
-    def test_validate_schema_not_installed(self):
-        with patch("pydiggs_agent.has_pydiggs", return_value=False):
+    def test_validate_diggs_schema_not_installed(self):
+        with patch("subsurface_characterization.formats.diggs_validation.has_pydiggs", return_value=False):
             from funhouse_agent.dispatch import call_agent
-            result = call_agent("pydiggs", "validate_diggs_schema", {
-                "file_path": "test.xml",
-            })
+            result = call_agent("subsurface", "validate_diggs_schema", {"file_path": "test.xml"})
             assert "error" in result
             assert "not installed" in result["error"].lower()
 
-    def test_validate_dictionary_not_installed(self):
-        with patch("pydiggs_agent.has_pydiggs", return_value=False):
+    def test_validate_diggs_dictionary_not_installed(self):
+        with patch("subsurface_characterization.formats.diggs_validation.has_pydiggs", return_value=False):
             from funhouse_agent.dispatch import call_agent
-            result = call_agent("pydiggs", "validate_diggs_dictionary", {
-                "file_path": "test.xml",
-            })
+            result = call_agent("subsurface", "validate_diggs_dictionary", {"file_path": "test.xml"})
             assert "error" in result
             assert "not installed" in result["error"].lower()
 
@@ -793,12 +737,16 @@ class TestPdfImportCalls:
 # ============================================================================
 
 class TestAllAdaptersRegistered:
-    """Verify all 11 adapters are reachable via dispatch."""
+    """Verify all 8 remaining adapters (in this file's scope) are reachable.
+
+    The former pygef/ags4/pydiggs modules were folded into ``subsurface``
+    (CONSOLIDATION_CHANGES.md #3) and are exercised via that module above.
+    """
 
     @pytest.mark.parametrize("agent_name", [
         "opensees", "pystrata", "liquepy", "seismic_signals",
-        "pystra", "salib", "pygef",
-        "ags4", "pydiggs", "dxf_import", "pdf_import",
+        "pystra", "salib",
+        "dxf_import", "pdf_import",
     ])
     def test_agent_in_registry(self, agent_name):
         from funhouse_agent.dispatch import list_methods

@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-32 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + swprocess agent + pystra agent + pydiggs agent + subsurface characterization + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM with staged construction) + funhouse_agent (engine-agnostic agent with vision).
+29 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + hvsrpy agent + GSTools agent + SALib agent + swprocess agent + pystra agent + subsurface characterization (DIGGS/GEF/AGS4 data I/O — folds in the former pygef/ags4/pydiggs wrappers as format adapters) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM with staged construction) + funhouse_agent (engine-agnostic agent with vision).
 
 ## Architecture Patterns
 
@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (53 modules = 32 analysis + 21 reference, + foundry harness; reference layer fully QC'd, all figure catalogs 100% page-accurate)
+## Module Inventory (50 modules = 29 analysis + 21 reference, + foundry harness; reference layer fully QC'd, all figure catalogs 100% page-accurate)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -46,15 +46,12 @@ Key conventions:
 | pystrata_agent | 60 | 1D EQL site response (SHAKE-type, Darendeli/Menq/custom) |
 | seismic_signals | 74 | Earthquake signal processing (eqsig/pyrotd) |
 | liquepy_agent | 59 | Boulanger & Idriss (2014) liquefaction triggering — CPT (LPI/LSN/LDI) + SPT |
-| pygef_agent | 45 | CPT/borehole file parser (GEF/BRO-XML) |
 | hvsrpy_agent | 37 | HVSR site characterization from ambient noise |
 | gstools_agent | 69 | Geostatistical kriging, variogram fitting, random fields |
-| ags4_agent | 39 | AGS4 geotechnical data format reader/validator |
 | salib_agent | 35 | Sobol & Morris sensitivity analysis |
 | swprocess_agent | 30 | MASW surface wave dispersion analysis |
 | pystra_agent | 43 | FORM/SORM/Monte Carlo structural reliability analysis |
-| pydiggs_agent | 31 | DIGGS 2.6 XML schema and dictionary validation |
-| subsurface_characterization | 145 | Subsurface data visualization (DIGGS parser w/ 20 test types, Plotly plots, trend stats) |
+| subsurface_characterization | 231 | Subsurface data I/O: DIGGS parser (20 test types) + Plotly plots + trend stats; PLUS folded format adapters — GEF/BRO-XML CPT/borehole parse (pygef), AGS4 read/validate (python-ags4), DIGGS schema/dictionary validation (pydiggs) |
 | dxf_import | 97 | DXF CAD import for slope stability + FEM (discover layers, parse geometry, build SlopeGeometry/FEM inputs) |
 | dxf_export | 37 | DXF export for cross-section geometry (surface, boundaries, GWT, nails, annotations) |
 | pdf_import | 56 | PDF cross-section import (PyMuPDF vector extraction, LLM vision extraction, geometry conversion) |
@@ -100,7 +97,7 @@ Run: `pytest pdf_import/ -v`
 
 ## Funhouse Agent (Engine-Agnostic Geotechnical Agent)
 
-`funhouse_agent/` provides an engine-agnostic geotechnical agent with text + vision capabilities. Works with any AI backend satisfying the `GenAIEngine` protocol. Self-contained dispatch layer routes tool calls directly to 48 modules (~890+ methods) via internal adapters — no dependency on `foundry/` files. Includes 32 analysis module adapters + 16 geotech-references adapters (DM7 340+ equations, 7 GEC/micropile references with text retrieval, FEMA P-2192, NOAA frost, 4 UFC standards, the cross-reference text-search DB `reference_db`, and the figure-catalog search DB `figure_db` — which pairs with the `read_reference_figure` vision tool to find an engineering chart by meaning and read a value off it).
+`funhouse_agent/` provides an engine-agnostic geotechnical agent with text + vision capabilities. Works with any AI backend satisfying the `GenAIEngine` protocol. Self-contained dispatch layer routes tool calls directly to the analysis + reference modules via internal adapters — no dependency on `foundry/` files. Analysis-module adapters + 16 geotech-references adapters (DM7 340+ equations, 7 GEC/micropile references with text retrieval, FEMA P-2192, NOAA frost, 4 UFC standards, the cross-reference text-search DB `reference_db`, and the figure-catalog search DB `figure_db` — which pairs with the `read_reference_figure` vision tool to find an engineering chart by meaning and read a value off it). The `subsurface` adapter now also exposes the folded GEF/AGS4/DIGGS-validation format-adapter methods (parse_cpt/parse_bore/read_ags4/validate_ags4/validate_diggs_schema/validate_diggs_dictionary).
 
 | File | Purpose |
 |------|---------|
@@ -113,7 +110,7 @@ Run: `pytest pdf_import/ -v`
 | `native_tools.py` | OpenAI tool schemas + dispatch for NativeToolEngine |
 | `vision_tools.py` | Vision tools: `analyze_image`, `analyze_pdf_page`, `read_reference_figure` (render a catalogued figure + read a value off it), `save_file` |
 | `notebook.py` | `NotebookChat` — ipywidgets chat interface for Jupyter/Databricks |
-| `adapters/` | 48 adapter modules (32 analysis + 16 reference) bridging flat JSON → module APIs |
+| `adapters/` | analysis-module adapters + 16 reference adapters bridging flat JSON → module APIs (the former pygef/ags4/pydiggs adapters were folded into `subsurface_adapter`) |
 | `tests/` | 106 tests (mock engines, no API key needed) |
 
 Usage:
@@ -188,7 +185,7 @@ through a single `consult_references` tool backed by a **reference-scoped sub-ag
 
 ## Module-Improvement Agent Team
 
-A standing, domain-organized agent team improves the 32 analysis modules over time, fed by the
+A standing, domain-organized agent team improves the 29 analysis modules over time, fed by the
 agent test-suite feedback and other tasks. Claude Code teammates are ephemeral, so the team's
 identity and memory live as **version-controlled files**:
 

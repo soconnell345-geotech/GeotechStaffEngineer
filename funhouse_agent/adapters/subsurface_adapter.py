@@ -195,6 +195,100 @@ def _run_plot_cross_section(params: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Format adapters — optional, dependency-backed file ingest/validate
+# (folded in from the former pygef_agent / ags4_agent / pydiggs_agent modules)
+# ---------------------------------------------------------------------------
+
+def _run_parse_cpt(params: dict) -> dict:
+    from subsurface_characterization.formats.gef import has_pygef, parse_cpt_file
+
+    if not has_pygef():
+        return {"error": "pygef is not installed. Install with: pip install pygef"}
+
+    result = parse_cpt_file(
+        file_path=params.get("file_path"),
+        engine=params.get("engine", "auto"),
+        index=params.get("index", 0),
+    )
+    return clean_result(result.to_dict())
+
+
+def _run_parse_borehole(params: dict) -> dict:
+    from subsurface_characterization.formats.gef import has_pygef, parse_bore_file
+
+    if not has_pygef():
+        return {"error": "pygef is not installed. Install with: pip install pygef"}
+
+    result = parse_bore_file(
+        file_path=params.get("file_path"),
+        engine=params.get("engine", "auto"),
+        index=params.get("index", 0),
+    )
+    return clean_result(result.to_dict())
+
+
+def _run_read_ags4(params: dict) -> dict:
+    from subsurface_characterization.formats.ags4 import has_ags4, read_ags4
+
+    if not has_ags4():
+        return {"error": "python-ags4 is not installed. Install with: pip install python-ags4"}
+
+    result = read_ags4(
+        filepath=params.get("file_path"),
+        content=params.get("content"),
+        encoding=params.get("encoding", "utf-8"),
+        include_data=params.get("include_data", True),
+        convert_numeric=params.get("convert_numeric", True),
+    )
+    return clean_result(result.to_dict())
+
+
+def _run_validate_ags4(params: dict) -> dict:
+    from subsurface_characterization.formats.ags4 import has_ags4, validate_ags4
+
+    if not has_ags4():
+        return {"error": "python-ags4 is not installed. Install with: pip install python-ags4"}
+
+    result = validate_ags4(
+        filepath=params.get("file_path"),
+        content=params.get("content"),
+        encoding=params.get("encoding", "utf-8"),
+    )
+    return clean_result(result.to_dict())
+
+
+def _run_validate_diggs_schema(params: dict) -> dict:
+    from subsurface_characterization.formats.diggs_validation import (
+        has_pydiggs, validate_diggs_schema,
+    )
+
+    if not has_pydiggs():
+        return {"error": "pydiggs is not installed. Install with: pip install pydiggs"}
+
+    result = validate_diggs_schema(
+        filepath=params.get("file_path"),
+        content=params.get("content"),
+        schema_version=params.get("schema_version", "2.6"),
+    )
+    return clean_result(result.to_dict())
+
+
+def _run_validate_diggs_dictionary(params: dict) -> dict:
+    from subsurface_characterization.formats.diggs_validation import (
+        has_pydiggs, validate_diggs_dictionary,
+    )
+
+    if not has_pydiggs():
+        return {"error": "pydiggs is not installed. Install with: pip install pydiggs"}
+
+    result = validate_diggs_dictionary(
+        filepath=params.get("file_path"),
+        content=params.get("content"),
+    )
+    return clean_result(result.to_dict())
+
+
+# ---------------------------------------------------------------------------
 # Statistics
 # ---------------------------------------------------------------------------
 
@@ -225,6 +319,13 @@ METHOD_REGISTRY = {
     "plot_plan_view": _run_plot_plan_view,
     "plot_cross_section": _run_plot_cross_section,
     "compute_trend": _run_compute_trend,
+    # Format adapters (folded-in pygef / ags4 / pydiggs)
+    "parse_cpt": _run_parse_cpt,
+    "parse_bore": _run_parse_borehole,
+    "read_ags4": _run_read_ags4,
+    "validate_ags4": _run_validate_ags4,
+    "validate_diggs_schema": _run_validate_diggs_schema,
+    "validate_diggs_dictionary": _run_validate_diggs_dictionary,
 }
 
 _SITE_KEY_DOC = "Key returned by parse_diggs or load_site (preferred). Alternative to site_data."
@@ -368,6 +469,112 @@ METHOD_INFO = {
             "r_squared": "Coefficient of determination.",
             "std_residual": "Standard deviation of residuals.",
             "cov": "Coefficient of variation.",
+        },
+    },
+    # -----------------------------------------------------------------------
+    # Format adapters — file ingest / validation (optional, dependency-backed)
+    # -----------------------------------------------------------------------
+    "parse_cpt": {
+        "category": "File Import",
+        "brief": "Parse a CPT file (GEF or BRO-XML, via pygef) into depth/qc/fs/u2 arrays (kPa).",
+        "parameters": {
+            "file_path": {"type": "str", "required": True, "description": "Path to CPT file (.gef or .xml)."},
+            "engine": {"type": "str", "required": False, "default": "auto", "description": "Parser engine: 'auto', 'gef', or 'xml'."},
+            "index": {"type": "int", "required": False, "default": 0, "description": "Record index for multi-record XML files."},
+        },
+        "returns": {
+            "n_points": "Number of data points.",
+            "alias": "Test ID or filename.",
+            "final_depth_m": "Final penetration depth (m).",
+            "gwl_m": "Groundwater level (m below surface) or null.",
+            "depth_m": "Depth array (m).",
+            "q_c_kPa": "Cone tip resistance array (kPa).",
+            "f_s_kPa": "Sleeve friction array (kPa).",
+            "u_2_kPa": "Pore pressure u2 array (kPa).",
+            "Rf_pct": "Friction ratio array (%).",
+        },
+    },
+    "parse_bore": {
+        "category": "File Import",
+        "brief": "Parse a borehole file (GEF or BRO-XML, via pygef) into layer descriptions.",
+        "parameters": {
+            "file_path": {"type": "str", "required": True, "description": "Path to borehole file (.gef or .xml)."},
+            "engine": {"type": "str", "required": False, "default": "auto", "description": "Parser engine: 'auto', 'gef', or 'xml'."},
+            "index": {"type": "int", "required": False, "default": 0, "description": "Record index for multi-record XML files."},
+        },
+        "returns": {
+            "n_layers": "Number of soil layers.",
+            "alias": "Borehole ID or filename.",
+            "final_depth_m": "Total bore depth (m).",
+            "gwl_m": "Groundwater level (m below surface) or null.",
+            "layers": "List of layer dicts with top_m, bottom_m, soil_name, soil_code.",
+        },
+    },
+    "read_ags4": {
+        "category": "File Import",
+        "brief": "Read and parse an AGS4 geotechnical data file (via python-ags4) into structured tables.",
+        "parameters": {
+            "file_path": {"type": "str", "required": False, "description": "Path to AGS4 file. Provide file_path or content, not both."},
+            "content": {"type": "str", "required": False, "description": "Raw AGS4 content as string."},
+            "encoding": {"type": "str", "required": False, "default": "utf-8", "description": "File encoding."},
+            "include_data": {"type": "bool", "required": False, "default": True, "description": "Include all table data in result."},
+            "convert_numeric": {"type": "bool", "required": False, "default": True, "description": "Convert numeric columns from text."},
+        },
+        "returns": {
+            "filepath": "Source file path or '<string>'.",
+            "n_groups": "Number of AGS4 groups (tables) found.",
+            "group_names": "Names of all groups.",
+            "group_row_counts": "Row counts per group.",
+            "tables": "Dict of group_name to list of row dicts (if include_data=True).",
+        },
+    },
+    "validate_ags4": {
+        "category": "File Validation",
+        "brief": "Validate an AGS4 file against AGS4 rules (via python-ags4).",
+        "parameters": {
+            "file_path": {"type": "str", "required": False, "description": "Path to AGS4 file. Provide file_path or content, not both."},
+            "content": {"type": "str", "required": False, "description": "Raw AGS4 content as string."},
+            "encoding": {"type": "str", "required": False, "default": "utf-8", "description": "File encoding."},
+        },
+        "returns": {
+            "filepath": "Source file path.",
+            "n_errors": "Number of errors found.",
+            "n_warnings": "Number of warnings found.",
+            "n_fyi": "Number of FYI messages.",
+            "is_valid": "True if no errors (warnings/FYI acceptable).",
+            "errors": "Error details grouped by rule number.",
+        },
+    },
+    "validate_diggs_schema": {
+        "category": "File Validation",
+        "brief": "Validate DIGGS XML against XSD schema (v2.6 or v2.5.a, via pydiggs). For DIGGS data EXTRACTION use parse_diggs instead.",
+        "parameters": {
+            "file_path": {"type": "str", "required": False, "description": "Path to DIGGS XML file. Provide file_path or content, not both."},
+            "content": {"type": "str", "required": False, "description": "DIGGS XML as string."},
+            "schema_version": {"type": "str", "required": False, "default": "2.6", "description": "Schema version: '2.6' or '2.5.a'."},
+        },
+        "returns": {
+            "source": "Filename or 'content'.",
+            "check_type": "Always 'schema'.",
+            "schema_version": "Schema version validated against.",
+            "is_valid": "Whether validation passed.",
+            "n_errors": "Number of validation errors.",
+            "errors": "List of error messages.",
+        },
+    },
+    "validate_diggs_dictionary": {
+        "category": "File Validation",
+        "brief": "Validate DIGGS propertyClass values against DIGGS dictionary (via pydiggs).",
+        "parameters": {
+            "file_path": {"type": "str", "required": False, "description": "Path to DIGGS XML file. Provide file_path or content, not both."},
+            "content": {"type": "str", "required": False, "description": "DIGGS XML as string."},
+        },
+        "returns": {
+            "source": "Filename or 'content'.",
+            "check_type": "Always 'dictionary'.",
+            "is_valid": "Whether all propertyClass values are valid.",
+            "n_errors": "Number of undefined properties.",
+            "errors": "List of undefined property messages.",
         },
     },
 }

@@ -1,7 +1,9 @@
 """
-Tests for pygef_agent — CPT and borehole file parser.
+Tests for the GEF / BRO-XML format adapter — CPT and borehole file parser.
 
-Tier 1: No pygef required (result dataclasses, validation, utilities, Foundry metadata)
+(Folded in from the former pygef_agent module; see CONSOLIDATION_CHANGES.md #3.)
+
+Tier 1: No pygef required (result dataclasses, validation, utilities)
 Tier 2: Requires pygef (integration tests with sample GEF files)
 """
 
@@ -13,8 +15,10 @@ import pytest
 import matplotlib
 matplotlib.use('Agg')
 
-from pygef_agent.pygef_utils import has_pygef
-from pygef_agent.results import CPTParseResult, BoreParseResult
+from subsurface_characterization.formats.gef import has_pygef
+from subsurface_characterization.formats.gef_results import (
+    CPTParseResult, BoreParseResult,
+)
 
 requires_pygef = pytest.mark.skipif(
     not has_pygef(), reason="pygef not installed"
@@ -205,22 +209,22 @@ class TestInputValidation:
     """Test input validation (no pygef needed)."""
 
     def test_cpt_empty_path(self):
-        from pygef_agent.cpt_parser import _validate_cpt_parse_inputs
+        from subsurface_characterization.formats.gef import _validate_cpt_parse_inputs
         with pytest.raises(ValueError, match="file_path"):
             _validate_cpt_parse_inputs("", "auto")
 
     def test_cpt_bad_engine(self):
-        from pygef_agent.cpt_parser import _validate_cpt_parse_inputs
+        from subsurface_characterization.formats.gef import _validate_cpt_parse_inputs
         with pytest.raises(ValueError, match="engine"):
             _validate_cpt_parse_inputs("test.gef", "csv")
 
     def test_bore_empty_path(self):
-        from pygef_agent.bore_parser import _validate_bore_parse_inputs
+        from subsurface_characterization.formats.gef import _validate_bore_parse_inputs
         with pytest.raises(ValueError, match="file_path"):
             _validate_bore_parse_inputs("", "auto")
 
     def test_bore_bad_engine(self):
-        from pygef_agent.bore_parser import _validate_bore_parse_inputs
+        from subsurface_characterization.formats.gef import _validate_bore_parse_inputs
         with pytest.raises(ValueError, match="engine"):
             _validate_bore_parse_inputs("test.gef", "csv")
 
@@ -237,55 +241,6 @@ class TestUtilities:
 
 
 # =====================================================================
-# Tier 1: Foundry metadata
-# =====================================================================
-
-class TestFoundryMetadata:
-    """Test Foundry agent metadata functions (no pygef needed)."""
-
-    def test_list_methods_all(self):
-        from foundry.pygef_agent_foundry import pygef_list_methods
-        result = json.loads(pygef_list_methods(""))
-        assert "File Parsing" in result
-
-    def test_list_methods_parsing(self):
-        from foundry.pygef_agent_foundry import pygef_list_methods
-        result = json.loads(pygef_list_methods("File Parsing"))
-        assert "parse_cpt" in result["File Parsing"]
-
-    def test_list_methods_bad_category(self):
-        from foundry.pygef_agent_foundry import pygef_list_methods
-        result = json.loads(pygef_list_methods("nonexistent"))
-        assert "error" in result
-
-    def test_describe_parse_cpt(self):
-        from foundry.pygef_agent_foundry import pygef_describe_method
-        result = json.loads(pygef_describe_method("parse_cpt"))
-        assert "parameters" in result
-        assert "file_path" in result["parameters"]
-
-    def test_describe_parse_bore(self):
-        from foundry.pygef_agent_foundry import pygef_describe_method
-        result = json.loads(pygef_describe_method("parse_bore"))
-        assert "parameters" in result
-
-    def test_describe_unknown_method(self):
-        from foundry.pygef_agent_foundry import pygef_describe_method
-        result = json.loads(pygef_describe_method("nonexistent"))
-        assert "error" in result
-
-    def test_agent_invalid_json(self):
-        from foundry.pygef_agent_foundry import pygef_agent
-        result = json.loads(pygef_agent("parse_cpt", "not json"))
-        assert "error" in result
-
-    def test_agent_unknown_method(self):
-        from foundry.pygef_agent_foundry import pygef_agent
-        result = json.loads(pygef_agent("nonexistent", "{}"))
-        assert "error" in result
-
-
-# =====================================================================
 # Tier 2: CPT parsing integration (requires pygef)
 # =====================================================================
 
@@ -294,50 +249,50 @@ class TestCPTParsingIntegration:
     """Integration tests for CPT file parsing."""
 
     def test_parse_sample_cpt(self):
-        from pygef_agent import parse_cpt_file
+        from subsurface_characterization.formats.gef import parse_cpt_file
         r = parse_cpt_file(SAMPLE_CPT)
         assert r.n_points == 10
         assert r.alias == "CPT-01"
 
     def test_cpt_depth_range(self):
-        from pygef_agent import parse_cpt_file
+        from subsurface_characterization.formats.gef import parse_cpt_file
         r = parse_cpt_file(SAMPLE_CPT)
         assert r.depth_m[0] == 0.5
         assert r.final_depth_m == 5.0
 
     def test_cpt_qc_converted_to_kpa(self):
-        from pygef_agent import parse_cpt_file
+        from subsurface_characterization.formats.gef import parse_cpt_file
         r = parse_cpt_file(SAMPLE_CPT)
         # GEF has 5.000 MPa = 5000 kPa at first point
         assert r.q_c_kPa[0] == pytest.approx(5000.0, rel=0.01)
 
     def test_cpt_fs_present(self):
-        from pygef_agent import parse_cpt_file
+        from subsurface_characterization.formats.gef import parse_cpt_file
         r = parse_cpt_file(SAMPLE_CPT)
         assert len(r.f_s_kPa) == 10
         # GEF has 0.050 MPa = 50 kPa at first point
         assert r.f_s_kPa[0] == pytest.approx(50.0, rel=0.01)
 
     def test_cpt_gwl_extracted(self):
-        from pygef_agent import parse_cpt_file
+        from subsurface_characterization.formats.gef import parse_cpt_file
         r = parse_cpt_file(SAMPLE_CPT)
         assert r.gwl_m == pytest.approx(1.5, abs=0.01)
 
     def test_cpt_location(self):
-        from pygef_agent import parse_cpt_file
+        from subsurface_characterization.formats.gef import parse_cpt_file
         r = parse_cpt_file(SAMPLE_CPT)
         assert r.x == pytest.approx(155000.0)
         assert r.y == pytest.approx(463000.0)
         assert "EPSG" in r.srs_name
 
     def test_cpt_to_dict_json_serializable(self):
-        from pygef_agent import parse_cpt_file
+        from subsurface_characterization.formats.gef import parse_cpt_file
         r = parse_cpt_file(SAMPLE_CPT)
         s = json.dumps(r.to_dict())
         assert isinstance(s, str)
 
     def test_cpt_to_liquepy_inputs(self):
-        from pygef_agent import parse_cpt_file
+        from subsurface_characterization.formats.gef import parse_cpt_file
         r = parse_cpt_file(SAMPLE_CPT)
         d = r.to_liquepy_inputs()
         assert len(d["depth"]) == 10
@@ -345,17 +300,19 @@ class TestCPTParsingIntegration:
         assert d["gwl"] == pytest.approx(1.5)
 
     def test_cpt_explicit_engine(self):
-        from pygef_agent import parse_cpt_file
+        from subsurface_characterization.formats.gef import parse_cpt_file
         r = parse_cpt_file(SAMPLE_CPT, engine="gef")
         assert r.n_points == 10
 
-    def test_foundry_agent_parse_cpt(self):
-        from foundry.pygef_agent_foundry import pygef_agent
-        params = {"file_path": SAMPLE_CPT}
-        result = json.loads(pygef_agent("parse_cpt", json.dumps(params)))
-        assert "error" not in result
-        assert result["alias"] == "CPT-01"
-        assert result["n_points"] == 10
+    def test_cpt_bridges_to_investigation(self):
+        """The GEF CPT result bridges into a SiteModel Investigation."""
+        from subsurface_characterization.formats.gef import parse_cpt_file
+        from subsurface_characterization import load_cpt_to_investigation
+        r = parse_cpt_file(SAMPLE_CPT)
+        inv = load_cpt_to_investigation(r)
+        assert inv.investigation_type == "cpt"
+        assert inv.investigation_id == "CPT-01"
+        assert len(inv.measurements) > 0
 
 
 # =====================================================================
@@ -367,41 +324,33 @@ class TestBoreParsingIntegration:
     """Integration tests for borehole file parsing."""
 
     def test_parse_sample_bore(self):
-        from pygef_agent import parse_bore_file
+        from subsurface_characterization.formats.gef import parse_bore_file
         r = parse_bore_file(SAMPLE_BORE)
         assert r.n_layers == 4
         assert r.alias == "BH-01"
 
     def test_bore_depth(self):
-        from pygef_agent import parse_bore_file
+        from subsurface_characterization.formats.gef import parse_bore_file
         r = parse_bore_file(SAMPLE_BORE)
         assert r.final_depth_m == 8.0
         assert r.top_m[0] == 0.0
         assert r.bottom_m[-1] == 8.0
 
     def test_bore_soil_names(self):
-        from pygef_agent import parse_bore_file
+        from subsurface_characterization.formats.gef import parse_bore_file
         r = parse_bore_file(SAMPLE_BORE)
         assert len(r.soil_name) == 4
         # pygef translates soil codes to Dutch names
         assert all(isinstance(s, str) for s in r.soil_name)
 
     def test_bore_to_dict_json_serializable(self):
-        from pygef_agent import parse_bore_file
+        from subsurface_characterization.formats.gef import parse_bore_file
         r = parse_bore_file(SAMPLE_BORE)
         s = json.dumps(r.to_dict())
         assert isinstance(s, str)
 
     def test_bore_to_dict_has_layers(self):
-        from pygef_agent import parse_bore_file
+        from subsurface_characterization.formats.gef import parse_bore_file
         r = parse_bore_file(SAMPLE_BORE)
         d = r.to_dict()
         assert len(d["layers"]) == 4
-
-    def test_foundry_agent_parse_bore(self):
-        from foundry.pygef_agent_foundry import pygef_agent
-        params = {"file_path": SAMPLE_BORE}
-        result = json.loads(pygef_agent("parse_bore", json.dumps(params)))
-        assert "error" not in result
-        assert result["alias"] == "BH-01"
-        assert result["n_layers"] == 4

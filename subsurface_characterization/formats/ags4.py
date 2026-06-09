@@ -1,12 +1,55 @@
 """
-AGS4 file reading and validation.
+AGS4 format adapter (python-ags4-backed).
+
+Wraps the optional ``python-ags4`` library for reading, parsing, and validating
+AGS4 format geotechnical data exchange files.
+
+``python-ags4`` is an OPTIONAL dependency — call ``has_ags4()`` to check
+availability at runtime; the functions raise a clear ImportError if it is missing.
+
+Public API
+----------
+read_ags4 : Read and parse an AGS4 file or string.
+validate_ags4 : Validate an AGS4 file against AGS4 rules.
+AGS4ReadResult, AGS4ValidationResult : Result dataclasses.
+has_ags4 : Check if python-ags4 is installed.
 """
 
 import io
 
-from ags4_agent.ags4_utils import import_ags4
-from ags4_agent.results import AGS4ReadResult, AGS4ValidationResult
+from subsurface_characterization.formats.ags4_results import (
+    AGS4ReadResult,
+    AGS4ValidationResult,
+)
 
+
+# ---------------------------------------------------------------------------
+# Optional-dependency guards
+# ---------------------------------------------------------------------------
+
+def has_ags4():
+    """Check if python-ags4 is installed and importable."""
+    try:
+        import python_ags4  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def import_ags4():
+    """Import and return the AGS4 class from python-ags4."""
+    try:
+        from python_ags4 import AGS4
+        return AGS4
+    except ImportError:
+        raise ImportError(
+            "python-ags4 is not installed. Install with: pip install python-ags4"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Read / validate
+# ---------------------------------------------------------------------------
 
 def _validate_read_inputs(filepath_or_content, is_content):
     """Validate inputs for read_ags4."""

@@ -71,9 +71,9 @@
 
   {"id": "GC-1", "module": "geotech_common", "complexity": "medium", "question": "Build a soil profile with 0 to 3 m of sand (gamma = 18 kN/m3), 3 to 8 m of clay (gamma = 17 kN/m3, su = 40 kPa), and the water table at 2 m. Report the total and effective vertical stress at 6 m depth."},
 
-  {"id": "PGEF-1", "module": "pygef_agent", "complexity": "medium", "question": "I have a GEF-format CPT sounding file. What can you extract and summarize from it, and what inputs do you need from me to parse it?"},
-  {"id": "AGS-1", "module": "ags4_agent", "complexity": "medium", "question": "What does your AGS4 reader validate, and what would you return from an AGS4 file containing borehole location and SPT data?"},
-  {"id": "DIGGS-1", "module": "pydiggs_agent", "complexity": "medium", "question": "Outline the validation checks you run on a DIGGS 2.6 XML file, including schema and dictionary validation."},
+  {"id": "PGEF-1", "module": "subsurface_characterization", "complexity": "medium", "question": "I have a GEF-format CPT sounding file. What can you extract and summarize from it, and what inputs do you need from me to parse it?"},
+  {"id": "AGS-1", "module": "subsurface_characterization", "complexity": "medium", "question": "What does your AGS4 reader validate, and what would you return from an AGS4 file containing borehole location and SPT data?"},
+  {"id": "DIGGS-1", "module": "subsurface_characterization", "complexity": "medium", "question": "Outline the validation checks you run on a DIGGS 2.6 XML file, including schema and dictionary validation."},
   {"id": "DXFI-1", "module": "dxf_import", "complexity": "medium", "question": "I have a DXF cross-section drawing of a slope. What layers and geometry can you discover, and how do you convert them into a slope stability model?"},
   {"id": "DXFE-1", "module": "dxf_export", "complexity": "medium", "question": "Export a cross-section to DXF given a ground surface defined by points (0,0), (10,5), (20,5) and a water table 1 m below the surface. What does the exported drawing include?"},
   {"id": "PDF-1", "module": "pdf_import", "complexity": "medium", "question": "I have a PDF of a geotechnical cross-section. What geometry can you extract using the vector method versus the vision method, and what are the limitations of each?"},

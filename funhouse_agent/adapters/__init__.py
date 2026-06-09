@@ -125,10 +125,6 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.salib_adapter",
         "brief": "Sensitivity analysis (Sobol variance-based and Morris screening)",
     },
-    "pygef": {
-        "adapter": "funhouse_agent.adapters.pygef_adapter",
-        "brief": "CPT and borehole file parser (GEF/BRO-XML via pygef)",
-    },
     "dxf_import": {
         "adapter": "funhouse_agent.adapters.dxf_import_adapter",
         "brief": "DXF CAD import for slope stability + FEM (discover, parse, build geometry)",
@@ -136,14 +132,6 @@ MODULE_REGISTRY = {
     "pdf_import": {
         "adapter": "funhouse_agent.adapters.pdf_import_adapter",
         "brief": "PDF cross-section import (PyMuPDF vector extraction, content discovery)",
-    },
-    "ags4": {
-        "adapter": "funhouse_agent.adapters.ags4_adapter",
-        "brief": "AGS4 geotechnical data format reader and validator",
-    },
-    "pydiggs": {
-        "adapter": "funhouse_agent.adapters.pydiggs_adapter",
-        "brief": "DIGGS 2.6 XML schema and dictionary validation",
     },
     "opensees": {
         "adapter": "funhouse_agent.adapters.opensees_adapter",
@@ -179,7 +167,7 @@ MODULE_REGISTRY = {
     },
     "subsurface": {
         "adapter": "funhouse_agent.adapters.subsurface_adapter",
-        "brief": "Subsurface data visualization — DIGGS XML ingestion, parameter vs depth, Atterberg limits, plan view, cross-section, trends",
+        "brief": "Subsurface data I/O — the single home for ingest+validate+visualize. DIGGS XML parse, Plotly plots (parameter vs depth, Atterberg, plan view, cross-section), trend stats, PLUS format adapters: GEF/BRO-XML CPT & borehole parse (pygef), AGS4 read/validate (python-ags4), DIGGS schema/dictionary validation (pydiggs)",
     },
     # --- geotech-references agents (reference modules + cross-reference DB) ---
     "reference_db": {
