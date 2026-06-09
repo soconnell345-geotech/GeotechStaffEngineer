@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-32 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + swprocess agent + pystra agent + pydiggs agent + subsurface characterization + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM with staged construction) + DM7 equations + funhouse_agent (engine-agnostic agent with vision).
+32 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + swprocess agent + pystra agent + pydiggs agent + subsurface characterization + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM with staged construction) + funhouse_agent (engine-agnostic agent with vision).
 
 ## Architecture Patterns
 

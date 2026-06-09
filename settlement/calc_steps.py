@@ -417,9 +417,7 @@ def get_figures(result, analysis) -> List[FigureData]:
     # DM7 Reference Figure: Terzaghi consolidation curve (when time-rate used)
     if result.time_settlement_curve is not None and analysis.cv is not None:
         try:
-            import sys
-            sys.path.insert(0, "DM7Eqs")
-            from geotech.dm7_1.chapter5 import plot_figure_5_16
+            from geotech_references.dm7_1.chapter5 import plot_figure_5_16
             from calc_package.dm7_figures import dm7_figure
 
             # Compute Tv at 50% consolidation as a representative query point

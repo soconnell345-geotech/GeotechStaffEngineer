@@ -6,13 +6,6 @@ __pycache__/
 !.claude/agents/
 nul
 
-# Large reference PDFs
-DM7Eqs/references/*.pdf
-
-# Reference/equation images
-DM7Eqs/eq_*.png
-DM7Eqs/references/*.png
-
 # Generated test artifacts
 lateral_pile_test_plot.png
 fig_*.png

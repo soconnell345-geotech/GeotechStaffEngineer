@@ -370,9 +370,7 @@ class TestDm7FigureHelper:
     def test_figure_516_no_query(self):
         """dm7_figure wraps plot_figure_5_16 into FigureData."""
         pytest.importorskip("matplotlib")
-        import sys
-        sys.path.insert(0, "DM7Eqs")
-        from geotech.dm7_1.chapter5 import plot_figure_5_16
+        from geotech_references.dm7_1.chapter5 import plot_figure_5_16
         from calc_package.dm7_figures import dm7_figure
         import base64
 
@@ -387,9 +385,7 @@ class TestDm7FigureHelper:
     def test_figure_516_with_query(self):
         """dm7_figure passes query params through to plot function."""
         pytest.importorskip("matplotlib")
-        import sys
-        sys.path.insert(0, "DM7Eqs")
-        from geotech.dm7_1.chapter5 import plot_figure_5_16
+        from geotech_references.dm7_1.chapter5 import plot_figure_5_16
         from calc_package.dm7_figures import dm7_figure
 
         fd = dm7_figure(plot_figure_5_16, Tv=0.2,
@@ -400,9 +396,7 @@ class TestDm7FigureHelper:
     def test_auto_title_from_docstring(self):
         """Title auto-extracted from plot function docstring."""
         pytest.importorskip("matplotlib")
-        import sys
-        sys.path.insert(0, "DM7Eqs")
-        from geotech.dm7_1.chapter8 import plot_figure_8_46
+        from geotech_references.dm7_1.chapter8 import plot_figure_8_46
         from calc_package.dm7_figures import dm7_figure
 
         fd = dm7_figure(plot_figure_8_46, title=None)
@@ -411,9 +405,7 @@ class TestDm7FigureHelper:
     def test_custom_title(self):
         """Explicit title overrides docstring extraction."""
         pytest.importorskip("matplotlib")
-        import sys
-        sys.path.insert(0, "DM7Eqs")
-        from geotech.dm7_1.chapter8 import plot_figure_8_46
+        from geotech_references.dm7_1.chapter8 import plot_figure_8_46
         from calc_package.dm7_figures import dm7_figure
 
         fd = dm7_figure(plot_figure_8_46, title="My Custom Title")
@@ -422,9 +414,7 @@ class TestDm7FigureHelper:
     def test_figure_436_with_query(self):
         """Rowe moment reduction figure with query point."""
         pytest.importorskip("matplotlib")
-        import sys
-        sys.path.insert(0, "DM7Eqs")
-        from geotech.dm7_2.chapter4 import plot_figure_4_36
+        from geotech_references.dm7_2.chapter4 import plot_figure_4_36
         from calc_package.dm7_figures import dm7_figure
 
         fd = dm7_figure(plot_figure_4_36, log_rho=-2.0,
