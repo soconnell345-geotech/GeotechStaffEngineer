@@ -77,17 +77,6 @@ Each agent wraps a third-party geotechnical library with a dict-based API for LL
 | `pydiggs_agent` | pydiggs | DIGGS 2.6 XML validation |
 | `groundhog_agent` | groundhog | Site investigation and soil mechanics |
 
-## GUIs
-
-Interactive browser-based GUIs built with Plotly Dash:
-
-| GUI | Command | Purpose |
-|-----|---------|---------|
-| `slope_stability_gui.py` | `python slope_stability_gui.py` | Slope stability analysis with live preview |
-| `fem2d_gui.py` | `python fem2d_gui.py` | 2D FEM analysis — gravity, foundation, SRM, excavation, seepage, consolidation |
-
-Requires `pip install geotech-staff-engineer[gui]` for Dash and Plotly dependencies.
-
 ## Optional Extras
 
 | Extra | Libraries |
@@ -108,7 +97,6 @@ Requires `pip install geotech-staff-engineer[gui]` for Dash and Plotly dependenc
 | `pystra` | pystra |
 | `pydiggs` | pydiggs |
 | `dxf` | ezdxf |
-| `gui` | dash, plotly |
 | `full` | All of the above |
 
 ## Related Package

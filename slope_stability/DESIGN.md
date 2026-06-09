@@ -116,9 +116,3 @@ search_critical_surface(geom, surface_type="noncircular",
 
 All dimensions converted from imperial (ft/psf/pcf) to SI (m/kPa/kN/m³).
 Example 5 skipped (curved Mohr-Coulomb envelope not supported).
-
-## Qt GUI
-- **Standalone app**: `slope_stability_qt.py` (separate from main `geotech_qt_gui.py`)
-- **Panel**: `qt_panels/slope_stability_panel.py`
-- Features: circular/noncircular toggle, convergence tolerance, entry/exit limits,
-  slice visualization on cross-section, save/load/export

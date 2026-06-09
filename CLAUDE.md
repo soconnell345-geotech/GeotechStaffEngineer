@@ -62,25 +62,6 @@ Key conventions:
 
 Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions + DM7 figure catalogs, 3529 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 + 25 + 31 + 5 = 479 tests)
 
-## GUIs
-
-### Plotly Dash (browser-based)
-| GUI | Port | Purpose |
-|-----|------|---------|
-| `slope_stability_gui.py` | 8051 | Slope stability: geometry, soil layers, GWT, Bishop/Spencer grid search |
-| `fem2d_gui.py` | 8055 | 2D FEM: gravity, foundation, slope SRM, excavation, seepage, consolidation |
-
-Run: `python slope_stability_gui.py` or `python fem2d_gui.py` — opens browser automatically.
-
-### Qt Desktop (PyQt5/PySide2)
-| GUI | Purpose |
-|-----|---------|
-| `geotech_qt_gui.py` | Main app: Bearing Capacity, Settlement, FEM 2D tabs |
-| `slope_stability_qt.py` | Standalone slope stability: circular/noncircular, entry/exit limits, slice visualization, contact stress plot |
-| `fem2d_qt.py` | Standalone FEM 2D: tabbed inputs, mesh preview, BC controls, FOS vs displacement |
-
-Run: `python geotech_qt_gui.py` or `python slope_stability_qt.py` or `python fem2d_qt.py`
-
 ## Foundry Test Harness
 
 `foundry_test_harness/` validates all Foundry agent functions via JSON-in/JSON-out:
