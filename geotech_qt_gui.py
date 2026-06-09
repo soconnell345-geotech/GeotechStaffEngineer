@@ -157,7 +157,7 @@ class MainWindow(QMainWindow):
             f"<p><b>Modules available:</b> bearing_capacity, settlement, "
             f"slope_stability, axial_pile, lateral_pile, sheet_pile, soe, "
             f"pile_group, drilled_shaft, retaining_walls, ground_improvement, "
-            f"seismic_geotech, fem2d, wind_loads, ...</p>"
+            f"seismic_geotech, fem2d, ...</p>"
             f"<hr>"
             f"<p>&copy; 2026 Sean O'Connell</p>",
         )

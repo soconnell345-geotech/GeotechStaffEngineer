@@ -42,9 +42,7 @@ MODULE_META = [
     ("gstools_agent",      "Geostatistical kriging, variogram fitting, random fields",   "Advanced"),
     ("ags4_agent",         "AGS4 geotechnical data format reader/validator",              "Data"),
     ("salib_agent",        "Sobol & Morris sensitivity analysis",                        "Advanced"),
-    ("pyseismosoil_agent", "MKZ/HH nonlinear soil curve calibration + Vs profiles",      "Library"),
     ("swprocess_agent",    "MASW surface wave dispersion analysis",                      "Advanced"),
-    ("geolysis_agent",     "USCS/AASHTO classification + SPT corrections + bearing",     "Data"),
     ("pystra_agent",       "FORM/SORM/Monte Carlo structural reliability",               "Advanced"),
     ("pydiggs_agent",      "DIGGS 2.6 XML schema and dictionary validation",             "Data"),
 ]

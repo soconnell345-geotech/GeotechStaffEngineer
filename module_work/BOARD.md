@@ -14,12 +14,12 @@ fixing tool ergonomics + real per-module issues. Re-run after each batch to meas
 
 | Domain | Ledger | Modules |
 |--------|--------|---------|
-| foundations | `foundations.md` | bearing_capacity, settlement, retaining_walls, ground_improvement, downdrag, wind_loads |
+| foundations | `foundations.md` | bearing_capacity, settlement, retaining_walls, ground_improvement, downdrag |
 | deep-foundations | `deep-foundations.md` | axial_pile, drilled_shaft, lateral_pile, pile_group, wave_equation |
 | earth-retention | `earth-retention.md` | sheet_pile, soe |
-| slope-fem | `slope-fem.md` | slope_stability, fem2d, fdm2d |
-| seismic | `seismic.md` | seismic_geotech, pystrata_agent, opensees_agent, liquepy_agent, seismic_signals_agent, pyseismosoil_agent |
-| characterization | `characterization.md` | geolysis, pygef_agent, ags4_agent, pydiggs_agent, hvsrpy_agent, swprocess_agent, gstools_agent, subsurface_characterization, salib_agent, pystra_agent |
+| slope-fem | `slope-fem.md` | slope_stability, fem2d |
+| seismic | `seismic.md` | seismic_geotech, pystrata_agent, opensees_agent, liquepy_agent, seismic_signals_agent |
+| characterization | `characterization.md` | pygef_agent, ags4_agent, pydiggs_agent, hvsrpy_agent, swprocess_agent, gstools_agent, subsurface_characterization, salib_agent, pystra_agent |
 | io-cad | `io-cad.md` | dxf_import, dxf_export, pdf_import |
 | references | `references.md` | dm7, gec6/7/10/11/12/13, micropile, fema_p2192, noaa_frost, ufc_* , reference_db |
 | common (lead-serialized) | — | geotech_common |
@@ -71,10 +71,10 @@ once Phase 0 ships. Error categories across the 40 recovered records:
    documents/accepts a param the underlying function doesn't take, or accesses `params["x"]` with a
    raw KeyError. The genuine specialist work. Affected: axial_pile (width/diameter/wall_thickness),
    ground_improvement (area_replacement_ratio, drain_spacing), retaining_walls (phi→rankine/coulomb),
-   geolysis (N_raw/n_field/n60), sheet_pile (unit_weight), soe (thickness), lateral_pile (k),
+   sheet_pile (unit_weight), soe (thickness), lateral_pile (k),
    slope_stability (name), reference_db (max_results).
-4. **missing optional deps in Databricks (~7 modules)** — NOT code bugs: liquepy, pystrata,
-   opensees(py), pyseismosoil, eqsig (seismic_signals), SALib, pystra are not installed in the
+4. **missing optional deps in Databricks (~6 modules)** — NOT code bugs: liquepy, pystrata,
+   opensees(py), eqsig (seismic_signals), SALib, pystra are not installed in the
    Databricks runtime. Fix = `pip install geotech-staff-engineer[full]` (or specific extras) there.
 5. **enum values (~4)** — downdrag `soil_type` (`clay`/`settling_fill`), axial_pile variants.
    Phase 0 `allowed_values` rollout (per domain).

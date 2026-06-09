@@ -2,7 +2,6 @@
 
 Covers:
 - fem2d_adapter (7 methods, no external dep)
-- fdm2d_adapter (2 methods, no external dep)
 - gstools_adapter (3 methods, has_gstools guard)
 - hvsrpy_adapter (1 method, has_hvsrpy guard)
 - swprocess_adapter (1 method, has_swprocess guard)
@@ -103,80 +102,6 @@ class TestFem2dCalls:
         assert "max_displacement_m" in result
         assert result["max_displacement_m"] >= 0
         assert "max_sigma_yy_kPa" in result
-
-
-# ===================================================================
-# FDM2D adapter
-# ===================================================================
-
-class TestFdm2dMethodInfo:
-    def test_keys_match(self):
-        from funhouse_agent.adapters.fdm2d_adapter import METHOD_INFO, METHOD_REGISTRY
-        assert set(METHOD_INFO.keys()) == set(METHOD_REGISTRY.keys())
-
-    def test_required_fields(self):
-        from funhouse_agent.adapters.fdm2d_adapter import METHOD_INFO
-        for name, info in METHOD_INFO.items():
-            assert "category" in info, f"{name} missing category"
-            assert "brief" in info, f"{name} missing brief"
-            assert "parameters" in info, f"{name} missing parameters"
-            assert "returns" in info, f"{name} missing returns"
-
-    def test_method_count(self):
-        from funhouse_agent.adapters.fdm2d_adapter import METHOD_INFO
-        assert len(METHOD_INFO) == 2
-
-
-class TestFdm2dDispatch:
-    def test_list_methods(self):
-        from funhouse_agent.dispatch import list_methods
-        methods = list_methods("fdm2d")
-        assert "error" not in methods
-        all_methods = []
-        for cat_methods in methods.values():
-            all_methods.extend(cat_methods.keys())
-        assert "fdm2d_gravity" in all_methods
-        assert "fdm2d_foundation" in all_methods
-        assert len(all_methods) == 2
-
-    def test_describe_method_gravity(self):
-        from funhouse_agent.dispatch import describe_method
-        info = describe_method("fdm2d", "fdm2d_gravity")
-        assert "parameters" in info
-        assert "width" in info["parameters"]
-        assert "E" in info["parameters"]
-        assert "damping" in info["parameters"]
-
-    def test_describe_method_foundation(self):
-        from funhouse_agent.dispatch import describe_method
-        info = describe_method("fdm2d", "fdm2d_foundation")
-        assert "parameters" in info
-        assert "B" in info["parameters"]
-        assert "q" in info["parameters"]
-
-
-class TestFdm2dCalls:
-    def test_gravity(self):
-        from funhouse_agent.dispatch import call_agent
-        result = call_agent("fdm2d", "fdm2d_gravity", {
-            "width": 10, "depth": 5, "gamma": 18,
-            "E": 10000, "nu": 0.3, "nx": 8, "ny": 4,
-        })
-        assert "error" not in result, f"Unexpected error: {result.get('error')}"
-        assert "max_displacement_m" in result
-        assert result["max_displacement_m"] > 0
-        assert "converged" in result
-
-    def test_foundation(self):
-        from funhouse_agent.dispatch import call_agent
-        result = call_agent("fdm2d", "fdm2d_foundation", {
-            "B": 2.0, "q": 100, "depth": 5,
-            "E": 20000, "nu": 0.3, "nx": 10, "ny": 5,
-        })
-        assert "error" not in result, f"Unexpected error: {result.get('error')}"
-        assert "max_displacement_m" in result
-        assert result["max_displacement_m"] > 0
-        assert "converged" in result
 
 
 # ===================================================================

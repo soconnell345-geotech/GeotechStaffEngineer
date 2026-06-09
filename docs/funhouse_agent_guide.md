@@ -170,13 +170,13 @@ The agent uses these tools automatically during the ReAct loop:
 | Tool | Purpose |
 |------|---------|
 | `call_agent(agent, method, params)` | Execute a geotechnical calculation |
-| `list_agents()` | List all 50 available modules |
+| `list_agents()` | List all 46 available modules |
 | `list_methods(agent, category)` | List methods for a module |
 | `describe_method(agent, method)` | Get parameter details |
 
-### Available Modules (50)
+### Available Modules (46)
 
-#### Core Analysis (18)
+#### Core Analysis (17)
 
 | Module | Description |
 |--------|-------------|
@@ -193,13 +193,11 @@ The agent uses these tools automatically during the ReAct loop:
 | `ground_improvement` | Ground improvement (aggregate piers, wick drains, vibro, GEC-13) |
 | `wave_equation` | Smith 1-D wave equation (bearing graph, drivability) |
 | `downdrag` | Pile downdrag (Fellenius neutral plane, UFC 3-220-20) |
-| `wind_loads` | ASCE 7-22 wind loads on freestanding walls and fences (Ch 29.3) |
 | `soe` | Support of excavation (braced/cantilever walls, stability, anchors) |
-| `geolysis` | Soil classification (USCS/AASHTO) + SPT corrections + bearing capacity |
 | `dxf_export` | Export cross-section geometry to DXF file format |
 | `calc_package` | Generate Mathcad-style calc packages (HTML/LaTeX/PDF) for 13 modules |
 
-#### External Library Adapters (7)
+#### External Library Adapters (6)
 
 | Module | Description |
 |--------|-------------|
@@ -207,7 +205,6 @@ The agent uses these tools automatically during the ReAct loop:
 | `pystrata` | 1D site response (equivalent-linear and linear elastic, SHAKE-type) |
 | `liquepy` | CPT-based liquefaction triggering (Boulanger & Idriss 2014) |
 | `seismic_signals` | Earthquake signal processing (response spectra, intensity measures, RotD) |
-| `pyseismosoil` | Nonlinear soil curve generation (MKZ/HH) and Vs profile characterization |
 | `pystra` | Structural reliability analysis (FORM/SORM/Monte Carlo) |
 | `salib` | Sensitivity analysis (Sobol variance-based and Morris screening) |
 
@@ -221,12 +218,11 @@ The agent uses these tools automatically during the ReAct loop:
 | `ags4` | AGS4 geotechnical data format reader and validator |
 | `pydiggs` | DIGGS 2.6 XML schema and dictionary validation |
 
-#### FEM/FDM & Visualization (3)
+#### FEM & Visualization (2)
 
 | Module | Description |
 |--------|-------------|
 | `fem2d` | 2D plane-strain FEM (gravity, foundation, slope SRM, excavation, seepage, consolidation) |
-| `fdm2d` | 2D explicit Lagrangian FDM, FLAC-style |
 | `subsurface` | Subsurface data visualization (parameter vs depth, Atterberg limits, trends) |
 
 #### Additional Analysis (3)
@@ -400,12 +396,12 @@ funhouse_agent/
   notebook.py          # NotebookChat — ipywidgets chat interface
   DESIGN.md            # Architecture and design decisions
   adapters/
-    __init__.py              # MODULE_REGISTRY (50 modules) + clean_value/clean_result
+    __init__.py              # MODULE_REGISTRY (46 modules) + clean_value/clean_result
     _reference_common.py     # Shared factory for 14 reference adapters
-    bearing_capacity.py ... soe.py, geolysis.py, dxf_export.py, calc_package.py
-    opensees_adapter.py ... salib_adapter.py        # 7 external library adapters
+    bearing_capacity.py ... soe.py, dxf_export.py, calc_package.py
+    opensees_adapter.py ... salib_adapter.py        # 6 external library adapters
     pygef_adapter.py ... pydiggs_adapter.py         # 5 file/data import adapters
-    fem2d_adapter.py, fdm2d_adapter.py, subsurface_adapter.py  # FEM/FDM/viz
+    fem2d_adapter.py, subsurface_adapter.py  # FEM/viz
     gstools_adapter.py, hvsrpy_adapter.py, swprocess_adapter.py  # additional
     dm7_adapter.py                                  # DM7 (340+ methods, collision handling)
     gec6_adapter.py ... micropile_adapter.py        # 7 GEC/micropile adapters

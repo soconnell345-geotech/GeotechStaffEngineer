@@ -14,14 +14,14 @@ from collections import defaultdict
 
 DOMAINS = {
     "foundations": ["bearing_capacity", "settlement", "retaining_walls",
-                    "ground_improvement", "downdrag", "wind_loads"],
+                    "ground_improvement", "downdrag"],
     "deep-foundations": ["axial_pile", "drilled_shaft", "lateral_pile",
                          "pile_group", "wave_equation"],
     "earth-retention": ["sheet_pile", "soe"],
-    "slope-fem": ["slope_stability", "fem2d", "fdm2d"],
+    "slope-fem": ["slope_stability", "fem2d"],
     "seismic": ["seismic_geotech", "pystrata_agent", "opensees_agent",
-                "liquepy_agent", "seismic_signals_agent", "pyseismosoil_agent"],
-    "characterization": ["geolysis", "pygef_agent", "ags4_agent", "pydiggs_agent",
+                "liquepy_agent", "seismic_signals_agent"],
+    "characterization": ["pygef_agent", "ags4_agent", "pydiggs_agent",
                          "hvsrpy_agent", "swprocess_agent", "gstools_agent",
                          "subsurface_characterization", "salib_agent", "pystra_agent"],
     "io-cad": ["dxf_import", "dxf_export", "pdf_import"],

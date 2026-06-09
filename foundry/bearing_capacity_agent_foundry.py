@@ -177,16 +177,12 @@ METHOD_INFO = {
             "settlement_agent.elastic_settlement": "Check settlement after computing q_allowable.",
             "settlement_agent.schmertmann_settlement": "For granular soils, use Schmertmann method for settlement.",
             "settlement_agent.consolidation_settlement": "For clay soils, check consolidation settlement.",
-            "geolysis_agent.ultimate_bc": "Alternative bearing capacity using Vesic/Terzaghi (cross-check).",
-            "geolysis_agent.allowable_bc_spt": "Quick allowable bearing capacity from SPT N-value.",
             "calc_package_agent.bearing_capacity_package": "Generate PDF calculation package.",
         },
         "typical_workflow": (
-            "1. Classify soil (geolysis_agent.classify_uscs)\n"
-            "2. Correct SPT if applicable (geolysis_agent.correct_spt)\n"
-            "3. Compute bearing capacity (this method)\n"
-            "4. Check settlement (settlement_agent.elastic_settlement or consolidation_settlement)\n"
-            "5. Generate calc package (calc_package_agent.bearing_capacity_package)"
+            "1. Compute bearing capacity (this method)\n"
+            "2. Check settlement (settlement_agent.elastic_settlement or consolidation_settlement)\n"
+            "3. Generate calc package (calc_package_agent.bearing_capacity_package)"
         ),
         "common_mistakes": [
             "Using drained phi with undrained cu — pick one approach: phi=0 with cu, or c'=0 with phi'.",

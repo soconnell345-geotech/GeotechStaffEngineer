@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "geotech-staff-engineer"
 version = "4.6.5"
-description = "Python toolkit for LLM-based geotechnical engineering agents — 36 analysis modules covering foundations, piles, slopes, seismic (incl. FEMA P-2082 / 2020 NEHRP site classification), excavation support (incl. the California/Caltrans Trenching and Shoring Manual reference), pavements (incl. FHWA-NHI-05-037 Geotechnical Aspects of Pavements), FEM, PDF/DXF import, and more"
+description = "Python toolkit for LLM-based geotechnical engineering agents — 32 analysis modules covering foundations, piles, slopes, seismic (incl. FEMA P-2082 / 2020 NEHRP site classification), excavation support (incl. the California/Caltrans Trenching and Shoring Manual reference), pavements (incl. FHWA-NHI-05-037 Geotechnical Aspects of Pavements), FEM, PDF/DXF import, and more"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -43,9 +43,7 @@ hvsrpy = ["hvsrpy>=2.0"]
 gstools = ["gstools>=1.5"]
 ags4 = ["python-ags4>=0.5"]
 salib = ["SALib>=1.4"]
-pyseismosoil = ["PySeismoSoil>=0.5"]
 swprocess = ["swprocess>=0.3"]
-geolysis = ["geolysis>=0.4"]
 pystra = ["pystra>=1.3"]
 pydiggs = ["pydiggs>=0.1"]
 dxf = ["ezdxf>=1.4"]
@@ -65,9 +63,7 @@ full = [
     "gstools>=1.5",
     "python-ags4>=0.5",
     "SALib>=1.4",
-    "PySeismoSoil>=0.5",
     "swprocess>=0.3",
-    "geolysis>=0.4",
     "pystra>=1.3",
     "pydiggs>=0.1",
     "ezdxf>=1.4",
@@ -107,18 +103,14 @@ include = [
     "gstools_agent*",
     "ags4_agent*",
     "salib_agent*",
-    "pyseismosoil_agent*",
     "swprocess_agent*",
-    "geolysis_agent*",
     "pystra_agent*",
     "pydiggs_agent*",
     "subsurface_characterization*",
-    "wind_loads*",
     "dxf_import*",
     "dxf_export*",
     "pdf_import*",
     "fem2d*",
-    "fdm2d*",
     "funhouse_agent*",
 ]
 exclude = [
@@ -150,15 +142,13 @@ testpaths = [
     "slope_stability", "downdrag", "geotech_common",
     "opensees_agent", "pystrata_agent", "seismic_signals_agent",
     "liquepy_agent", "pygef_agent", "hvsrpy_agent", "gstools_agent",
-    "ags4_agent", "salib_agent", "pyseismosoil_agent", "swprocess_agent",
-    "geolysis_agent", "pystra_agent", "pydiggs_agent",
+    "ags4_agent", "salib_agent", "swprocess_agent",
+    "pystra_agent", "pydiggs_agent",
     "subsurface_characterization",
-    "wind_loads",
     "dxf_import",
     "dxf_export",
     "pdf_import",
     "fem2d",
-    "fdm2d",
     "funhouse_agent",
     "foundry_test_harness",
     "geotech-references/tests",

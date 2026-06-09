@@ -1,7 +1,11 @@
 # Funhouse Agent Expansion Plan — COMPLETE
 
 All four expansion phases are **complete**. The funhouse_agent now exposes
-**50 modules** with **~901 callable methods**, up from the original 18 modules / 70 methods.
+**46 modules** with **~890 callable methods**, up from the original 18 modules / 70 methods.
+
+> **Phase 1 consolidation (2026-06-09):** `pyseismosoil`, `fdm2d`, `geolysis`,
+> and `wind_loads` were subsequently removed as redundant/out-of-scope. The phase
+> notes below are kept as the historical record of the original build-out.
 
 > **Note:** Foundry wrappers (`foundry/`) are a separate Palantir deployment
 > layer and are NOT part of the funhouse_agent.
@@ -10,8 +14,8 @@ All four expansion phases are **complete**. The funhouse_agent now exposes
 
 ## Phase 1 — External Library Adapters ✅
 
-7 modules added: `opensees`, `pystrata`, `liquepy`, `seismic_signals`,
-`pyseismosoil`, `pystra`, `salib`.
+6 modules added: `opensees`, `pystrata`, `liquepy`, `seismic_signals`,
+`pystra`, `salib`. (`pyseismosoil` was added here originally, later removed.)
 
 Each follows the standard adapter pattern with `METHOD_REGISTRY` / `METHOD_INFO`,
 optional dependency guards, and mock-based tests.
@@ -26,9 +30,9 @@ File parsing via attachment mechanism or direct path input.
 
 ---
 
-## Phase 3 — FEM/FDM High-Level APIs ✅
+## Phase 3 — FEM High-Level APIs ✅
 
-3 modules added: `fem2d`, `fdm2d`, `subsurface`.
+2 modules added: `fem2d`, `subsurface`. (`fdm2d` was added here originally, later removed.)
 
 Exposes high-level analysis functions (gravity, foundation, slope SRM,
 excavation, seepage, consolidation, staged construction) and subsurface
@@ -57,11 +61,12 @@ chapter-key prefixes.
 | Phase | Modules | Methods | Key Capability |
 |-------|---------|---------|----------------|
 | Original | 18 | 70 | Core geotechnical analysis |
-| Phase 1 | +7 | +~50 | Advanced seismic, probabilistic, sensitivity |
+| Phase 1 | +6 | +~45 | Advanced seismic, probabilistic, sensitivity |
 | Phase 2 | +5 | +~30 | Data import (CPT, CAD, PDF, AGS4, DIGGS) |
-| Phase 3 | +3 | +~40 | FEM/FDM, subsurface visualization |
+| Phase 3 | +2 | +~35 | FEM, subsurface visualization |
 | Phase 4 | +17 | +~711 | Standards references (DM7/GEC/UFC/FEMA/NOAA), geostatistics, HVSR, MASW |
-| **Total** | **50** | **~901** | **Full geotechnical toolkit** |
+| Consolidation | −2 | — | Removed `geolysis`, `wind_loads` (redundant/out-of-scope) |
+| **Total** | **46** | **~890** | **Full geotechnical toolkit** |
 
 ---
 
@@ -79,4 +84,4 @@ chapter-key prefixes.
 - **Calc package**: Supports 13 of the original 18 analysis modules. The 32 new
   modules do not have calc package (HTML/PDF report) support — separate effort.
 - **System prompt**: Auto-generated from MODULE_REGISTRY; already reflects all
-  50 modules via `list_methods` → `describe_method` discovery.
+  46 modules via `list_methods` → `describe_method` discovery.

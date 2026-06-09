@@ -52,11 +52,6 @@
   {"id": "DD-1", "module": "downdrag", "complexity": "medium", "question": "Determine the neutral plane location and the downdrag (drag) load on a 0.4 m diameter driven pile passing through 8 m of consolidating clay (su = 30 kPa) into dense sand, with a 40 kPa surcharge applied at the surface."},
   {"id": "DD-2", "module": "downdrag", "complexity": "medium", "question": "Estimate the downdrag force per UFC 3-220-20 on a pile embedded in 6 m of settling fill (gamma = 19 kN/m3) over competent bearing soil."},
 
-  {"id": "WL-1", "module": "wind_loads", "complexity": "medium", "question": "Compute the ASCE 7-22 design wind force on a 3 m tall, 30 m long ground-mounted solid freestanding wall, basic wind speed V = 115 mph, Exposure C."},
-
-  {"id": "GL-1", "module": "geolysis", "complexity": "medium", "question": "Classify a soil with 65 percent passing the No. 200 sieve, liquid limit 45, plasticity index 22, by both the USCS and AASHTO systems."},
-  {"id": "GL-2", "module": "geolysis", "complexity": "medium", "question": "From a raw SPT blow count N = 18 measured at 4 m depth with effective vertical stress 70 kPa and hammer efficiency 60 percent, compute the corrected (N1)60 and estimate an allowable bearing capacity for a shallow footing."},
-
   {"id": "LQ-1", "module": "liquepy_agent", "complexity": "medium", "question": "Perform a CPT-based liquefaction triggering evaluation (Boulanger and Idriss 2014) for a layer at 5 m depth: cone tip resistance qc = 4 MPa, sleeve friction fs = 40 kPa, total vertical stress 95 kPa, effective vertical stress 60 kPa, moment magnitude 7.5, peak ground acceleration 0.35g. Report the factor of safety."},
 
   {"id": "PS-1", "module": "pystra_agent", "complexity": "medium", "question": "Compute the reliability index using FORM for a foundation where resistance R is normally distributed with mean 1000 kN and standard deviation 150 kN, and load S is normally distributed with mean 600 kN and standard deviation 90 kN, for the limit state R minus S."},
@@ -67,14 +62,10 @@
 
   {"id": "PST-1", "module": "pystrata_agent", "complexity": "high", "question": "Perform a one-dimensional equivalent-linear site response analysis for a 30 m soil column (Vs = 250 m/s, Darendeli modulus reduction and damping curves) with an input motion peak ground acceleration of 0.2g. Report surface peak ground acceleration and amplification factor."},
 
-  {"id": "PSS-1", "module": "pyseismosoil_agent", "complexity": "medium", "question": "Calibrate an MKZ nonlinear backbone (modulus reduction) curve for a sand whose small-strain shear modulus is derived from Vs = 220 m/s and unit weight 19 kN/m3."},
-
   {"id": "SS2-1", "module": "seismic_signals_agent", "complexity": "medium", "question": "What earthquake signal-processing analyses can you perform on an acceleration time history (for example response spectra, Arias intensity, significant duration)? Demonstrate on a simple synthetic input if possible."},
 
   {"id": "FEM-1", "module": "fem2d", "complexity": "high", "question": "Use a 2D plane-strain finite element analysis with strength reduction to estimate the bearing capacity (collapse load and factor of safety) of a 2 m wide strip footing on clay with su = 50 kPa and unit weight 18 kN/m3."},
   {"id": "FEM-2", "module": "fem2d", "complexity": "high", "question": "Use a 2D finite element strength reduction analysis to find the factor of safety of a 10 m high slope at 2H:1V in soil with c = 15 kPa, phi = 25 degrees, unit weight 19 kN/m3."},
-
-  {"id": "FDM-1", "module": "fdm2d", "complexity": "high", "question": "Use a 2D explicit finite difference (FLAC-style) analysis to estimate the settlement under a 5 m high embankment (gamma = 20 kN/m3) on a soft clay foundation with Young's modulus 10 MPa. Describe the model setup and report results."},
 
   {"id": "GS-1", "module": "gstools_agent", "complexity": "medium", "question": "Given SPT N values at four points (0,0)=10, (10,0)=14, (0,10)=9, (10,10)=13, fit a variogram and use kriging to estimate the value at (5,5)."},
 

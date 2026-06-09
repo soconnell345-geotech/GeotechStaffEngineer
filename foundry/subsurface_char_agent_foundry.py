@@ -311,7 +311,6 @@ METHOD_INFO = {
         },
         "related": {
             "subsurface_char.plot_parameter_vs_depth": "Single parameter scatter",
-            "geolysis.classify_uscs": "USCS classification from Atterberg + gradation",
         },
         "typical_workflow": (
             "1. Load site with LL_pct, PL_pct, wn_pct measurements\n"

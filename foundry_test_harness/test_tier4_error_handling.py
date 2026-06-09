@@ -22,7 +22,6 @@ from foundry.seismic_geotech_agent_foundry import seismic_geotech_agent
 from foundry.retaining_walls_agent_foundry import retaining_walls_agent
 from foundry.sheet_pile_agent_foundry import sheet_pile_agent
 from foundry.slope_stability_agent_foundry import slope_stability_agent
-from foundry.geolysis_agent_foundry import geolysis_agent
 from foundry.ground_improvement_agent_foundry import ground_improvement_agent
 from foundry.wave_equation_agent_foundry import wave_equation_agent
 from foundry.pile_group_agent_foundry import pile_group_agent
@@ -42,7 +41,6 @@ ALL_AGENTS = [
     retaining_walls_agent,
     sheet_pile_agent,
     slope_stability_agent,
-    geolysis_agent,
     ground_improvement_agent,
     wave_equation_agent,
     pile_group_agent,
@@ -95,14 +93,6 @@ class TestMissingParameters:
             H.call(settlement_agent, "elastic_settlement", {
                 "q_net": 100.0,
                 # Missing B and Es
-            })
-
-    def test_spt_missing_eop(self):
-        """correct_spt requires eop (effective overburden pressure)."""
-        with pytest.raises(AgentError):
-            H.call(geolysis_agent, "correct_spt", {
-                "recorded_spt_n_value": 25,
-                # Missing eop
             })
 
 

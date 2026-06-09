@@ -2,7 +2,7 @@
 Tier 3: Cross-agent consistency checks.
 
 Where multiple agents can solve the same problem (e.g., bearing capacity
-via bearing_capacity_agent vs geolysis_agent vs groundhog_agent),
+via bearing_capacity_agent vs groundhog_agent),
 run all and verify results agree within engineering tolerance.
 """
 
@@ -15,7 +15,6 @@ from foundry.bearing_capacity_agent_foundry import bearing_capacity_agent
 from foundry.settlement_agent_foundry import settlement_agent
 from foundry.axial_pile_agent_foundry import axial_pile_agent
 from foundry.seismic_geotech_agent_foundry import seismic_geotech_agent
-from foundry.geolysis_agent_foundry import geolysis_agent
 from foundry.groundhog_agent_foundry import groundhog_agent
 
 H = FoundryAgentHarness()
@@ -27,30 +26,6 @@ H = FoundryAgentHarness()
 
 class TestBearingCapacityCrossCheck:
     """Compare bearing capacity from different agents for same problem."""
-
-    def test_vesic_bearing_capacity(self):
-        """bearing_capacity_agent vs geolysis_agent — Vesic method.
-
-        Same soil (phi=30°, c=0, gamma=18), same footing (B=2m, Df=1.5m, square).
-        Both use Vesic. Results should match within 10%.
-        """
-        r_bc = H.call(bearing_capacity_agent, "bearing_capacity_analysis",
-                      S.CROSS_CHECK_BEARING["bearing_capacity_params"])
-
-        r_geo = H.call(geolysis_agent, "ultimate_bc",
-                       S.CROSS_CHECK_BEARING["geolysis_params"])
-
-        # Both should give ultimate bearing capacity within 15%
-        # Different implementations may use slightly different factors
-        qu_bc = r_bc["q_ultimate_kPa"]
-        qu_geo = r_geo["bearing_capacity_kpa"]
-        assert qu_bc > 0
-        assert qu_geo > 0
-        ratio = qu_bc / qu_geo
-        assert 0.5 < ratio < 2.0, (
-            f"bearing_capacity={qu_bc:.1f} vs geolysis={qu_geo:.1f}, "
-            f"ratio={ratio:.2f} — expected within factor of 2"
-        )
 
     def test_bearing_factors_consistency(self):
         """Nc, Nq, Ngamma at phi=30° should match between agents.
@@ -66,19 +41,12 @@ class TestBearingCapacityCrossCheck:
         assert r["Nc"] == pytest.approx(30.14, rel=0.02)
         assert r["Nq"] == pytest.approx(18.40, rel=0.02)
 
-    def test_spt_bearing_cross_check(self):
-        """geolysis allowable BC from SPT vs groundhog SPT correlation.
+    def test_spt_to_friction_angle(self):
+        """groundhog SPT → friction angle correlation gives a reasonable phi.
 
-        Both should give reasonable (> 0) bearing capacity for N=20.
+        For N=20 at sigma'v=100 kPa, phi should fall in the 20-50° range.
         """
-        r_geo = H.call(geolysis_agent, "allowable_bc_spt", {
-            "corrected_spt_n_value": 20,
-            "width": 2.0,
-            "depth": 1.5,
-        })
-        assert r_geo["bearing_capacity_kpa"] > 0
-
-        # Groundhog: use SPT to estimate friction angle, then basic bearing capacity
+        # Groundhog: use SPT to estimate friction angle
         r_gh_phi = H.call(groundhog_agent, "spt_friction_angle_kulhawymayne", {
             "N": 20.0,
             "sigma_vo_eff": 100.0,
@@ -124,22 +92,7 @@ class TestEarthPressureCrossCheck:
 # ============================================================================
 
 class TestSPTCrossCheck:
-    """Compare SPT corrections from geolysis vs groundhog."""
-
-    def test_spt_overburden_correction(self):
-        """Overburden correction at 100 kPa: CN ≈ 1.0 for most methods.
-
-        geolysis and groundhog should both give N1_60 ≈ N60 at σ'v=100 kPa.
-        """
-        r_geo = H.call(geolysis_agent, "correct_spt", {
-            "recorded_spt_n_value": 20,
-            "eop": 100.0,
-            "opc_method": "liao",
-        })
-        n60_geo = r_geo["n60"]
-        n1_60_geo = r_geo["n1_60"]
-        # At 100 kPa, CN ≈ 1.0 for Liao method
-        assert n1_60_geo == pytest.approx(n60_geo, rel=0.15)
+    """SPT correlation checks via groundhog."""
 
     def test_spt_to_phi_consistency(self):
         """SPT N → friction angle should be consistent.
@@ -155,33 +108,6 @@ class TestSPTCrossCheck:
         phi = r["Phi [deg]"]
         # N=25 at 100 kPa should give phi ≈ 32-45°
         assert 28 < phi < 50
-
-
-# ============================================================================
-# Classification Cross-Check
-# ============================================================================
-
-class TestClassificationCrossCheck:
-    """Compare soil classification between agents."""
-
-    def test_uscs_classification(self):
-        """Same Atterberg limits → same USCS symbol.
-
-        geolysis vs groundhog for LL=45, PL=25, fines=60%.
-        """
-        r_geo = H.call(geolysis_agent, "classify_uscs", {
-            "liquid_limit": 45.0,
-            "plastic_limit": 25.0,
-            "fines": 60.0,
-        })
-        # Should be CL (lean clay)
-        assert "CL" in r_geo["symbol"]
-
-        # Groundhog doesn't have a direct USCS classifier in the same way,
-        # but we can check its soil description functions
-        # Just verify geolysis gives the right answer per USCS chart
-        # PI = 45 - 25 = 20, LL < 50, above A-line → CL
-        assert r_geo["description"] is not None
 
 
 # ============================================================================

@@ -47,9 +47,7 @@ jobs:
           pip install gstools || true
           pip install python-ags4 || true
           pip install SALib || true
-          pip install PySeismoSoil || true
           pip install swprocess || true
-          pip install geolysis || true
           pip install pystra || true
           pip install pydiggs || true
           pip install ezdxf || true

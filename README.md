@@ -1,6 +1,6 @@
 # GeotechStaffEngineer
 
-Python toolkit for LLM-based geotechnical engineering agents. 35 analysis modules covering foundations, piles, slopes, seismic analysis, ground improvement, FEM, and more.
+Python toolkit for LLM-based geotechnical engineering agents. 32 analysis modules covering foundations, piles, slopes, seismic analysis, ground improvement, FEM, and more.
 
 ## Installation
 
@@ -33,7 +33,7 @@ print(result.summary())
 
 All units are SI (meters, kPa, kN, degrees). Every module returns dataclasses with `.summary()` and `.to_dict()` methods for easy LLM integration.
 
-### Core Analysis (20 modules)
+### Core Analysis (19 modules)
 
 | Module | Purpose |
 |--------|---------|
@@ -54,11 +54,10 @@ All units are SI (meters, kPa, kN, degrees). Every module returns dataclasses wi
 | `geotech_common` | Shared soil profile, adapters, plotting utilities |
 | `calc_package` | Calculation package report generation |
 | `subsurface_characterization` | DIGGS parser, Plotly visualizations, trend stats |
-| `wind_loads` | ASCE 7-22 wind on freestanding walls and fences |
 | `dxf_import` | DXF CAD import for slope stability geometry |
 | `fem2d` | 2D plane-strain FEM — CST/Q4/beam, MC/HS, SRM, seepage, consolidation |
 
-### Library Wrapper Agents (15 modules)
+### Library Wrapper Agents (13 modules)
 
 Each agent wraps a third-party geotechnical library with a dict-based API for LLM tool use.
 
@@ -73,9 +72,7 @@ Each agent wraps a third-party geotechnical library with a dict-based API for LL
 | `gstools_agent` | gstools | Geostatistical kriging and random fields |
 | `ags4_agent` | python-ags4 | AGS4 data format reading and validation |
 | `salib_agent` | SALib | Sobol and Morris sensitivity analysis |
-| `pyseismosoil_agent` | PySeismoSoil | Nonlinear soil curve calibration |
 | `swprocess_agent` | swprocess | MASW surface wave dispersion |
-| `geolysis_agent` | geolysis | Soil classification and SPT corrections |
 | `pystra_agent` | pystra | FORM/SORM/Monte Carlo reliability |
 | `pydiggs_agent` | pydiggs | DIGGS 2.6 XML validation |
 | `groundhog_agent` | groundhog | Site investigation and soil mechanics |
@@ -107,9 +104,7 @@ Requires `pip install geotech-staff-engineer[gui]` for Dash and Plotly dependenc
 | `gstools` | gstools |
 | `ags4` | python-ags4 |
 | `salib` | SALib |
-| `pyseismosoil` | PySeismoSoil |
 | `swprocess` | swprocess |
-| `geolysis` | geolysis |
 | `pystra` | pystra |
 | `pydiggs` | pydiggs |
 | `dxf` | ezdxf |

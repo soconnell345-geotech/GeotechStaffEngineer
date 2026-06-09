@@ -195,15 +195,12 @@ _METHOD_ALIASES = {
     ("drilled_shaft", "single_shaft_capacity"): "drilled_shaft_capacity",
     ("axial_pile", "beta_method"): "axial_pile_capacity",
     ("downdrag", "fellenius_neutral_plane"): "downdrag_analysis",
-    # --- slope / FEM-FDM ---
+    # --- slope / FEM ---
     ("fem2d", "slope_strength_reduction"): "fem2d_slope_srm",
-    ("fdm2d", "embankment_settlement"): "fdm2d_foundation",
     # --- other analysis modules ---
-    ("wind_loads", "freestanding_wall_asce7_22"): "freestanding_wall",
     ("liquepy", "cpt_boulanger_idriss_2014"): "cpt_liquefaction",
     ("salib", "sobol_sensitivity"): "sobol_sample",
     ("pystrata", "equivalent_linear"): "eql_site_response",
-    ("pyseismosoil", "mkz_backbone"): "generate_curves",
     ("gstools", "fit_variogram"): "variogram",
     ("ags4", "read_and_validate"): "read_ags4",
     ("dxf_export", "export_cross_section"): "export_geometry_to_dxf",

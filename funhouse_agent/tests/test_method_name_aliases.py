@@ -37,12 +37,9 @@ ROUTING_CASES = [
     ("axial_pile", "beta_method", "axial_pile_capacity", None),
     ("downdrag", "fellenius_neutral_plane", "downdrag_analysis", None),
     ("fem2d", "slope_strength_reduction", "fem2d_slope_srm", None),
-    ("fdm2d", "embankment_settlement", "fdm2d_foundation", None),
-    ("wind_loads", "freestanding_wall_asce7_22", "freestanding_wall", None),
     ("liquepy", "cpt_boulanger_idriss_2014", "cpt_liquefaction", None),
     ("salib", "sobol_sensitivity", "sobol_sample", None),
     ("pystrata", "equivalent_linear", "eql_site_response", None),
-    ("pyseismosoil", "mkz_backbone", "generate_curves", None),
     ("gstools", "fit_variogram", "variogram", None),
     ("ags4", "read_and_validate", "read_ags4", None),
     ("dxf_export", "export_cross_section", "export_geometry_to_dxf", None),
@@ -97,15 +94,6 @@ def test_alias_end_to_end_drilled_shaft():
                     "N60": 0.0, "qu": 0.0, "RQD": 0.0}],
     })
     assert "error" not in r
-
-
-def test_wind_loads_alias_reaches_real_method():
-    """The alias must route past 'Unknown method' even if the target itself
-    has an unrelated param issue (separate adapter bug logged in WL-1)."""
-    r = call_agent("wind_loads", "freestanding_wall_asce7_22",
-                   {"V": 51.4, "z": 3.0, "B": 30.0, "s": 3.0,
-                    "exposure_category": "C"})
-    assert "Unknown method" not in str(r)
 
 
 def test_all_alias_targets_exist():

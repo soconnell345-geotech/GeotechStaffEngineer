@@ -101,17 +101,9 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.downdrag",
         "brief": "Pile downdrag (Fellenius neutral plane, UFC 3-220-20)",
     },
-    "wind_loads": {
-        "adapter": "funhouse_agent.adapters.wind_loads",
-        "brief": "ASCE 7-22 wind loads on freestanding walls and fences (Ch 29.3)",
-    },
     "soe": {
         "adapter": "funhouse_agent.adapters.soe",
         "brief": "Support of excavation (braced/cantilever walls, stability, anchors)",
-    },
-    "geolysis": {
-        "adapter": "funhouse_agent.adapters.geolysis",
-        "brief": "Soil classification (USCS/AASHTO) + SPT corrections + bearing capacity",
     },
     "dxf_export": {
         "adapter": "funhouse_agent.adapters.dxf_export",
@@ -120,10 +112,6 @@ MODULE_REGISTRY = {
     "calc_package": {
         "adapter": "funhouse_agent.adapters.calc_package",
         "brief": "Generate Mathcad-style calc packages (HTML/LaTeX/PDF) for 13 analysis modules",
-    },
-    "pyseismosoil": {
-        "adapter": "funhouse_agent.adapters.pyseismosoil_adapter",
-        "brief": "Nonlinear soil curve generation (MKZ/HH) and Vs profile site characterization",
     },
     "pystra": {
         "adapter": "funhouse_agent.adapters.pystra_adapter",
@@ -172,10 +160,6 @@ MODULE_REGISTRY = {
     "fem2d": {
         "adapter": "funhouse_agent.adapters.fem2d_adapter",
         "brief": "2D plane-strain FEM (gravity, foundation, slope SRM, excavation, seepage, consolidation, staged)",
-    },
-    "fdm2d": {
-        "adapter": "funhouse_agent.adapters.fdm2d_adapter",
-        "brief": "2D explicit Lagrangian FDM, FLAC-style (gravity, foundation)",
     },
     "gstools": {
         "adapter": "funhouse_agent.adapters.gstools_adapter",

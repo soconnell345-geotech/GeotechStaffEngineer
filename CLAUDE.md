@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-37 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + PySeismoSoil agent + swprocess agent + geolysis agent + pystra agent + pydiggs agent + subsurface characterization + wind loads (ASCE 7-22) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM with staged construction) + fdm2d (2D explicit Lagrangian FDM, FLAC-style) + DM7 equations + funhouse_agent (engine-agnostic agent with vision).
+32 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + pygef agent + hvsrpy agent + GSTools agent + AGS4 agent + SALib agent + swprocess agent + pystra agent + pydiggs agent + subsurface characterization + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM with staged construction) + DM7 equations + funhouse_agent (engine-agnostic agent with vision).
 
 ## Architecture Patterns
 
@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (57 modules = 36 analysis + 21 reference, + foundry harness; reference layer fully QC'd, all figure catalogs 100% page-accurate)
+## Module Inventory (53 modules = 32 analysis + 21 reference, + foundry harness; reference layer fully QC'd, all figure catalogs 100% page-accurate)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -51,18 +51,14 @@ Key conventions:
 | gstools_agent | 69 | Geostatistical kriging, variogram fitting, random fields |
 | ags4_agent | 39 | AGS4 geotechnical data format reader/validator |
 | salib_agent | 35 | Sobol & Morris sensitivity analysis |
-| pyseismosoil_agent | 41 | MKZ/HH nonlinear soil curve calibration + Vs profiles |
 | swprocess_agent | 30 | MASW surface wave dispersion analysis |
-| geolysis_agent | 65 | USCS/AASHTO soil classification + SPT corrections + bearing capacity |
 | pystra_agent | 43 | FORM/SORM/Monte Carlo structural reliability analysis |
 | pydiggs_agent | 31 | DIGGS 2.6 XML schema and dictionary validation |
 | subsurface_characterization | 145 | Subsurface data visualization (DIGGS parser w/ 20 test types, Plotly plots, trend stats) |
-| wind_loads | 62 | ASCE 7-22 wind loads on freestanding walls and fences (Ch 29.3) |
 | dxf_import | 97 | DXF CAD import for slope stability + FEM (discover layers, parse geometry, build SlopeGeometry/FEM inputs) |
 | dxf_export | 37 | DXF export for cross-section geometry (surface, boundaries, GWT, nails, annotations) |
 | pdf_import | 56 | PDF cross-section import (PyMuPDF vector extraction, LLM vision extraction, geometry conversion) |
 | fem2d | 271 | 2D plane-strain FEM (CST/Q4/beam, MC/HS, SRM, excavation, pore pressures, seepage, consolidation, staged construction) |
-| fdm2d | 81 | 2D explicit Lagrangian FDM (FLAC-style, quad zones, mixed discretization, MC, dynamic relaxation) |
 
 Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions + DM7 figure catalogs, 3529 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 + 25 + 31 + 5 = 479 tests)
 
@@ -123,7 +119,7 @@ Run: `pytest pdf_import/ -v`
 
 ## Funhouse Agent (Engine-Agnostic Geotechnical Agent)
 
-`funhouse_agent/` provides an engine-agnostic geotechnical agent with text + vision capabilities. Works with any AI backend satisfying the `GenAIEngine` protocol. Self-contained dispatch layer routes tool calls directly to 52 modules (~900+ methods) via internal adapters — no dependency on `foundry/` files. Includes 36 analysis module adapters + 16 geotech-references adapters (DM7 340+ equations, 7 GEC/micropile references with text retrieval, FEMA P-2192, NOAA frost, 4 UFC standards, the cross-reference text-search DB `reference_db`, and the figure-catalog search DB `figure_db` — which pairs with the `read_reference_figure` vision tool to find an engineering chart by meaning and read a value off it).
+`funhouse_agent/` provides an engine-agnostic geotechnical agent with text + vision capabilities. Works with any AI backend satisfying the `GenAIEngine` protocol. Self-contained dispatch layer routes tool calls directly to 48 modules (~890+ methods) via internal adapters — no dependency on `foundry/` files. Includes 32 analysis module adapters + 16 geotech-references adapters (DM7 340+ equations, 7 GEC/micropile references with text retrieval, FEMA P-2192, NOAA frost, 4 UFC standards, the cross-reference text-search DB `reference_db`, and the figure-catalog search DB `figure_db` — which pairs with the `read_reference_figure` vision tool to find an engineering chart by meaning and read a value off it).
 
 | File | Purpose |
 |------|---------|
@@ -136,7 +132,7 @@ Run: `pytest pdf_import/ -v`
 | `native_tools.py` | OpenAI tool schemas + dispatch for NativeToolEngine |
 | `vision_tools.py` | Vision tools: `analyze_image`, `analyze_pdf_page`, `read_reference_figure` (render a catalogued figure + read a value off it), `save_file` |
 | `notebook.py` | `NotebookChat` — ipywidgets chat interface for Jupyter/Databricks |
-| `adapters/` | 52 adapter modules (36 analysis + 16 reference) bridging flat JSON → module APIs |
+| `adapters/` | 48 adapter modules (32 analysis + 16 reference) bridging flat JSON → module APIs |
 | `tests/` | 106 tests (mock engines, no API key needed) |
 
 Usage:
@@ -181,7 +177,7 @@ through a single `consult_references` tool backed by a **reference-scoped sub-ag
 
 ## Module-Improvement Agent Team
 
-A standing, domain-organized agent team improves the 37 analysis modules over time, fed by the
+A standing, domain-organized agent team improves the 32 analysis modules over time, fed by the
 agent test-suite feedback and other tasks. Claude Code teammates are ephemeral, so the team's
 identity and memory live as **version-controlled files**:
 
@@ -238,7 +234,8 @@ decisions. See memory `feedback-reference-layer-autonomy`.
 - **Ergonomics:** semantic aliases for reference methods (`_reference_common.register_semantic_aliases`)
   + consult round-budget fix; **smart method resolution + analysis-method aliases** in `dispatch.py`
   (`_METHOD_ALIASES`, selector-value directives, fuzzy did-you-mean) driven by the agent-suite triage
-  (`module_work/module_feedback.json`); **`fdm2d` wall-clock guard** (no multi-minute solves).
+  (`module_work/module_feedback.json`). (A `fdm2d` wall-clock guard was added here too; `fdm2d`
+  has since been removed in the Phase 1 consolidation — see `CONSOLIDATION_CHANGES.md`.)
 
 **Open backlog (handed off, not done):** ~23 per-module param-name/value bugs (`module_feedback.json`);
 module-*selection* mis-routing (e.g. Rankine guessed on the wrong module) and coverage gaps

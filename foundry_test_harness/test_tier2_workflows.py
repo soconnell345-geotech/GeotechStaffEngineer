@@ -20,7 +20,6 @@ from foundry.drilled_shaft_agent_foundry import drilled_shaft_agent
 from foundry.seismic_geotech_agent_foundry import seismic_geotech_agent
 from foundry.retaining_walls_agent_foundry import retaining_walls_agent
 from foundry.slope_stability_agent_foundry import slope_stability_agent
-from foundry.geolysis_agent_foundry import geolysis_agent
 from foundry.ground_improvement_agent_foundry import ground_improvement_agent
 from foundry.pile_group_agent_foundry import pile_group_agent
 from foundry.wave_equation_agent_foundry import wave_equation_agent
@@ -35,40 +34,16 @@ H = FoundryAgentHarness()
 class TestFoundationDesignWorkflow:
     """
     Typical workflow:
-    1. Classify soil -> understand soil type
-    2. Correct SPT -> get design N-value
-    3. Compute bearing capacity -> check adequacy
-    4. Check settlement -> verify serviceability
+    1. Compute bearing capacity -> check adequacy
+    2. Check settlement -> verify serviceability
     """
 
     def test_sand_foundation_workflow(self):
         """Complete shallow foundation design on sand.
 
-        Workflow: classify_uscs -> correct_spt -> bearing_capacity -> settlement
+        Workflow: bearing_capacity -> settlement
         """
-        # Step 1: Classify the soil
-        r_class = H.call(geolysis_agent, "classify_uscs", {
-            "liquid_limit": 0.0,
-            "plastic_limit": 0.0,
-            "fines": 5.0,
-            "sand": 75.0,
-            "d_10": 0.15,
-            "d_30": 0.5,
-            "d_60": 2.0,
-        })
-        assert "S" in r_class["symbol"]  # Should be some kind of sand
-
-        # Step 2: Correct SPT N-value
-        r_spt = H.call(geolysis_agent, "correct_spt", {
-            "recorded_spt_n_value": 20,
-            "eop": 100.0,
-            "hammer_type": "safety",
-            "opc_method": "liao",
-        })
-        n1_60 = r_spt["n1_60"]
-        assert n1_60 > 0
-
-        # Step 3: Compute bearing capacity
+        # Step 1: Compute bearing capacity
         r_bc = H.call(bearing_capacity_agent, "bearing_capacity_analysis", {
             "width": 2.0,
             "length": 2.0,
@@ -81,7 +56,7 @@ class TestFoundationDesignWorkflow:
         q_allowable = r_bc["q_allowable_kPa"]
         assert q_allowable > 50
 
-        # Step 4: Check settlement using q_allowable as applied load
+        # Step 2: Check settlement using q_allowable as applied load
         r_sett = H.call(settlement_agent, "elastic_settlement", {
             "q_net": q_allowable,
             "B": 2.0,
@@ -94,17 +69,9 @@ class TestFoundationDesignWorkflow:
     def test_clay_foundation_workflow(self):
         """Foundation design on clay: undrained bearing capacity + consolidation.
 
-        Workflow: classify -> undrained BC (phi=0) -> consolidation settlement
+        Workflow: undrained BC (phi=0) -> consolidation settlement
         """
-        # Step 1: Classify clay
-        r_class = H.call(geolysis_agent, "classify_uscs", {
-            "liquid_limit": 50.0,
-            "plastic_limit": 25.0,
-            "fines": 85.0,
-        })
-        assert "C" in r_class["symbol"]  # Should be CL or CH
-
-        # Step 2: Undrained bearing capacity
+        # Step 1: Undrained bearing capacity
         r_bc = H.call(bearing_capacity_agent, "bearing_capacity_analysis", {
             "width": 3.0,
             "length": 3.0,
@@ -117,7 +84,7 @@ class TestFoundationDesignWorkflow:
         q_allow = r_bc["q_allowable_kPa"]
         assert q_allow > 50
 
-        # Step 3: Consolidation settlement
+        # Step 2: Consolidation settlement
         r_sett = H.call(settlement_agent, "consolidation_settlement", {
             "layers": [
                 {
@@ -151,21 +118,6 @@ class TestFoundationDesignWorkflow:
             "nu": 0.3,
         })
         assert r_sett["immediate_settlement_mm"] > 0
-
-    def test_spt_to_bearing_capacity(self):
-        """SPT N -> corrected N1_60 -> allowable bearing from SPT."""
-        r_spt = H.call(geolysis_agent, "correct_spt", {
-            "recorded_spt_n_value": 30,
-            "eop": 150.0,
-            "opc_method": "liao",
-        })
-
-        r_bc = H.call(geolysis_agent, "allowable_bc_spt", {
-            "corrected_spt_n_value": r_spt["n1_60"],
-            "width": 2.5,
-            "depth": 1.5,
-        })
-        assert r_bc["bearing_capacity_kpa"] > 0
 
 
 # ============================================================================

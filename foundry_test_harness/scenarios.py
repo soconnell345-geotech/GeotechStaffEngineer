@@ -322,54 +322,6 @@ SIMPLE_SLOPE = {
 
 
 # ============================================================================
-# SPT / Classification Scenarios
-# ============================================================================
-
-SPT_CORRECTION = {
-    "description": "SPT energy + overburden correction",
-    "params": {
-        "recorded_spt_n_value": 25,
-        "eop": 100.0,
-        "energy_percentage": 0.6,
-        "hammer_type": "safety",
-        "sampler_type": "standard",
-        "opc_method": "liao",
-    },
-}
-
-USCS_CL = {
-    "description": "Fine-grained soil — CL classification",
-    "params": {
-        "liquid_limit": 45.0,
-        "plastic_limit": 25.0,
-        "fines": 60.0,
-    },
-}
-
-USCS_SW = {
-    "description": "Well-graded sand — SW classification",
-    "params": {
-        "liquid_limit": 0.0,
-        "plastic_limit": 0.0,
-        "fines": 3.0,
-        "sand": 80.0,
-        "d_10": 0.1,
-        "d_30": 0.8,
-        "d_60": 3.0,
-    },
-}
-
-AASHTO_A7 = {
-    "description": "AASHTO A-7-6 classification",
-    "params": {
-        "liquid_limit": 45.0,
-        "plastic_limit": 25.0,
-        "fines": 60.0,
-    },
-}
-
-
-# ============================================================================
 # Ground Improvement Scenarios
 # ============================================================================
 
@@ -504,28 +456,3 @@ DOWNDRAG_BASIC = {
 }
 
 
-# ============================================================================
-# Cross-check: same problem for bearing_capacity vs geolysis
-# ============================================================================
-
-CROSS_CHECK_BEARING = {
-    "description": "Same bearing capacity problem for cross-agent comparison",
-    "bearing_capacity_params": {
-        "width": 2.0,
-        "length": 2.0,
-        "depth": 1.5,
-        "shape": "square",
-        "cohesion": 0.0,
-        "friction_angle": 30.0,
-        "unit_weight": 18.0,
-    },
-    "geolysis_params": {
-        "friction_angle": 30.0,
-        "cohesion": 0.0,
-        "moist_unit_wgt": 18.0,
-        "depth": 1.5,
-        "width": 2.0,
-        "shape": "square",
-        "ubc_method": "vesic",
-    },
-}

@@ -1,8 +1,8 @@
 """Tests for Phase 1 + Phase 2 funhouse_agent adapters.
 
-Covers 12 adapters:
+Covers 11 adapters:
 - opensees, pystrata, liquepy, seismic_signals (has_* guards, raise ValueError)
-- pyseismosoil, pystra, salib, pygef, ags4, pydiggs (has_* guards, return error dict)
+- pystra, salib, pygef, ags4, pydiggs (has_* guards, return error dict)
 - dxf_import, pdf_import (no guard, external deps mocked)
 
 Each adapter has:
@@ -281,82 +281,6 @@ class TestSeismicSignalsCalls:
                 "accel_history": [0.1, 0.2, -0.1], "dt": 0.01,
             })
             assert "error" in result
-
-
-# ============================================================================
-# 5. pyseismosoil_adapter — 2 methods, has_pyseismosoil guard (returns error dict)
-# ============================================================================
-
-class TestPyseismosoilMethodInfo:
-    def test_keys_match(self):
-        from funhouse_agent.adapters.pyseismosoil_adapter import METHOD_INFO, METHOD_REGISTRY
-        assert_method_info_complete(METHOD_INFO, METHOD_REGISTRY)
-
-    def test_expected_methods(self):
-        from funhouse_agent.adapters.pyseismosoil_adapter import METHOD_INFO
-        assert set(METHOD_INFO.keys()) == {
-            "generate_curves", "analyze_vs_profile",
-        }
-
-
-class TestPyseismosoilDispatch:
-    def test_list_methods(self):
-        from funhouse_agent.dispatch import list_methods
-        result = list_methods("pyseismosoil")
-        total = sum(len(v) for v in result.values())
-        assert total == 2
-
-    def test_describe_method(self):
-        from funhouse_agent.dispatch import describe_method
-        info = describe_method("pyseismosoil", "generate_curves")
-        assert "parameters" in info
-        assert "model" in info["parameters"]
-        assert "params" in info["parameters"]
-
-
-class TestPyseismosoilCalls:
-    def test_generate_curves_not_installed(self):
-        with patch("pyseismosoil_agent.has_pyseismosoil", return_value=False):
-            from funhouse_agent.dispatch import call_agent
-            result = call_agent("pyseismosoil", "generate_curves", {
-                "model": "MKZ",
-                "params": {"gamma_ref": 0.05, "beta": 1.0, "s": 0.919, "Gmax": 50000},
-            })
-            assert "error" in result
-            assert "not installed" in result["error"].lower()
-
-    def test_analyze_vs_profile_not_installed(self):
-        with patch("pyseismosoil_agent.has_pyseismosoil", return_value=False):
-            from funhouse_agent.dispatch import call_agent
-            result = call_agent("pyseismosoil", "analyze_vs_profile", {
-                "thicknesses": [5, 10, 0],
-                "vs_values": [150, 300, 760],
-            })
-            assert "error" in result
-            assert "not installed" in result["error"].lower()
-
-    def test_generate_curves_actual(self):
-        """Test actual call — succeeds if PySeismoSoil installed."""
-        from funhouse_agent.dispatch import call_agent
-        result = call_agent("pyseismosoil", "generate_curves", {
-            "model": "MKZ",
-            "params": {"gamma_ref": 0.05, "beta": 1.0, "s": 0.919, "Gmax": 50000},
-        })
-        if "error" not in result:
-            assert result["model"] == "MKZ"
-            assert result["n_points"] == 50
-            assert len(result["G_Gmax"]) == 50
-
-    def test_analyze_vs_profile_actual(self):
-        """Test actual call — succeeds if PySeismoSoil installed."""
-        from funhouse_agent.dispatch import call_agent
-        result = call_agent("pyseismosoil", "analyze_vs_profile", {
-            "thicknesses": [5, 10, 0],
-            "vs_values": [150, 300, 760],
-        })
-        if "error" not in result:
-            assert result["n_layers"] == 2
-            assert result["vs30"] > 0
 
 
 # ============================================================================
@@ -880,11 +804,11 @@ class TestPdfImportCalls:
 # ============================================================================
 
 class TestAllAdaptersRegistered:
-    """Verify all 12 adapters are reachable via dispatch."""
+    """Verify all 11 adapters are reachable via dispatch."""
 
     @pytest.mark.parametrize("agent_name", [
         "opensees", "pystrata", "liquepy", "seismic_signals",
-        "pyseismosoil", "pystra", "salib", "pygef",
+        "pystra", "salib", "pygef",
         "ags4", "pydiggs", "dxf_import", "pdf_import",
     ])
     def test_agent_in_registry(self, agent_name):
