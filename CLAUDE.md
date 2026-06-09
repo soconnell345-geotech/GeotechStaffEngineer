@@ -36,7 +36,7 @@ Key conventions:
 | pile_group | 72 | Rigid cap groups (6-DOF, Converse-Labarre) |
 | wave_equation | 45 | Smith 1-D wave equation (bearing graph, drivability) |
 | drilled_shaft | 48 | GEC-10 alpha/beta/rock socket |
-| seismic_geotech | 71 | Site class, M-O pressures, liquefaction |
+| seismic_geotech | 71 | Site class, M-O pressures, SPT liquefaction (NCEER/Youd-2001) |
 | retaining_walls | 70 | Cantilever + MSE walls (GEC-11) |
 | ground_improvement | 43 | Aggregate piers, wick drains, surcharge, vibro (GEC-13) |
 | slope_stability | 169+17skip | Fellenius/Bishop/Spencer, circular+noncircular, grid/random search, contact stresses, Duncan verification |
@@ -45,7 +45,7 @@ Key conventions:
 | opensees_agent | 106 | PM4Sand cyclic DSS, 1D site response |
 | pystrata_agent | 60 | 1D EQL site response (SHAKE-type, Darendeli/Menq/custom) |
 | seismic_signals | 74 | Earthquake signal processing (eqsig/pyrotd) |
-| liquepy_agent | 59 | CPT-based liquefaction triggering (B&I 2014, LPI, LSN, LDI) |
+| liquepy_agent | 59 | Boulanger & Idriss (2014) liquefaction triggering — CPT (LPI/LSN/LDI) + SPT |
 | pygef_agent | 45 | CPT/borehole file parser (GEF/BRO-XML) |
 | hvsrpy_agent | 37 | HVSR site characterization from ambient noise |
 | gstools_agent | 69 | Geostatistical kriging, variogram fitting, random fields |
@@ -138,6 +138,36 @@ chat.display()
 ```
 
 Run: `pytest funhouse_agent/ -v`
+
+### Unified liquefaction tool (`liquefaction`)
+
+Liquefaction triggering is consolidated into ONE discoverable agent-layer tool,
+`liquefaction` (adapter `adapters/liquefaction_adapter.py`, method
+`liquefaction_analysis`). It auto-routes by **input type** and **method** (no
+cross-module imports — the routing lives at the agent layer, which is allowed to
+call multiple modules):
+
+- **CPT** (`q_c`/`f_s` present) → `liquepy` Boulanger & Idriss (2014) CPT
+  (`liquepy_agent.analyze_cpt_liquefaction`), with LPI / LSN / LDI.
+- **SPT** (`N160` present), `method="bi2014"` (**DEFAULT**) → `liquepy` B&I-2014
+  SPT (`liquepy_agent.analyze_spt_liquefaction`).
+- **SPT**, `method="nceer2001"` → legacy NCEER / Youd et al. (2001) simplified
+  procedure (`seismic_geotech.evaluate_liquefaction`), for code-compliance work.
+
+B&I-2014 is the default for both SPT and CPT. The per-module functions and the
+direct `liquepy`/`seismic_geotech` adapters remain intact and callable.
+
+**liquepy SPT note:** `liquepy` ships a packaged B&I-2014 CPT triggering object
+(`run_bi2014`) but **no packaged SPT triggering object** — its only SPT entry
+points are *field correlations* (Vs/Dr/G0 from N). It DOES expose every B&I-2014
+SPT *building block* as tested module-level functions
+(`calc_crr_m7p5_from_n1_60cs`, `calc_rd`, `calc_csr`, `calc_k_sigma_w_n1_60cs`),
+so `liquepy_agent.analyze_spt_liquefaction` composes those into a full SPT
+triggering procedure (adding only the B&I SPT fines correction Eq 2.23 and the
+SPT MSF, which liquepy lacks for SPT). **seismic_geotech citation fix:** its
+SPT procedure is NCEER / Youd-2001 (NCEER CRR fit, NCEER MSF, Youd fines, Liao &
+Whitman rd) — the docstrings that previously cited "Boulanger & Idriss (2014)"
+were corrected; the numerical code was unchanged.
 
 ### Reference consult-agent (`reference_mode`)
 

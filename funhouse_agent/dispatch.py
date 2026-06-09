@@ -197,8 +197,19 @@ _METHOD_ALIASES = {
     ("downdrag", "fellenius_neutral_plane"): "downdrag_analysis",
     # --- slope / FEM ---
     ("fem2d", "slope_strength_reduction"): "fem2d_slope_srm",
+    # --- unified liquefaction tool ---
+    # The single liquefaction method auto-routes by input type + method; map the
+    # names the agent commonly guesses onto it (CPT/SPT, B&I-2014, NCEER/Youd).
+    ("liquefaction", "liquefaction_triggering"): "liquefaction_analysis",
+    ("liquefaction", "evaluate_liquefaction"): "liquefaction_analysis",
+    ("liquefaction", "cpt_liquefaction"): "liquefaction_analysis",
+    ("liquefaction", "spt_liquefaction"): "liquefaction_analysis",
+    ("liquefaction", "boulanger_idriss_2014"): "liquefaction_analysis",
+    ("liquefaction", "bi2014"): ("liquefaction_analysis", {"method": "bi2014"}),
+    ("liquefaction", "nceer2001"): ("liquefaction_analysis", {"method": "nceer2001"}),
     # --- other analysis modules ---
     ("liquepy", "cpt_boulanger_idriss_2014"): "cpt_liquefaction",
+    ("liquepy", "spt_boulanger_idriss_2014"): "spt_liquefaction",
     ("salib", "sobol_sensitivity"): "sobol_sample",
     ("pystrata", "equivalent_linear"): "eql_site_response",
     ("gstools", "fit_variogram"): "variogram",

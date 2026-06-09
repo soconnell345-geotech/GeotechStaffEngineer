@@ -63,7 +63,11 @@ MODULE_REGISTRY = {
     },
     "seismic_geotech": {
         "adapter": "funhouse_agent.adapters.seismic_geotech",
-        "brief": "Seismic evaluation (site class, M-O pressure, liquefaction)",
+        "brief": "Seismic evaluation (site class, M-O pressure). For liquefaction triggering use the unified 'liquefaction' module.",
+    },
+    "liquefaction": {
+        "adapter": "funhouse_agent.adapters.liquefaction_adapter",
+        "brief": "UNIFIED liquefaction triggering — the single liquefaction tool. Auto-routes by input type: CPT (q_c/f_s) -> Boulanger & Idriss 2014 (LPI/LSN/LDI); SPT (N160) -> B&I-2014 default, or NCEER/Youd-2001 via method='nceer2001'.",
     },
     "retaining_walls": {
         "adapter": "funhouse_agent.adapters.retaining_walls",
@@ -151,7 +155,7 @@ MODULE_REGISTRY = {
     },
     "liquepy": {
         "adapter": "funhouse_agent.adapters.liquepy_adapter",
-        "brief": "CPT-based liquefaction triggering and field correlations (Boulanger & Idriss 2014)",
+        "brief": "liquepy CPT/SPT B&I-2014 triggering + CPT field correlations (Vs/Dr/su/k). For routine liquefaction use the unified 'liquefaction' module; use liquepy directly for CPT post-triggering indices (LPI/LSN/LDI) or field correlations.",
     },
     "seismic_signals": {
         "adapter": "funhouse_agent.adapters.seismic_signals_adapter",

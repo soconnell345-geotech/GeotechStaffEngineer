@@ -440,3 +440,45 @@ class TestResidualStrength:
     def test_unknown_method_raises(self):
         with pytest.raises(ValueError):
             post_liquefaction_strength(10, method="unknown")
+
+
+# ================================================================
+# Citation correctness — the SPT triggering procedure is NCEER /
+# Youd-2001, NOT Boulanger & Idriss (2014). (Consolidation #5.)
+# ================================================================
+class TestLiquefactionCitation:
+    """Guard against the SPT procedure being mis-attributed to B&I-2014.
+
+    The CODE is the NCEER/Youd-2001 simplified procedure; only the docstrings
+    previously cited "Boulanger & Idriss (2014)". These tests lock the fix.
+    """
+
+    def test_module_docstring_not_attributed_to_bi2014(self):
+        import seismic_geotech.liquefaction as liq
+        doc = liq.__doc__ or ""
+        low = doc.lower()
+        # Must cite NCEER / Youd-2001 as the implemented procedure.
+        assert "youd" in low
+        assert "2001" in low
+        assert "nceer" in low
+        # Must explicitly disclaim B&I-2014 (the old, incorrect attribution).
+        # The phrase may appear, but only as a NEGATION ("is NOT the B&I-2014").
+        assert "not the boulanger" in low or "not boulanger" in low
+        # The old top-level reference line listing B&I-2014 as a reference of
+        # this module must be gone.
+        assert "boulanger & idriss (2014), cpt/spt-based" not in low
+
+    def test_package_init_docstring_corrected(self):
+        import seismic_geotech as sg
+        doc = sg.__doc__ or ""
+        assert "Youd" in doc
+        # The package init must not list B&I-2014 as a triggering reference.
+        assert "Boulanger & Idriss (2014)" not in doc
+
+    def test_crr_curve_is_nceer_youd2001(self):
+        # Anchor the NCEER/Youd-2001 CRR fit (Youd 2001 Eq 2). At (N1)60cs=20,
+        # the NCEER curve gives CRR_7.5 ~ 0.22 (distinct from B&I-2014 ~ 0.206).
+        crr = CRR_from_N160cs(20.0)
+        assert crr == pytest.approx(0.22, abs=0.02)
+        # Too-dense cap at >= 30.
+        assert CRR_from_N160cs(30.0) == 2.0

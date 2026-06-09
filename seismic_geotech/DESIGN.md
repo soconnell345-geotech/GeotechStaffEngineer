@@ -7,7 +7,14 @@ liquefaction triggering (Youd et al. 2001), and residual strength estimation.
 ## References
 - ASCE 7-22 — site classification (Vs30, N-bar, su-bar)
 - Mononobe-Okabe (1929) — seismic active/passive earth pressure
-- Youd et al. (2001) — SPT-based liquefaction triggering (NCEER workshop)
+- **Youd et al. (2001) — SPT-based liquefaction triggering (NCEER/NSF workshop;
+  the updated Seed-Idriss simplified procedure).** The triggering procedure in
+  `liquefaction.py` is NCEER / Youd-2001 (NCEER CRR fit, NCEER MSF, Youd fines
+  correction, Liao & Whitman rd) — it is NOT Boulanger & Idriss (2014). For
+  B&I-2014 triggering use `liquepy_agent`. The unified agent-layer liquefaction
+  tool defaults to B&I-2014 and exposes this NCEER-2001 procedure behind
+  `method="nceer2001"`.
+- Liao & Whitman (1986) — rd stress-reduction factor
 - Seed & Harder (1990), Idriss & Boulanger (2008) — residual strength
 
 ## Files

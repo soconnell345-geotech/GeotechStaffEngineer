@@ -291,3 +291,110 @@ Repo venv (`.venv/Scripts/python.exe -m pytest`), worktree root.
 - The known pre-existing failure in
   `seismic_geotech/.../TestMononobeOkabe::test_KPE_zero_kh_battered_equals_coulomb`
   is on the branch base and was NOT run here (not in the targeted set).
+
+## Task (#5) — Unified liquefaction tool (B&I-2014 default, NCEER-2001 behind flag) + fix seismic_geotech citation
+
+A BUILD task: consolidate liquefaction triggering into ONE discoverable
+agent-layer tool, default to Boulanger & Idriss (2014) for both SPT and CPT, keep
+the legacy NCEER/Youd-2001 SPT procedure behind a method flag, and fix the
+mis-attributed citation in `seismic_geotech`. No analysis-module physics was
+changed; the unification is at the agent/tool layer (analysis modules never
+import each other — only `geotech_common` is exempt).
+
+### Design decisions (locked by owner)
+- **B&I-2014 is the DEFAULT** method for both SPT and CPT.
+- Legacy **NCEER / Youd et al. (2001) SPT** procedure stays available behind
+  `method="nceer2001"` (for code-compliance work that still cites it).
+- Fix the `seismic_geotech` citation regardless.
+- Do NOT re-implement B&I-2014 natively — leverage `liquepy`'s tested code. Keep
+  existing module-level functions working (backward compatible); ADD the unified
+  layer on top.
+
+### Key finding — liquepy SPT B&I-2014 availability
+`liquepy` ships a packaged B&I-2014 **CPT** triggering object (`trigger.run_bi2014`,
+`BoulangerIdriss2014`/`BoulangerIdriss2014CPT`/`BoulangerIdriss2014SoilProfile` —
+all consume CPT `q_c`/`f_s`/`u_2`) but **NO packaged SPT triggering object**. Its
+only SPT entry points are *field correlations* (Vs/Dr/G0 from `n_1_60`, in
+`liquepy.field.correlations`), not triggering. However, `liquepy` DOES expose every
+B&I-2014 SPT **building block** as tested module-level functions in
+`liquepy.trigger.boulanger_and_idriss_2014`:
+`calc_crr_m7p5_from_n1_60cs`, `calc_rd`, `calc_csr`, `calc_k_sigma_w_n1_60cs`
+(verified empirically: CRR_M7.5 = 0.061/0.156/0.290/0.485 at (N1)60cs =
+0/15/25/30 — the published B&I-2014 SPT curve). So SPT B&I-2014 **is** achievable
+via liquepy by composing those tested blocks — which is what was done. The only
+SPT pieces liquepy lacks (the SPT fines correction Δ(N1)60 Eq 2.23, and the SPT
+form of MSF) were added in `liquepy_agent`, on top of liquepy's curve fits.
+
+### Files added
+- **`liquepy_agent/spt_liquefaction.py`** — `analyze_spt_liquefaction()`
+  (per-layer B&I-2014 SPT triggering: FoS = CRR_M7.5·MSF·K_sigma / CSR, built from
+  liquepy's tested blocks) + `bi2014_spt_fines_correction()` (Eq 2.23) +
+  `bi2014_spt_msf()` (SPT MSF, returns exactly 1.0 at M7.5 per liquepy convention).
+- **`funhouse_agent/adapters/liquefaction_adapter.py`** — the unified router
+  (module `liquefaction`, single method `liquefaction_analysis`). Detects input
+  type (CPT if `q_c`/`f_s`; SPT if `N160`; `input_type=` override for
+  both/neither), normalizes the method (B&I aliases → `bi2014`; NCEER/Youd
+  aliases → `nceer2001`), then routes: CPT→liquepy B&I CPT (LPI/LSN/LDI);
+  SPT+bi2014→liquepy B&I SPT; SPT+nceer2001→`seismic_geotech.evaluate_liquefaction`.
+  Rejects `nceer2001` for CPT and ambiguous/no-data input with clear errors.
+- **`liquepy_agent/tests/test_spt_liquefaction.py`** — 24 tests (fines/MSF
+  helpers, result dataclass, full SPT triggering vs published B&I curve + expected
+  behavior). liquepy-dependent tests skip when liquepy is absent.
+- **`funhouse_agent/tests/test_liquefaction_router.py`** — 28 tests (metadata +
+  discoverability, input-type detection, method normalization, SPT/CPT routing,
+  consistency with the underlying module outputs, error paths, alias routing).
+
+### Files edited
+- **`liquepy_agent/results.py`** — added `SPTLiquefactionResult` dataclass
+  (`summary`/`layer_results`/`to_dict`); module docstring updated to three result
+  types.
+- **`liquepy_agent/__init__.py`** — export `analyze_spt_liquefaction`,
+  `bi2014_spt_fines_correction`, `bi2014_spt_msf`, `SPTLiquefactionResult`;
+  docstring reframed as "B&I-2014 (CPT + SPT)".
+- **`seismic_geotech/liquefaction.py`** — **citation fix only** (no numeric
+  change): module docstring now attributes the procedure to NCEER / Youd-2001
+  (NCEER CRR fit, NCEER MSF, Youd fines, Liao & Whitman rd), explicitly states it
+  is NOT B&I-2014, and points to `liquepy_agent` for B&I-2014.
+- **`seismic_geotech/__init__.py`** — package docstring corrected (dropped the
+  "Boulanger & Idriss (2014)" reference line; liquefaction listed as NCEER/Youd
+  SPT).
+- **`seismic_geotech/DESIGN.md`** — References section strengthened to state the
+  NCEER/Youd-2001 attribution and that it is not B&I-2014.
+- **`seismic_geotech/tests/test_seismic_geotech.py`** — added
+  `TestLiquefactionCitation` (3 tests) locking the citation fix + the NCEER CRR
+  fit value.
+- **`funhouse_agent/adapters/liquepy_adapter.py`** — added a thin
+  `spt_liquefaction` method (mirrors `cpt_liquefaction`) → 3 methods now.
+- **`funhouse_agent/adapters/__init__.py`** — registered the new `liquefaction`
+  module in `MODULE_REGISTRY`; updated the `liquepy` and `seismic_geotech` briefs
+  to point at the unified tool as the discoverable one. (Auto-flows into
+  `list_agents`, the system-prompt catalog, `ANALYSIS_MODULES`, and `call_agent`
+  — `dispatch.py`/`system_prompt.py`/`native_tools.py` derive everything from the
+  registry, so no per-module schema edits were needed.)
+- **`funhouse_agent/dispatch.py`** — added curated `_METHOD_ALIASES` for the
+  `liquefaction` module (`evaluate_liquefaction`/`cpt_liquefaction`/`spt_liquefaction`/
+  `boulanger_idriss_2014`/`liquefaction_triggering` → `liquefaction_analysis`;
+  `bi2014`/`nceer2001` guesses inject the method flag) and a
+  `liquepy spt_boulanger_idriss_2014` → `spt_liquefaction` alias.
+- **`README.md`**, **`CLAUDE.md`** — describe the unified liquefaction capability
+  and the liquepy-SPT finding; module-inventory briefs updated.
+
+### Note on the seismic_geotech adapter
+`funhouse_agent/adapters/seismic_geotech.py` has a PRE-EXISTING signature mismatch
+in its `csr_crr_check` / `site_classification` helpers (calls e.g.
+`stress_reduction_rd(z, M)` / `compute_vs30` that don't match the current module
+signatures). This is unrelated to #5 and was left untouched. The unified router
+does NOT use those helpers — for `method="nceer2001"` it calls
+`seismic_geotech.liquefaction.evaluate_liquefaction` directly (clean, matching
+signature, exercised by its own tests).
+
+### Test results (#5)
+Repo venv (`.venv/Scripts/python.exe -m pytest`), worktree root.
+- New tests: `liquepy_agent/tests/test_spt_liquefaction.py`,
+  `seismic_geotech/.../TestLiquefactionCitation`,
+  `funhouse_agent/tests/test_liquefaction_router.py` → all green (liquepy-dependent
+  tests skip when liquepy absent; liquepy IS installed in the repo venv, so they ran).
+- Affected suites: `seismic_geotech liquepy_agent funhouse_agent` → see the
+  commit-time run below. The known pre-existing
+  `TestMononobeOkabe::test_KPE_zero_kh_battered_equals_coulomb` failure is the only
+  red and is NOT from this work.

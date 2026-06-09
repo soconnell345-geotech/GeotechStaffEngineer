@@ -1,15 +1,22 @@
 """
-Simplified liquefaction triggering evaluation.
+Simplified SPT-based liquefaction triggering evaluation.
 
-Implements the Seed & Idriss (1971) simplified procedure with
-updates from Youd et al. (2001) NCEER/NSF workshop.
+Implements the NCEER / Youd et al. (2001) SPT-based simplified procedure
+(the updated Seed-Idriss simplified procedure from the 1996/1998 NCEER/NSF
+workshops): NCEER CRR fit, NCEER MSF, Youd et al. fines correction, and the
+Liao & Whitman (1986) rd stress-reduction factor.
+
+This is NOT the Boulanger & Idriss (2014) procedure. For B&I-2014 triggering
+(the default in the unified agent layer) use ``liquepy_agent`` — CPT B&I-2014
+via ``analyze_cpt_liquefaction`` and SPT B&I-2014 via ``analyze_spt_liquefaction``.
+This module is retained for code-compliance work that still cites NCEER-2001.
 
 All units are SI: kPa, m, g (acceleration).
 
 References:
     Seed & Idriss (1971), ASCE JSMFED
-    Youd et al. (2001), ASCE JGGE, Vol 127, No 10
-    Boulanger & Idriss (2014), CPT/SPT-based liquefaction triggering
+    Youd et al. (2001), ASCE JGGE, Vol 127, No 10 (NCEER/NSF workshop summary)
+    Liao & Whitman (1986) — rd stress-reduction factor
 """
 
 import math

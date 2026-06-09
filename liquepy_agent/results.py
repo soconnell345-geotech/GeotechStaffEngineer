@@ -1,8 +1,9 @@
 """
 Result dataclasses for liquepy agent.
 
-Two result types:
-- CPTLiquefactionResult: Full triggering + post-triggering analysis
+Three result types:
+- CPTLiquefactionResult: Full CPT triggering + post-triggering analysis
+- SPTLiquefactionResult: SPT-based B&I-2014 triggering (per-layer FoS, CRR/CSR)
 - FieldCorrelationsResult: Vs, Dr, su/σv', permeability from CPT
 """
 
@@ -202,6 +203,114 @@ class CPTLiquefactionResult:
         if show:
             plt.show()
         return axes
+
+
+@dataclass
+class SPTLiquefactionResult:
+    """Result of SPT-based liquefaction triggering (Boulanger & Idriss 2014).
+
+    Per-layer triggering evaluation using the B&I-2014 SPT procedure assembled
+    from liquepy's tested building blocks (CRR from (N1)60cs, rd, K_sigma, MSF).
+
+    Attributes — Scalars
+    --------------------
+    n_layers : int
+        Number of evaluation layers.
+    gwt_depth_m : float
+        Groundwater table depth (m below surface).
+    amax_g : float
+        Peak ground acceleration (g).
+    m_w : float
+        Moment magnitude.
+    min_fos : float
+        Minimum factor of safety against liquefaction.
+    n_liquefiable : int
+        Number of layers with FoS < 1.0.
+
+    Attributes — Arrays
+    -------------------
+    depth : ndarray
+        Layer mid-depth (m).
+    n1_60 : ndarray
+        Corrected SPT blow count (N1)60.
+    n1_60cs : ndarray
+        Clean-sand equivalent (N1)60cs.
+    fines_content : ndarray
+        Fines content (%).
+    sigma_v : ndarray
+        Total vertical stress (kPa).
+    sigma_veff : ndarray
+        Effective vertical stress (kPa).
+    csr : ndarray
+        Cyclic stress ratio (B&I-2014).
+    crr : ndarray
+        Cyclic resistance ratio (magnitude- and overburden-corrected).
+    factor_of_safety : ndarray
+        Factor of safety against liquefaction (CRR/CSR).
+    liquefiable : ndarray
+        Boolean per layer (FoS < 1.0).
+    """
+
+    # Scalars
+    n_layers: int = 0
+    gwt_depth_m: float = 0.0
+    amax_g: float = 0.0
+    m_w: float = 7.5
+    min_fos: float = 0.0
+    n_liquefiable: int = 0
+
+    # Arrays
+    depth: np.ndarray = field(default_factory=lambda: np.array([]))
+    n1_60: np.ndarray = field(default_factory=lambda: np.array([]))
+    n1_60cs: np.ndarray = field(default_factory=lambda: np.array([]))
+    fines_content: np.ndarray = field(default_factory=lambda: np.array([]))
+    sigma_v: np.ndarray = field(default_factory=lambda: np.array([]))
+    sigma_veff: np.ndarray = field(default_factory=lambda: np.array([]))
+    csr: np.ndarray = field(default_factory=lambda: np.array([]))
+    crr: np.ndarray = field(default_factory=lambda: np.array([]))
+    factor_of_safety: np.ndarray = field(default_factory=lambda: np.array([]))
+    liquefiable: np.ndarray = field(default_factory=lambda: np.array([], dtype=bool))
+
+    def summary(self) -> str:
+        """One-line summary of results."""
+        return (
+            f"SPT Liquefaction (B&I 2014): {self.n_layers} layers, "
+            f"amax={self.amax_g:.2f}g, Mw={self.m_w:.1f}, "
+            f"min FoS={self.min_fos:.2f}, "
+            f"{self.n_liquefiable} liquefiable"
+        )
+
+    def layer_results(self) -> list:
+        """Per-layer results as a list of JSON-safe dicts."""
+        out = []
+        for i in range(self.n_layers):
+            out.append({
+                "depth_m": round(float(self.depth[i]), 2),
+                "N1_60": round(float(self.n1_60[i]), 1),
+                "N1_60cs": round(float(self.n1_60cs[i]), 1),
+                "FC_pct": round(float(self.fines_content[i]), 1),
+                "sigma_v_kPa": round(float(self.sigma_v[i]), 1),
+                "sigma_v_eff_kPa": round(float(self.sigma_veff[i]), 1),
+                "CSR": round(float(self.csr[i]), 4),
+                "CRR": round(float(self.crr[i]), 4),
+                "FOS_liq": round(float(self.factor_of_safety[i]), 3),
+                "liquefiable": bool(self.liquefiable[i]),
+            })
+        return out
+
+    def to_dict(self) -> dict:
+        """Return JSON-serializable dict of scalar + per-layer results."""
+        return {
+            "method": "bi2014",
+            "input_type": "SPT",
+            "n_layers": self.n_layers,
+            "gwt_depth_m": round(self.gwt_depth_m, 2),
+            "amax_g": round(self.amax_g, 3),
+            "m_w": round(self.m_w, 1),
+            "min_fos": round(self.min_fos, 3),
+            "n_liquefiable": self.n_liquefiable,
+            "layer_results": self.layer_results(),
+        }
 
 
 @dataclass

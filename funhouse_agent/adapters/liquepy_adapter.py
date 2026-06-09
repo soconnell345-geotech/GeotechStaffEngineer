@@ -35,6 +35,23 @@ def _run_cpt_liquefaction(params: dict) -> dict:
     return clean_result(result.to_dict())
 
 
+def _run_spt_liquefaction(params: dict) -> dict:
+    _check_liquepy()
+    from liquepy_agent import analyze_spt_liquefaction
+
+    result = analyze_spt_liquefaction(
+        depth=params["depth"],
+        n1_60=params.get("N160", params.get("n1_60")),
+        fc=params.get("FC", params.get("fc")),
+        gamma=params["gamma"],
+        amax_g=params.get("amax_g", params.get("pga")),
+        gwt_depth=params.get("gwt_depth", params.get("gwl")),
+        m_w=params.get("m_w", 7.5),
+        c_0=params.get("c_0", 2.8),
+    )
+    return clean_result(result.to_dict())
+
+
 def _run_field_correlations(params: dict) -> dict:
     _check_liquepy()
     from liquepy_agent import analyze_field_correlations
@@ -57,6 +74,7 @@ def _run_field_correlations(params: dict) -> dict:
 
 METHOD_REGISTRY = {
     "cpt_liquefaction": _run_cpt_liquefaction,
+    "spt_liquefaction": _run_spt_liquefaction,
     "field_correlations": _run_field_correlations,
 }
 
@@ -86,6 +104,25 @@ METHOD_INFO = {
             "LDI_m": "Lateral Displacement Index (m).",
             "n_liquefiable": "Number of liquefiable points.",
             "min_FOS": "Minimum factor of safety against liquefaction.",
+        },
+    },
+    "spt_liquefaction": {
+        "category": "Liquefaction",
+        "brief": "SPT-based liquefaction triggering (Boulanger & Idriss 2014), per-layer factor of safety. Assembled from liquepy's tested B&I-2014 building blocks (liquepy ships no packaged SPT triggering object).",
+        "parameters": {
+            "depth": {"type": "array", "brief": "Layer mid-depths (m)."},
+            "N160": {"type": "array", "brief": "Corrected SPT (N1)60 blow counts."},
+            "FC": {"type": "array", "brief": "Fines content (%) per layer."},
+            "gamma": {"type": "array", "brief": "Total unit weight (kN/m3) per layer."},
+            "amax_g": {"type": "float", "brief": "Peak ground acceleration (g)."},
+            "gwt_depth": {"type": "float", "brief": "Groundwater table depth (m)."},
+            "m_w": {"type": "float", "brief": "Moment magnitude.", "default": 7.5},
+            "c_0": {"type": "float", "brief": "CRR curve fit (2.8=16th pct, 2.6=median).", "default": 2.8},
+        },
+        "returns": {
+            "min_fos": "Minimum factor of safety against liquefaction.",
+            "n_liquefiable": "Number of liquefiable layers.",
+            "layer_results": "Per-layer CSR/CRR/FoS/(N1)60cs.",
         },
     },
     "field_correlations": {

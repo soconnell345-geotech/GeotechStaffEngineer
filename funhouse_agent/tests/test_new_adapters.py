@@ -145,7 +145,7 @@ class TestLiquepyMethodInfo:
     def test_expected_methods(self):
         from funhouse_agent.adapters.liquepy_adapter import METHOD_INFO
         assert set(METHOD_INFO.keys()) == {
-            "cpt_liquefaction", "field_correlations",
+            "cpt_liquefaction", "spt_liquefaction", "field_correlations",
         }
 
 
@@ -154,7 +154,7 @@ class TestLiquepyDispatch:
         from funhouse_agent.dispatch import list_methods
         result = list_methods("liquepy")
         total = sum(len(v) for v in result.values())
-        assert total == 2
+        assert total == 3
 
     def test_describe_method(self):
         from funhouse_agent.dispatch import describe_method
