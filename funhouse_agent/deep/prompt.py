@@ -31,7 +31,13 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   `read_file` / `edit_file` / `ls`. Stash intermediate results, large tool
   outputs (e.g. a full method dump or a long reference excerpt), and tables you
   will reuse, instead of re-deriving or re-quoting them. These scratch files
-  live only for the current session."""
+  live only for the current session.
+- **Theory names and qualifiers are not method names.** Names like
+  vesic/meyerhof/hansen and qualifiers like ultimate/net/effective-area are
+  `factor_method`/parameter values or output labels, not methods. Each module
+  typically exposes ONE main analysis method (e.g. `bearing_capacity_analysis`);
+  if you guess a method name and it gets redirected (a `_note` in the result),
+  use the real method it points you to."""
 
 _MEMORY_SECTION = """\
 - **`/memories/` persists across sessions.** Files you write under `/memories/`

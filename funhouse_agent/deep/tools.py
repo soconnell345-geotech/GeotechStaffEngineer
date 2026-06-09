@@ -35,6 +35,12 @@ from funhouse_agent.dispatch import (
     describe_method as _describe_method,
     list_agents as _list_agents,
     list_methods as _list_methods,
+    # Resolution primitives (underscore-prefixed but importable). Used to make
+    # describe_method redirect a guessed method name the same way call_agent
+    # already does, instead of bouncing with a bare "Unknown method".
+    _METHOD_ALIASES,
+    _load_adapter,
+    _selector_value_candidates,
 )
 from funhouse_agent.vision_tools import (
     dispatch_extended_tool as _dispatch_extended_tool,
@@ -86,6 +92,126 @@ def _truncate(text: str, max_chars: int) -> str:
 # Keys that belong to call_agent itself; anything else the model passes at the
 # top level is treated as a flattened method parameter and auto-nested.
 _CALL_AGENT_KEYS = {"agent_name", "method", "parameters"}
+
+
+def _resolve_describe_method(agent_name, method, allowed_agents):
+    """Resolve a guessed ``describe_method`` method name to real docs.
+
+    Mirrors the auto-resolution ``call_agent`` already performs (via the
+    dispatch ``_METHOD_ALIASES`` map and selector-value handling) so that
+    ``describe_method`` *redirects* a guess instead of bouncing it with a bare
+    "Unknown method" error — saving the agent a wasted recovery round.
+
+    The happy path (a real method) is left to :func:`dispatch.describe_method`;
+    this only runs when that returned an "Unknown method" error.
+
+    Parameters
+    ----------
+    agent_name : str
+        The module name (already confirmed visible/allowed by the caller, since
+        ``dispatch.describe_method`` returned an *Unknown method* — not an
+        *Unknown module* — error).
+    method : str
+        The guessed method name to resolve.
+    allowed_agents : iterable of str or None
+        The active scope, passed through to :func:`dispatch.describe_method` so
+        the returned docs respect the same visibility the caller enforces.
+
+    Returns
+    -------
+    dict or None
+        On success, the real method's documentation dict with a top-level
+        ``"_note"`` explaining the redirect. ``None`` when ``method`` cannot be
+        resolved to a real method of ``agent_name`` (the caller then builds an
+        enriched error). Defensive: any failure loading the adapter or probing
+        selector candidates yields ``None``.
+    """
+    guess = (method or "").strip().lower()
+
+    # (a) Curated alias map: the value is either the real method name (str) or a
+    # ``(real_method, {param: value})`` tuple when a selector value is implied.
+    entry = _METHOD_ALIASES.get((agent_name, guess))
+    if entry is not None:
+        real = entry if isinstance(entry, str) else entry[0]
+        inject = {} if isinstance(entry, str) else (entry[1] or {})
+        docs = _describe_method(
+            agent_name=agent_name, method=real, allowed_agents=allowed_agents,
+        )
+        if "error" not in docs:
+            out = dict(docs)
+            if inject:
+                pairs = ", ".join(f"{p}='{v}'" for p, v in inject.items())
+                out["_note"] = (
+                    f"'{method}' is not a method name — it maps to "
+                    f"'{real}' with {pairs}. Showing that method's docs; "
+                    f"call it with {pairs}."
+                )
+            else:
+                out["_note"] = (
+                    f"'{method}' is not a method name — it maps to the "
+                    f"'{real}' method. Showing that method's docs."
+                )
+            return out
+
+    # (b) Selector value: ``method`` is an allowed VALUE of a selector parameter
+    # (e.g. 'vesic' for the 'factor_method' parameter), not a method name.
+    try:
+        mod = _load_adapter(agent_name)
+        cands = _selector_value_candidates(mod, method)
+    except Exception:
+        return None
+    if cands:
+        real, selector = cands[0]
+        docs = _describe_method(
+            agent_name=agent_name, method=real, allowed_agents=allowed_agents,
+        )
+        if "error" not in docs:
+            out = dict(docs)
+            out["_note"] = (
+                f"'{method}' is not a method name — it is a value for the "
+                f"'{selector}' parameter of '{real}'. Showing that method's "
+                f"docs; call it with {selector}='{method}'."
+            )
+            return out
+
+    return None
+
+
+def _enriched_unknown_method_error(agent_name, method, allowed_agents):
+    """Build a recovery-friendly error listing each real method's brief.
+
+    Returned when a guessed method cannot be resolved. Instead of just naming
+    the available methods (which invites another guess), this pairs each with
+    its one-line ``brief`` from ``METHOD_INFO`` so the agent can pick the
+    closest one in a single reliable step.
+
+    Returns
+    -------
+    dict
+        ``{"error": ..., "available_methods": {method: brief, ...},
+        "directive": ...}``. Falls back to ``None`` if the adapter / method
+        info cannot be loaded, so the caller keeps the original bare error.
+    """
+    try:
+        mod = _load_adapter(agent_name)
+        briefs = {
+            m: info.get("brief", "")
+            for m, info in mod.METHOD_INFO.items()
+            if not info.get("alias_of")
+        }
+    except Exception:
+        return None
+    if not briefs:
+        return None
+    return {
+        "error": f"Unknown method '{method}' for module '{agent_name}'.",
+        "available_methods": briefs,
+        "directive": (
+            "These are the available methods and what they do; pick the "
+            "closest one. Theory/qualifier names (e.g. vesic, ultimate) are "
+            "parameter values, not methods."
+        ),
+    }
 
 
 class _CallAgentArgs(BaseModel):
@@ -175,18 +301,37 @@ def make_core_tools(
 
         ``agent_name`` is the module name; ``method`` is the method name
         within that module.
+
+        If ``method`` is a guessed name that is not real (e.g. a theory name
+        like 'vesic' or a selector value), this resolves/redirects it to the
+        module's real method — adding a ``_note`` explaining the mapping —
+        the same way ``call_agent`` already auto-resolves such guesses. When it
+        truly cannot resolve, it returns an enriched error listing each
+        available method's brief so recovery is one reliable step, not a guess.
         """
-        return _truncate(
-            json.dumps(
-                _describe_method(
-                    agent_name=agent_name,
-                    method=method,
-                    allowed_agents=allowed_agents,
-                ),
-                default=str,
-            ),
-            max_result_chars,
+        result = _describe_method(
+            agent_name=agent_name,
+            method=method,
+            allowed_agents=allowed_agents,
         )
+        # Happy path (real method, or an Unknown-MODULE / scope error): return
+        # as-is. Only an "Unknown method" error (the module is visible but the
+        # method name is wrong) is worth resolving — an Unknown-module error
+        # means the module is out of scope and must stay refused.
+        err = result.get("error", "") if isinstance(result, dict) else ""
+        if "Unknown method" in err:
+            resolved = _resolve_describe_method(
+                agent_name, method, allowed_agents
+            )
+            if resolved is not None:
+                result = resolved
+            else:
+                enriched = _enriched_unknown_method_error(
+                    agent_name, method, allowed_agents
+                )
+                if enriched is not None:
+                    result = enriched
+        return _truncate(json.dumps(result, default=str), max_result_chars)
 
     def call_agent(
         agent_name: str,
