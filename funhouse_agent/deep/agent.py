@@ -34,8 +34,25 @@ from funhouse_agent.dispatch import ANALYSIS_MODULES, REFERENCE_MODULES
 from funhouse_agent.reviewer import CONSULTANT_FRAMING, REVIEWER_SYSTEM_PROMPT
 
 from funhouse_agent.deep.prompt import build_domain_prompt
-from funhouse_agent.deep.tools import make_core_tools, make_vision_tools
+from funhouse_agent.deep.tools import (
+    DEFAULT_MAX_RESULT_CHARS,
+    make_core_tools,
+    make_vision_tools,
+)
 from funhouse_agent.deep.vision_engine import LangChainVisionEngine
+
+
+#: Concision instruction appended to the references sub-agent's framing. The
+#: sub-agent's reference-text dumps are the main token-bloat source, so it is
+#: told to return only the asked-for value(s) plus the citation rather than
+#: pasting long chapter passages — this shrinks both its returned text and what
+#: the primary then re-reads each round.
+_REFERENCES_CONCISION = (
+    "\n\nBe concise. Return ONLY the specific value(s)/provision asked for "
+    "with the exact citation (reference + section/table/figure). Do NOT paste "
+    "long chapter-text passages or restate full sections — a few sentences "
+    "plus the citation is ideal."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +237,7 @@ def build_references_subagent(
     engine=None,
     attachments=None,
     save_fn: Optional[Callable] = None,
+    max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
 ) -> dict:
     """Build the ``references`` sub-agent spec (reference librarian).
 
@@ -227,32 +245,58 @@ def build_references_subagent(
     vision tool (so it can read values off design charts). The vision tool
     needs an engine to actually call the model; offline it returns a clear
     "vision not available" error rather than raising.
+
+    Parameters
+    ----------
+    engine, attachments, save_fn
+        Forwarded to :func:`~funhouse_agent.deep.tools.make_vision_tools` for
+        the figure read-off tool.
+    max_result_chars : int, optional
+        Tool-result size cap forwarded to ``make_core_tools`` /
+        ``make_vision_tools`` (default ``8000``). This is the key bloat guard:
+        the reference modules return the largest text, so capping the
+        sub-agent's tool results bounds what is re-sent each round. The
+        sub-agent's framing is also extended with a concision instruction so it
+        returns only the asked-for value(s) plus the citation.
     """
-    tools = make_core_tools(allowed_agents=REFERENCE_MODULES) + make_vision_tools(
+    tools = make_core_tools(
+        allowed_agents=REFERENCE_MODULES, max_result_chars=max_result_chars
+    ) + make_vision_tools(
         engine=engine,
         attachments=attachments,
         save_fn=save_fn,
         include={"read_reference_figure"},
+        max_result_chars=max_result_chars,
     )
     return {
         "name": "references",
         "description": _REFERENCES_DESCRIPTION,
-        "system_prompt": CONSULTANT_FRAMING,
+        "system_prompt": CONSULTANT_FRAMING + _REFERENCES_CONCISION,
         "tools": tools,
     }
 
 
-def build_reviewer_subagent() -> dict:
+def build_reviewer_subagent(
+    max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
+) -> dict:
     """Build the ``reviewer`` sub-agent spec.
 
     Scoped to ``REFERENCE_MODULES`` core tools (reference lookup only — the
     reviewer checks work, it does not recompute).
+
+    Parameters
+    ----------
+    max_result_chars : int, optional
+        Tool-result size cap forwarded to ``make_core_tools`` (default
+        ``8000``), so the reviewer's reference lookups are bounded too.
     """
     return {
         "name": "reviewer",
         "description": _REVIEWER_DESCRIPTION,
         "system_prompt": REVIEWER_SYSTEM_PROMPT,
-        "tools": make_core_tools(allowed_agents=REFERENCE_MODULES),
+        "tools": make_core_tools(
+            allowed_agents=REFERENCE_MODULES, max_result_chars=max_result_chars
+        ),
     }
 
 
@@ -261,6 +305,7 @@ def build_primary_tools(
     engine=None,
     attachments=None,
     save_fn: Optional[Callable] = None,
+    max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
 ) -> list:
     """Build the primary agent's tool list.
 
@@ -268,11 +313,22 @@ def build_primary_tools(
     ``ANALYSIS_MODULES``) plus the vision/file-output tools. The reference
     modules are intentionally absent — the primary reaches them via the
     ``references`` sub-agent (the ``task`` tool).
+
+    Parameters
+    ----------
+    max_result_chars : int, optional
+        Tool-result size cap forwarded to ``make_core_tools`` /
+        ``make_vision_tools`` (default ``8000``, mirroring v1).
     """
     if allowed_agents is None:
         allowed_agents = ANALYSIS_MODULES
-    return make_core_tools(allowed_agents=allowed_agents) + make_vision_tools(
-        engine=engine, attachments=attachments, save_fn=save_fn,
+    return make_core_tools(
+        allowed_agents=allowed_agents, max_result_chars=max_result_chars
+    ) + make_vision_tools(
+        engine=engine,
+        attachments=attachments,
+        save_fn=save_fn,
+        max_result_chars=max_result_chars,
     )
 
 
@@ -284,6 +340,7 @@ def build_deep_agent(
     save_fn: Optional[Callable] = None,
     engine=None,
     attachments=None,
+    max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
     store=None,
     checkpointer=None,
     enable_memory: bool = False,
@@ -335,6 +392,14 @@ def build_deep_agent(
         if invoked).
     attachments : dict, optional
         ``{key: bytes}`` of attached files for the vision tools.
+    max_result_chars : int, optional
+        Single knob capping the size of EVERY tool result fed back to the model
+        — the primary's tools AND both sub-agents' (references, reviewer). It is
+        forwarded to ``build_primary_tools`` and both sub-agent builders.
+        Defaults to ``8000`` (mirrors v1's ``GeotechAgent._max_result_chars``);
+        set ``0`` to disable truncation. This is the token-bloat guard: the
+        references sub-agent's large reference-text dumps would otherwise be
+        re-sent on every round and compound the input-token cost.
     store : BaseStore, optional
         A LangGraph store (e.g. ``InMemoryStore`` / a Postgres store) for
         cross-session / persistent memory. Passing a store turns ``enable_memory``
@@ -413,6 +478,7 @@ def build_deep_agent(
         engine=engine,
         attachments=attachments,
         save_fn=save_fn,
+        max_result_chars=max_result_chars,
     )
 
     system_prompt = build_domain_prompt(allowed_agents, memory_enabled=enable_memory)
@@ -421,10 +487,15 @@ def build_deep_agent(
     if reference_mode != "off":
         subagents.append(
             build_references_subagent(
-                engine=engine, attachments=attachments, save_fn=save_fn,
+                engine=engine,
+                attachments=attachments,
+                save_fn=save_fn,
+                max_result_chars=max_result_chars,
             )
         )
-        subagents.append(build_reviewer_subagent())
+        subagents.append(
+            build_reviewer_subagent(max_result_chars=max_result_chars)
+        )
 
     # ----- Phase-3: persistent /memories/ backend + memory= source -----
     create_kwargs = dict(kwargs)

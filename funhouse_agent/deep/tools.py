@@ -43,6 +43,43 @@ from funhouse_agent.vision_tools import (
 
 
 # ---------------------------------------------------------------------------
+# Tool-result size cap (token-bloat guard)
+# ---------------------------------------------------------------------------
+
+#: Default cap on the size of a tool result fed back to the model, mirroring
+#: v1's ``GeotechAgent._max_result_chars`` (``funhouse_agent/agent.py``). Large
+#: reference-text dumps from the references sub-agent would otherwise be
+#: re-sent on every ReAct round and compound the input-token cost.
+DEFAULT_MAX_RESULT_CHARS = 8000
+
+
+def _truncate(text: str, max_chars: int) -> str:
+    """Truncate a tool-result string to ``max_chars``, marking any cut.
+
+    Mirrors :func:`funhouse_agent.react_support._truncate` (the v1 behavior),
+    but appends a count of the dropped characters so the marker is informative.
+
+    Parameters
+    ----------
+    text : str
+        The tool result (already a JSON string in this module).
+    max_chars : int
+        Maximum number of characters to keep. A value ``<= 0`` disables
+        truncation and the full ``text`` is returned unchanged.
+
+    Returns
+    -------
+    str
+        ``text`` unchanged when it is short enough (or truncation is disabled),
+        otherwise the first ``max_chars`` characters followed by a
+        ``\\n...[truncated N chars]`` marker.
+    """
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+    return text[:max_chars] + f"\n...[truncated {len(text) - max_chars} chars]"
+
+
+# ---------------------------------------------------------------------------
 # Core dispatch tools (the 4 meta-tools), scoped to allowed_agents
 # ---------------------------------------------------------------------------
 
@@ -78,7 +115,10 @@ class _CallAgentArgs(BaseModel):
     )
 
 
-def make_core_tools(allowed_agents=None) -> list:
+def make_core_tools(
+    allowed_agents=None,
+    max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
+) -> list:
     """Build the 4 core dispatch tools bound to an ``allowed_agents`` scope.
 
     Parameters
@@ -88,6 +128,13 @@ def make_core_tools(allowed_agents=None) -> list:
         invisible to ``list_agents`` / ``list_methods`` / ``describe_method``
         and refused by ``call_agent`` (same semantics as v1
         ``dispatch.dispatch_tool``). ``None`` exposes the full registry.
+    max_result_chars : int, optional
+        Cap on the size of each tool's JSON-string result fed back to the model
+        (default ``8000``, mirroring v1's ``GeotechAgent._max_result_chars``).
+        Results longer than this are truncated with a clear marker, which keeps
+        large reference-text dumps (especially from the references sub-agent,
+        which also uses this factory) from compounding the input-token cost as
+        they are re-sent on every round. A value ``<= 0`` disables truncation.
 
     Returns
     -------
@@ -98,8 +145,9 @@ def make_core_tools(allowed_agents=None) -> list:
     def list_agents() -> str:
         """List all available geotechnical analysis modules with brief
         descriptions."""
-        return json.dumps(
-            _list_agents(allowed_agents=allowed_agents), default=str
+        return _truncate(
+            json.dumps(_list_agents(allowed_agents=allowed_agents), default=str),
+            max_result_chars,
         )
 
     def list_methods(agent_name: str, category: str = "") -> str:
@@ -109,13 +157,16 @@ def make_core_tools(allowed_agents=None) -> list:
         'settlement', 'subsurface'). ``category`` is an optional category
         filter; empty string for all.
         """
-        return json.dumps(
-            _list_methods(
-                agent_name=agent_name,
-                category=category or "",
-                allowed_agents=allowed_agents,
+        return _truncate(
+            json.dumps(
+                _list_methods(
+                    agent_name=agent_name,
+                    category=category or "",
+                    allowed_agents=allowed_agents,
+                ),
+                default=str,
             ),
-            default=str,
+            max_result_chars,
         )
 
     def describe_method(agent_name: str, method: str) -> str:
@@ -125,13 +176,16 @@ def make_core_tools(allowed_agents=None) -> list:
         ``agent_name`` is the module name; ``method`` is the method name
         within that module.
         """
-        return json.dumps(
-            _describe_method(
-                agent_name=agent_name,
-                method=method,
-                allowed_agents=allowed_agents,
+        return _truncate(
+            json.dumps(
+                _describe_method(
+                    agent_name=agent_name,
+                    method=method,
+                    allowed_agents=allowed_agents,
+                ),
+                default=str,
             ),
-            default=str,
+            max_result_chars,
         )
 
     def call_agent(
@@ -157,15 +211,18 @@ def make_core_tools(allowed_agents=None) -> list:
         extras = {k: v for k, v in extra.items() if k not in _CALL_AGENT_KEYS}
         if extras:
             params.update(extras)
-        return json.dumps(
-            _call_agent(
-                agent_name=agent_name,
-                method=method,
-                parameters=params,
-                attachments=None,
-                allowed_agents=allowed_agents,
+        return _truncate(
+            json.dumps(
+                _call_agent(
+                    agent_name=agent_name,
+                    method=method,
+                    parameters=params,
+                    attachments=None,
+                    allowed_agents=allowed_agents,
+                ),
+                default=str,
             ),
-            default=str,
+            max_result_chars,
         )
 
     return [
@@ -215,6 +272,7 @@ def make_vision_tools(
     attachments: Optional[Dict[str, bytes]] = None,
     save_fn: Optional[Callable] = None,
     include: Optional[set] = None,
+    max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
 ) -> list:
     """Build the vision / file-output tools as LangChain tools.
 
@@ -237,6 +295,11 @@ def make_vision_tools(
         Subset of tool names to build. Defaults to all four
         (``analyze_image``, ``analyze_pdf_page``, ``read_reference_figure``,
         ``save_file``).
+    max_result_chars : int, optional
+        Cap on the size of each tool's result fed back to the model (default
+        ``8000``, mirroring v1). Results longer than this are truncated with a
+        clear marker; a value ``<= 0`` disables truncation. Applied to every
+        vision/file tool via the shared ``_dispatch`` helper.
 
     Returns
     -------
@@ -250,12 +313,15 @@ def make_vision_tools(
     }
 
     def _dispatch(tool_name: str, arguments: dict) -> str:
-        return _dispatch_extended_tool(
-            tool_name=tool_name,
-            arguments=arguments,
-            engine=engine,
-            attachments=attachments,
-            save_fn=save_fn,
+        return _truncate(
+            _dispatch_extended_tool(
+                tool_name=tool_name,
+                arguments=arguments,
+                engine=engine,
+                attachments=attachments,
+                save_fn=save_fn,
+            ),
+            max_result_chars,
         )
 
     def analyze_image(attachment_key: str,
@@ -357,4 +423,8 @@ def make_vision_tools(
     return tools
 
 
-__all__ = ["make_core_tools", "make_vision_tools"]
+__all__ = [
+    "make_core_tools",
+    "make_vision_tools",
+    "DEFAULT_MAX_RESULT_CHARS",
+]

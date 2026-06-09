@@ -168,7 +168,12 @@ def test_reference_scope_allows_reference_module():
     The module resolves (so the error is about the bogus METHOD, not an
     unknown module), proving the module itself is visible/allowed.
     """
-    tools = make_core_tools(allowed_agents=REFERENCE_MODULES)
+    # Disable truncation here: this test parses the JSON error, and the
+    # "Unknown method" payload lists every available method (> the default
+    # 8000-char cap), which would otherwise be truncated mid-JSON.
+    tools = make_core_tools(
+        allowed_agents=REFERENCE_MODULES, max_result_chars=0
+    )
 
     # list_agents now shows the reference modules.
     catalog = _invoke(_tool_by_name(tools, "list_agents"))
@@ -263,12 +268,13 @@ def test_subagents_configured():
     assert refs["name"] == "references"
     assert rev["name"] == "reviewer"
 
-    # references prompt is the consultant framing; reviewer is the reviewer
-    # system prompt.
+    # references prompt is the consultant framing (plus an appended concision
+    # instruction); reviewer is the reviewer system prompt unchanged.
     from funhouse_agent.reviewer import (
         CONSULTANT_FRAMING, REVIEWER_SYSTEM_PROMPT,
     )
-    assert refs["system_prompt"] == CONSULTANT_FRAMING
+    assert refs["system_prompt"].startswith(CONSULTANT_FRAMING)
+    assert "concise" in refs["system_prompt"].lower()
     assert rev["system_prompt"] == REVIEWER_SYSTEM_PROMPT
 
     # references has the figure read-off vision tool + core tools.
@@ -285,11 +291,14 @@ def test_subagents_configured():
                          "method": "x", "parameters": {}})
         )
         assert "Unknown module" in analysis_attempt["error"]
-        ref_attempt = json.loads(
-            call.invoke({"agent_name": "dm7",
-                         "method": "__nope__", "parameters": {}})
-        )
-        assert "Unknown module" not in ref_attempt["error"]
+        # The dm7 "Unknown method" payload lists every method (> the default
+        # 8000-char cap), so it may come back truncated (not valid JSON).
+        # Assert on the raw string: the module is allowed iff the error is NOT
+        # "Unknown module".
+        ref_raw = call.invoke({"agent_name": "dm7",
+                               "method": "__nope__", "parameters": {}})
+        assert "Unknown module" not in ref_raw
+        assert "Unknown method" in ref_raw
 
 
 def test_reference_mode_off_omits_named_subagents():
