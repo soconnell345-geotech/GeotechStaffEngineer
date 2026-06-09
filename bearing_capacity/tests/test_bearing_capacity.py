@@ -796,5 +796,64 @@ class TestTwoLayerLoadSpread:
         assert total == pytest.approx(result.q_ultimate, rel=1e-6)
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# TEST 15: GWT within B below the footing (BC-3) + two-layer label (BC-8)
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestGroundwaterWedge:
+    """Effective unit weight for the Nγ term must average over depth B below
+    the base, so a GWT inside the wedge reduces capacity (regression for BC-3)."""
+
+    def test_gamma_below_footing_averages_over_B(self):
+        gw = BearingSoilProfile(
+            layer1=SoilLayer(friction_angle=30, unit_weight=20.0)).gamma_w
+        # GWT 1.0 m below a 1.5 m base, B = 2.0 -> dw=1.0, buoyant fraction 0.5
+        soil = BearingSoilProfile(
+            layer1=SoilLayer(friction_angle=30, unit_weight=20.0), gwt_depth=2.5)
+        assert soil.gamma_below_footing(1.5, 2.0) == pytest.approx(20.0 - gw * 0.5)
+        # GWT at the base -> fully buoyant
+        soil_base = BearingSoilProfile(
+            layer1=SoilLayer(friction_angle=30, unit_weight=20.0), gwt_depth=1.5)
+        assert soil_base.gamma_below_footing(1.5, 2.0) == pytest.approx(20.0 - gw)
+        # GWT below the wedge (dw >= B) -> full total weight
+        soil_deep = BearingSoilProfile(
+            layer1=SoilLayer(friction_angle=30, unit_weight=20.0), gwt_depth=10.0)
+        assert soil_deep.gamma_below_footing(1.5, 2.0) == pytest.approx(20.0)
+
+    def test_gwt_in_wedge_reduces_capacity(self):
+        footing = Footing(width=2.0, depth=1.5, shape="square")
+        # GWT 0.5 m below the base (inside the B=2.0 wedge)
+        soil_wedge = BearingSoilProfile(
+            layer1=SoilLayer(friction_angle=32, unit_weight=20.0), gwt_depth=2.0)
+        # GWT far below the wedge (no buoyancy in the self-weight term)
+        soil_deep = BearingSoilProfile(
+            layer1=SoilLayer(friction_angle=32, unit_weight=20.0), gwt_depth=20.0)
+        r_wedge = BearingCapacityAnalysis(footing=footing, soil=soil_wedge).compute()
+        r_deep = BearingCapacityAnalysis(footing=footing, soil=soil_deep).compute()
+        # Overburden q is identical (GWT below base in both); only the Nγ
+        # self-weight term differs, and the in-wedge case must be conservative.
+        assert r_wedge.q_ultimate < r_deep.q_ultimate
+
+
+class TestTwoLayerCalcStepsLabel:
+    """The two-layer calc-steps label must match the BC-1 method (load-spread),
+    not the old 'Meyerhof & Hanna' claim (regression for BC-8)."""
+
+    def test_two_layer_label_is_load_spread(self):
+        from bearing_capacity.calc_steps import get_calc_steps
+        footing = Footing(width=2.0, depth=1.0, shape="square")
+        soil = BearingSoilProfile(
+            layer1=SoilLayer(friction_angle=35, unit_weight=19.0, thickness=1.0),
+            layer2=SoilLayer(cohesion=30.0, friction_angle=0, unit_weight=17.0),
+        )
+        analysis = BearingCapacityAnalysis(footing=footing, soil=soil)
+        result = analysis.compute()
+        sections = get_calc_steps(result, analysis)
+        blob = " ".join(
+            it for sec in sections for it in sec.items if isinstance(it, str))
+        assert "Meyerhof & Hanna" not in blob
+        assert "load-spread" in blob
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

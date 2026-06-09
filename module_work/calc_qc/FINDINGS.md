@@ -550,3 +550,21 @@ every touched module suite passes locally (funhouse remains the live validation 
 Test deltas (new regression tests added): bearing_capacity 66→72, wave_equation 45→46,
 axial_pile/ground_improvement +1/+1, sheet_pile 26→31, retaining_walls 70→73, settlement 39→44,
 lateral_pile TestPYCurves +1, pile_group 72→74.
+
+---
+
+## FIX LOG — Round 2 (2026-06-09, approved for 5.0; post module-consolidation, worktree at master 05b51fc)
+
+Three further findings fixed in the `calc-qc-fixes` worktree, main-repo only (no
+geotech-references submodule changes), each with a regression test; bearing_capacity +
+sheet_pile + calc_package = 207 passed / 3 skipped.
+
+| ID | Sev | Module | Fix |
+|----|-----|--------|-----|
+| CS-2 | Med | sheet_pile | `calc_steps.py` now mirrors the analysis (`_compute_Ka_Kp(phi, method, wall_friction_deg)`) at all 3 display sites — the Ka/Kp coefficient cards, the tension-crack Ka, and the rendered pressure diagram (`_compute_pressures`). The Coulomb display previously used δ=0 (≡ Rankine) and the diagram was always Rankine, so the package diverged from the analysis once SP-2 made wall friction live. Default δ=0 unchanged. |
+| BC-8 | Low | bearing_capacity | `calc_steps.py` two-layer label changed from "Meyerhof & Hanna, 1978" / "Combined (interpolated)" to "load-spread method; NAVFAC DM-7.01 / Bowles" / "Combined (load-spread)", matching the BC-1 source + DESIGN relabel. |
+| BC-3 | Med | bearing_capacity | `soil_profile.gamma_below_footing(footing_depth, footing_width)` now averages the effective unit weight over depth B below the base (`γ_eff = γ_total − γ_w·clamp((B−dw)/B,0,1)`), so a GWT lying inside the bearing wedge correctly reduces the Nγ self-weight term. Previously returned full total γ whenever the GWT was at/below the base — un-conservative. Caller `capacity.py` passes B. |
+
+Remaining still-open from the original review (unchanged): BC-3 ✔ now fixed; open Mediums
+WE-2/WE-3 (Smith spring elasto-plastic + damping label), RW-1 (active thrust inclination);
+plus the Low/Med + ~25 Low cleanups catalogued above.

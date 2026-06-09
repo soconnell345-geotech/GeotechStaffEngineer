@@ -166,15 +166,15 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         phi = layer.friction_angle
         phi_rad = math.radians(phi)
 
+        # Mirror the analysis exactly (CS-2): use the same method + wall friction
+        # the analysis used, so the displayed Ka/Kp match the reported design.
+        from sheet_pile.cantilever import _compute_Ka_Kp
+        delta = getattr(layer, "wall_friction_deg", 0.0)
+        Ka, Kp = _compute_Ka_Kp(phi, method, delta)
         if method == "coulomb":
-            from sheet_pile.earth_pressure import coulomb_Ka, coulomb_Kp
-            Ka = coulomb_Ka(phi)
-            Kp = coulomb_Kp(phi)
             ka_eq = "Coulomb Ka"
             kp_eq = "Coulomb Kp"
         else:
-            Ka = math.tan(math.pi / 4 - phi_rad / 2) ** 2
-            Kp = math.tan(math.pi / 4 + phi_rad / 2) ** 2
             ka_eq = "tan\u00b2(45\u00b0 - \u03c6/2)"
             kp_eq = "tan\u00b2(45\u00b0 + \u03c6/2)"
 
@@ -194,7 +194,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 title=f"Active Coefficient Ka (\u03c6 = {phi:.1f}\u00b0)",
                 equation=f"Ka = {ka_eq}",
                 substitution=f"Ka = tan\u00b2(45\u00b0 - {phi/2:.1f}\u00b0)"
-                if method == "rankine" else f"Ka (Coulomb, \u03c6={phi:.1f}\u00b0)",
+                if method == "rankine"
+                else f"Ka (Coulomb, \u03c6={phi:.1f}\u00b0, \u03b4={delta:.1f}\u00b0)",
                 result_name="Ka",
                 result_value=f"{Ka:.4f}",
                 reference=f"{'Rankine (1857)' if method == 'rankine' else 'Coulomb (1776)'}; "
@@ -204,7 +205,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 title=f"Passive Coefficient Kp (\u03c6 = {phi:.1f}\u00b0)",
                 equation=f"Kp = {kp_eq}",
                 substitution=f"Kp = tan\u00b2(45\u00b0 + {phi/2:.1f}\u00b0)"
-                if method == "rankine" else f"Kp (Coulomb, \u03c6={phi:.1f}\u00b0)",
+                if method == "rankine"
+                else f"Kp (Coulomb, \u03c6={phi:.1f}\u00b0, \u03b4={delta:.1f}\u00b0)",
                 result_name="Kp",
                 result_value=f"{Kp:.4f}",
                 reference=f"{'Rankine (1857)' if method == 'rankine' else 'Coulomb (1776)'}; "
@@ -238,8 +240,10 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     # Show tension crack depth for cohesive layers
     for i, layer in enumerate(layers, 1):
         if layer.cohesion > 0:
-            phi_rad = math.radians(layer.friction_angle)
-            Ka = math.tan(math.pi / 4 - phi_rad / 2) ** 2
+            from sheet_pile.cantilever import _compute_Ka_Kp
+            Ka, _ = _compute_Ka_Kp(
+                layer.friction_angle, method,
+                getattr(layer, "wall_friction_deg", 0.0))
             if Ka > 0 and layer.unit_weight > 0:
                 z_crack = (2.0 * layer.cohesion / math.sqrt(Ka) - q) / layer.unit_weight
                 z_crack = max(z_crack, 0.0)
@@ -518,9 +522,8 @@ def _compute_pressures(result, analysis, n_points=200):
     Returns (depths, p_active, p_passive, p_net) arrays.
     """
     import numpy as np
-    from sheet_pile.earth_pressure import rankine_Ka, rankine_Kp
     from sheet_pile.cantilever import (
-        _get_soil_at_depth, _cumulative_stress, _effective_gamma,
+        _get_soil_at_depth, _cumulative_stress, _effective_gamma, _compute_Ka_Kp,
     )
     from geotech_common.water import GAMMA_W
 
@@ -528,6 +531,7 @@ def _compute_pressures(result, analysis, n_points=200):
     layers = analysis.get("soil_layers", [])
     q = analysis.get("surcharge", 0.0)
     FOS = analysis.get("FOS_passive", result.FOS_passive)
+    method = analysis.get("pressure_method", "rankine").lower()
     gwt_a = analysis.get("gwt_depth_active", None)
     gwt_p = analysis.get("gwt_depth_passive", None)
     gamma_w = analysis.get("gamma_w", GAMMA_W)
@@ -539,8 +543,9 @@ def _compute_pressures(result, analysis, n_points=200):
 
     for idx, z in enumerate(depths):
         layer = _get_soil_at_depth(z, layers)
-        Ka = rankine_Ka(layer.friction_angle)
-        Kp = rankine_Kp(layer.friction_angle)
+        Ka, Kp = _compute_Ka_Kp(
+            layer.friction_angle, method,
+            getattr(layer, "wall_friction_deg", 0.0))
 
         if z <= H:
             # Above excavation: active pressure only

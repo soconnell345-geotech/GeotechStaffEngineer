@@ -166,27 +166,43 @@ class BearingSoilProfile:
             q = gamma * self.gwt_depth + (gamma - self.gamma_w) * (footing_depth - self.gwt_depth)
         return q
 
-    def gamma_below_footing(self, footing_depth: float) -> float:
+    def gamma_below_footing(self, footing_depth: float,
+                            footing_width: float) -> float:
         """Get effective unit weight to use for the 0.5*gamma*B*Ng term.
 
-        Per Vesic (1973) and FHWA GEC-6: use effective unit weight of
-        soil within depth B below the footing base.
+        Per Vesic (1973) and FHWA GEC-6, the self-weight term uses the effective
+        unit weight averaged over a depth B (the footing width) below the
+        footing base — the zone mobilized by the bearing wedge. Soil above the
+        water table contributes its total unit weight and soil below contributes
+        its buoyant weight, so for a water table at depth ``dw`` below the base:
+
+            gamma_eff = gamma_total - gamma_w * clamp((B - dw) / B, 0, 1)
+
+        - dw <= 0  (GWT at/above the base):  gamma_eff = gamma' (fully buoyant)
+        - 0 < dw < B (GWT within the wedge): partial buoyancy (linear average)
+        - dw >= B  (GWT below the wedge):    gamma_eff = gamma_total
+
+        The previous version returned the full total unit weight whenever the
+        GWT was at or below the base, ignoring a GWT lying inside the wedge,
+        which over-predicts the self-weight term (un-conservative) — BC-3.
 
         Parameters
         ----------
         footing_depth : float
             Depth of footing base below ground surface (m).
+        footing_width : float
+            Footing width B (m) — the averaging depth for the bearing wedge.
 
         Returns
         -------
         float
-            Effective unit weight for bearing capacity (kN/m³).
+            Effective unit weight for the self-weight term (kN/m³).
         """
-        layer = self.layer1
-        if self.gwt_depth is None or self.gwt_depth >= footing_depth:
-            # GWT below footing — could be within B below
-            # Conservative: use total weight (GWT is deeper)
-            return layer.unit_weight
-        else:
-            # GWT at or above footing base — use buoyant weight
-            return layer.unit_weight - self.gamma_w
+        gamma_total = self.layer1.unit_weight
+        if self.gwt_depth is None or footing_width <= 0:
+            return gamma_total
+
+        dw = self.gwt_depth - footing_depth  # depth of GWT below the footing base
+        frac = (footing_width - dw) / footing_width  # buoyant fraction over B
+        frac = max(0.0, min(1.0, frac))
+        return gamma_total - self.gamma_w * frac

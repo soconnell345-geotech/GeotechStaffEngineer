@@ -139,7 +139,7 @@ class BearingCapacityAnalysis:
         q = self.soil.overburden_pressure(Df)
 
         # Effective unit weight below footing
-        gamma = self.soil.gamma_below_footing(Df)
+        gamma = self.soil.gamma_below_footing(Df, B)
 
         # General bearing capacity equation
         # Term 1: cohesion term

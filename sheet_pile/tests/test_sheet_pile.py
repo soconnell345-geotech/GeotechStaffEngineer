@@ -322,5 +322,38 @@ class TestCoulombWallFriction:
         assert r_coul.embedment_depth < r_rank.embedment_depth
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# TEST 7: Coulomb calc-steps display matches the analysis (CS-2)
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestCalcStepsCoulomb:
+    """calc_steps must display the Coulomb Ka the analysis used (with wall
+    friction), not Rankine (regression for CS-2)."""
+
+    def test_coulomb_calc_steps_uses_wall_friction(self):
+        from sheet_pile.calc_steps import get_calc_steps
+        from calc_package.data_model import CalcStep
+
+        phi, delta = 32.0, 20.0
+        layers = [WallSoilLayer(20.0, 18.0, friction_angle=phi,
+                                wall_friction_deg=delta)]
+        result = analyze_cantilever(4.0, layers, pressure_method="coulomb")
+        analysis = {
+            "wall_type": "cantilever",
+            "excavation_depth": 4.0,
+            "soil_layers": layers,
+            "pressure_method": "coulomb",
+            "FOS_passive": 1.5,
+        }
+        sections = get_calc_steps(result, analysis)
+        ka = [it for sec in sections for it in sec.items
+              if isinstance(it, CalcStep) and it.result_name == "Ka"]
+        assert ka, "no Ka step found in calc steps"
+        shown = float(ka[0].result_value)
+        # Matches the analysis Coulomb Ka (with delta), not Rankine
+        assert shown == pytest.approx(coulomb_Ka(phi, delta_deg=delta), abs=1e-4)
+        assert shown != pytest.approx(rankine_Ka(phi), abs=1e-3)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

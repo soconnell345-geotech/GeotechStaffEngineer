@@ -341,14 +341,16 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
 
     # Two-layer info
     if r.is_two_layer:
-        gbc_items.append(f"Two-layer analysis (Meyerhof & Hanna, 1978):")
+        gbc_items.append(
+            "Two-layer analysis (load-spread method; NAVFAC DM-7.01 / Bowles):"
+        )
         gbc_items.append(TableData(
             title="Two-Layer Capacities",
             headers=["Layer", "q_ult (kPa)"],
             rows=[
                 ["Upper layer (if semi-infinite)", f"{r.q_upper_layer:,.1f}"],
                 ["Lower layer (if semi-infinite)", f"{r.q_lower_layer:,.1f}"],
-                ["Combined (interpolated)", f"{r.q_ultimate:,.1f}"],
+                ["Combined (load-spread)", f"{r.q_ultimate:,.1f}"],
             ],
         ))
 
