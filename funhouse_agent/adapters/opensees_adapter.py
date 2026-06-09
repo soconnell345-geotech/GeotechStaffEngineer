@@ -1,4 +1,4 @@
-"""OpenSees adapter — PM4Sand DSS, BNWF pile, 1D site response."""
+"""OpenSees adapter — PM4Sand DSS, 1D site response."""
 
 from funhouse_agent.adapters import clean_result
 
@@ -52,26 +52,6 @@ def _run_pm4sand_cyclic_dss(params: dict) -> dict:
     return clean_result(result.to_dict())
 
 
-def _run_bnwf_lateral_pile(params: dict) -> dict:
-    _check_opensees()
-    from opensees_agent import analyze_bnwf_pile
-
-    result = analyze_bnwf_pile(
-        pile_length=params["pile_length"],
-        pile_diameter=params["pile_diameter"],
-        wall_thickness=params["wall_thickness"],
-        E_pile=params["E_pile"],
-        layers=params["layers"],
-        lateral_load=params.get("lateral_load", 0.0),
-        moment=params.get("moment", 0.0),
-        axial_load=params.get("axial_load", 0.0),
-        head_condition=params.get("head_condition", "free"),
-        pile_above_ground=params.get("pile_above_ground", 0.0),
-        n_elem_per_meter=params.get("n_elem_per_meter", 5),
-    )
-    return clean_result(result.to_dict())
-
-
 def _run_site_response_1d(params: dict) -> dict:
     _check_opensees()
     from opensees_agent import analyze_site_response
@@ -93,7 +73,6 @@ def _run_site_response_1d(params: dict) -> dict:
 
 METHOD_REGISTRY = {
     "pm4sand_cyclic_dss": _run_pm4sand_cyclic_dss,
-    "bnwf_lateral_pile": _run_bnwf_lateral_pile,
     "site_response_1d": _run_site_response_1d,
 }
 
@@ -122,29 +101,6 @@ METHOD_INFO = {
             "n_cycles_to_liq": "Number of cycles to liquefaction (null if none).",
             "max_ru": "Peak excess pore pressure ratio.",
             "max_shear_strain_pct": "Peak shear strain (%).",
-        },
-    },
-    "bnwf_lateral_pile": {
-        "category": "OpenSees",
-        "brief": "BNWF laterally-loaded pile analysis using PySimple1/TzSimple1/QzSimple1.",
-        "parameters": {
-            "pile_length": {"type": "float", "brief": "Embedded pile length (m)."},
-            "pile_diameter": {"type": "float", "brief": "Outer diameter (m)."},
-            "wall_thickness": {"type": "float", "brief": "Pipe wall thickness (m). 0 for solid."},
-            "E_pile": {"type": "float", "brief": "Young's modulus of pile (kPa)."},
-            "layers": {"type": "array", "brief": "Soil layers: list of dicts with top, bottom, py_model, and model params."},
-            "lateral_load": {"type": "float", "brief": "Lateral force at pile head (kN).", "default": 0.0},
-            "moment": {"type": "float", "brief": "Moment at pile head (kN-m).", "default": 0.0},
-            "axial_load": {"type": "float", "brief": "Axial force (kN, compression positive).", "default": 0.0},
-            "head_condition": {"type": "str", "brief": "'free' or 'fixed'.", "default": "free"},
-            "pile_above_ground": {"type": "float", "brief": "Free length above ground (m).", "default": 0.0},
-            "n_elem_per_meter": {"type": "float", "brief": "Mesh density (elements per meter).", "default": 5},
-        },
-        "returns": {
-            "pile_head_deflection_m": "Lateral deflection at pile head (m).",
-            "pile_head_rotation_rad": "Rotation at pile head (rad).",
-            "max_moment_kNm": "Maximum bending moment (kN-m).",
-            "max_shear_kN": "Maximum shear force (kN).",
         },
     },
     "site_response_1d": {

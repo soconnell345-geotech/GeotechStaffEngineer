@@ -3,15 +3,14 @@ Tests for the opensees_agent module.
 
 Tier 1 tests (no openseespy required):
   - Result dataclasses: construction, summary(), to_dict(), plot_*()
-  - Input validation for analyze_pm4sand_dss and analyze_bnwf_pile
+  - Input validation for analyze_pm4sand_dss
   - Ground motions: list, get, validation
   - Utility functions: clean_numpy, compute_response_spectrum, has_opensees
   - Foundry agent: list_methods, describe_method, error handling
-  - BNWF pile: input validation, layer parsing, Foundry metadata
 
 Tier 2 tests (require openseespy, skipped if not installed):
   - PM4Sand DSS integration
-  - BNWF lateral pile integration
+  - Site response integration
 """
 
 import json
@@ -21,7 +20,7 @@ import numpy as np
 import pytest
 
 from opensees_agent.results import (
-    PM4SandDSSResult, BNWFPileResult, SiteResponseResult,
+    PM4SandDSSResult, SiteResponseResult,
 )
 from opensees_agent.opensees_utils import (
     has_opensees, clean_numpy, compute_response_spectrum,
@@ -30,7 +29,6 @@ from opensees_agent.ground_motions import (
     get_motion, list_motions, validate_motion_input,
 )
 from opensees_agent.pm4sand_dss import _validate_pm4sand_inputs
-from opensees_agent.bnwf_pile import _validate_bnwf_inputs, _build_py_model
 from opensees_agent.site_response import _validate_site_response_inputs
 
 # Skip marker for tests that need openseespy
@@ -160,104 +158,6 @@ class TestPM4SandDSSResultPlots:
         fig, axes = r.plot_all(show=False)
         assert isinstance(fig, matplotlib.figure.Figure)
         assert axes.shape == (2, 2)
-        import matplotlib.pyplot as plt
-        plt.close("all")
-
-
-# ===========================================================================
-# BNWFPileResult
-# ===========================================================================
-
-class TestBNWFPileResult:
-    """Tests for BNWFPileResult dataclass."""
-
-    def _make_result(self):
-        n = 50
-        z = np.linspace(0, 20, n)
-        return BNWFPileResult(
-            pile_length=20.0, pile_diameter=0.6,
-            lateral_force_kN=200.0, moment_kNm=0.0, axial_force_kN=500.0,
-            z=z,
-            deflection_m=np.exp(-z / 5) * 0.01,
-            moment_profile_kNm=np.sin(z * np.pi / 20) * 500,
-            shear_profile_kN=np.cos(z * np.pi / 20) * 200,
-            soil_reaction_kN_per_m=np.exp(-z / 3) * 50,
-            y_top_m=0.01, rotation_top_rad=0.002,
-            max_moment_kNm=500.0, max_moment_depth_m=5.0,
-            max_deflection_m=0.01, converged=True,
-        )
-
-    def test_construction_defaults(self):
-        r = BNWFPileResult()
-        assert r.pile_length == 0.0
-        assert r.converged is True
-        assert len(r.z) == 0
-
-    def test_summary(self):
-        r = self._make_result()
-        s = r.summary()
-        assert "BNWF" in s
-        assert "20.0" in s
-        assert "YES" in s
-
-    def test_to_dict(self):
-        r = self._make_result()
-        d = r.to_dict()
-        assert d["pile_length_m"] == 20.0
-        assert d["y_top_mm"] == 10.0
-        assert d["converged"] is True
-        json.dumps(d)  # serializable
-
-
-class TestBNWFPileResultPlots:
-    """Plot smoke tests for BNWFPileResult."""
-
-    @pytest.fixture(autouse=True)
-    def _setup(self):
-        import matplotlib
-        matplotlib.use("Agg")
-
-    def _make_result(self):
-        n = 30
-        z = np.linspace(0, 20, n)
-        return BNWFPileResult(
-            pile_length=20.0, pile_diameter=0.6,
-            lateral_force_kN=200.0, moment_kNm=0.0, axial_force_kN=0.0,
-            z=z,
-            deflection_m=np.exp(-z / 5) * 0.01,
-            moment_profile_kNm=np.sin(z * np.pi / 20) * 500,
-            shear_profile_kN=np.cos(z * np.pi / 20) * 200,
-            soil_reaction_kN_per_m=np.zeros(n),
-            y_top_m=0.01, rotation_top_rad=0.002,
-            max_moment_kNm=500.0, max_moment_depth_m=5.0,
-            max_deflection_m=0.01,
-        )
-
-    def test_plot_deflection(self):
-        import matplotlib
-        ax = self._make_result().plot_deflection(show=False)
-        assert isinstance(ax, matplotlib.axes.Axes)
-        import matplotlib.pyplot as plt
-        plt.close("all")
-
-    def test_plot_moment(self):
-        import matplotlib
-        ax = self._make_result().plot_moment(show=False)
-        assert isinstance(ax, matplotlib.axes.Axes)
-        import matplotlib.pyplot as plt
-        plt.close("all")
-
-    def test_plot_shear(self):
-        import matplotlib
-        ax = self._make_result().plot_shear(show=False)
-        assert isinstance(ax, matplotlib.axes.Axes)
-        import matplotlib.pyplot as plt
-        plt.close("all")
-
-    def test_plot_all(self):
-        import matplotlib
-        fig, axes = self._make_result().plot_all(show=False)
-        assert isinstance(fig, matplotlib.figure.Figure)
         import matplotlib.pyplot as plt
         plt.close("all")
 
@@ -595,22 +495,6 @@ class TestFoundryAgentMetadata:
         assert "error" in result
         assert "Unknown method" in result["error"]
 
-    def test_list_methods_includes_bnwf(self):
-        import foundry.opensees_agent_foundry as oaf
-        result = json.loads(oaf.opensees_list_methods.__wrapped__(""))
-        assert "Lateral Pile" in result
-        assert "bnwf_lateral_pile" in result["Lateral Pile"]
-
-    def test_describe_bnwf(self):
-        import foundry.opensees_agent_foundry as oaf
-        result = json.loads(oaf.opensees_describe_method.__wrapped__(
-            "bnwf_lateral_pile"))
-        assert "category" in result
-        assert result["category"] == "Lateral Pile"
-        assert "parameters" in result
-        assert "pile_length" in result["parameters"]
-        assert "layers" in result["parameters"]
-
     def test_list_methods_includes_site_response(self):
         import foundry.opensees_agent_foundry as oaf
         result = json.loads(oaf.opensees_list_methods.__wrapped__(""))
@@ -631,143 +515,6 @@ class TestFoundryAgentMetadata:
             "Site Response"))
         assert "Site Response" in result
         assert "site_response_1d" in result["Site Response"]
-
-
-# ===========================================================================
-# Input validation (BNWF Pile)
-# ===========================================================================
-
-def _good_layer():
-    """Return a valid sand layer dict for testing."""
-    return {
-        "top": 0.0, "bottom": 15.0,
-        "py_model": "api_sand",
-        "phi": 35.0, "gamma": 10.0, "k": 16000.0,
-    }
-
-
-class TestBNWFPileValidation:
-    """Input validation for analyze_bnwf_pile."""
-
-    def _call(self, **overrides):
-        defaults = dict(
-            pile_length=15.0, pile_diameter=0.6,
-            wall_thickness=0.0125, E_pile=200e6,
-            layers=[_good_layer()],
-            lateral_load=100.0, moment=0.0, axial_load=0.0,
-            head_condition='free', pile_above_ground=0.0,
-            n_elem_per_meter=5,
-        )
-        defaults.update(overrides)
-        _validate_bnwf_inputs(**defaults)
-
-    def test_valid_inputs(self):
-        self._call()  # should not raise
-
-    def test_pile_length_zero(self):
-        with pytest.raises(ValueError, match="pile_length must be positive"):
-            self._call(pile_length=0)
-
-    def test_pile_diameter_negative(self):
-        with pytest.raises(ValueError, match="pile_diameter must be positive"):
-            self._call(pile_diameter=-0.5)
-
-    def test_wall_thickness_too_large(self):
-        with pytest.raises(ValueError, match="wall_thickness.*must be <"):
-            self._call(pile_diameter=0.6, wall_thickness=0.4)
-
-    def test_E_pile_zero(self):
-        with pytest.raises(ValueError, match="E_pile must be positive"):
-            self._call(E_pile=0)
-
-    def test_empty_layers(self):
-        with pytest.raises(ValueError, match="non-empty list"):
-            self._call(layers=[])
-
-    def test_no_load(self):
-        with pytest.raises(ValueError, match="At least one of lateral_load"):
-            self._call(lateral_load=0, moment=0)
-
-    def test_invalid_head_condition(self):
-        with pytest.raises(ValueError, match="head_condition must be"):
-            self._call(head_condition='pinned')
-
-    def test_layer_missing_top(self):
-        bad = {"bottom": 5.0, "py_model": "api_sand", "phi": 35, "gamma": 10, "k": 16000}
-        with pytest.raises(ValueError, match="missing required key 'top'"):
-            self._call(layers=[bad])
-
-    def test_layer_bad_py_model(self):
-        bad = _good_layer()
-        bad["py_model"] = "bogus_model"
-        with pytest.raises(ValueError, match="not recognized"):
-            self._call(layers=[bad])
-
-    def test_layer_bottom_le_top(self):
-        bad = _good_layer()
-        bad["top"] = 10.0
-        bad["bottom"] = 5.0
-        with pytest.raises(ValueError, match="must be > 'top'"):
-            self._call(layers=[bad])
-
-    def test_pile_above_ground_negative(self):
-        with pytest.raises(ValueError, match="pile_above_ground must be >= 0"):
-            self._call(pile_above_ground=-1.0)
-
-
-class TestBNWFBuildPyModel:
-    """Tests for _build_py_model layer parsing."""
-
-    def test_api_sand(self):
-        layer = _good_layer()
-        model, name = _build_py_model(layer)
-        assert name == "api_sand"
-        from lateral_pile.py_curves import SandAPI
-        assert isinstance(model, SandAPI)
-
-    def test_matlock_with_c(self):
-        layer = {
-            "top": 0, "bottom": 5,
-            "py_model": "matlock",
-            "c": 50.0, "gamma": 9.0, "eps50": 0.01,
-        }
-        model, name = _build_py_model(layer)
-        assert name == "matlock"
-
-    def test_matlock_with_su_alias(self):
-        """'su' should be accepted as alias for 'c' in Matlock model."""
-        layer = {
-            "top": 0, "bottom": 5,
-            "py_model": "matlock",
-            "su": 50.0, "gamma": 9.0, "eps50": 0.01,
-        }
-        model, name = _build_py_model(layer)
-        assert name == "matlock"
-        assert model.c == 50.0
-
-    def test_jeanjean(self):
-        layer = {
-            "top": 0, "bottom": 10,
-            "py_model": "jeanjean",
-            "su": 30.0, "gamma": 8.0, "Gmax": 12000.0,
-        }
-        model, name = _build_py_model(layer)
-        assert name == "jeanjean"
-
-    def test_case_insensitive(self):
-        layer = _good_layer()
-        layer["py_model"] = "API_Sand"
-        model, name = _build_py_model(layer)
-        assert name == "api_sand"
-
-    def test_weak_rock(self):
-        layer = {
-            "top": 0, "bottom": 5,
-            "py_model": "weak_rock",
-            "qu": 500.0, "Er": 100000.0,
-        }
-        model, name = _build_py_model(layer)
-        assert name == "weak_rock"
 
 
 # ===========================================================================
@@ -827,82 +574,6 @@ class TestPM4SandDSSIntegration:
         d = result.to_dict()
         serialized = json.dumps(d)
         assert len(serialized) > 10
-
-
-class TestBNWFPileIntegration:
-    """Integration tests for BNWF lateral pile (require openseespy)."""
-
-    @requires_opensees
-    def test_basic_sand_pile(self):
-        """Free-head pile in uniform sand — basic structure check."""
-        from opensees_agent.bnwf_pile import analyze_bnwf_pile
-
-        result = analyze_bnwf_pile(
-            pile_length=15.0,
-            pile_diameter=0.6,
-            wall_thickness=0.0125,
-            E_pile=200e6,
-            layers=[{
-                "top": 0.0, "bottom": 15.0,
-                "py_model": "api_sand",
-                "phi": 35.0, "gamma": 10.0, "k": 16000.0,
-            }],
-            lateral_load=100.0,
-        )
-        assert isinstance(result, BNWFPileResult)
-        assert result.converged
-        assert result.y_top_m > 0  # pile deflects in load direction
-        assert result.max_moment_kNm > 0
-        assert len(result.z) > 10
-        assert len(result.deflection_m) == len(result.z)
-
-    @requires_opensees
-    def test_fixed_head_less_deflection(self):
-        """Fixed-head pile should deflect less than free-head."""
-        from opensees_agent.bnwf_pile import analyze_bnwf_pile
-
-        common = dict(
-            pile_length=15.0, pile_diameter=0.6,
-            wall_thickness=0.0125, E_pile=200e6,
-            layers=[{
-                "top": 0.0, "bottom": 15.0,
-                "py_model": "api_sand",
-                "phi": 35.0, "gamma": 10.0, "k": 16000.0,
-            }],
-            lateral_load=100.0,
-        )
-        free = analyze_bnwf_pile(**common, head_condition='free')
-        fixed = analyze_bnwf_pile(**common, head_condition='fixed')
-        assert fixed.y_top_m < free.y_top_m
-
-    @requires_opensees
-    def test_multilayer_clay_sand(self):
-        """Multi-layer profile (clay over sand) runs and converges."""
-        from opensees_agent.bnwf_pile import analyze_bnwf_pile
-
-        result = analyze_bnwf_pile(
-            pile_length=20.0,
-            pile_diameter=0.9,
-            wall_thickness=0.0,  # solid
-            E_pile=30e6,  # concrete
-            layers=[
-                {
-                    "top": 0.0, "bottom": 8.0,
-                    "py_model": "matlock",
-                    "c": 50.0, "gamma": 9.0, "eps50": 0.01,
-                },
-                {
-                    "top": 8.0, "bottom": 20.0,
-                    "py_model": "api_sand",
-                    "phi": 33.0, "gamma": 10.0, "k": 11000.0,
-                },
-            ],
-            lateral_load=200.0,
-        )
-        assert result.converged
-        assert result.y_top_m > 0
-        d = result.to_dict()
-        json.dumps(d)  # serializable
 
 
 # ===========================================================================

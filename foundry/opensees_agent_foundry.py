@@ -35,13 +35,6 @@ def _run_pm4sand_dss(params):
     return result.to_dict()
 
 
-def _run_bnwf_pile(params):
-    """Wrapper for analyze_bnwf_pile."""
-    from opensees_agent.bnwf_pile import analyze_bnwf_pile
-    result = analyze_bnwf_pile(**params)
-    return result.to_dict()
-
-
 def _run_site_response(params):
     """Wrapper for analyze_site_response."""
     from opensees_agent.site_response import analyze_site_response
@@ -51,7 +44,6 @@ def _run_site_response(params):
 
 METHOD_REGISTRY = {
     "pm4sand_cyclic_dss": _run_pm4sand_dss,
-    "bnwf_lateral_pile": _run_bnwf_pile,
     "site_response_1d": _run_site_response,
 }
 
@@ -61,92 +53,6 @@ METHOD_REGISTRY = {
 # ---------------------------------------------------------------------------
 
 METHOD_INFO = {
-    "bnwf_lateral_pile": {
-        "category": "Lateral Pile",
-        "brief": "BNWF lateral pile analysis with PySimple1/TzSimple1 springs.",
-        "description": (
-            "Builds a Beam on Nonlinear Winkler Foundation model in OpenSees "
-            "for lateral pile analysis. The pile is modeled with elastic beam "
-            "elements and soil is modeled with PySimple1 (lateral), TzSimple1 "
-            "(shaft friction), and QzSimple1 (tip bearing) springs. Reuses "
-            "the 7 p-y curve models from the lateral_pile module: Matlock soft "
-            "clay, Jeanjean soft clay, Reese stiff clay below/above WT, "
-            "API sand, Reese sand, and weak rock."
-        ),
-        "reference": (
-            "API RP2A-WSD (2000); Matlock (1970) OTC 1204; "
-            "Reese, Cox & Koop (1974) OTC 2080; "
-            "OpenSeesPy BNWF Example: "
-            "https://openseespydoc.readthedocs.io/en/latest/src/pile.html"
-        ),
-        "parameters": {
-            "pile_length": {
-                "type": "float", "required": True,
-                "description": "Embedded pile length (m).",
-            },
-            "pile_diameter": {
-                "type": "float", "required": True,
-                "description": "Outer diameter (m).",
-            },
-            "wall_thickness": {
-                "type": "float", "required": True,
-                "description": "Pipe pile wall thickness (m). Use 0 for solid.",
-            },
-            "E_pile": {
-                "type": "float", "required": True,
-                "description": "Young's modulus of pile (kPa). "
-                               "Steel: 200e6; Concrete: 25e6-35e6.",
-            },
-            "layers": {
-                "type": "list of dict", "required": True,
-                "description": (
-                    "Soil layers. Each dict must have: top (m), bottom (m), "
-                    "py_model (str: 'matlock', 'jeanjean', 'stiff_clay_below_wt', "
-                    "'stiff_clay_above_wt', 'api_sand', 'reese_sand', 'weak_rock', "
-                    "'liquefied_sand'), plus model-specific params (phi, gamma, k, "
-                    "su/c, eps50, etc.). liquefied_sand requires only 'diameter'."
-                ),
-            },
-            "lateral_load": {
-                "type": "float", "required": False,
-                "default": 0.0,
-                "description": "Lateral force at pile head (kN).",
-            },
-            "moment": {
-                "type": "float", "required": False,
-                "default": 0.0,
-                "description": "Moment at pile head (kN-m).",
-            },
-            "axial_load": {
-                "type": "float", "required": False,
-                "default": 0.0,
-                "description": "Axial force (kN, compression positive).",
-            },
-            "head_condition": {
-                "type": "str", "required": False,
-                "default": "free",
-                "description": "'free' or 'fixed' head condition.",
-            },
-            "pile_above_ground": {
-                "type": "float", "required": False,
-                "default": 0.0,
-                "description": "Free length above ground surface (m).",
-            },
-            "n_elem_per_meter": {
-                "type": "float", "required": False,
-                "default": 5,
-                "description": "Mesh density (elements per meter of pile).",
-            },
-        },
-        "returns": {
-            "y_top_mm": "Pile head lateral deflection (mm).",
-            "rotation_top_mrad": "Pile head rotation (mrad).",
-            "max_deflection_mm": "Maximum lateral deflection (mm).",
-            "max_moment_kNm": "Maximum bending moment (kN-m).",
-            "max_moment_depth_m": "Depth of maximum moment (m).",
-            "converged": "Whether the analysis converged.",
-        },
-    },
     "site_response_1d": {
         "category": "Site Response",
         "brief": "1D effective-stress site response analysis with pore pressure.",
@@ -343,8 +249,7 @@ def opensees_agent(method: str, parameters_json: str) -> str:
     OpenSees finite element analysis agent for geotechnical engineering.
 
     Builds, runs, and post-processes OpenSees FE models for geotechnical
-    problems including liquefaction triggering, lateral pile analysis, and
-    site response.
+    problems including liquefaction triggering and site response.
 
     Call opensees_list_methods() first to see available analyses, then
     opensees_describe_method() for parameter details.
@@ -392,7 +297,7 @@ def opensees_list_methods(category: str = "") -> str:
 
     Parameters:
         category: Optional filter (e.g. "Cyclic Element Tests",
-            "Lateral Pile", "Site Response"). Leave empty for all.
+            "Site Response"). Leave empty for all.
 
     Returns:
         JSON string with method names and brief descriptions.

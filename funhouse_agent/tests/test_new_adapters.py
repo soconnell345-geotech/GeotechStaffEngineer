@@ -32,7 +32,7 @@ def assert_method_info_complete(method_info, method_registry):
 
 
 # ============================================================================
-# 1. opensees_adapter — 3 methods, has_opensees guard (raises ValueError)
+# 1. opensees_adapter — 2 methods, has_opensees guard (raises ValueError)
 # ============================================================================
 
 class TestOpenseesMethodInfo:
@@ -43,7 +43,7 @@ class TestOpenseesMethodInfo:
     def test_expected_methods(self):
         from funhouse_agent.adapters.opensees_adapter import METHOD_INFO
         assert set(METHOD_INFO.keys()) == {
-            "pm4sand_cyclic_dss", "bnwf_lateral_pile", "site_response_1d",
+            "pm4sand_cyclic_dss", "site_response_1d",
         }
 
 
@@ -52,7 +52,7 @@ class TestOpenseesDispatch:
         from funhouse_agent.dispatch import list_methods
         result = list_methods("opensees")
         total = sum(len(v) for v in result.values())
-        assert total == 3
+        assert total == 2
 
     def test_describe_method(self):
         from funhouse_agent.dispatch import describe_method
@@ -71,17 +71,6 @@ class TestOpenseesCalls:
             })
             assert "error" in result
             assert "not installed" in result["error"].lower() or "opensees" in result["error"].lower()
-
-    def test_bnwf_not_installed(self):
-        with patch("opensees_agent.has_opensees", return_value=False):
-            from funhouse_agent.dispatch import call_agent
-            result = call_agent("opensees", "bnwf_lateral_pile", {
-                "pile_length": 15, "pile_diameter": 0.5,
-                "wall_thickness": 0.01, "E_pile": 200e6,
-                "layers": [{"top": 0, "bottom": 15, "py_model": "SandAPI",
-                            "phi": 35, "gamma": 18}],
-            })
-            assert "error" in result
 
     def test_site_response_not_installed(self):
         with patch("opensees_agent.has_opensees", return_value=False):

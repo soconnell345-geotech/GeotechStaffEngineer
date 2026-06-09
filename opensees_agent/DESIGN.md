@@ -13,9 +13,8 @@ results dataclass — the LLM agent never touches raw OpenSees commands.
 opensees_agent/
   opensees_utils.py    -- import guard, fresh_model(), response spectrum
   ground_motions.py    -- built-in earthquake records
-  results.py           -- PM4SandDSSResult, BNWFPileResult, SiteResponseResult
+  results.py           -- PM4SandDSSResult, SiteResponseResult
   pm4sand_dss.py       -- analyze_pm4sand_dss()
-  bnwf_pile.py         -- analyze_bnwf_pile()       [Tier 2]
   site_response.py     -- analyze_site_response()   [Tier 2]
 ```
 
@@ -54,20 +53,9 @@ OpenSees internally uses the same units (no conversion needed).
 - Reference: Boulanger & Ziotopoulou (2017)
 - Key outputs: n_cycles_to_liq, max_ru, stress-strain loops, stress path
 
-### BNWF Lateral Pile
-- Beam-on-nonlinear-Winkler-foundation (BNWF) approach
-- Pile: `elasticBeamColumn` elements (2D beam, ndm=2, ndf=3)
-- Lateral springs: `PySimple1` uniaxial material (soilType 1=clay, 2=sand)
-- Shaft friction: `TzSimple1` on same zero-length elements
-- Tip bearing: `QzSimple1` at pile toe
-- Reuses all 7 p-y models from `lateral_pile/py_curves.py` — no duplicated
-  p-y formulations.  `_build_py_model()` instantiates the correct class from
-  a layer dict, then `_get_py_params()` extracts pult and y50 from the p-y
-  curve at each node depth.
-- Node numbering: soil nodes (fixed) → spring nodes (free) → pile nodes,
-  connected via `zeroLength` + `equalDOF`
-- Static analysis with Newton-Raphson, 20 load increments, ModifiedNewton fallback
-- Reference: OpenSees BNWF example (openseespydoc.readthedocs.io), API RP2A
+> Note: a redundant OpenSees BNWF lateral-pile pathway was retired in the
+> Phase 2a consolidation. Lateral pile analysis is provided by the native
+> `lateral_pile` module (COM624P-style FD solver with 8 p-y models).
 
 ### 1D Effective-Stress Site Response
 - 1D soil column with SSPquadUP elements (4-node u-p formulation)
@@ -100,7 +88,7 @@ base64 numpy arrays.
 ## Testing Strategy
 
 - **Tier 1** (no openseespy): Input validation, result dataclasses,
-  ground motions, utilities, Foundry agent metadata, BNWF layer parsing,
-  site response validation.  ~97 tests.
+  ground motions, utilities, Foundry agent metadata, site response
+  validation.
 - **Tier 2** (requires openseespy): Integration tests with actual FE
-  analyses.  Skipped via `@pytest.mark.skipif` when not installed.  ~9 tests.
+  analyses.  Skipped via `@pytest.mark.skipif` when not installed.

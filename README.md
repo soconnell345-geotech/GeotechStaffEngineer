@@ -63,7 +63,7 @@ Each agent wraps a third-party geotechnical library with a dict-based API for LL
 
 | Module | Library | Purpose |
 |--------|---------|---------|
-| `opensees_agent` | OpenSeesPy | PM4Sand cyclic DSS, BNWF pile, 1D site response |
+| `opensees_agent` | OpenSeesPy | PM4Sand cyclic DSS, 1D site response |
 | `pystrata_agent` | pystrata | 1D equivalent-linear site response |
 | `seismic_signals_agent` | eqsig + pyrotd | Earthquake signal processing |
 | `liquepy_agent` | liquepy | CPT-based liquefaction triggering |

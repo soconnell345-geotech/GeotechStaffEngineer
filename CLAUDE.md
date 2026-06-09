@@ -42,7 +42,7 @@ Key conventions:
 | slope_stability | 169+17skip | Fellenius/Bishop/Spencer, circular+noncircular, grid/random search, contact stresses, Duncan verification |
 | downdrag | 53 | Fellenius neutral plane, UFC 3-220-20 downdrag |
 | geotech_common | 288 | SoilProfile (82) + checks (93) + adapters (89) + plots (21) |
-| opensees_agent | 106 | PM4Sand cyclic DSS, BNWF lateral pile, 1D site response |
+| opensees_agent | 106 | PM4Sand cyclic DSS, 1D site response |
 | pystrata_agent | 60 | 1D EQL site response (SHAKE-type, Darendeli/Menq/custom) |
 | seismic_signals | 74 | Earthquake signal processing (eqsig/pyrotd) |
 | liquepy_agent | 59 | CPT-based liquefaction triggering (B&I 2014, LPI, LSN, LDI) |

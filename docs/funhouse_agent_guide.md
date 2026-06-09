@@ -201,7 +201,7 @@ The agent uses these tools automatically during the ReAct loop:
 
 | Module | Description |
 |--------|-------------|
-| `opensees` | OpenSees FE analyses (PM4Sand DSS, BNWF lateral pile, 1D site response) |
+| `opensees` | OpenSees FE analyses (PM4Sand DSS, 1D site response) |
 | `pystrata` | 1D site response (equivalent-linear and linear elastic, SHAKE-type) |
 | `liquepy` | CPT-based liquefaction triggering (Boulanger & Idriss 2014) |
 | `seismic_signals` | Earthquake signal processing (response spectra, intensity measures, RotD) |

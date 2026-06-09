@@ -143,7 +143,7 @@ MODULE_REGISTRY = {
     },
     "opensees": {
         "adapter": "funhouse_agent.adapters.opensees_adapter",
-        "brief": "OpenSees FE analyses (PM4Sand DSS, BNWF lateral pile, 1D site response)",
+        "brief": "OpenSees FE analyses (PM4Sand DSS, 1D site response)",
     },
     "pystrata": {
         "adapter": "funhouse_agent.adapters.pystrata_adapter",
