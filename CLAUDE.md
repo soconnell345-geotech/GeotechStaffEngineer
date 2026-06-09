@@ -319,9 +319,18 @@ gec_6/7/12/13 chapter-text edits are a separate uncommitted workstream.
       a one-line semantic description + axis/variable list and write it back into
       `figures_catalog.json` to improve future `figure_search` recall at zero bulk cost.
       Planned in the original design, not built.
-- [ ] **P6 — (deferred) Text embeddings for recall.** Only if FTS5 lexical recall proves
-      insufficient: text-embed the descriptions via `GenAIEngine.get_embedding()`. (Image
-      embeddings remain rejected.)
+- [~] **P6 — Cheaper recall lever LANDED (2026-06-09); text embeddings still deferred.**
+      Built the lexical **synonym query-expansion** layer first
+      (`geotech_references/_query_expansion.py`) wired into `reference_search`/`figure_search`,
+      selected by `EXPANSION_STRATEGY` (env `GEOTECH_RETRIEVAL_EXPANSION`, default `auto`).
+      Eval (`scripts/eval_retrieval_recall.py`): recall@5 **11%→44%** with **0** top-1
+      disturbance (`auto` = rerank the literal+synonym union but pin the literal top-1).
+      27 new tests + full geotech-references suite (3702) pass. **Merged and live on master**;
+      reaches the Funhouse consultant for free (shared `reference_db`/`figure_db` adapters).
+      **v5.1 follow-ups:** live Funhouse reviewer-agent eval (owner-gated), synonym-map
+      curation, larger gold set, keep-`auto`-default-vs-opt-in decision — see
+      geotech-references `## Lexical Query Expansion`. **Text embeddings remain DEFERRED**
+      (only if expansion+lexical still prove insufficient); **image embeddings remain rejected.**
 - [ ] **P7 — (deferred) Figure cropping.** Full-page render is robust; revisit only if
       multi-figure pages hurt read-off accuracy.
 - [x] **P8 — DONE: figure catalogs are packaged.** `"*/figures_catalog.json"` added to
