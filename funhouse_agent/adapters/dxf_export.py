@@ -105,7 +105,7 @@ METHOD_INFO = {
             "gwt_points": {"type": "list", "required": False, "description": "Groundwater table as [[x,z],...]"},
             "nail_lines": {"type": "list", "required": False, "description": "Nail lines: [{x_head, z_head, x_tip, z_tip},...]"},
             "text_annotations": {"type": "list", "required": False, "description": "Text labels: [{text, x, y},...]"},
-            "units": {"type": "str", "required": False, "default": "m", "description": "Coordinate units (m, ft, mm)."},
+            "units": {"type": "str", "required": False, "default": "m", "allowed_values": ["m", "mm", "cm", "ft", "in"], "description": "Coordinate units."},
         },
         "returns": {
             "filepath": "Path to saved DXF file.",
@@ -122,7 +122,7 @@ METHOD_INFO = {
             "gwt_points": {"type": "list", "required": False, "description": "Groundwater table as [[x,z],...]"},
             "nail_lines": {"type": "list", "required": False, "description": "Nail lines: [{x_head, z_head, x_tip, z_tip},...]"},
             "text_annotations": {"type": "list", "required": False, "description": "Text labels: [{text, x, y},...]"},
-            "units": {"type": "str", "required": False, "default": "m", "description": "Coordinate units (m, ft, mm)."},
+            "units": {"type": "str", "required": False, "default": "m", "allowed_values": ["m", "mm", "cm", "ft", "in"], "description": "Coordinate units."},
         },
         "returns": {
             "dxf_base64": "Base64-encoded DXF file content.",

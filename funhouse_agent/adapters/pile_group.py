@@ -1,5 +1,6 @@
 """Pile group adapter — rigid cap analysis, 6-DOF, efficiency."""
 
+from funhouse_agent.adapters import require_keys, require_params
 from pile_group import (
     GroupPile, create_rectangular_layout, converse_labarre,
     block_failure_capacity, p_multiplier, GroupLoad,
@@ -9,9 +10,17 @@ from pile_group import (
 
 def _build_piles(params):
     if "n_rows" in params and "n_cols" in params:
+        # Accept a single 'spacing' for both directions.
+        sx = params.get("spacing_x", params.get("spacing"))
+        sy = params.get("spacing_y", params.get("spacing"))
+        if sx is None or sy is None:
+            raise ValueError(
+                "Rectangular layout requires spacing_x and spacing_y (m), "
+                "or a single 'spacing' applied to both directions."
+            )
         piles = create_rectangular_layout(
             n_rows=params["n_rows"], n_cols=params["n_cols"],
-            spacing_x=params["spacing_x"], spacing_y=params["spacing_y"],
+            spacing_x=sx, spacing_y=sy,
             axial_stiffness=params.get("axial_stiffness"), lateral_stiffness=params.get("lateral_stiffness"),
         )
         for p in piles:
@@ -21,6 +30,8 @@ def _build_piles(params):
                 p.axial_capacity_tension = params["axial_capacity_tension"]
         return piles
     elif "piles" in params:
+        for pd in params["piles"]:
+            require_keys(pd, ["x", "y"], method="pile_group", item_label="piles[]")
         return [GroupPile(
             x=pd["x"], y=pd["y"], batter_x=pd.get("batter_x", 0.0), batter_y=pd.get("batter_y", 0.0),
             axial_stiffness=pd.get("axial_stiffness"), lateral_stiffness=pd.get("lateral_stiffness"),
@@ -46,8 +57,14 @@ def _run_pile_group_6dof(params):
 def _run_group_efficiency(params):
     results = {}
     if "n_rows" in params and "n_cols" in params and "pile_diameter" in params:
+        s = params.get("spacing", params.get("spacing_x"))
+        if s is None:
+            raise ValueError(
+                "group_efficiency: missing 'spacing' (center-to-center, m). "
+                "Required with n_rows/n_cols/pile_diameter for Converse-Labarre."
+            )
         results["converse_labarre_Eg"] = round(converse_labarre(
-            params["n_rows"], params["n_cols"], params["pile_diameter"], params["spacing"]), 4)
+            params["n_rows"], params["n_cols"], params["pile_diameter"], s), 4)
     if "pile_length" in params and "cu" in params:
         results["block_failure_kN"] = round(block_failure_capacity(
             params["n_rows"], params["n_cols"], params.get("spacing_x", params.get("spacing", 0)),
@@ -72,8 +89,10 @@ METHOD_INFO = {
         "parameters": {
             "n_rows": {"type": "int", "required": False, "description": "Rows for rectangular layout."},
             "n_cols": {"type": "int", "required": False, "description": "Columns for rectangular layout."},
-            "spacing_x": {"type": "float", "required": False, "description": "X spacing (m)."},
-            "spacing_y": {"type": "float", "required": False, "description": "Y spacing (m)."},
+            "spacing_x": {"type": "float", "required": False, "description": "X spacing (m). Or give a single 'spacing' for both directions."},
+            "spacing_y": {"type": "float", "required": False, "description": "Y spacing (m). Or give a single 'spacing' for both directions."},
+            "spacing": {"type": "float", "required": False, "description": "Uniform center-to-center spacing (m), used for both x and y."},
+            "piles": {"type": "array", "required": False, "description": "Explicit pile list [{x, y, batter_x, batter_y, ...}] instead of n_rows/n_cols."},
             "Vz": {"type": "float", "required": True, "description": "Vertical load (kN)."},
             "Mx": {"type": "float", "required": False, "description": "Moment about x (kN-m)."},
             "My": {"type": "float", "required": False, "description": "Moment about y (kN-m)."},
@@ -86,8 +105,10 @@ METHOD_INFO = {
         "parameters": {
             "n_rows": {"type": "int", "required": False, "description": "Rows for rectangular layout."},
             "n_cols": {"type": "int", "required": False, "description": "Columns."},
-            "spacing_x": {"type": "float", "required": False, "description": "X spacing (m)."},
-            "spacing_y": {"type": "float", "required": False, "description": "Y spacing (m)."},
+            "spacing_x": {"type": "float", "required": False, "description": "X spacing (m). Or give a single 'spacing' for both directions."},
+            "spacing_y": {"type": "float", "required": False, "description": "Y spacing (m). Or give a single 'spacing' for both directions."},
+            "spacing": {"type": "float", "required": False, "description": "Uniform center-to-center spacing (m), used for both x and y."},
+            "piles": {"type": "array", "required": False, "description": "Explicit pile list [{x, y, batter_x, batter_y, ...}] instead of n_rows/n_cols."},
             "Vx": {"type": "float", "required": False, "description": "Lateral load x (kN)."},
             "Vy": {"type": "float", "required": False, "description": "Lateral load y (kN)."},
             "Vz": {"type": "float", "required": False, "description": "Vertical load (kN)."},

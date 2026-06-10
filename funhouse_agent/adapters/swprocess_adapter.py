@@ -34,7 +34,7 @@ METHOD_INFO = {
             "traces": {"type": "array", "required": True, "description": "Seismograms for each sensor channel (list of 1D arrays)."},
             "offsets": {"type": "array", "required": True, "description": "Source-receiver offset for each channel (m)."},
             "dt": {"type": "float", "required": True, "description": "Sampling interval (seconds)."},
-            "transform": {"type": "str", "required": False, "default": "phase_shift", "description": "Wavefield transform: phase_shift/fk/fdbf."},
+            "transform": {"type": "str", "required": False, "default": "phase_shift", "allowed_values": ["phase_shift", "fk", "fdbf"], "description": "Wavefield transform."},
             "fmin": {"type": "float", "required": False, "default": 5.0, "description": "Minimum frequency (Hz)."},
             "fmax": {"type": "float", "required": False, "default": 100.0, "description": "Maximum frequency (Hz)."},
             "vmin": {"type": "float", "required": False, "default": 50.0, "description": "Minimum phase velocity (m/s)."},

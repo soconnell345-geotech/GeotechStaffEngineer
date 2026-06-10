@@ -91,7 +91,7 @@ METHOD_INFO = {
             "shaft_length": {"type": "float", "required": True, "description": "Shaft length (m)."},
             "layers": {"type": "array", "required": True, "description": "Soil layers (same as drilled_shaft_capacity)."},
             "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
-            "tip_soil_type": {"type": "str", "required": False, "default": "cohesive", "description": "'cohesive', 'cohesionless', or 'rock' at shaft tip."},
+            "tip_soil_type": {"type": "str", "required": False, "default": "cohesive", "allowed_values": ["cohesive", "cohesionless", "rock"], "description": "Soil type at shaft tip."},
         },
         "returns": {"Q_ultimate_kN": "Unfactored ultimate capacity.", "lrfd": "Factored resistances by component."},
     },

@@ -1,17 +1,30 @@
 """Downdrag adapter — Fellenius neutral plane, UFC 3-220-20."""
 
 from downdrag import DowndragSoilLayer, DowndragSoilProfile, DowndragAnalysis
+from funhouse_agent.adapters import require_keys, require_params
+
+_SOIL_TYPES = ("cohesionless", "cohesive")
 
 
 def _run_downdrag_analysis(params):
-    layers = [DowndragSoilLayer(
-        thickness=l["thickness"], soil_type=l["soil_type"], unit_weight=l["unit_weight"],
-        phi=l.get("phi", 0.0), cu=l.get("cu", 0.0), beta=l.get("beta"), alpha=l.get("alpha"),
-        Cc=l.get("Cc", 0.0), Cr=l.get("Cr", 0.0), e0=l.get("e0", 0.0),
-        C_ec=l.get("C_ec"), C_er=l.get("C_er"), sigma_p=l.get("sigma_p"),
-        E_s=l.get("E_s"), nu_s=l.get("nu_s", 0.3),
-        settling=l.get("settling", False), description=l.get("description", ""),
-    ) for l in params["layers"]]
+    require_params(params, ["layers", "pile_length", "pile_diameter"],
+                   method="downdrag_analysis")
+    layers = []
+    for l in params["layers"]:
+        require_keys(l, ["thickness", "soil_type", "unit_weight"], method="downdrag_analysis")
+        if l["soil_type"] not in _SOIL_TYPES:
+            raise ValueError(
+                f"downdrag_analysis: layer soil_type must be one of {list(_SOIL_TYPES)} "
+                f"(got '{l['soil_type']}'). Mark settling layers with settling=True."
+            )
+        layers.append(DowndragSoilLayer(
+            thickness=l["thickness"], soil_type=l["soil_type"], unit_weight=l["unit_weight"],
+            phi=l.get("phi", 0.0), cu=l.get("cu", 0.0), beta=l.get("beta"), alpha=l.get("alpha"),
+            Cc=l.get("Cc", 0.0), Cr=l.get("Cr", 0.0), e0=l.get("e0", 0.0),
+            C_ec=l.get("C_ec"), C_er=l.get("C_er"), sigma_p=l.get("sigma_p"),
+            E_s=l.get("E_s"), nu_s=l.get("nu_s", 0.3),
+            settling=l.get("settling", False), description=l.get("description", ""),
+        ))
     soil = DowndragSoilProfile(layers=layers, gwt_depth=params.get("gwt_depth", 0.0))
     analysis = DowndragAnalysis(
         soil=soil, pile_length=params["pile_length"], pile_diameter=params["pile_diameter"],
@@ -33,7 +46,7 @@ METHOD_INFO = {
         "parameters": {
             "pile_length": {"type": "float", "required": True, "description": "Pile length (m)."},
             "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter (m)."},
-            "layers": {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, phi, cu, beta, Cc, e0, settling} dicts. Mark settling layers with settling=True."},
+            "layers": {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, phi, cu, beta, Cc, e0, settling} dicts. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay'/'settling_fill'). Mark settling layers with settling=True."},
             "Q_dead": {"type": "float", "required": False, "default": 0.0, "description": "Dead load at pile top (kN)."},
             "fill_thickness": {"type": "float", "required": False, "description": "Fill thickness causing downdrag (m)."},
             "gw_drawdown": {"type": "float", "required": False, "description": "Groundwater drawdown (m)."},

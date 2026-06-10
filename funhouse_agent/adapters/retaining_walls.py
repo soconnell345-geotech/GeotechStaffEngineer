@@ -1,5 +1,7 @@
-"""Retaining walls adapter — cantilever + MSE wall analysis."""
+"""Retaining walls adapter — cantilever + MSE wall analysis + earth pressure coefficients."""
 
+from funhouse_agent.adapters import apply_aliases, require_params
+from retaining_walls import earth_pressure as _ep
 from retaining_walls.geometry import CantileverWallGeometry, MSEWallGeometry
 from retaining_walls.cantilever import analyze_cantilever_wall
 from retaining_walls.mse import analyze_mse_wall
@@ -7,6 +9,12 @@ from retaining_walls.reinforcement import (
     Reinforcement, RIBBED_STEEL_STRIP_75x4, WELDED_WIRE_GRID_W11,
     GEOGRID_UX1600, GEOGRID_UX1700,
 )
+
+# Names the agent commonly reaches for, mapped to the adapter's canonical names.
+_WALL_ALIASES = {"phi": "phi_backfill", "gamma": "gamma_backfill",
+                 "friction_angle": "phi_backfill", "unit_weight": "gamma_backfill",
+                 "c": "c_backfill", "cohesion": "c_backfill",
+                 "height": "wall_height", "H": "wall_height"}
 
 _REINFORCEMENT_DB = {
     "ribbed_steel_strip_75x4": RIBBED_STEEL_STRIP_75x4,
@@ -20,6 +28,13 @@ def _build_reinforcement(params):
     name = params.get("reinforcement_name", "").lower()
     if name in _REINFORCEMENT_DB:
         return _REINFORCEMENT_DB[name]
+    if params.get("reinforcement_Tallowable") is None:
+        raise ValueError(
+            "mse_wall: provide a built-in reinforcement_name "
+            f"({sorted(_REINFORCEMENT_DB)}; see list_reinforcement) or a custom "
+            "reinforcement_Tallowable (kN/m) with optional reinforcement_type/"
+            "reinforcement_width/reinforcement_Fy/reinforcement_thickness."
+        )
     return Reinforcement(
         name=params.get("reinforcement_name", "Custom"),
         type=params.get("reinforcement_type", "geosynthetic"),
@@ -31,6 +46,9 @@ def _build_reinforcement(params):
 
 
 def _run_cantilever_wall(params):
+    params = apply_aliases(params, _WALL_ALIASES)
+    require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
+                   method="cantilever_wall")
     geom = CantileverWallGeometry(
         wall_height=params["wall_height"],
         base_width=params.get("base_width"), toe_length=params.get("toe_length"),
@@ -57,6 +75,9 @@ def _run_cantilever_wall(params):
 
 
 def _run_mse_wall(params):
+    params = apply_aliases(params, _WALL_ALIASES)
+    require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
+                   method="mse_wall")
     geom = MSEWallGeometry(
         wall_height=params["wall_height"],
         reinforcement_length=params.get("reinforcement_length"),
@@ -76,6 +97,52 @@ def _run_mse_wall(params):
     return output
 
 
+def _run_earth_pressure_coefficient(params):
+    """Thin wrapper over retaining_walls.earth_pressure Ka/Kp/K0 functions."""
+    p = apply_aliases(params, {"phi": "phi_deg", "friction_angle": "phi_deg",
+                               "phi_backfill": "phi_deg",
+                               "delta": "delta_deg", "wall_friction": "delta_deg",
+                               "beta": "beta_deg", "backfill_slope": "beta_deg",
+                               "slope_angle": "beta_deg",
+                               "alpha": "alpha_deg", "wall_angle": "alpha_deg"})
+    require_params(p, ["phi_deg"], method="earth_pressure_coefficient",
+                   valid=["phi_deg", "theory", "state", "delta_deg", "beta_deg", "alpha_deg"])
+    theory = p.get("theory", "rankine")
+    state = p.get("state", "active")
+    phi = p["phi_deg"]
+    beta = p.get("beta_deg", 0.0)
+    if theory not in ("rankine", "coulomb"):
+        raise ValueError(f"Unknown theory '{theory}'. Allowed: ['rankine', 'coulomb'].")
+    if state not in ("active", "passive", "at_rest"):
+        raise ValueError(f"Unknown state '{state}'. Allowed: ['active', 'passive', 'at_rest'].")
+
+    if state == "at_rest":
+        K, symbol = _ep.K0(phi), "K0"
+    elif theory == "rankine":
+        if state == "active":
+            K = _ep.rankine_Ka_sloped(phi, beta) if beta else _ep.rankine_Ka(phi)
+            symbol = "Ka"
+        else:
+            K, symbol = _ep.rankine_Kp(phi), "Kp"
+    else:  # coulomb
+        delta = p.get("delta_deg", 0.0)
+        alpha = p.get("alpha_deg", 90.0)
+        if state == "active":
+            K, symbol = _ep.coulomb_Ka(phi, delta, alpha, beta), "Ka"
+        else:
+            K, symbol = _ep.coulomb_Kp(phi, delta, alpha, beta), "Kp"
+    return {
+        "K": round(K, 4),
+        "coefficient": symbol,
+        "theory": "jaky_at_rest" if state == "at_rest" else theory,
+        "state": state,
+        "phi_deg": phi,
+        "delta_deg": p.get("delta_deg", 0.0),
+        "beta_deg": beta,
+        "alpha_deg": p.get("alpha_deg", 90.0),
+    }
+
+
 def _run_list_reinforcement(params):
     result = {}
     for key, r in _REINFORCEMENT_DB.items():
@@ -87,6 +154,7 @@ METHOD_REGISTRY = {
     "cantilever_wall": _run_cantilever_wall,
     "mse_wall": _run_mse_wall,
     "list_reinforcement": _run_list_reinforcement,
+    "earth_pressure_coefficient": _run_earth_pressure_coefficient,
 }
 
 METHOD_INFO = {
@@ -99,8 +167,23 @@ METHOD_INFO = {
             "phi_backfill": {"type": "float", "required": True, "description": "Backfill friction angle (degrees)."},
             "base_width": {"type": "float", "required": False, "description": "Base width (m). Auto-sized if omitted."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surcharge (kPa)."},
+            "backfill_slope": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees)."},
+            "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb"], "description": "Earth pressure theory."},
         },
         "returns": {"FOS_sliding": "Factor of safety against sliding.", "FOS_overturning": "Factor of safety against overturning."},
+    },
+    "earth_pressure_coefficient": {
+        "category": "Earth Pressure",
+        "brief": "Lateral earth pressure coefficient Ka/Kp/K0 (Rankine or Coulomb).",
+        "parameters": {
+            "phi_deg": {"type": "float", "required": True, "description": "Soil friction angle (degrees). Alias: phi."},
+            "theory": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb"], "description": "Earth pressure theory (ignored for at_rest, which uses Jaky K0 = 1 - sin(phi))."},
+            "state": {"type": "str", "required": False, "default": "active", "allowed_values": ["active", "passive", "at_rest"], "description": "Pressure state: Ka (active), Kp (passive), or K0 (at rest)."},
+            "delta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Wall friction angle (degrees). Coulomb only. Alias: delta."},
+            "beta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees). Aliases: beta, backfill_slope."},
+            "alpha_deg": {"type": "float", "required": False, "default": 90.0, "description": "Wall back face angle from horizontal (degrees, 90 = vertical). Coulomb only. Alias: alpha."},
+        },
+        "returns": {"K": "Earth pressure coefficient value.", "coefficient": "Ka, Kp, or K0.", "theory": "Theory used."},
     },
     "mse_wall": {
         "category": "MSE Wall",
@@ -109,7 +192,12 @@ METHOD_INFO = {
             "wall_height": {"type": "float", "required": True, "description": "Wall height (m)."},
             "gamma_backfill": {"type": "float", "required": True, "description": "Backfill unit weight (kN/m3)."},
             "phi_backfill": {"type": "float", "required": True, "description": "Backfill friction angle (degrees)."},
-            "reinforcement_name": {"type": "str", "required": False, "description": "Built-in name or custom. Use list_reinforcement to see options."},
+            "reinforcement_name": {"type": "str", "required": False, "description": "Built-in reinforcement name (use list_reinforcement to see options), or omit and define a custom reinforcement via reinforcement_type + reinforcement_Tallowable."},
+            "reinforcement_type": {"type": "str", "required": False, "default": "geosynthetic", "allowed_values": ["metallic_strip", "metallic_grid", "geosynthetic"], "description": "Custom reinforcement type. Drives the internal-stability lateral stress ratio (metallic vs geosynthetic Kr/Ka profile)."},
+            "reinforcement_Tallowable": {"type": "float", "required": False, "description": "Allowable tensile strength (kN/m) for a custom reinforcement. Required when reinforcement_name is not a built-in."},
+            "reinforcement_length": {"type": "float", "required": False, "description": "Reinforcement length (m). Auto-sized (0.7H minimum) if omitted."},
+            "reinforcement_spacing": {"type": "float", "required": False, "default": 0.6, "description": "Vertical reinforcement spacing (m)."},
+            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surcharge (kPa)."},
         },
         "returns": {"FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS."},
     },

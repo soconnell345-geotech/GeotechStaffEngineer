@@ -145,7 +145,7 @@ METHOD_INFO = {
             "file_path": {"type": "str", "required": True, "description": "Path to PDF file."},
             "page": {"type": "int", "required": False, "default": 0, "description": "Page number (0-indexed)."},
             "scale": {"type": "float", "required": False, "default": 1.0, "description": "Scale factor: drawing_units * scale = meters."},
-            "origin": {"type": "str", "required": False, "default": "bottom_left", "description": "Coordinate origin: 'bottom_left' or 'top_left'."},
+            "origin": {"type": "str", "required": False, "default": "bottom_left", "allowed_values": ["bottom_left", "top_left"], "description": "Coordinate origin."},
             "role_mapping": {"type": "dict", "required": False, "description": "Maps hex colors to roles: {'#000000': 'surface', '#0000ff': 'gwt', '#808080': 'boundary_Clay'}."},
         },
         "returns": {

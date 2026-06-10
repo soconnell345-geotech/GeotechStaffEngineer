@@ -1,6 +1,9 @@
 """GSTools adapter — flat dict -> gstools_agent API -> dict."""
 
-from funhouse_agent.adapters import clean_result
+from funhouse_agent.adapters import clean_result, require_params
+
+_MODEL_TYPES = ["Gaussian", "Exponential", "Matern", "Spherical", "Linear",
+                "Stable", "Rational", "Cubic", "HyperSpherical"]
 
 
 def _run_kriging(params: dict) -> dict:
@@ -8,6 +11,7 @@ def _run_kriging(params: dict) -> dict:
     if not has_gstools():
         return {"error": "gstools is not installed. Install with: pip install gstools"}
 
+    require_params(params, ["x", "y", "values"], method="kriging")
     result = analyze_kriging(
         x=params["x"],
         y=params["y"],
@@ -33,6 +37,7 @@ def _run_variogram(params: dict) -> dict:
     if not has_gstools():
         return {"error": "gstools is not installed. Install with: pip install gstools"}
 
+    require_params(params, ["x", "y", "values"], method="variogram")
     result = analyze_variogram(
         x=params["x"],
         y=params["y"],
@@ -80,8 +85,8 @@ METHOD_INFO = {
             "x": {"type": "array", "required": True, "description": "X-coordinates of measurement points."},
             "y": {"type": "array", "required": True, "description": "Y-coordinates of measurement points."},
             "values": {"type": "array", "required": True, "description": "Measured values at each point."},
-            "model_type": {"type": "str", "required": False, "default": "Gaussian", "description": "Covariance model: Gaussian/Exponential/Matern/Spherical/Linear."},
-            "kriging_type": {"type": "str", "required": False, "default": "ordinary", "description": "Kriging type: ordinary/simple/universal."},
+            "model_type": {"type": "str", "required": False, "default": "Gaussian", "allowed_values": _MODEL_TYPES, "description": "Covariance model."},
+            "kriging_type": {"type": "str", "required": False, "default": "ordinary", "allowed_values": ["ordinary", "simple", "universal"], "description": "Kriging type."},
             "grid_x_min": {"type": "float", "required": False, "description": "Grid X minimum. Auto from data if omitted."},
             "grid_x_max": {"type": "float", "required": False, "description": "Grid X maximum."},
             "grid_y_min": {"type": "float", "required": False, "description": "Grid Y minimum."},
@@ -107,7 +112,7 @@ METHOD_INFO = {
             "x": {"type": "array", "required": True, "description": "X-coordinates of measurement points."},
             "y": {"type": "array", "required": True, "description": "Y-coordinates of measurement points."},
             "values": {"type": "array", "required": True, "description": "Measured values at each point."},
-            "model_type": {"type": "str", "required": False, "default": "Gaussian", "description": "Covariance model to fit."},
+            "model_type": {"type": "str", "required": False, "default": "Gaussian", "allowed_values": _MODEL_TYPES, "description": "Covariance model to fit."},
             "n_bins": {"type": "int", "required": False, "default": 10, "description": "Number of lag bins."},
             "nugget": {"type": "float", "required": False, "default": 0.0, "description": "Nugget variance."},
         },
@@ -121,7 +126,7 @@ METHOD_INFO = {
         "category": "Geostatistics",
         "brief": "Generate a 2D spatial random field for probabilistic soil property modeling.",
         "parameters": {
-            "model_type": {"type": "str", "required": False, "default": "Gaussian", "description": "Covariance model."},
+            "model_type": {"type": "str", "required": False, "default": "Gaussian", "allowed_values": _MODEL_TYPES, "description": "Covariance model."},
             "variance": {"type": "float", "required": False, "default": 1.0, "description": "Field variance."},
             "len_scale": {"type": "float", "required": False, "default": 10.0, "description": "Correlation length."},
             "nugget": {"type": "float", "required": False, "default": 0.0, "description": "Nugget variance."},

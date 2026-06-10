@@ -1,5 +1,6 @@
 """Settlement adapter — flat dict → settlement functions → dict."""
 
+from funhouse_agent.adapters import apply_aliases, require_keys, require_params
 from settlement.immediate import elastic_settlement, SchmertmannLayer, schmertmann_settlement
 from settlement.consolidation import (
     ConsolidationLayer, consolidation_settlement_layer,
@@ -9,6 +10,9 @@ from settlement.analysis import SettlementAnalysis
 
 
 def _run_elastic_settlement(params: dict) -> dict:
+    params = apply_aliases(params, {"q": "q_net", "q_applied": "q_net", "pressure": "q_net"})
+    require_params(params, ["q_net", "B", "Es"], method="elastic_settlement",
+                   valid=["q_net", "B", "Es", "nu", "Iw", "shape"])
     Se = elastic_settlement(
         q=params["q_net"], B=params["B"], Es=params["Es"],
         nu=params.get("nu", 0.3), Iw=params.get("Iw", 1.0),
@@ -18,6 +22,10 @@ def _run_elastic_settlement(params: dict) -> dict:
 
 
 def _run_schmertmann_settlement(params: dict) -> dict:
+    params = apply_aliases(params, {"q": "q_net", "q_applied": "q_net"})
+    require_params(params, ["q_net", "B", "layers"], method="schmertmann_settlement")
+    for l in params["layers"]:
+        require_keys(l, ["depth_top", "depth_bottom", "Es"], method="schmertmann_settlement")
     layers = [SchmertmannLayer(depth_top=l["depth_top"], depth_bottom=l["depth_bottom"], Es=l["Es"]) for l in params["layers"]]
     Se = schmertmann_settlement(
         q_net=params["q_net"], q0=params.get("q_overburden", 0.0),
@@ -29,6 +37,10 @@ def _run_schmertmann_settlement(params: dict) -> dict:
 
 
 def _run_consolidation_settlement(params: dict) -> dict:
+    require_params(params, ["layers"], method="consolidation_settlement")
+    for l in params["layers"]:
+        require_keys(l, ["thickness", "depth_to_center", "e0", "Cc", "Cr", "sigma_v0"],
+                     method="consolidation_settlement")
     layers = [
         ConsolidationLayer(
             thickness=l["thickness"], depth_to_center=l["depth_to_center"],
@@ -63,6 +75,8 @@ def _run_consolidation_settlement(params: dict) -> dict:
 
 
 def _run_combined_settlement(params: dict) -> dict:
+    params = apply_aliases(params, {"q_net": "q_applied", "q": "q_applied"})
+    require_params(params, ["q_applied", "B"], method="combined_settlement_analysis")
     consol_layers = None
     if "consolidation_layers" in params:
         consol_layers = [
@@ -110,7 +124,7 @@ METHOD_INFO = {
             "B": {"type": "float", "required": True, "description": "Footing width (m)."},
             "Es": {"type": "float", "required": True, "description": "Soil elastic modulus (kPa)."},
             "nu": {"type": "float", "required": False, "default": 0.3, "description": "Poisson's ratio."},
-            "shape": {"type": "str", "required": False, "default": "square", "description": "square/rectangular/circular."},
+            "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "circular"], "description": "Footing shape (for reference; supply Iw for non-default rigidity)."},
         },
         "returns": {"immediate_settlement_mm": "Settlement in mm."},
     },
@@ -122,7 +136,7 @@ METHOD_INFO = {
             "B": {"type": "float", "required": True, "description": "Footing width (m)."},
             "layers": {"type": "array", "required": True, "description": "Array of {depth_top, depth_bottom, Es} dicts."},
             "q_overburden": {"type": "float", "required": False, "default": 0.0, "description": "Overburden pressure at footing base (kPa)."},
-            "shape": {"type": "str", "required": False, "default": "square", "description": "square/rectangular."},
+            "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "strip"], "description": "Footing shape."},
             "time_years": {"type": "float", "required": False, "default": 0.0, "description": "Time for creep factor."},
         },
         "returns": {"schmertmann_settlement_mm": "Settlement in mm."},
@@ -131,11 +145,11 @@ METHOD_INFO = {
         "category": "Consolidation",
         "brief": "Cc/Cr e-log(p) consolidation settlement with layer summation.",
         "parameters": {
-            "layers": {"type": "array", "required": True, "description": "Array of {thickness, depth_to_center, e0, Cc, Cr, sigma_v0, sigma_p} dicts."},
+            "layers": {"type": "array", "required": True, "description": "Array of {thickness (m), depth_to_center (m), e0, Cc, Cr (recompression index; ~Cc/10 if unknown), sigma_v0 (initial effective stress at layer center, kPa, must be > 0), sigma_p (preconsolidation, kPa, optional)} dicts. All of thickness/depth_to_center/e0/Cc/Cr/sigma_v0 are required."},
             "delta_sigma": {"type": "float", "required": False, "description": "Uniform stress increase (kPa). Or use delta_sigmas array."},
             "q_net": {"type": "float", "required": False, "description": "Net pressure for auto stress distribution."},
             "B": {"type": "float", "required": False, "description": "Footing width for stress distribution (m)."},
-            "stress_method": {"type": "str", "required": False, "default": "2:1", "description": "Stress distribution method (2:1 or boussinesq)."},
+            "stress_method": {"type": "str", "required": False, "default": "2:1", "allowed_values": ["2:1", "boussinesq", "westergaard"], "description": "Stress distribution method."},
         },
         "returns": {"consolidation_settlement_mm": "Total consolidation settlement in mm.", "layer_breakdown": "Per-layer results."},
     },
@@ -150,6 +164,9 @@ METHOD_INFO = {
             "schmertmann_layers": {"type": "array", "required": False, "description": "Array of Schmertmann layer dicts."},
             "cv": {"type": "float", "required": False, "description": "Coefficient of consolidation (m2/yr)."},
             "Hdr": {"type": "float", "required": False, "description": "Drainage path length (m)."},
+            "immediate_method": {"type": "str", "required": False, "default": "elastic", "allowed_values": ["elastic", "schmertmann"], "description": "Immediate settlement method."},
+            "drainage": {"type": "str", "required": False, "default": "double", "allowed_values": ["single", "double"], "description": "Drainage condition for time rate."},
+            "stress_method": {"type": "str", "required": False, "default": "2:1", "allowed_values": ["2:1", "boussinesq", "westergaard"], "description": "Stress distribution method."},
         },
         "returns": {"total_settlement_mm": "Total settlement.", "time_settlement_curve": "Settlement vs time data."},
     },

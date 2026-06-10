@@ -36,6 +36,7 @@ def _run_bearing_graph(params):
         damping_side=params.get("damping_side", 0.16), damping_toe=params.get("damping_toe", 0.50),
         R_min=params.get("R_min", 200.0), R_max=params.get("R_max", 2000.0), R_step=params.get("R_step", 200.0),
         helmet_weight=params.get("helmet_weight", 5.0),
+        damping_model=params.get("damping_model", "smith"),
     )
     return bg.to_dict()
 
@@ -50,6 +51,7 @@ def _run_drivability(params):
         segment_length=params.get("segment_length", 1.0),
         helmet_weight=params.get("helmet_weight", 5.0),
         refusal_blow_count=params.get("refusal_blow_count", 3000.0),
+        damping_model=params.get("damping_model", "smith"),
     )
     return result.to_dict()
 
@@ -72,13 +74,19 @@ def _run_single_blow(params):
         segment_length=params.get("segment_length", 1.0),
         unit_weight_material=params.get("pile_unit_weight", 78.5),
     )
+    # Module keyword is R_ultimate; METHOD_INFO advertises R_total — accept both.
+    R = params.get("R_total", params.get("R_ultimate"))
+    if R is None:
+        raise ValueError("single_blow: missing required parameter 'R_total' "
+                         "(total ultimate soil resistance, kN).")
     soil = SoilSetup(
-        R_total=params["R_total"],
+        R_ultimate=R,
         skin_fraction=params.get("skin_fraction", 0.5),
         quake_side=params.get("quake_side", 0.0025),
         quake_toe=params.get("quake_toe", 0.0025),
         damping_side=params.get("damping_side", 0.16),
         damping_toe=params.get("damping_toe", 0.50),
+        damping_model=params.get("damping_model", "smith"),
     )
     result = simulate_blow(
         hammer, cushion, pile, soil,
@@ -89,10 +97,9 @@ def _run_single_blow(params):
     return {
         "permanent_set_mm": round(perm_set * 1000, 3),
         "blow_count_per_m": blow_count,
-        "max_pile_stress_MPa": round(result.max_compressive_stress / 1000, 2),
-        "max_tension_stress_MPa": round(result.max_tensile_stress / 1000, 2),
-        "max_pile_force_kN": round(result.max_compressive_force, 1),
-        "energy_transfer_pct": round(result.energy_transfer * 100, 1),
+        "max_pile_stress_MPa": round(result.max_compression_stress / 1000, 2),
+        "max_tension_stress_MPa": round(result.max_tension_stress / 1000, 2),
+        "max_pile_force_kN": round(result.max_pile_force, 1),
     }
 
 
@@ -113,6 +120,7 @@ METHOD_INFO = {
             "pile_area": {"type": "float", "required": True, "description": "Pile area (m2)."},
             "R_total": {"type": "float", "required": True, "description": "Total soil resistance (kN)."},
             "skin_fraction": {"type": "float", "required": False, "default": 0.5, "description": "Skin friction fraction."},
+            "damping_model": {"type": "str", "required": False, "default": "smith", "allowed_values": ["smith", "smith_viscous"], "description": "Smith damping form: 'smith' (R_static-proportional) or 'smith_viscous' (R_ultimate-proportional)."},
         },
         "returns": {
             "permanent_set_mm": "Pile penetration per blow (mm).",
@@ -130,6 +138,7 @@ METHOD_INFO = {
             "pile_area": {"type": "float", "required": True, "description": "Pile cross-sectional area (m2)."},
             "R_min": {"type": "float", "required": False, "default": 200.0, "description": "Min resistance (kN)."},
             "R_max": {"type": "float", "required": False, "default": 2000.0, "description": "Max resistance (kN)."},
+            "damping_model": {"type": "str", "required": False, "default": "smith", "allowed_values": ["smith", "smith_viscous"], "description": "Smith damping form: 'smith' (R_static-proportional) or 'smith_viscous' (R_ultimate-proportional)."},
         },
         "returns": {"blow_counts_per_m": "Blow counts.", "max_pile_force_kN": "Max driving stress."},
     },
@@ -141,6 +150,7 @@ METHOD_INFO = {
             "pile_area": {"type": "float", "required": True, "description": "Pile area (m2)."},
             "depths": {"type": "array", "required": True, "description": "Depth stations (m)."},
             "R_at_depth": {"type": "array", "required": True, "description": "SRD at each depth (kN)."},
+            "damping_model": {"type": "str", "required": False, "default": "smith", "allowed_values": ["smith", "smith_viscous"], "description": "Smith damping form: 'smith' (R_static-proportional) or 'smith_viscous' (R_ultimate-proportional)."},
         },
         "returns": {"can_drive": "Whether pile can be driven.", "points": "Per-depth drivability data."},
     },

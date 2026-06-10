@@ -370,14 +370,14 @@ METHOD_INFO = {
             "site_key": {"type": "str", "required": False, "description": _SITE_KEY_DOC},
             "site_data": {"type": "dict", "required": False, "description": _SITE_DATA_DOC},
             "parameter": {"type": "str", "required": True, "description": "Parameter name to plot (e.g., 'N_spt', 'cu_kPa', 'wn_pct')."},
-            "color_by": {"type": "str", "required": False, "default": "investigation", "description": "Color coding: investigation/uscs/none."},
+            "color_by": {"type": "str", "required": False, "default": "investigation", "allowed_values": ["investigation", "uscs", "none"], "description": "Color coding."},
             "use_elevation": {"type": "bool", "required": False, "default": False, "description": "If True, Y-axis is elevation instead of depth."},
             "show_trend": {"type": "bool", "required": False, "default": False, "description": "Overlay linear trendline."},
             "show_bands": {"type": "bool", "required": False, "default": False, "description": "Overlay prediction bands."},
             "band_sigma": {"type": "float", "required": False, "default": 1.0, "description": "Number of sigma for prediction bands."},
             "group_trends_by": {"type": "str", "required": False, "default": "", "description": "Group trends by 'uscs' for separate trends per soil class."},
             "title": {"type": "str", "required": False, "default": "", "description": "Custom plot title."},
-            "output_format": {"type": "str", "required": False, "default": "metadata", "description": "Output: metadata/html/json."},
+            "output_format": {"type": "str", "required": False, "default": "metadata", "allowed_values": ["metadata", "html", "json"], "description": "Output format."},
         },
         "returns": {
             "plot_type": "Type of plot.",
@@ -393,7 +393,7 @@ METHOD_INFO = {
             "site_data": {"type": "dict", "required": False, "description": _SITE_DATA_DOC},
             "use_elevation": {"type": "bool", "required": False, "default": False, "description": "If True, Y-axis is elevation."},
             "title": {"type": "str", "required": False, "default": "", "description": "Custom plot title."},
-            "output_format": {"type": "str", "required": False, "default": "metadata", "description": "Output: metadata/html/json."},
+            "output_format": {"type": "str", "required": False, "default": "metadata", "allowed_values": ["metadata", "html", "json"], "description": "Output format."},
         },
         "returns": {
             "plot_type": "Type of plot.",
@@ -409,7 +409,7 @@ METHOD_INFO = {
             "parameters": {"type": "array", "required": True, "description": "Parameter names for each panel (e.g., ['N_spt','cu_kPa','wn_pct'])."},
             "use_elevation": {"type": "bool", "required": False, "default": False, "description": "If True, Y-axis is elevation."},
             "title": {"type": "str", "required": False, "default": "", "description": "Custom plot title."},
-            "output_format": {"type": "str", "required": False, "default": "metadata", "description": "Output: metadata/html/json."},
+            "output_format": {"type": "str", "required": False, "default": "metadata", "allowed_values": ["metadata", "html", "json"], "description": "Output format."},
         },
         "returns": {
             "plot_type": "Type of plot.",
@@ -423,11 +423,11 @@ METHOD_INFO = {
         "parameters": {
             "site_key": {"type": "str", "required": False, "description": _SITE_KEY_DOC},
             "site_data": {"type": "dict", "required": False, "description": _SITE_DATA_DOC},
-            "color_by": {"type": "str", "required": False, "default": "type", "description": "Color mode: 'type' (investigation type) or 'parameter' (avg value)."},
+            "color_by": {"type": "str", "required": False, "default": "type", "allowed_values": ["type", "parameter"], "description": "Color mode: 'type' (investigation type) or 'parameter' (avg value)."},
             "label_field": {"type": "str", "required": False, "default": "id", "description": "Label: 'id', 'depth_to_rock', 'gwl', 'fill_thickness', or parameter name."},
             "parameter_for_color": {"type": "str", "required": False, "default": "", "description": "Parameter name when color_by='parameter'."},
             "title": {"type": "str", "required": False, "default": "", "description": "Custom plot title."},
-            "output_format": {"type": "str", "required": False, "default": "metadata", "description": "Output: metadata/html/json."},
+            "output_format": {"type": "str", "required": False, "default": "metadata", "allowed_values": ["metadata", "html", "json"], "description": "Output format."},
         },
         "returns": {
             "plot_type": "Type of plot.",
@@ -446,7 +446,7 @@ METHOD_INFO = {
             "column_width": {"type": "float", "required": False, "default": 0.3, "description": "Width of lithology columns (fraction of spacing)."},
             "show_gwl": {"type": "bool", "required": False, "default": True, "description": "Show groundwater level dashed line."},
             "title": {"type": "str", "required": False, "default": "", "description": "Custom plot title."},
-            "output_format": {"type": "str", "required": False, "default": "metadata", "description": "Output: metadata/html/json."},
+            "output_format": {"type": "str", "required": False, "default": "metadata", "allowed_values": ["metadata", "html", "json"], "description": "Output format."},
         },
         "returns": {
             "plot_type": "Type of plot.",
@@ -459,7 +459,7 @@ METHOD_INFO = {
         "parameters": {
             "depths": {"type": "array", "required": True, "description": "Depth values (m)."},
             "values": {"type": "array", "required": True, "description": "Measurement values."},
-            "trend_type": {"type": "str", "required": False, "default": "linear", "description": "Trend type: linear or log_linear."},
+            "trend_type": {"type": "str", "required": False, "default": "linear", "allowed_values": ["linear", "log_linear"], "description": "Trend type."},
             "parameter": {"type": "str", "required": False, "default": "", "description": "Parameter name for labeling."},
             "group_label": {"type": "str", "required": False, "default": "", "description": "Group label (e.g., USCS class)."},
         },
@@ -479,7 +479,7 @@ METHOD_INFO = {
         "brief": "Parse a CPT file (GEF or BRO-XML, via pygef) into depth/qc/fs/u2 arrays (kPa).",
         "parameters": {
             "file_path": {"type": "str", "required": True, "description": "Path to CPT file (.gef or .xml)."},
-            "engine": {"type": "str", "required": False, "default": "auto", "description": "Parser engine: 'auto', 'gef', or 'xml'."},
+            "engine": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "gef", "xml"], "description": "Parser engine."},
             "index": {"type": "int", "required": False, "default": 0, "description": "Record index for multi-record XML files."},
         },
         "returns": {
@@ -499,7 +499,7 @@ METHOD_INFO = {
         "brief": "Parse a borehole file (GEF or BRO-XML, via pygef) into layer descriptions.",
         "parameters": {
             "file_path": {"type": "str", "required": True, "description": "Path to borehole file (.gef or .xml)."},
-            "engine": {"type": "str", "required": False, "default": "auto", "description": "Parser engine: 'auto', 'gef', or 'xml'."},
+            "engine": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "gef", "xml"], "description": "Parser engine."},
             "index": {"type": "int", "required": False, "default": 0, "description": "Record index for multi-record XML files."},
         },
         "returns": {
@@ -551,7 +551,7 @@ METHOD_INFO = {
         "parameters": {
             "file_path": {"type": "str", "required": False, "description": "Path to DIGGS XML file. Provide file_path or content, not both."},
             "content": {"type": "str", "required": False, "description": "DIGGS XML as string."},
-            "schema_version": {"type": "str", "required": False, "default": "2.6", "description": "Schema version: '2.6' or '2.5.a'."},
+            "schema_version": {"type": "str", "required": False, "default": "2.6", "allowed_values": ["2.6", "2.5.a"], "description": "DIGGS schema version."},
         },
         "returns": {
             "source": "Filename or 'content'.",

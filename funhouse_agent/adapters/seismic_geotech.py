@@ -28,7 +28,7 @@ def _run_site_classification(params: dict) -> dict:
     Ss = params.get("Ss")
     S1 = params.get("S1")
     if Ss is not None and S1 is not None:
-        sc_result = site_coefficients(site_class, Ss, S1)
+        sc_result = site_coefficients(site_class, Ss, S1, pga=params.get("pga"))
         result.update(sc_result.to_dict())
     return result
 
@@ -109,6 +109,7 @@ METHOD_INFO = {
             "layer_vs": {"type": "array", "required": False, "description": "Layer shear wave velocities (m/s)."},
             "Ss": {"type": "float", "required": False, "description": "Short-period spectral acceleration. If provided with S1, computes Fa/Fv."},
             "S1": {"type": "float", "required": False, "description": "1-second spectral acceleration."},
+            "pga": {"type": "float", "required": False, "description": "Mapped peak ground acceleration (g). If provided with Ss/S1, also returns Fpga and the site-adjusted PGA."},
         },
         "returns": {"site_class": "ASCE 7 site class (A-F).", "Fa": "Short-period coefficient.", "Fv": "Long-period coefficient."},
     },
@@ -143,7 +144,7 @@ METHOD_INFO = {
         "parameters": {
             "N160cs": {"type": "float", "required": True, "description": "Clean-sand equivalent SPT blow count."},
             "sigma_v_eff": {"type": "float", "required": False, "description": "Effective overburden stress (kPa)."},
-            "method": {"type": "str", "required": False, "default": "seed_harder", "description": "seed_harder or olson_stark."},
+            "method": {"type": "str", "required": False, "default": "seed_harder", "allowed_values": ["seed_harder", "olson_stark"], "description": "Residual strength correlation."},
         },
         "returns": {"Sr_kPa": "Residual strength (kPa)."},
     },

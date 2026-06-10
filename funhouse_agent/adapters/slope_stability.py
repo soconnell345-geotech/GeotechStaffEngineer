@@ -1,19 +1,23 @@
 """Slope stability adapter — flat dict → analyze_slope/search → dict."""
 
+from funhouse_agent.adapters import require_keys, require_params
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
 from slope_stability.analysis import analyze_slope, search_critical_surface
 
 
-def _build_geometry(params: dict) -> SlopeGeometry:
-    soil_layers = [
-        SlopeSoilLayer(
-            name=d["name"], top_elevation=d["top_elevation"],
+def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
+    require_params(params, ["surface_points", "soil_layers"], method=method)
+    soil_layers = []
+    for i, d in enumerate(params["soil_layers"]):
+        require_keys(d, ["top_elevation", "bottom_elevation", "gamma"],
+                     method=method, item_label="soil_layers[]")
+        soil_layers.append(SlopeSoilLayer(
+            name=d.get("name", f"layer_{i + 1}"), top_elevation=d["top_elevation"],
             bottom_elevation=d["bottom_elevation"], gamma=d["gamma"],
             gamma_sat=d.get("gamma_sat"), phi=d.get("phi", 0.0),
             c_prime=d.get("c_prime", 0.0), cu=d.get("cu", 0.0),
             analysis_mode=d.get("analysis_mode", "drained"),
-        ) for d in params["soil_layers"]
-    ]
+        ))
     surface_points = [tuple(pt) for pt in params["surface_points"]]
     gwt_points = [tuple(pt) for pt in params["gwt_points"]] if params.get("gwt_points") else None
     surcharge_x_range = tuple(params["surcharge_x_range"]) if params.get("surcharge_x_range") else None
@@ -28,7 +32,7 @@ def _build_geometry(params: dict) -> SlopeGeometry:
 
 
 def _run_analyze_slope(params: dict) -> dict:
-    geom = _build_geometry(params)
+    geom = _build_geometry(params, method="analyze_slope")
     slip_surface = None
     if params.get("slip_points") is not None:
         from slope_stability.slip_surface import PolylineSlipSurface
@@ -45,7 +49,7 @@ def _run_analyze_slope(params: dict) -> dict:
 
 
 def _run_search_critical_surface(params: dict) -> dict:
-    geom = _build_geometry(params)
+    geom = _build_geometry(params, method="search_critical_surface")
     x_range = tuple(params["x_range"]) if params.get("x_range") else None
     y_range = tuple(params["y_range"]) if params.get("y_range") else None
     x_entry_range = tuple(params["x_entry_range"]) if params.get("x_entry_range") else None
@@ -74,7 +78,7 @@ METHOD_INFO = {
         "brief": "Analyze ONE specified slip surface (Fellenius/Bishop/Spencer). Requires a trial circle (xc/yc/radius) or slip_points. If you do NOT already have a specific trial surface, use search_critical_surface instead — it auto-finds the critical surface and avoids 'circle does not intersect the ground surface' errors.",
         "parameters": {
             "surface_points": {"type": "array", "required": True, "description": "Ground surface as [[x,y], ...] array."},
-            "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {name, top_elevation, bottom_elevation, gamma, phi, c_prime, cu, analysis_mode}. analysis_mode must be 'drained' (uses phi + c_prime) or 'undrained' (uses cu)."},
+            "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {top_elevation, bottom_elevation, gamma (all required), name (optional), phi, c_prime, cu, analysis_mode}. analysis_mode must be 'drained' (uses phi + c_prime) or 'undrained' (uses cu)."},
             "xc": {"type": "float", "required": False, "description": "Circle center x (m). Required for circular."},
             "yc": {"type": "float", "required": False, "description": "Circle center y (m). Required for circular."},
             "radius": {"type": "float", "required": False, "description": "Circle radius (m). Required for circular."},
@@ -91,7 +95,7 @@ METHOD_INFO = {
         "brief": "Search for critical slip surface (minimum FOS) via grid or random search.",
         "parameters": {
             "surface_points": {"type": "array", "required": True, "description": "Ground surface [[x,y],...]."},
-            "soil_layers": {"type": "array", "required": True, "description": "Array of soil layer dicts."},
+            "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts (see analyze_slope): {top_elevation, bottom_elevation, gamma required; name optional; phi, c_prime, cu, analysis_mode}."},
             "surface_type": {"type": "str", "required": False, "default": "circular", "allowed_values": ["circular", "noncircular"], "description": "Slip surface type."},
             "x_range": {"type": "array", "required": False, "description": "[xmin, xmax] for circle center search."},
             "y_range": {"type": "array", "required": False, "description": "[ymin, ymax] for circle center search."},

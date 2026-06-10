@@ -17,9 +17,14 @@ drill-in.
 
 from __future__ import annotations
 
+from funhouse_agent.adapters import apply_aliases
 from funhouse_agent.adapters._reference_common import (
     extract_method_info, make_wrapper,
 )
+
+# Common guesses for the result-count parameter, mapped to ``limit``.
+_SEARCH_ALIASES = {"max_results": "limit", "top_k": "limit",
+                   "n_results": "limit", "k": "limit", "n": "limit"}
 
 
 def _build():
@@ -139,6 +144,20 @@ def _build():
         info[name] = extract_method_info(
             fn, "Reference DB (FTS5)", "geotech_references SQLite FTS5"
         )
+
+    # reference_search: accept the commonly-guessed result-count names
+    # (max_results/top_k/...) as aliases for ``limit``.
+    _search_wrapped = registry["reference_search"]
+
+    def _search_with_aliases(params):
+        return _search_wrapped(apply_aliases(params, _SEARCH_ALIASES))
+
+    _search_with_aliases.__wrapped__ = reference_search
+    registry["reference_search"] = _search_with_aliases
+    info["reference_search"]["parameters"]["limit"]["description"] = (
+        info["reference_search"]["parameters"]["limit"].get("description", "")
+        + " (aliases: max_results, top_k, n_results)"
+    ).strip()
     return registry, info
 
 

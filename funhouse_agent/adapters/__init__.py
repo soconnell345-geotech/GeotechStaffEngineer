@@ -45,6 +45,65 @@ def clean_result(result: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Shared parameter-ergonomics helpers
+# ---------------------------------------------------------------------------
+
+def apply_aliases(params: dict, aliases: dict) -> dict:
+    """Return a copy of ``params`` with alias keys renamed to canonical keys.
+
+    ``aliases`` maps alias_name -> canonical_name. The canonical key wins if
+    both are present (the alias is silently dropped in that case).
+    """
+    if not any(a in params for a in aliases):
+        return params
+    out = dict(params)
+    for alias, canonical in aliases.items():
+        if alias in out:
+            val = out.pop(alias)
+            out.setdefault(canonical, val)
+    return out
+
+
+def require_params(params: dict, required, *, method: str, valid=None):
+    """Raise a clear ValueError if any of ``required`` keys is missing.
+
+    Replaces raw ``KeyError: 'x'`` tracebacks with an actionable message that
+    lists the missing and valid parameter names.
+    """
+    missing = [k for k in required if params.get(k) is None]
+    if missing:
+        msg = (f"{method}: missing required parameter(s) {missing}.")
+        if valid:
+            msg += f" Valid parameters: {sorted(valid)}."
+        raise ValueError(msg)
+
+
+def require_keys(item: dict, required, *, method: str, item_label: str = "layers[]"):
+    """Raise a clear ValueError if a nested dict (e.g. a soil layer) lacks keys."""
+    missing = [k for k in required if item.get(k) is None]
+    if missing:
+        raise ValueError(
+            f"{method}: each {item_label} dict requires {list(required)}; "
+            f"missing {missing} (got keys {sorted(item.keys())})."
+        )
+
+
+def reject_unknown_params(params: dict, valid, *, method: str, aliases=()):
+    """Raise a clear ValueError naming unknown keys and listing valid ones.
+
+    Use for adapters that pass ``**params`` straight into a module function,
+    where an invented parameter name would otherwise surface as a bare
+    ``TypeError: unexpected keyword argument``.
+    """
+    unknown = [k for k in params if k not in valid and k not in aliases]
+    if unknown:
+        raise ValueError(
+            f"{method}: unknown parameter(s) {sorted(unknown)}. "
+            f"Valid parameters: {sorted(valid)}."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Module registry — defines all available modules and their adapter paths
 # ---------------------------------------------------------------------------
 

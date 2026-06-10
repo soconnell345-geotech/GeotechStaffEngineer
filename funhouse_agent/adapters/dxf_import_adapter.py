@@ -177,7 +177,7 @@ METHOD_INFO = {
         "parameters": {
             "file_path": {"type": "str", "required": True, "description": "Path to DXF file."},
             "layer_mapping": {"type": "dict", "required": True, "description": "Mapping with keys: surface (str), soil_boundaries ({layer: soil_name}), water_table (str), nails (str), annotations ([str])."},
-            "units": {"type": "str", "required": False, "default": "m", "description": "Drawing units: 'm', 'mm', 'cm', 'ft', 'in'."},
+            "units": {"type": "str", "required": False, "default": "m", "allowed_values": ["m", "mm", "cm", "ft", "in"], "description": "Drawing units."},
             "flip_y": {"type": "bool", "required": False, "default": False, "description": "Negate Y values for downward-positive drawings."},
         },
         "returns": {
