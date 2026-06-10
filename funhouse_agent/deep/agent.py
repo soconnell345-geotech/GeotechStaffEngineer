@@ -33,6 +33,10 @@ from deepagents.middleware import SummarizationMiddleware
 from funhouse_agent.dispatch import ANALYSIS_MODULES, REFERENCE_MODULES
 from funhouse_agent.reviewer import CONSULTANT_FRAMING, REVIEWER_SYSTEM_PROMPT
 
+from funhouse_agent.deep.limits import (
+    DEFAULT_REFERENCES_MAX_MODEL_CALLS,
+    ModelCallBudgetMiddleware,
+)
 from funhouse_agent.deep.prompt import build_domain_prompt
 from funhouse_agent.deep.tools import (
     DEFAULT_MAX_RESULT_CHARS,
@@ -238,6 +242,8 @@ def build_references_subagent(
     attachments=None,
     save_fn: Optional[Callable] = None,
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
+    reference_result_chars: Optional[int] = None,
+    max_model_calls: Optional[int] = DEFAULT_REFERENCES_MAX_MODEL_CALLS,
 ) -> dict:
     """Build the ``references`` sub-agent spec (reference librarian).
 
@@ -253,31 +259,53 @@ def build_references_subagent(
         the figure read-off tool.
     max_result_chars : int, optional
         Tool-result size cap forwarded to ``make_core_tools`` /
-        ``make_vision_tools`` (default ``8000``). This is the key bloat guard:
-        the reference modules return the largest text, so capping the
-        sub-agent's tool results bounds what is re-sent each round. The
-        sub-agent's framing is also extended with a concision instruction so it
-        returns only the asked-for value(s) plus the citation.
+        ``make_vision_tools`` (default ``8000``). This bounds what is re-sent
+        each round. The sub-agent's framing is also extended with a concision
+        instruction so it returns only the asked-for value(s) plus the
+        citation.
+    reference_result_chars : int, optional
+        LARGER cap for reference reads (``call_agent`` on a reference module +
+        ``read_reference_figure``) — the reference text is the payload.
+        Defaults to ``DEFAULT_REFERENCE_RESULT_CHARS`` (16000); see
+        :func:`~funhouse_agent.deep.tools.make_core_tools`.
+    max_model_calls : int, optional
+        The v5.1 round budget — THE key cost lever (26/76 reference questions
+        burned 69% of all tokens in rc7 because the sub-agent re-sent its
+        accumulated context across unbounded internal model calls). Attaches a
+        :class:`~funhouse_agent.deep.limits.ModelCallBudgetMiddleware` to the
+        sub-agent so each consult gets at most this many model calls; the last
+        budgeted call is forced to summarize-and-answer from what was already
+        gathered (graceful — a final answer is always returned, never an
+        error). Defaults to ``8``; ``None``/``0`` disables the budget.
     """
     tools = make_core_tools(
-        allowed_agents=REFERENCE_MODULES, max_result_chars=max_result_chars
+        allowed_agents=REFERENCE_MODULES,
+        max_result_chars=max_result_chars,
+        reference_result_chars=reference_result_chars,
     ) + make_vision_tools(
         engine=engine,
         attachments=attachments,
         save_fn=save_fn,
         include={"read_reference_figure"},
         max_result_chars=max_result_chars,
+        reference_result_chars=reference_result_chars,
     )
-    return {
+    spec = {
         "name": "references",
         "description": _REFERENCES_DESCRIPTION,
         "system_prompt": CONSULTANT_FRAMING + _REFERENCES_CONCISION,
         "tools": tools,
     }
+    if max_model_calls:
+        # deepagents appends SubAgent-spec middleware to the sub-agent's
+        # default stack (see create_deep_agent's subagent processing).
+        spec["middleware"] = [ModelCallBudgetMiddleware(max_model_calls)]
+    return spec
 
 
 def build_reviewer_subagent(
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
+    reference_result_chars: Optional[int] = None,
 ) -> dict:
     """Build the ``reviewer`` sub-agent spec.
 
@@ -289,13 +317,18 @@ def build_reviewer_subagent(
     max_result_chars : int, optional
         Tool-result size cap forwarded to ``make_core_tools`` (default
         ``8000``), so the reviewer's reference lookups are bounded too.
+    reference_result_chars : int, optional
+        Larger cap for the reviewer's reference reads; see
+        :func:`build_references_subagent`.
     """
     return {
         "name": "reviewer",
         "description": _REVIEWER_DESCRIPTION,
         "system_prompt": REVIEWER_SYSTEM_PROMPT,
         "tools": make_core_tools(
-            allowed_agents=REFERENCE_MODULES, max_result_chars=max_result_chars
+            allowed_agents=REFERENCE_MODULES,
+            max_result_chars=max_result_chars,
+            reference_result_chars=reference_result_chars,
         ),
     }
 
@@ -306,6 +339,7 @@ def build_primary_tools(
     attachments=None,
     save_fn: Optional[Callable] = None,
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
+    reference_result_chars: Optional[int] = None,
 ) -> list:
     """Build the primary agent's tool list.
 
@@ -319,16 +353,23 @@ def build_primary_tools(
     max_result_chars : int, optional
         Tool-result size cap forwarded to ``make_core_tools`` /
         ``make_vision_tools`` (default ``8000``, mirroring v1).
+    reference_result_chars : int, optional
+        Larger cap for reference reads (here only ``read_reference_figure``,
+        since the primary's ``call_agent`` scope excludes the reference
+        modules); see :func:`~funhouse_agent.deep.tools.make_core_tools`.
     """
     if allowed_agents is None:
         allowed_agents = ANALYSIS_MODULES
     return make_core_tools(
-        allowed_agents=allowed_agents, max_result_chars=max_result_chars
+        allowed_agents=allowed_agents,
+        max_result_chars=max_result_chars,
+        reference_result_chars=reference_result_chars,
     ) + make_vision_tools(
         engine=engine,
         attachments=attachments,
         save_fn=save_fn,
         max_result_chars=max_result_chars,
+        reference_result_chars=reference_result_chars,
     )
 
 
@@ -341,6 +382,8 @@ def build_deep_agent(
     engine=None,
     attachments=None,
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
+    reference_result_chars: Optional[int] = None,
+    references_max_model_calls: Optional[int] = DEFAULT_REFERENCES_MAX_MODEL_CALLS,
     store=None,
     checkpointer=None,
     enable_memory: bool = False,
@@ -400,6 +443,20 @@ def build_deep_agent(
         set ``0`` to disable truncation. This is the token-bloat guard: the
         references sub-agent's large reference-text dumps would otherwise be
         re-sent on every round and compound the input-token cost.
+    reference_result_chars : int, optional
+        LARGER cap for reference reads (``call_agent`` on a reference module
+        inside the references/reviewer sub-agents, plus
+        ``read_reference_figure``), where the reference text IS the payload.
+        Defaults to 16000 (never below ``max_result_chars``); numeric/calc
+        ``call_agent`` results are uncapped (they are tiny). Disabled along
+        with everything else when ``max_result_chars <= 0``.
+    references_max_model_calls : int, optional
+        Per-consult model-call budget for the ``references`` sub-agent — the
+        v5.1 single biggest cost lever (rc7: 26/76 reference questions burned
+        69% of all tokens via unbounded internal rounds). The last budgeted
+        call is forced to summarize-and-answer from what was gathered, so a
+        final answer is ALWAYS returned (never an error). Defaults to ``8``;
+        ``None``/``0`` disables the budget.
     store : BaseStore, optional
         A LangGraph store (e.g. ``InMemoryStore`` / a Postgres store) for
         cross-session / persistent memory. Passing a store turns ``enable_memory``
@@ -479,6 +536,7 @@ def build_deep_agent(
         attachments=attachments,
         save_fn=save_fn,
         max_result_chars=max_result_chars,
+        reference_result_chars=reference_result_chars,
     )
 
     system_prompt = build_domain_prompt(allowed_agents, memory_enabled=enable_memory)
@@ -491,10 +549,15 @@ def build_deep_agent(
                 attachments=attachments,
                 save_fn=save_fn,
                 max_result_chars=max_result_chars,
+                reference_result_chars=reference_result_chars,
+                max_model_calls=references_max_model_calls,
             )
         )
         subagents.append(
-            build_reviewer_subagent(max_result_chars=max_result_chars)
+            build_reviewer_subagent(
+                max_result_chars=max_result_chars,
+                reference_result_chars=reference_result_chars,
+            )
         )
 
     # ----- Phase-3: persistent /memories/ backend + memory= source -----

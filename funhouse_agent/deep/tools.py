@@ -31,6 +31,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, ConfigDict, Field
 
 from funhouse_agent.dispatch import (
+    REFERENCE_MODULES,
     call_agent as _call_agent,
     describe_method as _describe_method,
     list_agents as _list_agents,
@@ -58,12 +59,29 @@ from funhouse_agent.vision_tools import (
 #: re-sent on every ReAct round and compound the input-token cost.
 DEFAULT_MAX_RESULT_CHARS = 8000
 
+#: Larger default cap for REFERENCE reads (``call_agent`` on a reference
+#: module + ``read_reference_figure``): for those tools the reference text IS
+#: the payload, so cutting it at the general cap loses the answer and provokes
+#: a wasteful re-read. Numeric/calc results are NOT capped at all (they are
+#: tiny) — see :func:`_result_cap_for_module`.
+DEFAULT_REFERENCE_RESULT_CHARS = 16000
+
+#: Appended after the truncation marker so the agent does a NARROWER follow-up
+#: search instead of re-requesting (and re-truncating) the same large item.
+SEARCH_NARROWER_NUDGE = (
+    " Do NOT re-request this same item — it will truncate again. Run a "
+    "NARROWER follow-up search instead (more specific terms, or one specific "
+    "section/table/figure) to retrieve just the part you need."
+)
+
 
 def _truncate(text: str, max_chars: int) -> str:
     """Truncate a tool-result string to ``max_chars``, marking any cut.
 
     Mirrors :func:`funhouse_agent.react_support._truncate` (the v1 behavior),
-    but appends a count of the dropped characters so the marker is informative.
+    but appends a count of the dropped characters so the marker is informative,
+    plus :data:`SEARCH_NARROWER_NUDGE` so the agent's recovery move is a
+    narrower search rather than a re-read of the same oversized item.
 
     Parameters
     ----------
@@ -78,11 +96,48 @@ def _truncate(text: str, max_chars: int) -> str:
     str
         ``text`` unchanged when it is short enough (or truncation is disabled),
         otherwise the first ``max_chars`` characters followed by a
-        ``\\n...[truncated N chars]`` marker.
+        ``\\n...[truncated N chars]`` marker and the search-narrower nudge.
     """
     if max_chars <= 0 or len(text) <= max_chars:
         return text
-    return text[:max_chars] + f"\n...[truncated {len(text) - max_chars} chars]"
+    return (
+        text[:max_chars]
+        + f"\n...[truncated {len(text) - max_chars} chars]."
+        + SEARCH_NARROWER_NUDGE
+    )
+
+
+def _resolve_reference_cap(max_result_chars: int,
+                           reference_result_chars: Optional[int]) -> int:
+    """Resolve the cap used for REFERENCE reads.
+
+    * Truncation disabled globally (``max_result_chars <= 0``) → disabled here
+      too (``0``).
+    * Explicit ``reference_result_chars`` → used as-is.
+    * Default (``None``) → ``DEFAULT_REFERENCE_RESULT_CHARS``, but never
+      SMALLER than the general cap (a caller raising the general cap above
+      16000 should not silently shrink reference reads).
+    """
+    if max_result_chars <= 0:
+        return 0
+    if reference_result_chars is not None:
+        return reference_result_chars
+    return max(DEFAULT_REFERENCE_RESULT_CHARS, max_result_chars)
+
+
+def _result_cap_for_module(agent_name: str, max_result_chars: int,
+                           reference_cap: int) -> int:
+    """Per-call cap for a ``call_agent`` result, by target module.
+
+    * Reference modules (DM7/GEC/UFC/... text + ``reference_db``/``figure_db``)
+      get the LARGER ``reference_cap`` — the reference text is the payload.
+    * Numeric/calc modules are UNCAPPED (``0``): their JSON results are tiny,
+      and capping them risks cutting a valid result mid-number for no token
+      benefit.
+    """
+    if agent_name in REFERENCE_MODULES:
+        return reference_cap
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +299,7 @@ class _CallAgentArgs(BaseModel):
 def make_core_tools(
     allowed_agents=None,
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
+    reference_result_chars: Optional[int] = None,
 ) -> list:
     """Build the 4 core dispatch tools bound to an ``allowed_agents`` scope.
 
@@ -255,18 +311,26 @@ def make_core_tools(
         and refused by ``call_agent`` (same semantics as v1
         ``dispatch.dispatch_tool``). ``None`` exposes the full registry.
     max_result_chars : int, optional
-        Cap on the size of each tool's JSON-string result fed back to the model
-        (default ``8000``, mirroring v1's ``GeotechAgent._max_result_chars``).
-        Results longer than this are truncated with a clear marker, which keeps
-        large reference-text dumps (especially from the references sub-agent,
-        which also uses this factory) from compounding the input-token cost as
-        they are re-sent on every round. A value ``<= 0`` disables truncation.
+        Cap on the size of the catalog/doc tools' results (``list_agents`` /
+        ``list_methods`` / ``describe_method``) fed back to the model (default
+        ``8000``, mirroring v1's ``GeotechAgent._max_result_chars``). Results
+        longer than this are truncated with a clear marker + a
+        "search narrower" nudge. A value ``<= 0`` disables ALL truncation in
+        this factory (including reference reads).
+    reference_result_chars : int, optional
+        Cap for ``call_agent`` results from REFERENCE modules, where the
+        reference text is the payload. Defaults to the larger
+        ``DEFAULT_REFERENCE_RESULT_CHARS`` (16000; never below
+        ``max_result_chars``). ``call_agent`` results from numeric/calc
+        modules are NOT capped at all — they are tiny.
 
     Returns
     -------
     list[StructuredTool]
         ``[list_agents, list_methods, describe_method, call_agent]``.
     """
+    reference_cap = _resolve_reference_cap(max_result_chars,
+                                           reference_result_chars)
 
     def list_agents() -> str:
         """List all available geotechnical analysis modules with brief
@@ -356,6 +420,10 @@ def make_core_tools(
         extras = {k: v for k, v in extra.items() if k not in _CALL_AGENT_KEYS}
         if extras:
             params.update(extras)
+        # Smart per-tool budget: reference modules get the LARGER reference
+        # cap (their text is the payload); calc modules are uncapped (tiny).
+        cap = _result_cap_for_module(agent_name, max_result_chars,
+                                     reference_cap)
         return _truncate(
             json.dumps(
                 _call_agent(
@@ -367,7 +435,7 @@ def make_core_tools(
                 ),
                 default=str,
             ),
-            max_result_chars,
+            cap,
         )
 
     return [
@@ -418,6 +486,7 @@ def make_vision_tools(
     save_fn: Optional[Callable] = None,
     include: Optional[set] = None,
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
+    reference_result_chars: Optional[int] = None,
 ) -> list:
     """Build the vision / file-output tools as LangChain tools.
 
@@ -443,8 +512,14 @@ def make_vision_tools(
     max_result_chars : int, optional
         Cap on the size of each tool's result fed back to the model (default
         ``8000``, mirroring v1). Results longer than this are truncated with a
-        clear marker; a value ``<= 0`` disables truncation. Applied to every
-        vision/file tool via the shared ``_dispatch`` helper.
+        clear marker + a "search narrower" nudge; a value ``<= 0`` disables
+        truncation. Applied to every vision/file tool via the shared
+        ``_dispatch`` helper.
+    reference_result_chars : int, optional
+        Larger cap for ``read_reference_figure`` (a REFERENCE read — the chart
+        read-off text is the payload). Defaults to
+        ``DEFAULT_REFERENCE_RESULT_CHARS`` (16000; never below
+        ``max_result_chars``); disabled when ``max_result_chars <= 0``.
 
     Returns
     -------
@@ -456,8 +531,13 @@ def make_vision_tools(
         "analyze_image", "analyze_pdf_page", "read_reference_figure",
         "save_file",
     }
+    reference_cap = _resolve_reference_cap(max_result_chars,
+                                           reference_result_chars)
 
     def _dispatch(tool_name: str, arguments: dict) -> str:
+        # read_reference_figure is a reference read: larger budget.
+        cap = (reference_cap if tool_name == "read_reference_figure"
+               else max_result_chars)
         return _truncate(
             _dispatch_extended_tool(
                 tool_name=tool_name,
@@ -466,7 +546,7 @@ def make_vision_tools(
                 attachments=attachments,
                 save_fn=save_fn,
             ),
-            max_result_chars,
+            cap,
         )
 
     def analyze_image(attachment_key: str,
@@ -572,4 +652,6 @@ __all__ = [
     "make_core_tools",
     "make_vision_tools",
     "DEFAULT_MAX_RESULT_CHARS",
+    "DEFAULT_REFERENCE_RESULT_CHARS",
+    "SEARCH_NARROWER_NUDGE",
 ]
