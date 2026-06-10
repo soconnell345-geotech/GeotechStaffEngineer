@@ -117,7 +117,16 @@ def boussinesq_center_rectangular(q: float, B: float, L: float, z: float) -> flo
     -------
     float
         Vertical stress increase delta_sigma_z (kPa) at center.
+
+    Notes
+    -----
+    At z = 0 the stress equals the applied pressure q. The guard is needed
+    because the corner function returns q (not q/4) at z <= 0, so the 4x
+    superposition would otherwise yield 4q at exactly z = 0 (SET-4). The
+    z -> 0+ limit of the superposition is q, consistent with the guard.
     """
+    if z <= 0:
+        return q
     return 4.0 * boussinesq_rectangular(q, B / 2.0, L / 2.0, z)
 
 
@@ -255,6 +264,10 @@ def stress_at_depth(q: float, B: float, L: float, z: float,
             return boussinesq_rectangular(q, B, L, z)
     elif method == "westergaard":
         if location == "center":
+            # z <= 0 guard: the corner function returns q at z <= 0, so the
+            # 4x superposition would give 4q at exactly z = 0 (SET-4)
+            if z <= 0:
+                return q
             return 4.0 * westergaard_rectangular(q, B / 2, L / 2, z)
         else:
             return westergaard_rectangular(q, B, L, z)

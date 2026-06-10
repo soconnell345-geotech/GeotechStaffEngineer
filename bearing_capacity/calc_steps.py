@@ -106,9 +106,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     """
     r = result
     f = analysis.footing
-    phi = f.width  # just for variable naming clarity below
     phi_deg = analysis.soil.layer1.friction_angle
-    phi_rad = math.radians(phi_deg)
     sections = []
 
     # ── Section: Effective Dimensions ───────────────────────────
@@ -421,12 +419,29 @@ def get_figures(result, analysis) -> List[FigureData]:
 # ── Helper functions ──────────────────────────────────────────────
 
 def _shape_factor_equation(method: str, phi_deg: float) -> str:
-    """Return the shape factor equation as text."""
+    """Return the shape factor equation as text.
+
+    Mirrors :func:`bearing_capacity.factors.shape_factors`, including the
+    phi = 0 special forms, so the displayed equation matches the computed
+    values (BC-9).
+    """
     if method.lower() == "vesic":
+        if phi_deg == 0:
+            return (
+                "s_c = 1 + 0.2(B/L)  [\u03c6 = 0],  "
+                "s_q = 1.0,  "
+                "s_\u03b3 = 1 - 0.4(B/L)"
+            )
         return (
             "s_c = 1 + (B/L)(N_q/N_c),  "
             "s_q = 1 + (B/L)tan(\u03c6),  "
             "s_\u03b3 = 1 - 0.4(B/L)"
+        )
+    # Meyerhof
+    if phi_deg <= 10:
+        return (
+            "s_c = 1 + 0.2\u00d7Kp(B/L),  "
+            "s_q = s_\u03b3 = 1.0  [\u03c6 \u2264 10\u00b0]"
         )
     return (
         "s_c = 1 + 0.2\u00d7Kp(B/L),  "
@@ -435,16 +450,36 @@ def _shape_factor_equation(method: str, phi_deg: float) -> str:
 
 
 def _depth_factor_equation(method: str, phi_deg: float) -> str:
-    """Return the depth factor equation as text."""
+    """Return the depth factor equation as text.
+
+    Mirrors :func:`bearing_capacity.factors.depth_factors`, including the
+    d_c formula and the phi = 0 special forms, so the displayed equation
+    matches the computed values (BC-9).
+    """
     if method.lower() == "vesic":
+        if phi_deg == 0:
+            return (
+                "d_c = 1 + 0.4\u00d7k  [\u03c6 = 0],  "
+                "d_q = 1.0,  d_\u03b3 = 1.0,  "
+                "k = D_f/B if D_f/B \u2264 1 else arctan(D_f/B)"
+            )
         return (
             "d_q = 1 + 2\u00d7tan(\u03c6)\u00d7(1-sin(\u03c6))\u00b2\u00d7k,  "
+            "d_c = d_q - (1-d_q)/(N_c\u00d7tan(\u03c6)),  "
             "d_\u03b3 = 1.0,  "
             "k = D_f/B if D_f/B \u2264 1 else arctan(D_f/B)"
         )
+    # Meyerhof
+    if phi_deg <= 10:
+        return (
+            "d_c = 1 + 0.2\u00d7\u221aKp\u00d7k,  "
+            "d_q = d_\u03b3 = 1.0  [\u03c6 \u2264 10\u00b0],  "
+            "k = D_f/B if D_f/B \u2264 1 else arctan(D_f/B)"
+        )
     return (
-        "d_c = 1 + 0.2\u00d7\u221aKp\u00d7(D_f/B),  "
-        "d_q = d_\u03b3 = 1 + 0.1\u00d7\u221aKp\u00d7(D_f/B)"
+        "d_c = 1 + 0.2\u00d7\u221aKp\u00d7k,  "
+        "d_q = d_\u03b3 = 1 + 0.1\u00d7\u221aKp\u00d7k,  "
+        "k = D_f/B if D_f/B \u2264 1 else arctan(D_f/B)"
     )
 
 

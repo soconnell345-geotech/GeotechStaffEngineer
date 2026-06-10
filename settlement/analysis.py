@@ -73,12 +73,31 @@ class SettlementAnalysis:
         "double" or "single". Default "double".
         If "double", Hdr = total_thickness/2 (computed automatically if Hdr not given).
 
+        .. note:: Single-zone drainage assumption (SET-5)
+            When ``Hdr`` is not given, the entire consolidating zone
+            (all ``consolidation_layers`` combined) is treated as ONE
+            homogeneous layer with the stated drainage condition —
+            ``Hdr = sum(thickness)/2`` for "double", ``sum(thickness)``
+            for "single". Interbedded drainage layers (sand seams) within
+            the zone are not detected; supply ``Hdr`` explicitly to model
+            them.
+
     C_alpha : float, optional
         Secondary compression index. If None, no secondary settlement.
     e0_secondary : float, optional
         Void ratio for secondary settlement. Default 1.0.
     t_secondary : float, optional
-        Time for secondary settlement (years). Default 0.
+        Time for secondary settlement (years), measured from the end of
+        primary consolidation t1. Default 0.
+
+        .. note:: End-of-primary t1 assumption (SET-5)
+            Secondary compression runs from t1 (end of primary) to
+            ``t1 + t_secondary``. If ``cv`` is provided, t1 is estimated
+            as the time to 95% consolidation (t95). If ``cv`` is None,
+            t1 defaults to **1.0 year** — an arbitrary but common
+            placeholder. The secondary settlement scales with
+            log10(t2/t1), so the choice of t1 matters; provide ``cv``
+            (or check t1) for time-sensitive estimates.
 
     Examples
     --------
@@ -230,7 +249,18 @@ class SettlementAnalysis:
         return total_Sc, layer_results
 
     def _compute_secondary(self) -> float:
-        """Compute secondary compression settlement."""
+        """Compute secondary compression settlement.
+
+        Assumptions (SET-5)
+        -------------------
+        * t1 (end of primary consolidation) is estimated as t95 from the
+          time-rate solution when ``cv`` is available; otherwise it falls
+          back to a **1.0-year default** — an assumption, not a computed
+          value. Because Ss scales with log10(t2/t1), results are
+          sensitive to this default when ``cv`` is omitted.
+        * The whole consolidating zone is treated as a single layer of
+          total thickness sum(layer.thickness) with uniform C_alpha/(1+e0).
+        """
         if self.consolidation_layers is None:
             return 0.0
 
@@ -241,7 +271,7 @@ class SettlementAnalysis:
             from settlement.time_rate import time_for_consolidation
             t1 = time_for_consolidation(95.0, self.cv, Hdr)
         else:
-            t1 = 1.0  # default 1 year
+            t1 = 1.0  # assumed default (see docstring, SET-5)
 
         total_H = sum(layer.thickness for layer in self.consolidation_layers)
         return secondary_settlement(
@@ -250,7 +280,16 @@ class SettlementAnalysis:
         )
 
     def _get_Hdr(self) -> float:
-        """Get the drainage path length."""
+        """Get the drainage path length.
+
+        Assumption (SET-5): when ``Hdr`` is not supplied, the entire
+        consolidating zone (all layers combined) is treated as one
+        homogeneous layer with the stated drainage condition:
+        Hdr = total_thickness/2 for "double" drainage, total_thickness
+        for "single". Internal drainage layers (e.g. sand seams between
+        clay sublayers) are NOT detected — pass ``Hdr`` explicitly to
+        model them.
+        """
         if self.Hdr is not None:
             return self.Hdr
         if self.consolidation_layers:

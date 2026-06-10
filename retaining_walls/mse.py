@@ -205,9 +205,20 @@ def check_internal_stability(
         # Tmax at this level
         T = Tmax_at_level(z, gamma_backfill, Ka, kr_ka, Sv, geom.surcharge)
 
-        # Effective length Le = total length - active zone length
-        # Active zone extends from face at 45+phi/2 from horizontal
-        La = (H - z) * math.tan(math.radians(45 - phi_backfill / 2))
+        # Effective length Le = total length - active zone length La.
+        # GEC-11 / AASHTO Fig. 11.10.6.3.1-1: the failure surface depends
+        # on reinforcement extensibility (RW-2):
+        #  - Inextensible (metallic): bilinear coherent-gravity surface —
+        #    vertical at 0.3H from the face over the upper half of the
+        #    wall, then tapering linearly to the toe:
+        #       La = 0.3*H        for z <= H/2
+        #       La = 0.6*(H - z)  for z >  H/2
+        #  - Extensible (geosynthetic): Rankine wedge at 45+phi/2:
+        #       La = (H - z)*tan(45 - phi/2)
+        if reinforcement.is_metallic:
+            La = 0.3 * H if z <= H / 2.0 else 0.6 * (H - z)
+        else:
+            La = (H - z) * math.tan(math.radians(45 - phi_backfill / 2))
         Le = max(L - La, 1.0)  # minimum 1m effective length
 
         # Pullout resistance
@@ -232,6 +243,7 @@ def check_internal_stability(
             "depth_m": round(z, 2),
             "Tmax_kN_per_m": round(T, 2),
             "Pr_kN_per_m": round(Pr, 2),
+            "La_m": round(La, 2),
             "Le_m": round(Le, 2),
             "Kr_Ka": round(kr_ka, 3),
             "F_star": round(F_star, 3),
@@ -315,16 +327,19 @@ def check_external_stability(
     M_over = Pa * z_Pa
     FOS_overturning = M_stab / M_over if M_over > 0 else 99.9
 
-    # Bearing
+    # Bearing — Meyerhof uniform pressure over the effective width
+    # (AASHTO 11.10.5.4 / GEC-11 Eq. 4-13): sigma_v = W / (L - 2e).
+    # This replaces the trapezoidal q_toe = (W/L)(1 + 6e/L) convention,
+    # which is not the AASHTO/GEC-11 MSE convention (RW-3).
     x_R = (M_stab - M_over) / W if W > 0 else L / 2.0
     e = L / 2.0 - x_R
-    if abs(e) <= L / 6.0:
-        q_toe = W / L * (1.0 + 6.0 * e / L)
+    L_eff = L - 2.0 * abs(e)
+    if L_eff > 0:
+        sigma_v = W / L_eff
     else:
-        B_eff = 3.0 * x_R
-        q_toe = 2.0 * W / B_eff if B_eff > 0 else 0.0
+        sigma_v = 1.0e6  # resultant off the base — bearing effectively fails
 
-    FOS_bearing = q_allowable / q_toe if (q_allowable and q_toe > 0) else 99.9
+    FOS_bearing = q_allowable / sigma_v if (q_allowable and sigma_v > 0) else 99.9
 
     passes = (
         FOS_sliding >= FOS_sliding_req
@@ -336,7 +351,11 @@ def check_external_stability(
         "FOS_sliding": round(FOS_sliding, 3),
         "FOS_overturning": round(FOS_overturning, 3),
         "FOS_bearing": round(FOS_bearing, 3),
-        "q_toe_kPa": round(q_toe, 1),
+        # Meyerhof uniform bearing pressure over effective width L - 2e
+        # (key name kept for backward compatibility)
+        "q_toe_kPa": round(sigma_v, 1),
+        "sigma_v_kPa": round(sigma_v, 1),
+        "L_eff_m": round(max(L_eff, 0.0), 3),
         "eccentricity_m": round(e, 3),
         "passes": passes,
     }

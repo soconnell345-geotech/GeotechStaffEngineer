@@ -278,7 +278,14 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_unit="mm",
             reference="Mesri (1973); FHWA GEC-6, Eq. 8-20",
             notes="t_1 = time at end of primary consolidation, "
-                  "t_2 = t_1 + t_secondary",
+                  "t_2 = t_1 + t_secondary. "
+                  + ("t_1 estimated as t₉₅ from c_v with the whole "
+                     "consolidating zone treated as one "
+                     f"{analysis.drainage}-drained layer."
+                     if analysis.cv is not None else
+                     "t_1 = 1.0 yr ASSUMED (no c_v provided); S_s scales "
+                     "with log₁₀(t_2/t_1) — provide c_v for a "
+                     "computed end-of-primary time."),
         ))
 
         # Modified secondary compression index

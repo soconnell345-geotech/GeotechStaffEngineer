@@ -326,7 +326,7 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     Pa_total = max(Pa_earth + Pa_surcharge + Pa_cohesion, 0.0)
 
     ep_items.append(CalcStep(
-        title="Total Active Horizontal Force",
+        title="Total Active Thrust",
         equation="P_a = 0.5 \u00d7 K_a \u00d7 \u03b3 \u00d7 H\u00b2"
                  + (" + K_a \u00d7 q \u00d7 H" if geom.surcharge > 0 else "")
                  + (" - 2c\u221aK_a \u00d7 H" if c > 0 else ""),
@@ -342,6 +342,37 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         result_unit="kN/m",
         reference="Das Ch. 13",
     ))
+
+    # Thrust inclination & components (mirrors cantilever._active_thrust, RW-1):
+    # Coulomb -> delta = 2/3*phi; sloped Rankine -> delta = beta; else horizontal.
+    if method == "coulomb":
+        delta_incl = 2.0 / 3.0 * phi
+    elif geom.backfill_slope > 0:
+        delta_incl = geom.backfill_slope
+    else:
+        delta_incl = 0.0
+    Ph = Pa_total * math.cos(math.radians(delta_incl))
+    Pv = Pa_total * math.sin(math.radians(delta_incl))
+
+    if delta_incl > 0:
+        ep_items.append(CalcStep(
+            title="Thrust Components (inclined thrust)",
+            equation="P_h = P_a \u00d7 cos(\u03b4),  P_v = P_a \u00d7 sin(\u03b4)",
+            substitution=(
+                f"\u03b4 = {delta_incl:.2f}\u00b0; "
+                f"P_h = {Pa_total:.1f} \u00d7 cos({delta_incl:.2f}\u00b0), "
+                f"P_v = {Pa_total:.1f} \u00d7 sin({delta_incl:.2f}\u00b0)"
+            ),
+            result_name="P_h, P_v",
+            result_value=f"{Ph:.1f}, {Pv:.1f}",
+            result_unit="kN/m",
+            notes=(
+                "P_h drives sliding/overturning; P_v acts downward at the "
+                "pressure plane (back of heel) and is stabilizing."
+            ),
+            reference="Coulomb wall friction \u03b4 = 2/3\u03c6" if method == "coulomb"
+            else "Rankine thrust parallel to backfill slope",
+        ))
 
     sections.append(CalcSection(title="Earth Pressure Computation", items=ep_items))
 
@@ -386,12 +417,26 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         weight_rows.append(["Soil on heel", f"{W_soil:.1f}", f"{x_soil:.3f}",
                              f"{W_soil * x_soil:.1f}"])
 
+        # Sloped backfill: triangular wedge above the heel (RW-4)
+        if geom.backfill_slope > 0:
+            rise = heel * math.tan(math.radians(geom.backfill_slope))
+            W_wedge = 0.5 * gamma * heel * rise
+            x_wedge = t_toe + t_stem_b + 2.0 * heel / 3.0
+            weight_rows.append(["Backfill wedge (sloped)", f"{W_wedge:.1f}",
+                                 f"{x_wedge:.3f}", f"{W_wedge * x_wedge:.1f}"])
+
     # Surcharge on heel
     if heel > 0 and geom.surcharge > 0:
         W_q = geom.surcharge * heel
         x_q = t_toe + t_stem_b + heel / 2.0
         weight_rows.append(["Surcharge on heel", f"{W_q:.1f}", f"{x_q:.3f}",
                              f"{W_q * x_q:.1f}"])
+
+    # Vertical component of the inclined active thrust, applied at the
+    # pressure plane (back of heel, x = B) — stabilizing (RW-1)
+    if delta_incl > 0:
+        weight_rows.append(["Active thrust vert. comp. (P_v)", f"{Pv:.1f}",
+                             f"{B:.3f}", f"{Pv * B:.1f}"])
 
     # Totals
     total_W = sum(float(r[1]) for r in weight_rows)
@@ -439,11 +484,13 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
 
     slide_items.append(CalcStep(
         title="Factor of Safety Against Sliding",
-        equation="FOS_sliding = R / P_a",
-        substitution=f"FOS_sliding = {R_sliding:.1f} / {Pa_total:.1f}",
+        equation="FOS_sliding = R / P_h",
+        substitution=f"FOS_sliding = {R_sliding:.1f} / {Ph:.1f}",
         result_name="FOS_sliding",
         result_value=f"{result.FOS_sliding:.3f}",
         reference="AASHTO 11.6.3 (min 1.5)",
+        notes=("P_h = P_a × cos(δ) — horizontal thrust component."
+               if delta_incl > 0 else ""),
     ))
 
     slide_items.append(CheckItem(
@@ -461,22 +508,25 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     ot_items = []
 
     M_stab = total_M
-    # Location of resultant of Pa
-    z_Pa = H / 3.0  # simplified; with surcharge the actual code accounts for it
-    if geom.surcharge > 0 and Pa_total > 0:
-        z_earth = H / 3.0
-        z_surcharge = H / 2.0
-        z_Pa = (Pa_earth * z_earth + Pa_surcharge * z_surcharge) / Pa_total
+    # Location of resultant of Pa (mirrors horizontal_force_active:
+    # triangular earth at H/3, surcharge and cohesion components at H/2)
+    z_Pa = H / 3.0
+    if Pa_total > 0:
+        z_Pa = (Pa_earth * (H / 3.0) + Pa_surcharge * (H / 2.0)
+                + Pa_cohesion * (H / 2.0)) / Pa_total
         z_Pa = max(z_Pa, 0.0)
-    M_over = Pa_total * z_Pa
+    M_over = Ph * z_Pa
 
     ot_items.append(CalcStep(
         title="Overturning Moment about Toe",
-        equation="M_ot = P_a \u00d7 z_Pa",
-        substitution=f"M_ot = {Pa_total:.1f} \u00d7 {z_Pa:.3f}",
+        equation="M_ot = P_h \u00d7 z_Pa",
+        substitution=f"M_ot = {Ph:.1f} \u00d7 {z_Pa:.3f}",
         result_name="M_ot",
         result_value=f"{M_over:.1f}",
         result_unit="kN\u00b7m/m",
+        notes=("P_h = P_a \u00d7 cos(\u03b4); the vertical component P_v "
+               "appears as a stabilizing entry in the weight table."
+               if delta_incl > 0 else ""),
     ))
 
     ot_items.append(CalcStep(
@@ -744,22 +794,23 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         reference="GEC-11 (min 2.0)",
     ))
 
-    # Bearing
+    # Bearing — Meyerhof uniform pressure over effective width (RW-3)
     x_R = (M_stab - M_over) / W if W > 0 else L / 2.0
     e_ext = L / 2.0 - x_R
-    if abs(e_ext) <= L / 6.0:
-        q_toe = W / L * (1.0 + 6.0 * e_ext / L)
-    else:
-        B_eff = 3.0 * x_R
-        q_toe = 2.0 * W / B_eff if B_eff > 0 else 0.0
+    L_eff = L - 2.0 * abs(e_ext)
+    q_toe = W / L_eff if L_eff > 0 else 1.0e6
 
     ext_items.append(CalcStep(
-        title="Eccentricity & Toe Bearing Pressure",
-        equation="e = L/2 - (M_stab - M_ot)/W;  q_toe = (V/L)(1 + 6e/L)",
-        substitution=f"e = {L:.2f}/2 - ({M_stab:.1f} - {M_over:.1f})/{W:.1f}",
-        result_name="q_toe",
+        title="Eccentricity & Bearing Pressure (Meyerhof effective width)",
+        equation="e = L/2 - (M_stab - M_ot)/W;  σ_v = W / (L - 2e)",
+        substitution=(
+            f"e = {L:.2f}/2 - ({M_stab:.1f} - {M_over:.1f})/{W:.1f} "
+            f"= {e_ext:.3f} m;  σ_v = {W:.1f} / ({L:.2f} - 2×{abs(e_ext):.3f})"
+        ),
+        result_name="σ_v",
         result_value=f"{q_toe:.1f}",
         result_unit="kPa",
+        reference="AASHTO 11.10.5.4; GEC-11",
     ))
 
     if q_all is not None:
@@ -833,12 +884,17 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         title="Pullout Resistance",
         equation="P_r = F* \u00d7 \u03b1 \u00d7 \u03c3_v' \u00d7 L_e \u00d7 C",
         substitution=(
-            f"L_e = L - L_a (L_a from 45+\u03c6/2 failure plane); C = 2"
+            "L_e = L - L_a; L_a per bilinear coherent-gravity surface "
+            "(0.3H over upper H/2, tapering to toe) for inextensible "
+            "(metallic) reinforcement; C = 2"
+            if r_type == "Metallic" else
+            "L_e = L - L_a; L_a from Rankine 45+\u03c6/2 plane "
+            "(extensible/geosynthetic reinforcement); C = 2"
         ),
         result_name="P_r",
         result_value="(per level)",
         result_unit="kN/m",
-        reference="GEC-11, Eq. 4-18",
+        reference="GEC-11, Eq. 4-18; AASHTO Fig. 11.10.6.3.1-1",
     ))
 
     # Per-level results table
@@ -1273,12 +1329,18 @@ def _plot_mse_section(result, analysis):
         ax.plot([0, L], [y, y], color=r_color, linewidth=1.5, alpha=0.7)
         ax.plot(L, y, '|', color=r_color, markersize=8, markeredgewidth=2)
 
-    # Failure surface (Rankine: 45 + phi/2 from horizontal)
-    failure_angle = math.radians(45 + phi / 2)
-    # Line from toe going up at the failure angle
-    x_fail_top = H / math.tan(failure_angle)
-    ax.plot([0, x_fail_top], [0, H], 'r--', linewidth=2, alpha=0.7,
-            label=f'Failure plane (45+\u03c6/2 = {45 + phi / 2:.0f}\u00b0)')
+    # Failure surface: bilinear coherent-gravity surface for inextensible
+    # (metallic) reinforcement, Rankine 45+phi/2 plane for extensible (RW-2)
+    if reinforcement is not None and reinforcement.is_metallic:
+        ax.plot([0, 0.3 * H, 0.3 * H], [0, H / 2.0, H], 'r--',
+                linewidth=2, alpha=0.7,
+                label='Coherent-gravity surface (0.3H, inextensible)')
+    else:
+        failure_angle = math.radians(45 + phi / 2)
+        # Line from toe going up at the failure angle
+        x_fail_top = H / math.tan(failure_angle)
+        ax.plot([0, x_fail_top], [0, H], 'r--', linewidth=2, alpha=0.7,
+                label=f'Failure plane (45+\u03c6/2 = {45 + phi / 2:.0f}\u00b0)')
 
     # Retained soil behind reinforced zone
     ax.add_patch(patches.Rectangle(

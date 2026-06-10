@@ -64,11 +64,21 @@ def rankine_Ka_sloped(phi_deg: float, beta_deg: float) -> float:
 
 def horizontal_force_active(gamma: float, H: float, Ka: float,
                             c: float = 0.0, q: float = 0.0) -> Tuple[float, float]:
-    """Resultant active horizontal force and its location.
+    """Resultant active thrust magnitude and its location.
 
     For a wall of height H with uniform backfill:
     Pa = 0.5 * Ka * gamma * H² + Ka * q * H - 2*c*sqrt(Ka)*H
     Applied at H/3 from base (triangular) or adjusted for surcharge.
+
+    Note
+    ----
+    ``Pa`` is the magnitude of the thrust along its line of action. It is
+    horizontal only for Rankine theory with a vertical wall and level
+    backfill. For Coulomb (wall friction ``delta``) or Rankine with sloped
+    backfill (``beta``) the thrust is inclined at ``delta`` (resp. ``beta``)
+    from horizontal, and the caller must decompose it into
+    ``Ph = Pa*cos(delta)`` and ``Pv = Pa*sin(delta)`` (see
+    ``retaining_walls.cantilever._active_thrust``).
 
     Parameters
     ----------
@@ -86,7 +96,7 @@ def horizontal_force_active(gamma: float, H: float, Ka: float,
     Returns
     -------
     Pa : float
-        Total active horizontal force per unit width (kN/m).
+        Total active thrust per unit width (kN/m), along its line of action.
     z_Pa : float
         Height of resultant above base (m).
     """

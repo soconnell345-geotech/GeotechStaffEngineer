@@ -38,6 +38,16 @@ class SoilLayer:
         Total unit weight gamma (kN/m³).
     thickness : float, optional
         Layer thickness (m). None means semi-infinite (bottom layer).
+
+        .. note:: Two-layer convention (BC-4)
+            When this layer is ``layer1`` of a two-layer
+            :class:`BearingSoilProfile`, ``thickness`` is the thickness of
+            the upper layer **below the footing base** (the distance H from
+            the footing base down to the layer interface) — NOT the layer's
+            full thickness from the ground surface. The soil above the
+            footing base is also assumed to be layer-1 material for the
+            overburden computation. See
+            :class:`BearingSoilProfile` Notes for the full convention.
     description : str, optional
         Layer description (e.g., "Medium dense sand").
     """
@@ -90,6 +100,24 @@ class BearingSoilProfile:
     Notes
     -----
     For two-layer analysis, layer1.thickness must be specified.
+
+    **Two-layer ``thickness`` convention (BC-4).** Layer 1 is taken to
+    extend from the *ground surface* down past the footing base to the
+    layer interface:
+
+    - ``overburden_pressure(Df)`` uses ``layer1.unit_weight`` from the
+      ground surface to the footing base (the overburden soil is layer-1
+      material);
+    - ``layer1.thickness`` is the upper-layer thickness *below the footing
+      base* — the distance H from the base of the footing to the top of
+      layer 2 (the value used by the two-layer load-spread method in
+      ``BearingCapacityAnalysis._compute_two_layer``).
+
+    So for a footing at depth Df with the layer interface at depth z_i
+    below the ground surface, set ``layer1.thickness = z_i - Df``, not
+    ``z_i``. (If the soil above the footing base differs from layer 1,
+    its weight is approximated using layer 1's unit weight.)
+
     The groundwater table affects:
     - Overburden pressure q at the footing base
     - Effective unit weight gamma' below the water table
@@ -114,28 +142,14 @@ class BearingSoilProfile:
         """True if this is a two-layer soil profile."""
         return self.layer2 is not None
 
-    def effective_unit_weight(self, depth: float, layer: SoilLayer) -> float:
-        """Get effective unit weight at a given depth, accounting for groundwater.
-
-        Parameters
-        ----------
-        depth : float
-            Depth below ground surface (m).
-        layer : SoilLayer
-            The soil layer at this depth.
-
-        Returns
-        -------
-        float
-            Effective unit weight (kN/m³). Equal to total unit weight if
-            above GWT, or buoyant unit weight if below GWT.
-        """
-        if self.gwt_depth is None or depth <= self.gwt_depth:
-            return layer.unit_weight
-        return layer.unit_weight - self.gamma_w
-
     def overburden_pressure(self, footing_depth: float) -> float:
         """Compute effective overburden pressure q at the footing base.
+
+        The soil between the ground surface and the footing base is assumed
+        to be layer-1 material (``layer1.unit_weight``) — see the two-layer
+        ``thickness`` convention in the class Notes (BC-4):
+        ``layer1.thickness`` measures the upper layer *below* the base and
+        plays no role here.
 
         Parameters
         ----------

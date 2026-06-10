@@ -31,4 +31,10 @@ evaluate_feasibility(soil_type, fines_content, ...) -> FeasibilityResult
 - Wick drains use bisection to find spacing for target consolidation
 - feasibility.py takes plain floats, NOT SoilProfile objects
 - Vibro: FC<10% feasible, 10-20% marginal, >20% not feasible
-- 40 tests
+- `improved_bearing_capacity` is a FIRST-ORDER estimate using the
+  equal-strain stress-concentration factor 1 + as·(n−1) — not Priebe's n₀
+  (GI-2). The genuine Priebe (1995) basic improvement factor
+  n₀(as, φ_col, ν_s) is available as
+  `aggregate_piers.priebe_basic_improvement_factor`
+- `equivalent_drain_diameter = 2(w+t)/π` (Hansbo; GI-1 fixed in 5.0)
+- Tests in tests/test_ground_improvement.py

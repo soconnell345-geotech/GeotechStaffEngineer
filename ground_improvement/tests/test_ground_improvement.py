@@ -116,6 +116,60 @@ class TestAggregatePiers:
         assert q_imp == pytest.approx(expected, rel=1e-6)
         assert q_imp == pytest.approx(140.0)
 
+    def test_improved_bearing_relabeled_not_priebe(self):
+        """GI-2: the docstring must present 1+as(n-1) as a first-order
+        stress-concentration estimate, not as the Priebe factor."""
+        doc = improved_bearing_capacity.__doc__
+        assert "first-order" in doc.lower()
+        assert "not Priebe" in doc
+
+    def test_priebe_n0_chart_value_phi425(self):
+        """Genuine Priebe n0: A/Ac = 5 (as = 0.2), phi_c = 42.5 deg,
+        nu = 1/3 -> n0 ~ 2.35 (Priebe 1995 design chart)."""
+        from ground_improvement.aggregate_piers import (
+            priebe_basic_improvement_factor)
+        n0 = priebe_basic_improvement_factor(0.2, phi_column=42.5)
+        assert n0 == pytest.approx(2.35, abs=0.05)
+
+    def test_priebe_n0_chart_value_phi40(self):
+        """A/Ac = 10 (as = 0.1), phi_c = 40 deg -> n0 ~ 1.53."""
+        from ground_improvement.aggregate_piers import (
+            priebe_basic_improvement_factor)
+        n0 = priebe_basic_improvement_factor(0.1, phi_column=40.0)
+        assert n0 == pytest.approx(1.53, abs=0.05)
+
+    def test_priebe_n0_nu_third_closed_form(self):
+        """For nu = 1/3 the general form must reduce to the published
+        n0 = 1 + as*[(5-as)/(4*Kac*(1-as)) - 1]."""
+        import math as _m
+        from ground_improvement.aggregate_piers import (
+            priebe_basic_improvement_factor)
+        for as_ratio in (0.05, 0.15, 0.3):
+            for phi_c in (38.0, 42.5, 45.0):
+                Kac = _m.tan(_m.radians(45.0 - phi_c / 2.0)) ** 2
+                expected = 1.0 + as_ratio * (
+                    (5.0 - as_ratio) / (4.0 * Kac * (1.0 - as_ratio)) - 1.0)
+                got = priebe_basic_improvement_factor(as_ratio, phi_c)
+                assert got == pytest.approx(expected, rel=1e-9)
+
+    def test_priebe_n0_monotonic_in_as_and_phi(self):
+        from ground_improvement.aggregate_piers import (
+            priebe_basic_improvement_factor)
+        assert (priebe_basic_improvement_factor(0.25)
+                > priebe_basic_improvement_factor(0.10))
+        assert (priebe_basic_improvement_factor(0.2, phi_column=45.0)
+                > priebe_basic_improvement_factor(0.2, phi_column=38.0))
+
+    def test_priebe_n0_validation(self):
+        from ground_improvement.aggregate_piers import (
+            priebe_basic_improvement_factor)
+        with pytest.raises(ValueError):
+            priebe_basic_improvement_factor(0.0)
+        with pytest.raises(ValueError):
+            priebe_basic_improvement_factor(1.0)
+        with pytest.raises(ValueError):
+            priebe_basic_improvement_factor(0.2, nu_soil=0.5)
+
     def test_full_analysis(self):
         """End-to-end analyze_aggregate_piers."""
         result = analyze_aggregate_piers(

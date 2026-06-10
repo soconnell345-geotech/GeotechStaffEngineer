@@ -269,7 +269,11 @@ def _steps_aggregate_piers(result, analysis) -> List[CalcSection]:
             result_name="q_improved",
             result_value=f"{r.improved_bearing_kPa:.1f}",
             result_unit="kPa",
-            reference="Priebe (1995) improvement factor",
+            reference="Stress-concentration estimate (Barksdale & Bachus "
+                      "1983; GEC-13)",
+            notes="First-order estimate using the equal-strain "
+                  "stress-concentration factor — not Priebe's n₀ "
+                  "improvement factor.",
         ))
 
         bc_items.append(CheckItem(

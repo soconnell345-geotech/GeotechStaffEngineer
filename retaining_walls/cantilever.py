@@ -22,6 +22,55 @@ from retaining_walls.earth_pressure import (
 from retaining_walls.results import CantileverWallResult
 
 
+def _active_thrust(geom: CantileverWallGeometry,
+                   gamma_backfill: float, phi_backfill: float,
+                   c_backfill: float = 0.0,
+                   pressure_method: str = "rankine"):
+    """Active thrust magnitude, location, inclination, and components.
+
+    The total active thrust ``Pa = 0.5*Ka*gamma*H^2 + Ka*q*H - 2*c*sqrt(Ka)*H``
+    acts at an inclination ``delta`` from horizontal that depends on the
+    earth-pressure method (RW-1):
+
+    - Rankine, level backfill: horizontal (``delta = 0``) — the classical case
+      where treating Pa as purely horizontal is exact.
+    - Rankine, sloped backfill: parallel to the backfill slope
+      (``delta = beta``), per Rankine theory for a sloping surface (Das Ch. 13).
+    - Coulomb: at the wall-friction angle ``delta = (2/3)*phi`` from the normal
+      to the (vertical) pressure plane, i.e. (2/3)*phi above horizontal —
+      matching the ``delta_wall`` used to compute the Coulomb Ka.
+
+    The horizontal component ``Ph = Pa*cos(delta)`` drives sliding/overturning;
+    the vertical component ``Pv = Pa*sin(delta)`` acts downward on the vertical
+    pressure plane at the back of the heel (x = B from the toe) and is
+    stabilizing — it adds to the weight resultant and to the resisting moment.
+
+    Returns
+    -------
+    tuple
+        (Ka, Pa, z_Pa, delta_deg, Ph, Pv)
+    """
+    H = geom.H_active
+
+    if pressure_method == "coulomb":
+        delta_deg = 2.0 / 3.0 * phi_backfill
+        Ka = coulomb_Ka(phi_backfill, delta_deg,
+                        beta_deg=geom.backfill_slope)
+    elif geom.backfill_slope > 0:
+        Ka = rankine_Ka_sloped(phi_backfill, geom.backfill_slope)
+        delta_deg = geom.backfill_slope
+    else:
+        Ka = rankine_Ka(phi_backfill)
+        delta_deg = 0.0
+
+    Pa, z_Pa = horizontal_force_active(gamma_backfill, H, Ka,
+                                       c_backfill, geom.surcharge)
+    delta_rad = math.radians(delta_deg)
+    Ph = Pa * math.cos(delta_rad)
+    Pv = Pa * math.sin(delta_rad)
+    return Ka, Pa, z_Pa, delta_deg, Ph, Pv
+
+
 def _compute_wall_weights(geom: CantileverWallGeometry,
                           gamma_backfill: float,
                           gamma_concrete: float = 24.0):
@@ -64,6 +113,15 @@ def _compute_wall_weights(geom: CantileverWallGeometry,
         x_soil_heel = t_toe + t_stem_base + heel / 2.0
         weights.append((W_soil_heel, x_soil_heel))
 
+        # Sloped backfill: triangular soil wedge above the heel (RW-4).
+        # The surface rises from the stem back face to heel*tan(beta) at the
+        # back of the heel; its centroid is at 2/3 of the heel from the stem.
+        if geom.backfill_slope > 0:
+            rise = heel * math.tan(math.radians(geom.backfill_slope))
+            W_soil_wedge = 0.5 * gamma_backfill * heel * rise
+            x_soil_wedge = t_toe + t_stem_base + 2.0 * heel / 3.0
+            weights.append((W_soil_wedge, x_soil_wedge))
+
     # Soil on toe (if any, above toe in front of stem)
     # Typically minimal for cantilever walls, skip for simplicity
 
@@ -82,7 +140,12 @@ def check_sliding(geom: CantileverWallGeometry,
                   gamma_foundation: float = None) -> Dict[str, Any]:
     """Check sliding stability.
 
-    FOS_sliding = (V * tan(delta_b) + ca * B + Pp) / Pa_horizontal
+    FOS_sliding = (V * tan(delta_b) + ca * B + Pp) / (Pa * cos(delta))
+
+    The active thrust is decomposed per the chosen earth-pressure method
+    (RW-1): only the horizontal component Pa*cos(delta) drives sliding, and
+    the vertical component Pa*sin(delta) (Coulomb wall friction or sloped
+    Rankine) is added to V, increasing the frictional resistance.
 
     Parameters
     ----------
@@ -121,23 +184,12 @@ def check_sliding(geom: CantileverWallGeometry,
     if gamma_foundation is None:
         gamma_foundation = gamma_backfill
 
-    H = geom.H_active
     B = geom.base_width
 
-    # Active force
-    if pressure_method == "coulomb":
-        delta_wall = 2.0 / 3.0 * phi_backfill
-        Ka = coulomb_Ka(phi_backfill, delta_wall,
-                        beta_deg=geom.backfill_slope)
-    else:
-        # Use sloped Rankine Ka when backfill is sloped
-        if geom.backfill_slope > 0:
-            Ka = rankine_Ka_sloped(phi_backfill, geom.backfill_slope)
-        else:
-            Ka = rankine_Ka(phi_backfill)
-
-    Pa, _ = horizontal_force_active(gamma_backfill, H, Ka,
-                                    c_backfill, geom.surcharge)
+    # Active thrust, decomposed per the chosen method (RW-1)
+    Ka, Pa, _, delta_deg, Ph, Pv = _active_thrust(
+        geom, gamma_backfill, phi_backfill, c_backfill, pressure_method
+    )
 
     # Vertical force (sum of weights)
     weights = _compute_wall_weights(geom, gamma_backfill, gamma_concrete)
@@ -146,6 +198,9 @@ def check_sliding(geom: CantileverWallGeometry,
     # Add vertical component of surcharge on heel
     V_surcharge = geom.surcharge * geom.heel_length
     V += V_surcharge
+
+    # Vertical component of the active thrust (stabilizing)
+    V += Pv
 
     # Base friction: delta_b = 2/3 * phi_foundation
     delta_b = 2.0 / 3.0 * phi_foundation
@@ -166,7 +221,7 @@ def check_sliding(geom: CantileverWallGeometry,
         Pp = 0.5 * Kp * gamma_foundation * D ** 2
         resisting += Pp
 
-    driving = Pa
+    driving = Ph
 
     FOS = resisting / driving if driving > 0 else 99.9
 
@@ -175,6 +230,9 @@ def check_sliding(geom: CantileverWallGeometry,
         "driving_force_kN_per_m": round(driving, 1),
         "resisting_force_kN_per_m": round(resisting, 1),
         "Pp_kN_per_m": round(Pp, 1),
+        "Pa_kN_per_m": round(Pa, 1),
+        "Pa_vertical_kN_per_m": round(Pv, 1),
+        "thrust_inclination_deg": round(delta_deg, 2),
         "passes": FOS >= FOS_required,
     }
 
@@ -211,23 +269,15 @@ def check_overturning(geom: CantileverWallGeometry,
     dict
         FOS_overturning, stabilizing_moment, overturning_moment, passes.
     """
-    H = geom.H_active
+    B = geom.base_width
 
-    if pressure_method == "coulomb":
-        delta_wall = 2.0 / 3.0 * phi_backfill
-        Ka = coulomb_Ka(phi_backfill, delta_wall,
-                        beta_deg=geom.backfill_slope)
-    else:
-        if geom.backfill_slope > 0:
-            Ka = rankine_Ka_sloped(phi_backfill, geom.backfill_slope)
-        else:
-            Ka = rankine_Ka(phi_backfill)
+    # Active thrust, decomposed per the chosen method (RW-1)
+    Ka, Pa, z_Pa, delta_deg, Ph, Pv = _active_thrust(
+        geom, gamma_backfill, phi_backfill, c_backfill, pressure_method
+    )
 
-    Pa, z_Pa = horizontal_force_active(gamma_backfill, H, Ka,
-                                       c_backfill, geom.surcharge)
-
-    # Overturning moment about toe
-    M_overturning = Pa * z_Pa
+    # Overturning moment about toe: horizontal component only
+    M_overturning = Ph * z_Pa
 
     # Stabilizing moments about toe
     weights = _compute_wall_weights(geom, gamma_backfill, gamma_concrete)
@@ -240,12 +290,19 @@ def check_overturning(geom: CantileverWallGeometry,
         x_q = geom.toe_length + geom.stem_thickness_base + heel / 2.0
         M_stabilizing += W_q * x_q
 
+    # Vertical thrust component acts down at the pressure plane (back of
+    # heel, x = B from toe) -> stabilizing moment
+    M_stabilizing += Pv * B
+
     FOS = M_stabilizing / M_overturning if M_overturning > 0 else 99.9
 
     return {
         "FOS_overturning": round(FOS, 3),
         "stabilizing_moment_kNm_per_m": round(M_stabilizing, 1),
         "overturning_moment_kNm_per_m": round(M_overturning, 1),
+        "Pa_kN_per_m": round(Pa, 1),
+        "Pa_vertical_kN_per_m": round(Pv, 1),
+        "thrust_inclination_deg": round(delta_deg, 2),
         "passes": FOS >= FOS_required,
     }
 
@@ -280,21 +337,12 @@ def check_bearing(geom: CantileverWallGeometry,
     dict
         q_toe, q_heel, eccentricity, in_middle_third, FOS_bearing.
     """
-    H = geom.H_active
     B = geom.base_width
 
-    if pressure_method == "coulomb":
-        delta_wall = 2.0 / 3.0 * phi_backfill
-        Ka = coulomb_Ka(phi_backfill, delta_wall,
-                        beta_deg=geom.backfill_slope)
-    else:
-        if geom.backfill_slope > 0:
-            Ka = rankine_Ka_sloped(phi_backfill, geom.backfill_slope)
-        else:
-            Ka = rankine_Ka(phi_backfill)
-
-    Pa, z_Pa = horizontal_force_active(gamma_backfill, H, Ka,
-                                       c_backfill, geom.surcharge)
+    # Active thrust, decomposed per the chosen method (RW-1)
+    Ka, Pa, z_Pa, delta_deg, Ph, Pv = _active_thrust(
+        geom, gamma_backfill, phi_backfill, c_backfill, pressure_method
+    )
 
     # Weights and moments about toe
     weights = _compute_wall_weights(geom, gamma_backfill, gamma_concrete)
@@ -309,7 +357,11 @@ def check_bearing(geom: CantileverWallGeometry,
         V += W_q
         M_stab += W_q * x_q
 
-    M_over = Pa * z_Pa
+    # Vertical thrust component (acts at the pressure plane, x = B)
+    V += Pv
+    M_stab += Pv * B
+
+    M_over = Ph * z_Pa
 
     # Location of resultant from toe
     x_resultant = (M_stab - M_over) / V if V > 0 else B / 2.0
@@ -336,6 +388,9 @@ def check_bearing(geom: CantileverWallGeometry,
         "eccentricity_m": round(eccentricity, 3),
         "in_middle_third": in_middle_third,
         "FOS_bearing": round(FOS_bearing, 3),
+        "Pa_kN_per_m": round(Pa, 1),
+        "Pa_vertical_kN_per_m": round(Pv, 1),
+        "thrust_inclination_deg": round(delta_deg, 2),
     }
 
 

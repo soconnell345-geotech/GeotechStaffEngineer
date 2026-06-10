@@ -855,5 +855,94 @@ class TestTwoLayerCalcStepsLabel:
         assert "load-spread" in blob
 
 
+class TestCalcStepsEquationDisplay:
+    """Displayed factor equations must match the forms the code actually
+    used, including the phi=0 special cases (regression for BC-9a/b)."""
+
+    def test_vesic_phi0_shape_equation(self):
+        from bearing_capacity.calc_steps import _shape_factor_equation
+        eq = _shape_factor_equation("vesic", 0.0)
+        assert "1 + 0.2(B/L)" in eq        # sc phi=0 form
+        assert "s_q = 1.0" in eq           # tan(0) = 0
+        assert "(N_q/N_c)" not in eq       # phi>0 form must NOT be shown
+
+    def test_vesic_phi_positive_shape_equation_unchanged(self):
+        from bearing_capacity.calc_steps import _shape_factor_equation
+        eq = _shape_factor_equation("vesic", 30.0)
+        assert "(N_q/N_c)" in eq
+        assert "tan(φ)" in eq
+
+    def test_vesic_phi0_depth_equation(self):
+        from bearing_capacity.calc_steps import _depth_factor_equation
+        eq = _depth_factor_equation("vesic", 0.0)
+        assert "1 + 0.4×k" in eq      # dc = 1 + 0.4k
+        assert "d_q = 1.0" in eq
+        assert "2×tan(φ)" not in eq
+
+    def test_vesic_depth_equation_includes_dc(self):
+        """BC-9b: the Vesic phi>0 depth display must include the d_c formula."""
+        from bearing_capacity.calc_steps import _depth_factor_equation
+        eq = _depth_factor_equation("vesic", 30.0)
+        assert "d_c" in eq
+        assert "(1-d_q)/(N_c×tan(φ))" in eq
+
+    def test_meyerhof_low_phi_unity_factors_displayed(self):
+        from bearing_capacity.calc_steps import (
+            _shape_factor_equation, _depth_factor_equation)
+        assert "s_q = s_γ = 1.0" in _shape_factor_equation("meyerhof", 0.0)
+        assert "d_q = d_γ = 1.0" in _depth_factor_equation("meyerhof", 5.0)
+
+    def test_phi0_calc_steps_displayed_values_match_equation(self):
+        """phi=0 clay: displayed sc/dc values must satisfy the displayed
+        phi=0 equations (sc = 1+0.2*B/L, dc = 1+0.4k)."""
+        from bearing_capacity.calc_steps import get_calc_steps
+        footing = Footing(width=2.0, depth=1.0, shape="square")
+        soil = BearingSoilProfile(
+            layer1=SoilLayer(cohesion=50.0, friction_angle=0, unit_weight=18.0))
+        analysis = BearingCapacityAnalysis(footing=footing, soil=soil)
+        result = analysis.compute()
+        # The computed factors are the phi=0 forms
+        assert result.sc == pytest.approx(1.0 + 0.2 * 1.0)   # B/L = 1
+        assert result.dc == pytest.approx(1.0 + 0.4 * 0.5)   # k = Df/B = 0.5
+        # ... and rendering raises no errors with the phi=0 equations
+        sections = get_calc_steps(result, analysis)
+        assert sections
+
+    def test_two_layer_term_table_total_matches_parts(self):
+        """BC-9c: the rendered Term Breakdown total must equal the sum of
+        the three displayed terms for a two-layer run (post-BC-1 scaling)."""
+        from bearing_capacity.calc_steps import get_calc_steps
+        from calc_package.data_model import TableData
+        footing = Footing(width=2.0, depth=1.0, shape="square")
+        soil = BearingSoilProfile(
+            layer1=SoilLayer(friction_angle=35, unit_weight=19.0, thickness=1.0),
+            layer2=SoilLayer(cohesion=30.0, friction_angle=0, unit_weight=17.0),
+        )
+        analysis = BearingCapacityAnalysis(footing=footing, soil=soil)
+        result = analysis.compute()
+        sections = get_calc_steps(result, analysis)
+        tables = [it for sec in sections for it in sec.items
+                  if isinstance(it, TableData) and it.title == "Term Breakdown"]
+        assert len(tables) == 1
+        rows = tables[0].rows
+        parts = sum(float(r[1].replace(",", "")) for r in rows[:-1])
+        total = float(rows[-1][1].replace(",", ""))
+        assert parts == pytest.approx(total, abs=0.2)  # display rounding only
+        # ... and the percent column sums to ~100
+        pcts = sum(float(r[2].rstrip("%")) for r in rows[:-1])
+        assert pcts == pytest.approx(100.0, abs=2.0)   # 3 x 0-dp rounding
+
+
+class TestEffectiveUnitWeightPruned:
+    """BC-6: the unused BearingSoilProfile.effective_unit_weight() helper was
+    removed (zero callers repo-wide; geotech_common.water.effective_unit_weight
+    is the supported utility)."""
+
+    def test_method_removed(self):
+        soil = BearingSoilProfile(
+            layer1=SoilLayer(friction_angle=30, unit_weight=18.0))
+        assert not hasattr(soil, "effective_unit_weight")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

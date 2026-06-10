@@ -530,5 +530,105 @@ class TestSettlementQCFixes:
         assert Se_strip > Se_square
 
 
+class TestStressAtSurface:
+    """SET-4: center-of-footing stress at exactly z = 0 must return q,
+    not 4q (corner function returns q, not q/4, at z <= 0)."""
+
+    def test_boussinesq_center_z0_returns_q(self):
+        q = 100.0
+        assert stress_at_depth(q, 2.0, 3.0, 0.0,
+                               method="boussinesq",
+                               location="center") == pytest.approx(q)
+        assert boussinesq_center_rectangular(q, 2.0, 3.0, 0.0) == pytest.approx(q)
+
+    def test_westergaard_center_z0_returns_q(self):
+        q = 100.0
+        assert stress_at_depth(q, 2.0, 3.0, 0.0,
+                               method="westergaard",
+                               location="center") == pytest.approx(q)
+
+    def test_z0_continuous_with_limit(self):
+        """The z -> 0+ limit equals the z = 0 value (no jump)."""
+        q = 100.0
+        for method in ("boussinesq", "westergaard"):
+            near = stress_at_depth(q, 2.0, 3.0, 1e-6,
+                                   method=method, location="center")
+            at0 = stress_at_depth(q, 2.0, 3.0, 0.0,
+                                  method=method, location="center")
+            assert near == pytest.approx(at0, rel=1e-3)
+
+    def test_corner_z0_unchanged(self):
+        """Corner location at z = 0 still returns q (existing behavior)."""
+        q = 100.0
+        assert stress_at_depth(q, 2.0, 3.0, 0.0,
+                               method="boussinesq",
+                               location="corner") == pytest.approx(q)
+
+    def test_below_surface_unchanged(self):
+        """Values at z > 0 are untouched by the guard."""
+        q = 100.0
+        v = stress_at_depth(q, 2.0, 2.0, 1.0,
+                            method="boussinesq", location="center")
+        expected = 4.0 * stress_at_depth(q, 1.0, 1.0, 1.0,
+                                         method="boussinesq",
+                                         location="corner")
+        assert v == pytest.approx(expected, rel=1e-9)
+
+
+class TestSecondaryAssumptionsDocumented:
+    """SET-5: t1 = 1.0 yr default (no cv) and single-zone Hdr are documented
+    assumptions; the calc package carries an explicit note."""
+
+    def _analysis(self, cv=None):
+        return SettlementAnalysis(
+            q_applied=150, q_overburden=20, B=2.0, L=2.0,
+            immediate_method="elastic", Es_immediate=10000,
+            consolidation_layers=[
+                ConsolidationLayer(thickness=2, depth_to_center=1,
+                                   e0=0.8, Cc=0.3, Cr=0.05, sigma_v0=30)
+            ],
+            C_alpha=0.01, e0_secondary=0.8, t_secondary=20.0,
+            cv=cv,
+        )
+
+    def test_t1_default_one_year_when_no_cv(self):
+        """Without cv, secondary uses t1 = 1.0 yr (the documented default)."""
+        a = self._analysis(cv=None)
+        r = a.compute()
+        expected = secondary_settlement(0.01, 2.0, 1.0, 21.0, 0.8)
+        assert r.secondary == pytest.approx(expected, rel=1e-9)
+
+    def test_hdr_single_zone_double_drainage(self):
+        """_get_Hdr treats the whole zone as one doubly-drained layer."""
+        a = self._analysis(cv=5.0)
+        assert a._get_Hdr() == pytest.approx(1.0)  # 2.0 m zone / 2
+        a.drainage = "single"
+        assert a._get_Hdr() == pytest.approx(2.0)
+        a.Hdr = 0.5  # explicit override wins
+        assert a._get_Hdr() == pytest.approx(0.5)
+
+    def test_calc_steps_note_flags_assumed_t1(self):
+        from settlement.calc_steps import get_calc_steps
+        from calc_package.data_model import CalcStep
+        a = self._analysis(cv=None)
+        r = a.compute()
+        sections = get_calc_steps(r, a)
+        notes = " ".join(
+            it.notes for sec in sections for it in sec.items
+            if isinstance(it, CalcStep) and getattr(it, "notes", None))
+        assert "ASSUMED" in notes and "1.0 yr" in notes
+
+    def test_calc_steps_note_flags_t95_when_cv_given(self):
+        from settlement.calc_steps import get_calc_steps
+        from calc_package.data_model import CalcStep
+        a = self._analysis(cv=5.0)
+        r = a.compute()
+        sections = get_calc_steps(r, a)
+        notes = " ".join(
+            it.notes for sec in sections for it in sec.items
+            if isinstance(it, CalcStep) and getattr(it, "notes", None))
+        assert "one" in notes and "drained layer" in notes
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -116,13 +116,72 @@ def composite_modulus(as_ratio: float, E_soil: float,
     return E_soil * (1.0 + as_ratio * (n - 1.0))
 
 
+def priebe_basic_improvement_factor(as_ratio: float,
+                                    phi_column: float = 42.5,
+                                    nu_soil: float = 1.0 / 3.0) -> float:
+    """Priebe (1995) basic improvement factor n0 for vibro replacement.
+
+    The genuine Priebe factor — a function of the area replacement ratio,
+    the column friction angle, and the soil Poisson ratio:
+
+        n0 = 1 + as * [ (1/2 + f(nu, as)) / (K_ac * f(nu, as)) - 1 ]
+
+        f(nu, as) = (1 - nu) * (1 - as) / (1 - 2*nu + as)
+        K_ac      = tan^2(45 - phi_c / 2)
+
+    For the common nu_s = 1/3 this reduces to the published design-chart
+    form  n0 = 1 + as * [ (5 - as) / (4 * K_ac * (1 - as)) - 1 ].
+
+    Parameters
+    ----------
+    as_ratio : float
+        Area replacement ratio as = Ac / A (0 < as < 1).
+    phi_column : float, optional
+        Friction angle of the column material (degrees). Default 42.5
+        (Priebe's design-chart value for compacted stone).
+    nu_soil : float, optional
+        Poisson's ratio of the surrounding soil. Default 1/3.
+
+    Returns
+    -------
+    float
+        Basic improvement factor n0 (>= 1).
+
+    References
+    ----------
+    Priebe, H.J. (1995), "The Design of Vibro Replacement," Ground
+    Engineering, December 1995; FHWA GEC-13.
+    """
+    if not 0.0 < as_ratio < 1.0:
+        raise ValueError(
+            f"Area replacement ratio must be in (0, 1), got {as_ratio}")
+    if not 0.0 < phi_column <= 50.0:
+        raise ValueError(
+            f"Column friction angle must be in (0, 50] degrees, got {phi_column}")
+    if not 0.0 <= nu_soil < 0.5:
+        raise ValueError(
+            f"Soil Poisson ratio must be in [0, 0.5), got {nu_soil}")
+
+    Kac = math.tan(math.radians(45.0 - phi_column / 2.0)) ** 2
+    f = (1.0 - nu_soil) * (1.0 - as_ratio) / (1.0 - 2.0 * nu_soil + as_ratio)
+    return 1.0 + as_ratio * ((0.5 + f) / (Kac * f) - 1.0)
+
+
 def improved_bearing_capacity(q_unreinforced: float, as_ratio: float,
                               n: float) -> float:
     """Compute improved bearing capacity with aggregate piers.
 
     q_improved = q_unreinforced * (1 + as * (n - 1))
 
-    This is the Priebe improvement factor approach.
+    .. note:: First-order estimate, not Priebe (GI-2)
+        This applies the same equal-strain stress-concentration factor
+        ``1 + as*(n - 1)`` used for the composite modulus / settlement
+        reduction — a simple first-order estimate of the bearing
+        improvement, NOT Priebe's basic improvement factor n0 (which is
+        a distinct function of as, the column friction angle, and the
+        soil Poisson ratio). For the genuine Priebe factor use
+        :func:`priebe_basic_improvement_factor` and apply
+        ``q_improved = n0 * q_unreinforced``.
 
     Parameters
     ----------
@@ -137,6 +196,10 @@ def improved_bearing_capacity(q_unreinforced: float, as_ratio: float,
     -------
     float
         Improved bearing capacity (kPa).
+
+    References
+    ----------
+    Barksdale & Bachus (1983) stress-concentration model; FHWA GEC-13.
     """
     return q_unreinforced * (1.0 + as_ratio * (n - 1.0))
 
