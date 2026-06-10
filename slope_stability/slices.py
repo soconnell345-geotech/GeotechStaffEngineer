@@ -344,6 +344,15 @@ def _pore_pressure_at_base(z_base: float,
     """Compute pore water pressure at the midpoint of the slice base.
 
     u = gamma_w * (z_gwt - z_base) if z_base < z_gwt, else 0.
+
+    ASSUMPTION (SS-3): the piezometric head is taken as the full vertical
+    distance from the slice base to the GWT surface (hydrostatic, no-flow
+    conditions). For seepage parallel to an inclined phreatic surface the
+    rigorous head is reduced (factor ~cos^2(beta) of the phreatic slope,
+    or per a flownet), so this slightly OVERESTIMATES u — conservative —
+    on slopes with steeply inclined water tables. Use the layer ``ru``
+    coefficient as the alternative pore-pressure model when a calibrated
+    value is available.
     """
     if gwt_elev is None:
         return 0.0

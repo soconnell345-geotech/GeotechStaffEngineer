@@ -27,6 +27,25 @@ analyze_drivability(hammer, pile, soil_profile, ...) -> DrivabilityResult
 
 ## Key Notes
 - Time step automatically chosen for Courant stability
-- Smith damping: R = R_static + J * R_ultimate * v where J = damping factor (s/m)
+- Static soil spring is a true elasto-plastic (kinematic) spring with memory:
+  loads at slope R_ult/Q to R_ult, unloads along the same elastic slope from
+  the peak, leaving a plastic offset. The toe spring is no-tension (gaps on
+  rebound). Springs are stateful per blow; `simulate_blow` creates fresh
+  springs each blow.
+- Permanent set per blow = the toe spring's plastic (residual) displacement —
+  the physical quantity. For monotonic toe loading this equals
+  max(D_max,toe − Q_toe, 0), so it coincides exactly with the v5.0 (WE-1)
+  peak-minus-quake value; it stays correct under re-loading oscillations.
+- Smith damping (`damping_model` on SoilSetup / generate_bearing_graph /
+  drivability_study):
+  - `"smith"` (default): R = R_static + J·|R_static|·v — damping proportional
+    to the *mobilized* static resistance (Smith 1960, R_s·(1+J·v); GRLWEAP
+    default "Smith damping"). Acts throughout the blow; vanishes when no
+    static resistance is mobilized.
+  - `"smith_viscous"`: R = R_static + J·R_ultimate·v, loading only — damping
+    proportional to the *ultimate* resistance (GRLWEAP "Smith viscous"
+    variant; this module's pre-v5.1 behavior).
+  Switching the default from ∝R_ultimate to ∝R_static (v5.1, WE-3) reduces
+  early-blow damping, giving slightly larger sets / lower blow counts at a
+  given R_ult (a few percent on the standard test case).
 - Quake: elastic limit of soil spring (typically 2.5mm shaft, 2.5-5mm toe)
-- 41 tests

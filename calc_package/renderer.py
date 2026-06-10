@@ -101,6 +101,14 @@ def _item_type(item) -> str:
 def render_html(data: CalcPackageData) -> str:
     """Render a CalcPackageData object to a self-contained HTML string.
 
+    All text fields (project_name, engineer, company, titles,
+    descriptions, notes, references, table cells, ...) are
+    HTML-escaped (CP-1) so hostile strings render inert. The only
+    exceptions are the CalcStep ``equation`` and ``substitution``
+    fields, which the data model documents as trusted equation markup
+    ("HTML entities OK") — they are rendered raw via ``| safe`` in the
+    template so entities like ``&radic;`` still display correctly.
+
     Parameters
     ----------
     data : CalcPackageData
@@ -117,7 +125,9 @@ def render_html(data: CalcPackageData) -> str:
     # Preprocess: gather InputItems into tables
     processed_sections = _preprocess_sections(data.sections)
 
-    env = Environment(loader=BaseLoader(), autoescape=False)
+    # autoescape=True (CP-1): every interpolated field is HTML-escaped
+    # unless explicitly marked | safe in the template (equations only).
+    env = Environment(loader=BaseLoader(), autoescape=True)
     env.globals['item_type'] = _item_type
     template = env.from_string(CALC_PACKAGE_TEMPLATE)
     return template.render(data=data, sections=processed_sections)

@@ -193,69 +193,163 @@ class TestSoilModel:
         R = m.total_resistance(0.0025, 2.0)
         assert R == pytest.approx(100 + 0.5 * 100 * 2, rel=0.01)
 
-    def test_damping_proportional_to_Ru_not_Rs(self):
-        """Smith damping force = J * R_ultimate * v, NOT J * R_static * v.
+    # ── WE-3: damping variants ───────────────────────────────────────
 
-        This is the GRLWEAP/GEC-12 standard formulation. The damping
-        force is proportional to R_ultimate regardless of how much
-        static resistance has been mobilized.
+    def test_smith_damping_proportional_to_mobilized_Rs(self):
+        """Default ("smith"): R = R_s + J * |R_s| * v (Smith 1960 / GRLWEAP
+        default) — damping scales with the MOBILIZED static resistance.
 
-        At half the quake, R_static = 0.5 * R_u but damping still
-        uses full R_u.
+        At half the quake, R_static = 0.5 * R_u and damping uses that.
         """
         m = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5)
         d = 0.00125  # half the quake
         v = 2.0
 
-        R_s = m.static_resistance(d)
-        assert R_s == pytest.approx(50.0, rel=0.01)  # 100 * 0.00125/0.0025
+        R_total = m.total_resistance(d, v)
+        # R_s = 50; R = R_s * (1 + J*v) = 50 * (1 + 0.5*2) = 100
+        assert R_total == pytest.approx(50.0 * (1.0 + 0.5 * v), rel=0.01)
+
+        # And must NOT equal the viscous variant: R_s + J*R_u*v = 150
+        assert R_total != pytest.approx(50.0 + 0.5 * 100 * v, rel=0.01)
+
+    def test_smith_viscous_damping_proportional_to_Ru(self):
+        """"smith_viscous": R = R_s + J * R_ultimate * v during loading —
+        the pre-v5.1 behavior of this module (GRLWEAP's Smith-viscous
+        option), available via damping_model="smith_viscous"."""
+        m = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5,
+                           damping_model="smith_viscous")
+        d = 0.00125  # half the quake
+        v = 2.0
 
         R_total = m.total_resistance(d, v)
-        # Correct (GRLWEAP): R = R_s + J * R_u * v = 50 + 0.5*100*2 = 150
-        R_expected = R_s + 0.5 * 100 * v  # 50 + 100 = 150
-        assert R_total == pytest.approx(R_expected, rel=0.01)
+        # R_s = 50; R = R_s + J * R_u * v = 50 + 0.5*100*2 = 150
+        assert R_total == pytest.approx(50.0 + 0.5 * 100 * v, rel=0.01)
 
-        # This must NOT equal the old (incorrect) formula: R_s * (1+J*v) = 50*2 = 100
-        R_old_wrong = R_s * (1.0 + 0.5 * v)
-        assert R_total != pytest.approx(R_old_wrong, rel=0.01)
+    def test_invalid_damping_model_raises(self):
+        """Unknown damping_model should raise ValueError (model and setup)."""
+        with pytest.raises(ValueError):
+            SmithSoilModel(R_ultimate=100, damping_model="case")
+        with pytest.raises(ValueError):
+            SoilSetup(R_ultimate=1000, damping_model="case")
 
     def test_damping_at_zero_displacement(self):
-        """Damping force is zero when displacement is zero (not yet loaded).
+        """Damping force is zero when nothing is mobilized yet.
 
-        Per Smith model: damping only during loading (v and d same sign).
-        At d=0 with v>0, condition fails -> R=0.
+        smith: R_s = 0 -> J*|R_s|*v = 0. smith_viscous: loading gate
+        (d > 0) fails at d = 0. Both give R = 0.
         """
         m = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5)
-        R = m.total_resistance(0.0, 3.0)
-        assert R == pytest.approx(0.0, abs=1e-10)
+        assert m.total_resistance(0.0, 3.0) == pytest.approx(0.0, abs=1e-10)
+        mv = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5,
+                            damping_model="smith_viscous")
+        assert mv.total_resistance(0.0, 3.0) == pytest.approx(0.0, abs=1e-10)
 
     def test_damping_beyond_quake(self):
         """Beyond quake: R = R_u + J * R_u * v = R_u * (1 + J*v).
 
-        When fully mobilized, both old and new formulas agree.
+        When fully mobilized (R_s = R_u), both variants agree.
         """
-        m = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5)
-        d = 0.010  # well beyond quake
-        v = 3.0
+        for model in ("smith", "smith_viscous"):
+            m = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5,
+                               damping_model=model)
+            R_total = m.total_resistance(0.010, 3.0)
+            # R_s = 100 (capped at Ru), R_d = 0.5 * 100 * 3 = 150
+            assert R_total == pytest.approx(250.0, rel=0.01), model
 
-        R_total = m.total_resistance(d, v)
-        # R_s = 100 (capped at Ru), R_d = 0.5 * 100 * 3 = 150
-        assert R_total == pytest.approx(100 + 0.5 * 100 * 3, rel=0.01)  # 250
-
-    def test_no_damping_during_rebound(self):
-        """During rebound (v < 0, d > 0), no damping is applied.
-
-        Smith damping is one-directional: only during loading.
-        """
-        m = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5)
-        d = 0.005  # positive displacement (beyond quake)
-        v = -2.0   # rebounding upward
-
-        R_total = m.total_resistance(d, v)
-        R_s = m.static_resistance(d)
-        # Rebound: only static resistance, no damping
-        assert R_total == pytest.approx(R_s, rel=0.01)
+    def test_smith_viscous_no_damping_during_rebound(self):
+        """smith_viscous keeps the loading-only gate: during rebound
+        (v < 0, d > 0) only the static resistance acts."""
+        m = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5,
+                           damping_model="smith_viscous")
+        m.static_resistance(0.005)  # load past quake (sets plastic offset)
+        R_total = m.total_resistance(0.005, -2.0)
         assert R_total == pytest.approx(100.0, rel=0.01)
+
+    def test_smith_damping_dissipative_on_rebound(self):
+        """smith damping acts throughout the blow with signed velocity:
+        on rebound the damping term opposes the (upward) motion, reducing
+        the net downward resistance — Smith's R_s(1 + J*v) with v < 0."""
+        m = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5)
+        m.static_resistance(0.005)  # load past quake
+        R_total = m.total_resistance(0.005, -1.0)
+        # R_s = 100, R = 100 + 0.5*100*(-1) = 50
+        assert R_total == pytest.approx(100.0 * (1.0 - 0.5), rel=0.01)
+
+    # ── WE-2: elasto-plastic load/unload path ────────────────────────
+
+    def test_plastic_offset_after_yield(self):
+        """Loading past the quake advances the plastic offset to
+        d_max - quake (the residual displacement at zero force)."""
+        m = SmithSoilModel(R_ultimate=100, quake=0.0025)
+        m.static_resistance(0.010)  # load to 4x quake -> yields
+        assert m.plastic_displacement == pytest.approx(0.010 - 0.0025)
+
+    def test_unloading_follows_elastic_slope_from_peak(self):
+        """After loading to d_max, unloading follows slope R_u/Q from the
+        peak: R(d) = (R_u/Q) * (d - d_plastic), NOT the virgin curve.
+
+        The pre-v5.1 spring was reversible (no memory): it returned R_u at
+        any d > Q on the way down too. The true Smith spring at
+        d = d_max - Q/2 on unloading carries only R_u/2."""
+        Q = 0.0025
+        m = SmithSoilModel(R_ultimate=100, quake=Q)
+        m.static_resistance(0.010)         # peak: yields, d_plastic = 0.0075
+        R = m.static_resistance(0.010 - Q / 2)  # unload half a quake
+        assert R == pytest.approx(50.0, rel=0.01)
+        # Fully unloaded at the plastic offset:
+        assert m.static_resistance(0.0075) == pytest.approx(0.0, abs=1e-9)
+        # Plastic offset unchanged by elastic unloading:
+        assert m.plastic_displacement == pytest.approx(0.0075)
+
+    def test_reloading_rejoins_yield_surface(self):
+        """Unload then reload: the spring rejoins the yield plateau and
+        the plastic offset advances with the new maximum."""
+        m = SmithSoilModel(R_ultimate=100, quake=0.0025)
+        m.static_resistance(0.010)   # yield
+        m.static_resistance(0.008)   # unload
+        R = m.static_resistance(0.015)  # reload past previous peak
+        assert R == pytest.approx(100.0, rel=0.01)
+        assert m.plastic_displacement == pytest.approx(0.015 - 0.0025)
+
+    def test_skin_spring_reverse_yield(self):
+        """Skin friction reverses on rebound: unloading far enough yields
+        at -R_u (kinematic), shifting the plastic offset back."""
+        Q = 0.0025
+        m = SmithSoilModel(R_ultimate=100, quake=Q)  # no_tension=False (skin)
+        m.static_resistance(0.010)             # yield at +R_u
+        R = m.static_resistance(0.010 - 3 * Q)  # unload 3 quakes
+        assert R == pytest.approx(-100.0, rel=0.01)
+        assert m.plastic_displacement == pytest.approx(0.010 - 3 * Q + Q)
+
+    def test_toe_spring_no_tension_gaps(self):
+        """A no_tension (toe) spring unloads to zero and gaps — it never
+        develops negative static resistance and retains its offset."""
+        Q = 0.0025
+        m = SmithSoilModel(R_ultimate=100, quake=Q, no_tension=True)
+        m.static_resistance(0.010)              # yield, offset = 0.0075
+        R = m.static_resistance(0.010 - 3 * Q)  # rebound past the offset
+        assert R == pytest.approx(0.0, abs=1e-9)
+        assert m.plastic_displacement == pytest.approx(0.0075)
+
+    def test_reset_state(self):
+        """reset_state() clears the plastic offset (new blow)."""
+        m = SmithSoilModel(R_ultimate=100, quake=0.0025)
+        m.static_resistance(0.010)
+        assert m.plastic_displacement > 0
+        m.reset_state()
+        assert m.plastic_displacement == 0.0
+        # Virgin loading curve restored
+        assert m.static_resistance(0.00125) == pytest.approx(50.0, rel=0.01)
+
+    def test_fresh_models_per_blow(self):
+        """create_segment_models returns zero-offset springs and a
+        no-tension toe spring, so each blow starts unloaded."""
+        s = SoilSetup(R_ultimate=1000, skin_fraction=0.5)
+        sides, toe = s.create_segment_models(5)
+        assert all(m.plastic_displacement == 0.0 for m in sides)
+        assert toe.plastic_displacement == 0.0
+        assert toe.no_tension is True
+        assert all(m.no_tension is False for m in sides)
 
     def test_zero_resistance(self):
         """Zero Rult gives zero resistance."""
@@ -361,17 +455,36 @@ class TestTimeIntegration:
         assert result.permanent_set > 0.05  # > 50 mm
 
     def test_permanent_set_excludes_toe_quake(self):
-        """Permanent set is the peak toe penetration minus the toe's elastic
-        rebound (the toe quake), not the peak itself (WE-1)."""
+        """Permanent set is the toe spring's plastic (residual) displacement
+        (WE-2). For this monotonic-toe-loading case it must agree with the
+        v5.0 (WE-1) approximation: peak toe penetration minus the toe quake
+        — the two formulations are reconciled within tolerance."""
         import numpy as np
         h, c, p, s = self._make_system(800)  # hard driving: quake matters most
         result = simulate_blow(h, c, p, s)
         peak_toe = float(np.asarray(result.pile_toe_displacement).max())
         # Permanent set must be strictly below the peak penetration ...
         assert result.permanent_set < peak_toe
-        # ... by the toe quake (the recovered elastic rebound).
+        # ... by the toe quake (the recovered elastic rebound). This is the
+        # WE-1 max-minus-quake value; the plastic toe offset (primary, WE-2)
+        # equals it exactly under monotonic loading of the no-tension toe.
         assert (peak_toe - result.permanent_set) == pytest.approx(
             s.quake_toe, abs=5e-4)
+
+    def test_permanent_set_matches_toe_plastic_offset(self):
+        """The reported permanent set IS the plastic offset of an
+        equivalently-loaded no-tension toe spring: replaying the recorded
+        toe displacement history through a fresh toe spring reproduces
+        result.permanent_set (WE-2 reconciliation)."""
+        import numpy as np
+        h, c, p, s = self._make_system(500)
+        result = simulate_blow(h, c, p, s, store_interval=1)
+        replay = SmithSoilModel(s.R_toe, s.quake_toe, s.damping_toe,
+                                no_tension=True)
+        for d in np.asarray(result.pile_toe_displacement):
+            replay.static_resistance(float(d))
+        assert result.permanent_set == pytest.approx(
+            replay.plastic_displacement, abs=5e-5)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -429,6 +542,44 @@ class TestBearingGraph:
         d = bg.to_dict()
         assert "R_values_kN" in d
         assert "blow_counts_per_m" in d
+
+    def test_blow_count_regression_smith_default(self):
+        """Regression: blow counts on the standard test system with the
+        default ("smith") damping model (WE-2 + WE-3 baseline, v5.1).
+
+        vs the v5.0 model (reversible spring + viscous damping) the shift
+        is ~2%: e.g. 59.9 -> 58.4 blows/m at R_ult = 800 kN. The mobilized-
+        static damping dissipates slightly less energy early in the blow,
+        giving marginally larger sets / lower blow counts.
+        """
+        h, c, p = self._make_system()
+        bg = generate_bearing_graph(h, c, p, R_min=200, R_max=1000, R_step=200)
+        expected = [14.5, 28.7, 43.3, 58.4, 75.8]  # blows/m at 200..1000 kN
+        for bc, exp in zip(bg.blow_counts, expected):
+            assert bc == pytest.approx(exp, rel=0.05)
+
+    def test_blow_count_regression_smith_viscous(self):
+        """Regression: damping_model="smith_viscous" reproduces the v5.0
+        blow counts (the elasto-plastic spring alone does not shift the
+        monotonic-toe-loading bearing graph; cf. WE-1 fix log: 60 blows/m
+        at hard driving, R_ult = 800 kN)."""
+        h, c, p = self._make_system()
+        bg = generate_bearing_graph(h, c, p, R_min=200, R_max=1000,
+                                    R_step=200, damping_model="smith_viscous")
+        expected = [14.7, 29.0, 44.3, 59.9, 77.7]  # v5.0 values
+        for bc, exp in zip(bg.blow_counts, expected):
+            assert bc == pytest.approx(exp, rel=0.05)
+
+    def test_smith_default_slightly_less_damping_than_viscous(self):
+        """The default smith damping (∝ mobilized R_s) dissipates less
+        energy than smith_viscous (∝ R_ult) early in the blow, so sets are
+        >= the viscous variant's at every R_ult on this system."""
+        h, c, p = self._make_system()
+        bg_s = generate_bearing_graph(h, c, p, R_min=200, R_max=1000,
+                                      R_step=400)
+        bg_v = generate_bearing_graph(h, c, p, R_min=200, R_max=1000,
+                                      R_step=400, damping_model="smith_viscous")
+        assert np.all(bg_s.permanent_sets >= bg_v.permanent_sets - 1e-9)
 
 
 # ═══════════════════════════════════════════════════════════════════════

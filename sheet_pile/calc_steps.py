@@ -309,12 +309,18 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 f"{result.anchor_depth:.2f} m from top"
             ),
             result_name="D_calc",
-            result_value=f"{result.embedment_depth / 1.2:.2f}",
+            result_value=f"{result.embedment_depth:.2f}",
             result_unit="m",
             reference="USACE EM 1110-2-2504, Chapter 5",
-            notes="Embedment at moment balance before safety factor increase",
+            notes=("Embedment at moment balance (safety carried by the "
+                   "factored passive resistance; no depth increase for the "
+                   "free earth support method)"),
         ))
     else:
+        # Mirror the analysis: D_calc is the converged embedment and the
+        # design value applies the (defaulted 1.0) embedment_increase.
+        D_calc = getattr(result, "embedment_converged", 0.0) or result.embedment_depth
+        increase = getattr(result, "embedment_increase", 1.0)
         embed_items.append(
             "Simplified Method: Embedment depth is found by summing moments "
             "about the wall base until factored passive moment equals or "
@@ -325,23 +331,37 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             equation="\u03a3M_passive \u2265 \u03a3M_active (about wall base)",
             substitution="Iterative solution with numerical integration",
             result_name="D_calc",
-            result_value=f"{result.embedment_depth / 1.2:.2f}",
+            result_value=f"{D_calc:.2f}",
             result_unit="m",
             reference="USACE EM 1110-2-2504, Chapter 4",
-            notes="Embedment at moment balance before safety factor increase",
+            notes="Embedment at moment balance (passive side factored by FS_p)",
         ))
 
-    # Design embedment (with 20% increase)
-    embed_items.append(CalcStep(
-        title="Design Embedment Depth",
-        equation="D_design = 1.20 \u00d7 D_calc (USACE 20% increase)",
-        substitution=f"D_design = 1.20 \u00d7 {result.embedment_depth / 1.2:.2f}",
-        result_name="D_design",
-        result_value=f"{result.embedment_depth:.2f}",
-        result_unit="m",
-        reference="USACE EM 1110-2-2504",
-        notes="20% increase per USACE guidance for simplified method",
-    ))
+        # Design embedment
+        if increase != 1.0:
+            embed_items.append(CalcStep(
+                title="Design Embedment Depth",
+                equation=f"D_design = {increase:.2f} \u00d7 D_calc (embedment increase)",
+                substitution=f"D_design = {increase:.2f} \u00d7 {D_calc:.2f}",
+                result_name="D_design",
+                result_value=f"{result.embedment_depth:.2f}",
+                result_unit="m",
+                reference="USACE EM 1110-2-2504",
+                notes=("20-40% increase basis: appropriate with FS_p \u2248 1.0 "
+                       "(do not combine a large FS_p with a depth increase)"),
+            ))
+        else:
+            embed_items.append(CalcStep(
+                title="Design Embedment Depth",
+                equation="D_design = D_calc (safety basis: FS on passive resistance)",
+                substitution=f"D_design = {D_calc:.2f}",
+                result_name="D_design",
+                result_value=f"{result.embedment_depth:.2f}",
+                result_unit="m",
+                reference="USACE EM 1110-2-2504",
+                notes=("Single safety basis: passive resistance divided by FS_p; "
+                       "no additional embedment increase applied"),
+            ))
 
     # Total wall length
     embed_items.append(CalcStep(

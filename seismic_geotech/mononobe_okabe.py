@@ -4,12 +4,32 @@ Mononobe-Okabe seismic earth pressure theory.
 Computes active (KAE) and passive (KPE) earth pressure coefficients
 under seismic loading, and the seismic pressure increment.
 
+Sign convention (v5.1, SG-3): the wall batter ``beta_deg`` is measured
+from vertical, POSITIVE when the wall back face leans toward (over) the
+backfill — equivalent to a Coulomb wall inclination alpha = 90° + beta
+in the sin-based Coulomb form (``sheet_pile.earth_pressure``). With this
+convention, at kh = kv = 0 KAE reduces exactly to Coulomb Ka and KPE to
+Coulomb Kp for any batter beta and backfill slope i. Both coefficients
+have been verified against a numerical Coulomb/M-O wedge limit-
+equilibrium solution (planar failure surface, tilted body force) to
+4+ decimal places.
+
+The active case uses the seismic inertia force directed toward the wall
+(increasing the driving thrust); the passive case uses it directed away
+from the wall (reducing the available resistance) — both worst-case per
+the standard M-O treatment.
+
+Note that planar-wedge passive coefficients (Coulomb and M-O alike)
+overpredict resistance for high wall friction (delta/phi > ~0.5); a
+log-spiral solution is preferred in that range.
+
 All units are SI: kN, kPa, kN/m³, degrees, meters.
 
 References:
     Mononobe & Matsuo (1929); Okabe (1926)
     AASHTO LRFD Section 11.6.5
     FHWA GEC-3, Chapter 7
+    Kramer (1996), Geotechnical Earthquake Engineering, Section 11.6
 """
 
 import math
@@ -33,14 +53,17 @@ def mononobe_okabe_KAE(phi_deg: float, delta_deg: float, kh: float,
     kv : float, optional
         Vertical seismic coefficient (dimensionless). Default 0.
     beta_deg : float, optional
-        Wall batter angle from vertical (degrees). Default 0 (vertical wall).
+        Wall batter angle from vertical (degrees), positive when the
+        wall back face leans toward the backfill (Coulomb alpha =
+        90° + beta; see module docstring). Default 0 (vertical wall).
     i_deg : float, optional
         Backfill slope angle (degrees). Default 0 (horizontal).
 
     Returns
     -------
     float
-        Seismic active earth pressure coefficient KAE.
+        Seismic active earth pressure coefficient KAE. At kh = kv = 0
+        this reduces exactly to Coulomb Ka for any beta and i.
 
     References
     ----------
@@ -93,6 +116,21 @@ def mononobe_okabe_KPE(phi_deg: float, delta_deg: float, kh: float,
                        i_deg: float = 0.0) -> float:
     """Mononobe-Okabe passive earth pressure coefficient (reduced).
 
+    KPE = cos²(φ−θ−β) / [cosθ·cos²β·cos(δ+θ+β)
+          ·(1 − √(sin(φ+δ)·sin(φ+i−θ) / (cos(δ+θ+β)·cos(i+β))))²]
+
+    with θ = atan(kh/(1−kv)) and β per the module sign convention
+    (positive = back face leaning toward the backfill, Coulomb
+    alpha = 90° + β). The seismic inertia force is taken acting away
+    from the wall (worst case — minimum passive resistance).
+
+    Prior to v5.1 this function carried a flipped β sign in the
+    numerator and a flipped θ sign in the cos(δ+θ+β) terms (SG-3); it
+    did not reduce to Coulomb Kp for battered walls at kh = 0, and
+    under-predicted vertical-wall seismic KPE (e.g. φ=30°, δ=15°,
+    kh=0.2: 3.35 vs the correct 4.13). The corrected form matches a
+    numerical M-O wedge limit-equilibrium solution exactly.
+
     Parameters
     ----------
     phi_deg : float
@@ -104,14 +142,17 @@ def mononobe_okabe_KPE(phi_deg: float, delta_deg: float, kh: float,
     kv : float, optional
         Vertical seismic coefficient. Default 0.
     beta_deg : float, optional
-        Wall batter from vertical (degrees). Default 0.
+        Wall batter from vertical (degrees), positive when the wall
+        back face leans toward the backfill (Coulomb alpha = 90° + beta;
+        see module docstring). Default 0 (vertical wall).
     i_deg : float, optional
         Ground slope (degrees). Default 0.
 
     Returns
     -------
     float
-        Seismic passive earth pressure coefficient KPE.
+        Seismic passive earth pressure coefficient KPE. At kh = kv = 0
+        this reduces exactly to Coulomb Kp for any beta and i.
     """
     phi = math.radians(phi_deg)
     delta = math.radians(delta_deg)
@@ -125,11 +166,11 @@ def mononobe_okabe_KPE(phi_deg: float, delta_deg: float, kh: float,
     cos_theta = math.cos(theta)
     cos_beta = math.cos(beta)
 
-    num = math.cos(phi - theta + beta) ** 2
+    num = math.cos(phi - theta - beta) ** 2
 
     sin_pd = math.sin(phi + delta)
     sin_pti = math.sin(phi - theta + i)
-    cos_dbt = math.cos(delta - theta + beta)
+    cos_dbt = math.cos(delta + theta + beta)
     cos_ib = math.cos(i + beta)
 
     if cos_dbt * cos_ib <= 0:

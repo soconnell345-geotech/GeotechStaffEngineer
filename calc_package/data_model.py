@@ -44,9 +44,14 @@ class CalcStep:
     title : str
         Step title, e.g. "Bearing Capacity Factor Nq".
     equation : str
-        General equation in text form (HTML entities OK).
+        General equation in text form (HTML entities OK). NOTE:
+        ``equation`` and ``substitution`` are rendered RAW (unescaped)
+        in the HTML output so entities display correctly — they are
+        trusted, module-generated markup and must never carry
+        user-supplied text. All other fields are HTML-escaped (CP-1).
     substitution : str
-        Equation with numerical values substituted in.
+        Equation with numerical values substituted in (rendered raw,
+        see ``equation``).
     result_name : str
         Result variable name, e.g. "Nq".
     result_value : float

@@ -152,6 +152,8 @@ def get_input_summary(result, analysis) -> List[InputItem]:
                       f"{soil.damping_side:.2f}", "s/m"),
             InputItem("J_toe", "Toe Smith damping",
                       f"{soil.damping_toe:.2f}", "s/m"),
+            InputItem("Damping model", "Smith damping variant",
+                      getattr(soil, "damping_model", "smith"), ""),
         ])
 
     # ── Analysis type label ──
@@ -257,23 +259,36 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     soil_items.append(CalcStep(
         title="Static Soil Resistance (Elasto-Plastic)",
         equation=(
-            "R_static = (R_ult / Q) \u00d7 d,  for d \u2264 Q  (elastic)\n"
-            "R_static = R_ult,                for d > Q  (plastic)"
+            "Loading:   R_static = (R_ult / Q) \u00d7 (d - d_plastic) \u2264 R_ult\n"
+            "Unloading: elastic slope R_ult / Q from the peak \u2014 a plastic\n"
+            "offset d_plastic remains (= permanent set for the toe spring)"
         ),
         substitution="Q = quake (elastic limit displacement)",
         result_name="Model",
-        result_value="Smith elasto-plastic spring",
+        result_value="Smith elasto-plastic spring (kinematic, with memory)",
         reference="Smith (1960); FHWA GEC-12 Table 12-3",
     ))
 
-    soil_items.append(CalcStep(
-        title="Dynamic Soil Resistance (Smith Damping)",
-        equation="R_total = R_static + J \u00d7 R_ultimate \u00d7 v",
-        substitution="J = Smith damping factor (s/m), v = pile segment velocity",
-        result_name="Model",
-        result_value="Velocity-dependent viscous damping (GRLWEAP/GEC-12)",
-        reference="Smith (1960); FHWA GEC-12, Table 12-3",
-    ))
+    damping_model = getattr(soil, "damping_model", "smith") if soil is not None else "smith"
+    if damping_model == "smith_viscous":
+        damping_step = CalcStep(
+            title="Dynamic Soil Resistance (Smith-Viscous Damping)",
+            equation="R_total = R_static + J \u00d7 R_ultimate \u00d7 v  (loading only)",
+            substitution="J = Smith damping factor (s/m), v = pile segment velocity",
+            result_name="Model",
+            result_value="Damping proportional to ultimate resistance (Smith-viscous variant)",
+            reference="Smith (1960); GRLWEAP Manual (Smith-viscous damping option)",
+        )
+    else:
+        damping_step = CalcStep(
+            title="Dynamic Soil Resistance (Smith Damping)",
+            equation="R_total = R_static + J \u00d7 |R_static| \u00d7 v",
+            substitution="J = Smith damping factor (s/m), v = pile segment velocity",
+            result_name="Model",
+            result_value="Damping proportional to mobilized static resistance (Smith 1960 / GRLWEAP default)",
+            reference="Smith (1960); FHWA GEC-12, Table 12-3",
+        )
+    soil_items.append(damping_step)
 
     if soil is not None:
         skin_R = soil.R_ultimate * soil.skin_fraction

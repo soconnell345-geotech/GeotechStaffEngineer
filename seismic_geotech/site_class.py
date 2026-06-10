@@ -189,7 +189,8 @@ def classify_site(vs30: float = None,
     raise ValueError("At least one of vs30, n_bar, or su_bar must be provided")
 
 
-def site_coefficients(site_class: str, Ss: float, S1: float) -> SiteClassResult:
+def site_coefficients(site_class: str, Ss: float, S1: float,
+                      pga: Optional[float] = None) -> SiteClassResult:
     """Compute site coefficients Fpga, Fa, Fv per AASHTO.
 
     Parameters
@@ -200,6 +201,14 @@ def site_coefficients(site_class: str, Ss: float, S1: float) -> SiteClassResult:
         Spectral acceleration at 0.2s period (g).
     S1 : float
         Spectral acceleration at 1.0s period (g).
+    pga : float, optional
+        Peak ground acceleration coefficient on rock (g). If given,
+        Fpga is interpolated against PGA from AASHTO Table 3.10.3.2-1
+        (breakpoints 0.10-0.50 g), as AASHTO defines it. If omitted,
+        Fpga is APPROXIMATED as Fa(Ss) — the table values coincide, but
+        the abscissa is Ss (0.25-1.25 g) instead of PGA, so the
+        interpolated value is only exact when Ss = 2.5*PGA (SG-2).
+        Provide pga for code-compliant Fpga.
 
     Returns
     -------
@@ -208,7 +217,8 @@ def site_coefficients(site_class: str, Ss: float, S1: float) -> SiteClassResult:
 
     References
     ----------
-    AASHTO LRFD Tables 3.10.3.2-1, 3.10.3.2-2, 3.10.3.2-3
+    AASHTO LRFD Tables 3.10.3.2-1 (Fpga vs PGA), 3.10.3.2-2 (Fa vs Ss),
+    3.10.3.2-3 (Fv vs S1)
     """
     # Fa table: rows = site class, columns = Ss values
     # Ss:     0.25  0.50  0.75  1.00  1.25
@@ -232,6 +242,11 @@ def site_coefficients(site_class: str, Ss: float, S1: float) -> SiteClassResult:
     }
     _Fv_S1 = [0.10, 0.20, 0.30, 0.40, 0.50]
 
+    # Fpga table (AASHTO 3.10.3.2-1): same coefficient values as the Fa
+    # table, but indexed against PGA with breakpoints 0.10-0.50 g.
+    _Fpga_table = _Fa_table
+    _Fpga_PGA = [0.10, 0.20, 0.30, 0.40, 0.50]
+
     if site_class.upper() == "F":
         raise ValueError("Site Class F requires site-specific analysis")
 
@@ -241,8 +256,13 @@ def site_coefficients(site_class: str, Ss: float, S1: float) -> SiteClassResult:
 
     Fa = _interpolate_table(_Fa_Ss, _Fa_table[sc], Ss)
     Fv = _interpolate_table(_Fv_S1, _Fv_table[sc], S1)
-    # Fpga same table as Fa per AASHTO
-    Fpga = Fa
+    if pga is not None:
+        # AASHTO definition: Fpga interpolated against PGA
+        Fpga = _interpolate_table(_Fpga_PGA, _Fpga_table[sc], pga)
+    else:
+        # Approximation (documented): Fpga ~ Fa(Ss). Exact only when
+        # Ss = 2.5 * PGA. Pass pga for the code-defined value.
+        Fpga = Fa
 
     return SiteClassResult(
         site_class=sc,

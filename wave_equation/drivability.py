@@ -131,6 +131,7 @@ def drivability_study(
     damping_toe: float = 0.50,
     helmet_weight: float = 5.0,
     refusal_blow_count: float = 3000.0,
+    damping_model: str = "smith",
 ) -> DrivabilityResult:
     """Run drivability analysis at multiple depths.
 
@@ -162,6 +163,11 @@ def drivability_study(
         Helmet weight (kN).
     refusal_blow_count : float
         Blow count (blows/m) considered as refusal.
+    damping_model : str
+        "smith" (default): damping proportional to the mobilized static
+        resistance, R_d = J*R_static*v (Smith 1960 / GRLWEAP default).
+        "smith_viscous": damping proportional to R_ultimate, loading
+        only (pre-v5.1 behavior). See wave_equation.soil_model.
 
     Returns
     -------
@@ -189,6 +195,7 @@ def drivability_study(
             quake_toe=quake_toe,
             damping_side=damping_side,
             damping_toe=damping_toe,
+            damping_model=damping_model,
         )
 
         result = simulate_blow(

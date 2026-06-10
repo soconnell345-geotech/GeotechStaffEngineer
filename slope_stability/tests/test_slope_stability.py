@@ -1123,3 +1123,62 @@ class TestContactStresses:
         assert "normal_stress_kPa" in sd0
         assert "shear_stress_kPa" in sd0
         assert "shear_resistance_kPa" in sd0
+
+
+# ============================================================================
+# SS-2: Bishop numerator clamp under artesian pore pressure
+# ============================================================================
+
+class TestBishopArtesianClamp:
+    """SS-2 regression: (W - u*b)*tan(phi) is clamped to >= 0 in Bishop's
+    numerator, so artesian/perched pore pressures (u*b > W) cannot
+    contribute NEGATIVE frictional resistance (Fellenius already clamps
+    its effective normal the same way)."""
+
+    @staticmethod
+    def _synthetic_slices(u_extra):
+        """Three slices on a circular arc; the middle slice carries an
+        artesian pore pressure u = W/b + u_extra (u*b exceeds W by
+        u_extra*b when u_extra > 0). Circle center is left of the slices
+        so the gravity driving moment is positive."""
+        slip = CircularSlipSurface(xc=2.0, yc=20.0, radius=15.0)
+        slices = []
+        for x_mid, alpha_deg in [(6.0, 10.0), (10.0, 25.0), (14.0, 40.0)]:
+            b = 4.0
+            W = 200.0  # kN/m
+            alpha = math.radians(alpha_deg)
+            u = 0.0
+            if x_mid == 10.0:
+                u = W / b + u_extra  # kPa; u*b = W + u_extra*b
+            slices.append(Slice(
+                x_left=x_mid - b / 2, x_right=x_mid + b / 2, x_mid=x_mid,
+                width=b, z_top=10.0, z_base=5.0, height=5.0,
+                alpha=alpha, base_length=b / math.cos(alpha),
+                weight=W, pore_pressure=u, c=5.0, phi=30.0,
+                z_centroid=7.5,
+            ))
+        return slices, slip
+
+    def test_artesian_slice_contributes_no_negative_friction(self):
+        """Raising u beyond the u*b = W threshold must not change the
+        Bishop FOS: the frictional term is floored at zero either way.
+        (Pre-v5.1 the extra pore pressure kept reducing the FOS.)"""
+        slices_at, slip = self._synthetic_slices(u_extra=0.0)    # u*b = W
+        slices_art, _ = self._synthetic_slices(u_extra=100.0)    # u*b >> W
+        fos_at = bishop_fos(slices_at, slip)
+        fos_art = bishop_fos(slices_art, slip)
+        assert fos_art == pytest.approx(fos_at, rel=1e-9)
+        assert fos_art > 0
+
+    def test_normal_pore_pressure_unchanged(self):
+        """Sanity: with u*b < W on every slice the clamp is inactive and
+        Bishop behaves as before (FOS decreases as u rises)."""
+        slices_dry, slip = self._synthetic_slices(u_extra=0.0)
+        for s in slices_dry:
+            s.pore_pressure = 0.0
+        slices_wet, _ = self._synthetic_slices(u_extra=0.0)
+        for s in slices_wet:
+            s.pore_pressure = 10.0  # u*b = 40 << W = 200
+        fos_dry = bishop_fos(slices_dry, slip)
+        fos_wet = bishop_fos(slices_wet, slip)
+        assert fos_wet < fos_dry

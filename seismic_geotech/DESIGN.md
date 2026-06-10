@@ -33,6 +33,22 @@ analyze_liquefaction(N160, FC, sigma_v, sigma_v_eff, amax, M, ...) -> Liquefacti
 
 ## Key Notes
 - N-bar: average SPT over top 30m (warns if profile < 30m)
-- Liquefaction: CRR from N1_60cs (fines-corrected), CSR with rd depth factor
+- Liquefaction: CRR from N1_60cs (fines-corrected), CSR with rd depth factor.
+  Since v5.1 (SG-1) `evaluate_liquefaction` integrates total overburden
+  through the overlying layers (Σγᵢhᵢ; each point's γ applies from the
+  previous evaluation depth down to its own) instead of γ(z)·z; depths must
+  be increasing. Uniform profiles are unchanged.
+- Site coefficients (SG-2): `site_coefficients(..., pga=)` interpolates Fpga
+  against PGA per AASHTO Table 3.10.3.2-1. Without `pga`, Fpga ≈ Fa(Ss) — a
+  documented approximation (same table values, wrong abscissa; exact only
+  when Ss = 2.5·PGA).
+- Mononobe-Okabe sign convention (SG-3, fixed v5.1): wall batter β positive
+  when the back face leans toward the backfill (Coulomb α = 90° + β). At
+  kh = kv = 0, KAE → Coulomb Ka and KPE → Coulomb Kp exactly for any β, i
+  (previously xfail'd for battered passive). KAE was already exact; KPE had
+  a flipped β sign in the numerator AND a flipped θ sign in the cos(δ+θ+β)
+  terms — the latter affected vertical walls too (e.g. φ=30°, δ=15°, kh=0.2:
+  KPE 3.35 → 4.13). Both coefficients verified against a numerical M-O wedge
+  limit-equilibrium solution. Active uses inertia toward the wall; passive
+  uses inertia away from the wall (worst case each).
 - SoilProfile adapter: to_seismic_input(amax_g, magnitude)
-- 58 tests

@@ -129,6 +129,31 @@ class TestSiteCoefficients:
         with pytest.raises(ValueError):
             site_coefficients("F", Ss=0.5, S1=0.2)
 
+    def test_Fpga_from_pga_table_values(self):
+        """SG-2: with pga given, Fpga interpolates the AASHTO Table
+        3.10.3.2-1 values against PGA (not against Ss)."""
+        # Class D, PGA=0.10 -> 1.6; 0.20 -> 1.4; 0.30 -> 1.2; 0.50 -> 1.0
+        assert site_coefficients("D", Ss=1.0, S1=0.3, pga=0.10).Fpga == 1.6
+        assert site_coefficients("D", Ss=1.0, S1=0.3, pga=0.20).Fpga == 1.4
+        assert site_coefficients("D", Ss=1.0, S1=0.3, pga=0.30).Fpga == 1.2
+        assert site_coefficients("D", Ss=1.0, S1=0.3, pga=0.50).Fpga == 1.0
+        # Class E, PGA=0.40 -> 0.9
+        assert site_coefficients("E", Ss=0.5, S1=0.2, pga=0.40).Fpga == 0.9
+
+    def test_Fpga_interpolated_against_pga(self):
+        """SG-2: PGA=0.15 class D -> midway between 1.6 and 1.4 = 1.5,
+        independent of Ss."""
+        r = site_coefficients("D", Ss=1.25, S1=0.3, pga=0.15)
+        assert abs(r.Fpga - 1.5) < 0.01
+        # And clearly distinct from Fa(Ss=1.25) = 1.0
+        assert abs(r.Fa - 1.0) < 0.01
+
+    def test_Fpga_approximation_when_pga_absent(self):
+        """SG-2: without pga, Fpga falls back to the documented
+        approximation Fpga = Fa(Ss) (pre-v5.1 behavior preserved)."""
+        r = site_coefficients("D", Ss=0.375, S1=0.15)
+        assert r.Fpga == r.Fa
+
     def test_summary_and_dict(self):
         result = site_coefficients("D", Ss=0.5, S1=0.2)
         assert "Site Class: D" in result.summary()
@@ -174,7 +199,13 @@ class TestMononobeOkabe:
         assert abs(KPE - Kp_coulomb) < 0.01
 
     # ---- Tests with non-zero wall batter (beta) and backfill slope (i) ----
-    # Reference values computed via AASHTO LRFD alpha-form (sin-based) of M-O.
+    # Convention (SG-3, v5.1): beta positive = wall back face leaning toward
+    # the backfill = Coulomb alpha = 90 + beta.
+    # Active reference values verified exact against a numerical M-O wedge
+    # limit-equilibrium solution (planar surface, tilted body force); passive
+    # reference values regenerated the same way in v5.1 after the SG-3 sign
+    # fix (the pre-v5.1 passive values carried a flipped beta sign in the
+    # numerator and a flipped theta sign in the cos(delta+theta+beta) terms).
 
     def test_KAE_battered_wall(self):
         """phi=30, delta=15, kh=0.2, beta=10 deg wall batter."""
@@ -201,46 +232,70 @@ class TestMononobeOkabe:
         KAE = mononobe_okabe_KAE(30, 15, 0.2, kv=0.1, beta_deg=10, i_deg=5)
         assert abs(KAE - 0.4404) < 0.001
 
+    def test_KPE_vertical_seismic(self):
+        """phi=30, delta=15, kh=0.2, vertical wall.
+
+        Regression for the theta-sign part of SG-3: the pre-v5.1 code
+        returned 3.346 here (wrong even for vertical walls under seismic
+        load); the exact wedge value is 4.129.
+        """
+        KPE = mononobe_okabe_KPE(30, 15, 0.2)
+        assert abs(KPE - 4.1289) < 0.01
+
     def test_KPE_battered_wall(self):
         """phi=30, delta=15, kh=0.2, beta=10."""
         KPE = mononobe_okabe_KPE(30, 15, 0.2, beta_deg=10)
-        assert abs(KPE - 3.1601) < 0.01
+        assert abs(KPE - 5.8806) < 0.01
 
     def test_KPE_sloping_backfill(self):
         """phi=30, delta=15, kh=0.2, i=10."""
         KPE = mononobe_okabe_KPE(30, 15, 0.2, i_deg=10)
-        assert abs(KPE - 5.3948) < 0.01
+        assert abs(KPE - 7.0734) < 0.01
 
     def test_KPE_battered_and_sloping(self):
         """phi=30, delta=15, kh=0.2, beta=10, i=5."""
         KPE = mononobe_okabe_KPE(30, 15, 0.2, beta_deg=10, i_deg=5)
-        assert abs(KPE - 4.1166) < 0.01
+        assert abs(KPE - 8.1376) < 0.01
 
     def test_KPE_large_beta(self):
-        """phi=35, delta=20, kh=0.15, beta=15."""
+        """phi=35, delta=20, kh=0.15, beta=15.
+
+        Note: planar-wedge passive coefficients are known to overpredict
+        for delta/phi > ~0.5 (log-spiral preferred); the value here is
+        the exact planar-wedge solution.
+        """
         KPE = mononobe_okabe_KPE(35, 20, 0.15, beta_deg=15)
-        assert abs(KPE - 5.5431) < 0.01
+        assert abs(KPE - 18.5850) < 0.01
 
     def test_KPE_with_kv_beta_i(self):
         """phi=30, delta=15, kh=0.2, kv=0.1, beta=10, i=5."""
         KPE = mononobe_okabe_KPE(30, 15, 0.2, kv=0.1, beta_deg=10, i_deg=5)
-        assert abs(KPE - 3.9437) < 0.01
+        assert abs(KPE - 7.9429) < 0.01
+
+    def test_KPE_negative_beta(self):
+        """Negative beta (wall leaning away from backfill) lowers KPE.
+        phi=30, delta=15, kh=0.2, beta=-10 -> exact wedge value 3.2367."""
+        KPE = mononobe_okabe_KPE(30, 15, 0.2, beta_deg=-10)
+        assert abs(KPE - 3.2367) < 0.01
+        assert KPE < mononobe_okabe_KPE(30, 15, 0.2)
 
     def test_KAE_zero_kh_battered_equals_coulomb(self):
-        """With kh=0, KAE(beta=10) should equal Coulomb Ka(alpha=100)."""
+        """With kh=0, KAE(beta) must equal Coulomb Ka(alpha=90+beta) for
+        any batter (M-O active static reduction; SG-3 convention)."""
         from sheet_pile.earth_pressure import coulomb_Ka
-        for beta_d in [5, 10, 15]:
+        for beta_d in [-10, -5, 5, 10, 15]:
             KAE = mononobe_okabe_KAE(30, 15, 0.0, beta_deg=beta_d)
             Ka_c = coulomb_Ka(30, 15, alpha_deg=90 + beta_d)
             assert abs(KAE - Ka_c) < 0.001, (
                 f"beta={beta_d}: KAE={KAE:.4f} != Ka_coulomb={Ka_c:.4f}"
             )
 
-    @pytest.mark.xfail(reason="M-O passive does not reduce to Coulomb for battered walls at kh=0 (KPE!=Kp_coulomb); pre-existing, deferred to v5.1", strict=False)
     def test_KPE_zero_kh_battered_equals_coulomb(self):
-        """With kh=0, KPE(beta=10) should equal Coulomb Kp(alpha=100)."""
+        """With kh=0, KPE(beta) must equal Coulomb Kp(alpha=90+beta) for
+        any batter (M-O passive static reduction; previously xfail'd —
+        fixed by the SG-3 sign-convention correction)."""
         from sheet_pile.earth_pressure import coulomb_Kp
-        for beta_d in [5, 10, 15]:
+        for beta_d in [-10, -5, 5, 10, 15]:
             KPE = mononobe_okabe_KPE(30, 15, 0.0, beta_deg=beta_d)
             Kp_c = coulomb_Kp(30, 15, alpha_deg=90 + beta_d)
             assert abs(KPE - Kp_c) < 0.01, (
@@ -392,6 +447,39 @@ class TestLiquefactionEvaluation:
         results = evaluate_liquefaction([2], [10], [5], [18], 0.3, 5.0)
         # Above GWT, sigma_v/sigma_v' = 1.0, CSR is lower
         assert results[0]["sigma_v_eff_kPa"] == results[0]["sigma_v_kPa"]
+
+    def test_single_layer_total_stress_unchanged(self):
+        """SG-1 regression: a uniform-gamma profile gives sigma_v = gamma*z
+        at every depth (identical to the pre-v5.1 behavior)."""
+        depths = [3, 6, 9, 12]
+        results = evaluate_liquefaction(
+            depths, [10, 12, 8, 25], [5, 10, 15, 5], [18, 18, 18, 18],
+            0.3, 2.0)
+        for z, r in zip(depths, results):
+            assert r["sigma_v_kPa"] == pytest.approx(18 * z, abs=0.05)
+
+    def test_layered_total_stress_integrated(self):
+        """SG-1: for a layered profile the overburden is the integral
+        through the overlying layers (sum gamma_i * h_i), not the point's
+        own gamma times the full depth."""
+        # Light fill (16 kN/m3) over dense sand (20 kN/m3)
+        depths = [2.0, 6.0]
+        gamma = [16.0, 20.0]
+        results = evaluate_liquefaction(
+            depths, [10, 15], [5, 5], gamma, 0.3, 1.0)
+        # At z=2: 16*2 = 32 kPa (unchanged)
+        assert results[0]["sigma_v_kPa"] == pytest.approx(32.0, abs=0.05)
+        # At z=6: 16*2 + 20*4 = 112 kPa, NOT 20*6 = 120 kPa
+        assert results[1]["sigma_v_kPa"] == pytest.approx(112.0, abs=0.05)
+        # Effective stress consistent: u = 9.81*(6-1) below GWT at 1 m
+        assert results[1]["sigma_v_eff_kPa"] == pytest.approx(
+            112.0 - 9.81 * 5.0, abs=0.1)
+
+    def test_unsorted_depths_raise(self):
+        """SG-1: layered integration requires increasing depths."""
+        with pytest.raises(ValueError):
+            evaluate_liquefaction([6, 3], [10, 10], [5, 5], [18, 18],
+                                  0.3, 2.0)
 
     def test_result_container(self):
         layer_results = evaluate_liquefaction(

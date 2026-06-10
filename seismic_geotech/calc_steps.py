@@ -383,10 +383,12 @@ def _steps_earth_pressure(result, analysis) -> List[CalcSection]:
     kae_items.append(CalcStep(
         title="Mononobe-Okabe Active Coefficient (KAE)",
         equation=(
-            "KAE = cos\u00b2(\u03c6 - \u03b8 - \u03b2) / "
-            "[cos\u03b8 \u00d7 cos\u00b2\u03b2 \u00d7 cos(\u03b4 + \u03b2 + \u03b8) \u00d7 "
+            # Matches mononobe_okabe_KAE (SG-3 sign convention: beta
+            # positive = back face leaning toward the backfill).
+            "KAE = cos\u00b2(\u03c6 + \u03b2 - \u03b8) / "
+            "[cos\u03b8 \u00d7 cos\u00b2\u03b2 \u00d7 cos(\u03b4 + \u03b8 - \u03b2) \u00d7 "
             "(1 + \u221a(sin(\u03c6+\u03b4)\u00d7sin(\u03c6-\u03b8-i) / "
-            "(cos(\u03b4+\u03b2+\u03b8)\u00d7cos(i-\u03b2))))\u00b2]"
+            "(cos(\u03b4+\u03b8-\u03b2)\u00d7cos(i+\u03b2))))\u00b2]"
         ),
         substitution=(
             f"\u03c6 = {r.phi:.1f}\u00b0, \u03b4 = {r.delta:.1f}\u00b0, "
@@ -420,10 +422,13 @@ def _steps_earth_pressure(result, analysis) -> List[CalcSection]:
         kpe_items.append(CalcStep(
             title="Mononobe-Okabe Passive Coefficient (KPE)",
             equation=(
-                "KPE = cos\u00b2(\u03c6 - \u03b8 + \u03b2) / "
-                "[cos\u03b8 \u00d7 cos\u00b2\u03b2 \u00d7 cos(\u03b4 - \u03b2 + \u03b8) \u00d7 "
+                # Matches mononobe_okabe_KPE after the SG-3 sign fix
+                # (v5.1): numerator cos\u00b2(\u03c6\u2212\u03b8\u2212\u03b2), cos(\u03b4+\u03b8+\u03b2) terms,
+                # cos(i+\u03b2).
+                "KPE = cos\u00b2(\u03c6 - \u03b8 - \u03b2) / "
+                "[cos\u03b8 \u00d7 cos\u00b2\u03b2 \u00d7 cos(\u03b4 + \u03b8 + \u03b2) \u00d7 "
                 "(1 - \u221a(sin(\u03c6+\u03b4)\u00d7sin(\u03c6-\u03b8+i) / "
-                "(cos(\u03b4-\u03b2+\u03b8)\u00d7cos(i-\u03b2))))\u00b2]"
+                "(cos(\u03b4+\u03b8+\u03b2)\u00d7cos(i+\u03b2))))\u00b2]"
             ),
             substitution=(
                 f"\u03c6 = {r.phi:.1f}\u00b0, \u03b4 = {r.delta:.1f}\u00b0, "

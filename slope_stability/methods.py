@@ -135,10 +135,14 @@ def bishop_fos(slices: List[Slice],
     Requires circular slip surfaces only (moment equilibrium about
     circle center).
 
-    FOS = sum[(c'*b + (W - u*b)*tan(phi')) / m_alpha] /
+    FOS = sum[(c'*b + max(W - u*b, 0)*tan(phi')) / m_alpha] /
           sum[W*sin(alpha)]
 
-    where m_alpha = cos(alpha) + sin(alpha)*tan(phi')/FOS
+    where m_alpha = cos(alpha) + sin(alpha)*tan(phi')/FOS.
+    The effective-weight term (W - u*b) is clamped to >= 0 so that
+    artesian/perched pore pressures (u*b > W) cannot contribute
+    negative frictional resistance (consistent with the Fellenius
+    effective-normal clamp).
 
     Parameters
     ----------
@@ -211,7 +215,11 @@ def bishop_fos(slices: List[Slice],
             if abs(m_alpha) < 1e-10:
                 m_alpha = 1e-10
 
-            numerator = s.c * b + (W - s.pore_pressure * b) * tan_phi
+            # Clamp the effective-weight term to >= 0 (SS-2): with artesian/
+            # perched pore pressure u*b can exceed W, and a negative frictional
+            # term would subtract resistance. Fellenius clamps the effective
+            # normal the same way.
+            numerator = s.c * b + max(W - s.pore_pressure * b, 0.0) * tan_phi
             resisting += numerator / m_alpha
 
         fos_new = resisting / driving
@@ -230,13 +238,24 @@ def spencer_fos(slices: List[Slice],
                 slip,
                 tol: float = 1e-4,
                 max_iter: int = 100) -> Tuple[float, float]:
-    """Spencer's Method factor of safety.
+    """Spencer's Method factor of safety (approximate formulation).
 
     Satisfies both force and moment equilibrium simultaneously.
     Assumes interslice forces inclined at constant angle theta.
 
     Works for both circular and noncircular slip surfaces.
     For noncircular surfaces, this is the primary recommended method.
+
+    APPROXIMATION (SS-1): this is NOT the textbook-exact Spencer
+    interslice-force solution. The interslice inclination theta enters
+    through a shifted m_alpha = cos(alpha - theta)
+    + sin(alpha - theta)*tan(phi)/F and a force-equilibrium driving term
+    W*(sin(alpha) + cos(alpha)*tan(theta)), iterated until
+    FOS_moment = FOS_force — an engineering approximation of the full
+    general-limit-equilibrium (GLE) recursion of slice-by-slice
+    interslice forces. It has been validated against the Duncan, Wright
+    & Brandon published examples (see tests/test_duncan_verification.py)
+    but should not be treated as an exact GLE/Spencer implementation.
 
     Parameters
     ----------
@@ -412,7 +431,7 @@ def morgenstern_price_fos(slices: List[Slice],
                           f_interslice: str = "half_sine",
                           tol: float = 1e-4,
                           max_iter: int = 100) -> Tuple[float, float]:
-    """Morgenstern-Price / GLE factor of safety.
+    """Morgenstern-Price / GLE factor of safety (approximate formulation).
 
     Generalizes Spencer by using a variable interslice force function f(x)
     scaled by lambda. When f(x) = constant, this reduces to Spencer.
@@ -421,6 +440,13 @@ def morgenstern_price_fos(slices: List[Slice],
     find lambda where FOS_moment(lambda) = FOS_force(lambda).
 
     Works for both circular and noncircular slip surfaces.
+
+    APPROXIMATION (SS-1): as with ``spencer_fos``, the interslice
+    inclination (here atan(lambda*f(x)) per slice) enters through a
+    shifted m_alpha = cos(alpha - theta_eff)
+    + sin(alpha - theta_eff)*tan(phi)/F rather than the textbook-exact
+    Morgenstern-Price interslice-force recursion. Validated against the
+    Duncan, Wright & Brandon examples; not an exact GLE implementation.
 
     Parameters
     ----------

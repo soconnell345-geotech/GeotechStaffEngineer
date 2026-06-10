@@ -122,6 +122,7 @@ def generate_bearing_graph(
     R_step: float = 200.0,
     helmet_weight: float = 5.0,
     max_time: float = 0.10,
+    damping_model: str = "smith",
 ) -> BearingGraphResult:
     """Generate a bearing graph by running wave equation at multiple Rult.
 
@@ -145,6 +146,11 @@ def generate_bearing_graph(
         Helmet weight (kN).
     max_time : float
         Maximum simulation time per blow (s).
+    damping_model : str
+        "smith" (default): damping proportional to the mobilized static
+        resistance, R_d = J*R_static*v (Smith 1960 / GRLWEAP default).
+        "smith_viscous": damping proportional to R_ultimate, loading
+        only (pre-v5.1 behavior). See wave_equation.soil_model.
 
     Returns
     -------
@@ -168,6 +174,7 @@ def generate_bearing_graph(
             quake_toe=quake_toe,
             damping_side=damping_side,
             damping_toe=damping_toe,
+            damping_model=damping_model,
         )
 
         result = simulate_blow(

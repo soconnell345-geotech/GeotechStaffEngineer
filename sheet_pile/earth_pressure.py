@@ -241,7 +241,8 @@ def tension_crack_depth(c: float, gamma: float, Ka: float,
     """Depth of tension crack in cohesive soil behind an active wall.
 
     The active pressure is zero when Ka*(gamma*z + q) = 2*c*sqrt(Ka),
-    so z_crack = (2*c/sqrt(Ka) - Ka*q) / (Ka*gamma).
+    i.e. gamma*z + q = 2*c/sqrt(Ka), so
+    z_crack = (2*c/sqrt(Ka) - q) / gamma.
 
     Simplified for q=0: z_crack = 2*c / (gamma * sqrt(Ka))
 

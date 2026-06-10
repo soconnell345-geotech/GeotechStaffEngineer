@@ -217,6 +217,57 @@ class TestCantileverWall:
         assert "embedment_depth_m" in d
         assert d["embedment_depth_m"] > 0
 
+    def test_single_safety_basis_default(self):
+        """SP-3: the default safety basis is FOS_passive alone — the design
+        embedment equals the converged embedment (embedment_increase = 1.0),
+        with no hidden 1.2x increase stacked on top of FOS_passive = 1.5."""
+        result = analyze_cantilever(
+            excavation_depth=5.0,
+            soil_layers=[WallSoilLayer(20.0, 18.0, friction_angle=30)],
+            FOS_passive=1.5,
+        )
+        assert result.embedment_increase == 1.0
+        assert result.embedment_depth == pytest.approx(
+            result.embedment_converged)
+        d = result.to_dict()
+        assert d["embedment_increase"] == 1.0
+        assert d["embedment_converged_m"] == d["embedment_depth_m"]
+
+    def test_embedment_increase_basis(self):
+        """SP-3: the depth-increase basis (FOS = 1.0, +20%) is available as
+        an explicit, documented parameter and reproduces the pre-v5.1
+        D_design = D_converged * 1.2 arithmetic."""
+        result = analyze_cantilever(
+            excavation_depth=5.0,
+            soil_layers=[WallSoilLayer(20.0, 18.0, friction_angle=30)],
+            FOS_passive=1.0,
+            embedment_increase=1.2,
+        )
+        assert result.embedment_depth == pytest.approx(
+            result.embedment_converged * 1.2)
+        assert result.total_wall_length == pytest.approx(
+            5.0 + result.embedment_depth)
+
+    def test_embedment_increase_below_one_raises(self):
+        """SP-3: embedment_increase < 1.0 is rejected."""
+        with pytest.raises(ValueError):
+            analyze_cantilever(
+                excavation_depth=5.0,
+                soil_layers=[WallSoilLayer(20.0, 18.0, friction_angle=30)],
+                embedment_increase=0.8,
+            )
+
+    def test_two_safety_bases_comparable_embedment(self):
+        """SP-3 sanity: the two recognized safety bases (FS=1.5 alone vs
+        FS=1.0 + 1.3x depth increase) give embedments of the same order
+        for a standard sand case (neither basis double-counts)."""
+        layers = [WallSoilLayer(20.0, 18.0, friction_angle=30)]
+        r_fos = analyze_cantilever(5.0, layers, FOS_passive=1.5)
+        r_inc = analyze_cantilever(5.0, layers, FOS_passive=1.0,
+                                   embedment_increase=1.3)
+        ratio = r_fos.embedment_depth / r_inc.embedment_depth
+        assert 0.6 < ratio < 1.7
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # TEST 4: Anchored Wall

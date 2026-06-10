@@ -240,6 +240,100 @@ class TestRenderHtml:
         assert "2026" in html  # auto-filled today's date
 
 
+class TestRenderHtmlEscaping:
+    """CP-1: hostile strings in user-supplied text fields must be
+    HTML-escaped, while equation/substitution (trusted, module-generated
+    markup with HTML entities allowed) still render raw."""
+
+    HOSTILE = "<script>alert('xss')</script>"
+
+    def _hostile_data(self):
+        return CalcPackageData(
+            project_name=self.HOSTILE,
+            project_number='"><img src=x onerror=alert(1)>',
+            analysis_type="<b>Bold & Dangerous</b>",
+            engineer="<i>Eve</i> & Mallory",
+            checker=self.HOSTILE,
+            company="ACME <Geotech> & Sons",
+            date="2026-01-01",
+            sections=[
+                CalcSection(title="<script>section</script>", items=[
+                    InputItem("B", "Width <script>x</script>", "<val>", "m"),
+                    CalcStep(
+                        title="Step <script>t</script>",
+                        equation="q_ult &le; c&times;N_c",   # trusted markup
+                        substitution="q &radic;2",            # trusted markup
+                        result_name="q<script>r</script>",
+                        result_value="<script>v</script>",
+                        result_unit="kPa<script>u</script>",
+                        reference="Ref <script>ref</script>",
+                        notes="Note <script>n</script>",
+                    ),
+                    CheckItem("Check <script>c</script>", 100, "d<script>",
+                              300, "c<script>", "kPa<script>", True),
+                    TableData("T<script>", ["H<script>"],
+                              [["cell<script>"]], notes="tn<script>"),
+                    "text block <script>tb</script>",
+                ]),
+            ],
+            references=["Ref & <script>list</script>"],
+        )
+
+    def test_hostile_text_fields_escaped(self):
+        html = render_html(self._hostile_data())
+        # No live script/img tags anywhere in the document
+        assert "<script>" in self.HOSTILE  # sanity on the payload
+        assert "<script>" not in html
+        assert "<img src=x" not in html
+        assert "<b>Bold" not in html
+        assert "<i>Eve</i>" not in html
+        # Escaped forms ARE present (content preserved, inert)
+        assert "&lt;script&gt;" in html
+        assert "ACME &lt;Geotech&gt; &amp; Sons" in html
+
+    def test_equations_still_render_raw(self):
+        """equation/substitution are the documented trusted exception:
+        HTML entities pass through unescaped so they display correctly."""
+        html = render_html(self._hostile_data())
+        assert "q_ult &le; c&times;N_c" in html
+        assert "q &radic;2" in html
+        # Not double-escaped
+        assert "&amp;le;" not in html
+        assert "&amp;radic;" not in html
+
+    def test_check_comparator_entity_intact(self):
+        """The pass/fail comparator entity in the check detail row must
+        not be double-escaped by autoescape."""
+        data = CalcPackageData(
+            project_name="P", analysis_type="A", date="2026-01-01",
+            sections=[CalcSection(title="Checks", items=[
+                CheckItem("ok", 100, "d", 300, "c", "kPa", True),
+                CheckItem("bad", 400, "d", 300, "c", "kPa", False),
+            ])],
+        )
+        html = render_html(data)
+        assert "&le;" in html
+        assert "&gt;" in html
+        assert "&amp;le;" not in html
+        assert "&amp;gt;" not in html
+
+    def test_clean_data_unchanged(self):
+        """Benign packages render identically useful output (regression)."""
+        data = CalcPackageData(
+            project_name="I-95 Bridge", analysis_type="Bearing Capacity",
+            engineer="S. O'Connell", date="2026-01-01",
+            sections=[CalcSection(title="Calc", items=[
+                CalcStep("Nq", "Nq = e^(pi tan phi) tan^2(45+phi/2)",
+                         "Nq = 18.4", "Nq", 18.4, "", "Vesic (1973)"),
+            ])],
+        )
+        html = render_html(data)
+        assert "I-95 Bridge" in html
+        assert "Nq = 18.4" in html
+        # Apostrophe may be entity-encoded by autoescape; both inert forms OK
+        assert ("S. O'Connell" in html) or ("S. O&#39;Connell" in html)
+
+
 class TestFigureToBase64:
     def test_converts_figure(self):
         pytest.importorskip("matplotlib")

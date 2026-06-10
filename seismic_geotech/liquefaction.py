@@ -198,7 +198,12 @@ def evaluate_liquefaction(
     layer_FC : list of float
         Fines content (%) at each depth.
     layer_gamma : list of float
-        Total unit weight (kN/m³) at each depth.
+        Total unit weight (kN/m³) at each depth. Each value is taken to
+        apply over the interval from the previous evaluation depth (or
+        the ground surface, for the first point) down to its own depth,
+        so the total overburden is integrated through the overlying
+        layers: sigma_v(z_k) = sum_i gamma_i * h_i. For a uniform
+        profile this reduces to gamma * z.
     amax_g : float
         Peak ground acceleration (fraction of g).
     gwt_depth : float
@@ -213,12 +218,27 @@ def evaluate_liquefaction(
     list of dict
         Per-layer results with keys: depth_m, N160, N160cs, FC_pct,
         sigma_v_kPa, sigma_v_eff_kPa, CSR, CRR, FOS_liq, liquefiable.
+
+    Notes
+    -----
+    Prior to v5.1 the total stress at each point was computed as
+    gamma(z) * z using the point's own unit weight over the full depth
+    (SG-1), which mis-estimated sigma_v for layered profiles. Depths
+    must be in increasing order for the layered integration.
     """
+    if any(z2 <= z1 for z1, z2 in zip(layer_depths, layer_depths[1:])):
+        raise ValueError("layer_depths must be in strictly increasing order")
+
     results = []
 
+    sigma_v_prev = 0.0
+    z_prev = 0.0
     for z, N160, FC, gamma in zip(layer_depths, layer_N160, layer_FC, layer_gamma):
-        # Total stress
-        sigma_v = gamma * z
+        # Total stress: integrate overburden through the overlying layers
+        # (gamma of each point applies from the previous depth to its own).
+        sigma_v = sigma_v_prev + gamma * (z - z_prev)
+        sigma_v_prev = sigma_v
+        z_prev = z
 
         # Effective stress
         if z <= gwt_depth:

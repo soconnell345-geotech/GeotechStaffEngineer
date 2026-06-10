@@ -294,14 +294,19 @@ def simulate_blow(
         if step > 100 and np.all(vel[1:] < 0.01) and vel[0] < 0:
             break
 
-    # Permanent set per blow = peak toe penetration minus the toe's elastic
-    # rebound. The elasto-plastic toe spring recovers its quake on unloading, so
-    # the residual (plastic) penetration of the pile point is
-    #     set = max(D_max,toe - Q_toe, 0).
-    # Without subtracting the toe quake the set is overestimated and the blow
-    # count (1/set) underestimated — unconservative on a bearing graph.
+    # Permanent set per blow = the PLASTIC (residual) displacement of the
+    # elasto-plastic toe spring — the displacement at which its unloading
+    # branch reaches zero force. This is the physical quantity (WE-2): the
+    # toe spring yields whenever d - d_plastic > Q_toe, advancing the offset
+    # to d - Q_toe, so for the no-tension toe spring the offset equals
+    #     max(D_max,toe - Q_toe, 0)
+    # exactly — i.e. it coincides with the previous (WE-1) peak-minus-quake
+    # approximation under monotonic loading, but remains correct if the toe
+    # re-loads in later oscillations. Without subtracting the elastic quake
+    # the set is overestimated and the blow count (1/set) underestimated —
+    # unconservative on a bearing graph.
     # (Smith, 1960; FHWA GEC-12, Hannigan et al.)
-    permanent_set = max(float(max_toe_disp) - toe_model.quake, 0.0)
+    permanent_set = max(float(toe_model.plastic_displacement), 0.0)
 
     # Trim stored arrays
     time_arr = time_arr[:store_idx]

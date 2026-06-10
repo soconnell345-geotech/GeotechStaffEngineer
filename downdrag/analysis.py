@@ -740,6 +740,15 @@ def _settlement_clay(H: float, C_ec: float, C_er: float,
     2. OC stays OC (sigma_final <= sigma_p): Sc = C_er * H * log10(...)
     3. OC → NC: recompression to sigma_p, then virgin compression beyond
 
+    NC tolerance band (DD-1): the soil is treated as normally consolidated
+    whenever |sigma_p - sigma_v0| / sigma_v0 < 0.05, i.e. a preconsolidation
+    pressure within 5% of the in-situ stress counts as NC and the full
+    increment uses the virgin index C_ec. This avoids spurious
+    recompression-only behavior from small sigma_p measurement noise, but
+    creates a small settlement step versus a soil just outside the band
+    (slightly OC, case 3). The same convention is used by the settlement
+    module's consolidation routine, so the two modules agree.
+
     Parameters
     ----------
     H : float

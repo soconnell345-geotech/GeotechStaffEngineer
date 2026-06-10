@@ -72,13 +72,20 @@ class WallSoilLayer:
 
 @dataclass
 class CantileverWallResult:
-    """Results from a cantilever sheet pile wall analysis."""
+    """Results from a cantilever sheet pile wall analysis.
+
+    ``embedment_depth`` is the design embedment
+    (= ``embedment_converged`` x ``embedment_increase``); the safety
+    basis is recorded by ``FOS_passive`` and ``embedment_increase``.
+    """
     embedment_depth: float = 0.0
     total_wall_length: float = 0.0
     max_moment: float = 0.0
     max_moment_depth: float = 0.0
     FOS_passive: float = 1.0
     excavation_depth: float = 0.0
+    embedment_converged: float = 0.0
+    embedment_increase: float = 1.0
 
     def summary(self) -> str:
         lines = [
@@ -87,7 +94,10 @@ class CantileverWallResult:
             "=" * 60,
             "",
             f"  Excavation depth:   {self.excavation_depth:.2f} m",
-            f"  Required embedment: {self.embedment_depth:.2f} m",
+            f"  Required embedment: {self.embedment_depth:.2f} m"
+            + (f" (= {self.embedment_converged:.2f} x "
+               f"{self.embedment_increase:.2f})"
+               if self.embedment_increase != 1.0 else ""),
             f"  Total wall length:  {self.total_wall_length:.2f} m",
             f"  FOS on passive:     {self.FOS_passive:.2f}",
             "",
@@ -143,6 +153,8 @@ class CantileverWallResult:
     def to_dict(self):
         return {
             "embedment_depth_m": round(self.embedment_depth, 3),
+            "embedment_converged_m": round(self.embedment_converged, 3),
+            "embedment_increase": round(self.embedment_increase, 3),
             "total_wall_length_m": round(self.total_wall_length, 3),
             "max_moment_kNm_per_m": round(self.max_moment, 1),
             "max_moment_depth_m": round(self.max_moment_depth, 2),
@@ -160,6 +172,7 @@ def analyze_cantilever(
     FOS_passive: float = 1.5,
     gamma_w: float = GAMMA_W,
     pressure_method: str = "rankine",
+    embedment_increase: float = 1.0,
 ) -> CantileverWallResult:
     """Analyze a cantilever sheet pile wall.
 
@@ -167,6 +180,19 @@ def analyze_cantilever(
     1. Compute active and passive pressure diagrams
     2. Sum moments about the base to find required embedment D
     3. Compute maximum moment
+
+    Safety basis
+    ------------
+    The classic simplified method applies EITHER a factor of safety on
+    the passive resistance (FS ~ 1.5-2.0, no depth increase) OR an
+    unfactored passive diagram (FS ~ 1.0) with a 20-40% embedment
+    increase — not both (USS Sheet Piling Manual; USACE EM 1110-2-2504;
+    Das Ch. 9). The default here is the FOS basis: ``FOS_passive = 1.5``
+    with ``embedment_increase = 1.0``. To use the depth-increase basis
+    instead, pass ``FOS_passive = 1.0`` and ``embedment_increase`` of
+    1.2-1.4. (Prior to v5.1 this function applied BOTH FOS 1.5 and a
+    1.2x increase — a double safety margin; see SP-3 in the QC review
+    and DESIGN.md.)
 
     Parameters
     ----------
@@ -183,10 +209,16 @@ def analyze_cantilever(
         Uniform surcharge on the retained side (kPa). Default 0.
     FOS_passive : float, optional
         Factor of safety applied to passive resistance. Default 1.5.
+        This is the primary safety knob (see Safety basis above).
     gamma_w : float, optional
         Unit weight of water (kN/m³). Default 9.81.
     pressure_method : str, optional
         "rankine" (default) or "coulomb".
+    embedment_increase : float, optional
+        Multiplier applied to the converged embedment to obtain the
+        design embedment. Default 1.0 (no increase — safety carried by
+        FOS_passive). Use 1.2-1.4 with FOS_passive = 1.0 for the
+        depth-increase basis. Must be >= 1.0.
 
     Returns
     -------
@@ -194,6 +226,9 @@ def analyze_cantilever(
     """
     if excavation_depth <= 0:
         raise ValueError(f"Excavation depth must be positive, got {excavation_depth}")
+    if embedment_increase < 1.0:
+        raise ValueError(
+            f"embedment_increase must be >= 1.0, got {embedment_increase}")
 
     if gwt_depth_passive is None:
         gwt_depth_passive = gwt_depth_active
@@ -211,8 +246,10 @@ def analyze_cantilever(
         surcharge, FOS_passive, gamma_w, pressure_method, n_points=500
     )
 
-    # Apply 20-40% increase per USACE guidance for simplified method
-    D_design = D_converged * 1.2
+    # Design embedment. Default embedment_increase = 1.0: safety is carried
+    # entirely by FOS_passive (single, explicit safety basis — see docstring).
+    # A 1.2-1.4 increase is only appropriate with FOS_passive ~ 1.0.
+    D_design = D_converged * embedment_increase
 
     total_wall = excavation_depth + D_design
 
@@ -230,6 +267,8 @@ def analyze_cantilever(
         max_moment_depth=max_moment_depth,
         FOS_passive=FOS_passive,
         excavation_depth=excavation_depth,
+        embedment_converged=D_converged,
+        embedment_increase=embedment_increase,
     )
 
 

@@ -164,21 +164,27 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         method_items.append(CalcStep(
             title="Ordinary Method of Slices (Fellenius)",
             equation=(
+                # Matches fellenius_fos: effective normal clamped at zero.
                 "FOS = \u03a3[c_i \u00d7 b_i / cos(\u03b1_i) + "
-                "(W_i \u00d7 cos(\u03b1_i) - u_i \u00d7 b_i / cos(\u03b1_i)) "
+                "max(W_i \u00d7 cos(\u03b1_i) - u_i \u00d7 b_i / cos(\u03b1_i), 0) "
                 "\u00d7 tan(\u03c6_i)] / \u03a3[W_i \u00d7 sin(\u03b1_i)]"
             ),
             substitution="",
             result_name="FOS",
             result_value=f"{result.FOS:.3f}",
             reference="Fellenius (1927)",
-            notes="Satisfies moment equilibrium only. Does not satisfy force equilibrium.",
+            notes="Satisfies moment equilibrium only. Does not satisfy force "
+                  "equilibrium. Effective normal clamped at zero (no negative "
+                  "friction under high pore pressure).",
         ))
     elif result.method == "Bishop":
         method_items.append(CalcStep(
             title="Bishop's Simplified Method",
             equation=(
-                "FOS = \u03a3[(c_i\u00b7b_i + (W_i - u_i\u00b7b_i)\u00b7tan(\u03c6_i)) "
+                # Matches bishop_fos (SS-2): effective-weight term clamped
+                # at zero so artesian pore pressure cannot contribute
+                # negative frictional resistance.
+                "FOS = \u03a3[(c_i\u00b7b_i + max(W_i - u_i\u00b7b_i, 0)\u00b7tan(\u03c6_i)) "
                 "/ m_\u03b1_i] / \u03a3[W_i \u00d7 sin(\u03b1_i)]"
             ),
             substitution="m_\u03b1 = cos(\u03b1) + sin(\u03b1)\u00b7tan(\u03c6)/FOS",
@@ -186,7 +192,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_value=f"{result.FOS:.3f}",
             reference="Bishop (1955)",
             notes="Iterative solution — satisfies moment equilibrium. "
-                  "Assumes zero interslice shear forces.",
+                  "Assumes zero interslice shear forces. Frictional term "
+                  "clamped at zero where u·b > W (SS-2).",
         ))
     elif result.method == "Spencer":
         method_items.append(CalcStep(
@@ -199,6 +206,10 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="FOS",
             result_value=f"{result.FOS:.3f}",
             reference="Spencer (1967)",
+            notes="Approximate Spencer formulation (shifted m_α with "
+                  "force-equilibrium driving term, iterated until "
+                  "FOS_moment = FOS_force); validated against Duncan, "
+                  "Wright & Brandon examples (SS-1).",
         ))
         if result.theta_spencer is not None:
             method_items.append(CalcStep(

@@ -103,6 +103,22 @@ search_critical_surface(geom, surface_type="noncircular",
   are skipped (zero weight, no contribution)
 - **Nails disconnected**: `nails.py` is importable but not called from the analysis
   pipeline. Nail fields removed from `SlopeStabilityResult`. Can be re-enabled later.
+- **Spencer / Morgenstern-Price are APPROXIMATE (SS-1)**: both use a shifted
+  m_alpha = cos(alpha−theta) + sin(alpha−theta)·tanφ/F formulation (with
+  theta = const for Spencer, atan(λ·f(x)) for M-P) and a force-equilibrium
+  driving term W·(sinα + cosα·tanθ), iterated until FOS_moment = FOS_force.
+  This is an engineering approximation, NOT the textbook-exact GLE
+  interslice-force recursion. Validated against the Duncan, Wright & Brandon
+  examples (below) — treat results as Spencer/M-P-class accuracy, not exact.
+- **Bishop numerator clamp (SS-2, v5.1)**: the frictional term uses
+  max(W − u·b, 0)·tanφ so artesian/perched pore pressure (u·b > W) cannot
+  contribute negative resistance; consistent with the Fellenius
+  effective-normal clamp. Spencer/M-P share the (W − u·b) form but are left
+  unclamped to preserve the Duncan-validated behavior (noted for follow-up).
+- **Pore pressure model (SS-3)**: `_pore_pressure_at_base` uses the full
+  hydrostatic head to the GWT surface (no cos²β seepage correction for
+  inclined phreatic surfaces) — slightly conservative (overestimates u) on
+  steep water tables. The layer `ru` coefficient is the alternative.
 
 ## Duncan Verification Examples (test_duncan_verification.py)
 

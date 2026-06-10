@@ -363,9 +363,12 @@ CALC_PACKAGE_TEMPLATE = """<!DOCTYPE html>
     {% elif itype == "calc_step" %}
     <div class="calc-step">
         <div class="step-title">{{ item.title }}</div>
-        <div class="equation">{{ item.equation }}</div>
+        {# equation/substitution are trusted equation markup per the
+           CalcStep contract ("HTML entities OK") — rendered raw; all
+           other fields are autoescaped (CP-1). #}
+        <div class="equation">{{ item.equation | safe }}</div>
         {% if item.substitution %}
-        <div class="substitution">{{ item.substitution }}</div>
+        <div class="substitution">{{ item.substitution | safe }}</div>
         {% endif %}
         <div class="result">{{ item.result_name }} = <span class="computed">{{ item.result_value }}</span> {{ item.result_unit }}</div>
         {% if item.reference %}
@@ -383,7 +386,7 @@ CALC_PACKAGE_TEMPLATE = """<!DOCTYPE html>
     </div>
     <div class="check-detail">
         {{ item.demand_label }} = {{ item.demand }} {{ item.unit }}
-        &nbsp;&nbsp;{{ "&le;" if item.passes else "&gt;" }}&nbsp;&nbsp;
+        &nbsp;&nbsp;{{ ("&le;" if item.passes else "&gt;") | safe }}&nbsp;&nbsp;
         {{ item.capacity_label }} = {{ item.capacity }} {{ item.unit }}
         &nbsp;&nbsp;(D/C = {{ "%.2f"|format(item.demand / item.capacity if item.capacity != 0 else 0) }})
     </div>
