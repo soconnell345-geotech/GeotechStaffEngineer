@@ -38,6 +38,8 @@ jobs:
         # Agent tests skip gracefully when their package is missing.
         run: |
           pip install matplotlib plotly jinja2 || true
+          # v5.0 deepagents stack ([deep] extra) so funhouse_agent/deep tests run in CI
+          pip install deepagents langchain langgraph langchain-anthropic "typing_extensions>=4.13" || true
           pip install groundhog || true
           pip install pystrata || true
           pip install eqsig pyrotd || true
