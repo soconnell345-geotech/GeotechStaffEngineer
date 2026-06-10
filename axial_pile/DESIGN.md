@@ -25,4 +25,25 @@ analyze_axial_pile(pile_length, pile_diameter, layers, method, ...) -> AxialPile
 ## Key Notes
 - Layers are dicts with soil_type ("sand"/"clay"), phi/cu, gamma, thickness
 - SoilProfile adapter: to_axial_pile_input(pile_length) clips layers to pile length
-- 36 tests
+
+## Known Simplifications (read before relying on Nordlund numbers)
+- **Nordlund chart fits** (`nordlund.py`): `nordlund_Kd` ignores the
+  displaced-volume (V/V0) curve family (fixes the displacement-pile curve);
+  `alpha_t_factor` ignores phi and saturates at 1.0 for D/b > 5 (tip can be
+  over-predicted, bounded by the Meyerhof q_L cap); `nordlund_CF` is a linear
+  fit keyed only on delta/phi. Results can deviate from a rigorous
+  chart-based Nordlund calculation — verify against the GEC-12 charts or a
+  load test where tip resistance or low-displacement piles govern. (No
+  numeric GEC-12 worked example is available in the geotech-references text
+  layer to pin the deviation; flagged for a future tie-out.)
+- **delta/phi defaults**: 0.75 steel, 0.90 concrete/timber
+  (`nordlund.delta_from_phi`, GEC-12 Table 7-1) — overridable per layer via
+  `AxialSoilLayer.delta_phi_ratio`.
+- **Beta method clay phi**: cohesive layers assume phi' = 25 deg by default;
+  overridable via `AxialPileAnalysis(cohesive_phi=...)`.
+- **Skin friction integration**: midpoint rule per layer, with segments
+  split at the GWT (exact for the piecewise-linear sigma_v' profile).
+- **Uplift**: rule-of-thumb `uplift_skin_fraction` (default 0.75) x OUTSIDE
+  skin friction only; inside (plug) friction excluded; pile self-weight only
+  if supplied via `pile_weight`. Not a substitute for a dedicated tension
+  design method.

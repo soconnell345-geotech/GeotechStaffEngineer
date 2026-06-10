@@ -14,7 +14,7 @@ References:
 """
 
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -49,6 +49,37 @@ class AxialPileAnalysis:
         Factor of safety. Default 2.5.
     include_uplift : bool, optional
         If True, also compute uplift (tension) capacity. Default False.
+    cohesive_phi : float, optional
+        Effective friction angle (degrees) assumed for COHESIVE layers when
+        ``method="beta"`` (used for both skin friction and end bearing).
+        Default 25.0 — a typical drained phi' for clay per GEC-12 Table 7-9
+        guidance; override per-project when drained clay strength is known.
+        Ignored for cohesionless layers (which use their own
+        ``friction_angle``) and for the "auto" method.
+    uplift_skin_fraction : float, optional
+        Fraction of the OUTSIDE skin friction credited in tension
+        (rule-of-thumb tension reduction). Default 0.75.
+    pile_weight : float, optional
+        Pile self-weight (kN) added to the uplift capacity. Default None
+        (self-weight NOT credited — conservative). Supply the buoyant
+        weight below the water table if you want it included.
+
+    Notes
+    -----
+    Skin friction is integrated layer-by-layer using the midpoint rule
+    (unit friction evaluated at the mid-depth of each layer segment within
+    the pile, times segment thickness). Because the effective stress
+    profile is piecewise linear, this is EXACT within any segment of
+    constant gamma — segments are additionally split at the groundwater
+    table when it falls inside a layer, so the kink in sigma_v' there does
+    not bias the integral.
+
+    Uplift (when ``include_uplift=True``) is the rule-of-thumb
+    ``uplift_skin_fraction * Q_skin_outside`` (+ ``pile_weight`` if given).
+    Inside (plug) friction of open-ended pipe piles is EXCLUDED from
+    uplift: mobilizing it in tension requires the soil-plug weight, which
+    this estimate does not model. For final tension design use a dedicated
+    method (e.g. Nordlund with tension Kd, GEC-12 Section 7.2.3.2).
 
     Examples
     --------
@@ -66,6 +97,9 @@ class AxialPileAnalysis:
     method: str = "auto"
     factor_of_safety: float = 2.5
     include_uplift: bool = False
+    cohesive_phi: float = 25.0
+    uplift_skin_fraction: float = 0.75
+    pile_weight: Optional[float] = None
 
     def __post_init__(self):
         if self.pile is None:
@@ -88,10 +122,6 @@ class AxialPileAnalysis:
         AxialPileResult
             Complete results with skin friction, end bearing, and per-layer breakdown.
         """
-        n_segments = 50  # discretize pile into segments
-        dz = self.pile_length / n_segments
-        depths = np.linspace(dz / 2, self.pile_length - dz / 2, n_segments)
-
         total_Qs = 0.0
         layer_results = []
         current_depth = 0.0
@@ -107,36 +137,12 @@ class AxialPileAnalysis:
             # Portion of this layer that intersects the pile
             z_top = layer_top
             z_bottom = min(layer_bottom, self.pile_length)
-            thickness_in_pile = z_bottom - z_top
-            if thickness_in_pile <= 0:
+            if z_bottom - z_top <= 0:
                 continue
 
-            z_center = (z_top + z_bottom) / 2
-            sigma_v = self.soil.effective_stress_at_depth(z_center)
-
-            if self.method == "beta":
-                phi = layer.friction_angle if layer.soil_type == "cohesionless" else 25.0
-                beta = beta_from_phi(phi)
-                Qs_layer = skin_friction_beta(
-                    sigma_v, beta, self.pile.perimeter, thickness_in_pile
-                )
-                method_used = "beta"
-            elif layer.soil_type == "cohesionless":
-                pile_mat = "concrete" if "concrete" in self.pile.pile_type else "steel"
-                Qs_layer = skin_friction_cohesionless(
-                    layer.friction_angle, sigma_v,
-                    self.pile.perimeter, thickness_in_pile,
-                    pile_material=pile_mat,
-                    delta_phi_ratio=layer.delta_phi_ratio,
-                )
-                method_used = "nordlund"
-            else:
-                pile_type = "concrete" if "concrete" in self.pile.pile_type else "steel"
-                Qs_layer = skin_friction_cohesive(
-                    layer.cohesion, self.pile.perimeter,
-                    thickness_in_pile, pile_type=pile_type,
-                )
-                method_used = "tomlinson"
+            Qs_layer, sigma_v, method_used = self._layer_skin_friction(
+                layer, z_top, z_bottom, self.pile.perimeter
+            )
 
             total_Qs += Qs_layer
             layer_results.append({
@@ -149,12 +155,17 @@ class AxialPileAnalysis:
                 "sigma_v_kPa": round(sigma_v, 1),
             })
 
+        # Outside skin friction (before any inside/plug friction is added)
+        Qs_outside = total_Qs
+
         # End bearing
         tip_layer = self.soil.layer_at_depth(self.pile_length - 0.01)
         sigma_v_tip = self.soil.effective_stress_at_depth(self.pile_length)
 
         if self.method == "beta":
-            phi_tip = tip_layer.friction_angle if tip_layer.soil_type == "cohesionless" else 25.0
+            phi_tip = (tip_layer.friction_angle
+                       if tip_layer.soil_type == "cohesionless"
+                       else self.cohesive_phi)
             Nt = Nt_from_phi(phi_tip)
             Qt = end_bearing_beta(sigma_v_tip, Nt, self.pile.tip_area)
         elif tip_layer.soil_type == "cohesionless":
@@ -204,10 +215,15 @@ class AxialPileAnalysis:
 
         Q_allowable = Q_ultimate / self.factor_of_safety
 
-        # Uplift (tension) capacity: skin friction only, typically 75% of compression
+        # Uplift (tension) capacity: rule-of-thumb fraction of the OUTSIDE
+        # skin friction only (inside/plug friction excluded — mobilizing it
+        # in tension requires the soil-plug weight, not modeled here), plus
+        # optional pile self-weight. See class Notes.
         Q_uplift = None
         if self.include_uplift:
-            Q_uplift = 0.75 * total_Qs  # conservative estimate
+            Q_uplift = self.uplift_skin_fraction * Qs_outside
+            if self.pile_weight is not None:
+                Q_uplift += self.pile_weight
 
         return AxialPileResult(
             Q_ultimate=Q_ultimate,
@@ -222,6 +238,66 @@ class AxialPileAnalysis:
             layer_breakdown=layer_results,
             sigma_v_tip=sigma_v_tip,
         )
+
+    def _layer_skin_friction(self, layer: AxialSoilLayer, z_top: float,
+                             z_bottom: float, perimeter: float
+                             ) -> Tuple[float, float, str]:
+        """Skin friction for one layer segment of the pile.
+
+        Integrates with the midpoint rule, splitting the segment at the
+        groundwater table when it falls strictly inside: sigma_v' is
+        piecewise linear with a kink at the GWT, so midpoint x thickness
+        on each side of the kink is exact (unit friction is linear in
+        sigma_v' for the Nordlund and beta methods; the Tomlinson alpha
+        method does not use sigma_v').
+
+        Returns
+        -------
+        (Qs, sigma_v_mid, method_used) : tuple
+            Segment skin friction (kN), effective stress at the full
+            segment midpoint (kPa, for reporting), and the method label.
+        """
+        # Sub-segment boundaries: split at the GWT if inside the segment
+        gwt = self.soil.gwt_depth
+        if gwt is not None and z_top < gwt < z_bottom:
+            cuts = [z_top, gwt, z_bottom]
+        else:
+            cuts = [z_top, z_bottom]
+
+        Qs = 0.0
+        method_used = ""
+        for za, zb in zip(cuts[:-1], cuts[1:]):
+            seg_thickness = zb - za
+            sigma_v = self.soil.effective_stress_at_depth((za + zb) / 2)
+
+            if self.method == "beta":
+                phi = (layer.friction_angle
+                       if layer.soil_type == "cohesionless"
+                       else self.cohesive_phi)
+                beta = beta_from_phi(phi)
+                Qs += skin_friction_beta(
+                    sigma_v, beta, perimeter, seg_thickness
+                )
+                method_used = "beta"
+            elif layer.soil_type == "cohesionless":
+                pile_mat = "concrete" if "concrete" in self.pile.pile_type else "steel"
+                Qs += skin_friction_cohesionless(
+                    layer.friction_angle, sigma_v,
+                    perimeter, seg_thickness,
+                    pile_material=pile_mat,
+                    delta_phi_ratio=layer.delta_phi_ratio,
+                )
+                method_used = "nordlund"
+            else:
+                pile_type = "concrete" if "concrete" in self.pile.pile_type else "steel"
+                Qs += skin_friction_cohesive(
+                    layer.cohesion, perimeter,
+                    seg_thickness, pile_type=pile_type,
+                )
+                method_used = "tomlinson"
+
+        sigma_v_mid = self.soil.effective_stress_at_depth((z_top + z_bottom) / 2)
+        return Qs, sigma_v_mid, method_used
 
     def _compute_inside_skin_friction(self) -> float:
         """Compute inside skin friction for open-ended pipe pile (unplugged).
@@ -251,34 +327,12 @@ class AxialPileAnalysis:
 
             z_top = layer_top
             z_bottom = min(layer_bottom, self.pile_length)
-            thickness_in_pile = z_bottom - z_top
-            if thickness_in_pile <= 0:
+            if z_bottom - z_top <= 0:
                 continue
 
-            z_center = (z_top + z_bottom) / 2
-            sigma_v = self.soil.effective_stress_at_depth(z_center)
-
-            if self.method == "beta":
-                phi = layer.friction_angle if layer.soil_type == "cohesionless" else 25.0
-                beta = beta_from_phi(phi)
-                Qs_layer = skin_friction_beta(
-                    sigma_v, beta, inner_perim, thickness_in_pile
-                )
-            elif layer.soil_type == "cohesionless":
-                pile_mat = "concrete" if "concrete" in self.pile.pile_type else "steel"
-                Qs_layer = skin_friction_cohesionless(
-                    layer.friction_angle, sigma_v,
-                    inner_perim, thickness_in_pile,
-                    pile_material=pile_mat,
-                    delta_phi_ratio=layer.delta_phi_ratio,
-                )
-            else:
-                pile_type = "concrete" if "concrete" in self.pile.pile_type else "steel"
-                Qs_layer = skin_friction_cohesive(
-                    layer.cohesion, inner_perim,
-                    thickness_in_pile, pile_type=pile_type,
-                )
-
+            Qs_layer, _, _ = self._layer_skin_friction(
+                layer, z_top, z_bottom, inner_perim
+            )
             Qs_inside += Qs_layer
 
         return Qs_inside
@@ -308,11 +362,12 @@ class AxialPileAnalysis:
         depths = np.linspace(depth_min, depth_max, n_points)
         results = []
 
-        original_length = self.pile_length
+        # Use a copy per trial depth rather than temporarily mutating
+        # self.pile_length (re-entrant / thread-safe).
         for d in depths:
-            self.pile_length = float(d)
             try:
-                r = self.compute()
+                trial = replace(self, pile_length=float(d))
+                r = trial.compute()
                 results.append({
                     "depth_m": round(d, 2),
                     "Q_ultimate_kN": round(r.Q_ultimate, 1),
@@ -321,5 +376,4 @@ class AxialPileAnalysis:
                 })
             except Exception:
                 pass
-        self.pile_length = original_length
         return results

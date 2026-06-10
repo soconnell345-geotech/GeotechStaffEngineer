@@ -22,7 +22,8 @@ class Results:
     Attributes
     ----------
     z : numpy.ndarray
-        Depth array (m).
+        Depth array (m), measured from the ground surface. When an
+        above-ground stickup is modeled, nodes above grade have z < 0.
     deflection : numpy.ndarray
         Lateral deflection (m).
     slope : numpy.ndarray
@@ -54,6 +55,9 @@ class Results:
         reinforced concrete sections with cracked-EI iteration.
     ei_iterations : int
         Number of outer EI iterations (0 for non-RC piles).
+    stickup : float
+        Above-ground free length (m) included in the model. 0 when the
+        head load is applied at the ground surface.
     """
     z: np.ndarray
     deflection: np.ndarray
@@ -71,11 +75,21 @@ class Results:
     Q: float
     EI_profile: Optional[np.ndarray] = field(default=None, repr=False)
     ei_iterations: int = 0
+    stickup: float = 0.0
 
     @property
     def y_top(self) -> float:
-        """Pile head deflection (m)."""
+        """Pile head deflection (m). With a stickup this is the deflection
+        at the top of the stickup (where the load is applied)."""
         return float(self.deflection[0])
+
+    @property
+    def y_ground(self) -> float:
+        """Deflection at the ground surface (m). Equals ``y_top`` when no
+        stickup is modeled; interpolated at z = 0 otherwise."""
+        if self.stickup <= 0:
+            return float(self.deflection[0])
+        return float(np.interp(0.0, self.z, self.deflection))
 
     @property
     def rotation_top(self) -> float:
@@ -126,6 +140,10 @@ class Results:
             "Lateral Pile Analysis Results",
             "=" * 40,
             f"Pile length:          {self.pile_length:.2f} m",
+        ]
+        if self.stickup > 0:
+            lines.append(f"Stickup above grade:  {self.stickup:.2f} m")
+        lines += [
             f"Pile diameter:        {self.pile_diameter:.3f} m",
             f"Applied lateral load: {self.Vt:.1f} kN",
             f"Applied moment:       {self.Mt:.1f} kN-m",
@@ -166,6 +184,9 @@ class Results:
             'iterations': self.iterations,
             'converged': self.converged,
         }
+        if self.stickup > 0:
+            d['stickup_m'] = self.stickup
+            d['y_ground_m'] = self.y_ground
         if self.EI_profile is not None:
             d['EI_profile_kNm2'] = self.EI_profile.tolist()
             d['ei_iterations'] = self.ei_iterations

@@ -364,13 +364,17 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
 
         load_items.append(CalcStep(
             title="Simplified Elastic Load Distribution",
-            equation="P_i = V_z/n \u00b1 M_y\u00b7x_i/\u03a3x\u00b2 "
-                     "\u00b1 M_x\u00b7y_i/\u03a3y\u00b2",
+            equation="P_i = V_z/n + M_y\u00b7x_i/\u03a3x\u00b2 "
+                     "- M_x\u00b7y_i/\u03a3y\u00b2",
             substitution=_simple_load_substitution(n_piles, Vz, My, Mx, piles),
             result_name="Method",
             result_value="Simplified Elastic",
             reference="USACE EM 1110-2-2906, Eq. 4-1",
-            notes="Assumes vertical piles, rigid cap, and elastic behavior.",
+            notes=(
+                "Assumes vertical piles, rigid cap, and elastic behavior. "
+                "Right-hand-rule convention (z up, V_z positive down): "
+                "+M_y compresses the +x side; +M_x uplifts the +y side."
+            ),
         ))
 
     # Cap displacements
@@ -567,9 +571,9 @@ def _simple_load_substitution(n_piles, Vz, My, Mx, piles):
         sum_y2 = sum(y**2 for y in ys)
 
         if abs(My) > 0.01 and sum_x2 > 0:
-            parts.append(f"\u00b1 {My:,.1f}\u00b7x_i/{sum_x2:.3f}")
+            parts.append(f"+ {My:,.1f}\u00b7x_i/{sum_x2:.3f}")
         if abs(Mx) > 0.01 and sum_y2 > 0:
-            parts.append(f"\u00b1 {Mx:,.1f}\u00b7y_i/{sum_y2:.3f}")
+            parts.append(f"- {Mx:,.1f}\u00b7y_i/{sum_y2:.3f}")
 
     return " ".join(parts)
 

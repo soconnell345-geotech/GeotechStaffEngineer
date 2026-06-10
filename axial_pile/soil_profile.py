@@ -36,8 +36,9 @@ class AxialSoilLayer:
         Undrained shear strength cu (kPa). Required for cohesive.
     delta_phi_ratio : float, optional
         Ratio of pile-soil friction angle to soil friction angle (delta/phi).
-        Default: 0.8 for steel, 1.0 for concrete/timber.
-        Can be overridden per layer.
+        If None, ``nordlund.delta_from_phi`` supplies the default:
+        0.75 for steel, 0.90 for concrete/timber (GEC-12 Table 7-1 typical
+        values). Can be overridden per layer.
     description : str, optional
         Layer description.
     """

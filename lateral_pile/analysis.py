@@ -72,13 +72,15 @@ class LateralPileAnalysis:
         max_iterations: int = 100,
         ei_tolerance: float = 1e-3,
         max_ei_iterations: int = 20,
+        stickup: float = 0.0,
     ) -> Results:
         """Run the lateral pile analysis.
 
         Parameters
         ----------
         Vt : float
-            Lateral load at pile head (kN). Default 0.
+            Lateral load at pile head (kN). Default 0. When stickup > 0
+            the head load is applied at the top of the stickup.
         Mt : float
             Moment at pile head (kN-m). Default 0.
         Q : float
@@ -87,11 +89,13 @@ class LateralPileAnalysis:
             'free': specified shear and moment (default).
             'fixed': specified shear and zero rotation.
             'partial': specified shear and rotational stiffness.
+            Applied at the top of the stickup when stickup > 0.
         rotational_stiffness : float
             Rotational stiffness at pile head (kN-m/rad). Only used when
             head_condition='partial'. Default 0.
         n_elements : int
-            Number of pile segments for finite difference. Default 100.
+            Number of pile segments for finite difference, over the total
+            (stickup + embedded) length. Default 100.
         tolerance : float
             Convergence tolerance on deflection. Default 1e-5.
         max_iterations : int
@@ -101,24 +105,47 @@ class LateralPileAnalysis:
             Default 1e-3.
         max_ei_iterations : int
             Maximum number of outer EI iterations. Default 20.
+        stickup : float
+            Above-ground free (unsupported) pile length (m). Default 0
+            (head at the ground surface — identical to previous behavior).
+            When > 0, the mesh extends above grade with zero soil
+            resistance (p = 0) over the stickup and the head load /
+            boundary conditions act at the top of the stickup
+            (pile-bent / column applications). ``pile.length`` remains
+            the EMBEDDED length; soil layer depths are unchanged
+            (measured from the ground surface). Above-grade EI is taken
+            as the EI at grade when variable sections are defined.
 
         Returns
         -------
         Results
             Analysis results with deflection, moment, shear, slope,
-            soil reaction profiles, and summary properties.
+            soil reaction profiles, and summary properties. The depth
+            array spans [-stickup, pile.length]; node depths above grade
+            are negative.
         """
+        if stickup < 0:
+            raise ValueError(f"stickup must be >= 0, got {stickup}")
+
         n_nodes = n_elements + 1
-        z_nodes = np.linspace(0, self.pile.length, n_nodes)
+        z_top = -stickup if stickup > 0 else 0.0
+        z_nodes = np.linspace(z_top, self.pile.length, n_nodes)
 
-        # Get initial EI at each node
-        EI_values = self.pile.get_EI_profile(z_nodes)
+        # Get initial EI at each node. Section depths are measured from
+        # grade; above-grade nodes use the EI at grade (z clamped to 0).
+        EI_values = self.pile.get_EI_profile(np.maximum(z_nodes, 0.0))
 
-        # Build list of p-y functions for each node
+        # Build list of p-y functions for each node (no soil above grade).
+        # Tolerance matches the solver's grade tolerance so the node that
+        # lands exactly at grade (within floating point) keeps its soil.
+        grade_tol = 1e-9 * max(self.pile.length + stickup, 1.0)
+        zero_p = lambda y, z, b: 0.0  # noqa: E731
         py_functions = []
         for i, z in enumerate(z_nodes):
-            py_func = self._make_py_function(z)
-            py_functions.append(py_func)
+            if z < -grade_tol:
+                py_functions.append(zero_p)
+            else:
+                py_functions.append(self._make_py_function(max(z, 0.0)))
 
         # Check if pile has an RC section for cracked-EI iteration
         rc_section = getattr(self.pile, 'rc_section', None)
@@ -136,6 +163,7 @@ class LateralPileAnalysis:
                 tolerance=tolerance,
                 max_iterations=max_iterations,
                 pile_diameter=self.pile.diameter,
+                stickup=stickup,
             )
 
             return Results(
@@ -151,6 +179,7 @@ class LateralPileAnalysis:
                 pile_length=self.pile.length,
                 pile_diameter=self.pile.diameter,
                 Vt=Vt, Mt=Mt, Q=Q,
+                stickup=stickup,
             )
 
         # Cracked-EI outer iteration loop for RC sections
@@ -169,6 +198,7 @@ class LateralPileAnalysis:
                 tolerance=tolerance,
                 max_iterations=max_iterations,
                 pile_diameter=self.pile.diameter,
+                stickup=stickup,
             )
 
             # Update EI based on computed moments
@@ -225,6 +255,7 @@ class LateralPileAnalysis:
             Vt=Vt, Mt=Mt, Q=Q,
             EI_profile=EI_values,
             ei_iterations=ei_iter,
+            stickup=stickup,
         )
 
     def _make_py_function(self, z: float):

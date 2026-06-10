@@ -12,13 +12,33 @@ References:
     FHWA GEC-10, Chapter 13
     Brown, Turner & Castelli (2010)
     O'Neill & Reese (1999)
+    AASHTO LRFD Bridge Design Specifications, Section 10.8.3.5.1c
 """
+
+import math
+
+
+# GEC-10 / O'Neill-Reese limiting net unit end bearing in clay:
+# 80 ksf = 3830 kPa (~3.8 MPa). Higher values require load-test
+# verification.
+QB_MAX_COHESIVE = 3830.0  # kPa
+
+# Base diameter above which the O'Neill-Reese large-base reduction
+# applies in cohesive soil: 75 in = 1.90 m.
+LARGE_BASE_DIAMETER = 1.90  # m
+
+_M_TO_IN = 39.3701
+_KPA_TO_KSF = 1.0 / 47.8803
 
 
 def Nc_drilled_shaft(L_over_D: float) -> float:
     """Bearing capacity factor Nc for drilled shaft in cohesive soil.
 
-    Nc increases from 6.0 at L/D=0 to 9.0 at L/D>=3.
+    O'Neill & Reese (1999) / AASHTO form:
+        Nc = 6 * (1 + 0.2 * L/D) <= 9
+    which increases from 6.0 at L/D=0 to the maximum 9.0 at L/D = 2.5.
+    (The previous linearization min(6 + L/D, 9) reached 9 at L/D = 3,
+    slightly under-predicting Nc for 2.5 < L/D < 3.)
 
     Parameters
     ----------
@@ -32,16 +52,29 @@ def Nc_drilled_shaft(L_over_D: float) -> float:
 
     References
     ----------
-    GEC-10 Section 13.3.4.2; O'Neill & Reese (1999)
+    GEC-10; O'Neill & Reese (1999); AASHTO LRFD 10.8.3.5.1c
     """
-    return min(6.0 + L_over_D, 9.0)
+    return min(6.0 * (1.0 + 0.2 * L_over_D), 9.0)
 
 
 def end_bearing_cohesive(cu: float, tip_area: float,
-                         L_over_D: float = 10.0) -> float:
+                         L_over_D: float = 10.0,
+                         base_diameter: float = None,
+                         shaft_length: float = None) -> float:
     """End bearing in cohesive soil.
 
-    qb = Nc * cu
+    qb = Nc * cu, capped at the GEC-10/O'Neill-Reese limiting net unit
+    end bearing of 80 ksf (3830 kPa). For base (bell) diameters larger
+    than 1.90 m (75 in), the O'Neill & Reese (1999) / AASHTO large-base
+    reduction is applied:
+
+        qb_red = Fr * qb
+        Fr = 2.5 / (a * Bb_in + 2.5 * b) <= 1.0
+        a  = 0.0071 + 0.0021 * (L / Bb) <= 0.015
+        b  = 0.45 * sqrt(cu_ksf), clamped to [0.5, 1.5]
+
+    (Bb_in = base diameter in inches; cu_ksf = cu in ksf.)
+
     Qb = qb * A_tip
 
     Parameters
@@ -49,17 +82,39 @@ def end_bearing_cohesive(cu: float, tip_area: float,
     cu : float
         Undrained shear strength at tip (kPa).
     tip_area : float
-        Shaft tip area (m²).
+        Shaft tip (base/bell) area (m²).
     L_over_D : float, optional
-        Length to diameter ratio. Default 10.0 (full Nc=9).
+        Length to SHAFT diameter ratio (for Nc). Default 10.0 (full Nc=9).
+    base_diameter : float, optional
+        Base (bell) diameter (m). If provided and > 1.90 m, the
+        large-base reduction factor Fr is applied. Default None (no
+        reduction — preserves behavior for normal-size bases).
+    shaft_length : float, optional
+        Shaft length L (m), used in the Fr coefficient ``a``. If None
+        when the reduction applies, L is estimated as
+        ``L_over_D * base_diameter`` (conservative for belled shafts).
 
     Returns
     -------
     float
         End bearing capacity (kN).
+
+    References
+    ----------
+    GEC-10; O'Neill & Reese (1999); AASHTO LRFD 10.8.3.5.1c
     """
     Nc = Nc_drilled_shaft(L_over_D)
-    qb = Nc * cu
+    qb = min(Nc * cu, QB_MAX_COHESIVE)
+
+    if base_diameter is not None and base_diameter > LARGE_BASE_DIAMETER:
+        L = shaft_length if shaft_length is not None \
+            else L_over_D * base_diameter
+        a = min(0.0071 + 0.0021 * (L / base_diameter), 0.015)
+        b = 0.45 * math.sqrt(cu * _KPA_TO_KSF)
+        b = min(max(b, 0.5), 1.5)
+        Fr = min(2.5 / (a * base_diameter * _M_TO_IN + 2.5 * b), 1.0)
+        qb *= Fr
+
     return qb * tip_area
 
 
@@ -75,9 +130,11 @@ def end_bearing_cohesionless(N60: float, tip_area: float,
     N60 : float
         Energy-corrected SPT blow count at tip.
     tip_area : float
-        Shaft tip area (m²).
+        Shaft tip (base/bell) area (m²).
     diameter : float, optional
-        Shaft diameter (m). Default 1.0.
+        BASE diameter (m) — the bell diameter for belled shafts, since
+        the 1.27/D large-diameter reduction is governed by the bearing
+        surface size. Default 1.0.
 
     Returns
     -------

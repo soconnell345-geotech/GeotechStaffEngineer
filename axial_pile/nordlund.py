@@ -6,6 +6,24 @@ end bearing using Meyerhof's method for driven piles in sand/gravel.
 
 All units are SI: kPa, meters, kN, degrees.
 
+.. warning:: **Chart-fit simplifications vs rigorous Nordlund.**
+    The rigorous Nordlund method reads several design charts
+    (GEC-12 Figures 7-4 through 7-8 and 7-13). This module uses
+    simplified curve fits that drop some of the chart dependencies:
+
+    * ``nordlund_Kd`` ignores the displaced-volume (V/V0) family of
+      curves — it fixes the typical displacement-pile curve;
+    * ``alpha_t_factor`` ignores phi and returns the maximum (1.0) for
+      D/b > 5, which can over-predict tip resistance (mitigated by the
+      Meyerhof limiting q_L cap);
+    * ``nordlund_CF`` keys only on delta/phi (a linear fit), not on phi.
+
+    Results can therefore deviate from a rigorous chart-based Nordlund
+    calculation — typically within the chart-reading scatter for common
+    displacement piles at phi = 28-38 deg, but verify against the full
+    charts (or a load test / driving criteria) where tip resistance or
+    low-displacement piles (H-piles, open pipes) govern the design.
+
 References:
     Nordlund, R.L. (1963, 1979)
     FHWA GEC-12 (FHWA-NHI-16-009), Chapter 7, Sections 7.2.1
@@ -55,6 +73,12 @@ def nordlund_Kd(phi_deg: float, omega_deg: float = 0.0) -> float:
 
     Simplified from Nordlund's charts. For uniform (non-tapered) piles
     (omega=0), Kd depends primarily on phi.
+
+    .. warning:: This fit IGNORES the displaced-volume (V/V0) curve
+        family of the GEC-12 Kd charts — it represents a typical
+        displacement pile (V/V0 ~ 0.5-1.0). Low-displacement piles
+        (H-piles, open-ended pipes) have lower Kd than returned here;
+        see the module-level warning.
 
     Parameters
     ----------
@@ -110,6 +134,10 @@ def nordlund_CF(delta_phi_ratio: float) -> float:
     float
         Correction factor CF. Approximately 1.0 when delta/phi matches
         the value used to develop the Kd charts.
+
+    .. warning:: Simplified linear fit keyed ONLY on delta/phi; the
+        GEC-12 Figure 7-8 chart also varies with phi. See the
+        module-level warning.
 
     References
     ----------
@@ -228,6 +256,12 @@ def alpha_t_factor(Db_ratio: float) -> float:
     -------
     float
         alpha_t factor (0 to 1). Approaches 1.0 for deep piles.
+
+    .. warning:: Simplified fit that IGNORES phi (the GEC-12 Figure 7-13
+        chart varies with phi) and returns the maximum (1.0) for
+        D/b > 5 — this can over-predict tip resistance for high-phi
+        soils, though the Meyerhof limiting q_L cap bounds the error.
+        See the module-level warning.
 
     References
     ----------

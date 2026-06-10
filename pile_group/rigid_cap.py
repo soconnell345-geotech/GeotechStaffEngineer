@@ -9,12 +9,39 @@ Supports vertical and battered piles under 6-DOF loading.
 
 All units are SI: kN, m, radians.
 
+Sign convention (PG-2)
+----------------------
+One explicit right-hand-rule convention is used end-to-end (stiffness
+assembly, solution, and pile-force back-calculation):
+
+* Global axes (x, y, z) are RIGHT-HANDED with **z positive UP**;
+  x and y are the plan coordinates of the pile heads.
+* For engineering convenience the vertical force and displacement are
+  input/reported **positive DOWNWARD**: ``Vz > 0`` is a downward
+  (compressive) load and ``dz > 0`` is settlement. These are the
+  negatives of the right-handed z-components; everything else follows
+  the right-hand rule about the +x, +y, +z(up) axes.
+* Consequences of the convention:
+  - positive ``My`` (right-hand rule about +y) adds COMPRESSION to
+    piles on the +x side;
+  - positive ``Mx`` (right-hand rule about +x) adds TENSION (uplift)
+    to piles on the +y side;
+  - positive ``Mz`` twists the cap counterclockwise in plan when
+    viewed from above (+z looking down).
+* Rigid-cap kinematics for a pile head at (x, y, 0):
+  ``ux_pile = dx - rz*y``, ``uy_pile = dy + rz*x``,
+  ``settlement_pile = dz - rx*y + ry*x``.
+  The same kinematic matrix B is used to assemble K = sum(B^T k B) and
+  to back-calculate pile displacements/forces, so the results are
+  self-consistent (equilibrium of pile forces with the applied loads).
+
 References:
     CPGA User's Guide (ITL-89-4, Hartman et al., 1989)
     USACE EM 1110-2-2906, Chapter 4
 """
 
 import math
+import warnings
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Dict, Any
 
@@ -28,7 +55,8 @@ class GroupLoad:
     """Applied loads on the pile cap.
 
     All loads/moments are at the centroid of the pile group at the
-    cap elevation.
+    cap elevation. See the module docstring for the full sign
+    convention (right-handed axes, z up; Vz positive downward).
 
     Parameters
     ----------
@@ -37,13 +65,18 @@ class GroupLoad:
     Vy : float
         Horizontal force in Y-direction (kN).
     Vz : float
-        Vertical force (kN). Positive downward (compression).
+        Vertical force (kN). Positive DOWNWARD (compression).
     Mx : float
-        Moment about X-axis (kN-m). Positive per right-hand rule.
+        Moment about the +x axis (kN-m), positive per the right-hand
+        rule with z UP: positive Mx puts piles on the +y side in
+        TENSION (uplift).
     My : float
-        Moment about Y-axis (kN-m).
+        Moment about the +y axis (kN-m), right-hand rule: positive My
+        puts piles on the +x side in COMPRESSION.
     Mz : float
-        Torsion about Z-axis (kN-m).
+        Torsion about the +z (up) axis (kN-m), right-hand rule:
+        positive Mz twists the cap counterclockwise in plan viewed
+        from above.
     """
     Vx: float = 0.0
     Vy: float = 0.0
@@ -162,11 +195,17 @@ def analyze_vertical_group_simple(
 ) -> PileGroupResult:
     """Simplified elastic analysis for vertical piles only.
 
-    Uses the standard pile group equation:
-        Pi = Vz/n +/- My*xi/SUM(xi^2) +/- Mx*yi/SUM(yi^2)
+    Uses the standard pile group equation, signed per the module's
+    right-hand-rule convention (z up; Vz/settlement positive down):
 
-    This ignores lateral loads and torsion. Use the general 6-DOF
-    method for battered piles or combined loading.
+        Pi = Vz/n + My*xi/SUM(xi^2) - Mx*yi/SUM(yi^2)
+
+    so positive My compresses the +x side and positive Mx uplifts the
+    +y side — consistent with ``analyze_group_6dof``.
+
+    This method ignores lateral loads (Vx, Vy) and torsion (Mz); a
+    ``UserWarning`` is issued if any of them is nonzero (PG-3). Use the
+    general 6-DOF method for battered piles or combined loading.
 
     Parameters
     ----------
@@ -183,6 +222,18 @@ def analyze_vertical_group_simple(
     if n == 0:
         raise ValueError("At least one pile required")
 
+    ignored = [name for name, val in
+               (("Vx", load.Vx), ("Vy", load.Vy), ("Mz", load.Mz))
+               if abs(val) > 1e-12]
+    if ignored:
+        warnings.warn(
+            f"analyze_vertical_group_simple ignores {', '.join(ignored)}: "
+            "lateral loads and torsion are NOT distributed to the piles by "
+            "this method. Use analyze_group_6dof with lateral_stiffness "
+            "(and/or battered piles) to carry them.",
+            UserWarning,
+        )
+
     xs = np.array([p.x for p in piles])
     ys = np.array([p.y for p in piles])
 
@@ -192,11 +243,12 @@ def analyze_vertical_group_simple(
     # Axial force in each pile
     axial = np.full(n, load.Vz / n)
 
-    # Moment contribution
+    # Moment contribution (right-hand rule, z up: +My compresses +x,
+    # +Mx uplifts +y)
     if sum_x2 > 0:
         axial += load.My * xs / sum_x2
     if sum_y2 > 0:
-        axial += load.Mx * ys / sum_y2
+        axial -= load.Mx * ys / sum_y2
 
     # Results
     pile_forces = []
@@ -255,14 +307,25 @@ def analyze_group_6dof(
     contributions (transformed to global coordinates), solves for
     cap displacements, then back-calculates individual pile axial forces.
 
+    Sign convention (PG-2): see the module docstring — right-handed
+    axes with z UP; Vz and dz positive DOWNWARD; moments per the
+    right-hand rule. The stiffness matrix is assembled as
+    K = sum(B^T k B) with the rigid-cap kinematic matrix B, and pile
+    displacements are back-calculated with the SAME B, so pile forces
+    are in equilibrium with the applied loads under the stated
+    convention (positive My -> compression on the +x side; positive
+    Mx -> tension on the +y side; positive Mz -> counterclockwise
+    twist in plan viewed from above).
+
     The formulation models axial pile springs with eccentricity-based moment
-    resistance plus in-plane lateral springs. The force<->rotation coupling
-    that batter introduces between the translational and moment DOFs (kxz/kyz)
-    is not assembled, so for heavily battered groups under combined load a full
-    CPGA-style coupled analysis is preferred. If the group has no stiffness to
-    resist an applied lateral force or torsion (e.g. vertical piles with no
-    lateral_stiffness), a ``ValueError`` is raised rather than silently
-    dropping that load.
+    resistance plus in-plane lateral springs (including the in-plane kxy
+    coupling and the lateral-torsion coupling that the rigid-cap kinematics
+    produce). The force<->rotation coupling that batter introduces between
+    the translational and moment DOFs (kxz/kyz) is not assembled, so for
+    heavily battered groups under combined load a full CPGA-style coupled
+    analysis is preferred. If the group has no stiffness to resist an applied
+    lateral force or torsion (e.g. vertical piles with no lateral_stiffness),
+    a ``ValueError`` is raised rather than silently dropping that load.
 
     Parameters
     ----------
@@ -284,8 +347,18 @@ def analyze_group_6dof(
         if p.axial_stiffness is None:
             raise ValueError(f"Pile {i} ({p.label}) missing axial_stiffness")
 
-    # Build 6x6 group stiffness matrix
+    # Build 6x6 group stiffness matrix: K = sum(B^T k B), where B maps the
+    # cap DOFs U = (dx, dy, dz, rx, ry, rz) to the pile-head displacement
+    # components (ux, uy, settlement) under the module sign convention
+    # (right-handed, z up; dz/settlement positive DOWN):
+    #   ux_p = dx - rz*y
+    #   uy_p = dy + rz*x
+    #   s_p  = dz - rx*y + ry*x
+    # The SAME B is used for the pile-force back-calculation below, so the
+    # assembly and back-calc are self-consistent (PG-2) and the pile forces
+    # equilibrate the applied loads.
     K_group = np.zeros((6, 6))
+    B_matrices = []
 
     for pile in piles:
         ka = pile.axial_stiffness
@@ -293,53 +366,38 @@ def analyze_group_6dof(
 
         lx, ly, lz = pile.direction_cosines()
 
-        # Pile stiffness in local coordinates: [axial, lateral_x, lateral_y]
-        # Transform to global using direction cosines
-        # Simplified: axial along pile axis, lateral perpendicular
-        # For vertical piles: axial = kz, lateral = kx, ky
-        # For battered: transform
-
-        # Global stiffness contributions
+        # Pile-head stiffness in global (ux, uy, settlement) components:
+        # axial spring ka along the pile axis + isotropic lateral spring kl
+        # perpendicular to it.
         kxx = ka * lx**2 + kl * (1 - lx**2)
         kyy = ka * ly**2 + kl * (1 - ly**2)
         kzz = ka * lz**2 + kl * (1 - lz**2)
         kxy = (ka - kl) * lx * ly
-        kxz = (ka - kl) * lx * lz
-        kyz = (ka - kl) * ly * lz
+
+        # NOTE (PG-1 limitation, retained): the force<->rotation coupling
+        # that batter introduces between the translational DOFs and the
+        # moment DOFs (the kxz/kyz terms of the projected pile stiffness)
+        # is NOT assembled -- this formulation captures the
+        # axial-eccentricity moment resistance, in-plane translation
+        # (incl. kxy), and the rigid-cap lateral-torsion coupling. For
+        # heavily battered groups under combined load, a full CPGA-style
+        # coupled formulation is required.
+        k3 = np.array([
+            [kxx, kxy, 0.0],
+            [kxy, kyy, 0.0],
+            [0.0, 0.0, kzz],
+        ])
 
         x = pile.x
         y = pile.y
+        B = np.array([
+            [1.0, 0.0, 0.0, 0.0, 0.0, -y],
+            [0.0, 1.0, 0.0, 0.0, 0.0, x],
+            [0.0, 0.0, 1.0, -y, x, 0.0],
+        ])
+        B_matrices.append(B)
 
-        # Direct translational stiffness terms
-        K_group[0, 0] += kxx  # Vx -> dx
-        K_group[1, 1] += kyy  # Vy -> dy
-        K_group[2, 2] += kzz  # Vz -> dz
-
-        # In-plane translational coupling from skew-battered piles (this term
-        # was computed but never assembled -- PG-1).
-        K_group[0, 1] += kxy
-        K_group[1, 0] += kxy
-
-        # NOTE (PG-1 limitation): the force<->rotation coupling that batter
-        # introduces between the translational DOFs and the moment DOFs (the
-        # kxz/kyz terms) is NOT assembled here -- this formulation captures the
-        # axial-eccentricity moment resistance plus in-plane translation. For
-        # heavily battered groups under combined load, a full CPGA-style coupled
-        # formulation is required. (These terms were previously written as
-        # "kxz * 0" / "kyz * 0", i.e. silently dropped.)
-
-        # Moment stiffness from axial pile eccentricity
-        K_group[3, 3] += kzz * y**2  # Mx -> rx
-        K_group[4, 4] += kzz * x**2  # My -> ry
-        K_group[5, 5] += kxx * y**2 + kyy * x**2  # Mz -> rz
-
-        # Vertical-moment cross-coupling (axial eccentricity)
-        K_group[2, 3] += kzz * y  # Vz-rx
-        K_group[3, 2] += kzz * y
-        K_group[2, 4] += kzz * x  # Vz-ry
-        K_group[4, 2] += kzz * x
-        K_group[3, 4] += kzz * x * y  # rx-ry
-        K_group[4, 3] += kzz * x * y
+        K_group += B.T @ k3 @ B
 
     # Load vector
     F = np.array([load.Vx, load.Vy, load.Vz, load.Mx, load.My, load.Mz])
@@ -378,7 +436,8 @@ def analyze_group_6dof(
 
     dx, dy, dz, rx, ry, rz = U
 
-    # Back-calculate pile forces
+    # Back-calculate pile forces using the SAME kinematic matrix B as the
+    # stiffness assembly (PG-2: self-consistent end-to-end).
     pile_forces = []
     max_comp = 0.0
     max_tens = 0.0
@@ -388,17 +447,15 @@ def analyze_group_6dof(
         ka = pile.axial_stiffness
         lx, ly, lz = pile.direction_cosines()
 
-        # Pile head displacement along pile axis
-        # Local displacement = dot(global_disp_at_pile, pile_axis)
-        # Global displacement at pile location:
-        dx_pile = dx - ry * 0 + rz * pile.y  # simplified
-        dy_pile = dy + rx * 0 - rz * pile.x
-        dz_pile = dz + rx * pile.y + ry * pile.x
+        # Pile head displacement components (ux, uy, settlement) from the
+        # rigid-cap kinematics under the module sign convention.
+        dx_pile, dy_pile, dz_pile = B_matrices[i] @ U
 
-        # Axial displacement along pile
+        # Axial displacement along the pile axis (head toward tip; lz is
+        # the downward component, conjugate to settlement-positive dz_pile)
         d_axial = dx_pile * lx + dy_pile * ly + dz_pile * lz
 
-        # Axial force
+        # Axial force (positive = compression)
         axial_force = ka * d_axial
 
         compression = axial_force if axial_force > 0 else 0

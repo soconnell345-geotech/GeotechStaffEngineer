@@ -18,7 +18,7 @@ References:
 """
 
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import List, Optional
 
 import numpy as np
@@ -146,7 +146,10 @@ class DrillShaftAnalysis:
                 method_used = f"alpha={alpha:.3f}"
 
             elif layer.soil_type == "cohesionless":
-                beta = beta_cohesionless(z_center)
+                # N60 < 15 reduces beta (O'Neill-Reese); N60 = 0 means
+                # "not measured" -> no reduction (assumes N60 >= 15).
+                N60_side = layer.N60 if layer.N60 > 0 else None
+                beta = beta_cohesionless(z_center, N60=N60_side)
                 Qs_layer = side_resistance_cohesionless(
                     sigma_v, beta, shaft.perimeter, effective_thickness
                 )
@@ -177,16 +180,21 @@ class DrillShaftAnalysis:
                 "sigma_v_kPa": round(sigma_v, 1),
             })
 
-        # End bearing
+        # End bearing. Large-base reductions are governed by the bearing
+        # surface, so use the bell diameter when the shaft is belled.
         tip_layer = self.soil.layer_at_depth(L - 0.01)
         sigma_v_tip = self.soil.effective_stress_at_depth(L)
         L_over_D = L / D
+        base_D = shaft.bell_diameter if shaft.bell_diameter is not None else D
 
         if tip_layer.soil_type == "cohesive":
-            Qt = end_bearing_cohesive(tip_layer.cu, shaft.tip_area, L_over_D)
+            Qt = end_bearing_cohesive(
+                tip_layer.cu, shaft.tip_area, L_over_D,
+                base_diameter=base_D, shaft_length=L,
+            )
         elif tip_layer.soil_type == "cohesionless":
             N60 = tip_layer.N60 if tip_layer.N60 > 0 else 15.0
-            Qt = end_bearing_cohesionless(N60, shaft.tip_area, D)
+            Qt = end_bearing_cohesionless(N60, shaft.tip_area, base_D)
         else:  # rock
             Qt = end_bearing_rock(tip_layer.qu, shaft.tip_area, tip_layer.RQD)
 
@@ -234,11 +242,16 @@ class DrillShaftAnalysis:
         depths = np.linspace(depth_min, depth_max, n_points)
         results = []
 
-        original_length = self.shaft.length
+        # Use a copy of the shaft per trial depth rather than temporarily
+        # mutating the shared shaft.length (re-entrant / thread-safe).
         for d in depths:
-            self.shaft.length = float(d)
             try:
-                r = self.compute()
+                trial_shaft = replace(self.shaft, length=float(d))
+                trial = DrillShaftAnalysis(
+                    shaft=trial_shaft, soil=self.soil,
+                    factor_of_safety=self.factor_of_safety,
+                )
+                r = trial.compute()
                 results.append({
                     "depth_m": round(d, 2),
                     "Q_ultimate_kN": round(r.Q_ultimate, 1),
@@ -247,5 +260,4 @@ class DrillShaftAnalysis:
                 })
             except Exception:
                 pass
-        self.shaft.length = original_length
         return results

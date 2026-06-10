@@ -32,6 +32,7 @@ import warnings
 from dataclasses import dataclass
 
 import numpy as np
+from scipy.linalg import solve_banded
 
 
 @dataclass
@@ -41,7 +42,8 @@ class SolverResult:
     Attributes
     ----------
     z : numpy.ndarray
-        Depth array (m), length n+1.
+        Depth array (m), length n+1. Depth is measured from the ground
+        surface: nodes above grade (free/stickup length) have z < 0.
     y : numpy.ndarray
         Lateral deflection (m).
     slope : numpy.ndarray
@@ -83,50 +85,90 @@ def solve_lateral_pile(
     tolerance: float = 1e-5,
     max_iterations: int = 100,
     pile_diameter: float = 1.0,
+    stickup: float = 0.0,
 ) -> SolverResult:
     """Solve the laterally loaded pile problem using finite differences.
 
     Parameters
     ----------
     pile_length : float
-        Embedded pile length (m).
+        Embedded pile length below the ground surface (m).
     EI_values : numpy.ndarray
-        Flexural rigidity at each node (kN-m^2). Length n+1.
+        Flexural rigidity at each node (kN-m^2). Length n+1 (spanning the
+        full structural length, stickup + embedment, top to tip), or
+        length 1 for a uniform pile.
     py_functions : list of callables
         List of functions, one per node. Each takes (y, z, b) and returns p.
-        Length n+1.
+        Length n+1. Functions at nodes above grade (z < 0) are ignored —
+        zero soil resistance is enforced over the stickup length.
     Vt : float
         Lateral load at pile head (kN). Positive in direction of deflection.
+        Applied at the TOP of the stickup when stickup > 0.
     Mt : float
-        Applied moment at pile head (kN-m).
+        Applied moment at pile head (kN-m). Applied at the top of the stickup.
     Q : float
         Axial load on pile (kN). Positive in compression.
     head_condition : str
         'free': specified shear and moment (default).
         'fixed': specified shear and zero rotation (fixed head).
         'partial': specified shear and rotational stiffness.
+        Boundary conditions are applied at the top of the stickup.
     rotational_stiffness : float
         Rotational stiffness at pile head (kN-m/rad). Only used when
         head_condition='partial'.
     n_elements : int
-        Number of pile segments. Default 100.
+        Number of pile segments over the total (stickup + embedded) length.
+        Default 100.
     tolerance : float
         Convergence tolerance on deflection. Default 1e-5.
     max_iterations : int
         Maximum number of iterations. Default 100.
     pile_diameter : float
         Pile diameter (m). Passed to p-y functions.
+    stickup : float
+        Above-ground free (unsupported) length of pile (m). Default 0
+        (head load applied at the ground surface — behavior identical to
+        the pre-stickup solver). When > 0, the finite difference mesh is
+        extended above z=0 with zero soil resistance (p = 0) over the
+        stickup, and the head load / boundary conditions are applied at
+        the top of the stickup. For a free-headed pile this is statically
+        equivalent (for the embedded response) to applying
+        M = Mt + Vt*stickup at grade, provided Q = 0 (with Q != 0 a
+        P-delta moment also develops over the stickup, which this mesh
+        captures and the equivalent-load shortcut does not).
 
     Returns
     -------
     SolverResult
         Solution containing deflection, moment, shear, slope, and soil reaction.
+        The depth array spans [-stickup, pile_length].
     """
+    if stickup < 0:
+        raise ValueError(f"stickup must be >= 0, got {stickup}")
+
     n = n_elements
-    h = pile_length / n
+    total_length = pile_length + stickup
+    h = total_length / n
     n_nodes = n + 1
 
-    z = np.linspace(0, pile_length, n_nodes)
+    z_top = -stickup if stickup > 0 else 0.0
+    z = np.linspace(z_top, pile_length, n_nodes)
+
+    # Nodes at or below the ground surface (small tolerance for the node
+    # that lands exactly at grade in floating point).
+    grade_tol = 1e-9 * max(total_length, 1.0)
+    embedded = z >= -grade_tol
+
+    # With a stickup the soil stiffness is discontinuous at z = 0 (no soil
+    # above, Es below). For a node that lands exactly ON the discontinuity,
+    # collocating with the full one-sided Es introduces an O(h) error in
+    # the embedded response; the standard treatment is the average of the
+    # two-sided limits, i.e. Es/2 at the grade node. (Not applied when
+    # stickup = 0, where the grade node is the loaded boundary — preserves
+    # the original solver behavior exactly.)
+    soil_weight = np.ones(n_nodes)
+    if stickup > 0:
+        soil_weight[np.abs(z) <= grade_tol] = 0.5
 
     # Ensure EI_values has correct length
     if len(EI_values) == 1:
@@ -134,11 +176,13 @@ def solve_lateral_pile(
     elif len(EI_values) == n_nodes:
         EI = EI_values.copy()
     else:
-        EI = np.interp(z, np.linspace(0, pile_length, len(EI_values)), EI_values)
+        EI = np.interp(z, np.linspace(z_top, pile_length, len(EI_values)), EI_values)
 
-    # Initial guess for Es (soil secant modulus)
+    # Initial guess for Es (soil secant modulus); zero above grade
     Es = np.zeros(n_nodes)
     for i in range(n_nodes):
+        if not embedded[i]:
+            continue
         small_y = 0.001
         try:
             p_init = py_functions[i](small_y, z[i], pile_diameter)
@@ -158,15 +202,18 @@ def solve_lateral_pile(
 
         # Assemble and solve the full system
         Y_full = _assemble_and_solve(
-            n, h, EI, Es, Q, Vt, Mt, head_condition, rotational_stiffness
+            n, h, EI, Es * soil_weight, Q, Vt, Mt, head_condition,
+            rotational_stiffness
         )
 
         # Extract real node deflections: Y[2] through Y[n+2]
         y_new = Y_full[2:n + 3]
 
-        # Update Es from p-y curves
+        # Update Es from p-y curves (above-grade nodes keep Es = 0)
         Es_new = np.zeros(n_nodes)
         for i in range(n_nodes):
+            if not embedded[i]:
+                continue
             if abs(y_new[i]) > 1e-12:
                 p_val = py_functions[i](y_new[i], z[i], pile_diameter)
                 Es_new[i] = abs(p_val / y_new[i])
@@ -214,9 +261,10 @@ def solve_lateral_pile(
     for i in range(1, n_nodes - 1):
         shear[i] = (moment[i + 1] - moment[i - 1]) / (2.0 * h) + Q * slope[i]
 
-    # Soil reaction from p-y curves
+    # Soil reaction from p-y curves (zero above grade)
     soil_reaction = np.array([
-        py_functions[i](y[i], z[i], pile_diameter) for i in range(n_nodes)
+        py_functions[i](y[i], z[i], pile_diameter) if embedded[i] else 0.0
+        for i in range(n_nodes)
     ])
 
     if not converged:
@@ -244,7 +292,7 @@ def _assemble_and_solve(
     head_condition: str,
     rotational_stiffness: float,
 ) -> np.ndarray:
-    """Assemble the full (n+5) x (n+5) system and solve.
+    """Assemble the full (n+5) system in banded form and solve.
 
     Uses n+5 unknowns: 2 fictitious nodes above the pile head (y[-2], y[-1]),
     n+1 real nodes (y[0]..y[n]), and 2 fictitious nodes below the tip
@@ -257,85 +305,125 @@ def _assemble_and_solve(
     Rows 2..n+2: equilibrium equations at real nodes
     Rows n+3,n+4: tip boundary conditions
 
+    The interior equilibrium rows are pentadiagonal (|i-j| <= 2); the head
+    shear row (row 0, columns 0..4) and the tip shear row (row n+4,
+    columns n..n+4) widen the band to |i-j| <= 4. The system is therefore
+    solved with ``scipy.linalg.solve_banded`` with (l, u) = (4, 4) —
+    O(n) instead of the previous dense O(n^3) ``np.linalg.solve`` — which
+    matters for the iterative p-y / cracked-EI loops and capacity sweeps.
+
     Returns
     -------
     numpy.ndarray
         Full solution array Y of length n+5.
+    """
+    ab, F = _assemble_banded(
+        n, h, EI, Es, Q, Vt, Mt, head_condition, rotational_stiffness
+    )
+
+    # --- Solve (banded LAPACK gbsv) ---
+    try:
+        Y = solve_banded((_BAND, _BAND), ab, F)
+    except np.linalg.LinAlgError:
+        warnings.warn("Singular matrix in solver. Returning zero deflections.")
+        Y = np.zeros(n + 5)
+
+    return Y
+
+
+# Half-bandwidth of the assembled system (set by the head/tip shear
+# boundary-condition rows; interior rows are pentadiagonal, |i-j| <= 2).
+_BAND = 4
+
+
+def _assemble_banded(
+    n: int,
+    h: float,
+    EI: np.ndarray,
+    Es: np.ndarray,
+    Q: float,
+    Vt: float,
+    Mt: float,
+    head_condition: str,
+    rotational_stiffness: float,
+) -> tuple:
+    """Assemble the (n+5) system in LAPACK banded storage.
+
+    Returns (ab, F) where ``ab`` is the (2*_BAND+1, n+5) diagonal-ordered
+    band matrix (``ab[_BAND + i - j, j] = K[i, j]``) suitable for
+    ``scipy.linalg.solve_banded``, and ``F`` is the right-hand side.
+    The matrix entries are identical to the previous dense assembly.
     """
     N = n + 5
     h2 = h * h
     h3 = h2 * h
     h4 = h2 * h2
 
-    K = np.zeros((N, N))
+    ab = np.zeros((2 * _BAND + 1, N))
     F = np.zeros(N)
+
+    def add(i, j, val):
+        ab[_BAND + i - j, j] += val
 
     # --- Equilibrium equations for real nodes (rows 2 to n+2) ---
     for i in range(n + 1):
         j = i + 2  # index in the full Y array
-        K[j, j - 2] += EI[i] / h4
-        K[j, j - 1] += -4.0 * EI[i] / h4 + Q / h2
-        K[j, j]     += 6.0 * EI[i] / h4 - 2.0 * Q / h2 + Es[i]
-        K[j, j + 1] += -4.0 * EI[i] / h4 + Q / h2
-        K[j, j + 2] += EI[i] / h4
+        add(j, j - 2, EI[i] / h4)
+        add(j, j - 1, -4.0 * EI[i] / h4 + Q / h2)
+        add(j, j,     6.0 * EI[i] / h4 - 2.0 * Q / h2 + Es[i])
+        add(j, j + 1, -4.0 * EI[i] / h4 + Q / h2)
+        add(j, j + 2, EI[i] / h4)
 
     # --- Head boundary conditions ---
 
     # Row 0: Shear at pile head = Vt
     # V(0) = EI[0]*(Y[4]-2Y[3]+2Y[1]-Y[0])/(2h^3) + Q*(Y[3]-Y[1])/(2h) = Vt
-    K[0, 0] = -EI[0] / (2.0 * h3)
-    K[0, 1] = EI[0] / h3 - Q / (2.0 * h)
-    K[0, 3] = -EI[0] / h3 + Q / (2.0 * h)
-    K[0, 4] = EI[0] / (2.0 * h3)
+    add(0, 0, -EI[0] / (2.0 * h3))
+    add(0, 1, EI[0] / h3 - Q / (2.0 * h))
+    add(0, 3, -EI[0] / h3 + Q / (2.0 * h))
+    add(0, 4, EI[0] / (2.0 * h3))
     F[0] = Vt
 
     # Row 1: Depends on head condition
     if head_condition == 'free':
         # Moment at head = Mt:  EI[0]*(Y[1]-2Y[2]+Y[3])/h^2 = Mt
-        K[1, 1] = EI[0] / h2
-        K[1, 2] = -2.0 * EI[0] / h2
-        K[1, 3] = EI[0] / h2
+        add(1, 1, EI[0] / h2)
+        add(1, 2, -2.0 * EI[0] / h2)
+        add(1, 3, EI[0] / h2)
         F[1] = Mt
     elif head_condition == 'fixed':
         # Slope = 0:  (Y[3]-Y[1])/(2h) = 0
-        K[1, 1] = -1.0
-        K[1, 3] = 1.0
+        add(1, 1, -1.0)
+        add(1, 3, 1.0)
         F[1] = 0.0
     elif head_condition == 'partial':
         # M = -Kr * slope
         # EI[0]*(Y[1]-2Y[2]+Y[3])/h^2 = -Kr*(Y[3]-Y[1])/(2h)
         # => EI[0]*(Y[1]-2Y[2]+Y[3])/h^2 + Kr*(Y[3]-Y[1])/(2h) = 0
         Kr = rotational_stiffness
-        K[1, 1] = EI[0] / h2 - Kr / (2.0 * h)
-        K[1, 2] = -2.0 * EI[0] / h2
-        K[1, 3] = EI[0] / h2 + Kr / (2.0 * h)
+        add(1, 1, EI[0] / h2 - Kr / (2.0 * h))
+        add(1, 2, -2.0 * EI[0] / h2)
+        add(1, 3, EI[0] / h2 + Kr / (2.0 * h))
         F[1] = 0.0
 
     # --- Tip boundary conditions ---
 
     # Row n+3: Moment at tip = 0
     # EI[n]*(Y[n+1]-2Y[n+2]+Y[n+3])/h^2 = 0
-    K[n + 3, n + 1] = EI[n] / h2
-    K[n + 3, n + 2] = -2.0 * EI[n] / h2
-    K[n + 3, n + 3] = EI[n] / h2
+    add(n + 3, n + 1, EI[n] / h2)
+    add(n + 3, n + 2, -2.0 * EI[n] / h2)
+    add(n + 3, n + 3, EI[n] / h2)
     F[n + 3] = 0.0
 
     # Row n+4: Shear at tip = 0
     # EI[n]*(Y[n+4]-2Y[n+3]+2Y[n+1]-Y[n])/(2h^3) + Q*(Y[n+3]-Y[n+1])/(2h) = 0
-    K[n + 4, n]     = -EI[n] / (2.0 * h3)
-    K[n + 4, n + 1] = EI[n] / h3 - Q / (2.0 * h)
-    K[n + 4, n + 3] = -EI[n] / h3 + Q / (2.0 * h)
-    K[n + 4, n + 4] = EI[n] / (2.0 * h3)
+    add(n + 4, n,     -EI[n] / (2.0 * h3))
+    add(n + 4, n + 1, EI[n] / h3 - Q / (2.0 * h))
+    add(n + 4, n + 3, -EI[n] / h3 + Q / (2.0 * h))
+    add(n + 4, n + 4, EI[n] / (2.0 * h3))
     F[n + 4] = 0.0
 
-    # --- Solve ---
-    try:
-        Y = np.linalg.solve(K, F)
-    except np.linalg.LinAlgError:
-        warnings.warn("Singular matrix in solver. Returning zero deflections.")
-        Y = np.zeros(N)
-
-    return Y
+    return ab, F
 
 
 def hetenyi_solution(

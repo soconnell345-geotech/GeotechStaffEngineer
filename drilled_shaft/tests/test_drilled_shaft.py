@@ -256,14 +256,17 @@ class TestRockSocket:
 # ================================================================
 class TestEndBearing:
     def test_Nc_short_shaft(self):
-        """Nc = 6 + L/D for L/D < 3."""
-        assert Nc_drilled_shaft(1.0) == 7.0
-        assert Nc_drilled_shaft(2.0) == 8.0
+        """O'Neill-Reese: Nc = 6*(1 + 0.2*L/D) for L/D < 2.5 (DS-2)."""
+        assert Nc_drilled_shaft(0.0) == pytest.approx(6.0)
+        assert Nc_drilled_shaft(1.0) == pytest.approx(7.2)
+        assert Nc_drilled_shaft(2.0) == pytest.approx(8.4)
 
     def test_Nc_long_shaft(self):
-        """Nc = 9 for L/D >= 3."""
-        assert Nc_drilled_shaft(3.0) == 9.0
-        assert Nc_drilled_shaft(10.0) == 9.0
+        """Nc caps at 9 from L/D = 2.5 (O'Neill-Reese), not 3 (DS-2)."""
+        assert Nc_drilled_shaft(2.5) == pytest.approx(9.0)
+        assert Nc_drilled_shaft(2.75) == pytest.approx(9.0)  # 2.5-3 band
+        assert Nc_drilled_shaft(3.0) == pytest.approx(9.0)
+        assert Nc_drilled_shaft(10.0) == pytest.approx(9.0)
 
     def test_end_bearing_clay(self):
         cu = 100.0
@@ -404,6 +407,167 @@ class TestFullAnalysis:
         analysis = DrillShaftAnalysis(shaft=shaft, soil=soil, factor_of_safety=3.0)
         result = analysis.compute()
         assert abs(result.Q_allowable - result.Q_ultimate / 3.0) < 0.1
+
+
+# ================================================================
+# v5.1 QC regression tests (DS-1, DS-3, DS-4, DS-5)
+# ================================================================
+class TestCohesiveEndBearingCapAndLargeBase:
+    """DS-1: clay end bearing capped at 80 ksf (3830 kPa) and reduced
+    for base diameters > 1.90 m (O'Neill & Reese 1999 / AASHTO)."""
+
+    def test_qb_cap_high_cu(self):
+        """cu = 600 kPa, Nc = 9 -> Nc*cu = 5400 > 3830: qb is capped."""
+        area = math.pi * 1.0**2 / 4
+        Qt = end_bearing_cohesive(600.0, area, L_over_D=10)
+        assert Qt == pytest.approx(3830.0 * area, rel=1e-9)
+
+    def test_qb_below_cap_unchanged(self):
+        """cu = 100 kPa -> Nc*cu = 900 < 3830: no cap, behavior unchanged."""
+        area = math.pi * 1.0**2 / 4
+        Qt = end_bearing_cohesive(100.0, area, L_over_D=10)
+        assert Qt == pytest.approx(9.0 * 100.0 * area, rel=1e-9)
+
+    def test_large_base_reduction_hand_calc(self):
+        """Bb = 2.5 m > 1.90 m: Fr per O'Neill-Reese, hand-checked."""
+        cu, L, Bb = 200.0, 20.0, 2.5
+        area = math.pi * Bb**2 / 4
+        # a = min(0.0071 + 0.0021*(20/2.5), 0.015) = 0.015
+        a = min(0.0071 + 0.0021 * (L / Bb), 0.015)
+        assert a == 0.015
+        # b = 0.45*sqrt(cu_ksf), cu_ksf = 200/47.8803
+        b = 0.45 * math.sqrt(200.0 / 47.8803)
+        b = min(max(b, 0.5), 1.5)
+        Fr = min(2.5 / (a * Bb * 39.3701 + 2.5 * b), 1.0)
+        assert Fr < 1.0
+        Qt = end_bearing_cohesive(cu, area, L_over_D=10,
+                                  base_diameter=Bb, shaft_length=L)
+        assert Qt == pytest.approx(9.0 * cu * Fr * area, rel=1e-6)
+
+    def test_no_reduction_below_190(self):
+        """Base diameter <= 1.90 m: no large-base reduction."""
+        area = math.pi * 1.5**2 / 4
+        Qt_base = end_bearing_cohesive(150.0, area, L_over_D=10,
+                                       base_diameter=1.5, shaft_length=15.0)
+        Qt_none = end_bearing_cohesive(150.0, area, L_over_D=10)
+        assert Qt_base == pytest.approx(Qt_none, rel=1e-12)
+
+    def test_full_analysis_high_cu_large_bell(self):
+        """End-to-end: stiff clay (cu high enough to hit the cap) with a
+        large bell -> tip equals capped qb x Fr x bell area."""
+        Bb, L = 2.5, 15.0
+        shaft = DrillShaft(diameter=1.2, length=L, bell_diameter=Bb)
+        soil = ShaftSoilProfile(layers=[
+            ShaftSoilLayer(L, "cohesive", 19.0, cu=500.0),
+        ])
+        result = DrillShaftAnalysis(shaft=shaft, soil=soil).compute()
+        L_over_D = L / 1.2  # Nc uses shaft diameter; > 2.5 -> Nc = 9
+        qb = min(9.0 * 500.0, 3830.0)
+        a = min(0.0071 + 0.0021 * (L / Bb), 0.015)
+        b = min(max(0.45 * math.sqrt(500.0 / 47.8803), 0.5), 1.5)
+        Fr = min(2.5 / (a * Bb * 39.3701 + 2.5 * b), 1.0)
+        expected_Qt = qb * Fr * shaft.tip_area
+        assert result.Q_tip == pytest.approx(expected_Qt, rel=1e-6)
+
+
+class TestBelledBaseDiameterCohesionless:
+    """DS-3: the 1.27/D large-diameter tip reduction in sand uses the
+    bell (base) diameter, not the shaft diameter."""
+
+    def test_full_analysis_bell_governs_reduction(self):
+        """Shaft D = 1.0 (no reduction alone), bell 2.0 m -> 1.27/2.0
+        reduction applied to the bell-area tip."""
+        shaft = DrillShaft(diameter=1.0, length=15.0, bell_diameter=2.0)
+        soil = ShaftSoilProfile(layers=[
+            ShaftSoilLayer(15, "cohesionless", 18.5, phi=33, N60=30),
+        ])
+        result = DrillShaftAnalysis(shaft=shaft, soil=soil).compute()
+        expected_Qt = end_bearing_cohesionless(30, shaft.tip_area,
+                                               diameter=2.0)
+        assert result.Q_tip == pytest.approx(expected_Qt, rel=1e-9)
+        # And the reduction actually engaged (bell > 1.27 m)
+        unreduced = 57.5 * 30 * shaft.tip_area
+        assert result.Q_tip == pytest.approx(unreduced * 1.27 / 2.0,
+                                             rel=1e-9)
+
+    def test_unbelled_shaft_unchanged(self):
+        """No bell: shaft diameter still governs (regression)."""
+        shaft = DrillShaft(diameter=1.5, length=15.0)
+        soil = ShaftSoilProfile(layers=[
+            ShaftSoilLayer(15, "cohesionless", 18.5, phi=33, N60=30),
+        ])
+        result = DrillShaftAnalysis(shaft=shaft, soil=soil).compute()
+        expected_Qt = end_bearing_cohesionless(30, shaft.tip_area,
+                                               diameter=1.5)
+        assert result.Q_tip == pytest.approx(expected_Qt, rel=1e-9)
+
+
+class TestBetaN60Reduction:
+    """DS-4: O'Neill-Reese beta reduced by N60/15 for loose sand
+    (N60 < 15); no reduction when N60 unmeasured or >= 15."""
+
+    def test_beta_reduced_proportionally(self):
+        z = 5.0
+        base = beta_cohesionless(z)
+        assert beta_cohesionless(z, N60=10) == pytest.approx(
+            (10.0 / 15.0) * base, rel=1e-12)
+
+    def test_no_reduction_at_or_above_15(self):
+        z = 5.0
+        base = beta_cohesionless(z)
+        assert beta_cohesionless(z, N60=15) == pytest.approx(base)
+        assert beta_cohesionless(z, N60=40) == pytest.approx(base)
+
+    def test_none_means_no_reduction(self):
+        z = 5.0
+        assert beta_cohesionless(z, N60=None) == pytest.approx(
+            beta_cohesionless(z))
+
+    def test_full_analysis_loose_sand_side(self):
+        """Loose sand (N60 = 9) gives 9/15 of the unmeasured-N60 side
+        resistance; clay tip layer isolates the side-resistance effect."""
+        def make(n60):
+            shaft = DrillShaft(diameter=1.0, length=15.0)
+            soil = ShaftSoilProfile(layers=[
+                ShaftSoilLayer(10, "cohesionless", 18.5, phi=30, N60=n60),
+                ShaftSoilLayer(5, "cohesive", 17.0, cu=80),
+            ])
+            return DrillShaftAnalysis(shaft=shaft, soil=soil).compute()
+
+        r_loose = make(9)
+        r_unmeasured = make(0)  # N60=0 -> treated as not measured
+        assert r_loose.Q_side_sand == pytest.approx(
+            (9.0 / 15.0) * r_unmeasured.Q_side_sand, rel=1e-9)
+        # Tip (clay) unaffected
+        assert r_loose.Q_tip == pytest.approx(r_unmeasured.Q_tip, rel=1e-12)
+
+
+class TestCapacityVsDepthReentrant:
+    """DS-5: capacity_vs_depth must not mutate the shared shaft.length
+    and must return the same values as independent per-depth analyses."""
+
+    def test_no_mutation_and_identical_results(self):
+        shaft = DrillShaft(diameter=1.0, length=20.0)
+        soil = ShaftSoilProfile(layers=[
+            ShaftSoilLayer(5, "cohesionless", 18.0, phi=32, N60=20),
+            ShaftSoilLayer(15, "cohesive", 17.0, cu=80),
+        ])
+        analysis = DrillShaftAnalysis(shaft=shaft, soil=soil,
+                                      factor_of_safety=2.5)
+        cvd = analysis.capacity_vs_depth(depth_min=5, depth_max=20,
+                                         n_points=4)
+        assert shaft.length == 20.0  # not mutated
+        assert len(cvd) == 4
+        for row in cvd:
+            trial_shaft = DrillShaft(diameter=1.0, length=row["depth_m"])
+            fresh = DrillShaftAnalysis(shaft=trial_shaft, soil=soil,
+                                       factor_of_safety=2.5).compute()
+            assert row["Q_ultimate_kN"] == pytest.approx(
+                round(fresh.Q_ultimate, 1))
+            assert row["Q_skin_kN"] == pytest.approx(
+                round(fresh.Q_skin, 1))
+            assert row["Q_tip_kN"] == pytest.approx(
+                round(fresh.Q_tip, 1))
 
 
 # ================================================================
