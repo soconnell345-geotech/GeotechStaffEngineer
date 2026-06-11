@@ -201,14 +201,37 @@ Ex5 drawdown validation optional; T6 seepage not planned.
 ## PROGRESS
 
 - [x] Phase 0: theory + benchmarks gathered (GL99 PDF verified), plan written.
-- [ ] Phase 1: T6 elements + mesh conversion + elastic pipeline + tests.
-- [ ] Phase 2: 3D principal MC return (vectorized) + per-GP solver core.
-- [ ] Phase 3: SRM robustness.
-- [ ] Phase 4: NR hardening.
+- [x] Phase 1: T6 elements + mesh conversion + elastic pipeline + tests (76dc5d3).
+- [x] Phase 2: 3D principal MC return (vectorized) + per-GP solver core (36048e4).
+- [x] Phase 3: SRM robustness: GL99 failure detection (non-convergence +
+      dimensionless-displacement blowup), shared factorization across all SRF
+      trials, bracket+bisect to tol 0.01, srf_history/srf_curve/fos_basis
+      outputs, srm_field c/phi/c_phi, psi_red=min(psi,phi_red), HS coverage,
+      element_type through analyze_slope_srm (T6 default), h_ref for
+      GL99-comparable curves, opt-in stall_window (default OFF — it can
+      misclassify slow convergence as failure). 19 tests.
+- [ ] Phase 4: NR hardening (mechanisms landed in ph2 core: reform_interval,
+      dual convergence, cutback, line search — needs dedicated tests).
 - [ ] Phase 5: validation suite + VALIDATION.md.
 - [ ] Phase 6: performance.
 - [ ] Phase 7: adapter + docs.
 
-NEXT ACTION: implement Phase 1 (T6): quadrature + t6_* element functions in
-elements.py, convert_to_t6 in mesh.py, assembly support, tests in
-tests/test_t6.py.
+Phase 3 evidence (kept for the validation phase):
+- GL99 Ex1 (D=1 geometry, depth=0.5 m base sliver): T6 FOS 1.344 (32x12) /
+  1.369 (48x16) / 1.456 (64x20) vs published FE 1.4, B&M 1.380. tol=0.02.
+- Prandtl footing (weightless, phi=0): T6 3-pt Nc~5.10, 6-pt ~5.25 vs exact
+  5.14; CST locks completely (carried Nc>9 without collapse). 40x20 mesh.
+- D=1.5 foundation domain raises apparent FOS to ~1.87 (GL99 Ex2 says it
+  should stay 1.4): suspected mesh-quality artifact of the column-Delaunay
+  slope mesher near the toe + coarse vertical resolution; investigate in
+  Phase 5 before tabulating.
+- CST on thin-base (depth 0.5 m) meshes fails to converge even at SRF 0.5
+  (sliver triangles, aspect ~30:1, from fixed ny over thin columns) —
+  PRE-EXISTING mesher weakness, documented.
+- delta_max is dominated by gravity settlement of the foundation when
+  D>1, so dimensionless-displacement curves are only comparable to GL99
+  with their D (their delta includes settlement of a D=1 mesh).
+
+NEXT ACTION: Phase 4 — tests for the tangent path (tangent-vs-elastic
+agreement on a plastic problem, cutback on divergence, line search,
+reform_interval), then Phase 5 validation suite per the evidence above.

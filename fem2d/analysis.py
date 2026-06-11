@@ -15,7 +15,7 @@ from typing import Any, List, Optional
 
 from fem2d.mesh import (
     generate_rect_mesh, generate_slope_mesh, detect_boundary_nodes,
-    assign_layers_by_elevation,
+    assign_layers_by_elevation, convert_to_t6, t6_boundary_edges,
 )
 from fem2d.materials import elastic_D
 from fem2d.solver import solve_elastic, solve_nonlinear
@@ -23,7 +23,8 @@ from fem2d.srm import strength_reduction
 from fem2d.results import FEMResult, PhaseResult, StagedConstructionResult
 
 
-def analyze_gravity(width, depth, gamma, E, nu, nx=20, ny=10, t=1.0):
+def analyze_gravity(width, depth, gamma, E, nu, nx=20, ny=10, t=1.0,
+                    element_type='t6'):
     """Elastic gravity analysis of a rectangular soil column.
 
     Parameters
@@ -41,6 +42,8 @@ def analyze_gravity(width, depth, gamma, E, nu, nx=20, ny=10, t=1.0):
     FEMResult
     """
     nodes, elements = generate_rect_mesh(0, width, -depth, 0, nx, ny)
+    if element_type == 't6':
+        nodes, elements = convert_to_t6(nodes, elements)
     bc_nodes = detect_boundary_nodes(nodes)
     D = elastic_D(E, nu)
 
@@ -51,7 +54,8 @@ def analyze_gravity(width, depth, gamma, E, nu, nx=20, ny=10, t=1.0):
                          analysis_type="elastic")
 
 
-def analyze_foundation(B, q, depth, E, nu, gamma=0.0, nx=30, ny=15, t=1.0):
+def analyze_foundation(B, q, depth, E, nu, gamma=0.0, nx=30, ny=15, t=1.0,
+                       element_type='t6'):
     """Elastic analysis of a strip foundation on a half-space.
 
     Parameters
@@ -73,12 +77,15 @@ def analyze_foundation(B, q, depth, E, nu, gamma=0.0, nx=30, ny=15, t=1.0):
     x_extent = 3.0 * B
     nodes, elements = generate_rect_mesh(
         -x_extent, x_extent, -depth, 0, nx, ny)
+    n_corner = len(nodes)
+    if element_type == 't6':
+        nodes, elements = convert_to_t6(nodes, elements)
     bc_nodes = detect_boundary_nodes(nodes)
     D = elastic_D(E, nu)
 
     # Find surface edges under the foundation
     x_tol = 0.01
-    surface_nodes = np.where(np.abs(nodes[:, 1]) < x_tol)[0]
+    surface_nodes = np.where(np.abs(nodes[:n_corner, 1]) < x_tol)[0]
     loaded_nodes = surface_nodes[
         (nodes[surface_nodes, 0] >= -B / 2 - x_tol) &
         (nodes[surface_nodes, 0] <= B / 2 + x_tol)]
@@ -87,6 +94,8 @@ def analyze_foundation(B, q, depth, E, nu, gamma=0.0, nx=30, ny=15, t=1.0):
     surface_edges = []
     for i in range(len(loaded_nodes) - 1):
         surface_edges.append((loaded_nodes[i], loaded_nodes[i + 1]))
+    if element_type == 't6':
+        surface_edges = t6_boundary_edges(elements, surface_edges)
 
     surface_loads = [(surface_edges, 0.0, -q)]
 
@@ -100,10 +109,13 @@ def analyze_foundation(B, q, depth, E, nu, gamma=0.0, nx=30, ny=15, t=1.0):
 
 def analyze_slope_srm(surface_points, soil_layers, depth=None,
                       nx=30, ny=15, x_extend=None,
-                      srf_tol=0.02, n_load_steps=10, t=1.0,
+                      srf_tol=0.02, n_load_steps=2, t=1.0,
                       gwt=None, gamma_w=9.81,
-                      max_iter=100, tol=1e-5,
-                      layer_polylines=None):
+                      max_iter=1000, tol=1e-5,
+                      layer_polylines=None,
+                      element_type='t6', srm_field='c_phi',
+                      blowup_factor=15.0, srf_range=(0.5, 3.0),
+                      n_gp=None):
     """Slope stability FOS via Strength Reduction Method.
 
     Parameters
@@ -121,10 +133,17 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
     gwt : float, (M,2) array, or (n_nodes,) array, optional
         Groundwater table. See compute_pore_pressures() for formats.
     gamma_w : float — unit weight of water (kN/m^3). Default 9.81.
+    element_type : 't6' (default, quadratic — recommended) or 'cst'.
+    srm_field : 'c_phi' | 'c' | 'phi' — which strengths to reduce.
+    blowup_factor : float or None — displacement-blowup failure threshold
+        (multiple of the dimensionless displacement at the lowest stable
+        SRF). None = pure non-convergence criterion (Griffiths & Lane).
+    srf_range : (float, float) — SRF search range.
+    n_gp : int, optional — T6 Gauss rule override (3 or 6).
 
     Returns
     -------
-    FEMResult with FOS
+    FEMResult with FOS, srf_history, srf_curve, fos_basis
     """
     surf = np.array(surface_points)
     z_min_surf = surf[:, 1].min()
@@ -140,6 +159,8 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
     nodes, elements = generate_slope_mesh(
         surface_points, depth, nx, ny,
         x_extend_left=x_extend * 0.3, x_extend_right=x_extend * 0.3)
+    if element_type == 't6':
+        nodes, elements = convert_to_t6(nodes, elements)
     bc_nodes = detect_boundary_nodes(nodes)
 
     # Assign layers to elements
@@ -179,7 +200,9 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
         nodes, elements, material_props, gamma_arr, bc_nodes,
         t=t, tol=srf_tol, n_load_steps=n_load_steps,
         max_nr_iter=max_iter, nr_tol=tol,
-        pore_pressures=pp)
+        pore_pressures=pp, srm_field=srm_field,
+        blowup_factor=blowup_factor, srf_range=srf_range, n_gp=n_gp,
+        h_ref=H)
 
     result = _build_result(
         nodes, elements, srm_result['u_failure'],
@@ -189,6 +212,8 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
     result.converged = srm_result['converged']
     result.n_srf_trials = srm_result['n_srf_trials']
     result.srf_history = srm_result.get('srf_history')
+    result.srf_curve = srm_result.get('srf_curve')
+    result.fos_basis = srm_result.get('fos_basis')
     return result
 
 
@@ -246,7 +271,7 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
                        wall_EA, nx=30, ny=15, t=1.0, n_steps=10,
                        gwt=None, gamma_w=9.81, struts=None,
                        max_iter=100, tol=1e-5,
-                       layer_polylines=None):
+                       layer_polylines=None, element_type='t6'):
     """Analyze a braced excavation with a sheet pile wall.
 
     Creates a rectangular domain with a vertical wall on the left side
@@ -292,6 +317,10 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
 
     nodes, elements = generate_rect_mesh(
         x_left, x_right, y_bottom, y_top, nx, ny)
+    if element_type == 't6':
+        # Beams couple at corner AND midside nodes along the wall line
+        # (each T6 edge contributes two beam segments).
+        nodes, elements = convert_to_t6(nodes, elements)
     bc_nodes = detect_boundary_nodes(nodes)
 
     # Assign layers

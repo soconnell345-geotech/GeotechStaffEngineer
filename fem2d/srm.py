@@ -2,185 +2,239 @@
 Strength Reduction Method (SRM) for slope stability FOS.
 
 Progressively reduces c and tan(phi) by a Strength Reduction Factor
-(SRF) until the FEM model fails to converge. The critical SRF = FOS.
+(SRF) until the FEM model fails. The critical SRF = FOS.
+
+Failure detection (Griffiths & Lane, 1999):
+- primary: non-convergence of the constant-stiffness iteration within the
+  iteration ceiling (no stress distribution satisfies both the MC criterion
+  and global equilibrium);
+- secondary: dimensionless-displacement blowup — E_ref*delta_max/(gamma*H^2)
+  exceeding `blowup_factor` times its value at the lowest converged SRF
+  (the "knee" of the SRF vs displacement curve, GL99 Fig. 2).
 
 Algorithm:
-1. Establish gravity equilibrium at SRF = 1.0
-2. Increment SRF by 0.1 until non-convergence to bracket failure
-3. Bisect [SRF_low, SRF_high] to refine FOS to desired tolerance
+1. Build the nonlinear context once — the elastic global stiffness is
+   factorized once and shared by ALL SRF trials (it does not depend on
+   c/phi), so each trial costs only back-substitutions.
+2. Verify the lower bound converges, step SRF by `bracket_step` (0.1)
+   until failure to bracket, then bisect to `tol` (default 0.01).
 
-Reference: Griffiths & Lane (1999), Géotechnique 49(3)
+Strength reduction policy:
+- c_red = c/SRF, phi_red = arctan(tan(phi)/SRF)
+- psi_red = min(psi, phi_red)  (PLAXIS convention; GL99 used psi=0)
+- `srm_field`: 'c_phi' (default, both), 'c' (cohesion only),
+  'phi' (friction only)
+- HS materials: c and phi reduced, stiffness parameters unchanged.
+
+Reference: Griffiths & Lane (1999), Geotechnique 49(3) 387-403.
 """
 
 import math
 import numpy as np
 
-from fem2d.solver import solve_nonlinear
+from fem2d.solver import build_nl_context, run_nl, _material_arrays
 from fem2d.mesh import detect_boundary_nodes
 
 
+def _reduce_props(material_props, srf, srm_field):
+    """Apply strength reduction to a material property list."""
+    reduced = []
+    for mp in material_props:
+        rp = dict(mp)
+        c_orig = mp.get('c', 0.0)
+        phi_orig = mp.get('phi', 0.0)
+        psi_orig = mp.get('psi', 0.0)
+
+        if srm_field in ('c_phi', 'c'):
+            rp['c'] = c_orig / srf
+        if srm_field in ('c_phi', 'phi') and phi_orig > 0:
+            rp['phi'] = math.degrees(
+                math.atan(math.tan(math.radians(phi_orig)) / srf))
+        # Dilation capped at the reduced friction angle (PLAXIS policy)
+        rp['psi'] = min(psi_orig, rp.get('phi', phi_orig))
+        reduced.append(rp)
+    return reduced
+
+
 def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
-                       t=1.0, srf_range=(0.5, 3.0), tol=0.02,
-                       n_load_steps=10, max_nr_iter=100, nr_tol=1e-5,
-                       pore_pressures=None):
+                       t=1.0, srf_range=(0.5, 3.0), tol=0.01,
+                       n_load_steps=2, max_nr_iter=1000, nr_tol=1e-5,
+                       pore_pressures=None, srm_field='c_phi',
+                       bracket_step=0.1, blowup_factor=15.0,
+                       n_gp=None, disp_tol=None, stall_window=None,
+                       h_ref=None):
     """Find slope stability FOS using the Strength Reduction Method.
 
     Parameters
     ----------
     nodes : (n_nodes, 2) array
-    elements : (n_elements, 3) array — CST connectivity.
+    elements : (n_elements, 3 or 6) array — CST or T6 connectivity.
     material_props : list of dict — per-element material properties.
-        Each dict: {'E', 'nu', 'c', 'phi', 'psi', 'gamma'}.
+        Each dict: {'E', 'nu', 'c', 'phi', 'psi', 'gamma'} (+ HS params).
     gamma : float or array — unit weight (kN/m³).
     bc_nodes : dict, optional — from detect_boundary_nodes().
-        Auto-detected if None.
     t : float — thickness.
     srf_range : (float, float) — search range for SRF.
-    tol : float — bisection tolerance for FOS.
+    tol : float — bisection tolerance on FOS (default 0.01).
     n_load_steps : int — gravity load increments per SRF trial.
-    max_nr_iter : int — max Newton-Raphson iterations.
-    nr_tol : float — NR convergence tolerance.
-    pore_pressures : (n_nodes,) array, optional — nodal pore pressures.
-        Pore pressures remain unchanged during strength reduction
-        (only c and phi are reduced).
+        Default 2; Griffiths & Lane showed FOS is insensitive to the
+        gravity increment size for elastic-perfectly-plastic MC.
+    max_nr_iter : int — iteration ceiling per load step (1000, the
+        Griffiths & Lane value; iterations are cheap back-substitutions).
+    nr_tol : float — residual convergence tolerance.
+    pore_pressures : (n_nodes,) array, optional — held constant during
+        strength reduction.
+    srm_field : 'c_phi' | 'c' | 'phi' — which strengths to reduce.
+    bracket_step : float — coarse SRF increment for bracketing.
+    blowup_factor : float — dimensionless-displacement blowup threshold
+        (multiple of the value at the lowest converged SRF). Set None to
+        disable and use pure non-convergence (GL99).
+    n_gp : int, optional — Gauss rule override for T6.
+    disp_tol : float or None — displacement-increment convergence
+        criterion. Default None: convergence is judged on the residual
+        alone, which is the correct failure indicator for the
+        constant-stiffness scheme (the dual criterion can accept
+        stalled near-collapse states and overestimate FOS).
+    stall_window : int or None — abort a trial early when the residual
+        has not improved by >2% over this many iterations. Default
+        None (off): on coarse meshes slow-but-real convergence can
+        be misclassified as failure, biasing FOS low. Opt-in speedup.
+    h_ref : float, optional — reference height for the dimensionless
+        displacement E_ref*delta_max/(gamma_ref*h_ref^2) (Griffiths &
+        Lane). Default: total mesh height. Pass the SLOPE height to
+        compare against published curves.
 
     Returns
     -------
     dict with keys:
         'FOS': float — factor of safety.
         'converged': bool — whether bracketing succeeded.
-        'u_failure': (n_dof,) array — displacements at last converged SRF.
-        'stresses_failure': (n_elements, 3) array.
+        'fos_basis': 'nonconvergence' | 'blowup' | 'range_exhausted'
+        'u_failure': (n_dof,) array — displacements at last stable SRF.
+        'stresses_failure': (n_elements, 3) array (element-avg in-plane).
         'n_srf_trials': int — number of SRF evaluations.
-        'srf_history': list of dict — SRF trial history for FOS vs
-            displacement plots. Each dict has 'srf', 'max_disp_m',
-            'converged'.
+        'srf_history': list of dict — per-trial: 'srf', 'max_disp_m',
+            'dimensionless_disp', 'converged', 'failed', 'n_iter'.
+        'srf_curve': (srf, E_ref*dmax/(gamma*H^2)) arrays for plotting.
     """
+    nodes = np.asarray(nodes, dtype=float)
+    elements = np.asarray(elements, dtype=int)
     if bc_nodes is None:
         bc_nodes = detect_boundary_nodes(nodes)
 
     n_elem = len(elements)
-
-    # Expand material_props
     if len(material_props) < n_elem:
         material_props = list(material_props) + \
             [material_props[-1]] * (n_elem - len(material_props))
 
-    def _try_srf(srf):
-        """Run FEM with reduced strength, return (converged, u, stresses)."""
-        reduced_props = []
-        for mp in material_props:
-            rp = dict(mp)
-            c_orig = mp.get('c', 0.0)
-            phi_orig = mp.get('phi', 0.0)
+    # Build context once — elastic K factorization shared across all trials
+    ctx = build_nl_context(
+        nodes, elements, material_props, gamma, bc_nodes, t=t,
+        pore_pressures=pore_pressures, n_gp=n_gp)
 
-            rp['c'] = c_orig / srf
-            if phi_orig > 0:
-                rp['phi'] = math.degrees(
-                    math.atan(math.tan(math.radians(phi_orig)) / srf))
-            else:
-                rp['phi'] = 0.0
-            rp['psi'] = 0.0  # Zero dilation for SRM
-            # HS: stiffness params (E50_ref, Eur_ref, m, p_ref, R_f) unchanged
-            reduced_props.append(rp)
+    # Dimensionless displacement scaling (Griffiths & Lane):
+    # E_ref * delta_max / (gamma_ref * H^2)
+    E_ref = float(np.max(ctx['mats']['E']))
+    gamma_arr = np.asarray(gamma, dtype=float)
+    gamma_ref = float(gamma_arr.mean()) if gamma_arr.ndim else float(gamma_arr)
+    H_ref = float(h_ref) if h_ref is not None else \
+        float(nodes[:, 1].max() - nodes[:, 1].min())
+    dim_scale = E_ref / max(gamma_ref * H_ref ** 2, 1e-12)
 
-        converged, u, stresses, strains = solve_nonlinear(
-            nodes, elements, reduced_props, gamma, bc_nodes,
-            t=t, n_steps=n_load_steps, max_iter=max_nr_iter, tol=nr_tol,
-            pore_pressures=pore_pressures)
-        return converged, u, stresses
+    def _max_disp(u):
+        n2 = 2 * len(nodes)
+        ux = u[:n2:2]
+        uy = u[1:n2:2]
+        return float(np.max(np.sqrt(ux ** 2 + uy ** 2)))
 
     n_trials = 0
     srf_history = []
+    baseline_dim = [None]  # dimensionless disp at lowest converged SRF
+    blowup_seen = [False]
 
-    def _max_disp(u):
-        """Max displacement magnitude from DOF vector."""
-        ux = u[0::2]
-        uy = u[1::2]
-        return float(np.max(np.sqrt(ux**2 + uy**2)))
+    def _try_srf(srf):
+        nonlocal n_trials
+        n_trials += 1
+        reduced = _reduce_props(material_props, srf, srm_field)
+        mats = _material_arrays(reduced, n_elem)
+        res = run_nl(ctx, n_steps=n_load_steps, max_iter=max_nr_iter,
+                     tol=nr_tol, disp_tol=disp_tol, method='elastic',
+                     mats_override=mats, stall_window=stall_window)
+        conv = res['converged']
+        dmax = _max_disp(res['u'])
+        dim_disp = dmax * dim_scale
+        failed = not conv
+        if conv and blowup_factor is not None:
+            if baseline_dim[0] is None:
+                baseline_dim[0] = max(dim_disp, 1e-12)
+            elif dim_disp > blowup_factor * baseline_dim[0]:
+                failed = True
+                blowup_seen[0] = True
+        srf_history.append({
+            'srf': float(srf),
+            'max_disp_m': dmax,
+            'dimensionless_disp': dim_disp,
+            'converged': bool(conv),
+            'failed': bool(failed),
+            'n_iter': res['n_iter_total'],
+        })
+        return (not failed), res
 
-    # Phase 1: bracket failure by incrementing SRF
-    srf_low = srf_range[0]
-    srf_high = srf_range[1]
-
-    # Verify lower bound converges
-    n_trials += 1
-    conv_low, u_low, s_low = _try_srf(srf_low)
-    srf_history.append({
-        'srf': srf_low,
-        'max_disp_m': _max_disp(u_low) if conv_low else 0.0,
-        'converged': conv_low,
-    })
-    if not conv_low:
+    def _result(fos, converged, last_res, basis):
+        sig_gp = last_res['sigma_gp']
         return {
-            'FOS': srf_low,
-            'converged': False,
-            'u_failure': np.zeros(2 * len(nodes)),
-            'stresses_failure': np.zeros((n_elem, 3)),
+            'FOS': round(float(fos), 3),
+            'converged': converged,
+            'fos_basis': basis,
+            'u_failure': last_res['u'],
+            'stresses_failure': sig_gp[:, :, [0, 1, 3]].mean(axis=1),
             'n_srf_trials': n_trials,
             'srf_history': srf_history,
+            'srf_curve': (
+                np.array([h['srf'] for h in srf_history if h['converged']]),
+                np.array([h['dimensionless_disp'] for h in srf_history
+                          if h['converged']]),
+            ),
         }
 
-    # Increment from 1.0 upward to find non-convergence
-    srf = 1.0
-    d_srf = 0.1
-    last_conv_srf = srf_low
-    last_conv_u = u_low
-    last_conv_s = s_low
+    srf_low, srf_high = srf_range
 
-    while srf <= srf_high:
-        n_trials += 1
-        conv, u, s = _try_srf(srf)
-        srf_history.append({
-            'srf': srf,
-            'max_disp_m': _max_disp(u) if conv else _max_disp(last_conv_u) * 2,
-            'converged': conv,
-        })
-        if conv:
-            last_conv_srf = srf
-            last_conv_u = u
-            last_conv_s = s
-            srf += d_srf
+    # Verify lower bound is stable
+    ok_low, res_low = _try_srf(srf_low)
+    if not ok_low:
+        return _result(srf_low, False, res_low, 'nonconvergence')
+
+    # Bracket failure: step upward from max(1.0, srf_low)
+    srf = max(1.0, srf_low)
+    last_stable_srf = srf_low
+    last_stable_res = res_low
+    bracketed = False
+
+    while srf <= srf_high + 1e-12:
+        ok, res = _try_srf(srf)
+        if ok:
+            last_stable_srf = srf
+            last_stable_res = res
+            srf = round(srf + bracket_step, 10)
         else:
-            # Bracket found: [srf - d_srf, srf]
-            srf_low = last_conv_srf
-            srf_high = srf
+            srf_lo_b = last_stable_srf
+            srf_hi_b = srf
+            bracketed = True
             break
-    else:
-        # Never failed — FOS > srf_high
-        return {
-            'FOS': srf_high,
-            'converged': True,
-            'u_failure': last_conv_u,
-            'stresses_failure': last_conv_s,
-            'n_srf_trials': n_trials,
-            'srf_history': srf_history,
-        }
 
-    # Phase 2: bisection to refine FOS
-    while (srf_high - srf_low) > tol:
-        srf_mid = (srf_low + srf_high) / 2.0
-        n_trials += 1
-        conv, u, s = _try_srf(srf_mid)
-        srf_history.append({
-            'srf': srf_mid,
-            'max_disp_m': _max_disp(u) if conv else _max_disp(last_conv_u) * 2,
-            'converged': conv,
-        })
-        if conv:
-            srf_low = srf_mid
-            last_conv_u = u
-            last_conv_s = s
+    if not bracketed:
+        return _result(srf_high, True, last_stable_res, 'range_exhausted')
+
+    # Bisection
+    while (srf_hi_b - srf_lo_b) > tol:
+        srf_mid = 0.5 * (srf_lo_b + srf_hi_b)
+        ok, res = _try_srf(srf_mid)
+        if ok:
+            srf_lo_b = srf_mid
+            last_stable_res = res
         else:
-            srf_high = srf_mid
+            srf_hi_b = srf_mid
 
-    fos = (srf_low + srf_high) / 2.0
-
-    return {
-        'FOS': round(fos, 3),
-        'converged': True,
-        'u_failure': last_conv_u,
-        'stresses_failure': last_conv_s,
-        'n_srf_trials': n_trials,
-        'srf_history': srf_history,
-    }
+    fos = 0.5 * (srf_lo_b + srf_hi_b)
+    basis = 'blowup' if blowup_seen[0] else 'nonconvergence'
+    return _result(fos, True, last_stable_res, basis)

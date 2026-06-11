@@ -510,8 +510,9 @@ def _internal_force(ctx, sig_gp):
 def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
            u_init=None, sigma_gp_init=None, strain_gp_init=None,
            hs_state_init=None, method='elastic', reform_interval=1,
-           disp_tol=1e-5, disp_residual_cap=0.1, max_cutbacks=3,
-           line_search=False, mats_override=None):
+           disp_tol=None, disp_residual_cap=0.01, max_cutbacks=3,
+           line_search=False, mats_override=None,
+           stall_window=None, stall_ratio=0.98):
     """Run the incremental-iterative nonlinear solution on a context.
 
     Parameters
@@ -520,9 +521,12 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
     n_steps : int — load increments (proportional ramp of F_ext).
     max_iter : int — iteration ceiling per load step.
     tol : float — residual convergence: ||R_free|| / ||F_ext|| < tol.
-    disp_tol : float or None — displacement convergence:
-        ||du|| / ||u|| < disp_tol (accepted only if residual ratio is also
-        below `disp_residual_cap`). The Griffiths & Lane (1999) criterion.
+    disp_tol : float or None — optional displacement-increment criterion:
+        ||du|| / ||u|| < disp_tol, accepted only if the residual ratio is
+        also below `disp_residual_cap`. Default None (residual only):
+        near collapse the constant-stiffness iteration can stall with
+        small du but a large residual, so a loose dual criterion
+        overestimates SRM FOS (verified against Griffiths & Lane Ex. 1).
     method : 'elastic' (constant-stiffness, factorize once) or
         'tangent' (NR with continuum tangent).
     reform_interval : int — tangent reform interval ('tangent' only;
@@ -583,6 +587,7 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
         lu_t = None
         n_it = 0
         R_norm_prev = None
+        r_hist = []
         for it in range(max_iter):
             n_it = it + 1
             want_tan = (method == 'tangent') and (it % reform_interval == 0)
@@ -598,12 +603,19 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
             R[bc] = -penalty * u[bc]
             R_norm = np.linalg.norm(np.where(free, R, 0.0))
             r_ratio = R_norm / F_norm
+            r_hist.append(r_ratio)
 
             if r_ratio < tol:
                 step_conv = True
                 break
             if not np.isfinite(R_norm) or R_norm > 1e12:
                 break
+            # Stagnation cut: residual not improving over the window ->
+            # treat as non-convergence (saves burning the full ceiling)
+            if stall_window and len(r_hist) > stall_window:
+                if (min(r_hist[-stall_window:]) >
+                        stall_ratio * min(r_hist[:-stall_window])):
+                    break
 
             if method == 'tangent':
                 if want_tan:
@@ -681,7 +693,8 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
 
     return {'converged': converged_overall, 'u': u, 'sigma_gp': sig_gp,
             'eps_gp': eps_gp, 'hs_state': hs_state,
-            'iterations': iters_per_step, 'n_iter_total': n_iter_total}
+            'iterations': iters_per_step, 'n_iter_total': n_iter_total,
+            'r_history': r_hist}
 
 
 # ===========================================================================
@@ -722,7 +735,7 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
                     state_init=None, surface_loads=None,
                     return_state=False, strut_springs=None,
                     method='elastic', reform_interval=1,
-                    disp_tol=1e-5, max_cutbacks=3, line_search=False,
+                    disp_tol=None, max_cutbacks=3, line_search=False,
                     n_gp=None, return_gp=False, _ctx=None):
     """Solve a nonlinear (MC/HS) problem.
 
@@ -737,8 +750,8 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
         detection for SRM); 'tangent' — Newton-Raphson with continuum
         elastoplastic tangent, reform interval, and divergence cutback.
     reform_interval : int — K_T reform interval for 'tangent'.
-    disp_tol : float or None — displacement-increment convergence
-        criterion ||du||/||u|| (dual with residual `tol`). None disables.
+    disp_tol : float or None — optional displacement-increment criterion
+        ||du||/||u|| (dual with residual `tol`). Default None.
     max_cutbacks : int — load-step halvings on divergence ('tangent').
     line_search : bool — backtracking line search ('tangent').
     n_gp : int, optional — Gauss rule override for T6 (3 or 6).
