@@ -16,11 +16,21 @@
   `circular_bishop` (nonexistent), and `analyze_slope` failed repeatedly with "circle
   does not intersect the ground surface" from guessed centers/radii. System-prompt nudge
   + adapter steer should route to search_critical_surface; **verify SS-1..SS-3 after triage.**
-- ☐ Extend `allowed_values` to fem2d adapter.
+- ☑ Extend `allowed_values` to fem2d adapter (fem-modern branch: fem2d_slope_srm element_type/srm_field/n_gp + new outputs).
 - ☐ Consider whether `analyze_slope` should auto-fallback to a search when given an
   invalid circle (design decision — discuss with lead; this is a real-behavior change).
 - ☐ Per-module real issues — populate from `geotech_test_suite_results.json` triage (fem2d had 2 errors).
 
 ## Progress log
+- 2026-06-11 (fem-modern branch): fem2d modernization phases 3-7 — SRM
+  robustness (GL99 failure detection, shared factorization, srf curve),
+  NR hardening tests, published-benchmark validation suite
+  (fem2d/VALIDATION.md: GL99 Ex1 FOS 1.34-1.37 vs 1.4 published; Prandtl
+  Nc 5.10-5.25 vs 5.14 with T6, CST locks >9; Bishop cross-check +21%
+  converging). T6 now the default element for slope SRM. Found+fixed:
+  x_extend default (2x width) starved slope-face mesh and overpredicted
+  FOS by up to +91%; CST documented as collapse-unsafe. Adapter exposes
+  element_type/srm_field/blowup_factor/srf_range/n_gp with
+  allowed_values, returns fos_basis + srf_curve.
 - 2026-06-03 (lead, Phase 0): slope_stability adapter METHOD_INFO updated (allowed_values +
   search_critical_surface steer). funhouse_agent tests green.

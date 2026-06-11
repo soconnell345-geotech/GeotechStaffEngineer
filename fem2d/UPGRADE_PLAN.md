@@ -230,7 +230,13 @@ Ex5 drawdown validation optional; T6 seepage not planned.
 - [x] Phase 6: performance — numbers captured in VALIDATION.md sec 6:
       GL99 Ex1 T6 32x12 full SRM 11 s; one factorization per SRM run;
       suite ~13 min incl. slow benchmarks. No further profiling needed.
-- [ ] Phase 7: adapter + docs.
+- [x] Phase 7: adapter + docs — fem2d_slope_srm adapter exposes
+      element_type/srm_field/blowup_factor/srf_range/n_gp with
+      allowed_values and clear ValueErrors; returns fos_basis,
+      n_srf_trials, srf_curve; defaults aligned (max_iter 1000,
+      n_load_steps 2). DESIGN.md element/MC sections updated (T6
+      default for collapse, 3D principal MC return);
+      module_work/slope-fem.md progress note.
 
 Future work (designed, descoped):
 - B-bar / selective reduced integration or 15-node triangles for the

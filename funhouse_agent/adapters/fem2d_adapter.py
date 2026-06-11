@@ -41,17 +41,34 @@ def _run_analyze_slope_srm(params: dict) -> dict:
     surface_points = [tuple(pt) for pt in params["surface_points"]]
     soil_layers = params["soil_layers"]
 
+    element_type = params.get("element_type", "t6")
+    if element_type not in ("t6", "cst"):
+        raise ValueError(
+            f"element_type must be 't6' or 'cst', got {element_type!r}")
+    srm_field = params.get("srm_field", "c_phi")
+    if srm_field not in ("c_phi", "c", "phi"):
+        raise ValueError(
+            f"srm_field must be 'c_phi', 'c' or 'phi', got {srm_field!r}")
+    n_gp = params.get("n_gp")
+    if n_gp is not None and int(n_gp) not in (3, 6):
+        raise ValueError(f"n_gp must be 3 or 6 (T6 only), got {n_gp!r}")
+
     kwargs = dict(
         surface_points=surface_points,
         soil_layers=soil_layers,
         nx=params.get("nx", 30),
         ny=params.get("ny", 15),
         srf_tol=params.get("srf_tol", 0.02),
-        n_load_steps=params.get("n_load_steps", 10),
+        n_load_steps=params.get("n_load_steps", 2),
         t=params.get("t", 1.0),
         gamma_w=params.get("gamma_w", 9.81),
-        max_iter=params.get("max_iter", 100),
+        max_iter=params.get("max_iter", 1000),
         tol=params.get("tol", 1e-5),
+        element_type=element_type,
+        srm_field=srm_field,
+        blowup_factor=params.get("blowup_factor", 15.0),
+        srf_range=tuple(params.get("srf_range", (0.5, 3.0))),
+        n_gp=int(n_gp) if n_gp is not None else None,
     )
     if "depth" in params:
         kwargs["depth"] = params["depth"]
@@ -67,7 +84,17 @@ def _run_analyze_slope_srm(params: dict) -> dict:
         kwargs["layer_polylines"] = params["layer_polylines"]
 
     result = analyze_slope_srm(**kwargs)
-    return clean_result(result.to_dict())
+    out = clean_result(result.to_dict())
+    out["fos_basis"] = getattr(result, "fos_basis", None)
+    out["n_srf_trials"] = getattr(result, "n_srf_trials", None)
+    curve = getattr(result, "srf_curve", None)
+    if curve is not None:
+        srf, dim = curve
+        out["srf_curve"] = {
+            "srf": [round(float(v), 4) for v in srf],
+            "dimensionless_displacement": [round(float(v), 4) for v in dim],
+        }
+    return out
 
 
 def _run_analyze_excavation(params: dict) -> dict:
@@ -271,13 +298,22 @@ METHOD_INFO = {
             "nx": {"type": "int", "required": False, "default": 30, "description": "Mesh divisions in x."},
             "ny": {"type": "int", "required": False, "default": 15, "description": "Mesh divisions in y."},
             "x_extend": {"type": "float", "required": False, "description": "Horizontal extension (m). Default 2*width."},
-            "srf_tol": {"type": "float", "required": False, "default": 0.02, "description": "SRF bisection tolerance."},
+            "srf_tol": {"type": "float", "required": False, "default": 0.02, "description": "SRF bisection tolerance (0.01 for benchmark-grade runs)."},
             "gwt": {"type": "float|array", "required": False, "description": "Groundwater table: float elevation, or [[x,y],...] polyline."},
+            "element_type": {"type": "str", "required": False, "default": "t6", "allowed_values": ["t6", "cst"], "description": "Soil element. t6 (quadratic, recommended): collapse loads within a few % of published benchmarks. cst locks (overpredicts FOS) - elastic work only."},
+            "srm_field": {"type": "str", "required": False, "default": "c_phi", "allowed_values": ["c_phi", "c", "phi"], "description": "Strengths reduced by the SRF: both (default), cohesion only, or friction only."},
+            "blowup_factor": {"type": "float", "required": False, "default": 15.0, "description": "Secondary failure criterion: dimensionless-displacement blowup threshold (x the value at the lowest stable SRF). null disables (pure Griffiths-Lane non-convergence)."},
+            "srf_range": {"type": "array", "required": False, "default": [0.5, 3.0], "description": "[min, max] SRF search range."},
+            "n_gp": {"type": "int", "required": False, "allowed_values": [3, 6], "description": "T6 Gauss rule override (default 3)."},
+            "max_iter": {"type": "int", "required": False, "default": 1000, "description": "Iteration ceiling per load step (Griffiths-Lane non-convergence criterion)."},
         },
         "returns": {
             "FOS": "Factor of safety from SRM.",
-            "max_displacement_m": "Maximum displacement at failure.",
-            "converged": "Whether SRM converged.",
+            "fos_basis": "Failure criterion that fixed the FOS: nonconvergence | blowup | range_exhausted (= FOS capped at srf_range max).",
+            "n_srf_trials": "Number of SRF trials run.",
+            "srf_curve": "SRF vs dimensionless displacement E*dmax/(gamma*H^2) for converged trials (plotting / failure-onset review).",
+            "max_displacement_m": "Maximum displacement at the last stable SRF.",
+            "converged": "Whether SRM bracketing succeeded.",
         },
     },
     "fem2d_excavation": {

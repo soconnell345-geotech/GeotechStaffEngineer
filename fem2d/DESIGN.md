@@ -25,10 +25,16 @@ accounts for σ_zz.
 
 ### Element Types
 
-- **CST (3-node triangle)**: Constant strain, closed-form K_e = t·A·B^T·D·B.
-  Simple and robust. Used as the primary element.
+- **T6 (6-node quadratic triangle)**: isoparametric, 3-point interior
+  Gauss rule (exact for straight-sided elastic stiffness; 6-point
+  available via n_gp). DEFAULT for collapse/FOS work — validated within
+  a few percent of published benchmarks (see VALIDATION.md). Generated
+  from CST meshes by midside insertion (convert_to_t6).
+- **CST (3-node triangle)**: Constant strain, closed-form
+  K_e = t·A·B^T·D·B. Locks volumetrically in plastic collapse (Prandtl
+  Nc overshoots by >75%) — use for elastic/seepage/Biot work only.
 - **Q4 (4-node quad)**: Bilinear isoparametric, 2×2 Gauss quadrature.
-  Available but not default (CST meshes are easier to generate).
+  Available but not default.
 - **2D Euler-Bernoulli beam**: 2-node beam for structural members (walls,
   sheet piles). DOFs: [u, v, θ] per node. Local-to-global rotation transform.
   Axial stiffness EA/L + flexural stiffness 12EI/L³.
@@ -38,10 +44,13 @@ accounts for σ_zz.
 1. **Linear Elastic**: D-matrix above. Used for elastic analysis and
    as the trial predictor in elastoplastic analysis.
 
-2. **Mohr-Coulomb Elastoplastic**: 2D in-plane Mohr circle return mapping.
-   Yield criterion: f = q + p·sin(φ) - c·cos(φ) where p = (σ_xx+σ_yy)/2
-   and q = Mohr circle radius. Non-associated flow (ψ=0: scale deviatoric,
-   ψ>0: stress-space return). Apex return when deviatoric capacity exhausted.
+2. **Mohr-Coulomb Elastoplastic**: 3D principal-stress return mapping
+   (de Souza Neto et al. 2008; Clausen et al. 2006): sorted principal
+   stresses incl. σ_zz, main-plane return, Koiter two-plane edge
+   returns (extension/compression), apex return; non-associated flow
+   (ψ ≤ φ); fully vectorized over all Gauss points. The legacy
+   in-plane `mc_return_mapping` is retained for API compatibility but
+   is no longer used by the solver.
 
 3. **Hardening Soil (shear hardening)**: Schanz, Vermeer & Bonnier (1999).
    - Stress-dependent stiffness: E_50 = E_50_ref × ((c·cosφ + σ₃·sinφ) / (c·cosφ + p_ref·sinφ))^m
