@@ -90,6 +90,7 @@ def _run_cantilever_wall(params: dict) -> dict:
         FOS_passive=params.get("FOS_passive", 1.5),
         gamma_w=params.get("gamma_w", 9.81),
         pressure_method=params.get("pressure_method", "rankine"),
+        embedment_increase=params.get("embedment_increase", 1.0),
     )
     return result.to_dict()
 
@@ -127,7 +128,9 @@ METHOD_INFO = {
             "Determines required embedment depth, total wall length, and maximum "
             "bending moment for a cantilever sheet pile wall. Uses iterative moment "
             "balance about the wall base with Rankine or Coulomb earth pressure "
-            "coefficients. Applies 1.2x design factor to computed embedment per USACE."
+            "coefficients. Safety basis: by default FOS_passive=1.5 with no embedment "
+            "increase. Alternatively pass FOS_passive=1.0 with embedment_increase of "
+            "1.2-1.4 for the depth-increase basis — use one basis, not both."
         ),
         "reference": "USACE EM 1110-2-2504; USS Steel Sheet Piling Design Manual",
         "parameters": {
@@ -140,6 +143,7 @@ METHOD_INFO = {
             "gwt_depth_passive": {"type": "float", "required": False, "description": "GWT depth on passive side (m from excavation)."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge on active side (kPa)."},
             "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "Factor of safety on passive resistance."},
+            "embedment_increase": {"type": "float", "required": False, "default": 1.0, "description": "Multiplier on converged embedment (use 1.2-1.4 with FOS_passive=1.0 for the depth-increase safety basis; do not combine with FOS_passive > 1)."},
             "pressure_method": {"type": "str", "required": False, "default": "rankine", "description": "'rankine' or 'coulomb'."},
         },
         "returns": {

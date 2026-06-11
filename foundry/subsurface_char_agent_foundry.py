@@ -152,7 +152,8 @@ METHOD_INFO = {
         },
         "related": {
             "subsurface_char.load_site": "Alternative: load from dict/CSV",
-            "pydiggs.validate_diggs_file": "Validate DIGGS schema compliance",
+            "subsurface_characterization.formats.diggs_validation.validate_diggs_schema":
+                "Validate DIGGS schema compliance (requires the pydiggs library)",
         },
         "typical_workflow": (
             "1. parse_diggs(content=xml_string)\n"
@@ -161,7 +162,7 @@ METHOD_INFO = {
         ),
         "common_mistakes": [
             "Providing neither filepath nor content",
-            "Using pydiggs for extraction (it only validates, cannot extract data)",
+            "Using the pydiggs validator for extraction (it only validates; parse_diggs extracts data)",
         ],
     },
     "load_site": {

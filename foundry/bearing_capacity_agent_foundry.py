@@ -207,7 +207,6 @@ METHOD_INFO = {
         },
         "related": {
             "bearing_capacity_analysis": "Use factors in a full bearing capacity analysis.",
-            "dm7_agent": "DM7 also tabulates bearing capacity factors.",
         },
     },
 }
