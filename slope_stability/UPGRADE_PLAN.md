@@ -235,7 +235,15 @@ B6. Griffiths & Lane (1999) style cross-check of one geometry vs fem2d SRM
   bookkeeping (Kc-dependent undrained envelopes); interim guidance is
   high internal GWT + drawn-down pool. Suite: 322 passed / 17 skipped.
 
-NEXT ACTION: P8 — per-slice force table in results/to_dict (W, N', S_mob,
-E/X, u*b, alpha), thrust line exposure, method-comparison helper on the
-result side; then adapter update; then VALIDATION.md (B1/B2/B3/B4/B5 +
-B6 fem2d SRM cross-check).
+- 2026-06-11 P8 done: per-slice force table on SliceData/to_dict (W, N',
+  S_mob, U=u*l, alpha, boundary E/X for rigorous methods); analyze_slope
+  keeps the rich GLEResult (_try_gle) so spencer/M-P/gle expose interslice
+  forces + line of thrust (thrust_line on the result and in to_dict);
+  compare_methods_table() = F&K-style one-surface/all-methods table
+  (rows/surface/summary). 6 tests (test_results_outputs.py).
+  Suite: 328 passed / 17 skipped.
+
+NEXT ACTION: P9 — funhouse adapter (mostly drafted, needs tests via the
+funhouse adapter test pattern; keep funhouse_agent/tests green); then P10
+VALIDATION.md (B1/B2/B3/B4/B5 + B6 fem2d SRM cross-check) with
+slow-marked runnable validation tests.

@@ -38,6 +38,7 @@ from slope_stability.search import (
 )
 from slope_stability.analysis import (
     analyze_slope, search_critical_surface, rapid_drawdown_fos,
+    compare_methods_table,
 )
 from slope_stability.results import (
     SlopeStabilityResult, SliceData, SearchResult,
@@ -58,5 +59,6 @@ __all__ = [
     'search_pso', 'search_weak_layer_biased', 'search_entry_exit',
     'search_de',
     'analyze_slope', 'search_critical_surface', 'rapid_drawdown_fos',
+    'compare_methods_table',
     'SlopeStabilityResult', 'SliceData', 'SearchResult',
 ]

@@ -47,6 +47,21 @@ class SliceData:
         Positive = driving (base slopes downhill), negative = resisting.
     shear_resistance_kPa : float
         Available shear resistance on base = T_available / dl (kPa).
+    N_eff_kN : float
+        Effective normal FORCE on the base N' (kN/m). From the rigorous
+        GLE solution for Spencer/M-P/GLE; Fellenius decomposition
+        (W*cos(a) - u*l) otherwise.
+    S_mob_kN : float
+        Mobilized shear force on the base (kN/m).
+    U_base_kN : float
+        Pore-water force on the base u*l (kN/m).
+    E_left_kN, E_right_kN : float or None
+        Interslice normal force on the left/right boundary (kN/m).
+        Only available from the rigorous GLE engine (Spencer / M-P /
+        GLE methods); None otherwise.
+    X_left_kN, X_right_kN : float or None
+        Interslice shear force on the left/right boundary (kN/m).
+        Only available from the rigorous GLE engine; None otherwise.
     """
     x_mid: float = 0.0
     z_top: float = 0.0
@@ -63,6 +78,13 @@ class SliceData:
     shear_stress_kPa: float = 0.0
     shear_resistance_kPa: float = 0.0
     in_tension_crack: bool = False
+    N_eff_kN: float = 0.0
+    S_mob_kN: float = 0.0
+    U_base_kN: float = 0.0
+    E_left_kN: Optional[float] = None
+    E_right_kN: Optional[float] = None
+    X_left_kN: Optional[float] = None
+    X_right_kN: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d = {
@@ -80,7 +102,15 @@ class SliceData:
             "normal_stress_kPa": round(self.normal_stress_kPa, 2),
             "shear_stress_kPa": round(self.shear_stress_kPa, 2),
             "shear_resistance_kPa": round(self.shear_resistance_kPa, 2),
+            "N_eff_kN_per_m": round(self.N_eff_kN, 2),
+            "S_mob_kN_per_m": round(self.S_mob_kN, 2),
+            "U_base_kN_per_m": round(self.U_base_kN, 2),
         }
+        if self.E_left_kN is not None:
+            d["E_left_kN_per_m"] = round(self.E_left_kN, 2)
+            d["E_right_kN_per_m"] = round(self.E_right_kN, 2)
+            d["X_left_kN_per_m"] = round(self.X_left_kN, 2)
+            d["X_right_kN_per_m"] = round(self.X_right_kN, 2)
         if self.in_tension_crack:
             d["in_tension_crack"] = True
         return d
@@ -125,7 +155,11 @@ class SlopeStabilityResult:
     kh : float
         Horizontal seismic coefficient.
     slice_data : list of SliceData or None
-        Per-slice breakdown.
+        Per-slice breakdown (force table: W, N', S_mob, u*l, E/X at the
+        slice boundaries for rigorous methods, alpha).
+    thrust_line : list of (float, float) or None
+        Line of thrust (x, elevation) at each slice boundary from the
+        rigorous GLE solution (Spencer / M-P / GLE methods only).
     slip_points : list of (float, float) or None
         Noncircular slip surface points. None for circular.
     tension_crack_depth : float
@@ -154,6 +188,7 @@ class SlopeStabilityResult:
     has_seismic: bool = False
     kh: float = 0.0
     slice_data: Optional[List[SliceData]] = None
+    thrust_line: Optional[List[Tuple[float, float]]] = None
     slip_points: Optional[List[Tuple[float, float]]] = None
     tension_crack_depth: float = 0.0
     tension_crack_water_depth: float = 0.0
@@ -313,6 +348,10 @@ class SlopeStabilityResult:
                 sum(r["T_kN_per_m"] for r in self.reinforcements), 2)
         if self.slice_data is not None:
             d["slice_data"] = [s.to_dict() for s in self.slice_data]
+        if self.thrust_line is not None:
+            d["thrust_line"] = [
+                (round(x, 3), round(z, 3)) for x, z in self.thrust_line
+            ]
         return d
 
 
