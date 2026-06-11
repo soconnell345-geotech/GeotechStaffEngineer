@@ -254,5 +254,13 @@ B6. Griffiths & Lane (1999) style cross-check of one geometry vs fem2d SRM
   (funhouse_agent/tests/test_slope_stability_adapter.py); funhouse suite
   668 passed / 5 skipped.
 
-NEXT ACTION: P10 — VALIDATION.md (B1/B2/B3/B4/B5 + B6 fem2d SRM
-cross-check) with slow-marked runnable validation tests.
+- 2026-06-11 P10 done: VALIDATION.md (ours-vs-published tables: B1 F&K
+  per-method dry+ru, B2 weak-layer composite, B3 ACADS 1(a) searches
+  0.985-0.989 vs published 1.00, B4 Duncan beta_LN 2.318/pf 1.02%, B5
+  Duncan suite 19/19, B6 fem2d SRM 1.053 vs LE 0.985-0.989 on ACADS) +
+  test_validation.py regeneration tests (19 fast + 1 slow-marked SRM
+  cross-check ~6 min). ALL PHASES COMPLETE.
+
+Remaining descoped item: rapid drawdown (designed stub in
+rapid_drawdown_fos docstring — Duncan/USACE 3-stage method; needs
+per-slice consolidation-stress (Kc) bookkeeping).
