@@ -77,6 +77,9 @@ class Slice:
     in_tension_crack: bool = False
     crack_water_force: float = 0.0
     crack_water_z: float = 0.0
+    pond_force: float = 0.0      # vertical pond water weight (also in weight)
+    pond_hforce: float = 0.0     # signed horizontal pond thrust, +x (kN/m)
+    pond_z: float = 0.0          # elevation of pond thrust line of action
 
 
 @dataclass
@@ -187,6 +190,7 @@ def build_slices(geom: SlopeGeometry,
         crack_base_elev = z_surface_entry - geom.tension_crack_depth
 
     slices = []
+    below_base_x = []   # x of slices whose base dips below ALL soil layers
     for i in range(n_slices):
         x_left = x_entry + i * dx
         x_right = x_left + dx
@@ -202,12 +206,15 @@ def build_slices(geom: SlopeGeometry,
         if height <= 0:
             continue
 
-        # Fix empty-space bug: skip slices where slip surface is below
-        # all soil layers (cutting through empty space)
+        # Slip surface below all soil layers = cutting through empty
+        # space. Edge slivers are skipped; an INTERIOR hole makes the
+        # trial surface invalid (SS-5) — previously the middle slices
+        # were silently dropped and the remaining fragments produced a
+        # meaningless (often absurdly low) FOS that could win searches.
         if geom.layer_at_point(x_mid, z_base) is None:
-            # Check if z_base is below the lowest soil layer
             min_layer_bot = min(L.bottom_at(x_mid) for L in geom.soil_layers)
             if z_base < min_layer_bot:
+                below_base_x.append(x_mid)
                 continue
 
         alpha = slip.tangent_angle_at(x_mid)
@@ -222,21 +229,61 @@ def build_slices(geom: SlopeGeometry,
         # Weight through multiple layers
         weight = _compute_slice_weight(geom, x_mid, z_top, z_base, width, gwt_elev)
 
+        # Ponded water (auto-detected): GWT above the ground surface means
+        # standing water on the slice. The hydrostatic pressure on the
+        # submerged ground-surface segment resolves into
+        #   - a vertical component = weight of the water column
+        #     (added to the slice weight), and
+        #   - a signed horizontal component on inclined ground
+        #     Fx = gamma_w * (d_l^2 - d_r^2)/2  (d = pool depth at the
+        #     slice edges, clipped at 0), pushing toward the soil — the
+        #     classic external-water buttress.
+        # The pore pressure at the base already uses the full head to the
+        # pool surface, so with both components a fully submerged slope
+        # reproduces the buoyant-weight equivalence (boundary water
+        # pressures + internal u == buoyancy).
+        pond_weight = 0.0
+        pond_hforce = 0.0
+        pond_z = z_top
+        if gwt_elev is not None and gwt_elev > z_top:
+            pond_weight = GAMMA_W * (gwt_elev - z_top) * width
+        if gwt_elev is not None:
+            d_l = max(gwt_elev - geom.ground_elevation_at(x_left), 0.0)
+            d_r = max(gwt_elev - geom.ground_elevation_at(x_right), 0.0)
+            if d_l > 0.0 or d_r > 0.0:
+                pond_hforce = 0.5 * GAMMA_W * (d_l * d_l - d_r * d_r)
+                if abs(pond_hforce) > 1e-12:
+                    # line of action: centroid of the trapezoidal pressure
+                    # diagram on the projected vertical face
+                    depth = (2.0 * (d_l ** 3 - d_r ** 3)
+                             / (3.0 * (d_l * d_l - d_r * d_r)))
+                    pond_z = gwt_elev - depth
+
         # Pore pressure at base
         pore_pressure = _pore_pressure_at_base(z_base, gwt_elev)
 
         # Strength parameters from layer at base midpoint
         base_layer = geom.layer_at_point(x_mid, z_base)
-        if base_layer is not None:
-            c, phi = base_layer.shear_strength_params
-            # Apply Ru if no GWT pore pressure and layer has Ru > 0
-            if pore_pressure <= 0 and base_layer.ru > 0:
-                # u = Ru * gamma * h  where h = overburden depth
-                overburden_h = z_top - z_base
-                pore_pressure = base_layer.ru * base_layer.gamma * overburden_h
-        else:
+        if base_layer is None:
             # Fallback: use bottom-most layer
-            c, phi = geom.soil_layers[-1].shear_strength_params
+            base_layer = geom.soil_layers[-1]
+        # Apply Ru if no GWT pore pressure and layer has Ru > 0
+        if pore_pressure <= 0 and base_layer.ru > 0:
+            # u = Ru * gamma * h  where h = overburden depth
+            overburden_h = z_top - z_base
+            pore_pressure = base_layer.ru * base_layer.gamma * overburden_h
+
+        # Strength model evaluation (SHANSEP / Hoek-Brown need stress
+        # estimates at the base: Fellenius normal and vertical effective)
+        if base_layer.strength_model == "mohr_coulomb":
+            c, phi = base_layer.shear_strength_params
+        else:
+            sigma_v = (weight / width if width > 0 else 0.0) - pore_pressure
+            alpha_cos = math.cos(alpha)
+            dl = width / max(abs(alpha_cos), 1e-10)
+            sigma_n = (weight * alpha_cos / dl if dl > 0 else 0.0) \
+                - pore_pressure
+            c, phi = base_layer.strength_at(sigma_n, sigma_v)
 
         # Tension crack: slices near the entry where base is above crack
         # bottom have no shear resistance (open crack face).
@@ -252,8 +299,12 @@ def build_slices(geom: SlopeGeometry,
         # Surcharge
         surcharge_force = geom.surcharge_at(x_mid) * width
 
-        # Seismic horizontal force
+        # Seismic horizontal force — applied to the SOIL mass only
+        # (hydrodynamic effects on ponded water are not modeled)
         seismic_force = geom.kh * weight
+
+        # add pond water weight after seismic so kh acts on soil only
+        weight = weight + pond_weight
 
         # Centroid elevation (for seismic moment arm)
         z_centroid = z_base + height / 2.0
@@ -276,7 +327,23 @@ def build_slices(geom: SlopeGeometry,
             seismic_force=seismic_force,
             z_centroid=z_centroid,
             in_tension_crack=in_crack,
+            pond_force=pond_weight,
+            pond_hforce=pond_hforce,
+            pond_z=pond_z,
         ))
+
+    # Reject surfaces that dip below the soil model between valid slices
+    # (SS-5). A surface deeper than the lowest layer bottom must be
+    # re-specified (smaller circle, or model the deeper material).
+    if below_base_x and slices:
+        x_first = slices[0].x_mid
+        x_last = slices[-1].x_mid
+        if any(x_first < xb < x_last for xb in below_base_x):
+            raise ValueError(
+                "Slip surface passes below the bottom of the deepest soil "
+                f"layer between x={x_first:.2f} and x={x_last:.2f}. "
+                "Use a shallower trial surface or extend the soil layers."
+            )
 
     # Tension crack water force: applied to the first non-cracked slice
     # F_w = 0.5 * gamma_w * z_w^2, acting at z_w/3 above crack base

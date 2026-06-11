@@ -34,3 +34,4 @@
   allowed_values, returns fos_basis + srf_curve.
 - 2026-06-03 (lead, Phase 0): slope_stability adapter METHOD_INFO updated (allowed_values +
   search_critical_surface steer). funhouse_agent tests green.
+- 2026-06-11 (le-modern close-out): slope_stability LE modernization P0-P10 complete — rigorous GLE/M-P engine, Janbu+f0, DE/entry-exit searches, reinforcement, FOSM+MC, SHANSEP/Hoek-Brown, ponded water, per-slice force table + thrust line, modernized funhouse adapter, VALIDATION.md (F&K/ACADS/Duncan + fem2d SRM cross-check). Suites: slope_stability 348p/17s (incl. slow SRM cross-check), funhouse 668p/5s.

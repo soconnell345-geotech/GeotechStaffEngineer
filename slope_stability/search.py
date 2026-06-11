@@ -22,7 +22,10 @@ from typing import List, Tuple, Optional, Dict, Any
 from slope_stability.geometry import SlopeGeometry
 from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurface
 from slope_stability.slices import build_slices
-from slope_stability.methods import fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos
+from slope_stability.methods import (
+    fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
+)
+from slope_stability.gle import janbu_fos
 from slope_stability.results import SearchResult, SlopeStabilityResult
 
 
@@ -50,8 +53,10 @@ def _compute_fos(geom: SlopeGeometry,
                 fos = bishop_fos(slices, slip, tol=tol)
         elif method == "spencer":
             fos, _ = spencer_fos(slices, slip, tol=tol)
-        elif method == "morgenstern_price":
+        elif method in ("morgenstern_price", "gle"):
             fos, _ = morgenstern_price_fos(slices, slip, tol=tol)
+        elif method == "janbu":
+            fos, _, _ = janbu_fos(slices, slip, tol=min(tol, 1e-4) * 0.1)
         else:
             fos = bishop_fos(slices, slip, tol=tol)
 
@@ -308,6 +313,7 @@ def search_noncircular(
     n_slices: int = 30,
     tol: float = 1e-4,
     seed: Optional[int] = None,
+    method: str = "spencer",
 ) -> SearchResult:
     """Search for the critical noncircular slip surface using random polylines.
 
@@ -385,7 +391,7 @@ def search_noncircular(
 
         try:
             slip = PolylineSlipSurface(points=points)
-            fos = _compute_fos(geom, slip, "spencer", n_slices, tol=tol)
+            fos = _compute_fos(geom, slip, method, n_slices, tol=tol)
             n_evaluated += 1
 
             grid_fos.append({
@@ -409,7 +415,7 @@ def search_noncircular(
             slices = build_slices(geom, best_slip, n_slices)
             critical = SlopeStabilityResult(
                 FOS=best_fos,
-                method="Spencer",
+                method=method.replace("_", "-").title(),
                 xc=0.0,
                 yc=0.0,
                 radius=0.0,
@@ -977,4 +983,188 @@ def search_entry_exit(
         critical=critical,
         n_surfaces_evaluated=n_evaluated,
         grid_fos=grid_fos,
+    )
+
+
+# ── Differential-Evolution Noncircular Refinement ───────────────────────
+
+def search_de(
+    geom: SlopeGeometry,
+    x_entry_range: Tuple[float, float],
+    x_exit_range: Tuple[float, float],
+    n_points: int = 7,
+    method: str = "spencer",
+    n_slices: int = 30,
+    tol: float = 1e-4,
+    seed: Optional[int] = None,
+    maxiter: int = 30,
+    popsize: int = 15,
+    seed_surface=None,
+    n_seed_trials: int = 150,
+) -> SearchResult:
+    """Noncircular critical-surface optimization via differential evolution.
+
+    Optimizes a polyline slip surface parameterized as
+    [x_entry, x_exit, depth_frac_1..k] (k = n_points - 2 interior
+    vertices at evenly spaced x, each a fraction of the local depth to
+    the lowest layer bottom). The parameterization enforces monotonic x
+    and keeps vertices inside the ground; convex bumps (a vertex above
+    the chord of its neighbours by more than 2% of the slope height)
+    are penalized to keep surfaces kinematically reasonable.
+
+    Seeded with the best surface from a short random search (or a
+    user-provided ``seed_surface``) so DE refines rather than starts
+    cold.
+
+    Parameters
+    ----------
+    geom : SlopeGeometry
+    x_entry_range, x_exit_range : (float, float)
+        Entry/exit x windows on the ground surface.
+    n_points : int
+        Total polyline vertices (>= 4 recommended for DE). Default 7.
+    method : str
+        FOS method for evaluation. Default 'spencer'.
+    n_slices, tol, seed : usual meanings.
+    maxiter, popsize : int
+        scipy differential_evolution budget. Default 30 / 15.
+    seed_surface : PolylineSlipSurface, optional
+        Starting surface; its vertices are resampled onto this
+        parameterization. Default: best of a short random search.
+    n_seed_trials : int
+        Trials for the seeding random search. Default 150.
+
+    Returns
+    -------
+    SearchResult
+
+    References
+    ----------
+    Storn & Price (1997) — Differential Evolution.
+    Cheng et al. (2007) — heuristic optimization of noncircular surfaces.
+    """
+    from scipy.optimize import differential_evolution
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    min_layer_bot = min(L.bottom_elevation for L in geom.soil_layers)
+    z_max_ground = max(z for _, z in geom.surface_points)
+    slope_h = z_max_ground - min(z for _, z in geom.surface_points)
+    n_interior = max(n_points - 2, 1)
+    dim = 2 + n_interior
+
+    def _to_slip(v):
+        x_en = float(min(max(v[0], x_entry_range[0]), x_entry_range[1]))
+        x_ex = float(min(max(v[1], x_exit_range[0]), x_exit_range[1]))
+        if x_ex <= x_en + 1.0:
+            return None
+        pts = [(x_en, geom.ground_elevation_at(x_en))]
+        for j in range(n_interior):
+            frac = (j + 1) / (n_interior + 1)
+            x = x_en + frac * (x_ex - x_en)
+            zg = geom.ground_elevation_at(x)
+            max_depth = zg - min_layer_bot
+            if max_depth <= 0:
+                max_depth = 1.0
+            df = float(min(max(v[2 + j], 0.02), 0.95))
+            pts.append((x, zg - df * max_depth))
+        pts.append((x_ex, geom.ground_elevation_at(x_ex)))
+        try:
+            return PolylineSlipSurface(points=pts)
+        except ValueError:
+            return None
+
+    def _objective(v):
+        slip = _to_slip(v)
+        if slip is None:
+            return _FOS_MAX
+        fos = _compute_fos(geom, slip, method, n_slices, tol=tol)
+        # Convexity penalty: vertex above the chord of its neighbours
+        pts = slip.points
+        pen = 0.0
+        bump_tol = 0.02 * max(slope_h, 1.0)
+        for i in range(1, len(pts) - 1):
+            x0, z0 = pts[i - 1]
+            x1, z1 = pts[i + 1]
+            t = (pts[i][0] - x0) / (x1 - x0) if x1 > x0 else 0.5
+            z_chord = z0 + t * (z1 - z0)
+            if pts[i][1] > z_chord + bump_tol:
+                pen += 10.0 * (pts[i][1] - z_chord - bump_tol) / max(slope_h, 1.0)
+        return fos + pen
+
+    # ---- seeding -----------------------------------------------------------
+    if seed_surface is None and n_seed_trials > 0:
+        seed_res = search_noncircular(
+            geom, x_entry_range, x_exit_range, n_trials=n_seed_trials,
+            n_points=n_points, n_slices=n_slices, tol=tol, seed=seed,
+            method=method,
+        )
+        if seed_res.critical is not None and seed_res.critical.slip_points:
+            seed_surface = PolylineSlipSurface(
+                points=seed_res.critical.slip_points)
+
+    x0 = None
+    if seed_surface is not None:
+        pts = seed_surface.points
+        x_en, x_ex = pts[0][0], pts[-1][0]
+        x_en = min(max(x_en, x_entry_range[0]), x_entry_range[1])
+        x_ex = min(max(x_ex, x_exit_range[0]), x_exit_range[1])
+        v = [x_en, x_ex]
+        for j in range(n_interior):
+            frac = (j + 1) / (n_interior + 1)
+            x = x_en + frac * (x_ex - x_en)
+            z_slip = seed_surface.slip_elevation_at(x)
+            zg = geom.ground_elevation_at(x)
+            max_depth = zg - min_layer_bot
+            df = 0.3 if (z_slip is None or max_depth <= 0) else \
+                min(max((zg - z_slip) / max_depth, 0.02), 0.95)
+            v.append(df)
+        x0 = v
+
+    bounds = ([x_entry_range, x_exit_range]
+              + [(0.02, 0.95)] * n_interior)
+
+    # init population: latin hypercube + seed row
+    init = "latinhypercube"
+    if x0 is not None:
+        pop = np.empty((max(popsize, 5) * 1, dim))
+        for i in range(pop.shape[0]):
+            for d, (lo, hi) in enumerate(bounds):
+                pop[i, d] = rng.uniform(lo, hi)
+        pop[0, :] = x0
+        init = pop
+
+    result = differential_evolution(
+        _objective, bounds, init=init, maxiter=maxiter,
+        popsize=popsize, seed=seed, tol=1e-6, polish=False,
+        mutation=(0.4, 1.0), recombination=0.8,
+    )
+
+    n_evaluated = int(result.nfev)
+    best_slip = _to_slip(result.x)
+    best_fos = float(result.fun)
+
+    critical = None
+    if best_slip is not None and best_fos < _FOS_MAX:
+        # objective may include penalty; recompute clean FOS
+        clean = _compute_fos(geom, best_slip, method, n_slices, tol=tol)
+        try:
+            x_entry, x_exit = best_slip.find_entry_exit(geom)
+            slices = build_slices(geom, best_slip, n_slices)
+            critical = SlopeStabilityResult(
+                FOS=clean,
+                method=method.replace("_", "-").title(),
+                xc=0.0, yc=0.0, radius=0.0,
+                x_entry=x_entry, x_exit=x_exit,
+                n_slices=len(slices),
+                has_seismic=geom.kh > 0, kh=geom.kh,
+                slip_points=list(best_slip.points),
+            )
+        except ValueError:
+            pass
+
+    return SearchResult(
+        critical=critical,
+        n_surfaces_evaluated=n_evaluated,
+        grid_fos=[],
     )

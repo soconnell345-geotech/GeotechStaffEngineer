@@ -211,10 +211,10 @@ class TestDuncanExample2:
             slices = build_slices(geom, slip, 30)
             fos_b = bishop_fos(slices, slip)
             fos_s, theta = spencer_fos(slices, slip)
-            # Should be within 1% for circular
+            # Rigorous Spencer: close to Bishop for circular surfaces,
+            # theta = atan(lambda) nonzero (see F&K 1977).
             assert abs(fos_s - fos_b) / fos_b < 0.02
-            # Theta should be near 0 for circular
-            assert abs(theta) < 2.0
+            assert abs(theta) < 35.0
         except ValueError:
             pytest.skip("Circle does not intersect slope")
 
@@ -471,8 +471,23 @@ class TestDuncanExample6:
         assert r_wet.critical is not None
         assert r_wet.critical.FOS < r_dry.critical.FOS
 
-    def test_higher_gwt_lower_fos(self):
-        """Higher water table gives lower FOS."""
+    def test_submergence_buttresses_slope(self):
+        """Raising the external pool RAISES FOS for this c'-phi' slope.
+
+        Both pool levels stand above the toe, so this compares two
+        partially submerged cases. With ponded water modeled as an
+        external load (P7: water-column weight + horizontal thrust on
+        the submerged face) plus hydrostatic u, deeper submergence
+        moves the soil toward the buoyant condition and the FOS rises
+        (resisting c' term is unaffected while driving weight drops) —
+        Duncan's Example 6 point that submergence must be modeled.
+
+        NOTE: pre-P7 this test asserted the opposite (higher pool ->
+        lower FOS) because external water was ignored and only the
+        added pore pressure was felt. That behavior was doubly
+        conservative; the buttress now governs. test_water_reduces_fos
+        still covers the internal-GWT-rise direction vs dry.
+        """
         H = _ft_to_m(40)
         geom_low_gwt = self._geom(gwt_elevation=H * 0.25)
         geom_high_gwt = self._geom(gwt_elevation=H * 0.75)
@@ -482,7 +497,7 @@ class TestDuncanExample6:
 
         assert r_low.critical is not None
         assert r_high.critical is not None
-        assert r_high.critical.FOS < r_low.critical.FOS
+        assert r_high.critical.FOS > r_low.critical.FOS
 
 
 # ============================================================================

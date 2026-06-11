@@ -18,9 +18,10 @@ from slope_stability.slices import build_slices, compute_slice_forces
 from slope_stability.methods import (
     fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
 )
+from slope_stability.gle import janbu_fos
 from slope_stability.search import (
     grid_search, search_noncircular,
-    search_pso, search_weak_layer_biased, search_entry_exit,
+    search_pso, search_weak_layer_biased, search_entry_exit, search_de,
 )
 from slope_stability.results import (
     SlopeStabilityResult, SliceData, SearchResult,
@@ -35,6 +36,7 @@ def analyze_slope(geom: SlopeGeometry,
                   method: str = "bishop",
                   n_slices: int = 30,
                   tol: float = 1e-4,
+                  f_interslice: str = "half_sine",
                   include_slice_data: bool = False,
                   compare_methods: bool = False,
                   ) -> SlopeStabilityResult:
@@ -53,11 +55,18 @@ def analyze_slope(geom: SlopeGeometry,
     slip_surface : CircularSlipSurface or PolylineSlipSurface, optional
         Explicit slip surface object. If provided, xc/yc/radius are ignored.
     method : str
-        'fellenius', 'bishop', 'spencer', or 'morgenstern_price'. Default 'bishop'.
+        'fellenius', 'bishop', 'janbu', 'spencer', 'morgenstern_price'
+        or 'gle'. 'gle' is an alias for the rigorous Morgenstern-Price
+        solution with a selectable interslice force function. 'janbu'
+        reports the f0-corrected FOS (uncorrected value in
+        FOS_janbu_uncorrected). Default 'bishop'.
     n_slices : int
         Number of slices. Default 30.
     tol : float
         Convergence tolerance for iterative methods. Default 1e-4.
+    f_interslice : str
+        Interslice force function for 'morgenstern_price' / 'gle':
+        'constant', 'half_sine' (default), 'clipped_sine', 'trapezoidal'.
     include_slice_data : bool
         If True, include per-slice breakdown in results.
     compare_methods : bool
@@ -83,6 +92,12 @@ def analyze_slope(geom: SlopeGeometry,
     x_entry, x_exit = slip.find_entry_exit(geom)
     slices = build_slices(geom, slip, n_slices)
 
+    # Reinforcement crossings (nails / anchors / geosynthetics)
+    from slope_stability.reinforcement import compute_reinforcement_forces
+    reinf_forces = compute_reinforcement_forces(geom, slip, x_entry, x_exit)
+    if not reinf_forces:
+        reinf_forces = None
+
     # For result: store circle params if circular, zeros otherwise
     r_xc = slip.xc if is_circular else 0.0
     r_yc = slip.yc if is_circular else 0.0
@@ -94,51 +109,100 @@ def analyze_slope(geom: SlopeGeometry,
         method = "spencer"
 
     # Primary FOS
+    gle_result = None      # rich GLE state for rigorous methods
     theta_spencer = None
     fos_spencer = None
     fos_mp = None
     lambda_mp = None
+    fos_janbu = None
+    fos_janbu_uncorr = None
+    f0_janbu = None
     if method == "fellenius":
-        fos = fellenius_fos(slices, slip)
+        fos = fellenius_fos(slices, slip, reinf_forces=reinf_forces)
         method_name = "Fellenius"
+    elif method == "janbu":
+        fos_c, fos_u, f0 = janbu_fos(slices, slip, tol=min(tol, 1e-4) * 0.1,
+                                     reinf_forces=reinf_forces)
+        fos = fos_c
+        fos_janbu = fos_c
+        fos_janbu_uncorr = fos_u
+        f0_janbu = f0
+        method_name = "Janbu"
     elif method == "spencer":
-        fos, theta = spencer_fos(slices, slip, tol=tol)
+        gle_result = _try_gle(slices, slip, "constant", tol, reinf_forces)
+        if gle_result is not None:
+            fos = gle_result.fos
+            theta = math.degrees(math.atan(gle_result.lam))
+        else:
+            fos, theta = spencer_fos(slices, slip, tol=tol,
+                                     reinf_forces=reinf_forces)
         fos_spencer = fos
         theta_spencer = theta
         method_name = "Spencer"
-    elif method == "morgenstern_price":
-        fos, lam = morgenstern_price_fos(slices, slip, tol=tol)
+    elif method in ("morgenstern_price", "gle"):
+        gle_result = _try_gle(slices, slip, f_interslice, tol, reinf_forces)
+        if gle_result is not None:
+            fos, lam = gle_result.fos, gle_result.lam
+        else:
+            fos, lam = morgenstern_price_fos(
+                slices, slip, f_interslice=f_interslice, tol=tol,
+                reinf_forces=reinf_forces)
         fos_mp = fos
         lambda_mp = lam
-        method_name = "Morgenstern-Price"
+        method_name = ("GLE" if method == "gle" else "Morgenstern-Price")
     else:
-        fos = bishop_fos(slices, slip, tol=tol)
+        fos = bishop_fos(slices, slip, tol=tol, reinf_forces=reinf_forces)
         method_name = "Bishop"
 
     # Comparison FOS values
     fos_fellenius = None
     fos_bishop = None
     if compare_methods:
-        fos_fellenius = fellenius_fos(slices, slip)
+        fos_fellenius = fellenius_fos(slices, slip,
+                                      reinf_forces=reinf_forces)
         if is_circular:
-            fos_bishop = bishop_fos(slices, slip, tol=tol)
+            fos_bishop = bishop_fos(slices, slip, tol=tol,
+                                    reinf_forces=reinf_forces)
         if fos_spencer is None:
-            fos_sp, theta = spencer_fos(slices, slip, tol=tol)
+            fos_sp, theta = spencer_fos(slices, slip, tol=tol,
+                                        reinf_forces=reinf_forces)
             fos_spencer = fos_sp
             theta_spencer = theta
         if fos_mp is None:
-            fos_mp, lambda_mp = morgenstern_price_fos(slices, slip, tol=tol)
+            fos_mp, lambda_mp = morgenstern_price_fos(
+                slices, slip, f_interslice=f_interslice, tol=tol,
+                reinf_forces=reinf_forces)
+        if fos_janbu is None:
+            fos_janbu, fos_janbu_uncorr, f0_janbu = janbu_fos(
+                slices, slip, tol=min(tol, 1e-4) * 0.1,
+                reinf_forces=reinf_forces)
 
-    # Slice data for plotting
+    # Slice data (per-slice force table) and thrust line
     slice_data = None
+    thrust_line = None
     if include_slice_data:
         slice_data = []
-        for s in slices:
+        rich = gle_result  # rigorous per-slice/boundary forces, if any
+        for i, s in enumerate(slices):
             sf = compute_slice_forces(s)
             dl = s.base_length
-            sigma_n = sf.N_prime / dl if dl > 0 else 0.0
-            tau_mob = sf.S_mobilized / dl if dl > 0 else 0.0
-            tau_avail = sf.T_available / dl if dl > 0 else 0.0
+            U = s.pore_pressure * dl
+            if rich is not None:
+                # rigorous base forces at the converged GLE state
+                N_eff = rich.base_normal_eff[i]
+                S_mob = rich.shear_mobilized[i]
+                T_avail = S_mob * rich.fos
+                E_l, E_r = rich.interslice_E[i], rich.interslice_E[i + 1]
+                X_l, X_r = rich.interslice_X[i], rich.interslice_X[i + 1]
+            else:
+                # Fellenius decomposition (no interslice forces)
+                N_eff = sf.N_prime
+                S_mob = sf.S_mobilized
+                T_avail = sf.T_available
+                E_l = E_r = X_l = X_r = None
+            sigma_n = N_eff / dl if dl > 0 else 0.0
+            tau_mob = S_mob / dl if dl > 0 else 0.0
+            tau_avail = T_avail / dl if dl > 0 else 0.0
             slice_data.append(SliceData(
                 x_mid=s.x_mid,
                 z_top=s.z_top,
@@ -155,7 +219,16 @@ def analyze_slope(geom: SlopeGeometry,
                 shear_stress_kPa=tau_mob,
                 shear_resistance_kPa=tau_avail,
                 in_tension_crack=s.in_tension_crack,
+                N_eff_kN=N_eff,
+                S_mob_kN=S_mob,
+                U_base_kN=U,
+                E_left_kN=E_l,
+                E_right_kN=E_r,
+                X_left_kN=X_l,
+                X_right_kN=X_r,
             ))
+        if rich is not None and rich.boundary_x:
+            thrust_line = list(zip(rich.boundary_x, rich.thrust_elevation))
 
     return SlopeStabilityResult(
         FOS=fos,
@@ -171,14 +244,125 @@ def analyze_slope(geom: SlopeGeometry,
         FOS_spencer=fos_spencer,
         FOS_morgenstern_price=fos_mp,
         lambda_mp=lambda_mp,
+        FOS_janbu=fos_janbu,
+        FOS_janbu_uncorrected=fos_janbu_uncorr,
+        janbu_f0=f0_janbu,
+        reinforcements=[
+            {
+                "kind": f.kind, "index": f.index,
+                "x_m": round(f.x, 3), "z_m": round(f.z, 3),
+                "T_kN_per_m": round(f.T, 2),
+                "controlled_by": f.controlled_by,
+            } for f in (reinf_forces or [])
+        ] or None,
         n_slices=len(slices),
         has_seismic=geom.kh > 0,
         kh=geom.kh,
         slice_data=slice_data,
+        thrust_line=thrust_line,
         slip_points=r_slip_points,
         tension_crack_depth=geom.tension_crack_depth,
         tension_crack_water_depth=geom.tension_crack_water_depth,
     )
+
+
+def _try_gle(slices, slip, f_interslice, tol, reinf_forces):
+    """Run the rigorous GLE engine; return the GLEResult or None.
+
+    Mirrors the convergence acceptance used by the spencer_fos /
+    morgenstern_price_fos wrappers so analyze_slope can keep the rich
+    per-slice state (interslice E/X, thrust line) without solving twice.
+    """
+    from slope_stability.gle import gle_fos
+    try:
+        res = gle_fos(slices, slip, f_interslice=f_interslice,
+                      tol=min(tol, 1e-4) * 0.1, reinf_forces=reinf_forces)
+        if res.converged and 0.0 < res.fos < 900.0:
+            return res
+    except (ValueError, ZeroDivisionError, OverflowError):
+        pass
+    return None
+
+
+def compare_methods_table(geom: SlopeGeometry,
+                          xc: float = None,
+                          yc: float = None,
+                          radius: float = None,
+                          slip_surface=None,
+                          n_slices: int = 30,
+                          tol: float = 1e-4,
+                          f_interslice: str = "half_sine") -> dict:
+    """Run ALL limit-equilibrium methods on one slip surface.
+
+    The classic Fredlund & Krahn (1977) style comparison: one surface,
+    every method, side by side — useful for judging method sensitivity
+    and for validation against published tables.
+
+    Parameters
+    ----------
+    geom : SlopeGeometry
+    xc, yc, radius : float, optional
+        Trial circle (or pass slip_surface).
+    slip_surface : CircularSlipSurface or PolylineSlipSurface, optional
+    n_slices : int
+    tol : float
+    f_interslice : str
+        Interslice function for the Morgenstern-Price row.
+
+    Returns
+    -------
+    dict with keys:
+        'rows' : list of dicts {method, FOS, detail}
+        'surface' : surface description dict
+        'summary' : formatted text table
+    """
+    res = analyze_slope(geom, xc=xc, yc=yc, radius=radius,
+                        slip_surface=slip_surface, method="bishop"
+                        if (slip_surface is None or
+                            getattr(slip_surface, "is_circular", True))
+                        else "spencer",
+                        n_slices=n_slices, tol=tol,
+                        f_interslice=f_interslice, compare_methods=True)
+
+    rows = []
+    if res.FOS_fellenius is not None:
+        rows.append({"method": "Fellenius (OMS)",
+                     "FOS": round(res.FOS_fellenius, 4), "detail": ""})
+    if res.FOS_bishop is not None:
+        rows.append({"method": "Bishop simplified",
+                     "FOS": round(res.FOS_bishop, 4), "detail": ""})
+    if res.FOS_janbu_uncorrected is not None:
+        rows.append({"method": "Janbu simplified (uncorrected)",
+                     "FOS": round(res.FOS_janbu_uncorrected, 4),
+                     "detail": ""})
+    if res.FOS_janbu is not None:
+        rows.append({"method": "Janbu simplified (corrected)",
+                     "FOS": round(res.FOS_janbu, 4),
+                     "detail": f"f0={res.janbu_f0:.3f}"
+                     if res.janbu_f0 else ""})
+    if res.FOS_spencer is not None:
+        rows.append({"method": "Spencer",
+                     "FOS": round(res.FOS_spencer, 4),
+                     "detail": f"theta={res.theta_spencer:.2f} deg"
+                     if res.theta_spencer is not None else ""})
+    if res.FOS_morgenstern_price is not None:
+        rows.append({"method": f"Morgenstern-Price ({f_interslice})",
+                     "FOS": round(res.FOS_morgenstern_price, 4),
+                     "detail": f"lambda={res.lambda_mp:.3f}"
+                     if res.lambda_mp is not None else ""})
+
+    surface = {"type": "circular" if res.is_circular else "noncircular",
+               "xc": res.xc, "yc": res.yc, "radius": res.radius,
+               "x_entry": round(res.x_entry, 3),
+               "x_exit": round(res.x_exit, 3)}
+
+    lines = ["Method comparison (one surface, all methods)",
+             "-" * 52]
+    for r in rows:
+        lines.append(f"  {r['method']:<34s} {r['FOS']:>7.3f}  {r['detail']}")
+    summary = "\n".join(lines)
+
+    return {"rows": rows, "surface": surface, "summary": summary}
 
 
 def search_critical_surface(
@@ -218,7 +402,10 @@ def search_critical_surface(
     tol : float
         Convergence tolerance for iterative methods. Default 1e-4.
     surface_type : str
-        'circular' (default) or 'noncircular'.
+        'circular' (default, centre-grid search), 'entry_exit' (circular
+        arcs between entry/exit windows), 'noncircular' (random
+        polylines), 'noncircular_de' (differential-evolution refinement
+        seeded by a random search), 'pso', or 'weak_layer'.
     x_entry_range : (float, float), optional
         Allowed entry x-coordinate range.
     x_exit_range : (float, float), optional
@@ -242,6 +429,8 @@ def search_critical_surface(
     if x_exit_range is None:
         x_exit_range = (x_min_geo + (x_max_geo - x_min_geo) * 0.6, x_max_geo)
 
+    noncirc_method = method if method != "bishop" else "spencer"
+
     if surface_type == "noncircular":
         return search_noncircular(
             geom,
@@ -249,6 +438,19 @@ def search_critical_surface(
             x_exit_range=x_exit_range,
             n_trials=n_trials,
             n_points=n_points,
+            n_slices=n_slices,
+            tol=tol,
+            seed=seed,
+            method=noncirc_method,
+        )
+
+    if surface_type == "noncircular_de":
+        return search_de(
+            geom,
+            x_entry_range=x_entry_range,
+            x_exit_range=x_exit_range,
+            n_points=max(n_points, 5),
+            method=noncirc_method,
             n_slices=n_slices,
             tol=tol,
             seed=seed,
@@ -308,3 +510,39 @@ def search_critical_surface(
                          x_exit_range=x_exit_range)
 
     return result
+
+
+def rapid_drawdown_fos(geom: SlopeGeometry,
+                       drawdown_from_elevation: float,
+                       drawdown_to_elevation: float,
+                       **kwargs):
+    """Rapid drawdown analysis — NOT YET IMPLEMENTED (designed stub).
+
+    Planned implementation (Duncan, Wright & Brandon 2014, Ch. 9 /
+    USACE three-stage procedure):
+
+    1. Stage 1: long-term (drained) analysis with the high pool
+       (consolidation stresses sigma'_fc and tau_fc on the slip surface
+       from the pre-drawdown steady state).
+    2. Stage 2: undrained analysis after drawdown using composite
+       drained/undrained strength envelopes per slice — su tied to the
+       stage-1 consolidation stresses (Kc-dependent strengths).
+    3. Stage 3: drained check with the low pool; the governing FOS per
+       slice is min(undrained, drained).
+
+    Requires per-slice consolidation-stress bookkeeping and a composite
+    strength interpolation that the current Slice pipeline does not yet
+    carry. Until then, model drawdown conservatively by keeping the GWT
+    high inside the slope with the pond removed (gwt_points unchanged,
+    surface water at the drawn-down level).
+
+    Raises
+    ------
+    NotImplementedError
+    """
+    raise NotImplementedError(
+        "rapid_drawdown_fos is a designed stub (see docstring for the "
+        "planned Duncan 3-stage procedure). Conservative interim "
+        "approach: analyze with the pre-drawdown GWT inside the slope "
+        "and the external pool at the drawn-down elevation."
+    )

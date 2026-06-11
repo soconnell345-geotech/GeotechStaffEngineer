@@ -91,6 +91,21 @@ class SlopeSoilLayer:
     analysis_mode: str = "drained"
     ru: float = 0.0
     bottom_boundary_points: Optional[List[Tuple[float, float]]] = None
+    # --- strength model selection -------------------------------------
+    # 'mohr_coulomb' (default): c'/phi' or cu per analysis_mode.
+    # 'shansep':   su = shansep_S * OCR^shansep_m * sigma'_v  (phi = 0)
+    # 'hoek_brown': Generalized Hoek-Brown (GSI, mi, sigci, D) ->
+    #               instantaneous c-phi tangent at the slice base
+    #               effective normal stress (Fellenius estimate).
+    strength_model: str = "mohr_coulomb"
+    shansep_S: float = 0.22
+    shansep_m: float = 0.8
+    ocr: float = 1.0
+    su_min: float = 0.0
+    hb_sigci: float = 0.0
+    hb_gsi: float = 50.0
+    hb_mi: float = 10.0
+    hb_D: float = 0.0
 
     def __post_init__(self):
         if self.bottom_boundary_points is None:
@@ -118,6 +133,29 @@ class SlopeSoilLayer:
         else:
             if self.cu < 0:
                 raise ValueError(f"cu must be non-negative, got {self.cu}")
+        if self.strength_model not in ("mohr_coulomb", "shansep",
+                                       "hoek_brown"):
+            raise ValueError(
+                f"strength_model must be 'mohr_coulomb', 'shansep' or "
+                f"'hoek_brown', got '{self.strength_model}'")
+        if self.strength_model == "shansep":
+            if self.shansep_S <= 0:
+                raise ValueError(f"shansep_S must be positive, got {self.shansep_S}")
+            if self.ocr < 1.0:
+                raise ValueError(f"OCR must be >= 1, got {self.ocr}")
+            if not (0.0 < self.shansep_m <= 1.5):
+                raise ValueError(f"shansep_m out of range: {self.shansep_m}")
+        if self.strength_model == "hoek_brown":
+            if self.hb_sigci <= 0:
+                raise ValueError(
+                    "hb_sigci (intact UCS, kPa) must be positive for the "
+                    f"Hoek-Brown model, got {self.hb_sigci}")
+            if not (0.0 < self.hb_gsi <= 100.0):
+                raise ValueError(f"hb_gsi out of (0, 100]: {self.hb_gsi}")
+            if self.hb_mi <= 0:
+                raise ValueError(f"hb_mi must be positive, got {self.hb_mi}")
+            if not (0.0 <= self.hb_D <= 1.0):
+                raise ValueError(f"hb_D out of [0, 1]: {self.hb_D}")
 
     @property
     def thickness(self) -> float:
@@ -134,6 +172,39 @@ class SlopeSoilLayer:
         if self.analysis_mode == "undrained":
             return (self.cu, 0.0)
         return (self.c_prime, self.phi)
+
+    def strength_at(self, sigma_n_eff: float,
+                    sigma_v_eff: float) -> Tuple[float, float]:
+        """Base shear-strength parameters (c, phi) for this layer.
+
+        Parameters
+        ----------
+        sigma_n_eff : float
+            Effective normal stress estimate on the slice base (kPa) —
+            Fellenius estimate (W*cos(a)/l - u), used by the Hoek-Brown
+            tangent. The instantaneous c-phi is exact on the GHB
+            envelope at this stress; methods then iterate FOS with these
+            fixed parameters (standard LE treatment; Slide2's
+            'Generalized Hoek-Brown' does the same per-slice
+            linearization).
+        sigma_v_eff : float
+            Effective vertical (overburden) stress at the slice base
+            (kPa), used by SHANSEP.
+
+        Returns
+        -------
+        (c, phi) : tuple of float — cohesion (kPa) and friction angle
+            (degrees) to use at the slice base.
+        """
+        if self.strength_model == "shansep":
+            su = self.shansep_S * (self.ocr ** self.shansep_m) \
+                * max(sigma_v_eff, 0.0)
+            return (max(su, self.su_min), 0.0)
+        if self.strength_model == "hoek_brown":
+            return _hoek_brown_instantaneous(
+                max(sigma_n_eff, 0.0), self.hb_sigci, self.hb_gsi,
+                self.hb_mi, self.hb_D)
+        return self.shear_strength_params
 
     def bottom_at(self, x):
         """Bottom elevation at x. Uses polyline if set, else flat bottom_elevation."""
@@ -172,6 +243,10 @@ class SlopeGeometry:
         Horizontal seismic coefficient. Default 0 (no seismic).
     nails : list of SoilNail, optional
         Soil nails for reinforcement. Default None (no nails).
+    anchors : list of reinforcement.Anchor, optional
+        Tiebacks/anchors with user-specified allowable tension.
+    geosynthetics : list of reinforcement.Geosynthetic, optional
+        Horizontal reinforcement layers (T_allow per crossing).
     """
     surface_points: List[Tuple[float, float]]
     soil_layers: List[SlopeSoilLayer]
@@ -182,6 +257,8 @@ class SlopeGeometry:
     reinforcement_elevation: Optional[float] = None
     kh: float = 0.0
     nails: Optional[List[SoilNail]] = None
+    anchors: Optional[list] = None
+    geosynthetics: Optional[list] = None
     tension_crack_depth: float = 0.0
     tension_crack_water_depth: float = 0.0
 
@@ -287,3 +364,64 @@ class SlopeGeometry:
         if x_lo <= x <= x_hi:
             return self.surcharge
         return 0.0
+
+
+def _hoek_brown_instantaneous(sigma_n: float, sigci: float, gsi: float,
+                              mi: float, D: float):
+    """Instantaneous (c, phi) on the Generalized Hoek-Brown envelope.
+
+    GHB (Hoek, Carranza-Torres & Corkum 2002):
+        sigma1 = sigma3 + sigci*(mb*sigma3/sigci + s)^a
+        mb = mi*exp((GSI-100)/(28-14D)),  s = exp((GSI-100)/(9-3D)),
+        a = 1/2 + (exp(-GSI/15) - exp(-20/3))/6
+
+    Balmer's equations give the normal/shear stress on the failure
+    plane for a given sigma3:
+        d1 = dsigma1/dsigma3 = 1 + a*mb*(mb*sigma3/sigci + s)^(a-1)
+        sigma_n = sigma3 + (sigma1 - sigma3)/(d1 + 1)
+        tau     = (sigma_n - sigma3)*sqrt(d1)
+
+    sigma3 is found by bisection so that Balmer's sigma_n equals the
+    requested base normal stress; the tangent then yields
+        phi_i = atan( (d1 - 1) / (2*sqrt(d1)) ),
+        c_i   = tau - sigma_n*tan(phi_i).
+
+    Returns (c_i_kPa, phi_i_deg).
+    """
+    mb = mi * math.exp((gsi - 100.0) / (28.0 - 14.0 * D))
+    s = math.exp((gsi - 100.0) / (9.0 - 3.0 * D))
+    a = 0.5 + (math.exp(-gsi / 15.0) - math.exp(-20.0 / 3.0)) / 6.0
+    sig_t = -s * sigci / mb  # tensile cutoff (sigma3 at zero strength)
+
+    def balmer(sigma3):
+        term = mb * sigma3 / sigci + s
+        if term <= 0:
+            return None
+        d1 = 1.0 + a * mb * term ** (a - 1.0)
+        sigma1 = sigma3 + sigci * term ** a
+        sn = sigma3 + (sigma1 - sigma3) / (d1 + 1.0)
+        tau = (sn - sigma3) * math.sqrt(d1)
+        return sn, tau, d1
+
+    # bisection on sigma3 so balmer sigma_n == sigma_n requested
+    lo = sig_t * 0.999
+    hi = max(sigma_n, sigci) * 2.0 + 1.0
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        b = balmer(mid)
+        if b is None:
+            lo = mid
+            continue
+        if b[0] > sigma_n:
+            hi = mid
+        else:
+            lo = mid
+        if hi - lo < 1e-9 * max(abs(hi), 1.0):
+            break
+    b = balmer(0.5 * (lo + hi))
+    if b is None:
+        return (0.0, 0.0)
+    sn, tau, d1 = b
+    phi_i = math.atan((d1 - 1.0) / (2.0 * math.sqrt(d1)))
+    c_i = max(tau - sn * math.tan(phi_i), 0.0)
+    return (c_i, math.degrees(phi_i))

@@ -350,10 +350,13 @@ class TestSpencer:
         slip = _simple_slip()
         fos_b = bishop_fos(slices, slip)
         fos_s, theta = spencer_fos(slices, slip)
-        # Should be essentially identical for circular surfaces
-        assert abs(fos_s - fos_b) / fos_b < 0.01
-        # Theta should converge to ~0 for circular surfaces
-        assert abs(theta) < 1.0  # within 1 degree of zero
+        # Rigorous Spencer satisfies force AND moment equilibrium; for
+        # circular surfaces it stays close to Bishop (moment-dominated)
+        # but is not identical, and theta = atan(lambda) is nonzero
+        # (Fredlund & Krahn 1977 publish theta ~ 14.8 deg for their
+        # circular case).
+        assert abs(fos_s - fos_b) / fos_b < 0.02
+        assert abs(theta) < 35.0
 
     def test_spencer_geq_fellenius(self):
         """Spencer FOS >= Fellenius FOS."""
@@ -363,14 +366,18 @@ class TestSpencer:
         fos_s, _ = spencer_fos(slices, slip)
         assert fos_s >= fos_f - 0.01
 
-    def test_theta_zero_for_undrained_circular(self):
-        """For undrained phi=0 circular surface, theta ≈ 0."""
+    def test_theta_bounded_for_undrained_circular(self):
+        """For undrained phi=0 circular surface, rigorous Spencer
+        converges with a bounded interslice inclination and an FOS close
+        to Bishop (= exact for phi=0 moment equilibrium)."""
         geom = _simple_slope_geom(cu=50.0, analysis_mode="undrained")
         slip = _simple_slip()
         slices = build_slices(geom, slip, 30)
         fos, theta = spencer_fos(slices, slip)
         assert 0.5 < fos < 10.0
-        assert abs(theta) < 1.0
+        assert abs(theta) < 35.0
+        fos_b = bishop_fos(slices, slip)
+        assert abs(fos - fos_b) / fos_b < 0.03
 
     def test_seismic(self):
         """Spencer with seismic loading gives reasonable results."""
