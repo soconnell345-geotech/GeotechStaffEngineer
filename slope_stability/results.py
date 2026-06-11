@@ -149,6 +149,7 @@ class SlopeStabilityResult:
     FOS_janbu: Optional[float] = None
     FOS_janbu_uncorrected: Optional[float] = None
     janbu_f0: Optional[float] = None
+    reinforcements: Optional[List[Dict[str, Any]]] = None
     n_slices: int = 0
     has_seismic: bool = False
     kh: float = 0.0
@@ -193,6 +194,10 @@ class SlopeStabilityResult:
         ])
         if self.has_seismic:
             lines.append(f"  Seismic kh:       {self.kh:.3f}")
+        if self.reinforcements:
+            lines.append(f"  Reinforcement:    {len(self.reinforcements)} "
+                         f"element(s) crossing, total "
+                         f"{sum(r['T_kN_per_m'] for r in self.reinforcements):.1f} kN/m")
         if self.tension_crack_depth > 0:
             lines.append(f"  Tension crack:    {self.tension_crack_depth:.2f} m deep")
             if self.tension_crack_water_depth > 0:
@@ -301,6 +306,11 @@ class SlopeStabilityResult:
             d["FOS_janbu_uncorrected"] = round(self.FOS_janbu_uncorrected, 4)
         if self.janbu_f0 is not None:
             d["janbu_f0"] = round(self.janbu_f0, 4)
+        if self.reinforcements:
+            d["reinforcements"] = self.reinforcements
+            d["n_reinforcements_active"] = len(self.reinforcements)
+            d["total_reinforcement_kN_per_m"] = round(
+                sum(r["T_kN_per_m"] for r in self.reinforcements), 2)
         if self.slice_data is not None:
             d["slice_data"] = [s.to_dict() for s in self.slice_data]
         return d

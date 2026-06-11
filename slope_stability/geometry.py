@@ -172,6 +172,10 @@ class SlopeGeometry:
         Horizontal seismic coefficient. Default 0 (no seismic).
     nails : list of SoilNail, optional
         Soil nails for reinforcement. Default None (no nails).
+    anchors : list of reinforcement.Anchor, optional
+        Tiebacks/anchors with user-specified allowable tension.
+    geosynthetics : list of reinforcement.Geosynthetic, optional
+        Horizontal reinforcement layers (T_allow per crossing).
     """
     surface_points: List[Tuple[float, float]]
     soil_layers: List[SlopeSoilLayer]
@@ -182,6 +186,8 @@ class SlopeGeometry:
     reinforcement_elevation: Optional[float] = None
     kh: float = 0.0
     nails: Optional[List[SoilNail]] = None
+    anchors: Optional[list] = None
+    geosynthetics: Optional[list] = None
     tension_crack_depth: float = 0.0
     tension_crack_water_depth: float = 0.0
 

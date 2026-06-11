@@ -57,7 +57,8 @@ _MP_FUNCTIONS = {
 
 
 def fellenius_fos(slices: List[Slice],
-                  slip) -> float:
+                  slip,
+                  reinf_forces=None) -> float:
     """Ordinary Method of Slices (Fellenius) factor of safety.
 
     For circular surfaces:
@@ -84,6 +85,8 @@ def fellenius_fos(slices: List[Slice],
     -----
     Conservative: typically 10-60% lower than rigorous methods.
     No iteration required. Used as initial guess for Bishop.
+    Reinforcement (reinf_forces) is applied with the ACTIVE convention:
+    unfactored T reduces the driving moment/force.
     """
     resisting = 0.0
     is_circular = getattr(slip, 'is_circular', True)
@@ -119,6 +122,17 @@ def fellenius_fos(slices: List[Slice],
     # Driving = gravity magnitude + seismic magnitude + crack water.
     # Separated so seismic always increases driving regardless of slope direction.
     driving = abs(gravity_driving) + abs(seismic_driving) + abs(crack_water_driving)
+
+    if reinf_forces:
+        from slope_stability.reinforcement import (
+            moment_reduction, horizontal_reduction,
+        )
+        if is_circular:
+            driving -= moment_reduction(reinf_forces, slip.xc, slip.yc,
+                                        slip.radius)
+        else:
+            driving -= horizontal_reduction(reinf_forces)
+
     if driving <= 0:
         return _FOS_MAX
 
@@ -129,7 +143,8 @@ def bishop_fos(slices: List[Slice],
                slip,
                tol: float = 1e-4,
                max_iter: int = 50,
-               fos_initial: Optional[float] = None) -> float:
+               fos_initial: Optional[float] = None,
+               reinf_forces=None) -> float:
     """Bishop's Simplified Method factor of safety.
 
     Requires circular slip surfaces only (moment equilibrium about
@@ -199,6 +214,12 @@ def bishop_fos(slices: List[Slice],
 
     # Separated so seismic always increases driving regardless of slope direction
     driving = abs(gravity_driving) + abs(seismic_driving) + abs(crack_water_driving)
+
+    if reinf_forces:
+        from slope_stability.reinforcement import moment_reduction
+        driving -= moment_reduction(reinf_forces, slip.xc, slip.yc,
+                                    slip.radius)
+
     if driving <= 0:
         return _FOS_MAX
 
@@ -669,7 +690,8 @@ def morgenstern_price_fos_legacy(slices: List[Slice],
 def spencer_fos(slices: List[Slice],
                 slip,
                 tol: float = 1e-4,
-                max_iter: int = 100) -> Tuple[float, float]:
+                max_iter: int = 100,
+                reinf_forces=None) -> Tuple[float, float]:
     """Spencer's Method factor of safety (rigorous GLE formulation).
 
     Solves the full Fredlund-Krahn general limit equilibrium with a
@@ -697,7 +719,7 @@ def spencer_fos(slices: List[Slice],
 
     try:
         res = gle_fos(slices, slip, f_interslice="constant",
-                      tol=min(tol, 1e-4) * 0.1)
+                      tol=min(tol, 1e-4) * 0.1, reinf_forces=reinf_forces)
         if res.converged and 0.0 < res.fos < _FOS_MAX:
             return (res.fos, math.degrees(math.atan(res.lam)))
     except (ValueError, ZeroDivisionError, OverflowError):
@@ -709,7 +731,8 @@ def morgenstern_price_fos(slices: List[Slice],
                           slip,
                           f_interslice: str = "half_sine",
                           tol: float = 1e-4,
-                          max_iter: int = 100) -> Tuple[float, float]:
+                          max_iter: int = 100,
+                          reinf_forces=None) -> Tuple[float, float]:
     """Morgenstern-Price / GLE factor of safety (rigorous formulation).
 
     Full Fredlund-Krahn GLE: interslice shear X = lambda * f(x) * E with
@@ -731,7 +754,7 @@ def morgenstern_price_fos(slices: List[Slice],
 
     try:
         res = gle_fos(slices, slip, f_interslice=f_interslice,
-                      tol=min(tol, 1e-4) * 0.1)
+                      tol=min(tol, 1e-4) * 0.1, reinf_forces=reinf_forces)
         if res.converged and 0.0 < res.fos < _FOS_MAX:
             return (res.fos, res.lam)
     except (ValueError, ZeroDivisionError, OverflowError):

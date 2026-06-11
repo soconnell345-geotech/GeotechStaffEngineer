@@ -92,6 +92,12 @@ def analyze_slope(geom: SlopeGeometry,
     x_entry, x_exit = slip.find_entry_exit(geom)
     slices = build_slices(geom, slip, n_slices)
 
+    # Reinforcement crossings (nails / anchors / geosynthetics)
+    from slope_stability.reinforcement import compute_reinforcement_forces
+    reinf_forces = compute_reinforcement_forces(geom, slip, x_entry, x_exit)
+    if not reinf_forces:
+        reinf_forces = None
+
     # For result: store circle params if circular, zeros otherwise
     r_xc = slip.xc if is_circular else 0.0
     r_yc = slip.yc if is_circular else 0.0
@@ -111,47 +117,55 @@ def analyze_slope(geom: SlopeGeometry,
     fos_janbu_uncorr = None
     f0_janbu = None
     if method == "fellenius":
-        fos = fellenius_fos(slices, slip)
+        fos = fellenius_fos(slices, slip, reinf_forces=reinf_forces)
         method_name = "Fellenius"
     elif method == "janbu":
-        fos_c, fos_u, f0 = janbu_fos(slices, slip, tol=min(tol, 1e-4) * 0.1)
+        fos_c, fos_u, f0 = janbu_fos(slices, slip, tol=min(tol, 1e-4) * 0.1,
+                                     reinf_forces=reinf_forces)
         fos = fos_c
         fos_janbu = fos_c
         fos_janbu_uncorr = fos_u
         f0_janbu = f0
         method_name = "Janbu"
     elif method == "spencer":
-        fos, theta = spencer_fos(slices, slip, tol=tol)
+        fos, theta = spencer_fos(slices, slip, tol=tol,
+                                 reinf_forces=reinf_forces)
         fos_spencer = fos
         theta_spencer = theta
         method_name = "Spencer"
     elif method in ("morgenstern_price", "gle"):
         fos, lam = morgenstern_price_fos(slices, slip,
-                                         f_interslice=f_interslice, tol=tol)
+                                         f_interslice=f_interslice, tol=tol,
+                                         reinf_forces=reinf_forces)
         fos_mp = fos
         lambda_mp = lam
         method_name = ("GLE" if method == "gle" else "Morgenstern-Price")
     else:
-        fos = bishop_fos(slices, slip, tol=tol)
+        fos = bishop_fos(slices, slip, tol=tol, reinf_forces=reinf_forces)
         method_name = "Bishop"
 
     # Comparison FOS values
     fos_fellenius = None
     fos_bishop = None
     if compare_methods:
-        fos_fellenius = fellenius_fos(slices, slip)
+        fos_fellenius = fellenius_fos(slices, slip,
+                                      reinf_forces=reinf_forces)
         if is_circular:
-            fos_bishop = bishop_fos(slices, slip, tol=tol)
+            fos_bishop = bishop_fos(slices, slip, tol=tol,
+                                    reinf_forces=reinf_forces)
         if fos_spencer is None:
-            fos_sp, theta = spencer_fos(slices, slip, tol=tol)
+            fos_sp, theta = spencer_fos(slices, slip, tol=tol,
+                                        reinf_forces=reinf_forces)
             fos_spencer = fos_sp
             theta_spencer = theta
         if fos_mp is None:
             fos_mp, lambda_mp = morgenstern_price_fos(
-                slices, slip, f_interslice=f_interslice, tol=tol)
+                slices, slip, f_interslice=f_interslice, tol=tol,
+                reinf_forces=reinf_forces)
         if fos_janbu is None:
             fos_janbu, fos_janbu_uncorr, f0_janbu = janbu_fos(
-                slices, slip, tol=min(tol, 1e-4) * 0.1)
+                slices, slip, tol=min(tol, 1e-4) * 0.1,
+                reinf_forces=reinf_forces)
 
     # Slice data for plotting
     slice_data = None
@@ -198,6 +212,14 @@ def analyze_slope(geom: SlopeGeometry,
         FOS_janbu=fos_janbu,
         FOS_janbu_uncorrected=fos_janbu_uncorr,
         janbu_f0=f0_janbu,
+        reinforcements=[
+            {
+                "kind": f.kind, "index": f.index,
+                "x_m": round(f.x, 3), "z_m": round(f.z, 3),
+                "T_kN_per_m": round(f.T, 2),
+                "controlled_by": f.controlled_by,
+            } for f in (reinf_forces or [])
+        ] or None,
         n_slices=len(slices),
         has_seismic=geom.kh > 0,
         kh=geom.kh,

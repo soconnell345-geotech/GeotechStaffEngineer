@@ -188,6 +188,17 @@ B6. Griffiths & Lane (1999) style cross-check of one geometry vs fem2d SRM
   ValueError for interior holes -> searches reject the surface.
   Suite: 283 passed / 17 skipped.
 
-NEXT ACTION: implement P4 (reinforcement: wire nails into all methods,
-geosynthetics/anchors, GEC-7 hand-calc test). (`slope_stability/gle.py` + tests/test_gle.py with
+- 2026-06-11 P4 done: reinforcement.py (Geosynthetic, Anchor,
+  compute_reinforcement_forces with generic line/slip intersection that
+  points into the slope toward higher ground); nails wired into
+  Fellenius/Bishop (driving-moment reduction, ACTIVE convention per
+  GEC-7) and rigorously into GLE/Janbu (exact point-force moments,
+  per-slice horizontal equilibrium, vertical component into base
+  normal). Legacy SlopeGeometry.reinforcement_force/elevation now acts
+  (was a dead field). Hand-calc closed-form test (phi=0 circular)
+  matches to 1e-9; pullout-vs-tensile switch tested per GEC-7 equations.
+  Suite: 293 passed / 17 skipped.
+
+NEXT ACTION: implement P5 (probabilistic: fosm_fos + monte_carlo_fos,
+Duncan 2000 anchor). (`slope_stability/gle.py` + tests/test_gle.py with
 B1/B2 benchmarks), then decide rewire-vs-new-method from Duncan suite results.

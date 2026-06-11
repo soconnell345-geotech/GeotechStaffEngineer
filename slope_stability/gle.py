@@ -160,7 +160,7 @@ class _NSlice:
     """
     __slots__ = ("x_mid", "x_left", "x_right", "z_base", "z_centroid",
                  "alpha", "width", "length", "W", "u", "c", "tan_phi",
-                 "kW", "Fc", "z_crack")
+                 "kW", "Fc", "z_crack", "rh", "rv_down")
 
     def __init__(self, s: Slice, mirror: bool):
         sgn = -1.0 if mirror else 1.0
@@ -179,6 +179,8 @@ class _NSlice:
         self.kW = s.seismic_force          # magnitude, always driving
         self.Fc = s.crack_water_force      # magnitude, always driving
         self.z_crack = s.crack_water_z
+        self.rh = 0.0       # reinforcement horizontal force (+ = resisting)
+        self.rv_down = 0.0  # reinforcement vertical force (down positive)
 
 
 def _normalize(slices: List[Slice]) -> Tuple[List["_NSlice"], bool]:
@@ -258,7 +260,11 @@ class _GLESystem:
     """Holds geometry-derived constants and solves F_m/F_f for a lambda."""
 
     def __init__(self, ns: List["_NSlice"], axis: Tuple[float, float],
-                 f_name: str, tol: float):
+                 f_name: str, tol: float,
+                 reinf: Optional[List[Tuple[float, float, float, float]]] = None):
+        # reinf: list of (x_n, z, Tx_n, Tz) point forces in the normalized
+        # frame (Tx_n positive = resisting, Tz up-positive), already
+        # assigned to slices as rh / rv_down by the caller.
         self.ns = ns
         self.x0, self.y0 = axis
         self.tol = tol
@@ -294,10 +300,18 @@ class _GLESystem:
                 m_ext += s.kW * (s.z_centroid - self.y0)
             if s.Fc:
                 m_ext += s.Fc * (s.z_crack - self.y0)
+        # Reinforcement point forces enter the global moment and force
+        # balances exactly (active convention: unfactored, reduces driving)
+        if reinf:
+            for (rx, rz, tx, tz) in reinf:
+                m_ext += (rx - self.x0) * tz - (rz - self.y0) * tx
         self.moment_driving = -m_ext
 
-        # Horizontal external driving forces (for F_f denominator)
-        self.force_driving_ext = sum(s.kW for s in ns) + sum(s.Fc for s in ns)
+        # Horizontal external driving forces (for F_f denominator);
+        # resisting reinforcement components subtract.
+        self.force_driving_ext = (sum(s.kW for s in ns)
+                                  + sum(s.Fc for s in ns)
+                                  - (sum(t[2] for t in reinf) if reinf else 0.0))
 
     # -- N for one slice ----------------------------------------------------
 
@@ -313,7 +327,7 @@ class _GLESystem:
             if "m_alpha clamped" not in self.warnings:
                 self.warnings.append("m_alpha clamped (|m_a| < 0.05) on at "
                                      "least one slice")
-        num = (s.W - dV
+        num = (s.W + s.rv_down - dV
                - (s.c * s.length - s.u * s.length * s.tan_phi)
                * math.sin(s.alpha) / F)
         return num / m_alpha
@@ -369,7 +383,7 @@ class _GLESystem:
                 Sm = (s.c * s.length
                       + max(N_f[i] - s.u * s.length, 0.0) * s.tan_phi) / Ff_new
                 E[i + 1] = (E[i] - N_f[i] * math.sin(s.alpha)
-                            + Sm * math.cos(s.alpha) - s.kW - s.Fc)
+                            + Sm * math.cos(s.alpha) - s.kW - s.Fc + s.rh)
             # E at the far boundary closes to ~0 when Ff is exact; do not
             # force it — the ratio form of Ff enforces global closure.
 
@@ -390,6 +404,35 @@ class _GLESystem:
         return (Fm, Ff, E, V, N_f)
 
 
+def _assign_reinforcement(ns, reinf_forces, mirrored):
+    """Map reinforcement crossings into the normalized frame and assign
+    horizontal/vertical components to the containing slices.
+
+    Returns the list of (x_n, z, Tx_n, Tz_up) tuples for the system-level
+    moment/force balances, or None.
+    """
+    if not reinf_forces:
+        return None
+    sgn = -1.0 if mirrored else 1.0
+    out = []
+    for f in reinf_forces:
+        x_n = sgn * f.x
+        tx_n = sgn * f.dir_x * f.T
+        tz = f.dir_z * f.T  # up-positive
+        # In the normalized frame the resisting direction is +x; a
+        # reinforcement resists by construction, but guard the sign for
+        # odd geometries by taking the stabilizing magnitude.
+        if tx_n < 0:
+            tx_n = abs(tx_n)
+        for s in ns:
+            if s.x_left <= x_n <= s.x_right:
+                s.rh += tx_n
+                s.rv_down += -tz
+                break
+        out.append((x_n, f.z, tx_n, tz))
+    return out
+
+
 def gle_fos(slices: List[Slice],
             slip,
             f_interslice: str = "half_sine",
@@ -397,6 +440,7 @@ def gle_fos(slices: List[Slice],
             max_iter: int = 80,
             axis_point: Optional[Tuple[float, float]] = None,
             lambda_bounds: Tuple[float, float] = (-1.5, 1.5),
+            reinf_forces=None,
             ) -> GLEResult:
     """Rigorous GLE / Morgenstern-Price factor of safety.
 
@@ -419,6 +463,13 @@ def gle_fos(slices: List[Slice],
         circle fit through the slice base midpoints.
     lambda_bounds : (float, float)
         Bracketing range for lambda. Default (-1.5, 1.5).
+    reinf_forces : list of ReinforcementForce, optional
+        Resolved reinforcement crossings (see
+        slope_stability.reinforcement). Applied as unfactored external
+        point forces at the slip-surface crossings: exact moment via
+        cross products, horizontal component in each slice force
+        equilibrium, vertical component in the base-normal equation
+        (active convention).
 
     Returns
     -------
@@ -442,7 +493,8 @@ def gle_fos(slices: List[Slice],
     else:
         axis = _fit_axis_point(ns)
 
-    sys_ = _GLESystem(ns, axis, f_interslice, tol)
+    reinf_n = _assign_reinforcement(ns, reinf_forces, mirrored)
+    sys_ = _GLESystem(ns, axis, f_interslice, tol, reinf=reinf_n)
 
     result = GLEResult(f_interslice=f_interslice)
     result.warnings = sys_.warnings
@@ -653,6 +705,7 @@ def janbu_fos(slices: List[Slice],
               slip,
               tol: float = 1e-5,
               apply_correction: bool = True,
+              reinf_forces=None,
               ) -> Tuple[float, float, float]:
     """Janbu's Simplified method factor of safety.
 
@@ -686,7 +739,8 @@ def janbu_fos(slices: List[Slice],
         axis = ((-slip.xc if mirrored else slip.xc), slip.yc)
     else:
         axis = _fit_axis_point(ns)
-    sys_ = _GLESystem(ns, axis, "constant", tol)
+    reinf_n = _assign_reinforcement(ns, reinf_forces, mirrored)
+    sys_ = _GLESystem(ns, axis, "constant", tol, reinf=reinf_n)
     st = sys_.solve_for_lambda(0.0)
     if st is None:
         return (_FOS_MAX, _FOS_MAX, 1.0)

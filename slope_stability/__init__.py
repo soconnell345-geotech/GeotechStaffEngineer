@@ -26,6 +26,9 @@ from slope_stability.gle import (
     gle_fos, GLEResult, INTERSLICE_FUNCTIONS, janbu_fos, janbu_f0,
 )
 from slope_stability.nails import SoilNail
+from slope_stability.reinforcement import (
+    Geosynthetic, Anchor, ReinforcementForce, compute_reinforcement_forces,
+)
 from slope_stability.search import (
     grid_search, optimize_radius, search_noncircular,
     search_pso, search_weak_layer_biased, search_entry_exit, search_de,
@@ -37,6 +40,8 @@ from slope_stability.results import (
 
 __all__ = [
     'SlopeGeometry', 'SlopeSoilLayer', 'SoilNail',
+    'Geosynthetic', 'Anchor', 'ReinforcementForce',
+    'compute_reinforcement_forces',
     'CircularSlipSurface', 'PolylineSlipSurface',
     'Slice', 'build_slices',
     'fellenius_fos', 'bishop_fos', 'spencer_fos', 'morgenstern_price_fos',
