@@ -473,3 +473,95 @@ def _laplacian_smooth(nodes, elements, fixed_nodes, n_iter=3, weight=0.4):
             new_pos[i] = smoothed[i] + weight * (avg - smoothed[i])
         smoothed = new_pos
     return smoothed
+
+
+# ---------------------------------------------------------------------------
+# T6 conversion (midside-node insertion)
+# ---------------------------------------------------------------------------
+
+def convert_to_t6(nodes, elements):
+    """Convert a 3-node (CST) triangle mesh to 6-node (T6) by inserting
+    midside nodes on every unique edge.
+
+    Edges shared between two triangles get a single midside node.
+    Edges are straight (midside exactly at the geometric midpoint), so the
+    resulting T6 elements are straight-sided (subparametric geometry).
+
+    T6 node ordering per element: corners [n0, n1, n2] (CCW, unchanged)
+    then midsides [m01, m12, m20].
+
+    Parameters
+    ----------
+    nodes : (n_nodes, 2) array — corner node coordinates.
+    elements : (n_elem, 3) int array — CST connectivity.
+
+    Returns
+    -------
+    nodes_t6 : (n_nodes + n_edges, 2) array — corner nodes first
+        (indices unchanged), then midside nodes.
+    elements_t6 : (n_elem, 6) int array — T6 connectivity.
+    """
+    nodes = np.asarray(nodes, dtype=float)
+    elements = np.asarray(elements, dtype=int)
+    n_corner = len(nodes)
+
+    edge_mid = {}  # (lo, hi) -> midside node index
+    mid_coords = []
+    elements_t6 = np.zeros((len(elements), 6), dtype=int)
+    elements_t6[:, :3] = elements
+
+    for e in range(len(elements)):
+        n0, n1, n2 = elements[e]
+        for k, (a, b) in enumerate(((n0, n1), (n1, n2), (n2, n0))):
+            key = (a, b) if a < b else (b, a)
+            mid = edge_mid.get(key)
+            if mid is None:
+                mid = n_corner + len(mid_coords)
+                edge_mid[key] = mid
+                mid_coords.append(0.5 * (nodes[a] + nodes[b]))
+            elements_t6[e, 3 + k] = mid
+
+    nodes_t6 = np.vstack([nodes, np.array(mid_coords)]) if mid_coords \
+        else nodes.copy()
+    return nodes_t6, elements_t6
+
+
+def t6_corner_elements(elements_t6):
+    """Extract the 3-node corner connectivity from T6 elements.
+
+    Useful for running CST-based physics (seepage, Biot) on the corner
+    skeleton of a T6 mechanical mesh.
+    """
+    return np.asarray(elements_t6, dtype=int)[:, :3].copy()
+
+
+def t6_boundary_edges(elements_t6, corner_edges):
+    """Convert 2-node boundary edges to 3-node (corner, midside, corner)
+    edges using T6 connectivity.
+
+    Parameters
+    ----------
+    elements_t6 : (n_elem, 6) int array
+    corner_edges : list of (node_i, node_j) — corner-node edge list.
+
+    Returns
+    -------
+    edges3 : list of (node_i, node_mid, node_j)
+    """
+    elements_t6 = np.asarray(elements_t6, dtype=int)
+    edge_mid = {}
+    for e in range(len(elements_t6)):
+        n0, n1, n2, m01, m12, m20 = elements_t6[e]
+        for (a, b), m in (((n0, n1), m01), ((n1, n2), m12), ((n2, n0), m20)):
+            key = (a, b) if a < b else (b, a)
+            edge_mid[key] = m
+
+    edges3 = []
+    for ni, nj in corner_edges:
+        key = (ni, nj) if ni < nj else (nj, ni)
+        m = edge_mid.get(key)
+        if m is None:
+            raise ValueError(
+                f"Edge ({ni}, {nj}) is not an edge of the T6 mesh")
+        edges3.append((int(ni), int(m), int(nj)))
+    return edges3

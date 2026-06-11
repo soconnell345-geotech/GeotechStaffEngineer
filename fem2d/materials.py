@@ -358,3 +358,300 @@ def drucker_prager_params(c, phi_deg):
     alpha = tan_phi / denom
     k = 3.0 * c / denom
     return alpha, k
+
+
+# ---------------------------------------------------------------------------
+# 3D principal-stress Mohr-Coulomb return mapping (vectorized, plane strain)
+# ---------------------------------------------------------------------------
+# Theory: de Souza Neto, Peric & Owen (2008) ch. 8; Clausen, Damkilde &
+# Andersen (2006/07). Tension-positive. The full 4-component plane-strain
+# stress [sxx, syy, szz, txy] is decomposed into three principal stresses
+# (two in-plane eigenvalues + szz), sorted s1 >= s2 >= s3, returned to the
+# MC surface in principal-stress space (main plane, extension/compression
+# edge via Koiter, or apex), then rebuilt in the xy frame using the
+# unchanged trial principal directions.
+
+def _mc_edge_coeffs(lam, G, sphi, spsi):
+    """Diagonal and off-diagonal n.D.m coefficients for MC plane/edges."""
+    # d_aa = n_a . D_p . m_a  (same for any single MC plane)
+    d_diag = 4.0 * (lam * sphi * spsi + G * (1.0 + sphi * spsi))
+    # extension edge (planes share s3): n_a . D_p . m_b
+    d_ext = 4.0 * lam * sphi * spsi + 2.0 * G * (1.0 - sphi) * (1.0 - spsi)
+    # compression edge (planes share s1): n_a . D_p . m_b
+    d_comp = 4.0 * lam * sphi * spsi + 2.0 * G * (1.0 + sphi) * (1.0 + spsi)
+    return d_diag, d_ext, d_comp
+
+
+def mc_return_principal(sig4, E, nu, c, phi_deg, psi_deg=0.0, want_tangent=True):
+    """Vectorized 3D principal-stress Mohr-Coulomb return mapping.
+
+    Parameters
+    ----------
+    sig4 : (N, 4) array — trial stresses [sxx, syy, szz, txy],
+        tension-positive.
+    E, nu, c, phi_deg, psi_deg : float or (N,) arrays — material params.
+    want_tangent : bool — if True, also build the in-plane continuum
+        elastoplastic tangent (3x3 per point).
+
+    Returns
+    -------
+    sig4_new : (N, 4) array — returned stresses.
+    Dep : (N, 3, 3) array or None — in-plane tangent mapping
+        [d_exx, d_eyy, d_gxy] -> [d_sxx, d_syy, d_txy] (eps_zz = 0).
+        Continuum tangent with fixed-principal-direction rotation
+        (documented simplification of the Clausen consistent tangent).
+    yielded : (N,) bool array.
+    region : (N,) int array — 0 elastic, 1 main plane, 2 extension edge,
+        3 compression edge, 4 apex.
+    """
+    sig4 = np.atleast_2d(np.asarray(sig4, dtype=float))
+    N = len(sig4)
+    E = np.broadcast_to(np.asarray(E, dtype=float), (N,))
+    nu = np.broadcast_to(np.asarray(nu, dtype=float), (N,))
+    c = np.broadcast_to(np.asarray(c, dtype=float), (N,))
+    phi = np.radians(np.broadcast_to(np.asarray(phi_deg, dtype=float), (N,)))
+    psi = np.radians(np.broadcast_to(np.asarray(psi_deg, dtype=float), (N,)))
+    sphi = np.sin(phi)
+    cphi = np.cos(phi)
+    spsi = np.sin(psi)
+
+    G = E / (2.0 * (1.0 + nu))
+    lam = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))
+
+    sxx, syy, szz, txy = sig4[:, 0], sig4[:, 1], sig4[:, 2], sig4[:, 3]
+
+    # --- in-plane principal decomposition ---
+    p_in = 0.5 * (sxx + syy)
+    dd = 0.5 * (sxx - syy)
+    R = np.sqrt(dd ** 2 + txy ** 2)
+    safe = R > 1e-12
+    c2t = np.where(safe, np.where(safe, dd, 1.0) / np.where(safe, R, 1.0), 1.0)
+    s2t = np.where(safe, txy / np.where(safe, R, 1.0), 0.0)
+    sa = p_in + R   # in-plane major
+    sb = p_in - R   # in-plane minor
+
+    # --- sort the three principal values descending ---
+    s3v = np.column_stack([sa, sb, szz])         # (N, 3)
+    order = np.argsort(-s3v, axis=1, kind='stable')  # indices into [sa,sb,szz]
+    s_sorted = np.take_along_axis(s3v, order, axis=1)
+    s1, s2, s3 = s_sorted[:, 0], s_sorted[:, 1], s_sorted[:, 2]
+
+    # --- yield check ---
+    f_tr = (s1 - s3) + (s1 + s3) * sphi - 2.0 * c * cphi
+    yielded = f_tr > 1e-10
+    region = np.zeros(N, dtype=int)
+
+    s_new_sorted = s_sorted.copy()
+
+    if np.any(yielded):
+        idx = np.where(yielded)[0]
+        lam_y, G_y = lam[idx], G[idx]
+        sphi_y, spsi_y = sphi[idx], spsi[idx]
+        cphi_y, c_y = cphi[idx], c[idx]
+        f_y = f_tr[idx]
+        s_tr = s_sorted[idx]
+
+        d_diag, d_ext, d_comp = _mc_edge_coeffs(lam_y, G_y, sphi_y, spsi_y)
+
+        # D_p @ m vectors (m = flow direction of each plane)
+        # plane a: f(s1, s3); m_a = [1+spsi, 0, -(1-spsi)]
+        Dm_a = np.column_stack([
+            2.0 * lam_y * spsi_y + 2.0 * G_y * (1.0 + spsi_y),
+            2.0 * lam_y * spsi_y,
+            2.0 * lam_y * spsi_y - 2.0 * G_y * (1.0 - spsi_y),
+        ])
+        # plane b_ext: f(s2, s3); m = [0, 1+spsi, -(1-spsi)]
+        Dm_be = np.column_stack([
+            2.0 * lam_y * spsi_y,
+            2.0 * lam_y * spsi_y + 2.0 * G_y * (1.0 + spsi_y),
+            2.0 * lam_y * spsi_y - 2.0 * G_y * (1.0 - spsi_y),
+        ])
+        # plane b_comp: f(s1, s2); m = [1+spsi, -(1-spsi), 0]
+        Dm_bc = np.column_stack([
+            2.0 * lam_y * spsi_y + 2.0 * G_y * (1.0 + spsi_y),
+            2.0 * lam_y * spsi_y - 2.0 * G_y * (1.0 - spsi_y),
+            2.0 * lam_y * spsi_y,
+        ])
+
+        # --- 1) main-plane return ---
+        dl = f_y / d_diag
+        s_main = s_tr - dl[:, None] * Dm_a
+        tol_o = 1e-9 * np.maximum(1.0, np.abs(s_tr).max(axis=1))
+        ok_main = ((s_main[:, 0] >= s_main[:, 1] - tol_o) &
+                   (s_main[:, 1] >= s_main[:, 2] - tol_o))
+
+        s_ret = s_main.copy()
+        reg = np.ones(len(idx), dtype=int)
+
+        # --- 2) edge returns where main plane invalid ---
+        need_edge = ~ok_main
+        if np.any(need_edge):
+            je = np.where(need_edge)[0]
+            # extension edge if s1' < s2' (returned violates top ordering)
+            is_ext = s_main[je, 0] < s_main[je, 1] - tol_o[je]
+
+            # f values of the second plane at trial state
+            s1e, s2e, s3e = s_tr[je, 0], s_tr[je, 1], s_tr[je, 2]
+            f_a = f_y[je]
+            f_b_ext = (s2e - s3e) + (s2e + s3e) * sphi_y[je] \
+                - 2.0 * c_y[je] * cphi_y[je]
+            f_b_comp = (s1e - s2e) + (s1e + s2e) * sphi_y[je] \
+                - 2.0 * c_y[je] * cphi_y[je]
+            f_b = np.where(is_ext, f_b_ext, f_b_comp)
+
+            dgg = d_diag[je]
+            off = np.where(is_ext, d_ext[je], d_comp[je])
+            det = dgg ** 2 - off ** 2
+            det = np.where(np.abs(det) < 1e-30, 1e-30, det)
+            dl_a = (dgg * f_a - off * f_b) / det
+            dl_b = (dgg * f_b - off * f_a) / det
+
+            Dm_b = np.where(is_ext[:, None], Dm_be[je], Dm_bc[je])
+            s_edge = s_tr[je] - dl_a[:, None] * Dm_a[je] \
+                - dl_b[:, None] * Dm_b
+
+            ok_edge = ((dl_a >= -1e-12) & (dl_b >= -1e-12) &
+                       (s_edge[:, 0] >= s_edge[:, 1] - tol_o[je]) &
+                       (s_edge[:, 1] >= s_edge[:, 2] - tol_o[je]))
+
+            s_ret[je] = np.where(ok_edge[:, None], s_edge, s_ret[je])
+            reg[je] = np.where(ok_edge, np.where(is_ext, 2, 3), reg[je])
+
+            # --- 3) apex where edge invalid ---
+            need_apex = ~ok_edge
+            if np.any(need_apex):
+                ja = je[need_apex]
+                sphi_a = np.maximum(sphi_y[ja], 1e-10)
+                apex = c_y[ja] * cphi_y[ja] / sphi_a
+                s_ret[ja] = apex[:, None]
+                reg[ja] = 4
+
+        s_new_sorted[idx] = s_ret
+        region[idx] = reg
+
+    # --- unsort back to [sa', sb', szz'] positions ---
+    s_unsorted = np.empty_like(s_new_sorted)
+    np.put_along_axis(s_unsorted, order, s_new_sorted, axis=1)
+    sa_n, sb_n, szz_n = s_unsorted[:, 0], s_unsorted[:, 1], s_unsorted[:, 2]
+
+    # --- rebuild xy stresses from unchanged principal directions ---
+    p_n = 0.5 * (sa_n + sb_n)
+    r_n = 0.5 * (sa_n - sb_n)
+    sig4_new = np.column_stack([
+        p_n + r_n * c2t,
+        p_n - r_n * c2t,
+        szz_n,
+        r_n * s2t,
+    ])
+
+    Dep = None
+    if want_tangent:
+        Dep = _mc_tangent_inplane(
+            N, lam, G, sphi, spsi, region, order, c2t, s2t,
+            d_diag_all=_mc_edge_coeffs(lam, G, sphi, spsi))
+
+    return sig4_new, Dep, yielded, region
+
+
+def _mc_tangent_inplane(N, lam, G, sphi, spsi, region, order, c2t, s2t,
+                        d_diag_all):
+    """Continuum elastoplastic tangent, rotated to the xy frame.
+
+    Built in the principal frame (axes: in-plane major a, in-plane minor b,
+    z), with the elastic shear modulus retained for the in-plane shear
+    component (fixed-principal-direction simplification), then rotated by
+    the principal angle and condensed to the plane-strain 3x3 (row/col of
+    eps_zz removed since d_eps_zz = 0).
+    """
+    d_diag, d_ext, d_comp = d_diag_all
+
+    # Elastic principal-space matrix entries
+    # D_p = lam * ones + 2G * I  (3x3 normal components)
+    Dp = (lam[:, None, None] * np.ones((1, 3, 3)) +
+          2.0 * G[:, None, None] * np.eye(3)[None])
+
+    Dep_p = Dp.copy()  # (N,3,3) in SORTED principal coords
+
+    plastic = region > 0
+    if np.any(plastic):
+        # n / m vectors per region in sorted coords
+        def _nm(sv, idx0, idx2):
+            v = np.zeros((len(sv), 3))
+            v[:, idx0] = 1.0 + sv
+            v[:, idx2] = -(1.0 - sv)
+            return v
+
+        for r in (1, 2, 3, 4):
+            jr = np.where(region == r)[0]
+            if len(jr) == 0:
+                continue
+            if r == 4:
+                # apex: near-zero stiffness (keep small fraction for SPD)
+                Dep_p[jr] = 1e-6 * Dp[jr]
+                continue
+            n_a = _nm(sphi[jr], 0, 2)
+            m_a = _nm(spsi[jr], 0, 2)
+            Dm_a = np.einsum('nij,nj->ni', Dp[jr], m_a)
+            Dn_a = np.einsum('nij,nj->ni', Dp[jr], n_a)
+            if r == 1:
+                Dep_p[jr] = Dp[jr] - \
+                    np.einsum('ni,nj->nij', Dm_a, Dn_a) / d_diag[jr][:, None, None]
+            else:
+                if r == 2:   # extension edge: second plane f(s2, s3)
+                    n_b = _nm(sphi[jr], 1, 2)
+                    m_b = _nm(spsi[jr], 1, 2)
+                    off = d_ext[jr]
+                else:        # compression edge: second plane f(s1, s2)
+                    n_b = _nm(sphi[jr], 0, 1)
+                    m_b = _nm(spsi[jr], 0, 1)
+                    off = d_comp[jr]
+                Dm_b = np.einsum('nij,nj->ni', Dp[jr], m_b)
+                Dn_b = np.einsum('nij,nj->ni', Dp[jr], n_b)
+                det = d_diag[jr] ** 2 - off ** 2
+                det = np.where(np.abs(det) < 1e-30, 1e-30, det)
+                ia = d_diag[jr] / det
+                ib = -off / det
+                # Dep = Dp - [Dm_a Dm_b] inv(A) [Dn_a Dn_b]^T
+                Dep_p[jr] = Dp[jr] - (
+                    ia[:, None, None] * np.einsum('ni,nj->nij', Dm_a, Dn_a) +
+                    ib[:, None, None] * np.einsum('ni,nj->nij', Dm_a, Dn_b) +
+                    ib[:, None, None] * np.einsum('ni,nj->nij', Dm_b, Dn_a) +
+                    ia[:, None, None] * np.einsum('ni,nj->nij', Dm_b, Dn_b))
+
+    # --- unsort rows/cols from sorted coords back to (a, b, z) ---
+    # order maps sorted position -> original axis index; build permutation
+    inv = np.empty_like(order)
+    np.put_along_axis(inv, order, np.arange(3)[None].repeat(N, 0), axis=1)
+    # Dep_abz[i,j] = Dep_p[inv[i], inv[j]]
+    Dep_abz = np.take_along_axis(
+        np.take_along_axis(Dep_p, inv[:, :, None], axis=1),
+        inv[:, None, :], axis=2)
+
+    # --- build 4x4 in principal frame (a, b, z, gamma_ab) and rotate ---
+    D4p = np.zeros((N, 4, 4))
+    D4p[:, :3, :3] = Dep_abz
+    D4p[:, 3, 3] = G  # elastic shear stiffness (fixed-direction approx)
+
+    # Strain rotation matrix T_e: eps_principal = T_e @ eps_xy
+    # (eps vector [exx, eyy, ezz, gxy]; angle theta from xy to principal)
+    cc = 0.5 * (1.0 + c2t)   # cos^2
+    ss = 0.5 * (1.0 - c2t)   # sin^2
+    sc = 0.5 * s2t           # sin*cos
+    T = np.zeros((N, 4, 4))
+    T[:, 0, 0] = cc
+    T[:, 0, 1] = ss
+    T[:, 0, 3] = sc
+    T[:, 1, 0] = ss
+    T[:, 1, 1] = cc
+    T[:, 1, 3] = -sc
+    T[:, 2, 2] = 1.0
+    T[:, 3, 0] = -2.0 * sc
+    T[:, 3, 1] = 2.0 * sc
+    T[:, 3, 3] = cc - ss
+
+    # sigma_xy = T^T sigma_principal (contragredience) -> D_xy = T^T D4p T
+    D4 = np.einsum('nji,njk,nkl->nil', T, D4p, T)
+
+    # Condense to in-plane 3x3: drop eps_zz row/col (d eps_zz = 0)
+    keep = [0, 1, 3]
+    return D4[:, keep][:, :, keep]

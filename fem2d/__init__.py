@@ -4,7 +4,7 @@
 Custom FEM solver using numpy/scipy — no external FEM dependencies.
 
 Capabilities:
-- CST (3-node triangle) and Q4 (4-node quad) elements
+- CST (3-node), T6 (6-node quadratic triangle), and Q4 (4-node quad) elements
 - Euler-Bernoulli beam elements for structural members
 - Linear elastic, Mohr-Coulomb, and Hardening Soil materials
 - Delaunay mesh generation with variable density
@@ -56,9 +56,11 @@ from fem2d.materials import (
 from fem2d.elements import (
     cst_stiffness, cst_B, cst_area, cst_body_force, cst_stress,
     q4_stiffness, q4_body_force, q4_stress,
+    t6_stiffness, t6_body_force, t6_stress, t6_B_detJ, t6_shape, TRI_GAUSS,
     BeamElement, beam2d_stiffness, beam2d_internal_forces,
 )
 from fem2d.mesh import (
+    convert_to_t6, t6_corner_elements, t6_boundary_edges,
     generate_rect_mesh, generate_slope_mesh, generate_polygon_mesh,
     detect_boundary_nodes, assign_layers_by_elevation,
     assign_layers_by_polylines,
@@ -98,8 +100,11 @@ __all__ = [
     # Elements
     'cst_stiffness', 'cst_B', 'cst_area', 'cst_body_force', 'cst_stress',
     'q4_stiffness', 'q4_body_force', 'q4_stress',
+    't6_stiffness', 't6_body_force', 't6_stress', 't6_B_detJ', 't6_shape',
+    'TRI_GAUSS',
     'BeamElement', 'beam2d_stiffness', 'beam2d_internal_forces',
     # Mesh
+    'convert_to_t6', 't6_corner_elements', 't6_boundary_edges',
     'generate_rect_mesh', 'generate_slope_mesh', 'generate_polygon_mesh',
     'detect_boundary_nodes', 'assign_layers_by_elevation',
     'assign_layers_by_polylines',

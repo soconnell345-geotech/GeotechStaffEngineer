@@ -13,6 +13,7 @@ from scipy.sparse.linalg import spsolve
 from fem2d.elements import (
     cst_stiffness, cst_body_force, cst_stress,
     q4_stiffness, q4_body_force, q4_stress,
+    t6_stiffness, t6_body_force, t6_stress,
 )
 from fem2d.materials import elastic_D
 
@@ -76,6 +77,8 @@ def assemble_stiffness(nodes, elements, D, t=1.0, active_elements=None):
 
         if n_nodes_e == 3:
             Ke = cst_stiffness(coords, De, t)
+        elif n_nodes_e == 6:
+            Ke = t6_stiffness(coords, De, t)
         else:
             Ke = q4_stiffness(coords, De, t)
 
@@ -124,6 +127,8 @@ def assemble_gravity(nodes, elements, gamma, t=1.0, active_elements=None):
 
         if len(conn) == 3:
             fe = cst_body_force(coords, 0.0, -g, t)
+        elif len(conn) == 6:
+            fe = t6_body_force(coords, 0.0, -g, t)
         else:
             fe = q4_body_force(coords, 0.0, -g, t)
 
@@ -139,7 +144,8 @@ def assemble_surface_load(nodes, surface_edges, qx=0.0, qy=0.0, t=1.0):
     Parameters
     ----------
     nodes : (n_nodes, 2) array
-    surface_edges : list of (node_i, node_j) — edges on the loaded surface.
+    surface_edges : list of (node_i, node_j) 2-tuples (linear edges) or
+        (node_i, node_mid, node_j) 3-tuples (quadratic T6 edges).
     qx, qy : float — traction (kPa) in x and y directions.
         Negative qy = downward pressure.
     t : float
@@ -151,14 +157,24 @@ def assemble_surface_load(nodes, surface_edges, qx=0.0, qy=0.0, t=1.0):
     n_dof = 2 * len(nodes)
     F = np.zeros(n_dof)
 
-    for ni, nj in surface_edges:
-        L = np.linalg.norm(nodes[nj] - nodes[ni])
-        # Equal distribution to both nodes (linear edge)
-        f_node = t * L / 2.0
-        F[2 * ni] += f_node * qx
-        F[2 * ni + 1] += f_node * qy
-        F[2 * nj] += f_node * qx
-        F[2 * nj + 1] += f_node * qy
+    for edge in surface_edges:
+        if len(edge) == 2:
+            ni, nj = edge
+            L = np.linalg.norm(nodes[nj] - nodes[ni])
+            # Equal distribution to both nodes (linear edge)
+            f_node = t * L / 2.0
+            F[2 * ni] += f_node * qx
+            F[2 * ni + 1] += f_node * qy
+            F[2 * nj] += f_node * qx
+            F[2 * nj + 1] += f_node * qy
+        else:
+            # Quadratic (3-node) edge: consistent weights 1/6, 2/3, 1/6
+            ni, nm, nj = edge
+            L = np.linalg.norm(nodes[nj] - nodes[ni])
+            f_tot = t * L
+            for n, w in ((ni, 1.0 / 6.0), (nm, 2.0 / 3.0), (nj, 1.0 / 6.0)):
+                F[2 * n] += f_tot * w * qx
+                F[2 * n + 1] += f_tot * w * qy
 
     return F
 
@@ -284,6 +300,8 @@ def recover_element_stresses(nodes, elements, D, u):
 
         if len(conn) == 3:
             sig, eps = cst_stress(coords, De, u_e)
+        elif len(conn) == 6:
+            sig, eps = t6_stress(coords, De, u_e)
         else:
             sig, eps = q4_stress(coords, De, u_e)
 

@@ -376,3 +376,191 @@ def beam2d_internal_forces(coords_ij, EA, EI, u_beam_6):
         'moment_j': float(f_local[5]),
         'length': float(L),
     }
+
+
+# ---------------------------------------------------------------------------
+# Triangle quadrature (area coordinates, weights sum to 1)
+# ---------------------------------------------------------------------------
+
+# Rules keyed by number of points. Each entry: (points (n_gp, 3) area
+# coordinates [L1, L2, L3], weights (n_gp,) summing to 1).
+# 1-pt: exact degree 1 (CST). 3-pt interior: exact degree 2 (T6 default —
+# integrates the straight-sided T6 stiffness exactly). 6-pt Dunavant:
+# exact degree 4 (option for plasticity accuracy studies).
+_TRI_6A = 0.445948490915965
+_TRI_6B = 0.091576213509771
+TRI_GAUSS = {
+    1: (np.array([[1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]]),
+        np.array([1.0])),
+    3: (np.array([
+            [2.0 / 3.0, 1.0 / 6.0, 1.0 / 6.0],
+            [1.0 / 6.0, 2.0 / 3.0, 1.0 / 6.0],
+            [1.0 / 6.0, 1.0 / 6.0, 2.0 / 3.0],
+        ]),
+        np.array([1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0])),
+    6: (np.array([
+            [1.0 - 2.0 * _TRI_6A, _TRI_6A, _TRI_6A],
+            [_TRI_6A, 1.0 - 2.0 * _TRI_6A, _TRI_6A],
+            [_TRI_6A, _TRI_6A, 1.0 - 2.0 * _TRI_6A],
+            [1.0 - 2.0 * _TRI_6B, _TRI_6B, _TRI_6B],
+            [_TRI_6B, 1.0 - 2.0 * _TRI_6B, _TRI_6B],
+            [_TRI_6B, _TRI_6B, 1.0 - 2.0 * _TRI_6B],
+        ]),
+        np.array([0.223381589678011] * 3 + [0.109951743655322] * 3)),
+}
+
+
+# ---------------------------------------------------------------------------
+# T6 (6-node quadratic triangle)
+# ---------------------------------------------------------------------------
+# Node ordering: corners 0, 1, 2 (CCW) then midsides 3 (between 0-1),
+# 4 (between 1-2), 5 (between 2-0).
+# Shape functions in area coordinates L1, L2, L3 (Smith & Griffiths):
+#   N_i = L_i (2 L_i - 1)   for corners
+#   N_3 = 4 L1 L2,  N_4 = 4 L2 L3,  N_5 = 4 L3 L1
+
+def t6_shape(L):
+    """T6 shape functions at an area-coordinate point.
+
+    Parameters
+    ----------
+    L : (3,) array-like — area coordinates [L1, L2, L3].
+
+    Returns
+    -------
+    N : (6,) array
+    """
+    L1, L2, L3 = L
+    return np.array([
+        L1 * (2.0 * L1 - 1.0),
+        L2 * (2.0 * L2 - 1.0),
+        L3 * (2.0 * L3 - 1.0),
+        4.0 * L1 * L2,
+        4.0 * L2 * L3,
+        4.0 * L3 * L1,
+    ])
+
+
+def t6_shape_derivs(L):
+    """T6 shape functions and natural-coordinate derivatives.
+
+    Uses (xi, eta) = (L2, L3) as the independent natural coordinates,
+    with L1 = 1 - xi - eta.
+
+    Returns
+    -------
+    N : (6,) array
+    dN_dxi : (6,) array
+    dN_deta : (6,) array
+    """
+    L1, L2, L3 = L
+    N = t6_shape(L)
+    dN_dxi = np.array([
+        -(4.0 * L1 - 1.0),
+        4.0 * L2 - 1.0,
+        0.0,
+        4.0 * (L1 - L2),
+        4.0 * L3,
+        -4.0 * L3,
+    ])
+    dN_deta = np.array([
+        -(4.0 * L1 - 1.0),
+        0.0,
+        4.0 * L3 - 1.0,
+        -4.0 * L2,
+        4.0 * L2,
+        4.0 * (L1 - L3),
+    ])
+    return N, dN_dxi, dN_deta
+
+
+def t6_B_detJ(coords, L):
+    """B matrix and Jacobian determinant for a T6 element at one point.
+
+    Isoparametric formulation — valid for straight or (mildly) curved
+    edges. For straight-sided elements with midside nodes at edge
+    midpoints, detJ = 2A (constant).
+
+    Parameters
+    ----------
+    coords : (6, 2) array — node coordinates (ordering above).
+    L : (3,) array-like — area coordinates of the evaluation point.
+
+    Returns
+    -------
+    B : (3, 12) array — strain-displacement matrix.
+    detJ : float — Jacobian determinant (integration: dA = detJ/2 dxi deta).
+    N : (6,) array — shape function values.
+    """
+    N, dN_dxi, dN_deta = t6_shape_derivs(L)
+    J = np.array([dN_dxi, dN_deta]) @ coords  # (2, 2)
+    detJ = J[0, 0] * J[1, 1] - J[0, 1] * J[1, 0]
+    Jinv = np.array([[J[1, 1], -J[0, 1]], [-J[1, 0], J[0, 0]]]) / detJ
+    dN_dxy = Jinv @ np.array([dN_dxi, dN_deta])  # (2, 6)
+
+    B = np.zeros((3, 12))
+    B[0, 0::2] = dN_dxy[0]
+    B[1, 1::2] = dN_dxy[1]
+    B[2, 0::2] = dN_dxy[1]
+    B[2, 1::2] = dN_dxy[0]
+    return B, detJ, N
+
+
+def t6_stiffness(coords, D, t=1.0, n_gp=3):
+    """Element stiffness matrix for a T6 element.
+
+    Parameters
+    ----------
+    coords : (6, 2) array
+    D : (3, 3) array — constitutive matrix.
+    t : float — thickness.
+    n_gp : int — quadrature rule (1, 3, or 6). 3 is exact for
+        straight-sided elastic T6.
+
+    Returns
+    -------
+    K : (12, 12) array
+    """
+    pts, wts = TRI_GAUSS[n_gp]
+    K = np.zeros((12, 12))
+    for L, w in zip(pts, wts):
+        B, detJ, _ = t6_B_detJ(coords, L)
+        K += (B.T @ D @ B) * (0.5 * w * detJ * t)
+    return K
+
+
+def t6_body_force(coords, bx, by, t=1.0, n_gp=3):
+    """Consistent body force vector for a T6 element.
+
+    For straight-sided T6, the classic result: corner nodes receive zero,
+    midside nodes receive A/3 each.
+
+    Returns
+    -------
+    f : (12,) array
+    """
+    pts, wts = TRI_GAUSS[n_gp]
+    f = np.zeros(12)
+    for L, w in zip(pts, wts):
+        _, dN_dxi, dN_deta = t6_shape_derivs(L)
+        J = np.array([dN_dxi, dN_deta]) @ coords
+        detJ = J[0, 0] * J[1, 1] - J[0, 1] * J[1, 0]
+        N = t6_shape(L)
+        scale = 0.5 * w * detJ * t
+        f[0::2] += N * bx * scale
+        f[1::2] += N * by * scale
+    return f
+
+
+def t6_stress(coords, D, u_e):
+    """Element centroid stress/strain for a T6 element.
+
+    Returns
+    -------
+    sigma : (3,) array — [sigma_x, sigma_y, tau_xy] at the centroid.
+    epsilon : (3,) array
+    """
+    B, _, _ = t6_B_detJ(coords, np.array([1, 1, 1]) / 3.0)
+    epsilon = B @ u_e
+    sigma = D @ epsilon
+    return sigma, epsilon
