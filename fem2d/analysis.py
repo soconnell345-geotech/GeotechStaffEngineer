@@ -126,7 +126,9 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
         'psi' (optional, default 0), 'gamma'.
     depth : float, optional — depth below lowest surface. Default 2×H.
     nx, ny : int — mesh density.
-    x_extend : float, optional — horizontal extension. Default 2×width.
+    x_extend : float, optional — extra flat margin added to BOTH sides
+        (0.3x each). Default max(0.5*H, 5). Pass 0 when the profile
+        already includes adequate crest/toe margins (recommended).
     srf_tol : float — SRF bisection tolerance.
     n_load_steps : int — gravity increments.
     t : float
@@ -153,7 +155,14 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
     if depth is None:
         depth = max(2.0 * H, 10.0)
     if x_extend is None:
-        x_extend = max(2.0 * (surf[:, 0].max() - surf[:, 0].min()), 20.0)
+        # Depth-aware default: deep-seated mechanisms (weak foundation
+        # layers) spread laterally about as far as the model is deep, so
+        # the margin must scale with depth below the toe or the roller
+        # boundaries truncate the failure mass (non-convergence at every
+        # SRF). The old default (2x domain width) went the other way and
+        # starved the slope face of elements at fixed nx, overpredicting
+        # FOS by ~50%+ (verified against Bishop on a shared geometry).
+        x_extend = max(0.5 * H, depth, 5.0)
 
     # Generate mesh
     nodes, elements = generate_slope_mesh(

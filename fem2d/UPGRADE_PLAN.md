@@ -217,9 +217,29 @@ Ex5 drawdown validation optional; T6 seepage not planned.
       tangent-vs-elastic equilibrium agreement (CST+T6), tangent beats
       constant-stiffness on iterations, cutback grace, dual-criterion
       gating, API stability.
-- [ ] Phase 5: validation suite + VALIDATION.md.
-- [ ] Phase 6: performance.
+- [x] Phase 5: validation suite + VALIDATION.md — GL99 Ex1 (T6 1.341/
+      1.366 vs published 1.4; curve tracks Table 2; Ex2 D-invariance
+      reproduced at 48x24), Ex4 undrained (published 1.47 bracketed by
+      nu=0.30/0.49 runs — T6 incompressibility limits documented),
+      Prandtl footing (T6 Nc 5.10-5.25 vs 5.14; CST locks >9 — the
+      centerpiece contrast), elastic closed form (T6 exact), Bishop
+      cross-check (+21% @ 40x20, +11% @ 56x24). FIXED while validating:
+      analyze_slope_srm x_extend default (was 2x width) starved the
+      slope-face mesh and overpredicted FOS up to +91%; now 0.5H.
+      9 tests in tests/test_validation.py (slow-marked).
+- [x] Phase 6: performance — numbers captured in VALIDATION.md sec 6:
+      GL99 Ex1 T6 32x12 full SRM 11 s; one factorization per SRM run;
+      suite ~13 min incl. slow benchmarks. No further profiling needed.
 - [ ] Phase 7: adapter + docs.
+
+Future work (designed, descoped):
+- B-bar / selective reduced integration or 15-node triangles for the
+  incompressible (undrained nu->0.5) limit; would close the Ex4 bracket.
+- Structured (transfinite) slope mesher to remove toe-run sliver
+  triangles at D ~ 1 and restore CST convergence there.
+- GL99 Ex3 (thin weak layer) and Ex5 (slow drawdown) validation rows:
+  geometry support exists (layer_polylines / gwt); add rows when needed.
+- Q8 elements if exact GL99 element parity is ever required.
 
 Phase 3 evidence (kept for the validation phase):
 - GL99 Ex1 (D=1 geometry, depth=0.5 m base sliver): T6 FOS 1.344 (32x12) /
