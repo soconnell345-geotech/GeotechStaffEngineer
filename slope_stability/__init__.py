@@ -20,7 +20,9 @@ from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurfac
 from slope_stability.slices import Slice, build_slices
 from slope_stability.methods import (
     fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
+    spencer_fos_legacy, morgenstern_price_fos_legacy,
 )
+from slope_stability.gle import gle_fos, GLEResult, INTERSLICE_FUNCTIONS
 from slope_stability.nails import SoilNail
 from slope_stability.search import (
     grid_search, optimize_radius, search_noncircular,
@@ -36,6 +38,8 @@ __all__ = [
     'CircularSlipSurface', 'PolylineSlipSurface',
     'Slice', 'build_slices',
     'fellenius_fos', 'bishop_fos', 'spencer_fos', 'morgenstern_price_fos',
+    'spencer_fos_legacy', 'morgenstern_price_fos_legacy',
+    'gle_fos', 'GLEResult', 'INTERSLICE_FUNCTIONS',
     'grid_search', 'optimize_radius', 'search_noncircular',
     'search_pso', 'search_weak_layer_biased', 'search_entry_exit',
     'analyze_slope', 'search_critical_surface',

@@ -202,6 +202,14 @@ def bishop_fos(slices: List[Slice],
     if driving <= 0:
         return _FOS_MAX
 
+    # Slope-direction sign (SS-4): m_alpha must be evaluated with the base
+    # angle measured positive in the sliding direction. For crest-on-the-
+    # left slopes (sliding left-to-right) the gravity moment sum is
+    # negative and alpha must be mirrored, otherwise the sin(alpha)*tan(phi)
+    # term has the wrong sign and Bishop overestimates FOS (found via the
+    # Fredlund & Krahn 1977 benchmark).
+    d_sign = 1.0 if gravity_driving >= 0 else -1.0
+
     fos = fos_initial
     for iteration in range(max_iter):
         resisting = 0.0
@@ -211,7 +219,7 @@ def bishop_fos(slices: List[Slice],
             W = s.weight + s.surcharge_force
             b = s.width
 
-            m_alpha = math.cos(s.alpha) + math.sin(s.alpha) * tan_phi / fos
+            m_alpha = math.cos(s.alpha) + d_sign * math.sin(s.alpha) * tan_phi / fos
             if abs(m_alpha) < 1e-10:
                 m_alpha = 1e-10
 
@@ -234,11 +242,16 @@ def bishop_fos(slices: List[Slice],
     return fos
 
 
-def spencer_fos(slices: List[Slice],
+def spencer_fos_legacy(slices: List[Slice],
                 slip,
                 tol: float = 1e-4,
                 max_iter: int = 100) -> Tuple[float, float]:
-    """Spencer's Method factor of safety (approximate formulation).
+    """Spencer's Method factor of safety (LEGACY approximate formulation).
+
+    Superseded by the rigorous GLE engine (``spencer_fos`` now wraps
+    ``slope_stability.gle.gle_fos`` with f(x)=constant); kept as a
+    fallback for surfaces where the rigorous iteration fails to
+    converge, and for regression comparison.
 
     Satisfies both force and moment equilibrium simultaneously.
     Assumes interslice forces inclined at constant angle theta.
@@ -321,6 +334,10 @@ def spencer_fos(slices: List[Slice],
     if driving_moment <= 0:
         return (_FOS_MAX, 0.0)
 
+    # Slope-direction sign (SS-4): evaluate with alpha measured positive in
+    # the sliding direction (mirror for crest-on-the-left slopes).
+    d_sign = 1.0 if gravity_moment >= 0 else -1.0
+
     def _fos_moment(theta_rad, fos_est):
         """Moment equilibrium FOS for given theta."""
         fos_m = fos_est
@@ -332,8 +349,8 @@ def spencer_fos(slices: List[Slice],
                 W = s.weight + s.surcharge_force
                 b = s.width
 
-                # Spencer m_alpha: uses (alpha - theta)
-                diff = s.alpha - theta_rad
+                # Spencer m_alpha: uses (alpha_n - theta)
+                diff = d_sign * s.alpha - theta_rad
                 m_alpha = math.cos(diff) + math.sin(diff) * tan_phi / fos_m
                 if abs(m_alpha) < 1e-10:
                     m_alpha = 1e-10
@@ -359,11 +376,11 @@ def spencer_fos(slices: List[Slice],
                 tan_phi = math.tan(phi_rad)
                 W = s.weight + s.surcharge_force
                 b = s.width
-                sin_a = math.sin(s.alpha)
+                sin_a = math.sin(d_sign * s.alpha)
                 cos_a = math.cos(s.alpha)
 
-                # Spencer m_alpha: uses (alpha - theta)
-                diff = s.alpha - theta_rad
+                # Spencer m_alpha: uses (alpha_n - theta)
+                diff = d_sign * s.alpha - theta_rad
                 m_alpha = math.cos(diff) + math.sin(diff) * tan_phi / fos_f
                 if abs(m_alpha) < 1e-10:
                     m_alpha = 1e-10
@@ -426,12 +443,16 @@ def spencer_fos(slices: List[Slice],
     return (fos_final, math.degrees(theta_b))
 
 
-def morgenstern_price_fos(slices: List[Slice],
+def morgenstern_price_fos_legacy(slices: List[Slice],
                           slip,
                           f_interslice: str = "half_sine",
                           tol: float = 1e-4,
                           max_iter: int = 100) -> Tuple[float, float]:
-    """Morgenstern-Price / GLE factor of safety (approximate formulation).
+    """Morgenstern-Price factor of safety (LEGACY approximate formulation).
+
+    Superseded by the rigorous GLE engine (``morgenstern_price_fos`` now
+    wraps ``slope_stability.gle.gle_fos``); kept as a fallback and for
+    regression comparison.
 
     Generalizes Spencer by using a variable interslice force function f(x)
     scaled by lambda. When f(x) = constant, this reduces to Spencer.
@@ -521,6 +542,9 @@ def morgenstern_price_fos(slices: List[Slice],
     if driving_moment <= 0:
         return (_FOS_MAX, 0.0)
 
+    # Slope-direction sign (SS-4) — see spencer_fos_legacy
+    d_sign = 1.0 if gravity_driving >= 0 else -1.0
+
     def _fos_moment(lam, fos_est):
         """Moment equilibrium FOS for given lambda."""
         fos_m = fos_est
@@ -542,7 +566,7 @@ def morgenstern_price_fos(slices: List[Slice],
                 else:
                     theta_eff = math.atan(lam * 0.5 * (f_vals[i - 1] + f_vals[i]))
 
-                diff = s.alpha - theta_eff
+                diff = d_sign * s.alpha - theta_eff
                 m_alpha = math.cos(diff) + math.sin(diff) * tan_phi / fos_m
                 if abs(m_alpha) < 1e-10:
                     m_alpha = 1e-10
@@ -566,7 +590,7 @@ def morgenstern_price_fos(slices: List[Slice],
                 tan_phi = math.tan(phi_rad)
                 W = s.weight + s.surcharge_force
                 b = s.width
-                sin_a = math.sin(s.alpha)
+                sin_a = math.sin(d_sign * s.alpha)
                 cos_a = math.cos(s.alpha)
 
                 if i == 0:
@@ -578,7 +602,7 @@ def morgenstern_price_fos(slices: List[Slice],
 
                 tan_theta = math.tan(theta_eff)
 
-                diff = s.alpha - theta_eff
+                diff = d_sign * s.alpha - theta_eff
                 m_alpha = math.cos(diff) + math.sin(diff) * tan_phi / fos_f
                 if abs(m_alpha) < 1e-10:
                     m_alpha = 1e-10
@@ -636,3 +660,82 @@ def morgenstern_price_fos(slices: List[Slice],
     fos_final = 0.5 * (_fos_moment(lam_b, fos_guess) +
                         _fos_force(lam_b, fos_guess))
     return (fos_final, lam_b)
+
+
+# ---------------------------------------------------------------------------
+# Rigorous Spencer / Morgenstern-Price (GLE engine wrappers)
+# ---------------------------------------------------------------------------
+
+def spencer_fos(slices: List[Slice],
+                slip,
+                tol: float = 1e-4,
+                max_iter: int = 100) -> Tuple[float, float]:
+    """Spencer's Method factor of safety (rigorous GLE formulation).
+
+    Solves the full Fredlund-Krahn general limit equilibrium with a
+    constant interslice force function f(x) = 1 (Spencer's assumption):
+    interslice normals E integrated slice-to-slice, shear X = lambda*E,
+    and lambda found where the moment- and force-equilibrium factors of
+    safety cross. Works for circular and noncircular surfaces.
+
+    Falls back to the legacy approximate formulation
+    (``spencer_fos_legacy``) if the rigorous iteration fails — e.g. on
+    degenerate trial surfaces during searches.
+
+    Returns
+    -------
+    (FOS, theta) : tuple of (float, float)
+        Factor of safety and interslice force angle theta = atan(lambda)
+        in degrees.
+
+    References
+    ----------
+    Spencer (1967); Fredlund & Krahn (1977); GeoStudio Stability
+    Modeling theory book ch. 2.
+    """
+    from slope_stability.gle import gle_fos
+
+    try:
+        res = gle_fos(slices, slip, f_interslice="constant",
+                      tol=min(tol, 1e-4) * 0.1)
+        if res.converged and 0.0 < res.fos < _FOS_MAX:
+            return (res.fos, math.degrees(math.atan(res.lam)))
+    except (ValueError, ZeroDivisionError, OverflowError):
+        pass
+    return spencer_fos_legacy(slices, slip, tol=tol, max_iter=max_iter)
+
+
+def morgenstern_price_fos(slices: List[Slice],
+                          slip,
+                          f_interslice: str = "half_sine",
+                          tol: float = 1e-4,
+                          max_iter: int = 100) -> Tuple[float, float]:
+    """Morgenstern-Price / GLE factor of safety (rigorous formulation).
+
+    Full Fredlund-Krahn GLE: interslice shear X = lambda * f(x) * E with
+    E integrated across slices; lambda solved so the moment- and
+    force-equilibrium factors of safety are equal. Supports f(x) in
+    {'constant', 'half_sine', 'clipped_sine', 'trapezoidal'}.
+
+    Falls back to the legacy approximate formulation on non-convergence.
+
+    Returns
+    -------
+    (FOS, lambda) : tuple of (float, float)
+
+    References
+    ----------
+    Morgenstern & Price (1965); Fredlund & Krahn (1977).
+    """
+    from slope_stability.gle import gle_fos
+
+    try:
+        res = gle_fos(slices, slip, f_interslice=f_interslice,
+                      tol=min(tol, 1e-4) * 0.1)
+        if res.converged and 0.0 < res.fos < _FOS_MAX:
+            return (res.fos, res.lam)
+    except (ValueError, ZeroDivisionError, OverflowError):
+        pass
+    legacy_f = f_interslice if f_interslice in _MP_FUNCTIONS else "half_sine"
+    return morgenstern_price_fos_legacy(slices, slip, f_interslice=legacy_f,
+                                        tol=tol, max_iter=max_iter)

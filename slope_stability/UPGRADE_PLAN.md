@@ -155,6 +155,18 @@ B6. Griffiths & Lane (1999) style cross-check of one geometry vs fem2d SRM
 - 2026-06-11 P0 done (theory + benchmarks gathered; Slide2 verification
   manual figures read for F&K + ACADS geometry; GeoStudio book ch.2 GLE
   formulation confirmed).
+- 2026-06-11 P1 done: gle.py rigorous engine (interslice E marching, exact
+  cross-product moment arms, lambda bisection). spencer_fos /
+  morgenstern_price_fos REWIRED to rigorous GLE with legacy fallback
+  (*_legacy kept). B1 dry: Bishop 2.081/2.080, Spencer 2.073/2.073,
+  M-P 2.077/2.076. B1 ru: all within 1.5%. B2 composite within 3%.
+  NEW PRE-EXISTING BUG FOUND+FIXED (SS-4): bishop_fos and legacy
+  Spencer/M-P used m_alpha = cos(a)+sin(a)tan(phi)/F regardless of slope
+  direction -> Bishop overestimated FOS by ~18% on crest-on-the-LEFT
+  geometries (F&K benchmark exposed it; Duncan suite is all crest-right
+  so it never triggered). Fixed with direction-normalized alpha.
+  3 tests asserting legacy artifacts (Spencer theta==0 for circular)
+  updated to rigorous semantics. Suite: 264 passed / 17 skipped.
 
-NEXT ACTION: implement P1 (`slope_stability/gle.py` + tests/test_gle.py with
+NEXT ACTION: implement P2 (janbu_fos + f0 correction + compare helper) (`slope_stability/gle.py` + tests/test_gle.py with
 B1/B2 benchmarks), then decide rewire-vs-new-method from Duncan suite results.

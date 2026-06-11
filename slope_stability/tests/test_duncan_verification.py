@@ -211,10 +211,10 @@ class TestDuncanExample2:
             slices = build_slices(geom, slip, 30)
             fos_b = bishop_fos(slices, slip)
             fos_s, theta = spencer_fos(slices, slip)
-            # Should be within 1% for circular
+            # Rigorous Spencer: close to Bishop for circular surfaces,
+            # theta = atan(lambda) nonzero (see F&K 1977).
             assert abs(fos_s - fos_b) / fos_b < 0.02
-            # Theta should be near 0 for circular
-            assert abs(theta) < 2.0
+            assert abs(theta) < 35.0
         except ValueError:
             pytest.skip("Circle does not intersect slope")
 

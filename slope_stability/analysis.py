@@ -35,6 +35,7 @@ def analyze_slope(geom: SlopeGeometry,
                   method: str = "bishop",
                   n_slices: int = 30,
                   tol: float = 1e-4,
+                  f_interslice: str = "half_sine",
                   include_slice_data: bool = False,
                   compare_methods: bool = False,
                   ) -> SlopeStabilityResult:
@@ -53,11 +54,16 @@ def analyze_slope(geom: SlopeGeometry,
     slip_surface : CircularSlipSurface or PolylineSlipSurface, optional
         Explicit slip surface object. If provided, xc/yc/radius are ignored.
     method : str
-        'fellenius', 'bishop', 'spencer', or 'morgenstern_price'. Default 'bishop'.
+        'fellenius', 'bishop', 'spencer', 'morgenstern_price' or 'gle'.
+        'gle' is an alias for the rigorous Morgenstern-Price solution
+        with a selectable interslice force function. Default 'bishop'.
     n_slices : int
         Number of slices. Default 30.
     tol : float
         Convergence tolerance for iterative methods. Default 1e-4.
+    f_interslice : str
+        Interslice force function for 'morgenstern_price' / 'gle':
+        'constant', 'half_sine' (default), 'clipped_sine', 'trapezoidal'.
     include_slice_data : bool
         If True, include per-slice breakdown in results.
     compare_methods : bool
@@ -106,11 +112,12 @@ def analyze_slope(geom: SlopeGeometry,
         fos_spencer = fos
         theta_spencer = theta
         method_name = "Spencer"
-    elif method == "morgenstern_price":
-        fos, lam = morgenstern_price_fos(slices, slip, tol=tol)
+    elif method in ("morgenstern_price", "gle"):
+        fos, lam = morgenstern_price_fos(slices, slip,
+                                         f_interslice=f_interslice, tol=tol)
         fos_mp = fos
         lambda_mp = lam
-        method_name = "Morgenstern-Price"
+        method_name = ("GLE" if method == "gle" else "Morgenstern-Price")
     else:
         fos = bishop_fos(slices, slip, tol=tol)
         method_name = "Bishop"
@@ -127,7 +134,8 @@ def analyze_slope(geom: SlopeGeometry,
             fos_spencer = fos_sp
             theta_spencer = theta
         if fos_mp is None:
-            fos_mp, lambda_mp = morgenstern_price_fos(slices, slip, tol=tol)
+            fos_mp, lambda_mp = morgenstern_price_fos(
+                slices, slip, f_interslice=f_interslice, tol=tol)
 
     # Slice data for plotting
     slice_data = None
