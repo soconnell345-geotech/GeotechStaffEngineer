@@ -231,16 +231,26 @@ def build_slices(geom: SlopeGeometry,
 
         # Strength parameters from layer at base midpoint
         base_layer = geom.layer_at_point(x_mid, z_base)
-        if base_layer is not None:
-            c, phi = base_layer.shear_strength_params
-            # Apply Ru if no GWT pore pressure and layer has Ru > 0
-            if pore_pressure <= 0 and base_layer.ru > 0:
-                # u = Ru * gamma * h  where h = overburden depth
-                overburden_h = z_top - z_base
-                pore_pressure = base_layer.ru * base_layer.gamma * overburden_h
-        else:
+        if base_layer is None:
             # Fallback: use bottom-most layer
-            c, phi = geom.soil_layers[-1].shear_strength_params
+            base_layer = geom.soil_layers[-1]
+        # Apply Ru if no GWT pore pressure and layer has Ru > 0
+        if pore_pressure <= 0 and base_layer.ru > 0:
+            # u = Ru * gamma * h  where h = overburden depth
+            overburden_h = z_top - z_base
+            pore_pressure = base_layer.ru * base_layer.gamma * overburden_h
+
+        # Strength model evaluation (SHANSEP / Hoek-Brown need stress
+        # estimates at the base: Fellenius normal and vertical effective)
+        if base_layer.strength_model == "mohr_coulomb":
+            c, phi = base_layer.shear_strength_params
+        else:
+            sigma_v = (weight / width if width > 0 else 0.0) - pore_pressure
+            alpha_cos = math.cos(alpha)
+            dl = width / max(abs(alpha_cos), 1e-10)
+            sigma_n = (weight * alpha_cos / dl if dl > 0 else 0.0) \
+                - pore_pressure
+            c, phi = base_layer.strength_at(sigma_n, sigma_v)
 
         # Tension crack: slices near the entry where base is above crack
         # bottom have no shear resistance (open crack face).

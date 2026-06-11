@@ -207,6 +207,15 @@ B6. Griffiths & Lane (1999) style cross-check of one geometry vs fem2d SRM
   Closed-form undrained check: COV_F == COV_cu exactly; MC pf agrees with
   FOSM lognormal pf within sampling error (n=4000). 10 tests.
 
-NEXT ACTION: implement P6 (SHANSEP + Hoek-Brown strength models in
-build_slices). (`slope_stability/gle.py` + tests/test_gle.py with
+- 2026-06-11 P6 done: per-layer strength_model on SlopeSoilLayer
+  ('mohr_coulomb' | 'shansep' | 'hoek_brown'). SHANSEP su =
+  S*OCR^m*sigma'_v at slice base (phi=0, su_min floor); GHB
+  (Hoek-Carranza-Torres-Corkum 2002) instantaneous c-phi via Balmer
+  bisection at the Fellenius base normal estimate. Threaded through
+  build_slices so every method gets them. Hand-calc checks: slice su
+  exact, FOS scales by OCR^m exactly (phi=0), GHB tangent matches an
+  independent envelope evaluation + d(tau)/d(sigma_n) slope to 1%.
+  Suite: 315 passed / 17 skipped.
+
+NEXT ACTION: implement P7 (ponded water auto-detect + drawdown stub). (`slope_stability/gle.py` + tests/test_gle.py with
 B1/B2 benchmarks), then decide rewire-vs-new-method from Duncan suite results.
