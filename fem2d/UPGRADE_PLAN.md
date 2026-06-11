@@ -267,3 +267,23 @@ NEXT ACTION: Phase 5 — fem2d/VALIDATION.md + tests/test_validation.py
 per the evidence above (Ex1 D=1 numbers final; Ex4 undrained shows nu
 sensitivity: nu=0.49 locks high, nu=0.3 runs low — report both, designed
 path = higher-order/B-bar elements; Bishop cross-check needs x_extend=0).
+
+
+## Tracked follow-up: SRM failure-detection mesh consistency (found 2026-06-11, post-merge)
+
+On ACADS 1(a) (10 m, 2:1, c'=3 kPa, phi'=19.6 — published FOS 1.00, our LE
+0.985): the constant-stiffness SRM stall point moves DOWN with refinement
+(56x20: 0.934; 72x24: 0.80 — iteration counts climb smoothly into the
+ceiling with NO displacement blowup, i.e. slow convergence is being read as
+failure), while an experimental tangent-NR rescue moves the answer UP past
+the LE value (56x20: 1.32 — physically wrong for a homogeneous slope).
+GL99/Prandtl validation cases are unaffected (their meshes/strengths do not
+stall). Suspects: n_load_steps=2 gravity application at reduced strength;
+low-confinement apex returns at face Gauss points degrading the
+initial-stiffness convergence rate; ceiling-as-failure criterion. Candidate
+remedies to evaluate systematically: more gravity steps in trials,
+viscoplastic regularization (Smith & Griffiths), arc-length, residual-slope
+stall detection (distinguish "still converging" from "stalled"), B-bar.
+Knobs already in place for the study: `nr_method`, `nr_fallback` (opt-in,
+NOT validated), `stall_window`. The B6 LE-vs-SRM cross-check in
+slope_stability/tests/test_validation.py is pinned to 56x20 meanwhile.

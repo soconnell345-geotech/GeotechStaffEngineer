@@ -115,7 +115,7 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
                       layer_polylines=None,
                       element_type='t6', srm_field='c_phi',
                       blowup_factor=15.0, srf_range=(0.5, 3.0),
-                      n_gp=None):
+                      n_gp=None, nr_method='elastic', nr_fallback=False):
     """Slope stability FOS via Strength Reduction Method.
 
     Parameters
@@ -211,7 +211,7 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
         max_nr_iter=max_iter, nr_tol=tol,
         pore_pressures=pp, srm_field=srm_field,
         blowup_factor=blowup_factor, srf_range=srf_range, n_gp=n_gp,
-        h_ref=H)
+        h_ref=H, nr_method=nr_method, nr_fallback=nr_fallback)
 
     result = _build_result(
         nodes, elements, srm_result['u_failure'],

@@ -62,7 +62,7 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
                        pore_pressures=None, srm_field='c_phi',
                        bracket_step=0.1, blowup_factor=15.0,
                        n_gp=None, disp_tol=None, stall_window=None,
-                       h_ref=None):
+                       h_ref=None, nr_method='elastic', nr_fallback=False):
     """Find slope stability FOS using the Strength Reduction Method.
 
     Parameters
@@ -158,9 +158,22 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
         reduced = _reduce_props(material_props, srf, srm_field)
         mats = _material_arrays(reduced, n_elem)
         res = run_nl(ctx, n_steps=n_load_steps, max_iter=max_nr_iter,
-                     tol=nr_tol, disp_tol=disp_tol, method='elastic',
+                     tol=nr_tol, disp_tol=disp_tol, method=nr_method,
                      mats_override=mats, stall_window=stall_window)
         conv = res['converged']
+        extended = False
+        if not conv and nr_fallback and nr_method == 'elastic':
+            # OPT-IN (nr_fallback=True), experimental: see UPGRADE_PLAN
+            # "SRM failure-detection mesh consistency". On low-c/low-phi
+            # faces the elastic stall point and the tangent rescue point
+            # disagree across meshes (ACADS 1a: 0.80-1.32 spread), so the
+            # fallback is NOT part of the validated default behavior.
+            extended = True
+            res = run_nl(ctx, n_steps=n_load_steps,
+                         max_iter=max(200, max_nr_iter // 4),
+                         tol=nr_tol, disp_tol=disp_tol, method='tangent',
+                         mats_override=mats, stall_window=stall_window)
+            conv = res['converged']
         dmax = _max_disp(res['u'])
         dim_disp = dmax * dim_scale
         failed = not conv
@@ -177,6 +190,7 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
             'converged': bool(conv),
             'failed': bool(failed),
             'n_iter': res['n_iter_total'],
+            'extended': extended,
         })
         return (not failed), res
 
