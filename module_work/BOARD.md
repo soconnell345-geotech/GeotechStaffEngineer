@@ -40,19 +40,24 @@ fixing tool ergonomics + real per-module issues. Re-run after each batch to meas
 - ☑ Verified: `funhouse_agent/tests/` green except one unrelated pre-existing failure
   (see Known issues). Native prompt now retains catalog + nudge.
 
-### Rollout — extend the convention (per domain, ☐ todo)
-- ☐ Add `allowed_values` to METHOD_INFO enum params in the remaining ~47 adapters,
-  domain by domain (each specialist does its own `funhouse_agent/adapters/<module>.py`).
+### Rollout — extend the convention (per domain) — ☑ DONE 2026-06-10 (v5.1)
+- ☑ `allowed_values` now on 23 adapters (every closed-set param); coverage test
+  enforces presence + default-in-allowed_values globally. Remaining un-annotated
+  enums live only in the auto-generated reference adapters (docstrings already
+  enumerate values). Param-name hotspots (ground_improvement, soe, gstools,
+  settlement, lateral_pile, pile_group, retaining_walls, sheet_pile,
+  slope_stability, reference_db, axial_pile) fixed with aliases + clear errors
+  (`module_work/module_feedback.json` backlog cleared; see commit b506b76).
 
 ### Triage — funhouse feedback (lead, ⚠ blocked on upload)
 - ⚠ Parse `geotech_test_suite_results.json` (awaiting user upload) into per-domain
   tasks below. The 40 recovered-with-errors records carry the specifics.
 
 ### Known issues (logged from test runs)
-- ☐ **references**: `ufc_pavement` adapter `test_method_count` fails (11 actual vs 9
-  expected in `funhouse_agent/tests/test_reference_adapters.py`). Either 2 methods were
-  added without updating the count, or the adapter exposes extras. References specialist
-  to reconcile.
+- ☑ **references**: `ufc_pavement` method count reconciled (2026-06-10): adapter
+  exposes 21 METHOD_INFO entries of which 10 are `alias_of` short names excluded
+  by `list_methods` → 11 listed (3 equations + 8 tables), test updated; data
+  verified real + source-consistent from the submodule side.
 
 ## Triage results — baseline 4.6.1 (2026-06-03)
 

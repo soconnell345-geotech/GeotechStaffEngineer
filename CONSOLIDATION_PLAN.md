@@ -20,7 +20,7 @@ Owner: fleet agent `module-review-and-consolidation`. Created 2026-06-09.
 | 6 | Lateral pile two engines | **Retire opensees lateral-pile overlap** — but harvest first | SA-6 subagent: review opensees BNWF lateral-pile code for non-cyclic methods/features worth porting into native `lateral_pile`; then retire that pathway. **Module stays for site response (#1).** | SA-6 ✓ | READY (nothing to harvest except optional stickup feature) |
 | 7 | Reliability + sensitivity | **Backlog — bigger eval.** Assess whether `pystra`/`salib` even apply; user wants: statistical variability of subsurface properties + probabilistic geotech analyses (FOSM, Monte Carlo); possibly build own library. `gstools` may fold in here. | Scoping/build-or-buy evaluation (separate milestone) | — | BACKLOG |
 | 8 | Scope outliers | **Remove `wind_loads`**; **keep `gstools_agent`** (may fold into #7 later) | Remove wind_loads module + pyproject + adapter + dispatch + foundry + doc refs | — | READY |
-| 9 | Two deployment surfaces | **Conditional.** Retire foundry wrappers for retired modules; assess overall staleness. Keep general Foundry functions (user may build Foundry *reviewer* adapters later — simpler than the Funhouse ReAct harness). | (a) delete foundry wrapper alongside each retired module; (b) assess foundry adapter staleness vs current APIs → report | partial | PARTIAL + ASSESS |
+| 9 | Two deployment surfaces | **Conditional.** Retire foundry wrappers for retired modules; assess overall staleness. Keep general Foundry functions (user may build Foundry *reviewer* adapters later — simpler than the Funhouse ReAct harness). | (a) delete foundry wrapper alongside each retired module; (b) assess foundry adapter staleness vs current APIs → report | done | DONE 2026-06-10 (v5.1): 28 wrappers audited, 5 drifted fixed, harness 122/122; see module_work/foundry_staleness_report.md |
 | 10 | Two GUI stacks | **Retire both** Dash + Qt (future: proper web app) | Remove slope/fem Dash GUIs, Qt GUIs, `qt_panels/`, `gui` optional-dep, GUI doc sections. Keep underlying analysis modules. | — | READY |
 | 11 | Legacy equation layer | **Cut `DM7Eqs`** after confirming coverage | SA-11 subagent: verify everything in `DM7Eqs/` (UFC 3-220-10/20 eqs) is already covered in geotech-references; report gaps that would be lost. Then delete. | SA-11 ✓ | READY (safe to delete; superset confirmed) |
 
@@ -32,7 +32,7 @@ Owner: fleet agent `module-review-and-consolidation`. Created 2026-06-09.
 - **Phase 1 (ungated removals, batchable):** #1 cut pyseismosoil · #2 cut fdm2d · #4 cut geolysis · #8 cut wind_loads · #10 retire GUIs · #9 (retire foundry wrappers for those modules).
 - **Phase 2 (gated by investigations):** #6 harvest + retire opensees lateral-pile · #11 cut DM7Eqs · #5 build unified liquefaction API.
 - **Phase 3 (build):** #3 merge data parsers into one I/O module.
-- **Backlog:** #7 probability/reliability module (build-or-buy eval; gstools fold-in) · #9 foundry staleness assessment.
+- **Backlog:** #7 probability/reliability module (build-or-buy eval; gstools fold-in). (#9 foundry staleness: DONE 2026-06-10, see module_work/foundry_staleness_report.md.)
 
 ## Investigation findings
 

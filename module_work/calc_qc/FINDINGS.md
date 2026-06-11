@@ -568,3 +568,35 @@ sheet_pile + calc_package = 207 passed / 3 skipped.
 Remaining still-open from the original review (unchanged): BC-3 ✔ now fixed; open Mediums
 WE-2/WE-3 (Smith spring elasto-plastic + damping label), RW-1 (active thrust inclination);
 plus the Low/Med + ~25 Low cleanups catalogued above.
+
+---
+
+## FIX LOG — Round 3 (2026-06-10, v5.1 worktree, all remaining open findings)
+
+Everything still open from the original review is now CLOSED (fixed or explicitly
+documented as a modeling choice). Highlights:
+
+| ID | Resolution |
+|----|------------|
+| RW-1 | Active thrust decomposed per method (Ph=Pa·cosδ drives; Pv=Pa·sinδ resists at the pressure plane) through sliding/overturning/bearing + calc_steps. |
+| RW-2/3/4 | MSE metallic reinforcement on the bilinear coherent-gravity surface; MSE external bearing on Meyerhof effective width (AASHTO 11.10); sloped-backfill heel wedge weight added. |
+| WE-2 | True elasto-plastic Smith springs (plastic-offset memory, per-blow reset); permanent_set = physical plastic toe displacement (agrees with the 5.0 max-minus-quake fix to 5e-5 m). |
+| WE-3 | Damping default now J·R_static·v (mobilized, GRLWEAP standard); damping_model="smith_viscous" preserves v5.0 exactly. Default blow counts ~2% lower (pinned both ways). |
+| SG-3 | M-O β sign convention fixed; KAE and KPE reduce to Coulomb at kh=0 for any batter/slope; xfail removed. Pre-5.1 battered/seismic KPE values were wrong (verified vs numerical wedge solution). |
+| LP-2/3 | Banded solver (machine-identical, regression vs dense); native above-ground stickup (validated vs M=Mt+Vt·e equivalent-load oracle). |
+| DS-1..5 | Cohesive end-bearing cap 80 ksf + large-base reduction (bell diameter); O'Neill-Reese Nc; N60/15 side-β reduction; reentrant capacity_vs_depth. |
+| PG-2/3 | One explicit right-hand convention end-to-end (K=BᵀkB, same B in back-calc). BEHAVIOR CHANGE: +Mx now uplifts +y consistently. Simple method warns when Vx/Vy/Mz ignored. |
+| SP-3/4, AP-2..5, BC-4..9, SET-4/5, GI-2, SS-1..3, DD-1, CP-1, CS-3 | Fixed or documented per the calc-QC ledger; calc_package HTML now autoescapes non-equation fields. |
+
+Also fixed at the adapter layer: csr_crr_check (double-MSF + wrong signatures),
+wave_equation single_blow (renamed module fields). Suites after Round 3:
+foundations 378 · deep foundations 319 (incl. validation.py) · retention/seismic 574 ·
+funhouse 641 · deep 197 — all green.
+
+### Still-open candidates for a future round (flagged during Round 3, not fixed)
+- retaining_walls calc_steps: sliding display omits Pp when include_passive=True (FOS value itself correct).
+- mse.py: backfill_slope accepted but unused; surcharge counted on the resisting side (slightly unconservative for large q).
+- Negative (descending) backfill_slope treated as level everywhere, silently.
+- SG-2 display: Fpga step shows the Fa(Ss) abscissa even when pga was supplied (needs a pga field on SiteClassResult).
+- Spencer/M-P share the unclamped (W−u·b) frictional term (left to preserve Duncan-validated behavior).
+- lateral_pile DESIGN.md overstates stickup equivalence as "machine precision" (test uses rel=5e-3, correct for the O(h) grade-node effect).
