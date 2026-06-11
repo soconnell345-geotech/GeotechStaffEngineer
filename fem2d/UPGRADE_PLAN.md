@@ -210,8 +210,13 @@ Ex5 drawdown validation optional; T6 seepage not planned.
       element_type through analyze_slope_srm (T6 default), h_ref for
       GL99-comparable curves, opt-in stall_window (default OFF — it can
       misclassify slow convergence as failure). 19 tests.
-- [ ] Phase 4: NR hardening (mechanisms landed in ph2 core: reform_interval,
-      dual convergence, cutback, line search — needs dedicated tests).
+- [x] Phase 4: NR hardening — mechanisms landed in the ph2 core
+      (reform_interval/modified NR, dual residual+du convergence with
+      residual cap, divergence cutback, optional backtracking line
+      search); 10 dedicated tests in tests/test_nr_hardening.py verify
+      tangent-vs-elastic equilibrium agreement (CST+T6), tangent beats
+      constant-stiffness on iterations, cutback grace, dual-criterion
+      gating, API stability.
 - [ ] Phase 5: validation suite + VALIDATION.md.
 - [ ] Phase 6: performance.
 - [ ] Phase 7: adapter + docs.
@@ -232,6 +237,7 @@ Phase 3 evidence (kept for the validation phase):
   D>1, so dimensionless-displacement curves are only comparable to GL99
   with their D (their delta includes settlement of a D=1 mesh).
 
-NEXT ACTION: Phase 4 — tests for the tangent path (tangent-vs-elastic
-agreement on a plastic problem, cutback on divergence, line search,
-reform_interval), then Phase 5 validation suite per the evidence above.
+NEXT ACTION: Phase 5 — fem2d/VALIDATION.md + tests/test_validation.py
+per the evidence above (Ex1 D=1 numbers final; Ex4 undrained shows nu
+sensitivity: nu=0.49 locks high, nu=0.3 runs low — report both, designed
+path = higher-order/B-bar elements; Bishop cross-check needs x_extend=0).
