@@ -175,6 +175,19 @@ B6. Griffiths & Lane (1999) style cross-check of one geometry vs fem2d SRM
   (standard practice); ours corrected 2.021 (1.0% off), uncorrected 1.877.
   Suite: 272 passed / 17 skipped.
 
-NEXT ACTION: implement P3 (search: method plumb for gle/janbu; scipy
-differential_evolution noncircular refinement; ACADS B3 search gate test). (`slope_stability/gle.py` + tests/test_gle.py with
+- 2026-06-11 P3 done: _compute_fos handles janbu/gle/morgenstern_price;
+  noncircular searches take method=; search_de (scipy
+  differential_evolution over [x_entry, x_exit, depth fracs] with
+  convex-bump penalty, seeded by random search); surface_type
+  "noncircular_de" in search_critical_surface. ACADS 1(a) B3 gate passed
+  for bishop/spencer/janbu/gle (search FOS ~0.96-1.04 vs published 1.00,
+  Slide2 0.986-0.990). NEW PRE-EXISTING BUG FOUND+FIXED (SS-5):
+  build_slices silently dropped slices where a trial circle dips below
+  the deepest layer, leaving fragment masses with absurd FOS (~0.1) that
+  won searches (exposed by ACADS's shallow 15-unit layer). Now raises
+  ValueError for interior holes -> searches reject the surface.
+  Suite: 283 passed / 17 skipped.
+
+NEXT ACTION: implement P4 (reinforcement: wire nails into all methods,
+geosynthetics/anchors, GEC-7 hand-calc test). (`slope_stability/gle.py` + tests/test_gle.py with
 B1/B2 benchmarks), then decide rewire-vs-new-method from Duncan suite results.

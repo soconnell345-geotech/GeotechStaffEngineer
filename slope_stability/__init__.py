@@ -28,7 +28,7 @@ from slope_stability.gle import (
 from slope_stability.nails import SoilNail
 from slope_stability.search import (
     grid_search, optimize_radius, search_noncircular,
-    search_pso, search_weak_layer_biased, search_entry_exit,
+    search_pso, search_weak_layer_biased, search_entry_exit, search_de,
 )
 from slope_stability.analysis import analyze_slope, search_critical_surface
 from slope_stability.results import (
@@ -45,6 +45,7 @@ __all__ = [
     'janbu_fos', 'janbu_f0',
     'grid_search', 'optimize_radius', 'search_noncircular',
     'search_pso', 'search_weak_layer_biased', 'search_entry_exit',
+    'search_de',
     'analyze_slope', 'search_critical_surface',
     'SlopeStabilityResult', 'SliceData', 'SearchResult',
 ]

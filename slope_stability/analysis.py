@@ -21,7 +21,7 @@ from slope_stability.methods import (
 from slope_stability.gle import janbu_fos
 from slope_stability.search import (
     grid_search, search_noncircular,
-    search_pso, search_weak_layer_biased, search_entry_exit,
+    search_pso, search_weak_layer_biased, search_entry_exit, search_de,
 )
 from slope_stability.results import (
     SlopeStabilityResult, SliceData, SearchResult,
@@ -245,7 +245,10 @@ def search_critical_surface(
     tol : float
         Convergence tolerance for iterative methods. Default 1e-4.
     surface_type : str
-        'circular' (default) or 'noncircular'.
+        'circular' (default, centre-grid search), 'entry_exit' (circular
+        arcs between entry/exit windows), 'noncircular' (random
+        polylines), 'noncircular_de' (differential-evolution refinement
+        seeded by a random search), 'pso', or 'weak_layer'.
     x_entry_range : (float, float), optional
         Allowed entry x-coordinate range.
     x_exit_range : (float, float), optional
@@ -269,6 +272,8 @@ def search_critical_surface(
     if x_exit_range is None:
         x_exit_range = (x_min_geo + (x_max_geo - x_min_geo) * 0.6, x_max_geo)
 
+    noncirc_method = method if method != "bishop" else "spencer"
+
     if surface_type == "noncircular":
         return search_noncircular(
             geom,
@@ -276,6 +281,19 @@ def search_critical_surface(
             x_exit_range=x_exit_range,
             n_trials=n_trials,
             n_points=n_points,
+            n_slices=n_slices,
+            tol=tol,
+            seed=seed,
+            method=noncirc_method,
+        )
+
+    if surface_type == "noncircular_de":
+        return search_de(
+            geom,
+            x_entry_range=x_entry_range,
+            x_exit_range=x_exit_range,
+            n_points=max(n_points, 5),
+            method=noncirc_method,
             n_slices=n_slices,
             tol=tol,
             seed=seed,

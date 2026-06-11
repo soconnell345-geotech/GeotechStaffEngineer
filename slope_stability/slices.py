@@ -187,6 +187,7 @@ def build_slices(geom: SlopeGeometry,
         crack_base_elev = z_surface_entry - geom.tension_crack_depth
 
     slices = []
+    below_base_x = []   # x of slices whose base dips below ALL soil layers
     for i in range(n_slices):
         x_left = x_entry + i * dx
         x_right = x_left + dx
@@ -202,12 +203,15 @@ def build_slices(geom: SlopeGeometry,
         if height <= 0:
             continue
 
-        # Fix empty-space bug: skip slices where slip surface is below
-        # all soil layers (cutting through empty space)
+        # Slip surface below all soil layers = cutting through empty
+        # space. Edge slivers are skipped; an INTERIOR hole makes the
+        # trial surface invalid (SS-5) — previously the middle slices
+        # were silently dropped and the remaining fragments produced a
+        # meaningless (often absurdly low) FOS that could win searches.
         if geom.layer_at_point(x_mid, z_base) is None:
-            # Check if z_base is below the lowest soil layer
             min_layer_bot = min(L.bottom_at(x_mid) for L in geom.soil_layers)
             if z_base < min_layer_bot:
+                below_base_x.append(x_mid)
                 continue
 
         alpha = slip.tangent_angle_at(x_mid)
@@ -277,6 +281,19 @@ def build_slices(geom: SlopeGeometry,
             z_centroid=z_centroid,
             in_tension_crack=in_crack,
         ))
+
+    # Reject surfaces that dip below the soil model between valid slices
+    # (SS-5). A surface deeper than the lowest layer bottom must be
+    # re-specified (smaller circle, or model the deeper material).
+    if below_base_x and slices:
+        x_first = slices[0].x_mid
+        x_last = slices[-1].x_mid
+        if any(x_first < xb < x_last for xb in below_base_x):
+            raise ValueError(
+                "Slip surface passes below the bottom of the deepest soil "
+                f"layer between x={x_first:.2f} and x={x_last:.2f}. "
+                "Use a shallower trial surface or extend the soil layers."
+            )
 
     # Tension crack water force: applied to the first non-cracked slice
     # F_w = 0.5 * gamma_w * z_w^2, acting at z_w/3 above crack base
