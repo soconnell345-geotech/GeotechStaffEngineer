@@ -199,6 +199,14 @@ B6. Griffiths & Lane (1999) style cross-check of one geometry vs fem2d SRM
   matches to 1e-9; pullout-vs-tensile switch tested per GEC-7 equations.
   Suite: 293 passed / 17 skipped.
 
-NEXT ACTION: implement P5 (probabilistic: fosm_fos + monte_carlo_fos,
-Duncan 2000 anchor). (`slope_stability/gle.py` + tests/test_gle.py with
+- 2026-06-11 P5 done: probabilistic.py — fosm_fos (Duncan 2000 Taylor
+  series, central differences at +/-sigma, beta_normal + beta_lognormal,
+  variance contributions) and monte_carlo_fos (normal/lognormal sampling,
+  seed, fixed surface default, research_surface flag, histogram +
+  samples). Duncan anchor matched: beta_LN(1.5, 0.17) = 2.32, pf ~1%.
+  Closed-form undrained check: COV_F == COV_cu exactly; MC pf agrees with
+  FOSM lognormal pf within sampling error (n=4000). 10 tests.
+
+NEXT ACTION: implement P6 (SHANSEP + Hoek-Brown strength models in
+build_slices). (`slope_stability/gle.py` + tests/test_gle.py with
 B1/B2 benchmarks), then decide rewire-vs-new-method from Duncan suite results.

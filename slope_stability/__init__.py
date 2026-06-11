@@ -25,6 +25,9 @@ from slope_stability.methods import (
 from slope_stability.gle import (
     gle_fos, GLEResult, INTERSLICE_FUNCTIONS, janbu_fos, janbu_f0,
 )
+from slope_stability.probabilistic import (
+    fosm_fos, monte_carlo_fos, FOSMResult, MonteCarloResult,
+)
 from slope_stability.nails import SoilNail
 from slope_stability.reinforcement import (
     Geosynthetic, Anchor, ReinforcementForce, compute_reinforcement_forces,
@@ -48,6 +51,7 @@ __all__ = [
     'spencer_fos_legacy', 'morgenstern_price_fos_legacy',
     'gle_fos', 'GLEResult', 'INTERSLICE_FUNCTIONS',
     'janbu_fos', 'janbu_f0',
+    'fosm_fos', 'monte_carlo_fos', 'FOSMResult', 'MonteCarloResult',
     'grid_search', 'optimize_radius', 'search_noncircular',
     'search_pso', 'search_weak_layer_biased', 'search_entry_exit',
     'search_de',
