@@ -243,7 +243,16 @@ B6. Griffiths & Lane (1999) style cross-check of one geometry vs fem2d SRM
   (rows/surface/summary). 6 tests (test_results_outputs.py).
   Suite: 328 passed / 17 skipped.
 
-NEXT ACTION: P9 — funhouse adapter (mostly drafted, needs tests via the
-funhouse adapter test pattern; keep funhouse_agent/tests green); then P10
-VALIDATION.md (B1/B2/B3/B4/B5 + B6 fem2d SRM cross-check) with
-slow-marked runnable validation tests.
+- 2026-06-11 P9 done: funhouse adapter modernized — analyze_slope exposes
+  method=janbu/spencer/morgenstern_price/gle + f_interslice, force table /
+  thrust line; new adapter methods compare_methods_table, fosm_fos,
+  monte_carlo_fos; search_critical_surface surface_type adds entry_exit /
+  noncircular_de / pso / weak_layer; geometry params add nails / anchors /
+  geosynthetics, tension crack, ru, per-layer strength_model
+  (shansep / hoek_brown fields), ponded-water note. allowed_values +
+  _check_choice ValueErrors everywhere. 26 tests
+  (funhouse_agent/tests/test_slope_stability_adapter.py); funhouse suite
+  668 passed / 5 skipped.
+
+NEXT ACTION: P10 — VALIDATION.md (B1/B2/B3/B4/B5 + B6 fem2d SRM
+cross-check) with slow-marked runnable validation tests.
