@@ -141,7 +141,7 @@ py-modules = ["groundhog_agent"]
 calc_package = ["templates/*.html", "templates/*.tex"]
 # Ship the eval question set so funhouse_agent.deep.eval_harness works from an
 # installed wheel (the v5.0 A/B self-test). Tests themselves are not shipped.
-funhouse_agent = ["geotech_test_suite.json"]
+funhouse_agent = ["geotech_test_suite.json", "eval_samples/*"]
 
 [tool.pytest.ini_options]
 markers = [

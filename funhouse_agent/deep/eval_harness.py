@@ -24,15 +24,38 @@ success / reports a value with no acknowledgement of the failed step. See
 :func:`is_hallucination_on_error` for the precise, documented heuristic and its
 known false-positive / false-negative risks.
 
-Correctness is NOT auto-scorable from this suite
-------------------------------------------------
+Correctness auto-scoring (v5.1): the ``expected`` field
+--------------------------------------------------------
 ``geotech_test_suite.json`` is a flat list of ``{id, module, complexity,
-question}`` objects — it carries **NO expected/reference answers and no
-tolerances** (verified by inspection). So numeric pass/fail correctness CANNOT be
-computed from the suite alone. :func:`score_correctness` reports this honestly and
-leaves a clean hook (``judge_fn``) for an optional LLM-judge or a future
-expected-answer file; if a future suite variant DOES add an ``expected``/
-``tolerance`` field, :func:`_numeric_correctness` already knows how to grade it.
+question}`` objects. As of v5.1, calc-type questions with fully specified inputs
+additionally carry an ``expected`` dict (the answer key)::
+
+    "expected": {
+      "values":   [{"name": "q_ult_kPa", "value": 1593, "rtol": 0.15,
+                    "alt": [<same quantity in another unit/convention>]}],
+      "keywords": ["class D"],          # case-insensitive substrings
+      "source":   "v5.1 worktree ground truth (module.method, 2026-06-10)"
+    }
+
+The values were produced by RUNNING the engineering modules in the v5.1 worktree
+(via ``funhouse_agent.dispatch.call_agent``) — so they grade "does the agent
+reproduce the module's own answer", not textbook truth. :func:`default_judge`
+grades an answer by numeric extraction: every ``values`` entry must match SOME
+number in the final answer within ``rtol`` (of ``value`` or any ``alt``), and
+every keyword must appear. A question WITHOUT ``expected`` is **skipped** (not
+failed). A custom ``judge_fn(question, qa) -> bool | None`` (None = skip) can
+replace the default — see :func:`make_llm_judge` for an opt-in LLM judge.
+
+Sample input files: the ``sample_file`` field + ``{sample_path}`` token
+------------------------------------------------------------------------
+File-input questions (AGS4 / GEF / DIGGS / DXF / PDF) carry a ``sample_file``
+field naming a file bundled under ``funhouse_agent/eval_samples/``, and their
+question text contains the literal token ``{sample_path}``. :func:`load_suite`
+expands the token to an ABSOLUTE path resolved against the installed
+``funhouse_agent`` package (``importlib.resources``, with a ``__file__``
+fallback) — so the path is correct from any CWD and from an installed wheel.
+NOTE: shipping the samples in a wheel requires a ``[tool.setuptools.package-data]``
+entry ``funhouse_agent = ["geotech_test_suite.json", "eval_samples/*"]``.
 
 Offline vs live
 ---------------
@@ -81,6 +104,35 @@ SUITE_PATH = _FUNHOUSE_DIR / "geotech_test_suite.json"
 #: Default model id for a live run (kept in sync with ``deep/run_live.py``).
 DEFAULT_MODEL = "claude-sonnet-4-6"
 
+#: Literal token in a suite question's text that :func:`load_suite` replaces
+#: with the resolved absolute path of the question's ``sample_file``.
+SAMPLE_PATH_TOKEN = "{sample_path}"
+
+
+def resolve_sample_path(name: str) -> Path:
+    """Resolve a bundled eval-sample filename to an ABSOLUTE path.
+
+    Works from any CWD and from an installed wheel: resolution goes through
+    ``importlib.resources`` against the ``funhouse_agent`` package first, then
+    falls back to the source-tree layout relative to this file. The path is
+    returned even if the file is missing (callers/tests check ``exists()``), so
+    a broken packaging setup fails loudly at parse time, not silently here.
+
+    Parameters
+    ----------
+    name : str
+        Bare filename under ``funhouse_agent/eval_samples/`` (e.g.
+        ``"sample_cpt.gef"``).
+    """
+    try:
+        from importlib.resources import files
+        p = Path(str(files("funhouse_agent") / "eval_samples" / name))
+        if p.exists():
+            return p
+    except Exception:
+        pass
+    return _FUNHOUSE_DIR / "eval_samples" / name
+
 
 # ===========================================================================
 # Suite loading
@@ -88,6 +140,12 @@ DEFAULT_MODEL = "claude-sonnet-4-6"
 
 def load_suite(path: Path = SUITE_PATH) -> list[dict]:
     """Load the geotech eval suite as a list of question dicts.
+
+    For questions carrying a ``sample_file`` field, the literal
+    ``{sample_path}`` token in the question text is expanded to the sample's
+    resolved ABSOLUTE path (see :func:`resolve_sample_path`), so the agent
+    under test receives a real, openable path regardless of CWD or install
+    location.
 
     Parameters
     ----------
@@ -97,23 +155,30 @@ def load_suite(path: Path = SUITE_PATH) -> list[dict]:
     Returns
     -------
     list of dict
-        Each ``{"id", "module", "complexity", "question"}``. The suite carries
-        NO expected answers — see :func:`score_correctness`.
+        Each ``{"id", "module", "complexity", "question"}``, plus optional
+        ``expected`` (answer key — see :func:`default_judge`) and
+        ``sample_file`` fields.
     """
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
     if not isinstance(data, list):
         raise ValueError(f"Expected a JSON list of questions, got {type(data)}")
+    for q in data:
+        if isinstance(q, dict) and q.get("sample_file"):
+            sample = str(resolve_sample_path(q["sample_file"]))
+            q["question"] = (q.get("question") or "").replace(
+                SAMPLE_PATH_TOKEN, sample)
     return data
 
 
 def suite_has_expected_answers(questions: list[dict]) -> bool:
     """True if ANY suite question carries an ``expected``/``answer`` field.
 
-    Drives :func:`score_correctness`: the current suite returns ``False`` (it is
-    question-only), so correctness is reported as "not auto-scorable". A future
-    suite variant that adds expected answers flips this to ``True`` and unlocks
-    :func:`_numeric_correctness`.
+    As of v5.1 the packaged suite DOES carry ``expected`` dicts on calc-type
+    questions (worktree-module ground truth), so this returns ``True`` for the
+    packaged suite and unlocks the default-judge grading in
+    :func:`score_correctness`. Questions without ``expected`` are skipped, not
+    failed.
     """
     keys = {"expected", "expected_answer", "answer", "reference_answer", "expected_values"}
     return any(set(q) & keys for q in questions if isinstance(q, dict))
@@ -508,122 +573,226 @@ def is_hallucination_on_error(qa: QAResult) -> bool:
 
 
 # ===========================================================================
-# Correctness (NOT auto-scorable from this suite — honest hook)
+# Correctness — default expected-answer judge + opt-in LLM-judge hook
 # ===========================================================================
+
+_NUM_RE = re.compile(r"-?[\d,]*\.?\d+(?:[eE][-+]?\d+)?")
+
 
 def _extract_number(text: str) -> Optional[float]:
     """First plausible numeric token in ``text`` (helper for numeric grading)."""
-    for tok in re.findall(r"-?[\d,]*\.?\d+", text or ""):
+    nums = _extract_numbers(text)
+    return nums[0] if nums else None
+
+
+def _extract_numbers(text: str) -> list[float]:
+    """ALL plausible numeric tokens in ``text`` (commas + exponents handled)."""
+    out: list[float] = []
+    for tok in _NUM_RE.findall(text or ""):
         try:
-            return float(tok.replace(",", ""))
+            out.append(float(tok.replace(",", "")))
         except ValueError:
             continue
-    return None
+    return out
+
+
+def _any_number_matches(answer: str, expected: float, rtol: float) -> bool:
+    """True if ANY number in ``answer`` is within ``rtol`` of ``expected``.
+
+    Relative tolerance (absolute when ``expected == 0``). "Any number" rather
+    than "first number" because real answers carry many numbers (inputs,
+    intermediate factors, the result) — the expected value just has to appear.
+    Known false-positive risk: a small expected integer (e.g. ``2``) can match
+    an incidental number; mitigated by pairing values with keywords in the
+    suite's ``expected`` entries where that matters.
+    """
+    for got in _extract_numbers(answer):
+        if expected == 0:
+            if abs(got) <= rtol:
+                return True
+        elif abs(got - expected) <= abs(rtol * expected):
+            return True
+    return False
 
 
 def _numeric_correctness(answer: str, expected: float, tol: float) -> bool:
-    """Grade ``answer`` against an ``expected`` value within relative ``tol``.
+    """Grade ``answer`` against a scalar ``expected`` value within ``tol``.
 
-    Used ONLY when a (future) suite variant carries expected answers. Pulls the
-    first number from the answer and checks ``|got - expected| <= tol*|expected|``
-    (absolute tolerance when ``expected == 0``).
+    Legacy scalar-``expected`` path (kept for backward compatibility): passes
+    if any number in the answer is within the relative tolerance.
     """
-    got = _extract_number(answer)
-    if got is None:
-        return False
-    if expected == 0:
-        return abs(got) <= tol
-    return abs(got - expected) <= abs(tol * expected)
+    return _any_number_matches(answer, expected, tol)
+
+
+def default_judge(question: dict, qa: QAResult) -> Optional[bool]:
+    """The DEFAULT judge: grade ``qa.answer`` against the question's ``expected``.
+
+    Returns
+    -------
+    bool or None
+        ``None`` when the question carries no ``expected`` (the question is
+        SKIPPED — not graded, not failed). Otherwise ``True`` iff:
+
+        * every entry in ``expected["values"]`` matches some number in the
+          answer within ``rtol`` (of ``value`` or any ``alt`` variant — alts
+          cover unit/convention ambiguity, e.g. 42 mm vs 0.042 m), AND
+        * every ``expected["keywords"]`` entry appears in the answer
+          (case-insensitive substring).
+
+    A legacy scalar ``expected`` (float, with sibling ``tolerance``) is also
+    accepted and graded as a single any-number tolerance match.
+    """
+    if not isinstance(question, dict):
+        return None
+    expected = question.get("expected", question.get("expected_answer"))
+    if expected is None:
+        return None
+    answer = qa.answer or ""
+
+    # Legacy scalar form: {"expected": 100.0, "tolerance": 0.1}
+    if isinstance(expected, (int, float)):
+        tol = float(question.get("tolerance", 0.05))
+        return _any_number_matches(answer, float(expected), tol)
+
+    if not isinstance(expected, dict):
+        return None
+
+    for entry in expected.get("values") or []:
+        try:
+            value = float(entry["value"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        rtol = float(entry.get("rtol", 0.05))
+        candidates = [value] + [float(a) for a in (entry.get("alt") or [])]
+        if not any(_any_number_matches(answer, c, rtol) for c in candidates):
+            return False
+    for kw in expected.get("keywords") or []:
+        if str(kw).lower() not in answer.lower():
+            return False
+    return True
+
+
+def make_llm_judge(model, *, extra_instructions: str = "") -> Callable:
+    """Build an OPT-IN LLM judge_fn backed by a LangChain chat model.
+
+    Constructing the judge makes NO model calls; each ``judge(question, qa)``
+    invocation makes ONE ``model.invoke`` call (real budget on a real model —
+    never triggered by the offline tests, which pass a stub). The judge prompts
+    the model with the question, the ``expected`` answer key when present, and
+    the agent's final answer, and asks for a one-word ``PASS``/``FAIL`` verdict.
+
+    Parameters
+    ----------
+    model : BaseChatModel-like
+        Anything with ``.invoke(str) -> message`` (LangChain chat model or a
+        stub). The message's ``content`` is parsed for PASS/FAIL.
+    extra_instructions : str
+        Optional extra grading guidance appended to the prompt.
+
+    Returns
+    -------
+    callable
+        ``judge(question_dict, qa) -> bool | None`` — ``None`` (skip) when the
+        verdict cannot be parsed from the model reply.
+    """
+    def judge(question: dict, qa: QAResult) -> Optional[bool]:
+        expected = question.get("expected") if isinstance(question, dict) else None
+        expected_block = (
+            f"\nAnswer key (module-computed ground truth):\n"
+            f"{json.dumps(expected, indent=2)}\n" if expected else ""
+        )
+        prompt = (
+            "You are grading a geotechnical engineering agent's answer.\n"
+            f"Question:\n{question.get('question', '')}\n"
+            f"{expected_block}"
+            f"\nAgent's final answer:\n{qa.answer or '(no answer)'}\n\n"
+            "Grade the answer for technical correctness"
+            + (" against the answer key (allow tolerance/unit variants)"
+               if expected else "")
+            + ". " + extra_instructions
+            + "\nReply with exactly one word on the first line: PASS or FAIL."
+        )
+        reply = model.invoke(prompt)
+        text = getattr(reply, "content", reply)
+        if isinstance(text, list):  # content-block replies
+            text = "".join(
+                b.get("text", "") if isinstance(b, dict) else str(b) for b in text
+            )
+        m = re.search(r"\b(PASS|FAIL)\b", str(text), re.IGNORECASE)
+        if not m:
+            return None
+        return m.group(1).upper() == "PASS"
+
+    return judge
 
 
 def score_correctness(
     qas: list[QAResult],
     questions: list[dict],
     *,
-    judge_fn: Optional[Callable[[dict, QAResult], bool]] = None,
+    judge_fn: Optional[Callable[[dict, QAResult], Optional[bool]]] = None,
 ) -> dict:
-    """Score answer correctness — honestly reporting what the suite allows.
+    """Score answer correctness against the suite's ``expected`` answer keys.
 
-    The packaged suite is question-only (no expected answers), so by default this
-    returns ``{"auto_scorable": False, ...}`` and grades nothing. There are two
-    optional paths:
+    Default path: :func:`default_judge` grades every question that carries an
+    ``expected`` field (numeric tolerance + keyword matching); questions WITHOUT
+    ``expected`` are skipped — they count in ``n_skipped``, never as failures.
+    When NO question is gradable, returns ``{"auto_scorable": False, ...}``
+    honestly (the pre-v5.1 behavior).
 
-    * If the suite questions carry ``expected``/``tolerance`` fields, numeric
-      grading via :func:`_numeric_correctness` kicks in automatically.
-    * If a ``judge_fn(question_dict, qa) -> bool`` is supplied (e.g. an
-      LLM-judge), each answer is graded by it. This is the clean hook for adding
-      correctness later WITHOUT changing the harness.
-
-    Parameters
-    ----------
-    qas : list of QAResult
-        One agent's results.
-    questions : list of dict
-        The suite questions (carry expected answers only in a future variant).
-    judge_fn : callable, optional
-        ``(question_dict, qa) -> bool`` external grader.
+    A custom ``judge_fn(question_dict, qa) -> bool | None`` (e.g. from
+    :func:`make_llm_judge`) replaces the default judge; ``None`` verdicts are
+    skipped the same way.
 
     Returns
     -------
     dict
         ``{"auto_scorable": bool, "method": str, "pass_rate": float|None,
-        "n_passed": int|None, "n_graded": int, "note": str}``.
+        "n_passed": int|None, "n_graded": int, "n_skipped": int, "note": str}``.
     """
     by_id = {q.get("id"): q for q in questions if isinstance(q, dict)}
-    has_expected = suite_has_expected_answers(questions)
+    judge = judge_fn if judge_fn is not None else default_judge
 
-    if judge_fn is not None:
-        passed = 0
-        graded = 0
-        for qa in qas:
-            q = by_id.get(qa.qid)
-            if q is None:
-                continue
-            graded += 1
-            if judge_fn(q, qa):
-                passed += 1
-        return {
-            "auto_scorable": True,
-            "method": "llm_judge",
-            "n_graded": graded,
-            "n_passed": passed,
-            "pass_rate": (passed / graded) if graded else None,
-            "note": "Graded by the supplied judge_fn.",
-        }
+    passed = 0
+    graded = 0
+    skipped = 0
+    for qa in qas:
+        q = by_id.get(qa.qid)
+        verdict = judge(q, qa) if q is not None else None
+        if verdict is None:
+            skipped += 1
+            continue
+        graded += 1
+        if verdict:
+            passed += 1
 
-    if has_expected:
-        passed = 0
-        graded = 0
-        for qa in qas:
-            q = by_id.get(qa.qid)
-            if not q:
-                continue
-            expected = q.get("expected", q.get("expected_answer"))
-            if expected is None:
-                continue
-            tol = float(q.get("tolerance", 0.05))
-            graded += 1
-            if _numeric_correctness(qa.answer, float(expected), tol):
-                passed += 1
+    if graded == 0 and judge_fn is None:
         return {
-            "auto_scorable": True,
-            "method": "numeric_tolerance",
-            "n_graded": graded,
-            "n_passed": passed,
-            "pass_rate": (passed / graded) if graded else None,
-            "note": "Numeric-with-tolerance grading against suite expected values.",
+            "auto_scorable": False,
+            "method": "none",
+            "n_graded": 0,
+            "n_passed": None,
+            "n_skipped": skipped,
+            "pass_rate": None,
+            "note": (
+                "Not auto-scorable: none of these questions carry an "
+                "'expected' answer key. Supply a judge_fn (LLM-judge) or add "
+                "expected fields to grade correctness."
+            ),
         }
 
     return {
-        "auto_scorable": False,
-        "method": "none",
-        "n_graded": 0,
-        "n_passed": None,
-        "pass_rate": None,
+        "auto_scorable": True,
+        "method": "llm_judge" if judge_fn is not None else "expected",
+        "n_graded": graded,
+        "n_passed": passed,
+        "n_skipped": skipped,
+        "pass_rate": (passed / graded) if graded else None,
         "note": (
-            "Not auto-scorable from suite: geotech_test_suite.json carries no "
-            "expected answers/tolerances. Supply a judge_fn (LLM-judge) or an "
-            "expected-answer suite variant to grade correctness."
+            "Graded by the supplied judge_fn." if judge_fn is not None else
+            "Default judge: numeric-tolerance + keyword match against the "
+            "suite's 'expected' answer keys (v5.1 worktree-module ground "
+            "truth). Questions without 'expected' are skipped, not failed."
         ),
     }
 
@@ -1186,15 +1355,30 @@ def render_suite_markdown(suite_result: dict) -> str:
     m = suite_result.get("metrics", {}) or {}
     results = suite_result.get("results", []) or []
 
+    c = m.get("correctness", {}) or {}
+    if c.get("auto_scorable"):
+        correctness_blurb = (
+            f"Correctness is auto-scored for the {c.get('n_graded', 0)} "
+            f"question(s) carrying an `expected` answer key "
+            f"(pass rate {_fmt(c.get('pass_rate'), 'pct')}; "
+            f"{c.get('n_skipped', 0)} skipped — no key). The keys are "
+            "v5.1 worktree-module ground truth; still spot-check answers and "
+            "citations by eye."
+        )
+    else:
+        correctness_blurb = (
+            "Correctness is **not auto-scored** for these questions (no "
+            "`expected` answer keys). Read each answer below and judge its "
+            "quality by eye. The metrics below are process/behavior metrics, "
+            "not a correctness score."
+        )
+
     lines = [
         "# v2 (deepagents) suite review",
         "",
         f"Model: `{model}`  |  Questions: {n}",
         "",
-        "Correctness is **not auto-scored** from this suite "
-        "(`geotech_test_suite.json` carries no expected answers). Read each "
-        "answer below and judge its quality by eye. The metrics below are "
-        "process/behavior metrics, not a correctness score.",
+        correctness_blurb,
         "",
         "## Run metrics",
         "",
@@ -1209,6 +1393,15 @@ def render_suite_markdown(suite_result: dict) -> str:
         f"- Total tokens: {_fmt(m.get('total_tokens'), 'tok')}",
         f"- Avg tokens / question: {_fmt(m.get('avg_tokens'), 'tok')}",
         f"- Max tokens (one question): {_fmt(m.get('max_total_tokens'), 'tok')}",
+    ]
+    if c.get("auto_scorable"):
+        lines.append(
+            f"- Correctness ({c.get('method', '?')}): "
+            f"{_fmt(c.get('n_passed'), 'int')}/{_fmt(c.get('n_graded'), 'int')} "
+            f"passed ({_fmt(c.get('pass_rate'), 'pct')}), "
+            f"{c.get('n_skipped', 0)} skipped (no expected key)"
+        )
+    lines += [
         "",
         "## Answers",
         "",

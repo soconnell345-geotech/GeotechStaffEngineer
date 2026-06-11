@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic DIGGS 2.6-style site file for the funhouse_agent eval suite.
+     Two borings with lithology, SPT N-values, and a groundwater observation.
+     Parses via subsurface_characterization.parse_diggs. The simplified test
+     encodings (DrivenPenetrationTest with depth/blowCount children) match the
+     in-house parser, not the full DIGGS 2.6 XSD - strict schema validation
+     reports findings on those elements by design. -->
+<Diggs xmlns="http://diggsml.org/schemas/2.6"
+       xmlns:gml="http://www.opengis.net/gml/3.2"
+       xmlns:xlink="http://www.w3.org/1999/xlink"
+       gml:id="d1">
+  <documentInformation>
+    <DocumentInformation gml:id="di1">
+      <creationDate>2026-06-10</creationDate>
+    </DocumentInformation>
+  </documentInformation>
+  <project>
+    <Project gml:id="p1">
+      <gml:name>Eval Sample Site</gml:name>
+    </Project>
+  </project>
+  <samplingFeature>
+    <Borehole gml:id="BH1">
+      <gml:name>B-1</gml:name>
+      <investigationTarget>Natural Ground</investigationTarget>
+      <projectRef xlink:href="#p1"/>
+      <referencePoint>
+        <PointLocation gml:id="pt1">
+          <gml:pos srsDimension="3">100.0 200.0 10.0</gml:pos>
+        </PointLocation>
+      </referencePoint>
+      <centerLine>
+        <LinearExtent gml:id="cl1">
+          <gml:posList srsDimension="3">100.0 200.0 10.0 100.0 200.0 -5.0</gml:posList>
+        </LinearExtent>
+      </centerLine>
+      <totalMeasuredDepth uom="m">15.0</totalMeasuredDepth>
+      <LithologyObservation gml:id="lo1">
+        <depthTop>0.0</depthTop>
+        <depthBase>3.0</depthBase>
+        <description>Fill - sand and gravel</description>
+        <uscs>SM</uscs>
+      </LithologyObservation>
+      <LithologyObservation gml:id="lo2">
+        <depthTop>3.0</depthTop>
+        <depthBase>10.0</depthBase>
+        <description>Soft gray clay</description>
+        <uscs>CL</uscs>
+      </LithologyObservation>
+      <LithologyObservation gml:id="lo3">
+        <depthTop>10.0</depthTop>
+        <depthBase>15.0</depthBase>
+        <description>Dense sand</description>
+        <uscs>SP</uscs>
+      </LithologyObservation>
+    </Borehole>
+  </samplingFeature>
+  <samplingFeature>
+    <Borehole gml:id="BH2">
+      <gml:name>B-2</gml:name>
+      <investigationTarget>Natural Ground</investigationTarget>
+      <projectRef xlink:href="#p1"/>
+      <referencePoint>
+        <PointLocation gml:id="pt2">
+          <gml:pos srsDimension="3">140.0 200.0 9.5</gml:pos>
+        </PointLocation>
+      </referencePoint>
+      <centerLine>
+        <LinearExtent gml:id="cl2">
+          <gml:posList srsDimension="3">140.0 200.0 9.5 140.0 200.0 -2.5</gml:posList>
+        </LinearExtent>
+      </centerLine>
+      <totalMeasuredDepth uom="m">12.0</totalMeasuredDepth>
+      <LithologyObservation gml:id="lo4">
+        <depthTop>0.0</depthTop>
+        <depthBase>4.0</depthBase>
+        <description>Fill - silty sand</description>
+        <uscs>SM</uscs>
+      </LithologyObservation>
+      <LithologyObservation gml:id="lo5">
+        <depthTop>4.0</depthTop>
+        <depthBase>12.0</depthBase>
+        <description>Medium stiff clay</description>
+        <uscs>CL</uscs>
+      </LithologyObservation>
+    </Borehole>
+  </samplingFeature>
+  <DrivenPenetrationTest gml:id="spt1">
+    <investigationRef xlink:href="#BH1"/>
+    <depth>1.5</depth>
+    <blowCount>8</blowCount>
+  </DrivenPenetrationTest>
+  <DrivenPenetrationTest gml:id="spt2">
+    <investigationRef xlink:href="#BH1"/>
+    <depth>4.5</depth>
+    <blowCount>5</blowCount>
+  </DrivenPenetrationTest>
+  <DrivenPenetrationTest gml:id="spt3">
+    <investigationRef xlink:href="#BH1"/>
+    <depth>7.5</depth>
+    <blowCount>7</blowCount>
+  </DrivenPenetrationTest>
+  <DrivenPenetrationTest gml:id="spt4">
+    <investigationRef xlink:href="#BH1"/>
+    <depth>10.5</depth>
+    <blowCount>30</blowCount>
+  </DrivenPenetrationTest>
+  <DrivenPenetrationTest gml:id="spt5">
+    <investigationRef xlink:href="#BH2"/>
+    <depth>1.5</depth>
+    <blowCount>10</blowCount>
+  </DrivenPenetrationTest>
+  <DrivenPenetrationTest gml:id="spt6">
+    <investigationRef xlink:href="#BH2"/>
+    <depth>6.0</depth>
+    <blowCount>9</blowCount>
+  </DrivenPenetrationTest>
+  <WaterLevelObservation gml:id="wl1">
+    <investigationRef xlink:href="#BH1"/>
+    <waterDepth>3.5</waterDepth>
+  </WaterLevelObservation>
+</Diggs>

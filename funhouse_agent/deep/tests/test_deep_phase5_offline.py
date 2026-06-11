@@ -52,18 +52,19 @@ def test_load_suite_shape_and_count():
     assert "BC-1" in ids  # a known anchor question
 
 
-def test_suite_has_no_expected_answers():
-    """Correctness is NOT auto-scorable: the suite carries no expected answers."""
+def test_suite_carries_expected_answers():
+    """v5.1: the suite carries 'expected' answer keys on calc-type questions
+    (worktree-module ground truth), so correctness IS partially auto-scorable.
+    Deeper grading coverage lives in test_eval_scoring.py."""
     questions = eh.load_suite()
-    assert eh.suite_has_expected_answers(questions) is False
-    c = eh.score_correctness([], questions)
-    assert c["auto_scorable"] is False
-    assert c["pass_rate"] is None
-    assert "not auto-scorable" in c["note"].lower()
+    assert eh.suite_has_expected_answers(questions) is True
+    n_keyed = sum(1 for q in questions if "expected" in q)
+    assert n_keyed >= 25  # 31 as of v5.1
+    assert n_keyed < len(questions)  # open-ended questions stay key-less
 
 
 def test_suite_with_expected_answers_is_numeric_scorable():
-    """A FUTURE suite variant with expected answers unlocks numeric grading."""
+    """Legacy scalar expected/tolerance fields still unlock numeric grading."""
     questions = [
         {"id": "X-1", "module": "m", "question": "q", "expected": 100.0,
          "tolerance": 0.1},
@@ -73,7 +74,7 @@ def test_suite_with_expected_answers_is_numeric_scorable():
                      answer="The answer is about 105 kPa.")
     c = eh.score_correctness([qa], questions)
     assert c["auto_scorable"] is True
-    assert c["method"] == "numeric_tolerance"
+    assert c["method"] == "expected"
     assert c["pass_rate"] == 1.0  # 105 within 10% of 100
 
 

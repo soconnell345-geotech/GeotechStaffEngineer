@@ -81,12 +81,13 @@ def _run_csr_crr_check(params: dict) -> dict:
     sigma_v = params["sigma_v"]
     sigma_v_eff = params["sigma_v_eff"]
     M = params.get("magnitude", 7.5)
-    rd = stress_reduction_rd(z, M)
-    CSR = compute_CSR(amax, sigma_v, sigma_v_eff, rd)
+    rd = stress_reduction_rd(z)
+    # compute_CSR already applies rd (from z) and divides by MSF, so the
+    # returned CSR is on the M7.5 basis and pairs directly with CRR_from_N160cs.
+    CSR = compute_CSR(amax, sigma_v, sigma_v_eff, z, M)
     MSF = magnitude_scaling_factor(M)
-    N160cs = N160 + fines_correction(FC)
-    CRR75 = CRR_from_N160cs(N160cs)
-    CRR = CRR75 * MSF
+    N160cs = fines_correction(N160, FC)
+    CRR = CRR_from_N160cs(N160cs)
     FOS = CRR / CSR if CSR > 0 else 99.9
     return {"CSR": round(CSR, 4), "CRR": round(CRR, 4), "FOS_liq": round(FOS, 3), "N160cs": round(N160cs, 1), "rd": round(rd, 4), "MSF": round(MSF, 3), "liquefiable": FOS < 1.0}
 
