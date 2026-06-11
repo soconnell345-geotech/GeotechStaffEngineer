@@ -601,3 +601,95 @@ def gle_fos(slices: List[Slice],
         result.shear_mobilized = list(shear_m)
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Janbu's Simplified method (+ f0 correction factor)
+# ---------------------------------------------------------------------------
+
+def _janbu_b1(slices: List[Slice]) -> float:
+    """Janbu correction coefficient b1 by soil type along the surface.
+
+    0.69 for c-only soils, 0.31 for phi-only, 0.50 for c-phi soils
+    (Janbu 1973; Abramson et al. 2002, Fig. 6.18).
+    """
+    has_c = any(s.c > 1e-9 for s in slices)
+    has_phi = any(s.phi > 1e-9 for s in slices)
+    if has_c and has_phi:
+        return 0.50
+    if has_c:
+        return 0.69
+    return 0.31
+
+
+def janbu_f0(slices: List[Slice]) -> float:
+    """Janbu correction factor f0 = 1 + b1*[d/L - 1.4*(d/L)^2].
+
+    d = maximum perpendicular distance from the slip surface to the
+    entry-exit chord; L = chord length. Accounts for the interslice
+    shear forces neglected by the simplified (force-equilibrium-only)
+    method; deeper surfaces get a larger correction.
+    """
+    if len(slices) < 2:
+        return 1.0
+    # Chord through the surface endpoints (first/last slice bases sit at
+    # the ground surface at entry/exit).
+    x1, z1 = slices[0].x_left, slices[0].z_base
+    x2, z2 = slices[-1].x_right, slices[-1].z_base
+    dx, dz = x2 - x1, z2 - z1
+    L = math.hypot(dx, dz)
+    if L < 1e-9:
+        return 1.0
+    d_max = 0.0
+    for s in slices:
+        # perpendicular distance from base midpoint to the chord
+        d = abs(dx * (s.z_base - z1) - dz * (s.x_mid - x1)) / L
+        d_max = max(d_max, d)
+    ratio = d_max / L
+    return 1.0 + _janbu_b1(slices) * (ratio - 1.4 * ratio * ratio)
+
+
+def janbu_fos(slices: List[Slice],
+              slip,
+              tol: float = 1e-5,
+              apply_correction: bool = True,
+              ) -> Tuple[float, float, float]:
+    """Janbu's Simplified method factor of safety.
+
+    Horizontal force equilibrium with zero interslice shear (the GLE
+    force-equilibrium FOS at lambda = 0), optionally multiplied by the
+    Janbu f0 correction factor. Works for circular and noncircular
+    surfaces.
+
+    Parameters
+    ----------
+    slices : list of Slice
+    slip : CircularSlipSurface or PolylineSlipSurface
+    tol : float
+        Convergence tolerance. Default 1e-5.
+    apply_correction : bool
+        Reserved for symmetry; both values are always returned.
+
+    Returns
+    -------
+    (fos_corrected, fos_uncorrected, f0) : tuple of float
+
+    References
+    ----------
+    Janbu (1973); Fredlund & Krahn (1977); Abramson et al. (2002).
+    """
+    if len(slices) < 3:
+        raise ValueError("Janbu requires at least 3 slices")
+    ns, mirrored = _normalize(slices)
+    is_circular = getattr(slip, "is_circular", True)
+    if is_circular:
+        axis = ((-slip.xc if mirrored else slip.xc), slip.yc)
+    else:
+        axis = _fit_axis_point(ns)
+    sys_ = _GLESystem(ns, axis, "constant", tol)
+    st = sys_.solve_for_lambda(0.0)
+    if st is None:
+        return (_FOS_MAX, _FOS_MAX, 1.0)
+    _, ff, _, _, _ = st
+    f0 = janbu_f0(slices)
+    return (f0 * ff, ff, f0)

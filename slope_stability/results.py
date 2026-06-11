@@ -146,6 +146,9 @@ class SlopeStabilityResult:
     FOS_spencer: Optional[float] = None
     FOS_morgenstern_price: Optional[float] = None
     lambda_mp: Optional[float] = None
+    FOS_janbu: Optional[float] = None
+    FOS_janbu_uncorrected: Optional[float] = None
+    janbu_f0: Optional[float] = None
     n_slices: int = 0
     has_seismic: bool = False
     kh: float = 0.0
@@ -206,6 +209,11 @@ class SlopeStabilityResult:
             lines.append(f"  FOS (M-P):        {self.FOS_morgenstern_price:.3f}")
         if self.lambda_mp is not None:
             lines.append(f"  M-P lambda:       {self.lambda_mp:.3f}")
+        if self.FOS_janbu is not None and self.method != "Janbu":
+            lines.append(f"  FOS (Janbu corr): {self.FOS_janbu:.3f}")
+        if self.FOS_janbu_uncorrected is not None:
+            lines.append(f"  FOS (Janbu unc.): {self.FOS_janbu_uncorrected:.3f}"
+                         + (f"  (f0={self.janbu_f0:.3f})" if self.janbu_f0 else ""))
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -287,6 +295,12 @@ class SlopeStabilityResult:
             d["FOS_morgenstern_price"] = round(self.FOS_morgenstern_price, 4)
         if self.lambda_mp is not None:
             d["lambda_mp"] = round(self.lambda_mp, 4)
+        if self.FOS_janbu is not None:
+            d["FOS_janbu_corrected"] = round(self.FOS_janbu, 4)
+        if self.FOS_janbu_uncorrected is not None:
+            d["FOS_janbu_uncorrected"] = round(self.FOS_janbu_uncorrected, 4)
+        if self.janbu_f0 is not None:
+            d["janbu_f0"] = round(self.janbu_f0, 4)
         if self.slice_data is not None:
             d["slice_data"] = [s.to_dict() for s in self.slice_data]
         return d

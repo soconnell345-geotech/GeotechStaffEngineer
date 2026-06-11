@@ -168,5 +168,13 @@ B6. Griffiths & Lane (1999) style cross-check of one geometry vs fem2d SRM
   3 tests asserting legacy artifacts (Spencer theta==0 for circular)
   updated to rigorous semantics. Suite: 264 passed / 17 skipped.
 
-NEXT ACTION: implement P2 (janbu_fos + f0 correction + compare helper) (`slope_stability/gle.py` + tests/test_gle.py with
+- 2026-06-11 P2 done: janbu_fos (GLE F_f at lambda=0) + f0 correction in
+  gle.py; analyze_slope method="janbu" + "gle"; compare_methods now adds
+  Janbu corr/uncorr; results fields FOS_janbu/_uncorrected/janbu_f0.
+  Validation note: F&K's published 2.041 "Janbu simplified" INCLUDES f0
+  (standard practice); ours corrected 2.021 (1.0% off), uncorrected 1.877.
+  Suite: 272 passed / 17 skipped.
+
+NEXT ACTION: implement P3 (search: method plumb for gle/janbu; scipy
+differential_evolution noncircular refinement; ACADS B3 search gate test). (`slope_stability/gle.py` + tests/test_gle.py with
 B1/B2 benchmarks), then decide rewire-vs-new-method from Duncan suite results.

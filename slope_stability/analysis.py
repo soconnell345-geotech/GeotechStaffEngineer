@@ -18,6 +18,7 @@ from slope_stability.slices import build_slices, compute_slice_forces
 from slope_stability.methods import (
     fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
 )
+from slope_stability.gle import janbu_fos
 from slope_stability.search import (
     grid_search, search_noncircular,
     search_pso, search_weak_layer_biased, search_entry_exit,
@@ -54,9 +55,11 @@ def analyze_slope(geom: SlopeGeometry,
     slip_surface : CircularSlipSurface or PolylineSlipSurface, optional
         Explicit slip surface object. If provided, xc/yc/radius are ignored.
     method : str
-        'fellenius', 'bishop', 'spencer', 'morgenstern_price' or 'gle'.
-        'gle' is an alias for the rigorous Morgenstern-Price solution
-        with a selectable interslice force function. Default 'bishop'.
+        'fellenius', 'bishop', 'janbu', 'spencer', 'morgenstern_price'
+        or 'gle'. 'gle' is an alias for the rigorous Morgenstern-Price
+        solution with a selectable interslice force function. 'janbu'
+        reports the f0-corrected FOS (uncorrected value in
+        FOS_janbu_uncorrected). Default 'bishop'.
     n_slices : int
         Number of slices. Default 30.
     tol : float
@@ -104,9 +107,19 @@ def analyze_slope(geom: SlopeGeometry,
     fos_spencer = None
     fos_mp = None
     lambda_mp = None
+    fos_janbu = None
+    fos_janbu_uncorr = None
+    f0_janbu = None
     if method == "fellenius":
         fos = fellenius_fos(slices, slip)
         method_name = "Fellenius"
+    elif method == "janbu":
+        fos_c, fos_u, f0 = janbu_fos(slices, slip, tol=min(tol, 1e-4) * 0.1)
+        fos = fos_c
+        fos_janbu = fos_c
+        fos_janbu_uncorr = fos_u
+        f0_janbu = f0
+        method_name = "Janbu"
     elif method == "spencer":
         fos, theta = spencer_fos(slices, slip, tol=tol)
         fos_spencer = fos
@@ -136,6 +149,9 @@ def analyze_slope(geom: SlopeGeometry,
         if fos_mp is None:
             fos_mp, lambda_mp = morgenstern_price_fos(
                 slices, slip, f_interslice=f_interslice, tol=tol)
+        if fos_janbu is None:
+            fos_janbu, fos_janbu_uncorr, f0_janbu = janbu_fos(
+                slices, slip, tol=min(tol, 1e-4) * 0.1)
 
     # Slice data for plotting
     slice_data = None
@@ -179,6 +195,9 @@ def analyze_slope(geom: SlopeGeometry,
         FOS_spencer=fos_spencer,
         FOS_morgenstern_price=fos_mp,
         lambda_mp=lambda_mp,
+        FOS_janbu=fos_janbu,
+        FOS_janbu_uncorrected=fos_janbu_uncorr,
+        janbu_f0=f0_janbu,
         n_slices=len(slices),
         has_seismic=geom.kh > 0,
         kh=geom.kh,
