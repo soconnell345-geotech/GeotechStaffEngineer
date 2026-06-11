@@ -160,7 +160,7 @@ class _NSlice:
     """
     __slots__ = ("x_mid", "x_left", "x_right", "z_base", "z_centroid",
                  "alpha", "width", "length", "W", "u", "c", "tan_phi",
-                 "kW", "Fc", "z_crack", "rh", "rv_down")
+                 "kW", "Fc", "z_crack", "rh", "rv_down", "Ph", "z_pond")
 
     def __init__(self, s: Slice, mirror: bool):
         sgn = -1.0 if mirror else 1.0
@@ -179,6 +179,8 @@ class _NSlice:
         self.kW = s.seismic_force          # magnitude, always driving
         self.Fc = s.crack_water_force      # magnitude, always driving
         self.z_crack = s.crack_water_z
+        self.Ph = sgn * s.pond_hforce      # signed pond thrust (+x in frame)
+        self.z_pond = s.pond_z
         self.rh = 0.0       # reinforcement horizontal force (+ = resisting)
         self.rv_down = 0.0  # reinforcement vertical force (down positive)
 
@@ -300,6 +302,9 @@ class _GLESystem:
                 m_ext += s.kW * (s.z_centroid - self.y0)
             if s.Fc:
                 m_ext += s.Fc * (s.z_crack - self.y0)
+            if s.Ph:
+                # signed horizontal pond thrust: M_z = -(z - y0) * Fx
+                m_ext -= s.Ph * (s.z_pond - self.y0)
         # Reinforcement point forces enter the global moment and force
         # balances exactly (active convention: unfactored, reduces driving)
         if reinf:
@@ -311,6 +316,7 @@ class _GLESystem:
         # resisting reinforcement components subtract.
         self.force_driving_ext = (sum(s.kW for s in ns)
                                   + sum(s.Fc for s in ns)
+                                  - sum(s.Ph for s in ns)
                                   - (sum(t[2] for t in reinf) if reinf else 0.0))
 
     # -- N for one slice ----------------------------------------------------
@@ -383,7 +389,8 @@ class _GLESystem:
                 Sm = (s.c * s.length
                       + max(N_f[i] - s.u * s.length, 0.0) * s.tan_phi) / Ff_new
                 E[i + 1] = (E[i] - N_f[i] * math.sin(s.alpha)
-                            + Sm * math.cos(s.alpha) - s.kW - s.Fc + s.rh)
+                            + Sm * math.cos(s.alpha) - s.kW - s.Fc + s.rh
+                            + s.Ph)
             # E at the far boundary closes to ~0 when Ff is exact; do not
             # force it — the ratio form of Ff enforces global closure.
 
@@ -629,6 +636,8 @@ def gle_fos(slices: List[Slice],
             m += s.kW * (s.z_centroid - s.z_base)
         if s.Fc:
             m += s.Fc * (s.z_crack - s.z_base)
+        if s.Ph:
+            m -= s.Ph * (s.z_pond - s.z_base)
         if abs(E[i + 1]) > 1e-6:
             zE = s.z_base - m / E[i + 1]
         else:

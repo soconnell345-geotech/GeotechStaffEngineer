@@ -375,3 +375,39 @@ def search_critical_surface(
                          x_exit_range=x_exit_range)
 
     return result
+
+
+def rapid_drawdown_fos(geom: SlopeGeometry,
+                       drawdown_from_elevation: float,
+                       drawdown_to_elevation: float,
+                       **kwargs):
+    """Rapid drawdown analysis — NOT YET IMPLEMENTED (designed stub).
+
+    Planned implementation (Duncan, Wright & Brandon 2014, Ch. 9 /
+    USACE three-stage procedure):
+
+    1. Stage 1: long-term (drained) analysis with the high pool
+       (consolidation stresses sigma'_fc and tau_fc on the slip surface
+       from the pre-drawdown steady state).
+    2. Stage 2: undrained analysis after drawdown using composite
+       drained/undrained strength envelopes per slice — su tied to the
+       stage-1 consolidation stresses (Kc-dependent strengths).
+    3. Stage 3: drained check with the low pool; the governing FOS per
+       slice is min(undrained, drained).
+
+    Requires per-slice consolidation-stress bookkeeping and a composite
+    strength interpolation that the current Slice pipeline does not yet
+    carry. Until then, model drawdown conservatively by keeping the GWT
+    high inside the slope with the pond removed (gwt_points unchanged,
+    surface water at the drawn-down level).
+
+    Raises
+    ------
+    NotImplementedError
+    """
+    raise NotImplementedError(
+        "rapid_drawdown_fos is a designed stub (see docstring for the "
+        "planned Duncan 3-stage procedure). Conservative interim "
+        "approach: analyze with the pre-drawdown GWT inside the slope "
+        "and the external pool at the drawn-down elevation."
+    )

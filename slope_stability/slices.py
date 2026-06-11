@@ -77,6 +77,9 @@ class Slice:
     in_tension_crack: bool = False
     crack_water_force: float = 0.0
     crack_water_z: float = 0.0
+    pond_force: float = 0.0      # vertical pond water weight (also in weight)
+    pond_hforce: float = 0.0     # signed horizontal pond thrust, +x (kN/m)
+    pond_z: float = 0.0          # elevation of pond thrust line of action
 
 
 @dataclass
@@ -226,6 +229,36 @@ def build_slices(geom: SlopeGeometry,
         # Weight through multiple layers
         weight = _compute_slice_weight(geom, x_mid, z_top, z_base, width, gwt_elev)
 
+        # Ponded water (auto-detected): GWT above the ground surface means
+        # standing water on the slice. The hydrostatic pressure on the
+        # submerged ground-surface segment resolves into
+        #   - a vertical component = weight of the water column
+        #     (added to the slice weight), and
+        #   - a signed horizontal component on inclined ground
+        #     Fx = gamma_w * (d_l^2 - d_r^2)/2  (d = pool depth at the
+        #     slice edges, clipped at 0), pushing toward the soil — the
+        #     classic external-water buttress.
+        # The pore pressure at the base already uses the full head to the
+        # pool surface, so with both components a fully submerged slope
+        # reproduces the buoyant-weight equivalence (boundary water
+        # pressures + internal u == buoyancy).
+        pond_weight = 0.0
+        pond_hforce = 0.0
+        pond_z = z_top
+        if gwt_elev is not None and gwt_elev > z_top:
+            pond_weight = GAMMA_W * (gwt_elev - z_top) * width
+        if gwt_elev is not None:
+            d_l = max(gwt_elev - geom.ground_elevation_at(x_left), 0.0)
+            d_r = max(gwt_elev - geom.ground_elevation_at(x_right), 0.0)
+            if d_l > 0.0 or d_r > 0.0:
+                pond_hforce = 0.5 * GAMMA_W * (d_l * d_l - d_r * d_r)
+                if abs(pond_hforce) > 1e-12:
+                    # line of action: centroid of the trapezoidal pressure
+                    # diagram on the projected vertical face
+                    depth = (2.0 * (d_l ** 3 - d_r ** 3)
+                             / (3.0 * (d_l * d_l - d_r * d_r)))
+                    pond_z = gwt_elev - depth
+
         # Pore pressure at base
         pore_pressure = _pore_pressure_at_base(z_base, gwt_elev)
 
@@ -266,8 +299,12 @@ def build_slices(geom: SlopeGeometry,
         # Surcharge
         surcharge_force = geom.surcharge_at(x_mid) * width
 
-        # Seismic horizontal force
+        # Seismic horizontal force — applied to the SOIL mass only
+        # (hydrodynamic effects on ponded water are not modeled)
         seismic_force = geom.kh * weight
+
+        # add pond water weight after seismic so kh acts on soil only
+        weight = weight + pond_weight
 
         # Centroid elevation (for seismic moment arm)
         z_centroid = z_base + height / 2.0
@@ -290,6 +327,9 @@ def build_slices(geom: SlopeGeometry,
             seismic_force=seismic_force,
             z_centroid=z_centroid,
             in_tension_crack=in_crack,
+            pond_force=pond_weight,
+            pond_hforce=pond_hforce,
+            pond_z=pond_z,
         ))
 
     # Reject surfaces that dip below the soil model between valid slices

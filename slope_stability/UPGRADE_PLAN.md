@@ -217,5 +217,25 @@ B6. Griffiths & Lane (1999) style cross-check of one geometry vs fem2d SRM
   independent envelope evaluation + d(tau)/d(sigma_n) slope to 1%.
   Suite: 315 passed / 17 skipped.
 
-NEXT ACTION: implement P7 (ponded water auto-detect + drawdown stub). (`slope_stability/gle.py` + tests/test_gle.py with
-B1/B2 benchmarks), then decide rewire-vs-new-method from Duncan suite results.
+- 2026-06-11 P7 done: ponded water auto-detected from GWT above the
+  ground surface — per slice the pond contributes (a) vertical
+  water-column weight (kh excluded: seismic acts on soil only) and
+  (b) the signed horizontal hydrostatic thrust on inclined submerged
+  ground, Fx = gamma_w*(d_l^2 - d_r^2)/2 with exact trapezoidal
+  line-of-action; threaded through Fellenius/Bishop (clockwise-positive
+  moment Fx*(z - yc)), legacy Spencer/M-P, and the GLE engine (m_ext,
+  force denominator, E-marching, thrust line). Fully-submerged ==
+  buoyant equivalence: Bishop 0.1%, Spencer/M-P ~exact (0.02%); OMS
+  documented exception (N' = W cos a - u l pathology, conservative).
+  BEHAVIOR CHANGE (documented): external water now buttresses —
+  Duncan Ex 6 test asserting "higher pool -> lower FOS" inverted to the
+  physical direction. rapid_drawdown_fos() = designed stub
+  (NotImplementedError with the Duncan/USACE 3-stage plan in the
+  docstring) — DESCOPED: needs per-slice consolidation-stress
+  bookkeeping (Kc-dependent undrained envelopes); interim guidance is
+  high internal GWT + drawn-down pool. Suite: 322 passed / 17 skipped.
+
+NEXT ACTION: P8 — per-slice force table in results/to_dict (W, N', S_mob,
+E/X, u*b, alpha), thrust line exposure, method-comparison helper on the
+result side; then adapter update; then VALIDATION.md (B1/B2/B3/B4/B5 +
+B6 fem2d SRM cross-check).

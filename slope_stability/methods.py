@@ -107,6 +107,11 @@ def fellenius_fos(slices: List[Slice],
         if is_circular:
             # Circular: moment-arm formulation W*(x_mid - xc)/R
             gravity_driving += W * (s.x_mid - slip.xc) / slip.radius
+            if s.pond_hforce != 0:
+                # signed moment of the external pond thrust (buttress), in the
+                # same clockwise-positive convention as W*(x-xc):
+                # M = Fx*(z - yc); combined with gravity BEFORE abs()
+                gravity_driving += s.pond_hforce * (s.pond_z - slip.yc) / slip.radius
             if s.seismic_force != 0:
                 seismic_driving += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
             if s.crack_water_force != 0:
@@ -114,6 +119,9 @@ def fellenius_fos(slices: List[Slice],
         else:
             # Noncircular: use W*sin(alpha) directly
             gravity_driving += W * math.sin(s.alpha)
+            if s.pond_hforce != 0:
+                # +x force drives sliding in -alpha sense: signed -Fx*cos(a)
+                gravity_driving += -s.pond_hforce * math.cos(s.alpha)
             if s.seismic_force != 0:
                 seismic_driving += s.seismic_force * math.cos(s.alpha)
             if s.crack_water_force != 0:
@@ -207,6 +215,8 @@ def bishop_fos(slices: List[Slice],
     for s in slices:
         W = s.weight + s.surcharge_force
         gravity_driving += W * (s.x_mid - slip.xc) / slip.radius
+        if s.pond_hforce != 0:
+            gravity_driving += s.pond_hforce * (s.pond_z - slip.yc) / slip.radius
         if s.seismic_force != 0:
             seismic_driving += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
         if s.crack_water_force != 0:
@@ -333,6 +343,8 @@ def spencer_fos_legacy(slices: List[Slice],
         for s in slices:
             W = s.weight + s.surcharge_force
             gravity_moment += W * (s.x_mid - slip.xc) / slip.radius
+            if s.pond_hforce != 0:
+                gravity_moment += s.pond_hforce * (s.pond_z - slip.yc) / slip.radius
             if s.seismic_force != 0:
                 seismic_moment += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
             if s.crack_water_force != 0:
@@ -346,6 +358,8 @@ def spencer_fos_legacy(slices: List[Slice],
         for s in slices:
             W = s.weight + s.surcharge_force
             gravity_moment += W * math.sin(s.alpha)
+            if s.pond_hforce != 0:
+                gravity_moment += -s.pond_hforce * math.cos(s.alpha)
             if s.seismic_force != 0:
                 seismic_moment += s.seismic_force * math.cos(s.alpha)
             if s.crack_water_force != 0:
@@ -542,6 +556,8 @@ def morgenstern_price_fos_legacy(slices: List[Slice],
         for s in slices:
             W = s.weight + s.surcharge_force
             gravity_driving += W * (s.x_mid - slip.xc) / slip.radius
+            if s.pond_hforce != 0:
+                gravity_driving += s.pond_hforce * (s.pond_z - slip.yc) / slip.radius
             if s.seismic_force != 0:
                 seismic_driving += s.seismic_force * (slip.yc - s.z_centroid) / slip.radius
             if s.crack_water_force != 0:
@@ -554,6 +570,8 @@ def morgenstern_price_fos_legacy(slices: List[Slice],
         for s in slices:
             W = s.weight + s.surcharge_force
             gravity_driving += W * math.sin(s.alpha)
+            if s.pond_hforce != 0:
+                gravity_driving += -s.pond_hforce * math.cos(s.alpha)
             if s.seismic_force != 0:
                 seismic_driving += s.seismic_force * math.cos(s.alpha)
             if s.crack_water_force != 0:

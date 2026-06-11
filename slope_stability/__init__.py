@@ -36,7 +36,9 @@ from slope_stability.search import (
     grid_search, optimize_radius, search_noncircular,
     search_pso, search_weak_layer_biased, search_entry_exit, search_de,
 )
-from slope_stability.analysis import analyze_slope, search_critical_surface
+from slope_stability.analysis import (
+    analyze_slope, search_critical_surface, rapid_drawdown_fos,
+)
 from slope_stability.results import (
     SlopeStabilityResult, SliceData, SearchResult,
 )
@@ -55,6 +57,6 @@ __all__ = [
     'grid_search', 'optimize_radius', 'search_noncircular',
     'search_pso', 'search_weak_layer_biased', 'search_entry_exit',
     'search_de',
-    'analyze_slope', 'search_critical_surface',
+    'analyze_slope', 'search_critical_surface', 'rapid_drawdown_fos',
     'SlopeStabilityResult', 'SliceData', 'SearchResult',
 ]
