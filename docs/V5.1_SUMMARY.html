@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GeotechStaffEngineer — everything since v5.0.0</title>
+<style>
+  :root { --ink:#1d2733; --mut:#5d6b7a; --line:#dde4ec; --acc:#0e6e8e; --good:#1a7f4b; --warn:#a05a00; --bg:#f6f8fa; }
+  * { box-sizing:border-box; }
+  body { font:15px/1.55 "Segoe UI",system-ui,sans-serif; color:var(--ink); margin:0; background:var(--bg); }
+  .wrap { max-width:1060px; margin:0 auto; padding:28px 32px 64px; }
+  header { border-bottom:3px solid var(--acc); padding-bottom:14px; margin-bottom:24px; }
+  h1 { margin:0 0 4px; font-size:26px; }
+  h1 small { color:var(--mut); font-weight:400; font-size:15px; }
+  h2 { font-size:19px; margin:34px 0 10px; color:var(--acc); border-bottom:1px solid var(--line); padding-bottom:5px;}
+  h3 { font-size:15.5px; margin:18px 0 6px; }
+  .statrow { display:flex; gap:14px; flex-wrap:wrap; margin:18px 0 4px; }
+  .stat { background:#fff; border:1px solid var(--line); border-radius:8px; padding:12px 18px; min-width:140px; }
+  .stat b { display:block; font-size:24px; color:var(--acc); }
+  .stat span { color:var(--mut); font-size:12.5px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:8px; padding:16px 20px; margin:12px 0; }
+  .card h3 { margin-top:2px; }
+  table { border-collapse:collapse; width:100%; margin:8px 0 4px; font-size:13.5px; background:#fff; }
+  th, td { border:1px solid var(--line); padding:5px 9px; text-align:left; }
+  th { background:#eef2f6; font-weight:600; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .ok { color:var(--good); font-weight:600; }
+  .bad { color:#b3261e; font-weight:600; }
+  .tag { display:inline-block; font-size:11.5px; padding:1px 8px; border-radius:10px; background:#e3eef4; color:var(--acc); margin-right:6px; font-weight:600;}
+  .warn { background:#fff7ec; border-left:4px solid var(--warn); padding:10px 14px; border-radius:0 6px 6px 0; margin:10px 0; }
+  .note { color:var(--mut); font-size:13px; }
+  ul { margin:6px 0 6px 20px; padding:0; }
+  li { margin:3px 0; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:800px){ .grid2{grid-template-columns:1fr;} }
+  code { background:#eef2f6; padding:1px 5px; border-radius:4px; font-size:12.5px; }
+  .timeline td:first-child { white-space:nowrap; color:var(--mut); }
+</style>
+</head>
+<body><div class="wrap">
+
+<header>
+  <h1>GeotechStaffEngineer &mdash; everything since v5.0.0 <small>June 9 &rarr; June 12, 2026 &middot; master <code>66ae7a8</code></small></h1>
+  <div class="statrow">
+    <div class="stat"><b>53</b><span>commits on master</span></div>
+    <div class="stat"><b>+46,142</b><span>lines added (229 files)</span></div>
+    <div class="stat"><b>2</b><span>new top-level modules<br>(reliability, geo_project)</span></div>
+    <div class="stat"><b>~7,900</b><span>tests, all green<br>(was 7,105 at v5.0.0)</span></div>
+    <div class="stat"><b>5</b><span>pre-existing engineering<br>bugs found &amp; fixed</span></div>
+  </div>
+</header>
+
+<h2>1 &middot; v5.1 backlog cleared <span class="note">(June 10 — 8 parallel workstreams)</span></h2>
+<div class="grid2">
+<div class="card"><h3>Agent cost &amp; quality</h3><ul>
+  <li><b>References sub-agent round cap</b> — the 69%-of-all-tokens hotspot now has a model-call budget (default 8) with graceful "summarize &amp; answer" degradation.</li>
+  <li>Smart truncation: big budget for reference reads, calc results uncapped, "search narrower" nudge on truncation.</li>
+  <li>Param-name fixes + <code>allowed_values</code> on 23 adapters (the live-run error hotspots); two silently-broken adapters caught and fixed.</li>
+  <li>Eval suite: 5 parse-verified sample files (AGS, GEF, DIGGS, DXF, PDF) so file-input modules are really exercised; 31 questions got ground-truth answer keys + an automatic numeric judge.</li>
+</ul></div>
+<div class="card"><h3>Calc QC — every remaining finding closed</h3><ul>
+  <li>All ~35 open findings across 13 calc modules fixed or documented (FINDINGS.md Round 3).</li>
+  <li>Retaining walls: thrust decomposition (P<sub>v</sub> now helps resist); MSE coherent-gravity surface + Meyerhof bearing per AASHTO.</li>
+  <li>Wave equation: true elasto-plastic Smith springs; GRLWEAP-standard mobilized damping default.</li>
+  <li>Drilled shafts: clay end-bearing capped at 80 ksf w/ large-base reduction.</li>
+  <li>Foundry surface audited (5 drifted wrappers fixed, harness 122/122); references submodule reviewed (healthy; gap-pipeline dormancy flagged with a ranked v5.2 list).</li>
+</ul></div>
+</div>
+
+<h2>2 &middot; Limit-equilibrium slope module &rarr; modern-program standard <span class="note">(branch le-modern)</span></h2>
+<div class="card">
+<span class="tag">NEW</span> Rigorous GLE / Morgenstern-Price (Fredlund-Krahn) with selectable interslice functions &middot; Janbu + f<sub>0</sub> &middot; entry-exit and optimized noncircular searches &middot; soil nails / anchors / geosynthetics in all methods &middot; SHANSEP &amp; Hoek-Brown strength &middot; ponded water &middot; per-slice force tables + thrust line &middot; <b>probabilistic FOS (FOSM + Monte Carlo)</b>.
+<h3>Validation — ours vs published</h3>
+<table>
+<tr><th>Benchmark</th><th class="num">Published</th><th class="num">Ours</th><th class="num">&Delta;</th></tr>
+<tr><td>Fredlund &amp; Krahn (1977) — Bishop, dry</td><td class="num">2.080</td><td class="num">2.075</td><td class="num ok">&minus;0.2%</td></tr>
+<tr><td>F&amp;K — Spencer, dry</td><td class="num">2.073</td><td class="num">2.074</td><td class="num ok">+0.0%</td></tr>
+<tr><td>F&amp;K — M-P half-sine, dry (Slide2: 2.075)</td><td class="num">2.076</td><td class="num">2.076</td><td class="num ok">+0.0%</td></tr>
+<tr><td>F&amp;K — Spencer, r<sub>u</sub>=0.25</td><td class="num">1.761</td><td class="num">1.763</td><td class="num ok">+0.1%</td></tr>
+<tr><td>F&amp;K weak-layer composite (5 rows)</td><td class="num">&mdash;</td><td class="num">all</td><td class="num ok">&le;1.5%</td></tr>
+<tr><td>ACADS 1(a) critical-surface search (Slide2: 0.986&ndash;0.990)</td><td class="num">1.00</td><td class="num">0.985&ndash;0.989</td><td class="num ok">&asymp;Slide2</td></tr>
+<tr><td>Duncan (2000) reliability — &beta;<sub>LN</sub> / p<sub>f</sub></td><td class="num">2.32 / ~1%</td><td class="num">2.318 / 1.02%</td><td class="num ok">match</td></tr>
+</table>
+<p class="note">Also fixed two pre-existing bugs found on the way: a force-direction bug in Bishop/legacy methods (SS-4) and a below-base slice-fragment bug (SS-5).</p>
+</div>
+
+<h2>3 &middot; FEM module &rarr; modern-program standard <span class="note">(branch fem-modern)</span></h2>
+<div class="card">
+<span class="tag">NEW</span> T6 quadratic elements (default for collapse) &middot; full 3D principal-stress Mohr-Coulomb return (corners + apex) &middot; Griffiths-Lane-grade strength reduction with SRF-displacement curve &middot; hardened Newton solvers &middot; <b>19&times; faster solver core</b> (flagship SRM case: 11 s end-to-end).
+<h3>The element upgrade, in one table</h3>
+<table>
+<tr><th>Benchmark</th><th class="num">Published</th><th class="num">Old (CST)</th><th class="num">New (T6)</th></tr>
+<tr><td>Prandtl footing N<sub>c</sub></td><td class="num">5.14</td><td class="num bad">&ge;9.0 — locks, never collapses</td><td class="num ok">5.10&ndash;5.25 (~2%)</td></tr>
+<tr><td>Griffiths &amp; Lane (1999) Ex1 slope FOS</td><td class="num">1.40</td><td class="num bad">no convergence</td><td class="num ok">1.34&ndash;1.37</td></tr>
+<tr><td>G&amp;L Ex2 foundation-layer invariance</td><td class="num">FOS unchanged</td><td class="num">&mdash;</td><td class="num ok">reproduced</td></tr>
+<tr><td>1-D gravity compression (closed form)</td><td class="num">0.022286 m</td><td class="num">+0.91%</td><td class="num ok">exact</td></tr>
+</table>
+<p class="note">Two pre-existing correctness issues fixed: the in-plane-only yield check (&sigma;<sub>zz</sub> can govern in plane strain) and a default mesh extension that inflated FOS by up to +91%. Honest open items, documented with data and remedies in <code>fem2d/UPGRADE_PLAN.md</code>: the incompressible undrained limit, and SRM failure-detection mesh-consistency on weak lightly-cohesive faces.</p>
+</div>
+
+<h2>4 &middot; Reliability module <span class="note">(consolidation #7 — the prime long-term interest)</span></h2>
+<div class="card">
+<span class="tag">NEW MODULE</span> <code>reliability/</code> — four engines driven by <i>any</i> analysis callable: <b>FOSM</b> (with Duncan variance-contribution table), <b>Rosenblueth PEM</b>, <b>Monte Carlo</b> (Latin Hypercube, correlation, p<sub>f</sub> + CI), and <b>native FORM</b> (zero dependencies, matches pystra to 4 decimals). Plus a 43-entry <b>published COV database</b> (Duncan 2000 verified digit-for-digit; ISSMGE TC304 2021; Phoon &amp; Kulhawy) with full provenance, and Vanmarcke spatial averaging.
+<h3>Validation anchors</h3>
+<table>
+<tr><th>Source</th><th class="num">Published</th><th class="num">Ours</th></tr>
+<tr><td>Duncan (2000) retaining wall</td><td class="num">&beta;=2.32, p<sub>f</sub>&asymp;1%</td><td class="num ok">2.320, 1.02%</td></tr>
+<tr><td>Duncan (2000) LASH terminal slope</td><td class="num">p<sub>f</sub>=18%</td><td class="num ok">18.0%</td></tr>
+<tr><td>UFC 3-220-20 FOSM / PEM worked equations</td><td class="num">exact values</td><td class="num ok">exact</td></tr>
+<tr><td>USACE ETL 1110-2-547 closed forms</td><td class="num">&beta;=2.000 / 2.2275</td><td class="num ok">exact</td></tr>
+<tr><td>pystra cross-check (FORM)</td><td class="num">&beta;=2.7725</td><td class="num ok">2.7725 (4 decimals)</td></tr>
+</table>
+<p class="note">DM7-2 Chapter 7 statistics toolkit resurrected from the retired DM7Eqs module as the core. 176 module tests. Recommended next increments: random-field FEM (gstools), system reliability, LRFD calibration.</p>
+</div>
+
+<h2>5 &middot; Calc-package output &amp; interactive viewers <span class="note">(branch calc-viz)</span></h2>
+<div class="card">
+<ul>
+<li><b>slope_stability</b>: SLOPE/W-style report figures — trial-surface map colored by FOS, slice-force diagrams, thrust line, reinforcement layout, MC histogram with &beta;/p<sub>f</sub>, FOSM tornado — plus per-slice force tables, method comparison, and a probabilistic section in the rendered calc package.</li>
+<li><b>fem2d</b>: first-ever calc-package integration — PLAXIS-style mesh/deformed-mesh plots, displacement &amp; stress contours, plastic-point maps, SRF curve, seepage; full model-summary and results tables.</li>
+<li><b>Interactive single-file HTML viewers</b> (plotly, fully offline): toggle trial surfaces, hover any slice for its forces, FEM contour dropdowns. New optional extra: <code>pip install geotech-staff-engineer[interactive]</code>.</li>
+<li>Demos committed at <code>docs/examples/</code> (4 HTML files, delivered separately).</li>
+</ul>
+</div>
+
+<h2>6 &middot; LLM model-setup agent <span class="note">(branch model-setup)</span></h2>
+<div class="card">
+<span class="tag">NEW MODULE</span> <code>geo_project/</code> — a versioned, serializable Project document (geometry / stratigraphy / water / reinforcement / analyses) with 25+ deterministic validators, builders into both LE and FEM, parametric geometry templates, and DXF / vector-PDF ingestion with ask-the-user CAD-layer mapping.<br><br>
+<span class="tag">NEW SUB-AGENT</span> staged interview with <b>hard confirmation gates</b>: geometry &rarr; materials &rarr; water/loads &rarr; plan &rarr; run; <code>project_run</code> <i>refuses</i> until every stage is human-confirmed and validation is clean. The agent never trusts image-to-geometry: every stage ends with a rendered cross-section (numbered vertices) that the human verifies, and vision-extracted geometry is quarantined until explicitly confirmed. Material defaults arrive with citations from the reliability COV database; every assumption is logged. Form-schema confirmations ride langgraph interrupt/resume (chat-text rendering now; notebook widgets designed for later). Off by default: <code>build_deep_agent(enable_setup_agent=True)</code>.
+</div>
+
+<h2>Behavior changes to know about when testing</h2>
+<div class="warn"><ul>
+<li><b>Seismic passive pressure on battered walls</b> (KPE) changed — pre-5.1 values were from a sign-flipped Mononobe-Okabe convention and were wrong; verified against a numerical wedge solution. Vertical-wall statics unchanged.</li>
+<li><b>Pile group</b>: +M<sub>x</sub> now consistently uplifts the +y side (right-hand convention end-to-end); was self-inconsistent before.</li>
+<li><b>Sheet pile cantilever</b>: single safety basis — design embedment is now 1/1.2&times; the pre-5.1 value (the old default double-stacked FOS and a 1.2 multiplier); old arithmetic reachable via <code>embedment_increase</code>.</li>
+<li><b>Wave equation</b>: default damping is now mobilized-static (GRLWEAP standard); blow counts shift ~2% lower; <code>damping_model="smith_viscous"</code> reproduces v5.0 exactly.</li>
+<li><b>fem2d</b>: T6 elements are now the default for collapse/SRM analyses; CST is retained for elastic/seepage/consolidation only.</li>
+</ul></div>
+
+<h2>Timeline</h2>
+<table class="timeline">
+<tr><td>Jun 9</td><td>v5.0.0 released to PyPI (deepagents migration + consolidation + calc QC rounds 1&ndash;2).</td></tr>
+<tr><td>Jun 10</td><td>v5.1 backlog cleared: 8 workstreams (token cap, calc QC round 3, adapters, eval suite, foundry audit, references review) merged; CI green.</td></tr>
+<tr><td>Jun 11</td><td>LE + FEM modernization branches built, validated against published benchmarks, merged. Reliability module built and merged.</td></tr>
+<tr><td>Jun 11&ndash;12</td><td>Calc-package figures/tables + interactive viewers merged; model-setup agent (geo_project + staged interview) merged.</td></tr>
+</table>
+
+<h2>What's parked / next</h2>
+<ul>
+<li><b>Modeling GUI</b> — parked for owner iteration time; the Project schema (now shipped) was the prerequisite. Estimate: 2&ndash;4 focused weeks for a browser-based LE editor.</li>
+<li><b>Reliability increments</b>: random-field FEM (spatially variable slopes via gstools), system reliability, LRFD resistance-factor calibration.</li>
+<li><b>FEM</b>: incompressible-limit elements (B-bar/T15); SRM mesh-consistency study (knobs already in place).</li>
+<li><b>References v5.2 list</b>: revive the implementation-gaps QC pipeline, Tier-1 lookup authoring, query-expansion curation pass.</li>
+<li><b>ipywidgets confirmation forms</b> for the setup agent (payload already final; rendering only).</li>
+</ul>
+
+<p class="note" style="margin-top:28px">Generated 2026-06-12 &middot; master <code>66ae7a8</code> &middot; version on this build: 5.1.0rc1 (test wheel) &middot; all validation tables regenerable from the committed test suites (<code>slope_stability/VALIDATION.md</code>, <code>fem2d/VALIDATION.md</code>, <code>reliability/VALIDATION.md</code>).</p>
+
+</div></body></html>
