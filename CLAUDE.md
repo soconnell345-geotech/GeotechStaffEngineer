@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-30 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + hvsrpy agent + GSTools agent + SALib agent + swprocess agent + pystra agent + subsurface characterization (DIGGS/GEF/AGS4 data I/O — folds in the former pygef/ags4/pydiggs wrappers as format adapters) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM with staged construction) + funhouse_agent (engine-agnostic agent with vision).
+30 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + hvsrpy agent + GSTools agent + SALib agent + swprocess agent + pystra agent + subsurface characterization (DIGGS/GEF/AGS4 data I/O — folds in the former pygef/ags4/pydiggs wrappers as format adapters) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM: T6 quadratic elements, 3D-principal MC return, GL99 strength reduction, staged construction) + reliability (FOSM/PEM/Monte Carlo/native FORM + published COV database) + geo_project (staged, human-gated LLM model setup) + funhouse_agent (engine-agnostic agent with vision).
 
 ## Architecture Patterns
 
@@ -23,23 +23,41 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (51 modules = 30 analysis + 21 reference, + foundry harness; reference layer fully QC'd, all figure catalogs 100% page-accurate)
+## v5.1 status (UNRELEASED -- wheel 5.1.0rc1, owner validating in Funhouse)
+
+Everything since v5.0.0 is summarized in `docs/V5.1_SUMMARY.html` (one page; validation
+tables). Master carries: the v5.1 backlog (token round-cap, calc-QC round 3, adapter
+ergonomics, eval answer-keys/sample files, foundry audit, references review); the LE+FEM
+modernization (branches `le-modern`/`fem-modern`, merged); the `reliability/` module
+(consolidation #7 DONE); calc-package figures/tables + plotly interactive viewers
+(`calc-viz`); and the staged model-setup agent (`geo_project/` + `deep/setup_agent.py`,
+OFF by default via `build_deep_agent(enable_setup_agent=True)`). Intentional behavior
+changes vs 5.0 (battered-wall KPE, pile_group +Mx sense, sheet-pile embedment basis,
+wave-equation damping default, fem2d T6 default) are listed in the summary page.
+**No 5.1.0 final tag / PyPI publish until the owner explicitly says so** (a v* tag push
+auto-publishes via .github/workflows/publish.yml). Test wheel:
+`C:/Users/socon/OneDrive/dev/v5_test_wheel/geotech_staff_engineer-5.1.0rc1-py3-none-any.whl`.
+Databricks install: from /tmp or a UC Volume, `%pip install "...whl[deep]"`, then
+`dbutils.library.restartPython()` -- a stale runtime `typing_extensions` (<4.13) otherwise
+breaks langgraph imports with "unexpected keyword argument 'extra_items'".
+
+## Module Inventory (30 analysis + geo_project setup layer + 21 reference, + foundry harness; reference layer fully QC'd, all figure catalogs 100% page-accurate)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
-| bearing_capacity | 45 | Shallow foundations (CBEAR/Vesic/Meyerhof) |
-| settlement | 39 | Consolidation & immediate (CSETT) |
-| axial_pile | 55 | Driven pile capacity (Nordlund/Tomlinson/Beta) |
-| sheet_pile | 26 | Cantilever/anchored walls (Rankine/Coulomb) |
+| bearing_capacity | 83 | Shallow foundations (CBEAR/Vesic/Meyerhof, load-spread two-layer, GWT-in-wedge) |
+| settlement | 53 | Consolidation & immediate (CSETT, Schmertmann, shape-factored elastic) |
+| axial_pile | 65 | Driven pile capacity (Nordlund/Tomlinson/Beta, GWT-split integration, uplift) |
+| sheet_pile | 36 | Cantilever/anchored walls (Rankine/Coulomb w/ wall friction; single FOS basis) |
 | soe | 111 | Support of excavation (braced/cantilever, stability, anchors) |
-| lateral_pile | 66 | Lateral pile (COM624P, 8 p-y models, FD solver) |
-| pile_group | 72 | Rigid cap groups (6-DOF, Converse-Labarre) |
-| wave_equation | 45 | Smith 1-D wave equation (bearing graph, drivability) |
-| drilled_shaft | 48 | GEC-10 alpha/beta/rock socket |
-| seismic_geotech | 71 | Site class, M-O pressures, SPT liquefaction (NCEER/Youd-2001) |
-| retaining_walls | 70 | Cantilever + MSE walls (GEC-11) |
-| ground_improvement | 43 | Aggregate piers, wick drains, surcharge, vibro (GEC-13) |
-| slope_stability | 169+17skip | Fellenius/Bishop/Spencer, circular+noncircular, grid/random search, contact stresses, Duncan verification |
+| lateral_pile | 12+97 | Lateral pile (COM624P p-y models, banded FD solver, above-ground stickup; validation.py oracle suite) |
+| pile_group | 85 | Rigid cap groups (6-DOF, one RH sign convention end-to-end, Converse-Labarre) |
+| wave_equation | 60 | Smith 1-D wave equation (elasto-plastic springs, smith/smith_viscous damping, bearing graph) |
+| drilled_shaft | 60 | GEC-10 alpha/beta/rock socket (clay end-bearing cap, N60 side reduction) |
+| seismic_geotech | 82 | Site class, M-O pressures (battered-wall-correct), Fpga(PGA), SPT liquefaction (NCEER/Youd-2001) |
+| retaining_walls | 93 | Cantilever + MSE walls (GEC-11; thrust decomposition, coherent-gravity MSE, Meyerhof bearing) |
+| ground_improvement | 49 | Aggregate piers (incl. Priebe n0), wick drains, surcharge, vibro (GEC-13) |
+| slope_stability | 384+17skip | Rigorous GLE/M-P (Fredlund-Krahn) + Bishop/Janbu/Spencer/OMS, entry-exit + DE noncircular search, nails/anchors/geosynthetics, SHANSEP/Hoek-Brown, ponded water, probabilistic FOS (FOSM/MC), SLOPE/W-grade plots; validated vs F&K-1977/ACADS/Duncan (VALIDATION.md) |
 | reliability | 176 | Probabilistic geotech engines (FOSM/PEM/Monte Carlo/native FORM), published COV knowledge base (Duncan 2000/TC304/Phoon-Kulhawy), Vanmarcke spatial averaging, bearing/pile/slope wrappers |
 | downdrag | 53 | Fellenius neutral plane, UFC 3-220-20 downdrag |
 | geotech_common | 288 | SoilProfile (82) + checks (93) + adapters (89) + plots (21) |
@@ -56,7 +74,7 @@ Key conventions:
 | dxf_import | 97 | DXF CAD import for slope stability + FEM (discover layers, parse geometry, build SlopeGeometry/FEM inputs) |
 | dxf_export | 37 | DXF export for cross-section geometry (surface, boundaries, GWT, nails, annotations) |
 | pdf_import | 56 | PDF cross-section import (PyMuPDF vector extraction, LLM vision extraction, geometry conversion) |
-| fem2d | 271 | 2D plane-strain FEM (CST/Q4/beam, MC/HS, SRM, excavation, pore pressures, seepage, consolidation, staged construction) |
+| fem2d | 353 | 2D plane-strain FEM (T6 default + CST/Q4/beam, 3D-principal MC return, HS, GL99 SRM, seepage, consolidation, staged construction, PLAXIS-style calc-package plots); validated vs Griffiths-Lane/Prandtl (VALIDATION.md) |
 | geo_project | 89 | Canonical Project document for staged, human-gated LE/FEM model setup (schema+validators, builders, templates, DXF/PDF/vision ingest w/ provenance quarantine, echo-back renderer) |
 
 Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions + DM7 figure catalogs, 3529 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 + 25 + 31 + 5 = 479 tests)
@@ -209,9 +227,10 @@ identity and memory live as **version-controlled files**:
 Domains (in the board): foundations, deep-foundations, earth-retention, slope-fem, seismic,
 characterization, io-cad, references, common (lead-serialized).
 
-**Status: module-fix work is PINNED.** Phase 0 ergonomics (METHOD_INFO `allowed_values`, the
-system-prompt Tool Discipline nudge, the native-catalog fix) is done; per-module fixes are paused
-behind the reference-agent + figure work. Resume from `module_work/BOARD.md`. `.claude/agents/` is
+**Status: the module-fix backlog is CLEARED (v5.1, 2026-06-10).** Phase 0 ergonomics, the
+allowed_values rollout (23 adapters), the param-name hotspot fixes, and calc-QC Round 3 are all
+on master; `module_work/BOARD.md` and `module_work/calc_qc/FINDINGS.md` carry the close-out logs.
+The board remains the template for future feedback-driven rounds. `.claude/agents/` is
 committed (the repo `.gitignore` was changed to `.claude/*` + `!.claude/agents/`).
 
 ## Reference-Layer Build Work (figure catalogs + new references)
@@ -247,9 +266,10 @@ decisions. See memory `feedback-reference-layer-autonomy`.
   (`module_work/module_feedback.json`). (A `fdm2d` wall-clock guard was added here too; `fdm2d`
   has since been removed in the Phase 1 consolidation — see `CONSOLIDATION_CHANGES.md`.)
 
-**Open backlog (handed off, not done):** ~23 per-module param-name/value bugs (`module_feedback.json`);
-module-*selection* mis-routing (e.g. Rankine guessed on the wrong module) and coverage gaps
-(`retaining_walls` has no earth-pressure-coefficient method; `fem2d` no footing-SRM method).
+**Open backlog:** the ~23 per-module param-name/value bugs and the `retaining_walls`
+earth-pressure-coefficient gap were FIXED in v5.1 (adapter-ergonomics stream). Still open:
+module-*selection* mis-routing (e.g. Rankine guessed on the wrong module) and a `fem2d`
+footing-SRM convenience method.
 `ufc_expansive` has ~22 more figures behind an OCR pass (scanned PDF). The weekend QC routine's
 gec_6/7/12/13 chapter-text edits are a separate uncommitted workstream.
 

@@ -381,6 +381,41 @@ See `geo_project/DESIGN.md` (schema + staged protocol + confirmation
 mechanics) and `docs/examples/model_setup_walkthrough.md` for a full
 scripted transcript.
 
+## Installing in Databricks / Funhouse (and the gotchas)
+
+```python
+# from PyPI (released versions):
+%pip install "geotech-staff-engineer[deep]==5.0.0"
+# or from a test wheel -- upload to /tmp or a UC Volume (NOT /Workspace,
+# which mangles the filename):
+%pip install "/tmp/geotech_staff_engineer-5.1.0rc1-py3-none-any.whl[deep]"
+
+dbutils.library.restartPython()   # REQUIRED, see below
+```
+
+- The `[deep]` extra is required for the v2 deepagents loop (`funhouse_agent.deep`);
+  without it you get `ModuleNotFoundError: No module named 'deepagents'`.
+  Add `[interactive]` for the plotly single-file viewers, `[plot]` for matplotlib figures.
+- `dbutils.library.restartPython()` after install is mandatory: the cluster runtime
+  ships an old `typing_extensions` that shadows the new one until restart. Symptom of
+  skipping it (or of an old version still winning at cluster scope):
+  `TypeError: ... unexpected keyword argument 'extra_items'` on importing anything from
+  `funhouse_agent.deep` (langgraph TypedDicts need `typing_extensions>=4.13`). Fix:
+  `%pip install --upgrade "typing_extensions>=4.13"` then restart again.
+- Smoke test, then chat:
+
+```python
+from funhouse_agent.deep.databricks_bridge import PrompterChatModel
+from funhouse_agent.deep.selfcheck import run_selfcheck
+from funhouse_agent.deep.agent import build_deep_agent
+from funhouse_agent.deep.notebook import DeepNotebookChat
+
+model = PrompterChatModel(prompter=fh_prompter, model="funhouse-gpt-high")
+run_selfcheck(model)              # expect 2/2 PASS
+agent = build_deep_agent(model)   # enable_setup_agent=True for the staged model-setup sub-agent
+DeepNotebookChat(agent).display()
+```
+
 ## Error Handling
 
 - **Missing attachment**: Error fed back to agent, which reports it gracefully
