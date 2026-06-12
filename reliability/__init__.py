@@ -15,6 +15,10 @@ from reliability.stats import (
     pf_from_beta, beta_from_pf,
     rate_of_exceedance, rate_of_exceedance_from_probability,
 )
+from reliability.fosm import fosm
+from reliability.pem import pem
+from reliability.monte_carlo import monte_carlo
+from reliability.form import form
 from reliability.results import (
     FOSMResult, PEMResult, MonteCarloResult, FORMResult,
 )
@@ -25,5 +29,6 @@ __all__ = [
     "cov_from_params", "std_from_range", "combined_cov",
     "beta_normal", "beta_lognormal", "pf_from_beta", "beta_from_pf",
     "rate_of_exceedance", "rate_of_exceedance_from_probability",
+    "fosm", "pem", "monte_carlo", "form",
     "FOSMResult", "PEMResult", "MonteCarloResult", "FORMResult",
 ]
