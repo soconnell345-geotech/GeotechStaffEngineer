@@ -16,6 +16,11 @@ _WALL_ALIASES = {"phi": "phi_backfill", "gamma": "gamma_backfill",
                  "c": "c_backfill", "cohesion": "c_backfill",
                  "height": "wall_height", "H": "wall_height"}
 
+# MSE reinforced fill is select granular — there is no cohesion input, so do
+# not alias c/cohesion to c_backfill (the reject message would name a key the
+# caller never sent).
+_MSE_ALIASES = {k: v for k, v in _WALL_ALIASES.items() if v != "c_backfill"}
+
 _REINFORCEMENT_DB = {
     "ribbed_steel_strip_75x4": RIBBED_STEEL_STRIP_75x4,
     "welded_wire_grid_w11": WELDED_WIRE_GRID_W11,
@@ -84,7 +89,7 @@ def _run_cantilever_wall(params):
 
 
 def _run_mse_wall(params):
-    params = apply_aliases(params, _WALL_ALIASES)
+    params = apply_aliases(params, _MSE_ALIASES)
     reject_unknown_params(
         params,
         ("wall_height", "reinforcement_length", "reinforcement_spacing",

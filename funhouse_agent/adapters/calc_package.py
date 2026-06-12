@@ -73,10 +73,13 @@ def _build_response(module: str, result, analysis, params: dict,
     # existence) is checked: Databricks /Workspace FUSE writes can "succeed"
     # while the workspace stores only a literal PLACEHOLDER file.
     abs_path = os.path.abspath(output_path)
-    if fmt in ("html", "latex") and isinstance(content, str):
+    if fmt == "html" and isinstance(content, str):
         expected = content.encode("utf-8", errors="replace")
     else:
-        expected = None  # pdf: generate_calc_package returns the path, not content
+        # pdf: generate_calc_package returns the path, not content.
+        # latex: the saved file is rendered with figure paths and differs
+        # from the returned string, so only existence/size can be checked.
+        expected = None
     problem = written_file_problem(abs_path, expected)
     file_exists = os.path.isfile(abs_path)
     response = {
@@ -173,7 +176,8 @@ def _generate_lateral_pile_package(params: dict) -> dict:
         method="lateral_pile_package",
         valid=["pile_length", "pile_diameter", "pile_E", "pile_thickness",
                "moment_of_inertia", "soil_layers", "Vt", "Mt", "Q",
-               "head_condition"],
+               "head_condition", "output_path", "format", "project_name",
+               "project_number", "engineer", "checker", "company", "date"],
     )
 
     pile = Pile(

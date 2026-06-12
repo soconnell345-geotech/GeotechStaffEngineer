@@ -61,10 +61,14 @@ def written_file_problem(abs_path: str, expected: bytes = None):
         )
     try:
         with open(abs_path, "rb") as f:
-            head = f.read(256)
+            head = f.read(257)
     except OSError as exc:
         return f"the file at '{abs_path}' could not be read back ({exc})"
     norm = head.replace(b"\r\n", b"\n")
+    # A fixed-size read can split a CRLF pair; drop the orphaned \r rather
+    # than fail the comparison on a correctly-written file.
+    if norm.endswith(b"\r"):
+        norm = norm[:-1]
     if not expected.startswith(norm[: min(len(norm), 200)]):
         return (
             "the file on disk does not start with the written content "
@@ -79,8 +83,23 @@ def rescue_write(filename: str, expected: bytes):
     Returns the verified absolute rescue path, or ``None`` if even the temp
     dir write failed (or would overwrite the original path).
     """
-    rescue = os.path.abspath(
-        os.path.join(tempfile.gettempdir(), os.path.basename(filename)))
+    base = os.path.basename(filename)
+    stem, ext = os.path.splitext(base)
+    rescue = os.path.abspath(os.path.join(tempfile.gettempdir(), base))
+    # Uniquify so two rescues with the same basename never clobber each other.
+    n = 1
+    while os.path.exists(rescue) and rescue != os.path.abspath(filename):
+        try:
+            with open(rescue, "rb") as f:
+                if f.read() == expected:
+                    return rescue  # identical rescue already present
+        except OSError:
+            pass
+        rescue = os.path.abspath(
+            os.path.join(tempfile.gettempdir(), f"{stem}_{n}{ext}"))
+        n += 1
+        if n > 100:
+            return None
     if rescue == os.path.abspath(filename):
         return None
     try:

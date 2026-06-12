@@ -7,6 +7,14 @@ from funhouse_agent.adapters import (
 )
 
 
+
+def _require_layer_elevations(soil_layers, *, method):
+    """fem2d builds strata from each layer's bottom_elevation; everything else
+    (E, nu, c, phi, psi, gamma) has module defaults."""
+    for sl in soil_layers:
+        require_keys(sl, ["bottom_elevation"], method=method,
+                     item_label="soil_layers[]")
+
 def _run_analyze_gravity(params: dict) -> dict:
     from fem2d import analyze_gravity
     _valid = ("width", "depth", "gamma", "E", "nu", "nx", "ny", "t")
@@ -55,6 +63,7 @@ def _run_analyze_slope_srm(params: dict) -> dict:
     reject_unknown_params(params, _valid, method="fem2d_slope_srm")
     require_params(params, ["surface_points", "soil_layers"],
                    method="fem2d_slope_srm", valid=_valid)
+    _require_layer_elevations(params["soil_layers"], method="fem2d_slope_srm")
     surface_points = [tuple(pt) for pt in params["surface_points"]]
     soil_layers = params["soil_layers"]
 
@@ -123,6 +132,7 @@ def _run_analyze_excavation(params: dict) -> dict:
     require_params(params, ["width", "depth", "wall_depth", "soil_layers",
                             "wall_EI", "wall_EA"],
                    method="fem2d_excavation", valid=_valid)
+    _require_layer_elevations(params["soil_layers"], method="fem2d_excavation")
     kwargs = dict(
         width=params["width"],
         depth=params["depth"],
@@ -185,6 +195,7 @@ def _run_analyze_consolidation(params: dict) -> dict:
     require_params(params, ["width", "depth", "soil_layers", "k", "load_q",
                             "time_points"],
                    method="fem2d_consolidation", valid=_valid)
+    _require_layer_elevations(params["soil_layers"], method="fem2d_consolidation")
     kwargs = dict(
         width=params["width"],
         depth=params["depth"],
