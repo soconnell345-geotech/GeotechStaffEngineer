@@ -223,6 +223,7 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
     result.srf_history = srm_result.get('srf_history')
     result.srf_curve = srm_result.get('srf_curve')
     result.fos_basis = srm_result.get('fos_basis')
+    result.plastic_points = srm_result.get('plastic_gp')
     return result
 
 

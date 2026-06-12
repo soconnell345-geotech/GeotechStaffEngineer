@@ -75,6 +75,7 @@ def _ensure_registered(module_name: str) -> dict:
         "wave_equation": "wave_equation.calc_steps",
         "pile_group": "pile_group.calc_steps",
         "sheet_pile": "sheet_pile.calc_steps",
+        "fem2d": "fem2d.calc_steps",
     }
 
     if module_name not in _import_map:
@@ -102,7 +103,7 @@ def list_supported_modules() -> list:
         "bearing_capacity", "lateral_pile", "slope_stability",
         "settlement", "axial_pile", "drilled_shaft", "downdrag",
         "seismic_geotech", "retaining_walls", "ground_improvement",
-        "wave_equation", "pile_group", "sheet_pile",
+        "wave_equation", "pile_group", "sheet_pile", "fem2d",
     ]
 
 
