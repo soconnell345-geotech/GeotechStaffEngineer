@@ -13,6 +13,10 @@ import os
 from datetime import datetime
 
 from funhouse_agent.adapters import require_keys, require_params
+from funhouse_agent._fileio import (
+    default_output_dir, rescue_write, workspace_write_hint,
+    written_file_problem,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -32,9 +36,14 @@ def _extract_metadata(params: dict) -> dict:
 
 
 def _default_output_path(module_name: str, fmt: str = "html") -> str:
-    """Generate a timestamped default output filename."""
+    """Generate a timestamped default output filename.
+
+    On Databricks (or whenever the CWD is a /Workspace FUSE path) the file
+    goes to the system temp dir — the notebook CWD is a workspace path where
+    plain file writes are not durably stored.
+    """
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"{module_name}_calc_{ts}.{fmt}"
+    return os.path.join(default_output_dir(), f"{module_name}_calc_{ts}.{fmt}")
 
 
 def _build_response(module: str, result, analysis, params: dict,
@@ -60,25 +69,38 @@ def _build_response(module: str, result, analysis, params: dict,
 
     # Verify the write on the REAL filesystem so callers (LLM agents) never
     # need a separate ls/read to trust the save. Agent-side filesystem tools
-    # may be sandboxed/virtual and cannot see this file.
+    # may be sandboxed/virtual and cannot see this file. Content (not just
+    # existence) is checked: Databricks /Workspace FUSE writes can "succeed"
+    # while the workspace stores only a literal PLACEHOLDER file.
     abs_path = os.path.abspath(output_path)
+    if fmt in ("html", "latex") and isinstance(content, str):
+        expected = content.encode("utf-8", errors="replace")
+    else:
+        expected = None  # pdf: generate_calc_package returns the path, not content
+    problem = written_file_problem(abs_path, expected)
     file_exists = os.path.isfile(abs_path)
     response = {
         "status": "success",
         "analysis_type": analysis_type,
         "output_path": abs_path,
-        "file_exists": file_exists,
+        "file_exists": file_exists and problem is None,
         "file_size_bytes": os.path.getsize(abs_path) if file_exists else 0,
         "format": fmt,
         "html_length": len(content) if isinstance(content, str) else None,
     }
-    if not file_exists:
+    if problem:
+        rescue = rescue_write(abs_path, expected) if expected is not None else None
         response["status"] = "error"
         response["error"] = (
-            f"Calc package was generated but no file was found at '{abs_path}' "
-            "after writing. The target location may not be writable from this "
-            "process; retry with a local path (e.g. under /tmp)."
+            f"Calc package was generated but {problem}."
+            + workspace_write_hint(abs_path)
         )
+        if rescue:
+            response["rescue_path"] = rescue
+            response["error"] += (
+                f" A verified copy of the calc package was saved to "
+                f"'{rescue}' — report THAT path to the user."
+            )
     if extra:
         response.update(extra)
     return response
@@ -962,6 +984,8 @@ _COMMON_RETURNS = {
                    "Trust this field — do NOT try to verify the file with "
                    "agent-side filesystem tools (they may be sandboxed).",
     "file_size_bytes": "Size of the saved file (0 if file_exists is false).",
+    "rescue_path": "Only on write failure: a verified copy of the package in "
+                   "the local temp dir — report this path to the user.",
     "format": "Output format used.",
     "html_length": "Length of generated content.",
 }

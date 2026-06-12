@@ -307,26 +307,42 @@ def _dispatch_save_file(arguments, save_fn):
 
     # Verify the write on the REAL filesystem so the agent never needs a
     # separate ls/read to trust the save — agent-side filesystem tools may be
-    # sandboxed/virtual and cannot see this file. A custom save_fn may write
-    # somewhere not locally visible (e.g. DBFS), so only flag an error when
-    # the DEFAULT local writer produced no file.
+    # sandboxed/virtual and cannot see this file. For the default local
+    # writer the CONTENT is verified too (Databricks /Workspace FUSE writes
+    # can "succeed" while the workspace stores a literal PLACEHOLDER file).
+    # A custom save_fn may write somewhere not locally visible (e.g. DBFS),
+    # so only flag an error for the default writer.
+    from funhouse_agent._fileio import (
+        rescue_write, workspace_write_hint, written_file_problem,
+    )
+
     result = {"saved": saved_path}
     if isinstance(saved_path, str):
         abs_path = os.path.abspath(saved_path)
         file_exists = os.path.isfile(abs_path)
         result["saved"] = abs_path if file_exists else saved_path
-        result["file_exists"] = file_exists
         result["file_size_bytes"] = (
             os.path.getsize(abs_path) if file_exists else 0)
-        if not file_exists:
-            if save_fn is _default_save_fn:
+        if save_fn is _default_save_fn:
+            expected = (content if isinstance(content, bytes)
+                        else content.encode("utf-8", errors="replace"))
+            problem = written_file_problem(abs_path, expected)
+            result["file_exists"] = file_exists and problem is None
+            if problem:
                 result["error"] = (
-                    f"save_file ran but no file was found at '{abs_path}' "
-                    "after writing. The target location may not be writable "
-                    "from this process; retry with a local path (e.g. under "
-                    "/tmp)."
+                    f"save_file ran but {problem}."
+                    + workspace_write_hint(abs_path)
                 )
-            else:
+                rescue = rescue_write(abs_path, expected)
+                if rescue:
+                    result["rescue_path"] = rescue
+                    result["error"] += (
+                        f" A verified copy was saved to '{rescue}' — report "
+                        "THAT path to the user."
+                    )
+        else:
+            result["file_exists"] = file_exists
+            if not file_exists:
                 result["note"] = (
                     "File was saved via a custom save function; the path is "
                     "not visible on the local filesystem (e.g. remote/DBFS), "

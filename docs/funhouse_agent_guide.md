@@ -388,7 +388,7 @@ scripted transcript.
 %pip install "geotech-staff-engineer[deep]==5.0.0"
 # or from a test wheel -- upload to /tmp or a UC Volume (NOT /Workspace,
 # which mangles the filename):
-%pip install "/tmp/geotech_staff_engineer-5.1.0rc1-py3-none-any.whl[deep]"
+%pip install "/tmp/geotech_staff_engineer-5.1.0rc3-py3-none-any.whl[deep]"
 
 dbutils.library.restartPython()   # REQUIRED, see below
 ```
@@ -415,6 +415,29 @@ run_selfcheck(model)              # expect 2/2 PASS
 agent = build_deep_agent(model)   # enable_setup_agent=True for the staged model-setup sub-agent
 DeepNotebookChat(agent).display()
 ```
+
+### Saving outputs (calc packages, DXF, plots): do NOT use /Workspace paths
+
+Plain Python file writes to `/Workspace/...` go through the workspace FUSE
+mount, which on many compute/access modes does **not** durably store the
+content: the write call "succeeds" but the workspace keeps a literal
+11-byte `PLACEHOLDER` file (confirmed live 2026-06-12 with a 241 kB calc
+package), and binary files such as PDFs come out corrupt. The same applies
+to bare filenames on DBR 14+, where the notebook working directory IS a
+/Workspace folder.
+
+- Pass `output_path="/tmp/<name>.html"` (or a UC Volume path
+  `/Volumes/<catalog>/<schema>/<vol>/<name>.html`), then copy/download:
+  `dbutils.fs.cp("file:/tmp/<name>.html", "/Volumes/...")` or
+  `dbutils.fs.cp("file:/tmp/<name>.html", "dbfs:/FileStore/<name>.html")`
+  (downloadable at `https://<workspace>/files/<name>.html`).
+- As of 5.1.0rc3 the tools defend themselves: auto-generated output paths go
+  to `/tmp` on Databricks, every save response carries `file_exists` /
+  `file_size_bytes` verified against the written content, and if the target
+  did not store the content the tool returns an error plus a `rescue_path`
+  with a verified copy in `/tmp`.
+- PDF calc packages need `pdflatex`, which Databricks clusters do not have —
+  generate HTML (self-contained) and print to PDF from the browser instead.
 
 ## Error Handling
 

@@ -40,6 +40,14 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   `file_exists: true` with a size and `output_path`, the file IS on disk at
   that path. If a save genuinely failed, the tool call itself returns an error
   — report that error; do not silently rebuild or claim success.
+- **Saving outputs on Databricks: avoid `/Workspace` paths.** Plain file
+  writes to `/Workspace/...` are often not durably stored (the workspace
+  keeps a literal PLACEHOLDER file; binary files like PDFs come out corrupt).
+  Prefer `/tmp/...` or a Unity Catalog `/Volumes/...` path for `output_path`,
+  and tell the user to copy it out with
+  `dbutils.fs.cp('file:/tmp/<name>', ...)` or download it. If a tool response
+  reports a `rescue_path`, the requested location failed — give the user the
+  rescue path.
 - **Theory names and qualifiers are not method names.** Names like
   vesic/meyerhof/hansen and qualifiers like ultimate/net/effective-area are
   `factor_method`/parameter values or output labels, not methods. Each module
