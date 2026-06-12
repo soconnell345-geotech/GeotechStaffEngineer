@@ -26,6 +26,10 @@ from reliability.spatial import (
     averaged_cov, averaged_std, scale_of_fluctuation_guidance,
     variance_reduction,
 )
+from reliability.wrappers import (
+    axial_pile_reliability, bearing_capacity_reliability, run_engine,
+    slope_reliability,
+)
 from reliability.results import (
     FOSMResult, PEMResult, MonteCarloResult, FORMResult,
 )
@@ -40,5 +44,7 @@ __all__ = [
     "CovEntry", "cov_guidance", "list_properties",
     "averaged_cov", "averaged_std", "scale_of_fluctuation_guidance",
     "variance_reduction",
+    "axial_pile_reliability", "bearing_capacity_reliability",
+    "run_engine", "slope_reliability",
     "FOSMResult", "PEMResult", "MonteCarloResult", "FORMResult",
 ]

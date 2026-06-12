@@ -122,8 +122,8 @@ All engines drive a user-supplied callable `g(values: dict[str, float]) -> float
 - [x] Phase 2: core (variables/stats/results) — 65 tests
 - [x] Phase 3: engines (FOSM/PEM/MC/FORM) — 117 tests, pystra cross-check live
 - [x] Phase 4: cov_database + spatial — 151 tests
-- [ ] Phase 5: wrappers + slope cross-validation
+- [x] Phase 5: wrappers + slope cross-validation — 167 tests
 - [ ] Phase 6: funhouse adapter + registration
 - [ ] Phase 7: docs + full suite green
 
-NEXT ACTION: Phase 5 — wrappers.py (bearing, axial pile, slope delegate) + cross-validation.
+NEXT ACTION: Phase 6 — funhouse adapter + registration + pyproject.
