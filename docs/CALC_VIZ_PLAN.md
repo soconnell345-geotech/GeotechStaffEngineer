@@ -23,7 +23,7 @@ of scope.
       (slice_data E/X, thrust_line, grid_fos), fem2d results
       (FEMResult arrays, srf_history/srf_curve, SeepageResult,
       StagedConstructionResult), house style (sheet_pile calc_steps).
-- [ ] Phase 1 — slope_stability/plotting.py (matplotlib layer):
+- [x] Phase 1 — slope_stability/plotting.py (matplotlib layer):
       cross_section (layers/hatch/GWT/crack/surface/slices),
       trial_surface_map (SearchResult.trial_surfaces — additive
       storage of polyline trials; circular trials reconstructed from
@@ -76,8 +76,8 @@ of scope.
 - Tests before (branch @ 2789278): recorded in Phase 1 commit.
 
 ## Next action
-- Implement Phase 1 (slope_stability/plotting.py + trial_surfaces
-  storage in search.py/results.py) and its tests.
+- Implement Phase 2 (slope_stability/calc_steps.py upgrade
+  rendering the modern engine) and its tests.
 
 ## Notes / decisions
 - SearchResult gains `trial_surfaces: list[dict]` (additive,
