@@ -64,10 +64,10 @@ human confirmation gates; vision-derived geometry is quarantined
       sanity incl. ponded info, reinforcement inside section, materials complete
       per requested analyses, unit-sanity heuristics, vision_draft blocking) +
       tests. COMMIT per phase.
-- [ ] Phase 2 — builders.py (to_slope_geometry, to_fem_kwargs, run_analyses) +
+- [x] Phase 2 — builders.py (to_slope_geometry, to_fem_kwargs, run_analyses) +
       templates.py (simple_slope, benched_slope, embankment_on_foundation,
       cut_with_berm; LLM-friendly docstrings) + tests vs hand-built reference.
-- [ ] Phase 3 — ingest.py (discover_dxf, from_dxf, from_pdf_vector, from_points,
+- [x] Phase 3 — ingest.py (discover_dxf, from_dxf, from_pdf_vector, from_points,
       from_vision_draft) + render.py (echo_back PNG + numbered vertex table,
       matplotlib-guarded) + tests (synthetic ezdxf DXF; vision-draft blocking;
       every template renders + validates clean).
@@ -88,7 +88,7 @@ human confirmation gates; vision-derived geometry is quarantined
 
 ## Next action
 
-Implement Phase 2 (builders.py + templates.py + tests), run suites, commit.
+Implement Phase 4 (deep/setup_tools.py + offline tests), run both suites, commit.
 
 ## Descoped (designed path noted)
 
