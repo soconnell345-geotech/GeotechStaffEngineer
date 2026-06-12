@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-29 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + hvsrpy agent + GSTools agent + SALib agent + swprocess agent + pystra agent + subsurface characterization (DIGGS/GEF/AGS4 data I/O — folds in the former pygef/ags4/pydiggs wrappers as format adapters) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM with staged construction) + funhouse_agent (engine-agnostic agent with vision).
+30 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + hvsrpy agent + GSTools agent + SALib agent + swprocess agent + pystra agent + subsurface characterization (DIGGS/GEF/AGS4 data I/O — folds in the former pygef/ags4/pydiggs wrappers as format adapters) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM with staged construction) + funhouse_agent (engine-agnostic agent with vision).
 
 ## Architecture Patterns
 
@@ -23,7 +23,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## Module Inventory (50 modules = 29 analysis + 21 reference, + foundry harness; reference layer fully QC'd, all figure catalogs 100% page-accurate)
+## Module Inventory (51 modules = 30 analysis + 21 reference, + foundry harness; reference layer fully QC'd, all figure catalogs 100% page-accurate)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -40,6 +40,7 @@ Key conventions:
 | retaining_walls | 70 | Cantilever + MSE walls (GEC-11) |
 | ground_improvement | 43 | Aggregate piers, wick drains, surcharge, vibro (GEC-13) |
 | slope_stability | 169+17skip | Fellenius/Bishop/Spencer, circular+noncircular, grid/random search, contact stresses, Duncan verification |
+| reliability | 176 | Probabilistic geotech engines (FOSM/PEM/Monte Carlo/native FORM), published COV knowledge base (Duncan 2000/TC304/Phoon-Kulhawy), Vanmarcke spatial averaging, bearing/pile/slope wrappers |
 | downdrag | 53 | Fellenius neutral plane, UFC 3-220-20 downdrag |
 | geotech_common | 288 | SoilProfile (82) + checks (93) + adapters (89) + plots (21) |
 | opensees_agent | 106 | PM4Sand cyclic DSS, 1D site response |
@@ -185,7 +186,7 @@ through a single `consult_references` tool backed by a **reference-scoped sub-ag
 
 ## Module-Improvement Agent Team
 
-A standing, domain-organized agent team improves the 29 analysis modules over time, fed by the
+A standing, domain-organized agent team improves the 30 analysis modules over time, fed by the
 agent test-suite feedback and other tasks. Claude Code teammates are ephemeral, so the team's
 identity and memory live as **version-controlled files**:
 

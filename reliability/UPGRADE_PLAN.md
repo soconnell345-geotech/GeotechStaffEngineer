@@ -124,6 +124,9 @@ All engines drive a user-supplied callable `g(values: dict[str, float]) -> float
 - [x] Phase 4: cov_database + spatial — 151 tests
 - [x] Phase 5: wrappers + slope cross-validation — 167 tests
 - [x] Phase 6: funhouse adapter + registration — funhouse 887 passed / 6 skipped
-- [ ] Phase 7: docs + full suite green
+- [x] Phase 7: docs + full suite green — 176 reliability tests, funhouse 887 passed/6 skipped
 
-NEXT ACTION: Phase 7 — DESIGN.md, VALIDATION.md, CLAUDE.md line, CONSOLIDATION_PLAN #7.
+NEXT ACTION: none — build COMPLETE. Next-increment candidates (see DESIGN.md
+limitations): random-field FEM driver (gstools + fem2d), system reliability
+(series/parallel bounds), LRFD resistance-factor calibration, exact Nataf
+correlation correction.
