@@ -58,7 +58,7 @@ human confirmation gates; vision-derived geometry is quarantined
 
 - [x] Phase 0 — study (geometry/nails/reinforcement, fem2d.analysis, dxf/pdf
       import, plotting, cov_database, deep agent/tools/notebook, interrupt API).
-- [ ] Phase 1 — geo_project/schema.py (versioned dataclasses, to_json/from_json
+- [x] Phase 1 — geo_project/schema.py (versioned dataclasses, to_json/from_json
       round-trip, unknown-key tolerance, provenance + confirmations) +
       validate.py (Issue list: monotonic surface, layer coverage/overlap, GWT
       sanity incl. ponded info, reinforcement inside section, materials complete
@@ -88,7 +88,7 @@ human confirmation gates; vision-derived geometry is quarantined
 
 ## Next action
 
-Implement Phase 1 (schema.py + validate.py + tests), run suites, commit.
+Implement Phase 2 (builders.py + templates.py + tests), run suites, commit.
 
 ## Descoped (designed path noted)
 
