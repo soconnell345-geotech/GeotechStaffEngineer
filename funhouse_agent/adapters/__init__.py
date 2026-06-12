@@ -180,6 +180,10 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.pystra_adapter",
         "brief": "Structural reliability analysis (FORM/SORM/Monte Carlo)",
     },
+    "reliability": {
+        "adapter": "funhouse_agent.adapters.reliability_adapter",
+        "brief": "GEOTECH probabilistic analysis (native, no extra deps): FOSM/Duncan-2000, Rosenblueth PEM, Monte Carlo (LHS, correlation), FORM + published COV guidance (Duncan/TC304/Phoon-Kulhawy), combined COV, Vanmarcke spatial averaging. For SORM or pystra cross-checks use the 'pystra' module.",
+    },
     "salib": {
         "adapter": "funhouse_agent.adapters.salib_adapter",
         "brief": "Sensitivity analysis (Sobol variance-based and Morris screening)",
