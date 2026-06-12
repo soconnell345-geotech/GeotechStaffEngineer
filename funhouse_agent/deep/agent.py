@@ -38,6 +38,7 @@ from funhouse_agent.deep.limits import (
     ModelCallBudgetMiddleware,
 )
 from funhouse_agent.deep.prompt import build_domain_prompt
+from funhouse_agent.deep.setup_agent import build_setup_subagent
 from funhouse_agent.deep.tools import (
     DEFAULT_MAX_RESULT_CHARS,
     make_core_tools,
@@ -384,6 +385,9 @@ def build_deep_agent(
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
     reference_result_chars: Optional[int] = None,
     references_max_model_calls: Optional[int] = DEFAULT_REFERENCES_MAX_MODEL_CALLS,
+    enable_setup_agent: bool = False,
+    setup_store=None,
+    setup_render_dir: Optional[str] = None,
     store=None,
     checkpointer=None,
     enable_memory: bool = False,
@@ -457,6 +461,21 @@ def build_deep_agent(
         call is forced to summarize-and-answer from what was gathered, so a
         final answer is ALWAYS returned (never an error). Defaults to ``8``;
         ``None``/``0`` disables the budget.
+    enable_setup_agent : bool
+        Attach the ``model_setup`` sub-agent (staged LE/FEM model building
+        with human confirmation gates and echo-back renders — see
+        :mod:`funhouse_agent.deep.setup_agent`). OFF by default: model setup
+        is an opt-in, session-scoped workflow whose tools carry mutable
+        per-build state (the ProjectStore), so hosts that only ask
+        calculation questions never pay for the extra tool surface.
+    setup_store : ProjectStore, optional
+        The shared project state for the setup sub-agent (created fresh when
+        omitted). Pass your own to inspect ``setup_store.project`` from the
+        host. Only used when ``enable_setup_agent`` is on.
+    setup_render_dir : str, optional
+        Directory the setup sub-agent writes echo-back PNGs to (default
+        ``model_setup_renders/``). Only used when ``enable_setup_agent`` is
+        on.
     store : BaseStore, optional
         A LangGraph store (e.g. ``InMemoryStore`` / a Postgres store) for
         cross-session / persistent memory. Passing a store turns ``enable_memory``
@@ -557,6 +576,14 @@ def build_deep_agent(
             build_reviewer_subagent(
                 max_result_chars=max_result_chars,
                 reference_result_chars=reference_result_chars,
+            )
+        )
+    if enable_setup_agent:
+        subagents.append(
+            build_setup_subagent(
+                store=setup_store,
+                render_dir=setup_render_dir,
+                max_result_chars=max_result_chars,
             )
         )
 
@@ -678,6 +705,7 @@ __all__ = [
     "build_primary_tools",
     "build_references_subagent",
     "build_reviewer_subagent",
+    "build_setup_subagent",
     "build_memory_backend",
     "build_summarization_middleware",
     "run_memory_demo",

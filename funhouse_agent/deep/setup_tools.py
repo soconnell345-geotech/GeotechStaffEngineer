@@ -257,6 +257,26 @@ def _strip_private(obj: Any) -> Any:
     return obj
 
 
+def _interrupt_available() -> bool:
+    """True when langgraph ``interrupt()`` can actually pause-and-resume.
+
+    That requires BOTH a runnable graph context AND a checkpointer
+    (``interrupt`` raises GraphInterrupt regardless, but without a
+    checkpointer the run cannot be resumed — the turn would just die).
+    Detection: the graph runtime injects the checkpointer under the
+    ``__pregel_checkpointer`` configurable (``langgraph.constants.
+    CONFIG_KEY_CHECKPOINTER``); absent/None means chat fallback.
+    """
+    try:
+        from langgraph.config import get_config
+        from langgraph.constants import CONFIG_KEY_CHECKPOINTER
+        conf = get_config()
+    except Exception:
+        return False
+    return bool((conf or {}).get("configurable", {})
+                .get(CONFIG_KEY_CHECKPOINTER))
+
+
 def _fallback_text(payload: Dict[str, Any]) -> str:
     """Render the confirmation payload as numbered chat questions."""
     lines = [
@@ -613,15 +633,14 @@ def make_setup_tools(store: Optional[ProjectStore] = None,
         }
 
         if user_response is None:
-            try:
+            if _interrupt_available():
+                # Durable path: pause the graph; the host resumes with
+                # Command(resume={approved, edits}). GraphInterrupt MUST
+                # propagate — it IS the pause mechanism.
                 from langgraph.types import interrupt
                 resume = interrupt(payload)
-            except Exception as exc:
-                # GraphInterrupt MUST propagate — it is the pause mechanism.
-                from langgraph.errors import GraphInterrupt
-                if isinstance(exc, GraphInterrupt):
-                    raise
-                # No checkpointer / not in a graph: chat fallback.
+            else:
+                # No checkpointer / not inside a graph: chat fallback.
                 return _json({
                     "status": "needs_user",
                     "stage": stage,

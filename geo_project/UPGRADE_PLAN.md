@@ -76,7 +76,7 @@ human confirmation gates; vision-derived geometry is quarantined
       cov_lookup, project_run gate, request_confirmation interrupt+fallback) +
       offline tests (incl. real interrupt round-trip on a tiny StateGraph with
       InMemorySaver; gate ordering; patch resets stage confirmations).
-- [ ] Phase 5 — funhouse_agent/deep/setup_agent.py: SETUP_SYSTEM_PROMPT (staged
+- [x] Phase 5 — funhouse_agent/deep/setup_agent.py: SETUP_SYSTEM_PROMPT (staged
       protocol + assumption ledger + never-proceed-unconfirmed + dxf_discover-
       and-ask), build_setup_subagent, build_deep_agent(enable_setup_agent=False
       default) wiring + scripted-model offline test walking all stages
@@ -88,7 +88,7 @@ human confirmation gates; vision-derived geometry is quarantined
 
 ## Next action
 
-Implement Phase 5 (deep/setup_agent.py + build_deep_agent wiring + staged scripted-model test), run both suites, commit.
+Implement Phase 6 (DESIGN.md, demo walkthrough + PNG, CLAUDE.md line, pyproject packaging), run both suites, commit.
 
 ## Descoped (designed path noted)
 
