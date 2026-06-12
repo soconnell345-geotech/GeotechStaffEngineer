@@ -1,0 +1,143 @@
+
+========== PAGE 116 ==========
+2-38 
+design procedures including FoSSA-Foundation Stress & Settlement Analysis (Adama 
+Engineering 2003). Once the preliminary spacing is determined, the total project quantities 
+can be computed from the project geometry. 
+4.4 
+Design Example 
+A highway embankment is planned at a location where available borings indicate a profile of 
+20 feet of normally consolidated clay with sand lenses over rock. Total settlement, based on 
+one-dimensional drainage is estimated at 12 inches, with 90 percent occurring in 10 years. 
+This estimate is based on preliminary evaluations of compression and consolidation 
+coefficients obtained from classification data and liquid limit of 60. 
+The available construction time is on the order of 18 months; hence it is desirable to 
+accelerate settlements by the use of PVDs to a point at which 90 percent of the total 
+settlements would occur within about one year, without a surcharge load. To estimate 
+feasibility and cost, a potential spacing must be determined. 
+From Figure 2-10, using the center curve, an estimated coefficient of consolidation (cv) of 0.1 
+ft2/day is obtained, and based on the existence of horizontal sand lenses in the profile, a 
+coefficient of horizontal consolidation (ch) of 2 times cv can be assumed. Equation 2-1 can be 
+solved for various drain spacings, using an equivalent diameter of drain of 2.5 inches to 
+obtain the field time required to attain 90 percent consolidation. The solution using triangular 
+spacing indicates required times on the order of 300 days at an approximate spacing of 8 feet 
+or 500 days at an approximate spacing of 10 feet. 
+Note that this feasibility design method is only suitable for preliminary design or a quick 
+check of a detailed design to determine if there are any errors. Since feasibility design is 
+solely predicated on the liquid limit determined, it must be representative of the compressible 
+stratum. 
+
+========== PAGE 117 ==========
+2-39 
+5.0 
+CONSTRUCTION SPECIFICATIONS AND CONSTRUCTION CONTROL 
+5.1 
+Introduction 
+PVD construction equipment, methods and materials, are well established with a proven 
+track record of many successfully completed projects in the last several decades. The design 
+concepts are well understood and the accuracy of the design is almost directly related to the 
+accurate determination of the horizontal coefficient of consolidation. Therefore, method 
+specifications are almost always used to implement this ground modification technology. 
+5.2 
+Specification Development 
+The role of good specifications is to reduce the problems, risks, and cost of PVD installations 
+and to ensure an installation that achieves the intended objective of the design. To 
+accomplish the above, agencies usually specify the general construction method and controls 
+for PVD installation. Under this contracting method, the designer details the spacing, the 
+extent and length of the drains, as well as the details of the drainage blanket (usually 
+specified separately under earthwork items), and the horizontal discharge drains. End result 
+specifications are not common since they would require extensive soil exploration and design 
+by the contractor. 
+The specifications should provide the PVD installer as much flexibility as possible in 
+achieving the intended result. The specifications should include quality control and assurance 
+procedures. Initial installation trial drains should be required to establish standard 
+procedures. At this stage of construction, such items as mandrel size, depth gauges, splicing 
+procedures, verticality, and materials should be carefully inspected for compliance. Visual 
+observations and periodic checks can then determine any variances or concerns once 
+production has begun. 
+Inspection personnel should check the physical measurement of drain sizes (thickness and 
+width) for compliance to specifications and variances from material submittals. If significant 
+differences are noted, laboratory testing may be required to determine if PVD materials 
+comply with specifications. 
+As part of the development of GeoTechTools, an extensive evaluation was made of 
+specifications for PVDs. Eight specifications written by state DOTs, as well as the guide 
+specification presented in the 2006 version of this manual, were reviewed and evaluated. 
+These specifications were used to develop a guide specification entitled Standard Method 
+Approach Specification for Prefabricated Vertical Drains and Fill Preloading that is intended 
+to be a complete and fair specification containing commentary and instructions that is easily 
+adaptable by the user for a specific project. This guide specification can be accessed on the 
+
+========== PAGE 118 ==========
+2-40 
+GeoTechTools website under the Prefabricated Vertical Drains and Fill Preloading 
+Technology Information page. An additional specification resource is the recently published 
+Wick Drain Guide Specification (Method), prepared by the Ground Improvement Committee 
+of the Deep Foundations Institute (DFI 2014). This specification can be found by accessing 
+the Ground Improvement Committee webpage on the DFI website (http://www.dfi.org/). 
+Regardless of which PVD specification is used, it is recommended that the Hansbo (1986), 
+Rixner et al. (1986a), Holtz and Christopher (1987), and Bo et al. (2005) references be 
+reviewed to ensure that all PVD material and installation requirements are included. 
+5.3 
+Quality Assurance 
+One major advantage of the PVDs over other vertical drainage systems is the simplicity of 
+field control. Once trial drains have been satisfactorily completed, inspection mainly consists 
+of recording depths and locations of each drain, observing splices and verticality of 
+equipment, taking occasional material samples for inspection and testing, and noting any 
+major variances in procedure. 
+To ensure proper performance, the drains must be installed in accordance with the plans and 
+specifications. It is important that field inspection personnel know the procedures and 
+possible ramifications of any deviations. 
+The construction monitoring personnel should be thoroughly familiar with the contract 
+drawings and specifications and should have a good understanding of the purpose of PVDs. 
+The engineer in charge should have a good understanding of the total PVD solution, 
+including site preparation, fill placement, and other items that might influence the 
+performance of PVDs. Inspection of the PVD installation after initial procedures are 
+established can become quite repetitive and monotonous. However, when changes or 
+variations occur, these should be discussed immediately with personnel familiar with the 
+project design requirements.  
+Other items of significance in construction, such as the drainage blanket material quality, 
+embankment placement and compaction, and surcharge loading rate, must also be monitored. 
+5.3.1 Site Preparation 
+Site preparation includes any excavation and grading to prepare the site for installation of 
+PVDs. This may include site clearing, excavation and/or filling operations to bring the site to 
+grade, and construction of a working platform or drainage blanket. It is also important that 
+the grade be such that a drainage blanket remains continuous and surface drainage will not 
+erode the blanket to the extent where it is no longer continuous. 
+
+========== PAGE 119 ==========
+2-41 
+During construction of a working platform or drainage blanket, the field inspection personnel 
+should be monitoring for any unusual soil movements, which would be indications of mud 
+waving or a potential failure. On some projects, working mats or drainage blankets were 
+installed too thick, creating failures, which were very expensive to repair. In one example 
+project, a contractor installed a 5 feet haul road over a 2 feet drainage blanket prior to PVD 
+installation in order to have access to a piling location. This haul road caused an extensive 
+failure of the entire area that was to be stabilized.  
+5.3.2 Prefabricated Vertical Drain Material and Installation Equipment 
+Once the equipment and materials are checked for compliance with the specifications, the 
+remaining field observations are rather simple. The major items to be monitored are 
+verticality, depth of installation, and location. Most projects will provide an estimated depth 
+or elevation across the site. It is routine to anticipate local variations from this estimate. 
+However, the depth of PVDs should vary only slightly from that of adjacent drains. The 
+inspector should refer to pertinent borings for a guideline to determine if proper depths are 
+achieved or if there is a significant variance in soil conditions. 
+5.3.2.1 Material 
+Prior to installation, the PVD material should be visually observed to ensure that it is similar 
+to that originally submitted and tested. The core and filter jacket should be continuous and 
+comply with required dimensions, and the materials should not have been damaged during 
+handling or storage. 
+Many specifications list intricate tests to be performed on the PVD materials. Many of these 
+tests are taken from manufacturer's data and quite often are far beyond what is necessary. 
+However, an individual project may have specific criteria, which are dependent on some 
+stringent design or performance requirement. 
+5.3.2.2 Equipment 
+Inspection personnel should determine that the equipment complies with specification 
+requirements. Some of the important items to be checked are the following: 
+•
+Penetration method
+•
+Mandrel shape, size, and stiffness
+•
+Anchor type and size
+•
+Method to measure and determine penetration depth

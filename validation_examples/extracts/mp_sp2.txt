@@ -1,0 +1,1025 @@
+
+========== PAGE 427 ==========
+ 
+FHWA NHI-05-039                                                                                 Appendix E – Sample Problem No.2 
+Micropile Design & Construction 
+    E-1 
+                            December 2005 
+ 
+SAMPLE PROBLEM NO. 2 – LATERALLY LOADED MICROPILE 
+ 
+ 
+Micropiles are being considered to support loads for a new multi-story building.  The site 
+is underlain by approximately 6 m of undocumented and variable fill overlying partially 
+weathered rock.  The soil matrix of the fill is characterized as loose to very dense silty to 
+clayey sand.  Approximately 3 m of new fill will be placed over the existing fill to 
+establish foundation grades. 
+ 
+The micropile section shown in Figure S2-1 is proposed for the project.  The micropiles 
+are required to carry a design axial compression load of 1,423 kN and a design lateral 
+groundline shear load of 44.48 kN.   
+ 
+Perform a laterally loaded pile analysis and evaluate: 
+1. 
+structural capacity of the cased length of the micropile 
+2. 
+reduced section modulus of the casing joint and proposed bending moment 
+limit at the casing joints 
+ 
+Micropile Section Properties 
+ 
+1. 
+Casing outside diameter (OD) = 0.1969 m. 
+2. 
+Casing wall thickness (tw) = 0.0151 m. 
+3. 
+Casing yield strength (Fy) = 552 MPa 
+4. 
+Grout compressive strength (f’c)  = 27.6 MPa 
+ 
+Determine: (1) casing area, Acasing; (2) casing moment of inertia, Icasing; (3) casing section 
+modulus, Scasing; and (4) area of grout, Agrout. 
+ 
+(
+)
+(
+)
+(
+)
+2
+2
+2
+2
+2
+2
+2
+sin
+00863
+.0
+)
+0151
+.0
+(
+2
+1969
+.0
+1969
+.0
+4
+4
+m
+m
+m
+ID
+OD
+A
+g
+ca
+=
+−
+−
+=
+−
+=
+π
+π
+ 
+ 
+ 
+(
+)
+(
+)
+(
+)
+4
+4
+4
+4
+4
+4
+4
+sin
+00003587
+.0
+.
+)
+0151
+.0
+(
+2
+1969
+.0
+.
+1969
+.0
+64
+64
+m
+m
+in
+ID
+OD
+I
+g
+ca
+=
+−
+−
+=
+−
+=
+π
+π
+ 
+ 
+3
+4
+sin
+sin
+000364
+.0
+)
+2
+/
+1969
+.0
+(
+.
+00003587
+.0
+2
+/
+m
+m
+m
+OD
+I
+S
+g
+ca
+g
+ca
+=
+=
+=
+ 
+ 
+2
+2
+2
+2
+sin
+2
+0218
+.0
+00863
+.0
+)
+1969
+.0
+(
+4
+)
+(
+4
+m
+m
+m
+A
+OD
+A
+g
+ca
+grout
+=
+−
+=
+−
+=
+π
+π
+ 
+ 
+
+========== PAGE 428 ==========
+ 
+FHWA NHI-05-039                                                                                 Appendix E – Sample Problem No.2 
+Micropile Design & Construction 
+    E-2 
+                            December 2005 
+ 
+ 
+1 in. = 25.4 mm 
+1 ksi = 6.89 MPa 
+ 
+Figure S2-1.  Micropile Detail for Sample Problem 2.
+
+========== PAGE 429 ==========
+ 
+FHWA NHI-05-039                                                                                 Appendix E – Sample Problem No.2 
+Micropile Design & Construction 
+    E-3 
+                            December 2005 
+ 
+Laterally Loaded Pile Analysis 
+ 
+The computer program LPILE is used to evaluate the maximum bending moment in the 
+cased length of the micropile.  For the purposes of this example, both 50% fixity and 
+fixed head (100% fixity) conditions are analyzed.  The micropile cap will be embedded 
+0.91 m below the ground surface.  For the analysis, a 0.305-m embedment depth was 
+conservatively assumed. 
+ 
+For the analysis, a 12.2-m length of the micropile was modeled.  Default LPILE p-y 
+curves for sand above the water table were used to model the soil profile.  The upper 3.35 
+m of the profile was modeled with a soil friction angle of 32 degrees and the remaining 
+portion of the profile (representing the existing fill layer) was modeled with a soil friction 
+angle of 30 degrees.  Other soil parameters are provided in the LPILE output file. 
+ 
+ 
+LPILE Analysis Results  
+ 
+The results of the LPILE analysis are provided below and the bending moment diagram 
+and lateral deflection profile are provided in Figures S2-2 and S2-3. 
+ 
+Axial 
+Load 
+(kN) 
+Fixity 
+Condition 
+Pile Head 
+Deflection 
+(mm) 
+Maximum 
+Shear Load 
+(kN) 
+Maximum 
+Bending 
+Moment 
+(kN-m) 
+1,423 
+100% 
+3.3 
+44.48 
+-37.3 
+1,423 
+50% 
+8.4 
+44.48 
+27.2 
+ 
+Structural Capacity Evaluation (Eq. 5-3) 
+ 
+0.1
+1
+'
+≤
+
+
+
+
+
+−
++
+b
+e
+a
+b
+a
+a
+F
+F
+f
+f
+F
+f
+ 
+ 
+Where 
+MPa
+m
+kN
+A
+P
+f
+g
+ca
+c
+a
+89
+.
+164
+00863
+.0
+423
+,1
+2
+sin
+=
+=
+=
+ 
+ 
+MPa
+m
+m
+kN
+S
+M
+f
+g
+ca
+b
+47
+.
+102
+000364
+.0
+3.
+37
+3
+sin
+max
+=
+−
+=
+=
+ 
+ 
+
+========== PAGE 430 ==========
+ 
+FHWA NHI-05-039                                                                                 Appendix E – Sample Problem No.2 
+Micropile Design & Construction 
+    E-4 
+                            December 2005 
+ 
+MPa
+MPa
+F
+F
+MPa
+MPa
+F
+F
+y
+b
+y
+a
+6.
+303
+)
+552
+(
+55
+.0
+55
+.0
+44
+.
+259
+)
+552
+(
+47
+.0
+47
+.0
+=
+=
+=
+=
+=
+=
+ 
+ 
+Assume buckling potential is negligible, F′e >>> fa 
+ 
+Therefore, 
+ 
+OK
+MPa
+MPa
+MPa
+MPa
+0.1
+97
+.0
+6.
+303
+47
+.
+102
+44
+.
+259
+89
+.
+164
+<
+=
++
+ 
+ 
+Structural Capacity Evaluation (Eq. 5-6) 
+ 
+0.1
+max
+≤
++
+−
+allowable
+allowable
+c
+c
+M
+M
+P
+P
+ 
+Where 
+ 
+[
+]
+kN
+m
+MPa
+m
+MPa
+A
+F
+A
+f
+P
+g
+ca
+y
+grout
+c
+allowable
+c
+479
+,2
+)
+00863
+.0
+()
+552
+(
+47
+.0
+)
+0218
+.0
+()
+6.
+27
+(
+4.0
+47
+.0
+4.0
+2
+2
+sin
+'
+=
++
+=
++
+×
+=
+−
+ 
+ 
+.
+5.
+110
+)
+000364
+.0
+()
+552
+(
+55
+.0
+55
+.0
+3
+sin
+m
+kN
+m
+MPa
+S
+F
+M
+g
+ca
+y
+allowable
+−
+=
+=
+=
+ 
+ 
+Therefore, 
+ 
+OK
+m
+kN
+m
+kN
+kN
+kN
+0.1
+91
+.0
+5.
+110
+3.
+37
+479
+,2
+423
+,1
+<
+=
+−
+−
++
+ 
+ 
+Section Modulus at the Joint (Eq. 5-26 ) 
+ 
+(
+)
+(
+)
+3
+4
+4
+4
+4
+int
+int
+000173
+.0
+2
+/)
+0151
+.0
+1969
+.0
+(
+)
+1667
+.0
+(
+)
+0151
+.0
+1969
+.0
+((
+64
+2
+/
+)
+)
+((
+64
+2
+/
+m
+m
+m
+m
+m
+m
+t
+OD
+ID
+t
+OD
+t
+OD
+I
+S
+w
+w
+w
+jo
+jo
+=
+−
+−
+−
+=
+−
+−
+−
+=
+−
+=
+π
+π
+ 
+ 
+Maximum Bending Moment at the Joint (Eq. 5-27) 
+ 
+m
+kN
+MPa
+MPa
+MPa
+m
+F
+F
+f
+F
+f
+S
+M
+b
+e
+a
+a
+a
+jo
+jo
+−
+=
+×
+
+
+
+
+
+−
+×
+=
+
+
+
+
+
+−
+×
+
+
+
+
+
+−
+×
+=
+2.
+19
+6.
+303
+44
+.
+259
+89
+.
+164
+1
+000173
+.0
+1
+1
+3
+'
+int
+int)
+(
+max
+ 
+Using the reduced section modulus at a joint indicates that the combined stress criterion 
+can only be satisfied at the location of a threaded connection (i.e., joint) if the maximum 
+
+========== PAGE 431 ==========
+ 
+FHWA NHI-05-039                                                                                 Appendix E – Sample Problem No.2 
+Micropile Design & Construction 
+    E-5 
+                            December 2005 
+ 
+bending moment is 19.2 kN-m or less.  This result indicates that threaded connections 
+should not be placed from the bottom of the pile cap to approximately 0.5 m below the 
+ground surface where the micropile-footing connection achieves 100% fixity.  For the 
+50% fixity condition, positive bending moments greater than 19.2 kN-m are computed 
+between a depth of approximately 0.75 to 2.1 m.   
+Alternatively, if the maximum bending moment needs to be resisted over these depths, 
+the following options could be considered: (1) use a larger casing (with a larger cross 
+sectional area of steel) over this depth range; or (2) place an additional steel casing at 
+least over this length.  On projects where a second casing is used, the design should 
+require that joints from the two casings be staggered by at least 1 m. 
+For the 50% fixity case, a 3-m long casing could be used at the ground surface so that the 
+first threaded connection would be located in an area where acceptable bending resistance 
+could be developed. 
+0
+1
+2
+3
+4
+5
+6
+-40
+-20
+0
+20
+40
+60
+Bending Moment (kN-m)
+Depth (m)
+Fixed Head
+50% Fixity
+Free Head
+ 
+Figure S2-2.  Bending Moment Diagram for Sample Problem No. 2. 
+
+========== PAGE 432 ==========
+ 
+FHWA NHI-05-039                                                                                 Appendix E – Sample Problem No.2 
+Micropile Design & Construction 
+    E-6 
+                            December 2005 
+ 
+0
+1
+2
+3
+4
+5
+6
+-5
+0
+5
+10
+15
+20
+Deflection (mm)
+Depth (m)
+Fixed Head
+50% Fixity
+Free Head
+ 
+Figure S2-3.  Lateral Deflection Profile for Sample Problem No. 2. 
+ 
+ 
+ 
+
+========== PAGE 433 ==========
+ 
+FHWA NHI-05-039                                                                                 Appendix E – Sample Problem No.2 
+Micropile Design & Construction 
+    E-7 
+                            December 2005 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+LPILE ANALYSIS RESULTS 
+FOR 
+SAMPLE PROBLEM 2 
+
+========== PAGE 434 ==========
+ 
+FHWA NHI-05-039                                                                                 Appendix E – Sample Problem No.2 
+Micropile Design & Construction 
+    E-8 
+                            December 2005 
+ 
+============================================================================== 
+ 
+                LPILE Plus for Windows, Version 4.0 (4.0.8)     
+ 
+               Analysis of Individual Piles and Drilled Shafts  
+              Subjected to Lateral Loading Using the p-y Method 
+ 
+                    (c) Copyright ENSOFT, Inc., 1985-2003       
+                             All Rights Reserved                
+ 
+============================================================================== 
+ 
+ 
+This program is licensed to:  
+ 
+Paul Sabatini 
+GeoSyntec 
+ 
+Path to file locations:      G:\CWP\CHE8123 - NHI Micropiles\400 - Technical\402 - 
+Revised Manual\Draft 100% Manual\Ch. 5\LPILE Analysis\ 
+Name of input data file:     004SI.lpd 
+Name of output file:         004SI.lpo 
+Name of plot output file:    004SI.lpp 
+Name of runtime file:        004SI.lpr 
+ 
+ 
+------------------------------------------------------------------------------ 
+                          Time and Date of Analysis 
+------------------------------------------------------------------------------ 
+ 
+               Date:  May 24, 2005     Time:  16:51:45 
+ 
+ 
+------------------------------------------------------------------------------ 
+                                Problem Title 
+------------------------------------------------------------------------------ 
+ 
+Micropile Manual - Sand Profile                                                  
+ 
+ 
+------------------------------------------------------------------------------ 
+                                Program Options 
+------------------------------------------------------------------------------ 
+ 
+Units Used in Computations - SI Units, meters, kilopascals 
+ 
+Basic Program Options: 
+ 
+Analysis Type 3:  
+- Computation of Nonlinear Bending Stiffness and Ultimate Bending Moment  
+  Capacity with Pile Response Computed Using Nonlinear EI 
+ 
+Computation Options: 
+- Only internally-generated p-y curves used in analysis 
+- Analysis does not use p-y multipliers (individual pile or shaft action only) 
+- Analysis assumes no shear resistance at pile tip 
+- Analysis includes automatic computation of pile-top deflection vs. 
+  pile embedment length 
+- No computation of foundation stiffness matrix elements 
+- Output pile response for full length of pile 
+- Analysis assumes no soil movements acting on pile 
+- Additional p-y curves computed at specified depths 
+ 
+Solution Control Parameters: 
+- Number of pile increments            =          100 
+- Maximum number of iterations allowed =          100 
+- Deflection tolerance for convergence =   2.5400E-07 m  
+- Maximum allowable deflection         =   2.5400E+00 m  
+ 
+ 
+
+========== PAGE 435 ==========
+ 
+FHWA NHI-05-039                                                                                 Appendix E – Sample Problem No.2 
+Micropile Design & Construction 
+    E-9 
+                            December 2005 
+ 
+Printing Options: 
+- Values of pile-head deflection, bending moment, shear force, and  
+  soil reaction are printed for full length of pile. 
+- Printing Increment (spacing of output points) =  1 
+ 
+ 
+------------------------------------------------------------------------------ 
+                   Pile Structural Properties and Geometry 
+------------------------------------------------------------------------------ 
+ 
+Pile Length                               =      12.19 m  
+Depth of ground surface below top of pile =       -.30 m  
+Slope angle of ground surface             =        .00 deg. 
+ 
+Structural properties of pile defined using  2 points 
+ 
+Point    Depth         Pile      Moment of       Pile      Modulus of 
+           X         Diameter     Inertia        Area      Elasticity 
+            m            m          m**4        Sq. m       kN/Sq. m 
+-----  ---------   -----------   ----------   ----------   ----------- 
+  1       0.0000     .19685000  3.58667E-05      .008626 199947980.000 
+  2      14.5000     .19685000  3.58667E-05      .008626 199947980.000 
+ 
+Please note that because this analysis makes computations of ultimate 
+moment capacity and pile response using nonlinear bending stiffness  
+that the above values of moment of inertia and modulus of are not used 
+for any computations other than total stress due to combined axial  
+loading and bending. 
+ 
+ 
+------------------------------------------------------------------------------ 
+                      Soil and Rock Layering Information 
+------------------------------------------------------------------------------ 
+ 
+The soil profile is modelled using  2 layers 
+ 
+Layer  1 is sand, p-y criteria by Reese et al., 1974 
+Distance from top of pile to top of layer    =        -.305 m  
+Distance from top of pile to bottom of layer =        3.048 m  
+p-y subgrade modulus k for top of soil layer =    24430.244  kN/ m**3 
+p-y subgrade modulus k for bottom of layer   =    24430.244  kN/ m**3 
+ 
+Layer  2 is sand, p-y criteria by Reese et al., 1974 
+Distance from top of pile to top of layer    =        3.048 m  
+Distance from top of pile to bottom of layer =       12.192 m  
+p-y subgrade modulus k for top of soil layer =    16286.830  kN/ m**3 
+p-y subgrade modulus k for bottom of layer   =    16286.830  kN/ m**3 
+ 
+ 
+(Depth of lowest layer extends     .00 m  below pile tip) 
+ 
+ 
+------------------------------------------------------------------------------ 
+                   Effective Unit Weight of Soil vs. Depth 
+------------------------------------------------------------------------------ 
+ 
+Distribution of effective unit weight of soil with depth 
+is defined using  4 points 
+ 
+Point        Depth X    Eff. Unit Weight 
+ No.            m           kN/ m**3 
+-----      ----------   ---------------- 
+  1             -.30       18.83843 
+  2             3.05       18.83843 
+  3             3.05       17.64407 
+  4            12.19       17.64407 
+ 
+ 
+ 
+ 
+
+========== PAGE 436 ==========
+ 
+FHWA NHI-05-039                                                                                 Appendix E – Sample Problem No.2 
+Micropile Design & Construction 
+    E-10 
+                            December 2005 
+ 
+------------------------------------------------------------------------------ 
+                           Shear Strength of Soils 
+------------------------------------------------------------------------------ 
+ 
+Distribution of shear strength parameters with depth 
+defined using  4 points 
+ 
+Point    Depth X     Cohesion c     Angle of Friction     E50 or      RQD 
+ No.        m          kN/ m**2            Deg.            k_rm        % 
+-----   --------     ----------     ------------------    ------    ------ 
+  1        -.305         .00000           32.00           ------    ------ 
+  2        3.048         .00000           32.00           ------    ------ 
+  3        3.048         .00000           30.00           ------    ------ 
+  4       12.192         .00000           30.00           ------    ------ 
+ 
+Notes: 
+ 
+(1)  Cohesion = uniaxial compressive strength for rock materials. 
+(2)  Values of E50 are reported for clay strata.  
+(3)  Default values will be generated for E50 when input values are 0. 
+(4)  RQD and k_rm are reported only for weak rock strata. 
+ 
+ 
+ 
+ 
+------------------------------------------------------------------------------ 
+                                 Loading Type 
+------------------------------------------------------------------------------ 
+ 
+Static loading criteria was used for computation of  p-y curves 
+ 
+ 
+ 
+------------------------------------------------------------------------------ 
+              Pile-head Loading and Pile-head Fixity Conditions 
+------------------------------------------------------------------------------ 
+ 
+Number of loads specified =  5 
+ 
+Load Case Number  1 
+ 
+Pile-head boundary conditions are Shear and Slope (BC Type 2) 
+Shear force at pile head    =          44.482  kN 
+Slope at pile head          =            .000  m/ m 
+Axial load at pile head     =        1423.431  kN 
+ 
+(Zero slope for this load indicates fixed-head condition)  
+ 
+Load Case Number  2 
+ 
+Pile-head boundary conditions are Shear and Moment (BC Type 1) 
+Shear force at pile head    =          44.482  kN 
+Bending moment at pile head =            .000  m- kN 
+Axial load at pile head     =        1423.431  kN 
+ 
+(Zero moment at pile head for this load indicates a free-head condition) 
+ 
+Load Case Number  3 
+ 
+Pile-head boundary conditions are Shear and Rotational Stiffness (BC Type 3) 
+Shear force at pile head    =          44.482  kN 
+Rotational stiffness        =       88964.449  m- kN 
+Axial load at pile head     =        1423.431  kN 
+ 
+Load Case Number  4 
+ 
+Pile-head boundary conditions are Shear and Rotational Stiffness (BC Type 3) 
+Shear force at pile head    =          44.482  kN 
+Rotational stiffness        =      889644.490  m- kN 
+Axial load at pile head     =        1423.431  kN 

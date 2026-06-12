@@ -1,0 +1,1551 @@
+
+========== PAGE 293 ==========
+ 
+ 
+  
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+EXAMPLE E4  
+SEGMENTAL PRECAST PANEL MSE WALL WITH LEVEL BACKFILL AND  
+LIVE LOAD SURCHARGE  
+ 
+E4-1 INTRODUCTION 
+ 
+This example problem demonstrates the analysis of a MSE wall with a level backfill and live 
+load surcharge. The MSE wall is assumed to include a segmental precast panel face with 
+steel grid (bar mat) reinforcements.  The MSE wall configuration to be analyzed is shown in 
+Figure E4-1. The analysis is based on various principles that were discussed in Chapter 4.  
+Table E4-1 presents a summary of steps involved in the analysis.  Each of the steps and sub-
+steps is sequential and if the design is revised at any step or sub-step then all the previous 
+computations need to be re-visited.  Each of the steps and the sub-steps in Table E4-1 is 
+explained in detail herein. Practical considerations are presented in Section E4-2 after the 
+illustration of the step-by-step procedures. 
+ 
+Table E4-1. Summary of steps in analysis of MSE wall with level backfill and live 
+load surcharge 
+Step Item 
+1 
+Establish project requirements  
+2 
+Establish project parameters 
+3 
+Estimate wall embedment depth and length of reinforcement 
+4 
+Estimate unfactored loads 
+5 
+Summarize applicable load and resistance factors 
+6 
+Evaluate external stability of MSE wall 
+6.1 Evaluation of sliding resistance 
+6.2 Evaluation of limiting eccentricity 
+6.3 Evaluation of bearing resistance 
+6.4 Settlement analysis 
+7 
+Evaluate internal stability of MSE wall 
+7.1 Estimate critical failure surface, variation of Kr and F* for internal stability 
+7.2 Establish vertical layout of soil reinforcements 
+7.3 Calculate horizontal stress and maximum tension at each reinforcement level 
+7.4 Establish nominal and factored long-term tensile resistance of soil reinforcement 
+7.5 Establish nominal and factored pullout resistance of soil reinforcement 
+7.6 Establish number of soil reinforcing elements at each level of reinforcement 
+8 
+Design of facing elements 
+9 
+Check overall and compound stability at the service limit state. 
+10 
+Design wall drainage system 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 1 
+November 2009  
+
+========== PAGE 294 ==========
+ 
+ 
+  
+ 
+  
+ 
+ 
+ 
+D
+i
+a
+g
+r
+a
+m
+ 
+i
+l
+l
+u
+s
+t
+r
+a
+t
+i
+n
+g
+ t
+h
+e  
+c
+o
+nfiguration showin
+g various parameters
+ for ana
+lys
+is
+ 
+of
+ a MSE wall with l
+evel back
+fill and
+ live lo
+ad surcha
+rge (not-to-scal
+e).
+ 
+ 
+ 
+ 
+ 
+STEP 1. ESTABLISH PROJECT REQUIREMENTS 
+ Exposed wall height, He = 23.64 ft 
+ Length of wall = 850 ft 
+ Design life = 75 years 
+ Precast panel units: 5 ft wide x 5 ft tall x 0.5 ft thick 
+ Type of reinforcement: Grade 65 (Fy = 65 ksi), steel bar mat with W15 and W11 wires. 
+Assume wires to be galvanized with zinc coating of 3.386 mils (86 m).   
+ No seismic considerations 
+STEP 2. EVALUATE PROJECT PARAMETERS  
+ Reinforced backfill, ' r = 34°, r = 125 pcf, coefficient of uniformity, Cu = 7.0 and 
+meeting the AASHTO (2007) requirements for electrochemical properties 
+ Retained backfill, ' f = 30°, f = 125 pcf 
+ Foundation soil, dense clayey sand with ' fd = 30°, fd = 125 pcf 
+ Factored Bearing resistance of foundation soil 
+o For service limit consideration, qnf-ser = 7.50 ksf for 1-inch of total settlement 
+o For strength limit consideration, qnf-str = 10.50 ksf 
+ Live load surcharge, heq = 2 ft of soil per Table 3.11.6.4-2 of AASHTO (2007) 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 2 
+November 2009  
+
+========== PAGE 295 ==========
+ 
+ 
+  
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+STEP 3.  ESTIMATE DEPTH OF EMBEDMENT AND LENGTH OF 
+REINFORCEMENT 
+Based on Table C.11.10.2.2.-1 of AASHTO (2007), the minimum embedment depth = H/20 
+for walls with horizontal ground in front of wall, i.e., 1.2 ft for exposed wall height of 23.64 
+ft. For this design, assume embedment, d = 2.0 ft.  Thus, design height of the wall, H = He + 
+d = 23.64 ft + 2.0 ft = 25.64 ft. 
+Due to the level backfill, the minimum initial length of reinforcement is assumed to be 0.7H 
+or 18 ft.  This length will be verified as part of the design process.  The length of the 
+reinforcement is assumed to be constant throughout the height to limit differential settlements 
+across the reinforced zone because differential settlements could overstress the 
+reinforcements. 
+STEP 4.  ESTIMATE UNFACTORED LOADS 
+Tables E4-4.1 and E4-4.2 present the equations for unfactored loads and moment arms about 
+Point A shown in Figure E4-2. The moments are a product of the respective forces and 
+moment arms. Each force is assigned a designation representing the applicable load type as 
+per Tables 3.4.1-1 and 3.4.1-2 of AASHTO (2007).  
+To compute the numerical values of various forces and moments, the parameters provided in 
+Step 2 are used. Using the values of the various friction angles, the coefficients of lateral 
+earth pressure are as follows: 
+Kar = (1 - sin34°)/(1 + sin34°) = 0.283 
+Kaf = (1 - sin30°)/(1 + sin30°) = 0.333 
+For the example problem, Tables E4-4.3 and E4-4.4 summarize the numerical values 
+unfactored forces and moments, respectively, based on the equations, various dimensions and 
+values of lateral earth pressure coefficients presented above.  Refer to Figure E4-2 for 
+notations of various forces. 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 3 
+November 2009  
+
+========== PAGE 296 ==========
+ 
+ 
+  
+ 
+  
+ 
+ 
+ 
+M
+u
+l
+ti
+ple d
+iagr
+ams illustrat ing a legend for computation of forces and moments (not-to-scale).
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 4 
+November 2009  
+
+========== PAGE 297 ==========
+ 
+ 
+  
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+The unfactored forces and moments in Tables E4-4.3 and E4-4.4 form the basis of all 
+computations in this example problem.  The unfactored forces and moments should be 
+multiplied by the appropriate load factors based on the load types identified in the second 
+column of the Tables E4-4.1 and E4-4.2 to perform the analysis for various load 
+combinations such as Strength I, Service I, etc.  
+The load factors for various load types relevant to this example problem are discussed in Step 
+5. 
+Table E4-4.1. Equations of computing unfactored vertical forces and moments 
+Vertical Force 
+(Force/length units) 
+LRFD 
+Load Type 
+Moment arm 
+(Length units) 
+@ Point A 
+V1 = (γr)(H)(L) 
+EV 
+L/2 
+VS = (γf)(heq)(L) = (q)L 
+LL 
+L/2 
+Note: heq is the equivalent height of soil such that q = (γf)(heq) 
+Table E4-4.2. Equations of computing unfactored horizontal forces and moments 
+Horizontal Force  
+(Force/length) 
+LRFD 
+Load Type 
+Moment arm 
+(Length units) 
+@ Point A 
+F1 = ½(Kaf)(γf)H2 
+EH 
+H/3 
+F2 = (Kaf)[(γf)(heq)](H) 
+LL 
+H/2 
+Table E4-4.3. Unfactored vertical forces and moments 
+Force 
+Value 
+k/ft 
+Moment 
+Arm @ 
+Point A, ft 
+Moment 
+Moment at 
+Point A, 
+k-ft/ft 
+V1 = 
+57.69 
+9.00 
+MV1 = 
+519.21 
+Vs = 
+4.50 
+9.00 
+MVs = 
+40.50 
+Note: Vs is based on heq of 2 ft per Table 3.11.6.4-1 of 
+AASHTO (2007). 
+Table E4-4.4. Unfactored horizontal forces and moments 
+Force 
+Value 
+k/ft 
+Moment 
+Arm @ 
+Point A, ft 
+Moment 
+Moment at 
+Point A, 
+k-ft/ft 
+F1 = 
+13.68 
+8.55 
+MF1 = 
+116.94 
+F2 = 
+2.13 
+12.82 
+MF2 = 
+27.36 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 5 
+November 2009  
+
+========== PAGE 298 ==========
+ 
+ 
+  
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+STEP 5. SUMMARIZE APPLICABLE LOAD AND RESISTANCE FACTORS  
+Table E4-5.1 summarizes the load factors for the various LRFD load type shown in second 
+column of Tables E4-4.1 and E4-4.2.  Throughout the computations in this example 
+problem, the forces and moments in Tables E4-4.1 and E4-4.2 should be multiplied by 
+appropriate load factors.  For example, if computations are being done for Strength I 
+(maximum) load combination, the forces and moments corresponding to load V1 should be 
+multiplied by 1.35 which is associated with load type EV assigned to load V1. 
+Table E4-5.1. Summary of applicable load factors 
+Load Combination 
+Load Factors 
+(after AASHTO, 2007 Tables 3.4.1-1 and 3.4.1-2) 
+EV 
+EH 
+LL 
+Strength I (maximum) 
+1.35 
+1.50 
+1.75 
+Strength I (minimum) 
+1.00 
+0.90 
+1.75 
+Service I 
+1.00 
+1.00 
+1.00 
+For computation of factored resistances during evaluation of strength limits states, 
+appropriate resistance factors have to be used.  Table E4-5.2 summarizes the applicable 
+resistance factors. For service limit state, all resistance factors are equal to 1.0. 
+Table E4-5.2. Summary of applicable resistance factors for evaluation of resistances 
+Item 
+Resistance 
+Factors 
+AASHTO (2007) 
+Reference 
+Sliding of MSE wall on foundation soil 
+s = 1.00 
+Table 11.5.6-1 
+Bearing resistance 
+b = 0.65 
+Table 11.5.6-1 
+Tensile resistance (for steel bar mats) 
+t = 0.65 
+Table 11.5.6-1 
+Pullout resistance 
+p = 0.90 
+Table 11.5.6-1 
+STEP 6. EVALUATE EXTERNAL STABILITY OF MSE WALL 
+The external stability of MSE wall is a function of the various forces and moments shown in 
+Figure E4-2.  In the LRFD context the forces and moments need to be categorized into 
+various load types. The primary load types for this example problem are soil loads (EV, EH) 
+and live load (LL). 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 6 
+November 2009  
+
+========== PAGE 299 ==========
+ 
+ 
+  
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+6.1 
+Sliding Resistance at Base of MSE Wall 
+The purpose of these computations is to evaluate the sliding resistance at the base of the MSE 
+wall. Since the computations are related to sliding resistance, the beneficial contribution of 
+live load to resisting forces and moments is neglected.  The computations for sliding 
+resistance at the base of the MSE wall are illustrated in Table E4-6.1.  Note that sliding 
+resistance is a strength limit state check and therefore service limit state calculations are not 
+performed.  Since the friction angle of foundation soil, ' fd, is less than the friction angle for 
+reinforced soil, ' r, the sliding check will be performed using ' fd.  The critical values based 
+on max/min result in the extreme force effect and govern the sliding mode of failure. 
+Table E4-6.1. Computations for evaluation of sliding resistance of MSE wall 
+Item 
+Unit 
+Str I 
+(max) 
+Str I 
+(min) 
+Ser I 
+Lateral load on the MSE wall, Hm = F1+F2 
+k/ft 
+24.26 
+16.05 
+NA 
+Vertical load at base of MSE wall without LL 
+surcharge = V1 
+k/ft 
+77.88 
+57.69 
+NA 
+Nominal sliding resistance at base of MSE wall, VNm 
+= tan(' fd)(V1) 
+k/ft 
+44.96 
+33.31 
+NA 
+Sliding resistance at base of MSE wall, VFm= s*VNm 
+k/ft 
+44.96 
+33.31 
+NA 
+Is VFm > Hm? 
+-
+Yes 
+Yes 
+NA 
+Capacity:Demand Ratio (CDR) = VFm:Hm 
+dim 
+1.85 
+2.08 
+NA 
+CRITICAL VALUES BASED ON MAX/MIN 
+Minimum VFm (VFmmin) 
+k/ft 
+33.31 
+Maximum Hm (Hmmax) 
+k/ft 
+24.26 
+Is VFmmin > Hmmax? 
+-
+Yes 
+Capacity:Demand Ratio (CDR) = VFmmin:Hmmax 
+dim 
+1.37 
+6.2 
+Limiting Eccentricity at Base of MSE Wall 
+The purpose of these computations is to evaluate the limiting eccentricity at the base of the 
+MSE wall. Since the computations are related to limiting eccentricity, the beneficial 
+contribution of live load to resisting forces and moments is neglected.  The computations for 
+limiting eccentricity at the base of the MSE wall are illustrated in Table E4-6.2.  Limiting 
+eccentricity is a strength limit state check and therefore service limit state calculations are not 
+performed.  The critical values based on max/min result in the extreme force effect and 
+govern the limiting eccentricity mode of failure. 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 7 
+November 2009  
+
+========== PAGE 300 ==========
+ 
+ 
+  
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Table E4-6.2. Computations for evaluation of limiting eccentricity for MSE wall 
+Item 
+Unit 
+Str I 
+(max) 
+Str I 
+(min) 
+Ser I 
+Total vertical load at base of MSE wall without LL, 
+VA = V1 
+k/ft 
+77.88 
+57.69 
+N/A 
+Resisting moments about Point A without LL 
+surcharge= MRA = MV1 
+k-ft/ft 
+700.93 
+519.21 
+N/A 
+Overturning moments about Point A = MOA = 
+MF1+MF2 
+k-ft/ft 
+223.30 
+153.13 
+N/A 
+Net moment about Point A = MA = MRA – MOA 
+k-ft/ft 
+477.64 
+366.08 
+N/A 
+Location of the resultant force on base of MSE wall 
+from Point A, a = MA/VA 
+ft 
+6.13 
+6.35 
+N/A 
+Eccentricity at base of MSE wall, eL = L/2 – a 
+ft 
+2.87 
+2.65 
+N/A 
+Limiting eccentricity, e = L/4 for strength limit state 
+ft 
+4.50 
+4.50 
+N/A 
+Is the resultant within limiting value of e? 
+-
+Yes 
+Yes 
+N/A 
+Calculated eL/L 
+-
+0.16 
+0.15 
+N/A 
+CRITICAL VALUES BASED ON MAX/MIN 
+Overturning moments about Point A, MOA-C 
+k-ft/ft 
+223.30 
+Resisting moments about Point A, MRA-C 
+k-ft/ft 
+519.21* 
+Net moment about Point A, MA-C = MRA-C - MOA-C 
+k-ft/ft 
+295.91 
+Vertical force, VA-C 
+k/ft 
+57.69* 
+Location of resultant from Point A, anl = MA-C/VA-C 
+ft 
+5.13 
+Eccentricity from center of wall base, eL=0.5*L - anl 
+ft 
+3.87 
+Limiting eccentricity, e = L/4  
+ft 
+4.50 
+Is the limiting eccentricity criteria satisfied? 
+-
+Yes 
+Effective width of base of MSE wall, B' = L-2eL 
+ft 
+10.26 
+Calculated eL/L 
+-
+0.22 
+Note: *519.21 and 57.69 are consistent values based on the mass of reinforced soil block 
+6.3 
+Bearing Resistance at base of MSE Wall 
+For bearing resistance computations, the effect of live load is included since it creates larger 
+bearing stresses. The bearing stress at the base of the MSE wall can be computed as follows: 
+E
+qu
+at i
+on
+ as discussed in the captioned text.
+where ΣV = R = V1 + VS is the resultant of vertical forces and the load eccentricity eL is 
+calculated by principles of statics using appropriate loads and moments with the applicable 
+load factors. 
+In LRFD, σv is compared with the factored bearing resistance when computed for strength 
+limit state and used for settlement analysis when computed for service limit state.  The 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 8 
+November 2009  
+
+========== PAGE 301 ==========
+ 
+ 
+  
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+  
+ 
+  
+ 
+ 
+ 
+various computations for evaluation of bearing resistance are presented in Table E4-6.3.  The 
+Strength I (max) load combination results in the extreme force effect in terms of maximum 
+bearing stress and therefore governs the bearing resistance mode of failure.  The Service I 
+load combination is evaluated to compute the bearing stress for settlement analysis. 
+Table E4-6.3. Computations for evaluation of bearing resistance for MSE wall 
+Item 
+Unit 
+Str I 
+(max) 
+Str I 
+(min) 
+Ser I 
+Vertical load at base of MSE wall including LL on 
+top, ΣV = R = V1 + VS 
+k/ft 
+85.76 
+65.57 
+62.19 
+Resisting moments @  Point A on the MSE wall, 
+MRA = MV1+MVS 
+k-ft/ft 
+771.81 
+590.09 
+559.71 
+Overturning moments @ Point A on the MSE wall, 
+MOA = MF1+MF2 
+k-ft/ft 
+223.30 
+153.13 
+144.30 
+Net moment at Point A, MA = MRA - MOA 
+k-ft/ft 
+548.51 
+436.95 
+415.41 
+Location of Resultant from Point A, a = MA/ΣV 
+ft 
+6.40 
+6.66 
+6.68 
+Eccentricity from center of  wall base, eL = 0.5*L – a 
+ft 
+2.60 
+2.34 
+2.32 
+Limiting eccentricity, e = L/4 for strength limit states 
+and e= L/6 for service limit state 
+ft 
+4.50 
+4.50 
+3.00 
+Is the resultant within limiting value of eL? 
+-
+Yes 
+Yes 
+Yes 
+Effective width of base of MSE wall, B' = L-2eL 
+ft 
+12.79 
+13.33 
+13.36 
+Bearing stress due to MSE wall =ΣV/(L-2eL) = v 
+ksf 
+6.70 
+4.92 
+4.66 
+Bearing resistance, (qnf-str for strength) or (qnf-ser for 
+service) (given) 
+ksf 
+10.50 
+10.50 
+7.50 
+Is bearing stress less than the bearing resistance? 
+-
+Yes 
+Yes 
+Yes 
+Capacity:Demand Ratio (CDR) = qnf:σv 
+dim 
+1.57 
+2.13 
+1.61 
+CRITICAL VALUES BASED ON MAX/MIN 
+Resisting moments about Point A, MRA-C 
+k-ft/ft 
+590.09* 
+Overturning moments about Point A, MOA-C 
+k-ft/ft 
+223.30 
+Net moment about Point A, MA-C = MRA-C - MOA-C 
+k-ft/ft 
+366.79 
+Vertical force, ΣVC 
+k/ft 
+65.57* 
+Location of resultant from Point A, a = MA-C/ΣVC 
+ft 
+5.59 
+Eccentricity from center of wall base, eL = 0.5*L – a 
+ft 
+3.41 
+Limiting eccentricity, e = L/4  
+ft 
+4.50 
+Is the limiting eccentricity criteria satisfied? 
+-
+Yes 
+Effective width of base of MSE wall, B' = L-2eL 
+ft 
+11.19 
+Bearing stress, ΣVC / (L-2eL) = v-c 
+ksf 
+5.86 
+Bearing resistance, qnf-str (given) 
+ksf 
+10.50 
+Is bearing stress < bearing resistance? 
+dim 
+Yes 
+Capacity:Demand Ratio (CDR) = qnf-str:σv-c 
+dim 
+1.79 
+Note: *590.09 and 65.57 are consistent values based on the mass of reinforced soil block 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 9 
+November 2009  
+
+========== PAGE 302 ==========
+ 
+ 
+  
+ 
+ 
+ 
+6.4 
+Settlement Analysis 
+ 
+Settlement is evaluated at Service I Limit State. From Step 2, the estimated settlement under 
+a bearing stress of 7.50 ksf is 1.00 in.  From Table E1-6.3, the bearing stress for Service I 
+limit state is 4.66 ksf.  Therefore, the settlement will be less than 1.00 in. 
+ 
+ 
+STEP 7: EVALUATE INTERNAL STABILITY ANALYSIS OF MSE WALL 
+ 
+7.1 
+Estimate critical failure surface, variation of Kr and F* for internal stability 
+ 
+For the case of inextensible steel bar mats, the profile of the critical failure surface, the 
+variation of internal lateral horizontal stress coefficient, Kr, and the variation of the pullout 
+resistance factor, F*, are as shown in Figure E4-5 wherein other definitions such as 
+measurement of depth, Z, and height, H, are also shown.  It should be noted that the variation 
+of Kr and F* are with respect to depth Z that is measured from top of the reinforced soil zone.  
+The value of Ka is based on the angle of internal friction of the reinforced backfill, r, which 
+is equal to Ka = 0.283 calculated in Step 4. Thus, the value of Kr varies from 2.5(0.283) = 
+0.707 at Z=0 to 1.2(0.283) = 0.340 at Z =20 ft. The value of F* is a function of the 
+transverse wire configuration and is calculated later. 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 10 
+November 2009  
+D
+i
+a
+g
+r
+a
+ms illu str
+ating the g
+eom
+etry
+ d
+efiniti
+on, loca
+tion of 
+critical
+ f
+ai
+lure surface and variation of Kr amd F* parameters for steel bar mats.
+
+========== PAGE 303 ==========
+ 
+ 
+  
+ 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+ 
+7.2 
+Establish vertical layout of soil reinforcements 
+ 
+Using the definition of depth Z as shown in Figure E4-5 the following vertical layout of the 
+soil reinforcements is chosen. 
+  
+Z  = 1.87 ft, 4.37 ft, 6.87 ft, 9.37 ft, 11.87 ft, 14.37 ft, 16.87 ft, 19.37 ft, 21.87 ft, and 24.37 ft 
+ 
+The above layout leads to 10 levels of reinforcements.  The vertical spacing was chosen 
+based on a typical vertical spacing, Sv, of approximately 2.5 ft that is commonly used in the 
+industry for steel grid (bar mat) reinforcement.  The vertical spacing near the top and bottom 
+of the walls are locally adjusted as necessary to fit the height of the wall. 
+ 
+For internal stability computations, each layer of reinforcement is assigned a tributary area, 
+Atrib as follows 
+ 
+Atrib = (wp)(Svt) 
+ 
+where wp is the panel width of the precast facing element and Svt is the vertical tributary 
+spacing of the reinforcements based on the location of the reinforcements above and below 
+the level of the reinforcement under consideration.  The computation of Svt is summarized in 
+Table E4-7.1 wherein S
+
+vt  z  z . Note that wp = 5.00 ft per Step 1. 
+Table E4-7.1. Summary of computations for Svt 
+Level 
+Z (ft) 
+Z (ft) 
+Z (ft) 
+Svt (ft) 
+1 
+1.87 
+0 
+1.87+0.5(4.37–1.87)=3.12 
+3.12 
+2 
+4.37 
+4.37-0.5(4.37–1.87)=3.12 
+4.37+0.5(6.87-4.37)=5.62 
+2.50 
+3 
+6.87 
+6.87-0.5(6.87-4.37)=5.62 
+6.87+0.5(9.37-6.87)=8.12 
+2.50 
+4 
+9.37 
+9.37-0.5(9.37-6.87)=8.12 
+9.37+0.5(11.87-9.37)=10.62 
+2.50 
+5 
+11.87 
+11.87-0.5(11.87-9.37)=10.62 
+11.87+0.5(14.37-11.87)=13.12 
+2.50 
+6 
+14.37 
+14.37-0.5(14.37-11.87)=13.12 
+14.37+0.5(16.87-14.37)=15.62 
+2.50 
+7 
+16.87 
+16.87-0.5(16.87-14.37)=15.62 
+16.87+0.5(19.37-16.87)=18.12 
+2.50 
+8 
+19.37 
+19.37-0.5(19.37-16.87)=18.12 
+19.37+0.5(21.87-19.37)=20.62 
+2.50 
+9 
+21.87 
+21.87-0.5(21.87-19.37)=20.62 
+21.87+0.5(24.37-21.87)=23.12 
+2.50 
+10 
+24.37 
+24.37-0.5(24.37-21.87)=23.12 
+25.64 
+2.52 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 11 
+November 2009  
+
+========== PAGE 304 ==========
+ 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+7.3 
+Calculate horizontal stress and maximum tension at each reinforcement level 
+The horizontal spacing of the reinforcements is based on the maximum tension (Tmax) at each 
+level of reinforcements which requires computation of the horizontal stress, σH, at each 
+reinforcement level.  The reinforcement tensile and pullout resistances are then compared 
+with Tmax and an appropriate reinforcement pattern is adopted.  This section demonstrates the 
+calculation of horizontal stress, σH, and maximum tension, Tmax. 
+The horizontal stress, σH, at any depth within the MSE wall is based on only the soil load as 
+summarized in Table E4-7.2. 
+Equation as discussed in the captioned text.
+Table E4-7.2. Summary of load components leading to horizontal stress 
+Load Component 
+Load Type 
+Horizontal Stress 
+Soil load from reinforced mass, σv-soil 
+EV 
+σH-soil = [Krσv-soil]γP-EV 
+Surcharge traffic live load, q 
+EV 
+σH-surcharge = [Krq]γP-EV 
+Using the unit weight of the reinforced soil mass and heights Z and heq, the equation for 
+horizontal stress at any depth Z within the MSE wall can be written as follows (also see 
+Chapter 4): 
+Eq
+uation as discussed in the captioned text.
+Once the horizontal stress is computed at any given level of reinforcement, the maximum 
+tension, Tmax, is computed as follows: 
+Equation as discussed in the captioned text.
+where Atrib is the tributary area for the soil reinforcement at a given level as discussed in 
+Section 7.2. 
+The computations for Tmax are illustrated at zo = 9.37 ft which is Level 4 in the assumed 
+vertical layout of reinforcement.  Assume Strength I (max) load combination for illustration 
+purposes and use appropriate load factors from Table E4-5.1.   
+  At Z = 9.37 ft, the following depths are computed  
+Z = 8.12 ft (from Table E4-7.1)  
+Z = 10.62 ft (from Table E4-7.1) 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 12 
+November 2009  
+
+========== PAGE 305 ==========
+ 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+  
+ 
+ 
+  Obtain Kr by linear interpolation between 1.7Ka = 0.707 at Z = 0 and 1.2Ka = 0.340 at 
+Z = 20.00 ft as follows: 
+At Z = 8.12 ft, Kr(z-)= 0.340 + (20.00 ft – 8.12 ft)(0.707-0.340)/20.00 ft = 0.558 
+At Z = 10.62 ft, Kr(z+)= 0.340 + (20.00 ft – 10.62 ft)(0.707-0.340)/20.00 ft = 0.512 
+  Compute σH-soil = [kr σv-soil]γP-EV as follows: 
+γP-EV = 1.35 from Table E4-5.1 
+At Z = 8.12 ft, 
+v-soil(Z-) = (0.125 kcf)(8.12 ft) = 1.02 ksf  
+σH-soil(Z-) = [Kr(z-)σv-soil(z-)]γP-EV = (0.558)(1.02 ksf)(1.35) = 0.76 ksf  
+At  Z = 10.62 ft, 
+v-soil(Z+) = (0.125 kcf)(10.62 ft) = 1.33 ksf  
+σH-soil(Z+) = [Kr(z+)σv-soil(z+)]γP-EV = (0.512)(1.33 ksf)(1.35) = 0.92 ksf  
+σH-soil = 0.5(0.76 ksf + 0.92 ksf) = 0.84 ksf  
+  Compute σH-surcharge = [Kr q] γP-EV as follows: 
+γP-EV = 1.35 from Table E4-5.1 
+q = (γf)(heq) = (0.125 kcf)(2.00 ft) = 0.25 ksf 
+At  Z = 8.12 ft, σH-surcharge(Z-) = [Kr(Z-) q] γP-EV = (0.558)(0.25 ksf)(1.35) = 0.19 ksf 
+At  Z = 10.62 ft, σH-surcharge(Z+) = [Kr(Z+) q] γP-EV = (0.512)(0.25 ksf)(1.35) = 0.17 ksf 
+σH-surcharge = 0.5(0.19 ksf + 0.17 ksf) = 0.18 ksf 
+  Compute σH = σH-soil + σH-surcharge as follows: 
+σH = 0.84 ksf + 0.18 ksf = 1.02 ksf 
+  Based on Table E4-7.1, the vertical tributary spacing at Level 4 is Svt = 2.50 ft 
+  The panel width, wp, is 5.00 ft (given in Step 1) 
+  The tributary area, Atrib, is computed as follows: 
+Atrib = (2.50 ft)(5.00 ft) = 12.50 ft2 
+  The maximum tension at Level 4 is computed as follows: 
+Tmax = (σh)(Atrib) = (1.02 ksf)(12.50 ft2) = 12.75 k/panel of 5-ft width 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 13 
+November 2009  
+
+========== PAGE 306 ==========
+ 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Using similar computations, the various quantities can be developed at other levels of 
+reinforcements and load combinations. 
+7.4 
+Establish nominal and factored long-term tensile resistance of soil reinforcement 
+The nominal tensile resistance of galvanized steel bar mat soil reinforcement is based on the 
+design life and estimated loss of steel over the design life during corrosion. 
+The nominal diameters, D, of W15 and W11 wires are as follows: 
+For W15 wires, D = 0.437 in. = 11.10 mm = 11,100 m 
+For W11 wires, D = 0.374 in. = 9.50 mm = 9,500 m 
+As per Step 2, the reinforced backfill meets the AASHTO (2007) requirements for 
+electrochemical properties.  For this reinforced backfill, the basis for calculating the 
+thickness losses due to corrosion is as follows per Article 11.10.6.4.2a of AASHTO (2007): 
+Zinc loss = 0.58 mil for first 2 years and 0.16 mil per year thereafter 
+Steel loss = 0.16 mil/year/side 
+Based on the above corrosion rates, the following can be calculated: 
+Life of zinc coating (galvanization) = 2 years + (3.386 – 2*0.58)/0.16 ≈ 16 years 
+As per Step 1, the design life is 75 years. The base carbon steel will lose thickness for 75 
+years – 16 years = 59 years at a rate of 0.47 mil/year/side.  Therefore, the anticipated 
+diameter and area after 75 years for W15 and W11 is calculated as follows: 
+For W15 wires 
+D75 = 0.437 in. – (0.47 mil/year/side) (59 years) (2 sides)/1000 = 0.437 in. – 0.056 in. 
+D75 = 0.381 in. 
+Based on a 0.381 in. diameter wire, the cross-sectional area at the end of 75 years will be 
+equal to ()(0.381 in.)2/4 = 0.1142 in2/wire 
+For W11 wires 
+D75 = 0.374 in. – (0.47 mil/year/side) (59 years) (2 sides) = 0.374 in. – 0.056 in. 
+D75 = 0.318 in. 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 14 
+November 2009  
+
+========== PAGE 307 ==========
+ 
+ 
+  
+ 
+ 
+ 
+Based on a 0.318 in. diameter wire, the cross-sectional area at the end of 75 years will be 
+equal to ()(0.318 in.)2/4 = 0.0795 in2/wire 
+ 
+For Grade 65 steel with Fy = 65 ksi, the nominal tensile resistance, Tn, and factored tensile 
+resistance, Tr, for the W15 and W11 wires will be as follows: 
+ 
+For W15 wires 
+Tn = 65 ksi (0.1142 in2) = 7.42 k/wire. 
+ 
+Using the resistance factor, t = 0.65 as listed in Table E4-5.2, the factored tensile resistance, 
+Tr = 7.42 k/wire (0.65) = 4.82 k/wire. 
+ 
+For W11 wires 
+Tn = 65 ksi (0.0795 in2) = 5.17 k/wire. 
+ 
+Using the resistance factor, t = 0.65 as listed in Table E4-5.2, the factored tensile resistance, 
+Tr = 5.14 k/wire (0.65) = 3.36 k/wire. 
+ 
+7.5 
+Establish nominal and factored pullout resistance of soil reinforcement 
+ 
+The nominal pullout resistance, Pr, of galvanized steel bar mat (grid) reinforcement is based 
+on various parameters in the following equation: 
+ 
+Pr = (F*)(2b)(Le)[(σv-soil)(γP-EV)] 
+ 
+In the above equation, the contribution of live load is not included as per Figure E4-2b.  
+Since the steel bar mat has welded connections, it can be considered inextensible with  = 1. 
+ 
+Assume a W11 transverse wire which has a nominal diameter of 0.374 in. The transverse 
+spacing of transverse wires, St, is varied depending on the level of reinforcement to optimize 
+the design from an economical perspective.  For this example problem, assume that the 
+spacing of the transverse wires, St = 6 in., 12 in. and 18 in. Based on these spacing, the value 
+of t/St is as follows: 
+ 
+For, St = 6 in., t/St = 0.374 in./6 in. = 0.0623 
+For, St = 12 in., t/St = 0.374 in./12 in. = 0.0312 
+For, St = 18 in., t/St = 0.374 in./18 in. = 0.0208 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 15 
+November 2009  
+
+========== PAGE 308 ==========
+ 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Based on the value of t/St, the F* parameter varies from 20(t/St) at z = 0 ft to 10(t/St) at z ≥ 
+20 ft and greater as shown in Figure E4-5. For the three value of t/St the variation of F* is as 
+follows: 
+For t/St = 0.0623, F* = 1.2460 at Z = 0 ft and F* = 0.623 at Z ≥ 20 ft 
+For t/St = 0.0312, F* = 0.623 at Z = 0 ft and F* = 0.312 at Z ≥ 20 ft 
+For t/St = 0.0208, F* = 0.416 at Z = 0 ft and F* = 0.208 at Z ≥ 20 ft 
+Assume bar mat width, b = 1 ft for computing pullout resistance on a per foot width basis. 
+The actual bar mat width will be computed based on comparison of the pullout resistance 
+with Tmax. 
+For this example problem, assume the layout of longitudinal and transverse wires as shown 
+in Table E4-7.3. The number of longitudinal wires and thus the width of the bar mats will be 
+determined in Section 7.6. 
+Table E4-7.3. Assumed bar mat configuration for internal stability analysis 
+Level 
+Longitudinal wire 
+Transverse wire 
+Spacing of transverse wires, St 
+1 to 4 
+W11 
+W11 
+6 in. 
+5 to 7 
+W15 
+W11 
+12 in. 
+8 to 10 
+W15 
+W11 
+18 in. 
+The computations for Pr are illustrated at z = 9.37 ft which is Level 4 as measured from top 
+of the wall.  Assume Strength I (max) load combination for illustration purposes and use 
+appropriate load factors from Table E4-5.1. 
+  Obtain F* at z = 9.37 ft by linear interpolation between 1.2460 at Z = 0 and 0.623 at 
+Z = 20 ft as follows: 
+F* = 0.623 + (20.00 ft – 9.37 ft)(1.246 – 0.623)/20 ft = 0.955 
+  Compute effective length Le as follows:  
+Since Z < H/2, Le = L – 0.3(H)  
+Le = 18 ft – 0.3(25.64 ft) = 10.31 ft  
+  Compute (σv-soil)(γP-EV) 
+Per Article 11.10.6.3.2 of AASHTO (2007), use unfactored vertical stress for pullout 
+resistance. Thus, 
+γP-EV = 1.00 
+(σv-soil)(γP-EV) = (0.125 kcf)(9.37 ft)(1.00) = 1.171 ksf 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 16 
+November 2009  
+
+========== PAGE 309 ==========
+ 
+ 
+  
+ 
+ 
+ 
+ 
+  Compute nominal pullout resistance as follows:  
+Pr = (F*)(2b)(Le)[(σv-soil)(γP-EV)]  
+Pr = (1.0)(0.955)(2)(1.00 ft)(10.31 ft)(1.171 ksf) = 23.06 k/ft   
+ 
+  Compute factored pullout resistance as follows:  
+Prr = Pr = (0.90)(23.06 k/ft) = 20.75 k/ft  
+ 
+Using similar computations, the various quantities can be developed at other levels of 
+reinforcements and load combinations. 
+ 
+7.6 
+Establish number of longitudinal wires at each level of reinforcement 
+ 
+Based on Tmax, Tr and Prr, the number of longitudinal wires at any given level of 
+reinforcements can be computed as follows: 
+ 
+ Assume spacing of the longitudinal wires, Sl = 6 in. = 0.5 ft 
+ 
+ Based on tensile resistance considerations, the number of longitudinal, Nt, is 
+computed as follows: 
+ 
+Nt = Tmax/Tr  
+ 
+ Based on pullout resistance considerations, the number of longitudinal wires, Np, is 
+computed as follows: 
+ 
+Np = 1 + (Tmax/Prr)/(Sl) 
+ 
+Using the Level 4 reinforcement at Z = 9.37 ft, the number of W11 longitudinal wires for 5 ft 
+wide panel can be computed as follows: 
+ 
+ Tmax = 12.75 k/panel of 5 ft width, Tr = 3.36 k/wire, Prr = 20.75 k/ft 
+ 
+ Nt = Tmax/Tr = (12.75 k/panel of 5 ft width)/(3.36 k/wire) = 3.8 longitudinal 
+wires/panel of 5 ft width 
+ 
+ Np = 1 + (Tmax/Prr)/(Sl) = 1 + [(12.75 k/panel of 5 ft width)/(20.75 k/ft)]/(0.5 ft) = 2.2 
+longitudinal wires/panel 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 17 
+November 2009  
+
+========== PAGE 310 ==========
+ 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+  Since Nt > Np, tension breakage is the governing criteria and therefore the governing 
+value, Ng, is 3.8. Select 4 longitudinal wires at Level 4 for each panel of 5 ft width. 
+Thus, the steel bar mat configuration at Level 4 is 4W11 + W11x0.5' which means a bar mat 
+with 4 W11 longitudinal wires spaced at 0.5 ft on centers with W11 transverse wires spaced 
+at 0.5 ft on centers. 
+The computations in Sections 7.4 to 7.6 are repeated at each level of reinforcement.  Table 
+E4-7.4 presents the computations at all levels of reinforcement for Strength I (max) load 
+combination.  Similar computations can be performed for Strength I (min) and Service I load 
+combination but they will not govern the design because the load factors for these two load 
+combinations are less than those for Strength I (max) load combination. 
+Note to users: All the long-form step-by-step calculations illustrated in Step 7 were based on 
+hand-calculations in which numbers were rounded to the third or fourth significant digit as 
+appropriate in each step.  Table E4-7.4 was generated using a spreadsheet in which numbers 
+at all calculation steps were not rounded.  Thus, the end result in Table E4-7.4 may be 
+somewhat different when compared to long-form hand calculations.  However, the difference 
+should be less than 0.2 in most cases. 
+Table E4-7.4. Summary of internal stability computations for Strength I (max) load 
+combination  
+Level 
+Z 
+ft 
+H
+ksf 
+Tmax
+k/5 ft 
+wide 
+panel 
+F* 
+dim 
+Le 
+ft 
+p(Pr) 
+k/ft 
+s(Tn) 
+k/wire 
+Np 
+-
+Nt 
+-
+Ng 
+-
+Bar Mat 
+-
+1 
+1.87 
+0.40 
+6.25 
+1.188 
+10.31 
+5.16 
+3.38 
+3.4 
+1.9 
+4 
+4W11+W11x0.5' 
+2 
+4.37 
+0.67 
+8.36 
+1.110 
+10.31 
+11.25 
+3.38 
+2.5 
+2.5 
+3 
+3W11+W11x0.5' 
+3 
+6.87 
+0.86 
+10.80 
+1.033 
+10.31 
+16.47 
+3.38 
+2.3 
+3.2 
+4 
+4W11+W11x0.5' 
+4 
+9.37 
+1.02 
+12.77 
+0.955 
+10.31 
+20.75 
+3.38 
+2.2 
+3.8 
+4 
+4W11+W11x0.5' 
+5 
+11.87 
+1.14 
+14.26 
+0.438 
+10.31 
+12.06 
+4.84 
+3.4 
+2.9 
+4 
+4W15+W11x1' 
+6 
+14.37 
+1.22 
+15.23 
+0.399 
+11.24 
+14.50 
+4.84 
+3.1 
+3.1 
+4 
+4W15+W11x1' 
+7 
+16.87 
+1.26 
+15.71 
+0.360 
+12.74 
+17.41 
+4.84 
+2.8 
+3.2 
+4 
+4W15+W11x1' 
+8 
+19.37 
+1.28 
+16.03 
+0.214 
+14.24 
+13.27 
+4.84 
+3.4 
+3.3 
+4 
+4W15+W11x1.5' 
+9 
+21.87 
+1.37 
+17.10 
+0.208 
+15.74 
+16.12 
+4.84 
+3.1 
+3.5 
+4 
+4W15+W11x1.5' 
+10 
+24.37 
+1.51 
+19.05 
+0.208 
+17.24 
+19.66 
+4.84 
+2.9 
+3.9 
+4 
+4W15+W11x1.5' 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 18 
+November 2009  
+
+========== PAGE 311 ==========
+ 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+STEP 8:  DESIGN OF FACING ELEMENTS 
+The precast facing elements must be designed as structural elements with appropriate 
+connection strength as discussed in Chapter 4.   
+STEP 9:  CHECK OVERALL AND COMPOUND STABILITY AT SERVICE LIMIT 
+STATE 
+From Step 2, it is given that the foundation soil is dense clayey sand that has fd = 30°, fd = 
+125 pcf. Furthermore, the ground in front of the wall is horizontal and the foundation soil 
+has no water table. Therefore, based on observation, overall stability is adequate.  For actual 
+projects, overall stability should be investigated at the Service I load combination and a 
+resistance factor of 0.65. 
+STEP 10: DESIGN WALL DRAINAGE SYSTESM 
+See Chapter 5 for wall drainage considerations. 
+E4-2 PRACTICAL CONSIDERATIONS 
+Following is a general list of practical considerations from a geotechnical and structural 
+viewpoint: 
+ Attempt should be made to not vary the bar mat configuration too much because that 
+increases the possibility of inadvertent mixing of bar mats and use of wrong bar mat at a 
+given level. 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 19 
+November 2009  
+
+========== PAGE 312 ==========
+ 
+ 
+  
+ 
+ 
+ 
+ 
+FHWA NHI-10-025 
+Example E4 – Level backfill with LL  
+MSE Walls and RSS – Vol II 
+E4 – 20 
+November 2009  

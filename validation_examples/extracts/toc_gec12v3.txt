@@ -1,0 +1,218 @@
+
+========== PAGE 7 ==========
+TABLE OF CONTENTS 
+LIST OF TABLES ............................................................................................. vi 
+LIST OF FIGURES ........................................................................................ xiv 
+D 
+COMPREHENSIVE DESIGN EXAMPLES .............................................. 1 
+D.1 
+Block 1: Establish Global Project Performance Requirements ..... 8 
+D.2 
+Block 2: Determine Structure (Bridge) Geometry, 
+Substructure Locations and Elevations ......................................... 9 
+D.3 
+Block 3: Define General Site Geotechnical Conditions, 
+Scour, and Seismicity ................................................................... 9 
+D.4 
+Block 4: Perform Preliminary Structure Modeling.  Determine 
+Preliminary Substructure Loads and Tolerable Deformations ..... 10 
+D.5 
+Block 5: Develop and Execute Subsurface Exploration and 
+Laboratory Testing Program for Feasible Foundation 
+Systems ...................................................................................... 10 
+D.6 
+Block 6: Evaluate Information and Determine Candidate 
+Foundation Systems ................................................................... 20 
+D.7 
+Block 7: Determine if a Deep Foundation is Required ................ 20 
+D.8 
+Block 8: Select Candidate Driven Pile Types and Sections ........ 20 
+D.9 
+Block 9: North Abutment – Calculate Nominal and Factored 
+Structural Resistances for all Candidate Piles ............................ 21 
+D.10 Block 10: North Abutment – Calculate Nominal and Factored 
+Geotechnical Resistances in Axial Compression and Tension 
+Versus Depth for all Candidate Piles; Perform Preliminary 
+Pile Drivability Analyses .............................................................. 22 
+D.10.1 Geotechnical Resistance in Axial Compression.............. 26 
+D.10.2 Geotechnical Resistance in Axial Tension ...................... 34 
+D.10.3 Preliminary Pile Drivability Assessment .......................... 37 
+D.11 Block 11: North Abutment – Estimate Preliminary Number of 
+Piles, Preliminary Pile Group Size, and Resolve Individual 
+Pile Loads for All Limit States ..................................................... 46 
+D.12 Block 12: North Abutment – Estimate Pile Penetration Depth 
+for Maximum Axial Compression Loads; Check Group 
+Efficiency in Axial Compression .................................................. 49 
+ 
+i 
+
+========== PAGE 8 ==========
+D.13 Block 13: North Abutment – Establish Minimum Pile 
+Penetration Depth for Axial Tension Loads; If Conditions 
+Warrant, Modify Design and Return to Block 10 ........................ 51 
+D.14 Block 14: North Abutment – Establish Minimum Pile 
+Penetration Depth for Lateral Loads.  Determine p-y Models, 
+Required Geomaterial Parameters, and Perform Lateral 
+Load Analysis; If Conditions Warrant, Modify Design and 
+Return to Block 10 ...................................................................... 56 
+D.15 Block 15: North Abutment – Establish Pile Penetration 
+Depths that Satisfy Tolerable Deformations; Estimate Group 
+Settlement over the Minimum and Maximum Range of Pile 
+Penetration Depths From Blocks 12 through 14 and Identify 
+All Pile Toe Elevations Which Result in Intolerable 
+Deformations; If Conditions Warrant, Modify Design and 
+Return to Block 10 ...................................................................... 62 
+D.16 Block 16: North Abutment – Check pile drivability to 
+maximum pile penetration depth requirements established in 
+Blocks 12 through 15 ................................................................. 76 
+D.17 Block 17: North Abutment – Determine the Neutral Plane 
+Location and Resulting Drag Force; Check Structural 
+Strength Limit State for Pile Penetration Depth From 
+Block 16 ..................................................................................... 77 
+D.18 Decision Block 18: Does Estimated Total Settlement and 
+Differential Settlement Between Adjacent Substructure 
+Locations Satisfy Requirements and Angular Distortion Limits? 83 
+D.19 Block 19: North Abutment – Evaluate Economics of 
+Candidate Piles, Preliminary Group Configurations, and 
+Other Factors ............................................................................. 83 
+D.20 Decision 20: Is the Preliminary Design of All Substructure 
+Foundations Complete? ............................................................. 92 
+D.21 Block 9: Pier 2 – Calculate Nominal and Factored Structural 
+Resistances for all Candidate Piles ............................................ 93 
+D.22 Block 10: Pier 2 – Calculate Nominal and Factored 
+Geotechnical Resistances in Axial Compression and Tension 
+versus Depth for all Candidate Piles; Perform Preliminary 
+Pile Drivability Analyses ............................................................. 94 
+D.22.1 Geotechnical Resistance in Axial Compression ............. 99 
+D.22.1.1 Geotechnical Resistance in Axial 
+Compression at the Design Flood ................ 101 
+ 
+ii 
+
+========== PAGE 9 ==========
+D.22.1.2 Geotechnical Resistance in Axial 
+Compression at the Check Flood ................. 108 
+D.22.2 Geotechnical Resistance in Axial Tension .................... 114 
+D.22.2.1 Geotechnical Resistance in Axial Tension 
+at the Design Flood ....................................... 114 
+D.22.2.2 Geotechnical Resistance in Axial Tension 
+at the Check Flood ........................................ 119 
+D.22.3 Preliminary Pile Drivability Assessment ........................ 123 
+D.23 Block 11: Pier 2 – Estimate Preliminary Number of Piles, 
+Preliminary Pile Group Size, and Resolve Individual Pile 
+Loads for All Limit States .......................................................... 129 
+D.24 Block 12: Pier 2 – Estimate Pile Penetration Depth for 
+Maximum Axial Compression Loads. Check Group Efficiency 
+in Axial Compression ................................................................ 134 
+D.25 Block 13: Pier 2 – Establish Minimum Pile Penetration Depth 
+for Axial Tension Loads.  If Conditions Warrant, Modify 
+Design and Return to Block 10 ................................................. 136 
+D.26 Block 14: Pier 2 – Establish Minimum Pile Penetration Depth 
+for Lateral Loads.  Determine p-y Models, Required 
+Geomaterial Parameters, and Perform Lateral Load Analysis.  
+If Conditions Warrant, Modify Design and Return to Block 10 .. 136 
+D.27 Block 15: Pier 2 – Establish Pile Penetration Depths that 
+Satisfy Tolerable Deformations.  Estimate Group Settlement 
+over the Minimum and Maximum Range of Pile Penetration 
+Depths From Blocks 12 to 14 and Identify All Pile Toe 
+Elevations Which Result in Intolerable Deformations.  If 
+Conditions Warrant, Modify Design and Return to Block 10 ..... 147 
+D.28 Block 16: Pier 2 – Check pile drivability to maximum pile 
+penetration depth requirements established in Blocks 12 
+through 15 ................................................................................. 161 
+D.29 Block 17: Pier 2 – Determine the Neutral Plane Location and 
+Resulting Drag Force. Check Structural Strength Limit State 
+for Pile Penetration Depth From Block 16 ................................. 162 
+D.30 Decision 18: Does Estimated Total Settlement and Differential 
+Settlement Between Adjacent Substructure Locations Satisfy 
+Requirements and Angular Distortion Limits? ........................... 166 
+D.31 Block 19: Pier 2 – Evaluate Economics of Candidate Piles, 
+Preliminary Group Configurations, and Other Factors .............. 167 
+D.32 Decision 20: Is the Preliminary Design of All Substructure 
+Foundations Complete? ............................................................ 172 
+ 
+iii 
+
+========== PAGE 10 ==========
+D.33 Block 9: South Abutment – For all Candidate Piles, Calculate 
+Nominal and Factored Structural Resistances ......................... 173 
+D.34 Block 10: South Abutment – For All Candidate Piles, 
+Calculate Nominal and Factored Geotechnical Resistances 
+in Axial Compression and Tension versus Depth.  Perform 
+Preliminary Pile Drivability Analyses ........................................ 174 
+D.34.1 Geotechnical Resistance in Axial Compression ........... 177 
+D.34.2 Geotechnical Resistance in Axial Tension (uplift) ........ 187 
+D.34.3 Preliminary Pile Drivability Assessment ....................... 191 
+D.35 Block 11: South Abutment – Estimate Preliminary Number of 
+Piles, Preliminary Pile Group Size, and Resolve Individual 
+Pile Loads for All Limit States................................................... 199 
+D.36 Block 12: South Abutment – Estimate Pile Penetration Depth 
+for Maximum Axial Compression Loads.  Check Group 
+Efficiency in Axial Compression ............................................... 202 
+D.37 Block 13: South Abutment – Establish Minimum Pile 
+Penetration Depth for Axial Tension Loads.  If Conditions 
+Warrant, Modify Design and Return to Block 10 ...................... 203 
+D.38 Block 14: South Abutment – Establish Minimum Pile 
+Penetration Depth for Lateral Loads.  Determine p-y Models, 
+Required Geomaterial Parameters, and Perform Lateral 
+Load Analysis.  If Conditions Warrant, Modify Design and 
+Return to Block 10 .................................................................... 209 
+D.39 Block 15: South Abutment – Establish Pile Penetration 
+Depths that Satisfy Tolerable Deformations.  Estimate Group 
+Settlement over the Minimum and Maximum Range of Pile 
+Penetration Depths From Blocks 12 to 14 and Identify All Pile 
+Toe Elevations Which Result in Intolerable Deformations.  If 
+Conditions Warrant, Modify Design and Return to Block 10 .... 215 
+D.40 Block 16: South Abutment – Check pile drivability to 
+maximum pile penetration depth requirements established in 
+Blocks 12 through 15 ............................................................... 237 
+D.41 Block 17: South Abutment – Determine the Neutral Plane 
+Location and Resulting Drag Force. Check Structural 
+Strength Limit State for Pile Penetration Depth From 
+Block 16 ................................................................................... 238 
+D.42 Decision 18: Does Estimated Total Settlement and Differential 
+Settlement Between Adjacent Substructure Locations Satisfy 
+Requirements and Angular Distortion Limits? .......................... 242 
+ 
+iv 
+
+========== PAGE 11 ==========
+D.43 Block 19: South Abutment – Evaluate Economics of 
+Candidate Piles, Preliminary Group Configurations, and 
+Other Factors ............................................................................ 243 
+D.44 Decision 20: Is the Preliminary Design of All Substructure 
+Foundations Complete? ............................................................ 248 
+D.45 Block 21: Refine Structural Modeling and Determine Loads 
+at Foundation Top and Lateral Earth Pressure Loads on 
+Abutments ................................................................................. 248 
+D.46 Decision 22: Did Loads Significantly Change, and Require 
+Reevaluation of the Foundation Design? .................................. 249 
+D.47 Block 23: For Dynamic Elastic Analyses, Reevaluate 
+Foundation Stiff nesses Using Unfactored Loads in Structural 
+Model to get New Foundation Loads ........................................ 249 
+D.48 Decision 24: Did Loads Significantly Change, and Require 
+Reevaluation of the Foundation Design? .................................. 249 
+D.49 Decision 25: Does the Design Meet All Limit State 
+Requirements? ......................................................................... 249 
+D.50 Block 26: Design Pile Caps and Abutments.............................. 250 
+D.51 Block 27: Finalize Plans and Specifications Including Pile 
+Quantities, Minimum Pile Penetration Requirements from 
+Blocks 13 through 15, and Required Nominal Resistances ...... 250 
+D.51.1 Required Nominal Resistance at the North Abutment .. 251 
+D.51.2 Required Nominal Resistance at Pier 2 ........................ 252 
+D.51.3 Required Nominal Resistance at the South Abutment .. 253 
+D.52 Block 28: Perform Evaluation of Contractor’s Proposed 
+Equipment ................................................................................. 254 
+D.52.1 Wave Equation for the North Abutment ........................ 256 
+D.52.2 Wave Equation for Pier 2 .............................................. 259 
+D.52.3 Wave Equation for the South Abutment ........................ 262 
+D.53 Block 29: Set Preliminary Driving Criteria, Drive Test Pile(s) 
+and Assess Constructability ...................................................... 265 
+D.54 Block 30: Adjust Driving Criteria or Design ............................... 265 
+D.55 Block 31: Drive Production Piles with Construction 
+Monitoring, Resolve any Pile Installation Problems .................. 265 
+D.56 Block 32: Perform Post-Construction Evaluation and 
+Refinement For Future Designs ................................................ 265 
+ 
+ 
+v 

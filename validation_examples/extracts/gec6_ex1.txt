@@ -1,0 +1,2165 @@
+
+========== PAGE 161 ==========
+EXAMPLE 1: INTERIOR BRIDGE PIER ON SPREAD FOOTING 
+Given: 
+• Subsurface profile at the interior bridge pier is shown in Figure B1-1. 
+• There is no scour potential at this site. 
+• Frost penetration depth is 0.6 m (2 ft). 
+• Tolerable settlement is 38 mm (1.5 in). 
+• The sign conventions and loading directions are shown in Figure B1-2. 
+Find: 
+• Size the footing based on AASHTO Service Load Design, Group I loads (allowable stress 
+design method) considering both the settlement and bearing capacity.  Check for 
+overturning and sliding. 
+Boring B-1
+?
+Unit 1:
+Lean Clay
+Unit 2:
+Silty Sand
+Unit 3a:
+Well-graded Sand
+Unit 3b:
+Well-graded Sand
+(saturated)
+Unit 4:
+Clean, uniform Sand
+6
+7
+18
+20
+22
+42
+38
+47
+33
+45
+42
+37
+49
+Column Diameter,
+D = 0.6 m
+SPT N-value
+g =19.6 kN/m3
+2.3 m
+2.1 m
+4.7 m
+3.0 m
+3.0 m
+g =19.6 kN/m3
+g =19.6 kN/m3
+g =19.6 kN/m3
+ 
+Figure B1-1:  Subsurface Profile 
+B - 3 
+
+========== PAGE 162 ==========
+ 
+Area of Column, Acol
+Lf
+Bf
+Df
+Z - Transverse
+Direction of Bridge
+Y - Longitudinal
+Direction of Bridge
+P
+Mz - Moment About
+Z-Axis due to
+Longitudinal Loading
+My - Moment About
+Y-Axis due to
+Transverse Loading
+Soil
+Footing
+ 
+Figure B1-2: Sign Conventions and Loading Directions 
+Solution: 
+The solution can be obtained by following the step-by-step process shown in Figure 6-1, Design 
+Process Flow Chart. 
+Steps 1 through 4 – Preliminary bridge layout, review of existing geologic and subsurface 
+data, site reconnaissance, scour and frost potential:  
+The structural, hydraulics and geotechnical engineers completed these steps.  The required 
+design information is provided in the problem-given statement. 
+Step 5 – Determine the loads applied to the footing: 
+The structural engineer has calculated and provided the values shown in Table B1-1. 
+ 
+ 
+ 
+B - 4 
+
+========== PAGE 163 ==========
+TABLE B1-1: LOADS AT COLUMN BASE 
+ 
+Load 
+Axial, P 
+(kN) 
+Shear, V 
+(kN) 
+Moment, MZ 
+(kN-m) 
+Moment, MY 
+(kN-m) 
+Dead load (D) 
+6400 
+167 
+211 
+748 
+Live load (L) 
+1670 
+42 
+409 
+196.5 
+Impact (I) 
+315 
+8 
+77 
+37 
+Wind on structure 
+(W) 
+884 
+49 
+89 
+226 
+Wind on live load 
+(WL) 
+18 
+4 
+7 
+26 
+Earthquake (EQ) 
+1671 
+804 
+1675 
+5546 
+ 
+Service Load Design Loads for Group I: 
+The general equation is: 
+)
+(
+β
++
+β
++
+β + )
++
+( 
+β + )
+(
+β
+[ γ
+=
+B
+)
+E
+(
+)
+CF
+(
+I
+L
+D
+ 
+P
+B
+E
+C
+L
+D
+I
+ 
+(AASHTO, 1996, 
+)
+T
+S
+R
+(
+)
+LF
+(
+)
+WL
+(
+)
+W
+(
+)
+SF
+(
+R
+L
+WL
+W
+S
++
++
+β
++
+β
++
+β
++ 
+β
++
+β +
+  
+Eqn. 3-10) 
+)]
+ICE
+(
+)
+EQ
+(
+ICE
+EQ
+β
++
+β
++
+ 
+where: γ  = Load factor (always equal to 1.0 for SLD) 
+ 
+ = Coefficient for particular load, i, as found in Table 3.22.1A of AASHTO (1996). 
+i
+β
+Recall from Table 6-2, that SLD Group I is the load combination for normal vehicles using the 
+bridge without wind, and that earthquake loads are only considered in Load Group VII.  
+Therefore the coefficients for W, WL and EQ are all zero and the general load equation reduces 
+to the following for this example: 
+] )
++
+( 
+β + )
+(
+β
+[ γ
+=
+I
+L
+D
+ 
+P
+L
+D
+I
+ 
+The AASHTO provisions permit neglecting the impact load, I, for foundations and buried 
+structures.  Also, since the footing is relatively shallow, assume that the effect of footing self-
+weight is negligible.  The factored loads are as follows: 
+Axial Loads: 
+kN
+kN
+kN
+L
+D
+I
+8070
+1670
+6400
+L
+D
+ 
+P
+ =
+] )
+( 
+1.0
+ + )
+( 
+[1.0
+ 
+1.0
+ =
+]
+)
+( 
+β + )
+(
+β
+[ γ
+=
+ 
+ 
+B - 5 
+
+========== PAGE 164 ==========
+Shear: 
+kN
+kN
+kN
+L
+D
+209
+] )
+(42
+ 
+1.0
+ 
+ )
+(167
+ 
+[1.0
+ 
+1.0
+ 
+)]
+L
+(
+)
+D
+(
+[
+ 
+  
+V
+=
++
+=
+β
++
+β
+γ
+=
+ 
+Moment in the Z direction: 
+m
+-
+kN
+m
+-
+kN
+m
+-
+kN
+L
+D
+Z
+620
+ 
+] )
+(409
+ 
+1.0
+ 
+ )
+ 
+(211
+ 
+[1.0
+ 
+1.0
+ 
+)]
+L
+(
+)
+D
+(
+[
+ 
+  
+M
+=
++
+=
+β
++
+β
+γ
+=
+ 
+Moment in the Y direction: 
+m
+-
+kN
+m
+-
+kN
+m
+-
+kN
+L
+D
+Y
+944.5
+ 
+] )
+(196.5
+ 
+1.0
+ 
+ )
+ 
+(748
+ 
+[1.0
+ 
+1.0
+ 
+)]
+I
+L
+(
+)
+D
+(
+[
+ 
+  
+M
+=
++
+=
++
+β
++
+β
+γ
+=
+ 
+Step 6 – Subsurface Exploration and Laboratory Testing:  
+This step is complete, and the subsurface data are shown in Figure B1-1.  Laboratory testing was 
+limited to soil classifications and moisture content due to the granular nature of the soils 
+encountered in the boring.  The foundation design will be based largely on design parameters 
+correlated to the soil classifications and the field SPT N-values.  Apply judgment and recognize 
+that it is minimal excavation to remove all of the medium stiff Unit 1 lean clay to avoid any 
+associated low strength or compressibility problems in this material.  Therefore, select depth of 
+footing, Df, of 2.3 m to bear below Unit 1.  Compute the initial vertical effective stresses at the 
+midpoint of each soil layer below the footing: 
+Layer 2: 
+kPa
+7.
+65
+)
+6.
+19
+(
+m
+35
+.3
+'
+3
+m
+kN
+2
+vo
+=
+=
+σ
+ 
+Layer 3a: 
+kPa
+132
+)
+6.
+19
+(
+m
+75
+.6
+'
+3
+m
+kN
+a
+3
+vo
+=
+=
+σ
+ 
+Layer 3b: 
+kPa
+193
+)
+8.9
+(
+m
+5.1
+)
+6.
+19
+(
+m
+6.
+10
+'
+3
+m
+kN
+3
+m
+kN
+b
+3
+vo
+=
+−
+=
+σ
+ 
+B - 6 
+
+========== PAGE 165 ==========
+Layer 4: 
+kPa
+222
+)
+8.9
+(
+m
+5.4
+)
+6.
+19
+(
+m
+6.
+13
+'
+3
+m
+kN
+3
+m
+kN
+4
+vo
+=
+−
+=
+σ
+ 
+The effective stress diagram for the profile at the pier location is plotted in Figure B1-3. 
+2
+4
+6
+8
+10
+12
+14
+16
+0
+Depth (m)
+100
+200
+0
+300
+400
+u
+Vertical Stress (kPa)
+132
+65.7
+267
+208
+193
+222
+Unit 1
+Unit 2
+Unit 3a
+Unit 4
+Unit 3b
+σ Vo
+σ'Vo
+ 
+Figure B1-3:  Effective Stress Diagram 
+Step 7 – Calculate allowable bearing capacity:   
+The geotechnical engineer will calculate the allowable bearing capacity, considering both the 
+potential for bearing capacity failure (Section 5.1) and settlement (Section 5.2). 
+Calculate ultimate bearing capacity: 
+The general equation for bearing capacity is: 
+ 
+b
+s
+C
+N
+B
+5.0
+d
+b
+s
+C
+qN
+ 
+b
+s
+cN
+q
+W
+f
+q
+q
+q
+W
+q
+c
+c
+c
+ult
+q
+γ
+γ
+γ
+γ
+γ
++
++
+=
+ 
+(Eqn. 5-14) 
+B - 7 
+
+========== PAGE 166 ==========
+The first term goes to zero since the foundation materials are granular and cohesionless, so the 
+cohesion term, c, is zero. 
+For the interior pier, we will assume that the footing is essentially rectangular (L/B < 5). Recall 
+that the shape and inclination factors should not be applied together (see discussion in Section 
+5.2).  Since the effect of the shape factors is significant for rectangular footings, and the 
+inclination resulting from the relatively small shear load component (V) is small, we will only 
+apply the shape factors as follows: 
+6.0
+s
+L
+B
+4.0
+1
+s
+f
+f
+=
+−
+=
+γ
+γ
+ 
+Assume the effect of eccentricity is small for 
+now, so 
+f
+f
+L
+B ≅
+ 
+(Table 5-2) 
+A design friction angle associated with Layer 2 is needed to calculate sq.  The geotechnical 
+engineer has recommended that the footing be cast against the firm, undisturbed soil of Unit 2.  
+Unit 2 is 2.1-m thick and overlies denser material at depth, so the properties of Unit 2 will 
+govern the footing design.  From Figure B1-1, the average uncorrected field SPT N-value for this 
+layer is 20.  From Figure B1-3, the average vertical effective stress in Layer 2 is 65.7 kPa (about 
+1.4 ksf).  Entering Figure 4-1 with a blowcount of 20 and a vertical effective stress of 1.4 ksf, a 
+relative density, DR, of about 75 percent is read.  Entering Figure 4-2 with this relative density 
+for silty sand (Unified Soil Classification ‘SM’), a friction angle of 35 is selected for computing 
+bearing capacity.   
+7.1
+s
+)
+35
+tan(
+1
+1
+1
+s
+tan
+L
+B
+1
+s
+q
+o
+q
+f
+f
+q
+=
++
+=
+φ
++
+=
+ 
+ 
+(Table 5-2) 
+Since the overburden materials above the footing are cohesive soils, the correction factor to 
+account for shearing resistance of the material above the bearing elevation, dq, should be set 
+equal to 1.0: 
+0.1
+dq =
+ 
+(Table 5-4) 
+Since this footing will be level, there is no effect of inclination of the base, so: 
+0.1
+b
+b
+q =
+=
+γ
+ 
+(Table 5-5) 
+Calculate the effect of the footing embedment, q.  Apply judgment and recognize that it is 
+minimal excavation to remove all of the Unit 1 medium stiff lean clay and avoid any associated 
+low strength or compressibility characteristics in this material.  Therefore select Df = 2.3 m to 
+bear below Unit 1: 
+B - 8 
+
+========== PAGE 167 ==========
+In this case q is only a function of the depth of bearing. 
+f
+o
+v
+D
+'
+'
+q
+γ
+=
+σ
+=
+ 
+where: 
+3
+m
+6.
+19
+'=
+kN
+bulk =
+γ
+γ
+ 
+(
+)
+m
+3.2
+)
+6.
+19
+(
+q
+3
+m
+kN
+=
+ 
+kPa
+1.
+45
+q =
+ 
+Check ground water effect: 
+Depth of ground water table below the bearing depth: 
+Df = Depth of footing = 2.3 m 
+Assumes a 0.9-m thick footing and 1.4-m cover 
+Dw = Depth of ground water below the ground surface (Df ) = 9.1 m 
+Conservatively estimate the footing width with an upper bound value of Bf = 6 m. 
+Calculate ground water correction factors, CWγ and CWq: 
+0.1
+D
+B
+5.1
+D
+5.0
+5.0
+C
+f
+f
+W
+W
+≤
+
+
+
+
+
+
++
++
+=
+γ
+  
+(Eqn. 5-10) 
+9.0
+3.2
+)
+6
+(
+5.1
+1.9
+5.0
+5.0
+CW
+=
+
+
+
+
+
+
++
++
+=
+γ
+  
+0.1
+D
+D
+5.0
+5.0
+C
+f
+W
+q
+W
+≤
+
+
+
+
+
+
++
+=
+  
+(Eqn. 5-11) 
+48
+.2
+3.2
+1.9
+5.0
+5.0
+C
+q
+W
+=
+
+
+
+
+
+
++
+=
+ ;  Use CWq = 1.0 
+From Table 5-1, the bearing capacity factors, Nγ and Nq, are 48.0 and 33.3, respectively, for a 
+friction angle of 35 degrees in Layer 2. 
+So the equation for bearing capacity is: 
+f
+ult
+f
+ult
+W
+f
+q
+q
+q
+W
+q
+ult
+B
+254
+kPa
+2553
+q
+0)
+9)(0.6)(1.
+)(48.0)(0.
+)(B
+ 
+(19.6
+ 
+0.5
+)(1.0)
+)(1.7)(1.0
+(33.3)(1.0
+ 
+kPa
+ 
+45.1
+ = 
+q
+ 
+b
+s
+C
+N
+B
+5.0
+d
+b
+s
+C
+qN
+ 
+q
+3
+m
+kN
+q
++
+=
++
+γ
++
+=
+γ
+γ
+γ
+γ
+ 
+B - 9 
+
+========== PAGE 168 ==========
+Incorporating a factor of safety of 3.0: 
+kPa
+B
+85
+851
+q
+0.3
+)
+B
+254
+kPa
+2553
+(
+q
+0.3
+q
+q
+f
+all
+f
+all
+ult
+all
++
+=
+÷
++
+=
+÷
+=
+ 
+Estimate Footing Settlement 
+Calculate stress increase at the midpoint of each soil layer using the 2-on-1 stress distribution 
+method for various footing widths – say, Bf = 3, 4.6 and 6.1 m: 
+)
+Z
+L
+)(
+Z
+B
+(
+)
+L
+)(
+B
+(
+q
+f
+f
+f
+f
+V
++
++
+=
+σ
+∆
+ 
+(Figure 5-12) 
+2
+f
+2
+f
+V
+f
+f
+)
+Z
+B
+/(
+B
+q
+:
+so
+,
+L
+B
+but
++
+=
+σ
+∆
+≅
+ 
+Layer 2 with midpoint of layer @ Z = 1.05 m below base of footing: 
+55
+.0
+)
+05
+.1
+3
+/(
+3
+q
+2
+2
+2
+V
+=
++
+=
+σ
+∆
+ 
+Layer 3a with midpoint of layer @ Z = 4.45 m below base of footing: 
+16
+.0
+)
+45
+.4
+3
+/(
+3
+q
+2
+2
+a
+3
+V
+=
++
+=
+σ
+∆
+ 
+Layer 3b with midpoint of layer @ Z = 8.3 m below base of footing: 
+07
+.0
+)3.8
+3
+/(
+3
+q
+2
+2
+b
+3
+V
+=
++
+=
+σ
+∆
+ 
+Layer 4 with midpoint of layer @ Z = 11.3 m below base of footing: 
+04
+.0
+)
+3.
+11
+3
+/(
+3
+q
+2
+2
+4
+V
+=
++
+=
+σ
+∆
+ 
+Perform similar calculations for Bf = 4.6 m and Bf = 6.1 m and tabulate: 
+B - 10 
+
+========== PAGE 169 ==========
+TABLE B1-2: STRESS INCREASE WITH DEPTH 
+AS FUNCTION OF FOOTING WIDTH 
+Stress Increase, ∆σv 
+Soil Layer 
+Depth 
+Range (m) 
+Bf = 3 m 
+Bf = 4.6 m 
+Bf = 6.1 m 
+2 
+2.3 – 4.4 
+0.55q 
+0.66q 
+0.73q 
+3a 
+4.4 – 9.1 
+0.16q 
+0.26q 
+0.33q 
+3b 
+9.1 – 12.1 
+0.07q 
+0.13q 
+0.18q 
+4 
+12.1 – 15.1 
+0.04q 
+0.08q 
+0.12q 
+Determine stress applied by footing to generate 38 mm of settlement for same range of footing 
+widths, Bf = 3, 4.6 and 6.1 m, using the Hough method: 
+General equation: 
+
+
+
+
+
+
+σ′
+σ
+∆
++
+σ′
+′
+=
+∆
+vo
+v
+vo
+o
+f
+log
+C
+1
+H
+H
+ 
+(Eqn. 5-24) 
+Correct SPT blowcounts to account for overburden pressure, N′, for each layer, and enter Figure 
+5-19 to obtain bearing capacity factor, C′: 
+Layer 2: 
+Navg = 20 
+N′/N = 1.2 
+ 
+(from Figure 5-18) 
+N′ = 24 
+C′ = 65 
+ 
+(from Figure 5-19 for silty Sand) 
+Layer 3a: 
+Navg = 40 
+N′/N = 0.9 
+ 
+(from Figure 5-18) 
+N′ = 36 
+C′ = 120 
+ 
+(from Figure 5-19 for well-graded Sand and Gravel) 
+Layer 3b: 
+Navg = 43 
+N′/N = 0.7 
+ 
+(from Figure 5-18) 
+N′ = 30 
+C′ = 102 
+ 
+(from Figure 5-19 for well-graded Sand and Gravel) 
+Layer 4: 
+Navg = 40 
+N′/N = 0.66 
+ 
+(from Figure 5-18) 
+N′ = 26 
+C′ =110 
+ 
+(from Figure 5-19 for clean, uniform Sand) 
+B - 11 
+
+========== PAGE 170 ==========
+Calculate settlement in each layer and sum the settlements to obtain the total settlement for a 
+range of applied stresses and footing widths.  Select applied stresses of q = 240 kPa, 290 kPa, 
+335 kPa and 380 kPa (corresponding to about 3, 4, 5 and 6 ksf) and nominal footing widths of 3, 
+4.6 and 6.1 m: 
+Layer 2 (Bf = 3 m): 
+mm
+15
+m
+015
+.0
+H
+)]
+kPa
+7.
+65
+/
+))
+kPa
+240
+(
+55
+.0
+kPa
+7.
+65
+log[(
+)
+65
+/
+1(
+m
+1.2
+H
+]
+'
+/)
+'
+log[(
+)'
+C
+/
+1(
+H
+H
+2
+2
+v
+v
+v
+2
+2
+o
+o
+=
+=
+∆
++
+=
+∆
+σ
+σ
+∆
++
+σ
+=
+∆
+ 
+mm
+4
+m
+004
+.0
+H
+)]
+kPa
+132
+/
+))
+kPa
+240
+(
+16
+.0
+kPa
+132
+log[(
+)
+120
+/
+1(
+m
+7.4
+H
+]
+'
+/)
+'
+log[(
+)'
+C
+/
+1(
+H
+H
+a
+3
+a
+3
+o
+v
+v
+o
+v
+a
+3
+a
+3
+=
+=
+∆
++
+=
+∆
+σ
+σ
+∆
++
+σ
+=
+∆
+ 
+mm
+1
+m
+001
+.0
+H
+)]
+kPa
+193
+/
+))
+kPa
+240
+(
+07
+.0
+kPa
+193
+log[(
+)
+102
+/
+1(
+m
+0.3
+H
+]
+'
+/)
+'
+log[(
+)'
+C
+/
+1(
+H
+H
+b
+3
+b
+3
+v
+v
+v
+3
+b
+3
+o
+o
+=
+=
+∆
++
+=
+∆
+σ
+σ
+∆
++
+σ
+=
+∆
+ 
+mm
+1
+m
+0005
+.0
+H
+)]
+kPa
+222
+/
+))
+kPa
+240
+(
+04
+.0
+kPa
+222
+log[(
+)
+110
+/
+1(
+m
+3
+H
+]
+'
+/)
+'
+log[(
+)'
+C
+/
+1(
+H
+H
+4
+4
+v
+v
+v
+4
+4
+o
+o
+≅
+=
+∆
++
+=
+∆
+σ
+σ
+∆
++
+σ
+=
+∆
+ 
+mm
+21
+mm
+1
+mm
+1
+mm
+4
+mm
+15
+Hi
+=
++
++
++
+=
+∆
+∑
+ 
+Repeat and tabulate for various footing widths and applied stresses (a spreadsheet or computer 
+tool can make these calculations rapidly): 
+TABLE B1-3: SETTLEMENT AS A FUNCTION OF 
+APPLIED STRESS AND FOOTING WIDTH 
+Settlement (mm) 
+Applied Stress 
+(kPa) 
+Bf = 3 m 
+Bf = 4.6 m 
+Bf = 6.1 m 
+240 
+21 
+28 
+31 
+290 
+25 
+31 
+35 
+335 
+28 
+34 
+38 
+380 
+30 
+37 
+41 
+ 
+ 
+ 
+B - 12 
+
+========== PAGE 171 ==========
+Compare to allowable bearing capacities at same footing widths relative to shear failure, 
+remembering that the maximum tolerable settlement is 38 mm: 
+For Bf = 3 m: 
+kPa
+1106
+kPa
+)
+m
+3
+(
+85
+851
+qall
+=
++
+=
+  >> 380 kPa (with 30 mm settlement) 
+For Bf = 4.6 m: 
+kPa
+1242
+kPa
+)
+m
+6.4
+(
+85
+851
+qall
+=
++
+=
+  >> 335 kPa (with 34 mm settlement) 
+For Bf = 6.1 m: 
+kPa
+1369
+kPa
+)
+m
+1.6
+(
+85
+851
+qall
+=
++
+=
+  >> 290 kPa (with 35 mm settlement) 
+Settlement will therefore limit the allowable bearing capacity for the design of this footing.  
+Interpolating the values in Table B1-3, find ranges of footing widths that will limit settlement to 
+38 mm or less at allowable bearing capacities of 335 kPa and 380 kPa as shown in Table B1-4. 
+TABLE B1-4: SETTLEMENT-LIMITED ALLOWABLE  
+BEARING CAPACITIES 
+Allowable Bearing Capacity 
+(kPa) 
+Range of Footing Widths That Will 
+Limit Settlement to < 38 mm 
+380 
+< 5.0 m 
+335 
+5.0 to 6.1 m 
+ 
+The geotechnical engineer should provide this table to the structural designer for sizing of the 
+footing. 
+Step 8 – Calculate sliding and passive soil resistance: 
+The footing will bear in the Unit 2 soils.  The friction angle, φ, of 35 degrees selected in Step 7 
+will be used to compute sliding resistance. 
+The general equation for sliding resistance on cohesionless soils is: 
+FR = (W + Pv) tan δ 
+(Eqn. 5-38) 
+The second term goes to zero since we are founding the footing on a cohesionless soil unit.  For a 
+concrete footing cast against the ground, δ = φ, so the ultimate sliding resistance is: 
+)
+P
+W
+(
+7.0
+35
+tan
+)
+P
+W
+(
+F
+v
+v
+R
++
+=
+°
++
+=
+ 
+ 
+B - 13 
+
+========== PAGE 172 ==========
+Since the sliding resistance will develop at strain levels much lower than those needed to develop 
+passive pressures against the side of the footing, passive pressure will be ignored unless it is 
+found that sliding resistance governs the design of the footing.  The geotechnical engineer should 
+provide this equation and the assumptions regarding use of passive pressures to the structural 
+engineer for checking the footing’s resistance to sliding. 
+Step 9 – Check global stability of the footing: 
+The geotechnical engineer has determined that since this is an interior pier with level ground 
+conditions, global stability is not a concern. 
+Step 10 – Size the footing: 
+The structural designer should make a preliminary estimate of the size of the footing by dividing 
+the Group I axial load by the largest allowable bearing pressure from Table B1-4: 
+m
+6.4
+A
+L
+B
+m
+2.
+21
+kPa
+380
+8070
+A
+q
+P
+A
+f
+f
+2
+kN
+all
+I
+≅
+=
+=
+=
+÷
+=
+÷
+=
+ 
+Then calculate eccentricity and effective footing dimensions: 
+y
+f
+f
+e
+2
+B
+B
+−
+=
+′
+ 
+(Eqn. 6-6) 
+m
+45
+.4
+)
+m
+077
+.0
+(
+2
+m
+6.4
+B
+m
+077
+.0
+8070
+620
+e
+P
+M
+e
+f
+kN
+m
+kN
+y
+Z
+y
+=
+−
+=
+′
+=
+÷
+=
+÷
+=
+−
+ 
+z
+f
+f
+e
+2
+L
+L
+−
+=
+′
+ 
+(Eqn. 6-7) 
+m
+37
+.4
+)
+m
+117
+.0
+(
+2
+m
+6.4
+L
+m
+117
+.0
+8070
+5.
+944
+e
+P
+M
+e
+f
+k
+m
+kN
+z
+Y
+z
+=
+−
+=
+′
+=
+÷
+=
+÷
+=
+−
+ 
+2
+f
+f
+m
+4.
+19
+)
+m
+37
+.4
+)(
+m
+45
+.4
+(
+L
+B
+A
+=
+=
+′
+⋅
+′
+=
+′
+ 
+Check allowable bearing stress for effective footing area: 
+kPa
+416
+m
+4.
+19
+8070
+A
+P
+q
+2
+kN
+applied
+=
+÷
+=
+′
+÷
+=
+ 
+This is greater than qall = 380 kPa for footings less than 5.0 m wide, according to Table B1-4, in 
+order to limit settlement to less than 38 mm.  Therefore the footing should be sized larger. 
+ 
+B - 14 
+
+========== PAGE 173 ==========
+Try a 4.9 m-by-4.9 m footing.  Calculate eccentricity and effective footing dimensions: 
+y
+f
+f
+e
+2
+B
+B
+−
+=
+′
+ 
+(Eqn. 6-6) 
+m
+75
+.4
+)
+m
+077
+.0
+(
+2
+m
+9.4
+B
+m
+077
+.0
+8070
+620
+e
+P
+M
+e
+f
+kN
+m
+kN
+y
+Z
+y
+=
+−
+=
+′
+=
+÷
+=
+÷
+=
+−
+ 
+z
+f
+f
+e
+2
+L
+L
+−
+=
+′
+ 
+(Eqn. 6-7) 
+m
+67
+.4
+)
+m
+117
+.0
+(
+2
+m
+9.4
+L
+m
+117
+.0
+8070
+5.
+944
+e
+P
+M
+e
+f
+k
+m
+kN
+z
+Y
+z
+=
+−
+=
+′
+=
+÷
+=
+÷
+=
+−
+ 
+2
+f
+f
+m
+2.
+22
+)
+m
+67
+.4
+)(
+m
+75
+.4
+(
+L
+B
+A
+=
+=
+′
+⋅
+′
+=
+′
+ 
+Check allowable bearing stress for effective footing area: 
+kPa
+364
+m
+2.
+22
+8070
+A
+P
+q
+2
+kN
+applied
+=
+÷
+=
+′
+÷
+=
+ 
+This is less than qall = 380 kPa for footings less than 5.0 m wide, according to Table B1-4, in 
+order to limit settlement to less than 38 mm. 
+The design is acceptable for bearing capacity and settlement considerations. 
+Step 11 – Check overturning (eccentricity) and sliding: 
+Overturning will be acceptable if eccentricity in any direction is less than one-sixth the footing 
+dimension in that direction. 
+077
+.0
+e
+e
+m
+82
+.0
+)
+m
+9.4
+(
+6
+1
+L
+6
+1
+B
+6
+1
+y
+z
+f
+f
+=
+>
+>
+=
+=
+=
+ 
+ 
+(OK) 
+A minimum factor of safety of 1.5 should be provided against sliding: 
+V
+)
+P
+W
+(
+7.0
+F
+F
+FS
+V
+sliding
+R
++
+=
+=
+  
+(FR from Step 8) 
+V
+)
+P
+W
+(
+7.0
+FS
+V
++
+=
+ 
+Calculate the weight of cover over the footing and the weight of footing: 
+The footing is bearing 2.3 m below grade.  The footing can be assumed to be 0.9 m thick. 
+B - 15 
+
+========== PAGE 174 ==========
+The area of the column is: 
+2
+2
+col
+m
+28
+.0
+)
+m
+6.0
+(
+4
+A
+=
+π
+=
+ 
+The weight of the footing and the soil cover is then (assume unit weight of concrete, γconc, 
+of 23.5 kN/m3): 
+kN
+col
+er
+cov
+kN
+ftg
+651
+)
+6.
+19
+)](
+m
+4.1(
+A
+)
+m
+9.4
+)(
+m
+9.4
+)(
+m
+4.1
+[(
+W
+508
+)
+5.
+23
+)(
+m
+9.4
+)(
+m
+9.4
+)(
+m
+9.0
+(
+W
+3
+m
+kN
+3
+m
+kN
+=
+−
+=
+=
+=
+ 
+kN
+kN
+kN
+er
+cov
+ftg
+1159
+651
+508
+W
+W
+W
+=
++
+=
++
+=
+ 
+So: 
+5.1
+31
+209
+)
+8070
+1159
+(
+7.0
+FS
+kN
+kN
+kN
+>
+=
++
+=
+ 
+(OK) 
+Step 12 – Complete structural design of footing:  
+The structural engineer completes this step. 
+ 
+B - 16 
+
+========== PAGE 175 ==========
+EXAMPLE 2: INTEGRAL BRIDGE ABUTMENT ON STRUCTURAL FILL 
+Given: 
+• An integral abutment on a spread footing is proposed for a bridge. 
+• There is no scour potential at this site. 
+• The footing length is L = 25.0 m (82 ft); other abutment dimensions are shown in Figure 
+B2-1. 
+• The approach embankment and the foundation soils are shown in Figure B2-1. 
+• The SPT hammer energy ratio is assumed to be ER = 60%. 
+• Frost penetration depth is 0.6 m (2 ft). 
+• Tolerable settlement is 25 mm (1 in). 
+• Abutment symbols are shown in Figure B2-2. 
+Find: 
+• Size the footing based on Service Load Design, Group I loads (allowable stress design 
+method), considering both the settlement and bearing capacity.  Check for overturning 
+and sliding. 
+ 
+Hard BASALT
+Well-graded clean  SAND
+6.0 m
+SPT  N-v alue
+19
+24
+27
+25
+33
+37
+37
+41
+RQD = 80%
+5.24 m
+2
+1
+0.46 m
+0.91 m
+1.22 m
+2.0 m
+0.51 m
+B
+1.5 B
+Structural f ill (Well-graded silty  SAND & GRAVEL)
+N  =  Uncorrected SPT Blowcount
+4.57 m
+Existing Ground
+Surf ace
+Key
+Boring B-1
+ φ =  38 deg  (assumed, N' = 32)
+ γ =  20.5 kN/m 3
+ φ =  f riction angle
+N'  =  Corrected SPT Blowcount
+ γ =  18.6 kN/m 3
+ γ sat =  19.6 kN/m 3
+ 
+Figure B2-1: Approach Embankment and Foundation Soils 
+B - 17 

@@ -1,0 +1,369 @@
+
+========== PAGE 162 ==========
+CHAPTER 8, RESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 8 
+8 - 11 
+ 
+ 
+Figure 8-8 Deflected Shape for Restrained System 
+8-4.04 
+Example 8-1, Single Ground Anchor Sheet Pile Wall 
+Check the adequacy of a single ground anchor sheet pile wall with a single soil layer as 
+illustrated below in Figure 8-9, with the ground anchors spaced at every 10 feet. 
+Assume that the sheet pile section is a PZ22, with a steel grade of 42 ksi. Note that 
+pressure and stress calculations will be performed on a typical one-foot strip of the 
+sheet pile wall.  
+ 
+ 
+Figure 8-9. Example 8-1 Given Information 
+
+========== PAGE 163 ==========
+CHAPTER 8, RESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 8 
+8 - 12 
+ 
+Determine:  
+1. Active & passive earth pressures 
+2. Pile embedment D with FS = 1.3 
+3. Ground anchor load with FS = 1.0 
+4. Maximum shear, maximum moment. 
+ 
+Structural properties of sheet pile section PZ22 are: 
+a. Section modulus per foot of wall width: S = 18.10 in3 
+b. Moment of inertia per foot of wall width:  I = 84.70 in4 
+c. Radius of gyration per foot of wall width:  r = 3.62 in 
+d. Area per foot of wall width: 
+ 
+ 
+ 
+ 
+Develop the pressure diagram: 
+From Rankine’s Theory: Ka = 0.33. Using the method outlined in Section 4-6, Log-Spiral 
+Passive Earth Pressure, and Figure 4-20, Passive Earth Pressure Coefficient (Caquot 
+and Kerisel, 1948), and considering the wall friction angle (δ) is equal to 15 degrees, 
+obtain the following: 
+• φ = 30°,  β = 0°,  yields  β/φ = 0 
+• initial Kp  ≈ 6.3 
+• -(δ/φ ) = (-15/30) = -0.5 
+• R = 0.746 
+  
+ 
+ 
+The lateral earth pressure distribution for the analysis of anchored walls constructed in 
+cohesionless soils may be determined using Figure 8-10. 
+𝐀𝐀= 𝐈𝐈
+𝐫𝐫𝟐𝟐= 84.7 in 4
+(3.62 in )2 = 6.46 in 2 
+   (8-4-1) 
+𝐊𝐊𝐩𝐩𝐡𝐡= 𝐊𝐊𝐩𝐩= 0.746 x 6.3 = 4.7 
+(8-4-2) 
+
+========== PAGE 164 ==========
+CHAPTER 8, RESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 8 
+8 - 13 
+ 
+ 
+Figure 8-10. Pressure Diagram for Single Ground Anchor Wall 
+ 
+The maximum ordinate (σa) of the pressure diagram is determined as follows: 
+ 
+Where the total active earth pressure for a triangular pressure distribution is calculated 
+as follows: 
+ 
+Using Equation 8-2-5:   𝐏𝐏𝐓𝐓= 𝟏𝟏. 𝟑𝟑× 𝐏𝐏 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+   (8-4-3) 
+𝐏𝐏= 𝟏𝟏
+𝟐𝟐𝛄𝛄𝐇𝐇𝟐𝟐𝐊𝐊𝐚𝐚        
+(8-4-4) 
+  
+ (8-4-5) 
+PT = 1.3P = 1.3 × 11,980 = 15,574 lb/ft 
+(8-4-6) 
+
+========== PAGE 165 ==========
+CHAPTER 8, RESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 8 
+8 - 14 
+ 
+ 
+ 
+Figure 8-11. Pressure Diagram. 
+ 
+Active stress at the points A and B as shown in Figure 8-11: 
+ 
+ 
+Active stress at the dredge line point C: 
+ 
+ 
+ 
+Let FS = 1.3  
+ 
+ 
+ 
+(8-4-7) 
+ 
+ (8-4-8) 
+𝐅𝐅𝐅𝐅= 𝐌𝐌𝐑𝐑
+𝐌𝐌𝐃𝐃
+ 
+       (8-4-9) 
+ MR = 1.3MD 
+     (8-4-10) 
+
+========== PAGE 166 ==========
+CHAPTER 8, RESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 8 
+8 - 15 
+ 
+Take moments about the ground anchor:  
+ 
+As determined above:  Kp is 4.7. 
+  
+    
+    
+Solve for D. 
+ 
+ 
+Solve for ground anchor force T by setting the resisting moment equal to driving 
+moment as shown below: 
+ 
+ 
+Find D’: 
+ 
+ 
+ 
+ 
+             (8-4-11) 
+ 
+(8-4-12) 
+MR  =  180.167D3 +  4053.75D2 
+(8-4-13) 
+MR  + 1.3 MD = 0 
+(8-4-14) 
+D3 + 18.7D2 −114.53D −223.98 = 0 
+(8-4-15) 
+D ≈6.09 ft 
+ (8-4-16) 
+ 𝐌𝐌𝐑𝐑= 𝐌𝐌𝐃𝐃 
+(8-4-17) 
+D′3 + 19.64D′2 −85.88D′ −167.95 = 0 
+(8-4-18) 
+ D′ ≈4.89 ft 
+(8-4-19) 
+ 
+(8-4-20) 
+ 
+(8-4-21) 
+
+========== PAGE 167 ==========
+CHAPTER 8, RESTRAINED SHORING SYSTEMS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 8 
+8 - 16 
+Figure 8-12. Pressure Diagram for Single-Ground Anchor Above Dredge Line Based on 𝐌𝐌𝐑𝐑= 𝐌𝐌𝐃𝐃 
+The maximum shear in the sheet pile is located at the ground anchor. 
+Maximum shear is T1L = 8,026 lb/ft. Recall the area of the sheet pile is 6.46 in2/ ft, thus: 
+PZ22 is satisfactory in shear. 
+TH = 143.87 kips   and    T = 143.87 
+cos(15°) = 148.95 kips 
+(8-4-22) 
+ T1U =
+1
+2 (934.4)(6.667′) + (934.4)(3.333′) = 3,114 + 3,114 = 6,228 lb/ft 
+(8-4-23)
+(8-4-24) 
+(8-4-25) 
+[Fv = 42,000 psi × 0.4 = 17,000 psi ] ∴ 
+      (8-4-26) 
+fv = 8,026 lbs/ft
+6.46 in2/ft = 1,242 psi/ft  <   16,800 psi 
+(8-4-23)
+
+========== PAGE 168 ==========
+CHAPTER 8, RESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 8 
+8 - 17 
+ 
+Determine moment M1 at top of ground anchor due to cantilever loads: 
+ 
+M1 = F1 x Moment arm of triangular load + F2 x Moment arm of rectangular load 
+ 
+ 
+Determine moment at zero shear below the ground anchor. Please refer to Figure 8-13 
+for the shear diagram of single ground anchor. The point of zero shear is either located 
+below the bottom of excavation or it is located between the ground anchor and the 
+bottom of excavation. For this particular example problem, when the summation of 
+forces in the horizontal direction includes the area below the bottom of excavation, a 
+quadratic equation results with two possible roots. As shown below, one root lies at 
+depth D but is not the root we are looking for. The other root is negative and therefore, 
+cannot be used: 
+ 
+Solving: 
+ 
+ yields:  
+ 
+ 
+Since the second root is invalid, the point of zero shear must be located above the 
+bottom of the excavation. Further, it can be surmised that the point of zero shear is 
+located within the sloping portion of the load diagram below the ground anchor since: 
+ 
+ 
+The slope of the load line just above the dredge line is:  
+ 
+     (8-4-27) 
+ 
+ 
+(8-4-28) 
+(8-4-29) 
+  (8-4-30) 
+ 
+(8-4-32) 
+  
+T1L −(934.4)(5′) = 8,026 lbs −4,672 lbs = 3354 lbs/ft > 0 
+y′2 −3.816y′ −5.25 = 0 
+y′ = 4.89 ft and y′ = −1.07 ft 
+(8-4-31) 
+
+========== PAGE 169 ==========
+CHAPTER 8, RESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 8 
+8 - 18 
+ 
+Solving for y’: 
+ 
+Figure 8-13. Zero Shear 
+ 
+ 
+ 
+The point of zero shear is located 5′+4.69′ = 9.69′ below T1. Taking moments about the 
+point of zero shear (O) in Figure 8-13:  
+ 
+ 
+ 
+(8,026 −4,672) = 1
+2 (934.4 + 934.4 −93.44y′)y′ 
+(2)(3,354) = 1,868.8y′ −93.44y′2 
+∴93.44y′2 −1,868.8y′ + 6,708 = 0  
+y′ = 4.69′ 
+   (8-4-33) 
+F1 = 1
+2 (93.44)(4.69′)(4.69′) = 1,027.6 lbs/ft 
+(8-4-34) 
+F2 = (93.44)(10′ −4.69′)(4.69′) = 2,326.7 lbs/ft  
+(8-4-35) 
+
+========== PAGE 170 ==========
+CHAPTER 8, RESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 8 
+8 - 19 
+ 
+ 
+ 
+Therefore, the maximum moment is at T1: 
+ 
+ 
+Check the bending stress in the sheet pile section: 
+ 
+ 
+Therefore, PZ22 is satisfactory in bending. 
+ 
+The process to check deflection is discussed in Section 7-3, System Deflection, and 
+illustrated in Example 9-1 from Chapter 9, Railroad, as well as in Appendix B, Example 
+Problems; it will not be calculated for this example. The deflection diagram in Figure 
+8-14 represents the deflected shape of the PZ22 sheet pile based on the Moment Area 
+method; therefore, use these values with caution. The deflection due to the cantilever is 
+0.20 inches. The maximum deflection is 0.23 inches and is located about 9.6 feet below 
+T1. The respective diagrams for pressure, shear, moment, and deflection for the 
+example with single ground anchors, are shown below in Figure 8-14, and are for 
+information only.  These results were obtained using the Caltrans Trenching and 
+Shoring Check Program. 
+ 
+ 
+   (8-4-36) 
+M1−tip = 77,772 −33,592 −3,211 −5,455 −22,494 = 13,020 ft-lbs/ft  
+(8-4-37) 
+M1 = 22,494 ft-lbs/ft 
+(8-4-38) 
+fb = 22,494 ft-lb/ft × 12 in/ft
+18.10 in3/ft
+= 14,913 psi 
+(8-4-39) 
+Fb = 42,000 psi × 0.6 ≈25,000 psi ∴ 
+(8-4-40) 
+
+========== PAGE 171 ==========
+CHAPTER 8, RESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 8 
+8 - 20 
+ 
+ 
+Figure 8-14. Pressure, Shear, Moment, and Deflection Diagrams (CT-T&S Program) 
+ 
+
+========== PAGE 172 ==========
+CHAPTER 8, RESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 8 
+8 - 21 
+ 
+8-4.05 
+Example 8-2 Multiple Ground Anchor Soldier Pile 
+Wall 
+Check the adequacy of the multi-ground anchor cantilevered soldier pile wall in one-
+layered soil. The soldier piles are HP8 x 36 steel beams, at 8 feet spacing, placed in    
+2-foot-diameter holes filled with 4-sack concrete.  
+ 
+Given:  
+ 
+ 
+ 
+Figure 8-15. Multiple Ground Anchor Soldier Pile Wall, Example 8-2 
+ 
+Determine: 
+1.  Active & passive earth pressures 
+2.  Pile embedment D 
+3. Ground anchor loads 
+4.  Maximum shear, maximum moment 
+ 
+Solution: 
+In the case of multiple ground anchor walls, the lateral active horizontal earth pressure 
+for the typical multilevel anchors wall is shown in Figure 8-16. 

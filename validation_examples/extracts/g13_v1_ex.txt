@@ -1,0 +1,607 @@
+
+========== PAGE 370 ==========
+ 
+5-44 
+6. Check the time rate of settlement. If the time for settlement is too large consider 
+changing the column spacing. 
+7. Check global stability. 
+The design process for rammed aggregate piers is similar in many respects to stone columns. 
+However, the major difference in design of the two systems is with respect to settlement 
+analysis that is presented in the following sections.  
+4.2.3 Settlement Analysis 
+Rammed aggregate pier settlement control design methodology is based on a two-layer 
+settlement approach as described by Lawton et al. (1994), Fox and Cowell (1998), and 
+Wissmann et al. (2002). The installation of rammed aggregate piers within the aggregate 
+column-reinforced zone, referred to as the upper zone, creates a stiffened, engineered zone 
+with reduced compressibility that reduces settlement of embankments and transportation-
+related structures. The settlement below the rammed aggregate pier-reinforced zone, referred 
+to as the lower-zone, is evaluated using conventional geotechnical analysis approaches. The 
+total settlement (stot) of the transportation structures is evaluated as the sum of the upper zone 
+settlement (suz) and the lower zone settlement (slz): 
+lz
+uz
+tot
+s
+s
+s
++
+=
+ 
+[Eq. 5-11] 
+4.2.3.1 Settlement in the Rammed Aggregate Pier-Reinforced Zone 
+Settlement in the rammed aggregate pier-reinforced zone (upper zone) is estimated by first 
+calculating the top-of-pier stress (qg) using the following equation: 
+
+
+
+
++
+−
+=
+1
+a
+a
+s
+s
+g
+R
+R
+n
+n
+q
+q
+ 
+[Eq. 5-12] 
+where, 
+q 
+= 
+average applied bearing pressure 
+Ra 
+= 
+ratio of the cross-sectional area coverage of the rammed aggregate 
+piers to the matrix soil 
+ns 
+= 
+stress concentration ratio between the rammed aggregate piers and the 
+matrix soil 
+
+========== PAGE 371 ==========
+ 
+5-45 
+Research has shown that stress concentration ratios range from 4 to 45 for rigid footings. 
+Because embankments and most MSE walls are not rigid structures, stress concentration 
+ratios may be lower than those observed for rigid footings and should be selected with care. 
+In addition, the stress concentration ratio is related to the stiffness of the matrix soil with 
+larger ratios resulting at softer soil sites. Suggested stress concentration ratios ranging from 5 
+to 10 may be used for settlement control of embankments. 
+The settlement of the rammed aggregate pier-reinforced zone is estimated as the top-of-
+rammed aggregate pier stress, qg, divided by the rammed aggregate pier stiffness modulus, 
+kg,: 
+g
+g
+uz
+k
+q
+s =
+ 
+[Eq. 5-13] 
+Design rammed aggregate pier stiffness modulus values range from 75 pci to 360 pci for 
+support of rigid footings. Conservative stiffness modulus values should be used for support 
+of embankments and transportation-related structures (Collin 2007). 
+4.2.3.2 Settlement below the Rammed Aggregate Pier Reinforced Zone  
+Settlement below the rammed aggregate pier-reinforced zone is evaluated using conventional 
+geotechnical approaches, consisting of either elastic settlement analyses or consolidation 
+analyses using equation 5-14 for cohesionless or overconsolidated cohesive soils and 
+equation 5-15 for normally-consolidated cohesive soils  
+E
+H
+q
+slz
+∆
+=
+ 
+[Eq. 5-14] 
+
+
+
+
+
+
+∆
++
+
+
+
+
+
+
++
+=
+o
+o
+o
+c
+lz
+p
+q
+p
+H
+e
+c
+s
+log
+1
+1
+ 
+[Eq. 5-15] 
+where H is the thickness of the lower zone, E is the matrix soil elastic modulus within the 
+lower zone, cc is the matrix soil coefficient of compressibility, eo is the matrix soil void ratio, 
+po is the vertical effective stress at the mid-point of the compressible layer, and ∆q is the 
+average bearing pressure applied by the embankment. The average applied bearing pressure 
+is the product of the applied pressure and the stress influence factor, Iσ. The stress influence 
+factor can be determined using either Boussinesq or Westergaard’s method. Rammed 
+aggregate pier reinforced soil is typically considered a layered soil and therefore 
+Westergaard’s method is typically used. However, for embankments, the stress influence 
+
+========== PAGE 372 ==========
+ 
+5-46 
+factor within the lower zone is typically assumed to be 1.0 because of the large lateral extent 
+of embankment fills.  
+Typically, elastic modulus settlement approaches are used to estimate settlement in granular 
+soils and heavily over-consolidated cohesive soils. Matrix soil equivalent elastic modulus 
+values may be estimated using published correlations from SPT N-values, undrained shear 
+strengths, CPT tip resistances, or other in situ tests. Consolidation settlement approaches are 
+used to evaluate settlement in normally-consolidated or lightly over-consolidated cohesive 
+soils. 
+4.3 
+Design Examples 
+4.3.1 Rammed Aggregate Piers 
+The following design example is provided to demonstrate the method to determine settlement 
+of an embankment supported on rammed aggregate piers.  
+4.3.1.1 Problem 
+A new embankment is to be constructed over a soft clay layer that is underlain by rock. The 
+geometry of the embankment and soil stratigraphy are shown in Figure 5-24.  
+Figure 5-24. Example problem 1 geometry. 
+Determine the total settlement that will occur after the embankment is constructed. The 
+spacing of the columns is 5 feet and the diameter of the columns is 2.75 feet. 
+4.3.1.2 Total Settlement Magnitude without Ground Improvement 
+(
+)
+(
+)
+psf
+pcf
+pcf
+ft
+z
+P
+w
+sat
+o
+432
+4.
+62
+120
+5.7
+=
+−
+=
+−
+=
+γ
+γ
+ 
+(
+)
+psf
+ft
+pcf
+H
+q
+500
+,
+2
+20
+125
+=
+=
+=γ
+ 
+
+========== PAGE 373 ==========
+ 
+5-47 
+(
+)
+( )
+inches
+ft
+P
+q
+P
+H
+e
+c
+S
+o
+o
+o
+c
+22
+83
+.1
+432
+2500
+432
+log
+15
+7.0
+1
+1
+25
+.0
+log
+1
+1
+=
+=
+
+
+
+
+
+
++
+
+
+
+
+
+
++
+=
+
+
+
+
+
+
+
+
+
+
+
+
+∆
++
++
+=
+ 
+The total expected settlement of the embankment without ground improvement is 22 inches. 
+The proposed aggregate column layout for the embankment is shown in Figure 5-25.  
+Figure 5-25. Aggregate column ground improvement layout. 
+Determine the anticipated amount of settlement with the rammed aggregate piers. 
+4.3.1.3 Settlement Magnitude with Rammed Aggregate Piers 
+(
+)
+27
+.0
+25
+.5
+94
+.5
+2 =
+=
+=
+ft
+ft
+a
+A
+R
+g
+a
+ 
+( )
+25
+.5
+5
+05
+.1
+05
+.1
+=
+=
+=
+s
+de
+ 
+(
+)
+psf
+ft
+pcf
+H
+q
+500
+,
+2
+20
+125
+=
+=
+=γ
+ 
+(
+)
+psf
+psf
+R
+R
+n
+n
+q
+q
+a
+a
+s
+s
+g
+383
+,6
+1
+27
+.0
+27
+.0
+6
+6
+500
+,2
+1
+=
+
+
+
+
++
+−
+=
+
+
+
+
++
+−
+=
+ 
+(
+)
+inches
+ft
+in
+pci
+psf
+k
+q
+s
+g
+g
+uz
+68
+.0
+144
+65
+383
+,6
+2
+2
+=
+
+
+
+
+=
+=
+ 
+4.3.2 Stone Columns 
+4.3.2.1 Problem 
+A new embankment is to be constructed over a soft clay layer that is underlain by dense sand 
+with and an average N160 = 48. The geometry of the embankment and soil stratigraphy are 
+shown in Figure 5-26.  
+
+========== PAGE 374 ==========
+ 
+5-48 
+Figure 5-26. Example problem 2 geometry and soils. 
+Determine the total settlement that will occur after the embankment is constructed. The 
+spacing of the columns is 5.7 feet and the diameter of the columns is 3.0 feet. Assume that no 
+settlement on the dense sand will occur. 
+4.3.2.2 Total Settlement Magnitude without Ground Improvement 
+(
+)
+(
+)
+psf
+pcf
+pcf
+ft
+z
+P
+w
+sat
+o
+440
+,1
+4.
+62
+120
+25
+=
+−
+=
+−
+=
+γ
+γ
+ 
+(
+)
+psf
+ft
+pcf
+H
+q
+875
+,1
+15
+125
+=
+=
+=γ
+ 
+(
+)
+(
+)
+inches
+ft
+P
+q
+P
+H
+e
+c
+S
+o
+o
+o
+c
+27
+26
+.2
+440
+,1
+875
+,1
+440
+,1
+log
+50
+6.0
+1
+1
+2.0
+log
+1
+1
+=
+=
+
+
+
+
+
+
++
+
+
+
+
+
+
++
+=
+
+
+
+
+
+
+
+
+
+
+
+
+∆
++
++
+=
+ 
+4.3.2.3 Settlement Magnitude with Stone Columns 
+(
+)
+(
+)
+6.3
+0.3
+7.5
+2
+2
+=
+=
+sc
+A
+A
+ 
+Using the Priebe curve from Figure 5-27, determine the settlement ratio.  
+
+========== PAGE 375 ==========
+ 
+5-49 
+After Wallays et al. 1983 
+Figure 5-27. Example problem 2 settlement ratio determination. 
+The settlement ratio is 2.7. Therefore, the settlement of the embankment using stone columns 
+as ground improvement is 10 inches. 
+4.4 
+Design Verification 
+As an important adjunct to design, a field verification program of load tests and in situ testing 
+must be developed and implemented through appropriate construction specification 
+requirements. A program should be specified, regardless of the contracting method. 
+A combination of load tests on aggregate columns constructed before, during, and after 
+production should be specified to verify the design assumptions and the performance 
+specification. There are three types of load tests: (1) short-term tests, which are used to 
+evaluate ultimate stone column bearing resistance, (2) long-term tests, which are used to 
+measure the consolidation settlement characteristics; and (3) horizontal or composite shear 
+tests, which are used to evaluate the composite aggregate-soil shear strength for use in 
+
+========== PAGE 376 ==========
+ 
+5-50 
+stability analyses. The most common of these tests is the short-term load test on a single 
+column. 
+The short-term load tests, similar to pile load tests, should be performed after all excess pore 
+pressures induced during construction have been dissipated. The load increment should 
+closely correspond to the actual loading. For example, if the actual foundation load will be 
+applied very slowly, a load increment of approximately 10 percent of the ultimate should be 
+used. A rapid loading may result in immediate settlement, as well as consolidation 
+settlement. If the actual load will be applied rapidly, a load increment of 20 to 25 percent of 
+ultimate should be used. The tests are generally performed to 150% of the design load, and 
+the measured settlement is compared to project settlement tolerance. For example, a final 
+acceptance criterion of 1 inch of settlement at 150 to 200 percent of the design load appears 
+to be a reasonable criterion for columns supporting a structure. 
+The long-term settlement of the stone column foundation is usually estimated from the 
+results of short-term load tests on single stone columns. Mitchell (1981) reported that the 
+foundation settlement due to a uniform loading of a large area was 5 to 10 times greater than 
+the settlement measured in a short-term load test on a single column. However, there is very 
+little field data available to confirm this behavior. Therefore, it is recommended that long-
+term load tests on a group of columns be conducted in conjunction with short-term load tests 
+to develop an estimate of the settlement of the stone column foundation. The long-term load 
+tests should be conducted on a minimum of three to four stone columns located within a 
+group of 9 to 12 columns having the proposed spacing and pattern. The load should be 
+applied over the tributary area of the columns and left in place until the cohesive soil reaches 
+a primary degree of consolidation of 90-95 percent. The applied load could consist of column 
+backfill material, native material, and/or the dead weight from the short-term load tests. The 
+results of these tests will provide valuable information for estimating the ultimate settlement 
+of the stone column foundation. 
+During the production phase of construction, a few short-term load tests can be performed for 
+quality control purposes. These tests are referred to as proof tests and are used to verify 
+quality control during production. The load applied in the proof test is usually 150 to 200 
+percent of the allowable/design load. 
+In situ testing to evaluate the effect of the stone column construction on the native cohesive 
+soil can be also specified. However, the specified test method should be selected on the basis 
+of its ability to measure changes in lateral pressure in cohesive soils. The cone penetrometer 
+(CPT), the flat plate dilatometer (DMT), and the pressuremeter (PMT) appear to provide the 
+best means for measuring the change, if any, in lateral stress due to stone column 
+construction. Due to the limited amount of information that will be obtained from CPT, 

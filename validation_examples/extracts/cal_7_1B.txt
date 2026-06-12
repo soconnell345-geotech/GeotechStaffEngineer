@@ -1,0 +1,812 @@
+
+========== PAGE 133 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 26 
+ 
+Example lagging calculations are based on Chapter 6, Structural Design of Shoring 
+Systems, Section 6-5, Lagging. A reduction factor of 0.6 will be used to reduce the soil 
+distribution behind the lagging. See Section 6-5.01, Example Lagging Calculations, of 
+this manual.  
+7-5.05 
+Example 7-1B: Cantilevered Soldier Pile Wall by 
+Simplified Method 
+Perform a shoring check for a W14x120 cantilevered soldier-pile-lagging wall with piles 
+at 8 feet on center encased in 2-foot diameter holes filled with 4-sack concrete, using 
+the AASHTO simplified procedure. The pressure of 72 psf is the minimum lateral 
+construction surcharge acting on the timber lagging that is caused by typical 
+construction loading. The soil properties are shown below.  
+ 
+ 
+Figure 7-24. Cantilevered Soldier-Pile-Lagging Wall Cross-Section 
+Use these steps: 
+1. Calculate active & passive earth pressures 
+2. Determine pile embedment, D 
+3. Calculate maximum shear & moment 
+4. Calculate service deformation 
+5. Calculate timber lagging deflection. 
+
+========== PAGE 134 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 27 
+ 
+Determine active and passive earth pressures: 
+• Calculate active and passive earth pressure coefficients. Since the wall friction 
+(δ) is zero, use Rankine earth pressure theory to calculate the active and passive 
+earth pressure coefficients: 
+ 
+ 
+Note: Rankine theory tends to underestimate the passive earth pressure. It is 
+recommended to use the Log-Spiral model to compute the passive earth 
+force.  
+• Calculate earth pressure distribution: 
+Lateral load due to minimum construction surcharge above the excavation line 
+only: 
+ 
+ 
+Lateral load distribution at excavation level: 
+ 
+Active lateral load distribution of the soil below the dredge line at depth Do: 
+ 
+Passive Lateral load distribution in front of the wall, at depth Do: 
+ 
+ Calculate resultant earth forces: 
+1. Calculate active earth force due to surcharge PAS: 
+ 
+ 
+(7-5-35) 
+ 
+  (7-5-36) 
+σsur = 0.072 ksf 
+  (7-5-37) 
+σ = 0.125 x 15 x 0.271 = 0.508 ksf 
+(7-5-38) 
+σADO = 0.508 + (0.271 x 0.125 x DO)=(0.508 + 0.0339 DO)ksf 
+(7-5-39) 
+σpDO = 0.125 x 3.69 x DO = 0.461 DO ksf 
+(7-5-40) 
+PAs=15 ft × 8 ft × 0.072 ksf =8.64 kips 
+(7-5-41) 
+
+========== PAGE 135 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 28 
+ 
+2. Calculate active earth force above dredge line using 8-foot spacing, PA1: 
+ 
+3. Calculate active earth force below dredge line using 2-foot hole diameter, 
+PA2: 
+ 
+ 
+• Calculate passive earth force below dredge line using 2-foot hole diameter and 
+soil arching capability factor, Pp: 
+ 
+ 
+These calculated values are summarized in Figure 7-25. 
+ 
+Figure 7-25. Force Diagram  
+PA1= 15
+2  ft × 8 ft × 0.508 ksf = 30.48 kips 
+(7-5-42) 
+PA21= D0×2×0.508 = 1.016 D0 kips 
+  (7-5-43) 
+ 
+(7-5-44) 
+f = 0.08 × ∅ = (0.08×35)= 2.8 
+(7-5-45) 
+ 
+(7-5-46) 
+
+========== PAGE 136 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 29 
+ 
+Calculate driving and resisting moments as shown in Table 7-1 and Table 7-2: 
+ 
+Table 7-1. Driving Moments 
+Driving Force (kips) 
+Arm (ft) 
+Driving Moment MDR  
+8.64 
+7.5 + D0 
+64.8 + 8.64D0 
+30.48 
+5 + D0 
+152.4 + 30.48D0 
+1.016D0 
+D0
+2  
+0.508D0
+2
+  
+0.0339D0
+2 
+D0
+3  
+0.0113D0
+3 
+ 
+Table 7-2. Resisting Moments 
+Resisting Force (kips) 
+Arm (ft) 
+Resisting Moment MRS  
+1.291D0
+2 
+D0
+3  
+0.430D0
+3 
+ 
+ 
+ 
+ 
+Calculate embedment depth:  
+ 
+ 
+ 
+Determine D to account for pile embedment required below point O. 
+ 
+ Note that this embedment depth, D, does not have a safety factor applied.  
+MDR = 0.0113 D0
+3 + 0.508 D0
+2 + 30.48 D0 + 152.4 + 8.64 D0 + 64.8 
+(7-5-47) 
+MRS = 0.43 D0
+3 
+(7-5-48) 
+MDR = 0.0113 D0
+3 + 0.508 D0
+2 + 30.48 D0 + 152.4 + 8.64 D0 + 64.8 
+(7-5-49) 
+D0
+3 −1.2133 D0
+2 −93.432 D0 −518.75 = 0  
+(7-5-50) 
+D0 = 12.272 ft 
+Solving for Do :   
+(7-5-51) 
+D = 1.2D0 = 14.73 ft 
+(7-5-52) 
+
+========== PAGE 137 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 30 
+ 
+Calculate maximum moment:   
+The maximum moment is located at distance Y below the excavation line where the 
+shear is equal to zero. Therefore, the summation of horizontal forces at the distance Y 
+must be set to equal zero.  
+ 
+ 
+ 
+ 
+ 
+ 
+Figure 7-26 displays the shear and moment diagram using the Simplified Method, and 
+Figure 7-27 displays the deflection diagram. 
+ 
+(7-5-53) 
+1.2571Y 2  – 1.016Y – 39.12 = 0  
+(7-5-54) 
+Y 2 – 0.808Y – 31.119 = 0   =>   Y = 5.997 ft (below the dredge line) 
+(7-5-55) 
+Vmax = 1.291 × 12.2722 −8.64 −30.48 −1.016 x 12.272 −5.11 = 137.729 kips  
+(7-5-56) 
+ 
+(7-5-57) 
+Mmax= 379.697  kip-ft 
+(7-5-58) 
+
+========== PAGE 138 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 31 
+ 
+ 
+Figure 7-26. Shear and Moment Diagram (CT_T&S Program) 
+ 
+ 
+Figure 7-27. Deflection by Simplified Method (CT_T&S Program) 
+
+========== PAGE 139 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 32 
+ 
+Table 7-3 below is a summary of these two methods of shoring system analysis. The 
+Simplified Method is inherently slightly more conservative for embedment depth and 
+shear. As a reminder to the reader, both the Rigorous and the Simplified methods only 
+apply to unrestrained (cantilevered) shoring systems. 
+ 
+Table 7-3. Comparison of Results Between Simplified Method and Conventional Method 
+Characteristic 
+Conventional 
+Simplified 
+Depth, D (ft) 
+13.53 
+*14.73 
+Shear, V (kips) 
+91.28 
+136.97 
+Moment, M (kip-ft) 
+379.90 
+379.70 
+Deflection ∆ (in) 
+1.73 
+1.64 
+Note: Simplified depth D, is increased by 20% (D = 1.2Do, where Do = 12.3). The depth, D, shown above 
+only used a safety factor of 1.0. 
+7-5.06 
+Example 7-2: Cantilevered Soldier Pile Wall, 
+Simplified Method with Two Soil Layers above the 
+Excavation 
+For a shoring system subjected to the lateral load of two different soil layers above the 
+excavation, calculate the total required horizontal force using Rankine earth pressure 
+theory. See Example 5 from Appendix B, Example Problems, for a related example.  
+COARSE SAND AND 
+γ Dry =130 pcf 
+φ = 37 ο 
+FINE SAND,  φ = 30 ο 
+γ Dry =102.4 pcf 
+4 ft 
+6 ft 
+20 ft 
+COARSE SAND AND GRAVEL 
+γ Dry =130 pcf 
+φ = 37 ο 
+FINE SAND,  φ = 30 ο 
+γ Dry =102.4 pcf 
+4 ft 
+6 ft 
+20 ft 
+ 
+Figure 7-28. Diagram of Shoring Cross Section and Soil Properties 
+
+========== PAGE 140 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 33 
+ 
+Determine:   
+• Calculate and plot earth pressure distribution. 
+• Calculate the total force on the shoring system. 
+ 
+Solution: 
+ 
+ 
+ 
+ 
+Figure 7-29. Pressure Loading Diagram 
+ 
+In Figure 7-29 above and the analysis below, the subscripted numbers refer to the soil 
+layer. The superscripted + refers to the stress at the indicated soil layer due the material 
+above the layer line based on Ka of that soil. The superscripted – refers to the stress at 
+the indicated soil layer for the material above the layer line based on the Ka of the soil 
+below the layer line.   
+4 ft
+6 ft
+20 ft
+Water
+Pressure
+Stress Points
+a1
+1
+=
++
+σ
+a2
+1
+=
+−
+σ
+a4
+3
+3
+=
+=
++
+−
+σ
+σ
+a3
+2
+2
+=
+=
++
+−
+σ
+σ
+a
+Water
+5 = σ
+a1
+a2
+a3
+a4
+a5
+4 ft
+6 ft
+20 ft
+Water
+Pressure
+Stress Points
+a1
+1
+=
++
+σ
+a2
+1
+=
+−
+σ
+a4
+3
+3
+=
+=
++
+−
+σ
+σ
+a3
+2
+2
+=
+=
++
+−
+σ
+σ
+a
+Water
+5 = σ
+a1
+a2
+a3
+a4
+a5
+ 
+(7-5-59) 
+ 
+(7-5-60) 
+
+========== PAGE 141 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 34 
+ 
+ 
+ 
+ 
+ 
+ 
+Water Pressure (at excavation line): 
+ 
+Driving Forces: 
+ 
+ 
+ 
+ 
+ 
+ 
+Net Forces: 
+ 
+σ1
++ = (130pcf)(4ft)(0.249) = 129.48 psf   
+(7-5-61) 
+σ1
+−= (130pcf)(4ft)(0.333) = 173.16 psf  
+ 
+(7-5-62) 
+σ2
++ = 173.16 + (102.40pcf)(6ft)(0.333) = 377.76 psf 
+(7-5-63) 
+σ2
++ = σ2
+−= 377.76 psf   
+ 
+(7-5-64) 
+σ3
++ = σ3
+−= 377.76 + (102.40 −62.40)(20)(0.333) = 644.16 psf  
+ 
+(7-5-65) 
+σa5 = 20(62.4pcf) = 1,248.0 psf 
+(7-5-66) 
+F1 = 1
+2 (4ft)(129.48 psf) = 258.96 lb/ft   
+ 
+(7-5-67) 
+F2 = (6ft)(173.16 psf) = 1,038.96 lb/ft  
+ 
+(7-5-68) 
+F3 = 2 (6ft)(377.76 −173.16 psf) = 613.80 lb/ft  
+ 
+1
+ (7-5-69) 
+F4 = (20ft)(377.76 psf) = 7,555.20 lb/ft  
+(7-5-70) 
+F5 = 1
+2 (20ft)(644.16 −377.76 psf) = 2,664.00 lb/ft  
+(7-5-71) 
+F6 = 1
+2 (20ft)(1248 psf) = 12,480 lb/ft 
+(7-5-72) 
+FTOTAL = 24,610.92 lb/ft 
+(7-5-73) 
+
+========== PAGE 142 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 35 
+ 
+ 
+ 
+Figure 7-30. Force Loading Diagram 
+ 
+7-5.07 
+Example 7-3: Cantilevered Soldier Pile Wall, 
+Simplified Method  
+Using the Simplified Method, check the adequacy of the cantilevered soldier pile wall in 
+granular 2-layered soil with a negative slope in the front of the wall. The soldier pile is 
+an HP12X84, 50 ksi steel beam placed in a 2-foot diameter hole filled with 4-sack 
+concrete. Refer to Figure 7-31. 
+ 
+4 ft
+6 ft
+A1 = F1
+F1
+F2
+F3
+F4
+F6
+A1
+A2
+A3
+A4
+A5
+A6
+F5
+A2 = F2
+A3 = F3
+A4 = F4
+A5 = F5
+A6 = F6
+20 ft
+Water
+Pressure
+4 ft
+6 ft
+A1 = F1
+F1
+F2
+F3
+F4
+F6
+A1
+A1
+A2
+A2
+A3
+A3
+A4
+A4
+A5
+A5
+A6
+A6
+F5
+A2 = F2
+A3 = F3
+A4 = F4
+A5 = F5
+A6 = F6
+20 ft
+Water
+Pressure
+
+========== PAGE 143 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 36 
+ 
+ 
+Figure 7-31. Soldier Pile Wall with Sloping Ground, Example 7-3 
+ 
+Determine:   
+1. Active & passive earth pressures  
+2. Pile embedment, D   
+3. Maximum moment.   
+ 
+Solution: 
+ 
+Calculate the active & passive earth pressures for layer 1: 
+ 
+Use Coulomb theory to calculate active earth pressure in layer 2. Note that due to layer 
+2 having a friction angle, δ, between the soil and the shoring, the active and passive 
+pressures act at an angle (to the horizontal), and thus will need to be converted to the 
+horizontal value. 
+ 
+ 
+(7-5-74) 
+
+========== PAGE 144 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 37 
+The passive horizontal earth pressure coefficient Kph is calculated using the method 
+outlined in Section 4-6, Log-Spiral Passive Earth Pressure, and Figure 4-20, as shown 
+below: 
+Calculate δ/φ: 
+Calculate β/φ: 
+Where beta (β) is the slope of the backfill. 
+Use Log-Spiral to determine the passive soil coefficient, Kp, using Figure 4-20. 
+Determine Kp from Figure 4-20:  Kp = 1.65 
+Determine the reduction factor R, using the ratio of δ/φ (thru interpolation of 
+Figure 4-20):  R = 0.8  
+Kp is acting at an angle due to the wall friction angle, δ, of 24 degrees. Thus, 
+calculate Kp acting in the horizontal, Kph: 
+(7-5-75) 
+(7-5-76) 
+𝛅𝛅
+𝛟𝛟= 24
+36 = 0.67 
+(7-5-77) 
+𝛃𝛃
+𝛟𝛟= −32
+36 = −0.89 
+(7-5-78) 
+𝐊𝐊𝐏𝐏
+′ = 𝐊𝐊𝐩𝐩×  𝐑𝐑= 1.65 × 0.8 =  1.32 
+(7-5-79) 
+𝐊𝐊𝐩𝐩𝐩𝐩= 𝐊𝐊′𝐩𝐩×  𝐜𝐜𝐜𝐜𝐜𝐜(𝛅𝛅) = 1.32 ×  cos(24) = 1.20 
+(7-5-80) 
+
+========== PAGE 145 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 38 
+ 
+ 
+Where:  
+δ = Friction angle between soil and shoring members (in this case, it is with 
+the embedded piles). 
+Φ =  Effective friction angle of soil. 
+Ka = Coefficient of active lateral earth pressure. 
+Kp = Coefficient of passive lateral earth pressure. 
+ 
+ 
+Figure 7-32. Active and Passive Earth Pressure Coefficients 
+ 
+ 
+Calculate earth pressure distribution:  
+ 
+Lateral load due to surcharge above the excavation line only: 
+ 
+ 
+Note: Surcharge is assumed to act uniformly for the top 10 feet only. 
+Lateral load distribution for the first layer: 
+ 
+σSur = (120) × (2) × (0.283) = 68 psf; use 72 psf minimum   
+(7-5-81) 
+σ+ = 72 + [(120) × (10) × (0.283)] = 411.6 psf; use 412 psf 
+(7-5-82) 
+
+========== PAGE 146 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 39 
+Lateral load distribution for the second layer at the soil boundary: 
+Lateral load distribution for the second layer at depth D: 
+Passive lateral load distribution for the second layer in the front of depth D: 
+Calculate active earth pressure due to surcharge PAS: 
+Calculate active earth pressure for the first soil layer PA1: 
+Calculate active earth pressure for the second soil layer PA2:  
+Calculate passive earth pressure for the second soil layer Pp:  
+Because the pile spacing is equal to 4 times the effective width of the pile and the 
+arching factor is limited to a maximum of 3, the arching factor will be used to increase 
+the effective pile width for the passive forces below the dredge line. Only the effective 
+width of the pile should be used for the active forces below the dredge line because 
+the arching factor is not applicable there. Figure 7-33 provides the total pressure for 
+each area per foot of wall. Use these in reference to Table 7-4 and Table 7-5 for 
+calculating the Driving and Resisting moments. 
+Kah = Ka ×  cos(δ) = 0.235 × cos(24) = 0.215 
+(7-5-83) 
+σ−= (120) × (10) × (0.215) = 258 psf 
+(7-5-84) 
+σD =  258 + (125)(0.215)D = (258 + 26.88D) psf 
+(7-5-85) 
+σPD = (125)(1.2)D = 150D psf 
+(7-5-86) 
+PAS = 72 × 10 = 720 plf 
+(7-5-87) 
+(7-5-88) 
+PA21 = 258D plf 
+(7-5-89) 
+(7-5-90) 
+(7-5-91) 
+
+========== PAGE 147 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+ 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 40 
+ 
+ 
+Figure 7-33. Pressure Diagram 
+  
+Table 7-4. Calculate Driving Moment (MDR) about Point “O” using Figure 7-33 
+Driving Force = 
+Pa × Spacing 
+Moment Arm(ft.) 
+Driving Moment MDR 
+720 × 8 = 5760 
+5+D 
+5760D+28800 
+1700 × 8 = 13600 
+10/3+D 
+13600D+45333 
+258D × 2 = 516D 
+D/2 
+258 D2 
+13.44D2 × 2 = 26.88D2 
+D/3 
+8.96 D3 
+ 
+ 
+Table 7-5. Calculate the Resisting Moment (MRS) about Point “O” using Figure 7-33 
+Resisting Force = 
+Pp × Spacing 
+Moment Arm(ft.) 
+Resisting Moment MRS 
+75D2 × (5.76) = 432D2 
+D/3 
+144 D3 
+ 
+ 
+
+========== PAGE 148 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 41 
+For the external stability use the safety factor of 1.3 to calculate the embedment depth 
+and then increase it by 20 percent to account for the Simplified Method. 
+Increase D by 20 percent: 
+Calculate embedment depth using a factor of safety (FS) equal to 1.0 for the purposes 
+of calculating the shear and moments. 
+Increase D by 20 percent: 
+MDR = 8.96D3 − 258D2 − 19360D − 74134 = 0 
+(7-5-92) 
+MRS = 144D3 
+(7-5-93) 
+MRS
+MDR
+= 1.3 
+(7-5-94) 
+(7-5-95) 
+D3 −2.53D2 −190.2D −728.2 = 0 ⟶D = 16.6 ft 
+(7-5-96) 
+16.6 × 1.20 ⟶D = 19.9 ft 
+(7-5-97) 
+MRS
+MDR
+= 1.0 
+(7-5-98) 
+144D3 − 8.96D3 − 258D2 − 19360D − 74134 = 0 
+(7-5-99) 
+D3 −1.91D2 −143.3D −549 = 0 ⟶D = 14.4 ft 
+(7-5-100) 
+14.4 × 1.20 →D = 17.3 ft 
+(7-5-101) 
+
+========== PAGE 149 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 42 
+Figure 7-34. Location of Zero Shear and Maximum Moment 
+Calculate zero shear location using Figure 7-34: 
+Based on zero shear location, maximum moment can be calculated as below: 
+432Y2 −26.88Y2 −516Y −19360 = 0 
+(7-5-102) 
+Y2 −1.3Y −47.8 = 0 
+(7-5-103) 
+Y = 7.59 ft  Below the dredge line 
+(7-5-104) 
+(7-5-105) 
+Mmax =  176893 lb-ft 
+(7-5-106) 
+
+========== PAGE 150 ==========
+CHAPTER 7, UNRESTRAINED SHORING SYSTEMS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 7 
+7 - 43 
+      Recall: Sx = 106 in3 for an HP 12x84 
+In summary, using the Simplified Method, the adequacy of the 10-foot cantilevered 
+soldier pile wall for a granular 2-layered soil was completed to calculate the active and 
+passive earth pressures, the pile embedment (D), and the maximum moment.   
+Deflection and structural integrity of the lagging material were not included in this 
+example.   
+The pile embedment required was determined to be 19.9 feet with a safety factor of 1.3. 
+Use this value to compare with the Contractor’s value in the shop drawings. The 
+calculated maximum moment was used to verify the adequacy of the steel beam 
+provided and was acceptable. Keep in mind that the calculations would have to be done 
+if any of the variables change, such as excavation height, pile spacing, beam type, or 
+soil conditions. See Example 4 from Appendix B, Example Problems, for a related 
+example.  
+Fb = 0.60Fy = 0.60(50 ksi) = 30 ksi 
+(7-5-107) 
+SRequired = Mmax
+Fb
+= 176.893 ×  12
+30
+= 70.8 in3 < 106 in3 ∶O. K 
+(7-5-108) 
+
+========== PAGE 151 ==========
+ 
+JULY 2025 
+ 
+ 
+CHAPTER 8 
+ 
+ 
+RESTRAINED SHORING 
+SYSTEMS 
+ 
+ 
+ 
+ 

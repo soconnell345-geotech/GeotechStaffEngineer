@@ -1,0 +1,675 @@
+
+===== GEC 10.pdf (747 pages, 82 hits) =====
+p8: Idealized Geomaterial Layer Profiles (Step 1) ......................................................
+p12: APPENDIX A DESIGN EXAMPLE:  DRILLED SHAFTS FOR REPLACEMENT BRIDGE ........... A-1
+p14: Design Example (see Appendix A). ...................................................................
+p19: Figure 10-5 Subsurface Profile and Drilled Shaft for Illustrative Example 10-1, 10-2, 10-3, and
+p19: Figure 10-9  Ground Profile and Trial Shaft for Illustrative Example 10-4 ..........................
+p19: Figure 10-11  Analysis of Service Limit State Displacement for Example 10-6 ........................
+p19: Figure 12-7  P-M Interaction diagram for illustrative example. .....................................
+p22: Figure A-14    Slump Flow Measurement on High-Performance Concrete of Design Example............. A-
+p23: Illustrative Example 10-4 ..........................................................................
+p25: Table A-10  Mix Design For Drilled Shafts, Design Example ..........................................
+p28: of drilled shaft load tests for transportation projects, and incorporates some illustrative examples
+p29: Figure 1-1  Design Example (see Appendix A).
+p284: 8.  Details and illustrative examples of each step are presented in the following sections.
+p284: 10.3.1  Idealized Geomaterial Layer Profiles (Step 1)
+p292: Illustrative Example 10-1 on the following page demonstrates determination of unit side resistance b
+p292: Illustrative Example 10-1:  Side Resistance in Cohesionless Soil Layers by β-Method
+p292: Figure 10-5 shows the idealized subsurface profile (Step 1), soil properties (Step 3), and trial dim
+p293: Figure 10-5  Subsurface Profile and Drilled Shaft for Illustrative Example 10-1, 10-2, 10-3, and 10-
+p297: Illustrative Example 10-2 demonstrates the calculation of nominal side resistance for a drilled shaf
+p298: Illustrative Example 10-2:  Side Resistance in Clay
+p298: Consider the soil profile and trial drilled shaft dimensions of Illustrative Example 10-1.  The lowe
+p299: Illustrative Example 10-3 demonstrates the computation of base resistance using the method described
+p300: Illustrative Example 10-3:  Base Resistance in Clay
+p300: For the soil profile and trial drilled shaft of Illustrative Example 10-1 as shown in Figure 10-5, c
+p300: From Illustrative Example 10-2, the equivalent CIUC undrained shear strength of the clay is 2,571 ps
+p306: Illustrative Example 10-4 demonstrates the calculation of side and base resistances in a rock-socket
+p307: Illustrative Example 10-4.  Rock Socket Resistance for Trial Drilled Shaft Design
+p307: Figure 10-9   Ground Profile and Trial Shaft for Illustrative Example 10-4
+p308: Illustrative Example 10-5 demonstrates evaluation of a strength limit state check (Step 6).
+p309: Illustrative Example 10-5.  Perform Strength Limit State Check for Axial Design
+p309: For the trial design presented in Illustrative Example 10-1 and depicted in Figure 10-5, the nominal
+p309: resistances were calculated in Illustrative Examples 10-1, 10-2 and 10-3.  Information provided by t
+p310: The first method is presented below followed by an illustrative example.  A general overview is then
+p313: Illustrative Example 10-6.  Service Limit State Evaluation of Trial Shaft
+p313: In this example, the trial drilled shaft design introduced as Example 10-1 and used to illustrate ca
+p314: Figure 10-11  Analysis of Service Limit State Displacement for Example 10-6
+p368: Example 12-1.  Determine the minimum required bar size of Grade 80 spiral for a 5-ft diameter drille
+p372: presented below in more detail with illustrative examples.
+p373: Loads applied at the top of the shaft are those obtained in Step 1 and should be the factored demand
+p373: locations over the depth of the shaft. To illustrate, consider the drilled shaft cross section of Ex
+p373: single column of a bridge.  The subsurface profile, factored force demands at top-of-shaft (Step 1),
+p378: Figure 12-7  P-M Interaction diagram for illustrative example.
+p380: shown in Figure 12-4.  As determined in Example 12-1, the code-specified minimum transverse steel ca
+p389: Step 1. The section to be isolated and modeled consists of the socketed portion of the drilled shaft
+p390: design, including the application of P-M interaction diagrams, are presented with illustrative examp
+p582: DESIGN EXAMPLE:
+p584: A – Design Example
+p584: DESIGN EXAMPLE:  DRILLED SHAFTS FOR REPLACEMENT BRIDGE
+p585: A – Design Example
+p586: A – Design Example
+p587: A – Design Example
+p588: A – Design Example
+p588: Force effects calculated by the structural modeling program from Step 1 at the mudline nodes are
+p589: A – Design Example
+p590: A – Design Example
+p591: FHWA-NHI-18-024                                                                                     
+p591: resistance in cohesive soil layers, and (C) base resistance.  Example calculations are presented bel
+p592: FHWA-NHI-18-024                                                                                     
+p593: A – Design Example
+p594: A – Design Example
+p595: FHWA-NHI-18-024                                                                                     
+p596: FHWA-NHI-18-024                                                                                     
+p597: A – Design Example
+p598: FHWA-NHI-18-024                                                                                     
+p599: A – Design Example
+p600: A – Design Example
+p601: A – Design Example
+p602: A – Design Example
+p603: A – Design Example
+p604: A – Design Example
+p605: FHWA-NHI-18-024                                                                                     
+p606: A – Design Example
+p607: A – Design Example
+p608: A – Design Example
+p609: A – Design Example
+p610: A – Design Example
+p611: FHWA-NHI-18-024                                                                                     
+p611: TABLE A-10  MIX DESIGN FOR DRILLED SHAFTS, DESIGN EXAMPLE
+p612: A – Design Example
+p612: Figure A-14  Slump Flow Measurement on High-Performance Concrete of Design Example
+p639: To illustrate the application of this method, consider Illustrative Example 19-4 Chapter 10) in whic
+p640: Illustrative Example 10-4
+
+===== GEC 11 VOL 2.pdf (404 pages, 115 hits) =====
+p7: 9.2.1  Step 1 - Establish the geometric, loading, and performance
+p10: APPENDIX E EXAMPLE CALCULATIONS
+p17: 4.4.1  Step 1 - Establish Project Requirements .................................................. 4-
+p36: example problem E.10 in Appendix E.
+p65: 9.2.1 Step 1. Establish the geometric, loading, and performance requirements for design.
+p86: estimate for the 6.5 ft (5 m) high reinforced slope design Example E.8.  Considering the 12
+p207: tests on the reinforcement itself from Step 1.
+p210: Step 1:
+p212: B.4.2 Example Calculation
+p212: An example problem is presented within to demonstrate the analysis of laboratory connection
+p214: Step 1.
+p223: Step 1:  Plot the creep rupture data as log time to rupture versus log load level or versus load
+p228: reasonable, and that approximately 12 to 18 data points which are well distributed (see Step 1
+p235: followed. Step 1 has already been accomplished (Figure D.6-2).
+p238: will be exposed during its life (i.e., step 1 above) is within the boundaries of
+p241: EXAMPLE CALCULATIONS
+p241: This appendix presents ten example problems that illustrate the application of the various
+p241: The ten example problems were chosen to encompass a variety of geometries, soil
+p241: Summary of Example Problems
+p241: Appendix E – Example Calculations
+p242: factors. Therefore, the MSE wall example problems in this appendix have been solved in the
+p242: Appendix E – Example Calculations
+p243: This example problem demonstrates the analysis of an MSE wall with a broken backslope
+p243: he configurat ion of example problem E1.
+p244: Step 1.
+p244: Step 1.
+p248: various load types. For this example problem, the primary load types are soil loads (EV, EH
+p256: summarized in Table E1-7.5. Example calculation, for layer #3 follows.
+p261: example problem.  The wall height is 20 feet, and is below the recommended maximum
+p261: computer programs.  This step is not detailed in this example calculation, see Chapter 9.
+p261: elements in the analyses.  This step is not detailed in this example calculation, see Chapter 9.
+p262: example calculation, see Chapter 5.
+p263: This example problem demonstrates the strength limit state bearing resistance analyses of an
+p264: Step 1.
+p273: This example problem demonstrates the analysis of a MSE wall with a sloping backfill
+p274: STEP 1. ESTABLISH PROJECT REQUIREMENTS
+p275: example problem.  In actual designs, the geotechnical engineer should develop
+p276: For this example problem, compute the coefficient of active earth pressure for the retained
+p276: For the example problem, Tables E3-4.3 and E3-4.4 summarize the numerical values
+p276: computations in this example problem.  The unfactored forces and moments should be
+p276: The load factors for various load types relevant to this example problem are discussed in Step
+p278: For this example problem, tan = 0.5, and h = 30 ft + 24 ft (0.5) = 42.00 ft.
+p279: into various load types.  For this example problem, the primary load types are soil loads (EV
+p287:   The panel width, wp, is 5.00 ft (given in Step 1)
+p288: As per Step 1, the soil reinforcement for this example is assumed to be Grade 65 (Fy = 65
+p288: As per Step 1, the design life is 75 years. The base carbon steel will lose thickness for 75
+p289: For this example problem, the following parameters are constant at levels of reinforcements:
+p293: This example problem demonstrates the analysis of a MSE wall with a level backfill and live
+p294: STEP 1. ESTABLISH PROJECT REQUIREMENTS
+p295: For the example problem, Tables E4-4.3 and E4-4.4 summarize the numerical values
+p297: computations in this example problem.  The unfactored forces and moments should be
+p297: The load factors for various load types relevant to this example problem are discussed in Step
+p298: various load types. The primary load types for this example problem are soil loads (EV, EH)
+p303: vt  z  z . Note that wp = 5.00 ft per Step 1.
+p305:   The panel width, wp, is 5.00 ft (given in Step 1)
+p306: As per Step 1, the design life is 75 years. The base carbon steel will lose thickness for 75
+p307: the design from an economical perspective.  For this example problem, assume that the
+p308: For this example problem, assume the layout of longitudinal and transverse wires as shown
+p313: EXAMPLE PROBLEM E5
+p313: This example problem demonstrates the analysis of a bridge abutment supported on a spread
+p313: This example problem presents a typical case that may not be
+p313: The example problem is presented herein to
+p316: STEP 1. ESTABLISH PROJECT REQUIREMENTS
+p317: number.  Since in this case H=25.5 ft, the length of reinforcement for this example problem
+p318: For the example problem, Tables E5-4.3 and E5-4.4 summarize the numerical values of
+p318: analysis of footing versus heqM for analysis of MSE block.  In this example problem, the
+p318: computations in this example problem.  The unfactored forces and moments should be
+p318: The load factors for various load types relevant to this example problem are discussed in Step
+p322: example problem, the forces and moments in Tables E5-4.1 and E5-4.2 should be
+p338:   The panel width, wp, is 10.00 ft (given in Step 1)
+p339: As per Step 1, the soil reinforcement for this example is assumed to be Grade 65 (Fy = 65
+p339: As per Step 1, the design life is 100 years.  The base carbon steel will lose thickness for 100
+p340: For this example problem, the following parameters are constant at levels of reinforcements:
+p345: This example problem is an extension of Example Problem E4, and demonstrates the analysis
+p345: This example problem is an extension of Example Problem E4, and demonstrates the analysis
+p348:   The panel width, wp, is 5.00 ft (given in Step 1, Example E4)
+p349:   The panel width, wp, is 5.00 ft (given in Step 1, Example E4)
+p350: determined in Example Problem E4.
+p355: This example problem demonstrates the analysis of the Example #4 MSE wall for earthquake
+p356: STEP 1. COMPLETE STATIC ANALYSIS/DESIGN
+p356: computations in this example problem, the forces and moments in Tables E4-4.1 and
+p357: STEP 1.  ESTABLISH INITIAL WALL DESIGN
+p357: of Latitude 40.66 and Longitude –111.51 was used for this design example.  The following
+p358: The M-O formulation is used for this design example.
+p365: STEP 1.   COMPUTE INTERNAL DYNAMIC FORCE, Pi
+p371: STEP 1.
+p371: RSS Design Examples
+p372: RSS Design Examples
+p373: RSS Design Examples
+p374: RSS Design Examples
+p375: RSS Design Examples
+p376: RSS Design Examples
+p377: example, Design Example E8 is contained as an input file in the program ReSSA and a step­
+p377: RSS Design Examples
+p378: RSS Design Examples
+p379: STEP 1. GEOMETRIC AND LOADING REQUIREMENTS FOR DESIGN
+p379: RSS Design Examples
+p380: RSS Design Examples
+p381: the new slope as shown in the design example Figure E9-1a.  Note that the minimum factor
+p381: reinforced section for a factor of safety of 1.5, as shown on the design example Figure E9­
+p381: RSS Design Examples
+p382: RSS Design Examples
+p383: RSS Design Examples
+p384: provided is adequate as shown in the design example Figure E9-1b.
+p384: RSS Design Examples
+p385: RSS Design Examples
+p386: RSS Design Examples
+p387: g a design example  2: global stability..
+p387: RSS Design Examples
+p388: RSS Design Examples
+p389: RSS Design Examples
+p390: RSS Design Examples
+p390: Where, F* and α are as assumed for the geogrid in Example 1, and
+p391: RSS Design Examples
+p392: RSS Design Examples
+
+===== GEC 11 Vol 1.pdf (332 pages, 21 hits) =====
+p9: 4.4.1  Step 1 - Establish Project Requirements .................................................. 4-
+p19: 9.2.1  Step 1 - Establish the geometric, loading, and performance
+p22: APPENDIX E EXAMPLE CALCULATIONS
+p28: C  Design examples.
+p28: As an integral part of this Manual, several example calculations are appended that
+p143: structures with unusual features are covered in Chapter 6.  Detailed example calculations for
+p148: minimum load factors.  The detailed design examples complex MSE wall configurations in
+p150: Step 1.
+p151: 4.4.1 Step 1 – Establish Project Requirements
+p183: Example 1: MSE wall with level backfill and no surcharge.  This represents the simplest
+p184: Example 2: MSE wall with sloping backfill.  This configuration is commonly used for
+p184: is demonstrated in Example Problem E-3 in Appendix E.
+p184: Example 3: MSE wall with level backfill and live load surcharge.  This configuration is
+p184: Example 4: Bridge abutment with a spread footing on top of MSE wall.  In this
+p185: in Example Problem E-5 in Appendix E.
+p252: Step 1. Determine the gradation of the material to be separated/filtered. The filtered material
+p252: Using the D85 and Cu values from Step 1, determine the largest allowable pore size as
+p292: the example problem can also be applied to different complex geometries.
+p294: lateral pressure distribution shown in Figure E5-2 of Example Problem E5.  The effect of the
+p315: Step 1
+p330: An example calculation is presented in Appendix E.6.  Note that for geosynthetic reinforcements,
+
+===== GEC 12 Vol 2.pdf (573 pages, 65 hits) =====
+p3: by step procedures are included for most analysis procedures and design examples.
+p5: construction monitoring.  Comprehensive design examples are presented in
+p9: 12.5.1 Example 1 – General Bearing Graph .......................... 162
+p9: 12.5.2 Example 2 – Constant Capacity / Variable Stroke
+p9: 12.5.3 Example 3 – Drivability Studies.................................. 167
+p9: 12.5.4 Example 4 – Tension and Compression Stress
+p9: 12.5.5 Example 5 – Use of Soil Setup .................................. 179
+p9: 12.5.6 Example 6 – Driving System Characteristics ............... 182
+p9: 12.5.7 Example 7 – Assessment of Pile Damage .................. 187
+p9: 12.5.8 Example 8 – Selection of Wall Thickness ................... 193
+p9: 12.5.9 Example 9 – Evaluation of Vibratory Driving ............... 197
+p12: 17.4.1 Driving Criterion – Example 1 .................................... 442
+p12: 17.4.2 Driving Criterion – Example 2 .................................... 443
+p15: Example 6: Proposed Hammer and Driving Systems ............ 183
+p15: Example 7 – Maxima of Forces, Stresses and Other
+p15: Example 7 – Maxima of Forces, Stresses and Other
+p15: Example 8 – Wave Equation Results for Four Potential Pipe
+p16: Example 1 Summary of Requirements and Results .............. 442
+p21: Example 1 – Problem profile. .............................................. 163
+p21: Example 3 – Problem profile. .............................................. 169
+p21: Example 4 – Problem profile. .............................................. 174
+p21: Example 5 –- Problem profile. ............................................. 180
+p21: Example 6 – Problem profile. .............................................. 183
+p21: Example 7 –- Problem profile. ............................................. 187
+p21: Example 8 – Problem profile. .............................................. 194
+p21: Example 9 – Problem profile. .............................................. 198
+p186: problems it can solve.  Example problems, highlighting wave equation program
+p194: 12.5.1 Example 1 – General Bearing Graph
+p195: Figure 12-3 Example 1 – Problem profile.
+p196: An inspector’s chart analysis (see Example 2) provides this information determining
+p199: 12.5.2 Example 2 – Constant Capacity / Variable Stroke Option
+p199: The hammer-pile-soil information used in Example 1 will be reused for a constant
+p199: capacity (or inspector's chart) analysis in Example 2.  In this example, the
+p199: 12.5.3 Example 3 – Drivability Studies
+p201: Figure 12-6 Example 3 – Problem profile.
+p206: 12.5.4 Example 4 – Tension and Compression Stress Control
+p206: Example 4 illustrates the use of the wave equation for the control of tension stresses
+p206: Figure 12-9 Example 4 – Problem profile.
+p211: 12.5.5 Example 5 – Use of Soil Setup
+p211: that described in Example 4.  For an easy driving analysis, the assumption of a new
+p212: Figure 12-12 Example 5 –- Problem profile.
+p214: 12.5.6 Example 6 – Driving System Characteristics
+p214: Example 6 presents a wave equation comparison of two hammers having the same
+p214: shaft.  The example problem's soil profile is presented in Figure 12-14.  With a very
+p215: Figure 12-14 Example 6 – Problem profile.
+p215: Example 6: Proposed Hammer and Driving Systems
+p219: 12.5.7 Example 7 – Assessment of Pile Damage
+p219: Figure 12-17 Example 7 –- Problem profile.
+p222: Example 7 – Maxima of Forces, Stresses and Other Variables for
+p222: Example 7 – Maxima of Forces, Stresses and Other Variables for at
+p225: 12.5.8 Example 8 – Selection of Wall Thickness
+p226: Figure 12-20 Example 8 – Problem profile.
+p227: Example 8 – Wave Equation Results for Four Potential Pipe Pile Wall
+p229: 12.5.9 Example 9 – Evaluation of Vibratory Driving
+p229: situation is depicted in Figure 12-22 and is similar to Example 3.  The sheet piles
+p230: Figure 12-22 Example 9 – Problem profile.
+p231: Soil Information for Vibratory Sheet Pile Driving in Example 9
+p235: performed, leading to either a bearing graph as illustrated in Example 1, or a
+p236: presented in Example 3.  Sometimes both analyses are performed.  The validity of
+p239: As pointed out in Example 9, there is a great difference in how the soil responds to a
+p241: It has been explained in Example 4 that pile cushions experience a particularly
+p244: effects of large toe quakes.  Example 6 in Section 12.5.6 illustrates the effect of a
+p474: 17.4.1 Driving Criterion – Example 1
+p474: Example 1 Summary of Requirements and Results
+p475: 17.4.2 Driving Criterion – Example 2
+
+===== GEC 12 Vol 3.pdf (299 pages, 35 hits) =====
+p1: Comprehensive Design Examples
+p3: - Comprehensive Design Examples
+p3: This document presents comprehensive design examples for driven pile foundations on
+p3: highway structures.  The worked design examples supplement the material presented in
+p3: driven pile foundations.  The worked LRFD design examples address strength, service
+p3: subsurface conditions.  Pile foundation design examples in cohesionless, cohesive, and
+p5: construction monitoring.  Comprehensive design examples are presented in
+p7: COMPREHENSIVE DESIGN EXAMPLES .............................................. 1
+p35: COMPREHENSIVE DESIGN EXAMPLES
+p35: This appendix presents comprehensive design examples for a driven pile foundation
+p35: project.  The worked design examples supplement the material presented in
+p35: bridge structure in highly variable subsurface conditions.  Worked design examples
+p35: the worked design examples.
+p35: soil profile for the worked design examples was developed to illustrate use of the
+p35: The worked design examples follow the step by step design and construction
+p35: introduced in Chapter 2 is followed in the worked design examples and is presented
+p88: summed to calculate the total weight of the block.  An example calculation is shown
+p95: final design.  However for the remainder of this example problem, this pile section
+p100: An example calculation is shown for a depth below footing, z, of 2.5 feet.  Complete
+p101: pile driving and superstructure construction.  This example calculation assumes
+p102: The following example calculation is performed for an equivalent footing located at
+p138: based on the static analysis method used in this design example. For this,
+p145: this design example. For this, (𝜙𝜙𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠=0.45) was applied to the cohesionless soils as a
+p164: The following example calculation considers Group Configuration 6 and all
+p165: (i.e., 5.5 kips per pile).  For the axial load per pile, an example calculation for the
+p179: assumed as fixity for this design example.  A review of Figure D-70 shows this depth
+p182: pile edge.  This example calculation is therefore only suitable for this configuration.
+p186: The following example calculation is performed for the neutral plane located 40 feet
+p186: while the width is 13 feet.  This example calculation is therefore only suitable for this
+p206: however an exhaustive analysis is not presented in this design example.
+p251: An example calculation is shown for a depth below footing, z, of 2.5 feet, while
+p254: The following example calculation is performed for an equivalent footing located 35
+p264: theory.  For this example calculation, it was decided that the settlement method
+p267: estimation approach.  For this design example, the established minimum pile
+p284: design was performed for this design example in Block 13.  Final pile cap and
+
+===== GEC 12 vol 1.pdf (563 pages, 28 hits) =====
+p5: by step procedures are included for most analysis procedures and design examples.
+p9: construction monitoring. Comprehensive design examples are presented in
+p18: Example Calculations for H Pile Structural
+p288: STEP 1
+p296: STEP 1
+p300: STEP 1
+p303: STEP 1
+p308: STEP 1
+p313: STEP 1
+p370: STEP 1
+p373: STEP 1
+p377: STEP 1
+p380: STEP 1
+p388: STEP 1
+p414: STEP 1
+p424: STEP 1
+p436: An example calculation for determining 𝑅𝑛d𝑟𝑟
+p441: depth.  This concept is illustrated in the wave equation example problem presented
+p447: STEP 1
+p487: STEP 1
+p489: STEP 1
+p492: STEP 1
+p495: STEP 1
+p497: STEP 1
+p500: 8.5.3 Example Calculations for H Pile Structural Resistance.
+p511: STEP 1
+p513: STEP 1
+p517: STEP 1
+
+===== GEC 13 Vol 1.pdf (394 pages, 16 hits) =====
+p12: Step 1: Identify Potential Poor Ground Conditions and Need for Ground
+p57: Step 1
+p58: 8.2.1 Step 1: Identify Potential Poor Ground Conditions and Need for Ground
+p74: Design Example .....................................................................................
+p116: Design Example
+p163: and includes design examples, construction practices, design details, case histories, and
+p173: including design examples and design detailing are contained in the report companion
+p322: Design Examples ....................................................................................
+p325: Figure 5-24. Example problem 1 geometry. ...........................................................
+p325: Figure 5-26. Example problem 2 geometry and soils. .................................................
+p325: Figure 5-27. Example problem 2 settlement ratio determination. .....................................
+p372: Design Examples
+p372: The following design example is provided to demonstrate the method to determine settlement
+p372: Figure 5-24. Example problem 1 geometry.
+p374: Figure 5-26. Example problem 2 geometry and soils.
+p375: Figure 5-27. Example problem 2 settlement ratio determination.
+
+===== GEC 13 Vol 2.pdf (550 pages, 47 hits) =====
+p13: EXAMPLE PROBLEMS ...................................................................................
+p13: Example Problem 1 ..................................................................................
+p13: Example Problem 2 ..................................................................................
+p14: Figure 6-25. GeogridBridge spreadsheet, Example Problem 1, no bridging layer. ............. 6-60
+p14: Figure 6-26. GeogridBridge spreadsheet, Example Problem 1, with bridging layer. .......... 6-61
+p15: Figure 6-29. GeogridBridge spreadsheet, Example Problem 2, no bridging layer. ............. 6-65
+p15: Figure 6-30. GeogridBridge spreadsheet, Example Problem 2, with bridging layer. .......... 6-66
+p72: EXAMPLE PROBLEMS
+p72: Example Problem 1
+p73: Step 1. Estimate Preliminary Column Spacing
+p75: not included in this design example. For column design guidance see the references listed in
+p76: Figure 6-25. GeogridBridge spreadsheet, Example Problem 1, no bridging layer.
+p77: Figure 6-26. GeogridBridge spreadsheet, Example Problem 1, with bridging layer.
+p80: performed as part of this example problem. However, if a global stability analysis is required
+p80: Example Problem 2
+p80: This problem is similar to example 1. However, there is a 5 foot thick layer of sand at
+p81: Figure 6-29. GeogridBridge spreadsheet, Example Problem 2, no bridging layer.
+p82: Figure 6-30. GeogridBridge spreadsheet, Example Problem 2, with bridging layer.
+p92: Design Example .....................................................................................
+p93: Figure 7-6. Cross-section and material properties for design example. ..............................
+p109: 2.3.2.1 Step 1: Establish Project Requirements
+p111: criteria established in Step 1. If settlements are too large or factors of safety against
+p122: 3.3.2.1 Step 1: Establish Project Requirements
+p123: criteria established in Step 1. If settlements are too large or factors of safety against
+p123: 3.3.3 Design Example
+p125: Figure 7-6. Cross-section and material properties for design example.
+p127: Step 1.
+p141: Step 1: Determine Project Performance Requirements ................................. 8-118
+p264: 4.1.1 Step 1: Determine Project Performance Requirements
+p264: Based on the information assembled in step 1, determine the adequacy of the existing
+p340: Step 1. Identify properties of the subgrade, including CBR, location of groundwater table,
+p353: Step 1. Ground surface preparation where the geosynthetic is to be placed:
+p360: Step 1. Assess the need for a geotextile separator. Determine if subgrade conditions warrant
+p364: Step 1. Identify properties of the subgrade, including CBR, location of groundwater table,
+p402: Step 1. Classify soil to be stabilized.
+p414: Step 1. Evaluate site conditions for the need for drainage and select the appropriate drainage
+p423: Step 1. The surface on which the geotextile is to be placed should be excavated to design
+p429: Step 1. Determine the gradation of the material to be filtered. The filtered material is the soil
+p431: Step 1. Design for adequate filtration without clogging or piping.
+p442: Step 1. Determine the depth to the base of the encapsulation layer or the vertical depth of the
+p477: Step 1.
+p490: design references listed below. Detailed design guidance, discussions, example calculations,
+p490: Step 1.
+p516: Detailed design guidance, discussions, example calculations, and steps for complex cases are
+p527: Step 1. Excavation. The depth of the initial excavation lift (unsupported cut) may range
+p532: guidance, discussions, and example calculations are presented in that reference.
+p533: Step 1
+
+===== GEC 14.pdf (103 pages, 2 hits) =====
+p50: Geotechnical Specialist (GS) – Refer to Section 1.2 of Guidance Document. GS in Step 1 must be licen
+p51: Geotechnical Specialist (GS) – Refer to Section 1.2 of Guidance Document. GS in Step 1 must be regis
+
+===== GEC 4.pdf (304 pages, 12 hits) =====
+p2: systems.  Also included in the document are two detailed design examples and technical
+p4: systems.  Also included in the document are two detailed design examples and technical
+p14: Design Examples
+p14: Example Calculation of Bending Moment for Wall in Weak Cohesive Soil
+p68: Step 1.
+p108: lowest anchor.  An example calculation for a wall in a cohesive deposit is shown in appendix C.  For
+p119: Step 1.
+p122: Step 1.
+p168: Step 1.
+p207: DESIGN EXAMPLE 1
+p224: DESIGN EXAMPLE 2
+p251: EXAMPLE CALCULATION OF BENDING MOMENT FOR WALL IN
+
+===== GEC 5.pdf (688 pages, 8 hits) =====
+p224: (Step 1) is taken to be the preconsolidation pressure.
+p224: Step 1
+p407: illustrative examples on selection of appropriate values for 𝐷.
+p631: A2.1 EXAMPLE 1: BRIDGE SITE WITH SAND OVER SHALE AND LIMESTONE
+p635: should be considered to be direct measurements.  Example calculations are provided below for Layer 2
+p647: A2.2 EXAMPLE 2: HIGHWAY ATOP LEVEE ON SILT OVER SAND
+p652: Table A2–10  Summary of information related to stratigraphy for Example 2.
+p664: A2.3 EXAMPLE 3: EMBANKMENT ON SOFT CLAY – CONSOLIDATION SETTLEMENT
+
+===== GEC 6.pdf (296 pages, 41 hits) =====
+p1: Detailed design examples are provided for shallow foundations in several bridge support
+p3: Volume II – Design Examples (FHWA-SA-97-077)
+p3: design examples presented in Appendix B, provide the practical information
+p4: • Appendix B includes five worked design examples of shallow foundations for highway
+p5: Notable and much appreciated contributions to the design examples included in this Circular
+p7: histories and design examples on the use of shallow foundations to support abutments in
+p71: example problems presented in Appendix B that are solved using the LRFD method.  Notice that
+p91: allow the use of a spread footing supported in the approach fill.  Example 3 in Appendix B
+p95: N′, determined in Step 1.
+p101: the design examples in Appendices B and C).
+p109: Worked foundation design examples that follow this process are included in Appendix B for
+p127: al., 1997) and the course materials and design examples developed for National Highway
+p159: DESIGN EXAMPLES
+p159: This appendix provides worked design examples for bridge foundation support on shallow
+p159: EXAMPLE 1: INTERIOR BRIDGE PIER ON A SPREAD FOOTING FOUNDED IN NATIVE SOIL
+p159: EXAMPLE 2: INTEGRAL STUB ABUTMENT ON COMPACTED STRUCTURAL FILL
+p159: EXAMPLE 3: STUB SEAT-TYPE ABUTMENT FOOTING IN COMPACTED STRUCTURAL FILL
+p160: EXAMPLE 4: FULL-HEIGHT SEAT ABUTMENT FOUNDED IN NATIVE SOIL
+p160: EXAMPLE 5: INTERIOR BRIDGE PIER ON A SPREAD FOOTING ON NATIVE ROCK
+p161: EXAMPLE 1: INTERIOR BRIDGE PIER ON SPREAD FOOTING
+p175: EXAMPLE 2: INTEGRAL BRIDGE ABUTMENT ON STRUCTURAL FILL
+p188: and found that the minimum factor of safety was about 1.6 and satisfactory (see Example 3).
+p193: EXAMPLE 3: STUB SEAT-TYPE BRIDGE ABUTMENT ON STRUCTURAL FILL
+p204: │ Project Name   : Example 3            Client          : Shallow Fnd GEC      │
+p221: EXAMPLE 4: FULL-HEIGHT BRIDGE ABUTMENT WITH LATERAL EARTH PRESSURE
+p230: Step 1, after construction and backfill of the abutment and before erection of the superstructure
+p231: Figure B4-5: Intermediate Construction Step 1 Loading Conditions
+p241: EXAMPLE 5: INTERIOR BRIDGE PIER ON IN-SITU ROCK
+p249: Bridge Design Specifications (1998).  Design examples B-1 and B-3 are re-worked using LRFD
+p261: Example 1 in Appendix B, which was worked using Service Load Design criteria.)
+p279: LRFD EXAMPLE 2: STUB SEAT-TYPE BRIDGE ABUTMENT ON STRUCTURAL FILL
+p279: Example 3 in Appendix B, which was solved using Service Load Design criteria.)
+p281: the footing, were calculated as part of Service Load Design Example 3 (Appendix B).  These
+p281: footing, were calculated as part of Service Load Design Example 3 (Appendix B).  These values
+p282: are unchanged from Service Load Design Example 3 (Appendix B).
+p284: effective stresses are the same as computed for Service Load Design Example 3 (Appendix B)
+p284: The ultimate bearing capacity was calculated for this abutment in Service Load Design Example
+p284: Load Design Example 3 (Appendix B) for effective footing widths of 2 and 2.5 meters:
+p285: The results are plotted in Figure C2-3.  As discussed in Example 3, the pressure bulb for
+p285: Service Load Design Example 3.  The estimated settlement for various combinations of footing
+p287: Load Design Example 3).
+
+===== GEC 7.pdf (425 pages, 16 hits) =====
+p5: • The inclusion of design examples based upon the SNAP-2 computer program.
+p13: Step 1 Project Requirements .................................................................145
+p18: Appendix C: Design Example .........................................................................
+p41: • Inclusion of design example based on the SNAP-2 computer program (Siel 2014)
+p46: of this chapter is illustrated with a design example presented in Appendix C.
+p47: • APPENDIX C – Design Example
+p53: Step 1. Excavation.  The depth of the initial excavation lift (unsupported cut) may range
+p158: demonstrating the design procedure of this manual, the design example in Appendix C has
+p183: Step 1
+p185: requirements and constraints (Step 1), collecting geotechnical information (Step 2), and
+p185: 6.1.2a Step 1
+p316: Commentaries and Example Problems,” National Cooperative Highway Research
+p341: Appendix C:  Design Example
+p341: Step 1:  Project Requirements
+p350: in Chapter 6.  This option was not used in this design example.
+p365: Design Example GEC7
+
+===== GEC 8.pdf (293 pages, 29 hits) =====
+p9: 5.8  EXAMPLE PROBLEMS: AXIAL CAPACITY OF SINGLE PILES ....................... 125
+p9: 6.1  STEP 1: INITIAL DESIGN CONSIDERATIONS .................................................... 133
+p9: EXAMPLE PROBLEM ....................................................................................
+p9: 6.6.2  Step 1: Initial Design Considerations .......................................................
+p15: Soil Profile Su vs. Depth for Example Problem of CFA Pile in Cohesive Soil .....128
+p15: Soil Profile SPT-N  vs. Depth for Example Problem of CFA Pile and DD Pile
+p15: Deflection and Bending Moments vs. Depth for Example Problem .....................152
+p17: APPENDIX B   EXAMPLE PROBLEMS: SPREADSHEET SOLUTIONS FOR
+p148: EXAMPLE PROBLEMS: AXIAL CAPACITY OF SINGLE PILES
+p148: This section presents two example problems that illustrate the estimation of the axial capacity of
+p148: conventional CFA and DD piles in cohesionless soils.  In these example problems, all quantities
+p148: described in the example problem of Chapter 6 (section 6.7.4, part A), provided information
+p151: example problem o
+p156: Step 1:  Initial Design Considerations
+p156: STEP 1: INITIAL DESIGN CONSIDERATIONS
+p156: project. Step 1 is subdivided into several components as described below.
+p157: A comprehensive review of this component of Step 1 is the subject of other FHWA publications
+p157: The information from Step 1 must be evaluated and a foundation system selected.  Alternatives
+p168: This example problem is intended to demonstrate the step-by-step design methodology for CFA
+p168: example problem is developed in English units only.
+p168: Step 1: Initial Design Considerations
+p169: described in Step 1 and will thus be considered further.  The cohesive soils do not favor the use
+p280: performed, as described in the Chapter 6 example problem (Section 6.7.4, Part A), provided
+p284: example 3 ft).  This is as recommended in Section 5.3.1.1; solutions for the depth of
+p287: Table B.2. ASD Example Calculations for 18-inch Diameter CFA Pile in Cohesionless Soils
+p288: Table B.3. ASD Example Calculations for 18-inch Diameter Drilled Displacement Pile in Cohesionless S
+p292: the pile tip to a depth of 2 to 4 pile diameters below the pile tip (in this example 4
+p292: N. Intentionally left Blank – for easy comparison of example calculations of CFA
+p293: tip (in this example 4 to 8 ft), depending upon the frequency of SPT-N values with
+
+===== GEC 9.pdf (293 pages, 13 hits) =====
+p10: APPENDIX B: EXAMPLE PROBLEMS AND/OR CASE HISTORIES ....................... 235
+p14: Figure B-1: Example problem for ITS pole............................................................
+p14: Figure B-6:  Example problem B2. ...................................................................
+p20: Appendix B: This appendix provides detailed design examples.
+p167: Step 1: Determine the equivalent nominal yield resistance, Po:
+p170: Step 1: Check flange slenderness ratio and limiting slenderness.
+p171: Step 1: Check diameter to thickness ratio
+p177: Step 1: Determine the normalized column slenderness factor, 𝝀𝝀.
+p239: APPENDIX B: EXAMPLE PROBLEMS AND/OR CASE HISTORIES
+p239: Figure B-1: Example problem for ITS pole.
+p240: Step 1: Determine Idealized Soil Profile and Geotechnical Design Parameters
+p246: Step 1: Determine Idealized Soil Profile and Geotechnical Design Parameters
+p247: Figure B-6:  Example problem B2.
+
+===== fema_p2082_2020_nehrp.pdf (593 pages, 15 hits) =====
+p174: FIGURE C11.9-1 Illustrative Example of the Vertical/Horizontal Spectral Ratio
+p258: provides design examples of a diaphragm with a 400 foot span and 200 foot width using common
+p258: engineered design practice and SDPWS. FEMA P-1026 Chapter 3 provides a design example of the
+p258: design example using the new provisions of Section 12.10.4. Using Section 12.10.1 diaphragm design
+p281: 3TFEMA3T. (2013). “2009 NEHRP recommended seismic provisions: Design examples.” FEMA P-751CD,
+p433: FIGURE C15.7-4 Example Problem Using ASME BPVC (2007), Section VIII, Division 2, 2008
+p434: FIGURE C15.7-4 (Continued) Example Problem Using ASME BPVC (2007), Section VIII,
+p435: FIGURE C15.7-4 (Continued) Example Problem Using ASME BPVC (2007), Section VIII,
+p436: FIGURE C15.7-4 (Continued) Example Problem Using ASME BPVC (2007), Section VIII,
+p437: FIGURE C15.7-5 Example Problem Using AWWA D100-05, Section 13.4.3.4
+p438: FIGURE C15.7-5 (Continued) Example Problem Using AWWA D100-05, Section 13.4.3.4
+p450: Step 1 involves preselecting the ground motion records in the database (e.g., Anchenta et al. 2015) 
+p450: selection process is to select the final set of motions from those preselected in Step 1.
+p450: but are already reflected in the spectral shape used in Step 2. For Step 1, reasonable limits on sit
+p528: , which is calculated using factors for conventional structural response. Design examples using
+
+===== ufc_3_220_04fa_2004.pdf (60 pages, 0 hits) =====
+
+===== ufc_3_220_07.pdf (99 pages, 0 hits) =====
+
+===== ufc_3_220_10_2026.pdf (574 pages, 6 hits) =====
+p17: Flow Net Example Calculations ........................................................ 292
+p214: required, to determine the change in vertical stress.  Example calculations are provided
+p269: Equations 5-10 and 5-11.  Example calculations are shown in Figure 5-13.
+p319: Figure 6-5 presents an example flow net with example calculations for discharge, uplift
+p320: Flow Net Example Calculations
+p347: Step 1. Plot the grain-size distributions for the base soil and assess whether the base
+
+===== ufc_3_220_20_2025.pdf (724 pages, 49 hits) =====
+p16: EXAMPLE 1 – CANTILEVER CUT WALL. ........................................ 596
+p16: EXAMPLE 2 – ANCHORED CUT WALL. .......................................... 606
+p16: EXAMPLE 3 – BEARING CAPACITY OF SHALLOW FOUNDATIONS.
+p16: EXAMPLE 4 – MAT FOUNDATION DESIGN. ................................... 627
+p17: EXAMPLE 5 – PILE GROUP CAPACITY AND SETTLEMENT. ........ 633
+p17: EXAMPLE 6 – LATERAL LOAD ANALYSIS...................................... 644
+p17: EXAMPLE 7 – RELIABILITY ANALYSIS OF A RETAINING WALL. . 651
+p20: Example Problem for Flow into an Excavation Through Sheet Piling .. 99
+p21: Oversize Correction Example Calculations ....................................... 124
+p25: Example Calculations Illustrating the Terzaghi Method with the
+p25: Example Calculations Illustrating the Meyerhof Method .................... 303
+p25: Example Calculations Illustrating the Brinch Hansen Method ........... 304
+p25: Example Calculations for Bearing Capacity of Rock .......................... 318
+p26: Example Problem for Single Rock Anchors ....................................... 344
+p29: LRFD Pile Design Example ............................................................... 554
+p29: Three Rows of Footings – Example 3 ................................................ 615
+p37: Summary of Stability Checks for Example 1 ...................................... 602
+p37: Summary of Anchored Bulkhead Design Example ............................ 614
+p37: Bearing Capacity Factors for the Example 3 ..................................... 616
+p37: Summary of Bearing Capacity Analyses – Example 3 ....................... 623
+p123: Table 2-9.  Example problems considering the topic of deep excavation support
+p137: be calculated.  An example problem for leakage through sheet piling is shown in Figure
+p137: Figure 2-22 Example Problem for Flow into an Excavation Through Sheet Piling
+p162: Figure 3-12 Oversize Correction Example Calculations
+p237: design. The results of simple example problems using log-spiral solutions should be
+p282: provides additional design examples.
+p286: Plan View, (c) Passive Pressure Assumptions, and (d) Example Calculation
+p340: Figure 5-10 Example Calculations Illustrating the Terzaghi Method with the
+p341: Figure 5-11 Example Calculations Illustrating the Meyerhof Method
+p342: Figure 5-12 Example Calculations Illustrating the Brinch Hansen Method
+p356: Figure 5-25 Example Calculations for Bearing Capacity of Rock
+p362: modulus through a specific settlement point, for example 1-inch of settlement and the
+p381: the cross-sectional area of the tendon.  Example calculations for a rock anchor are
+p382: Figure 5-39 Example Problem for Single Rock Anchors
+p592: Figure 7-23 LRFD Pile Design Example
+p634: EXAMPLE 1 – CANTILEVER CUT WALL.
+p643: Summary of Stability Checks for Example 1
+p644: EXAMPLE 2 – ANCHORED CUT WALL.
+p655: Table B-13 Summary of Anchored Bulkhead Design Example
+p656: EXAMPLE 3 – BEARING CAPACITY OF SHALLOW FOUNDATIONS.
+p656: Figure B-13. Three Rows of Footings – Example 3
+p657: Table B-15 Bearing Capacity Factors for the Example 3
+p664: Table B-21 Summary of Bearing Capacity Analyses – Example 3
+p665: EXAMPLE 4 – MAT FOUNDATION DESIGN.
+p671: EXAMPLE 5 – PILE GROUP CAPACITY AND SETTLEMENT.
+p682: EXAMPLE 6 – LATERAL LOAD ANALYSIS.
+p682: For the pile-supported bridge pier considered in Example 5, evaluate the serviceability
+p683: Example 6 satisfies the geotechnical strength limit state and serviceability limit state
+p689: EXAMPLE 7 – RELIABILITY ANALYSIS OF A RETAINING WALL.
+
+===== ufc_3_250_01_2016.pdf (290 pages, 33 hits) =====
+p7: DESIGN EXAMPLES. ............................................................................. 38
+p8: DESIGN EXAMPLE. ................................................................................ 42
+p9: OVERLAY DESIGN EXAMPLE. ............................................................. 52
+p11: DESIGN EXAMPLE HEAVILY TRAFFICKED ROAD. ............................ 87
+p13: DESIGN EXAMPLES. ........................................................................... 125
+p14: Example 1: Cohesionless Subgrade. ................................................. 257
+p14: Example 2: Cohesive Subgrade. ....................................................... 258
+p14: Example 1. .........................................................................................
+p14: Example 2. .........................................................................................
+p14: Example 1: Non-Stabilized. ................................................................ 261
+p14: Example 2: Stabilized Soil. ................................................................ 262
+p15: Example 1: Non-Frost Design. ........................................................... 268
+p15: Example 2: Frost Design.................................................................... 268
+p58: DESIGN EXAMPLES.
+p58: Appendix G contains two design examples of rigid pavement design
+p62: DESIGN EXAMPLE.
+p62: Appendix G includes a design example for a reinforced concrete pavement.
+p66: increments.  See paragraph titled Overlay Design Example for an example.
+p72: OVERLAY DESIGN EXAMPLE.
+p107: DESIGN EXAMPLE HEAVILY TRAFFICKED ROAD.
+p145: DESIGN EXAMPLES.
+p145: Appendix G contains two design examples of unsurfaced aggregate roads.
+p277: Example 1: Cohesionless Subgrade.
+p278: Example 2: Cohesive Subgrade.
+p280: Example 1.
+p280: Example 2.
+p281: Example 1: Non-Stabilized.
+p282: Example 2: Stabilized Soil.
+p284: A design example for a reinforced concrete pavement requires a plan concrete
+p288: Example 1: Non-Frost Design.
+p288: Figure G-1 Results for Example 1-Non-frost design, M923, 5-Ton Cargo Truck
+p288: Example 2: Frost Design.
+p289: Figure G-2 Results for Example 2-Frost design, M977, HEMTT, 10-TON Cargo

@@ -1,0 +1,419 @@
+
+========== PAGE 355 ==========
+ 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+EXAMPLE E7  
+SEGMENTAL PRECAST PANEL MSE WALL WITH SEISMIC LOADING  
+ 
+ 
+E7-1 INTRODUCTION 
+ 
+This example problem demonstrates the analysis of the Example #4 MSE wall for earthquake 
+loading.  The MSE wall has a level backfill and live load surcharge, and is assumed to 
+include a segmental precast panel face with steel grid (bar mat) reinforcements.  The MSE 
+wall configuration to be analyzed is shown in Figure E4-1.  The analysis is based on various 
+principles that were discussed in Chapter 7.  Table E7-1 presents a summary of steps 
+involved in the analysis. Each of the steps and sub-steps is sequential and if the design is 
+revised at any step or sub-step then all the previous computations need to be re-visited.  Each 
+of the steps and the sub-steps in Table E7-1 is explained in detail herein.   
+Table E7-1. Summary of steps in analysis of MSE wall with seismic loading 
+Step Item 
+GENERAL 
+1 
+Complete static analysis/design 
+2 
+Summarize applicable load and resistance factors 
+EXTERNAL STABILITY 
+1 
+Establish initial wall design based on static loading  
+2 
+Establish seismic hazard, and estimate peak ground acceleration (PGA) and spectral 
+acceleration at 1-second, S1. 
+3 
+Establish site effects 
+4 
+Determine maximum accelerations, kmax, and peak ground velocity (PVG) 
+5 
+Obtain an average peak ground acceleration, kav, within the reinforced soil zone 
+6 
+Determine the total (static + dynamic) thrust PAE, using one of the following two 
+methods 
+1 Mononobe-Okabe (M-O) formulation 
+2 Generalized Limit Equilibrium (GLE) slope stability 
+7 
+Determine the horizontal inertial force, PIR, of the total reinforced wall mass 
+8 
+Check sliding stability 
+ if sliding stability is met, go to Step 11 
+ if sliding stability is not met, go to Step 9 
+9 
+Determine the wall yield seismic coefficient, ky, where wall sliding is initiated. 
+10 
+Determine the wall sliding displacement based on the following relationships between 
+d, ky/kmax, kmax, PGV, and site location 
+11 
+Evaluate the limiting eccentricity and bearing resistance 
+12 
+If Step 11 criteria are not met, adjust the wall geometry and repeat Steps 6 to 11, as 
+needed 
+13 
+If Step 11 criteria are met, assess acceptability of amount of sliding displacement 
+FHWA NHI-10-025 
+Example E7 – Seismic Loading  
+MSE Walls and RSS – Vol II 
+E7 – 1 
+November 2009  
+
+========== PAGE 356 ==========
+ 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+INTERNAL STABILITY 
+1 
+Compute the internal dynamic force, Pi, of the active wedge 
+2 
+Compute maximum combined factored loads in the soil reinforcements 
+3 
+Check tensile resistance of soil reinforcements 
+4 
+Check pullout resistance of the soil reinforcements 
+5 
+Check connection resistance  
+GENERAL 
+ 
+ 
+STEP 1. COMPLETE STATIC ANALYSIS/DESIGN 
+ 
+Initial wall design based upon static loading was established in Example E4.   
+ 
+ 
+ 
+STEP 2. SUMMARIZE APPLICABLE LOAD AND RESISTANCE FACTORS 
+ 
+Table E7-2 summarizes the load factors for the various LRFD load type, including seismic 
+(extreme event I), shown in second column of Tables E4-4.1 and E4-4.2.  Throughout the 
+computations in this example problem, the forces and moments in Tables E4-4.1 and 
+E4-4.2 should be multiplied by appropriate load factors.   
+Table E7-2. Summary of applicable load factors 
+Load Combination 
+Load Factors 
+(after AASHTO, 2007 Tables 3.4.1-1 and 3.4.1-2) 
+EV 
+EH 
+LS 
+EQ 
+Extreme Event I 
+p 
+p 
+EQ = 1.00 
+1.00 
+Strength I (maximum) 
+p = 1.35 
+p = 1.50 
+1.75 
+– 
+Strength I (minimum) 
+p = 1.00 
+p = 0.90 
+1.75 
+– 
+Service I 
+1.00 
+1.00 
+1.00 
+– 
+For computation of factored resistances during evaluation of extreme event I limits states, 
+appropriate resistance factors have to be used.  Table E7-3 summarizes the applicable 
+resistance factors. 
+Table E7-3. Summary of applicable combined static/earthquake resistance factors  
+Item 
+Resistance 
+Factors 
+AASHTO (2007) 
+Reference 
+Sliding of MSE wall on foundation soil 
+s = 1.00 
+Table 11.5.6-1 
+Bearing resistance 
+b = 1.00 
+Article 10.5.5.3.3 
+Tensile resistance (for steel bar mats) 
+t = 0.85 
+Table 11.5.6-1 
+Pullout resistance 
+p = 1.20 
+Table 11.5.6-1 
+FHWA NHI-10-025 
+Example E7 – Seismic Loading  
+MSE Walls and RSS – Vol II 
+E7 – 2 
+November 2009  
+
+========== PAGE 357 ==========
+ 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+EVALUATE XTERNAL STABILITY ANALYSIS OF MSE WALL 
+ 
+ 
+STEP 1.  ESTABLISH INITIAL WALL DESIGN 
+ 
+Initial wall design based upon static loading was established in Example E4.   
+ 
+ 
+STEP 2.  ESTABLISH SEISMIC HAZARD, AND ESTIMATE PEAK GROUND 
+ACCELERATION (PGA) AND SPECTRAL ACCELERATION AT 1-
+SECOND, S1. 
+ 
+The USGS Seismic Design Parameters CD (Version 2.10) {provided with AASHTO LRFD 
+Bridge Specifications) was used to determine these design parameters.  An assumed location 
+of Latitude 40.66 and Longitude –111.51 was used for this design example.  The following 
+parameters were established: 
+ PGA = 0.206 g 
+ S1 at 1.0 sec Period = 0.177 g 
+ 
+ 
+STEP 3.  ESTABLISH SITE EFFECTS  
+ 
+From the assumed location (Latitude and Longitude) and the USGS Seismic Design 
+Parameters CD (Version 2.10).  The following Site Class was found. 
+ Site Class B 
+ 
+From AASHTO Table 3.10.3.2-1, and using Site Class B and PGA = 0.206g, the Fpga value at 
+zero-period on acceleration spectrum is established. 
+ Fpga = 1.00 
+ 
+From AASHTO Table 3.10.3.2-3, and using Site Class B and S1 = 0.177g, Fv value is 
+established. 
+ Fv = 1.0 
+ 
+ 
+STEP 4.  DETERMINE MAXIMUM ACCELERATIONS, kmax, AND PEAK 
+GROUND VELOCITY (PVG) 
+ 
+With Equation 7-1: 
+kmax  = Fpga (PGA) = 1.00 (0.206 g) = 0.206 g 
+FHWA NHI-10-025 
+Example E7 – Seismic Loading  
+MSE Walls and RSS – Vol II 
+E7 – 3 
+November 2009  
+
+========== PAGE 358 ==========
+ 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+With Equation 7-2: 
+ 
+ 
+PGV (in/sec) = 38 Fv S1  = 38 (1.0) (0.177 g) = 6.726 
+ 
+ 
+STEP 5.  OBTAIN AN AVERAGE PEAK GROUND ACCELERATION, kav, 
+WITHIN THE REINFORCED SOIL ZONE  
+ 
+The average peak ground acceleration, using a wall height dependent reduction factor, , 
+within the reinforced soil zone, using Equation7-3, is equal to: 
+ 
+kav  =  kmax  
+ 
+For Site Class B and using Equation 7-4 the wall height factor, , is equal to: 
+ 
+ 
+ = 1.0245 
+ 
+Therefore, 
+kav  =  kmax  = 1.024 (0.206g) = 0.211g 
+ 
+ 
+ 
+STEP 6.  DETERMINE THE TOTAL (STATIC + DYNAMIC) THRUST PAE   
+ 
+The total (static + dynamic) thrust PAE, may be determined using one of the following two 
+methods 
+1 Mononobe-Okabe (M-O) formulation 
+2 Generalized Limit Equilibrium (GLE) slope stability 
+ 
+The M-O formulation is used for this design example. 
+ 
+Assumptions: 
+ kv  = 0 
+ kh  = kmax  = 0.206g 
+FHWA NHI-10-025 
+Example E7 – Seismic Loading  
+MSE Walls and RSS – Vol II 
+E7 – 4 
+November 2009  
+Eq
+uat
+i on
+ as
+ d is c
+u
+ss
+ed
+ in the capti on
+ed t
+ex t.
+
+========== PAGE 359 ==========
+ 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+With the Mononobe-Okabe (M-O) formulation (see Equation 7-5): 
+ 
+Equation as discussed
+ in the captioned text.
+where h is the wall height along the vertical plane within the reinforced soil mass as shown 
+below (and in Figure 7-1), b is the unit weight of the retained backfill and KAE is obtained as 
+per Equation 7-6, as follows. 
+ 
+ 
+ 
+D
+i
+a
+g
+r
+a
+m 
+i
+ll
+u
+s
+t
+r
+atio
+n
+ 
+w
+i
+th equation 
+as  discu
+ssed in the captioned text.
+Per Equation 7-6, KAE is equal to: 
+  
+2 
+' 
+Equ ation as discus
+sed in
+ 
+th
+e 
+capt io
+ne
+d
+ text.
+with 
+FHWA NHI-10-025 
+Example E7 – Seismic Loading  
+MSE Walls and RSS – Vol II 
+E7 – 5 
+November 2009  
+
+========== PAGE 360 ==========
+ 
+ 
+  
+ 
+ 
+ 
+Equ
+at io
+n as  
+di
+scussed 
+in th e 
+ca pt io ned te xt.
+   = angle of wall friction = lesser of the angle of friction for the reinforced soil mass (' r) 
+and the retained backfill (' b) = 30 
+I 
+=   the backfill slope angle = β = 0 
+' b   =  angle of internal friction for retained backfill  = 30 
+ = the slope angle of the face = 90 
+ 
+ 
+ 
+ 
+Therefore 
+ 
+Equation as discussed i
+n the c
+a
+pt
+i
+on
+ed text.
+Equation as d
+iscusse
+d in th
+e 
+ca ptioned
+ 
+te
+xt
+.
+Equation as 
+di
+scussed in  the captioned text.
+ 
+ 
+ 
+STEP 7 
+ 
+DETERMINE THE HORIZONTAL INERTIA FORCE, PIR  
+ 
+Determine the horizontal inertial force, PIR, of the total reinforced wall mass with Equation 7-7, 
+as follows: 
+ 
+PIR = 0.5(kav)(W) 
+ 
+where W is the weight of the full reinforced soil mass and any overlying permanent slopes 
+and/or permanent surcharges within the limits of the reinforced soil mass. The inertial force is 
+assumed to act at the centroid of the mass used to determine the weight W. 
+ 
+W = 25.64 ft (18 ft) (125 pcf) =  57.68 k/lft 
+FHWA NHI-10-025 
+Example E7 – Seismic Loading  
+MSE Walls and RSS – Vol II 
+E7 – 6 
+November 2009  

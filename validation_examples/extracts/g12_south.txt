@@ -1,0 +1,3054 @@
+
+========== PAGE 209 ==========
+ 
+Figure D-81 Effective stress diagram for the South Abutment using Boring S-3. 
+ 
+As indicated by soil boring S-3 (Figures D-4), the soil conditions at the South 
+Abutment consist of silty clay to a depth of 96 feet where bedrock is encountered.  
+Unconfined compression strength tests were performed on each undisturbed 
+cohesive soil sample.  The undrained shear strength was then calculated by dividing 
+the unconfined compression strength by 2. 
+ 
+Figure D-82 presents a plot of the undrained shear strength versus depth for the 
+South Abutment soils.  As illustrated, the undrained shear strength has distinct 
+changes in undrained shear strength that can be used to identify three distinct soil 
+layers and the layer boundaries.  The undrained shear strength also increases 
+approximately linearly with depth within each layer.  
+ 
+Table D-96 summarizes the undrained shear strength values for Soil Layer 1 as well 
+as sublayers a through e.  Similarly, Table D-97 and Table D-98 present the 
+undrained shear strength values for Soil Layer 2 and Soil Layer 3 respectively, as 
+well as the individual sublayers. 
+ 
+ 
+175 
+
+========== PAGE 210 ==========
+ 
+Figure D-82 Undrained shear strength, su, versus depth at the South Abutment. 
+ 
+ 
+Table D-96 Undrained Shear Strength, su, for Soil Layer 1 at the South Abutment 
+Soil Layer 
+Sample Depth (ft) 
+σ'vo (ksf) 
+qu (tsf) 
+su (ksf) 
+1a 
+1 
+0.110 
+0.650 
+0.650 
+1b 
+6 
+0.488 
+0.660 
+0.660 
+1c 
+11 
+0.726 
+0.680 
+0.680 
+1d 
+16 
+0.964 
+0.700 
+0.700 
+1e 
+21 
+1.202 
+0.720 
+0.720 
+ 
+ 
+Table D-97 Undrained Shear Strength, su, for Soil Layer 2 at the South Abutment 
+Soil Layer 
+Sample Depth (ft) 
+σ'vo (ksf) 
+qu (tsf) 
+su (ksf) 
+2a 
+26 
+1.440 
+1.79 
+1.79 
+2b 
+31 
+1.748 
+1.83 
+1.83 
+2c 
+36 
+2.056 
+1.93 
+1.93 
+2d 
+41 
+2.364 
+2.00 
+2.00 
+ 
+ 
+ 
+ 
+176 
+
+========== PAGE 211 ==========
+Table D-98 Undrained Shear Strength, su, for Soil Layer 3 at the South Abutment 
+Soil Layer 
+Sample Depth (ft) 
+σ'vo (ksf) 
+qu (tsf) 
+su (ksf) 
+3a 
+46 
+2.672 
+3.11 
+3.11 
+3b 
+51 
+3.005 
+3.19 
+3.19 
+3c 
+56 
+3.338 
+3.30 
+3.30 
+3d 
+61 
+3.671 
+3.36 
+3.36 
+3e 
+66 
+4.004 
+3.39 
+3.39 
+3f 
+71 
+4.337 
+3.50 
+3.50 
+3g 
+76 
+4.670 
+3.55 
+3.55 
+3h 
+81 
+5.003 
+3.58 
+3.58 
+3i 
+86 
+5.336 
+3.60 
+3.60 
+3j 
+91 
+5.669 
+3.65 
+3.65 
+3k 
+96 
+6.002 
+3.70 
+3.70 
+ 
+The design soil profile for the South Abutment is presented in Figure D-83.  The 
+bottom of pile cap (Elev. 305 feet) is 5 feet below ground surface.  Some soil 
+properties in the design soil profile such as the initial cyclic modulus of subgrade 
+reaction, kc, have been selected based on published correlations in the absence of 
+laboratory testing.  For this particular soil profile, the initial cyclic moduli of subgrade 
+reaction was selected based on the values given in Table 7-22 which are delineated 
+by soil shear strength.  Similarly, the 50% strain factor, ε50, was estimated based 
+upon the values given in Table 7-21 which vary by soil shear strength.  If piles will be 
+driven to bedrock, strength properties of the limestone bedrock are needed.  These 
+rock parameters obtained from laboratory tests on recovered rock core samples are 
+summarized in Table D-99. 
+ 
+Table D-99 Laboratory Determined Properties of Limestone Bedrock 
+Effective 
+Unit 
+Weight 
+(kcf) 
+Undrained 
+Shearing 
+Resistance, 𝑠𝑠𝑢𝑢 
+(ksf) 
+Friction 
+Angle, φ 
+(degrees) 
+0.165  
+476 
+35.5 
+ 
+D.34.1 Geotechnical Resistance in Axial Compression 
+ 
+The nominal geotechnical resistance in axial compression is now calculated for the 
+selected candidate H-pile sections.  The nominal geotechnical resistance can be 
+calculated by hand or with computer software using an appropriate analysis method  
+ 
+177 
+
+========== PAGE 212 ==========
+ 
+Figure D-83 Design soil profile at the South Abutment. 
+ 
+based upon soil, rock, and pile type.  Chapter 7 describes appropriate methods for 
+this purpose as well as computer programs available at the time of this manual’s 
+publication. 
+ 
+For this abutment, the DrivenPiles computer program was used to calculate the 
+nominal resistance, shaft resistance, and toe resistance each as a function of depth 
+for each of the five candidate H-piles.  For nominal geotechnical resistance 
+calculations, each cohesive sample depth in Soil Layers 1, 2, and 3 was treated as 
+an individual layer with respect to shear strength.  This software program was 
+selected since it uses the FHWA recommended alpha method to calculate the 
+nominal geotechnical resistance of H-piles in cohesive soils.  A summary of the 
+shaft, toe, and nominal geotechnical resistance is presented for the HP 12x74 H-pile 
+section in Table D-100.  The depth shown is taken from the bottom of pile cap. 
+ 
+In the DrivenPiles program, the selection of the geomaterial is limited to either 
+cohesionless or cohesive soil.  Hence, the program cannot calculate the nominal toe 
+resistance on rock and the only choice is either to model rock as a hard cohesive 
+soil or a very dense cohesionless soil.  The nominal toe resistance presented in 
+Table D-100 at depth 91.25 feet was not calculated using the DrivenPiles program 
+but rather calculated using the procedure for hard rock presented in Section 
+7.2.1.4.2 of Chapter 7. 
+ 
+ 
+178 
+
+========== PAGE 213 ==========
+Table D-100 Nominal Shaft, Nominal Toe and Nominal Geotechnical Resistance for 
+HP 12x74 at the South Abutment 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal 
+Geotechnical 
+Resistance  
+(kips) 
+ 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal 
+Geotechnical 
+Resistance  
+(kips) 
+0.01 
+0.02 
+6.09 
+6.11 
+32 
+116.23 
+17.81 
+134.03 
+1 
+2.21 
+6.09 
+8.3 
+33 
+122.25 
+17.81 
+140.05 
+2 
+4.42 
+6.09 
+10.51 
+34 
+128.36 
+17.81 
+146.16 
+3 
+6.63 
+6.09 
+12.72 
+34.99 
+134.49 
+17.81 
+152.3 
+4 
+8.85 
+6.09 
+14.93 
+35.01 
+134.62 
+18.45 
+153.07 
+4.99 
+11.03 
+6.09 
+17.12 
+36 
+140.69 
+18.45 
+159.14 
+5.01 
+11.08 
+6.27 
+17.35 
+37 
+146.83 
+18.45 
+165.28 
+6 
+13.35 
+6.27 
+19.62 
+38 
+152.96 
+18.45 
+171.41 
+7 
+15.67 
+6.27 
+21.95 
+39 
+159.1 
+18.45 
+177.55 
+8 
+18.03 
+6.27 
+24.3 
+39.99 
+165.17 
+18.45 
+183.62 
+9 
+20.42 
+6.27 
+26.69 
+40.01 
+165.28 
+28.69 
+193.98 
+9.99 
+22.81 
+6.27 
+29.08 
+41 
+170.34 
+28.69 
+199.03 
+10.01 
+22.86 
+6.46 
+29.32 
+42 
+175.44 
+28.69 
+204.13 
+11 
+25.27 
+6.46 
+31.73 
+43 
+180.54 
+28.69 
+209.24 
+12 
+27.75 
+6.46 
+34.21 
+44 
+185.65 
+28.69 
+214.34 
+13 
+30.25 
+6.46 
+36.71 
+44.99 
+190.7 
+28.69 
+219.39 
+14 
+32.79 
+6.46 
+39.25 
+45.01 
+190.8 
+29.43 
+220.23 
+14.99 
+35.34 
+6.46 
+41.79 
+46 
+195.85 
+29.43 
+225.28 
+15.01 
+35.39 
+6.64 
+42.03 
+47 
+200.95 
+29.43 
+230.39 
+16 
+37.96 
+6.64 
+44.6 
+48 
+206.06 
+29.43 
+235.49 
+17 
+40.58 
+6.64 
+47.23 
+49 
+211.16 
+29.43 
+240.59 
+18 
+43.24 
+6.64 
+49.89 
+49.99 
+216.21 
+29.43 
+245.64 
+19 
+45.94 
+6.64 
+52.58 
+50.01 
+216.31 
+30.45 
+246.76 
+19.99 
+48.63 
+6.64 
+55.28 
+51 
+221.37 
+30.45 
+251.81 
+20.01 
+48.71 
+16.51 
+65.23 
+52 
+226.47 
+30.45 
+256.92 
+21 
+53.96 
+16.51 
+70.48 
+53 
+231.57 
+30.45 
+262.02 
+22 
+59.34 
+16.51 
+75.85 
+54 
+236.68 
+30.45 
+267.12 
+23 
+64.8 
+16.51 
+81.31 
+54.99 
+241.73 
+30.45 
+272.17 
+24 
+70.33 
+16.51 
+86.84 
+55.01 
+241.83 
+31 
+272.83 
+24.99 
+75.89 
+16.51 
+92.4 
+56.00 
+246.88 
+31 
+277.88 
+25.01 
+76 
+16.88 
+92.88 
+57 
+251.98 
+31 
+282.98 
+26 
+81.48 
+16.88 
+98.37 
+58 
+257.09 
+31 
+288.09 
+27 
+87.1 
+16.88 
+103.99 
+59 
+262.19 
+31 
+293.19 
+28 
+92.8 
+16.88 
+109.69 
+59.99 
+267.24 
+31 
+298.24 
+29 
+98.59 
+16.88 
+115.47 
+60.01 
+267.34 
+31.28 
+298.62 
+29.99 
+104.39 
+16.88 
+121.27 
+61 
+272.4 
+31.28 
+303.67 
+30.01 
+104.51 
+17.81 
+122.31 
+62 
+277.5 
+31.28 
+308.78 
+31 
+110.29 
+17.81 
+128.1 
+63 
+282.6 
+31.28 
+313.88 
+ 
+ 
+ 
+ 
+179 
+
+========== PAGE 214 ==========
+Table D-100 Nominal Shaft, Nominal Toe and Nominal Geotechnical Resistance for 
+HP 12x74 at the South Abutment (Continued) 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal 
+Geotechnical 
+Resistance  
+(kips) 
+ 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal 
+Geotechnical 
+Resistance  
+(kips) 
+64 
+287.71 
+31.28 
+318.98 
+78 
+359.15 
+33.03 
+392.18 
+64.99 
+292.76 
+31.28 
+324.03 
+79 
+364.25 
+33.03 
+397.28 
+65.01 
+292.86 
+32.29 
+325.15 
+79.99 
+369.3 
+33.03 
+402.33 
+66 
+297.91 
+32.29 
+330.2 
+80.01 
+369.4 
+33.21 
+402.62 
+67 
+303.01 
+32.29 
+335.31 
+81 
+374.46 
+33.21 
+407.67 
+68 
+308.12 
+32.29 
+340.41 
+82 
+379.56 
+33.21 
+412.77 
+69 
+313.22 
+32.29 
+345.51 
+83 
+384.66 
+33.21 
+417.88 
+69.99 
+318.27 
+32.29 
+350.56 
+84 
+389.77 
+33.21 
+422.98 
+70.01 
+318.37 
+32.75 
+351.13 
+84.99 
+394.82 
+33.21 
+428.03 
+71 
+323.43 
+32.75 
+356.18 
+85.01 
+394.92 
+33.68 
+428.59 
+72 
+328.53 
+32.75 
+361.28 
+86 
+399.97 
+33.68 
+433.65 
+73 
+333.63 
+32.75 
+366.39 
+87 
+405.07 
+33.68 
+438.75 
+74 
+338.74 
+32.75 
+371.49 
+88 
+410.18 
+33.68 
+443.85 
+74.99 
+343.79 
+32.75 
+376.54 
+89 
+415.28 
+33.68 
+448.96 
+75.01 
+343.89 
+33.03 
+376.92 
+90 
+420.33 
+33.68 
+454.01 
+76 
+348.94 
+33.03 
+381.97 
+91 
+420.43 
+33.68 
+454.11 
+77 
+354.04 
+33.03 
+387.07 
+91.25 
+420.43 
+1527.00 
+1947.43 
+ 
+ 
+For piles driven to hard rock, the nominal toe resistance should be determined using 
+Equation 7-34 as described in Section 7.2.1.4.2.  The strength properties of the 
+limestone bedrock were presented in Table D-99.  The unit toe resistance, qp, of the 
+hard rock can then be calculated using Equation 7-34. 
+ 
+ 
+𝑞𝑞𝑝𝑝= 𝑃𝑃𝑠𝑠 𝑠𝑠𝑢𝑢 𝑁𝑁𝑐𝑐 +  γ 𝐷𝐷 𝑁𝑁𝑞𝑞+ 𝑃𝑃𝑡𝑡 γ ( 
+𝑏𝑏 𝑁𝑁γ
+2 ) 
+[Eq. 7-34] 
+ 
+This computation requires determination of the bearing capacity factors  𝑁𝑁𝑐𝑐,  𝑁𝑁𝑞𝑞, and 
+𝑁𝑁γ  from Figure D-84.  Entering the figure with a friction angle of 35.5 degrees, the 
+bearing capacity factors  𝑁𝑁𝑐𝑐,  𝑁𝑁𝑞𝑞, and 𝑁𝑁γ , were determined to be 17, 14, and 24, 
+respectively.  Because piles will likely be seated on bedrock, the pile penetration into 
+the rock surface is assumed as 0.25 feet. 
+ 
+ 
+180 
+
+========== PAGE 215 ==========
+ 
+Figure D-84 Bearing capacity factors for foundations on rock. 
+ 
+Equation 7-34 is now used to determine the unit resistance, qp, of the rock. 
+ 
+ 
+𝑠𝑠𝑢𝑢 
+=  undrained shearing resistance of the rock, 476 ksf. 
+ 
+γ  
+=  effective density of the rock mass, 0.165 kcf. 
+ 
+𝐷𝐷 
+=  pile penetration below the rock surface, assume 0.25 feet. 
+ 
+𝑏𝑏 
+=  pile width or diameter 1 foot (HP 12x74). 
+ 
+𝑃𝑃𝑠𝑠  
+=  pile shape factor of 1.25 for square pile toe. 
+ 
+𝑃𝑃𝑡𝑡 
+=  pile base factor of 0.80 for a square pile toe. 
+ 
+𝑁𝑁𝑐𝑐  =  bearing capacity factor, 17 (Figure D-84). 
+ 
+𝑁𝑁𝑞𝑞  =  bearing capacity factor, 14 (Figure D-84). 
+ 
+𝑁𝑁γ  
+=  bearing capacity factor, 24 (Figure D-84). 
+ 
+ 
+𝑞𝑞𝑝𝑝= 𝑃𝑃𝑠𝑠 𝑠𝑠𝑢𝑢 𝑁𝑁𝑐𝑐 +  γ 𝐷𝐷 𝑁𝑁𝑞𝑞+ 𝑃𝑃𝑡𝑡 γ ( 
+𝑏𝑏 𝑁𝑁γ
+2 ) 
+[Eq. 7-34] 
+ 
+ 
+𝑞𝑞𝑝𝑝= (1.25) ∗(476 𝑘𝑘𝑘𝑘𝑘𝑘) ∗(17) 
+                      + (0.165 𝑘𝑘𝑘𝑘𝑘𝑘) ∗(0.25 𝑓𝑓𝑓𝑓𝑓𝑓𝑓𝑓) ∗(14)      
+                                 + (0.80) ∗(0.165 𝑘𝑘𝑘𝑘𝑘𝑘) ∗( (1 𝑓𝑓𝑓𝑓𝑓𝑓𝑓𝑓) ∗(24)
+2
+) 
+ 
+ 
+𝑞𝑞𝑝𝑝= 10,117 𝑘𝑘𝑘𝑘𝑘𝑘 
+ 
+181 
+
+========== PAGE 216 ==========
+For the HP 12x74 pile section with toe area (area of steel, 𝐴𝐴𝑠𝑠) of 0.151 ft2, the 
+nominal toe resistance is then calculated as follows: 
+ 
+ 
+𝑅𝑅𝑝𝑝= 𝑞𝑞𝑝𝑝∗𝐴𝐴𝑠𝑠 
+ 
+ 
+𝑅𝑅𝑝𝑝= (10,117 𝑘𝑘𝑘𝑘𝑘𝑘) ∗(0.151 𝑓𝑓𝑓𝑓2) 
+ 
+ 
+𝑅𝑅𝑝𝑝= 1,528 𝑘𝑘𝑘𝑘𝑘𝑘𝑘𝑘 
+ 
+The nominal shaft, nominal toe, and nominal geotechnical resistance are also 
+presented graphically in Figure D-85.  A review of Table D-94 indicates the nominal 
+structural resistance for the HP 12x74 section is 1088 kips, which is less than the 
+nominal toe resistance when driven to hard limestone bedrock.  Therefore, the 
+nominal structural resistance will control the design.  The penetration depth indicated 
+in both Table D-100 and Figure D-85 is referenced from the bottom of footing, which 
+is 5 feet below the original ground surface elevation.  The nominal shaft, nominal 
+toe, and nominal geotechnical resistances were calculated for all of the candidate 
+pile sections in a similar manner.  The nominal geotechnical resistances in axial 
+compression versus pile penetration depth for all candidate pile types are presented 
+in Figure D-86. 
+ 
+Once the nominal geotechnical resistance in axial compression versus pile 
+penetration depth has been calculated, the factored geotechnical resistance in axial 
+compression versus pile penetration depth can be determined.  The factored 
+geotechnical resistance depends on the resistance determination method selected 
+for the design. 
+ 
+If the nominal resistance will be confirmed by a field determination method, the 
+factored geotechnical resistance in axial compression as a function of pile 
+penetration depth can be determined by multiplying the calculated nominal 
+geotechnical resistance at a given depth by the resistance factor associated with the 
+field determination method, 𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑.  AASHTO (2014) resistance factors for field 
+resistance determination methods are presented in Table 7-2. 
+ 
+If pile installation will be controlled by driving to a depth determined by static analysis 
+method, then the factored geotechnical resistance in axial compression as a function 
+of pile penetration depth can be determined by multiplying the calculated nominal 
+resistance at a given depth by the resistance factor associated with the static 
+analysis method, 𝜙𝜙𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠.  AASHTO (2014) resistance factors for static analysis 
+methods are presented in Table 7-1 of this manual.   
+ 
+182 
+
+========== PAGE 217 ==========
+ 
+Figure D-85 Nominal geotechnical resistance in axial compression versus pile 
+penetration depth for HP 12x74 at the South Abutment. 
+ 
+ 
+Figure D-86 Nominal geotechnical resistance in axial compression versus pile 
+penetration depth for all candidate pile sections at South Abutment. 
+ 
+183 
+
+========== PAGE 218 ==========
+Figure D-87 presents a design chart of the nominal and factored geotechnical 
+resistance in axial compression versus depth for the HP 12x74 candidate H-pile 
+section.  The design chart includes the nominal geotechnical resistance as well as 
+factored geotechnical resistances based on several resistance determination 
+methods.  The factored geotechnical resistance versus penetration depth is plotted 
+for resistance determination by a static load test with dynamic testing of 2% of the 
+piles (𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.80), by dynamic testing of at least two piles per site condition, but no 
+less than 2% of the production piles, with signal matching (𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.65), and by wave 
+equation analysis (𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.50).  Also included is the factored geotechnical resistance 
+based on the static analysis method used at the abutment, the alpha method 
+(𝜙𝜙𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠=0.35).  An AASHTO resistance factor is not currently available for the static 
+analysis method used for hard rock.  Therefore, the field resistance determination 
+method would control pile installation.   
+ 
+For the HP 12x74 section, Figure D-87 illustrates the effects that the various 
+resistance determination methods have on the pile length required for a given 
+factored compression resistance, the range of factored resistances available from a 
+given pile section, and the potential impact of these factors on the number of piles 
+needed to resist axial compression loads. 
+ 
+ 
+Figure D-87 Design chart of nominal and factored geotechnical resistance in axial 
+compression versus pile penetration depth for HP 12x74 at the South Abutment. 
+ 
+184 
+
+========== PAGE 219 ==========
+The factored geotechnical resistance in axial compression for all candidate pile 
+sections is presented in Figures D-88 through D-91 based on the same resistance 
+determination method.  For all the candidate pile sections, these figures illustrate the 
+effects the various resistance determination methods have on the pile length 
+required for a given factored resistance, the factored resistance available from a 
+given pile section, and the potential impact of these factors on the number of piles 
+needed to resist axial compression loads. 
+ 
+ 
+ 
+Figure D-88 Factored geotechnical resistance, Rr, in axial compression based on 
+field determination by static load test and dynamic testing 2% of the piles,𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.80. 
+ 
+ 
+185 
+
+========== PAGE 220 ==========
+ 
+Figure D-89 Factored geotechnical resistance, Rr, in axial compression based on 
+field determination by dynamic testing 2% of the piles, 𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.65. 
+ 
+ 
+Figure D-90 Factored geotechnical resistance, Rr, in axial compression based on 
+field determination by wave equation analysis, 𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.50. 
+ 
+186 
+
+========== PAGE 221 ==========
+ 
+Figure D-91 Factored geotechnical resistance, Rr, in axial compression based on 
+determination using alpha method static analysis, 𝜙𝜙𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠=0.35. 
+ 
+D.34.2 Geotechnical Resistance in Axial Tension (uplift) 
+ 
+In a similar manner, the nominal and factored geotechnical resistances in axial 
+tension (uplift) were calculated using the alpha method and with the DrivenPiles 
+computer program.  Figure D-92 presents the nominal shaft resistance versus 
+penetration depth for all the candidate pile sections.  As outlined in Section 7.2.3.2.1, 
+the factored resistance in axial tension is the shaft resistance multiplied by the 
+resistance factor, φup, for the resistance determination method.  
+ 
+Figure D-93 presents a design chart of the nominal and factored geotechnical 
+resistance in axial tension versus pile penetration depth for HP 12x74 H-pile section.  
+A resistance factor of 0.60 is used when the tension resistance is determined by a 
+static load test, 0.50 when determined by a dynamic test with signal matching, and 
+0.25 when determined by the alpha method static analysis.  For a single pile section 
+(HP 12x74), this figure illustrates the effects the various resistance determination 
+methods have on the pile length required for a given factored resistance, the 
+factored resistance available from a given pile section, and the potential impact of 
+these factors on the number of piles needed to resist axial tension loads. 
+ 
+ 
+187 
+
+========== PAGE 222 ==========
+Figures D-94 to D-96 present the factored geotechnical resistance in axial tension 
+versus penetration depth based on the field determination method for each of the 
+candidate pile sections.  For all the candidate pile sections, these figures illustrate 
+the effects the various resistance determination methods have on the pile length 
+required for a given factored resistance, the factored resistance available from a 
+given pile section, and the potential impact of these factors on the number of piles 
+needed to resist axial tension loads. 
+ 
+A review of the soil profile at the South Abutment indicates no unsuitable soil layers 
+are present that should be ignored for load support.  Abutment scour and 
+liquefaction due to a seismic event are also not considerations.  
+ 
+ 
+Figure D-92 Nominal shaft resistance versus penetration depth for all candidate pile 
+sections at the South Abutment. 
+ 
+ 
+188 
+
+========== PAGE 223 ==========
+ 
+Figure D-93 Design chart of nominal and factored geotechnical resistance in axial 
+tension versus pile penetration depth for HP 12x74 at the South Abutment. 
+ 
+ 
+Figure D-94 Factored geotechnical resistance, Rr, in axial tension based on field 
+determination by static load test, φdyn=0.60. 
+ 
+189 
+
+========== PAGE 224 ==========
+ 
+Figure D-95 Factored geotechnical resistance, Rr, in axial tension based on field 
+determination by dynamic testing with signal matching, φdyn=0.50. 
+ 
+ 
+Figure D-96 Factored geotechnical resistance, Rr, in axial tension based on 
+determination using alpha method static analysis, φstat=0.25. 
+ 
+190 
+
+========== PAGE 225 ==========
+D.34.3 Preliminary Pile Drivability Assessment 
+ 
+Preliminary assessments of pile drivability are now performed at this stage of the 
+design.  A drivability check at this time is essential to assess the constructability of 
+candidate pile types and/or sections and to eliminate sections with insufficient 
+drivability.  Section 12.4 provides a detailed discussion of wave equation drivability 
+analyses and their applications.   
+ 
+A candidate pile section must be capable of being driven to the nominal driving 
+resistance.  In this example, the nominal driving resistance is less than the nominal 
+geotechnical resistance since soil set up will be incorporated into the design.  In 
+addition, a candidate pile section must be capable of being driven to the penetration 
+depth necessary to achieve the nominal geotechnical resistance in axial tension, and 
+to a penetration depth necessary to satisfy lateral load demands as well as axial and 
+lateral deformation requirements.  A suitably sized pile hammer must be capable of 
+driving the pile to its established minimum penetration depth and to the nominal 
+resistance at a reasonable blow count without exceeding material stress limits.  As 
+detailed in Chapter 12, the blow count should be between 30 and 120 blows per foot 
+at the nominal resistance.  If the pile cannot be driven within these requirements, a 
+larger pile hammer, a pile section with greater impedance, or pile installation aids 
+such as predrilling or jetting may be required to satisfy or improve drivability.   
+ 
+Driving stresses during pile installation should remain below the driving stress limits 
+tied to pile type and material strength.  For the candidate steel H-piles, compression 
+driving stress limits are given by Equation 8-33.  As per ASTM A-572 requirements, 
+new steel H-piles are rolled with a minimum yield stress of 50 ksi. 
+ 
+The driving stress limit, σ𝑑𝑑𝑑𝑑, for candidate pile sections is then calculated as follows: 
+ 
+ 
+σ𝑑𝑑𝑑𝑑= 𝜑𝜑𝑑𝑑𝑑𝑑 ൫0.9 𝐹𝐹𝑦𝑦൯ 
+[Eq. 8-33] 
+ 
+ 
+Where: 
+φ𝑑𝑑𝑑𝑑 
+= resistance factor, 1.0 for steel piles. 
+ 
+ 
+𝐹𝐹𝑦𝑦  
+= yield stress, 50 ksi. 
+ 
+Therefore, the driving stress limit, σ𝑑𝑑𝑑𝑑, is 45 ksi. 
+ 
+𝜎𝜎𝑑𝑑𝑑𝑑= (1.0)൫0.9 (50 𝑘𝑘𝑘𝑘𝑘𝑘)൯= 45 𝑘𝑘𝑘𝑘𝑘𝑘 
+ 
+Drivability analyses were performed for all five candidate pile sections.  Since the 
+specific pile hammer is often unknown at this point in the design, a reasonably sized, 
+ 
+191 
+
+========== PAGE 226 ==========
+commonly available single acting diesel hammer was chosen for each of the 
+candidate pile sections.  As noted in Section 15.19, a hammer having a ram weight 
+of 1 to 2% of the larger of the required nominal resistance or required nominal 
+driving resistance often provides a reasonable initial estimate of hammer size for 
+wave equation analysis. 
+ 
+Table D-101 summarizes the factored structural resistance in axial compression, Pr, 
+and the corresponding minimum and maximum nominal driving resistance 
+associated with full section utilization and field determination methods ranging from 
+a static load test with dynamic testing (φdyn=0.80) to the FHWA modified Gates 
+dynamic formula (φdyn=0.40).  Given that utilization of the full structural resistance is 
+uncommon for piles driven in soil, a reasonable initial estimate of the trial hammer 
+size for a wave equation drivability analysis is 1 to 1.5% of the minimum Rndr.  
+Driving stresses could exceed specified limits by choosing a hammer with a ram 
+weight significantly larger than 2% of the minimum Rndr.  For each pile hammer, the 
+wave equation default values were used for the helmet weight, hammer cushion 
+materials, and the hammer cushion material properties. 
+ 
+Table D-101 Summary of Pile Hammers Used in Drivability Analyses 
+Pile Section 
+Pile 
+Cross 
+Sectional 
+Area  
+(in2) 
+Factored 
+Structural 
+Resistance, 
+Pr  
+(kips) 
+Minimum 
+Rndr 
+φdyn=0.80 
+ 
+(kips) 
+Maximum 
+Rndr 
+φdyn=0.40 
+ 
+(kips) 
+Ram 
+Weight  
+1% of Min 
+Rndr  
+(%) 
+Diesel 
+Model 
+Ram 
+Weight  
+ 
+ 
+(kips) 
+Rated 
+Energy  
+ 
+ 
+(ft-kips) 
+HP 10x42 
+12.4 
+309 
+386 
+773 
+3.86 
+D25-52 
+5.51 
+62.0 
+HP 12x53 
+15.5 
+383 
+478 
+958 
+4.78 
+D30-52 
+6.62 
+74.4 
+HP 12x74 
+21.8 
+544 
+680 
+1360 
+6.80 
+D36-52 
+7.94 
+89.3 
+HP 14x89 
+26.1 
+652 
+815 
+1630 
+8.15 
+D46-52 
+10.14 
+114.1 
+HP 14x117 
+34.4 
+860 
+1075 
+2150 
+10.07 
+D50-52 
+11.03 
+124.0 
+ 
+For the soil resistance model, the output from DrivenPiles was converted to unit 
+shaft resistance and unit toe resistance values and then input into the wave equation 
+program.  Similar soil resistances are thereby calculated versus depth by both the 
+static analysis and wave equation analysis programs.   
+ 
+The dynamic soil properties for each soil layer were chosen in accordance with wave 
+equation program recommendations.  Selection of soil quake and damping 
+parameters is discussed in Section 12.6.7.  For the South Abutment profile, setup 
+factors of 2.0 were selected for all of the silty clay layers.  No setup was considered 
+ 
+192 
+
+========== PAGE 227 ==========
+for the hard rock.  Soil setup is discussed in Section 7.2.4.2 and a summary of 
+typical soil setup factors is provided in Table 7-16.  A summary of the dynamic soil 
+properties chosen for the drivability analyses are summarized in Table D-102. 
+ 
+Table D-102 Dynamic Soil Properties for South Abutment Soil Profile 
+Soil 
+Layer 
+Pile  
+Section 
+Shaft 
+Quake 
+(in) 
+Toe 
+Quake 
+(in) 
+Shaft 
+Damping 
+(s/ft) 
+Toe 
+Damping 
+(s/ft) 
+Soil Set-
+Up 
+Factor 
+1 
+HP 10 x 42 
+0.10 
+0.17 
+0.20 
+0.15 
+2.0 
+1 
+HP 12 x 53 
+0.10 
+0.20 
+0.20 
+0.15 
+2.0 
+1 
+HP 12 x 74 
+0.10 
+0.20 
+0.20 
+0.15 
+2.0 
+1 
+HP 14 x 89 
+0.10 
+0.23 
+0.20 
+0.15 
+2.0 
+1 
+HP 14 x 117 
+0.10 
+0.23 
+0.20 
+0.15 
+2.0 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+2 
+HP 10 x 42 
+0.10 
+0.17 
+0.20 
+0.15 
+2.0 
+2 
+HP 12 x 53 
+0.10 
+0.20 
+0.20 
+0.15 
+2.0 
+2 
+HP 12 x 74 
+0.10 
+0.20 
+0.20 
+0.15 
+2.0 
+2 
+HP 14 x 89 
+0.10 
+0.23 
+0.20 
+0.15 
+2.0 
+2 
+HP 14 x 117 
+0.10 
+0.23 
+0.20 
+0.15 
+2.0 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+3 
+HP 10 x 42 
+0.10 
+0.17 
+0.20 
+0.15 
+2.0 
+3 
+HP 12 x 53 
+0.10 
+0.20 
+0.20 
+0.15 
+2.0 
+3 
+HP 12 x 74 
+0.10 
+0.20 
+0.20 
+0.15 
+2.0 
+3 
+HP 14 x 89 
+0.10 
+0.23 
+0.20 
+0.15 
+2.0 
+3 
+HP 14 x 117 
+0.10 
+0.23 
+0.20 
+0.15 
+2.0 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+4 
+HP 10 x 42 
+0.10 
+0.08 
+0.05 
+0.15 
+1.0 
+4 
+HP 12 x 53 
+0.10 
+0.10 
+0.05 
+0.15 
+1.0 
+4 
+HP 12 x 74 
+0.10 
+0.10 
+0.05 
+0.15 
+1.0 
+4 
+HP 14 x 89 
+0.10 
+0.12 
+0.05 
+0.15 
+1.0 
+4 
+HP 14 x 117 
+0.10 
+0.12 
+0.05 
+0.15 
+1.0 
+ 
+In soils that exhibit setup, the long term nominal resistance may be higher than the 
+nominal driving resistance.  Therefore, a gain/loss factor of 0.50 was used to 
+estimate the nominal driving resistance versus depth in the drivability analyses.  This 
+gain/loss factor was determined from the inverse of the highest soil setup factor 
+within the soil model (e.g., 1 divided by 2.0 equals 0.50).  A gain/loss factor of 1 
+would be used if it was desired to model the nominal resistance instead of the 
+nominal driving resistance and not consider the soil strength loss during driving and 
+any subsequent soil setup.  Refer to Chapter 12 for more detailed discussion on the 
+selection of dynamic soil properties and soil setup factors. 
+ 
+ 
+193 
+
+========== PAGE 228 ==========
+The DrivenPiles program calculates the nominal driving resistance which models the 
+soil strength lost during driving as well as the geotechnical nominal resistance once 
+setup occurs.  Figure D-97 presents the nominal shaft, toe, and driving resistance 
+versus pile penetration depth for the HP 12x74 H-pile section at the South Abutment.  
+These results are also presented numerically in Table D-103.  To quantify the 
+expected soil setup at a given pile penetration depth, the values from Table D-103 
+can be compared against the nominal resistance previously presented in Table 
+D-100.  Figure D-98 illustrates the significant difference between the expected 
+nominal driving resistance and the geotechnical nominal resistance after setup for 
+the HP 12x74 candidate pile section.  For example, at a depth of 45 feet, the 
+expected setup from shaft resistance is 95 kips.  Where significant soil setup is 
+expected, a smaller pile driving hammer may be acceptable for pile installation since 
+the nominal driving resistance will be significantly lower than the nominal 
+geotechnical resistance. 
+ 
+ 
+Figure D-97 Nominal driving resistance for HP 12x74 at the South Abutment. 
+ 
+ 
+194 
+
+========== PAGE 229 ==========
+ 
+Figure D-98 Comparison of nominal driving resistance and nominal geotechnical 
+resistance in axial compression for HP 12x74 at the South Abutment.  
+ 
+ 
+ 
+195 
+
+========== PAGE 230 ==========
+Table D-103 Nominal Shaft, Nominal Toe and Nominal Driving Resistance  
+for HP 12x74 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal  
+Driving 
+Resistance  
+(kips) 
+ 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal 
+Driving 
+Resistance  
+(kips) 
+0.01 
+0.01 
+6.09 
+6.1 
+32 
+58.11 
+17.81 
+75.92 
+1 
+1.1 
+6.09 
+7.19 
+33 
+61.12 
+17.81 
+78.93 
+2 
+2.2 
+6.09 
+8.3 
+34 
+64.18 
+17.81 
+81.99 
+3 
+3.3 
+6.09 
+9.41 
+34.99 
+67.25 
+17.81 
+85.05 
+4 
+4.4 
+6.09 
+10.51 
+35.01 
+67.31 
+18.45 
+85.76 
+4.99 
+5.52 
+6.09 
+11.61 
+36 
+70.35 
+18.45 
+88.8 
+5.01 
+5.54 
+6.27 
+11.81 
+37 
+73.41 
+18.45 
+91.87 
+6 
+6.67 
+6.27 
+12.95 
+38 
+76.48 
+18.45 
+94.93 
+7 
+7.84 
+6.27 
+14.11 
+39 
+79.55 
+18.45 
+98 
+8 
+9.01 
+6.27 
+15.29 
+39.99 
+82.59 
+18.45 
+101.04 
+9 
+10.21 
+6.27 
+16.48 
+40.01 
+82.64 
+28.69 
+111.34 
+9.99 
+11.4 
+6.27 
+17.68 
+41 
+85.17 
+28.69 
+113.86 
+10.01 
+11.43 
+6.46 
+17.89 
+42 
+87.72 
+28.69 
+116.41 
+11 
+12.64 
+6.46 
+19.1 
+43 
+90.27 
+28.69 
+118.96 
+12 
+13.87 
+6.46 
+20.33 
+44 
+92.82 
+28.69 
+121.52 
+13 
+15.13 
+6.46 
+21.59 
+44.99 
+95.35 
+28.69 
+124.04 
+14 
+16.4 
+6.46 
+22.85 
+45.01 
+95.4 
+29.43 
+124.83 
+14.99 
+17.67 
+6.46 
+24.13 
+46 
+97.93 
+29.43 
+127.36 
+15.01 
+17.69 
+6.64 
+24.34 
+47 
+100.48 
+29.43 
+129.91 
+16 
+18.98 
+6.64 
+25.62 
+48 
+103.03 
+29.43 
+132.46 
+17 
+20.29 
+6.64 
+26.93 
+49 
+105.58 
+29.43 
+135.01 
+18 
+21.62 
+6.64 
+28.26 
+49.99 
+108.11 
+29.43 
+137.54 
+19 
+22.97 
+6.64 
+29.61 
+50.01 
+108.16 
+30.45 
+138.6 
+19.99 
+24.32 
+6.64 
+30.96 
+51 
+110.68 
+30.45 
+141.13 
+20.01 
+24.36 
+16.51 
+40.87 
+52 
+113.23 
+30.45 
+143.68 
+21 
+26.98 
+16.51 
+43.5 
+53 
+115.79 
+30.45 
+146.23 
+22 
+29.67 
+16.51 
+46.18 
+54 
+118.34 
+30.45 
+148.78 
+23 
+32.4 
+16.51 
+48.91 
+54.99 
+120.86 
+30.45 
+151.31 
+24 
+35.16 
+16.51 
+51.68 
+55.01 
+120.91 
+31.00 
+151.91 
+24.99 
+37.94 
+16.51 
+54.46 
+56 
+123.44 
+31.00 
+154.44 
+25.01 
+38.0 
+16.88 
+54.88 
+57 
+125.99 
+31.00 
+156.99 
+26 
+40.74 
+16.88 
+57.63 
+58 
+128.54 
+31.00 
+159.54 
+27 
+43.55 
+16.88 
+60.44 
+59 
+131.1 
+31.00 
+162.1 
+28 
+46.4 
+16.88 
+63.29 
+59.99 
+133.62 
+31.00 
+164.62 
+29 
+49.29 
+16.88 
+66.18 
+60.01 
+133.67 
+31.28 
+164.95 
+29.99 
+52.19 
+16.88 
+69.08 
+61 
+136.2 
+31.28 
+167.48 
+30.01 
+52.25 
+17.81 
+70.06 
+62 
+138.75 
+31.28 
+170.03 
+31 
+55.15 
+17.81 
+72.95 
+63 
+141.3 
+31.28 
+172.58 
+ 
+ 
+ 
+ 
+196 
+
+========== PAGE 231 ==========
+Table D-103 Nominal Shaft, Nominal Toe and Nominal Driving Resistance  
+for HP 12x74 (continued) 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal 
+Driving 
+Resistance  
+(kips) 
+ 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal 
+Driving 
+Resistance  
+(kips) 
+64 
+143.85 
+31.28 
+175.13 
+78 
+179.57 
+33.03 
+212.6 
+64.99 
+146.38 
+31.28 
+177.66 
+79 
+182.13 
+33.03 
+215.15 
+65.01 
+146.43 
+32.29 
+178.72 
+79.99 
+184.65 
+33.03 
+217.68 
+66 
+148.96 
+32.29 
+181.25 
+80.01 
+184.7 
+33.21 
+217.92 
+67 
+151.51 
+32.29 
+183.8 
+81 
+187.23 
+33.21 
+220.44 
+68 
+154.06 
+32.29 
+186.35 
+82 
+189.78 
+33.21 
+222.99 
+69 
+156.61 
+32.29 
+188.9 
+83 
+192.33 
+33.21 
+225.55 
+69.99 
+159.14 
+32.29 
+191.43 
+84 
+194.88 
+33.21 
+228.1 
+70.01 
+159.19 
+32.75 
+191.94 
+84.99 
+197.41 
+33.21 
+230.62 
+71 
+161.71 
+32.75 
+194.47 
+85.01 
+197.46 
+33.68 
+231.14 
+72 
+164.26 
+32.75 
+197.02 
+86 
+199.99 
+33.68 
+233.66 
+73 
+166.82 
+32.75 
+199.57 
+87 
+202.54 
+33.68 
+236.21 
+74 
+169.37 
+32.75 
+202.12 
+88 
+205.09 
+33.68 
+238.76 
+74.99 
+171.89 
+32.75 
+204.65 
+89 
+207.64 
+33.68 
+241.32 
+75.01 
+171.94 
+33.03 
+204.97 
+90 
+210.17 
+33.68 
+243.84 
+76 
+174.47 
+33.03 
+207.5 
+91 
+210.24 
+33.68 
+243.92 
+77 
+177.02 
+33.03 
+210.05 
+91.25 
+210.24 
+1527.00 
+1737.24 
+ 
+ 
+Graphical outputs of the preliminary drivability analyses are shown in Figure D-99.  
+The nominal driving resistance, the blow count or pile penetration resistance, and 
+the compression driving stress are presented versus pile penetration depth for each 
+of the five candidate pile sections.  As previously noted, the recommended blow 
+count limit is 120 blows per foot (10 blows per inch), and the recommended driving 
+stress limit is 45 ksi.  A circular reference marker is indicated on the blow count 
+versus depth plot highlighting the depth where the blow count first exceeds 120 
+blows per foot.  This marker is also shown at the same depth on the nominal driving 
+resistance versus depth plot indicating the nominal driving resistance achieved when 
+practical refusal driving conditions are encountered with the selected hammer in the 
+modeled driving conditions.  Similarly, the marker is shown at the same depth on the 
+compression driving stress versus depth plot indicating the compression driving 
+stress when practical refusal driving conditions are encountered. 
+ 
+In Figure D-99, preliminary drivability results illustrate all candidate pile sections can 
+be driven to the hard rock layer without reaching the blow count limit of 120 blows 
+per foot.  Compression driving stresses are also well below the driving stress limit of 
+45 ksi prior to reaching bedrock.   
+ 
+197 
+
+========== PAGE 232 ==========
+ 
+ 
+Figure D-99 Preliminary drivability results for five candidate H-pile sections at the 
+South Abutment. 
+ 
+For piles driven to hard rock, the driving criteria should be established to control 
+compression stresses and prevent pile toe damage (e.g., limit the number of blows 
+at refusal driving conditions).  A summary of the preliminary drivability results is 
+presented in Table D-104.  The anticipated nominal resistance in this table is the 
+expected resistance after soil setup that can be mobilized by the driving system at 
+10 blows per inch.  Since the piles terminate on hard rock, a higher geotechnical 
+nominal resistance, up to the structural resistance of the pile, is actually available. 
+ 
+Once the estimated and/or minimum pile toe elevations are determined in Block 12 
+through Block 15 of the design process, the drivability results should be reviewed to 
+confirm that the candidate pile section can be driven to the required nominal driving 
+resistance, at the estimated or required pile penetration depth, at a reasonable blow 
+count, and within driving stress limits.  Upon determination of the estimated toe 
+elevation, these plots should be reviewed to confirm that the pile can be driven to the 
+estimated toe elevation at reasonable blow counts and stresses. 
+ 
+ 
+198 
+
+========== PAGE 233 ==========
+Table D-104 Summary of Preliminary Drivability Results at South Abutment 
+Pile 
+Section 
+ 
+ 
+ 
+Pile 
+Hammer 
+ 
+ 
+ 
+Fuel 
+Setting 
+ 
+ 
+ 
+Pile 
+Penetration 
+Depth at 
+Practical 
+Refusal 
+Limit 
+(feet) 
+Nominal 
+Driving 
+Resistance 
+at Practical 
+Refusal 
+Limit 
+(kips) 
+Anticipated 
+Nominal 
+Resistance 
+at Depth of 
+Practical 
+Refusal 
+(kips) 
+Penetration 
+Depth 
+Exceeding 
+Compression 
+Driving 
+Stress Limit  
+(feet) 
+Maximum 
+Compression 
+Driving 
+Stress 
+ 
+ 
+(ksi) 
+HP 10x42 
+D25-52 
+4 
+91.1 
+362 
+536 
+> 91.1 
+34.1 
+HP 12x53 
+D30-52 
+4 
+91.1 
+446 
+649 
+> 91.1 
+34.6 
+HP 12x74 
+D36-52 
+4 
+91.1 
+590 
+806 
+> 91.1 
+36.7 
+HP 14x89 
+D46-52 
+4 
+91.1 
+729 
+975 
+> 91.1 
+39.5 
+HP 14x117 
+D50-52 
+4 
+91.1 
+896 
+1143 
+> 91.1 
+39.2 
+ 
+ 
+D.35 Block 11: South Abutment – Estimate Preliminary Number of Piles, 
+Preliminary Pile Group Size, and Resolve Individual Pile Loads for All 
+Limit States 
+ 
+The structural engineer has provided the anticipated loads for the controlling limit 
+states at the South Abutment.  These limit state loads are restated in Table D-105.  
+The Strength I limit state loads are used to evaluate geotechnical resistance in axial 
+compression and tension, as well as for lateral loading.  Service I limit state loads 
+were also provided by the structural engineer without live loads.  The Service I 
+without live load (LL) includes only unfactored permanent loads such as the 
+superstructure and wearing surface, pile cap and stem, utilities, and vertical earth 
+pressure among others.  The Service I without live load should be used for 
+evaluating vertical deformation.  There are no loads in the transverse direction at this 
+abutment.  
+ 
+Table D-105 Limit State Loads on South Abutment 
+Limit State 
+Q 
+(kips) 
+Vuy 
+(kips) 
+Muy 
+(k-ft) 
+Strength I 
+-2815 
+946 
+6732 
+Service I 
+-2082 
+629 
+3931 
+Service I, without live load 
+-1783 
+546 
+3024 
+ 
+ 
+ 
+199 
+
+========== PAGE 234 ==========
+Based on past experience, the agency generally utilizes 2 rows of piles at abutments 
+with a minimum center to center pile spacing of at least 3 pile diameters.  Three 
+potential pile group configurations are therefore being considered: 2 rows of 9 piles, 
+2 rows of 11 piles, and 2 rows of 13 piles.  These group configurations are identified 
+as Group Configuration 1, 2, and 3, respectively in Table D-106.  Because of site 
+constraints, the pile cap length is limited to 43 feet.  Furthermore, the distance from 
+the center of any exterior pile to the pile cap edge must be at least 1.25 feet in both 
+the transverse (x) and longitudinal (y) direction. 
+ 
+Table D-106 Potential Pile Group Configurations 
+Group 
+Configuration 
+Piles 
+per 
+Row 
+Total 
+Number 
+of Piles 
+Sbx
+*
+ 
+ 
+(feet) 
+Total Footing 
+Length 
+(feet) 
+Sby
+*
+ 
+ 
+(feet) 
+Total Footing 
+Width 
+(feet) 
+1 
+9 
+18 
+5.0 
+42.5 
+4.0 
+6.5 
+2 
+11 
+22 
+4.0 
+42.5 
+4.0 
+6.5 
+3 
+13 
+26 
+3.0 
+38.5 
+4.0 
+6.5 
+Note: * - Sbx and Sby are illustrated in Figure D-100 
+ 
+The following calculation is for the Group Configuration 3 and all applicable loads.  
+For this alternative, 13 piles per row are used in two separate rows, thus the 
+transverse pile spacing, Sbx, is 5’-0” and the total footing length is 38’-6”.  The 
+longitudinal pile spacing, Sby, is 4’-0”.  Figure D-100 shows the layout for the Group 
+Configuration 3 pile cap.   
+ 
+ 
+Figure D-100 Group Configuration 3 pile cap plan view. 
+ 
+ 
+200 
+
+========== PAGE 235 ==========
+For the established limit state loads and the trial pile group configuration in Figure 
+D-100, reactions for both the front and the back rows of piles were determined.  
+Compression loads are taken as positive.  The maximum factored load applied to 
+each pile was subsequently calculated by dividing the reactions by the number of 
+piles.  Figure D-101 shows the free body diagram for determining the factored load 
+for both the front and the back row. 
+ 
+ 
+Figure D-101 Elevation view of cap free body diagram. 
+ 
+Table D-107 summarizes the limit state loads and the front and back row reactions.  
+Strength I loads, Service I loads and the Service I loads without live load (LL) are 
+provided.  The Service I load without live load is used for settlement calculations.   
+ 
+Table D-107 Factored Loads and Row Reactions 
+Limit State 
+Q 
+(kips) 
+Muy 
+(k-ft) 
+Rfront 
+(kips) 
+Rback 
+(kips) 
+Strength I 
+-2815 
+6732 
+3091 
+-276 
+Service I 
+-2082 
+3931 
+2037 
+46 
+Service I, without LL 
+-1783 
+3024 
+1648 
+136 
+ 
+Table D-108 presents the maximum factored load per pile based upon the number of 
+piles in each group configuration.  For example, considering Group Configuration 3, 
+the Service I, without live load, front-row reaction of 1648 kips is divided by 13 piles 
+to yield a front-row factored load per pile equal to 127 kips.  Table D-108 also 
+provides the factored load per pile for other limit states and group configurations. 
+ 
+ 
+201 
+
+========== PAGE 236 ==========
+Table D-108 Factored Load Per Pile for Alternative Pile Group Configurations 
+Group 
+Configuration 
+Strength I, 
+Q 
+(kips) 
+Strength I,  
+Q (tension) 
+(kips) 
+Strength I,  
+Vuy 
+(kips) 
+Service I, without LL  
+Q 
+(kips) 
+1 
+344 
+-31 
+53 
+183 
+2 
+281 
+-25 
+43 
+150 
+3 
+238 
+-21 
+37 
+127 
+ 
+ 
+D.36 Block 12: South Abutment – Estimate Pile Penetration Depth for Maximum 
+Axial Compression Loads.  Check Group Efficiency in Axial Compression 
+ 
+The estimated minimum pile penetration depth necessary to obtain a factored 
+geotechnical resistance that is equal or greater than the maximum factored load per 
+pile is now determined.  Note that the factored geotechnical resistance in axial 
+compression and the resulting pile penetration depth is dependent upon the 
+resistance determination method.  Therefore, the influence of the field resistance 
+determination method on the design needs to be evaluated at this point in the design 
+process and some resistance determination methods may be eliminated from further 
+design consideration. 
+ 
+Since setup in the cohesive soils will be a significant component of the nominal 
+resistance, it is determined that the nominal geotechnical resistance will be 
+substantiated by dynamic testing 2% of the piles.  Figure D-89 illustrates the nominal 
+geotechnical resistance versus penetration depth for the 5 candidate pile sections 
+based on this resistance determination method.  From this plot, the estimated 
+penetration depth for a factored geotechnical resistance of 238 kips in axial 
+compression for the Group Configuration 3 ranges from 62 feet for the HP 14x117 
+H-pile section to 91 feet for the HP 10x42 H-pile section.   The estimated pile 
+penetration depth needed for the factored load associated with each group 
+configuration is provided for all candidate pile sections in Table D-109.  
+ 
+ 
+202 
+
+========== PAGE 237 ==========
+Table D-109 Estimated Pile Penetration Depths for the Factored Geotechnical 
+Resistance in Axial Compression at the Strength I Limit State 
+Group 
+Configuration 
+Factored 
+Load per 
+Pile 
+(kips) 
+HP 
+10x42  
+ 
+(feet) 
+HP 
+12x53  
+ 
+(feet) 
+HP 
+12x74  
+ 
+(feet) 
+HP 
+14x89  
+ 
+(feet) 
+HP 
+14x117  
+ 
+(feet) 
+1 
+344 
+91 
+91 
+91 
+90 
+88 
+2 
+281 
+91 
+90 
+86 
+74 
+72 
+3 
+238 
+91 
+74 
+73 
+63 
+62 
+ 
+As described in Section 7.2.2.2, the nominal geotechnical resistance of a pile group 
+in cohesive soil can be taken as the sum of the individual pile nominal geotechnical 
+resistances.  In a similar manner, the factored geotechnical resistance of the pile 
+group in cohesive soil is taken as the sum of the individual pile factored geotechnical 
+resistances.  This is recommended so long as 1) the pile cap is in firm contact with 
+the ground and 2) the piles are not installed at a pile spacing of less than 3 times the 
+pile diameter or 3 feet.  Since both conditions are met at the South Abutment, by 
+inspection, the nominal and factored group resistances are satisfactory.   
+ 
+As will be discussed later in Block 15, in order to satisfy tolerable deformations, the 
+piles at the South Abutment will be driven to bedrock.  Therefore, piles at the South 
+Abutment are not subject to block failure as outlined in Section 7.2.2.3 of Chapter 7. 
+ 
+ 
+D.37 Block 13: South Abutment – Establish Minimum Pile Penetration Depth 
+for Axial Tension Loads.  If Conditions Warrant, Modify Design and 
+Return to Block 10 
+ 
+The factored geotechnical resistance in axial tension must also be evaluated as the 
+back row of piles will be loaded in tension (Table D-107).  In this case, the minimum 
+required factored geotechnical resistance in axial tension is established using the 
+Strength I limit state and is determined following the procedure outlined in Section 
+7.2.3.2.  The analysis presented in this appendix slightly differs from the procedure 
+outlined in Chapter 7 in that only a single row of piles is providing the tension 
+resistance rather than the entire pile group.  Two analyses are performed; one that 
+considers the factored shaft resistances from individual piles, and one that considers 
+the weight of a soil block acting with the piles.  The lesser tension resistance 
+determined from either method controls the design. 
+ 
+ 
+203 
+
+========== PAGE 238 ==========
+As noted in Table D-107, the Strength I limit state tension load on the back row of 
+piles for the Group Configuration 3 is 276 kips.  Therefore, the minimum factored 
+geotechnical resistance in axial tension required from an individual pile is this 
+factored load divided by the 13 piles in the rear row or 21 kips.  In a similar manner, 
+the minimum factored geotechnical resistance required from an individual pile in 
+axial tension is 31 kips for Group Configuration 1, and 25 kips for Group 
+Configuration 2. 
+ 
+As noted earlier, dynamic testing with signal matching will be used as the resistance 
+determination method in the field.  Therefore, the AASHTO recommended 
+resistance factor, 𝜙𝜙up, is 0.5 (Table 7-2 of Chapter 7).  Figure D-95 provides plots of 
+the factored geotechnical resistance in axial tension versus depth for all of the 
+candidate pile types based on this resistance determination method.  For each 
+candidate section, Figure D-95 should be entered on the x-axis at the required 
+factored axial tension resistance to determine the corresponding pile penetration 
+depth. 
+ 
+Following this procedure, the estimated pile penetration depth to achieve the 
+factored geotechnical resistance in axial tension for each candidate pile section and 
+group configuration is summarized in Table D-110. 
+ 
+Table D-110 Estimated Minimum Pile Penetration Depth Required for Factored 
+Geotechnical Resistance in Axial Tension at the Strength I Limit State 
+Group 
+Configuration 
+ 
+ 
+Required 
+Factored 
+Resistance 
+in Axial 
+Tension 
+(kips) 
+HP 
+10x42 
+ 
+ 
+(feet) 
+HP 
+12x53  
+ 
+ 
+(feet) 
+HP 
+12x74 
+ 
+ 
+(feet) 
+HP 
+14x89 
+ 
+ 
+(feet) 
+HP 
+14x117 
+ 
+ 
+(feet) 
+1 
+31 
+25 
+23 
+23 
+21 
+21 
+2 
+25 
+23 
+21 
+21 
+19 
+18 
+3 
+21 
+21 
+19 
+18 
+16 
+16 
+ 
+Next, the tension resistance of the pile row when considered as a soil block is 
+calculated.  For Group Configuration 3, the required factored tension resistance of 
+the back row remains 276 kips (Table D-107) and the resistance is derived from the 
+weight of soil as a block and an average of the soil shear strength.  Equation 7-39 is 
+used to determine the required nominal group resistance in axial tension. 
+ 
+ 
+ 
+204 
+
+========== PAGE 239 ==========
+ 
+𝑅𝑅𝑟𝑟=  𝜙𝜙𝑅𝑅𝑛𝑛= 𝜙𝜙𝑢𝑢𝑢𝑢𝑅𝑅𝑢𝑢𝑢𝑢 
+[Eq. 7-39] 
+Where: 
+ 
+ 
+𝑅𝑅𝑛𝑛 
+= nominal resistance (kips). 
+ 
+𝜙𝜙ug = resistance factor for tension per Table 7-1, 0.50. 
+ 
+𝑅𝑅𝑢𝑢𝑢𝑢  = nominal uplift resistance of the pile group (kips). 
+ 
+ 
+𝑅𝑅𝑢𝑢𝑢𝑢=
+𝑅𝑅𝑟𝑟
+𝜙𝜙𝑢𝑢𝑢𝑢 
+Eq. [7-39 modified] 
+ 
+ 
+𝑅𝑅𝑢𝑢𝑢𝑢=
+(276 𝑘𝑘𝑘𝑘𝑘𝑘𝑘𝑘)
+(0.5)
+ 
+ 
+ 
+ 
+𝑅𝑅𝑢𝑢𝑢𝑢= 552 𝑘𝑘𝑘𝑘𝑘𝑘𝑘𝑘 
+ 
+ 
+The minimum required nominal uplift resistance is 552 kips. 
+ 
+Equation 7-41 is then used to determine the minimum embedded length required to 
+satisfy the nominal group tension resistance for soil acting as a block.  The length of 
+the pile group will change depending upon the group configuration.  For Group 
+Configuration 1 and 2, the pile group length is 41 feet from exterior pile edge to 
+exterior pile edge assuming a 12 inch pile width/diameter.  For Group Configuration 
+3, the pile group length is 37 feet using the same pile dimension.  The effect of a 
+smaller pile size on the pile group length is negligible (e.g. for HP 10x42 section, the 
+pile group length is 40.83 feet).  
+ 
+ 
+ 𝑅𝑅𝑢𝑢𝑢𝑢= 2 D (B + Z)𝑠𝑠𝑢𝑢+ 𝑊𝑊𝑔𝑔 
+[Eq. 7-41] 
+ 
+ 
+D 
+= embedded length of piles (feet). 
+ 
+B 
+= width of pile group, assume 1 foot (1 row in tension). 
+ 
+Z 
+= length of pile group, 37 feet (Group Configuration 3). 
+ 
+𝑠𝑠𝑢𝑢 
+= weighted average of the undrained shear strength over the depth of 
+pile embedment along the pile group perimeter (ksf) (Figure D-83). 
+ 
+𝑊𝑊𝑔𝑔 = effective weight of the pile/soil block including pile cap weight (kips). 
+ 
+The calculation is performed for the HP 12x74 pile section in Group Configuration 3.  
+The back row contains 13 piles, and the group length is 37 feet.  Figure D-102 
+provides a visual representation of the soil volume used to determine tension 
+resistance.  The block of soil being evaluated is only as wide as, and lies between, 
+the piles.  Therefore it is not visible in the transverse elevation view in Figure D-102. 
+ 
+205 
+
+========== PAGE 240 ==========
+ 
+ 
+Figure D-102 Tension resistance of pile group in cohesive soil. 
+ 
+Several iterations were performed to incrementally increase the pile length and 
+evaluate the nominal uplift resistance of the pile group.  The minimum required 
+embedded length of piles was determined to be 9 feet, and therefore, that 
+calculation is presented below. 
+ 
+Calculate the weight of piles: 
+ 
+ 
+D 
+= embedded length of piles, 9 feet. 
+ 
+W/ft = weight per linear foot of HP 12x74 pile section, 0.074 kip/ft. 
+ 
+ 
+ 𝑊𝑊𝑝𝑝𝑝𝑝𝑝𝑝𝑝𝑝𝑝𝑝= (Weight/ linear foot) ∗𝐷𝐷∗𝑁𝑁𝑁𝑁𝑁𝑁𝑁𝑁𝑁𝑁𝑁𝑁 𝑜𝑜𝑜𝑜 𝑃𝑃𝑃𝑃𝑃𝑃𝑃𝑃𝑃𝑃 
+ 
+ 
+ 
+ 𝑊𝑊𝑝𝑝𝑝𝑝𝑝𝑝𝑝𝑝𝑝𝑝= ቀ0.074
+𝑘𝑘𝑘𝑘𝑘𝑘
+𝑓𝑓𝑓𝑓ቁ∗(9 𝑓𝑓𝑓𝑓𝑓𝑓𝑓𝑓) ∗(13 𝑝𝑝𝑝𝑝𝑝𝑝𝑝𝑝𝑝𝑝) 
+ 
+ 
+ 
+ 𝑊𝑊𝑝𝑝𝑝𝑝𝑝𝑝𝑝𝑝𝑝𝑝= 8.66 𝑘𝑘𝑘𝑘𝑘𝑘𝑘𝑘 
+ 
+ 
+ 
+ 
+ 
+ 
+206 
+
+========== PAGE 241 ==========
+Calculate the weight of soil: 
+ 
+ 
+D 
+= embedded length of piles, 9 feet. 
+ 
+B 
+= width of pile group, assume 1 foot (1 row in tension). 
+ 
+Z 
+= length of pile group, 37 feet (Group Configuration 3). 
+ 
+𝛾𝛾′𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠 = effective unit weight of soil, 47.6 pcf (Figure D-83). 
+ 
+ 
+ 𝑊𝑊𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠= D ∗𝐵𝐵∗Z ∗𝛾𝛾′𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠 
+ 
+ 
+ 
+ 𝑊𝑊𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠= (9 𝑓𝑓𝑓𝑓𝑓𝑓𝑓𝑓) ∗(1 𝑓𝑓𝑓𝑓𝑓𝑓𝑓𝑓) ∗(37 𝑓𝑓𝑓𝑓𝑓𝑓𝑓𝑓) ∗(47.6 𝑝𝑝𝑝𝑝𝑝𝑝) ∗ቀ
+1 𝑘𝑘𝑘𝑘𝑘𝑘
+1000 𝑙𝑙𝑙𝑙𝑙𝑙ቁ 
+ 
+ 
+ 
+ 𝑊𝑊𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠= 15.85 𝑘𝑘𝑘𝑘𝑘𝑘𝑘𝑘 
+ 
+ 
+Calculate weight of the pile cap, conservatively taken as the tributary are over piles 
+in tension: 
+ 
+ 𝐵𝐵𝑐𝑐𝑐𝑐𝑐𝑐  
+= 
+width of pile cap, half of cap width 6.5 feet /2 = 3.25 ft  
+(Table D-106). 
+ 
+𝑍𝑍𝑐𝑐𝑐𝑐𝑐𝑐  
+= 
+length of pile group, 38.5 feet (Table D-106). 
+ 
+𝑡𝑡𝑐𝑐𝑐𝑐𝑐𝑐  
+= 
+thickness of pile cap, preliminary estimate, 4.2 feet. 
+ 
+𝛾𝛾𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐 = 
+unit weight of reinforce concrete, 150 pcf. 
+ 
+ 
+ 𝑊𝑊𝑐𝑐𝑐𝑐𝑐𝑐= 𝐵𝐵𝑐𝑐𝑐𝑐𝑐𝑐∗𝑍𝑍𝑐𝑐𝑐𝑐𝑐𝑐∗𝑡𝑡𝑐𝑐𝑐𝑐𝑐𝑐∗𝛾𝛾𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐𝑐 
+ 
+ 
+ 
+ 𝑊𝑊𝑐𝑐𝑐𝑐𝑐𝑐= (3.25 𝑓𝑓𝑓𝑓𝑓𝑓𝑓𝑓) ∗(38.5 𝑓𝑓𝑓𝑓𝑓𝑓𝑓𝑓) ∗(4.2 𝑓𝑓𝑓𝑓𝑓𝑓𝑓𝑓) ∗(150 𝑝𝑝𝑝𝑝𝑝𝑝) ∗ቀ
+1 𝑘𝑘𝑘𝑘𝑘𝑘
+1000 𝑙𝑙𝑙𝑙𝑙𝑙ቁ 
+ 
+ 
+ 
+ 𝑊𝑊𝑐𝑐𝑐𝑐𝑐𝑐= 78.83 kips 
+ 
+ 
+Calculate the effective weight of the pile/soil block including pile cap weight: 
+ 
+ 
+𝑊𝑊𝑔𝑔= 𝑊𝑊𝑝𝑝𝑝𝑝𝑝𝑝𝑝𝑝𝑝𝑝+ 𝑊𝑊𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠+ 𝑊𝑊𝑐𝑐𝑐𝑐𝑐𝑐 
+ 
+ 
+ 
+𝑊𝑊𝑔𝑔= (8.66 𝑘𝑘𝑘𝑘𝑘𝑘𝑘𝑘) + (15.85 𝑘𝑘𝑘𝑘𝑘𝑘𝑘𝑘) + (78.83 𝑘𝑘𝑘𝑘𝑘𝑘𝑘𝑘) 
+ 
+ 
+ 
+𝑊𝑊𝑔𝑔= 103.3 𝑘𝑘𝑘𝑘𝑘𝑘𝑘𝑘 
+ 
+ 
+ 
+207 
+
+========== PAGE 242 ==========
+Equation 7-41 is next used to calculate the group tension resistance for soil acting 
+as a block.  A weighted average shear strength value of 0.67 ksf was used for the 
+first 10 feet below the footing in the silty clay soil layer (Figure D-83). 
+ 
+ 
+D 
+= embedded length of piles, 9 feet. 
+ 
+B 
+= width of pile group, assume 1 foot (1 row in tension). 
+ 
+Z 
+= length of pile group, 37 feet (Group Configuration 3). 
+ 
+𝑠𝑠𝑢𝑢 
+= weighted average undrained shear strength, 0.67 ksf (Figure D-83). 
+ 
+𝑊𝑊𝑔𝑔 = effective weight of the block, 103.3 kips. 
+ 
+ 
+ 𝑅𝑅𝑢𝑢𝑢𝑢= 2 D (B + Z)𝑠𝑠𝑢𝑢+ 𝑊𝑊𝑔𝑔 
+[Eq. 7-41] 
+ 
+   𝑅𝑅𝑢𝑢𝑢𝑢(9 𝑓𝑓𝑓𝑓) = 2 ∗(9 𝑓𝑓𝑓𝑓𝑓𝑓𝑓𝑓) ∗ ൫(1 𝑓𝑓𝑓𝑓𝑓𝑓𝑓𝑓) + (37 𝑓𝑓𝑓𝑓𝑓𝑓𝑓𝑓)൯∗(0.67 𝑘𝑘𝑘𝑘𝑘𝑘) + (103.3 𝑘𝑘𝑘𝑘𝑘𝑘𝑘𝑘) 
+ 
+ 
+ 
+ 
+ 𝑅𝑅𝑢𝑢𝑢𝑢(9 𝑓𝑓𝑓𝑓) = 561.6 𝑘𝑘𝑘𝑘𝑘𝑘𝑘𝑘 
+ 
+ 
+Therefore: 
+𝑅𝑅𝑢𝑢𝑢𝑢(9 𝑓𝑓𝑓𝑓) > 𝑅𝑅𝑢𝑢𝑢𝑢 
+ 
+561.6 𝑘𝑘𝑘𝑘𝑘𝑘𝑘𝑘> 552 𝑘𝑘𝑘𝑘𝑘𝑘𝑘𝑘 
+ 
+The required soil block weight is achieved at approximately 9 feet of pile penetration.  
+Accordingly, any additional pile penetration would satisfy this requirement.  For a pile 
+group length of 41 feet (i.e., Group Configuration 1 and 2), the minimum pile 
+penetration depth to achiegve a soil block weight in excess of the required 552 kips 
+is also 9 feet.  
+ 
+As noted earlier, two analyses are performed to determine the minimum pile 
+penetration depth for nominal tension resistance.  The first one considers the shaft 
+resistances from individual piles, and the second one considers the weight of a soil 
+block acting with the piles.  The required minimum pile penetration depth to achieve 
+geotechnical resistance in axial tension is the greater depth of the above calculated 
+resistances.  The estimated minimum penetration depth required for the factored 
+geotechnical resistance in axial tension was summarized in Table D-110.  For the 
+HP 12x74 pile section in Group Configuration 3, the minimum pile penetration depth 
+is 18 feet for the factored tension load of 21 kips. 
+ 
+ 
+𝐷𝐷(𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖)  = minimum pile penetration depth based on sum of individual 
+pile resistance = 18 feet (Table D-110). 
+ 
+208 
+
+========== PAGE 243 ==========
+ 
+ 
+𝐷𝐷(𝑏𝑏𝑏𝑏𝑏𝑏𝑏𝑏𝑏𝑏)  
+= minimum pile penetration depth based on weight of soil block 
+= 9 feet. (calculated above). 
+ 
+𝐷𝐷(𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖𝑖) > 𝐷𝐷(𝑏𝑏𝑏𝑏𝑏𝑏𝑏𝑏𝑏𝑏) 
+ 
+18 𝑓𝑓𝑓𝑓𝑓𝑓𝑓𝑓> 9 𝑓𝑓𝑓𝑓𝑓𝑓𝑓𝑓 
+ 
+Therefore, the minimum penetration depth 𝐷𝐷(𝑚𝑚𝑚𝑚𝑚𝑚−𝑡𝑡𝑡𝑡𝑡𝑡𝑡𝑡𝑡𝑡𝑡𝑡𝑡𝑡) is as follows: 
+ 
+𝐷𝐷(𝑚𝑚𝑚𝑚𝑚𝑚−𝑡𝑡𝑡𝑡𝑡𝑡𝑡𝑡𝑡𝑡𝑡𝑡𝑡𝑡) = 18 𝑓𝑓𝑓𝑓𝑓𝑓𝑓𝑓  
+ 
+In a similar manner, this check was performed for all candidate pile sections and 
+group configurations.  The resulting established minimum required pile penetration 
+depth to meet axial tension requirements for each candidate pile section within the 
+specified group configuration is presented in Table D-111.  
+ 
+Table D-111 Established Minimum Pile Penetration Depth Required for Factored 
+Geotechnical Resistance in Axial Tension at South Abutment 
+Group 
+Configuration 
+HP 10x42 
+(feet) 
+HP 12x53 
+(feet) 
+HP 12x74 
+(feet) 
+HP 14x89 
+(feet) 
+HP 14x117 
+(feet) 
+1 
+25 
+23 
+23 
+21 
+21 
+2 
+23 
+21 
+21 
+19 
+18 
+3 
+21 
+19 
+18 
+16 
+16 
+ 
+ 
+D.38 Block 14: South Abutment – Establish Minimum Pile Penetration Depth 
+for Lateral Loads.  Determine p-y Models, Required Geomaterial 
+Parameters, and Perform Lateral Load Analysis.  If Conditions Warrant, 
+Modify Design and Return to Block 10 
+ 
+Next, lateral analyses are performed to establish the required minimum pile 
+penetration depth for lateral loading and to evaluate pile deflection and structural 
+resistance for the applied limit state loads.  The minimum required pile penetration 
+depth required to satisfy the nominal geotechnical resistance requirements in axial 
+tension was determined to be 18 feet in Block 13.  A deeper minimum required pile 
+penetration depth for lateral loading can result based on the combination of factored 
+lateral loads and structural resistances, or deflection limits.  Excessive deflections 
+and moments develop at relatively short pile lengths, where a depth to fixity is not 
+ 
+209 
+
+========== PAGE 244 ==========
+achieved.  Furthermore, the structural resistance of pile sections must be evaluated 
+based upon the axial, lateral and moment loads.  Factored structural resistances 
+were presented in Table D-95 while a lateral deformation limit of 1 inch was 
+established as a global performance requirement in Block 1 and confirmed In Block 
+4 as the design progressed.  
+ 
+The soil profile at the South Abutment was presented in Figure D-83.  For lateral 
+load analyses, appropriate p-y models must be selected for each soil layer.  The 
+input parameters necessary for lateral load analysis using the LPILE computer 
+program are included in the South Abutment soil profile. 
+ 
+As discussed in Section 7.3.7.6, p-multipliers are applied to the p-y curves to model 
+pile group behavior.  The p-multipliers depend on the center to center pile spacing 
+within the pile group.  For all group configurations at the South Abutment, the pile 
+spacing in the longitudinal direction is 4 feet.  Therefore, per Section 7.3.7.6 and 
+AASHTO (2014) design specifications, interpolation was used to determine 
+p-multipliers for a pile spacing of 4b.  In this case, the front row p-multiplier is 0.90, 
+while the second row is 0.625. 
+ 
+Cyclic loading was performed for both rows using LPILE’s Load Type 2 option, which 
+uses shear and slope to model a fixed head condition.  Considering loading 
+conditions at this abutment, lateral analyses in the longitudinal (y-direction) were 
+performed about the pile section’s strong axis.  Figure D-100 shows the pile 
+orientation within the trial pile cap design. 
+ 
+The following example is presented for the HP 12x74 pile section using a range of 
+factored axial and lateral loads for Group Configuration 3.  Tables D-112 and D-113 
+provide LPILE output summaries for both rows at the pile head considering a pile 
+penetration for lateral loading of 30 feet.  The pile head is assumed to terminate at 
+the ground surface (i.e. no stickup). 
+ 
+ 
+210 
+
+========== PAGE 245 ==========
+Table D-112 LPILE Summary Output at Pile Head for Front Row, pm=0.90 
+Load 
+Case 
+Load 
+Type 
+No. 
+Pile-Head 
+Condition 1  
+ 
+V (kips) 
+Pile-Head 
+Condition 2  
+ 
+S (rad) 
+Axial 
+Load 
+  
+(kips) 
+Pile-Head 
+Deflection 
+  
+(inches) 
+Maximum 
+Moment in 
+Pile  
+(kip-ft) 
+Maximum 
+Shear in 
+Pile 
+(kips) 
+Pile-Head 
+Rotation 
+  
+(radians) 
+1 
+2 
+0 
+0 
+238 
+0.000 
+0.0 
+0 
+0 
+2 
+2 
+15 
+0 
+238 
+0.116 
+-56.6 
+15 
+0 
+3 
+2 
+30 
+0 
+238 
+0.451 
+-141.7 
+30 
+0 
+4 
+2 
+35 
+0 
+238 
+0.611 
+-173.8 
+35 
+0 
+5 
+2 
+36 
+0 
+238 
+0.646 
+-180.4 
+36 
+0 
+6 
+2 
+37 
+0 
+238 
+0.682 
+-187.1 
+37 
+0 
+7 
+2 
+38 
+0 
+238 
+0.719 
+-193.9 
+38 
+0 
+8 
+2 
+40 
+0 
+238 
+0.796 
+-207.6 
+40 
+0 
+9 
+2 
+42 
+0 
+238 
+0.876 
+-221.5 
+42 
+0 
+10 
+2 
+50 
+0 
+238 
+1.344 
+-292.1 
+50 
+0 
+ 
+ 
+Table D-113 LPILE Summary Output at Pile Head for Second Row, pm=0.625 
+Load 
+Case 
+Load 
+Type 
+No. 
+Pile-Head 
+Condition 1  
+ 
+V (kips) 
+Pile-Head 
+Condition 2  
+ 
+S (rad) 
+Axial 
+Load 
+  
+(kips) 
+Pile-Head 
+Deflection 
+  
+(inches) 
+Maximum 
+Moment in 
+Pile  
+(kip-ft) 
+Maximum 
+Shear in 
+Pile 
+(kips) 
+Pile-Head 
+Rotation 
+  
+(radians) 
+1 
+2 
+0 
+0 
+238 
+0.000 
+0.0 
+0 
+0 
+2 
+2 
+15 
+0 
+238 
+0.196 
+-67.5 
+15 
+0 
+3 
+2 
+30 
+0 
+238 
+0.769 
+-169.8 
+30 
+0 
+4 
+2 
+35 
+0 
+238 
+1.060 
+-211.2 
+35 
+0 
+5 
+2 
+36 
+0 
+238 
+1.138 
+-221.2 
+36 
+0 
+6 
+2 
+37 
+0 
+238 
+1.223 
+-231.8 
+37 
+0 
+7 
+2 
+38 
+0 
+238 
+1.317 
+-242.9 
+38 
+0 
+8 
+2 
+40 
+0 
+238 
+1.531 
+-266.6 
+40 
+0 
+9 
+2 
+42 
+0 
+238 
+1.793 
+-292.7 
+42 
+0 
+ 
+The pile group deflection can be estimated from the above LPILE’s deflection results 
+for the front and second rows.  The factored load versus pile head deflection for 
+each row is plotted in Figure D-103 along with the group average.  The average 
+lateral load per pile for a given group deflection is shown.  A step by step discussion 
+of this procedure is provided in Section 7.3.7.6. 
+ 
+The rigid cap method assumes piles move together, and therefore experience the 
+same shear and lateral load.  Accordingly, at the resulting factored lateral load per 
+pile, Vuy, of 37 kips (Table D-108), the estimated lateral group deflection at the pile 
+head is determined as 0.96 inches.  This lateral deflection is less than the 1 inch 
+tolerance based upon project specific requirements. 
+ 
+211 

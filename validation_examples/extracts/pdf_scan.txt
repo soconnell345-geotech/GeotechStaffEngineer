@@ -1,0 +1,189 @@
+
+===== California Trenching and Shoring Manual.pdf (342 pages, 50 hits) =====
+p10: 9-4  Example 9-1 (Railroad Example)
+p10: Appendix B Example Problems
+p34: Cal/OSHA CSO, § 1541.1, Appendix C, also contains four example problems
+p35: Cal/OSHA CSO, § 1541.1, Appendix D, also contains four example problems
+p90: Figure 5-6. Example problem of HS-20 traffic
+p93: 5-1.04A      Example 5-1 Sample Problem – Surcharge Loads
+p93: 5-1.04A      Example 5-1 Sample Problem – Surcharge Loads
+p103: Step 1:  First determine the allowable stresses for shear, bending, and compression
+p108: Example 7-1A: Cantilevered Soldier Pile Wall by Rigorous Method ... 17
+p108: Example 7-1B: Cantilevered Soldier Pile Wall by Simplified Method .. 26
+p108: Example 7-2: Cantilevered Soldier Pile Wall, Simplified Method with
+p108: Example 7-3: Cantilevered Soldier Pile Wall, Simplified Method ........ 35
+p114: HQ in Sacramento. An example problem showing deflection calculations can be found
+p114: in Appendix B, Example Problems.
+p124: Example 7-1A: Cantilevered Soldier Pile Wall by
+p133: Example 7-1B: Cantilevered Soldier Pile Wall by
+p139: Example 7-2: Cantilevered Soldier Pile Wall,
+p139: theory. See Example 5 from Appendix B, Example Problems, for a related example.
+p139: theory. See Example 5 from Appendix B, Example Problems, for a related example.
+p142: Example 7-3: Cantilevered Soldier Pile Wall,
+p143: Figure 7-31. Soldier Pile Wall with Sloping Ground, Example 7-3
+p150: soil conditions. See Example 4 from Appendix B, Example Problems, for a related
+p150: soil conditions. See Example 4 from Appendix B, Example Problems, for a related
+p152: Example 8-1, Single Ground Anchor Sheet Pile Wall.......................... 11
+p152: Example 8-2 Multiple Ground Anchor Soldier Pile Wall ...................... 21
+p162: Example 8-1, Single Ground Anchor Sheet Pile Wall
+p162: Figure 8-9. Example 8-1 Given Information
+p168: bottom of excavation. For this particular example problem, when the summation of
+p170: illustrated in Example 9-1 from Chapter 9, Railroad, as well as in Appendix B, Example
+p172: Example 8-2 Multiple Ground Anchor Soldier Pile
+p172: Figure 8-15. Multiple Ground Anchor Soldier Pile Wall, Example 8-2
+p188: 9-4 Example 9-1 (Railroad Example) .................................................................
+p195: 9-4 Example 9-1 (Railroad Example)
+p210: Example 10-1  Problem – Anchor Blocks ........................................... 14
+p210: Example 10-2  Problem – Heave Factor of Safety ............................. 20
+p223: Example 10-1  Problem – Anchor Blocks
+p223: Figure 10-13. Anchor Block Example 10-1
+p223: Step 1: Calculate active and passive earth pressure in the front and back of the anchor
+p229: Example 10-2  Problem – Heave Factor of Safety
+p230: Figure 10-17. Heave Example Problem Calculations
+p240: 10-5.02A      Example 10-3  Problem – Fellenius Method
+p243: 10-5.03A      Example 10-4 Problem – Bishop Method
+p247: 10-5.04A      Example 10-5  Problem – Translational Slide
+p265: Example 11-1A demonstrates the calculation of long-term creep by Equation 11-3-1 and
+p268: 11-3.10A      Example 11-1A  Measurement and Time Method
+p269: 11-3.10B      Example 10-1B Lift-Off Load Method
+p294: The following sections of this appendix contain six example problems. These example
+p315: Example 1:
+p316: Example 2:
+p317: Table C-1. Tabulated Values of Combined Horizontal Surcharges for Example 2
+
+===== FHWA Micropile Manual.pdf (456 pages, 123 hits) =====
+p3: and cost-effective use of micropiles on transportation projects.  Two detailed design examples
+p6: 5.2  STEP 1:  EVALUATE FEASIBILITY OF MICROPILES ............................................5 – 3
+p7: 6.2  STEP 1:  IDENTIFY PROJECT SPECIFIC CONSTRAINTS AND EVALUATE
+p7: 6.7  DESIGN EXAMPLES FOR SLOPE STABILIZATION WITH MICROPILES.........6 – 37
+p9: 10.3.3.1  Sample Problem No. 1  (Bridge Abutment Support)..........................10 – 6
+p9: 10.3.3.2  Sample Problem No. 2  (Seismic Retrofit) .........................................10 – 8
+p10: APPENDIX D – SAMPLE PROBLEM NO.1,
+p10: APPENDIX E – SAMPLE PROBLEM NO. 2, LATERALLY LOADED MICROPILE
+p11: Table 6-2.   Mult Values for Design Example.........................................................
+p12: Table 10-5.  Sample Problem No. 1 – Cost Analysis (Bridge Abutment Support)  ........... 10 – 7
+p12: Table 10-6.  Sample Problem No. 2 – Cost Analysis (Seismic Retrofit)  ........................... 10
+p15: Figure 6 - 24  Slope Geometry and Subsurface Information for the Design Example.........6 – 38
+p15: Figure 6 - 29  Micropile Cross-Section for the Design Example.......................................
+p15: Example Problem ....................................................................................
+p93: this chapter and a complete design is shown in Sample Problem No. 1.
+p95: STEP 1:  EVALUATE PROJECT REQUIREMENTS AND MICROPILE
+p117: Step 1:  Calculate ultimate group capacity as:
+p117: (i.e., from Step 1 and Step 2) for design.
+p124: Step 1: Determine the new load imposed on soil by the pile group.
+p125: Step 1: Determine the new load imposed on soil by the pile group.
+p129: An example calculation of elastic compression and tension displacement for a
+p129: micropile is provided in Sample Problem No. 1.
+p130: Sample Problem No. 1 includes the design of a pile connection similar to that shown
+p130: sample problem calculations.
+p137: typical drawings and specifications is provided in Sample Problem No. 1.
+p146: Step 1:  Determine basic pile input parameters for the micropile including: (1) pile
+p150: Sample Problem No. 2.
+p153: The use of this method is demonstrated and discussed in Sample Problem No. 2.
+p154: Step 1:  Develop p-y curves for single pile (see guidance for single pile previously
+p204: is demonstrated in the Design Example provided in Section 6.7.6.
+p210: of a detailed design example in Section 6.7.7.
+p215: DESIGN EXAMPLE FOR SLOPE STABILIZATION WITH MICROPILES
+p215: This section provides a complete design example for micropiles used for slope stabilization.
+p216: Figure 6-24.  Slope Geometry and Subsurface Information for the Design Example.
+p222: Figure 6-29.  Micropile Cross-Section for the Design Example.
+p222: In the design example, Labove is approximately 10 m (3.28 ft).  This depth can be
+p225: Table 6-2.  Mult Values for Design Example.
+p225: performing laterally loaded pile analyses.  For the design example, p-y curves may be
+p226: M (i.e., in Step 1) and re-run both analyses again.  When slopes at the pile head
+p229: In this design example, the batter angle for the upslope micropile leg is selected as 3o and the
+p230: In the design example, Hreq is calculated as 650 kN/m (44.5 k/ft) and Hult-pair is calculated as
+p231: For the design example, Eq. 6-12 was developed in a spreadsheet format (Figure 6-35).  The
+p231: the design example the depth of the critical slip surface is 10 m.  Therefore, Hult-soil/pile is
+p233: for the Example Problem.
+p235: Summary of the Design Example
+p308: The use of Table 10-4 is demonstrated in two sample problems provided below.
+p308: 10.3.3.1 Sample Problem No. 1  (Bridge Abutment Support)
+p309: Table 10-5.  Sample Problem No. 1 – Cost Analysis
+p310: 10.3.3.2 Sample Problem No. 2  (Seismic Retrofit)
+p311: Table 10-6.  Sample Problem No. 2 – Cost Analysis (Seismic Retrofit).
+p403: FHWA NHI-05-039                                                                                 Appe
+p403: SAMPLE PROBLEM NO. 1 – BRIDGE ABUTMENT FOUNDATION SUPPORT
+p403: The following sample problem illustrates the design of foundation support for a bridge abutment
+p403: using micropiles.  This sample problem is intended to illustrate the quantification of typical
+p403: bridge abutments, and therefore this sample problem is not intended to depict a “standard
+p403: abutment” or a “standard abutment design procedure.”  For simplicity, this example problem
+p404: FHWA NHI-05-039                                                                                 Appe
+p404: Figure S1-1.  Sample Problem No. 1 - Abutment Section Detail
+p405: FHWA NHI-05-039                                                                                 Appe
+p405: Figure S1-2.  Sample Problem No. 1 – Pile Details
+p406: FHWA NHI-05-039                                                                                 Appe
+p406: Figure S1-3.  Sample Problem No. 1 – Summary of Abutment Loads
+p407: FHWA NHI-05-039                                                                                 Appe
+p407: Figure S1-4.  Sample Problem No. 1 – Soil Boring Log
+p408: FHWA NHI-05-039                                                                                 Appe
+p408: STEP 1 – ABUTMENT DESIGN LOADS
+p409: FHWA NHI-05-039                                                                                 Appe
+p409: Table S1-1.  Sample Problem No. 1- Summary of Abutment Loads Per Meter Length
+p409: See “Seismic Design of Bridges - Design Example No. 3" Publication No. FHWA-SA-
+p410: FHWA NHI-05-039                                                                                 Appe
+p411: FHWA NHI-05-039                                                                                 Appe
+p412: FHWA NHI-05-039                                                                                 Appe
+p413: FHWA NHI-05-039                                                                                 Appe
+p414: FHWA NHI-05-039                                                                                 Appe
+p415: FHWA NHI-05-039                                                                                 Appe
+p416: FHWA NHI-05-039                                                                                 Appe
+p417: FHWA NHI-05-039                                                                                 Appe
+p418: FHWA NHI-05-039                                                                                 Appe
+p419: FHWA NHI-05-039                                                                                 Appe
+p420: FHWA NHI-05-039                                                                                 Appe
+p421: FHWA NHI-05-039                                                                                 Appe
+p422: FHWA NHI-05-039                                                                                 Appe
+p423: FHWA NHI-05-039                                                                                 Appe
+p424: FHWA NHI-05-039                                                                                 Appe
+p425: FHWA NHI-05-039                                                                                 Appe
+p425: Figure S1-6.  Page 1 of Sample Problem No.1 – Working Drawing Submittal
+p426: FHWA NHI-05-039                                                                                 Appe
+p426: Figure S1-7. Page 2 of Sample Problem No. 1 – Working Drawing Submittal
+p427: FHWA NHI-05-039                                                                                 Appe
+p427: SAMPLE PROBLEM NO. 2 – LATERALLY LOADED MICROPILE
+p428: FHWA NHI-05-039                                                                                 Appe
+p428: Figure S2-1.  Micropile Detail for Sample Problem 2.
+p429: FHWA NHI-05-039                                                                                 Appe
+p430: FHWA NHI-05-039                                                                                 Appe
+p431: FHWA NHI-05-039                                                                                 Appe
+p431: Figure S2-2.  Bending Moment Diagram for Sample Problem No. 2.
+p432: FHWA NHI-05-039                                                                                 Appe
+p432: Figure S2-3.  Lateral Deflection Profile for Sample Problem No. 2.
+p433: FHWA NHI-05-039                                                                                 Appe
+p433: SAMPLE PROBLEM 2
+p434: FHWA NHI-05-039                                                                                 Appe
+p435: FHWA NHI-05-039                                                                                 Appe
+p436: FHWA NHI-05-039                                                                                 Appe
+p437: FHWA NHI-05-039                                                                                 Appe
+p438: FHWA NHI-05-039                                                                                 Appe
+p439: FHWA NHI-05-039                                                                                 Appe
+p440: FHWA NHI-05-039                                                                                 Appe
+p441: FHWA NHI-05-039                                                                                 Appe
+p442: FHWA NHI-05-039                                                                                 Appe
+p443: FHWA NHI-05-039                                                                                 Appe
+p444: FHWA NHI-05-039                                                                                 Appe
+p445: FHWA NHI-05-039                                                                                 Appe
+p446: FHWA NHI-05-039                                                                                 Appe
+p447: FHWA NHI-05-039                                                                                 Appe
+p448: FHWA NHI-05-039                                                                                 Appe
+p449: FHWA NHI-05-039                                                                                 Appe
+p450: FHWA NHI-05-039                                                                                 Appe
+p451: FHWA NHI-05-039                                                                                 Appe
+p452: FHWA NHI-05-039                                                                                 Appe
+p453: FHWA NHI-05-039                                                                                 Appe
+p454: FHWA NHI-05-039                                                                                 Appe
+p455: FHWA NHI-05-039                                                                                 Appe
+p456: FHWA NHI-05-039                                                                                 Appe
+
+===== FHWA-NHI-05-037 - Geotech Pavements.pdf (598 pages, 16 hits) =====
+p21: Summary of design soil properties for example problem (pre-construction) 8-11
+p129: table are difficult and, in some cases, not possible. Several illustrative examples of GPR
+Traceback (most recent call last):
+  File [35m"C:\Users\socon\OneDrive\dev\GeotechStaffEngineer\.claude\worktrees\v5.1-todos\validation_examples\scan_pdfs.py"[0m, line [35m29[0m, in [35m<module>[0m
+    [31mprint[0m[1;31m(tag)[0m
+    [31m~~~~~[0m[1;31m^^^^^[0m
+  File [35m"C:\Python314\Lib\encodings\cp1252.py"[0m, line [35m19[0m, in [35mencode[0m
+    return [31mcodecs.charmap_encode[0m[1;31m(input,self.errors,encoding_table)[0m[0]
+           [31m~~~~~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mUnicodeEncodeError[0m: [35m'charmap' codec can't encode character '\u03b8' in position 18: character maps to <undefined>[0m

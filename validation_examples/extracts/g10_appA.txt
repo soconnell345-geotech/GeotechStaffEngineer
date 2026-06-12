@@ -1,0 +1,1831 @@
+
+========== PAGE 584 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-1
+09/11/2018 
+APPENDIX A 
+DESIGN EXAMPLE:  DRILLED SHAFTS FOR REPLACEMENT BRIDGE 
+An example is used to illustrate design of drilled shafts as foundations for a proposed replacement bridge.  
+Conditions are based on an actual project.  The owner is a state transportation agency and the site is 
+located in the Atlantic Coastal Plain physiographic province.  Design of the drilled shaft foundations is 
+used to illustrate the LRFD design procedures presented in this manual.  The following aspects of drilled 
+shaft design and corresponding chapters in this manual are incorporated into the example: 
+Chapter 2:   Site Characterization 
+Chapter 8:   Drilled Shaft Design Process 
+Chapter 9:   Design for Lateral Loading 
+Chapter 10: Geotechnical Design for Axial Loading 
+Chapter 12: Structural Design  
+A.1 
+GENERAL
+The example follows the process outlined in Figure 8-1 “Drilled Shaft Design and Construction Process”.  
+It is assumed that the general project requirements and constraints have been established and preliminary 
+studies on various bridge and foundation options are completed (Steps 1 through 6) and that a decision 
+has been made to proceed with further evaluation of drilled shafts (Step 7).  A minor deviation is made 
+from the step-by-step procedure, in that Step 11 (design for axial load) is presented before Step 10 (design 
+for lateral load); because in this case the axial load considerations control the drilled shaft final 
+dimensions.  
+The proposed replacement bridge is a 6-span structure, 1,230 ft in length and 57 ft wide, supported on two 
+abutments and five piers.  The superstructure consists of AASHTO Modified Type VI spliced post-
+tensioned girders.  Each abutment is supported on a group of driven piles with the piers supported on 
+drilled shafts.  Span lengths range from 175 to 220 ft and the trial design calls for three, 8-ft diameter 
+drilled shafts per pier.  Each drilled shaft supports an 8-ft diameter concrete pier column, and each set of 
+three pier columns supports a cast-in-place concrete pier cap.  The joint between each drilled shaft and 
+pier column is located 1 ft above the mean high water level (MHW).  For this example, drilled shaft 
+design is focused on Pier No. 2.  Figure A-1 shows a cross section of the bridge at Pier 2. 
+Step 8:  Define Subsurface Profile for Analysis 
+A subsurface exploration program consisting of 32 borings was performed, in addition to 32 borings 
+made in 1953 for an existing bridge at the project site.  Geologic studies combined with the boring logs 
+show that soils in the project area consist of Pleistocene lowland alluvial deposits overlying Tertiary 
+marine sediments.  In some areas of the site the alluvial deposits are covered by recent marsh soils which 
+were deposited in tidal estuaries along the coastal areas and inland streams of the Atlantic coastal plain. 
+The tidal marsh deposits consist of compressible organic silts and peat extending from mudline to depths 
+of 10 to 30 ft.  The underlying Pleistocene alluvial deposits are composed of layers of yellow-brown to 
+gray-white quartz sand and gravel occurring in well defined alternating or intermixed layers.  Silts and 
+clay are encountered in lenses or pockets.  Tertiary marine deposits underlie the Pleistocene sediments 
+and consist of medium to fine silty sands, white to yellow in color, with localized gray to brown clay 
+layers and lenses.  
+
+========== PAGE 585 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-2
+09/11/2018 
+Figure A-1  Pier Section of Proposed Bridge 
+Figure A-2 shows a generalized subsurface profile along the alignment of the bridge.  Soils are 
+subdivided into general strata showing similar properties as described in the Legend of Figure A-2.  At 
+Pier No. 2, the reference boring is Boring W-2.  Five of the general soil strata are present at Pier 2; these 
+include strata R, C, D, E and F.  Stratum R, river bed material consisting of loose sand and organic soils, 
+is approximately 3.5 ft thick at Pier 2 and is neglected.  The uppermost strata at Pier 2 is therefore Stratum 
+C, which starts at elevation -29 ft.   Field N-values from the Standard Penetration Test at Boring W-2 are 
+also shown at 5 ft intervals and these values are used to obtain soil engineering properties for drilled shaft 
+design.     
+ 
+
+========== PAGE 586 ==========
+FHWA-NHI-18-024       
+  A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-3
+09/11/2018 
+Figure A-2  Generalized Subsurface Profile 
+
+========== PAGE 587 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-4
+09/11/2018 
+A.2 
+SCOUR AND SEISMIC CONSIDERATIONS
+The profile in Figure A-2 shows the scour line, based on hydrologic studies in accordance with methods 
+described in Section 10.5 of this manual.  The scour limit shown is for the scour design flood and results 
+in total scour of 38 ft at Pier 2.  This scour depth results in removal of the upper portion of Stratum C at 
+Pier 2, to an elevation of -67 ft.  The resulting subsurface profile (i.e., with full scour) is used to evaluate 
+Strength I and Service I limit states in subsequent design steps. 
+The proposed bridge is evaluated for Extreme Event I limit state (earthquake).  Although the bridge is 
+determined to be in Seismic Performance Zone 1, the owner-agency designated the bridge as “essential” 
+and required a site-specific response analysis.  These analyses were carried out for selected locations 
+along the approach piers and the main span units to account for the variations in subsurface soil 
+conditions along the bridge alignment. The final design ground motions were determined based on the 
+results of site specific response analyses and the following seismic design parameters were established: 
+Peak Ground Acceleration, 1,000-year event:  A  = 0.052g 
+Site Class:   D (stiff soils) 
+Seismic Importance Category:    Essential 
+Seismic Performance:   Zone 1 
+Elastic Response Coefficient:    Csm = 0.075 
+Horizontal force effects due to earthquake (EQ) were determined using the elastic response coefficient 
+(Csm) and the equivalent weight of the superstructure, as described in Chapter 9 and in accordance with 
+AASHTO LRFD Bridge Design Specifications (2017).  Structural modeling of the bridge under the 
+Extreme Event I load combination was used to determine the force demands transmitted to the drilled 
+shaft foundations.  In accordance with the owner specifications, Extreme Event I conditions did not 
+include scour. 
+Within the limits of the new bridge piers, liquefaction analysis indicates that the existing fill and 
+underlying sand deposits are generally medium dense to dense and not subject to liquefaction.  Although 
+small pockets of loose soils do exist, it was determined that liquefaction of the localized fill material will 
+not adversely affect the drilled shaft foundations. 
+Step 9:  Establish Limit States and Factored Drilled Shaft Load Demands 
+The following limit states are to be checked for the drilled shafts supporting the bridge piers: 
+Strength I (including effects of scour at the design flood): 
+Geotechnical axial compression resistance of single shaft  
+Lateral geotechnical resistance of single shaft 
+Structural resistance of single shaft, including checks for axial, lateral, and flexural resistances 
+Extreme Event I:  Load combination including earthquake: 
+Geotechnical axial compression resistance of single shaft 
+Lateral geotechnical resistance of single shaft 
+Structural resistance of single shaft, including checks for axial, lateral, and flexural resistances 
+
+========== PAGE 588 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-5
+09/11/2018 
+Service I  (including effects of scour at the design flood): 
+Settlement (vertical deformation) of single shaft 
+Horizontal movement at the top of the foundation 
+Factored force demands were determined by structural modeling of the bridge using a commercially 
+available finite element computer program.  Initially, drilled shafts were modeled as 8.5-ft diameter 
+equivalent fixed-end columns extending from the joint with the pier column (1 ft above MHW) to a point 
+of fixity 15 ft below the mudline (10 ft below scour line for limit states that include scour).  
+The diameter of 8.5 ft accounts for permanent casing, which is used from 2 ft below MHW to a depth 
+corresponding to the final scour elevation (-67 ft). Figure A-3 shows an example of the frame geometry 
+for the structural model at Pier 2.  An additional node was added to each drilled shaft element at the 
+mudline elevation (elevation -29 ft).  Force effects calculated at these mudline nodes were taken as the 
+force effects applied to the tops of the drilled shafts in the geotechnical analysis.  Additional nodes were 
+also added at several intermediate depths below the mudline for modeling the lateral stiffness of the 
+embedded shafts in subsequent iterations. 
+ 
+Figure A-3    Idealized Frame Model for Structural Analysis, Pier 2 
+The iterative procedure for establishing factored force effects on the drilled shafts can be summarized as 
+follows: 
+1.
+For each applicable limit state, the structural model is analyzed under the factored loads;  load
+combinations and load factors are those specified in Tables 8-2 and 8-3; drilled shaft lateral spring
+constants initially are assumed, in consultation with geotechnical specialists
+2.
+Force effects calculated by the structural modeling program from Step 1 at the mudline nodes are
+resolved into axial, lateral, and moment components
+3.
+The factored axial, lateral, and moment force effects from Step 2 are used as the applied loads for
+analyzing trial drilled shafts by the p-y method of analysis;  p-y curves are established on the basis
+
+========== PAGE 589 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-6
+09/11/2018 
+of soil properties and the idealized subsurface profile; the top of each drilled shaft corresponds to 
+mudline elevation (-29 ft) 
+4.
+Results of the p-y analysis are used to evaluate lateral stiffness versus lateral deflection along the
+length of the drilled shaft;  these stiffness profiles are used to develop revised spring constants in
+subsequent structural modeling
+5.
+The structural model is re-analyzed using the revised lateral spring constants established in Step 4;
+drilled shafts are modeled as beam-column elements; these elements are assumed to be pinned at
+their lower end, at a depth corresponding to zero lateral deflection from the p-y analysis
+6.
+Steps 3, 4, and 5 are repeated iteratively until lateral deflections at mudline elevation calculated by
+the structural modeling program and p-y analyses show agreement to within + 20 percent.
+7.
+Factored force effects (foundation load demands) from structural modeling at the mudline nodes
+are used to conduct LRFD checks on all applicable limit states specified by AASHTO and
+summarized above.
+Factored axial, lateral, and moment load demands at the top-of-shaft resulting from the analysis procedure 
+outlined above are summarized in Table A-1 for the drilled shafts at Pier 2.  In subsequent sections, these 
+factored loads are used in limit state checks to show that the drilled shaft design satisfies the basic LRFD 
+requirement, that the factored demands in Table A-1 may not exceed the summation of factored 
+resistances. 
+TABLE A-1  SUMMARY OF DRILLED SHAFT FACTORED LOAD DEMANDS, PIER 2 
+Limit State 
+Max Axial 
+Compression 
+(kips) 
+Min Axial 
+Compression 
+(kips) 
+Lateral, 
+Longitudinal 
+(kips) 
+Lateral, 
+Transverse 
+(kips) 
+Moment 
+about 
+Longitudinal 
+Axis (kip-ft) 
+Moment 
+about 
+Transverse 
+Axis (kip-ft) 
+Strength I 
+3,389.47 
+2,673.42 
+36.98 
+9.63 
+1,686.87 
+221.68 
+Service I 
+2,835.40 
+1,836.42 
+54.65 
+34.59 
+2,647.17 
+317.24 
+Extreme Event I 
+2,823.04 
+2,810.26 
+144.52 
+290.48 
+7,776.42 
+3,212.32 
+Step 11:  Establish Diameter and Depths for Axial Loads 
+Reference is made to the step-by-step procedure shown in Figure 10-2, “Flow Chart of Recommended 
+Steps for Axial Load Design.”  Each step is carried out as follows. 
+Step 11.1  At each foundation location, divide the subsurface into a finite number of geomaterial layers; 
+assign one of the following geomaterial types to each layer:  cohesionless soil; cohesive soil;  rock;  IGM. 
+Figure A-4 shows the idealized geomaterial layer profile used for foundation design at Pier 2, based on 
+Boring W-2.   Table A-2 presents the depth and elevation limits of each geomaterial, the general stratum 
+to which each layer corresponds, and the geomaterial type.  All of the geomaterials are categorized as 
+either cohesionless soil or cohesive soil.  For Strength I and Service I limit states, full scour is assumed, 
+resulting in complete removal of Layer No. 1 and partial removal of Layer No. 2 to a depth of 38 ft 
+(elevation - 67 ft.).  For Extreme Event I, zero scour is assumed. 
+Step 11.2  Review the limit states to be satisfied and the corresponding axial load combinations and load 
+factors for each foundation. 
+
+========== PAGE 590 ==========
+FHWA-NHI-18-024         
+         A – Design Example 
+GEC10 Drilled Shafts Manual         
+A-7
+09/11/2018 
+For axial compression loading, the drilled shafts at Pier 2 are designed to satisfy the LRFD criterion for 
+Strength I, Extreme Event I, and Service I limit states.  Axial load demands for each of these limit states 
+are given in TABLE A-1.  
+TABLE A-2  SUMMARY OF GEOMATERIAL LAYER THICKNESSES  
+AND GEOMATERIAL TYPES 
+Geomaterial 
+Layer No. 
+Elevation, 
+Top of Layer 
+(ft) 
+Elevation, 
+Bottom of Layer 
+(ft) 
+Thickness 
+(ft) 
+Depth 
+Interval (ft), 
+from Mudline 
+Subsurface 
+Stratum 
+Geomaterial Type 
+Cohesionless 
+Soil 
+Cohesive 
+Soil 
+1 
+-29
+-54
+25 
+0-25
+C 
+X 
+- 
+2 
+-54
+-94
+40 
+25-65
+C 
+X 
+- 
+3 
+-94
+-114
+20 
+65 to 85 
+D 
+X 
+- 
+4 
+-114
+-129
+15 
+85 to 100 
+D 
+- 
+X 
+5 
+-129
+-139
+10 
+100 to 110 
+D 
+X 
+- 
+6 
+-139
+-219.5
+80.5 
+110 to 190.5 
+D and E 
+- 
+X 
+7 
+-219.5
+-241.5
+22 
+190.5 to 212.5 
+F 
+X 
+- 
+8 
+-241.5
+-249
+7.5 
+212.5 to 220 
+F 
+- 
+X 
+Figure A-4   Idealized Geomaterial Layer Profile for Drilled Shaft Design at Pier 2 
+ 
+
+========== PAGE 591 ==========
+ 
+ 
+FHWA-NHI-18-024                                                                                                                        A – Design Example 
+GEC10 Drilled Shafts Manual                                         A-8                                 
+09/11/2018 
+Step 11.3  For each limit state, establish the loading mode(s) to be analyzed for overall foundation 
+response (drained loading, undrained loading, or both) and assign corresponding geomaterial properties 
+needed for evaluation of axial resistances for each geomaterial layer. 
+ 
+Cohesionless soil layers are analyzed for drained loading response, while cohesive soil layers are 
+analyzed for undrained loading response.  The corresponding strength properties required for calculating 
+resistances are:  effective stress friction angle (φ) for cohesionless soils and undrained shear strength (su) 
+for cohesive soils.   Table A-3 shows the calculation results for determination of soil friction angle for 
+each of the cohesionless soil layers (Layers 1, 2, 3, 5 and 7).  For each layer, the field N-values (N60), 
+depth, and vertical effective stress corresponding to each measurement are tabulated.  Each field N-value 
+is corrected for effective overburden stress to yield (N1)60 according to the following equation presented 
+in Chapter 3: 
+ 
+n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+(N sub 1) sub 60 equals N sub 60 times the fraction of (p sub a over sigma prime sub vo ) to the power of n
+ 
+A-1 
+ 
+   
+where pa = atmospheric stress (2,116 psf), σ'vo = vertical effective stress at the depth of the SPT N-value 
+measurement, and n = 0.5 for sandy soils.  The mean value of (N1)60 and corresponding coefficient of 
+variation are then calculated for each layer.  If the coefficient of variation is within the specified limit (< 
+45%), the mean value of (N1)60 is then correlated to effective stress friction angle by the following 
+equation, also presented in Chapter 3:    
+ 
+ 
+phi prime equals 27.5 plus 9.2 times the log of [(N sub 1) sub 60]
+phi prime equals 27.5 plus 9.2 times the log of [(N sub 1) sub 60]
+phi prime equals 27.5 plus 9.2 times the log of [(N sub 1) sub 60]
+]
+phi prime equals 27.5 plus 9.2 times the log of [(N sub 1) sub 60]
+phi prime equals 27.5 plus 9.2 times the log of [(N sub 1) sub 60]
+phi prime equals 27.5 plus 9.2 times the log of [(N sub 1) sub 60]
+phi prime equals 27.5 plus 9.2 times the log of [(N sub 1) sub 60]phi prime equals 27.5 plus 9.2 times the log of [(N sub 1) sub 60]phi prime equals 27.5 plus 9.2 times the log of [(N sub 1) sub 60]
+phi prime equals 27.5 plus 9.2 times the log of [(N sub 1) sub 60]phi prime equals 27.5 plus 9.2 times the log of [(N sub 1) sub 60]
+phi prime equals 27.5 plus 9.2 times the log of [(N sub 1) sub 60]
+phi prime equals 27.5 plus 9.2 times the log of [(N sub 1) sub 60]
+phi prime equals 27.5 plus 9.2 times the log of [(N sub 1) sub 60]
+phi prime equals 27.5 plus 9.2 times the log of [(N sub 1) sub 60]
+phi prime equals 27.5 plus 9.2 times the log of [(N sub 1) sub 60]
+ 
+A-2 
+ 
+ 
+Step 11.4   For each drilled shaft, select trial lengths and diameters for initial analyses.  As stated, the trial 
+diameter is 8 ft and the trial shaft length is 201 ft from mudline to tip elevation (elevation -67 ft to 
+elevation -268 ft). 
+ 
+Steps 11.5 and 11.6  Compute values of nominal side resistance for all geomaterial layers through which 
+the trial shaft extends and the nominal base resistance at the trial tip elevation.  Select appropriate 
+resistance factors and calculate factored resistances. 
+ 
+Calculations of nominal side and base resistances are readily carried out using a spreadsheet or other 
+computational desktop tool.  Table A-4 shows the calculation results for Strength I limit state of this 
+example.  The table is divided into three areas:  (A) side resistance in cohesionless soil layers; (B) side 
+resistance in cohesive soil layers, and (C) base resistance.  Example calculations are presented below for a 
+single layer within each group. 
+ 
+A. Consider geomaterial Layer 3 for illustrating the beta method of computing side resistance of a 
+cohesionless soil layer.  The computations follow the equations presented in Chapter 10.  The 
+example is for Strength I limit state, therefore full scour is taken into account.   
+ 
+ 
+Establish mean value of N60 and mean vertical effective stress σ'v  
+ 
+mean N60 = 30, mean σ'v = 4,645 psf (no scour);  mean σ'v = 2,266 psf (full scour);   
+ 
+
+========== PAGE 592 ==========
+ 
+ 
+FHWA-NHI-18-024                                                                                                                        A – Design Example 
+GEC10 Drilled Shafts Manual                                         A-9                                 
+09/11/2018 
+ 
+TABLE A-3  FRICTION ANGLE CORRELATIONS FOR COHESIONLESS SOIL LAYERS 
+ 
+Layer 
+Depth (ft) 
+σ'V (psf) 
+Field N-value 
+Corrected 
+N-value 
+(N1)60 
+Mean (N1)60 
+Coefficient of 
+variation 
+φ (degrees) 
+Layer 1 
+5 
+313.0 
+22 
+44 
+28 
+33% 
+41 
+10 
+626.0 
+17 
+31 
+15 
+939.0 
+13 
+20 
+20 
+1252.0 
+22 
+29 
+25 
+1565.0 
+16 
+19 
+Layer 2 
+30 
+1878.0 
+40 
+42 
+61 
+33% 
+44 
+35 
+2191.0 
+77 
+76 
+40 
+2504.0 
+100 
+92 
+45 
+2817.0 
+91 
+79 
+50 
+3130.0 
+65 
+53 
+55 
+3443.0 
+74 
+58 
+60 
+3756.0 
+81 
+61 
+65 
+4069.0 
+35 
+25 
+Layer 3 
+65 
+4069.0 
+35 
+25 
+21 
+23% 
+40 
+70 
+4357.0 
+38 
+26 
+75 
+4645.0 
+21 
+14 
+80 
+4933.0 
+25 
+16 
+85 
+5221.0 
+32 
+20 
+Layer 5 
+100 
+5,935 
+34 
+20 
+21 
+-- 
+40 
+105 
+6,223 
+38 
+22 
+Layer 7 
+195 
+10,602 
+41 
+18 
+18 
+3% 
+39 
+200 
+10,890 
+41 
+18 
+205 
+11,178 
+39 
+17 
+210 
+11,466 
+43 
+18 
+ 
+ 
+ 
+
+========== PAGE 593 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-10
+09/11/2018 
+Establish φ' by correlation to (N1)60 
+ mean (Ν1)60 = 21 (see Table A-3)       
+φ′ = 27.5 + 9.2log[(N1)60] = 27.5 + 9.2[log(21)]  = 40 degrees
+ δ = φ = 40o 
+Establish preconsolidations stress (σ'p) by correlation to N60 and calculate overconsolidation ratio 
+(OCR): 
+   σ'p = pa [0.47 (N60)m] = 2,116 psf [0.47 (30)0.6] = 7,654 psf 
+  OCR = σ'p / σ'v = 7,654 / 4,645 = 1.65 
+Calculate Ko using estimated values of OCR and φ' 
+  Ko = (1 – sin φ') OCRsin φ'   = (1 – sin 40o) 1.65sin 40  = 0.49    <  Kp 
+Calculate β and average nominal unit side resistance fSN  
+  β = K tan δ = 0.49 tan40o = 0.41 
+  fSN = β x σ'v = 0.41 (2,266 psf) = 936 psf *note that σ'v accounts for scour 
+Calculate Layer 3 nominal side resistance RSN 
+  RSN = πB ∆z fSN = π (8 ft) (20 ft) 932 lb/ft2 = 470,684 lb 
+Select appropriate resistance factor and calculate factored resistance: 
+By Table A-5, the resistance factor for side resistance of a drilled shaft under axial compression by 
+the β- method is 0.55.  The factored side resistance of geomaterial Layer 3 therefore is: 
+ (ϕs RSN)i = 3 = 0.55 (470,684 lb) = 258,876 lb 
+B. Consider geomaterial Layer 4 for illustrating the computation of side resistance in a cohesive soil
+layer.  In accordance with Chapter 10, the alpha method is used for undrained side resistance of shafts
+in cohesive soil.
+Establish the mean value of soil undrained shear strength
+Based on unconsolidated undrained (UU) triaxial tests, mean su = 1,750 psf
+Transform the UU undrained shear strength to its equivalent CIUC value by Equation 10-17:
+The fr
+action s sub u (UC) over s sub u (CIUC) is equal to 0.893 plus 0.513 times logarithm of (s sub u (UC) divided by sigma bar sub vo) equals 0.893 plus 0.513 times logarithm of (1,750 pounds per square foot over 2,114 pounds per square foot) equals 0.851 T he fr a ction  s s
+ub u (
+UC) over s sub u (CIUC) is equal to 0.893 plus 0.513 times logarithm of (s sub u (UC) divided by sigma bar sub vo) equals 0.893 plus 0.513 times logarithm of (1,750 pounds per square foot over 2,114 pounds per square foot) equals 0.851 T h e fra c tion s s ub u (UC) over s sub u (CIUC) is equal to 0.893 plus 0.513 times logarithm of (s sub u (UC) divided by sigma bar sub vo) equals 0.893 plus 0.513 times logarithm of (1,750 pounds per square foot over 2,114 pounds per square foot) equals 0.85
+1
+T he fraction s sub u (UC) over s sub u (CIUC) is equal to 0.893 plus 0.513 times logarithm of (s sub u (UC) divided by sigma bar sub vo) equals 0.893 plus 0.513 times logarithm of (1,750 pounds per square foot over 2,114 pounds per square foot) equals 0.851
+  su(CIUC) = 1,750 psf / 0.851 = 2,057 psf 
+Calculate the value of the coefficient α: 
+
+========== PAGE 594 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-11
+09/11/2018 
+al p ha e q
+ual 
+0.30 plus
+ fraction 0.17 over (s sub u (CIUC) over p sub a) equals 0.30 plus fraction 0.17 over (2,057 over 2,114) equals 0.47
+alpha equal 0.30 plus fraction 0.17 over (s sub u (CIUC) over p sub a) equals 0.30 plus fraction 0.17 over (2,057 over 2,114) equals 0.47 a lpha eq
+ual 
+0.30 p
+lus fraction 0.17 over (s sub u (CIUC) over p sub a) equals 0.30 plus fraction 0.17 over (2,057 over 2,114) equals 0.47alpha equal 0.30 plus fraction 0.17 over (s sub u (CIUC) over p sub a) equals 0.30 plus fraction 0.17 over (2,057 over 2,114) equals 0.47 alpha equal 0.30 plus fraction 0.17 over (s sub u (CIUC) over p sub a) equals 0.30 plus fraction 0.17 over (2,057 over 2,114) equals 0.47
+Calculate layer nominal unit side resistance: 
+   fSN = α su = 0.47 (2,057 psf) = 976 psf 
+Calculate nominal layer side resistance: 
+   RSN = πB ∆z fSN = π (8 ft) (15 ft) 967 lb/ft2 = 368,124 lb 
+Select applicable resistance factor and calculate Layer 4 factored side resistance: 
+Table 10-5 specifies a resistance factor of 0.45 for side resistance in compression by the α-method. 
+ (ϕs RSN)i = 4 = 0.45 (368,124 lb) = 165,656 lb 
+C. Base resistance is calculated for the trial design length of 201 ft, which places the tip in Layer 7,
+categorized as cohesionless soil.  Applying the equations presented in Chapter 10, the nominal unit
+base resistance is given by:
+qBN = 0.60 N60 = 0.60 (41) = 24.6 tsf = 49.2 k/ft2 
+in which N60 is the average field N-value (uncorrected) over a depth of two shaft diameters beneath the 
+tip.  Nominal base resistance is the product of unit base resistance and the cross-sectional area of the 
+shaft: 
+ RBN = π/4 (8 ft)2 49.2 k/ft2 = 2,473 kips 
+By Table 10-5, the resistance factor for base resistance in compression is 0.50.  The factored base 
+resistance is then given as: 
+  (ϕB RBN) = 0.50 (2,473 kips) = 1,236.5 kips 
+Table A-4 presents the calculated side resistances for each layer, and shows the summation of factored 
+side resistance for the cohesionless layers, the cohesive layers, and factored base resistance. Note that the 
+spreadsheet calculations may exhibit minor differences compared to those presented above as a result of 
+rounding differences.  The summation of factored resistances is given by: 
+∑φiRi =  1,087,053 +   1,181,955 +   1,236,531 =   3,505,539 𝑙𝑏= 3,506 kips 
+Referring to Table A-1, the factored maximum axial compression force for Strength I limit state is 3,389 
+kips.  The limit state check is given by: 
+        3,389 kips < 3,506 kips  
+and the trial design therefore satisfies the Strength I limit state for geotechnical axial compression. 
+
+========== PAGE 595 ==========
+ 
+ 
+FHWA-NHI-18-024                                                                                                                        A – Design Example 
+GEC10 Drilled Shafts Manual                                         A-12                                 
+09/11/2018 
+TABLE A-4  SPREADSHEET CALCULATIONS FOR AXIAL COMPRESSIVE RESISTANCE, 
+STRENGTH I LIMIT STATE 
+Spreadsheet A: Side Resistance, Cohesionless Soil Layers 
+Geomaterial Layer No. 
+1 
+2 
+3 
+5 
+7 
+Σ 
+Thickness, ft (after scour) 
+0 
+27 
+20 
+10 
+10.5 
+-- 
+Average φ 
+41 
+44 
+40 
+40 
+39 
+-- 
+Existing Ground: Mean Vertical Effective Stress, σ’v (psf) 
+783 
+2,817 
+4,645 
+6,223 
+10,645 
+-- 
+After Scour: Mean Vertical Effective Stress, σ’v (psf) 
+0 
+845 
+2,266 
+3,844 
+8,266 
+-- 
+Mean N-value (N60) 
+17 
+75 
+30 
+36 
+41 
+-- 
+σP (psf)=0.47(N60)m 
+5,444 
+13,263 
+7,654 
+8,539 
+9,232 
+-- 
+OCR 
+7.0 
+4.7 
+1.6 
+1.4 
+1.0 
+-- 
+K=KO 
+1.23 
+0.90 
+0.49 
+0.44 
+0.37 
+-- 
+Β=K tanφ 
+1.07 
+0.87 
+0.41 
+0.37 
+0.30 
+-- 
+Nominal Unit Side Resistance, fSN=β σ’v 
+0 
+731 
+936 
+1,412 
+2,481 
+-- 
+Layer Nominal Side Resistance, RSN (lb) 
+0 
+496,072 
+470,684 
+354,897 
+654,807 
+-- 
+Side Resistance Factor, φS 
+NA 
+0.55 
+0.55 
+0.55 
+0.55 
+-- 
+Layer Factored Side Resistance, φS RSN (lb) 
+0 
+272,840 
+258,876 
+195,193 
+360,144 
+1,087,053 
+ 
+Spreadsheet B: Side Resistance, Cohesive Soil Layers 
+Geomaterial Layer No. 
+4 
+6 
+Σ 
+Thickness, ft  
+15 
+80.5 
+-- 
+Average CIUC Undrained Shear Strength (ps) 
+2,057 
+2,523 
+-- 
+Coefficient α 
+0.47 
+0.44 
+-- 
+Nominal Unit Side Resistance, fSN= α cu 
+976 
+1,116 
+-- 
+Layer Nominal Side Resistance, RSN (lb) 
+368,124 
+2,258,442 
+-- 
+Side Resistance Factor, φS 
+0.45 
+0.45 
+-- 
+Layer Factored Side Resistance, φSRSN (lb) 
+165,656 
+1,016,299 
+1,181,955 
+ 
+Spreadsheet C: Base Resistance, Layer 7, Cohesionless Soil 
+Geomaterial Layer No. 
+7 
+Mean N-value for 2-Diameters Below Tip  
+41 
+Nominal Unit Side Resistance = 0.6 N60 (tsf) 
+24.6 
+Nominal Base Resistance, RBN (lb) 
+2,473,062 
+Base Resistance Factor, φB 
+0.50 
+Factored Base Resistance, φBRBN (lb) 
+1,236,531 
+ 
+Summation of Factored Resistances = 3,506 kips 
+ 
+A similar analysis is conducted for a limit state check of Extreme Event I (earthquake). In this case, zero 
+scour is assumed, and the full soil profile shown in Figure A-4 is taken into account. The spreadsheet 
+calculations, presented in Table A-5, are essentially the same as those made for the Strength I limit state, 
+except that all resistance factors are equal to 1.00 and the absence of scour results in higher values of 
+vertical effective stress, resulting in higher side resistances in the cohesionless soil layers. As shown at the 
+bottom of Table A-5, the summation of factored resistances equals 9,932 kips. From Table A-1, the 
+maximum factored axial force effect for Extreme Event I is 2,823 kips. The limit state check is given by: 
+ 
+2,823 kips < 9,932 kips 
+The factored resistance is substantially greater than the factored axial demand and the trial design 
+therefore easily satisfies the Extreme Event I limit state for axial compression. 
+ 
+ 
+
+========== PAGE 596 ==========
+ 
+ 
+FHWA-NHI-18-024                                                                                                                        A – Design Example 
+GEC10 Drilled Shafts Manual                                         A-13                                 
+09/11/2018 
+TABLE A-5  SPREADSHEET CALCULATIONS OF AXIAL COMPRESSIVE RESISTANCE 
+FOR EXTREME EVENT I LIMIT STATE 
+Spreadsheet A: Side Resistance, Cohesionless Soil Layers 
+Geomaterial Layer No. 
+1 
+2 
+3 
+5 
+7 
+Σ 
+Thickness, ft (after scour) 
+25 
+40 
+20 
+10 
+10.5 
+-- 
+Average φ 
+41 
+44 
+40 
+40 
+39 
+-- 
+Existing Ground: Mean Vertical Effective Stress, σ’v 
+(psf) 
+783 
+2,817 
+4,645 
+6,223 
+10,645 
+-- 
+After Scour: Mean Vertical Effective Stress, σ’v (psf) 
+783 
+2,817 
+4,645 
+6,223 
+10,645 
+-- 
+Mean N-value (N60) 
+17 
+75 
+30 
+36 
+41 
+-- 
+σP (psf)=0.47(N60)m 
+5,444 
+13,263 
+7,654 
+8,539 
+9,232 
+-- 
+OCR 
+7.0 
+4.7 
+1.6 
+1.4 
+1.0 
+-- 
+K=KO 
+1.23 
+0.90 
+0.49 
+0.44 
+0.37 
+-- 
+Β=K tanφ 
+1.07 
+0.87 
+0.41 
+0.37 
+0.30 
+-- 
+Nominal Unit Side Resistance, fSN=β σ’v 
+835 
+2,437 
+1,919 
+2,286 
+3,195 
+-- 
+Layer Nominal Side Resistance, RSN (lb) 
+524,776 
+2,449,741 
+964,754 
+574,507 
+843,239 
+-- 
+Side Resistance Factor, φS 
+1.00 
+1.00 
+1.00 
+1.00 
+1.00 
+-- 
+Layer Factored Side Resistance, φSRSN (lb) 
+524,776 
+2,449,741 
+964,754 
+574,507 
+843,239 
+4,832,242 
+ 
+Spreadsheet B: Side Resistance, Cohesive Soil Layers 
+Geomaterial Layer No. 
+4 
+6 
+Σ 
+Thickness, ft  
+15 
+80.5 
+-- 
+Average CIUC Undrained Shear Strength (ps) 
+2,057 
+2,523 
+-- 
+Coefficient α 
+0.47 
+0.44 
+-- 
+Nominal Unit Side Resistance, fSN= α cu 
+976 
+1,116 
+-- 
+Layer Nominal Side Resistance, RSN (lb) 
+368,124 
+2,258,442 
+-- 
+Side Resistance Factor, φS 
+1.00 
+1.00 
+-- 
+Layer Factored Side Resistance, φSRSN (lb) 
+368,124 
+2,258,442 
+2,626,566 
+ 
+Spreadsheet C: Base Resistance, Layer 7, Cohesionless Soil 
+Geomaterial Layer No. 
+7 
+Mean N-value for 2-Diameters Below Tip  
+41 
+Nominal Unit Side Resistance = 0.6 N60 (tsf) 
+24.6 
+Nominal Base Resistance, RBN (lb) 
+2,473,062 
+Base Resistance Factor, φB 
+1.00 
+Factored Base Resistance, φBRBN (lb) 
+2,473,062 
+ 
+Summation of Factored Resistances = 9,932 kips 
+The final geotechnical limit state to be evaluated for axial loading is Service I. The bridge structural 
+designer has established a tolerable settlement of 2.0 inches for single shafts at Pier 2. Applying the first-
+order approximation involving the use of normalized displacement curves for single drilled shafts in soil 
+(as shown in Figure 10-40) the resistance corresponding to a downward displacement of 2 inches can be 
+estimated as follows: 
+“Failure Threshold”  L2  = RSN + RBN = (1,976.5 + 2,626.6) + 2,473.1 = 7,076.2 kips 
+Normalized displacement = δtolerable / B = 2 in / 96 in (100%) = 2.1% 
+Entering Figure 10-40, reproduced below as Figure A-5, with a normalized displacement of 2.1% yields a 
+normalized test load of 78%. 
+“Test Load” = Rservice + W = 0.78 (7,076.2) = 5,519 kips 
+ 
+
+========== PAGE 597 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-14
+09/11/2018 
+        Rservice = 5,519 – W = 5,519 – 885.0 = 4,634 kips 
+The limit state check is then written as: 
+ 2,835.4 kips < 4,634 kips 
+or, the factored Service I axial demand is less than the axial resistance developed at the tolerable 
+displacement, and therefore the trial design satisfies Service I limit state 
+Figure A-5  Normalized Load-Displacement Curve for Analysis of Service Limit State 
+Step 10:  Establish Minimum Diameter and Depth for Lateral Loads 
+As described in Chapter 9, drilled shafts are designed to withstand lateral loading by selecting the 
+dimensions (diameter and depth) and structural properties to satisfy LRFD limit state checks on the 
+geotechnical strength and structural strength for all applicable strength and extreme event limit states.  For 
+service limit states, the shaft must develop sufficient resistance at tolerable lateral displacements specified 
+by the structural designer.   Figure 9-12 outlines a design process for lateral loading, in which each step is 
+identified as a substep of Block 10 of the overall process. 
+Step 10.1  Define the detailed subsurface profiles for each lateral load case, including scour.  The profile 
+shown in Figure A-4, developed for axial loading, is also applied to the lateral load cases considered in 
+this example.  Soil properties used for lateral load analysis by the p-y method are also shown in the profile 
+(Figure A-4).  For Strength I and Service I limit states, full scour of 38 ft is assumed, while for Extreme 
+Event I zero scour is assumed.  
+2.1% 
+78% 
+
+========== PAGE 598 ==========
+ 
+ 
+FHWA-NHI-18-024                                                                                                                        A – Design Example 
+GEC10 Drilled Shafts Manual                                         A-15                                 
+09/11/2018 
+Step 10.2  Select Trial Length and Diameter. The trial dimensions established in the axial load analysis,  
+8-ft diameter, 201-ft deep shafts, are checked for each limit state under lateral loading. In addition, 
+minimum depths needed to satisfy lateral loading requirements are evaluated. 
+ 
+Step 10.3  Analyze the geotechnical strength limit state using factored loads.   
+ 
+As described in Section 12.3.3.1, the geotechnical strength under lateral loading is evaluated by 
+conducting a “pushover analysis” in which force effects are applied to the head of the shaft in various 
+multiples up to and exceeding the factored force effects.  For each load multiple, lateral head deflection is 
+calculated and the load-deflection curve must exhibit stable behavior up to the maximum load multiples. 
+In addition, lateral deflection at the maximum load must be less than 10% of the shaft diameter. The 
+concrete shaft is modeled in this analysis as a linear elastic beam of modulus equal to that of the concrete 
+and moment of inertia taken as that of the uncracked section. 
+ 
+The p-y method of analysis is used to illustrate the pushover analysis for Strength I and Extreme Event I 
+limit states. For the Strength I limit state, the factored lateral demands presented in Table A-1 are 
+considered. Lateral and moment demands are given for both longitudinal and transverse directions. For 
+the p-y analysis, the resultant lateral and moment force effects are resolved as follows: 
+ 
+ 
+ 
+ 
+ 
+The minimum axial compressive force given in Table A-1 for Strength I (2,673.42 kips) is also applied, in 
+combination with the factored shear and moment. Drilled shaft properties used in the LPILE analysis are 
+summarized in Table A-6. 
+ 
+TABLE A-6  DRILLED SHAFT PROPERTIES FOR PUSHOVER ANALYSIS 
+Drilled Shaft Property 
+Value 
+Diameter 
+96 inches 
+Length 
+2,412 inches 
+Distance from pile top to ground surface 
+456 inches 
+Moment of inertia 
+4,169,220 in4 
+Area 
+7,238 in2 
+Modulus of elasticity 
+4,000,000 lb/in2 
+ 
+The soil layers and properties are as shown in Figure A-4, and the Strength I analysis incorporates full 
+scour to a depth of 38 ft below the top of the shaft (hence a distance of 456 inches from top of pile to 
+ground surface). The pushover analysis is conducted by applying shear and moment in increments up to 
+maximum values of 1/ϕ times the factored demands, where ϕ = resistance factor. For Strength I, ϕ = 0.67, 
+which is equivalent to multiplying the factored demands by 1.5.  For this analysis, the lateral load and 
+moment were applied in multiples of 0.25 up to 1.5 times the factored values. The actual load 
+combinations and resulting lateral head deflection values from the LPILE output are summarized in  
+Table A-7. 
+  
+ 
+ 
+V equals the square root of the sum of (V sub longitudinal) squared and (V sub transverse) squared equals the square root of the sum (36.98) squared and (9.63) squared equals 38.21 kips V equals the square root of t
+h e sum of (V sub longitudinal) squared and (V sub transverse) squared equals the square root of the sum (36.98) squared and (9.63) squared equals 38.21 kips V equals the square roo t of the sum of (V sub longitudinal) squared and (V sub transverse) squared equals the square root of the sum (36.98) squared and (9.63) squared equals 38.21 kips V equals the square root of the sum of (V sub longitudinal) squared and (V sub transverse) squared equals the square root of the sum (36.98) squared and (9.63) squared equals 38.21 kips V equals t he square root of the sum of (V sub longitudinal) squared and (V sub transverse) squared equals the square root of the sum (36.98) squared and (9.63) squared equals 38.21 kips V  equals the square root of the sum of (V sub longitudinal) squared and (V sub transverse) squared equals the square root of the sum (36.98) squared and (9.63) squared equals 38.21 kips V equals the square root of the sum of (V sub longitudinal) squared and (V sub transverse) squared equals the square root of the sum (36.98) squared and (9.63) squared equals 38.21 kips 
+M equals the square root of the sum of (M sub longitudinal) squared and (M sub transverse) squared equals the square root of the sum (1,686.87) squared and (221.68) squared equals 1,701.37 kips-ft M equals the square root of t
+h e sum of (M sub longitudinal) squared and (M sub transverse) squared equals the square root of the sum (1,686.87) squared and (221.68) squared equals 1,701.37 kips-ft M equals the square roo t of the sum of (M sub longitudinal) squared and (M sub transverse) squared equals the square root of the sum (1,686.87) squared and (221.68) squared equals 1,701.37 kips-ft M equals the square root of the sum of (M sub longitudinal) squared and (M sub transverse) squared equals the square root of the sum (1,686.87) squared and (221.68) squared equals 1,701.37 kips-ft M equals the  square root of the sum of (M sub longitudinal) squared and (M sub transverse) squared equals the square root of the sum (1,686.87) squared and (221.68) squared equals 1,701.37 kips-ft M  equals the squ a re root of the sum of (M sub longitudinal) squared and (M sub transverse) squared equals the square root of the sum (1,686.87) squared and (221.68) squared equals 1,701.37 kips-ft 
+
+========== PAGE 599 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-16
+09/11/2018 
+TABLE A-7   LOADING AND COMPUTED HEAD DEFLECTIONS, PUSHOVER ANALYSIS 
+OF TRIAL SHAFT, STRENGTH I 
+Load 
+Increment 
+Multiple of 
+Factored 
+Demands 
+Shear 
+Force, V 
+(lbs) 
+Moment, M 
+(in-lbs) 
+Axial Force, 
+Q (lbs) 
+Computed Lateral 
+Head Deflection, y 
+(inches) 
+1 
+0.25 
+9,553 
+5,104,121 
+1,836,420 
+0.175 
+2 
+0.50 
+19,107 
+10,208,242 
+1,836,420 
+0.350 
+3 
+0.75 
+28,660 
+15,312,363 
+1,836,420 
+0.526 
+4 
+1.00 
+38,213 
+20,416,484 
+1,836,420 
+0.702 
+5 
+1.25 
+47,767 
+25,520,605 
+1,836,420 
+0.879 
+6 
+1.50 
+57,320 
+30,624,726 
+1,836,420 
+1.056 
+Figure A-6 shows the computed lateral deflection versus depth curves for the six load combinations. 
+Lateral deflection reduces to zero at a depth of approximately 60 ft, which is 26 ft below the ground 
+surface (below scour line).  This observation suggests that the shaft trial length of 201 ft is greater than 
+necessary for geotechnical strength under lateral loading; however this length is required for axial design. 
+The shaft lengths are therefore controlled by axial loading, not lateral loading. 
+In Figure A-7, the lateral head deflection is plotted against the load multiplier for each of the six cases. 
+The curve for the trial shaft length of 201 ft exhibits stable behavior up through 1.5 times the factored 
+force effects, and maximum deflection of 1.06 inches is well within 10 percent of the shaft diameter. 
+Based on the pushover analysis, the trial design therefore satisfies the geotechnical Strength I limit state 
+criterion. 
+To illustrate the minimum shaft depth required to provide adequate pushover stability, additional p-y 
+analyses were conducted with all parameters held constant except shaft length.  For a shaft length of 68 ft 
+(corresponding to 30 ft of embedment below the scour line), the load-deflection behavior is still 
+approximately linear and stable up to 1.5 times the factored force effects.  However, for a shaft length of 
+62 ft (24 ft of embedment), the load deflection curve shows a nonlinear trend at higher loads and a 
+deflection of 4 inches at 1.5 times the factored force effects, suggesting the onset of instability against 
+overturning.  For a shaft length shorter than 62 ft, the program will not converge to a solution, indicating 
+this is the minimum depth for stability against pushover.    
+
+========== PAGE 600 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-17
+09/11/2018 
+Figure A-6   Curves of Lateral Deflection versus Depth from Pushover Analysis of Trial Shaft 
+Figure A-7  Results of Pushover Analyses for Strength I Limit State 
+A similar approach is applied to evaluation of the Extreme Event I limit state.  The soil profile shown in 
+Figure A-4, but with no scour, is used to define the soil layers.  In accordance with AASHTO design code 
+(2017) two load cases are analyzed.  The factored demands in the longitudinal direction are combined 
+with 30 percent of the factored demands in the transverse direction to form the first load case, while the 
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+3.5
+4.0
+4.5
+5.0
+Proportion of 
+Factored Shear 
+and Moment 
+Applied to 
+Head of Shaft
+Lateral Deflection at Top of Shaft (inches) 
+L = 201 ft
+L = 68 ft
+L = 62 ft
+
+========== PAGE 601 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-18
+09/11/2018 
+second case consists of the demands in the transverse direction combined with 30 percent of the factored 
+demands in the longitudinal direction.  The first case is critical for pushover and is presented herein. 
+Referring to the factored demands in Table A-1 for Extreme Event I, the factored shear and moment used 
+in the analyses are given by: 
+V  equals the square root of the sum of (V sub longitudinal) squared and (the fraction 1 over 3 times V sub transverse) squared equals the square root of the sum (144.52) squared and the fraction (290.48 over 3) squared equals 173.96 kips V equals the squ
+a re root of the sum of (V sub longitudinal) squared and (the fraction 1 over 3 times V sub transverse) squared equals the square root of the sum (144.52) squared and the fraction (290.48 over 3) squared equals 173.96 kips V 
+equals the square root of the sum of (V sub longitudinal) squared and (the fraction 1 over 3 times V sub transverse) squared equals the square root of the sum (144.52) squared and the fraction (290.48 over 3) squared equals 173.96 kips V equals the
+ square root of the sum of (V sub longitudinal) squared and (the fraction 1 over 3 times V sub transverse) squared equals the square root of the sum (144.52) squared and the fraction (290.48 over 3) squared equals 173.96 kips
+V equals the square root of the sum of (V sub longitudinal) squared and (the fraction 1 over 3 times V sub transverse) squared equals the square root of the sum (144.52) squared and the fraction (290.48 over 3) squared equals 173.96 kips V equals t h e squar
+e root of the sum of (V sub longitudinal) squared and (the fraction 1 over 3 times V sub transverse) squared equals the square root of the sum (144.52) squared and the fraction (290.48 over 3) squared equals 173.96 kips
+V
+ equals the square root of the sum of (V sub longitudinal) squared and (the fraction 1 over 3 times V sub transverse) squared equals the square root of the sum (144.52) squared and the fraction (290.48 over 3) squared equals 173.96 kips
+V  equals the square root of the sum of (V sub longitudinal) squared and (the fraction 1 over 3 times V sub transverse) squared equals the square root of the sum (144.52) squared and the fraction (290.48 over 3) squared equals 173.96 kips V equals the square root of the sum of (V sub longitudinal) squared and (the fraction 1 over 3 times V sub transverse) squared equals the square root of the sum (144.52) squared and the fraction (290.48 over 3) squared equals 173.96 kips 
+M  equals the square root of the sum of (M sub longitudinal) squared and (the fraction 1 over 3 times M sub transverse) squared equals the square root of the sum (7,776.42) squared and the fraction (3,212.32 over 3) squared equals 7,849.79 kips-ft M equals the squ
+a re root of the sum of (M sub longitudinal) squared and (the fraction 1 over 3 times M sub transverse) squared equals the square root of the sum (7,776.42) squared and the fraction (3,212.32 over 3) squared equals 7,849.79 kips-ft M 
+equals the square root of the sum of (M sub longitudinal) squared and (the fraction 1 over 3 times M sub transverse) squared equals the square root of the sum (7,776.42) squared and the fraction (3,212.32 over 3) squared equals 7,849.79 kips-ft M equals the
+ square root of the sum of (M sub longitudinal) squared and (the fraction 1 over 3 times M sub transverse) squared equals the square root of the sum (7,776.42) squared and the fraction (3,212.32 over 3) squared equals 7,849.79 kips-ft
+M equals the square root of the sum of (M sub longitudinal) squared and (the fraction 1 over 3 times M sub transverse) squared equals the square root of the sum (7,776.42) squared and the fraction (3,212.32 over 3) squared equals 7,849.79 kips-ft M equals the  square ro
+ot of the sum of (M sub longitudinal) squared and (the fraction 1 over 3 times M sub transverse) squared equals the square root of the sum (7,776.42) squared and the fraction (3,212.32 over 3) squared equals 7,849.79 kips-ft
+M
+ equals the square root of the sum of (M sub longitudinal) squared and (the fraction 1 over 3 times M sub transverse) squared equals the square root of the sum (7,776.42) squared and the fraction (3,212.32 over 3) squared equals 7,849.79 kips-ft
+M  equals the s quare root of the sum of (M sub longitudinal) squared and (the fraction 1 over 3 times M sub transverse) squared equals the square root of the sum (7,776.42) squared and the fraction (3,212.32 over 3) squared equals 7,849.79 kips-ft 
+The minimum factored axial compressive force of 2,810.26 kips is also applied.  The drilled shaft is 
+treated as a linearly elastic beam-column with properties as given in Table A-6, except that the distance 
+from the top of the shaft to the ground surface in this case is zero, corresponding to no scour. 
+The pushover analysis is performed by applying the shear (V) and moment (M) in increments up to 
+maximum values of 1/ϕ times the factored demands, where ϕ = resistance factor.  For Extreme Event I, ϕ 
+= 0.80, which is equivalent to multiplying the factored force effects by 1.25.  The shear and moment were 
+applied in multiples of 0.25 up to 1.25 times the factored values.  The load combinations and resulting 
+lateral head deflection values from the LPILE output are summarized in Table A-8.  
+Figure A-8 shows the lateral head deflection versus the load multiplier for each of the five load 
+increments, for the trial shaft length of 201 ft and also for shorter lengths to establish the minimum 
+required depth for pushover stability.  The trial design length (201 ft) exhibits stable, approximately linear 
+behavior up through 1.25 times the factored demands, and maximum deflection of 0.51 inches is well 
+within an acceptable range.  The trial design therefore provides adequate lateral geotechnical strength for 
+the Extreme Event I limit state. 
+TABLE A-8  Loading and Computed Head Deflections, 
+Pushover Analysis of Trial Shaft, Extreme Event I 
+Load 
+Increment 
+Multiple of 
+Factored 
+Force Effects 
+Shear Force, 
+V (lbs) 
+Moment, M 
+(in-lbs) 
+Axial Force, Q 
+(lbs) 
+Computed 
+Lateral Head 
+Deflection, y 
+(inches) 
+1 
+0.25 
+43,490 
+23,549,382 
+2,810,260 
+0.095 
+2 
+0.50 
+86,980 
+47,098,763 
+2,810,260 
+0.191 
+3 
+0.75 
+130,470 
+70,648,145 
+2,810,260 
+0.289 
+4 
+1.00 
+173,960 
+94,197,526 
+2,810,260 
+0.396 
+5 
+1.25 
+217,450 
+117,746,908 
+2,810,260 
+0.512 
+
+========== PAGE 602 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-19
+09/11/2018 
+Figure A-8  Results of Pushover Analysis for Extreme Event I 
+For a shaft length of 30 ft (fully embedded), the load-deflection behavior becomes nonlinear, suggestion 
+that an unstable length is being approached, and a shaft of 27 ft in length shows deflection at the 
+overstress load level (multiplier = 1.25) exceeding 6 inches.  If the shaft length is decreased to 26 ft, the 
+program will not converge.  This exercise indicates that 30 ft is the approximate minimum shaft length 
+required to satisfy lateral geotechnical strength for Extreme Event I.   
+Step 10.4  Analyze preliminary structural strength limit state for flexure using factored loads.  This step 
+provides a preliminary check of moment resistance of the trial design, which is then compared to 
+maximum bending moments obtained from the pushover analyses, in which the shaft is treated as a 
+simple linearly elastic beam.  Nominal moment resistance (MN) is approximated by (see Chapter 9, 
+Section 9.3.2.2): 
+  for ρ = 1% MN (ft-k) = 27 D3= 27 (8ft)3 = 13,824 ft-k = 165,888 in-k 
+  for ρ = 1.5% MN (ft-k) = 40 D3= 40 (8ft)3 = 20,480 ft-k = 245,760 in-k 
+From the Strength I limit state pushover analysis, Mmax = 40,981 in-k, and for the Extreme Event I 
+pushover analysis, Mmax = 107,810 in-k.    Considering that resistance factors for flexure range from 0.75 
+to 0.90, the 8-ft diameter shafts with ρ in the range considered above (1.0% – 1.5%) will provide 
+sufficient flexural resistance.  There is no need at this point to consider larger diameters.  Complete 
+design for structural strength incorporating the nonlinear bending stiffness of the shaft, is considered in 
+Block 12 of the overall design process.  
+Step 10.5  Analyze service limit state (deformations) using unfactored loads. 
+In consultation with the bridge structural engineer, a maximum tolerable lateral deformation of ½ inch at 
+the scour line (38 ft below the top of the shaft) is established for serviceability.  The trial design is 
+analyzed by the p-y method of analysis, subject to the Service I factored demands.  Since service load 
+factors specified by AASHTO currently are 1.00, these are essentially unfactored load demands.  
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+7.0
+8.0
+9.0
+10.0
+Proportion of 
+Factored Shear 
+and Moment 
+Applied to 
+Head of Shaft
+Lateral Deflection at Top of Shaft (inches) 
+L = 201 ft
+L = 30 ft
+L = 27 ft
+
+========== PAGE 603 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-20
+09/11/2018 
+Referring to Table A-1, the factored shear and moment demands used in the Service I analyses are given 
+by: 
+V  equals the square root of the sum of (V sub longitudinal) squared and (V sub transverse) squared equals the square root of the sum (54.65) squared and (34.59) squared equals 64.68 kips V equals the squ
+a re root of the sum of (V sub longitudinal) squared and (V sub transverse) squared equals the square root of the sum (54.65) squared and (34.59) squared equals 64.68 kips V equals the square root of the sum of (V sub longitudinal) squared and (V sub transverse) squared equals the square root of the sum (54.65) squared and (34.59) squared equals 64.68 kips V equals t he square root of the sum of (V sub longitudinal) squared and (V sub transverse) squared equals the square root of the sum (54.65) squared and (34.59) squared equals 64.68 kips V  equals the square root of the sum of (V sub longitudinal) squared and (V sub transverse) squared equals the square root of the sum (54.65) squared and (34.59) squared equals 64.68 kips V equals the square root of the sum of (V sub longitudinal) squared and (V sub transverse) squared equals the square root of the sum (54.65) squared and (34.59) squared equals 64.68 kips
+M  equals the square root of the sum of (M sub longitudinal) squared and (M sub transverse) squared equals the square root of the sum (2,647.17) squared and (317.24) squared equals 2,666.11 kips-ft M equals the squ
+a re root of the sum of (M sub longitudinal) squared and (M sub transverse) squared equals the square root of the sum (2,647.17) squared and (317.24) squared equals 2,666.11 kips-ft M equals the square root of the sum of (M sub longitudinal) squared and (M sub transverse) squared equals the square root of the sum (2,647.17) squared and (317.24) squared equals 2,666.11 kips-ft M equals the square root of the sum of (M sub longitudinal) squared and (M sub transverse) squared equals the square root of the sum (2,647.17) squared and (317.24) squared equals 2,666.11 kips-ft M equals the  square root of the sum of (M sub longitudinal) squared and (M sub transverse) squared equals the square root of the sum (2,647.17) squared and (317.24) squared equals 2,666.11 kips-ft M  equals the s quare root of the sum of (M sub longitudinal) squared and (M sub transverse) squared equals the square root of the sum (2,647.17) squared and (317.24) squared equals 2,666.11 kips-ft
+The minimum factored axial compressive force of 1,836.42 kips is also applied. 
+The program input used for the pushover analysis of the 201-ft trial shaft length is adjusted to the service 
+limit state loads and additional input is required to characterize the nonlinear structural properties of the 
+reinforced concrete shaft.  The shaft is specified to be a circular, nonlinear reinforced concrete member, 
+96 inches diameter, reinforced with 40  #14 bars, and with 6-inches of concrete cover.  This provides a 
+steel area ratio (ρ) of approximately 1.25 percent of the concrete gross cross-sectional area.  Concrete 
+compressive strength qc = 4,000 psi and yield strength of the steel reinforcement bars fy = 60,000 psi. 
+Figure A-9 shows the deflection versus depth curve from the p-y analysis.  At a depth of 38-ft (scour 
+line), the lateral deformation is 0.49 inches, just within the specified tolerance of ½ inch.  The trial design 
+therefore satisfies the Service I limit state for lateral deformation. 
+Figure A-9   Deflection versus Depth for Drilled Shaft Under Service I Force Effects  
+
+========== PAGE 604 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-21
+09/11/2018 
+Substep 10.6  Define minimum length and diameter based on analyses 
+If lateral loading only is considered, the minimum length is approximately 65 ft, for 8-ft diameter shafts, 
+based on the Strength I limit state, or pushover analysis.  Based on axial load considerations, the 
+minimum depth is 201 ft. 
+Step 12:  Finalize Structural Design of the Shafts and Connection to Structure 
+In Step 10.4, above, it was shown that 8-ft diameter shafts with steel reinforcement ratios (ρ) in the range 
+of 1 to 2 percent should be sufficient to satisfy structural strength requirements due to flexure.  In Step 
+10.5, analysis shows that ρ = 1.25 percent is just sufficient to satisfy the service limit state requirement 
+for ½ inch lateral displacement at the scour line.  In this section, the trial design consisting of 8-ft 
+diameter, 201-ft long shafts with ρ = 1.25 percent will be checked for structural resistance, for Strength I 
+and Extreme Event I limit states.  The procedure described herein follows the steps for structural design 
+presented in Chapter 12 of this manual.   
+Step 12.1  Determine the factored force demands at the top of the drilled shaft. 
+Factored top-of-shaft demands at Pier 2 are given in Table A-1 for the Strength I and Extreme Event I 
+limit states, based on structural modeling of the bridge and foundations as described previously 
+Step 12.2  Check trial design for axial resistance, i.e., check whether the factored axial demand is well 
+within the factored nominal axial resistance φ(Pn) of the shaft using Equation (12-6). 
+Referring to Chapter 12, the factored axial resistance, given the trial shaft properties, is given by: 
+ Pr = ϕPn = ϕβ [0.85 fc' (Ag – As) + Asfy] = 0.75(0.85) [0.85 x 4(7,238 – 90) + 90(60)] 
+ Pr = 18,936.8 kips >> 3,389.5 kips 
+The factored axial demand (3,389.5) is well within the factored axial compressive resistance (18,936.8 
+kips) and the trial design therefore satisfies the structural Strength I limit state for compression. 
+Step 12.3  Analyze the shaft under lateral/moment loading to establish critical sections for moment and 
+shear. 
+In this step, p-y analysis is carried out using top of shaft demands in combination with the nonlinear 
+model of the reinforced concrete shaft.  Graphs of moment versus depth and shear versus depth are 
+generated and the program output file is inspected to determine maximum values of moment and shear 
+demand and the corresponding depths at which they occur.  Figure A-10 shows the resulting moment and 
+shear diagrams for Strength I, and Table A-9 summarizes the critical values of moment, shear, and critical 
+depths for Strength I and Extreme Event I force effects.  The two cases analyzed for Strength I correspond 
+to the minimum and maximum values of factored compression. 
+
+========== PAGE 605 ==========
+ 
+ 
+FHWA-NHI-18-024                                                                                                                        A – Design Example 
+GEC10 Drilled Shafts Manual                                         A-22                                 
+09/11/2018 
+ 
+Figure A-10  Moment and Shear versus Depth, Drilled Shaft Under Strength I Force Effects 
+ 
+TABLE A-9  SUMMARY OF CRITICAL MOMENTS AND SHEAR FOR  
+STRUCTURAL DESIGN 
+Limit 
+State 
+Mmax  
+in-lb 
+Mmax  
+ft-kips 
+Depth of 
+Mmax inches 
+Depth of 
+Mmax ft 
+Vmax 
+(kips) 
+lbs 
+Vmax 
+(kips) 
+kips 
+Depth of 
+Vmax inches 
+Depth of 
+Vmax ft 
+P 
+(kips) 
+Strength I 
+46,344,639 
+3,862 
+506.52 
+42.2 
+-158,218 
+-158.2 
+675.5 
+56.3 
+3,389.5 
+44,647,327 
+3,721 
+506.52 
+42.2 
+-150,687 
+-150.7 
+675.4 
+56.3 
+2,673.4 
+Extreme 
+Event I 
+1.08E+08 
+8,966 
+96.48 
+8.0 
+-425.6 
+-425.6 
+265.3 
+22.1 
+2,823.0 
+ 
+Step 12.4  Treating the drilled shaft as a beam-column, determine the required amount and distribution of 
+longitudinal steel required for the section to resist the combined axial load and moment demands. 
+ 
+This step requires the designer to develop an interaction diagram, a curve defining the combination of axial 
+compression (P) and moment (M) that defines the strength of a reinforced concrete beam column, as 
+described in Chapter 12.  For this example, p-y analyses were performed with the trial shaft dimensions and 
+nonlinear bending properties to determine the moment required to achieve the strength limit state for a 
+range of axial compression values from zero to the nominal crushing strength of 29,703 kips.  The trial 
+design consists of 4,000 psi concrete, 40 # 14 bars with fy = 60 ksi, giving a steel ratio of 1.25%.  The 
+resulting P-M interaction diagram is shown in Figure A-11 as the nominal (or unfactored) interaction curve.  
+These values are then factored according to AASHTO specifications as described in Section 12.7 of this 
+manual.  For axial strain values up to 0.002, compression controls and the resistance factor is taken as 0.75.  
+For strain in the extreme tension fiber equal to or exceeding 0.005, the resistance factor is taken as 0.90.  
+Between these limits of strain, the resistance factor is interpolated linearly between 0.75 and 0.90.  Factored 
+resistances are computed by multiplying both Pn and Mn by the appropriate single value of ϕ.  The resulting 
+factored interaction curve determined in this way is also shown in Figure A-11.   
+  
+
+========== PAGE 606 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-23
+09/11/2018 
+Figure A-11   P-M Interaction Diagram for Trial Shaft Structural Analysis 
+Limit state checks for flexure are then carried out by plotting the points representing the combination of 
+factored axial and moment demands for each applicable limit state on the P-M interaction diagram.  These 
+points are shown on Figure A-11 for the Strength I (blue) and Extreme Event I (red) limit states.  The 
+values of factored demands (P and M) are those given in Table A-9.  The LRFD requirement is that the P-
+M points lie within the factored interaction curves.  For the Strength I limit state, the blue point must lie 
+within the curve labeled “Factored Interaction Curve”.  For Extreme Event I, the resistance factors are 
+taken equal to 1.00, which means that the factored resistances are equivalent to the nominal resistances. 
+The point labeled Extreme Event I must therefore lie within the curve labeled “Nominal Interaction 
+Curve”.  In this case, both points are well within the respective interaction curves, and therefore the trial 
+structural design is satisfactory for flexural resistance for both Strength I and Extreme Event I limit states.  
+Step 12.5  Design for shear:  check whether the concrete section has adequate shear resistance with the 
+code-specified minimum transverse reinforcement; select appropriate ties or spirals according to 
+AASHTO and ensure the spacing between reinforcement satisfies requirements for constructability. 
+First, determine whether the factored shear demand (425.6 kips from Table A-9 for Extreme Event I) 
+exceeds one-half of the factored shear resistance provided by the concrete portion of the shaft cross 
+section.  By Eq. 12-15: 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+  V s ub c equals 0.0632 times lambda times square root of f prime sub c times b sub v times d sub v equals 0.0632 times square root of 4 ksi times (96 inches) times 66.98 inches) equals 812.8 kipsV su b  c equals 0.0632 times lambda times square root of f prime sub c times b sub v times d sub v equals 0.0632 times square root of 4 ksi times (96 inches) times 66.98 inches) equals 812.8 kipsV sub c equals 0. 0 632 times lambda times square root of f prime sub c times b sub v times d sub v equals 0.0632 times square root of 4 ksi times (96 inches) times 66.98 inches) equals 812.8 kips
+ 0.5φVc = 0.50 (0.90) 812.8 kips = 365.7 kips 
+Since the factored shear demand of 425.6 kips exceeds one-half of the factored shear resistance of the 
+concrete, the code-specified minimum must be met.  By Eq. 12-5 the required minimum is: 
+
+========== PAGE 607 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-24
+09/11/2018 
+A sub v ( inches squa
+red) is greater than or equal to 0.0316 times lambda times square root of f prime sub c times fraction b sub v times s over f sub y equals 0.0316 times (1.0) times square root of 4 ksi times fraction 96 inches times (s) over 60 ksi equals 0.101 times xsA
+ su
+b v (inches squared) is greater than or equal to 0.0316 times lambda times square root of f prime sub c times fraction b sub v times s over f sub y equals 0.0316 times (1.0) times square root of 4 ksi times fraction 96 inches times (s) over 60 ksi equals 0.101 times xs A  sub v (inches squared) is greater than or equal to 0.0316 times lambda times square root of f prime sub c times fraction b sub v times s over f sub y equals 0.0316 times (1.0) times square root of 4 ksi times fraction 96 inches times (s) over 60 ksi equals 0.101 times xs
+A sub v 
+(inches squared) is greater than or equal to 0.0316 times lambda times square root of f prime sub c times fraction b sub v times s over f sub y equals 0.0316 times (1.0) times square root of 4 ksi times fraction 96 inches times (s) over 60 ksi equals 0.101 times xs A  sub v (inches squared) is greater than or equal to 0.0316 times lambda times square root of f prime sub c times fraction b sub v times s over f sub y equals 0.0316 times (1.0) times square root of 4 ksi times fraction 96 inches times (s) over 60 ksi equals 0.101 times xs
+where s = vertical spacing of the transverse reinforcement.  Initially assume a spacing of 6 inches to meet 
+the minimum clear space of 5 inches.  In that case, Av = 0.606 in2.  The minimum bar size meeting the 
+required cross-sectional area is No. 8 with Av = 0.785 in2.  Proceed with a trial design consisting of No. 8 
+hoops on a 6-inch spacing. 
+The next step is to evaluate the factored shearing resistance of the section, assuming #8 hoops on a 6-inch 
+spacing.  The nominal shearing resistance (Vn) is given by the smaller of the following two values: 
+  Vn = Vc + Vs or Vn = 0.25 fc' bvdv 
+in which Vc = nominal shear resistance provided by the concrete and Vs = nominal shearing resistance 
+provided by the transverse reinforcement steel.  In the second expression, the dimensions bv and dv refer 
+to the width and effective depth of a rectangular cross-section, and the product bv x dv represents the cross-
+sectional area that is effective in resisting shear.  For a circular cross-section, these parameters can be 
+approximated by: 
+  𝑏𝑣= 𝑑𝑟𝑖𝑙𝑙𝑒𝑑 𝑠ℎ𝑎𝑓𝑡 𝑑𝑖𝑎𝑚𝑒𝑡𝑒𝑟, 𝐷= 96 𝑖𝑛 
+d s u b v  
+e
+quals 0.9 times the sum of fractions (D over 2) plus (D sub r over pi) equals 0.9 times the sum of fractions (96 over 2) plus (83 over pi) equals 66.98 inches d
+ s
+ub v equals 0.9 times the sum of fractions (D over 2) plus (D sub r over pi) equals 0.9 times the sum of fractions (96 over 2) plus (83 over pi) equals 66.98 inches d  sub  
+v 
+equals 0.9 times the sum of fractions (D over 2) plus (D sub r over pi) equals 0.9 times the sum of fractions (96 over 2) plus (83 over pi) equals 66.98 inches d
+ s
+ub v equals 0.9 times the sum of fractions (D over 2) plus (D sub r over pi) equals 0.9 times the sum of fractions (96 over 2) plus (83 over pi) equals 66.98 inches d  sub v equals 0.9 times the sum of fractions (D over 2) plus (D sub r over pi) equals 0.9 times the sum of fractions (96 over 2) plus (83 over pi) equals 66.98 inches
+For a 6-in pitch the angle of the spiral to the vertical is given by: 
+        α = cos-1 [6 in / (π x 84 in)] = 88.7 degrees 
+By Eqs. 12-15 and 12-17: 
+V su b  c equals 0.0632 times square root of f prime sub c times b sub v times d sub v equals 0.0632 times square root of 4 ksi times (66.98 inches) times (96 inches) equals 812.8 kipsV su b  c equals 0.0632 times square root of f prime sub c times b sub v times d sub v equals 0.0632 times square root of 4 ksi times (66.98 inches) times (96 inches) equals 812.8 kipsV sub c equals 0.0 6 32 times square root of f prime sub c times b sub v times d sub v equals 0.0632 times square root of 4 ksi times (66.98 inches) times (96 inches) equals 812.8 kips
+V s u
+b s eq
+uals fraction A sub v times f sub y times d sub v over s equals fraction (0.785 inches squared) times (60 ksi) times (66.98 inches) divided by 6 inches equals 525.8 kips
+V
+ sub s equals fraction A sub 
+v times f sub y times d sub v over s equals fraction (0.785 inches squared) times (60 ksi) times (66.98 inches) divided by 6 inches equals 525.8 kips
+V  sub s equals fraction A sub v times f sub y times d sub v over s equals fraction (0.785 inches squared) times (60 ksi) times (66.98 inches) divided by 6 inches equals 525.8 kips
+       Vn = Vc + Vs = 812.8 + 525.8 = 1,338.6 kips 
+As a check: 0.25 fc' bvdv = 0.25 (4 ksi) 96 in (66.98 in) = 6,430 kips > 1,339 kips 
+The factored shear resistance of the trial design is therefore: 
+  Vr = φVn = 0.90 (1,338.6 kips) = 1,204.7 kips 
+Limit state checks are then carried out by comparing the factored shear demand (Table A-9) to the 
+factored shear resistance: 
+For the Strength I limit state: 158.2 kips < 1,204.7 kips 
+For the Extreme Event I limit state: 425.6 kips < 1,204.7 kips 
+
+========== PAGE 608 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-25
+09/11/2018 
+The factored shear resistance easily exceeds factored shear demand for both limit states.  The trial design 
+consisting of No. 8, Grade 60 hoops on a 6-inch spacing therefore satisfies the required minimum 
+transverse reinforcement and meets the shear demand for strength and extreme event limit states. 
+As stated in Chapter 12, AASHTO specifications require that the minimum amount of transverse steel 
+extend from the top of the drilled shaft to a depth of at least three diameters below the calculated depth of 
+moment fixity.  Based on the p-y analyses of the trial shaft for Strength I and Extreme Event I, the 
+maximum depth of moment fixity is 110 ft below the existing mudline elevation (see Figure A-10).  
+Three shaft diameters (24 ft) establishes a depth of 134 ft below mudline elevation as the depth to which 
+the minimum transverse reinforcement is required.  Also considering that the drilled shafts extend from 
+the existing mudline elevation (-29 ft) upward to the connection with the pier columns at elevation + 3.64 
+ft, the total shaft length over which the minimum traverse steel is required is approximately 167 ft.  The 
+spiral size and pitch required to meet the minimum transverse steel requirement has been calculated 
+above, and consists of:  No. 8, Grade 60 spiral at s = 6.0 inch.  Below the depth corresponding to three 
+diameters below moment fixity, the transverse reinforcement can be reduced to a size and spacing that 
+will provide a stable reinforcing cage for handling and constructability, for example No. 5 hoops or spiral 
+on 12-inch pitch. 
+The clear spacing between #8 hoops at 6-inch spacing is 5 inches.  If the No. 14 longitudinal bars are 
+bundled radially in groups of two, the circumferential clear space between bundles is approximately 11 
+inches.   Both values of clear spacing meet the recommended minimum value of 5 inches (Chapter 6).   
+Below the depth at which the drilled shafts behave as columns, which can be taken as the depth below 
+which bending moment is zero, or approximately 115 ft below existing mudline, the minimum 
+recommended reinforcement ratio of 0.5 percent can be used.  If one bar of each two-bar bundle of #14 
+bars is discontinued below this depth, the steel ratio is approximately 0.6 percent, a practical solution and 
+one that provides continuity in the reinforcement cage. 
+Connection to Pier Columns.  A construction joint is located at the connection between the drilled shafts 
+and the pier columns at elevation +5.0 ft, which is approximately 2.4 ft above mean high water level 
+(M.H.W.). Figure A-12  shows a partial elevation of the drilled shafts at Pier 2 and selected cross-sections 
+of the drilled shafts for the cased (Section A-A) and uncased (Section B-B) lengths.   The column and 
+shaft reinforcement are the same for the drilled shafts and pier columns (40 #14 bars in bundles of two). 
+Mechanical couplers are specified for splicing the longitudinal bars at the construction joint, with 
+connections between individual bars within each 2-bar bundle to be staggered.  The transverse steel for 
+the drilled shafts, consisting of bundled #8 hoops at s = 6 inches, also extends into the pier columns and is 
+continued 5 ft into the pier cap.  The interior bar of each 2-bar bundle is to be straight and also embedded 
+5 ft into the pier cap.  Following construction of the superstructure, the permanent casing is to be cut from 
+the top, to 2 ft below the mean low water elevation (M.L.W.).  
+
+========== PAGE 609 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-26
+09/11/2018 
+Figure A-12  Elevation and Cross-Sections of Drilled Shafts at Pier 2. 
+Step 13 Evaluate Constructability 
+Constructability issues associated with this project included: subsurface stratigraphy consisting of 
+alternating layers of saturated coarse-grained and fined-grained soils; over-water construction; partial-
+length permanent casing; and requirements for concrete with high workability.   
+To address borehole stability, the contractor’s installation plan called for the use of a polymer-based 
+drilling fluid.  Slurry properties were controlled in accordance with manufacturer-provided specifications. 
+Prior to concrete placement, high silt content in the polymer slurry was addressed by full replacement of 
+the slurry column with fresh slurry. 
+Drilled shafts were excavated from a barge using the crane-mounted rotary drilling machine shown in 
+Figure A-13.  Use of a crane mount provided the clearance needed for inserting and removing the drilling 
+tool over the top of the permanent casing.  Excavated soil was discharged from the auger into barges and 
+transported to a disposal site.  Excavated soil was not permitted to be discharged into the environmentally 
+sensitive river environment or surrounding wetlands. 
+ 
+6 inch Cover 
+8 CSL Access Tubes, 
+Equally Spaced 
+Around Inside of 
+Rebar Cage  
+A 
+A 
+EL 30.0 ft  
+Bottom of Pier Cap 
+               
+Approximate Existing 
+Mudline (EL -29 ft) 
+Casing Tip EL -67.0 ft 
+Top of Drilled Shaft  
+     EL 5.0 ft 
+Construction Joint 
+8 ft-6 inch Dia. Permanent 
+Steel Casing; Cut Off @ 2 ft 
+Below M.L.W. 
+40 #14 
+Equally Spaced; 
+2 per Bundle 
+8 ft-6 inch O.D. 
+Steel Casing 
+#8 Hoops 
+Centerline, Drilled 
+Shaft and Pier Column 
+M.H.W. EL +2.54 ft 
+M.L.W. EL -0.3 ft 
+B 
+B 
+40 #14 
+Equally Spaced; 
+2 per Bundle 
+8 ft  Diameter 
+Drilled Shaft 
+#8 Hoops 
+6 inch Cover  
+Section A - A 
+Section B - B 
+10 ft  
+Pier Cap  
+              
+Mechanical Couplers 
+
+========== PAGE 610 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-27
+09/11/2018 
+Figure A-13  Crane-Mounted Drilling Machine for Construction Over Water 
+The large volumes of concrete required made this project an excellent candidate for the use of high-
+performance concrete.  The mix design selected corresponds to tremie concrete mixes described in 
+Chapter 7 (Section 7.6.1.2) and was considered to self-consolidating concrete mix (SCC).    The most 
+significant advantages of using a tremie concrete SSC mix for this project included:  
+•
+High workability and retention of workability
+The volume of concrete required to construct 8-ft diameter, 201-ft long drilled shafts is
+approximately 360 cubic yards.  This required 8 to 10 hours for placement of concrete, per drilled
+shaft.  Retention of workability was achieved with an SCC mix design that included a high range
+water reducing admixture and a set retarder.
+•
+Passing ability
+The tremie con mix was made with high sand content and No. 8 crushed stone, with a top-size of
+½ inch.  This mix provided adequate flow of concrete through the rebar cage, with a clear spacing
+of ten times the aggregate maximum particle size.
+
+========== PAGE 611 ==========
+ 
+ 
+FHWA-NHI-18-024                                                                                                                        A – Design Example 
+GEC10 Drilled Shafts Manual                                         A-28                                 
+09/11/2018 
+Table A-10 presents the mix design and properties of the concrete. This mix provided slump flow in the 
+range of 18 to 24 inches and appeared to perform very well for this job. Figure A-14 shows a typical 
+slump flow spread. No problems were observed during tremie placement of the concrete and no 
+anomalies were detected by cross-hole sonic logging tests. Specifications called for a minimum 4,000 psi 
+compressive strength, but this mix had 28 day breaks as high as 7,000 psi. Other noteworthy points 
+regarding the concrete include:  
+• 
+Class F fly ash was 20% of the total cementitious material 
+• 
+Sand to total aggregate ratio = 0.48 
+• 
+Water to cement ratio = 0.41 
+• 
+The high-range water-reducing admixture was made from polycarboxylate polymers 
+• 
+The hydration control admixture (retarder) provided some water reducing benefits 
+ 
+TABLE A-10  MIX DESIGN FOR DRILLED SHAFTS, DESIGN EXAMPLE 
+Mix Components 
+Mix Component 
+Pounds/Cubic Yard 
+Yield (Cubic Ft) 
+Type I Portland Cement 
+526 
+2.68 
+Class F Fly Ash 
+132 
+1.00 
+Concrete Sand 
+1363 
+8.30 
+No. 8 Crushed Stone 
+1500 
+8.71 
+Water 
+267 
+4.28 
+Total Air (%) 
+7.5±2.0 
+2.03 
+Total 
+27.00 
+Admixtures 
+Admixtures 
+Ounces (US)/ 
+Cubic Yard 
+High range water reducing and superplasticizing admixture meeting ASTM C-494 Types A and F 
+46.06 
+Water reducing and retarding admixture meeting ASTM T-494 Types B and D 
+26.32 
+Air entraining admixture meeting ASTM C-260 
+4.9 
+Mix Properties 
+Mix 
+Properties 
+Water to Cement Ratio 
+0.41 
+Concrete Unit Weight 
+140.3 (lb/ft3) 
+Flow Spread of Fluid Concrete 
+19-24 inch 
+ 
+ 
+ 
+
+========== PAGE 612 ==========
+FHWA-NHI-18-024       
+ A – Design Example 
+GEC10 Drilled Shafts Manual 
+A-29
+09/11/2018 
+Figure A-14  Slump Flow Measurement on High-Performance Concrete of Design Example  
+A.3 
+SUMMARY
+An example design problem, based on an actual bridge project, is presented to illustrate the design 
+procedures presented in this manual.  Design of single drilled shafts for one of the piers (Pier 2) is 
+illustrated for Strength I, Service I, and Extreme Event I limit states.  Information obtained from the 
+subsurface investigation is used to establish an idealized subsurface profile and to select soil properties 
+used in the design equations.  Design scour conditions are incorporated into the Strength I and Service I 
+limit state analyses.  Calculations are presented to illustrate limit state checks for geotechnical and 
+structural resistances, for lateral and axial loading.  Finally, constructability issues relevant to the project 
+are identified and the measures taken to address them are discussed.   
+
+========== PAGE 613 ==========
+This page is intentionally left blank.
+
+========== PAGE 614 ==========
+ 
+ 
+APPENDIX B  
+ 
+DRILLED SHAFTS IN 
+CHALLENGING 
+GEOMATERIALS  
+ 
+
+========== PAGE 615 ==========
+This page is intentionally left blank. 

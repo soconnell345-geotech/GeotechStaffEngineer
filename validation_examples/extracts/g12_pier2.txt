@@ -1,0 +1,2567 @@
+
+========== PAGE 130 ==========
+The SPT N value was then corrected for vertical effective stress as presented in 
+Equation 5-2, using the Peck et al. (1974) correction factor, 𝐶𝐶𝑛𝑛.  The depth value for 
+this calculation was taken from the middle depth of the SPT sampling event after the 
+6 inch seating interval (e.g., the SPT N value recorded from 0.5-1.5 feet was 
+corrected using the vertical effective stress at 1 foot). 
+ 
+ 
+(𝑁𝑁1)60 = 𝐶𝐶𝑛𝑛𝑁𝑁60  
+[Eq. 5-2] 
+ 
+ 
+𝐶𝐶𝑛𝑛= 0.77 log ቀ
+20
+𝜎𝜎′𝑣𝑣𝑣𝑣ቁ  
+[Eq. 5-3] 
+ 
+ 
+After correcting the SPT N values for energy transfer and vertical effective stress, an 
+average corrected N value was determined for each respective cohesionless soil 
+layer.  The N value from the first SPT sample in Layer 1 was not included in this 
+procedure for Layer 1 since the bottom of the footing at Pier 2 is below this sample 
+depth.   
+ 
+Table D-49 presents the average (N1)60 value for each cohesionless layer at Pier 2, 
+the coefficient of variation, COV, within the layer, and the effective stress friction 
+angle chosen for the layer.  The coefficient of variation for each layer was less than 
+25% indicating low variability within each of the identified layers.  Higher variability 
+would have necessitated separating the soil profile into additional soil layers.   
+ 
+ 
+Table D-48 Correction of Field SPT N Value for Energy and Vertical Effective 
+Stress at Pier 2 using Boring S-2 
+Soil Layer 
+Depth (ft) 
+σ'vo (ksf) 
+Field N value 
+N60 
+Cn 
+(N1)60 
+1 
+1 
+0.033 
+3 
+4 
+2.00 
+8 
+1 
+6 
+0.101 
+7 
+9 
+2.00 
+18 
+2 
+8 
+0.166 
+51 
+64 
+1.83 
+117 
+2 
+11 
+0.369 
+52 
+65 
+1.57 
+102 
+2 
+16 
+0.707 
+55 
+69 
+1.35 
+93 
+4 
+51 
+3.013 
+42 
+53 
+0.86 
+45 
+4 
+56 
+3.326 
+46 
+58 
+0.83 
+48 
+4 
+61 
+3.639 
+41 
+51 
+0.80 
+41 
+4 
+66 
+3.952 
+50 
+63 
+0.77 
+48 
+ 
+The (N1)60 values were used to estimate the effective stress friction angle of each 
+soil layer in accordance with Table 5-5 of Chapter 5.  These friction angle 
+ 
+96 
+
+========== PAGE 131 ==========
+correlations are presented in Table D-49.  Layer 2 consists of extremely dense 
+gravel and Layer 4 consists of hard angular gravel with sand.  Therefore, as 
+discussed in Section 5.5.1, a design friction angle of 36 degrees was used for 
+estimating the shaft resistance in both of these layers while the friction angle noted 
+in Table D-49 was used to estimate the toe resistance. 
+ 
+Table D-49 Soil Layer Effective Stress Friction Angle Correlations at Pier 2  
+Soil Layer 
+Average (N1)60 
+COV 
+φ' shaft 
+(degrees) 
+φ' toe 
+(degrees)  
+1 
+18 
+0.0% 
+32 
+32 
+2 
+104 
+9.6% 
+36 
+43 
+4 
+46 
+6.3% 
+36 
+38 
+ 
+Soil Layer 3 consists of very stiff silty clay.  Unconfined compression strength tests 
+were performed on each undisturbed cohesive soil sample.  The undrained shear 
+strength was then calculated by dividing the unconfined compression strength by 2. 
+ 
+Figure D-38 presents the undrained shear strength versus depth for Soil Layer 3.  
+The undrained shear strength increases approximately linearly from 20 to 45 feet.  
+Layer 3 was refined into 6 sublayer increments of 5 feet, each using the respective 
+undrained shear strength value determined from laboratory testing.  Table D-50 
+presents the shear strength values for Soil Layer 3 as well as sublayers a through f.  
+ 
+ 
+Figure D-38 Undrained shear strength, su, versus depth for Soil Layer 3 at Pier 2. 
+ 
+97 
+
+========== PAGE 132 ==========
+Table D-50 Undrained Shear Strength, su, for Soil Layer 3 at Pier 2 
+Soil Layer 
+Depth (ft) 
+σ'vo (ksf) 
+qu (tsf) 
+su (ksf) 
+3a 
+21 
+1.045 
+3.10 
+3.10 
+3b 
+26 
+1.373 
+3.21 
+3.21 
+3c 
+31 
+1.701 
+3.25 
+3.25 
+3d 
+36 
+2.029 
+3.30 
+3.30 
+3e 
+41 
+2.357 
+3.34 
+3.34 
+3f 
+46 
+2.685 
+3.40 
+3.40 
+ 
+ 
+The design soil profile for Pier 2 is presented in Figure D-39, with the bottom of 
+footing elevation noted 10 feet below ground surface.  Some soil properties in the 
+design soil profile such as the elastic moduli, Es, and the initial cyclic modulus of 
+subgrade reaction, kc, have been selected based on published correlations in the 
+absence of laboratory and field testing.  For this particular soil profile, the elastic 
+moduli were determined from the SPT correlation in Table 5-11 and the initial cyclic 
+moduli of subgrade reaction were selected based on representative values shown in 
+Table 7-22.  The average cohesive soil strength for Layer 3 was used to select the 
+50% strain factor, ε50, from Table 7-21.   
+ 
+ 
+ 
+Figure D-39 Design soil profile at Pier 2. 
+ 
+ 
+98 
+
+========== PAGE 133 ==========
+D.22.1 Geotechnical Resistance in Axial Compression 
+ 
+The nominal geotechnical resistance in axial compression is now determined for the 
+selected candidate H-pile sections.  The nominal geotechnical resistance can be 
+calculated by hand or with computer software using an appropriate analysis method 
+based upon soil and pile type.  Chapter 7 describes appropriate methods for this 
+purpose as well as available computer programs. 
+ 
+For this example, the DrivenPiles computer program was used to calculate the 
+nominal resistance, shaft resistance, and toe resistance as a function of depth for 
+each of the five candidate H-piles.  This software program was selected since it uses 
+the FHWA recommended Nordlund method and alpha method to estimate the 
+nominal geotechnical resistance of H-piles in cohesionless and cohesive soils, 
+respectively.  The DrivenPiles program also allows the analyst to select a different 
+friction angle for shaft and toe resistance calculations in any layer.  This option was 
+utilized for the extremely dense gravel in Layer 2 and the gravel with sand 
+comprising Layer 4.  The computer program was also used to evaluate the nominal 
+geotechnical resistance at Pier 2 during the design flood and at the check flood. 
+ 
+A summary of the nominal shaft, nominal toe, and nominal geotechnical resistance 
+is presented for the HP 12x74 H-pile section in Table D-51.  A graphical 
+interpretation of the estimated resistance is presented in Figure D-40.  The indicated 
+pile penetration depth is referenced from the bottom of pile cap (Elev. 275.0 feet), 
+which is 10 feet below the original ground surface (Elev. 285.0 feet). 
+ 
+ 
+99 
+
+========== PAGE 134 ==========
+Table D-51 Nominal Shaft, Nominal Toe and Nominal Geotechnical Resistance for 
+HP 12x74 at Pier 2 (pre-scour) 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal 
+Geotechnical 
+Resistance  
+(kips) 
+ 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal 
+Geotechnical 
+Resistance  
+(kips) 
+0.01 
+0.0 
+106.5 
+106.5 
+29.99 
+109.9 
+30.5 
+140.4 
+1 
+1.1 
+123.0 
+124.2 
+30.01 
+110.1 
+30.8 
+140.9 
+2 
+2.4 
+139.7 
+142.1 
+31 
+115.1 
+30.8 
+145.9 
+3 
+3.9 
+156.4 
+160.2 
+32 
+120.2 
+30.8 
+151.0 
+4 
+5.5 
+173.1 
+178.5 
+33 
+125.3 
+30.8 
+156.1 
+4.99 
+7.2 
+189.6 
+196.8 
+34 
+130.4 
+30.8 
+161.2 
+5.01 
+7.3 
+189.9 
+197.2 
+34.99 
+135.5 
+30.8 
+166.3 
+6 
+9.2 
+206.4 
+215.6 
+35.01 
+135.6 
+31.4 
+166.9 
+7 
+11.3 
+223.1 
+234.4 
+36 
+140.6 
+31.4 
+172.0 
+8 
+13.5 
+239.8 
+253.3 
+37 
+145.7 
+31.4 
+177.1 
+9 
+16.0 
+256.5 
+272.4 
+38 
+150.8 
+31.4 
+182.2 
+9.99 
+18.5 
+273.0 
+291.5 
+39 
+155.9 
+31.4 
+187.3 
+10.01 
+18.6 
+28.6 
+47.2 
+39.99 
+161.0 
+31.4 
+192.3 
+11 
+22.4 
+28.6 
+51.0 
+40.01 
+161.1 
+251.3 
+412.4 
+12 
+26.3 
+28.6 
+54.9 
+41 
+168.5 
+256.4 
+424.9 
+13 
+30.4 
+28.6 
+59.0 
+42 
+176.2 
+261.5 
+437.7 
+14 
+34.6 
+28.6 
+63.2 
+43 
+184.0 
+266.6 
+450.6 
+14.99 
+38.9 
+28.6 
+67.5 
+44 
+191.9 
+271.7 
+463.7 
+15.01 
+39.0 
+29.6 
+68.6 
+45 
+200.0 
+275.4 
+475.4 
+16 
+43.1 
+29.6 
+72.8 
+46 
+208.3 
+275.4 
+483.6 
+17 
+47.4 
+29.6 
+77.0 
+47 
+216.7 
+275.4 
+492.0 
+18 
+51.8 
+29.6 
+81.4 
+48 
+225.2 
+275.4 
+500.6 
+19 
+56.4 
+29.6 
+86.0 
+49 
+234.0 
+275.4 
+509.3 
+19.99 
+61.0 
+29.6 
+90.6 
+50 
+242.8 
+275.4 
+518.2 
+20.01 
+61.1 
+30.0 
+91.1 
+51 
+251.8 
+275.4 
+527.2 
+21 
+65.5 
+30.0 
+95.5 
+52 
+261.0 
+275.4 
+536.3 
+22 
+70.1 
+30.0 
+100.1 
+53 
+270.3 
+275.4 
+545.6 
+23 
+74.8 
+30.0 
+104.8 
+54 
+279.8 
+275.4 
+555.1 
+24 
+79.7 
+30.0 
+109.7 
+55 
+289.4 
+275.4 
+564.7 
+24.99 
+84.7 
+30.0 
+114.6 
+56 
+299.1 
+275.4 
+574.5 
+25.01 
+84.7 
+30.5 
+115.2 
+57 
+309.0 
+275.4 
+584.4 
+26 
+89.5 
+30.5 
+119.9 
+58 
+319.1 
+275.4 
+594.5 
+27 
+94.4 
+30.5 
+124.9 
+59 
+329.3 
+275.4 
+604.7 
+28 
+99.5 
+30.5 
+129.9 
+59.99 
+339.6 
+275.4 
+614.9 
+29 
+104.7 
+30.5 
+135.1 
+60.01 
+339.7 
+1042.6 
+1382.3 
+ 
+100 
+
+========== PAGE 135 ==========
+ 
+ 
+Figure D-40 Nominal geotechnical resistance in axial compression versus pile 
+penetration depth for HP 12x74 at Pier 2 (pre scour). 
+ 
+D.22.1.1 Geotechnical Resistance in Axial Compression at the Design Flood 
+ 
+The nominal geotechnical resistance in axial compression at the design flood must 
+also be evaluated.  In the design flood, 5 feet of channel degradation scour is 
+anticipated.  The channel degradation scour results in a change in vertical effective 
+stress from the removal of 5 feet of channel materials.  The channel degradation 
+scour occurs above the bottom of the pile cap.  Hence the channel degradation 
+scour results in no loss of nominal resistance other than that caused by the 
+reduction in overburden stress. 
+ 
+In addition to the channel degradation scour, 10 feet of local scour occurs during the 
+design flood.  This 10 feet of local scour occurring below the channel degradation 
+scour results in the loss of frictional resistance on the upper 5 feet of the pile in the 
+design flood event.  Hence, these two scour mechanisms require a more rigorous 
+analysis of the nominal resistance beyond simple subtraction of the shaft resistance 
+within the scour prism.  Therefore, the DrivenPiles program was used to calculate 
+the shaft, toe and nominal resistance as a function of depth for each of the five 
+candidate H-piles in the design flood.   
+ 
+ 
+101 
+
+========== PAGE 136 ==========
+Figure D-41 presents plots of the nominal shaft resistance, Rs, the nominal toe 
+resistance, Rp, and nominal resistance, Rn for the HP 12x74 pile section versus pile 
+penetration depth.  These results are also presented numerically in Table D-52.  The 
+depth indicated in both Figure D-41 and Table D-52 is referenced from the bottom of 
+pile cap (EL 275 feet), which is 10 feet below the original ground surface elevation 
+(EL 285 feet). 
+ 
+ 
+ 
+Figure D-41 Nominal geotechnical resistance in axial compression versus pile 
+penetration depth for HP 12x74 at Pier 2 (design flood). 
+ 
+The nominal resistance versus depth at the design flood was calculated for all of the 
+candidate pile sections in a similar manner.  These results are presented in Figure 
+D-42.  
+ 
+102 
+
+========== PAGE 137 ==========
+Table D-52 Nominal Shaft, Nominal Toe and Nominal Geotechnical Resistance for 
+HP 12x74 at Pier 2 (design flood) 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal  
+Geotechnical 
+Resistance  
+(kips) 
+ 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal  
+Geotechnical 
+Resistance  
+(kips) 
+0.01 
+0.0 
+0.0 
+0.0 
+29.99 
+100.8 
+30.8 
+131.7 
+1 
+0.0 
+0.0 
+0.0 
+30.01 
+105.9 
+30.8 
+136.7 
+2 
+0.0 
+0.0 
+0.0 
+31 
+111.0 
+30.8 
+141.8 
+3 
+0.0 
+0.0 
+0.0 
+32 
+116.1 
+30.8 
+146.9 
+4 
+0.0 
+0.0 
+0.0 
+33 
+121.2 
+30.8 
+152.0 
+4.99 
+0.0 
+149.7 
+149.7 
+34 
+126.3 
+30.8 
+157.1 
+5.01 
+1.5 
+166.2 
+167.8 
+34.99 
+126.4 
+31.4 
+157.7 
+6 
+3.3 
+182.9 
+186.1 
+35.01 
+131.4 
+31.4 
+162.8 
+7 
+5.1 
+199.6 
+204.7 
+36 
+136.5 
+31.4 
+167.9 
+8 
+7.2 
+216.2 
+223.4 
+37 
+141.6 
+31.4 
+173.0 
+9 
+9.3 
+232.8 
+242.1 
+38 
+146.7 
+31.4 
+178.1 
+9.99 
+9.4 
+28.6 
+38.0 
+39 
+151.8 
+31.4 
+183.1 
+10.01 
+13.2 
+28.6 
+41.8 
+39.99 
+151.9 
+238.0 
+389.9 
+11 
+17.1 
+28.6 
+45.7 
+40.01 
+158.9 
+243.1 
+402.0 
+12 
+21.2 
+28.6 
+49.8 
+41 
+166.2 
+248.2 
+414.4 
+13 
+25.4 
+28.6 
+54.0 
+42 
+173.6 
+253.3 
+426.9 
+14 
+29.7 
+28.6 
+58.3 
+43 
+181.1 
+258.4 
+439.6 
+14.99 
+29.8 
+29.6 
+59.4 
+44 
+188.9 
+263.5 
+452.4 
+15.01 
+33.9 
+29.6 
+63.5 
+45 
+196.7 
+268.6 
+465.4 
+16 
+38.2 
+29.6 
+67.8 
+46 
+204.7 
+273.8 
+478.5 
+17 
+42.6 
+29.6 
+72.2 
+47 
+212.9 
+275.4 
+488.2 
+18 
+47.2 
+29.6 
+76.8 
+48 
+221.2 
+275.4 
+496.6 
+19 
+51.8 
+29.6 
+81.4 
+49 
+229.7 
+275.4 
+505.0 
+19.99 
+51.9 
+30.0 
+81.9 
+50 
+238.3 
+275.4 
+513.6 
+20.01 
+56.3 
+30.0 
+86.3 
+51 
+247.0 
+275.4 
+522.4 
+21 
+60.9 
+30.0 
+90.9 
+52 
+256.0 
+275.4 
+531.3 
+22 
+65.6 
+30.0 
+95.6 
+53 
+265.0 
+275.4 
+540.4 
+23 
+70.5 
+30.0 
+100.5 
+54 
+274.3 
+275.4 
+549.6 
+24 
+75.4 
+30.0 
+105.4 
+55 
+283.6 
+275.4 
+559.0 
+24.99 
+75.5 
+30.5 
+106.0 
+56 
+293.1 
+275.4 
+568.5 
+25.01 
+80.3 
+30.5 
+110.7 
+57 
+302.8 
+275.4 
+578.2 
+26 
+85.2 
+30.5 
+115.7 
+58 
+312.6 
+275.4 
+588.0 
+27 
+90.3 
+30.5 
+120.7 
+59 
+322.5 
+275.4 
+597.9 
+28 
+95.5 
+30.5 
+125.9 
+59.99 
+322.7 
+922.6 
+1245.3 
+29 
+100.7 
+30.5 
+131.2 
+60.01 
+327.7 
+1042.6 
+1370.3 
+ 
+ 
+103 
+
+========== PAGE 138 ==========
+ 
+ 
+Figure D-42 Nominal geotechnical resistance in axial compression versus 
+penetration depth for all candidate pile sections at Pier 2 (design flood). 
+ 
+Figure D-43 presents a design chart of the nominal and factored geotechnical 
+resistance for the HP 12x74 pile section in axial compression during the design flood 
+event.  The design chart includes the nominal geotechnical resistance as well as the 
+factored geotechnical resistance based on several resistance determination 
+methods.  The factored geotechnical resistance versus penetration depth is plotted 
+for resistance determination by a static load test with dynamic testing of 2% of the 
+piles (𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.80), by dynamic testing of at least two piles per site condition, but no 
+less than 2% of the production piles, with signal matching (𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.65), and by wave 
+equation analysis (𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.50).  Also included is the factored geotechnical resistance 
+based on the static analysis method used in this design example. For this, 
+(𝜙𝜙𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠=0.45) was applied to the cohesionless soils as a result of using the Nordlund 
+method while (𝜙𝜙𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠=0.35) applied to the cohesives soils as a result of using the 
+alpha method.  For a single pile section (HP 12x74), this figure illustrates the effects 
+the various resistance determination methods have on the pile length required for a 
+given factored resistance, the factored resistance available from a given pile section, 
+and the potential impact of these factors on the number of piles needed to resist 
+axial compression loads.  
+ 
+ 
+104 
+
+========== PAGE 139 ==========
+ 
+Figure D-43 Design chart of nominal and factored geotechnical resistance in axial 
+compression versus pile penetration depth for HP 12x74 at the Pier 2 (design flood). 
+ 
+The factored geotechnical resistance in axial compression for all candidate pile 
+sections is presented in Figures D-44 through D-47 during the design flood event. 
+The presented factored geotechnical resistances are based upon on the field 
+determination method or static analysis method used.  Accordingly, these figures 
+can be used to assess the effects of the various determination methods on pile 
+length, pile section selection, and the required number of piles to resist axial 
+compression loads.  
+ 
+105 
+
+========== PAGE 140 ==========
+ 
+ 
+Figure D-44 Factored geotechnical resistance, Rr, in axial compression based on 
+field determination by static load test and dynamic testing 2% of the piles, φdyn=0.80. 
+ 
+ 
+Figure D-45 Factored geotechnical resistance, Rr, in axial compression based on 
+field determination by dynamic testing 2% of the piles, φdyn=0.65. 
+ 
+106 
+
+========== PAGE 141 ==========
+ 
+Figure D-46 Factored geotechnical resistance, Rr, in axial compression based on 
+field determination by wave equation analysis, φdyn=0.50. 
+ 
+ 
+Figure D-47 Factored geotechnical resistance, Rr, in axial compression based on 
+determination using Nordlund Method static analysis, φstat=0.45. 
+ 
+107 
+
+========== PAGE 142 ==========
+D.22.1.2 Geotechnical Resistance in Axial Compression at the Check Flood 
+ 
+The nominal geotechnical resistance in axial compression at the Extreme Event 
+check flood must also be evaluated.  In the check flood, 5 feet of channel 
+degradation scour is anticipated.  The channel degradation scour results in a change 
+in vertical effective stress from the removal of 5 feet of channel materials.  The 
+channel degradation scour occurs above the bottom of the pile cap.  Hence the 
+channel degradation scour results in no loss of nominal resistance other than that 
+caused by the reduction in overburden stress. 
+ 
+In addition to the channel degradation scour, 12 feet of local scour occurs during the 
+design flood.  This 12 feet of local scour occurring below the channel degradation 
+scour results in the loss of frictional resistance on the upper 7 feet of the pile in the 
+Extreme Event check flood.  Hence, these two scour mechanisms require a more 
+rigorous analysis of the nominal resistance beyond simple subtraction of the shaft 
+resistance within the scour prism.  The DrivenPiles program was once again used to 
+calculate the shaft, toe and nominal resistance as a function of depth for each of the 
+five candidate H-piles in the check flood. 
+ 
+Table D-53 presents a summary of the estimated nominal geotechnical resistance 
+considering scour at the check flood for the HP 12x74 pile section. These results are 
+also presented graphically in Figure D-48.  The depth indicated in both Table D-53 
+and Figure D-48 is referenced from the bottom of footing (EL 275 feet), which is 10 
+feet below the original ground surface elevation (EL 285 feet).  
+ 
+The nominal shaft, nominal toe, and nominal geotechnical resistance considering 
+scour at the check flood were calculated for all of the candidate pile sections in a 
+similar manner.  These results are presented in Figure D-49. 
+ 
+ 
+ 
+108 
+
+========== PAGE 143 ==========
+Table D-53 Nominal Shaft, Nominal Toe and Nominal Geotechnical Resistance for 
+HP 12x74 at Pier 2 (check flood) 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal  
+Geotechnical 
+Resistance  
+(kips) 
+ 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal 
+Geotechnical 
+Resistance  
+(kips) 
+0.01 
+0.0 
+0.0 
+0.0 
+29.99 
+97.5 
+30.5 
+127.9 
+1 
+0.0 
+0.0 
+0.0 
+30.01 
+97.6 
+30.8 
+128.4 
+2 
+0.0 
+0.0 
+0.0 
+31 
+102.6 
+30.8 
+133.5 
+3 
+0.0 
+0.0 
+0.0 
+32 
+107.7 
+30.8 
+138.6 
+4 
+0.0 
+0.0 
+0.0 
+33 
+112.8 
+30.8 
+143.7 
+5 
+0.0 
+0.0 
+0.0 
+34 
+118.0 
+30.8 
+148.8 
+6 
+0.0 
+0.0 
+0.0 
+34.99 
+123.0 
+30.8 
+153.8 
+6.99 
+0.0 
+0.0 
+0.0 
+35.01 
+123.1 
+31.4 
+154.5 
+7.01 
+0.0 
+183.1 
+183.1 
+36 
+128.2 
+31.4 
+159.5 
+8 
+1.9 
+199.6 
+201.4 
+37 
+133.3 
+31.4 
+164.6 
+9 
+3.9 
+216.2 
+220.2 
+38 
+138.4 
+31.4 
+169.7 
+9.99 
+6.1 
+232.8 
+238.8 
+39 
+143.5 
+31.4 
+174.8 
+10.01 
+6.1 
+28.6 
+34.7 
+39.99 
+148.5 
+31.4 
+179.9 
+11 
+9.9 
+28.6 
+38.5 
+40.01 
+148.6 
+238.0 
+386.6 
+12 
+13.9 
+28.6 
+42.5 
+41 
+155.7 
+243.1 
+398.7 
+13 
+18.0 
+28.6 
+46.6 
+42 
+162.9 
+248.2 
+411.1 
+14 
+22.2 
+28.6 
+50.8 
+43 
+170.3 
+253.3 
+423.6 
+14.99 
+26.5 
+28.6 
+55.1 
+44 
+177.9 
+258.4 
+436.3 
+15.01 
+26.6 
+29.6 
+56.2 
+45 
+185.6 
+263.5 
+449.1 
+16 
+30.7 
+29.6 
+60.3 
+46 
+193.5 
+268.6 
+462.1 
+17 
+35.0 
+29.6 
+64.6 
+47 
+201.5 
+273.8 
+475.2 
+18 
+39.4 
+29.6 
+69.0 
+48 
+209.6 
+275.4 
+485.0 
+19 
+43.9 
+29.6 
+73.5 
+49 
+217.9 
+275.4 
+493.3 
+19.99 
+48.5 
+29.6 
+78.1 
+50 
+226.4 
+275.4 
+501.8 
+20.01 
+48.6 
+30.0 
+78.6 
+51 
+235.0 
+275.4 
+510.4 
+21 
+53.0 
+30.0 
+83.0 
+52 
+243.8 
+275.4 
+519.1 
+22 
+57.6 
+30.0 
+87.6 
+53 
+252.7 
+275.4 
+528.1 
+23 
+62.4 
+30.0 
+92.4 
+54 
+261.8 
+275.4 
+537.1 
+24 
+67.2 
+30.0 
+97.2 
+55 
+271.0 
+275.4 
+546.4 
+24.99 
+72.2 
+30.0 
+102.2 
+56 
+280.4 
+275.4 
+555.7 
+25.01 
+72.3 
+30.5 
+102.7 
+57 
+289.9 
+275.4 
+565.2 
+26 
+77.0 
+30.5 
+107.5 
+58 
+299.6 
+275.4 
+574.9 
+27 
+82.0 
+30.5 
+112.4 
+59 
+309.4 
+275.4 
+584.7 
+28 
+87.0 
+30.5 
+117.5 
+59.99 
+319.3 
+275.4 
+594.6 
+29 
+92.2 
+30.5 
+122.7 
+60.01 
+319.4 
+1042.6 
+1362.0 
+ 
+ 
+ 
+ 
+109 
+
+========== PAGE 144 ==========
+ 
+ 
+Figure D-48 Nominal geotechnical resistance in axial compression versus pile 
+penetration depth for HP 12x74 at Pier 2 (check flood). 
+ 
+ 
+Figure D-49 Nominal geotechnical resistance in axial compression versus 
+penetration depth for all candidate pile sections at Pier 2 (check flood). 
+ 
+110 
+
+========== PAGE 145 ==========
+Figure D-50 presents a design chart of the nominal and factored geotechnical 
+resistance in axial compression versus depth during the check flood for the HP 
+12x74 candidate H-pile section.  The design chart includes the nominal geotechnical 
+resistance as well as the factored geotechnical resistance based on several 
+resistance determination methods.  The factored geotechnical resistance versus 
+penetration depth is plotted for resistance determination by a static load test with 
+dynamic testing of 2% of the piles (𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.80), by dynamic testing of at least two 
+piles per site condition, but no less than 2% of the production piles, with signal 
+matching (𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.65), and by wave equation analysis (𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.50).  Also included is 
+the factored geotechnical resistance based on the static analysis method used in 
+this design example. For this, (𝜙𝜙𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠=0.45) was applied to the cohesionless soils as a 
+result of using the Nordlund method while (𝜙𝜙𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠=0.35) was applied to the cohesive 
+soils as a result of using the alpha method.  For a single pile section (HP 12x74), this 
+figure illustrates the effects the various resistance determination methods have on 
+the pile length required for a given factored resistance, the factored resistance 
+available from a given pile section, and the potential impact of these factors on the 
+number of piles needed to resist axial compression loads.  
+ 
+ 
+Figure D-50 Design chart of nominal and factored geotechnical resistance in axial 
+compression versus pile penetration depth for HP 12x74 at the Pier 2 (check flood). 
+ 
+ 
+111 
+
+========== PAGE 146 ==========
+The factored geotechnical resistance in axial compression at the check flood for all 
+candidate pile sections is presented in Figures D-51 through D-54.  The presented 
+factored geotechnical resistances are based upon on the field determination method 
+or static analysis method used.  Accordingly, these figures will be used to assess the 
+effects of the various determination methods on pile length, pile section selection, 
+and the required number of piles to resist axial compression loads.  
+ 
+ 
+ 
+Figure D-51 Factored geotechnical resistance, Rr, in axial compression based on 
+field determination by static load test and dynamic testing 2% of the piles, φdyn=0.80. 
+ 
+ 
+112 
+
+========== PAGE 147 ==========
+ 
+Figure D-52 Factored geotechnical resistance, Rr, in axial compression based on 
+field determination by dynamic testing 2% of the piles, φdyn=0.65. 
+ 
+ 
+Figure D-53 Factored geotechnical resistance, Rr, in axial compression based on 
+field determination by wave equation analysis, φdyn=0.5. 
+ 
+113 
+
+========== PAGE 148 ==========
+ 
+Figure D-54 Factored geotechnical resistance, Rr, in axial compression based on 
+determination using static analysis, φstat=0.45 or φstat=0.35. 
+ 
+D.22.2 Geotechnical Resistance in Axial Tension 
+ 
+The nominal and factored geotechnical resistances in axial tension (uplift) are now 
+calculated.  The calculations were performed using the DrivenPiles program which 
+utilized the Nordlund method in cohesionless soil layers and the alpha method in 
+cohesive soil layers.  For geotechnical resistance in axial tension, only the shaft 
+resistance is considered.  Therefore, the shaft resistance results calculated for the 
+geotechnical resistance in axial compression can be re-used for axial tension.  
+These tabular outputs of the nominal shaft resistance versus depth were previously 
+presented in Table D-52 for the design flood and Table D-53 for the check flood. 
+ 
+D.22.2.1 Geotechnical Resistance in Axial Tension at the Design Flood 
+ 
+The nominal geotechnical resistance in axial tension at the design flood must be 
+evaluated.  In the design flood, 5 feet of channel degradation scour is anticipated.  
+The channel degradation scour results in a change in vertical effective stress from 
+the removal of 5 feet of channel materials.  The channel degradation scour occurs 
+above the bottom of the pile cap.  Hence the channel degradation scour results in no 
+loss of nominal resistance other than that caused by the reduction in overburden 
+stress. 
+ 
+114 
+
+========== PAGE 149 ==========
+In addition to the channel degradation scour, 10 feet of local scour occurs during the 
+design flood.  This 10 feet of local scour occurring below the channel degradation 
+scour results in the loss of frictional resistance on the upper 5 feet of the pile in the 
+design flood event.  Hence, these two scour mechanisms require a more rigorous 
+analysis of the nominal resistance beyond simple subtraction of the shaft resistance 
+within the scour prism.   
+ 
+The nominal geotechnical resistance in axial tension at the design flood (and 
+associated factored geotechnical resistance based upon resistance determination 
+method) will therefore be used to evaluate axial tension at the Strength limit state. 
+ 
+Figure D-55 presents plots of the nominal shaft resistance versus penetration depth 
+for all the candidate pile sections during the design flood.  As outlined in Section 
+7.2.3.2.1, the factored uplift resistance for a single pile is the shaft resistance 
+multiplied by the appropriate resistance determination resistance factor, φup.  Figure 
+D-56 presents a design chart of the nominal and factored geotechnical resistance in 
+axial tension for the HP 12x74 H-pile section.  A resistance factor of 0.60 is used 
+when the uplift resistance is determined by a static load test and 0.50 is used when 
+determined by a dynamic test with signal matching.  If the axial tension resistance is 
+evaluated using static analysis methods, a resistance factor of 0.35 is applied to the 
+nominal shaft resistance determined by the Nordlund static analysis method in 
+cohesionless soil layers, and a resistance factor of 0.25 is applied to the nominal 
+shaft resistance determined by the alpha static analysis method in cohesive soil 
+layers. 
+ 
+For a single pile section (HP 12x74), Figure D-56 illustrates the effects the various 
+resistance determination methods have on the pile length required for a given 
+factored resistance, the factored resistance available from a given pile section, and 
+the potential impact of these factors on the number of piles needed to resist axial 
+tension loads. 
+ 
+115 
+
+========== PAGE 150 ==========
+ 
+Figure D-55 Nominal shaft resistance versus pile penetration depth for all candidate 
+pile sections at Pier 2 (design flood). 
+ 
+ 
+Figure D-56 Design chart of nominal and factored geotechnical resistance in axial 
+tension versus pile penetration depth for HP 12x74 at the Pier 2 (design flood). 
+ 
+116 
+
+========== PAGE 151 ==========
+Figures D-57 to D-59 present the factored geotechnical resistance in axial tension 
+versus penetration depth for all candidate pile sections at the design flood based on 
+the resistance determination method.  For all the candidate pile sections, these 
+figures illustrate the effects the various resistance determination methods have on 
+the pile length required for a given factored resistance, the factored resistance 
+available from a given pile section, and the potential impact of these factors on the 
+number of piles needed to resist axial tension loads. 
+ 
+ 
+Figure D-57 Factored geotechnical resistance, Rr, in axial tension based on field 
+determination by static load test, φdyn=0.60 (design flood). 
+ 
+117 
+
+========== PAGE 152 ==========
+ 
+Figure D-58 Factored geotechnical resistance, Rr, in axial tension based on field 
+determination by dynamic testing with signal matching, φdyn=0.50 (design flood). 
+ 
+ 
+Figure D-59 Factored geotechnical resistance, Rr, in axial tension based on 
+determination using static analysis, φstat=0.35 or φstat=0.25 (design flood). 
+ 
+118 
+
+========== PAGE 153 ==========
+D.22.2.2 Geotechnical Resistance in Axial Tension at the Check Flood 
+ 
+The nominal geotechnical resistance in axial tension at the Extreme Event check 
+flood must also be evaluated.  In the check flood, 5 feet of channel degradation 
+scour is anticipated.  The channel degradation scour results in a change in vertical 
+effective stress from the removal of 5 feet of channel materials.  The channel 
+degradation scour occurs above the bottom of the pile cap.  Hence the channel 
+degradation scour results in no loss of nominal resistance other than that caused by 
+the reduction in overburden stress. 
+ 
+In addition to the channel degradation scour, 12 feet of local scour occurs during the 
+check flood.  This 12 feet of local scour occurring below the channel degradation 
+scour results in the loss of frictional resistance on the upper 7 feet of the pile in the 
+check flood Extreme Event.  Hence, these two scour mechanisms require a more 
+rigorous analysis of the nominal resistance beyond simple subtraction of the shaft 
+resistance within the scour prism.   
+ 
+The nominal geotechnical resistance in axial tension at the check flood (and 
+associated factored geotechnical resistance based upon resistance determination 
+method) will therefore be used to evaluate axial tension at the Extreme Event limit 
+state. 
+ 
+Figure D-60 presents the nominal shaft resistance versus penetration depth for all 
+the candidate pile sections.  As outlined in Section 7.2.3.2.1 of Chapter 7, the 
+factored uplift resistance for a single pile is the shaft resistance multiplied by the 
+appropriate field determination resistance factor, φup.  Figure D-61 presents a design 
+chart of the nominal shaft resistance, Rs, and the factored geotechnical resistance, 
+Rr, in axial tension versus pile penetration depth for the HP 12x74 H-pile section.  A 
+resistance factor of 0.60 is used when the uplift resistance is determined by a static 
+load test, 0.50 when determined by a dynamic test with signal matching, 0.35 when 
+determined by the Nordlund static analysis method and 0.25 when determined by 
+the alpha static analysis method. 
+ 
+For a single pile section (HP 12x74), this figure illustrates the effects the various 
+resistance determination methods have on the pile length required for a given 
+factored resistance, the factored resistance available from a given pile section, and 
+the potential impact of these factors on the number of piles needed to resist axial 
+tension loads. 
+ 
+ 
+119 
+
+========== PAGE 154 ==========
+ 
+Figure D-60 Nominal shaft resistance versus pile penetration depth for all candidate 
+pile sections at Pier 2 during Extreme Event (check flood). 
+ 
+ 
+Figure D-61 Design chart of nominal and factored geotechnical resistance in axial 
+tension versus depth for HP 12x74 at the Pier 2 during Extreme Event (check flood). 
+ 
+120 
+
+========== PAGE 155 ==========
+Figures D-62 to D-64 present the factored geotechnical resistance in axial tension 
+versus penetration depth based on the field determination method for each of the 
+candidate pile sections.  For all the candidate pile sections, these figures illustrate 
+the effects the various resistance determination methods have on the pile length 
+required for a given factored resistance, the factored resistance available from a 
+given pile section, and the potential impact of these factors on the number of piles 
+needed to resist axial tension loads. 
+ 
+ 
+Figure D-62 Factored geotechnical resistance, Rr, in axial tension based on field 
+determination by static load test, φdyn=0.60. 
+ 
+121 
+
+========== PAGE 156 ==========
+ 
+Figure D-63 Factored geotechnical resistance, Rr, in axial tension based on field 
+determination by dynamic testing with signal matching, φdyn=0.50. 
+ 
+ 
+Figure D-64 Factored geotechnical resistance, Rr, in axial tension based on 
+determination using static analysis, φstat=0.35 or φstat=0.25. 
+ 
+122 
+
+========== PAGE 157 ==========
+D.22.3 Preliminary Pile Drivability Assessment 
+ 
+Preliminary assessments of pile drivability are now performed at this stage of the 
+design.  A drivability check at this time is essential to assess the constructability of 
+candidate pile types and/or sections and to eliminate sections with insufficient 
+drivability.  Section 12.4 provides a detailed discussion of wave equation drivability 
+analyses and their applications. 
+ 
+A candidate pile section must be capable of being driven to the penetration depth 
+necessary to achieve the nominal geotechnical resistance in axial compression and 
+tension, to a penetration depth necessary to satisfy lateral load demands, as well as 
+a penetration depth necessary to satisfy deformation requirements.  A suitably sized 
+pile hammer must be capable of driving the pile to its established minimum 
+penetration depth and to the nominal resistance at a reasonable blow count without 
+exceeding material stress limits.  As detailed in Chapter 12, the blow count should 
+be between 30 and 120 blows per foot at the nominal resistance.  If the pile cannot 
+be driven within these requirements, a larger pile hammer, a pile section with greater 
+impedance, or pile installation aids such as predrilling or jetting may be required to 
+satisfy or improve drivability.  
+ 
+Driving stresses during pile installation should remain below the driving stress limits 
+tied to pile type and material strength.  For the candidate steel H-piles, compression 
+driving stress limits are given by Equation 8-33.  As per ASTM A-572 requirements, 
+new steel H-piles are rolled with a minimum yield stress of 50 ksi.   
+ 
+The driving stress limit, σ𝑑𝑑𝑑𝑑, for candidate pile sections is then calculated as follows: 
+ 
+ 
+σ𝑑𝑑𝑑𝑑= 𝜑𝜑𝑑𝑑𝑑𝑑 ൫0.9 𝐹𝐹𝑦𝑦൯ 
+[Eq. 8-33] 
+ 
+ 
+Where: 
+φ𝑑𝑑𝑑𝑑 
+= resistance factor, 1.0 for steel piles. 
+ 
+ 
+𝐹𝐹𝑦𝑦  
+= yield stress, 50 ksi. 
+ 
+Therefore, the driving stress limit, σ𝑑𝑑𝑑𝑑, is 45 ksi. 
+ 
+𝜎𝜎𝑑𝑑𝑑𝑑= (1.0)൫0.9 (50 𝑘𝑘𝑘𝑘𝑘𝑘)൯= 45 𝑘𝑘𝑘𝑘𝑘𝑘 
+ 
+Drivability analyses were performed for all five candidate pile sections.  Since the 
+specific pile hammer is often unknown at this point in the design, a reasonably sized, 
+commonly available single acting diesel hammer was chosen for each of the 
+candidate pile sections.  As noted in Section 15.19, a hammer having a ram weight 
+ 
+123 
+
+========== PAGE 158 ==========
+of 1 to 2% of the larger of the required nominal resistance or required nominal 
+driving resistance often provides a reasonable initial estimate of hammer size for 
+wave equation analysis.  Table D-54 summarizes the factored structural resistance 
+in axial compression, Pr, and corresponding minimum and maximum nominal driving 
+resistance associated with full section utilization and the full range of field 
+determination methods resistance factors (static load test and dynamic testing 
+(φdyn=0.80), and FHWA modified Gates dynamic formula (φdyn=0.40)).  Given that full 
+utilization of the structural section is uncommon, a reasonable initial estimate of the 
+hammer size for a wave equation drivability analysis is 1% of the minimum Rndr.  
+Driving stress limits would likely be exceeded by choosing a significantly larger pile 
+hammer.  For each pile hammer, the wave equation default values were used for the 
+helmet weight, hammer cushion materials, and the cushion material properties. 
+ 
+Table D-54 Summary of Pile Hammers Used in Drivability Analyses 
+Pile Section 
+Pile 
+Cross 
+Sectional 
+Area  
+(in2) 
+Factored 
+Structural 
+Resistance, 
+Pr  
+(kips) 
+Minimum 
+Rndr 
+φdyn=0.80 
+ 
+(kips) 
+Maximum 
+Rndr 
+φdyn=0.40 
+ 
+(kips) 
+Ram 
+Weight  
+1% of Min 
+Rndr  
+(%) 
+Diesel 
+Model 
+Ram 
+Weight  
+ 
+ 
+(kips) 
+Rated 
+Energy  
+ 
+ 
+(ft-kips) 
+HP 10x42 
+12.4 
+309 
+386 
+773 
+3.86 
+D25-52 
+5.51 
+62.0 
+HP 12x53 
+15.5 
+383 
+478 
+958 
+4.78 
+D30-52 
+6.62 
+74.4 
+HP 12x74 
+21.8 
+544 
+680 
+1360 
+6.80 
+D36-52 
+7.94 
+89.3 
+HP 14x89 
+26.1 
+652 
+815 
+1630 
+8.15 
+D46-32 
+10.14 
+114.1 
+HP 14x117 
+34.4 
+860 
+1075 
+2150 
+10.07 
+D50-52 
+11.03 
+124.0 
+ 
+For the soil resistance model, the output from DrivenPiles was converted to unit 
+shaft resistance and unit toe resistance values and then input into the wave equation 
+program.  Similar soil resistances are thereby calculated versus depth by both the 
+static analysis and wave equation analysis programs. 
+ 
+The dynamic soil properties for each soil layer were chosen in accordance with wave 
+equation program recommendations.  Selection of soil quake and damping 
+parameters is discussed in Section 12.6.7.  Pile driving at Pier 2 will commence at 
+the bottom of pile cap excavation of Elevation 270 feet.  Therefore dynamic soil 
+properties for Layer 1 are not required for the preliminary drivability analyses.  For 
+the Pier 2 soil profile, a setup up factor of 2.0 was selected for the very stiff silty clay 
+comprising Layer 3, while no setup is expected in the extremely dense gravel of 
+Layer 2 or the dense gravel with sand of Layer 4.  Soil setup is discussed in Section 
+7.2.4.2 and a summary of typical soil setup factors is provided in Table 7-16.  The 
+dynamic properties chosen are summarized in Table D-55. 
+ 
+124 
+
+========== PAGE 159 ==========
+Table D-55 Dynamic Soil Properties for Pier 2 Soil Profile 
+Soil 
+Layer 
+Pile  
+Section 
+Shaft 
+Quake 
+(in) 
+Toe 
+Quake 
+(in) 
+Shaft 
+Damping 
+(s/ft) 
+Toe 
+Damping 
+(s/ft) 
+Soil Set-
+Up Factor 
+2 
+HP 10 x 42 
+0.10 
+0.08 
+0.05 
+0.15 
+1.0 
+2 
+HP 12 x 53 
+0.10 
+0.10 
+0.05 
+0.15 
+1.0 
+2 
+HP 12 x 74 
+0.10 
+0.10 
+0.05 
+0.15 
+1.0 
+2 
+HP 14 x 89 
+0.10 
+0.12 
+0.05 
+0.15 
+1.0 
+2 
+HP 14 x 117 
+0.10 
+0.12 
+0.05 
+0.15 
+1.0 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+3 
+HP 10 x 42 
+0.10 
+0.17 
+0.20 
+0.15 
+2.0 
+3 
+HP 12 x 53 
+0.10 
+0.20 
+0.20 
+0.15 
+2.0 
+3 
+HP 12 x 74 
+0.10 
+0.20 
+0.20 
+0.15 
+2.0 
+3 
+HP 14 x 89 
+0.10 
+0.23 
+0.20 
+0.15 
+2.0 
+3 
+HP 14 x 117 
+0.10 
+0.23 
+0.20 
+0.15 
+2.0 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+4 
+HP 10 x 42 
+0.10 
+0.08 
+0.05 
+0.15 
+1.0 
+4 
+HP 12 x 53 
+0.10 
+0.10 
+0.05 
+0.15 
+1.0 
+4 
+HP 12 x 74 
+0.10 
+0.10 
+0.05 
+0.15 
+1.0 
+4 
+HP 14 x 89 
+0.10 
+0.12 
+0.05 
+0.15 
+1.0 
+4 
+HP 14 x 117 
+0.10 
+0.12 
+0.05 
+0.15 
+1.0 
+ 
+In soils that exhibit setup, the nominal resistance will be higher than the nominal 
+driving resistance.  Therefore, a gain/loss factor of 0.5 was used to estimate the 
+nominal driving resistance versus depth in the drivability analyses.  This gain/loss 
+factor was determined from the inverse of the highest soil setup factor within the soil 
+model (e.g., 1 divided by 2.0 equals 0.5).  A gain/loss factor of 1 would be used if it 
+was desired to model the nominal resistance instead of the nominal driving 
+resistance and not consider the soil strength loss during driving and any subsequent 
+soil setup.  Refer to Chapter 12 for more detailed discussion on the selection of 
+dynamic soil properties and soil setup factors.  
+ 
+The DrivenPiles program calculates the nominal driving resistance which models the 
+soil strength lost during driving as well as the geotechnical nominal resistance once 
+setup occurs.  Figure D-65 presents the shaft resistance, toe resistance, and 
+nominal driving resistance versus pile penetration depth for the HP 12x74 H-pile 
+section at Pier 2. These nominal driving resistances are presented numerically in 
+Table D-56.  To quantify the expected soil setup at a given pile penetration depth, 
+the values from Table D-56 can be compared against the nominal resistance 
+previously presented in Table D-51. Figure D-66 illustrates the significant difference 
+between the expected nominal driving resistance and the geotechnical nominal 
+resistance after setup for the HP 12x74 candidate pile section. 
+ 
+125 
+
+========== PAGE 160 ==========
+ 
+Figure D-65 Nominal driving resistance for HP 12x74 at Pier 2. 
+ 
+ 
+Figure D-66 Comparison of nominal driving resistance and nominal geotechnical 
+resistance in axial compression for HP 12x74 at Pier 2. 
+ 
+ 
+126 
+
+========== PAGE 161 ==========
+Table D-56 Summary of Nominal Driving Resistance Versus Pile Penetration 
+Depth for HP 12x74 at Pier 2 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal 
+Driving 
+Resistance  
+(kips) 
+ 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal 
+Driving 
+Resistance  
+(kips) 
+0.01 
+0.0 
+106.5 
+106.5 
+29.99 
+64.3 
+30.5 
+94.7 
+1 
+1.1 
+123.0 
+124.2 
+30.01 
+64.3 
+30.8 
+95.1 
+2 
+2.4 
+139.7 
+142.1 
+31 
+66.8 
+30.8 
+97.7 
+3 
+3.9 
+156.4 
+160.2 
+32 
+69.4 
+30.8 
+100.2 
+4 
+5.5 
+173.1 
+178.5 
+33 
+71.9 
+30.8 
+102.8 
+4.99 
+7.2 
+189.6 
+196.8 
+34 
+74.5 
+30.8 
+105.3 
+5.01 
+7.3 
+189.9 
+197.2 
+34.99 
+77.0 
+30.8 
+107.8 
+6 
+9.2 
+206.4 
+215.6 
+35.01 
+77.1 
+31.4 
+108.4 
+7 
+11.3 
+223.1 
+234.4 
+36 
+79.6 
+31.4 
+111.0 
+8 
+13.5 
+239.8 
+253.3 
+37 
+82.1 
+31.4 
+113.5 
+9 
+16.0 
+256.5 
+272.4 
+38 
+84.7 
+31.4 
+116.1 
+9.99 
+18.5 
+273.0 
+291.5 
+39 
+87.2 
+31.4 
+118.6 
+10.01 
+18.6 
+28.6 
+47.2 
+39.99 
+89.8 
+31.4 
+121.1 
+11 
+20.5 
+28.6 
+49.1 
+40.01 
+89.9 
+251.3 
+341.2 
+12 
+22.5 
+28.6 
+51.1 
+41 
+97.3 
+256.4 
+353.7 
+13 
+24.5 
+28.6 
+53.1 
+42 
+104.9 
+261.5 
+366.4 
+14 
+26.6 
+28.6 
+55.2 
+43 
+112.7 
+266.6 
+379.4 
+14.99 
+28.8 
+28.6 
+57.4 
+44 
+120.7 
+271.7 
+392.4 
+15.01 
+28.8 
+29.6 
+58.4 
+45 
+128.8 
+275.4 
+404.2 
+16 
+30.9 
+29.6 
+60.5 
+46 
+137.1 
+275.4 
+412.4 
+17 
+33.0 
+29.6 
+62.6 
+47 
+145.5 
+275.4 
+420.8 
+18 
+35.2 
+29.6 
+64.8 
+48 
+154.0 
+275.4 
+429.4 
+19 
+37.5 
+29.6 
+67.1 
+49 
+162.7 
+275.4 
+438.1 
+19.99 
+39.8 
+29.6 
+69.4 
+50 
+171.6 
+275.4 
+446.9 
+20.01 
+39.8 
+30.0 
+69.8 
+51 
+180.6 
+275.4 
+455.9 
+21 
+42.0 
+30.0 
+72.0 
+52 
+189.7 
+275.4 
+465.1 
+22 
+44.3 
+30.0 
+74.3 
+53 
+199.1 
+275.4 
+474.4 
+23 
+46.7 
+30.0 
+76.7 
+54 
+208.5 
+275.4 
+483.9 
+24 
+49.1 
+30.0 
+79.1 
+55 
+218.1 
+275.4 
+493.5 
+24.99 
+51.6 
+30.0 
+81.6 
+56 
+227.9 
+275.4 
+503.2 
+25.01 
+51.7 
+30.5 
+82.1 
+57 
+237.8 
+275.4 
+513.2 
+26 
+54.0 
+30.5 
+84.5 
+58 
+247.9 
+275.4 
+523.2 
+27 
+56.5 
+30.5 
+86.9 
+59 
+258.1 
+275.4 
+533.4 
+28 
+59.0 
+30.5 
+89.5 
+59.99 
+268.4 
+275.4 
+543.7 
+29 
+61.6 
+30.5 
+92.1 
+60.01 
+268.5 
+1042.6 
+1311.1 
+ 
+Graphical outputs of the preliminary drivability analyses are shown in Figure D-67.  
+The nominal driving resistance, the blow count or pile penetration resistance, and 
+the compression driving stress are presented versus pile penetration depth for each 
+ 
+127 
+
+========== PAGE 162 ==========
+of the five candidate pile sections.  As previously noted, the recommended blow 
+count limit is 120 blows per foot (10 blows per inch), and the recommended driving 
+stress limit is 45 ksi.  A circular reference marker is indicated on the blow count 
+versus depth plot highlighting the depth where the blow count first exceeds 120 
+blows per foot.  This marker is also shown at the same depth on the nominal driving 
+resistance versus depth plot indicating the nominal driving resistance achieved when 
+practical refusal driving conditions are encountered with the selected hammer in the 
+modeled driving conditions.  Similarly, the marker is shown at the same depth on the 
+compression driving stress versus depth plot indicating the compression driving 
+stress when practical refusal driving conditions are encountered. 
+ 
+ 
+ 
+Figure D-67 Preliminary drivability results at Pier 2. 
+ 
+For all of the candidate pile sections and selected pile hammers, the blow count was 
+60 blows per foot or less before encountering hard rock at a penetration depth of 60 
+feet.  Once bedrock was encountered, the blow count quickly transitioned to 120 
+blows per foot.  Compression driving stresses for all candidate pile sections were 
+also less than the 45 ksi driving stress limit prior to reaching bedrock.   
+ 
+If the final design requires piles be driven to hard bedrock, the driving criteria should 
+be established to control compression stresses and prevent pile toe damage once 
+hard rock is encountered (e.g., limit the number of blows at refusal driving 
+ 
+128 
+
+========== PAGE 163 ==========
+conditions).  A summary of the preliminary drivability results is presented in Table 
+D-57.  The anticipated nominal resistance in this table is the expected resistance 
+after soil setup that can be mobilized by the driving system at 10 blows per inch.  For 
+piles terminated on hard rock, a higher geotechnical nominal resistance, up to the 
+structural resistance of the pile is actually available.  
+ 
+Once the estimated and/or minimum pile toe elevations are determined in Block 12 
+through Block 15 of the design process, the drivability results in Figure D-67 and 
+Table D-57 should be reviewed to confirm that the candidate pile section can be 
+driven to the estimated or required pile penetration depth, at reasonable blow 
+counts, and with driving stress limits. 
+ 
+Table D-57 Summary of Preliminary Drivability Results at Pier 2 
+Pile 
+Section 
+ 
+ 
+ 
+Pile 
+Hammer 
+ 
+ 
+ 
+Fuel 
+Setting 
+ 
+ 
+ 
+Pile 
+Penetration 
+Depth at 
+Practical 
+Refusal 
+Limit 
+(feet) 
+Nominal 
+Driving 
+Resistance 
+at Practical 
+Refusal 
+Limit 
+(kips) 
+Anticipated 
+Nominal 
+Resistance 
+at Depth of 
+Practical 
+Refusal 
+(kips) 
+Penetration 
+Depth 
+Exceeding 
+Compression 
+Driving 
+Stress Limit  
+(feet) 
+Maximum 
+Compression 
+Driving 
+Stress 
+ 
+ 
+(ksi) 
+HP 10x42 
+D25-52 
+4 
+60 
+440 
+500 
+60 
+46.4 
+HP 12x53 
+D30-52 
+4 
+60 
+540 
+610 
+60 
+44.9 
+HP 12x74 
+D36-52 
+4 
+60 
+700 
+770 
+60 
+42.6 
+HP 14x89 
+D46-52 
+4 
+60 
+870 
+950 
+60 
+43.2 
+HP 14x117 
+D50-52 
+4 
+60 
+1045 
+1125 
+60 
+41.8 
+ 
+ 
+D.23 Block 11: Pier 2 – Estimate Preliminary Number of Piles, Preliminary Pile 
+Group Size, and Resolve Individual Pile Loads for All Limit States 
+ 
+The structural engineer has provided the anticipated loads for the controlling limit 
+states at Pier 2.  These limit state loads are restated in Table D-58.  The Strength V 
+limit state loads are used to evaluate geotechnical resistance in axial compression 
+and tension, as well as for lateral loading.  Although loads at Service I limit state 
+were provided by the structural engineer, live loads should be removed when 
+evaluating vertical deformation.  Moreover, the Service I without live load includes 
+only unfactored permanent loads such as the superstructure and wearing surface, 
+pile cap and stem, utilities and vertical earth pressure among others.  The Extreme 
+Event II limit state must also be evaluated at this substructure location to consider 
+effects of the check flood and associated loads. 
+ 
+ 
+129 
+
+========== PAGE 164 ==========
+Table D-58 Limit State Loads on Pier 2 
+Limit State 
+Q 
+(kips) 
+Vux 
+(kips) 
+Vuy 
+(kips) 
+Mux 
+(k-ft) 
+Muy 
+(k-ft) 
+Strength V 
+3456 
+18 
+109 
+-2981 
+3982 
+Service I 
+2682 
+15 
+100 
+-2749 
+2997 
+Service I, without LL 
+2172 
+0 
+0 
+0 
+0 
+Extreme Event II 
+3023 
+30 
+23 
+-797 
+1273 
+ 
+Pier construction will include a cofferdam and excavation of the existing 
+geomaterials.  The Agency practice for pier construction in a river is to use a 
+substructure design with the smallest footprint.  A minimum center to center pile 
+spacing of 3 pile diameters is typical.  Three potential pile group configurations for 
+Pier 2 are under consideration.  These are identified as Group Configurations 4, 5, 
+and 6, respectively in Table D-59.  Each group configuration has 5 rows of piles in 
+the transverse direction.  In the longitudinal direction, Group Configuration 4 has 3 
+rows of piles while Group Configurations 5 and 6 have 4 rows of piles.  Furthermore, 
+the distance from the center of any exterior pile to the pile cap edge must be at least 
+1.25 feet in both the transverse (x) and longitudinal (y) direction.   
+ 
+Table D-59 Potential Pile Group Configurations 
+Group 
+Configuration 
+Piles 
+per 
+Row 
+Y dir 
+Piles 
+per 
+Row 
+X dir 
+Total 
+Number 
+of Piles 
+Sbx
+*
+ 
+ 
+ 
+(feet) 
+Total Footing 
+Length 
+ 
+(feet) 
+Sby
+*
+ 
+ 
+ 
+(feet) 
+Total 
+Footing 
+Width 
+(feet) 
+4 
+3 
+5 
+15 
+3.0 
+14.5 
+3.0 
+8.5 
+5 
+4 
+5 
+20 
+3.0 
+14.5 
+3.0 
+11.5 
+6 
+4 
+5 
+20 
+5.0 
+22.5 
+4.0 
+14.5 
+* Sbx and Sby are illustrated in Figure D-68. 
+ 
+The following example calculation considers Group Configuration 6 and all 
+applicable loads.  For this alternative, 5 piles per row in the X direction and 4 piles 
+per row in the Y direction are proposed.  Thus the transverse pile spacing, Sbx, is 3’-
+0” and the total footing length is 14’-6”.  The longitudinal pile spacing, Sby, is 3’-0” 
+and the total footing width is 11’-6”.  Figure D-68 shows the layout for the Group 
+Configuration 6 pile cap.   
+ 
+ 
+130 
+
+========== PAGE 165 ==========
+ 
+Figure D-68 Group Configuration 6 pile cap plan view. 
+ 
+For the trial pile group configuration in Figure D-68, loads for each pile in the group 
+were determined using the limit state loads presented in Table D-58.  The lateral 
+load per pile in each direction was calculated by dividing the factored horizontal load 
+Vux or Vuy in Table D-58 by the number of piles, while the axial load per pile was 
+calculated using Equation 8-79.  For example, in Group Configuration 6, the lateral 
+load per pile in the longitudinal direction is calculated by dividing 109 kips by 20 piles 
+(i.e., 5.5 kips per pile).  For the axial load per pile, an example calculation for the 
+load applied to pile 5 at the Strength V limit state is presented below.  Table D-60 
+shows the full calculation for all piles Group Configuration 6. The maximum 
+individual pile load (on pile number 5) is 257 kips. 
+ 
+ 
+ 
+P𝑢𝑢𝑢𝑢= 
+P𝑢𝑢𝑢𝑢+𝑊𝑊𝑐𝑐+𝑊𝑊𝑠𝑠
+𝑛𝑛
++
+𝑀𝑀𝑢𝑢𝑢𝑢𝑦𝑦
+∑𝑦𝑦2 +
+𝑀𝑀𝑢𝑢𝑢𝑢𝑥𝑥
+∑𝑥𝑥2  
+[Eq. 8-79] 
+ 
+ 
+In this case, the factored limit state load, Q, replaces the factored axial load from 
+superstructure/substructure acting upon pile cap, P𝑢𝑢𝑢𝑢, estimated weight of pile cap, 
+ 𝑊𝑊𝑐𝑐 and estimated weight of soil above pile cap, 𝑊𝑊𝑠𝑠 as follows: 
+ 
+Q = P𝑢𝑢𝑢𝑢+ 𝑊𝑊𝑐𝑐+ 𝑊𝑊𝑠𝑠 
+ 
+ 
+ 
+ 
+ 
+131 

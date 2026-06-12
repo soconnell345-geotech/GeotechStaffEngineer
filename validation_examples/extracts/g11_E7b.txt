@@ -1,0 +1,990 @@
+
+========== PAGE 360 ==========
+ 
+ 
+  
+ 
+ 
+ 
+Equ
+at io
+n as  
+di
+scussed 
+in th e 
+ca pt io ned te xt.
+   = angle of wall friction = lesser of the angle of friction for the reinforced soil mass (' r) 
+and the retained backfill (' b) = 30 
+I 
+=   the backfill slope angle = β = 0 
+' b   =  angle of internal friction for retained backfill  = 30 
+ = the slope angle of the face = 90 
+ 
+ 
+ 
+ 
+Therefore 
+ 
+Equation as discussed i
+n the c
+a
+pt
+i
+on
+ed text.
+Equation as d
+iscusse
+d in th
+e 
+ca ptioned
+ 
+te
+xt
+.
+Equation as 
+di
+scussed in  the captioned text.
+ 
+ 
+ 
+STEP 7 
+ 
+DETERMINE THE HORIZONTAL INERTIA FORCE, PIR  
+ 
+Determine the horizontal inertial force, PIR, of the total reinforced wall mass with Equation 7-7, 
+as follows: 
+ 
+PIR = 0.5(kav)(W) 
+ 
+where W is the weight of the full reinforced soil mass and any overlying permanent slopes 
+and/or permanent surcharges within the limits of the reinforced soil mass. The inertial force is 
+assumed to act at the centroid of the mass used to determine the weight W. 
+ 
+W = 25.64 ft (18 ft) (125 pcf) =  57.68 k/lft 
+FHWA NHI-10-025 
+Example E7 – Seismic Loading  
+MSE Walls and RSS – Vol II 
+E7 – 6 
+November 2009  
+
+========== PAGE 361 ==========
+ 
+ 
+  
+ 
+ 
+ 
+PIR = 0.5(kav)(W)  = 0.5 (0.211 g) (57.68 k/lft)  =  6.09 k/lft 
+ 
+ 
+STEP 8 
+ 
+CHECK SLIDING STABILITY 
+ 
+From page 7-6, check the sliding stability using a resistance factor, , equal to 1.0 and the full, 
+nominal weight of the reinforced zone and any overlying permament sucharges.  If the sliding 
+stability is met, the design is satisfactory and go to Step 11.  If not, go to Step 9.   
+ 
+Compute the total horizontal force, THF, for M-O Method as follows: 
+ 
+THF  =   Horizontal component of PAE + PIR + EQ(qLS)(H)(KAE) + other horizontal nominal 
+forces due to surcharges (with load factor =1.0) 
+ 
+where, EQ is the load factor for live load in Extreme Event I limit state and qLS is the 
+intensity of the live load surcharge. 
+ 
+THF     = PAE cos+ PIR + EQ(qLS) 
+= 19.65 k/lft (cos 30) + 6.09 k/lft + 0.5(0.25 ksf)(25.64 ft)(0.4785)  = 
+ 
+   = 17.02 k/lft + 6.09 k/lft + 1.53 k/lft 
+      = 24.64 k/lft 
+ 
+Compute the sliding resistance, R, as follows: 
+ 
+Equation as discussed in the captioned text.
+ 
+where  is the minimum of tan' r, tan' f or (for continuous reinforcement) tan (as discussed in 
+Section 4.5.6.a) and V is the summation of the vertical forces as follows: 
+ 
+V = W + PAEsin + permanent nominal surcharge loads within the limits of the reinforced 
+soil mass 
+V = W + PAEsink/lft + 19.65 k/lft (sin 30) = 57.68 + 9.84  =  67.52 k/lft 
+ 
+R = V (k/lft (tan 30) = 38.98 k/lft 
+ 
+The sliding stability capacity to demand (CDR) ratio is calculated as: 
+ 
+CDRsliding = R / THF  =  38.98 k/lft / 24.64 k/lft  =  1.58  > 1.0  O.K., and go to Step 11 
+FHWA NHI-10-025 
+Example E7 – Seismic Loading  
+MSE Walls and RSS – Vol II 
+E7 – 7 
+November 2009  
+
+========== PAGE 362 ==========
+ 
+ 
+  
+ 
+ 
+ 
+STEP 11. EVALUATE ECCENTRICITY AND BEARING RESISTANCE  
+ 
+Evaluate the limiting eccentricity and bearing resistance.  Include all applicable loads for 
+Extreme Event I.  For the M-O method, add other applicable forces to PAE. Check the limit 
+states using the following criteria: 
+1.  For limiting eccentricity, for foundations on soil and rock, the location of the resultant of the 
+applicable forces should be within the middle two-thirds of the wall base for EQ = 0.0 and 
+within the middle eight-tenths of the wall base for EQ = 1.0.  Interpolate linearly between 
+these values as appropriate.  
+2.   For bearing resistance compare the bearing pressure to the nominal bearing resistance (i.e., 
+use a resistance factor of 1.0) based on full width of the reinforced zone. 
+ 
+ 
+11.1 
+ 
+Limiting Eccentricity at Base of MSE Wall 
+ 
+The purpose of these computations is to evaluate the limiting eccentricity at the base of the 
+MSE wall. Since the computations are related to limiting eccentricity, the beneficial 
+contribution of live load to resisting forces and moments is neglected.  The computations for 
+limiting eccentricity at the base of the MSE wall are illustrated in Table E4-6.2.  Limiting 
+eccentricity is a strength limit state check and therefore service limit state calculations are not 
+performed.  The critical values based on max/min result in the extreme force effect and 
+govern the limiting eccentricity mode of failure. 
+ 
+FHWA NHI-10-025 
+Example E7 – Seismic Loading  
+MSE Walls and RSS – Vol II 
+E7 – 8 
+November 2009  
+
+========== PAGE 363 ==========
+ 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+  
+ 
+Table E7-4. Computations for evaluation of limiting eccentricity for MSE wall 
+Item 
+Unit 
+Extreme Event I 
+(p = max) 
+(p = min) 
+Total vertical load at base of MSE wall without LL, 
+VA = V1 
+k/ft 
+77.88 
+57.69 
+PAE sin 
+k/ft 
+9.84 
+9.84 
+Resisting moments about Point A without LL 
+surcharge = MRA = M1V1 + L (PAE sin 
+k-ft/ft 
+878.05 
+696.33 
+Total thrust seismic overturning moment about Pt A  
+= PAE coshk/ft (cos 30) (25.64/2 ft) 
+k-ft/ft 
+218.16 
+218.16 
+LL component overturning moment about Point A = 
+1.53k/ft (25.64/2 ft) 
+k-ft/ft 
+19.65 
+19.65 
+Inertial force, PIR overturning moment about Pt A =   
+max:  6.09 k/lft (1.35)(25.64/2 ft) 
+min: 6.09 k/lft (1.00)(25.64/2 ft) 
+k-ft/ft 
+105.36 
+78.04 
+Overturning moment, MOA (static + seismic) 
+k-ft/ft 
+343.17 
+315.85 
+Net moment about Point A = MA = MRA – MOA 
+k-ft/ft 
+534.88 
+380.48 
+Location of the resultant force on base of MSE wall 
+from Point A, a = MA/(VA + PAE sin 
+ft 
+6.10 
+5.63 
+Eccentricity at base of MSE wall, eL = L/2 – a 
+ft 
+2.9 
+3.37 
+Limiting eccentricity, e = 0.40L for extreme event I  
+limit state 
+ft 
+6.60 
+6.60 
+Is the resultant within limiting value of e? 
+-
+Yes 
+Yes 
+Calculated eL/L 
+-
+0.16 
+0.19 
+CRITICAL VALUES BASED ON MAX/MIN 
+Overturning moments about Point A, MOA-C 
+k-ft/ft 
+343.17 
+Resisting moments about Point A, MRA-C 
+k-ft/ft 
+696.33 
+Net moment about Point A, MA-C = MRA-C - MOA-C 
+k-ft/ft 
+353.16 
+Vertical force, VA-C = V1 + PAE sin 
+k/ft 
+67.52 
+Location of resultant from Point A, anl = MA-C/VA-C 
+ft 
+5.23 
+Eccentricity from center of wall base, eL=0.5*L - anl 
+ft 
+3.76 
+Limiting seismic eccentricity, e = 0.4L 
+ft 
+7.20 
+Is the limiting eccentricity criteria satisfied? 
+-
+Yes 
+11.2 
+Bearing Resistance at Base of MSE Wall 
+For bearing resistance computations, the effect of live load is included since it creates larger 
+bearing stresses. For seismic bearing resistance compare the bearing pressure to the nominal 
+bearing resistance (i.e., use a resistance factor of 1.0) based on full width of the reinforced zone. 
+Therefore, seismic bearing stress at the base of the MSE wall can be computed as follows: 
+FHWA NHI-10-025 
+Example E7 – Seismic Loading  
+MSE Walls and RSS – Vol II 
+E7 – 9 
+November 2009  
+
+========== PAGE 364 ==========
+ 
+ 
+ 
+ 
+ 
+E
+qu
+a tion as discussed in the captioned text.
+ 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+   
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+where ΣV = R = V1 + VS + PAE sinis the resultant of vertical. 
+Table E7-5. Computations for evaluation of seismic bearing resistance 
+(see Table E4-6.3. for static values0 
+Item 
+Unit 
+Extreme 
+Event I 
+(p = max) 
+Static Vertical load at base of MSE wall including 
+LL on top, ΣV = R = V1 + VS 
+k/ft 
+80.13 
+Seismic Vertical load at base of MSE wall, PAE sin 
+k/ft 
+9.84 
+Total vertical load at base of MSE wall without LL, 
+VA = R = V1 + VS + PAE sin 
+k/ft 
+89.97 
+Resisting moments about Point A = MRA 
+= MV1 + MV5 + MPV 
+k-ft/ft 
+898.03 
+Overturning moments about Point A = MOA 
+= MF1 + MF2 + MFIR 
+k-ft/ft 
+343.17 
+Net moment at Point A, MA = MRA - MOA 
+k-ft/ft 
+554.86 
+Location of the resultant force on MSE block from 
+Point A, a = (MRA – MOA)/VA 
+ft 
+6.17 
+Eccentricity at base of MSE block, eL = L/2 - a 
+ft 
+2.83 
+Limiting eL 
+ft 
+4.50 
+Is the resultant within limiting value of eL? 
+ft 
+YES 
+Effective width of base of MSE wall, B' = L – 2e 
+ft 
+12.34 
+Bearing stress due to MSE wall =ΣV/(B') = v 
+ksf 
+7.29 
+Bearing resistance (10.50 ksf given in E4 for static 
+resistance, seismic / static = 1.0/0.65, therefore, 
+seismic resistance = 16.15 ksf) 
+ksf 
+16.15 
+Is bearing stress less than the bearing resistance? 
+– 
+YES 
+FHWA NHI-10-025 
+Example E7 – Seismic Loading  
+MSE Walls and RSS – Vol II 
+E7 – 10 
+November 2009  
+
+========== PAGE 365 ==========
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+EVALUATE INTERNAL STABILITY ANALYSIS OF MSE WALL 
+ 
+ 
+STEP 1.   COMPUTE INTERNAL DYNAMIC FORCE, Pi  
+  
+For internal stability, the active wedge is assumed to develop an internal dynamic force, Pi, that 
+is equal to the product of the mass in the active zone and the wall height dependent average 
+seismic coefficient, kav.  Pi is computed as: 
+ 
+Equation as discussed in the captioned text.
+ 
+Wa is the soil weight of the active zone as shown by shaded area in Figure E7-1. 
+ 
+Wa  = [0.3H(H/2) + 0.5(0.3H)(H/2)] r   
+W
+2
+2
+a = [0.3 (25.64 ft) (1/2) + 0.5(0.3)(25.64 ft) (1/2)] 125 pcf 
+Wa  = [98.61 ft2 + 49.31 ft2 ] 125 pcf = 18.49 k/lft 
+ 
+Pi  = 0.211g (18.49 k) = 3.90 k/lft 
+ 
+The inertial force is distributed to the n number of reinforcement layers equally as follows.  
+From Example E4, n = 10.  
+E
+qu
+ation as dis
+cu ss
+ed  i
+n the captioned  t ext.
+STEP 2.  COMPUTE MAXIMUM FACTORED LOADS IN THE 
+  
+REINFORCEMENTS 
+ 
+  
+The load factor for seismic forces is equal to 1.0.  The total factored load applied to the 
+reinforcement on a load per unit of wall width basis is determined as follows, with Tmax the 
+factored static load applied to the reinforcements determined using the appropriate equations in 
+Chapters 4 and 6.   
+ 
+T 
+ 
+total  T max Tmd  
+ 
+Ttotal for each layer of reinforcement is listed in Table E7-6, with Tmax from Table E4-7.4 
+FHWA NHI-10-025 
+Example E7 – Seismic Loading  
+MSE Walls and RSS – Vol II 
+E7 – 11 
+November 2009  
+
+========== PAGE 366 ==========
+ 
+ 
+ 
+ 
+ 
+M
+u
+l
+t
+i
+p
+l
+e
+ 
+d
+i
+a
+g
+r
+a
+m
+s
+ 
+i
+l
+l
+u
+s
+t
+r
+a
+t
+i
+n
+g
+ 
+t
+h
+e
+ 
+s
+e
+is
+m
+ic internal st ability for inextensible reinforcements. (from Figure 4-9 and
+ Digure 7-5)
+FHWA NHI-10-025 
+Example E7 – Seismic Loading 
+MSE Walls and RSS – Vol II 
+E7 – 12 
+November 2009 
+
+========== PAGE 367 ==========
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+STEP 3. CHECK TENSILE RESISTANCE OF THE SOIL REINFORCEMENTS 
+As listed in Table E7-3, the resistance factor for metallic bar mats while evaluating tensile 
+failure under combined static and earthquake loading is equal to 0.85.   
+Ttotal for each layer of reinforcement is listed in Table E7-6, with Tmax and Ng from Table E4­
+7.4. 
+Table E7-6. Summary of tensile resistance computations for 
+Extreme Event I load combination 
+Level 
+Z 
+ft 
+H
+ksf 
+Tmax
+ Tmd
+ Ttotal
+kips/ 5 ft panel 
+Tn 
+k/wire 
+ 
+Bar  
+Mat 
+Ng 
+ Tn) Ng 
+k/5’ panel 
+CDR 
+1 
+1.87 
+0.40 
+6.25 
+1.95 
+8.20 
+5.17 
+0.85 
+4W11 
+4 
+17.58 
+2.14 
+2 
+4.37 
+0.67 
+8.36 
+1.95 
+10.31 
+5.17 
+0.85 
+3W11 
+3 
+13.18 
+1.28 
+3 
+6.87 
+0.87 
+10.80 
+1.95 
+12.75 
+5.17 
+0.85 
+4W11 
+4 
+17.58 
+1.38 
+4 
+9.37 
+1.03 
+12.77 
+1.95 
+14.72 
+5.17 
+0.85 
+4W11 
+4 
+17.58 
+1.19 
+5 
+11.87 
+1.15 
+14.26 
+1.95 
+16.21 
+7.42 
+0.85 
+4W15 
+4 
+25.23 
+1.56 
+6 
+14.37 
+1.23 
+15.23 
+1.95 
+17.18 
+7.42 
+0.85 
+4W15 
+4 
+25.23 
+1.47 
+7 
+16.87 
+1.26 
+15.71 
+1.95 
+17.66 
+7.42 
+0.85 
+4W15 
+4 
+25.23 
+1.43 
+8 
+19.37 
+1.27 
+16.03 
+1.95 
+17.98 
+7.42 
+0.85 
+4W15 
+4 
+25.23 
+1.40 
+9 
+21.87 
+1.37 
+17.10 
+1.95 
+19.05 
+7.42 
+0.85 
+4W15 
+4 
+25.23 
+1.32 
+10 
+24.37 
+1.51 
+19.05 
+1.95 
+21.00 
+7.42 
+0.85 
+4W15 
+4 
+25.23 
+1.20 
+Capacity to demand ratios (CDR) are greater than 1.00, therefore, tensile resistance under 
+seismic loading is adequate for all layers of soil reinforcement. 
+FHWA NHI-10-025 
+Example E7 – Seismic Loading  
+MSE Walls and RSS – Vol II 
+E7 – 13 
+November 2009  
+
+========== PAGE 368 ==========
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+ 
+STEP 4. CHECK PULLOUT RESISTANCE OF THE SOIL REINFORCEMENTS  
+The seismic tensile and total tensile loads are summarized below in Table E7-7.  The static 
+factor pullout resistance values listed below, in terms of k/lft, are from Table E4-7.4. 
+For seismic loading conditions, the value of F*, the pullout resistance factor, is reduced to 80 
+percent of the value used for static design, unless dynamic pullout tests are performed to directly 
+determine the F* value.  Therefore, the static values listed must be reduced by 80% to determine 
+seismic pullout resistance. 
+The pullout resistance factor is equal to 0.9 and to 1.20 for static and for seismic conditions, 
+respectively. Therefore, the factored static values listed must be multiplied by a ratio of 1.20/0.9 
+to determine factored seismic pullout resistance. 
+Ttotal is presented in terms of kips per 5-foot panel width.  Therefore, the static pullout values 
+listed must be multiplied by 5 to go from a per foot to a per panel basis.   
+Table E7-7. Summary of pullout computations for  
+Extreme Event I load combination  
+Level 
+Z 
+ft 
+H
+ksf 
+Tmax
+ Tmd
+ Ttotal 
+kips/ 5 ft panel 
+Static 
+ Pr 
+k/ft 
+x 
+80% 
+x 
+1.20 
+/0.9 
+x 
+5 ft 
+Seismic 
+ Pr 
+k/5’ panel 
+CDR 
+1 
+1.87 
+0.44 
+6.25 
+1.95 
+8.20 
+5.16 
+0.8 
+1.33 
+5 
+27.52 
+3.36 
+2 
+4.37 
+0.67 
+8.36 
+1.95 
+10.31 
+11.25 
+0.0 
+1.33 
+5 
+60.00 
+5.82 
+3 
+6.87 
+0.87 
+10.80 
+1.95 
+12.75 
+16.47 
+0.8 
+1.33 
+5 
+87.84 
+6.89 
+4 
+9.37 
+1.03 
+12.77 
+1.95 
+14.72 
+20.75 
+0.8 
+1.33 
+5 
+110.7 
+7.52 
+5 
+11.87 
+1.15 
+14.26 
+1.95 
+16.21 
+12.06 
+0.8 
+1.33 
+5 
+64.32 
+3.97 
+6 
+14.37 
+1.23 
+15.23 
+1.95 
+17.18 
+14.50 
+0.8 
+1.33 
+5 
+77.33 
+4.50 
+7 
+16.87 
+1.26 
+15.71 
+1.95 
+17.66 
+17.41 
+0.8 
+1.33 
+5 
+92.85 
+5.26 
+8 
+19.37 
+1.27 
+16.03 
+1.95 
+17.98 
+13.27 
+0.8 
+1.33 
+5 
+70.77 
+3.94 
+9 
+21.87 
+1.37 
+17.10 
+1.95 
+19.05 
+16.12 
+0.8 
+1.33 
+5 
+85.97 
+4.51 
+10 
+24.37 
+1.51 
+19.05 
+1.95 
+21.00 
+19.66 
+0.8 
+1.33 
+5 
+104.8 
+4.99 
+Capacity to demand ratios (CDR) are greater than 1.00, therefore, pullout resistance under 
+seismic loading is adequate for all layers of soil reinforcement. 
+FHWA NHI-10-025 
+Example E7 – Seismic Loading  
+MSE Walls and RSS – Vol II 
+E7 – 14 
+November 2009  
+
+========== PAGE 369 ==========
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+  
+ 
+  
+ 
+STEP 5: CHECK CONNECTION RESISTANCE 
+The precast facing elements must be designed as structural elements with appropriate 
+connection strength as discussed in Chapter 4.   For the Extreme Event I limit state the 
+connection, at each level, must be designed to resist the total (static + seismic) factored load, 
+Ttotal.  The factored long-term connection strength, Tac, must be greater than Ttotal. The 
+resistance factor for combined static and seismic loads for steel grid reinforcement is 0.85 (the 
+static resistance factor is 0.65). 
+FHWA NHI-10-025 
+Example E7 – Seismic Loading  
+MSE Walls and RSS – Vol II 
+E7 – 15 
+November 2009  
+
+========== PAGE 370 ==========
+ 
+ 
+ 
+ 
+ 
+ 
+FHWA NHI-10-025 
+Example E7 – Seismic Loading  
+MSE Walls and RSS – Vol II 
+E7 – 16 
+November 2009  
+
+========== PAGE 371 ==========
+ 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+EXAMPLE E8  
+REINFORCED SOIL SLOPE DESIGN – ROAD WIDENING   
+ 
+E8-1 INTRODUCTION 
+ 
+  
+ 
+A 0.6 mile (1 km) long, 16.5 ft (5 m) high, 2.5H:1V side slope road embankment in a suburban 
+area is to be widened by one lane.  At least a 20 ft (6.1 m) width extension is required to allow 
+for the additional lane plus shoulder improvements.  A 1H:1V reinforced soil slope up from the 
+toe of the existing slope will provide 25 ft (7.6 m) width to the alignment.  The following 
+provides the steps necessary to perform a preliminary design for determining the quantity of 
+reinforcement to evaluate the feasibility and cost of this option.  The reader is referred to the 
+design steps in section 9.2 to more clearly follow the meaning of the design sequence. 
+ 
+ 
+STEP 1. 
+SLOPE DESCRIPTION 
+ 
+ 
+a. Geometric and load requirements 
+ 
+ 
+ 
+•  
+H = 16.5 ft (5 m) 
+ 
+ 
+ •   
+β = 45o  
+ 
+ 
+ 
+ 
+•     
+q = 200 psf (10 kPa) (for dead weight of pavement section) + 2% road grade 
+ 
+b. Performance requirements 
+ 
+ 
+•  
+External Stability:   
+ 
+ 
+Sliding Stability: FSmin = 1.3  
+ 
+ 
+Overall slope stability and deep seated: FSmin = 1.3  
+ 
+ 
+Dynamic loading: no requirement  
+ 
+ 
+Settlement: analysis required  
+ 
+• 
+ 
+Compound Failure: FSmin = 1.3 
+ 
+ 
+•  
+Internal Stability: FSmin = 1.3 
+ 
+FHWA NHI-10-025 
+RSS Design Examples  
+MSE Walls and RSS – Vol II 
+E8 – 1 
+November 2009  

@@ -1,0 +1,1045 @@
+
+========== PAGE 229 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 20 
+Figure 10-16. Driving and Resisting Forces and the Factor of Safety 
+10-3.02 
+Example 10-2  Problem – Heave Factor of Safety
+Given: 
+H = 30', 
+B = 15', 
+L = 45' 
+q = 300 psf,  c = 500 psf,  γ = 120 pcf 
+Solution: 
+Nc(square)  as determined from Figure 10-15  for H/B= 2 is 8.5. This is the value for L/B=1.  
+However, the L/B value for this example is = 3. 
+Nc from Figure 10-15 (for H/B = 2 and L/B=3) is = 7.6. 
+Bearing capacity = c x Nc x (0.7B) = (500 psf) x (7.6) x (0.7 x 15 feet) ≈ 40 kip /ft 
+
+========== PAGE 230 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 21 
+Figure 10-17. Heave Example Problem Calculations 
+(Note: figure only shows one side for simplicity) 
+10-4 Piping
+For excavations in pervious materials (sands), the condition of piping can occur when 
+an unbalanced hydrostatic head exists. This pressure difference causes an upward flow 
+of water through the soil and into the bottom of the excavation. This is also known as 
+quick conditions, and may be visible as a sand boil. If the piping is allowed to continue, 
+this movement of water into the excavation will transport material and will cause 
+settlement of the soil adjacent to the excavation. The passive resistance of embedded 
+members will be reduced as a result. 
+One solution to this problem is to equalize the unbalanced hydraulic head by either 
+allowing the excavation to fill with water or lower the water table outside the excavation 
+by dewatering. If dewatering is used, the flow rate into the excavation will decrease, the 
+shear strength of the soil will increase, and the soil will stop acting as a liquid. On 
+Caltrans projects, one of the common methods used to protect or mitigate against piping 
+is the use of a seal course. Refer to the Foundation Manual, Chapter 12, Cofferdams 
+and Seal Courses, for additional information regarding seal course construction. 
+If the embedded length of the shoring system member is long enough, the condition of 
+piping should not develop. The USS Steel Sheet Piling Design Manual contains charts 
+on page 65 giving lengths of sheet pile embedment, which will result in an adequate 
+factor of safety against piping.  These charts are of particular interest and a good 
+resource for cofferdams. 
+
+========== PAGE 231 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 22 
+10-4.01 
+Hydraulic Forces on Cofferdams and Other
+Structures
+Moving water imposes not only normal forces acting on the normal projection of the 
+cofferdam, but also substantial forces in the form of eddies that can act along the sides 
+of sheet piles as shown in Figure 10-18. The drag force, D (in pounds), is calculated 
+with Equation 10-4-1 [from Ratay (1984)]: 
+Where: 
+A 
+= Projected area of the obstruction normal to the current in ft² 
+Cd 
+= Coefficient of drag 
+γw 
+= Water unit weight in lbs/ft³ 
+V 
+= Velocity of the current in ft/sec 
+g 
+= Acceleration due to gravity in ft/sec² 
+In English units, the numerical value of γω  is approximately equal to 2g, without regard 
+to units. (Recall that the weight of water is 62.4 lbs/ft³, and the acceleration of gravity is 
+32.2 ft/s2). Thus, Equation 10-4-1 can be simplified as follows:  
+Where: 
+A 
+=    as defined above 
+V    =    as defined above 
+ Cd 
+=    Coefficient of drag, lbs sec2/ft4  (Note: Cd is not 
+dimensionless in the above equation for D to be in lbs.) 
+ D 
+=    Drag force in lbs 
+Figure 10-18. Hydraulic Forces on Cofferdams 
+𝐃𝐃= (𝐀𝐀)(𝟐𝟐𝐝𝐝)(𝛄𝛄𝐰𝐰 ) 𝐕𝐕𝟐𝟐
+𝟐𝟐𝐠𝐠
+(10-4-1) 
+𝐃𝐃= (𝐀𝐀)(𝟐𝟐𝐝𝐝)(𝐕𝐕𝟐𝟐) 
+(10-4-2) 
+
+========== PAGE 232 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 23 
+Considering the roughness along the sides of the obstructions (as for a sheet pile 
+cofferdam) the practical value for Cd = 2.0. 
+The drag load, D, is applied in the same manner as a wind rectangular load on the 
+loaded height of the obstruction (falsework or guyed elements). 
+Example:  
+Determine the drag force on a 6-foot wide sheet pile cofferdam placed 
+vertically in water with average depth of 6 feet flowing at 4 feet per 
+second. For this example: Cd = 2.0. 
+Projected Area = 6(6) = 36 ft2. 
+𝐃𝐃= 2(36)(4)2 = 1,152 lbs.  
+The drag load, D, may then be added as an additional live load force 
+distributed over the projected area of the cofferdam. If applied as a point 
+load it would be placed at the centroid of the projected area, i.e., at the 
+center of the 6-ft by 6-ft area for the example above. It is more appropriate 
+to apply as a per square foot-loading, as illustrated in the calculation 
+below. The applied load per square-foot generally would not govern for the 
+stress in the sheet piles. 
+Drag Load = 1152 lbs/36 ft2 = 32 psf 
+Figure 10-19. Drag and Hydraulic Forces on a Cofferdam 
+𝐃𝐃= 𝟐𝟐𝐀𝐀𝐕𝐕𝟐𝟐 
+(10-4-3) 
+
+========== PAGE 233 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 24 
+For the example above, illustrated in Figure 10-19, the Engineer may determine that the 
+additional live load is negligible compared to the overall loads to the cofferdam system. 
+It will likely be the primary contributor to the loading for the upper strut both in the final 
+condition and in the sequence of construction. However, for a system nearing allowable 
+capacities, the additional drag force produced by the water flow could require 
+consideration. 
+The characteristic of a cofferdam differs from a typical sheet pile system only in that it is 
+intended to address both hydrostatic and flowing water. This added variable requires 
+additional attention to the installation sequence proposed by the Contractor, as each 
+step will require analysis of the system. Always obtain and review the Contractor’s 
+installation sequence. While the procedures vary by contractor, a typical installation may 
+include the following: 
+1. Construct and install outside waler-ring template and anchor per the Contractor’s
+submittal.
+2. Install sheet piling to specified elevation.
+3. Dewater cofferdam to elevation described in the Contractor’s submittal to
+facilitate the installation of the first level of interior bracing. Verify calculations for
+cofferdam system in this configuration.
+4. Install interior waler and struts and any required diagonal cross bracing struts.
+Verify cofferdam load capacities with bracing system installed.
+5. Place concrete filler required at diagonal cross bracing struts.
+6. Confirm Contractor’s seal course thickness is adequate to resist hydrostatic
+pressure and verify use of proper cofferdam vent during seal course placement
+as required by the Contract Specifications, Section 19-3.03 B(4), Earthwork –
+Structure Excavation and Backfill – Construction – Cofferdams.
+7. Excavate to specified elevation (usually bottom of seal course).
+8. Place seal course concrete underwater and cure.
+9. Dewater cofferdam. Verify cofferdam calculations at this configuration, fully
+dewatered, and braced with seal course placed.
+10. Clean and prepare top of seal course for footing subgrade.
+It should be noted that the Contractor’s cofferdam system may require multiple levels of 
+interior waler and struts, and the procedure of excavation and dewatering noted in the 
+submittal should be followed closely. 
+
+========== PAGE 234 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 25 
+10-5 Slope Stability
+When the ground surface is not horizontal at the construction site, a component of 
+gravity may cause the soil to move in the direction of the slope. Slopes fail in different 
+ways. Figure 10-20 shows some of the most common patterns of slope failure in soil. 
+The slope failure of rocks is beyond the scope of this manual. 
+Figure 10-20. Common Pattern of Soil Slope Failure (USGS) 
+A stability analysis prepared by a Geotechnical engineer or Geologist should be 
+requested from the Contractor when it appears that shoring or a cut slope presents a 
+possibility of some form of slip failure. The discussion and examples that follow are 
+intended to give the Engineer the ability to anticipate conditions needing further 
+analysis. Geotechnical Services in Sacramento has the capability of performing 
+computer-aided stability analysis to verify a contractor’s submitted analysis, and it is 
+recommended the Engineer utilize this resource when they are tasked with performing a 
+slope stability review.  
+The discussion and examples that follow for Fellenius and Bishop methods are provided 
+to simply show the concept of the failure mechanism and analysis thereof. It is very 
+important to be in agreement on the soil parameters with the Contractor, as these will 
+have a significant effect on the factor of safety calculated, especially cohesion. 
+The fundamental assumption of the limit-equilibrium method is that failure occurs when 
+a mass of a soil slides along a slip surface as shown in Figure 10-20. The popularity of 
+limit-equilibrium methods is primarily due to their relative simplicity, and the many years 
+of experience analyzing slope failures.  
+a-Rotational Slide
+b-Translational Slide
+a-Rotational Slide
+b-Translational Slide
+
+========== PAGE 235 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 26 
+Construction surcharges such as equipment and stockpiled materials, may cause 
+excavation instabilities and should be considered when performing a slope stability 
+analysis. The slope stability analysis involves the following: 
+1. Obtain surface geometry, stratigraphy, and subsurface information.
+2. Determine soil properties.
+3. Determine soil-structure interaction, such as the presence of sheet piles, soldier
+piles, ground anchors, soil nails, and so forth.
+4. Determine surcharge loads.
+5. Perform slope stability analysis to calculate the minimum factor of safety against
+failure for various stage constructions.
+The stability of an excavated slope is expressed in terms of the lowest factor of safety  
+found, utilizing multiple potential failure surfaces. Circular solutions to slope stability 
+have been developed primarily due to the ease of this geometry during the 
+computational procedure. The most critical failure surface will be dependent on site 
+geology and other factors mentioned above. However, the most critical failure surface is 
+not necessarily circular, as shown in Figure 10-20 (Rotational Slide) and Figure 10-21. 
+Non-circular failure surfaces can be caused by adversely dipping bedding planes, zones 
+of weak soil, or unfavorable ground water conditions. 
+10-5.01 
+Rotational Slides
+Stability analysis of slopes with circular failure surfaces can be explained using a 
+method of slices. Figure 10-21a shows an arc or a circle, AB, representing a trial failure 
+surface. The soil above the trial surface is divided into a number of slices and given an 
+incremental designation. The forces acting on a typical slice “i” are shown as b, c and d 
+of Figure 10-21. The ordinary method of slices (Figure 10-21b), which is the simplest 
+method, does not consider interslice forces acting on the side of the slices. The 
+Simplified Bishop’s Method of Slices (Figure 10-21c) accounts only for the horizontal 
+interslice forces while more refined methods, such as Spencer’s solution (Figure 
+10-21d), account for both vertical and horizontal interslice forces acting on each side of
+the slice.
+
+========== PAGE 236 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 27 
+Figure 10-21. Method of Slices and Forces Acting on a Slice 
+iθ
+i
+W
+iE
+1
++
+iE
+1
++
+iE
+1
++
+i
+X
+i
+X
+iT
+iT
+iE
+i
+N
+i
+i
+i
+x
+u
+U
+∆
+=
+i
+N
+i
+i
+i
+x
+u
+U
+∆
+=
+iT
+i
+W
+i
+W
+i
+N
+i
+i
+i
+x
+u
+U
+∆
+=
+i
+N
+i
+i
+i
+x
+u
+U
+∆
+=
+i
+N
+i
+i
+i
+x
+u
+U
+∆
+=
+i
+N
+i
+i
+i
+x
+u
+U
+∆
+=
+ix
+∆
+ix
+∆
+ix
+∆
+ix
+∆
+ix
+∆
+iθ
+Slice i
+b
+c
+d
+A
+B
+a
+L
+
+========== PAGE 237 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 28 
+Variations of this method used for investigating the factor of safety for potential stability 
+failure include: 
+•
+Fellenius Method of Slices (Figure 10-21b).
+•
+Simplified Bishop Method of Slices (Figure 10-21c).
+•
+Spencer and Janbu Method of Slices (Figure 10-21d).
+Also known as Ordinary Method of Slices or Swedish Circle, the Fellenius Method was 
+published in 1936. The Simplified Bishop Method (1955) also uses the method of slices 
+to find the factor of safety for the soil mass. The failure is assumed to occur by rotation 
+of a mass of soil on a circular slip surface centered on a common point as shown in 
+Figure 10-22. 
+The basic equation for each of these methods is: 
+Nomenclature 
+FS = Factor of safety 
+FSa = Assumed factor of safety 
+i 
+= Represents the current slice 
+𝛟𝛟‾
+= Friction angle based on effective stresses  
+𝐂𝐂‾
+= Cohesion intercept based on effective stresses 
+Wi = Weight of the slice 
+= Effective normal force 
+θi 
+=  Angle from the horizontal of a tangent at the center of the slice along the 
+slip surface. 
+Ti = Shear force at base of slice. 
+ui = Pore-water pressure force on a slice 
+Ui = Resultant neutral (pore-water pressure) force 
+∆li = Length of the failure arc cut by the slice. Note that as the slices get smaller, 
+the values of ∆xi and ∆li converge. 
+∆xi =  the width of a slice 
+L 
+= Length of the entire failure arc 
+𝐅𝐅𝐒𝐒= 𝐑𝐑𝐋𝐋+ 𝐮𝐮𝐚𝐚𝐭𝐭𝛟𝛟∑
+𝐍𝐍𝐢𝐢
+𝐢𝐢=𝐭𝐭
+𝐢𝐢=𝟏𝟏
+ 
+∑
+𝐖𝐖𝐢𝐢𝐬𝐬𝐢𝐢𝐭𝐭𝛉𝛉𝐢𝐢
+𝐢𝐢=𝐭𝐭
+𝐢𝐢=𝟏𝟏
+(10-5-1) 
+
+========== PAGE 238 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 29 
+Note: The angle, θ, (measured from the horizontal) is shown in Figure 10-21 and 
+is equal to the angle that is measured from the vertical in Figure 10-22. In Figure 
+10-21, the shear force at the base of the slice (Ti) acts at this angle, and this
+angle is measured from the horizontal.
+For major excavations in side slopes, slope stability failure for the entire system should 
+be investigated. 
+Figure 10-22. A Trial Surface and Potential Slices for Fellenius, Simplified Bishop, and Spencer 
+and Janbu, Methods of Slices 
+10-5.02 
+Fellenius Method
+This method assumes that for any slice, the forces acting upon its sides have a resultant 
+of zero in the direction normal to the failure arc. This method is conservative but is 
+widely used in practice because of its early origins and simplicity. 
+
+========== PAGE 239 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 30 
+Figure 10-23. Slice i, Fellenius Method 
+Recall that for small slices, 
+Thus, the basic equation becomes: 
+The procedure is to investigate many possible failure planes, with different centers and 
+radii, to identify the possible failure arc with the lowest factor of safety. Since this may 
+take hundreds of iterations and is thus ideally solved with specialized software, 
+Structure Construction staff should contact the DES Geotechnical unit for assistance.  
+iθ
+i
+W
+iT
+i
+N
+i
+i
+i
+x
+u
+U
+∆
+=
+ix
+∆
+Resultant of all slide 
+forces assumed to act in 
+this direction
+-Found by assuming
+forces in this direction
+i
+N
+iθ
+i
+W
+iT
+i
+N
+i
+i
+i
+x
+u
+U
+∆
+=
+ix
+∆
+Resultant of all slide 
+forces assumed to act in 
+this direction
+-Found by assuming
+forces in this direction
+i
+N
+ (10-5-2) 
+∆xi ≈ ∆li 
+  (10-5-3) 
+𝐅𝐅𝐒𝐒= 𝐑𝐑𝐋𝐋+ 𝐮𝐮𝐚𝐚𝐭𝐭𝛟𝛟∑
+(𝐖𝐖𝐢𝐢𝐜𝐜𝐜𝐜𝐬𝐬𝛉𝛉𝐢𝐢−𝐮𝐮𝐢𝐢𝚫𝚫𝚫𝚫𝐢𝐢)
+𝐢𝐢=𝐭𝐭
+𝐢𝐢=𝟏𝟏
+∑
+𝐖𝐖𝐢𝐢𝐬𝐬𝐢𝐢𝐭𝐭𝛉𝛉𝐢𝐢
+𝐢𝐢=𝐭𝐭
+𝐢𝐢=𝟏𝟏
+ 
+(10-5-4) 
+
+========== PAGE 240 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 31 
+10-5.02A      Example 10-3  Problem – Fellenius Method
+Given: 
+γ = 115 pcf  
+𝛟𝛟‾  = 30° 
+𝐂𝐂 ‾ = 200 psf  
+No Groundwater 
+Solution: 
+The trial failure mass is divided into 6 slices with equal width as shown in Figure 
+10-24. Each slice makes an angle θ with respect to horizontal as shown; note
+relationship between angles from vertical and horizonal.
+Figure 10-24. Example of Fellenius and Bishop Method of Slices 
+Assume failure 
+surface
+'
+60
+=
+R
+1
+2
+3
+4
+6
+4
+3
+1
+'
+10
+'
+10
+'
+10
+'
+10
+'
+10
+'
+10
+5
+Average Height
+iθ
+'
+45
+
+========== PAGE 241 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 32 
+Table 10-1. Fellenius Table of Slices, Part 1 
+Angles θi (°) 
+Average 
+Height (ft) 
+Slice Weights (kips/ft) 
+θ1  = sin-1   (5/60) = 4.78° 
+ 6.46 
+W1 =   (6.46) (10) (0.115) =  7.43 
+θ2  = sin-1(15/60) = 14.48° 
+18.09 
+W2 = (18.09) (10) (0.115) = 20.81 
+θ3  = sin-1(25/60) = 24.62° 
+27.88 
+W3 = (27.88) (10) (0.115) = 32.06 
+θ4  = sin-1(35/60) = 35.69° 
+35.40 
+W4 = (35.40) (10) (0.115) = 40.71 
+θ5  = sin-1(45/60) = 48.59° 
+39.69 
+W5 = (39.69) (10) (0.115) = 45.64 
+θ6  = sin-1(55/60) = 66.44° 
+37.31 
+W6 = (37.31) (10) (0.115) = 42.91 
+Table 10-2. Fellenius Table of Slices, Part 2 
+Slice 
+θi (°) 
+Wi 
+(kips/ft) 
+WisinθI 
+(kips/ft) 
+WicosθI 
+(kips/ft) 
+(kips/ft) 
+1 
+4.78 
+7.43 
+0.62 
+7.40 
+7.40 
+2 
+14.48 
+20.81 
+5.20 
+20.15 
+20.15 
+3 
+24.62 
+32.06 
+13.36 
+29.14 
+29.14 
+4 
+35.69 
+40.71 
+23.75 
+33.07 
+33.07 
+5 
+48.59 
+45.64 
+34.23 
+30.19 
+30.19 
+6 
+66.44 
+42.91 
+39.33 
+17.15 
+17.15 
+Σ = 116.49 
+Σ = 137.09 
+L = 113.55 ft   (by geometry) 
+This is the value for one trial failure plane. Additional trials are necessary to determine 
+the critical one that gives the minimum factor of safety. The slope for this sample 
+problem is deemed to be unstable since the computed safety factor determined by this 
+single calculation is less than one.  
+(10-5-5) 
+FS = (0.2) (113.55) + (0.577) (137.09)
+116.49
+= 0.87 < 1 
+
+========== PAGE 242 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 33 
+10-5.03 
+Bishop Method
+This method assumes that the forces acting on the sides of any slice have a zero 
+resultant in the vertical direction. 
+Figure 10-25. Slice i, Bishop Method 
+The basic equation becomes: 
+Where: 
+For the Bishop Method, the factor of safety must be assumed (FSa)  and trial-and-error 
+iterations are required to determine the solution. The assumed FSa converge on the 
+factor of safety for that trial failure plane. Close agreement between the assumed FSa 
+and the calculated FS indicate that the selection of the center and radius is near the 
+target value. 
+iθ
+i
+W
+iT
+i
+N
+i
+i
+i
+x
+u
+U
+∆
+=
+ix
+∆
+Resultant of all slide 
+forces assumed to act in 
+this direction
+-Found by assuming
+forces in this direction
+i
+N
+iθ
+i
+W
+iT
+i
+N
+i
+i
+i
+x
+u
+U
+∆
+=
+ix
+∆
+Resultant of all slide 
+forces assumed to act in 
+this direction
+-Found by assuming
+forces in this direction
+i
+N
+(10-5-6) 
+(10-5-7) 
+(10-5-8) 
+
+========== PAGE 243 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 34 
+10-5.03A      Example 10-4 Problem – Bishop Method
+Given:  
+γ = 115 pcf 
+φ = 30° 
+θ = 200 psf 
+No Groundwater 
+Solution: 
+Table 10-3. Bishop Table of Slices, Part 1 
+Column 
+A 
+B 
+C 
+D 
+E 
+F 
+G 
+Slice 
+θI (deg) Wi (k/ft) 
+C ‾ ∆xi
+(k/ft) 
+Witanϕ‾  
+(k/ft) 
+cosθi 
+tanθitanϕ‾  
+C + D 
+(kips/ft) 
+1 
+4.78 
+7.43 
+2 
+4.29 
+1.00 
+0.05 
+6.29 
+2 
+14.48 
+20.81 
+2 
+12.01 
+0.97 
+0.15 
+14.01 
+3 
+24.62 
+32.06 
+2 
+18.51 
+0.91 
+0.26 
+20.51 
+4 
+35.69 
+40.71 
+2 
+23.50 
+0.81 
+0.41 
+25.50 
+5 
+48.59 
+45.64 
+2 
+26.35 
+0.66 
+0.65 
+28.35 
+6 
+66.44 
+42.91 
+2 
+24.77 
+0.40 
+1.32 
+26.77 
+Table 10-4. Bishop Table of Slices, Part 2 
+Column 
+Ha 
+Hb 
+Ia 
+Ib 
+J 
+Slice 
+Mi 
+Mi 
+G/Ha 
+(kips/ft) 
+G/Hb 
+(kips/ft) 
+WisinθI
+(kips/ft) 
+FSa = 1.5 
+FSa = 0.8 
+FSa = 1.5 
+FSa = 0.8 
+1 
+ 1.03 
+1.06 
+ 6.11 
+5.93 
+ 0.62 
+2 
+1.06 
+1.15 
+ 13.21 
+12.18 
+ 5.20 
+3 
+1.07 
+1.21 
+ 19.17 
+ 16.95 
+ 13.36 
+4 
+1.04 
+1.23 
+ 24.52 
+ 20.72 
+ 23.75 
+5 
+0.95 
+1.20 
+ 29.84 
+ 23.63 
+ 34.23 
+6 
+0.75 
+1.06 
+ 35.69 
+ 25.25 
+ 39.33 
+Σ = 128.54 
+Σ =  104.66 
+Σ = 116.49 
+For FSa = 1.5: 
+For FSa = 0.8: 
+The factor of safety for this trial converges to ≈ 0.9. Again, this is the value for one trial 
+failure plane. Additional trials are necessary to determine the critical one that gives the 
+minimum factor of safety.  
+If ground water were present, pore pressure would need to be considered. The values 
+are most typically calculated based on field measured water levels. 
+FS = 128.54
+116.49 = 1.10 
+(10-5-9) 
+FS = 104.66
+116.49 = 0.90 
+(10-5-10) 
+
+========== PAGE 244 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 35 
+10-5.04 
+Translational Slide
+For excavations with soil layers dipping toward the excavation, or when there is a 
+definite plane of weakness near the base of the slope, the slope may fail along a plane 
+parallel to the weak strata as shown in Figure 10-26. This surface would be assumed 
+along the interface of the upper sliding soil and the weaker soil below it. 
+The movement of the soil mass within the failure surface is translational rather than 
+rotational. Methods of analysis that consider blocks or wedges sliding along plane 
+surfaces must be used to analyze slopes with a specific plane of weakness. Note that 
+for Figure 10-26, the soil layers depicted are at an incline that would also need to be 
+accounted for. A down sloping angle in the direction of the larger active mass would 
+contribute to the forces that the passive block would need to resist. 
+Figure 10-26. Mechanism of Translational Slide 
+Figure 10-27 also depicts a stratified soil consisting of three layers and a potential 
+sliding mass. The force equilibrium of the blocks or wedges is more sensitive to shear 
+forces than moment equilibrium as shown in Figure 10-27. The potential failure mass 
+consists of an upper or active Block A, a central or neutral Block B, and a lower or 
+passive Block P. The active earth pressure from Block A tends to initiate translational 
+movement. This movement is opposed by the passive resistance to sliding of Block P 
+and by shearing resistance along the base of central Block B. The critical failure surface 
+can be located using an iterative process as explained previously. 
+1
+1
+1 c
+,
+γ
+φ
+3
+3
+3 c
+,
+γ
+φ
+2
+2
+2 c
+,
+γ
+φ
+Weak Layer
+1
+1
+1 c
+,
+γ
+φ
+3
+3
+3 c
+,
+γ
+φ
+2
+2
+2 c
+,
+γ
+φ
+Weak Layer
+1
+1
+1 c
+,
+γ
+φ
+3
+3
+3 c
+,
+γ
+φ
+2
+2
+2 c
+,
+γ
+φ
+Weak Layer
+
+========== PAGE 245 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 36 
+Figure 10-27. Mechanism of Translational Slide 
+The factor of safety of the slope against translational sliding is established by the ratio of 
+resisting to driving forces. The resisting force is a function of passive pressure at the toe 
+of the slope and the shearing resistance along the base of Block B. The driving force is 
+the active earth pressure due to thrust of Block A. Thus the factor of safety can be 
+expressed as follows: 
+
+========== PAGE 246 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 37 
+In which: 
+Where: 
+T 
+= tangential resistance force at the base of Block B 
+c2 
+= unit cohesion along base of the Block B 
+L 
+= length of base of Block B 
+Pa 
+= resultant active pressure on Block B = W1 tan( αa −ϕ1) 
+Pp 
+= passive pressure on Block B = W3tan (αP + ϕ1) 
+W1 = weight of section of Block A 
+W2 = weight of section of Block B 
+W3 = weight of section of Block P 
+αa 
+= failure plane angle with horizontal for active pressure 
+αp 
+= failure plane angle with horizontal for passive pressure 
+φ1 
+= internal friction angle of soil for Block A 
+φ2 
+= internal friction angle of weaker underlying soil 
+FS = factor of safety 
+Additional notes and observations for the translational slide: 
+1. Block B is the middle block, and it is the key element. A free body diagram can
+be drawn for Block B.
+2. The bottom of Block B is horizontal in Figure 10-27. If the bottom of block B has a
+slope downward to the left, then the factor of safety would be reduced.
+3. There is only one driving force that is acting on Block B, and that driving force is
+the resultant Rankine active earth pressure force on the right side of Block B.
+4. At the bottom of Block B, there is a resisting force from the cohesion of the weak
+layer (due to the cohesion value for the weak layer), and there is a resisting force
+from the friction of the weak layer (due to the phi (φ) angle for the weak layer).
+5. On the left side of Block B, there is a resisting force from the resultant Rankine
+passive earth pressure.
+6. The factor of safety is equal to the sum of the resisting forces divided by the sum
+of the driving forces.
+FS = 𝐓𝐓+ 𝐏𝐏𝐩𝐩
+𝐏𝐏𝐚𝐚
+(10-5-11) 
+𝐓𝐓 = 𝐜𝐜𝟐𝟐× 𝐋𝐋+ 𝐖𝐖𝟐𝟐× 𝐮𝐮𝐚𝐚𝐭𝐭𝛟𝛟𝟐𝟐 
+(10-5-12) 
+
+========== PAGE 247 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 38 
+10-5.04A      Example 10-5  Problem – Translational Slide
+Calculate the factor of safety for a translational slide for a given failure surface, as 
+shown below in Figure 10-28. 
+Figure 10-28. Example of a Translational Slide 
+Solution: 
+By geometry:  αa = 62°   αp = 26.6°   
+Note that these values for αa  and αp are close to the values one would obtain when 
+following the more rigorous method outlined in Section 4-3.02, Active and/or Passive 
+Earth Pressure, of this manual.  
+Calculating the weight of the soil blocks: 
+(10-5-13) 
+(10-5-14) 
+(10-5-15) 
+
+========== PAGE 248 ==========
+CHAPTER 10, SPECIAL CONDITIONS 
+JULY 2025 
+CALTRANS ● TRENCHING AND SHORING MANUAL 
+CHAPTER 10 
+10 - 39 
+The tangential resistance force at the bottom of the block with weight W2, due to the 
+cohesion of the weak layer is calculated as: 
+Calculate the resultant active and passive forces acting on the soil block with weight W2: 
+Note that if the length of W2 was increased to 100 feet, the FS ≈ 1.57. 
+Depending on the reliability of the soil properties, the duration, the level of risk desired, 
+as well as other considerations, a factor of safety of 1.5 may be appropriate. A 
+discussion with DES Geotechnical is always appropriate. 
+10-5.05 
+Stability Analysis of Shoring Systems
+Deep-seated stability failure should be investigated for major shoring systems such as 
+ground anchor walls. The slip surface passes behind the anchors and underneath the 
+base tip of the vertical structural members as shown in Figure 10-29. A minimum factor 
+of safety of 1.25 is required for the deep-seated stability failure. Local system failure 
+should also be investigated for major ground anchor systems as shown in Figure 10-29. 
+The trial surface must extend to the depth of the excavation to calculate the minimum 
+factor of safety of 1.25. The un-bonded length must extend beyond the failure surface.  
+Figure 10-29. Stability Failure Modes 
+(10-5-16) 
+Pa = (115.2)(Tan(62° −34°)) ≈61.3 kip/ft 
+(10-5-17) 
+Pp = (12.0)(Tan(26.6° + 34°)) ≈21.3 kip/ft 
+(10-5-18) 
+FS = 7.5 + 21.3
+61.3
+= 0.47 
+(10-5-19) 

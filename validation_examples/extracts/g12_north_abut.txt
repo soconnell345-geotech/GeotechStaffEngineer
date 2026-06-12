@@ -1,0 +1,1845 @@
+
+========== PAGE 35 ==========
+APPENDIX D 
+COMPREHENSIVE DESIGN EXAMPLES 
+This appendix presents comprehensive design examples for a driven pile foundation 
+project.  The worked design examples supplement the material presented in 
+publications FHWA-NHI-16-009 and FHWA-NHI-16-010, the primary FHWA 
+guidance documents on driven pile foundations.  The worked LRFD design 
+examples address strength, service, and extreme limit state considerations for a 
+bridge structure in highly variable subsurface conditions.  Worked design examples 
+in cohesionless, cohesive, and layered soil profiles are presented as well as pile 
+design on hard rock.  All limit states considerations are addressed as applicable in 
+the worked design examples. 
+ 
+The bridge dimensions and superstructure loads were provided by a transportation 
+agency, while the bridge structure is supported at two abutments and a pier.  The 
+soil profile for the worked design examples was developed to illustrate use of the 
+manual’s design methods and procedures in a variety of subsurface conditions.  
+Each substructure location presents a different subsurface condition.  A 
+cohesionless soil profile is presented at the North Abutment.  At the pier, worked 
+examples in a layered subsurface profile are presented.  At the South Abutment, 
+worked examples for a cohesive soil profile underlain by a hard bedrock are 
+presented.  Strength, service, and extreme limit states are addressed at each 
+substructure location as appropriate.  An economic evaluation of candidate pile 
+types is also included at each substructure location.       
+ 
+The worked design examples follow the step by step design and construction 
+process outlined in Chapter 2 of FHWA-NHI-16-009.  The design process flow chart 
+introduced in Chapter 2 is followed in the worked design examples and is presented 
+herein as Figure D-1. 
+  
+ 
+ 
+ 
+ 
+1 
+
+========== PAGE 36 ==========
+ 
+Figure D-1 
+Design process flow chart. 
+ 
+ 
+2 
+
+========== PAGE 37 ==========
+ 
+Figure D-1 
+Design process flow chart (continued). 
+ 
+ 
+3 
+
+========== PAGE 38 ==========
+ 
+Figure D-1 
+Design process flow chart (continued). 
+ 
+4 
+
+========== PAGE 39 ==========
+ 
+Figure D-1 
+Design process flow chart (continued). 
+ 
+ 
+5 
+
+========== PAGE 40 ==========
+ 
+Figure D-1 
+Design process flow chart (continued). 
+ 
+ 
+6 
+
+========== PAGE 41 ==========
+ 
+ 
+ 
+ 
+Figure D-1 
+Design process flow chart (continued). 
+ 
+ 
+7 
+
+========== PAGE 42 ==========
+D.1 Block 1: Establish Global Project Performance Requirements 
+ 
+The general structure requirements have been determined and are summarized 
+below. 
+ 
+1.   
+The project will consist of new twin river bridges, one for northbound traffic 
+and one for southbound traffic.  Both bridges will be designed for three travel 
+lanes. 
+ 
+2. 
+The project will be constructed at one time. 
+ 
+3.   
+The general structure layout and approximate substructure locations are 
+ 
+known but approach grades have yet to be established. 
+ 
+4.   
+The foundation engineer has visited the site.  During normal flow, the river is 
+approximately 80 feet wide and 5 feet deep at the proposed bridge location.  
+The north side of the river has a bank approximately 20 feet high consisting of 
+silty sand.  The ground surface on the south side of the river has a slightly 
+more gradual slope with surficial soils consisting of silty clay.  The new 
+bridges will be approximately 200 feet long with a higher approach 
+embankment required on the south side.5. 
+Based on other bridge 
+structures similar to those contemplated for this project, limit state axial 
+compression loads are anticipated to be on the order of 2000 to 2500 kips at 
+the abutments and 2500 to 3500 kips at the pier. 
+ 
+ 
+Based on safety, drainage, and rideability considerations, a maximum total 
+settlement at any substructure location of 1.5 inches and maximum 
+differential settlement between substructure locations of 1 inch are desired.  
+In addition, the lateral deformation is limited to 1 inch. 
+ 
+6. 
+The new bridge structure is not subject to vessel or vehicle impact loading or 
+seismic activity.  However, substantial scour is a design consideration. 
+ 
+7. 
+Lateral squeeze may or may not be a design consideration depending upon 
+ 
+the subsurface conditions encountered. 
+ 
+8.   
+No modifications appear warranted in the preliminary design such as 
+adjustments in substructure locations or span lengths. 
+ 
+ 
+8 
+
+========== PAGE 43 ==========
+9. 
+No site or surrounding environmental considerations (low headroom, utility 
+conflicts, aggressive soil environments, limitations on noise, vibrations, etc.) 
+need to be considered in the design. 
+ 
+10. 
+There are no special factors influencing bridge span length. 
+ 
+ 
+D.2 Block 2: Determine Structure (Bridge) Geometry, Substructure Locations 
+and Elevations 
+ 
+The general bridge geometry, probable substructure locations, and the top of 
+foundation elevations have been established.  This information is presented in Table 
+D-1. 
+ 
+Table D-1 
+General Bridge Geometry Summary  
+ 
+Substructure 
+ 
+Substructure Station 
+Top of Foundation 
+Elevation  
+(feet) 
+North Abutment 
+1223 + 26 
++ 312.0 
+Pier 2 
+1224 + 26 
++ 280.0 
+South Abutment 
+1225 + 26 
++ 307.0 
+ 
+ 
+D.3 Block 3: Define General Site Geotechnical Conditions, Scour, and 
+Seismicity 
+ 
+Available foundation plans and structure performance have been collected from 
+other projects in the vicinity.  The project is located in an area known for variable 
+subsurface conditions.  Post construction issues of unsatisfactory structure 
+performance have not been reported in the vicinity.  The hydraulic engineer has 
+been consulted to determine probable scour depths that may impact the foundation 
+selection.  Seismicity is not a design consideration. 
+ 
+9 
+
+========== PAGE 44 ==========
+D.4 Block 4: Perform Preliminary Structure Modeling.  Determine Preliminary 
+Substructure Loads and Tolerable Deformations 
+ 
+Preliminary structural analysis and modeling of the proposed bridge structure has 
+been performed at this time.  The preliminary strength, service and extreme events 
+limit state loads and performance requirements at the foundation top have also been 
+established.  The tolerable vertical and lateral deformations previously stated in 
+Block 1 have been confirmed by the bridge office as performance requirements. 
+ 
+ 
+D.5 Block 5: Develop and Execute Subsurface Exploration and Laboratory 
+Testing Program for Feasible Foundation Systems 
+ 
+Prior to this stage, only the general bridge geometry, preliminary superstructure limit 
+state loads and general site geotechnical conditions were known.  The substructure 
+locations now have been determined.  A subsurface exploration and laboratory 
+testing program has been implemented with a single boring performed at each 
+substructure location.  The soil boring logs for the southbound bridge are presented 
+in Figures D-2 through D-4. 
+ 
+At each respective sample depth, the boring logs indicate the SPT N value in 
+cohesionless soil layers, or the undisturbed Shelby tube sampling interval in 
+cohesive layers.  The results from subsequent unconfined compression tests and 
+other index tests performed on the undisturbed samples are also provided on the 
+boring logs at the respective sample depth.  The results of the subsurface 
+exploration and laboratory testing program are used to prepare a subsurface profile; 
+define soil and rock parameters including strength, compressibility, parameter 
+variation, liquefaction susceptibility, and seismic earth pressure parameters; define 
+subsurface water conditions, as well as identify critical cross sections for design.   
+ 
+The results of the subsurface exploration program and laboratory test results have 
+been used to generate a generalized soil profile which is presented in Figure D-5.  
+This generalized soil profile is an invaluable resource as the foundation selection 
+process proceeds.  A design profile for each substructure location will be developed 
+from the information gathered in this block and used in later blocks. 
+ 
+ 
+10 
+
+========== PAGE 45 ==========
+ 
+Figure D-2 
+Boring Log S-1, Page 1 of 3. 
+ 
+ 
+11 
+
+========== PAGE 46 ==========
+ 
+Figure D-2 
+Boring Log S-1, Page 2 of 3. 
+ 
+ 
+12 
+
+========== PAGE 47 ==========
+ 
+Figure D-2 
+Boring Log S-1, Page 3 of 3. 
+ 
+ 
+13 
+
+========== PAGE 48 ==========
+ 
+Figure D-3 
+Boring Log S-2, Page 1 of 2. 
+ 
+ 
+14 
+
+========== PAGE 49 ==========
+ 
+Figure D-3 
+Boring Log S-2, Page 2 of 2. 
+ 
+ 
+15 
+
+========== PAGE 50 ==========
+ 
+Figure D-4 
+Boring Log S-3, Page 1 of 3. 
+ 
+ 
+16 
+
+========== PAGE 51 ==========
+ 
+Figure D-4 
+Boring Log S-3, Page 2 of 3. 
+ 
+ 
+17 
+
+========== PAGE 52 ==========
+ 
+Figure D-4 
+Boring Log S-3, Page 3 of 3. 
+ 
+ 
+ 
+18 
+
+========== PAGE 53 ==========
+ 
+Figure D-5 
+Site Profile View. 
+ 
+19 
+
+========== PAGE 54 ==========
+D.6 Block 6: Evaluate Information and Determine Candidate Foundation 
+Systems 
+ 
+The question to be answered is what candidate foundation systems are appropriate 
+for consideration based on the site conditions.  This question will be answered 
+based primarily on the strength and compressibility of the geomaterials, the 
+proposed loading conditions, the project deformation limits, the project schedule, 
+and the foundation cost.  The hydraulic analysis indicates the potential for 
+substantial scour at the center pier.  The selection of the appropriate foundation 
+system including cost considerations is discussed in greater detail in Chapter 3. 
+ 
+ 
+D.7 Block 7: Determine if a Deep Foundation is Required 
+ 
+Based on the strength and compressibility of the near surface geomaterials, scour 
+concerns, as well as the required construction timeline, it is decided that a deep 
+foundation system is required for structure support.  Driven piles and other deep 
+foundation systems must now be evaluated.  Through this process, some foundation 
+systems become less viable as constructability and cost considerations are refined.  
+In the final analysis, the design, construction, and testing costs associated with 
+addressing the variable subsurface conditions at this site are prohibitive for all of the 
+drilled deep foundation solutions.  Accordingly, driven piles are selected for the 
+structure support; and drilled shaft, micropile, CFA pile, and other drilled deep 
+foundation systems are eliminated. 
+ 
+ 
+D.8 Block 8: Select Candidate Driven Pile Types and Sections  
+ 
+Driven pile foundation systems consisting of steel H-piles, closed-end steel pipe 
+piles, and prestressed concrete piles are initially considered technically and 
+economically feasible.  However, due to pile drivability concerns presented by the 
+extremely dense gravel layer at Pier 2, closed-end steel pipe piles and prestressed 
+concrete piles are eliminated from further consideration.  In this geographic region, 
+steel H-piles are commonly used.  Local contractors are familiar with H-pile 
+installation and splicing, and H-piles are readily available from a local manufacturing 
+facility.  For these reasons, in addition to the ease with which H-piles can 
+accommodate length variations associated with site variability, H-piles are viewed as 
+the primary candidate pile type.  Several H-pile sections are viable, and those 
+sections will be advanced as candidate driven pile foundation systems. 
+ 
+ 
+20 
+
+========== PAGE 55 ==========
+Foundation loads are now closer to being finalized as are the tolerable deformation 
+limits for the structure.  At this stage in the design process, detailed analyses are 
+required at each substructure location.  Therefore, Block 9 through Block 19 will be 
+repeated for each of the three substructure locations: North Abutment, Pier 2, and 
+South Abutment.  The design process will be presented for these blocks at a given 
+substructure location before repeating the same steps at the next substructure 
+location. 
+ 
+ 
+D.9 Block 9: North Abutment – Calculate Nominal and Factored Structural 
+Resistances for all Candidate Piles 
+ 
+The nominal structural resistance is now evaluated for five candidate H-pile sections. 
+The H-pile sections selected for evaluation include a HP 10x42, a HP 12x53, a HP 
+12x74, a HP 14x89, and a HP 14x117.  A detailed step by step example for 
+calculation of the nominal structural resistance was previously presented in Section 
+8.5.3 for an HP 14x117 H-pile section.  Therefore, this process is not repeated for 
+the five candidate pile sections.  Table D-2 presents the calculated nominal 
+structural resistances in axial compression, flexure, and shear for the five candidate 
+sections.  An unbraced length of 1 foot was assumed in these calculations. 
+ 
+Table D-2 
+Nominal Structural Resistances in Axial Compression, Flexure and 
+Shear  
+H-pile Section 
+HP 
+10x42 
+HP 
+12x53 
+HP 
+12x74 
+HP 
+14x89 
+HP 
+14x117 
+Pn, Nominal Resistance in Axial 
+Compression (kips) 
+618 
+767 
+1088 
+1303 
+1718 
+Mny, Nominal Resistance in 
+Weak Axis Flexure (kip-ft) 
+82 
+114 
+118 
+257 
+380 
+Mnx, Nominal Resistance in 
+Strong Axis Flexure (kip-ft) 
+176 
+295 
+433 
+592 
+807 
+Vn, Nominal Resistance in 
+Shear (kips) 
+118 
+149 
+214 
+246 
+331 
+ 
+It is anticipated that the piles at the North Abutment will be driven into the dense 
+gravel with sand deposit, or possibly to the underlying bedrock.  The dense gravel 
+with sand deposit contains occasional cobbles.  In these conditions, pile shoes are 
+recommended for use with the H-piles to reduce the risk of damage.  Therefore, the 
+applicable structural resistance factors, 𝜙𝜙𝑐𝑐, are 0.5 for axial compression resistance 
+and 0.7 for combined axial compression and flexural resistance.  A resistance factor 
+ 
+21 
+
+========== PAGE 56 ==========
+of 𝜙𝜙𝑣𝑣 =1.0 is used for shear, and a resistance factor of 𝜙𝜙𝑓𝑓=1.0 is applicable for 
+flexure only.  Table D-3 summarizes the calculated factored structural resistances in 
+axial compression, combined axial compression and flexure, flexure, and shear. 
+ 
+Table D-3 
+Factored Structural Resistance in Axial Compression, Flexure and 
+Shear 
+H-pile Section 
+HP 
+10x42 
+HP 
+12x53 
+HP 
+12x74 
+HP 
+14x89 
+HP 
+14x117 
+Pr, Factored Resistance in  
+Axial Compression, 
+𝜙𝜙𝑐𝑐 = 0.5  (kips) 
+309 
+383 
+544 
+652 
+859 
+Pr, Factored Resistance in  
+Axial Compression and Flexure, 
+𝜙𝜙𝑐𝑐 = 0.7  (kips) 
+433 
+537 
+762 
+912 
+1203 
+Mry, Factored Resistance in 
+Weak Axis Flexure, 
+𝜙𝜙𝑓𝑓=1.0  (kip-ft) 
+82 
+114 
+118 
+257 
+380 
+Mrx, Factored Resistance in 
+Strong Axis Flexure, 
+𝜙𝜙𝑓𝑓=1.0  (kip-ft) 
+176 
+295 
+433 
+592 
+807 
+Vr, Factored Resistance in  
+Shear 
+𝜙𝜙𝑣𝑣 =1.0  (kips) 
+118 
+149 
+214 
+246 
+331 
+ 
+ 
+D.10 Block 10: North Abutment – Calculate Nominal and Factored Geotechnical 
+Resistances in Axial Compression and Tension Versus Depth for all 
+Candidate Piles; Perform Preliminary Pile Drivability Analyses 
+ 
+The engineering properties of the subsurface materials at the North Abutment were 
+determined in Block 5.  The results of the boring program and laboratory tests are 
+now used to develop a design profile for each substructure location.  Engineering 
+judgement was used in developing the design profile to delineate the subsurface 
+conditions into layers with similar properties.  An effective stress diagram, depicted 
+in Figure D-6, was also constructed in association with the design profile.  This 
+diagram includes the total stress, porewater pressure, and effective stress versus 
+depth.  Figure D-6 also presents the basic soil profile for quick reference to the 
+relevant soil layers.  The effective stress diagram was computed using Equations 
+5-7 through 5-9 from Chapter 5.  These equations are repeated below.  For Figure 
+D-6, the total stress, porewater pressure, and effective stress were calculated at 1 
+foot increments using a spreadsheet.
+ 
+ 
+ 
+22 
+
+========== PAGE 57 ==========
+ 
+𝜎𝜎𝑣𝑣𝑣𝑣= ∑(𝛾𝛾𝑖𝑖ℎ𝑖𝑖)
+𝑛𝑛
+𝑖𝑖
+  
+[Eq. 5-7] 
+ 
+ 
+𝑢𝑢= 𝛾𝛾𝑤𝑤ℎ𝑤𝑤  
+[Eq. 5-8] 
+ 
+ 
+𝜎𝜎′𝑣𝑣𝑣𝑣= ∑(𝛾𝛾𝑖𝑖ℎ𝑖𝑖) −𝛾𝛾𝑤𝑤ℎ𝑤𝑤
+𝑛𝑛
+𝑖𝑖
+  
+[Eq. 5-9] 
+ 
+ 
+Figure D-6 
+Effective stress diagram for North Abutment using Boring S-1. 
+ 
+To continue development of an idealized design profile, field SPT N values were 
+corrected for hammer energy transfer and vertical effective stress.  The field SPT N 
+values were first corrected for energy transfer using Equation 5-1.  These results are 
+presented in Table D-4  Typical correlations for SPT hammer type and energy 
+transfer are provided in Section 5.1.1 (e.g., typical energy transfer of 80% for 
+automatic hammer).  The SPT hammer on the drill rig used for this project’s 
+subsurface exploration program was calibrated in accordance with ASTM D4633.  
+Results of this calibration indicated an average energy transfer of 75%.  Therefore, 
+the ER value in Equation 5-1 is equal to 75. 
+ 
+ 
+𝑁𝑁60 = 𝑁𝑁ቀ
+𝐸𝐸𝐸𝐸
+60ቁ  
+[Eq. 5-1] 
+ 
+ 
+The SPT N value was corrected for vertical effective stress as presented in Equation 
+5-2, using the Peck et al. (1974) correction factor, 𝐶𝐶𝑛𝑛.  The depth value for this 
+calculation was taken from the middle depth of the SPT sampling event after the 6 
+ 
+23 
+
+========== PAGE 58 ==========
+inch seating interval (e.g., the SPT N value recorded from 0.5-1.5 feet was corrected 
+using the vertical effective stress at a depth of 1 foot). 
+ 
+ 
+(𝑁𝑁1)60 = 𝐶𝐶𝑛𝑛𝑁𝑁60  
+[Eq. 5-2] 
+ 
+ 
+𝐶𝐶𝑛𝑛= 0.77 log ቀ
+20
+𝜎𝜎′𝑣𝑣𝑣𝑣ቁ  
+[Eq. 5-3] 
+ 
+ 
+Table D-4 
+Correction of Field SPT N Value for Energy and Vertical Effective 
+Stress at the North Abutment using S-1 
+Soil Layer 
+Depth (ft) 
+σ'vo (ksf) 
+Field N value 
+N60 
+Cn 
+(N1)60 
+1 
+1 
+0.105 
+4 
+5 
+1.99 
+10 
+1 
+6 
+0.630 
+4 
+5 
+1.39 
+7 
+1 
+11 
+1.155 
+6 
+8 
+1.19 
+9 
+1 
+16 
+1.618 
+6 
+8 
+1.07 
+8 
+1 
+21 
+1.831 
+8 
+10 
+1.03 
+10 
+2 
+26 
+2.058 
+13 
+16 
+0.99 
+16 
+2 
+31 
+2.306 
+15 
+19 
+0.95 
+18 
+2 
+36 
+2.554 
+11 
+14 
+0.92 
+13 
+2 
+41 
+2.802 
+15 
+19 
+0.89 
+17 
+2 
+46 
+3.050 
+18 
+23 
+0.86 
+19 
+3 
+51 
+3.363 
+40 
+50 
+0.83 
+41 
+3 
+56 
+3.676 
+39 
+49 
+0.80 
+39 
+3 
+61 
+3.989 
+41 
+51 
+0.77 
+40 
+3 
+66 
+4.302 
+43 
+54 
+0.75 
+40 
+3 
+71 
+4.615 
+41 
+51 
+0.72 
+37 
+3 
+76 
+4.928 
+44 
+55 
+0.70 
+39 
+3 
+81 
+5.241 
+45 
+56 
+0.68 
+38 
+3 
+86 
+5.554 
+48 
+60 
+0.66 
+40 
+3 
+91 
+5.867 
+46 
+58 
+0.64 
+37 
+3 
+96 
+6.180 
+47 
+59 
+0.62 
+37 
+ 
+After correcting the SPT N values for energy transfer and vertical effective stress, an 
+average corrected N value was determined for each respective layer.  The N value 
+from the first SPT sample in Layer 1 was not included in this procedure since the 
+bottom of the footing at the North Abutment is below this sample depth. 
+ 
+24 
+
+========== PAGE 59 ==========
+Table D-5 presents the average (N1)60 value for each layer at the North Abutment, 
+the coefficient of variation, COV, within the layer, and the effective stress friction 
+angle, φ', chosen for the layer.  The coefficient of variation for each layer was less 
+than 25% indicating low variability within each of the identified layers.  Therefore, 
+separating the soil profile into additional layers was not performed, as it would have 
+been with the existence of higher variability soil. 
+ 
+The (N1)60 values were used to estimate the effective stress friction angle of each 
+soil layer in accordance with Table 5-5.  Layer 3 consists of hard angular gravel with 
+sand.  Therefore, as discussed in Section 5.5.1 of Chapter 5, the design friction 
+angle in this layer was limited to 36 degrees for estimating the shaft resistance while 
+a friction angle of 40 degrees was used to estimate the toe resistance. 
+ 
+Table D-5 
+Effective Stress Friction Angle Correlations at the North Abutment  
+Soil Layer 
+Average (N1)60 
+COV 
+φ' shaft 
+(degrees) 
+φ' toe 
+(degrees)  
+1 
+9 
+14.4% 
+33 
+33 
+2 
+17 
+13.5% 
+36 
+36 
+3 
+39 
+3.7% 
+36 
+40 
+ 
+ 
+The design profile for the North Abutment is presented in Figure D-7, with the bottom 
+of footing elevation 5 feet below ground surface elevation.  Some soil properties in 
+the design soil profile such as the elastic moduli, Es, and the initial cyclic modulus of 
+subgrade reaction, kc, have been selected based on published correlations in the 
+absence of laboratory and field testing.  For this particular soil profile, the elastic 
+moduli were determined from the SPT correlation in Table 5-11 and the initial cyclic 
+moduli of subgrade reaction were selected based on representative values shown in 
+Table 7-22.  The figure format used to summarize the design profile is used at all 
+substructure locations and therefore includes design value placeholders for cohesive 
+soil parameters, the undrained shear strength, su, and 50% strain factor, ε50.  
+However, cohesive soils are not present at the North Abutment. 
+ 
+ 
+25 
+
+========== PAGE 60 ==========
+ 
+ 
+Figure D-7 
+Design profile at the North Abutment. 
+ 
+D.10.1 Geotechnical Resistance in Axial Compression 
+ 
+The nominal geotechnical resistance in axial compression is now determined for the 
+selected candidate H-pile sections.  The nominal geotechnical resistance can be 
+calculated by hand or with computer software using an appropriate analysis method 
+for cohesionless soils and the pile type.  Chapter 7 describes appropriate methods 
+for this purpose as well as computer programs available at the time of this manual’s 
+publication. 
+ 
+For this abutment, the DrivenPiles computer program was used to calculate the 
+nominal resistance, shaft resistance, and toe resistance each as a function of depth 
+for each of the five candidate H-piles.  This software program was selected since it 
+uses the FHWA recommended Nordlund method.  This method is appropriate for 
+calculating the nominal geotechnical resistance of H-piles in cohesionless soils such 
+as those encountered in Boring S-1.  The DrivenPiles program code also allows the 
+analyst to select a different friction angle for shaft and toe resistance calculations in 
+any layer.  This option was utilized for the gravel with sand and occasional cobbles 
+comprising Layer 3. 
+ 
+A summary of the shaft, toe, and nominal geotechnical resistance determined by the 
+Nordlund static analysis method is presented for one of the candidate pile sections 
+ 
+26 
+
+========== PAGE 61 ==========
+in Table D-6.  These results are also presented graphically in Figure D-8.  The depth 
+indicated in both Table D-6 and Figure D-8  is referenced from the bottom of footing, 
+which is 5 feet below the original ground surface elevation.  The nominal shaft, 
+nominal toe, and nominal geotechnical resistances were calculated for all of the 
+candidate pile sections in a similar manner.  The nominal geotechnical resistances in 
+axial compression versus pile penetration depth are presented in Figure D-9 for all 
+candidate pile types. 
+ 
+Once the nominal geotechnical resistance in axial compression versus pile 
+penetration depth has been calculated, the factored geotechnical resistance in axial 
+compression versus pile penetration depth can be determined.  The factored 
+geotechnical resistance depends on the resistance determination method selected 
+for the design. 
+ 
+If pile installation will be controlled by driving to a depth determined by static analysis 
+method, then the factored geotechnical resistance in axial compression as a function 
+of pile penetration depth can be determined by multiplying the calculated nominal 
+resistance at a given depth by the resistance factor associated with the static 
+analysis method, 𝜙𝜙𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠.  AASHTO (2014) resistance factors for static analysis 
+methods are presented in Table 7-1 of this manual.   
+ 
+If the nominal resistance will be confirmed by a field determination method, the 
+factored geotechnical resistance in axial compression as a function of pile 
+penetration depth can be determined by multiplying the calculated nominal 
+geotechnical resistance at a given depth by the resistance factor associated with the 
+field determination method, 𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑.  AASHTO (2014) resistance factors for field 
+resistance determination methods are presented in Table 7-2. 
+ 
+ 
+ 
+ 
+ 
+27 
+
+========== PAGE 62 ==========
+Table D-6 
+Nominal Shaft, Nominal Toe and Nominal Geotechnical Resistance for 
+HP 12x74 at the North Abutment 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal 
+Geotechnical 
+Resistance  
+(kips) 
+ 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal 
+Geotechnical 
+Resistance  
+(kips) 
+0.01 
+0.0 
+16.4 
+16.4 
+ 
+37 
+151.0 
+155.4 
+306.4 
+1 
+1.1 
+19.7 
+20.7 
+ 
+38 
+157.9 
+155.4 
+313.3 
+2 
+2.3 
+23.0 
+25.3 
+ 
+39 
+165.0 
+155.4 
+320.4 
+3 
+3.7 
+26.2 
+30.0 
+ 
+40 
+172.1 
+155.4 
+327.5 
+4 
+5.3 
+29.5 
+34.9 
+ 
+41 
+179.4 
+155.4 
+334.8 
+5 
+7.2 
+32.8 
+40.0 
+ 
+42 
+186.8 
+155.4 
+342.2 
+6 
+9.2 
+36.1 
+45.2 
+ 
+43 
+194.3 
+155.4 
+349.7 
+7 
+11.4 
+39.4 
+50.7 
+ 
+44 
+202.0 
+155.4 
+357.4 
+8 
+13.7 
+42.6 
+56.4 
+ 
+44.99 
+209.7 
+155.4 
+365.1 
+9 
+16.3 
+45.9 
+62.2 
+ 
+45.01 
+209.8 
+398.8 
+608.6 
+9.99 
+19.1 
+49.2 
+68.2 
+ 
+46 
+217.6 
+406.4 
+624.0 
+10.01 
+19.1 
+49.2 
+68.3 
+ 
+47 
+225.7 
+414.1 
+639.8 
+11 
+22.0 
+50.5 
+72.5 
+ 
+48 
+233.9 
+421.8 
+655.7 
+12 
+25.0 
+51.3 
+76.2 
+ 
+49 
+242.2 
+428.1 
+670.3 
+13 
+28.0 
+51.3 
+79.3 
+ 
+50 
+250.7 
+428.1 
+678.8 
+14 
+31.2 
+51.3 
+82.4 
+ 
+51 
+259.4 
+428.1 
+687.5 
+15 
+34.4 
+51.3 
+85.6 
+ 
+52 
+268.2 
+428.1 
+696.3 
+16 
+37.7 
+51.3 
+88.9 
+ 
+53 
+277.2 
+428.1 
+705.3 
+17 
+41.0 
+51.3 
+92.3 
+ 
+54 
+286.3 
+428.1 
+714.4 
+18 
+44.5 
+51.3 
+95.7 
+ 
+55 
+295.5 
+428.1 
+723.6 
+19 
+48.0 
+51.3 
+99.2 
+ 
+56 
+304.9 
+428.1 
+733.0 
+19.99 
+51.5 
+51.3 
+102.8 
+ 
+57 
+314.5 
+428.1 
+742.6 
+20.01 
+51.6 
+110.2 
+161.8 
+ 
+58 
+324.2 
+428.1 
+752.3 
+21 
+56.5 
+112.8 
+169.3 
+ 
+59 
+334.1 
+428.1 
+762.2 
+22 
+61.5 
+115.5 
+176.9 
+ 
+60 
+344.1 
+428.1 
+772.2 
+23 
+66.6 
+118.1 
+184.7 
+ 
+61 
+354.2 
+428.1 
+782.3 
+24 
+71.9 
+120.8 
+192.7 
+ 
+62 
+364.6 
+428.1 
+792.7 
+25 
+77.2 
+123.5 
+200.7 
+ 
+63 
+375.0 
+428.1 
+803.1 
+26 
+82.7 
+126.2 
+208.9 
+ 
+64 
+385.7 
+428.1 
+813.7 
+27 
+88.3 
+128.8 
+217.2 
+ 
+65 
+396.4 
+428.1 
+824.5 
+28 
+94.0 
+131.5 
+225.6 
+ 
+66 
+407.3 
+428.1 
+835.4 
+29 
+99.9 
+134.2 
+234.1 
+ 
+67 
+418.4 
+428.1 
+846.5 
+30 
+105.9 
+136.9 
+242.7 
+ 
+68 
+429.6 
+428.1 
+857.7 
+31 
+111.9 
+139.5 
+251.5 
+ 
+69 
+441.0 
+428.1 
+869.1 
+32 
+118.2 
+142.2 
+260.4 
+ 
+70 
+452.5 
+428.1 
+880.6 
+33 
+124.5 
+144.9 
+269.4 
+ 
+71 
+464.2 
+428.1 
+892.3 
+34 
+130.9 
+147.6 
+278.5 
+ 
+72 
+476.0 
+428.1 
+904.1 
+35 
+137.5 
+150.2 
+287.7 
+ 
+73 
+488.0 
+428.1 
+916.1 
+36 
+144.2 
+152.9 
+297.1 
+ 
+74 
+500.1 
+428.1 
+928.2 
+ 
+28 
+
+========== PAGE 63 ==========
+Table D-6 
+Nominal Shaft, Nominal Toe and Nominal Geotechnical Resistance for 
+HP 12x74 at the North Abutment (continued) 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal 
+Geotechnical 
+Resistance  
+(kips) 
+ 
+Depth 
+ 
+ 
+(feet) 
+Nominal 
+Shaft 
+Resistance 
+(kips) 
+Nominal 
+Toe 
+Resistance 
+(kips) 
+Nominal 
+Geotechnical 
+Resistance  
+(kips) 
+75 
+512.4 
+428.1 
+940.5 
+ 
+84 
+629.8 
+428.1 
+1057.8 
+76 
+524.9 
+428.1 
+953.0 
+ 
+85 
+643.5 
+428.1 
+1071.6 
+77 
+537.4 
+428.1 
+965.5 
+ 
+86 
+657.48 
+428.1 
+1085.58 
+78 
+550.2 
+428.1 
+978.3 
+ 
+87 
+671.57 
+428.1 
+1099.67 
+79 
+563.05 
+428.1 
+991.15 
+ 
+88 
+685.82 
+428.1 
+1113.92 
+80 
+576.09 
+428.1 
+1,004.19 
+ 
+89 
+700.21 
+428.10 
+1,128.31 
+81 
+589.28 
+428.1 
+1,017.38 
+ 
+90 
+714.76 
+428.10 
+1,142.86 
+82 
+602.6 
+428.1 
+1030.7 
+ 
+91 
+729.46 
+428.10 
+1,157.56 
+83 
+616.1 
+428.1 
+1044.2 
+ 
+91.99 
+744.16 
+428.10 
+1,172.26 
+ 
+ 
+ 
+ 
+Figure D-8 
+Geotechnical resistance in axial compression versus pile penetration 
+depth for HP 12x74 candidate pile section at North Abutment. 
+ 
+ 
+ 
+29 
+
+========== PAGE 64 ==========
+ 
+ 
+Figure D-9 
+Nominal geotechnical resistance in axial compression versus pile 
+penetration depth for all candidate pile sections at the North Abutment. 
+ 
+ 
+Figure D-10 presents a design chart of the nominal resistance, Rn, and the factored 
+geotechnical resistance, Rr, in axial compression versus pile penetration depth for 
+the HP 12x74 H-pile section at the North Abutment.  The design chart includes the 
+nominal geotechnical resistance as well as a number of factored geotechnical 
+resistances.  The factored geotechnical resistances are presented for a selection of 
+resistance determination methods.  The factored geotechnical resistance versus 
+penetration depth is plotted for resistance determination by a static load test with 
+dynamic testing of 2% of the piles (𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.80), by dynamic testing of at least two 
+piles per site condition, but no less than 2% of the production piles, with signal 
+matching (𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.65), and by wave equation analysis (𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.50).  The factored 
+geotechnical resistance is also plotted for resistance determination by the Nordlund 
+static analysis method (𝜙𝜙𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠=0.45).  For a single pile section (HP 12x74), this figure 
+illustrates the effects the various resistance determination methods have on the pile 
+length required for a given factored resistance, the factored resistance available 
+from a given pile section, and the potential impact of these factors on the number of 
+piles needed to resist axial compression loads. 
+ 
+ 
+30 
+
+========== PAGE 65 ==========
+ 
+Figure D-10 Design chart of nominal and factored geotechnical resistance in axial 
+compression versus pile penetration depth for HP 12x74 at the North Abutment. 
+ 
+ 
+The factored geotechnical resistance in axial compression for all candidate pile 
+sections is presented in Figures D-11 through D-14 based on the same resistance 
+determination methods.  For all the candidate pile sections, these figures illustrate 
+the effects the various resistance determination methods have on the pile length 
+required for a given factored resistance, the factored resistance available from a 
+given pile section, and the potential impact of these factors on the number of piles 
+needed to resist axial compression loads. 
+ 
+31 
+
+========== PAGE 66 ==========
+ 
+ 
+Figure D-11 Factored geotechnical resistance, Rr, in axial compression based on 
+field determination by static load test and dynamic testing 2% of the piles, 𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.80. 
+ 
+ 
+Figure D-12 Factored geotechnical resistance, Rr, in axial compression based on 
+field determination by dynamic testing 2% of the piles, 𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.65. 
+ 
+32 
+
+========== PAGE 67 ==========
+ 
+Figure D-13 Factored geotechnical resistance, Rr, in axial compression based on 
+field determination by wave equation analysis, 𝜙𝜙𝑑𝑑𝑑𝑑𝑑𝑑=0.50. 
+ 
+ 
+Figure D-14 Factored geotechnical resistance, Rr, in axial compression based on 
+determination using Nordlund Method static analysis, 𝜙𝜙𝑠𝑠𝑠𝑠𝑠𝑠𝑠𝑠=0.45. 
+ 
+33 
+
+========== PAGE 68 ==========
+D.10.2 Geotechnical Resistance in Axial Tension 
+ 
+In a similar manner, the nominal and factored geotechnical resistances in axial 
+tension (uplift) were calculated using the Nordlund method and with the DrivenPiles 
+computer program.  Figure D-15 presents the nominal shaft resistance versus 
+penetration depth for all the candidate pile sections.  As outlined in Section 7.2.3.2.1 
+of Chapter 7, the factored resistance in axial tension is the shaft resistance 
+multiplied by the resistance factor, φup, for the resistance determination method.   
+ 
+ 
+Figure D-15 Nominal shaft resistance versus penetration depth for all candidate pile 
+sections at the North Abutment. 
+ 
+Figure D-16 presents a design chart of the nominal shaft resistance, Rs, and the 
+factored geotechnical resistance, Rr, in axial tension versus pile penetration depth for 
+the HP 12x74 H-pile section at the North Abutment.  A resistance factor of 0.60 is 
+used when the tension resistance is determined by a static load test, 0.50 when 
+determined by a dynamic test with signal matching, and 0.35 when determined by 
+the Nordlund static analysis method.  For a single pile section (HP 12x74), this figure 
+illustrates the effects the various resistance determination methods have on the pile 
+length required for a given factored resistance, the factored resistance available 
+from a given pile section, and the potential impact of these factors on the number of 
+piles needed to resist axial tension loads. 
+ 
+34 
+
+========== PAGE 69 ==========
+ 
+Figure D-16 Design chart of nominal and factored geotechnical resistance in axial 
+tension for HP 12x74 at the North Abutment. 
+ 
+Figures D-17 to D-19 present the factored geotechnical resistance in axial tension 
+versus penetration depth based on the field determination method for each of the 
+candidate pile sections.  For all the candidate pile sections, these figures illustrate 
+the effects the various resistance determination methods have on the pile length 
+required for a given factored resistance, the factored resistance available from a 
+given pile section, and the potential impact of these factors on the number of piles 
+needed to resist axial tension loads. 
+ 
+A review of the soil profile at the North Abutment indicates no unsuitable soil layers 
+are present that should be ignored for load support.  Abutment scour and 
+liquefaction due to a seismic event are also not considerations.  
+ 
+ 
+35 
+
+========== PAGE 70 ==========
+ 
+Figure D-17 Factored geotechnical resistance, Rr, in axial tension based on field 
+determination by static load test, φdyn=0.60. 
+ 
+ 
+Figure D-18 Factored geotechnical resistance, Rr, in axial tension based on field 
+determination by dynamic testing with signal matching, φdyn=0.50. 
+ 
+36 
+
+========== PAGE 71 ==========
+ 
+Figure D-19 Factored geotechnical resistance, Rr, in axial tension based on 
+determination using Nordlund Method static analysis, φstat=0.35. 
+ 
+D.10.3 Preliminary Pile Drivability Assessment 
+ 
+A preliminary assessment of pile drivability is now performed.  A check of pile 
+drivability at this time is essential to assess the constructability of candidate pile 
+types and/or sections and to eliminate sections with insufficient drivability.  Section 
+12.4 provides a detailed discussion of wave equation drivability analyses and their 
+applications. 
+ 
+A candidate pile section must be capable of being driven to the penetration depth 
+necessary to achieve the nominal geotechnical resistance in axial compression and 
+tension, and to a penetration depth necessary to satisfy lateral load demands as well 
+as axial and lateral deformation requirements.  A suitably sized pile hammer must be 
+capable of driving the pile to this penetration depth and nominal resistance at a 
+reasonable blow count without exceeding material stress limits.  As detailed in 
+Chapter 12, the blow count should be between 30 and 120 blows per foot at the 
+nominal resistance.  If the pile cannot be driven within these requirements, a larger 
+pile hammer, a pile section with greater impedance, or pile installation aids such as 
+predrilling or jetting may be required to satisfy or improve drivability.   
+ 
+ 
+37 
+
+========== PAGE 72 ==========
+Driving stresses during pile installation should remain below the driving stress limits 
+associated with the pile type and material strength.  For the candidate steel H-piles, 
+compression driving stress limits are given by Equation 8-33.  As per ASTM A-572 
+requirements, new steel H-piles are rolled with a minimum yield stress of 50 ksi.   
+ 
+The driving stress limit, σ𝑑𝑑𝑑𝑑, for candidate pile sections is then calculated as follows: 
+ 
+ 
+σ𝑑𝑑𝑑𝑑= 𝜑𝜑𝑑𝑑𝑑𝑑 ൫0.9 𝐹𝐹𝑦𝑦൯ 
+[Eq. 8-33] 
+ 
+ 
+Where: 
+φ𝑑𝑑𝑑𝑑 
+= resistance factor, 1.0 for steel piles. 
+ 
+ 
+𝐹𝐹𝑦𝑦  
+= yield stress, 50 ksi. 
+ 
+Therefore, the driving stress limit, σ𝑑𝑑𝑑𝑑, is 45 ksi. 
+ 
+𝜎𝜎𝑑𝑑𝑑𝑑= (1.0)൫0.9 (50 𝑘𝑘𝑘𝑘𝑘𝑘)൯= 45 𝑘𝑘𝑘𝑘𝑘𝑘 
+ 
+Drivability analyses were performed for all five candidate pile sections.  Since the 
+specific pile hammer is often unknown at this point in the design, a reasonably sized, 
+commonly available single acting diesel hammer was chosen for each of the 
+candidate pile sections.  As noted in Section 15.19, a hammer having a ram weight 
+of 1 to 2% of the larger of the required nominal resistance or required nominal 
+driving resistance often provides a reasonable initial estimate of a trial hammer size 
+for wave equation analysis. 
+ 
+Table D-7 summarizes the factored structural resistance in axial compression, Pr, 
+and the corresponding minimum and maximum nominal driving resistance 
+associated with full section utilization and field determination methods ranging from 
+a static load test with dynamic testing (φdyn=0.80) to the FHWA modified Gates 
+dynamic formula (φdyn=0.40).  Given that utilization of the full structural resistance is 
+uncommon for piles driven in soil, a reasonable initial estimate of the trial hammer 
+size for a wave equation drivability analysis is 1 to 1.5% of the minimum Rndr.  
+Driving stresses could exceed specified limits by choosing a hammer with a ram 
+weight significantly larger than 2% of the minimum Rndr.  For each pile hammer, the 
+wave equation default values were used for the helmet weight, hammer cushion 
+materials, and the hammer cushion material properties. 
+ 
+ 
+38 
+
+========== PAGE 73 ==========
+Table D-7 
+Summary of Pile Hammers Used in Drivability Analyses 
+Pile  
+Section 
+Pile 
+Cross 
+Sectional 
+Area  
+(in2) 
+Factored 
+Structural 
+Resistance, 
+Pr  
+(kips) 
+Minimum 
+Rndr 
+φdyn=0.80 
+ 
+(kips) 
+Maximum 
+Rndr 
+φdyn=0.40 
+ 
+(kips) 
+Ram 
+Weight  
+1% of 
+Min Rndr  
+(%) 
+Trial 
+Diesel 
+Hammer 
+Model 
+Ram 
+Weight  
+ 
+ 
+(kips) 
+Rated 
+Energy  
+ 
+ 
+(ft-kips) 
+HP 10x42 
+12.4 
+309 
+386 
+773 
+3.86 
+D25-52 
+5.51 
+62.0 
+HP 12x53 
+15.5 
+383 
+478 
+958 
+4.78 
+D30-52 
+6.62 
+74.4 
+HP 12x74 
+21.8 
+544 
+680 
+1360 
+6.80 
+D36-52 
+7.94 
+89.3 
+HP 14x89 
+26.1 
+652 
+815 
+1630 
+8.15 
+D46-52 
+10.14 
+114.1 
+HP 14x117 
+34.4 
+860 
+1075 
+2150 
+10.07 
+D50-52 
+11.03 
+124.0 
+ 
+For the soil resistance model, the output from DrivenPiles was converted to unit 
+shaft resistance and unit toe resistance values and then input into the wave equation 
+program.  Similar soil resistances are thereby calculated versus depth by both the 
+static analysis and wave equation analysis programs. 
+ 
+The dynamic soil properties for each soil layer were chosen in accordance with wave 
+equation program recommendations.   Selection of soil quake and damping 
+parameters is discussed in Section 12.6.7.  For the North Abutment profile, some 
+soil setup is expected in the upper silty fine sand layer and the underlying layer of 
+medium dense sand with little silt.  Therefore soil setup factors of 1.2 were selected 
+for these two layers.  No setup was expected in the dense gravel with sand of Layer 
+3.  Soil setup is discussed in Section 7.2.4.2 and a summary of typical soil setup 
+factors is provided in Table 7-16.  A summary of the dynamic soil properties chosen 
+for the drivability analyses are summarized in Table D-8. 
+ 
+In soils that exhibit setup, the long term nominal resistance may be higher than the 
+nominal driving resistance.  Therefore, a gain/loss factor of 0.833 was used to 
+estimate the nominal driving resistance versus depth in the drivability analyses.  This 
+gain/loss factor was determined from the inverse of the highest soil setup factor 
+within the soil model (e.g., 1 divided by 1.2 equals 0.833).  A gain/loss factor of 1 
+would be used if it was desired to model the nominal resistance instead of the 
+nominal driving resistance and not consider the soil strength loss during driving and 
+any subsequent soil setup.  Refer to Chapter 12 for more detailed discussion on the 
+selection of dynamic soil properties and soil setup factors. 
+ 
+ 
+ 
+39 
+
+========== PAGE 74 ==========
+Table D-8 
+Dynamic Soil Properties for North Abutment Soil Profile 
+Soil 
+Layer 
+Pile  
+Section 
+Shaft 
+Quake 
+(in) 
+Toe 
+Quake 
+(in) 
+Shaft 
+Damping 
+(s/ft) 
+Toe 
+Damping 
+(s/ft) 
+Soil Set-
+Up Factor 
+1 
+HP 10 x 42 
+0.10 
+0.17 
+0.10 
+0.15 
+1.2 
+1 
+HP 12 x 53 
+0.10 
+0.20 
+0.10 
+0.15 
+1.2 
+1 
+HP 12 x 74 
+0.10 
+0.20 
+0.10 
+0.15 
+1.2 
+1 
+HP 14 x 89 
+0.10 
+0.23 
+0.10 
+0.15 
+1.2 
+1 
+HP 14 x 117 
+0.10 
+0.23 
+0.10 
+0.15 
+1.2 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+2 
+HP 10 x 42 
+0.10 
+0.17 
+0.05 
+0.15 
+1.2 
+2 
+HP 12 x 53 
+0.10 
+0.20 
+0.05 
+0.15 
+1.2 
+2 
+HP 12 x 74 
+0.10 
+0.20 
+0.05 
+0.15 
+1.2 
+2 
+HP 14 x 89 
+0.10 
+0.23 
+0.05 
+0.15 
+1.2 
+2 
+HP 14 x 117 
+0.10 
+0.23 
+0.05 
+0.15 
+1.2 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+3 
+HP 10 x 42 
+0.10 
+0.08 
+0.05 
+0.15 
+1.0 
+3 
+HP 12 x 53 
+0.10 
+0.10 
+0.05 
+0.15 
+1.0 
+3 
+HP 12 x 74 
+0.10 
+0.10 
+0.05 
+0.15 
+1.0 
+3 
+HP 14 x 89 
+0.10 
+0.12 
+0.05 
+0.15 
+1.0 
+3 
+HP 14 x 117 
+0.10 
+0.12 
+0.05 
+0.15 
+1.0 
+ 
+The DrivenPiles program calculates the nominal driving resistance which models the 
+soil strength lost during driving as well as the geotechnical nominal resistance once 
+setup occurs.  Figure D-20 presents the nominal shaft, toe, and driving resistance 
+versus pile penetration depth for the HP 12x74 H-pile section at the North Abutment. 
+These nominal driving resistances are presented numerically in Table D-9.  To 
+quantify the expected soil setup at a given pile penetration depth, the values from 
+Table D-9 can be compared against the nominal resistance previously presented in 
+Table D-6.  Figure D-21 illustrates the difference between the expected nominal 
+driving resistance and the geotechnical nominal resistance after setup for the HP 
+12x74 candidate pile section.  For example, at a depth of 45 feet, the expected setup 
+from shaft resistance is 35 kips. 
+ 
+40 
+
+========== PAGE 75 ==========
+ 
+Figure D-20 Nominal driving resistance for HP 12x74 at the North Abutment. 
+ 
+ 
+Figure D-21 Comparison of nominal driving resistance and nominal geotechnical 
+resistance in axial compression for HP 12x74 at the North Abutment. 
+ 
+41 

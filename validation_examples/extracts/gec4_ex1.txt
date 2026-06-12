@@ -1,0 +1,1838 @@
+
+========== PAGE 207 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 1_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-1
+APPENDIX A
+DESIGN EXAMPLE 1
+ANCHORED WALL SUPPORTED EXCAVATION
+WALL REQUIREMENTS
+A 10-m high permanent anchored soldier beam and timber lagging wall is to be constructed as part
+of a depressed roadway project.  When construction of the wall is completed, a 7.3-m wide entrance
+ramp will be constructed 3 m behind the wall.  The wall is to be constructed in a medium dense silty
+sand profile as shown in figure A-1.  No existing structures or underground utilities are located
+within 20 m of the top of the proposed wall location.  A cast-in-place (CIP) concrete facing is to be
+used.
+SUBSURFACE CHARACTERIZATION
+Geotechnical borings drilled in front of, alongside, and behind the proposed wall alignment indicate
+that the subsurface stratigraphy is relatively uniform.  The profile shown in figure A-1 is considered
+to be representative of the soil stratigraphy along the alignment of the wall.  Soil properties for
+design are shown for individual layers in figure A-1.  Groundwater was not encountered in any of
+the borings and it is concluded that groundwater levels at the site are below elevation 87 m MSL.
+Agressivity testing indicates that the site soils have a resistivity above 5,000 ohm-cm, a pH between
+6.2 and 6.8, and no sulfides are present.  The soils are therefore considered to be non-aggressive.
+
+========== PAGE 208 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 2_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-2
+Figure A-1.  Subsurface stratigraphy and design cross section.
+
+========== PAGE 209 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 3_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-3
+LOAD TYPES ACTING ON WALL
+Wall loads are estimated based on AASHTO (1996) recommendations for a Group I Load
+Combination using the Service Load design method, as follows:
+Group I Load = [
+]
+SF
+B
+E
+CF
+I)
+(L
+D
++
++
++
++
++
++
+where D is dead load; L is live load; I is live impact load; CF is centrifugal force; E is lateral earth
+pressure; B is buoyancy; and SF is stream flow pressure.
+Wall loads are approximated as follows:
+1.
+D:  The dead load acting at the base of each soldier beam was approximated as the sum of the
+weight of the soldier beam, concrete backfill (if used), timber lagging, and CIP concrete facing.
+2. 
+L and I: For conditions where traffic lanes are located within half the wall height behind the
+wall, AASHTO (1996) recommends that a surcharge pressure equivalent to 0.6 m of soil above
+the wall be included in the calculation of lateral earth pressure against the wall.
+3.
+E: The lateral earth pressure was approximated using the trapezoidal apparent earth pressure
+diagram for sands as shown in figure 24.
+4.
+B, CF, and SF: These load types are not expected to be present during the construction or
+service life of the wall.
+LOCATION OF CRITICAL FAILURE SURFACE
+The critical failure surface may be assumed to intersect the corner of the wall and exit at the ground
+surface and be sloped at 45°+φ’/2 from the horizontal where φ’ is equal to the effective stress friction
+angle of the soil behind the wall.  Alternatively, a slope stability analysis may be performed to
+evaluate the location of the critical potential failure surface.  When using a slope stability analysis
+program, a uniform lateral surcharge load is applied to the wall face to model the restraint provided
+by the anchors.  This load is increased until a factor of safety equal to one (FS = 1.0) is achieved.
+Input parameters for a slope stability analysis, including geometry of the wall, subsurface
+stratigraphy, and soil properties, are shown in figure A-1.
+
+========== PAGE 210 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 4_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-4
+APPARENT EARTH PRESSURE DIAGRAM
+The apparent earth pressure diagram for a two-tier anchored wall constructed in predominately
+cohesionless soils is shown in figure A-2 where TH1 is the horizontal anchor load per meter of wall
+for the upper anchor; TH2 is the horizontal anchor load per meter of wall for the lower anchor; and pe
+is the maximum ordinate of the apparent earth pressure diagram.  It was assumed that the upper
+anchor is located 2.5 m below the top of the wall and the lower anchor is located 6.25 m below the
+top of the wall.
+Figure A-2.  Apparent earth pressure diagram and surcharge pressure diagram.
+The majority of the excavation for the wall will penetrate through the upper soil layer, i.e., the
+medium dense silty sand layer.  To develop the apparent earth pressure diagram, a unit weight of 18
+kN/m3 and effective stress friction angle of 33 degrees were used.
+1.
+The value of pe was calculated based on figure 24:
+3
+H
+3
+H
+H
+H
+2
+45
+tan
+0.65
+p
+3
+1
+2
+2
+e
+−
+−
+γ
+
+
+
+
+
+
+
+
+φ
+−
+=
+
+========== PAGE 211 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 5_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-5
+(
+)
+2
+2
+3
+2
+kN/m
+43.6
+3
+m
+3.75
+3
+m
+2.5
+m
+10
+m
+10
+kN/m
+18
+2
+33
+45
+tan
+0.65
+=
+−
+−
+
+
+
+
+
+
+
+
+°
+−
+=
+LATERAL EARTH PRESSURE DUE TO TRAFFIC SURCHARGE
+The traffic surcharge pressure (qs) applied at the ground surface is assumed to equal 0.6 m x 18
+kN/m3 = 11 kN/m2.  The corresponding lateral pressure (ps) is assumed to act uniformly over the
+entire wall height and is calculated as follows:
+s
+A
+s
+q
+K
+p =
+2
+2
+2
+kN/m
+3.2
+kN/m
+11
+2
+33
+45
+tan
+=
+
+
+
+
+−
+=
+The earth pressure diagram due to the traffic surcharge is shown in figure A-2.
+HORIZONTAL ANCHOR LOADS, MAXIMUM WALL BENDING MOMENT, AND
+REACTION FORCE TO BE RESISTED BY THE SUBGRADE
+The tributary area method (figure 34) was used to calculate the horizontal anchor loads, TH1 and TH2,
+the maximum wall bending moment, Mmax, and the reaction force to be resisted by the subgrade, R.
+1.
+The horizontal anchor loads were calculated using the tributary area method, as follows:
+s
+2
+1
+e
+2
+1
+H1
+p
+2
+H
+H
+p
+2
+H
+H
+3
+2
+T
+
+
+
+
++
++
+
+
+
+
++
+=
+2
+2
+kN/m
+3.2
+2
+m
+3.75
+m
+2.5
+kN/m
+43.6
+2
+m
+3.75
+m
+2.5
+3
+2
+
+
+
+
++
++
+
+
+
+
++
+=
+
+========== PAGE 212 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 6_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-6
+anchor)
+(upper 
+ 
+kN/m
+168
+=
+s
+3
+2
+e
+3
+2
+H2
+p
+2
+H
+2
+H
+p
+H
+48
+23
+2
+H
+T
+
+
+
+
++
++
+
+
+
+
++
+=
+2
+2
+kN/m
+3.2
+2
+m
+3.75
+2
+m
+3.75
+kN/m
+43.6
+m
+3.75
+48
+23
+2
+m
+3.75
+
+
+
+
++
++
+
+
+
+
++
+=
+anchor)
+(lower 
+ 
+kN/m
+172
+=
+2. Wall bending moments were calculated for the upper anchor level (M1), between the upper and
+lower anchor level (M2), and between the lower anchor level and the base of the excavation
+(M3) using the tributary area method.  The wall bending moment used for design, Mmax, is the
+largest of M1, M2, and M3.
+The value of M1 was calculated as follows:
+2
+H
+H
+p
+p
+H
+54
+13
+M
+1
+1
+s
+e
+2
+1
+1
++
+=
+(
+)
+
+
+
+
++
+=
+2
+m
+2.5
+m)
+2.5
+(
+kN/m
+3.2
+kN/m
+43.6
+m
+2.5
+54
+13
+2
+2
+2
+m/m
+-
+kN
+76
+=
+The maximum bending moment below the upper anchor was calculated assuming H2  = H3  =
+3.75 m:
+(
+) (
+)
+s
+e
+2
+2,3
+2,3
+p
+p
+H
+10
+1
+M
++
+=
+(
+) (
+)
+2
+2
+2
+kN/m
+3.2
+kN/m
+43.6
+m
+3.75
+10
+1
++
+=
+m/m
+kN
+66
+−
+=
+The wall bending moment used for design is Mmax=76 kN-m/m.
+
+========== PAGE 213 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 7_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-7
+3.
+The reaction force to be resisted by the subgrade is assumed to act at the base of the excavation
+and was calculated using the tributary  area method as follows:
+m
+/
+kN
+37
+m
+/
+kN
+2.3
+2
+m
+75
+.3
+m
+/
+kN
+6.
+43
+16
+)
+m
+75
+.3
+(
+3
+p
+2
+H
+p
+16
+H
+3
+R
+2
+2
+s
+3
+e
+3
+=
+
+
+
+
++
+
+
+
+
+
+
+
+
++
+
+
+
+
+=
+INITIAL TRIAL DESIGN ASSUMPTIONS
+Initial designs were developed for a soldier beam and lagging wall with bar anchors and for a soldier
+beam and lagging wall with strand anchors.  The inclination of all anchors was assumed to be 15º
+and the soldier beam center-to-center spacing was assumed to be 2.5 m.  A cross section view of the
+initial design for the wall including the bar anchors is shown in figure A-3.  The wall design
+including the strand anchors is the same as that shown in figure A-3, except that the minimum
+unbonded length of the lowermost anchor is greater than that for the bar anchor configuration.  A
+discussion of the unbonded and bond lengths for the strand and bar designs is provided subsequently.
+ANCHOR DESIGN LOAD
+1.
+Upper anchor:  The anchor design load (DL1) was calculated as follows:
+(
+)
+kN
+435
+15
+cos
+m
+2.5
+kN/m
+168
+15
+cos
+m
+2.5
+T
+DL
+H1
+1
+=
+⋅
+=
+°
+=
+2.
+Lower anchor: The anchor design load (DL2) was calculated as follows:
+(
+)
+kN
+445
+15
+cos
+m
+2.5
+kN/m
+172
+15
+cos
+m
+2.5
+T
+DL
+H2
+2
+=
+⋅
+=
+°
+=
+The maximum calculated anchor design load is 445 kN.
+
+========== PAGE 214 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 8_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-8
+Figure A-3.  Location of unbonded and bond lengths for ground anchors.
+DESIGN OF THE UNBONDED LENGTH
+For the design that includes bar anchors, the minimum unbonded length was selected to be the
+greater of either 3 m or the distance from the wall to a location 2 m beyond the critical failure
+surface.  For the design that includes strand anchors, the minimum unbonded length was selected to
+be the greater of either 4.5 m or the distance from the wall to a location 2 m beyond the critical
+failure surface.  These minimum values for the unbonded length are discussed in section 5.3.7.
+ANCHOR CAPACITY
+The anchor bond zones will be formed in the medium dense silty sand layer (Elevation 101 to 110 m
+MSL) and the dense silty sand layer (Elevation 94 to 101 m MSL).  Assuming that the load transfer
+rate is controlled by the medium dense silty sand layer, a load transfer rate of 100 kN/m was selected
+(see table 6).
+
+========== PAGE 215 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 9_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-9
+The design load with a factor of safety of 2.0 should be able to be achieved with a typical soil anchor
+bond length of 12 m, assuming a small diameter low pressure grouted anchor.  For a length of 12 m
+the bond strength is [(100kN/m)/2.0]x12 m = 600 kN.  The allowable anchor capacity of 600 kN is
+larger than the maximum design load of 445 kN.  This implies that the design load can be attained at
+this site for the assumed anchor spacings and inclination.  Right of way estimates can be made based
+on the bond length required for mobilization of the design load, as follows:
+Maximum Bond Length  
+(
+)(
+)
+m
+9.8
+kN/m
+100
+2.0
+kN
+445
+=
+=
+EXTERNAL STABILITY
+The external stability of the anchored wall was evaluated using a slope stability analysis program.  A
+target factor of safety of 1.3 was selected.  Wall and subsurface input parameter values used are the
+same as those used for the stability analysis to evaluate the anchor unbonded lengths.  The location
+of the end of each anchor bond zone is shown in figure A-3.  The analysis was performed for the
+anchored wall including the bar anchors.  The minimum calculated factors of safety for potential
+failure slip surfaces located behind the upper and lower anchors were calculated to be 2.5 and 2.6,
+respectively.  Based on these calculations the anchored wall is considered stable with respect to
+external stability.
+SELECTION OF TENDON
+Although the site soils are classified as nonaggresive, the consequence of failure and subsequent
+closure of the roadway is considered serious.  Therefore, a Class I (double protection) encapsulated
+tendon is selected.  Dimensions are calculated for both strand and bar tendons assuming a maximum
+test load of 1.33 DL.
+A 32-mm diameter, Grade 150 prestressing bar may be selected, based on an allowable tensile
+capacity of 60 percent of the specified minimum tensile strength (SMTS).  The allowable tensile
+capacity is 501 kN (see table 9) which exceeds the calculated maximum design load of 445 kN.  The
+minimum estimated trumpet opening is 95 mm for a Class I corrosion protection system (see table
+11).
+A 3 strand, Grade 270 strand anchor may also be selected.  The allowable tensile capacity of the
+tendon is 469 kN (see table 10).  The minimum estimated trumpet opening is 150 mm for a Class I
+corrosion protection system.
+
+========== PAGE 216 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 10_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-10
+SOLDIER BEAM SELECTION
+The required section modulus, Sreq, of each soldier beam is calculated as follows:
+b
+max
+req
+F
+M
+S
+=
+where Fb is the allowable bending stress of the steel, which is equal to 55 percent of the yield stress
+for permanent applications.  Yield stresses for Grade 36 and Grade 50 steels are 248 MPa (36 ksi)
+and 345 MPa (50 ksi), respectively.  Using Mmax from previous calculations, the maximum soldier
+beam moment is equal to (76 kN-m/m x 2.5 m) = 190 kN-m.
+1. Grade 36 steel:
+(
+)
+3
+req
+m
+0.001393
+MPa
+248
+0.55
+m
+-
+kN
+190
+S
+=
+=
+Two C15 x 40 channel sections provides a section modulus of 0.001524 m3.
+2. Grade 50 steel:
+(
+)
+3
+req
+m
+0.001001
+MPa
+345
+0.55
+m
+kN
+190
+S
+=
+−
+=
+Two MC12 x 31 channel sections provide a section modulus of 0.001109 m3.
+It was assumed that a pair of MC12 x 31 Grade 50 channel sections would be used for each soldier
+beam.  It was also assumed that each hole would be backfilled from the bottom of the hole to the
+elevation of the excavation base with structural concrete such that the full diameter of the shaft may
+be considered for axial and lateral load capacity evaluations.  The minimum required diameter of the
+shaft was calculated based on the diagonal distance between the tips of the flanges.  For a MC 12x31
+section, the flange width and beam depth are 93 mm and 305 mm, respectively.  Assuming a 150
+mm open space between channels, bos, for the tendon, the minimum required diameter is:
+mm
+ 
+454
+ 
+diameter 
+ 
+required
+ 
+minimum
+mm)
+ 
+(305
+ 
+mm)
+150
+ 
+ 
+mm
+93
+ x 
+(2
+ 
+diameter 
+ 
+required
+ 
+minimum
+depth)
+ 
+(beam
+ 
+)
+b 
+ width 
+flange
+ x 
+(2
+ 
+diameter 
+ 
+required
+ 
+minimum
+2
+2
+2
+2
+os
+=
++
++
+=
++
++
+=
+A shaft diameter of 610 mm will be used.
+
+========== PAGE 217 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 11_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-11
+DESIGN OF TIMBER LAGGING
+For a soldier beam consisting of two channel sections, the required length of timber lagging may be
+calculated as the center-to-center spacing of the soldier beams minus the space between the channel
+sections of a soldier beam.  This can be written as follows:
+required length of timber lagging  = 
+os
+b
+-
+s
+required length of timber lagging = 2.5 m – 0.15 m
+required length of timber lagging = 2.35 m
+A timber lagging thickness of 75 mm was selected based on table 12.
+LATERAL CAPACITY OF SOLDIER BEAM TOE
+The soldier beam must be sufficiently embedded to develop passive resistance to carry the lateral
+load resulting from the reaction force to be resisted by the subgrade, R, and the active pressure
+acting over the soldier beam width, b, (i.e., 0.6 m) along the embedded soldier beam length.  A
+factor of safety of 1.5 is required.  The lateral load, RLoad, is calculated as follows:
+(
+)b
+D
+2H
+DK
+2
+1
+Rs
+R
+A
+Load
++
+γ
++
+=
+(
+)
+m
+0.6
+D
+m)
+10
+(
+2
+2
+39
+45
+tan
+D
+2
+1
+m)
+(2.5
+kN/m
+37
+R
+2
+Load
++
+
+
+
+
+°
+−
++
+=
+The ultimate passive resistance is assumed to be the minimum ultimate passive resistance calculated
+from equations B-2, B-4, B-5, and B-6 (see appendix B).  The factor of safety was calculated as the
+ratio of the ultimate passive force, Fp to RLoad.  Calculations were performed using the spreadsheet
+presented in figure A-4.  Based on these calculations, a soldier beam embedment depth of 2.0 m is
+required to achieve a factor of safety that exceeds the target value of 1.5.
+
+========== PAGE 218 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 12_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-12
+Unit weight of soil (γ)
+18
+kN/m3
+Height of soldier beam above final excavation level (H)
+10
+m
+Drilled shaft diameter (b)
+0.6
+m
+Soldier beam center to center spacing (s)
+2.5
+m
+Clear spacing between drilled shafts (sc)
+1.9
+m
+soil friction angle (φ)
+39
+degrees
+β=45+φ/2
+64.5
+degrees
+α=φ (for dense sands)
+39
+degrees
+Subgrade reaction force (R)
+37
+kN/m 
+at-rest earth pressure coefficient ( Ko) = 1-sinφ
+0.37
+active earth pressure coefficient (Ka) = tan2(45-φ/2)
+0.23
+passive earth pressure coefficient (Kp) = tan2(45+φ/2)
+4.40
+Toe Depth 
+(m)
+Wedge 
+Resistance 
+(single pile) 
+(Eq. B-2) 
+(kN/m)
+Wedge 
+Resistance 
+(intersecting 
+wedges)        
+(kN/m)
+Flow Resistance 
+(Eq. B-5)     
+(kN/m)
+Rankine 
+Continuous 
+(Eq. B-6) 
+(kN/m)
+Minimum 
+Wang-Reese 
+Passive 
+Resistance 
+(kN/m)
+Total Passive 
+Force         
+(kN)
+Total Active 
+Force        
+(kN)
+Total 
+Subgrade 
+Reaction 
+Force      
+(kN)
+Factor of 
+Safety
+0.0
+0
+0
+0
+0
+0
+0
+0.0
+92.5
+0.0
+0.5
+60
+60
+490
+99
+60
+15
+12.6
+92.5
+0.1
+1.0
+194
+169
+980
+198
+169
+73
+25.8
+92.5
+0.6
+1.5
+401
+289
+1,470
+297
+289
+187
+39.6
+92.5
+1.4
+2.0
+680
+419
+1,960
+396
+396
+358
+54.1
+92.5
+2.4
+2.5
+1,034
+559
+2,449
+494
+494
+581
+69.1
+92.5
+3.6
+3.0
+1,460
+710
+2,939
+593
+593
+853
+84.8
+92.5
+4.8
+3.5
+1,959
+870
+3,429
+692
+692
+1,174
+101.0
+92.5
+6.1
+4.0
+2,532
+1,041
+3,919
+791
+791
+1,545
+117.9
+92.5
+7.3
+4.5
+3,178
+1,222
+4,409
+890
+890
+1,965
+135.4
+92.5
+8.6
+5.0
+3,897
+1,414
+4,899
+989
+989
+2,435
+153.6
+92.5
+9.9
+Figure A-4.  Embedment depth calculations (Wang-Reese method).
+AXIAL CAPACITY OF SOLDIER BEAM
+1.
+Calculate total axial load
+The total axial load was calculated as the sum of the vertical anchor forces and weights of the soldier
+beam, concrete backfill, timber lagging, and CIP concrete facing.  For the calculations, it was
+assumed that the embedment depth of the soldier beam was 2.5 m.
+
+========== PAGE 219 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 13_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-13
+• 
+The vertical anchor forces were calculated using anchor design loads and inclinations as
+follows:
+Vertical force of upper anchor: 435 kN x sin 15° = 113 kN
+Vertical force of lower anchor: 445 kN x sin 15° = 115 kN
+• 
+The weight of two MC12 x 31 Grade 50 channel sections with an assumed embedment
+depth of 2.5 m and a unit weight of 0.452 kN/m is calculated as follows:
+Weight of soldier beam
+kN
+11
+m
+12.5
+x
+kN/m
+0.452
+x
+2
+=
+=
+• 
+The drill hole size selected for a soldier beam fabricated from a pair of MC12 x 31 shapes is
+0.6 m.  The weight of concrete backfill for a drilled-in soldier beam for a 0.6 m diameter
+concrete section and a unit weight of 22.6 kN/m3 was calculated as follows:
+Weight of concrete backfill
+(
+)
+kN
+80
+m
+12.5
+4
+m
+0.6
+kN/m
+22.6
+2
+3
+=
+⋅
+π
+⋅
+=
+This weight was reduced to account for the removal of the lean-mix concrete backfill during
+lagging installation.  The area of concrete to be removed down to the front flange of the
+channel beams was calculated to be 0.055 m2.
+Weight of removed concrete = 
+kN
+12
+m
+10
+m
+055
+.0
+kN/m
+22.6
+2
+3
+=
+⋅
+⋅
+=
+• 
+The weight of timber lagging was calculated for 75-mm thick boards.  The unit weight of
+timber lagging was assumed to be 8 kN/m3.
+Weight of timber lagging
+kN
+14
+m
+0.075
+m
+2.35
+m
+10
+kN/m
+8
+3
+=
+⋅
+⋅
+⋅
+=
+• 
+The weight of the CIP concrete facing is calculated for a 254-mm thick facing.  The unit
+weight of reinforced concrete was assumed to be 23.6 kN/m3.
+Weight of concrete facing
+kN
+150
+m
+0.254
+m
+2.5
+m
+10
+kN/m
+6.
+23
+3
+=
+⋅
+⋅
+⋅
+=
+The total axial load was calculated as the sum of the above loads and is equal to 471 kN.
+
+========== PAGE 220 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 14_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-14
+2.
+Calculate the required axial capacity
+The required axial capacity of a drilled-in soldier beam was calculated using procedures described in
+section 5.6 for drilled-in soldier beams in cohesionless soil.  The required axial capacity (Qa) is
+calculated by applying a safety factor of 2.0 to the ultimate skin friction and a factor of safety of 2.5
+to the ultimate end bearing such that:
+2.5
+A
+q
+2.0
+A
+f
+Q
+t
+t
+s
+s
+a
++
+=
+End Bearing
+Using the SPT blowcount value at the approximate location of the bottom of the soldier beam (use
+N=45) and equation 30 results in:
+(
+)
+kN
+293
+5.2
+/
+m
+6.0
+4
+)
+45
+(
+5.
+57
+2.5
+A
+q
+ 
+ 
+bearing)
+ 
+(end
+ 
+Q
+2
+t
+t
+a
+=
+
+
+
+=
+=
+π
+Side Resistance
+Using an assumed embedment depth, D, of 2.5 m and equation 29 results in:
+(
+)
+0.72
+2
+m
+5.2
+m
+10
+0.42
+1.5
+ 
+   
+D
+H
+2
+1
+z
+;
+z
+42
+.0
+5.1
+0.2
+A
+p
+2.0
+A
+f 
+ 
+friction)
+ 
+(skin
+ 
+Q
+0.34
+34
+.0
+s
+o
+s
+s
+a
+=
+
+
+
+
++
+−
+=
++
+=
+−
+=
+β
+β
+=
+=
+
+========== PAGE 221 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 15_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-15
+(
+)
+kN
+190
+2.0
+/
+A
+m
+6.0
+m
+5.2
+p
+kN/m
+112
+72
+.0
+ 
+friction)
+ 
+(skin
+ 
+Q
+kN/m
+112
+m)
+5.2
+m
+(10
+2
+kN/m
+18
+D
+H
+2
+p
+s
+o
+2
+a
+2
+3
+o
+=
+
+
+
+
+
+
+⋅
+⋅
+π
+⋅
+⋅
+β
+=
+=
++
+=
++
+γ
+=
+
+ 
+
+ 
+
+
+
+
+Total Axial Capacity
+for D = 2.5 m, Qa = 293 kN + 190 kN = 483 kN > 471 kN (OK)
+RESISTING THE UPPER ANCHOR TEST LOAD
+The factor of safety against passive failure of the retained soil above the upper anchor level at the
+anchor test load is calculated as the ratio of the maximum passive resistance of the retained soil and
+the test load (see section 5.11.4).  The test load is equal to 1.33 times the horizontal component of
+the design anchor load, i.e., (1.33*435 kN cos 15o = 559 kN).  The maximum passive resistance of
+the retained soil was calculated using the following equation:
+s
+H
+K
+125
+.1
+F
+2
+1
+p
+p
+γ
+=
+where Kp = 6.0 based on an effective stress friction angle of 33° for the upper sand layer and an
+assumed wall/soil interface friction angle δ equal to 0.5 φ’ (Figure 17).
+(
+) (
+)(
+) (
+)
+N
+k
+1,898
+m
+2.5
+m
+2.5
+m
+/
+kN
+18
+6.0
+1.125
+F
+2
+3
+p
+=
+=
+The factor of safety against passive failure is 1,898 kN/559 kN = 3.4 > 1.5 (OK).
+
+========== PAGE 222 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 16_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-16
+PERMANENT FACING DESIGN
+The 254-mm thick permanent CIP concrete facing is designed as a one-way concrete slab with
+supports at the soldier beam locations.  The permanent facing is designed to resist apparent earth
+pressures and it is assumed that the timber lagging is ineffective in carrying earth pressure loadings
+for long-term permanent conditions.  Using table 13, the maximum bending moment was estimated
+using a moment coefficient of 1/10.  This results in:
+2
+s
+e
+max
+s
+)
+p
+p
+(
+10
+1
+M
++
+=
+m
+/
+m
+kN
+3.
+29
+)
+m
+5.2
+()
+m
+/
+kN
+2.3
+m
+/
+kN
+6.
+43
+(
+10
+1
+M
+2
+max
+−
+=
++
+=
+The structural design of the permanent facing should consider this maximum moment and the
+connection between the anchor system and the permanent facing should be performed in accordance
+with the latest AASHTO specifications.
+
+========== PAGE 223 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 17_
+of
+ 17_
+Written By :
+DGP
+Date:
+       99/01/28
+Reviewed by:
+PJS
+Date:
+      99/01/30
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-17
+SUMMARY OF INITIAL DESIGN
+Soldier Beams
+Initial Design Results
+Spacing
+2.5 m
+Diameter
+0.6 m
+Embedment
+2.5 m
+Size
+Two MC12 x 31 Grade 50 Channel Sections
+Design Analysis Information
+Required Properties
+Initial Design Results
+Section Modulus
+0.001001 m3
+0.001109 m3
+Vertical Capacity
+471 kN
+491 kN
+Anchors
+Initial Design Results
+Rows
+2
+Size
+32-mm diameter Grade 150 bar or 3@15-mm diameter Grade 270 strand
+Depth
+2.5 m (upper) and 6.25 m (lower)
+Inclination
+15° for both rows
+Design Analysis Information
+Required Properties
+Initial Design Results
+Row 1, Allowable bond capacity
+435 kN
+600 kN
+Row 2, Allowable bond capacity
+445 kN
+600 kN
+32-mm Bar
+Allowable Capacity
+Trumpet Diameter
+445 kN
+95 mm
+501 kN
+150 mm
+3@15-mm Strand
+Allowable Capacity
+Trumpet Diameter
+445 kN
+150 mm
+469 kN
+150 mm
+CONCLUSIONS
+The initial design is feasible.  A review of the results indicates that sufficient bond capacity is
+available to permit a wider spacing of the soldier beams.  A second iteration of the design should be
+performed with a wider soldier beam spacing and flatter anchor inclinations to determine the
+optimum design.
+
+========== PAGE 224 ==========
+GEOSYNTEC CONSULTANTS
+Page
+ 1_
+of
+17_
+Written By :
+DGP
+Date:
+  99   /  1     /  28  
+Reviewed by:
+PJS
+Date:
+99     /  1     /  30  
+Client:
+FHWA
+Project:
+GEC#4
+Project/Proposal No.:
+GE3686
+Task No:
+G2
+A-18
+DESIGN EXAMPLE 2
+ANCHORED WALL SUPPORTED SLOPE
+WALL REQUIREMENTS
+An 8-m high permanent anchored soldier beam and timber lagging wall is to be constructed to retain
+an existing slope for the realignment of a section of highway.  A cross section of the proposed wall is
+shown in figure A-5.  The wall is to be located near the toe of a colluvial slope.  No existing
+structures are located near the proposed wall.  A CIP concrete facing is to be used for the permanent
+facing.
+Figure A-5.  Subsurface stratigraphy and design cross section.
