@@ -361,6 +361,26 @@ chat.output_files          # list of calc package paths
 chat.preview_file(path)    # render HTML inline
 ```
 
+## Model Setup (v5 deep agent)
+
+The v5 deep agent can attach a `model_setup` sub-agent that builds 2D LE/FEM
+slope models in STAGES with human confirmation gates and an echo-back
+cross-section render (the agent never trusts its own read of a drawing —
+the human confirms the rendered numbers visually). Off by default:
+
+```python
+from funhouse_agent.deep.agent import build_deep_agent
+from funhouse_agent.deep.setup_tools import ProjectStore
+
+store = ProjectStore()                      # inspect store.project anytime
+agent = build_deep_agent(model, enable_setup_agent=True, setup_store=store,
+                         setup_render_dir="renders")
+```
+
+See `geo_project/DESIGN.md` (schema + staged protocol + confirmation
+mechanics) and `docs/examples/model_setup_walkthrough.md` for a full
+scripted transcript.
+
 ## Error Handling
 
 - **Missing attachment**: Error fed back to agent, which reports it gracefully

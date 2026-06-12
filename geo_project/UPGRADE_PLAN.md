@@ -82,13 +82,13 @@ human confirmation gates; vision-derived geometry is quarantined
       default) wiring + scripted-model offline test walking all stages
       (template → render → confirm → materials via cov_lookup → confirm →
       water/loads confirm → run LE; project_run refuses early, succeeds after).
-- [ ] Phase 6 — geo_project/DESIGN.md, demo script → docs/examples/
+- [x] Phase 6 — geo_project/DESIGN.md, demo script → docs/examples/
       model_setup_walkthrough.md + PNG, CLAUDE.md module line, pyproject
       packages/testpaths, notebook-forms stub note.
 
 ## Next action
 
-Implement Phase 6 (DESIGN.md, demo walkthrough + PNG, CLAUDE.md line, pyproject packaging), run both suites, commit.
+DONE — all phases complete. See geo_project/DESIGN.md and docs/examples/model_setup_walkthrough.md. Suites: 315 passed / 1 skipped (geo_project 89; deep 226+1s, of which 29 are new setup tests).
 
 ## Descoped (designed path noted)
 

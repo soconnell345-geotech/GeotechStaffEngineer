@@ -125,6 +125,7 @@ include = [
     "dxf_export*",
     "pdf_import*",
     "fem2d*",
+    "geo_project*",
     "funhouse_agent*",
 ]
 exclude = [
@@ -165,6 +166,7 @@ testpaths = [
     "dxf_export",
     "pdf_import",
     "fem2d",
+    "geo_project",
     "funhouse_agent",
     "foundry_test_harness",
     "geotech-references/tests",
