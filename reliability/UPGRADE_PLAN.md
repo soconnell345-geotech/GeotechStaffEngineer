@@ -119,11 +119,11 @@ All engines drive a user-supplied callable `g(values: dict[str, float]) -> float
 
 - [x] Phase 0: harvest
 - [x] Phase 1: plan committed
-- [ ] Phase 2: core (variables/stats/results)
+- [x] Phase 2: core (variables/stats/results) — 65 tests
 - [ ] Phase 3: engines (FOSM/PEM/MC/FORM)
 - [ ] Phase 4: cov_database + spatial
 - [ ] Phase 5: wrappers + slope cross-validation
 - [ ] Phase 6: funhouse adapter + registration
 - [ ] Phase 7: docs + full suite green
 
-NEXT ACTION: Phase 2 — write reliability/variables.py.
+NEXT ACTION: Phase 3 — engines (fosm.py, pem.py, monte_carlo.py, form.py).
