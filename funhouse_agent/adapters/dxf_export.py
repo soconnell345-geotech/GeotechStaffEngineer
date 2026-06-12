@@ -1,11 +1,23 @@
 """DXF export adapter — write cross-section geometry to DXF files."""
 
 import base64
+import os
+
+from funhouse_agent.adapters import reject_unknown_params, require_params
+
+# Geometry params shared by both export methods.
+_GEOMETRY_PARAMS = ("surface_points", "boundary_profiles", "gwt_points",
+                    "nail_lines", "text_annotations", "units")
 
 
 def _run_export_geometry_to_dxf(params):
     from dxf_export import export_to_dxf
 
+    reject_unknown_params(params, _GEOMETRY_PARAMS + ("output_path",),
+                          method="export_geometry_to_dxf")
+    require_params(params, ["output_path"], method="export_geometry_to_dxf",
+                   valid=_GEOMETRY_PARAMS + ("output_path",))
+    params = dict(params)  # pops below must not mutate the caller's dict
     output_path = params.pop("output_path")
 
     # Convert boundary_profiles values from list-of-dicts to list-of-tuples
@@ -46,11 +58,30 @@ def _run_export_geometry_to_dxf(params):
         text_annotations=text_annotations,
         units=units,
     )
-    return result.to_dict()
+    out = result.to_dict()
+    # Verify the write on the REAL filesystem so callers (LLM agents) never
+    # need a separate ls/read to trust the save — agent-side filesystem tools
+    # may be sandboxed/virtual and cannot see this file.
+    abs_path = os.path.abspath(output_path)
+    file_exists = os.path.isfile(abs_path)
+    out["filepath"] = abs_path
+    out["file_exists"] = file_exists
+    out["file_size_bytes"] = os.path.getsize(abs_path) if file_exists else 0
+    if not file_exists:
+        out["error"] = (
+            f"DXF export ran but no file was found at '{abs_path}' after "
+            "writing. The target location may not be writable from this "
+            "process; retry with a local path (e.g. under /tmp)."
+        )
+    return out
 
 
 def _run_export_to_dxf_bytes(params):
     from dxf_export import to_dxf_bytes
+
+    reject_unknown_params(params, _GEOMETRY_PARAMS,
+                          method="export_to_dxf_bytes")
+    params = dict(params)
 
     # Convert geometry inputs same as above
     boundaries = params.pop("boundary_profiles", None)
@@ -108,7 +139,11 @@ METHOD_INFO = {
             "units": {"type": "str", "required": False, "default": "m", "allowed_values": ["m", "mm", "cm", "ft", "in"], "description": "Coordinate units."},
         },
         "returns": {
-            "filepath": "Path to saved DXF file.",
+            "filepath": "Absolute path of the saved DXF file.",
+            "file_exists": "True if the file was verified on disk after writing. "
+                           "Trust this field — do NOT try to verify the file with "
+                           "agent-side filesystem tools (they may be sandboxed).",
+            "file_size_bytes": "Size of the saved file (0 if file_exists is false).",
             "n_layers": "Number of layers created.",
             "n_entities": "Total entity count.",
         },

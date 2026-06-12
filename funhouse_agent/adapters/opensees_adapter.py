@@ -1,6 +1,6 @@
 """OpenSees adapter — PM4Sand DSS, 1D site response."""
 
-from funhouse_agent.adapters import clean_result
+from funhouse_agent.adapters import clean_result, require_params
 
 
 def _check_opensees():
@@ -16,6 +16,8 @@ def _run_pm4sand_cyclic_dss(params: dict) -> dict:
     _check_opensees()
     from opensees_agent import analyze_pm4sand_dss
 
+    require_params(params, ["Dr", "G0", "hpo", "Den"],
+                   method="pm4sand_cyclic_dss")
     result = analyze_pm4sand_dss(
         Dr=params["Dr"],
         G0=params["G0"],
@@ -56,6 +58,7 @@ def _run_site_response_1d(params: dict) -> dict:
     _check_opensees()
     from opensees_agent import analyze_site_response
 
+    require_params(params, ["layers"], method="site_response_1d")
     result = analyze_site_response(
         layers=params["layers"],
         motion=params.get("motion"),

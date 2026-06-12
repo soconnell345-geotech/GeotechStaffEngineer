@@ -212,6 +212,31 @@ class TestLateralPileClearErrors:
                             "phi": 33, "gamma": 9.5}],
             })
 
+    def test_unknown_top_level_param_rejected(self):
+        # Regression (v5.0 live failure): an invented stiffness name (E_GPa)
+        # was silently dropped, so the run used the 200 GPa steel default and
+        # reported a confidently wrong deflection for a concrete shaft.
+        from funhouse_agent.adapters.lateral_pile import METHOD_REGISTRY as R
+        with pytest.raises(ValueError, match="E_GPa"):
+            R["lateral_pile_analysis"]({
+                "pile_diameter": 0.8, "pile_length": 15.0, "Vt": 20.0,
+                "E_GPa": 9.3,
+                "layers": [{"top": 0, "bottom": 15, "model": "SandAPI",
+                            "phi": 32, "gamma": 19, "k": 8150}],
+            })
+
+    def test_pile_E_documented_and_consumed(self):
+        from funhouse_agent.adapters.lateral_pile import METHOD_REGISTRY as R, METHOD_INFO
+        assert "pile_E" in METHOD_INFO["lateral_pile_analysis"]["parameters"]
+        base = {
+            "pile_diameter": 0.8, "pile_length": 15.0, "Vt": 20.0,
+            "layers": [{"top": 0, "bottom": 15, "model": "SandAPI",
+                        "phi": 32, "gamma": 19, "k": 8150}],
+        }
+        steel = R["lateral_pile_analysis"](dict(base))
+        concrete = R["lateral_pile_analysis"](dict(base, pile_E=7.5e6))
+        assert concrete["deflection_m"][0] > 2 * steel["deflection_m"][0]
+
 
 class TestPileGroupSpacing:
     def test_single_spacing_accepted(self):
@@ -496,6 +521,264 @@ class TestSheetPileEmbedmentIncrease:
                                     "embedment_increase": 1.2})
         assert inc["embedment_depth_m"] == pytest.approx(
             1.2 * base["embedment_depth_m"], rel=1e-3)
+
+
+# ============================================================================
+# v5.1 adapter sweep — unknown-param rejection (class 4: never silently drop
+# an invented parameter and run with a default) across the priority adapters
+# ============================================================================
+
+# (adapter module, method, minimal-valid params). Each call gets an extra
+# invented key and must raise a ValueError naming it.
+_REJECT_CASES = [
+    ("bearing_capacity", "bearing_capacity_analysis",
+     {"width": 2.0, "unit_weight": 18.0, "friction_angle": 30.0}),
+    ("bearing_capacity", "bearing_capacity_factors",
+     {"friction_angle": 30.0}),
+    ("settlement", "elastic_settlement",
+     {"q_net": 100.0, "B": 2.0, "Es": 15000.0}),
+    ("settlement", "combined_settlement_analysis",
+     {"q_applied": 100.0, "B": 2.0, "Es": 15000.0}),
+    ("drilled_shaft", "drilled_shaft_capacity",
+     {"diameter": 1.0, "shaft_length": 10.0,
+      "layers": [{"thickness": 15, "soil_type": "cohesive",
+                  "unit_weight": 18, "cu": 50}]}),
+    ("pile_group", "pile_group_simple",
+     {"n_rows": 2, "n_cols": 2, "spacing": 1.5, "Vz": 1000.0}),
+    ("pile_group", "group_efficiency",
+     {"n_rows": 2, "n_cols": 2, "pile_diameter": 0.3, "spacing": 1.0}),
+    ("sheet_pile", "cantilever_wall",
+     {"excavation_depth": 4.0,
+      "layers": [{"thickness": 12, "unit_weight": 18,
+                  "friction_angle": 32}]}),
+    ("retaining_walls", "cantilever_wall",
+     {"wall_height": 4.0, "gamma_backfill": 19.0, "phi_backfill": 32.0}),
+    ("retaining_walls", "earth_pressure_coefficient",
+     {"phi_deg": 30.0}),
+    ("seismic_geotech", "seismic_earth_pressure",
+     {"phi": 32.0, "kh": 0.2}),
+    ("seismic_geotech", "site_classification",
+     {"vs30": 300.0}),
+    ("slope_stability", "analyze_slope",
+     {"surface_points": [[0, 0], [10, 0], [25, 8], [40, 8]],
+      "soil_layers": [{"top_elevation": 8, "bottom_elevation": -10,
+                       "gamma": 19, "phi": 30, "c_prime": 5}],
+      "xc": 17.0, "yc": 18.0, "radius": 17.0}),
+    ("soe", "check_piping",
+     {"delta_h": 3.0, "flow_path": 8.0}),
+    ("soe", "braced_excavation",
+     {"excavation_depth": 6.0,
+      "layers": [{"thickness": 15, "unit_weight": 18,
+                  "friction_angle": 30}],
+      "supports": [{"depth": 2.0}, {"depth": 4.5}]}),
+    ("downdrag", "downdrag_analysis",
+     {"pile_length": 20.0, "pile_diameter": 0.4,
+      "layers": [{"thickness": 25, "soil_type": "cohesive",
+                  "unit_weight": 18, "cu": 40, "settling": True,
+                  "Cc": 0.3, "e0": 0.9}]}),
+    ("fem2d_adapter", "fem2d_gravity",
+     {"width": 10.0, "depth": 5.0, "gamma": 18.0, "E": 30000.0, "nu": 0.3}),
+    ("dxf_export", "export_to_dxf_bytes",
+     {"surface_points": [[0, 0], [10, 5]]}),
+    ("reliability_adapter", "combined_cov",
+     {"cov_inherent": 0.3}),
+]
+
+
+class TestRejectUnknownParams:
+    @pytest.mark.parametrize(
+        "mod_name,method,params", _REJECT_CASES,
+        ids=[f"{m}.{meth}" for m, meth, _ in _REJECT_CASES])
+    def test_invented_param_rejected_loudly(self, mod_name, method, params):
+        mod = importlib.import_module(f"funhouse_agent.adapters.{mod_name}")
+        bad = dict(params, E_GPa=9.3)
+        with pytest.raises(ValueError, match="E_GPa"):
+            mod.METHOD_REGISTRY[method](bad)
+
+    @pytest.mark.parametrize(
+        "mod_name,method,params", _REJECT_CASES,
+        ids=[f"{m}.{meth}" for m, meth, _ in _REJECT_CASES])
+    def test_valid_params_still_accepted(self, mod_name, method, params):
+        """The same minimal calls run cleanly without the invented key."""
+        mod = importlib.import_module(f"funhouse_agent.adapters.{mod_name}")
+        result = mod.METHOD_REGISTRY[method](dict(params))
+        assert isinstance(result, dict)
+
+
+class TestClearMissingParamErrors:
+    """Former bare-KeyError paths now raise actionable ValueErrors."""
+
+    def test_bearing_capacity_missing_width(self):
+        from funhouse_agent.adapters.bearing_capacity import METHOD_REGISTRY as R
+        with pytest.raises(ValueError, match=r"width"):
+            R["bearing_capacity_analysis"]({"unit_weight": 18.0})
+
+    def test_bearing_factors_missing_phi(self):
+        from funhouse_agent.adapters.bearing_capacity import METHOD_REGISTRY as R
+        with pytest.raises(ValueError, match="friction_angle"):
+            R["bearing_capacity_factors"]({})
+
+    def test_drilled_shaft_layer_missing_soil_type(self):
+        from funhouse_agent.adapters.drilled_shaft import METHOD_REGISTRY as R
+        with pytest.raises(ValueError, match=r"layers\[\].*soil_type"):
+            R["drilled_shaft_capacity"]({
+                "diameter": 1.0, "shaft_length": 10.0,
+                "layers": [{"thickness": 15, "unit_weight": 18}],
+            })
+
+    def test_drilled_shaft_length_alias(self):
+        from funhouse_agent.adapters.drilled_shaft import METHOD_REGISTRY as R
+        r = R["drilled_shaft_capacity"]({
+            "diameter": 1.0, "length": 10.0,
+            "layers": [{"thickness": 15, "soil_type": "cohesive",
+                        "unit_weight": 18, "cu": 50}],
+        })
+        assert r["Q_ultimate_kN"] > 0
+
+    def test_seismic_earth_pressure_missing_kh(self):
+        from funhouse_agent.adapters.seismic_geotech import METHOD_REGISTRY as R
+        with pytest.raises(ValueError, match="kh"):
+            R["seismic_earth_pressure"]({"phi": 32.0})
+
+    def test_site_classification_no_inputs(self):
+        from funhouse_agent.adapters.seismic_geotech import METHOD_REGISTRY as R
+        with pytest.raises(ValueError, match="vs30"):
+            R["site_classification"]({})
+
+    def test_csr_crr_check_missing_sigma_v(self):
+        from funhouse_agent.adapters.seismic_geotech import METHOD_REGISTRY as R
+        with pytest.raises(ValueError, match="sigma_v"):
+            R["csr_crr_check"]({"depth": 5.0, "N160": 12, "amax_g": 0.3})
+
+    def test_wave_equation_incomplete_cushion(self):
+        from funhouse_agent.adapters.wave_equation import METHOD_REGISTRY as R
+        import wave_equation
+        with pytest.raises(ValueError, match="cushion_E"):
+            R["bearing_graph"]({
+                "hammer_name": wave_equation.list_hammers()[0],
+                "pile_length": 20.0, "pile_area": 0.01,
+                "cushion_area": 0.2, "cushion_thickness": 0.05,
+            })
+
+    def test_wave_equation_custom_hammer_missing_stroke(self):
+        from funhouse_agent.adapters.wave_equation import METHOD_REGISTRY as R
+        with pytest.raises(ValueError, match="stroke"):
+            R["bearing_graph"]({
+                "ram_weight": 40.0,
+                "pile_length": 20.0, "pile_area": 0.01,
+            })
+
+    def test_pile_group_block_failure_missing_diameter(self):
+        from funhouse_agent.adapters.pile_group import METHOD_REGISTRY as R
+        with pytest.raises(ValueError, match="pile_diameter"):
+            R["group_efficiency"]({
+                "n_rows": 2, "n_cols": 2, "spacing": 1.0,
+                "pile_length": 15.0, "cu": 50.0,
+            })
+
+    def test_dxf_import_missing_file_path(self):
+        from funhouse_agent.adapters.dxf_import_adapter import METHOD_REGISTRY as R
+        with pytest.raises(ValueError, match="file_path"):
+            R["discover_layers"]({})
+
+    def test_pdf_import_missing_file_path(self):
+        from funhouse_agent.adapters.pdf_import_adapter import METHOD_REGISTRY as R
+        with pytest.raises(ValueError, match="file_path"):
+            R["discover_pdf_content"]({})
+
+    def test_dxf_export_missing_output_path(self):
+        from funhouse_agent.adapters.dxf_export import METHOD_REGISTRY as R
+        with pytest.raises(ValueError, match="output_path"):
+            R["export_geometry_to_dxf"]({
+                "surface_points": [[0, 0], [10, 5]],
+            })
+
+    def test_subsurface_load_site_missing_data(self):
+        from funhouse_agent.adapters.subsurface_adapter import METHOD_REGISTRY as R
+        with pytest.raises(ValueError, match="site_data"):
+            R["load_site"]({})
+
+    def test_fem2d_gravity_missing_E(self):
+        from funhouse_agent.adapters.fem2d_adapter import METHOD_REGISTRY as R
+        with pytest.raises(ValueError, match=r"\['E'\]"):
+            R["fem2d_gravity"]({"width": 10.0, "depth": 5.0, "gamma": 18.0,
+                                "nu": 0.3})
+
+
+class TestDocCodeParity:
+    """Class-3 fixes: params the code accepts are now discoverable."""
+
+    def test_bearing_ngamma_method_documented(self):
+        from funhouse_agent.adapters.bearing_capacity import METHOD_INFO
+        p = METHOD_INFO["bearing_capacity_analysis"]["parameters"]
+        for key in ("ngamma_method", "load_inclination", "ground_slope",
+                    "eccentricity_B"):
+            assert key in p
+
+    def test_anchored_wall_pressure_method_documented_and_accepted(self):
+        from funhouse_agent.adapters.sheet_pile import (
+            METHOD_INFO, METHOD_REGISTRY,
+        )
+        assert "pressure_method" in METHOD_INFO["anchored_wall"]["parameters"]
+        r = METHOD_REGISTRY["anchored_wall"]({
+            "excavation_depth": 4.0, "anchor_depth": 1.0,
+            "layers": [{"thickness": 12, "unit_weight": 18,
+                        "friction_angle": 32}],
+            "pressure_method": "coulomb",
+        })
+        assert r["embedment_depth_m"] > 0
+
+    def test_downdrag_extras_documented(self):
+        from funhouse_agent.adapters.downdrag import METHOD_INFO
+        p = METHOD_INFO["downdrag_analysis"]["parameters"]
+        for key in ("gwt_depth", "pile_E", "structural_capacity", "Nt"):
+            assert key in p
+
+    def test_drilled_shaft_socket_documented(self):
+        from funhouse_agent.adapters.drilled_shaft import METHOD_INFO
+        p = METHOD_INFO["drilled_shaft_capacity"]["parameters"]
+        for key in ("gwt_depth", "socket_length", "bell_diameter"):
+            assert key in p
+
+    def test_settlement_Iw_documented(self):
+        from funhouse_agent.adapters.settlement import METHOD_INFO
+        assert "Iw" in METHOD_INFO["elastic_settlement"]["parameters"]
+        assert "delta_sigmas" in METHOD_INFO[
+            "consolidation_settlement"]["parameters"]
+
+    def test_seismic_layer_arrays_documented(self):
+        from funhouse_agent.adapters.seismic_geotech import METHOD_INFO
+        p = METHOD_INFO["site_classification"]["parameters"]
+        for key in ("layer_N", "n_bar", "su_bar"):
+            assert key in p
+        p2 = METHOD_INFO["seismic_earth_pressure"]["parameters"]
+        for key in ("kv", "delta", "include_passive"):
+            assert key in p2
+
+
+class TestDxfExportFileVerification:
+    """Class-5: file-writing tool responses verify the write on disk."""
+
+    GEOM = {
+        "surface_points": [[0.0, 0.0], [10.0, 2.0], [20.0, 2.0]],
+        "boundary_profiles": {"Clay": [[0.0, -3.0], [20.0, -3.0]]},
+    }
+
+    def test_export_reports_verified_absolute_path(self, tmp_path):
+        import os
+        from funhouse_agent.adapters.dxf_export import METHOD_REGISTRY as R
+        out = tmp_path / "section.dxf"
+        r = R["export_geometry_to_dxf"](dict(self.GEOM, output_path=str(out)))
+        assert r["file_exists"] is True
+        assert r["file_size_bytes"] == out.stat().st_size > 0
+        assert os.path.isabs(r["filepath"])
+        assert "error" not in r
+
+    def test_export_returns_documented(self):
+        from funhouse_agent.adapters.dxf_export import METHOD_INFO
+        rets = METHOD_INFO["export_geometry_to_dxf"]["returns"]
+        assert "file_exists" in rets
+        assert "file_size_bytes" in rets
 
 
 class TestMseCustomReinforcement:

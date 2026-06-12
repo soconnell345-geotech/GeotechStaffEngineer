@@ -1,6 +1,6 @@
 """SALib adapter — Sobol and Morris sensitivity analysis."""
 
-from funhouse_agent.adapters import clean_result
+from funhouse_agent.adapters import clean_result, require_params
 
 
 def _run_sobol_sample(params: dict) -> dict:
@@ -9,6 +9,7 @@ def _run_sobol_sample(params: dict) -> dict:
     if not has_salib():
         return {"error": "SALib is not installed. Install via: pip install SALib"}
 
+    require_params(params, ["var_names", "bounds"], method="sobol_sample")
     sample_matrix = sobol_sample(
         var_names=params["var_names"],
         bounds=params["bounds"],
@@ -30,6 +31,7 @@ def _run_sobol_analyze(params: dict) -> dict:
     if not has_salib():
         return {"error": "SALib is not installed. Install via: pip install SALib"}
 
+    require_params(params, ["var_names", "bounds", "Y"], method="sobol_analyze")
     result = sobol_analyze(
         var_names=params["var_names"],
         bounds=params["bounds"],
@@ -47,6 +49,7 @@ def _run_morris_sample(params: dict) -> dict:
     if not has_salib():
         return {"error": "SALib is not installed. Install via: pip install SALib"}
 
+    require_params(params, ["var_names", "bounds"], method="morris_sample")
     sample_matrix = morris_sample(
         var_names=params["var_names"],
         bounds=params["bounds"],
@@ -68,6 +71,8 @@ def _run_morris_analyze(params: dict) -> dict:
     if not has_salib():
         return {"error": "SALib is not installed. Install via: pip install SALib"}
 
+    require_params(params, ["var_names", "bounds", "X", "Y"],
+                   method="morris_analyze")
     result = morris_analyze(
         var_names=params["var_names"],
         bounds=params["bounds"],

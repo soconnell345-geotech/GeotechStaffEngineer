@@ -2,11 +2,17 @@
 
 import numpy as np
 
-from funhouse_agent.adapters import clean_result
+from funhouse_agent.adapters import (
+    clean_result, reject_unknown_params, require_keys, require_params,
+)
 
 
 def _run_analyze_gravity(params: dict) -> dict:
     from fem2d import analyze_gravity
+    _valid = ("width", "depth", "gamma", "E", "nu", "nx", "ny", "t")
+    reject_unknown_params(params, _valid, method="fem2d_gravity")
+    require_params(params, ["width", "depth", "gamma", "E", "nu"],
+                   method="fem2d_gravity", valid=_valid)
     result = analyze_gravity(
         width=params["width"],
         depth=params["depth"],
@@ -22,6 +28,10 @@ def _run_analyze_gravity(params: dict) -> dict:
 
 def _run_analyze_foundation(params: dict) -> dict:
     from fem2d import analyze_foundation
+    _valid = ("B", "q", "depth", "E", "nu", "gamma", "nx", "ny", "t")
+    reject_unknown_params(params, _valid, method="fem2d_foundation")
+    require_params(params, ["B", "q", "depth", "E", "nu"],
+                   method="fem2d_foundation", valid=_valid)
     result = analyze_foundation(
         B=params["B"],
         q=params["q"],
@@ -38,6 +48,13 @@ def _run_analyze_foundation(params: dict) -> dict:
 
 def _run_analyze_slope_srm(params: dict) -> dict:
     from fem2d import analyze_slope_srm
+    _valid = ("surface_points", "soil_layers", "nx", "ny", "srf_tol",
+              "n_load_steps", "t", "gamma_w", "max_iter", "tol",
+              "element_type", "srm_field", "blowup_factor", "srf_range",
+              "n_gp", "depth", "x_extend", "gwt", "layer_polylines")
+    reject_unknown_params(params, _valid, method="fem2d_slope_srm")
+    require_params(params, ["surface_points", "soil_layers"],
+                   method="fem2d_slope_srm", valid=_valid)
     surface_points = [tuple(pt) for pt in params["surface_points"]]
     soil_layers = params["soil_layers"]
 
@@ -99,6 +116,13 @@ def _run_analyze_slope_srm(params: dict) -> dict:
 
 def _run_analyze_excavation(params: dict) -> dict:
     from fem2d import analyze_excavation
+    _valid = ("width", "depth", "wall_depth", "soil_layers", "wall_EI",
+              "wall_EA", "nx", "ny", "t", "n_steps", "gamma_w", "max_iter",
+              "tol", "gwt", "struts", "layer_polylines")
+    reject_unknown_params(params, _valid, method="fem2d_excavation")
+    require_params(params, ["width", "depth", "wall_depth", "soil_layers",
+                            "wall_EI", "wall_EA"],
+                   method="fem2d_excavation", valid=_valid)
     kwargs = dict(
         width=params["width"],
         depth=params["depth"],
@@ -131,6 +155,10 @@ def _run_analyze_excavation(params: dict) -> dict:
 
 def _run_analyze_seepage(params: dict) -> dict:
     from fem2d import analyze_seepage
+    _valid = ("nodes", "elements", "k", "head_bcs", "t", "gamma_w")
+    reject_unknown_params(params, _valid, method="fem2d_seepage")
+    require_params(params, ["nodes", "elements", "k", "head_bcs"],
+                   method="fem2d_seepage", valid=_valid)
     nodes = np.array(params["nodes"])
     elements = np.array(params["elements"])
     k = params["k"]
@@ -151,6 +179,12 @@ def _run_analyze_seepage(params: dict) -> dict:
 
 def _run_analyze_consolidation(params: dict) -> dict:
     from fem2d import analyze_consolidation
+    _valid = ("width", "depth", "soil_layers", "k", "load_q", "time_points",
+              "gwt", "gamma_w", "nx", "ny", "t", "n_w", "layer_polylines")
+    reject_unknown_params(params, _valid, method="fem2d_consolidation")
+    require_params(params, ["width", "depth", "soil_layers", "k", "load_q",
+                            "time_points"],
+                   method="fem2d_consolidation", valid=_valid)
     kwargs = dict(
         width=params["width"],
         depth=params["depth"],
@@ -179,6 +213,13 @@ def _run_analyze_staged(params: dict) -> dict:
         assign_element_groups, create_wall_elements,
     )
 
+    _valid = ("nodes", "elements", "material_props", "gamma",
+              "element_groups", "phases", "t", "max_iter", "tol", "gamma_w",
+              "beam_elements")
+    reject_unknown_params(params, _valid, method="fem2d_staged")
+    require_params(params, ["nodes", "elements", "material_props", "gamma",
+                            "element_groups", "phases"],
+                   method="fem2d_staged", valid=_valid)
     nodes = np.array(params["nodes"])
     elements = np.array(params["elements"])
     material_props = params["material_props"]
@@ -227,6 +268,8 @@ def _run_analyze_staged(params: dict) -> dict:
         from fem2d.elements import BeamElement
         beam_elems = []
         for bd in params["beam_elements"]:
+            require_keys(bd, ["node_i", "node_j", "EA", "EI"],
+                         method="fem2d_staged", item_label="beam_elements[]")
             beam_elems.append(BeamElement(
                 node_i=bd["node_i"],
                 node_j=bd["node_j"],
@@ -306,6 +349,7 @@ METHOD_INFO = {
             "srf_range": {"type": "array", "required": False, "default": [0.5, 3.0], "description": "[min, max] SRF search range."},
             "n_gp": {"type": "int", "required": False, "allowed_values": [3, 6], "description": "T6 Gauss rule override (default 3)."},
             "max_iter": {"type": "int", "required": False, "default": 1000, "description": "Iteration ceiling per load step (Griffiths-Lane non-convergence criterion)."},
+            "layer_polylines": {"type": "dict", "required": False, "description": "{layer_name: [[x,y],...]} bottom-boundary polylines for non-horizontal layering."},
         },
         "returns": {
             "FOS": "Factor of safety from SRM.",
@@ -328,6 +372,8 @@ METHOD_INFO = {
             "wall_EA": {"type": "float", "required": True, "description": "Wall axial stiffness (kN/m)."},
             "struts": {"type": "array", "required": False, "description": "Array of {depth, stiffness} for struts."},
             "gwt": {"type": "float|array", "required": False, "description": "Groundwater table."},
+            "n_steps": {"type": "int", "required": False, "default": 10, "description": "Number of excavation steps."},
+            "layer_polylines": {"type": "dict", "required": False, "description": "{layer_name: [[x,y],...]} bottom-boundary polylines for non-horizontal layering."},
         },
         "returns": {
             "max_displacement_m": "Maximum displacement.",

@@ -1,6 +1,8 @@
 """GSTools adapter — flat dict -> gstools_agent API -> dict."""
 
-from funhouse_agent.adapters import clean_result, require_params
+from funhouse_agent.adapters import (
+    clean_result, reject_unknown_params, require_params,
+)
 
 _MODEL_TYPES = ["Gaussian", "Exponential", "Matern", "Spherical", "Linear",
                 "Stable", "Rational", "Cubic", "HyperSpherical"]
@@ -11,6 +13,12 @@ def _run_kriging(params: dict) -> dict:
     if not has_gstools():
         return {"error": "gstools is not installed. Install with: pip install gstools"}
 
+    reject_unknown_params(
+        params,
+        ("x", "y", "values", "model_type", "kriging_type", "grid_x_min",
+         "grid_x_max", "grid_y_min", "grid_y_max", "n_grid_x", "n_grid_y",
+         "variance", "len_scale", "nugget", "fit_variogram"),
+        method="kriging")
     require_params(params, ["x", "y", "values"], method="kriging")
     result = analyze_kriging(
         x=params["x"],
@@ -37,6 +45,9 @@ def _run_variogram(params: dict) -> dict:
     if not has_gstools():
         return {"error": "gstools is not installed. Install with: pip install gstools"}
 
+    reject_unknown_params(
+        params, ("x", "y", "values", "model_type", "n_bins", "nugget"),
+        method="variogram")
     require_params(params, ["x", "y", "values"], method="variogram")
     result = analyze_variogram(
         x=params["x"],
@@ -54,6 +65,11 @@ def _run_random_field(params: dict) -> dict:
     if not has_gstools():
         return {"error": "gstools is not installed. Install with: pip install gstools"}
 
+    reject_unknown_params(
+        params,
+        ("model_type", "variance", "len_scale", "nugget", "mean", "x_min",
+         "x_max", "y_min", "y_max", "n_x", "n_y", "seed"),
+        method="random_field")
     result = generate_random_field(
         model_type=params.get("model_type", "Gaussian"),
         variance=params.get("variance", 1.0),

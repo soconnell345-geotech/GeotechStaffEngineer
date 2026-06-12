@@ -1,6 +1,6 @@
 """HVSR adapter — flat dict -> hvsrpy_agent API -> dict."""
 
-from funhouse_agent.adapters import clean_result
+from funhouse_agent.adapters import clean_result, require_params
 
 
 def _run_hvsr_analysis(params: dict) -> dict:
@@ -8,6 +8,7 @@ def _run_hvsr_analysis(params: dict) -> dict:
     if not has_hvsrpy():
         return {"error": "hvsrpy is not installed. Install with: pip install hvsrpy"}
 
+    require_params(params, ["ns", "ew", "vt", "dt"], method="analyze_hvsr")
     result = analyze_hvsr(
         ns=params["ns"],
         ew=params["ew"],

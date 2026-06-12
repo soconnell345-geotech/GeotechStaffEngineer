@@ -1,6 +1,8 @@
 """Sheet pile adapter — cantilever and anchored wall analysis."""
 
-from funhouse_agent.adapters import apply_aliases, require_keys, require_params
+from funhouse_agent.adapters import (
+    apply_aliases, reject_unknown_params, require_keys, require_params,
+)
 from sheet_pile.cantilever import WallSoilLayer, analyze_cantilever
 from sheet_pile.anchored import analyze_anchored
 
@@ -24,6 +26,11 @@ def _build_soil_layers(params, *, method):
 
 
 def _run_cantilever_wall(params):
+    reject_unknown_params(
+        params,
+        ("excavation_depth", "layers", "gwt_depth_active", "gwt_depth_passive",
+         "surcharge", "FOS_passive", "pressure_method", "embedment_increase"),
+        method="cantilever_wall")
     layers = _build_soil_layers(params, method="cantilever_wall")
     require_params(params, ["excavation_depth"], method="cantilever_wall")
     result = analyze_cantilever(
@@ -37,6 +44,11 @@ def _run_cantilever_wall(params):
 
 
 def _run_anchored_wall(params):
+    reject_unknown_params(
+        params,
+        ("excavation_depth", "anchor_depth", "layers", "gwt_depth_active",
+         "gwt_depth_passive", "surcharge", "FOS_passive", "pressure_method"),
+        method="anchored_wall")
     layers = _build_soil_layers(params, method="anchored_wall")
     require_params(params, ["excavation_depth", "anchor_depth"], method="anchored_wall")
     result = analyze_anchored(
@@ -44,6 +56,7 @@ def _run_anchored_wall(params):
         soil_layers=layers, gwt_depth_active=params.get("gwt_depth_active"),
         gwt_depth_passive=params.get("gwt_depth_passive"), surcharge=params.get("surcharge", 0.0),
         FOS_passive=params.get("FOS_passive", 1.5),
+        pressure_method=params.get("pressure_method", "rankine"),
     )
     return result.to_dict()
 
@@ -79,6 +92,8 @@ METHOD_INFO = {
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},
             "gwt_depth_active": {"type": "float", "required": False, "description": "Groundwater depth on active side (m)."},
             "gwt_depth_passive": {"type": "float", "required": False, "description": "Groundwater depth on passive side (m)."},
+            "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "FOS applied to passive resistance."},
+            "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb"], "description": "Earth pressure theory."},
         },
         "returns": {"embedment_depth_m": "Required embedment.", "anchor_force_kN_per_m": "Anchor force."},
     },

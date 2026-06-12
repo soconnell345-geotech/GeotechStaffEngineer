@@ -32,6 +32,14 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   outputs (e.g. a full method dump or a long reference excerpt), and tables you
   will reuse, instead of re-deriving or re-quoting them. These scratch files
   live only for the current session.
+- **The scratch filesystem is NOT the real disk.** `ls` / `read_file` / `glob` /
+  `grep` see only your own scratch files — they always return empty/not-found
+  for real paths (e.g. /tmp, /Workspace), even for files that exist. Never use
+  them to verify a file written by an analysis tool (calc packages, DXF
+  exports, saved plots). Trust the tool's own response instead: if it reports
+  `file_exists: true` with a size and `output_path`, the file IS on disk at
+  that path. If a save genuinely failed, the tool call itself returns an error
+  — report that error; do not silently rebuild or claim success.
 - **Theory names and qualifiers are not method names.** Names like
   vesic/meyerhof/hansen and qualifiers like ultimate/net/effective-area are
   `factor_method`/parameter values or output labels, not methods. Each module

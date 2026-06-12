@@ -1,6 +1,6 @@
 """Lateral pile adapter — COM624P, 8 p-y models, FD solver."""
 
-from funhouse_agent.adapters import require_keys, require_params
+from funhouse_agent.adapters import require_keys, require_params, reject_unknown_params
 from lateral_pile import Pile, ReinforcedConcreteSection, rebar_diameter, SoilLayer, LateralPileAnalysis
 from lateral_pile.py_curves import (
     SoftClayMatlock, StiffClayBelowWT, StiffClayAboveWT, SoftClayJeanjean,
@@ -74,7 +74,21 @@ def _build_pile(params):
                     moment_of_inertia=params.get("moment_of_inertia"))
 
 
+# Every top-level parameter _run_lateral_pile_analysis consumes. Anything else
+# is rejected loudly: a silently dropped parameter (e.g. an invented stiffness
+# name like 'E_GPa') would otherwise run the analysis with the steel default
+# and return a confidently wrong answer.
+_ANALYSIS_VALID_PARAMS = (
+    "pile_type", "pile_diameter", "pile_length", "pile_E", "pile_thickness",
+    "moment_of_inertia", "designation", "axis", "fc", "layers",
+    "Vt", "Mt", "Q", "head_condition", "n_elements", "tolerance",
+    "max_iterations", "stickup", "free_length",
+)
+
+
 def _run_lateral_pile_analysis(params):
+    reject_unknown_params(params, _ANALYSIS_VALID_PARAMS,
+                          method="lateral_pile_analysis")
     pile = _build_pile(params)
     require_params(params, ["layers"], method="lateral_pile_analysis")
     for l in params["layers"]:
@@ -119,9 +133,15 @@ METHOD_INFO = {
         "category": "Lateral Pile",
         "brief": "Full lateral pile analysis with p-y curves and FD solver.",
         "parameters": {
-            "pile_type": {"type": "str", "required": False, "default": "pipe", "allowed_values": ["pipe", "h_pile", "filled_pipe"], "description": "Pile type. h_pile requires designation; filled_pipe also requires pile_thickness."},
+            "pile_type": {"type": "str", "required": False, "default": "pipe", "allowed_values": ["pipe", "h_pile", "filled_pipe"], "description": "Pile type. h_pile requires designation; filled_pipe also requires pile_thickness. For a solid pile/drilled shaft, use 'pipe' with no pile_thickness and set pile_E."},
             "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter (m)."},
             "pile_length": {"type": "float", "required": True, "description": "Pile length (m)."},
+            "pile_E": {"type": "float", "required": False, "default": 200e6, "description": "Pile Young's modulus (kPa). DEFAULT IS STEEL (200e6) — for concrete drilled shafts set this explicitly, e.g. ~25e6 gross or a reduced value (e.g. 0.3x) for cracked sections."},
+            "pile_thickness": {"type": "float", "required": False, "description": "Wall thickness (m) for hollow pipe. Omit for a solid section."},
+            "moment_of_inertia": {"type": "float", "required": False, "description": "Moment of inertia (m4). Overrides the value computed from diameter/thickness."},
+            "designation": {"type": "str", "required": False, "description": "H-pile designation (e.g. 'HP360x132') — required for pile_type 'h_pile'."},
+            "axis": {"type": "str", "required": False, "default": "strong", "allowed_values": ["strong", "weak"], "description": "Bending axis — pile_type 'h_pile' only."},
+            "fc": {"type": "float", "required": False, "default": 28000.0, "description": "Concrete f'c (kPa) — pile_type 'filled_pipe' only."},
             "layers": {"type": "array", "required": True, "description": "Array of {top, bottom, model, ...model params}. Required model params: SoftClayMatlock/StiffClayAboveWT {c, gamma, eps50}; StiffClayBelowWT {c, gamma, eps50, ks}; SoftClayJeanjean {su, gamma, Gmax}; SandReese/SandAPI {phi, gamma, k} where k = initial subgrade modulus (kN/m3); WeakRock {qu, Er}."},
             "Vt": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load at pile top (kN)."},
             "Mt": {"type": "float", "required": False, "default": 0.0, "description": "Moment at pile top (kN-m)."},

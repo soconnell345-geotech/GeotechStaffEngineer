@@ -513,6 +513,47 @@ class TestSaveFileTool:
         """save_file is in the extended tool set."""
         assert "save_file" in EXTENDED_TOOLS
 
+    def test_save_file_response_reports_verified_file(self, tmp_path):
+        """The tool response carries file_exists + file_size_bytes + an
+        absolute path so the agent never needs (sandboxed) fs tools to
+        verify the write."""
+        import os
+        from funhouse_agent.vision_tools import (
+            _default_save_fn, _dispatch_save_file,
+        )
+        out = tmp_path / "data.csv"
+        res = json.loads(_dispatch_save_file(
+            {"path": str(out), "content": "x,y\n1,2"}, _default_save_fn))
+        assert res["file_exists"] is True
+        assert res["file_size_bytes"] == out.stat().st_size > 0
+        assert os.path.isabs(res["saved"])
+
+    def test_save_file_custom_fn_remote_path_is_note_not_error(self):
+        """A custom save_fn returning a non-local path (e.g. DBFS) reports
+        file_exists False with a note — not an error."""
+        from funhouse_agent.vision_tools import _dispatch_save_file
+        res = json.loads(_dispatch_save_file(
+            {"path": "out.txt", "content": "hi"},
+            lambda p, c: f"/dbfs/{p}"))
+        assert res["file_exists"] is False
+        assert "note" in res
+        assert "error" not in res
+
+    def test_save_file_default_fn_missing_file_is_error(self, tmp_path,
+                                                        monkeypatch):
+        """If the DEFAULT local writer produced no file, the response is an
+        explicit error (never a silent success)."""
+        import funhouse_agent.vision_tools as vt
+
+        def fake_default(path, content):
+            return str(tmp_path / "never_written.txt")
+
+        monkeypatch.setattr(vt, "_default_save_fn", fake_default)
+        res = json.loads(vt._dispatch_save_file(
+            {"path": "x.txt", "content": "hi"}, vt._default_save_fn))
+        assert res["file_exists"] is False
+        assert "error" in res
+
     def test_save_file_callback_fires(self):
         """on_tool_call callback fires for save_file."""
         calls = []

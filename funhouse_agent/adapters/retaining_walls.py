@@ -1,6 +1,6 @@
 """Retaining walls adapter — cantilever + MSE wall analysis + earth pressure coefficients."""
 
-from funhouse_agent.adapters import apply_aliases, require_params
+from funhouse_agent.adapters import apply_aliases, reject_unknown_params, require_params
 from retaining_walls import earth_pressure as _ep
 from retaining_walls.geometry import CantileverWallGeometry, MSEWallGeometry
 from retaining_walls.cantilever import analyze_cantilever_wall
@@ -47,6 +47,15 @@ def _build_reinforcement(params):
 
 def _run_cantilever_wall(params):
     params = apply_aliases(params, _WALL_ALIASES)
+    reject_unknown_params(
+        params,
+        ("wall_height", "base_width", "toe_length", "stem_thickness_top",
+         "stem_thickness_base", "base_thickness", "has_shear_key", "key_depth",
+         "backfill_slope", "surcharge", "gamma_backfill", "phi_backfill",
+         "c_backfill", "phi_foundation", "c_foundation", "q_allowable",
+         "gamma_concrete", "FOS_sliding_required", "FOS_overturning_required",
+         "pressure_method"),
+        method="cantilever_wall")
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
                    method="cantilever_wall")
     geom = CantileverWallGeometry(
@@ -76,6 +85,15 @@ def _run_cantilever_wall(params):
 
 def _run_mse_wall(params):
     params = apply_aliases(params, _WALL_ALIASES)
+    reject_unknown_params(
+        params,
+        ("wall_height", "reinforcement_length", "reinforcement_spacing",
+         "backfill_slope", "surcharge", "gamma_backfill", "phi_backfill",
+         "reinforcement_name", "reinforcement_type",
+         "reinforcement_Tallowable", "reinforcement_width",
+         "reinforcement_Fy", "reinforcement_thickness", "gamma_foundation",
+         "phi_foundation", "c_foundation", "q_allowable"),
+        method="mse_wall")
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
                    method="mse_wall")
     geom = MSEWallGeometry(
@@ -105,6 +123,9 @@ def _run_earth_pressure_coefficient(params):
                                "beta": "beta_deg", "backfill_slope": "beta_deg",
                                "slope_angle": "beta_deg",
                                "alpha": "alpha_deg", "wall_angle": "alpha_deg"})
+    reject_unknown_params(
+        p, ("phi_deg", "theory", "state", "delta_deg", "beta_deg", "alpha_deg"),
+        method="earth_pressure_coefficient")
     require_params(p, ["phi_deg"], method="earth_pressure_coefficient",
                    valid=["phi_deg", "theory", "state", "delta_deg", "beta_deg", "alpha_deg"])
     theory = p.get("theory", "rankine")
@@ -166,8 +187,21 @@ METHOD_INFO = {
             "gamma_backfill": {"type": "float", "required": True, "description": "Backfill unit weight (kN/m3)."},
             "phi_backfill": {"type": "float", "required": True, "description": "Backfill friction angle (degrees)."},
             "base_width": {"type": "float", "required": False, "description": "Base width (m). Auto-sized if omitted."},
+            "toe_length": {"type": "float", "required": False, "description": "Toe length (m). Auto-sized if omitted."},
+            "stem_thickness_top": {"type": "float", "required": False, "default": 0.30, "description": "Stem thickness at top (m)."},
+            "stem_thickness_base": {"type": "float", "required": False, "description": "Stem thickness at base (m)."},
+            "base_thickness": {"type": "float", "required": False, "default": 0.60, "description": "Base slab thickness (m)."},
+            "has_shear_key": {"type": "bool", "required": False, "default": False, "description": "Include a shear key (with key_depth)."},
+            "key_depth": {"type": "float", "required": False, "default": 0.0, "description": "Shear key depth (m)."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surcharge (kPa)."},
             "backfill_slope": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees)."},
+            "c_backfill": {"type": "float", "required": False, "default": 0.0, "description": "Backfill cohesion (kPa)."},
+            "phi_foundation": {"type": "float", "required": False, "description": "Foundation soil friction angle (deg). Defaults to phi_backfill."},
+            "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation soil cohesion (kPa)."},
+            "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa) for the bearing check."},
+            "gamma_concrete": {"type": "float", "required": False, "default": 24.0, "description": "Concrete unit weight (kN/m3)."},
+            "FOS_sliding_required": {"type": "float", "required": False, "default": 1.5, "description": "Required sliding FOS."},
+            "FOS_overturning_required": {"type": "float", "required": False, "default": 2.0, "description": "Required overturning FOS."},
             "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb"], "description": "Earth pressure theory."},
         },
         "returns": {"FOS_sliding": "Factor of safety against sliding.", "FOS_overturning": "Factor of safety against overturning."},
@@ -197,7 +231,15 @@ METHOD_INFO = {
             "reinforcement_Tallowable": {"type": "float", "required": False, "description": "Allowable tensile strength (kN/m) for a custom reinforcement. Required when reinforcement_name is not a built-in."},
             "reinforcement_length": {"type": "float", "required": False, "description": "Reinforcement length (m). Auto-sized (0.7H minimum) if omitted."},
             "reinforcement_spacing": {"type": "float", "required": False, "default": 0.6, "description": "Vertical reinforcement spacing (m)."},
+            "reinforcement_width": {"type": "float", "required": False, "default": 0.05, "description": "Custom reinforcement width (m), pullout."},
+            "reinforcement_Fy": {"type": "float", "required": False, "default": 0.0, "description": "Custom steel yield strength (MPa)."},
+            "reinforcement_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Custom steel strip thickness (mm)."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surcharge (kPa)."},
+            "backfill_slope": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees)."},
+            "gamma_foundation": {"type": "float", "required": False, "description": "Foundation soil unit weight (kN/m3)."},
+            "phi_foundation": {"type": "float", "required": False, "description": "Foundation soil friction angle (deg)."},
+            "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation soil cohesion (kPa)."},
+            "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa)."},
         },
         "returns": {"FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS."},
     },

@@ -1,6 +1,6 @@
 """Support of excavation adapter — braced/cantilever, stability, anchors."""
 
-from funhouse_agent.adapters import require_keys, require_params
+from funhouse_agent.adapters import reject_unknown_params, require_keys, require_params
 from soe import (
     ExcavationGeometry, SOEWallLayer, SupportLevel,
     select_apparent_pressure, analyze_braced_excavation, analyze_cantilever_excavation,
@@ -41,17 +41,33 @@ def _build_geometry(params, *, method):
     )
 
 
-def _run_braced_excavation(p): return analyze_braced_excavation(_build_geometry(p, method="braced_excavation"), Fy=p.get("Fy", 345.0)).to_dict()
-def _run_cantilever_excavation(p): return analyze_cantilever_excavation(_build_geometry(p, method="cantilever_excavation"), FOS_passive=p.get("FOS_passive", 1.5), Fy=p.get("Fy", 345.0)).to_dict()
+# Geometry params consumed by _build_geometry (shared by both wall analyses).
+_GEOM_PARAMS = ("excavation_depth", "layers", "supports", "surcharge",
+                "gwt_depth", "excavation_width")
+
+
+def _run_braced_excavation(p):
+    reject_unknown_params(p, _GEOM_PARAMS + ("Fy",), method="braced_excavation")
+    return analyze_braced_excavation(_build_geometry(p, method="braced_excavation"), Fy=p.get("Fy", 345.0)).to_dict()
+
+
+def _run_cantilever_excavation(p):
+    reject_unknown_params(p, _GEOM_PARAMS + ("FOS_passive", "Fy"),
+                          method="cantilever_excavation")
+    return analyze_cantilever_excavation(_build_geometry(p, method="cantilever_excavation"), FOS_passive=p.get("FOS_passive", 1.5), Fy=p.get("Fy", 345.0)).to_dict()
 
 
 def _run_apparent_pressure(params):
+    reject_unknown_params(params, ("excavation_depth", "layers", "surcharge"),
+                          method="apparent_pressure")
     require_params(params, ["excavation_depth"], method="apparent_pressure")
     layers = _build_layers(params, method="apparent_pressure")
     return select_apparent_pressure(layers, params["excavation_depth"], params.get("surcharge", 0.0))
 
 
 def _run_select_wall_section(params):
+    reject_unknown_params(params, ("required_Sx_cm3", "section_type"),
+                          method="select_wall_section")
     require_params(params, ["required_Sx_cm3"], method="select_wall_section",
                    valid=["required_Sx_cm3", "section_type"])
     t = params.get("section_type", "hp")
@@ -59,12 +75,15 @@ def _run_select_wall_section(params):
     if t == "hp": r = select_hp_section(sx)
     elif t == "sheet_pile": r = select_sheet_pile(sx)
     elif t == "w": r = select_w_section(sx)
-    else: return {"error": f"Unknown section_type '{t}'."}
+    else: return {"error": f"Unknown section_type '{t}'. Allowed: ['hp', 'sheet_pile', 'w']."}
     return r if r else {"error": f"No {t} section for Sx = {sx} cm3"}
 
 
 def _run_check_basal_heave(params):
     m = params.get("method", "terzaghi")
+    reject_unknown_params(params, ("H", "cu", "gamma", "method", "q_surcharge",
+                                   "B", "Be", "Le", "FOS_required"),
+                          method="check_basal_heave")
     require_params(params, ["H", "cu", "gamma"], method="check_basal_heave",
                    valid=["H", "cu", "gamma", "method", "q_surcharge", "B",
                           "Be", "Le", "FOS_required"])
@@ -84,6 +103,9 @@ def _run_check_basal_heave(params):
 
 
 def _run_check_bottom_blowout(p):
+    reject_unknown_params(p, ("D_embed", "hw_excess", "gamma_soil", "gamma_w",
+                              "FOS_required"),
+                          method="check_bottom_blowout")
     require_params(p, ["D_embed", "hw_excess", "gamma_soil"], method="check_bottom_blowout",
                    valid=["D_embed", "hw_excess", "gamma_soil", "gamma_w", "FOS_required"])
     return check_bottom_blowout(D_embed=p["D_embed"], hw_excess=p["hw_excess"], gamma_soil=p["gamma_soil"],
@@ -91,6 +113,9 @@ def _run_check_bottom_blowout(p):
 
 
 def _run_check_piping(p):
+    reject_unknown_params(p, ("delta_h", "flow_path", "Gs", "void_ratio",
+                              "FOS_required"),
+                          method="check_piping")
     require_params(p, ["delta_h", "flow_path"], method="check_piping",
                    valid=["delta_h", "flow_path", "Gs", "void_ratio", "FOS_required"])
     return check_piping(delta_h=p["delta_h"], flow_path=p["flow_path"], Gs=p.get("Gs", 2.65),
@@ -98,6 +123,12 @@ def _run_check_piping(p):
 
 
 def _run_design_ground_anchor(p):
+    reject_unknown_params(
+        p,
+        ("design_load_kN", "anchor_depth", "excavation_depth", "phi_deg",
+         "soil_type", "anchor_angle_deg", "drill_diameter_mm", "tendon_type",
+         "FOS_bond", "lock_off_pct", "max_load_pct", "bond_stress_kPa"),
+        method="design_ground_anchor")
     require_params(p, ["design_load_kN", "anchor_depth", "excavation_depth", "phi_deg"],
                    method="design_ground_anchor",
                    valid=["design_load_kN", "anchor_depth", "excavation_depth", "phi_deg",
@@ -128,10 +159,10 @@ _LAYERS = {"type": "array", "required": True, "description": "Array of soil-laye
 
 METHOD_INFO = {
     "braced_excavation": {"category": "Braced Excavation", "brief": "Multi-level braced excavation analysis (Terzaghi-Peck).",
-        "parameters": {"excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "layers": _LAYERS, "supports": {"type": "array", "required": False, "description": "Support levels [{depth (m), support_type ('strut' or 'anchor'), spacing (m), angle_deg}]."}, "surcharge": {"type": "float", "required": False, "default": 10.0, "description": "Surface surcharge (kPa)."}, "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."}},
+        "parameters": {"excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "layers": _LAYERS, "supports": {"type": "array", "required": False, "description": "Support levels [{depth (m), support_type ('strut' or 'anchor'), spacing (m), angle_deg}]."}, "surcharge": {"type": "float", "required": False, "default": 10.0, "description": "Surface surcharge (kPa)."}, "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."}, "excavation_width": {"type": "float", "required": False, "default": 0.0, "description": "Excavation width (m), for stability checks."}, "Fy": {"type": "float", "required": False, "default": 345.0, "description": "Steel yield strength (MPa) for section sizing."}},
         "returns": {"n_support_levels": "Number of supports.", "support_reactions": "Support forces.", "max_moment_kNm_per_m": "Max wall moment."}},
     "cantilever_excavation": {"category": "Cantilever Excavation", "brief": "Cantilever (unbraced) excavation wall analysis.",
-        "parameters": {"excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "layers": _LAYERS, "surcharge": {"type": "float", "required": False, "default": 10.0, "description": "Surface surcharge (kPa)."}},
+        "parameters": {"excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "layers": _LAYERS, "surcharge": {"type": "float", "required": False, "default": 10.0, "description": "Surface surcharge (kPa)."}, "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."}, "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "FOS on passive resistance."}, "Fy": {"type": "float", "required": False, "default": 345.0, "description": "Steel yield strength (MPa) for section sizing."}},
         "returns": {"embedment_depth_m": "Required embedment.", "max_moment_kNm_per_m": "Maximum moment."}},
     "apparent_pressure": {"category": "Earth Pressure", "brief": "Terzaghi-Peck apparent earth pressure envelope.",
         "parameters": {"excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "layers": _LAYERS, "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."}},
@@ -143,12 +174,12 @@ METHOD_INFO = {
         "parameters": {"H": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "cu": {"type": "float", "required": True, "description": "Undrained shear strength (kPa)."}, "gamma": {"type": "float", "required": True, "description": "Soil unit weight (kN/m3)."}, "method": {"type": "str", "required": False, "default": "terzaghi", "allowed_values": ["terzaghi", "bjerrum_eide"], "description": "Check method. bjerrum_eide also requires Be and Le."}, "B": {"type": "float", "required": False, "default": 0.0, "description": "Excavation width (m), terzaghi method."}, "Be": {"type": "float", "required": False, "description": "Excavation width (m). REQUIRED for bjerrum_eide."}, "Le": {"type": "float", "required": False, "description": "Excavation length (m). REQUIRED for bjerrum_eide."}, "q_surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."}},
         "returns": {"FOS": "Factor of safety.", "is_stable": "Pass/fail."}},
     "check_bottom_blowout": {"category": "Stability", "brief": "Bottom blowout (hydraulic uplift) check.",
-        "parameters": {"D_embed": {"type": "float", "required": True, "description": "Wall embedment below excavation (m)."}, "hw_excess": {"type": "float", "required": True, "description": "Excess water head (m)."}, "gamma_soil": {"type": "float", "required": True, "description": "Soil unit weight (kN/m3)."}},
+        "parameters": {"D_embed": {"type": "float", "required": True, "description": "Wall embedment below excavation (m)."}, "hw_excess": {"type": "float", "required": True, "description": "Excess water head (m)."}, "gamma_soil": {"type": "float", "required": True, "description": "Soil unit weight (kN/m3)."}, "gamma_w": {"type": "float", "required": False, "default": 9.81, "description": "Water unit weight (kN/m3)."}, "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required FOS."}},
         "returns": {"FOS": "Factor of safety."}},
     "check_piping": {"category": "Stability", "brief": "Piping (internal erosion) check.",
-        "parameters": {"delta_h": {"type": "float", "required": True, "description": "Head difference (m)."}, "flow_path": {"type": "float", "required": True, "description": "Seepage path length (m)."}},
+        "parameters": {"delta_h": {"type": "float", "required": True, "description": "Head difference (m)."}, "flow_path": {"type": "float", "required": True, "description": "Seepage path length (m)."}, "Gs": {"type": "float", "required": False, "default": 2.65, "description": "Specific gravity of solids."}, "void_ratio": {"type": "float", "required": False, "default": 0.65, "description": "Void ratio."}, "FOS_required": {"type": "float", "required": False, "default": 2.0, "description": "Required FOS."}},
         "returns": {"FOS": "Factor of safety.", "i_exit": "Exit gradient."}},
     "design_ground_anchor": {"category": "Anchors", "brief": "Ground anchor design per GEC-4/PTI.",
-        "parameters": {"design_load_kN": {"type": "float", "required": True, "description": "Design anchor load (kN)."}, "anchor_depth": {"type": "float", "required": True, "description": "Anchor depth (m)."}, "excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "phi_deg": {"type": "float", "required": True, "description": "Soil friction angle (degrees)."}, "soil_type": {"type": "str", "required": False, "default": "sand_medium", "allowed_values": ["sand_loose", "sand_medium", "sand_dense", "gravel", "clay_stiff", "clay_hard", "rock_soft", "rock_medium", "rock_hard"], "description": "Soil/rock type for bond stress lookup (or give bond_stress_kPa directly)."}, "tendon_type": {"type": "str", "required": False, "default": "strand_15mm", "allowed_values": ["strand_13mm", "strand_15mm", "bar_26mm", "bar_32mm", "bar_36mm", "bar_44mm"], "description": "Tendon type."}, "anchor_angle_deg": {"type": "float", "required": False, "default": 15.0, "description": "Anchor inclination below horizontal (deg)."}, "bond_stress_kPa": {"type": "float", "required": False, "description": "Override ultimate bond stress (kPa)."}},
+        "parameters": {"design_load_kN": {"type": "float", "required": True, "description": "Design anchor load (kN)."}, "anchor_depth": {"type": "float", "required": True, "description": "Anchor depth (m)."}, "excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "phi_deg": {"type": "float", "required": True, "description": "Soil friction angle (degrees)."}, "soil_type": {"type": "str", "required": False, "default": "sand_medium", "allowed_values": ["sand_loose", "sand_medium", "sand_dense", "gravel", "clay_stiff", "clay_hard", "rock_soft", "rock_medium", "rock_hard"], "description": "Soil/rock type for bond stress lookup (or give bond_stress_kPa directly)."}, "tendon_type": {"type": "str", "required": False, "default": "strand_15mm", "allowed_values": ["strand_13mm", "strand_15mm", "bar_26mm", "bar_32mm", "bar_36mm", "bar_44mm"], "description": "Tendon type."}, "anchor_angle_deg": {"type": "float", "required": False, "default": 15.0, "description": "Anchor inclination below horizontal (deg)."}, "bond_stress_kPa": {"type": "float", "required": False, "description": "Override ultimate bond stress (kPa)."}, "drill_diameter_mm": {"type": "float", "required": False, "default": 150.0, "description": "Drill hole diameter (mm)."}, "FOS_bond": {"type": "float", "required": False, "default": 2.0, "description": "FOS on bond stress."}, "lock_off_pct": {"type": "float", "required": False, "default": 0.80, "description": "Lock-off load fraction of design load."}, "max_load_pct": {"type": "float", "required": False, "default": 0.60, "description": "Max tendon load fraction of ultimate strength."}},
         "returns": {"unbonded_length_m": "Unbonded length.", "bond_length_m": "Bond length.", "total_length_m": "Total anchor length."}},
 }

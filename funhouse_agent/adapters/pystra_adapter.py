@@ -1,6 +1,6 @@
 """Pystra adapter — FORM/SORM/Monte Carlo structural reliability analysis."""
 
-from funhouse_agent.adapters import clean_result
+from funhouse_agent.adapters import clean_result, require_params
 
 
 def _run_form_reliability(params: dict) -> dict:
@@ -9,6 +9,7 @@ def _run_form_reliability(params: dict) -> dict:
     if not has_pystra():
         return {"error": "pystra is not installed. Install via: pip install pystra"}
 
+    require_params(params, ["variables", "limit_state"], method="form_analysis")
     result = analyze_form(
         variables=params["variables"],
         limit_state=params["limit_state"],
@@ -23,6 +24,7 @@ def _run_sorm_reliability(params: dict) -> dict:
     if not has_pystra():
         return {"error": "pystra is not installed. Install via: pip install pystra"}
 
+    require_params(params, ["variables", "limit_state"], method="sorm_analysis")
     result = analyze_sorm(
         variables=params["variables"],
         limit_state=params["limit_state"],
@@ -37,6 +39,8 @@ def _run_monte_carlo_reliability(params: dict) -> dict:
     if not has_pystra():
         return {"error": "pystra is not installed. Install via: pip install pystra"}
 
+    require_params(params, ["variables", "limit_state"],
+                   method="monte_carlo_analysis")
     result = analyze_monte_carlo(
         variables=params["variables"],
         limit_state=params["limit_state"],

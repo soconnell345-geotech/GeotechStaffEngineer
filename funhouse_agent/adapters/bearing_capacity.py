@@ -1,5 +1,6 @@
 """Bearing capacity adapter — flat dict → BearingCapacityAnalysis → dict."""
 
+from funhouse_agent.adapters import reject_unknown_params, require_params
 from bearing_capacity.footing import Footing
 from bearing_capacity.soil_profile import SoilLayer, BearingSoilProfile
 from bearing_capacity.capacity import BearingCapacityAnalysis
@@ -7,8 +8,24 @@ from bearing_capacity.factors import (
     bearing_capacity_Nc, bearing_capacity_Nq, bearing_capacity_Ngamma,
 )
 
+# Every top-level parameter _run_bearing_capacity_analysis consumes. Anything
+# else is rejected loudly so an invented name is never silently dropped.
+_ANALYSIS_VALID_PARAMS = (
+    "width", "length", "depth", "shape", "base_tilt", "eccentricity_B",
+    "eccentricity_L", "cohesion", "friction_angle", "unit_weight",
+    "layer1_thickness", "layer1_description", "layer2_cohesion",
+    "layer2_friction_angle", "layer2_unit_weight", "layer2_description",
+    "gwt_depth", "load_inclination", "ground_slope", "vertical_load",
+    "factor_of_safety", "ngamma_method", "factor_method",
+)
+
 
 def _run_bearing_capacity_analysis(params: dict) -> dict:
+    reject_unknown_params(params, _ANALYSIS_VALID_PARAMS,
+                          method="bearing_capacity_analysis")
+    require_params(params, ["width", "unit_weight"],
+                   method="bearing_capacity_analysis",
+                   valid=_ANALYSIS_VALID_PARAMS)
     footing = Footing(
         width=params["width"],
         length=params.get("length"),
@@ -47,6 +64,11 @@ def _run_bearing_capacity_analysis(params: dict) -> dict:
 
 
 def _run_bearing_capacity_factors(params: dict) -> dict:
+    reject_unknown_params(params, ("friction_angle", "method"),
+                          method="bearing_capacity_factors")
+    require_params(params, ["friction_angle"],
+                   method="bearing_capacity_factors",
+                   valid=["friction_angle", "method"])
     phi = params["friction_angle"]
     method = params.get("method", "vesic")
     return {
@@ -82,6 +104,13 @@ METHOD_INFO = {
             "layer1_thickness": {"type": "float", "required": False, "description": "First layer thickness (m) for 2-layer."},
             "factor_of_safety": {"type": "float", "required": False, "default": 3.0, "description": "Factor of safety."},
             "factor_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "hansen"], "description": "Bearing-capacity-factor method."},
+            "ngamma_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "hansen"], "description": "Ngamma factor method (may differ from factor_method)."},
+            "base_tilt": {"type": "float", "required": False, "default": 0.0, "description": "Base tilt angle (degrees)."},
+            "eccentricity_B": {"type": "float", "required": False, "default": 0.0, "description": "Load eccentricity along B (m)."},
+            "eccentricity_L": {"type": "float", "required": False, "default": 0.0, "description": "Load eccentricity along L (m)."},
+            "load_inclination": {"type": "float", "required": False, "default": 0.0, "description": "Load inclination from vertical (degrees)."},
+            "ground_slope": {"type": "float", "required": False, "default": 0.0, "description": "Ground slope angle (degrees)."},
+            "vertical_load": {"type": "float", "required": False, "default": 0.0, "description": "Applied vertical load (kN) for inclination factors."},
         },
         "returns": {
             "q_ultimate_kPa": "Ultimate bearing capacity.",

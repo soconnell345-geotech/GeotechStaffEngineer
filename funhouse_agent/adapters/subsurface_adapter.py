@@ -7,7 +7,16 @@ re-sending the entire data dict.
 
 import numpy as np
 
-from funhouse_agent.adapters import clean_result
+from funhouse_agent.adapters import clean_result, require_params
+
+
+def _require_file_or_content(params: dict, *, method: str):
+    """Raise a clear ValueError when neither file_path nor content is given."""
+    if params.get("file_path") is None and params.get("content") is None:
+        raise ValueError(
+            f"{method}: provide 'file_path' (path to the file) or 'content' "
+            "(file text), or an 'attachment_key' for an uploaded file."
+        )
 
 # Module-level cache: site_key -> SiteModel.  Populated by parse_diggs,
 # consumed by any plot method that receives site_key instead of site_data.
@@ -42,6 +51,7 @@ def _resolve_site(params: dict):
 def _run_parse_diggs(params: dict) -> dict:
     from subsurface_characterization import parse_diggs
 
+    _require_file_or_content(params, method="parse_diggs")
     filepath = params.get("file_path")
     content = params.get("content")
     result = parse_diggs(filepath=filepath, content=content)
@@ -86,6 +96,7 @@ def _run_parse_diggs(params: dict) -> dict:
 
 def _run_load_site(params: dict) -> dict:
     from subsurface_characterization import load_site_from_dict
+    require_params(params, ["site_data"], method="load_site")
     site = load_site_from_dict(params["site_data"])
 
     # Cache the SiteModel
@@ -123,6 +134,7 @@ def _run_load_site(params: dict) -> dict:
 
 def _run_plot_parameter_vs_depth(params: dict) -> dict:
     from subsurface_characterization import plot_parameter_vs_depth
+    require_params(params, ["parameter"], method="plot_parameter_vs_depth")
     site = _resolve_site(params)
     result = plot_parameter_vs_depth(
         site=site,
@@ -153,6 +165,7 @@ def _run_plot_atterberg_limits(params: dict) -> dict:
 
 def _run_plot_multi_parameter(params: dict) -> dict:
     from subsurface_characterization import plot_multi_parameter
+    require_params(params, ["parameters"], method="plot_multi_parameter")
     site = _resolve_site(params)
     result = plot_multi_parameter(
         site=site,
@@ -180,6 +193,7 @@ def _run_plot_plan_view(params: dict) -> dict:
 
 def _run_plot_cross_section(params: dict) -> dict:
     from subsurface_characterization import plot_cross_section
+    require_params(params, ["investigation_ids"], method="plot_cross_section")
     site = _resolve_site(params)
     result = plot_cross_section(
         site=site,
@@ -205,6 +219,7 @@ def _run_parse_cpt(params: dict) -> dict:
     if not has_pygef():
         return {"error": "pygef is not installed. Install with: pip install pygef"}
 
+    require_params(params, ["file_path"], method="parse_cpt")
     result = parse_cpt_file(
         file_path=params.get("file_path"),
         engine=params.get("engine", "auto"),
@@ -219,6 +234,7 @@ def _run_parse_borehole(params: dict) -> dict:
     if not has_pygef():
         return {"error": "pygef is not installed. Install with: pip install pygef"}
 
+    require_params(params, ["file_path"], method="parse_bore")
     result = parse_bore_file(
         file_path=params.get("file_path"),
         engine=params.get("engine", "auto"),
@@ -233,6 +249,7 @@ def _run_read_ags4(params: dict) -> dict:
     if not has_ags4():
         return {"error": "python-ags4 is not installed. Install with: pip install python-ags4"}
 
+    _require_file_or_content(params, method="read_ags4")
     result = read_ags4(
         filepath=params.get("file_path"),
         content=params.get("content"),
@@ -249,6 +266,7 @@ def _run_validate_ags4(params: dict) -> dict:
     if not has_ags4():
         return {"error": "python-ags4 is not installed. Install with: pip install python-ags4"}
 
+    _require_file_or_content(params, method="validate_ags4")
     result = validate_ags4(
         filepath=params.get("file_path"),
         content=params.get("content"),
@@ -265,6 +283,7 @@ def _run_validate_diggs_schema(params: dict) -> dict:
     if not has_pydiggs():
         return {"error": "pydiggs is not installed. Install with: pip install pydiggs"}
 
+    _require_file_or_content(params, method="validate_diggs_schema")
     result = validate_diggs_schema(
         filepath=params.get("file_path"),
         content=params.get("content"),
@@ -281,6 +300,7 @@ def _run_validate_diggs_dictionary(params: dict) -> dict:
     if not has_pydiggs():
         return {"error": "pydiggs is not installed. Install with: pip install pydiggs"}
 
+    _require_file_or_content(params, method="validate_diggs_dictionary")
     result = validate_diggs_dictionary(
         filepath=params.get("file_path"),
         content=params.get("content"),
@@ -294,6 +314,7 @@ def _run_validate_diggs_dictionary(params: dict) -> dict:
 
 def _run_compute_trend(params: dict) -> dict:
     from subsurface_characterization import compute_trend
+    require_params(params, ["depths", "values"], method="compute_trend")
     depths = np.asarray(params["depths"], dtype=float)
     values = np.asarray(params["values"], dtype=float)
     result = compute_trend(

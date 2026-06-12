@@ -1,6 +1,6 @@
 """Pile group adapter — rigid cap analysis, 6-DOF, efficiency."""
 
-from funhouse_agent.adapters import require_keys, require_params
+from funhouse_agent.adapters import reject_unknown_params, require_keys, require_params
 from pile_group import (
     GroupPile, create_rectangular_layout, converse_labarre,
     block_failure_capacity, p_multiplier, GroupLoad,
@@ -46,15 +46,31 @@ def _build_load(params):
                      Mx=params.get("Mx", 0.0), My=params.get("My", 0.0), Mz=params.get("Mz", 0.0))
 
 
+# Every top-level parameter the group-analysis methods consume.
+_GROUP_VALID_PARAMS = (
+    "n_rows", "n_cols", "spacing_x", "spacing_y", "spacing", "piles",
+    "axial_stiffness", "lateral_stiffness", "axial_capacity_compression",
+    "axial_capacity_tension", "Vx", "Vy", "Vz", "Mx", "My", "Mz",
+)
+
+
 def _run_pile_group_simple(params):
+    reject_unknown_params(params, _GROUP_VALID_PARAMS, method="pile_group_simple")
     return analyze_vertical_group_simple(_build_piles(params), _build_load(params)).to_dict()
 
 
 def _run_pile_group_6dof(params):
+    reject_unknown_params(params, _GROUP_VALID_PARAMS, method="pile_group_6dof")
     return analyze_group_6dof(_build_piles(params), _build_load(params)).to_dict()
 
 
 def _run_group_efficiency(params):
+    reject_unknown_params(
+        params,
+        ("n_rows", "n_cols", "pile_diameter", "spacing", "spacing_x",
+         "spacing_y", "pile_length", "cu", "row_position",
+         "spacing_diameter_ratio"),
+        method="group_efficiency")
     results = {}
     if "n_rows" in params and "n_cols" in params and "pile_diameter" in params:
         s = params.get("spacing", params.get("spacing_x"))
@@ -66,6 +82,10 @@ def _run_group_efficiency(params):
         results["converse_labarre_Eg"] = round(converse_labarre(
             params["n_rows"], params["n_cols"], params["pile_diameter"], s), 4)
     if "pile_length" in params and "cu" in params:
+        require_params(params, ["n_rows", "n_cols", "pile_diameter"],
+                       method="group_efficiency (block failure)",
+                       valid=["n_rows", "n_cols", "pile_diameter", "spacing",
+                              "spacing_x", "spacing_y", "pile_length", "cu"])
         results["block_failure_kN"] = round(block_failure_capacity(
             params["n_rows"], params["n_cols"], params.get("spacing_x", params.get("spacing", 0)),
             params.get("spacing_y", params.get("spacing", 0)), params["pile_length"],
@@ -96,6 +116,8 @@ METHOD_INFO = {
             "Vz": {"type": "float", "required": True, "description": "Vertical load (kN)."},
             "Mx": {"type": "float", "required": False, "description": "Moment about x (kN-m)."},
             "My": {"type": "float", "required": False, "description": "Moment about y (kN-m)."},
+            "axial_capacity_compression": {"type": "float", "required": False, "description": "Per-pile compression capacity (kN) for utilization checks (rectangular layout)."},
+            "axial_capacity_tension": {"type": "float", "required": False, "description": "Per-pile tension capacity (kN) (rectangular layout)."},
         },
         "returns": {"pile_forces": "Per-pile axial forces.", "max_compression_kN": "Max compression."},
     },
@@ -112,6 +134,9 @@ METHOD_INFO = {
             "Vx": {"type": "float", "required": False, "description": "Lateral load x (kN)."},
             "Vy": {"type": "float", "required": False, "description": "Lateral load y (kN)."},
             "Vz": {"type": "float", "required": False, "description": "Vertical load (kN)."},
+            "Mx": {"type": "float", "required": False, "description": "Moment about x (kN-m)."},
+            "My": {"type": "float", "required": False, "description": "Moment about y (kN-m)."},
+            "Mz": {"type": "float", "required": False, "description": "Torsion about z (kN-m)."},
         },
         "returns": {"pile_forces": "Per-pile forces.", "cap_displacement": "Cap displacement."},
     },
@@ -123,7 +148,11 @@ METHOD_INFO = {
             "n_cols": {"type": "int", "required": True, "description": "Number of columns."},
             "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter (m)."},
             "spacing": {"type": "float", "required": True, "description": "Center-to-center spacing (m)."},
+            "pile_length": {"type": "float", "required": False, "description": "Pile length (m). With cu, also computes block failure capacity."},
+            "cu": {"type": "float", "required": False, "description": "Undrained shear strength (kPa) for block failure."},
+            "row_position": {"type": "int", "required": False, "description": "Row number (1 = lead) — returns the lateral p-multiplier."},
+            "spacing_diameter_ratio": {"type": "float", "required": False, "description": "s/D ratio for the p-multiplier (computed from spacing/pile_diameter if omitted)."},
         },
-        "returns": {"converse_labarre_Eg": "Group efficiency factor."},
+        "returns": {"converse_labarre_Eg": "Group efficiency factor.", "block_failure_kN": "Block failure capacity (with pile_length + cu).", "p_multiplier": "Lateral p-multiplier (with row_position)."},
     },
 }

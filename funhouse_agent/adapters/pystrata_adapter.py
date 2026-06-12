@@ -1,6 +1,6 @@
 """pyStrata adapter — equivalent-linear and linear 1D site response."""
 
-from funhouse_agent.adapters import clean_result
+from funhouse_agent.adapters import clean_result, require_params
 
 
 def _check_pystrata():
@@ -16,6 +16,7 @@ def _run_eql_site_response(params: dict) -> dict:
     _check_pystrata()
     from pystrata_agent import analyze_eql_site_response
 
+    require_params(params, ["layers"], method="eql_site_response")
     result = analyze_eql_site_response(
         layers=params["layers"],
         motion=params.get("motion"),
@@ -34,6 +35,7 @@ def _run_linear_site_response(params: dict) -> dict:
     _check_pystrata()
     from pystrata_agent import analyze_linear_site_response
 
+    require_params(params, ["layers"], method="linear_site_response")
     result = analyze_linear_site_response(
         layers=params["layers"],
         motion=params.get("motion"),

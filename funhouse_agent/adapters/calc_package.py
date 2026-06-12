@@ -9,7 +9,10 @@ Ported from foundry/calc_package_agent_foundry.py — same object construction
 logic, adapted to the funhouse adapter pattern (METHOD_REGISTRY + METHOD_INFO).
 """
 
+import os
 from datetime import datetime
+
+from funhouse_agent.adapters import require_keys, require_params
 
 
 # ---------------------------------------------------------------------------
@@ -55,13 +58,27 @@ def _build_response(module: str, result, analysis, params: dict,
         **meta,
     )
 
+    # Verify the write on the REAL filesystem so callers (LLM agents) never
+    # need a separate ls/read to trust the save. Agent-side filesystem tools
+    # may be sandboxed/virtual and cannot see this file.
+    abs_path = os.path.abspath(output_path)
+    file_exists = os.path.isfile(abs_path)
     response = {
         "status": "success",
         "analysis_type": analysis_type,
-        "output_path": output_path,
+        "output_path": abs_path,
+        "file_exists": file_exists,
+        "file_size_bytes": os.path.getsize(abs_path) if file_exists else 0,
         "format": fmt,
         "html_length": len(content) if isinstance(content, str) else None,
     }
+    if not file_exists:
+        response["status"] = "error"
+        response["error"] = (
+            f"Calc package was generated but no file was found at '{abs_path}' "
+            "after writing. The target location may not be writable from this "
+            "process; retry with a local path (e.g. under /tmp)."
+        )
     if extra:
         response.update(extra)
     return response
@@ -75,6 +92,9 @@ def _generate_bearing_capacity_package(params: dict) -> dict:
     from bearing_capacity.footing import Footing
     from bearing_capacity.soil_profile import SoilLayer, BearingSoilProfile
     from bearing_capacity.capacity import BearingCapacityAnalysis
+
+    require_params(params, ["width", "unit_weight"],
+                   method="bearing_capacity_package")
 
     footing = Footing(
         width=params["width"],
@@ -120,20 +140,19 @@ def _generate_bearing_capacity_package(params: dict) -> dict:
 def _generate_lateral_pile_package(params: dict) -> dict:
     from lateral_pile import Pile, LateralPileAnalysis
     from lateral_pile.soil import SoilLayer
-    from lateral_pile.py_curves import (
-        SoftClayMatlock, StiffClayBelowWT, StiffClayAboveWT,
-        SoftClayJeanjean, SandReese, SandAPI, WeakRock,
-    )
+    # Same p-y construction/validation as lateral_pile.lateral_pile_analysis,
+    # so both tools accept identical layer dicts and fail with the same
+    # actionable messages (model names, required keys) instead of raw
+    # KeyError/TypeError.
+    from funhouse_agent.adapters.lateral_pile import _build_py_model
 
-    PY_MODEL_MAP = {
-        "SoftClayMatlock": SoftClayMatlock,
-        "StiffClayBelowWT": StiffClayBelowWT,
-        "StiffClayAboveWT": StiffClayAboveWT,
-        "SoftClayJeanjean": SoftClayJeanjean,
-        "SandReese": SandReese,
-        "SandAPI": SandAPI,
-        "WeakRock": WeakRock,
-    }
+    require_params(
+        params, ["pile_length", "pile_diameter", "pile_E", "soil_layers"],
+        method="lateral_pile_package",
+        valid=["pile_length", "pile_diameter", "pile_E", "pile_thickness",
+               "moment_of_inertia", "soil_layers", "Vt", "Mt", "Q",
+               "head_condition"],
+    )
 
     pile = Pile(
         length=params["pile_length"],
@@ -145,14 +164,21 @@ def _generate_lateral_pile_package(params: dict) -> dict:
 
     layers = []
     for ld in params["soil_layers"]:
-        model_name = ld["py_model"]
-        model_cls = PY_MODEL_MAP[model_name]
-        model_params = {k: v for k, v in ld.items()
-                        if k not in ("top", "bottom", "py_model", "description")}
-        py_model = model_cls(**model_params)
+        d = dict(ld)
+        # The analysis tool calls this key 'model'; accept both spellings.
+        if d.get("model") is None and d.get("py_model") is not None:
+            d["model"] = d.pop("py_model")
+        if d.get("model") is None:
+            raise ValueError(
+                "lateral_pile_package: each soil_layers[] dict requires "
+                "'py_model' (p-y model name; 'model' also accepted) "
+                f"(got keys {sorted(ld.keys())})."
+            )
+        require_keys(d, ["top", "bottom"], method="lateral_pile_package",
+                     item_label="soil_layers[]")
         layers.append(SoilLayer(
-            top=ld["top"], bottom=ld["bottom"],
-            py_model=py_model, description=ld.get("description"),
+            top=d["top"], bottom=d["bottom"],
+            py_model=_build_py_model(d), description=d.get("description"),
         ))
 
     analysis = LateralPileAnalysis(pile, layers)
@@ -182,8 +208,14 @@ def _generate_slope_stability_package(params: dict) -> dict:
     from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
     from slope_stability.analysis import analyze_slope
 
+    require_params(params, ["surface_points", "soil_layers", "xc", "yc", "radius"],
+                   method="slope_stability_package")
+
     soil_layers = []
     for ld in params["soil_layers"]:
+        require_keys(ld, ["name", "top_elevation", "bottom_elevation", "gamma"],
+                     method="slope_stability_package",
+                     item_label="soil_layers[]")
         soil_layers.append(SlopeSoilLayer(
             name=ld["name"],
             top_elevation=ld["top_elevation"],
@@ -245,6 +277,10 @@ def _generate_settlement_package(params: dict) -> dict:
     if params.get("consolidation_layers"):
         consol_layers = []
         for ld in params["consolidation_layers"]:
+            require_keys(ld, ["thickness", "depth_to_center", "e0", "Cc", "Cr",
+                              "sigma_v0"],
+                         method="settlement_package",
+                         item_label="consolidation_layers[]")
             consol_layers.append(ConsolidationLayer(
                 thickness=ld["thickness"],
                 depth_to_center=ld["depth_to_center"],
@@ -260,6 +296,9 @@ def _generate_settlement_package(params: dict) -> dict:
     if params.get("schmertmann_layers"):
         schm_layers = []
         for ld in params["schmertmann_layers"]:
+            require_keys(ld, ["depth_top", "depth_bottom", "Es"],
+                         method="settlement_package",
+                         item_label="schmertmann_layers[]")
             schm_layers.append(SchmertmannLayer(
                 depth_top=ld["depth_top"],
                 depth_bottom=ld["depth_bottom"],
@@ -307,6 +346,10 @@ def _generate_settlement_package(params: dict) -> dict:
 def _generate_axial_pile_package(params: dict) -> dict:
     from axial_pile import AxialPileAnalysis, AxialSoilLayer, AxialSoilProfile, PileSection
 
+    require_params(params, ["pile_area", "pile_perimeter", "pile_tip_area",
+                            "pile_width", "pile_length", "soil_layers"],
+                   method="axial_pile_package")
+
     pile = PileSection(
         name=params.get("pile_name", "Custom Pile"),
         pile_type=params.get("pile_type", "h_pile"),
@@ -319,6 +362,8 @@ def _generate_axial_pile_package(params: dict) -> dict:
 
     layers = []
     for ld in params["soil_layers"]:
+        require_keys(ld, ["soil_type", "thickness", "unit_weight"],
+                     method="axial_pile_package", item_label="soil_layers[]")
         layers.append(AxialSoilLayer(
             soil_type=ld["soil_type"],
             thickness=ld["thickness"],
@@ -357,6 +402,9 @@ def _generate_axial_pile_package(params: dict) -> dict:
 def _generate_drilled_shaft_package(params: dict) -> dict:
     from drilled_shaft import DrillShaft, ShaftSoilLayer, ShaftSoilProfile, DrillShaftAnalysis
 
+    require_params(params, ["diameter", "length", "soil_layers"],
+                   method="drilled_shaft_package")
+
     shaft = DrillShaft(
         diameter=params["diameter"],
         length=params["length"],
@@ -369,6 +417,8 @@ def _generate_drilled_shaft_package(params: dict) -> dict:
 
     layers = []
     for ld in params["soil_layers"]:
+        require_keys(ld, ["soil_type", "thickness", "unit_weight"],
+                     method="drilled_shaft_package", item_label="soil_layers[]")
         layers.append(ShaftSoilLayer(
             soil_type=ld["soil_type"],
             thickness=ld["thickness"],
@@ -407,8 +457,14 @@ def _generate_drilled_shaft_package(params: dict) -> dict:
 def _generate_downdrag_package(params: dict) -> dict:
     from downdrag import DowndragAnalysis, DowndragSoilLayer, DowndragSoilProfile
 
+    require_params(params, ["pile_length", "pile_diameter", "pile_E", "Q_dead",
+                            "soil_layers"],
+                   method="downdrag_package")
+
     layers = []
     for ld in params["soil_layers"]:
+        require_keys(ld, ["soil_type", "thickness", "unit_weight"],
+                     method="downdrag_package", item_label="soil_layers[]")
         layers.append(DowndragSoilLayer(
             soil_type=ld["soil_type"],
             thickness=ld["thickness"],
@@ -470,6 +526,13 @@ def _generate_seismic_package(params: dict) -> dict:
     analysis_dict = dict(params)
 
     if analysis_type == "site_classification":
+        require_params(params, ["Ss", "S1"],
+                       method="seismic_package (site_classification)")
+        if all(params.get(k) is None for k in ("vs30", "n_bar", "su_bar")):
+            raise ValueError(
+                "seismic_package (site_classification): provide one of "
+                "'vs30' (m/s), 'n_bar' (avg SPT N), or 'su_bar' (kPa)."
+            )
         site_class = classify_site(
             vs30=params.get("vs30"),
             n_bar=params.get("n_bar"),
@@ -478,6 +541,8 @@ def _generate_seismic_package(params: dict) -> dict:
         result = site_coefficients(site_class, Ss=params["Ss"], S1=params["S1"])
 
     elif analysis_type == "seismic_earth_pressure":
+        require_params(params, ["phi", "kh", "gamma", "H"],
+                       method="seismic_package (seismic_earth_pressure)")
         KAE = mononobe_okabe_KAE(
             phi_deg=params["phi"],
             delta_deg=params.get("delta", params["phi"] * 2 / 3),
@@ -499,6 +564,9 @@ def _generate_seismic_package(params: dict) -> dict:
         )
 
     elif analysis_type == "liquefaction":
+        require_params(params, ["layer_depths", "layer_N160", "layer_FC",
+                                "layer_gamma", "amax_g", "gwt_depth"],
+                       method="seismic_package (liquefaction)")
         layer_results = evaluate_liquefaction(
             layer_depths=params["layer_depths"],
             layer_N160=params["layer_N160"],
@@ -515,7 +583,10 @@ def _generate_seismic_package(params: dict) -> dict:
             gwt_depth=params["gwt_depth"],
         )
     else:
-        raise ValueError(f"Unknown analysis_type: {analysis_type}")
+        raise ValueError(
+            f"Unknown analysis_type '{analysis_type}'. Allowed: "
+            "['site_classification', 'seismic_earth_pressure', 'liquefaction']."
+        )
 
     return _build_response(
         "seismic_geotech", result, analysis_dict, params,
@@ -537,6 +608,8 @@ def _generate_retaining_wall_package(params: dict) -> dict:
     analysis_dict = dict(params)
 
     if wall_type == "cantilever":
+        require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
+                       method="retaining_wall_package")
         geom = CantileverWallGeometry(
             wall_height=params["wall_height"],
             base_width=params.get("base_width"),
@@ -589,6 +662,8 @@ def _generate_ground_improvement_package(params: dict) -> dict:
     analysis_dict = dict(params)
 
     if method == "wick_drains":
+        require_params(params, ["spacing", "ch", "cv", "Hdr", "time"],
+                       method="ground_improvement_package (wick_drains)")
         result = analyze_wick_drains(
             spacing=params["spacing"],
             ch=params["ch"], cv=params["cv"],
@@ -599,6 +674,8 @@ def _generate_ground_improvement_package(params: dict) -> dict:
             kh_ks_ratio=params.get("kh_ks_ratio", 2.0),
         )
     elif method == "aggregate_piers":
+        require_params(params, ["diameter", "spacing", "length"],
+                       method="ground_improvement_package (aggregate_piers)")
         result = analyze_aggregate_piers(
             diameter=params["diameter"],
             spacing=params["spacing"],
@@ -609,6 +686,8 @@ def _generate_ground_improvement_package(params: dict) -> dict:
             applied_stress=params.get("applied_stress", 100.0),
         )
     elif method == "surcharge":
+        require_params(params, ["H_clay", "cv", "surcharge", "sigma_v0", "Cc", "e0"],
+                       method="ground_improvement_package (surcharge)")
         result = analyze_surcharge_preloading(
             H_clay=params["H_clay"],
             cv=params["cv"],
@@ -619,13 +698,18 @@ def _generate_ground_improvement_package(params: dict) -> dict:
             target_consolidation=params.get("target_consolidation", 90.0),
         )
     elif method == "vibro":
+        require_params(params, ["spacing", "N1_before", "depth"],
+                       method="ground_improvement_package (vibro)")
         result = analyze_vibro_compaction(
             spacing=params["spacing"],
             N1_before=params["N1_before"],
             depth=params["depth"],
         )
     else:
-        raise ValueError(f"Unknown ground improvement method: {method}")
+        raise ValueError(
+            f"Unknown ground improvement method '{method}'. Allowed: "
+            "['wick_drains', 'aggregate_piers', 'surcharge', 'vibro']."
+        )
 
     return _build_response(
         "ground_improvement", result, analysis_dict, params,
@@ -643,6 +727,17 @@ def _generate_wave_equation_package(params: dict) -> dict:
         get_hammer, make_cushion_from_properties, Cushion,
         discretize_pile, generate_bearing_graph,
     )
+
+    require_params(params, ["hammer_name", "pile_length", "pile_area", "pile_E"],
+                   method="wave_equation_package")
+    if params.get("cushion_stiffness") is None and any(
+            params.get(k) is None
+            for k in ("cushion_area", "cushion_thickness", "cushion_E")):
+        raise ValueError(
+            "wave_equation_package: provide either 'cushion_stiffness' (kN/m) "
+            "or all of 'cushion_area' (m2), 'cushion_thickness' (m), "
+            "'cushion_E' (kPa)."
+        )
 
     hammer = get_hammer(params["hammer_name"])
     if "cushion_stiffness" in params:
@@ -693,13 +788,23 @@ def _generate_pile_group_package(params: dict) -> dict:
     )
 
     if params.get("layout") == "rectangular":
+        require_params(params, ["n_rows", "n_cols", "spacing_x", "spacing_y"],
+                       method="pile_group_package (layout='rectangular')")
         piles = create_rectangular_layout(
             n_rows=params["n_rows"], n_cols=params["n_cols"],
             spacing_x=params["spacing_x"], spacing_y=params["spacing_y"],
         )
     else:
+        if not params.get("piles"):
+            raise ValueError(
+                "pile_group_package: provide either layout='rectangular' with "
+                "n_rows/n_cols/spacing_x/spacing_y, or a 'piles' list of "
+                "{x, y} dicts."
+            )
         piles = []
         for pd in params["piles"]:
+            require_keys(pd, ["x", "y"], method="pile_group_package",
+                         item_label="piles[]")
             piles.append(GroupPile(
                 x=pd["x"], y=pd["y"],
                 axial_capacity_compression=pd.get("axial_capacity_compression"),
@@ -742,8 +847,16 @@ def _generate_pile_group_package(params: dict) -> dict:
 def _generate_sheet_pile_package(params: dict) -> dict:
     from sheet_pile import WallSoilLayer, analyze_cantilever, analyze_anchored
 
+    require_params(params, ["excavation_depth", "soil_layers"],
+                   method="sheet_pile_package")
+    if params.get("wall_type") == "anchored":
+        require_params(params, ["anchor_depth"],
+                       method="sheet_pile_package (wall_type='anchored')")
+
     layers = []
     for ld in params["soil_layers"]:
+        require_keys(ld, ["thickness", "unit_weight"],
+                     method="sheet_pile_package", item_label="soil_layers[]")
         layers.append(WallSoilLayer(
             thickness=ld["thickness"],
             unit_weight=ld["unit_weight"],
@@ -844,7 +957,11 @@ _COMMON_PARAMS = {
 _COMMON_RETURNS = {
     "status": "success or error.",
     "analysis_type": "Type of analysis performed.",
-    "output_path": "Path to saved calc package file.",
+    "output_path": "Absolute path of the saved calc package file.",
+    "file_exists": "True if the file was verified on disk after writing. "
+                   "Trust this field — do NOT try to verify the file with "
+                   "agent-side filesystem tools (they may be sandboxed).",
+    "file_size_bytes": "Size of the saved file (0 if file_exists is false).",
     "format": "Output format used.",
     "html_length": "Length of generated content.",
 }
@@ -874,11 +991,13 @@ METHOD_INFO = {
         "parameters": {
             "pile_length": {"type": "float", "required": True, "description": "Pile length (m)."},
             "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter (m)."},
-            "pile_E": {"type": "float", "required": True, "description": "Pile Young's modulus (kPa)."},
+            "pile_E": {"type": "float", "required": True, "description": "Pile Young's modulus (kPa). Steel ~200e6; concrete drilled shafts ~25e6 gross (use a reduced value, e.g. 0.3x, for cracked sections)."},
             "pile_thickness": {"type": "float", "required": False, "description": "Wall thickness (m). Solid if omitted."},
-            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: top, bottom, py_model (name string), plus model-specific params."},
+            "moment_of_inertia": {"type": "float", "required": False, "description": "Moment of inertia (m4). Overrides the value computed from diameter/thickness."},
+            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: top, bottom, py_model (alias: model), plus model params. py_model one of SoftClayMatlock/StiffClayAboveWT {c, gamma, eps50}; StiffClayBelowWT {c, gamma, eps50, ks}; SoftClayJeanjean {su, gamma, Gmax}; SandReese/SandAPI {phi, gamma, k} where k = initial subgrade modulus (kN/m3); WeakRock {qu, Er}. Same layer schema as lateral_pile.lateral_pile_analysis."},
             "Vt": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load at head (kN)."},
             "Mt": {"type": "float", "required": False, "default": 0.0, "description": "Moment at head (kN-m)."},
+            "Q": {"type": "float", "required": False, "default": 0.0, "description": "Axial load at pile top (kN), for P-delta."},
             "head_condition": {"type": "str", "required": False, "default": "free", "allowed_values": ["free", "fixed"], "description": "Pile head condition."},
             **_COMMON_PARAMS,
         },

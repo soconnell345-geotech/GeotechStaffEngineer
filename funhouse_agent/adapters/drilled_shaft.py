@@ -1,10 +1,24 @@
 """Drilled shaft adapter — GEC-10 alpha/beta/rock socket capacity + LRFD."""
 
+from funhouse_agent.adapters import (
+    apply_aliases, reject_unknown_params, require_keys, require_params,
+)
 from drilled_shaft import DrillShaft, ShaftSoilLayer, ShaftSoilProfile, DrillShaftAnalysis
 from drilled_shaft.lrfd import apply_lrfd, RESISTANCE_FACTORS
 
+# Shaft + soil params shared by every method below.
+_SHAFT_PARAMS = ("diameter", "shaft_length", "socket_diameter",
+                 "socket_length", "bell_diameter", "casing_depth",
+                 "concrete_fc")
+_SOIL_PARAMS = ("layers", "gwt_depth")
+# 'length' is a common guess for the shaft length.
+_SHAFT_ALIASES = {"length": "shaft_length", "pile_length": "shaft_length"}
+
 
 def _build_shaft(params):
+    require_params(params, ["diameter", "shaft_length"],
+                   method="drilled_shaft",
+                   valid=_SHAFT_PARAMS + _SOIL_PARAMS)
     return DrillShaft(diameter=params["diameter"], length=params["shaft_length"],
                        socket_diameter=params.get("socket_diameter"),
                        socket_length=params.get("socket_length", 0.0),
@@ -14,15 +28,23 @@ def _build_shaft(params):
 
 
 def _build_soil_profile(params):
-    layers = [ShaftSoilLayer(
-        thickness=l["thickness"], soil_type=l["soil_type"], unit_weight=l["unit_weight"],
-        cu=l.get("cu", 0.0), phi=l.get("phi", 0.0), N60=l.get("N60", 0.0),
-        qu=l.get("qu", 0.0), RQD=l.get("RQD", 100.0), description=l.get("description", ""),
-    ) for l in params["layers"]]
+    require_params(params, ["layers"], method="drilled_shaft")
+    layers = []
+    for l in params["layers"]:
+        require_keys(l, ["thickness", "soil_type", "unit_weight"],
+                     method="drilled_shaft", item_label="layers[]")
+        layers.append(ShaftSoilLayer(
+            thickness=l["thickness"], soil_type=l["soil_type"], unit_weight=l["unit_weight"],
+            cu=l.get("cu", 0.0), phi=l.get("phi", 0.0), N60=l.get("N60", 0.0),
+            qu=l.get("qu", 0.0), RQD=l.get("RQD", 100.0), description=l.get("description", ""),
+        ))
     return ShaftSoilProfile(layers=layers, gwt_depth=params.get("gwt_depth"))
 
 
 def _run_drilled_shaft_capacity(params):
+    params = apply_aliases(params, _SHAFT_ALIASES)
+    reject_unknown_params(params, _SHAFT_PARAMS + _SOIL_PARAMS + ("factor_of_safety",),
+                          method="drilled_shaft_capacity")
     shaft = _build_shaft(params)
     soil = _build_soil_profile(params)
     analysis = DrillShaftAnalysis(shaft=shaft, soil=soil, factor_of_safety=params.get("factor_of_safety", 2.5))
@@ -30,6 +52,12 @@ def _run_drilled_shaft_capacity(params):
 
 
 def _run_capacity_vs_depth(params):
+    params = apply_aliases(params, _SHAFT_ALIASES)
+    reject_unknown_params(
+        params,
+        _SHAFT_PARAMS + _SOIL_PARAMS + ("factor_of_safety", "depth_min",
+                                        "depth_max", "n_points"),
+        method="capacity_vs_depth")
     shaft = _build_shaft(params)
     soil = _build_soil_profile(params)
     analysis = DrillShaftAnalysis(shaft=shaft, soil=soil, factor_of_safety=params.get("factor_of_safety", 2.5))
@@ -39,11 +67,18 @@ def _run_capacity_vs_depth(params):
 
 
 def _run_lrfd_capacity(params):
+    params = apply_aliases(params, _SHAFT_ALIASES)
+    reject_unknown_params(params, _SHAFT_PARAMS + _SOIL_PARAMS + ("tip_soil_type",),
+                          method="lrfd_capacity")
     shaft = _build_shaft(params)
     soil = _build_soil_profile(params)
     analysis = DrillShaftAnalysis(shaft=shaft, soil=soil, factor_of_safety=1.0)
     result = analysis.compute()
     tip_soil_type = params.get("tip_soil_type", "cohesive")
+    if tip_soil_type not in ("cohesive", "cohesionless", "rock"):
+        raise ValueError(
+            f"lrfd_capacity: unknown tip_soil_type '{tip_soil_type}'. "
+            "Allowed: ['cohesive', 'cohesionless', 'rock'].")
     lrfd = apply_lrfd(result, tip_soil_type)
     output = result.to_dict()
     output["lrfd"] = lrfd
@@ -67,9 +102,15 @@ METHOD_INFO = {
         "brief": "Full drilled shaft capacity (GEC-10 alpha/beta/rock socket).",
         "parameters": {
             "diameter": {"type": "float", "required": True, "description": "Shaft diameter (m)."},
-            "shaft_length": {"type": "float", "required": True, "description": "Shaft length (m)."},
+            "shaft_length": {"type": "float", "required": True, "description": "Shaft length (m). Alias: length."},
             "layers": {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, cu, phi, N60, qu, RQD} dicts. soil_type: cohesive/cohesionless/rock."},
+            "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
             "factor_of_safety": {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety."},
+            "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter (m). Defaults to shaft diameter."},
+            "socket_length": {"type": "float", "required": False, "default": 0.0, "description": "Rock socket length (m)."},
+            "bell_diameter": {"type": "float", "required": False, "description": "Belled base diameter (m)."},
+            "casing_depth": {"type": "float", "required": False, "default": 0.0, "description": "Permanent casing depth (m, no side resistance)."},
+            "concrete_fc": {"type": "float", "required": False, "default": 28000.0, "description": "Concrete f'c (kPa)."},
         },
         "returns": {"Q_ultimate_kN": "Ultimate capacity.", "Q_skin_kN": "Side resistance.", "Q_tip_kN": "Tip resistance."},
     },

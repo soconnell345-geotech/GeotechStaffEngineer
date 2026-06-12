@@ -1,6 +1,6 @@
 """Slope stability adapter — flat dict → analyze_slope/search/probabilistic → dict."""
 
-from funhouse_agent.adapters import require_keys, require_params
+from funhouse_agent.adapters import reject_unknown_params, require_keys, require_params
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
 from slope_stability.analysis import (
     analyze_slope, search_critical_surface, compare_methods_table,
@@ -12,6 +12,17 @@ _F_INTERSLICE = ["constant", "half_sine", "clipped_sine", "trapezoidal"]
 _SURFACE_TYPES = ["circular", "entry_exit", "noncircular", "noncircular_de",
                   "pso", "weak_layer"]
 _STRENGTH_MODELS = ["mohr_coulomb", "shansep", "hoek_brown"]
+
+
+# Top-level geometry params consumed by _build_geometry, and the trial-surface
+# spec params — shared by every method's reject_unknown_params valid set.
+_GEOM_PARAMS = (
+    "surface_points", "soil_layers", "gwt_points", "surcharge",
+    "surcharge_x_range", "reinforcement_force", "reinforcement_elevation",
+    "kh", "nails", "anchors", "geosynthetics", "tension_crack_depth",
+    "tension_crack_water_depth",
+)
+_SURFACE_PARAMS = ("xc", "yc", "radius", "slip_points")
 
 
 def _check_choice(value, allowed, *, name: str, method: str):
@@ -114,6 +125,12 @@ def _slip_surface_from(params: dict):
 
 
 def _run_analyze_slope(params: dict) -> dict:
+    reject_unknown_params(
+        params,
+        _GEOM_PARAMS + _SURFACE_PARAMS + (
+            "method", "f_interslice", "n_slices", "tol",
+            "include_slice_data", "compare_methods"),
+        method="analyze_slope")
     geom = _build_geometry(params, method="analyze_slope")
     method = _check_choice(params.get("method", "bishop"), _METHODS,
                            name="method", method="analyze_slope")
@@ -132,6 +149,10 @@ def _run_analyze_slope(params: dict) -> dict:
 
 
 def _run_compare_methods(params: dict) -> dict:
+    reject_unknown_params(
+        params,
+        _GEOM_PARAMS + _SURFACE_PARAMS + ("f_interslice", "n_slices", "tol"),
+        method="compare_methods_table")
     geom = _build_geometry(params, method="compare_methods_table")
     f_interslice = _check_choice(
         params.get("f_interslice", "half_sine"), _F_INTERSLICE,
@@ -146,6 +167,13 @@ def _run_compare_methods(params: dict) -> dict:
 
 
 def _run_search_critical_surface(params: dict) -> dict:
+    reject_unknown_params(
+        params,
+        _GEOM_PARAMS + (
+            "surface_type", "method", "x_range", "y_range", "x_entry_range",
+            "x_exit_range", "nx", "ny", "n_trials", "n_points", "n_slices",
+            "tol", "seed"),
+        method="search_critical_surface")
     geom = _build_geometry(params, method="search_critical_surface")
     method = _check_choice(params.get("method", "bishop"), _METHODS,
                            name="method", method="search_critical_surface")
@@ -171,6 +199,11 @@ def _run_search_critical_surface(params: dict) -> dict:
 
 def _run_fosm(params: dict) -> dict:
     from slope_stability.probabilistic import fosm_fos
+    reject_unknown_params(
+        params,
+        _GEOM_PARAMS + _SURFACE_PARAMS + ("variables", "method", "n_slices",
+                                          "tol"),
+        method="fosm_fos")
     geom = _build_geometry(params, method="fosm_fos")
     require_params(params, ["variables"], method="fosm_fos")
     method = _check_choice(params.get("method", "bishop"), _METHODS,
@@ -187,6 +220,12 @@ def _run_fosm(params: dict) -> dict:
 
 def _run_monte_carlo(params: dict) -> dict:
     from slope_stability.probabilistic import monte_carlo_fos
+    reject_unknown_params(
+        params,
+        _GEOM_PARAMS + _SURFACE_PARAMS + (
+            "variables", "method", "n", "seed", "n_slices", "tol",
+            "research_surface"),
+        method="monte_carlo_fos")
     geom = _build_geometry(params, method="monte_carlo_fos")
     require_params(params, ["variables"], method="monte_carlo_fos")
     method = _check_choice(params.get("method", "bishop"), _METHODS,
@@ -222,6 +261,8 @@ _GEOMETRY_PARAMS = {
     "nails": {"type": "array", "required": False, "description": "Soil nails (per metre of slope run): [{x_head, z_head, length required; inclination deg below horizontal=15, bar_diameter mm=25, drill_hole_diameter mm=150, fy MPa=420, bond_stress kPa=100, spacing_h m=1.5}]. Capacity = min(pullout behind slip surface, bar tensile)/spacing_h (FHWA GEC-7)."},
     "anchors": {"type": "array", "required": False, "description": "Tieback anchors: [{x_head, z_head, length, T_allow kN/m required; inclination=15}]. Full T_allow applied when the bond zone crosses the slip surface."},
     "geosynthetics": {"type": "array", "required": False, "description": "Horizontal geosynthetic layers: [{elevation, T_allow kN/m required; x_start, x_end optional}]."},
+    "reinforcement_force": {"type": "float", "required": False, "default": 0.0, "description": "Single equivalent horizontal reinforcement force (kN/m). Simpler alternative to nails/anchors."},
+    "reinforcement_elevation": {"type": "float", "required": False, "description": "Elevation of the equivalent reinforcement force (m)."},
 }
 
 _SURFACE_SPEC_PARAMS = {

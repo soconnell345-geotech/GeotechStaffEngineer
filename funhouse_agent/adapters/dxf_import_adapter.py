@@ -1,11 +1,15 @@
 """DXF import adapter — discover layers, parse geometry, build slope/FEM inputs."""
 
-from funhouse_agent.adapters import clean_result
+from funhouse_agent.adapters import (
+    clean_result, reject_unknown_params, require_params,
+)
 
 
 def _run_discover_layers(params):
     from dxf_import import discover_layers
 
+    reject_unknown_params(params, ("file_path",), method="discover_layers")
+    require_params(params, ["file_path"], method="discover_layers")
     filepath = params.get("file_path")
     result = discover_layers(filepath=filepath)
     return clean_result(result.to_dict())
@@ -14,6 +18,12 @@ def _run_discover_layers(params):
 def _run_parse_dxf_geometry(params):
     from dxf_import import parse_dxf_geometry, LayerMapping
 
+    reject_unknown_params(params, ("file_path", "layer_mapping", "units",
+                                   "flip_y"),
+                          method="parse_geometry")
+    require_params(params, ["file_path", "layer_mapping"],
+                   method="parse_geometry",
+                   valid=["file_path", "layer_mapping", "units", "flip_y"])
     filepath = params.get("file_path")
     units = params.get("units", "m")
     flip_y = params.get("flip_y", False)
@@ -41,6 +51,12 @@ def _run_build_slope_geometry(params):
     from dxf_import import build_slope_geometry, SoilPropertyAssignment
     from dxf_import.results import DxfParseResult
 
+    reject_unknown_params(params, ("parse_result", "soil_properties",
+                                   "nail_defaults"),
+                          method="build_slope_geometry")
+    require_params(params, ["parse_result", "soil_properties"],
+                   method="build_slope_geometry",
+                   valid=["parse_result", "soil_properties", "nail_defaults"])
     # Reconstruct DxfParseResult from dict
     pr = params.get("parse_result", {})
     surface_points = [
@@ -99,6 +115,11 @@ def _run_build_fem_inputs(params):
     from dxf_import import build_fem_inputs, FEMSoilPropertyAssignment
     from dxf_import.results import DxfParseResult
 
+    reject_unknown_params(params, ("parse_result", "soil_properties"),
+                          method="build_fem_inputs")
+    require_params(params, ["parse_result", "soil_properties"],
+                   method="build_fem_inputs",
+                   valid=["parse_result", "soil_properties"])
     # Reconstruct DxfParseResult from dict
     pr = params.get("parse_result", {})
     surface_points = [

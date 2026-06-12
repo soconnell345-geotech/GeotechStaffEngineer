@@ -341,7 +341,11 @@ class TestEdgeCases:
             "width": 2.0, "unit_weight": 18.0, "friction_angle": 30.0,
         })
         assert result["status"] == "success"
-        assert result["output_path"].startswith("bearing_capacity_calc_")
+        # output_path is returned absolute so callers know exactly where it landed
+        assert os.path.isabs(result["output_path"])
+        assert os.path.basename(result["output_path"]).startswith("bearing_capacity_calc_")
+        assert result["file_exists"] is True
+        assert result["file_size_bytes"] > 0
         # Clean up auto-generated file
         if os.path.exists(result["output_path"]):
             os.remove(result["output_path"])
@@ -361,3 +365,82 @@ class TestEdgeCases:
         html = open(outfile).read()
         assert "Bridge Abutment" in html
         assert "ACME Engineering" in html
+
+
+# ---------------------------------------------------------------------------
+# Regression: v5.0 lateral-pile calc-package failure conversation (2026-06-12).
+# The live agent burned ~850k tokens on (a) raw KeyError/TypeError from
+# guessed layer keys/model names, (b) a silently-ignored stiffness param on
+# the analysis tool making the package result look "wrong", and (c) being
+# unable to verify the saved file.
+# ---------------------------------------------------------------------------
+
+class TestLateralPilePackageErgonomics:
+    def _params(self, tmp_path, layers, **kw):
+        p = {
+            "pile_length": 15.0, "pile_diameter": 0.8, "pile_E": 7.5e6,
+            "Vt": 20.0, "soil_layers": layers,
+            "output_path": str(tmp_path / "lp.html"),
+        }
+        p.update(kw)
+        return p
+
+    def test_unknown_py_model_lists_options(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import _generate_lateral_pile_package
+        layers = [{"top": 0, "bottom": 15, "py_model": "api_sand",
+                   "phi": 32, "gamma": 19, "k": 8150}]
+        with pytest.raises(ValueError, match="SandAPI"):
+            _generate_lateral_pile_package(self._params(tmp_path, layers))
+
+    def test_wrong_layer_param_names_actionable(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import _generate_lateral_pile_package
+        # The live agent guessed phi_deg / gamma_kN_m3 — must get a message
+        # naming the required keys, not a raw TypeError.
+        layers = [{"top": 0, "bottom": 15, "py_model": "SandAPI",
+                   "phi_deg": 32, "gamma_kN_m3": 19, "k": 8150}]
+        with pytest.raises(ValueError, match=r"phi.*gamma|requires"):
+            _generate_lateral_pile_package(self._params(tmp_path, layers))
+
+    def test_model_key_alias_accepted(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import _generate_lateral_pile_package
+        # The analysis tool calls this key 'model'; the package accepts both.
+        layers = [{"top": 0, "bottom": 15, "model": "SandAPI",
+                   "phi": 32, "gamma": 19, "k": 8150}]
+        result = _generate_lateral_pile_package(self._params(tmp_path, layers))
+        assert result["status"] == "success"
+
+    def test_missing_pile_E_actionable(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import _generate_lateral_pile_package
+        layers = [{"top": 0, "bottom": 15, "py_model": "SandAPI",
+                   "phi": 32, "gamma": 19, "k": 8150}]
+        p = self._params(tmp_path, layers)
+        del p["pile_E"]
+        with pytest.raises(ValueError, match="pile_E"):
+            _generate_lateral_pile_package(p)
+
+    def test_file_verification_fields(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import _generate_lateral_pile_package
+        layers = [{"top": 0, "bottom": 15, "py_model": "SandAPI",
+                   "phi": 32, "gamma": 19, "k": 8150}]
+        result = _generate_lateral_pile_package(self._params(tmp_path, layers))
+        assert result["file_exists"] is True
+        assert result["file_size_bytes"] > 1000
+        assert os.path.isabs(result["output_path"])
+        assert os.path.getsize(result["output_path"]) == result["file_size_bytes"]
+
+    def test_package_matches_analysis_tool(self, tmp_path):
+        """Same inputs -> same deflection from both tools (the 0.50 vs 1.86 mm
+        confusion came from DIFFERENT stiffness inputs, not different solvers)."""
+        from funhouse_agent.adapters.calc_package import _generate_lateral_pile_package
+        from funhouse_agent.adapters.lateral_pile import METHOD_REGISTRY as LP
+        layers = [{"top": 0, "bottom": 15, "py_model": "SandAPI",
+                   "phi": 32, "gamma": 19, "k": 8150}]
+        pkg = _generate_lateral_pile_package(self._params(tmp_path, layers))
+        direct = LP["lateral_pile_analysis"]({
+            "pile_type": "pipe", "pile_diameter": 0.8, "pile_length": 15.0,
+            "pile_E": 7.5e6, "Vt": 20.0,
+            "layers": [{"top": 0, "bottom": 15, "model": "SandAPI",
+                        "phi": 32, "gamma": 19, "k": 8150}],
+        })
+        y_direct_mm = direct["deflection_m"][0] * 1000
+        assert abs(pkg["y_top_mm"] - y_direct_mm) < 0.05

@@ -1,6 +1,6 @@
 """swprocess adapter — flat dict -> swprocess_agent API -> dict."""
 
-from funhouse_agent.adapters import clean_result
+from funhouse_agent.adapters import clean_result, require_params
 
 
 def _run_masw_dispersion(params: dict) -> dict:
@@ -8,6 +8,7 @@ def _run_masw_dispersion(params: dict) -> dict:
     if not has_swprocess():
         return {"error": "swprocess is not installed. Install with: pip install swprocess"}
 
+    require_params(params, ["traces", "offsets", "dt"], method="analyze_masw")
     result = analyze_masw(
         traces=params["traces"],
         offsets=params["offsets"],

@@ -1,14 +1,22 @@
 """Downdrag adapter — Fellenius neutral plane, UFC 3-220-20."""
 
 from downdrag import DowndragSoilLayer, DowndragSoilProfile, DowndragAnalysis
-from funhouse_agent.adapters import require_keys, require_params
+from funhouse_agent.adapters import reject_unknown_params, require_keys, require_params
 
 _SOIL_TYPES = ("cohesionless", "cohesive")
 
+# Every top-level parameter _run_downdrag_analysis consumes.
+_VALID_PARAMS = (
+    "layers", "gwt_depth", "pile_length", "pile_diameter", "pile_perimeter",
+    "pile_area", "pile_E", "pile_unit_weight", "Q_dead", "structural_capacity",
+    "fill_thickness", "fill_unit_weight", "gw_drawdown", "Nt", "n_sublayers",
+)
+
 
 def _run_downdrag_analysis(params):
+    reject_unknown_params(params, _VALID_PARAMS, method="downdrag_analysis")
     require_params(params, ["layers", "pile_length", "pile_diameter"],
-                   method="downdrag_analysis")
+                   method="downdrag_analysis", valid=_VALID_PARAMS)
     layers = []
     for l in params["layers"]:
         require_keys(l, ["thickness", "soil_type", "unit_weight"], method="downdrag_analysis")
@@ -49,7 +57,14 @@ METHOD_INFO = {
             "layers": {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, phi, cu, beta, Cc, e0, settling} dicts. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay'/'settling_fill'). Mark settling layers with settling=True."},
             "Q_dead": {"type": "float", "required": False, "default": 0.0, "description": "Dead load at pile top (kN)."},
             "fill_thickness": {"type": "float", "required": False, "description": "Fill thickness causing downdrag (m)."},
+            "fill_unit_weight": {"type": "float", "required": False, "default": 19.0, "description": "Fill unit weight (kN/m3)."},
             "gw_drawdown": {"type": "float", "required": False, "description": "Groundwater drawdown (m)."},
+            "gwt_depth": {"type": "float", "required": False, "default": 0.0, "description": "Groundwater depth (m)."},
+            "pile_E": {"type": "float", "required": False, "default": 200e6, "description": "Pile elastic modulus (kPa). Default is steel."},
+            "pile_perimeter": {"type": "float", "required": False, "description": "Pile perimeter (m). Computed from diameter if omitted."},
+            "pile_area": {"type": "float", "required": False, "description": "Pile cross-section area (m2). Computed from diameter if omitted."},
+            "structural_capacity": {"type": "float", "required": False, "description": "Pile structural capacity (kN) for the max-load check."},
+            "Nt": {"type": "float", "required": False, "description": "Toe bearing capacity coefficient override."},
         },
         "returns": {"neutral_plane_depth_m": "Neutral plane depth.", "dragload_kN": "Downdrag force on pile."},
     },

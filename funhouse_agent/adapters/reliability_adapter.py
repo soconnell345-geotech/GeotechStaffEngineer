@@ -6,7 +6,12 @@ averaging)."""
 import math
 import re
 
-from funhouse_agent.adapters import clean_result, require_params
+from funhouse_agent.adapters import (
+    clean_result, reject_unknown_params, require_params,
+)
+
+# Engine-method shared params (the variables/g_expression interface).
+_ENGINE_PARAMS = ("variables", "g_expression", "convention", "correlation")
 
 _CONVENTIONS = ["fos", "margin"]
 _SAMPLING = ["random", "lhs"]
@@ -68,6 +73,7 @@ def _prep(params: dict, method: str):
 
 def _run_fosm(params: dict) -> dict:
     from reliability import fosm
+    reject_unknown_params(params, _ENGINE_PARAMS, method="fosm")
     g, variables, corr, conv = _prep(params, "fosm")
     res = fosm(g, variables, correlation=corr, convention=conv)
     return clean_result(res.to_dict())
@@ -75,6 +81,7 @@ def _run_fosm(params: dict) -> dict:
 
 def _run_pem(params: dict) -> dict:
     from reliability import pem
+    reject_unknown_params(params, _ENGINE_PARAMS + ("scheme",), method="pem")
     g, variables, corr, conv = _prep(params, "pem")
     scheme = params.get("scheme", "full")
     if scheme not in _SCHEMES:
@@ -86,6 +93,9 @@ def _run_pem(params: dict) -> dict:
 
 def _run_monte_carlo(params: dict) -> dict:
     from reliability import monte_carlo
+    reject_unknown_params(params,
+                          _ENGINE_PARAMS + ("n", "seed", "sampling", "n_bins"),
+                          method="monte_carlo")
     g, variables, corr, conv = _prep(params, "monte_carlo")
     sampling = params.get("sampling", "random")
     if sampling not in _SAMPLING:
@@ -100,6 +110,8 @@ def _run_monte_carlo(params: dict) -> dict:
 
 def _run_form(params: dict) -> dict:
     from reliability import form
+    reject_unknown_params(params, _ENGINE_PARAMS + ("max_iterations",),
+                          method="form")
     g, variables, corr, conv = _prep(params, "form")
     res = form(g, variables, correlation=corr, convention=conv,
                max_iterations=int(params.get("max_iterations", 100)))
@@ -108,6 +120,8 @@ def _run_form(params: dict) -> dict:
 
 def _run_cov_guidance(params: dict) -> dict:
     from reliability import cov_guidance
+    reject_unknown_params(params, ("property", "soil_type", "test", "category"),
+                          method="cov_guidance")
     require_params(params, ["property"], method="cov_guidance")
     category = params.get("category")
     if category is not None and category not in _CATEGORIES:
@@ -128,6 +142,9 @@ def _run_cov_guidance(params: dict) -> dict:
 
 def _run_combined_cov(params: dict) -> dict:
     from reliability import combined_cov
+    reject_unknown_params(params, ("cov_inherent", "cov_measurement",
+                                   "cov_transformation", "variance_reduction"),
+                          method="combined_cov")
     require_params(params, ["cov_inherent"], method="combined_cov")
     total = combined_cov(
         float(params["cov_inherent"]),
@@ -152,6 +169,8 @@ def _run_combined_cov(params: dict) -> dict:
 def _run_variance_reduction(params: dict) -> dict:
     from reliability import variance_reduction
     from reliability.spatial import scale_of_fluctuation_guidance
+    reject_unknown_params(params, ("L", "delta", "soil_type", "model"),
+                          method="variance_reduction")
     require_params(params, ["L"], method="variance_reduction")
     model = params.get("model", "exponential")
     if model not in _VR_MODELS:

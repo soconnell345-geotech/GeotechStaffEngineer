@@ -1,6 +1,6 @@
 """liquepy adapter — CPT-based liquefaction triggering and field correlations."""
 
-from funhouse_agent.adapters import clean_result
+from funhouse_agent.adapters import apply_aliases, clean_result, require_params
 
 
 def _check_liquepy():
@@ -16,6 +16,7 @@ def _run_cpt_liquefaction(params: dict) -> dict:
     _check_liquepy()
     from liquepy_agent import analyze_cpt_liquefaction
 
+    require_params(params, ["depth", "q_c", "f_s"], method="cpt_liquefaction")
     result = analyze_cpt_liquefaction(
         depth=params["depth"],
         q_c=params["q_c"],
@@ -39,15 +40,22 @@ def _run_spt_liquefaction(params: dict) -> dict:
     _check_liquepy()
     from liquepy_agent import analyze_spt_liquefaction
 
+    # Accept the common alternative spellings before validating.
+    p = apply_aliases(params, {"n1_60": "N160", "fc": "FC", "pga": "amax_g",
+                               "gwl": "gwt_depth"})
+    require_params(p, ["depth", "N160", "FC", "gamma", "amax_g", "gwt_depth"],
+                   method="spt_liquefaction",
+                   valid=["depth", "N160", "FC", "gamma", "amax_g",
+                          "gwt_depth", "m_w", "c_0"])
     result = analyze_spt_liquefaction(
-        depth=params["depth"],
-        n1_60=params.get("N160", params.get("n1_60")),
-        fc=params.get("FC", params.get("fc")),
-        gamma=params["gamma"],
-        amax_g=params.get("amax_g", params.get("pga")),
-        gwt_depth=params.get("gwt_depth", params.get("gwl")),
-        m_w=params.get("m_w", 7.5),
-        c_0=params.get("c_0", 2.8),
+        depth=p["depth"],
+        n1_60=p["N160"],
+        fc=p["FC"],
+        gamma=p["gamma"],
+        amax_g=p["amax_g"],
+        gwt_depth=p["gwt_depth"],
+        m_w=p.get("m_w", 7.5),
+        c_0=p.get("c_0", 2.8),
     )
     return clean_result(result.to_dict())
 
@@ -56,6 +64,7 @@ def _run_field_correlations(params: dict) -> dict:
     _check_liquepy()
     from liquepy_agent import analyze_field_correlations
 
+    require_params(params, ["depth", "q_c", "f_s"], method="field_correlations")
     result = analyze_field_correlations(
         depth=params["depth"],
         q_c=params["q_c"],

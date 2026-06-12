@@ -2,9 +2,16 @@
 
 from axial_pile import PileSection, make_pipe_pile, make_concrete_pile, make_h_pile
 from axial_pile import AxialSoilLayer, AxialSoilProfile, AxialPileAnalysis
-from funhouse_agent.adapters import apply_aliases, require_keys, require_params
+from funhouse_agent.adapters import (
+    apply_aliases, reject_unknown_params, require_keys, require_params,
+)
 
 _PILE_TYPES = ("pipe_closed", "pipe_open", "concrete_square", "concrete_circular", "h_pile")
+
+# Pile-geometry params (incl. the accepted aliases width/thickness/diameter).
+_PILE_PARAMS = ("pile_type", "diameter", "wall_thickness", "width",
+                "thickness", "designation", "E")
+_SOIL_PARAMS = ("layers", "gwt_depth")
 
 
 def _build_pile(params):
@@ -47,6 +54,12 @@ def _build_soil_profile(params, *, method):
 
 
 def _run_axial_pile_capacity(params):
+    reject_unknown_params(
+        params,
+        _PILE_PARAMS + _SOIL_PARAMS + (
+            "pile_length", "method", "factor_of_safety", "include_uplift",
+            "cohesive_phi", "uplift_skin_fraction", "pile_weight"),
+        method="axial_pile_capacity")
     pile = _build_pile(params)
     soil = _build_soil_profile(params, method="axial_pile_capacity")
     require_params(params, ["pile_length"], method="axial_pile_capacity")
@@ -61,6 +74,11 @@ def _run_axial_pile_capacity(params):
 
 
 def _run_capacity_vs_depth(params):
+    reject_unknown_params(
+        params,
+        _PILE_PARAMS + _SOIL_PARAMS + (
+            "pile_length", "method", "depth_min", "depth_max", "n_points"),
+        method="capacity_vs_depth")
     pile = _build_pile(params)
     soil = _build_soil_profile(params, method="capacity_vs_depth")
     analysis = AxialPileAnalysis(pile=pile, soil=soil, pile_length=params.get("pile_length", soil.total_thickness),
@@ -71,6 +89,7 @@ def _run_capacity_vs_depth(params):
 
 
 def _run_make_pile_section(params):
+    reject_unknown_params(params, _PILE_PARAMS, method="make_pile_section")
     pile = _build_pile(params)
     return {
         "name": pile.name,
@@ -98,6 +117,7 @@ METHOD_INFO = {
             "wall_thickness": {"type": "float", "required": False, "description": "Pipe wall thickness (m)."},
             "width": {"type": "float", "required": False, "description": "Side dimension (m) for concrete piles."},
             "designation": {"type": "str", "required": False, "description": "H-pile designation (e.g., 'HP14x117')."},
+            "E": {"type": "float", "required": False, "description": "Pile elastic modulus (kPa). Defaults: steel 200e6, concrete 25e6."},
             "pile_length": {"type": "float", "required": True, "description": "Pile length (m)."},
             "layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {thickness (m), soil_type, unit_weight (kN/m3), friction_angle (deg, for cohesionless), cohesion (kPa, for cohesive)}. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay')."},
             "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
@@ -116,8 +136,12 @@ METHOD_INFO = {
         "parameters": {
             "pile_type": {"type": "str", "required": True, "allowed_values": ["pipe_closed", "pipe_open", "concrete_square", "concrete_circular", "h_pile"], "description": "Pile type (see axial_pile_capacity for geometry params per type)."},
             "layers": {"type": "array", "required": True, "description": "Soil layers; each soil_type must be 'cohesionless' or 'cohesive'."},
+            "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
+            "pile_length": {"type": "float", "required": False, "description": "Reference pile length (m). Defaults to total soil thickness."},
+            "method": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "beta"], "description": "Capacity method (see axial_pile_capacity)."},
             "depth_min": {"type": "float", "required": False, "default": 3.0, "description": "Min depth (m)."},
             "depth_max": {"type": "float", "required": False, "description": "Max depth (m)."},
+            "n_points": {"type": "int", "required": False, "default": 20, "description": "Points on the curve."},
         },
         "returns": {"capacity_vs_depth": "List of {depth, Q_ult, Q_skin, Q_tip} dicts."},
     },

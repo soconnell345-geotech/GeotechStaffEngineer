@@ -1,6 +1,8 @@
 """Settlement adapter — flat dict → settlement functions → dict."""
 
-from funhouse_agent.adapters import apply_aliases, require_keys, require_params
+from funhouse_agent.adapters import (
+    apply_aliases, reject_unknown_params, require_keys, require_params,
+)
 from settlement.immediate import elastic_settlement, SchmertmannLayer, schmertmann_settlement
 from settlement.consolidation import (
     ConsolidationLayer, consolidation_settlement_layer,
@@ -11,6 +13,8 @@ from settlement.analysis import SettlementAnalysis
 
 def _run_elastic_settlement(params: dict) -> dict:
     params = apply_aliases(params, {"q": "q_net", "q_applied": "q_net", "pressure": "q_net"})
+    reject_unknown_params(params, ("q_net", "B", "Es", "nu", "Iw", "shape"),
+                          method="elastic_settlement")
     require_params(params, ["q_net", "B", "Es"], method="elastic_settlement",
                    valid=["q_net", "B", "Es", "nu", "Iw", "shape"])
     Se = elastic_settlement(
@@ -23,6 +27,10 @@ def _run_elastic_settlement(params: dict) -> dict:
 
 def _run_schmertmann_settlement(params: dict) -> dict:
     params = apply_aliases(params, {"q": "q_net", "q_applied": "q_net"})
+    reject_unknown_params(
+        params, ("q_net", "q_overburden", "B", "L", "layers", "shape",
+                 "time_years"),
+        method="schmertmann_settlement")
     require_params(params, ["q_net", "B", "layers"], method="schmertmann_settlement")
     for l in params["layers"]:
         require_keys(l, ["depth_top", "depth_bottom", "Es"], method="schmertmann_settlement")
@@ -37,6 +45,10 @@ def _run_schmertmann_settlement(params: dict) -> dict:
 
 
 def _run_consolidation_settlement(params: dict) -> dict:
+    reject_unknown_params(
+        params, ("layers", "delta_sigma", "delta_sigmas", "q_net", "B", "L",
+                 "stress_method"),
+        method="consolidation_settlement")
     require_params(params, ["layers"], method="consolidation_settlement")
     for l in params["layers"]:
         require_keys(l, ["thickness", "depth_to_center", "e0", "Cc", "Cr", "sigma_v0"],
@@ -76,19 +88,37 @@ def _run_consolidation_settlement(params: dict) -> dict:
 
 def _run_combined_settlement(params: dict) -> dict:
     params = apply_aliases(params, {"q_net": "q_applied", "q": "q_applied"})
+    reject_unknown_params(
+        params, ("q_applied", "q_overburden", "B", "L", "shape",
+                 "immediate_method", "Es", "nu", "schmertmann_layers",
+                 "consolidation_layers", "cv", "Hdr", "drainage", "C_alpha",
+                 "e0_secondary", "t_secondary", "stress_method",
+                 "time_years_schmertmann"),
+        method="combined_settlement_analysis")
     require_params(params, ["q_applied", "B"], method="combined_settlement_analysis")
     consol_layers = None
     if "consolidation_layers" in params:
-        consol_layers = [
-            ConsolidationLayer(
+        consol_layers = []
+        for l in params["consolidation_layers"]:
+            require_keys(l, ["thickness", "depth_to_center", "e0", "Cc", "Cr",
+                             "sigma_v0"],
+                         method="combined_settlement_analysis",
+                         item_label="consolidation_layers[]")
+            consol_layers.append(ConsolidationLayer(
                 thickness=l["thickness"], depth_to_center=l["depth_to_center"],
                 e0=l["e0"], Cc=l["Cc"], Cr=l["Cr"],
                 sigma_v0=l["sigma_v0"], sigma_p=l.get("sigma_p"),
-            ) for l in params["consolidation_layers"]
-        ]
+            ))
     schmertmann_layers = None
     if "schmertmann_layers" in params:
-        schmertmann_layers = [SchmertmannLayer(depth_top=l["depth_top"], depth_bottom=l["depth_bottom"], Es=l["Es"]) for l in params["schmertmann_layers"]]
+        schmertmann_layers = []
+        for l in params["schmertmann_layers"]:
+            require_keys(l, ["depth_top", "depth_bottom", "Es"],
+                         method="combined_settlement_analysis",
+                         item_label="schmertmann_layers[]")
+            schmertmann_layers.append(SchmertmannLayer(
+                depth_top=l["depth_top"], depth_bottom=l["depth_bottom"],
+                Es=l["Es"]))
 
     analysis = SettlementAnalysis(
         q_applied=params["q_applied"], q_overburden=params.get("q_overburden", 0.0),
@@ -124,6 +154,7 @@ METHOD_INFO = {
             "B": {"type": "float", "required": True, "description": "Footing width (m)."},
             "Es": {"type": "float", "required": True, "description": "Soil elastic modulus (kPa)."},
             "nu": {"type": "float", "required": False, "default": 0.3, "description": "Poisson's ratio."},
+            "Iw": {"type": "float", "required": False, "default": 1.0, "description": "Influence factor for footing rigidity/shape."},
             "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "circular"], "description": "Footing shape (for reference; supply Iw for non-default rigidity)."},
         },
         "returns": {"immediate_settlement_mm": "Settlement in mm."},
@@ -147,8 +178,10 @@ METHOD_INFO = {
         "parameters": {
             "layers": {"type": "array", "required": True, "description": "Array of {thickness (m), depth_to_center (m), e0, Cc, Cr (recompression index; ~Cc/10 if unknown), sigma_v0 (initial effective stress at layer center, kPa, must be > 0), sigma_p (preconsolidation, kPa, optional)} dicts. All of thickness/depth_to_center/e0/Cc/Cr/sigma_v0 are required."},
             "delta_sigma": {"type": "float", "required": False, "description": "Uniform stress increase (kPa). Or use delta_sigmas array."},
+            "delta_sigmas": {"type": "array", "required": False, "description": "Per-layer stress increases (kPa), one per layer."},
             "q_net": {"type": "float", "required": False, "description": "Net pressure for auto stress distribution."},
             "B": {"type": "float", "required": False, "description": "Footing width for stress distribution (m)."},
+            "L": {"type": "float", "required": False, "description": "Footing length for stress distribution (m). Defaults to B."},
             "stress_method": {"type": "str", "required": False, "default": "2:1", "allowed_values": ["2:1", "boussinesq", "westergaard"], "description": "Stress distribution method."},
         },
         "returns": {"consolidation_settlement_mm": "Total consolidation settlement in mm.", "layer_breakdown": "Per-layer results."},
@@ -167,6 +200,14 @@ METHOD_INFO = {
             "immediate_method": {"type": "str", "required": False, "default": "elastic", "allowed_values": ["elastic", "schmertmann"], "description": "Immediate settlement method."},
             "drainage": {"type": "str", "required": False, "default": "double", "allowed_values": ["single", "double"], "description": "Drainage condition for time rate."},
             "stress_method": {"type": "str", "required": False, "default": "2:1", "allowed_values": ["2:1", "boussinesq", "westergaard"], "description": "Stress distribution method."},
+            "q_overburden": {"type": "float", "required": False, "default": 0.0, "description": "Overburden pressure at footing base (kPa)."},
+            "L": {"type": "float", "required": False, "description": "Footing length (m). Defaults to B."},
+            "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "strip"], "description": "Footing shape."},
+            "nu": {"type": "float", "required": False, "default": 0.3, "description": "Poisson's ratio for immediate settlement."},
+            "C_alpha": {"type": "float", "required": False, "description": "Secondary compression index. Enables secondary settlement."},
+            "e0_secondary": {"type": "float", "required": False, "default": 1.0, "description": "Void ratio for secondary settlement."},
+            "t_secondary": {"type": "float", "required": False, "default": 0.0, "description": "Time for secondary settlement (years)."},
+            "time_years_schmertmann": {"type": "float", "required": False, "default": 0.0, "description": "Creep time for Schmertmann immediate method (years)."},
         },
         "returns": {"total_settlement_mm": "Total settlement.", "time_settlement_curve": "Settlement vs time data."},
     },

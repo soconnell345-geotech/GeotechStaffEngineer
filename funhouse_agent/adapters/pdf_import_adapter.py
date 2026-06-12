@@ -1,11 +1,22 @@
 """PDF import adapter — discover PDF content, extract vector geometry, build slope/FEM inputs."""
 
-from funhouse_agent.adapters import clean_result
+from funhouse_agent.adapters import (
+    clean_result, reject_unknown_params, require_params,
+)
+
+
+def _point_xz(p):
+    """Accept a point as {x, z} dict or [x, z] pair."""
+    return (p["x"], p["z"]) if isinstance(p, dict) else tuple(p)
 
 
 def _run_discover_pdf_content(params):
     from pdf_import import discover_pdf_content
 
+    reject_unknown_params(params, ("file_path", "page"),
+                          method="discover_pdf_content")
+    require_params(params, ["file_path"], method="discover_pdf_content",
+                   valid=["file_path", "page"])
     filepath = params.get("file_path")
     page = params.get("page", 0)
 
@@ -19,6 +30,10 @@ def _run_discover_pdf_content(params):
 def _run_extract_vector_geometry(params):
     from pdf_import import extract_vector_geometry
 
+    _valid = ("file_path", "page", "scale", "origin", "role_mapping")
+    reject_unknown_params(params, _valid, method="extract_vector_geometry")
+    require_params(params, ["file_path"], method="extract_vector_geometry",
+                   valid=_valid)
     filepath = params.get("file_path")
     page = params.get("page", 0)
     scale = params.get("scale", 1.0)
@@ -39,15 +54,20 @@ def _run_build_slope_geometry(params):
     from pdf_import import to_dxf_parse_result, PdfParseResult
     from dxf_import.converter import SoilPropertyAssignment, build_slope_geometry
 
+    reject_unknown_params(params, ("parse_result", "soil_properties"),
+                          method="build_slope_geometry")
+    require_params(params, ["parse_result", "soil_properties"],
+                   method="build_slope_geometry",
+                   valid=["parse_result", "soil_properties"])
     pr = params.get("parse_result", {})
-    surface_points = [(p["x"], p["z"]) for p in pr.get("surface_points", [])]
+    surface_points = [_point_xz(p) for p in pr.get("surface_points", [])]
     boundary_profiles = {
-        name: [(p["x"], p["z"]) for p in pts]
+        name: [_point_xz(p) for p in pts]
         for name, pts in pr.get("boundary_profiles", {}).items()
     }
     gwt_points = None
     if pr.get("gwt_points"):
-        gwt_points = [(p["x"], p["z"]) for p in pr["gwt_points"]]
+        gwt_points = [_point_xz(p) for p in pr["gwt_points"]]
     pdf_result = PdfParseResult(
         surface_points=surface_points,
         boundary_profiles=boundary_profiles,
@@ -81,15 +101,20 @@ def _run_build_fem_inputs(params):
     from pdf_import import to_dxf_parse_result, PdfParseResult
     from dxf_import.converter import FEMSoilPropertyAssignment, build_fem_inputs
 
+    reject_unknown_params(params, ("parse_result", "soil_properties"),
+                          method="build_fem_inputs")
+    require_params(params, ["parse_result", "soil_properties"],
+                   method="build_fem_inputs",
+                   valid=["parse_result", "soil_properties"])
     pr = params.get("parse_result", {})
-    surface_points = [(p["x"], p["z"]) for p in pr.get("surface_points", [])]
+    surface_points = [_point_xz(p) for p in pr.get("surface_points", [])]
     boundary_profiles = {
-        name: [(p["x"], p["z"]) for p in pts]
+        name: [_point_xz(p) for p in pts]
         for name, pts in pr.get("boundary_profiles", {}).items()
     }
     gwt_points = None
     if pr.get("gwt_points"):
-        gwt_points = [(p["x"], p["z"]) for p in pr["gwt_points"]]
+        gwt_points = [_point_xz(p) for p in pr["gwt_points"]]
     pdf_result = PdfParseResult(
         surface_points=surface_points,
         boundary_profiles=boundary_profiles,

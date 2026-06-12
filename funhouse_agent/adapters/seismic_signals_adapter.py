@@ -21,10 +21,23 @@ def _check_pyrotd():
         )
 
 
+def _require_motion(params, *, method, a_key="motion", b_key="accel_history"):
+    """Raise a clear ValueError if neither a built-in motion nor a custom
+    history was supplied (a custom history also needs dt)."""
+    if params.get(a_key) is None and params.get(b_key) is None:
+        raise ValueError(
+            f"{method}: provide either '{a_key}' (built-in motion name) or "
+            f"'{b_key}' (acceleration array, g) with 'dt' (s)."
+        )
+    if params.get(b_key) is not None and params.get("dt") is None:
+        raise ValueError(f"{method}: '{b_key}' requires 'dt' (time step, s).")
+
+
 def _run_response_spectrum(params: dict) -> dict:
     _check_eqsig()
     from seismic_signals_agent import analyze_response_spectrum
 
+    _require_motion(params, method="response_spectrum")
     result = analyze_response_spectrum(
         motion=params.get("motion"),
         accel_history=params.get("accel_history"),
@@ -39,6 +52,7 @@ def _run_intensity_measures(params: dict) -> dict:
     _check_eqsig()
     from seismic_signals_agent import analyze_intensity_measures
 
+    _require_motion(params, method="intensity_measures")
     result = analyze_intensity_measures(
         motion=params.get("motion"),
         accel_history=params.get("accel_history"),
@@ -53,6 +67,10 @@ def _run_rotd_spectrum(params: dict) -> dict:
     _check_pyrotd()
     from seismic_signals_agent import analyze_rotd_spectrum
 
+    _require_motion(params, method="rotd_spectrum",
+                    a_key="motion_a", b_key="accel_history_a")
+    _require_motion(params, method="rotd_spectrum",
+                    a_key="motion_b", b_key="accel_history_b")
     result = analyze_rotd_spectrum(
         motion_a=params.get("motion_a"),
         accel_history_a=params.get("accel_history_a"),
@@ -70,6 +88,7 @@ def _run_signal_processing(params: dict) -> dict:
     _check_eqsig()
     from seismic_signals_agent import analyze_signal_processing
 
+    _require_motion(params, method="signal_processing")
     result = analyze_signal_processing(
         motion=params.get("motion"),
         accel_history=params.get("accel_history"),

@@ -1,5 +1,6 @@
 """Seismic geotechnical adapter — site class, M-O pressure, liquefaction."""
 
+from funhouse_agent.adapters import reject_unknown_params, require_params
 from seismic_geotech.site_class import compute_vs30, compute_n_bar, compute_su_bar, classify_site, site_coefficients
 from seismic_geotech.mononobe_okabe import mononobe_okabe_KAE, mononobe_okabe_KPE, seismic_earth_pressure
 from seismic_geotech.liquefaction import evaluate_liquefaction, CRR_from_N160cs, compute_CSR, stress_reduction_rd, magnitude_scaling_factor, fines_correction
@@ -8,6 +9,18 @@ from sheet_pile.earth_pressure import rankine_Ka
 
 
 def _run_site_classification(params: dict) -> dict:
+    reject_unknown_params(
+        params,
+        ("vs30", "layer_thicknesses", "layer_vs", "layer_N", "n_bar",
+         "su_layer_thicknesses", "layer_su", "su_bar", "Ss", "S1", "pga"),
+        method="site_classification")
+    if all(params.get(k) is None for k in
+           ("vs30", "n_bar", "su_bar", "layer_vs", "layer_N", "layer_su")):
+        raise ValueError(
+            "site_classification: provide one of 'vs30' (m/s), 'n_bar' "
+            "(avg SPT N), 'su_bar' (kPa), or layer arrays "
+            "(layer_thicknesses + layer_vs / layer_N / layer_su)."
+        )
     vs30 = None
     n_bar = None
     su_bar = None
@@ -34,6 +47,11 @@ def _run_site_classification(params: dict) -> dict:
 
 
 def _run_seismic_earth_pressure(params: dict) -> dict:
+    _valid = ("phi", "delta", "kh", "kv", "beta", "i", "include_passive",
+              "gamma", "H")
+    reject_unknown_params(params, _valid, method="seismic_earth_pressure")
+    require_params(params, ["phi", "kh"], method="seismic_earth_pressure",
+                   valid=_valid)
     phi = params["phi"]
     delta = params.get("delta", 2.0 / 3.0 * phi)
     kh = params["kh"]
@@ -54,6 +72,12 @@ def _run_seismic_earth_pressure(params: dict) -> dict:
 
 
 def _run_liquefaction_evaluation(params: dict) -> dict:
+    _valid = ("depths", "N160", "FC", "gamma", "amax_g", "gwt_depth",
+              "magnitude")
+    reject_unknown_params(params, _valid, method="liquefaction_evaluation")
+    require_params(params, ["depths", "N160", "FC", "gamma", "amax_g",
+                            "gwt_depth"],
+                   method="liquefaction_evaluation", valid=_valid)
     results = evaluate_liquefaction(
         layer_depths=params["depths"], layer_N160=params["N160"],
         layer_FC=params["FC"], layer_gamma=params["gamma"],
@@ -66,6 +90,9 @@ def _run_liquefaction_evaluation(params: dict) -> dict:
 
 
 def _run_residual_strength(params: dict) -> dict:
+    _valid = ("N160cs", "sigma_v_eff", "method")
+    reject_unknown_params(params, _valid, method="residual_strength")
+    require_params(params, ["N160cs"], method="residual_strength", valid=_valid)
     Sr = post_liquefaction_strength(params["N160cs"], params.get("sigma_v_eff"), params.get("method", "seed_harder"))
     result = {"Sr_kPa": round(Sr, 1), "N160cs": params["N160cs"], "method": params.get("method", "seed_harder")}
     if params.get("sigma_v_eff") and params["sigma_v_eff"] > 0:
@@ -74,6 +101,12 @@ def _run_residual_strength(params: dict) -> dict:
 
 
 def _run_csr_crr_check(params: dict) -> dict:
+    _valid = ("depth", "N160", "FC", "amax_g", "sigma_v", "sigma_v_eff",
+              "magnitude")
+    reject_unknown_params(params, _valid, method="csr_crr_check")
+    require_params(params, ["depth", "N160", "amax_g", "sigma_v",
+                            "sigma_v_eff"],
+                   method="csr_crr_check", valid=_valid)
     z = params["depth"]
     N160 = params["N160"]
     FC = params.get("FC", 5.0)
@@ -106,8 +139,13 @@ METHOD_INFO = {
         "brief": "ASCE 7 site classification and coefficients from Vs30, N-bar, or Su-bar.",
         "parameters": {
             "vs30": {"type": "float", "required": False, "description": "Time-averaged shear wave velocity (m/s)."},
-            "layer_thicknesses": {"type": "array", "required": False, "description": "Layer thicknesses for Vs30 calc (m)."},
+            "layer_thicknesses": {"type": "array", "required": False, "description": "Layer thicknesses for Vs30/N-bar calc (m)."},
             "layer_vs": {"type": "array", "required": False, "description": "Layer shear wave velocities (m/s)."},
+            "layer_N": {"type": "array", "required": False, "description": "Layer SPT N values for N-bar calc (with layer_thicknesses)."},
+            "n_bar": {"type": "float", "required": False, "description": "Average SPT blow count (alternative to vs30)."},
+            "su_layer_thicknesses": {"type": "array", "required": False, "description": "Cohesive layer thicknesses for su-bar calc (m)."},
+            "layer_su": {"type": "array", "required": False, "description": "Layer undrained strengths (kPa) for su-bar calc."},
+            "su_bar": {"type": "float", "required": False, "description": "Average undrained strength (kPa) (alternative to vs30)."},
             "Ss": {"type": "float", "required": False, "description": "Short-period spectral acceleration. If provided with S1, computes Fa/Fv."},
             "S1": {"type": "float", "required": False, "description": "1-second spectral acceleration."},
             "pga": {"type": "float", "required": False, "description": "Mapped peak ground acceleration (g). If provided with Ss/S1, also returns Fpga and the site-adjusted PGA."},
@@ -120,6 +158,11 @@ METHOD_INFO = {
         "parameters": {
             "phi": {"type": "float", "required": True, "description": "Friction angle (degrees)."},
             "kh": {"type": "float", "required": True, "description": "Horizontal seismic coefficient."},
+            "kv": {"type": "float", "required": False, "default": 0.0, "description": "Vertical seismic coefficient."},
+            "delta": {"type": "float", "required": False, "description": "Wall friction angle (deg). Defaults to 2/3 phi."},
+            "beta": {"type": "float", "required": False, "default": 0.0, "description": "Wall back face batter from vertical (degrees)."},
+            "i": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees)."},
+            "include_passive": {"type": "bool", "required": False, "default": False, "description": "Also return KPE (passive seismic coefficient)."},
             "gamma": {"type": "float", "required": False, "description": "Soil unit weight (kN/m3) for force calculation."},
             "H": {"type": "float", "required": False, "description": "Wall height (m) for force calculation."},
         },
@@ -155,9 +198,11 @@ METHOD_INFO = {
         "parameters": {
             "depth": {"type": "float", "required": True, "description": "Depth (m)."},
             "N160": {"type": "float", "required": True, "description": "Corrected SPT blow count."},
+            "FC": {"type": "float", "required": False, "default": 5.0, "description": "Fines content (%)."},
             "amax_g": {"type": "float", "required": True, "description": "PGA (g)."},
             "sigma_v": {"type": "float", "required": True, "description": "Total overburden (kPa)."},
             "sigma_v_eff": {"type": "float", "required": True, "description": "Effective overburden (kPa)."},
+            "magnitude": {"type": "float", "required": False, "default": 7.5, "description": "Earthquake magnitude."},
         },
         "returns": {"CSR": "Cyclic stress ratio.", "CRR": "Cyclic resistance ratio.", "FOS_liq": "Factor of safety."},
     },

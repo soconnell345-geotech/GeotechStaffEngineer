@@ -302,6 +302,35 @@ def _dispatch_save_file(arguments, save_fn):
 
     try:
         saved_path = save_fn(path, content)
-        return json.dumps({"saved": saved_path})
     except Exception as e:
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
+
+    # Verify the write on the REAL filesystem so the agent never needs a
+    # separate ls/read to trust the save — agent-side filesystem tools may be
+    # sandboxed/virtual and cannot see this file. A custom save_fn may write
+    # somewhere not locally visible (e.g. DBFS), so only flag an error when
+    # the DEFAULT local writer produced no file.
+    result = {"saved": saved_path}
+    if isinstance(saved_path, str):
+        abs_path = os.path.abspath(saved_path)
+        file_exists = os.path.isfile(abs_path)
+        result["saved"] = abs_path if file_exists else saved_path
+        result["file_exists"] = file_exists
+        result["file_size_bytes"] = (
+            os.path.getsize(abs_path) if file_exists else 0)
+        if not file_exists:
+            if save_fn is _default_save_fn:
+                result["error"] = (
+                    f"save_file ran but no file was found at '{abs_path}' "
+                    "after writing. The target location may not be writable "
+                    "from this process; retry with a local path (e.g. under "
+                    "/tmp)."
+                )
+            else:
+                result["note"] = (
+                    "File was saved via a custom save function; the path is "
+                    "not visible on the local filesystem (e.g. remote/DBFS), "
+                    "so file_exists/file_size_bytes reflect the local view "
+                    "only."
+                )
+    return json.dumps(result)
