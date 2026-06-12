@@ -31,7 +31,7 @@ of scope.
       interslice_distribution (E/X + thrust line), reinforcement
       layout overlay, mc_histogram (+lognormal fit, beta/pf box),
       fosm_tornado (variance contribution). Unit tests.
-- [ ] Phase 2 — slope_stability/calc_steps.py upgrade: method+
+- [x] Phase 2 — slope_stability/calc_steps.py upgrade: method+
       interslice statement (GLE/Spencer/M-P lambda/theta, Janbu f0),
       per-slice force TableData (W, alpha, N', S, u*l, E/X),
       reinforcement table, method-comparison table, probabilistic
@@ -40,7 +40,7 @@ of scope.
       from Phase 1 embedded. analysis dict gains optional keys:
       search (SearchResult), mc (MonteCarloResult), fosm (FOSMResult),
       variables (probabilistic spec), FOS_required. Tests.
-- [ ] Phase 3 — fem2d/plotting.py + fem2d/calc_steps.py (NEW) +
+- [x] Phase 3 — fem2d/plotting.py + fem2d/calc_steps.py (NEW) +
       registry entry in calc_package/__init__. Figures: mesh plot
       (material coloring, BC symbols), deformed mesh (auto scale
       factor annotated), tricontourf contours (|u|, ux, uy, sigma_yy,
@@ -53,12 +53,12 @@ of scope.
       table, BCs), analysis narrative, results tables (max disp,
       FOS + basis + srf_history table, beam forces), staged = one
       section per phase. Tests.
-- [ ] Phase 4 — end-to-end render tests: LE (reinforced + MC),
+- [x] Phase 4 — end-to-end render tests: LE (reinforced + MC),
       LE search, FEM gravity/footing, FEM slope SRM, seepage, staged
       -> render_html with base64 figure asserts + table asserts;
       no-matplotlib degradation test (monkeypatch import) for both
       modules.
-- [ ] Phase 5 (STRETCH) — calc_package/interactive.py: plotly-based
+- [x] Phase 5 (STRETCH) — calc_package/interactive.py: plotly-based
       single-file HTML viewer, save_interactive_report(result, path,
       ...). LE view: section + toggleable trial surfaces colored by
       FOS + slice hover (W, N', S, E/X) + thrust toggle. FEM view:
@@ -67,17 +67,18 @@ of scope.
       no network needed; plotly optional dep (pyproject extra
       `interactive`). Tests: file generated, trace-name string
       asserts, no-plotly degradation.
-- [ ] Phase 6 — demo artifacts to docs/examples/ (committed HTML):
+- [x] Phase 6 — demo artifacts to docs/examples/ (committed HTML):
       slope_le_calc_package.html (reinforced + MC + search),
       fem_srm_calc_package.html, slope_le_interactive.html,
       fem_srm_interactive.html. Final report.
 
 ## Baseline (Phase 0)
-- Tests before (branch @ 2789278): recorded in Phase 1 commit.
+- Tests before (branch @ 2789278): 775 passed, 20 skipped combined
+  (calc_package 104+3skip, slope_stability 347+17skip, fem2d 324).
 
 ## Next action
-- Implement Phase 2 (slope_stability/calc_steps.py upgrade
-  rendering the modern engine) and its tests.
+- DONE: all phases complete; see final report.
+
 
 ## Notes / decisions
 - SearchResult gains `trial_surfaces: list[dict]` (additive,
