@@ -71,7 +71,7 @@ human confirmation gates; vision-derived geometry is quarantined
       from_vision_draft) + render.py (echo_back PNG + numbered vertex table,
       matplotlib-guarded) + tests (synthetic ezdxf DXF; vision-draft blocking;
       every template renders + validates clean).
-- [ ] Phase 4 — funhouse_agent/deep/setup_tools.py: ProjectStore +
+- [x] Phase 4 — funhouse_agent/deep/setup_tools.py: ProjectStore +
       make_setup_tools (project_new/show/patch/render/validate, dxf_discover,
       cov_lookup, project_run gate, request_confirmation interrupt+fallback) +
       offline tests (incl. real interrupt round-trip on a tiny StateGraph with
@@ -88,7 +88,7 @@ human confirmation gates; vision-derived geometry is quarantined
 
 ## Next action
 
-Implement Phase 4 (deep/setup_tools.py + offline tests), run both suites, commit.
+Implement Phase 5 (deep/setup_agent.py + build_deep_agent wiring + staged scripted-model test), run both suites, commit.
 
 ## Descoped (designed path noted)
 
