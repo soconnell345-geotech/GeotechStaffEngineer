@@ -56,6 +56,49 @@ def _reduce_props(material_props, srf, srm_field):
     return reduced
 
 
+def _plastic_gp_points(ctx, sig_gp, material_props, srf, srm_field):
+    """Gauss points on the reduced-strength MC yield surface (additive).
+
+    At a converged state the return mapping leaves plastic Gauss-point
+    stresses ON the yield surface (f = 0) and elastic ones inside
+    (f < 0), so flagging f >= -tol identifies the plastic points the
+    same way PLAXIS plastic-point plots do. Uses the in-plane Mohr
+    circle criterion of materials.mc_return_mapping (tension-positive):
+    f = q + p*sin(phi) - c*cos(phi), with c/phi REDUCED at the given
+    SRF.
+
+    Returns dict: {'points': [(x, y), ...], 'n_plastic': int,
+    'n_gp_total': int, 'srf': float} or None on failure.
+    """
+    try:
+        n_elem = ctx['n_elem']
+        reduced = _reduce_props(material_props, srf, srm_field)
+        mats = _material_arrays(reduced, n_elem)
+        c = np.asarray(mats['c'], dtype=float)[:, None]
+        phi = np.radians(np.asarray(mats['phi'], dtype=float))[:, None]
+        sxx = sig_gp[:, :, 0]
+        syy = sig_gp[:, :, 1]
+        txy = sig_gp[:, :, 3]
+        pm = 0.5 * (sxx + syy)
+        q = np.sqrt((0.5 * (sxx - syy)) ** 2 + txy ** 2)
+        f = q + pm * np.sin(phi) - c * np.cos(phi)
+        scale = np.maximum(
+            np.abs(c * np.cos(phi)) + np.abs(pm * np.sin(phi)), 1.0)
+        plastic = f >= -1e-3 * scale
+        gp = ctx['gp']
+        coords = np.einsum('gi,eij->egj', gp['N'],
+                           ctx['nodes'][gp['elements']])
+        pts = coords[plastic]
+        return {
+            'points': [(float(x), float(y)) for x, y in pts],
+            'n_plastic': int(plastic.sum()),
+            'n_gp_total': int(plastic.size),
+            'srf': float(srf),
+        }
+    except (KeyError, ValueError, IndexError):
+        return None
+
+
 def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
                        t=1.0, srf_range=(0.5, 3.0), tol=0.01,
                        n_load_steps=2, max_nr_iter=1000, nr_tol=1e-5,
@@ -194,8 +237,9 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
         })
         return (not failed), res
 
-    def _result(fos, converged, last_res, basis):
+    def _result(fos, converged, last_res, basis, stable_srf=None):
         sig_gp = last_res['sigma_gp']
+        srf_for_state = stable_srf if stable_srf is not None else fos
         return {
             'FOS': round(float(fos), 3),
             'converged': converged,
@@ -209,6 +253,8 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
                 np.array([h['dimensionless_disp'] for h in srf_history
                           if h['converged']]),
             ),
+            'plastic_gp': _plastic_gp_points(
+                ctx, sig_gp, material_props, srf_for_state, srm_field),
         }
 
     srf_low, srf_high = srf_range
@@ -216,7 +262,8 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
     # Verify lower bound is stable
     ok_low, res_low = _try_srf(srf_low)
     if not ok_low:
-        return _result(srf_low, False, res_low, 'nonconvergence')
+        return _result(srf_low, False, res_low, 'nonconvergence',
+                       stable_srf=srf_low)
 
     # Bracket failure: step upward from max(1.0, srf_low)
     srf = max(1.0, srf_low)
@@ -237,7 +284,8 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
             break
 
     if not bracketed:
-        return _result(srf_high, True, last_stable_res, 'range_exhausted')
+        return _result(srf_high, True, last_stable_res, 'range_exhausted',
+                       stable_srf=last_stable_srf)
 
     # Bisection
     while (srf_hi_b - srf_lo_b) > tol:
@@ -246,9 +294,11 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
         if ok:
             srf_lo_b = srf_mid
             last_stable_res = res
+            last_stable_srf = srf_mid
         else:
             srf_hi_b = srf_mid
 
     fos = 0.5 * (srf_lo_b + srf_hi_b)
     basis = 'blowup' if blowup_seen[0] else 'nonconvergence'
-    return _result(fos, True, last_stable_res, basis)
+    return _result(fos, True, last_stable_res, basis,
+                   stable_srf=last_stable_srf)

@@ -358,6 +358,7 @@ def search_noncircular(
     best_slip = None
     n_evaluated = 0
     grid_fos = []
+    trial_surfaces = []
 
     for _ in range(n_trials):
         # Random entry and exit x-coordinates
@@ -400,6 +401,12 @@ def search_noncircular(
                 "R": 0.0,
                 "FOS": round(fos, 4),
             })
+            if fos < 900:
+                trial_surfaces.append({
+                    "FOS": round(fos, 4),
+                    "points": [(round(px, 3), round(pz, 3))
+                               for px, pz in points],
+                })
 
             if fos < best_fos:
                 best_fos = fos
@@ -433,6 +440,7 @@ def search_noncircular(
         critical=critical,
         n_surfaces_evaluated=n_evaluated,
         grid_fos=grid_fos,
+        trial_surfaces=trial_surfaces,
     )
 
 
@@ -555,6 +563,7 @@ def search_pso(
 
     n_evaluated = n_particles
     grid_fos = []
+    trial_surfaces = []
 
     for i in range(n_particles):
         slip = _particle_to_slip(positions[i])
@@ -565,6 +574,11 @@ def search_pso(
                 "yc": round(mid[1], 2),
                 "R": 0.0,
                 "FOS": round(fitness[i], 4),
+            })
+            trial_surfaces.append({
+                "FOS": round(fitness[i], 4),
+                "points": [(round(px, 3), round(pz, 3))
+                           for px, pz in slip.points],
             })
 
     for iteration in range(n_iterations):
@@ -603,6 +617,11 @@ def search_pso(
                     "R": 0.0,
                     "FOS": round(fos, 4),
                 })
+                trial_surfaces.append({
+                    "FOS": round(fos, 4),
+                    "points": [(round(px, 3), round(pz, 3))
+                               for px, pz in slip.points],
+                })
 
             if fos < pbest_fit[i]:
                 pbest_fit[i] = fos
@@ -639,6 +658,7 @@ def search_pso(
         critical=critical,
         n_surfaces_evaluated=n_evaluated,
         grid_fos=grid_fos,
+        trial_surfaces=trial_surfaces,
     )
 
 
@@ -711,6 +731,7 @@ def search_weak_layer_biased(
     best_slip = None
     n_evaluated = 0
     grid_fos = []
+    trial_surfaces = []
 
     for _ in range(n_trials):
         x_entry = random.uniform(*x_entry_range)
@@ -760,6 +781,12 @@ def search_weak_layer_biased(
                 "R": 0.0,
                 "FOS": round(fos, 4),
             })
+            if fos < 900:
+                trial_surfaces.append({
+                    "FOS": round(fos, 4),
+                    "points": [(round(px, 3), round(pz, 3))
+                               for px, pz in points],
+                })
 
             if fos < best_fos:
                 best_fos = fos
@@ -792,6 +819,7 @@ def search_weak_layer_biased(
         critical=critical,
         n_surfaces_evaluated=n_evaluated,
         grid_fos=grid_fos,
+        trial_surfaces=trial_surfaces,
     )
 
 
