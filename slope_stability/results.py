@@ -367,10 +367,15 @@ class SearchResult:
         Total number of trial surfaces evaluated.
     grid_fos : list of dict
         Grid of {xc, yc, R, FOS} for all evaluated surfaces.
+    trial_surfaces : list of dict
+        Noncircular trial surfaces stored for plotting:
+        {"FOS": float, "points": [(x, z), ...]}. Circular searches
+        leave this empty (trials are reconstructable from grid_fos).
     """
     critical: Optional[SlopeStabilityResult] = None
     n_surfaces_evaluated: int = 0
     grid_fos: List[Dict[str, float]] = field(default_factory=list)
+    trial_surfaces: List[Dict[str, Any]] = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
