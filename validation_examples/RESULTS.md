@@ -36,6 +36,19 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 | V-010 | retaining_walls MSE internal built-in curves | `Kr_Ka_ratio`(z=0)=1.7; `F_star_metallic`(0)=2.0 (ribbed STRIP) | bar mat: Kr/Ka(0)=2.5; F*(0)=20·t/St=1.246 | — | CONVENTION | The module's built-in `Kr_Ka_ratio`/`F_star_metallic` implement only the ribbed-metallic-STRIP curves (Kr/Ka 1.7→1.2; F* 2.0→tanφ), not the steel-bar-mat curves (Kr/Ka 2.5→1.2; F* 20(t/St)→10(t/St)). So the high-level internal path doesn't auto-match a bar-mat wall — the primitives must be fed the bar-mat coefficients. Documented coverage gap. |
 | V-011 | seismic_geotech Mononobe-Okabe KAE (**regression anchor**) | **KAE = 0.4782** | KAE = 0.4785 | −0.06% | **PASS** | φ=30, δ=30, kh=kmax=0.206, kv=0, vertical wall, level backfill. δ=φ=30 with kv=0 is the case the battered-wall M-O fix targeted; the corrected sign/degrees/kv handling gives KAE within ±0.06% (tolerance ±2%). No bug; value pinned to catch a future M-O regression. |
 | V-011 | seismic_geotech M-O seismic sliding chain | PAE=19.65, PIR=6.09, THF=24.64, V=67.52, R=38.98, CDR=1.58 k/ft | PAE=19.65, PIR=6.09, THF=24.64, V=67.52, R=38.98, CDR=1.58 | <0.5% | **PASS** | Full GEC-11 E7 Step-8 chain built on the module KAE: PAE=0.5γh²KAE; THF=PAE·cos30+PIR+0.5·qLS·H·KAE; V=W+PAE·sin30; R=V·tan30; CDR=R/THF. Reproduces the example to <0.5%. |
+| V-025 | sheet_pile earth-pressure builder (layered Ka + water) | Ka1=0.249, Ka2=0.333; σ pts 129.5/173.2/377.8/644.2 psf, u=1248; FTOTAL=24,611 lb/ft | Ka1=0.249, Ka2=0.333; 129.48/173.16/377.76/644.16/1248; FTOTAL=24,610.9 | 0.00% | **PASS** | `rankine_Ka` + `active_pressure` reproduce every stress ordinate at the Ka-discontinuity (4-ft boundary, same overburden × Ka1 vs Ka2) and the layered-moist/submerged + hydrostatic water blocks. Total driving force exact to 0.00% with source-rounded Ka (≈359 kN/m). |
+| V-012 | sheet_pile cantilever Ka/Kp (soldier pile) | Ka=0.271, Kp=3.69 | Ka=0.271, Kp=3.69 | exact | **PASS** (primitive) | `rankine_Ka`/`rankine_Kp`(φ=35) match the published coefficients exactly. |
+| V-012 | soldier-pile arching / simplified toe-moment | (not in module; hand: f=2.8, fb=5.6 ft, D0=12.27, D=14.73 ft, Y=6.0, Mmax=379.7 kip-ft, Vmax=137.7 kips) | D0=12.27, D=14.73, Y=6.0, Mmax=379.7, Vmax=137.7 | <0.1% (hand) | N/A (scope) | `analyze_cantilever` is a CONTINUOUS per-metre free-earth-support solver — no soldier-pile effective-width/arching (active on 2-ft hole width, passive on f·b=0.08φ·b=5.6 ft) and no simplified toe-moment cubic. The published Simplified row is reproduced by hand on the module Ka/Kp to document the method. |
+| V-012 | analyze_cantilever (continuous wall) | D_conv ≈ 11.3 ft (per-metre framework) | D0=12.27 ft (per-pile) | — | CONVENTION | Continuous-wall embedment is a different framework than the per-pile simplified D0 (active+passive spread over a continuous wall, no 2-ft/5.6-ft widths). Not comparable; pins the framework gap. |
+| V-013 | sheet_pile anchored Rankine Ka | Ka=0.333 | Ka=0.333 | exact | **PASS** (primitive) | `rankine_Ka`(φ=30) matches exactly. |
+| V-013 | passive coefficient source | Rankine Kp=3.0 (−36%); Coulomb Kp(δ=15)=4.98 (+6%) | log-spiral Kp=4.7 (Caquot-Kerisel 6.3×0.746) | — | CONVENTION | No Caquot-Kerisel log-spiral passive in the module; published Kp=4.7 lies between Rankine (3.0) and Coulomb (4.98), matching neither tightly. Module not tuned. |
+| V-013 | FHWA apparent-diagram anchor quantities | P=11,980; PT=15,574; σ_a=934.4 psf; T1U=6,228; TH=143.9; T=148.95 kips | P=11,980; PT=15,574; σ_a=934.4; T1U=6,228; TH=143.87; T=148.95 | <1.5% (hand) | **PASS** (by hand) | The single-anchor 1.3× apparent trapezoid, max ordinate, upper-tributary anchor force, per-anchor TH (10-ft spacing) and inclined T reproduce by hand on the module Ka. Mmax 22,494 ft-lb/ft ≈ 100 kN-m/m. |
+| V-013 | analyze_anchored (classical FES) | D ≈ 10.8 ft (Rankine FES) | D=6.09 ft (apparent + log-spiral Kp) | — | N/A (scope) | `analyze_anchored` is classical free-earth-support with a TRIANGULAR Rankine/Coulomb active diagram (not the FHWA 1.3× apparent trapezoid) and Rankine/Coulomb passive (no log-spiral). Embedment/anchor/moment differ by method, not bug. |
+| V-014 | basal heave — Caltrans force balance | (hand: qu=3.8 ksf, F_RS=40.0, W=37.8, +q 3.15, −S 15.0, F_dr=26.0, FS=1.54) | F_RS=40.0, F_dr=26.0, FS=1.54 | <0.5% (hand) | N/A (scope) | Caltrans balances qu·(0.7B) against the block W + 0.7B·q − S with sidewall shear S=c·H. Reproduced exactly by hand. |
+| V-014 | check_basal_heave_bjerrum_eide | FOS=0.86 (cu·Nc/(γH+q)); module Nc=6.71 | FS=1.54; chart Nc=7.6 | — | N/A (scope) | Module uses the inverted-footing bearing FOS = cu·Nc/(γH+q) — NO sidewall-shear term, NOT the 0.7B force block — so FOS=0.86 (far more conservative). Its Bjerrum-Eide Nc table reads 6.71 at H/B=2, Be/Le=1/3 vs the Caltrans chart's 7.6. Different formulation. |
+| V-016 | soe Ka + FHWA pe + ps | Ka=0.295, pe=43.6, ps=3.2 | Ka=0.295, pe=43.6, ps=3.2 | <1% | **PASS** | `soe.rankine_Ka`(φ=33)=0.295; two-anchor trapezoid pe=0.65·Ka·γ·H²/(H−H1/3−H3/3)=43.6; ps=Ka·qs=3.2. |
+| V-016 | tributary anchor loads + R + DL | TH1=168.4, TH2=172.1, R=36.7, DL1=435, DL2=445 | TH1=168, TH2=172, R=37, DL1=435, DL2=445 | <2% | **PASS** | Tributary-area horizontal anchor loads, subgrade reaction R=(3/16)H3·pe+(H3/2)ps, and anchor design loads DL=TH·s/cos15 all reproduce to ≤2%. |
+| V-016 | hinge moments M1 / M2,3 | M2,3=66 (exact); M1=70.4 (compact form); M1_earth=65.6 | M2,3=66; M1=Mmax=76 | M2,3 <1%; M1 −7.4% | **PASS** (M2,3) / CONVENTION (M1) | M2,3=(1/10)H2²(pe+ps)=66 exact. M1: the inventory's compact (13/54)H1²(pe+ps)=70.4 vs published 76 — GEC-4 applies the uniform surcharge over a larger tributary than the apparent term in the top region. Dominant earth part (13/54)pe·H1²=65.6 exact; delta is the surcharge tributary only (within 8%). |
 
 ## Notes / flags for the owner
 
@@ -132,3 +145,66 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 - **Unit note for MSE per-length quantities.** Forces convert k/ft ↔ kN/m by
   14.594; moments-per-length convert k-ft/ft ↔ kN-m/m by 1.356/0.3048 = 4.4488
   (a kip-ft of moment per ft of wall). The tests carry both constants explicitly.
+
+### Batch V-012..V-025 (Caltrans T&S + GEC-4 SOE / sheet-pile) — owner notes
+
+- **V-025 is the cleanest SOE/sheet-pile check (PASS).** The `sheet_pile`
+  earth-pressure builder (`rankine_Ka` + `active_pressure`) reproduces the
+  Caltrans Ex 7-2 layered-Ka stress-point diagram and the total driving force
+  (24,611 lb/ft ≈ 359 kN/m) to 0.00 % with the source-rounded Ka. The two-sided
+  stress point at the 4-ft layer boundary (same overburden × Ka1=0.249 above vs
+  Ka2=0.333 below) and the moist→submerged transition + hydrostatic water all come
+  out right. No module change.
+- **V-012 — the soldier-pile *Simplified method* is not in the module (N/A-scope),
+  but the coefficients are exact (PASS).** `rankine_Ka`/`rankine_Kp`(φ=35) give the
+  published 0.271 / 3.69 exactly. The Caltrans simplified method, however, puts
+  ACTIVE pressure on the 2-ft hole width and PASSIVE pressure on an
+  arching-amplified width f·b = (0.08·φ)·b = 5.6 ft, then solves a simplified
+  toe-moment cubic — none of which lives in `analyze_cantilever`, which is a
+  continuous per-metre free-earth-support solver. The published Simplified row
+  (D0=12.27, D=14.73 ft, Y=6.0, Mmax=379.7 kip-ft, Vmax=137.7 kips) is reproduced
+  by hand on the module coefficients to document the method. **Possible add:** a
+  soldier-pile mode (active-width / passive-arching-width inputs + the AASHTO
+  simplified toe-moment) if soldier-pile SOE is in scope. Note the inventory's
+  D=13.53 "rigorous" row would need the conventional cantilever method (also not the
+  module's continuous solver).
+- **V-013 — single-anchor wall: classical FES vs FHWA apparent diagram (N/A-scope)
+  + log-spiral passive gap (CONVENTION).** Rankine Ka=0.333 matches the module
+  exactly, and the FHWA apparent-diagram quantities (P, PT=1.3P, σ_a=934.4 psf,
+  upper tributary T1U=6,228, per-anchor TH=143.9, inclined T=148.95 kips) reproduce
+  by hand to <1.5 %. But `analyze_anchored` implements CLASSICAL free-earth-support
+  on a TRIANGULAR Rankine/Coulomb active diagram (not the 1.3× apparent trapezoid)
+  and has no Caquot-Kerisel log-spiral passive — published Kp=4.7 sits between
+  Rankine (3.0, −36 %) and Coulomb δ=15 (4.98, +6 %). So the packaged
+  embedment/anchor/moment differ by method, not by a bug. **Possible adds:** an
+  FHWA apparent-diagram single-anchor path, and a log-spiral (Caquot-Kerisel)
+  passive option. Module not tuned to the example.
+- **V-014 — basal heave: module method differs from Caltrans (N/A-scope).** The
+  module DOES have `check_basal_heave_bjerrum_eide`, but it computes the
+  inverted-footing bearing ratio FOS = cu·Nc/(γH+q) — with NO sidewall-shear term
+  and NOT the 0.7B force block — returning FOS≈0.86 here (far more conservative).
+  Its Bjerrum-Eide Nc table also reads 6.71 at H/B=2, Be/Le=1/3, vs the Caltrans
+  chart's 7.6. The Caltrans force-balance (resistance qu·0.7B vs driving block
+  W + 0.7B·q − S, S=c·H side shear → FS=1.54) is reproduced exactly by hand. The two
+  are simply different basal-heave formulations. **Possible add:** a Caltrans-style
+  force-balance heave option with the side-shear term and the 0.7B block, if that
+  convention is wanted; the current bearing-ratio method is defensible (and more
+  conservative), so it was NOT changed.
+- **V-016 — GEC-4 two-tier anchored wall is largely PASS via primitives.**
+  `soe.rankine_Ka`(33)=0.295, the FHWA trapezoid pe=43.6, surcharge ps=3.2, both
+  tributary anchor loads (TH1=168, TH2=172), the subgrade reaction R=37, the lower
+  hinge moment M2,3=66, and both anchor design loads (DL1=435, DL2=445) all
+  reproduce to ≤2 %. The **one** soft spot is the upper hinge moment M1: the
+  inventory's compact form (13/54)·H1²·(pe+ps)=70.4 vs the published 76 kN-m/m,
+  because GEC-4 applies the uniform traffic surcharge over a larger tributary in the
+  top region than the apparent-pressure term. The dominant earth part
+  (13/54)·pe·H1²=65.6 is exact; the −7.4 % is purely the surcharge tributary
+  (CONVENTION, within 8 %). No module change — these are all hand-built on the
+  module's Ka because the FHWA multi-anchor envelope / tributary-load / hinge-moment
+  bookkeeping is not packaged as a single `soe` entry point. **Possible add:** a
+  multi-anchor apparent-envelope helper (pe, TH_i, M_i, R) in `soe`.
+- **No module bugs found or fixed in this batch.** V-012/013/014 are method/scope
+  gaps (soldier-pile arching, FHWA apparent diagram + log-spiral passive,
+  Caltrans force-balance heave with side shear); V-016 M1 is a surcharge-tributary
+  convention; V-025 and the module coefficient/earth-pressure primitives are clean
+  PASSes. `soe/` and `sheet_pile/` suites were not modified.
