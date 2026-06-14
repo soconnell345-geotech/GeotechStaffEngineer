@@ -322,6 +322,9 @@ def build_nl_context(nodes, elements, material_props, gamma, bc_nodes,
     for key in ('roller_left', 'roller_right'):
         for n in bc_nodes.get(key, []):
             bc_dofs.add(2 * n)
+    # Roller base: v = 0 (horizontal symmetry plane / smooth rigid base)
+    for n in bc_nodes.get('roller_base', []):
+        bc_dofs.add(2 * n + 1)
     # Floating DOFs (nodes not in any active element) — fix to zero
     if active_elements is not None:
         active_nodes = set(elements[act].ravel().tolist())
@@ -512,7 +515,7 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
            hs_state_init=None, method='elastic', reform_interval=1,
            disp_tol=None, disp_residual_cap=0.01, max_cutbacks=3,
            line_search=False, mats_override=None,
-           stall_window=None, stall_ratio=0.98):
+           stall_window=None, stall_ratio=0.98, f_int_offset=None):
     """Run the incremental-iterative nonlinear solution on a context.
 
     Parameters
@@ -534,6 +537,15 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
     max_cutbacks : int — load-step halvings on divergence ('tangent' only).
     line_search : bool — backtracking line search on the residual norm.
     mats_override : dict, optional — replaces ctx['mats'] (SRM trials).
+    f_int_offset : (n_dof,) array, optional — internal-force baseline to
+        subtract from the residual. Used for an initial-stress release
+        (excavation/unloading): with a pre-stressed `sigma_gp_init` whose
+        equilibrium internal force is `F0 = integral(B^T sigma_init)`,
+        passing `f_int_offset = F0` and `ctx['F_ext'] = -F0` makes the
+        residual `R = F_ext - (F_int - F0)`, so at convergence the
+        body relaxes to equilibrium with the released boundary traction-
+        free (rather than re-applying the in-situ field as an external
+        load). None = standard residual `R = F_ext - F_int`.
 
     Returns
     -------
@@ -598,6 +610,8 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
             F_int = _internal_force(ctx, sig_new)
             if ctx['K_lin'] is not None:
                 F_int += ctx['K_lin'] @ u
+            if f_int_offset is not None:
+                F_int = F_int - f_int_offset
 
             R = F_ext - F_int
             R[bc] = -penalty * u[bc]
@@ -642,6 +656,8 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
                     F_t = _internal_force(ctx, sig_t)
                     if ctx['K_lin'] is not None:
                         F_t += ctx['K_lin'] @ u_try
+                    if f_int_offset is not None:
+                        F_t = F_t - f_int_offset
                     R_t = F_ext - F_t
                     R_t[bc] = -penalty * u_try[bc]
                     R_t_norm = np.linalg.norm(np.where(free, R_t, 0.0))
@@ -736,7 +752,8 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
                     return_state=False, strut_springs=None,
                     method='elastic', reform_interval=1,
                     disp_tol=None, max_cutbacks=3, line_search=False,
-                    n_gp=None, return_gp=False, _ctx=None):
+                    n_gp=None, return_gp=False, _ctx=None,
+                    initial_stress_relaxation=False):
     """Solve a nonlinear (MC/HS) problem.
 
     Vectorized Gauss-point core with 4-component stress state and 3D
@@ -757,6 +774,19 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
     n_gp : int, optional — Gauss rule override for T6 (3 or 6).
     return_gp : bool — append (sigma_gp, eps_gp) per-Gauss-point arrays
         (4-component stress incl. sigma_zz) to the returned tuple.
+    initial_stress_relaxation : bool — initial-stress release / unloading.
+        Requires `sigma_init` (the in-situ field). The equilibrium internal
+        force `F0 = integral(B^T sigma_init)` is computed and the analysis
+        is driven by the release load `F_ext = -F0` (ramped over `n_steps`),
+        with the residual offset by `F0` so the structure relaxes to a NEW
+        equilibrium in which any unsupported (traction-free) boundary —
+        e.g. an unlined tunnel/cavity wall, or an excavated face — carries
+        zero traction. Any `surface_loads` are ADDED to the release load (so
+        a residual support pressure can be retained on part of the
+        boundary). The Mohr-Coulomb / HS yield check sees the true total
+        stress `sigma_init + Delta sigma` throughout, so the elasto-plastic
+        unloading path is correct. Use symmetry BCs (`roller_left/right`
+        for u=0, `roller_base` for v=0) plus a fixed or far-field boundary.
 
     Returns
     -------
@@ -788,12 +818,29 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
     # load directly — the initial state already represents equilibrium.
     n_steps_actual = 1 if u_init is not None else n_steps
 
+    f_int_offset = None
+    if initial_stress_relaxation:
+        if sigma_init is None:
+            raise ValueError(
+                "initial_stress_relaxation=True requires sigma_init "
+                "(the in-situ stress field to be released).")
+        # F0 = integral(B^T sigma_init): the equilibrium internal force of
+        # the in-situ field. The release load is -F0 (ramped); any prescribed
+        # surface_loads already in ctx['F_ext'] are retained (added).
+        F0 = _internal_force(ctx, sig_gp0)
+        ctx = dict(ctx)
+        ctx['F_ext'] = ctx['F_ext'] - F0
+        f_int_offset = F0
+        # Relaxation is an unloading path — always ramp over n_steps even if
+        # u_init is supplied.
+        n_steps_actual = n_steps
+
     res = run_nl(ctx, n_steps=n_steps_actual, max_iter=max_iter, tol=tol,
                  u_init=u_init, sigma_gp_init=sig_gp0,
                  strain_gp_init=eps_gp0, hs_state_init=state_init,
                  method=method, reform_interval=reform_interval,
                  disp_tol=disp_tol, max_cutbacks=max_cutbacks,
-                 line_search=line_search)
+                 line_search=line_search, f_int_offset=f_int_offset)
 
     sig_gp = res['sigma_gp']
     eps_gp = res['eps_gp']

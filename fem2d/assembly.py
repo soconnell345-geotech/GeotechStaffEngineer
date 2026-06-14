@@ -191,7 +191,9 @@ def apply_bcs_penalty(K, F, bc_nodes, penalty=None):
     K : sparse CSR matrix
     F : (n_dof,) array
     bc_nodes : dict from detect_boundary_nodes() with keys:
-        'fixed_base', 'roller_left', 'roller_right'
+        'fixed_base', 'roller_left', 'roller_right', and optionally
+        'roller_base' (vertical roller — v = 0, u free; used for a
+        horizontal symmetry plane / smooth rigid base).
     penalty : float, optional — penalty value. Default: 1e20.
 
     Returns
@@ -211,12 +213,18 @@ def apply_bcs_penalty(K, F, bc_nodes, penalty=None):
             K_lil[dof, dof] += penalty
             F_mod[dof] += penalty * 0.0
 
-    # Roller left/right: u = 0
+    # Roller left/right: u = 0 (vertical boundary, x-DOF fixed)
     for key in ['roller_left', 'roller_right']:
         for n in bc_nodes.get(key, []):
             dof = 2 * n  # x-DOF
             K_lil[dof, dof] += penalty
             F_mod[dof] += penalty * 0.0
+
+    # Roller base: v = 0 (horizontal boundary / symmetry plane, y-DOF fixed)
+    for n in bc_nodes.get('roller_base', []):
+        dof = 2 * n + 1  # y-DOF
+        K_lil[dof, dof] += penalty
+        F_mod[dof] += penalty * 0.0
 
     return K_lil.tocsr(), F_mod
 

@@ -69,6 +69,12 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 | V-021b | bearing_capacity `Footing` effective area (eccentric) | B'=4.746, L'=4.666, A'=22.15 m², q_applied=364.4 kPa; sliding FS=30.9 | B'=4.75, L'=4.67, A'=22.2, q=364; FS=31 | <0.5% | **PASS** | The 4.9 m square footing with eB=0.077, eL=0.117 (P=8070 kN): `Footing.B_eff/L_eff/A_eff` (Meyerhof effective-area) reproduce the example's eccentric-load dimensions and q_applied=P/A' exactly; the 4.6 m trial likewise (B'=4.45, L'=4.37, A'=19.4, q=416). Sliding FS=0.7·(W+P)/V=30.9 (pub 31). |
 | V-022 | settlement `approximate_2to1` stress increase (square) | Δσv/q: B=3 → 0.549/0.162/0.070/0.044; B=6.1 → 0.728/0.334/0.179/0.123 | B=3 → 0.55/0.16/0.07/0.04; B=6.1 → 0.73/0.33/0.18/0.12 | ≤2% | **PASS** (primitive) | The example's 2:1 Δσv=q·B²/(B+Z)² for a square footing IS `approximate_2to1` (q·B·L/((B+z)(L+z)) at B=L). The module reproduces every Table B1-2 stress fraction (3 widths × 4 layers) to ≤2%. |
 | V-022 | settlement Hough (granular C'-index) layer formula | (no module method) hand: B=3,q=240 → 15.4+4.4+1.1+0.6=21.5 mm; full Table B1-3 (12 cells) reproduced to ≤1.5 mm | per-layer 15+4+1+1=21 mm; table B=3:21/25/28/30, B=4.6:28/31/34/37, B=6.1:31/35/38/41 | <1.5 mm | N/A (scope) | The `settlement` module has NO Hough / C'-index granular method (only Cc/Cr e-log(p) + Schmertmann/elastic); the Hough index C' is a bearing-capacity index, NOT Cc/(1+e0). The 2:1 stress primitive is shared & validated; the Hough layer sum dH=H/C'·log10[(σ'vo+Δσ)/σ'vo] is reproduced inline on `approximate_2to1` (all 12 q×B cells; largest spread −1.2 mm at B=3,q=335: 26.8 vs 28). Documented coverage gap, not a bug. |
+| V-023 | fem2d final drained settlement (confined 1-D Biot column) | w = 2.609 mm (elastic confined-column solve AND `solve_consolidation` end-state) | pz·H/(K+4G/3) = 2.61 mm | 0.0% | **PASS** | Laterally-confined column (oedometric, side rollers), base fixed, top loaded pz=1e5 Pa. fem2d reproduces the drained end-state settlement EXACTLY (ratio 1.0000) both via `solve_elastic` and via the coupled `solve_consolidation`. Units mapped Pa→kPa; Biot M→n_w=M/1000 kPa; mobility k→k_hyd=k·γ_w. |
+| V-023 | fem2d analytical anchors (S, c, p0) | S=1.554e-9 1/Pa; c=0.0643 m²/s; p0_consistent=0.839e5 Pa | S=1.554e-9; c=0.0643; p0 (formula) 0.839e5 / (Itasca reported 0.981e5) | exact | (anchors) | Storage S=1/M+α²/(K+4G/3), c=k/S, and the Biot 1-D undrained p0 verified inline. The inventory's stated 0.981e5 is Itasca's reported value, which needs an effective M≈10× the stated 4e9 (near-incompressible fluid); the inventory's own formula gives 0.839e5 (consistent with the stated M). Documented; immaterial since fem2d gives 0 (next row). |
+| V-023 | fem2d undrained p0 + p(z,t) consolidation decay | excess pp = 0 at every step; settlement = drained 2.609 mm from t=0 (NO transient) | undrained p0 ~0.84e5 Pa; Terzaghi decay p/p0 vs t̂; FLAC <5% err | — | N/A (scope) | **Structural limitation of the staggered Biot scheme.** `solve_consolidation` applies the surface load as a static F_ext and the staggered displacement step solves the fully DRAINED equilibrium at every time level (top pinned head=0) → no undrained excess pore pressure is generated and the settlement is the drained value from t=0 with no decay. A prescribed-p0 dissipation test (no load) also fails to reproduce the Terzaghi diffusion (non-monotonic, far too fast). Needs a monolithic u-p solve or an undrained predictor — NOT a unit bug. The drained end-state (PASS above) is the only reproducible quantity. |
+| V-024 | fem2d MC plastic radius (Salencon cavity) | R0=1.735 m (σ_r=12.01 crossing); R0=1.731 m (σ_θ peak) | R0=1.735 m | 0% / −0.2% | **PASS** (slow) | Quarter-symmetry graded T6 annular mesh (a=1, R_out=20a, ~3700 elem, ~2.5 s), in-situ σ=−P0, cavity unloaded P0→0 via the new `initial_stress_relaxation` driver + `roller_base` symmetry BC (both general solver additions). Both R0 detectors (σ_r boundary crossing on the x-axis; σ_θ peak = elastic-plastic boundary) land within ±5%. psi=0 non-associated. |
+| V-024 | fem2d radial stress at elastic-plastic boundary | σ_r(R0) ≈ 11.9 MPa (at the σ_θ peak) | (1/(Kp+1))·(2P0−q) = 12.01 MPa | −0.7% | **PASS** (slow) | Boundary radial stress within ~1% of the Salencon value. Kp=3.0, q=2c√Kp=11.95 MPa. |
+| V-024 | fem2d far-field stress profile r/a=2..5 | σ_r/σ_θ follow Salencon elastic branch but ~5% LOW (compression under-predicted) | Salencon elastic σ_r=P0−(P0−σ_r,R0)(R0/r)², σ_θ symmetric | ~−5% | CONVENTION | Far-field domain-truncation: the outer boundary is FIXED at R_out=20a (the inventory flags ~1−2%; a rigid fixed boundary adds a bit more than a far-field traction). Profile SHAPE and elastic decay are correct; asserted ±7% with the low-side bias documented. R0/σ_r(R0) (primary targets) pass at ±5%. A pure-traction outer BC pushes the far field to ±3% but is under-constrained (drifts, non-convergence) — fixed is the robust choice. |
 
 ## Notes / flags for the owner
 
@@ -412,3 +418,82 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
   method/scope gap with the shared 2:1 primitive validated. `bearing_capacity/` and
   `settlement/` suites were run unchanged (**136 passed** combined); both used
   read-only.
+
+### Batch V-023 / V-024 (Itasca FLAC — fem2d Biot consolidation + MC cavity) — owner notes
+
+- **V-024 (cylindrical hole in MC, Salencon) is a clean PASS — but it required
+  two small, GENERAL solver capabilities that fem2d was missing.** This is the
+  hardest FE problem in the library (elasto-plastic stress redistribution around
+  an unloaded cavity), and the win is squarely on the analysis module. The
+  quarter-symmetry graded-T6 annular model (a=1, R_out=20a, ~3700 elem, ~2.5 s)
+  reproduces:
+  - plastic radius **R0 = 1.735 m** (σ_r=12.01 crossing) / **1.731 m** (σ_θ peak)
+    vs analytic **1.735 m** (0% / −0.2%);
+  - **σ_r(R0) = 11.9 MPa** vs analytic **12.01** (−0.7%).
+  The far-field profile (r/a=2..5) runs ~5% low — domain truncation from the
+  FIXED outer boundary (inventory flags ~1−2%; the rigid boundary adds more).
+  **Two capabilities were ADDED to `fem2d` (general, not benchmark-tuned):**
+  1. **`roller_base` BC key** (v = 0, u free) in `assembly.apply_bcs_penalty` and
+     `solver.build_nl_context` — a horizontal-roller / symmetry-plane support
+     (the BC vocabulary previously had only `fixed_base` and the vertical
+     `roller_left/right`, so a quarter-symmetry model with v=0 on a horizontal
+     axis was impossible). Needed by ANY half/quarter-symmetry model.
+  2. **`solve_nonlinear(initial_stress_relaxation=True)`** — an initial-stress
+     release / excavation driver. Given a pre-stressed `sigma_init` (in-situ
+     field), it drives the analysis by the release load
+     `F_ext = −∫B^T σ_init` (ramped over `n_steps`) with the residual offset by
+     that initial internal force (`run_nl(f_int_offset=…)`), so a traction-free
+     boundary (cavity wall, excavated face) relaxes to equilibrium while the
+     MC/HS yield check sees the TRUE total stress (`σ_init + Δσ`) at every step.
+     fem2d's `solve_nonlinear` previously only equilibrated gravity/surface loads
+     from a STRESS-FREE reference (or staged construction) — it had no
+     in-situ-stress + boundary-release path, which is exactly what tunnel/cavity
+     and excavation-unloading problems need. **Possible follow-up:** expose a
+     thin high-level `analyze_cavity(...)` / `analyze_tunnel(...)` wrapper (mesh
+     + symmetry BCs + relaxation) so users don't hand-build the annular mesh.
+  - The fem2d **groundwater + core suites still pass (138)**; the broader fem2d
+    non-slow suite was run after the edits (see final pytest line). No existing
+    behavior changed (both additions are opt-in: a new BC key and a default-False
+    flag).
+  - *Inventory slip (documented, harmless):* the inventory's `nu ≈ 0.313` is
+    wrong — K=3.9, G=2.8 GPa give **nu = 0.210**. nu does not enter R0 or the
+    stresses (only displacements), so it is immaterial to the verdict.
+
+- **V-023 (1-D Terzaghi/Biot consolidation) is a SPLIT verdict: final drained
+  settlement is an EXACT PASS; the undrained p0 and the consolidation decay are
+  N/A (a structural limitation of fem2d's staggered Biot scheme).**
+  - **PASS:** the analytical final drained settlement `w = pz·H/(K+4G/3) =
+    2.609 mm` is reproduced to **ratio 1.0000** both by the elastic
+    confined-column solve and by the coupled `solve_consolidation` end-state.
+    The analytical storage `S = 1/M + α²/(K+4G/3) = 1.554e-9`, coefficient of
+    consolidation `c = k/S = 0.0643 m²/s`, and the Biot undrained `p0` are
+    verified inline.
+  - **N/A (scope):** `solve_consolidation` does NOT generate a load-induced
+    undrained pore pressure and has NO consolidation transient. It applies the
+    surface load as a static `F_ext`, and the STAGGERED displacement step solves
+    the fully DRAINED equilibrium at every time level (the top is pinned to
+    head=0), so the max excess pore pressure stays **0** (vs the analytical
+    p0 ≈ 0.84e5 Pa) and the settlement is the drained value already at t=0.
+    A prescribed-p0 dissipation probe (load bypassed) further shows the staggered
+    split does not reproduce the Terzaghi diffusion (pressure history is
+    non-monotonic and far too fast). The fix is NOT a unit/mesh tweak — it needs
+    a **monolithic (coupled u-p) Biot solve, or an undrained predictor** (apply
+    the load with drainage temporarily closed to set p0, then dissipate). This
+    is a real solver limitation; the module was **not** re-architected for one
+    benchmark. **Possible follow-up:** a monolithic u-p consolidation option, or
+    an `undrained_load=True` predictor in `solve_consolidation`.
+  - *Storage-term note (for the future upgrade):* fem2d's compressibility uses
+    `S = 1/n_w` only — it has no Biot α and omits the skeleton storage term
+    `α²/(K+4G/3)`. With `n_w = M`, fem2d's storage would be `1/M`, vs the true
+    `1/M + α²/(K+4G/3)` (≈ 17% higher here). Map `n_w` to the FULL storage
+    (`n_w = 1/S`) if matching `c` is wanted once the transient works.
+  - *p0 reconciliation (documented):* the inventory quotes both a formula
+    (`α·M/(K+4G/3+α²·M)·pz` → **0.839e5**, consistent with the stated M=4e9) and
+    Itasca's reported **0.981e5** (which needs an effective M ≈ 10× larger, i.e.
+    a near-incompressible fluid). Both recorded; immaterial since fem2d gives 0.
+
+- **Module edits this batch (fem2d only):** `assembly.apply_bcs_penalty`
+  (+`roller_base`), `solver.build_nl_context` (+`roller_base` DOF),
+  `solver.run_nl` (+`f_int_offset`), `solver.solve_nonlinear`
+  (+`initial_stress_relaxation`). All additive/opt-in. No consolidation-solver
+  changes were made (the V-023 limitation is documented, not patched).
