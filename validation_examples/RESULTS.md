@@ -55,6 +55,13 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 | V-017 | lateral_pile FD solver (verification) | fixed-head y & M_head match Reese-Matlock T-method to 4 figures (linear p=k·z·y) | (analytical T-method) | <1% | **PASS** | With a linear soil law the beam-column solver reproduces 0.93·V·T³/EI (fixed-head groundline y) and ≈−0.93·V·T (head moment) exactly. Isolates the solver + fixed-head BC (slope=0) as correct, so the V-017 deflection excess is a p-y construction difference, not a solver bug. |
 | V-017 | lateral_pile fixed-head Mmax (Reese sand, axial) | −39.3 kN·m (at head) | −37.3 kN·m | +5.4% | **PASS** | `SandReese` static p-y, 2-layer profile (φ=32/30, k=24430/16287 kN/m³, γ′=18.84/17.64), head 0.305 m below grade (overburden +0.305 m), V=44.482 kN, slope=0, axial P=1423.4 kN with P-delta. Mmax within ±10%. |
 | V-017 | lateral_pile fixed-head deflection | 3.92 mm | 3.3 mm | +19% | CONVENTION | Just outside ±15%. Solver verified exact (row above); the excess is the module's documented chart-free `SandReese` simplification (LP-1: 1/3-power parabola anchored at ultimate) being softer than LPILE's full Reese (1974) construction with the B-factor m-point. Not a bug, not tuned. Axial P-delta correctly raises y 3.60→3.92 mm and Mmax −36.8→−39.3. |
+| V-018 | ground_improvement / settlement unimproved consolidation | S = 22.0 in (settlement module + closed form) | S = 22 in | 0.0% | **PASS** | `consolidation_settlement_layer` (NC clay, Cc=0.25, eo=0.7, H=15 ft, po=432 psf, dq=2500 psf) reproduces S=Cc/(1+eo)·H·log10((po+dq)/po) to the printed digit (0.559 m). Tight closed-form anchor, independent of any GI method. |
+| V-018 | ground_improvement `area_replacement_ratio` (RAP) | as_tri = 0.2744 | Ra = Ac/(π/4·de²) = 0.27 | <0.5% | **PASS** (primitive) | The triangular tributary √3/2·s² numerically equals the de=1.05·s unit cell π/4·(1.05s)² (both 21.65 ft²), so the module's geometric `as` matches the source's de-based Ra to 4 figures. |
+| V-018 | RAP improved settlement (upper-zone stiffness modulus qg/kg) | hand: qg=6324 psf, suz=0.68 in (module `as`); module SRF path gives ~9.4 in | qg=6383 psf, suz≈0.7 in | suz <3% (hand) | N/A (scope) | The GEC-13 two-layer upper-zone method (qg=q·ns/(Ra·ns−Ra+1), suz=qg/kg, kg=pier stiffness modulus pci) is NOT in the module. `analyze_aggregate_piers`/`improved_settlement` use the equal-strain SRF=1/(1+as(n−1)) model (no kg) → SRF=0.43, improved ≈9.4 in — a fundamentally different method. Published 0.68 in reproduced by hand on the module `as`; module not tuned. |
+| V-019 | ground_improvement / settlement unimproved consolidation | S = 27.2 in (settlement module + closed form) | S = 27 in | <1% | **PASS** | `consolidation_settlement_layer` (Cc=0.2, eo=0.6, H=50 ft, po=1440 psf, dq=1875 psf) reproduces S=27.16 in (0.690 m) exactly. Tight anchor. |
+| V-019 | ground_improvement `priebe_basic_improvement_factor` (stone column) | n0=3.06 (as=Ac/A=0.277, φ_col=42.5); n0=2.81 (module geom as=0.251, φ_col=42.5) | chart ratio 2.7 (Fig 5-27) | +13% / +4% | CONVENTION | Module exposes the genuine Priebe (1995) n0. Published 2.7 is a CHART read; the factor depends on the area-ratio convention AND φ_col. With the source's as=Ac/A=0.277 + default φ_col=42.5 → 3.06 (outside ±0.3); with the module's geometric triangular as=0.251 + φ_col=42.5 → 2.81 (WITHIN 2.7±0.3); the chart 2.7 ≈ φ_col 39° at as=0.277. Improved S=27/n0 = 8.8–9.6 in brackets the published 10 in. Formula correct, not tuned. |
+| V-020 | ground_improvement wick drains (Barron-Hansbo radial-only, ideal) | t90 = 299 d (s=8 ft), 503 d (s=10 ft) | ~300 d / ~500 d ("on the order of") | <1% | **PASS** | RADIAL-ONLY ideal Barron (F(n)=ln(n)−0.75, no smear/well resistance) via `influence_diameter`(de=1.05s) + `drain_function_F` + `time_for_radial_consolidation` reproduces both published t90 to <1% (well inside ±20%). de(8 ft)=2.560 m, de(10 ft)=3.200 m, dw=0.0635 m (2.5 in), n=40.3/50.4. |
+| V-020 | wick drains combined vertical+radial (convention check) | U_total ≈ 93.1% at s=8 ft, t=300 d (Ur≈90%, Uv≈31%) | (radial-only target 90%) | — | CONVENTION | The packaged combined model U_total=1−(1−Uv)(1−Ur) over-predicts U at the published times — the 20-ft clay over rock (single drainage, Hdr=20 ft) adds ~31% vertical on its own, so the combined t90 would be SHORTER. Documents that the source used radial-only; the module supports both. Not a bug. |
 
 ## Notes / flags for the owner
 
@@ -286,3 +293,62 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
   are a source under-iteration (V-015 Bishop) and a documented p-y construction
   simplification (V-017 deflection). `slope_stability/` and `lateral_pile/` suites
   were run unchanged (109 lateral_pile pass; slope_stability pass).
+
+### Batch V-018..V-020 (GEC-13 ground_improvement) — owner notes
+
+- **The unimproved consolidation anchors are clean PASSes (V-018, V-019).** Both
+  GEC-13 examples open with a baseline consolidation S = Cc/(1+eo)·H·log10((po+dq)/po),
+  and the `settlement` module's `consolidation_settlement_layer` (NC clay,
+  sigma_p=sigma_v0) reproduces both to the printed digit in SI: **22.0 in** (V-018,
+  0.559 m) and **27.2 in** (V-019, 0.690 m). These are the tight checks; the
+  improvement factors are the module-specific (looser) targets.
+- **V-018 — the RAP upper-zone *stiffness-modulus* settlement method is NOT in the
+  module (N/A-scope), but the area-ratio primitive is exact (PASS).** GEC-13's RAP
+  two-layer method computes a top-of-pier stress qg = q·ns/(Ra·ns−Ra+1) and then
+  suz = qg/kg, where **kg is the pier stiffness modulus in pci** (a stress/penetration
+  modulus, 75–360 pci range). `ground_improvement` has **no kg input and no qg/kg
+  path** — `analyze_aggregate_piers` / `improved_settlement` instead use the
+  equal-strain **settlement-reduction-factor** model SRF = 1/(1+as·(n−1)). For this
+  example SRF = 0.43, so the module's improved settlement would be ~9.4 in, versus the
+  published **0.68 in** from qg/kg — a fundamentally different model (the SRF model
+  has no notion of a pier stiffness modulus and gives far less reduction at as≈0.27).
+  The published 0.68 in is reproduced by hand on the module's `area_replacement_ratio`
+  (which DOES match the source's de=1.05·s unit-cell Ra=0.2744 to 4 figures, because
+  √3/2·s² ≈ π/4·(1.05s)²). **Possible add:** a RAP `upper_zone_settlement(q, Ra, ns, kg)`
+  helper (the GEC-13 / Lawton-Fox-Wissmann two-layer method) if RAP stiffness-modulus
+  design is in scope. Not a bug — a method/coverage gap.
+- **V-019 — Priebe improvement factor is in the module; the spread is convention,
+  not a bug (CONVENTION).** The module exposes the genuine Priebe (1995) basic
+  improvement factor `priebe_basic_improvement_factor(as, phi_col, nu_s)`. The
+  published 2.7 is a **chart read** (Figure 5-27, after Wallays et al. 1983), and the
+  factor is sensitive to two conventions the source leaves implicit:
+  - **Area-ratio convention.** The source uses A/Ac = (s/d)² = 3.6 → as = Ac/A = 0.277
+    (a square-grid / unit-cell ratio). The module's geometric `area_replacement_ratio`
+    for a *triangular* pattern uses √3/2·s² and gives as = 0.251. Feeding the module's
+    own as → Priebe n0 = 2.81 (within 2.7±0.3); feeding the source's as = 0.277 →
+    n0 = 3.06 (outside).
+  - **Column friction angle.** The module default φ_col = 42.5° (Priebe's compacted-
+    stone chart value). At as = 0.277 the published 2.7 corresponds to φ_col ≈ 39°.
+  Either way the improved S = 27/n0 = 8.8–9.6 in brackets the published 10 in. The
+  formula reproduces the chart family; the ±13% is the area-ratio + φ_col + chart-read
+  latitude the inventory flagged. **Module NOT tuned to the one chart value.** (Note:
+  `priebe_basic_improvement_factor` takes as = Ac/A — feed it the source's 1/(s/d)²
+  directly to match the source's convention, rather than the geometric triangular as.)
+- **V-020 — the PVD radial-consolidation primitive is a clean PASS (radial-only,
+  ideal Barron).** With ch only (no vertical, no smear, no well resistance) the
+  module's Barron-Hansbo radial solution — `influence_diameter`(de = 1.05·s),
+  `drain_function_F`(F(n) = ln(n)−0.75), `time_for_radial_consolidation`(t = −F/8·
+  ln(1−U)·de²/ch) — gives **t90 = 299 d at s = 8 ft** and **503 d at s = 10 ft**, vs
+  the published "on the order of" **~300 / ~500 days** (<1%, well inside ±20%). The
+  de = 1.05·s triangular unit cell and the dw = 2.5 in plumbing both check out
+  (n = 40.3 / 50.4). **Convention used by the source: RADIAL-ONLY.** The module's
+  packaged `analyze_wick_drains` adds the combined term U_total = 1−(1−Uv)(1−Ur); at
+  s = 8 ft, t = 300 d that gives U_total ≈ 93% (Ur ≈ 90%, Uv ≈ 31% from the 20-ft clay
+  over rock at single drainage), so the COMBINED t90 would be *shorter* than 300 d.
+  The example clearly used radial-only — documented, not a bug. The module supports
+  both (pass radial-only via the primitives, or combined via `analyze_wick_drains`).
+- **No module bugs found or fixed in this batch.** All three are either clean PASSes
+  (unimproved consolidation; area-ratio primitive; radial-only Barron t90) or
+  documented method/convention gaps (RAP stiffness-modulus method absent; Priebe
+  area-ratio + φ_col + chart latitude; PVD radial-only vs combined). `ground_improvement/`
+  suite was run unchanged (**49 passed**); `settlement` used read-only.
