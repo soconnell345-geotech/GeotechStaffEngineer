@@ -49,6 +49,12 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 | V-016 | soe Ka + FHWA pe + ps | Ka=0.295, pe=43.6, ps=3.2 | Ka=0.295, pe=43.6, ps=3.2 | <1% | **PASS** | `soe.rankine_Ka`(φ=33)=0.295; two-anchor trapezoid pe=0.65·Ka·γ·H²/(H−H1/3−H3/3)=43.6; ps=Ka·qs=3.2. |
 | V-016 | tributary anchor loads + R + DL | TH1=168.4, TH2=172.1, R=36.7, DL1=435, DL2=445 | TH1=168, TH2=172, R=37, DL1=435, DL2=445 | <2% | **PASS** | Tributary-area horizontal anchor loads, subgrade reaction R=(3/16)H3·pe+(H3/2)ps, and anchor design loads DL=TH·s/cos15 all reproduce to ≤2%. |
 | V-016 | hinge moments M1 / M2,3 | M2,3=66 (exact); M1=70.4 (compact form); M1_earth=65.6 | M2,3=66; M1=Mmax=76 | M2,3 <1%; M1 −7.4% | **PASS** (M2,3) / CONVENTION (M1) | M2,3=(1/10)H2²(pe+ps)=66 exact. M1: the inventory's compact (13/54)H1²(pe+ps)=70.4 vs published 76 — GEC-4 applies the uniform surcharge over a larger tributary than the apparent term in the top region. Dominant earth part (13/54)pe·H1²=65.6 exact; delta is the surcharge tributary only (within 8%). |
+| V-015 | slope_stability slice table (pinned circle) | θ_i, W_i exact; ΣW·sinθ=116.49, ΣW·cosθ=137.09 kips/ft | ΣW·sinθ=116.49, ΣW·cosθ=137.09 | 0.00% | **PASS** | The pinned circle (center 0,60 ft directly above the toe, R=60 ft) + the 4V:3H face reproduce the Caltrans Table 10-1/10-2 slice table EXACTLY — all six θ_i=asin(x_i/60), weights W_i, and both force sums. Geometry reconstruction verified before any FS comparison. |
+| V-015 | slope_stability Fellenius (OMS) | 0.863 (module pipeline, x=0→57.6, ΣdL→77.2 ft); 0.874 (published formula w/ source L=113.55) | 0.87 | −0.007 / +0.004 | **PASS** | `fellenius_fos` over the geometrically-correct mass converges to 0.863 (6 slices 0.866); feeding the source's hand arc length L=113.55 ft into the published formula gives 0.874. Both within ±0.05. The only spread is the cohesion term: source's hand L=113.55 ft over-states the discretized base length (true lower-arc 0→57.6 ft is 77.2 ft). No module change. |
+| V-015 | slope_stability Simplified Bishop | 0.9595 (rigorous fixed point) | 0.90 (source, under-iterated) | +6.6% | CONVENTION | `bishop_fos` returns the proper fixed point FS=FSa=0.9595 on the source's own 6-slice table. The manual shows only two hand iterations (FSa=1.5→1.10; FSa=0.8→0.90, reproduced EXACTLY here incl. the Hb=m_α column) and declares "converges to ≈0.9" — one step short. Re-iterating the source's OWN table to convergence gives 0.96, matching the module. Module is the more-correct value; published 0.90 is not converged. |
+| V-017 | lateral_pile FD solver (verification) | fixed-head y & M_head match Reese-Matlock T-method to 4 figures (linear p=k·z·y) | (analytical T-method) | <1% | **PASS** | With a linear soil law the beam-column solver reproduces 0.93·V·T³/EI (fixed-head groundline y) and ≈−0.93·V·T (head moment) exactly. Isolates the solver + fixed-head BC (slope=0) as correct, so the V-017 deflection excess is a p-y construction difference, not a solver bug. |
+| V-017 | lateral_pile fixed-head Mmax (Reese sand, axial) | −39.3 kN·m (at head) | −37.3 kN·m | +5.4% | **PASS** | `SandReese` static p-y, 2-layer profile (φ=32/30, k=24430/16287 kN/m³, γ′=18.84/17.64), head 0.305 m below grade (overburden +0.305 m), V=44.482 kN, slope=0, axial P=1423.4 kN with P-delta. Mmax within ±10%. |
+| V-017 | lateral_pile fixed-head deflection | 3.92 mm | 3.3 mm | +19% | CONVENTION | Just outside ±15%. Solver verified exact (row above); the excess is the module's documented chart-free `SandReese` simplification (LP-1: 1/3-power parabola anchored at ultimate) being softer than LPILE's full Reese (1974) construction with the B-factor m-point. Not a bug, not tuned. Axial P-delta correctly raises y 3.60→3.92 mm and Mmax −36.8→−39.3. |
 
 ## Notes / flags for the owner
 
@@ -208,3 +214,75 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
   Caltrans force-balance heave with side shear); V-016 M1 is a surcharge-tributary
   convention; V-025 and the module coefficient/earth-pressure primitives are clean
   PASSes. `soe/` and `sheet_pile/` suites were not modified.
+
+### Batch V-015 / V-017 (Caltrans slope FOS + Micropile LPILE) — owner notes
+
+- **V-015 slope_stability is a clean PASS on the hard part (the geometry + the
+  Fellenius/Bishop methods themselves), and surfaces a SOURCE error in the
+  published Bishop value.** Driving the module's slice builder with the *pinned*
+  circle (center 0,60 ft directly above the toe, R=60 ft) and the 4V:3H face
+  reproduces the Caltrans Table 10-1/10-2 slice table to the printed digit — every
+  θ_i=asin(x_i/60), every weight, and both sums ΣW·sinθ=116.49 / ΣW·cosθ=137.09
+  kips/ft. On that mass:
+  - **Fellenius** `fellenius_fos` = 0.863 over the geometrically-correct mass
+    (x=0→57.6 ft, where the full circle crosses the face), vs the published 0.87
+    (Δ −0.007, well inside ±0.05). The published 0.87 itself is recovered exactly
+    (0.874) by feeding the source's hand arc length **L=113.55 ft** into the
+    published formula. That L is a hand over-estimate — the true lower-arc length
+    from the toe to x=57.6 is **77.2 ft** (the module's self-consistent ΣdL); the
+    c′·L cohesion term is the entire ~0.05 spread. The module's smaller, self-
+    consistent L is the more accurate one.
+  - **Bishop** `bishop_fos` = **0.9595**, the rigorous fixed point (FS=FSa) on the
+    source's own 6-slice table — vs the published **0.90**. The manual prints only
+    two hand iterations (FSa=1.5→FS=1.10; FSa=0.8→FS=0.90; reproduced here EXACTLY,
+    including the m_α=cos θ+sin θ·tanφ/FSa = "Hb" column 1.06/1.15/1.21/1.23/1.20/
+    1.06) and loosely declares "converges to ≈0.9" — **one hand step short of
+    convergence.** Iterating the source's OWN table to FS=FSa gives 0.96, matching
+    the module. So the module is correct and the published 0.90 is under-iterated;
+    recorded as CONVENTION (the +6.6% is the source's truncated iteration, not a
+    module error). **No module change.**
+  - *Geometry-representation note:* this circle's center sits directly above the
+    toe, so its lower arc never re-exits the slope on its own (max z=60 ft at
+    x=60 ft, while the face there is z=80 ft) and the source's stated exit
+    (x=57.6 ft, z=76.8 ft) is on the *upper* arc. `CircularSlipSurface` only models
+    the lower arc, so `build_slices`/`find_entry_exit` cannot auto-terminate the
+    mass at 57.6 ft for this specific circle. The test therefore builds the slice
+    discretization over x=0→57.6 directly and exercises `fellenius_fos`/`bishop_fos`
+    on it (the FOS methods are the validation target; they are exact). A general
+    auto-handling of toe-centered circles whose exit is above the center elevation
+    would need the slip surface to expose the upper arc too — a minor possible
+    enhancement, not required here.
+- **V-017 lateral_pile: the FD solver is verified EXACT; the one out-of-tolerance
+  number (deflection +19%) is the documented Reese p-y simplification, not a bug.**
+  - With a linear soil law p=k·z·y the beam-column solver reproduces the Reese-
+    Matlock characteristic-length (T-method) closed form to 4 figures for the
+    fixed-head groundline deflection (0.93·V·T³/EI) and head moment (≈−0.93·V·T).
+    That pins the solver, the fixed-head BC (slope=0), and the discretization as
+    correct, so the deflection excess can only come from the p-y curve.
+  - With `SandReese` static curves + the LPILE inputs, **fixed-head Mmax = −39.3
+    kN·m vs −37.3 (+5.4%, PASS within ±10%)** and **head deflection 3.92 mm vs 3.3
+    (+19%, just outside ±15%)**. The deflection overshoot is the module's own
+    chart-free `SandReese` simplification (LP-1 in `py_curves.py`: a 1/3-power
+    parabola anchored at the ultimate point) being a bit softer than LPILE's full
+    Reese (1974) three-part construction with the B-factor m-point and variable
+    exponent. Recorded as CONVENTION — not tuned to this one example. (For a
+    smoother curve, `SandAPI` gives 5.0 mm / −44 kN·m — also soft; neither matches
+    LPILE's exact Reese curve to <15% on deflection.)
+  - **Axial P-delta is correctly captured:** P=1423.4 kN raises the fixed-head
+    deflection from 3.60→3.92 mm and Mmax from −36.8→−39.3 kN·m. The published case
+    has P-delta on, so the axial result is the comparison value.
+  - **Head-datum subtlety (flagged):** the LPILE echo's "ground surface 0.305 m
+    below top of pile = −0.30 m" and the manual text ("the cap will be embedded
+    0.305 m below the ground surface") both mean the head is **0.305 m BELOW grade**
+    — i.e. +0.305 m of soil overburden over the head. The INVENTORY note "0.305 m
+    above ground (stickup)" is a misreading of the sign; modeling it as an
+    above-grade stickup gives ~9 mm (far off). The test honors the below-grade
+    overburden with a thin `SandReese` depth-offset wrapper. **Possible ergonomics
+    add:** an optional `head_depth` / overburden-offset parameter on
+    `LateralPileAnalysis.solve()` so a below-grade pile head needs no wrapper (the
+    existing `stickup` only handles the above-grade case).
+- **No module bugs found or fixed in this batch.** slope_stability's slice builder +
+  Fellenius/Bishop and lateral_pile's FD solver are all verified correct; the gaps
+  are a source under-iteration (V-015 Bishop) and a documented p-y construction
+  simplification (V-017 deflection). `slope_stability/` and `lateral_pile/` suites
+  were run unchanged (109 lateral_pile pass; slope_stability pass).
