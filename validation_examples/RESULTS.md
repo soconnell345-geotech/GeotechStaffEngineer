@@ -62,6 +62,13 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 | V-019 | ground_improvement `priebe_basic_improvement_factor` (stone column) | n0=3.06 (as=Ac/A=0.277, φ_col=42.5); n0=2.81 (module geom as=0.251, φ_col=42.5) | chart ratio 2.7 (Fig 5-27) | +13% / +4% | CONVENTION | Module exposes the genuine Priebe (1995) n0. Published 2.7 is a CHART read; the factor depends on the area-ratio convention AND φ_col. With the source's as=Ac/A=0.277 + default φ_col=42.5 → 3.06 (outside ±0.3); with the module's geometric triangular as=0.251 + φ_col=42.5 → 2.81 (WITHIN 2.7±0.3); the chart 2.7 ≈ φ_col 39° at as=0.277. Improved S=27/n0 = 8.8–9.6 in brackets the published 10 in. Formula correct, not tuned. |
 | V-020 | ground_improvement wick drains (Barron-Hansbo radial-only, ideal) | t90 = 299 d (s=8 ft), 503 d (s=10 ft) | ~300 d / ~500 d ("on the order of") | <1% | **PASS** | RADIAL-ONLY ideal Barron (F(n)=ln(n)−0.75, no smear/well resistance) via `influence_diameter`(de=1.05s) + `drain_function_F` + `time_for_radial_consolidation` reproduces both published t90 to <1% (well inside ±20%). de(8 ft)=2.560 m, de(10 ft)=3.200 m, dw=0.0635 m (2.5 in), n=40.3/50.4. |
 | V-020 | wick drains combined vertical+radial (convention check) | U_total ≈ 93.1% at s=8 ft, t=300 d (Ur≈90%, Uv≈31%) | (radial-only target 90%) | — | CONVENTION | The packaged combined model U_total=1−(1−Uv)(1−Ur) over-predicts U at the published times — the 20-ft clay over rock (single drainage, Hdr=20 ft) adds ~31% vertical on its own, so the combined t90 would be SHORTER. Documents that the source used radial-only; the module supports both. Not a bug. |
+| V-021 | bearing_capacity Vesic N-factors (φ=35) | Nq=33.30, Nγ=48.03 | Nq=33.3, Nγ=48.0 | <0.1% | **PASS** | `bearing_capacity_Nq`/`bearing_capacity_Ngamma(method="vesic")` reproduce the GEC-6 Table 5-1 AASHTO/Vesic factors to 4 figures. (Meyerhof Nγ=37.15, Hansen Nγ=33.92 differ markedly — the Vesic path is the right one.) The direct N-factor match the inventory flagged. |
+| V-021 | bearing_capacity Vesic shape factors (square) | sq=1.700, s_γ=0.600 | sq=1.7, s_γ=0.6 | exact | **PASS** | Vesic `shape_factors` for B/L=1: sq=1+(B/L)·tanφ=1.700, s_γ=1−0.4(B/L)=0.600 — GEC-6 Table 5-2, exact. |
+| V-021 | bearing_capacity qult/qall (assembled, example convention) | qult=2552+254.2·B; qall(FS=3)=851+85·B → B=3: 1105, 4.6: 1240, 6.1: 1368 kPa | qult=2553+254·B; B=3: 1106, 4.6: 1242, 6.1: 1369 | <0.2% | **PASS** | Strongest bearing check. Driving the example's assembly (q·Nq·sq·Cwq + 0.5·γ·B·Nγ·s_γ·Cwγ, dq=1.0, AASHTO Cwγ=0.9 fixed at the B=6 trial) on the MODULE factor functions reproduces the published closed-form intercept (2552 vs 2553) AND slope (254.2 vs 254) to 4 figures. q=γ·Df=45.1 kPa; Cwq=2.48→cap 1.0; Cwγ(B=6)=0.903. |
+| V-021 | bearing_capacity `compute()` (high-level) | qult=3897 kPa at B=3 (dq=1.195, γ_eff=19.6, no Cwγ) | qult=3315 at B=3 | +17.6% | CONVENTION | Packaged `BearingCapacityAnalysis.compute()` runs high for two defensible reasons: (1) it applies Vesic DEPTH factors dq≈1.10–1.20 while the example sets dq=1.0 (cohesive overburden, Table 5-4); (2) its effective-unit-weight GW model sees the GW at 9.1 m below the bearing wedge so γ_eff=γ=19.6 (no reduction), vs the example's AASHTO Cwγ=0.9 correction factor. Same N/shape factors; closed form recovered exactly the example's way (row above). Module NOT tuned. |
+| V-021b | bearing_capacity `Footing` effective area (eccentric) | B'=4.746, L'=4.666, A'=22.15 m², q_applied=364.4 kPa; sliding FS=30.9 | B'=4.75, L'=4.67, A'=22.2, q=364; FS=31 | <0.5% | **PASS** | The 4.9 m square footing with eB=0.077, eL=0.117 (P=8070 kN): `Footing.B_eff/L_eff/A_eff` (Meyerhof effective-area) reproduce the example's eccentric-load dimensions and q_applied=P/A' exactly; the 4.6 m trial likewise (B'=4.45, L'=4.37, A'=19.4, q=416). Sliding FS=0.7·(W+P)/V=30.9 (pub 31). |
+| V-022 | settlement `approximate_2to1` stress increase (square) | Δσv/q: B=3 → 0.549/0.162/0.070/0.044; B=6.1 → 0.728/0.334/0.179/0.123 | B=3 → 0.55/0.16/0.07/0.04; B=6.1 → 0.73/0.33/0.18/0.12 | ≤2% | **PASS** (primitive) | The example's 2:1 Δσv=q·B²/(B+Z)² for a square footing IS `approximate_2to1` (q·B·L/((B+z)(L+z)) at B=L). The module reproduces every Table B1-2 stress fraction (3 widths × 4 layers) to ≤2%. |
+| V-022 | settlement Hough (granular C'-index) layer formula | (no module method) hand: B=3,q=240 → 15.4+4.4+1.1+0.6=21.5 mm; full Table B1-3 (12 cells) reproduced to ≤1.5 mm | per-layer 15+4+1+1=21 mm; table B=3:21/25/28/30, B=4.6:28/31/34/37, B=6.1:31/35/38/41 | <1.5 mm | N/A (scope) | The `settlement` module has NO Hough / C'-index granular method (only Cc/Cr e-log(p) + Schmertmann/elastic); the Hough index C' is a bearing-capacity index, NOT Cc/(1+e0). The 2:1 stress primitive is shared & validated; the Hough layer sum dH=H/C'·log10[(σ'vo+Δσ)/σ'vo] is reproduced inline on `approximate_2to1` (all 12 q×B cells; largest spread −1.2 mm at B=3,q=335: 26.8 vs 28). Documented coverage gap, not a bug. |
 
 ## Notes / flags for the owner
 
@@ -352,3 +359,56 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
   documented method/convention gaps (RAP stiffness-modulus method absent; Priebe
   area-ratio + φ_col + chart latitude; PVD radial-only vs combined). `ground_improvement/`
   suite was run unchanged (**49 passed**); `settlement` used read-only.
+
+### Batch V-021 / V-022 (GEC-6 Ex B-1 spread-footing) — owner notes
+
+- **V-021 is the strongest bearing check in the library — a clean PASS on the
+  bearing_capacity factors, no bug.** The example's Vesic/AASHTO bearing-capacity
+  factors at φ=35 (**Nq=33.3, Nγ=48.0**) and Vesic square shape factors (**sq=1.7,
+  s_γ=0.6**) are reproduced by the module's `bearing_capacity_Nq` (33.30),
+  `bearing_capacity_Ngamma(method="vesic")` (48.03) and `shape_factors` (1.700 /
+  0.600) **to 4 figures**. Assembling the example's own equation
+  `qult = q·Nq·sq·Cwq + 0.5·γ·B·Nγ·s_γ·Cwγ` (q=γ·Df=45.1 kPa, dq=1.0, Cwq capped
+  at 1.0, Cwγ=0.9) on those module factors gives **qult = 2552 + 254.2·B** vs the
+  published **2553 + 254·B** — intercept and slope both within 0.04%. qall (FS=3)
+  at B=3/4.6/6.1 m = **1105/1240/1368 kPa** vs published **1106/1242/1369** (all
+  <0.2%, inside the ±3% tolerance). The eccentric effective-area follow-on
+  (V-021b) is also a clean PASS through the module's `Footing`: the 4.9 m square
+  with eB=0.077, eL=0.117 gives B'=4.746, L'=4.666, A'=22.15 m², q_applied=364.4
+  kPa (pub 364) and sliding FS=30.9 (pub 31). **No module change.**
+- **V-021 high-level `compute()` is a CONVENTION (depth factor + GW model), ~+17%.**
+  The packaged `BearingCapacityAnalysis(...).compute()` returns qult=3897 vs the
+  published 3315 at B=3 m for two defensible reasons, NOT a bug: (1) it applies the
+  Vesic **depth factor** dq≈1.10–1.20, while the example deliberately sets **dq=1.0**
+  because the overburden above the footing is the cohesive Unit-1 lean clay (GEC-6
+  Table 5-4 guidance — "set dq=1.0 when the overburden is cohesive"); and (2) its
+  groundwater model averages the effective unit weight over the bearing wedge — and
+  for these footing widths the GW at 9.1 m lies *below* the wedge (Df+1.5B), so
+  γ_eff=γ=19.6 with **no reduction**, whereas the example applies the AASHTO **Cwγ
+  groundwater-correction factor** Cwγ=0.5+0.5·[Dw/(Df+1.5B)]=0.9 (a width-dependent
+  factor it then holds fixed at the B=6 m trial to get a linear qult). The module's
+  N/shape factors are identical to the example's; the closed form is recovered
+  exactly by assembling them the example's way (above). **Possible adds:** (a) an
+  optional flag to suppress depth factors / pass dq=1.0 (cohesive-overburden case),
+  and (b) an AASHTO Cwq/Cwγ groundwater-correction-factor option as an alternative
+  to the effective-unit-weight averaging. Both are GEC-6 conventions; the current
+  module path is defensible and was NOT changed.
+- **V-022 — no Hough / C'-index granular settlement method in the module (N/A-scope),
+  but the 2:1 stress primitive is exact (PASS).** The example's Hough form
+  `dH = H/C'·log10[(σ'vo+Δσ)/σ'vo]` uses a *bearing-capacity index* C' (from the
+  corrected SPT N', GEC-6 Fig 5-19), which is **not** the module's Cc/(1+e0)
+  consolidation index — `settlement` exposes only the Cc/Cr e-log(p) consolidation
+  and Schmertmann/elastic methods, so the Hough layer formula is a coverage gap. The
+  stress increase, however, is exactly the module's `approximate_2to1` (for a square
+  footing q·B²/(B+Z)² = q·B·L/((B+z)(L+z)) at B=L): it reproduces the published
+  Table B1-2 stress fractions (e.g. B=3 → 0.55/0.16/0.07/0.04) to ≤2%, and the full
+  Table B1-3 settlement matrix (4 stresses × 3 widths) is reproduced inline on
+  `approximate_2to1` to within ±1.5 mm / the source's mm rounding (worked B=3,q=240:
+  15.4+4.4+1.1+0.6=21.5 mm vs pub 15+4+1+1=21). **Possible add:** a `hough_settlement(
+  layers, q, B, L)` helper (granular C'-index, with the 2:1 stress it already has) if
+  SPT-based granular settlement is in scope. Not a bug — a documented method gap.
+- **No module bugs found or fixed in this batch.** V-021 is a clean factor-level PASS
+  (the high-level `compute()` delta is the dq-and-GW-model convention); V-022 is a
+  method/scope gap with the shared 2:1 primitive validated. `bearing_capacity/` and
+  `settlement/` suites were run unchanged (**136 passed** combined); both used
+  read-only.
