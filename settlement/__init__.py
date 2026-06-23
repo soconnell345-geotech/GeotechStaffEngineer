@@ -6,6 +6,7 @@ and secondary compression settlement for shallow foundations.
 
 Methods:
 - Immediate: Elastic method, Schmertmann (1978)
+- Granular: Hough (1959) C'-index (SPT bearing-capacity-index) method
 - Consolidation: Cc/Cr e-log(p) with layer summation
 - Time rate: Terzaghi 1-D theory
 - Secondary: C_alpha creep
@@ -27,6 +28,9 @@ from settlement.consolidation import (
     ConsolidationLayer, consolidation_settlement_layer,
     total_consolidation_settlement,
 )
+from settlement.hough import (
+    HoughLayer, HoughResult, hough_settlement, hough_settlement_layer,
+)
 from settlement.time_rate import (
     time_factor, degree_of_consolidation, time_for_consolidation,
     settlement_at_time,
@@ -40,6 +44,7 @@ __all__ = [
     'elastic_settlement', 'schmertmann_settlement', 'SchmertmannLayer',
     'ConsolidationLayer', 'consolidation_settlement_layer',
     'total_consolidation_settlement',
+    'HoughLayer', 'HoughResult', 'hough_settlement', 'hough_settlement_layer',
     'time_factor', 'degree_of_consolidation', 'time_for_consolidation',
     'settlement_at_time',
     'secondary_settlement',

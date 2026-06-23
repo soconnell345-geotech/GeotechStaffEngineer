@@ -53,18 +53,17 @@ KEY FINDINGS (details in each test docstring and RESULTS.md):
   exactly by assembling the SAME module N/shape factors the example's way
   (dq = 1, AASHTO Cw). Module NOT tuned.
 
-- V-022 Hough method is N/A (scope); the 2:1 stress-distribution primitive is a
-  PASS and the Hough closed form is verified inline. The `settlement` module has
-  NO Hough / C'-index granular method (only Cc/Cr e-log(p) consolidation +
-  Schmertmann/elastic) — the Hough form dH = H/C'·log10[(σ'vo+Δσ)/σ'vo] uses a
-  "bearing capacity index" C' that is NOT the module's Cc/(1+e0), so it is a
-  coverage gap. But the example's stress increase is exactly the module's
-  `approximate_2to1` (square footing: q·B²/(B+Z)² = q·B·L/((B+z)(L+z)) at B=L):
-  the module reproduces the published Table B1-2 stress fractions
-  (0.55/0.16/0.07/0.04 at B = 3, etc.) to ≤2%, and the full Hough settlement
-  table B1-3 (all 12 q×B cells) is reproduced inline on `approximate_2to1` to
-  within ±1.5 mm / the source's mm rounding (the worked B = 3, q = 240 case lands
-  at 21.5 mm = 15.4+4.4+1.1+0.6 vs the published 21 = 15+4+1+1).
+- V-022 Hough method is now a PASS via the NEW `settlement.hough` module method
+  (v5.2): `hough_settlement(layers, q_net, B, L=None)` over `HoughLayer`
+  objects. The Hough form dH = H/C'·log10[(σ'vo+Δσ)/σ'vo] uses a "bearing
+  capacity index" C' (distinct from the module's Cc/(1+e0)) and REUSES the
+  module's `approximate_2to1` for the 2:1 stress increase (square footing:
+  q·B²/(B+Z)² = q·B·L/((B+z)(L+z)) at B=L). The module reproduces the published
+  Table B1-2 stress fractions (0.55/0.16/0.07/0.04 at B = 3, etc.) to ≤2%, and
+  the full Hough settlement Table B1-3 (all 12 q×B cells) to within ±15% /
+  the source's mm rounding (the worked B = 3, q = 240 case lands at 21.5 mm =
+  15.4+4.4+1.1+0.6 vs the published 21 = 15+4+1+1). The Cc/Cr e-log(p)
+  consolidation path remains for cohesive soils.
 
 Units: V-021 / V-022 inputs are already SI (kPa, m, kN/m3, degrees). No
 conversions needed. The only non-SI quantity is the Hough index C' (dimensionless
@@ -83,8 +82,9 @@ from bearing_capacity import (
 from bearing_capacity.factors import (
     bearing_capacity_Nq, bearing_capacity_Ngamma, shape_factors,
 )
-# settlement (V-022): the 2:1 stress-distribution primitive
+# settlement (V-022): the 2:1 stress-distribution primitive + Hough method
 from settlement.stress_distribution import approximate_2to1
+from settlement.hough import HoughLayer, hough_settlement
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -281,6 +281,19 @@ def _hough_total_mm(B, q):
     return total
 
 
+def _hough_layers():
+    """Build the four GEC-6 Ex B-1 granular layers as HoughLayer objects."""
+    return [
+        HoughLayer(thickness=H, depth_to_center=Z, sigma_v0=svo, C_prime=Cp)
+        for (H, svo, Cp), Z in zip(_V022_LAYERS, _V022_ZMID)
+    ]
+
+
+def _hough_module_total_mm(B, q):
+    """Hough settlement (mm) via the NEW settlement.hough module method."""
+    return hough_settlement(_hough_layers(), q_net=q, B=B).total_mm
+
+
 def test_v022_2to1_stress_increase_matches_table_b1_2():
     """PASS (primitive): the example's 2:1 stress increase Δσv = q·B²/(B+Z)² for a
     square footing IS the `settlement` module's `approximate_2to1` (which for a
@@ -300,65 +313,60 @@ def test_v022_2to1_stress_increase_matches_table_b1_2():
 
 
 def test_v022_hough_worked_case_b3_q240():
-    """N/A (scope) — Hough method absent from the module; closed form verified
-    inline. The `settlement` module has NO Hough / C'-index granular method (only
-    Cc/Cr e-log(p) consolidation + Schmertmann/elastic). The Hough form
-    dH = H/C'·log10[(σ'vo+Δσ)/σ'vo] uses a bearing-capacity index C' that is NOT
-    Cc/(1+e0), so this is a documented coverage gap. We reproduce the example's
-    worked single case (B = 3 m, q = 240 kPa) inline, driving the module's
-    `approximate_2to1` for the stress increase: per-layer 15.4 + 4.4 + 1.1 + 0.6
-    = 21.5 mm vs the published 15 + 4 + 1 + 1 = 21 mm (source rounds each layer to
-    mm)."""
-    B, q = 3.0, 240.0
-    per_layer = []
-    for (H, svo, Cp), Z in zip(_V022_LAYERS, _V022_ZMID):
-        dsig = approximate_2to1(q, B, B, Z)
-        per_layer.append(H / Cp * math.log10((svo + dsig) / svo) * 1000.0)
+    """PASS — the NEW `settlement.hough.hough_settlement` module method reproduces
+    the example's worked single case (B = 3 m, q = 240 kPa). The Hough form
+    dH = H/C'·log10[(σ'vo+Δσ)/σ'vo] uses the bearing-capacity index C' (distinct
+    from Cc/(1+e0)) and the module's 2:1 stress increase. Per-layer 15.4 + 4.4 +
+    1.1 + 0.6 = 21.5 mm vs the published 15 + 4 + 1 + 1 = 21 mm (source rounds each
+    layer to mm). Driven through the module (not inline arithmetic)."""
+    res = hough_settlement(_hough_layers(), q_net=240.0, B=3.0)
+    per_layer = [lyr["settlement_mm"] for lyr in res.layers]
     # published per-layer (rounded): 15 / 4 / 1 / 1
     assert per_layer[0] == pytest.approx(15.0, abs=1.0)
     assert per_layer[1] == pytest.approx(4.0, abs=1.0)
     assert per_layer[2] == pytest.approx(1.0, abs=1.0)
     assert per_layer[3] == pytest.approx(1.0, abs=1.0)
-    total = sum(per_layer)
-    assert total == pytest.approx(21.0, abs=1.5)          # pub 21 mm
+    assert res.total_mm == pytest.approx(21.0, abs=1.5)   # pub 21 mm
 
 
 def test_v022_hough_full_table_b1_3():
-    """N/A (scope) — full Hough table reproduced inline on the module's 2:1
-    primitive. Every cell of the published Table B1-3 (settlement vs applied
-    stress q ∈ {240,290,335,380} kPa and footing width B ∈ {3,4.6,6.1} m) is
-    reproduced by the inline Hough sum (the module supplies only the 2:1 stress
-    via `approximate_2to1`) to within ±1.5 mm / the source's mm rounding (largest
-    spread −1.2 mm at B = 3, q = 335: 26.8 vs 28). Documents the coverage gap with
-    a full numeric match of the closed form."""
+    """PASS — the full published Table B1-3 reproduced by the NEW module method
+    `settlement.hough.hough_settlement`. Every cell (settlement vs applied stress
+    q ∈ {240,290,335,380} kPa and footing width B ∈ {3,4.6,6.1} m) is reproduced
+    to within ±15% (inventory tolerance); the largest relative spread is ~4.6% at
+    B = 4.6, q = 240 (26.7 vs 28). Driven through the module method (not inline
+    arithmetic). A regression check confirms the module result equals the inline
+    closed form, so the validated layer/stress handling is the same."""
     pub = {
         (3.0, 240): 21, (3.0, 290): 25, (3.0, 335): 28, (3.0, 380): 30,
         (4.6, 240): 28, (4.6, 290): 31, (4.6, 335): 34, (4.6, 380): 37,
         (6.1, 240): 31, (6.1, 290): 35, (6.1, 335): 38, (6.1, 380): 41,
     }
     for (B, q), S_pub in pub.items():
-        S = _hough_total_mm(B, float(q))
+        S = _hough_module_total_mm(B, float(q))       # NEW module method
+        # module result must match the validated inline closed form exactly
+        assert S == pytest.approx(_hough_total_mm(B, float(q)), rel=1e-9)
         # ±15% (inventory tolerance) OR ±1.5 mm for the small rounded values
         assert (S == pytest.approx(S_pub, rel=0.15)
                 or S == pytest.approx(S_pub, abs=1.5)), \
             f"B={B}, q={q}: ours={S:.1f} mm vs pub {S_pub} mm"
 
 
-def test_v022_settlement_module_has_no_hough_method():
-    """Documents the coverage gap directly: the `settlement` module exposes no
-    Hough / C'-index granular method. Its consolidation path is Cc/Cr e-log(p)
-    (`consolidation_settlement_layer`), whose index Cc/(1+e0) is a DIFFERENT
-    quantity than the Hough bearing-capacity index C'. The 2:1 stress primitive
-    is shared (and validated above), but the Hough layer formula is not packaged.
-    """
+def test_v022_settlement_module_exposes_hough_method():
+    """Coverage gap CLOSED: the `settlement` module now exposes the Hough /
+    C'-index granular method (`hough_settlement`, `HoughLayer`, `HoughResult`,
+    `hough_settlement_layer`). Its index C' is the Hough bearing-capacity index
+    (NOT Cc/(1+e0)); the 2:1 stress primitive is reused. The Cc/Cr e-log(p)
+    consolidation path remains for cohesive soils."""
     import settlement
     names = dir(settlement)
-    assert not any("hough" in n.lower() for n in names)
-    assert not any("c_index" in n.lower() or "c_prime" in n.lower() for n in names)
-    # the consolidation form is Cc/(1+e0), not H/C' — confirm the export set
+    assert "hough_settlement" in names
+    assert "HoughLayer" in names
+    assert "HoughResult" in names
+    assert "hough_settlement_layer" in names
+    # the distinct consolidation form (Cc/(1+e0)) is still present
     assert "consolidation_settlement_layer" in names
-    # the shared 2:1 stress primitive IS available (used above); the Hough LAYER
-    # formula (H/C'·log10) is what is missing, not the stress distribution
+    # the shared 2:1 stress primitive is still available and reused
     assert "approximate_2to1" in names
     from settlement import stress_distribution
     assert hasattr(stress_distribution, "approximate_2to1")

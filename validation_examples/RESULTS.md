@@ -68,7 +68,7 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 | V-021 | bearing_capacity `compute()` (high-level) | qult=3897 kPa at B=3 (dq=1.195, γ_eff=19.6, no Cwγ) | qult=3315 at B=3 | +17.6% | CONVENTION | Packaged `BearingCapacityAnalysis.compute()` runs high for two defensible reasons: (1) it applies Vesic DEPTH factors dq≈1.10–1.20 while the example sets dq=1.0 (cohesive overburden, Table 5-4); (2) its effective-unit-weight GW model sees the GW at 9.1 m below the bearing wedge so γ_eff=γ=19.6 (no reduction), vs the example's AASHTO Cwγ=0.9 correction factor. Same N/shape factors; closed form recovered exactly the example's way (row above). Module NOT tuned. |
 | V-021b | bearing_capacity `Footing` effective area (eccentric) | B'=4.746, L'=4.666, A'=22.15 m², q_applied=364.4 kPa; sliding FS=30.9 | B'=4.75, L'=4.67, A'=22.2, q=364; FS=31 | <0.5% | **PASS** | The 4.9 m square footing with eB=0.077, eL=0.117 (P=8070 kN): `Footing.B_eff/L_eff/A_eff` (Meyerhof effective-area) reproduce the example's eccentric-load dimensions and q_applied=P/A' exactly; the 4.6 m trial likewise (B'=4.45, L'=4.37, A'=19.4, q=416). Sliding FS=0.7·(W+P)/V=30.9 (pub 31). |
 | V-022 | settlement `approximate_2to1` stress increase (square) | Δσv/q: B=3 → 0.549/0.162/0.070/0.044; B=6.1 → 0.728/0.334/0.179/0.123 | B=3 → 0.55/0.16/0.07/0.04; B=6.1 → 0.73/0.33/0.18/0.12 | ≤2% | **PASS** (primitive) | The example's 2:1 Δσv=q·B²/(B+Z)² for a square footing IS `approximate_2to1` (q·B·L/((B+z)(L+z)) at B=L). The module reproduces every Table B1-2 stress fraction (3 widths × 4 layers) to ≤2%. |
-| V-022 | settlement Hough (granular C'-index) layer formula | (no module method) hand: B=3,q=240 → 15.4+4.4+1.1+0.6=21.5 mm; full Table B1-3 (12 cells) reproduced to ≤1.5 mm | per-layer 15+4+1+1=21 mm; table B=3:21/25/28/30, B=4.6:28/31/34/37, B=6.1:31/35/38/41 | <1.5 mm | N/A (scope) | The `settlement` module has NO Hough / C'-index granular method (only Cc/Cr e-log(p) + Schmertmann/elastic); the Hough index C' is a bearing-capacity index, NOT Cc/(1+e0). The 2:1 stress primitive is shared & validated; the Hough layer sum dH=H/C'·log10[(σ'vo+Δσ)/σ'vo] is reproduced inline on `approximate_2to1` (all 12 q×B cells; largest spread −1.2 mm at B=3,q=335: 26.8 vs 28). Documented coverage gap, not a bug. |
+| V-022 | settlement Hough (granular C'-index) via new `hough_settlement` | B=3,q=240 → 15.4+4.4+1.1+0.6=21.5 mm; full Table B1-3 (12 cells) reproduced to within ±4.6% | per-layer 15+4+1+1=21 mm; table B=3:21/25/28/30, B=4.6:28/31/34/37, B=6.1:31/35/38/41 | ≤4.6% | **PASS** | The new `settlement.hough.hough_settlement(layers, q_net, B, L)` method (over `HoughLayer`) packages the Hough (1959) granular C'-index form dH=H/C'·log10[(σ'vo+Δσ)/σ'vo], reusing `approximate_2to1` for the 2:1 stress increase. C' is the Hough bearing-capacity index (NOT Cc/(1+e0)); the Cc/Cr e-log(p) path remains for cohesive soils. The module method reproduces every cell of Table B1-3 (12 q×B cells) within ±15% (largest −4.6% at B=4.6,q=240: 26.7 vs 28; worked B=3,q=240: 21.5 vs 21). Coverage gap closed; module NOT tuned. |
 | V-023 | fem2d final drained settlement (confined 1-D Biot column) | w = 2.609 mm (elastic confined-column solve AND `solve_consolidation` end-state) | pz·H/(K+4G/3) = 2.61 mm | 0.0% | **PASS** | Laterally-confined column (oedometric, side rollers), base fixed, top loaded pz=1e5 Pa. fem2d reproduces the drained end-state settlement EXACTLY (ratio 1.0000) both via `solve_elastic` and via the coupled `solve_consolidation`. Units mapped Pa→kPa; Biot M→n_w=M/1000 kPa; mobility k→k_hyd=k·γ_w. |
 | V-023 | fem2d analytical anchors (S, c, p0) | S=1.554e-9 1/Pa; c=0.0643 m²/s; p0_consistent=0.839e5 Pa | S=1.554e-9; c=0.0643; p0 (formula) 0.839e5 / (Itasca reported 0.981e5) | exact | (anchors) | Storage S=1/M+α²/(K+4G/3), c=k/S, and the Biot 1-D undrained p0 verified inline. The inventory's stated 0.981e5 is Itasca's reported value, which needs an effective M≈10× the stated 4e9 (near-incompressible fluid); the inventory's own formula gives 0.839e5 (consistent with the stated M). Documented; immaterial since fem2d gives 0 (next row). |
 | V-023 | fem2d undrained p0 + p(z,t) consolidation decay | excess pp = 0 at every step; settlement = drained 2.609 mm from t=0 (NO transient) | undrained p0 ~0.84e5 Pa; Terzaghi decay p/p0 vs t̂; FLAC <5% err | — | N/A (scope) | **Structural limitation of the staggered Biot scheme.** `solve_consolidation` applies the surface load as a static F_ext and the staggered displacement step solves the fully DRAINED equilibrium at every time level (top pinned head=0) → no undrained excess pore pressure is generated and the settlement is the drained value from t=0 with no decay. A prescribed-p0 dissipation test (no load) also fails to reproduce the Terzaghi diffusion (non-monotonic, far too fast). Needs a monolithic u-p solve or an undrained predictor — NOT a unit bug. The drained end-state (PASS above) is the only reproducible quantity. |
@@ -399,20 +399,19 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
   and (b) an AASHTO Cwq/Cwγ groundwater-correction-factor option as an alternative
   to the effective-unit-weight averaging. Both are GEC-6 conventions; the current
   module path is defensible and was NOT changed.
-- **V-022 — no Hough / C'-index granular settlement method in the module (N/A-scope),
-  but the 2:1 stress primitive is exact (PASS).** The example's Hough form
-  `dH = H/C'·log10[(σ'vo+Δσ)/σ'vo]` uses a *bearing-capacity index* C' (from the
-  corrected SPT N', GEC-6 Fig 5-19), which is **not** the module's Cc/(1+e0)
-  consolidation index — `settlement` exposes only the Cc/Cr e-log(p) consolidation
-  and Schmertmann/elastic methods, so the Hough layer formula is a coverage gap. The
-  stress increase, however, is exactly the module's `approximate_2to1` (for a square
-  footing q·B²/(B+Z)² = q·B·L/((B+z)(L+z)) at B=L): it reproduces the published
-  Table B1-2 stress fractions (e.g. B=3 → 0.55/0.16/0.07/0.04) to ≤2%, and the full
-  Table B1-3 settlement matrix (4 stresses × 3 widths) is reproduced inline on
-  `approximate_2to1` to within ±1.5 mm / the source's mm rounding (worked B=3,q=240:
-  15.4+4.4+1.1+0.6=21.5 mm vs pub 15+4+1+1=21). **Possible add:** a `hough_settlement(
-  layers, q, B, L)` helper (granular C'-index, with the 2:1 stress it already has) if
-  SPT-based granular settlement is in scope. Not a bug — a documented method gap.
+- **V-022 — Hough / C'-index granular settlement method ADDED (v5.2), now a PASS.**
+  The example's Hough form `dH = H/C'·log10[(σ'vo+Δσ)/σ'vo]` uses a *bearing-capacity
+  index* C' (from the corrected SPT N', GEC-6 Fig 5-19), which is **not** the module's
+  Cc/(1+e0) consolidation index. This is now packaged as `settlement.hough`
+  (`hough_settlement(layers, q_net, B, L=None)` over `HoughLayer`, plus
+  `hough_settlement_layer`/`HoughResult`), additive alongside the Cc/Cr e-log(p) and
+  Schmertmann/elastic methods. It REUSES `approximate_2to1` for the 2:1 stress
+  increase (square footing q·B²/(B+Z)² = q·B·L/((B+z)(L+z)) at B=L). It reproduces the
+  published Table B1-2 stress fractions (e.g. B=3 → 0.55/0.16/0.07/0.04) to ≤2%, and
+  the full Table B1-3 settlement matrix (4 stresses × 3 widths) within ±15% / the
+  source's mm rounding (worked B=3,q=240: 15.4+4.4+1.1+0.6=21.5 mm vs pub 15+4+1+1=21;
+  largest spread −4.6% at B=4.6,q=240). The funhouse adapter exposes it as the
+  `hough_settlement` method. Module NOT tuned (validated, not fit).
 - **No module bugs found or fixed in this batch.** V-021 is a clean factor-level PASS
   (the high-level `compute()` delta is the dq-and-GW-model convention); V-022 is a
   method/scope gap with the shared 2:1 primitive validated. `bearing_capacity/` and

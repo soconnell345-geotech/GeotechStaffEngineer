@@ -25,6 +25,9 @@ from settlement.consolidation import (
     ConsolidationLayer, consolidation_settlement_layer,
     total_consolidation_settlement,
 )
+from settlement.hough import (
+    HoughLayer, HoughResult, hough_settlement, hough_settlement_layer,
+)
 from settlement.time_rate import (
     time_factor, degree_of_consolidation, time_for_consolidation,
     settlement_at_time,
@@ -628,6 +631,103 @@ class TestSecondaryAssumptionsDocumented:
             it.notes for sec in sections for it in sec.items
             if isinstance(it, CalcStep) and getattr(it, "notes", None))
         assert "one" in notes and "drained layer" in notes
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TEST 10: Hough granular (C'-index) settlement — GEC-6 Ex B-1 (V-022)
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestHoughSettlement:
+    """Verify the Hough (1959) granular C'-index method.
+
+    Reference: FHWA GEC-6 (FHWA-SA-02-054), Appendix B, Example 1,
+    Tables B1-2 / B1-3. Square footing Df=2.3 m, four granular layers below
+    the base. Per-layer dH = H/C'*log10[(sigma'_vo + delta_sigma)/sigma'_vo],
+    delta_sigma from the 2:1 method (square: q*B^2/(B+Z)^2).
+    """
+
+    # (thickness H [m], depth-to-mid Z [m], sigma'_vo [kPa], C' [-])
+    LAYERS = [
+        (2.1, 1.05, 65.7, 65),    # L2 silty sand
+        (4.7, 4.45, 132.0, 120),  # L3a well-graded sand
+        (3.0, 8.3, 193.0, 102),   # L3b well-graded sand (saturated)
+        (3.0, 11.3, 222.0, 110),  # L4 clean uniform sand
+    ]
+
+    def _layers(self):
+        return [
+            HoughLayer(thickness=H, depth_to_center=Z, sigma_v0=svo, C_prime=Cp)
+            for (H, Z, svo, Cp) in self.LAYERS
+        ]
+
+    def test_layer_formula(self):
+        """Single-layer Hough form dH = H/C'*log10[(svo+dsig)/svo]."""
+        lyr = HoughLayer(thickness=2.1, depth_to_center=1.05,
+                         sigma_v0=65.7, C_prime=65)
+        dH = hough_settlement_layer(lyr, delta_sigma=131.69)
+        expected = 2.1 / 65 * math.log10((65.7 + 131.69) / 65.7)
+        assert dH == pytest.approx(expected, rel=1e-9)
+
+    def test_zero_stress_increase(self):
+        """Zero stress increase → zero layer settlement."""
+        lyr = HoughLayer(thickness=2.1, depth_to_center=1.05,
+                         sigma_v0=65.7, C_prime=65)
+        assert hough_settlement_layer(lyr, 0.0) == 0.0
+
+    def test_worked_case_B3_q240(self):
+        """GEC-6 Ex B-1 worked single case: B=3 m, q=240 kPa.
+        Published per-layer 15/4/1/1 mm, total ~21 mm."""
+        res = hough_settlement(self._layers(), q_net=240.0, B=3.0)
+        per = [lyr["settlement_mm"] for lyr in res.layers]
+        assert per[0] == pytest.approx(15.0, abs=1.0)   # pub 15
+        assert per[1] == pytest.approx(4.0, abs=1.0)    # pub 4
+        assert per[2] == pytest.approx(1.0, abs=1.0)    # pub 1
+        assert per[3] == pytest.approx(1.0, abs=1.0)    # pub 1
+        assert res.total_mm == pytest.approx(21.0, abs=1.5)  # pub 21 mm
+
+    def test_other_width_B61_q380(self):
+        """GEC-6 Ex B-1 Table B1-3: B=6.1 m, q=380 kPa → 41 mm published."""
+        res = hough_settlement(self._layers(), q_net=380.0, B=6.1)
+        assert res.total_mm == pytest.approx(41.0, rel=0.15)  # pub 41 mm
+
+    def test_uses_2to1_stress_increase(self):
+        """The per-layer delta_sigma equals the module's 2:1 stress (square)."""
+        res = hough_settlement(self._layers(), q_net=240.0, B=3.0)
+        for lyr, (H, Z, svo, Cp) in zip(res.layers, self.LAYERS):
+            ds_expected = approximate_2to1(240.0, 3.0, 3.0, Z)
+            assert lyr["delta_sigma_kPa"] == pytest.approx(ds_expected, abs=0.01)
+
+    def test_rectangular_uses_BL(self):
+        """Rectangular footing uses q*B*L/((B+z)(L+z)); L>B → less settlement
+        than the same B with L=B is wrong — larger L spreads less, so a longer
+        footing gives MORE stress at depth → more settlement."""
+        sq = hough_settlement(self._layers(), q_net=240.0, B=3.0, L=3.0)
+        rect = hough_settlement(self._layers(), q_net=240.0, B=3.0, L=6.0)
+        assert rect.total_mm > sq.total_mm
+
+    def test_zero_net_pressure(self):
+        """Zero net pressure → zero total settlement."""
+        res = hough_settlement(self._layers(), q_net=0.0, B=3.0)
+        assert res.total_mm == 0.0
+        assert res.layers == []
+
+    def test_result_to_dict_and_summary(self):
+        res = hough_settlement(self._layers(), q_net=240.0, B=3.0)
+        d = res.to_dict()
+        assert d["method"] == "hough"
+        assert d["total_settlement_mm"] == pytest.approx(21.0, abs=1.5)
+        assert len(d["layer_breakdown"]) == 4
+        s = res.summary()
+        assert "HOUGH" in s
+        assert "mm" in s
+
+    def test_invalid_layer_inputs(self):
+        with pytest.raises(ValueError):
+            HoughLayer(thickness=-1, depth_to_center=1, sigma_v0=50, C_prime=65)
+        with pytest.raises(ValueError):
+            HoughLayer(thickness=2, depth_to_center=1, sigma_v0=0, C_prime=65)
+        with pytest.raises(ValueError):
+            HoughLayer(thickness=2, depth_to_center=1, sigma_v0=50, C_prime=0)
 
 
 if __name__ == "__main__":

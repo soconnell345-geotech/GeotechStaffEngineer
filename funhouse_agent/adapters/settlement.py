@@ -7,6 +7,7 @@ from settlement.immediate import elastic_settlement, SchmertmannLayer, schmertma
 from settlement.consolidation import (
     ConsolidationLayer, consolidation_settlement_layer,
 )
+from settlement.hough import HoughLayer, hough_settlement
 from settlement.stress_distribution import stress_at_depth
 from settlement.analysis import SettlementAnalysis
 
@@ -86,6 +87,34 @@ def _run_consolidation_settlement(params: dict) -> dict:
     return {"consolidation_settlement_m": round(S_total, 6), "consolidation_settlement_mm": round(S_total * 1000, 2), "layer_breakdown": layer_results}
 
 
+def _run_hough_settlement(params: dict) -> dict:
+    params = apply_aliases(params, {"q": "q_net", "q_applied": "q_net",
+                                    "pressure": "q_net"})
+    reject_unknown_params(
+        params, ("q_net", "B", "L", "layers"),
+        method="hough_settlement")
+    require_params(params, ["q_net", "B", "layers"], method="hough_settlement",
+                   valid=["q_net", "B", "L", "layers"])
+    layers = []
+    for l in params["layers"]:
+        l = apply_aliases(l, {"C": "C_prime", "Cprime": "C_prime",
+                              "sigma_vo": "sigma_v0",
+                              "depth_to_mid": "depth_to_center",
+                              "depth_mid": "depth_to_center"})
+        require_keys(l, ["thickness", "depth_to_center", "sigma_v0", "C_prime"],
+                     method="hough_settlement")
+        layers.append(HoughLayer(
+            thickness=l["thickness"], depth_to_center=l["depth_to_center"],
+            sigma_v0=l["sigma_v0"], C_prime=l["C_prime"],
+            description=l.get("description", ""),
+        ))
+    result = hough_settlement(
+        layers=layers, q_net=params["q_net"], B=params["B"],
+        L=params.get("L"),
+    )
+    return result.to_dict()
+
+
 def _run_combined_settlement(params: dict) -> dict:
     params = apply_aliases(params, {"q_net": "q_applied", "q": "q_applied"})
     reject_unknown_params(
@@ -142,6 +171,7 @@ METHOD_REGISTRY = {
     "elastic_settlement": _run_elastic_settlement,
     "schmertmann_settlement": _run_schmertmann_settlement,
     "consolidation_settlement": _run_consolidation_settlement,
+    "hough_settlement": _run_hough_settlement,
     "combined_settlement_analysis": _run_combined_settlement,
 }
 
@@ -185,6 +215,17 @@ METHOD_INFO = {
             "stress_method": {"type": "str", "required": False, "default": "2:1", "allowed_values": ["2:1", "boussinesq", "westergaard"], "description": "Stress distribution method."},
         },
         "returns": {"consolidation_settlement_mm": "Total consolidation settlement in mm.", "layer_breakdown": "Per-layer results."},
+    },
+    "hough_settlement": {
+        "category": "Granular Settlement",
+        "brief": "Hough (1959) granular C'-index settlement: dH = H/C'*log10[(sigma'_vo + delta_sigma)/sigma'_vo] per layer, with a 2:1 stress increase (GEC-6). Use for sands/gravels with SPT data (C' is the Hough bearing-capacity index from corrected N', NOT Cc/(1+e0)).",
+        "parameters": {
+            "q_net": {"type": "float", "required": True, "description": "Net bearing pressure at footing base (kPa)."},
+            "B": {"type": "float", "required": True, "description": "Footing width (m)."},
+            "layers": {"type": "array", "required": True, "description": "Array of granular {thickness (m), depth_to_center (m, mid-depth below footing base), sigma_v0 (effective overburden at layer center, kPa, > 0), C_prime (Hough bearing-capacity index, dimensionless, > 0)} dicts. All four keys are required per layer."},
+            "L": {"type": "float", "required": False, "description": "Footing length (m). Defaults to B (square footing); 2:1 increase is q*B*L/((B+z)(L+z))."},
+        },
+        "returns": {"total_settlement_mm": "Total Hough settlement in mm.", "layer_breakdown": "Per-layer results (delta_sigma, sigma_v0, C', settlement)."},
     },
     "combined_settlement_analysis": {
         "category": "Combined Analysis",
