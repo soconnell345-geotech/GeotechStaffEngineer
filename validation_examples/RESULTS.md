@@ -22,7 +22,8 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 | V-008b | drilled_shaft base large-D | 1.27/Dᵦ applied (0.521) | (not shown in example) | — | CONVENTION | Module follows GEC-10 §13.3.4.3 / O'Neill-Reese large-diameter base reduction; the extracted example value is unreduced. Correct per the cited method; flagged for owner awareness. |
 | V-001 | axial_pile Nordlund shaft (sand) | Rs = 126/249/353/477 kips (D=35/50/60/70) | Rs = 137.5/250.7/344.1/452.5 | −8% / −1% / +3% / +5% | **PASS** | Nordlund shaft vs Table D-6, modeled from the footing datum. All four depths within ±15%; the displacement-pile Kd fit reproduces the published Nordlund shaft for this φ 33–36 H-pile profile. |
 | V-001 | axial_pile Nordlund toe (sand), toe φ=40 | Rt = 408.5 kips (Layer 3 plateau) | Rt = 428.1 kips | −5% | **PASS** (toe fn) | Calling `end_bearing_cohesionless(φ=40)` reproduces the published toe plateau; the q_L cap (Meyerhof Fig 7-15) at φ=40 governs at 408.5 kips. |
-| V-001 | axial_pile Nordlund toe (single-φ API) | Rt = 301 kips (φ=36 in L3) | Rt = 428.1 kips | −30% | CONVENTION | The high-level `AxialPileAnalysis` API uses ONE φ per layer, so it cannot apply the example's separate Layer-3 toe φ=40 (GEC-12 design-limit). Documented API limitation; not tuned. See note below. |
+| V-001 | axial_pile Nordlund toe (single-φ API, default) | Rt = 301 kips (φ=36 in L3) | Rt = 428.1 kips | −30% | DEFAULT | With NO per-layer toe φ set, the high-level `AxialPileAnalysis` API uses ONE φ per layer (φ=36 at the toe too) → 301 kips. Pins the unchanged default; the v5.2 toe-φ feature (next row) is purely additive. |
+| V-001 | axial_pile Nordlund toe (high-level API, per-layer toe φ=40) | Rt = 408.5 kips (Layer 3 plateau) | Rt = 428.1 kips | −4.6% | **PASS** (v5.2) | The new `AxialSoilLayer.toe_friction_angle=40` lets the high-level `AxialPileAnalysis` apply the GEC-12 separate Layer-3 design-limit toe φ; the q_L cap (Meyerhof Fig 7-15) at φ=40 governs at 408.5 kips. Shaft unaffected (still φ=36). Closes the old single-φ CONVENTION gap; default-preserving (toe φ unset → byte-identical to before). Also new: `AxialPileAnalysis(head_depth=…)` clips the shaft to a below-grade pile head (e.g. a footing datum) without hand-clipping layers; default 0 = head at surface. |
 | V-002 | axial_pile alpha toe (clay), 9·cu | Rt = 32.8/33.3/34.1 kips (D=70/80/90) | Rt = 32.75/33.03/33.68 | 0% / +1% / +1% | **PASS** | End bearing 9·cu matches Table D-100 to ±1% where the tip is cleanly inside Layer 3. (D=40 toe is a layer-boundary artifact — tip exactly at the L2/L3 interface — excluded.) |
 | V-002 | axial_pile alpha shaft (clay) | Rs = 250/297/345 kips (D=70/80/90) | Rs = 318.4/369.3/420.33 | −22% / −20% / −18% | CONVENTION | Module under-predicts shaft. Cause isolated to the STIFF clay band: module Tomlinson α≈0.42 vs the example's DrivenPiles α≈0.76 at su≈1.9 ksf. Soft (α≈0.85) and very-stiff (α≈0.34) bands agree. Different α-vs-cu curve; module not tuned. |
 | V-003 | wave_equation drivability (diesel) | ~48 bpf @ 746 kips, ~48 ksi comp | 120 bpf @ Rndr=746 kips, 40.1 ksi | bpf −60%, stress +21% | N/A (scope) | No Delmag D36-52 in the hammer DB (only the −22/−32 single-energy diesel series). A hand-built D36-52 + generic cushion gives 48 bpf (vs 120, outside ±25%) and 48 ksi (vs 40.1, outside ±10%): the module's diesel hammer is a simple energy/efficiency velocity conversion, not a GRLWEAP diesel combustion + ram-cycle model. Coverage gap. |
@@ -95,21 +96,26 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 
 ### Batch V-001..V-005 (GEC-12 Vol 3 driven piles) — owner notes
 
-- **Datum matters for axial_pile.** The GEC-12 tables reference depths to the
-  footing/cap bottom (5 ft bgs) and the pile head sits there. Modeling the
-  `AxialSoilProfile` from the footing bottom (not the ground surface) is what
-  makes V-001 shaft land within ±15% — modeling from the ground surface adds
-  ~5 ft of spurious skin friction above the pile head and inflates shaft by
-  ~25%. There is no surcharge/embedment-offset input on `AxialPileAnalysis`; the
-  user must clip the profile to the pile head themselves. **Possible ergonomics
-  add:** an optional `head_depth`/surcharge parameter so the footing datum is
-  handled without re-clipping layers.
-- **axial_pile has no separate shaft/toe φ per layer (V-001).** The example uses
-  a Layer-3 design-limit toe φ=40 with a shaft φ=36; the high-level API applies
-  one φ per layer, so the single-φ toe is −30% low (301 vs 428 kips). The toe
-  *function* with φ=40 is only −5% off. **Possible feature:** a per-layer
-  `toe_friction_angle` override (GEC-12 explicitly allows different shaft/toe φ
-  in dense gravels). Not a bug — an API capability gap.
+- **Datum matters for axial_pile — head-offset feature ADDED (v5.2).** The GEC-12
+  tables reference depths to the footing/cap bottom (5 ft bgs) and the pile head
+  sits there. Modeling the `AxialSoilProfile` from the footing bottom (not the
+  ground surface) is what makes V-001 shaft land within ±15% — modeling from the
+  ground surface adds ~5 ft of spurious skin friction above the pile head.
+  `AxialPileAnalysis(head_depth=…)` now clips the shaft integral to a below-grade
+  pile head automatically (layers above the head contribute no skin friction;
+  overburden above the head still counts toward σ'v at the tip). Default
+  `head_depth=0` = head at surface, byte-identical to before. (For the V-001
+  excavated footing the soil above the footing is removed, so σ'v=0 at the head
+  and the footing-datum profile remains the physically-correct shaft model; the
+  offset is the convenience for a below-grade head with the soil left in place.)
+- **axial_pile separate shaft/toe φ per layer — feature ADDED (v5.2).** The example
+  uses a Layer-3 design-limit toe φ=40 with a shaft φ=36. The optional
+  `AxialSoilLayer.toe_friction_angle` now carries a distinct end-bearing φ for a
+  layer (GEC-12 explicitly allows different shaft/toe φ in dense gravels). With it
+  set the high-level API toe reaches **408.5 kips (−4.6%** vs 428.1), closing the
+  old single-φ gap (which was −30% at 301 kips). Unset → falls back to the layer's
+  `friction_angle`, preserving prior behaviour exactly. Adapter param:
+  `layers[].toe_friction_angle` (alias `toe_phi`).
 - **axial_pile Tomlinson α-vs-cu curve runs low for stiff clay (V-002).** Isolated
   to su≈1.9 ksf (stiff CL): module α≈0.42 vs DrivenPiles/Tomlinson ≈0.76. The
   soft and very-stiff bands agree. This is the dominant cause of the 18–32%

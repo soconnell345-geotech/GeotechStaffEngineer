@@ -18,9 +18,11 @@ water table is shifted up by 5 ft accordingly. (Modeling from the ground surface
 instead would integrate ~5 ft of spurious skin friction above the pile head.)
 
 Summary of verdicts (details in each test docstring and RESULTS.md):
-- V-001 axial_pile Nordlund (sand): shaft PASS (-8%..+5%); toe CONVENTION — the
-  high-level API uses one phi per layer, so it cannot apply the example's separate
-  Layer-3 toe phi=40 (design limit); driving the toe function with phi=40 gives -5%.
+- V-001 axial_pile Nordlund (sand): shaft PASS (-8%..+5%); toe PASS — the v5.2
+  per-layer AxialSoilLayer.toe_friction_angle lets the high-level API apply the
+  example's separate Layer-3 toe phi=40 (design limit), reaching 408.5 kips
+  (-4.6% vs the published 428.1 plateau). The old single-phi toe (phi=36 -> 301
+  kips, -30%) is retained below as the documented default-behaviour baseline.
 - V-002 axial_pile alpha (clay): toe (9*cu) PASS; shaft CONVENTION — the module's
   simplified Tomlinson alpha-vs-cu curve gives a lower alpha for stiff clay than the
   example's DrivenPiles Tomlinson curve.
@@ -129,18 +131,97 @@ def test_v001_toe_with_design_limit_phi40_matches():
         )
 
 
-def test_v001_toe_single_phi_api_is_a_convention_gap():
-    """CONVENTION: the high-level AxialPileAnalysis API uses ONE phi per layer,
-    so it applies phi=36 (shaft) at the toe too, giving ~301 kips in Layer 3
-    (-30% vs the published 428.1, which uses the separate toe phi=40). This pins
-    the documented API limitation — it is NOT tuned away."""
+def test_v001_toe_single_phi_api_is_default_behaviour():
+    """DEFAULT BEHAVIOUR (preserved): with NO per-layer toe phi set, the
+    high-level AxialPileAnalysis API uses ONE phi per layer, so it applies
+    phi=36 (shaft) at the toe too, giving ~301 kips in Layer 3 (-30% vs the
+    published 428.1). This pins the unchanged default — the v5.2 toe-phi
+    feature is purely additive (see the next test)."""
     pile = make_h_pile("HP12x74")
-    soil = _v001_profile()
+    soil = _v001_profile()           # no toe_friction_angle anywhere
     r = AxialPileAnalysis(pile=pile, soil=soil,
                           pile_length=60 * FT, method="auto").compute()
     Rt_single_phi = r.Q_tip / KIP
     assert Rt_single_phi == pytest.approx(301.0, rel=0.05)   # module, phi=36 toe
-    assert abs(Rt_single_phi - 428.1) / 428.1 > 0.15         # genuinely off vs published
+    assert abs(Rt_single_phi - 428.1) / 428.1 > 0.15         # off vs published
+
+
+def _v001_profile_with_toe_phi40():
+    """V-001 profile (footing datum) with the Layer-3 design-limit toe phi=40
+    set per-layer — the GEC-12 DrivenPiles "separate shaft/toe phi" option."""
+    return AxialSoilProfile(layers=[
+        AxialSoilLayer(thickness=20 * FT, soil_type="cohesionless",
+                       unit_weight=105 * PCF, friction_angle=33,
+                       description="L1 loose silty sand"),
+        AxialSoilLayer(thickness=25 * FT, soil_type="cohesionless",
+                       unit_weight=112 * PCF, friction_angle=36,
+                       description="L2 medium dense sand"),
+        AxialSoilLayer(thickness=52 * FT, soil_type="cohesionless",
+                       unit_weight=125 * PCF, friction_angle=36,
+                       toe_friction_angle=40,
+                       description="L3 dense gravel (shaft phi=36 / toe phi=40)"),
+    ], gwt_depth=10 * FT)
+
+
+def test_v001_highlevel_api_toe_phi40_matches_plateau():
+    """PASS (v5.2 feature): the high-level AxialPileAnalysis API, given the
+    Layer-3 per-layer toe phi=40 (AxialSoilLayer.toe_friction_angle), now
+    reproduces the Table D-6 toe plateau (428.1 kips) to within +/-15% at every
+    depth where the tip is in Layer 3 — closing the old single-phi CONVENTION
+    gap. The q_L cap (Meyerhof Fig 7-15) at phi=40 governs at 408.5 kips
+    (-4.6%). The shaft is unaffected (still uses phi=36)."""
+    pile = make_h_pile("HP12x74")
+    soil = _v001_profile_with_toe_phi40()
+    for D_ft in (50, 60, 70):           # depths where the tip is in Layer 3
+        r = AxialPileAnalysis(pile=pile, soil=soil,
+                              pile_length=D_ft * FT, method="auto").compute()
+        assert r.Q_tip / KIP == pytest.approx(428.1, rel=0.15), (
+            f"D={D_ft} ft: high-level toe(phi=40) {r.Q_tip / KIP:.1f} "
+            f"vs published plateau 428.1"
+        )
+    # And the toe-phi feature is additive: shaft matches the single-phi profile.
+    r40 = AxialPileAnalysis(pile=pile, soil=soil,
+                            pile_length=60 * FT, method="auto").compute()
+    r36 = AxialPileAnalysis(pile=pile, soil=_v001_profile(),
+                            pile_length=60 * FT, method="auto").compute()
+    assert r40.Q_skin == pytest.approx(r36.Q_skin, rel=1e-12)
+    assert r40.Q_tip > r36.Q_tip
+
+
+def test_v001_head_depth_offset_reproduces_footing_datum_shaft():
+    """PASS (v5.2 feature): the head_depth offset lets the API model the pile
+    head at the footing bottom WITHOUT hand-clipping the layers. Because the
+    GEC-12 footing sits in a 5-ft excavation (overburden removed, sigma_v'=0 at
+    the head), the footing-datum profile IS the correct shaft model; this test
+    confirms head_depth=0 on that profile is unchanged and the offset machinery
+    runs cleanly on a from-ground-surface profile (clipping the 5 ft above the
+    head out of the shaft integral)."""
+    pile = make_h_pile("HP12x74")
+    # Footing-datum profile, head at surface (head_depth=0) == validated shaft.
+    soil_footing = _v001_profile()
+    published_Rs = {35: 137.5, 50: 250.7, 60: 344.1, 70: 452.5}
+    for D_ft, Rs_pub in published_Rs.items():
+        r = AxialPileAnalysis(pile=pile, soil=soil_footing, pile_length=D_ft * FT,
+                              head_depth=0.0, method="auto").compute()
+        assert r.Q_skin / KIP == pytest.approx(Rs_pub, rel=0.15)
+
+    # From-ground-surface profile with the head 5 ft down: the 5-ft top layer
+    # above the head contributes NO skin friction (auto-clipped).
+    soil_ground = AxialSoilProfile(layers=[
+        AxialSoilLayer(thickness=25 * FT, soil_type="cohesionless",
+                       unit_weight=105 * PCF, friction_angle=33),
+        AxialSoilLayer(thickness=25 * FT, soil_type="cohesionless",
+                       unit_weight=112 * PCF, friction_angle=36),
+        AxialSoilLayer(thickness=47 * FT, soil_type="cohesionless",
+                       unit_weight=125 * PCF, friction_angle=36,
+                       toe_friction_angle=40),
+    ], gwt_depth=15 * FT)
+    r_clip = AxialPileAnalysis(pile=pile, soil=soil_ground, pile_length=45 * FT,
+                               head_depth=5 * FT, method="auto").compute()
+    # Shaft integration starts at the head (5 ft), not the ground surface
+    # (depth_top_m is reported rounded to 2 decimals).
+    assert r_clip.layer_breakdown[0]["depth_top_m"] == pytest.approx(5 * FT, abs=0.01)
+    assert r_clip.Q_skin > 0
 
 
 # ── V-002 : Tomlinson alpha H-pile in clay (South Abutment, Table D-100) ─────

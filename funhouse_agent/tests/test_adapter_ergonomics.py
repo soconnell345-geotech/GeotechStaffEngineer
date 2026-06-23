@@ -141,6 +141,69 @@ class TestAxialPileAliases:
         with pytest.raises(ValueError, match="pipe_closed"):
             R["make_pile_section"]({"pile_type": "timber"})
 
+    def _h_pile_layers_toe(self, toe=None):
+        l3 = {"thickness": 30, "soil_type": "cohesionless",
+              "unit_weight": 19.6, "friction_angle": 36}
+        if toe is not None:
+            l3["toe_friction_angle"] = toe
+        return [{"thickness": 6, "soil_type": "cohesionless",
+                 "unit_weight": 16.5, "friction_angle": 33}, l3]
+
+    def test_per_layer_toe_phi_accepted_and_raises_tip(self):
+        """A layer toe_friction_angle is accepted and raises end bearing."""
+        from funhouse_agent.adapters.axial_pile import METHOD_REGISTRY as R
+        base = {"pile_type": "h_pile", "designation": "HP12x74",
+                "pile_length": 18.0}
+        r_default = R["axial_pile_capacity"](
+            dict(base, layers=self._h_pile_layers_toe(toe=None)))
+        r_toe40 = R["axial_pile_capacity"](
+            dict(base, layers=self._h_pile_layers_toe(toe=40)))
+        assert r_toe40["Q_tip_kN"] > r_default["Q_tip_kN"]
+        assert r_toe40["Q_skin_kN"] == pytest.approx(r_default["Q_skin_kN"], rel=1e-9)
+
+    def test_toe_phi_alias_accepted(self):
+        """'toe_phi' is accepted as an alias for toe_friction_angle."""
+        from funhouse_agent.adapters.axial_pile import METHOD_REGISTRY as R
+        base = {"pile_type": "h_pile", "designation": "HP12x74",
+                "pile_length": 18.0}
+        layers = self._h_pile_layers_toe(toe=None)
+        layers[1]["toe_phi"] = 40
+        r_alias = R["axial_pile_capacity"](dict(base, layers=layers))
+        r_canon = R["axial_pile_capacity"](
+            dict(base, layers=self._h_pile_layers_toe(toe=40)))
+        assert r_alias["Q_tip_kN"] == pytest.approx(r_canon["Q_tip_kN"], rel=1e-9)
+
+    def test_head_depth_accepted_and_clips_shaft(self):
+        """head_depth is accepted; clipping the top layer reduces skin friction
+        vs. the same pile with the head at the surface."""
+        from funhouse_agent.adapters.axial_pile import METHOD_REGISTRY as R
+        layers = [{"thickness": 5, "soil_type": "cohesionless",
+                   "unit_weight": 18, "friction_angle": 30},
+                  {"thickness": 15, "soil_type": "cohesionless",
+                   "unit_weight": 19, "friction_angle": 33}]
+        full = R["axial_pile_capacity"]({
+            "pile_type": "pipe_closed", "diameter": 0.6, "wall_thickness": 0.012,
+            "pile_length": 15.0, "layers": layers})
+        clipped = R["axial_pile_capacity"]({
+            "pile_type": "pipe_closed", "diameter": 0.6, "wall_thickness": 0.012,
+            "pile_length": 10.0, "head_depth": 5.0, "layers": layers})
+        assert clipped["Q_skin_kN"] < full["Q_skin_kN"]
+        # Same absolute tip depth (5 + 10 = 15) -> identical tip resistance.
+        assert clipped["Q_tip_kN"] == pytest.approx(full["Q_tip_kN"], rel=1e-9)
+
+    def test_head_depth_default_zero_unchanged(self):
+        """Omitting head_depth equals head_depth=0 (default-preserving)."""
+        from funhouse_agent.adapters.axial_pile import METHOD_REGISTRY as R
+        layers = [{"thickness": 20, "soil_type": "cohesionless",
+                   "unit_weight": 19, "friction_angle": 33}]
+        r_omit = R["axial_pile_capacity"]({
+            "pile_type": "h_pile", "designation": "HP12x74",
+            "pile_length": 15.0, "layers": layers})
+        r_zero = R["axial_pile_capacity"]({
+            "pile_type": "h_pile", "designation": "HP12x74",
+            "pile_length": 15.0, "head_depth": 0.0, "layers": layers})
+        assert r_omit["Q_ultimate_kN"] == r_zero["Q_ultimate_kN"]
+
 
 class TestGroundImprovementAliases:
     def test_aggregate_piers_area_replacement_ratio(self):

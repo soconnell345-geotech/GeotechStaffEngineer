@@ -25,6 +25,19 @@ analyze_axial_pile(pile_length, pile_diameter, layers, method, ...) -> AxialPile
 ## Key Notes
 - Layers are dicts with soil_type ("sand"/"clay"), phi/cu, gamma, thickness
 - SoilProfile adapter: to_axial_pile_input(pile_length) clips layers to pile length
+- **Per-layer toe friction angle** (`AxialSoilLayer.toe_friction_angle`,
+  default None): an optional separate phi for TOE/end-bearing when the tip is in
+  that layer (GEC-12 allows a different shaft vs toe phi in a layer, e.g. a
+  dense-gravel design-limit toe phi). Unset → falls back to `friction_angle`, so
+  the single-phi behaviour is preserved exactly. Cohesionless only.
+- **Pile-head depth / embedment offset** (`AxialPileAnalysis.head_depth`,
+  default 0.0): depth of the pile head below the ground surface. Layers above
+  the head contribute no skin friction (no hand-clipping needed); overburden
+  above the head still raises σ'v at the tip. `pile_length` is the embedded
+  length (head → tip); the tip sits at `head_depth + pile_length`. Default 0 =
+  head at the surface, byte-identical to before. (NB: for an excavated footing
+  datum the soil above is removed, so model from the footing bottom rather than
+  using `head_depth`; the offset is for a below-grade head with soil in place.)
 
 ## Known Simplifications (read before relying on Nordlund numbers)
 - **Nordlund chart fits** (`nordlund.py`): `nordlund_Kd` ignores the

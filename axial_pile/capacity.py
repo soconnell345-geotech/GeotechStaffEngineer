@@ -100,6 +100,7 @@ class AxialPileAnalysis:
     cohesive_phi: float = 25.0
     uplift_skin_fraction: float = 0.75
     pile_weight: Optional[float] = None
+    head_depth: float = 0.0
 
     def __post_init__(self):
         if self.pile is None:
@@ -108,11 +109,26 @@ class AxialPileAnalysis:
             raise ValueError("Soil profile must be provided")
         if self.pile_length <= 0:
             raise ValueError(f"Pile length must be positive, got {self.pile_length}")
-        if self.pile_length > self.soil.total_thickness:
+        if self.head_depth < 0:
+            raise ValueError(
+                f"head_depth must be >= 0 (depth of the pile head below the "
+                f"ground surface), got {self.head_depth}"
+            )
+        if self.head_depth + self.pile_length > self.soil.total_thickness:
             warnings.warn(
-                f"Pile length ({self.pile_length}m) exceeds soil profile "
+                f"Pile tip (head_depth {self.head_depth}m + pile_length "
+                f"{self.pile_length}m) exceeds soil profile "
                 f"({self.soil.total_thickness}m); using full profile depth"
             )
+
+    @property
+    def _tip_depth(self) -> float:
+        """Absolute depth of the pile tip below the ground surface (m).
+
+        With the default ``head_depth = 0`` this equals ``pile_length``, so
+        every existing result is unchanged.
+        """
+        return self.head_depth + self.pile_length
 
     def compute(self) -> AxialPileResult:
         """Run the axial capacity analysis.
@@ -125,18 +141,21 @@ class AxialPileAnalysis:
         total_Qs = 0.0
         layer_results = []
         current_depth = 0.0
+        tip_depth = self._tip_depth
 
         for layer in self.soil.layers:
             layer_top = current_depth
             layer_bottom = current_depth + layer.thickness
             current_depth = layer_bottom
 
-            if layer_top >= self.pile_length:
+            if layer_top >= tip_depth:
                 break
 
-            # Portion of this layer that intersects the pile
-            z_top = layer_top
-            z_bottom = min(layer_bottom, self.pile_length)
+            # Portion of this layer that intersects the pile shaft. Layers
+            # above the pile head (head_depth) contribute no skin friction;
+            # with the default head_depth = 0 this clips at [0, pile_length].
+            z_top = max(layer_top, self.head_depth)
+            z_bottom = min(layer_bottom, tip_depth)
             if z_bottom - z_top <= 0:
                 continue
 
@@ -159,18 +178,22 @@ class AxialPileAnalysis:
         Qs_outside = total_Qs
 
         # End bearing
-        tip_layer = self.soil.layer_at_depth(self.pile_length - 0.01)
-        sigma_v_tip = self.soil.effective_stress_at_depth(self.pile_length)
+        tip_layer = self.soil.layer_at_depth(tip_depth - 0.01)
+        sigma_v_tip = self.soil.effective_stress_at_depth(tip_depth)
 
+        # Toe/end-bearing friction angle: a cohesionless tip layer may carry a
+        # separate ``toe_friction_angle`` (GEC-12 design-limit toe phi); when
+        # it is unset, ``toe_phi`` falls back to the shaft friction_angle, so
+        # the single-phi behaviour is preserved exactly.
         if self.method == "beta":
-            phi_tip = (tip_layer.friction_angle
+            phi_tip = (tip_layer.toe_phi
                        if tip_layer.soil_type == "cohesionless"
                        else self.cohesive_phi)
             Nt = Nt_from_phi(phi_tip)
             Qt = end_bearing_beta(sigma_v_tip, Nt, self.pile.tip_area)
         elif tip_layer.soil_type == "cohesionless":
             Qt = end_bearing_cohesionless(
-                tip_layer.friction_angle, sigma_v_tip,
+                tip_layer.toe_phi, sigma_v_tip,
                 self.pile.tip_area, self.pile_length, self.pile.width
             )
         else:
@@ -193,7 +216,7 @@ class AxialPileAnalysis:
                 )
             elif tip_layer.soil_type == "cohesionless":
                 Qt_plugged = end_bearing_cohesionless(
-                    tip_layer.friction_angle, sigma_v_tip,
+                    tip_layer.toe_phi, sigma_v_tip,
                     self.pile.tip_area_plugged, self.pile_length, self.pile.width
                 )
             else:
@@ -316,17 +339,18 @@ class AxialPileAnalysis:
 
         Qs_inside = 0.0
         current_depth = 0.0
+        tip_depth = self._tip_depth
 
         for layer in self.soil.layers:
             layer_top = current_depth
             layer_bottom = current_depth + layer.thickness
             current_depth = layer_bottom
 
-            if layer_top >= self.pile_length:
+            if layer_top >= tip_depth:
                 break
 
-            z_top = layer_top
-            z_bottom = min(layer_bottom, self.pile_length)
+            z_top = max(layer_top, self.head_depth)
+            z_bottom = min(layer_bottom, tip_depth)
             if z_bottom - z_top <= 0:
                 continue
 

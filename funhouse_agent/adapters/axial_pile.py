@@ -44,10 +44,14 @@ def _build_soil_profile(params, *, method):
     layers = []
     for l in params["layers"]:
         require_keys(l, ["thickness", "unit_weight"], method=method)
+        # 'toe_friction_angle' (or its alias 'toe_phi') is an OPTIONAL separate
+        # end-bearing phi for a layer; left unset it falls back to friction_angle.
+        toe_phi = l.get("toe_friction_angle", l.get("toe_phi"))
         layers.append(AxialSoilLayer(
             thickness=l["thickness"], soil_type=l.get("soil_type", "cohesionless"),
             unit_weight=l["unit_weight"], friction_angle=l.get("friction_angle"),
             cohesion=l.get("cohesion"), delta_phi_ratio=l.get("delta_phi_ratio", 0.75),
+            toe_friction_angle=toe_phi,
             description=l.get("description", ""),
         ))
     return AxialSoilProfile(layers=layers, gwt_depth=params.get("gwt_depth"))
@@ -58,7 +62,7 @@ def _run_axial_pile_capacity(params):
         params,
         _PILE_PARAMS + _SOIL_PARAMS + (
             "pile_length", "method", "factor_of_safety", "include_uplift",
-            "cohesive_phi", "uplift_skin_fraction", "pile_weight"),
+            "cohesive_phi", "uplift_skin_fraction", "pile_weight", "head_depth"),
         method="axial_pile_capacity")
     pile = _build_pile(params)
     soil = _build_soil_profile(params, method="axial_pile_capacity")
@@ -69,7 +73,8 @@ def _run_axial_pile_capacity(params):
                                   include_uplift=params.get("include_uplift", False),
                                   cohesive_phi=params.get("cohesive_phi", 25.0),
                                   uplift_skin_fraction=params.get("uplift_skin_fraction", 0.75),
-                                  pile_weight=params.get("pile_weight"))
+                                  pile_weight=params.get("pile_weight"),
+                                  head_depth=params.get("head_depth", 0.0))
     return analysis.compute().to_dict()
 
 
@@ -77,12 +82,14 @@ def _run_capacity_vs_depth(params):
     reject_unknown_params(
         params,
         _PILE_PARAMS + _SOIL_PARAMS + (
-            "pile_length", "method", "depth_min", "depth_max", "n_points"),
+            "pile_length", "method", "depth_min", "depth_max", "n_points",
+            "head_depth"),
         method="capacity_vs_depth")
     pile = _build_pile(params)
     soil = _build_soil_profile(params, method="capacity_vs_depth")
     analysis = AxialPileAnalysis(pile=pile, soil=soil, pile_length=params.get("pile_length", soil.total_thickness),
-                                  method=params.get("method", "auto"))
+                                  method=params.get("method", "auto"),
+                                  head_depth=params.get("head_depth", 0.0))
     curve = analysis.capacity_vs_depth(depth_min=params.get("depth_min", 3.0),
                                         depth_max=params.get("depth_max"), n_points=params.get("n_points", 20))
     return {"capacity_vs_depth": curve}
@@ -118,9 +125,10 @@ METHOD_INFO = {
             "width": {"type": "float", "required": False, "description": "Side dimension (m) for concrete piles."},
             "designation": {"type": "str", "required": False, "description": "H-pile designation (e.g., 'HP14x117')."},
             "E": {"type": "float", "required": False, "description": "Pile elastic modulus (kPa). Defaults: steel 200e6, concrete 25e6."},
-            "pile_length": {"type": "float", "required": True, "description": "Pile length (m)."},
-            "layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {thickness (m), soil_type, unit_weight (kN/m3), friction_angle (deg, for cohesionless), cohesion (kPa, for cohesive)}. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay')."},
-            "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
+            "pile_length": {"type": "float", "required": True, "description": "Embedded pile length from the pile head to the tip (m)."},
+            "layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts (measured from the GROUND SURFACE): {thickness (m), soil_type, unit_weight (kN/m3), friction_angle (deg, for cohesionless), cohesion (kPa, for cohesive), toe_friction_angle (deg, OPTIONAL: separate end-bearing phi if the pile tip is in this layer; defaults to friction_angle)}. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay')."},
+            "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth below ground surface (m)."},
+            "head_depth": {"type": "float", "required": False, "default": 0.0, "description": "Depth of the pile head below the ground surface (m), e.g. the bottom of a footing 1.5 m down. Layers above the head contribute no skin friction; overburden above the head still raises effective stress at the tip. Default 0 = head at the ground surface."},
             "factor_of_safety": {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety."},
             "method": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "beta"], "description": "auto = Nordlund (sand) / Tomlinson (clay); beta = effective-stress method for all layers."},
             "include_uplift": {"type": "bool", "required": False, "default": False, "description": "Also report uplift (tension) capacity."},
@@ -135,8 +143,9 @@ METHOD_INFO = {
         "brief": "Capacity vs depth curve for pile length optimization.",
         "parameters": {
             "pile_type": {"type": "str", "required": True, "allowed_values": ["pipe_closed", "pipe_open", "concrete_square", "concrete_circular", "h_pile"], "description": "Pile type (see axial_pile_capacity for geometry params per type)."},
-            "layers": {"type": "array", "required": True, "description": "Soil layers; each soil_type must be 'cohesionless' or 'cohesive'."},
+            "layers": {"type": "array", "required": True, "description": "Soil layers; each soil_type must be 'cohesionless' or 'cohesive'. Optional per-layer toe_friction_angle (separate end-bearing phi) supported."},
             "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
+            "head_depth": {"type": "float", "required": False, "default": 0.0, "description": "Depth of the pile head below the ground surface (m). Default 0 = head at the ground surface (see axial_pile_capacity)."},
             "pile_length": {"type": "float", "required": False, "description": "Reference pile length (m). Defaults to total soil thickness."},
             "method": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "beta"], "description": "Capacity method (see axial_pile_capacity)."},
             "depth_min": {"type": "float", "required": False, "default": 3.0, "description": "Min depth (m)."},

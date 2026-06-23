@@ -39,6 +39,16 @@ class AxialSoilLayer:
         If None, ``nordlund.delta_from_phi`` supplies the default:
         0.75 for steel, 0.90 for concrete/timber (GEC-12 Table 7-1 typical
         values). Can be overridden per layer.
+    toe_friction_angle : float, optional
+        Separate drained friction angle phi (degrees) used for TOE
+        (end-bearing) resistance when the pile tip falls in this layer.
+        If None (default), the layer's ``friction_angle`` is used for both
+        shaft and toe — so leaving this unset preserves the prior single-phi
+        behaviour exactly. GEC-12 explicitly allows a different shaft vs toe
+        friction angle in a layer (e.g. a dense-gravel "design-limit" toe
+        phi above the shaft phi); set this to apply it. Only meaningful for
+        cohesionless layers (Nordlund/beta tip term); ignored for cohesive
+        layers, which use 9*cu at the toe.
     description : str, optional
         Layer description.
     """
@@ -48,6 +58,7 @@ class AxialSoilLayer:
     friction_angle: float = 0.0
     cohesion: float = 0.0
     delta_phi_ratio: Optional[float] = None
+    toe_friction_angle: Optional[float] = None
     description: str = ""
 
     def __post_init__(self):
@@ -66,9 +77,33 @@ class AxialSoilLayer:
                 raise ValueError("Cohesionless soil must have friction_angle > 0")
             if self.friction_angle > 50:
                 raise ValueError(f"Friction angle must be <= 50 degrees, got {self.friction_angle}")
-        else:
+
+        if self.toe_friction_angle is not None:
+            if self.toe_friction_angle <= 0:
+                raise ValueError(
+                    "toe_friction_angle must be > 0 when set, got "
+                    f"{self.toe_friction_angle}"
+                )
+            if self.toe_friction_angle > 50:
+                raise ValueError(
+                    "toe_friction_angle must be <= 50 degrees, got "
+                    f"{self.toe_friction_angle}"
+                )
+
+        if self.soil_type != "cohesionless":
             if self.cohesion <= 0:
                 raise ValueError("Cohesive soil must have cohesion (cu) > 0")
+
+    @property
+    def toe_phi(self) -> float:
+        """Friction angle (degrees) to use for TOE/end-bearing in this layer.
+
+        Returns ``toe_friction_angle`` when set, otherwise falls back to the
+        layer's shaft ``friction_angle`` (preserving single-phi behaviour).
+        """
+        if self.toe_friction_angle is not None:
+            return self.toe_friction_angle
+        return self.friction_angle
 
 
 @dataclass
