@@ -32,9 +32,9 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 | V-009 | retaining_walls MSE external, unfactored loads | V1=57.69, Vs=4.50, F1=13.68, F2=2.14 k/ft; MV1=519.1, MF1=117.0, MF2=27.4 k-ft/ft | V1=57.69, Vs=4.50, F1=13.68, F2=2.13; MV1=519.21, MF1=116.94, MF2=27.36 | <0.5% | **PASS** | `rankine_Ka`(34→0.283, 30→0.333) + the GEC-11 force eqns reproduce every Table E4-4.3/4.4 unfactored force & moment about Point A. `horizontal_force_active` returns the combined F1+F2 thrust (15.83 k/ft) + line of action. These are the load quantities the module's primitives contribute. |
 | V-009 | retaining_walls MSE external, LRFD CDRs | sliding 1.85/2.08/1.37; ecc eL 2.87/3.87 ft; bearing σv 6.70 ksf, CDR 1.57; svc σv 4.66; crit σv 5.75 | sliding 1.85/2.08/1.37; ecc 2.87/3.87; bearing 6.70, 1.57; svc 4.66; crit 5.86 | ≤2% | **PASS** (via primitives) | Driving the GEC-11 Str I max/min load-factor pairing (EV 1.35/1.00, EH 1.50/0.90, LL 1.75) + LL-on-resisting exclusion (sliding/ecc) / LL-included (bearing) on top of the module's earth-pressure primitives reproduces every published CDR. Critical bearing σv 5.75 vs 5.86 (+1.9%) is within the source's own "consistent-values" rounding note. |
 | V-009 | retaining_walls `analyze_mse_wall` (high-level) | ASD FOS_sliding ≈ 2.27 (R/demand, no load factors) | LRFD sliding CDR 1.85 | — | CONVENTION | The packaged `analyze_mse_wall` returns ASD factors of safety (unfactored resistance/demand, surcharge in W, LL not split out), NOT the GEC-11 LRFD CDRs. The LRFD load-factor + LL-exclusion bookkeeping is not in the module. Documented API/method gap; the example was reproduced through the lower-level primitives instead. |
-| V-010 | retaining_walls MSE internal `Tmax_at_level` (bar mat) | σH/Tmax L1 0.40/6.24, L4 1.02/12.76, L7 1.26/15.73, L10 1.51/19.03 (k/panel) | σH/Tmax L1 0.40/6.25, L4 1.02/12.77, L7 1.26/15.71, L10 1.51/19.05 | ≤0.5% | **PASS** (primitive) | `Tmax_at_level` reproduces Table E4-7.4 bar-mat Tmax/σH at all 4 sampled levels when fed the bar-mat Kr/Ka (2.5→1.2 over 0–20 ft) and the EV factor 1.35 on soil+surcharge, via the example's average-over-tributary-bounds σH method. |
-| V-010 | retaining_walls MSE internal `pullout_resistance` (bar mat) | nominal Pr=23.06, φ·Pr=20.76 k/ft (Level 4) | Pr=23.06, φ_p·Pr=20.75 | <0.1% | **PASS** (primitive) | `pullout_resistance(C=2)` (two grid surfaces = the example's "2b") with bar-mat F*=0.955 (interp 20·t/St→10·t/St), Le=L−0.3H=10.31 ft, unfactored soil σv, φ_pullout=0.90 reproduces Level-4 Pr exactly. Le lengthens to 17.24 ft at Level 10 (Z>H/2 taper). |
-| V-010 | retaining_walls MSE internal built-in curves | `Kr_Ka_ratio`(z=0)=1.7; `F_star_metallic`(0)=2.0 (ribbed STRIP) | bar mat: Kr/Ka(0)=2.5; F*(0)=20·t/St=1.246 | — | CONVENTION | The module's built-in `Kr_Ka_ratio`/`F_star_metallic` implement only the ribbed-metallic-STRIP curves (Kr/Ka 1.7→1.2; F* 2.0→tanφ), not the steel-bar-mat curves (Kr/Ka 2.5→1.2; F* 20(t/St)→10(t/St)). So the high-level internal path doesn't auto-match a bar-mat wall — the primitives must be fed the bar-mat coefficients. Documented coverage gap. |
+| V-010 | retaining_walls MSE internal `Tmax_at_level` (bar mat) | σH/Tmax L1 0.40/6.24, L4 1.02/12.76, L7 1.26/15.73, L10 1.51/19.03 (k/panel) | σH/Tmax L1 0.40/6.25, L4 1.02/12.77, L7 1.26/15.71, L10 1.51/19.05 | ≤0.5% | **PASS** | `Tmax_at_level` reproduces Table E4-7.4 bar-mat Tmax/σH at all 4 sampled levels driven by the BUILT-IN bar-mat `Kr_Ka_ratio`(z,"metallic_grid") (2.5→1.2 over 0–20 ft) and the EV factor 1.35 on soil+surcharge, via the example's average-over-tributary-bounds σH method. (v5.2 Q4: curve now in the module, no hand-fed coefficient.) |
+| V-010 | retaining_walls MSE internal `pullout_resistance` (bar mat) | nominal Pr=23.06, φ·Pr=20.76 k/ft (Level 4) | Pr=23.06, φ_p·Pr=20.75 | <0.1% | **PASS** | `pullout_resistance(C=2)` (two grid surfaces = the example's "2b") with the BUILT-IN bar-mat F*=0.955 from `F_star_metallic`(z,"metallic_grid",t/St) (20·t/St→10·t/St), Le=L−0.3H=10.31 ft, unfactored soil σv, φ_pullout=0.90 reproduces Level-4 Pr exactly. Le lengthens to 17.24 ft at Level 10 (Z>H/2 taper). (v5.2 Q4.) |
+| V-010 | retaining_walls MSE internal built-in curves (bar-mat branch) | `Kr_Ka_ratio`(0,"metallic_grid")=2.5; `F_star_metallic`(0,…,"metallic_grid",t/St)=20·t/St=1.246; F*(L4)=0.955 | bar mat: Kr/Ka(0)=2.5; F*(0)=1.246; F*(L4)=0.955 | ≤0.5% | **PASS** (v5.2 Q4) | The steel-bar-mat / welded-grid curves are now BUILT INTO `Kr_Ka_ratio`/`F_star_metallic` (reinforcement_type "bar_mat"/"welded_grid"/"metallic_grid"): Kr/Ka 2.5→1.2 over 0–20 ft and F* 20(t/St)→10(t/St) over 0–20 ft. `check_internal_stability` auto-selects them for a `metallic_grid` reinforcement (e.g. `WELDED_WIRE_GRID_W11`), so the high-level internal path matches a bar-mat wall directly. The ribbed-STRIP default (1.7→1.2; 2.0→tanφ) is byte-identical/unchanged. Closes the former coverage gap. |
 | V-011 | seismic_geotech Mononobe-Okabe KAE (**regression anchor**) | **KAE = 0.4782** | KAE = 0.4785 | −0.06% | **PASS** | φ=30, δ=30, kh=kmax=0.206, kv=0, vertical wall, level backfill. δ=φ=30 with kv=0 is the case the battered-wall M-O fix targeted; the corrected sign/degrees/kv handling gives KAE within ±0.06% (tolerance ±2%). No bug; value pinned to catch a future M-O regression. |
 | V-011 | seismic_geotech M-O seismic sliding chain | PAE=19.65, PIR=6.09, THF=24.64, V=67.52, R=38.98, CDR=1.58 k/ft | PAE=19.65, PIR=6.09, THF=24.64, V=67.52, R=38.98, CDR=1.58 | <0.5% | **PASS** | Full GEC-11 E7 Step-8 chain built on the module KAE: PAE=0.5γh²KAE; THF=PAE·cos30+PIR+0.5·qLS·H·KAE; V=W+PAE·sin30; R=V·tan30; CDR=R/THF. Reproduces the example to <0.5%. |
 | V-025 | sheet_pile earth-pressure builder (layered Ka + water) | Ka1=0.249, Ka2=0.333; σ pts 129.5/173.2/377.8/644.2 psf, u=1248; FTOTAL=24,611 lb/ft | Ka1=0.249, Ka2=0.333; 129.48/173.16/377.76/644.16/1248; FTOTAL=24,610.9 | 0.00% | **PASS** | `rankine_Ka` + `active_pressure` reproduce every stress ordinate at the Ka-discontinuity (4-ft boundary, same overburden × Ka1 vs Ka2) and the layered-moist/submerged + hydrostatic water blocks. Total driving force exact to 0.00% with source-rounded Ka (≈359 kN/m). |
@@ -166,18 +166,21 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
   factors applied) every published CDR to ≤2%. **Possible add:** an LRFD
   external-stability path (load-combination input + per-mode CDR output) if
   AASHTO-LRFD MSE checks are in scope. The ASD path is correct for what it is.
-- **MSE internal stress/pullout primitives are solid; only the bar-mat curves are
-  missing.** `Tmax_at_level` and `pullout_resistance(C=2)` reproduce the
-  Table E4-7.4 bar-mat Tmax/σH/Pr to ≤3% when fed the right coefficients. But
-  the module's built-in `Kr_Ka_ratio` and `F_star_metallic` only carry the
-  **ribbed-metallic-STRIP** curves (Kr/Ka 1.7→1.2; F* 2.0→tanφ over 0–6 m), not
-  the **steel-bar-mat / grid** curves (Kr/Ka 2.5→1.2; F* 20(t/St)→10(t/St) over
-  0–20 ft). **Possible add:** a `reinforcement_type="bar_mat"` (or grid) branch
-  in `Kr_Ka_ratio`/`F_star_metallic` with the 2.5-top Kr and the t/St-based F*,
-  so the high-level internal path matches bar-mat walls without hand-feeding
-  coefficients. The depth datum is also worth noting: GEC-11 caps the bar-mat
-  Kr/Ka taper at Z = 20 ft (≈6.1 m) — close to but not exactly the module's 6.0 m
-  strip cap.
+- **MSE internal stress/pullout primitives are solid; the bar-mat curves are now
+  built in (v5.2 Q4 — gap CLOSED).** `Tmax_at_level` and `pullout_resistance(C=2)`
+  reproduce the Table E4-7.4 bar-mat Tmax/σH/Pr to ≤3%. The module's built-in
+  `Kr_Ka_ratio` and `F_star_metallic` now carry BOTH the **ribbed-metallic-STRIP**
+  curves (Kr/Ka 1.7→1.2; F* 2.0→tanφ over 0–6 m) AND the **steel-bar-mat / welded-grid**
+  curves (Kr/Ka 2.5→1.2; F* 20(t/St)→10(t/St) over 0–20 ft), selected by
+  `reinforcement_type` ("bar_mat"/"welded_grid"/"metallic_grid"). The grid F*
+  needs t (transverse-bar diameter) and St (transverse spacing) — taken from the
+  `Reinforcement` geometry (`thickness`/`transverse_spacing`, e.g.
+  `WELDED_WIRE_GRID_W11`) or supplied to `F_star_metallic(t_over_St=…)`.
+  `check_internal_stability` auto-selects them for a `metallic_grid` reinforcement,
+  so the high-level internal path now matches a bar-mat wall directly — no
+  hand-fed coefficients. The ribbed-STRIP default path is byte-identical/unchanged.
+  Depth datum: the bar-mat Kr/Ka and F* tapers cap at Z = 20 ft (= 6.096 m),
+  distinct from the 6.0 m strip cap (both handled in the branch).
 - **Unit note for MSE per-length quantities.** Forces convert k/ft ↔ kN/m by
   14.594; moments-per-length convert k-ft/ft ↔ kN-m/m by 1.356/0.3048 = 4.4488
   (a kip-ft of moment per ft of wall). The tests carry both constants explicitly.

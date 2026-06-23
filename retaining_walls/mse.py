@@ -20,18 +20,31 @@ from retaining_walls.reinforcement import Reinforcement
 from retaining_walls.results import MSEWallResult
 
 
-def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
-    """Ratio Kr/Ka as a function of depth per GEC-11.
+# 20 ft = 6.096 m: the GEC-11 / AASHTO depth below which Kr/Ka and F* become
+# constant for inextensible (metallic) reinforcement.
+_Z20_FT_M = 20.0 * 0.3048  # 6.096 m
 
-    For metallic reinforcements: varies from 1.7 at z=0 to 1.2 at z>=6m.
-    For geosynthetic: constant 1.0.
+
+def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
+    """Ratio Kr/Ka as a function of depth per GEC-11 / AASHTO.
+
+    Two inextensible (metallic) lateral-stress-ratio curves, plus geosynthetic:
+
+    - ribbed metallic STRIP ("metallic" / "metallic_strip", DEFAULT):
+      1.7 at z=0 -> 1.2 at z>=6 m, constant below (GEC-11 Fig. 4-10).
+    - steel bar-mat / welded-grid ("bar_mat" / "welded_grid" /
+      "metallic_grid"): 2.5 at z=0 -> 1.2 at z>=20 ft (6.096 m), constant below
+      (GEC-11 Fig. E4-5 / AASHTO Fig. 11.10.6.2.1-3).
+    - geosynthetic / extensible ("geosynthetic"): constant 1.0.
 
     Parameters
     ----------
     z : float
         Depth below top of wall (m).
     reinforcement_type : str, optional
-        "metallic" or "geosynthetic". Default "metallic".
+        "metallic"/"metallic_strip" (ribbed strip, DEFAULT),
+        "bar_mat"/"welded_grid"/"metallic_grid" (steel grid),
+        or "geosynthetic".
 
     Returns
     -------
@@ -40,12 +53,21 @@ def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
 
     References
     ----------
-    FHWA GEC-11, Figure 4-10
+    FHWA GEC-11, Figures 4-10 and E4-5; AASHTO LRFD Fig. 11.10.6.2.1-3
     """
     if reinforcement_type == "geosynthetic":
         return 1.0
 
-    # Metallic: linear from 1.7 at z=0 to 1.2 at z=6m, constant below
+    if reinforcement_type in ("bar_mat", "welded_grid", "metallic_grid"):
+        # Steel bar mat / welded grid: 2.5 at z=0 -> 1.2 at z=20 ft (6.096 m)
+        if z <= 0:
+            return 2.5
+        elif z >= _Z20_FT_M:
+            return 1.2
+        else:
+            return 2.5 - (2.5 - 1.2) / _Z20_FT_M * z
+
+    # Ribbed metallic strip (default): linear 1.7 at z=0 to 1.2 at z=6m
     if z <= 0:
         return 1.7
     elif z >= 6.0:
@@ -54,18 +76,32 @@ def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
         return 1.7 - (0.5 / 6.0) * z
 
 
-def F_star_metallic(z: float, phi_backfill: float = 34.0) -> float:
-    """Pullout resistance factor F* for ribbed metallic strips.
+def F_star_metallic(z: float, phi_backfill: float = 34.0,
+                    reinforcement_type: str = "metallic",
+                    t_over_St: float = None) -> float:
+    """Pullout friction-bearing factor F* for inextensible reinforcement.
 
-    F* varies linearly from 2.0 at z=0 to tan(phi) at z>=6m
-    per GEC-11 Figure 4-11.
+    Two curves per GEC-11 Figure 4-11 / E4-5:
+
+    - ribbed metallic STRIP ("metallic" / "metallic_strip", DEFAULT):
+      F* = 2.0 at z=0 -> tan(phi) at z>=6 m (linear interpolation).
+    - steel bar-mat / welded-grid ("bar_mat" / "welded_grid" /
+      "metallic_grid"): F* = 20·(t/St) at z=0 -> 10·(t/St) at z>=20 ft
+      (6.096 m), where t = transverse-bar diameter and St = transverse-bar
+      (grid) spacing. ``t_over_St`` is required for the grid curve.
 
     Parameters
     ----------
     z : float
         Depth below top of wall (m).
     phi_backfill : float, optional
-        Backfill friction angle (degrees). Default 34.
+        Backfill friction angle (degrees). Default 34. (Strip curve only.)
+    reinforcement_type : str, optional
+        "metallic"/"metallic_strip" (ribbed strip, DEFAULT) or
+        "bar_mat"/"welded_grid"/"metallic_grid" (steel grid).
+    t_over_St : float, optional
+        Transverse-bar diameter / spacing ratio (unit-free) for the steel-grid
+        curve. Required when ``reinforcement_type`` is a grid type.
 
     Returns
     -------
@@ -74,8 +110,23 @@ def F_star_metallic(z: float, phi_backfill: float = 34.0) -> float:
 
     References
     ----------
-    FHWA GEC-11, Figure 4-11 (for ribbed steel strips)
+    FHWA GEC-11, Figure 4-11 (ribbed steel strips) and Figure E4-5 (bar mats)
     """
+    if reinforcement_type in ("bar_mat", "welded_grid", "metallic_grid"):
+        if t_over_St is None:
+            raise ValueError(
+                "F_star_metallic: a steel-grid (bar_mat) F* curve requires "
+                "t_over_St = transverse-bar diameter / spacing."
+            )
+        F_surface = 20.0 * t_over_St
+        F_deep = 10.0 * t_over_St
+        if z <= 0:
+            return F_surface
+        elif z >= _Z20_FT_M:
+            return F_deep
+        else:
+            return F_deep + (_Z20_FT_M - z) * (F_surface - F_deep) / _Z20_FT_M
+
     F_star_surface = 2.0
     # At depth >= 6m, F* = tan(phi) for ribbed metallic strips (GEC-11 Fig 4-11)
     F_star_deep = math.tan(math.radians(phi_backfill))
@@ -195,7 +246,19 @@ def check_internal_stability(
     H = geom.wall_height
     L = geom.reinforcement_length
     Sv = geom.reinforcement_spacing
-    r_type = "metallic" if reinforcement.is_metallic else "geosynthetic"
+    # Select the depth-variation curve family by reinforcement type:
+    #  - steel bar mat / welded grid -> bar-mat curves (Kr/Ka 2.5->1.2,
+    #    F* 20(t/St)->10(t/St))
+    #  - ribbed metallic strip       -> strip curves (Kr/Ka 1.7->1.2,
+    #    F* 2.0->tan-phi)  [unchanged default]
+    #  - geosynthetic                -> Kr/Ka 1.0, F* 0.67*tan-phi
+    if reinforcement.is_grid:
+        r_type = "metallic_grid"
+    elif reinforcement.is_metallic:
+        r_type = "metallic"
+    else:
+        r_type = "geosynthetic"
+    t_over_St = reinforcement.t_over_St if reinforcement.is_grid else None
 
     results = []
     for z in geom.reinforcement_depths:
@@ -222,7 +285,12 @@ def check_internal_stability(
         Le = max(L - La, 1.0)  # minimum 1m effective length
 
         # Pullout resistance
-        if reinforcement.is_metallic:
+        if reinforcement.is_grid and t_over_St is not None:
+            # Steel bar-mat / welded-grid F* = 20(t/St) -> 10(t/St)
+            F_star = F_star_metallic(z, phi_backfill, "metallic_grid", t_over_St)
+        elif reinforcement.is_metallic:
+            # Ribbed strip F* = 2.0 -> tan(phi) (also the fallback for a grid
+            # whose transverse geometry t/St was not supplied)
             F_star = F_star_metallic(z, phi_backfill)
         else:
             F_star = 0.67 * math.tan(math.radians(phi_backfill))

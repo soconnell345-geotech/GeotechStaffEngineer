@@ -29,6 +29,24 @@ _REINFORCEMENT_DB = {
 }
 
 
+# Reinforcement-type aliases. The bar-mat / welded-grid Kr/Ka (2.5->1.2) and
+# F* (20 t/St -> 10 t/St) curves are keyed off the dataclass type
+# "metallic_grid"; expose the friendlier "bar_mat"/"welded_grid" names too.
+_REINFORCEMENT_TYPE_ALIASES = {
+    "bar_mat": "metallic_grid",
+    "barmat": "metallic_grid",
+    "welded_grid": "metallic_grid",
+    "welded_wire_grid": "metallic_grid",
+    "steel_grid": "metallic_grid",
+    "grid": "metallic_grid",
+    "strip": "metallic_strip",
+    "ribbed_strip": "metallic_strip",
+    "metallic_strip": "metallic_strip",
+    "metallic_grid": "metallic_grid",
+    "geosynthetic": "geosynthetic",
+}
+
+
 def _build_reinforcement(params):
     name = params.get("reinforcement_name", "").lower()
     if name in _REINFORCEMENT_DB:
@@ -38,15 +56,20 @@ def _build_reinforcement(params):
             "mse_wall: provide a built-in reinforcement_name "
             f"({sorted(_REINFORCEMENT_DB)}; see list_reinforcement) or a custom "
             "reinforcement_Tallowable (kN/m) with optional reinforcement_type/"
-            "reinforcement_width/reinforcement_Fy/reinforcement_thickness."
+            "reinforcement_width/reinforcement_Fy/reinforcement_thickness "
+            "(and, for a bar mat / welded grid: reinforcement_transverse_spacing "
+            "= St with reinforcement_thickness = transverse-bar diameter t)."
         )
+    r_type_in = params.get("reinforcement_type", "geosynthetic")
+    r_type = _REINFORCEMENT_TYPE_ALIASES.get(r_type_in, r_type_in)
     return Reinforcement(
         name=params.get("reinforcement_name", "Custom"),
-        type=params.get("reinforcement_type", "geosynthetic"),
+        type=r_type,
         Tallowable=params["reinforcement_Tallowable"],
         width=params.get("reinforcement_width", 0.05),
         Fy=params.get("reinforcement_Fy", 0.0),
         thickness=params.get("reinforcement_thickness", 0.0),
+        transverse_spacing=params.get("reinforcement_transverse_spacing", 0.0),
     )
 
 
@@ -96,7 +119,8 @@ def _run_mse_wall(params):
          "backfill_slope", "surcharge", "gamma_backfill", "phi_backfill",
          "reinforcement_name", "reinforcement_type",
          "reinforcement_Tallowable", "reinforcement_width",
-         "reinforcement_Fy", "reinforcement_thickness", "gamma_foundation",
+         "reinforcement_Fy", "reinforcement_thickness",
+         "reinforcement_transverse_spacing", "gamma_foundation",
          "phi_foundation", "c_foundation", "q_allowable"),
         method="mse_wall")
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
@@ -232,13 +256,14 @@ METHOD_INFO = {
             "gamma_backfill": {"type": "float", "required": True, "description": "Backfill unit weight (kN/m3)."},
             "phi_backfill": {"type": "float", "required": True, "description": "Backfill friction angle (degrees)."},
             "reinforcement_name": {"type": "str", "required": False, "description": "Built-in reinforcement name (use list_reinforcement to see options), or omit and define a custom reinforcement via reinforcement_type + reinforcement_Tallowable."},
-            "reinforcement_type": {"type": "str", "required": False, "default": "geosynthetic", "allowed_values": ["metallic_strip", "metallic_grid", "geosynthetic"], "description": "Custom reinforcement type. Drives the internal-stability lateral stress ratio (metallic vs geosynthetic Kr/Ka profile)."},
+            "reinforcement_type": {"type": "str", "required": False, "default": "geosynthetic", "allowed_values": ["metallic_strip", "metallic_grid", "bar_mat", "welded_grid", "geosynthetic"], "description": "Custom reinforcement type. Drives the internal-stability lateral-stress-ratio Kr/Ka and pullout F* curves: ribbed STRIP (metallic_strip: Kr/Ka 1.7->1.2, F* 2.0->tan-phi), steel bar mat / welded grid (metallic_grid / bar_mat / welded_grid: Kr/Ka 2.5->1.2, F* 20(t/St)->10(t/St) — supply reinforcement_thickness=t and reinforcement_transverse_spacing=St), or geosynthetic (Kr/Ka 1.0)."},
             "reinforcement_Tallowable": {"type": "float", "required": False, "description": "Allowable tensile strength (kN/m) for a custom reinforcement. Required when reinforcement_name is not a built-in."},
             "reinforcement_length": {"type": "float", "required": False, "description": "Reinforcement length (m). Auto-sized (0.7H minimum) if omitted."},
             "reinforcement_spacing": {"type": "float", "required": False, "default": 0.6, "description": "Vertical reinforcement spacing (m)."},
             "reinforcement_width": {"type": "float", "required": False, "default": 0.05, "description": "Custom reinforcement width (m), pullout."},
             "reinforcement_Fy": {"type": "float", "required": False, "default": 0.0, "description": "Custom steel yield strength (MPa)."},
-            "reinforcement_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Custom steel strip thickness (mm)."},
+            "reinforcement_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Strip thickness (m) for a strip; transverse-bar diameter t (m) for a steel bar mat / welded grid (the t in F* = 20 t/St)."},
+            "reinforcement_transverse_spacing": {"type": "float", "required": False, "default": 0.0, "description": "Transverse-bar (grid) spacing St (m) for a steel bar mat / welded grid (the St in F* = 20 t/St). Used only for bar_mat/welded_grid/metallic_grid."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surcharge (kPa)."},
             "backfill_slope": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees)."},
             "gamma_foundation": {"type": "float", "required": False, "description": "Foundation soil unit weight (kN/m3)."},

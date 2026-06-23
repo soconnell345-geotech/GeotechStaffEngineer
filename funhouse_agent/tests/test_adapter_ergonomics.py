@@ -866,4 +866,46 @@ class TestMseCustomReinforcement:
         from funhouse_agent.adapters.retaining_walls import METHOD_INFO
         av = METHOD_INFO["mse_wall"]["parameters"]["reinforcement_type"][
             "allowed_values"]
-        assert av == ["metallic_strip", "metallic_grid", "geosynthetic"]
+        # ribbed strip + steel bar-mat/welded-grid (+ aliases) + geosynthetic
+        assert av == ["metallic_strip", "metallic_grid", "bar_mat",
+                      "welded_grid", "geosynthetic"]
+        assert "geosynthetic" in av  # the documented default
+
+    def test_custom_bar_mat_with_transverse_geometry(self):
+        """A custom steel bar mat (bar_mat / welded_grid) is accepted with its
+        transverse-bar geometry t/St and routes to the bar-mat Kr/F* curves."""
+        from funhouse_agent.adapters.retaining_walls import METHOD_REGISTRY as R
+        r = R["mse_wall"]({
+            "wall_height": 7.8, "gamma_backfill": 19.6, "phi_backfill": 34.0,
+            "reinforcement_type": "bar_mat",
+            "reinforcement_Tallowable": 200.0,
+            "reinforcement_thickness": 0.0095,        # W11 transverse t
+            "reinforcement_transverse_spacing": 0.1524,  # St = 6 in
+        })
+        assert r["FOS_sliding"] > 0
+        # the shallowest internal level uses the bar-mat Kr/Ka (>2), not strip
+        assert r["internal_results"][0]["Kr_Ka"] > 2.0
+
+    def test_bar_mat_type_alias_routes_to_metallic_grid(self):
+        from funhouse_agent.adapters.retaining_walls import _build_reinforcement
+        rebar = _build_reinforcement({
+            "reinforcement_type": "welded_grid",
+            "reinforcement_Tallowable": 180.0,
+            "reinforcement_thickness": 0.0095,
+            "reinforcement_transverse_spacing": 0.3048,
+        })
+        assert rebar.type == "metallic_grid"
+        assert rebar.is_grid
+        assert rebar.t_over_St == pytest.approx(0.0095 / 0.3048, abs=1e-6)
+
+    def test_transverse_spacing_param_rejected_when_invented_key_added(self):
+        """reinforcement_transverse_spacing is a known param (no false reject);
+        an invented key is still rejected loudly."""
+        from funhouse_agent.adapters.retaining_walls import METHOD_REGISTRY as R
+        with pytest.raises(ValueError, match="bogus_key"):
+            R["mse_wall"]({
+                "wall_height": 6.0, "gamma_backfill": 19.0,
+                "phi_backfill": 34.0, "reinforcement_type": "bar_mat",
+                "reinforcement_Tallowable": 150.0,
+                "reinforcement_transverse_spacing": 0.15, "bogus_key": 1,
+            })

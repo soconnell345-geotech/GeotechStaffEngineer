@@ -28,6 +28,7 @@ from retaining_walls.mse import (
 )
 from retaining_walls.reinforcement import (
     Reinforcement, RIBBED_STEEL_STRIP_75x4, GEOGRID_UX1600,
+    WELDED_WIRE_GRID_W11,
 )
 from retaining_walls.results import CantileverWallResult, MSEWallResult
 
@@ -947,3 +948,151 @@ class TestSoilWedgeOnHeel:
         # tally without it (all other rows + Pv*B unchanged)
         assert W_wedge * x_wedge > 0
         assert r["stabilizing_moment_kNm_per_m"] > W_wedge * x_wedge
+
+
+# ================================================================
+# NEW TESTS: Q4 -- steel bar-mat / welded-grid Kr/Ka + F* curves
+# ================================================================
+class TestBarMatCurves:
+    """Steel bar-mat / welded-grid reinforcement curves (GEC-11 / AASHTO,
+    inextensible): Kr/Ka 2.5 -> 1.2 over 0-20 ft (6.096 m); F* 20(t/St) ->
+    10(t/St) over 0-20 ft. Distinct from the ribbed-metallic-STRIP curves.
+    20 ft = 6.096 m transition; t/St is a unit-free ratio."""
+
+    Z20 = 20.0 * 0.3048  # 6.096 m
+
+    # -- Kr/Ka bar-mat (2.5 -> 1.2) ----------------------------------------
+    def test_barmat_Kr_Ka_surface(self):
+        for rt in ("bar_mat", "welded_grid", "metallic_grid"):
+            assert Kr_Ka_ratio(0.0, rt) == pytest.approx(2.5)
+
+    def test_barmat_Kr_Ka_at_and_below_20ft(self):
+        assert Kr_Ka_ratio(self.Z20, "bar_mat") == pytest.approx(1.2)
+        assert Kr_Ka_ratio(self.Z20 + 1.0, "bar_mat") == pytest.approx(1.2)
+        assert Kr_Ka_ratio(10.0, "bar_mat") == pytest.approx(1.2)  # well below 20 ft
+
+    def test_barmat_Kr_Ka_linear_midpoint(self):
+        """Halfway (z = 10 ft) -> halfway between 2.5 and 1.2 = 1.85."""
+        z_mid = 10.0 * 0.3048
+        assert Kr_Ka_ratio(z_mid, "bar_mat") == pytest.approx(1.85, abs=1e-6)
+
+    def test_barmat_Kr_Ka_matches_published_level4_bounds(self):
+        """GEC-11 E4: Kr(Ka) interpolation at the Level-4 tributary bounds.
+        At Z=8.12 ft Kr/Ka should be (in Kr terms) 0.558/Ka; check the ratio."""
+        z = 8.12 * 0.3048
+        # published Kr = 0.558 with Ka = 0.283 -> Kr/Ka = 1.972
+        assert Kr_Ka_ratio(z, "metallic_grid") == pytest.approx(1.972, abs=0.005)
+
+    # -- F* steel grid (20 t/St -> 10 t/St) --------------------------------
+    def test_barmat_Fstar_surface_is_20_tSt(self):
+        tSt = 0.374 / 6.0
+        for rt in ("bar_mat", "welded_grid", "metallic_grid"):
+            assert F_star_metallic(0.0, 34.0, rt, tSt) == pytest.approx(
+                20.0 * tSt)
+        # numeric anchor from GEC-11 E4 (St = 6 in): F*(0) = 1.246
+        assert F_star_metallic(0.0, 34.0, "metallic_grid", tSt) == pytest.approx(
+            1.246, abs=0.001)
+
+    def test_barmat_Fstar_deep_is_10_tSt(self):
+        tSt = 0.374 / 6.0
+        assert F_star_metallic(self.Z20, 34.0, "metallic_grid", tSt) == \
+            pytest.approx(10.0 * tSt)
+        assert F_star_metallic(self.Z20 + 2.0, 34.0, "metallic_grid", tSt) == \
+            pytest.approx(10.0 * tSt)
+
+    def test_barmat_Fstar_level4_interp(self):
+        """GEC-11 E4 Level 4 (Z=9.37 ft, St=6 in): F* = 0.955."""
+        tSt = 0.374 / 6.0
+        z = 9.37 * 0.3048
+        assert F_star_metallic(z, 34.0, "metallic_grid", tSt) == pytest.approx(
+            0.955, abs=0.005)
+
+    def test_barmat_Fstar_independent_of_phi(self):
+        """The grid F* curve depends on t/St only (not phi), unlike strips."""
+        tSt = 0.374 / 12.0
+        z = 5.0 * 0.3048
+        a = F_star_metallic(z, 28.0, "metallic_grid", tSt)
+        b = F_star_metallic(z, 40.0, "metallic_grid", tSt)
+        assert a == pytest.approx(b)
+
+    def test_barmat_Fstar_requires_tSt(self):
+        with pytest.raises(ValueError, match="t_over_St"):
+            F_star_metallic(3.0, 34.0, "metallic_grid")
+
+    # -- default-preserving: ribbed strip unchanged ------------------------
+    def test_strip_default_unchanged(self):
+        """The default (ribbed-strip) curves are byte-identical to before:
+        Kr/Ka 1.7 -> 1.2 over 6 m; F* 2.0 -> tan(phi) over 6 m."""
+        def kr_old(z):
+            if z <= 0:
+                return 1.7
+            if z >= 6.0:
+                return 1.2
+            return 1.7 - (0.5 / 6.0) * z
+
+        def f_old(z, phi):
+            fs, fd = 2.0, math.tan(math.radians(phi))
+            if z <= 0:
+                return fs
+            if z >= 6.0:
+                return fd
+            return fs - (fs - fd) / 6.0 * z
+
+        for z in [0.0, 1.0, 2.5, 3.0, 5.9, 6.0, 8.0]:
+            assert Kr_Ka_ratio(z) == kr_old(z)
+            assert Kr_Ka_ratio(z, "metallic") == kr_old(z)
+            for phi in (28.0, 30.0, 34.0, 40.0):
+                assert F_star_metallic(z, phi) == f_old(z, phi)
+                assert F_star_metallic(z, phi, "metallic") == f_old(z, phi)
+
+    # -- routing: a built-in bar-mat reinforcement uses the new curves -----
+    def test_welded_grid_constant_carries_geometry(self):
+        r = WELDED_WIRE_GRID_W11
+        assert r.is_grid
+        assert r.type == "metallic_grid"
+        # W11 transverse t = 0.374 in -> 0.0095 m; St = 6 in -> 0.1524 m
+        assert r.t_over_St == pytest.approx(0.0095 / 0.1524, abs=1e-6)
+
+    def test_grid_reinforcement_routes_to_barmat_curves(self):
+        """check_internal_stability with a bar-mat reinforcement uses the
+        bar-mat Kr/Ka (2.5 at top) and bar-mat F* (20 t/St at top), NOT the
+        ribbed-strip curves (1.7 / 2.0)."""
+        geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6,
+                               reinforcement_length=5.0)
+        results = check_internal_stability(geom, 18.0, 34.0,
+                                           WELDED_WIRE_GRID_W11)
+        Ka = rankine_Ka(34.0)
+        tSt = WELDED_WIRE_GRID_W11.t_over_St
+        top = results[0]               # shallowest level (z = 0.3 m)
+        kr_ka_top = Kr_Ka_ratio(top["depth_m"], "metallic_grid")
+        # bar-mat top is ~2.43 at z=0.3 m, well above the strip's 1.69
+        assert top["Kr_Ka"] == pytest.approx(round(kr_ka_top, 3), abs=0.002)
+        assert top["Kr_Ka"] > 2.0
+        f_top = F_star_metallic(top["depth_m"], 34.0, "metallic_grid", tSt)
+        assert top["F_star"] == pytest.approx(round(f_top, 3), abs=0.002)
+
+    def test_strip_reinforcement_still_strip_curves(self):
+        """Default-preserving at the high level: a ribbed-strip reinforcement
+        still produces the strip Kr/Ka (1.7 family) through the same path."""
+        geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6,
+                               reinforcement_length=5.0)
+        results = check_internal_stability(geom, 18.0, 34.0,
+                                           RIBBED_STEEL_STRIP_75x4)
+        top = results[0]
+        assert top["Kr_Ka"] == pytest.approx(
+            round(Kr_Ka_ratio(top["depth_m"], "metallic"), 3), abs=0.002)
+        assert top["Kr_Ka"] < 1.75   # strip top, not the 2.43 bar-mat value
+
+    def test_grid_without_geometry_falls_back_to_strip_Fstar(self):
+        """A metallic_grid with no transverse geometry (t/St unknown) must not
+        crash: F* falls back to the ribbed-strip curve (additive safety)."""
+        geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6,
+                               reinforcement_length=5.0)
+        bare_grid = Reinforcement(name="bare grid", type="metallic_grid",
+                                  Tallowable=100.0)
+        results = check_internal_stability(geom, 18.0, 34.0, bare_grid)
+        top = results[0]
+        # Kr/Ka still bar-mat (geometry not needed for Kr), F* strip fallback
+        assert top["Kr_Ka"] > 2.0
+        assert top["F_star"] == pytest.approx(
+            round(F_star_metallic(top["depth_m"], 34.0), 3), abs=0.002)
