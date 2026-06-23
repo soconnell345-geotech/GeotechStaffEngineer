@@ -19,7 +19,7 @@ References:
 from pile_group.pile_layout import GroupPile, create_rectangular_layout
 from pile_group.group_efficiency import (
     converse_labarre, block_failure_capacity, p_multiplier,
-    group_settlement_equivalent_raft,
+    group_settlement_equivalent_raft, meyerhof_group_settlement,
 )
 from pile_group.rigid_cap import (
     GroupLoad, PileGroupResult,
@@ -29,7 +29,7 @@ from pile_group.rigid_cap import (
 __all__ = [
     'GroupPile', 'create_rectangular_layout',
     'converse_labarre', 'block_failure_capacity', 'p_multiplier',
-    'group_settlement_equivalent_raft',
+    'group_settlement_equivalent_raft', 'meyerhof_group_settlement',
     'GroupLoad', 'PileGroupResult',
     'analyze_vertical_group_simple', 'analyze_group_6dof',
 ]

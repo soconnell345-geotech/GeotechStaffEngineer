@@ -17,7 +17,7 @@ import numpy as np
 from pile_group.pile_layout import GroupPile, create_rectangular_layout
 from pile_group.group_efficiency import (
     converse_labarre, block_failure_capacity, p_multiplier,
-    group_settlement_equivalent_raft,
+    group_settlement_equivalent_raft, meyerhof_group_settlement,
 )
 from pile_group.rigid_cap import (
     GroupLoad, PileGroupResult,
@@ -356,6 +356,154 @@ class TestGroupSettlement:
         expected_stress = Q / ((Bg + z_mid) * (Lg + z_mid))
         expected_settle = expected_stress * depth / Es * 1000  # mm
         assert result["settlement_mm"] == pytest.approx(expected_settle, rel=0.01)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TEST 2C: Group Settlement — Meyerhof (1976) SPT method
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestMeyerhofGroupSettlement:
+    """Tests for meyerhof_group_settlement (Meyerhof 1976; GEC-12 Vol 3 D-23).
+
+    S[in] = 4 * pf[ksf] * If * sqrt(B[ft]) / N160, applied via an SI public
+    API (B in m, load in kN / pf in kPa, settlement returned in mm).
+    """
+
+    # US -> SI unit factors for the published GEC-12 Vol 3 Table D-23 case.
+    FT = 0.3048
+    KIP = 4.448
+    KSF = 47.88
+
+    def test_published_50ft_case_mm(self):
+        """GEC-12 Vol 3 Table D-23, 50-ft penetration row (fully specified):
+        B=5 ft, Z=41 ft, Q=1540 kips, DB=5 ft, N160=59 -> S = 1.04 in.
+
+        Driven through the SI public API (m, kN -> mm) and checked to +/-5%.
+        """
+        B_m = 5.0 * self.FT
+        Z_m = 41.0 * self.FT
+        Q_kN = 1540.0 * self.KIP
+        DB_m = 5.0 * self.FT
+        r = meyerhof_group_settlement(
+            group_width=B_m, group_length=Z_m, N160=59,
+            load_kN=Q_kN, embedment_DB=DB_m,
+        )
+        # Published 1.04 in = 26.5 mm, tolerance +/-5%.
+        assert r["settlement_in"] == pytest.approx(1.04, rel=0.05)
+        assert r["settlement_mm"] == pytest.approx(26.5, rel=0.05)
+        # Intermediates match the published hand calc.
+        assert r["pf_ksf"] == pytest.approx(7.512, abs=0.01)
+        assert r["pf_kPa"] == pytest.approx(7.512 * self.KSF, rel=0.01)
+        assert r["influence_factor"] == pytest.approx(0.9167, abs=0.001)
+        assert r["B_m"] == pytest.approx(B_m, abs=1e-6)
+
+    def test_pf_input_matches_load_input(self):
+        """Supplying pf_kPa directly equals supplying the total load Q."""
+        B_m = 5.0 * self.FT
+        Z_m = 41.0 * self.FT
+        Q_kN = 1540.0 * self.KIP
+        pf_kPa = Q_kN / (B_m * Z_m)
+        r_load = meyerhof_group_settlement(
+            group_width=B_m, group_length=Z_m, N160=59,
+            load_kN=Q_kN, embedment_DB=5.0 * self.FT,
+        )
+        r_pf = meyerhof_group_settlement(
+            group_width=B_m, group_length=Z_m, N160=59,
+            pf_kPa=pf_kPa, embedment_DB=5.0 * self.FT,
+        )
+        assert r_pf["settlement_mm"] == pytest.approx(r_load["settlement_mm"])
+
+    def test_si_path_equals_us_form_hand_calc(self):
+        """The SI path reproduces the US-customary closed form by hand.
+
+        Independently evaluate S[mm] = 25.4 * 4 * pf[ksf] * If * sqrt(B[ft])
+        / N160 from the raw US inputs, and confirm the SI public API returns
+        the same mm value (this pins the internal unit conversion).
+        """
+        B_ft, Z_ft, Q_kips, DB_ft, N160 = 5.0, 41.0, 1540.0, 5.0, 59
+        pf_ksf = Q_kips / (B_ft * Z_ft)
+        If = 1.0 - (2.0 / 3.0 * DB_ft) / (8.0 * B_ft)
+        S_in_hand = 4.0 * pf_ksf * If * math.sqrt(B_ft) / N160
+        S_mm_hand = S_in_hand * 25.4
+
+        r = meyerhof_group_settlement(
+            group_width=B_ft * self.FT, group_length=Z_ft * self.FT,
+            N160=N160, load_kN=Q_kips * self.KIP, embedment_DB=DB_ft * self.FT,
+        )
+        assert r["settlement_mm"] == pytest.approx(S_mm_hand, rel=1e-4)
+        assert r["settlement_in"] == pytest.approx(S_in_hand, rel=1e-4)
+
+    def test_si_consistent_coefficient(self):
+        """The equivalent SI closed form S[mm]=C·pf[kPa]·If·√B[m]/N160 with
+        C = 25.4·4/47.88/√0.3048 = 3.8435 reproduces the API value."""
+        C = 25.4 * 4.0 / 47.88 / math.sqrt(0.3048)
+        assert C == pytest.approx(3.8435, abs=0.001)
+        B_m, Z_m = 5.0 * self.FT, 41.0 * self.FT
+        pf_kPa = (1540.0 * self.KIP) / (B_m * Z_m)
+        If = 1.0 - (2.0 / 3.0 * (5.0 * self.FT)) / (8.0 * B_m)
+        S_mm_C = C * pf_kPa * If * math.sqrt(B_m) / 59
+        r = meyerhof_group_settlement(
+            group_width=B_m, group_length=Z_m, N160=59,
+            pf_kPa=pf_kPa, embedment_DB=5.0 * self.FT,
+        )
+        assert r["settlement_mm"] == pytest.approx(S_mm_C, rel=1e-4)
+
+    def test_no_embedment_gives_unit_influence_factor(self):
+        """DB = 0 -> If = 1.0 (no embedment reduction)."""
+        r = meyerhof_group_settlement(
+            group_width=2.0, group_length=4.0, N160=20, pf_kPa=150.0,
+        )
+        assert r["influence_factor"] == pytest.approx(1.0, abs=1e-9)
+
+    def test_influence_factor_floors_at_half(self):
+        """If is floored at 0.5 for a deeply embedded narrow group.
+
+        DB large relative to B drives 1 - (2/3·DB)/(8·B) below 0.5; the
+        function clamps it to 0.5.
+        """
+        # Raw If would be 1 - (2/3·30)/(8·2) = 1 - 1.25 = -0.25 -> floored.
+        r = meyerhof_group_settlement(
+            group_width=2.0, group_length=4.0, N160=20, pf_kPa=150.0,
+            embedment_DB=30.0,
+        )
+        assert r["influence_factor"] == pytest.approx(0.5, abs=1e-9)
+
+    def test_b_is_smaller_dimension(self):
+        """B is always the smaller plan dimension regardless of arg order."""
+        r1 = meyerhof_group_settlement(
+            group_width=5.0, group_length=12.0, N160=30, pf_kPa=200.0)
+        r2 = meyerhof_group_settlement(
+            group_width=12.0, group_length=5.0, N160=30, pf_kPa=200.0)
+        assert r1["B_m"] == pytest.approx(5.0)
+        assert r2["B_m"] == pytest.approx(5.0)
+        assert r1["settlement_mm"] == pytest.approx(r2["settlement_mm"])
+
+    def test_settlement_decreases_with_higher_N(self):
+        """Settlement is inversely proportional to N160."""
+        r_loose = meyerhof_group_settlement(
+            group_width=3.0, group_length=6.0, N160=15, pf_kPa=200.0)
+        r_dense = meyerhof_group_settlement(
+            group_width=3.0, group_length=6.0, N160=45, pf_kPa=200.0)
+        assert r_dense["settlement_mm"] < r_loose["settlement_mm"]
+        # Inverse-in-N160: 45/15 = 3x (allow last-digit rounding of the mm out).
+        assert r_loose["settlement_mm"] == pytest.approx(
+            3 * r_dense["settlement_mm"], abs=0.01)
+
+    def test_raises_without_load_or_pf(self):
+        """Neither load_kN nor pf_kPa -> ValueError."""
+        with pytest.raises(ValueError, match="load_kN.*pf_kPa"):
+            meyerhof_group_settlement(
+                group_width=3.0, group_length=6.0, N160=20)
+
+    def test_raises_negative_N160(self):
+        with pytest.raises(ValueError, match="N160 must be positive"):
+            meyerhof_group_settlement(
+                group_width=3.0, group_length=6.0, N160=-5, pf_kPa=200.0)
+
+    def test_raises_negative_width(self):
+        with pytest.raises(ValueError, match="group_width must be positive"):
+            meyerhof_group_settlement(
+                group_width=-3.0, group_length=6.0, N160=20, pf_kPa=200.0)
 
 
 # ═══════════════════════════════════════════════════════════════════════

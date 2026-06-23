@@ -27,7 +27,7 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 | V-002 | axial_pile alpha shaft (clay) | Rs = 250/297/345 kips (D=70/80/90) | Rs = 318.4/369.3/420.33 | −22% / −20% / −18% | CONVENTION | Module under-predicts shaft. Cause isolated to the STIFF clay band: module Tomlinson α≈0.42 vs the example's DrivenPiles α≈0.76 at su≈1.9 ksf. Soft (α≈0.85) and very-stiff (α≈0.34) bands agree. Different α-vs-cu curve; module not tuned. |
 | V-003 | wave_equation drivability (diesel) | ~48 bpf @ 746 kips, ~48 ksi comp | 120 bpf @ Rndr=746 kips, 40.1 ksi | bpf −60%, stress +21% | N/A (scope) | No Delmag D36-52 in the hammer DB (only the −22/−32 single-energy diesel series). A hand-built D36-52 + generic cushion gives 48 bpf (vs 120, outside ±25%) and 48 ksi (vs 40.1, outside ±10%): the module's diesel hammer is a simple energy/efficiency velocity conversion, not a GRLWEAP diesel combustion + ram-cycle model. Coverage gap. |
 | V-004 | downdrag neutral plane (Fellenius) | NP=53.3 ft, Qmax=487.2 kips, DF=286.2 kips | NP=54 ft, Qmax=486 kips, DF=285 kips | NP −0.7 ft, Qmax +0.2%, DF +0.4% | **PASS** | Fellenius NP construction reproduces NP/Qmax/DF to <1% at 100% toe mobilization (toe=428.1 kips, Q=201 kips). Per-layer β overridden to feed the module the published Table D-6 Nordlund shaft (inventory-permitted), validating the NP equilibrium logic decoupled from the shaft method. |
-| V-005 | Meyerhof (1976) group settlement | (no module method) | S = 1.04 in | — | N/A (scope) | No module exposes S = 4·pf·If·√B/N160. `settlement/` has only shallow-footing methods; `pile_group/` has only the elastic equivalent-raft method (`group_settlement_equivalent_raft`, a 2V:1H elastic sum — different method). Closed form verified inline (1.044 in) as documentation of the gap. |
+| V-005 | pile_group `meyerhof_group_settlement` (Meyerhof 1976 SPT) | S = 26.52 mm (1.044 in) | S = 1.04 in | +0.4% | **PASS** | New `pile_group.meyerhof_group_settlement` packages S[in]=4·pf[ksf]·If·√B[ft]/N160 behind an **SI public API** (B in m, load in kN → settlement in mm), converting internally (SI→US, apply US-form, US→mm; equiv. SI coeff C=25.4·4/47.88/√0.3048=3.8435). 50-ft Table D-23 case (B=5 ft, Z=41 ft, Q=1540 kips → pf=7.512 ksf; DB=5 ft → If=0.9167; N160=59) → 26.52 mm = 1.044 in vs published 1.04 in (+0.4%, within ±5%). Coverage gap closed; formula NOT tuned. |
 | V-009 | retaining_walls MSE external, unfactored loads | V1=57.69, Vs=4.50, F1=13.68, F2=2.14 k/ft; MV1=519.1, MF1=117.0, MF2=27.4 k-ft/ft | V1=57.69, Vs=4.50, F1=13.68, F2=2.13; MV1=519.21, MF1=116.94, MF2=27.36 | <0.5% | **PASS** | `rankine_Ka`(34→0.283, 30→0.333) + the GEC-11 force eqns reproduce every Table E4-4.3/4.4 unfactored force & moment about Point A. `horizontal_force_active` returns the combined F1+F2 thrust (15.83 k/ft) + line of action. These are the load quantities the module's primitives contribute. |
 | V-009 | retaining_walls MSE external, LRFD CDRs | sliding 1.85/2.08/1.37; ecc eL 2.87/3.87 ft; bearing σv 6.70 ksf, CDR 1.57; svc σv 4.66; crit σv 5.75 | sliding 1.85/2.08/1.37; ecc 2.87/3.87; bearing 6.70, 1.57; svc 4.66; crit 5.86 | ≤2% | **PASS** (via primitives) | Driving the GEC-11 Str I max/min load-factor pairing (EV 1.35/1.00, EH 1.50/0.90, LL 1.75) + LL-on-resisting exclusion (sliding/ecc) / LL-included (bearing) on top of the module's earth-pressure primitives reproduces every published CDR. Critical bearing σv 5.75 vs 5.86 (+1.9%) is within the source's own "consistent-values" rounding note. |
 | V-009 | retaining_walls `analyze_mse_wall` (high-level) | ASD FOS_sliding ≈ 2.27 (R/demand, no load factors) | LRFD sliding CDR 1.85 | — | CONVENTION | The packaged `analyze_mse_wall` returns ASD factors of safety (unfactored resistance/demand, surcharge in W, LL not split out), NOT the GEC-11 LRFD CDRs. The LRFD load-factor + LL-exclusion bookkeeping is not in the module. Documented API/method gap; the example was reproduced through the lower-level primitives instead. |
@@ -131,11 +131,15 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
   module the published distribution via per-layer β overrides (inventory-permitted)
   to isolate the NP logic. Also note: `_compute_toe_resistance` uses `pile_area`
   as the toe area, so for H-piles the box toe area must be passed as `pile_area`.
-- **No Meyerhof (1976) SPT group settlement anywhere (V-005).** Trivial closed
-  form (S = 4·pf·If·√B/N160). `pile_group.group_settlement_equivalent_raft` is an
-  elastic 2V:1H method, not this. **Possible add:** a one-line
-  `meyerhof_group_settlement(...)` helper in `pile_group` if SPT-based group
-  settlement is in scope; otherwise leave as a documented gap.
+- **Meyerhof (1976) SPT group settlement added — gap CLOSED (V-005).** The
+  closed form (S = 4·pf·If·√B/N160) is now packaged as
+  `pile_group.meyerhof_group_settlement`, distinct from the elastic 2V:1H
+  `group_settlement_equivalent_raft`. The coefficient "4" is US-calibrated
+  (S in inches, pf in ksf, B in feet), so the helper takes **SI inputs**
+  (B in m, load in kN / pf in kPa) and returns **mm**, converting internally
+  (SI→US, apply the US-form, US→mm). The 50-ft Table D-23 case reproduces the
+  published 1.04 in (26.52 mm = 1.044 in, +0.4%). Adapter method
+  `meyerhof_group_settlement` wired with alias/require/reject discipline.
 
 ### Batch V-009..V-011 (GEC-11 E4/E7 MSE wall) — owner notes
 

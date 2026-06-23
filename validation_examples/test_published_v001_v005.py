@@ -28,8 +28,9 @@ Summary of verdicts (details in each test docstring and RESULTS.md):
   and the simplified diesel model can't reproduce a GRLWEAP diesel bearing graph.
 - V-004 downdrag neutral plane: PASS — the Fellenius NP construction reproduces
   NP, Qmax, and drag force to <1% when fed the published Table D-6 shaft.
-- V-005 Meyerhof (1976) pile-group SPT settlement: N/A (scope) — no module exposes
-  S = 4*pf*If*sqrt(B)/N160; the closed form is verified inline as documentation.
+- V-005 Meyerhof (1976) pile-group SPT settlement: PASS — pile_group's new
+  meyerhof_group_settlement (SI API, m/kN -> mm) reproduces the published
+  1.04 in (50-ft case) to within +/-5%.
 
 Units: example is US customary; modules are SI.
 1 ft = 0.3048 m, 1 kip = 4.448 kN, 1 ksf = 47.88 kPa, 1 pcf = 0.157087 kN/m3,
@@ -355,31 +356,42 @@ def test_v004_neutral_plane_and_drag_force():
 
 # ── V-005 : Meyerhof (1976) pile-group SPT settlement (Block 15, Table D-23) ─
 
-def test_v005_meyerhof_group_settlement_is_a_coverage_gap():
-    """N/A (scope): no analysis module exposes the Meyerhof (1976) SPT pile-
-    group settlement S = 4*pf*If*sqrt(B)/N160. settlement/ has only shallow-
-    footing methods; pile_group/ has only the elastic equivalent-raft method
-    (group_settlement_equivalent_raft, FHWA GEC-12 9.8, a 2V:1H elastic sum) —
-    a different method. The closed form is verified inline here as
-    documentation of the gap; it reproduces the published 1.04 in.
+def test_v005_meyerhof_group_settlement_matches_published():
+    """PASS: pile_group.meyerhof_group_settlement (Meyerhof 1976 SPT method)
+    reproduces the published Table D-23 50-ft case to within +/-5%.
+
+    The method packages S[in] = 4*pf[ksf]*If*sqrt(B[ft])/N160 behind an SI
+    public API (B in m, load in kN, settlement returned in mm), converting
+    internally. Inputs (50-ft penetration row): B=5 ft, Z=41 ft, Q=1540 kips
+    (unfactored permanent), DB=5 ft into the bearing stratum, N160=59 ->
+    published S = 1.04 in (~26.5 mm).
     """
-    # No symbol named for the Meyerhof SPT method anywhere in the two modules.
-    import pile_group
-    import settlement
-    assert not hasattr(pile_group, "meyerhof_group_settlement")
-    assert not hasattr(settlement, "meyerhof_group_settlement")
+    from pile_group import meyerhof_group_settlement
 
-    # Closed-form check of the extracted formula and inputs (documentation only).
-    B = 5.0        # ft, group width (edge-to-edge)
-    Z = 41.0       # ft, group length
-    Q = 1540.0     # kips, unfactored permanent load
-    pf = Q / (B * Z)                       # ksf
-    assert pf == pytest.approx(7.512, abs=0.01)
+    # SI inputs (the published US values converted via the module's factors).
+    B_m = 5.0 * FT
+    Z_m = 41.0 * FT
+    Q_kN = 1540.0 * KIP
+    DB_m = 5.0 * FT
 
-    DB = 5.0                               # ft, embedment into bearing stratum
-    If = 1.0 - (2.0 / 3.0 * DB) / (8.0 * B)
-    assert If == pytest.approx(0.92, abs=0.01)
+    r = meyerhof_group_settlement(
+        group_width=B_m, group_length=Z_m, N160=59,
+        load_kN=Q_kN, embedment_DB=DB_m,
+    )
 
-    N160 = 59
-    S_in = 4.0 * pf * If * math.sqrt(B) / N160
-    assert S_in == pytest.approx(1.04, abs=0.05)   # published 1.04 in
+    # Net pressure and influence factor reproduce the published hand calc.
+    assert r["pf_ksf"] == pytest.approx(7.512, abs=0.01)
+    assert r["pf_kPa"] == pytest.approx(7.512 * KSF, rel=0.01)
+    assert r["influence_factor"] == pytest.approx(0.9167, abs=0.001)
+
+    # Published settlement: 1.04 in ~ 26.5 mm, +/-5%.
+    assert r["settlement_in"] == pytest.approx(1.04, rel=0.05)
+    assert r["settlement_mm"] == pytest.approx(26.5, rel=0.05)
+
+    # Cross-check the SI public-API result against the raw US-form hand calc
+    # (pins the internal unit conversion).
+    B_ft, Z_ft, Q_kips, DB_ft = 5.0, 41.0, 1540.0, 5.0
+    pf_ksf = Q_kips / (B_ft * Z_ft)
+    If = 1.0 - (2.0 / 3.0 * DB_ft) / (8.0 * B_ft)
+    S_in_hand = 4.0 * pf_ksf * If * math.sqrt(B_ft) / 59
+    assert r["settlement_in"] == pytest.approx(S_in_hand, rel=1e-4)

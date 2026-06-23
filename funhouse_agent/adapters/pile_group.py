@@ -1,10 +1,13 @@
 """Pile group adapter — rigid cap analysis, 6-DOF, efficiency."""
 
-from funhouse_agent.adapters import reject_unknown_params, require_keys, require_params
+from funhouse_agent.adapters import (
+    apply_aliases, reject_unknown_params, require_keys, require_params,
+)
 from pile_group import (
     GroupPile, create_rectangular_layout, converse_labarre,
     block_failure_capacity, p_multiplier, GroupLoad,
     analyze_vertical_group_simple, analyze_group_6dof,
+    meyerhof_group_settlement,
 )
 
 
@@ -96,10 +99,49 @@ def _run_group_efficiency(params):
     return results
 
 
+# Meyerhof (1976) SPT group-settlement aliases (accept a few common synonyms
+# for the SI plan dimensions / pressure / SPT count without silently dropping).
+_MEYERHOF_ALIASES = {
+    "B": "group_width", "width": "group_width",
+    "L": "group_length", "Z": "group_length", "length": "group_length",
+    "Q": "load_kN", "load": "load_kN", "load_permanent_kN": "load_kN",
+    "pf": "pf_kPa", "net_pressure_kPa": "pf_kPa",
+    "DB": "embedment_DB", "embedment": "embedment_DB", "embedment_m": "embedment_DB",
+    "N": "N160", "N1_60": "N160", "N1_60_avg": "N160",
+}
+
+_MEYERHOF_VALID_PARAMS = (
+    "group_width", "group_length", "N160", "load_kN", "pf_kPa", "embedment_DB",
+)
+
+
+def _run_meyerhof_group_settlement(params):
+    params = apply_aliases(params, _MEYERHOF_ALIASES)
+    reject_unknown_params(params, _MEYERHOF_VALID_PARAMS,
+                          method="meyerhof_group_settlement")
+    require_params(params, ["group_width", "group_length", "N160"],
+                   method="meyerhof_group_settlement",
+                   valid=_MEYERHOF_VALID_PARAMS)
+    if params.get("load_kN") is None and params.get("pf_kPa") is None:
+        raise ValueError(
+            "meyerhof_group_settlement: provide either load_kN (total "
+            "permanent load, kN) or pf_kPa (net foundation pressure, kPa)."
+        )
+    return meyerhof_group_settlement(
+        group_width=params["group_width"],
+        group_length=params["group_length"],
+        N160=params["N160"],
+        load_kN=params.get("load_kN"),
+        pf_kPa=params.get("pf_kPa"),
+        embedment_DB=params.get("embedment_DB", 0.0),
+    )
+
+
 METHOD_REGISTRY = {
     "pile_group_simple": _run_pile_group_simple,
     "pile_group_6dof": _run_pile_group_6dof,
     "group_efficiency": _run_group_efficiency,
+    "meyerhof_group_settlement": _run_meyerhof_group_settlement,
 }
 
 METHOD_INFO = {
@@ -154,5 +196,18 @@ METHOD_INFO = {
             "spacing_diameter_ratio": {"type": "float", "required": False, "description": "s/D ratio for the p-multiplier (computed from spacing/pile_diameter if omitted)."},
         },
         "returns": {"converse_labarre_Eg": "Group efficiency factor.", "block_failure_kN": "Block failure capacity (with pile_length + cu).", "p_multiplier": "Lateral p-multiplier (with row_position)."},
+    },
+    "meyerhof_group_settlement": {
+        "category": "Pile Group",
+        "brief": "Meyerhof (1976) SPT pile-group settlement S=4·pf·If·√B/N160 (GEC-12). SI in, mm out.",
+        "parameters": {
+            "group_width": {"type": "float", "required": True, "description": "Group plan width B, the SMALLER plan dimension (m)."},
+            "group_length": {"type": "float", "required": True, "description": "Group plan length Z, the larger plan dimension (m). Used with group_width to form the plan area when load_kN is given."},
+            "N160": {"type": "float", "required": True, "description": "Average corrected SPT (N1)60 within ~B below the pile-group toe (dimensionless)."},
+            "load_kN": {"type": "float", "required": False, "description": "Total unfactored permanent load Q (kN); net pressure pf = Q/(B·Z). Provide this OR pf_kPa."},
+            "pf_kPa": {"type": "float", "required": False, "description": "Net foundation pressure pf (kPa), supplied directly. Takes precedence over load_kN. Provide this OR load_kN."},
+            "embedment_DB": {"type": "float", "required": False, "description": "Embedment depth of the group into the bearing stratum DB (m); If = 1 − (2/3·DB)/(8·B), floored at 0.5. Default 0.0 (If = 1.0)."},
+        },
+        "returns": {"settlement_mm": "Group settlement (mm).", "settlement_in": "Group settlement (inches).", "influence_factor": "Embedment factor If.", "pf_kPa": "Net foundation pressure used (kPa)."},
     },
 }
