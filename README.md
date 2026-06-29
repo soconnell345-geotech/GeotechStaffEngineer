@@ -47,53 +47,50 @@ One stack, layered so each concern stays independent. Analysis modules never imp
 
 ```mermaid
 flowchart TB
-    ENG["Engineer asks in natural language<br/><i>Is a 2 m footing safe here? How sensitive to phi? What is P_f?</i>"]
+    ENG["Engineer asks in natural language"]
 
-    subgraph AGENT["AGENT HARNESS — engine-agnostic LLM driver"]
-        direction LR
-        FA["funhouse_agent<br/>GeotechAgent · dispatch · vision"]
-        FD["foundry/ wrappers<br/>48 standalone tool agents"]
-        LIB["groundhog + 9 library agents"]
-        GP["geo_project<br/>staged, human-gated setup"]
+    subgraph AGENT["Agent harness - engine-agnostic LLM driver"]
+        FA["funhouse_agent: GeotechAgent, dispatch, vision"]
+        FD["foundry wrappers: 48 standalone tool agents"]
+        LIB["groundhog plus 9 library agents"]
+        GP["geo_project: staged human-gated setup"]
     end
 
-    subgraph VAR["★ VARIABILITY ENGINE — wraps any deterministic method as g(values), runs it thousands of times"]
-        direction LR
-        REL["reliability<br/>FOSM · PEM · Monte Carlo · FORM → β, P_f"]
-        COV["cov_database · spatial<br/>published COV · Vanmarcke averaging"]
-        SENS["salib · pystra<br/>Sobol/Morris · structural reliability"]
+    subgraph VAR["Variability engine - wraps any deterministic method, runs it thousands of times"]
+        REL["reliability: FOSM, PEM, Monte Carlo, FORM to beta and Pf"]
+        COV["cov_database and spatial: published COV, Vanmarcke averaging"]
+        SENS["salib and pystra: Sobol/Morris, structural reliability"]
     end
 
-    subgraph DET["DETERMINISTIC ANALYSIS — 30 modules · analyze_*() → dataclass · no cross-imports"]
-        direction LR
-        F["foundations · deep foundations<br/>earth retention"]
-        S["slope · FEM · CAD"]
-        SE["seismic · characterization"]
+    subgraph DET["Deterministic analysis - 30 modules, dataclass I/O, no cross-imports"]
+        F["foundations, deep foundations, earth retention"]
+        S["slope, FEM, CAD"]
+        SE["seismic, characterization"]
     end
 
-    SPINE["geotech_common — SoilProfile spine<br/>(the one type every module speaks)"]
-    REF["geotech-references — 21 digitized standards · DM7 · GEC · UFC · FHWA"]
-    GROUND["Subsurface reality — borings · CPT · lab tests"]
+    SPINE["geotech_common: SoilProfile spine - one type every module speaks"]
+    REF["geotech-references: 21 digitized standards - DM7, GEC, UFC, FHWA"]
+    GROUND["Subsurface reality: borings, CPT, lab tests"]
 
     ENG --> AGENT
     AGENT --> VAR
-    VAR -->|the calc as a function, run N times| DET
+    VAR -->|run the calc N times| DET
     DET --> SPINE
-    AGENT -. cites .-> REF
+    AGENT -.->|cites| REF
     GROUND --> SPINE
 
-    classDef agent fill:#1a1326,stroke:#c8a0ff,color:#e8edf6;
-    classDef var fill:#241804,stroke:#ffb86b,color:#e8edf6;
-    classDef det fill:#0d1622,stroke:#5cc8ff,color:#e8edf6;
-    classDef spine fill:#0e1f16,stroke:#7df0c0,color:#e8edf6;
-    classDef ref fill:#130f1c,stroke:#c8a0ff,color:#e8edf6;
-    classDef ground fill:#0e1626,stroke:#6b778c,color:#9aa7bd;
-    class FA,FD,LIB,GP agent;
-    class REL,COV,SENS var;
-    class F,S,SE det;
-    class SPINE spine;
-    class REF ref;
-    class GROUND ground;
+    classDef agent fill:#1a1326,stroke:#c8a0ff,color:#e8edf6
+    classDef var fill:#241804,stroke:#ffb86b,color:#e8edf6
+    classDef det fill:#0d1622,stroke:#5cc8ff,color:#e8edf6
+    classDef spine fill:#0e1f16,stroke:#7df0c0,color:#e8edf6
+    classDef ref fill:#130f1c,stroke:#c8a0ff,color:#e8edf6
+    classDef ground fill:#0e1626,stroke:#6b778c,color:#9aa7bd
+    class FA,FD,LIB,GP agent
+    class REL,COV,SENS var
+    class F,S,SE det
+    class SPINE spine
+    class REF ref
+    class GROUND ground
 ```
 
 - **Why a shared spine** — one `SoilProfile` type means modules compose without knowing about each other, and an agent learns one way to describe the ground.
