@@ -8,9 +8,9 @@
 
 ---
 
-## Soil is uncertain. So you don't calculate once — you calculate thousands of times.
+## Soil is uncertain. So you don't calculate once — you calculate repeatedly until the problem is understood.
 
-Geotechnical engineering is the science of building **on** and **out of** the ground: foundations, retaining walls, slopes, excavations, embankments. Unlike a steel beam with a certified strength, the geotechnical engineer's material is **the earth itself** — heterogeneous, layered, partly saturated, and sampled at only a handful of points across an entire site.
+Geotechnical engineering is the practice of building **on** and **in** the ground: foundations, retaining walls, slopes, excavations, embankments. Unlike a steel beam with a certified strength, the geotechnical engineer's material is **the earth itself** — heterogeneous, layered, partly saturated, and sampled at only a handful of points across an entire site.
 
 Because the ground is **variable and only partly known**, a single number is never the answer. Understanding a geotechnical problem means understanding *how the answer moves as the inputs move*. That's what this project is built around.
 
@@ -20,14 +20,12 @@ Because the ground is **variable and only partly known**, a single number is nev
 |------|----------|---------|
 | **1 · Characterize** | Drill borings, push CPT cones, run lab tests | A sparse, noisy picture of strength, stiffness, and groundwater — never the whole truth |
 | **2 · Idealize** | Collapse the data into a layered soil profile | Design values of φ, c, γ, water table — each an *estimate with a spread* |
-| **3 · Analyze** | Run the method (bearing capacity, settlement, pile capacity, slope stability) | A chain of code-prescribed formulas from DM7, FHWA, UFC, AASHTO |
-| **4 · Check & revise** | Compare against the required factor of safety; vary assumptions; re-run | Loop until the design is robust *across* the uncertainty |
+| **3 · Analyze** | Run the method (bearing capacity, settlement, pile capacity, slope stability) | A chained assortment of industry-standard formulas, empirical and numerical methods |
+| **4 · Check & revise** | Compare against the design requirements; vary assumptions; re-run | Loop until the design is robust *across* the uncertainty |
 
-Steps 3 and 4 are not one calculation — they are the **same calculation run again and again** across plausible soil states. The engineering judgment is in choosing the range and reading the *spread* of answers, not in any single result.
+Steps 3 and 4 are repeated calculations across plausible subsurface and loading conditions. The agent helps the engineer understand the range and *spread* of answers.
 
-### Why the answer is a distribution, not a number
-
-Two engineers, same site, can pick φ = 30° or φ = 33° and both be defensible — the soil genuinely varies that much. A bearing capacity that changes materially between those values is not a rounding question; it *is* the question.
+### In geotech engineer, the true answer is a distribution
 
 - **Parameter uncertainty** — design properties carry coefficients of variation (COV) of 10–40%, far larger than structural materials.
 - **Spatial variability** — soil changes boring to boring; a footing averages over its footprint, a long slope samples many weak and strong zones. Scale matters.
@@ -37,7 +35,7 @@ Done by hand, that exploration gets truncated — a couple of cases and a lot of
 
 ### Computers have always amplified the engineer
 
-Slide rules and design charts → spreadsheets and FEM → scripting and Monte Carlo → **LLM agents**. Every tool in this lineage did the same thing: it let one engineer explore more of the problem in the time they had. This project is the next step — *not a replacement for judgment, but a force multiplier for it.* Take the methods a staff engineer uses, make every one a clean Python function that returns structured data, wrap the variability tooling around them, and put a reasoning agent on top.
+Slide rules and design charts → spreadsheets and FEM → scripting and Monte Carlo → **LLM agents**. Every tool in this lineage did the same thing: it let one engineer explore more of the problem in the time they had. This project is the next step — *not a replacement for judgment, but a multiplier for it.* Take the methods a staff engineer uses, make every one a clean Python function that returns structured data, wrap the variability tooling around them, and put a reasoning agent on top.
 
 ---
 
