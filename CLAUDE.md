@@ -3,6 +3,32 @@
 Python toolkit for LLM-based geotechnical engineering agents.
 30 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + hvsrpy agent + GSTools agent + SALib agent + swprocess agent + pystra agent + subsurface characterization (DIGGS/GEF/AGS4 data I/O — folds in the former pygef/ags4/pydiggs wrappers as format adapters) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM: T6 quadratic elements, 3D-principal MC return, GL99 strength reduction, staged construction) + reliability (FOSM/PEM/Monte Carlo/native FORM + published COV database) + geo_project (staged, human-gated LLM model setup) + funhouse_agent (engine-agnostic agent with vision).
 
+## What this is for (framing — use this voice in user-facing docs)
+
+Geotechnical engineering is the *practice* of building **on and in the ground** —
+foundations, retaining walls, slopes, excavations, embankments. The engineer's
+material is the earth itself: heterogeneous, layered, partly saturated, and
+sampled at only a handful of points across a site. Because the ground is variable
+and only partly known, **a single number is never the answer**. Geotechnical
+analysis is **repeated calculation across plausible subsurface and loading
+conditions** — running a chained assortment of industry-standard formulas,
+empirical and numerical methods, then comparing against the **design
+requirements** and varying assumptions until the design is robust across the
+uncertainty. The engineer's job is to understand the **range and spread** of
+answers, not one point estimate; the **true answer is a distribution**.
+
+This toolkit packages those methods as clean, machine-callable Python
+(deterministic `analyze_*()` functions → dataclasses), wraps them in a
+probabilistic variability engine (`reliability/` — FOSM/PEM/MC/FORM → β, P_f),
+and drives them with an engine-agnostic LLM agent (`funhouse_agent/`). It follows
+the lineage of every tool that amplified the engineer — slide rule → spreadsheet
+/ FEM → Monte Carlo → LLM agent — **not a replacement for judgment, but a
+multiplier for it.** (Plain-language framing lives in `README.md` /
+`docs/overview.html`; keep that practitioner voice — "practice," "on and in the
+ground," "design requirements," "subsurface and loading conditions" — in
+user-facing copy.)
+
+
 ## Architecture Patterns
 
 Every analysis module follows this structure:
