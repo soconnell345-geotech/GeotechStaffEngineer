@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentic Retrieval in Funhouse — A Developer's Build Guide</title>
+<style>
+  :root{
+    --bg:#0c1018; --bg2:#121826; --panel:#161d2e; --panel2:#1c2640;
+    --ink:#e8edf6; --mut:#9aa7bd; --dim:#6b778c;
+    --line:#27324a;
+    --acc:#5cc8ff;      /* text retrieval / cyan */
+    --acc2:#7df0c0;     /* python lookups / green */
+    --acc3:#ffb86b;     /* figure+vision / amber */
+    --acc4:#c8a0ff;     /* orchestration / violet */
+    --warn:#ff7b9c;
+    --mono:"SF Mono",ui-monospace,"Cascadia Code","JetBrains Mono",Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:radial-gradient(1200px 700px at 80% -10%,#16203a 0%,var(--bg) 55%) fixed;
+    color:var(--ink);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--acc);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
+  code,kbd{font-family:var(--mono);font-size:.86em}
+  .mono{font-family:var(--mono)}
+
+  /* ---- hero ---- */
+  header.hero{padding:64px 0 30px;border-bottom:1px solid var(--line);position:relative;overflow:hidden}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.28em;text-transform:uppercase;color:var(--acc);margin:0 0 14px}
+  h1{font-size:clamp(28px,4.6vw,46px);line-height:1.12;margin:0 0 16px;font-weight:760;letter-spacing:-.02em}
+  h1 .grad{background:linear-gradient(92deg,var(--acc),var(--acc2) 45%,var(--acc3));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{font-size:18px;color:var(--mut);max-width:820px;margin:0 0 22px}
+  .pills{display:flex;flex-wrap:wrap;gap:8px}
+  .pill{font-family:var(--mono);font-size:12px;padding:5px 11px;border:1px solid var(--line);border-radius:999px;color:var(--mut);background:#0e1422}
+  .pill b{color:var(--ink);font-weight:600}
+
+  /* ---- sections ---- */
+  section{padding:50px 0;border-bottom:1px solid var(--line)}
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
+  h2{font-size:clamp(22px,3vw,30px);margin:0 0 12px;letter-spacing:-.01em;font-weight:720}
+  h2 .n{font-family:var(--mono);color:var(--acc4);font-size:.62em;margin-right:12px;vertical-align:middle;opacity:.8}
+  .sub{color:var(--mut);max-width:820px;margin:0 0 26px}
+
+  /* ---- TL;DR band ---- */
+  .tldr{background:linear-gradient(180deg,var(--panel),#10172700);border:1px solid var(--line);border-radius:16px;padding:22px 24px;margin-top:30px}
+  .tldr h3{margin:0 0 14px;font-size:14px;letter-spacing:.16em;text-transform:uppercase;color:var(--acc2);font-family:var(--mono)}
+  .tldr ol{margin:0;padding-left:20px;columns:2;column-gap:34px}
+  .tldr li{margin:0 0 9px;color:var(--mut)}
+  .tldr li b{color:var(--ink)}
+  @media(max-width:720px){.tldr ol{columns:1}}
+
+  /* ---- diagram ---- */
+  .diagram{background:var(--bg2);border:1px solid var(--line);border-radius:16px;padding:10px}
+  svg{display:block;width:100%;height:auto}
+  .legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:18px;font-size:13px;color:var(--mut)}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .dot{width:11px;height:11px;border-radius:3px;display:inline-block}
+
+  /* ---- cards ---- */
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  @media(max-width:860px){.g2,.g3{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px}
+  .card h4{margin:0 0 6px;font-size:16px;display:flex;align-items:center;gap:9px}
+  .card .tag{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid var(--line);color:var(--mut)}
+  .card p{margin:8px 0 0;color:var(--mut);font-size:14px}
+  .card .file{font-family:var(--mono);font-size:12px;color:var(--dim);margin-top:10px;display:block;word-break:break-all}
+  .lead-cyan{border-left:3px solid var(--acc)}
+  .lead-green{border-left:3px solid var(--acc2)}
+  .lead-amber{border-left:3px solid var(--acc3)}
+  .lead-violet{border-left:3px solid var(--acc4)}
+
+  /* ---- code ---- */
+  pre{background:#0a0f1a;border:1px solid var(--line);border-radius:12px;padding:16px 18px;overflow:auto;margin:16px 0;font-family:var(--mono);font-size:12.5px;line-height:1.62}
+  pre .c{color:var(--dim)}       /* comment */
+  pre .k{color:var(--acc4)}      /* keyword */
+  pre .s{color:var(--acc2)}      /* string */
+  pre .f{color:var(--acc)}       /* function/def */
+  pre .n{color:var(--acc3)}      /* number / literal */
+  pre .d{color:#ff9ec4}          /* decorator */
+  .codecap{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--dim);text-transform:uppercase;margin:24px 0 -6px}
+
+  /* ---- step flow ---- */
+  .flow{display:grid;grid-template-columns:repeat(6,1fr);gap:0;margin:18px 0 6px}
+  @media(max-width:860px){.flow{grid-template-columns:1fr}}
+  .step{position:relative;padding:16px 14px;border:1px solid var(--line);background:var(--panel);border-radius:12px;margin:6px}
+  .step .num{font-family:var(--mono);font-size:11px;color:var(--acc4);font-weight:700}
+  .step b{display:block;margin:5px 0 4px;font-size:14px}
+  .step span{color:var(--mut);font-size:12.5px}
+
+  /* ---- table ---- */
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);font-weight:600}
+  td code{color:var(--acc2)}
+  tbody tr:hover{background:#10182a}
+
+  /* ---- callout ---- */
+  .note{border:1px solid var(--line);border-left:3px solid var(--acc3);background:#150f08;border-radius:10px;padding:14px 18px;margin:18px 0;color:var(--mut);font-size:14px}
+  .note b{color:var(--acc3)}
+  .note.violet{border-left-color:var(--acc4);background:#130f1c}
+  .note.violet b{color:var(--acc4)}
+  .note.cyan{border-left-color:var(--acc);background:#08141c}
+  .note.cyan b{color:var(--acc)}
+
+  /* ---- toc ---- */
+  nav.toc{position:sticky;top:0;z-index:20;background:rgba(12,16,24,.86);backdrop-filter:blur(9px);border-bottom:1px solid var(--line)}
+  nav.toc .wrap{display:flex;gap:18px;flex-wrap:wrap;padding:12px 22px;font-family:var(--mono);font-size:12.5px}
+  nav.toc a{color:var(--mut)}
+  nav.toc a:hover{color:var(--ink);text-decoration:none}
+
+  footer{padding:40px 0 70px;color:var(--dim);font-size:13px}
+  .small{font-size:12.5px;color:var(--dim)}
+  .arrow{color:var(--dim)}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Funhouse Agent · Developer Build Guide</p>
+    <h1>Agentic retrieval, <span class="grad">from PDF to cited answer</span><br>— and how to build your own in Funhouse</h1>
+    <p class="lede">A code-level walkthrough of how the <b>geotech-references</b> submodule and the <b>funhouse_agent</b> harness fit together to do <i>agentic</i> retrieval — an LLM that searches, drills in, and reads charts with vision, rather than a one-shot vector lookup. Follow the data from a source PDF all the way to the tool the model calls, then copy the pattern for your own bot.</p>
+    <div class="pills">
+      <span class="pill"><b>2</b> repos · submodule + harness</span>
+      <span class="pill"><b>SQLite FTS5</b> retrieval engine</span>
+      <span class="pill"><b>3</b> modalities · text · python · figure+vision</span>
+      <span class="pill"><b>consult</b> sub-agent scoping</span>
+      <span class="pill">native + ReAct tool loops</span>
+    </div>
+  </div>
+</header>
+
+<nav class="toc">
+  <div class="wrap">
+    <a href="#map">① The map</a>
+    <a href="#submodule">② Inside the submodule</a>
+    <a href="#engine">③ The retrieval engine</a>
+    <a href="#tools">④ Tools the model sees</a>
+    <a href="#loop">⑤ The agentic loop</a>
+    <a href="#patterns">⑥ Why it's agentic</a>
+    <a href="#build">⑦ Build your own</a>
+    <a href="#files">Appendix · file map</a>
+  </div>
+</nav>
+
+<section id="map">
+  <div class="wrap">
+    <p class="kicker">The big picture</p>
+    <h2><span class="n">01</span>Two layers: a retrieval engine, and a harness that drives it</h2>
+    <p class="sub">The system splits cleanly along a seam worth copying. The <b>geotech-references</b> submodule is a pure-Python <i>library</i>: digitized data plus a retrieval engine, with <b>no LLM and no agent loop inside it</b>. The <b>funhouse_agent</b> harness is the <i>agent</i>: an engine-agnostic loop that turns the library's functions into tools the model can call. The same library is wrapped two ways — as standalone Foundry functions <i>and</i> as Funhouse adapters — so the retrieval logic is written once and reused.</p>
+
+    <div class="diagram">
+      <svg viewBox="0 0 1140 660" role="img" aria-label="Layered architecture from source PDFs up to the LLM">
+        <defs>
+          <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M0,0 L9,4.5 L0,9 z" fill="#6b778c"/>
+          </marker>
+          <marker id="arv" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M0,0 L9,4.5 L0,9 z" fill="#c8a0ff"/>
+          </marker>
+          <style>
+            .lbl{font-family:var(--mono,monospace);font-size:12px;fill:#e8edf6}
+            .sub{font-family:var(--mono,monospace);font-size:10.5px;fill:#9aa7bd}
+            .zone{font-family:var(--mono,monospace);font-size:11px;letter-spacing:.12em;fill:#6b778c}
+            .box{rx:9;stroke-width:1}
+          </style>
+        </defs>
+
+        <!-- ZONE: references submodule -->
+        <rect x="20" y="40" width="700" height="470" rx="14" fill="#0e1626" stroke="#27324a"/>
+        <text x="40" y="66" class="zone">geotech-references  (submodule · pure python · pip install -e)</text>
+
+        <!-- L1 source -->
+        <text x="40" y="100" class="zone" fill="#7df0c0">① SOURCE</text>
+        <rect class="box" x="40" y="110" width="200" height="56" fill="#10211a" stroke="#7df0c0"/>
+        <text x="56" y="134" class="lbl">docs/*.pdf</text>
+        <text x="56" y="152" class="sub">DM7 · GEC · UFC · FHWA</text>
+        <text x="262" y="142" class="sub">hand-digitized by Claude Code →</text>
+
+        <!-- L2 data forms -->
+        <text x="40" y="196" class="zone" fill="#7df0c0">② DIGITIZED DATA  (three forms, committed to the repo)</text>
+        <rect class="box" x="40" y="206" width="210" height="78" fill="#10211a" stroke="#7df0c0"/>
+        <text x="56" y="230" class="lbl">tables.py · figures.py</text>
+        <text x="56" y="248" class="sub">equations.py</text>
+        <text x="56" y="266" class="sub">callable lookup fns</text>
+
+        <rect class="box" x="262" y="206" width="210" height="78" fill="#0c1c24" stroke="#5cc8ff"/>
+        <text x="278" y="230" class="lbl">text/chapterNN.json</text>
+        <text x="278" y="248" class="sub">body · key_points</text>
+        <text x="278" y="266" class="sub">equations · figures · tables</text>
+
+        <rect class="box" x="484" y="206" width="216" height="78" fill="#231806" stroke="#ffb86b"/>
+        <text x="500" y="230" class="lbl">figures_catalog.json</text>
+        <text x="500" y="248" class="sub">number · caption · pdf_page</text>
+        <text x="500" y="266" class="sub">concept-enriched desc</text>
+
+        <!-- L3 engine -->
+        <text x="40" y="318" class="zone" fill="#c8a0ff">③ RETRIEVAL ENGINE  (private _modules — build index lazily, rank, expand)</text>
+        <rect class="box" x="40" y="328" width="210" height="86" fill="#0c1c24" stroke="#5cc8ff"/>
+        <text x="56" y="352" class="lbl">_retrieval_db.py</text>
+        <text x="56" y="370" class="sub">FTS5 over text JSON</text>
+        <text x="56" y="388" class="sub">reference_search /</text>
+        <text x="56" y="404" class="sub">_get / _query · bm25</text>
+
+        <rect class="box" x="262" y="328" width="210" height="86" fill="#231806" stroke="#ffb86b"/>
+        <text x="278" y="352" class="lbl">_figures_db.py</text>
+        <text x="278" y="370" class="sub">FTS5 over catalog</text>
+        <text x="278" y="388" class="sub">figure_search / _get /</text>
+        <text x="278" y="404" class="sub">resolve_pdf → page</text>
+
+        <rect class="box" x="484" y="328" width="216" height="86" fill="#130f1c" stroke="#c8a0ff"/>
+        <text x="500" y="352" class="lbl">_query_expansion.py</text>
+        <text x="500" y="370" class="sub">synonym recall lever</text>
+        <text x="500" y="388" class="sub">off / fill / rerank /</text>
+        <text x="500" y="404" class="sub">auto (default)</text>
+
+        <!-- L4 access -->
+        <text x="40" y="448" class="zone" fill="#9aa7bd">④ ACCESS WRAPPERS  (thin — same engine, two front doors)</text>
+        <rect class="box" x="40" y="458" width="320" height="40" fill="#161d2e" stroke="#27324a"/>
+        <text x="56" y="483" class="lbl">agents/references_agent.py <tspan class="sub">· @function ×6 (Foundry)</tspan></text>
+
+        <rect class="box" x="372" y="458" width="328" height="40" fill="#161d2e" stroke="#27324a"/>
+        <text x="388" y="483" class="lbl">funhouse_agent/adapters/* <tspan class="sub">· flat-JSON bridge</tspan></text>
+
+        <!-- ZONE: harness -->
+        <rect x="752" y="40" width="368" height="470" rx="14" fill="#120f1c" stroke="#3a2d52"/>
+        <text x="772" y="66" class="zone" fill="#c8a0ff">funhouse_agent  (the harness · engine-agnostic)</text>
+
+        <rect class="box" x="772" y="92" width="328" height="64" fill="#161d2e" stroke="#27324a"/>
+        <text x="788" y="116" class="lbl">dispatch.py</text>
+        <text x="788" y="134" class="sub">call_agent / list_methods /</text>
+        <text x="788" y="150" class="sub">describe_method + scoping</text>
+
+        <rect class="box" x="772" y="170" width="328" height="74" fill="#130f1c" stroke="#c8a0ff"/>
+        <text x="788" y="194" class="lbl">reviewer.py → consult_references</text>
+        <text x="788" y="212" class="sub">reference-scoped GeotechAgent</text>
+        <text x="788" y="230" class="sub">(allowed_agents = REFERENCE_MODULES)</text>
+
+        <rect class="box" x="772" y="258" width="328" height="88" fill="#161d2e" stroke="#27324a"/>
+        <text x="788" y="282" class="lbl">agent.py · GeotechAgent</text>
+        <text x="788" y="300" class="sub">ReAct loop  |  native tool loop</text>
+        <text x="788" y="318" class="sub">reference_mode · max_rounds</text>
+        <text x="788" y="336" class="sub">vision: read_reference_figure</text>
+
+        <rect class="box" x="772" y="360" width="328" height="56" fill="#0d1622" stroke="#5cc8ff"/>
+        <text x="788" y="384" class="lbl">engine.py · GenAIEngine protocol</text>
+        <text x="788" y="402" class="sub">Claude · Native(OpenAI) · Prompter</text>
+
+        <rect class="box" x="772" y="432" width="328" height="56" fill="#1a1326" stroke="#c8a0ff"/>
+        <text x="788" y="456" class="lbl">🤖  LLM</text>
+        <text x="788" y="474" class="sub">picks &amp; calls tools each round</text>
+
+        <!-- flow arrows submodule -->
+        <line x1="140" y1="166" x2="140" y2="204" stroke="#6b778c" marker-end="url(#ar)"/>
+        <line x1="145" y1="284" x2="145" y2="326" stroke="#6b778c" marker-end="url(#ar)"/>
+        <line x1="367" y1="284" x2="367" y2="326" stroke="#6b778c" marker-end="url(#ar)"/>
+        <line x1="590" y1="284" x2="590" y2="326" stroke="#6b778c" marker-end="url(#ar)"/>
+        <line x1="200" y1="414" x2="200" y2="456" stroke="#6b778c" marker-end="url(#ar)"/>
+        <line x1="540" y1="414" x2="540" y2="456" stroke="#6b778c" marker-end="url(#ar)"/>
+
+        <!-- engine reused by both wrappers (dashed) -->
+        <path d="M150,414 C150,440 360,440 360,456" fill="none" stroke="#27324a" stroke-dasharray="3 3"/>
+
+        <!-- harness pulls adapters -->
+        <line x1="700" y1="478" x2="770" y2="300" stroke="#c8a0ff" stroke-dasharray="4 3" marker-end="url(#arv)"/>
+        <text x="712" y="372" class="sub" fill="#c8a0ff" transform="rotate(-26 712 372)">imports adapters</text>
+
+        <!-- internal harness arrows -->
+        <line x1="936" y1="346" x2="936" y2="358" stroke="#6b778c" marker-end="url(#ar)"/>
+        <line x1="936" y1="416" x2="936" y2="430" stroke="#6b778c" marker-end="url(#ar)"/>
+        <line x1="936" y1="244" x2="936" y2="256" stroke="#6b778c" marker-end="url(#ar)"/>
+
+        <!-- bottom caption -->
+        <text x="40" y="540" class="sub">Read bottom-up on the left (data → engine → wrappers); the harness on the right imports the wrappers and exposes them to the model.</text>
+        <text x="40" y="560" class="sub" fill="#c8a0ff">The whole left box has zero LLM dependency. Swap in your own corpus there and the right box is unchanged.</text>
+
+        <!-- legend chips -->
+        <rect x="40" y="586" width="14" height="14" rx="3" fill="#10211a" stroke="#7df0c0"/><text x="62" y="598" class="sub">python lookups</text>
+        <rect x="200" y="586" width="14" height="14" rx="3" fill="#0c1c24" stroke="#5cc8ff"/><text x="222" y="598" class="sub">text retrieval</text>
+        <rect x="350" y="586" width="14" height="14" rx="3" fill="#231806" stroke="#ffb86b"/><text x="372" y="598" class="sub">figure + vision</text>
+        <rect x="510" y="586" width="14" height="14" rx="3" fill="#130f1c" stroke="#c8a0ff"/><text x="532" y="598" class="sub">orchestration / harness</text>
+      </svg>
+    </div>
+
+    <div class="tldr">
+      <h3>The recipe in six moves</h3>
+      <ol>
+        <li><b>Digitize once, in plain Python.</b> Turn your corpus into committed data: callable lookups, structured JSON, a figure catalog. No LLM in the library.</li>
+        <li><b>Index lazily with SQLite FTS5.</b> Build a BM25 full-text index into a temp DB on first call; rebuild only when source files change.</li>
+        <li><b>Expose summary-first tools.</b> <code>search</code> returns ranked summaries; <code>get</code> fetches one full section. Cheap to scan, then drill in.</li>
+        <li><b>Add a recall lever.</b> A dependency-free synonym expansion fixes vocabulary gaps that stemming can't (and is far cheaper than embeddings).</li>
+        <li><b>Wrap as tools, scope with a sub-agent.</b> A reference-only consultant keeps the primary agent's tool surface small and forces citations.</li>
+        <li><b>For charts, find-with-text, read-with-pixels.</b> Locate a figure lexically, render the page, and let a vision model read the value off it.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section id="submodule">
+  <div class="wrap">
+    <p class="kicker">Inside the references submodule</p>
+    <h2><span class="n">02</span>How the Python comes together: data → engine → wrappers</h2>
+    <p class="sub">Each reference (a manual, a code, an FHWA circular) is one package directory. The data lives in three complementary forms, all written by hand from the source PDF — never auto-generated at query time. The private <code>_*.py</code> modules are the engine that turns that data into ranked, drillable results.</p>
+
+    <div class="codecap">geotech-references/geotech_references/  ·  one dir per reference + shared engine</div>
+<pre>
+geotech_references/
+  <span class="f">_retrieval.py</span>          <span class="c"># in-memory load/search of text JSON (no DB)</span>
+  <span class="f">_retrieval_db.py</span>       <span class="c"># SQLite FTS5 over ALL text JSON  → reference_search/_get/_query</span>
+  <span class="f">_figures_db.py</span>         <span class="c"># SQLite FTS5 over figure catalogs → figure_search/_get/resolve_pdf</span>
+  <span class="f">_query_expansion.py</span>    <span class="c"># synonym recall lever (off/fill/rerank/auto)</span>
+  <span class="f">_interpolation.py</span>      <span class="c"># shared _linterp helper for the lookup fns</span>
+  dm7_1/
+    chapter1.py ... chapter8.py   <span class="c"># figure_X_Y_*() / table_X_Y_*() callables</span>
+    text/chapter1.json ...        <span class="c"># {sections:[{section_id,title,summary,body,</span>
+    figures_catalog.json          <span class="c">#   key_points,equations,figures,tables,applicability}]}</span>
+  gec_10/  gec_11/  micropile/  ufc_backfill/  ...   <span class="c"># same shape, 21 references</span>
+</pre>
+
+    <div class="grid g3" style="margin-top:8px">
+      <div class="card lead-green">
+        <h4>Python lookups <span class="tag">exact</span></h4>
+        <p>A digitized chart or table becomes a function: input the independent variables, get the interpolated value back. Deterministic, unit-checked, test-covered.</p>
+        <span class="file">dm7_2/chapter4.py → figure_4_12_log_spiral_kp(...)</span>
+      </div>
+      <div class="card lead-cyan">
+        <h4>Structured text <span class="tag">searchable</span></h4>
+        <p>Each chapter is JSON: sections carry a one-line <code>summary</code>, full <code>body</code>, <code>key_points</code>, and cross-links to equations/figures/tables. This is what the FTS index is built from.</p>
+        <span class="file">gec_10/text/chapter10.json</span>
+      </div>
+      <div class="card lead-amber">
+        <h4>Figure catalog <span class="tag">find→read</span></h4>
+        <p>Every figure's number, caption, true PDF page, and a concept-enriched description (pulled from the chapter text) so a meaning query finds a chart whose caption is just notation.</p>
+        <span class="file">dm7_2/figures_catalog.json (252 figures)</span>
+      </div>
+    </div>
+
+    <div class="note cyan"><b>Key idea —</b> the three forms are not redundant; they are three <i>access modalities</i> over the same source. A value that was digitized is served exactly by a Python lookup; narrative is served by text search; and anything only available as a chart is served by figure-search + vision read-off. The agent picks the modality.</div>
+  </div>
+</section>
+
+<section id="engine">
+  <div class="wrap">
+    <p class="kicker">The retrieval engine</p>
+    <h2><span class="n">03</span>SQLite FTS5, built lazily, ranked by BM25, widened by synonyms</h2>
+    <p class="sub">There is no vector store and no embedding service. Retrieval is lexical: an FTS5 virtual table with porter stemming, ranked by BM25. The DB is a build artifact — created in a temp dir on first call and rebuilt automatically whenever any source JSON is newer than the index. This keeps the repo clean and the index always fresh.</p>
+
+    <div class="codecap">_retrieval_db.py · the index schema (built once, lazily)</div>
+<pre>
+<span class="k">def</span> <span class="f">_build_db</span>(db_path):
+    cur.execute(<span class="s">"""
+      CREATE TABLE sections (
+        reference, reference_title, chapter, chapter_title,
+        section_id, title, summary, body, key_points, applicability,
+        equations_json, figures_json, tables_json )"""</span>)
+    cur.execute(<span class="s">"""
+      CREATE VIRTUAL TABLE sections_fts USING fts5(
+        title, summary, body, key_points, applicability,
+        content=<span class="n">'sections'</span>, content_rowid=<span class="n">'rowid'</span>,
+        tokenize=<span class="n">'porter unicode61'</span> )"""</span>)        <span class="c"># ← stemming built in</span>
+    <span class="c"># walk every &lt;reference&gt;/text/*.json, INSERT one row per section,</span>
+    <span class="c"># then mirror the indexed columns into the FTS table.</span>
+
+<span class="k">def</span> <span class="f">_needs_rebuild</span>(db_path):
+    <span class="k">return</span> (<span class="k">not</span> db_path.exists()
+            <span class="k">or</span> db_path.stat().st_mtime &lt; _newest_source_mtime())  <span class="c"># self-healing</span>
+</pre>
+
+    <p class="sub" style="margin-top:24px">The public functions are deliberately shaped for an LLM: <b>search is summary-only</b> (the noise-reduction lever), and <b>get is the one place</b> the full body is paid for. Notice the strategy switch inside <code>reference_search</code> — the synonym expansion is applied as a re-rank that <i>pins the literal top-1</i>, so a query that was already good keeps its best hit while weaker queries gain recall.</p>
+
+    <div class="codecap">_retrieval_db.py · search = rank + expand; get = drill in</div>
+<pre>
+<span class="k">def</span> <span class="f">reference_search</span>(query, reference=<span class="k">None</span>, chapter=<span class="k">None</span>, limit=<span class="n">5</span>):
+    <span class="c"># run() = SELECT … FROM sections_fts MATCH ? ORDER BY bm25(sections_fts) LIMIT ?</span>
+    strategy = _qe.EXPANSION_STRATEGY                 <span class="c"># env GEOTECH_RETRIEVAL_EXPANSION</span>
+    <span class="k">if</span> strategy == <span class="s">"auto"</span>:                         <span class="c"># the default</span>
+        literal  = run(query)
+        combined = _qe.combined_query(query)          <span class="c"># "(query) OR synonym1 OR synonym2 …"</span>
+        rows = _qe.merge_hits([literal[<span class="n">0</span>]], run(combined), limit)   <span class="c"># pin top-1, rerank rest</span>
+    <span class="k">if</span> <span class="k">not</span> rows <span class="k">and</span> strategy != <span class="s">"off"</span>:            <span class="c"># zero-hit recall fallback</span>
+        rows = run(_qe.or_fallback(query))            <span class="c"># AND → OR-of-terms</span>
+    <span class="k">return</span> [_row_to_summary(r) <span class="k">for</span> r <span class="k">in</span> rows]   <span class="c"># ← summary only, NO body</span>
+
+<span class="k">def</span> <span class="f">reference_get</span>(reference, section_id):              <span class="c"># the drill-in</span>
+    <span class="k">return</span> _row_to_full(row)   <span class="c"># body + key_points + equations(implemented_in→python fn) + figures + tables</span>
+</pre>
+
+    <div class="grid g2">
+      <div class="card lead-violet">
+        <h4>Why expansion, not embeddings?</h4>
+        <p>Stemming closes <i>morphological</i> gaps (“pressures”→“pressure”) but not <i>synonym</i> gaps (“bored pile” vs “drilled shaft”, “interface friction” vs δ). A curated, dependency-free synonym table fixes that. Measured lift: recall@5 <b>11% → 44%</b> with <b>zero</b> top-1 disturbance under <code>auto</code>. Text embeddings stay deferred; image embeddings were rejected for axis-labeled charts.</p>
+      </div>
+      <div class="card lead-amber">
+        <h4>Figures: find with text, read with pixels</h4>
+        <p><code>_figures_db.figure_search</code> ranks the catalog (same FTS5 pattern) and <code>resolve_pdf()</code> returns <code>(pdf_path, page_index)</code>. The harness renders that page at 220 DPI and hands the <i>actual image</i> to a vision model. CLIP-style image embeddings were explicitly rejected — they fit line charts poorly.</p>
+      </div>
+    </div>
+
+    <div class="note"><b>Safety in <code>reference_query</code> —</b> the raw-SQL escape hatch opens the DB <code>mode=ro</code>, regex-gates to <code>SELECT</code>/<code>WITH</code> only, rejects a forbidden-keyword set (INSERT/UPDATE/DROP/PRAGMA…), blocks multi-statements, and caps the result at 50 rows. Give the model power and a fence at the same time.</div>
+  </div>
+</section>
+
+<section id="tools">
+  <div class="wrap">
+    <p class="kicker">Tools the model sees</p>
+    <h2><span class="n">04</span>One engine, two front doors — Foundry functions &amp; Funhouse adapters</h2>
+    <p class="sub">The retrieval engine is wrapped twice so the same logic ships to two runtimes. <b>For Foundry</b>: <code>agents/references_agent.py</code> exposes six <code>@function</code>-decorated tools. <b>For Funhouse</b>: the thin adapters in <code>funhouse_agent/adapters/</code> bridge flat JSON ⇄ the engine and are what the harness loads. Both call the very same <code>_retrieval_db</code> / <code>_figures_db</code>.</p>
+
+    <div class="codecap">agents/references_agent.py · the Foundry surface (auto-fallback shim if Foundry absent)</div>
+<pre>
+<span class="k">try</span>:
+    <span class="k">from</span> functions.api <span class="k">import</span> function          <span class="c"># real Foundry decorator…</span>
+<span class="k">except</span> ImportError:
+    <span class="k">def</span> <span class="f">function</span>(fn): fn.__wrapped__ = fn; <span class="k">return</span> fn   <span class="c"># …else a no-op, so it runs anywhere</span>
+
+<span class="d">@function</span>
+<span class="k">def</span> <span class="f">reference_search</span>(query, reference=<span class="s">""</span>, chapter=<span class="n">0</span>, limit=<span class="n">5</span>) -> str:
+    <span class="s">"""Full-text search across all structured reference text.
+       Returns ranked summary-only hits — call reference_get to fetch the body.
+       This is the noise-reduction lever: use it first, then drill in."""</span>
+    <span class="k">from</span> geotech_references <span class="k">import</span> _retrieval_db
+    <span class="k">return</span> json.dumps(_retrieval_db.reference_search(query, …))
+</pre>
+
+    <table>
+      <thead><tr><th>Tool</th><th>Modality</th><th>What it returns</th><th>Next step</th></tr></thead>
+      <tbody>
+        <tr><td><code>reference_search</code></td><td><span style="color:var(--acc)">text</span></td><td>ranked <b>summaries</b> (ref, section_id, title, summary)</td><td><span class="arrow">→</span> <code>reference_get</code></td></tr>
+        <tr><td><code>reference_get</code></td><td><span style="color:var(--acc)">text</span></td><td>one full section: body, key_points, equations, figures, tables</td><td>cite it</td></tr>
+        <tr><td><code>reference_query</code></td><td><span style="color:var(--acc)">text</span></td><td>read-only SELECT (counts, GROUP BY, custom filters)</td><td>advanced only</td></tr>
+        <tr><td><code>lookup_reference</code></td><td><span style="color:var(--acc2)">python</span></td><td>exact value from a digitized table/figure/equation fn</td><td>use directly</td></tr>
+        <tr><td><code>list / describe_reference_method</code></td><td><span style="color:var(--acc2)">python</span></td><td>browse fns &amp; their parameter docs (introspected via <code>inspect</code>)</td><td><span class="arrow">→</span> <code>lookup_reference</code></td></tr>
+        <tr><td><code>figure_search</code></td><td><span style="color:var(--acc3)">figure</span></td><td>ranked figures + a <code>read_value</code> signpost (no value!)</td><td><span class="arrow">→</span> <code>read_reference_figure</code></td></tr>
+        <tr><td><code>read_reference_figure</code></td><td><span style="color:var(--acc3)">vision</span></td><td>renders the PDF page, vision-reads the value off the chart</td><td>cite (est.)</td></tr>
+      </tbody>
+    </table>
+
+    <div class="note cyan"><b>Self-describing tools.</b> <code>lookup_reference</code> doesn't hardcode a function list — <code>references_agent.py</code> walks each reference's submodules with <code>inspect.getmembers</code>, reads the numpydoc docstring, and synthesizes parameter types, defaults, and descriptions on the fly. Add a new <code>table_*()</code> function to a chapter file and it's instantly discoverable, no registry edit.</div>
+  </div>
+</section>
+
+<section id="loop">
+  <div class="wrap">
+    <p class="kicker">The agentic loop</p>
+    <h2><span class="n">05</span>How a question becomes a cited answer</h2>
+    <p class="sub">The harness is where “retrieval” becomes “<i>agentic</i> retrieval.” The model isn't handed a context blob — it runs a loop, choosing one tool per round, reacting to each result, and deciding when to drill in, switch modality, or stop. Reference access is delegated to a scoped <b>consult sub-agent</b> so the primary agent never carries the 21-reference surface itself.</p>
+
+    <div class="flow">
+      <div class="step"><span class="num">ROUND 0</span><b>User asks</b><span>“Per GEC-10, what α for drilled-shaft side resistance in clay, s<sub>u</sub>=80 kPa?” hits the primary <code>GeotechAgent.ask()</code>.</span></div>
+      <div class="step"><span class="num">DELEGATE</span><b>consult_references</b><span>Primary calls one tool: the consultant. A reference-scoped <code>GeotechAgent</code> spins up (<code>allowed_agents=REFERENCE_MODULES</code>, <code>reference_mode="off"</code> so no recursion).</span></div>
+      <div class="step"><span class="num">SEARCH</span><b>reference_search</b><span>Consultant runs FTS5 + synonym expansion → ranked <i>summaries</i>. Cheap scan picks the right GEC-10 section.</span></div>
+      <div class="step"><span class="num">DRILL</span><b>reference_get / lookup</b><span>Fetches the full section, or calls the digitized <code>α</code> figure function for the exact value at s<sub>u</sub>=80.</span></div>
+      <div class="step"><span class="num">CHART?</span><b>figure→vision</b><span>If the value only lives on a chart: <code>figure_search</code> → <code>read_reference_figure</code> renders the page and reads it off.</span></div>
+      <div class="step"><span class="num">ANSWER</span><b>cited result</b><span>Consultant returns a cited answer; primary folds it into the final response. Optional reviewer re-checks vs standards.</span></div>
+    </div>
+
+    <div class="codecap">funhouse_agent/agent.py + reviewer.py · the delegation, distilled</div>
+<pre>
+<span class="c"># In the primary agent's loop, a tool call named consult_references routes here:</span>
+<span class="k">def</span> <span class="f">consult_references</span>(engine, question, max_rounds=<span class="n">10</span>):
+    sub = GeotechAgent(
+        genai_engine   = engine,                 <span class="c"># same model → native tool calling for free</span>
+        allowed_agents = REFERENCE_MODULES,      <span class="c"># dm7, gec*, ufc_*, reference_db, figure_db…</span>
+        reference_mode = <span class="s">"off"</span>,                 <span class="c"># can't recurse into another consult</span>
+        review         = <span class="k">False</span>,
+    )
+    <span class="k">return</span> sub.ask(CONSULTANT_FRAMING + question).answer   <span class="c"># "act as a reference librarian; CITE everything"</span>
+
+<span class="c"># dispatch.py enforces the scope at the door — anything outside the whitelist is invisible:</span>
+<span class="k">def</span> <span class="f">call_agent</span>(agent_name, method, parameters, allowed_agents=<span class="k">None</span>):
+    <span class="k">if</span> <span class="k">not</span> _is_visible(agent_name, allowed_agents):
+        <span class="k">return</span> {<span class="s">"error"</span>: <span class="s">f"Unknown module '{agent_name}'. Available: …"</span>}
+</pre>
+
+    <div class="grid g3">
+      <div class="card lead-violet">
+        <h4>Two loop flavors</h4>
+        <p><b>Native</b> (OpenAI <code>tools</code> param) when the engine advertises <code>native_tool_calling</code> — structured <code>tool_calls</code>. Otherwise <b>ReAct</b>: the model emits <code>&lt;tool_call&gt;</code> XML that the harness parses. Same dispatch underneath.</p>
+      </div>
+      <div class="card lead-violet">
+        <h4>reference_mode</h4>
+        <p><code>anytime</code> (default) always offers the consultant and scopes the primary to analysis modules; <code>after_calc</code> offers it only once a calc has run; <code>off</code> leaves the reference modules directly callable (legacy).</p>
+      </div>
+      <div class="card lead-violet">
+        <h4>Engine-agnostic</h4>
+        <p>Anything satisfying the <code>GenAIEngine</code> protocol (a <code>chat()</code>, optional <code>analyze_image()</code>) drives it: <code>ClaudeEngine</code>, <code>NativeToolEngine</code>, or the Funhouse Prompter bridge. The loop doesn't care which.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="patterns">
+  <div class="wrap">
+    <p class="kicker">Why it's agentic, not just RAG</p>
+    <h2><span class="n">06</span>Five design patterns that do the heavy lifting</h2>
+    <p class="sub">A vector-DB RAG call stuffs top-k chunks into context and hopes. These patterns instead make the <i>right behavior the path of least resistance</i> — the model is nudged toward verifying rather than guessing.</p>
+
+    <div class="grid g2">
+      <div class="card lead-cyan">
+        <h4>① Summary-first noise reduction</h4>
+        <p><code>search</code> returns only one-line summaries; the costly <code>body</code> is paid for exactly once, in <code>get</code>, after the model has chosen the section. Context stays clean; the model scans, then commits.</p>
+      </div>
+      <div class="card lead-amber">
+        <h4>② Starve the shortcut</h4>
+        <p>A figure search hit carries <b>no chart value</b> — only an identity plus a <code>read_value</code> instruction pointing at <code>read_reference_figure</code>. With nothing to guess from, the vision read-off becomes the easiest path, killing the “answer from the caption / from memory” failure (Fig 4-12 K<sub>p</sub>: confabulated ≈9.0 → read-off ≈5.3).</p>
+      </div>
+      <div class="card lead-violet">
+        <h4>③ Scoped consult sub-agent</h4>
+        <p>Reference access is one tool, not 21 modules, on the primary. The consultant is whitelisted to reference modules and framed as a librarian that must cite. Small tool surface = far less method/module-name guessing.</p>
+      </div>
+      <div class="card lead-green">
+        <h4>④ Recall lever &gt; precision risk</h4>
+        <p>Synonym expansion as a re-rank that <i>pins the literal top-1</i>: good queries are undisturbed, weak ones gain recall. A cheap, auditable table beats an embedding service for a closed technical vocabulary.</p>
+      </div>
+      <div class="card lead-violet">
+        <h4>⑤ Smart method resolution</h4>
+        <p>When the model guesses a method name that's really a parameter value (<code>call_agent('bearing_capacity','vesic')</code>), dispatch detects the selector-value, suggests the real call, or routes a curated alias — turning a dead-end error into progress.</p>
+      </div>
+      <div class="card lead-amber">
+        <h4>⑥ Self-healing, zero-config index</h4>
+        <p>The FTS DB rebuilds when sources change and lives in a temp dir, so there's no migration step and no stale index. Editable install means data edits are live from source.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="build">
+  <div class="wrap">
+    <p class="kicker">Build your own Funhouse bot</p>
+    <h2><span class="n">07</span>Port the pattern to your domain in five files</h2>
+    <p class="sub">Nothing here is geotech-specific. To stand up agentic retrieval over <i>your</i> corpus in Funhouse, copy the seam: a pure-Python retrieval library, thin tool wrappers, and a scoped agent loop. Here's the minimal skeleton.</p>
+
+    <div class="codecap">① retrieval_engine.py — the library (no LLM here)</div>
+<pre>
+<span class="k">import</span> sqlite3, tempfile, json, pathlib
+
+<span class="k">def</span> <span class="f">_ensure_db</span>():
+    db = pathlib.Path(tempfile.gettempdir()) / <span class="s">"mycorpus_fts.sqlite"</span>
+    <span class="k">if</span> _needs_rebuild(db):           <span class="c"># compare db mtime to newest source file</span>
+        _build_fts5(db)              <span class="c"># CREATE VIRTUAL TABLE … USING fts5(title, summary, body, tokenize='porter')</span>
+    <span class="k">return</span> db
+
+<span class="k">def</span> <span class="f">search</span>(query, limit=<span class="n">5</span>):       <span class="c"># SUMMARY-ONLY — the noise-reduction lever</span>
+    rows = _run(<span class="s">"SELECT id,title,summary FROM docs_fts WHERE docs_fts MATCH ? "</span>
+                <span class="s">"ORDER BY bm25(docs_fts) LIMIT ?"</span>, [combined_query(query), limit])
+    <span class="k">return</span> [dict(r) <span class="k">for</span> r <span class="k">in</span> rows]
+
+<span class="k">def</span> <span class="f">get</span>(doc_id):               <span class="c"># the drill-in — full body paid for once</span>
+    <span class="k">return</span> _fetch_full(doc_id)
+</pre>
+
+    <div class="codecap">② tools.py — wrap each engine fn as a Funhouse/Foundry @function with a docstring the model reads</div>
+<pre>
+<span class="d">@function</span>
+<span class="k">def</span> <span class="f">corpus_search</span>(query: str, limit: int = <span class="n">5</span>) -> str:
+    <span class="s">"""Search the corpus. Returns ranked SUMMARIES only — call corpus_get for the body.
+       Run this FIRST to scope, then drill in."""</span>
+    <span class="k">return</span> json.dumps(retrieval_engine.search(query, limit))
+
+<span class="d">@function</span>
+<span class="k">def</span> <span class="f">corpus_get</span>(doc_id: str) -> str:
+    <span class="s">"""Fetch the full body of one document by id (use after corpus_search)."""</span>
+    <span class="k">return</span> json.dumps(retrieval_engine.get(doc_id))
+</pre>
+
+    <div class="codecap">③ agent — a scoped consultant + a loop (engine-agnostic)</div>
+<pre>
+agent = GeotechAgent(                       <span class="c"># or your own loop over the GenAIEngine protocol</span>
+    genai_engine   = NativeToolEngine(fh_prompter),   <span class="c"># Funhouse Prompter → native tool calling</span>
+    allowed_agents = {<span class="s">"corpus_db"</span>},               <span class="c"># scope: only your retrieval tools</span>
+    reference_mode = <span class="s">"anytime"</span>,
+)
+print(agent.ask(<span class="s">"What does the spec say about X, and cite the section?"</span>).answer)
+</pre>
+
+    <div class="grid g3" style="margin-top:6px">
+      <div class="card lead-green"><h4>Do</h4>
+        <p>Keep the library LLM-free · make <code>search</code> summary-only · write tool docstrings <i>for the model</i> (say what to call next) · scope the agent's tools · render+vision for anything that's a chart.</p></div>
+      <div class="card lead-amber"><h4>Skip (at first)</h4>
+        <p>A vector DB — start lexical (FTS5 + BM25 + a synonym table); it's cheaper, debuggable, and often enough. Add embeddings only when recall plateaus.</p></div>
+      <div class="card lead-violet"><h4>Steal</h4>
+        <p>The starve-the-shortcut signpost · the read-only SQL fence · lazy self-healing index · selector-value method resolution · the pin-top-1 re-rank.</p></div>
+    </div>
+
+    <div class="note violet"><b>Why a sub-agent instead of just more tools?</b> Every tool you add to the primary widens its choice space and its error rate. Delegating retrieval to a <i>scoped</i> consultant keeps the primary's surface tiny, lets the consultant specialize (the “cite everything” framing), and prevents a reference lookup from accidentally calling a compute tool. In live testing this single change cut method- and module-name guessing materially.</div>
+  </div>
+</section>
+
+<section id="files">
+  <div class="wrap">
+    <p class="kicker">Appendix</p>
+    <h2><span class="n">08</span>File map — where to look</h2>
+    <p class="sub">The exact files behind every box in the diagram.</p>
+    <table>
+      <thead><tr><th>Concern</th><th>File</th><th>Role</th></tr></thead>
+      <tbody>
+        <tr><td>Text index</td><td><code>geotech-references/geotech_references/_retrieval_db.py</code></td><td>FTS5 build + <code>reference_search</code>/<code>_get</code>/<code>_query</code></td></tr>
+        <tr><td>Figure index</td><td><code>…/geotech_references/_figures_db.py</code></td><td>FTS5 over catalogs + <code>resolve_pdf()</code></td></tr>
+        <tr><td>Recall lever</td><td><code>…/geotech_references/_query_expansion.py</code></td><td>synonym groups, strategies, <code>combined_query</code></td></tr>
+        <tr><td>Digitized data</td><td><code>…/&lt;ref&gt;/{tables,figures,equations}.py</code> · <code>text/*.json</code> · <code>figures_catalog.json</code></td><td>the three data forms</td></tr>
+        <tr><td>Foundry tools</td><td><code>geotech-references/agents/references_agent.py</code></td><td>6 <code>@function</code> wrappers, introspective lookup</td></tr>
+        <tr><td>Funhouse adapters</td><td><code>funhouse_agent/adapters/reference_db_adapter.py</code> · <code>figure_db_adapter.py</code></td><td>flat-JSON bridge to the engine</td></tr>
+        <tr><td>Agent loop</td><td><code>funhouse_agent/agent.py</code></td><td><code>GeotechAgent</code> — native + ReAct loops, vision</td></tr>
+        <tr><td>Dispatch + scoping</td><td><code>funhouse_agent/dispatch.py</code></td><td><code>call_agent</code>, <code>REFERENCE_MODULES</code>, method resolution</td></tr>
+        <tr><td>Consult sub-agent</td><td><code>funhouse_agent/reviewer.py</code></td><td><code>consult_references</code> (scoped librarian) + reviewer</td></tr>
+        <tr><td>Vision read-off</td><td><code>funhouse_agent/vision_tools.py</code></td><td><code>read_reference_figure</code> (render 220 DPI → vision)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>Generated walkthrough of the <span class="mono">geotech-references</span> + <span class="mono">funhouse_agent</span> agentic-retrieval stack · open this file in any browser. Code excerpts are distilled for readability — see the listed files for the authoritative implementation.</p>
+  </div>
+</footer>
+
+</body>
+</html>
