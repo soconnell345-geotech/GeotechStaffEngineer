@@ -39,6 +39,21 @@ class ShaftSoilLayer:
         Unconfined compressive strength for rock (kPa).
     RQD : float, optional
         Rock Quality Designation (%). Default 100.
+    N1_60 : float, optional
+        Overburden-corrected SPT blow count (N1)60. Only used by the GEC-10
+        rational beta method (``beta_method="rational"``) to seed phi' via
+        phi' = 27.5 + 9.2*log10[(N1)60]. Default 0.0 (unused).
+    sigma_v_ref : float, optional
+        Reference effective vertical stress (kPa) for the OCR in the rational
+        beta method — the historical / pre-scour maximum stress the layer has
+        experienced. Default 0.0 -> use the current profile sigma'v (the normal
+        no-scour case). Set it higher than the current sigma'v to model a
+        scour-reduced design stress (GEC-10 Appendix A: OCR uses the no-scour
+        sigma'v = 4,645 psf while fs uses the scoured sigma'v = 2,266 psf).
+    OCR : float, optional
+        Direct overconsolidation-ratio override for the rational beta method.
+        Default 0.0 -> compute OCR = sigma'p/sigma_v_ref from N60. If > 0 it is
+        used as given (N60/sigma_v_ref then not needed for beta).
     description : str, optional
         Layer description.
     """
@@ -50,6 +65,9 @@ class ShaftSoilLayer:
     N60: float = 0.0
     qu: float = 0.0
     RQD: float = 100.0
+    N1_60: float = 0.0
+    sigma_v_ref: float = 0.0
+    OCR: float = 0.0
     description: str = ""
 
     def __post_init__(self):

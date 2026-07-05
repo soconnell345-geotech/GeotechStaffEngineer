@@ -17,6 +17,8 @@ from drilled_shaft.side_resistance import (
     alpha_cohesive, side_resistance_cohesive,
     beta_cohesionless, side_resistance_cohesionless,
     side_resistance_rock, PA,
+    phi_prime_from_N1_60, preconsolidation_stress, k0_from_ocr,
+    beta_cohesionless_rational, su_to_ciuc, alpha_cohesive_rational,
 )
 from drilled_shaft.end_bearing import (
     Nc_drilled_shaft, end_bearing_cohesive,
@@ -624,3 +626,115 @@ class TestLRFD:
         lrfd = apply_lrfd(result, tip_soil_type="cohesive")
         expected = 1000 * 0.45 + 500 * 0.40
         assert abs(lrfd["phi_Qn_kN"] - expected) < 0.1
+
+
+# ================================================================
+# GEC-10 rational side-resistance chains (opt-in, default-preserving)
+# ================================================================
+class TestRationalSideResistance:
+    def test_phi_from_N1_60(self):
+        # (N1)60 = 21 -> phi' = 27.5 + 9.2*log10(21) ~ 39.66 deg (GEC-10 App A: 40)
+        assert phi_prime_from_N1_60(21) == pytest.approx(39.66, abs=0.05)
+        with pytest.raises(ValueError):
+            phi_prime_from_N1_60(0)
+
+    def test_preconsolidation_stress(self):
+        # sigma'p = 0.47*pa*N60^0.6; N60=30, pa=101.325 -> 366.5 kPa
+        assert preconsolidation_stress(30) == pytest.approx(366.5, rel=0.01)
+        with pytest.raises(ValueError):
+            preconsolidation_stress(-1)
+
+    def test_k0_from_ocr(self):
+        # Ko = (1-sin40)*1.65^sin40 ~ 0.49
+        assert k0_from_ocr(40.0, 1.65) == pytest.approx(0.49, abs=0.01)
+        # NC (OCR=1): Ko = 1 - sin phi'
+        assert k0_from_ocr(30.0, 1.0) == pytest.approx(0.5, abs=1e-6)
+
+    def test_beta_rational_matches_gec10(self):
+        # phi'=40, OCR=1.65, delta=phi' -> beta ~ 0.41 (GEC-10 App A Layer 3)
+        assert beta_cohesionless_rational(40.0, 1.65) == pytest.approx(0.41, abs=0.01)
+
+    def test_beta_rational_delta_override(self):
+        # delta < phi' lowers beta
+        full = beta_cohesionless_rational(40.0, 1.65)
+        reduced = beta_cohesionless_rational(40.0, 1.65, delta=30.0)
+        assert reduced < full
+
+    def test_su_to_ciuc_transforms(self):
+        su_uu, sv0 = 1750 * 0.04788, 2114 * 0.04788  # kPa
+        # UC pair (0.893/0.513): su(CIUC) ~ 2057 psf (GEC-10 App A Layer 4)
+        assert su_to_ciuc(su_uu, sv0, "uc") / 0.04788 == pytest.approx(2057, rel=0.01)
+        # UU pair differs slightly
+        assert su_to_ciuc(su_uu, sv0, "uu") != su_to_ciuc(su_uu, sv0, "uc")
+        # ciuc -> unchanged
+        assert su_to_ciuc(su_uu, sv0, "ciuc") == su_uu
+        with pytest.raises(ValueError):
+            su_to_ciuc(su_uu, sv0, "bogus")
+
+    def test_alpha_rational_matches_gec10(self):
+        su_ciuc = 2057 * 0.04788
+        assert alpha_cohesive_rational(su_ciuc) == pytest.approx(0.47, abs=0.01)
+        with pytest.raises(ValueError):
+            alpha_cohesive_rational(0)
+
+    def test_high_level_beta_rational_vs_depth_default(self):
+        """beta_method='rational' changes the sand side resistance; the default
+        'depth' path is unchanged."""
+        shaft = DrillShaft(diameter=8 * 0.3048, length=3.0 + 20 * 0.3048, casing_depth=3.0)
+        layers = [
+            ShaftSoilLayer(3.0, "cohesionless", 18.0, phi=30),
+            ShaftSoilLayer(20 * 0.3048, "cohesionless", 17.9, phi=40, N60=30,
+                           N1_60=21, sigma_v_ref=4645 * 0.04788, description="sand"),
+        ]
+        soil = ShaftSoilProfile(layers=layers)
+        rational = DrillShaftAnalysis(shaft=shaft, soil=soil, beta_method="rational").compute()
+        depth = DrillShaftAnalysis(shaft=shaft, soil=soil).compute()  # default
+        sand_r = next(lb for lb in rational.layer_breakdown if lb.get("description") == "sand")
+        sand_d = next(lb for lb in depth.layer_breakdown if lb.get("description") == "sand")
+        assert "rational" in sand_r["method"]
+        assert "rational" not in sand_d["method"]
+        # rational beta 0.413 vs depth-floored 0.25 -> larger side resistance
+        assert sand_r["side_resistance_kN"] > sand_d["side_resistance_kN"]
+
+    def test_high_level_alpha_rational_vs_aashto_default(self):
+        shaft = DrillShaft(diameter=8 * 0.3048, length=3.0 + 15 * 0.3048 + 3.0, casing_depth=3.0)
+        layers = [
+            ShaftSoilLayer(3.0, "cohesive", 18.0, cu=100.0),
+            ShaftSoilLayer(15 * 0.3048, "cohesive", 20.3, cu=1750 * 0.04788, description="clay"),
+            ShaftSoilLayer(3.0, "cohesionless", 19.0, phi=35),
+        ]
+        soil = ShaftSoilProfile(layers=layers)
+        rational = DrillShaftAnalysis(shaft=shaft, soil=soil,
+                                      alpha_method="rational", su_test_type="uc").compute()
+        aashto = DrillShaftAnalysis(shaft=shaft, soil=soil).compute()  # default
+        clay_r = next(lb for lb in rational.layer_breakdown if lb.get("description") == "clay")
+        clay_a = next(lb for lb in aashto.layer_breakdown if lb.get("description") == "clay")
+        assert float(clay_r["method"].split("=")[1].split()[0]) == pytest.approx(0.47, abs=0.02)
+        assert float(clay_a["method"].split("=")[1].split()[0]) == pytest.approx(0.55, abs=1e-6)
+
+    def test_invalid_method_selectors_raise(self):
+        shaft = DrillShaft(diameter=1.0, length=10.0)
+        soil = ShaftSoilProfile(layers=[
+            ShaftSoilLayer(10.0, "cohesionless", 18.0, phi=32, N60=20)])
+        with pytest.raises(ValueError):
+            DrillShaftAnalysis(shaft=shaft, soil=soil, beta_method="bogus")
+        with pytest.raises(ValueError):
+            DrillShaftAnalysis(shaft=shaft, soil=soil, alpha_method="bogus")
+        with pytest.raises(ValueError):
+            DrillShaftAnalysis(shaft=shaft, soil=soil, su_test_type="bogus")
+
+    def test_rational_beta_requires_N60_or_ocr(self):
+        shaft = DrillShaft(diameter=1.0, length=10.0)
+        soil = ShaftSoilProfile(layers=[
+            ShaftSoilLayer(10.0, "cohesionless", 18.0, phi=32)])  # no N60, no OCR
+        with pytest.raises(ValueError):
+            DrillShaftAnalysis(shaft=shaft, soil=soil, beta_method="rational").compute()
+
+    def test_rational_beta_direct_ocr_override(self):
+        """A layer OCR override bypasses the sigma'p/N60 computation."""
+        shaft = DrillShaft(diameter=1.0, length=10.0)
+        soil = ShaftSoilProfile(layers=[
+            ShaftSoilLayer(10.0, "cohesionless", 18.0, phi=40, OCR=1.65)])
+        result = DrillShaftAnalysis(shaft=shaft, soil=soil, beta_method="rational").compute()
+        sand = next(lb for lb in result.layer_breakdown if lb["soil_type"] == "cohesionless")
+        assert float(sand["method"].split("=")[1].split()[0]) == pytest.approx(0.41, abs=0.02)

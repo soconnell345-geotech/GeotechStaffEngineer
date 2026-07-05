@@ -16,8 +16,8 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 
 | Entry | Module | Our value | Published | Δ | Verdict | Notes |
 |-------|--------|-----------|-----------|---|---------|-------|
-| V-006 | drilled_shaft side (sand) | β=0.25 (depth-based, floored) | β=0.41 (rational OCR chain) | — | N/A (scope) | Module = O'Neill-Reese depth-based β (`1.5−0.245√z_ft`), not the GEC-10 (N1)60→φ′→OCR→Ko rational β. Documented coverage gap. |
-| V-007 | drilled_shaft side (clay) | α=0.55 (AASHTO) | α=0.47 (rational su-transform) | — | N/A (scope) | Module = AASHTO α (0.55, cu/pa≤1.5), not the GEC-10 `0.30+0.17/(su_CIUC/pa)` with UU→CIUC transform. Documented gap. |
+| V-006 | drilled_shaft side (sand), `beta_method="rational"` | β=0.413; fSN=935 psf; RSN=470.2 kips (high-level path) | β=0.41; fSN=936 psf; RSN=470.7 kips (rational OCR chain) | β +0.7%, RSN −0.1% | **PASS** (v5.3) | The GEC-10 Appendix A rational β chain is now BUILT INTO the module ((N1)60→φ′=27.5+9.2·log10; σ′p=0.47·pa·N60^0.6; OCR=σ′p/σ′v_ref; Ko=(1−sinφ′)·OCR^(sinφ′)≤Kp; β=Ko·tanφ′) as the opt-in `beta_method="rational"`. Per-layer `sigma_v_ref` carries the no-scour σ′v (4,645 psf) for OCR while `fs` uses the scoured σ′v (2,266 psf). Reproduced through the high-level `DrillShaftAnalysis` path, no hand-fed coefficients. Default `beta_method="depth"` (O'Neill-Reese, floors at 0.25) byte-identical. Coverage gap CLOSED. |
+| V-007 | drilled_shaft side (clay), `alpha_method="rational"` | α=0.475; fSN=977 psf; RSN=367.8 kips (high-level path) | α=0.47; fSN=976 psf; RSN=368.1 kips (rational su-transform) | α +1.1%, RSN −0.1% | **PASS** (v5.3) | The GEC-10 Chen-2011 rational α is now BUILT INTO the module (`alpha_method="rational"`): su(UU)→su(CIUC) via the Chen & Kulhawy UC-pair transform (0.893+0.513·log10, `su_test_type="uc"`) → su(CIUC)=2,057 psf, then α=0.30+0.17/(su_CIUC/pa)=0.475, with `fs = α·su_CIUC`. Reproduced through the high-level path; the full 15-ft clay is active (bottom-1D exclusion lands in the bearing layer below). Default `alpha_method="aashto"` (0.55) byte-identical. Coverage gap CLOSED. |
 | V-008 | drilled_shaft base (sand) | qb=49.24 ksf; RBN(unreduced)=2475 kips | qb=49.2 ksf; RBN=2473 kips | <0.1% | **PASS** (unit) | `57.5·N60` kPa ≡ `0.60·N60` tsf — exact. Module additionally applies the O'Neill-Reese 1.27/Dᵦ large-diameter reduction (factor 0.521 at Dᵦ=2.44 m) → 1289 kips; example shows the unreduced value. See CONVENTION note below. |
 | V-008b | drilled_shaft base large-D | 1.27/Dᵦ applied (0.521) | (not shown in example) | — | CONVENTION | Module follows GEC-10 §13.3.4.3 / O'Neill-Reese large-diameter base reduction; the extracted example value is unreduced. Correct per the cited method; flagged for owner awareness. |
 | V-001 | axial_pile Nordlund shaft (sand) | Rs = 126/249/353/477 kips (D=35/50/60/70) | Rs = 137.5/250.7/344.1/452.5 | −8% / −1% / +3% / +5% | **PASS** | Nordlund shaft vs Table D-6, modeled from the footing datum. All four depths within ±15%; the displacement-pile Kd fit reproduces the published Nordlund shaft for this φ 33–36 H-pile profile. |
@@ -79,13 +79,16 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 
 ## Notes / flags for the owner
 
-- **drilled_shaft is the simplified-method module by design.** It implements
-  AASHTO/O'Neill-Reese (1999) simplified α (0.55) and depth-based β
-  (`1.5−0.245√z_ft`). The GEC-10 (2018) *rational* side-resistance chains
-  (OCR-based β from (N1)60; su-test-mode α `0.30+0.17/(su/pa)`) used in the
-  GEC-10 Appendix A example are **not** in the analysis module — they live in
-  the reference layer (`gec_10` lookups). This is a real **coverage gap** if the
-  owner wants the module to offer the rational methods; recorded, not "fixed."
+- **drilled_shaft now offers BOTH the simplified defaults AND the GEC-10
+  rational chains (v5.3 — gap CLOSED).** The defaults remain the AASHTO /
+  O'Neill-Reese simplified α (0.55) and depth-based β (`1.5−0.245√z_ft`), byte-
+  identical to before. The GEC-10 (2018) *rational* side-resistance chains from
+  the Appendix A example are now built in as **opt-in** methods on
+  `DrillShaftAnalysis`: `beta_method="rational"` (OCR-based β from (N1)60/N60 with
+  the Ko chain) and `alpha_method="rational"` (Chen-2011 α `0.30+0.17/(su_CIUC/pa)`
+  with the UU/UC→CIUC transform, `su_test_type`). V-006/V-007 now reproduce the
+  published β=0.41 / α=0.47 through the high-level path within ~1% (see the flipped
+  rows above). The reference-layer `gec_10` lookups still hold the same formulas.
 - **Deep cohesionless β floors at 0.25** (`z ≳ 40 ft`) — the O'Neill-Reese
   depth formula clamps there. Expected behavior, noted because it makes deep
   sand side resistance conservative vs the rational method (0.41).

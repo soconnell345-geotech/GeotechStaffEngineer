@@ -29,6 +29,8 @@ from drilled_shaft.side_resistance import (
     alpha_cohesive, side_resistance_cohesive,
     beta_cohesionless, side_resistance_cohesionless,
     side_resistance_rock, PA,
+    alpha_cohesive_rational, su_to_ciuc,
+    beta_cohesionless_rational, phi_prime_from_N1_60, preconsolidation_stress,
 )
 from drilled_shaft.end_bearing import (
     end_bearing_cohesive, end_bearing_cohesionless, end_bearing_rock,
@@ -48,6 +50,19 @@ class DrillShaftAnalysis:
         Layered soil profile.
     factor_of_safety : float, optional
         Factor of safety. Default 2.5.
+    beta_method : str, optional
+        Cohesionless side-resistance method: "depth" (default, O'Neill & Reese
+        1.5-0.245*sqrt(z_ft)) or "rational" (GEC-10 Appendix A OCR/Ko chain, from
+        per-layer N60/N1_60/sigma_v_ref). Default "depth" preserves prior results.
+    alpha_method : str, optional
+        Cohesive side-resistance method: "aashto" (default, piecewise 0.55) or
+        "rational" (GEC-10 Chen-2011 alpha = 0.30+0.17/(su_CIUC/pa) with the
+        UU/UC->CIUC transform). Default "aashto" preserves prior results.
+    su_test_type : str, optional
+        For alpha_method="rational": what lab test the layer ``cu`` represents,
+        for the CIUC transform — "ciuc" (default, no transform), "uc", or "uu".
+    pa : float, optional
+        Atmospheric pressure (kPa) for the rational chains. Default 101.325.
 
     Examples
     --------
@@ -63,17 +78,53 @@ class DrillShaftAnalysis:
     shaft: DrillShaft = None
     soil: ShaftSoilProfile = None
     factor_of_safety: float = 2.5
+    beta_method: str = "depth"
+    alpha_method: str = "aashto"
+    su_test_type: str = "ciuc"
+    pa: float = PA
 
     def __post_init__(self):
         if self.shaft is None:
             raise ValueError("Shaft must be provided")
         if self.soil is None:
             raise ValueError("Soil profile must be provided")
+        if self.beta_method not in ("depth", "rational"):
+            raise ValueError(
+                f"beta_method must be 'depth' or 'rational', got '{self.beta_method}'"
+            )
+        if self.alpha_method not in ("aashto", "rational"):
+            raise ValueError(
+                f"alpha_method must be 'aashto' or 'rational', got '{self.alpha_method}'"
+            )
+        if self.su_test_type not in ("ciuc", "uc", "uu"):
+            raise ValueError(
+                f"su_test_type must be 'ciuc', 'uc', or 'uu', got '{self.su_test_type}'"
+            )
         if self.shaft.length > self.soil.total_thickness:
             warnings.warn(
                 f"Shaft length ({self.shaft.length}m) exceeds soil profile "
                 f"({self.soil.total_thickness}m); using full profile depth"
             )
+
+    def _rational_beta(self, layer, sigma_v: float) -> float:
+        """GEC-10 Appendix A rational beta for a cohesionless layer.
+
+        phi' from (N1)60 (or layer.phi); OCR from sigma'p(N60)/sigma_v_ref
+        (or a direct layer.OCR); delta = phi'.
+        """
+        phi = phi_prime_from_N1_60(layer.N1_60) if layer.N1_60 > 0 else layer.phi
+        if layer.OCR > 0:
+            OCR = layer.OCR
+        else:
+            if layer.N60 <= 0:
+                raise ValueError(
+                    "beta_method='rational' needs N60 (for sigma'p) or a direct "
+                    "OCR on each cohesionless layer"
+                )
+            sigma_p = preconsolidation_stress(layer.N60, self.pa)
+            sigma_ref = layer.sigma_v_ref if layer.sigma_v_ref > 0 else sigma_v
+            OCR = sigma_p / sigma_ref
+        return beta_cohesionless_rational(phi, OCR)
 
     def compute(self) -> DrillShaftResult:
         """Run the drilled shaft capacity analysis.
@@ -137,25 +188,39 @@ class DrillShaftAnalysis:
             sigma_v = self.soil.effective_stress_at_depth(z_center)
 
             if layer.soil_type == "cohesive":
-                alpha = alpha_cohesive(layer.cu)
-                Qs_layer = side_resistance_cohesive(
-                    layer.cu, shaft.perimeter, effective_thickness, alpha
-                )
-                fs = alpha * layer.cu
+                if self.alpha_method == "rational":
+                    # GEC-10 Chen-2011 alpha on the CIUC-equivalent strength.
+                    su_ciuc = su_to_ciuc(layer.cu, sigma_v, self.su_test_type)
+                    alpha = alpha_cohesive_rational(su_ciuc, self.pa)
+                    Qs_layer = side_resistance_cohesive(
+                        su_ciuc, shaft.perimeter, effective_thickness, alpha
+                    )
+                    fs = alpha * su_ciuc
+                    method_used = f"alpha={alpha:.3f} (rational)"
+                else:
+                    alpha = alpha_cohesive(layer.cu)
+                    Qs_layer = side_resistance_cohesive(
+                        layer.cu, shaft.perimeter, effective_thickness, alpha
+                    )
+                    fs = alpha * layer.cu
+                    method_used = f"alpha={alpha:.3f}"
                 Qs_clay += Qs_layer
-                method_used = f"alpha={alpha:.3f}"
 
             elif layer.soil_type == "cohesionless":
-                # N60 < 15 reduces beta (O'Neill-Reese); N60 = 0 means
-                # "not measured" -> no reduction (assumes N60 >= 15).
-                N60_side = layer.N60 if layer.N60 > 0 else None
-                beta = beta_cohesionless(z_center, N60=N60_side)
+                if self.beta_method == "rational":
+                    beta = self._rational_beta(layer, sigma_v)
+                    method_used = f"beta={beta:.3f} (rational)"
+                else:
+                    # N60 < 15 reduces beta (O'Neill-Reese); N60 = 0 means
+                    # "not measured" -> no reduction (assumes N60 >= 15).
+                    N60_side = layer.N60 if layer.N60 > 0 else None
+                    beta = beta_cohesionless(z_center, N60=N60_side)
+                    method_used = f"beta={beta:.3f}"
                 Qs_layer = side_resistance_cohesionless(
                     sigma_v, beta, shaft.perimeter, effective_thickness
                 )
                 fs = min(beta * sigma_v, 200.0)
                 Qs_sand += Qs_layer
-                method_used = f"beta={beta:.3f}"
 
             else:  # rock
                 perimeter = shaft.socket_perimeter
@@ -250,6 +315,8 @@ class DrillShaftAnalysis:
                 trial = DrillShaftAnalysis(
                     shaft=trial_shaft, soil=self.soil,
                     factor_of_safety=self.factor_of_safety,
+                    beta_method=self.beta_method, alpha_method=self.alpha_method,
+                    su_test_type=self.su_test_type, pa=self.pa,
                 )
                 r = trial.compute()
                 results.append({
