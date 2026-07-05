@@ -1,0 +1,2190 @@
+
+==========================================================================================
+VERIFICATION PROBLEM #2 (manual pages 24-27)
+==========================================================================================
+ 
+24  
+rocscience.com 
+2. Slide Verification Problem #2 
+Slope, homogenous, tension crack 
+2.1. Introduction 
+In 1988 a set of 5 basic slope stability problems, together with 5 variants, was distributed both in the 
+Australian Geomechanics profession and overseas as part of a survey sponsored by ACADS (Giam & 
+Donald (1989)). This is the ACADS 1(b) problem. 
+ 
+2.2. Problem Description 
+Problem #2 has the same slope geometry as verification problem #1, with the addition of a tension crack 
+zone, as shown in Figure 2.1. For this problem, a suitable tension crack depth is required and water is 
+assumed to have filled the tension crack. The tension crack depth can be estimated from the following 
+equations [Craig (1997)]. 
+ak
+c
+Depth
+
+2
+=
+      
+
+
+sin
+1
+sin
+1
+,
++
+−
+=
+ak
+ 
+In order to locate the critical slip surfaces, a slip center search grid of 20 x 20 intervals was used, with 11 
+circles per grid point, generating a total of 4851 slip surfaces. Grid located at (31, 49), (47, 49), (31, 34), 
+and (47, 34). Tolerance is 0.0001. 
+ 
+2.3. Geometry and Material Properties 
+ 
+Figure 2.1: Geometry Setup in Slide 
+Table 2.1: Soil Properties 
+c΄ (kN/m2) ΄ (deg.) 
+  (kN/m3) 
+32.0 
+10.0 
+20.0 
+
+ 
+25  
+rocscience.com 
+2.4. Results 
+Table 2.2 
+Method 
+Factor of Safety 
+Bishop 
+1.596 
+Spencer 
+1.592 
+GLE 
+1.592 
+Janbu Corrected 
+1.489 
+ Note: Reference factor of safety = 1.65 [Giam] 
+ 
+ 
+Figure 2.2: Solution, using the Bishop simplified method 
+ 
+
+ 
+26  
+rocscience.com 
+ 
+Figure 2.3: Solution, using the Spencer method 
+ 
+ 
+Figure 2.4: Solution, using the GLE method 
+ 
+
+ 
+27  
+rocscience.com 
+ 
+Figure 2.5: Solution, using the Janbu corrected method 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #4 (manual pages 32-35)
+==========================================================================================
+ 
+32  
+rocscience.com 
+4. Slide Verification Problem #4 
+Slope, (3) materials, seismic 
+4.1. Introduction 
+In 1988 a set of 5 basic slope stability problems, together with 5 variants, was distributed both in the 
+Australian Geomechanics profession and overseas as part of a survey sponsored by ACADS (Giam & 
+Donald (1989)). This is the ACADS 1(d) problem. 
+ 
+4.2. Problem Description 
+Problem #4 is a non-homogeneous, three-layer slope with material properties given in Table 4.1 and 
+geometry as shown in Figure 4.1. This problem is identical to #3, but with a horizontal seismically induced 
+acceleration of 0.15g included in the analysis. The factor of safety and its corresponding critical circular 
+failure surface is calculated. 
+ 
+4.3. Geometry and Material Properties 
+ 
+Figure 4.1: Geometry Setup in Slide 
+Table 4.1: Soil Properties 
+ 
+c΄ (kN/m2) ΄ (deg.) 
+  (kN/m3) 
+Soil #1 
+0.0 
+38.0 
+19.5 
+Soil #2 
+5.3 
+23.0 
+19.5 
+Soil #3 
+7.2 
+20.0 
+19.5 
+
+ 
+33  
+rocscience.com 
+4.4. Results 
+Table 4.2 
+Method 
+Factor of Safety 
+Bishop 
+1.016 
+Spencer 
+0.991 
+GLE 
+0.989 
+Janbu Corrected 
+0.965 
+Note: 
+Reference factor of safety = 1.00 [Giam] 
+Mean FOS (15 samples) = 0.973 
+ 
+ 
+Figure 4.2: Solution, using the Bishop simplified method 
+ 
+
+ 
+34  
+rocscience.com 
+ 
+Figure 4.3: Solution, using the Spencer method 
+ 
+ 
+Figure 4.4: Solution, using the GLE method 
+ 
+
+ 
+35  
+rocscience.com 
+ 
+Figure 4.5: Solution, using the Janbu corrected method 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #9 (manual pages 50-54)
+==========================================================================================
+ 
+50  
+rocscience.com 
+9. Slide Verification Problem #9 
+Slope, (2) materials, weak layer, water table, distributed load 
+9.1. Introduction 
+In 1988 a set of 5 basic slope stability problems, together with 5 variants, was distributed both in the 
+Australian Geomechanics profession and overseas as part of a survey sponsored by ACADS (Giam & 
+Donald (1989)). This is the ACADS 4 problem. 
+ 
+9.2. Problem Description 
+Problem #9 is shown in Figure 9.1. The soil properties, external loadings and piezometric surface are 
+shown in Table 9.1, Table 9.2 and Table 9.3 respectively. The effect of a tension crack is to be ignored. 
+The noncircular critical slip surface and corresponding factor of safety is calculated.  
+A block search for the critical non-circular failure surface was carried out by defining a block search 
+polyline object within the weak layer, and variable projection angles from the weak layer to the slope 
+surface. A total of 5000 random surfaces were generated by the search. The results are compared with 
+optimization results. 
+ 
+9.3. Geometry and Material Properties 
+ 
+Figure 9.1: Geometry Setup in Slide 
+ 
+
+ 
+51  
+rocscience.com 
+Table 9.1: Soil Properties 
+ 
+c΄ (kN/m2) 
+΄ (deg.) 
+  (kN/m3) 
+Soil #1 
+28.5 
+20.0 
+18.84 
+Soil #2 
+0 
+10.0 
+18.84 
+ 
+Table 9.2: External Loadings 
+Xc (m) 
+Yc (m) 
+Normal Stress (kN/m2) 
+23.00 
+27.75 
+20.00 
+43.00 
+27.75 
+20.00 
+70.00 
+40.00 
+20.00 
+80.00 
+40.00 
+40.00 
+ 
+Table 9.3: Data for Piezometric surface 
+Pt.# 
+Xc (m) 
+Yc (m) 
+1  
+20.0 
+27.75 
+2 
+43.0 
+27.75 
+3 
+49.0 
+29.8 
+4 
+60.0 
+34.0 
+5 
+66.0 
+35.8 
+6 
+74.0 
+37.6 
+7 
+80.0 
+38.4 
+8 
+84.0 
+38.4 
+ 
+ 
+
+ 
+52  
+rocscience.com 
+9.4. Results 
+No optimization 
+Table 9.4 
+Method 
+Factor of Safety 
+Spencer 
+0.760 
+GLE 
+0.720 
+Janbu Corrected 
+0.734 
+ 
+ 
+ 
+ 
+Note: 
+Reference factor of safety = 0.78 [Giam] 
+ 
+ 
+ 
+ 
+ 
+Mean Non-circular FOS (20 samples) = 0.808 
+ 
+ 
+ 
+ 
+ 
+Reference GLE Factor of Safety = 0.6878 [Slope 2000] 
+ 
+ 
+Figure 9.2: Solution, using the Spencer method 
+ 
+
+ 
+53  
+rocscience.com 
+ 
+Figure 9.3: Solution, using the GLE method 
+ 
+ 
+Figure 9.4: Solution, using the Janbu correction method 
+
+ 
+54  
+rocscience.com 
+Table 9.5: Block search with optimization 
+Method 
+Factor of Safety 
+Spencer 
+0.707 
+GLE 
+0.683 
+Janbu Corrected 
+0.699 
+ 
+ 
+ 
+ 
+Note: 
+Reference factor of safety = 0.78 [Giam] 
+ 
+ 
+ 
+ 
+ 
+Mean Non-circular FOS (20 samples) = 0.808 
+ 
+ 
+ 
+ 
+ 
+Reference GLE Factor of Safety = 0.6878 [Slope 2000] 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #10 (manual pages 55-58)
+==========================================================================================
+ 
+55  
+rocscience.com 
+10. Slide Verification Problem #10 
+Slope, homogenous, pore pressure grid, ponded water 
+10.1. Introduction 
+In 1988 a set of 5 basic slope stability problems, together with 5 variants, was distributed both in the 
+Australian Geomechanics profession and overseas as part of a survey sponsored by ACADS (Giam & 
+Donald (1989)). This is the ACADS 5 problem. 
+ 
+10.2. Problem Description 
+Problem #10 is shown in Figure 10.1. The soil properties are given in Table 10.1. This slope has been 
+excavated at a slope of 1:2 (β=26.56˚) below an initially horizontal ground surface. The position of the 
+critical slip surface and the corresponding factor of safety are required for the long-term condition, i.e. 
+after the ground water conditions have stabilized. Pore water pressure may be derived from the given 
+boundary conditions or from the approximate flow net provided in Figure 10.2. If information is required 
+beyond the geometrical limits of Figure 10.2, the flow net may be extended by the user. Grid interpolation 
+is done with TIN triangulation. The critical slip surface (circular) and the corresponding factor of safety is 
+calculated. 
+ 
+10.3. Geometry and Material Properties 
+ 
+Figure 10.1: Geometry Setup in Slide 
+Note:  Grid used to draw waterline (which comes from Figure 10.2) is identical to the data used in 
+tutorial 5 (tutorial5.sli). The data can be imported from tutorial5.sli or verification#10.sli. 
+
+ 
+56  
+rocscience.com 
+ 
+Figure 10.2: Approximate Flow Net 
+Table 10.1: Soil Properties 
+c΄ (kN/m2) 
+΄ (deg.) 
+  (kN/m3) 
+11.0 
+28.0 
+20.00 
+ 
+10.4. Results 
+Table 10.2 
+Method 
+Factor of Safety 
+Bishop 
+1.498 
+Spencer 
+1.500 
+GLE 
+1.500 
+Janbu Corrected 
+1.457 
+Note: 
+Reference factor of safety = 1.53 [Giam] 
+ 
+Mean FOS (23 samples) = 1.464 
+ 
+
+ 
+57  
+rocscience.com 
+ 
+Figure 10.3: Solution, using the Bishop simplified method 
+ 
+ 
+Figure 10.4: Solution, using the Spencer method 
+
+ 
+58  
+rocscience.com 
+ 
+Figure 10.5: Solution, using the GLE method 
+ 
+Figure 10.6: Solution, using the Janbu corrected method 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #29 (manual pages 121-122)
+==========================================================================================
+ 
+121  
+rocscience.com 
+29. Slide Verification Problem #29 
+Submerged slope, homogenous, probabilistic analysis, water table 
+29.1. Introduction 
+This model is taken from Duncan (2000). It looks at the failure of the 100 ft high underwater slope at the 
+Lighter Aboard Ship (LASH) terminal at the Port of San Francisco. 
+ 
+29.2. Problem Description 
+Verification problem #29 is shown in Figure 29.1. All geometry and property values are determined using 
+the figures and published data in Duncan (2000). The cohesion is taken to be 100 psf at an elevation of -
+20 ft and increase linearly with depth at a rate of 9.8 psf/ft. A probabilistic analysis using the latin-
+hypercube simulation technique is performed using 10000 samples to compute the probability of failure 
+and reliability index of the estimated failure surface defined in Duncan (2000). These values are 
+determined using the Janbu, Spencer, and GLE methods. 
+ 
+29.3. Geometry and Material Properties 
+ 
+Figure 29.1: Geometry Setup in Slide 
+Table 29.1: Deterministic Soil Properties 
+ 
+cohesion 
+(datum) (psf) 
+Datum 
+(ft) 
+Rate of change 
+(psf/ft) 
+Unit Weight 
+(pcf) 
+San Francisco Bay Mud 
+100 
+-20 
+9.8 
+100 
+
+ 
+122  
+rocscience.com 
+Table 29.2: Probabilistic Soil Properties 
+San Francisco Bay Mud 
+Standard 
+deviation 
+Absolute 
+Minimum 
+Absolute 
+Maximum 
+Unit Weight 
+3.3 
+99.1 
+109.9 
+Rate of change  
+1.2 
+5.8 
+13.8 
+ 
+29.4. Results 
+Table 29.3 
+Method 
+Deterministic 
+Factor of Safety 
+Probability of 
+Failure (%) 
+Reliability Index 
+(lognormal) 
+Janbu Simplified 
+1.127 
+18 
+1.086 
+Janbu Corrected 
+1.168 
+15 
+1.0 
+Spencer 
+1.157 
+14 
+1.1 
+GLE 
+1.160 
+13 
+1.2 
+ 
+      Note: Duncan (2000) quotes a deterministic factor of safety of 1.17 and a probability of failure    
+ 
+      of 18%. The probability of failure is calculated using the Taylor series technique. 
+ 
+Figure 29.2: Noncircular failure surface, using the Spencer method 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #36 (manual pages 137-139)
+==========================================================================================
+ 
+137  
+rocscience.com 
+36. Slide Verification Problem #36 
+Slope, homogenous, probabilistic analysis, ru pore pressure, reliability index 
+36.1. Introduction 
+This model is taken from Li and Lumb (1987) and Hassan and Wolff (1999). It analyzes reliability indices 
+of a simple homogeneous slope. This verification looks at comparing the reliability index of the 
+deterministic global circular failure surface and the minimum reliability index value obtained from analysis 
+of several failure surfaces. 
+ 
+36.2. Problem Description 
+The geometry of the homogeneous slope is shown in Figure 36.1 and soil parameters are provided in 
+Table 36.1. The Bishop simplified method of analysis is used. Using Monte Carlo analysis that assumes 
+all probabilistic variables to be normally distributed, reliability indices are calculated on the assumption 
+that factors of safety values are distributed lognormally. This is consistent with the reliability index 
+measures used by Hassan and Wolff (1999). 
+The reliability index calculated for the deterministic minimum factor of safety surface (critical deterministic 
+surface), the minimum reliability index (critical probabilistic surface), and the overall reliability index of the 
+slope are compared with reliability indices calculated by Hassan and Wolff in Table 36.2. Figure 36.2 and 
+Figure 36.3 show the locations of the critical deterministic and probabilistic surfaces calculated by Slide. 
+ 
+36.3. Geometry and Material Properties 
+ 
+Figure 36.1: Geometry Setup in Slide 
+
+ 
+138  
+rocscience.com 
+Table 36.1: Soil Properties 
+Property 
+Mean value 
+Standard deviation  
+c΄ (kN/m2) 
+18 
+3.6 
+΄ (deg.) 
+30 
+3 
+ (kN/m3) 
+18 
+0.9 
+ru 
+0.2 
+0.02 
+ 
+36.4. Results 
+Table 36.2 
+Slide Results by the Bishop Simplified method 
+Hasssan and Wolf Results 
+Surface 
+Factor of Safety 
+Reliability Index 
+(lognormal) 
+Factor of Safety 
+Reliability Index 
+(lognormal) 
+Deterministic minimum 
+factor of safety surface 
+1.340 
+2.482 
+1.334 
+2.336 
+Minimum reliability 
+index surface 
+1.369 
+2.407 
+1.190 
+2.293 
+Overall slope (no 
+particular surface) 
+1.350 
+2.393 
+-- 
+-- 
+ 
+ 
+Figure 36.2: Critical deterministic surface and overall result 
+
+ 
+139  
+rocscience.com 
+ 
+Figure 36.3: Critical probabilistic surface 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #39 (manual pages 147-150)
+==========================================================================================
+ 
+147  
+rocscience.com 
+39. Slide Verification Problem #39 
+Reinforced embankment, (2) materials, tension crack, geosynthetic 
+39.1. Introduction 
+This model is taken from Tandjiria (2002), their problem 1. It looks at the stability of a geosynthetic-
+reinforced embankment on soft soil. The problem looks at the stability of the embankment if it consists of 
+either a sand fill or an undrained clayey fill. Both are analyzed. 
+ 
+39.2. Problem Description 
+Verification problem #39 is shown in Figures 39.1 and 39.2. The purpose of this example is to compute 
+the required reinforcement force to yield a factor of safety of 1.35. Both circular and non-circular surfaces 
+are looked at. In each case, the embankment is modeled without the reinforcement; the critical slip 
+surface is located, and then used in the reinforced model to determine the reinforcement force to achieve 
+a factor of safety of 1.35. This is done for a sand or clay embankment, circular and non-circular critical slip 
+surfaces. Both cases incorporate a tension crack in the embankment. In the case of the clay 
+embankment, a water-filled tension crack is incorporated into the analysis. The reinforcement is located at 
+the base of the embankment. The model was analyzed with both Spencer and GLE (half-sine interslice 
+function) but Spencer was used for the force computation. The reinforcement is modeled as an active 
+force since this is how Tandjiria et.al. modelled the force. 
+ 
+39.3. Geometry and Material Properties 
+ 
+Figure 39.1: Clay Fill Embankment 
+
+ 
+148  
+rocscience.com 
+Table 39.1: Clay fill model material properties 
+Material Name 
+'c (kPa) 
+'
+ (deg.) 
+ (kN/m3) 
+Sand Fill 
+20 
+0 
+19.4 
+Soft Clay 
+20 
+0 
+19.4 
+ 
+ 
+Figure 39.2: Sand Fill Embankment 
+Table 39.2: Sand fill model material properties 
+Material Name 
+'c (kPa) 
+'
+ (deg.) 
+ (kN/m3) 
+Sand Fill 
+0 
+37 
+17 
+Soft Clay 
+20 
+0 
+20 
+ 
+ 
+ 
+ 
+ 
+ 
+
+ 
+149  
+rocscience.com 
+39.4. Results 
+Table 39.2: Circular – Clay embankment with no reinforcement 
+Method 
+Factor of Safety  
+Spencer 
+0.975 
+GLE/M-P 
+0.975 
+ 
+ 
+ 
+ 
+Note: Tandiiria (2002) Spencer factor of safety = 0.981 
+ 
+Table 39.3: Noncircular – Clay embankment with no reinforcement 
+Method 
+Factor of Safety  
+Spencer 
+0.935 
+GLE/M-P 
+0.936 
+ 
+ 
+ 
+ 
+Note: Tandiiria (2002) Spencer factor of safety = 0.941 
+ 
+Table 39.4: Circular – Sand embankment with no reinforcement 
+Method 
+Factor of Safety  
+Spencer 
+1.209 
+GLE/M-P 
+1.218 
+ 
+ 
+ 
+ 
+Note: Tandiiria (2002) Spencer factor of safety = 1.219 
+ 
+Table 39.5: Noncircular Results – Sand embankment with no reinforcement 
+Method 
+Factor of Safety  
+Spencer 
+1.188 
+GLE/M-P 
+1.178 
+ 
+ 
+ 
+ 
+Note: Tandiiria (2002) Spencer factor of safety = 1.192 
+ 
+Table 39.6: Circular Results – Clay embankment with reinforcement 
+Method 
+Reinforcement Force (KN/m) 
+Factor of Safety  
+Spencer 
+169 
+1.35 
+ 
+ 
+ 
+Note: Tandiiria (2002) Reinforcement Force = 170 KN/m 
+ 
+
+ 
+150  
+rocscience.com 
+Table 39.7: Noncircular Results – Clay embankment with reinforcement 
+Method 
+Reinforcement Force (KN/m) 
+Factor of Safety  
+Spencer 
+184 
+1.35 
+ 
+ 
+ 
+Note: Tandiiria (2002) Reinforcement Force = 190 KN/m 
+ 
+Table 39.8: Circular Results – Sand embankment with reinforcement 
+Method 
+Reinforcement Force (KN/m) 
+Factor of Safety  
+Spencer 
+44 
+1.35 
+ 
+ 
+ 
+Note: Tandiiria (2002) Reinforcement Force = 45 KN/m 
+ 
+Table 39.9: Noncircular Results – Sand embankment with reinforcement 
+Method 
+Reinforcement Force (KN/m) 
+Factor of Safety  
+Spencer 
+56 
+1.35 
+ 
+ 
+ 
+Note: Tandiiria (2002) Reinforcement Force = 56 KN/m 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #51 (manual pages 186-187)
+==========================================================================================
+ 
+186  
+rocscience.com 
+51. Slide Verification Problem #51 
+Slope, (4) materials, water table, tension crack, seismic 
+51.1. Introduction 
+This problem was taken from Zhu (2003). It analyzes a four layered slope with a given failure surface, 
+using twelve different methods. 
+ 
+51.2. Problem Description 
+Verification problem #51 examines a multiple layer slope with a circular failure surface. A tension crack is 
+included in the top layer. The slope is also assumed to be under earthquake conditions, with a seismic 
+coefficient of 0.1. The factor of safety for this surface - with 100 slices - is required, using all methods of 
+analysis. A tolerance of 0.001 is used.  
+ 
+51.3. Geometry and Material Properties 
+ 
+Figure 51.1: Geometry Setup in Slide 
+Table 51.1: Soil Properties 
+ 
+c΄ (kN/m2) 
+΄ (deg.) 
+  (kN/m3) 
+Material 
+c΄ (kN/m2) 
+΄ (deg.) 
+ (kN/m3) 
+Layer 1 (top) 
+20 
+32 
+18.2 
+Layer 2 
+25 
+30 
+18 
+Layer 3 
+40 
+18 
+18.5 
+
+ 
+187  
+rocscience.com 
+51.4. Results 
+Table 51.2 
+Method 
+Slide 
+Factor of Safety 
+Zhu 
+Factor of Safety 
+Ordinary 
+1.145 
+1.066 
+Bishop Simplified 
+1.278 
+1.278 
+Janbu Simplified 
+1.112 
+1.112 
+Corps of Engineers 2 
+1.422 
+1.377 
+Lowe & Karafiath 
+1.288 
+1.290 
+Spencer 
+1.293 
+1.293 
+GLE/Morgenstern & Price 
+1.304 
+1.303 
+ 
+ 
+Figure 51.2: Safety factor using the Lowe & Karafiath method 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #54 (manual pages 196-198)
+==========================================================================================
+ 
+196  
+rocscience.com 
+54. Slide Verification Problem #54 
+Slope, homogenous, micro piles 
+54.1. Introduction 
+This problem was taken from Yamagami (2000). It looks at the reinforcement of an unstable slope, using 
+stabilizing piles. 
+ 
+54.2. Problem Description 
+Verification problem #54 analyzes a homogeneous slope (Figure 54.1) with a circular failure surface. The 
+single row of micro-piles acts as passive reinforcement. The piles are spaced 1 m horizontally, with a 
+shear strength of 10.7 kN. The factors of safety for the slope with and without reinforcement is calculated.  
+ 
+54.3. Geometry and Material Properties 
+ 
+Figure 54.1: Geometry Setup in Slide 
+ 
+Table 54.1: Soil Properties 
+Material 
+c΄ (kN/m2) 
+΄ (deg.) 
+  (kN/m3) 
+Material 1 
+4.9 
+10 
+15.68 
+
+ 
+197  
+rocscience.com 
+54.4. Results 
+Table 54.2 
+Method 
+Factor of Safety 
+Slide – no pile 
+1.102 
+Slide – with pile 
+1.193 
+Yamagami – no pile 
+1.10 
+Yamagami – with pile 
+1.20 
+ 
+ 
+Figure 54.2: Circular failure surface, no pile 
+ 
+
+ 
+198  
+rocscience.com 
+ 
+Figure 54.3: Circular failure surface, with reinforcing pile 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #57 (manual pages 203-205)
+==========================================================================================
+ 
+203  
+rocscience.com 
+57. Slide Verification Problem #57 
+Slope, (2) materials, water table, tension crack, composite surfaces 
+57.1. Introduction 
+In December 2000, Pockoski and Duncan released a paper comparing eight different computer programs 
+for analysis of reinforced slopes. This is their third test slope. 
+ 
+57.2. Problem Description 
+Verification problem #57 analyses an unreinforced layered slope with a dry tension crack at the surface. A 
+water table is also present. The circular critical failure surface and factor of safety are required. This slope 
+was analyzed with and without composite surfaces in order to compare results with programs that either 
+have this option or do not. 
+ 
+57.3. Geometry and Material Properties 
+ 
+Figure 57.1: Geometry Setup in Slide 
+Table 57.1: Soil Properties 
+Material 
+c΄ (psf) 
+΄ (deg.) 
+ (pcf) 
+Sandy clay 
+300 
+35 
+130 
+Highly Plastic Clay 
+0 
+25 
+130 
+ 
+
+ 
+204  
+rocscience.com 
+57.4. Results 
+Table 57.2: Composite surfaces/Noncircular 
+Method 
+Slide 
+SLOPE/W 
+XSTABL 
+Spencer 
+1.400 
+1.40 
+-- 
+Bishop simplified 
+1.392 
+1.39 
+1.41 
+Janbu simplified 
+1.222 
+1.21 
+1.34 
+Lowe-Karafiath 
+1.385 
+-- 
+-- 
+Ordinary 
+1.257 
+0.85 
+-- 
+ 
+ 
+ 
+Note: 
+SNAIL FS = 1.39 (Wedge method) 
+ 
+Figure 57.2: Noncircular failure surface, using Spencer method 
+ 
+ 
+ 
+ 
+ 
+
+ 
+205  
+rocscience.com 
+Table 57.3: No composite surfaces/Circular 
+Method 
+Slide 
+UTEXAS4 
+WINSTABL 
+RSS 
+Spencer 
+1.422 
+1.42 
+1.45 
+-- 
+Bishop simplified 
+1.417 
+1.41 
+1.39 
+1.41 
+Janbu simplified 
+1.263 
+1.20 
+1.23 
+1.24 
+Lowe-Karafiath 
+1.414 
+1.12 
+-- 
+-- 
+Ordinary 
+1.319 
+-- 
+-- 
+-- 
+ 
+ 
+  Note: GOLD-NAIL FS = 1.40 (Circular method) 
+ 
+ 
+Figure 57.3: Circular failure surface, using Spencer method 
+ 
+ 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #61 (manual pages 213-215)
+==========================================================================================
+ 
+213  
+rocscience.com 
+61. Slide Verification Problem #61 
+Slope, homogenous, composite surfaces 
+61.1. Introduction 
+This problem was taken from Baker (2003). It is his third example problem comparing linear and non-
+linear Mohr envelopes. 
+ 
+61.2. Problem Description 
+Verification problem #61 compares two homogeneous slopes of congruent geometry (Figure 44.1) under 
+different strength functions (Table 61.1). The critical circular surface factor of safety and maximum 
+effective normal stress must be determined for both Mohr-Coulomb strength criterio and Power Curve 
+criterion. The power curve criterion was derived from Baker’s own non-linear function:  
+n
+a
+a
+T
+P
+A
+P
+
+
+
+
+
+
++
+=
+
+
+… Pa = 101.325 kPa 
+The power curve variables are in the form: 
+(
+)
+c
+d
+a
+b
+n
++
++
+=
+
+
+ 
+Finally, the critical circular surface factor of safety and maximum effective normal stress must be 
+determined using the material properties that Baker derives from his iterative process; these values 
+should be compared to the accepted values. 
+ 
+61.3. Geometry and Material Properties 
+ 
+Figure 61.1: Geometry Setup in Slide 
+
+ 
+214  
+rocscience.com 
+Table 61.1: Soil Properties – Power Curve criterion 
+ 
+Baker’s Parameters 
+Slide Paramaters 
+Material 
+A 
+n 
+T 
+a 
+b 
+c 
+d 
+Clay 
+0.535 
+0.6 
+0.0015 
+3.39344 
+0.6 
+0 
+0.1520 
+ 
+Table 61.2: Soil Properties – Mohr-Coulomb criterion 
+Material 
+c΄ (kN/m2) 
+΄ (deg.) 
+ (kN/m3) 
+Clay 
+6.0 
+32 
+18 
+ 
+61.4. Results 
+Table 61.3 
+Strength Type 
+Method 
+Factor of Safety 
+Maximum effective 
+normal stress (kPa) 
+Power Curve 
+Janbu Simplified 
+1.348 
+36.33 
+ 
+Spencer 
+1.468 
+31.21 
+Mohr-Coulomb 
+Janbu Simplifed 
+1.291 
+30.05 
+ 
+Spencer 
+1.366 
+26.44 
+ 
+     Note: 
+Baker (2003) non-linear results: FS = 1.48,  max = 21.4 
+ 
+ 
+ 
+Baker (2003) M-C results: FS = 1.35, max = 27.5 
+ 
+Figure 61.2: Circular critical surface with power curve criteria, Spencer method 
+
+ 
+215  
+rocscience.com 
+ 
+Figure 61.3: Circular critical surface with Mohr-Coulomb criteria, Spencer method 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #62 (manual pages 216-218)
+==========================================================================================
+ 
+216  
+rocscience.com 
+62. Slide Verification Problem #62 
+Slope, homogenous, ru pore pressure, seismic 
+62.1. Introduction 
+This problem is taken from Loukidis et al. (2003). The paper provides a method for determining the critical 
+seismic coefficient, kc. This coefficient corresponds to a factor of safety of 1. This is their first example 
+problem. 
+ 
+62.2. Problem Description 
+Verification problem #62 examines a simple homogeneous slope with seismic loading (Figure 62.1). The 
+slope is analyzed using circular and noncircular* slip surfaces, both of which pass through the toe of the 
+slope. Two pore pressure conditions are also accounted for: a dry slope, and Ru = 0.5. The goal of this 
+verification problem is to reproduce a safety factor of 1 (Spencer) using Loukidis’ critical seismic 
+coefficients (Table 62.1). 
+Note: 
+*Loukidis examines a log-spiral surface. In order to model this type of noncircular surface with 
+ 
+Slide, a path search with Monte-Carlo optimization was performed. 
+ 
+62.3. Geometry and Material Properties 
+ 
+Figure 62.1: Geometry Setup in Slide 
+ 
+Table 62.1: Seismic Coefficients 
+Dry Slope 
+0.432 
+Ru = 0.5 
+0.132 
+ 
+Table 62.2: Soil Properties 
+Material 
+c΄ (kPa) 
+΄ (deg.) 
+ (kN/m3) 
+Clay 
+25 
+30 
+20 
+
+ 
+217  
+rocscience.com 
+ 
+62.4. Results 
+Table 62.3: Dry slope (kc = 0.432) 
+Type 
+Spencer 
+Bishop Simplified 
+Circular (Grid search) 
+1.001 
+0.991 
+Noncircular  
+(Path search with optimization) 
+0.999 
+0.989 
+ 
+        Note: 
+Loukidis factor of safety (Spencer) = 1.000 
+ 
+ 
+Figure 62.2: Circular slip surface, using the Spencer method 
+ 
+Figure 62.3: Non-circular slip surface, using the Spencer method 
+
+ 
+218  
+rocscience.com 
+Table 62.4: Ru = 0.5 (kc = 0.132) 
+Type 
+Spencer 
+Bishop Simplified 
+Circular (Grid search) 
+1.001 
+0.987 
+Noncircular  
+(Path search with optimization) 
+0.997 
+0.966 
+ 
+        Note: 
+Loukidis factor of safety (Spencer) = 1.000 
+ 
+Figure 62.4: Circular slip surface, using the Bishop simplified method 
+ 
+Figure 62.5: Non-circular slip surface, using the Bishop simplified method 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #63 (manual pages 219-220)
+==========================================================================================
+ 
+219  
+rocscience.com 
+63. Slide Verification Problem #63 
+Slope, (3) materials, seismic 
+63.1. Introduction 
+This problem is taken from Loukidis et al. (2003). The paper provides a method for determining the critical 
+seismic coefficient, kc. This coefficient corresponds to a factor of safety of 1. This is their second example 
+problem. 
+ 
+63.2. Problem Description 
+Verification problem #63 analyzes a layered, dry slope under seismic loading conditions. The goal is to 
+duplicate a Spencer safety factor of 1.000 using the author’s seismic coefficient of 0.155. A log-spiral 
+surface is analyzed by Loukidis; this is modeled in Slide by doing a path search with Monte-Carlo 
+optimization. The critical slip surface passes through the material boundary point on the slope between 
+the middle and lower layers (limits are included in Figure 63.1). 
+ 
+63.3. Geometry and Material Properties 
+ 
+Figure 63.1: Geometry Setup in Slide 
+Table 63.1: Soil Properties 
+Layer 
+c (kN/m2) 
+ (deg.) 
+ (kN/m3) 
+Top 
+4 
+30 
+17 
+Middle 
+25 
+15 
+19 
+Bottom 
+15 
+45 
+19 
+
+ 
+220  
+rocscience.com 
+63.4. Results 
+Table 63.2 
+Method 
+Factor of Safety 
+Spencer 
+0.991 
+Note: 
+Loukidis factor of safety (Spencer) = 1.000 
+ 
+ 
+Figure 63.2: Critical slip surface, using the Spencer method 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #79 (manual pages 267-269)
+==========================================================================================
+ 
+267  
+rocscience.com 
+79. Slide Verification Problem #79 
+Slope, (2) materials, infinite slope failure 
+79.1. Introduction 
+This problem is taken from Figure 14.4 on page 217 of Duncan and Wright (2005)  
+ 
+79.2. Problem Description 
+Figure 79.1 shows a cohesionless slope. Two slip surfaces are of interest in this verification problem. The 
+first is a slip surface that is very shallow (infinite slope mechanism) and the second is a deep slip surface 
+that is tangent to the bottom of the foundation. 
+ 
+79.3. Geometry and Material Properties 
+ 
+Figure 79.1: A Cohesionless Earth Embankment  
+ 
+Table 79.1: Soil Properties 
+Zone 
+c’ (psf) 
+’ (0) 
+ (pcf) 
+Embankment 
+0 
+30 
+120 
+Foundation 
+450 
+0 
+120 
+ 
+ 
+ 
+
+ 
+268  
+rocscience.com 
+79.4. Results 
+Table 79.2: Case 1 – Deep slip surface tangent to the bottom of the foundation 
+Method 
+Factor of Safety 
+(Circular) 
+Factor of Safety 
+(Non-circular) 
+Bishop 
+1.412 
+1.225 
+Spencer 
+1.400 
+1.361 
+GLE 
+1.404 
+1.373 
+ 
+ 
+          Note: Reference factor of safety = 1.40 [Duncan and Wright] 
+ 
+Figure 79.2: Solution to Case 1, using the Spencer method 
+ 
+ 
+ 
+ 
+ 
+
+ 
+269  
+rocscience.com 
+Table 79.3: Case 2 – Very shallow slip surface (infinite slope mechanism) 
+Method 
+Factor of Safety 
+(Circular) 
+Factor of Safety 
+(Non-circular) 
+Bishop 
+1.444 
+1.444 
+Spencer 
+1.443 
+1.443 
+GLE 
+1.443 
+1.443 
+ 
+ 
+          Note: Reference factor of safety = 1.44 [Duncan and Wright] 
+ 
+Figure 79.3: Solution to Case 2, using the Spencer method 
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #81 (manual pages 273-275)
+==========================================================================================
+ 
+273  
+rocscience.com 
+81. Slide Verification Problem #81 
+Embankment, (2) materials, infinite slope failure 
+81.1. Introduction 
+This problem is taken from Figure 14.7 on page 220 of Duncan and Wright (2005)  
+ 
+81.2. Problem Description 
+Figure 81.1 shows an earth embankment. Two critical slip surfaces are of interest in this verification 
+problem. The first is a deep slip surface tangent to the bottom of the foundation and the second is a very 
+shallow (infinite slope mechanism) slip surface. 
+ 
+81.3. Geometry and Material Properties 
+ 
+Figure 81.1: Geometry Setup in Slide 
+Table 81.1: Soil Properties 
+Zone 
+c’ (psf) 
+’ (0) 
+ (pcf) 
+Embankment 
+0 
+30 
+124 
+Foundation 
+500 
+0 
+98 
+ 
+ 
+ 
+ 
+ 
+
+ 
+274  
+rocscience.com 
+81.4. Results 
+Table 81.2: Case 1 – Deep slip surface tangent to the bottom of the foundation 
+Method 
+Factor of Safety 
+(Circular) 
+Factor of Safety 
+(Non-circular) 
+Bishop 
+1.230 
+1.081 
+Spencer 
+1.209 
+1.183 
+GLE 
+1.217 
+1.174 
+ 
+         
+ 
+Note: Reference factor of safety = 1.21 [Duncan and Wright] 
+ 
+Figure 81.2: Solution for Case 1, using the Spencer method 
+ 
+ 
+ 
+ 
+ 
+ 
+
+ 
+275  
+rocscience.com 
+Table 81.3: Case 2 – Very shallow (infinite slope mechanism) slip surface 
+Method 
+Factor of Safety 
+(Circular) 
+Factor of Safety 
+(Non-circular) 
+Bishop 
+1.155 
+1.155 
+Spencer 
+1.155 
+1.155 
+GLE 
+1.155 
+1.155 
+ 
+         
+ 
+Note: Reference factor of safety = 1.15 [Duncan and Wright] 
+ 
+Figure 81.3: Solution for Case 2, using the Spencer method 
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #95 (manual pages 307-308)
+==========================================================================================
+ 
+307  
+rocscience.com 
+95. Slide Verification Problem #95 
+Embankment dam, homogenous, rapid drawdown, water table 
+95.1. Introduction 
+This rapid drawdown problem is taken from Appendix G of the Engineering Manual EM 1110-2-1902, 
+“Engineering and Design – Stability of Earth and Rock-Fill Dams,” by Corps of Engineers (1970).  
+ 
+95.2. Problem Description 
+The slope in Figure 95.1 is analyzed for slope stability. An initial water level is assumed at elevation 110 
+ft. Rapid drawdown brings the water level down to an elevation of 24 ft. Material properties of the slope 
+are given in Table 95.1. One circular slip surface is considered. This slip surface is centered at 
+coordinates (169.5, 210) and has a radius of 210 ft. The Army Corps of Engineers 2-stage rapid 
+drawdown method is used. 
+ 
+95.3. Geometry and Material Properties 
+ 
+Figure 95.1: Slope Subjected to Rapid Drawdown in Slide 
+Table 95.1: Slope Material Properties 
+Unit Weight 
+Effective Stress Envelope 
+R-Envelope 
+Intercept, c’ 
+Slope, Φ’ 
+Intercept, cR 
+Slope, ΦR 
+135 pcf 
+0 
+30° 
+1200 psf 
+16° 
+
+ 
+308  
+rocscience.com 
+95.4. Results 
+Table 95.2 
+Rapid Drawdown Method 
+Factor of Safety 
+Army Corp. Eng. 2 Stage 
+1.347 
+ 
+ 
+ 
+    Note: Reference factor of safety = 1.35 (using Army Corp. Eng. 2 Stage  
+ 
+ 
+ 
+    method) [Corps of Engineers] 
+ 
+Figure 95.2: Solution, using the Army Corp. Eng. 2-stage rapid drawdown method 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #96 (manual pages 309-310)
+==========================================================================================
+ 
+309  
+rocscience.com 
+96. Slide Verification Problem #96 
+Embankment dam, homogenous, rapid drawdown, water table 
+96.1. Introduction 
+This rapid drawdown problem is similar to Verification Problem #95, also taken from Appendix G of the 
+Engineering Manual EM 1110-2-1902, “Engineering and Design – Stability of Earth and Rock-Fill Dams,” 
+by Corps of Engineers (1970).  
+ 
+96.2. Problem Description 
+The slope in Figure 96.1 is analyzed for slope stability. An initial water level is assumed at elevation 110 
+ft. Rapid drawdown brings the water level down to an elevation of 24 ft. Material properties of the slope 
+are given in Table 96.1. One circular slip surface is considered. This slip surface is centered at 
+coordinates (169.5, 210) and has a radius of 210 ft. The Duncan, Wright and Wong 3-stage rapid 
+drawdown method is used. 
+ 
+96.3. Geometry and Material Properties 
+ 
+Figure 96.1: Slope Subjected to Rapid Drawdown 
+Table 96.1: Slope Soil Properties 
+Unit Weight 
+Effective Stress Envelope 
+R-Envelope 
+Intercept, c’ 
+Slope, Φ’ 
+Intercept, cR 
+Slope, ΦR 
+135 pcf 
+0 
+30° 
+1200 psf 
+16° 
+
+ 
+310  
+rocscience.com 
+96.4. Results 
+Table 96.2 
+Rapid Drawdown Method 
+Factor of Safety 
+Duncan, Wright and Wong 3-stage 
+1.443 
+ 
+ 
+           Note: Reference factor of safety = 1.44 (using Duncan, Wright and Wong 3 stage  
+ 
+ 
+ 
+        method) [Corps of Engineers] 
+ 
+Figure 96.2: Solution, using the Duncan, Wright and Wong 3-stage rapid drawdown method 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #98 (manual pages 313-314)
+==========================================================================================
+ 
+313  
+rocscience.com 
+98. Slide Verification Problem #98 
+Embankment dam, (5) materials, rapid drawdown, water table 
+98.1. Introduction 
+This rapid drawdown problem is taken from the “Slope Stability during Rapid Drawdown” paper by 
+Duncan, Wright, and Wong (1990). It is based on the Walter Bouldin Dam in Alabama. 
+ 
+98.2. Problem Description 
+The slope in Figure 98.1 is analyzed for slope stability. An initial water level is assumed at a height of 47 
+ft. Rapid drawdown brings the water level down to a height of 15 ft. Material properties of the slope are 
+given in Table 98.1. Various slip surfaces are considered to find the minimum factor of safety. 
+ 
+98.3. Geometry and Material Properties 
+ 
+Figure 98.1: Walter Bouldin Dam Model 
+Table 98.1: Dam Material Properties 
+Material 
+Unit 
+Weight 
+Effective Stress Envelope 
+R-Envelope 
+Intercept, c’ 
+Slope, Φ’ 
+Intercept, cR 
+Slope, ΦR 
+Riprap 
+125 pcf 
+0 
+40.0° 
+-- 
+-- 
+Clayey Silty Sand 
+128 pcf 
+240 
+32.7° 
+650 psf 
+13.0° 
+Micaceous Sand 
+123 pcf 
+220 
+22.5° 
+450 psf 
+11.0° 
+Cretaceous Clay 
+124 pcf 
+180 
+19.0° 
+180 psf 
+13.0° 
+Clayey Sandy Gravel 
+125 pcf 
+0 
+40.0° 
+-- 
+-- 
+
+ 
+314  
+rocscience.com 
+98.4. Results 
+Table 98.2 
+Rapid Drawdown Method 
+Factor of Safety 
+(from Slide) 
+Factor of Safety (from Duncan, 
+Wright and Wong, 1990) 
+Army Corp. Eng. 2 Stage 
+0.931 
+0.93 
+Lowe and Karafiath 
+1.075 
+1.09 
+Duncan, Wright, Wong 3 
+Stage 
+1.039 
+1.04 
+ 
+ 
+Figure 98.2: Solution, using the Army Corp. Eng. 2-stage rapid drawdown method 
+ 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #102 (manual pages 321-327)
+==========================================================================================
+ 
+321  
+rocscience.com 
+102. 
+Slide Verification Problem #102 
+Embankment dam, homogenous, rapid drawdown 
+102.1. 
+Problem Description 
+This problem investigates the stability of an earth dam subjected to rapid drawdown conditions. The dam 
+material is a homogenous, isotropic soil with the soil properties outlined in Table 102.1. 
+ 
+102.2. 
+Geometry and Material Properties 
+Figure 102.1 shows the Slide model used to perform the stability analysis. 
+ 
+Figure 102.1: Geometry Setup in Slide 
+Table 102.1: Soil Properties 
+Property 
+Value 
+𝑐′ 
+13.8 kPa 
+𝜑′ 
+37º 
+𝛾 
+18.2 kN/m3 
+𝐸 
+1 x 105 kPa 
+𝜈 
+0.3 
+ 
+102.3. 
+Results 
+Figure 102.2 shows the Slide results for the earth dam under dry conditions. The calculated factor of 
+safety of 2.455(Spencer method) corresponds closely with the value of 2.43 quoted in the “Strength 
+reduction FEM in stability analysis of soil slopes subjected to transient unsaturated seepage” paper by 
+Huang and Jia (2008). 
+
+ 
+322  
+rocscience.com 
+Figure 102.3 shows the Slide analysis for initial steady state before rapid drawdown. Total head contours 
+are also shown. The calculated factor of safety of 1.745 corresponds closely with the value of 1.70 quoted 
+in Huang and Jia (2008). 
+Transient analysis considered a φb value of both 0º and 37º. Slide results at different times for the two 
+cases are plotted on Figures 102.4 and Figure 102.5, along with values from Huang and Jia (2008). The 
+Slide results correspond closely with the published ones. Figures 102.6 to Figure 102.11 show the Slide 
+model results for both cases at various analysis times. Tables 102.2 and Table 102.3 list these values. 
+ 
+Figure 102.2: Slide Results for Dry Conditions, using the Spencer method 
+ 
+ Figure 102.3: Slide Results for Initial Conditions, using the Spencer method 
+
+ 
+323  
+rocscience.com 
+ 
+Figure 102.4: Factors of Safety Plot for φb = 0º 
+ 
+ 
+Figure 102.5: Factors of Safety Plot for φb = 37º 
+ 
+0
+0.5
+1
+1.5
+2
+2.5
+3
+0
+400
+800
+1200
+1600
+Time (h)
+Factor of Safety
+Slide
+Huang
+and Jia
+(2008)
+0
+0.5
+1
+1.5
+2
+2.5
+3
+0
+400
+800
+1200
+1600
+Time (h)
+Factor of Safety
+Slide
+Huang
+and Jia
+(2008)
+
+ 
+324  
+rocscience.com 
+ 
+Figure 102.6: Slide Results for φb = 0º at 80 h, using the Spencer method 
+ 
+ 
+Figure 102.7: Slide Results for φb = 0º at 300 h, using the Spencer method 
+ 
+
+ 
+325  
+rocscience.com 
+ 
+Figure 102.8: Slide Results for φb = 0º at 1500 h, using the Spencer method 
+ 
+ 
+Figure 102.9: Slide Results for φb = 37º at 80 h, using the Spencer method 
+ 
+
+ 
+326  
+rocscience.com 
+ 
+Figure 102.10: Slide Results for φb = 37º at 300 h, using the Spencer method 
+ 
+ 
+Figure 102.11: Slide Results for φb = 37º at 1500 h, using the Spencer method 
+ 
+ 
+ 
+ 
+
+ 
+327  
+rocscience.com 
+Table 102.2: Factors of Safety for φb = 0º 
+Time (h) 
+Factor of Safety (Slide) 
+Factor of Safety 
+(Huang and Jia, 2008) 
+0 
+1.745 
+1.683 
+60 
+1.805 
+1.805 
+70 
+1.820 
+1.840 
+75 
+1.828 
+1.858 
+80 
+1.836 
+1.875 
+85 
+1.844 
+1.893 
+90 
+1.852 
+1.909 
+100 
+1.868 
+1.940 
+300 
+2.094 
+2.274 
+600 
+2.243 
+2.360 
+1000 
+2.330 
+2.374 
+1500 
+2.376 
+2.374 
+ 
+Table 102.3: Factors of Safety for φb = 37º 
+Time (h) 
+Factor of Safety (Slide) 
+Factor of Safety 
+(Huang and Jia, 2008) 
+0 
+1.815 
+1.764 
+60 
+1.886 
+ 
+1.930 
+70 
+1.904 
+1.982 
+75 
+1.913 
+2.009 
+80 
+1.923 
+ 
+2.035 
+85 
+1.932 
+2.065 
+90 
+1.942 
+2.098 
+100 
+1.961 
+2.134 
+300 
+2.220 
+2.595 
+600 
+2.416 
+2.754 
+1000 
+2.542 
+2.804 
+1500 
+2.612 
+2.813 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #104 (manual pages 330-331)
+==========================================================================================
+ 
+330  
+rocscience.com 
+104. 
+Slide Verification Problem #104 
+Newmark analysis, seismic analysis, multi-modal optimization (MMO) 
+104.1. 
+Introduction 
+This example is based on Tutorial 28 Seismic Analysis with Newmark Method. Two groups were defined: 
+one is the MMO PS with SA, and the other is the uni-modal PS with SA for comparison. Note that an area 
+filter of 1 m was applied in the Surface Options dialog to eliminate some very shallow surfaces. The 
+Spencer method is used, as it is in the tutorial. 
+ 
+104.2. 
+Problem Description 
+The first row shows the MMO results for each seismic scenario. The second row shows the same results 
+using regular, uni-modal, PS with SA. The four scenarios are: 
+• 
+No Seismic: regular slope stability analysis 
+• 
+Seismic coefficient of 0.15: seismic coefficient applied, otherwise regular slope stability analysis 
+• 
+Critical acceleration: returns critical seismic coefficient such that the factor of safety (FS) is 1. 
+• 
+Newmark displacement: returns associated displacement for surface, given seismic record 
+ 
+Figure 104.1: Slide2 results for MMO (top row) and uni-modal (bottom row) 
+The most critical MMO result for each scenario is compared to the corresponding uni-modal result below 
+and they are found to be in very good agreement. 
+Table 104.1: Slide2 MMO vs uni-modal results for each scenario 
+ 
+MMO (most critical) 
+Uni-modal 
+No Seismic 
+FS = 1.359 
+FS = 1.360 
+Seismic coefficient of 0.15 
+FS = 0.978 
+FS = 0.980 
+Critical acceleration 
+Ky = 0.139 
+Ky = 0.140 
+Newmark displacement 
+Disp = 5.042 cm 
+Disp = 5.081 cm 
+
+ 
+331  
+rocscience.com 
+As an additional verification, the Ky = 0.147 surface in the third scenario, which was quite different from 
+the critical surface, was computed with a regular slope stability analysis, and a seismic coefficient of 
+0.147. The results were as shown: 
+ 
+Figure 104.2: Ky = 0.147 applied to corresponding surface found using MMO 
+An additional view of interest is the comparison of all the surfaces between the MMO (left) and uni-modal 
+(right) for the Newmark displacement scenario. Several distinct high displacement regions are visible with 
+the MMO algorithm which are not clear with the uni-modal: 
+ 
+Figure 104.3: MMO vs uni-modal all surfaces view for Newmark scenario 
+ 
+ 
+ 
+ 
+ 
+
+
+==========================================================================================
+VERIFICATION PROBLEM #106 (manual pages 334-334)
+==========================================================================================
+ 
+334  
+rocscience.com 
+106. 
+Slide Verification Problem #106 
+Support, Ito & Matsui pile 
+106.1. 
+Problem Description 
+This example comes from Cai & Ugai (2000) where the Ito & Matsui pile was used in a Bishop’s circular 
+analysis in order to compare to finite element analysis. The results of their Bishop analysis are compared 
+to Slide2 below: 
+ 
+Figure 106.1: Cai & Ugai (2000) model used in this example 
+ 
+106.2. 
+Results 
+The pile spacing was varied in each scenario following the paper, and the results from the paper and 
+Slide2 are shown below: 
+Table 106.1: FS for Cai & Ugai (2000) vs Slide2 for each pile spacing 
+Pile (Spacing/Diameter) 
+Cai & Ugai (2000) FS 
+Slide2 FS 
+No Pile 
+1.13 
+1.14 
+2 
+1.54 
+1.54 
+3 
+1.37 
+1.43 
+4 
+1.31 
+1.33 
+6 
+1.25 
+1.25 
+It can be surmised that any differences are due to the different search methods used and hence surfaces 
+found in the paper vs. Slide2. 
