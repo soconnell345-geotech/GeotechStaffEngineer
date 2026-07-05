@@ -356,6 +356,43 @@ are SI — implementers must convert (1 ft = 0.3048 m, 1 kip = 4.448 kN, 1 ksf =
 
 ---
 
+# v5.3 additions — Slide2 Slope Stability Verification Manual (public)
+
+Source manual: Rocscience Slide2 Slope Stability Verification Manual,
+https://static.rocscience.cloud/assets/verification-and-theory/Slide2/Slide_SlopeStabilityVerification.pdf
+(21 MB, kept out of the repo). Raw text of the 21 selected problems:
+`module_work/slope_v53/slide2_selected_problems.txt`. These are classic published
+referee problems (ACADS/Giam & Donald 1989, Duncan 2000, Loukidis 2003, Baker
+2003, Pockoski & Duncan 2000) each carrying per-method + referee factors of
+safety. NOTE: the manual's geometry lives in figures that did NOT survive the
+text extraction; problems whose geometry could not be reconstructed from the text
++ a known sibling problem are marked SKIPPED(geometry) below.
+
+## V-026 Slide2 #2 = ACADS 1(b) — homogeneous slope, water-filled tension crack
+- Source: Slide2 Verification #2 (manual pp. 24-27); ACADS 1(b) [Giam & Donald 1989].
+- Target: `slope_stability` (tension crack + water in crack, all methods).
+- Geometry: SAME as Slide2 #1 / ACADS 1(a) — the (20,25)-(30,25)-(50,35)-(70,35) m,
+  2:1, 10 m slope already validated in slope_stability B3. Analyzed MIRRORED
+  (crest on the left, x->90-x) because the module hard-codes the tension crack to
+  the slip-surface ENTRY side.
+- Inputs: soil c'=32 kPa, phi'=10 deg, gamma=20 kN/m3 (Table 2.1); water-filled
+  tension crack, Rankine/Craig-1997 depth zc = 2c'/(gamma*sqrt(Ka)),
+  Ka=(1-sin phi')/(1+sin phi')=0.704 -> zc=3.81 m. Search grid centers per manual
+  ~x[31,47] y[34,49].
+- Published answer (Table 2.2, WITH water crack): Bishop 1.596, Spencer 1.592,
+  GLE 1.592, Janbu corrected 1.489; referee FOS = 1.65 [Giam].
+- Suggested tolerance: dry crack within +/-3.5% of the Slide2 water-crack values;
+  water crack documented as ~6% conservative (CONVENTION).
+- Confidence in extraction: high (geometry = known ACADS #1; soil + answers verbatim).
+- Notes: exercises the tension-crack strength truncation + hydrostatic crack-water
+  thrust. The module is more conservative than Slide2 on the water-filled crack
+  (keeps the cracked wedge as zero-strength driving soil + full hydrostatic thrust;
+  Slide2 truncates the mass at the crack). B2 refinement candidates: (1) allow the
+  tension crack on the exit side (currently entry-only, forcing the mirror);
+  (2) mass-truncation crack model. See RESULTS.md V-026.
+
+---
+
 # Looked for but NOT extracted (and why)
 
 - **Liquefaction (liquepy_agent / seismic_geotech NCEER)** — no clean published worked example with complete inputs + FS values found in the local library (UFC/DM7/GEC refs have none); Boulanger & Idriss (2014, UCD/CGM-14/01) presents case-history plots, not a reproducible single-profile worked calc; Youd et al. (2001) likewise. Best future option: NCHRP/TRB "Pile Design for Downdrag" Appendix G design example (nap.nationalacademies.org/read/27864/chapter/8) pairs a CPT liquefaction calc with downdrag — needs a dedicated extraction pass.
