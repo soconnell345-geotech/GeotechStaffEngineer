@@ -473,6 +473,39 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   the harder 3-layer ACADS #4 seismic case (whose reconstructed layer geometry is
   the limiting factor there, not the seismic engine).
 
+## V-027 Slide2 #4 = ACADS 1(d) — 3-material slope + seismic 0.15g (geometry-limited)
+- Source: Slide2 Verification #4 (manual pp. 32-35); ACADS 1(d) [Giam & Donald 1989].
+- Target: `slope_stability` (3-layer + pseudo-static seismic kh=0.15).
+- Geometry (metres, from Fig 4.1; layer boundaries pixel-read, MODERATE confidence):
+  surface (20,25),(30,25),(50,35),(70,35); base y=20; upper matl bnd (base of
+  Soil#1) (33,26.5),(40,27),(50,29),(54,31),(70,31); lower matl bnd (Soil#2/#3)
+  (40,27),(52,24),(70,24). Soil#1 c'=0/phi'=38, Soil#2 c'=5.3/phi'=23, Soil#3
+  c'=7.2/phi'=20, all gamma=19.5. kh=0.15.
+- Published answer (Table 4.2, seismic): Bishop 1.016, Spencer 0.991, GLE 0.989,
+  Janbu corrected 0.965; referee 1.00.
+- Verdict: **N/A (geometry-precision)** — the reconstructed 3-layer geometry gives
+  static Bishop ~1.0-1.23 (depending on the ambiguous toe soil-region assignment)
+  and seismic ~0.78-0.91, vs the published seismic 1.016. Even the strongest
+  defensible soil config (all Soil#2 below Soil#1) reaches only seismic 0.913. The
+  seismic ENGINE is validated to +0.5% by the clean-geometry Loukidis #62 (V-033),
+  so the shortfall is the imprecise layer geometry (the FOS is highly sensitive to
+  the exact material boundaries, which are not label-resolved in the figure), NOT
+  a kh bug. No passing test; documented as a geometry-reconstruction limit.
+- Confidence in extraction: surface + soils high; layer boundaries moderate.
+
+## V-034 Slide2 #63 — Loukidis (2003) ex 2, 3-layer seismic (geometry-limited)
+- Source: Slide2 Verification #63 (manual pp. 219-220); Loukidis et al. (2003).
+- Target: `slope_stability` (3-layer + pseudo-static seismic kc=0.155).
+- Geometry (metres, Fig 63.1 UNLABELED — pixel-reconstructed, ~+/-1.5 m): surface
+  (-30,20),(20,20),(58,39),(77,40),(111,54),(150,54); top/middle bnd daylights
+  ~(78,41)->(150,44); middle/lower bnd daylights ~(37,27)->(150,33); base y~-20.
+  Top c=4/phi=30/gamma=17, Middle c=25/phi=15/gamma=19, Bottom c=15/phi=45/gamma=19.
+- Published answer: Spencer FOS = 1.000 at kc=0.155 (Slide2 0.991).
+- Verdict: **N/A (geometry-precision)** — the approximate/unlabeled 3-layer figure
+  gives seismic ~0.82 vs 1.0 (same imprecise-3-layer-geometry issue as V-027 #4).
+  The seismic engine is validated by V-033 (#62). No passing test.
+- Confidence in extraction: geometry approximate (unlabeled figure).
+
 ---
 
 # Looked for but NOT extracted (and why)
