@@ -402,6 +402,31 @@ class TestFullAnalysis:
         assert "Q_ultimate_kN" in d
         assert "Q_side_clay_kN" in d
 
+    def test_dict_exposes_side_resistance_by_layer(self):
+        """to_dict() surfaces the per-layer side-resistance breakdown so the
+        agent can quote the mobilized alpha/beta/fs instead of guessing."""
+        shaft, soil = self._mixed_profile()
+        analysis = DrillShaftAnalysis(shaft=shaft, soil=soil)
+        result = analysis.compute()
+        d = result.to_dict()
+        assert "side_resistance_by_layer" in d
+        assert "side_resistance_note" in d
+        layers = d["side_resistance_by_layer"]
+        assert layers is result.layer_breakdown
+        # Every layer carries a unit side resistance.
+        assert all("fs_kPa" in lb for lb in layers)
+        # The cohesive layer's method string quotes the GEC-10 alpha.
+        cohesive = [lb for lb in layers if lb["soil_type"] == "cohesive"]
+        assert cohesive
+        assert any(lb["method"].startswith("alpha=") for lb in cohesive)
+
+    def test_dict_omits_layer_breakdown_when_absent(self):
+        """No layer_breakdown -> the additive keys stay out of the dict."""
+        result = DrillShaftResult(Q_ultimate=100.0, Q_skin=60.0, Q_tip=40.0)
+        d = result.to_dict()
+        assert "side_resistance_by_layer" not in d
+        assert "side_resistance_note" not in d
+
     def test_allowable_capacity(self):
         shaft, soil = self._clay_profile()
         analysis = DrillShaftAnalysis(shaft=shaft, soil=soil, factor_of_safety=3.0)

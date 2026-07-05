@@ -117,6 +117,16 @@ class DrillShaftResult:
             "method": self.method,
             "sigma_v_tip_kPa": round(self.sigma_v_tip, 1),
         }
+        if self.layer_breakdown:
+            d["side_resistance_by_layer"] = self.layer_breakdown
+            d["side_resistance_note"] = (
+                "Per-layer side resistance. 'method' gives the mobilized "
+                "coefficient (alpha=... for cohesive, beta=... for "
+                "cohesionless, rock socket); 'fs_kPa' is the unit side "
+                "resistance. effective_top_m/effective_bottom_m reflect the "
+                "GEC-10 exclusion zones (top 1.5 m or casing depth; bottom 1D "
+                "in cohesive layers) that carry no side resistance."
+            )
         return d
 
     def plot_load_transfer(self, ax=None, show=True, **kwargs):
