@@ -11,23 +11,29 @@ master fb34502).
 
 ## Plan / status
 
-- [ ] **A. Baseline** — full repo suite (`pytest -q`) + geotech-references
-      suite; record counts. (background shell)
+- [x] **A. Baseline** — full repo suite (`pytest -q`) + geotech-references
+      suite; record counts. (Closed 2026-07-05: full suite re-run green with
+      the eval fixes — 8056 passed / 48 skipped; geotech-references 3703
+      recorded in Phase C.)
 - [x] **B. Code QC** — adversarial review of this week's unreviewed diffs
       (c974247 adapter sweep, d7a3b30 _fileio) + general code QC; fix findings.
 - [x] **C. Reference-retrieval QC** — registry wiring of all 21 reference
       modules, FTS DB integrity, semantic aliases, figure_db/figure catalogs,
       query-expansion eval (scripts/eval_retrieval_recall.py), reference_mode
       consult path offline. Fix findings.
-- [ ] **D. Worked-example inventory** — sweep reference library text JSONs +
+- [x] **D. Worked-example inventory** — sweep reference library text JSONs +
       DM7/GEC/UFC for worked example problems with numeric answers; map to
-      modules. Add public FLAC/Itasca verification problems (web).
+      modules. Add public FLAC/Itasca verification problems (web). (Done —
+      committed a9f81a1: `validation_examples/INVENTORY.md`, 25 problems,
+      14 modules; checkbox was stale.)
 - [x] **E. Validation runs** — all 25 inventory problems implemented as
       offline pytest checks (`validation_examples/test_published_v0*.py`, 87
       tests) with `RESULTS.md`. Done 2026-06-14 (resumed under Opus after the
       Fable→Opus switch). No analysis-result bugs found; one additive fem2d
       capability gained (see below). Verdicts + gaps in RESULTS.md.
-- [ ] **F. Wrap-up** — summary report for owner, memory update, final push.
+- [x] **F. Wrap-up** — summary report for owner, memory update, final push.
+      (Covered by the follow-on docs session: `docs/V5.1_SUMMARY.html`,
+      HANDOFF refresh 70888e8; checkbox was stale.)
 
 ## Log
 
@@ -57,3 +63,13 @@ master fb34502).
   roller_base BC + initial_stress_relaxation (excavation/cavity unloading),
   which enabled V-024. This is the only shipped-code change in Phase E ->
   justifies the rc4 wheel rebuild.
+- 2026-07-05 (Fable, eval-review session): owner ran the 71-Q suite on the rc5
+  wheel (results: `docs/geotech_eval_20260705.json` / `docs/geotech_eval.md`).
+  Verdict: 26/31 auto-graded pass (83.9%); 4 of the 5 fails were missing
+  optional packages on the cluster (gstools/pygef/python-ags4/ezdxf — agent
+  refused honestly), 1 real content miss (REF-1 alpha narrative). All 5 P1
+  flags verified as recovered-after-error false positives. Fixes landed on
+  master: drilled_shaft to_dict per-layer alpha/fs breakdown, 6 new dispatch
+  aliases, eval-harness P1 recovered-split + optional-dep preflight,
+  `[deep,full]` install docs. Phase A closed with the post-fix full-suite
+  run: **8056 passed, 48 skipped** (14:20); board checkboxes D/F reconciled.

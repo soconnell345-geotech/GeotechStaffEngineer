@@ -25,7 +25,7 @@ Because the ground is **variable and only partly known**, a single number is nev
 
 Steps 3 and 4 are repeated calculations across plausible subsurface and loading conditions. The agent helps the engineer understand the range and *spread* of answers.
 
-### In geotech engineer, the true answer is a distribution
+### In geotechnical engineering, the true answer is a distribution
 
 - **Parameter uncertainty** — design properties carry coefficients of variation (COV) of 10–40%, far larger than structural materials.
 - **Spatial variability** — soil changes boring to boring; a footing averages over its footprint, a long slope samples many weak and strong zones. Scale matters.
