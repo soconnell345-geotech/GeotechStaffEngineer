@@ -409,6 +409,50 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Confidence in extraction: soil + answers high; geometry + PP grid not recoverable
   from text.
 
+## V-031 Slide2 #57 — Pockoski & Duncan (2000) test slope 3 (2-layer, water, circular)
+- Source: Slide2 Verification #57 (manual pp. 203-205); Pockoski & Duncan (2000).
+- Target: `slope_stability` (2-layer + water table, circular critical surface).
+- Geometry (feet, from labeled Fig 57.1): surface (-70,100),(0,100),(125,150),
+  (200,150) — 2.5:1, 50 ft; horizontal material boundary el 90; base el 85; water
+  table (-70,100),(0,100),(125,140),(200,140); dry tension crack (auto, shallow).
+- Inputs: Sandy clay c'=300 psf/phi'=35/130 pcf over Highly Plastic Clay
+  c'=0/phi'=25/130 pcf.
+- Published answer (Table 57.3, circular): Spencer 1.422, Bishop 1.417, Janbu-simplified
+  1.263, Lowe-Karafiath 1.414, Ordinary 1.319; GOLD-NAIL 1.40.
+- Suggested tolerance: +/-1% on Bishop/Spencer vs the Slide2 circular values.
+- Confidence in extraction: high (labeled figure vertices).
+- Notes: Bishop/Spencer reproduce to <0.6% (PASS). Janbu (module f0-CORRECTED)
+  runs above the Slide2 Janbu-SIMPLIFIED, and Ordinary/OMS-with-water below — usual
+  method-definition conventions.
+
+## V-032 Slide2 #61 — Baker (2003) example 3, homogeneous Mohr-Coulomb
+- Source: Slide2 Verification #61 (manual pp. 213-215); Baker (2003).
+- Target: `slope_stability` (homogeneous M-C circular). Power-curve (nonlinear
+  envelope) variant is OUT OF SCOPE (module has no power-curve strength).
+- Geometry (metres, labeled Fig 61.1): surface (0,0),(6,6),(20,6) — 45 deg (1:1),
+  6 m high; base y=0.
+- Inputs: homogeneous clay c'=6 kPa, phi'=32 deg, gamma=18 kN/m3.
+- Published answer: Spencer 1.366, Janbu-simplified 1.291 (M-C). (Power-curve
+  Spencer 1.468 / Baker nonlinear FS 1.48 — out of scope.)
+- Suggested tolerance: +/-1% on Spencer.
+- Confidence in extraction: high (labeled figure).
+- Notes: Spencer reproduces to <0.1% (PASS).
+
+## V-033 Slide2 #62 — Loukidis et al. (2003) ex 1, critical seismic coefficient
+- Source: Slide2 Verification #62 (manual pp. 216-218); Loukidis et al. (2003).
+- Target: `slope_stability` (pseudo-static SEISMIC, homogeneous, circular thru toe).
+- Geometry (metres, labeled Fig 62.1): surface (-50,0),(0,0),(75,25),(150,25) —
+  3:1, 25 m high; base y=-25.
+- Inputs: homogeneous clay c'=25 kPa, phi'=30 deg, gamma=20 kN/m3; Loukidis'
+  critical seismic coefficient (dry) kc=0.432 (also ru=0.5 case kc=0.132).
+- Published answer: at kc=0.432 the Spencer FOS = 1.000 (Slide2 circular 1.001).
+- Suggested tolerance: +/-2% on the reproduced FOS=1.0.
+- Confidence in extraction: high (labeled figure).
+- Notes: Spencer 1.005 at kc=0.432 (+0.5%, PASS). This CLEAN, fully-labeled
+  geometry validates the module's pseudo-static seismic engine independently of
+  the harder 3-layer ACADS #4 seismic case (whose reconstructed layer geometry is
+  the limiting factor there, not the seismic engine).
+
 ---
 
 # Looked for but NOT extracted (and why)
