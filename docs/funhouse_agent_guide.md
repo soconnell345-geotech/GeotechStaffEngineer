@@ -388,7 +388,7 @@ scripted transcript.
 %pip install "geotech-staff-engineer[deep]==5.0.0"
 # or from a test wheel -- upload to /tmp or a UC Volume (NOT /Workspace,
 # which mangles the filename):
-%pip install "/tmp/geotech_staff_engineer-5.1.0rc4-py3-none-any.whl[deep]"
+%pip install "/tmp/geotech_staff_engineer-5.1.0rc5-py3-none-any.whl[deep]"
 
 dbutils.library.restartPython()   # REQUIRED, see below
 ```
