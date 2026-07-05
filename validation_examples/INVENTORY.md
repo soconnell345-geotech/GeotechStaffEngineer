@@ -391,6 +391,24 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   tension crack on the exit side (currently entry-only, forcing the mirror);
   (2) mass-truncation crack model. See RESULTS.md V-026.
 
+## V-029 Slide2 #10 = ACADS 5 — homogeneous slope, pore-pressure GRID + ponded water
+- Source: Slide2 Verification #10 (manual pp. 55-58); ACADS 5 [Giam & Donald 1989].
+- Target: `slope_stability` — but pore pressure is supplied as a discrete GRID of
+  (x, z, u) points (TIN-interpolated from the Figure 10.2 flow net).
+- Inputs: homogeneous soil c'=11 kPa, phi'=28 deg, gamma=20 kN/m3 (Table 10.1);
+  1:2 excavated slope (beta=26.56 deg) below an initially horizontal surface;
+  pore pressure from a flow-net grid; ponded water.
+- Published answer (Table 10.2): Bishop 1.498, Spencer 1.500, GLE 1.500, Janbu
+  corrected 1.457; referee 1.53 [Giam].
+- Verdict: **N/A (scope)** — the module has NO pore-pressure-GRID input (it
+  supports a piezometric surface `gwt_points` and a per-layer `ru`, but not an
+  arbitrary TIN-interpolated u(x,z) grid). The flow-net grid values are a figure
+  that did not survive text extraction, and the excavation height is not in the
+  text, so an ru/piezo approximation is not defensible here. Capability gap for B2
+  (pore-pressure-grid input + TIN interpolation). No test.
+- Confidence in extraction: soil + answers high; geometry + PP grid not recoverable
+  from text.
+
 ---
 
 # Looked for but NOT extracted (and why)
