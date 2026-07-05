@@ -43,6 +43,13 @@ ROUTING_CASES = [
     ("gstools", "fit_variogram", "variogram", None),
     ("subsurface", "read_and_validate", "read_ags4", None),
     ("dxf_export", "export_cross_section", "export_geometry_to_dxf", None),
+    # Curated from the 2026-07-05 71-question eval run.
+    ("lateral_pile", "analyze_lateral_pile", "lateral_pile_analysis", None),
+    ("retaining_walls", "earth_pressure_analysis", "earth_pressure_coefficient", None),
+    ("ground_improvement", "aggregate_pier_design", "aggregate_piers", None),
+    ("liquefaction", "cpt_based_triggering", "liquefaction_analysis", None),
+    ("gstools", "ordinary_kriging", "kriging", None),
+    ("dxf_import", "discover_dxf", "discover_layers", None),
 ]
 
 

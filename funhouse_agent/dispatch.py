@@ -195,6 +195,14 @@ _METHOD_ALIASES = {
     ("drilled_shaft", "single_shaft_capacity"): "drilled_shaft_capacity",
     ("axial_pile", "beta_method"): "axial_pile_capacity",
     ("downdrag", "fellenius_neutral_plane"): "downdrag_analysis",
+    # analyze_lateral_pile — verb-prefixed guess (2026-07-05 eval run).
+    ("lateral_pile", "analyze_lateral_pile"): "lateral_pile_analysis",
+    # --- earth retention / ground improvement ---
+    # Names the agent guessed for these tools (2026-07-05 eval run). The
+    # earth-pressure coefficient tool is the Rankine/Coulomb K helper; the
+    # aggregate-pier tool is the GEC-13 design method.
+    ("retaining_walls", "earth_pressure_analysis"): "earth_pressure_coefficient",
+    ("ground_improvement", "aggregate_pier_design"): "aggregate_piers",
     # --- slope / FEM ---
     ("fem2d", "slope_strength_reduction"): "fem2d_slope_srm",
     # --- unified liquefaction tool ---
@@ -207,12 +215,18 @@ _METHOD_ALIASES = {
     ("liquefaction", "boulanger_idriss_2014"): "liquefaction_analysis",
     ("liquefaction", "bi2014"): ("liquefaction_analysis", {"method": "bi2014"}),
     ("liquefaction", "nceer2001"): ("liquefaction_analysis", {"method": "nceer2001"}),
+    # cpt_based_triggering — descriptive guess; auto-routes by CPT input
+    # (2026-07-05 eval run).
+    ("liquefaction", "cpt_based_triggering"): "liquefaction_analysis",
     # --- other analysis modules ---
     ("liquepy", "cpt_boulanger_idriss_2014"): "cpt_liquefaction",
     ("liquepy", "spt_boulanger_idriss_2014"): "spt_liquefaction",
     ("salib", "sobol_sensitivity"): "sobol_sample",
     ("pystrata", "equivalent_linear"): "eql_site_response",
     ("gstools", "fit_variogram"): "variogram",
+    # ordinary_kriging / discover_dxf — names guessed in the 2026-07-05 eval run.
+    ("gstools", "ordinary_kriging"): "kriging",
+    ("dxf_import", "discover_dxf"): "discover_layers",
     # subsurface_characterization is the single data-I/O home; the former
     # pygef/ags4/pydiggs modules are folded in as format-adapter methods.
     ("subsurface", "read_and_validate"): "read_ags4",
