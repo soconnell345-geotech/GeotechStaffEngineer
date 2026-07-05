@@ -109,6 +109,12 @@ just-added file): unzip and confirm the new files/tokens are present.
   (questions with `expected` keys) + partly eyeballed from the `.md`; process
   metrics (P1 hallucination rate, tool-error rate, rounds, latency, tokens) are
   always computed.
+  - **Full coverage needs the optional-dependency extras:** install
+    `%pip install "/tmp/...whl[deep,full]"` — with `[deep]` alone, ~12 questions
+    (the gstools/pygef/ags4/pydiggs/ezdxf/SALib/pystrata/eqsig/liquepy/openseespy
+    modules) fail honestly with "not installed" errors. `run_suite` runs an
+    optional-dependency preflight and prints a "Missing optional packages" banner
+    at the top of the `.md` when any are absent.
 - Save outputs to `/tmp` or `/Volumes`, then `dbutils.fs.cp` out — NOT
   `/Workspace` (FUSE writes are non-durable / permission-blocked on the cluster).
 

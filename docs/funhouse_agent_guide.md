@@ -396,6 +396,12 @@ dbutils.library.restartPython()   # REQUIRED, see below
 - The `[deep]` extra is required for the v2 deepagents loop (`funhouse_agent.deep`);
   without it you get `ModuleNotFoundError: No module named 'deepagents'`.
   Add `[interactive]` for the plotly single-file viewers, `[plot]` for matplotlib figures.
+- **Full 71-question eval coverage needs the optional-dependency extras:** install
+  `%pip install "/tmp/...whl[deep,full]"`. With `[deep]` alone, ~12 questions (the
+  gstools/pygef/ags4/pydiggs/ezdxf/SALib/pystrata/eqsig/liquepy/openseespy modules)
+  fail honestly with "not installed" errors. `run_suite` runs an optional-dependency
+  preflight and prints a "Missing optional packages" banner at the top of the `.md`
+  when any are absent.
 - `dbutils.library.restartPython()` after install is mandatory: the cluster runtime
   ships an old `typing_extensions` that shadows the new one until restart. Symptom of
   skipping it (or of an old version still winning at cluster scope):

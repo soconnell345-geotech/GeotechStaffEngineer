@@ -179,6 +179,33 @@ def test_run_suite_records_per_question_exception(monkeypatch):
     assert out["metrics"]["exception_rate"] == pytest.approx(0.5)
 
 
+def test_run_suite_records_missing_optional_deps(monkeypatch):
+    """The optional-dependency preflight lands in metrics + the markdown banner."""
+    _patch_build(monkeypatch, _StubDeepAgent())
+    monkeypatch.setattr(
+        eh, "check_optional_deps",
+        lambda *a, **k: [{"import": "gstools", "extra": "gstools"},
+                         {"import": "pygef", "extra": "subsurface"}],
+    )
+    out = eh.run_suite("fake-model", questions=_tiny_suite(), verbose=False)
+    missing = out["metrics"]["missing_optional_deps"]
+    assert [d["import"] for d in missing] == ["gstools", "pygef"]
+
+    md = eh.render_suite_markdown(out)
+    assert "Missing optional packages" in md
+    assert "gstools" in md and "pygef" in md
+    assert "geotech-staff-engineer[deep,full]" in md
+
+
+def test_run_suite_no_banner_when_all_deps_present(monkeypatch):
+    """No missing-deps banner when the preflight comes back empty."""
+    _patch_build(monkeypatch, _StubDeepAgent())
+    monkeypatch.setattr(eh, "check_optional_deps", lambda *a, **k: [])
+    out = eh.run_suite("fake-model", questions=_tiny_suite(), verbose=False)
+    assert out["metrics"]["missing_optional_deps"] == []
+    assert "Missing optional packages" not in eh.render_suite_markdown(out)
+
+
 def test_run_suite_object_model_label_includes_model_id(monkeypatch):
     """A non-string model labels as ClassName(model_id) for the review header."""
     _patch_build(monkeypatch, _StubDeepAgent())

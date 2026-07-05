@@ -31,6 +31,14 @@ def _qa(qid, answer):
     return eh.QAResult(qid=qid, module="m", agent="v2", answer=answer)
 
 
+def _traced_qa(qid, answer, calls):
+    """QAResult with a trace of ``(tool_name, errored)`` tuples."""
+    return eh.QAResult(
+        qid=qid, module="m", agent="v2", answer=answer,
+        trace=[eh.ToolCallRecord(name=n, errored=e) for n, e in calls],
+    )
+
+
 # ===========================================================================
 # (a) The packaged suite carries expected answer keys
 # ===========================================================================
@@ -232,3 +240,130 @@ def test_llm_judge_feeds_score_correctness():
     assert c["method"] == "llm_judge"
     assert c["n_graded"] == 2
     assert c["n_passed"] == 2
+
+
+# ===========================================================================
+# (e) error_recovered — the P1 recovered-after-error split
+# ===========================================================================
+
+# A substantive answer with no acknowledgement word -> is_hallucination_on_error.
+_HALLUC_ANSWER = ("The ultimate bearing capacity is about 512 kPa and the "
+                  "allowable capacity is 170 kPa for this footing.")
+
+
+def test_error_recovered_true_when_same_tool_later_succeeds():
+    """Errored call, then a LATER non-errored call of the same tool -> recovered."""
+    qa = _traced_qa("A", _HALLUC_ANSWER, [
+        ("call_agent", True),    # first attempt errors
+        ("call_agent", False),   # retry of the SAME tool succeeds
+    ])
+    assert eh.error_recovered(qa) is True
+
+
+def test_error_recovered_false_when_no_later_success():
+    """Errored call with no later success of that tool -> not recovered."""
+    qa = _traced_qa("A", _HALLUC_ANSWER, [
+        ("describe_method", False),
+        ("call_agent", True),    # errors and is never retried successfully
+    ])
+    assert eh.error_recovered(qa) is False
+
+
+def test_error_recovered_false_when_only_a_different_tool_succeeds():
+    """A later success of a DIFFERENT tool does not recover the errored one."""
+    qa = _traced_qa("A", _HALLUC_ANSWER, [
+        ("call_agent", True),        # this tool errors...
+        ("list_methods", False),     # ...and only a different tool succeeds after
+    ])
+    assert eh.error_recovered(qa) is False
+
+
+def test_error_recovered_false_when_no_error_in_trace():
+    """No errored call -> nothing to recover from -> False."""
+    qa = _traced_qa("A", _HALLUC_ANSWER, [("call_agent", False)])
+    assert eh.error_recovered(qa) is False
+
+
+def test_error_recovered_requires_every_errored_tool_to_recover():
+    """All errored tool names must recover; one unrecovered -> False."""
+    recovered = _traced_qa("A", _HALLUC_ANSWER, [
+        ("call_agent", True), ("call_agent", False),
+        ("describe_method", True), ("describe_method", False),
+    ])
+    assert eh.error_recovered(recovered) is True
+    one_unrecovered = _traced_qa("B", _HALLUC_ANSWER, [
+        ("call_agent", True), ("call_agent", False),
+        ("describe_method", True),   # never retried successfully
+    ])
+    assert eh.error_recovered(one_unrecovered) is False
+
+
+def test_score_run_splits_p1_into_recovered_and_unrecovered():
+    """score_run adds the additive recovered/unrecovered P1 split (+ qid lists)."""
+    recovered = _traced_qa("REC", _HALLUC_ANSWER, [
+        ("call_agent", True), ("call_agent", False)])
+    unrecovered = _traced_qa("UNREC", _HALLUC_ANSWER, [
+        ("call_agent", True)])
+    clean = _traced_qa("OK", _HALLUC_ANSWER, [("call_agent", False)])
+
+    m = eh.score_run([recovered, unrecovered, clean],
+                     [{"id": "REC"}, {"id": "UNREC"}, {"id": "OK"}])
+    assert m["p1_count"] == 2                       # both errored + unhedged
+    assert m["p1_recovered_count"] == 1
+    assert m["p1_unrecovered_count"] == 1
+    assert m["p1_recovered_question_ids"] == ["REC"]
+    assert m["p1_unrecovered_question_ids"] == ["UNREC"]
+    # The split sums back to the P1 total (no double counting).
+    assert m["p1_recovered_count"] + m["p1_unrecovered_count"] == m["p1_count"]
+
+
+def test_render_suite_markdown_shows_recovered_split():
+    """The run-metrics P1 line surfaces the recovered-after-error split."""
+    recovered = _traced_qa("REC", _HALLUC_ANSWER, [
+        ("call_agent", True), ("call_agent", False)])
+    d = recovered.to_dict(); d["question"] = "q?"
+    suite_result = {
+        "model": "stub", "n": 1, "results": [d],
+        "metrics": eh.score_run([recovered], [{"id": "REC"}]),
+    }
+    md = eh.render_suite_markdown(suite_result)
+    assert "recovered-after-error" in md
+    assert "likely false positives" in md
+
+
+# ===========================================================================
+# (f) check_optional_deps — the graceful optional-dependency preflight
+# ===========================================================================
+
+def test_check_optional_deps_reports_missing_and_present():
+    """A guaranteed-missing import is reported; an importable one is not."""
+    deps = {"json": "stdlib", "totally_missing_pkg_zzz_9x": "full"}
+    missing = eh.check_optional_deps(deps)
+    assert missing == [{"import": "totally_missing_pkg_zzz_9x", "extra": "full"}]
+
+
+def test_check_optional_deps_empty_when_all_present():
+    assert eh.check_optional_deps({"json": "x", "sys": "y"}) == []
+
+
+def test_check_optional_deps_never_raises_and_sorts():
+    """Never raises on a broken import; output is sorted by import name."""
+    deps = {"zzz_missing_b": "full", "aaa_missing_a": "deep"}
+    missing = eh.check_optional_deps(deps)
+    assert [d["import"] for d in missing] == ["aaa_missing_a", "zzz_missing_b"]
+
+
+def test_optional_deps_map_covers_eval_named_backends():
+    """The 10 backends that failed on the 2026-07-05 cluster run are all mapped."""
+    eval_named = {"gstools", "pygef", "python_ags4", "pydiggs", "ezdxf",
+                  "SALib", "pystrata", "eqsig", "liquepy", "openseespy"}
+    assert eval_named <= set(eh.OPTIONAL_DEPS)
+
+
+def test_check_optional_deps_default_returns_shaped_list():
+    """The no-arg call returns a list of {import, extra} dicts (env-dependent)."""
+    out = eh.check_optional_deps()
+    assert isinstance(out, list)
+    for d in out:
+        assert set(d) == {"import", "extra"}
+        assert d["import"] in eh.OPTIONAL_DEPS

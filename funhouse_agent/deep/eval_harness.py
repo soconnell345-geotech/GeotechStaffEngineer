@@ -135,6 +135,64 @@ def resolve_sample_path(name: str) -> Path:
 
 
 # ===========================================================================
+# Optional-dependency preflight
+# ===========================================================================
+#: Optional backend packages that gate dependency-backed agent modules, keyed by
+#: their IMPORT name -> the ``pyproject.toml`` [project.optional-dependencies]
+#: extra that provides them. When one is absent, the questions that exercise that
+#: module fail honestly ("... is not installed"), inflating the tool-error and
+#: correctness numbers with environment noise rather than agent behavior. The
+#: ``full`` extra installs all of these at once (``geotech-staff-engineer[deep,full]``).
+OPTIONAL_DEPS: dict[str, str] = {
+    "openseespy": "opensees",
+    "pystrata": "pystrata",
+    "eqsig": "seismic-signals",
+    "pyrotd": "seismic-signals",
+    "liquepy": "liquepy",
+    "hvsrpy": "hvsrpy",
+    "gstools": "gstools",
+    "SALib": "salib",
+    "swprocess": "swprocess",
+    "pystra": "pystra",
+    "pygef": "subsurface",
+    "python_ags4": "subsurface",
+    "pydiggs": "subsurface",
+    "ezdxf": "dxf",
+    "groundhog": "groundhog",
+}
+
+
+def check_optional_deps(deps: Optional[dict] = None) -> list[dict]:
+    """Try-import each optional backend; return the MISSING ones.
+
+    A graceful preflight for :func:`run_suite`. Never raises — any import
+    failure (missing package, broken install, import-time error) is treated as
+    "missing" so the preflight itself can never abort a run.
+
+    Parameters
+    ----------
+    deps : dict, optional
+        ``{import_name: extra}`` map to check. Defaults to :data:`OPTIONAL_DEPS`.
+
+    Returns
+    -------
+    list of dict
+        ``[{"import": <name>, "extra": <extra>}, ...]`` for each dep that is NOT
+        importable, sorted by import name. Empty when all are present.
+    """
+    import importlib
+
+    deps = OPTIONAL_DEPS if deps is None else deps
+    missing: list[dict] = []
+    for name, extra in deps.items():
+        try:
+            importlib.import_module(name)
+        except BaseException:  # noqa: BLE001 - a broken backend must not abort
+            missing.append({"import": name, "extra": extra})
+    return sorted(missing, key=lambda d: d["import"])
+
+
+# ===========================================================================
 # Suite loading
 # ===========================================================================
 
@@ -572,6 +630,38 @@ def is_hallucination_on_error(qa: QAResult) -> bool:
     return not answer_acknowledges_failure(qa.answer)
 
 
+def error_recovered(qa: QAResult) -> bool:
+    """True if every tool that errored in the trace LATER succeeded.
+
+    Splits the P1 hallucination-on-error set (see :func:`is_hallucination_on_error`)
+    into a "recovered-after-error" slice vs an "unrecovered" slice. A question is
+    *recovered* when, for EVERY tool name that produced an errored call, the trace
+    also contains a non-errored call of that SAME tool name at a LATER position —
+    i.e. the agent hit the error, then retried/re-called that tool successfully
+    and answered from the good result. That is exactly the documented main
+    false-positive pattern of the P1 heuristic (errored once, recovered, answered
+    honestly without mentioning the blip), so the recovered slice is the "likely
+    false positive" portion of the P1 count.
+
+    Returns ``False`` when the trace has NO errored call — there is nothing to
+    recover from, so it is not a recovered-after-error case.
+    """
+    last_error_idx: dict[str, int] = {}
+    for i, tc in enumerate(qa.trace):
+        if tc.errored:
+            last_error_idx[tc.name] = i
+    if not last_error_idx:
+        return False
+    for name, err_idx in last_error_idx.items():
+        later_success = any(
+            (not tc.errored) and tc.name == name
+            for tc in qa.trace[err_idx + 1:]
+        )
+        if not later_success:
+            return False
+    return True
+
+
 # ===========================================================================
 # Correctness — default expected-answer judge + opt-in LLM-judge hook
 # ===========================================================================
@@ -817,8 +907,11 @@ def score_run(
     Returns
     -------
     dict
-        ``n_questions``, ``p1_hallucination_rate`` (+ ``p1_count``),
-        ``tool_error_rate`` (questions with >=1 tool error / n),
+        ``n_questions``, ``p1_hallucination_rate`` (+ ``p1_count`` and the
+        additive recovered-split ``p1_recovered_count`` /
+        ``p1_unrecovered_count`` and their qid lists — see
+        :func:`error_recovered`), ``tool_error_rate`` (questions with >=1 tool
+        error / n),
         ``errors_per_question`` (mean tool errors), ``exception_rate``,
         ``avg_rounds``, ``avg_latency_s``, ``total_tokens`` / ``avg_tokens`` /
         ``max_total_tokens`` (``None`` if no usage — ``max_total_tokens`` is the
@@ -830,6 +923,11 @@ def score_run(
         return {"n_questions": 0}
 
     p1 = [q for q in qas if is_hallucination_on_error(q)]
+    # Recovered-split of P1: the "recovered after error" slice is the documented
+    # main false-positive pattern (errored once, retried the SAME tool
+    # successfully, answered honestly). See :func:`error_recovered`.
+    p1_recovered = [q for q in p1 if error_recovered(q)]
+    p1_unrecovered = [q for q in p1 if not error_recovered(q)]
     n_with_tool_error = sum(1 for q in qas if q.has_tool_error)
     n_exception = sum(1 for q in qas if q.exception)
     total_tool_errors = sum(q.n_tool_errors for q in qas)
@@ -845,6 +943,10 @@ def score_run(
         "p1_count": len(p1),
         "p1_hallucination_rate": len(p1) / n,
         "p1_question_ids": [q.qid for q in p1],
+        "p1_recovered_count": len(p1_recovered),
+        "p1_unrecovered_count": len(p1_unrecovered),
+        "p1_recovered_question_ids": [q.qid for q in p1_recovered],
+        "p1_unrecovered_question_ids": [q.qid for q in p1_unrecovered],
         "tool_error_rate": n_with_tool_error / n,
         "errors_per_question": total_tool_errors / n,
         "exception_rate": n_exception / n,
@@ -1042,7 +1144,9 @@ def run_suite(
     dict
         ``{"model": <str>, "n": N, "results": [qa.to_dict(), ...],
         "metrics": score_run(results, questions)}``. ``results`` are
-        :class:`QAResult` dicts (one per question).
+        :class:`QAResult` dicts (one per question). The ``metrics`` dict also
+        carries ``missing_optional_deps`` (the :func:`check_optional_deps`
+        preflight result) so the markdown header can flag environment gaps.
     """
     if questions is None:
         questions = load_suite()
@@ -1059,6 +1163,19 @@ def run_suite(
         print(
             f"Running {n} question(s) through v2 (deepagents) on "
             f"{model_label} — REAL API calls"
+        )
+
+    # Optional-dependency preflight — never raises. Missing backends make the
+    # questions that exercise those modules fail honestly, so surface them up
+    # front (and record them on the metrics for the markdown header).
+    missing_optional_deps = check_optional_deps()
+    if verbose and missing_optional_deps:
+        pkgs = ", ".join(d["import"] for d in missing_optional_deps)
+        print(
+            f"WARNING: {len(missing_optional_deps)} optional package(s) not "
+            f"installed: {pkgs}. Questions exercising these modules will fail "
+            f"honestly. Install geotech-staff-engineer[deep,full] for full "
+            f"coverage."
         )
 
     # Build the v2 agent ONCE — the owner's model drives both text and (via the
@@ -1107,6 +1224,8 @@ def run_suite(
         "results": results,
         "metrics": score_run(qas, questions),
     }
+    # Record the preflight result so the markdown header can flag missing deps.
+    suite_result["metrics"]["missing_optional_deps"] = missing_optional_deps
 
     if out is not None:
         paths = write_suite_results(suite_result, Path(out))
@@ -1373,18 +1492,44 @@ def render_suite_markdown(suite_result: dict) -> str:
             "not a correctness score."
         )
 
+    # Prominent missing-optional-dependency banner (from run_suite's preflight).
+    missing = m.get("missing_optional_deps") or []
+    warn_lines: list[str] = []
+    if missing:
+        pkgs = ", ".join(d.get("import", "?") for d in missing)
+        warn_lines = ["", (
+            f"> ⚠ **Missing optional packages:** {pkgs} — questions that "
+            f"exercise these modules will fail honestly with \"not installed\" "
+            f"errors. Install `geotech-staff-engineer[deep,full]` for full "
+            f"coverage."
+        )]
+
+    # P1 line, with the additive recovered-after-error split when present.
+    p1_line = (
+        f"- P1 hallucination-on-error rate: "
+        f"{_fmt(m.get('p1_hallucination_rate'), 'pct')} "
+        f"({_fmt(m.get('p1_count'), 'int')} question(s)"
+    )
+    if m.get("p1_recovered_count") is not None and (m.get("p1_count") or 0) > 0:
+        p1_line += (
+            f"; {_fmt(m.get('p1_recovered_count'), 'int')} of "
+            f"{_fmt(m.get('p1_count'), 'int')} recovered-after-error — likely "
+            f"false positives"
+        )
+    p1_line += ")"
+
     lines = [
         "# v2 (deepagents) suite review",
         "",
         f"Model: `{model}`  |  Questions: {n}",
+        *warn_lines,
         "",
         correctness_blurb,
         "",
         "## Run metrics",
         "",
         f"- Questions: {m.get('n_questions', n)}",
-        f"- P1 hallucination-on-error rate: {_fmt(m.get('p1_hallucination_rate'), 'pct')} "
-        f"({_fmt(m.get('p1_count'), 'int')} question(s))",
+        p1_line,
         f"- Tool-error rate (q with >=1 error): {_fmt(m.get('tool_error_rate'), 'pct')}",
         f"- Errors per question (mean): {_fmt(m.get('errors_per_question'), 'num')}",
         f"- Exception rate: {_fmt(m.get('exception_rate'), 'pct')}",
