@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geotech-staff-engineer"
-version = "5.1.0rc5"
+version = "5.2.0"
 description = "Python toolkit for LLM-based geotechnical engineering agents — 30 analysis modules covering foundations, piles, slopes, reliability, seismic (incl. FEMA P-2082 / 2020 NEHRP site classification), excavation support (incl. the California/Caltrans Trenching and Shoring Manual reference), pavements (incl. FHWA-NHI-05-037 Geotechnical Aspects of Pavements), subsurface characterization (DIGGS/GEF/AGS4 data I/O), FEM, PDF/DXF import, and more"
 readme = "README.md"
 license = "MIT"
@@ -27,7 +27,7 @@ classifiers = [
 dependencies = [
     "numpy>=2.0",
     "scipy>=1.13",
-    "geotech-references>=1.2.5",
+    "geotech-references>=1.3.0",
 ]
 
 [project.optional-dependencies]

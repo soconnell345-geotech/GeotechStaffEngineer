@@ -11,18 +11,17 @@ only for the detailed Phase-E history; this file supersedes it.
 | Item | Value |
 |------|-------|
 | Repo | github.com/soconnell345-geotech/GeotechStaffEngineer (private) |
-| **master HEAD** | **`04cc6dd`** — pushed to origin, clean |
-| Submodule `geotech-references` | `99e67b7` (pushed; pointer synced) |
-| **Version string** | `5.1.0rc5` in `pyproject.toml` — **committed string only, NO git tag** |
-| Test wheel | `C:\Users\socon\OneDrive\dev\v5_test_wheel\geotech_staff_engineer-5.1.0rc5-py3-none-any.whl` (only rc5 + the 5.0.0rc8 baseline are kept) |
+| **master HEAD** | **v5.2.0 release commit** (eval-review fixes + version bump) — pushed |
+| Submodule `geotech-references` | `fe7fe9d` = **v1.3.0 on PyPI** (query expansion + QC fixes) |
+| **Version string** | `5.2.0` in `pyproject.toml` — **RELEASED 2026-07-05** (tag `v5.2.0`) |
 | Validation suite | `validation_examples/` — **90 passed** (offline, no API) |
-| Full repo suite | ~8000 tests green (`pytest -q`, ~35–40 min) |
-| **Publish status** | **UNRELEASED.** 5.1.0 final tag/PyPI publish is **owner-gated.** |
+| Full repo suite | **8056 passed / 48 skipped** (2026-07-05, `pytest -q`) |
+| **Publish status** | **5.2.0 + geotech-references 1.3.0 PUBLISHED** (owner OK'd 2026-07-05). |
 
-**⚠️ Release gate (do not trip):** a `v*` git tag push **auto-publishes to PyPI**
-via `.github/workflows/publish.yml` (OIDC trusted publishing). All rc versions
-are committed as version strings with **no tag**. Do **not** push a tag, bump to
-a final version, or publish without the owner's explicit OK.
+**⚠️ Release gate (still applies to FUTURE releases):** a `v*` git tag push
+**auto-publishes to PyPI** via `.github/workflows/publish.yml` (OIDC trusted
+publishing). Do **not** push a tag, bump to a new version, or publish without
+the owner's explicit OK.
 
 ---
 
@@ -64,10 +63,15 @@ note `project_le_fem_modernization` (auto-loaded).
 
 ## 3. What's in flight / next
 
-- **NOW (owner):** validating the **rc5 wheel** in Funhouse. Health check passed
-  (offline 1a–1c PASS, live self-check 2/2). Owner is running the **71-question
-  eval suite** (`run_suite`) and will review the results in a separate session.
-  When satisfied, the owner gives the go for the `v5.1.0` tag (auto-publishes).
+- **DONE (2026-07-05): rc5 eval reviewed → fixes merged → 5.2.0 RELEASED**
+  (5.1.0 never shipped; master went straight to 5.2.0 since it already carried
+  v5.2 Batch 1). The 71-Q results are archived at
+  `docs/geotech_eval_20260705.json`/`.md` (26/31 auto-graded; 4 of 5 fails were
+  missing optional cluster packages — install `[deep,full]`; REF-1 alpha
+  narrative fixed via the drilled_shaft per-layer breakdown; all 5 P1 flags
+  were recovered-after-error false positives). Post-release validation idea:
+  re-run the eval on the published 5.2.0 with `[deep,full]` to confirm the
+  env-blocked questions now pass.
 - **NEXT (open, not started) — v5.2 coverage Batch 2** (the bigger builds, all
   still offline with exact published targets in `validation_examples/INVENTORY.md`;
   list + rationale in `module_work/V5.2_COVERAGE.md`):

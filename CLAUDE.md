@@ -49,7 +49,14 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## v5.1 status (UNRELEASED -- wheel 5.1.0rc5, owner validating in Funhouse)
+## v5.2.0 status (RELEASED 2026-07-05 to PyPI, with geotech-references 1.3.0)
+
+**5.2.0 ships everything below** (the whole post-5.0 line: the v5.1 backlog, LE+FEM
+modernization, reliability module, Phase E validation, v5.2 coverage Batch 1, and the
+2026-07-05 eval-review fixes). The owner-gated publish rule still applies to FUTURE
+releases: no version bump / tag / publish without explicit owner OK (a `v*` tag push
+auto-publishes via .github/workflows/publish.yml). Next release train: v5.2 coverage
+Batch 2 (see `module_work/V5.2_COVERAGE.md`) → 5.3.
 
 **>> For a full cross-session handoff read `HANDOFF.md` (repo root) first. <<**
 
@@ -71,11 +78,9 @@ and **v5.2 coverage Batch 1** (four additive, default-preserving capability adds
 Intentional behavior changes vs 5.0 (battered-wall KPE, pile_group +Mx sense, sheet-pile
 embedment basis, wave-equation damping default, fem2d T6 default) are listed in the
 summary page.
-**No 5.1.0 final tag / PyPI publish until the owner explicitly says so** (a v* tag push
-auto-publishes via .github/workflows/publish.yml). Test wheel (rebuild bumps the version
--- pip skips a same-version reinstall):
-`C:/Users/socon/OneDrive/dev/v5_test_wheel/geotech_staff_engineer-5.1.0rc5-py3-none-any.whl`.
-Databricks install: from /tmp or a UC Volume, `%pip install "...whl[deep]"`, then
+Databricks install: from /tmp or a UC Volume, `%pip install "geotech-staff-engineer[deep,full]"`
+(the `[full]` extra covers the optional analysis backends — without it ~12 of the 71 eval
+questions fail honestly with "not installed"), then
 `dbutils.library.restartPython()` -- a stale runtime `typing_extensions` (<4.13) otherwise
 breaks langgraph imports with "unexpected keyword argument 'extra_items'". Funhouse health
 check: `funhouse_agent/deep/rc_wheel_check.py` (`run_rc_check(fh_prompter)`); the 71-Q eval
