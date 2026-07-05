@@ -49,23 +49,38 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## v5.1 status (UNRELEASED -- wheel 5.1.0rc1, owner validating in Funhouse)
+## v5.1 status (UNRELEASED -- wheel 5.1.0rc5, owner validating in Funhouse)
+
+**>> For a full cross-session handoff read `HANDOFF.md` (repo root) first. <<**
 
 Everything since v5.0.0 is summarized in `docs/V5.1_SUMMARY.html` (one page; validation
 tables). Master carries: the v5.1 backlog (token round-cap, calc-QC round 3, adapter
 ergonomics, eval answer-keys/sample files, foundry audit, references review); the LE+FEM
 modernization (branches `le-modern`/`fem-modern`, merged); the `reliability/` module
 (consolidation #7 DONE); calc-package figures/tables + plotly interactive viewers
-(`calc-viz`); and the staged model-setup agent (`geo_project/` + `deep/setup_agent.py`,
-OFF by default via `build_deep_agent(enable_setup_agent=True)`). Intentional behavior
-changes vs 5.0 (battered-wall KPE, pile_group +Mx sense, sheet-pile embedment basis,
-wave-equation damping default, fem2d T6 default) are listed in the summary page.
+(`calc-viz`); the staged model-setup agent (`geo_project/` + `deep/setup_agent.py`,
+OFF by default via `build_deep_agent(enable_setup_agent=True)`); the post-v5.0
+lateral-pile calc-package fix + adapter-ergonomics sweep + the Databricks /Workspace
+placeholder-write fix (`funhouse_agent/_fileio.py`); **Phase E** published-example
+validation (25 problems as 87+ offline tests in `validation_examples/`, `RESULTS.md`,
+0 analysis bugs -- also added general fem2d `roller_base` BC + `initial_stress_relaxation`);
+and **v5.2 coverage Batch 1** (four additive, default-preserving capability adds:
+`settlement` Hough, `pile_group` Meyerhof group settlement, `axial_pile` per-layer
+`toe_friction_angle` + `head_depth`, `retaining_walls` MSE bar-mat Kr/F* curves -- see
+`module_work/V5.2_COVERAGE.md`; Batch 2 = the bigger builds, NOT yet started).
+Intentional behavior changes vs 5.0 (battered-wall KPE, pile_group +Mx sense, sheet-pile
+embedment basis, wave-equation damping default, fem2d T6 default) are listed in the
+summary page.
 **No 5.1.0 final tag / PyPI publish until the owner explicitly says so** (a v* tag push
-auto-publishes via .github/workflows/publish.yml). Test wheel:
-`C:/Users/socon/OneDrive/dev/v5_test_wheel/geotech_staff_engineer-5.1.0rc1-py3-none-any.whl`.
+auto-publishes via .github/workflows/publish.yml). Test wheel (rebuild bumps the version
+-- pip skips a same-version reinstall):
+`C:/Users/socon/OneDrive/dev/v5_test_wheel/geotech_staff_engineer-5.1.0rc5-py3-none-any.whl`.
 Databricks install: from /tmp or a UC Volume, `%pip install "...whl[deep]"`, then
 `dbutils.library.restartPython()` -- a stale runtime `typing_extensions` (<4.13) otherwise
-breaks langgraph imports with "unexpected keyword argument 'extra_items'".
+breaks langgraph imports with "unexpected keyword argument 'extra_items'". Funhouse health
+check: `funhouse_agent/deep/rc_wheel_check.py` (`run_rc_check(fh_prompter)`); the 71-Q eval
+suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save outputs to
+`/tmp` or `/Volumes`, NOT `/Workspace` (FUSE writes are non-durable / permission-blocked).
 
 ## Module Inventory (30 analysis + geo_project setup layer + 21 reference, + foundry harness; reference layer fully QC'd, all figure catalogs 100% page-accurate)
 

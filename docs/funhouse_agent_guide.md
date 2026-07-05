@@ -416,6 +416,28 @@ agent = build_deep_agent(model)   # enable_setup_agent=True for the staged model
 DeepNotebookChat(agent).display()
 ```
 
+### Wheel health check + eval suite (for validating a test wheel)
+
+Two purpose-built entry points ship in the wheel:
+
+```python
+# 1. One-cell health check — offline regression (calc-package/file-write fixes)
+#    + the live 2-proof self-check. Prints PASS/FAIL per check.
+from funhouse_agent.deep.rc_wheel_check import run_rc_check
+run_rc_check(fh_prompter)          # run_rc_check() with no arg = offline section only
+
+# 2. The 71-question geotech eval suite through the deep agent.
+from funhouse_agent.deep.eval_harness import run_suite
+res = run_suite(model, limit=5, out="/tmp/geotech_eval_smoke")   # subset first (real API calls)
+res = run_suite(model, out="/tmp/geotech_eval_rc")               # full run; writes .json + .md
+print(res["metrics"])              # P1 hallucination rate, tool-error rate, rounds, latency, tokens
+```
+`run_suite` writes both a results JSON and a readable markdown review at
+`<out>.md`. Correctness is **partly auto-scored** (questions carrying an
+`expected` answer key are numeric-tolerance/keyword graded) and **partly
+eyeballed** from the `.md`; the process metrics are always computed. Copy the
+`.md` out of `/tmp` with `dbutils.fs.cp` to read/share it.
+
 ### Saving outputs (calc packages, DXF, plots): do NOT use /Workspace paths
 
 Plain Python file writes to `/Workspace/...` go through the workspace FUSE
