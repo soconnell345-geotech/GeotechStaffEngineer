@@ -409,6 +409,26 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Confidence in extraction: soil + answers high; geometry + PP grid not recoverable
   from text.
 
+## V-030 Slide2 #29 — Duncan (2000) LASH underwater slope (deterministic + probabilistic)
+- Source: Slide2 Verification #29 (manual pp. 121-122); Duncan (2000), JGGE 126(4).
+- Target: `slope_stability` (undrained noncircular FOS + `probabilistic` reliability).
+- Geometry (feet, labeled Fig 29.1): seabed surface (-28,-40),(0,-40),(71,-120),
+  (138,-120),(228,-18),(283,-17),(350,-8),(389,22),(461,22); ocean level el 0;
+  base el -143. Duncan's "estimated" noncircular failure surface (pixel-traced,
+  ~+-3 ft): (138,-120),(150,-117),(170,-105),(185,-100),(205,-93),(221,-85),
+  (240,-75),(257,-64),(275,-53),(293,-39),(311,-23),(350,-8).
+- Inputs: SF Bay Mud, undrained su = 100 psf at el -20, +9.8 psf/ft; gamma=100 pcf.
+  Probabilistic (Table 29.2): gamma std 3.3 pcf; su rate-of-change std 1.2 psf/ft.
+- Published answer (Table 29.3): deterministic FOS Janbu-s 1.127 / Janbu-c 1.168 /
+  Spencer 1.157 / GLE 1.160 (Duncan quote 1.17); Pf 18% (Taylor series).
+- Suggested tolerance: +/-5% on the deterministic FOS; Pf within a few points.
+- Confidence in extraction: high (labeled figure; surface pixel-traced).
+- Notes: DETERMINISTIC PASS — rigorous methods reproduce Spencer 1.157/Duncan 1.17
+  to +2.9% (thin undrained sub-layers for the linear su + ocean at el 0). RELIABILITY
+  PASS — Taylor-series helpers reproduce F=1.17->Pf 18%. Input-COV FOSM propagation
+  is N/A-scope (needs a depth-varying-su law with one correlated gradient variable
+  -> B2).
+
 ## V-031 Slide2 #57 — Pockoski & Duncan (2000) test slope 3 (2-layer, water, circular)
 - Source: Slide2 Verification #57 (manual pp. 203-205); Pockoski & Duncan (2000).
 - Target: `slope_stability` (2-layer + water table, circular critical surface).

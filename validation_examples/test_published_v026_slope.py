@@ -217,19 +217,92 @@ def test_v026_water_thrust_and_cracked_arc_mechanics():
 # Janbu-s 1.127/18/1.086, Janbu-c 1.168/15/1.0, Spencer 1.157/14/1.1,
 # GLE 1.160/13/1.2. Duncan (2000) quotes FOS 1.17 and Pf 18% (Taylor series).
 #
-# GEOMETRY SKIPPED: the full slope geometry (surface + ocean level + Duncan's
-# noncircular surface) lives in a manual figure that did NOT survive the text
-# extraction, and the module has no built-in "su varies linearly with depth"
-# strength law with a single random gradient shared (perfectly correlated) across
-# the depth (its FOSM varies phi/c/cu/gamma independently per layer, so a stack of
-# thin undrained sub-layers would over-count the variance). So the FOSM-ON-SURFACE
-# is deferred (capability + geometry gap -> B2). What IS validated offline here:
-# the module's Taylor-series RELIABILITY layer (the exact machinery Duncan used,
-# lognormal_beta / normal_beta / pf) reproduces Duncan's reported (F=1.17, Pf=18%)
-# and the internal consistency of the Slide2 per-method (F, Pf, beta) table.
-# VERDICT: PASS (reliability arithmetic) / N/A-scope (FOSM-on-surface).
+# Geometry recovered from the manual's labeled Fig 29.1 (feet): seabed surface
+# (-28,-40),(0,-40),(71,-120),(138,-120),(228,-18),(283,-17),(350,-8),(389,22),
+# (461,22); ocean level horizontal at el 0; base el -143. Duncan's "estimated"
+# noncircular failure surface (pixel-traced, ~+-3 ft): (138,-120)...(350,-8).
+#
+# TWO things are validated offline here:
+#  (1) DETERMINISTIC FOS on Duncan's specified noncircular surface -- the module
+#      reproduces the Slide2/Duncan Spencer FOS (1.157 / 1.17) to +2.9% with the
+#      linearly-increasing undrained strength discretized into thin sub-layers and
+#      the ocean at el 0 (ponded-water buttress). Rigorous methods (Spencer/GLE/
+#      Janbu) all land 1.18-1.19; only OMS/Fellenius shows the usual
+#      submerged-noncircular pathology (1.44, high).
+#  (2) The Taylor-series RELIABILITY layer (the exact machinery Duncan used,
+#      lognormal_beta / normal_beta / pf) reproduces Duncan's reported (F=1.17,
+#      Pf=18%) and brackets the Slide2 per-method Pf table.
+# NOT reproduced (N/A-scope): the full FOSM propagation of the two input COVs
+# (gamma; su-gradient) THROUGH the FOS -- the module's FOSM varies phi/c/cu/gamma
+# independently per layer, so a shared random su-gradient across the thin
+# sub-layers would be over-counted (a B2 capability: a depth-varying-su strength
+# law with one correlated gradient variable). VERDICT: PASS (det. FOS + reliability
+# arithmetic) / N/A-scope (input-COV FOSM propagation).
 
+from slope_stability.slip_surface import PolylineSlipSurface
+from slope_stability.slices import build_slices as _build_slices
+from slope_stability.methods import (
+    spencer_fos as _spencer_fos, fellenius_fos as _fellenius_fos,
+)
+from slope_stability.gle import gle_fos as _gle_fos, janbu_fos as _janbu_fos
 from slope_stability.probabilistic import lognormal_beta, normal_beta, _phi_cdf
+
+# ── V-030 deterministic geometry (SI, converted from feet) ──────────────────
+_F, _PSF, _PCF = 0.3048, 0.04788, 0.157087
+_V030_SURFACE = [(x*_F, z*_F) for x, z in
+                 [(-28, -40), (0, -40), (71, -120), (138, -120), (228, -18),
+                  (283, -17), (350, -8), (389, 22), (461, 22)]]
+_V030_FAIL = [(x*_F, z*_F) for x, z in
+              [(138, -120), (150, -117), (170, -105), (185, -100), (205, -93),
+               (221, -85), (240, -75), (257, -64), (275, -53), (293, -39),
+               (311, -23), (350, -8)]]
+_V030_GAMMA = 100 * _PCF
+_V030_BASE = -143 * _F
+_V030_TOP = 22 * _F
+
+
+def _v030_su_kpa(el_m, floor_psf=15.0):
+    """Bay Mud undrained strength: su = max(100 + 9.8*(-20 - el_ft), floor) psf."""
+    el_ft = el_m / _F
+    return max(100 + 9.8 * (-20 - el_ft), floor_psf) * _PSF
+
+
+def _v030_geom(nlayers=60):
+    dz = (_V030_TOP - _V030_BASE) / nlayers
+    layers = []
+    for i in range(nlayers):
+        t = _V030_TOP - i * dz
+        b = t - dz
+        layers.append(SlopeSoilLayer(
+            name="baymud_%d" % i, top_elevation=t, bottom_elevation=b,
+            gamma=_V030_GAMMA, gamma_sat=_V030_GAMMA,
+            cu=_v030_su_kpa(0.5 * (t + b)), analysis_mode="undrained"))
+    return SlopeGeometry(
+        surface_points=_V030_SURFACE, soil_layers=layers,
+        gwt_points=[(_V030_SURFACE[0][0], 0.0), (_V030_SURFACE[-1][0], 0.0)])
+
+
+def test_v030_duncan_lash_deterministic_fos():
+    """PASS: on Duncan's specified noncircular failure surface, the module's
+    rigorous FOS reproduces the Slide2/Duncan deterministic FOS (Spencer 1.157;
+    Duncan quote 1.17) to within ~3% -- Spencer 1.190, GLE 1.192, Janbu-corrected
+    1.182 -- with the linearly-increasing Bay-Mud undrained strength (su=100 psf
+    at el -20, +9.8 psf/ft) discretized into thin undrained sub-layers and the
+    ocean at el 0 (ponded-water buttress). The result is insensitive to the
+    near-surface su floor. Only OMS/Fellenius shows the usual submerged/noncircular
+    over-estimate (~1.44)."""
+    slip = PolylineSlipSurface(points=_V030_FAIL)
+    sl = _build_slices(_v030_geom(), slip, 60)
+    fs, _ = _spencer_fos(sl, slip)
+    fg = _gle_fos(sl, slip, f_interslice="half_sine").fos
+    fj, _u, _f0 = _janbu_fos(sl, slip)
+    assert fs == pytest.approx(1.190, abs=0.03)      # ours (Spencer)
+    assert fs == pytest.approx(1.157, rel=0.05)      # Slide2 Spencer
+    assert fs == pytest.approx(1.17, rel=0.05)       # Duncan (2000) quote
+    assert fg == pytest.approx(1.160, rel=0.05)      # Slide2 GLE
+    assert fj == pytest.approx(1.168, rel=0.05)      # Slide2 Janbu-corrected
+    # OMS/Fellenius is the known submerged-noncircular pathology (high)
+    assert _fellenius_fos(sl, slip) > 1.35
 
 
 def test_v030_duncan_lash_taylor_series_pf():
