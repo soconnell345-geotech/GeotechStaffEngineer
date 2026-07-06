@@ -661,6 +661,9 @@ class TestPdfImportMethodInfo:
         assert set(METHOD_INFO.keys()) == {
             "discover_pdf_content", "extract_vector_geometry",
             "build_slope_geometry", "build_fem_inputs",
+            # v5.3 C1/C2/C3/C5 additions:
+            "calibrate_scale", "propose_scale", "propose_role_mapping",
+            "cleanup_geometry", "cross_check",
         }
 
 
@@ -669,7 +672,7 @@ class TestPdfImportDispatch:
         from funhouse_agent.dispatch import list_methods
         result = list_methods("pdf_import")
         total = sum(len(v) for v in result.values())
-        assert total == 4
+        assert total == 9
 
     def test_describe_method_discover(self):
         from funhouse_agent.dispatch import describe_method
