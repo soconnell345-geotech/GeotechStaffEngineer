@@ -121,6 +121,27 @@ search_critical_surface(geom, surface_type="noncircular",
   cohesionless dry reduces to tan φ'/tan β (depth-free), seepage-parallel at the
   surface to (γ'/γ)·that. Validated vs Slide2 #79 (1.44) / #81 (1.15). This is
   the exact answer for the c'=0 circular-overestimate limitation noted above.
+- **Rapid drawdown (v5.3 B2a)** — `rapid_drawdown.rapid_drawdown_fos(geom, from_el,
+  to_el, xc/yc/radius, method='corps_2stage'|'duncan_3stage')` → `RapidDrawdownResult`
+  (also `analysis.rapid_drawdown_fos`). Low-permeability layers carry the total-stress
+  **R-envelope** (`R_c`, `R_phi`) alongside the effective `c_prime`/`phi`; `R_phi is
+  None` = free-draining. The method is wired to the GLE engine by OVERRIDING each
+  undrained slice's base strength to a fixed `c = τ_ff, φ = 0` and re-solving. Theory:
+  * **Stage 1** — effective-stress ("S") analysis at the FULL pool gives the
+    consolidation stresses on each base: σ'_fc = N'/l and τ_fc = S_mob/l (from the
+    GLE per-slice effective normal / mobilized shear).
+  * **Stage 2** — undrained strength τ_ff. Corps 2-stage: τ_ff = min(R-envelope,
+    drained) at σ'_fc (the "combined" envelope, capping R-envelope over-strength at
+    low σ'). Duncan 3-stage: linear interpolation with the consolidation stress ratio
+    Kc = σ'_1c/σ'_3c between the Kc=1 (R / IC-U, lower) and Kc=Kf (drained, upper)
+    envelopes: τ_ff = τ_R + (Kc−1)/(Kf−1)·(τ_drained − τ_R), capped at the drained
+    (Kf) bound. Kc per slice is back-figured from σ'_fc, τ_fc and the base angle α
+    assuming a vertical major principal consolidation stress; Kf = (1+sinφ')/(1−sinφ').
+  * **Stage 3** (3-stage only) — where the post-drawdown DRAINED strength (low-pool
+    effective stress) is less than the stage-2 undrained strength, it is substituted.
+  * The final FOS is a GLE/Spencer solve at the DRAWN-DOWN pool (external water load
+    removed to the low level; undrained slices carry τ_ff as φ=0 total-stress
+    strength). Validated vs Slide2 #95 (2-stage) / #96 (3-stage) — see RESULTS V-037/V-038.
 - **Empty-space slices**: slices where the slip surface is below all soil layers
   are skipped (zero weight, no contribution)
 - **Nails disconnected**: `nails.py` is importable but not called from the analysis

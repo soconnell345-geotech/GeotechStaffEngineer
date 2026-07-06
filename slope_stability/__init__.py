@@ -43,6 +43,7 @@ from slope_stability.analysis import (
 from slope_stability.results import (
     SlopeStabilityResult, SliceData, SearchResult, InfiniteSlopeResult,
 )
+from slope_stability.rapid_drawdown import RapidDrawdownResult
 
 __all__ = [
     'SlopeGeometry', 'SlopeSoilLayer', 'SoilNail',
@@ -61,4 +62,5 @@ __all__ = [
     'analyze_slope', 'search_critical_surface', 'rapid_drawdown_fos',
     'compare_methods_table', 'infinite_slope_fos',
     'SlopeStabilityResult', 'SliceData', 'SearchResult', 'InfiniteSlopeResult',
+    'RapidDrawdownResult',
 ]

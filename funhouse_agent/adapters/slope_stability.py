@@ -61,6 +61,8 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
             hb_gsi=d.get("hb_gsi", 50.0),
             hb_mi=d.get("hb_mi", 10.0),
             hb_D=d.get("hb_D", 0.0),
+            R_c=d.get("R_c", 0.0),
+            R_phi=d.get("R_phi"),
         ))
     surface_points = [tuple(pt) for pt in params["surface_points"]]
     gwt_points = [tuple(pt) for pt in params["gwt_points"]] if params.get("gwt_points") else None
@@ -264,18 +266,47 @@ def _run_infinite_slope(params: dict) -> dict:
     return result.to_dict()
 
 
+_RD_METHODS = ["corps_2stage", "duncan_3stage"]
+
+
+def _run_rapid_drawdown(params: dict) -> dict:
+    from slope_stability.analysis import rapid_drawdown_fos
+    reject_unknown_params(
+        params,
+        _GEOM_PARAMS + _SURFACE_PARAMS + (
+            "drawdown_from_elevation", "drawdown_to_elevation", "method",
+            "f_interslice", "n_slices", "tol"),
+        method="rapid_drawdown_fos")
+    geom = _build_geometry(params, method="rapid_drawdown_fos")
+    require_params(params, ["drawdown_from_elevation", "drawdown_to_elevation"],
+                   method="rapid_drawdown_fos")
+    method = _check_choice(params.get("method", "duncan_3stage"), _RD_METHODS,
+                           name="method", method="rapid_drawdown_fos")
+    f_int = _check_choice(params.get("f_interslice", "constant"), _F_INTERSLICE,
+                          name="f_interslice", method="rapid_drawdown_fos")
+    result = rapid_drawdown_fos(
+        geom, params["drawdown_from_elevation"], params["drawdown_to_elevation"],
+        xc=params.get("xc"), yc=params.get("yc"), radius=params.get("radius"),
+        slip_surface=_slip_surface_from(params),
+        method=method, f_interslice=f_int,
+        n_slices=params.get("n_slices", 50), tol=params.get("tol", 1e-4),
+    )
+    return result.to_dict()
+
+
 METHOD_REGISTRY = {
     "analyze_slope": _run_analyze_slope,
     "search_critical_surface": _run_search_critical_surface,
     "compare_methods_table": _run_compare_methods,
     "infinite_slope_fos": _run_infinite_slope,
+    "rapid_drawdown_fos": _run_rapid_drawdown,
     "fosm_fos": _run_fosm,
     "monte_carlo_fos": _run_monte_carlo,
 }
 
 _GEOMETRY_PARAMS = {
     "surface_points": {"type": "array", "required": True, "description": "Ground surface as [[x,y], ...] array (x increasing)."},
-    "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {top_elevation, bottom_elevation, gamma (all required); name, gamma_sat, phi, c_prime, cu, analysis_mode ('drained'|'undrained'), ru, bottom_boundary_points optional}. Per-layer strength_model: 'mohr_coulomb' (default), 'shansep' (su = shansep_S * ocr^shansep_m * sigma'_v; fields shansep_S, shansep_m, ocr, su_min) or 'hoek_brown' (Generalized Hoek-Brown; fields hb_sigci kPa, hb_gsi, hb_mi, hb_D)."},
+    "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {top_elevation, bottom_elevation, gamma (all required); name, gamma_sat, phi, c_prime, cu, analysis_mode ('drained'|'undrained'), ru, bottom_boundary_points optional}. Per-layer strength_model: 'mohr_coulomb' (default), 'shansep' (su = shansep_S * ocr^shansep_m * sigma'_v; fields shansep_S, shansep_m, ocr, su_min) or 'hoek_brown' (Generalized Hoek-Brown; fields hb_sigci kPa, hb_gsi, hb_mi, hb_D). For rapid_drawdown_fos, low-permeability layers also take the total-stress R-envelope R_c (kPa) and R_phi (deg); R_phi omitted/null => free-draining."},
     "gwt_points": {"type": "array", "required": False, "description": "Groundwater table [[x,y],...]. If above the ground surface, ponded water is auto-detected (water weight + horizontal hydrostatic thrust applied as external loads)."},
     "kh": {"type": "float", "required": False, "default": 0.0, "description": "Horizontal pseudo-static seismic coefficient (acts on soil weight only)."},
     "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Vertical surcharge (kPa)."},
@@ -341,6 +372,20 @@ METHOD_INFO = {
             "water_depth": {"type": "float", "required": False, "default": 0.0, "description": "Depth of the phreatic surface below the ground (m), for seepage_parallel. 0 = water table at the surface."},
         },
         "returns": {"FOS": "Factor of safety.", "normal_stress_kPa": "sigma_n on the slip plane.", "shear_stress_kPa": "Driving shear tau.", "pore_pressure_kPa": "u on the slip plane."},
+    },
+    "rapid_drawdown_fos": {
+        "category": "Slope Stability",
+        "brief": "Rapid-drawdown FOS on a SPECIFIED slip surface: USACE/Army-Corps 2-stage or Duncan-Wright-Wong 3-stage. Low-permeability layers respond undrained after fast reservoir drawdown; give them the total-stress R-envelope (soil_layers[].R_c, R_phi) alongside c_prime/phi (R_phi=null => free-draining). Stage 1 = full-pool effective stresses; stage 2 = undrained strength from the R and effective envelopes (Kc-interpolated for 3-stage); stage 3 (3-stage) substitutes the drained strength where lower; final FOS is solved at the drawn-down pool.",
+        "parameters": {
+            **_GEOMETRY_PARAMS,
+            **_SURFACE_SPEC_PARAMS,
+            "drawdown_from_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation BEFORE drawdown (m)."},
+            "drawdown_to_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation AFTER drawdown (m); must be below drawdown_from_elevation."},
+            "method": {"type": "str", "required": False, "default": "duncan_3stage", "allowed_values": _RD_METHODS, "description": "'duncan_3stage' (Duncan-Wright-Wong, Kc-interpolated undrained strength + drained substitution) or 'corps_2stage' (USACE combined R/effective envelope)."},
+            "f_interslice": {"type": "str", "required": False, "default": "constant", "allowed_values": _F_INTERSLICE, "description": "GLE interslice function ('constant' = Spencer)."},
+            "n_slices": {"type": "int", "required": False, "default": 50, "description": "Number of slices."},
+        },
+        "returns": {"FOS": "Drawdown factor of safety.", "stage1_FOS": "Full-pool (pre-drawdown) FOS.", "n_undrained_slices": "Slices treated undrained.", "n_drained_substituted": "Stage-3 drained substitutions (3-stage)."},
     },
     "search_critical_surface": {
         "category": "Slope Stability",

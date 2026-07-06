@@ -561,6 +561,33 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Confidence in extraction: high (2:1 ratio).
 - Notes: PASS — `infinite_slope_fos` gives FOS = tan(30)/0.5 = 1.155.
 
+## V-037 Slide2 #95 — USACE 2-stage rapid drawdown (EM 1110-2-1902 App. G)
+- Source: Slide2 Verification #95 (manual pp. 307-308); USACE EM 1110-2-1902 (1970).
+- Target: `slope_stability.rapid_drawdown_fos` (`method='corps_2stage'`).
+- Geometry (feet, Fig 95.1 — RASTER figure, read approximately): homogeneous
+  embankment, toe (0,0), straight upstream face to crest el 110 (~x=305, ≈2.77:1),
+  crest to x≈380, base el 0. Specified circle centre (169.5, 210), R=210.
+  Water: initial el 110 -> drawdown to el 24.
+- Inputs: gamma=135 pcf; effective c'=0/phi'=30; R-envelope cR=1200 psf/phiR=16.
+- Published answer: Army-Corps 2-stage FOS 1.347; referee 1.35.
+- Verdict: **CONVENTION (approximate)** — computed 1.228 (~9% below). Residual =
+  raster geometry (face slope) + FLAT-phreatic stage-1 pore pressure vs Slide's
+  steady-seepage flow net (sensitivity: 2-stage -> 1.35 with a declined phreatic).
+- Confidence in extraction: soil + circle + water exact; geometry approximate.
+
+## V-038 Slide2 #96 — Duncan-Wright-Wong 3-stage rapid drawdown (same dam)
+- Source: Slide2 Verification #96 (manual pp. 309-310); Duncan, Wright, Wong (1990).
+- Target: `slope_stability.rapid_drawdown_fos` (`method='duncan_3stage'`).
+- Geometry/inputs: identical to V-037 (only the method differs).
+- Published answer: Duncan-Wright-Wong 3-stage FOS 1.443; referee 1.44.
+- Verdict: **CONVENTION (approximate)** — computed 1.279 (~11% below) but
+  reproduces the published ORDERING (3-stage LESS conservative than the 2-stage:
+  1.279 > 1.228, as 1.443 > 1.347). The 3-stage Kc-interpolated undrained strength
+  + stage-3 drained substitution work; the absolute gap is the same
+  geometry/seepage residual as V-037 plus the R-envelope total-vs-effective
+  consolidation convention (not pinned by the published data). #98 (5-material
+  Walter Bouldin Dam) NOT attempted — Fig 98.1 geometry not reliably readable.
+
 ---
 
 # Looked for but NOT extracted (and why)

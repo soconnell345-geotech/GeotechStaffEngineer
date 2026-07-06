@@ -106,6 +106,14 @@ class SlopeSoilLayer:
     hb_gsi: float = 50.0
     hb_mi: float = 10.0
     hb_D: float = 0.0
+    # --- rapid-drawdown R-envelope (Corps/Duncan) ---------------------
+    # Total-stress (consolidated-undrained, "R") strength envelope used ONLY
+    # by the rapid-drawdown 3-stage / 2-stage analysis. When R_phi is set, the
+    # layer is treated as LOW-PERMEABILITY (undrained during rapid drawdown);
+    # when None it is FREE-DRAINING (keeps its effective strength throughout).
+    # See slope_stability/rapid_drawdown.py.
+    R_c: float = 0.0            # R-envelope cohesion intercept (kPa)
+    R_phi: Optional[float] = None   # R-envelope friction angle (deg); None = free-draining
 
     def __post_init__(self):
         if self.bottom_boundary_points is None:

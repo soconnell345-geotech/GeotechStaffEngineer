@@ -515,37 +515,42 @@ def search_critical_surface(
 def rapid_drawdown_fos(geom: SlopeGeometry,
                        drawdown_from_elevation: float,
                        drawdown_to_elevation: float,
-                       **kwargs):
-    """Rapid drawdown analysis — NOT YET IMPLEMENTED (designed stub).
+                       xc: float = None, yc: float = None, radius: float = None,
+                       slip_surface=None,
+                       method: str = "duncan_3stage",
+                       f_interslice: str = "constant",
+                       n_slices: int = 50,
+                       tol: float = 1e-4):
+    """Rapid-drawdown factor of safety (USACE 2-stage / Duncan-Wright-Wong
+    3-stage) on a specified slip surface.
 
-    Planned implementation (Duncan, Wright & Brandon 2014, Ch. 9 /
-    USACE three-stage procedure):
+    Low-permeability layers must carry the R-envelope (`R_c`, `R_phi`) in
+    addition to the effective `c_prime`/`phi`; `R_phi is None` marks a
+    free-draining layer. See `slope_stability.rapid_drawdown` for the full
+    theory and `RapidDrawdownResult`.
 
-    1. Stage 1: long-term (drained) analysis with the high pool
-       (consolidation stresses sigma'_fc and tau_fc on the slip surface
-       from the pre-drawdown steady state).
-    2. Stage 2: undrained analysis after drawdown using composite
-       drained/undrained strength envelopes per slice — su tied to the
-       stage-1 consolidation stresses (Kc-dependent strengths).
-    3. Stage 3: drained check with the low pool; the governing FOS per
-       slice is min(undrained, drained).
+    Parameters
+    ----------
+    geom : SlopeGeometry
+    drawdown_from_elevation, drawdown_to_elevation : float
+        Reservoir surface elevation before / after drawdown (m).
+    xc, yc, radius / slip_surface :
+        The specified slip surface (circle or explicit surface).
+    method : str
+        'duncan_3stage' (default) or 'corps_2stage'.
+    f_interslice : str
+        Interslice function ('constant' = Spencer). Default 'constant'.
+    n_slices, tol : usual meanings.
 
-    Requires per-slice consolidation-stress bookkeeping and a composite
-    strength interpolation that the current Slice pipeline does not yet
-    carry. Until then, model drawdown conservatively by keeping the GWT
-    high inside the slope with the pond removed (gwt_points unchanged,
-    surface water at the drawn-down level).
-
-    Raises
-    ------
-    NotImplementedError
+    Returns
+    -------
+    RapidDrawdownResult
     """
-    raise NotImplementedError(
-        "rapid_drawdown_fos is a designed stub (see docstring for the "
-        "planned Duncan 3-stage procedure). Conservative interim "
-        "approach: analyze with the pre-drawdown GWT inside the slope "
-        "and the external pool at the drawn-down elevation."
-    )
+    from slope_stability.rapid_drawdown import rapid_drawdown_fos as _rd
+    return _rd(geom, drawdown_from_elevation, drawdown_to_elevation,
+               xc=xc, yc=yc, radius=radius, slip_surface=slip_surface,
+               method=method, f_interslice=f_interslice, n_slices=n_slices,
+               tol=tol)
 
 
 def infinite_slope_fos(slope_angle: float,

@@ -193,13 +193,24 @@ class TestPondedWater:
         assert res.FOS > 0.5
 
 
-class TestRapidDrawdownStub:
+class TestRapidDrawdown:
+    """The rapid-drawdown method is now implemented (v5.3 B2a); the old
+    NotImplementedError stub is closed. Full theory + validation in
+    slope_stability/rapid_drawdown.py and tests/test_rapid_drawdown.py."""
 
-    def test_stub_raises_with_guidance(self):
+    def _geom(self):
         layer = SlopeSoilLayer(
             name="soil", top_elevation=20.0, bottom_elevation=-15.0,
-            gamma=19.0, phi=25.0, c_prime=5.0,
+            gamma=19.0, phi=25.0, c_prime=5.0, R_c=30.0, R_phi=12.0,
         )
-        geom = SlopeGeometry(surface_points=SURFACE, soil_layers=[layer])
-        with pytest.raises(NotImplementedError, match="3-stage|drawdown"):
-            rapid_drawdown_fos(geom, 18.0, 10.0)
+        return SlopeGeometry(surface_points=SURFACE, soil_layers=[layer])
+
+    def test_returns_result_not_raises(self):
+        res = rapid_drawdown_fos(self._geom(), 18.0, 10.0, method="duncan_3stage",
+                                 **CIRCLE)
+        assert res.FOS > 0
+        assert res.stage1_fos > 0
+
+    def test_requires_slip_surface(self):
+        with pytest.raises(ValueError):
+            rapid_drawdown_fos(self._geom(), 18.0, 10.0)   # no circle/surface

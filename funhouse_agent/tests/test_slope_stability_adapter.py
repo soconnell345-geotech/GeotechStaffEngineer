@@ -55,7 +55,7 @@ class TestMethodInfo:
         assert set(METHOD_INFO.keys()) == {
             "analyze_slope", "search_critical_surface",
             "compare_methods_table", "infinite_slope_fos",
-            "fosm_fos", "monte_carlo_fos",
+            "rapid_drawdown_fos", "fosm_fos", "monte_carlo_fos",
         }
 
     def test_method_allowed_values_modernized(self):
