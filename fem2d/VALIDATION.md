@@ -99,7 +99,29 @@ for elastic, seepage and Biot work.
 | K0 = nu/(1-nu) stress ratio | 0.4286 | within 10% | existing suite (test_cross_validation) |
 | Boussinesq stress bulb under strip load | — | within band | existing suite (test_cross_validation) |
 
-## 5. Cross-check vs slope_stability Bishop (shared geometry)
+## 5. Biot consolidation — undrained transient (V-023, Itasca 1-D column)
+
+Itasca FLAC verification problem: a 20 m saturated column, drained top /
+impermeable base, instantaneously loaded with Δσ = 100 kPa. K = 500, G = 200,
+M = 4000 MPa, α = 1, mobility k_mob = 1e-10 m²/(Pa·s). Solved with the
+**monolithic u–p Taylor–Hood** scheme (`scheme="monolithic"`), 40 elements tall.
+
+| Quantity | Reference | fem2d monolithic | Note |
+|---|---|---|---|
+| Undrained p0 (interior/base) | 0.839×10⁵ Pa (= α·M/(K+4G/3+α²M)·Δσ) | **83.92 kPa** | exact; matches the value **consistent with the stated M** |
+| Undrained p0 (Itasca-reported) | 0.981×10⁵ Pa | — | needs an effective M ≈ 10× (near-incompressible fluid); **tuned to neither** — documented |
+| Decay p(z,t)/p0 at base, t̂ = 0.05…1.0 | Terzaghi series (c = k_mob/S = 0.0643) | within **<1%** (θ=0.5) / **≤3.1%** (θ=1) | inside the FLAC <5% envelope |
+| Drained end-state settlement | Δσ·H/(K+4G/3) = 2.609 mm | **2.596 mm** (−0.5%) | same value the staggered scheme already gets |
+
+The equal-order (CST) monolithic solve shows the classic LBB pressure overshoot at
+the drained boundary (max ≈ 173 vs correct 84); the Taylor–Hood T6/T3 pairing removes
+it (residual t=0 boundary-layer max ≈ 119, dissipating immediately) with **no
+stabilization term**. The staggered scheme cannot generate this load-induced
+undrained pressure at all (it stays ≈ 0), which is why the monolithic option was
+added. Tests: `validation_examples/test_published_v023_v024.py`
+(`test_v023_monolithic_*`).
+
+## 6. Cross-check vs slope_stability Bishop (shared geometry)
 
 Shared profile [(0,0),(10,0),(30,10),(50,10)] (2:1, H = 10 m), c' = 10
 kPa, phi' = 15 deg, gamma = 18 kN/m3, dry, 5 m foundation.

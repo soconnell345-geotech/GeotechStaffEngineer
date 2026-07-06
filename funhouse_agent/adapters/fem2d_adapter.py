@@ -190,12 +190,18 @@ def _run_analyze_seepage(params: dict) -> dict:
 def _run_analyze_consolidation(params: dict) -> dict:
     from fem2d import analyze_consolidation
     _valid = ("width", "depth", "soil_layers", "k", "load_q", "time_points",
-              "gwt", "gamma_w", "nx", "ny", "t", "n_w", "layer_polylines")
+              "gwt", "gamma_w", "nx", "ny", "t", "n_w", "layer_polylines",
+              "consolidation_scheme", "theta")
     reject_unknown_params(params, _valid, method="fem2d_consolidation")
     require_params(params, ["width", "depth", "soil_layers", "k", "load_q",
                             "time_points"],
                    method="fem2d_consolidation", valid=_valid)
     _require_layer_elevations(params["soil_layers"], method="fem2d_consolidation")
+    scheme = params.get("consolidation_scheme", "staggered")
+    if scheme not in ("staggered", "monolithic"):
+        raise ValueError(
+            "consolidation_scheme must be 'staggered' or 'monolithic', "
+            f"got {scheme!r}")
     kwargs = dict(
         width=params["width"],
         depth=params["depth"],
@@ -209,6 +215,8 @@ def _run_analyze_consolidation(params: dict) -> dict:
         ny=params.get("ny", 20),
         t=params.get("t", 1.0),
         n_w=params.get("n_w", 2.2e6),
+        consolidation_scheme=scheme,
+        theta=params.get("theta", 1.0),
     )
     if "layer_polylines" in params:
         kwargs["layer_polylines"] = params["layer_polylines"]
@@ -419,6 +427,11 @@ METHOD_INFO = {
             "load_q": {"type": "float", "required": True, "description": "Surface load (kPa, positive downward)."},
             "time_points": {"type": "array", "required": True, "description": "Time points (seconds) for output."},
             "gwt": {"type": "float", "required": False, "default": 0.0, "description": "GWT elevation (m)."},
+            "consolidation_scheme": {"type": "string", "required": False, "default": "staggered",
+                                     "allowed_values": ["staggered", "monolithic"],
+                                     "description": "Biot solver: 'staggered' (default, sequential split) or 'monolithic' (coupled u-p, Taylor-Hood T6/T3, reproduces the load-induced undrained response p0 and the Terzaghi transient). For 'monolithic', pass k as the MOBILITY m^2/(kPa.s) and n_w as the Biot modulus M (kPa)."},
+            "theta": {"type": "float", "required": False, "default": 1.0,
+                      "description": "Time-integration parameter for the monolithic scheme (1.0 backward Euler; 0.5 Crank-Nicolson, more accurate). Range [0.5, 1.0]."},
         },
         "returns": {
             "max_settlement_m": "Maximum settlement.",

@@ -522,11 +522,21 @@ def analyze_seepage(nodes, elements, k, head_bcs, t=1.0, gamma_w=9.81):
 def analyze_consolidation(width, depth, soil_layers, k, load_q,
                           time_points, gwt=0.0, gamma_w=9.81,
                           nx=10, ny=20, t=1.0, n_w=2.2e6,
-                          layer_polylines=None):
+                          layer_polylines=None,
+                          consolidation_scheme="staggered", theta=1.0):
     """1D-like consolidation of a loaded soil column.
 
     Sets up rectangular domain, applies surface load, tracks
     settlement and pore pressure dissipation over time.
+
+    ``consolidation_scheme`` selects the Biot solver: "staggered" (**default**,
+    sequential split — transports a pore field but does not create excess pore
+    pressure from an applied load) or "monolithic" (coupled u-p, Taylor-Hood
+    T6/T3, ``theta``-time-stepping — reproduces the load-induced undrained response
+    p0 and the Terzaghi consolidation transient). Pass the flow ``k`` as the
+    MOBILITY (m^2/(kPa.s)) and ``n_w`` as the Biot modulus M (kPa) for the
+    monolithic transient; use a fine ``time_points`` schedule and theta in
+    [0.5, 1] for the tightest decay match.
 
     Parameters
     ----------
@@ -595,7 +605,8 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
         nodes, elements, material_props, gamma_arr, bc_nodes,
         k=k, head_bcs=head_bcs, time_steps=np.asarray(time_points),
         t=t, gamma_w=gamma_w, n_w=n_w,
-        pore_pressures_0=pp_0, surface_loads=surface_loads)
+        pore_pressures_0=pp_0, surface_loads=surface_loads,
+        scheme=consolidation_scheme, theta=theta)
 
     return ConsolidationResult(
         n_nodes=len(nodes),

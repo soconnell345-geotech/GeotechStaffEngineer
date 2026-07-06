@@ -172,6 +172,44 @@ Staggered algorithm per time step Δt:
 
 Implicit backward Euler → unconditionally stable for any Δt.
 
+The staggered split transports a **prescribed** pore field and dissipates it, but
+it does not create the **load-induced undrained excess pore pressure** (an applied
+total-stress increment splits between effective stress and pore pressure only if the
+u–p equations are solved together). For that transient use the monolithic scheme.
+
+#### Monolithic u–p (Taylor–Hood), `solve_consolidation(scheme="monolithic")`
+
+The coupled block system is solved simultaneously with a θ-method in time:
+
+```
+| K      -Q  | | u_{n+1} |   | F_ext                                    |
+|            | |         | = |                                          |
+| Q^T   S+θΔtH| | p_{n+1} |   | Q^T u_n + S p_n − (1−θ)Δt H p_n + drainage |
+```
+
+At t = 0 (Δt = 0, no flow) the block solve gives the **instantaneous undrained
+response** — the applied load is split into effective stress + excess pore pressure
+p0 in one solve. In 1-D (confined column, drained top), the interior p0 matches the
+analytical `α·M/(K+4G/3+α²·M)·Δσ`; the field then dissipates as the Terzaghi/Biot
+transient with `c = k_mob/S`, `S = 1/M + α²/(K+4G/3)`.
+
+- **LBB / Taylor–Hood.** Equal-order (linear u / linear p) interpolation violates the
+  LBB (inf-sup) condition → spurious pressure overshoot at the drained boundary. The
+  monolithic path therefore uses a **Taylor–Hood pairing: T6 (quadratic) displacement /
+  T3 (linear) pressure**. The CST input mesh is converted to T6 internally
+  (`convert_to_t6`); pressure DOFs live on the corner nodes only, so H and S reuse the
+  CST corner-skeleton matrices while the coupling `Q_e = ∫ B_u^T m N_p dA` integrates the
+  T6 strain operator against the linear corner-pressure shape
+  (`assemble_coupling_taylor_hood`). No stabilization term or physics fudge is used.
+- **Units for the transient.** The flow rate needs the **mobility** k_mob = k/γ_w
+  (m²/(kPa·s)), passed as `k`, and the Biot modulus **M** (kPa) passed as `n_w` — not the
+  hydraulic conductivity, which only fixes the drained end-state.
+- **θ (`theta`, default 1.0).** θ=1 backward Euler is L-stable/robust; θ=0.5
+  Crank–Nicolson is 2nd-order and matches the Terzaghi decay to <1% with a fine step
+  schedule (θ must be in [0.5, 1]).
+- **Default preserved.** `scheme="staggered"` is the default and the staggered code path
+  is byte-for-byte unchanged.
+
 ### Staged Construction
 
 Plaxis-style multi-phase analysis where each phase activates/deactivates

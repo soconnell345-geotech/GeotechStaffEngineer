@@ -260,6 +260,88 @@ def test_v023_undrained_response_and_decay_is_scope_gap():
     assert settlements[-1] == pytest.approx(2.61, abs=0.05)
 
 
+def _terzaghi_pp_ratio(Z, T, n_terms=80):
+    """Terzaghi 1-D consolidation p(z,t)/p0 series at depth ratio Z, time factor T."""
+    s = 0.0
+    for j in range(n_terms):
+        Mj = (2 * j + 1) * math.pi / 2.0
+        s += 2.0 / Mj * math.sin(Mj * Z) * math.exp(-Mj ** 2 * T)
+    return s
+
+
+def _v023_monolithic_run(theta, n_steps=120):
+    E_Pa, nu = _E_nu_from_K_G(_V023_K, _V023_G)
+    E_kPa = E_Pa / 1000.0
+    pz_kPa = _V023_PZ / 1000.0
+    n_w_kPa = _V023_M / 1000.0
+    k_mob_kPa = _V023_KMOB * 1000.0             # 1e-10 m2/(Pa.s) -> 1e-7 m2/(kPa.s)
+    S = 1.0 / _V023_M + _V023_ALPHA ** 2 / _V023_MOED
+    c = _V023_KMOB / S                          # 0.0643 m2/s
+    nodes, elements = generate_rect_mesh(0.0, 2.0, -_V023_H, 0.0, 2, 40)
+    bc = detect_boundary_nodes(nodes)
+    top = np.where(np.abs(nodes[:, 1]) < 1e-6)[0]
+    top_s = top[np.argsort(nodes[top, 0])]
+    edges = [(int(top_s[i]), int(top_s[i + 1])) for i in range(len(top_s) - 1)]
+    head_bcs = [(int(n), 0.0) for n in top]
+    t_hat = np.linspace(0.0, 2.0, n_steps + 1)
+    times = t_hat * _V023_H ** 2 / c
+    res = solve_consolidation(
+        nodes, elements, [{'E': E_kPa, 'nu': nu}], 0.0, bc,
+        k=k_mob_kPa, head_bcs=head_bcs, time_steps=times, t=1.0,
+        n_w=n_w_kPa, pore_pressures_0=np.zeros(len(nodes)),
+        surface_loads=[(edges, 0.0, -pz_kPa)], scheme="monolithic", theta=theta)
+    base = np.where((nodes[:, 1] < -_V023_H + 1e-6) & (nodes[:, 0] < 0.01))[0][0]
+    return res, np.asarray(res['pore_pressures']), base, t_hat
+
+
+def test_v023_monolithic_undrained_p0_pass():
+    """PASS (v5.3 A5): the NEW monolithic u-p Biot scheme with the Taylor-Hood
+    (T6 displacement / T3 pressure) pairing captures the load-induced UNDRAINED
+    excess pore pressure the staggered scheme cannot. At t=0 the interior undrained
+    p0 (base, far from the drained top) matches the analytical
+    alpha*M/(K+4G/3+alpha^2*M)*pz = 0.839e5 Pa (= 83.9 kPa) — the value CONSISTENT
+    with the stated M. Itasca's reported 0.981e5 needs an effective M ~10x larger
+    (near-incompressible fluid) — documented, tuned to NEITHER."""
+    p0_kPa = (_V023_ALPHA * _V023_M
+              / (_V023_MOED + _V023_ALPHA ** 2 * _V023_M) * _V023_PZ) / 1000.0
+    assert p0_kPa == pytest.approx(83.9, abs=0.5)
+    res, pp, base, _ = _v023_monolithic_run(theta=0.5)
+    assert res['converged']
+    assert res.get('scheme') == 'monolithic_taylor_hood'
+    # A load-induced undrained excess pore pressure IS generated (staggered gives 0).
+    assert pp[0].max() > 0.5 * p0_kPa
+    # Interior undrained p0 at the base = analytical 83.9 kPa (exact).
+    assert pp[0][base] == pytest.approx(p0_kPa, rel=0.02)
+
+
+def test_v023_monolithic_terzaghi_decay_within_envelope():
+    """PASS (v5.3 A5): the Taylor-Hood monolithic reproduces the Terzaghi/Biot
+    p(z,t)/p0 dissipation at the base within the Itasca/FLAC <5% envelope, with the
+    coefficient of consolidation c = k_mob/S = 0.0643 emerging from the coupled
+    solve. Crank-Nicolson (theta=0.5) matches to <1%; backward Euler (theta=1)
+    with enough steps is also inside 5%. The mobility k_mob = k*1000 (m^2/(kPa.s))
+    and n_w = M/1000 kPa map the Pa-based inputs to the module's kPa units."""
+    res, pp, base, t_hat = _v023_monolithic_run(theta=0.5, n_steps=160)
+    base0 = pp[0][base]
+    for T in (0.05, 0.1, 0.2, 0.5, 1.0):
+        i = int(np.argmin(np.abs(t_hat - T)))
+        fe = pp[i][base] / base0
+        an = _terzaghi_pp_ratio(1.0, T)
+        assert abs(fe - an) / an < 0.05, f"t_hat={T}: FE {fe:.3f} vs Terzaghi {an:.3f}"
+
+
+def test_v023_monolithic_drained_endstate_pass():
+    """PASS (v5.3 A5): the monolithic transient converges to the correct DRAINED
+    end-state settlement w = pz*H/(K+4G/3) = 2.609 mm (as the excess pore pressure
+    fully dissipates), so adding the undrained transient does not disturb the
+    end-state the staggered scheme already got right."""
+    res, pp, base, _ = _v023_monolithic_run(theta=0.5, n_steps=160)
+    w_mm = abs(res['settlements'][-1]) * 1000.0
+    assert w_mm == pytest.approx(2.61, abs=0.05)
+    # excess pore pressure has essentially fully dissipated at the end
+    assert pp[-1].max() < 0.05 * pp[0][base]
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # V-024 : Itasca cylindrical hole in MC medium (Salencon)
 # ════════════════════════════════════════════════════════════════════════════

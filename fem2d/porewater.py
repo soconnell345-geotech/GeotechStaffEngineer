@@ -6,7 +6,8 @@ Provides:
 - Effective stress correction for total → effective stress
 - Pore pressure equivalent nodal forces
 - Steady-state seepage solver (Laplace equation, CST flow elements)
-- Coupled Biot consolidation (staggered scheme)
+- Coupled Biot consolidation (staggered default; monolithic u-p option for the
+  load-induced undrained transient, ``solve_consolidation(scheme="monolithic")``)
 
 Sign convention (tension-positive code):
     Compression = negative sigma
@@ -22,7 +23,7 @@ References:
 """
 
 import numpy as np
-from scipy.sparse import coo_matrix, lil_matrix
+from scipy.sparse import coo_matrix, lil_matrix, bmat
 from scipy.sparse.linalg import spsolve
 
 from fem2d.elements import cst_B, cst_area
@@ -541,13 +542,28 @@ def assemble_compressibility(nodes, elements, n_w=2.2e6, t=1.0):
 def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
                         k, head_bcs, time_steps, t=1.0,
                         gamma_w=9.81, n_w=2.2e6,
-                        pore_pressures_0=None, surface_loads=None):
-    """Solve Biot consolidation using staggered scheme.
+                        pore_pressures_0=None, surface_loads=None,
+                        scheme="staggered", theta=1.0):
+    """Solve Biot consolidation using the staggered or monolithic u-p scheme.
 
-    Staggered (sequential) at each time step dt:
-    1. Displacement: K * u_{n+1} = F_ext - Q * p_n
-    2. Pressure: (S/dt + H) * p_{n+1} = S * p_n / dt - Q^T * (u_{n+1} - u_n) / dt
-    Apply head BCs to pressure system.
+    ``scheme="staggered"`` (**default**, unchanged): sequential split at each dt:
+      1. Displacement: K * u_{n+1} = F_ext - Q * p_n
+      2. Pressure: (S/dt + H) * p_{n+1} = S * p_n / dt - Q^T*(u_{n+1}-u_n)/dt
+    This transports a pre-existing pore field but does NOT convert an applied
+    total-stress increment into excess pore pressure (no undrained transient).
+
+    ``scheme="monolithic"``: solve displacement AND pore pressure SIMULTANEOUSLY
+    from the coupled Biot block system (theta-method in time):
+
+        | K      -Q            | | u_{n+1} |   | F_ext                            |
+        | Q^T   (S + theta dt H)| | p_{n+1} | = | Q^T u_n + S p_n - (1-theta)dt H p_n |
+
+    The load is applied UNDRAINED at t=0 (the first block solve with no flow gives
+    the instantaneous excess pore pressure p0), then it dissipates through H — the
+    full Terzaghi/Biot consolidation transient. ``theta`` in [0.5, 1]; 1.0 =
+    backward Euler (unconditionally stable, recommended for the early undrained
+    boundary layer). Default byte-identical staggered behavior when
+    scheme="staggered".
 
     Parameters
     ----------
@@ -591,6 +607,17 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
     n_elem = len(elements)
     n_steps = len(time_steps)
     n_dof_u = 2 * n_nodes
+
+    if scheme not in ("staggered", "monolithic"):
+        raise ValueError(
+            f"scheme must be 'staggered' or 'monolithic', got '{scheme}'")
+    if scheme == "monolithic":
+        # Monolithic u-p uses a Taylor-Hood (T6 displacement / T3 pressure)
+        # pairing to satisfy the LBB (inf-sup) condition; self-assembles on a
+        # T6 mesh derived from the CST input mesh.
+        return _monolithic_taylor_hood(
+            nodes, elements, material_props, gamma, bc_nodes, k, head_bcs,
+            time_steps, t, n_w, float(theta), surface_loads)
 
     # Expand material props
     if len(material_props) < n_elem:
@@ -731,3 +758,186 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
         'degree_of_consolidation': degree_of_consolidation,
         'converged': converged,
     }
+
+
+def _monolithic_consolidation(K_bc, F_ext_bc, Q, H, S, head_bcs,
+                              time_steps, theta, surface_mask):
+    """Monolithic (coupled) u-p Biot consolidation, theta time-stepping.
+
+    Solves the block system for (u, p) simultaneously so an applied total-stress
+    increment is instantly split into effective stress + excess pore pressure
+    (the undrained response), which then dissipates through the flow matrix H.
+    K_bc / F_ext_bc already carry the displacement BCs (penalty); Q is
+    (n_dof_u x n_dof_p), H and S are (n_dof_p x n_dof_p). Dimensions are inferred
+    from the matrices, so the same solver serves the CST and the Taylor-Hood
+    (T6/T3) pairings. Drainage (head) BCs are applied to the pressure block by
+    penalty. See ``solve_consolidation``.
+    """
+    time_steps = np.asarray(time_steps, dtype=float)
+    n_steps = len(time_steps)
+    n_dof_u = K_bc.shape[0]
+    n_dof_p = S.shape[0]
+    penalty = 1.0e20
+    if not (0.5 <= theta <= 1.0):
+        raise ValueError(f"theta must be in [0.5, 1.0], got {theta}")
+
+    # Pressure (drainage) BCs by penalty: prescribed pore pressure = head value.
+    p_pen = np.zeros(n_dof_p)
+    p_val = np.zeros(n_dof_p)
+    for node, head in head_bcs:
+        p_pen[int(node)] = penalty
+        p_val[int(node)] = float(head)
+    idx = np.arange(n_dof_p)
+    P_bc = coo_matrix((p_pen, (idx, idx)), shape=(n_dof_p, n_dof_p)).tocsr()
+    p_rhs_bc = p_pen * p_val
+
+    Qt = Q.T.tocsr()
+
+    def _solve_block(A22, rhs_p):
+        A = bmat([[K_bc, -Q], [Qt, A22]]).tocsc()
+        rhs = np.concatenate([F_ext_bc, rhs_p])
+        x = spsolve(A, rhs)
+        return x[:n_dof_u], x[n_dof_u:]
+
+    # t = 0: undrained response (no flow term) — the instantaneous p0 field.
+    u, p = _solve_block((S + P_bc).tocsr(), p_rhs_bc.copy())
+
+    u_hist = np.zeros((n_steps, n_dof_u))
+    p_hist = np.zeros((n_steps, n_dof_p))
+    settlements = np.zeros(n_steps)
+    u_hist[0] = u
+    p_hist[0] = p
+    if surface_mask.any():
+        settlements[0] = float(np.min(u[1::2][surface_mask]))
+    converged = True
+
+    for step in range(1, n_steps):
+        dt = time_steps[step] - time_steps[step - 1]
+        if dt <= 0:
+            u_hist[step] = u
+            p_hist[step] = p
+            settlements[step] = settlements[step - 1]
+            continue
+        A22 = (S + theta * dt * H + P_bc).tocsr()
+        rhs_p = Qt @ u + S @ p - (1.0 - theta) * dt * (H @ p) + p_rhs_bc
+        try:
+            u, p = _solve_block(A22, rhs_p)
+        except Exception:
+            converged = False
+            u_hist[step:] = u
+            p_hist[step:] = p
+            settlements[step:] = settlements[step - 1]
+            break
+        u_hist[step] = u
+        p_hist[step] = p
+        if surface_mask.any():
+            settlements[step] = float(np.min(u[1::2][surface_mask]))
+
+    s_final = abs(settlements[-1]) if abs(settlements[-1]) > 1e-12 else 1.0
+    doc = abs(settlements[-1]) / s_final
+    return {
+        'times': time_steps,
+        'displacements': u_hist,
+        'pore_pressures': p_hist,
+        'settlements': settlements,
+        'max_settlement_m': float(np.min(settlements)),
+        'max_excess_pore_pressure_kPa': float(np.max(np.abs(p_hist))),
+        'degree_of_consolidation': doc,
+        'converged': converged,
+        'scheme': 'monolithic',
+    }
+
+
+def assemble_coupling_taylor_hood(nodes6, elements6, t=1.0, n_gp=3):
+    """Taylor-Hood solid-fluid coupling Q (T6 displacement x T3 corner pressure).
+
+    Q_e = integral_T B_u^T m N_p dA, with B_u the T6 strain-displacement matrix
+    (3x12) and N_p = [L1, L2, L3] the linear (T3) pressure shape on the corner
+    nodes. Global Q is (2*n6 x n_corner); pressure DOFs live on the corner nodes
+    only (indices 0..n_corner-1 in the convert_to_t6 node ordering).
+    """
+    from fem2d.elements import t6_B_detJ, TRI_GAUSS
+
+    nodes6 = np.asarray(nodes6, dtype=float)
+    elements6 = np.asarray(elements6, dtype=int)
+    n6 = len(nodes6)
+    n_corner = int(elements6[:, :3].max()) + 1
+    pts, wts = TRI_GAUSS[n_gp]
+
+    rows, cols, vals = [], [], []
+    for e in range(len(elements6)):
+        conn = elements6[e]
+        coords = nodes6[conn]                 # (6, 2)
+        Qe = np.zeros((12, 3))
+        for L, w in zip(pts, wts):
+            B, detJ, _ = t6_B_detJ(coords, L)
+            Np = np.asarray(L, dtype=float)    # corner linear shape = area coords
+            BTm = B.T @ _M_VOIGT               # (12,)
+            Qe += np.outer(BTm, Np) * (0.5 * w * detJ * t)
+        dofs_u = element_dofs(conn)            # (12,)
+        corners = conn[:3]
+        for i in range(12):
+            for j in range(3):
+                rows.append(dofs_u[i])
+                cols.append(int(corners[j]))
+                vals.append(Qe[i, j])
+    return coo_matrix((vals, (rows, cols)),
+                      shape=(2 * n6, n_corner)).tocsr()
+
+
+def _monolithic_taylor_hood(nodes, elements, material_props, gamma, bc_nodes,
+                            k, head_bcs, time_steps, t, n_w, theta, surface_loads):
+    """Monolithic u-p consolidation with the Taylor-Hood (T6/T3) pairing.
+
+    Converts the CST input mesh to T6, assembles the quadratic-displacement
+    stiffness + the mixed coupling, uses the corner (CST) skeleton for the
+    linear-pressure flow/compressibility matrices, and time-steps the coupled
+    block system (theta-method) — LBB-stable, so the drained-boundary pressure
+    overshoot of the equal-order pairing is avoided.
+    """
+    from fem2d.mesh import convert_to_t6, t6_boundary_edges, detect_boundary_nodes
+    from fem2d.assembly import (
+        assemble_stiffness, assemble_gravity, assemble_surface_load,
+        apply_bcs_penalty,
+    )
+    from fem2d.materials import elastic_D
+
+    nodes = np.asarray(nodes, dtype=float)
+    elements = np.asarray(elements, dtype=int)
+    n_elem = len(elements)
+    if len(material_props) < n_elem:
+        material_props = list(material_props) + \
+            [material_props[-1]] * (n_elem - len(material_props))
+
+    # Quadratic-displacement (T6) mesh; corners keep their indices.
+    nodes6, elem6 = convert_to_t6(nodes, elements)
+
+    D_array = np.array([elastic_D(mp['E'], mp['nu']) for mp in material_props])
+    K = assemble_stiffness(nodes6, elem6, D_array, t)
+
+    F_ext = assemble_gravity(nodes6, elem6, gamma, t)
+    if surface_loads:
+        for edges, qx, qy in surface_loads:
+            edges3 = t6_boundary_edges(elem6, edges)
+            F_ext += assemble_surface_load(nodes6, edges3, qx, qy, t)
+
+    # Displacement BCs on the T6 mesh (re-detect so midside boundary nodes are
+    # constrained too); geometry matches the CST detection.
+    bc6 = detect_boundary_nodes(nodes6)
+    K_bc, F_ext_bc = apply_bcs_penalty(K, F_ext, bc6)
+
+    # Linear-pressure (T3) flow + compressibility on the corner skeleton
+    # (identical to the original CST element matrices).
+    H_p, _ = assemble_flow_system(nodes, elements, k, t)
+    S_p = assemble_compressibility(nodes, elements, n_w, t)
+
+    Q = assemble_coupling_taylor_hood(nodes6, elem6, t)
+
+    y_max = nodes6[:, 1].max()
+    surface_mask = np.abs(nodes6[:, 1] - y_max) < \
+        0.01 * (y_max - nodes6[:, 1].min() + 1)
+
+    res = _monolithic_consolidation(K_bc, F_ext_bc, Q, H_p, S_p, head_bcs,
+                                    time_steps, theta, surface_mask)
+    res['scheme'] = 'monolithic_taylor_hood'
+    return res
