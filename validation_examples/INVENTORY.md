@@ -481,17 +481,49 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   Soil#1) (33,26.5),(40,27),(50,29),(54,31),(70,31); lower matl bnd (Soil#2/#3)
   (40,27),(52,24),(70,24). Soil#1 c'=0/phi'=38, Soil#2 c'=5.3/phi'=23, Soil#3
   c'=7.2/phi'=20, all gamma=19.5. kh=0.15.
-- Published answer (Table 4.2, seismic): Bishop 1.016, Spencer 0.991, GLE 0.989,
-  Janbu corrected 0.965; referee 1.00.
-- Verdict: **N/A (geometry-precision)** — the reconstructed 3-layer geometry gives
-  static Bishop ~1.0-1.23 (depending on the ambiguous toe soil-region assignment)
-  and seismic ~0.78-0.91, vs the published seismic 1.016. Even the strongest
-  defensible soil config (all Soil#2 below Soil#1) reaches only seismic 0.913. The
-  seismic ENGINE is validated to +0.5% by the clean-geometry Loukidis #62 (V-033),
-  so the shortfall is the imprecise layer geometry (the FOS is highly sensitive to
-  the exact material boundaries, which are not label-resolved in the figure), NOT
-  a kh bug. No passing test; documented as a geometry-reconstruction limit.
+- Published answer: STATIC (#3, Table 3.2) Bishop 1.405 / Spencer 1.375 / GLE 1.374;
+  SEISMIC 0.15g (#4, Table 4.2) Bishop 1.016 / Spencer 0.991 / GLE 0.989; referee 1.00
+  (seismic).
+- Verdict: **N/A (geometry-precision — discrepancy analysis)** — the reconstructed
+  geometry cannot reproduce EITHER published table, and the discrepancy is isolated
+  to the geometry, not the module:
+  * The module's per-slice soil assignment was VERIFIED correct against the figure
+    (toe/base = orange Soil#3 φ=20, mid-right wedge = green Soil#2, crest cap = yellow
+    Soil#1 φ=38).
+  * The critical circle is a toe circle DOMINATED by the weak Soil#3 (φ=20) → static
+    Bishop 1.02 / seismic 0.77. A full soil-interpretation sweep (Soil#1-top vs
+    -base, flip, all-Soil#2, all-Soil#1) found NONE reaching the published static
+    1.405: the target sits between homogeneous all-φ23 (static 1.305) and all-φ38
+    (1.562), i.e. an EFFECTIVE φ≈29 along the critical surface.
+  * The target seismic/static ratio 0.723 matches the HOMOGENEOUS cases (0.712-0.725),
+    NOT the layered one (0.760) — and the seismic engine is independently validated
+    to +0.5% by Loukidis #62 (V-033). So the module is right; the published surface
+    must AVOID the weak Soil#3 toe (Soil#3 confined deeper than the figure read
+    implies), which the reconstructed boundaries don't achieve. FOS is hyper-sensitive
+    to this. No forced test.
 - Confidence in extraction: surface + soils high; layer boundaries moderate.
+
+## V-028 Slide2 #9 = ACADS 4 — weak seam + piezometric surface + distributed load (discrepancy)
+- Source: Slide2 Verification #9 (manual pp. 50-54); ACADS 4 [Giam & Donald 1989].
+- Target: `slope_stability` (thin weak seam, noncircular block, water table, surcharge).
+- Geometry (metres, Fig 9.1): surface (20,28),(43,28),(68,40),(84,40); base z=15;
+  weak seam = 1 m planar band, does NOT daylight, top [(20,19),(84,37)] bottom
+  [(20,18),(84,36)]. Soil#1 c'=28.5/phi'=20/gamma=18.84 (above+below seam); Soil#2
+  weak seam c'=0/phi'=10. Piezometric surface (Table 9.3, confirmed vs figure);
+  distributed loads 20 kPa on the bench (x~23-43), 20+40 kPa on the crest (x~68-84).
+- Published answer (noncircular through the seam): Spencer 0.760, GLE 0.720, Janbu
+  corrected 0.734; referee 0.78 [Giam].
+- Verdict: **N/A (discrepancy)** — not cleanly reproducible: (a) the module's
+  `weak_layer` noncircular search returns DEGENERATE surfaces (Spencer ~0.05-0.18) for
+  this seam geometry — a search-robustness pathology (B2: reject degenerate/short-span
+  surfaces in the weak-layer search); (b) a hand-constructed block along the seam gives
+  Spencer ~0.53 (water) / ~0.61 (dry), BELOW the referee 0.76, sensitive to the scarp
+  construction and to the module's conservative full-vertical-head pore pressure (SS-3)
+  on the inclined piezometric surface. The module also supports only ONE surcharge zone
+  (the problem has two: bench + crest — B2 capability). Core LE methods validated by the
+  5 clean problems (V-026/030/031/032/033). No forced test.
+- Confidence in extraction: geometry high (label-confirmed); the gaps are search
+  robustness + pore-pressure convention + surcharge-zone capability.
 
 ## V-034 Slide2 #63 — Loukidis (2003) ex 2, 3-layer seismic (geometry-limited)
 - Source: Slide2 Verification #63 (manual pp. 219-220); Loukidis et al. (2003).
