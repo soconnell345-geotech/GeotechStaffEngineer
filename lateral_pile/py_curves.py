@@ -688,12 +688,45 @@ def _sand_k_recommendation(phi: float, below_wt: bool = True) -> float:
 # 4. Sand — Reese, Cox & Koop (1974)
 # =============================================================================
 
+# Reese (1974) non-dimensional A and B coefficients vs depth ratio z/b, digitized
+# from the Reese, Cox & Koop (1974) charts (Reese & Van Impe 2001, Figs 3.30/3.31;
+# COM624P FHWA-SA-91-048 Figs 2.19/2.20). A scales the ultimate curve resistance
+# (pu = A*ps at yu = 3b/80); B scales the m-point (pm = B*ps at ym = b/60).
+# Asymptotes (z/b >= 5): A_s=0.88, A_c=0.53, B_s=0.50, B_c=0.55.
+_REESE_AB_ZB = [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0]
+_REESE_A_STATIC = [2.90, 2.60, 2.25, 1.90, 1.62, 1.42, 1.28, 1.02, 0.88]
+_REESE_A_CYCLIC = [2.90, 2.35, 1.80, 1.30, 0.95, 0.65, 0.53, 0.53, 0.53]
+_REESE_B_STATIC = [2.20, 1.85, 1.55, 1.28, 1.05, 0.90, 0.80, 0.62, 0.50]
+_REESE_B_CYCLIC = [2.20, 1.90, 1.62, 1.35, 1.12, 0.95, 0.80, 0.65, 0.55]
+
+
+def _reese_A(zb: float, cyclic: bool) -> float:
+    """Reese (1974) ultimate-resistance coefficient A at depth ratio z/b."""
+    tab = _REESE_A_CYCLIC if cyclic else _REESE_A_STATIC
+    return float(np.interp(zb, _REESE_AB_ZB, tab))
+
+
+def _reese_B(zb: float, cyclic: bool) -> float:
+    """Reese (1974) m-point coefficient B at depth ratio z/b."""
+    tab = _REESE_B_CYCLIC if cyclic else _REESE_B_STATIC
+    return float(np.interp(zb, _REESE_AB_ZB, tab))
+
+
 @dataclass
 class SandReese:
     """p-y curves for sand per Reese, Cox & Koop (1974).
 
-    Uses a three-part curve construction with parabolic transition between
-    the initial straight-line portion and the ultimate resistance.
+    Two curve constructions are available (``construction``):
+    - ``"simplified"`` (**default**) — an initial linear branch (k*z*y), a
+      1/3-power softening parabola anchored at the ultimate point (yu = 3b/80),
+      and the ultimate plateau p_ult = A*min(pus,pud) with A = max(0.9, 3-0.8 z/b)
+      (static). Chart-free; the historical module behavior.
+    - ``"reese1974"`` — the FULL four-segment Reese (1974) construction: initial
+      linear (k*z*y) up to yk, a parabola p = C*y^(1/n), a straight m-segment from
+      the m-point (ym = b/60, pm = B*pu) to the ultimate point (yu = 3b/80,
+      pu_curve = A*pu), then the plateau. A and B come from the Reese charts
+      (``_reese_A``/``_reese_B``). This is stiffer in the working range than the
+      simplified curve (it tracks the initial linear further before softening).
 
     Parameters
     ----------
@@ -706,16 +739,21 @@ class SandReese:
         See _sand_k_recommendation() for typical values.
     loading : str
         'static' or 'cyclic'. Default 'static'.
+    construction : str
+        'simplified' (default) or 'reese1974' (full four-segment curve).
 
     References
     ----------
     Reese, L.C., Cox, W.R. & Koop, F.D. (1974). OTC 2080.
-    COM624P Manual (FHWA-SA-91-048), Section 2.3.4.
+    Reese, L.C. & Van Impe, W.F. (2001). Single Piles and Pile Groups Under
+    Lateral Loading, Figs 3.30/3.31.
+    COM624P Manual (FHWA-SA-91-048), Section 2.3.4, Figs 2.19/2.20.
     """
     phi: float
     gamma: float
     k: float
     loading: str = 'static'
+    construction: str = 'simplified'
 
     def __post_init__(self):
         if self.phi <= 0 or self.phi > 50:
@@ -726,6 +764,9 @@ class SandReese:
             raise ValueError(f"k must be positive, got {self.k}")
         if self.loading not in ('static', 'cyclic'):
             raise ValueError(f"loading must be 'static' or 'cyclic', got '{self.loading}'")
+        if self.construction not in ('simplified', 'reese1974'):
+            raise ValueError(
+                f"construction must be 'simplified' or 'reese1974', got '{self.construction}'")
 
         self.C1, self.C2, self.C3 = _sand_coefficients(self.phi)
 
@@ -787,18 +828,20 @@ class SandReese:
         pus, pud = self.get_pu(z, b)
         pu = min(pus, pud)
 
+        k_init = self.k * z  # initial slope (kN/m of resistance per m deflection)
+        if k_init <= 0 or pu <= 0:
+            return 0.0
+
+        if self.construction == 'reese1974':
+            return sign * self._p_reese1974(y_abs, z, b, pu, k_init)
+
+        # --- simplified (default) construction ---------------------------------
         # Adjustment factor A (COM624P): static A = max(0.9, 3 - 0.8 z/b),
         # cyclic A = 0.9.
         A = 0.9 if self.loading == 'cyclic' else max(0.9, 3.0 - 0.8 * z / b)
         p_ult = A * pu
-
-        k_init = self.k * z  # initial slope (kN/m of resistance per m deflection)
-        if k_init <= 0 or p_ult <= 0:
-            return 0.0
-
         # Deflection at ultimate resistance (Reese 1974).
         yu = 3.0 * b / 80.0
-
         # Lower envelope of: initial linear, 1/3-power softening parabola
         # (passing through the ultimate point at yu), and the ultimate plateau.
         p_linear = k_init * y_abs
@@ -806,6 +849,37 @@ class SandReese:
         p = min(p_linear, p_parabola, p_ult)
 
         return sign * p
+
+    def _p_reese1974(self, y_abs: float, z: float, b: float,
+                     pu: float, k_init: float) -> float:
+        """Full four-segment Reese (1974) sand p-y resistance (magnitude).
+
+        Initial linear (k*z*y) -> parabola (C*y^(1/n)) -> straight m-segment
+        (pm..pu_curve) -> plateau. The A/B chart coefficients set the ultimate and
+        m-point resistances; the initial linear governs (via the lower envelope)
+        below yk where it undercuts the parabola.
+        """
+        cyclic = self.loading == 'cyclic'
+        zb = z / b if b > 0 else 0.0
+        pu_curve = _reese_A(zb, cyclic) * pu          # ultimate at yu = 3b/80
+        pm = _reese_B(zb, cyclic) * pu                # m-point at ym = b/60
+        yu = 3.0 * b / 80.0
+        ym = b / 60.0
+        if pm <= 0 or pu_curve <= pm or ym <= 0 or yu <= ym:
+            # Degenerate (e.g. B >= A); fall back to a linear-to-plateau curve.
+            return min(k_init * y_abs, pu_curve)
+        m = (pu_curve - pm) / (yu - ym)               # slope of the m-segment
+        n = pm / (m * ym)                             # parabola exponent 1/n
+        C = pm / ym ** (1.0 / n)
+        # Composite parabola -> m-segment -> plateau (upper branch).
+        if y_abs <= ym:
+            p_upper = C * y_abs ** (1.0 / n)
+        elif y_abs <= yu:
+            p_upper = pm + m * (y_abs - ym)
+        else:
+            p_upper = pu_curve
+        # Initial linear governs until it meets the parabola at yk (lower envelope).
+        return min(k_init * y_abs, p_upper)
 
     def get_py_curve(self, z: float, b: float, n_points: int = 50,
                      y_max_factor: float = 5.0) -> Tuple[np.ndarray, np.ndarray]:

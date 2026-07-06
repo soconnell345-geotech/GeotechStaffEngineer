@@ -41,21 +41,25 @@ KEY FINDINGS (details in each test docstring and RESULTS.md):
   source's own table to convergence gives 0.96, matching the module. The module is
   the more-correct value; the published 0.90 is not converged.
 
-- V-017 fixed-head Mmax is a PASS; the head deflection is a CONVENTION (p-y
-  construction). The lateral_pile FD beam-column solver is verified EXACT: with a
+- V-017 fixed-head Mmax is a PASS; the head deflection is a CONVENTION whose root
+  cause (v5.3 A4) is the section BENDING STIFFNESS (composite/nonlinear EI), NOT the
+  p-y construction. The lateral_pile FD beam-column solver is verified EXACT: with a
   linear p = k*z*y soil law it reproduces the Reese-Matlock characteristic-length
   (T-method) closed form to 4 figures (fixed-head groundline y and head moment).
   With the module's `SandReese` p-y curves and the LPILE inputs (D=0.19685 m,
   I=3.58667e-5 m4, E=199,948 MPa; two sand layers phi=32/30, k=24430/16287 kN/m3,
   gamma'=18.84/17.64; V=44.482 kN, axial P=1423.4 kN, head 0.305 m below grade),
   the fixed-head Mmax = -39.3 kN-m vs the published -37.3 (+5.4%, within +/-10%) and
-  the head deflection = 3.92 mm vs 3.3 (+19%, just outside +/-15%). The deflection
-  excess is the documented chart-free `SandReese` simplification (a 1/3-power
-  parabola anchored at ultimate -- LP-1 in py_curves.py) being slightly softer than
-  LPILE's full Reese (1974) construction with the B-factor m-point; the solver,
-  fixed-head BC (slope=0), axial P-delta, multilayer, and stickup-style head
-  embedment are all correct. The axial load is material: it raises y from 3.60 to
-  3.92 mm and Mmax from -36.8 to -39.3 (P-delta captured).
+  the head deflection = 3.92 mm vs 3.3 (+19%). A4 root-cause: the published LPILE
+  run used NONLINEAR/composite EI (casing+grout+bar; extract "Computed Pile Response
+  Using Nonlinear EI") while the test uses the casing-only elastic EI; a modest
+  EI x1.3 lands the simplified curve on exactly 3.28 mm ~ 3.3. The FULL Reese (1974)
+  four-segment construction (now available, construction="reese1974") is SOFTER
+  (5.02 mm), disproving the "simplified is too soft a p-y" hypothesis -- the working
+  deflection sits at the m-point ym=b/60 where Reese fixes pm=B*pu (B->0.5), softer
+  than the simplified 1/3-power parabola. k (24430/16287) is the source's documented
+  value. Solver, fixed-head BC, axial P-delta, multilayer are all correct; the axial
+  load raises y from 3.60 to 3.92 mm and Mmax from -36.8 to -39.3 (P-delta captured).
 
   NOTE on the head datum: the LPILE echo lists "ground surface 0.305 m below top of
   pile = -0.30 m" -- i.e. the micropile head/cap is 0.305 m BELOW grade (the manual
@@ -397,19 +401,59 @@ def test_v017_fixed_head_mmax_pass():
 
 
 def test_v017_fixed_head_deflection_convention():
-    """CONVENTION (p-y construction): fixed-head head deflection = 3.92 mm vs the
-    published LPILE 3.3 mm (+19%, just outside +/-15%). The FD solver is verified
-    exact (previous test); the excess is the module's documented chart-free
-    `SandReese` simplification (LP-1: a 1/3-power parabola anchored at ultimate)
-    being slightly softer than LPILE's full Reese (1974) construction with the
-    B-factor m-point. Pinned for documentation -- not a solver bug, not tuned."""
+    """CONVENTION (section stiffness, NOT the p-y construction): fixed-head head
+    deflection = 3.92 mm (simplified SandReese) vs the published LPILE 3.3 mm
+    (+19%). Root cause identified in v5.3 A4: the gap is the BENDING STIFFNESS, not
+    the p-y curve. The published LPILE run used NONLINEAR (composite) EI -- the
+    micropile section is a steel casing + grout + bar -- while this test uses the
+    casing-only elastic EI (I=3.58667e-5, per the LPILE echo's linear section). A
+    modest, physically-expected composite-section stiffening (EI x1.3) lands the
+    simplified curve on exactly 3.28 mm ~ 3.3. The FULL Reese (1974) construction
+    (available since A4, next test) is actually SOFTER (5.02 mm), disproving the old
+    'simplified is too soft a p-y' hypothesis. The documented k (24430.244 /
+    16286.830 kN/m3) is used verbatim from the source, so it is not a k-selection
+    issue either. Not tuned; reproducing 3.3 mm needs a composite/nonlinear-EI
+    capability (flagged as an A4 follow-up in V5.3_PLAN)."""
     res = LateralPileAnalysis(_v017_pile(), _v017_layers()).solve(
         Vt=_V017_V, Q=_V017_P, head_condition='fixed', n_elements=400)
     assert res.converged
     y_head_mm = res.deflection[0] * 1000.0
     assert y_head_mm == pytest.approx(3.92, abs=0.1)     # our value, pinned
-    # documented overshoot vs the published 3.3 mm (p-y construction difference)
+    # documented overshoot vs the published 3.3 mm (section-stiffness difference)
     assert (y_head_mm - 3.3) / 3.3 == pytest.approx(0.19, abs=0.05)
+
+
+def test_v017_full_reese_construction_is_softer_not_stiffer():
+    """A4 finding (v5.3): the FULL Reese (1974) four-segment sand p-y
+    (construction='reese1974') is now available as an additive option, but for
+    V-017 it gives ~5.02 mm -- SOFTER than the simplified 3.92 mm and further from
+    the published 3.3 mm, NOT closer. This is faithful to Reese: the working
+    deflection sits at the m-point ym = b/60 = 3.28 mm, where Reese fixes the
+    resistance at pm = B*pu (B->0.50 at depth), genuinely softer than the
+    simplified 1/3-power parabola. So the V-017 deflection gap is the section
+    stiffness (composite/nonlinear EI), not the p-y construction. The A/B
+    asymptotes were NOT tuned to force 3.3 mm."""
+    def _layers(construction):
+        off = _V017_HEAD_BELOW_GRADE
+        return [
+            SoilLayer(top=0.0, bottom=3.048,
+                      py_model=_ReeseWithOverburdenOffset(
+                          off, phi=32.0, gamma=18.83843, k=24430.244,
+                          loading='static', construction=construction)),
+            SoilLayer(top=3.048, bottom=12.192,
+                      py_model=_ReeseWithOverburdenOffset(
+                          off, phi=30.0, gamma=17.64407, k=16286.830,
+                          loading='static', construction=construction)),
+        ]
+    full = LateralPileAnalysis(_v017_pile(), _layers('reese1974')).solve(
+        Vt=_V017_V, Q=_V017_P, head_condition='fixed', n_elements=400)
+    simp = LateralPileAnalysis(_v017_pile(), _layers('simplified')).solve(
+        Vt=_V017_V, Q=_V017_P, head_condition='fixed', n_elements=400)
+    y_full = full.deflection[0] * 1000.0
+    y_simp = simp.deflection[0] * 1000.0
+    assert y_full == pytest.approx(5.02, abs=0.15)       # full construction, pinned
+    assert y_full > y_simp                                # full is SOFTER, not stiffer
+    assert y_simp == pytest.approx(3.92, abs=0.1)         # simplified unchanged
 
 
 def test_v017_axial_load_p_delta_effect():

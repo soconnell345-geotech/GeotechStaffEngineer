@@ -55,7 +55,7 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 | V-015 | slope_stability Simplified Bishop | 0.9595 (rigorous fixed point) | 0.90 (source, under-iterated) | +6.6% | CONVENTION | `bishop_fos` returns the proper fixed point FS=FSa=0.9595 on the source's own 6-slice table. The manual shows only two hand iterations (FSa=1.5→1.10; FSa=0.8→0.90, reproduced EXACTLY here incl. the Hb=m_α column) and declares "converges to ≈0.9" — one step short. Re-iterating the source's OWN table to convergence gives 0.96, matching the module. Module is the more-correct value; published 0.90 is not converged. |
 | V-017 | lateral_pile FD solver (verification) | fixed-head y & M_head match Reese-Matlock T-method to 4 figures (linear p=k·z·y) | (analytical T-method) | <1% | **PASS** | With a linear soil law the beam-column solver reproduces 0.93·V·T³/EI (fixed-head groundline y) and ≈−0.93·V·T (head moment) exactly. Isolates the solver + fixed-head BC (slope=0) as correct, so the V-017 deflection excess is a p-y construction difference, not a solver bug. |
 | V-017 | lateral_pile fixed-head Mmax (Reese sand, axial) | −39.3 kN·m (at head) | −37.3 kN·m | +5.4% | **PASS** | `SandReese` static p-y, 2-layer profile (φ=32/30, k=24430/16287 kN/m³, γ′=18.84/17.64), head 0.305 m below grade (overburden +0.305 m), V=44.482 kN, slope=0, axial P=1423.4 kN with P-delta. Mmax within ±10%. |
-| V-017 | lateral_pile fixed-head deflection | 3.92 mm | 3.3 mm | +19% | CONVENTION | Just outside ±15%. Solver verified exact (row above); the excess is the module's documented chart-free `SandReese` simplification (LP-1: 1/3-power parabola anchored at ultimate) being softer than LPILE's full Reese (1974) construction with the B-factor m-point. Not a bug, not tuned. Axial P-delta correctly raises y 3.60→3.92 mm and Mmax −36.8→−39.3. |
+| V-017 | lateral_pile fixed-head deflection | 3.92 mm (simplified); 5.02 mm (full Reese1974) | 3.3 mm | +19% / +52% | CONVENTION | **Root cause found (v5.3 A4): the gap is the section BENDING STIFFNESS, NOT the p-y construction.** The published LPILE run used NONLINEAR/composite EI (casing+grout+bar; extract mp_sp2.txt "Computed Pile Response Using Nonlinear EI"), while the test uses the casing-only elastic EI. A physically-expected EI×1.3 (composite vs bare casing) lands the simplified curve on **exactly 3.28 mm ≈ 3.3**. The NEW full Reese (1974) four-segment construction (`SandReese(construction="reese1974")`) is actually SOFTER (5.02 mm) — the working deflection sits at the m-point ym=b/60=3.28 mm where Reese fixes pm=B·pu (B→0.5), genuinely softer than the simplified 1/3-power parabola — DISPROVING the old "simplified is too soft a p-y" hypothesis. The documented k (24430.244/16286.830 kN/m³, LPILE echo) is used verbatim, so not a k issue. A/B asymptotes NOT tuned. Reproducing 3.3 mm needs a composite/nonlinear-EI capability (A4 follow-up in V5.3_PLAN). Mmax row PASS unchanged. |
 | V-018 | ground_improvement / settlement unimproved consolidation | S = 22.0 in (settlement module + closed form) | S = 22 in | 0.0% | **PASS** | `consolidation_settlement_layer` (NC clay, Cc=0.25, eo=0.7, H=15 ft, po=432 psf, dq=2500 psf) reproduces S=Cc/(1+eo)·H·log10((po+dq)/po) to the printed digit (0.559 m). Tight closed-form anchor, independent of any GI method. |
 | V-018 | ground_improvement `area_replacement_ratio` (RAP) | as_tri = 0.2744 | Ra = Ac/(π/4·de²) = 0.27 | <0.5% | **PASS** (primitive) | The triangular tributary √3/2·s² numerically equals the de=1.05·s unit cell π/4·(1.05s)² (both 21.65 ft²), so the module's geometric `as` matches the source's de-based Ra to 4 figures. |
 | V-018 | RAP improved settlement (upper-zone stiffness modulus qg/kg) | hand: qg=6324 psf, suz=0.68 in (module `as`); module SRF path gives ~9.4 in | qg=6383 psf, suz≈0.7 in | suz <3% (hand) | N/A (scope) | The GEC-13 two-layer upper-zone method (qg=q·ns/(Ra·ns−Ra+1), suz=qg/kg, kg=pier stiffness modulus pci) is NOT in the module. `analyze_aggregate_piers`/`improved_settlement` use the equal-strain SRF=1/(1+as(n−1)) model (no kg) → SRF=0.43, improved ≈9.4 in — a fundamentally different method. Published 0.68 in reproduced by hand on the module `as`; module not tuned. |
@@ -303,22 +303,33 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
     auto-handling of toe-centered circles whose exit is above the center elevation
     would need the slip surface to expose the upper arc too — a minor possible
     enhancement, not required here.
-- **V-017 lateral_pile: the FD solver is verified EXACT; the one out-of-tolerance
-  number (deflection +19%) is the documented Reese p-y simplification, not a bug.**
+- **V-017 lateral_pile: the FD solver is verified EXACT; the deflection +19% is
+  the section BENDING STIFFNESS (composite/nonlinear EI), NOT the p-y curve —
+  root-caused in v5.3 A4.**
   - With a linear soil law p=k·z·y the beam-column solver reproduces the Reese-
     Matlock characteristic-length (T-method) closed form to 4 figures for the
     fixed-head groundline deflection (0.93·V·T³/EI) and head moment (≈−0.93·V·T).
     That pins the solver, the fixed-head BC (slope=0), and the discretization as
-    correct, so the deflection excess can only come from the p-y curve.
-  - With `SandReese` static curves + the LPILE inputs, **fixed-head Mmax = −39.3
-    kN·m vs −37.3 (+5.4%, PASS within ±10%)** and **head deflection 3.92 mm vs 3.3
-    (+19%, just outside ±15%)**. The deflection overshoot is the module's own
-    chart-free `SandReese` simplification (LP-1 in `py_curves.py`: a 1/3-power
-    parabola anchored at the ultimate point) being a bit softer than LPILE's full
-    Reese (1974) three-part construction with the B-factor m-point and variable
-    exponent. Recorded as CONVENTION — not tuned to this one example. (For a
-    smoother curve, `SandAPI` gives 5.0 mm / −44 kN·m — also soft; neither matches
-    LPILE's exact Reese curve to <15% on deflection.)
+    correct.
+  - **A4 root cause (v5.3):** the published LPILE run used **nonlinear/composite
+    EI** — the micropile section is a steel casing + grout + bar (extract
+    `mp_sp2.txt`: "Computed Pile Response Using Nonlinear EI") — while the test uses
+    the casing-only elastic EI (I=3.58667e-5, per the LPILE echo's linear section).
+    A modest, physically-expected composite stiffening (**EI×1.3**) lands the
+    simplified curve on **exactly 3.28 mm ≈ 3.3**. So the gap is section stiffness,
+    not the p-y construction.
+  - **The full Reese (1974) four-segment construction is now available**
+    (`SandReese(construction="reese1974")`, v5.3 A4) but for V-017 gives **5.02 mm
+    — SOFTER** than the simplified 3.92 mm and further from 3.3, DISPROVING the old
+    "simplified is too soft a p-y" hypothesis. This is faithful to Reese: the
+    working deflection sits at the m-point ym=b/60=3.28 mm where Reese fixes the
+    resistance at pm=B·pu (B→0.5 at depth), genuinely softer than the simplified
+    1/3-power parabola. The A/B asymptotes (A_s=0.88/B_s=0.50 etc.) were NOT tuned
+    to force 3.3 mm. **fixed-head Mmax = −39.3 kN·m vs −37.3 (+5.4%, PASS)**;
+    **deflection 3.92 mm (simplified) / 5.02 mm (full) vs 3.3 — CONVENTION.** The
+    documented k (24430.244/16286.830 kN/m³) is used verbatim from the LPILE echo,
+    so not a k-selection issue either. Reproducing 3.3 mm honestly needs a
+    composite/nonlinear-EI capability (flagged as an A4 follow-up in V5.3_PLAN).
   - **Axial P-delta is correctly captured:** P=1423.4 kN raises the fixed-head
     deflection from 3.60→3.92 mm and Mmax from −36.8→−39.3 kN·m. The published case
     has P-delta on, so the axial result is the comparison value.

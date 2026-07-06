@@ -336,6 +336,60 @@ class TestPYCurves:
         k_init = 22000.0 * z
         assert np.sum((interior > 1e-6) & (interior < 0.5 * k_init)) >= 3
 
+    def test_sand_reese_construction_default_is_simplified(self):
+        """construction defaults to 'simplified'; the two constructions differ."""
+        simp = SandReese(phi=35.0, gamma=9.0, k=22000.0)
+        assert simp.construction == 'simplified'
+        full = SandReese(phi=35.0, gamma=9.0, k=22000.0, construction='reese1974')
+        z, b = 3.0, 0.6
+        ym = b / 60.0
+        # default vs explicit simplified are identical; full differs at the m-point
+        assert simp.get_p(ym, z, b) == pytest.approx(
+            SandReese(phi=35.0, gamma=9.0, k=22000.0,
+                      construction='simplified').get_p(ym, z, b), rel=1e-12)
+        assert full.get_p(ym, z, b) != pytest.approx(simp.get_p(ym, z, b), rel=1e-6)
+        with pytest.raises(ValueError):
+            SandReese(phi=35.0, gamma=9.0, k=22000.0, construction='bogus')
+
+    def test_sand_reese_full_four_segment_curve(self):
+        """The full Reese (1974) construction is a genuine four-segment curve with
+        the A/B chart m-point: pm = B*pu at ym = b/60, pu_curve = A*pu at yu = 3b/80,
+        a straight m-segment between them, and a plateau beyond yu."""
+        from lateral_pile.py_curves import _reese_A, _reese_B
+        model = SandReese(phi=35.0, gamma=9.0, k=22000.0, loading='static',
+                          construction='reese1974')
+        z, b = 3.0, 0.6
+        zb = z / b
+        ym, yu = b / 60.0, 3.0 * b / 80.0
+        pus, pud = model.get_pu(z, b)
+        pu = min(pus, pud)
+        pm_expected = _reese_B(zb, False) * pu
+        pu_curve_expected = _reese_A(zb, False) * pu
+        # m-point and ultimate resistances match the A/B charts
+        assert model.get_p(ym, z, b) == pytest.approx(pm_expected, rel=1e-6)
+        assert model.get_p(yu, z, b) == pytest.approx(pu_curve_expected, rel=1e-6)
+        # plateau held beyond yu
+        assert model.get_p(2.0 * yu, z, b) == pytest.approx(pu_curve_expected, rel=1e-9)
+        # m-point below ultimate (B < A), curve monotonic non-decreasing
+        assert pm_expected < pu_curve_expected
+        y, p = model.get_py_curve(z, b, n_points=300)
+        assert np.all(np.diff(p) >= -1e-9)
+        # straight m-segment between ym and yu (near-constant slope there)
+        m_expected = (pu_curve_expected - pm_expected) / (yu - ym)
+        assert (model.get_p(0.5 * (ym + yu), z, b)
+                == pytest.approx(pm_expected + m_expected * 0.5 * (yu - ym), rel=0.02))
+
+    def test_sand_reese_A_B_coefficients_asymptotes(self):
+        """The digitized Reese A/B coefficients hit the published asymptotes at
+        z/b >= 5 (A_s=0.88, A_c=0.53, B_s=0.50, B_c=0.55) and B < A everywhere."""
+        from lateral_pile.py_curves import _reese_A, _reese_B
+        assert _reese_A(5.0, False) == pytest.approx(0.88, abs=0.001)
+        assert _reese_A(6.0, True) == pytest.approx(0.53, abs=0.001)
+        assert _reese_B(5.0, False) == pytest.approx(0.50, abs=0.001)
+        assert _reese_B(6.0, True) == pytest.approx(0.55, abs=0.001)
+        for zb in (0.0, 1.0, 2.0, 3.0, 5.0):
+            assert _reese_B(zb, False) < _reese_A(zb, False)   # m-point below ultimate
+
     def test_stiff_clay_below_wt_basics(self):
         """StiffClayBelowWT should produce reasonable results."""
         model = StiffClayBelowWT(c=100.0, gamma=9.0, eps50=0.005, ks=270000.0)

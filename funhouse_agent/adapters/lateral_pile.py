@@ -45,7 +45,10 @@ def _build_py_model(d):
         return cls(c=d["c"], gamma=d["gamma"], eps50=d["eps50"], J=d.get("J", 0.5), loading=loading)
     elif model_name == "SoftClayJeanjean":
         return cls(su=d["su"], gamma=d["gamma"], Gmax=d["Gmax"], J=d.get("J", 0.5), loading=loading)
-    elif model_name in ("SandReese", "SandAPI"):
+    elif model_name == "SandReese":
+        return cls(phi=d["phi"], gamma=d["gamma"], k=d["k"], loading=loading,
+                   construction=d.get("construction", "simplified"))
+    elif model_name == "SandAPI":
         return cls(phi=d["phi"], gamma=d["gamma"], k=d["k"], loading=loading)
     elif model_name == "WeakRock":
         return cls(qu=d["qu"], Er=d["Er"], gamma_r=d.get("gamma_r", 22.0), RQD=d.get("RQD", 100.0), loading=loading)
@@ -142,7 +145,7 @@ METHOD_INFO = {
             "designation": {"type": "str", "required": False, "description": "H-pile designation (e.g. 'HP360x132') — required for pile_type 'h_pile'."},
             "axis": {"type": "str", "required": False, "default": "strong", "allowed_values": ["strong", "weak"], "description": "Bending axis — pile_type 'h_pile' only."},
             "fc": {"type": "float", "required": False, "default": 28000.0, "description": "Concrete f'c (kPa) — pile_type 'filled_pipe' only."},
-            "layers": {"type": "array", "required": True, "description": "Array of {top, bottom, model, ...model params}. Required model params: SoftClayMatlock/StiffClayAboveWT {c, gamma, eps50}; StiffClayBelowWT {c, gamma, eps50, ks}; SoftClayJeanjean {su, gamma, Gmax}; SandReese/SandAPI {phi, gamma, k} where k = initial subgrade modulus (kN/m3); WeakRock {qu, Er}."},
+            "layers": {"type": "array", "required": True, "description": "Array of {top, bottom, model, ...model params}. Required model params: SoftClayMatlock/StiffClayAboveWT {c, gamma, eps50}; StiffClayBelowWT {c, gamma, eps50, ks}; SoftClayJeanjean {su, gamma, Gmax}; SandReese/SandAPI {phi, gamma, k} where k = initial subgrade modulus (kN/m3); WeakRock {qu, Er}. SandReese also takes optional construction='simplified'(default)|'reese1974' (full four-segment Reese 1974 curve)."},
             "Vt": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load at pile top (kN)."},
             "Mt": {"type": "float", "required": False, "default": 0.0, "description": "Moment at pile top (kN-m)."},
             "head_condition": {"type": "str", "required": False, "default": "free", "allowed_values": ["free", "fixed"], "description": "Pile head condition."},
@@ -164,6 +167,7 @@ METHOD_INFO = {
             "eps50": {"type": "float", "required": False, "description": "Strain at 50% deviator stress. For clay."},
             "phi": {"type": "float", "required": False, "description": "Friction angle (deg). For sand."},
             "k": {"type": "float", "required": False, "description": "Initial subgrade modulus (kN/m3). For sand."},
+            "construction": {"type": "str", "required": False, "default": "simplified", "allowed_values": ["simplified", "reese1974"], "description": "SandReese curve construction. 'simplified' (default): initial linear + 1/3-power parabola anchored at ultimate. 'reese1974': the full four-segment Reese (1974) curve (linear -> parabola -> straight m-segment -> plateau) with the A/B chart coefficients and the m-point (pm=B*pu at ym=b/60, pu=A*pu at yu=3b/80)."},
             "qu": {"type": "float", "required": False, "description": "UCS (kPa). For WeakRock."},
             "Er": {"type": "float", "required": False, "description": "Rock mass modulus (kPa). For WeakRock."},
         },

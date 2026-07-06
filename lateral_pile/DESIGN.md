@@ -57,6 +57,19 @@ results.summary()
 - **Moment equilibrium**: integral(p*z*dz) = -Mt (soil reaction opposes applied moment)
 - **Matlock cyclic**: Only engages when deflections exceed 3*y50
 - **API sand**: tanh model is linear at small loads
+- **SandReese construction (v5.3)**: `SandReese(construction=...)` selects the
+  sand p-y curve build. `"simplified"` (**default**, byte-identical to prior):
+  initial linear (k*z*y) + a 1/3-power softening parabola anchored at the ultimate
+  point (yu=3b/80) + plateau, with A = max(0.9, 3-0.8 z/b). `"reese1974"`: the FULL
+  four-segment Reese (1974) curve — initial linear -> parabola (p=C*y^(1/n)) ->
+  straight m-segment (pm..pu_curve) -> plateau — with the A/B chart coefficients
+  (`_reese_A`/`_reese_B`, digitized from Reese & Van Impe 2001 Figs 3.30/3.31 /
+  COM624P; asymptotes A_s=0.88, A_c=0.53, B_s=0.50, B_c=0.55), the m-point
+  pm=B*pu at ym=b/60, and pu_curve=A*pu at yu=3b/80. NOTE: the full construction is
+  SOFTER than the simplified at the working deflection (the m-point pm=B*pu with
+  B->0.5 is genuinely soft), so it is not a drop-in "stiffer" replacement — see the
+  V-017 note in `validation_examples/RESULTS.md` (the V-017 deflection gap is the
+  composite/nonlinear section EI, not the p-y curve).
 - **numpy >=2.0**: np.trapz renamed to np.trapezoid — use try/except
 
 ## Validation
