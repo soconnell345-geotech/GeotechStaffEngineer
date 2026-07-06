@@ -76,6 +76,26 @@ def test_free_draining_layer_stays_drained():
     assert r.n_undrained_slices == 0
 
 
+def test_stage1_seepage_phreatic_raises_fos():
+    """The optional steady-seepage stage-1 phreatic (declining through the dam)
+    lowers stage-1 pore pressure -> higher consolidation stress -> higher
+    mobilized undrained strength -> higher drawdown FOS than the conservative
+    flat full-pool default. A flat phreatic at the pool level reproduces the
+    default (the option's identity case)."""
+    g = _dam()
+    flat = _rd(g, "corps_2stage").FOS
+    seepage = rapid_drawdown_fos(
+        g, 110 * FT, 24 * FT, xc=169.5 * FT, yc=210 * FT, radius=210 * FT,
+        method="corps_2stage", n_slices=50,
+        stage1_phreatic_points=[(0.0, 110 * FT), (380 * FT, 80 * FT)]).FOS
+    assert seepage > flat
+    identity = rapid_drawdown_fos(
+        g, 110 * FT, 24 * FT, xc=169.5 * FT, yc=210 * FT, radius=210 * FT,
+        method="corps_2stage", n_slices=50,
+        stage1_phreatic_points=[(-1.0, 110 * FT), (381 * FT, 110 * FT)]).FOS
+    assert identity == pytest.approx(flat, abs=0.01)
+
+
 def test_validation_errors():
     g = _dam()
     with pytest.raises(ValueError):

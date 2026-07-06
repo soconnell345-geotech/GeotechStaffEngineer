@@ -564,29 +564,53 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 ## V-037 Slide2 #95 — USACE 2-stage rapid drawdown (EM 1110-2-1902 App. G)
 - Source: Slide2 Verification #95 (manual pp. 307-308); USACE EM 1110-2-1902 (1970).
 - Target: `slope_stability.rapid_drawdown_fos` (`method='corps_2stage'`).
-- Geometry (feet, Fig 95.1 — RASTER figure, read approximately): homogeneous
-  embankment, toe (0,0), straight upstream face to crest el 110 (~x=305, ≈2.77:1),
-  crest to x≈380, base el 0. Specified circle centre (169.5, 210), R=210.
-  Water: initial el 110 -> drawdown to el 24.
+- Geometry (feet, Fig 95.1 — EXACT two-segment face, calibrated to the published
+  circle): homogeneous embankment, toe (0,0) -> 3H:1V to (220,73) -> 2.5H:1V to the
+  crest shoulder (312,110) -> flat crest to (380,110); base el 0. Specified circle
+  centre (169.5,210), R=210 (arc through the confirmed entry (72,24) / exit
+  (354,110) to <0.5 ft). Water: initial el 110 -> drawdown to el 24. (Figure draws
+  the initial level at ~103; the TEXT says 110 — 110 matches the published FOS.)
 - Inputs: gamma=135 pcf; effective c'=0/phi'=30; R-envelope cR=1200 psf/phiR=16.
 - Published answer: Army-Corps 2-stage FOS 1.347; referee 1.35.
-- Verdict: **CONVENTION (approximate)** — computed 1.228 (~9% below). Residual =
-  raster geometry (face slope) + FLAT-phreatic stage-1 pore pressure vs Slide's
-  steady-seepage flow net (sensitivity: 2-stage -> 1.35 with a declined phreatic).
-- Confidence in extraction: soil + circle + water exact; geometry approximate.
+- Verdict: **PASS (under steady-seepage stage-1)** — with the declined stage-1
+  phreatic (`stage1_phreatic_points`, ~0.08 gradient) FOS = 1.34 vs 1.347 (~0.6%).
+  The combined R/effective (`min`) envelope is confirmed correct (pure R -> ~1.42).
+  The flat-phreatic DEFAULT gives the conservative bound 1.21. The exact geometry
+  does NOT close the gap on its own (~1.21, if anything below the earlier straight
+  face) — the residual was the stage-1 flow net, now reproducible via the option.
+- Confidence in extraction: soil + circle + water + geometry exact.
 
 ## V-038 Slide2 #96 — Duncan-Wright-Wong 3-stage rapid drawdown (same dam)
 - Source: Slide2 Verification #96 (manual pp. 309-310); Duncan, Wright, Wong (1990).
 - Target: `slope_stability.rapid_drawdown_fos` (`method='duncan_3stage'`).
 - Geometry/inputs: identical to V-037 (only the method differs).
 - Published answer: Duncan-Wright-Wong 3-stage FOS 1.443; referee 1.44.
-- Verdict: **CONVENTION (approximate)** — computed 1.279 (~11% below) but
-  reproduces the published ORDERING (3-stage LESS conservative than the 2-stage:
-  1.279 > 1.228, as 1.443 > 1.347). The 3-stage Kc-interpolated undrained strength
-  + stage-3 drained substitution work; the absolute gap is the same
-  geometry/seepage residual as V-037 plus the R-envelope total-vs-effective
-  consolidation convention (not pinned by the published data). #98 (5-material
-  Walter Bouldin Dam) NOT attempted — Fig 98.1 geometry not reliably readable.
+- Verdict: **CONVENTION (approximate)** — flat 1.235, seepage stage-1 1.273; the
+  published ORDERING holds (3-stage >= 2-stage at the default) and seepage raises
+  it, but a ~12% residual to 1.443 remains at the SAME phreatic that validates the
+  2-stage. Isolated to the Duncan-Wright-Wong Kc (anisotropic-consolidation)
+  interpolation for a c'=0 soil: the drained (Kc=Kf) envelope falls below the R
+  (Kc=1) envelope at low sigma'_fc, so the anisotropic strength gain that lifts the
+  published 3-stage above the 2-stage is under-captured. NOT geometry/seepage;
+  documented follow-up (see DESIGN.md). Stage-3 substitution left per Duncan-
+  Wright-Brandon (2014) Ch. 9.
+
+## Slide2 #98 (Walter Bouldin Dam, 5-material rapid drawdown) — DEFERRED
+- Source: Slide2 Verification #98 (manual pp. 313-314); Duncan, Wright, Wong (1990).
+- Published answers (SEARCH minima): Corps 2-stage 0.931, Lowe-Karafiath 1.075,
+  DWW 3-stage 1.039. Water: initial 47 ft -> drawdown 15 ft.
+- Geometry recovered (Fig 98.1, printed labels): domain x 0-180, z 0-60; surface
+  (0,0)-(100,40)-(140,60)-(180,60); 4 stacked layers (Clayey Sandy Gravel 0-17,
+  Cretaceous Clay 17-30, Micaceous Silt/Sand 30-51, Clayey Silty Sand 51-60 at
+  x=180) with pinch-outs, plus a riprap veneer on the upper face. Material R-data
+  in the manual is complete (Table 98.1).
+- Verdict: **DEFERRED (search-limited, not data-limited).** The published values
+  are MINIMA over a slip-surface search; `rapid_drawdown_fos` evaluates ONE
+  specified surface, so #98 needs a rapid-drawdown search wrapper (evaluate the
+  drawdown strength over a circle/noncircular grid and take the min) — a new
+  capability beyond this bounded pass (candidate B2a-search). Geometry + R-data are
+  recorded here for that follow-up; a single-circle spot check would not reproduce
+  the published minimum and is intentionally not reported as a validation.
 
 ---
 

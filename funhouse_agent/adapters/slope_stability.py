@@ -275,7 +275,7 @@ def _run_rapid_drawdown(params: dict) -> dict:
         params,
         _GEOM_PARAMS + _SURFACE_PARAMS + (
             "drawdown_from_elevation", "drawdown_to_elevation", "method",
-            "f_interslice", "n_slices", "tol"),
+            "f_interslice", "n_slices", "tol", "stage1_phreatic_points"),
         method="rapid_drawdown_fos")
     geom = _build_geometry(params, method="rapid_drawdown_fos")
     require_params(params, ["drawdown_from_elevation", "drawdown_to_elevation"],
@@ -290,6 +290,7 @@ def _run_rapid_drawdown(params: dict) -> dict:
         slip_surface=_slip_surface_from(params),
         method=method, f_interslice=f_int,
         n_slices=params.get("n_slices", 50), tol=params.get("tol", 1e-4),
+        stage1_phreatic_points=params.get("stage1_phreatic_points"),
     )
     return result.to_dict()
 
@@ -384,6 +385,7 @@ METHOD_INFO = {
             "method": {"type": "str", "required": False, "default": "duncan_3stage", "allowed_values": _RD_METHODS, "description": "'duncan_3stage' (Duncan-Wright-Wong, Kc-interpolated undrained strength + drained substitution) or 'corps_2stage' (USACE combined R/effective envelope)."},
             "f_interslice": {"type": "str", "required": False, "default": "constant", "allowed_values": _F_INTERSLICE, "description": "GLE interslice function ('constant' = Spencer)."},
             "n_slices": {"type": "int", "required": False, "default": 50, "description": "Number of slices."},
+            "stage1_phreatic_points": {"type": "array", "required": False, "description": "Optional steady-seepage phreatic surface [[x,z],...] for the STAGE-1 consolidation stresses only. Default (omitted) uses a flat full-pool phreatic (hydrostatic to the reservoir) -- the conservative no-through-seepage bound. Supply the flow-net/Casagrande phreatic line (declining from the pool level at the upstream face through the dam) to reproduce the steady-seepage condition Slide2/EM 1110-2-1902 use, which raises the mobilized undrained strengths and the FOS."},
         },
         "returns": {"FOS": "Drawdown factor of safety.", "stage1_FOS": "Full-pool (pre-drawdown) FOS.", "n_undrained_slices": "Slices treated undrained.", "n_drained_substituted": "Stage-3 drained substitutions (3-stage)."},
     },

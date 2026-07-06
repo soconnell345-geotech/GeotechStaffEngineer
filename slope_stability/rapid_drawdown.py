@@ -153,7 +153,9 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
                        method: str = "duncan_3stage",
                        f_interslice: str = "constant",
                        n_slices: int = 50,
-                       tol: float = 1e-4) -> RapidDrawdownResult:
+                       tol: float = 1e-4,
+                       stage1_phreatic_points: Optional[List] = None
+                       ) -> RapidDrawdownResult:
     """Rapid-drawdown factor of safety on a specified slip surface.
 
     Parameters
@@ -171,6 +173,21 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
     f_interslice : str
         Interslice function for the GLE engine ('constant' = Spencer).
     n_slices, tol : usual meanings.
+    stage1_phreatic_points : list of (x, z), optional
+        Steady-seepage phreatic surface used for the STAGE-1 consolidation
+        stresses only. Default ``None`` reproduces the conservative
+        no-through-seepage bound: a flat pool at ``drawdown_from_elevation``
+        with hydrostatic pore pressure ``u = gamma_w * (pool - z)`` everywhere.
+        When a low-permeability embankment has an established steady-state
+        seepage regime under full pool, the phreatic surface DECLINES through
+        the dam (head dissipates from the upstream face toward the downstream),
+        so the true stage-1 pore pressures are LOWER and the consolidation
+        effective stresses (hence the mobilized undrained strengths) HIGHER.
+        Slide2 / EM 1110-2-1902 use this steady-seepage field. Supplying the
+        flow-net (or a Casagrande) phreatic line here reproduces that condition;
+        the drawn-down stage still applies the flat drawdown pool. The line
+        should start at the pool elevation on the upstream face so the external
+        reservoir load on the submerged face is preserved.
 
     Returns
     -------
@@ -189,7 +206,11 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         slip = CircularSlipSurface(xc, yc, radius)
 
     # ── Stage 1: full-pool effective-stress analysis -> consolidation stresses
-    g_full = _pool_geometry(geom, drawdown_from_elevation)
+    if stage1_phreatic_points is not None:
+        g_full = copy.deepcopy(geom)
+        g_full.gwt_points = [tuple(p) for p in stage1_phreatic_points]
+    else:
+        g_full = _pool_geometry(geom, drawdown_from_elevation)
     sl1 = build_slices(g_full, slip, n_slices)
     res1 = gle_fos(sl1, slip, f_interslice=f_interslice,
                    tol=min(tol, 1e-4) * 0.1)

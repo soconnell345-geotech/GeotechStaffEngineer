@@ -138,10 +138,30 @@ search_critical_surface(geom, surface_type="noncircular",
     (Kf) bound. Kc per slice is back-figured from σ'_fc, τ_fc and the base angle α
     assuming a vertical major principal consolidation stress; Kf = (1+sinφ')/(1−sinφ').
   * **Stage 3** (3-stage only) — where the post-drawdown DRAINED strength (low-pool
-    effective stress) is less than the stage-2 undrained strength, it is substituted.
+    effective stress) is less than the stage-2 undrained strength, it is substituted
+    (Duncan, Wright & Brandon 2014, Ch. 9: third-stage drained strength on the
+    drawn-down effective stresses).
   * The final FOS is a GLE/Spencer solve at the DRAWN-DOWN pool (external water load
     removed to the low level; undrained slices carry τ_ff as φ=0 total-stress
     strength). Validated vs Slide2 #95 (2-stage) / #96 (3-stage) — see RESULTS V-037/V-038.
+  * **Stage-1 seepage option (`stage1_phreatic_points`)** — the DEFAULT stage-1 uses a
+    flat full-pool phreatic (hydrostatic to the reservoir), the conservative
+    no-through-seepage bound. A low-permeability embankment under an established full
+    pool actually has a steady-state seepage field whose phreatic DECLINES through the
+    dam, so the true σ'_fc (and mobilized τ_ff) are higher. Passing the flow-net /
+    Casagrande phreatic line as `stage1_phreatic_points` (a `[(x,z),…]` surface that
+    starts at the pool level on the upstream face, preserving the external reservoir
+    load there) reproduces the steady-seepage condition Slide2/EM 1110-2-1902 use.
+    Default `None` = unchanged. For Slide2 #95 this recovers the Corps 2-stage FOS from
+    the conservative 1.21 to 1.34 vs the published 1.347 (~0.6%).
+  * **Known limitation — Duncan 3-stage for c'=0 soils.** When the drained (Kc=Kf)
+    envelope falls BELOW the R (Kc=1) envelope at the operative σ'_fc (a c'=0 soil with a
+    cohesive R-envelope, e.g. #95/#96), the Kc interpolation under-captures the
+    anisotropic-consolidation strength GAIN that lifts the published 3-stage above the
+    2-stage; the module's 3-stage tracks the 2-stage (ordering preserved) but lands
+    ~12% below the published 3-stage even under the steady-seepage stage-1 that
+    validates the 2-stage. Follow-up: a τ_ff-vs-σ'_fc envelope-crossing treatment per
+    Duncan-Wright-Wong (1990). Not geometry- or seepage-related.
 - **Empty-space slices**: slices where the slip surface is below all soil layers
   are skipped (zero weight, no contribution)
 - **Nails disconnected**: `nails.py` is importable but not called from the analysis

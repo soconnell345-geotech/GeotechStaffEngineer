@@ -520,7 +520,8 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
                        method: str = "duncan_3stage",
                        f_interslice: str = "constant",
                        n_slices: int = 50,
-                       tol: float = 1e-4):
+                       tol: float = 1e-4,
+                       stage1_phreatic_points=None):
     """Rapid-drawdown factor of safety (USACE 2-stage / Duncan-Wright-Wong
     3-stage) on a specified slip surface.
 
@@ -541,6 +542,10 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
     f_interslice : str
         Interslice function ('constant' = Spencer). Default 'constant'.
     n_slices, tol : usual meanings.
+    stage1_phreatic_points : list of (x, z), optional
+        Steady-seepage phreatic surface for the stage-1 consolidation stresses
+        only (default None = flat full-pool, the conservative no-through-seepage
+        bound). See `slope_stability.rapid_drawdown` for details.
 
     Returns
     -------
@@ -550,7 +555,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
     return _rd(geom, drawdown_from_elevation, drawdown_to_elevation,
                xc=xc, yc=yc, radius=radius, slip_surface=slip_surface,
                method=method, f_interslice=f_interslice, n_slices=n_slices,
-               tol=tol)
+               tol=tol, stage1_phreatic_points=stage1_phreatic_points)
 
 
 def infinite_slope_fos(slope_angle: float,
