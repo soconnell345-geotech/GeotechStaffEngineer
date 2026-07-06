@@ -123,25 +123,40 @@ METHOD_REGISTRY = {
     "get_resistance_factors": _run_get_resistance_factors,
 }
 
+# Shared METHOD_INFO parameter blocks — every method that accepts these params
+# documents them identically (with allowed_values), so capacity_vs_depth and
+# lrfd_capacity stay in lockstep with drilled_shaft_capacity instead of drifting.
+_INFO_DIAMETER = {"type": "float", "required": True, "description": "Shaft diameter (m)."}
+_INFO_LAYERS = {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, cu, phi, N60, qu, RQD} dicts. soil_type: cohesive/cohesionless/rock. For beta_method='rational' each cohesionless layer also takes N1_60 (overburden-corrected SPT, seeds phi'=27.5+9.2*log10[(N1)60]) and optionally sigma_v_ref (kPa, pre-scour effective stress for OCR; default = current sigma'v) or a direct OCR."}
+_INFO_GWT = {"type": "float", "required": False, "description": "Groundwater depth (m)."}
+_INFO_FOS = {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety."}
+# GEC-10 rational side-resistance selectors (opt-in; defaults preserve AASHTO/depth).
+_INFO_RATIONAL = {
+    "beta_method": {"type": "str", "required": False, "default": "depth", "allowed_values": ["depth", "rational"], "description": "Cohesionless side resistance. 'depth' = O'Neill & Reese 1.5-0.245*sqrt(z_ft) (default). 'rational' = GEC-10 Appendix A OCR/Ko chain: beta=Ko*tan(phi'), Ko=(1-sin phi')*OCR^(sin phi'), OCR=sigma'p/sigma_v_ref, sigma'p=0.47*pa*N60^0.6 (needs per-layer N60/N1_60)."},
+    "alpha_method": {"type": "str", "required": False, "default": "aashto", "allowed_values": ["aashto", "rational"], "description": "Cohesive side resistance. 'aashto' = piecewise 0.55 (default). 'rational' = GEC-10 Chen-2011 alpha=0.30+0.17/(su_CIUC/pa), applied to the CIUC-equivalent strength (fs=alpha*su_CIUC)."},
+    "su_test_type": {"type": "str", "required": False, "default": "ciuc", "allowed_values": ["ciuc", "uc", "uu"], "description": "For alpha_method='rational': the lab test the layer cu represents, for the UU/UC->CIUC transform. 'ciuc' = no transform (default); 'uc'/'uu' = Chen & Kulhawy (1993) transform."},
+    "pa": {"type": "float", "required": False, "default": 101.325, "description": "Atmospheric pressure (kPa) for the rational chains."},
+}
+_INFO_SHAFT_GEOM = {
+    "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter (m). Defaults to shaft diameter."},
+    "socket_length": {"type": "float", "required": False, "default": 0.0, "description": "Rock socket length (m)."},
+    "bell_diameter": {"type": "float", "required": False, "description": "Belled base diameter (m)."},
+    "casing_depth": {"type": "float", "required": False, "default": 0.0, "description": "Permanent casing depth (m, no side resistance)."},
+    "concrete_fc": {"type": "float", "required": False, "default": 28000.0, "description": "Concrete f'c (kPa)."},
+}
+
 METHOD_INFO = {
     "drilled_shaft_capacity": {
         "category": "Drilled Shaft",
         "brief": "Full drilled shaft capacity (GEC-10 alpha/beta/rock socket).",
         "parameters": {
-            "diameter": {"type": "float", "required": True, "description": "Shaft diameter (m)."},
+            "diameter": _INFO_DIAMETER,
             "shaft_length": {"type": "float", "required": True, "description": "Shaft length (m). Alias: length."},
-            "layers": {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, cu, phi, N60, qu, RQD} dicts. soil_type: cohesive/cohesionless/rock. For beta_method='rational' each cohesionless layer also takes N1_60 (overburden-corrected SPT, seeds phi'=27.5+9.2*log10[(N1)60]) and optionally sigma_v_ref (kPa, pre-scour effective stress for OCR; default = current sigma'v) or a direct OCR."},
-            "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
-            "factor_of_safety": {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety."},
-            "beta_method": {"type": "str", "required": False, "default": "depth", "allowed_values": ["depth", "rational"], "description": "Cohesionless side resistance. 'depth' = O'Neill & Reese 1.5-0.245*sqrt(z_ft) (default). 'rational' = GEC-10 Appendix A OCR/Ko chain: beta=Ko*tan(phi'), Ko=(1-sin phi')*OCR^(sin phi'), OCR=sigma'p/sigma_v_ref, sigma'p=0.47*pa*N60^0.6 (needs per-layer N60/N1_60)."},
-            "alpha_method": {"type": "str", "required": False, "default": "aashto", "allowed_values": ["aashto", "rational"], "description": "Cohesive side resistance. 'aashto' = piecewise 0.55 (default). 'rational' = GEC-10 Chen-2011 alpha=0.30+0.17/(su_CIUC/pa), applied to the CIUC-equivalent strength (fs=alpha*su_CIUC)."},
-            "su_test_type": {"type": "str", "required": False, "default": "ciuc", "allowed_values": ["ciuc", "uc", "uu"], "description": "For alpha_method='rational': the lab test the layer cu represents, for the UU/UC->CIUC transform. 'ciuc' = no transform (default); 'uc'/'uu' = Chen & Kulhawy (1993) transform."},
-            "pa": {"type": "float", "required": False, "default": 101.325, "description": "Atmospheric pressure (kPa) for the rational chains."},
-            "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter (m). Defaults to shaft diameter."},
-            "socket_length": {"type": "float", "required": False, "default": 0.0, "description": "Rock socket length (m)."},
-            "bell_diameter": {"type": "float", "required": False, "description": "Belled base diameter (m)."},
-            "casing_depth": {"type": "float", "required": False, "default": 0.0, "description": "Permanent casing depth (m, no side resistance)."},
-            "concrete_fc": {"type": "float", "required": False, "default": 28000.0, "description": "Concrete f'c (kPa)."},
+            "layers": _INFO_LAYERS,
+            "gwt_depth": _INFO_GWT,
+            "factor_of_safety": _INFO_FOS,
+            **_INFO_RATIONAL,
+            **_INFO_SHAFT_GEOM,
         },
         "returns": {"Q_ultimate_kN": "Ultimate capacity.", "Q_skin_kN": "Side resistance.", "Q_tip_kN": "Tip resistance."},
     },
@@ -149,9 +164,16 @@ METHOD_INFO = {
         "category": "Drilled Shaft",
         "brief": "Capacity vs depth curve for length optimization.",
         "parameters": {
-            "diameter": {"type": "float", "required": True, "description": "Shaft diameter (m)."},
-            "shaft_length": {"type": "float", "required": True, "description": "Max shaft length (m)."},
-            "layers": {"type": "array", "required": True, "description": "Soil layers."},
+            "diameter": _INFO_DIAMETER,
+            "shaft_length": {"type": "float", "required": True, "description": "Maximum shaft length (m); upper bound of the depth sweep. Alias: length."},
+            "layers": _INFO_LAYERS,
+            "gwt_depth": _INFO_GWT,
+            "factor_of_safety": _INFO_FOS,
+            **_INFO_RATIONAL,
+            **_INFO_SHAFT_GEOM,
+            "depth_min": {"type": "float", "required": False, "default": 3.0, "description": "Minimum trial shaft length (m) in the sweep."},
+            "depth_max": {"type": "float", "required": False, "description": "Maximum trial shaft length (m). Default: min(shaft_length, soil profile depth)."},
+            "n_points": {"type": "int", "required": False, "default": 20, "description": "Number of trial lengths in the sweep."},
         },
         "returns": {"capacity_vs_depth": "List of {depth, Q_ult, Q_skin, Q_tip} dicts."},
     },
@@ -159,14 +181,13 @@ METHOD_INFO = {
         "category": "Drilled Shaft",
         "brief": "Drilled shaft capacity with AASHTO LRFD resistance factors.",
         "parameters": {
-            "diameter": {"type": "float", "required": True, "description": "Shaft diameter (m)."},
-            "shaft_length": {"type": "float", "required": True, "description": "Shaft length (m)."},
-            "layers": {"type": "array", "required": True, "description": "Soil layers (same as drilled_shaft_capacity, incl. the optional rational-beta N1_60/sigma_v_ref/OCR fields)."},
-            "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
+            "diameter": _INFO_DIAMETER,
+            "shaft_length": {"type": "float", "required": True, "description": "Shaft length (m). Alias: length."},
+            "layers": _INFO_LAYERS,
+            "gwt_depth": _INFO_GWT,
             "tip_soil_type": {"type": "str", "required": False, "default": "cohesive", "allowed_values": ["cohesive", "cohesionless", "rock"], "description": "Soil type at shaft tip."},
-            "beta_method": {"type": "str", "required": False, "default": "depth", "allowed_values": ["depth", "rational"], "description": "Cohesionless side-resistance method (see drilled_shaft_capacity)."},
-            "alpha_method": {"type": "str", "required": False, "default": "aashto", "allowed_values": ["aashto", "rational"], "description": "Cohesive side-resistance method (see drilled_shaft_capacity)."},
-            "su_test_type": {"type": "str", "required": False, "default": "ciuc", "allowed_values": ["ciuc", "uc", "uu"], "description": "Lab test for the CIUC transform when alpha_method='rational'."},
+            **_INFO_RATIONAL,
+            **_INFO_SHAFT_GEOM,
         },
         "returns": {"Q_ultimate_kN": "Unfactored ultimate capacity.", "lrfd": "Factored resistances by component."},
     },

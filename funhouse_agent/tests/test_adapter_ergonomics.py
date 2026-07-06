@@ -803,6 +803,20 @@ class TestDocCodeParity:
         for key in ("gwt_depth", "socket_length", "bell_diameter"):
             assert key in p
 
+    def test_drilled_shaft_capacity_vs_depth_and_lrfd_document_all_params(self):
+        """capacity_vs_depth and lrfd_capacity must document every accepted param
+        (rational selectors + the method-specific ones), not just diameter/length
+        -- otherwise the agent cannot discover them via describe_method."""
+        from funhouse_agent.adapters.drilled_shaft import METHOD_INFO
+        cvd = METHOD_INFO["capacity_vs_depth"]["parameters"]
+        for key in ("beta_method", "alpha_method", "su_test_type", "pa",
+                    "factor_of_safety", "gwt_depth",
+                    "depth_min", "depth_max", "n_points"):
+            assert key in cvd, f"capacity_vs_depth missing {key}"
+        lr = METHOD_INFO["lrfd_capacity"]["parameters"]
+        for key in ("beta_method", "alpha_method", "su_test_type", "pa"):
+            assert key in lr, f"lrfd_capacity missing {key}"
+
     def test_settlement_Iw_documented(self):
         from funhouse_agent.adapters.settlement import METHOD_INFO
         assert "Iw" in METHOD_INFO["elastic_settlement"]["parameters"]
