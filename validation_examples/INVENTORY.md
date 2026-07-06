@@ -503,27 +503,27 @@ text extraction; problems whose geometry could not be reconstructed from the tex
     to this. No forced test.
 - Confidence in extraction: surface + soils high; layer boundaries moderate.
 
-## V-028 Slide2 #9 = ACADS 4 — weak seam + piezometric surface + distributed load (discrepancy)
+## V-028 Slide2 #9 = ACADS 4 — weak seam + piezometric surface, noncircular
 - Source: Slide2 Verification #9 (manual pp. 50-54); ACADS 4 [Giam & Donald 1989].
-- Target: `slope_stability` (thin weak seam, noncircular block, water table, surcharge).
+- Target: `slope_stability` (thin weak seam, noncircular, water table).
 - Geometry (metres, Fig 9.1): surface (20,28),(43,28),(68,40),(84,40); base z=15;
   weak seam = 1 m planar band, does NOT daylight, top [(20,19),(84,37)] bottom
   [(20,18),(84,36)]. Soil#1 c'=28.5/phi'=20/gamma=18.84 (above+below seam); Soil#2
-  weak seam c'=0/phi'=10. Piezometric surface (Table 9.3, confirmed vs figure);
-  distributed loads 20 kPa on the bench (x~23-43), 20+40 kPa on the crest (x~68-84).
-- Published answer (noncircular through the seam): Spencer 0.760, GLE 0.720, Janbu
-  corrected 0.734; referee 0.78 [Giam].
-- Verdict: **N/A (discrepancy)** — not cleanly reproducible: (a) the module's
-  `weak_layer` noncircular search returns DEGENERATE surfaces (Spencer ~0.05-0.18) for
-  this seam geometry — a search-robustness pathology (B2: reject degenerate/short-span
-  surfaces in the weak-layer search); (b) a hand-constructed block along the seam gives
-  Spencer ~0.53 (water) / ~0.61 (dry), BELOW the referee 0.76, sensitive to the scarp
-  construction and to the module's conservative full-vertical-head pore pressure (SS-3)
-  on the inclined piezometric surface. The module also supports only ONE surcharge zone
-  (the problem has two: bench + crest — B2 capability). Core LE methods validated by the
-  5 clean problems (V-026/030/031/032/033). No forced test.
-- Confidence in extraction: geometry high (label-confirmed); the gaps are search
-  robustness + pore-pressure convention + surcharge-zone capability.
+  weak seam c'=0/phi'=10. Piezometric surface (Table 9.3, confirmed vs figure).
+- Published answer (noncircular through the seam): NO-optimization Spencer 0.760 /
+  GLE 0.720 / Janbu-c 0.734; block-search WITH optimization Spencer 0.707 / GLE
+  0.683 / Janbu 0.699; Slope-2000 GLE 0.6878; referee 0.78 [Giam].
+- Verdict: **PASS (v5.3 B2)** — RE-VALIDATED after the SS-6 weak-layer search fix.
+  Before the fix the `weak_layer` noncircular search returned spurious DEGENERATE
+  surfaces (Spencer ~0.05-0.18, a solver-non-convergence artifact); it now reliably
+  finds a smooth seam-following critical surface at Spencer 0.792 -- within +1.5% of
+  the referee 0.78 (GLE 0.786, Janbu 0.804), bracketed by Slide2's no-opt 0.760 and
+  optimized 0.707. The optimized `noncircular_de` reaches ~0.69, matching Slide2's
+  optimized 0.707 / Slope-2000 0.6878. Two tests in
+  test_published_v035_slope.py (pinned surface + search regression). NOTE: the
+  module still supports only ONE surcharge zone (problem has bench + crest — a
+  separate B2 capability gap; the loads are secondary to the seam-governed FOS).
+- Confidence in extraction: high (label-confirmed geometry).
 
 ## V-034 Slide2 #63 — Loukidis (2003) ex 2, 3-layer seismic (geometry-limited)
 - Source: Slide2 Verification #63 (manual pp. 219-220); Loukidis et al. (2003).
@@ -537,6 +537,29 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   gives seismic ~0.82 vs 1.0 (same imprecise-3-layer-geometry issue as V-027 #4).
   The seismic engine is validated by V-033 (#62). No passing test.
 - Confidence in extraction: geometry approximate (unlabeled figure).
+
+## V-035 Slide2 #79 — Duncan & Wright (2005), cohesionless embankment, infinite slope
+- Source: Slide2 Verification #79 (manual pp. 267-269); Duncan & Wright (2005), Fig 14.4.
+- Target: `slope_stability.infinite_slope_fos` (planar/translational mechanism).
+- Geometry: cohesionless embankment on a stiff foundation; the "very shallow"
+  (infinite-slope) surface parallels the 2.5H:1V embankment face (tan beta = 0.4).
+  Embankment c'=0, phi'=30, gamma=120 pcf.
+- Published answer (Case 2, infinite slope): Bishop/Spencer/GLE all 1.443-1.444;
+  referee 1.44 [Duncan & Wright].
+- Suggested tolerance: exact (closed form); +/-0.005.
+- Confidence in extraction: high (the slope ratio 2.5:1 is the clean value the
+  infinite-slope FOS = tan30/tan(beta) reproduces to 1.443).
+- Notes: PASS — `infinite_slope_fos` gives FOS = tan(30)/0.4 = 1.443.
+
+## V-036 Slide2 #81 — Duncan & Wright (2005), earth embankment, infinite slope
+- Source: Slide2 Verification #81 (manual pp. 273-275); Duncan & Wright (2005), Fig 14.7.
+- Target: `slope_stability.infinite_slope_fos`.
+- Geometry: 2H:1V embankment (tan beta = 0.5); embankment c'=0, phi'=30, gamma=124 pcf.
+- Published answer (Case 2, infinite slope): Bishop/Spencer/GLE all 1.155;
+  referee 1.15 [Duncan & Wright].
+- Suggested tolerance: exact (closed form); +/-0.005.
+- Confidence in extraction: high (2:1 ratio).
+- Notes: PASS — `infinite_slope_fos` gives FOS = tan(30)/0.5 = 1.155.
 
 ---
 

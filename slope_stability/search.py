@@ -32,6 +32,96 @@ from slope_stability.results import SearchResult, SlopeStabilityResult
 _FOS_MAX = 999.9
 
 
+def _noncircular_admissible(slip, slices, geom, n_slices_requested: int) -> bool:
+    """Reject grossly-degenerate noncircular trial surfaces (SS-6, geometry).
+
+    Cheap geometric sanity checks the team-lead's list calls for — they weed
+    out sliver / non-spanning surfaces before the (more expensive) rigorous
+    solve. The *jagged-but-spanning* zig-zags that used to win searches with a
+    spurious low FOS are caught separately and more reliably by REQUIRING the
+    rigorous GLE to converge (see ``_rigorous_noncircular_fos``): the GLE
+    reports ``converged=False`` on those, whereas valid smooth surfaces
+    converge. This geometric check is deliberately lenient so the random /
+    weak-layer generators keep exploring.
+
+    * **Too few surviving slices** — a surface that self-clips or barely enters
+      the ground leaves a tiny sliver mass (build_slices drops below-model
+      slices); not a usable failure surface.
+    * **Too short a horizontal span** — an entry->exit span below ~15% of the
+      slope width is a sliver, not a slope failure.
+    """
+    if len(slices) < max(5, n_slices_requested // 3):
+        return False
+    xs = [p[0] for p in geom.surface_points]
+    slope_width = xs[-1] - xs[0]
+    span = slices[-1].x_right - slices[0].x_left
+    if slope_width > 0 and span < 0.15 * slope_width:
+        return False
+    return True
+
+
+# A suspiciously LOW FOS on a jagged (non-concave) noncircular surface is a
+# solver artifact, not a real critical surface. We geometry-check only such
+# low-FOS surfaces, so the random/weak-layer generators keep exploring the many
+# high-FOS jagged trials (which harmlessly lose the search) while a spurious low
+# value can never win.
+_LOW_FOS_JAGGED_GATE = 1.5
+_JAG_MAX_SEGMENT_DEG = 80.0     # near-vertical segment
+_JAG_MAX_DROP_DEG = 25.0        # concavity reversal from the running-max angle
+
+
+def _is_jagged(slip) -> bool:
+    """True if the polyline is non-concave / spiky (kinematically inadmissible).
+
+    A real slip surface is concave-up: its segment inclination increases
+    roughly monotonically from the driving end to the resisting end. A surface
+    with a near-vertical segment, a non-monotonic x, or a segment angle that
+    DROPS more than ``_JAG_MAX_DROP_DEG`` below the running maximum (a
+    back-and-forth zig-zag / bump) is flagged.
+    """
+    pts = getattr(slip, "points", None)
+    if not pts or len(pts) < 3:
+        return False
+    max_seg = math.radians(_JAG_MAX_SEGMENT_DEG)
+    max_drop = math.radians(_JAG_MAX_DROP_DEG)
+    running_max = -math.inf
+    for i in range(len(pts) - 1):
+        dx = pts[i + 1][0] - pts[i][0]
+        dz = pts[i + 1][1] - pts[i][1]
+        if dx <= 0:
+            return True
+        ang = math.atan2(dz, dx)
+        if abs(ang) > max_seg or ang < running_max - max_drop:
+            return True
+        running_max = max(running_max, ang)
+    return False
+
+
+def _rigorous_noncircular_fos(slices, slip, f_interslice: str,
+                              tol: float) -> Optional[float]:
+    """Rigorous GLE FOS for a noncircular surface, REQUIRING convergence.
+
+    Returns None when the GLE does not converge, so the caller REJECTS the
+    surface instead of silently accepting the legacy Spencer approximation —
+    which returns a spurious low FOS (~0.05-0.2) on jagged/degenerate surfaces
+    that a search would then wrongly pick as critical. The rigorous GLE reports
+    ``converged=False`` on those surfaces at every slice count (verified on the
+    ACADS-4 zig-zag: GLE constant 0.15 / half-sine 0.22, both non-converged,
+    vs a Fellenius 8.2 — the methods disagree because the surface is
+    kinematically inadmissible). Valid smooth surfaces converge and return the
+    same value as before.
+    """
+    from slope_stability.gle import gle_fos
+    try:
+        res = gle_fos(slices, slip, f_interslice=f_interslice,
+                      tol=min(tol, 1e-4) * 0.1)
+        if res.converged and 0.05 < res.fos < _FOS_MAX:
+            return res.fos
+    except (ValueError, ZeroDivisionError, OverflowError):
+        pass
+    return None
+
+
 def _compute_fos(geom: SlopeGeometry,
                  slip,
                  method: str,
@@ -42,6 +132,33 @@ def _compute_fos(geom: SlopeGeometry,
         slices = build_slices(geom, slip, n_slices)
         if len(slices) < 3:
             return _FOS_MAX
+
+        # Noncircular guard (SS-6): reject kinematically-degenerate trial
+        # surfaces and REQUIRE the rigorous GLE to converge. This kills the
+        # weak-layer/random-polyline search pathology where a jagged surface
+        # makes the rigorous solver diverge, the legacy Spencer fallback
+        # returns a spurious low FOS (~0.05-0.2), and the search wrongly picks
+        # it as critical. Circular surfaces are untouched (their GLE converges;
+        # bishop/grid/entry-exit paths are byte-identical below).
+        if not getattr(slip, 'is_circular', True):
+            if not _noncircular_admissible(slip, slices, geom, n_slices):
+                return _FOS_MAX
+            if method in ("morgenstern_price", "gle"):
+                fos = _rigorous_noncircular_fos(slices, slip, "half_sine", tol)
+            elif method == "fellenius":
+                fos = fellenius_fos(slices, slip)
+            elif method == "janbu":
+                fos, _u, _f0 = janbu_fos(slices, slip,
+                                         tol=min(tol, 1e-4) * 0.1)
+            else:  # spencer / bishop-fallback / default
+                fos = _rigorous_noncircular_fos(slices, slip, "constant", tol)
+            if fos is None or fos < 0.05 or math.isnan(fos) or math.isinf(fos):
+                return _FOS_MAX
+            # Spurious-low-FOS guard: a low FOS on a jagged surface is a solver
+            # artifact (SS-6), not a real critical surface — reject it.
+            if fos < _LOW_FOS_JAGGED_GATE and _is_jagged(slip):
+                return _FOS_MAX
+            return fos
 
         if method == "fellenius":
             fos = fellenius_fos(slices, slip)

@@ -99,6 +99,28 @@ search_critical_surface(geom, surface_type="noncircular",
 - **FOS convergence guard**: in `_compute_fos` (search.py), FOS < 0.05 is treated
   as non-convergence and returns FOS_MAX (999). Prevents negative/absurd FOS from
   polluting search results.
+- **Noncircular degenerate-surface guard (SS-6, v5.3 B2)**: the random / weak-layer
+  polyline generators can emit jagged zig-zag surfaces on which the rigorous GLE
+  either fails to converge (the legacy Spencer fallback then returns a spurious
+  low FOS ~0.05-0.2) or converges to a spurious low value — a search would wrongly
+  report that as the critical surface (seen on ACADS 4). `_compute_fos` guards
+  noncircular trials three ways: (1) a cheap geometric admissibility check rejects
+  sliver / too-short-span / too-few-slice surfaces (`_noncircular_admissible`);
+  (2) the rigorous FOS REQUIRES GLE convergence (`_rigorous_noncircular_fos`
+  returns None otherwise, instead of falling back to the legacy value); and
+  (3) a **low-FOS jaggedness gate** rejects any surface whose FOS is below
+  `_LOW_FOS_JAGGED_GATE` (1.5) AND is non-concave / near-vertical (`_is_jagged`) —
+  a low FOS on a jagged surface is a solver artifact, not a real critical surface.
+  The gate is deliberately scoped to LOW-FOS surfaces so the generators keep
+  exploring the many high-FOS jagged trials (which harmlessly lose the search).
+  Circular surfaces are untouched. See `tests/test_b2_round1.py`.
+- **`infinite_slope_fos` (v5.3 B2c)**: closed-form planar/translational FOS for
+  the shallow surface-parallel mechanism, `analysis.infinite_slope_fos(slope_angle,
+  phi, gamma, c=0, depth=1, water_condition='dry'|'seepage_parallel'|'ru', ...)`
+  → `InfiniteSlopeResult`. FOS = [c' + (γz cos²β − u)tanφ']/(γz sinβ cosβ);
+  cohesionless dry reduces to tan φ'/tan β (depth-free), seepage-parallel at the
+  surface to (γ'/γ)·that. Validated vs Slide2 #79 (1.44) / #81 (1.15). This is
+  the exact answer for the c'=0 circular-overestimate limitation noted above.
 - **Empty-space slices**: slices where the slip surface is below all soil layers
   are skipped (zero weight, no contribution)
 - **Nails disconnected**: `nails.py` is importable but not called from the analysis
