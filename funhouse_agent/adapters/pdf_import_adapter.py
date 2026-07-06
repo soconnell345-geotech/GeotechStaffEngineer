@@ -50,6 +50,30 @@ def _run_extract_vector_geometry(params):
     return clean_result(result.to_dict())
 
 
+def _run_calibrate_scale(params):
+    from pdf_import import calibrate_scale
+
+    reject_unknown_params(params, ("p1", "p2", "distance_m"),
+                          method="calibrate_scale")
+    require_params(params, ["p1", "p2", "distance_m"], method="calibrate_scale",
+                   valid=["p1", "p2", "distance_m"])
+    sf = calibrate_scale(_point_xz(params["p1"]), _point_xz(params["p2"]),
+                         params["distance_m"])
+    return {"scale_factor": sf, "basis": "two_point_calibration", "applied": False,
+            "note": "Pass scale_factor as extract_vector_geometry(scale=...)."}
+
+
+def _run_propose_scale(params):
+    from pdf_import import propose_scale
+
+    reject_unknown_params(params, ("text_blocks", "calibration"),
+                          method="propose_scale")
+    require_params(params, ["text_blocks"], method="propose_scale",
+                   valid=["text_blocks", "calibration"])
+    return clean_result(propose_scale(params["text_blocks"],
+                                      calibration=params.get("calibration")))
+
+
 def _run_build_slope_geometry(params):
     from pdf_import import to_dxf_parse_result, PdfParseResult
     from dxf_import.converter import SoilPropertyAssignment, build_slope_geometry
@@ -143,6 +167,8 @@ def _run_build_fem_inputs(params):
 METHOD_REGISTRY = {
     "discover_pdf_content": _run_discover_pdf_content,
     "extract_vector_geometry": _run_extract_vector_geometry,
+    "calibrate_scale": _run_calibrate_scale,
+    "propose_scale": _run_propose_scale,
     "build_slope_geometry": _run_build_slope_geometry,
     "build_fem_inputs": _run_build_fem_inputs,
 }
@@ -181,6 +207,25 @@ METHOD_INFO = {
             "extraction_method": "Always 'vector'.",
             "confidence": "1.0 for vector extraction.",
         },
+    },
+    "calibrate_scale": {
+        "category": "PDF Import",
+        "brief": "Two-point scale calibration: meters-per-drawing-unit from two points + their known real-world distance (deterministic, for extract_vector_geometry scale=...).",
+        "parameters": {
+            "p1": {"type": "array", "required": True, "description": "First point in drawing units, [x, y] or {x, z}."},
+            "p2": {"type": "array", "required": True, "description": "Second point in drawing units."},
+            "distance_m": {"type": "float", "required": True, "description": "Known real-world distance between p1 and p2 (meters)."},
+        },
+        "returns": {"scale_factor": "Meters per drawing unit.", "applied": "Always false — pass it as scale=... yourself."},
+    },
+    "propose_scale": {
+        "category": "PDF Import",
+        "brief": "Parse scale annotations ('SCALE 1:100', '1\"=20 ft', '1 cm=2 m') from the page text_blocks into scale CANDIDATES with provenance/confidence. Proposals only — never silently applied; confirm one and pass it as scale=...",
+        "parameters": {
+            "text_blocks": {"type": "array", "required": True, "description": "Text blocks from discover_pdf_content (each has a 'text')."},
+            "calibration": {"type": "dict", "required": False, "description": "Optional {p1, p2, distance_m} to add a deterministic two-point candidate (confidence 1.0)."},
+        },
+        "returns": {"candidates": "Scale candidates (highest confidence first), each {scale_factor, basis, provenance, confidence, applied:false}.", "recommended": "Best candidate or null."},
     },
     "build_slope_geometry": {
         "category": "PDF Import",

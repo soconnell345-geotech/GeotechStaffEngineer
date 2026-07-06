@@ -15,12 +15,18 @@ Requires: PyMuPDF >= 1.23 (optional dependency)
 from pdf_import.results import PdfParseResult
 from pdf_import.extractor import discover_pdf_content, extract_vector_geometry
 from pdf_import.vision import extract_geometry_vision
+from pdf_import.scale import (
+    calibrate_scale, parse_scale_annotations, propose_scale,
+)
 
 __all__ = [
     'PdfParseResult',
     'discover_pdf_content',
     'extract_vector_geometry',
     'extract_geometry_vision',
+    'calibrate_scale',
+    'parse_scale_annotations',
+    'propose_scale',
 ]
 
 
