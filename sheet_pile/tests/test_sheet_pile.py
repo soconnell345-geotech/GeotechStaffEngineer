@@ -14,7 +14,7 @@ import math
 import pytest
 
 from sheet_pile.earth_pressure import (
-    rankine_Ka, rankine_Kp, coulomb_Ka, coulomb_Kp, K0,
+    rankine_Ka, rankine_Kp, coulomb_Ka, coulomb_Kp, caquot_kerisel_Kp, K0,
     active_pressure, passive_pressure, tension_crack_depth,
 )
 from sheet_pile.cantilever import (
@@ -371,6 +371,32 @@ class TestCoulombWallFriction:
         r_rank = analyze_cantilever(4.0, smooth, pressure_method="rankine")
         r_coul = analyze_cantilever(4.0, rough, pressure_method="coulomb")
         assert r_coul.embedment_depth < r_rank.embedment_depth
+
+
+class TestCaquotKeriselKp:
+    """Log-spiral passive coefficient: a smooth wall (delta=0) must return the
+    Rankine Kp, not clamp to the lowest tabulated column R(0.40) (which would
+    over-predict passive resistance and under-predict embedment)."""
+
+    @pytest.mark.parametrize("phi", [25.0, 30.0, 35.0])
+    def test_smooth_wall_delta0_equals_rankine(self, phi):
+        assert caquot_kerisel_Kp(phi, delta_deg=0.0) == pytest.approx(
+            rankine_Kp(phi), rel=1e-9)
+
+    def test_v013_case_unchanged(self):
+        """phi=30, delta/phi=0.5 stays at the Caltrans Ex 8-1 value 4.70, and the
+        delta=phi base stays 6.30 (the sub-0.40 anchor must not perturb these)."""
+        assert caquot_kerisel_Kp(30.0, delta_deg=15.0) == pytest.approx(4.70, abs=0.02)
+        assert caquot_kerisel_Kp(30.0) == pytest.approx(6.30, abs=0.02)
+
+    @pytest.mark.parametrize("phi", [25.0, 30.0, 35.0])
+    def test_R_monotonic_over_delta_ratio(self, phi):
+        """Kp' rises monotonically with delta/phi from the Rankine value (delta=0)
+        to the full-friction base Kp0 (delta=phi)."""
+        ratios = [i / 20.0 for i in range(21)]
+        kps = [caquot_kerisel_Kp(phi, delta_deg=r * phi) for r in ratios]
+        assert all(b >= a - 1e-12 for a, b in zip(kps, kps[1:]))
+        assert kps[0] == pytest.approx(rankine_Kp(phi), rel=1e-9)
 
 
 # ═══════════════════════════════════════════════════════════════════════

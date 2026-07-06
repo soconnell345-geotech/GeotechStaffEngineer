@@ -415,13 +415,32 @@ def check_basal_heave_caltrans(
     surcharge_force = width * q_surcharge
     side_shear = cu * H
     F_dr = W + surcharge_force - side_shear
-    FOS = F_RS / F_dr if F_dr > 0 else float("inf")
+
+    notes = []
+    if F_dr > 0:
+        FOS = F_RS / F_dr
+        passes = FOS >= FOS_required
+    else:
+        # Non-positive driving force: the sidewall shear cu*H exceeds the block
+        # weight + surcharge, so the Caltrans force-balance mechanism is outside
+        # its applicability range (the block cannot drive heave here). FOS is
+        # mathematically +inf, but a hard PASS on an out-of-range method is the
+        # defect this branch fixes -- for narrow/deep geometry basal heave is
+        # governed by the inverted-footing bearing check, which can still fail.
+        FOS = float("inf")
+        passes = False
+        notes.append(
+            "Driving force non-positive: sidewall shear cu*H exceeds block "
+            "weight + surcharge -- the Caltrans force-balance mechanism is "
+            "outside its applicability range here; basal-heave adequacy NOT "
+            "demonstrated. Verify with check_basal_heave_bjerrum_eide (governs "
+            "for narrow/deep geometry).")
 
     return StabilityCheckResult(
         check_type="basal_heave_caltrans",
         FOS=round(FOS, 3),
         FOS_required=FOS_required,
-        passes=FOS >= FOS_required,
+        passes=passes,
         resistance=round(F_RS, 2),
         demand=round(F_dr, 2),
         parameters={
@@ -439,6 +458,7 @@ def check_basal_heave_caltrans(
             "side_shear_S_kN_per_m": round(side_shear, 2),
             "width_factor": width_factor,
         },
+        notes=notes,
     )
 
 

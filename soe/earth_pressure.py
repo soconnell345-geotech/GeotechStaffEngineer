@@ -125,7 +125,10 @@ def caquot_kerisel_Kp(phi_deg: float, delta_deg: float = None,
     <= 1 reduces it for the actual wall-friction ratio delta/phi. Unlike Coulomb
     (planar wedge), the log-spiral surface does not over-predict Kp at high
     delta/phi. For phi = 30 deg, delta/phi = 0.5, Kp' = 6.30 * 0.746 = 4.70
-    (Caltrans Ex 8-1). See sheet_pile.earth_pressure.caquot_kerisel_Kp.
+    (Caltrans Ex 8-1). Below the lowest tabulated delta/phi column (0.40) R is
+    interpolated down to the Rankine anchor R(0) = Kp_rankine(phi)/Kp0, so a
+    smooth wall (delta = 0) returns exactly the Rankine Kp (not 0.686*Kp0). See
+    sheet_pile.earth_pressure.caquot_kerisel_Kp.
 
     Parameters
     ----------
@@ -149,10 +152,24 @@ def caquot_kerisel_Kp(phi_deg: float, delta_deg: float = None,
     ratio = min(max(delta_deg / phi_deg, 0.0), 1.0)
     if ratio >= 1.0:
         return Kp0
-    phi_c = min(max(phi_deg, _CK_R_PHI[0]), _CK_R_PHI[-1])
-    r_row = [_lininterp(ratio, _CK_R_RATIO, [_CK_R[p][k] for k in _CK_R_RATIO])
-             for p in _CK_R_PHI]
-    R = _lininterp(phi_c, _CK_R_PHI, r_row)
+
+    def _R_tab(r):
+        # Bilinear over the tabulated (phi, delta/phi) grid, clamped in phi.
+        phi_c = min(max(phi_deg, _CK_R_PHI[0]), _CK_R_PHI[-1])
+        r_row = [_lininterp(r, _CK_R_RATIO, [_CK_R[p][k] for k in _CK_R_RATIO])
+                 for p in _CK_R_PHI]
+        return _lininterp(phi_c, _CK_R_PHI, r_row)
+
+    lowest = _CK_R_RATIO[0]  # 0.40 -- lowest tabulated delta/phi column
+    if ratio >= lowest:
+        R = _R_tab(ratio)
+    else:
+        # Below the lowest tabulated column the table would clamp to R(0.40),
+        # over-predicting passive resistance for near-smooth walls. Interpolate R
+        # linearly between the Rankine anchor R(0) = Kp_rankine(phi)/Kp0 -- which
+        # makes delta = 0 return exactly the Rankine Kp -- and R(0.40).
+        R0 = rankine_Kp(phi_deg) / Kp0
+        R = R0 + (ratio / lowest) * (_R_tab(lowest) - R0)
     return Kp0 * R
 
 

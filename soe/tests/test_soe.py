@@ -18,6 +18,7 @@ from soe.earth_pressure import (
     rankine_Kp,
     coulomb_Ka,
     coulomb_Kp,
+    caquot_kerisel_Kp,
     K0,
     active_pressure,
     passive_pressure,
@@ -58,9 +59,41 @@ from soe.anchor_design import (
 from soe.stability import (
     check_basal_heave_terzaghi,
     check_basal_heave_bjerrum_eide,
+    check_basal_heave_caltrans,
     check_bottom_blowout,
     check_piping,
 )
+
+
+# ============================================================================
+# Caquot-Kerisel log-spiral passive coefficient: smooth-wall anchor + parity
+# ============================================================================
+
+class TestCaquotKeriselKp:
+    @pytest.mark.parametrize("phi", [25.0, 30.0, 35.0])
+    def test_smooth_wall_delta0_equals_rankine(self, phi):
+        """delta=0 must return the Rankine Kp, not clamp to R(0.40)*Kp0."""
+        assert caquot_kerisel_Kp(phi, delta_deg=0.0) == pytest.approx(
+            rankine_Kp(phi), rel=1e-9)
+
+    def test_v013_case_unchanged(self):
+        assert caquot_kerisel_Kp(30.0, delta_deg=15.0) == pytest.approx(4.70, abs=0.02)
+
+    def test_parity_with_sheet_pile_copy(self):
+        """The soe copy must stay byte-for-byte numerically identical to the
+        sheet_pile copy over a phi x delta/phi grid (no-cross-module-import means
+        two hand-maintained copies -- this pins them equal). Tests may cross
+        modules even though module code may not."""
+        from sheet_pile.earth_pressure import caquot_kerisel_Kp as sp_ck
+        phis = [15.0, 20.0, 25.0, 28.0, 30.0, 32.0, 35.0, 40.0, 45.0]
+        ratios = [0.0, 0.1, 0.2, 0.3, 0.4, 0.44, 0.5, 0.7, 1.0]
+        for phi in phis:
+            for r in ratios:
+                delta = r * phi
+                assert caquot_kerisel_Kp(phi, delta_deg=delta) == sp_ck(
+                    phi, delta_deg=delta)
+            # delta=None (full-friction) branch too
+            assert caquot_kerisel_Kp(phi) == sp_ck(phi)
 
 
 # ============================================================================
@@ -798,6 +831,40 @@ class TestBasalHeaveBjerrumEide:
             check_basal_heave_bjerrum_eide(H=6, cu=50, gamma=18, Be=0, Le=10)
         with pytest.raises(ValueError):
             check_basal_heave_bjerrum_eide(H=6, cu=50, gamma=18, Be=10, Le=0)
+
+
+class TestBasalHeaveCaltrans:
+    """Tests for check_basal_heave_caltrans() -- force-balance method with the
+    out-of-applicability-range guard for non-positive driving force."""
+
+    def test_normal_case_positive_driving_force(self):
+        """F_dr > 0: finite FOS, passes tied to FOS, no applicability note."""
+        r = check_basal_heave_caltrans(
+            H=8.0, cu=80.0, gamma=18.0, B=10.0, L=30.0, q_surcharge=10.0)
+        assert r.demand > 0
+        assert r.FOS != float("inf")
+        assert r.passes is (r.FOS >= r.FOS_required)
+        assert r.notes == []
+
+    def test_narrow_deep_non_positive_driving_force_does_not_hard_pass(self):
+        """Narrow/deep geometry (cu*H > 0.7B*gamma*H): F_dr <= 0. FOS is +inf but
+        the method is out of range, so it must NOT report a hard PASS."""
+        r = check_basal_heave_caltrans(H=20.0, cu=40.0, gamma=18.0, B=3.0)
+        assert r.demand <= 0
+        assert r.FOS == float("inf")
+        assert r.passes is False
+        assert r.notes and "applicability range" in r.notes[0]
+        assert "check_basal_heave_bjerrum_eide" in r.notes[0]
+
+    def test_narrow_deep_masks_bjerrum_eide_failure(self):
+        """For H=20, B=3, cu=40, gamma=18 the inverted-footing Bjerrum-Eide check
+        FAILS, while the old Caltrans branch returned inf/passes=True and masked
+        it. After the fix the Caltrans branch no longer claims a pass."""
+        cal = check_basal_heave_caltrans(H=20.0, cu=40.0, gamma=18.0, B=3.0)
+        be = check_basal_heave_bjerrum_eide(H=20.0, cu=40.0, gamma=18.0,
+                                            Be=3.0, Le=3.0)
+        assert be.passes is False        # governs for narrow/deep, and fails
+        assert cal.passes is False        # no longer masks the BE failure
 
 
 class TestBottomBlowout:
