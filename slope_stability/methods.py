@@ -139,7 +139,7 @@ def fellenius_fos(slices: List[Slice],
             driving -= moment_reduction(reinf_forces, slip.xc, slip.yc,
                                         slip.radius)
         else:
-            driving -= horizontal_reduction(reinf_forces)
+            driving -= horizontal_reduction(reinf_forces, slices)
 
     if driving <= 0:
         return _FOS_MAX
@@ -742,6 +742,11 @@ def spencer_fos(slices: List[Slice],
             return (res.fos, math.degrees(math.atan(res.lam)))
     except (ValueError, ZeroDivisionError, OverflowError):
         pass
+    if reinf_forces:
+        warnings.warn(
+            "Spencer GLE did not converge; falling back to the legacy "
+            "approximate solver, which IGNORES reinforcement. The reported FOS "
+            "is UNreinforced (conservative) — verify the surface or method.")
     return spencer_fos_legacy(slices, slip, tol=tol, max_iter=max_iter)
 
 
@@ -777,6 +782,11 @@ def morgenstern_price_fos(slices: List[Slice],
             return (res.fos, res.lam)
     except (ValueError, ZeroDivisionError, OverflowError):
         pass
+    if reinf_forces:
+        warnings.warn(
+            "Morgenstern-Price GLE did not converge; falling back to the legacy "
+            "approximate solver, which IGNORES reinforcement. The reported FOS "
+            "is UNreinforced (conservative) — verify the surface or method.")
     legacy_f = f_interslice if f_interslice in _MP_FUNCTIONS else "half_sine"
     return morgenstern_price_fos_legacy(slices, slip, f_interslice=legacy_f,
                                         tol=tol, max_iter=max_iter)

@@ -15,13 +15,15 @@ import math
 import pytest
 
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
-from slope_stability.slip_surface import CircularSlipSurface
+from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurface
 from slope_stability.slices import build_slices
-from slope_stability.methods import fellenius_fos, bishop_fos
+from slope_stability.methods import (
+    fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
+)
 from slope_stability.gle import gle_fos, janbu_fos
 from slope_stability.nails import SoilNail
 from slope_stability.reinforcement import (
-    Geosynthetic, Anchor, compute_reinforcement_forces,
+    Geosynthetic, Anchor, StabilizingPile, compute_reinforcement_forces,
     moment_reduction, horizontal_reduction,
 )
 from slope_stability.analysis import analyze_slope
@@ -335,3 +337,116 @@ class TestStabilizingPile:
             StabilizingPile(x=1.0, ito_matsui=True)      # no diameter
         with pytest.raises(ValueError):
             StabilizingPile(x=1.0, ito_matsui=True, diameter=2.0, spacing=1.0)
+
+
+class TestOMSNoncircularDirZ:
+    """Finding #4: horizontal_reduction must consume dir_z. A
+    force_direction='normal' pile is the first reinforcement emitting dir_z != 0;
+    the OMS-noncircular driving reduction used to drop it, crediting the pile
+    inconsistently with moment_reduction / the rigorous GLE (both dir_z-aware)."""
+
+    def _noncirc(self, **pile_kw):
+        layer = SlopeSoilLayer(name="soil", top_elevation=20.0,
+                               bottom_elevation=-15.0, gamma=19.0, phi=25.0,
+                               c_prime=8.0)
+        geom = SlopeGeometry(
+            surface_points=[(0.0, 10.0), (20.0, 10.0), (40.0, 20.0),
+                            (70.0, 20.0)],
+            soil_layers=[layer],
+            stabilizing_piles=[StabilizingPile(
+                x=27.0, shear_capacity=200.0, spacing=2.0, **pile_kw)])
+        slip = PolylineSlipSurface(points=[(18, 10), (24, 6), (30, 4),
+                                           (36, 6), (45, 20)])
+        x_entry, x_exit = slip.find_entry_exit(geom)
+        slices = build_slices(geom, slip, 40)
+        forces = compute_reinforcement_forces(geom, slip, x_entry, x_exit)
+        return geom, slip, slices, forces
+
+    def test_horizontal_reduction_counts_dir_z(self):
+        """A 'normal' pile is largely vertical; the fixed horizontal_reduction
+        (given the slices) adds its base-tangent projection, so it exceeds the
+        old dir_x-only value."""
+        _, _, slices, forces = self._noncirc(force_direction="normal")
+        f = forces[0]
+        assert f.kind == "pile" and abs(f.dir_z) > 0.5      # largely vertical
+        legacy = horizontal_reduction(forces)               # dir_x only
+        fixed = horizontal_reduction(forces, slices)        # + dir_z tangential
+        assert legacy == pytest.approx(f.T * abs(f.dir_x))
+        assert fixed > legacy
+
+    def test_horizontal_pile_byte_identical(self):
+        """dir_z == 0 (horizontal pile / nails / anchors / geosynthetics):
+        horizontal_reduction is unchanged with or without the slices."""
+        _, _, slices, forces = self._noncirc(force_direction="horizontal")
+        f = forces[0]
+        assert abs(f.dir_z) < 1e-12
+        assert horizontal_reduction(forces, slices) == \
+            pytest.approx(horizontal_reduction(forces))
+        assert horizontal_reduction(forces) == pytest.approx(f.T * abs(f.dir_x))
+
+    def test_oms_noncircular_credits_normal_pile(self):
+        """With dir_z counted, the OMS (Fellenius) noncircular FOS rises when the
+        normal pile is added (active convention), instead of the near-zero credit
+        the dropped dir_z used to give."""
+        _, slip, slices, forces = self._noncirc(force_direction="normal")
+        assert fellenius_fos(slices, slip, reinf_forces=forces) > \
+            fellenius_fos(slices, slip)
+
+    def test_oms_and_bishop_agree_on_pile_benefit_direction(self):
+        """On a circular surface both OMS (Fellenius) and Bishop resolve the pile
+        through the dir_z-aware moment_reduction, so a horizontal stabilizing
+        pile raises BOTH factors of safety — consistent benefit direction."""
+        geom, slip = _drained_slope(stabilizing_piles=[
+            StabilizingPile(x=30.0, shear_capacity=300.0, spacing=2.0)])
+        x_entry, x_exit = slip.find_entry_exit(geom)
+        slices = build_slices(geom, slip, 40)
+        forces = compute_reinforcement_forces(geom, slip, x_entry, x_exit)
+        d_fell = (fellenius_fos(slices, slip, reinf_forces=forces)
+                  - fellenius_fos(slices, slip))
+        d_bish = (bishop_fos(slices, slip, reinf_forces=forces)
+                  - bishop_fos(slices, slip))
+        assert d_fell > 0 and d_bish > 0
+
+
+class TestLegacyFallbackWarnsOnReinforcement:
+    """Finding #5: when the rigorous GLE fails and spencer/MP fall back to the
+    legacy solvers (which take no reinforcement), warn that the reported FOS is
+    unreinforced instead of silently dropping the reinforcement."""
+
+    def _reinforced(self):
+        geom, slip = _drained_slope()
+        geom.nails = [SoilNail(x_head=24.0, z_head=12.0, length=22.0,
+                               inclination=15.0, bond_stress=120.0,
+                               spacing_h=1.5)]
+        x_entry, x_exit = slip.find_entry_exit(geom)
+        slices = build_slices(geom, slip, 40)
+        forces = compute_reinforcement_forces(geom, slip, x_entry, x_exit)
+        assert forces
+        return slip, slices, forces
+
+    def test_fallback_warns_with_reinforcement(self, monkeypatch):
+        import slope_stability.gle as gle_mod
+
+        def _boom(*a, **k):
+            raise ValueError("forced non-convergence")
+
+        monkeypatch.setattr(gle_mod, "gle_fos", _boom)
+        slip, slices, forces = self._reinforced()
+        with pytest.warns(UserWarning, match="IGNORES reinforcement"):
+            spencer_fos(slices, slip, reinf_forces=forces)
+        with pytest.warns(UserWarning, match="IGNORES reinforcement"):
+            morgenstern_price_fos(slices, slip, reinf_forces=forces)
+
+    def test_fallback_silent_without_reinforcement(self, monkeypatch):
+        import warnings as _w
+        import slope_stability.gle as gle_mod
+
+        def _boom(*a, **k):
+            raise ValueError("forced non-convergence")
+
+        monkeypatch.setattr(gle_mod, "gle_fos", _boom)
+        slip, slices, _ = self._reinforced()
+        with _w.catch_warnings(record=True) as rec:
+            _w.simplefilter("always")
+            spencer_fos(slices, slip)                     # no reinf_forces
+        assert not any("IGNORES reinforcement" in str(w.message) for w in rec)

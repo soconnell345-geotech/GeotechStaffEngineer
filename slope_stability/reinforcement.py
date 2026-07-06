@@ -524,9 +524,45 @@ def moment_reduction(forces: List[ReinforcementForce],
     return total
 
 
-def horizontal_reduction(forces: List[ReinforcementForce]) -> float:
-    """Reduction of the driving force for force-equilibrium methods.
+def _base_angle_at(slices, x: float) -> float:
+    """Base inclination (rad) of the slice whose base the crossing x falls in.
 
-    Magnitude of the horizontal components (assumed stabilizing).
+    Used to resolve the vertical component of a reinforcement force onto the
+    base tangent for the force-equilibrium (OMS-noncircular) driving reduction.
+    Returns 0.0 when no slice list is available.
     """
-    return sum(f.T * abs(f.dir_x) for f in forces)
+    if not slices:
+        return 0.0
+    for s in slices:
+        if s.x_left <= x <= s.x_right:
+            return s.alpha
+    # x outside the slice span: use the nearest end slice
+    return slices[0].alpha if x < slices[0].x_left else slices[-1].alpha
+
+
+def horizontal_reduction(forces: List[ReinforcementForce],
+                         slices=None) -> float:
+    """Reduction of the driving force for force-equilibrium (OMS-noncircular).
+
+    The reinforcement force is resolved into the base-driving direction and
+    subtracted from the driving sum (active convention, assumed stabilizing):
+
+    * the horizontal component contributes ``T*|dir_x|`` (unchanged — this is the
+      only term for nails/anchors/geosynthetics/horizontal piles, whose
+      ``dir_z == 0``, so their behaviour is byte-identical);
+    * the vertical component contributes ``T*|dir_z|*|sin(alpha)|`` — its
+      projection onto the base tangent at the crossing, where ``alpha`` is the
+      base inclination there. A vertical force resists tangential sliding on an
+      inclined base and does nothing on a flat one. Dropping it (the old
+      behaviour) silently under-credited a ``force_direction='normal'`` pile,
+      whose force is largely vertical, inconsistently with ``moment_reduction``
+      and the rigorous GLE (both of which consume ``dir_z``). ``slices`` supplies
+      the base geometry; when omitted the vertical term is zero (legacy).
+    """
+    total = 0.0
+    for f in forces:
+        total += f.T * abs(f.dir_x)
+        if slices is not None and abs(f.dir_z) > 1e-12:
+            alpha = _base_angle_at(slices, f.x)
+            total += f.T * abs(f.dir_z) * abs(math.sin(alpha))
+    return total
