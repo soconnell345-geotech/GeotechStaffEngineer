@@ -10,6 +10,8 @@ from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurfac
 from slope_stability.slices import build_slices
 from slope_stability.search import (
     _noncircular_admissible, _is_jagged, _compute_fos, _FOS_MAX,
+    _new_reject_stats, _rejection_kwargs, _window_span,
+    search_noncircular,
 )
 
 
@@ -76,6 +78,90 @@ def test_smooth_valid_noncircular_surface_is_admissible():
     assert _noncircular_admissible(smooth, slices, geom, 40) is True
     fos = _compute_fos(geom, smooth, "spencer", 40)
     assert 0.5 < fos < 3.0 and fos < _FOS_MAX
+
+
+def _wide_geom():
+    """A 10 m slope embedded in a 200 m-wide model (long toe + long crest bench),
+    where a fraction-of-model-width span floor (old 0.15*200 = 30 m) would wrongly
+    reject a legitimate localized failure only ~14 m across."""
+    return SlopeGeometry(
+        surface_points=[(0, 0), (80, 0), (100, 10), (200, 10)],
+        soil_layers=[SlopeSoilLayer(name="s", top_elevation=10.0,
+                                    bottom_elevation=-20.0, gamma=19.0,
+                                    phi=25.0, c_prime=10.0)])
+
+
+def test_span_floor_anchored_to_slope_not_model_width():
+    """Finding #3(a): a localized ~14 m failure in a 200 m-wide model is admissible
+    (old 15%-of-width floor = 30 m would have silently rejected it); the floor is
+    anchored to slope height (0.5*H) or the entry/exit window, not model width."""
+    geom = _wide_geom()
+    surf = PolylineSlipSurface(points=[(88, 4), (93, 1), (98, 3), (102, 10)])
+    slices = build_slices(geom, surf, 30)
+    span = slices[-1].x_right - slices[0].x_left
+    assert span < 0.15 * 200                       # would fail the old floor
+    assert _noncircular_admissible(surf, slices, geom, 30) is True
+    assert _noncircular_admissible(surf, slices, geom, 30,
+                                   window_span=25.0) is True
+    # a genuine sliver is still rejected (0.5*H = 5 m floor)
+    sliver = PolylineSlipSurface(points=[(92, 6.0), (94, 3.5), (96, 7.0)])
+    sl2 = build_slices(geom, sliver, 30)
+    assert _noncircular_admissible(sliver, sl2, geom, 30) is False
+
+
+def test_window_span_helper():
+    assert _window_span((5, 15), (25, 45)) == pytest.approx(25.0)   # 35 - 10
+    assert _window_span(None, (25, 45)) is None
+
+
+def test_reject_stats_counts_geometry():
+    """Finding #3(b): a sliver rejection is tallied under 'geometry'."""
+    geom = _flat_geom()
+    stats = _new_reject_stats()
+    sliver = PolylineSlipSurface(points=[(50.0, 28.0), (52.0, 25.0), (54.0, 28.0)])
+    assert _compute_fos(geom, sliver, "spencer", 30, reject_stats=stats) == _FOS_MAX
+    assert stats == {"geometry": 1, "nonconverged": 0, "jagged": 0}
+
+
+def test_reject_stats_counts_degenerate_jagged():
+    """The ACADS-4 zig-zag is tallied as a rejection (non-converged or, if it
+    converges to a spurious low FOS via the pinned-axis fallback, jagged) -- never
+    scored as a real surface."""
+    geom = _flat_geom()
+    stats = _new_reject_stats()
+    jag = PolylineSlipSurface(points=_JAGGED)
+    assert _compute_fos(geom, jag, "spencer", 40, reject_stats=stats) == _FOS_MAX
+    assert stats["geometry"] == 0
+    assert stats["nonconverged"] + stats["jagged"] == 1
+
+
+def test_majority_rejection_warns():
+    """A search that rejects a MAJORITY of its trials warns instead of silently
+    returning an under-resolved result; a minority does not."""
+    with pytest.warns(UserWarning, match="rejected 10/15"):
+        kw = _rejection_kwargs({"geometry": 8, "nonconverged": 2, "jagged": 0}, 15)
+    assert kw["n_rejected_geometry"] == 8 and kw["n_rejected_nonconverged"] == 2
+    import warnings as _w
+    with _w.catch_warnings(record=True) as rec:
+        _w.simplefilter("always")
+        _rejection_kwargs({"geometry": 1, "nonconverged": 0, "jagged": 0}, 15)
+    assert not any("rejected" in str(w.message) for w in rec)
+
+
+def test_search_result_exposes_rejection_counts():
+    """A real noncircular search populates the SearchResult rejection counters
+    (and to_dict surfaces them when nonzero)."""
+    geom = _flat_geom()
+    res = search_noncircular(geom, x_entry_range=(41, 50), x_exit_range=(70, 78),
+                             n_trials=40, n_slices=30, seed=3)
+    for v in (res.n_rejected_geometry, res.n_rejected_nonconverged,
+              res.n_rejected_jagged):
+        assert isinstance(v, int) and v >= 0
+    total = (res.n_rejected_geometry + res.n_rejected_nonconverged
+             + res.n_rejected_jagged)
+    d = res.to_dict()
+    if total:
+        assert d["n_rejected"]["nonconverged"] == res.n_rejected_nonconverged
 
 
 def test_circular_surfaces_unaffected():

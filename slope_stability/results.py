@@ -371,11 +371,19 @@ class SearchResult:
         Noncircular trial surfaces stored for plotting:
         {"FOS": float, "points": [(x, z), ...]}. Circular searches
         leave this empty (trials are reconstructable from grid_fos).
+    n_rejected_geometry, n_rejected_nonconverged, n_rejected_jagged : int
+        Noncircular trial surfaces rejected before scoring, by reason
+        (degenerate geometry / non-converged rigorous GLE / jagged low-FOS
+        artifact). Zero for circular searches. A majority-rejected search also
+        emits a ``warnings.warn`` — see ``search._rejection_kwargs``.
     """
     critical: Optional[SlopeStabilityResult] = None
     n_surfaces_evaluated: int = 0
     grid_fos: List[Dict[str, float]] = field(default_factory=list)
     trial_surfaces: List[Dict[str, Any]] = field(default_factory=list)
+    n_rejected_geometry: int = 0
+    n_rejected_nonconverged: int = 0
+    n_rejected_jagged: int = 0
 
     def summary(self) -> str:
         lines = [
@@ -434,6 +442,14 @@ class SearchResult:
 
     def to_dict(self) -> Dict[str, Any]:
         d = {"n_surfaces_evaluated": self.n_surfaces_evaluated}
+        n_rej = (self.n_rejected_geometry + self.n_rejected_nonconverged
+                 + self.n_rejected_jagged)
+        if n_rej:
+            d["n_rejected"] = {
+                "geometry": self.n_rejected_geometry,
+                "nonconverged": self.n_rejected_nonconverged,
+                "jagged": self.n_rejected_jagged,
+            }
         if self.critical:
             d["critical"] = self.critical.to_dict()
         return d

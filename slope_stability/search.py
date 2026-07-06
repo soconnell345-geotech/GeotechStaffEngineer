@@ -32,7 +32,51 @@ from slope_stability.results import SearchResult, SlopeStabilityResult
 _FOS_MAX = 999.9
 
 
-def _noncircular_admissible(slip, slices, geom, n_slices_requested: int) -> bool:
+def _window_span(x_entry_range, x_exit_range) -> Optional[float]:
+    """Characteristic span of a surface bracketed by the entry/exit windows.
+
+    The centre-to-centre distance between the entry and exit windows — a real
+    critical surface spans roughly this. Used to anchor the noncircular span
+    floor (``_noncircular_admissible``) to the actual problem rather than the
+    full model width. Returns None if either window is missing.
+    """
+    if x_entry_range is None or x_exit_range is None:
+        return None
+    entry_c = 0.5 * (x_entry_range[0] + x_entry_range[1])
+    exit_c = 0.5 * (x_exit_range[0] + x_exit_range[1])
+    return abs(exit_c - entry_c)
+
+
+def _new_reject_stats() -> Dict[str, int]:
+    """Fresh per-search rejection tally (see ``_compute_fos``)."""
+    return {"geometry": 0, "nonconverged": 0, "jagged": 0}
+
+
+def _bump(stats: Optional[Dict[str, int]], key: str) -> None:
+    if stats is not None:
+        stats[key] += 1
+
+
+def _rejection_kwargs(stats: Dict[str, int], n_evaluated: int) -> Dict[str, int]:
+    """SearchResult counter kwargs + a ``warnings.warn`` when a majority of the
+    trial surfaces were rejected (an otherwise-silent under-resolution)."""
+    total_rej = stats["geometry"] + stats["nonconverged"] + stats["jagged"]
+    if n_evaluated > 0 and total_rej > 0.5 * n_evaluated:
+        warnings.warn(
+            f"Noncircular search rejected {total_rej}/{n_evaluated} trial "
+            f"surfaces ({stats['geometry']} geometry, {stats['nonconverged']} "
+            f"non-converged, {stats['jagged']} jagged). The critical surface may "
+            f"be under-resolved -- widen the entry/exit windows, raise n_trials, "
+            f"or check the geometry.")
+    return {
+        "n_rejected_geometry": stats["geometry"],
+        "n_rejected_nonconverged": stats["nonconverged"],
+        "n_rejected_jagged": stats["jagged"],
+    }
+
+
+def _noncircular_admissible(slip, slices, geom, n_slices_requested: int,
+                            window_span: Optional[float] = None) -> bool:
     """Reject grossly-degenerate noncircular trial surfaces (SS-6, geometry).
 
     Cheap geometric sanity checks the team-lead's list calls for — they weed
@@ -47,15 +91,23 @@ def _noncircular_admissible(slip, slices, geom, n_slices_requested: int) -> bool
     * **Too few surviving slices** — a surface that self-clips or barely enters
       the ground leaves a tiny sliver mass (build_slices drops below-model
       slices); not a usable failure surface.
-    * **Too short a horizontal span** — an entry->exit span below ~15% of the
-      slope width is a sliver, not a slope failure.
+    * **Too short a horizontal span** — the span floor is anchored to the
+      caller's entry/exit WINDOW extent (``window_span``: a real surface roughly
+      spans the window) when supplied, else to the local slope HEIGHT (0.5*H).
+      The old floor of 15% of the FULL model width silently rejected a legitimate
+      localized failure in a wide model — a wide right-of-way or a long tailwater
+      bench blew the floor up far past a real slide length.
     """
     if len(slices) < max(5, n_slices_requested // 3):
         return False
-    xs = [p[0] for p in geom.surface_points]
-    slope_width = xs[-1] - xs[0]
     span = slices[-1].x_right - slices[0].x_left
-    if slope_width > 0 and span < 0.15 * slope_width:
+    if window_span is not None and window_span > 0:
+        min_span = 0.5 * window_span
+    else:
+        zs = [p[1] for p in geom.surface_points]
+        slope_height = (max(zs) - min(zs)) if zs else 0.0
+        min_span = 0.5 * slope_height
+    if min_span > 0 and span < min_span:
         return False
     return True
 
@@ -97,8 +149,30 @@ def _is_jagged(slip) -> bool:
     return False
 
 
+def _noncircular_axis_point(slices, geom) -> Optional[Tuple[float, float]]:
+    """A deterministic, robust moment axis for the noncircular convergence gate.
+
+    Midpoint of the surviving span, half a span above the highest ground point —
+    the same centroid-above-surface heuristic the validated composite-surface
+    path passes explicitly (test_validation uses the parent circle centre). This
+    pins the axis for the convergence check instead of leaving it to gle's
+    internal least-squares fit, which can land absurdly far away on a
+    near-straight surface and spuriously fail convergence. A converged GLE FOS is
+    axis-independent (both moment and force equilibrium are enforced), so this
+    does not move the reported FOS of valid surfaces.
+    """
+    if not slices:
+        return None
+    x_lo = slices[0].x_left
+    x_hi = slices[-1].x_right
+    span = max(x_hi - x_lo, 1.0)
+    z_top = max(p[1] for p in geom.surface_points) if geom is not None else \
+        max(s.z_base for s in slices)
+    return (0.5 * (x_lo + x_hi), z_top + 0.5 * span)
+
+
 def _rigorous_noncircular_fos(slices, slip, f_interslice: str,
-                              tol: float) -> Optional[float]:
+                              tol: float, geom=None) -> Optional[float]:
     """Rigorous GLE FOS for a noncircular surface, REQUIRING convergence.
 
     Returns None when the GLE does not converge, so the caller REJECTS the
@@ -110,15 +184,30 @@ def _rigorous_noncircular_fos(slices, slip, f_interslice: str,
     vs a Fellenius 8.2 — the methods disagree because the surface is
     kinematically inadmissible). Valid smooth surfaces converge and return the
     same value as before.
+
+    The moment axis for the convergence check is tried in two steps: first gle's
+    internal least-squares fit (``axis_point=None`` — byte-identical to the
+    historical behaviour, so a surface that already converged is unchanged), and
+    only if THAT fails to converge, a robust pinned axis
+    (``_noncircular_axis_point``, when ``geom`` is supplied). The second pass
+    rescues a valid surface whose least-squares centre lands absurdly far away
+    (spuriously failing convergence) without ever removing a convergence the
+    first pass already found.
     """
     from slope_stability.gle import gle_fos
-    try:
-        res = gle_fos(slices, slip, f_interslice=f_interslice,
-                      tol=min(tol, 1e-4) * 0.1)
-        if res.converged and 0.05 < res.fos < _FOS_MAX:
-            return res.fos
-    except (ValueError, ZeroDivisionError, OverflowError):
-        pass
+    axes = [None]
+    if geom is not None:
+        pinned = _noncircular_axis_point(slices, geom)
+        if pinned is not None:
+            axes.append(pinned)
+    for axis_point in axes:
+        try:
+            res = gle_fos(slices, slip, f_interslice=f_interslice,
+                          tol=min(tol, 1e-4) * 0.1, axis_point=axis_point)
+            if res.converged and 0.05 < res.fos < _FOS_MAX:
+                return res.fos
+        except (ValueError, ZeroDivisionError, OverflowError):
+            pass
     return None
 
 
@@ -126,11 +215,20 @@ def _compute_fos(geom: SlopeGeometry,
                  slip,
                  method: str,
                  n_slices: int,
-                 tol: float = 1e-4) -> float:
-    """Safely compute FOS, returning _FOS_MAX on any error."""
+                 tol: float = 1e-4,
+                 window_span: Optional[float] = None,
+                 reject_stats: Optional[Dict[str, int]] = None) -> float:
+    """Safely compute FOS, returning _FOS_MAX on any error.
+
+    ``window_span`` anchors the noncircular span floor to the caller's entry/exit
+    window (see ``_noncircular_admissible``). ``reject_stats`` (optional) is a
+    mutable tally the generators pass so that silent noncircular rejections
+    (geometry / non-converged / jagged) are counted rather than lost.
+    """
     try:
         slices = build_slices(geom, slip, n_slices)
         if len(slices) < 3:
+            _bump(reject_stats, "geometry")
             return _FOS_MAX
 
         # Noncircular guard (SS-6): reject kinematically-degenerate trial
@@ -141,22 +239,28 @@ def _compute_fos(geom: SlopeGeometry,
         # it as critical. Circular surfaces are untouched (their GLE converges;
         # bishop/grid/entry-exit paths are byte-identical below).
         if not getattr(slip, 'is_circular', True):
-            if not _noncircular_admissible(slip, slices, geom, n_slices):
+            if not _noncircular_admissible(slip, slices, geom, n_slices,
+                                           window_span):
+                _bump(reject_stats, "geometry")
                 return _FOS_MAX
             if method in ("morgenstern_price", "gle"):
-                fos = _rigorous_noncircular_fos(slices, slip, "half_sine", tol)
+                fos = _rigorous_noncircular_fos(slices, slip, "half_sine", tol,
+                                                geom)
             elif method == "fellenius":
                 fos = fellenius_fos(slices, slip)
             elif method == "janbu":
                 fos, _u, _f0 = janbu_fos(slices, slip,
                                          tol=min(tol, 1e-4) * 0.1)
             else:  # spencer / bishop-fallback / default
-                fos = _rigorous_noncircular_fos(slices, slip, "constant", tol)
+                fos = _rigorous_noncircular_fos(slices, slip, "constant", tol,
+                                                geom)
             if fos is None or fos < 0.05 or math.isnan(fos) or math.isinf(fos):
+                _bump(reject_stats, "nonconverged")
                 return _FOS_MAX
             # Spurious-low-FOS guard: a low FOS on a jagged surface is a solver
             # artifact (SS-6), not a real critical surface — reject it.
             if fos < _LOW_FOS_JAGGED_GATE and _is_jagged(slip):
+                _bump(reject_stats, "jagged")
                 return _FOS_MAX
             return fos
 
@@ -465,6 +569,7 @@ def search_noncircular(
 
     x_lo_entry, x_hi_entry = x_entry_range
     x_lo_exit, x_hi_exit = x_exit_range
+    window_span = _window_span(x_entry_range, x_exit_range)
 
     # Get ground surface elevation range for depth generation
     z_min_ground = min(z for _, z in geom.surface_points)
@@ -476,6 +581,7 @@ def search_noncircular(
     n_evaluated = 0
     grid_fos = []
     trial_surfaces = []
+    reject_stats = _new_reject_stats()
 
     for _ in range(n_trials):
         # Random entry and exit x-coordinates
@@ -509,7 +615,9 @@ def search_noncircular(
 
         try:
             slip = PolylineSlipSurface(points=points)
-            fos = _compute_fos(geom, slip, method, n_slices, tol=tol)
+            fos = _compute_fos(geom, slip, method, n_slices, tol=tol,
+                               window_span=window_span,
+                               reject_stats=reject_stats)
             n_evaluated += 1
 
             grid_fos.append({
@@ -558,6 +666,7 @@ def search_noncircular(
         n_surfaces_evaluated=n_evaluated,
         grid_fos=grid_fos,
         trial_surfaces=trial_surfaces,
+        **_rejection_kwargs(reject_stats, n_evaluated),
     )
 
 
@@ -622,6 +731,8 @@ def search_pso(
 
     min_layer_bot = min(L.bottom_elevation for L in geom.soil_layers)
     n_interior = max(n_points - 2, 1)
+    window_span = _window_span(x_entry_range, x_exit_range)
+    reject_stats = _new_reject_stats()
 
     # Particle = [x_entry, x_exit, depth_frac_1, ..., depth_frac_n_interior]
     dim = 2 + n_interior
@@ -663,7 +774,8 @@ def search_pso(
         slip = _particle_to_slip(pos)
         if slip is None:
             return _FOS_MAX
-        return _compute_fos(geom, slip, "spencer", n_slices, tol=tol)
+        return _compute_fos(geom, slip, "spencer", n_slices, tol=tol,
+                            window_span=window_span, reject_stats=reject_stats)
 
     # Initialize swarm
     positions = [_random_particle() for _ in range(n_particles)]
@@ -776,6 +888,7 @@ def search_pso(
         n_surfaces_evaluated=n_evaluated,
         grid_fos=grid_fos,
         trial_surfaces=trial_surfaces,
+        **_rejection_kwargs(reject_stats, n_evaluated),
     )
 
 
@@ -828,6 +941,8 @@ def search_weak_layer_biased(
         random.seed(seed)
 
     min_layer_bot = min(L.bottom_elevation for L in geom.soil_layers)
+    window_span = _window_span(x_entry_range, x_exit_range)
+    reject_stats = _new_reject_stats()
 
     # Compute weakness score for each layer: inverse of shear strength
     layer_weakness = []
@@ -889,7 +1004,9 @@ def search_weak_layer_biased(
 
         try:
             slip = PolylineSlipSurface(points=points)
-            fos = _compute_fos(geom, slip, "spencer", n_slices, tol=tol)
+            fos = _compute_fos(geom, slip, "spencer", n_slices, tol=tol,
+                               window_span=window_span,
+                               reject_stats=reject_stats)
             n_evaluated += 1
 
             grid_fos.append({
@@ -937,6 +1054,7 @@ def search_weak_layer_biased(
         n_surfaces_evaluated=n_evaluated,
         grid_fos=grid_fos,
         trial_surfaces=trial_surfaces,
+        **_rejection_kwargs(reject_stats, n_evaluated),
     )
 
 
@@ -1197,6 +1315,8 @@ def search_de(
     slope_h = z_max_ground - min(z for _, z in geom.surface_points)
     n_interior = max(n_points - 2, 1)
     dim = 2 + n_interior
+    window_span = _window_span(x_entry_range, x_exit_range)
+    reject_stats = _new_reject_stats()
 
     def _to_slip(v):
         x_en = float(min(max(v[0], x_entry_range[0]), x_entry_range[1]))
@@ -1223,7 +1343,8 @@ def search_de(
         slip = _to_slip(v)
         if slip is None:
             return _FOS_MAX
-        fos = _compute_fos(geom, slip, method, n_slices, tol=tol)
+        fos = _compute_fos(geom, slip, method, n_slices, tol=tol,
+                           window_span=window_span, reject_stats=reject_stats)
         # Convexity penalty: vertex above the chord of its neighbours
         pts = slip.points
         pen = 0.0
@@ -1292,7 +1413,8 @@ def search_de(
     critical = None
     if best_slip is not None and best_fos < _FOS_MAX:
         # objective may include penalty; recompute clean FOS
-        clean = _compute_fos(geom, best_slip, method, n_slices, tol=tol)
+        clean = _compute_fos(geom, best_slip, method, n_slices, tol=tol,
+                             window_span=window_span)
         try:
             x_entry, x_exit = best_slip.find_entry_exit(geom)
             slices = build_slices(geom, best_slip, n_slices)
@@ -1312,4 +1434,5 @@ def search_de(
         critical=critical,
         n_surfaces_evaluated=n_evaluated,
         grid_fos=[],
+        **_rejection_kwargs(reject_stats, n_evaluated),
     )

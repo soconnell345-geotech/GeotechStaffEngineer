@@ -113,7 +113,30 @@ search_critical_surface(geom, surface_type="noncircular",
   a low FOS on a jagged surface is a solver artifact, not a real critical surface.
   The gate is deliberately scoped to LOW-FOS surfaces so the generators keep
   exploring the many high-FOS jagged trials (which harmlessly lose the search).
-  Circular surfaces are untouched. See `tests/test_b2_round1.py`.
+  Circular surfaces are untouched. See `tests/test_search_robustness.py`.
+  - **Span floor is problem-anchored, not model-wide** (v5.3 review fix): the
+    admissibility span floor is anchored to the caller's entry/exit WINDOW extent
+    (`_window_span`, half the window centre-to-centre distance) when a search
+    supplies one, else to the local slope HEIGHT (0.5·H). The previous floor of
+    15% of the FULL model width silently rejected legitimate LOCALIZED failures in
+    a wide model (a long tailwater bench or wide right-of-way inflated the floor
+    past a real slide length). The min-slice check is unchanged.
+  - **Silent rejections are counted** (v5.3 review fix): each noncircular
+    generator passes a `reject_stats` tally into `_compute_fos`; the per-reason
+    counts (geometry / non-converged / jagged) land on
+    `SearchResult.n_rejected_*` (and `to_dict()['n_rejected']`), and a search that
+    rejects a MAJORITY of its trials emits a `warnings.warn` so an
+    under-resolved / mis-windowed search is not silently reported as a clean
+    result.
+  - **Convergence-gate moment axis has a robust fallback** (v5.3 review fix):
+    `_rigorous_noncircular_fos` first tries gle's internal least-squares axis
+    (byte-identical to before) and, only if that fails to converge, retries with
+    an explicit pinned `axis_point` (`_noncircular_axis_point`: span midpoint,
+    half a span above the crest). The least-squares fit can land absurdly far
+    away on a near-straight surface and spuriously fail; the second pass rescues
+    such a valid surface without ever discarding a convergence the first pass
+    already found (so no existing search result moves). A converged GLE FOS is
+    axis-independent.
 - **`infinite_slope_fos` (v5.3 B2c)**: closed-form planar/translational FOS for
   the shallow surface-parallel mechanism, `analysis.infinite_slope_fos(slope_angle,
   phi, gamma, c=0, depth=1, water_condition='dry'|'seepage_parallel'|'ru', ...)`
@@ -171,13 +194,20 @@ search_critical_surface(geom, surface_type="noncircular",
     validated by Loukidis #62/#63 = V-033). FOS(kh) is monotone decreasing, so bisection
     on FOS=1 gives ky directly. If the static FOS ≤ 1, ky=0. The caller's `geom.kh` is
     not mutated (shallow copy).
-  * **`newmark_displacement(ky, accel, dt)`** — rigid-block double integration
-    (Newmark 1965). Downslope-only: the block slides only while |a_ground| > ay and the
-    relative velocity is positive (clamped ≥ 0, no upslope rebound), so displacement is
-    monotonic; the absolute value of the record is used so both polarities of a
-    symmetric record drive the single downslope block (conservative, orientation-
-    independent). Trapezoidal on the piecewise-linear relative velocity — EXACT for a
-    rectangular pulse (`D = ap(ap−ay)T²/(2ay)`), which is the integrator's validation.
+  * **`newmark_displacement(ky, accel, dt, polarity=…)`** — rigid-block double
+    integration (Newmark 1965), no upslope rebound (relative velocity clamped ≥ 0), so
+    displacement is monotonic. Two polarity conventions:
+      - `polarity="downslope"` (**default**, standard Newmark 1965 / Jibson 2007): the
+        SIGNED record is integrated and the block is driven only when the ground
+        acceleration exceeds ay in the destabilizing (downslope-positive) direction; the
+        reverse polarity decelerates it. Only the destabilizing polarity of a symmetric
+        record contributes → about HALF the rectified displacement.
+      - `polarity="rectified"`: the ABSOLUTE record is integrated so both polarities drive
+        the single downslope block — a conservative, orientation-independent option (use
+        when the record's sign relative to the slope's downslope direction is unknown).
+    Trapezoidal on the piecewise-linear relative velocity — EXACT for a rectangular pulse
+    (`D = ap(ap−ay)T²/(2ay)`), the integrator's validation (identical under both
+    polarities for a one-sided pulse).
   * **`newmark_jibson2007(ky, amax)`** — Jibson (2007) Eq. 6 regression,
     `log10 D[cm] = 0.215 + log10[(1−ky/amax)^2.341·(ky/amax)^−1.438]`, σ=0.510 log10,
     a time-history-free cross-check (valid 0 < ky < amax).
