@@ -692,10 +692,17 @@ def _sand_k_recommendation(phi: float, below_wt: bool = True) -> float:
 # from the Reese, Cox & Koop (1974) charts (Reese & Van Impe 2001, Figs 3.30/3.31;
 # COM624P FHWA-SA-91-048 Figs 2.19/2.20). A scales the ultimate curve resistance
 # (pu = A*ps at yu = 3b/80); B scales the m-point (pm = B*ps at ym = b/60).
-# Asymptotes (z/b >= 5): A_s=0.88, A_c=0.53, B_s=0.50, B_c=0.55.
+# Because the m-point precedes the ultimate point on the (monotonic) curve, A
+# MUST stay >= B at every depth for BOTH loadings; the cyclic ultimate and
+# m-point coincide at the deep asymptote (A_c = B_c = 0.55). Asymptotes
+# (z/b >= 5): A_s=0.88, A_c=0.55, B_s=0.50, B_c=0.55.
+# (The earlier _REESE_A_CYCLIC dipped below _REESE_B_CYCLIC from z/b~1.4 down, so
+# pm >= pu_curve and the four-segment curve silently degenerated to linear-
+# plateau for nearly every cyclic depth; corrected here to descend 2.9 -> 0.55
+# staying >= B_c.)
 _REESE_AB_ZB = [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0]
 _REESE_A_STATIC = [2.90, 2.60, 2.25, 1.90, 1.62, 1.42, 1.28, 1.02, 0.88]
-_REESE_A_CYCLIC = [2.90, 2.35, 1.80, 1.30, 0.95, 0.65, 0.53, 0.53, 0.53]
+_REESE_A_CYCLIC = [2.90, 2.55, 2.20, 1.85, 1.55, 1.30, 1.05, 0.80, 0.55]
 _REESE_B_STATIC = [2.20, 1.85, 1.55, 1.28, 1.05, 0.90, 0.80, 0.62, 0.50]
 _REESE_B_CYCLIC = [2.20, 1.90, 1.62, 1.35, 1.12, 0.95, 0.80, 0.65, 0.55]
 
@@ -865,9 +872,26 @@ class SandReese:
         pm = _reese_B(zb, cyclic) * pu                # m-point at ym = b/60
         yu = 3.0 * b / 80.0
         ym = b / 60.0
-        if pm <= 0 or pu_curve <= pm or ym <= 0 or yu <= ym:
-            # Degenerate (e.g. B >= A); fall back to a linear-to-plateau curve.
+        if pm <= 0 or ym <= 0 or yu <= ym:
+            # Geometry degenerate (zero diameter etc.); linear-to-plateau.
             return min(k_init * y_abs, pu_curve)
+        if pu_curve < pm:
+            # A < B: m-point above the ultimate -- unphysical, and impossible
+            # with the corrected A/B tables (A_c >= B_c enforced). Guard defense-
+            # in-depth: warn and fall back to a linear-to-plateau curve.
+            warnings.warn(
+                "Reese (1974) sand p-y: A < B at z/b=%.2f (%s) gives an m-point "
+                "above the ultimate; check the A/B coefficient tables. Falling "
+                "back to a linear-to-plateau curve." % (
+                    zb, 'cyclic' if cyclic else 'static'))
+            return min(k_init * y_abs, pu_curve)
+        if pu_curve == pm:
+            # A == B (deep cyclic asymptote): zero-length m-segment. The parabola
+            # runs straight to the ultimate/plateau -- no m-segment, no division
+            # by zero. Anchor a 1/3-power parabola at the ultimate point.
+            p_upper = (pu_curve * (y_abs / yu) ** (1.0 / 3.0)
+                       if y_abs <= yu else pu_curve)
+            return min(k_init * y_abs, p_upper)
         m = (pu_curve - pm) / (yu - ym)               # slope of the m-segment
         n = pm / (m * ym)                             # parabola exponent 1/n
         C = pm / ym ** (1.0 / n)

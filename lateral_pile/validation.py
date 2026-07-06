@@ -381,14 +381,49 @@ class TestPYCurves:
 
     def test_sand_reese_A_B_coefficients_asymptotes(self):
         """The digitized Reese A/B coefficients hit the published asymptotes at
-        z/b >= 5 (A_s=0.88, A_c=0.53, B_s=0.50, B_c=0.55) and B < A everywhere."""
-        from lateral_pile.py_curves import _reese_A, _reese_B
+        z/b >= 5 (A_s=0.88, A_c=0.55, B_s=0.50, B_c=0.55) and the m-point stays at
+        or below the ultimate (B <= A) for BOTH loadings at every tabulated depth
+        -- the geometric requirement the corrected cyclic A table restores (the
+        old A_c dipped below B_c from z/b~1.4 down)."""
+        from lateral_pile.py_curves import _reese_A, _reese_B, _REESE_AB_ZB
         assert _reese_A(5.0, False) == pytest.approx(0.88, abs=0.001)
-        assert _reese_A(6.0, True) == pytest.approx(0.53, abs=0.001)
+        assert _reese_A(6.0, True) == pytest.approx(0.55, abs=0.001)
         assert _reese_B(5.0, False) == pytest.approx(0.50, abs=0.001)
         assert _reese_B(6.0, True) == pytest.approx(0.55, abs=0.001)
-        for zb in (0.0, 1.0, 2.0, 3.0, 5.0):
-            assert _reese_B(zb, False) < _reese_A(zb, False)   # m-point below ultimate
+        for zb in _REESE_AB_ZB:
+            assert _reese_B(zb, False) < _reese_A(zb, False)         # static m < ult
+            assert _reese_B(zb, True) <= _reese_A(zb, True) + 1e-12  # cyclic m <= ult
+
+    def test_sand_reese_cyclic_four_segment_and_deep_degeneracy(self):
+        """The corrected cyclic A table restores a genuine four-segment curve at
+        depth instead of the old linear-plateau degeneration. At z/b=2 A_c > B_c so
+        pm < pu_curve (a proper m-segment); at z/b=5 the coefficients coincide
+        (A_c = B_c = 0.55) -- a valid zero-length m-segment (parabola straight to
+        the plateau) that must not divide-by-zero, warn, or lose monotonicity."""
+        import warnings
+        from lateral_pile.py_curves import _reese_A, _reese_B
+        b = 0.6
+        ym, yu = b / 60.0, 3.0 * b / 80.0
+        model = SandReese(phi=35.0, gamma=9.0, k=22000.0, loading='cyclic',
+                          construction='reese1974')
+        # z/b = 2: proper four-segment (m-point strictly below the ultimate).
+        z2 = 2.0 * b
+        pu2 = min(*model.get_pu(z2, b))
+        pm2, puc2 = _reese_B(2.0, True) * pu2, _reese_A(2.0, True) * pu2
+        assert pm2 < puc2
+        assert model.get_p(ym, z2, b) == pytest.approx(pm2, rel=1e-6)
+        assert model.get_p(yu, z2, b) == pytest.approx(puc2, rel=1e-6)
+        assert model.get_p(2.0 * yu, z2, b) == pytest.approx(puc2, rel=1e-9)  # plateau
+        y2, p2 = model.get_py_curve(z2, b, n_points=300)
+        assert np.all(np.diff(p2) >= -1e-9)
+        # z/b = 5: A_c == B_c == 0.55; zero-length m-segment, no warning/crash.
+        z5 = 5.0 * b
+        pu5 = min(*model.get_pu(z5, b))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            y5, p5 = model.get_py_curve(z5, b, n_points=300)
+        assert np.all(np.diff(p5) >= -1e-9)
+        assert model.get_p(3.0 * yu, z5, b) == pytest.approx(0.55 * pu5, rel=1e-9)
 
     def test_stiff_clay_below_wt_basics(self):
         """StiffClayBelowWT should produce reasonable results."""
