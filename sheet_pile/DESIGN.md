@@ -41,3 +41,16 @@ for basis 2. Result records both `embedment_converged` and
 computed over the (shorter) design embedment accordingly.
 Anchored walls (free earth support) are unchanged: factored passive, no
 depth increase.
+
+## Log-spiral passive coefficient (SP-4, v5.3)
+`earth_pressure.caquot_kerisel_Kp(phi, delta, Kp_initial=None)` adds the
+Caquot-Kerisel (1948) log-spiral passive coefficient: Kp' = R·Kp0, where Kp0 is
+the passive coefficient at δ=φ (digitized from the C-K chart; the φ=30 anchor is
+the Caltrans Fig 4-20 value 6.30) and R = Kp(δ)/Kp(δ=φ) ≤ 1 is the wall-friction
+reduction (Caltrans T&S Matrix 4-1 / NAVFAC DM-7.2, tabulated φ 30-35, δ/φ
+0.40-0.50). Unlike Coulomb (planar wedge), the log spiral does NOT over-predict
+Kp at high δ/φ. For φ=30, δ/φ=0.5, Kp' = 6.30·0.746 = 4.70 (Caltrans Ex 8-1).
+Selectable via `pressure_method="log_spiral"` in `analyze_cantilever` /
+`analyze_anchored` (uses Coulomb active + the log-spiral passive; set the layer
+`wall_friction_deg` = δ). Default remains Rankine/Coulomb. Validated in
+`validation_examples` (V-013).

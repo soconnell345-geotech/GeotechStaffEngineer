@@ -25,7 +25,9 @@ from soe.geometry import ExcavationGeometry, SOEWallLayer, SupportLevel
 from soe.earth_pressure import (
     rankine_Ka,
     rankine_Kp,
+    caquot_kerisel_Kp,
     select_apparent_pressure,
+    fhwa_apparent_pressure_anchored_wall,
 )
 from soe.beam_analysis import (
     analyze_braced_excavation,
@@ -47,6 +49,7 @@ from soe.results import (
 from soe.stability import (
     check_basal_heave_terzaghi,
     check_basal_heave_bjerrum_eide,
+    check_basal_heave_caltrans,
     check_bottom_blowout,
     check_piping,
 )
@@ -65,7 +68,9 @@ __all__ = [
     'SupportLevel',
     'rankine_Ka',
     'rankine_Kp',
+    'caquot_kerisel_Kp',
     'select_apparent_pressure',
+    'fhwa_apparent_pressure_anchored_wall',
     'analyze_braced_excavation',
     'analyze_cantilever_excavation',
     'compute_embedment',
@@ -78,6 +83,7 @@ __all__ = [
     'StabilityCheckResult',
     'check_basal_heave_terzaghi',
     'check_basal_heave_bjerrum_eide',
+    'check_basal_heave_caltrans',
     'check_bottom_blowout',
     'check_piping',
     'AnchorDesignResult',

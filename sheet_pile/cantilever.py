@@ -20,7 +20,7 @@ from typing import List, Optional
 import numpy as np
 
 from sheet_pile.earth_pressure import (
-    rankine_Ka, rankine_Kp, coulomb_Ka, coulomb_Kp,
+    rankine_Ka, rankine_Kp, coulomb_Ka, coulomb_Kp, caquot_kerisel_Kp,
     active_pressure, passive_pressure, tension_crack_depth,
 )
 from geotech_common.water import GAMMA_W
@@ -280,7 +280,14 @@ def _compute_Ka_Kp(phi_deg: float, method: str = "rankine",
     smooth wall, for which Coulomb reduces to Rankine). A nonzero delta lowers
     the active coefficient and raises the passive coefficient. Rankine ignores
     wall friction.
+
+    method="log_spiral" (Caquot-Kerisel) uses the Coulomb active coefficient but
+    the log-spiral PASSIVE coefficient (``caquot_kerisel_Kp``), which avoids
+    Coulomb's over-prediction of Kp at high delta/phi. Requires delta_deg.
     """
+    if method in ("log_spiral", "caquot_kerisel", "logspiral"):
+        return (coulomb_Ka(phi_deg, delta_deg=delta_deg),
+                caquot_kerisel_Kp(phi_deg, delta_deg=delta_deg))
     if method == "coulomb":
         return (coulomb_Ka(phi_deg, delta_deg=delta_deg),
                 coulomb_Kp(phi_deg, delta_deg=delta_deg))

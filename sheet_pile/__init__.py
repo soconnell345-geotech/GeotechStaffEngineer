@@ -16,7 +16,7 @@ References:
 """
 
 from sheet_pile.earth_pressure import (
-    rankine_Ka, rankine_Kp, coulomb_Ka, coulomb_Kp, K0,
+    rankine_Ka, rankine_Kp, coulomb_Ka, coulomb_Kp, caquot_kerisel_Kp, K0,
     active_pressure, passive_pressure, tension_crack_depth,
 )
 from sheet_pile.cantilever import (
@@ -27,7 +27,7 @@ from sheet_pile.anchored import (
 )
 
 __all__ = [
-    'rankine_Ka', 'rankine_Kp', 'coulomb_Ka', 'coulomb_Kp', 'K0',
+    'rankine_Ka', 'rankine_Kp', 'coulomb_Ka', 'coulomb_Kp', 'caquot_kerisel_Kp', 'K0',
     'active_pressure', 'passive_pressure', 'tension_crack_depth',
     'WallSoilLayer', 'CantileverWallResult', 'analyze_cantilever',
     'AnchoredWallResult', 'analyze_anchored',

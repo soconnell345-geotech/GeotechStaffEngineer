@@ -97,6 +97,39 @@ Selection uses Allowable Stress Design (ASD):
 8. ArcelorMittal. *Steel Sheet Piling Design Manual*.
 9. PTI DC35.1: *Recommendations for Prestressed Rock and Soil Anchors*.
 
+## Basal heave — three methods (v5.3)
+`stability.py` offers three basal-heave checks; all are additive/independent:
+- `check_basal_heave_terzaghi` — Terzaghi (1943) inverted-footing bearing.
+- `check_basal_heave_bjerrum_eide` — Bjerrum-Eide (1956) bearing ratio
+  FOS = cu·Nc/(γH+q), Nc from the H/Be, Be/Le table. NO sidewall shear.
+- `check_basal_heave_caltrans` (NEW) — the Caltrans T&S / Terzaghi limiting-
+  equilibrium force balance that INCLUDES the sidewall-shear resistance
+  S = cu·H on the vertical failure plane:
+  resisting F_RS = cu·Nc·(0.7B); driving F_dr = 0.7B·H·γ + 0.7B·q − cu·H;
+  FS = F_RS/F_dr. Nc from the Skempton/Bjerrum-Eide form
+  5.14(1+0.2 B/L)(1+0.2 H/B) (H/B capped at 2.5; ~7.7 at H/B=2, L/B=3), or a
+  chart-read `Nc`. The 0.7B block width and the side-shear term make it less
+  conservative than the bearing-ratio method — it reproduces Caltrans Ex 10-2
+  (FS=1.54). Validated in `validation_examples` (V-014).
+
+## FHWA/GEC-4 apparent-pressure anchored wall (v5.3)
+`earth_pressure.fhwa_apparent_pressure_anchored_wall(H, anchor_depths, γ, φ, …)`
+builds the FHWA apparent earth-pressure envelope and distributes it to the
+anchors by the tributary (hinge) method:
+pe = 0.65·Ka·γ·H²/(H − H1/3 − Hn+1/3) (H1 = depth to top anchor, Hn+1 = lowest
+anchor to base; total load = 1.3× the triangular Rankine total). Returns pe, the
+surcharge term ps = Ka·q, per-anchor tributary loads TH_i (top/interior/bottom
+formulas), subgrade reaction R, hinge moments, and anchor design loads
+DL = TH·s/cos(incl). Reproduces GEC-4 Design Example 1 (V-016, 2-anchor) natively
+and the Caltrans Ex 8-1 single-anchor envelope (pe = σ_a, PT, upper tributary).
+
+## Log-spiral passive coefficient (v5.3)
+`earth_pressure.caquot_kerisel_Kp(phi, delta)` — the Caquot-Kerisel (1948)
+log-spiral passive coefficient Kp' = R·Kp0 (base Kp0 at δ=φ; reduction R for
+δ/φ from Caltrans Matrix 4-1 / NAVFAC DM-7.2). Unlike Coulomb it does not
+over-predict Kp at high δ/φ. φ=30, δ/φ=0.5 → 4.70 (V-013). Mirrored in
+`sheet_pile.earth_pressure` and selectable there as `pressure_method="log_spiral"`.
+
 ## Future Work
 
 - Full ACI 318 concrete design for secant/diaphragm walls

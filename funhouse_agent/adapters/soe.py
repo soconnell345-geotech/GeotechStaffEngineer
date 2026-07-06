@@ -6,7 +6,8 @@ from soe import (
     select_apparent_pressure, analyze_braced_excavation, analyze_cantilever_excavation,
     select_hp_section, select_sheet_pile, select_w_section,
     check_basal_heave_terzaghi, check_basal_heave_bjerrum_eide,
-    check_bottom_blowout, check_piping, design_ground_anchor,
+    check_basal_heave_caltrans, check_bottom_blowout, check_piping,
+    design_ground_anchor, fhwa_apparent_pressure_anchored_wall,
 )
 
 
@@ -82,14 +83,19 @@ def _run_select_wall_section(params):
 def _run_check_basal_heave(params):
     m = params.get("method", "terzaghi")
     reject_unknown_params(params, ("H", "cu", "gamma", "method", "q_surcharge",
-                                   "B", "Be", "Le", "FOS_required"),
+                                   "B", "Be", "Le", "L", "Nc", "width_factor",
+                                   "FOS_required"),
                           method="check_basal_heave")
     require_params(params, ["H", "cu", "gamma"], method="check_basal_heave",
                    valid=["H", "cu", "gamma", "method", "q_surcharge", "B",
-                          "Be", "Le", "FOS_required"])
+                          "Be", "Le", "L", "Nc", "width_factor", "FOS_required"])
     if m == "bjerrum_eide":
         require_params(params, ["Be", "Le"], method="check_basal_heave (bjerrum_eide)",
                        valid=["H", "cu", "gamma", "Be", "Le", "q_surcharge", "FOS_required"])
+    if m == "caltrans":
+        require_params(params, ["B"], method="check_basal_heave (caltrans)",
+                       valid=["H", "cu", "gamma", "B", "L", "Nc", "q_surcharge",
+                              "width_factor", "FOS_required"])
     if m == "terzaghi":
         return check_basal_heave_terzaghi(H=params["H"], cu=params["cu"], gamma=params["gamma"],
                                            q_surcharge=params.get("q_surcharge", 0.0), B=params.get("B", 0.0),
@@ -99,7 +105,26 @@ def _run_check_basal_heave(params):
                                                Be=params["Be"], Le=params["Le"],
                                                q_surcharge=params.get("q_surcharge", 0.0),
                                                FOS_required=params.get("FOS_required", 1.5)).to_dict()
-    return {"error": f"Unknown method '{m}'. Allowed: ['terzaghi', 'bjerrum_eide']."}
+    elif m == "caltrans":
+        return check_basal_heave_caltrans(H=params["H"], cu=params["cu"], gamma=params["gamma"],
+                                          B=params["B"], L=params.get("L"), Nc=params.get("Nc"),
+                                          q_surcharge=params.get("q_surcharge", 0.0),
+                                          width_factor=params.get("width_factor", 0.7),
+                                          FOS_required=params.get("FOS_required", 1.5)).to_dict()
+    return {"error": f"Unknown method '{m}'. Allowed: ['terzaghi', 'bjerrum_eide', 'caltrans']."}
+
+
+def _run_fhwa_apparent_pressure(p):
+    reject_unknown_params(
+        p, ("H", "anchor_depths", "gamma", "phi", "surcharge", "spacing",
+            "inclination_deg", "Ka"),
+        method="fhwa_apparent_pressure_anchored_wall")
+    require_params(p, ["H", "anchor_depths", "gamma", "phi"],
+                   method="fhwa_apparent_pressure_anchored_wall")
+    return fhwa_apparent_pressure_anchored_wall(
+        H=p["H"], anchor_depths=p["anchor_depths"], gamma=p["gamma"], phi=p["phi"],
+        surcharge=p.get("surcharge", 0.0), spacing=p.get("spacing", 1.0),
+        inclination_deg=p.get("inclination_deg", 0.0), Ka=p.get("Ka"))
 
 
 def _run_check_bottom_blowout(p):
@@ -153,6 +178,7 @@ METHOD_REGISTRY = {
     "check_bottom_blowout": _run_check_bottom_blowout,
     "check_piping": _run_check_piping,
     "design_ground_anchor": _run_design_ground_anchor,
+    "fhwa_apparent_pressure_anchored_wall": _run_fhwa_apparent_pressure,
 }
 
 _LAYERS = {"type": "array", "required": True, "description": "Array of soil-layer dicts: {thickness (m, required), unit_weight (kN/m3, required), friction_angle (deg, default 30), cohesion (kPa, default 0), soil_type ('sand' or 'clay', default 'sand')}."}
@@ -170,9 +196,12 @@ METHOD_INFO = {
     "select_wall_section": {"category": "Section Selection", "brief": "Select lightest HP/sheet/W section for demand.",
         "parameters": {"required_Sx_cm3": {"type": "float", "required": True, "description": "Required section modulus (cm3)."}, "section_type": {"type": "str", "required": False, "default": "hp", "allowed_values": ["hp", "sheet_pile", "w"], "description": "Section family."}},
         "returns": {"designation": "Section designation.", "Sx_cm3": "Section modulus."}},
-    "check_basal_heave": {"category": "Stability", "brief": "Basal heave stability check (Terzaghi or Bjerrum-Eide).",
-        "parameters": {"H": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "cu": {"type": "float", "required": True, "description": "Undrained shear strength (kPa)."}, "gamma": {"type": "float", "required": True, "description": "Soil unit weight (kN/m3)."}, "method": {"type": "str", "required": False, "default": "terzaghi", "allowed_values": ["terzaghi", "bjerrum_eide"], "description": "Check method. bjerrum_eide also requires Be and Le."}, "B": {"type": "float", "required": False, "default": 0.0, "description": "Excavation width (m), terzaghi method."}, "Be": {"type": "float", "required": False, "description": "Excavation width (m). REQUIRED for bjerrum_eide."}, "Le": {"type": "float", "required": False, "description": "Excavation length (m). REQUIRED for bjerrum_eide."}, "q_surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."}},
+    "check_basal_heave": {"category": "Stability", "brief": "Basal heave stability check (Terzaghi, Bjerrum-Eide, or Caltrans force-balance).",
+        "parameters": {"H": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "cu": {"type": "float", "required": True, "description": "Undrained shear strength (kPa)."}, "gamma": {"type": "float", "required": True, "description": "Soil unit weight (kN/m3)."}, "method": {"type": "str", "required": False, "default": "terzaghi", "allowed_values": ["terzaghi", "bjerrum_eide", "caltrans"], "description": "Check method. bjerrum_eide requires Be+Le (inverted-footing bearing ratio, NO side shear). caltrans requires B (Caltrans/Terzaghi force-balance with sidewall shear S=cu*H and the 0.7B block; optional L for the rectangular Nc correction)."}, "B": {"type": "float", "required": False, "default": 0.0, "description": "Excavation width (m); terzaghi and caltrans methods."}, "L": {"type": "float", "required": False, "description": "Excavation length (m) for the caltrans rectangular Nc correction (default square)."}, "Nc": {"type": "float", "required": False, "description": "Explicit chart-read bearing factor Nc (caltrans); default from the Skempton/Bjerrum-Eide form."}, "Be": {"type": "float", "required": False, "description": "Excavation width (m). REQUIRED for bjerrum_eide."}, "Le": {"type": "float", "required": False, "description": "Excavation length (m). REQUIRED for bjerrum_eide."}, "width_factor": {"type": "float", "required": False, "default": 0.7, "description": "Failure-block width as a fraction of B (caltrans). Default 0.7 (Terzaghi)."}, "q_surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."}},
         "returns": {"FOS": "Factor of safety.", "is_stable": "Pass/fail."}},
+    "fhwa_apparent_pressure_anchored_wall": {"category": "Earth Pressure", "brief": "FHWA/GEC-4 apparent-pressure anchored-wall design (tributary method): apparent envelope pe + tributary anchor loads + subgrade reaction + hinge moments + anchor design loads.",
+        "parameters": {"H": {"type": "float", "required": True, "description": "Total wall height (m)."}, "anchor_depths": {"type": "array", "required": True, "description": "Depths of the anchor levels below the top of wall (m), e.g. [2.5, 6.25]."}, "gamma": {"type": "float", "required": True, "description": "Retained-soil unit weight (kN/m3)."}, "phi": {"type": "float", "required": True, "description": "Retained-soil friction angle (deg)."}, "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform surface surcharge q (kPa); adds ps = Ka*q."}, "spacing": {"type": "float", "required": False, "default": 1.0, "description": "Horizontal anchor spacing (m) for the design loads."}, "inclination_deg": {"type": "float", "required": False, "default": 0.0, "description": "Anchor inclination from horizontal (deg)."}, "Ka": {"type": "float", "required": False, "description": "Active coefficient override (default Rankine Ka)."}},
+        "returns": {"pe_kPa": "Max apparent-pressure ordinate.", "anchors": "Per-anchor {depth, TH (tributary load), design_load}.", "subgrade_reaction_kN_per_m": "Base reaction R.", "max_moment_kN_m_per_m": "Governing hinge moment."}},
     "check_bottom_blowout": {"category": "Stability", "brief": "Bottom blowout (hydraulic uplift) check.",
         "parameters": {"D_embed": {"type": "float", "required": True, "description": "Wall embedment below excavation (m)."}, "hw_excess": {"type": "float", "required": True, "description": "Excess water head (m)."}, "gamma_soil": {"type": "float", "required": True, "description": "Soil unit weight (kN/m3)."}, "gamma_w": {"type": "float", "required": False, "default": 9.81, "description": "Water unit weight (kN/m3)."}, "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required FOS."}},
         "returns": {"FOS": "Factor of safety."}},

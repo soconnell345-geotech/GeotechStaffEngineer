@@ -8,7 +8,8 @@ from sheet_pile.anchored import analyze_anchored
 
 # Layer-dict key aliases the agent commonly uses.
 _LAYER_ALIASES = {"gamma": "unit_weight", "phi": "friction_angle",
-                  "c": "cohesion", "cu": "cohesion"}
+                  "c": "cohesion", "cu": "cohesion",
+                  "delta": "wall_friction_deg", "wall_friction": "wall_friction_deg"}
 
 
 def _build_soil_layers(params, *, method):
@@ -20,6 +21,7 @@ def _build_soil_layers(params, *, method):
         layers.append(WallSoilLayer(
             thickness=l["thickness"], unit_weight=l["unit_weight"],
             friction_angle=l.get("friction_angle", 30.0), cohesion=l.get("cohesion", 0.0),
+            wall_friction_deg=l.get("wall_friction_deg", 0.0),
             description=l.get("description", ""),
         ))
     return layers
@@ -77,7 +79,7 @@ METHOD_INFO = {
             "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "FOS applied to passive resistance."},
             "gwt_depth_active": {"type": "float", "required": False, "description": "Groundwater depth on active (retained) side (m)."},
             "gwt_depth_passive": {"type": "float", "required": False, "description": "Groundwater depth on passive (excavated) side (m)."},
-            "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb"], "description": "Earth pressure theory."},
+            "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "log_spiral"], "description": "Earth pressure theory. 'log_spiral' (Caquot-Kerisel) uses Coulomb active + the log-spiral PASSIVE coefficient (avoids Coulomb's over-prediction of Kp at high delta/phi); set the layer wall_friction_deg (delta)."},
             "embedment_increase": {"type": "float", "required": False, "default": 1.0, "description": "Multiplier on the computed embedment (e.g. 1.2 for the traditional 20% rule). Use 1.0 (default) when FOS_passive already provides the safety basis — do not double-count."},
         },
         "returns": {"embedment_depth_m": "Required embedment.", "max_moment_kNm_per_m": "Maximum bending moment."},
@@ -93,7 +95,7 @@ METHOD_INFO = {
             "gwt_depth_active": {"type": "float", "required": False, "description": "Groundwater depth on active side (m)."},
             "gwt_depth_passive": {"type": "float", "required": False, "description": "Groundwater depth on passive side (m)."},
             "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "FOS applied to passive resistance."},
-            "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb"], "description": "Earth pressure theory."},
+            "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "log_spiral"], "description": "Earth pressure theory. 'log_spiral' (Caquot-Kerisel) uses Coulomb active + the log-spiral PASSIVE coefficient (avoids Coulomb's over-prediction of Kp at high delta/phi); set the layer wall_friction_deg (delta)."},
         },
         "returns": {"embedment_depth_m": "Required embedment.", "anchor_force_kN_per_m": "Anchor force."},
     },

@@ -321,6 +321,127 @@ def check_basal_heave_bjerrum_eide(
     )
 
 
+def _nc_skempton(H_over_B: float, B_over_L: float) -> float:
+    """Skempton (1951) bearing-capacity factor Nc for basal heave.
+
+        Nc = 5.14 * (1 + 0.2*B/L) * (1 + 0.2*H/B),   with H/B capped at 2.5.
+
+    This is the Nc chart the Caltrans force-balance heave method reads: it gives
+    ~8.6 for a square excavation at H/B=2 and ~7.7 after the L/B=3 rectangular
+    correction — matching the Caltrans Figure 10-17 chart (8.5 -> 7.6) to ~1.5%.
+    (Distinct from the module's Terzaghi/Bjerrum-Eide ``_interpolate_Nc_bjerrum``
+    table used by ``check_basal_heave_bjerrum_eide``.)
+    """
+    depth_factor = 1.0 + 0.2 * min(max(H_over_B, 0.0), 2.5)
+    shape_factor = 1.0 + 0.2 * max(min(B_over_L, 1.0), 0.0)
+    return 5.14 * shape_factor * depth_factor
+
+
+def check_basal_heave_caltrans(
+    H: float,
+    cu: float,
+    gamma: float,
+    B: float,
+    L: Optional[float] = None,
+    q_surcharge: float = 0.0,
+    Nc: Optional[float] = None,
+    width_factor: float = 0.7,
+    FOS_required: float = 1.5,
+) -> StabilityCheckResult:
+    """Basal-heave FS by the Caltrans (T&S Manual Ex 10-2) force-balance method.
+
+    Unlike ``check_basal_heave_bjerrum_eide`` (an inverted-footing bearing ratio
+    FOS = cu*Nc/(gamma*H+q) with no side shear), this reproduces the Caltrans
+    limiting-equilibrium block balance, which INCLUDES the sidewall-shear
+    resistance S = cu*H on the vertical failure plane:
+
+        resisting  F_RS = qu * (width_factor * B),  qu = cu * Nc
+        driving    F_dr = W + (width_factor*B)*q - S
+                        = (width_factor*B)*H*gamma + (width_factor*B)*q - cu*H
+        FS = F_RS / F_dr
+
+    The failure block width is ``width_factor * B`` (Terzaghi's 0.7B). Nc is the
+    Skempton/Bjerrum-Eide bearing factor for the excavation depth/shape
+    (``_nc_skempton``; H/B capped at 2.5), or an explicit chart-read ``Nc``.
+
+    Parameters
+    ----------
+    H : float
+        Excavation depth (m).
+    cu : float
+        Undrained shear strength (kPa) (clay, phi=0).
+    gamma : float
+        Total unit weight of the retained soil (kN/m3).
+    B : float
+        Excavation width (m).
+    L : float, optional
+        Excavation length (m) for the rectangular Nc correction. Default None
+        (square, B/L = 1).
+    q_surcharge : float, optional
+        Surface surcharge (kPa). Default 0.
+    Nc : float, optional
+        Bearing-capacity factor. If None, computed from ``_nc_skempton``.
+    width_factor : float, optional
+        Failure-block width as a fraction of B. Default 0.7 (Terzaghi).
+    FOS_required : float, optional
+        Minimum required FS. Default 1.5.
+
+    Returns
+    -------
+    StabilityCheckResult
+
+    References
+    ----------
+    Caltrans Trenching & Shoring Manual, Ch. 10, Example 10-2 / Figure 10-17;
+    Terzaghi (1943); Bjerrum & Eide (1956); Skempton (1951).
+    """
+    if H <= 0:
+        raise ValueError("Excavation depth H must be positive")
+    if cu <= 0:
+        raise ValueError("Undrained shear strength cu must be positive")
+    if gamma <= 0:
+        raise ValueError("Unit weight gamma must be positive")
+    if B <= 0:
+        raise ValueError("Excavation width B must be positive")
+
+    B_over_L = (B / L) if (L and L > 0) else 1.0
+    if Nc is None:
+        Nc = _nc_skempton(H / B, B_over_L)
+
+    width = width_factor * B
+    qu = cu * Nc
+    F_RS = qu * width
+    W = width * H * gamma
+    surcharge_force = width * q_surcharge
+    side_shear = cu * H
+    F_dr = W + surcharge_force - side_shear
+    FOS = F_RS / F_dr if F_dr > 0 else float("inf")
+
+    return StabilityCheckResult(
+        check_type="basal_heave_caltrans",
+        FOS=round(FOS, 3),
+        FOS_required=FOS_required,
+        passes=FOS >= FOS_required,
+        resistance=round(F_RS, 2),
+        demand=round(F_dr, 2),
+        parameters={
+            "H_m": H,
+            "B_m": B,
+            "L_m": L,
+            "cu_kPa": cu,
+            "gamma_kNm3": gamma,
+            "q_surcharge_kPa": q_surcharge,
+            "Nc": round(Nc, 3),
+            "qu_kPa": round(qu, 2),
+            "block_width_m": round(width, 3),
+            "W_kN_per_m": round(W, 2),
+            "surcharge_force_kN_per_m": round(surcharge_force, 2),
+            "side_shear_S_kN_per_m": round(side_shear, 2),
+            "width_factor": width_factor,
+        },
+    )
+
+
 # ============================================================================
 # Bottom blowout (uplift)
 # ============================================================================

@@ -74,15 +74,20 @@ from sheet_pile.earth_pressure import (
     rankine_Ka as sp_rankine_Ka,
     rankine_Kp as sp_rankine_Kp,
     coulomb_Kp as sp_coulomb_Kp,
+    caquot_kerisel_Kp as sp_caquot_kerisel_Kp,
     active_pressure as sp_active_pressure,
 )
 from sheet_pile.cantilever import analyze_cantilever, WallSoilLayer
 from sheet_pile.anchored import analyze_anchored
 
 # soe primitives
-from soe.earth_pressure import rankine_Ka as soe_rankine_Ka
+from soe.earth_pressure import (
+    rankine_Ka as soe_rankine_Ka,
+    fhwa_apparent_pressure_anchored_wall,
+)
 from soe.stability import (
     check_basal_heave_bjerrum_eide,
+    check_basal_heave_caltrans,
     _interpolate_Nc_bjerrum,
 )
 
@@ -306,18 +311,38 @@ def test_v013_rankine_Ka_matches_module():
     assert sp_rankine_Ka(30.0) == pytest.approx(0.333, abs=0.001)
 
 
-def test_v013_passive_coefficient_source_differs():
-    """CONVENTION: the example uses the Caquot-Kerisel LOG-SPIRAL passive
-    Kp = 6.3 * R(0.746) = 4.7 (delta/phi = -0.5). The module has NO log-spiral
-    method -- its options are Rankine Kp = 3.0 (-36%) or Coulomb Kp(delta=15) = 4.98
-    (+6%). Documents the passive-coefficient source gap (module not tuned)."""
+def test_v013_log_spiral_passive_Kp_now_in_module():
+    """PASS (v5.3): the Caquot-Kerisel LOG-SPIRAL passive coefficient is now built
+    into the module (`caquot_kerisel_Kp`). For phi=30, delta=15 (delta/phi=0.5) it
+    reproduces the published Kp = 6.30 * R(0.746) = 4.70, distinct from the Rankine
+    Kp=3.0 (-36%) and the over-predicting Coulomb Kp(delta=15)=4.98 (+6%). Base
+    Kp0(delta=phi)=6.30 (Caltrans Fig 4-20); R from Caltrans Matrix 4-1 / NAVFAC
+    DM-7.2. Selectable as pressure_method='log_spiral' in analyze_anchored /
+    analyze_cantilever."""
     assert sp_rankine_Kp(30.0) == pytest.approx(3.0, abs=0.01)
     assert sp_coulomb_Kp(30.0, delta_deg=15.0) == pytest.approx(4.98, abs=0.05)
-    Kp_logspiral = 6.3 * 0.746
-    assert Kp_logspiral == pytest.approx(4.7, abs=0.05)
-    # the published value lies between Rankine and Coulomb, matching neither tightly
-    assert abs(Kp_logspiral - 3.0) > 0.5
-    assert abs(Kp_logspiral - sp_coulomb_Kp(30.0, delta_deg=15.0)) > 0.2
+    # the NEW built-in log-spiral coefficient:
+    Kp_ls = sp_caquot_kerisel_Kp(30.0, delta_deg=15.0)
+    assert Kp_ls == pytest.approx(4.70, abs=0.05)              # pub 4.7
+    assert sp_caquot_kerisel_Kp(30.0) == pytest.approx(6.30, abs=0.02)  # delta=phi base
+    # it sits between Rankine and Coulomb, as the log-spiral should
+    assert 3.0 < Kp_ls < 4.98
+
+
+def test_v013_fhwa_apparent_pressure_high_level():
+    """PASS (v5.3): the new `fhwa_apparent_pressure_anchored_wall` reproduces the
+    single-anchor FHWA apparent-diagram envelope through the high-level path — the
+    max ordinate pe (= published sigma_a = 934.4 psf), the total apparent load
+    PT = 1.3*P = 15,574 lb/ft, and the upper-tributary anchor load T1U = 6,228
+    lb/ft. (The single-anchor TOTAL anchor force + embedment D=6.09 ft come from the
+    free-earth-support solve with the new log-spiral passive.)"""
+    r = fhwa_apparent_pressure_anchored_wall(
+        H=_V013_H * FT, anchor_depths=[10.0 * FT], gamma=115 * PCF,
+        phi=_V013_PHI, surcharge=0.0, spacing=10.0 * FT, inclination_deg=15.0)
+    assert r["pe_kPa"] / PSF == pytest.approx(934.4, rel=0.01)          # sigma_a
+    assert r["PT_total_kN_per_m"] / (PSF * FT) == pytest.approx(15574.0, rel=0.01)
+    T1U = r["anchors"][0]["TH_upper_kN_per_m"]
+    assert T1U / (PSF * FT) == pytest.approx(6228.0, rel=0.01)          # upper tributary
 
 
 def test_v013_apparent_diagram_quantities_by_hand():
@@ -404,6 +429,34 @@ def test_v014_caltrans_force_balance_by_hand():
     assert F_dr == pytest.approx(26.0, abs=0.1)
     FS = F_RS / F_dr
     assert FS == pytest.approx(1.54, abs=0.05)   # pub FS = 1.54
+
+
+def test_v014_caltrans_force_balance_high_level():
+    """PASS (v5.3): the new `check_basal_heave_caltrans` reproduces the Caltrans
+    force-balance FS through the high-level path — INCLUDING the sidewall-shear
+    resistance term S = cu*H that the Bjerrum-Eide bearing-ratio method omits.
+    Nc from the Skempton/Bjerrum-Eide form (7.68 vs the chart's 7.6); the block
+    balance F_RS=40.3, W=37.8, surcharge=3.15, S=15.0, F_dr=25.95 -> FS=1.55
+    (pub 1.54, within the +/-0.1 chart-read tolerance)."""
+    H_m = _V014_H * FT
+    B_m = _V014_B * FT
+    L_m = _V014_L * FT
+    cu = 500 * PSF
+    gamma_si = 120 * PCF
+    q_si = 300 * PSF
+    res = check_basal_heave_caltrans(H=H_m, cu=cu, gamma=gamma_si, B=B_m, L=L_m,
+                                     q_surcharge=q_si)
+    p = res.parameters
+    assert p["Nc"] == pytest.approx(7.6, abs=0.15)                 # chart 7.6
+    assert res.resistance / KFT == pytest.approx(40.0, abs=0.6)    # F_RS 40.0 k/ft
+    assert p["W_kN_per_m"] / KFT == pytest.approx(37.8, abs=0.2)   # W
+    assert p["side_shear_S_kN_per_m"] / KFT == pytest.approx(15.0, abs=0.2)  # S=cu*H
+    assert res.demand / KFT == pytest.approx(26.0, abs=0.3)        # F_dr 26.0 k/ft
+    assert res.FOS == pytest.approx(1.54, abs=0.1)                 # pub FS 1.54
+    # explicit chart Nc reproduces 1.54 nearly exactly
+    res_chart = check_basal_heave_caltrans(H=H_m, cu=cu, gamma=gamma_si, B=B_m,
+                                           L=L_m, q_surcharge=q_si, Nc=7.6)
+    assert res_chart.FOS == pytest.approx(1.54, abs=0.02)
 
 
 def test_v014_module_method_differs_from_caltrans():
@@ -513,3 +566,24 @@ def test_v016_anchor_design_loads():
     DL2 = 172.0 * _V016_SPACING / math.cos(math.radians(_V016_INCL))
     assert DL1 == pytest.approx(435.0, rel=0.02)      # pub 435 kN
     assert DL2 == pytest.approx(445.0, rel=0.02)      # pub 445 kN
+
+
+def test_v016_fhwa_apparent_pressure_high_level():
+    """PASS (v5.3): the new `fhwa_apparent_pressure_anchored_wall` reproduces the
+    GEC-4 two-anchor design example NATIVELY through the high-level path — pe, ps,
+    the tributary anchor loads TH1/TH2, subgrade reaction R, and the anchor design
+    loads DL1/DL2 — no hand-assembled tributary formulas. (Mmax uses the compact
+    (13/54)H1^2(pe+ps) top-hinge form = 70.4, the documented CONVENTION vs the
+    published 76 surcharge-tributary value.)"""
+    r = fhwa_apparent_pressure_anchored_wall(
+        H=_V016_H, anchor_depths=[_V016_H1, _V016_H1 + _V016_H2],
+        gamma=_V016_GAMMA, phi=_V016_PHI, surcharge=_V016_QS,
+        spacing=_V016_SPACING, inclination_deg=_V016_INCL)
+    assert r["Ka"] == pytest.approx(0.295, abs=0.002)
+    assert r["pe_kPa"] == pytest.approx(43.6, rel=0.01)           # pub pe 43.6
+    assert r["ps_kPa"] == pytest.approx(3.2, abs=0.1)             # pub ps 3.2
+    assert r["anchors"][0]["TH_kN_per_m"] == pytest.approx(168.0, rel=0.02)
+    assert r["anchors"][1]["TH_kN_per_m"] == pytest.approx(172.0, rel=0.02)
+    assert r["subgrade_reaction_kN_per_m"] == pytest.approx(37.0, rel=0.03)
+    assert r["anchors"][0]["design_load_kN"] == pytest.approx(435.0, rel=0.02)
+    assert r["anchors"][1]["design_load_kN"] == pytest.approx(445.0, rel=0.02)
