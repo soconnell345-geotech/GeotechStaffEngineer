@@ -86,6 +86,18 @@ Tolerance-parametrized, pure-geometry cleanup to run BEFORE
   endpoints, optionally join; returns cleaned copies (inputs untouched) + a
   before/after point-count report. Funhouse adapter: `cleanup_geometry`.
 
+## Vision grid overlay (C4, v5.3) — `vision.py`
+`extract_geometry_vision(..., grid_overlay=True, grid_spacing=...)` renders the
+PDF page with a labelled coordinate grid (`render_page_with_grid`) before the
+vision call and uses the grid-aware prompt (`GRID_VISION_PROMPT`), so the model
+reads coordinates OFF the grid instead of guessing — improving read-off accuracy.
+The grid is labelled in drawing units (PDF points; x along the bottom, z from the
+bottom-left upward), matching the `extract_vector_geometry` frame so vision and
+vector read-offs are directly comparable (feeds C5 cross-check). Default
+(`grid_overlay=False`) is unchanged. The grid is drawn on the in-memory page and
+never saved. (Not a flat-JSON adapter method — the vision path needs an `image_fn`
+engine.)
+
 ## Vision <-> vector cross-check (C5, v5.3) — `crosscheck.py`
 `cross_check(vector_result, vision_result, tol)` compares the two extractions
 feature by feature (surface, each boundary, gwt) and returns a DISCREPANCY

@@ -16,7 +16,7 @@ from pdf_import.results import PdfParseResult
 from pdf_import.extractor import (
     discover_pdf_content, extract_vector_geometry, extract_colored_paths,
 )
-from pdf_import.vision import extract_geometry_vision
+from pdf_import.vision import extract_geometry_vision, render_page_with_grid
 from pdf_import.scale import (
     calibrate_scale, parse_scale_annotations, propose_scale,
 )
@@ -35,6 +35,7 @@ __all__ = [
     'extract_vector_geometry',
     'extract_colored_paths',
     'extract_geometry_vision',
+    'render_page_with_grid',
     'calibrate_scale',
     'parse_scale_annotations',
     'propose_scale',

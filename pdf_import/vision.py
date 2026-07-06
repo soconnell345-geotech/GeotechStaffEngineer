@@ -39,6 +39,31 @@ Rules:
 """
 
 
+# Grid-aware prompt: the page is rendered with a labelled coordinate grid, so the
+# model reads coordinates OFF the grid instead of guessing them.
+GRID_VISION_PROMPT = """\
+You are analyzing a geotechnical cross-section drawing that has a labelled
+COORDINATE GRID overlaid on it. Read every coordinate OFF the grid.
+
+Return ONLY a JSON object:
+{
+    "surface_points": [[x1, z1], [x2, z2], ...],
+    "boundary_profiles": {"layer_name": [[x1, z1], [x2, z2], ...], ...},
+    "gwt_points": [[x1, z1], [x2, z2], ...] or null,
+    "scale_info": "description of any scale/dimensions visible"
+}
+
+Rules:
+- Use the GRID LABELS to read each (x, z) — x from the labels along the bottom,
+  z (elevation, increasing UPWARD) from the labels along the left. Interpolate
+  between gridlines for points that fall between them.
+- The surface is the topmost ground profile line; boundaries separate soil layers;
+  GWT is usually a dashed/blue line.
+- Include the endpoints and every slope break / boundary kink.
+- If you cannot identify a feature, omit it rather than guess.
+"""
+
+
 def extract_geometry_vision(
     image_fn: Callable,
     filepath: Optional[str] = None,
@@ -47,6 +72,8 @@ def extract_geometry_vision(
     dpi: int = 200,
     custom_prompt: Optional[str] = None,
     scale: float = 1.0,
+    grid_overlay: bool = False,
+    grid_spacing: float = 50.0,
 ) -> PdfParseResult:
     """Extract geometry from PDF/image using LLM vision.
 
@@ -67,21 +94,99 @@ def extract_geometry_vision(
         Custom prompt to use instead of the default.
     scale : float
         Scale factor: drawing_units * scale = meters.
+    grid_overlay : bool
+        If True (PDF pages only), render the page with a labelled coordinate grid
+        and use the grid-aware prompt, so the model reads coordinates off the grid
+        (improves read-off accuracy). The grid is labelled in drawing units (PDF
+        points, z from the bottom), matching the vector extraction's frame.
+    grid_spacing : float
+        Grid line spacing in drawing units (PDF points). Default 50.
 
     Returns
     -------
     PdfParseResult
         Extracted geometry with confidence < 1.0.
     """
-    image_bytes = _get_image_bytes(filepath, content, page, dpi)
-    prompt = custom_prompt or VISION_PROMPT
+    if grid_overlay:
+        image_bytes = render_page_with_grid(
+            filepath=filepath, content=content, page=page, dpi=dpi,
+            grid_spacing=grid_spacing)
+        prompt = custom_prompt or GRID_VISION_PROMPT
+    else:
+        image_bytes = _get_image_bytes(filepath, content, page, dpi)
+        prompt = custom_prompt or VISION_PROMPT
 
     # Call the vision function
     response_text = image_fn(image_bytes, prompt)
 
     # Parse the JSON response
     result = _parse_vision_response(response_text, scale, page)
+    if grid_overlay:
+        result.warnings.append(
+            f"grid overlay used (spacing {grid_spacing} drawing units)")
     return result
+
+
+def render_page_with_grid(
+    filepath: Optional[str] = None,
+    content: Optional[bytes] = None,
+    page: int = 0,
+    dpi: int = 200,
+    grid_spacing: float = 50.0,
+) -> bytes:
+    """Render a PDF page to PNG with a labelled coordinate grid overlaid.
+
+    Vertical gridlines are drawn at x = 0, spacing, 2*spacing, ... (labelled with
+    the drawing-x value along the bottom); horizontal gridlines at elevation
+    z = 0, spacing, ... measured from the BOTTOM of the page (labelled along the
+    left, z increasing upward). This matches the ``extract_vector_geometry``
+    frame (bottom-left origin), so vision read-offs are directly comparable.
+
+    Returns PNG bytes. Requires PyMuPDF.
+    """
+    try:
+        import fitz
+    except ImportError:
+        raise ImportError("PyMuPDF is required for grid overlay. "
+                          "Install with: pip install PyMuPDF>=1.23")
+    if grid_spacing <= 0:
+        raise ValueError(f"grid_spacing must be positive, got {grid_spacing}")
+
+    if content is not None:
+        doc = fitz.open(stream=content, filetype="pdf")
+    elif filepath is not None:
+        doc = fitz.open(filepath)
+    else:
+        raise ValueError("Provide either filepath or content")
+    if page >= len(doc):
+        doc.close()
+        raise ValueError(f"Page {page} out of range (document has {len(doc)} pages)")
+
+    pg = doc[page]
+    w, h = pg.rect.width, pg.rect.height
+    grid_col = (0.6, 0.6, 0.85)     # light blue-gray
+    lbl_col = (0.15, 0.15, 0.55)
+    fs = max(4.0, min(9.0, grid_spacing * 0.18))
+
+    # Vertical lines (constant x).
+    x = 0.0
+    while x <= w + 1e-6:
+        pg.draw_line((x, 0), (x, h), color=grid_col, width=0.4)
+        pg.insert_text((x + 1, h - 2), f"{int(round(x))}", fontsize=fs, color=lbl_col)
+        x += grid_spacing
+    # Horizontal lines (constant elevation z from the bottom).
+    z = 0.0
+    while z <= h + 1e-6:
+        py = h - z                  # PDF y (top-left origin) for elevation z
+        pg.draw_line((0, py), (w, py), color=grid_col, width=0.4)
+        pg.insert_text((2, py - 1), f"{int(round(z))}", fontsize=fs, color=lbl_col)
+        z += grid_spacing
+
+    zoom = dpi / 72.0
+    pix = pg.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+    png_bytes = pix.tobytes("png")
+    doc.close()                     # modifications discarded (never saved)
+    return png_bytes
 
 
 def _get_image_bytes(
