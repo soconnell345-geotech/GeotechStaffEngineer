@@ -73,17 +73,51 @@ def test_integrator_no_slip_below_yield():
     assert r.n_exceedances == 0
 
 
-def test_integrator_both_polarities_downslope():
-    """Both polarities drive the downslope block (abs record), no rebound:
-    a +/- pulse pair gives ~2x a single positive pulse."""
+def test_integrator_both_polarities_rectified():
+    """Rectified mode (polarity='rectified'): both polarities drive the downslope
+    block (abs record), no rebound, so a +/- pulse pair gives ~2x a single
+    positive pulse."""
     ap, T, dt = 3.0, 1.0, 0.0005
     ky = 1.0 / _G
     tail = [0.0] * int(3.0 / dt)
-    one = newmark_displacement(ky, [ap] * int(T / dt) + tail, dt).displacement
+    one = newmark_displacement(ky, [ap] * int(T / dt) + tail, dt,
+                               polarity="rectified").displacement
     two = newmark_displacement(
-        ky, [ap] * int(T / dt) + tail + [-ap] * int(T / dt) + tail, dt
+        ky, [ap] * int(T / dt) + tail + [-ap] * int(T / dt) + tail, dt,
+        polarity="rectified"
     ).displacement
     assert two == pytest.approx(2.0 * one, rel=1e-3)
+
+
+def test_downslope_symmetric_record_is_half_rectified():
+    """Default downslope mode integrates ONLY the destabilizing polarity, so a
+    symmetric +/- record gives half the rectified (abs) displacement -- the
+    standard Newmark/Jibson single-block convention."""
+    ap, T, dt = 3.0, 1.0, 0.0005
+    ky = 1.0 / _G
+    tail = [0.0] * int(3.0 / dt)
+    record = [ap] * int(T / dt) + tail + [-ap] * int(T / dt) + tail
+    down = newmark_displacement(ky, record, dt).displacement           # default
+    rect = newmark_displacement(ky, record, dt,
+                                polarity="rectified").displacement
+    assert down == pytest.approx(0.5 * rect, rel=1e-3)
+    assert newmark_displacement(ky, record, dt).polarity == "downslope"
+    with pytest.raises(ValueError):
+        newmark_displacement(ky, record, dt, polarity="sideways")
+
+
+def test_one_sided_pulse_same_under_both_polarities():
+    """A one-sided (all-positive) pulse exceeds ay only in the destabilizing
+    direction, so downslope and rectified give the SAME displacement -- the
+    closed-form rectangular-pulse checks hold under both modes."""
+    ap, T, dt = 3.0, 2.0, 0.0005
+    ky = 1.5 / _G
+    accel = [ap] * int(T / dt) + [0.0] * int(4.0 / dt)
+    d_down = newmark_displacement(ky, accel, dt, polarity="downslope").displacement
+    d_rect = newmark_displacement(ky, accel, dt, polarity="rectified").displacement
+    analytic = _rect_pulse_analytic(ap, ky * _G, T)
+    assert d_down == pytest.approx(analytic, rel=1e-3)
+    assert d_rect == pytest.approx(analytic, rel=1e-3)
 
 
 # --- Jibson (2007) regression -------------------------------------------------

@@ -74,6 +74,9 @@ class RapidDrawdownResult:
     Kc: List[float] = field(default_factory=list)
     tau_ff: List[float] = field(default_factory=list)        # stage-2 undrained strength, kPa
     stage1_fos: float = 0.0
+    stage1_converged: bool = True
+    stage3_converged: bool = True
+    warnings: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         return "\n".join([
@@ -89,7 +92,7 @@ class RapidDrawdownResult:
         ])
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "FOS": round(self.FOS, 4),
             "method": self.method,
             "drawdown_from": self.drawdown_from,
@@ -98,7 +101,12 @@ class RapidDrawdownResult:
             "n_slices": self.n_slices,
             "n_undrained_slices": self.n_undrained_slices,
             "n_drained_substituted": self.n_drained_substituted,
+            "stage1_converged": self.stage1_converged,
+            "stage3_converged": self.stage3_converged,
         }
+        if self.warnings:
+            d["warnings"] = list(self.warnings)
+        return d
 
 
 def _pool_geometry(geom: SlopeGeometry, water_elevation: float) -> SlopeGeometry:
@@ -211,10 +219,16 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         g_full.gwt_points = [tuple(p) for p in stage1_phreatic_points]
     else:
         g_full = _pool_geometry(geom, drawdown_from_elevation)
+    warnings: List[str] = []
     sl1 = build_slices(g_full, slip, n_slices)
     res1 = gle_fos(sl1, slip, f_interslice=f_interslice,
                    tol=min(tol, 1e-4) * 0.1)
+    stage1_converged = bool(res1.converged)
     if not res1.converged:
+        warnings.append(
+            "Stage 1 (full-pool consolidation) GLE did not converge; "
+            "consolidation stresses fell back to a Fellenius effective-normal "
+            "estimate.")
         # fall back to a Fellenius effective-normal estimate if GLE stalls
         sigma_fc = [max(s.weight * math.cos(s.alpha) / s.base_length
                         - s.pore_pressure, 0.0) for s in sl1]
@@ -288,7 +302,12 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
 
     res3 = gle_fos(sl3, slip, f_interslice=f_interslice,
                    tol=min(tol, 1e-4) * 0.1)
-    fos = res3.fos if res3.converged else res3.fos
+    fos = res3.fos
+    stage3_converged = bool(res3.converged)
+    if not res3.converged:
+        warnings.append(
+            "Stage 3 (drawn-down) GLE did not converge; the reported drawdown "
+            "FOS is the last iterate and may be approximate.")
 
     return RapidDrawdownResult(
         FOS=fos, method=method,
@@ -299,4 +318,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         sigma_fc=sigma_fc, tau_fc=tau_fc, Kc=Kc_list,
         tau_ff=[t for t in tau_ff if t is not None],
         stage1_fos=stage1_fos,
+        stage1_converged=stage1_converged,
+        stage3_converged=stage3_converged,
+        warnings=warnings,
     )

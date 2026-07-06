@@ -14,6 +14,7 @@ _F_INTERSLICE = ["constant", "half_sine", "clipped_sine", "trapezoidal"]
 _SURFACE_TYPES = ["circular", "entry_exit", "noncircular", "noncircular_de",
                   "pso", "weak_layer"]
 _STRENGTH_MODELS = ["mohr_coulomb", "shansep", "hoek_brown"]
+_NEWMARK_POLARITY = ["downslope", "rectified"]
 
 
 # Top-level geometry params consumed by _build_geometry, and the trial-surface
@@ -332,13 +333,16 @@ def _run_yield_acceleration(params: dict) -> dict:
 def _run_newmark_displacement(params: dict) -> dict:
     from slope_stability.newmark import newmark_displacement
     reject_unknown_params(
-        params, ("ky", "accel", "dt", "accel_in_g"),
+        params, ("ky", "accel", "dt", "accel_in_g", "polarity"),
         method="newmark_displacement")
     require_params(params, ["ky", "accel", "dt"],
                    method="newmark_displacement")
+    polarity = _check_choice(params.get("polarity", "downslope"),
+                             _NEWMARK_POLARITY, name="polarity",
+                             method="newmark_displacement")
     result = newmark_displacement(
         ky=params["ky"], accel=params["accel"], dt=params["dt"],
-        accel_in_g=params.get("accel_in_g", False))
+        accel_in_g=params.get("accel_in_g", False), polarity=polarity)
     return result.to_dict()
 
 
@@ -462,14 +466,15 @@ METHOD_INFO = {
     },
     "newmark_displacement": {
         "category": "Slope Stability",
-        "brief": "Newmark rigid-block permanent DOWNSLOPE displacement by double integration of an earthquake acceleration time history against the yield coefficient ky. Downslope-only (no upslope rebound); both polarities of the record drive the block (absolute acceleration). Get ky from yield_acceleration. For a quick estimate without a record, use newmark_jibson2007.",
+        "brief": "Newmark rigid-block permanent DOWNSLOPE displacement by double integration of an earthquake acceleration time history against the yield coefficient ky (no upslope rebound). polarity='downslope' (default) is the standard Newmark/Jibson single-block convention (only the destabilizing polarity drives the block); 'rectified' uses the absolute record so both polarities drive it (conservative, ~2x for a symmetric record). Get ky from yield_acceleration. For a quick estimate without a record, use newmark_jibson2007.",
         "parameters": {
             "ky": {"type": "float", "required": True, "description": "Yield seismic coefficient (fraction of g); ay = ky*g."},
-            "accel": {"type": "array", "required": True, "description": "Ground acceleration time history (equally spaced), in m/s^2 (or in g if accel_in_g=true)."},
+            "accel": {"type": "array", "required": True, "description": "Ground acceleration time history (equally spaced), in m/s^2 (or in g if accel_in_g=true). Sign convention is downslope-positive when polarity='downslope'."},
             "dt": {"type": "float", "required": True, "description": "Time step of the record (s)."},
             "accel_in_g": {"type": "bool", "required": False, "default": False, "description": "True if 'accel' is in units of g rather than m/s^2."},
+            "polarity": {"type": "str", "required": False, "default": "downslope", "allowed_values": _NEWMARK_POLARITY, "description": "'downslope' (default; standard Newmark/Jibson — integrate only destabilizing-polarity exceedances of the signed record) or 'rectified' (integrate the absolute record so both polarities drive the block; conservative, orientation-independent)."},
         },
-        "returns": {"displacement_m": "Permanent downslope displacement (m).", "displacement_cm": "Same in cm.", "n_exceedances": "Steps exceeding ay.", "duration_s": "Record duration."},
+        "returns": {"displacement_m": "Permanent downslope displacement (m).", "displacement_cm": "Same in cm.", "n_exceedances": "Steps exceeding ay.", "duration_s": "Record duration.", "polarity": "Polarity convention used."},
     },
     "newmark_jibson2007": {
         "category": "Slope Stability",

@@ -11,13 +11,20 @@ Three pieces, all operating on a SPECIFIED slip surface:
 
 2. ``newmark_displacement`` — the permanent downslope displacement of a rigid
    block on the surface, by double integration of an earthquake acceleration
-   time history against ky (Newmark 1965). The classic downslope-only assumption
-   is used: the block slides only while the ground acceleration drives it in the
-   destabilizing (downslope) direction and the relative velocity is positive; it
-   never slides back upslope, so displacement accumulates monotonically. A
-   time history that is symmetric about zero is therefore rectified to its
-   destabilizing polarity (both polarities of a real record are handled by taking
-   the absolute acceleration — the standard single-block treatment).
+   time history against ky (Newmark 1965). The block slides only while the
+   relative velocity is positive; it never slides back upslope, so displacement
+   accumulates monotonically. Two polarity conventions are offered
+   (``polarity=``):
+     * ``"downslope"`` (default, standard Newmark 1965 / Jibson 2007) — the
+       SIGNED record is used and the block is driven only when the ground
+       acceleration exceeds ay in the destabilizing (downslope-positive)
+       direction; the reverse polarity decelerates the block. Only one polarity
+       of a symmetric record contributes, so it gives about HALF the rectified
+       displacement.
+     * ``"rectified"`` — the absolute acceleration is used, so both polarities of
+       the record drive the single downslope block. A conservative,
+       orientation-independent option (see DESIGN.md); use when the sign of the
+       record relative to the slope's downslope direction is unknown.
 
 3. ``newmark_jibson2007`` — Jibson's (2007) regression estimate of Newmark
    displacement from the critical-acceleration ratio ky/amax, an independent
@@ -72,6 +79,7 @@ class NewmarkResult:
     amax: float = 0.0              # peak ground acceleration used (fraction of g)
     n_exceedances: int = 0         # times the record exceeds ay (integration)
     duration: float = 0.0          # s (integration)
+    polarity: str = "downslope"    # 'downslope' or 'rectified' (integration)
     sigma_log10: Optional[float] = None   # Jibson dispersion (log10 cm)
 
     @property
@@ -93,6 +101,7 @@ class NewmarkResult:
         if self.method == "integration":
             d["n_exceedances"] = self.n_exceedances
             d["duration_s"] = round(self.duration, 3)
+            d["polarity"] = self.polarity
         else:
             d["amax_g"] = round(self.amax, 5)
         return d
@@ -177,6 +186,7 @@ def newmark_displacement(ky: float,
                          accel: Sequence[float],
                          dt: float,
                          accel_in_g: bool = False,
+                         polarity: str = "downslope",
                          g: float = _G) -> NewmarkResult:
     """Permanent downslope displacement by Newmark double integration.
 
@@ -186,11 +196,27 @@ def newmark_displacement(ky: float,
         Yield seismic coefficient (fraction of g); yield acceleration ay = ky*g.
     accel : sequence of float
         Ground acceleration time history, equally spaced at ``dt``. In m/s^2 by
-        default, or in g if ``accel_in_g=True``.
+        default, or in g if ``accel_in_g=True``. The record's sign convention is
+        downslope-positive (a positive value drives the block downslope) when
+        ``polarity="downslope"``.
     dt : float
         Time step (s).
     accel_in_g : bool
         If True, ``accel`` is in units of g (multiplied by g internally).
+    polarity : {"downslope", "rectified"}
+        Which polarity of the record drives the block:
+
+        * ``"downslope"`` (default) — the STANDARD Newmark (1965) / Jibson
+          (2007) single-block treatment: the SIGNED record is integrated and the
+          block accelerates only when the ground acceleration exceeds ay in the
+          destabilizing (downslope-positive) direction; the opposite polarity
+          decelerates it. Only the destabilizing polarity of a symmetric record
+          contributes.
+        * ``"rectified"`` — the ABSOLUTE record is integrated, so both polarities
+          drive the single downslope block. A conservative, orientation-
+          independent option (about twice the downslope displacement for a
+          symmetric record); use when the record's sign relative to the slope's
+          downslope direction is unknown. See DESIGN.md.
     g : float
         Gravity (m/s^2). Default 9.80665.
 
@@ -201,17 +227,20 @@ def newmark_displacement(ky: float,
 
     Notes
     -----
-    Downslope-only rigid-block integration: at each step the block slides only
-    while |a_ground| exceeds ay and the relative velocity is positive; the
-    relative velocity is clamped at zero (no upslope rebound), so displacement
-    is monotonic. The absolute value of the record is used so both polarities of
-    a symmetric record drive the (single) downslope block — the standard
-    single-block treatment (Jibson 2007; Duncan-Wright-Brandon 2014, Ch. 10).
+    Rigid-block integration with no upslope rebound: the relative velocity is
+    clamped at zero, so displacement is monotonic. Trapezoidal integration of the
+    piecewise-linear relative velocity is EXACT for a rectangular pulse
+    (D = ap*(ap-ay)*T^2/(2*ay)), which is the integrator's closed-form check.
+
+    References: Newmark (1965); Jibson (2007); Duncan-Wright-Brandon (2014),
+    Ch. 10.
     """
     if ky < 0:
         raise ValueError("ky must be non-negative")
     if dt <= 0:
         raise ValueError("dt must be positive")
+    if polarity not in ("downslope", "rectified"):
+        raise ValueError("polarity must be 'downslope' or 'rectified'")
     ay = ky * g
     scale = g if accel_in_g else 1.0
 
@@ -220,19 +249,22 @@ def newmark_displacement(ky: float,
     n_exc = 0
     amax = 0.0
     for a_raw in accel:
-        a = abs(a_raw) * scale
-        amax = max(amax, a)
-        if a > ay or v > 0.0:
-            if a > ay:
+        a = a_raw * scale
+        amax = max(amax, abs(a))
+        # destabilizing (downslope) driving acceleration
+        drive = abs(a) if polarity == "rectified" else a
+        if drive > ay or v > 0.0:
+            if drive > ay:
                 n_exc += 1
             v_prev = v
-            v = v_prev + (a - ay) * dt
+            v = v_prev + (drive - ay) * dt
             if v < 0.0:
                 v = 0.0
             d += 0.5 * (v_prev + v) * dt      # trapezoidal
     return NewmarkResult(
         displacement=d, ky=ky, method="integration",
-        amax=amax / g, n_exceedances=n_exc, duration=len(accel) * dt)
+        amax=amax / g, n_exceedances=n_exc, duration=len(accel) * dt,
+        polarity=polarity)
 
 
 def newmark_jibson2007(ky: float, amax: float) -> NewmarkResult:
