@@ -55,6 +55,21 @@ Two ways to establish the `extract_vector_geometry(scale=...)` factor
   passes its `scale_factor` to the extractor. Funhouse adapter: `calibrate_scale`,
   `propose_scale`.
 
+## Label -> region association (C2, v5.3) — `labels.py`
+Proposes a colour->role `role_mapping` from the drawing's text labels:
+- `classify_label(text)` — text -> role ("surface"/"gwt"/"boundary_<Name>").
+  GWT/surface phrases first; then a USCS 2-letter symbol (SM/CL/…); else the
+  RIGHTMOST soil noun wins ("silty SAND" -> Sand, "sandy CLAY" -> Clay).
+- `associate_labels_to_regions(regions, text_blocks)` — attach each label to a
+  region. Soil (area) labels use the ENCLOSING region (point-in-polygon); GWT and
+  surface (LINE) labels use the nearest polyline edge (so a water-table label
+  sitting inside a soil box still binds to the nearby line, not the box).
+- `propose_role_mapping(regions, text_blocks)` — build `{hex_color: role}` from
+  the closest label per colour. **Proposal only** (`applied: False`); confirm
+  before passing to `extract_vector_geometry(role_mapping=...)`. `regions` come
+  from `extract_colored_paths(...)` (one entry per vector path: `{color, points}`).
+  Funhouse adapter: `propose_role_mapping` (chains PDF -> paths+text -> mapping).
+
 ## References
 
 - PyMuPDF documentation: https://pymupdf.readthedocs.io/

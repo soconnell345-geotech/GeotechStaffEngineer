@@ -13,20 +13,29 @@ Requires: PyMuPDF >= 1.23 (optional dependency)
 """
 
 from pdf_import.results import PdfParseResult
-from pdf_import.extractor import discover_pdf_content, extract_vector_geometry
+from pdf_import.extractor import (
+    discover_pdf_content, extract_vector_geometry, extract_colored_paths,
+)
 from pdf_import.vision import extract_geometry_vision
 from pdf_import.scale import (
     calibrate_scale, parse_scale_annotations, propose_scale,
+)
+from pdf_import.labels import (
+    classify_label, associate_labels_to_regions, propose_role_mapping,
 )
 
 __all__ = [
     'PdfParseResult',
     'discover_pdf_content',
     'extract_vector_geometry',
+    'extract_colored_paths',
     'extract_geometry_vision',
     'calibrate_scale',
     'parse_scale_annotations',
     'propose_scale',
+    'classify_label',
+    'associate_labels_to_regions',
+    'propose_role_mapping',
 ]
 
 

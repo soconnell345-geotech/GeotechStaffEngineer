@@ -74,6 +74,33 @@ def _run_propose_scale(params):
                                       calibration=params.get("calibration")))
 
 
+def _run_propose_role_mapping(params):
+    from pdf_import import (
+        propose_role_mapping, extract_colored_paths, discover_pdf_content,
+    )
+
+    _valid = ("file_path", "page", "origin", "regions", "text_blocks")
+    reject_unknown_params(params, _valid, method="propose_role_mapping")
+    regions = params.get("regions")
+    text_blocks = params.get("text_blocks")
+    if regions is None or text_blocks is None:
+        require_params(params, ["file_path"], method="propose_role_mapping",
+                       valid=_valid)
+        page = params.get("page", 0)
+        origin = params.get("origin", "bottom_left")
+        if regions is None:
+            regions = extract_colored_paths(filepath=params["file_path"],
+                                            page=page, origin=origin)
+        if text_blocks is None:
+            text_blocks = discover_pdf_content(
+                filepath=params["file_path"], page=page)["text_blocks"]
+    # Normalize region points ({x,z}/[x,y]) to (x, y) tuples.
+    norm = [{"color": r.get("color"),
+             "points": [_point_xz(p) if isinstance(p, dict) else tuple(p)
+                        for p in r.get("points", [])]} for r in regions]
+    return clean_result(propose_role_mapping(norm, text_blocks))
+
+
 def _run_build_slope_geometry(params):
     from pdf_import import to_dxf_parse_result, PdfParseResult
     from dxf_import.converter import SoilPropertyAssignment, build_slope_geometry
@@ -169,6 +196,7 @@ METHOD_REGISTRY = {
     "extract_vector_geometry": _run_extract_vector_geometry,
     "calibrate_scale": _run_calibrate_scale,
     "propose_scale": _run_propose_scale,
+    "propose_role_mapping": _run_propose_role_mapping,
     "build_slope_geometry": _run_build_slope_geometry,
     "build_fem_inputs": _run_build_fem_inputs,
 }
@@ -226,6 +254,18 @@ METHOD_INFO = {
             "calibration": {"type": "dict", "required": False, "description": "Optional {p1, p2, distance_m} to add a deterministic two-point candidate (confidence 1.0)."},
         },
         "returns": {"candidates": "Scale candidates (highest confidence first), each {scale_factor, basis, provenance, confidence, applied:false}.", "recommended": "Best candidate or null."},
+    },
+    "propose_role_mapping": {
+        "category": "PDF Import",
+        "brief": "Propose a colour->role role_mapping by associating soil/GWT/surface text labels to the vector regions they sit in / are nearest to. Proposal only — confirm before passing to extract_vector_geometry(role_mapping=...).",
+        "parameters": {
+            "file_path": {"type": "str", "required": False, "description": "PDF path — extracts coloured paths + text blocks internally. Provide this OR regions+text_blocks."},
+            "page": {"type": "int", "required": False, "default": 0, "description": "Page number (0-indexed)."},
+            "origin": {"type": "str", "required": False, "default": "bottom_left", "allowed_values": ["bottom_left", "top_left"], "description": "Coordinate origin."},
+            "regions": {"type": "array", "required": False, "description": "Alternative to file_path: [{color, points:[[x,y],...]}, ...]."},
+            "text_blocks": {"type": "array", "required": False, "description": "Alternative to file_path: [{text, x, y}, ...]."},
+        },
+        "returns": {"role_mapping": "Proposed {hex_color: role} (roles: surface/gwt/boundary_<Name>).", "associations": "Per-label {label, role, color, method, distance}.", "applied": "Always false."},
     },
     "build_slope_geometry": {
         "category": "PDF Import",

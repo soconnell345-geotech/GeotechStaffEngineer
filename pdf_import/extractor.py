@@ -261,6 +261,43 @@ def extract_vector_geometry(
     )
 
 
+def extract_colored_paths(
+    filepath=None, content=None, page: int = 0,
+    scale: float = 1.0, origin: str = "bottom_left",
+) -> List[Dict[str, Any]]:
+    """Return the page's vector paths as coloured regions for label association.
+
+    Companion to ``discover_pdf_content`` (which gives text blocks) and
+    ``pdf_import.labels.propose_role_mapping``: returns one entry per drawing path
+    as ``{"color": hex, "points": [(x, y), ...]}`` (same coordinate convention as
+    ``extract_vector_geometry``). No role_mapping is required.
+
+    Returns
+    -------
+    list of dict
+        [{"color": hex, "points": [(x, y), ...]}, ...] — one per vector path.
+    """
+    doc = _open_document(filepath, content)
+    if page >= len(doc):
+        doc.close()
+        raise ValueError(f"Page {page} out of range")
+    pg = doc[page]
+    page_height = pg.rect.height
+    regions = []
+    for d in pg.get_drawings():
+        color_hex = _color_to_hex(d.get("color"))
+        pts = _extract_path_points(d.get("items", []))
+        if not pts:
+            continue
+        out_pts = []
+        for x, y in pts:
+            yy = page_height - y if origin == "bottom_left" else y
+            out_pts.append((round(x * scale, 4), round(yy * scale, 4)))
+        regions.append({"color": color_hex, "points": out_pts})
+    doc.close()
+    return regions
+
+
 def _extract_path_points(items) -> List[Tuple[float, float]]:
     """Extract (x, y) points from PyMuPDF drawing items."""
     points = []
