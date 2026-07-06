@@ -254,3 +254,73 @@ class TestAnalyzeSlopeIntegration:
                             method="gle", n_slices=40)
         assert res.FOS > 0
         assert res.reinforcements
+
+
+class TestStabilizingPile:
+    """B2d: single-row stabilizing piles (specified shear or Ito-Matsui)."""
+
+    def test_explicit_shear_closed_form(self):
+        """A pile with a specified shear capacity reduces the driving moment by
+        (shear_capacity/spacing)*d_perp/R exactly, for phi=0 Fellenius."""
+        from slope_stability.reinforcement import StabilizingPile
+        shear, spacing, x_pile = 80.0, 2.0, 30.0
+        geom, slip = _clay_slope(stabilizing_piles=[
+            StabilizingPile(x=x_pile, shear_capacity=shear, spacing=spacing)])
+        x_entry, x_exit = slip.find_entry_exit(geom)
+        slices = build_slices(geom, slip, 40)
+        fos_0 = fellenius_fos(slices, slip)
+        forces = compute_reinforcement_forces(geom, slip, x_entry, x_exit)
+        assert len(forces) == 1 and forces[0].kind == "pile"
+        f = forces[0]
+        assert f.T == pytest.approx(shear / spacing)     # per metre
+        assert abs(f.dir_z) < 1e-12                       # horizontal
+        fos_r = fellenius_fos(slices, slip, reinf_forces=forces)
+        d_perp = slip.yc - f.z                            # horizontal force arm
+        driving_0 = abs(sum((s.weight + s.surcharge_force)
+                            * (s.x_mid - slip.xc) / slip.radius for s in slices))
+        resisting = fos_0 * driving_0
+        fos_hand = resisting / (driving_0 - (shear / spacing) * d_perp
+                                / slip.radius)
+        assert fos_r == pytest.approx(fos_hand, rel=1e-9)
+        assert fos_r > fos_0
+
+    def test_pile_off_surface_has_no_effect(self):
+        from slope_stability.reinforcement import StabilizingPile
+        geom, slip = _clay_slope(stabilizing_piles=[
+            StabilizingPile(x=-4.0, shear_capacity=50.0)])   # left of entry
+        x_entry, x_exit = slip.find_entry_exit(geom)
+        forces = compute_reinforcement_forces(geom, slip, x_entry, x_exit)
+        assert forces == []
+
+    def test_ito_matsui_increases_fos_and_drops_with_spacing(self):
+        from slope_stability.reinforcement import (
+            StabilizingPile, ito_matsui_lateral_force)
+        geom, slip = _drained_slope()
+        res0 = analyze_slope(geom, xc=30.0, yc=32.0, radius=26.0,
+                             method="bishop", n_slices=40)
+        geom.stabilizing_piles = [StabilizingPile(
+            x=30.0, spacing=1.6, ito_matsui=True, diameter=0.8)]
+        res1 = analyze_slope(geom, xc=30.0, yc=32.0, radius=26.0,
+                             method="bishop", n_slices=40)
+        assert res1.FOS > res0.FOS
+        assert res1.reinforcements
+        # per-metre Ito-Matsui force decreases as spacing widens
+        f = [ito_matsui_lateral_force(8.0, 25.0, 19.0, D1, D1 - 0.8,
+                                      z_top=6.0, z_bot=0.0) / D1
+             for D1 in (1.6, 2.4, 3.2, 4.8)]
+        assert f == sorted(f, reverse=True)
+
+    def test_ito_matsui_pressure_positive_and_grows_with_depth(self):
+        from slope_stability.reinforcement import ito_matsui_pressure
+        p = [ito_matsui_pressure(10.0, 20.0, 18.0, z, 1.6, 0.8)
+             for z in (1.0, 3.0, 5.0)]
+        assert all(v > 0 for v in p) and p == sorted(p)
+
+    def test_validation_errors(self):
+        from slope_stability.reinforcement import StabilizingPile
+        with pytest.raises(ValueError):
+            StabilizingPile(x=1.0)                       # no resistance given
+        with pytest.raises(ValueError):
+            StabilizingPile(x=1.0, ito_matsui=True)      # no diameter
+        with pytest.raises(ValueError):
+            StabilizingPile(x=1.0, ito_matsui=True, diameter=2.0, spacing=1.0)

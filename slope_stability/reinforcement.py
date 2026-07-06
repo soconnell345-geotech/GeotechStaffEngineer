@@ -91,6 +91,76 @@ class Anchor:
 
 
 @dataclass
+class StabilizingPile:
+    """A single row of vertical stabilizing / micro piles crossing the slope.
+
+    The row provides a lateral resisting force where the piles cross the slip
+    surface. Two ways to set the resistance:
+
+    * ``shear_capacity`` — the limiting shear resistance of ONE pile (kN). The
+      per-metre force applied to the sliding mass is ``shear_capacity/spacing``
+      (Slide2 verification #54 / Yamagami 2000 style: a directly-specified
+      passive pile shear).
+    * Ito & Matsui (1975) plastic-deformation lateral force — set
+      ``ito_matsui=True`` and give the pile ``diameter`` (so the clear spacing
+      D2 = spacing - diameter). The lateral force per pile is the Ito-Matsui
+      pressure integrated from the pile head to the slip surface; divided by
+      ``spacing`` for the per-metre force. Soil c/phi/gamma default to the layer
+      the pile passes through.
+
+    Parameters
+    ----------
+    x : float
+        Pile-row location (m). The piles are vertical.
+    shear_capacity : float, optional
+        Limiting shear per pile (kN). Mutually exclusive with ``ito_matsui``.
+    spacing : float
+        Center-to-center pile spacing along the row, D1 (m). Default 1.0.
+    z_head : float, optional
+        Pile head elevation (m). Default: ground surface at ``x``.
+    z_toe : float, optional
+        Pile toe elevation (m). Default: unbounded below (crosses wherever the
+        slip surface is below the head).
+    ito_matsui : bool
+        Use the Ito & Matsui (1975) plastic-deformation lateral force.
+    diameter : float, optional
+        Pile diameter/width B (m); required for ``ito_matsui`` (D2 = spacing-B).
+    c, phi, gamma : float, optional
+        Soil strength/unit weight for the Ito-Matsui force. Default: taken from
+        the soil layer at the pile mid-depth.
+    force_direction : str
+        'horizontal' (default) or 'normal' (perpendicular to the slip surface
+        at the crossing).
+    """
+    x: float
+    shear_capacity: Optional[float] = None
+    spacing: float = 1.0
+    z_head: Optional[float] = None
+    z_toe: Optional[float] = None
+    ito_matsui: bool = False
+    diameter: Optional[float] = None
+    c: Optional[float] = None
+    phi: Optional[float] = None
+    gamma: Optional[float] = None
+    force_direction: str = "horizontal"
+
+    def __post_init__(self):
+        if self.spacing <= 0:
+            raise ValueError(f"spacing must be positive, got {self.spacing}")
+        if self.ito_matsui:
+            if self.diameter is None or self.diameter <= 0:
+                raise ValueError("ito_matsui piles need a positive diameter")
+            if self.diameter >= self.spacing:
+                raise ValueError("diameter must be < spacing (need D2 = spacing "
+                                 "- diameter > 0)")
+        elif self.shear_capacity is None or self.shear_capacity <= 0:
+            raise ValueError("give a positive shear_capacity or set "
+                             "ito_matsui=True with a diameter")
+        if self.force_direction not in ("horizontal", "normal"):
+            raise ValueError("force_direction must be 'horizontal' or 'normal'")
+
+
+@dataclass
 class ReinforcementForce:
     """A resolved reinforcement force at a slip-surface crossing.
 
@@ -189,6 +259,84 @@ def _line_slip_intersection(slip, geom, x_head, z_head, beta_rad, length,
         if found:
             return found
     return None
+
+
+def ito_matsui_pressure(c: float, phi: float, gamma: float, z: float,
+                        D1: float, D2: float) -> float:
+    """Ito & Matsui (1975) lateral force per unit depth on one pile at depth z.
+
+    Plastic-deformation theory for a row of piles in c-phi soil. ``z`` is the
+    depth below the top of the moving layer, D1 the center-to-center pile
+    spacing and D2 the clear spacing (D1 - pile diameter). The pressure is
+
+        p(z) = P_c  +  (gamma*z / N_phi) * (D1*A - D2)
+
+    with N_phi = tan^2(45+phi/2), and (writing s=sqrt(N_phi), t=tan(phi),
+    m = s*t + N_phi - 1, and Cterm = (2 t + 2 s + 1/s)/m):
+
+        A   = (D1/D2)^m * exp[ (D1-D2)/D2 * N_phi * t * tan(pi/8 + phi/2) ]
+        P_c = c * { D1 * [ (A - 2 s t - 1)/(s t) + Cterm ] - D2 * Cterm }
+
+    For phi = 0 the general form is singular; Ito & Matsui give the cohesive
+    limit  p(z) = c*D1*[ 3 ln(D1/D2) + (D1-D2)/D2 ] + gamma*z*(D1-D2)  (used
+    below when phi < 1e-6).
+
+    References: Ito, T. & Matsui, T. (1975), "Methods to estimate lateral force
+    acting on stabilizing piles," Soils and Foundations 15(4), 43-59; equation
+    as reproduced in Hassiotis, Chameau & Gunaratne (1997), "Design method for
+    stabilizing piles in slopes," J. Geotech. Geoenviron. Eng. 123(4)
+    (exponential argument tan(pi/8 + phi/2)). Also the basis of the Rocscience
+    Slide2 Ito & Matsui pile support (verification #106). Validated here by the
+    #106 spacing trend (force falls as spacing/diameter grows), not an exact FOS.
+    """
+    if D2 <= 0 or D2 >= D1:
+        raise ValueError("need 0 < D2 < D1")
+    if phi < 1e-6:
+        return (c * D1 * (3.0 * math.log(D1 / D2) + (D1 - D2) / D2)
+                + gamma * z * (D1 - D2))
+    phir = math.radians(phi)
+    Nphi = math.tan(math.radians(45.0 + phi / 2.0)) ** 2
+    s = math.sqrt(Nphi)
+    t = math.tan(phir)
+    m = s * t + Nphi - 1.0
+    A = (D1 / D2) ** m * math.exp((D1 - D2) / D2 * Nphi * t
+                                  * math.tan(math.pi / 8.0 + phir / 2.0))
+    Cterm = (2.0 * t + 2.0 * s + 1.0 / s) / m
+    P_c = c * (D1 * ((A - 2.0 * s * t - 1.0) / (s * t) + Cterm) - D2 * Cterm)
+    return P_c + (gamma * z / Nphi) * (D1 * A - D2)
+
+
+def ito_matsui_lateral_force(c: float, phi: float, gamma: float,
+                             D1: float, D2: float,
+                             z_top: float, z_bot: float) -> float:
+    """Total Ito & Matsui (1975) lateral force on ONE pile (kN).
+
+    Integrates ``ito_matsui_pressure`` over the moving layer, from the pile head
+    (``z_top``) down to the slip surface (``z_bot``), with depth measured below
+    the head. Because p(z) is linear in the overburden gamma*z, the integral over
+    a layer of thickness H = z_top - z_bot is closed-form:
+
+        F = P_c * H + (gamma / N_phi) * (D1*A - D2) * H^2 / 2      (phi > 0)
+        F = c*D1*[3 ln(D1/D2)+(D1-D2)/D2]*H + gamma*(D1-D2)*H^2/2  (phi = 0)
+
+    Divide by the spacing D1 for the force per metre of slope run.
+    """
+    H = z_top - z_bot
+    if H <= 0:
+        return 0.0
+    if phi < 1e-6:
+        pc = c * D1 * (3.0 * math.log(D1 / D2) + (D1 - D2) / D2)
+        return pc * H + gamma * (D1 - D2) * H * H / 2.0
+    phir = math.radians(phi)
+    Nphi = math.tan(math.radians(45.0 + phi / 2.0)) ** 2
+    s = math.sqrt(Nphi)
+    t = math.tan(phir)
+    m = s * t + Nphi - 1.0
+    A = (D1 / D2) ** m * math.exp((D1 - D2) / D2 * Nphi * t
+                                  * math.tan(math.pi / 8.0 + phir / 2.0))
+    Cterm = (2.0 * t + 2.0 * s + 1.0 / s) / m
+    P_c = c * (D1 * ((A - 2.0 * s * t - 1.0) / (s * t) + Cterm) - D2 * Cterm)
+    return P_c * H + (gamma / Nphi) * (D1 * A - D2) * H * H / 2.0
 
 
 def compute_reinforcement_forces(geom, slip,
@@ -302,6 +450,52 @@ def compute_reinforcement_forces(geom, slip,
         forces.append(ReinforcementForce(
             x=crossing, z=g.elevation, T=g.T_allow, dir_x=dir_x, dir_z=0.0,
             kind="geosynthetic", index=i, controlled_by="allowable"))
+
+    piles = getattr(geom, "stabilizing_piles", None) or []
+    for i, p in enumerate(piles):
+        if p.x < x_entry or p.x > x_exit:
+            continue
+        z_slip = slip.slip_elevation_at(p.x)
+        if z_slip is None:
+            continue
+        z_head = p.z_head if p.z_head is not None else geom.ground_elevation_at(p.x)
+        if z_slip >= z_head:
+            continue                       # slip surface above the pile head
+        if p.z_toe is not None and z_slip <= p.z_toe:
+            continue                       # slip surface below the pile toe
+        if p.ito_matsui:
+            lay = geom.layer_at_point(p.x, 0.5 * (z_head + z_slip))
+            c = p.c if p.c is not None else (lay.c_prime if lay else 0.0)
+            phi = p.phi if p.phi is not None else (lay.phi if lay else 0.0)
+            gamma = p.gamma if p.gamma is not None else (lay.gamma if lay else 0.0)
+            F_pile = ito_matsui_lateral_force(
+                c=c, phi=phi, gamma=gamma, D1=p.spacing, D2=p.spacing - p.diameter,
+                z_top=z_head, z_bot=z_slip)
+            ctrl = "ito_matsui"
+        else:
+            F_pile = p.shear_capacity
+            ctrl = "shear_capacity"
+        T = F_pile / p.spacing             # per metre of slope run
+        if T <= 0:
+            continue
+        if p.force_direction == "normal":
+            # perpendicular to the slip surface (resisting), pointing into the
+            # stable mass; approximate the local slip tangent by finite diff
+            zl = slip.slip_elevation_at(p.x - 0.25)
+            zr = slip.slip_elevation_at(p.x + 0.25)
+            if zl is not None and zr is not None:
+                tx, tz = 0.5, (zr - zl)
+                norm = math.hypot(tx, tz)
+                dir_x, dir_z = -tz / norm, tx / norm    # rotate tangent +90
+                if dir_z < 0:                            # point upward (resisting)
+                    dir_x, dir_z = -dir_x, -dir_z
+            else:
+                dir_x, dir_z = _into_slope_sign(geom, p.x), 0.0
+        else:
+            dir_x, dir_z = _into_slope_sign(geom, p.x), 0.0
+        forces.append(ReinforcementForce(
+            x=p.x, z=z_slip, T=T, dir_x=dir_x, dir_z=dir_z,
+            kind="pile", index=i, controlled_by=ctrl))
 
     return forces
 

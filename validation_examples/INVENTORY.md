@@ -634,6 +634,30 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   7.3 cm at 0.60g).
 - Confidence in extraction: published FS/Ky/disp values exact; record + geometry absent.
 
+## V-040 Slide2 #54 — stabilizing micro-piles (Yamagami 2000) (B2d)
+- Source: Slide2 Verification #54 (manual pp. 196-198; Yamagami 2000); Ito & Matsui
+  (1975) for the plastic-force formula (#106 target, geometry-limited).
+- Target: `slope_stability.reinforcement.StabilizingPile` + `ito_matsui_lateral_force`
+  / `ito_matsui_pressure`, wired through `compute_reinforcement_forces`.
+- Geometry (Fig 54.1, LABELED): surface (-6,0)-(0,0)-(8,4)-(12,4); base to z=-5;
+  homogeneous c'=4.9/phi'=10/gamma=15.68. Single pile row at the crest (x≈8.75),
+  spaced 1 m, shear strength 10.7 kN per pile. Circular search.
+- Published: no-pile 1.102 (Yamagami 1.10); with-pile 1.193 (Yamagami 1.20).
+- Verdict: **CONVENTION (pile reinforcement validated).** No-pile critical circle
+  1.114 (+1.1%); with the 10.7 kN/m pile on that surface 1.223 (+2.5%). The pile-force
+  integration is exact (phi=0 closed form in tests). The +2.5% over-prediction is the
+  active-vs-passive support convention (the module reduces the driving moment; a passive
+  resisting force would be slightly less effective) + the figure-read pile location +
+  the single-pile search subtlety (a re-search WITH the pile finds a pile-avoiding
+  surface at ~1.11, so the pile is applied to the recovered critical surface as Slide
+  reports). NOT tuned.
+- Ito-Matsui FORMULA (#106 Cai & Ugai 2000): the c-phi plastic-deformation lateral
+  force is implemented + unit-tested for the published spacing TREND (force/metre falls
+  as spacing/diameter grows: #106 FS 1.54/1.37/1.31/1.25 for ratio 2/3/4/6). The #106
+  cross-section (Fig 106.1) is not in the manual extract, so a single-surface FOS is not
+  reproduced — the formula is validated by trend + the standard published equation form.
+- Confidence in extraction: #54 geometry + soil + pile data exact; #106 geometry absent.
+
 ---
 
 # Looked for but NOT extracted (and why)

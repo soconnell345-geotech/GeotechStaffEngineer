@@ -21,8 +21,8 @@ _STRENGTH_MODELS = ["mohr_coulomb", "shansep", "hoek_brown"]
 _GEOM_PARAMS = (
     "surface_points", "soil_layers", "gwt_points", "surcharge",
     "surcharge_x_range", "reinforcement_force", "reinforcement_elevation",
-    "kh", "nails", "anchors", "geosynthetics", "tension_crack_depth",
-    "tension_crack_water_depth",
+    "kh", "nails", "anchors", "geosynthetics", "stabilizing_piles",
+    "tension_crack_depth", "tension_crack_water_depth",
 )
 _SURFACE_PARAMS = ("xc", "yc", "radius", "slip_points")
 
@@ -108,6 +108,21 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
                 x_start=d.get("x_start"), x_end=d.get("x_end"),
             ))
 
+    stabilizing_piles = None
+    if params.get("stabilizing_piles"):
+        from slope_stability.reinforcement import StabilizingPile
+        stabilizing_piles = []
+        for d in params["stabilizing_piles"]:
+            require_keys(d, ["x"], method=method, item_label="stabilizing_piles[]")
+            stabilizing_piles.append(StabilizingPile(
+                x=d["x"], shear_capacity=d.get("shear_capacity"),
+                spacing=d.get("spacing", 1.0), z_head=d.get("z_head"),
+                z_toe=d.get("z_toe"), ito_matsui=d.get("ito_matsui", False),
+                diameter=d.get("diameter"), c=d.get("c"), phi=d.get("phi"),
+                gamma=d.get("gamma"),
+                force_direction=d.get("force_direction", "horizontal"),
+            ))
+
     return SlopeGeometry(
         surface_points=surface_points, soil_layers=soil_layers,
         gwt_points=gwt_points, surcharge=params.get("surcharge", 0.0),
@@ -116,6 +131,7 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
         reinforcement_elevation=params.get("reinforcement_elevation"),
         kh=params.get("kh", 0.0),
         nails=nails, anchors=anchors, geosynthetics=geosynthetics,
+        stabilizing_piles=stabilizing_piles,
         tension_crack_depth=params.get("tension_crack_depth", 0.0),
         tension_crack_water_depth=params.get("tension_crack_water_depth", 0.0),
     )
@@ -359,6 +375,7 @@ _GEOMETRY_PARAMS = {
     "nails": {"type": "array", "required": False, "description": "Soil nails (per metre of slope run): [{x_head, z_head, length required; inclination deg below horizontal=15, bar_diameter mm=25, drill_hole_diameter mm=150, fy MPa=420, bond_stress kPa=100, spacing_h m=1.5}]. Capacity = min(pullout behind slip surface, bar tensile)/spacing_h (FHWA GEC-7)."},
     "anchors": {"type": "array", "required": False, "description": "Tieback anchors: [{x_head, z_head, length, T_allow kN/m required; inclination=15}]. Full T_allow applied when the bond zone crosses the slip surface."},
     "geosynthetics": {"type": "array", "required": False, "description": "Horizontal geosynthetic layers: [{elevation, T_allow kN/m required; x_start, x_end optional}]."},
+    "stabilizing_piles": {"type": "array", "required": False, "description": "Single-row stabilizing/micro piles crossing the slope (Ito & Matsui 1975 or a specified shear): [{x required; spacing m=1.0 (D1); z_head, z_toe optional}]. Set the resistance EITHER by shear_capacity (kN per pile; per-metre force = shear_capacity/spacing) OR ito_matsui=true with diameter (m; D2=spacing-diameter) and optional c/phi/gamma (default: soil layer) giving the Ito-Matsui plastic lateral force integrated from head to slip surface. force_direction 'horizontal' (default) or 'normal'. Active stabilizing force at the slip crossing."},
     "reinforcement_force": {"type": "float", "required": False, "default": 0.0, "description": "Single equivalent horizontal reinforcement force (kN/m). Simpler alternative to nails/anchors."},
     "reinforcement_elevation": {"type": "float", "required": False, "description": "Elevation of the equivalent reinforcement force (m)."},
 }

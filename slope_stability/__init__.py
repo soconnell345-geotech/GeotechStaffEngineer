@@ -31,6 +31,7 @@ from slope_stability.probabilistic import (
 from slope_stability.nails import SoilNail
 from slope_stability.reinforcement import (
     Geosynthetic, Anchor, ReinforcementForce, compute_reinforcement_forces,
+    StabilizingPile, ito_matsui_lateral_force, ito_matsui_pressure,
 )
 from slope_stability.search import (
     grid_search, optimize_radius, search_noncircular,
@@ -53,6 +54,7 @@ __all__ = [
     'SlopeGeometry', 'SlopeSoilLayer', 'SoilNail',
     'Geosynthetic', 'Anchor', 'ReinforcementForce',
     'compute_reinforcement_forces',
+    'StabilizingPile', 'ito_matsui_lateral_force', 'ito_matsui_pressure',
     'CircularSlipSurface', 'PolylineSlipSurface',
     'Slice', 'build_slices',
     'fellenius_fos', 'bishop_fos', 'spencer_fos', 'morgenstern_price_fos',

@@ -181,6 +181,26 @@ class TestReinforcement:
             METHOD_REGISTRY["analyze_slope"](_base(
                 nails=[{"x_head": 30, "z_head": 15}]))
 
+    def test_stabilizing_pile_shear_increases_fos(self):
+        plain = METHOD_REGISTRY["analyze_slope"](_base(method="bishop"))
+        piled = METHOD_REGISTRY["analyze_slope"](_base(
+            method="bishop",
+            stabilizing_piles=[{"x": 35.0, "shear_capacity": 120.0,
+                                "spacing": 1.5}]))
+        assert piled["FOS"] > plain["FOS"]
+
+    def test_stabilizing_pile_ito_matsui_accepted(self):
+        r = METHOD_REGISTRY["analyze_slope"](_base(
+            method="bishop",
+            stabilizing_piles=[{"x": 35.0, "ito_matsui": True,
+                                "diameter": 0.6, "spacing": 1.5}]))
+        assert r["FOS"] > 0 and r["reinforcements"]
+
+    def test_stabilizing_pile_missing_x(self):
+        with pytest.raises(ValueError, match=r"stabilizing_piles\[\].*x"):
+            METHOD_REGISTRY["analyze_slope"](_base(
+                stabilizing_piles=[{"shear_capacity": 100.0}]))
+
 
 # ----------------------------------------------------------------------------
 # Strength models + ponded water

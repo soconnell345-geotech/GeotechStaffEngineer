@@ -267,6 +267,7 @@ class SlopeGeometry:
     nails: Optional[List[SoilNail]] = None
     anchors: Optional[list] = None
     geosynthetics: Optional[list] = None
+    stabilizing_piles: Optional[list] = None
     tension_crack_depth: float = 0.0
     tension_crack_water_depth: float = 0.0
 

@@ -184,6 +184,30 @@ search_critical_surface(geom, surface_type="noncircular",
   * Slide2 #104 (Tutorial-28 record) is the target problem; its acceleration record and
     geometry are not published, so the integrator is validated analytically and Jibson
     against its published equation — see RESULTS V-039.
+- **Stabilizing piles (v5.3 B2d)** — `reinforcement.StabilizingPile` on
+  `geom.stabilizing_piles`, resolved by `compute_reinforcement_forces` like the other
+  reinforcement (active convention: the resisting force reduces the driving moment) and
+  applied where the vertical pile crosses the slip surface. Two ways to set the row's
+  resistance:
+  * **Specified shear** — `shear_capacity` (kN per pile); the per-metre force is
+    `shear_capacity/spacing` (Slide2 #54 / Yamagami 2000). Direction 'horizontal'
+    (default) or 'normal' (perpendicular to the slip surface).
+  * **Ito & Matsui (1975)** — `ito_matsui=True` with the pile `diameter` (clear spacing
+    D2 = spacing − diameter). `ito_matsui_pressure(c,phi,gamma,z,D1,D2)` is the
+    plastic-deformation lateral force per unit depth on one pile:
+    `p(z) = P_c + (gamma·z/N_phi)·(D1·A − D2)` with N_phi=tan²(45+phi/2),
+    `A = (D1/D2)^(√N_phi·tanphi+N_phi−1)·exp[(D1−D2)/D2·N_phi·tanphi·tan(pi/8+phi/2)]`,
+    and `P_c = c·{D1·[(A−2√N_phi·tanphi−1)/(√N_phi·tanphi) + Cterm] − D2·Cterm}`,
+    `Cterm=(2tanphi+2√N_phi+1/√N_phi)/(√N_phi·tanphi+N_phi−1)`; the phi=0 cohesive limit
+    is `p(z)=c·D1·[3 ln(D1/D2)+(D1−D2)/D2]+gamma·z·(D1−D2)`. `ito_matsui_lateral_force`
+    integrates p(z) from the pile head to the slip surface (closed form, linear in
+    gamma·z); divided by the spacing for the per-metre force.
+  * Validation: #54 (specified shear) → CONVENTION, RESULTS V-040 (no-pile +1.1%,
+    with-pile +2.5%; residual = active-vs-passive support convention + figure-read pile
+    location). The Ito-Matsui FORMULA is unit-tested for the #106 spacing trend (its
+    cross-section is not in the manual). Support-force application is ACTIVE for all
+    reinforcement, which slightly over-predicts the pile benefit vs a passive force — a
+    documented convention, not a bug.
 - **Empty-space slices**: slices where the slip surface is below all soil layers
   are skipped (zero weight, no contribution)
 - **Nails disconnected**: `nails.py` is importable but not called from the analysis
