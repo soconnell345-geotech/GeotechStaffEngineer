@@ -101,6 +101,18 @@ def _run_propose_role_mapping(params):
     return clean_result(propose_role_mapping(norm, text_blocks))
 
 
+def _run_cross_check(params):
+    from pdf_import import cross_check
+
+    _valid = ("vector_result", "vision_result", "tol", "n_samples")
+    reject_unknown_params(params, _valid, method="cross_check")
+    require_params(params, ["vector_result", "vision_result"],
+                   method="cross_check", valid=_valid)
+    return clean_result(cross_check(
+        params["vector_result"], params["vision_result"],
+        tol=params.get("tol", 0.5), n_samples=params.get("n_samples", 25)))
+
+
 def _run_cleanup_geometry(params):
     from pdf_import import cleanup_geometry
 
@@ -232,6 +244,7 @@ METHOD_REGISTRY = {
     "propose_scale": _run_propose_scale,
     "propose_role_mapping": _run_propose_role_mapping,
     "cleanup_geometry": _run_cleanup_geometry,
+    "cross_check": _run_cross_check,
     "build_slope_geometry": _run_build_slope_geometry,
     "build_fem_inputs": _run_build_fem_inputs,
 }
@@ -301,6 +314,17 @@ METHOD_INFO = {
             "text_blocks": {"type": "array", "required": False, "description": "Alternative to file_path: [{text, x, y}, ...]."},
         },
         "returns": {"role_mapping": "Proposed {hex_color: role} (roles: surface/gwt/boundary_<Name>).", "associations": "Per-label {label, role, color, method, distance}.", "applied": "Always false."},
+    },
+    "cross_check": {
+        "category": "PDF Import",
+        "brief": "Cross-check a vector extraction against a vision extraction feature by feature: which features are present in both / only one, and the vertical RMS/max deviation where they overlap. Discrepancy report only — nothing merged.",
+        "parameters": {
+            "vector_result": {"type": "dict", "required": True, "description": "Vector extraction {surface_points, boundary_profiles, gwt_points} (from extract_vector_geometry)."},
+            "vision_result": {"type": "dict", "required": True, "description": "Vision extraction (from extract_geometry_vision)."},
+            "tol": {"type": "float", "required": False, "default": 0.5, "description": "Vertical-deviation tolerance below which a feature is considered to agree (geometry units)."},
+            "n_samples": {"type": "int", "required": False, "default": 25, "description": "Samples for the deviation estimate."},
+        },
+        "returns": {"features": "Per-feature {name, in_vector, in_vision, deviation, agrees}.", "agree": "True iff every shared feature agrees and none is present in only one.", "note": "Reconciliation guidance."},
     },
     "cleanup_geometry": {
         "category": "PDF Import",

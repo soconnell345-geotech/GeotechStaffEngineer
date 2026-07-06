@@ -86,6 +86,16 @@ Tolerance-parametrized, pure-geometry cleanup to run BEFORE
   endpoints, optionally join; returns cleaned copies (inputs untouched) + a
   before/after point-count report. Funhouse adapter: `cleanup_geometry`.
 
+## Vision <-> vector cross-check (C5, v5.3) — `crosscheck.py`
+`cross_check(vector_result, vision_result, tol)` compares the two extractions
+feature by feature (surface, each boundary, gwt) and returns a DISCREPANCY
+REPORT: which features are present in both / only one, and the vertical
+deviation (`polyline_deviation` -> RMS / max / mean over the overlapping x-range)
+between the polylines. `agree` is True only when every shared feature is within
+`tol` and no feature is present in only one extraction. Nothing is auto-merged —
+the report is for the caller to reconcile (geo_project provenance-quarantine
+spirit). Funhouse adapter: `cross_check`.
+
 ## References
 
 - PyMuPDF documentation: https://pymupdf.readthedocs.io/

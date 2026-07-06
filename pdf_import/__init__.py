@@ -27,6 +27,7 @@ from pdf_import.cleanup import (
     dedupe_consecutive, merge_collinear, cleanup_polyline,
     snap_endpoints, join_polylines, cleanup_geometry,
 )
+from pdf_import.crosscheck import cross_check, polyline_deviation
 
 __all__ = [
     'PdfParseResult',
@@ -46,6 +47,8 @@ __all__ = [
     'snap_endpoints',
     'join_polylines',
     'cleanup_geometry',
+    'cross_check',
+    'polyline_deviation',
 ]
 
 
