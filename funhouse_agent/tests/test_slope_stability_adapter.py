@@ -54,7 +54,8 @@ class TestMethodInfo:
     def test_expected_methods(self):
         assert set(METHOD_INFO.keys()) == {
             "analyze_slope", "search_critical_surface",
-            "compare_methods_table", "fosm_fos", "monte_carlo_fos",
+            "compare_methods_table", "infinite_slope_fos",
+            "fosm_fos", "monte_carlo_fos",
         }
 
     def test_method_allowed_values_modernized(self):
@@ -211,6 +212,34 @@ class TestStrengthModels:
         ponded = METHOD_REGISTRY["analyze_slope"](_base(
             gwt_points=[[0, 14], [70, 14]]))   # 4 m pond over the toe bench
         assert ponded["FOS"] != pytest.approx(dry_toe["FOS"], rel=1e-3)
+
+
+# ----------------------------------------------------------------------------
+# Infinite slope
+# ----------------------------------------------------------------------------
+
+class TestInfiniteSlope:
+    def test_dry_cohesionless(self):
+        import math
+        beta = math.degrees(math.atan(0.4))    # 2.5:1
+        r = METHOD_REGISTRY["infinite_slope_fos"](
+            {"slope_angle": beta, "phi": 30.0, "gamma": 18.85})
+        assert r["FOS"] == pytest.approx(1.443, abs=0.003)   # Slide2 #79
+
+    def test_ru_and_components(self):
+        r = METHOD_REGISTRY["infinite_slope_fos"](
+            {"slope_angle": 20.0, "phi": 25.0, "gamma": 19.0, "c": 10.0,
+             "depth": 3.0, "water_condition": "ru", "ru": 0.3})
+        assert r["FOS"] == pytest.approx(1.392, abs=0.005)
+        assert r["pore_pressure_kPa"] == pytest.approx(17.1, abs=0.1)
+
+    def test_requires_core_params_and_rejects_bad_water(self):
+        with pytest.raises(ValueError):
+            METHOD_REGISTRY["infinite_slope_fos"]({"slope_angle": 20.0, "phi": 30.0})
+        with pytest.raises(ValueError, match="water_condition"):
+            METHOD_REGISTRY["infinite_slope_fos"](
+                {"slope_angle": 20.0, "phi": 30.0, "gamma": 19.0,
+                 "water_condition": "bogus"})
 
 
 # ----------------------------------------------------------------------------

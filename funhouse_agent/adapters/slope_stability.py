@@ -4,10 +4,12 @@ from funhouse_agent.adapters import reject_unknown_params, require_keys, require
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
 from slope_stability.analysis import (
     analyze_slope, search_critical_surface, compare_methods_table,
+    infinite_slope_fos,
 )
 
 _METHODS = ["fellenius", "bishop", "janbu", "spencer", "morgenstern_price",
             "gle"]
+_WATER_CONDITIONS = ["dry", "seepage_parallel", "ru"]
 _F_INTERSLICE = ["constant", "half_sine", "clipped_sine", "trapezoidal"]
 _SURFACE_TYPES = ["circular", "entry_exit", "noncircular", "noncircular_de",
                   "pso", "weak_layer"]
@@ -241,10 +243,32 @@ def _run_monte_carlo(params: dict) -> dict:
     return result.to_dict()
 
 
+def _run_infinite_slope(params: dict) -> dict:
+    reject_unknown_params(
+        params,
+        ("slope_angle", "phi", "gamma", "c", "depth", "water_condition",
+         "gamma_w", "ru", "water_depth"),
+        method="infinite_slope_fos")
+    require_params(params, ["slope_angle", "phi", "gamma"],
+                   method="infinite_slope_fos")
+    water = _check_choice(params.get("water_condition", "dry"),
+                          _WATER_CONDITIONS, name="water_condition",
+                          method="infinite_slope_fos")
+    result = infinite_slope_fos(
+        slope_angle=params["slope_angle"], phi=params["phi"],
+        gamma=params["gamma"], c=params.get("c", 0.0),
+        depth=params.get("depth", 1.0), water_condition=water,
+        gamma_w=params.get("gamma_w", 9.81), ru=params.get("ru", 0.0),
+        water_depth=params.get("water_depth", 0.0),
+    )
+    return result.to_dict()
+
+
 METHOD_REGISTRY = {
     "analyze_slope": _run_analyze_slope,
     "search_critical_surface": _run_search_critical_surface,
     "compare_methods_table": _run_compare_methods,
+    "infinite_slope_fos": _run_infinite_slope,
     "fosm_fos": _run_fosm,
     "monte_carlo_fos": _run_monte_carlo,
 }
@@ -301,6 +325,22 @@ METHOD_INFO = {
             "n_slices": {"type": "int", "required": False, "default": 30, "description": "Number of slices."},
         },
         "returns": {"rows": "[{method, FOS, detail}, ...] per method.", "surface": "Surface description.", "summary": "Formatted text table."},
+    },
+    "infinite_slope_fos": {
+        "category": "Slope Stability",
+        "brief": "Infinite-slope (planar translational) factor of safety in closed form (Duncan-Wright): FOS = [c' + (gamma*z*cos^2(beta) - u)*tan(phi')] / (gamma*z*sin(beta)*cos(beta)). For the shallow surface-parallel failure mechanism; the depth cancels for cohesionless soil (FOS = tan(phi')/tan(beta) dry, or gamma'/gamma * that for seepage at the surface). Use analyze_slope/search_critical_surface for circular/noncircular mechanisms.",
+        "parameters": {
+            "slope_angle": {"type": "float", "required": True, "description": "Slope inclination beta (degrees from horizontal), 0-90."},
+            "phi": {"type": "float", "required": True, "description": "Effective friction angle (degrees)."},
+            "gamma": {"type": "float", "required": True, "description": "Total (moist/saturated) unit weight (kN/m3)."},
+            "c": {"type": "float", "required": False, "default": 0.0, "description": "Effective cohesion (kPa). Default 0 (cohesionless)."},
+            "depth": {"type": "float", "required": False, "default": 1.0, "description": "Slip-plane depth z below the surface (m). Cancels for c'=0; matters when c'>0."},
+            "water_condition": {"type": "str", "required": False, "default": "dry", "allowed_values": _WATER_CONDITIONS, "description": "'dry' (u=0); 'seepage_parallel' (steady seepage parallel to the slope, phreatic surface at depth water_depth, u=gamma_w*(z-water_depth)*cos^2 beta); 'ru' (u=ru*gamma*z)."},
+            "gamma_w": {"type": "float", "required": False, "default": 9.81, "description": "Unit weight of water (kN/m3), for seepage_parallel."},
+            "ru": {"type": "float", "required": False, "default": 0.0, "description": "Pore-pressure ratio, for water_condition='ru'."},
+            "water_depth": {"type": "float", "required": False, "default": 0.0, "description": "Depth of the phreatic surface below the ground (m), for seepage_parallel. 0 = water table at the surface."},
+        },
+        "returns": {"FOS": "Factor of safety.", "normal_stress_kPa": "sigma_n on the slip plane.", "shear_stress_kPa": "Driving shear tau.", "pore_pressure_kPa": "u on the slip plane."},
     },
     "search_critical_surface": {
         "category": "Slope Stability",

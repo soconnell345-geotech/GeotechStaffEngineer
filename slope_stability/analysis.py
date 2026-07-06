@@ -24,7 +24,7 @@ from slope_stability.search import (
     search_pso, search_weak_layer_biased, search_entry_exit, search_de,
 )
 from slope_stability.results import (
-    SlopeStabilityResult, SliceData, SearchResult,
+    SlopeStabilityResult, SliceData, SearchResult, InfiniteSlopeResult,
 )
 
 
@@ -545,4 +545,101 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         "planned Duncan 3-stage procedure). Conservative interim "
         "approach: analyze with the pre-drawdown GWT inside the slope "
         "and the external pool at the drawn-down elevation."
+    )
+
+
+def infinite_slope_fos(slope_angle: float,
+                       phi: float,
+                       gamma: float,
+                       c: float = 0.0,
+                       depth: float = 1.0,
+                       water_condition: str = "dry",
+                       gamma_w: float = 9.81,
+                       ru: float = 0.0,
+                       water_depth: float = 0.0) -> InfiniteSlopeResult:
+    """Infinite-slope (planar translational) factor of safety — closed form.
+
+    Effective-stress limit equilibrium of a slip plane parallel to an
+    infinitely long slope at depth ``z`` below the surface (Duncan, Wright &
+    Brandon 2014, Ch. 14; Skempton & DeLory 1957):
+
+        sigma_n = gamma * z * cos^2(beta)             (total normal on plane)
+        tau     = gamma * z * sin(beta) * cos(beta)   (driving shear)
+        FOS     = [ c' + (sigma_n - u) * tan(phi') ] / tau
+
+    Pore pressure ``u`` on the slip plane by ``water_condition``:
+
+    * ``'dry'``              : u = 0.
+    * ``'seepage_parallel'`` : steady seepage parallel to the slope, phreatic
+      surface a depth ``water_depth`` below the ground;
+      u = gamma_w * (z - water_depth) * cos^2(beta)  (0 if z <= water_depth).
+      ``water_depth = 0`` -> water table at the surface (the usual case).
+    * ``'ru'``               : u = ru * gamma * z  (pore-pressure ratio).
+
+    For a cohesionless soil (c' = 0) the depth cancels:
+        dry:                FOS = tan(phi') / tan(beta)
+        seepage (d_w = 0):  FOS = (gamma'/gamma) * tan(phi') / tan(beta).
+
+    Parameters
+    ----------
+    slope_angle : float
+        Slope inclination beta (degrees from horizontal), in (0, 90).
+    phi : float
+        Effective friction angle (degrees).
+    gamma : float
+        Total (moist / saturated) unit weight (kN/m3).
+    c : float
+        Effective cohesion (kPa). Default 0 (cohesionless).
+    depth : float
+        Slip-plane depth z below the surface (m). Cancels for c' = 0; must be
+        positive. Default 1.0.
+    water_condition : str
+        'dry' (default), 'seepage_parallel', or 'ru'.
+    gamma_w : float
+        Unit weight of water (kN/m3). Default 9.81.
+    ru : float
+        Pore-pressure ratio, used when ``water_condition='ru'``. Default 0.
+    water_depth : float
+        Depth of the phreatic surface below the ground (m), used when
+        ``water_condition='seepage_parallel'``. Default 0 (table at surface).
+
+    Returns
+    -------
+    InfiniteSlopeResult
+    """
+    if not (0.0 < slope_angle < 90.0):
+        raise ValueError(
+            f"slope_angle must be in (0, 90) deg, got {slope_angle}")
+    if gamma <= 0:
+        raise ValueError(f"gamma must be positive, got {gamma}")
+    if depth <= 0:
+        raise ValueError(f"depth must be positive, got {depth}")
+    if phi < 0 or c < 0:
+        raise ValueError("phi and c must be non-negative")
+    if water_condition not in ("dry", "seepage_parallel", "ru"):
+        raise ValueError(
+            "water_condition must be 'dry', 'seepage_parallel' or 'ru', "
+            f"got '{water_condition}'")
+
+    beta = math.radians(slope_angle)
+    cosb, sinb = math.cos(beta), math.sin(beta)
+    sigma_n = gamma * depth * cosb * cosb
+    tau = gamma * depth * sinb * cosb
+
+    if water_condition == "seepage_parallel":
+        head = max(depth - water_depth, 0.0)
+        u = gamma_w * head * cosb * cosb
+    elif water_condition == "ru":
+        u = ru * gamma * depth
+    else:
+        u = 0.0
+
+    sigma_eff = max(sigma_n - u, 0.0)
+    resist = c + sigma_eff * math.tan(math.radians(phi))
+    fos = resist / tau if tau > 0 else float("inf")
+
+    return InfiniteSlopeResult(
+        FOS=fos, slope_angle=slope_angle, depth=depth, phi=phi, c=c,
+        gamma=gamma, water_condition=water_condition,
+        normal_stress=sigma_n, shear_stress=tau, pore_pressure=u, ru=ru,
     )

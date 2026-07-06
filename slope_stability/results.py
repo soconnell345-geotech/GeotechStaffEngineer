@@ -437,3 +437,56 @@ class SearchResult:
         if self.critical:
             d["critical"] = self.critical.to_dict()
         return d
+
+
+@dataclass
+class InfiniteSlopeResult:
+    """Infinite-slope (planar, translational) factor-of-safety result.
+
+    Closed-form FOS for a slip plane parallel to an infinite slope surface
+    at depth z, with the effective-stress strength on that plane. All units
+    SI (m, kPa, kN/m3, degrees).
+    """
+    FOS: float
+    slope_angle: float          # beta, degrees
+    depth: float                # z, m (slip-plane depth below surface)
+    phi: float                  # deg
+    c: float                    # kPa
+    gamma: float                # kN/m3
+    water_condition: str        # 'dry' | 'seepage_parallel' | 'ru'
+    normal_stress: float = 0.0  # sigma_n on the slip plane, kPa
+    shear_stress: float = 0.0   # tau (driving) on the slip plane, kPa
+    pore_pressure: float = 0.0  # u on the slip plane, kPa
+    ru: float = 0.0
+
+    def summary(self) -> str:
+        return "\n".join([
+            "=" * 56,
+            "  INFINITE SLOPE (planar) FACTOR OF SAFETY",
+            "=" * 56,
+            f"  Slope angle beta:  {self.slope_angle:.2f} deg",
+            f"  Slip-plane depth:  {self.depth:.3f} m",
+            f"  c' / phi':         {self.c:.2f} kPa / {self.phi:.1f} deg",
+            f"  Water condition:   {self.water_condition}"
+            + (f" (ru={self.ru:.3f})" if self.water_condition == "ru" else ""),
+            f"  sigma_n / u:       {self.normal_stress:.2f} / "
+            f"{self.pore_pressure:.2f} kPa",
+            f"  tau (driving):     {self.shear_stress:.2f} kPa",
+            f"  FOS:               {self.FOS:.3f}",
+            "=" * 56,
+        ])
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "FOS": round(self.FOS, 4),
+            "slope_angle_deg": round(self.slope_angle, 3),
+            "depth_m": round(self.depth, 4),
+            "phi_deg": round(self.phi, 3),
+            "c_kPa": round(self.c, 3),
+            "gamma_kN_m3": round(self.gamma, 3),
+            "water_condition": self.water_condition,
+            "ru": round(self.ru, 4),
+            "normal_stress_kPa": round(self.normal_stress, 3),
+            "shear_stress_kPa": round(self.shear_stress, 3),
+            "pore_pressure_kPa": round(self.pore_pressure, 3),
+        }
