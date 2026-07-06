@@ -791,3 +791,56 @@ class TestConsolidationStability:
         assert result['converged']
         assert not np.any(np.isnan(result['displacements']))
         assert not np.any(np.isnan(result['pore_pressures']))
+
+
+class TestMonolithicRefactorization:
+    """The monolithic u-p solver factorizes the coupled block ONCE for a uniform
+    time step and reuses it (K/Q/S/H constant, A depends only on dt). The cached
+    path must be numerically identical to refactorizing every step."""
+
+    def _run(self, theta=1.0, n_steps=6):
+        from fem2d.mesh import generate_rect_mesh, detect_boundary_nodes
+        from fem2d.porewater import solve_consolidation
+        nodes, elements = generate_rect_mesh(0.0, 1.0, -5.0, 0.0, 2, 10)
+        bc = detect_boundary_nodes(nodes)
+        top = np.where(np.abs(nodes[:, 1]) < 1e-6)[0]
+        top_s = top[np.argsort(nodes[top, 0])]
+        edges = [(int(top_s[i]), int(top_s[i + 1])) for i in range(len(top_s) - 1)]
+        head_bcs = [(int(n), 0.0) for n in top]
+        times = np.linspace(0.0, 6.0e5, n_steps + 1)   # uniform dt
+        return solve_consolidation(
+            nodes, elements, [{'E': 1.0e4, 'nu': 0.3}], 0.0, bc,
+            k=1e-6, head_bcs=head_bcs, time_steps=times, t=1.0,
+            n_w=1.0e6, pore_pressures_0=np.zeros(len(nodes)),
+            surface_loads=[(edges, 0.0, -50.0)], scheme="monolithic", theta=theta)
+
+    def test_cached_lu_matches_per_step_refactor(self):
+        """Cached factorization vs forcing a refactor every step (patch the
+        _same_dt seam to always say 'different') -- results must be identical."""
+        from unittest import mock
+        import fem2d.porewater as pw
+        res_cached = self._run()
+        with mock.patch.object(pw, "_same_dt", lambda a, b: False):
+            res_naive = self._run()
+        assert np.allclose(res_cached['pore_pressures'],
+                           res_naive['pore_pressures'], rtol=1e-12, atol=1e-12)
+        assert np.allclose(res_cached['displacements'],
+                           res_naive['displacements'], rtol=1e-12, atol=1e-12)
+        assert res_cached['degree_of_consolidation'] == pytest.approx(
+            res_naive['degree_of_consolidation'], rel=1e-12)
+
+    def test_uniform_dt_factorizes_once(self):
+        """Efficiency: a uniform schedule factorizes only twice -- once for the
+        t=0 undrained block, once for the (single) uniform-dt loop block."""
+        from unittest import mock
+        import fem2d.porewater as pw
+        calls = {"n": 0}
+        real_splu = pw.splu
+
+        def counting_splu(A):
+            calls["n"] += 1
+            return real_splu(A)
+
+        with mock.patch.object(pw, "splu", counting_splu):
+            self._run(n_steps=8)
+        assert calls["n"] == 2

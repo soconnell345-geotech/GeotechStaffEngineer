@@ -24,7 +24,7 @@ References:
 
 import numpy as np
 from scipy.sparse import coo_matrix, lil_matrix, bmat
-from scipy.sparse.linalg import spsolve
+from scipy.sparse.linalg import spsolve, splu
 
 from fem2d.elements import cst_B, cst_area
 from fem2d.assembly import element_dofs
@@ -591,7 +591,10 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
         settlements : (n_steps,) array — max surface settlement at each step
         max_settlement_m : float
         max_excess_pore_pressure_kPa : float
-        degree_of_consolidation : float — U at final time
+        degree_of_consolidation : float — U at final time. For the monolithic
+            scheme this is the mean excess-pore-pressure dissipation
+            (1 - mean|p_final| / mean|p0|); the staggered scheme has no undrained
+            predictor so its settlement-ratio U is identically 1.0.
         converged : bool
     """
     from fem2d.assembly import (
@@ -760,6 +763,14 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
     }
 
 
+def _same_dt(dt_a, dt_b):
+    """True if two time-step sizes are equal to working precision, so the coupled
+    A-block LU factorization can be reused. A patchable seam: forcing this to
+    False makes the monolithic solver refactor every step (the naive path), which
+    a test uses to confirm the cached path is numerically identical."""
+    return bool(np.isclose(dt_a, dt_b, rtol=1e-12, atol=0.0))
+
+
 def _monolithic_consolidation(K_bc, F_ext_bc, Q, H, S, head_bcs,
                               time_steps, theta, surface_mask):
     """Monolithic (coupled) u-p Biot consolidation, theta time-stepping.
@@ -793,14 +804,20 @@ def _monolithic_consolidation(K_bc, F_ext_bc, Q, H, S, head_bcs,
 
     Qt = Q.T.tocsr()
 
-    def _solve_block(A22, rhs_p):
+    def _factor(A22):
+        # LU-factorize the coupled block [[K, -Q], [Qt, A22]]. The block is
+        # constant for a fixed dt (K/Q/S/H/P_bc do not change), so the
+        # factorization is reused across every step that shares dt.
         A = bmat([[K_bc, -Q], [Qt, A22]]).tocsc()
+        return splu(A)
+
+    def _solve_block_lu(lu, rhs_p):
         rhs = np.concatenate([F_ext_bc, rhs_p])
-        x = spsolve(A, rhs)
+        x = lu.solve(rhs)
         return x[:n_dof_u], x[n_dof_u:]
 
     # t = 0: undrained response (no flow term) — the instantaneous p0 field.
-    u, p = _solve_block((S + P_bc).tocsr(), p_rhs_bc.copy())
+    u, p = _solve_block_lu(_factor((S + P_bc).tocsr()), p_rhs_bc.copy())
 
     u_hist = np.zeros((n_steps, n_dof_u))
     p_hist = np.zeros((n_steps, n_dof_p))
@@ -811,6 +828,12 @@ def _monolithic_consolidation(K_bc, F_ext_bc, Q, H, S, head_bcs,
         settlements[0] = float(np.min(u[1::2][surface_mask]))
     converged = True
 
+    # Factorization cache: the A-block depends only on dt, so a uniform-time-step
+    # schedule (the common case) factorizes ONCE and reuses; it is rebuilt only
+    # when dt changes. lu.solve uses the same SuperLU backend as spsolve, so the
+    # results are numerically identical to a per-step rebuild.
+    lu = None
+    lu_dt = None
     for step in range(1, n_steps):
         dt = time_steps[step] - time_steps[step - 1]
         if dt <= 0:
@@ -818,10 +841,12 @@ def _monolithic_consolidation(K_bc, F_ext_bc, Q, H, S, head_bcs,
             p_hist[step] = p
             settlements[step] = settlements[step - 1]
             continue
-        A22 = (S + theta * dt * H + P_bc).tocsr()
         rhs_p = Qt @ u + S @ p - (1.0 - theta) * dt * (H @ p) + p_rhs_bc
         try:
-            u, p = _solve_block(A22, rhs_p)
+            if lu is None or not _same_dt(dt, lu_dt):
+                lu = _factor((S + theta * dt * H + P_bc).tocsr())
+                lu_dt = dt
+            u, p = _solve_block_lu(lu, rhs_p)
         except Exception:
             converged = False
             u_hist[step:] = u
@@ -833,8 +858,17 @@ def _monolithic_consolidation(K_bc, F_ext_bc, Q, H, S, head_bcs,
         if surface_mask.any():
             settlements[step] = float(np.min(u[1::2][surface_mask]))
 
-    s_final = abs(settlements[-1]) if abs(settlements[-1]) > 1e-12 else 1.0
-    doc = abs(settlements[-1]) / s_final
+    # Degree of consolidation from pore-pressure dissipation (NOT the
+    # settlement-ratio form, which is identically 1.0 here and cannot report the
+    # transient): U = 1 - (mean |excess p| now) / (mean |excess p0|). p_hist[0] is
+    # the instantaneous undrained t=0 field; at full dissipation the final mean
+    # -> 0 so U -> 1, and at t=0 U = 0. Guard a ~zero p0 (no applied load) -> U=1.
+    mean_p0 = float(np.mean(np.abs(p_hist[0])))
+    if mean_p0 > 1e-12:
+        mean_p_final = float(np.mean(np.abs(p_hist[-1])))
+        doc = min(max(1.0 - mean_p_final / mean_p0, 0.0), 1.0)
+    else:
+        doc = 1.0
     return {
         'times': time_steps,
         'displacements': u_hist,
@@ -842,6 +876,7 @@ def _monolithic_consolidation(K_bc, F_ext_bc, Q, H, S, head_bcs,
         'settlements': settlements,
         'max_settlement_m': float(np.min(settlements)),
         'max_excess_pore_pressure_kPa': float(np.max(np.abs(p_hist))),
+        # U at the final time step, from mean excess-pore-pressure dissipation.
         'degree_of_consolidation': doc,
         'converged': converged,
         'scheme': 'monolithic',

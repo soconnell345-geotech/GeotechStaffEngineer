@@ -209,6 +209,18 @@ transient with `c = k_mob/S`, `S = 1/M + α²/(K+4G/3)`.
   schedule (θ must be in [0.5, 1]).
 - **Default preserved.** `scheme="staggered"` is the default and the staggered code path
   is byte-for-byte unchanged.
+- **`degree_of_consolidation`.** For the monolithic scheme this is the mean
+  excess-pore-pressure dissipation `U = 1 − mean|p_final| / mean|p0|` (p0 = the
+  instantaneous undrained t=0 field), so it rises from 0 at t=0 toward 1 as the
+  excess dissipates. (The staggered scheme has no undrained predictor, so its
+  settlement-ratio `U` is identically 1.0 and cannot report the transient — left
+  unchanged as the default.)
+- **Factorization reuse (monolithic).** The coupled A-block depends only on Δt
+  (K/Q/S/H are constant), so a uniform-time-step schedule is LU-factorized once
+  (`scipy.sparse.linalg.splu`) and reused across steps; the factorization is
+  rebuilt only when Δt changes (`_same_dt`). `splu.solve` is the same SuperLU
+  backend as `spsolve`, so results are numerically identical to a per-step
+  rebuild (asserted in `test_groundwater.py::TestMonolithicRefactorization`).
 
 ### Staged Construction
 

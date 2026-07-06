@@ -269,7 +269,7 @@ def _terzaghi_pp_ratio(Z, T, n_terms=80):
     return s
 
 
-def _v023_monolithic_run(theta, n_steps=120):
+def _v023_monolithic_run(theta, n_steps=120, t_hat_max=2.0):
     E_Pa, nu = _E_nu_from_K_G(_V023_K, _V023_G)
     E_kPa = E_Pa / 1000.0
     pz_kPa = _V023_PZ / 1000.0
@@ -283,7 +283,7 @@ def _v023_monolithic_run(theta, n_steps=120):
     top_s = top[np.argsort(nodes[top, 0])]
     edges = [(int(top_s[i]), int(top_s[i + 1])) for i in range(len(top_s) - 1)]
     head_bcs = [(int(n), 0.0) for n in top]
-    t_hat = np.linspace(0.0, 2.0, n_steps + 1)
+    t_hat = np.linspace(0.0, t_hat_max, n_steps + 1)
     times = t_hat * _V023_H ** 2 / c
     res = solve_consolidation(
         nodes, elements, [{'E': E_kPa, 'nu': nu}], 0.0, bc,
@@ -340,6 +340,21 @@ def test_v023_monolithic_drained_endstate_pass():
     assert w_mm == pytest.approx(2.61, abs=0.05)
     # excess pore pressure has essentially fully dissipated at the end
     assert pp[-1].max() < 0.05 * pp[0][base]
+
+
+def test_v023_monolithic_degree_of_consolidation_tracks_dissipation():
+    """PASS (v5.3): the monolithic degree_of_consolidation reports the real
+    pore-pressure dissipation transient (1 - mean|p_final|/mean|p0|), not the
+    settlement-ratio placeholder that was identically 1.0. An early-stopping
+    schedule (T_hat_max = 0.02, barely any dissipation) gives U well below 1; the
+    full schedule (T_hat_max = 2.0, essentially drained) gives U ~ 1."""
+    res_early, _, _, _ = _v023_monolithic_run(theta=1.0, n_steps=8, t_hat_max=0.02)
+    res_full, _, _, _ = _v023_monolithic_run(theta=0.5, n_steps=160)
+    U_early = res_early['degree_of_consolidation']
+    U_full = res_full['degree_of_consolidation']
+    assert 0.0 <= U_early < 0.5, f"early U={U_early}"      # well below 1
+    assert U_full > 0.9, f"full U={U_full}"                # near-fully consolidated
+    assert U_full > U_early
 
 
 # ════════════════════════════════════════════════════════════════════════════
