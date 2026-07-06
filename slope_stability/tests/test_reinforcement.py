@@ -316,6 +316,17 @@ class TestStabilizingPile:
              for z in (1.0, 3.0, 5.0)]
         assert all(v > 0 for v in p) and p == sorted(p)
 
+    def test_ito_matsui_hand_check_values(self):
+        """Original Ito & Matsui (1975) Eq. 13 / Eq. 23, verified against the
+        paper (J-STAGE)."""
+        from slope_stability.reinforcement import ito_matsui_pressure
+        # c-phi (Eq. 13): c=10, phi=20, gamma=18, z=5, D1=2.0, D2=1.5
+        assert ito_matsui_pressure(10.0, 20.0, 18.0, 5.0, 2.0, 1.5) == \
+            pytest.approx(105.079, abs=0.01)
+        # phi=0 cohesive limit (Eq. 23): c=25, gamma=18, z=4, D1=2.0, D2=1.0
+        assert ito_matsui_pressure(25.0, 0.0, 18.0, 4.0, 2.0, 1.0) == \
+            pytest.approx(146.683, abs=0.01)
+
     def test_validation_errors(self):
         from slope_stability.reinforcement import StabilizingPile
         with pytest.raises(ValueError):

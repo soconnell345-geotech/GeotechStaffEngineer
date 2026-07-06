@@ -651,11 +651,14 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   the single-pile search subtlety (a re-search WITH the pile finds a pile-avoiding
   surface at ~1.11, so the pile is applied to the recovered critical surface as Slide
   reports). NOT tuned.
-- Ito-Matsui FORMULA (#106 Cai & Ugai 2000): the c-phi plastic-deformation lateral
-  force is implemented + unit-tested for the published spacing TREND (force/metre falls
-  as spacing/diameter grows: #106 FS 1.54/1.37/1.31/1.25 for ratio 2/3/4/6). The #106
-  cross-section (Fig 106.1) is not in the manual extract, so a single-surface FOS is not
-  reproduced — the formula is validated by trend + the standard published equation form.
+- Ito-Matsui FORMULA (#106 Cai & Ugai 2000): implements the ORIGINAL Ito & Matsui
+  (1975) Eq. 13 (exp arg tan(pi/8+phi/4), first-term coeff 1/(Nphi·tanphi), second
+  cohesion term −c(D1·Fc−2·D2/√Nphi)) + the phi=0 Eq. 23 cohesive limit; unit-tested
+  against the paper's exact hand-check values (c=10/phi=20/gamma=18/z=5/D1=2/D2=1.5 →
+  105.079 kN/m per m depth; phi=0 c=25/gamma=18/z=4/D1=2/D2=1 → 146.683) PLUS the #106
+  spacing TREND (force/metre falls as spacing/diameter grows: #106 FS 1.54/1.37/1.31/
+  1.25 for ratio 2/3/4/6). The #106 cross-section (Fig 106.1) is not in the manual
+  extract, so a single-surface FOS is not reproduced.
 - Confidence in extraction: #54 geometry + soil + pile data exact; #106 geometry absent.
 
 ---

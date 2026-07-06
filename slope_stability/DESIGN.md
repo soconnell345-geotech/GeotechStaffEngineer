@@ -193,15 +193,19 @@ search_critical_surface(geom, surface_type="noncircular",
     `shear_capacity/spacing` (Slide2 #54 / Yamagami 2000). Direction 'horizontal'
     (default) or 'normal' (perpendicular to the slip surface).
   * **Ito & Matsui (1975)** — `ito_matsui=True` with the pile `diameter` (clear spacing
-    D2 = spacing − diameter). `ito_matsui_pressure(c,phi,gamma,z,D1,D2)` is the
-    plastic-deformation lateral force per unit depth on one pile:
-    `p(z) = P_c + (gamma·z/N_phi)·(D1·A − D2)` with N_phi=tan²(45+phi/2),
-    `A = (D1/D2)^(√N_phi·tanphi+N_phi−1)·exp[(D1−D2)/D2·N_phi·tanphi·tan(pi/8+phi/2)]`,
-    and `P_c = c·{D1·[(A−2√N_phi·tanphi−1)/(√N_phi·tanphi) + Cterm] − D2·Cterm}`,
-    `Cterm=(2tanphi+2√N_phi+1/√N_phi)/(√N_phi·tanphi+N_phi−1)`; the phi=0 cohesive limit
-    is `p(z)=c·D1·[3 ln(D1/D2)+(D1−D2)/D2]+gamma·z·(D1−D2)`. `ito_matsui_lateral_force`
-    integrates p(z) from the pile head to the slip surface (closed form, linear in
-    gamma·z); divided by the spacing for the per-metre force.
+    D2 = spacing − diameter). `ito_matsui_pressure(c,phi,gamma,z,D1,D2)` is the ORIGINAL
+    1975 plastic-deformation lateral force per unit depth on one pile (their Eq. 13),
+    `p(z) = c·D1·[(A−2√N_phi·tanphi−1)/(N_phi·tanphi) + Fc] − c·(D1·Fc − 2·D2/√N_phi)
+    + (gamma·z/N_phi)·(D1·A − D2)` with N_phi=tan²(45+phi/2),
+    `A = (D1/D2)^(√N_phi·tanphi+N_phi−1)·exp[(D1−D2)/D2·N_phi·tanphi·tan(pi/8+phi/4)]`,
+    `Fc=(2tanphi+2√N_phi+1/√N_phi)/(√N_phi·tanphi+N_phi−1)`. Note the exp argument is
+    `tan(pi/8+phi/4)` and the first-term coefficient is `1/(N_phi·tanphi)` (per the
+    printed equation; the D1·Fc contributions cancel). The phi=0 cohesive limit
+    (Eq. 23) is `p(z)=c·{D1·(3 ln(D1/D2)+(D1−D2)/D2·tan(pi/8)) − 2(D1−D2)}+gamma·z·(D1−D2)`.
+    Hand-checked: c=10/phi=20/gamma=18/z=5/D1=2/D2=1.5 → 105.079; c=25/phi=0/gamma=18/z=4/
+    D1=2/D2=1 → 146.683. `ito_matsui_lateral_force` integrates p(z) from the pile head to
+    the slip surface (closed form, linear in gamma·z); divided by the spacing for the
+    per-metre force.
   * Validation: #54 (specified shear) → CONVENTION, RESULTS V-040 (no-pile +1.1%,
     with-pile +2.5%; residual = active-vs-passive support convention + figure-read pile
     location). The Ito-Matsui FORMULA is unit-tested for the #106 spacing trend (its

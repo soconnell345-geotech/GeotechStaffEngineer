@@ -261,49 +261,63 @@ def _line_slip_intersection(slip, geom, x_head, z_head, beta_rad, length,
     return None
 
 
-def ito_matsui_pressure(c: float, phi: float, gamma: float, z: float,
-                        D1: float, D2: float) -> float:
-    """Ito & Matsui (1975) lateral force per unit depth on one pile at depth z.
+def _ito_matsui_coeffs(c: float, phi: float, gamma: float,
+                       D1: float, D2: float):
+    """Return (P_c, P_g) so the Ito-Matsui pressure is p(z) = P_c + P_g*z.
 
-    Plastic-deformation theory for a row of piles in c-phi soil. ``z`` is the
-    depth below the top of the moving layer, D1 the center-to-center pile
-    spacing and D2 the clear spacing (D1 - pile diameter). The pressure is
-
-        p(z) = P_c  +  (gamma*z / N_phi) * (D1*A - D2)
-
-    with N_phi = tan^2(45+phi/2), and (writing s=sqrt(N_phi), t=tan(phi),
-    m = s*t + N_phi - 1, and Cterm = (2 t + 2 s + 1/s)/m):
-
-        A   = (D1/D2)^m * exp[ (D1-D2)/D2 * N_phi * t * tan(pi/8 + phi/2) ]
-        P_c = c * { D1 * [ (A - 2 s t - 1)/(s t) + Cterm ] - D2 * Cterm }
-
-    For phi = 0 the general form is singular; Ito & Matsui give the cohesive
-    limit  p(z) = c*D1*[ 3 ln(D1/D2) + (D1-D2)/D2 ] + gamma*z*(D1-D2)  (used
-    below when phi < 1e-6).
-
-    References: Ito, T. & Matsui, T. (1975), "Methods to estimate lateral force
-    acting on stabilizing piles," Soils and Foundations 15(4), 43-59; equation
-    as reproduced in Hassiotis, Chameau & Gunaratne (1997), "Design method for
-    stabilizing piles in slopes," J. Geotech. Geoenviron. Eng. 123(4)
-    (exponential argument tan(pi/8 + phi/2)). Also the basis of the Rocscience
-    Slide2 Ito & Matsui pile support (verification #106). Validated here by the
-    #106 spacing trend (force falls as spacing/diameter grows), not an exact FOS.
+    Original Ito & Matsui (1975) plastic-deformation solution (their Eq. 13 for
+    c-phi soil, Eq. 23 for phi=0). N_phi = tan^2(45+phi/2); s=sqrt(N_phi),
+    t=tan(phi). With
+        A  = (D1/D2)^(s*t + N_phi - 1) * exp[ (D1-D2)/D2 * N_phi*t*tan(pi/8+phi/4) ]
+        Fc = (2t + 2s + 1/s) / (s*t + N_phi - 1)
+    the pressure per unit depth on one pile is
+        p(z) = c*D1*[ (A - 2 s t - 1)/(N_phi*t) + Fc ]
+             - c*( D1*Fc - 2*D2/s )
+             + (gamma*z/N_phi)*(D1*A - D2).
+    (Note tan(pi/8 + phi/4) -- NOT phi/2 -- and the 1/(N_phi*t) coefficient on
+    the first term; the D1*Fc contributions cancel, but the printed grouping is
+    kept for traceability.) The phi=0 cohesive limit is
+        p(z) = c*{ D1*(3 ln(D1/D2) + (D1-D2)/D2*tan(pi/8)) - 2*(D1-D2) }
+             + gamma*z*(D1-D2).
     """
     if D2 <= 0 or D2 >= D1:
-        raise ValueError("need 0 < D2 < D1")
+        raise ValueError("need 0 < D2 < D1 (D2 = spacing - pile diameter)")
     if phi < 1e-6:
-        return (c * D1 * (3.0 * math.log(D1 / D2) + (D1 - D2) / D2)
-                + gamma * z * (D1 - D2))
+        P_c = c * (D1 * (3.0 * math.log(D1 / D2)
+                         + (D1 - D2) / D2 * math.tan(math.pi / 8.0))
+                   - 2.0 * (D1 - D2))
+        return P_c, gamma * (D1 - D2)
     phir = math.radians(phi)
     Nphi = math.tan(math.radians(45.0 + phi / 2.0)) ** 2
     s = math.sqrt(Nphi)
     t = math.tan(phir)
     m = s * t + Nphi - 1.0
     A = (D1 / D2) ** m * math.exp((D1 - D2) / D2 * Nphi * t
-                                  * math.tan(math.pi / 8.0 + phir / 2.0))
-    Cterm = (2.0 * t + 2.0 * s + 1.0 / s) / m
-    P_c = c * (D1 * ((A - 2.0 * s * t - 1.0) / (s * t) + Cterm) - D2 * Cterm)
-    return P_c + (gamma * z / Nphi) * (D1 * A - D2)
+                                  * math.tan(math.pi / 8.0 + phir / 4.0))
+    Fc = (2.0 * t + 2.0 * s + 1.0 / s) / m
+    P_c = (c * D1 * ((A - 2.0 * s * t - 1.0) / (Nphi * t) + Fc)
+           - c * (D1 * Fc - 2.0 * D2 / s))
+    P_g = (gamma / Nphi) * (D1 * A - D2)
+    return P_c, P_g
+
+
+def ito_matsui_pressure(c: float, phi: float, gamma: float, z: float,
+                        D1: float, D2: float) -> float:
+    """Ito & Matsui (1975) lateral force per unit depth on one pile at depth z.
+
+    Plastic-deformation theory for a row of piles in c-phi soil. ``z`` is the
+    depth below the top of the moving layer, D1 the center-to-center pile
+    spacing and D2 the clear spacing (D1 - pile diameter). See
+    ``_ito_matsui_coeffs`` for the equation.
+
+    References: Ito, T. & Matsui, T. (1975), "Methods to estimate lateral force
+    acting on stabilizing piles," Soils and Foundations 15(4), 43-59
+    (DOI 10.3208/sandf1972.15.4_43) -- the ORIGINAL form, as used by Rocscience
+    Slide2 (verification #106). Hand check: c=10, phi=20, gamma=18, z=5, D1=2.0,
+    D2=1.5 -> p = 105.079 kN/m per m depth.
+    """
+    P_c, P_g = _ito_matsui_coeffs(c, phi, gamma, D1, D2)
+    return P_c + P_g * z
 
 
 def ito_matsui_lateral_force(c: float, phi: float, gamma: float,
@@ -312,31 +326,16 @@ def ito_matsui_lateral_force(c: float, phi: float, gamma: float,
     """Total Ito & Matsui (1975) lateral force on ONE pile (kN).
 
     Integrates ``ito_matsui_pressure`` over the moving layer, from the pile head
-    (``z_top``) down to the slip surface (``z_bot``), with depth measured below
-    the head. Because p(z) is linear in the overburden gamma*z, the integral over
-    a layer of thickness H = z_top - z_bot is closed-form:
-
-        F = P_c * H + (gamma / N_phi) * (D1*A - D2) * H^2 / 2      (phi > 0)
-        F = c*D1*[3 ln(D1/D2)+(D1-D2)/D2]*H + gamma*(D1-D2)*H^2/2  (phi = 0)
-
+    (``z_top``) down to the slip surface (``z_bot``), depth measured below the
+    head. Because p(z) = P_c + P_g*z is linear in depth, the integral over a
+    layer of thickness H = z_top - z_bot is closed-form:  F = P_c*H + P_g*H^2/2.
     Divide by the spacing D1 for the force per metre of slope run.
     """
     H = z_top - z_bot
     if H <= 0:
         return 0.0
-    if phi < 1e-6:
-        pc = c * D1 * (3.0 * math.log(D1 / D2) + (D1 - D2) / D2)
-        return pc * H + gamma * (D1 - D2) * H * H / 2.0
-    phir = math.radians(phi)
-    Nphi = math.tan(math.radians(45.0 + phi / 2.0)) ** 2
-    s = math.sqrt(Nphi)
-    t = math.tan(phir)
-    m = s * t + Nphi - 1.0
-    A = (D1 / D2) ** m * math.exp((D1 - D2) / D2 * Nphi * t
-                                  * math.tan(math.pi / 8.0 + phir / 2.0))
-    Cterm = (2.0 * t + 2.0 * s + 1.0 / s) / m
-    P_c = c * (D1 * ((A - 2.0 * s * t - 1.0) / (s * t) + Cterm) - D2 * Cterm)
-    return P_c * H + (gamma / Nphi) * (D1 * A - D2) * H * H / 2.0
+    P_c, P_g = _ito_matsui_coeffs(c, phi, gamma, D1, D2)
+    return P_c * H + P_g * H * H / 2.0
 
 
 def compute_reinforcement_forces(geom, slip,
