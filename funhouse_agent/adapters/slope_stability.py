@@ -295,12 +295,54 @@ def _run_rapid_drawdown(params: dict) -> dict:
     return result.to_dict()
 
 
+def _run_yield_acceleration(params: dict) -> dict:
+    from slope_stability.newmark import yield_acceleration
+    reject_unknown_params(
+        params,
+        _GEOM_PARAMS + _SURFACE_PARAMS + ("method", "n_slices", "tol",
+                                          "kh_max"),
+        method="yield_acceleration")
+    geom = _build_geometry(params, method="yield_acceleration")
+    method = _check_choice(params.get("method", "spencer"), _METHODS,
+                           name="method", method="yield_acceleration")
+    result = yield_acceleration(
+        geom, xc=params.get("xc"), yc=params.get("yc"),
+        radius=params.get("radius"), slip_surface=_slip_surface_from(params),
+        method=method, n_slices=params.get("n_slices", 50),
+        tol=params.get("tol", 1e-4), kh_max=params.get("kh_max", 2.0))
+    return result.to_dict()
+
+
+def _run_newmark_displacement(params: dict) -> dict:
+    from slope_stability.newmark import newmark_displacement
+    reject_unknown_params(
+        params, ("ky", "accel", "dt", "accel_in_g"),
+        method="newmark_displacement")
+    require_params(params, ["ky", "accel", "dt"],
+                   method="newmark_displacement")
+    result = newmark_displacement(
+        ky=params["ky"], accel=params["accel"], dt=params["dt"],
+        accel_in_g=params.get("accel_in_g", False))
+    return result.to_dict()
+
+
+def _run_newmark_jibson2007(params: dict) -> dict:
+    from slope_stability.newmark import newmark_jibson2007
+    reject_unknown_params(params, ("ky", "amax"), method="newmark_jibson2007")
+    require_params(params, ["ky", "amax"], method="newmark_jibson2007")
+    result = newmark_jibson2007(ky=params["ky"], amax=params["amax"])
+    return result.to_dict()
+
+
 METHOD_REGISTRY = {
     "analyze_slope": _run_analyze_slope,
     "search_critical_surface": _run_search_critical_surface,
     "compare_methods_table": _run_compare_methods,
     "infinite_slope_fos": _run_infinite_slope,
     "rapid_drawdown_fos": _run_rapid_drawdown,
+    "yield_acceleration": _run_yield_acceleration,
+    "newmark_displacement": _run_newmark_displacement,
+    "newmark_jibson2007": _run_newmark_jibson2007,
     "fosm_fos": _run_fosm,
     "monte_carlo_fos": _run_monte_carlo,
 }
@@ -388,6 +430,38 @@ METHOD_INFO = {
             "stage1_phreatic_points": {"type": "array", "required": False, "description": "Optional steady-seepage phreatic surface [[x,z],...] for the STAGE-1 consolidation stresses only. Default (omitted) uses a flat full-pool phreatic (hydrostatic to the reservoir) -- the conservative no-through-seepage bound. Supply the flow-net/Casagrande phreatic line (declining from the pool level at the upstream face through the dam) to reproduce the steady-seepage condition Slide2/EM 1110-2-1902 use, which raises the mobilized undrained strengths and the FOS."},
         },
         "returns": {"FOS": "Drawdown factor of safety.", "stage1_FOS": "Full-pool (pre-drawdown) FOS.", "n_undrained_slices": "Slices treated undrained.", "n_drained_substituted": "Stage-3 drained substitutions (3-stage)."},
+    },
+    "yield_acceleration": {
+        "category": "Slope Stability",
+        "brief": "Yield (critical) seismic coefficient ky for a SPECIFIED slip surface: the horizontal pseudo-static coefficient kh at which the factor of safety = 1.0 (Newmark critical acceleration, ay = ky*g). Found by bisection on the module's pseudo-static FOS. Feed ky into newmark_displacement or newmark_jibson2007. Provide the surface as xc/yc/radius or slip_points.",
+        "parameters": {
+            **_GEOMETRY_PARAMS,
+            **_SURFACE_SPEC_PARAMS,
+            "method": {"type": "str", "required": False, "default": "spencer", "allowed_values": _METHODS, "description": "Limit-equilibrium method for the pseudo-static FOS."},
+            "n_slices": {"type": "int", "required": False, "default": 50, "description": "Number of slices."},
+            "kh_max": {"type": "float", "required": False, "default": 2.0, "description": "Upper bound of the kh bracket; if the surface is still stable at kh_max the result is non-converged with ky=kh_max."},
+        },
+        "returns": {"ky": "Yield seismic coefficient (fraction of g).", "ay_m_s2": "Yield acceleration = ky*g (m/s^2).", "FOS_static": "Pseudo-static FOS at kh=0.", "converged": "Whether ky was bracketed."},
+    },
+    "newmark_displacement": {
+        "category": "Slope Stability",
+        "brief": "Newmark rigid-block permanent DOWNSLOPE displacement by double integration of an earthquake acceleration time history against the yield coefficient ky. Downslope-only (no upslope rebound); both polarities of the record drive the block (absolute acceleration). Get ky from yield_acceleration. For a quick estimate without a record, use newmark_jibson2007.",
+        "parameters": {
+            "ky": {"type": "float", "required": True, "description": "Yield seismic coefficient (fraction of g); ay = ky*g."},
+            "accel": {"type": "array", "required": True, "description": "Ground acceleration time history (equally spaced), in m/s^2 (or in g if accel_in_g=true)."},
+            "dt": {"type": "float", "required": True, "description": "Time step of the record (s)."},
+            "accel_in_g": {"type": "bool", "required": False, "default": False, "description": "True if 'accel' is in units of g rather than m/s^2."},
+        },
+        "returns": {"displacement_m": "Permanent downslope displacement (m).", "displacement_cm": "Same in cm.", "n_exceedances": "Steps exceeding ay.", "duration_s": "Record duration."},
+    },
+    "newmark_jibson2007": {
+        "category": "Slope Stability",
+        "brief": "Jibson (2007) regression estimate of Newmark displacement from the critical-acceleration ratio ky/amax (Eq. 6): log10 D[cm] = 0.215 + log10[(1-ky/amax)^2.341 (ky/amax)^-1.438], sigma=0.51 log10. Needs no time history; requires 0 < ky < amax.",
+        "parameters": {
+            "ky": {"type": "float", "required": True, "description": "Yield / critical seismic coefficient (fraction of g)."},
+            "amax": {"type": "float", "required": True, "description": "Peak ground acceleration (fraction of g). Must exceed ky."},
+        },
+        "returns": {"displacement_cm": "Estimated Newmark displacement (cm).", "displacement_m": "Same in m.", "amax_g": "PGA used."},
     },
     "search_critical_surface": {
         "category": "Slope Stability",

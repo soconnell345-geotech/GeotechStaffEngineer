@@ -44,6 +44,10 @@ from slope_stability.results import (
     SlopeStabilityResult, SliceData, SearchResult, InfiniteSlopeResult,
 )
 from slope_stability.rapid_drawdown import RapidDrawdownResult
+from slope_stability.newmark import (
+    yield_acceleration, newmark_displacement, newmark_jibson2007,
+    YieldAccelerationResult, NewmarkResult,
+)
 
 __all__ = [
     'SlopeGeometry', 'SlopeSoilLayer', 'SoilNail',
@@ -63,4 +67,6 @@ __all__ = [
     'compare_methods_table', 'infinite_slope_fos',
     'SlopeStabilityResult', 'SliceData', 'SearchResult', 'InfiniteSlopeResult',
     'RapidDrawdownResult',
+    'yield_acceleration', 'newmark_displacement', 'newmark_jibson2007',
+    'YieldAccelerationResult', 'NewmarkResult',
 ]

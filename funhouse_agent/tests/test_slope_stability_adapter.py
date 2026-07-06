@@ -55,7 +55,9 @@ class TestMethodInfo:
         assert set(METHOD_INFO.keys()) == {
             "analyze_slope", "search_critical_surface",
             "compare_methods_table", "infinite_slope_fos",
-            "rapid_drawdown_fos", "fosm_fos", "monte_carlo_fos",
+            "rapid_drawdown_fos", "yield_acceleration",
+            "newmark_displacement", "newmark_jibson2007",
+            "fosm_fos", "monte_carlo_fos",
         }
 
     def test_method_allowed_values_modernized(self):
@@ -240,6 +242,35 @@ class TestInfiniteSlope:
             METHOD_REGISTRY["infinite_slope_fos"](
                 {"slope_angle": 20.0, "phi": 30.0, "gamma": 19.0,
                  "water_condition": "bogus"})
+
+
+class TestNewmark:
+    def test_yield_acceleration(self):
+        r = METHOD_REGISTRY["yield_acceleration"](_base(method="spencer"))
+        assert r["converged"] and r["ky"] > 0
+        assert r["ay_m_s2"] == pytest.approx(r["ky"] * 9.80665, rel=1e-3)
+        assert r["FOS_static"] > 1.0
+
+    def test_newmark_displacement_rectangular_pulse(self):
+        # ay = 1 m/s^2 -> ky = 1/g; ap=3, T=2 -> D = ap(ap-ay)T^2/(2ay)
+        ky = 1.0 / 9.80665
+        dt = 0.001
+        accel = [3.0] * int(2.0 / dt) + [0.0] * int(4.0 / dt)
+        r = METHOD_REGISTRY["newmark_displacement"](
+            {"ky": ky, "accel": accel, "dt": dt})
+        ay = ky * 9.80665
+        assert r["displacement_m"] == pytest.approx(3.0 * (3.0 - ay) * 4.0
+                                                    / (2 * ay), rel=1e-3)
+
+    def test_newmark_jibson2007(self):
+        r = METHOD_REGISTRY["newmark_jibson2007"]({"ky": 0.10, "amax": 0.20})
+        assert r["displacement_cm"] == pytest.approx(0.877, abs=1e-2)
+
+    def test_newmark_requires_params(self):
+        with pytest.raises(ValueError):
+            METHOD_REGISTRY["newmark_jibson2007"]({"ky": 0.1})
+        with pytest.raises(ValueError):
+            METHOD_REGISTRY["newmark_displacement"]({"ky": 0.1, "dt": 0.01})
 
 
 # ----------------------------------------------------------------------------

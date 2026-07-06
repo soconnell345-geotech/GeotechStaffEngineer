@@ -612,6 +612,28 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   recorded here for that follow-up; a single-circle spot check would not reproduce
   the published minimum and is intentionally not reported as a validation.
 
+## V-039 Slide2 #104 — Newmark seismic sliding-block displacement (B2b)
+- Source: Slide2 Verification #104 (manual pp. 330-331), based on Slide2 Tutorial 28
+  "Seismic Analysis with Newmark Method"; Newmark (1965); Jibson (2007).
+- Target: `slope_stability.newmark` — `yield_acceleration`, `newmark_displacement`,
+  `newmark_jibson2007`.
+- Published answers (four scenarios, MMO / uni-modal): no-seismic FS 1.359/1.360;
+  seismic k=0.15 FS 0.978/0.980; critical accel Ky=0.139/0.140; Newmark displacement
+  5.042/5.081 cm.
+- What is / isn't recoverable: the acceleration TIME HISTORY (Tutorial-28 record) and
+  the Tutorial-28 geometry are NOT in the manual, so 5.042 cm cannot be reproduced
+  directly.
+- Verdict: **PASS (integrator + Jibson) / #104 documented (record-limited).**
+  (1) The rigid-block integrator reproduces the closed-form rectangular-pulse Newmark
+  displacement D = ap(ap−ay)T²/(2ay) exactly. (2) `newmark_jibson2007` reproduces
+  Jibson (2007) Eq. 6 (coeffs 0.215 / 2.341 / −1.438, σ=0.510) exactly. (3) The #104
+  four-scenario structure is reproduced qualitatively: the published values are
+  internally consistent with a near-linear FOS(k) (FS 1.359 at k=0, 0.978 at k=0.15 →
+  FS=1 at k≈0.141, matching Ky=0.139), which is what `yield_acceleration` bisects; and
+  a Jibson cross-check at Ky=0.139 brackets the published 5.042 cm (1.9 cm at PGA 0.35g,
+  7.3 cm at 0.60g).
+- Confidence in extraction: published FS/Ky/disp values exact; record + geometry absent.
+
 ---
 
 # Looked for but NOT extracted (and why)

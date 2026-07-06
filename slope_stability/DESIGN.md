@@ -162,6 +162,28 @@ search_critical_surface(geom, surface_type="noncircular",
     ~12% below the published 3-stage even under the steady-seepage stage-1 that
     validates the 2-stage. Follow-up: a τ_ff-vs-σ'_fc envelope-crossing treatment per
     Duncan-Wright-Wong (1990). Not geometry- or seepage-related.
+- **Newmark seismic sliding block (v5.3 B2b)** — `newmark.py`, three functions
+  (exported + adapter `yield_acceleration` / `newmark_displacement` /
+  `newmark_jibson2007`):
+  * **`yield_acceleration`** — the yield seismic coefficient ky (Newmark critical
+    acceleration ay = ky·g) for a SPECIFIED surface, by bisection on the module's
+    pseudo-static FOS (`analyze_slope` with a trial `kh`; the seismic_force = kh·W path
+    validated by Loukidis #62/#63 = V-033). FOS(kh) is monotone decreasing, so bisection
+    on FOS=1 gives ky directly. If the static FOS ≤ 1, ky=0. The caller's `geom.kh` is
+    not mutated (shallow copy).
+  * **`newmark_displacement(ky, accel, dt)`** — rigid-block double integration
+    (Newmark 1965). Downslope-only: the block slides only while |a_ground| > ay and the
+    relative velocity is positive (clamped ≥ 0, no upslope rebound), so displacement is
+    monotonic; the absolute value of the record is used so both polarities of a
+    symmetric record drive the single downslope block (conservative, orientation-
+    independent). Trapezoidal on the piecewise-linear relative velocity — EXACT for a
+    rectangular pulse (`D = ap(ap−ay)T²/(2ay)`), which is the integrator's validation.
+  * **`newmark_jibson2007(ky, amax)`** — Jibson (2007) Eq. 6 regression,
+    `log10 D[cm] = 0.215 + log10[(1−ky/amax)^2.341·(ky/amax)^−1.438]`, σ=0.510 log10,
+    a time-history-free cross-check (valid 0 < ky < amax).
+  * Slide2 #104 (Tutorial-28 record) is the target problem; its acceleration record and
+    geometry are not published, so the integrator is validated analytically and Jibson
+    against its published equation — see RESULTS V-039.
 - **Empty-space slices**: slices where the slip surface is below all soil layers
   are skipped (zero weight, no contribution)
 - **Nails disconnected**: `nails.py` is importable but not called from the analysis
