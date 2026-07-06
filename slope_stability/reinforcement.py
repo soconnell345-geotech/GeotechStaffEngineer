@@ -274,9 +274,14 @@ def _ito_matsui_coeffs(c: float, phi: float, gamma: float,
         p(z) = c*D1*[ (A - 2 s t - 1)/(N_phi*t) + Fc ]
              - c*( D1*Fc - 2*D2/s )
              + (gamma*z/N_phi)*(D1*A - D2).
-    (Note tan(pi/8 + phi/4) -- NOT phi/2 -- and the 1/(N_phi*t) coefficient on
-    the first term; the D1*Fc contributions cancel, but the printed grouping is
-    kept for traceability.) The phi=0 cohesive limit is
+    NOTE the exponential uses tan(pi/8 + phi/4) and the first-term coefficient is
+    1/(N_phi*tanphi): these are the ORIGINAL Ito & Matsui (1975) printed forms
+    (Eq. 13, confirmed by their Fig. 2 wedge half-angle pi/8 + phi/4). A widely
+    copied SECONDARY reproduction (Hassiotis, Chameau & Gunaratne 1997) prints
+    tan(pi/8 + phi/2) and 1/(sqrt(N_phi)*tanphi); those variants overestimate the
+    force (up to ~+150% for tight spacing / high phi) and are NOT used here. The
+    D1*Fc contributions cancel, but the printed grouping is kept for traceability.
+    The phi=0 cohesive limit is
         p(z) = c*{ D1*(3 ln(D1/D2) + (D1-D2)/D2*tan(pi/8)) - 2*(D1-D2) }
              + gamma*z*(D1-D2).
     """
