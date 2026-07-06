@@ -13,12 +13,13 @@ References:
 
 from retaining_walls.geometry import CantileverWallGeometry, MSEWallGeometry
 from retaining_walls.cantilever import analyze_cantilever_wall
-from retaining_walls.mse import analyze_mse_wall
+from retaining_walls.mse import analyze_mse_wall, check_external_stability_lrfd
 from retaining_walls.reinforcement import Reinforcement
 from retaining_walls.results import CantileverWallResult, MSEWallResult
 
 __all__ = [
     'CantileverWallGeometry', 'MSEWallGeometry',
     'analyze_cantilever_wall', 'analyze_mse_wall',
+    'check_external_stability_lrfd',
     'Reinforcement', 'CantileverWallResult', 'MSEWallResult',
 ]

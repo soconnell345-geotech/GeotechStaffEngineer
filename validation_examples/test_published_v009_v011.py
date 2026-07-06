@@ -46,7 +46,7 @@ import pytest
 
 from retaining_walls.earth_pressure import rankine_Ka, horizontal_force_active
 from retaining_walls.mse import (
-    analyze_mse_wall, Kr_Ka_ratio, F_star_metallic,
+    analyze_mse_wall, check_external_stability_lrfd, Kr_Ka_ratio, F_star_metallic,
     Tmax_at_level, pullout_resistance,
 )
 from retaining_walls.geometry import MSEWallGeometry
@@ -219,6 +219,87 @@ def test_v009_highlevel_api_reports_asd_fos_not_lrfd_cdr():
     W = GAMMA * H * L + Q_LL * L
     asd_expected = (W * math.tan(math.radians(PHI_FD))) / Pa
     assert res.FOS_sliding == pytest.approx(asd_expected, rel=0.02)   # ~2.27
+
+
+def test_v009_lrfd_external_stability_high_level_path():
+    """PASS (v5.3): the NEW high-level `check_external_stability_lrfd` computes the
+    full GEC-11 Example E4 external-stability CDR set — sliding, eccentricity,
+    bearing — directly from the wall/soil inputs with the AASHTO/GEC-11 Strength I
+    (max+min) and Service I load-factor combinations built in (no hand-assembled
+    factors). Reproduces Tables E4-6.1/6.2/6.3 to the published values."""
+    geom = MSEWallGeometry(wall_height=H, reinforcement_length=L,
+                           reinforcement_spacing=2.5 * FT, surcharge=Q_LL)
+    r = check_external_stability_lrfd(
+        geom, gamma_backfill=GAMMA, phi_backfill=PHI_R, phi_foundation=PHI_FD,
+        phi_retained=PHI_F, gamma_retained=GAMMA,
+        bearing_resistance_strength=10.50 * KSF,
+        bearing_resistance_service=7.50 * KSF,
+    )
+
+    # Sliding CDRs (Table E4-6.1): Str I max 1.85, min 2.08, critical 1.37
+    s = r["sliding"]
+    assert s["CDR_strength_max"] == pytest.approx(1.85, abs=0.05)
+    assert s["CDR_strength_min"] == pytest.approx(2.08, abs=0.05)
+    assert s["CDR_critical"] == pytest.approx(1.37, abs=0.05)
+    assert s["CDR_governing"] == pytest.approx(1.37, abs=0.05)   # critical governs
+    assert s["passes"]
+
+    # Eccentricity (Table E4-6.2): Str I max eL 2.87 ft, critical 3.87 ft, limit L/4
+    e = r["eccentricity"]
+    assert e["eL_strength_max_m"] / FT == pytest.approx(2.87, abs=0.05)
+    assert e["eL_critical_m"] / FT == pytest.approx(3.87, abs=0.05)
+    assert e["e_limit_m"] / FT == pytest.approx(4.50, abs=0.02)   # L/4
+    assert e["passes"]                                            # 3.87 < 4.50
+
+    # Bearing (Table E4-6.3): Str I max eL 2.60, B' 12.79, sigma_v 6.70 ksf,
+    # CDR 1.57; Service sigma_v 4.66 ksf; critical sigma_v 5.86 (source rounding).
+    b = r["bearing"]
+    assert b["eL_strength_max_m"] / FT == pytest.approx(2.60, abs=0.05)
+    assert b["B_eff_strength_max_m"] / FT == pytest.approx(12.79, abs=0.05)
+    assert b["sigma_v_strength_max_kPa"] / KSF == pytest.approx(6.70, rel=0.02)
+    assert b["CDR_strength"] == pytest.approx(1.57, abs=0.05)
+    assert b["sigma_v_service_kPa"] / KSF == pytest.approx(4.66, rel=0.02)
+    # critical bearing: 5.75 (module) vs 5.86 (published) — within the source's
+    # own "consistent-values" rounding note (+/-2.5%)
+    assert b["sigma_v_critical_kPa"] / KSF == pytest.approx(5.86, rel=0.025)
+    assert b["passes"]
+
+    assert r["passes"]
+
+
+def test_v009_analyze_mse_wall_lrfd_flag_attaches_cdrs():
+    """PASS (v5.3): `analyze_mse_wall(lrfd_external=True)` runs BOTH the ASD FOS
+    path (unchanged default) AND the LRFD external path, attaching the CDR set as
+    `result.external_lrfd`. Default (flag off) leaves external_lrfd = None."""
+    geom = MSEWallGeometry(wall_height=H, reinforcement_length=L,
+                           reinforcement_spacing=2.5 * FT, surcharge=Q_LL)
+    rebar = Reinforcement(name="bar mat", type="metallic_grid",
+                          Tallowable=200.0, Fy=448000.0, thickness=0.0095)
+    # default: LRFD not requested -> external_lrfd absent, ASD FOS unchanged
+    res_default = analyze_mse_wall(
+        geom, gamma_backfill=GAMMA, phi_backfill=PHI_R, reinforcement=rebar,
+        gamma_foundation=GAMMA, phi_foundation=PHI_FD,
+        q_allowable=10.50 * KSF, phi_retained=PHI_F, gamma_retained=GAMMA,
+    )
+    assert res_default.external_lrfd is None
+    assert "external_lrfd" not in res_default.to_dict()
+
+    # opt-in: LRFD CDRs attached, matching the standalone high-level path
+    res = analyze_mse_wall(
+        geom, gamma_backfill=GAMMA, phi_backfill=PHI_R, reinforcement=rebar,
+        gamma_foundation=GAMMA, phi_foundation=PHI_FD,
+        q_allowable=10.50 * KSF, phi_retained=PHI_F, gamma_retained=GAMMA,
+        lrfd_external=True, bearing_resistance_strength=10.50 * KSF,
+        bearing_resistance_service=7.50 * KSF,
+    )
+    lrfd = res.external_lrfd
+    assert lrfd is not None
+    assert lrfd["sliding"]["CDR_governing"] == pytest.approx(1.37, abs=0.05)
+    assert lrfd["bearing"]["CDR_strength"] == pytest.approx(1.57, abs=0.05)
+    assert res.to_dict()["external_lrfd"]["sliding"]["CDR_strength_max"] == \
+        pytest.approx(1.85, abs=0.05)
+    # the ASD FOS path is untouched by the flag
+    assert res.FOS_sliding == pytest.approx(res_default.FOS_sliding, rel=1e-9)
 
 
 # ── V-010 : MSE internal stability — bar-mat Kr/Tmax/pullout ─────────────────

@@ -4,7 +4,7 @@ from funhouse_agent.adapters import apply_aliases, reject_unknown_params, requir
 from retaining_walls import earth_pressure as _ep
 from retaining_walls.geometry import CantileverWallGeometry, MSEWallGeometry
 from retaining_walls.cantilever import analyze_cantilever_wall
-from retaining_walls.mse import analyze_mse_wall
+from retaining_walls.mse import analyze_mse_wall, check_external_stability_lrfd
 from retaining_walls.reinforcement import (
     Reinforcement, RIBBED_STEEL_STRIP_75x4, WELDED_WIRE_GRID_W11,
     GEOGRID_UX1600, GEOGRID_UX1700,
@@ -144,6 +144,49 @@ def _run_mse_wall(params):
     return output
 
 
+def _run_mse_lrfd_external_stability(params):
+    """AASHTO/GEC-11 LRFD external-stability CDR set (sliding / eccentricity /
+    bearing) under Strength I (max + min) and Service I combinations."""
+    params = apply_aliases(params, _MSE_ALIASES)
+    reject_unknown_params(
+        params,
+        ("wall_height", "reinforcement_length", "reinforcement_spacing",
+         "backfill_slope", "surcharge", "gamma_backfill", "phi_backfill",
+         "phi_foundation", "phi_retained", "gamma_retained", "live_load",
+         "bearing_resistance_strength", "bearing_resistance_service",
+         "c_foundation", "gamma_EV_max", "gamma_EV_min", "gamma_EH_max",
+         "gamma_EH_min", "gamma_LL", "phi_sliding", "ecc_limit_ratio"),
+        method="mse_lrfd_external_stability")
+    require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
+                   method="mse_lrfd_external_stability")
+    geom = MSEWallGeometry(
+        wall_height=params["wall_height"],
+        reinforcement_length=params.get("reinforcement_length"),
+        reinforcement_spacing=params.get("reinforcement_spacing", 0.60),
+        backfill_slope=params.get("backfill_slope", 0.0),
+        surcharge=params.get("surcharge", 0.0),
+    )
+    # Only forward load/resistance factors the caller actually set (so the
+    # GEC-11 defaults live in one place — the module function).
+    factor_keys = ("gamma_EV_max", "gamma_EV_min", "gamma_EH_max",
+                   "gamma_EH_min", "gamma_LL", "phi_sliding", "ecc_limit_ratio")
+    factors = {k: params[k] for k in factor_keys if k in params}
+    result = check_external_stability_lrfd(
+        geom, gamma_backfill=params["gamma_backfill"],
+        phi_backfill=params["phi_backfill"],
+        phi_foundation=params.get("phi_foundation", params["phi_backfill"]),
+        phi_retained=params.get("phi_retained"),
+        gamma_retained=params.get("gamma_retained"),
+        live_load=params.get("live_load"),
+        c_foundation=params.get("c_foundation", 0.0),
+        bearing_resistance_strength=params.get("bearing_resistance_strength"),
+        bearing_resistance_service=params.get("bearing_resistance_service"),
+        **factors,
+    )
+    result["reinforcement_length_m"] = geom.reinforcement_length
+    return result
+
+
 def _run_earth_pressure_coefficient(params):
     """Thin wrapper over retaining_walls.earth_pressure Ka/Kp/K0 functions."""
     p = apply_aliases(params, {"phi": "phi_deg", "friction_angle": "phi_deg",
@@ -203,6 +246,7 @@ def _run_list_reinforcement(params):
 METHOD_REGISTRY = {
     "cantilever_wall": _run_cantilever_wall,
     "mse_wall": _run_mse_wall,
+    "mse_lrfd_external_stability": _run_mse_lrfd_external_stability,
     "list_reinforcement": _run_list_reinforcement,
     "earth_pressure_coefficient": _run_earth_pressure_coefficient,
 }
@@ -272,6 +316,32 @@ METHOD_INFO = {
             "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa)."},
         },
         "returns": {"FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS."},
+    },
+    "mse_lrfd_external_stability": {
+        "category": "MSE Wall",
+        "brief": "MSE wall external stability by AASHTO/GEC-11 LRFD: sliding / eccentricity / bearing capacity:demand ratios (CDRs) under Strength I (max+min) and Service I. Distinct from mse_wall, which reports ASD factors of safety.",
+        "parameters": {
+            "wall_height": {"type": "float", "required": True, "description": "Design wall height H (m), incl. embedment. Alias: height."},
+            "gamma_backfill": {"type": "float", "required": True, "description": "Reinforced fill unit weight (kN/m3). Alias: gamma."},
+            "phi_backfill": {"type": "float", "required": True, "description": "Reinforced fill friction angle (deg). Alias: phi."},
+            "reinforcement_length": {"type": "float", "required": False, "description": "Reinforcement length L (m). Auto-sized (0.7H) if omitted."},
+            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Live-load surcharge q (kPa) over the mass (e.g. heq*gamma). Used as the LL unless live_load overrides."},
+            "phi_foundation": {"type": "float", "required": False, "description": "Foundation friction angle (deg); the sliding interface uses min(phi_backfill, phi_foundation). Defaults to phi_backfill."},
+            "phi_retained": {"type": "float", "required": False, "description": "Retained (behind-mass) fill friction angle (deg) for the external active thrust. Defaults to phi_backfill."},
+            "gamma_retained": {"type": "float", "required": False, "description": "Retained fill unit weight (kN/m3). Defaults to gamma_backfill."},
+            "live_load": {"type": "float", "required": False, "description": "Live-load surcharge q (kPa) if different from `surcharge`."},
+            "bearing_resistance_strength": {"type": "float", "required": False, "description": "Factored bearing resistance qR at the strength limit (kPa) = phi_b*qn; enables the strength/critical bearing CDR = qR/sigma_v."},
+            "bearing_resistance_service": {"type": "float", "required": False, "description": "Service bearing resistance (kPa); enables the Service I bearing CDR."},
+            "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation cohesion (kPa) for sliding adhesion (2/3 c)."},
+            "gamma_EV_max": {"type": "float", "required": False, "default": 1.35, "description": "Max vertical-earth (EV) load factor (AASHTO Strength I)."},
+            "gamma_EV_min": {"type": "float", "required": False, "default": 1.00, "description": "Min vertical-earth (EV) load factor."},
+            "gamma_EH_max": {"type": "float", "required": False, "default": 1.50, "description": "Max horizontal-earth (EH) load factor."},
+            "gamma_EH_min": {"type": "float", "required": False, "default": 0.90, "description": "Min horizontal-earth (EH) load factor."},
+            "gamma_LL": {"type": "float", "required": False, "default": 1.75, "description": "Live-load (LL) factor."},
+            "phi_sliding": {"type": "float", "required": False, "default": 1.0, "description": "Sliding resistance factor (AASHTO 11.10.5.3)."},
+            "ecc_limit_ratio": {"type": "float", "required": False, "default": 0.25, "description": "Limiting-eccentricity ratio e_max/L (0.25 = L/4 for MSE on soil; use 1/6 on rock)."},
+        },
+        "returns": {"sliding": "Sliding CDRs (strength max/min, critical, governing).", "eccentricity": "eL (strength max, critical) vs e_limit.", "bearing": "sigma_v (strength/critical/service) + bearing CDRs."},
     },
     "list_reinforcement": {
         "category": "MSE Wall",

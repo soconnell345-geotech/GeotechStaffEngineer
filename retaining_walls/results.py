@@ -154,6 +154,10 @@ class MSEWallResult:
     all_pass_internal: bool = False
     wall_height: float = 0.0
     reinforcement_length: float = 0.0
+    # Optional AASHTO/GEC-11 LRFD external-stability CDR set (from
+    # check_external_stability_lrfd); populated only when analyze_mse_wall is
+    # called with lrfd_external=True. None -> the ASD FOS path only.
+    external_lrfd: Optional[Dict[str, Any]] = None
 
     @property
     def n_levels(self) -> int:
@@ -196,7 +200,7 @@ class MSEWallResult:
         return "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "FOS_sliding": round(self.FOS_sliding, 3),
             "FOS_overturning": round(self.FOS_overturning, 3),
             "FOS_bearing": round(self.FOS_bearing, 3),
@@ -207,3 +211,6 @@ class MSEWallResult:
             "reinforcement_length_m": self.reinforcement_length,
             "internal_results": self.internal_results,
         }
+        if self.external_lrfd is not None:
+            d["external_lrfd"] = self.external_lrfd
+        return d

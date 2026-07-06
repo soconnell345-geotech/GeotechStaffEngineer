@@ -429,6 +429,220 @@ def check_external_stability(
     }
 
 
+def check_external_stability_lrfd(
+    geom: MSEWallGeometry,
+    gamma_backfill: float,
+    phi_backfill: float,
+    phi_foundation: float,
+    *,
+    phi_retained: float = None,
+    gamma_retained: float = None,
+    live_load: float = None,
+    bearing_resistance_strength: float = None,
+    bearing_resistance_service: float = None,
+    c_foundation: float = 0.0,
+    gamma_EV_max: float = 1.35,
+    gamma_EV_min: float = 1.00,
+    gamma_EH_max: float = 1.50,
+    gamma_EH_min: float = 0.90,
+    gamma_LL: float = 1.75,
+    phi_sliding: float = 1.0,
+    ecc_limit_ratio: float = 0.25,
+) -> Dict[str, Any]:
+    """AASHTO/GEC-11 LRFD external stability for an MSE wall (rigid block).
+
+    Computes the full capacity:demand ratio (CDR) set — sliding, limiting
+    eccentricity (overturning), and bearing — under the AASHTO Strength I
+    (max and min load-factor) and Service I load combinations, with the GEC-11
+    load-side bookkeeping built in:
+
+    * The **live-load surcharge is EXCLUDED from the resisting side** for
+      sliding and eccentricity (a vertical LL over the mass is destabilizing
+      only through its horizontal thrust, so counting its weight would be
+      unconservative) and **INCLUDED for bearing** (it raises the bearing
+      stress).
+    * Each mode is checked for the governing load combination. The **critical**
+      ("min-vertical") combination pairs the minimum vertical load factor
+      (least resistance / largest eccentricity, ``gamma_EV_min`` on all vertical
+      gravity loads) with the maximum horizontal/driving factors
+      (``gamma_EH_max``, ``gamma_LL``).
+
+    This is the LRFD counterpart to the ASD ``check_external_stability``; it does
+    NOT change that function. It reproduces the GEC-11 Example E4 (FHWA-NHI-10-025,
+    Appendix E) external-stability results (sliding CDR 1.85/2.08/1.37,
+    eccentricity eL 2.87/3.87 ft vs L/4, bearing sigma_v 6.70 ksf / CDR 1.57,
+    Service sigma_v 4.66 ksf).
+
+    Parameters
+    ----------
+    geom : MSEWallGeometry
+        Wall geometry. ``geom.surcharge`` is the live-load surcharge unless
+        ``live_load`` overrides it.
+    gamma_backfill, phi_backfill : float
+        Reinforced fill unit weight (kN/m3) and friction angle (deg).
+    phi_foundation : float
+        Foundation friction angle (deg); the sliding interface uses
+        min(phi_backfill, phi_foundation).
+    phi_retained, gamma_retained : float, optional
+        Retained (behind-the-mass) fill properties for the external active
+        thrust. Default to the reinforced-fill values.
+    live_load : float, optional
+        Live-load surcharge q (kPa). Default: ``geom.surcharge``.
+    bearing_resistance_strength : float, optional
+        Factored bearing resistance qR at the strength limit (kPa) = phi_b*qn.
+        If given, the strength/critical bearing CDR = qR / sigma_v is reported.
+    bearing_resistance_service : float, optional
+        Service bearing resistance (kPa). If given, the Service I bearing CDR is
+        reported.
+    c_foundation : float, optional
+        Foundation cohesion (kPa) for sliding adhesion (2/3 c). Default 0.
+    gamma_EV_max, gamma_EV_min : float, optional
+        Vertical earth (EV) load factors. Defaults 1.35 / 1.00 (AASHTO Str I).
+    gamma_EH_max, gamma_EH_min : float, optional
+        Horizontal earth (EH) load factors. Defaults 1.50 / 0.90.
+    gamma_LL : float, optional
+        Live-load (LL) factor. Default 1.75.
+    phi_sliding : float, optional
+        Sliding resistance factor. Default 1.0 (AASHTO 11.10.5.3).
+    ecc_limit_ratio : float, optional
+        Limiting-eccentricity ratio e_max/L. Default 0.25 (L/4, MSE on soil;
+        use 1/6 for foundations on rock).
+
+    Returns
+    -------
+    dict
+        Nested {sliding, eccentricity, bearing} CDR/eL/sigma_v results (SI:
+        kN/m, kN-m/m, kPa, m), plus the unfactored load components and the load
+        factors used. All ratios are capacity:demand (>=1.0 passes).
+    """
+    H = geom.wall_height
+    L = geom.reinforcement_length
+    phi_ext = phi_retained if phi_retained is not None else phi_backfill
+    gamma_ext = gamma_retained if gamma_retained is not None else gamma_backfill
+    q = geom.surcharge if live_load is None else live_load
+    Ka = rankine_Ka(phi_ext)
+
+    # Unfactored load components about the toe (Point A). Vertical loads V*
+    # resist overturning (arm L/2); horizontal loads F* drive it.
+    V1 = gamma_backfill * H * L          # EV: reinforced mass weight
+    Vs = q * L                           # LL: vertical surcharge over the mass
+    F1 = 0.5 * Ka * gamma_ext * H ** 2   # EH: active earth thrust (arm H/3)
+    F2 = Ka * q * H                      # LL: surcharge thrust (arm H/2)
+    MV1 = V1 * (L / 2.0)
+    MVs = Vs * (L / 2.0)
+    MF1 = F1 * (H / 3.0)
+    MF2 = F2 * (H / 2.0)
+
+    delta_b = min(phi_backfill, phi_foundation)
+    tan_d = math.tan(math.radians(delta_b))
+    ca = (2.0 / 3.0) * c_foundation
+
+    # --- Sliding (LL excluded from resistance) -----------------------------
+    def _sliding_cdr(ev, eh):
+        demand = eh * F1 + gamma_LL * F2
+        resist = phi_sliding * (ev * V1 * tan_d + ca * L)
+        return (resist / demand) if demand > 0 else 99.9
+
+    cdr_slide_max = _sliding_cdr(gamma_EV_max, gamma_EH_max)   # all-max
+    cdr_slide_min = _sliding_cdr(gamma_EV_min, gamma_EH_min)   # all-min
+    cdr_slide_crit = _sliding_cdr(gamma_EV_min, gamma_EH_max)  # min V, max H
+    cdr_slide_gov = min(cdr_slide_max, cdr_slide_min, cdr_slide_crit)
+
+    # --- Limiting eccentricity (LL excluded from resistance) ---------------
+    MOA = gamma_EH_max * MF1 + gamma_LL * MF2   # max overturning about toe
+
+    def _eL(ev):
+        Vr = ev * V1
+        a = (ev * MV1 - MOA) / Vr
+        return L / 2.0 - a
+
+    eL_max = _eL(gamma_EV_max)     # Strength I max (EV=1.35)
+    eL_crit = _eL(gamma_EV_min)    # min-vertical (EV=1.00): largest eccentricity
+    e_limit = ecc_limit_ratio * L
+    eL_gov = max(eL_max, eL_crit)
+
+    # --- Bearing (LL included; min-vertical combo uses gamma_EV_min on all
+    #     vertical gravity loads) ---------------------------------------------
+    def _bearing(ev_soil, ev_ll):
+        SV = ev_soil * V1 + ev_ll * Vs
+        MR = ev_soil * MV1 + ev_ll * MVs
+        a = (MR - MOA) / SV
+        eL = L / 2.0 - a
+        Bp = L - 2.0 * eL
+        sigma = (SV / Bp) if Bp > 0 else 1.0e6
+        return sigma, eL, Bp
+
+    sig_str, eL_bear, Bp_str = _bearing(gamma_EV_max, gamma_LL)   # Str I max
+    sig_crit, _, _ = _bearing(gamma_EV_min, gamma_EV_min)         # min-vertical
+
+    # Service I: all factors 1.0, LL included, overturning without EH/LL factors.
+    SV_s = V1 + Vs
+    MR_s = MV1 + MVs
+    MO_s = MF1 + MF2
+    a_s = (MR_s - MO_s) / SV_s
+    eL_s = L / 2.0 - a_s
+    Bp_s = L - 2.0 * eL_s
+    sig_svc = (SV_s / Bp_s) if Bp_s > 0 else 1.0e6
+
+    def _cdr(resistance, demand):
+        if resistance is None or demand <= 0:
+            return None
+        return resistance / demand
+
+    cdr_bear_str = _cdr(bearing_resistance_strength, sig_str)
+    cdr_bear_crit = _cdr(bearing_resistance_strength, sig_crit)
+    cdr_bear_svc = _cdr(bearing_resistance_service, sig_svc)
+    bear_cdrs = [c for c in (cdr_bear_str, cdr_bear_crit) if c is not None]
+    cdr_bear_gov = min(bear_cdrs) if bear_cdrs else None
+
+    passes = (
+        cdr_slide_gov >= 1.0
+        and eL_gov <= e_limit
+        and (cdr_bear_gov is None or cdr_bear_gov >= 1.0)
+    )
+
+    return {
+        "sliding": {
+            "CDR_strength_max": round(cdr_slide_max, 3),
+            "CDR_strength_min": round(cdr_slide_min, 3),
+            "CDR_critical": round(cdr_slide_crit, 3),
+            "CDR_governing": round(cdr_slide_gov, 3),
+            "passes": cdr_slide_gov >= 1.0,
+        },
+        "eccentricity": {
+            "eL_strength_max_m": round(eL_max, 4),
+            "eL_critical_m": round(eL_crit, 4),
+            "eL_governing_m": round(eL_gov, 4),
+            "e_limit_m": round(e_limit, 4),
+            "passes": eL_gov <= e_limit,
+        },
+        "bearing": {
+            "sigma_v_strength_max_kPa": round(sig_str, 2),
+            "eL_strength_max_m": round(eL_bear, 4),
+            "B_eff_strength_max_m": round(Bp_str, 4),
+            "sigma_v_critical_kPa": round(sig_crit, 2),
+            "sigma_v_service_kPa": round(sig_svc, 2),
+            "CDR_strength": round(cdr_bear_str, 3) if cdr_bear_str else None,
+            "CDR_critical": round(cdr_bear_crit, 3) if cdr_bear_crit else None,
+            "CDR_service": round(cdr_bear_svc, 3) if cdr_bear_svc else None,
+            "CDR_governing": round(cdr_bear_gov, 3) if cdr_bear_gov else None,
+            "passes": (cdr_bear_gov is None or cdr_bear_gov >= 1.0),
+        },
+        "passes": passes,
+        "unfactored_kN_m": {
+            "V1": round(V1, 3), "Vs": round(Vs, 3),
+            "F1": round(F1, 3), "F2": round(F2, 3),
+            "Ka_retained": round(Ka, 4),
+        },
+        "load_factors": {
+            "EV_max": gamma_EV_max, "EV_min": gamma_EV_min,
+            "EH_max": gamma_EH_max, "EH_min": gamma_EH_min,
+            "LL": gamma_LL, "phi_sliding": phi_sliding,
+            "ecc_limit_ratio": ecc_limit_ratio,
+        },
+    }
+
+
 def analyze_mse_wall(
     geom: MSEWallGeometry,
     gamma_backfill: float,
@@ -440,6 +654,10 @@ def analyze_mse_wall(
     q_allowable: float = None,
     phi_retained: float = None,
     gamma_retained: float = None,
+    lrfd_external: bool = False,
+    bearing_resistance_strength: float = None,
+    bearing_resistance_service: float = None,
+    live_load: float = None,
 ) -> MSEWallResult:
     """Run complete MSE wall analysis.
 
@@ -465,6 +683,15 @@ def analyze_mse_wall(
         Retained soil friction angle (degrees). If None, uses phi_backfill.
     gamma_retained : float, optional
         Retained soil unit weight (kN/m³). If None, uses gamma_backfill.
+    lrfd_external : bool, optional
+        If True, ALSO run the AASHTO/GEC-11 LRFD external-stability path
+        (``check_external_stability_lrfd``) and attach its CDR set to
+        ``result.external_lrfd``. Default False (ASD FOS path only — unchanged).
+    bearing_resistance_strength, bearing_resistance_service : float, optional
+        Factored strength / service bearing resistances (kPa) for the LRFD
+        bearing CDRs (only used when lrfd_external=True).
+    live_load : float, optional
+        Live-load surcharge (kPa) for the LRFD path. Default: geom.surcharge.
 
     Returns
     -------
@@ -488,6 +715,16 @@ def analyze_mse_wall(
 
     all_pass_internal = all(r["passes"] for r in internal)
 
+    external_lrfd = None
+    if lrfd_external:
+        external_lrfd = check_external_stability_lrfd(
+            geom, gamma_backfill, phi_backfill, phi_foundation,
+            phi_retained=phi_retained, gamma_retained=gamma_retained,
+            live_load=live_load, c_foundation=c_foundation,
+            bearing_resistance_strength=bearing_resistance_strength,
+            bearing_resistance_service=bearing_resistance_service,
+        )
+
     return MSEWallResult(
         FOS_sliding=external["FOS_sliding"],
         FOS_overturning=external["FOS_overturning"],
@@ -497,4 +734,5 @@ def analyze_mse_wall(
         all_pass_internal=all_pass_internal,
         wall_height=geom.wall_height,
         reinforcement_length=geom.reinforcement_length,
+        external_lrfd=external_lrfd,
     )
