@@ -49,14 +49,21 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## v5.2.0 status (RELEASED 2026-07-05 to PyPI, with geotech-references 1.3.0)
+## v5.3.0 status (RELEASED 2026-07-06 to PyPI; geotech-references stays 1.3.0)
 
-**5.2.0 ships everything below** (the whole post-5.0 line: the v5.1 backlog, LE+FEM
-modernization, reliability module, Phase E validation, v5.2 coverage Batch 1, and the
-2026-07-05 eval-review fixes). The owner-gated publish rule still applies to FUTURE
-releases: no version bump / tag / publish without explicit owner OK (a `v*` tag push
-auto-publishes via .github/workflows/publish.yml). Next release train: v5.2 coverage
-Batch 2 (see `module_work/V5.2_COVERAGE.md`) → 5.3.
+**5.3.0 adds** (on top of the 5.2.0 line): Batch-2 coverage 5/5 (drilled_shaft rational
+GEC-10 chains, MSE LRFD external-stability CDRs, soe basal-heave-sidewall-shear + FHWA
+apparent-pressure anchored walls + log-spiral Caquot-Kerisel Kp, full Reese-1974 sand
+p-y, fem2d monolithic Taylor-Hood u-p Biot consolidation); slope_stability round 2
+(15 new Slide2/ACADS/Duncan validation problems V-026..V-040, noncircular-search
+robustness fix + rejection diagnostics, rapid drawdown 2/3-stage, Newmark + Jibson,
+infinite slope, Ito-Matsui stabilizing piles verified vs the original 1975 paper);
+pdf_import round 2 (scale calibration, label→region, cleanup, vision grid overlay,
+vision↔vector cross-check); and 12 adversarial-review fixes (headline: log-spiral Kp
+δ=0 Rankine anchor). Plan of record + deferred follow-ups: `module_work/V5.3_PLAN.md`.
+The owner-gated publish rule still applies to FUTURE releases: no version bump / tag /
+publish without explicit owner OK (a `v*` tag push auto-publishes via
+.github/workflows/publish.yml).
 
 **>> For a full cross-session handoff read `HANDOFF.md` (repo root) first. <<**
 

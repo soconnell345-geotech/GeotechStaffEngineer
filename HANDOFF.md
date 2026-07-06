@@ -11,12 +11,12 @@ only for the detailed Phase-E history; this file supersedes it.
 | Item | Value |
 |------|-------|
 | Repo | github.com/soconnell345-geotech/GeotechStaffEngineer (private) |
-| **master HEAD** | **v5.2.0 release commit** (eval-review fixes + version bump) — pushed |
-| Submodule `geotech-references` | `fe7fe9d` = **v1.3.0 on PyPI** (query expansion + QC fixes) |
-| **Version string** | `5.2.0` in `pyproject.toml` — **RELEASED 2026-07-05** (tag `v5.2.0`) |
-| Validation suite | `validation_examples/` — **90 passed** (offline, no API) |
-| Full repo suite | **8056 passed / 48 skipped** (2026-07-05, `pytest -q`) |
-| **Publish status** | **5.2.0 + geotech-references 1.3.0 PUBLISHED** (owner OK'd 2026-07-05). |
+| **master HEAD** | **v5.3.0 release commit** (Batch 2 + slope round 2 + pdf_import round 2 + review fixes) — pushed |
+| Submodule `geotech-references` | `fe7fe9d` = **v1.3.0 on PyPI** (unchanged since 5.2.0) |
+| **Version string** | `5.3.0` in `pyproject.toml` — **RELEASED 2026-07-06** (tag `v5.3.0`) |
+| Validation suite | `validation_examples/` — **136+ passed** (offline; V-001..V-040) |
+| Full repo suite | **8218 passed / 48 skipped** (2026-07-06, `pytest -q`) |
+| **Publish status** | **5.3.0 PUBLISHED** (owner OK'd 2026-07-06). v5.4 plan: see task list + `module_work/V5.3_PLAN.md` follow-ups. |
 
 **⚠️ Release gate (still applies to FUTURE releases):** a `v*` git tag push
 **auto-publishes to PyPI** via `.github/workflows/publish.yml` (OIDC trusted
