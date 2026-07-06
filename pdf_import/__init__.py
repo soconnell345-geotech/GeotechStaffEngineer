@@ -23,6 +23,10 @@ from pdf_import.scale import (
 from pdf_import.labels import (
     classify_label, associate_labels_to_regions, propose_role_mapping,
 )
+from pdf_import.cleanup import (
+    dedupe_consecutive, merge_collinear, cleanup_polyline,
+    snap_endpoints, join_polylines, cleanup_geometry,
+)
 
 __all__ = [
     'PdfParseResult',
@@ -36,6 +40,12 @@ __all__ = [
     'classify_label',
     'associate_labels_to_regions',
     'propose_role_mapping',
+    'dedupe_consecutive',
+    'merge_collinear',
+    'cleanup_polyline',
+    'snap_endpoints',
+    'join_polylines',
+    'cleanup_geometry',
 ]
 
 

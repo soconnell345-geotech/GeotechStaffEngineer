@@ -101,6 +101,40 @@ def _run_propose_role_mapping(params):
     return clean_result(propose_role_mapping(norm, text_blocks))
 
 
+def _run_cleanup_geometry(params):
+    from pdf_import import cleanup_geometry
+
+    _valid = ("parse_result", "tol", "snap_tol", "angle_tol_deg", "join")
+    reject_unknown_params(params, _valid, method="cleanup_geometry")
+    require_params(params, ["parse_result"], method="cleanup_geometry",
+                   valid=_valid)
+    pr = params["parse_result"]
+
+    def _pts(seq):
+        return [_point_xz(p) for p in (seq or [])]
+
+    surface = _pts(pr.get("surface_points"))
+    boundaries = {name: _pts(pts)
+                  for name, pts in (pr.get("boundary_profiles") or {}).items()}
+    gwt = _pts(pr.get("gwt_points")) if pr.get("gwt_points") is not None else None
+
+    out = cleanup_geometry(
+        surface_points=surface, boundary_profiles=boundaries, gwt_points=gwt,
+        tol=params.get("tol", 1e-4), snap_tol=params.get("snap_tol", 1e-3),
+        angle_tol_deg=params.get("angle_tol_deg", 1.0),
+        join=params.get("join", False))
+
+    def _xz(seq):
+        return [{"x": round(x, 4), "z": round(z, 4)} for x, z in (seq or [])]
+
+    return clean_result({
+        "surface_points": _xz(out["surface_points"]),
+        "boundary_profiles": {n: _xz(p) for n, p in out["boundary_profiles"].items()},
+        "gwt_points": _xz(out["gwt_points"]) if out["gwt_points"] is not None else None,
+        "report": out["report"],
+    })
+
+
 def _run_build_slope_geometry(params):
     from pdf_import import to_dxf_parse_result, PdfParseResult
     from dxf_import.converter import SoilPropertyAssignment, build_slope_geometry
@@ -197,6 +231,7 @@ METHOD_REGISTRY = {
     "calibrate_scale": _run_calibrate_scale,
     "propose_scale": _run_propose_scale,
     "propose_role_mapping": _run_propose_role_mapping,
+    "cleanup_geometry": _run_cleanup_geometry,
     "build_slope_geometry": _run_build_slope_geometry,
     "build_fem_inputs": _run_build_fem_inputs,
 }
@@ -266,6 +301,18 @@ METHOD_INFO = {
             "text_blocks": {"type": "array", "required": False, "description": "Alternative to file_path: [{text, x, y}, ...]."},
         },
         "returns": {"role_mapping": "Proposed {hex_color: role} (roles: surface/gwt/boundary_<Name>).", "associations": "Per-label {label, role, color, method, distance}.", "applied": "Always false."},
+    },
+    "cleanup_geometry": {
+        "category": "PDF Import",
+        "brief": "Clean extracted geometry before build_slope_geometry: dedupe points, thin collinear runs, snap near-coincident surface/boundary endpoints, optionally join broken polylines. Returns cleaned geometry + a point-count report.",
+        "parameters": {
+            "parse_result": {"type": "dict", "required": True, "description": "Extracted geometry {surface_points, boundary_profiles, gwt_points} (from extract_vector_geometry)."},
+            "tol": {"type": "float", "required": False, "default": 0.0001, "description": "Dedupe distance tolerance (m)."},
+            "snap_tol": {"type": "float", "required": False, "default": 0.001, "description": "Endpoint-snapping tolerance across surface + boundaries (m)."},
+            "angle_tol_deg": {"type": "float", "required": False, "default": 1.0, "description": "Collinear-thinning bend tolerance (deg): interior vertices turning less than this are removed."},
+            "join": {"type": "bool", "required": False, "default": False, "description": "Also join broken polyline segments within each boundary."},
+        },
+        "returns": {"surface_points": "Cleaned surface.", "boundary_profiles": "Cleaned boundaries.", "gwt_points": "Cleaned GWT or null.", "report": "Before/after point counts."},
     },
     "build_slope_geometry": {
         "category": "PDF Import",

@@ -70,6 +70,22 @@ Proposes a colour->role `role_mapping` from the drawing's text labels:
   from `extract_colored_paths(...)` (one entry per vector path: `{color, points}`).
   Funhouse adapter: `propose_role_mapping` (chains PDF -> paths+text -> mapping).
 
+## Geometry cleanup (C3, v5.3) — `cleanup.py`
+Tolerance-parametrized, pure-geometry cleanup to run BEFORE
+`build_slope_geometry` / `build_fem_inputs`:
+- `dedupe_consecutive(points, tol)` — drop consecutive near-duplicate vertices.
+- `merge_collinear(points, angle_tol_deg)` — thin a densely-sampled straight run
+  to its endpoints while KEEPING corners (a vertex is kept only when the path
+  bends by more than `angle_tol_deg`).
+- `snap_endpoints(polylines, tol)` — snap near-coincident polyline ENDPOINTS to a
+  shared averaged vertex (interior vertices untouched) so touching lines meet.
+- `join_polylines(polylines, tol)` — greedily join segments sharing endpoints
+  (with reversal) into longer chains.
+- `cleanup_polyline(...)` / `cleanup_geometry(surface, boundaries, gwt, ...)` —
+  apply dedupe + collinear-thin per polyline, cross-snap surface+boundary
+  endpoints, optionally join; returns cleaned copies (inputs untouched) + a
+  before/after point-count report. Funhouse adapter: `cleanup_geometry`.
+
 ## References
 
 - PyMuPDF documentation: https://pymupdf.readthedocs.io/
