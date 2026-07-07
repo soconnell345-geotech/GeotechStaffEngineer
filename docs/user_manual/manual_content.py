@@ -615,9 +615,15 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "(Fredlund&ndash;Krahn) with interslice-force functions.",
             "Critical-surface search: circular centre-grid, entry&ndash;exit arcs, random noncircular "
             "polylines with differential-evolution / PSO refinement, and weak-layer search.",
-            "Reinforcement (soil nails, tieback anchors, geosynthetics, Ito&ndash;Matsui stabilizing "
-            "piles), SHANSEP and Hoek&ndash;Brown layer strengths, ponded water, tension cracks, and "
-            "pseudo-static k<sub>h</sub>.",
+            "Advanced per-layer strength models (the layer <code>strength_model</code> selector): "
+            "Mohr&ndash;Coulomb (default), **SHANSEP** undrained-strength-ratio "
+            "(s<sub>u</sub> = S&middot;OCR<sup>m</sup>&middot;&sigma;&prime;<sub>v</sub>, with a "
+            "s<sub>u,min</sub> floor), and **Generalized Hoek&ndash;Brown** for rock "
+            "(&sigma;<sub>ci</sub>, GSI, m<sub>i</sub>, D).",
+            "Reinforcement crossing the slip surface: **soil nails** (pullout + bar-tension capacity, "
+            "FHWA GEC-7), **tieback anchors** (allowable tension when the bond zone crosses the "
+            "surface), horizontal **geosynthetic** layers, and **Ito &amp; Matsui (1975)** stabilizing "
+            "piles; plus ponded water, tension cracks, and pseudo-static k<sub>h</sub>.",
             "Seismic displacement (**Newmark** sliding block + **Jibson 2007** regression), **rapid "
             "drawdown** (USACE 2-stage / Duncan&ndash;Wright&ndash;Wong 3-stage), infinite-slope FOS, and "
             "**probabilistic FOS** (FOSM and Monte Carlo).",
