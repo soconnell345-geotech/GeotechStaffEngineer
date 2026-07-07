@@ -177,14 +177,42 @@ search_critical_surface(geom, surface_type="noncircular",
     load there) reproduces the steady-seepage condition Slide2/EM 1110-2-1902 use.
     Default `None` = unchanged. For Slide2 #95 this recovers the Corps 2-stage FOS from
     the conservative 1.21 to 1.34 vs the published 1.347 (~0.6%).
-  * **Known limitation — Duncan 3-stage for c'=0 soils.** When the drained (Kc=Kf)
-    envelope falls BELOW the R (Kc=1) envelope at the operative σ'_fc (a c'=0 soil with a
-    cohesive R-envelope, e.g. #95/#96), the Kc interpolation under-captures the
-    anisotropic-consolidation strength GAIN that lifts the published 3-stage above the
-    2-stage; the module's 3-stage tracks the 2-stage (ordering preserved) but lands
-    ~12% below the published 3-stage even under the steady-seepage stage-1 that
-    validates the 2-stage. Follow-up: a τ_ff-vs-σ'_fc envelope-crossing treatment per
-    Duncan-Wright-Wong (1990). Not geometry- or seepage-related.
+  * **Duncan 3-stage for c'=0 soils — stage-3 normal (v5.4 E2).** For #95/#96 the
+    default 3-stage lands ~12% below the published 1.443. The V5.3 note blamed the Kc
+    interpolation; the E2 re-investigation found the Kc interpolation is sound (it yields
+    ~1.45 on its own) and the deficit is in the STAGE-3 drained substitution: the
+    drawn-down effective normal σ'_post was estimated with the Fellenius `W·cosα/l − u`
+    term, which under-predicts N' (it neglects interslice forces) and so substitutes a
+    too-low drained strength on 17/50 slices. The optional
+    `stage3_effective_normal='gle'` uses the RIGOROUS GLE effective normal from a
+    drawn-down drained solve (the same `base_normal_eff` basis stage 1 uses) — 9
+    physically-genuine substitutions instead of 17 — lifting #96 to 1.306 (flat) /
+    1.370 (seepage), closing most of the residual (~5% left, within the
+    representative-flow-net + LE-N'-at-FOS sensitivity that shows as the +0.6% Corps
+    residual). **Default is `'fellenius'` (byte-identical to before);** the refinement
+    is opt-in. Only the 3-stage has a stage 3, so the 2-stage is untouched.
+- **Rapid-drawdown critical-surface search (v5.4 E1)** — `rapid_drawdown.
+  search_rapid_drawdown(geom, from_el, to_el, method=…, surface_type='circular'|
+  'entry_exit'|'noncircular'|'noncircular_de', …)` → `RapidDrawdownSearchResult`
+  (also `analysis.search_rapid_drawdown`; exported at the package level). It finds the
+  MINIMUM-FOS surface with the drawdown strength substituted per trial, for both stage
+  methods and both circular/noncircular surfaces. It is a THIN composition: `search.py`
+  gained an optional `fos_fn(geom, slip)->FOS` hook on `_compute_fos` and the search
+  entry points (`grid_search`/`optimize_radius`/`search_entry_exit`/`search_noncircular`/
+  `search_de`), default `None` = byte-identical; the wrapper passes a drawdown-FOS
+  closure so the grid/entry-exit/random/DE loops, radius optimisation, entry/exit
+  filtering, and noncircular guards are all SHARED — no search internals are duplicated.
+  The result carries the ordinary rich `SearchResult` plus the stage-level
+  `RapidDrawdownResult` recomputed on the winning surface. **Robustness gate:** the
+  drawdown closure REJECTS a trial surface whose stage-1 or stage-3 GLE did not converge,
+  whose drawn-down solve retained too few slices, or whose stage-1 (full-pool) FOS is
+  implausibly low (<0.5) — a large near-flat circle self-clips to a handful of slices
+  whose GLE "converges" to a spurious low FOS (~0.18) that would otherwise win the
+  search. Validated vs Slide2 #98 Walter Bouldin search minima (Corps 0.931 / DWW 1.039)
+  on the RECOVERED geometry (~10% low, geometry-limited) and by exact wrapper mechanics
+  on #95/#96 — see RESULTS V-041. Note: each trial is several LE solves + two geometry
+  deep-copies, so a circular grid search is heavy; prefer a modest `nx·ny` or
+  `entry_exit` and bounded entry/exit windows (an O(n_surfaces) hotspot, not optimised).
 - **Newmark seismic sliding block (v5.3 B2b)** — `newmark.py`, three functions
   (exported + adapter `yield_acceleration` / `newmark_displacement` /
   `newmark_jibson2007`):

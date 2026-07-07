@@ -44,7 +44,9 @@ from slope_stability.analysis import (
 from slope_stability.results import (
     SlopeStabilityResult, SliceData, SearchResult, InfiniteSlopeResult,
 )
-from slope_stability.rapid_drawdown import RapidDrawdownResult
+from slope_stability.rapid_drawdown import (
+    RapidDrawdownResult, RapidDrawdownSearchResult, search_rapid_drawdown,
+)
 from slope_stability.newmark import (
     yield_acceleration, newmark_displacement, newmark_jibson2007,
     YieldAccelerationResult, NewmarkResult,
@@ -66,9 +68,10 @@ __all__ = [
     'search_pso', 'search_weak_layer_biased', 'search_entry_exit',
     'search_de',
     'analyze_slope', 'search_critical_surface', 'rapid_drawdown_fos',
+    'search_rapid_drawdown',
     'compare_methods_table', 'infinite_slope_fos',
     'SlopeStabilityResult', 'SliceData', 'SearchResult', 'InfiniteSlopeResult',
-    'RapidDrawdownResult',
+    'RapidDrawdownResult', 'RapidDrawdownSearchResult',
     'yield_acceleration', 'newmark_displacement', 'newmark_jibson2007',
     'YieldAccelerationResult', 'NewmarkResult',
 ]

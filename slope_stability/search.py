@@ -17,7 +17,7 @@ References:
 import math
 import random
 import warnings
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any, Callable
 
 from slope_stability.geometry import SlopeGeometry
 from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurface
@@ -217,13 +217,22 @@ def _compute_fos(geom: SlopeGeometry,
                  n_slices: int,
                  tol: float = 1e-4,
                  window_span: Optional[float] = None,
-                 reject_stats: Optional[Dict[str, int]] = None) -> float:
+                 reject_stats: Optional[Dict[str, int]] = None,
+                 fos_fn: Optional[Callable] = None) -> float:
     """Safely compute FOS, returning _FOS_MAX on any error.
 
     ``window_span`` anchors the noncircular span floor to the caller's entry/exit
     window (see ``_noncircular_admissible``). ``reject_stats`` (optional) is a
     mutable tally the generators pass so that silent noncircular rejections
     (geometry / non-converged / jagged) are counted rather than lost.
+
+    ``fos_fn`` (optional) substitutes a caller-supplied per-surface FOS
+    evaluator ``fos_fn(geom, slip) -> float`` for the built-in method dispatch,
+    while KEEPING the same geometry-admissibility, non-convergence, and jagged
+    guards. This is how ``search_rapid_drawdown`` reuses every search loop
+    (grid / entry-exit / random / DE) with the rapid-drawdown FOS substituted per
+    surface instead of an ordinary drained/undrained solve. Default ``None``
+    leaves the method dispatch byte-identical.
     """
     try:
         slices = build_slices(geom, slip, n_slices)
@@ -243,7 +252,9 @@ def _compute_fos(geom: SlopeGeometry,
                                            window_span):
                 _bump(reject_stats, "geometry")
                 return _FOS_MAX
-            if method in ("morgenstern_price", "gle"):
+            if fos_fn is not None:
+                fos = fos_fn(geom, slip)
+            elif method in ("morgenstern_price", "gle"):
                 fos = _rigorous_noncircular_fos(slices, slip, "half_sine", tol,
                                                 geom)
             elif method == "fellenius":
@@ -264,7 +275,9 @@ def _compute_fos(geom: SlopeGeometry,
                 return _FOS_MAX
             return fos
 
-        if method == "fellenius":
+        if fos_fn is not None:
+            fos = fos_fn(geom, slip)
+        elif method == "fellenius":
             fos = fellenius_fos(slices, slip)
         elif method == "bishop":
             if not getattr(slip, 'is_circular', True):
@@ -283,7 +296,7 @@ def _compute_fos(geom: SlopeGeometry,
 
         # Guard against non-convergence producing negative or absurd values
         # FOS < 0.05 is physically meaningless and indicates numerical issues
-        if fos < 0.05 or math.isnan(fos) or math.isinf(fos):
+        if fos is None or fos < 0.05 or math.isnan(fos) or math.isinf(fos):
             return _FOS_MAX
         return fos
     except (ValueError, ZeroDivisionError, RuntimeError):
@@ -321,6 +334,7 @@ def optimize_radius(geom: SlopeGeometry,
                     tol: float = 1e-4,
                     x_entry_range: Optional[Tuple[float, float]] = None,
                     x_exit_range: Optional[Tuple[float, float]] = None,
+                    fos_fn: Optional[Callable] = None,
                     ) -> Tuple[float, float]:
     """Find the radius that minimizes FOS for a given circle center.
 
@@ -384,7 +398,7 @@ def optimize_radius(geom: SlopeGeometry,
         if not _check_entry_exit(geom, slip, x_entry_range, x_exit_range):
             continue
 
-        fos = _compute_fos(geom, slip, method, n_slices, tol=tol)
+        fos = _compute_fos(geom, slip, method, n_slices, tol=tol, fos_fn=fos_fn)
         if fos < best_fos:
             best_fos = fos
             best_r = r
@@ -407,8 +421,10 @@ def optimize_radius(geom: SlopeGeometry,
         ok1 = _check_entry_exit(geom, slip1, x_entry_range, x_exit_range)
         ok2 = _check_entry_exit(geom, slip2, x_entry_range, x_exit_range)
 
-        f1 = _compute_fos(geom, slip1, method, n_slices, tol=tol) if ok1 else _FOS_MAX
-        f2 = _compute_fos(geom, slip2, method, n_slices, tol=tol) if ok2 else _FOS_MAX
+        f1 = _compute_fos(geom, slip1, method, n_slices, tol=tol,
+                          fos_fn=fos_fn) if ok1 else _FOS_MAX
+        f2 = _compute_fos(geom, slip2, method, n_slices, tol=tol,
+                          fos_fn=fos_fn) if ok2 else _FOS_MAX
 
         if f1 < f2:
             b = r2
@@ -434,6 +450,7 @@ def grid_search(geom: SlopeGeometry,
                 tol: float = 1e-4,
                 x_entry_range: Optional[Tuple[float, float]] = None,
                 x_exit_range: Optional[Tuple[float, float]] = None,
+                fos_fn: Optional[Callable] = None,
                 ) -> SearchResult:
     """Grid search for the critical circular slip surface.
 
@@ -480,6 +497,7 @@ def grid_search(geom: SlopeGeometry,
             r_opt, fos_opt = optimize_radius(
                 geom, xc, yc, method=method, n_slices=n_slices, tol=tol,
                 x_entry_range=x_entry_range, x_exit_range=x_exit_range,
+                fos_fn=fos_fn,
             )
             n_evaluated += 1
 
@@ -535,6 +553,7 @@ def search_noncircular(
     tol: float = 1e-4,
     seed: Optional[int] = None,
     method: str = "spencer",
+    fos_fn: Optional[Callable] = None,
 ) -> SearchResult:
     """Search for the critical noncircular slip surface using random polylines.
 
@@ -617,7 +636,7 @@ def search_noncircular(
             slip = PolylineSlipSurface(points=points)
             fos = _compute_fos(geom, slip, method, n_slices, tol=tol,
                                window_span=window_span,
-                               reject_stats=reject_stats)
+                               reject_stats=reject_stats, fos_fn=fos_fn)
             n_evaluated += 1
 
             grid_fos.append({
@@ -1080,6 +1099,7 @@ def search_entry_exit(
     method: str = "bishop",
     n_slices: int = 30,
     tol: float = 1e-4,
+    fos_fn: Optional[Callable] = None,
 ) -> SearchResult:
     """Entry/exit region search for circular slip surfaces.
 
@@ -1159,7 +1179,8 @@ def search_entry_exit(
                     continue
 
                 slip = CircularSlipSurface(xc, yc, r)
-                fos = _compute_fos(geom, slip, method, n_slices, tol=tol)
+                fos = _compute_fos(geom, slip, method, n_slices, tol=tol,
+                                   fos_fn=fos_fn)
                 n_evaluated += 1
 
                 if fos < local_best_fos:
@@ -1187,9 +1208,9 @@ def search_entry_exit(
                 r2 = math.sqrt(half_chord**2 + t2**2)
 
                 f1 = _compute_fos(geom, CircularSlipSurface(xc1, yc1, r1),
-                                  method, n_slices, tol=tol)
+                                  method, n_slices, tol=tol, fos_fn=fos_fn)
                 f2 = _compute_fos(geom, CircularSlipSurface(xc2, yc2, r2),
-                                  method, n_slices, tol=tol)
+                                  method, n_slices, tol=tol, fos_fn=fos_fn)
                 n_evaluated += 2
 
                 if f1 < f2:
@@ -1264,6 +1285,7 @@ def search_de(
     popsize: int = 15,
     seed_surface=None,
     n_seed_trials: int = 150,
+    fos_fn: Optional[Callable] = None,
 ) -> SearchResult:
     """Noncircular critical-surface optimization via differential evolution.
 
@@ -1344,7 +1366,8 @@ def search_de(
         if slip is None:
             return _FOS_MAX
         fos = _compute_fos(geom, slip, method, n_slices, tol=tol,
-                           window_span=window_span, reject_stats=reject_stats)
+                           window_span=window_span, reject_stats=reject_stats,
+                           fos_fn=fos_fn)
         # Convexity penalty: vertex above the chord of its neighbours
         pts = slip.points
         pen = 0.0
@@ -1363,7 +1386,7 @@ def search_de(
         seed_res = search_noncircular(
             geom, x_entry_range, x_exit_range, n_trials=n_seed_trials,
             n_points=n_points, n_slices=n_slices, tol=tol, seed=seed,
-            method=method,
+            method=method, fos_fn=fos_fn,
         )
         if seed_res.critical is not None and seed_res.critical.slip_points:
             seed_surface = PolylineSlipSurface(
@@ -1414,7 +1437,7 @@ def search_de(
     if best_slip is not None and best_fos < _FOS_MAX:
         # objective may include penalty; recompute clean FOS
         clean = _compute_fos(geom, best_slip, method, n_slices, tol=tol,
-                             window_span=window_span)
+                             window_span=window_span, fos_fn=fos_fn)
         try:
             x_entry, x_exit = best_slip.find_entry_exit(geom)
             slices = build_slices(geom, best_slip, n_slices)

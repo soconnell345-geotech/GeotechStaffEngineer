@@ -100,6 +100,55 @@ LE-vs-FEM spread ~6-7%: consistent with the usual SRM-vs-LE comparisons
 (Griffiths & Lane 1999 report agreement within a few percent; coarse
 meshes bias SRM high). The cross-check test is `-m slow` (~6 min).
 
+## B7 — Rapid drawdown (Corps 2-stage / Duncan-Wright-Wong 3-stage) + search
+[`rapid_drawdown_fos` (single specified surface) and `search_rapid_drawdown`
+(critical-surface search under drawdown strengths, v5.4 E1). Low-permeability
+layers carry the R-envelope (`R_c`/`R_phi`); the FOS is a GLE/Spencer solve at the
+drawn-down pool with each undrained slice's base overridden to `c = tau_ff, phi =
+0`. Feet inputs converted to SI. Full theory in DESIGN.md.]
+
+### Single specified surface (validation_examples V-037 / V-038)
+
+| Problem | Method | Ours | Published | vs pub |
+|---------|--------|-----:|----------:|-------:|
+| #95 EM 1110-2-1902 dam (seepage stage-1) | Corps 2-stage | 1.34  | 1.347 | -0.5% |
+| #95 (flat full-pool stage-1, conservative bound) | Corps 2-stage | 1.21 | — | — |
+| #96 same dam (seepage stage-1), default stage-3 | DWW 3-stage | 1.273 | 1.443 | -12% |
+| #96 same dam (seepage stage-1), `stage3_effective_normal='gle'` | DWW 3-stage | 1.370 | 1.443 | -5% |
+
+**#96 3-stage refinement (v5.4 E2).** The default (Fellenius stage-3 effective
+normal) is preserved byte-for-byte (flat 1.235 / seepage 1.273). The residual to
+the published 1.443 was traced NOT to the Kc interpolation (which alone yields
+~1.45) but to the stage-3 drained substitution: the Fellenius `W*cos(a)/l - u`
+normal under-predicts N' and fires the substitution on 17/50 slices. The optional
+`stage3_effective_normal='gle'` uses the rigorous GLE normal (consistent with
+stage 1; 9 genuine substitutions) → 1.306 flat / 1.370 seepage, closing most of
+the gap. Gated behind the new parameter; the lead decides whether to flip the
+default. ~5% residual left, within the representative-flow-net + LE-N'-at-FOS
+sensitivity band (cf. the +0.6% Corps residual on #95).
+
+### Critical-surface search (validation_examples V-041, v5.4 E1)
+
+`search_rapid_drawdown` reuses the ordinary search machinery (grid / entry-exit /
+random / DE) with the drawdown FOS wired in per surface via a new `fos_fn` hook;
+degenerate/non-converged trial surfaces are rejected (a stage-1+stage-3
+convergence gate + a min-slice / stage-1-FOS floor kill the shallow near-flat
+slivers a circular search would otherwise pick with a spurious low FOS).
+
+| Problem | Method | Ours (search min) | Published (search min) | vs pub |
+|---------|--------|------------------:|-----------------------:|-------:|
+| #98 Walter Bouldin (approx geom) | Corps 2-stage | 0.837 | 0.931 | -10% |
+| #98 (approx geom) | DWW 3-stage (default) | 0.938 | 1.039 | -10% |
+| #98 (approx geom) | DWW 3-stage (`gle` stage-3) | 0.959 | 1.039 | -8% |
+
+Wrapper MECHANICS are exact on the #95/#96 EXACT section (search min 0.90 <= the
+published specified-circle single-surface FOS; the stage detail recomputed on the
+winning surface reproduces the search FOS). #98's ~10% low minima are a geometry
+effect — the cross-section is only RECOVERED (flat-stacked layers, real pinch-outs
+simplified, riprap veneer omitted; INVENTORY #98), and two independent search
+types (grid + entry-exit) both land ~0.85 Corps, with the correct ordering
+(DWW > Corps). NOT tuned; the recovered geometry is left as-is.
+
 ---
 
 ## Notes / known deviations
@@ -115,6 +164,7 @@ meshes bias SRM high). The cross-check test is `-m slow` (~6 min).
   SS-4 (m_alpha direction error: Bishop overestimated FOS ~18% on
   crest-on-the-left geometries) and SS-5 (build_slices silently dropped
   below-base fragments, letting absurd FOS ~0.1 win searches).
-- Rapid drawdown: designed stub only (NotImplementedError with the
-  Duncan/USACE 3-stage plan); descoped pending per-slice consolidation-
-  stress bookkeeping.
+- Rapid drawdown: IMPLEMENTED (v5.3 B2a + v5.4 E1/E2) — see section B7 above.
+  The earlier "designed stub only" status is superseded: `rapid_drawdown_fos`
+  (single surface) and `search_rapid_drawdown` (critical-surface search) are
+  validated against Slide2 #95/#96/#98.

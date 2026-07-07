@@ -521,7 +521,8 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
                        f_interslice: str = "constant",
                        n_slices: int = 50,
                        tol: float = 1e-4,
-                       stage1_phreatic_points=None):
+                       stage1_phreatic_points=None,
+                       stage3_effective_normal: str = "fellenius"):
     """Rapid-drawdown factor of safety (USACE 2-stage / Duncan-Wright-Wong
     3-stage) on a specified slip surface.
 
@@ -546,6 +547,10 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         Steady-seepage phreatic surface for the stage-1 consolidation stresses
         only (default None = flat full-pool, the conservative no-through-seepage
         bound). See `slope_stability.rapid_drawdown` for details.
+    stage3_effective_normal : str, optional
+        Stage-3 (3-stage) drained-substitution effective-normal basis:
+        'fellenius' (default, preserved) or 'gle' (rigorous). See
+        `slope_stability.rapid_drawdown` for details.
 
     Returns
     -------
@@ -555,7 +560,16 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
     return _rd(geom, drawdown_from_elevation, drawdown_to_elevation,
                xc=xc, yc=yc, radius=radius, slip_surface=slip_surface,
                method=method, f_interslice=f_interslice, n_slices=n_slices,
-               tol=tol, stage1_phreatic_points=stage1_phreatic_points)
+               tol=tol, stage1_phreatic_points=stage1_phreatic_points,
+               stage3_effective_normal=stage3_effective_normal)
+
+
+# Re-export the rapid-drawdown critical-surface search (defined in
+# rapid_drawdown.py, which composes it from search.py) for parity with
+# rapid_drawdown_fos and the rest of the analysis-orchestrator surface.
+from slope_stability.rapid_drawdown import (  # noqa: E402
+    search_rapid_drawdown, RapidDrawdownSearchResult,
+)
 
 
 def infinite_slope_fos(slope_angle: float,
