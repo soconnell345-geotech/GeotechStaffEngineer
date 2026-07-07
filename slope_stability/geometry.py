@@ -261,6 +261,12 @@ class SlopeGeometry:
     gwt_points: Optional[List[Tuple[float, float]]] = None
     surcharge: float = 0.0
     surcharge_x_range: Optional[Tuple[float, float]] = None
+    # Additional surcharge zones (v5.4 E8) for problems with several distinct
+    # loaded areas (e.g. a bench load + a crest load). Each is a
+    # (pressure_kPa, x_start, x_end) triple; ``surcharge_at`` SUMS every zone
+    # covering x, ON TOP OF the single ``surcharge``/``surcharge_x_range`` pair
+    # (which is unchanged). Default None = single-surcharge behaviour preserved.
+    surcharges: Optional[List[Tuple[float, float, float]]] = None
     reinforcement_force: float = 0.0
     reinforcement_elevation: Optional[float] = None
     kh: float = 0.0
@@ -301,6 +307,19 @@ class SlopeGeometry:
             raise ValueError(f"kh must be non-negative, got {self.kh}")
         if self.surcharge < 0:
             raise ValueError(f"surcharge must be non-negative, got {self.surcharge}")
+        if self.surcharges is not None:
+            for z in self.surcharges:
+                if len(z) != 3:
+                    raise ValueError(
+                        "each surcharges entry must be a (pressure, x_start, "
+                        f"x_end) triple, got {z!r}")
+                p, x0, x1 = z
+                if p < 0:
+                    raise ValueError(
+                        f"surcharge zone pressure must be non-negative, got {p}")
+                if x1 <= x0:
+                    raise ValueError(
+                        f"surcharge zone needs x_start < x_end, got {(x0, x1)}")
         if self.tension_crack_depth < 0:
             raise ValueError(f"tension_crack_depth must be non-negative, got {self.tension_crack_depth}")
         if self.tension_crack_water_depth < 0:
@@ -397,15 +416,26 @@ class SlopeGeometry:
         return (min(zs), max(zs))
 
     def surcharge_at(self, x: float) -> float:
-        """Return surcharge pressure at x (kPa)."""
-        if self.surcharge <= 0:
-            return 0.0
-        if self.surcharge_x_range is None:
-            return self.surcharge
-        x_lo, x_hi = self.surcharge_x_range
-        if x_lo <= x <= x_hi:
-            return self.surcharge
-        return 0.0
+        """Return the TOTAL surcharge pressure at x (kPa).
+
+        Sums the single ``surcharge`` (within ``surcharge_x_range``, or
+        everywhere if that is None) and every ``surcharges`` zone
+        ``(pressure, x_start, x_end)`` that covers x. With ``surcharges=None``
+        this is byte-identical to the single-surcharge behaviour.
+        """
+        q = 0.0
+        if self.surcharge > 0:
+            if self.surcharge_x_range is None:
+                q += self.surcharge
+            else:
+                x_lo, x_hi = self.surcharge_x_range
+                if x_lo <= x <= x_hi:
+                    q += self.surcharge
+        if self.surcharges:
+            for p, x0, x1 in self.surcharges:
+                if x0 <= x <= x1:
+                    q += p
+        return q
 
     def pore_pressure_at(self, x: float, z: float) -> Optional[float]:
         """Interpolate the discrete pore-pressure field at (x, z).

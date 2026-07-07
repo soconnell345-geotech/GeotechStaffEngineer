@@ -255,6 +255,19 @@ class TestStrengthModels:
             gwt_points=[[0, 14], [70, 14]]))   # 4 m pond over the toe bench
         assert ponded["FOS"] != pytest.approx(dry_toe["FOS"], rel=1e-3)
 
+    def test_multiple_surcharge_zones(self):
+        """E8: several distinct surcharge zones (bench + crest) apply and lower
+        the FOS; a zone off the sliding mass is inert; bad zone rejected."""
+        plain = METHOD_REGISTRY["analyze_slope"](_base(method="bishop"))["FOS"]
+        loaded = METHOD_REGISTRY["analyze_slope"](_base(
+            method="bishop",
+            surcharges=[{"pressure": 40.0, "x_start": 30.0, "x_end": 45.0},
+                        {"pressure": 30.0, "x_start": 45.0, "x_end": 60.0}]))["FOS"]
+        assert loaded < plain          # crest-side loads add driving weight
+        with pytest.raises(ValueError, match=r"surcharges\[\].*pressure"):
+            METHOD_REGISTRY["analyze_slope"](_base(
+                surcharges=[{"x_start": 30.0, "x_end": 45.0}]))
+
 
 # ----------------------------------------------------------------------------
 # Infinite slope

@@ -335,6 +335,15 @@ search_critical_surface(geom, surface_type="noncircular",
   linear field. Enables Slide2 #10 / ACADS 5 (pore-pressure-grid, previously
   N/A-scope) — see VALIDATION.md B8 / RESULTS V-029. (scipy imported lazily, as
   in `search.search_de`.)
+- **Multiple surcharge zones (v5.4 E8)**: `SlopeGeometry.surcharges` is an optional
+  list of `(pressure_kPa, x_start, x_end)` zones for problems with several distinct
+  loaded areas (a bench load + a crest load, etc.). `surcharge_at(x)` SUMS every zone
+  covering x on top of the single `surcharge`/`surcharge_x_range` pair (which is
+  unchanged), so slices and the search pick them up with no change (both route through
+  `surcharge_at`). Default `None` = single-surcharge behaviour byte-identical. A
+  linearly-varying (trapezoidal) load is represented as its mean uniform pressure or as
+  several thin zones. Exercised on Slide2 #9 / ACADS 4 (bench + crest loads) — see
+  VALIDATION.md B11 / RESULTS V-028.
 
 ## Duncan Verification Examples (test_duncan_verification.py)
 

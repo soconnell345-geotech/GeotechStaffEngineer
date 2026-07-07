@@ -27,6 +27,7 @@ _GEOM_PARAMS = (
     "kh", "nails", "anchors", "geosynthetics", "stabilizing_piles",
     "tension_crack_depth", "tension_crack_water_depth",
     "tension_crack_side", "tension_crack_model", "pore_pressure_points",
+    "surcharges",
 )
 _SURFACE_PARAMS = ("xc", "yc", "radius", "slip_points")
 
@@ -80,6 +81,13 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
     pore_pressure_points = (
         [tuple(p) for p in params["pore_pressure_points"]]
         if params.get("pore_pressure_points") else None)
+    surcharges = None
+    if params.get("surcharges"):
+        surcharges = []
+        for z in params["surcharges"]:
+            require_keys(z, ["pressure", "x_start", "x_end"], method=method,
+                         item_label="surcharges[]")
+            surcharges.append((z["pressure"], z["x_start"], z["x_end"]))
 
     nails = None
     if params.get("nails"):
@@ -153,7 +161,7 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
         tension_crack_depth=params.get("tension_crack_depth", 0.0),
         tension_crack_water_depth=params.get("tension_crack_water_depth", 0.0),
         tension_crack_side=crack_side, tension_crack_model=crack_model,
-        pore_pressure_points=pore_pressure_points,
+        pore_pressure_points=pore_pressure_points, surcharges=surcharges,
     )
 
 
@@ -442,8 +450,9 @@ _GEOMETRY_PARAMS = {
     "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {top_elevation, bottom_elevation, gamma (all required); name, gamma_sat, phi, c_prime, cu, analysis_mode ('drained'|'undrained'), ru, bottom_boundary_points optional}. Per-layer strength_model: 'mohr_coulomb' (default), 'shansep' (su = shansep_S * ocr^shansep_m * sigma'_v; fields shansep_S, shansep_m, ocr, su_min) or 'hoek_brown' (Generalized Hoek-Brown; fields hb_sigci kPa, hb_gsi, hb_mi, hb_D). For rapid_drawdown_fos, low-permeability layers also take the total-stress R-envelope R_c (kPa) and R_phi (deg); R_phi omitted/null => free-draining."},
     "gwt_points": {"type": "array", "required": False, "description": "Groundwater table [[x,y],...]. If above the ground surface, ponded water is auto-detected (water weight + horizontal hydrostatic thrust applied as external loads)."},
     "kh": {"type": "float", "required": False, "default": 0.0, "description": "Horizontal pseudo-static seismic coefficient (acts on soil weight only)."},
-    "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Vertical surcharge (kPa)."},
-    "surcharge_x_range": {"type": "array", "required": False, "description": "[x_start, x_end] extent of the surcharge."},
+    "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Vertical surcharge (kPa). A single loaded zone; use 'surcharges' for several distinct loaded areas."},
+    "surcharge_x_range": {"type": "array", "required": False, "description": "[x_start, x_end] extent of the single 'surcharge'."},
+    "surcharges": {"type": "array", "required": False, "description": "Several distinct surcharge zones (bench + crest loads, etc.): [{pressure kPa, x_start, x_end}, ...]. Each zone's pressure is summed at any x it covers, ON TOP OF the single 'surcharge'/'surcharge_x_range'. Represent a linearly-varying (trapezoidal) load as its mean uniform pressure or as several thin zones."},
     "tension_crack_depth": {"type": "float", "required": False, "default": 0.0, "description": "Tension crack depth at the crest (m)."},
     "tension_crack_water_depth": {"type": "float", "required": False, "default": 0.0, "description": "Water depth in the tension crack (m)."},
     "tension_crack_side": {"type": "str", "required": False, "default": "entry", "allowed_values": _CRACK_SIDES, "description": "Which crest end the tension crack is on: 'entry' (default, low-x / slip-surface entry) or 'exit' (high-x). Put it on whichever side the crest is on; no need to mirror the slope."},

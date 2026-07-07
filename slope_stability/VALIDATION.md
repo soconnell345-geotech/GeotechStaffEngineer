@@ -216,6 +216,28 @@ B) drops the with-pile Bishop FOS to 1.203, +0.8% over the published 1.193 (vs a
 +2.5%). Only the circular moment methods honour it; the GLE applies the pile force as an
 external equilibrium force. Default (active) byte-identical to V-040. NOT tuned.
 
+## B11 — Multiple surcharge zones (v5.4 E8, validation_examples V-028 E8)
+[Slide2 Verification #9 = ACADS 4: weak-seam noncircular slope + piezometric surface
++ TWO external loads (Table 9.2): a bench load ~20 kPa (x 23-43) and a crest load
+~20->40 kPa (x 70-80). Published no-optimization Spencer 0.760 / GLE 0.720; referee
+0.78.]
+
+`SlopeGeometry.surcharges` = list of (pressure, x_start, x_end) zones, summed by
+`surcharge_at` on top of the single surcharge. slices + search route through
+`surcharge_at`, so no change there.
+
+| V-028 pinned seam surface | Spencer | GLE |
+|---------------------------|--------:|----:|
+| no surcharge (V-028)      | 0.792   | 0.786 |
+| + 2 zones (bench + crest) | 0.788   | 0.782 |
+
+VERDICT: **PASS — capability built, small seam-governed movement.** The two ACADS-4
+zones lower the FOS by ~0.4% (Spencer 0.792 -> 0.788): the crest-side zone (x 70-80,
+~11 slices on the sliding mass) adds driving weight; the bench zone (x 23-43) barely
+overlaps the mass (~1 slice). The move is small because the weak seam (c'=0, phi'=10)
+governs the FOS, as expected. Default (no `surcharges`) byte-identical to V-028. The
+crest 20->40 kPa ramp is represented as a uniform 30 kPa (its mean). NOT tuned.
+
 ---
 
 ## Notes / known deviations
