@@ -127,6 +127,7 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | dxf_import | 97 | DXF CAD import for slope stability + FEM (discover layers, parse geometry, build SlopeGeometry/FEM inputs) |
 | dxf_export | 37 | DXF export for cross-section geometry (surface, boundaries, GWT, nails, annotations) |
 | pdf_import | 56 | PDF cross-section import (PyMuPDF vector extraction, LLM vision extraction, geometry conversion) |
+| drawing_ir | 61 | LLM-ready drawing digitization ("Drawing IR"): deterministic extractor owns coordinates, LLM owns semantics. Unified JSON IR (Line/Polyline/Arc/Circle/Text/Region w/ coords+layer/color+provenance+per-entity confidence) from DXF (ezdxf, conf 1.0), PDF vector (pdf_import+scale module, conf 1.0), raster (NEW OpenCV Hough/contour tracing, conf <1); slice-query interface (bbox/angle/text/layer/nearest) so the LLM requests slices, not pixels |
 | fem2d | 353 | 2D plane-strain FEM (T6 default + CST/Q4/beam, 3D-principal MC return, HS, GL99 SRM, seepage, consolidation, staged construction, PLAXIS-style calc-package plots); validated vs Griffiths-Lane/Prandtl (VALIDATION.md) |
 | geo_project | 89 | Canonical Project document for staged, human-gated LE/FEM model setup (schema+validators, builders, templates, DXF/PDF/vision ingest w/ provenance quarantine, echo-back renderer) |
 

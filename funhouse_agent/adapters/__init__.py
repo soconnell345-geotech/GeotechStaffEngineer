@@ -196,6 +196,10 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.pdf_import_adapter",
         "brief": "PDF cross-section import (PyMuPDF vector extraction, content discovery)",
     },
+    "drawing_ir": {
+        "adapter": "funhouse_agent.adapters.drawing_ir_adapter",
+        "brief": "LLM-ready drawing digitization — digitize a DXF/PDF-vector/raster drawing into a unified intermediate representation (lines/polylines/arcs/circles/text with coordinates + provenance + confidence), cached by handle, then request SLICES (bbox/angle/text/layer queries) instead of interpreting pixels",
+    },
     "opensees": {
         "adapter": "funhouse_agent.adapters.opensees_adapter",
         "brief": "OpenSees FE analyses (PM4Sand DSS, 1D site response)",
