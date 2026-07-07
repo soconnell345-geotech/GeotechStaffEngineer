@@ -390,6 +390,13 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   Slide2 truncates the mass at the crack). B2 refinement candidates: (1) allow the
   tension crack on the exit side (currently entry-only, forcing the mirror);
   (2) mass-truncation crack model. See RESULTS.md V-026.
+- **v5.4 update (E4): both candidates BUILT, residual RESOLVED.**
+  `tension_crack_side='exit'` removes the mirror workaround (un-mirrored ≡
+  mirrored to ~1e-16); `tension_crack_model='truncation'` (Slide2's mass model)
+  reproduces the published water-crack FOS to <0.1% (Bishop 1.597 / Spencer
+  1.593 / GLE 1.594 vs 1.596 / 1.592 / 1.592) — not tuned. Defaults
+  ('entry', 'strength') unchanged; the strength model stays documented as the
+  conservative convention. Tests: test_published_v026_e4.py (5).
 
 ## V-029 Slide2 #10 = ACADS 5 — homogeneous slope, pore-pressure GRID + ponded water
 - Source: Slide2 Verification #10 (manual pp. 55-58); ACADS 5 [Giam & Donald 1989].
@@ -406,6 +413,15 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   that did not survive text extraction, and the excavation height is not in the
   text, so an ru/piezo approximation is not defensible here. Capability gap for B2
   (pore-pressure-grid input + TIN interpolation). No test.
+- **v5.4 update (E3): capability BUILT** — `SlopeGeometry.pore_pressure_points`
+  (scattered (x,z,u) triples, Delaunay-linear TIN interpolation with nearest-
+  neighbour fallback, suction clamped ≥0, overrides piezo/ru at slice bases,
+  wired through the search; additive, None = byte-identical). Validated
+  rigorously by construction (hydrostatic grid ≡ piezometric line to machine
+  precision; TIN exact on linear fields; 6 tests, test_published_v029*). The
+  published Bishop 1.498 remains UNPINNED — Fig 10.2's grid values are still
+  not recoverable and inventing them is forbidden; the ACADS-5-style run is a
+  capability demonstration (dry 1.89 → grid 1.25), not a referee match.
 - Confidence in extraction: soil + answers high; geometry + PP grid not recoverable
   from text.
 
