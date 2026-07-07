@@ -36,7 +36,7 @@ REFERENCES = [
 
 
 # ── Atmospheric pressure constant (kPa) for alpha method ─────────
-_PA = 101.325
+from .side_resistance import PA as _PA
 
 
 def get_input_summary(result, analysis) -> List[InputItem]:
