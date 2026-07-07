@@ -107,11 +107,11 @@ Intentional behavior changes vs 5.0 (battered-wall KPE, pile_group +Mx sense, sh
 embedment basis, wave-equation damping default, fem2d T6 default) are listed in the
 summary page.
 Databricks install: from /tmp or a UC Volume, `%pip install "geotech-staff-engineer[deep,full]"`
-(the `[full]` extra covers the optional analysis backends — without it ~12 of the 71 eval
+(the `[full]` extra covers the optional analysis backends — without it ~12 of the 96 eval
 questions fail honestly with "not installed"), then
 `dbutils.library.restartPython()` -- a stale runtime `typing_extensions` (<4.13) otherwise
 breaks langgraph imports with "unexpected keyword argument 'extra_items'". Funhouse health
-check: `funhouse_agent/deep/rc_wheel_check.py` (`run_rc_check(fh_prompter)`); the 71-Q eval
+check: `funhouse_agent/deep/rc_wheel_check.py` (`run_rc_check(fh_prompter)`); the 96-question eval
 suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save outputs to
 `/tmp` or `/Volumes`, NOT `/Workspace` (FUSE writes are non-durable / permission-blocked).
 

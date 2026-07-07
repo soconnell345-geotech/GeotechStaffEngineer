@@ -158,7 +158,7 @@ just-added file): unzip and confirm the new files/tokens are present.
   cluster scope; installing `typing_extensions>=4.13` as a **cluster-scoped library**
   avoids the situation entirely.
 - Health check: `from funhouse_agent.deep.rc_wheel_check import run_rc_check; run_rc_check(fh_prompter)`.
-- 71-Q eval: `from funhouse_agent.deep.eval_harness import run_suite;
+- Eval suite (96 questions as of v5.4): `from funhouse_agent.deep.eval_harness import run_suite;
   run_suite(model, out="/tmp/eval")` (writes `.json` + a readable `.md`). Model =
   `PrompterChatModel(prompter=fh_prompter, model="funhouse-gpt-high")`. Real API
   calls; use `limit=` for a subset first. Correctness is PARTLY auto-scored
@@ -224,8 +224,8 @@ just-added file): unzip and confirm the new files/tokens are present.
   `.claude/agents/seismic-reviewer.md` — the narrow-reviewer pattern (seismic
   first; family rollout = F8).
 - `funhouse_agent/deep/rc_wheel_check.py` — one-cell Funhouse health check.
-- `funhouse_agent/deep/eval_harness.py` — `run_suite` (71-Q eval) + scorers.
-- `funhouse_agent/geotech_test_suite.json` — the 71 eval questions.
+- `funhouse_agent/deep/eval_harness.py` — `run_suite` (96-question eval) + scorers.
+- `funhouse_agent/geotech_test_suite.json` — the 96 eval questions (71 base + 25 v5.3/v5.4, E10).
 - `funhouse_agent/_fileio.py` — verified-write + `/Workspace` rescue helpers.
 - `docs/V5.1_SUMMARY.html` — everything-since-5.0 summary (owner-facing).
 - `docs/funhouse_agent_guide.md` — install + Databricks gotchas + snippets +
