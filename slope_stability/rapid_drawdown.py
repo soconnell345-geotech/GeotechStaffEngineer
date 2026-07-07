@@ -43,6 +43,7 @@ Duncan, J.M., Wright, S.G., Wong, K.S. (1990). "Slope stability during rapid
 Duncan, Wright & Brandon (2014). Soil Strength and Slope Stability, Ch. 9.
 """
 
+import bisect
 import copy
 import math
 from dataclasses import dataclass, field
@@ -57,6 +58,30 @@ from slope_stability.results import SearchResult
 
 _METHODS = ("corps_2stage", "duncan_3stage")
 _SURFACE_TYPES = ("circular", "entry_exit", "noncircular", "noncircular_de")
+
+
+def _nearest_index(sorted_xs: List[float], x: float) -> int:
+    """Index of the value in ASCENDING ``sorted_xs`` nearest ``x``.
+
+    Bit-for-bit equivalent to ``min(range(len(sorted_xs)),
+    key=lambda k: abs(sorted_xs[k] - x))`` — including the tie rule (``min``
+    returns the FIRST/lowest index, i.e. the LEFT neighbour) — but O(log n)
+    instead of O(n). Used to map the stage-3 slices back onto the stage-1
+    slices by x_mid (the two slice lists are each built left-to-right, so their
+    x_mid are ascending).
+    """
+    n = len(sorted_xs)
+    pos = bisect.bisect_left(sorted_xs, x)
+    if pos == 0:
+        return 0
+    if pos >= n:
+        return n - 1
+    left = pos - 1
+    # sorted_xs[left] < x <= sorted_xs[pos]; on a tie pick the LEFT (lower index),
+    # matching min's first-index rule since left < pos.
+    if x - sorted_xs[left] <= sorted_xs[pos] - x:
+        return left
+    return pos
 
 
 @dataclass
@@ -399,10 +424,13 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
             sig_post_gle = None
 
     # slice count can differ if the pool changes which slivers survive; align by
-    # nearest x_mid so the stage-2 strengths map onto the stage-3 slices.
+    # nearest x_mid so the stage-2 strengths map onto the stage-3 slices. sl1 is
+    # built left-to-right so its x_mid are ascending -> O(log n) bisect lookup
+    # (bit-identical to the previous O(n) min-scan, tie rule included).
+    sl1_xmid = [s1.x_mid for s1 in sl1]
     n_sub = 0
     for j, s in enumerate(sl3):
-        i = min(range(len(sl1)), key=lambda k: abs(sl1[k].x_mid - s.x_mid))
+        i = _nearest_index(sl1_xmid, s.x_mid)
         if tau_ff[i] is None:
             continue                     # free-draining: keep drained c'/phi'
         s_und = tau_ff[i]

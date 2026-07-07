@@ -107,14 +107,30 @@ class NewmarkResult:
         return d
 
 
-def _fos_at_kh(geom: SlopeGeometry, slip, method: str, kh: float,
-               n_slices: int, tol: float) -> float:
-    from slope_stability.analysis import analyze_slope
-    g = copy.copy(geom)          # shallow copy: only kh is overridden
-    g.kh = kh
-    res = analyze_slope(g, slip_surface=slip, method=method,
-                        n_slices=n_slices, tol=tol)
-    return res.FOS
+def _method_fos(slices, slip, method: str, tol: float, reinf) -> float:
+    """FOS on pre-built slices, dispatched EXACTLY as ``analyze_slope`` does.
+
+    Verified bit-identical to ``analyze_slope(...).FOS`` for every method across
+    kh (see E9 timing/exactness note): the spencer/M-P wrappers already run the
+    rigorous GLE with the same legacy fallback ``analyze_slope`` uses, and janbu
+    uses the same tightened tolerance. Lets ``yield_acceleration`` reuse one
+    discretization across the bisection instead of rebuilding the slices per FOS.
+    """
+    from slope_stability.methods import (
+        fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
+    )
+    from slope_stability.gle import janbu_fos
+    if method == "fellenius":
+        return fellenius_fos(slices, slip, reinf_forces=reinf)
+    if method == "janbu":
+        return janbu_fos(slices, slip, tol=min(tol, 1e-4) * 0.1,
+                         reinf_forces=reinf)[0]
+    if method == "spencer":
+        return spencer_fos(slices, slip, tol=tol, reinf_forces=reinf)[0]
+    if method in ("morgenstern_price", "gle"):
+        return morgenstern_price_fos(slices, slip, f_interslice="half_sine",
+                                     tol=tol, reinf_forces=reinf)[0]
+    return bishop_fos(slices, slip, tol=tol, reinf_forces=reinf)
 
 
 def yield_acceleration(geom: SlopeGeometry,
@@ -152,7 +168,27 @@ def yield_acceleration(geom: SlopeGeometry,
             raise ValueError("provide slip_surface or all of xc, yc, radius")
         slip = CircularSlipSurface(xc, yc, radius)
 
-    fos_static = _fos_at_kh(geom, slip, method, 0.0, n_slices, tol)
+    # Build the FIXED discretization ONCE and reuse it across the bisection: the
+    # only kh-dependent slice quantity is the seismic force (kh * soil weight),
+    # so capture the exact per-slice soil weight (the seismic force at kh=1, since
+    # 1.0*w == w exactly in IEEE-754) and overwrite just that per kh — instead of
+    # rebuilding the slices for every FOS call. The reinforcement crossings and
+    # entry/exit are kh-independent. FOS is bit-identical to analyze_slope().
+    from slope_stability.slices import build_slices
+    from slope_stability.reinforcement import compute_reinforcement_forces
+    g_ref = copy.copy(geom)
+    g_ref.kh = 1.0
+    ref_slices = build_slices(g_ref, slip, n_slices)
+    soil_weights = [s.seismic_force for s in ref_slices]
+    x_entry, x_exit = slip.find_entry_exit(g_ref)
+    reinf = compute_reinforcement_forces(g_ref, slip, x_entry, x_exit) or None
+
+    def _fos(kh: float) -> float:
+        for s, sw in zip(ref_slices, soil_weights):
+            s.seismic_force = kh * sw
+        return _method_fos(ref_slices, slip, method, tol, reinf)
+
+    fos_static = _fos(0.0)
     if fos_static <= 1.0:
         # already at/over the limit with no seismic load -> ky = 0
         return YieldAccelerationResult(
@@ -160,7 +196,7 @@ def yield_acceleration(geom: SlopeGeometry,
             converged=True, n_iter=0)
 
     lo, hi = 0.0, kh_max
-    fos_hi = _fos_at_kh(geom, slip, method, hi, n_slices, tol)
+    fos_hi = _fos(hi)
     if fos_hi > 1.0:
         # surface never yields within the bracket
         return YieldAccelerationResult(
@@ -170,7 +206,7 @@ def yield_acceleration(geom: SlopeGeometry,
     n = 0
     while hi - lo > bisection_tol and n < 100:
         mid = 0.5 * (lo + hi)
-        f = _fos_at_kh(geom, slip, method, mid, n_slices, tol)
+        f = _fos(mid)
         if f > 1.0:
             lo = mid
         else:
