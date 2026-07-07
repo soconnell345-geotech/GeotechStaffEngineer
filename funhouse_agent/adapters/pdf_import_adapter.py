@@ -147,14 +147,16 @@ def _run_cleanup_geometry(params):
     })
 
 
-def _run_build_slope_geometry(params):
+def _dxf_result_from_params(params, method):
+    """Shared ``parse_result`` -> DxfParseResult conversion for the build_*
+    methods: validate the params and rebuild the PdfParseResult / DxfParseResult
+    from the flat ``parse_result`` dict. Both build methods differ only in the
+    soil-property class and the final build call, so this front half is shared.
+    """
     from pdf_import import to_dxf_parse_result, PdfParseResult
-    from dxf_import.converter import SoilPropertyAssignment, build_slope_geometry
-
     reject_unknown_params(params, ("parse_result", "soil_properties"),
-                          method="build_slope_geometry")
-    require_params(params, ["parse_result", "soil_properties"],
-                   method="build_slope_geometry",
+                          method=method)
+    require_params(params, ["parse_result", "soil_properties"], method=method,
                    valid=["parse_result", "soil_properties"])
     pr = params.get("parse_result", {})
     surface_points = [_point_xz(p) for p in pr.get("surface_points", [])]
@@ -170,7 +172,13 @@ def _run_build_slope_geometry(params):
         boundary_profiles=boundary_profiles,
         gwt_points=gwt_points,
     )
-    dxf_result = to_dxf_parse_result(pdf_result)
+    return to_dxf_parse_result(pdf_result)
+
+
+def _run_build_slope_geometry(params):
+    from dxf_import.converter import SoilPropertyAssignment, build_slope_geometry
+
+    dxf_result = _dxf_result_from_params(params, "build_slope_geometry")
     soil_props = [
         SoilPropertyAssignment(
             name=sp.get("name", ""), gamma=sp.get("gamma", 18.0),
@@ -195,29 +203,9 @@ def _run_build_slope_geometry(params):
 
 
 def _run_build_fem_inputs(params):
-    from pdf_import import to_dxf_parse_result, PdfParseResult
     from dxf_import.converter import FEMSoilPropertyAssignment, build_fem_inputs
 
-    reject_unknown_params(params, ("parse_result", "soil_properties"),
-                          method="build_fem_inputs")
-    require_params(params, ["parse_result", "soil_properties"],
-                   method="build_fem_inputs",
-                   valid=["parse_result", "soil_properties"])
-    pr = params.get("parse_result", {})
-    surface_points = [_point_xz(p) for p in pr.get("surface_points", [])]
-    boundary_profiles = {
-        name: [_point_xz(p) for p in pts]
-        for name, pts in pr.get("boundary_profiles", {}).items()
-    }
-    gwt_points = None
-    if pr.get("gwt_points"):
-        gwt_points = [_point_xz(p) for p in pr["gwt_points"]]
-    pdf_result = PdfParseResult(
-        surface_points=surface_points,
-        boundary_profiles=boundary_profiles,
-        gwt_points=gwt_points,
-    )
-    dxf_result = to_dxf_parse_result(pdf_result)
+    dxf_result = _dxf_result_from_params(params, "build_fem_inputs")
     soil_props = [
         FEMSoilPropertyAssignment(
             name=sp.get("name", ""), gamma=sp.get("gamma", 18.0),
