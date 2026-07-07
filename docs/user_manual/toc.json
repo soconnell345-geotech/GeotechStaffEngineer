@@ -1,0 +1,262 @@
+[
+  [
+    1,
+    "1  What this package is",
+    "What this package is"
+  ],
+  [
+    2,
+    "1.1  What a geotechnical engineer actually does",
+    "What a geotechnical engineer actually does"
+  ],
+  [
+    2,
+    "1.2  The lineage: every tool amplified the engineer",
+    "The lineage: every tool amplified the engineer"
+  ],
+  [
+    2,
+    "1.3  The architecture in four layers",
+    "The architecture in four layers"
+  ],
+  [
+    1,
+    "2  Installation & environments",
+    "Installation & environments"
+  ],
+  [
+    2,
+    "2.1  Install from PyPI",
+    "Install from PyPI"
+  ],
+  [
+    2,
+    "2.2  The extras groups",
+    "The extras groups"
+  ],
+  [
+    2,
+    "2.3  Local Python",
+    "Local Python"
+  ],
+  [
+    2,
+    "2.4  Databricks / Funhouse",
+    "Databricks / Funhouse"
+  ],
+  [
+    2,
+    "2.5  Reference figures: GEOTECH_REFERENCES_DOCS",
+    "Reference figures: GEOTECH_REFERENCES_DOCS"
+  ],
+  [
+    1,
+    "3  Using the agent",
+    "Using the agent"
+  ],
+  [
+    2,
+    "3.1  The v1 agent: GeotechAgent",
+    "The v1 agent: GeotechAgent"
+  ],
+  [
+    2,
+    "3.2  How tool dispatch works",
+    "How tool dispatch works"
+  ],
+  [
+    2,
+    "3.3  References through a scoped consultant",
+    "References through a scoped consultant"
+  ],
+  [
+    2,
+    "3.4  Vision: reading drawings and charts",
+    "Vision: reading drawings and charts"
+  ],
+  [
+    2,
+    "3.5  The v2 deep agent and notebook chat",
+    "The v2 deep agent and notebook chat"
+  ],
+  [
+    1,
+    "4  The problem catalog",
+    "The problem catalog"
+  ],
+  [
+    2,
+    "4.1  Shallow foundations",
+    "Shallow foundations"
+  ],
+  [
+    2,
+    "4.2  Deep foundations",
+    "Deep foundations"
+  ],
+  [
+    2,
+    "4.3  Earth retention & excavation support",
+    "Earth retention & excavation support"
+  ],
+  [
+    2,
+    "4.4  Slope stability & continuum FEM",
+    "Slope stability & continuum FEM"
+  ],
+  [
+    2,
+    "4.5  Seismic & liquefaction",
+    "Seismic & liquefaction"
+  ],
+  [
+    2,
+    "4.6  Site characterization & geostatistics",
+    "Site characterization & geostatistics"
+  ],
+  [
+    2,
+    "4.7  Reliability & sensitivity",
+    "Reliability & sensitivity"
+  ],
+  [
+    2,
+    "4.8  Geometry import & reporting",
+    "Geometry import & reporting"
+  ],
+  [
+    2,
+    "4.9  Also available: groundhog correlations",
+    "Also available: groundhog correlations"
+  ],
+  [
+    1,
+    "5  The reference library",
+    "The reference library"
+  ],
+  [
+    2,
+    "5.1  The references",
+    "The references"
+  ],
+  [
+    2,
+    "5.2  Find with text, read with pixels",
+    "Find with text, read with pixels"
+  ],
+  [
+    1,
+    "6  Geometry import & model setup",
+    "Geometry import & model setup"
+  ],
+  [
+    2,
+    "6.1  DXF import",
+    "DXF import"
+  ],
+  [
+    2,
+    "6.2  PDF cross-section import",
+    "PDF cross-section import"
+  ],
+  [
+    2,
+    "6.3  DXF export",
+    "DXF export"
+  ],
+  [
+    2,
+    "6.4  Staged, human-gated model setup (geo_project)",
+    "Staged, human-gated model setup (geo_project)"
+  ],
+  [
+    2,
+    "6.5  Calc-package reporting",
+    "Calc-package reporting"
+  ],
+  [
+    1,
+    "7  Reliability & probabilistic analysis",
+    "Reliability & probabilistic analysis"
+  ],
+  [
+    2,
+    "7.1  Declare the uncertainty, pick an engine",
+    "Declare the uncertainty, pick an engine"
+  ],
+  [
+    2,
+    "7.2  Don’t assume a COV — look it up",
+    "Don’t assume a COV — look it up"
+  ],
+  [
+    2,
+    "7.3  Which input governs? — global sensitivity",
+    "Which input governs? — global sensitivity"
+  ],
+  [
+    2,
+    "7.4  Probabilistic paths that ship out of the box",
+    "Probabilistic paths that ship out of the box"
+  ],
+  [
+    1,
+    "8  Validation basis",
+    "Validation basis"
+  ],
+  [
+    2,
+    "8.1  Published-example validation (V-001…V-040)",
+    "Published-example validation (V-001…V-040)"
+  ],
+  [
+    2,
+    "8.2  How to read the verdicts",
+    "How to read the verdicts"
+  ],
+  [
+    1,
+    "9  Limitations & responsible use",
+    "Limitations & responsible use"
+  ],
+  [
+    2,
+    "9.1  It is a multiplier for judgment, not a replacement",
+    "It is a multiplier for judgment, not a replacement"
+  ],
+  [
+    2,
+    "9.2  Validation covers only the documented cases",
+    "Validation covers only the documented cases"
+  ],
+  [
+    2,
+    "9.3  Known method boundaries",
+    "Known method boundaries"
+  ],
+  [
+    2,
+    "9.4  Treat agent output with particular care",
+    "Treat agent output with particular care"
+  ],
+  [
+    1,
+    "Appendix A  Full method & parameter reference",
+    "Full method & parameter reference"
+  ],
+  [
+    2,
+    "10.1  Analysis modules",
+    "Analysis modules"
+  ],
+  [
+    2,
+    "10.2  Reference modules",
+    "Reference modules"
+  ],
+  [
+    1,
+    "Appendix B  Version history",
+    "Version history"
+  ]
+]
