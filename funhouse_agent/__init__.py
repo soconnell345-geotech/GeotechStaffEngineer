@@ -30,6 +30,7 @@ from funhouse_agent.engine import (
 )
 from funhouse_agent.agent import GeotechAgent
 from funhouse_agent.react_support import AgentResult
+from funhouse_agent._disclaimer import disclaimer
 
 __all__ = [
     "GeotechAgent",
@@ -39,4 +40,15 @@ __all__ = [
     "PrompterBridgeEngine",
     "USING_SDK_ENGINES",
     "AgentResult",
+    "disclaimer",
 ]
+
+# One-time (per user) professional-use disclaimer banner on first import. Fully
+# self-guarding: stderr only, suppressed by GEOTECH_NO_DISCLAIMER=1 and under
+# pytest, and it never raises. See funhouse_agent/_disclaimer.py.
+try:
+    from funhouse_agent._disclaimer import maybe_show_first_import_notice as _show_disclaimer
+
+    _show_disclaimer()
+except Exception:  # pragma: no cover - the notice must never break importing
+    pass

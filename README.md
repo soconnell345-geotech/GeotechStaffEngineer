@@ -8,6 +8,14 @@
 
 ---
 
+## ⚠️ Professional-use disclaimer
+
+**This toolkit is an analysis and research aid — a multiplier for a qualified engineer's judgment, not a replacement for it, and not a design deliverable.** It runs industry-standard methods and an LLM agent that drives them, but it does not know your site and cannot exercise engineering judgment. Every input, assumption, method choice, and result **must be independently reviewed by a licensed professional engineer familiar with the site** before it is relied upon; LLM-agent output in particular is a starting point for review, never a final basis for design. Using this software creates **no engineer-of-record relationship**. Validation covers only the documented benchmark cases in [`validation_examples/RESULTS.md`](validation_examples/RESULTS.md); all units are SI. Provided under the MIT License **"AS IS", without warranty of any kind**.
+
+**→ Read the full terms in [`DISCLAIMER.md`](DISCLAIMER.md).**
+
+---
+
 ## Soil is uncertain. So you don't calculate once — you calculate repeatedly until the problem is understood.
 
 Geotechnical engineering is the practice of building **on** and **in** the ground: foundations, retaining walls, slopes, excavations, embankments. Unlike a steel beam with a certified strength, the geotechnical engineer's material is **the earth itself** — heterogeneous, layered, partly saturated, and sampled at only a handful of points across an entire site.
