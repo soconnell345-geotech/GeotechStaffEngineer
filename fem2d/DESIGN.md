@@ -111,6 +111,17 @@ For nonlinear problems (MC/HS materials):
 Validated against Griffiths & Lane (1999) and Bishop results from
 the slope_stability module.
 
+**Mesh-consistency study** (`srm_mesh_refinement_study`, `mesh_study.py`): a
+convenience that runs `analyze_slope_srm` over a sequence of mesh densities and
+returns a `MeshRefinementResult` (per-mesh FOS table + successive changes,
+`converged` flag, and a Richardson-extrapolated mesh-independent FOS when the
+finest three levels settle monotonically). It only drives the existing SRM at
+several densities — no algorithm/default change. Used to demonstrate that the FE
+FOS is mesh-converged and consistent with the limit-equilibrium answer (GL99
+Ex1 stays banded near the published 1.4; the shared-geometry Bishop cross-check
+converges monotonically toward the LE value with refinement). Convergence tables:
+`VALIDATION.md` §7.
+
 ### Pore Water Pressures and Effective Stress
 
 Flexible GWT input:

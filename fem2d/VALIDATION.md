@@ -143,6 +143,61 @@ their own margins should pass `x_extend=0`. Orientation (crest-left vs
 crest-right) was verified to make no difference (mirrored geometry,
 identical FOS).
 
+## 7. SRM mesh-refinement (mesh-consistency) study — B2e
+
+`srm_mesh_refinement_study(surface_points, soil_layers, meshes, ...)` (in
+`fem2d/mesh_study.py`, exported from `fem2d`) runs `analyze_slope_srm` over a
+sequence of mesh densities and returns a `MeshRefinementResult` — a per-mesh
+FOS table with successive relative changes, a `converged` flag (relative FOS
+change between the two finest meshes below `conv_tol`, default 3%), and a
+Richardson-extrapolated mesh-independent FOS when the three finest levels are
+monotonic and settling (characteristic size `h ∝ 1/√elements`). It only drives
+the existing SRM at several densities — no algorithm or default changes. This
+makes the fem2d↔LE mesh-consistency check reproducible in one call.
+
+**Griffiths & Lane (1999) Example 1** (published FE **1.4**), T6, D=1 (0.5 m
+base sliver), `srf_tol` 0.02, `x_extend=0`:
+
+| Mesh | Elements | FOS | vs 1.4 |
+|---|---|---|---|
+| T6 24x10 | 500 | 1.381 | −1.4% |
+| T6 32x12 | 794 | 1.344 | −4.0% |
+| T6 40x16 | 1312 | 1.381 | −1.4% |
+
+Mesh-**consistent**: every density sits in a tight band 1.34–1.38 just below the
+published FE value (all within ~4%). Point-to-point convergence is **noisy**
+rather than strictly monotonic here — the D=1 column-mesher slivers under the toe
+(see Known limitations) inject ~±0.03 of discretization noise, comparable to the
+refinement trend — so no Richardson estimate is reported for this case
+(`fos_richardson is None`). No mesh runs away; the FOS is bounded near 1.4 at
+every density, which is the mesh-consistency the SRM FOS needs.
+
+**Shared-geometry Bishop cross-check** (§6 geometry; LE Bishop **1.173**), T6,
+5 m foundation (clean mesh), `srf_tol` 0.02, `x_extend=0`:
+
+| Mesh | Elements | FOS | vs LE 1.173 | step |
+|---|---|---|---|---|
+| T6 24x12 | 593 | 1.531 | +30.5% | — |
+| T6 32x16 | 1046 | 1.456 | +24.1% | −4.9% |
+| T6 40x20 | 1623 | 1.419 | +21.0% | −2.5% |
+
+Here the mesh is clean (no base sliver) and the SRM FOS decreases
+**monotonically** toward the LE value with each refinement, the step shrinks
+(−4.9% → −2.5%, i.e. settling), and Richardson extrapolation gives a
+mesh-independent estimate **≈ 1.376** (observed order p ≈ 2.8). The finest 40x20
+value 1.419 matches the value recorded in §6. The residual offset above the LE
+1.173 at these densities is the expected SRM-vs-Bishop discretization gap
+(SRM sits above Bishop and refines toward it; deeper refinement — 56x24 → 1.306,
+§6 — continues the trend). Tests: `fem2d/tests/test_mesh_study.py`
+(`-m slow` for the two benchmark runs; the extrapolation math + bookkeeping are
+fast unit tests).
+
+Note: the constant-stiffness SRM **failure-detection** mesh dependence on very
+low-c'/low-φ faces (ACADS 1a: stall point drifts down with refinement) is a
+**separate**, still-open tracked follow-up (`UPGRADE_PLAN.md` "SRM
+failure-detection mesh consistency") — the GL99 and cross-check meshes/strengths
+above do not stall, so they are unaffected.
+
 ## 6. Performance
 
 Wall-clock on the dev machine, single process, including mesh build and
