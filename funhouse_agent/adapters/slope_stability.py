@@ -127,6 +127,10 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
         stabilizing_piles = []
         for d in params["stabilizing_piles"]:
             require_keys(d, ["x"], method=method, item_label="stabilizing_piles[]")
+            _check_choice(d.get("support_convention", "active"),
+                          ["active", "passive"],
+                          name="stabilizing_piles[].support_convention",
+                          method=method)
             stabilizing_piles.append(StabilizingPile(
                 x=d["x"], shear_capacity=d.get("shear_capacity"),
                 spacing=d.get("spacing", 1.0), z_head=d.get("z_head"),
@@ -134,6 +138,7 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
                 diameter=d.get("diameter"), c=d.get("c"), phi=d.get("phi"),
                 gamma=d.get("gamma"),
                 force_direction=d.get("force_direction", "horizontal"),
+                support_convention=d.get("support_convention", "active"),
             ))
 
     return SlopeGeometry(
@@ -447,7 +452,7 @@ _GEOMETRY_PARAMS = {
     "nails": {"type": "array", "required": False, "description": "Soil nails (per metre of slope run): [{x_head, z_head, length required; inclination deg below horizontal=15, bar_diameter mm=25, drill_hole_diameter mm=150, fy MPa=420, bond_stress kPa=100, spacing_h m=1.5}]. Capacity = min(pullout behind slip surface, bar tensile)/spacing_h (FHWA GEC-7)."},
     "anchors": {"type": "array", "required": False, "description": "Tieback anchors: [{x_head, z_head, length, T_allow kN/m required; inclination=15}]. Full T_allow applied when the bond zone crosses the slip surface."},
     "geosynthetics": {"type": "array", "required": False, "description": "Horizontal geosynthetic layers: [{elevation, T_allow kN/m required; x_start, x_end optional}]."},
-    "stabilizing_piles": {"type": "array", "required": False, "description": "Single-row stabilizing/micro piles crossing the slope (Ito & Matsui 1975 or a specified shear): [{x required; spacing m=1.0 (D1); z_head, z_toe optional}]. Set the resistance EITHER by shear_capacity (kN per pile; per-metre force = shear_capacity/spacing) OR ito_matsui=true with diameter (m; D2=spacing-diameter) and optional c/phi/gamma (default: soil layer) giving the Ito-Matsui plastic lateral force integrated from head to slip surface. force_direction 'horizontal' (default) or 'normal'. Active stabilizing force at the slip crossing."},
+    "stabilizing_piles": {"type": "array", "required": False, "description": "Single-row stabilizing/micro piles crossing the slope (Ito & Matsui 1975 or a specified shear): [{x required; spacing m=1.0 (D1); z_head, z_toe optional}]. Set the resistance EITHER by shear_capacity (kN per pile; per-metre force = shear_capacity/spacing) OR ito_matsui=true with diameter (m; D2=spacing-diameter) and optional c/phi/gamma (default: soil layer) giving the Ito-Matsui plastic lateral force integrated from head to slip surface. force_direction 'horizontal' (default) or 'normal'. support_convention 'active' (default; the force reduces the driving moment, Slide2 Method A) or 'passive' (added to the resisting side, Method B; more conservative -- affects the circular moment methods Fellenius/Bishop). Stabilizing force at the slip crossing."},
     "reinforcement_force": {"type": "float", "required": False, "default": 0.0, "description": "Single equivalent horizontal reinforcement force (kN/m). Simpler alternative to nails/anchors."},
     "reinforcement_elevation": {"type": "float", "required": False, "description": "Elevation of the equivalent reinforcement force (m)."},
 }

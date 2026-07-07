@@ -267,9 +267,20 @@ search_critical_surface(geom, surface_type="noncircular",
   * Validation: #54 (specified shear) → CONVENTION, RESULTS V-040 (no-pile +1.1%,
     with-pile +2.5%; residual = active-vs-passive support convention + figure-read pile
     location). The Ito-Matsui FORMULA is unit-tested for the #106 spacing trend (its
-    cross-section is not in the manual). Support-force application is ACTIVE for all
-    reinforcement, which slightly over-predicts the pile benefit vs a passive force — a
-    documented convention, not a bug.
+    cross-section is not in the manual).
+  * **Support convention — active/passive (v5.4 E6).** `StabilizingPile.
+    support_convention` = `'active'` (**default**) applies the unfactored pile force as
+    a REDUCTION of the driving moment (Slide2 "Method A"); `'passive'` adds it to the
+    RESISTING side instead (Slide2 "Method B"). Active gives a larger FOS gain for the
+    same capacity (it shrinks the denominator), which slightly over-predicts vs a
+    passive pile; passive is the more conservative treatment. Only the circular moment
+    methods (Fellenius/Bishop) honour the convention — the rigorous GLE (Spencer/M-P)
+    applies the pile force as an external equilibrium force either way. On #54 the
+    passive option narrows the with-pile Bishop residual from +2.5% (active) to +0.8%
+    vs the published 1.193 (VALIDATION.md B10 / RESULTS V-040-E6). Default 'active' is
+    byte-identical. Implemented via `reinforcement.moment_resistance` /
+    `horizontal_resistance` (passive forces) alongside the existing `*_reduction`
+    (active forces), split on `ReinforcementForce.passive`.
 - **Tension crack — side + model (v5.4 E4)**: `geom.tension_crack_depth` opens a
   vertical crack at the CREST end of the slip surface; `tension_crack_water_depth`
   fills it (hydrostatic thrust `0.5·γw·z_w²` at `z_w/3` above the crack base,

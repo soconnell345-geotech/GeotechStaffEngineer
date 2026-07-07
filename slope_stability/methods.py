@@ -134,12 +134,16 @@ def fellenius_fos(slices: List[Slice],
     if reinf_forces:
         from slope_stability.reinforcement import (
             moment_reduction, horizontal_reduction,
+            moment_resistance, horizontal_resistance,
         )
         if is_circular:
             driving -= moment_reduction(reinf_forces, slip.xc, slip.yc,
                                         slip.radius)
+            resisting += moment_resistance(reinf_forces, slip.xc, slip.yc,
+                                           slip.radius)
         else:
             driving -= horizontal_reduction(reinf_forces, slices)
+            resisting += horizontal_resistance(reinf_forces, slices)
 
     if driving <= 0:
         return _FOS_MAX
@@ -225,10 +229,17 @@ def bishop_fos(slices: List[Slice],
     # Separated so seismic always increases driving regardless of slope direction
     driving = abs(gravity_driving) + abs(seismic_driving) + abs(crack_water_driving)
 
+    passive_resistance = 0.0
     if reinf_forces:
-        from slope_stability.reinforcement import moment_reduction
+        from slope_stability.reinforcement import (
+            moment_reduction, moment_resistance,
+        )
         driving -= moment_reduction(reinf_forces, slip.xc, slip.yc,
                                     slip.radius)
+        # PASSIVE-convention forces add to the resisting side (FOS-independent
+        # external moment), not the driving side. Default (active) = 0.
+        passive_resistance = moment_resistance(reinf_forces, slip.xc, slip.yc,
+                                               slip.radius)
 
     if driving <= 0:
         return _FOS_MAX
@@ -261,7 +272,7 @@ def bishop_fos(slices: List[Slice],
             numerator = s.c * b + max(W - s.pore_pressure * b, 0.0) * tan_phi
             resisting += numerator / m_alpha
 
-        fos_new = resisting / driving
+        fos_new = (resisting + passive_resistance) / driving
         if abs(fos_new - fos) < tol:
             return fos_new
         fos = fos_new

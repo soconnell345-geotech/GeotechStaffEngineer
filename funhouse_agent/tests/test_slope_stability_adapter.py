@@ -202,6 +202,25 @@ class TestReinforcement:
             METHOD_REGISTRY["analyze_slope"](_base(
                 stabilizing_piles=[{"shear_capacity": 100.0}]))
 
+    def test_stabilizing_pile_passive_convention(self):
+        """The support_convention='passive' option (Slide2 Method B) gives a
+        smaller FOS gain than the default active convention (E6)."""
+        active = METHOD_REGISTRY["analyze_slope"](_base(
+            method="bishop",
+            stabilizing_piles=[{"x": 35.0, "shear_capacity": 120.0,
+                                "spacing": 1.5}]))["FOS"]
+        passive = METHOD_REGISTRY["analyze_slope"](_base(
+            method="bishop",
+            stabilizing_piles=[{"x": 35.0, "shear_capacity": 120.0,
+                                "spacing": 1.5,
+                                "support_convention": "passive"}]))["FOS"]
+        plain = METHOD_REGISTRY["analyze_slope"](_base(method="bishop"))["FOS"]
+        assert plain < passive < active
+        with pytest.raises(ValueError, match="support_convention"):
+            METHOD_REGISTRY["analyze_slope"](_base(
+                stabilizing_piles=[{"x": 35.0, "shear_capacity": 120.0,
+                                    "support_convention": "bogus"}]))
+
 
 # ----------------------------------------------------------------------------
 # Strength models + ponded water

@@ -198,6 +198,24 @@ published water-crack FOS is reproduced to <0.1%. The exit-side option removes t
 old need to mirror the slope (V-026 analysed the mirror image). Default (entry,
 strength) byte-identical to V-026. NOT tuned; the match falls out of the mass model.
 
+## B10 — Stabilizing-pile passive support convention (v5.4 E6, validation_examples V-040 E6)
+[Slide2 Verification #54 (Yamagami 2000): homogeneous slope, single micro-pile row
+(1 m spacing, 10.7 kN/pile). Published: no-pile 1.102, with-pile 1.193.]
+
+`StabilizingPile.support_convention` = 'active' (default) | 'passive'.
+
+| Convention | with-pile Bishop | vs published 1.193 |
+|-----------|-----------------:|-------------------:|
+| active (default, V-040) | 1.223 | +2.5% |
+| **passive** (Method B)  | **1.203** | **+0.8%** |
+
+VERDICT: **PASS — the passive option narrows the residual.** The default active
+convention (pile force reduces the driving moment) over-credits the pile vs a passive
+force. The opt-in passive convention (force added to the resisting side, Slide2 Method
+B) drops the with-pile Bishop FOS to 1.203, +0.8% over the published 1.193 (vs active's
++2.5%). Only the circular moment methods honour it; the GLE applies the pile force as an
+external equilibrium force. Default (active) byte-identical to V-040. NOT tuned.
+
 ---
 
 ## Notes / known deviations

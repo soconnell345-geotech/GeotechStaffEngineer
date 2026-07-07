@@ -131,6 +131,16 @@ class StabilizingPile:
     force_direction : str
         'horizontal' (default) or 'normal' (perpendicular to the slip surface
         at the crossing).
+    support_convention : str
+        How the pile force enters the circular moment methods (Fellenius /
+        Bishop): 'active' (**default**) applies the unfactored force as a
+        REDUCTION of the driving moment (Slide2 "Method A"); 'passive' adds it to
+        the RESISTING side instead (Slide2 "Method B"). Active gives a larger FOS
+        gain for the same force (it shrinks the denominator); passive is the more
+        conservative treatment matching a pile mobilised only as the mass moves.
+        Only affects the circular moment methods; the rigorous GLE (Spencer /
+        Morgenstern-Price) applies the pile force as an external equilibrium force
+        either way. Default 'active' is byte-identical to earlier behaviour.
     """
     x: float
     shear_capacity: Optional[float] = None
@@ -143,6 +153,7 @@ class StabilizingPile:
     phi: Optional[float] = None
     gamma: Optional[float] = None
     force_direction: str = "horizontal"
+    support_convention: str = "active"
 
     def __post_init__(self):
         if self.spacing <= 0:
@@ -158,6 +169,9 @@ class StabilizingPile:
                              "ito_matsui=True with a diameter")
         if self.force_direction not in ("horizontal", "normal"):
             raise ValueError("force_direction must be 'horizontal' or 'normal'")
+        if self.support_convention not in ("active", "passive"):
+            raise ValueError("support_convention must be 'active' or 'passive', "
+                             f"got '{self.support_convention}'")
 
 
 @dataclass
@@ -179,6 +193,10 @@ class ReinforcementForce:
         Index within its input list.
     controlled_by : str
         'pullout', 'tensile', or 'allowable'.
+    passive : bool
+        If True, the force is applied with the PASSIVE convention (added to the
+        resisting side of the circular moment methods) rather than the default
+        ACTIVE convention (reducing the driving side). Default False (active).
     """
     x: float
     z: float
@@ -188,6 +206,7 @@ class ReinforcementForce:
     kind: str
     index: int
     controlled_by: str = "allowable"
+    passive: bool = False
 
 
 def _into_slope_sign(geom, x_head: float) -> float:
@@ -499,7 +518,8 @@ def compute_reinforcement_forces(geom, slip,
             dir_x, dir_z = _into_slope_sign(geom, p.x), 0.0
         forces.append(ReinforcementForce(
             x=p.x, z=z_slip, T=T, dir_x=dir_x, dir_z=dir_z,
-            kind="pile", index=i, controlled_by=ctrl))
+            kind="pile", index=i, controlled_by=ctrl,
+            passive=(p.support_convention == "passive")))
 
     return forces
 
@@ -508,20 +528,39 @@ def compute_reinforcement_forces(geom, slip,
 # Contributions for the classical methods (active convention)
 # ---------------------------------------------------------------------------
 
+def _moment_arm_sum(forces, xc, yc, radius, *, passive: bool) -> float:
+    """Sum of T*d_perp/R over the forces matching the ``passive`` flag."""
+    total = 0.0
+    for f in forces:
+        if bool(f.passive) is not passive:
+            continue
+        d_perp = abs((f.x - xc) * f.dir_z - (f.z - yc) * f.dir_x)
+        total += f.T * d_perp / radius
+    return total
+
+
 def moment_reduction(forces: List[ReinforcementForce],
                      xc: float, yc: float, radius: float) -> float:
     """Reduction of the (normalized) driving moment for circular methods.
 
-    Returns sum(T * d_perp) / R — subtract from the driving sum of
-    Fellenius/Bishop (which is the driving moment divided by R).
-    The perpendicular arm is taken as a magnitude: reinforcement crossing
-    the surface is assumed stabilizing (standard practice).
+    Returns sum(T * d_perp) / R over the ACTIVE-convention forces — subtract from
+    the driving sum of Fellenius/Bishop (which is the driving moment divided by
+    R). The perpendicular arm is taken as a magnitude: reinforcement crossing the
+    surface is assumed stabilizing (standard practice). Passive-convention forces
+    are handled by ``moment_resistance`` instead (added to the resisting side).
     """
-    total = 0.0
-    for f in forces:
-        d_perp = abs((f.x - xc) * f.dir_z - (f.z - yc) * f.dir_x)
-        total += f.T * d_perp / radius
-    return total
+    return _moment_arm_sum(forces, xc, yc, radius, passive=False)
+
+
+def moment_resistance(forces: List[ReinforcementForce],
+                      xc: float, yc: float, radius: float) -> float:
+    """Contribution of the PASSIVE-convention forces to the resisting moment.
+
+    Returns sum(T * d_perp) / R over the passive forces — ADD to the resisting
+    sum of Fellenius/Bishop (Slide2 "Method B"). Zero when no force is passive,
+    so the default (active) behaviour is byte-identical.
+    """
+    return _moment_arm_sum(forces, xc, yc, radius, passive=True)
 
 
 def _base_angle_at(slices, x: float) -> float:
@@ -540,12 +579,25 @@ def _base_angle_at(slices, x: float) -> float:
     return slices[0].alpha if x < slices[0].x_left else slices[-1].alpha
 
 
+def _horizontal_proj_sum(forces, slices, *, passive: bool) -> float:
+    """Sum of the base-tangent projection of the forces matching ``passive``."""
+    total = 0.0
+    for f in forces:
+        if bool(f.passive) is not passive:
+            continue
+        total += f.T * abs(f.dir_x)
+        if slices is not None and abs(f.dir_z) > 1e-12:
+            alpha = _base_angle_at(slices, f.x)
+            total += f.T * abs(f.dir_z) * abs(math.sin(alpha))
+    return total
+
+
 def horizontal_reduction(forces: List[ReinforcementForce],
                          slices=None) -> float:
     """Reduction of the driving force for force-equilibrium (OMS-noncircular).
 
-    The reinforcement force is resolved into the base-driving direction and
-    subtracted from the driving sum (active convention, assumed stabilizing):
+    The ACTIVE-convention reinforcement force is resolved into the base-driving
+    direction and subtracted from the driving sum (assumed stabilizing):
 
     * the horizontal component contributes ``T*|dir_x|`` (unchanged — this is the
       only term for nails/anchors/geosynthetics/horizontal piles, whose
@@ -553,16 +605,17 @@ def horizontal_reduction(forces: List[ReinforcementForce],
     * the vertical component contributes ``T*|dir_z|*|sin(alpha)|`` — its
       projection onto the base tangent at the crossing, where ``alpha`` is the
       base inclination there. A vertical force resists tangential sliding on an
-      inclined base and does nothing on a flat one. Dropping it (the old
-      behaviour) silently under-credited a ``force_direction='normal'`` pile,
-      whose force is largely vertical, inconsistently with ``moment_reduction``
-      and the rigorous GLE (both of which consume ``dir_z``). ``slices`` supplies
-      the base geometry; when omitted the vertical term is zero (legacy).
+      inclined base and does nothing on a flat one. ``slices`` supplies the base
+      geometry; when omitted the vertical term is zero (legacy).
+
+    Passive-convention forces are handled by ``horizontal_resistance`` instead.
     """
-    total = 0.0
-    for f in forces:
-        total += f.T * abs(f.dir_x)
-        if slices is not None and abs(f.dir_z) > 1e-12:
-            alpha = _base_angle_at(slices, f.x)
-            total += f.T * abs(f.dir_z) * abs(math.sin(alpha))
-    return total
+    return _horizontal_proj_sum(forces, slices, passive=False)
+
+
+def horizontal_resistance(forces: List[ReinforcementForce],
+                          slices=None) -> float:
+    """Base-tangent projection of the PASSIVE-convention forces (add to
+    resisting). Zero when no force is passive, so the active default is
+    byte-identical."""
+    return _horizontal_proj_sum(forces, slices, passive=True)
