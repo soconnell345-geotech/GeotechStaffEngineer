@@ -270,6 +270,24 @@ search_critical_surface(geom, surface_type="noncircular",
     cross-section is not in the manual). Support-force application is ACTIVE for all
     reinforcement, which slightly over-predicts the pile benefit vs a passive force — a
     documented convention, not a bug.
+- **Tension crack — side + model (v5.4 E4)**: `geom.tension_crack_depth` opens a
+  vertical crack at the CREST end of the slip surface; `tension_crack_water_depth`
+  fills it (hydrostatic thrust `0.5·γw·z_w²` at `z_w/3` above the crack base,
+  treated downstream as an always-driving magnitude). Two selectors, both
+  DEFAULT-PRESERVING:
+  * `tension_crack_side` = `'entry'` (default, low-x) or `'exit'` (high-x) — the
+    crack forms on whichever side the crest is on. The exit-side option removes
+    the old need to MIRROR the slope so the crest landed on the entry side (the
+    exit-side crack on the un-mirrored slope is machine-precision identical to the
+    entry-side crack on the mirror, by symmetry).
+  * `tension_crack_model` = `'strength'` (default) keeps the cracked wedge as
+    zero-shear-strength DRIVING soil; `'truncation'` REMOVES it from the sliding
+    mass (the mass ends at the vertical crack face), matching Slide2/UTEXAS.
+    Truncation is LESS conservative (removes the driving wedge). On Slide2 #2 /
+    ACADS 1(b) the truncation model reproduces the published water-crack FOS
+    (Bishop 1.596/Spencer 1.592/GLE 1.592) to <0.1%, resolving the V-026
+    strength-model conservatism (documented there as a CONVENTION). See
+    VALIDATION.md B9 / RESULTS V-026.
 - **Empty-space slices**: slices where the slip surface is below all soil layers
   are skipped (zero weight, no contribution)
 - **Nails disconnected**: `nails.py` is importable but not called from the analysis

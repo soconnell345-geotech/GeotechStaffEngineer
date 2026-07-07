@@ -176,6 +176,28 @@ survive text extraction, so an exact referee match would require inventing them
 Follow-up for the lead: expose `pore_pressure_points` in the funhouse slope
 adapter (outside this task's edit scope).
 
+## B9 — Tension crack: exit-side + mass-truncation (v5.4 E4, validation_examples V-026 E4)
+[Slide2 Verification #2 = ACADS 1(b): ACADS #1 slope, c'=32/phi'=10/gamma=20,
+water-filled tension crack, Rankine depth zc=3.81 m. Published (WITH the water
+crack): Bishop 1.596 / Spencer 1.592 / GLE 1.592; referee 1.65.]
+
+`tension_crack_side` ('entry'|'exit') + `tension_crack_model` ('strength'|
+'truncation'), both default-preserving.
+
+| Case | Bishop | Spencer | GLE | vs Slide2 |
+|------|-------:|--------:|----:|-----------|
+| entry, strength (V-026 default) | 1.497 | 1.498 | 1.494 | -6% (conservative) |
+| exit, strength (un-mirrored geom) | 1.497 | 1.498 | 1.494 | = entry (mirror-symmetric, ~1e-16) |
+| entry, **truncation** | **1.597** | **1.593** | **1.594** | **<0.1%** |
+
+VERDICT: **PASS — mass-truncation matches Slide2; exit-side is mirror-symmetric.**
+The V-026 CONVENTION residual (the module was ~6% conservative because it kept the
+cracked wedge as zero-strength DRIVING soil) is resolved: with the truncation
+model — the cracked wedge REMOVED from the sliding mass, as Slide2 does — the
+published water-crack FOS is reproduced to <0.1%. The exit-side option removes the
+old need to mirror the slope (V-026 analysed the mirror image). Default (entry,
+strength) byte-identical to V-026. NOT tuned; the match falls out of the mass model.
+
 ---
 
 ## Notes / known deviations

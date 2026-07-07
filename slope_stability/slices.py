@@ -188,13 +188,16 @@ def build_slices(geom: SlopeGeometry,
     pp_interp = (build_pore_pressure_interpolator(geom.pore_pressure_points)
                  if geom.pore_pressure_points is not None else None)
 
-    # Tension crack: compute crack base elevation at entry.
-    # Only slices in the entry half of the slip surface can be in the crack.
+    # Tension crack: compute the crack base elevation at the crest end of the
+    # slip surface (entry = low-x by default, or exit = high-x). Only slices on
+    # that half of the surface can be in the crack.
     crack_base_elev = None
     x_midpoint = (x_entry + x_exit) / 2.0
+    crack_side = geom.tension_crack_side
+    crack_truncate = geom.tension_crack_model == "truncation"
     if geom.tension_crack_depth > 0:
-        z_surface_entry = geom.ground_elevation_at(x_entry)
-        crack_base_elev = z_surface_entry - geom.tension_crack_depth
+        x_crest = x_entry if crack_side == "entry" else x_exit
+        crack_base_elev = geom.ground_elevation_at(x_crest) - geom.tension_crack_depth
 
     slices = []
     below_base_x = []   # x of slices whose base dips below ALL soil layers
@@ -297,16 +300,21 @@ def build_slices(geom: SlopeGeometry,
                 - pore_pressure
             c, phi = base_layer.strength_at(sigma_n, sigma_v)
 
-        # Tension crack: slices near the entry where base is above crack
-        # bottom have no shear resistance (open crack face).
-        # x-position guard prevents marking exit-side slices on flat surfaces.
+        # Tension crack: slices on the CREST half whose base is above the crack
+        # bottom either lose shear resistance (strength model — open crack face)
+        # or are removed from the sliding mass (truncation model — the mass ends
+        # at the vertical crack face). The x-position guard scopes it to the
+        # crest side (entry = low-x default, exit = high-x).
         in_crack = False
-        if (crack_base_elev is not None
-                and z_base >= crack_base_elev
-                and x_mid <= x_midpoint):
-            in_crack = True
-            c = 0.0
-            phi = 0.0
+        if crack_base_elev is not None and z_base >= crack_base_elev:
+            on_crest_side = (x_mid <= x_midpoint if crack_side == "entry"
+                             else x_mid >= x_midpoint)
+            if on_crest_side:
+                if crack_truncate:
+                    continue           # truncate the mass at the crack face
+                in_crack = True
+                c = 0.0
+                phi = 0.0
 
         # Surcharge
         surcharge_force = geom.surcharge_at(x_mid) * width
@@ -357,23 +365,26 @@ def build_slices(geom: SlopeGeometry,
                 "Use a shallower trial surface or extend the soil layers."
             )
 
-    # Tension crack water force: applied to the first non-cracked slice
-    # F_w = 0.5 * gamma_w * z_w^2, acting at z_w/3 above crack base
+    # Tension crack water force: hydrostatic thrust on the retained face,
+    # F_w = 0.5 * gamma_w * z_w^2 acting at z_w/3 above the crack base (treated
+    # downstream as an always-driving magnitude). Apply it to the retained slice
+    # adjacent to the crack face: the first non-cracked slice for an entry-side
+    # crack, the last non-cracked for an exit-side crack (for truncation the
+    # cracked slices are already gone, so this is the boundary retained slice).
     if crack_base_elev is not None and geom.tension_crack_water_depth > 0 and slices:
         z_w = geom.tension_crack_water_depth
         crack_water_f = 0.5 * GAMMA_W * z_w ** 2
         crack_water_elev = crack_base_elev + z_w / 3.0
-        # Apply to first non-cracked slice (or last cracked if all cracked)
         target = None
-        for s in slices:
+        ordered = slices if crack_side == "entry" else list(reversed(slices))
+        for s in ordered:
             if not s.in_tension_crack:
                 target = s
                 break
-        if target is None and slices:
-            target = slices[-1]
-        if target is not None:
-            target.crack_water_force = crack_water_f
-            target.crack_water_z = crack_water_elev
+        if target is None:
+            target = ordered[-1]
+        target.crack_water_force = crack_water_f
+        target.crack_water_z = crack_water_elev
 
     return slices
 

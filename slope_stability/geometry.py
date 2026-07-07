@@ -270,6 +270,17 @@ class SlopeGeometry:
     stabilizing_piles: Optional[list] = None
     tension_crack_depth: float = 0.0
     tension_crack_water_depth: float = 0.0
+    # Tension-crack placement + model (v5.4 E4). Defaults reproduce the historical
+    # entry-side, strength-truncation behaviour byte-for-byte.
+    #  * ``tension_crack_side``: 'entry' (default, low-x / slip-surface entry) or
+    #    'exit' (high-x). The crack forms at the CREST; put it on whichever side
+    #    of the surface the crest is on (no need to mirror the slope any more).
+    #  * ``tension_crack_model``: 'strength' (default) keeps the cracked wedge as
+    #    zero-shear-strength DRIVING soil; 'truncation' REMOVES it from the sliding
+    #    mass (the mass ends at the vertical crack face, as Slide2/UTEXAS do).
+    #    Both apply the hydrostatic crack-water thrust on the retained face.
+    tension_crack_side: str = "entry"
+    tension_crack_model: str = "strength"
     # Discrete pore-pressure field: scattered (x, z, u) points (kPa), e.g. from a
     # flow net / TIN. When set, the base pore pressure at each slice is
     # INTERPOLATED from this field (linear on the Delaunay triangulation, with a
@@ -296,6 +307,12 @@ class SlopeGeometry:
             raise ValueError(f"tension_crack_water_depth must be non-negative, got {self.tension_crack_water_depth}")
         if self.tension_crack_water_depth > self.tension_crack_depth:
             self.tension_crack_water_depth = self.tension_crack_depth
+        if self.tension_crack_side not in ("entry", "exit"):
+            raise ValueError("tension_crack_side must be 'entry' or 'exit', "
+                             f"got '{self.tension_crack_side}'")
+        if self.tension_crack_model not in ("strength", "truncation"):
+            raise ValueError("tension_crack_model must be 'strength' or "
+                             f"'truncation', got '{self.tension_crack_model}'")
         if self.pore_pressure_points is not None:
             if len(self.pore_pressure_points) < 1:
                 raise ValueError("pore_pressure_points, if given, must be a "
