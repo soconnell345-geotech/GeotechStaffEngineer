@@ -33,16 +33,20 @@ VERDICTS
   bound 1.21. Geometry alone does not close the gap (the exact section is, if
   anything, slightly lower than the earlier straight-face approximation) — the
   residual was the stage-1 flow net, now reproducible.
-* V-038 (#96, Duncan 3-stage): **CONVENTION (approximate).** The seepage stage-1
-  raises the FOS (1.23 -> 1.27) and the published ordering holds at the default
-  (3-stage >= 2-stage), but a ~12% residual to 1.443 remains at the same
-  phreatic that validates the Corps 2-stage. The residual is isolated to the
-  Duncan-Wright-Wong Kc (anisotropic-consolidation) strength interpolation for a
-  c'=0 soil, where the drained (Kc=Kf) envelope falls BELOW the R (Kc=1)
-  envelope at low sigma'_fc so the anisotropic strength GAIN that lifts the
-  published 3-stage above the 2-stage is under-captured. This is a documented
-  follow-up (not geometry, not seepage); the current stage-3 drained
-  substitution follows Duncan, Wright & Brandon (2014) Ch. 9 and is left as-is.
+* V-038 (#96, Duncan 3-stage): **CONVENTION (approximate) — improved by the E2
+  stage-3 refinement.** The DEFAULT (Fellenius stage-3 normal) is unchanged: flat
+  1.235 / seepage 1.273, ordering (3-stage >= 2-stage) holds. The V5.3 diagnosis
+  blamed the Kc interpolation; the E2 re-investigation found the interpolation is
+  actually sound (it yields ~1.45 on its own) and the residual came from the
+  STAGE-3 drained substitution firing spuriously: it estimated the drawn-down
+  effective normal with a Fellenius ``W*cos(a)/l - u`` term that systematically
+  under-predicts N' (17 of 50 slices substituted a too-low drained strength). The
+  optional ``stage3_effective_normal='gle'`` uses the rigorous GLE normal instead
+  (consistent with stage 1; 9 physically-genuine substitutions), lifting the FOS
+  to flat 1.306 / seepage 1.370 and closing most of the residual to the published
+  1.443 (~5% left, within the representative-flow-net + LE-N'-at-FOS sensitivity
+  that already shows as V-037's ~0.6% Corps residual). Gated behind the new
+  parameter (default preserved). NOT tuned; see DESIGN.md and the E2 test below.
 See INVENTORY.md (V-037/V-038), RESULTS.md, and slope_stability/rapid_drawdown.py.
 """
 
@@ -69,11 +73,12 @@ def _dam_geom():
             R_c=1200 * PSF, R_phi=16.0)])
 
 
-def _fos(method, stage1_phreatic=None):
+def _fos(method, stage1_phreatic=None, stage3="fellenius"):
     return rapid_drawdown_fos(
         _dam_geom(), 110 * FT, 24 * FT, xc=169.5 * FT, yc=210 * FT,
         radius=210 * FT, method=method, n_slices=50,
-        stage1_phreatic_points=stage1_phreatic)
+        stage1_phreatic_points=stage1_phreatic,
+        stage3_effective_normal=stage3)
 
 
 def test_v037_corps_2stage_flat_is_conservative_bound():
@@ -104,6 +109,33 @@ def test_v038_duncan_3stage_ordering_and_residual():
     assert f3_flat >= f2_flat - 1e-6                      # DWW no more conservative
     assert f3_seep > f3_flat                              # seepage raises it
     assert f3_seep == pytest.approx(1.273, abs=0.03)      # ours (pinned)
+
+
+def test_v038_duncan_3stage_gle_stage3_refinement():
+    """E2 refinement: ``stage3_effective_normal='gle'`` uses the RIGOROUS GLE
+    drawn-down effective normal for the stage-3 drained substitution (consistent
+    with stage 1) instead of the Fellenius estimate that under-predicts N' and
+    over-fires the substitution. It lifts the Duncan 3-stage FOS toward the
+    published 1.443 while leaving the default byte-identical, and never touches
+    the Corps 2-stage (which has no stage 3)."""
+    # default (Fellenius stage-3) is unchanged
+    assert _fos("duncan_3stage").FOS == pytest.approx(1.235, abs=0.02)
+    assert _fos("duncan_3stage", _SEEPAGE).FOS == pytest.approx(1.273, abs=0.03)
+    # rigorous GLE stage-3 raises the FOS (fewer spurious drained substitutions)
+    g_flat = _fos("duncan_3stage", None, "gle")
+    g_seep = _fos("duncan_3stage", _SEEPAGE, "gle")
+    assert g_flat.FOS == pytest.approx(1.306, abs=0.02)   # ours (pinned)
+    assert g_seep.FOS == pytest.approx(1.370, abs=0.03)   # ours (pinned)
+    assert g_flat.FOS > _fos("duncan_3stage").FOS         # gle >= fellenius
+    assert g_seep.FOS > _fos("duncan_3stage", _SEEPAGE).FOS
+    # fewer stage-3 substitutions than the Fellenius default (17 -> ~9 seepage)
+    assert g_seep.n_drained_substituted < \
+        _fos("duncan_3stage", _SEEPAGE).n_drained_substituted
+    # still short of the published 1.443 (documented ~5% residual), honest
+    assert g_seep.FOS < 1.443
+    # Corps 2-stage has no stage 3: the option is inert there
+    assert _fos("corps_2stage", _SEEPAGE, "gle").FOS == \
+        pytest.approx(_fos("corps_2stage", _SEEPAGE).FOS, abs=1e-9)
 
 
 def test_v037_v038_undrained_is_critical():
