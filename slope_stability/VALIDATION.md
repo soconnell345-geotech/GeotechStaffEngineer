@@ -149,6 +149,33 @@ simplified, riprap veneer omitted; INVENTORY #98), and two independent search
 types (grid + entry-exit) both land ~0.85 Corps, with the correct ordering
 (DWW > Corps). NOT tuned; the recovered geometry is left as-is.
 
+## B8 — Pore-pressure GRID / TIN input (v5.4 E3, validation_examples V-029)
+[Slide2 Verification #10 = ACADS 5: homogeneous 1:2 excavation, c'=11 kPa /
+phi'=28 deg / gamma=20 kN/m3, pore pressure from a flow-net grid + ponded water.
+Published Bishop 1.498 / referee 1.53.]
+
+`SlopeGeometry.pore_pressure_points` (scattered (x,z,u) triples) interpolated at
+each slice base (`build_pore_pressure_interpolator`: Delaunay-linear + nearest
+fallback, suction clamped). Overrides the piezometric-line / ru base pressure;
+ponded water still from `gwt_points`; wired through the search.
+
+| Check | Result |
+|-------|--------|
+| Grid encoding a hydrostatic field vs `gwt_points` piezometric line | identical base u + FOS (Bishop/Spencer/GLE) to ~1e-15 |
+| TIN linear interpolation of a linear field u=3+0.5x+2z | exact (err ~2e-15) |
+| Outside convex hull / < 3 points / suction | finite nearest value, u clamped >= 0 |
+| ACADS-5-style 1:2 cut + flow-net grid (reconstructed) | dry 1.89 -> grid 1.25 (Bishop) |
+
+VERDICT: **CAPABILITY BUILT — flips V-029 from N/A-scope.** Previously the module
+had only a piezometric surface + per-layer ru; the pore-pressure grid is the
+missing capability. Validated by construction (hydrostatic-grid == piezo-line
+equivalence, TIN exactness, search wiring). The published 1.498 is NOT pinned: the
+manual's Figure 10.2 flow-net grid + excavation extent are a figure that did not
+survive text extraction, so an exact referee match would require inventing them
+(forbidden). The ACADS-5-style run is a capability DEMONSTRATION, not a match.
+Follow-up for the lead: expose `pore_pressure_points` in the funhouse slope
+adapter (outside this task's edit scope).
+
 ---
 
 ## Notes / known deviations

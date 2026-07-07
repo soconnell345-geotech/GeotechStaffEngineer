@@ -270,6 +270,13 @@ class SlopeGeometry:
     stabilizing_piles: Optional[list] = None
     tension_crack_depth: float = 0.0
     tension_crack_water_depth: float = 0.0
+    # Discrete pore-pressure field: scattered (x, z, u) points (kPa), e.g. from a
+    # flow net / TIN. When set, the base pore pressure at each slice is
+    # INTERPOLATED from this field (linear on the Delaunay triangulation, with a
+    # nearest fallback outside the hull) instead of the piezometric-line / ru
+    # models. The ponded-water buttress is still driven by ``gwt_points`` (set
+    # both for a pool over a flow-net field). Default None = unchanged.
+    pore_pressure_points: Optional[List[Tuple[float, float, float]]] = None
 
     def __post_init__(self):
         if len(self.surface_points) < 2:
@@ -289,6 +296,15 @@ class SlopeGeometry:
             raise ValueError(f"tension_crack_water_depth must be non-negative, got {self.tension_crack_water_depth}")
         if self.tension_crack_water_depth > self.tension_crack_depth:
             self.tension_crack_water_depth = self.tension_crack_depth
+        if self.pore_pressure_points is not None:
+            if len(self.pore_pressure_points) < 1:
+                raise ValueError("pore_pressure_points, if given, must be a "
+                                 "non-empty list of (x, z, u) triples")
+            for p in self.pore_pressure_points:
+                if len(p) != 3:
+                    raise ValueError(
+                        "each pore_pressure_points entry must be an "
+                        f"(x, z, u) triple, got {p!r}")
 
     def ground_elevation_at(self, x: float) -> float:
         """Linearly interpolate ground surface elevation at x.
@@ -374,6 +390,20 @@ class SlopeGeometry:
             return self.surcharge
         return 0.0
 
+    def pore_pressure_at(self, x: float, z: float) -> Optional[float]:
+        """Interpolate the discrete pore-pressure field at (x, z).
+
+        Returns the pore pressure (kPa, clamped >= 0) linearly interpolated on
+        the Delaunay triangulation of ``pore_pressure_points`` (nearest-node
+        fallback outside the convex hull / for degenerate point sets), or None
+        if no field is set. This is the convenience/adapter entry point; the
+        slice builder builds the interpolator once per call for the hot path.
+        """
+        if self.pore_pressure_points is None:
+            return None
+        interp = build_pore_pressure_interpolator(self.pore_pressure_points)
+        return interp(x, z)
+
 
 def _hoek_brown_instantaneous(sigma_n: float, sigci: float, gsi: float,
                               mi: float, D: float):
@@ -434,3 +464,54 @@ def _hoek_brown_instantaneous(sigma_n: float, sigci: float, gsi: float,
     phi_i = math.atan((d1 - 1.0) / (2.0 * math.sqrt(d1)))
     c_i = max(tau - sn * math.tan(phi_i), 0.0)
     return (c_i, math.degrees(phi_i))
+
+
+def build_pore_pressure_interpolator(points):
+    """Build a callable u(x, z) -> kPa from scattered pore-pressure points.
+
+    ``points`` is a list of (x, z, u) triples (a flow-net / TIN sampling).
+    Returns a function that linearly interpolates u on the Delaunay
+    triangulation of the (x, z) nodes, falling back to the nearest node outside
+    the convex hull or when the triangulation is degenerate (< 3 points, or
+    collinear points). Values are clamped to >= 0 (suction is not carried into
+    the effective-stress reduction). SI throughout (m, kPa).
+
+    scipy is imported lazily (same pattern as search.search_de) so importing
+    geometry stays dependency-light.
+    """
+    import numpy as np
+
+    pts = np.asarray([(float(x), float(z)) for x, z, _ in points], dtype=float)
+    vals = np.asarray([float(u) for _, _, u in points], dtype=float)
+
+    # Nearest-node fallback (always available, incl. 1-2 points / collinear).
+    try:
+        from scipy.interpolate import NearestNDInterpolator
+        nearest = NearestNDInterpolator(pts, vals)
+    except Exception:
+        nearest = None
+
+    linear = None
+    if len(points) >= 3:
+        try:
+            from scipy.interpolate import LinearNDInterpolator
+            linear = LinearNDInterpolator(pts, vals)
+        except Exception:
+            linear = None
+
+    def _interp(x: float, z: float) -> float:
+        u = float("nan")
+        if linear is not None:
+            u = float(linear(x, z))
+        if (u != u or u is None) and nearest is not None:  # nan -> outside hull
+            u = float(nearest(x, z))
+        if u != u:  # still nan: no usable interpolator
+            # last-resort inverse-distance on the raw points
+            d2 = (pts[:, 0] - x) ** 2 + (pts[:, 1] - z) ** 2
+            if len(d2) == 0:
+                return 0.0
+            j = int(np.argmin(d2))
+            u = float(vals[j])
+        return max(u, 0.0)
+
+    return _interp

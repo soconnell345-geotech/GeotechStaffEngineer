@@ -290,6 +290,22 @@ search_critical_surface(geom, surface_type="noncircular",
   hydrostatic head to the GWT surface (no cos²β seepage correction for
   inclined phreatic surfaces) — slightly conservative (overestimates u) on
   steep water tables. The layer `ru` coefficient is the alternative.
+- **Pore-pressure GRID / TIN input (v5.4 E3)**: `SlopeGeometry.pore_pressure_points`
+  is an optional list of scattered `(x, z, u)` triples (kPa) — a flow-net / TIN
+  sampling of the pore-pressure field. When set, the base pore pressure at each
+  slice is INTERPOLATED from it by `geometry.build_pore_pressure_interpolator`
+  (scipy `LinearNDInterpolator` = linear on the Delaunay triangulation, with a
+  `NearestNDInterpolator` fallback outside the convex hull and for degenerate
+  point sets < 3 points / collinear; suction clamped to u ≥ 0). It OVERRIDES the
+  piezometric-line (`gwt_points`) and per-layer `ru` base pore pressure and is
+  wired through the search path (build_slices builds the interpolator once per
+  call). The ponded-water buttress + submerged weight still come from
+  `gwt_points`, so a reservoir over a flow-net field sets BOTH. Default `None` =
+  unchanged. A grid encoding a hydrostatic field reproduces the `gwt_points`
+  base pressure (hence FOS) to machine precision; TIN-linear is exact for a
+  linear field. Enables Slide2 #10 / ACADS 5 (pore-pressure-grid, previously
+  N/A-scope) — see VALIDATION.md B8 / RESULTS V-029. (scipy imported lazily, as
+  in `search.search_de`.)
 
 ## Duncan Verification Examples (test_duncan_verification.py)
 

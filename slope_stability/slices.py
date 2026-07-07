@@ -14,7 +14,9 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from geotech_common.water import GAMMA_W
-from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
+from slope_stability.geometry import (
+    SlopeGeometry, SlopeSoilLayer, build_pore_pressure_interpolator,
+)
 
 
 @dataclass
@@ -181,6 +183,11 @@ def build_slices(geom: SlopeGeometry,
     x_entry, x_exit = slip.find_entry_exit(geom)
     dx = (x_exit - x_entry) / n_slices
 
+    # Discrete pore-pressure field (flow-net / TIN): build the interpolator once
+    # per call for the hot path; None when the piezometric-line / ru model is used.
+    pp_interp = (build_pore_pressure_interpolator(geom.pore_pressure_points)
+                 if geom.pore_pressure_points is not None else None)
+
     # Tension crack: compute crack base elevation at entry.
     # Only slices in the entry half of the slip surface can be in the crack.
     crack_base_elev = None
@@ -268,10 +275,15 @@ def build_slices(geom: SlopeGeometry,
             # Fallback: use bottom-most layer
             base_layer = geom.soil_layers[-1]
         # Apply Ru if no GWT pore pressure and layer has Ru > 0
-        if pore_pressure <= 0 and base_layer.ru > 0:
+        if pp_interp is None and pore_pressure <= 0 and base_layer.ru > 0:
             # u = Ru * gamma * h  where h = overburden depth
             overburden_h = z_top - z_base
             pore_pressure = base_layer.ru * base_layer.gamma * overburden_h
+
+        # Discrete pore-pressure field overrides the piezometric-line / ru value
+        # at the slice base (the ponded-water buttress above still uses gwt_elev).
+        if pp_interp is not None:
+            pore_pressure = pp_interp(x_mid, z_base)
 
         # Strength model evaluation (SHANSEP / Hoek-Brown need stress
         # estimates at the base: Fellenius normal and vertical effective)
