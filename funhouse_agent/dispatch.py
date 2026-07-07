@@ -248,6 +248,16 @@ _METHOD_ALIASES = {
     # earth-pressure coefficient tool is the Rankine/Coulomb K helper; the
     # aggregate-pier tool is the GEC-13 design method.
     ("retaining_walls", "earth_pressure_analysis"): "earth_pressure_coefficient",
+    # Rankine/Coulomb K guessed by name ON retaining_walls (the right module) —
+    # route in-module to the real earth-pressure coefficient helper. The SAME
+    # names guessed on the WRONG module are handled by _CROSS_MODULE_REDIRECTS.
+    ("retaining_walls", "rankine_coefficients"): "earth_pressure_coefficient",
+    ("retaining_walls", "rankine_earth_pressure"): "earth_pressure_coefficient",
+    ("retaining_walls", "rankine_ka"): "earth_pressure_coefficient",
+    ("retaining_walls", "rankine_kp"): "earth_pressure_coefficient",
+    ("retaining_walls", "coulomb_coefficients"): "earth_pressure_coefficient",
+    ("retaining_walls", "active_earth_pressure"): "earth_pressure_coefficient",
+    ("retaining_walls", "passive_earth_pressure"): "earth_pressure_coefficient",
     ("ground_improvement", "aggregate_pier_design"): "aggregate_piers",
     # --- slope / FEM ---
     ("fem2d", "slope_strength_reduction"): "fem2d_slope_srm",
@@ -278,6 +288,55 @@ _METHOD_ALIASES = {
     ("subsurface", "read_and_validate"): "read_ags4",
     ("dxf_export", "export_cross_section"): "export_geometry_to_dxf",
 }
+
+
+# Cross-module SELECTION mis-routing: a method name asked of the WRONG module,
+# mapped to the module + method that actually implements it. Keyed by the
+# guessed name (lowercased) — the wrong module the agent picked is irrelevant,
+# so ANY module that lacks the method redirects to the right one. Unlike
+# _METHOD_ALIASES (same-module, auto-executed), these NEVER auto-execute: a
+# different module has different required parameters, so silently running it
+# could return a confidently wrong answer. Instead call_agent returns a
+# did-you-mean error naming the right module+method. Sourced from the agent
+# test-suite triage (module_work/module_feedback.json): Rankine/Coulomb earth-
+# pressure coefficients repeatedly guessed on bearing_capacity / seismic_geotech
+# (the real home is retaining_walls.earth_pressure_coefficient).
+_CROSS_MODULE_REDIRECTS = {
+    "rankine_coefficients": ("retaining_walls", "earth_pressure_coefficient"),
+    "rankine_earth_pressure": ("retaining_walls", "earth_pressure_coefficient"),
+    "rankine_ka": ("retaining_walls", "earth_pressure_coefficient"),
+    "rankine_kp": ("retaining_walls", "earth_pressure_coefficient"),
+    "rankine_k0": ("retaining_walls", "earth_pressure_coefficient"),
+    "coulomb_coefficients": ("retaining_walls", "earth_pressure_coefficient"),
+    "coulomb_earth_pressure": ("retaining_walls", "earth_pressure_coefficient"),
+    "earth_pressure_coefficients": ("retaining_walls", "earth_pressure_coefficient"),
+    "active_earth_pressure": ("retaining_walls", "earth_pressure_coefficient"),
+    "passive_earth_pressure": ("retaining_walls", "earth_pressure_coefficient"),
+}
+
+
+def _cross_module_redirect(agent_name: str, method: str, allowed_agents=None):
+    """Point a method guessed on the wrong module at the module that has it.
+
+    Returns ``(right_agent, right_method)`` or ``None``. Only fires when the
+    target module is visible and really exposes the method, and never for a
+    same-module guess (those are handled by ``_METHOD_ALIASES``).
+    """
+    target = _CROSS_MODULE_REDIRECTS.get(method.strip().lower())
+    if target is None:
+        return None
+    right_agent, right_method = target
+    if right_agent == agent_name:
+        return None
+    if not _is_visible(right_agent, allowed_agents):
+        return None
+    try:
+        tmod = _load_adapter(right_agent)
+    except Exception:
+        return None
+    if right_method not in tmod.METHOD_REGISTRY:
+        return None
+    return right_agent, right_method
 
 
 def _selector_value_candidates(mod, name: str):
@@ -355,6 +414,14 @@ def call_agent(
         else:
             available = sorted(k for k, v in mod.METHOD_INFO.items()
                                if not v.get("alias_of"))
+            redirect = _cross_module_redirect(agent_name, method, allowed_agents)
+            if redirect is not None:
+                right_agent, right_method = redirect
+                return {"error":
+                        f"'{method}' is not a '{agent_name}' method — it lives "
+                        f"on module '{right_agent}' as '{right_method}'. Call "
+                        f"call_agent('{right_agent}', '{right_method}', {{...}}). "
+                        f"Available '{agent_name}' methods: {available}"}
             cands = _selector_value_candidates(mod, method)
             if cands:
                 opts = ", ".join(f"{m}({p}='{method}')" for m, p in cands)
