@@ -55,7 +55,8 @@ class TestMethodInfo:
         assert set(METHOD_INFO.keys()) == {
             "analyze_slope", "search_critical_surface",
             "compare_methods_table", "infinite_slope_fos",
-            "rapid_drawdown_fos", "yield_acceleration",
+            "rapid_drawdown_fos", "search_rapid_drawdown",
+            "yield_acceleration",
             "newmark_displacement", "newmark_jibson2007",
             "fosm_fos", "monte_carlo_fos",
         }
@@ -334,3 +335,151 @@ class TestErrors:
     def test_invalid_f_interslice(self):
         with pytest.raises(ValueError, match="f_interslice 'parabolic'"):
             METHOD_REGISTRY["analyze_slope"](_base(f_interslice="parabolic"))
+
+
+# ----------------------------------------------------------------------------
+# v5.4 capabilities: pore-pressure grid, tension-crack side/model, rapid-drawdown
+# stage-3 normal option, and the rapid-drawdown critical-surface search
+# ----------------------------------------------------------------------------
+
+_FT, _PSF, _PCF = 0.3048, 0.04788, 0.157087
+
+
+def _dam(**over):
+    """#98-style embankment dam geometry (feet -> SI) for rapid drawdown."""
+    p = {
+        "surface_points": [[0, 0], [100 * _FT, 40 * _FT], [140 * _FT, 60 * _FT],
+                           [180 * _FT, 60 * _FT]],
+        "soil_layers": [{"top_elevation": 60 * _FT, "bottom_elevation": -2 * _FT,
+                         "gamma": 125 * _PCF, "c_prime": 0.0, "phi": 40.0}],
+    }
+    p.update(over)
+    return p
+
+
+class TestV54PorePressureGrid:
+    def test_pore_pressure_points_lowers_fos(self):
+        import math
+        gw = 9.81
+        base = {
+            "surface_points": [[0, 0], [10, 0], [30, 10], [50, 10]],
+            "soil_layers": [{"top_elevation": 10, "bottom_elevation": -8,
+                             "gamma": 20, "phi": 28, "c_prime": 11}],
+            "xc": 14.29, "yc": 21.86, "radius": 22.27,
+            "method": "bishop", "n_slices": 40,
+        }
+        dry = METHOD_REGISTRY["analyze_slope"](base)["FOS"]
+        grid = [[float(x), float(z), gw * max(5.0 - z, 0.0)]
+                for x in range(-2, 53, 5) for z in [-8, -5, 0, 5, 10]]
+        wet = METHOD_REGISTRY["analyze_slope"](
+            {**base, "pore_pressure_points": grid})["FOS"]
+        assert wet < dry
+        assert "pore_pressure_points" in \
+            METHOD_INFO["analyze_slope"]["parameters"]
+
+    def test_pore_pressure_grid_wires_through_search(self):
+        grid = [[float(x), float(z), 9.81 * max(5.0 - z, 0.0)]
+                for x in range(-2, 53, 5) for z in [-8, -5, 0, 5, 10]]
+        r = METHOD_REGISTRY["search_critical_surface"]({
+            "surface_points": [[0, 0], [10, 0], [30, 10], [50, 10]],
+            "soil_layers": [{"top_elevation": 10, "bottom_elevation": -8,
+                             "gamma": 20, "phi": 28, "c_prime": 11}],
+            "surface_type": "circular", "nx": 5, "ny": 5, "n_slices": 20,
+            "x_entry_range": [0, 12], "x_exit_range": [28, 50],
+            "pore_pressure_points": grid})
+        assert r["critical"]["FOS"] > 0.5
+
+
+class TestV54TensionCrack:
+    def _acads1b(self, **over):
+        p = {
+            "surface_points": [[20, 25], [30, 25], [50, 35], [70, 35]],
+            "soil_layers": [{"top_elevation": 35, "bottom_elevation": 10,
+                             "gamma": 20, "phi": 10, "c_prime": 32}],
+            "xc": 38.04, "yc": 42.94, "radius": 20.47,
+            "method": "bishop", "n_slices": 60,
+            "tension_crack_depth": 3.814, "tension_crack_water_depth": 3.814,
+        }
+        p.update(over)
+        return p
+
+    def test_exit_side_truncation_matches_slide2(self):
+        """Exit-side crack + mass-truncation on the un-mirrored ACADS 1(b) slope
+        reproduces Slide2's published Bishop water-crack FOS (1.596)."""
+        r = METHOD_REGISTRY["analyze_slope"](self._acads1b(
+            tension_crack_side="exit", tension_crack_model="truncation"))
+        assert r["FOS"] == pytest.approx(1.597, abs=0.01)
+
+    def test_strength_model_is_more_conservative(self):
+        strength = METHOD_REGISTRY["analyze_slope"](self._acads1b(
+            tension_crack_side="exit", tension_crack_model="strength"))["FOS"]
+        trunc = METHOD_REGISTRY["analyze_slope"](self._acads1b(
+            tension_crack_side="exit", tension_crack_model="truncation"))["FOS"]
+        assert trunc > strength
+
+    def test_allowed_values_and_bad_values(self):
+        gp = METHOD_INFO["analyze_slope"]["parameters"]
+        assert gp["tension_crack_side"]["allowed_values"] == ["entry", "exit"]
+        assert gp["tension_crack_model"]["allowed_values"] == \
+            ["strength", "truncation"]
+        with pytest.raises(ValueError, match="tension_crack_side 'bogus'"):
+            METHOD_REGISTRY["analyze_slope"](self._acads1b(
+                tension_crack_side="bogus"))
+        with pytest.raises(ValueError, match="tension_crack_model 'bogus'"):
+            METHOD_REGISTRY["analyze_slope"](self._acads1b(
+                tension_crack_model="bogus"))
+
+
+class TestV54RapidDrawdown:
+    def test_stage3_effective_normal_raises_fos(self):
+        """The 3-stage 'gle' stage-3 normal option raises the FOS above the
+        Fellenius default on a specified circle (Slide2 #96 dam)."""
+        _FACE = [[0, 0], [220 * _FT, 73 * _FT], [312 * _FT, 110 * _FT],
+                 [380 * _FT, 110 * _FT]]
+        base = {
+            "surface_points": _FACE,
+            "soil_layers": [{"top_elevation": 110 * _FT,
+                             "bottom_elevation": -1.0 * _FT,
+                             "gamma": 135 * _PCF, "phi": 30.0, "c_prime": 0.0,
+                             "R_c": 1200 * _PSF, "R_phi": 16.0}],
+            "xc": 169.5 * _FT, "yc": 210 * _FT, "radius": 210 * _FT,
+            "drawdown_from_elevation": 110 * _FT,
+            "drawdown_to_elevation": 24 * _FT,
+            "method": "duncan_3stage", "n_slices": 50,
+        }
+        fell = METHOD_REGISTRY["rapid_drawdown_fos"](base)["FOS"]
+        gle = METHOD_REGISTRY["rapid_drawdown_fos"](
+            {**base, "stage3_effective_normal": "gle"})["FOS"]
+        assert gle > fell
+        assert METHOD_INFO["rapid_drawdown_fos"]["parameters"][
+            "stage3_effective_normal"]["allowed_values"] == ["fellenius", "gle"]
+
+    def test_bad_stage3_normal_rejected(self):
+        with pytest.raises(ValueError, match="stage3_effective_normal"):
+            METHOD_REGISTRY["rapid_drawdown_fos"](_dam(
+                drawdown_from_elevation=47 * _FT,
+                drawdown_to_elevation=15 * _FT,
+                stage3_effective_normal="bogus"))
+
+
+class TestV54SearchRapidDrawdown:
+    def test_search_runs_and_returns_detail(self):
+        r = METHOD_REGISTRY["search_rapid_drawdown"](_dam(
+            drawdown_from_elevation=47 * _FT, drawdown_to_elevation=15 * _FT,
+            method="corps_2stage", surface_type="circular", nx=5, ny=4,
+            x_range=[30 * _FT, 140 * _FT], y_range=[60 * _FT, 150 * _FT],
+            n_slices=20))
+        assert 0.3 < r["FOS"] < 2.5
+        assert r["method"] == "corps_2stage"
+        assert r["n_surfaces_evaluated"] > 0
+        assert "drawdown_detail" in r and "search" in r
+
+    def test_requires_drawdown_levels(self):
+        with pytest.raises(ValueError, match="drawdown_from_elevation"):
+            METHOD_REGISTRY["search_rapid_drawdown"](_dam())
+
+    def test_bad_surface_type_rejected(self):
+        with pytest.raises(ValueError, match="surface_type"):
+            METHOD_REGISTRY["search_rapid_drawdown"](_dam(
+                drawdown_from_elevation=47 * _FT,
+                drawdown_to_elevation=15 * _FT, surface_type="pso"))

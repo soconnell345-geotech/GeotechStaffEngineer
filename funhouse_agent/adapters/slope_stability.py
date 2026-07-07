@@ -15,6 +15,8 @@ _SURFACE_TYPES = ["circular", "entry_exit", "noncircular", "noncircular_de",
                   "pso", "weak_layer"]
 _STRENGTH_MODELS = ["mohr_coulomb", "shansep", "hoek_brown"]
 _NEWMARK_POLARITY = ["downslope", "rectified"]
+_CRACK_SIDES = ["entry", "exit"]
+_CRACK_MODELS = ["strength", "truncation"]
 
 
 # Top-level geometry params consumed by _build_geometry, and the trial-surface
@@ -24,6 +26,7 @@ _GEOM_PARAMS = (
     "surcharge_x_range", "reinforcement_force", "reinforcement_elevation",
     "kh", "nails", "anchors", "geosynthetics", "stabilizing_piles",
     "tension_crack_depth", "tension_crack_water_depth",
+    "tension_crack_side", "tension_crack_model", "pore_pressure_points",
 )
 _SURFACE_PARAMS = ("xc", "yc", "radius", "slip_points")
 
@@ -68,6 +71,15 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
     surface_points = [tuple(pt) for pt in params["surface_points"]]
     gwt_points = [tuple(pt) for pt in params["gwt_points"]] if params.get("gwt_points") else None
     surcharge_x_range = tuple(params["surcharge_x_range"]) if params.get("surcharge_x_range") else None
+    crack_side = _check_choice(params.get("tension_crack_side", "entry"),
+                               _CRACK_SIDES, name="tension_crack_side",
+                               method=method)
+    crack_model = _check_choice(params.get("tension_crack_model", "strength"),
+                                _CRACK_MODELS, name="tension_crack_model",
+                                method=method)
+    pore_pressure_points = (
+        [tuple(p) for p in params["pore_pressure_points"]]
+        if params.get("pore_pressure_points") else None)
 
     nails = None
     if params.get("nails"):
@@ -135,6 +147,8 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
         stabilizing_piles=stabilizing_piles,
         tension_crack_depth=params.get("tension_crack_depth", 0.0),
         tension_crack_water_depth=params.get("tension_crack_water_depth", 0.0),
+        tension_crack_side=crack_side, tension_crack_model=crack_model,
+        pore_pressure_points=pore_pressure_points,
     )
 
 
@@ -284,6 +298,8 @@ def _run_infinite_slope(params: dict) -> dict:
 
 
 _RD_METHODS = ["corps_2stage", "duncan_3stage"]
+_RD_STAGE3_NORMAL = ["fellenius", "gle"]
+_RD_SURFACE_TYPES = ["circular", "entry_exit", "noncircular", "noncircular_de"]
 
 
 def _run_rapid_drawdown(params: dict) -> dict:
@@ -292,7 +308,8 @@ def _run_rapid_drawdown(params: dict) -> dict:
         params,
         _GEOM_PARAMS + _SURFACE_PARAMS + (
             "drawdown_from_elevation", "drawdown_to_elevation", "method",
-            "f_interslice", "n_slices", "tol", "stage1_phreatic_points"),
+            "f_interslice", "n_slices", "tol", "stage1_phreatic_points",
+            "stage3_effective_normal"),
         method="rapid_drawdown_fos")
     geom = _build_geometry(params, method="rapid_drawdown_fos")
     require_params(params, ["drawdown_from_elevation", "drawdown_to_elevation"],
@@ -301,6 +318,9 @@ def _run_rapid_drawdown(params: dict) -> dict:
                            name="method", method="rapid_drawdown_fos")
     f_int = _check_choice(params.get("f_interslice", "constant"), _F_INTERSLICE,
                           name="f_interslice", method="rapid_drawdown_fos")
+    stage3 = _check_choice(
+        params.get("stage3_effective_normal", "fellenius"), _RD_STAGE3_NORMAL,
+        name="stage3_effective_normal", method="rapid_drawdown_fos")
     result = rapid_drawdown_fos(
         geom, params["drawdown_from_elevation"], params["drawdown_to_elevation"],
         xc=params.get("xc"), yc=params.get("yc"), radius=params.get("radius"),
@@ -308,6 +328,50 @@ def _run_rapid_drawdown(params: dict) -> dict:
         method=method, f_interslice=f_int,
         n_slices=params.get("n_slices", 50), tol=params.get("tol", 1e-4),
         stage1_phreatic_points=params.get("stage1_phreatic_points"),
+        stage3_effective_normal=stage3,
+    )
+    return result.to_dict()
+
+
+def _run_search_rapid_drawdown(params: dict) -> dict:
+    from slope_stability.rapid_drawdown import search_rapid_drawdown
+    reject_unknown_params(
+        params,
+        _GEOM_PARAMS + (
+            "drawdown_from_elevation", "drawdown_to_elevation", "method",
+            "surface_type", "x_range", "y_range", "x_entry_range",
+            "x_exit_range", "nx", "ny", "n_trials", "n_points", "seed",
+            "n_slices", "tol", "f_interslice", "stage1_phreatic_points",
+            "stage3_effective_normal"),
+        method="search_rapid_drawdown")
+    geom = _build_geometry(params, method="search_rapid_drawdown")
+    require_params(params, ["drawdown_from_elevation", "drawdown_to_elevation"],
+                   method="search_rapid_drawdown")
+    method = _check_choice(params.get("method", "corps_2stage"), _RD_METHODS,
+                           name="method", method="search_rapid_drawdown")
+    surface_type = _check_choice(
+        params.get("surface_type", "circular"), _RD_SURFACE_TYPES,
+        name="surface_type", method="search_rapid_drawdown")
+    f_int = _check_choice(params.get("f_interslice", "constant"), _F_INTERSLICE,
+                          name="f_interslice", method="search_rapid_drawdown")
+    stage3 = _check_choice(
+        params.get("stage3_effective_normal", "fellenius"), _RD_STAGE3_NORMAL,
+        name="stage3_effective_normal", method="search_rapid_drawdown")
+    x_range = tuple(params["x_range"]) if params.get("x_range") else None
+    y_range = tuple(params["y_range"]) if params.get("y_range") else None
+    x_entry_range = tuple(params["x_entry_range"]) if params.get("x_entry_range") else None
+    x_exit_range = tuple(params["x_exit_range"]) if params.get("x_exit_range") else None
+    result = search_rapid_drawdown(
+        geom, params["drawdown_from_elevation"], params["drawdown_to_elevation"],
+        method=method, surface_type=surface_type,
+        x_range=x_range, y_range=y_range,
+        nx=params.get("nx", 10), ny=params.get("ny", 10),
+        x_entry_range=x_entry_range, x_exit_range=x_exit_range,
+        n_trials=params.get("n_trials", 500), n_points=params.get("n_points", 5),
+        seed=params.get("seed"), n_slices=params.get("n_slices", 50),
+        tol=params.get("tol", 1e-4), f_interslice=f_int,
+        stage1_phreatic_points=params.get("stage1_phreatic_points"),
+        stage3_effective_normal=stage3,
     )
     return result.to_dict()
 
@@ -360,6 +424,7 @@ METHOD_REGISTRY = {
     "compare_methods_table": _run_compare_methods,
     "infinite_slope_fos": _run_infinite_slope,
     "rapid_drawdown_fos": _run_rapid_drawdown,
+    "search_rapid_drawdown": _run_search_rapid_drawdown,
     "yield_acceleration": _run_yield_acceleration,
     "newmark_displacement": _run_newmark_displacement,
     "newmark_jibson2007": _run_newmark_jibson2007,
@@ -376,6 +441,9 @@ _GEOMETRY_PARAMS = {
     "surcharge_x_range": {"type": "array", "required": False, "description": "[x_start, x_end] extent of the surcharge."},
     "tension_crack_depth": {"type": "float", "required": False, "default": 0.0, "description": "Tension crack depth at the crest (m)."},
     "tension_crack_water_depth": {"type": "float", "required": False, "default": 0.0, "description": "Water depth in the tension crack (m)."},
+    "tension_crack_side": {"type": "str", "required": False, "default": "entry", "allowed_values": _CRACK_SIDES, "description": "Which crest end the tension crack is on: 'entry' (default, low-x / slip-surface entry) or 'exit' (high-x). Put it on whichever side the crest is on; no need to mirror the slope."},
+    "tension_crack_model": {"type": "str", "required": False, "default": "strength", "allowed_values": _CRACK_MODELS, "description": "Tension-crack mechanism: 'strength' (default) keeps the cracked wedge as zero-shear-strength driving soil; 'truncation' removes it from the sliding mass (mass ends at the vertical crack face, as Slide2/UTEXAS do). Truncation is less conservative."},
+    "pore_pressure_points": {"type": "array", "required": False, "description": "Discrete pore-pressure field as [[x, z, u], ...] triples (u in kPa) -- a flow-net / TIN sampling. When given, the base pore pressure at each slice is interpolated from this field (linear on the Delaunay triangulation, nearest-node fallback outside the hull, suction clamped to 0), OVERRIDING the gwt_points piezometric line and per-layer ru. The ponded-water buttress still comes from gwt_points, so set BOTH for a reservoir over a flow-net field."},
     "nails": {"type": "array", "required": False, "description": "Soil nails (per metre of slope run): [{x_head, z_head, length required; inclination deg below horizontal=15, bar_diameter mm=25, drill_hole_diameter mm=150, fy MPa=420, bond_stress kPa=100, spacing_h m=1.5}]. Capacity = min(pullout behind slip surface, bar tensile)/spacing_h (FHWA GEC-7)."},
     "anchors": {"type": "array", "required": False, "description": "Tieback anchors: [{x_head, z_head, length, T_allow kN/m required; inclination=15}]. Full T_allow applied when the bond zone crosses the slip surface."},
     "geosynthetics": {"type": "array", "required": False, "description": "Horizontal geosynthetic layers: [{elevation, T_allow kN/m required; x_start, x_end optional}]."},
@@ -449,8 +517,34 @@ METHOD_INFO = {
             "f_interslice": {"type": "str", "required": False, "default": "constant", "allowed_values": _F_INTERSLICE, "description": "GLE interslice function ('constant' = Spencer)."},
             "n_slices": {"type": "int", "required": False, "default": 50, "description": "Number of slices."},
             "stage1_phreatic_points": {"type": "array", "required": False, "description": "Optional steady-seepage phreatic surface [[x,z],...] for the STAGE-1 consolidation stresses only. Default (omitted) uses a flat full-pool phreatic (hydrostatic to the reservoir) -- the conservative no-through-seepage bound. Supply the flow-net/Casagrande phreatic line (declining from the pool level at the upstream face through the dam) to reproduce the steady-seepage condition Slide2/EM 1110-2-1902 use, which raises the mobilized undrained strengths and the FOS."},
+            "stage3_effective_normal": {"type": "str", "required": False, "default": "fellenius", "allowed_values": _RD_STAGE3_NORMAL, "description": "3-stage only: basis for the STAGE-3 drained-substitution effective normal stress. 'fellenius' (default) uses the W*cos(a)/l - u estimate (historical); 'gle' uses the rigorous GLE drawn-down normal (consistent with stage 1), which removes spurious drained substitutions and raises the FOS toward the published Duncan-Wright-Wong value (e.g. Slide2 #96: 1.27 -> 1.37). Inert for the 2-stage method."},
         },
         "returns": {"FOS": "Drawdown factor of safety.", "stage1_FOS": "Full-pool (pre-drawdown) FOS.", "n_undrained_slices": "Slices treated undrained.", "n_drained_substituted": "Stage-3 drained substitutions (3-stage)."},
+    },
+    "search_rapid_drawdown": {
+        "category": "Slope Stability",
+        "brief": "SEARCH for the critical (minimum-FOS) slip surface under RAPID-DRAWDOWN strengths (Corps 2-stage / Duncan-Wright-Wong 3-stage). Like search_critical_surface but the per-trial FOS is the rapid-drawdown solve; supports circular and noncircular searches. Use this (not rapid_drawdown_fos) when you do NOT already have a specific trial surface. Low-permeability layers need the R-envelope (soil_layers[].R_c, R_phi).",
+        "parameters": {
+            **_GEOMETRY_PARAMS,
+            "drawdown_from_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation BEFORE drawdown (m)."},
+            "drawdown_to_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation AFTER drawdown (m); must be below drawdown_from_elevation."},
+            "method": {"type": "str", "required": False, "default": "corps_2stage", "allowed_values": _RD_METHODS, "description": "Rapid-drawdown stage method: 'corps_2stage' (default) or 'duncan_3stage'."},
+            "surface_type": {"type": "str", "required": False, "default": "circular", "allowed_values": _RD_SURFACE_TYPES, "description": "Search strategy: 'circular' (centre grid), 'entry_exit' (arcs between entry/exit windows), 'noncircular' (random polylines), 'noncircular_de' (differential-evolution refinement)."},
+            "x_range": {"type": "array", "required": False, "description": "[xmin, xmax] for the circle-centre grid (circular)."},
+            "y_range": {"type": "array", "required": False, "description": "[ymin, ymax] for the circle-centre grid (circular)."},
+            "x_entry_range": {"type": "array", "required": False, "description": "[xmin, xmax] allowed slip-surface entry window."},
+            "x_exit_range": {"type": "array", "required": False, "description": "[xmin, xmax] allowed exit window."},
+            "nx": {"type": "int", "required": False, "default": 10, "description": "Grid divisions in x (or entry divisions for entry_exit). Each trial is several LE solves -- keep modest."},
+            "ny": {"type": "int", "required": False, "default": 10, "description": "Grid divisions in y (or exit divisions for entry_exit)."},
+            "n_trials": {"type": "int", "required": False, "default": 500, "description": "Random trials for noncircular searches."},
+            "n_points": {"type": "int", "required": False, "default": 5, "description": "Polyline vertices for noncircular searches."},
+            "n_slices": {"type": "int", "required": False, "default": 50, "description": "Number of slices per trial."},
+            "seed": {"type": "int", "required": False, "description": "Random seed for reproducible noncircular searches."},
+            "f_interslice": {"type": "str", "required": False, "default": "constant", "allowed_values": _F_INTERSLICE, "description": "GLE interslice function ('constant' = Spencer)."},
+            "stage1_phreatic_points": {"type": "array", "required": False, "description": "Optional steady-seepage stage-1 phreatic surface [[x,z],...] (see rapid_drawdown_fos)."},
+            "stage3_effective_normal": {"type": "str", "required": False, "default": "fellenius", "allowed_values": _RD_STAGE3_NORMAL, "description": "3-stage stage-3 drained-substitution normal basis: 'fellenius' (default) or 'gle' (rigorous). See rapid_drawdown_fos."},
+        },
+        "returns": {"FOS": "Minimum drawdown factor of safety found.", "method": "Stage method used.", "surface_type": "Search strategy.", "n_surfaces_evaluated": "Number of surfaces checked.", "search": "Rich search result (critical surface geometry + diagnostics).", "drawdown_detail": "Stage-level detail on the winning surface (stage-1 FOS, drained substitutions)."},
     },
     "yield_acceleration": {
         "category": "Slope Stability",
