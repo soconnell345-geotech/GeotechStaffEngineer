@@ -45,20 +45,15 @@ _NC_STRIP = {
 
 
 def _interpolate_Nc_strip(H_Be: float) -> float:
-    """Interpolate Nc for strip excavation from H/Be ratio."""
+    """Interpolate Nc for strip excavation from H/Be ratio.
+
+    Uses the module's shared clamped linear interpolation (``earth_pressure.
+    _lininterp``); bit-identical to the former inline formula on the _NC_STRIP
+    table (verified) — this is a dedup, not a numeric change.
+    """
+    from soe.earth_pressure import _lininterp
     keys = sorted(_NC_STRIP.keys())
-    if H_Be <= keys[0]:
-        return _NC_STRIP[keys[0]]
-    if H_Be >= keys[-1]:
-        return _NC_STRIP[keys[-1]]
-
-    for i in range(len(keys) - 1):
-        if keys[i] <= H_Be <= keys[i + 1]:
-            x0, x1 = keys[i], keys[i + 1]
-            y0, y1 = _NC_STRIP[x0], _NC_STRIP[x1]
-            return y0 + (y1 - y0) * (H_Be - x0) / (x1 - x0)
-
-    return _NC_STRIP[keys[-1]]
+    return _lininterp(H_Be, keys, [_NC_STRIP[k] for k in keys])
 
 
 # ============================================================================
