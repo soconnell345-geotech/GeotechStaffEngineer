@@ -90,6 +90,16 @@ without bound. T6/3-pt resolves the exact mechanism within a few
 percent. **Do not use CST for collapse loads or FOS** — it is retained
 for elastic, seepage and Biot work.
 
+**Convenience** (`analyze_footing_capacity`, v5.4 E11): a one-call wrapper of
+this load-control-to-collapse workflow (build the half-space mesh from footing
+width B → ramp the strip pressure → last converged level = q_ult), the FE
+analogue of a bearing-capacity calculation (analogous to how
+`analyze_slope_srm` wraps the slope workflow). It reports q_ult, the
+back-figured Nc, the closed-form factors (`bearing_capacity_factors`, Prandtl–
+Reissner + Vesic Nγ), and a bearing FOS vs a working pressure. Validated here:
+T6 40x20 gives Nc = **5.12** (−0.4% vs 5.14); CST locks (never brackets
+collapse, Nc > 8). Tests: `fem2d/tests/test_footing_capacity.py`.
+
 ## 4. Elastic closed-form checks
 
 | Check | Closed form | fem2d | Error |

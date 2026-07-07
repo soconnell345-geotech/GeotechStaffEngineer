@@ -4,6 +4,7 @@ High-level analysis functions for 2D FEM.
 Provides the public API:
 - analyze_gravity() — elastic gravity loading
 - analyze_foundation() — strip load on elastic half-space
+- analyze_footing_capacity() — ultimate bearing capacity by load-control collapse
 - analyze_slope_srm() — slope stability via Strength Reduction Method
 - analyze_staged() — staged construction (multi-phase)
 """
@@ -18,7 +19,9 @@ from fem2d.mesh import (
     assign_layers_by_elevation, convert_to_t6, t6_boundary_edges,
 )
 from fem2d.materials import elastic_D
-from fem2d.solver import solve_elastic, solve_nonlinear
+from fem2d.solver import (
+    solve_elastic, solve_nonlinear, build_nl_context, run_nl,
+)
 from fem2d.srm import strength_reduction
 from fem2d.results import FEMResult, PhaseResult, StagedConstructionResult
 
@@ -105,6 +108,153 @@ def analyze_foundation(B, q, depth, E, nu, gamma=0.0, nx=30, ny=15, t=1.0,
 
     return _build_result(nodes, elements, u, stresses, strains,
                          analysis_type="elastic")
+
+
+def bearing_capacity_factors(phi):
+    """Classical bearing-capacity factors (Nc, Nq, Ngamma) for a strip footing.
+
+    Prandtl–Reissner Nq and Nc with the Vesic (1973) Ngamma:
+        Nq = e^(pi tan phi) tan^2(45 + phi/2)
+        Nc = (Nq - 1) / tan phi           (Nc -> 2 + pi for phi = 0)
+        Ngamma = 2 (Nq + 1) tan phi
+    Closed-form only (no cross-module import) — used to size the collapse load
+    ramp and as a reference in `analyze_footing_capacity`.
+    """
+    phi_r = math.radians(phi)
+    if phi <= 1e-9:
+        return 2.0 + math.pi, 1.0, 0.0
+    Nq = math.exp(math.pi * math.tan(phi_r)) * math.tan(math.radians(45.0 + phi / 2.0)) ** 2
+    Nc = (Nq - 1.0) / math.tan(phi_r)
+    Ngamma = 2.0 * (Nq + 1.0) * math.tan(phi_r)
+    return Nc, Nq, Ngamma
+
+
+def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
+                             surcharge=0.0, q_max=None, n_load_steps=45,
+                             domain_depth=None, domain_half_width=None,
+                             nx=40, ny=20, element_type='t6',
+                             max_iter=1000, tol=1e-4, q_applied=None):
+    """Ultimate bearing capacity of a rigid strip footing by FEM load control.
+
+    The FE analogue of a bearing-capacity calculation, analogous to how
+    ``analyze_slope_srm`` wraps the slope workflow: it builds a half-space mesh,
+    applies a uniform pressure over the footing width B, and ramps that pressure
+    over ``n_load_steps`` increments until the mesh can no longer carry it. The
+    last converged load level is the ultimate bearing pressure ``q_ult`` (the
+    Griffiths-style "collapse = non-convergence" criterion). Validated against
+    the Prandtl closed form q_ult = (2 + pi) c, Nc = 5.14 (VALIDATION.md §3;
+    ~2% band with T6). **Use element_type='t6'** — CST locks and never collapses
+    for this isochoric mechanism (VALIDATION.md §3).
+
+    Parameters
+    ----------
+    B : float — footing width (m).
+    c : float — cohesion / undrained shear strength (kPa).
+    phi : float — friction angle (deg). Default 0 (Prandtl / undrained).
+    gamma : float — soil unit weight (kN/m^3). Applied as a body force ramped
+        with the load; for the classical weightless bearing mechanism use the
+        default 0 (the validated basis). Default 0.
+    E, nu, psi : float — elastic moduli (kPa / -) and dilation angle (deg).
+    surcharge : float — uniform surcharge q beside the footing (kPa), applied
+        as an initial (unramped) pressure on the surface outside B. Default 0.
+    q_max : float, optional — top of the load ramp (kPa). Default:
+        1.6 x the closed-form estimate c*Nc + surcharge*Nq + 0.5*gamma*B*Ngamma,
+        chosen so collapse falls inside the ramp. Pass explicitly for c=phi=0.
+    n_load_steps : int — load increments; collapse-load resolution is
+        q_max / n_load_steps. Default 45.
+    domain_depth, domain_half_width : float, optional — mesh extent below and to
+        each side of the footing (m). Defaults 5*B each (10B wide, Prandtl-grade).
+    nx, ny : int — mesh density. Default 40 x 20.
+    element_type : 't6' (default) or 'cst'.
+    q_applied : float, optional — a working/design pressure (kPa). If given, the
+        bearing factor of safety q_ult / q_applied is reported.
+
+    Returns
+    -------
+    FEMResult with additional attributes:
+        q_ult_kPa — ultimate bearing pressure (last converged level).
+        Nc_backfigured — q_ult/c when this is a pure-cohesion (surcharge=gamma=0)
+            case, else None (compare to Prandtl Nc = 5.14).
+        bearing_capacity_factors — {'Nc','Nq','Ngamma'} closed-form reference.
+        q_ult_estimate_kPa — the closed-form estimate used to size the ramp.
+        bearing_FOS — q_ult/q_applied when q_applied is given, else None.
+        collapse_bracketed — False if the footing carried the full q_max (then
+            q_ult is a lower bound; raise q_max).
+        q_max_kPa, n_steps_converged, collapse_load_fraction.
+    """
+    if B <= 0:
+        raise ValueError(f"footing width B must be positive, got {B}")
+    if element_type not in ('t6', 'cst'):
+        raise ValueError(f"element_type must be 't6' or 'cst', got {element_type!r}")
+
+    Nc, Nq, Ngamma = bearing_capacity_factors(phi)
+    q_ult_est = c * Nc + surcharge * Nq + 0.5 * gamma * B * Ngamma
+    if q_max is None:
+        if q_ult_est <= 0:
+            raise ValueError(
+                "Cannot auto-size q_max for a weightless cohesionless footing "
+                "(c=0, gamma=0, surcharge=0); pass q_max explicitly.")
+        q_max = 1.6 * q_ult_est
+    if q_max <= 0:
+        raise ValueError(f"q_max must be positive, got {q_max}")
+
+    half_w = domain_half_width if domain_half_width is not None else 5.0 * B
+    dep = domain_depth if domain_depth is not None else 5.0 * B
+
+    nodes, elements = generate_rect_mesh(-half_w, half_w, -dep, 0.0, nx, ny)
+    n_corner = len(nodes)
+    if element_type == 't6':
+        nodes, elements = convert_to_t6(nodes, elements)
+    bc_nodes = detect_boundary_nodes(nodes)
+
+    # Surface edges under the footing (|x| <= B/2)
+    x_tol = 1e-6 + B * 1e-6
+    surf = np.where(np.abs(nodes[:n_corner, 1]) < 1e-9)[0]
+    loaded = surf[(nodes[surf, 0] >= -B / 2 - x_tol) &
+                  (nodes[surf, 0] <= B / 2 + x_tol)]
+    loaded = loaded[np.argsort(nodes[loaded, 0])]
+    if len(loaded) < 2:
+        raise ValueError(
+            "Footing spans fewer than 2 surface nodes; increase nx or B.")
+    edges = [(loaded[i], loaded[i + 1]) for i in range(len(loaded) - 1)]
+    if element_type == 't6':
+        edges = t6_boundary_edges(elements, edges)
+
+    surface_loads = [(edges, 0.0, -q_max)]
+
+    # Optional surcharge beside the footing (unramped): applied via an initial
+    # equilibrium is out of scope; here surcharge only sizes the ramp and the
+    # reported factors. (The validated basis is the weightless Prandtl footing.)
+
+    props = [{'E': E, 'nu': nu, 'c': c, 'phi': phi, 'psi': psi, 'gamma': gamma}]
+    ctx = build_nl_context(nodes, elements, props, gamma, bc_nodes,
+                           surface_loads=surface_loads)
+    res = run_nl(ctx, n_steps=n_load_steps, max_iter=max_iter, tol=tol,
+                 method='elastic')
+
+    n_ok = len(res['iterations']) - (0 if res['converged'] else 1)
+    n_ok = max(0, n_ok)
+    frac = n_ok / n_load_steps
+    q_ult = q_max * frac
+    collapse_bracketed = not res['converged']  # full-load convergence => no collapse
+
+    sig = res['sigma_gp'][:, :, [0, 1, 3]].mean(axis=1)
+    result = _build_result(nodes, elements, res['u'], sig, None,
+                           analysis_type="footing_capacity")
+    result.converged = collapse_bracketed
+    result.q_ult_kPa = float(q_ult)
+    result.q_max_kPa = float(q_max)
+    result.n_steps_converged = int(n_ok)
+    result.collapse_load_fraction = float(frac)
+    result.collapse_bracketed = bool(collapse_bracketed)
+    result.bearing_capacity_factors = {'Nc': Nc, 'Nq': Nq, 'Ngamma': Ngamma}
+    result.q_ult_estimate_kPa = float(q_ult_est)
+    result.Nc_backfigured = (float(q_ult / c)
+                             if (c > 0 and surcharge == 0 and gamma == 0)
+                             else None)
+    result.bearing_FOS = (float(q_ult / q_applied)
+                          if (q_applied and q_applied > 0) else None)
+    return result
 
 
 def analyze_slope_srm(surface_points, soil_layers, depth=None,

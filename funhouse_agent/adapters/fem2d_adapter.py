@@ -78,6 +78,45 @@ def _run_analyze_foundation(params: dict) -> dict:
     return clean_result(result.to_dict())
 
 
+def _run_analyze_footing_capacity(params: dict) -> dict:
+    from fem2d import analyze_footing_capacity
+    _valid = ("B", "c", "phi", "gamma", "E", "nu", "psi", "surcharge",
+              "q_max", "n_load_steps", "domain_depth", "domain_half_width",
+              "nx", "ny", "element_type", "max_iter", "tol", "q_applied")
+    reject_unknown_params(params, _valid, method="fem2d_footing_capacity")
+    require_params(params, ["B", "c"], method="fem2d_footing_capacity",
+                   valid=_valid)
+    element_type = params.get("element_type", "t6")
+    _require_choice(element_type, ("t6", "cst"),
+                    name="element_type", method="fem2d_footing_capacity")
+    result = analyze_footing_capacity(
+        B=params["B"], c=params["c"],
+        phi=params.get("phi", 0.0), gamma=params.get("gamma", 0.0),
+        E=params.get("E", 1e5), nu=params.get("nu", 0.3),
+        psi=params.get("psi", 0.0), surcharge=params.get("surcharge", 0.0),
+        q_max=params.get("q_max"), n_load_steps=params.get("n_load_steps", 45),
+        domain_depth=params.get("domain_depth"),
+        domain_half_width=params.get("domain_half_width"),
+        nx=params.get("nx", 40), ny=params.get("ny", 20),
+        element_type=element_type,
+        max_iter=params.get("max_iter", 1000), tol=params.get("tol", 1e-4),
+        q_applied=params.get("q_applied"),
+    )
+    out = {
+        "q_ult_kPa": result.q_ult_kPa,
+        "Nc_backfigured": result.Nc_backfigured,
+        "bearing_FOS": result.bearing_FOS,
+        "bearing_capacity_factors": result.bearing_capacity_factors,
+        "q_ult_estimate_kPa": result.q_ult_estimate_kPa,
+        "q_max_kPa": result.q_max_kPa,
+        "n_steps_converged": result.n_steps_converged,
+        "collapse_load_fraction": result.collapse_load_fraction,
+        "collapse_bracketed": result.collapse_bracketed,
+        "max_displacement_m": result.max_displacement_m,
+    }
+    return clean_result(out)
+
+
 def _run_analyze_slope_srm(params: dict) -> dict:
     from fem2d import analyze_slope_srm
     _valid = ("surface_points", "soil_layers", "nx", "ny", "srf_tol",
@@ -316,6 +355,7 @@ def _run_analyze_staged(params: dict) -> dict:
 METHOD_REGISTRY = {
     "fem2d_gravity": _run_analyze_gravity,
     "fem2d_foundation": _run_analyze_foundation,
+    "fem2d_footing_capacity": _run_analyze_footing_capacity,
     "fem2d_slope_srm": _run_analyze_slope_srm,
     "fem2d_excavation": _run_analyze_excavation,
     "fem2d_seepage": _run_analyze_seepage,
@@ -359,6 +399,33 @@ METHOD_INFO = {
         "returns": {
             "max_displacement_m": "Maximum displacement magnitude.",
             "max_sigma_yy_kPa": "Maximum vertical stress.",
+        },
+    },
+    "fem2d_footing_capacity": {
+        "category": "FEM 2D",
+        "brief": "Ultimate bearing capacity of a rigid strip footing by FEM load-control to collapse (plane-strain, the FE analogue of a bearing-capacity calc). Validated vs Prandtl Nc=5.14. Use element_type='t6' (CST locks and never collapses).",
+        "parameters": {
+            "B": {"type": "float", "required": True, "description": "Footing width (m)."},
+            "c": {"type": "float", "required": True, "description": "Cohesion / undrained shear strength (kPa)."},
+            "phi": {"type": "float", "required": False, "default": 0.0, "description": "Friction angle (deg). Default 0 (Prandtl / undrained)."},
+            "gamma": {"type": "float", "required": False, "default": 0.0, "description": "Soil unit weight (kN/m3), applied as a body force ramped with the load. Default 0 = classical weightless mechanism (the validated basis)."},
+            "E": {"type": "float", "required": False, "default": 1e5, "description": "Young's modulus (kPa)."},
+            "nu": {"type": "float", "required": False, "default": 0.3, "description": "Poisson's ratio."},
+            "psi": {"type": "float", "required": False, "default": 0.0, "description": "Dilation angle (deg)."},
+            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform surcharge q beside the footing (kPa) — used to size the load ramp and the reported factors."},
+            "q_max": {"type": "float", "required": False, "description": "Top of the load ramp (kPa). Default 1.6x the closed-form estimate c*Nc+surcharge*Nq+0.5*gamma*B*Ngamma. Pass explicitly for a c=phi=0 footing."},
+            "n_load_steps": {"type": "int", "required": False, "default": 45, "description": "Load increments; collapse-load resolution = q_max/n_load_steps."},
+            "nx": {"type": "int", "required": False, "default": 40, "description": "Mesh divisions in x."},
+            "ny": {"type": "int", "required": False, "default": 20, "description": "Mesh divisions in y."},
+            "element_type": {"type": "str", "required": False, "default": "t6", "allowed_values": ["t6", "cst"], "description": "Soil element. t6 (recommended): collapse load within ~2% of Prandtl. cst LOCKS on the isochoric bearing mechanism and never collapses — do not use for capacity."},
+            "q_applied": {"type": "float", "required": False, "description": "Working/design pressure (kPa). If given, bearing_FOS = q_ult/q_applied is reported."},
+        },
+        "returns": {
+            "q_ult_kPa": "Ultimate bearing pressure (last converged load level).",
+            "Nc_backfigured": "q_ult/c for a pure-cohesion footing (compare to Prandtl 5.14); null otherwise.",
+            "bearing_FOS": "q_ult/q_applied when q_applied is given, else null.",
+            "bearing_capacity_factors": "Closed-form {Nc, Nq, Ngamma} reference (Prandtl-Reissner + Vesic Ngamma).",
+            "collapse_bracketed": "False if the footing carried the full q_max (q_ult is then a lower bound — raise q_max).",
         },
     },
     "fem2d_slope_srm": {

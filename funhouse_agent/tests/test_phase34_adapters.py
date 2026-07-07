@@ -37,7 +37,7 @@ class TestFem2dMethodInfo:
 
     def test_method_count(self):
         from funhouse_agent.adapters.fem2d_adapter import METHOD_INFO
-        assert len(METHOD_INFO) == 7
+        assert len(METHOD_INFO) == 8   # +fem2d_footing_capacity (v5.4 E11)
 
 
 class TestFem2dDispatch:
@@ -50,12 +50,13 @@ class TestFem2dDispatch:
             all_methods.extend(cat_methods.keys())
         assert "fem2d_gravity" in all_methods
         assert "fem2d_foundation" in all_methods
+        assert "fem2d_footing_capacity" in all_methods
         assert "fem2d_slope_srm" in all_methods
         assert "fem2d_excavation" in all_methods
         assert "fem2d_seepage" in all_methods
         assert "fem2d_consolidation" in all_methods
         assert "fem2d_staged" in all_methods
-        assert len(all_methods) == 7
+        assert len(all_methods) == 8
 
     def test_describe_method_gravity(self):
         from funhouse_agent.dispatch import describe_method

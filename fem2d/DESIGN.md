@@ -310,8 +310,9 @@ fem2d/
   solver.py            # Linear solve, Newton-Raphson (MC/HS/beam/pore pressure)
   srm.py               # Strength Reduction Method (with pore pressure support)
   porewater.py         # Pore pressures, seepage, Biot consolidation
-  analysis.py          # High-level API: gravity, foundation, slope SRM,
-                       #   excavation, seepage, consolidation, staged construction
+  analysis.py          # High-level API: gravity, foundation, footing capacity,
+                       #   slope SRM, excavation, seepage, consolidation, staged
+  mesh_study.py        # SRM mesh-refinement (mesh-consistency) study
   results.py           # FEMResult, BeamForceResult, SeepageResult,
                        #   ConsolidationResult, PhaseResult,
                        #   StagedConstructionResult with summary()/to_dict()

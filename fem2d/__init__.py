@@ -36,6 +36,8 @@ References:
 from fem2d.analysis import (
     analyze_gravity,
     analyze_foundation,
+    analyze_footing_capacity,
+    bearing_capacity_factors,
     analyze_slope_srm,
     analyze_excavation,
     analyze_seepage,
@@ -88,7 +90,8 @@ from fem2d.porewater import (
 
 __all__ = [
     # High-level API
-    'analyze_gravity', 'analyze_foundation', 'analyze_slope_srm',
+    'analyze_gravity', 'analyze_foundation', 'analyze_footing_capacity',
+    'bearing_capacity_factors', 'analyze_slope_srm',
     'analyze_excavation', 'analyze_seepage', 'analyze_consolidation',
     'analyze_staged', 'create_wall_elements',
     'ConstructionPhase', 'assign_element_groups',
