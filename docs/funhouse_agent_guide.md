@@ -455,7 +455,7 @@ import funhouse_agent.deep   # auto-repairs the stale typing_extensions on impor
 - The `[deep]` extra is required for the v2 deepagents loop (`funhouse_agent.deep`);
   without it you get `ModuleNotFoundError: No module named 'deepagents'`.
   Add `[interactive]` for the plotly single-file viewers, `[plot]` for matplotlib figures.
-- **Full eval coverage (97 questions as of v5.4) needs the optional-dependency extras:** install
+- **Full eval coverage (100 questions as of v5.4) needs the optional-dependency extras:** install
   `%pip install "/tmp/...whl[deep,full]"`. With `[deep]` alone, ~12 questions (the
   gstools/pygef/ags4/pydiggs/ezdxf/SALib/pystrata/eqsig/liquepy/openseespy modules)
   fail honestly with "not installed" errors. `run_suite` runs an optional-dependency
@@ -507,7 +507,7 @@ Two purpose-built entry points ship in the wheel:
 from funhouse_agent.deep.rc_wheel_check import run_rc_check
 run_rc_check(fh_prompter)          # run_rc_check() with no arg = offline section only
 
-# 2. The geotech eval suite (97 questions as of v5.4) through the deep agent.
+# 2. The geotech eval suite (100 questions as of v5.4) through the deep agent.
 from funhouse_agent.deep.eval_harness import run_suite
 res = run_suite(model, limit=5, out="/tmp/geotech_eval_smoke")   # subset first (real API calls)
 res = run_suite(model, out="/tmp/geotech_eval_rc")               # full run; writes .json + .md

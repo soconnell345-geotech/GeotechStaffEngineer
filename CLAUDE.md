@@ -111,7 +111,7 @@ Databricks install: from /tmp or a UC Volume, `%pip install "geotech-staff-engin
 questions fail honestly with "not installed"), then
 `dbutils.library.restartPython()` -- a stale runtime `typing_extensions` (<4.13) otherwise
 breaks langgraph imports with "unexpected keyword argument 'extra_items'". Funhouse health
-check: `funhouse_agent/deep/rc_wheel_check.py` (`run_rc_check(fh_prompter)`); the 97-question eval
+check: `funhouse_agent/deep/rc_wheel_check.py` (`run_rc_check(fh_prompter)`); the 100-question eval
 suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save outputs to
 `/tmp` or `/Volumes`, NOT `/Workspace` (FUSE writes are non-durable / permission-blocked).
 
