@@ -344,6 +344,24 @@ search_critical_surface(geom, surface_type="noncircular",
   linearly-varying (trapezoidal) load is represented as its mean uniform pressure or as
   several thin zones. Exercised on Slide2 #9 / ACADS 4 (bench + crest loads) — see
   VALIDATION.md B11 / RESULTS V-028.
+- **Probabilistic FOS — correlated depth-varying su law (v5.4 F1)**: `probabilistic.py`
+  normally varies each scalar parameter (phi/c_prime/cu/gamma/gamma_sat) INDEPENDENTLY
+  per targeted layer. That over-counts a strength profile whose uncertainty is a single
+  shared su-GRADIENT spread across many thin sub-layers. The additive `linear_su` law
+  (a `variables` entry carrying a `'law'` key) treats `su(z) = a + b*(datum_z - z)` as
+  ONE correlated `(a, b)` random-variable pair, applied COHERENTLY to every targeted
+  layer's cu (each layer's mid/top/bottom elevation, `z_ref`; floored at `su_min`; layer
+  forced undrained). FOSM adds the Taylor cross-term
+  `Var = (dFa/2)^2 + (dFb/2)^2 + 2*rho_ab*(dFa/2)*(dFb/2)` (a std-0 component, e.g. a
+  fixed intercept, drops out); Monte Carlo samples `(a, b)` from a bivariate normal via
+  Cholesky (`b = b_m + b_s*zb`, `a = a_m + a_s*(rho*zb + sqrt(1-rho^2)*za)`). The scalar
+  path is byte-identical when no law is present (variables split; scalar RNG stream drawn
+  first). Also NEW: **`gamma_sat` is now a valid scalar variable** — for a submerged slope
+  the operative unit weight is `gamma_sat` (below the water table), and its uncertainty is
+  buoyancy-amplified (the buoyant weight `gamma_sat - gamma_w` carries a larger relative
+  spread than `gamma_sat` itself), so varying the dry `gamma` alone is inert. Closes the
+  Duncan (2000) LASH input-COV FOSM gap — see VALIDATION / RESULTS V-030 and
+  `validation_examples/test_published_v030_fosm_slope.py`.
 
 ## Duncan Verification Examples (test_duncan_verification.py)
 

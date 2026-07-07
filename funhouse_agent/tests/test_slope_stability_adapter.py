@@ -345,6 +345,30 @@ class TestProbabilistic:
         with pytest.raises(ValueError, match="variables"):
             METHOD_REGISTRY["fosm_fos"](_base(method="bishop"))
 
+    def test_fosm_gamma_sat_variable_accepted(self):
+        """gamma_sat is a valid scalar variable (submerged unit weight)."""
+        r = METHOD_REGISTRY["fosm_fos"](_base(
+            method="bishop", variables={"gamma_sat": {"cov": 0.05}}))
+        assert r["COV_F"] > 0
+        assert "gamma_sat" in r["variable_variance_pct"]
+
+    def test_fosm_correlated_su_law_routes_through(self):
+        """A depth-varying su-gradient law (correlated a,b pair) is accepted and
+        contributes to the FOS variance alongside a scalar variable."""
+        law = {"law": "linear_su",
+               "a": {"mean": 5.0, "std": 0.0},
+               "b": {"mean": 1.0, "cov": 0.20},
+               "rho_ab": 0.0, "datum_z": 20.0, "z_ref": "mid", "su_min": 1.0}
+        r = METHOD_REGISTRY["fosm_fos"](_base(
+            method="bishop",
+            variables={"gamma_sat": {"cov": 0.05}, "su_law": law}))
+        assert r["COV_F"] > 0
+        # both the scalar and the law appear as variance contributors
+        assert "su_law" in r["variable_variance_pct"]
+        assert r["variable_variance_pct"]["su_law"] > 0
+        assert sum(r["variable_variance_pct"].values()) == pytest.approx(
+            100.0, abs=0.5)
+
     def test_monte_carlo_seeded_reproducible(self):
         kw = _base(method="bishop", n=150, seed=42,
                    variables={"phi": {"cov": 0.10}})

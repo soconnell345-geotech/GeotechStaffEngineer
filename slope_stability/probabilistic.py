@@ -21,9 +21,37 @@ Variable spec format (the agent-facing dict):
         "cu:soft":    {"mean": 35.0, "cov": 0.25, "dist": "lognormal"},
     }
 
-Keys are parameter names ('phi', 'c_prime', 'cu', 'gamma'), optionally
-scoped to one layer with ':layer_name'. 'std' may be given instead of
-'cov'. If 'mean' is omitted the current layer value is used.
+Keys are parameter names ('phi', 'c_prime', 'cu', 'gamma', 'gamma_sat'),
+optionally scoped to one layer with ':layer_name'. 'std' may be given
+instead of 'cov'. If 'mean' is omitted the current layer value is used.
+Each scalar variable is varied INDEPENDENTLY (per targeted layer). Use
+'gamma_sat' (not the dry 'gamma') when varying the unit weight of a
+submerged slope — the buoyant weight, hence the FOS, tracks gamma_sat.
+
+Depth-varying undrained-strength law (correlated su-gradient)
+-------------------------------------------------------------
+For a linearly-increasing undrained strength su(z) = a + b*(datum_z - z),
+give an entry carrying a ``'law'`` key. The (a, b) pair is ONE correlated
+random variable (Var[a], Var[b], rho_ab), applied COHERENTLY to every
+targeted layer — so a single gradient perturbation moves the whole profile
+together (the per-layer-independent cu path above would over-count a shared
+su-gradient). z is each layer's mid/top/bottom elevation (``z_ref``); cu is
+floored at ``su_min`` and the layer is set undrained:
+
+    variables = {
+        "gamma_sat": {"cov": 0.033},
+        "bay_mud":   {"law": "linear_su",
+                      "a": {"mean": 4.79, "std": 0.0},   # datum su (kPa)
+                      "b": {"mean": 1.54, "cov": 0.12},  # gradient (kPa/m)
+                      "rho_ab": 0.0, "datum_z": -6.10,   # el where su = a (m)
+                      "z_ref": "mid", "su_min": 0.72},
+    }
+
+FOSM adds the correlated Taylor term
+    Var = (dFa/2)^2 + (dFb/2)^2 + 2*rho_ab*(dFa/2)*(dFb/2);
+Monte Carlo samples (a, b) from a bivariate normal (Cholesky). A component
+with std 0 (e.g. a fixed intercept) simply drops out. This closes the
+Duncan (2000) LASH input-COV FOSM gap (validation V-030).
 
 References
 ----------
@@ -43,7 +71,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from slope_stability.geometry import SlopeGeometry
 from slope_stability.slip_surface import CircularSlipSurface
 
-_VALID_PARAMS = ("phi", "c_prime", "cu", "gamma")
+_VALID_PARAMS = ("phi", "c_prime", "cu", "gamma", "gamma_sat")
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +163,116 @@ def _apply_values(geom: SlopeGeometry, parsed: list,
                 if param == "gamma" and L.gamma_sat is not None:
                     # keep gamma_sat consistent offset
                     pass
+    return g
+
+
+# ---------------------------------------------------------------------------
+# Depth-varying undrained-strength law (F1): su(z) = a + b*(datum_z - z) as ONE
+# correlated (a, b) random-variable pair, applied COHERENTLY across the (thin)
+# layers so a single gradient perturbation moves every sub-layer together —
+# unlike the per-layer independent cu variation above, which would over-count a
+# shared su-gradient. Closes the Duncan (2000) LASH input-COV FOSM gap (V-030).
+# ---------------------------------------------------------------------------
+
+_VALID_LAWS = ("linear_su",)
+
+
+def _split_variables(variables: Dict[str, Dict]):
+    """Partition the variables dict into scalar specs (existing per-param path)
+    and strength-law specs (any spec carrying a ``'law'`` key)."""
+    scalar, laws = {}, {}
+    for key, spec in variables.items():
+        if isinstance(spec, dict) and "law" in spec:
+            laws[key] = spec
+        else:
+            scalar[key] = spec
+    return scalar, laws
+
+
+def _pair(spec: Dict, name: str):
+    """Parse an ``{'mean':…, 'std'|'cov':…}`` sub-spec -> (mean, std)."""
+    sub = spec.get(name)
+    if not isinstance(sub, dict) or "mean" not in sub:
+        raise ValueError(f"strength law: '{name}' must be a dict with a 'mean'"
+                         f" (and 'std' or 'cov'), got {sub!r}")
+    mean = float(sub["mean"])
+    if "std" in sub:
+        std = float(sub["std"])
+    elif "cov" in sub:
+        std = float(sub["cov"]) * abs(mean)
+    else:
+        std = 0.0                      # deterministic component (e.g. a fixed)
+    if std < 0:
+        raise ValueError(f"strength law: '{name}' std must be non-negative")
+    return mean, std
+
+
+def _parse_su_laws(geom: SlopeGeometry, law_specs: Dict[str, Dict]) -> list:
+    """Normalize the strength-law specs into parsed dicts."""
+    layer_names = [L.name for L in geom.soil_layers]
+    out = []
+    for key, spec in law_specs.items():
+        law = spec.get("law")
+        if law not in _VALID_LAWS:
+            raise ValueError(f"strength law '{key}': law must be one of "
+                             f"{_VALID_LAWS}, got '{law}'")
+        a_mean, a_std = _pair(spec, "a")
+        b_mean, b_std = _pair(spec, "b")
+        rho = float(spec.get("rho_ab", 0.0))
+        if not -1.0 <= rho <= 1.0:
+            raise ValueError(f"strength law '{key}': rho_ab must be in [-1, 1]")
+        if "datum_z" not in spec:
+            raise ValueError(f"strength law '{key}': 'datum_z' (elevation where "
+                             "su = a) is required")
+        z_ref = spec.get("z_ref", "mid")
+        if z_ref not in ("mid", "top", "bottom"):
+            raise ValueError(f"strength law '{key}': z_ref must be 'mid', 'top'"
+                             f" or 'bottom', got '{z_ref}'")
+        layers = spec.get("layers")
+        if layers is not None:
+            for ln in layers:
+                if ln not in layer_names:
+                    raise ValueError(f"strength law '{key}': unknown layer "
+                                     f"'{ln}'. Layers: {layer_names}")
+            targets = set(layers)
+        else:
+            targets = None
+        out.append({
+            "key": key, "kind": law,
+            "a_mean": a_mean, "a_std": a_std,
+            "b_mean": b_mean, "b_std": b_std, "rho_ab": rho,
+            "datum_z": float(spec["datum_z"]), "z_ref": z_ref,
+            "su_min": float(spec.get("su_min", 0.0)), "targets": targets,
+        })
+    return out
+
+
+def _apply_su_law(g: SlopeGeometry, law: dict, a: float, b: float) -> None:
+    """Set each targeted layer's cu from the linear law su(z) = a + b*(datum-z),
+    IN PLACE on the (already-copied) geometry g. z is the layer mid/top/bottom
+    elevation per ``z_ref``; cu is floored at ``su_min`` and the layer is put in
+    undrained mode."""
+    targets = law["targets"]
+    for L in g.soil_layers:
+        if targets is not None and L.name not in targets:
+            continue
+        if law["z_ref"] == "top":
+            z = L.top_elevation
+        elif law["z_ref"] == "bottom":
+            z = L.bottom_elevation
+        else:
+            z = 0.5 * (L.top_elevation + L.bottom_elevation)
+        L.cu = max(a + b * (law["datum_z"] - z), law["su_min"])
+        L.analysis_mode = "undrained"
+
+
+def _build_geom(geom, parsed, scalar_values, laws, ab_list):
+    """Deep-copy geom, apply the scalar variable values, then the strength
+    law(s) at their (a, b). Used by the FOSM finite differences and MC."""
+    g = _apply_values(geom, parsed, scalar_values) if parsed \
+        else copy.deepcopy(geom)
+    for law, (a, b) in zip(laws, ab_list):
+        _apply_su_law(g, law, a, b)
     return g
 
 
@@ -295,40 +433,72 @@ def fosm_fos(geom: SlopeGeometry,
 
     Returns both beta_normal and beta_lognormal (+ pf for each).
     """
-    parsed = _parse_variables(geom, variables)
+    scalar_specs, law_specs = _split_variables(variables)
+    parsed = _parse_variables(geom, scalar_specs) if scalar_specs else []
+    laws = _parse_su_laws(geom, law_specs)
+    if not parsed and not laws:
+        raise ValueError("variables dict is empty")
     slip = _resolve_surface(geom, xc, yc, radius, slip_surface)
 
     means = [p[3] for p in parsed]
-    f_mlv = _eval_fos(_apply_values(geom, parsed, means), slip, method,
-                      n_slices, tol)
+    law_means = [(law["a_mean"], law["b_mean"]) for law in laws]
+    f_mlv = _eval_fos(_build_geom(geom, parsed, means, laws, law_means), slip,
+                      method, n_slices, tol)
     if f_mlv >= 900:
         raise ValueError("FOS evaluation failed at mean values "
                          "(invalid surface?)")
 
     deltas = {}
-    var_sum = 0.0
+    contribs = {}          # per-variable variance contribution (dF/2)^2 (+cross)
+    # Independent scalar variables (per-param): unchanged central differences.
     for i, p in enumerate(parsed):
         key, _, _, mean, std, _ = p
         up = list(means)
         dn = list(means)
         up[i] = mean + std
         dn[i] = max(mean - std, 1e-6)
-        f_up = _eval_fos(_apply_values(geom, parsed, up), slip, method,
-                         n_slices, tol)
-        f_dn = _eval_fos(_apply_values(geom, parsed, dn), slip, method,
-                         n_slices, tol)
+        f_up = _eval_fos(_build_geom(geom, parsed, up, laws, law_means), slip,
+                         method, n_slices, tol)
+        f_dn = _eval_fos(_build_geom(geom, parsed, dn, laws, law_means), slip,
+                         method, n_slices, tol)
         dF = (f_up - f_dn)
         deltas[key] = dF
-        var_sum += (dF / 2.0) ** 2
+        contribs[key] = (dF / 2.0) ** 2
+    # Strength-law variables: the correlated (a, b) pair adds
+    #   Var = (dFa/2)^2 + (dFb/2)^2 + 2*rho_ab*(dFa/2)*(dFb/2)
+    # (Taylor series with correlation; a fixed component has std 0 -> dF = 0).
+    for j, law in enumerate(laws):
+        dFa = 0.0
+        if law["a_std"] > 0:
+            ab_up = list(law_means); ab_dn = list(law_means)
+            ab_up[j] = (law["a_mean"] + law["a_std"], law["b_mean"])
+            ab_dn[j] = (max(law["a_mean"] - law["a_std"], 1e-9), law["b_mean"])
+            dFa = (_eval_fos(_build_geom(geom, parsed, means, laws, ab_up),
+                             slip, method, n_slices, tol)
+                   - _eval_fos(_build_geom(geom, parsed, means, laws, ab_dn),
+                               slip, method, n_slices, tol))
+        dFb = 0.0
+        if law["b_std"] > 0:
+            ab_up = list(law_means); ab_dn = list(law_means)
+            ab_up[j] = (law["a_mean"], law["b_mean"] + law["b_std"])
+            ab_dn[j] = (law["a_mean"], law["b_mean"] - law["b_std"])
+            dFb = (_eval_fos(_build_geom(geom, parsed, means, laws, ab_up),
+                             slip, method, n_slices, tol)
+                   - _eval_fos(_build_geom(geom, parsed, means, laws, ab_dn),
+                               slip, method, n_slices, tol))
+        ta, tb = dFa / 2.0, dFb / 2.0
+        contribs[law["key"]] = ta * ta + tb * tb + 2.0 * law["rho_ab"] * ta * tb
+        deltas[law["key"] + ":a"] = dFa
+        deltas[law["key"] + ":b"] = dFb
 
-    sigma_f = math.sqrt(var_sum)
+    var_sum = sum(contribs.values())
+    sigma_f = math.sqrt(max(var_sum, 0.0))
     cov_f = sigma_f / f_mlv if f_mlv > 0 else float("inf")
     b_n = normal_beta(f_mlv, sigma_f)
     b_ln = lognormal_beta(f_mlv, cov_f)
 
-    pct = {}
-    for k, dF in deltas.items():
-        pct[k] = 100.0 * ((dF / 2.0) ** 2) / var_sum if var_sum > 0 else 0.0
+    pct = {k: (100.0 * c / var_sum if var_sum > 0 else 0.0)
+           for k, c in contribs.items()}
 
     return FOSMResult(
         fos_mlv=f_mlv, sigma_f=sigma_f, cov_f=cov_f,
@@ -388,7 +558,11 @@ def monte_carlo_fos(geom: SlopeGeometry,
     """
     import numpy as np
 
-    parsed = _parse_variables(geom, variables)
+    scalar_specs, law_specs = _split_variables(variables)
+    parsed = _parse_variables(geom, scalar_specs) if scalar_specs else []
+    laws = _parse_su_laws(geom, law_specs)
+    if not parsed and not laws:
+        raise ValueError("variables dict is empty")
     if not research_surface:
         slip = _resolve_surface(geom, xc, yc, radius, slip_surface)
     else:
@@ -406,10 +580,26 @@ def monte_carlo_fos(geom: SlopeGeometry,
             samples_in[:, j] = rng.normal(mean, std, size=n)
     samples_in = np.maximum(samples_in, 1e-6)
 
+    # Strength-law (a, b) pair samples — drawn AFTER the scalar stream so the
+    # scalar samples are unchanged (byte-identical when no law is present).
+    # Correlated bivariate normal via Cholesky: b = b_m + b_s*zb;
+    # a = a_m + a_s*(rho*zb + sqrt(1-rho^2)*za).
+    law_samples = []
+    for law in laws:
+        zb = rng.normal(0.0, 1.0, size=n)
+        za = rng.normal(0.0, 1.0, size=n)
+        b = law["b_mean"] + law["b_std"] * zb
+        a = law["a_mean"] + law["a_std"] * (
+            law["rho_ab"] * zb
+            + math.sqrt(max(1.0 - law["rho_ab"] ** 2, 0.0)) * za)
+        law_samples.append((a, b))
+
     fos_vals = []
     n_eval_failed = 0
     for i in range(n):
-        g = _apply_values(geom, parsed, list(samples_in[i]))
+        ab_i = [(law_samples[j][0][i], law_samples[j][1][i])
+                for j in range(len(laws))]
+        g = _build_geom(geom, parsed, list(samples_in[i]), laws, ab_i)
         if research_surface:
             from slope_stability.analysis import search_critical_surface
             kw = dict(search_kwargs or {})

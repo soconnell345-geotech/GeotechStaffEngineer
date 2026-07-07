@@ -474,7 +474,7 @@ _SURFACE_SPEC_PARAMS = {
 }
 
 _VARIABLES_PARAM = {
-    "variables": {"type": "object", "required": True, "description": "Random variables: {'phi': {cov: 0.1}, 'cu:Clay': {mean: 30, std: 5, dist: 'lognormal'}, ...}. Keys are layer parameters (phi, c_prime, cu, gamma, ...) optionally scoped ':LayerName'; each spec needs cov or std (mean defaults to the layer value); dist is 'normal' (default) or 'lognormal'."},
+    "variables": {"type": "object", "required": True, "description": "Random variables: {'phi': {cov: 0.1}, 'cu:Clay': {mean: 30, std: 5, dist: 'lognormal'}, ...}. Keys are layer parameters (phi, c_prime, cu, gamma, gamma_sat) optionally scoped ':LayerName'; each spec needs cov or std (mean defaults to the layer value); dist is 'normal' (default) or 'lognormal'. Use gamma_sat (not dry gamma) for the unit weight of a submerged slope. A depth-varying undrained-strength law su(z)=a+b*(datum_z-z) is ONE correlated (a,b) variable applied coherently across layers — give an entry with a 'law':'linear_su' key: {'a':{mean,std|cov}, 'b':{mean,std|cov}, 'rho_ab':0..1, 'datum_z': elevation where su=a, 'z_ref':'mid'|'top'|'bottom', 'su_min': floor, 'layers': names|null}. A std-0 component (e.g. fixed intercept) drops out."},
 }
 
 METHOD_INFO = {
@@ -615,7 +615,7 @@ METHOD_INFO = {
     },
     "fosm_fos": {
         "category": "Slope Stability",
-        "brief": "FOSM / Taylor-series reliability of the FOS on a fixed slip surface (Duncan 2000): central finite differences at +/- 1 sigma per variable -> COV_F, beta (normal + lognormal), probability of failure, per-variable variance contributions.",
+        "brief": "FOSM / Taylor-series reliability of the FOS on a fixed slip surface (Duncan 2000): central finite differences at +/- 1 sigma per variable -> COV_F, beta (normal + lognormal), probability of failure, per-variable variance contributions. Supports both independent per-layer scalar variables AND a correlated depth-varying su-gradient law (see 'variables').",
         "parameters": {
             **_GEOMETRY_PARAMS,
             **_SURFACE_SPEC_PARAMS,

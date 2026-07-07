@@ -441,9 +441,11 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Confidence in extraction: high (labeled figure; surface pixel-traced).
 - Notes: DETERMINISTIC PASS — rigorous methods reproduce Spencer 1.157/Duncan 1.17
   to +2.9% (thin undrained sub-layers for the linear su + ocean at el 0). RELIABILITY
-  PASS — Taylor-series helpers reproduce F=1.17->Pf 18%. Input-COV FOSM propagation
-  is N/A-scope (needs a depth-varying-su law with one correlated gradient variable
-  -> B2).
+  PASS — Taylor-series helpers reproduce F=1.17->Pf 18%. Input-COV FOSM propagation:
+  GAP CLOSED (v5.4 F1) — the new `linear_su` correlated (a,b) law + `gamma_sat` var
+  propagate the stated Table 29.2 inputs to COV_F 0.133 -> Pf ~11% (~13% at F=1.17, in
+  the Slide2 band); Duncan's closed-form COV_F 0.16 -> Pf 18% is recovered with the full
+  coherent su-profile COV. Tests: test_published_v030_fosm_slope.py (5). See RESULTS V-030.
 
 ## V-031 Slide2 #57 — Pockoski & Duncan (2000) test slope 3 (2-layer, water, circular)
 - Source: Slide2 Verification #57 (manual pp. 203-205); Pockoski & Duncan (2000).
