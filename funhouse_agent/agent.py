@@ -138,6 +138,12 @@ class GeotechAgent:
         against reference standards (DM7, GECs, UFCs) after the primary
         agent produces its final answer. Adds latency but improves
         engineering rigor.
+    system_prompt_extra : str, optional
+        An extra block appended to the built system prompt (after the module
+        catalog and any consult-tool description). Used to specialize the agent
+        without forking the prompt machinery — e.g. the narrow reviewer agents
+        (``funhouse_agent.reviewers``) inject a review-mode checklist here.
+        Default ``None`` leaves the prompt unchanged.
     """
 
     def __init__(
@@ -151,6 +157,7 @@ class GeotechAgent:
         review: bool = False,
         allowed_agents=None,
         reference_mode: str = "anytime",
+        system_prompt_extra: Optional[str] = None,
     ):
         self._engine = genai_engine
         self._save_fn = save_fn or _default_save_fn
@@ -185,6 +192,13 @@ class GeotechAgent:
             self._system_prompt = _build_agent_system_prompt(allowed_agents)
             if self._reference_mode != "off":
                 self._system_prompt += CONSULT_TEXT_DESCRIPTION
+        # Optional extra system-prompt block appended AFTER the module catalog
+        # (and any consult-tool description). Used by the narrow reviewer agents
+        # to re-cast the agent into "review mode" with a domain checklist — see
+        # funhouse_agent/reviewers.py and review_checklists.py. Default None keeps
+        # every existing call site byte-for-byte identical.
+        if system_prompt_extra:
+            self._system_prompt += "\n\n" + system_prompt_extra
         self._history = ConversationHistory()
         self._native_messages: list = []  # persistent messages for native path
         self._attachments: Dict[str, bytes] = {}

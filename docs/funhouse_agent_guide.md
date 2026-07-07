@@ -361,6 +361,64 @@ chat.output_files          # list of calc package paths
 chat.preview_file(path)    # render HTML inline
 ```
 
+## Narrow reviewer agents
+
+A **narrow reviewer** is a `GeotechAgent` whose direct tool surface is scoped
+(via `allowed_agents`) to ONE geotechnical domain, and whose system prompt is
+re-cast into "review mode" with a domain checklist. You chat with it
+independently to have a calc CHECKED — it re-runs the domain tools to verify
+numbers and cites the governing references — rather than to produce a design.
+
+The first one is the **seismic reviewer** (v5.4 item D6):
+
+```python
+from funhouse_agent import make_seismic_reviewer, NativeToolEngine
+
+rev = make_seismic_reviewer(NativeToolEngine(fh_prompter))
+print(rev.ask("Review this liquefaction calc: N1_60cs=12, CSR=0.22, M=7.5, "
+              "computed FS=0.9 with NCEER rd but a Boulanger-Idriss MSF ...").answer)
+```
+
+It is scoped to the seismic analysis modules it may re-run —
+`seismic_geotech`, `liquefaction`, `liquepy`, `slope_stability` (pseudo-static /
+Newmark), `opensees`, `pystrata`, `seismic_signals`, `hvsrpy`, `fem2d` — plus
+the seismic reference modules it cites from — `fema_p2082`, `dm7`, `gec5`,
+`gec7`, `gec11`, and `reference_db` / `figure_db` (which still search the whole
+library). The checklist covers units (g vs m/s²), total-vs-effective stress, the
+liquefaction CSR/CRR chain (NCEER/Youd-2001 vs Boulanger-Idriss-2014 are NOT
+interchangeable), Mononobe-Okabe sign/battered-wall conventions (KAE→Ka at
+kh=0), site-class boundary cases (Vs30 at 180/360/760), Newmark polarity, and
+cross-method consistency.
+
+There are **two thin surfaces over one shared playbook** so they cannot drift:
+
+| Surface | What it is | How you use it |
+|---------|-----------|----------------|
+| Funhouse sub-agent | `funhouse_agent.make_seismic_reviewer(engine)` (this module) | Chat with it in a notebook / Databricks |
+| Claude Code agent | `.claude/agents/seismic-reviewer.md` (version-controlled) | Spawn it as a reviewer teammate in Claude Code |
+
+The checklist text lives once in `funhouse_agent/review_checklists.py`
+(`SEISMIC_CHECKLIST` / `SEISMIC_REVIEWER_PREAMBLE`); the factory imports it and
+the `.md` playbook pastes it with a sync pointer. The scope sets live in
+`funhouse_agent/dispatch.py` (`SEISMIC_MODULES`, `SEISMIC_REFERENCES`).
+
+A **deepagents** variant is available too (planning + scratch filesystem +
+optional persistent memory; needs the `[deep]` extra):
+
+```python
+from funhouse_agent import make_seismic_reviewer_deep
+
+agent = make_seismic_reviewer_deep(model)   # a compiled deep-agent graph
+agent.invoke({"messages": [{"role": "user", "content": "Review ..."}]},
+             config={"configurable": {"thread_id": "review-1"}})
+```
+
+Both factories set `reference_mode="off"` deliberately: the seismic references
+are already directly in scope, so the general `consult_references` tool (which
+would reach ALL 21 references) is omitted to keep the scoping tight. More
+reviewer domains (foundations, earth-retention, slope/FEM) follow the same
+pattern once seismic proves out (V5.4 item F8).
+
 ## Model Setup (v5 deep agent)
 
 The v5 deep agent can attach a `model_setup` sub-agent that builds 2D LE/FEM

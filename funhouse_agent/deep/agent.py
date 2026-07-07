@@ -379,6 +379,7 @@ def build_deep_agent(
     *,
     allowed_agents=None,
     reference_mode: str = "anytime",
+    extra_system_prompt: Optional[str] = None,
     save_fn: Optional[Callable] = None,
     engine=None,
     attachments=None,
@@ -423,6 +424,12 @@ def build_deep_agent(
         tool), so this currently only gates whether that sub-agent is attached:
         ``"off"`` omits it, anything else attaches it. Defaults to
         ``"anytime"``.
+    extra_system_prompt : str, optional
+        An extra block appended to the domain system prompt. Lets a caller
+        specialize the agent without forking the prompt machinery — e.g. the
+        seismic reviewer (``funhouse_agent.reviewers.make_seismic_reviewer_deep``)
+        injects its review-mode checklist here. Default ``None`` leaves the
+        prompt unchanged.
     save_fn : callable, optional
         ``(path, content) -> saved_path`` for ``save_file``. Defaults to local
         filesystem write.
@@ -559,6 +566,12 @@ def build_deep_agent(
     )
 
     system_prompt = build_domain_prompt(allowed_agents, memory_enabled=enable_memory)
+    if extra_system_prompt:
+        # Appended AFTER the domain prompt (mirrors GeotechAgent.system_prompt_extra)
+        # so a caller can re-cast the agent — e.g. the seismic reviewer's review-mode
+        # checklist (funhouse_agent.reviewers.make_seismic_reviewer_deep). Default
+        # None leaves the prompt unchanged.
+        system_prompt = system_prompt + "\n\n" + extra_system_prompt
 
     subagents = []
     if reference_mode != "off":

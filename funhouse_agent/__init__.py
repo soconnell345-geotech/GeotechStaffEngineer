@@ -30,6 +30,10 @@ from funhouse_agent.engine import (
 )
 from funhouse_agent.agent import GeotechAgent
 from funhouse_agent.react_support import AgentResult
+from funhouse_agent.reviewers import (
+    make_seismic_reviewer,
+    make_seismic_reviewer_deep,
+)
 from funhouse_agent._disclaimer import disclaimer
 
 __all__ = [
@@ -40,6 +44,8 @@ __all__ = [
     "PrompterBridgeEngine",
     "USING_SDK_ENGINES",
     "AgentResult",
+    "make_seismic_reviewer",
+    "make_seismic_reviewer_deep",
     "disclaimer",
 ]
 

@@ -61,6 +61,50 @@ REFERENCE_MODULES = frozenset({
 ANALYSIS_MODULES = frozenset(MODULE_REGISTRY) - REFERENCE_MODULES
 
 
+# ---------------------------------------------------------------------------
+# Narrow-reviewer scoping sets (v5.4 D6 — seismic reviewer)
+# ---------------------------------------------------------------------------
+# The seismic reviewer (funhouse_agent.reviewers.make_seismic_reviewer and the
+# .claude/agents/seismic-reviewer.md Claude Code agent) is scoped to these sets
+# via ``allowed_agents``. Chosen by domain, cross-checked against MODULE_REGISTRY
+# names and the reference library's actual seismic content — see the D6 report /
+# funhouse_agent/review_checklists.py.
+
+# Seismic ANALYSIS modules the reviewer may run to verify a calc. The core
+# seismic-native tools plus slope_stability (pseudo-static / Newmark / Jibson)
+# and fem2d (seismic-adjacent dynamic / effective-stress FEM). Excludes the
+# static foundation/retaining/pile modules and the general-purpose reliability /
+# sensitivity / geostatistics / data-I/O tools.
+SEISMIC_MODULES = frozenset({
+    "seismic_geotech",   # site class, Fpga, Mononobe-Okabe, NCEER liquefaction, residual strength
+    "liquefaction",      # unified triggering (CPT/SPT; B&I-2014 default, NCEER via method)
+    "liquepy",           # Boulanger & Idriss 2014 CPT/SPT + CPT indices/correlations
+    "slope_stability",   # pseudo-static kh, yield acceleration, Newmark, Jibson
+    "opensees",          # PM4Sand cyclic DSS + effective-stress 1D site response
+    "pystrata",          # equivalent-linear (SHAKE-type) 1D site response
+    "seismic_signals",   # response spectra, intensity measures, RotD
+    "hvsrpy",            # HVSR site period / amplification from ambient noise
+    "fem2d",             # 2D FEM — seismic-adjacent (dynamic / effective-stress)
+})
+
+# Seismic-relevant REFERENCE modules (a subset of REFERENCE_MODULES). Picked
+# from the library's ACTUAL seismic content (chapter-text search), not the
+# briefs: fema_p2082 is the core seismic site-design reference; gec11/gec7 carry
+# the seismic earth-pressure / pseudo-static wall provisions; gec5 the seismic
+# site characterization + hazards; dm7 the general/dynamic soil-mechanics
+# anchor. The three UFC modules in the library (backfill/expansive/pavement) are
+# NOT seismic and are deliberately excluded. reference_db/figure_db search the
+# WHOLE library, so seismic content in any reference is still reachable.
+SEISMIC_REFERENCES = frozenset({
+    "reference_db", "figure_db",
+    "fema_p2082",   # 2020 NEHRP: site class (+ BC/CD/DE), SDS/SD1, design spectrum, SDC
+    "dm7",          # NAVFAC DM7 — general + dynamic soil properties, seismic settlement
+    "gec5",         # site characterization: Vs/Gmax, seismic hazards, liquefaction screening
+    "gec7",         # pseudo-static seismic design of soil nail walls
+    "gec11",        # seismic external/internal stability of MSE walls (M-O)
+})
+
+
 def _scoped_names(allowed_agents):
     """Return the visible agent names given an optional whitelist."""
     if allowed_agents is None:
