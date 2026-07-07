@@ -594,8 +594,17 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   published 3-stage above the 2-stage is under-captured. NOT geometry/seepage;
   documented follow-up (see DESIGN.md). Stage-3 substitution left per Duncan-
   Wright-Brandon (2014) Ch. 9.
+- **v5.4 update (E2):** re-diagnosed — the Kc interpolation is sound (yields ~1.45
+  in isolation); the residual sits in the STAGE-3 drained substitution, whose
+  Fellenius estimate of the drawn-down effective normal is inconsistent with the
+  rigorous GLE normal used in stage 1 and over-fires the substitution (17/50
+  slices). Opt-in `stage3_effective_normal='gle'` (default `'fellenius'`
+  preserved) uses the consistent rigorous normal: flat 1.306 / seepage 1.370 vs
+  published 1.443 (~5% residual, within the flow-net + LE-N'-at-FOS sensitivity
+  seen on #95). Default-flip decision is owner-gated. See slope_stability
+  VALIDATION.md §B7 (authoritative) and test_published_v038.
 
-## Slide2 #98 (Walter Bouldin Dam, 5-material rapid drawdown) — DEFERRED
+## V-041 Slide2 #98 (Walter Bouldin Dam, 5-material rapid drawdown) — was DEFERRED, now VALIDATED (geometry-limited)
 - Source: Slide2 Verification #98 (manual pp. 313-314); Duncan, Wright, Wong (1990).
 - Published answers (SEARCH minima): Corps 2-stage 0.931, Lowe-Karafiath 1.075,
   DWW 3-stage 1.039. Water: initial 47 ft -> drawdown 15 ft.
@@ -604,13 +613,17 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   Cretaceous Clay 17-30, Micaceous Silt/Sand 30-51, Clayey Silty Sand 51-60 at
   x=180) with pinch-outs, plus a riprap veneer on the upper face. Material R-data
   in the manual is complete (Table 98.1).
-- Verdict: **DEFERRED (search-limited, not data-limited).** The published values
-  are MINIMA over a slip-surface search; `rapid_drawdown_fos` evaluates ONE
-  specified surface, so #98 needs a rapid-drawdown search wrapper (evaluate the
-  drawdown strength over a circle/noncircular grid and take the min) — a new
-  capability beyond this bounded pass (candidate B2a-search). Geometry + R-data are
-  recorded here for that follow-up; a single-circle spot check would not reproduce
-  the published minimum and is intentionally not reported as a validation.
+- Verdict (v5.3): **DEFERRED (search-limited, not data-limited)** — the published
+  values are MINIMA over a slip-surface search and `rapid_drawdown_fos` evaluated
+  only one specified surface.
+- **Verdict (v5.4, E1): VALIDATED — GEOMETRY-LIMITED.** `search_rapid_drawdown`
+  (the B2a-search wrapper) now finds drawdown search minima: Corps 0.837 / DWW
+  0.938 vs published 0.931 / 1.039 — both ~10% low with the correct method
+  ordering (DWW > Corps), on the RECOVERED simplified section (flat-stacked
+  layers, pinch-outs simplified, riprap veneer omitted). Wrapper exactness proven
+  on the exact #95/#96 section (search min ≤ published specified-circle FOS;
+  stage detail reproduces the search FOS to machine precision). NOT tuned. See
+  test_published_v041.py and slope_stability VALIDATION.md §B7.
 
 ## V-039 Slide2 #104 — Newmark seismic sliding-block displacement (B2b)
 - Source: Slide2 Verification #104 (manual pp. 330-331), based on Slide2 Tutorial 28
