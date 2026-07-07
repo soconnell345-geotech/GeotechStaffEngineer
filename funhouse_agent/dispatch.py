@@ -71,7 +71,8 @@ ANALYSIS_MODULES = frozenset(MODULE_REGISTRY) - REFERENCE_MODULES
 # funhouse_agent/review_checklists.py.
 
 # Seismic ANALYSIS modules the reviewer may run to verify a calc. The core
-# seismic-native tools plus slope_stability (pseudo-static / Newmark / Jibson)
+# seismic-native tools plus slope_stability (pseudo-static / Newmark / Jibson),
+# the Vs-characterization tools that feed Vs30 -> site class (hvsrpy, swprocess),
 # and fem2d (seismic-adjacent dynamic / effective-stress FEM). Excludes the
 # static foundation/retaining/pile modules and the general-purpose reliability /
 # sensitivity / geostatistics / data-I/O tools.
@@ -84,6 +85,7 @@ SEISMIC_MODULES = frozenset({
     "pystrata",          # equivalent-linear (SHAKE-type) 1D site response
     "seismic_signals",   # response spectra, intensity measures, RotD
     "hvsrpy",            # HVSR site period / amplification from ambient noise
+    "swprocess",         # MASW surface-wave dispersion -> Vs profile -> Vs30 -> site class
     "fem2d",             # 2D FEM — seismic-adjacent (dynamic / effective-stress)
 })
 
