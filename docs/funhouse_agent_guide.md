@@ -381,8 +381,8 @@ print(rev.ask("Review this liquefaction calc: N1_60cs=12, CSR=0.22, M=7.5, "
 
 It is scoped to the seismic analysis modules it may re-run —
 `seismic_geotech`, `liquefaction`, `liquepy`, `slope_stability` (pseudo-static /
-Newmark), `opensees`, `pystrata`, `seismic_signals`, `hvsrpy`, `fem2d` — plus
-the seismic reference modules it cites from — `fema_p2082`, `dm7`, `gec5`,
+Newmark), `opensees`, `pystrata`, `seismic_signals`, `hvsrpy`, `swprocess`
+(MASW → Vs30), `fem2d` — plus the seismic reference modules it cites from — `fema_p2082`, `dm7`, `gec5`,
 `gec7`, `gec11`, and `reference_db` / `figure_db` (which still search the whole
 library). The checklist covers units (g vs m/s²), total-vs-effective stress, the
 liquefaction CSR/CRR chain (NCEER/Youd-2001 vs Boulanger-Idriss-2014 are NOT

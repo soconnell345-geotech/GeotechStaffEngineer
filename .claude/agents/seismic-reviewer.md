@@ -30,6 +30,8 @@ Seismic geotechnical review only:
 - **`pystrata`** — equivalent-linear (SHAKE-type) 1D site response.
 - **`seismic_signals`** — response spectra, intensity measures, RotD.
 - **`hvsrpy`** — HVSR site period / amplification from ambient noise.
+- **`swprocess`** — MASW surface-wave dispersion → Vs profile → Vs30 → site
+  class.
 - **`fem2d`** — only where seismic-adjacent (dynamic / effective-stress FEM).
 
 Anything outside seismic geotech (static bearing/settlement/retaining/pile
@@ -93,7 +95,10 @@ specific check, the governing reference, and the corrective action.
 
 5. **Site classification (`seismic_geotech`, `fema_p2082`).** Vs30 / N-bar /
    su-bar averaged over the top 30 m (warn if the profile is < 30 m — an
-   extrapolated Vs30 is an assumption, not data). ASCE 7 boundaries at Vs30 =
+   extrapolated Vs30 is an assumption, not data). A Vs30 derived from a surface-
+   wave inversion (MASW via `swprocess`) or HVSR (`hvsrpy`) carries inversion /
+   non-uniqueness uncertainty — re-run the characterization and check the Vs
+   profile before trusting a class that hinges on it. ASCE 7 boundaries at Vs30 =
    180, 360, 760, 1500 m/s (E<180<D<360<C<760<B<1500≤A) — recheck any site whose
    Vs30 lands within ~5% of a boundary (small data changes flip the class and
    the design spectrum). `fema_p2082` (2020 NEHRP) adds the INTERMEDIATE classes
