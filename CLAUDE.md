@@ -49,6 +49,27 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
+## v5.4 status (branch `v5.4`, BUILT + gated 2026-07-07, NOT merged/released)
+
+All six owner directives are DONE on branch `v5.4` (pushed to origin; final gate
+**8279 passed / 48 skipped**; release awaits the owner's 5.3 Funhouse feedback):
+**D1** 132-pp PDF user manual (`docs/GeotechStaffEngineer_User_Manual_v5.3.pdf`,
+regenerable builder, catalog auto-generated from METHOD_INFO); **D2** Databricks
+no-restart flow (`funhouse_agent/runtime_check.py` hot-reloads a stale
+`typing_extensions` before langchain imports); **D3** layered disclaimers
+(DISCLAIMER.md ships in the wheel, PyPI README section, one-time first-import
+notice w/ `GEOTECH_NO_DISCLAIMER=1`, `geotech-disclaimer` script, calc-package
+basis blocks — pip runs no code on wheel install, these are the equivalents);
+**D4** 12-exhibit visualization gallery (`docs/gallery/`, real validated runs);
+**D5** `drawing_ir/` module (LLM-ready drawing IR: exact-coordinate entities w/
+provenance + confidence, DXF / PDF-vector / raster-opencv legs, agent query
+surface via handles; `[raster]` extra; geo_project wiring = flagged follow-up);
+**D6** seismic reviewer (`.claude/agents/seismic-reviewer.md` +
+`funhouse_agent.make_seismic_reviewer(engine)` / `make_seismic_reviewer_deep`;
+shared checklist `funhouse_agent/review_checklists.py` — reviewer-family
+template). Open backlog: `module_work/V5.4_PLAN.md` E1–E11 (QC carryovers) +
+F1–F8 (creative proposals). **HANDOFF.md §3 is the authoritative v5.4 summary.**
+
 ## v5.3.0 status (RELEASED 2026-07-06 to PyPI; geotech-references stays 1.3.0)
 
 **5.3.0 adds** (on top of the 5.2.0 line): Batch-2 coverage 5/5 (drilled_shaft rational
