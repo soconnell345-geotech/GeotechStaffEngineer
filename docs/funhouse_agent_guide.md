@@ -390,7 +390,8 @@ scripted transcript.
 # which mangles the filename):
 %pip install "/tmp/geotech_staff_engineer-5.1.0rc5-py3-none-any.whl[deep]"
 
-dbutils.library.restartPython()   # REQUIRED, see below
+# No dbutils.library.restartPython() needed in the normal flow (see below).
+import funhouse_agent.deep   # auto-repairs the stale typing_extensions on import
 ```
 
 - The `[deep]` extra is required for the v2 deepagents loop (`funhouse_agent.deep`);
@@ -402,12 +403,28 @@ dbutils.library.restartPython()   # REQUIRED, see below
   fail honestly with "not installed" errors. `run_suite` runs an optional-dependency
   preflight and prints a "Missing optional packages" banner at the top of the `.md`
   when any are absent.
-- `dbutils.library.restartPython()` after install is mandatory: the cluster runtime
-  ships an old `typing_extensions` that shadows the new one until restart. Symptom of
-  skipping it (or of an old version still winning at cluster scope):
-  `TypeError: ... unexpected keyword argument 'extra_items'` on importing anything from
-  `funhouse_agent.deep` (langgraph TypedDicts need `typing_extensions>=4.13`). Fix:
-  `%pip install --upgrade "typing_extensions>=4.13"` then restart again.
+- **`dbutils.library.restartPython()` is no longer required in the normal flow.**
+  The cluster runtime pre-imports an old `typing_extensions` (<4.13) that used to
+  shadow the freshly-installed one until a kernel restart; importing anything from
+  `funhouse_agent.deep` then failed with
+  `TypeError: ... unexpected keyword argument 'extra_items'` (langgraph/langchain
+  build PEP 728 `TypedDict`s at import, which need `typing_extensions>=4.13`).
+  `funhouse_agent/runtime_check.py` now runs at the top of `funhouse_agent.deep`
+  and **reloads the already-installed `typing_extensions` in place** (`importlib.reload`
+  re-executes the same module object, so `typing_extensions.TypedDict` is rebound to
+  the PEP 728 implementation before langchain imports it). You can just
+  `import funhouse_agent.deep` after `%pip install`.
+  - **Fallbacks** (only if the auto-fix reports it could not help): it raises a clear
+    error telling you either to `%pip install --upgrade "typing_extensions>=4.13"`
+    (if the on-disk copy is itself too old) or to
+    `dbutils.library.restartPython()` (if an even older copy is still winning at
+    cluster/library scope and the in-place reload did not take). Restart therefore
+    remains the guaranteed fallback, not a routine step.
+  - **To avoid the issue entirely, install `typing_extensions` as a cluster-scoped
+    library** (Compute → cluster → Libraries → Install `typing_extensions>=4.13`, or a
+    cluster init script). A cluster-scoped install is present *before* the runtime
+    pre-imports its old copy, so the new version wins from the start and no reload or
+    restart is involved.
 - Smoke test, then chat:
 
 ```python

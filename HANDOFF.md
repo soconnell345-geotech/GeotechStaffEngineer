@@ -103,8 +103,14 @@ Also **verify the wheel contents** after building (a past rc shipped without a
 just-added file): unzip and confirm the new files/tokens are present.
 
 **Funhouse (Databricks) — notebook, needs API/`fh_prompter`:**
-- Install: `%pip install "/tmp/...whl[deep]"` then `dbutils.library.restartPython()`
-  (mandatory — else the `typing_extensions`/`extra_items` error).
+- Install: `%pip install "/tmp/...whl[deep]"`, then just `import funhouse_agent.deep`.
+  `dbutils.library.restartPython()` is **no longer required** in the normal flow:
+  `funhouse_agent/runtime_check.py` (run at the top of `funhouse_agent.deep`) reloads
+  the freshly-installed `typing_extensions>=4.13` in place, curing the old
+  `typing_extensions`/`extra_items` PEP 728 error without a restart. Restart is kept
+  only as the fallback the auto-fix points to if an even older copy is winning at
+  cluster scope; installing `typing_extensions>=4.13` as a **cluster-scoped library**
+  avoids the situation entirely.
 - Health check: `from funhouse_agent.deep.rc_wheel_check import run_rc_check; run_rc_check(fh_prompter)`.
 - 71-Q eval: `from funhouse_agent.deep.eval_harness import run_suite;
   run_suite(model, out="/tmp/eval")` (writes `.json` + a readable `.md`). Model =

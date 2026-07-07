@@ -14,6 +14,15 @@ Public API::
   never requires ipywidgets).
 """
 
+# MUST run before ANY langchain / langgraph / deepagents import below: on
+# Databricks the runtime pre-imports a stale typing_extensions (<4.13) and
+# langchain-protocol builds PEP 728 TypedDicts at import time. This reloads the
+# freshly-installed typing_extensions in place so no dbutils.library.restartPython()
+# is needed. See funhouse_agent/runtime_check.py.
+from funhouse_agent.runtime_check import ensure_typing_extensions as _ensure_te
+
+_ensure_te()
+
 from funhouse_agent.deep.agent import (
     build_deep_agent,
     build_primary_tools,
