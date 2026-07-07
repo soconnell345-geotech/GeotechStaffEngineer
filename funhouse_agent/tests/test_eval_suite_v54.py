@@ -24,7 +24,7 @@ _NEW_IDS = {
     "RDD-1", "RDD-2", "RDD-3", "RDD-4", "RDS-1",
     "INF-1", "INF-2", "INF-3", "NMK-1", "NMK-2", "NMK-3",
     "SPL-1", "SPL-2", "SPL-3", "PPG-1", "TCK-1", "SUR-1",
-    "CEI-1", "CEI-2", "EPC-1", "EPC-2", "MSE-1", "FF-1", "CAL-1", "DIR-1",
+    "CEI-1", "CEI-2", "EPC-1", "EPC-2", "EPC-3", "MSE-1", "FF-1", "CAL-1", "DIR-1",
 }
 
 
@@ -189,6 +189,9 @@ def test_composite_earthpressure_pdf_drawing_keys_reproduce():
         {"phi_deg": 32, "state": "active", "theory": "rankine"})["K"])
     _check("EPC-2", "Kp", call_agent("retaining_walls", "earth_pressure_coefficient",
         {"phi_deg": 32, "state": "passive", "theory": "rankine"})["K"])
+    _check("EPC-3", "Kp", call_agent("retaining_walls", "earth_pressure_coefficient",
+        {"phi_deg": 35, "state": "passive", "theory": "caquot_kerisel",
+         "delta_deg": 23.33})["K"])
     mse = call_agent("retaining_walls", "mse_lrfd_external_stability",
         {"wall_height": 7.0, "gamma_backfill": 19.0, "phi_backfill": 34.0,
          "surcharge": 12.0})

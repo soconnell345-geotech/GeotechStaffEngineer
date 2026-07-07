@@ -416,6 +416,22 @@ class TestEarthPressureCoefficient:
         assert r["phi_deg"] == 30.0
         assert r["delta_deg"] == 20.0
 
+    def test_caquot_kerisel_log_spiral_kp(self):
+        # Caquot-Kerisel (1948) log-spiral passive Kp (v5.3). phi=35, delta=23.33
+        # (delta/phi=2/3) -> Kp ~ 7.2; delta omitted -> delta=phi (R=1).
+        r = self._run({"phi_deg": 35.0, "state": "passive",
+                       "theory": "caquot_kerisel", "delta_deg": 23.33})
+        assert r["coefficient"] == "Kp"
+        assert r["K"] == pytest.approx(7.2, abs=0.05)
+        full = self._run({"phi_deg": 30.0, "state": "passive",
+                          "theory": "caquot_kerisel"})["K"]
+        assert full == pytest.approx(6.3, abs=0.1)   # delta=phi anchor
+
+    def test_caquot_kerisel_requires_passive(self):
+        with pytest.raises(ValueError, match="passive"):
+            self._run({"phi_deg": 35.0, "theory": "caquot_kerisel",
+                       "state": "active"})
+
     def test_invalid_theory(self):
         with pytest.raises(ValueError, match="rankine"):
             self._run({"phi_deg": 30.0, "theory": "terzaghi"})
@@ -435,7 +451,7 @@ class TestEarthPressureCoefficient:
         assert set(METHOD_INFO) == set(METHOD_REGISTRY)
         info = METHOD_INFO["earth_pressure_coefficient"]
         assert info["parameters"]["theory"]["allowed_values"] == [
-            "rankine", "coulomb"]
+            "rankine", "coulomb", "caquot_kerisel"]
         assert info["parameters"]["state"]["allowed_values"] == [
             "active", "passive", "at_rest"]
 

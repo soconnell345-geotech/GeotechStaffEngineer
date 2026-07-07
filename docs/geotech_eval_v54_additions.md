@@ -1,13 +1,13 @@
 # Eval-suite v5.3/v5.4 additions (E10)
 
-25 answer-keyed questions added to `funhouse_agent/geotech_test_suite.json`
-(71 → 96), exercising the tools shipped in v5.3/v5.4. Every answer key was
+26 answer-keyed questions added to `funhouse_agent/geotech_test_suite.json`
+(71 → 97), exercising the tools shipped in v5.3/v5.4. Every answer key was
 produced by RUNNING the actual module (not from memory) and is re-verified by
 `funhouse_agent/tests/test_eval_suite_v54.py`, which recomputes each key and
 asserts it lands within the question's own tolerance. The LIVE model run stays
 owner-gated; this deliverable is the suite + keys + this manifest.
 
-Weighting: 17 of 25 exercise the slope / rapid-drawdown / seismic surface (the
+Weighting: 17 of 26 exercise the slope / rapid-drawdown / seismic surface (the
 biggest new area), the rest cover the composite-EI, earth-pressure/MSE-LRFD,
 fem2d, pdf and drawing-IR tools.
 
@@ -36,6 +36,7 @@ fem2d, pdf and drawing-IR tools.
 | CEI-2 | lateral_pile | `composite_section_ei` reinforced concrete (E5) | EI 175,652 kN·m² |
 | EPC-1 | retaining_walls | `earth_pressure_coefficient` Rankine Ka | 0.307 |
 | EPC-2 | retaining_walls | `earth_pressure_coefficient` Rankine Kp | 3.255 |
+| EPC-3 | retaining_walls | `earth_pressure_coefficient` Caquot-Kerisel log-spiral Kp | 7.2 |
 | MSE-1 | retaining_walls | `mse_lrfd_external_stability` sliding CDR | 1.84 |
 | FF-1 | fem2d | `fem2d_foundation` elastic strip footing | 0.01946 m |
 | CAL-1 | pdf_import | `calibrate_scale` two-point scale | 0.05 m/unit |
@@ -48,11 +49,11 @@ DIR-1 reuses the bundled `funhouse_agent/eval_samples/sample_section.dxf`.
 These v5.3/v5.4 items were on the list but left out with a reason; each has a
 ready answer key the owner can drop in once the gap is closed:
 
-- **Log-spiral Caquot-Kerisel Kp** — `soe.earth_pressure.caquot_kerisel_Kp` is
-  NOT reachable through any agent adapter (the `earth_pressure_coefficient`
-  method exposes only Rankine/Coulomb). A live agent could not answer it, so no
-  question was added. Ready key when it is wired up: phi=35°, delta=23.33° →
-  Kp = 7.2 (and the delta=0 anchor phi=30° → Kp = 3.0).
+- **Log-spiral Caquot-Kerisel Kp** — DONE (follow-up). Wired
+  `soe.earth_pressure.caquot_kerisel_Kp` into the `earth_pressure_coefficient`
+  adapter as `theory='caquot_kerisel'` (passive-only, with the wall-friction
+  `delta_deg`); question EPC-3 added (phi=35°, delta=23.33° → Kp 7.2, recomputed
+  via the adapter path).
 - **Monolithic Taylor-Hood consolidation** (`fem2d_consolidation`, scheme
   `monolithic`) — the adapter call needs a specific `soil_layers` shape and the
   degree-of-consolidation output was 0 at the feasible `time_points` in a quick
@@ -68,6 +69,6 @@ ready answer key the owner can drop in once the gap is closed:
 ## Harness note
 
 `eval_harness.run_suite` sizes itself from `len(questions)`, so it needs no
-change — it picks up all 96. Docs that named the current suite "71" were updated
+change — it picks up all 97. Docs that named the current suite "71" were updated
 (`docs/funhouse_agent_guide.md`, `CLAUDE.md`, `HANDOFF.md`); the dated run
 reports (`docs/geotech_eval*.{md,json}`) are historical and left as-is.

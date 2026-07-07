@@ -204,12 +204,23 @@ def _run_earth_pressure_coefficient(params):
     state = p.get("state", "active")
     phi = p["phi_deg"]
     beta = p.get("beta_deg", 0.0)
-    if theory not in ("rankine", "coulomb"):
-        raise ValueError(f"Unknown theory '{theory}'. Allowed: ['rankine', 'coulomb'].")
+    if theory not in ("rankine", "coulomb", "caquot_kerisel"):
+        raise ValueError(f"Unknown theory '{theory}'. Allowed: "
+                         "['rankine', 'coulomb', 'caquot_kerisel'].")
     if state not in ("active", "passive", "at_rest"):
         raise ValueError(f"Unknown state '{state}'. Allowed: ['active', 'passive', 'at_rest'].")
 
-    if state == "at_rest":
+    if theory == "caquot_kerisel":
+        # Caquot-Kerisel (1948) log-spiral PASSIVE coefficient Kp (v5.3). Unlike
+        # Coulomb it does not over-predict Kp at high wall friction delta/phi.
+        # Passive-only; delta_deg defaults to phi (R=1) when omitted.
+        if state != "passive":
+            raise ValueError(
+                "theory 'caquot_kerisel' is a passive (Kp) log-spiral coefficient; "
+                "use state='passive' (it has no active/at-rest form).")
+        from soe.earth_pressure import caquot_kerisel_Kp
+        K, symbol = caquot_kerisel_Kp(phi, delta_deg=p.get("delta_deg")), "Kp"
+    elif state == "at_rest":
         K, symbol = _ep.K0(phi), "K0"
     elif theory == "rankine":
         if state == "active":
@@ -281,12 +292,12 @@ METHOD_INFO = {
     },
     "earth_pressure_coefficient": {
         "category": "Earth Pressure",
-        "brief": "Lateral earth pressure coefficient Ka/Kp/K0 (Rankine or Coulomb).",
+        "brief": "Lateral earth pressure coefficient Ka/Kp/K0 (Rankine, Coulomb, or Caquot-Kerisel log-spiral passive Kp).",
         "parameters": {
             "phi_deg": {"type": "float", "required": True, "description": "Soil friction angle (degrees). Alias: phi."},
-            "theory": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb"], "description": "Earth pressure theory (ignored for at_rest, which uses Jaky K0 = 1 - sin(phi))."},
-            "state": {"type": "str", "required": False, "default": "active", "allowed_values": ["active", "passive", "at_rest"], "description": "Pressure state: Ka (active), Kp (passive), or K0 (at rest)."},
-            "delta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Wall friction angle (degrees). Coulomb only. Alias: delta."},
+            "theory": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "caquot_kerisel"], "description": "Earth pressure theory. 'caquot_kerisel' = Caquot-Kerisel (1948) log-spiral PASSIVE coefficient Kp (state must be 'passive'; does not over-predict Kp at high wall friction the way Coulomb does). Theory is ignored for at_rest, which uses Jaky K0 = 1 - sin(phi)."},
+            "state": {"type": "str", "required": False, "default": "active", "allowed_values": ["active", "passive", "at_rest"], "description": "Pressure state: Ka (active), Kp (passive), or K0 (at rest). 'caquot_kerisel' requires 'passive'."},
+            "delta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Wall friction angle (degrees). Coulomb and caquot_kerisel. Alias: delta. For caquot_kerisel, omitting it means delta = phi (full wall friction, R = 1)."},
             "beta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees). Aliases: beta, backfill_slope."},
             "alpha_deg": {"type": "float", "required": False, "default": 90.0, "description": "Wall back face angle from horizontal (degrees, 90 = vertical). Coulomb only. Alias: alpha."},
         },

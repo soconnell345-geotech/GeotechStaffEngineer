@@ -1298,5 +1298,21 @@
       ],
       "source": "v5.3/v5.4 worktree ground truth, 2026-07-07 (recomputed by the E10 offline test)"
     }
+  },
+  {
+    "id": "EPC-3",
+    "module": "retaining_walls",
+    "complexity": "medium",
+    "question": "Compute the Caquot-Kerisel (1948) log-spiral PASSIVE earth-pressure coefficient Kp for a wall retaining sand with soil friction angle 35 degrees and wall friction angle delta = 23.33 degrees (delta/phi = 2/3). Use the log-spiral (Caquot-Kerisel) theory, not Coulomb.",
+    "expected": {
+      "values": [
+        {
+          "name": "Kp",
+          "value": 7.2,
+          "rtol": 0.05
+        }
+      ],
+      "source": "v5.3 worktree ground truth, 2026-07-07 (retaining_walls.earth_pressure_coefficient theory=caquot_kerisel -> soe.earth_pressure.caquot_kerisel_Kp; recomputed via the adapter path)"
+    }
   }
 ]
