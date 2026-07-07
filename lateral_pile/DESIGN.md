@@ -71,9 +71,27 @@ results.summary()
   V-017 note in `validation_examples/RESULTS.md` (the V-017 deflection gap is the
   composite/nonlinear section EI, not the p-y curve).
 - **numpy >=2.0**: np.trapz renamed to np.trapezoid — use try/except
+- **Composite / transformed-section EI (`composite_section.py`, v5.4 E5)**:
+  `composite_section_ei(section_type, ...)` returns a `CompositeSection` with the
+  UNCRACKED transformed-section `EI` (kN·m²), `EA` (kN), transformed area/inertia
+  and a `summary()`. Three cases: `filled_pipe` (concrete/grout-filled steel
+  pipe), `cased_concrete` (steel casing + grout core + optional circular bar
+  ring), `reinforced_concrete` (circular or rectangular RC). Method: EI =
+  Σ E_i·I_i about the composite neutral axis; a steel pipe/casing and the
+  concrete core it confines are summed directly (non-overlapping), while bars
+  embedded in concrete are added at the NET modulus (E_bar − E_concrete) — the
+  (n−1) transformed rule that avoids double-counting displaced concrete. Concrete
+  modulus from `E_concrete` or `fc` via ACI 318 `Ec = 4700√f'c` (MPa). Feed the
+  result into an analysis with `Pile.from_composite_section(length, section,
+  diameter)`. **Basis is uncracked / gross** (upper-bound working stiffness) —
+  cracked / moment-curvature (M-φ) EI is out of scope (for a moment-dependent
+  cracked circular-RC EI use `ReinforcedConcreteSection` / `Pile.from_rc_section`,
+  Branson's equation). Validates V-017: the composite EI upgrades the micropile
+  head-deflection flag from CONVENTION to PASS (see validation_examples/RESULTS.md).
 
 ## Validation
 - COM624P Example 1 (Sabine River): 0.3% match to published 34.3mm
 - Hetenyi closed-form: <2% error
 - Force/moment equilibrium: <0.01% error
-- validation.py (97 tests) + tests/ (12 regression tests)
+- validation.py (97 tests) + tests/ (12 regression tests) + composite-section
+  hand-check tests (tests/test_composite_section.py)

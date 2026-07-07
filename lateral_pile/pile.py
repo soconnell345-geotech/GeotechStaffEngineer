@@ -321,6 +321,48 @@ class Pile:
         pile.rc_section = rc_section
         return pile
 
+    @classmethod
+    def from_composite_section(cls, length: float, section, diameter: float,
+                               E: Optional[float] = None) -> 'Pile':
+        """Create a Pile from a CompositeSection (composite transformed EI).
+
+        Uses the composite section's uncracked transformed EI directly:
+        the pile modulus is set to ``section.E_ref`` and the moment of inertia
+        to ``section.inertia_transformed`` so that ``pile.EI == section.EI``.
+
+        Parameters
+        ----------
+        length : float
+            Embedded pile length (m).
+        section : CompositeSection
+            Result of ``lateral_pile.composite_section_ei(...)``. Duck-typed:
+            any object exposing ``E_ref`` and ``inertia_transformed``.
+        diameter : float
+            Physical pile diameter (m) used for the p-y curves (e.g. the outer
+            casing/concrete diameter). This is a geometric input to the soil
+            reaction and is independent of the transformed EI.
+        E : float, optional
+            Override the modulus at which the EI is stored. Defaults to
+            ``section.E_ref`` (the transformed reference modulus).
+
+        Returns
+        -------
+        Pile
+
+        Examples
+        --------
+        >>> from lateral_pile import composite_section_ei
+        >>> sec = composite_section_ei('filled_pipe', outer_diameter=0.61,
+        ...                            wall_thickness=0.0127, fc=35000.0)
+        >>> pile = Pile.from_composite_section(20.0, sec, diameter=0.61)
+        >>> abs(pile.EI - sec.EI) < 1e-6
+        True
+        """
+        E_use = section.E_ref if E is None else E
+        I_use = section.EI / E_use
+        return cls(length=length, diameter=diameter, E=E_use,
+                   moment_of_inertia=I_use)
+
 
 # ── AISC HP Shape Database ──────────────────────────────────────────────
 # Section properties for lateral analysis (moment of inertia).

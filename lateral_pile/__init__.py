@@ -14,8 +14,12 @@ References:
 from lateral_pile.pile import Pile, ReinforcedConcreteSection, rebar_diameter
 from lateral_pile.soil import SoilLayer
 from lateral_pile.analysis import LateralPileAnalysis
+from lateral_pile.composite_section import (
+    CompositeSection, composite_section_ei, aci_concrete_modulus,
+)
 
 __all__ = [
     'Pile', 'SoilLayer', 'LateralPileAnalysis',
     'ReinforcedConcreteSection', 'rebar_diameter',
+    'CompositeSection', 'composite_section_ei', 'aci_concrete_modulus',
 ]

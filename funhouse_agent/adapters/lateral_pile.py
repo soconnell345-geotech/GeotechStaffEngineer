@@ -1,7 +1,10 @@
 """Lateral pile adapter — COM624P, 8 p-y models, FD solver."""
 
 from funhouse_agent.adapters import require_keys, require_params, reject_unknown_params
-from lateral_pile import Pile, ReinforcedConcreteSection, rebar_diameter, SoilLayer, LateralPileAnalysis
+from lateral_pile import (
+    Pile, ReinforcedConcreteSection, rebar_diameter, SoilLayer,
+    LateralPileAnalysis, composite_section_ei,
+)
 from lateral_pile.py_curves import (
     SoftClayMatlock, StiffClayBelowWT, StiffClayAboveWT, SoftClayJeanjean,
     SandReese, SandAPI, WeakRock,
@@ -126,9 +129,49 @@ def _run_get_py_curve(params):
     }
 
 
+# Every parameter _run_composite_section_ei consumes. Reject anything else
+# loudly so an invented geometry/material name is not silently ignored (which
+# would return a confidently wrong EI).
+_COMPOSITE_VALID_PARAMS = (
+    "section_type", "E_concrete", "fc", "outer_diameter", "wall_thickness",
+    "E_steel", "diameter", "width", "height", "n_bars", "bar_diameter",
+    "bar_circle_diameter", "bar_layers", "E_bar",
+)
+
+
+def _run_composite_section_ei(params):
+    reject_unknown_params(params, _COMPOSITE_VALID_PARAMS,
+                          method="composite_section_ei")
+    require_params(params, ["section_type"], method="composite_section_ei",
+                   valid=_COMPOSITE_VALID_PARAMS)
+    bar_layers = params.get("bar_layers")
+    if bar_layers is not None:
+        # JSON arrives as [[n, y], ...]; composite_section_ei wants tuples.
+        bar_layers = [tuple(layer) for layer in bar_layers]
+    kw = dict(
+        E_concrete=params.get("E_concrete"), fc=params.get("fc"),
+        outer_diameter=params.get("outer_diameter"),
+        wall_thickness=params.get("wall_thickness"),
+        diameter=params.get("diameter"),
+        width=params.get("width"), height=params.get("height"),
+        n_bars=params.get("n_bars", 0),
+        bar_diameter=params.get("bar_diameter", 0.0),
+        bar_circle_diameter=params.get("bar_circle_diameter"),
+        bar_layers=bar_layers,
+    )
+    # Only pass the modulus overrides when supplied so the module defaults hold.
+    if params.get("E_steel") is not None:
+        kw["E_steel"] = params["E_steel"]
+    if params.get("E_bar") is not None:
+        kw["E_bar"] = params["E_bar"]
+    section = composite_section_ei(params["section_type"], **kw)
+    return section.to_dict()
+
+
 METHOD_REGISTRY = {
     "lateral_pile_analysis": _run_lateral_pile_analysis,
     "get_py_curve": _run_get_py_curve,
+    "composite_section_ei": _run_composite_section_ei,
 }
 
 METHOD_INFO = {
@@ -172,5 +215,26 @@ METHOD_INFO = {
             "Er": {"type": "float", "required": False, "description": "Rock mass modulus (kPa). For WeakRock."},
         },
         "returns": {"y_m": "Deflection array (m).", "p_kN_per_m": "Soil resistance array (kN/m)."},
+    },
+    "composite_section_ei": {
+        "category": "Lateral Pile",
+        "brief": "Uncracked transformed-section composite EI/EA for a multi-material pile section (concrete-filled steel pipe, cased grout + optional bar ring, or reinforced concrete). Feed the returned EI/inertia into lateral_pile_analysis via moment_of_inertia (at pile_E = E_ref).",
+        "parameters": {
+            "section_type": {"type": "str", "required": True, "allowed_values": ["filled_pipe", "cased_concrete", "reinforced_concrete"], "description": "filled_pipe = concrete/grout-filled steel pipe (needs outer_diameter, wall_thickness). cased_concrete = steel casing + grout core + optional circular bar ring. reinforced_concrete = circular (diameter) or rectangular (width, height) RC, no outer steel."},
+            "fc": {"type": "float", "required": False, "description": "Concrete/grout compressive strength f'c (kPa). Ec = 4700*sqrt(f'c[MPa]) (ACI 318). Provide fc OR E_concrete."},
+            "E_concrete": {"type": "float", "required": False, "description": "Concrete/grout Young's modulus (kPa), used directly instead of the fc correlation."},
+            "outer_diameter": {"type": "float", "required": False, "description": "Steel pipe/casing outer diameter (m) — filled_pipe / cased_concrete."},
+            "wall_thickness": {"type": "float", "required": False, "description": "Steel pipe/casing wall thickness (m) — filled_pipe / cased_concrete."},
+            "E_steel": {"type": "float", "required": False, "default": 200e6, "description": "Steel casing modulus (kPa)."},
+            "diameter": {"type": "float", "required": False, "description": "Concrete diameter (m) — circular reinforced_concrete."},
+            "width": {"type": "float", "required": False, "description": "Rectangular concrete breadth (m). Bending about the axis parallel to width (I = width*height^3/12)."},
+            "height": {"type": "float", "required": False, "description": "Rectangular concrete depth (m)."},
+            "n_bars": {"type": "int", "required": False, "default": 0, "description": "Number of bars in the circular ring (cased_concrete / circular reinforced_concrete)."},
+            "bar_diameter": {"type": "float", "required": False, "default": 0.0, "description": "Individual reinforcing-bar diameter (m). Use a standard size, e.g. 0.0254 for a #8 bar."},
+            "bar_circle_diameter": {"type": "float", "required": False, "description": "Pitch-circle diameter of the bar ring (m) — circular reinforcement."},
+            "bar_layers": {"type": "array", "required": False, "description": "Rectangular reinforcement: array of [n_bars, y_from_centroid_m] layers (y signed; symmetric layers keep the neutral axis centred). Requires bar_diameter."},
+            "E_bar": {"type": "float", "required": False, "default": 200e6, "description": "Reinforcing-steel modulus (kPa)."},
+        },
+        "returns": {"EI_kNm2": "Composite flexural rigidity (kN-m^2).", "EA_kN": "Composite axial rigidity (kN).", "E_ref_kPa": "Reference modulus for the transformed properties.", "inertia_transformed_m4": "Equivalent moment of inertia at E_ref (pass as moment_of_inertia with pile_E=E_ref).", "area_transformed_m2": "Transformed area at E_ref.", "components": "Per-material EI/EA breakdown."},
     },
 }

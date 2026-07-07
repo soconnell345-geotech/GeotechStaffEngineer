@@ -86,7 +86,9 @@ from slope_stability.slices import Slice, build_slices
 from slope_stability.methods import fellenius_fos, bishop_fos
 
 # lateral_pile (V-017)
-from lateral_pile import Pile, SoilLayer, LateralPileAnalysis
+from lateral_pile import (
+    Pile, SoilLayer, LateralPileAnalysis, composite_section_ei,
+)
 from lateral_pile.py_curves import SandReese
 
 # Unit conversions (US -> SI)
@@ -421,6 +423,51 @@ def test_v017_fixed_head_deflection_convention():
     assert y_head_mm == pytest.approx(3.92, abs=0.1)     # our value, pinned
     # documented overshoot vs the published 3.3 mm (section-stiffness difference)
     assert (y_head_mm - 3.3) / 3.3 == pytest.approx(0.19, abs=0.05)
+
+
+def test_v017_composite_ei_upgrades_deflection_to_pass():
+    """UPGRADE (v5.4 E5): computing the section's UNCRACKED COMPOSITE
+    (transformed-section) EI with the new `composite_section_ei` helper flips
+    the fixed-head head deflection from the +19% CONVENTION flag to a PASS.
+
+    The published SP-2 micropile is a grout-filled steel casing (extract
+    `mp_sp2.txt`: casing OD=0.1969 m, wall=0.0151 m, grout f'c=27.6 MPa, casing
+    E=199,948 MPa). The casing-only elastic EI (I=3.58667e-5) is 7171 kN-m^2;
+    the composite transformed EI (steel annulus + grout core, ACI Ec) is
+    8109 kN-m^2 (x1.13). Feeding that EI through the SAME p-y model / loads /
+    overburden offset gives a fixed-head head deflection of 3.60 mm vs the
+    published LPILE 3.3 mm — +9.2%, inside the +/-10% band the V-017 Mmax test
+    already uses. NOT tuned: the EI comes purely from the published section
+    geometry + the ACI 318 Ec correlation + the published steel modulus.
+
+    This confirms the A4 root cause (the gap is the composite/nonlinear section
+    stiffness, not the p-y construction): the uncracked composite EI closes
+    ~half the gap; the residual is the cracked / moment-curvature EI LPILE used
+    ("Nonlinear EI"), which is genuinely softer and is out of scope here (the
+    uncracked composite is an upper-bound stiffness — owner decision pending).
+    """
+    # composite (transformed-section) EI from the published section geometry
+    sec = composite_section_ei('filled_pipe', outer_diameter=0.1969,
+                               wall_thickness=0.0151, fc=27600.0,
+                               E_steel=_V017_E)
+    assert sec.EI == pytest.approx(8109.0, abs=3.0)          # composite EI, pinned
+    casing_only_EI = _V017_E * _V017_I
+    assert sec.EI / casing_only_EI == pytest.approx(1.13, abs=0.02)
+
+    # same p-y diameter (LPILE echo), same layers/loads/overburden offset
+    pile = Pile.from_composite_section(_V017_LEN, sec, diameter=_V017_D)
+    res = LateralPileAnalysis(pile, _v017_layers()).solve(
+        Vt=_V017_V, Q=_V017_P, head_condition='fixed', n_elements=400)
+    assert res.converged
+    y_head_mm = res.deflection[0] * 1000.0
+    assert y_head_mm == pytest.approx(3.60, abs=0.1)         # our value, pinned
+    # UPGRADE: composite EI lands within +/-10% of the published 3.3 mm
+    assert y_head_mm == pytest.approx(3.3, rel=0.10)
+    # moved the right way: between the published 3.3 and the casing-only 3.92
+    assert 3.3 < y_head_mm < 3.92
+    # Mmax stays a PASS vs the published -37.3 kN-m (+/-10%)
+    Mmax = res.moment[int(np.argmax(np.abs(res.moment)))]
+    assert Mmax == pytest.approx(-37.3, rel=0.10)
 
 
 def test_v017_full_reese_construction_is_softer_not_stiffer():
