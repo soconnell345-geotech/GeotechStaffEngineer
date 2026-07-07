@@ -15,6 +15,30 @@ def _require_layer_elevations(soil_layers, *, method):
         require_keys(sl, ["bottom_elevation"], method=method,
                      item_label="soil_layers[]")
 
+
+def _require_choice(value, allowed, *, name, method):
+    """Single-sourced enum/choice validation for adapter parameters.
+
+    Replaces the per-parameter inline ``if value not in (...): raise`` blocks
+    (element_type / srm_field / n_gp / consolidation_scheme) with one check so
+    the allowed set lives in exactly one place per call site.
+    """
+    if value not in allowed:
+        raise ValueError(
+            f"{method}: {name} must be one of {list(allowed)}, got {value!r}.")
+
+
+def _normalize_gwt(gwt):
+    """Coerce a groundwater-table polyline [[x, y], ...] to an ndarray; pass a
+    scalar elevation (or an already-array value) through unchanged.
+
+    Single-sources the identical GWT-argument coercion previously copy-pasted
+    into the slope-SRM, excavation and staged adapters.
+    """
+    if isinstance(gwt, list) and len(gwt) > 0 and isinstance(gwt[0], (list, tuple)):
+        return np.array(gwt)
+    return gwt
+
 def _run_analyze_gravity(params: dict) -> dict:
     from fem2d import analyze_gravity
     _valid = ("width", "depth", "gamma", "E", "nu", "nx", "ny", "t")
@@ -68,16 +92,15 @@ def _run_analyze_slope_srm(params: dict) -> dict:
     soil_layers = params["soil_layers"]
 
     element_type = params.get("element_type", "t6")
-    if element_type not in ("t6", "cst"):
-        raise ValueError(
-            f"element_type must be 't6' or 'cst', got {element_type!r}")
+    _require_choice(element_type, ("t6", "cst"),
+                    name="element_type", method="fem2d_slope_srm")
     srm_field = params.get("srm_field", "c_phi")
-    if srm_field not in ("c_phi", "c", "phi"):
-        raise ValueError(
-            f"srm_field must be 'c_phi', 'c' or 'phi', got {srm_field!r}")
+    _require_choice(srm_field, ("c_phi", "c", "phi"),
+                    name="srm_field", method="fem2d_slope_srm")
     n_gp = params.get("n_gp")
-    if n_gp is not None and int(n_gp) not in (3, 6):
-        raise ValueError(f"n_gp must be 3 or 6 (T6 only), got {n_gp!r}")
+    if n_gp is not None:
+        _require_choice(int(n_gp), (3, 6),
+                        name="n_gp", method="fem2d_slope_srm")
 
     kwargs = dict(
         surface_points=surface_points,
@@ -101,11 +124,7 @@ def _run_analyze_slope_srm(params: dict) -> dict:
     if "x_extend" in params:
         kwargs["x_extend"] = params["x_extend"]
     if "gwt" in params:
-        gwt = params["gwt"]
-        if isinstance(gwt, list) and len(gwt) > 0 and isinstance(gwt[0], (list, tuple)):
-            kwargs["gwt"] = np.array(gwt)
-        else:
-            kwargs["gwt"] = gwt
+        kwargs["gwt"] = _normalize_gwt(params["gwt"])
     if "layer_polylines" in params:
         kwargs["layer_polylines"] = params["layer_polylines"]
 
@@ -149,11 +168,7 @@ def _run_analyze_excavation(params: dict) -> dict:
         tol=params.get("tol", 1e-5),
     )
     if "gwt" in params:
-        gwt = params["gwt"]
-        if isinstance(gwt, list) and len(gwt) > 0 and isinstance(gwt[0], (list, tuple)):
-            kwargs["gwt"] = np.array(gwt)
-        else:
-            kwargs["gwt"] = gwt
+        kwargs["gwt"] = _normalize_gwt(params["gwt"])
     if "struts" in params:
         kwargs["struts"] = params["struts"]
     if "layer_polylines" in params:
@@ -198,10 +213,8 @@ def _run_analyze_consolidation(params: dict) -> dict:
                    method="fem2d_consolidation", valid=_valid)
     _require_layer_elevations(params["soil_layers"], method="fem2d_consolidation")
     scheme = params.get("consolidation_scheme", "staggered")
-    if scheme not in ("staggered", "monolithic"):
-        raise ValueError(
-            "consolidation_scheme must be 'staggered' or 'monolithic', "
-            f"got {scheme!r}")
+    _require_choice(scheme, ("staggered", "monolithic"),
+                    name="consolidation_scheme", method="fem2d_consolidation")
     kwargs = dict(
         width=params["width"],
         depth=params["depth"],
@@ -255,9 +268,7 @@ def _run_analyze_staged(params: dict) -> dict:
     # Build ConstructionPhase objects
     phases = []
     for pd in params["phases"]:
-        gwt = pd.get("gwt")
-        if isinstance(gwt, list) and len(gwt) > 0 and isinstance(gwt[0], (list, tuple)):
-            gwt = np.array(gwt)
+        gwt = _normalize_gwt(pd.get("gwt"))
         phases.append(ConstructionPhase(
             name=pd.get("name", "Phase"),
             active_soil_groups=pd.get("active_soil_groups", []),
