@@ -25,6 +25,8 @@ _NEW_IDS = {
     "INF-1", "INF-2", "INF-3", "NMK-1", "NMK-2", "NMK-3",
     "SPL-1", "SPL-2", "SPL-3", "PPG-1", "TCK-1", "SUR-1",
     "CEI-1", "CEI-2", "EPC-1", "EPC-2", "EPC-3", "MSE-1", "FF-1", "CAL-1", "DIR-1",
+    # v5.4 E11 fem2d-owned additions
+    "CON-1", "FTG-1", "MRS-1",
 }
 
 
@@ -204,14 +206,48 @@ def test_composite_earthpressure_pdf_drawing_keys_reproduce():
     _check("DIR-1", "n_text", dig["counts_by_type"].get("text", 0))
 
 
+def test_fem2d_consolidation_key_reproduces():
+    """CON-1: monolithic Taylor-Hood Biot consolidation — degree of
+    consolidation. Fast (~1s), so kept in the default (non-slow) set."""
+    from funhouse_agent.dispatch import call_agent
+    K, G, M = 500000.0, 200000.0, 4e6
+    E = 9 * K * G / (3 * K + G)
+    nu = (3 * K - 2 * G) / (2 * (3 * K + G))
+    out = call_agent("fem2d", "fem2d_consolidation", {
+        "width": 2.0, "depth": 20.0,
+        "soil_layers": [{"bottom_elevation": -20.0, "E": E, "nu": nu, "gamma": 0.0}],
+        "k": 1e-10, "load_q": 100.0, "time_points": [1e3, 1e7, 1e8],
+        "consolidation_scheme": "monolithic", "theta": 0.5, "n_w": M,
+        "nx": 3, "ny": 20})
+    _check("CON-1", "degree_of_consolidation", out["degree_of_consolidation"])
+
+
 @pytest.mark.slow
 def test_heavier_keys_reproduce():
-    """The two slower calls (marked slow): the rapid-drawdown SEARCH and the
-    fem2d elastic footing. Same reproduce guarantee."""
+    """The slower calls (marked slow): the rapid-drawdown SEARCH, the fem2d
+    elastic footing, and the v5.4 E11 fem2d footing-capacity + mesh study.
+    Same reproduce guarantee."""
     from slope_stability.rapid_drawdown import search_rapid_drawdown
     from funhouse_agent.dispatch import call_agent
+    from fem2d import srm_mesh_refinement_study
     _check("RDS-1", "FOS", search_rapid_drawdown(_dam(), 18, 3, method="corps_2stage",
         surface_type="circular", nx=7, ny=6, x_range=(10, 55), y_range=(25, 70),
         x_entry_range=(0, 30), x_exit_range=(35, 60), n_slices=25).FOS)
     _check("FF-1", "max_displacement_m", call_agent("fem2d", "fem2d_foundation",
         {"B": 2.0, "q": 200.0, "depth": 12.0, "E": 30000.0, "nu": 0.3})["max_displacement_m"])
+
+    # FTG-1: footing bearing capacity by load-control collapse (Prandtl Nc)
+    ftg = call_agent("fem2d", "fem2d_footing_capacity",
+                     {"B": 2.0, "c": 100.0, "nx": 40, "ny": 20, "q_applied": 200.0})
+    _check("FTG-1", "Nc_backfigured", ftg["Nc_backfigured"])
+    _check("FTG-1", "q_ult_kPa", ftg["q_ult_kPa"])
+
+    # MRS-1: SRM mesh-refinement study (finest + coarsest FOS)
+    surf = [(0, 0), (10, 0), (30, 10), (50, 10)]
+    layer = [{"name": "clay", "bottom_elevation": -10, "E": 30000, "nu": 0.3,
+              "c": 10.0, "phi": 15.0, "psi": 0, "gamma": 18.0}]
+    mrs = srm_mesh_refinement_study(surf, layer, meshes=[(16, 8), (24, 12)],
+                                    depth=5.0, x_extend=0.0, element_type="t6",
+                                    srf_tol=0.02)
+    _check("MRS-1", "fos_finest", mrs.fos_finest)
+    _check("MRS-1", "fos_coarsest", mrs.fos_coarsest)

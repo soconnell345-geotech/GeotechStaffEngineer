@@ -1314,5 +1314,72 @@
       ],
       "source": "v5.3 worktree ground truth, 2026-07-07 (retaining_walls.earth_pressure_coefficient theory=caquot_kerisel -> soe.earth_pressure.caquot_kerisel_Kp; recomputed via the adapter path)"
     }
+  },
+  {
+    "id": "CON-1",
+    "module": "fem2d",
+    "complexity": "high",
+    "question": "Using the monolithic coupled u-p (Taylor-Hood) Biot consolidation scheme, model a 20 m saturated soil column (2 m wide, drained top, impermeable base) with E = 529412 kPa, Poisson ratio 0.3235 and Biot modulus M = 4.0e6 kPa, mobility 1e-10, under a 100 kPa surface load. Report the degree of consolidation at t = 1.0e8 s (time points 1e3, 1e7, 1e8).",
+    "expected": {
+      "values": [
+        {
+          "name": "degree_of_consolidation",
+          "value": 0.599,
+          "rtol": 0.1,
+          "alt": [
+            59.9
+          ]
+        }
+      ],
+      "source": "v5.4 worktree ground truth, 2026-07-07 (recomputed by the E11 offline test)"
+    }
+  },
+  {
+    "id": "FTG-1",
+    "module": "fem2d",
+    "complexity": "medium",
+    "question": "Using plane-strain FEM load-control to collapse, compute the ultimate bearing capacity of a 2 m wide smooth rigid strip footing on weightless cohesive-frictionless soil (phi = 0, c = 100 kPa), mesh 40x20 T6. Report the back-figured bearing capacity factor Nc and the ultimate pressure q_ult (the Prandtl value is Nc = 5.14, q_ult = 514 kPa).",
+    "expected": {
+      "values": [
+        {
+          "name": "Nc_backfigured",
+          "value": 5.12,
+          "rtol": 0.06,
+          "alt": [
+            5.142
+          ]
+        },
+        {
+          "name": "q_ult_kPa",
+          "value": 512.0,
+          "rtol": 0.06,
+          "alt": [
+            514.2
+          ]
+        }
+      ],
+      "source": "v5.4 worktree ground truth, 2026-07-07 (recomputed by the E11 offline test)"
+    }
+  },
+  {
+    "id": "MRS-1",
+    "module": "fem2d",
+    "complexity": "high",
+    "question": "Run an SRM mesh-refinement (mesh-consistency) study on a 2:1, 10 m slope [(0,0),(10,0),(30,10),(50,10)] with c' = 10 kPa, phi' = 15 deg, gamma = 18 kN/m3 and a 5 m foundation, using the mesh sequence (16x8) then (24x12) with T6 elements. Report the finest-mesh strength-reduction FOS (it should decrease toward the limit-equilibrium value as the mesh refines).",
+    "expected": {
+      "values": [
+        {
+          "name": "fos_finest",
+          "value": 1.531,
+          "rtol": 0.05
+        },
+        {
+          "name": "fos_coarsest",
+          "value": 1.581,
+          "rtol": 0.05
+        }
+      ],
+      "source": "v5.4 worktree ground truth, 2026-07-07 (recomputed by the E11 offline test); exercises the srm_mesh_refinement_study fem2d utility (wraps fem2d_slope_srm)"
+    }
   }
 ]
