@@ -71,7 +71,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from slope_stability.geometry import SlopeGeometry
 from slope_stability.slip_surface import CircularSlipSurface
 
-_VALID_PARAMS = ("phi", "c_prime", "cu", "gamma", "gamma_sat")
+_VALID_PARAMS = ("phi", "c_prime", "cu", "gamma", "gamma_sat", "ru")
 
 
 # ---------------------------------------------------------------------------

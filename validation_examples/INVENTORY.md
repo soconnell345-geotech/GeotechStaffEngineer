@@ -692,6 +692,46 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   extract, so a single-surface FOS is not reproduced.
 - Confidence in extraction: #54 geometry + soil + pile data exact; #106 geometry absent.
 
+## V-042 Slide2 #36 — Li-Lumb (1987) / Hassan-Wolff (1999) probabilistic slope (F2)
+- Source: Slide2 Verification #36 (manual pp. 137-139); Li & Lumb (1987); Hassan &
+  Wolff (1999).
+- Target: `slope_stability.probabilistic` (fosm_fos + monte_carlo_fos + lognormal RI).
+- Geometry (Fig 36.1, LABELED, m): surface (0,5),(5,5),(15,15),(20,15); base el 0;
+  homogeneous. Table 36.1 (mean, std): c'=18±3.6, phi=30±3, gamma=18±0.9, ru=0.2±0.02.
+  Bishop; variables normal; FOS lognormal.
+- Published (Table 36.2): Slide Bishop det-min FOS 1.340 (RI_LN 2.482) / overall 1.350
+  (2.393); Hassan-Wolff 1.334 (2.336).
+- Verdict: **PASS.** Searched Bishop critical FOS 1.325 (−0.7% vs H-W). FOSM COV_F
+  0.1225 reproduces H-W's implied FOS-COV: lognormal_beta at the published FOS 1.334 →
+  RI 2.30 (within 1.6% of 2.336); module's own F=1.325 → RI 2.244 (~4%). FOSM≈MC.
+  c'-dominated variance (~70%). Needed the additive `ru` probabilistic variable.
+- Confidence: high (labeled figure + full property table).
+
+## V-043 Slide2 #39 — Tandjiria (2002) geosynthetic-reinforced embankment (F2)
+- Source: Slide2 Verification #39 (manual pp. 147-150); Tandjiria (2002) problem 1.
+- Target: `slope_stability` 2-material embankment + `Geosynthetic` reinforcement +
+  tension crack; Spencer/GLE.
+- Geometry (Fig 39.1/39.2, LABELED, m): surface (0,9),(10,9),(20,3),(30,3); soft-clay
+  foundation el 0-3 full width; fill above el 3 x0-20. Sand fill c'=0/phi=37/gamma=17,
+  soft clay c'=20/phi=0/gamma=20 (Table 39.2); clay fill both c=20/phi=0/gamma=19.4,
+  water-filled crest crack (Table 39.1).
+- Published: no-reinf Spencer sand circ 1.209/noncirc 1.188, clay circ 0.975/noncirc
+  0.935; reinf force (FS=1.35) sand 44-45/56, clay 169-170/184-190 kN/m.
+- Verdict: **PASS (sand no-reinf)** / **CONVENTION (reinf force, clay crack).** Sand
+  no-reinf circular 1.180 (−2.4%), noncircular ~1.19 (~+0.2%). Geosynthetic force for
+  FS=1.35 ~55 kN/m circ / ~50 noncirc — brackets published 44-56 but split inverted
+  (surface-sensitive). Clay: without the unlabeled water crack 1.039 (+6.6% vs 0.975);
+  full 2c/γ water column overshoots to ~0.27 — not reproduced, NOT tuned.
+- Confidence: geometry + soil exact; crack depth + Slide2 critical surfaces absent.
+
+## V-106 Slide2 #106 — Cai & Ugai (2000) Ito-Matsui pile — N/A (source)
+- Source: Slide2 Verification #106 (manual p. 334); Cai & Ugai (2000).
+- Verdict: **N/A (source).** Fig 106.1 is an unlabeled raster (no coords, no soil/pile
+  properties); geometry + Ito-Matsui pile params live only in the external Cai & Ugai
+  paper. Cannot recover without reconstructing/fitting. The Ito-Matsui 1975 force is
+  unit-tested vs the paper and a with-pile FOS is validated at V-040 — source-coverage
+  gap, not a capability gap. Recorded, not pinned.
+
 ---
 
 # Looked for but NOT extracted (and why)
