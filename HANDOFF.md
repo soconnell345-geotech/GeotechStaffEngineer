@@ -13,7 +13,7 @@ only for the detailed Phase-E history; this file supersedes it.
 | Repo | github.com/soconnell345-geotech/GeotechStaffEngineer (private) |
 | **master HEAD** | `d93ab25` = **v5.4.0 release commit** (tag `v5.4.0`) — pushed, PUBLISHED to PyPI (owner OK'd 2026-07-08) |
 | **Branch `v5.4`** | merged into master at `d93ab25` (branch tip `c52ec47`); the worktree `.claude/worktrees/v5.1-todos` is still checked out on it for the next train |
-| Submodule `geotech-references` | `46f6c60` on main (ufc_expansive figures complete; **1.3.1 PyPI release = awaiting owner OK** — version still 1.3.0) |
+| Submodule `geotech-references` | `3b25e0e` = **v1.3.1 on PyPI** (owner OK'd 2026-07-08; ufc_expansive figures complete, 42/42 page-accurate); parent pin `>=1.3.1` |
 | Version string | `5.4.0` in `pyproject.toml` (master) |
 | Validation suite | `validation_examples/` — 179 passed (offline; V-001..V-044) |
 | Full repo suite | **8436 passed / 48 skipped** (release gate, 2026-07-08) |
