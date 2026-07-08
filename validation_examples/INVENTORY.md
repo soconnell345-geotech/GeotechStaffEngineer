@@ -732,6 +732,31 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   unit-tested vs the paper and a with-pile FOS is validated at V-040 — source-coverage
   gap, not a capability gap. Recorded, not pinned.
 
+## V-044 Slide2 #70 — Duncan & Wright (2005) submerged slope + ponded water (F2)
+- Source: Slide2 Verification #70 (manual pp. 233-236); Duncan & Wright (2005) Fig 6.27.
+- Target: `slope_stability` submerged slope, ponded-water buttress, circular search.
+- Geometry (Fig 70.1/70.2, LABELED, ft): surface (0,15),(30,15),(105,45),(140,45);
+  base el 0; homogeneous γ=128 pcf, c'=100 psf, φ'=20°. Fully submerged; ponded water
+  at el 75 ft (Case 1) / el 105 ft (Case 2).
+- Published: Bishop 1.603 / Spencer 1.599 / GLE 1.599 (circular), ref 1.60; Case 1 = Case 2.
+- Verdict: **PASS.** On the Bishop centre-grid critical circle: Bishop 1.597 / Spencer
+  1.598 / GLE 1.595 (within 0.4%). Water-level INDEPENDENCE reproduced to ~7 sig figs
+  (same circle → 1.5974 at water el 75/105/45). A free Spencer/entry-exit search hits a
+  spurious degenerate surface on this ponded geometry; Bishop centre-grid is the robust
+  path (Slide auto-refine). Tests: test_published_v044_slope_submerged.py (2).
+
+## V-085/086 Slide2 #85/#86 — Duncan & Wright grouted tiebacks — DEFERRED (search robustness)
+- Source: Slide2 #85 (Fig 6.34) / #86 (Fig 7.28); Duncan & Wright (2005).
+- Geometry recovered (labeled): #85 saturated clay c=350 psf/φ=0, single 9,000 lb/ft
+  support at mid-height, steep 0.5:1 20-ft face; #86 c'=0/φ=37 fill on rigid rock, five
+  800 lb/ft tiebacks (el 4/8/12/16/20 ft, 20 ft long).
+- Verdict: **DEFERRED (search robustness).** Both blocked by the circular search
+  converging to spurious degenerate surfaces on steep / thin-layer / c'=0 sections
+  (centres outside the domain or below the rigid base; #86 c'=0 toe circles at 0.55,
+  below the 0.94 infinite-slope value) that the supports don't engage. Not tuned/pinned;
+  flagged as a search-robustness follow-up (physical-centre / below-base rejection guard,
+  like the E1 drawdown-search gate). Anchor mechanic itself exercised at V-043.
+
 ---
 
 # Looked for but NOT extracted (and why)
