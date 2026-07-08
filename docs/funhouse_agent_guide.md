@@ -415,9 +415,38 @@ agent.invoke({"messages": [{"role": "user", "content": "Review ..."}]},
 
 Both factories set `reference_mode="off"` deliberately: the seismic references
 are already directly in scope, so the general `consult_references` tool (which
-would reach ALL 21 references) is omitted to keep the scoping tight. More
-reviewer domains (foundations, earth-retention, slope/FEM) follow the same
-pattern once seismic proves out (V5.4 item F8).
+would reach ALL 21 references) is omitted to keep the scoping tight.
+
+### The reviewer family (v5.4 F8)
+
+Three more reviewers follow the same two-surface pattern (F8). Each has a
+Funhouse factory (`make_*_reviewer` + a `_deep` variant), a
+`.claude/agents/<domain>-reviewer.md` Claude Code agent, a shared checklist in
+`review_checklists.py`, and scope sets in `dispatch.py`:
+
+| Reviewer | Factory | Analysis scope | Reference scope | Key checks |
+|----------|---------|----------------|-----------------|-----------|
+| **seismic** | `make_seismic_reviewer` | seismic_geotech, liquefaction, liquepy, slope_stability, opensees, pystrata, seismic_signals, hvsrpy, swprocess, fem2d | fema_p2082, dm7, gec5/7/11 | g vs m/s², total/effective stress, NCEER-vs-B&I chain, M-O KAE→Ka, Vs30 boundaries, Newmark polarity |
+| **foundations** | `make_foundations_reviewer` | bearing_capacity, settlement, axial_pile, drilled_shaft, pile_group, lateral_pile, wave_equation, downdrag, ground_improvement | dm7, gec6/8/9/10/12/13, micropile, ufc_expansive | GWT-in-wedge bearing, method-per-soil settlement/pile, pile-group RH sign + Converse-Labarre, drivability damping default, downdrag neutral plane |
+| **earth-retention** | `make_earth_retention_reviewer` | sheet_pile, soe, retaining_walls, seismic_geotech (M-O only) | dm7, gec4/7/11, california_trenching | Ka/K0/Kp state, single-FOS embedment basis, apparent-vs-triangular envelope, MSE LRFD CDRs, battered-wall M-O |
+| **slope / FEM** | `make_slope_fem_reviewer` | slope_stability, fem2d, reliability, dxf_import, pdf_import, drawing_ir | dm7, gec7/11 | LE method ordering + Bishop fixed point, noncircular rejection diagnostics, SRM-vs-LE + mesh convergence, T6-not-CST, reliability COV basis, ingest scale/provenance |
+
+```python
+from funhouse_agent import make_foundations_reviewer, NativeToolEngine
+rev = make_foundations_reviewer(NativeToolEngine(fh_prompter))
+rev.ask("Review this bearing-capacity calc: B=2 m, Df=1 m, sand phi=34, GWT at "
+        "0.5 m, q_ult=... using Vesic Nq with total unit weight throughout ...")
+```
+
+`seismic_geotech` legitimately appears in TWO scopes — the seismic reviewer owns
+liquefaction / site class / Newmark, while the earth-retention reviewer owns only
+its Mononobe-Okabe seismic earth pressure (each checklist says so). Note
+`geotech_common` is a shared library, not a registered agent, so it is NOT a
+scope member (adding it would be a no-op). More families (e.g. deep-foundations
+split out, characterization) can be added by the same recipe: a scope pair in
+`dispatch.py`, a checklist + preamble in `review_checklists.py`, a factory pair
+in `reviewers.py`, and a `.md` agent def that pastes the checklist with a sync
+pointer.
 
 ## Model Setup (v5 deep agent)
 

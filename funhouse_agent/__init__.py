@@ -33,6 +33,12 @@ from funhouse_agent.react_support import AgentResult
 from funhouse_agent.reviewers import (
     make_seismic_reviewer,
     make_seismic_reviewer_deep,
+    make_foundations_reviewer,
+    make_foundations_reviewer_deep,
+    make_earth_retention_reviewer,
+    make_earth_retention_reviewer_deep,
+    make_slope_fem_reviewer,
+    make_slope_fem_reviewer_deep,
 )
 from funhouse_agent._disclaimer import disclaimer
 
@@ -46,6 +52,12 @@ __all__ = [
     "AgentResult",
     "make_seismic_reviewer",
     "make_seismic_reviewer_deep",
+    "make_foundations_reviewer",
+    "make_foundations_reviewer_deep",
+    "make_earth_retention_reviewer",
+    "make_earth_retention_reviewer_deep",
+    "make_slope_fem_reviewer",
+    "make_slope_fem_reviewer_deep",
     "disclaimer",
 ]
 

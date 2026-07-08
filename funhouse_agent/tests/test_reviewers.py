@@ -8,6 +8,8 @@ Run from the worktree root with the venv python::
 """
 
 import json
+from collections import namedtuple
+from pathlib import Path
 
 import pytest
 
@@ -16,15 +18,27 @@ from funhouse_agent.reviewers import (
     make_seismic_reviewer,
     make_seismic_reviewer_deep,
     SEISMIC_REVIEWER_SCOPE,
+    make_foundations_reviewer, make_foundations_reviewer_deep,
+    FOUNDATIONS_REVIEWER_SCOPE,
+    make_earth_retention_reviewer, make_earth_retention_reviewer_deep,
+    EARTH_RETENTION_REVIEWER_SCOPE,
+    make_slope_fem_reviewer, make_slope_fem_reviewer_deep,
+    SLOPE_FEM_REVIEWER_SCOPE,
 )
 from funhouse_agent.dispatch import (
     ANALYSIS_MODULES, REFERENCE_MODULES,
     SEISMIC_MODULES, SEISMIC_REFERENCES,
+    FOUNDATIONS_MODULES, FOUNDATIONS_REFERENCES,
+    EARTH_RETENTION_MODULES, EARTH_RETENTION_REFERENCES,
+    SLOPE_FEM_MODULES, SLOPE_FEM_REFERENCES,
     list_agents, list_methods, call_agent,
 )
 from funhouse_agent.adapters import MODULE_REGISTRY
 from funhouse_agent.review_checklists import (
     SEISMIC_CHECKLIST, SEISMIC_REVIEWER_PREAMBLE,
+    FOUNDATIONS_CHECKLIST, FOUNDATIONS_REVIEWER_PREAMBLE,
+    EARTH_RETENTION_CHECKLIST, EARTH_RETENTION_REVIEWER_PREAMBLE,
+    SLOPE_FEM_CHECKLIST, SLOPE_FEM_REVIEWER_PREAMBLE,
 )
 
 
@@ -209,5 +223,157 @@ class TestMakeSeismicReviewerDeep:
         agent = make_seismic_reviewer_deep(model)
         assert agent is not None
         # Core dispatch tools are bound on the compiled primary.
+        names = set(agent.nodes["tools"].bound.tools_by_name.keys())
+        assert "call_agent" in names
+
+
+# ---------------------------------------------------------------------------
+# F8 reviewer family — foundations / earth-retention / slope-FEM
+# ---------------------------------------------------------------------------
+
+_AGENTS_DIR = Path(__file__).resolve().parents[2] / ".claude" / "agents"
+
+_Rev = namedtuple("_Rev", [
+    "name", "make", "make_deep", "scope", "modules", "references",
+    "checklist", "preamble", "header", "in_scope", "out_scope",
+    "markers", "md_file",
+])
+
+_F8 = [
+    _Rev("foundations", make_foundations_reviewer, make_foundations_reviewer_deep,
+         FOUNDATIONS_REVIEWER_SCOPE, FOUNDATIONS_MODULES, FOUNDATIONS_REFERENCES,
+         FOUNDATIONS_CHECKLIST, FOUNDATIONS_REVIEWER_PREAMBLE,
+         "FOUNDATIONS REVIEW MODE", "bearing_capacity", "slope_stability",
+         ("GWT", "Converse-Labarre", "neutral plane", "Nordlund"),
+         "foundations-reviewer.md"),
+    _Rev("earth_retention", make_earth_retention_reviewer,
+         make_earth_retention_reviewer_deep,
+         EARTH_RETENTION_REVIEWER_SCOPE, EARTH_RETENTION_MODULES,
+         EARTH_RETENTION_REFERENCES,
+         EARTH_RETENTION_CHECKLIST, EARTH_RETENTION_REVIEWER_PREAMBLE,
+         "EARTH-RETENTION REVIEW MODE", "retaining_walls", "bearing_capacity",
+         ("APPARENT", "KAE", "Mononobe-Okabe", "embedment", "MSE"),
+         "earth-retention-reviewer.md"),
+    _Rev("slope_fem", make_slope_fem_reviewer, make_slope_fem_reviewer_deep,
+         SLOPE_FEM_REVIEWER_SCOPE, SLOPE_FEM_MODULES, SLOPE_FEM_REFERENCES,
+         SLOPE_FEM_CHECKLIST, SLOPE_FEM_REVIEWER_PREAMBLE,
+         "SLOPE / FEM REVIEW MODE", "slope_stability", "bearing_capacity",
+         ("SRM", "mesh", "OMS", "rejection", "CST"),
+         "slope-fem-reviewer.md"),
+]
+
+
+@pytest.mark.parametrize("r", _F8, ids=[r.name for r in _F8])
+class TestF8ReviewerFamily:
+    def test_scope_subsets(self, r):
+        assert r.modules <= ANALYSIS_MODULES
+        assert r.references <= REFERENCE_MODULES
+
+    def test_scope_is_union(self, r):
+        assert r.scope == (r.modules | r.references)
+
+    def test_every_scope_name_registered(self, r):
+        for name in r.scope:
+            assert name in MODULE_REGISTRY, f"{name} not in MODULE_REGISTRY"
+        # geotech_common is a shared library, not an agent — must NOT be scoped.
+        assert "geotech_common" not in r.scope
+
+    def test_builds_geotech_agent_scoped(self, r):
+        rev = r.make(MockEngine([]))
+        assert isinstance(rev, GeotechAgent)
+        assert set(rev._allowed_agents) == set(r.scope)
+
+    def test_reference_mode_off(self, r):
+        assert r.make(MockEngine([]))._reference_mode == "off"
+
+    def test_list_agents_shows_only_domain(self, r):
+        rev = r.make(MockEngine([]))
+        visible = list_agents(allowed_agents=rev._allowed_agents)
+        assert set(visible.keys()) == set(r.scope)
+        assert r.in_scope in visible
+        assert r.out_scope not in visible
+
+    def test_prompt_has_header_and_checklist(self, r):
+        sp = r.make(MockEngine([]))._system_prompt
+        assert r.header in sp
+        assert r.checklist in sp
+        # scoping trims the catalog table to the in-scope module, not the out one
+        assert f"| {r.in_scope} |" in sp
+        assert f"| {r.out_scope} |" not in sp
+
+    def test_out_of_scope_module_refused(self, r):
+        rev = r.make(MockEngine([]))
+        result = call_agent(r.out_scope, "whatever", {},
+                            allowed_agents=rev._allowed_agents)
+        assert "error" in result and "Unknown module" in result["error"]
+
+    def test_in_scope_module_allowed(self, r):
+        rev = r.make(MockEngine([]))
+        assert "error" not in list_methods(r.in_scope,
+                                           allowed_agents=rev._allowed_agents)
+
+    def test_extra_modules_widen_scope(self, r):
+        rev = r.make(MockEngine([]), extra_modules={"calc_package"})
+        assert "calc_package" in rev._allowed_agents
+        assert set(r.scope) <= set(rev._allowed_agents)
+
+    def test_kwargs_forwarded(self, r):
+        rev = r.make(MockEngine([]), max_rounds=2)
+        assert rev._max_rounds == 2
+
+    def test_preamble_embeds_checklist(self, r):
+        assert r.checklist in r.preamble
+
+    def test_checklist_covers_domain_markers(self, r):
+        for m in r.markers:
+            assert m in r.checklist, f"{r.name}: missing marker {m!r}"
+
+    def test_md_agent_def_pastes_checklist_verbatim(self, r):
+        """The Claude Code agent def must carry the SAME checklist (sync)."""
+        md = (_AGENTS_DIR / r.md_file).read_text(encoding="utf-8")
+        assert r.checklist in md, f"{r.md_file} checklist drifted from the module"
+        assert r.make.__name__ in md   # sync pointer names the factory
+        assert "review_checklists.py" in md
+
+    def test_round_trip_ask(self, r):
+        rev = r.make(MockEngine([f"PASS — {r.name} review, no issues."]))
+        result = rev.ask("Review this calc: ...")
+        assert "PASS" in result.answer
+        assert any(r.header in c["system"] for c in rev._engine.chat_calls)
+
+
+class TestF8ScopeDistinctness:
+    def test_scopes_are_distinct(self):
+        scopes = [FOUNDATIONS_REVIEWER_SCOPE, EARTH_RETENTION_REVIEWER_SCOPE,
+                  SLOPE_FEM_REVIEWER_SCOPE, SEISMIC_REVIEWER_SCOPE]
+        # analysis-module cores are disjoint enough to be genuinely different
+        assert FOUNDATIONS_MODULES != EARTH_RETENTION_MODULES != SLOPE_FEM_MODULES
+        assert len({frozenset(s) for s in scopes}) == 4
+
+    def test_checklists_are_distinct(self):
+        cks = {FOUNDATIONS_CHECKLIST, EARTH_RETENTION_CHECKLIST,
+               SLOPE_FEM_CHECKLIST, SEISMIC_CHECKLIST}
+        assert len(cks) == 4
+
+    def test_seismic_geotech_shared_between_seismic_and_earth_retention(self):
+        # M-O lives in seismic_geotech; earth-retention reviews M-O, seismic
+        # reviews the rest — both legitimately include the module.
+        assert "seismic_geotech" in EARTH_RETENTION_MODULES
+        assert "seismic_geotech" in SEISMIC_MODULES
+
+
+@pytest.mark.parametrize("r", _F8, ids=[r.name for r in _F8])
+class TestF8ReviewerDeep:
+    def test_builds_with_fake_model(self, r):
+        pytest.importorskip("deepagents")
+        pytest.importorskip("langchain_core")
+        from langchain_core.language_models.fake_chat_models import (
+            GenericFakeChatModel,
+        )
+        from langchain_core.messages import AIMessage
+
+        model = GenericFakeChatModel(messages=iter([AIMessage(content="ok")]))
+        agent = r.make_deep(model)
+        assert agent is not None
         names = set(agent.nodes["tools"].bound.tools_by_name.keys())
         assert "call_agent" in names

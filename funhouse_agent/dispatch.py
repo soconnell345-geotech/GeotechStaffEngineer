@@ -107,6 +107,73 @@ SEISMIC_REFERENCES = frozenset({
 })
 
 
+# ---------------------------------------------------------------------------
+# Narrow-reviewer scoping sets (v5.4 F8 — foundations / earth-retention / slope-FEM)
+# ---------------------------------------------------------------------------
+# Three more reviewer families on the same D6 pattern. Module/reference names are
+# verified against MODULE_REGISTRY (ANALYSIS_MODULES / REFERENCE_MODULES); the
+# reference picks are from each reference's ACTUAL content (see the briefs), not
+# its title. NOTE: geotech_common is a shared library, NOT a registered agent, so
+# it is intentionally not a scope member (adding it would be a no-op).
+
+# Foundations reviewer — shallow + deep foundations, ground improvement.
+FOUNDATIONS_MODULES = frozenset({
+    "bearing_capacity",  # shallow foundations (CBEAR/Vesic/Meyerhof, GWT-in-wedge)
+    "settlement",        # consolidation + immediate (CSETT/Schmertmann/Hough)
+    "axial_pile",        # driven pile capacity (Nordlund/Tomlinson/Beta)
+    "drilled_shaft",     # GEC-10 alpha/beta/rock socket
+    "pile_group",        # rigid-cap 6-DOF groups, Converse-Labarre efficiency
+    "lateral_pile",      # COM624P p-y lateral analysis
+    "wave_equation",     # Smith 1-D wave equation / drivability
+    "downdrag",          # Fellenius neutral plane / negative skin friction
+    "ground_improvement",# aggregate piers, wick drains, surcharge (GEC-13)
+})
+FOUNDATIONS_REFERENCES = frozenset({
+    "reference_db", "figure_db",
+    "dm7",          # NAVFAC DM7 — bearing, settlement, deep foundations
+    "gec6",         # shallow foundations
+    "gec8",         # CFA pile design
+    "gec9",         # laterally loaded piles
+    "gec10",        # drilled shafts
+    "gec12",        # driven piles
+    "gec13",        # ground modification / ground improvement
+    "micropile",    # micropile design
+    "ufc_expansive",# foundations on expansive soils
+})
+
+# Earth-retention reviewer — walls, excavation support, seismic earth pressure.
+EARTH_RETENTION_MODULES = frozenset({
+    "sheet_pile",       # cantilever / anchored sheet-pile walls
+    "soe",              # support of excavation (braced/cantilever, anchors, heave)
+    "retaining_walls",  # cantilever + MSE walls (GEC-11)
+    "seismic_geotech",  # Mononobe-Okabe seismic earth pressure ONLY (see checklist)
+})
+EARTH_RETENTION_REFERENCES = frozenset({
+    "reference_db", "figure_db",
+    "dm7",                 # NAVFAC DM7 — earth pressures, retaining structures
+    "gec4",                # ground anchors
+    "gec7",                # soil nail walls
+    "gec11",               # MSE walls & reinforced soil slopes
+    "california_trenching",# Caltrans T&S — temporary excavation support / shoring
+})
+
+# Slope / FEM reviewer — slope stability, continuum FEM, reliability, geometry ingest.
+SLOPE_FEM_MODULES = frozenset({
+    "slope_stability",  # LE (OMS/Bishop/Spencer/GLE) + search + reinforcement
+    "fem2d",            # 2D plane-strain FEM (SRM, staged, seepage/consolidation)
+    "reliability",      # FOSM/PEM/MC/FORM probabilistic engines
+    "dxf_import",       # DXF geometry ingest for slope/FEM
+    "pdf_import",       # PDF cross-section ingest
+    "drawing_ir",       # LLM-ready drawing digitization (geometry ingest)
+})
+SLOPE_FEM_REFERENCES = frozenset({
+    "reference_db", "figure_db",
+    "dm7",     # NAVFAC DM7 — slope stability (Ch 7), general soil mechanics for FEM
+    "gec7",    # soil nail walls — the library's soil-nail reference (slope nails)
+    "gec11",   # reinforced soil slopes (geosynthetic-reinforced slopes)
+})
+
+
 def _scoped_names(allowed_agents):
     """Return the visible agent names given an optional whitelist."""
     if allowed_agents is None:
