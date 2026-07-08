@@ -1,6 +1,6 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-07-07.** This is the authoritative, always-current handoff
+**Last updated: 2026-07-08.** This is the authoritative, always-current handoff
 for a fresh LLM session (any model). The older `HANDOFF_2026-06-14.md` is kept
 only for the detailed Phase-E history; this file supersedes it.
 
@@ -11,13 +11,13 @@ only for the detailed Phase-E history; this file supersedes it.
 | Item | Value |
 |------|-------|
 | Repo | github.com/soconnell345-geotech/GeotechStaffEngineer (private) |
-| **master HEAD** | `d41540e` = **v5.3.0 release commit** (tag `v5.3.0`) — pushed, PUBLISHED to PyPI |
-| **Branch `v5.4`** | **PUSHED to origin, NOT merged** — all 6 owner directives BUILT (this file's §3); worktree `.claude/worktrees/v5.1-todos` is checked out on it |
-| Submodule `geotech-references` | `fe7fe9d` = **v1.3.0 on PyPI** (unchanged since 5.2.0) |
-| Version string | `5.3.0` in `pyproject.toml` (on both master and `v5.4` — no bump yet) |
-| Validation suite | `validation_examples/` — 136+ passed (offline; V-001..V-040) |
-| Full repo suite | **8279 passed / 48 skipped** on `v5.4` (2026-07-07); 8218/48 on master |
-| **Publish status** | 5.3.0 PUBLISHED (owner OK'd 2026-07-06). **v5.4 release = OWNER-GATED**: owner is validating 5.3 in Funhouse; on their OK → merge `v5.4`→master, bump 5.4.0, tag. |
+| **master HEAD** | `d93ab25` = **v5.4.0 release commit** (tag `v5.4.0`) — pushed, PUBLISHED to PyPI (owner OK'd 2026-07-08) |
+| **Branch `v5.4`** | merged into master at `d93ab25` (branch tip `c52ec47`); the worktree `.claude/worktrees/v5.1-todos` is still checked out on it for the next train |
+| Submodule `geotech-references` | `46f6c60` on main (ufc_expansive figures complete; **1.3.1 PyPI release = awaiting owner OK** — version still 1.3.0) |
+| Version string | `5.4.0` in `pyproject.toml` (master) |
+| Validation suite | `validation_examples/` — 179 passed (offline; V-001..V-044) |
+| Full repo suite | **8436 passed / 48 skipped** (release gate, 2026-07-08) |
+| **Publish status** | 5.4.0 PUBLISHED. Owner-gated next: live 100-Q eval run (owner, Databricks `[deep,full]`); geotech-references 1.3.1 release. **Next train (branch `v5.4` continues):** correlated c'-φ' pair + Slide2 #33/#34, F3 Bray-Travasarou, F4 CoE/Lowe-Karafiath, F6 anisotropic su, F7 slope calc-package. E2 stage-3 default STAYS 'fellenius' (owner decision 2026-07-08). |
 
 **⚠️ Release gate (still applies):** a `v*` git tag push **auto-publishes to
 PyPI** via `.github/workflows/publish.yml` (OIDC trusted publishing). Do **not**
