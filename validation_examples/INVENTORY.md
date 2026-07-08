@@ -745,17 +745,36 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   spurious degenerate surface on this ponded geometry; Bishop centre-grid is the robust
   path (Slide auto-refine). Tests: test_published_v044_slope_submerged.py (2).
 
-## V-085/086 Slide2 #85/#86 — Duncan & Wright grouted tiebacks — DEFERRED (search robustness)
+## V-085/086 Slide2 #85/#86 — Duncan & Wright grouted tiebacks — CONVENTION (guard-improved)
 - Source: Slide2 #85 (Fig 6.34) / #86 (Fig 7.28); Duncan & Wright (2005).
 - Geometry recovered (labeled): #85 saturated clay c=350 psf/φ=0, single 9,000 lb/ft
   support at mid-height, steep 0.5:1 20-ft face; #86 c'=0/φ=37 fill on rigid rock, five
   800 lb/ft tiebacks (el 4/8/12/16/20 ft, 20 ft long).
-- Verdict: **DEFERRED (search robustness).** Both blocked by the circular search
-  converging to spurious degenerate surfaces on steep / thin-layer / c'=0 sections
-  (centres outside the domain or below the rigid base; #86 c'=0 toe circles at 0.55,
-  below the 0.94 infinite-slope value) that the supports don't engage. Not tuned/pinned;
-  flagged as a search-robustness follow-up (physical-centre / below-base rejection guard,
-  like the E1 drawdown-search gate). Anchor mechanic itself exercised at V-043.
+- Verdict: **CONVENTION (guard-improved; with-support blocked).** The F2c
+  search-admissibility guard (SS-5 generalized) FIXED the spurious degenerate surfaces
+  these exposed: a circle plunging below the rigid base and re-emerging near the exit
+  (one-sided fragment) is now rejected, so the no-support baselines are physical
+  (#85 0.72→0.912, #86 0.55→1.549). The published WITH-support FOS is still not cleanly
+  reproduced for reasons BEYOND the guard: (#85) the single mid-height support is
+  partially avoided by the critical surface (the anchor force IS computed and engages
+  crossing surfaces, but the search minimum is a support-avoiding circle); (#86) the c'=0
+  circular search settles on a deep circle (1.549) not the true planar critical (0.94),
+  which the tiebacks don't engage. Not tuned/pinned. Guard validated at
+  tests/test_search_robustness.py; Anchor mechanic at V-043.
+
+## V-051 Slide2 #51 — Zhu (2003) 4-layer seismic method comparison — N/A (source)
+- Source: Slide2 #51 (manual pp. 186-187); Zhu (2003).
+- Verdict: **N/A (source).** Table 51.1 gives only 3 of the 4 layer strengths (Layer 4
+  omitted) yet the given circular surface dips below the L3/L4 boundary into Layer 4; and
+  the surface centre/radius, the piecewise water table, and the tension-crack depth are
+  all unlabeled in Fig 51.1. Cannot recover honestly without the missing parameters.
+
+## Slide2 #50 / #30 / #31 / #32 — reinforced (multi-material) — SKIPPED (complexity)
+- **#50** (SNAILZ, 2 materials, predefined surface): 14 geotextile rows each with a
+  distinct bond strength/length modelled as bond-controlled soil nails; figure-only
+  geometry + failure surfaces. **#30/#31/#32** reinforced embankments with 4 / 5 / 7
+  materials, figure-only. SKIPPED (complexity / diminishing returns) — the reinforcement
+  mechanics are already validated at V-040 (piles) and V-043 (geosynthetics).
 
 ---
 

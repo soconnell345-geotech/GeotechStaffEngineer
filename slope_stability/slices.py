@@ -352,16 +352,32 @@ def build_slices(geom: SlopeGeometry,
             pond_z=pond_z,
         ))
 
-    # Reject surfaces that dip below the soil model between valid slices
-    # (SS-5). A surface deeper than the lowest layer bottom must be
-    # re-specified (smaller circle, or model the deeper material).
+    # Reject surfaces that dip below the deepest soil layer (SS-5, generalized
+    # v5.4 F2c). A base point below the lowest layer bottom passes through
+    # material that does not exist, so the trial surface is geometrically
+    # inadmissible — a legitimate critical surface at most grazes the base
+    # tangentially (a slice or two at the entry/exit from finite
+    # discretization). TWO independent triggers, both physical:
+    #  (1) an INTERIOR below-base gap bracketed by surviving slices on BOTH
+    #      sides (the original SS-5 hole); and
+    #  (2) a below-base span exceeding a small tangential-sliver tolerance
+    #      (NEW). Trigger (1) alone missed a surface that plunges below the base
+    #      right after entry and re-emerges only near the exit: the surviving
+    #      fragment is one-sided (all below-base x fall OUTSIDE
+    #      [slices[0], slices[-1]]), so no bracketing pair exists, yet the tiny
+    #      exit-side fragment yields a spurious low FOS that wins searches
+    #      (e.g. Slide2 #85 steep clay: a circle dipping ~4 ft below the rigid
+    #      base returned ~0.72 on 12 of 40 slices).
     if below_base_x and slices:
         x_first = slices[0].x_mid
         x_last = slices[-1].x_mid
-        if any(x_first < xb < x_last for xb in below_base_x):
+        interior = any(x_first < xb < x_last for xb in below_base_x)
+        sliver_tol = max(2, round(0.03 * n_slices))
+        if interior or len(below_base_x) > sliver_tol:
             raise ValueError(
                 "Slip surface passes below the bottom of the deepest soil "
-                f"layer between x={x_first:.2f} and x={x_last:.2f}. "
+                f"layer over {len(below_base_x)} of {n_slices} slices "
+                f"(max {sliver_tol} tangential slivers allowed). "
                 "Use a shallower trial surface or extend the soil layers."
             )
 

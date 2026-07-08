@@ -178,3 +178,46 @@ def test_circular_surfaces_unaffected():
     assert fos < _FOS_MAX
     assert fos == pytest.approx(bishop_fos(build_slices(geom, slip, 60), slip),
                                 rel=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# SS-5 generalized (v5.4 F2c): below-the-rigid-base one-sided-plunge rejection.
+# A circle that drops below the deepest soil layer right after entry and
+# re-emerges only near the exit leaves a ONE-SIDED surviving fragment; the old
+# interior-only SS-5 check missed it, so a spurious low FOS could win a search
+# (Slide2 #85 steep clay: ~0.72 on 12 of 40 slices, ~4 ft below the rigid base).
+# ---------------------------------------------------------------------------
+
+def _thin_base_geom():
+    """Steep saturated-clay slope on a rigid base at el 10 (Slide2 #85 family)."""
+    return SlopeGeometry(
+        surface_points=[(15.0, 10.0), (25.0, 30.0), (57.0, 30.0)],
+        soil_layers=[SlopeSoilLayer(name="clay", top_elevation=30.0,
+            bottom_elevation=10.0, gamma=15.4, phi=0.0, c_prime=16.8, cu=16.8,
+            analysis_mode="undrained")])
+
+
+def test_below_base_one_sided_plunge_rejected():
+    """A circle dipping well below the deepest layer over most of its span
+    (one-sided fragment) is rejected: build_slices raises and _compute_fos
+    returns _FOS_MAX, so a search cannot pick its spurious low FOS."""
+    geom = _thin_base_geom()
+    slip = CircularSlipSurface(xc=29.3, yc=33.0, radius=26.9)   # bottom el ~6.1
+    with pytest.raises(ValueError, match="below the bottom of the deepest"):
+        build_slices(geom, slip, 40)
+    assert _compute_fos(geom, slip, "bishop", 40) == _FOS_MAX
+
+
+def test_search_returns_base_admissible_critical_surface():
+    """With the guard, the circular-search critical surface is physically
+    ADMISSIBLE -- its lowest arc point (yc - R) sits at/above the deepest layer
+    bottom (the rigid base el 10), instead of a below-base degenerate fragment.
+    A real FOS is returned (not _FOS_MAX)."""
+    from slope_stability.analysis import search_critical_surface
+    res = search_critical_surface(_thin_base_geom(), method="bishop",
+                                  surface_type="circular", nx=20, ny=20,
+                                  n_slices=40)
+    c = res.critical
+    assert 0.0 < c.FOS < _FOS_MAX
+    # lowest arc point at/above the deepest layer bottom (el 10)
+    assert c.yc - c.radius >= 10.0 - 0.25

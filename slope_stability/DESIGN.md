@@ -99,6 +99,34 @@ search_critical_surface(geom, surface_type="noncircular",
 - **FOS convergence guard**: in `_compute_fos` (search.py), FOS < 0.05 is treated
   as non-convergence and returns FOS_MAX (999). Prevents negative/absurd FOS from
   polluting search results.
+- **Below-the-base rejection, generalized (SS-5, v5.4 F2c)**: a trial slip
+  surface whose base drops below the bottom of the DEEPEST soil layer passes
+  through material that does not exist, so it is geometrically inadmissible.
+  `build_slices` skips such below-base slices and, after the loop, REJECTS the
+  surface (raises `ValueError`, which `_compute_fos` maps to `_FOS_MAX` so a
+  search discards it) when EITHER (1) a below-base gap is bracketed by surviving
+  slices on both sides (the original interior-hole check), OR (2) the below-base
+  span exceeds a small tangential-sliver tolerance `max(2, round(0.03·n_slices))`
+  (NEW). Trigger (2) closes a hole in trigger (1): a circle that plunges below a
+  shallow rigid base right after entry and re-emerges only near the exit leaves a
+  ONE-SIDED surviving fragment (all below-base x fall OUTSIDE
+  `[slices[0], slices[-1]]`, so no bracketing pair exists), and the tiny
+  exit-side fragment returned a spurious low FOS that won searches (Slide2 #85
+  steep clay on a rigid base at el 10: a circle dipping ~4 ft below the base
+  scored ~0.72 on 12 of 40 slices). **Why this cannot exclude a legitimate
+  critical surface:** the true critical surface lies entirely within the soil; it
+  can at most graze the deepest layer bottom TANGENTIALLY, which from finite
+  slicing touches at most a slice or two at the tangent point — well inside the
+  sliver tolerance. Any surface with more below-base slices genuinely leaves the
+  soil and is impossible, independent of the strength parameters, so the rule is
+  default-ON. Proven no-shift: the full `slope_stability/` (432) and
+  `validation_examples/` (179) suites pass byte-identically with the guard (no
+  pinned FOS moved — the guard only ever rejects surfaces that previously
+  produced a spurious value). See `tests/test_search_robustness.py`. (The
+  separate c'=0 shallow-toe-circle artifact — a circular search over-estimating
+  the critical for a c'=0 slope whose true minimum is the planar infinite slope —
+  is a judgement-based heuristic left for a future opt-in, NOT part of this
+  default-on rule.)
 - **Noncircular degenerate-surface guard (SS-6, v5.3 B2)**: the random / weak-layer
   polyline generators can emit jagged zig-zag surfaces on which the rigorous GLE
   either fails to converge (the legacy Spencer fallback then returns a spurious
