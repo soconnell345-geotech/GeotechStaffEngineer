@@ -49,10 +49,25 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
-## v5.4 status (branch `v5.4`, BUILT + gated 2026-07-07, NOT merged/released)
+## v5.4.0 status (RELEASED 2026-07-08 to PyPI; owner OK'd pre-live-eval)
 
-All six owner directives are DONE on branch `v5.4` (pushed to origin; final gate
-**8279 passed / 48 skipped**; release awaits the owner's 5.3 Funhouse feedback):
+Merged to master and released; release gate **8436 passed / 48 skipped**.
+On top of the six owner directives (below), 5.4.0 carries the FULL E1–E11 QC
+backlog (rapid-drawdown search + validated #98, stage-3 'gle' option — default
+STAYS 'fellenius' per owner, pore-pressure TIN grids, exit-side/truncation
+tension cracks — V-026 <0.1%, composite pile EI — V-017 PASS, pile passive
+convention, SRM mesh-refinement study, multi-surcharge zones, perf cleanups,
+eval suite 71→**100** keyed questions, cross-module did-you-mean redirects,
+fem2d `analyze_footing_capacity` — Prandtl −0.4%, ufc_expansive figures
+complete in geotech-references ≥1.3.1) and F1/F2/F5/F8 (correlated `linear_su`
++ `ru`/`gamma_sat` probabilistic variables — Duncan Pf anchor, V-042/043/044,
+search-admissibility guard — zero-shift proven, local-FOS heatmap + gallery
+Exhibit 13, reviewer family: seismic/foundations/earth-retention/slope-fem).
+DEFERRED to next train: correlated c'-φ' scalar-pair + Slide2 #33/#34, F3
+Bray-Travasarou, F4 CoE/Lowe-Karafiath, F6 anisotropic su, F7 slope
+calc-package. Owner-gated: live 100-Q eval run.
+
+All six owner directives DONE (2026-07-07):
 **D1** 132-pp PDF user manual (`docs/GeotechStaffEngineer_User_Manual_v5.3.pdf`,
 regenerable builder, catalog auto-generated from METHOD_INFO); **D2** Databricks
 no-restart flow (`funhouse_agent/runtime_check.py` hot-reloads a stale
