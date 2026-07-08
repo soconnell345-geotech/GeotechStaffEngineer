@@ -181,6 +181,49 @@ def _run_analyze_slope_srm(params: dict) -> dict:
     return out
 
 
+def _run_analyze_local_fos(params: dict) -> dict:
+    from fem2d import analyze_slope_srm
+    _valid = ("surface_points", "soil_layers", "nx", "ny", "srf_tol",
+              "n_load_steps", "t", "gamma_w", "max_iter", "tol",
+              "element_type", "srm_field", "blowup_factor", "srf_range",
+              "n_gp", "depth", "x_extend", "gwt", "layer_polylines",
+              "local_fos_cap")
+    reject_unknown_params(params, _valid, method="fem2d_local_fos")
+    require_params(params, ["surface_points", "soil_layers"],
+                   method="fem2d_local_fos", valid=_valid)
+    _require_layer_elevations(params["soil_layers"], method="fem2d_local_fos")
+    element_type = params.get("element_type", "t6")
+    _require_choice(element_type, ("t6", "cst"),
+                    name="element_type", method="fem2d_local_fos")
+    kwargs = dict(
+        surface_points=[tuple(pt) for pt in params["surface_points"]],
+        soil_layers=params["soil_layers"],
+        nx=params.get("nx", 30), ny=params.get("ny", 15),
+        srf_tol=params.get("srf_tol", 0.02),
+        n_load_steps=params.get("n_load_steps", 2),
+        element_type=element_type,
+        srm_field=params.get("srm_field", "c_phi"),
+        blowup_factor=params.get("blowup_factor", 15.0),
+        srf_range=tuple(params.get("srf_range", (0.5, 3.0))),
+        compute_local_fos=True,
+        local_fos_cap=params.get("local_fos_cap", 10.0),
+    )
+    if "depth" in params:
+        kwargs["depth"] = params["depth"]
+    if "x_extend" in params:
+        kwargs["x_extend"] = params["x_extend"]
+    if "gwt" in params:
+        kwargs["gwt"] = _normalize_gwt(params["gwt"])
+    if "layer_polylines" in params:
+        kwargs["layer_polylines"] = params["layer_polylines"]
+    result = analyze_slope_srm(**kwargs)
+    out = result.local_fos.to_dict()
+    out["FOS"] = result.FOS
+    out["fos_basis"] = getattr(result, "fos_basis", None)
+    out["converged"] = result.converged
+    return clean_result(out)
+
+
 def _run_analyze_excavation(params: dict) -> dict:
     from fem2d import analyze_excavation
     _valid = ("width", "depth", "wall_depth", "soil_layers", "wall_EI",
@@ -357,6 +400,7 @@ METHOD_REGISTRY = {
     "fem2d_foundation": _run_analyze_foundation,
     "fem2d_footing_capacity": _run_analyze_footing_capacity,
     "fem2d_slope_srm": _run_analyze_slope_srm,
+    "fem2d_local_fos": _run_analyze_local_fos,
     "fem2d_excavation": _run_analyze_excavation,
     "fem2d_seepage": _run_analyze_seepage,
     "fem2d_consolidation": _run_analyze_consolidation,
@@ -455,6 +499,30 @@ METHOD_INFO = {
             "srf_curve": "SRF vs dimensionless displacement E*dmax/(gamma*H^2) for converged trials (plotting / failure-onset review).",
             "max_displacement_m": "Maximum displacement at the last stable SRF.",
             "converged": "Whether SRM bracketing succeeded.",
+        },
+    },
+    "fem2d_local_fos": {
+        "category": "FEM 2D",
+        "brief": "Local (pointwise) factor-of-safety map for a slope: runs the SRM then evaluates local_FOS = Mohr-Coulomb available shear / mobilized shear at each element using the ORIGINAL strengths. At the critical SRF the minimum local FOS ~ the global SRM FOS and the low-FOS band is the failure mass. Returns summary stats (the full field is for plotting).",
+        "parameters": {
+            "surface_points": {"type": "array", "required": True, "description": "Ground surface as [[x,z],...] array."},
+            "soil_layers": {"type": "array", "required": True, "description": "Array of dicts with 'name','bottom_elevation','E','nu','c','phi','psi','gamma' (same as fem2d_slope_srm)."},
+            "depth": {"type": "float", "required": False, "description": "Depth below lowest surface (m). Default 2*H."},
+            "nx": {"type": "int", "required": False, "default": 30, "description": "Mesh divisions in x."},
+            "ny": {"type": "int", "required": False, "default": 15, "description": "Mesh divisions in y."},
+            "x_extend": {"type": "float", "required": False, "description": "Horizontal margin (m). Pass 0 when the profile already has margins."},
+            "srf_tol": {"type": "float", "required": False, "default": 0.02, "description": "SRF bisection tolerance."},
+            "element_type": {"type": "str", "required": False, "default": "t6", "allowed_values": ["t6", "cst"], "description": "Soil element. t6 recommended (cst locks)."},
+            "srm_field": {"type": "str", "required": False, "default": "c_phi", "allowed_values": ["c_phi", "c", "phi"], "description": "Strengths reduced by the SRF."},
+            "local_fos_cap": {"type": "float", "required": False, "default": 10.0, "description": "Upper cap on local FOS where the mobilized shear is ~0 (deep isotropic stress)."},
+        },
+        "returns": {
+            "min_local_fos": "Minimum local factor of safety (~ the global FOS at the critical SRF).",
+            "min_location_xy": "[x, y] of the minimum-FOS point (on the slip surface, typically the toe).",
+            "global_fos": "The global SRM factor of safety.",
+            "frac_below_1": "Fraction of elements with local FOS < 1 (inadmissible).",
+            "frac_below_1_5": "Fraction with local FOS < 1.5 (extent of the near-critical mobilized mass).",
+            "FOS": "Global SRM FOS (alias of global_fos).",
         },
     },
     "fem2d_excavation": {

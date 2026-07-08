@@ -208,6 +208,42 @@ low-c'/low-φ faces (ACADS 1a: stall point drifts down with refinement) is a
 failure-detection mesh consistency") — the GL99 and cross-check meshes/strengths
 above do not stall, so they are unaffected.
 
+## 8. Local factor-of-safety field (mobilized-strength map) — F5
+
+`local_fos_field(result, c, phi)` (`fem2d/local_fos.py`, exported; also attached
+as `result.local_fos` when `analyze_slope_srm(..., compute_local_fos=True)`)
+maps the stress field to a pointwise factor of safety against Mohr-Coulomb shear:
+`local_FOS = tau_available / tau_mobilized`, with `tau_mobilized` the Mohr-circle
+radius and `tau_available = c' cos phi' - p sin phi'` (p tension-positive). It is
+the reciprocal of PLAXIS's relative shear stress. Plotting hook:
+`fem2d.plotting.plot_local_fos`; adapter: `fem2d_local_fos`.
+
+**Consistency check** (Griffiths & Lane Ex 1, T6 32x12, evaluated with the
+ORIGINAL strengths on the critical-SRF stress field):
+
+| Case | c', phi' | global SRM FOS | min local FOS | min / global | frac < 1 |
+|---|---|---|---|---|---|
+| critical | 10 kPa, 20 deg | 1.344 | 1.303 | **0.97** | 0% |
+| stable   | 25 kPa, 25 deg | 2.156 | 1.994 | **0.93** | 0% |
+
+The minimum local FOS tracks the global SRM factor of safety (within ~3–7%) and
+no element is inadmissible (`local_FOS >= 1` everywhere) — the slope is evaluated
+at its last STABLE SRF. The low-FOS band is the mobilized failure mass: at the
+critical SRF the whole potential sliding mass is near `c'/SRF` mobilization
+(here `frac < 1.5` ≈ 83% of the section), reddest along the slip zone and
+minimum on it, while the low-confinement surface wedge and the deep foundation
+sit higher (green). It envelops the Bishop LE critical circle (gallery Exhibit
+13), and its minimum is the local analogue of the global FOS — the same
+quantity the sharp displacement/plastic-point localization shows geometrically.
+
+Honest notes: (a) the min/global ratio is **exactly 1 for phi'=0** but a few
+percent below 1 for phi'>0, because the SRM reduces `tan phi'` (not phi'), so the
+un-reduced-to-reduced strength ratio along the band is slightly under the SRF.
+(b) For this D=1 mesh the global minimum lands on a highly-stressed element at
+the base/toe — a genuine stress concentration at the fixed-boundary corner. It is
+**reported, not smoothed away**; the near-zero-shear deep interior is capped
+(`cap`, default 10) rather than blown up.
+
 ## 6. Performance
 
 Wall-clock on the dev machine, single process, including mesh build and

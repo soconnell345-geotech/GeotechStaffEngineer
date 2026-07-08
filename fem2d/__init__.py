@@ -78,6 +78,7 @@ from fem2d.assembly import (
 from fem2d.solver import solve_elastic, solve_nonlinear
 from fem2d.srm import strength_reduction
 from fem2d.mesh_study import srm_mesh_refinement_study, MeshRefinementResult
+from fem2d.local_fos import local_fos_field, LocalFOSField
 from fem2d.porewater import (
     compute_pore_pressures, element_pore_pressures,
     effective_stress_correction, pore_pressure_force,
@@ -124,6 +125,7 @@ __all__ = [
     # SRM
     'strength_reduction',
     'srm_mesh_refinement_study', 'MeshRefinementResult',
+    'local_fos_field', 'LocalFOSField',
     # Pore water pressures
     'compute_pore_pressures', 'element_pore_pressures',
     'effective_stress_correction', 'pore_pressure_force',

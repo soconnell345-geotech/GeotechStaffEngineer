@@ -265,7 +265,8 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
                       layer_polylines=None,
                       element_type='t6', srm_field='c_phi',
                       blowup_factor=15.0, srf_range=(0.5, 3.0),
-                      n_gp=None, nr_method='elastic', nr_fallback=False):
+                      n_gp=None, nr_method='elastic', nr_fallback=False,
+                      compute_local_fos=False, local_fos_cap=10.0):
     """Slope stability FOS via Strength Reduction Method.
 
     Parameters
@@ -374,6 +375,16 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
     result.srf_curve = srm_result.get('srf_curve')
     result.fos_basis = srm_result.get('fos_basis')
     result.plastic_points = srm_result.get('plastic_gp')
+    if compute_local_fos:
+        # Local FOS at the critical-SRF stress field, evaluated with the
+        # ORIGINAL (un-reduced) strengths: the low-FOS band traces the slip
+        # surface and its minimum ~ the global SRM FOS (see fem2d/local_fos.py).
+        from fem2d.local_fos import local_fos_field
+        c_arr = np.array([mp.get('c', 0.0) for mp in material_props], dtype=float)
+        phi_arr = np.array([mp.get('phi', 0.0) for mp in material_props],
+                           dtype=float)
+        result.local_fos = local_fos_field(result, c_arr, phi_arr,
+                                            cap=local_fos_cap)
     return result
 
 

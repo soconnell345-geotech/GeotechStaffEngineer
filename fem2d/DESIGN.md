@@ -313,6 +313,7 @@ fem2d/
   analysis.py          # High-level API: gravity, foundation, footing capacity,
                        #   slope SRM, excavation, seepage, consolidation, staged
   mesh_study.py        # SRM mesh-refinement (mesh-consistency) study
+  local_fos.py         # pointwise local factor-of-safety (mobilized-strength) map
   results.py           # FEMResult, BeamForceResult, SeepageResult,
                        #   ConsolidationResult, PhaseResult,
                        #   StagedConstructionResult with summary()/to_dict()

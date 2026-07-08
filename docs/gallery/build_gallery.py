@@ -1353,6 +1353,98 @@ def ex_pdf_import() -> Exhibit:
 
 
 # ===========================================================================
+# EXHIBIT 13 — fem2d local factor-of-safety heatmap (mobilized-strength map)
+# ===========================================================================
+@exhibit(13)
+def ex_local_fos() -> Exhibit:
+    import numpy as np
+    from fem2d.analysis import analyze_slope_srm
+    from fem2d.plotting import plot_local_fos
+    from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
+    from slope_stability.analysis import search_critical_surface
+
+    # Same slope as Exhibit 6 (B6 cross-check): 2:1, H = 10 m, c' = 10 kPa,
+    # phi' = 15 deg, 5 m foundation.
+    surface = [(0, 0), (10, 0), (30, 10), (50, 10)]
+    layer = {'name': 'clay', 'bottom_elevation': -10, 'E': 30000, 'nu': 0.3,
+             'c': 10.0, 'phi': 15.0, 'psi': 0, 'gamma': 18.0}
+    geom = SlopeGeometry(
+        surface_points=surface,
+        soil_layers=[SlopeSoilLayer(name='clay', top_elevation=10,
+                                    bottom_elevation=-20, gamma=18.0,
+                                    phi=15.0, c_prime=10.0)])
+    bishop = search_critical_surface(geom, method='bishop', nx=15, ny=15).critical
+
+    # SRM with the local-FOS field attached (the slow step, ~1 min).
+    srm = analyze_slope_srm(
+        surface_points=surface, soil_layers=[layer], depth=5.0,
+        nx=40, ny=20, srf_tol=0.02, x_extend=0.0, element_type='t6',
+        compute_local_fos=True)
+    lf = srm.local_fos
+
+    fig = plot_local_fos(
+        srm, title="Local factor of safety at the reduced strength, "
+                   "with the Bishop critical circle")
+    ax = fig.axes[0]
+    th = np.linspace(0, 2 * np.pi, 400)
+    cx = bishop.xc + bishop.radius * np.cos(th)
+    cy = bishop.yc + bishop.radius * np.sin(th)
+    m = (cy >= -5.2) & (cy <= 10.3) & (cx >= -1) & (cx <= 51)
+    ax.plot(cx[m], cy[m], color="#111", lw=2.2, ls="--", label="Bishop LE circle")
+    pp = getattr(srm, 'plastic_points', None)
+    if pp and pp.get('points'):
+        pts = np.asarray(pp['points'], dtype=float)
+        ax.plot(pts[:, 0], pts[:, 1], 's', color='#111111', markersize=1.2,
+                alpha=0.35, linestyle='none', label='plastic points')
+    ax.legend(loc="upper left", fontsize=8)
+    png = save(fig, "ex13_local_fos.png")
+
+    ex = Exhibit(
+        num=13, module="fem2d (local factor of safety)",
+        title="Local factor of safety — where in the slope the strength is used up",
+        anchor="fem2d/VALIDATION.md sec 8 — min local FOS ~ global SRM FOS; "
+               "B6 cross-check vs Bishop LE",
+        figures=[
+            Figure(png, "A pointwise factor of safety over the whole section: "
+                        "red is where the soil is closest to its Mohr-Coulomb "
+                        "shear strength, green is where it has margin to spare. "
+                        "The red mobilized mass envelops the dashed Bishop "
+                        "critical circle and the plastic points."),
+        ],
+        numbers={
+            "Global SRM FOS": f"{srm.FOS:.3f}",
+            "Minimum local FOS": f"{lf.min_fos:.3f} at "
+                                 f"({lf.min_location[0]:.1f}, "
+                                 f"{lf.min_location[1]:.1f}) m",
+            "min local / global FOS": f"{lf.min_fos / srm.FOS:.2f}",
+            "Near-critical mass (local FOS < 1.5)": f"{lf.frac_below_1_5:.0%} "
+                                                    f"of the section",
+            "Inadmissible points (local FOS < 1)": f"{lf.frac_below_1:.0%}",
+            "Bishop LE (same slope)": f"{bishop.FOS:.3f}",
+        },
+        what=(
+            "The strength-reduction factor of safety is one number for the whole "
+            "slope; this map opens that number up and shows where the strength is "
+            "actually being spent. At every point it takes the finite-element "
+            "stress state at the reduced strength, builds the Mohr circle, and "
+            "compares the shear the soil is carrying to the shear its "
+            "Mohr-Coulomb strength allows — their ratio is the local factor of "
+            "safety, red where it approaches one and green where the soil is "
+            "lightly worked. The red band is the mobilized failure mass: it wraps "
+            "around and contains the dashed Bishop critical circle and the mesh's "
+            "own plastic points, so three different lenses agree on where the "
+            "slope fails. The lowest local value sits on the slip zone and is "
+            "essentially the global factor of safety itself (within a few "
+            "percent), which is the consistency check — the pointwise picture and the "
+            "single global number are the same physics. The low-confinement wedge "
+            "along the face and the deep foundation keep their margin (green); the "
+            "few genuinely singular points are highly stressed model-boundary and "
+            "mesh corners, which are reported rather than smoothed away."),
+    )
+    return ex
+
+
+# ===========================================================================
 # HTML assembly
 # ===========================================================================
 _CSS = r"""

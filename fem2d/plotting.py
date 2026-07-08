@@ -461,6 +461,97 @@ def plot_failure_mechanism(result, show_plastic_points=True,
 
 
 # ---------------------------------------------------------------------------
+# 6b. Local factor-of-safety heatmap
+# ---------------------------------------------------------------------------
+
+def plot_local_fos(field_or_result, c=None, phi=None, *, cap=None,
+                   vmax=None, n_levels=14,
+                   title='Local Factor of Safety (mobilized strength)',
+                   figsize=(10, 6.5)):
+    """Filled contour of the pointwise local FOS over the mesh.
+
+    Same look as ``plot_contour`` — low FOS is red (critical), high is green
+    (safe), on the RdYlGn scale, clipped for display at ``vmax``.
+
+    Parameters
+    ----------
+    field_or_result : LocalFOSField or FEMResult
+        Either a precomputed ``LocalFOSField`` (from ``local_fos_field`` or a
+        result's ``.local_fos``), or a FEMResult plus ``c`` and ``phi`` to
+        compute one on the fly.
+    c, phi : float or array, optional
+        Original c' (kPa) / phi' (deg), required only when passing a raw result.
+    cap : float, optional
+        Local-FOS cap when computing from a result (default 10).
+    vmax : float, optional
+        Upper limit of the color scale (display only). Default: 3x the global
+        FOS if known, else ~2x the minimum (keeps the critical band legible).
+    n_levels : int — contour levels.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    from fem2d.local_fos import LocalFOSField, local_fos_field
+    if isinstance(field_or_result, LocalFOSField):
+        lf = field_or_result
+    else:
+        lf = getattr(field_or_result, 'local_fos', None)
+        if lf is None:
+            if c is None or phi is None:
+                raise ValueError(
+                    "Pass a LocalFOSField, a result with .local_fos, or a "
+                    "result together with c and phi.")
+            lf = local_fos_field(field_or_result, c, phi,
+                                 cap=cap if cap is not None else 10.0)
+
+    plt = _get_plt()
+    tri = _triangulation(lf.nodes, lf.elements)
+    vals = np.asarray(lf.nodal_values, dtype=float).copy()
+
+    if vmax is None:
+        # keep the near-critical (mobilized) band legible: scale a little above
+        # the global FOS, or ~2x the minimum, whichever gives useful contrast.
+        if lf.global_fos is not None:
+            vmax = 2.2 * lf.global_fos
+        else:
+            vmax = max(2.0 * lf.min_fos, lf.min_fos + 1.0)
+    vmax = float(min(vmax, lf.cap))
+    vmin = float(max(0.0, min(1.0, lf.min_fos)))
+    vals = np.clip(vals, vmin, vmax)
+
+    levels = np.linspace(vmin, vmax, n_levels + 1)
+    fig, ax = plt.subplots(figsize=figsize)
+    cf = ax.tricontourf(tri, vals, levels=levels, cmap='RdYlGn', extend='both')
+    # highlight the local_FOS = 1 (incipient yield) contour if in range
+    if vmin < 1.0 < vmax:
+        ax.tricontour(tri, vals, levels=[1.0], colors='#111111',
+                      linewidths=1.4, linestyles='--')
+    _draw_outline(ax, lf.nodes, lf.elements, color='#555555', lw=0.8)
+    ax.plot(lf.min_location[0], lf.min_location[1], marker='v',
+            markersize=9, color='#111111', markerfacecolor='#dc2626',
+            zorder=6, label=f'min local FOS = {lf.min_fos:.2f}')
+
+    cbar = fig.colorbar(cf, ax=ax, shrink=0.85, pad=0.02)
+    cbar.set_label('local FOS = tau_available / tau_mobilized', fontsize=9)
+    cbar.ax.tick_params(labelsize=8)
+
+    txt = (f"min local FOS = {lf.min_fos:.3f}\n"
+           f"median = {lf.median_fos:.2f}")
+    if lf.global_fos is not None:
+        txt += (f"\nglobal SRM FOS = {lf.global_fos:.3f}"
+                f"\nmin/global = {lf.min_fos / lf.global_fos:.2f}")
+    ax.text(0.02, 0.98, txt, transform=ax.transAxes, fontsize=9, va='top',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                      alpha=0.9, edgecolor='#999999'), zorder=10)
+
+    _style_axes(ax, title)
+    ax.legend(loc='lower right', fontsize=8, framealpha=0.9)
+    fig.tight_layout()
+    return fig
+
+
+# ---------------------------------------------------------------------------
 # 7. Seepage
 # ---------------------------------------------------------------------------
 
