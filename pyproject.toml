@@ -32,7 +32,7 @@ classifiers = [
 dependencies = [
     "numpy>=2.0",
     "scipy>=1.13",
-    "geotech-references>=1.3.0",
+    "geotech-references>=1.3.1",
 ]
 
 [project.optional-dependencies]
