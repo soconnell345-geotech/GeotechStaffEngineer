@@ -48,7 +48,7 @@ from calc_package.data_model import (
     TableData,
 )
 from calc_package.renderer import render_html, save_html, figure_to_base64
-from calc_package.latex_renderer import render_latex, save_latex, save_pdf
+from calc_package.latex_renderer import render_latex, save_latex, save_pdf, render_pdf
 from calc_package.equation_converter import unicode_to_latex, escape_latex
 
 

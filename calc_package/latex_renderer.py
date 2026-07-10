@@ -20,10 +20,10 @@ from calc_package.data_model import (
     CalcPackageData, CalcSection, CalcStep, InputItem,
     CheckItem, FigureData, TableData,
 )
-from calc_package.renderer import _preprocess_sections, _item_type
+from calc_package.renderer import _preprocess_sections, _item_type, render_html
 from calc_package.equation_converter import unicode_to_latex, escape_latex
 from calc_package.latex_template import LATEX_TEMPLATE
-from calc_package.latex_compiler import compile_pdf
+from calc_package.latex_compiler import compile_pdf, find_latex_compiler
 
 
 # ── Jinja2 environment with LaTeX-safe delimiters ─────────────────────
@@ -236,36 +236,16 @@ def save_latex(data: CalcPackageData, filepath: str) -> str:
     return str(path.resolve())
 
 
-def save_pdf(
+def _save_pdf_latex(
     data: CalcPackageData,
     filepath: str,
     keep_tex: bool = False,
     compiler: str = "pdflatex",
 ) -> str:
-    """Render a .tex file, compile to PDF, and clean up.
+    """Render a .tex file, compile to PDF via pdflatex, and clean up.
 
-    Parameters
-    ----------
-    data : CalcPackageData
-        Complete calculation package data.
-    filepath : str
-        Output PDF file path.
-    keep_tex : bool
-        If True, keep the .tex source and figures alongside the PDF.
-    compiler : str
-        LaTeX compiler: ``"pdflatex"`` or ``"xelatex"``.
-
-    Returns
-    -------
-    str
-        Absolute path to the PDF file.
-
-    Raises
-    ------
-    FileNotFoundError
-        If the LaTeX compiler is not installed.
-    RuntimeError
-        If compilation fails.
+    The best-fidelity path (Mathcad-style layout, real math typesetting).
+    Requires a LaTeX distribution on PATH. Returns the absolute PDF path.
     """
     output_path = Path(filepath).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -300,3 +280,141 @@ def save_pdf(
         shutil.rmtree(temp_dir, ignore_errors=True)
 
     return str(output_path)
+
+
+def _save_pdf_story(data: CalcPackageData, filepath: str) -> str:
+    """Pure-Python HTML -> PDF via PyMuPDF's Story engine (no LaTeX needed).
+
+    Renders the SAME self-contained HTML as ``format="html"`` (``render_html``)
+    into a paginated PDF. The Story engine supports a SUBSET of CSS: it lays out
+    text, headings, tables, colours and inline base64 ``<img>`` figures, but
+    ignores advanced CSS (flexbox/grid, positioned layout, some border/spacing
+    rules), so the result is a plainer-looking document than the LaTeX PDF. The
+    CONTENT is complete — only the styling fidelity differs. Returns the absolute
+    PDF path.
+    """
+    try:
+        import fitz  # PyMuPDF, installed via the [pdf] extra
+    except Exception as exc:  # pragma: no cover - environment dependent
+        raise RuntimeError(
+            "PyMuPDF (fitz) is not installed, so the pure-Python PDF fallback "
+            "is unavailable. Install the [pdf] extra: "
+            "pip install 'geotech-staff-engineer[pdf]'."
+        ) from exc
+
+    html = render_html(data)
+    output_path = Path(filepath).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    story = fitz.Story(html=html)
+    writer = fitz.DocumentWriter(str(output_path))
+    mediabox = fitz.paper_rect("letter")
+    where = mediabox + (54, 54, -54, -54)      # ~0.75 in margins
+    more = 1
+    while more:
+        device = writer.begin_page(mediabox)
+        more, _filled = story.place(where)
+        story.draw(device)
+        writer.end_page()
+    writer.close()
+    return str(output_path)
+
+
+def render_pdf(
+    data: CalcPackageData,
+    filepath: str,
+    keep_tex: bool = False,
+    compiler: str = "pdflatex",
+    *,
+    renderer: str = "auto",
+) -> dict:
+    """Render a calc package to PDF via a fallback chain; return a report dict.
+
+    Chain (``renderer="auto"``, the default): **pdflatex** if it is on PATH
+    (best fidelity, output byte-identical to the historical path) -> **PyMuPDF
+    Story** pure-Python HTML->PDF (no LaTeX; simpler layout, CSS subset) -> a
+    clear error with print-to-PDF advice if neither works. Force a single leg
+    with ``renderer="pdflatex"`` (raises if unavailable) or
+    ``renderer="pymupdf_story"``.
+
+    Returns
+    -------
+    dict
+        ``{"path": str, "renderer": "pdflatex"|"pymupdf_story", "warnings": [str]}``.
+
+    Raises
+    ------
+    FileNotFoundError
+        With ``renderer="pdflatex"`` when the compiler is not installed.
+    RuntimeError
+        When neither renderer can produce a PDF.
+    """
+    if renderer not in ("auto", "pdflatex", "pymupdf_story"):
+        raise ValueError(
+            "renderer must be 'auto', 'pdflatex', or 'pymupdf_story'")
+    warnings: list = []
+    have_latex = shutil.which(compiler) is not None
+
+    if renderer == "pdflatex" and not have_latex:
+        find_latex_compiler(compiler)          # raises the informative error
+
+    if renderer == "pdflatex" or (renderer == "auto" and have_latex):
+        path = _save_pdf_latex(data, filepath, keep_tex=keep_tex,
+                               compiler=compiler)
+        return {"path": path, "renderer": "pdflatex", "warnings": warnings}
+
+    # Pure-Python fallback.
+    if renderer == "auto":
+        warnings.append(
+            f"'{compiler}' not found on PATH; produced the PDF with the PyMuPDF "
+            "Story HTML engine (simpler layout, CSS subset). Install a LaTeX "
+            "distribution (MiKTeX / TeX Live) for the full-fidelity PDF.")
+    try:
+        path = _save_pdf_story(data, filepath)
+    except Exception as exc:
+        raise RuntimeError(
+            "Could not produce a PDF: pdflatex is not installed and the "
+            f"PyMuPDF Story fallback failed ({type(exc).__name__}: {exc}). "
+            "Generate HTML output (format='html') and use your browser's "
+            "Print -> Save as PDF, or install a LaTeX distribution "
+            "(MiKTeX / TeX Live)."
+        ) from exc
+    return {"path": path, "renderer": "pymupdf_story", "warnings": warnings}
+
+
+def save_pdf(
+    data: CalcPackageData,
+    filepath: str,
+    keep_tex: bool = False,
+    compiler: str = "pdflatex",
+    *,
+    renderer: str = "auto",
+) -> str:
+    """Render a calc package to PDF and return the absolute file path.
+
+    Uses the :func:`render_pdf` fallback chain (pdflatex -> PyMuPDF Story ->
+    clear error). Default-preserving: when ``pdflatex`` is on PATH the output is
+    byte-for-byte the historical LaTeX PDF. Call :func:`render_pdf` instead if
+    you need to know which renderer was used.
+
+    Parameters
+    ----------
+    data : CalcPackageData
+        Complete calculation package data.
+    filepath : str
+        Output PDF file path.
+    keep_tex : bool
+        If True, keep the .tex source and figures alongside the PDF (pdflatex
+        leg only).
+    compiler : str
+        LaTeX compiler: ``"pdflatex"`` or ``"xelatex"``.
+    renderer : str
+        ``"auto"`` (default), ``"pdflatex"``, or ``"pymupdf_story"``.
+
+    Returns
+    -------
+    str
+        Absolute path to the PDF file.
+    """
+    return render_pdf(data, filepath, keep_tex=keep_tex, compiler=compiler,
+                      renderer=renderer)["path"]
