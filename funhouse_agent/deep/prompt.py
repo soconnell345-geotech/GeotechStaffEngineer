@@ -40,7 +40,17 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   `file_exists: true` with a size and `output_path`, the file IS on disk at
   that path. If a save genuinely failed, the tool call itself returns an error
   — report that error; do not silently rebuild or claim success.
-- **Saving outputs on Databricks: avoid `/Workspace` paths.** Plain file
+- **Reading a REAL file the user gives you (PDF report, DXF, image): use the
+  file-reading TOOLS, not the scratch filesystem.** `read_file` failing on a
+  real path does NOT mean the file is unreachable — `analyze_pdf_page`
+  (vision-reads one PDF page), `analyze_image`, the `pdf_import` /
+  `dxf_import` / `drawing_ir` agent methods, and geo_project ingest all open
+  REAL paths directly (`/tmp/...`, `/Volumes/...`; plain path, never a
+  `file:` URI). For a geotech report PDF: `analyze_pdf_page` page-by-page,
+  starting with the table of contents, then the boring logs / lab-summary /
+  recommendations pages. If a real path errors there too, ask the user to
+  copy the file to driver-local `/tmp` or a `/Volumes` path (`/Workspace`
+  reads are unreliable) — do NOT conclude the file cannot be read. Plain file
   writes to `/Workspace/...` are often not durably stored (the workspace
   keeps a literal PLACEHOLDER file; binary files like PDFs come out corrupt).
   Prefer `/tmp/...` or a Unity Catalog `/Volumes/...` path for `output_path`,
