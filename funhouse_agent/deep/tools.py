@@ -528,17 +528,19 @@ def make_vision_tools(
     attachments = attachments if attachments is not None else {}
     save_fn = save_fn or _default_save_fn
     include = include if include is not None else {
-        "read_pdf_text", "analyze_image", "analyze_pdf_page",
+        "list_files", "read_pdf_text", "analyze_image", "analyze_pdf_page",
         "read_reference_figure", "save_file",
     }
     reference_cap = _resolve_reference_cap(max_result_chars,
                                            reference_result_chars)
 
     def _dispatch(tool_name: str, arguments: dict) -> str:
-        # read_reference_figure / read_pdf_text are text-payload reads: the text
-        # IS the answer, so they get the larger reference budget.
+        # read_reference_figure / read_pdf_text are text-payload reads and
+        # list_files can be a long directory dump: the content IS the answer,
+        # so they get the larger reference budget.
         cap = (reference_cap
-               if tool_name in ("read_reference_figure", "read_pdf_text")
+               if tool_name in ("read_reference_figure", "read_pdf_text",
+                                "list_files")
                else max_result_chars)
         return _truncate(
             _dispatch_extended_tool(
@@ -549,6 +551,24 @@ def make_vision_tools(
                 save_fn=save_fn,
             ),
             cap,
+        )
+
+    def list_files(path: str = ".", max_entries: int = 200,
+                   depth: int = 0) -> str:
+        """Browse a REAL directory (read-only) to find the user's files and
+        where to save output. Returns each entry's name, type (dir/file), size,
+        and modified time.
+
+        Use this to DISCOVER the real folder structure before reading a report
+        or choosing a save path — the scratch filesystem's ``ls`` / ``read_file``
+        do NOT see real paths (``/Workspace``, ``/Volumes``, ``/tmp``), this tool
+        does. ``path`` is a real directory; ``max_entries`` caps the count
+        (default 200); ``depth`` descends sub-directories (0 = children only,
+        max 2).
+        """
+        return _dispatch(
+            "list_files",
+            {"path": path, "max_entries": max_entries, "depth": depth},
         )
 
     def read_pdf_text(source: str, pages: str = "") -> str:
@@ -633,6 +653,14 @@ def make_vision_tools(
         )
 
     _builders = {
+        "list_files": (
+            list_files,
+            "Browse a REAL directory (read-only) to find the user's files and "
+            "where to save output. Returns name, type (dir/file), size, and "
+            "modified time per entry. Use it to discover the real folder "
+            "structure (/Workspace, /Volumes, /tmp) before reading or saving; "
+            "the scratch filesystem does not see real paths.",
+        ),
         "read_pdf_text": (
             read_pdf_text,
             "Extract the TEXT LAYER of a PDF (PyMuPDF — cheap, no vision). "

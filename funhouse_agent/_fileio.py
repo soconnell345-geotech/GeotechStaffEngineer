@@ -123,7 +123,99 @@ def workspace_write_hint(path: str) -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# Databricks-aware durable /Workspace writes (optional databricks-sdk)
+# ---------------------------------------------------------------------------
+#
+# Plain file I/O to /Workspace is unreliable (see module docstring). The
+# authenticated Workspace API stores arbitrary file bytes durably. The SDK is
+# an OPTIONAL dependency — it is preinstalled on Databricks runtimes but must
+# never become a hard requirement, so every import and call is guarded and any
+# failure degrades to a plain write + verify + rescue by the caller.
+
+
+def _workspace_upload_bytes(client, path: str, content: bytes) -> None:
+    """Upload raw bytes to a workspace path via the SDK's import/upload API.
+
+    Isolated so the exact SDK surface lives in one place (and is trivial to
+    mock in tests). The SDK's ``workspace.upload`` expects a binary stream, so
+    the bytes are wrapped in ``BytesIO``. ``ImportFormat.AUTO`` imports
+    arbitrary files as-is by extension; it is imported defensively so a missing
+    enum does not block the upload.
+    """
+    import io
+
+    fmt = None
+    try:  # pragma: no cover - trivial import shim, exercised via mocks
+        from databricks.sdk.service.workspace import ImportFormat
+        fmt = ImportFormat.AUTO
+    except Exception:
+        fmt = None
+    kwargs = {"overwrite": True}
+    if fmt is not None:
+        kwargs["format"] = fmt
+    client.workspace.upload(path, io.BytesIO(content), **kwargs)
+
+
+def _workspace_size(client, path: str):
+    """Best-effort byte size of a workspace object; ``None`` if unavailable."""
+    try:
+        status = client.workspace.get_status(path)
+    except Exception:
+        return None
+    return getattr(status, "size", None)
+
+
+def workspace_api_upload(path: str, content) -> dict:
+    """Durably write ``content`` to a ``/Workspace`` path via the Databricks SDK.
+
+    Uses ``WorkspaceClient`` (default in-notebook auth). Returns a result dict
+    and NEVER raises:
+
+    * ``{"ok": True, "size": int, "verified": bool}`` on success — ``verified``
+      is ``True`` when the stored size was read back and matches.
+    * ``{"ok": False, "error": str}`` on any failure, including
+      ``databricks-sdk`` not being importable.
+
+    ``databricks-sdk`` stays an optional dependency: an import failure simply
+    yields ``ok=False`` so the caller falls back to a plain filesystem write.
+    """
+    if isinstance(content, str):
+        content = content.encode("utf-8")
+    try:
+        from databricks.sdk import WorkspaceClient
+    except Exception as e:  # ImportError or a partial/broken install
+        return {"ok": False, "error": f"databricks-sdk not importable: {e}"}
+    try:
+        client = WorkspaceClient()
+    except Exception as e:  # missing/failed auth off-cluster
+        return {"ok": False, "error": f"WorkspaceClient auth failed: {e}"}
+
+    norm = str(path).replace("\\", "/")
+    parent = norm.rsplit("/", 1)[0]
+    if parent and parent not in ("", "/", "/Workspace"):
+        try:
+            client.workspace.mkdirs(parent)
+        except Exception:
+            pass  # upload may still succeed; report the real error below
+
+    try:
+        _workspace_upload_bytes(client, norm, content)
+    except Exception as e:
+        return {"ok": False,
+                "error": f"workspace upload failed: {type(e).__name__}: {e}"}
+
+    size = _workspace_size(client, norm)
+    if size is None:
+        return {"ok": True, "size": len(content), "verified": False}
+    if size < len(content):
+        return {"ok": False,
+                "error": (f"workspace API stored {size} bytes but "
+                          f"{len(content)} were sent")}
+    return {"ok": True, "size": size, "verified": True}
+
+
 __all__ = [
     "is_databricks", "default_output_dir", "written_file_problem",
-    "rescue_write", "workspace_write_hint",
+    "rescue_write", "workspace_write_hint", "workspace_api_upload",
 ]

@@ -23,9 +23,10 @@ GeotechAgent
 │   ├── Text-based ReAct  — <tool_call> XML parsing (ClaudeEngine, PrompterAPI.chat)
 │   └── Native tool calling — OpenAI `tools` parameter (NativeToolEngine)
 ├── 50 adapter modules (36 analysis + 14 reference) bridging flat JSON → module APIs
-├── PDF text extraction (read_pdf_text, PyMuPDF) + vision tools (engine.analyze_image())
+├── Real-FS discovery (list_files) + PDF text extraction (read_pdf_text) + vision tools
 ├── Attachments dict for image/PDF data — accepts an attachment key OR a real path
-└── Extended tool dispatch (4 standard + 5 extended tools)
+├── Verified saves (write-then-read-back + /tmp rescue; Databricks /Workspace API)
+└── Extended tool dispatch (4 standard + 6 extended tools)
 
 Dispatch Chain:
   agent.py → dispatch.py → adapters/<module>.py → analysis modules
@@ -139,8 +140,14 @@ Set `output_format: "html"` to get a renderable Plotly figure.
 ## Extended Tools
 
 Beyond the 4 standard ReAct tools (`call_agent`, `list_methods`,
-`describe_method`, `list_agents`), 5 extended tools:
+`describe_method`, `list_agents`), 6 extended tools:
 
+- `list_files` — read-only listing of a REAL directory (name, type, size,
+  mtime per entry). The DISCOVERY tool: the agent's scratch filesystem
+  (`ls`/`read_file`) cannot see real paths, so `list_files` is how it finds an
+  uploaded report, confirms a path, or picks a save destination. Dirs sorted
+  first; optional bounded recursion (`depth` 0–2); output self-limited to stay
+  valid JSON under the result cap, with a "narrow to a subdirectory" nudge.
 - `read_pdf_text` — PyMuPDF text-layer extraction (no vision engine): read a
   real report's TOC, boring logs, lab summary and recommendations as TEXT.
   Cheap first pass for text-based PDFs. Flags any page with no text layer
@@ -150,18 +157,36 @@ Beyond the 4 standard ReAct tools (`call_agent`, `list_methods`,
 - `analyze_pdf_page` — render one PDF page and analyze it via vision (for
   scanned pages, figures, plotted cross-sections; heavier than `read_pdf_text`)
 - `read_reference_figure` — read a value off a reference chart/figure via vision
-- `save_file` — save content to a file (calc packages, HTML, PDF, plots)
+- `save_file` — save content to a file (calc packages, HTML, PDF, plots),
+  **write-verified** (see below)
 
 `read_pdf_text`, `analyze_image`, and `analyze_pdf_page` each resolve their
 source via `_resolve_attachment_or_path`: attachment-dict key first, then an
 `os.path.isfile` real-path fallback, with an error that lists the available
-keys and notes real paths are accepted. `read_pdf_text` and
-`read_reference_figure` get a larger truncation cap (16k chars) than the
-default 8k so long text extracts and dense figure read-offs survive.
+keys and notes real paths are accepted. `read_pdf_text`, `read_reference_figure`,
+and `list_files` get a larger truncation cap (16k chars) than the default 8k so
+long text extracts, dense figure read-offs, and directory dumps survive.
 
 These are dispatched within the agent's ReAct loop (and via the native
 `tools` schema in `native_tools.py` / the deep `StructuredTool` factories in
 `deep/tools.py`), separate from the standard geotechnical tool dispatch.
+
+### Verified saves (`_fileio.py`)
+
+`save_file` (and `calc_package`) write through helpers in `_fileio.py` that
+**verify what actually landed on disk** — a plain write to Databricks
+`/Workspace` can "succeed" while the workspace stores a literal `PLACEHOLDER`
+(confirmed live 2026-06-12). `written_file_problem` reads the file back and
+compares size + head; on a mismatch, `rescue_write` stages a verified copy to
+the temp dir and the tool returns a structured `error` naming both the failed
+target and the `rescue_path`. The same rescue fires if the writer raises.
+
+For the DEFAULT writer with a `/Workspace` target, `save_file` first attempts a
+durable write through the authenticated Databricks workspace API
+(`workspace_api_upload` → `WorkspaceClient`), falling back to the plain
+verified write when `databricks-sdk` is not importable. The SDK stays an
+OPTIONAL dependency (preinstalled on Databricks runtimes, guarded everywhere); a
+custom `save_fn` is the caller's explicit backend and is never rerouted.
 
 ## Notebook Chat (notebook.py, deep/notebook.py)
 

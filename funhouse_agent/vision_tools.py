@@ -47,6 +47,7 @@ STANDARD_TOOLS = {"call_agent", "list_methods", "describe_method", "list_agents"
 
 # Standard tools + vision + output extensions
 EXTENDED_TOOLS = STANDARD_TOOLS | {
+    "list_files",
     "read_pdf_text",
     "analyze_image",
     "analyze_pdf_page",
@@ -55,7 +56,22 @@ EXTENDED_TOOLS = STANDARD_TOOLS | {
 }
 
 VISION_TOOL_DESCRIPTIONS = """
-### 5. read_pdf_text
+### 5. list_files
+Browse a REAL directory (read-only) so you can find where the user's files are
+and where to save output. Returns each entry's name, type (dir/file), size, and
+modified time. `path` is a real filesystem directory (e.g. `/Workspace/Users/...`,
+`/Volumes/...`, `/tmp`, or `.`); `max_entries` caps the count (default 200);
+optional `depth` (0-2, default 0) lists sub-directories too. Use this to
+DISCOVER the user's folder structure before reading a report or choosing a save
+destination — the agent scratch filesystem (`ls`/`read_file`) does NOT see real
+paths, this tool does.
+```
+<tool_call>
+{"tool_name": "list_files", "path": "/Workspace/Users/me/geotech_project"}
+</tool_call>
+```
+
+### 6. read_pdf_text
 Extract the TEXT LAYER of a PDF (PyMuPDF — cheap, no vision). **This is the
 first-choice reader for a text-based report** (boring logs, lab summaries,
 recommendations, specs): read the text directly instead of vision-reading every
@@ -70,7 +86,7 @@ use `analyze_pdf_page` on those.
 </tool_call>
 ```
 
-### 6. analyze_image
+### 7. analyze_image
 Analyze an attached image using vision. Returns text description/analysis.
 `attachment_key` is an attachment key OR a real filesystem path.
 ```
@@ -79,7 +95,7 @@ Analyze an attached image using vision. Returns text description/analysis.
 </tool_call>
 ```
 
-### 7. analyze_pdf_page
+### 8. analyze_pdf_page
 Render ONE PDF page and analyze it using vision — for a SCANNED page, a figure,
 a boring-log sheet, or a plotted cross-section. For a text-layer report prefer
 `read_pdf_text` (cheaper). `attachment_key` is an attachment key OR a real path.
@@ -89,7 +105,7 @@ a boring-log sheet, or a plotted cross-section. For a text-layer report prefer
 </tool_call>
 ```
 
-### 8. read_reference_figure
+### 9. read_reference_figure
 Render a digitized reference figure (e.g. a DM7 design chart) and read a value
 off it with vision. **Use this whenever a numeric value must come from a chart —
 do not read values off a chart from the caption or from memory.** Find the figure
@@ -103,8 +119,11 @@ where one exists.
 </tool_call>
 ```
 
-### 9. save_file
-Save raw text or data to a file. Returns the saved file path.
+### 10. save_file
+Save raw text or data to a file. Returns the saved file path. The write is
+VERIFIED on the real filesystem; report the `saved` path the tool returns (or
+its `rescue_path` if the target could not store the file). A `/Workspace` save
+on Databricks goes through the authenticated workspace API when available.
 For formatted calculation documents, use the `calc_package` module instead.
 ```
 <tool_call>
@@ -167,7 +186,9 @@ def dispatch_extended_tool(
     str
         JSON string result.
     """
-    if tool_name == "read_pdf_text":
+    if tool_name == "list_files":
+        return _dispatch_list_files(arguments)
+    elif tool_name == "read_pdf_text":
         return _dispatch_read_pdf_text(arguments, attachments)
     elif tool_name == "analyze_image":
         return _dispatch_analyze_image(arguments, engine, attachments)
@@ -214,6 +235,166 @@ def _resolve_attachment_or_path(key, attachments):
         f"also accepted (driver-local /tmp/... or a /Volumes/... path; "
         f"/Workspace reads are unreliable on Databricks)."
     )
+
+
+# ---------------------------------------------------------------------------
+# list_files — read-only REAL-directory listing (discovery, no engine needed)
+# ---------------------------------------------------------------------------
+
+#: Default cap on the number of entries returned.
+_LIST_FILES_DEFAULT_MAX = 200
+#: Absolute ceiling on entries, even for a recursive listing with a big cap.
+_LIST_FILES_HARD_CAP = 1000
+#: Character budget for the serialized entries, kept below the reference result
+#: cap (16000) so the JSON result is never string-truncated into invalid JSON.
+_LIST_FILES_CHAR_BUDGET = 14000
+#: Deepest recursion allowed (0 = immediate children only).
+_LIST_FILES_MAX_DEPTH = 2
+
+
+def _fmt_mtime(ts):
+    """Format a POSIX mtime as 'YYYY-MM-DD HH:MM' (or None if out of range)."""
+    import datetime
+    try:
+        return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _list_entry_for(dir_entry, name):
+    """Build a listing record for an ``os.DirEntry`` (dir/file, size, mtime)."""
+    try:
+        is_dir = dir_entry.is_dir(follow_symlinks=False)
+    except OSError:
+        is_dir = False
+    try:
+        st = dir_entry.stat(follow_symlinks=False)
+    except OSError as e:
+        return {"name": name, "type": "dir" if is_dir else "file",
+                "error": f"stat failed: {e}"}
+    return {
+        "name": name,
+        "type": "dir" if is_dir else "file",
+        "size_bytes": None if is_dir else st.st_size,
+        "modified": _fmt_mtime(st.st_mtime),
+    }
+
+
+def _collect_entries(root, depth, max_entries, char_budget):
+    """Collect listing records under ``root`` (BFS, dirs-first within each dir).
+
+    Descends up to ``depth`` levels (0 = immediate children only). Stops at
+    ``max_entries`` OR when the serialized size would exceed ``char_budget``,
+    returning ``(entries, truncated)``.
+    """
+    entries = []
+    used = 0
+    truncated = False
+    queue = [(root, "", 0)]
+    while queue and not truncated:
+        current, rel, lvl = queue.pop(0)
+        try:
+            with os.scandir(current) as it:
+                children = sorted(
+                    it,
+                    key=lambda e: (not _safe_is_dir(e), e.name.lower()),
+                )
+        except OSError as e:
+            entries.append({"name": (rel + "/") if rel else ".",
+                            "type": "dir", "error": f"unreadable: {e}"})
+            continue
+        for child in children:
+            if len(entries) >= max_entries:
+                truncated = True
+                break
+            name = (rel + "/" + child.name) if rel else child.name
+            entry = _list_entry_for(child, name)
+            entry_len = len(json.dumps(entry, default=str)) + 2
+            if entries and used + entry_len > char_budget:
+                truncated = True
+                break
+            entries.append(entry)
+            used += entry_len
+            if entry.get("type") == "dir" and lvl < depth:
+                queue.append((os.path.join(current, child.name), name, lvl + 1))
+    return entries, truncated
+
+
+def _safe_is_dir(dir_entry) -> bool:
+    try:
+        return dir_entry.is_dir(follow_symlinks=False)
+    except OSError:
+        return False
+
+
+def _dispatch_list_files(arguments):
+    """List a REAL directory so the agent can locate files and save targets.
+
+    Read-only. Accepts ``path`` (real filesystem directory), ``max_entries``
+    (default 200, hard-capped), and ``depth`` (0-2, default 0). Returns entry
+    records with type/size/mtime, a clear error for a missing/unreadable path,
+    and a truncation nudge to narrow to a subdirectory when the cap is hit.
+    """
+    path = (arguments.get("path") or arguments.get("directory")
+            or arguments.get("dir") or ".")
+    path = str(path).strip() or "."
+    try:
+        max_entries = int(arguments.get("max_entries", _LIST_FILES_DEFAULT_MAX))
+    except (ValueError, TypeError):
+        max_entries = _LIST_FILES_DEFAULT_MAX
+    max_entries = max(1, min(max_entries, _LIST_FILES_HARD_CAP))
+    try:
+        depth = int(arguments.get("depth", 0))
+    except (ValueError, TypeError):
+        depth = 0
+    depth = max(0, min(depth, _LIST_FILES_MAX_DEPTH))
+
+    abs_path = os.path.abspath(os.path.expanduser(path))
+    if not os.path.exists(abs_path):
+        return json.dumps({
+            "error": (
+                f"Path not found: '{path}' (resolved to '{abs_path}'). Give an "
+                "existing directory — browse from a known root like '/Workspace', "
+                "'/Volumes', '/tmp', or '.' (the agent scratch filesystem's "
+                "ls/read_file do NOT see real paths; this tool does)."
+            )
+        })
+    if os.path.isfile(abs_path):
+        try:
+            st = os.stat(abs_path)
+            info = {"size_bytes": st.st_size, "modified": _fmt_mtime(st.st_mtime)}
+        except OSError as e:
+            info = {"stat_error": str(e)}
+        return json.dumps({
+            "path": abs_path,
+            "is_file": True,
+            **info,
+            "note": ("This is a file, not a directory. Read it with "
+                     "read_pdf_text / analyze_pdf_page / analyze_image, or "
+                     "list its parent directory."),
+        })
+
+    try:
+        entries, truncated = _collect_entries(
+            abs_path, depth, max_entries, _LIST_FILES_CHAR_BUDGET)
+    except PermissionError as e:
+        return json.dumps({"error": f"Permission denied reading '{abs_path}': {e}"})
+    except OSError as e:
+        return json.dumps({
+            "error": f"Could not read '{abs_path}': {type(e).__name__}: {e}"})
+
+    result = {
+        "path": abs_path,
+        "depth": depth,
+        "n_entries": len(entries),
+        "entries": entries,
+    }
+    if truncated:
+        result["truncated"] = True
+        result["truncated_note"] = (
+            f"Listing hit the {max_entries}-entry / size cap. Narrow to a "
+            "specific subdirectory (pass its path) to see the rest.")
+    return json.dumps(result)
 
 
 # ---------------------------------------------------------------------------
@@ -526,10 +707,56 @@ def _dispatch_save_file(arguments, save_fn):
         except Exception as e:
             return json.dumps({"error": f"Invalid base64 content: {e}"})
 
+    from funhouse_agent._fileio import (
+        rescue_write, workspace_write_hint, written_file_problem,
+        workspace_api_upload, _is_workspace_path,
+    )
+
+    expected = (content if isinstance(content, bytes)
+                else content.encode("utf-8", errors="replace"))
+
+    # Databricks durable /Workspace write: plain FUSE writes to /Workspace
+    # often store only a PLACEHOLDER, so route through the authenticated
+    # workspace API first — but ONLY for the DEFAULT writer. A custom save_fn
+    # is the caller's explicit backend choice and must never be bypassed.
+    api_error = None
+    if save_fn is _default_save_fn and _is_workspace_path(path):
+        api = workspace_api_upload(path, expected)
+        if api.get("ok"):
+            result = {
+                "saved": path,
+                "file_exists": True,
+                "file_size_bytes": api.get("size", len(expected)),
+                "save_method": "workspace_api",
+                "note": (
+                    "Written durably via the Databricks workspace API."
+                    if api.get("verified")
+                    else "Written via the Databricks workspace API; the stored "
+                    "size could not be read back, so file_size_bytes is the "
+                    "number of bytes sent."
+                ),
+            }
+            return json.dumps(result)
+        api_error = api.get("error")  # fall through to plain write + verify
+
+    # Write via save_fn. On a hard failure, still rescue the content to /tmp
+    # so the user does not lose it, and return a structured error naming both.
     try:
         saved_path = save_fn(path, content)
     except Exception as e:
-        return json.dumps({"error": f"{type(e).__name__}: {e}"})
+        err = {"error": f"{type(e).__name__}: {e}" + workspace_write_hint(path)}
+        rescue = rescue_write(os.path.abspath(path), expected)
+        if rescue:
+            err["rescue_path"] = rescue
+            err["error"] += (
+                f" A verified copy was saved to '{rescue}' — report THAT path "
+                "to the user."
+            )
+        if api_error:
+            err["workspace_api_note"] = (
+                f"The Databricks workspace API was tried first and failed "
+                f"({api_error}); the plain write then also failed.")
+        return json.dumps(err)
 
     # Verify the write on the REAL filesystem so the agent never needs a
     # separate ls/read to trust the save — agent-side filesystem tools may be
@@ -538,10 +765,6 @@ def _dispatch_save_file(arguments, save_fn):
     # can "succeed" while the workspace stores a literal PLACEHOLDER file).
     # A custom save_fn may write somewhere not locally visible (e.g. DBFS),
     # so only flag an error for the default writer.
-    from funhouse_agent._fileio import (
-        rescue_write, workspace_write_hint, written_file_problem,
-    )
-
     result = {"saved": saved_path}
     if isinstance(saved_path, str):
         abs_path = os.path.abspath(saved_path)
@@ -550,8 +773,6 @@ def _dispatch_save_file(arguments, save_fn):
         result["file_size_bytes"] = (
             os.path.getsize(abs_path) if file_exists else 0)
         if save_fn is _default_save_fn:
-            expected = (content if isinstance(content, bytes)
-                        else content.encode("utf-8", errors="replace"))
             problem = written_file_problem(abs_path, expected)
             result["file_exists"] = file_exists and problem is None
             if problem:
@@ -566,6 +787,13 @@ def _dispatch_save_file(arguments, save_fn):
                         f" A verified copy was saved to '{rescue}' — report "
                         "THAT path to the user."
                     )
+            if api_error:
+                # We tried the durable workspace API for a /Workspace path and
+                # fell back to a plain write — tell the agent, since a "clean"
+                # plain /Workspace write can still be non-durable on Databricks.
+                result["workspace_api_note"] = (
+                    f"The Databricks workspace API was unavailable "
+                    f"({api_error}); used a plain filesystem write instead.")
         else:
             result["file_exists"] = file_exists
             if not file_exists:

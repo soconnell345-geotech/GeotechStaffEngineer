@@ -1,9 +1,10 @@
 """
 OpenAI-native tool schemas and dispatch for NativeToolEngine.
 
-Defines the 7 tools (4 dispatch + 3 extended) as OpenAI function-calling
-schemas, and routes native tool_call responses to the existing adapter
-dispatch functions.
+Defines the 9 tools (4 dispatch + 5 extended: list_files, read_pdf_text,
+analyze_image, analyze_pdf_page, save_file) as OpenAI function-calling schemas,
+and routes native tool_call responses to the existing adapter dispatch
+functions.
 """
 
 import json
@@ -118,6 +119,47 @@ OPENAI_TOOLS = [
                     },
                 },
                 "required": ["agent_name", "method", "parameters"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_files",
+            "description": (
+                "Browse a REAL directory (read-only) to find where the user's "
+                "files are and where to save output. Returns each entry's name, "
+                "type (dir/file), size, and modified time. Use this to DISCOVER "
+                "the real folder structure before reading a report or choosing a "
+                "save path — the agent scratch filesystem does NOT see real "
+                "paths. Works without a vision engine."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": (
+                            "Real filesystem directory (e.g. "
+                            "'/Workspace/Users/...', '/Volumes/...', '/tmp', "
+                            "or '.')."
+                        ),
+                    },
+                    "max_entries": {
+                        "type": "integer",
+                        "description": "Max entries to return (default 200).",
+                        "default": 200,
+                    },
+                    "depth": {
+                        "type": "integer",
+                        "description": (
+                            "Sub-directory levels to descend: 0 (default) lists "
+                            "immediate children only; max 2."
+                        ),
+                        "default": 0,
+                    },
+                },
+                "required": ["path"],
             },
         },
     },
@@ -247,8 +289,8 @@ OPENAI_TOOLS = [
 ]
 
 # Tool names that are dispatched via vision_tools (not dispatch.py)
-EXTENDED_TOOL_NAMES = {"read_pdf_text", "analyze_image", "analyze_pdf_page",
-                       "save_file"}
+EXTENDED_TOOL_NAMES = {"list_files", "read_pdf_text", "analyze_image",
+                       "analyze_pdf_page", "save_file"}
 
 # Consult-references tool — added to the primary's tool list conditionally
 # (per the agent's ``reference_mode``), NOT part of OPENAI_TOOLS. It routes a

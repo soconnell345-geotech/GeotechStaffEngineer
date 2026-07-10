@@ -206,8 +206,8 @@ def test_analysis_scope_hides_reference_in_catalog():
 def test_vision_tools_build_and_error_without_engine():
     tools = make_vision_tools(engine=None)
     names = {t.name for t in tools}
-    assert names == {"read_pdf_text", "analyze_image", "analyze_pdf_page",
-                     "read_reference_figure", "save_file"}
+    assert names == {"list_files", "read_pdf_text", "analyze_image",
+                     "analyze_pdf_page", "read_reference_figure", "save_file"}
 
     # read_reference_figure without args → clear error (no raise).
     out = _invoke(
@@ -241,6 +241,24 @@ def test_read_pdf_text_offline(tmp_path):
     assert "SPT N=15" in out["pages"][0]["text"]
     assert out["pages"][1]["has_text_layer"] is False
     assert out["scanned_pages"] == [1]
+
+
+def test_list_files_offline(tmp_path):
+    """list_files is a pure filesystem tool: works with engine=None on a real
+    directory, sorts dirs first, and recurses only when asked."""
+    (tmp_path / "report.pdf").write_bytes(b"%PDF-1.4 ...")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "logs.csv").write_text("a,b\n")
+
+    tools = make_vision_tools(engine=None)
+    out = _invoke(_tool_by_name(tools, "list_files"), path=str(tmp_path))
+    names = {e["name"]: e["type"] for e in out["entries"]}
+    assert names == {"report.pdf": "file", "sub": "dir"}
+    assert out["entries"][0]["type"] == "dir"  # dirs first
+
+    deep = _invoke(_tool_by_name(tools, "list_files"),
+                   path=str(tmp_path), depth=1)
+    assert "sub/logs.csv" in {e["name"] for e in deep["entries"]}
 
 
 def test_save_file_works_offline(tmp_path):

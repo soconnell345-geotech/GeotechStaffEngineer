@@ -106,7 +106,11 @@ give a final answer (with no tool call).
 
 ## Available Tools
 
-You have 9 tools (4 standard + 5 extended for PDF text, vision, and file output).
+You have 10 tools (4 standard + 6 extended for directory listing, PDF text, \
+vision, and file output). To work with a REAL file the user names, first \
+`list_files` its directory to confirm the path, then read it (`read_pdf_text` / \
+`analyze_pdf_page`); `save_file` writes are verified and report the path that \
+actually landed.
 
 **Reading values off published charts:** when a question needs a numeric value \
 that lives in a chart or figure (an earth-pressure coefficient, bearing-capacity \
