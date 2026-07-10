@@ -1,0 +1,223 @@
+"""Streamlit shell for the geotech web chat app — a thin view over webapp.core.
+
+Run locally:
+
+    streamlit run webapp/app.py
+
+Everything with logic (attachment staging, artifact capture, streaming, engine
+resolution, the disclaimer text) lives in ``webapp.core`` / ``webapp.engine_config``
+so it is testable without a streamlit runtime. This file only wires those to
+streamlit widgets. One conversation per browser session (``st.session_state``),
+with a per-session LangGraph ``thread_id``.
+"""
+
+from __future__ import annotations
+
+import streamlit as st
+
+from webapp import core, engine_config
+
+st.set_page_config(page_title="GeotechStaffEngineer", page_icon="⛰️",
+                   layout="wide")
+
+
+# ---------------------------------------------------------------------------
+# Session bootstrap
+# ---------------------------------------------------------------------------
+
+def _init_session() -> None:
+    ss = st.session_state
+    if ss.get("initialized"):
+        return
+    ss.attachments = {}                 # shared with the agent's vision tools
+    ss.temp_dir = core.new_session_dir()
+    ss.artifacts = []                   # agent-produced files (download list)
+    ss.messages = []                    # agent-facing history (replayed)
+    ss.transcript = []                  # display entries
+    ss.pending_notes = []               # attachment notes for the next turn
+    ss.thread_id = core.new_thread_id()
+    ss.total_tokens = 0
+    ss.last_turn_tokens = 0
+    ss.agent_error = None
+    ss.engine = engine_config.resolve_engine()
+    ss.agent = None
+    if ss.engine.ok:
+        try:
+            ss.agent = core.build_agent(
+                ss.engine.model, ss.attachments, ss.temp_dir, ss.artifacts)
+        except Exception as exc:  # surface, don't crash the app
+            ss.agent_error = f"{type(exc).__name__}: {exc}"
+    ss.initialized = True
+
+
+def _reset_session() -> None:
+    """Clear the conversation and start a fresh thread + temp dir + agent."""
+    for k in ("initialized", "attachments", "temp_dir", "artifacts", "messages",
+              "transcript", "pending_notes", "thread_id", "total_tokens",
+              "last_turn_tokens", "agent", "engine", "agent_error"):
+        st.session_state.pop(k, None)
+    _init_session()
+
+
+_init_session()
+ss = st.session_state
+
+
+# ---------------------------------------------------------------------------
+# Header + disclaimer (prominent, at the very top)
+# ---------------------------------------------------------------------------
+
+st.title("⛰️ GeotechStaffEngineer")
+st.caption("An LLM agent that drives industry-standard geotechnical analysis "
+           "methods. Research/analysis aid — not a design deliverable.")
+
+_disc = core.disclaimer_text()
+st.warning(_disc.splitlines()[0] if _disc else "Professional-use disclaimer.")
+with st.expander("Professional-use disclaimer — read before relying on any result",
+                 expanded=False):
+    st.text(_disc)
+
+
+# ---------------------------------------------------------------------------
+# Sidebar: engine status, attachments, artifacts, tokens, reset
+# ---------------------------------------------------------------------------
+
+with st.sidebar:
+    st.header("Session")
+
+    eng = ss.engine
+    if ss.agent is not None:
+        st.success(eng.message)
+    elif ss.agent_error:
+        st.error(f"Engine resolved ({eng.model_name}) but the agent failed to "
+                 f"build: {ss.agent_error}")
+    elif eng.source == "error":
+        st.error(eng.message)
+    else:
+        st.warning(eng.message)
+
+    st.divider()
+    st.subheader("Attachments")
+    uploaded = st.file_uploader(
+        "Attach files (PDF, image, DXF, CSV, DIGGS…)",
+        type=core.ACCEPTED_UPLOAD_TYPES, accept_multiple_files=True,
+        key=f"uploader_{ss.thread_id}",
+    )
+    if uploaded:
+        pairs = [(f.name, f.getvalue()) for f in uploaded]
+        # Only stage names not already registered this session.
+        fresh = [(n, d) for (n, d) in pairs
+                 if core.sanitize_key(n) not in ss.attachments]
+        if fresh:
+            atts = core.stage_uploads(ss.attachments, ss.temp_dir, fresh)
+            ss.pending_notes.append(core.attachment_note(atts))
+            for a in atts:
+                ss.transcript.append(
+                    {"role": "attach", "text": f"{a.key} ({a.size:,} bytes)"})
+            st.rerun()
+
+    if ss.attachments:
+        for key in ss.attachments:
+            st.markdown(f"- `{key}`")
+    else:
+        st.caption("No attachments yet.")
+
+    if ss.artifacts:
+        st.divider()
+        st.subheader("Downloads")
+        for path in ss.artifacts:
+            import os as _os
+            try:
+                with open(path, "rb") as fh:
+                    data = fh.read()
+                st.download_button(_os.path.basename(path), data=data,
+                                   file_name=_os.path.basename(path),
+                                   key=f"dl_{path}")
+            except OSError:
+                pass
+
+    st.divider()
+    st.caption(core.token_line(ss.last_turn_tokens, ss.total_tokens))
+    st.caption(f"thread `{ss.thread_id[:8]}` · {len(ss.messages)} msgs")
+    if st.button("Reset conversation", type="secondary"):
+        _reset_session()
+        st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Transcript
+# ---------------------------------------------------------------------------
+
+for entry in ss.transcript:
+    role = entry.get("role")
+    text = entry.get("text", "")
+    if role == "attach":
+        st.chat_message("user").caption(f"📎 attached {text}")
+    else:
+        st.chat_message(role).markdown(text)
+
+
+# ---------------------------------------------------------------------------
+# Chat input + streaming
+# ---------------------------------------------------------------------------
+
+prompt = st.chat_input("Ask a geotechnical question…"
+                       if ss.agent is not None else
+                       "Configure an engine to start (see the sidebar)")
+
+if prompt:
+    if ss.agent is None:
+        st.chat_message("assistant").error(
+            "No engine is configured, so I can't answer yet. "
+            + ss.engine.message)
+    else:
+        st.chat_message("user").markdown(prompt)
+        ss.transcript.append({"role": "user", "text": prompt})
+
+        agent_content = core.assemble_user_message(ss.pending_notes, prompt)
+        ss.pending_notes = []
+        ss.messages.append({"role": "user", "content": agent_content})
+
+        import os as _os
+        before = core.snapshot_dir(ss.temp_dir)
+        staged_inputs = {  # staged upload paths are inputs, not artifacts
+            _os.path.join(ss.temp_dir, k) for k in ss.attachments
+        }
+
+        with st.chat_message("assistant"):
+            answer_box = st.empty()
+            status = st.status("Working…", expanded=False)
+            answer = ""
+            final = ""
+            turn_tokens = 0
+            try:
+                for item in core.stream_turn(ss.agent, ss.messages,
+                                             ss.thread_id):
+                    kind = item["kind"]
+                    if kind == "token":
+                        answer += item["text"]
+                        answer_box.markdown(answer)
+                    elif kind in ("tool_call", "todos", "tool_result"):
+                        status.write(item["text"])
+                    elif kind == "turn_done":
+                        final = item["answer"]
+                        turn_tokens = item["turn_tokens"]
+                status.update(label="Done", state="complete")
+            except Exception as exc:
+                status.update(label="Error", state="error")
+                st.error(f"{type(exc).__name__}: {exc}")
+
+            final = final or answer or "(no answer text)"
+            answer_box.markdown(final)
+
+        ss.messages.append({"role": "assistant", "content": final})
+        ss.transcript.append({"role": "assistant", "text": final})
+        ss.last_turn_tokens = turn_tokens
+        ss.total_tokens += turn_tokens
+
+        # Capture any artifacts the agent wrote to the session dir this turn
+        # (save_fn already recorded save_file outputs; this catches the rest).
+        for p in core.new_artifacts(ss.temp_dir, before, staged_inputs):
+            if p not in ss.artifacts:
+                ss.artifacts.append(p)
+        st.rerun()

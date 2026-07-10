@@ -1,0 +1,14 @@
+# Dependencies for the GeotechStaffEngineer web chat app (webapp/app.py).
+#
+# TinyApp submission: teams submit application code + this requirements file;
+# the platform installs it. This pulls the published package with the three
+# extras the app needs:
+#   [deep]   -> the deepagents-based agent (build_deep_agent) + langchain-anthropic
+#   [full]   -> the optional analysis backends (so eval/tool coverage is complete)
+#   [webapp] -> streamlit
+#
+# The Anthropic engine is selected at runtime from the environment
+# (ANTHROPIC_API_KEY), or — in the TinyApp "Prompter" case — the deployment
+# registers a model builder via webapp.engine_config.register_model_builder;
+# either way no extra pip dependency is required here for the engine.
+geotech-staff-engineer[deep,full,webapp]>=5.4.0

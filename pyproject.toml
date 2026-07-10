@@ -74,6 +74,10 @@ deep = [
     # langchain-protocol doesn't pin it high enough, so force the floor here.
     "typing_extensions>=4.13",
 ]
+# Streamlit web chat app (webapp/). The app also needs the [deep] agent and the
+# [full] analysis backends — install them together:
+# `geotech-staff-engineer[deep,full,webapp]` (see webapp/README.md).
+webapp = ["streamlit>=1.36"]
 full = [
     "matplotlib>=3.8",
     "jinja2>=3.1",
@@ -141,6 +145,7 @@ include = [
     "fem2d*",
     "geo_project*",
     "funhouse_agent*",
+    "webapp*",
 ]
 exclude = [
     "*.tests",
