@@ -528,15 +528,17 @@ def make_vision_tools(
     attachments = attachments if attachments is not None else {}
     save_fn = save_fn or _default_save_fn
     include = include if include is not None else {
-        "analyze_image", "analyze_pdf_page", "read_reference_figure",
-        "save_file",
+        "read_pdf_text", "analyze_image", "analyze_pdf_page",
+        "read_reference_figure", "save_file",
     }
     reference_cap = _resolve_reference_cap(max_result_chars,
                                            reference_result_chars)
 
     def _dispatch(tool_name: str, arguments: dict) -> str:
-        # read_reference_figure is a reference read: larger budget.
-        cap = (reference_cap if tool_name == "read_reference_figure"
+        # read_reference_figure / read_pdf_text are text-payload reads: the text
+        # IS the answer, so they get the larger reference budget.
+        cap = (reference_cap
+               if tool_name in ("read_reference_figure", "read_pdf_text")
                else max_result_chars)
         return _truncate(
             _dispatch_extended_tool(
@@ -548,6 +550,22 @@ def make_vision_tools(
             ),
             cap,
         )
+
+    def read_pdf_text(source: str, pages: str = "") -> str:
+        """Extract the TEXT LAYER of a PDF (PyMuPDF — cheap, no vision). Use
+        this FIRST for a text-based report (boring logs, lab summaries,
+        recommendations, specs) instead of vision-reading every page.
+
+        ``source`` is an attachment key OR a real filesystem path
+        (driver-local /tmp/... or a /Volumes/... path; /Workspace reads are
+        unreliable). ``pages`` is an int, a list, or a "start-end" range like
+        "0-9"; omit for the first several pages. A page with no text layer
+        (scanned image) is flagged per-page — use analyze_pdf_page for those.
+        """
+        args = {"source": source}
+        if pages != "":
+            args["pages"] = pages
+        return _dispatch("read_pdf_text", args)
 
     def analyze_image(attachment_key: str,
                       prompt: str = "Describe this image.") -> str:
@@ -615,6 +633,13 @@ def make_vision_tools(
         )
 
     _builders = {
+        "read_pdf_text": (
+            read_pdf_text,
+            "Extract the TEXT LAYER of a PDF (PyMuPDF — cheap, no vision). "
+            "First-choice reader for a text-based report; a scanned page with "
+            "no text layer is flagged per-page (use analyze_pdf_page there). "
+            "source is an attachment key or a real filesystem path.",
+        ),
         "analyze_image": (
             analyze_image,
             "Analyze an attached image using vision. Returns text "

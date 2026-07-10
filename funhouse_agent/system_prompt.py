@@ -106,7 +106,7 @@ give a final answer (with no tool call).
 
 ## Available Tools
 
-You have 8 tools (4 standard + 4 extended for vision and file output).
+You have 9 tools (4 standard + 5 extended for PDF text, vision, and file output).
 
 **Reading values off published charts:** when a question needs a numeric value \
 that lives in a chart or figure (an earth-pressure coefficient, bearing-capacity \

@@ -124,10 +124,45 @@ OPENAI_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "read_pdf_text",
+            "description": (
+                "Extract the TEXT LAYER of a PDF (PyMuPDF — cheap, no vision). "
+                "First-choice reader for a text-based report (boring logs, lab "
+                "summaries, recommendations, specs). A page with no text layer "
+                "(scanned image) is flagged per-page — use analyze_pdf_page for "
+                "those. Works without a vision engine."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "description": (
+                            "Attachment key OR a real filesystem path "
+                            "(driver-local /tmp/... or a /Volumes/... path; "
+                            "/Workspace reads are unreliable)."
+                        ),
+                    },
+                    "pages": {
+                        "type": "string",
+                        "description": (
+                            "Pages to read: an int, a list, or a 'start-end' "
+                            "range like '0-9'. Omit for the first several pages."
+                        ),
+                    },
+                },
+                "required": ["source"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "analyze_image",
             "description": (
                 "Analyze an attached image using vision. Returns text "
-                "description/analysis of the image content."
+                "description/analysis of the image content. attachment_key may "
+                "be an attachment key OR a real filesystem path."
             ),
             "parameters": {
                 "type": "object",
@@ -212,7 +247,8 @@ OPENAI_TOOLS = [
 ]
 
 # Tool names that are dispatched via vision_tools (not dispatch.py)
-EXTENDED_TOOL_NAMES = {"analyze_image", "analyze_pdf_page", "save_file"}
+EXTENDED_TOOL_NAMES = {"read_pdf_text", "analyze_image", "analyze_pdf_page",
+                       "save_file"}
 
 # Consult-references tool — added to the primary's tool list conditionally
 # (per the agent's ``reference_mode``), NOT part of OPENAI_TOOLS. It routes a

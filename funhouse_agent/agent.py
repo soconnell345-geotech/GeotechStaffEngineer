@@ -203,6 +203,16 @@ class GeotechAgent:
         self._native_messages: list = []  # persistent messages for native path
         self._attachments: Dict[str, bytes] = {}
         self._max_result_chars = 8000
+        # Text-payload tools (a PDF text dump, a chart read-off) get a larger
+        # cap — their content IS the answer, so the general cap would cut it and
+        # force a wasteful re-read. Mirrors the deep surface's reference cap.
+        self._large_result_chars = 16000
+
+    def _result_cap_for(self, tool_name: str) -> int:
+        """Truncation cap for a tool result: larger for text-payload tools."""
+        if tool_name in ("read_pdf_text", "read_reference_figure"):
+            return self._large_result_chars
+        return self._max_result_chars
 
     def ask(self, question: str) -> AgentResult:
         """Run the tool-calling loop for a user question.
@@ -307,8 +317,9 @@ class GeotechAgent:
             # Dispatch: consult sub-agent, extended tools (vision/save), or standard
             if tc.tool_name == "consult_references":
                 result_str = self._dispatch_consult(tc.arguments)
-            elif tc.tool_name in ("analyze_image", "analyze_pdf_page",
-                                  "read_reference_figure", "save_file"):
+            elif tc.tool_name in ("read_pdf_text", "analyze_image",
+                                  "analyze_pdf_page", "read_reference_figure",
+                                  "save_file"):
                 result_str = dispatch_extended_tool(
                     tc.tool_name, tc.arguments,
                     self._engine, self._attachments,
@@ -320,7 +331,8 @@ class GeotechAgent:
                     allowed_agents=self._allowed_agents,
                 )
 
-            result_str = _truncate(result_str, self._max_result_chars)
+            result_str = _truncate(result_str,
+                                   self._result_cap_for(tc.tool_name))
 
             # Check for dispatch errors and log them
             try:
@@ -525,7 +537,8 @@ class GeotechAgent:
                     )
                     if fn_name == "call_agent":
                         calc_done = True
-                result_str = _truncate(result_str, self._max_result_chars)
+                result_str = _truncate(result_str,
+                                       self._result_cap_for(fn_name))
 
                 # Check for dispatch errors
                 try:

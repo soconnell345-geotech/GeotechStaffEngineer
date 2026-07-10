@@ -42,14 +42,18 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   — report that error; do not silently rebuild or claim success.
 - **Reading a REAL file the user gives you (PDF report, DXF, image): use the
   file-reading TOOLS, not the scratch filesystem.** `read_file` failing on a
-  real path does NOT mean the file is unreachable — `analyze_pdf_page`
-  (vision-reads one PDF page), `analyze_image`, the `pdf_import` /
-  `dxf_import` / `drawing_ir` agent methods, and geo_project ingest all open
-  REAL paths directly (`/tmp/...`, `/Volumes/...`; plain path, never a
-  `file:` URI). For a geotech report PDF: `analyze_pdf_page` page-by-page,
-  starting with the table of contents, then the boring logs / lab-summary /
-  recommendations pages. If a real path errors there too, ask the user to
-  copy the file to driver-local `/tmp` or a `/Volumes` path (`/Workspace`
+  real path does NOT mean the file is unreachable — the file-reading tools open
+  REAL paths directly. For a PDF report, start with **`read_pdf_text`** (cheap
+  PyMuPDF text-layer extraction — pass the path as `source`, and `pages` like
+  `"0-9"`): read the table of contents, boring logs, lab summary and
+  recommendations as TEXT. `read_pdf_text` flags any page that has no text layer
+  ("no text layer — use analyze_pdf_page") — for those scanned pages, and for
+  figures / plotted cross-sections / a boring-log sheet, use **`analyze_pdf_page`**
+  (vision, one page). `analyze_image`, and the `pdf_import` / `dxf_import` /
+  `drawing_ir` agent methods and geo_project ingest, also open real paths. All of
+  these accept an attachment key OR a real path (`/tmp/...`, `/Volumes/...`; a
+  plain path, never a `file:` URI). If a real path errors on every tool, ask the
+  user to copy the file to driver-local `/tmp` or a `/Volumes` path (`/Workspace`
   reads are unreliable) — do NOT conclude the file cannot be read. Plain file
   writes to `/Workspace/...` are often not durably stored (the workspace
   keeps a literal PLACEHOLDER file; binary files like PDFs come out corrupt).

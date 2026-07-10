@@ -206,7 +206,7 @@ def test_analysis_scope_hides_reference_in_catalog():
 def test_vision_tools_build_and_error_without_engine():
     tools = make_vision_tools(engine=None)
     names = {t.name for t in tools}
-    assert names == {"analyze_image", "analyze_pdf_page",
+    assert names == {"read_pdf_text", "analyze_image", "analyze_pdf_page",
                      "read_reference_figure", "save_file"}
 
     # read_reference_figure without args → clear error (no raise).
@@ -215,6 +215,32 @@ def test_vision_tools_build_and_error_without_engine():
         reference="", figure_number="",
     )
     assert "error" in out
+
+
+def test_read_pdf_text_offline(tmp_path):
+    """read_pdf_text is a pure-PyMuPDF tool: works with engine=None on a real
+    path, extracts the text layer, and flags a scanned page."""
+    fitz = pytest.importorskip("fitz")
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 72), "Report page zero. SPT N=15.")
+    # scanned page (image only, no text layer)
+    tmp = fitz.open()
+    tmp.new_page().insert_text((72, 72), "x")
+    pix = tmp[0].get_pixmap()
+    sp = doc.new_page()
+    sp.insert_image(sp.rect, pixmap=pix)
+    tmp.close()
+    path = tmp_path / "r.pdf"
+    path.write_bytes(doc.tobytes())
+    doc.close()
+
+    tools = make_vision_tools(engine=None)
+    out = _invoke(_tool_by_name(tools, "read_pdf_text"),
+                  source=str(path), pages="0-1")
+    assert out["source_type"] == "path"
+    assert "SPT N=15" in out["pages"][0]["text"]
+    assert out["pages"][1]["has_text_layer"] is False
+    assert out["scanned_pages"] == [1]
 
 
 def test_save_file_works_offline(tmp_path):

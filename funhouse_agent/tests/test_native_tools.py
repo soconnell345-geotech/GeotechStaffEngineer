@@ -111,7 +111,7 @@ def _make_final_response(content):
 
 class TestToolSchemas:
     def test_seven_tools_defined(self):
-        assert len(OPENAI_TOOLS) == 7
+        assert len(OPENAI_TOOLS) == 8
 
     def test_all_have_function_type(self):
         for tool in OPENAI_TOOLS:
@@ -124,7 +124,7 @@ class TestToolSchemas:
         names = {t["function"]["name"] for t in OPENAI_TOOLS}
         expected = {
             "list_agents", "list_methods", "describe_method", "call_agent",
-            "analyze_image", "analyze_pdf_page", "save_file",
+            "read_pdf_text", "analyze_image", "analyze_pdf_page", "save_file",
         }
         assert names == expected
 
@@ -140,7 +140,7 @@ class TestToolSchemas:
 
     def test_extended_tool_names(self):
         assert EXTENDED_TOOL_NAMES == {
-            "analyze_image", "analyze_pdf_page", "save_file",
+            "read_pdf_text", "analyze_image", "analyze_pdf_page", "save_file",
         }
 
 
@@ -436,7 +436,7 @@ class TestGeotechAgentNative:
         assert "tools" in calls[0]
         # 7 base tools + consult_references (reference_mode defaults to "anytime")
         tool_names = {t["function"]["name"] for t in calls[0]["tools"]}
-        assert len(calls[0]["tools"]) == 8
+        assert len(calls[0]["tools"]) == 9
         assert "consult_references" in tool_names
         assert calls[0]["tool_choice"] == "auto"
 
@@ -587,7 +587,7 @@ class TestReferenceConsult:
         agent.ask("Hi")
         names = self._names(prompter.client.chat.completions.calls[0])
         assert "consult_references" not in names
-        assert len(names) == 7
+        assert len(names) == 8
         # legacy: references stay directly available
         assert agent._allowed_agents is None
         assert "| dm7 |" in agent._system_prompt

@@ -14,6 +14,7 @@ STANDARD_TOOLS = {"call_agent", "list_methods", "describe_method", "list_agents"
 
 # Standard tools + vision + output extensions
 EXTENDED_TOOLS = STANDARD_TOOLS | {
+    "read_pdf_text",
     "analyze_image",
     "analyze_pdf_page",
     "read_reference_figure",
@@ -21,23 +22,41 @@ EXTENDED_TOOLS = STANDARD_TOOLS | {
 }
 
 VISION_TOOL_DESCRIPTIONS = """
-### 5. analyze_image
+### 5. read_pdf_text
+Extract the TEXT LAYER of a PDF (PyMuPDF — cheap, no vision). **This is the
+first-choice reader for a text-based report** (boring logs, lab summaries,
+recommendations, specs): read the text directly instead of vision-reading every
+page. `source` is an attachment key OR a real filesystem path (driver-local
+`/tmp/...` or a `/Volumes/...` path; `/Workspace` reads are unreliable). `pages`
+is an int, a list, or a "start-end" range (e.g. "0-9"); omit it for the first
+several pages. A page with no text layer (scanned image) is flagged per-page —
+use `analyze_pdf_page` on those.
+```
+<tool_call>
+{"tool_name": "read_pdf_text", "source": "/tmp/geotech_report.pdf", "pages": "0-4"}
+</tool_call>
+```
+
+### 6. analyze_image
 Analyze an attached image using vision. Returns text description/analysis.
+`attachment_key` is an attachment key OR a real filesystem path.
 ```
 <tool_call>
 {"tool_name": "analyze_image", "attachment_key": "site_plan", "prompt": "Extract the cross-section geometry"}
 </tool_call>
 ```
 
-### 6. analyze_pdf_page
-Render a PDF page and analyze it using vision.
+### 7. analyze_pdf_page
+Render ONE PDF page and analyze it using vision — for a SCANNED page, a figure,
+a boring-log sheet, or a plotted cross-section. For a text-layer report prefer
+`read_pdf_text` (cheaper). `attachment_key` is an attachment key OR a real path.
 ```
 <tool_call>
 {"tool_name": "analyze_pdf_page", "attachment_key": "report", "page": 0, "prompt": "Extract geometry from this cross-section"}
 </tool_call>
 ```
 
-### 7. read_reference_figure
+### 8. read_reference_figure
 Render a digitized reference figure (e.g. a DM7 design chart) and read a value
 off it with vision. **Use this whenever a numeric value must come from a chart —
 do not read values off a chart from the caption or from memory.** Find the figure
@@ -51,7 +70,7 @@ where one exists.
 </tool_call>
 ```
 
-### 8. save_file
+### 9. save_file
 Save raw text or data to a file. Returns the saved file path.
 For formatted calculation documents, use the `calc_package` module instead.
 ```
@@ -115,7 +134,9 @@ def dispatch_extended_tool(
     str
         JSON string result.
     """
-    if tool_name == "analyze_image":
+    if tool_name == "read_pdf_text":
+        return _dispatch_read_pdf_text(arguments, attachments)
+    elif tool_name == "analyze_image":
         return _dispatch_analyze_image(arguments, engine, attachments)
     elif tool_name == "analyze_pdf_page":
         return _dispatch_analyze_pdf_page(arguments, engine, attachments)
@@ -131,19 +152,194 @@ def dispatch_extended_tool(
 dispatch_vision_tool = dispatch_extended_tool
 
 
+# ---------------------------------------------------------------------------
+# Source resolution: attachment key OR real filesystem path
+# ---------------------------------------------------------------------------
+
+def _resolve_attachment_or_path(key, attachments):
+    """Return ``(bytes, source_type)`` for an attachment key OR a real file path.
+
+    The ``attachments`` dict takes PRECEDENCE; only if the key is not an
+    attachment is it tried as a filesystem path (driver-local ``/tmp/...`` or a
+    ``/Volumes/...`` path). The dict is never written to. Raises
+    ``FileNotFoundError`` with an informative message listing the available
+    attachment keys AND noting that real paths are accepted.
+    """
+    attachments = attachments or {}
+    if key and key in attachments:
+        return attachments[key], "attachment"
+    if key and os.path.isfile(key):
+        try:
+            with open(key, "rb") as fh:
+                return fh.read(), "path"
+        except OSError as e:
+            raise FileNotFoundError(f"'{key}' exists but could not be read: {e}")
+    available = sorted(attachments.keys())
+    raise FileNotFoundError(
+        f"'{key}' not found as an attachment key or a readable file path. "
+        f"Available attachment keys: {available}. Real filesystem paths are "
+        f"also accepted (driver-local /tmp/... or a /Volumes/... path; "
+        f"/Workspace reads are unreliable on Databricks)."
+    )
+
+
+# ---------------------------------------------------------------------------
+# read_pdf_text — PyMuPDF text-layer extraction (no vision engine needed)
+# ---------------------------------------------------------------------------
+
+#: Default per-call character budget for the concatenated page text. Sized to
+#: fit inside the deep reference-read cap (DEFAULT_REFERENCE_RESULT_CHARS=16000)
+#: and the v1 read_pdf_text cap, with headroom for the JSON envelope.
+_PDF_TEXT_MAX_CHARS = 12000
+#: Pages returned when ``pages`` is not given.
+_PDF_TEXT_DEFAULT_PAGES = 8
+#: A page whose stripped text is shorter than this is treated as "no text layer"
+#: (scanned image) and flagged for analyze_pdf_page.
+_SCANNED_TEXT_THRESHOLD = 20
+
+
+def _parse_pages(pages, n_total, default_n):
+    """Resolve the ``pages`` argument to a sorted list of valid 0-based indices.
+
+    Accepts ``None`` (first ``default_n`` pages), an int, a list of ints, or a
+    ``"start-end"`` / ``"N"`` range string. Returns ``(page_list, note)`` where
+    ``note`` is a message about dropped out-of-range requests (or None).
+    """
+    if n_total <= 0:
+        return [], "document has no pages"
+    note = None
+    if pages is None or pages == "":
+        return list(range(min(default_n, n_total))), None
+    raw = []
+    try:
+        if isinstance(pages, int):
+            raw = [pages]
+        elif isinstance(pages, (list, tuple)):
+            raw = [int(p) for p in pages]
+        elif isinstance(pages, str):
+            s = pages.strip()
+            if "-" in s:
+                a, b = s.split("-", 1)
+                raw = list(range(int(a), int(b) + 1))
+            else:
+                raw = [int(s)]
+        else:
+            raw = [int(pages)]
+    except (ValueError, TypeError):
+        return list(range(min(default_n, n_total))), (
+            f"could not parse pages={pages!r}; returned the first "
+            f"{min(default_n, n_total)} pages instead")
+    valid = sorted({p for p in raw if 0 <= p < n_total})
+    dropped = sorted({p for p in raw if not (0 <= p < n_total)})
+    if dropped:
+        note = (f"requested page(s) {dropped} are out of range "
+                f"(document has {n_total} pages, 0-{n_total - 1})")
+    if not valid:
+        return [], note or "no valid pages requested"
+    return valid, note
+
+
+def _dispatch_read_pdf_text(arguments, attachments):
+    """Extract a PDF's text layer with PyMuPDF (no vision engine required)."""
+    key = (arguments.get("source") or arguments.get("attachment_key")
+           or arguments.get("path") or "")
+    pages_arg = arguments.get("pages")
+    try:
+        max_chars = int(arguments.get("max_chars", _PDF_TEXT_MAX_CHARS))
+    except (ValueError, TypeError):
+        max_chars = _PDF_TEXT_MAX_CHARS
+    try:
+        max_pages = int(arguments.get("max_pages", _PDF_TEXT_DEFAULT_PAGES))
+    except (ValueError, TypeError):
+        max_pages = _PDF_TEXT_DEFAULT_PAGES
+
+    try:
+        data, source_type = _resolve_attachment_or_path(key, attachments)
+    except FileNotFoundError as e:
+        return json.dumps({"error": str(e)})
+
+    try:
+        import fitz
+    except ImportError:
+        return json.dumps({
+            "error": "PyMuPDF required for PDF text extraction. "
+                     "pip install PyMuPDF"
+        })
+    try:
+        doc = fitz.open(stream=data, filetype="pdf")
+    except Exception as e:
+        return json.dumps({
+            "error": f"Could not open '{key}' as a PDF: {type(e).__name__}: {e}"
+        })
+
+    try:
+        n_total = doc.page_count
+        page_list, page_note = _parse_pages(pages_arg, n_total, max_pages)
+
+        out_pages = []
+        total_chars = 0
+        truncated = False
+        for p in page_list:
+            text = doc[p].get_text("text")
+            if len(text.strip()) < _SCANNED_TEXT_THRESHOLD:
+                out_pages.append({
+                    "page": p, "has_text_layer": False, "text": "",
+                    "note": (f"page {p} has no text layer — use "
+                             f"analyze_pdf_page for this page"),
+                })
+                continue
+            remaining = max_chars - total_chars
+            if remaining <= 0:
+                truncated = True
+                break
+            if len(text) > remaining:
+                text = text[:remaining] + "\n...[page text truncated]"
+                truncated = True
+            out_pages.append({
+                "page": p, "has_text_layer": True,
+                "chars": len(text), "text": text,
+            })
+            total_chars += len(text)
+            if truncated:
+                break
+    finally:
+        doc.close()
+
+    scanned = [e["page"] for e in out_pages if not e.get("has_text_layer")]
+    result = {
+        "source": key,
+        "source_type": source_type,
+        "n_pages_total": n_total,
+        "pages_returned": [e["page"] for e in out_pages],
+        "pages": out_pages,
+    }
+    if scanned:
+        result["scanned_pages"] = scanned
+        result["scanned_note"] = (
+            f"{len(scanned)} page(s) have no text layer "
+            f"(scanned images): {scanned}. Use analyze_pdf_page for those.")
+    if truncated:
+        result["truncated"] = True
+        result["truncated_note"] = (
+            "Output hit the character budget. Request specific later pages "
+            "(e.g. pages='8-15') to continue reading.")
+    if page_note:
+        result["page_request_note"] = page_note
+    return json.dumps(result)
+
+
 def _dispatch_analyze_image(arguments, engine, attachments):
     """Handle analyze_image tool call."""
     key = arguments.get("attachment_key", "")
     prompt = arguments.get("prompt", "Describe this image.")
 
-    if key not in attachments:
-        available = list(attachments.keys()) if attachments else []
-        return json.dumps({
-            "error": f"Attachment '{key}' not found. Available: {available}"
-        })
+    try:
+        image_data, _src = _resolve_attachment_or_path(key, attachments)
+    except FileNotFoundError as e:
+        return json.dumps({"error": str(e)})
 
     try:
-        result = engine.analyze_image(attachments[key], prompt)
+        result = engine.analyze_image(image_data, prompt)
         return json.dumps({"analysis": result})
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({
@@ -159,13 +355,10 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
     page = arguments.get("page", 0)
     prompt = arguments.get("prompt", "Describe the content of this page.")
 
-    if key not in attachments:
-        available = list(attachments.keys()) if attachments else []
-        return json.dumps({
-            "error": f"Attachment '{key}' not found. Available: {available}"
-        })
-
-    pdf_bytes = attachments[key]
+    try:
+        pdf_bytes, _src = _resolve_attachment_or_path(key, attachments)
+    except FileNotFoundError as e:
+        return json.dumps({"error": str(e)})
 
     # Render PDF page to PNG
     try:

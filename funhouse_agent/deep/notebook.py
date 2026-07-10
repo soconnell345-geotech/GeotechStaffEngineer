@@ -79,7 +79,8 @@ _MODEL_NODE = "model"
 #: to a generic ``name({args})`` summary.
 _KNOWN_TOOLS = {
     "call_agent", "list_methods", "describe_method", "list_agents",
-    "analyze_image", "analyze_pdf_page", "read_reference_figure", "save_file",
+    "read_pdf_text", "analyze_image", "analyze_pdf_page",
+    "read_reference_figure", "save_file",
     "write_todos", "task",
 }
 
@@ -182,6 +183,11 @@ def _format_tool_call(name: str, args: Optional[dict]) -> str:
         ref = args.get("reference", "?")
         fig = args.get("figure_number", "?")
         return f"read_reference_figure: {ref} fig {fig}"
+
+    if name == "read_pdf_text":
+        src = args.get("source") or args.get("attachment_key") or "?"
+        pages = args.get("pages")
+        return f"read_pdf_text: {src}" + (f" pages {pages}" if pages not in (None, "") else "")
 
     if name in ("analyze_image", "analyze_pdf_page"):
         key = args.get("attachment_key", "?")
