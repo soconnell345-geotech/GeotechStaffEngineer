@@ -40,6 +40,13 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   `file_exists: true` with a size and `output_path`, the file IS on disk at
   that path. If a save genuinely failed, the tool call itself returns an error
   — report that error; do not silently rebuild or claim success.
+- **Finding the user's real files and folders: use `list_files`.** The scratch
+  filesystem's `ls` / `read_file` / `glob` see only your own scratch files, NOT
+  the real disk. `list_files` DOES list real directories (`/Workspace/...`,
+  `/Volumes/...`, `/tmp`, `.`) — use it to discover where an uploaded report
+  lives, confirm a path before reading it, or pick a real destination folder
+  before saving. It returns each entry's type, size, and modified time; pass a
+  subdirectory to narrow a long listing.
 - **Reading a REAL file the user gives you (PDF report, DXF, image): use the
   file-reading TOOLS, not the scratch filesystem.** `read_file` failing on a
   real path does NOT mean the file is unreachable — the file-reading tools open
@@ -59,9 +66,14 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   keeps a literal PLACEHOLDER file; binary files like PDFs come out corrupt).
   Prefer `/tmp/...` or a Unity Catalog `/Volumes/...` path for `output_path`,
   and tell the user to copy it out with
-  `dbutils.fs.cp('file:/tmp/<name>', ...)` or download it. If a tool response
-  reports a `rescue_path`, the requested location failed — give the user the
-  rescue path.
+  `dbutils.fs.cp('file:/tmp/<name>', ...)` or download it. **`save_file` writes
+  are VERIFIED**: the response reports the path that actually landed on disk
+  (`saved`, with `file_size_bytes`) — a `/Workspace` save is routed through the
+  authenticated Databricks workspace API when the SDK is available so it stores
+  durably. Whenever a tool response reports a `rescue_path`, the requested
+  location did not store the file — give the user the `rescue_path`, not the
+  original path. `list_files` a destination folder first if you are unsure it
+  exists.
 - **Theory names and qualifiers are not method names.** Names like
   vesic/meyerhof/hansen and qualifiers like ultimate/net/effective-area are
   `factor_method`/parameter values or output labels, not methods. Each module

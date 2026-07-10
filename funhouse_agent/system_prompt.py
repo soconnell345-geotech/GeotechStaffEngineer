@@ -56,9 +56,13 @@ summary of investigations, measurements, and available parameters.
 2. Use the `site_key` in subsequent plot calls (`plot_parameter_vs_depth`, \
 `plot_plan_view`, `plot_cross_section`, `plot_atterberg_limits`, \
 `plot_multi_parameter`) — no need to re-send the full data.
-3. **Always set `output_format: "html"`** to get a renderable Plotly figure. \
-The default ("metadata") returns only counts/stats with no figure.
-4. Save the HTML output via `save_file` so the user can view it.
+3. To produce a figure, **pass `output_path`** to the plot method (e.g. \
+`/Workspace/Users/me/plot.html` or `/tmp/plot.html`): it SAVES the \
+self-contained Plotly HTML to that path with a verified write and returns a \
+short `{output_path, file_exists, file_size_bytes}` confirmation — do NOT then \
+call `save_file`, and do NOT ask for the HTML inline. Only set \
+`output_format: "html"` (no `output_path`) when you genuinely need the HTML in \
+the response; the default ("metadata") returns counts/stats with no figure.
 
 ## CRITICAL: Always Use Your Tools for Calculations
 
@@ -106,7 +110,11 @@ give a final answer (with no tool call).
 
 ## Available Tools
 
-You have 9 tools (4 standard + 5 extended for PDF text, vision, and file output).
+You have 10 tools (4 standard + 6 extended for directory listing, PDF text, \
+vision, and file output). To work with a REAL file the user names, first \
+`list_files` its directory to confirm the path, then read it (`read_pdf_text` / \
+`analyze_pdf_page`); `save_file` writes are verified and report the path that \
+actually landed.
 
 **Reading values off published charts:** when a question needs a numeric value \
 that lives in a chart or figure (an earth-pressure coefficient, bearing-capacity \

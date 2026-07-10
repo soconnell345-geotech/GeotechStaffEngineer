@@ -104,6 +104,63 @@ def reject_unknown_params(params: dict, valid, *, method: str, aliases=()):
 
 
 # ---------------------------------------------------------------------------
+# Figure-output helpers (save a plot's HTML to a file instead of returning it)
+# ---------------------------------------------------------------------------
+
+def figure_output_format(params: dict, default: str = "metadata") -> str:
+    """Resolve a plot method's ``output_format``, honoring ``output_path``.
+
+    A caller that passes ``output_path`` wants the figure written to a file, so
+    the HTML must be produced regardless of ``output_format`` — this forces
+    ``"html"`` in that case. Otherwise the explicit ``output_format`` (or
+    ``default``) is used.
+    """
+    if params.get("output_path"):
+        return "html"
+    return params.get("output_format", default)
+
+
+def save_html_output(result: dict, params: dict, *, html_key: str = "html") -> dict:
+    """Save a plot result's HTML to ``params['output_path']`` when given.
+
+    A self-contained Plotly figure serialized to HTML is ~MB; returning it
+    inline burns model context and several turns of "now save it to a file".
+    When ``output_path`` is set and ``result`` carries the figure HTML under
+    ``html_key``, this writes the HTML to that path (verified) and REPLACES the
+    blob with a compact confirmation (``output_path``/``file_exists``/size +
+    ``renderer_note``). No-op when there is no ``output_path`` or no HTML.
+
+    Reuses :func:`funhouse_agent._fileio.save_verified`, so a ``/Workspace``
+    target goes through the durable Databricks workspace API and every write is
+    read-back-verified with a ``/tmp`` rescue on failure.
+    """
+    output_path = params.get("output_path")
+    if not output_path or html_key not in result:
+        return result
+    from funhouse_agent._fileio import save_verified
+
+    html = result.pop(html_key)
+    saved = save_verified(str(output_path), html)
+    # Present the saved path as ``output_path`` to match the calc_package
+    # response shape (output_path / file_exists / file_size_bytes).
+    if "saved" in saved:
+        saved["output_path"] = saved.pop("saved")
+    result.update(saved)
+    if saved.get("file_exists"):
+        result["renderer_note"] = (
+            "The self-contained figure HTML was written to the file above "
+            "instead of returned inline (open it in a browser). Omit "
+            "output_path to receive the HTML in the response."
+        )
+    else:
+        result["renderer_note"] = (
+            "The figure HTML could NOT be stored at output_path — see 'error' "
+            "and 'rescue_path'; report the rescue path to the user."
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Module registry — defines all available modules and their adapter paths
 # ---------------------------------------------------------------------------
 

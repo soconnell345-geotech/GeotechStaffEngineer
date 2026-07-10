@@ -210,7 +210,7 @@ class GeotechAgent:
 
     def _result_cap_for(self, tool_name: str) -> int:
         """Truncation cap for a tool result: larger for text-payload tools."""
-        if tool_name in ("read_pdf_text", "read_reference_figure"):
+        if tool_name in ("read_pdf_text", "read_reference_figure", "list_files"):
             return self._large_result_chars
         return self._max_result_chars
 
@@ -317,7 +317,7 @@ class GeotechAgent:
             # Dispatch: consult sub-agent, extended tools (vision/save), or standard
             if tc.tool_name == "consult_references":
                 result_str = self._dispatch_consult(tc.arguments)
-            elif tc.tool_name in ("read_pdf_text", "analyze_image",
+            elif tc.tool_name in ("list_files", "read_pdf_text", "analyze_image",
                                   "analyze_pdf_page", "read_reference_figure",
                                   "save_file"):
                 result_str = dispatch_extended_tool(

@@ -154,6 +154,61 @@ with st.sidebar:
 
 
 # ---------------------------------------------------------------------------
+# Artifact card (inline, in the chat flow at the turn that produced the file)
+# ---------------------------------------------------------------------------
+
+_KIND_ICON = {"html": "📄", "pdf": "📕", "png": "🖼️", "image": "🖼️",
+              "svg": "🖼️", "dxf": "📐", "csv": "📊", "text": "📄", "other": "📎"}
+
+
+def _render_artifact_card(path: str) -> None:
+    """Render one artifact as a card: name/size/type + download + inline preview
+    (HTML in a sandboxed iframe inside an expander, PDF via base64 data-URI
+    iframe, images inline). Big files are download-only."""
+    card = core.describe_artifact(path)
+    if not card.exists:
+        return
+    icon = _KIND_ICON.get(card.kind, "📎")
+    with st.container(border=True):
+        st.markdown(f"{icon} **{card.name}** · {card.size:,} bytes · "
+                    f"{card.kind.upper()}")
+        try:
+            data = core.artifact_bytes(path)
+        except OSError:
+            st.caption("(file unavailable)")
+            return
+        st.download_button("Download", data=data, file_name=card.name,
+                           key=f"dlcard_{path}")
+        if card.kind in ("png", "image", "svg"):
+            try:
+                st.image(path)
+            except Exception:
+                st.caption("(could not render image inline — download above)")
+        elif card.kind == "html":
+            with st.expander("Preview (HTML)", expanded=False):
+                if card.size <= core.HTML_PREVIEW_MAX_BYTES:
+                    import streamlit.components.v1 as components
+                    components.html(core.read_text(path), height=600,
+                                    scrolling=True)
+                else:
+                    st.caption(f"Too large to preview inline "
+                               f"({card.size:,} bytes) — download above.")
+        elif card.kind == "pdf":
+            with st.expander("Preview (PDF)", expanded=False):
+                uri = core.pdf_data_uri(path)
+                if uri:
+                    import streamlit.components.v1 as components
+                    components.html(
+                        f'<iframe src="{uri}" width="100%" height="600" '
+                        f'style="border:none"></iframe>', height=620)
+                else:
+                    st.caption(
+                        f"Too large to preview inline "
+                        f"(> {core.PDF_PREVIEW_MAX_BYTES // (1024 * 1024)} MB) — "
+                        f"download above.")
+
+
+# ---------------------------------------------------------------------------
 # Transcript
 # ---------------------------------------------------------------------------
 
@@ -163,7 +218,10 @@ for entry in ss.transcript:
     if role == "attach":
         st.chat_message("user").caption(f"📎 attached {text}")
     else:
-        st.chat_message(role).markdown(text)
+        with st.chat_message(role):
+            st.markdown(text)
+            for _path in entry.get("artifacts", []):
+                _render_artifact_card(_path)
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +247,7 @@ if prompt:
 
         import os as _os
         before = core.snapshot_dir(ss.temp_dir)
+        artifacts_before_len = len(ss.artifacts)     # save_fn appends here live
         staged_inputs = {  # staged upload paths are inputs, not artifacts
             _os.path.join(ss.temp_dir, k) for k in ss.attachments
         }
@@ -220,13 +279,18 @@ if prompt:
             answer_box.markdown(final)
 
         ss.messages.append({"role": "assistant", "content": final})
-        ss.transcript.append({"role": "assistant", "text": final})
         ss.last_turn_tokens = turn_tokens
         ss.total_tokens += turn_tokens
 
-        # Capture any artifacts the agent wrote to the session dir this turn
-        # (save_fn already recorded save_file outputs; this catches the rest).
-        for p in core.new_artifacts(ss.temp_dir, before, staged_inputs):
+        # Associate this turn's artifacts: save_fn appended save_file outputs to
+        # ss.artifacts live during the turn; the directory diff catches anything
+        # else written to the session dir (calc packages, DXFs, plots).
+        save_new = ss.artifacts[artifacts_before_len:]
+        dir_new = core.new_artifacts(ss.temp_dir, before, staged_inputs)
+        for p in dir_new:                       # add dir-only files to the list
             if p not in ss.artifacts:
                 ss.artifacts.append(p)
+        turn_paths = core.collect_turn_artifacts(save_new, dir_new)
+        ss.transcript.append({"role": "assistant", "text": final,
+                              "artifacts": turn_paths})
         st.rerun()

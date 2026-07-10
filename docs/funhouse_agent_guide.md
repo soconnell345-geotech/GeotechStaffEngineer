@@ -253,18 +253,42 @@ The agent uses these tools automatically during the ReAct loop:
 | `ufc_expansive` | UFC 3-220-07 expansive soils (swell potential, heave, pier design) |
 | `ufc_pavement` | UFC 3-260-02 airfield pavement design (CBR, thickness, ESWL) |
 
-### Vision Tools
+### Extended Tools (files & vision)
 
 | Tool | Purpose |
 |------|---------|
+| `list_files` | Browse a REAL directory (read-only) — name, type, size, mtime per entry; the discovery tool for finding files and save destinations |
+| `read_pdf_text` | Extract a PDF's text layer (PyMuPDF, no vision); flags scanned pages |
 | `analyze_image` | Analyze an attached image via engine vision |
-| `analyze_pdf_page` | Render a PDF page and analyze it |
-| `save_file` | Save content to a file (text or base64 binary) |
+| `analyze_pdf_page` | Render a PDF page and analyze it (scanned pages, figures) |
+| `read_reference_figure` | Render a digitized reference chart and read a value off it via vision |
+| `save_file` | Save content to a file (text or base64 binary), **write-verified** |
 
-## File Output (save_fn)
+`list_files`, `read_pdf_text`, `analyze_image`, and `analyze_pdf_page` each
+accept an attachment key **or** a real filesystem path (`/tmp/...`,
+`/Volumes/...`, `/Workspace/...`). The agent's own scratch filesystem
+(`ls` / `read_file`) does NOT see real paths — `list_files` is how it discovers
+the user's actual folders before reading or saving.
 
-By default, files save to the local filesystem. Inject a custom function for
-other backends:
+## File Output (save_fn) — verified writes
+
+By default, files save to the local filesystem, and every `save_file` write is
+**verified on the real filesystem**: the response reports `saved` (the path that
+actually landed), `file_size_bytes`, and `file_exists`. If the target did not
+store the content — the classic Databricks `/Workspace` failure, where a plain
+write leaves a literal `PLACEHOLDER` — the response carries an `error` plus a
+`rescue_path` (a verified copy in the temp dir); report the `rescue_path` to the
+user, not the original path.
+
+**Databricks `/Workspace` durable writes:** when the target starts with
+`/Workspace` and the default writer is used, `save_file` routes through the
+authenticated Databricks workspace API (`databricks-sdk`, preinstalled on
+Databricks runtimes) so the bytes store durably; it falls back to a plain
+verified write when the SDK is unavailable. `databricks-sdk` stays an optional
+dependency — nothing here requires it off-cluster.
+
+Inject a custom `save_fn` for other backends (a custom function is used as-is —
+the `/Workspace` API routing applies only to the default writer):
 
 ```python
 # Databricks DBFS
@@ -593,7 +617,18 @@ to bare filenames on DBR 14+, where the notebook working directory IS a
   to `/tmp` on Databricks, every save response carries `file_exists` /
   `file_size_bytes` verified against the written content, and if the target
   did not store the content the tool returns an error plus a `rescue_path`
-  with a verified copy in `/tmp`.
+  with a verified copy in `/tmp`. A `/Workspace` target now also goes through
+  the authenticated Databricks workspace API (durable) when `databricks-sdk`
+  is available.
+- **Plots: pass `output_path` to the plot method instead of saving the HTML
+  yourself.** The subsurface `plot_*` methods (`plot_parameter_vs_depth`,
+  `plot_cross_section`, `plot_plan_view`, `plot_atterberg_limits`,
+  `plot_multi_parameter`) accept an optional `output_path`. When given, the
+  self-contained Plotly HTML is written there (verified, same `/Workspace`
+  handling) and the method returns a short `{output_path, file_exists,
+  file_size_bytes, renderer_note}` confirmation instead of a ~MB HTML blob — no
+  separate `save_file` step. Omit `output_path` and set `output_format: "html"`
+  only when you actually want the HTML inline.
 - PDF calc packages need `pdflatex`, which Databricks clusters do not have —
   generate HTML (self-contained) and print to PDF from the browser instead.
 

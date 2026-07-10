@@ -116,6 +116,57 @@ def test_new_artifacts_detects_new_files_and_excludes_inputs(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Artifact cards (viewer)
+# ---------------------------------------------------------------------------
+
+def test_classify_artifact_by_extension():
+    assert core.classify_artifact("a/b/report.HTML") == "html"
+    assert core.classify_artifact("calc.pdf") == "pdf"
+    assert core.classify_artifact("plot.png") == "png"
+    assert core.classify_artifact("photo.jpeg") == "image"
+    assert core.classify_artifact("section.dxf") == "dxf"
+    assert core.classify_artifact("data.csv") == "csv"
+    assert core.classify_artifact("mystery.xyz") == "other"
+
+
+def test_describe_artifact(tmp_path):
+    p = tmp_path / "calc_package.html"
+    p.write_text("<html>x</html>", encoding="utf-8")
+    card = core.describe_artifact(str(p))
+    assert card.name == "calc_package.html"
+    assert card.kind == "html"
+    assert card.size == len("<html>x</html>")
+    assert card.exists is True
+    assert core.describe_artifact(str(tmp_path / "gone.pdf")).exists is False
+
+
+def test_pdf_data_uri_small_and_oversized(tmp_path):
+    p = tmp_path / "calc.pdf"
+    p.write_bytes(b"%PDF-1.4 minimal")
+    uri = core.pdf_data_uri(str(p))
+    assert uri is not None and uri.startswith("data:application/pdf;base64,")
+    # oversized -> None (cap below the file size)
+    assert core.pdf_data_uri(str(p), max_bytes=4) is None
+    # missing -> None
+    assert core.pdf_data_uri(str(tmp_path / "nope.pdf")) is None
+
+
+def test_artifact_bytes_and_read_text(tmp_path):
+    p = tmp_path / "out.txt"
+    p.write_text("hello", encoding="utf-8")
+    assert core.artifact_bytes(str(p)) == b"hello"
+    assert core.read_text(str(p)) == "hello"
+
+
+def test_collect_turn_artifacts_unions_and_dedupes():
+    save_new = ["/t/a.html", "/t/b.pdf"]
+    dir_new = ["/t/b.pdf", "/t/c.dxf"]       # b.pdf appears in both
+    assert core.collect_turn_artifacts(save_new, dir_new) == \
+        ["/t/a.html", "/t/b.pdf", "/t/c.dxf"]
+    assert core.collect_turn_artifacts([], []) == []
+
+
+# ---------------------------------------------------------------------------
 # Disclaimer
 # ---------------------------------------------------------------------------
 
