@@ -7,7 +7,9 @@ re-sending the entire data dict.
 
 import numpy as np
 
-from funhouse_agent.adapters import clean_result, require_params
+from funhouse_agent.adapters import (
+    clean_result, figure_output_format, require_params, save_html_output,
+)
 
 
 def _require_file_or_content(params: dict, *, method: str):
@@ -147,8 +149,9 @@ def _run_plot_parameter_vs_depth(params: dict) -> dict:
         group_trends_by=params.get("group_trends_by", ""),
         title=params.get("title", ""),
     )
-    output_format = params.get("output_format", "metadata")
-    return clean_result(result.to_dict(output_format=output_format))
+    output_format = figure_output_format(params)
+    return save_html_output(
+        clean_result(result.to_dict(output_format=output_format)), params)
 
 
 def _run_plot_atterberg_limits(params: dict) -> dict:
@@ -159,8 +162,9 @@ def _run_plot_atterberg_limits(params: dict) -> dict:
         use_elevation=params.get("use_elevation", False),
         title=params.get("title", ""),
     )
-    output_format = params.get("output_format", "metadata")
-    return clean_result(result.to_dict(output_format=output_format))
+    output_format = figure_output_format(params)
+    return save_html_output(
+        clean_result(result.to_dict(output_format=output_format)), params)
 
 
 def _run_plot_multi_parameter(params: dict) -> dict:
@@ -173,8 +177,9 @@ def _run_plot_multi_parameter(params: dict) -> dict:
         use_elevation=params.get("use_elevation", False),
         title=params.get("title", ""),
     )
-    output_format = params.get("output_format", "metadata")
-    return clean_result(result.to_dict(output_format=output_format))
+    output_format = figure_output_format(params)
+    return save_html_output(
+        clean_result(result.to_dict(output_format=output_format)), params)
 
 
 def _run_plot_plan_view(params: dict) -> dict:
@@ -187,8 +192,9 @@ def _run_plot_plan_view(params: dict) -> dict:
         parameter_for_color=params.get("parameter_for_color", ""),
         title=params.get("title", ""),
     )
-    output_format = params.get("output_format", "metadata")
-    return clean_result(result.to_dict(output_format=output_format))
+    output_format = figure_output_format(params)
+    return save_html_output(
+        clean_result(result.to_dict(output_format=output_format)), params)
 
 
 def _run_plot_cross_section(params: dict) -> dict:
@@ -204,8 +210,9 @@ def _run_plot_cross_section(params: dict) -> dict:
         show_gwl=params.get("show_gwl", True),
         title=params.get("title", ""),
     )
-    output_format = params.get("output_format", "metadata")
-    return clean_result(result.to_dict(output_format=output_format))
+    output_format = figure_output_format(params)
+    return save_html_output(
+        clean_result(result.to_dict(output_format=output_format)), params)
 
 
 # ---------------------------------------------------------------------------
@@ -399,6 +406,7 @@ METHOD_INFO = {
             "group_trends_by": {"type": "str", "required": False, "default": "", "description": "Group trends by 'uscs' for separate trends per soil class."},
             "title": {"type": "str", "required": False, "default": "", "description": "Custom plot title."},
             "output_format": {"type": "str", "required": False, "default": "metadata", "allowed_values": ["metadata", "html", "json"], "description": "Output format."},
+            "output_path": {"type": "str", "required": False, "description": "If given, SAVE the self-contained figure HTML to this real path (e.g. '/Workspace/Users/me/plot.html' or '/tmp/plot.html') and return a short {output_path, file_exists, size} confirmation instead of the large HTML blob. Forces html rendering; the write is verified. Omit to receive the HTML inline."},
         },
         "returns": {
             "plot_type": "Type of plot.",
@@ -415,6 +423,7 @@ METHOD_INFO = {
             "use_elevation": {"type": "bool", "required": False, "default": False, "description": "If True, Y-axis is elevation."},
             "title": {"type": "str", "required": False, "default": "", "description": "Custom plot title."},
             "output_format": {"type": "str", "required": False, "default": "metadata", "allowed_values": ["metadata", "html", "json"], "description": "Output format."},
+            "output_path": {"type": "str", "required": False, "description": "If given, SAVE the self-contained figure HTML to this real path (e.g. '/Workspace/Users/me/plot.html' or '/tmp/plot.html') and return a short {output_path, file_exists, size} confirmation instead of the large HTML blob. Forces html rendering; the write is verified. Omit to receive the HTML inline."},
         },
         "returns": {
             "plot_type": "Type of plot.",
@@ -431,6 +440,7 @@ METHOD_INFO = {
             "use_elevation": {"type": "bool", "required": False, "default": False, "description": "If True, Y-axis is elevation."},
             "title": {"type": "str", "required": False, "default": "", "description": "Custom plot title."},
             "output_format": {"type": "str", "required": False, "default": "metadata", "allowed_values": ["metadata", "html", "json"], "description": "Output format."},
+            "output_path": {"type": "str", "required": False, "description": "If given, SAVE the self-contained figure HTML to this real path (e.g. '/Workspace/Users/me/plot.html' or '/tmp/plot.html') and return a short {output_path, file_exists, size} confirmation instead of the large HTML blob. Forces html rendering; the write is verified. Omit to receive the HTML inline."},
         },
         "returns": {
             "plot_type": "Type of plot.",
@@ -449,6 +459,7 @@ METHOD_INFO = {
             "parameter_for_color": {"type": "str", "required": False, "default": "", "description": "Parameter name when color_by='parameter'."},
             "title": {"type": "str", "required": False, "default": "", "description": "Custom plot title."},
             "output_format": {"type": "str", "required": False, "default": "metadata", "allowed_values": ["metadata", "html", "json"], "description": "Output format."},
+            "output_path": {"type": "str", "required": False, "description": "If given, SAVE the self-contained figure HTML to this real path (e.g. '/Workspace/Users/me/plot.html' or '/tmp/plot.html') and return a short {output_path, file_exists, size} confirmation instead of the large HTML blob. Forces html rendering; the write is verified. Omit to receive the HTML inline."},
         },
         "returns": {
             "plot_type": "Type of plot.",
@@ -468,6 +479,7 @@ METHOD_INFO = {
             "show_gwl": {"type": "bool", "required": False, "default": True, "description": "Show groundwater level dashed line."},
             "title": {"type": "str", "required": False, "default": "", "description": "Custom plot title."},
             "output_format": {"type": "str", "required": False, "default": "metadata", "allowed_values": ["metadata", "html", "json"], "description": "Output format."},
+            "output_path": {"type": "str", "required": False, "description": "If given, SAVE the self-contained figure HTML to this real path (e.g. '/Workspace/Users/me/plot.html' or '/tmp/plot.html') and return a short {output_path, file_exists, size} confirmation instead of the large HTML blob. Forces html rendering; the write is verified. Omit to receive the HTML inline."},
         },
         "returns": {
             "plot_type": "Type of plot.",

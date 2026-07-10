@@ -135,7 +135,13 @@ Adapters are lazy-loaded: `dispatch.py` only imports an adapter when first calle
 | `compute_trend` | Linear/log-linear regression with R², COV |
 
 All plot methods accept `site_key` (preferred, from cache) or `site_data` (dict).
-Set `output_format: "html"` to get a renderable Plotly figure.
+Pass **`output_path`** to SAVE the self-contained Plotly HTML to a real path
+(verified write via `_fileio.save_verified`, `/Workspace` through the Databricks
+workspace API) and get back a compact `{output_path, file_exists, size,
+renderer_note}` confirmation instead of the ~MB blob — the shared
+`figure_output_format` / `save_html_output` helpers in `adapters/__init__.py`
+handle this uniformly. Set `output_format: "html"` (no `output_path`) to receive
+the HTML inline instead; the default (`"metadata"`) returns only counts/stats.
 
 ## Extended Tools
 

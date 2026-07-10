@@ -215,7 +215,100 @@ def workspace_api_upload(path: str, content) -> dict:
     return {"ok": True, "size": size, "verified": True}
 
 
+# ---------------------------------------------------------------------------
+# High-level reusable verified save
+# ---------------------------------------------------------------------------
+
+def _local_write(path: str, content) -> str:
+    """Write bytes/str to the local filesystem; returns the absolute path."""
+    abs_path = os.path.abspath(path)
+    parent = os.path.dirname(abs_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    if isinstance(content, bytes):
+        with open(abs_path, "wb") as f:
+            f.write(content)
+    else:
+        with open(abs_path, "w", encoding="utf-8") as f:
+            f.write(content)
+    return abs_path
+
+
+def save_verified(path: str, content) -> dict:
+    """Write ``content`` to a REAL path, verify it landed, rescue on failure.
+
+    The reusable verified-save entry point for tool/adapter code that produces
+    a real output file (e.g. a self-contained Plotly HTML). Mirrors the
+    ``save_file`` tool's default-writer behavior without the tool envelope:
+
+    * a ``/Workspace`` target is routed through the durable Databricks
+      workspace API first (falls back to a plain write when ``databricks-sdk``
+      is unavailable);
+    * the write is read back and compared (size + head) — a target that stored
+      only a ``PLACEHOLDER`` is caught;
+    * on a verify failure or a writer exception, a verified copy is staged to
+      the temp dir and returned as ``rescue_path``.
+
+    ``content`` may be ``str`` or ``bytes``. Returns a structured dict:
+    ``{saved, file_exists, file_size_bytes, [save_method], [error],
+    [rescue_path], [workspace_api_note]}``.
+    """
+    expected = (content if isinstance(content, bytes)
+                else content.encode("utf-8", errors="replace"))
+
+    api_error = None
+    if _is_workspace_path(path):
+        api = workspace_api_upload(path, expected)
+        if api.get("ok"):
+            return {
+                "saved": path,
+                "file_exists": True,
+                "file_size_bytes": api.get("size", len(expected)),
+                "save_method": "workspace_api",
+            }
+        api_error = api.get("error")
+
+    try:
+        saved_path = _local_write(path, content)
+    except Exception as e:
+        out = {"error": f"{type(e).__name__}: {e}" + workspace_write_hint(path)}
+        rescue = rescue_write(os.path.abspath(path), expected)
+        if rescue:
+            out["rescue_path"] = rescue
+            out["error"] += (
+                f" A verified copy was saved to '{rescue}' — report THAT path "
+                "to the user.")
+        if api_error:
+            out["workspace_api_note"] = (
+                f"The Databricks workspace API was tried first and failed "
+                f"({api_error}); the plain write then also failed.")
+        return out
+
+    abs_path = os.path.abspath(saved_path)
+    exists = os.path.isfile(abs_path)
+    out = {
+        "saved": abs_path if exists else saved_path,
+        "file_size_bytes": os.path.getsize(abs_path) if exists else 0,
+    }
+    problem = written_file_problem(abs_path, expected)
+    out["file_exists"] = exists and problem is None
+    if problem:
+        out["error"] = f"save ran but {problem}." + workspace_write_hint(abs_path)
+        rescue = rescue_write(abs_path, expected)
+        if rescue:
+            out["rescue_path"] = rescue
+            out["error"] += (
+                f" A verified copy was saved to '{rescue}' — report THAT path "
+                "to the user.")
+    if api_error:
+        out["workspace_api_note"] = (
+            f"The Databricks workspace API was unavailable ({api_error}); used "
+            "a plain filesystem write instead.")
+    return out
+
+
 __all__ = [
     "is_databricks", "default_output_dir", "written_file_problem",
     "rescue_write", "workspace_write_hint", "workspace_api_upload",
+    "save_verified",
 ]

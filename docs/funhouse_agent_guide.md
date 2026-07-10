@@ -617,7 +617,18 @@ to bare filenames on DBR 14+, where the notebook working directory IS a
   to `/tmp` on Databricks, every save response carries `file_exists` /
   `file_size_bytes` verified against the written content, and if the target
   did not store the content the tool returns an error plus a `rescue_path`
-  with a verified copy in `/tmp`.
+  with a verified copy in `/tmp`. A `/Workspace` target now also goes through
+  the authenticated Databricks workspace API (durable) when `databricks-sdk`
+  is available.
+- **Plots: pass `output_path` to the plot method instead of saving the HTML
+  yourself.** The subsurface `plot_*` methods (`plot_parameter_vs_depth`,
+  `plot_cross_section`, `plot_plan_view`, `plot_atterberg_limits`,
+  `plot_multi_parameter`) accept an optional `output_path`. When given, the
+  self-contained Plotly HTML is written there (verified, same `/Workspace`
+  handling) and the method returns a short `{output_path, file_exists,
+  file_size_bytes, renderer_note}` confirmation instead of a ~MB HTML blob — no
+  separate `save_file` step. Omit `output_path` and set `output_format: "html"`
+  only when you actually want the HTML inline.
 - PDF calc packages need `pdflatex`, which Databricks clusters do not have —
   generate HTML (self-contained) and print to PDF from the browser instead.
 

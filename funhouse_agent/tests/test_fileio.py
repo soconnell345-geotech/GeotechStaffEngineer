@@ -16,7 +16,7 @@ import types
 import pytest
 
 from funhouse_agent._fileio import (
-    default_output_dir, rescue_write, workspace_api_upload,
+    default_output_dir, rescue_write, save_verified, workspace_api_upload,
     workspace_write_hint, written_file_problem,
 )
 
@@ -324,6 +324,78 @@ class TestSaveFileWorkspaceRouting:
         res = json.loads(vt._dispatch_save_file(
             {"path": "rescue_me_test_fileio.txt", "content": "IMPORTANT"},
             raising))
+        assert "error" in res
+        assert res.get("rescue_path")
+        try:
+            assert open(res["rescue_path"], "rb").read() == b"IMPORTANT"
+        finally:
+            os.remove(res["rescue_path"])
+
+
+class TestSaveVerified:
+    """The reusable high-level verified save (used by plot adapters etc.)."""
+
+    def test_local_success(self, tmp_path):
+        out = tmp_path / "a.html"
+        res = save_verified(str(out), "<html>hi</html>")
+        assert res["file_exists"] is True
+        assert res["file_size_bytes"] == out.stat().st_size > 0
+        assert os.path.isabs(res["saved"])
+        assert "error" not in res
+
+    def test_bytes_content(self, tmp_path):
+        out = tmp_path / "a.bin"
+        res = save_verified(str(out), b"\x00\x01\x02BIN")
+        assert res["file_exists"] is True
+        assert out.read_bytes() == b"\x00\x01\x02BIN"
+
+    def test_workspace_uses_api(self):
+        store = {}
+        with _fake_databricks_sdk(_client_factory(store)):
+            res = save_verified("/Workspace/Users/x/plot.html", "<html>fig</html>")
+        assert res["save_method"] == "workspace_api"
+        assert res["file_exists"] is True
+        assert store["upload"][0] == "/Workspace/Users/x/plot.html"
+
+    def test_workspace_api_absent_falls_back(self, tmp_path, monkeypatch):
+        import funhouse_agent._fileio as fio
+        target = tmp_path / "out.html"
+
+        def writer(path, content):
+            mode = "wb" if isinstance(content, (bytes, bytearray)) else "w"
+            with open(target, mode) as f:
+                f.write(content)
+            return str(target)
+
+        monkeypatch.setattr(fio, "_local_write", writer)
+        res = save_verified("/Workspace/Users/x/out.html", "<html>hi</html>")
+        assert res["file_exists"] is True
+        assert res.get("save_method") != "workspace_api"
+        assert "workspace_api_note" in res
+
+    def test_placeholder_write_rescues(self, tmp_path, monkeypatch):
+        import funhouse_agent._fileio as fio
+        target = tmp_path / "ph.html"
+
+        def placeholder(path, content):
+            target.write_bytes(b"PLACEHOLDER")
+            return str(target)
+
+        monkeypatch.setattr(fio, "_local_write", placeholder)
+        res = save_verified(str(target), "<html>" + "y" * 3000 + "</html>")
+        assert res["file_exists"] is False
+        assert "did not store the content" in res["error"]
+        assert res.get("rescue_path")
+        os.remove(res["rescue_path"])
+
+    def test_writer_exception_rescues(self, monkeypatch):
+        import funhouse_agent._fileio as fio
+
+        def raising(path, content):
+            raise PermissionError("denied")
+
+        monkeypatch.setattr(fio, "_local_write", raising)
+        res = save_verified("save_verified_exc_test.html", "IMPORTANT")
         assert "error" in res
         assert res.get("rescue_path")
         try:
