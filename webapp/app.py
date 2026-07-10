@@ -13,6 +13,15 @@ with a per-session LangGraph ``thread_id``.
 
 from __future__ import annotations
 
+import os
+import sys
+
+# streamlit runs this file with webapp/ as the script dir; the repo/site root
+# that contains the `webapp` package is one level up and must be importable.
+_PKG_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PKG_ROOT not in sys.path:
+    sys.path.insert(0, _PKG_ROOT)
+
 import streamlit as st
 
 from webapp import core, engine_config
