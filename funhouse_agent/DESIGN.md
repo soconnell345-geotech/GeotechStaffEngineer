@@ -23,9 +23,9 @@ GeotechAgent
 │   ├── Text-based ReAct  — <tool_call> XML parsing (ClaudeEngine, PrompterAPI.chat)
 │   └── Native tool calling — OpenAI `tools` parameter (NativeToolEngine)
 ├── 50 adapter modules (36 analysis + 14 reference) bridging flat JSON → module APIs
-├── Vision tools via engine.analyze_image()
-├── Attachments dict for image/PDF data
-└── Extended tool dispatch (standard + vision tools)
+├── PDF text extraction (read_pdf_text, PyMuPDF) + vision tools (engine.analyze_image())
+├── Attachments dict for image/PDF data — accepts an attachment key OR a real path
+└── Extended tool dispatch (4 standard + 5 extended tools)
 
 Dispatch Chain:
   agent.py → dispatch.py → adapters/<module>.py → analysis modules
@@ -138,27 +138,70 @@ Set `output_format: "html"` to get a renderable Plotly figure.
 
 ## Extended Tools
 
-Beyond the standard 4 ReAct tools:
-- `analyze_image` — analyze attached image via vision
-- `analyze_pdf_page` — render PDF page and analyze
+Beyond the 4 standard ReAct tools (`call_agent`, `list_methods`,
+`describe_method`, `list_agents`), 5 extended tools:
+
+- `read_pdf_text` — PyMuPDF text-layer extraction (no vision engine): read a
+  real report's TOC, boring logs, lab summary and recommendations as TEXT.
+  Cheap first pass for text-based PDFs. Flags any page with no text layer
+  ("no text layer — use analyze_pdf_page") so scanned pages fall through to
+  vision. Accepts an attachment key OR a real path (`/tmp/...`, `/Volumes/...`).
+- `analyze_image` — analyze an attached image via vision
+- `analyze_pdf_page` — render one PDF page and analyze it via vision (for
+  scanned pages, figures, plotted cross-sections; heavier than `read_pdf_text`)
+- `read_reference_figure` — read a value off a reference chart/figure via vision
 - `save_file` — save content to a file (calc packages, HTML, PDF, plots)
 
-These are dispatched within the agent's ReAct loop, separate from the
-standard geotechnical tool dispatch.
+`read_pdf_text`, `analyze_image`, and `analyze_pdf_page` each resolve their
+source via `_resolve_attachment_or_path`: attachment-dict key first, then an
+`os.path.isfile` real-path fallback, with an error that lists the available
+keys and notes real paths are accepted. `read_pdf_text` and
+`read_reference_figure` get a larger truncation cap (16k chars) than the
+default 8k so long text extracts and dense figure read-offs survive.
 
-## Notebook Chat (notebook.py)
+These are dispatched within the agent's ReAct loop (and via the native
+`tools` schema in `native_tools.py` / the deep `StructuredTool` factories in
+`deep/tools.py`), separate from the standard geotechnical tool dispatch.
 
-`NotebookChat` wraps a `GeotechAgent` with ipywidgets for Jupyter/Databricks.
-Injects into `agent._on_tool_call` to capture tool calls and detect output files
-(from `save_file` and `calc_package` adapter results). Uses `HTML` widgets for
-styled chat history with collapsible `<details>` for tool calls.
+## Notebook Chat (notebook.py, deep/notebook.py)
+
+`NotebookChat` (v1 `GeotechAgent`) and `DeepNotebookChat` (deep/LangGraph agent)
+wrap an agent with ipywidgets for Jupyter/Databricks. Both inject into the
+agent's tool-call hook to capture tool calls and detect output files (from
+`save_file` and `calc_package` adapter results), and use `HTML` widgets for
+styled chat history with collapsible tool-call details.
 
 Import explicitly to avoid pulling ipywidgets for non-notebook users:
 ```python
-from funhouse_agent.notebook import NotebookChat
-chat = NotebookChat(agent)
-chat.display()
+from funhouse_agent.notebook import NotebookChat       # v1 agent
+chat = NotebookChat(agent); chat.display()
+
+from funhouse_agent.deep.notebook import DeepNotebookChat  # deep agent
+DeepNotebookChat.from_model(model).display()           # builds the agent for you
 ```
+
+### File-attachment upload widget
+
+Both chats expose an **Attach** `FileUpload` button that writes uploaded bytes
+straight into the agent's **live attachments dict**, so a file dropped mid-chat
+is immediately reachable by `read_pdf_text` / `analyze_pdf_page` / `analyze_image`
+under its sanitized filename (e.g. `Mali Report v2.pdf` → key `Mali_Report_v2.pdf`).
+Re-uploading the same name overwrites and says so; an attachments indicator shows
+the current keys. A system-style chat line names each attached key so the user
+knows what to reference.
+
+The dict must be **one shared live object** end to end. `build_deep_agent`
+materializes a single attachments dict (even when called with none), closures it
+into every tool factory, and exposes it as `agent.geotech_attachments`;
+`DeepNotebookChat` resolves its dict as explicit-arg → `agent.geotech_attachments`
+→ fresh, and `from_model` threads the *same* dict into both the build and the
+chat. v1 `NotebookChat` writes through `agent.add_attachment`. This is why an
+upload reaches tools even when the agent was built without any attachments.
+
+**Databricks ceiling:** the ipywidgets `FileUpload` transport caps at ~10 MB.
+For larger files, read the bytes in a cell into an attachments dict and pass it
+to the agent (`DeepNotebookChat.from_model(model, attachments=attachments)`), or
+reference a driver-local real path (`/tmp/...`, `/Volumes/...`) directly.
 
 **Note:** Panel (`pn.chat.ChatInterface`) and Gradio (`gr.ChatInterface`) were
 evaluated as alternative chat UIs (Mar 2026). Gradio is blocked on the org

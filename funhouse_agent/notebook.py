@@ -271,18 +271,28 @@ class NotebookChat:
     def _on_upload_change(self, change):
         if not change["new"]:
             return
-        value = change["new"]
-        if isinstance(value, dict):
-            # ipywidgets 7.x: {name: {"content": bytes}}
-            for name, info in value.items():
-                self._agent.add_attachment(name, info["content"])
-        else:
-            # ipywidgets 8.x: tuple of FileInfo dicts
-            for file_info in value:
-                name = file_info.get("name", "file")
-                content = file_info.get("content", b"")
-                self._agent.add_attachment(name, bytes(content))
-        self._update_attachment_badges()
+        from funhouse_agent.vision_tools import (
+            sanitize_upload_name, iter_upload_files,
+        )
+        existing = set(self._agent.attachments.keys())
+        names = []
+        for raw_name, content in iter_upload_files(change["new"]):
+            key = sanitize_upload_name(raw_name)
+            overwrite = key in existing
+            self._agent.add_attachment(key, content)
+            existing.add(key)
+            names.append(key)
+            self._messages.append({
+                "role": "system",
+                "content": (
+                    f"attached '{key}' ({len(content):,} bytes)"
+                    + (" — replaced the previous file of that name" if overwrite
+                       else " — reference it by that name")
+                ),
+            })
+        if names:
+            self._update_attachment_badges()
+            self._refresh_chat()
 
     # -- agent callback -----------------------------------------------------
 
@@ -379,6 +389,11 @@ class NotebookChat:
                 parts.append(
                     f'<div class="nb-msg nb-status">'
                     f'<em>{_escape(msg["content"])}</em></div>'
+                )
+            elif role == "system":
+                parts.append(
+                    f'<div class="nb-msg nb-status">📎 '
+                    f'{_escape(msg["content"])}</div>'
                 )
         return "\n".join(parts)
 

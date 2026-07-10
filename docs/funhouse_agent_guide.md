@@ -345,7 +345,11 @@ chat.display()
 Features:
 - Text input with Send/Reset buttons (Enter key to send)
 - Scrollable chat history with styled messages and collapsible tool calls
-- File upload widget + `chat.attach(path)` for loading files from DBFS/workspace
+- **Attach** file-upload widget (writes into the agent's live attachments under
+  the sanitized filename, posts a `📎 attached '<name>'` line + an attachments
+  indicator) — plus `chat.attach(path)` for loading a file from DBFS/workspace.
+  The widget caps at ~10 MB on Databricks; for a bigger file use `chat.attach()`
+  or reference a real path (`/tmp/...`, `/Volumes/...`) directly in the question
 - Output file detection and display for calc packages
 - Token/stats tracking bar
 - `chat.output_files` — list of produced file paths
@@ -522,8 +526,30 @@ from funhouse_agent.deep.notebook import DeepNotebookChat
 
 model = PrompterChatModel(prompter=fh_prompter, model="funhouse-gpt-high")
 run_selfcheck(model)              # expect 2/2 PASS
-agent = build_deep_agent(model)   # enable_setup_agent=True for the staged model-setup sub-agent
-DeepNotebookChat(agent).display()
+# from_model wires ONE shared attachments dict through to the tools AND the
+# upload widget, so the Attach button "just works":
+chat = DeepNotebookChat.from_model(model)   # or .from_model(model, enable_setup_agent=True)
+chat.display()
+```
+
+The chat has an **Attach** file-upload button: pick a PDF / image / DXF / DIGGS
+file and it is written into the agent's live attachments dict under its
+(sanitized) filename, a `📎 attached '<name>'` line appears in the chat, and an
+`attachments: [...]` indicator lists what is loaded. Reference it in your
+question by that name (e.g. *"read the boring logs in report.pdf"*) — the agent
+resolves an attachment key OR a real path via `read_pdf_text` / `analyze_pdf_page`.
+
+**Size ceiling:** the ipywidgets `FileUpload` control tops out around ~10 MB on
+Databricks. For a bigger PDF, skip the widget and put the bytes in the shared
+attachments dict directly, then reference the key:
+
+```python
+attachments = {}
+with open("/tmp/big_report.pdf", "rb") as f:
+    attachments["big_report.pdf"] = f.read()
+chat = DeepNotebookChat.from_model(model, attachments=attachments)
+chat.display()   # then ask: "summarize the recommendations in big_report.pdf"
+# (or just reference the real path directly: "read /tmp/big_report.pdf")
 ```
 
 ### Wheel health check + eval suite (for validating a test wheel)

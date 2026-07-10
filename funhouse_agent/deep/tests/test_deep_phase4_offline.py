@@ -275,6 +275,73 @@ def test_explicit_thread_id_honored():
 
 
 # ===========================================================================
+# (c2) FileUpload attachments (item 5) — headless, no ipywidgets/model needed
+# ===========================================================================
+
+class _FakeAgent:
+    """Stand-in compiled agent exposing a shared attachments dict."""
+    def __init__(self):
+        self.geotech_attachments = {}
+
+
+def test_chat_shares_agent_attachments_dict():
+    from funhouse_agent.deep.notebook import DeepNotebookChat
+    ag = _FakeAgent()
+    chat = DeepNotebookChat(ag)
+    assert chat.attachments is ag.geotech_attachments
+
+
+def test_ingest_uploads_writes_and_sanitizes(tmp_path):
+    """8.x tuple form: bytes land in the SHARED dict under a sanitized key and a
+    per-file attachment line is added to the transcript (headless — no widgets)."""
+    from funhouse_agent.deep.notebook import DeepNotebookChat
+    ag = _FakeAgent()
+    chat = DeepNotebookChat(ag)
+    names = chat._ingest_uploads((
+        {"name": "Mali Report v2.pdf", "content": b"%PDF-1.4 data"},
+    ))
+    assert names == ["Mali_Report_v2.pdf"]
+    assert ag.geotech_attachments["Mali_Report_v2.pdf"] == b"%PDF-1.4 data"
+    assert chat._transcript[-1]["kind"] == "attachment"
+    assert "reference it by that name" in chat._transcript[-1]["text"]
+
+
+def test_ingest_uploads_7x_dict_form_and_overwrite():
+    from funhouse_agent.deep.notebook import DeepNotebookChat
+    chat = DeepNotebookChat(_FakeAgent())
+    chat._ingest_uploads({"r.pdf": {"content": b"A"}})   # 7.x dict form
+    chat._ingest_uploads({"r.pdf": {"content": b"B"}})   # same key -> overwrite
+    assert chat.attachments["r.pdf"] == b"B"
+    assert "replaced" in chat._transcript[-1]["text"]
+
+
+def test_from_model_upload_reaches_agent_tools():
+    """from_model wires ONE shared dict; an upload reaches the compiled agent's
+    exposed attachments (the same object its vision tools read)."""
+    from funhouse_agent.deep.notebook import DeepNotebookChat
+    chat = DeepNotebookChat.from_model(_fake_model())
+    assert chat.attachments is getattr(chat._agent, "geotech_attachments")
+    chat._ingest_uploads(({"name": "b.pdf", "content": b"X"},))
+    assert getattr(chat._agent, "geotech_attachments")["b.pdf"] == b"X"
+
+
+def test_attachment_kind_renders():
+    from funhouse_agent.deep.notebook import DeepNotebookChat, _entry_to_plain
+    assert "attachment" in _entry_to_plain(
+        {"kind": "attachment", "text": "attached 'x.pdf'"})
+
+
+def test_build_deep_agent_exposes_shared_attachments():
+    from funhouse_agent.deep.agent import build_deep_agent
+    att = {}
+    agent = build_deep_agent(_fake_model(), attachments=att)
+    assert getattr(agent, "geotech_attachments") is att   # same object
+    # default (attachments=None) still exposes one shared dict
+    agent2 = build_deep_agent(_fake_model())
+    assert isinstance(getattr(agent2, "geotech_attachments"), dict)
+
+
+# ===========================================================================
 # (d) ask_and_print over a STUBBED agent (no model) — full streaming core
 # ===========================================================================
 

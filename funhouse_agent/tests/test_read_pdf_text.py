@@ -11,7 +11,7 @@ import pytest
 
 from funhouse_agent.vision_tools import (
     dispatch_extended_tool, _resolve_attachment_or_path, _parse_pages,
-    EXTENDED_TOOLS,
+    sanitize_upload_name, iter_upload_files, EXTENDED_TOOLS,
 )
 
 fitz = pytest.importorskip("fitz")  # PyMuPDF
@@ -152,6 +152,29 @@ class TestRealPathFallback:
         assert src2 == "attachment" and data2 == b"ATT"
         with pytest.raises(FileNotFoundError):
             _resolve_attachment_or_path("nope", {"k": b"ATT"})
+
+
+class TestUploadHelpers:
+    def test_sanitize_basename_and_chars(self):
+        assert sanitize_upload_name("Mali Report v2.pdf") == "Mali_Report_v2.pdf"
+        assert sanitize_upload_name("/tmp/sub/dir/a b.pdf") == "a_b.pdf"
+        assert sanitize_upload_name("C:\\x\\y z.PDF") == "y_z.PDF"
+        assert sanitize_upload_name("") == "file"
+        assert sanitize_upload_name(None) == "file"
+
+    def test_iter_upload_files_8x_tuple(self):
+        got = list(iter_upload_files(
+            ({"name": "a.pdf", "content": b"AA"},
+             {"name": "b.png", "content": bytearray(b"BB")})))
+        assert got == [("a.pdf", b"AA"), ("b.png", b"BB")]
+
+    def test_iter_upload_files_7x_dict(self):
+        got = list(iter_upload_files({"a.pdf": {"content": b"AA"}}))
+        assert got == [("a.pdf", b"AA")]
+
+    def test_iter_upload_files_empty(self):
+        assert list(iter_upload_files(None)) == []
+        assert list(iter_upload_files({})) == []
 
 
 class TestParsePages:

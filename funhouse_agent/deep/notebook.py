@@ -402,6 +402,8 @@ def _entry_to_plain(entry: dict) -> str:
         return text
     if kind == "tool_result":
         return f"  [result] {text}"
+    if kind == "attachment":
+        return f"  [attachment] {text}"
     return text
 
 
@@ -451,6 +453,7 @@ class DeepNotebookChat:
         *,
         thread_id: Optional[str] = None,
         store=None,
+        attachments: Optional[dict] = None,
         max_result_chars: int = 2000,
         height: str = "500px",
     ):
@@ -459,6 +462,18 @@ class DeepNotebookChat:
         self._max_result_chars = max_result_chars
         self._height = height
         self._thread_id = thread_id or uuid4().hex
+
+        # The attachments dict the FileUpload writes into MUST be the SAME object
+        # the agent's vision tools read. Priority: an explicitly passed dict, else
+        # the one build_deep_agent exposed on the agent, else a fresh dict (used
+        # only if this agent was hand-built without one — uploads then may not
+        # reach the tools; from_model always wires a shared dict).
+        if attachments is not None:
+            self._attachments = attachments
+        else:
+            self._attachments = getattr(agent, "geotech_attachments", None)
+            if self._attachments is None:
+                self._attachments = {}
 
         # Client-side conversation history (LangChain-style dict messages).
         self._messages: list[dict] = []
@@ -509,11 +524,17 @@ class DeepNotebookChat:
         from funhouse_agent.deep.agent import build_deep_agent
 
         store = build_kwargs.get("store")
-        agent = build_deep_agent(model, **build_kwargs)
+        # One shared attachments dict handed to BOTH the agent build and the chat
+        # so the FileUpload writes reach the tools.
+        attachments = build_kwargs.pop("attachments", None)
+        if attachments is None:
+            attachments = {}
+        agent = build_deep_agent(model, attachments=attachments, **build_kwargs)
         return cls(
             agent,
             thread_id=thread_id,
             store=store,
+            attachments=attachments,
             max_result_chars=max_result_chars,
             height=height,
         )
@@ -734,6 +755,22 @@ class DeepNotebookChat:
                 padding="8px",
             ),
         )
+        # File upload — writes into the shared attachments dict so the user never
+        # has to juggle paths (Databricks FileUpload caps around ~10 MB; for a
+        # bigger PDF, add it to the attachments dict directly — see the guide).
+        self._upload = widgets.FileUpload(
+            accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.xml,.diggs,.dxf,.csv,.txt",
+            multiple=True,
+            description="Attach",
+            tooltip="Attach a file (PDF, image, DXF, DIGGS...) up to ~10 MB",
+            layout=widgets.Layout(width="150px"),
+        )
+        self._attach_html = widgets.HTML(value="")
+        upload_row = widgets.HBox(
+            [self._upload, self._attach_html],
+            layout=widgets.Layout(padding="4px 0"),
+        )
+
         self._input = widgets.Text(
             placeholder="Ask a geotechnical question...",
             continuous_update=False,
@@ -753,12 +790,14 @@ class DeepNotebookChat:
             layout=widgets.Layout(padding="4px 0"),
         )
         self._container = widgets.VBox([
-            self._status_html, self._chat_html, input_row,
+            self._status_html, self._chat_html, upload_row, input_row,
         ])
 
         self._send_btn.on_click(self._on_send)
         self._input.observe(self._on_input_change, names="value")
         self._reset_btn.on_click(lambda _=None: self.reset())
+        self._upload.observe(self._on_upload_change, names="value")
+        self._update_attachments_indicator()
         self._refresh_transcript()
 
     # -- widget event handlers ----------------------------------------------
@@ -813,6 +852,67 @@ class DeepNotebookChat:
             self._update_status("")
             self._is_processing = False
             self._send_btn.disabled = False
+
+    # -- attachments --------------------------------------------------------
+
+    @property
+    def attachments(self) -> dict:
+        """The live attachments dict shared with the agent's vision tools."""
+        return self._attachments
+
+    def _ingest_uploads(self, value) -> list:
+        """Write uploaded files into the shared attachments dict.
+
+        Testable headless: updates ``self._attachments`` and the transcript, and
+        refreshes the widgets ONLY when they have been built. Returns the list of
+        attachment keys ingested (a sanitized basename; an existing key is
+        overwritten with a visible note).
+        """
+        from funhouse_agent.vision_tools import (
+            sanitize_upload_name, iter_upload_files,
+        )
+        names = []
+        for raw_name, data in iter_upload_files(value):
+            key = sanitize_upload_name(raw_name)
+            overwrite = key in self._attachments
+            self._attachments[key] = data
+            names.append(key)
+            note = (
+                f"attached '{key}' ({len(data):,} bytes)"
+                + (" — replaced the previous file of that name" if overwrite
+                   else " — reference it by that name")
+            )
+            self._transcript.append({"kind": "attachment", "text": note})
+        if names:
+            self._update_attachments_indicator()
+            self._refresh_transcript()
+        return names
+
+    def _on_upload_change(self, change):
+        value = change.get("new")
+        if not value:
+            return
+        self._ingest_uploads(value)
+        # Clear the widget so re-uploading the same filename fires again.
+        try:
+            self._upload.value = {} if isinstance(self._upload.value, dict) else ()
+        except Exception:
+            pass
+
+    def _update_attachments_indicator(self):
+        if self._container is None:
+            return
+        keys = list(self._attachments.keys())
+        if keys:
+            self._attach_html.value = (
+                '<span style="color:#555;font-family:monospace;font-size:12px;">'
+                f"attachments: [{', '.join(_escape(k) for k in keys)}]</span>"
+            )
+        else:
+            self._attach_html.value = (
+                '<span style="color:#999;font-size:12px;">no attachments — use '
+                "Attach, or reference a real path like /tmp/report.pdf</span>"
+            )
 
     # -- widget rendering ----------------------------------------------------
 
@@ -871,6 +971,10 @@ class DeepNotebookChat:
                 parts.append(
                     f'<div class="dnb-error">{_escape(text)}</div>'
                 )
+            elif kind == "attachment":
+                parts.append(
+                    f'<div class="dnb-attach">📎 {_escape(text)}</div>'
+                )
         return "\n".join(parts)
 
 
@@ -892,6 +996,8 @@ _TRANSCRIPT_CSS = """<style>
            margin:6px 0;padding:6px 12px;border-radius:6px}
 .dnb-tokens{color:#888;font-size:11px;font-family:monospace;
             margin:1px 0 6px 16px}
+.dnb-attach{background:#fff8e1;color:#7a5c00;font-size:12px;
+            margin:4px 0;padding:6px 12px;border-radius:6px}
 </style>"""
 
 

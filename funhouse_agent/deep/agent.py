@@ -556,6 +556,13 @@ def build_deep_agent(
     if engine is None and not isinstance(model, str):
         engine = LangChainVisionEngine(model)
 
+    # ONE shared attachments dict for the whole agent: the primary vision tools
+    # AND the references sub-agent close over the SAME object, and it is exposed
+    # on the returned agent (below) so a notebook FileUpload can add files after
+    # the build reaches every tool. (Previously a None default made each
+    # make_vision_tools create its own empty dict — added files reached nothing.)
+    attachments = {} if attachments is None else attachments
+
     tools = build_primary_tools(
         allowed_agents=allowed_agents,
         engine=engine,
@@ -630,13 +637,22 @@ def build_deep_agent(
     if checkpointer is not None:
         create_kwargs["checkpointer"] = checkpointer
 
-    return create_deep_agent(
+    agent = create_deep_agent(
         model=model,
         tools=tools,
         system_prompt=system_prompt,
         subagents=subagents,
         **create_kwargs,
     )
+    # Expose the shared attachments dict so a UI (DeepNotebookChat FileUpload)
+    # can add files that reach the already-built tools. Best-effort: if the
+    # compiled object rejects attribute assignment, the caller can still pass
+    # the same dict it handed to build_deep_agent.
+    try:
+        agent.geotech_attachments = attachments
+    except Exception:
+        pass
+    return agent
 
 
 def run_memory_demo(model, store, checkpointer=None, *, verbose: bool = True) -> bool:

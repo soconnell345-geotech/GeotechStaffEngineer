@@ -7,7 +7,40 @@ list_agents) with vision-capable tools and file output tools.
 
 import json
 import os
+import re
 from typing import Any, Callable, Dict, Optional
+
+
+# ---------------------------------------------------------------------------
+# Uploaded-file helpers (shared by the notebook chat FileUpload widgets)
+# ---------------------------------------------------------------------------
+
+def sanitize_upload_name(name) -> str:
+    """Reduce an uploaded filename to a safe attachment key.
+
+    Drops any directory component and replaces characters outside
+    ``[A-Za-z0-9._-]`` with ``_`` so the key is stable and shell/path safe.
+    """
+    base = os.path.basename(str(name or "").replace("\\", "/")) or "file"
+    base = re.sub(r"[^A-Za-z0-9._-]", "_", base)
+    return base or "file"
+
+
+def iter_upload_files(value):
+    """Yield ``(name, bytes)`` from an ipywidgets ``FileUpload.value``.
+
+    Handles both widget generations: ipywidgets 7.x (``{name: {"content":
+    bytes}}``) and 8.x (a tuple of ``{"name", "content", ...}`` dicts).
+    """
+    if not value:
+        return
+    if isinstance(value, dict):
+        for name, info in value.items():
+            content = info.get("content", b"") if isinstance(info, dict) else b""
+            yield name, bytes(content)
+    else:
+        for info in value:
+            yield info.get("name", "file"), bytes(info.get("content", b""))
 
 # Standard 4 ReAct tools (defined locally to avoid foundry import chain)
 STANDARD_TOOLS = {"call_agent", "list_methods", "describe_method", "list_agents"}

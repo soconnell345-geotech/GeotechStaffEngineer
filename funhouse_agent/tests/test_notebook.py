@@ -46,6 +46,34 @@ def _make_chat(responses=None, **kwargs):
     return NotebookChat(agent)
 
 
+class TestUploadWidget:
+    """The FileUpload writes into the agent's live attachments dict, sanitizes
+    the key, and posts a system chat line (item 5)."""
+
+    def test_upload_sanitizes_key_and_posts_system_line(self):
+        chat = _make_chat()
+        chat._on_upload_change(
+            {"new": ({"name": "Mali Report.pdf", "content": b"%PDF data"},)})
+        assert chat._agent.attachments["Mali_Report.pdf"] == b"%PDF data"
+        sys_msgs = [m for m in chat._messages if m["role"] == "system"]
+        assert sys_msgs and "Mali_Report.pdf" in sys_msgs[-1]["content"]
+        assert "📎" in chat._render_chat_html()
+
+    def test_upload_7x_dict_and_overwrite(self):
+        chat = _make_chat()
+        chat._on_upload_change({"new": {"r.pdf": {"content": b"A"}}})
+        chat._on_upload_change({"new": {"r.pdf": {"content": b"B"}}})
+        assert chat._agent.attachments["r.pdf"] == b"B"
+        sys_msgs = [m for m in chat._messages if m["role"] == "system"]
+        assert "replaced" in sys_msgs[-1]["content"]
+
+    def test_empty_upload_noop(self):
+        chat = _make_chat()
+        before = len(chat._messages)
+        chat._on_upload_change({"new": ()})
+        assert len(chat._messages) == before
+
+
 # ---------------------------------------------------------------------------
 # Helper tests
 # ---------------------------------------------------------------------------
