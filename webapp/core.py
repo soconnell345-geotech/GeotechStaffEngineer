@@ -193,6 +193,99 @@ def make_save_fn(temp_dir: str, artifacts: List[str]) -> Callable[[str, object],
     return save_fn
 
 
+#: Extension -> artifact kind (drives the card icon + which inline preview to
+#: use). Anything unlisted is "other" (download-only).
+_ARTIFACT_KIND_BY_EXT = {
+    ".html": "html", ".htm": "html",
+    ".pdf": "pdf",
+    ".png": "png",
+    ".jpg": "image", ".jpeg": "image", ".gif": "image", ".webp": "image",
+    ".bmp": "image",
+    ".svg": "svg",
+    ".dxf": "dxf",
+    ".csv": "csv", ".txt": "text", ".md": "text", ".json": "text",
+}
+
+#: Inline-preview size caps. Bigger files are offered download-only — a
+#: self-contained calc-package HTML or a big PDF should not be inlined on every
+#: rerun.
+HTML_PREVIEW_MAX_BYTES = 4 * 1024 * 1024
+PDF_PREVIEW_MAX_BYTES = 10 * 1024 * 1024
+
+
+@dataclass
+class ArtifactCard:
+    """Display data for one agent-produced artifact (streamlit-free — the
+    rendering lives in app.py)."""
+    path: str
+    name: str
+    size: int
+    kind: str
+
+    @property
+    def exists(self) -> bool:
+        return os.path.isfile(self.path)
+
+
+def classify_artifact(path) -> str:
+    """Map a file path to an artifact kind by extension
+    (``html``/``pdf``/``png``/``image``/``svg``/``dxf``/``csv``/``text``/``other``)."""
+    return _ARTIFACT_KIND_BY_EXT.get(os.path.splitext(str(path))[1].lower(),
+                                     "other")
+
+
+def describe_artifact(path) -> ArtifactCard:
+    """Build the :class:`ArtifactCard` for ``path`` (name, size, kind)."""
+    p = str(path)
+    try:
+        size = os.path.getsize(p)
+    except OSError:
+        size = 0
+    return ArtifactCard(path=p, name=os.path.basename(p), size=size,
+                        kind=classify_artifact(p))
+
+
+def artifact_bytes(path) -> bytes:
+    """Read an artifact's raw bytes (for download / preview)."""
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
+def read_text(path) -> str:
+    """Read an artifact as UTF-8 text (lossy on undecodable bytes)."""
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        return fh.read()
+
+
+def pdf_data_uri(path, max_bytes: int = PDF_PREVIEW_MAX_BYTES) -> Optional[str]:
+    """Return a ``data:application/pdf;base64,…`` URI for inline preview, or
+    ``None`` when the file is missing/empty or exceeds ``max_bytes`` (then the
+    app shows download-only)."""
+    import base64
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return None
+    if size <= 0 or size > max_bytes:
+        return None
+    return "data:application/pdf;base64," + \
+        base64.b64encode(artifact_bytes(path)).decode("ascii")
+
+
+def collect_turn_artifacts(save_new: Iterable[str],
+                           dir_new: Iterable[str]) -> List[str]:
+    """Associate a turn's artifacts: the union of the paths the save_fn recorded
+    during the turn and the new files the directory diff found, deduplicated and
+    order-preserving (save_fn first)."""
+    out: List[str] = []
+    seen = set()
+    for p in list(save_new or []) + list(dir_new or []):
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
+
 def snapshot_dir(temp_dir: str) -> set:
     """Return the set of file paths currently under ``temp_dir`` (recursive)."""
     found = set()
