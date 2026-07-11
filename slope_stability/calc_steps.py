@@ -183,7 +183,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             description="Slope stability adequacy",
             demand=FOS_required,
             demand_label="FOS_required",
-            capacity=result.FOS,
+            capacity=round(result.FOS, 3),
             capacity_label="FOS_computed",
             unit="",
             passes=result.FOS >= FOS_required,

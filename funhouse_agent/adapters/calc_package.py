@@ -19,7 +19,8 @@ logic, adapted to the funhouse adapter pattern (METHOD_REGISTRY + METHOD_INFO).
 import os
 from datetime import datetime
 
-from funhouse_agent.adapters import require_keys, require_params
+from funhouse_agent.adapters import (require_keys, require_params,
+                                     reject_unknown_params)
 from funhouse_agent._fileio import (
     default_output_dir, rescue_write, workspace_write_hint,
     written_file_problem,
@@ -324,6 +325,23 @@ def _generate_slope_report_package(params: dict) -> dict:
 
     require_params(params, ["surface_points", "soil_layers"],
                    method="slope_report_package")
+    reject_unknown_params(
+        params,
+        valid=[
+            # geometry
+            "surface_points", "soil_layers", "gwt_points", "surcharge", "kh",
+            # search
+            "method", "surface_type", "n_slices", "tol", "x_range", "y_range",
+            "nx", "ny", "x_entry_range", "x_exit_range", "n_trials", "n_points",
+            "seed", "f_interslice", "FOS_required",
+            # probabilistic annex
+            "variables", "fosm", "monte_carlo", "n", "research_surface",
+            # output + header metadata
+            "output_path", "format", "project_name", "project_number",
+            "engineer", "checker", "company", "date",
+        ],
+        method="slope_report_package",
+    )
 
     geom = _build_slope_geom(params, "slope_report_package")
 
