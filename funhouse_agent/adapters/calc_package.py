@@ -5,6 +5,13 @@ modules.  Each handler builds domain objects, runs the analysis, and calls
 generate_calc_package().  The response includes a file path and key results
 (never the full HTML, which would exceed the 8000-char ReAct truncation limit).
 
+``slope_report_package`` is the one-call slope REPORT for a critical-surface
+SEARCH run (F7): it runs the search (no fixed circle), re-analyzes the critical
+surface with method comparison + slice data, and optionally runs FOSM/Monte
+Carlo, then renders the full report (search story with rejection diagnostics,
+FOS-by-method table, interslice/thrust figures, reinforcement + probabilistic
+annexes) via slope_stability.calc_steps.
+
 Ported from foundry/calc_package_agent_foundry.py — same object construction
 logic, adapted to the funhouse adapter pattern (METHOD_REGISTRY + METHOD_INFO).
 """
@@ -230,18 +237,14 @@ def _generate_lateral_pile_package(params: dict) -> dict:
 # 3. Slope Stability
 # ---------------------------------------------------------------------------
 
-def _generate_slope_stability_package(params: dict) -> dict:
+def _build_slope_geom(params: dict, method: str):
+    """Build a SlopeGeometry from flat params. Shared by the slope packages."""
     from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
-    from slope_stability.analysis import analyze_slope
-
-    require_params(params, ["surface_points", "soil_layers", "xc", "yc", "radius"],
-                   method="slope_stability_package")
 
     soil_layers = []
     for ld in params["soil_layers"]:
         require_keys(ld, ["name", "top_elevation", "bottom_elevation", "gamma"],
-                     method="slope_stability_package",
-                     item_label="soil_layers[]")
+                     method=method, item_label="soil_layers[]")
         soil_layers.append(SlopeSoilLayer(
             name=ld["name"],
             top_elevation=ld["top_elevation"],
@@ -252,6 +255,9 @@ def _generate_slope_stability_package(params: dict) -> dict:
             c_prime=ld.get("c_prime", 0.0),
             cu=ld.get("cu", 0.0),
             analysis_mode=ld.get("analysis_mode", "drained"),
+            bottom_boundary_points=(
+                [tuple(p) for p in ld["bottom_boundary_points"]]
+                if ld.get("bottom_boundary_points") else None),
         ))
 
     surface_points = [tuple(p) for p in params["surface_points"]]
@@ -259,13 +265,22 @@ def _generate_slope_stability_package(params: dict) -> dict:
     if params.get("gwt_points"):
         gwt_points = [tuple(p) for p in params["gwt_points"]]
 
-    geom = SlopeGeometry(
+    return SlopeGeometry(
         surface_points=surface_points,
         soil_layers=soil_layers,
         gwt_points=gwt_points,
         surcharge=params.get("surcharge", 0.0),
         kh=params.get("kh", 0.0),
     )
+
+
+def _generate_slope_stability_package(params: dict) -> dict:
+    from slope_stability.analysis import analyze_slope
+
+    require_params(params, ["surface_points", "soil_layers", "xc", "yc", "radius"],
+                   method="slope_stability_package")
+
+    geom = _build_slope_geom(params, "slope_stability_package")
 
     result = analyze_slope(
         geom,
@@ -287,6 +302,114 @@ def _generate_slope_stability_package(params: dict) -> dict:
         extra={
             "FOS": round(result.FOS, 3),
             "method": result.method,
+            "is_stable": result.FOS >= analysis_dict.get("FOS_required", 1.5),
+        },
+    )
+
+
+def _generate_slope_report_package(params: dict) -> dict:
+    """One-call slope calc REPORT for a critical-surface SEARCH run.
+
+    Runs a critical-surface search (not a single fixed circle), then re-analyzes
+    the critical surface with method comparison + slice data so the package
+    carries: input echo, the search story (surfaces tried + rejection
+    diagnostics + critical surface/FOS), a FOS-by-method table, the slice-force
+    and (for rigorous methods) interslice/thrust-line figures, a reinforcement
+    summary when present, and a probabilistic annex when a ``variables`` spec is
+    supplied (FOSM by default, Monte Carlo when ``monte_carlo=True``). The rich
+    rendering lives in slope_stability.calc_steps — this handler just feeds it a
+    search + probabilistic results in the ``analysis`` dict.
+    """
+    from slope_stability.analysis import analyze_slope, search_critical_surface
+
+    require_params(params, ["surface_points", "soil_layers"],
+                   method="slope_report_package")
+
+    geom = _build_slope_geom(params, "slope_report_package")
+
+    method = params.get("method", "spencer")
+    surface_type = params.get("surface_type", "circular")
+    n_slices = params.get("n_slices", 30)
+    tol = params.get("tol", 1e-4)
+
+    def _range(key):
+        return tuple(params[key]) if params.get(key) else None
+
+    search = search_critical_surface(
+        geom=geom,
+        x_range=_range("x_range"), y_range=_range("y_range"),
+        nx=params.get("nx", 10), ny=params.get("ny", 10),
+        method=method, n_slices=n_slices, tol=tol,
+        surface_type=surface_type,
+        x_entry_range=_range("x_entry_range"),
+        x_exit_range=_range("x_exit_range"),
+        n_trials=params.get("n_trials", 500),
+        n_points=params.get("n_points", 5),
+        seed=params.get("seed"),
+    )
+
+    crit = search.critical
+    if crit is None:
+        return {
+            "status": "error",
+            "analysis_type": "Slope Stability Report",
+            "error": (
+                "Critical-surface search found no admissible surface "
+                f"({search.n_surfaces_evaluated} evaluated). Widen the search "
+                "grid (x_range/y_range for circular, or x_entry_range/"
+                "x_exit_range) or check the geometry."
+            ),
+        }
+
+    # Re-analyze the critical surface with method comparison + slice data so the
+    # report carries the FOS-by-method table and, for a rigorous method, the
+    # interslice-force / line-of-thrust figure. Uses the SAME method the search
+    # minimized, so the reported critical FOS stays consistent with the search.
+    if crit.is_circular:
+        surf_kwargs = dict(xc=crit.xc, yc=crit.yc, radius=crit.radius)
+    else:
+        from slope_stability.slip_surface import PolylineSlipSurface
+        surf_kwargs = dict(slip_surface=PolylineSlipSurface(crit.slip_points))
+    result = analyze_slope(
+        geom, method=method, n_slices=n_slices, tol=tol,
+        f_interslice=params.get("f_interslice", "half_sine"),
+        include_slice_data=True, compare_methods=True, **surf_kwargs,
+    )
+
+    analysis_dict = {
+        "geom": geom,
+        "FOS_required": params.get("FOS_required", 1.5),
+        "search": search,
+        "f_interslice": params.get("f_interslice", "half_sine"),
+    }
+
+    # Optional probabilistic annex (reliability) on the critical surface.
+    variables = params.get("variables")
+    if variables:
+        analysis_dict["variables"] = variables
+        prob_surf = (dict(xc=crit.xc, yc=crit.yc, radius=crit.radius)
+                     if crit.is_circular
+                     else dict(slip_surface=PolylineSlipSurface(crit.slip_points)))
+        if params.get("fosm", True):
+            from slope_stability.probabilistic import fosm_fos
+            analysis_dict["fosm"] = fosm_fos(
+                geom, variables, method=method, n_slices=n_slices, tol=tol,
+                **prob_surf)
+        if params.get("monte_carlo", False):
+            from slope_stability.probabilistic import monte_carlo_fos
+            analysis_dict["mc"] = monte_carlo_fos(
+                geom, variables, method=method, n=params.get("n", 1000),
+                seed=params.get("seed"), n_slices=n_slices, tol=tol,
+                research_surface=params.get("research_surface", False),
+                **prob_surf)
+
+    return _build_response(
+        "slope_stability", result, analysis_dict, params,
+        analysis_type="Slope Stability Report",
+        extra={
+            "FOS": round(result.FOS, 3),
+            "method": result.method,
+            "n_surfaces_evaluated": search.n_surfaces_evaluated,
             "is_stable": result.FOS >= analysis_dict.get("FOS_required", 1.5),
         },
     )
@@ -941,6 +1064,7 @@ METHOD_REGISTRY = {
     "bearing_capacity_package": _generate_bearing_capacity_package,
     "lateral_pile_package": _generate_lateral_pile_package,
     "slope_stability_package": _generate_slope_stability_package,
+    "slope_report_package": _generate_slope_report_package,
     "settlement_package": _generate_settlement_package,
     "axial_pile_package": _generate_axial_pile_package,
     "drilled_shaft_package": _generate_drilled_shaft_package,
@@ -1047,6 +1171,35 @@ METHOD_INFO = {
             **_COMMON_PARAMS,
         },
         "returns": {**_COMMON_RETURNS, "FOS": "Factor of safety.", "method": "Method used.", "is_stable": "Whether FOS >= required."},
+    },
+    "slope_report_package": {
+        "category": "Calculation Package",
+        "brief": "One-call slope stability REPORT for a critical-surface SEARCH: input echo, search story (surfaces tried + rejection diagnostics + critical surface/FOS), FOS-by-method table, slice-force + interslice/thrust-line figures, reinforcement summary, and a probabilistic annex (FOSM/Monte Carlo) when 'variables' is supplied. No fixed circle needed — the search finds the critical surface.",
+        "parameters": {
+            "surface_points": {"type": "array", "required": True, "description": "List of [x, z] ground surface coordinates."},
+            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: name, top_elevation, bottom_elevation, gamma, phi, c_prime (or cu + analysis_mode). Optional 'bottom_boundary_points' ([[x,z],...]) defines a non-horizontal layer base (e.g. a weak seam)."},
+            "method": {"type": "str", "required": False, "default": "spencer", "allowed_values": ["spencer", "morgenstern_price", "gle", "bishop", "janbu", "fellenius"], "description": "Limit-equilibrium method the search minimizes and the report highlights. Default 'spencer' (rigorous — populates the interslice-force / line-of-thrust figure)."},
+            "surface_type": {"type": "str", "required": False, "default": "circular", "allowed_values": ["circular", "entry_exit", "noncircular", "noncircular_de", "pso", "weak_layer"], "description": "Trial-surface family for the search. 'circular' uses the x_range/y_range grid; the others use x_entry_range/x_exit_range. 'weak_layer' biases trials toward a defined weak seam."},
+            "x_range": {"type": "array", "required": False, "description": "[min, max] circle-center x for the search grid (circular)."},
+            "y_range": {"type": "array", "required": False, "description": "[min, max] circle-center y for the search grid (circular)."},
+            "nx": {"type": "int", "required": False, "default": 10, "description": "Grid divisions in x (circular search)."},
+            "ny": {"type": "int", "required": False, "default": 10, "description": "Grid divisions in y (circular search)."},
+            "x_entry_range": {"type": "array", "required": False, "description": "[min, max] entry x for entry-exit / noncircular searches."},
+            "x_exit_range": {"type": "array", "required": False, "description": "[min, max] exit x for entry-exit / noncircular searches."},
+            "n_trials": {"type": "int", "required": False, "default": 500, "description": "Number of random trials (noncircular searches)."},
+            "n_points": {"type": "int", "required": False, "default": 5, "description": "Vertices per noncircular trial surface."},
+            "n_slices": {"type": "int", "required": False, "default": 30, "description": "Number of slices."},
+            "gwt_points": {"type": "array", "required": False, "description": "List of [x, z] GWT coordinates."},
+            "kh": {"type": "float", "required": False, "default": 0.0, "description": "Seismic coefficient (pseudo-static)."},
+            "seed": {"type": "int", "required": False, "description": "Random seed for the search / Monte Carlo (reproducibility)."},
+            "variables": {"type": "dict", "required": False, "description": "Probabilistic variable spec {param[:layer]: {mean?, cov|std, dist?, source?}}. When given, adds a reliability annex (FOSM by default) on the critical surface."},
+            "monte_carlo": {"type": "bool", "required": False, "default": False, "description": "If True (and 'variables' given), also run a Monte Carlo simulation on the critical surface for the annex."},
+            "n": {"type": "int", "required": False, "default": 1000, "description": "Monte Carlo realizations (when monte_carlo=True)."},
+            "research_surface": {"type": "bool", "required": False, "default": False, "description": "Monte Carlo: re-search the critical surface each realization (slower) instead of holding it fixed."},
+            "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required factor of safety for the stability check."},
+            **_COMMON_PARAMS,
+        },
+        "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety.", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required."},
     },
     "settlement_package": {
         "category": "Calculation Package",

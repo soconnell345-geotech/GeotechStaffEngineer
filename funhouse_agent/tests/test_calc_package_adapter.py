@@ -2,7 +2,7 @@
 
 Covers:
 - Helper functions (_extract_metadata, _default_output_path)
-- All 13 handler functions (integration: build objects → analysis → calc package → file)
+- All 14 handler functions (integration: build objects → analysis → calc package → file)
 - Dispatch integration (call_agent routing)
 - Edge cases (auto output path, METHOD_INFO completeness)
 """
@@ -119,6 +119,120 @@ class TestSlopeStabilityPackage:
         assert result["status"] == "success"
         assert result["FOS"] > 0
         assert os.path.exists(outfile)
+
+
+class TestSlopeReportPackage:
+    """The one-call slope REPORT for a critical-surface SEARCH run (F7)."""
+
+    _SIMPLE = {
+        "surface_points": [[0, 10], [10, 10], [20, 5], [30, 5]],
+        "soil_layers": [{
+            "name": "Clay", "top_elevation": 10, "bottom_elevation": 0,
+            "gamma": 18.0, "phi": 25, "c_prime": 10,
+        }],
+        "x_range": [10, 22], "y_range": [14, 24], "nx": 5, "ny": 5,
+        "n_slices": 16,
+    }
+
+    def test_basic_circular_search(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import _generate_slope_report_package
+        out = str(tmp_path / "report.html")
+        res = _generate_slope_report_package(
+            {**self._SIMPLE, "method": "spencer", "output_path": out})
+        assert res["status"] == "success"
+        assert res["FOS"] > 0
+        assert res["n_surfaces_evaluated"] > 0
+        assert res["method"] == "Spencer"
+        html = open(out, encoding="utf-8").read()
+        # search story + method comparison + rigorous interslice/thrust figures
+        for section in ("Critical Surface Search", "Method Comparison",
+                        "Slice Force", "Line of Thrust"):
+            assert section in html, section
+
+    def test_probabilistic_annex(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import _generate_slope_report_package
+        out = str(tmp_path / "prob.html")
+        res = _generate_slope_report_package({
+            **self._SIMPLE, "method": "spencer", "output_path": out,
+            "variables": {
+                "phi": {"mean": 25, "cov": 0.10, "source": "Duncan (2000)"},
+                "c_prime": {"mean": 10, "cov": 0.30},
+            },
+        })
+        assert res["status"] == "success"
+        html = open(out, encoding="utf-8").read()
+        assert "Probabilistic Analysis" in html
+        assert "Reliability Index" in html      # FOSM beta
+        assert "Random Variables" in html
+
+    def test_no_output_path_autogenerates(self):
+        from funhouse_agent.adapters.calc_package import _generate_slope_report_package
+        res = _generate_slope_report_package(
+            {**self._SIMPLE, "method": "bishop"})
+        assert res["status"] == "success"
+        assert res["output_path"].endswith(".html")
+        assert os.path.isfile(res["output_path"])
+        os.remove(res["output_path"])
+
+    def test_pdf_output_fitz_verified(self, tmp_path):
+        pytest.importorskip("fitz")
+        import fitz
+        from funhouse_agent.adapters.calc_package import _generate_slope_report_package
+        out = str(tmp_path / "report.pdf")
+        res = _generate_slope_report_package({
+            **self._SIMPLE, "method": "spencer", "format": "pdf",
+            "output_path": out})
+        assert res["status"] == "success"
+        assert res["file_exists"] is True
+        doc = fitz.open(out)
+        try:
+            assert doc.page_count > 0
+        finally:
+            doc.close()
+
+    def test_v028_weak_seam_report_matches_referee(self, tmp_path):
+        """Validate the report against the V-028 (Slide2 #9 / ACADS 4) weak-seam
+        search: the critical Spencer FOS is ~0.792 (referee 0.78), and the
+        report renders the search story with rejection diagnostics."""
+        from funhouse_agent.adapters.calc_package import _generate_slope_report_package
+        out = str(tmp_path / "v028.html")
+        res = _generate_slope_report_package({
+            "surface_points": [[20, 28], [43, 28], [68, 40], [84, 40]],
+            "soil_layers": [
+                {"name": "upper", "top_elevation": 40, "bottom_elevation": 15,
+                 "gamma": 18.84, "phi": 20, "c_prime": 28.5,
+                 "bottom_boundary_points": [[20, 19], [84, 37]]},
+                {"name": "weak", "top_elevation": 40, "bottom_elevation": 15,
+                 "gamma": 18.84, "phi": 10, "c_prime": 0.0,
+                 "bottom_boundary_points": [[20, 18], [84, 36]]},
+                {"name": "lower", "top_elevation": 40, "bottom_elevation": 15,
+                 "gamma": 18.84, "phi": 20, "c_prime": 28.5},
+            ],
+            "gwt_points": [[20, 27.75], [43, 27.75], [49, 29.86], [60, 34.06],
+                           [66, 35.80], [74, 37.68], [80, 38.4], [84, 38.4]],
+            "surface_type": "weak_layer", "method": "spencer",
+            "n_trials": 700, "n_points": 6, "n_slices": 30, "seed": 3,
+            "x_entry_range": [20, 50], "x_exit_range": [58, 84],
+            "output_path": out,
+        })
+        assert res["status"] == "success"
+        # module Spencer 0.792; referee 0.78 (+1.5%)
+        assert res["FOS"] == pytest.approx(0.792, abs=0.02)
+        assert res["FOS"] == pytest.approx(0.78, rel=0.05)
+        assert res["is_stable"] is False           # 0.79 < 1.5
+        html = open(out, encoding="utf-8").read()
+        assert "Critical Surface Search" in html
+        assert "rejected" in html.lower()          # rejection diagnostics
+        assert "Method Comparison" in html
+
+    def test_call_agent_routing(self, tmp_path):
+        from funhouse_agent.dispatch import call_agent
+        out = str(tmp_path / "routed.html")
+        res = call_agent("calc_package", "slope_report_package",
+                         {**self._SIMPLE, "method": "bishop",
+                          "output_path": out})
+        assert res["status"] == "success"
+        assert os.path.exists(out)
 
 
 class TestSettlementPackage:
@@ -320,7 +434,7 @@ class TestDispatchIntegration:
         methods = list_methods("calc_package")
         # list_methods returns {category: {method: brief}}
         total = sum(len(v) for v in methods.values())
-        assert total == 13
+        assert total == 14
 
     def test_describe_method(self):
         from funhouse_agent.dispatch import describe_method
