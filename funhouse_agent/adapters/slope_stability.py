@@ -312,7 +312,7 @@ def _run_infinite_slope(params: dict) -> dict:
     return result.to_dict()
 
 
-_RD_METHODS = ["corps_2stage", "duncan_3stage"]
+_RD_METHODS = ["corps_2stage", "duncan_3stage", "lowe_karafiath"]
 _RD_STAGE3_NORMAL = ["fellenius", "gle"]
 _RD_SURFACE_TYPES = ["circular", "entry_exit", "noncircular", "noncircular_de"]
 
@@ -541,13 +541,13 @@ METHOD_INFO = {
     },
     "rapid_drawdown_fos": {
         "category": "Slope Stability",
-        "brief": "Rapid-drawdown FOS on a SPECIFIED slip surface: USACE/Army-Corps 2-stage or Duncan-Wright-Wong 3-stage. Low-permeability layers respond undrained after fast reservoir drawdown; give them the total-stress R-envelope (soil_layers[].R_c, R_phi) alongside c_prime/phi (R_phi=null => free-draining). Stage 1 = full-pool effective stresses; stage 2 = undrained strength from the R and effective envelopes (Kc-interpolated for 3-stage); stage 3 (3-stage) substitutes the drained strength where lower; final FOS is solved at the drawn-down pool.",
+        "brief": "Rapid-drawdown FOS on a SPECIFIED slip surface: USACE/Army-Corps 2-stage, Lowe-Karafiath 2-stage, or Duncan-Wright-Wong 3-stage. Low-permeability layers respond undrained after fast reservoir drawdown; give them the total-stress R-envelope (soil_layers[].R_c, R_phi) alongside c_prime/phi (R_phi=null => free-draining). Stage 1 = full-pool effective stresses; stage 2 = undrained strength from the R and effective envelopes (Kc-interpolated for Lowe-Karafiath and 3-stage); stage 3 (3-stage only) substitutes the drained strength where lower; final FOS is solved at the drawn-down pool.",
         "parameters": {
             **_GEOMETRY_PARAMS,
             **_SURFACE_SPEC_PARAMS,
             "drawdown_from_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation BEFORE drawdown (m)."},
             "drawdown_to_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation AFTER drawdown (m); must be below drawdown_from_elevation."},
-            "method": {"type": "str", "required": False, "default": "duncan_3stage", "allowed_values": _RD_METHODS, "description": "'duncan_3stage' (Duncan-Wright-Wong, Kc-interpolated undrained strength + drained substitution) or 'corps_2stage' (USACE combined R/effective envelope)."},
+            "method": {"type": "str", "required": False, "default": "duncan_3stage", "allowed_values": _RD_METHODS, "description": "'duncan_3stage' (Duncan-Wright-Wong, Kc-interpolated undrained strength + stage-3 drained substitution), 'lowe_karafiath' (the SAME Kc-interpolated stage-2 strength but NO stage 3, so >= duncan_3stage), or 'corps_2stage' (USACE combined min(R, effective) envelope, no stage 3)."},
             "f_interslice": {"type": "str", "required": False, "default": "constant", "allowed_values": _F_INTERSLICE, "description": "GLE interslice function ('constant' = Spencer)."},
             "n_slices": {"type": "int", "required": False, "default": 50, "description": "Number of slices."},
             "stage1_phreatic_points": {"type": "array", "required": False, "description": "Optional steady-seepage phreatic surface [[x,z],...] for the STAGE-1 consolidation stresses only. Default (omitted) uses a flat full-pool phreatic (hydrostatic to the reservoir) -- the conservative no-through-seepage bound. Supply the flow-net/Casagrande phreatic line (declining from the pool level at the upstream face through the dam) to reproduce the steady-seepage condition Slide2/EM 1110-2-1902 use, which raises the mobilized undrained strengths and the FOS."},
@@ -557,12 +557,12 @@ METHOD_INFO = {
     },
     "search_rapid_drawdown": {
         "category": "Slope Stability",
-        "brief": "SEARCH for the critical (minimum-FOS) slip surface under RAPID-DRAWDOWN strengths (Corps 2-stage / Duncan-Wright-Wong 3-stage). Like search_critical_surface but the per-trial FOS is the rapid-drawdown solve; supports circular and noncircular searches. Use this (not rapid_drawdown_fos) when you do NOT already have a specific trial surface. Low-permeability layers need the R-envelope (soil_layers[].R_c, R_phi).",
+        "brief": "SEARCH for the critical (minimum-FOS) slip surface under RAPID-DRAWDOWN strengths (Corps 2-stage / Lowe-Karafiath 2-stage / Duncan-Wright-Wong 3-stage). Like search_critical_surface but the per-trial FOS is the rapid-drawdown solve; supports circular and noncircular searches. Use this (not rapid_drawdown_fos) when you do NOT already have a specific trial surface. Low-permeability layers need the R-envelope (soil_layers[].R_c, R_phi).",
         "parameters": {
             **_GEOMETRY_PARAMS,
             "drawdown_from_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation BEFORE drawdown (m)."},
             "drawdown_to_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation AFTER drawdown (m); must be below drawdown_from_elevation."},
-            "method": {"type": "str", "required": False, "default": "corps_2stage", "allowed_values": _RD_METHODS, "description": "Rapid-drawdown stage method: 'corps_2stage' (default) or 'duncan_3stage'."},
+            "method": {"type": "str", "required": False, "default": "corps_2stage", "allowed_values": _RD_METHODS, "description": "Rapid-drawdown stage method: 'corps_2stage' (default), 'lowe_karafiath', or 'duncan_3stage'. See rapid_drawdown_fos."},
             "surface_type": {"type": "str", "required": False, "default": "circular", "allowed_values": _RD_SURFACE_TYPES, "description": "Search strategy: 'circular' (centre grid), 'entry_exit' (arcs between entry/exit windows), 'noncircular' (random polylines), 'noncircular_de' (differential-evolution refinement)."},
             "x_range": {"type": "array", "required": False, "description": "[xmin, xmax] for the circle-centre grid (circular)."},
             "y_range": {"type": "array", "required": False, "description": "[ymin, ymax] for the circle-centre grid (circular)."},

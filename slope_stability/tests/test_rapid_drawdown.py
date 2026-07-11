@@ -72,6 +72,23 @@ def test_3stage_less_conservative_than_2stage():
     assert 1.0 < f2 < 1.6 and 1.0 < f3 < 1.7
 
 
+def test_lowe_karafiath_is_duncan_without_stage3():
+    """Lowe & Karafiath (2-stage) uses the SAME Kc-interpolated stage-2 undrained
+    strength as Duncan-Wright-Wong but omits stage 3, so its FOS is >= the 3-stage
+    (stage 3 only substitutes a LOWER strength), it makes no drained substitutions,
+    and its per-slice Kc diagnostics match the 3-stage run (same stage 1 + 2)."""
+    lk = _rd(_dam(), "lowe_karafiath")
+    dww = _rd(_dam(), "duncan_3stage")
+    assert lk.method == "lowe_karafiath"
+    assert lk.FOS >= dww.FOS - 1e-6
+    assert lk.n_drained_substituted == 0
+    # identical stage-1/stage-2 => identical consolidation stresses and Kc
+    assert lk.sigma_fc == pytest.approx(dww.sigma_fc, abs=1e-9)
+    assert lk.Kc == pytest.approx(dww.Kc, abs=1e-9)
+    # and it is never more conservative than the Corps combined-envelope 2-stage
+    assert lk.FOS >= _rd(_dam(), "corps_2stage").FOS - 1e-6
+
+
 def test_undrained_slices_and_diagnostics():
     r = _rd(_dam(), "duncan_3stage")
     assert r.n_undrained_slices == r.n_slices   # homogeneous low-perm dam

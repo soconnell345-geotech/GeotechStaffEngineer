@@ -534,6 +534,33 @@ class TestV54RapidDrawdown:
         assert METHOD_INFO["rapid_drawdown_fos"]["parameters"][
             "stage3_effective_normal"]["allowed_values"] == ["fellenius", "gle"]
 
+    def test_lowe_karafiath_routes_and_is_ge_duncan(self):
+        """'lowe_karafiath' is exposed and routes through; it uses the Duncan
+        Kc-interpolated stage-2 strength but omits stage 3, so its FOS is >=
+        the duncan_3stage FOS and it reports zero drained substitutions."""
+        _FACE = [[0, 0], [220 * _FT, 73 * _FT], [312 * _FT, 110 * _FT],
+                 [380 * _FT, 110 * _FT]]
+        base = {
+            "surface_points": _FACE,
+            "soil_layers": [{"top_elevation": 110 * _FT,
+                             "bottom_elevation": -1.0 * _FT,
+                             "gamma": 135 * _PCF, "phi": 30.0, "c_prime": 0.0,
+                             "R_c": 1200 * _PSF, "R_phi": 16.0}],
+            "xc": 169.5 * _FT, "yc": 210 * _FT, "radius": 210 * _FT,
+            "drawdown_from_elevation": 110 * _FT,
+            "drawdown_to_elevation": 24 * _FT, "n_slices": 50,
+        }
+        lk = METHOD_REGISTRY["rapid_drawdown_fos"](
+            {**base, "method": "lowe_karafiath"})
+        dww = METHOD_REGISTRY["rapid_drawdown_fos"](
+            {**base, "method": "duncan_3stage"})
+        assert lk["method"] == "lowe_karafiath"
+        assert lk["FOS"] >= dww["FOS"] - 1e-6
+        assert lk["n_drained_substituted"] == 0
+        assert "lowe_karafiath" in \
+            METHOD_INFO["rapid_drawdown_fos"]["parameters"]["method"][
+                "allowed_values"]
+
     def test_bad_stage3_normal_rejected(self):
         with pytest.raises(ValueError, match="stage3_effective_normal"):
             METHOD_REGISTRY["rapid_drawdown_fos"](_dam(

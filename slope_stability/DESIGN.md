@@ -173,7 +173,8 @@ search_critical_surface(geom, surface_type="noncircular",
   surface to (γ'/γ)·that. Validated vs Slide2 #79 (1.44) / #81 (1.15). This is
   the exact answer for the c'=0 circular-overestimate limitation noted above.
 - **Rapid drawdown (v5.3 B2a)** — `rapid_drawdown.rapid_drawdown_fos(geom, from_el,
-  to_el, xc/yc/radius, method='corps_2stage'|'duncan_3stage')` → `RapidDrawdownResult`
+  to_el, xc/yc/radius, method='corps_2stage'|'lowe_karafiath'|'duncan_3stage')`
+  → `RapidDrawdownResult`
   (also `analysis.rapid_drawdown_fos`). Low-permeability layers carry the total-stress
   **R-envelope** (`R_c`, `R_phi`) alongside the effective `c_prime`/`phi`; `R_phi is
   None` = free-draining. The method is wired to the GLE engine by OVERRIDING each
@@ -183,13 +184,22 @@ search_critical_surface(geom, surface_type="noncircular",
     GLE per-slice effective normal / mobilized shear).
   * **Stage 2** — undrained strength τ_ff. Corps 2-stage: τ_ff = min(R-envelope,
     drained) at σ'_fc (the "combined" envelope, capping R-envelope over-strength at
-    low σ'). Duncan 3-stage: linear interpolation with the consolidation stress ratio
-    Kc = σ'_1c/σ'_3c between the Kc=1 (R / IC-U, lower) and Kc=Kf (drained, upper)
-    envelopes: τ_ff = τ_R + (Kc−1)/(Kf−1)·(τ_drained − τ_R), capped at the drained
-    (Kf) bound. Kc per slice is back-figured from σ'_fc, τ_fc and the base angle α
-    assuming a vertical major principal consolidation stress; Kf = (1+sinφ')/(1−sinφ').
-  * **Stage 3** (3-stage only) — where the post-drawdown DRAINED strength (low-pool
-    effective stress) is less than the stage-2 undrained strength, it is substituted
+    low σ'). Duncan 3-stage AND Lowe-Karafiath 2-stage: linear interpolation with the
+    consolidation stress ratio Kc = σ'_1c/σ'_3c between the Kc=1 (R / IC-U, lower) and
+    Kc=Kf (drained, upper) envelopes: τ_ff = τ_R + (Kc−1)/(Kf−1)·(τ_drained − τ_R),
+    capped at the drained (Kf) bound. Kc per slice is back-figured from σ'_fc, τ_fc
+    and the base angle α assuming a vertical major principal consolidation stress;
+    Kf = (1+sinφ')/(1−sinφ'). **Lowe-Karafiath (1960)** uses this identical stage-2
+    strength but stops here (no stage 3); Duncan-Wright-Wong (1990) is Lowe-Karafiath
+    plus the stage-3 drained check, so `lowe_karafiath` FOS ≥ `duncan_3stage` FOS
+    always (stage 3 only ever *substitutes a lower* strength). On the exact #95/#96
+    dam `lowe_karafiath` lands at 1.36 flat / 1.45 seepage — the seepage value sits
+    on the published Duncan-Wright-Wong 1.443, corroborating that the Kc stage-2 is
+    sound and the default 3-stage's deficit is entirely the Fellenius stage-3 normal
+    (see the E2 note below), not the interpolation.
+  * **Stage 3** (3-stage only, `duncan_3stage`) — where the post-drawdown DRAINED
+    strength (low-pool effective stress) is less than the stage-2 undrained strength,
+    it is substituted
     (Duncan, Wright & Brandon 2014, Ch. 9: third-stage drained strength on the
     drawn-down effective stresses).
   * The final FOS is a GLE/Spencer solve at the DRAWN-DOWN pool (external water load

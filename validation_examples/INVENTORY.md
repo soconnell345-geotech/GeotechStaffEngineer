@@ -642,6 +642,12 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   on the exact #95/#96 section (search min ≤ published specified-circle FOS;
   stage detail reproduces the search FOS to machine precision). NOT tuned. See
   test_published_v041.py and slope_stability VALIDATION.md §B7.
+- **Lowe-Karafiath column (v5.4, F4): VALIDATED in V-046.** The third published
+  #98 search-minimum column, Lowe-Karafiath 1.075, is reproduced at 0.964 (~10%
+  low, the SAME recovered-geometry offset as Corps/DWW) with the published method
+  ordering L&K (1.075) > DWW (1.039) > Corps (0.931) preserved (ours 0.964 > 0.938
+  > 0.837). `method='lowe_karafiath'` = the DWW Kc stage-2 without stage 3. See
+  test_published_v046_drawdown_methods.py.
 
 ## V-039 Slide2 #104 — Newmark seismic sliding-block displacement (B2b)
 - Source: Slide2 Verification #104 (manual pp. 330-331), based on Slide2 Tutorial 28
