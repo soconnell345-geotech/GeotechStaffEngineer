@@ -433,6 +433,19 @@ def _run_newmark_jibson2007(params: dict) -> dict:
     return result.to_dict()
 
 
+def _run_bray_travasarou_2007(params: dict) -> dict:
+    from slope_stability.newmark import bray_travasarou_2007
+    reject_unknown_params(
+        params, ("ky", "ts", "sa_1p5ts", "magnitude", "rigid"),
+        method="bray_travasarou_2007")
+    require_params(params, ["ky", "ts", "sa_1p5ts", "magnitude"],
+                   method="bray_travasarou_2007")
+    result = bray_travasarou_2007(
+        ky=params["ky"], ts=params["ts"], sa_1p5ts=params["sa_1p5ts"],
+        magnitude=params["magnitude"], rigid=params.get("rigid"))
+    return result.to_dict()
+
+
 METHOD_REGISTRY = {
     "analyze_slope": _run_analyze_slope,
     "search_critical_surface": _run_search_critical_surface,
@@ -443,6 +456,7 @@ METHOD_REGISTRY = {
     "yield_acceleration": _run_yield_acceleration,
     "newmark_displacement": _run_newmark_displacement,
     "newmark_jibson2007": _run_newmark_jibson2007,
+    "bray_travasarou_2007": _run_bray_travasarou_2007,
     "fosm_fos": _run_fosm,
     "monte_carlo_fos": _run_monte_carlo,
 }
@@ -598,6 +612,18 @@ METHOD_INFO = {
             "amax": {"type": "float", "required": True, "description": "Peak ground acceleration (fraction of g). Must exceed ky."},
         },
         "returns": {"displacement_cm": "Estimated Newmark displacement (cm).", "displacement_m": "Same in m.", "amax_g": "PGA used."},
+    },
+    "bray_travasarou_2007": {
+        "category": "Slope Stability",
+        "brief": "Bray & Travasarou (2007) simplified seismic DEVIATORIC slope displacement — a fully-coupled stick-slip sliding-block regression that captures sliding-mass flexibility (via the fundamental period Ts) and spectral demand at 1.5*Ts, which the rigid-block Jibson/integration models don't. Returns P(D=0) (prob. of negligible <=1 cm displacement) and the median non-zero displacement (16/84% via sigma_ln=0.66). A period-dependent cross-check for Jibson.",
+        "parameters": {
+            "ky": {"type": "float", "required": True, "description": "Yield / critical seismic coefficient (fraction of g)."},
+            "ts": {"type": "float", "required": True, "description": "Initial fundamental period of the potential sliding mass (s); ~4H/Vs (deep/wide) or 2.6H/Vs (surface). Ts<0.05 s auto-uses the rigid-block branch (then sa_1p5ts is the PGA)."},
+            "sa_1p5ts": {"type": "float", "required": True, "description": "5%-damped elastic spectral acceleration at the degraded period 1.5*Ts (g)."},
+            "magnitude": {"type": "float", "required": True, "description": "Moment magnitude Mw."},
+            "rigid": {"type": "bool", "required": False, "description": "Force the rigid (True) / flexible (False) branch; default auto-selects rigid when ts<0.05 s."},
+        },
+        "returns": {"displacement_cm": "Median deviatoric displacement (cm).", "displacement_16pct_cm": "16th-percentile displacement.", "displacement_84pct_cm": "84th-percentile displacement.", "p_zero": "P(D=0): probability of negligible (<=1 cm) displacement.", "displacement_m": "Median in m."},
     },
     "search_critical_surface": {
         "category": "Slope Stability",

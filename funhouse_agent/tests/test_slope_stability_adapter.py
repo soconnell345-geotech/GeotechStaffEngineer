@@ -58,6 +58,7 @@ class TestMethodInfo:
             "rapid_drawdown_fos", "search_rapid_drawdown",
             "yield_acceleration",
             "newmark_displacement", "newmark_jibson2007",
+            "bray_travasarou_2007",
             "fosm_fos", "monte_carlo_fos",
         }
 
@@ -319,11 +320,22 @@ class TestNewmark:
         r = METHOD_REGISTRY["newmark_jibson2007"]({"ky": 0.10, "amax": 0.20})
         assert r["displacement_cm"] == pytest.approx(0.877, abs=1e-2)
 
+    def test_bray_travasarou_2007_worked_example(self):
+        """Routes through and reproduces the Bray (2007) worked example
+        (ky=0.14, Ts=0.4, Sa=0.48, M=7.2 -> D~9.9 cm, P(D=0)~0.01)."""
+        r = METHOD_REGISTRY["bray_travasarou_2007"](
+            {"ky": 0.14, "ts": 0.4, "sa_1p5ts": 0.48, "magnitude": 7.2})
+        assert r["displacement_cm"] == pytest.approx(9.86, rel=0.03)
+        assert r["p_zero"] == pytest.approx(0.01, abs=0.005)
+        assert "displacement_16pct_cm" in r and "displacement_84pct_cm" in r
+
     def test_newmark_requires_params(self):
         with pytest.raises(ValueError):
             METHOD_REGISTRY["newmark_jibson2007"]({"ky": 0.1})
         with pytest.raises(ValueError):
             METHOD_REGISTRY["newmark_displacement"]({"ky": 0.1, "dt": 0.01})
+        with pytest.raises(ValueError):
+            METHOD_REGISTRY["bray_travasarou_2007"]({"ky": 0.14, "ts": 0.4})
 
 
 # ----------------------------------------------------------------------------

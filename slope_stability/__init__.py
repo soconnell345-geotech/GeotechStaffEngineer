@@ -49,7 +49,8 @@ from slope_stability.rapid_drawdown import (
 )
 from slope_stability.newmark import (
     yield_acceleration, newmark_displacement, newmark_jibson2007,
-    YieldAccelerationResult, NewmarkResult,
+    bray_travasarou_2007,
+    YieldAccelerationResult, NewmarkResult, BrayTravasarou2007Result,
 )
 
 __all__ = [
@@ -73,5 +74,6 @@ __all__ = [
     'SlopeStabilityResult', 'SliceData', 'SearchResult', 'InfiniteSlopeResult',
     'RapidDrawdownResult', 'RapidDrawdownSearchResult',
     'yield_acceleration', 'newmark_displacement', 'newmark_jibson2007',
-    'YieldAccelerationResult', 'NewmarkResult',
+    'bray_travasarou_2007',
+    'YieldAccelerationResult', 'NewmarkResult', 'BrayTravasarou2007Result',
 ]
