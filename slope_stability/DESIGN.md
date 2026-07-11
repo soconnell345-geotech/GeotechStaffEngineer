@@ -197,6 +197,23 @@ search_critical_surface(geom, surface_type="noncircular",
     on the published Duncan-Wright-Wong 1.443, corroborating that the Kc stage-2 is
     sound and the default 3-stage's deficit is entirely the Fellenius stage-3 normal
     (see the E2 note below), not the interpolation.
+  * **R-envelope input convention — the Kc=1 line (EM G-12 reconciliation).** The
+    Kc=1 (R / IC-U) envelope is taken DIRECTLY as `τ_R = R_c + σ'_fc·tan(R_phi)`,
+    i.e. `(R_c, R_phi)` are the strength envelope ALREADY plotted as τ_ff vs the
+    effective consolidation stress σ'_fc — the "Total Stress R Envelope (linear)"
+    Slide2/GeoStudio expose and that the EM 1110-2-1902 App. G verification
+    problems (#95–#99) tabulate. This is NOT the raw isotropically-consolidated CU
+    triaxial envelope: EM Eq. G-12 maps that raw envelope onto the τ_ff-vs-σ'_fc
+    plane via d = R_c·cos(R_phi)·cos(φ')/(1−sin R_phi) and ψ = atan[sin(R_phi)·
+    cos(φ')/(1−sin R_phi)]. Feeding the raw parameters through *and* letting the
+    module treat them as the plotted line would double-apply that transform and
+    OVER-predict: for #96 (R_c=1200 psf, R_phi=16°, φ'=30°) the G-12 image is
+    (d=1379 psf, ψ=18.24°), which drives `lowe_karafiath` to 1.53 seepage —
+    overshooting the published 1.443 that the raw (as-plotted) inputs reproduce at
+    1.45. So supply `(R_c, R_phi)` as the τ_ff-vs-σ'_fc envelope (Slide2
+    convention, validated by V-037/V-048); a user starting from raw CU triaxial
+    data applies EM G-12 first. Confirmed empirically (raw 1.45 vs G-12 1.53 on
+    #95/#96; published 1.443).
   * **Stage 3** (3-stage only, `duncan_3stage`) — where the post-drawdown DRAINED
     strength (low-pool effective stress) is less than the stage-2 undrained strength,
     it is substituted
