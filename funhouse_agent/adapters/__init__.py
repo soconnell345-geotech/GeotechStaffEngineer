@@ -120,7 +120,8 @@ def figure_output_format(params: dict, default: str = "metadata") -> str:
     return params.get("output_format", default)
 
 
-def save_html_output(result: dict, params: dict, *, html_key: str = "html") -> dict:
+def save_html_output(result: dict, params: dict, *, html_key: str = "html",
+                     figure_json: str = None) -> dict:
     """Save a plot result's HTML to ``params['output_path']`` when given.
 
     A self-contained Plotly figure serialized to HTML is ~MB; returning it
@@ -129,6 +130,13 @@ def save_html_output(result: dict, params: dict, *, html_key: str = "html") -> d
     ``html_key``, this writes the HTML to that path (verified) and REPLACES the
     blob with a compact confirmation (``output_path``/``file_exists``/size +
     ``renderer_note``). No-op when there is no ``output_path`` or no HTML.
+
+    When ``figure_json`` (a Plotly ``figure.to_json()`` string) is supplied, a
+    compact ``<name>.plotly.json`` sidecar is written next to the HTML so a
+    front-end (e.g. the webapp) can render the figure natively with
+    ``st.plotly_chart`` instead of an HTML iframe. The sidecar is additive and
+    best-effort — a sidecar failure never affects the HTML save. Its path is
+    returned under ``plotly_json_path``.
 
     Reuses :func:`funhouse_agent._fileio.save_verified`, so a ``/Workspace``
     target goes through the durable Databricks workspace API and every write is
@@ -152,6 +160,12 @@ def save_html_output(result: dict, params: dict, *, html_key: str = "html") -> d
             "instead of returned inline (open it in a browser). Omit "
             "output_path to receive the HTML in the response."
         )
+        if figure_json:
+            import os as _os
+            sidecar = _os.path.splitext(str(output_path))[0] + ".plotly.json"
+            side = save_verified(sidecar, figure_json)
+            if side.get("file_exists"):
+                result["plotly_json_path"] = side.get("saved", sidecar)
     else:
         result["renderer_note"] = (
             "The figure HTML could NOT be stored at output_path — see 'error' "

@@ -71,6 +71,25 @@ class TestSaveHtmlOutput:
         assert "figure_html" not in res
         assert res["file_exists"] is True
 
+    def test_figure_json_writes_plotly_sidecar(self, tmp_path):
+        out = tmp_path / "fig.html"
+        res = save_html_output(
+            {"html": "<html>FIG</html>"}, {"output_path": str(out)},
+            figure_json='{"data": [], "layout": {}}')
+        assert res["file_exists"] is True
+        sidecar = tmp_path / "fig.plotly.json"
+        assert res["plotly_json_path"] == str(sidecar) or \
+            os.path.abspath(res["plotly_json_path"]) == str(sidecar)
+        assert sidecar.read_text() == '{"data": [], "layout": {}}'
+
+    def test_no_figure_json_no_sidecar(self, tmp_path):
+        out = tmp_path / "fig.html"
+        res = save_html_output({"html": "<html>FIG</html>"},
+                               {"output_path": str(out)})
+        assert res["file_exists"] is True
+        assert "plotly_json_path" not in res
+        assert not (tmp_path / "fig.plotly.json").exists()
+
     def test_save_failure_surfaces_rescue(self, tmp_path, monkeypatch):
         import funhouse_agent._fileio as fio
 
@@ -143,6 +162,22 @@ def test_plot_output_path_saves_file_and_drops_html(method, extra, site_key, tmp
     assert out.is_file()
     # a self-contained Plotly HTML doc
     assert out.read_text(encoding="utf-8").lstrip().lower().startswith("<html")
+
+
+def test_plot_output_path_emits_plotly_sidecar(site_key, tmp_path):
+    """With output_path, the subsurface plot also writes a <name>.plotly.json
+    sidecar (for native st.plotly_chart rendering) that round-trips."""
+    out = tmp_path / "pvd.html"
+    res = call_agent("subsurface", "plot_parameter_vs_depth",
+                     {"site_key": site_key, "parameter": "N_spt",
+                      "output_path": str(out)})
+    assert "error" not in res, res
+    sidecar = res.get("plotly_json_path")
+    assert sidecar and os.path.isfile(sidecar)
+    assert sidecar.endswith(".plotly.json")
+    import plotly.io as pio
+    fig = pio.from_json(open(sidecar, encoding="utf-8").read())
+    assert len(fig.data) >= 1
 
 
 def test_plot_default_unchanged_no_html_no_output_path(site_key):
