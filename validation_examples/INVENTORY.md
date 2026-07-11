@@ -811,6 +811,46 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   the surface centre/radius, the piecewise water table, and the tension-crack depth are
   all unlabeled in Fig 51.1. Cannot recover honestly without the missing parameters.
 
+## V-052 Slide2 #97 — Pilarcitos Dam rapid-drawdown method ordering (F4)
+- Source: Slide2 Verification #97 (Tables 97.1/97.2); Duncan, Wright & Wong (1990);
+  GEO-SLOPE "Rapid Drawdown – Multi-Stage" Ex 3.
+- Recovered (all published): homogeneous rolled earth-fill γ=135 pcf, effective
+  c'=0/φ'=45, total-stress R-envelope c_R=60 psf/φ_R=23; toe El. 620, crest ~El. 698
+  (H=78 ft); full pool El. 692 (72 ft) drawn to El. 657 (37 ft).
+- Published: Corps 2-stage 0.823 / Lowe-Karafiath 1.047 / DWW 3-stage 1.043
+  (Duncan-Wright-Wong 1990: 0.82 / 1.05 / 1.05). Historic upstream failure Oct-Nov 1969.
+- Geometry caveat: the upstream SLOPE ANGLE / vertices are NOT published in prose (only
+  the vertical elevations). A representative 2.5H:1V face is used; the asserted ORDERING
+  is slope-invariant (holds at 2:1, 2.5:1, 3:1).
+- Verdict: **CONVENTION (ordering validated; magnitudes geometry/φ'-limited).** The
+  three-method ORDERING Corps < DWW < LK is reproduced with DWW ~ LK (the stage-3 check
+  barely fires, as published where DWW 1.043 ~ LK 1.047). Corps 2-stage (R-governed here)
+  lands ~0.79 near the published 0.823 and BELOW 1.0, reproducing the observed failure.
+  Lowe-Karafiath / DWW OVERSHOOT (~1.35 vs published ~1.05): the assumed slope plus the
+  steep published φ'=45 (Kf=(1+sin45)/(1-sin45)=5.83) inflate the Kc interpolation gain
+  vs Slide2's narrow LK-Corps spread — on the moderate-φ' #98 dam our spacing matched to
+  ~10% (V-048), so the wide spread is specific to this steep-φ' case. Not tuned. Tests:
+  test_published_v052_drawdown_pilarcitos.py (2).
+
+## V-053 Slide2 #99 — Pumped-Storage Project Dam rapid drawdown — N/A (geometry)
+- Source: Slide2 Verification #99 (Tables 99.1/99.2); Duncan, Wright & Wong (1990);
+  GEO-SLOPE "Rapid Drawdown – Multi-Stage" Ex 2.
+- Recovered (all published): ~300 ft high ZONED dam; toe El. 260, crest ~El. 560,
+  mid-height bench El. 380; drawdown El. 545 (285 ft) -> 380 (120 ft). Materials:
+  (1) Compacted Rockfill γ=142, c'=0/φ'=37, FREE-DRAINING (no R-envelope); (2) Silty
+  Clay Core γ=140, c'=0/φ'=36, R c_R=2000 psf/φ_R=18; (3) Silty Clay Random Zone =
+  identical to the core.
+- Published: Corps 2-stage 1.345 / Lowe-Karafiath 1.620 / DWW 3-stage 1.534
+  (Duncan-Wright-Wong 1990: 1.37 / 1.58 / 1.56).
+- Verdict: **N/A (geometry).** Unlike #97 (homogeneous — one unknown slope), #99 is a
+  ZONED core/shell/bench section whose zone boundaries (core width, rockfill-shell slopes,
+  bench width) are NOT published in prose — only the vertical elevations + material
+  properties are. The mechanism (free-draining upstream shell dewaters; undrained silty-
+  clay core carries the R-envelope) depends entirely on where the core sits relative to
+  the slip surface, so the section cannot be reconstructed honestly from figure-only
+  zoning. Soil data + elevations recorded above for a future figure-digitization pass.
+  Not pinned.
+
 ## Slide2 #50 / #30 / #31 / #32 — reinforced (multi-material) — SKIPPED (complexity)
 - **#50** (SNAILZ, 2 materials, predefined surface): 14 geotextile rows each with a
   distinct bond strength/length modelled as bond-controlled soil nails; figure-only
