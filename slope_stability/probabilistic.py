@@ -308,6 +308,7 @@ def _parse_correlations(parsed: list, correlations) -> list:
         return []
     key_index = {p[0]: i for i, p in enumerate(parsed)}
     out = []
+    used = {}
     for c in correlations:
         if isinstance(c, dict):
             k1 = c.get("var1") or c.get("key1") or c.get("a")
@@ -325,6 +326,20 @@ def _parse_correlations(parsed: list, correlations) -> list:
                 f"'{k1}' twice)")
         if not -1.0 <= rho <= 1.0:
             raise ValueError(f"correlation rho must be in [-1, 1], got {rho}")
+        # A variable may appear in ONE pair only: the Monte Carlo sampler
+        # imposes each pair by overwriting the two columns, so a variable in
+        # two pairs would silently lose its first correlation (and a chain
+        # A-B, B-C does not define a valid joint distribution pairwise).
+        for k in (k1, k2):
+            if k in used:
+                raise ValueError(
+                    f"variable '{k}' appears in more than one correlation "
+                    f"pair (with '{used[k]}' and with "
+                    f"'{k2 if k == k1 else k1}'). Each variable may be "
+                    "correlated with at most ONE other variable; a full "
+                    "correlation matrix is not supported.")
+        used[k1] = k2
+        used[k2] = k1
         out.append((key_index[k1], key_index[k2], rho))
     return out
 
