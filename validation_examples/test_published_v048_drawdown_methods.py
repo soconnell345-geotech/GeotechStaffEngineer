@@ -97,7 +97,7 @@ def _search_98(method):
 
 # ── Lowe-Karafiath stage logic on the EXACT #95/#96 dam ─────────────────────
 
-def test_v046_lowe_karafiath_is_dww_without_stage3():
+def test_v048_lowe_karafiath_is_dww_without_stage3():
     """Lowe-Karafiath uses the Duncan-Wright-Wong Kc-interpolated stage-2 strength
     but omits stage 3, so it is NEVER more conservative than the 3-stage (stage 3
     only substitutes a lower strength). On the exact #95/#96 dam LK = 1.357 flat /
@@ -113,7 +113,7 @@ def test_v046_lowe_karafiath_is_dww_without_stage3():
     assert lk_flat.n_drained_substituted == 0
 
 
-def test_v046_lowe_karafiath_stage2_reproduces_published_dww():
+def test_v048_lowe_karafiath_stage2_reproduces_published_dww():
     """The Lowe-Karafiath seepage FOS (1.450) lands on the PUBLISHED Duncan-Wright-
     Wong 1.443 for this dam. Since LK's stage 2 IS the DWW stage 2, this confirms
     the Kc (anisotropic-consolidation) interpolation is correct and the default
@@ -124,7 +124,7 @@ def test_v046_lowe_karafiath_stage2_reproduces_published_dww():
 
 # ── #98 published search minima: the LOWE-KARAFIATH column + ordering ────────
 
-def test_v046_98_lowe_karafiath_search_minimum():
+def test_v048_98_lowe_karafiath_search_minimum():
     """#98 Lowe-Karafiath search minimum = 0.964 vs published 1.075 (~10% low);
     the residual is V-041's approximate recovered geometry (flat layers, no riprap
     veneer), the SAME ~10% offset seen for Corps and DWW there, not the method."""
@@ -134,7 +134,7 @@ def test_v046_98_lowe_karafiath_search_minimum():
     assert r.critical is not None and r.critical.is_circular
 
 
-def test_v046_98_all_published_method_columns():
+def test_v048_98_all_published_method_columns():
     """All three published #98 search-minimum columns reproduced on the recovered
     section, each ~10% low (the shared V-041 geometry offset) but in the correct
     published ORDER Lowe-Karafiath (1.075) > Duncan-Wright-Wong (1.039) > Corps

@@ -1,4 +1,4 @@
-"""V-034 — Slide2 Verification #34: Wolff & Harr (1987) Clarence Cannon Dam,
+"""V-045 — Slide2 Verification #34: Wolff & Harr (1987) Clarence Cannon Dam,
 correlated c'-phi' probabilistic analysis. [manual pp. 132-133]
 
 Validates the CORRELATED SCALAR-PAIR reliability capability (train item 1 —
@@ -62,7 +62,7 @@ def _geom():
     ])
 
 
-def test_v034_feature_consumes_published_correlations():
+def test_v045_feature_consumes_published_correlations():
     """FOSM accepts #34's published rho values (Table 34.1), surfaces the
     cross-term as corr(...) entries, and the correlation shifts COV_F off the
     independent value."""
@@ -79,7 +79,7 @@ def test_v034_feature_consumes_published_correlations():
     assert "corr(c_prime:PhaseII,phi:PhaseII)" in pct
 
 
-def test_v034_fosm_and_mc_same_band_at_high_cov():
+def test_v045_fosm_and_mc_same_band_at_high_cov():
     """FOSM and Monte Carlo agree within the high-COV band on #34's stats
     (extreme phi' COV ~1.2 -> ~8% FOSM/MC gap from Taylor linearization, not a
     feature defect)."""

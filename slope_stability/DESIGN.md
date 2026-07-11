@@ -413,8 +413,8 @@ search_critical_surface(geom, surface_type="noncircular",
   (byte-identical to the classic Taylor series). For a c'-φ' pair both raising the
   FOS, a NEGATIVE correlation reduces the FOS variance. Adapter-exposed
   (`correlations`). Validated against Slide2 #34's published Table 34.1
-  coefficients — see RESULTS/INVENTORY V-034 and
-  `validation_examples/test_published_v034_slope_correlated.py`. (At very high COV,
+  coefficients — see RESULTS/INVENTORY V-045 and
+  `validation_examples/test_published_v045_slope_correlated.py`. (At very high COV,
   φ' COV≈1.2 in #34, FOSM's linear Taylor series diverges from MC by ~8% — a
   documented linearization limit, not a defect; the machinery matches MC to <1% at
   moderate COV.)

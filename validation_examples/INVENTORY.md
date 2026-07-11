@@ -642,12 +642,12 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   on the exact #95/#96 section (search min ≤ published specified-circle FOS;
   stage detail reproduces the search FOS to machine precision). NOT tuned. See
   test_published_v041.py and slope_stability VALIDATION.md §B7.
-- **Lowe-Karafiath column (v5.4, F4): VALIDATED in V-046.** The third published
+- **Lowe-Karafiath column (v5.4, F4): VALIDATED in V-048.** The third published
   #98 search-minimum column, Lowe-Karafiath 1.075, is reproduced at 0.964 (~10%
   low, the SAME recovered-geometry offset as Corps/DWW) with the published method
   ordering L&K (1.075) > DWW (1.039) > Corps (0.931) preserved (ours 0.964 > 0.938
   > 0.837). `method='lowe_karafiath'` = the DWW Kc stage-2 without stage 3. See
-  test_published_v046_drawdown_methods.py.
+  test_published_v048_drawdown_methods.py.
 
 ## V-039 Slide2 #104 — Newmark seismic sliding-block displacement (B2b)
 - Source: Slide2 Verification #104 (manual pp. 330-331), based on Slide2 Tutorial 28
@@ -751,7 +751,7 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   spurious degenerate surface on this ponded geometry; Bishop centre-grid is the robust
   path (Slide auto-refine). Tests: test_published_v044_slope_submerged.py (2).
 
-## V-034 Slide2 #34 — Wolff & Harr (1987) Cannon Dam, correlated c'-φ' (v5.4.1)
+## V-045 Slide2 #34 — Wolff & Harr (1987) Cannon Dam, correlated c'-φ' (v5.4.1)
 - Source: Slide2 Verification #34 (manual pp. 132-133); Wolff & Harr (1987).
 - Target: `slope_stability.probabilistic` correlated scalar-pair capability
   (`correlations`), the train-item-1 generalization of the F1 su-law (a,b)
@@ -768,9 +768,9 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   #34's extreme φ' COV≈1.2). The full slope FOS 2.36 / Pf is N/A-scope: Fig 34.2
   is a rendered multi-material section with no labeled coords, a figure-only
   non-circular surface, omitted layers, and Slide-tuned γ (the manual's note).
-  Tests: test_published_v034_slope_correlated.py (2).
+  Tests: test_published_v045_slope_correlated.py (2).
 
-## V-033 Slide2 #33 — El-Ramly (2003) Syncrude dyke — N/A (geometry)
+## V-046 Slide2 #33 — El-Ramly (2003) Syncrude dyke — N/A (geometry)
 - Source: Slide2 Verification #33 (manual pp. 130-131); El-Ramly et al (2003).
 - Table 33.1: c'=0 for all layers; only Sandy till φ' (std 2) and Kca clay-shale
   φ' (std 2.1) are varied — INDEPENDENT (c'=0 → no c'-φ' correlation; does not
@@ -779,7 +779,7 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   phreatic surfaces and no labeled coordinates — geometry does not survive honest
   extraction; the Pf is not reproduced. Recorded, not pinned.
 
-## V-035 Slide2 #35 — Hassan & Wolff (1999) Cannon Dam RIs — SKIPPED (source)
+## V-047 Slide2 #35 — Hassan & Wolff (1999) Cannon Dam RIs — SKIPPED (source)
 - Source: Slide2 Verification #35 (manual pp. 134-136); Hassan & Wolff (1999).
 - Verdict: **SKIPPED (source).** The manual states outright that "the paper does
   not provide all the required input parameters, we selected values for the
@@ -787,7 +787,7 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   missing inputs to the target, and the published RIs are physically scattered
   (4–11 across the 9 surfaces). Not a clean independent anchor.
 
-## V-085/086 Slide2 #85/#86 — Duncan & Wright grouted tiebacks — CONVENTION (guard-improved)
+## V-049/050 Slide2 #85/#86 — Duncan & Wright grouted tiebacks — CONVENTION (guard-improved)
 - Source: Slide2 #85 (Fig 6.34) / #86 (Fig 7.28); Duncan & Wright (2005).
 - Geometry recovered (labeled): #85 saturated clay c=350 psf/φ=0, single 9,000 lb/ft
   support at mid-height, steep 0.5:1 20-ft face; #86 c'=0/φ=37 fill on rigid rock, five
