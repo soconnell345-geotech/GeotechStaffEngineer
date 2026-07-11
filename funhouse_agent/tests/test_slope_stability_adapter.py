@@ -369,6 +369,18 @@ class TestProbabilistic:
         assert sum(r["variable_variance_pct"].values()) == pytest.approx(
             100.0, abs=0.5)
 
+    def test_fosm_correlated_scalar_pair_routes_through(self):
+        """A correlated c'-phi' pair is accepted; the cross-term shows up as a
+        corr(...) variance entry and a negative correlation lowers COV_F."""
+        base = dict(method="bishop",
+                    variables={"c_prime": {"std": 3.0}, "phi": {"std": 3.0}})
+        indep = METHOD_REGISTRY["fosm_fos"](_base(**base))
+        corr = METHOD_REGISTRY["fosm_fos"](_base(
+            correlations=[["c_prime", "phi", -0.5]], **base))
+        assert "corr(c_prime,phi)" in corr["variable_variance_pct"]
+        # both raise the FOS, so a negative correlation reduces the FOS variance
+        assert corr["COV_F"] < indep["COV_F"]
+
     def test_monte_carlo_seeded_reproducible(self):
         kw = _base(method="bishop", n=150, seed=42,
                    variables={"phi": {"cov": 0.10}})

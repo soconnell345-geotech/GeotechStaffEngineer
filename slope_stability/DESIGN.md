@@ -390,6 +390,24 @@ search_critical_surface(geom, surface_type="noncircular",
   spread than `gamma_sat` itself), so varying the dry `gamma` alone is inert. Closes the
   Duncan (2000) LASH input-COV FOSM gap — see VALIDATION / RESULTS V-030 and
   `validation_examples/test_published_v030_fosm_slope.py`.
+- **Probabilistic FOS — correlated SCALAR pairs (v5.4.1)**: the same correlation
+  machinery generalizes from the su-law `(a,b)` pair to arbitrary scalar variable
+  pairs via the `correlations` argument of `fosm_fos` / `monte_carlo_fos` — a list
+  of `(key1, key2, rho)` triples over the scalar variable keys (e.g.
+  `[("c_prime", "phi", -0.5)]`, keys optionally `:LayerName`-scoped). FOSM adds
+  the Taylor cross-term `2*rho*(dF1/2)*(dF2/2)` as a signed `corr(k1,k2)` entry in
+  `variable_variance_pct` (so the per-variable shares still total 100%); Monte
+  Carlo draws the pair from a bivariate normal via Cholesky, mapped through each
+  variable's own marginal (normal/lognormal) so the correlation does not change
+  either marginal distribution. Default `None` = every variable independent
+  (byte-identical to the classic Taylor series). For a c'-φ' pair both raising the
+  FOS, a NEGATIVE correlation reduces the FOS variance. Adapter-exposed
+  (`correlations`). Validated against Slide2 #34's published Table 34.1
+  coefficients — see RESULTS/INVENTORY V-034 and
+  `validation_examples/test_published_v034_slope_correlated.py`. (At very high COV,
+  φ' COV≈1.2 in #34, FOSM's linear Taylor series diverges from MC by ~8% — a
+  documented linearization limit, not a defect; the machinery matches MC to <1% at
+  moderate COV.)
 
 ## Duncan Verification Examples (test_duncan_verification.py)
 

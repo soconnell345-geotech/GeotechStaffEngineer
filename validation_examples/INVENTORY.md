@@ -745,6 +745,42 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   spurious degenerate surface on this ponded geometry; Bishop centre-grid is the robust
   path (Slide auto-refine). Tests: test_published_v044_slope_submerged.py (2).
 
+## V-034 Slide2 #34 — Wolff & Harr (1987) Cannon Dam, correlated c'-φ' (v5.4.1)
+- Source: Slide2 Verification #34 (manual pp. 132-133); Wolff & Harr (1987).
+- Target: `slope_stability.probabilistic` correlated scalar-pair capability
+  (`correlations`), the train-item-1 generalization of the F1 su-law (a,b)
+  correlation to arbitrary scalar pairs.
+- Data (Table 34.1, lb/ft units): Phase I fill c'=2230±1150, φ'=6.34±7.87,
+  rho(c',φ')=+0.11, γ=150; Phase II fill c'=2901.6±1079.8, φ'=14.8±9.44,
+  rho=−0.51, γ=150; Sand drain c'=0/φ'=30 (not varied). Given non-circular
+  surface. Bishop/GLE/Spencer; Monte Carlo Pf.
+- Published: FOS 2.333 GLE / 2.383 Spencer / 2.36 Wolff-Harr; Pf 3.55e-3 (Slide).
+- Verdict: **PASS (correlated-pair capability) / N/A-scope (full FOS+Pf).** The
+  feature consumes #34's OWN published rho values on a representative 2-material
+  embankment (FOSM COV_F 0.396 indep → 0.413 corr; MC 0.381; corr(...) variance
+  entries surfaced), FOSM≈MC in the high-COV band (~8% gap = FOSM Taylor limit at
+  #34's extreme φ' COV≈1.2). The full slope FOS 2.36 / Pf is N/A-scope: Fig 34.2
+  is a rendered multi-material section with no labeled coords, a figure-only
+  non-circular surface, omitted layers, and Slide-tuned γ (the manual's note).
+  Tests: test_published_v034_slope_correlated.py (2).
+
+## V-033 Slide2 #33 — El-Ramly (2003) Syncrude dyke — N/A (geometry)
+- Source: Slide2 Verification #33 (manual pp. 130-131); El-Ramly et al (2003).
+- Table 33.1: c'=0 for all layers; only Sandy till φ' (std 2) and Kca clay-shale
+  φ' (std 2.1) are varied — INDEPENDENT (c'=0 → no c'-φ' correlation; does not
+  exercise the new feature). Published Slide FOS 1.305, Pf 1.54e-3.
+- Verdict: **N/A (geometry).** Fig 33.2 is a rendered 4-material dyke section with
+  phreatic surfaces and no labeled coordinates — geometry does not survive honest
+  extraction; the Pf is not reproduced. Recorded, not pinned.
+
+## V-035 Slide2 #35 — Hassan & Wolff (1999) Cannon Dam RIs — SKIPPED (source)
+- Source: Slide2 Verification #35 (manual pp. 134-136); Hassan & Wolff (1999).
+- Verdict: **SKIPPED (source).** The manual states outright that "the paper does
+  not provide all the required input parameters, we selected values for the
+  missing parameters that allowed us to match factors of safety" — Slide tuned
+  missing inputs to the target, and the published RIs are physically scattered
+  (4–11 across the 9 surfaces). Not a clean independent anchor.
+
 ## V-085/086 Slide2 #85/#86 — Duncan & Wright grouted tiebacks — CONVENTION (guard-improved)
 - Source: Slide2 #85 (Fig 6.34) / #86 (Fig 7.28); Duncan & Wright (2005).
 - Geometry recovered (labeled): #85 saturated clay c=350 psf/φ=0, single 9,000 lb/ft

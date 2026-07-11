@@ -53,6 +53,22 @@ Monte Carlo samples (a, b) from a bivariate normal (Cholesky). A component
 with std 0 (e.g. a fixed intercept) simply drops out. This closes the
 Duncan (2000) LASH input-COV FOSM gap (validation V-030).
 
+Correlated SCALAR pairs (c'-phi', ...)
+--------------------------------------
+The same correlation machinery generalizes to arbitrary pairs of the scalar
+variables via the ``correlations`` argument of ``fosm_fos`` / ``monte_carlo_fos``
+-- a list of ``(key1, key2, rho)`` triples over the scalar keys, e.g.::
+
+    correlations = [("c_prime", "phi", -0.5)]        # or scoped ':LayerName'
+
+FOSM adds the cross-term ``2*rho*(dF1/2)*(dF2/2)`` (a signed contribution shown
+in ``variable_variance_pct`` as ``corr(k1,k2)`` so the shares still total 100%);
+Monte Carlo draws the pair from a bivariate normal via Cholesky, mapped through
+each variable's own marginal so the correlation does not change either marginal
+distribution. Default ``None`` leaves every variable independent (byte-identical
+to the classic Taylor series). A c'-phi' negative correlation typically REDUCES
+the FOS variance because both raise the FOS. (Slide2 #33/#34, Table 35.1.)
+
 References
 ----------
 Duncan, J.M. (2000). "Factors of safety and reliability in geotechnical
@@ -276,6 +292,56 @@ def _build_geom(geom, parsed, scalar_values, laws, ab_list):
     return g
 
 
+def _parse_correlations(parsed: list, correlations) -> list:
+    """Normalize a correlation spec into ``[(i1, i2, rho), ...]`` — index pairs
+    into the scalar ``parsed`` list plus the correlation coefficient.
+
+    ``correlations`` is a list of ``(key1, key2, rho)`` triples (or dicts with
+    ``{'var1','var2','rho'}``). The keys must be SCALAR variable keys present in
+    ``variables`` (e.g. ``'c_prime'``, ``'phi'``, or scoped ``'c_prime:Clay'``).
+    Generalizes the F1 su-law ``(a, b)`` correlation to arbitrary scalar pairs:
+    FOSM adds the Taylor cross-term ``2*rho*(dF1/2)*(dF2/2)`` and Monte Carlo
+    draws the pair from a bivariate normal. Default (``None``) leaves every
+    scalar independent (byte-identical to the pre-correlation path).
+    """
+    if not correlations:
+        return []
+    key_index = {p[0]: i for i, p in enumerate(parsed)}
+    out = []
+    for c in correlations:
+        if isinstance(c, dict):
+            k1 = c.get("var1") or c.get("key1") or c.get("a")
+            k2 = c.get("var2") or c.get("key2") or c.get("b")
+            rho = float(c.get("rho", c.get("rho_ab", 0.0)))
+        else:
+            k1, k2, rho = c[0], c[1], float(c[2])
+        if k1 not in key_index or k2 not in key_index:
+            raise ValueError(
+                f"correlation references unknown scalar variable(s) "
+                f"'{k1}' / '{k2}'. Scalar variables are: {list(key_index)}")
+        if k1 == k2:
+            raise ValueError(
+                f"a correlation must relate two DIFFERENT variables (got "
+                f"'{k1}' twice)")
+        if not -1.0 <= rho <= 1.0:
+            raise ValueError(f"correlation rho must be in [-1, 1], got {rho}")
+        out.append((key_index[k1], key_index[k2], rho))
+    return out
+
+
+def _sample_marginal(z, mean: float, std: float, dist: str):
+    """Map standard-normal z-scores to a variable's marginal distribution — the
+    same marginals the independent MC sampler uses (normal: mean+std*z;
+    lognormal: exp(mln+sln*z)), so imposing correlation does not change any
+    variable's own distribution."""
+    import numpy as np
+    if dist == "lognormal":
+        sln = math.sqrt(math.log(1.0 + (std / mean) ** 2))
+        mln = math.log(mean) - 0.5 * sln ** 2
+        return np.exp(mln + sln * z)
+    return mean + std * z
+
+
 # ---------------------------------------------------------------------------
 # Result containers
 # ---------------------------------------------------------------------------
@@ -423,19 +489,27 @@ def fosm_fos(geom: SlopeGeometry,
              slip_surface=None,
              method: str = "bishop",
              n_slices: int = 30,
-             tol: float = 1e-4) -> FOSMResult:
+             tol: float = 1e-4,
+             correlations=None) -> FOSMResult:
     """FOSM / Taylor-series reliability of the FOS on a fixed surface.
 
     Central finite differences at +/- one standard deviation per variable
     (Duncan 2000's procedure):
 
-        sigma_F^2 = sum( (DeltaF_i / 2)^2 )
+        sigma_F^2 = sum( (DeltaF_i / 2)^2 ) + 2*sum_{i<j} rho_ij*(dFi/2)*(dFj/2)
+
+    The second sum is present only when ``correlations`` declares correlated
+    scalar pairs (default: none -> every variable independent, byte-identical to
+    the classic Taylor series). ``correlations`` is a list of
+    ``(key1, key2, rho)`` triples over the scalar variable keys (e.g.
+    ``[("c_prime", "phi", -0.5)]``); see :func:`_parse_correlations`.
 
     Returns both beta_normal and beta_lognormal (+ pf for each).
     """
     scalar_specs, law_specs = _split_variables(variables)
     parsed = _parse_variables(geom, scalar_specs) if scalar_specs else []
     laws = _parse_su_laws(geom, law_specs)
+    corr = _parse_correlations(parsed, correlations)
     if not parsed and not laws:
         raise ValueError("variables dict is empty")
     slip = _resolve_surface(geom, xc, yc, radius, slip_surface)
@@ -491,6 +565,17 @@ def fosm_fos(geom: SlopeGeometry,
         deltas[law["key"] + ":a"] = dFa
         deltas[law["key"] + ":b"] = dFb
 
+    # Correlated scalar pairs: add the Taylor cross-term for each declared pair
+    #   2 * rho * (dF1/2) * (dF2/2)
+    # as its own signed contribution (so the per-variable variance shares still
+    # total 100%). A single pair keeps sigma_F^2 >= 0; the clamp below covers a
+    # user-supplied non-PSD set of correlations.
+    for (i1, i2, rho) in corr:
+        k1 = parsed[i1][0]
+        k2 = parsed[i2][0]
+        contribs[f"corr({k1},{k2})"] = \
+            2.0 * rho * (deltas[k1] / 2.0) * (deltas[k2] / 2.0)
+
     var_sum = sum(contribs.values())
     sigma_f = math.sqrt(max(var_sum, 0.0))
     cov_f = sigma_f / f_mlv if f_mlv > 0 else float("inf")
@@ -524,7 +609,8 @@ def monte_carlo_fos(geom: SlopeGeometry,
                     research_surface: bool = False,
                     search_kwargs: Optional[Dict] = None,
                     n_bins: int = 25,
-                    keep_samples: bool = True) -> MonteCarloResult:
+                    keep_samples: bool = True,
+                    correlations=None) -> MonteCarloResult:
     """Monte Carlo FOS distribution.
 
     By default the critical surface is FIXED (fast, standard practice —
@@ -568,6 +654,7 @@ def monte_carlo_fos(geom: SlopeGeometry,
     else:
         slip = None
 
+    corr = _parse_correlations(parsed, correlations)
     rng = np.random.default_rng(seed)
     k = len(parsed)
     samples_in = np.empty((n, k))
@@ -578,6 +665,19 @@ def monte_carlo_fos(geom: SlopeGeometry,
             samples_in[:, j] = rng.lognormal(mln, sln, size=n)
         else:
             samples_in[:, j] = rng.normal(mean, std, size=n)
+    # Correlated scalar pairs: OVERWRITE the two columns with a bivariate-normal
+    # draw (Cholesky) mapped through each variable's own marginal. Drawn after
+    # the independent stream so the no-correlation path is byte-identical. The
+    # floor is applied after so the correlated columns are floored too.
+    for (i1, i2, rho) in corr:
+        _, _, _, m1, s1, d1 = parsed[i1]
+        _, _, _, m2, s2, d2 = parsed[i2]
+        zb = rng.normal(0.0, 1.0, size=n)
+        za = rng.normal(0.0, 1.0, size=n)
+        z1 = zb
+        z2 = rho * zb + math.sqrt(max(1.0 - rho ** 2, 0.0)) * za
+        samples_in[:, i1] = _sample_marginal(z1, m1, s1, d1)
+        samples_in[:, i2] = _sample_marginal(z2, m2, s2, d2)
     samples_in = np.maximum(samples_in, 1e-6)
 
     # Strength-law (a, b) pair samples — drawn AFTER the scalar stream so the

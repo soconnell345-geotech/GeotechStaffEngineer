@@ -250,7 +250,7 @@ def _run_fosm(params: dict) -> dict:
     reject_unknown_params(
         params,
         _GEOM_PARAMS + _SURFACE_PARAMS + ("variables", "method", "n_slices",
-                                          "tol"),
+                                          "tol", "correlations"),
         method="fosm_fos")
     geom = _build_geometry(params, method="fosm_fos")
     require_params(params, ["variables"], method="fosm_fos")
@@ -262,6 +262,7 @@ def _run_fosm(params: dict) -> dict:
         slip_surface=_slip_surface_from(params),
         method=method, n_slices=params.get("n_slices", 30),
         tol=params.get("tol", 1e-4),
+        correlations=params.get("correlations"),
     )
     return result.to_dict()
 
@@ -272,7 +273,7 @@ def _run_monte_carlo(params: dict) -> dict:
         params,
         _GEOM_PARAMS + _SURFACE_PARAMS + (
             "variables", "method", "n", "seed", "n_slices", "tol",
-            "research_surface"),
+            "research_surface", "correlations"),
         method="monte_carlo_fos")
     geom = _build_geometry(params, method="monte_carlo_fos")
     require_params(params, ["variables"], method="monte_carlo_fos")
@@ -285,6 +286,7 @@ def _run_monte_carlo(params: dict) -> dict:
         method=method, n=params.get("n", 1000), seed=params.get("seed"),
         n_slices=params.get("n_slices", 30), tol=params.get("tol", 1e-4),
         research_surface=params.get("research_surface", False),
+        correlations=params.get("correlations"),
     )
     return result.to_dict()
 
@@ -477,6 +479,10 @@ _VARIABLES_PARAM = {
     "variables": {"type": "object", "required": True, "description": "Random variables: {'phi': {cov: 0.1}, 'cu:Clay': {mean: 30, std: 5, dist: 'lognormal'}, ...}. Keys are layer parameters (phi, c_prime, cu, gamma, gamma_sat, ru) optionally scoped ':LayerName'; each spec needs cov or std (mean defaults to the layer value); dist is 'normal' (default) or 'lognormal'. Use gamma_sat (not dry gamma) for the unit weight of a submerged slope. A depth-varying undrained-strength law su(z)=a+b*(datum_z-z) is ONE correlated (a,b) variable applied coherently across layers — give an entry with a 'law':'linear_su' key: {'a':{mean,std|cov}, 'b':{mean,std|cov}, 'rho_ab':0..1, 'datum_z': elevation where su=a, 'z_ref':'mid'|'top'|'bottom', 'su_min': floor, 'layers': names|null}. A std-0 component (e.g. fixed intercept) drops out."},
 }
 
+_CORRELATIONS_PARAM = {
+    "correlations": {"type": "array", "required": False, "description": "Optional correlated scalar pairs: [['c_prime','phi',-0.5], ...] (or [{'var1','var2','rho'}]). Each references two SCALAR variable keys from 'variables' (optionally scoped ':LayerName') and a correlation rho in [-1,1]. FOSM adds the Taylor cross-term 2*rho*(dF1/2)*(dF2/2); Monte Carlo draws the pair from a bivariate normal. Omit for independent variables (default). A c'-phi' negative correlation typically lowers the FOS variance."},
+}
+
 METHOD_INFO = {
     "analyze_slope": {
         "category": "Slope Stability",
@@ -622,8 +628,9 @@ METHOD_INFO = {
             **_VARIABLES_PARAM,
             "method": {"type": "str", "required": False, "default": "bishop", "allowed_values": _METHODS, "description": "Limit-equilibrium method for each FOS evaluation."},
             "n_slices": {"type": "int", "required": False, "default": 30, "description": "Number of slices."},
+            **_CORRELATIONS_PARAM,
         },
-        "returns": {"FOS_mean_values": "FOS at mean (most-likely) values.", "COV_F": "Coefficient of variation of FOS.", "beta_lognormal": "Lognormal reliability index (Duncan 2000).", "pf_lognormal": "Probability of failure.", "variable_variance_pct": "Per-variable share of Var[FOS]."},
+        "returns": {"FOS_mean_values": "FOS at mean (most-likely) values.", "COV_F": "Coefficient of variation of FOS.", "beta_lognormal": "Lognormal reliability index (Duncan 2000).", "pf_lognormal": "Probability of failure.", "variable_variance_pct": "Per-variable share of Var[FOS] (with a 'corr(k1,k2)' entry per correlated pair)."},
     },
     "monte_carlo_fos": {
         "category": "Slope Stability",
@@ -637,6 +644,7 @@ METHOD_INFO = {
             "seed": {"type": "int", "required": False, "description": "Random seed for reproducibility."},
             "research_surface": {"type": "bool", "required": False, "default": False, "description": "Re-search the critical surface for every realization (slow; default keeps the surface fixed, standard practice)."},
             "n_slices": {"type": "int", "required": False, "default": 30, "description": "Number of slices."},
+            **_CORRELATIONS_PARAM,
         },
         "returns": {"pf": "Probability of failure (FOS < 1).", "FOS_mean": "Mean FOS.", "FOS_std": "Std of FOS.", "beta_lognormal": "Lognormal reliability index from the sample moments.", "histogram_bins": "Histogram bin edges.", "histogram_counts": "Histogram counts."},
     },
