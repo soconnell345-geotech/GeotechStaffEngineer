@@ -12,12 +12,12 @@ only for the detailed Phase-E history; this file supersedes it.
 |------|-------|
 | Repo | github.com/soconnell345-geotech/GeotechStaffEngineer (private) |
 | **master HEAD** | `3b84442` = **v5.4.1 release merge** (tag `v5.4.1`) — pushed, PUBLISHED to PyPI (owner OK'd 2026-07-10). 5.4.1 = the live-Funhouse file round-trip fixes: `read_pdf_text` (text-layer, attachment-or-real-path), real-path `analyze_pdf_page`/`analyze_image`, `list_files` real-FS browser, verified saves (+ Databricks workspace-API route), subsurface plot `output_path`, notebook Attach widget + shared attachments dict, calc_package PDF fallback (pdflatex→PyMuPDF Story), and the NEW **`webapp/`** Streamlit chat (TinyApp target + local; artifact cards; `[webapp]` extra) |
-| **Branch `v5.4`** | merged into master at `3b84442` (branch tip `d75ac4e`); the worktree `.claude/worktrees/v5.1-todos` is still checked out on it for the next train |
+| **Branch `v5.4`** | tip `f2827d9`, PUSHED, **NOT merged** — the post-5.4.1 train, COMPLETE + lead-QC'd 2026-07-12: correlated c'-φ' pairs (V-045; overlap guard), Bray-Travasarou 2007 (anchors hand-verified), Lowe-Karafiath drawdown (V-048/052/053; "Corps #1/#2" = menu-name collision, not built), anisotropic su(α) (V-054, exact isotropic identity), thrust-line spike fixed BOTH sides (source threshold + display clamp), slope_report_package hardening (param rejection, renderer surfaced, PDF 19.5→1.2 MB, wide tables fit). Plan of record: `module_work/V5.4_PLAN.md` (Close-out QC section = the finding ledger) |
 | Submodule `geotech-references` | `3b25e0e` = **v1.3.1 on PyPI** (owner OK'd 2026-07-08; ufc_expansive figures complete, 42/42 page-accurate); parent pin `>=1.3.1` |
-| Version string | `5.4.0` in `pyproject.toml` (master) |
-| Validation suite | `validation_examples/` — 179 passed (offline; V-001..V-044) |
-| Full repo suite | **8510 passed / 48 skipped** (5.4.1 release gate, 2026-07-10) |
-| **Publish status** | 5.4.0 PUBLISHED. Owner-gated next: live 100-Q eval run (owner, Databricks `[deep,full]`); geotech-references 1.3.1 release. **Next train (branch `v5.4` continues):** correlated c'-φ' pair + Slide2 #33/#34, F3 Bray-Travasarou, F4 CoE/Lowe-Karafiath, F6 anisotropic su, F7 slope calc-package. E2 stage-3 default STAYS 'fellenius' (owner decision 2026-07-08). |
+| Version string | `5.4.1` in `pyproject.toml` (master); branch unbumped (release = owner call) |
+| Validation suite | `validation_examples/` — 191+ passed (offline; V-001..V-054) |
+| Full repo suite | **8539 passed / 48 skipped** (train close-out gate on branch `v5.4`, 2026-07-12); 8510/48 on master (5.4.1) |
+| **Publish status** | 5.4.1 + refs 1.3.1 PUBLISHED. Owner-gated next: live 100-Q eval run (Databricks `[deep,full]`); the NEXT release (merge `v5.4`→master + bump + tag) on owner OK; TinyApp hosting feedback (form submitted 2026-07-10, ~1 wk). Deferred follow-ups (V5.4_PLAN): toe-circle search under-sampling, steep-φ' Kc sensitivity, E2 default stays 'fellenius' (owner decision 2026-07-08). |
 
 **⚠️ Release gate (still applies):** a `v*` git tag push **auto-publishes to
 PyPI** via `.github/workflows/publish.yml` (OIDC trusted publishing). Do **not**
