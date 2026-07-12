@@ -317,16 +317,28 @@ def new_artifacts(temp_dir: str, before: set, input_paths: Iterable[str]) -> Lis
 # ---------------------------------------------------------------------------
 
 def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
-                **build_kwargs):
+                checkpointer=None, **build_kwargs):
     """Build the compiled deep agent wired to the SHARED attachments dict and a
     session-dir save_fn. ``build_kwargs`` pass through to ``build_deep_agent``
-    (e.g. ``enable_memory``). Lazy-imports the deepagents builder."""
+    (e.g. ``enable_memory``). Lazy-imports the deepagents builder.
+
+    ``checkpointer`` (optional) is a LangGraph checkpointer forwarded to
+    ``build_deep_agent`` for durable/resumable thread state. The shipped webapp
+    resumes conversations by REPLAYING the persisted agent-facing message history
+    (see the Persistence section) rather than depending on a durable checkpointer,
+    so this defaults to ``None`` (byte-identical to the pre-persistence build);
+    it is exposed so a durable saver (e.g. a LangGraph SQLite saver, an optional
+    dependency) can be dropped in without touching the builder wiring.
+    """
     from funhouse_agent.deep.agent import build_deep_agent
+    kw = dict(build_kwargs)
+    if checkpointer is not None:
+        kw["checkpointer"] = checkpointer
     return build_deep_agent(
         model,
         attachments=attachments,
         save_fn=make_save_fn(temp_dir, artifacts),
-        **build_kwargs,
+        **kw,
     )
 
 
@@ -405,3 +417,276 @@ def stream_turn(agent, messages: list, thread_id: str,
         turn_tokens = _sum_callback_tokens(dict(cb.usage_metadata))
     yield {"kind": "turn_done", "answer": "".join(answer_parts),
            "turn_tokens": turn_tokens}
+
+
+# ---------------------------------------------------------------------------
+# Persistence — durable, resumable conversations
+# ---------------------------------------------------------------------------
+#
+# A conversation is a directory ``<data_root>/conversations/<thread_id>/`` with:
+#   meta.json          {thread_id, title, created, updated, turn_count}
+#   transcript.jsonl   one display entry per line (append-on-turn)
+#   messages.json      the agent-facing message history (replayed on resume so
+#                      the model "remembers" the conversation without depending
+#                      on a durable LangGraph checkpointer)
+#   attachments.json   the staged upload keys (re-registered into the live
+#                      attachments dict on resume)
+#   files/             the working dir: staged uploads AND agent artifacts (this
+#                      is the ``temp_dir`` the rest of core.py already uses, made
+#                      persistent so artifacts survive restarts)
+# Deleting a conversation MOVES its directory into ``<data_root>/.trash/`` rather
+# than hard-deleting. The data root is ``$GEOTECH_WEBAPP_DATA`` or, by default,
+# ``~/.geotech_webapp`` (TinyApp deployments override it to a writable volume).
+
+import json as _json
+import shutil as _shutil
+import time as _time
+
+
+def data_root() -> str:
+    """Root directory for persisted conversations. ``$GEOTECH_WEBAPP_DATA`` if
+    set (``~`` expanded), else ``~/.geotech_webapp``."""
+    env = os.environ.get("GEOTECH_WEBAPP_DATA")
+    if env:
+        return os.path.abspath(os.path.expanduser(env))
+    return os.path.join(os.path.expanduser("~"), ".geotech_webapp")
+
+
+def conversations_root(root: Optional[str] = None) -> str:
+    return os.path.join(root or data_root(), "conversations")
+
+
+def conversation_dir(thread_id: str, root: Optional[str] = None) -> str:
+    return os.path.join(conversations_root(root), thread_id)
+
+
+def conversation_files_dir(thread_id: str, root: Optional[str] = None) -> str:
+    """The conversation's working dir (staged uploads + artifacts) — the
+    persistent replacement for ``new_session_dir()``. Created on demand."""
+    d = os.path.join(conversation_dir(thread_id, root), "files")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def auto_title(text, n_words: int = 8) -> str:
+    """First ~``n_words`` words of the first user message, as a conversation
+    title. Falls back to 'New conversation' for empty input."""
+    words = str(text or "").split()
+    if not words:
+        return "New conversation"
+    title = " ".join(words[:n_words])
+    if len(words) > n_words:
+        title += "…"
+    return title
+
+
+def _conv_path(thread_id, name, root=None) -> str:
+    return os.path.join(conversation_dir(thread_id, root), name)
+
+
+def load_meta(thread_id: str, root: Optional[str] = None) -> Optional[dict]:
+    """Load a conversation's meta dict, or ``None`` if it does not exist."""
+    p = _conv_path(thread_id, "meta.json", root)
+    try:
+        with open(p, encoding="utf-8") as fh:
+            return _json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def save_meta(thread_id: str, meta: dict, root: Optional[str] = None) -> None:
+    os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+    with open(_conv_path(thread_id, "meta.json", root), "w",
+              encoding="utf-8") as fh:
+        _json.dump(meta, fh, ensure_ascii=False, indent=2)
+
+
+def ensure_conversation(thread_id: str, title: Optional[str] = None,
+                        root: Optional[str] = None) -> dict:
+    """Return the conversation's meta, creating it (with ``title`` or a
+    placeholder) on first use."""
+    meta = load_meta(thread_id, root)
+    if meta is None:
+        now = _time.time()
+        meta = {"thread_id": thread_id, "title": title or "New conversation",
+                "created": now, "updated": now, "turn_count": 0}
+        save_meta(thread_id, meta, root)
+    return meta
+
+
+def touch_conversation(thread_id: str, *, title: Optional[str] = None,
+                       turn_count: Optional[int] = None,
+                       root: Optional[str] = None) -> dict:
+    """Update ``updated`` (and optionally ``title`` / ``turn_count``) on a
+    conversation's meta; creates it if missing."""
+    meta = ensure_conversation(thread_id, title=title, root=root)
+    if title is not None:
+        meta["title"] = title
+    if turn_count is not None:
+        meta["turn_count"] = turn_count
+    meta["updated"] = _time.time()
+    save_meta(thread_id, meta, root)
+    return meta
+
+
+def rename_conversation(thread_id: str, title: str,
+                        root: Optional[str] = None) -> dict:
+    """Set a conversation's title."""
+    return touch_conversation(thread_id, title=str(title), root=root)
+
+
+def list_conversations(root: Optional[str] = None) -> List[dict]:
+    """Every saved conversation's meta, most-recently-updated first. Skips the
+    ``.trash`` folder and any dir without a readable meta.json."""
+    base = conversations_root(root)
+    out: List[dict] = []
+    try:
+        names = os.listdir(base)
+    except OSError:
+        return out
+    for name in names:
+        if not os.path.isdir(os.path.join(base, name)):
+            continue
+        meta = load_meta(name, root)
+        if meta:
+            out.append(meta)
+    out.sort(key=lambda m: m.get("updated", 0), reverse=True)
+    return out
+
+
+def _rel_artifact(path, files_dir) -> str:
+    """Store an artifact reference portably: relative to the conversation files
+    dir when it lives under it, else the absolute path."""
+    ap = os.path.abspath(str(path))
+    fd = os.path.abspath(files_dir)
+    if ap == fd or ap.startswith(fd + os.sep):
+        return os.path.relpath(ap, fd)
+    return ap
+
+
+def _resolve_artifact(ref, files_dir) -> str:
+    """Inverse of ``_rel_artifact``: resolve a stored reference back to a path
+    under the (possibly relocated) conversation files dir."""
+    if os.path.isabs(ref):
+        return ref
+    return os.path.join(files_dir, ref)
+
+
+def append_transcript(thread_id: str, entry: dict,
+                      root: Optional[str] = None) -> None:
+    """Append ONE display entry to ``transcript.jsonl``. Artifact paths in the
+    entry are stored relative to the conversation files dir (portable)."""
+    os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+    files_dir = conversation_files_dir(thread_id, root)
+    rec = dict(entry)
+    if rec.get("artifacts"):
+        rec["artifacts"] = [_rel_artifact(p, files_dir) for p in rec["artifacts"]]
+    with open(_conv_path(thread_id, "transcript.jsonl", root), "a",
+              encoding="utf-8") as fh:
+        fh.write(_json.dumps(rec, ensure_ascii=False) + "\n")
+
+
+def load_transcript(thread_id: str, root: Optional[str] = None) -> List[dict]:
+    """Load the display transcript, resolving artifact refs back to absolute
+    paths under the conversation files dir."""
+    p = _conv_path(thread_id, "transcript.jsonl", root)
+    files_dir = conversation_files_dir(thread_id, root)
+    out: List[dict] = []
+    try:
+        fh = open(p, encoding="utf-8")
+    except OSError:
+        return out
+    with fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = _json.loads(line)
+            except ValueError:
+                continue
+            if rec.get("artifacts"):
+                rec["artifacts"] = [_resolve_artifact(r, files_dir)
+                                    for r in rec["artifacts"]]
+            out.append(rec)
+    return out
+
+
+def save_messages(thread_id: str, messages: list,
+                  root: Optional[str] = None) -> None:
+    """Persist the agent-facing message history (small; full rewrite)."""
+    os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+    with open(_conv_path(thread_id, "messages.json", root), "w",
+              encoding="utf-8") as fh:
+        _json.dump(list(messages or []), fh, ensure_ascii=False)
+
+
+def load_messages(thread_id: str, root: Optional[str] = None) -> list:
+    """Load the agent-facing message history (replayed on resume)."""
+    p = _conv_path(thread_id, "messages.json", root)
+    try:
+        with open(p, encoding="utf-8") as fh:
+            data = _json.load(fh)
+        return data if isinstance(data, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def save_attachments_index(thread_id: str, keys: Iterable[str],
+                           root: Optional[str] = None) -> None:
+    """Record the staged upload keys so they can be re-registered on resume."""
+    os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+    with open(_conv_path(thread_id, "attachments.json", root), "w",
+              encoding="utf-8") as fh:
+        _json.dump(list(keys or []), fh, ensure_ascii=False)
+
+
+def load_attachments(thread_id: str, attachments: dict,
+                     root: Optional[str] = None) -> List[Attachment]:
+    """Re-register a conversation's staged uploads into the live ``attachments``
+    dict by reading each key's bytes from the conversation files dir. Returns the
+    :class:`Attachment` list (so callers can rebuild the agent-facing note)."""
+    p = _conv_path(thread_id, "attachments.json", root)
+    files_dir = conversation_files_dir(thread_id, root)
+    try:
+        with open(p, encoding="utf-8") as fh:
+            keys = _json.load(fh)
+    except (OSError, ValueError):
+        return []
+    out: List[Attachment] = []
+    for key in keys or []:
+        fpath = os.path.join(files_dir, key)
+        try:
+            with open(fpath, "rb") as fh:
+                data = fh.read()
+        except OSError:
+            continue
+        attachments[key] = data
+        out.append(Attachment(key=key, path=fpath, size=len(data)))
+    return out
+
+
+def delete_conversation(thread_id: str, root: Optional[str] = None) -> Optional[str]:
+    """Move a conversation directory into ``<data_root>/.trash/`` (soft delete).
+    Returns the trash path, or ``None`` if the conversation did not exist."""
+    src = conversation_dir(thread_id, root)
+    if not os.path.isdir(src):
+        return None
+    trash = os.path.join(root or data_root(), ".trash")
+    os.makedirs(trash, exist_ok=True)
+    dst = os.path.join(trash, f"{thread_id}_{int(_time.time())}")
+    _shutil.move(src, dst)
+    return dst
+
+
+def artifacts_from_transcript(transcript: Iterable[dict]) -> List[str]:
+    """Rebuild the download list (unique artifact paths, in order) from a loaded
+    transcript's per-turn artifact references."""
+    out: List[str] = []
+    seen = set()
+    for entry in transcript or []:
+        for p in entry.get("artifacts", []) or []:
+            if p not in seen:
+                seen.add(p)
+                out.append(p)
+    return out

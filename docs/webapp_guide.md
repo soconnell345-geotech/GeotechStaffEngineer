@@ -24,8 +24,13 @@ analysis code of its own — it's UI and glue over the shipped modules.
   or a plot, it appears as a download button in the sidebar.
 - **Token counts** — per-turn and running conversation totals (the same metering
   the notebook chat uses), so you can watch spend.
-- **One conversation per browser session**, with a **Reset** button to start a
-  fresh thread.
+- **Persistent conversations** — every chat is **saved automatically** and
+  **survives restarts**. The sidebar **Conversations** list shows your saved chats
+  (most-recent first, auto-titled from the first message); click one to resume it
+  (the agent remembers the thread, your uploads and the artifacts it produced),
+  **➕ New conversation** to start fresh, ✏️ to rename, 🗑️ to delete (a soft
+  delete — moved to a `.trash/` folder, not erased). Conversations live under
+  `~/.geotech_webapp/` by default, or wherever you point `GEOTECH_WEBAPP_DATA`.
 - **Prominent professional-use disclaimer** at the top of every session.
 
 ---

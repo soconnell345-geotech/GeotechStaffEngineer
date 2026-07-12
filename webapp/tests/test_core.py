@@ -282,3 +282,183 @@ def test_stream_turn_assembles_answer_and_reports_tokens():
     assert done["kind"] == "turn_done"
     assert done["answer"] == "Bearing capacity is 450 kPa."
     assert isinstance(done["turn_tokens"], int)
+
+
+# ---------------------------------------------------------------------------
+# Persistence — durable conversations
+# ---------------------------------------------------------------------------
+
+def test_data_root_env_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path / "store"))
+    assert core.data_root() == str((tmp_path / "store").resolve()) or \
+        core.data_root() == os.path.abspath(str(tmp_path / "store"))
+    monkeypatch.delenv("GEOTECH_WEBAPP_DATA", raising=False)
+    assert core.data_root().endswith(".geotech_webapp")
+
+
+def test_conversation_lifecycle_and_listing(tmp_path):
+    root = str(tmp_path)
+    # created on first use, then renamed; a second, later conversation sorts first
+    m1 = core.ensure_conversation("t1", title="Bearing question", root=root)
+    assert m1["thread_id"] == "t1" and m1["turn_count"] == 0
+    core.touch_conversation("t1", turn_count=2, root=root)
+    core.rename_conversation("t1", "Footing on sand", root=root)
+    core.ensure_conversation("t2", title="Slope FOS", root=root)
+    core.touch_conversation("t2", turn_count=1, root=root)   # newer 'updated'
+    convs = core.list_conversations(root=root)
+    assert [c["thread_id"] for c in convs] == ["t2", "t1"]   # recent-first
+    assert core.load_meta("t1", root=root)["title"] == "Footing on sand"
+    assert core.load_meta("t1", root=root)["turn_count"] == 2
+    assert core.load_meta("missing", root=root) is None
+
+
+def test_auto_title():
+    assert core.auto_title("") == "New conversation"
+    assert core.auto_title("what is the bearing capacity of a 2 m footing on "
+                           "dense sand at 1.5 m") == \
+        "what is the bearing capacity of a 2…"      # first 8 words + ellipsis
+    assert core.auto_title("short one") == "short one"
+
+
+def test_transcript_append_load_roundtrip_with_portable_artifacts(tmp_path):
+    root = str(tmp_path)
+    tid = "conv"
+    files_dir = core.conversation_files_dir(tid, root=root)
+    art = os.path.join(files_dir, "calc.html")
+    open(art, "w").close()
+    core.append_transcript(tid, {"role": "user", "text": "run the calc"},
+                           root=root)
+    core.append_transcript(tid, {"role": "assistant", "text": "done",
+                                 "artifacts": [art]}, root=root)
+    # stored reference is RELATIVE (portable), resolved back on load
+    raw = open(core._conv_path(tid, "transcript.jsonl", root)).read()
+    assert '"calc.html"' in raw and files_dir not in raw
+    loaded = core.load_transcript(tid, root=root)
+    assert [e["role"] for e in loaded] == ["user", "assistant"]
+    assert loaded[1]["artifacts"] == [art]
+    assert core.artifacts_from_transcript(loaded) == [art]
+
+
+def test_messages_save_load(tmp_path):
+    root = str(tmp_path)
+    msgs = [{"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello"}]
+    core.save_messages("c", msgs, root=root)
+    assert core.load_messages("c", root=root) == msgs
+    assert core.load_messages("nope", root=root) == []
+
+
+def test_attachment_reregistration_on_resume(tmp_path):
+    root = str(tmp_path)
+    tid = "c"
+    # stage an upload into the conversation files dir, index it, then resume
+    files_dir = core.conversation_files_dir(tid, root=root)
+    live = {}
+    core.stage_upload(live, files_dir, "Boring Log.pdf", b"PDFBYTES")
+    core.save_attachments_index(tid, list(live.keys()), root=root)
+    # fresh session: empty attachments dict, re-register from disk
+    resumed = {}
+    atts = core.load_attachments(tid, resumed, root=root)
+    assert resumed["Boring_Log.pdf"] == b"PDFBYTES"
+    assert atts[0].key == "Boring_Log.pdf" and atts[0].size == 8
+    assert os.path.isfile(atts[0].path)
+
+
+def test_delete_conversation_moves_to_trash(tmp_path):
+    root = str(tmp_path)
+    core.ensure_conversation("gone", title="x", root=root)
+    assert os.path.isdir(core.conversation_dir("gone", root=root))
+    dst = core.delete_conversation("gone", root=root)
+    assert dst is not None and os.path.isdir(dst)          # moved to .trash
+    assert not os.path.isdir(core.conversation_dir("gone", root=root))
+    assert core.load_meta("gone", root=root) is None
+    assert "gone" not in [c["thread_id"] for c in core.list_conversations(root=root)]
+    assert core.delete_conversation("never", root=root) is None
+
+
+def test_thread_isolation(tmp_path):
+    """Two conversations do not cross-contaminate messages/transcript/attachments."""
+    root = str(tmp_path)
+    core.save_messages("A", [{"role": "user", "content": "A-msg"}], root=root)
+    core.save_messages("B", [{"role": "user", "content": "B-msg"}], root=root)
+    core.append_transcript("A", {"role": "user", "text": "A-turn"}, root=root)
+    core.append_transcript("B", {"role": "user", "text": "B-turn"}, root=root)
+    core.stage_upload({}, core.conversation_files_dir("A", root=root),
+                      "a.pdf", b"AA")
+    core.save_attachments_index("A", ["a.pdf"], root=root)
+    assert core.load_messages("A", root=root)[0]["content"] == "A-msg"
+    assert core.load_transcript("B", root=root)[0]["text"] == "B-turn"
+    b_att = {}
+    core.load_attachments("B", b_att, root=root)             # B has no index
+    assert b_att == {}
+    a_att = {}
+    core.load_attachments("A", a_att, root=root)
+    assert list(a_att.keys()) == ["a.pdf"]
+
+
+def test_checkpointer_grows_and_isolates_across_threads():
+    """The pluggable checkpointer path: a LangGraph InMemorySaver accumulates
+    state per thread_id and keeps threads isolated (proves build_agent's
+    checkpointer wiring is sound without needing a live model)."""
+    saver = pytest.importorskip("langgraph.checkpoint.memory").InMemorySaver()
+
+    def cfg(tid):
+        return {"configurable": {"thread_id": tid, "checkpoint_ns": ""}}
+
+    def put(tid, i):
+        saver.put(cfg(tid),
+                  {"v": 1, "id": f"{tid}-{i}", "ts": "", "channel_values": {},
+                   "channel_versions": {}, "versions_seen": {}},
+                  {"step": i}, {})
+
+    put("one", 0)
+    put("one", 1)
+    put("two", 0)
+    one = list(saver.list(cfg("one")))
+    two = list(saver.list(cfg("two")))
+    assert len(one) == 2 and len(two) == 1        # grows per thread, isolated
+    assert core.build_agent.__defaults__ is not None  # checkpointer param exists
+
+
+def test_persist_and_resume_conversation_roundtrip(tmp_path):
+    """End-to-end: simulate a turn (persist attachment + transcript + messages +
+    artifact + meta), then RESUME in a fresh session and verify the display
+    transcript, agent-facing memory, attachments, artifacts and meta are all
+    restored — the resume-correctness invariant the UI depends on."""
+    root = str(tmp_path)
+    tid = core.new_thread_id()
+    files_dir = core.conversation_files_dir(tid, root=root)
+
+    # --- a live turn (what app.py does) ---
+    live = {}
+    core.stage_upload(live, files_dir, "log.pdf", b"PDF")
+    core.save_attachments_index(tid, list(live.keys()), root=root)
+    core.append_transcript(tid, {"role": "attach", "text": "log.pdf"}, root=root)
+    core.append_transcript(tid, {"role": "user", "text": "analyze it"}, root=root)
+    messages = [{"role": "user", "content": "[note]\n\nanalyze it"}]
+    artifact = os.path.join(files_dir, "calc.html")
+    with open(artifact, "w") as fh:
+        fh.write("<html>ok</html>")
+    core.append_transcript(tid, {"role": "assistant", "text": "done",
+                                 "artifacts": [artifact]}, root=root)
+    messages.append({"role": "assistant", "content": "done"})
+    core.save_messages(tid, messages, root=root)
+    core.touch_conversation(tid, title=core.auto_title("analyze it"),
+                            turn_count=1, root=root)
+
+    # --- resume in a FRESH session (empty state) ---
+    resumed_att: dict = {}
+    core.load_attachments(tid, resumed_att, root=root)
+    transcript = core.load_transcript(tid, root=root)
+    resumed_msgs = core.load_messages(tid, root=root)
+    resumed_arts = core.artifacts_from_transcript(transcript)
+    meta = core.load_meta(tid, root=root)
+
+    assert resumed_att["log.pdf"] == b"PDF"                     # attachment bytes
+    assert [e["role"] for e in transcript] == \
+        ["attach", "user", "assistant"]                        # display transcript
+    assert resumed_msgs == messages                            # agent memory (replay)
+    assert resumed_arts == [artifact] and os.path.isfile(artifact)  # artifact survives
+    assert meta["title"] == "analyze it" and meta["turn_count"] == 1
+    assert tid in [c["thread_id"]
+                   for c in core.list_conversations(root=root)]

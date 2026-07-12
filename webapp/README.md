@@ -58,7 +58,43 @@ until an engine is provided.
 
 ---
 
-## 2. Databricks (notebook-launched, via the driver proxy)
+## 2. Conversations (auto-saved, resumable)
+
+Every conversation is **saved automatically** as you go and **survives app
+restarts** — nothing to click. The sidebar **Conversations** list shows your
+saved chats (most-recent first, auto-titled from the first message); click one to
+resume it, **➕ New conversation** to start fresh, ✏️ to rename, 🗑️ to delete.
+Delete is a **soft delete** — the conversation directory is moved to a `.trash/`
+folder under the data root, not erased.
+
+**Where it's stored.** Under `$GEOTECH_WEBAPP_DATA` if set, else
+`~/.geotech_webapp/`. Each conversation is a directory
+`conversations/<thread_id>/` holding the display transcript, the agent-facing
+message history (replayed on resume so the model remembers the thread), the
+staged uploads, the produced artifacts, and a small metadata file.
+
+```bash
+export GEOTECH_WEBAPP_DATA=/data/geotech_webapp   # PowerShell: $env:GEOTECH_WEBAPP_DATA="D:\geotech_webapp"
+```
+
+**Durability mechanism (honest note).** Resume works by **persisting and
+replaying the agent's message history** — dependency-free, using tools already in
+our tree. We do *not* depend on a durable LangGraph checkpointer: `langgraph`'s
+SQLite saver is a separate optional package not currently pinned. `build_agent`
+accepts a `checkpointer=` argument so a durable saver (e.g.
+`langgraph-checkpoint-sqlite`) can be dropped in later without other changes; the
+in-tree `InMemorySaver` covers within-session thread state.
+
+> ⚠️ **TinyApp storage caveat.** Whether the TinyApp environment gives the app a
+> **persistent, writable** filesystem is unknown until the platform answer. If it
+> does, set `GEOTECH_WEBAPP_DATA` to that persistent volume and conversations
+> survive restarts/redeploys. If storage is **ephemeral**, conversations live
+> only for the container's lifetime (the app still works; it just won't persist
+> across a redeploy). Confirm with the hosting team.
+
+---
+
+## 3. Databricks (notebook-launched, via the driver proxy)
 
 You can run the app on a Databricks cluster and reach it through the **driver
 proxy URL**. Run streamlit on the driver node bound to a port, then open the
@@ -106,7 +142,7 @@ and the cluster allows the driver-proxy for your workspace. The local path
 
 ---
 
-## 3. TinyApp deployment (Azure Government)
+## 4. TinyApp deployment (Azure Government)
 
 TinyApp hosts application code you submit (Streamlit/Python is a first-class
 stack). Submit:
@@ -138,6 +174,8 @@ click.
 - [ ] App opens cold (no engine) without a traceback — shows the banner.
 - [ ] Disclaimer renders at the top.
 - [ ] File upload → the agent can read the staged file (see `webapp_guide.md`).
+- [ ] `GEOTECH_WEBAPP_DATA` pointed at a **persistent** volume if conversations
+      should survive redeploys (else they are per-container; see section 2).
 
 ---
 
@@ -146,7 +184,7 @@ click.
 | File | Purpose |
 |------|---------|
 | `app.py` | Streamlit shell — a thin view over `core.py` (no logic). |
-| `core.py` | All logic: attachment staging, artifact capture, streaming, disclaimer. Import-testable without streamlit. |
+| `core.py` | All logic: attachment staging, artifact capture, streaming, disclaimer, and conversation **persistence** (per-conversation dir under `GEOTECH_WEBAPP_DATA`: transcript / messages / attachments / artifacts / meta; list / resume / rename / delete-to-trash). Import-testable without streamlit. |
 | `engine_config.py` | Env-driven engine resolution (Anthropic key / Prompter hook / no-engine). |
 | `requirements.txt` | TinyApp dependency pin. |
 | `tests/` | Offline tests for `core.py` + `engine_config.py` (no streamlit, no live model). |

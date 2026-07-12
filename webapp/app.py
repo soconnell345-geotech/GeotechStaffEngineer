@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sys
+from typing import Optional
 
 # streamlit runs this file with webapp/ as the script dir; the repo/site root
 # that contains the `webapp` package is one level up and must be importable.
@@ -34,38 +35,73 @@ st.set_page_config(page_title="GeotechStaffEngineer", page_icon="⛰️",
 # Session bootstrap
 # ---------------------------------------------------------------------------
 
-def _init_session() -> None:
+def _build_agent_for_session() -> None:
+    """(Re)build the compiled agent wired to the current attachments dict +
+    persistent files dir. Surfaces build errors without crashing the app."""
     ss = st.session_state
-    if ss.get("initialized"):
-        return
-    ss.attachments = {}                 # shared with the agent's vision tools
-    ss.temp_dir = core.new_session_dir()
-    ss.artifacts = []                   # agent-produced files (download list)
-    ss.messages = []                    # agent-facing history (replayed)
-    ss.transcript = []                  # display entries
-    ss.pending_notes = []               # attachment notes for the next turn
-    ss.thread_id = core.new_thread_id()
-    ss.total_tokens = 0
-    ss.last_turn_tokens = 0
-    ss.agent_error = None
-    ss.engine = engine_config.resolve_engine()
     ss.agent = None
+    ss.agent_error = None
     if ss.engine.ok:
         try:
             ss.agent = core.build_agent(
                 ss.engine.model, ss.attachments, ss.temp_dir, ss.artifacts)
         except Exception as exc:  # surface, don't crash the app
             ss.agent_error = f"{type(exc).__name__}: {exc}"
+
+
+def _new_conversation() -> None:
+    """Start a fresh conversation: new thread id + persistent files dir + agent.
+    The conversation's meta is not written until its first turn, so an unused
+    'New conversation' does not clutter the saved list."""
+    ss = st.session_state
+    ss.thread_id = core.new_thread_id()
+    ss.temp_dir = core.conversation_files_dir(ss.thread_id)
+    ss.attachments = {}                 # shared with the agent's vision tools
+    ss.artifacts = []                   # agent-produced files (download list)
+    ss.messages = []                    # agent-facing history (replayed)
+    ss.transcript = []                  # display entries
+    ss.pending_notes = []               # attachment notes for the next turn
+    ss.total_tokens = 0
+    ss.last_turn_tokens = 0
+    _build_agent_for_session()
+
+
+def _open_conversation(thread_id: str) -> None:
+    """Resume a saved conversation: reload the display transcript, replay the
+    agent-facing messages, re-register staged attachments, rebuild the download
+    list, and rebuild the agent on the SAME thread + persistent files dir."""
+    ss = st.session_state
+    ss.thread_id = thread_id
+    ss.temp_dir = core.conversation_files_dir(thread_id)
+    ss.attachments = {}
+    core.load_attachments(thread_id, ss.attachments)   # re-register upload bytes
+    ss.transcript = core.load_transcript(thread_id)
+    ss.messages = core.load_messages(thread_id)         # replayed → agent memory
+    ss.artifacts = core.artifacts_from_transcript(ss.transcript)
+    ss.pending_notes = []
+    ss.total_tokens = 0
+    ss.last_turn_tokens = 0
+    _build_agent_for_session()
+
+
+def _persist_turn(first_user_text: Optional[str]) -> None:
+    """After a completed turn: rewrite the agent-facing messages, and update the
+    conversation meta (title from the first user message, running turn count)."""
+    ss = st.session_state
+    user_turns = sum(1 for e in ss.transcript if e.get("role") == "user")
+    title = core.auto_title(first_user_text) if (user_turns == 1 and
+                                                 first_user_text) else None
+    core.save_messages(ss.thread_id, ss.messages)
+    core.touch_conversation(ss.thread_id, title=title, turn_count=user_turns)
+
+
+def _init_session() -> None:
+    ss = st.session_state
+    if ss.get("initialized"):
+        return
+    ss.engine = engine_config.resolve_engine()
+    _new_conversation()
     ss.initialized = True
-
-
-def _reset_session() -> None:
-    """Clear the conversation and start a fresh thread + temp dir + agent."""
-    for k in ("initialized", "attachments", "temp_dir", "artifacts", "messages",
-              "transcript", "pending_notes", "thread_id", "total_tokens",
-              "last_turn_tokens", "agent", "engine", "agent_error"):
-        st.session_state.pop(k, None)
-    _init_session()
 
 
 _init_session()
@@ -91,7 +127,56 @@ with st.expander("Professional-use disclaimer — read before relying on any res
 # Sidebar: engine status, attachments, artifacts, tokens, reset
 # ---------------------------------------------------------------------------
 
+def _relative_time(updated: float) -> str:
+    import time as _t
+    ago = max(0, int(_t.time() - (updated or 0)))
+    if ago < 60:
+        return "just now"
+    if ago < 3600:
+        return f"{ago // 60}m ago"
+    if ago < 86400:
+        return f"{ago // 3600}h ago"
+    return f"{ago // 86400}d ago"
+
+
 with st.sidebar:
+    st.header("Conversations")
+    if st.button("➕ New conversation", use_container_width=True,
+                 key="new_conv"):
+        _new_conversation()
+        st.rerun()
+
+    for _m in core.list_conversations()[:50]:
+        _tid = _m["thread_id"]
+        _current = (_tid == ss.thread_id)
+        _title = _m.get("title") or "Untitled"
+        _row = st.columns([0.72, 0.14, 0.14])
+        with _row[0]:
+            if st.button(("● " if _current else "") + _title, key=f"open_{_tid}",
+                         help=f"{_relative_time(_m.get('updated'))} · "
+                              f"{_m.get('turn_count', 0)} turns",
+                         use_container_width=True):
+                if not _current:
+                    _open_conversation(_tid)
+                    st.rerun()
+        with _row[1]:
+            if st.button("✏️", key=f"rn_{_tid}", help="Rename"):
+                ss[f"renaming_{_tid}"] = not ss.get(f"renaming_{_tid}", False)
+        with _row[2]:
+            if st.button("🗑️", key=f"del_{_tid}", help="Delete (to trash)"):
+                core.delete_conversation(_tid)
+                if _current:
+                    _new_conversation()
+                st.rerun()
+        if ss.get(f"renaming_{_tid}"):
+            _new_title = st.text_input("New title", value=_title,
+                                       key=f"rntext_{_tid}")
+            if st.button("Save title", key=f"rnsave_{_tid}"):
+                core.rename_conversation(_tid, _new_title or _title)
+                ss[f"renaming_{_tid}"] = False
+                st.rerun()
+
+    st.divider()
     st.header("Session")
 
     eng = ss.engine
@@ -121,8 +206,10 @@ with st.sidebar:
             atts = core.stage_uploads(ss.attachments, ss.temp_dir, fresh)
             ss.pending_notes.append(core.attachment_note(atts))
             for a in atts:
-                ss.transcript.append(
-                    {"role": "attach", "text": f"{a.key} ({a.size:,} bytes)"})
+                entry = {"role": "attach", "text": f"{a.key} ({a.size:,} bytes)"}
+                ss.transcript.append(entry)
+                core.append_transcript(ss.thread_id, entry)      # persist
+            core.save_attachments_index(ss.thread_id, list(ss.attachments))
             st.rerun()
 
     if ss.attachments:
@@ -147,10 +234,8 @@ with st.sidebar:
 
     st.divider()
     st.caption(core.token_line(ss.last_turn_tokens, ss.total_tokens))
-    st.caption(f"thread `{ss.thread_id[:8]}` · {len(ss.messages)} msgs")
-    if st.button("Reset conversation", type="secondary"):
-        _reset_session()
-        st.rerun()
+    st.caption(f"thread `{ss.thread_id[:8]}` · {len(ss.messages)} msgs · "
+               f"auto-saved")
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +337,9 @@ if prompt:
             + ss.engine.message)
     else:
         st.chat_message("user").markdown(prompt)
-        ss.transcript.append({"role": "user", "text": prompt})
+        user_entry = {"role": "user", "text": prompt}
+        ss.transcript.append(user_entry)
+        core.append_transcript(ss.thread_id, user_entry)         # persist
 
         agent_content = core.assemble_user_message(ss.pending_notes, prompt)
         ss.pending_notes = []
@@ -304,6 +391,9 @@ if prompt:
             if p not in ss.artifacts:
                 ss.artifacts.append(p)
         turn_paths = core.collect_turn_artifacts(save_new, dir_new)
-        ss.transcript.append({"role": "assistant", "text": final,
-                              "artifacts": turn_paths})
+        assistant_entry = {"role": "assistant", "text": final,
+                           "artifacts": turn_paths}
+        ss.transcript.append(assistant_entry)
+        core.append_transcript(ss.thread_id, assistant_entry)    # persist
+        _persist_turn(prompt)          # rewrite messages.json + update meta
         st.rerun()
