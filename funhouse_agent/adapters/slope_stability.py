@@ -13,7 +13,7 @@ _WATER_CONDITIONS = ["dry", "seepage_parallel", "ru"]
 _F_INTERSLICE = ["constant", "half_sine", "clipped_sine", "trapezoidal"]
 _SURFACE_TYPES = ["circular", "entry_exit", "noncircular", "noncircular_de",
                   "pso", "weak_layer"]
-_STRENGTH_MODELS = ["mohr_coulomb", "shansep", "hoek_brown"]
+_STRENGTH_MODELS = ["mohr_coulomb", "shansep", "hoek_brown", "anisotropic"]
 _NEWMARK_POLARITY = ["downslope", "rectified"]
 _CRACK_SIDES = ["entry", "exit"]
 _CRACK_MODELS = ["strength", "truncation"]
@@ -66,6 +66,9 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
             hb_gsi=d.get("hb_gsi", 50.0),
             hb_mi=d.get("hb_mi", 10.0),
             hb_D=d.get("hb_D", 0.0),
+            su_active=d.get("su_active", 0.0),
+            su_dss=d.get("su_dss", 0.0),
+            su_passive=d.get("su_passive", 0.0),
             R_c=d.get("R_c", 0.0),
             R_phi=d.get("R_phi"),
         ))
@@ -463,7 +466,7 @@ METHOD_REGISTRY = {
 
 _GEOMETRY_PARAMS = {
     "surface_points": {"type": "array", "required": True, "description": "Ground surface as [[x,y], ...] array (x increasing)."},
-    "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {top_elevation, bottom_elevation, gamma (all required); name, gamma_sat, phi, c_prime, cu, analysis_mode ('drained'|'undrained'), ru, bottom_boundary_points optional}. Per-layer strength_model: 'mohr_coulomb' (default), 'shansep' (su = shansep_S * ocr^shansep_m * sigma'_v; fields shansep_S, shansep_m, ocr, su_min) or 'hoek_brown' (Generalized Hoek-Brown; fields hb_sigci kPa, hb_gsi, hb_mi, hb_D). For rapid_drawdown_fos, low-permeability layers also take the total-stress R-envelope R_c (kPa) and R_phi (deg); R_phi omitted/null => free-draining."},
+    "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {top_elevation, bottom_elevation, gamma (all required); name, gamma_sat, phi, c_prime, cu, analysis_mode ('drained'|'undrained'), ru, bottom_boundary_points optional}. Per-layer strength_model: 'mohr_coulomb' (default), 'shansep' (su = shansep_S * ocr^shansep_m * sigma'_v; fields shansep_S, shansep_m, ocr, su_min) 'hoek_brown' (Generalized Hoek-Brown; fields hb_sigci kPa, hb_gsi, hb_mi, hb_D) or 'anisotropic' (undrained su varies with the slice-base inclination alpha; fields su_active [kPa, ACTIVE/crest zone, alpha>=+45deg], su_dss [direct simple shear, alpha=0], su_passive [PASSIVE/toe zone, alpha<=-45deg] — su_active>=su_dss>=su_passive for K>1 clays; Casagrande-Carrillo sin(2alpha) interpolation; standard toe-at-low-x slope). For rapid_drawdown_fos, low-permeability layers also take the total-stress R-envelope R_c (kPa) and R_phi (deg); R_phi omitted/null => free-draining."},
     "gwt_points": {"type": "array", "required": False, "description": "Groundwater table [[x,y],...]. If above the ground surface, ponded water is auto-detected (water weight + horizontal hydrostatic thrust applied as external loads)."},
     "kh": {"type": "float", "required": False, "default": 0.0, "description": "Horizontal pseudo-static seismic coefficient (acts on soil weight only)."},
     "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Vertical surcharge (kPa). A single loaded zone; use 'surcharges' for several distinct loaded areas."},

@@ -851,6 +851,34 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   zoning. Soil data + elevations recorded above for a future figure-digitization pass.
   Not pinned.
 
+## V-054 Anisotropic undrained strength su(α) (ADP) — isotropic anchor + Bakklandet (F6)
+- Source: Casagrande & Carrillo (1944); isotropic sanity = Frontiers Earth Sci
+  13:1581457; Bakklandet natural slope = IOP EES 1523 (2025) 012038 (NGI-ADP FEM);
+  Slide2 #105 (anisotropic). Refs: Lo (1965), Su & Liao (1999), Al-Karni &
+  Al-Shamrani (2000).
+- Target: `SlopeSoilLayer.strength_model='anisotropic'` (su_active/su_dss/su_passive;
+  su(α) = Casagrande-Carrillo sin(2α) interpolation on the slice-base angle, φ=0).
+- Verdict: **PASS (isotropic anchor + exact isotropic reduction) / CONVENTION
+  (Bakklandet anisotropy magnitude).**
+  * Isotropic sanity (H=5 m, 45° slope, γ=20, su=40): critical toe circle Bishop
+    2.287 vs published 2.16 (FLAC 2.18; Taylor φ=0 ~2.2) — within ~5%. AND the
+    anisotropic model with su_active=su_dss=su_passive reproduces the mohr_coulomb
+    cu=40 FOS EXACTLY (structural isotropic identity). NOTE the auto centre-grid
+    SEARCH over-estimates (~2.74) because it under-samples the small toe circle — a
+    search-coverage limit, unrelated to the strength model (brute-force critical
+    used as the anchor surface).
+  * Bakklandet (DSS/A=0.63, P/A=0.35): the anisotropy reduces the FOS from the
+    isotropic critical 2.287 to 1.850 on that circle (19%) / 1.796 on the anisotropic
+    critical (21.5% critical-vs-critical), bracketing the published FEM ~24%
+    (1.43→1.09). CONVENTION — direction + magnitude reproduced; exact value not pinned
+    (FEM vs LEM, different geometry, Bakklandet's depth-varying su_A vs a representative
+    constant su here).
+  * Slide2 #105 (Bishop 0.970/Janbu 0.935/Spencer 1.086/GLE 1.017): the cross-section
+    lives in Slide2 Tutorial 32, NOT the verification manual — geometry does not survive
+    honest extraction. **N/A (source).** Recorded, not pinned.
+  Tests: test_published_v054_anisotropic_su.py (4) + slope_stability/tests/
+  test_strength_models.py::TestAnisotropicSu (5).
+
 ## Slide2 #50 / #30 / #31 / #32 — reinforced (multi-material) — SKIPPED (complexity)
 - **#50** (SNAILZ, 2 materials, predefined surface): 14 geotextile rows each with a
   distinct bond strength/length modelled as bond-controlled soil nails; figure-only

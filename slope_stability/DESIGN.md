@@ -435,6 +435,32 @@ search_critical_surface(geom, surface_type="noncircular",
   φ' COV≈1.2 in #34, FOSM's linear Taylor series diverges from MC by ~8% — a
   documented linearization limit, not a defect; the machinery matches MC to <1% at
   moderate COV.)
+- **Anisotropic undrained strength su(α) (v5.4 F6)**: `SlopeSoilLayer.strength_model
+  = 'anisotropic'` makes the undrained strength vary with the slice-base inclination
+  α (the ADP active/DSS/passive anisotropy common in soft-clay practice; φ=0).
+  Parameters `su_active` / `su_dss` / `su_passive`. The interpolation follows
+  Casagrande & Carrillo (1944), `su(i) = su_H + (su_V − su_H)·sin²(i)` with `i` the
+  MAJOR-PRINCIPAL-STRESS inclination from horizontal and the failure plane at 45° to
+  σ1 (φ_u=0, so `i = α + 45°`); since `2·sin²(α+45°) − 1 = sin(2α)` this reduces to a
+  clean sin(2α) form on the base angle:
+    * `α ≥ +45°` → `su_active` (triaxial-compression / active); `α ≤ −45°` → `su_passive`
+      (triaxial-extension / passive); `α = 0` → `su_dss` (direct simple shear);
+    * `0 ≤ α < 45°`: `su_dss + (su_active − su_dss)·sin(2α)`;
+    * `−45° < α < 0`: `su_dss + (su_passive − su_dss)·sin(2|α|)`.
+  `_anisotropic_su(α)` (geometry.py) is called per slice from `build_slices` with the
+  slice-base α threaded through `strength_at(…, alpha=α)`. **α SIGN CONVENTION (the #1
+  error source — α is the failure-PLANE angle, not the σ1 inclination; they differ by
+  ~45°):** positive α = base dipping toward +x = the ACTIVE (driving/crest) side for
+  the module's standard slope (toe at low x, crest at high x — every validation
+  geometry). A mirrored slope must swap su_active/su_passive. With equal su's the
+  model reduces to `mohr_coulomb` cu EXACTLY (isotropic identity). Adapter-exposed
+  (`strength_model='anisotropic'` + `su_active`/`su_dss`/`su_passive`). Validated —
+  RESULTS/INVENTORY V-054 and `test_published_v054_anisotropic_su.py`: isotropic
+  anchor FOS 2.29 vs published ~2.16–2.2 (Taylor/FLAC, H=5/45°/su=40); the Bakklandet
+  ADP ratios (DSS/A=0.63, P/A=0.35) drop the FOS ~21% (critical-vs-critical),
+  bracketing the published FEM 24% (1.43→1.09) — CONVENTION (FEM vs LEM). Refs: Lo
+  (1965), Su & Liao (1999), Al-Karni & Al-Shamrani (2000) — anisotropy matters mainly
+  for slopes flatter than ~53°.
 
 ## Duncan Verification Examples (test_duncan_verification.py)
 

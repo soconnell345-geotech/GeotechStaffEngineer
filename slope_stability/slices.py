@@ -298,7 +298,9 @@ def build_slices(geom: SlopeGeometry,
             dl = width / max(abs(alpha_cos), 1e-10)
             sigma_n = (weight * alpha_cos / dl if dl > 0 else 0.0) \
                 - pore_pressure
-            c, phi = base_layer.strength_at(sigma_n, sigma_v)
+            # alpha (base inclination) drives the 'anisotropic' su(alpha) model;
+            # ignored by shansep / hoek_brown.
+            c, phi = base_layer.strength_at(sigma_n, sigma_v, alpha=alpha)
 
         # Tension crack: slices on the CREST half whose base is above the crack
         # bottom either lose shear resistance (strength model — open crack face)

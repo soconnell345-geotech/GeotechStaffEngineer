@@ -97,6 +97,9 @@ class SlopeSoilLayer:
     # 'hoek_brown': Generalized Hoek-Brown (GSI, mi, sigci, D) ->
     #               instantaneous c-phi tangent at the slice base
     #               effective normal stress (Fellenius estimate).
+    # 'anisotropic': undrained su varies with the slice-base inclination alpha
+    #               (ADP active/DSS/passive; su_active/su_dss/su_passive, phi=0).
+    #               See _anisotropic_su and strength_at.
     strength_model: str = "mohr_coulomb"
     shansep_S: float = 0.22
     shansep_m: float = 0.8
@@ -106,6 +109,16 @@ class SlopeSoilLayer:
     hb_gsi: float = 50.0
     hb_mi: float = 10.0
     hb_D: float = 0.0
+    # --- anisotropic undrained strength (ADP: active / DSS / passive) --------
+    # Undrained strength as a function of the slice-base inclination alpha (the
+    # failure-plane angle to horizontal). su_active applies in the ACTIVE zone
+    # (alpha >= +45 deg, steep bases under the crest / driving side), su_passive
+    # in the PASSIVE zone (alpha <= -45 deg, reverse-dip bases at the toe /
+    # resisting side), su_dss at direct simple shear (alpha = 0). Only used when
+    # strength_model == 'anisotropic'. See _anisotropic_su.
+    su_active: float = 0.0
+    su_dss: float = 0.0
+    su_passive: float = 0.0
     # --- rapid-drawdown R-envelope (Corps/Duncan) ---------------------
     # Total-stress (consolidated-undrained, "R") strength envelope used ONLY
     # by the rapid-drawdown 3-stage / 2-stage analysis. When R_phi is set, the
@@ -142,10 +155,19 @@ class SlopeSoilLayer:
             if self.cu < 0:
                 raise ValueError(f"cu must be non-negative, got {self.cu}")
         if self.strength_model not in ("mohr_coulomb", "shansep",
-                                       "hoek_brown"):
+                                       "hoek_brown", "anisotropic"):
             raise ValueError(
-                f"strength_model must be 'mohr_coulomb', 'shansep' or "
-                f"'hoek_brown', got '{self.strength_model}'")
+                f"strength_model must be 'mohr_coulomb', 'shansep', "
+                f"'hoek_brown' or 'anisotropic', got '{self.strength_model}'")
+        if self.strength_model == "anisotropic":
+            for nm in ("su_active", "su_dss", "su_passive"):
+                if getattr(self, nm) < 0:
+                    raise ValueError(f"{nm} must be non-negative, got "
+                                     f"{getattr(self, nm)}")
+            if max(self.su_active, self.su_dss, self.su_passive) <= 0:
+                raise ValueError(
+                    "anisotropic strength_model needs a positive su_active, "
+                    "su_dss or su_passive")
         if self.strength_model == "shansep":
             if self.shansep_S <= 0:
                 raise ValueError(f"shansep_S must be positive, got {self.shansep_S}")
@@ -181,8 +203,8 @@ class SlopeSoilLayer:
             return (self.cu, 0.0)
         return (self.c_prime, self.phi)
 
-    def strength_at(self, sigma_n_eff: float,
-                    sigma_v_eff: float) -> Tuple[float, float]:
+    def strength_at(self, sigma_n_eff: float, sigma_v_eff: float,
+                    alpha: Optional[float] = None) -> Tuple[float, float]:
         """Base shear-strength parameters (c, phi) for this layer.
 
         Parameters
@@ -198,6 +220,10 @@ class SlopeSoilLayer:
         sigma_v_eff : float
             Effective vertical (overburden) stress at the slice base
             (kPa), used by SHANSEP.
+        alpha : float, optional
+            Slice-base inclination (radians, failure-plane angle to
+            horizontal). Required by the 'anisotropic' model; ignored by
+            the others.
 
         Returns
         -------
@@ -212,7 +238,47 @@ class SlopeSoilLayer:
             return _hoek_brown_instantaneous(
                 max(sigma_n_eff, 0.0), self.hb_sigci, self.hb_gsi,
                 self.hb_mi, self.hb_D)
+        if self.strength_model == "anisotropic":
+            return (self._anisotropic_su(0.0 if alpha is None else alpha), 0.0)
         return self.shear_strength_params
+
+    def _anisotropic_su(self, alpha_rad: float) -> float:
+        """Anisotropic undrained strength su at base inclination ``alpha_rad``.
+
+        ADP interpolation between su_passive (alpha <= -45 deg, passive/toe),
+        su_dss (alpha = 0, direct simple shear) and su_active (alpha >= +45 deg,
+        active/crest). Within each half the Casagrande & Carrillo (1944)
+        elliptical variation su = su_h + (su_v - su_h)*sin^2(i) — with i the
+        major-principal-stress inclination from horizontal and the failure plane
+        at 45 deg to sigma1 (phi_u = 0, so i = alpha + 45 deg) — reduces to
+        sin(2*alpha) (since 2*sin^2(alpha+45) - 1 = sin(2*alpha)):
+
+            alpha in [0, 45) deg:   su_dss + (su_active  - su_dss)*sin(2*alpha)
+            alpha in (-45, 0] deg:  su_dss + (su_passive - su_dss)*sin(2*|alpha|)
+
+        held constant beyond +/-45 deg (the triaxial-compression/extension
+        failure-plane angles). su_active >= su_dss >= su_passive for K>1 natural
+        clays, but any ordering is accepted.
+
+        ALPHA SIGN CONVENTION (the #1 error source — be explicit): positive
+        alpha = base dipping toward +x = the ACTIVE (driving/crest) side for the
+        module's standard slope (toe at low x, crest at high x, sliding toward
+        low x — the orientation every validation geometry uses). A mirrored
+        slope (crest at low x) must swap su_active/su_passive. NOTE alpha is the
+        failure-PLANE angle, not the major-principal-stress inclination i (they
+        differ by ~45 deg for phi_u = 0).
+        """
+        a = alpha_rad
+        quarter = math.pi / 4.0        # 45 deg
+        if a >= quarter:
+            return self.su_active
+        if a <= -quarter:
+            return self.su_passive
+        if a >= 0.0:
+            return self.su_dss + (self.su_active - self.su_dss) \
+                * math.sin(2.0 * a)
+        return self.su_dss + (self.su_passive - self.su_dss) \
+            * math.sin(-2.0 * a)
 
     def bottom_at(self, x):
         """Bottom elevation at x. Uses polyline if set, else flat bottom_elevation."""

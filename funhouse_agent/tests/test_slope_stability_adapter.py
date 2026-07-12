@@ -244,6 +244,20 @@ class TestStrengthModels:
             "hb_gsi": 45, "hb_mi": 10}]))
         assert r["FOS"] > 1.0
 
+    def test_anisotropic_routes_and_reduces_to_mohr(self):
+        """'anisotropic' routes through; equal su's reproduce the mohr_coulomb
+        cu FOS, and K>1 (softer DSS/passive) lowers the FOS."""
+        def run(sm, **kw):
+            return METHOD_REGISTRY["analyze_slope"](_base(soil_layers=[{
+                "top_elevation": 20, "bottom_elevation": -15, "gamma": 18,
+                "analysis_mode": "undrained", "cu": 40,
+                "strength_model": sm, **kw}]))["FOS"]
+        mc = run("mohr_coulomb")
+        equal = run("anisotropic", su_active=40, su_dss=40, su_passive=40)
+        aniso = run("anisotropic", su_active=40, su_dss=25, su_passive=14)
+        assert equal == pytest.approx(mc, rel=1e-9)
+        assert aniso < equal
+
     def test_invalid_strength_model(self):
         with pytest.raises(ValueError, match="strength_model 'tresca'"):
             METHOD_REGISTRY["analyze_slope"](_base(soil_layers=[{
