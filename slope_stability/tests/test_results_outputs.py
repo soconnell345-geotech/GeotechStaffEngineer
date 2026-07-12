@@ -6,6 +6,7 @@ import pytest
 
 from slope_stability import analyze_slope, compare_methods_table
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
+from slope_stability.slip_surface import CircularSlipSurface
 
 
 SURFACE = [(0.0, 10.0), (20.0, 10.0), (40.0, 20.0), (70.0, 20.0)]
@@ -68,6 +69,25 @@ class TestSliceForceTable:
         assert len(res.thrust_line) == len(sds) + 1
         for (x, z), sd in zip(res.thrust_line[1:-1], sds[1:]):
             assert sd.z_base - 1.0 <= z <= sd.z_top + 1.0
+
+    def test_thrust_line_clamped_to_section_at_ends(self):
+        """Near the slip exit/entry the interslice normal E -> 0, so the raw
+        point of application z = z_base - m/E (gle.py) can spike out of the
+        section; the reported thrust line is clamped to the physical section
+        (slip surface <= z <= ground) at EVERY boundary — including the
+        previously-spiking end boundaries the older check had to skip."""
+        geom = _geom()
+        res = analyze_slope(geom, method="gle", n_slices=30,
+                            include_slice_data=True, **CIRCLE)
+        slip = CircularSlipSurface(**CIRCLE)
+        assert res.thrust_line is not None
+        for x, z in res.thrust_line:
+            z_slip = slip.slip_elevation_at(x)
+            z_ground = geom.ground_elevation_at(x)
+            if z_slip is None or z_ground is None:
+                continue
+            lo, hi = min(z_slip, z_ground), max(z_slip, z_ground)
+            assert lo - 1e-6 <= z <= hi + 1e-6
 
     def test_to_dict_force_table(self):
         res = analyze_slope(_geom(), method="spencer", n_slices=20,
