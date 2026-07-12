@@ -452,6 +452,14 @@ def bray_travasarou_2007(ky: float, ts: float, sa_1p5ts: float,
     -----
     Anchor (Bray 2007 Ch. 14 worked example): ky=0.14, Ts=0.4 s, Sa(1.5Ts)=0.48 g,
     M=7.2 -> ln(D)=2.29 (D~9.9 cm), P(D=0)=0.01. Validation V-062bt.
+
+    Provenance: Eqs 14.4/14.5 and the FLEXIBLE-branch coefficient (a0=-1.10) were
+    extracted from the Bray (2007) Ch. 14 chapter PDF (in hand, text-layer) and
+    reproduce the worked example above (primary source, anchor-validated). The RIGID
+    branch (a0=-0.22 with the 1.5*Ts term dropped, Ts<0.05 s) is NOT reproduced
+    against a published rigid worked example -- only its limiting behaviour is tested
+    -- so treat the rigid coefficient as UNVERIFIED; confirm against Bray & Travasarou
+    (2007) before relying on it near Ts=0. See module_work/provenance_audit_slope.md.
     """
     if ky <= 0:
         raise ValueError("ky must be positive (fraction of g)")
