@@ -49,6 +49,26 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
+## v5.5.0 status (RELEASED 2026-07-12 to PyPI; owner OK'd)
+
+The post-5.4.1 train, merged and released; close-out gate **8539 passed /
+48 skipped**. Adds: correlated scalar-pair probabilistic variables
+(`correlations=[(k1,k2,rho)]` on fosm_fos/monte_carlo_fos, V-045; overlapping
+pairs rejected), Bray & Travasarou (2007) seismic displacement
+(`bray_travasarou_2007`, paper anchors reproduced + hand-verified),
+Lowe-Karafiath rapid drawdown (`method='lowe_karafiath'`, V-048/052/053;
+"Corps #1/#2" = interslice-function menu-name collision, intentionally NOT a
+drawdown method), anisotropic undrained strength (`strength_model='anisotropic'`,
+su_active/su_dss/su_passive, V-054, exact isotropic identity), the one-call
+`slope_report_package` (search story + rejection diagnostics + method table +
+thrust line + FOSM/MC annex; hardened: param rejection, renderer surfaced,
+Story PDFs ~1 MB, wide tables fit, thrust-line spike fixed source+display),
+and native inline Plotly in `webapp/` (.plotly.json sidecar). Lead close-out
+QC ledger: `module_work/V5.4_PLAN.md` §"Close-out QC" (7 findings, all fixed).
+Deferred: toe-circle search under-sampling; steep-φ' Kc sensitivity.
+5.4.1 (2026-07-10) carried the file round-trip (read_pdf_text, list_files,
+verified saves, plot output_path, Attach widget, PDF fallback) + `webapp/`.
+
 ## v5.4.0 status (RELEASED 2026-07-08 to PyPI; owner OK'd pre-live-eval)
 
 Merged to master and released; release gate **8436 passed / 48 skipped**.
