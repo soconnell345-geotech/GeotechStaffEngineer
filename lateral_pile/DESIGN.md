@@ -63,13 +63,25 @@ results.summary()
   point (yu=3b/80) + plateau, with A = max(0.9, 3-0.8 z/b). `"reese1974"`: the FULL
   four-segment Reese (1974) curve — initial linear -> parabola (p=C*y^(1/n)) ->
   straight m-segment (pm..pu_curve) -> plateau — with the A/B chart coefficients
-  (`_reese_A`/`_reese_B`, digitized from Reese & Van Impe 2001 Figs 3.30/3.31 /
-  COM624P; asymptotes A_s=0.88, A_c=0.53, B_s=0.50, B_c=0.55), the m-point
+  (`_REESE_A_*`/`_REESE_B_*`, digitized from Reese & Van Impe 2001 Figs 3.30/3.31 /
+  COM624P; asymptotes A_s=0.88, A_c=0.55, B_s=0.50, B_c=0.55), the m-point
   pm=B*pu at ym=b/60, and pu_curve=A*pu at yu=3b/80. NOTE: the full construction is
   SOFTER than the simplified at the working deflection (the m-point pm=B*pu with
   B->0.5 is genuinely soft), so it is not a drop-in "stiffer" replacement — see the
   V-017 note in `validation_examples/RESULTS.md` (the V-017 deflection gap is the
   composite/nonlinear section EI, not the p-y curve).
+  - **Source basis (Reese A/B tables, `_REESE_A_*`/`_REESE_B_*` in `py_curves.py`):**
+    transcription/digitization of the A and B coefficient charts. Authoring-time
+    source-consultation status (Reese & Van Impe 2001 / COM624P in hand vs
+    reconstructed) was not recorded. Values were re-digitized and corrected in the
+    v5.3 review (the cyclic `_REESE_A_CYCLIC` had dipped below `_REESE_B_CYCLIC`,
+    silently degenerating the four-segment curve to linear-plateau; corrected to
+    descend 2.9 -> 0.55 staying >= B_c) and are constrained by the physical A>=B
+    monotonicity and anchored by the p-y regression tests + V-017. RED-FLAG note:
+    the anchors verify curve SHAPE/behavior, not the exact chart ordinates, so the
+    ordinates remain a **candidate for verification against the owner's reference
+    wiki** (Reese, Cox & Koop 1974 OTC 2080 originals; Reese & Van Impe 2001
+    Figs 3.30/3.31; COM624P FHWA-SA-91-048 Figs 2.19/2.20).
 - **numpy >=2.0**: np.trapz renamed to np.trapezoid — use try/except
 - **Composite / transformed-section EI (`composite_section.py`, v5.4 E5)**:
   `composite_section_ei(section_type, ...)` returns a `CompositeSection` with the

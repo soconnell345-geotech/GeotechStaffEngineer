@@ -53,6 +53,8 @@ def compute_pore_pressures(nodes, gwt, gamma_w=9.81):
           GWT elevation is linearly interpolated between points.
         - (n_nodes,) array: per-node prescribed head (for artesian).
     gamma_w : float — unit weight of water (kN/m^3). Default 9.81.
+        Source basis: physical constant (rho_w*g = 1000*9.81/1000 = 9.81
+        kN/m^3), not a correlation; see geotech_common.water.GAMMA_W.
 
     Returns
     -------
@@ -449,6 +451,8 @@ def cst_compressibility_matrix(coords, n_w=2.2e6, t=1.0):
     coords : (3, 2) array — element node coordinates.
     n_w : float — bulk modulus of water (kPa). Large value for
         incompressible fluid (effectively S -> 0, pure Terzaghi).
+        Source basis: PHYSICAL CONSTANT — the bulk modulus of water is
+        ~2.2e6 kPa (2.2 GPa). Not a correlation or chart read.
     t : float — thickness.
 
     Returns

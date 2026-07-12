@@ -4,7 +4,11 @@ Water-related utilities for geotechnical calculations.
 Provides the unit weight of water and pore pressure calculations.
 """
 
-# Unit weight of water in kN/m³
+# Unit weight of water in kN/m³.
+# Source basis: physical constant, γ_w = ρ_w · g = 1000 kg/m³ × 9.81 m/s²
+# = 9.81 kN/m³ (fresh water, 4 °C). Not a correlation. Some practices use
+# 9.807 (standard gravity) or round to 10.0 for hand calcs; 9.81 is the value
+# used consistently across these modules.
 GAMMA_W: float = 9.81
 
 

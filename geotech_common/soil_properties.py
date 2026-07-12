@@ -53,7 +53,13 @@ def spt_to_phi(N60: float, method: str = "peck") -> float:
     method = method.lower()
     if method == "peck":
         # Peck, Hanson & Thornburn (1974) — piecewise linear approximation
-        # of their chart relating N to phi
+        # of their chart relating N to phi.
+        # Source basis: HAND-DIGITIZATION of the PHT N-vs-phi chart. The
+        # breakpoints (26/28/31/38/42 deg) trace the chart's zones, but the
+        # intermediate SLOPES are author-chosen to interpolate smoothly and were
+        # NOT verified per-value against PHT 1974 Table 10-3 / the original
+        # figure in hand. Intended for preliminary design; candidate for wiki
+        # verification against Peck, Hanson & Thornburn (1974) Table 10-3.
         if N60 <= 0:
             return 26.0
         elif N60 <= 4:

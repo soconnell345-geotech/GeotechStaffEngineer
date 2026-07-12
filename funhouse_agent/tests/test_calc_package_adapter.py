@@ -249,6 +249,56 @@ class TestSlopeReportPackage:
         assert os.path.exists(out)
 
 
+class TestCalcPackageDisplayFixes:
+    """Regression pins: calc-package displays that had drifted from the code
+    (provenance-audit findings)."""
+
+    def test_settlement_renders_actual_influence_factor(self):
+        """The elastic-settlement step must show the Iw the analysis actually
+        used (Schleicher ~1.122 for a square), not a hardcoded 1.0."""
+        from settlement.analysis import SettlementAnalysis
+        from settlement.calc_steps import get_calc_steps, _immediate_Iw
+        analysis = SettlementAnalysis(
+            q_applied=150, q_overburden=20, B=2.0, L=2.0,
+            immediate_method="elastic", Es_immediate=12000, nu=0.3)
+        result = analysis.compute()
+        Iw = _immediate_Iw(analysis)
+        assert Iw == pytest.approx(1.122, abs=0.01)      # square Schleicher, not 1.0
+        text = _calc_step_text(get_calc_steps(result, analysis))
+        assert f"{Iw:.3f}" in text                       # actual Iw rendered
+        assert "× 1.0" not in text                       # old hardcoded value gone
+        assert "I_w = 1.0 (flexible footing on surface)" not in text
+
+    def test_drilled_shaft_nc_uses_current_formula(self, tmp_path):
+        """Cohesive-tip N_c must display min(6(1+0.2·L/D), 9), matching
+        end_bearing.py — not the superseded min(6 + L/D, 9)."""
+        from funhouse_agent.adapters.calc_package import _generate_drilled_shaft_package
+        out = str(tmp_path / "d.html")
+        res = _generate_drilled_shaft_package({
+            "diameter": 1.0, "length": 15.0,
+            "soil_layers": [{"soil_type": "cohesive", "thickness": 20.0,
+                             "unit_weight": 18.0, "cu": 100.0}],
+            "output_path": out,
+        })
+        assert res["status"] == "success"
+        html = open(out, encoding="utf-8").read()
+        assert "1 + 0.2" in html                         # current formula shown
+        assert "min(6.0 + L/D, 9.0)" not in html         # superseded formula gone
+
+
+def _calc_step_text(sections) -> str:
+    """Concatenate the equation/substitution/notes text of every CalcStep in a
+    list of CalcSection (for asserting on rendered calc-package content)."""
+    out = []
+    for sec in sections:
+        for item in getattr(sec, "items", []):
+            for attr in ("equation", "substitution", "notes", "title"):
+                v = getattr(item, attr, None)
+                if isinstance(v, str):
+                    out.append(v)
+    return "\n".join(out)
+
+
 class TestSettlementPackage:
     def test_basic(self, tmp_path):
         from funhouse_agent.adapters.calc_package import _generate_settlement_package

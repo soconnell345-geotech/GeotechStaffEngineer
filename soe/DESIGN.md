@@ -128,7 +128,32 @@ and the Caltrans Ex 8-1 single-anchor envelope (pe = σ_a, PT, upper tributary).
 log-spiral passive coefficient Kp' = R·Kp0 (base Kp0 at δ=φ; reduction R for
 δ/φ from Caltrans Matrix 4-1 / NAVFAC DM-7.2). Unlike Coulomb it does not
 over-predict Kp at high δ/φ. φ=30, δ/φ=0.5 → 4.70 (V-013). Mirrored in
-`sheet_pile.earth_pressure` and selectable there as `pressure_method="log_spiral"`.
+`sheet_pile.earth_pressure` (a byte-identical copy of the table) and selectable
+there as `pressure_method="log_spiral"`.
+
+**Source basis (Caquot-Kerisel Kp0 base values + R reduction grid).** These are
+CHART/TABLE reads. Only the **φ=30 → Kp0=6.30 entry is a verified chart read**
+(Caltrans T&S Manual Fig 4-20, anchored by V-013 Example 8-1). The neighbouring
+Kp0 values (other φ) and the full R(δ/φ) grid are attributed to
+Caquot-Kerisel 1948 / NAVFAC DM-7.2 / Caltrans Matrix 4-1 but were **not
+confirmed per-value from a source in hand**. This is the **top wiki-wishlist
+item** for this module: re-verify the Kp0 column and R grid against Caquot &
+Kerisel (1948) tables, NAVFAC DM-7.2 passive-pressure charts, and Caltrans
+Fig 4-20 / Matrix 4-1. (A DM7.2 Kp chart in the in-house `dm7` figure catalog
+would allow a vision cross-read of the 5 unverified Kp0 values — a recommended
+follow-up.)
+
+## Ground anchor design (built — provenance)
+`anchor_design.py` is fully implemented (grouted-anchor bond capacity, tendon
+selection). **Source basis:** the presumptive ultimate grout-to-ground **bond
+stress table** (`_BOND_STRESS` in `anchor_design.py`, sand/clay/rock) are
+**nominal presumptive values per FHWA GEC-4 (Ground Anchors & Anchored Systems,
+FHWA-IF-99-015) Table 4** (the code already carries the "nominal values" caveat);
+tendon strand/bar data follow **PTI DC35.1** and **ASTM A722** (bar) / **A416**
+(strand). **RED FLAG — UNBENCHMARKED:** the anchor-design tables have **no
+worked-example numeric validation** (no `validation_examples` anchor), so they
+rest on the transcribed nominal values alone. Wiki-wishlist: GEC-4 Table 4,
+PTI DC35.1 strand/bar tables, ASTM A722/A416.
 
 ## Future Work
 
@@ -138,5 +163,4 @@ over-predict Kp at high δ/φ. φ=30, δ/φ=0.5 → 4.70 (V-013). Mirrored in
 - Lagging design between soldier piles
 - Raker and corner bracing (3D configurations)
 - Seismic apparent pressure (M-O increments)
-- Ground anchor design per GEC-4/PTI (Phase 3)
 - Stability checks: basal heave, bottom blowout, piping (Phase 2)

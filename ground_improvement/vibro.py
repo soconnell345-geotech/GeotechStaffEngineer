@@ -11,6 +11,15 @@ References:
     FHWA GEC-13: Ground Modification Methods Reference Manual
     Brown (1977) — Vibroflotation compaction of cohesionless soils
     Mitchell & Jardine (2002) — A Guide to Ground Treatment
+
+Source basis: the FEASIBILITY screening thresholds (fines-content 10/15/20 %,
+D50 0.1/0.2 mm, N_spt 20/25) follow standard vibro-compaction suitability
+guidance (Brown 1977 / GEC-13). The estimated PROBE-SPACING endpoints
+(~3.0 m clean-sand to ~1.5 m, and the fines-content spacing reduction factor)
+are **empirical rule-of-thumb values attributed to generic GEC-13 guidance, NOT
+tied to a specific figure/table and NOT benchmarked** — they give a preliminary
+spacing only. Candidate for wiki verification against the FHWA GEC-13
+(FHWA-NHI-16-027) vibro-compaction chapter's spacing charts.
 """
 
 import warnings

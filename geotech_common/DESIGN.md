@@ -32,3 +32,21 @@ Each returns plain dicts (no circular imports):
 - Correlations: N60->phi (Peck), N60->cu (Terzaghi-Peck), LL->Cc, Cc->Cr, cu->eps50
 - SoilProfileBuilder: from SPT boring log, CPT data, or simple dict table
 - 238 total tests (82 + 84 + 72)
+
+## Correlation provenance
+The empirical correlations in `soil_properties.py` are **approximate,
+for-preliminary-design** estimates — each carries an inline source citation, but
+NONE is a primary-source-in-hand transcription and several are hand-digitized
+chart fits with author-chosen interpolation. Use measured values for final
+design. Source basis per correlation:
+- **N60 -> phi (Peck)** — hand-digitization of the Peck, Hanson & Thornburn
+  (1974) N-vs-phi chart; breakpoints trace the chart zones but intermediate
+  slopes are author-chosen and NOT verified per-value against PHT 1974
+  Table 10-3. (Also `meyerhof` phi ~ 25 + 0.3*N60, an approximate closed form.)
+- **N60 -> cu (Terzaghi-Peck), LL -> Cc, Cc -> Cr, cu -> eps50** — standard
+  textbook correlations coded from the formula; approximate.
+- **GAMMA_W (water.py)** — physical constant (9.81 kN/m^3), not a correlation.
+
+Wiki-wishlist: Peck, Hanson & Thornburn (1974) Table 10-3 / their chart, to
+re-verify the N->phi breakpoints and slopes. See
+`module_work/provenance_audit_other.md` for the full audit.

@@ -9,6 +9,16 @@ Produces bearing graphs (capacity vs blow count) and drivability analyses.
 - Goble & Rausche (1976) — WEAP methodology
 - FHWA GEC-12 (Driven Piles) — wave equation chapter
 
+**Source basis (default quake & damping constants, `soil_model.py`).** The
+governing algebra (Smith spring-dashpot, `R = R_static·(1 + J·v)`) is coded from
+the equation (text). The DEFAULT numeric quake values (~2.5 mm shaft,
+2.5–5 mm toe) and Smith damping factors J are transcribed standard values
+(Smith 1960 / GRLWEAP defaults, restated in GEC-12 Table 12-3); authoring-time
+in-hand status was not recorded. They are user-overridable inputs, not fixed
+results, and are anchored by the drivability/bearing-graph behavior checks.
+**Candidate for wiki verification against FHWA GEC-12 (FHWA-NHI-16-009)
+Table 12-3** for the exact default quake/damping values by soil type.
+
 ## Files
 - `hammer.py` — 14 built-in hammers (diesel, hydraulic, air/steam)
 - `cushion.py` — hammer cushion and pile cushion stiffness

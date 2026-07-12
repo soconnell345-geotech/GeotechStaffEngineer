@@ -41,6 +41,13 @@ ACI 318 normalweight correlation ``Ec = 4700 sqrt(f'c)`` (MPa, ``f'c`` in MPa;
 converted to kPa internally) — the same correlation used elsewhere in this
 module (``ReinforcedConcreteSection.Ec``, ``Pile.from_filled_pipe``).
 
+Source basis: the SI normalweight simplified modulus correlation
+``Ec = 4700 sqrt(f'c)``. Standard location: ACI 318-19 §19.2.2.1(b). This is a
+textbook-standard correlation coded from the equation (text, not a chart), but
+the specific edition/clause was NOT verified against ACI 318 in hand during this
+campaign — candidate for wiki verification (confirm the clause number and
+whether the coefficient is identical across the editions of interest).
+
 Scope / limitations
 -------------------
 - **Uncracked / gross basis only.** The returned EI is the full transformed

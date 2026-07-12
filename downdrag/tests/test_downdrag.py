@@ -960,5 +960,18 @@ class TestGeotechnicalULS:
         assert result.geotechnical_ok is False
 
 
+def test_Nt_from_phi_consistent_with_gec12_table_7_9():
+    """Provenance pin (audit): _Nt_from_phi is a piecewise Nt(phi) interpolation
+    duplicated from axial_pile, NOT a literal copy of GEC-12 Table 7-9 (Nt RANGES
+    by soil type). Verified 2026-07-12 against the in-house GEC-12 reference
+    (geotech_references/gec_12/tables.py _TABLE_7_9: clay 3-30, silt 20-40,
+    sand 30-150, gravel 60-300). Pins the transcription against drift."""
+    from downdrag.analysis import _Nt_from_phi
+    assert 20 <= _Nt_from_phi(28) <= 40     # silt band
+    assert 30 <= _Nt_from_phi(33) <= 150    # sand band
+    assert 30 <= _Nt_from_phi(38) <= 150    # sand upper band
+    assert _Nt_from_phi(25) <= 30           # within clay range top
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

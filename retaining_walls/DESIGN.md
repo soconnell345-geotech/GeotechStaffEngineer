@@ -79,6 +79,14 @@ Two external-stability paths are available; both are default-preserving.
   `check_internal_stability` auto-selects the bar-mat curves for a
   `metallic_grid` reinforcement (e.g. `WELDED_WIRE_GRID_W11`). The strip default
   is byte-identical to the pre-Q4 behavior.
+  - **Source basis (built-in reinforcement products).** The product constants
+    (the `WELDED_WIRE_GRID_W11` grid geometry, the 75x4 mm ribbed-strip
+    `T_allowable`, etc.) are **representative values typical of the reinforcement
+    class, NOT a specific manufacturer's catalog** — they exist to exercise the
+    Kr/F* selection logic and give sensible defaults. For a real design the user
+    should supply the actual product's certified properties. The Kr/F* CURVES
+    themselves are digitized from GEC-11 Figs 4-11/E4-5 (see `mse.py`), anchored
+    by the GEC-11 Example E4 reproduction.
   Active-zone length La branches on reinforcement extensibility (RW-2):
   bilinear coherent-gravity surface (0.3H) for metallic/inextensible (strips and
   bar mats), Rankine 45+φ/2 plane for geosynthetic/extensible

@@ -1,12 +1,24 @@
 # seismic_geotech — Seismic Geotechnical Analysis
 
 ## Purpose
-Site classification (ASCE 7), seismic earth pressures (Mononobe-Okabe),
-liquefaction triggering (Youd et al. 2001), and residual strength estimation.
+Site classification (AASHTO LRFD / NEHRP), seismic earth pressures
+(Mononobe-Okabe), liquefaction triggering (Youd et al. 2001), and residual
+strength estimation.
 
 ## References
-- ASCE 7-22 — site classification (Vs30, N-bar, su-bar)
-- Mononobe-Okabe (1929) — seismic active/passive earth pressure
+- AASHTO LRFD Bridge Design Specifications, 9th Ed., Section 3.10.3, with
+  NEHRP Recommended Seismic Provisions (FEMA P-1050) — site classification
+  (Vs30 / N-bar / su-bar boundaries and site factors). This is the standard the
+  code implements (`calc_steps.py`, `__init__.py`); an earlier DESIGN.md note
+  saying "ASCE 7" was inaccurate. **Source basis:** the Vs30/N/su class
+  boundaries are text values (not a chart read); site-factor tables (Fpga/Fa/Fv)
+  are transcribed — authoring-time in-hand status not recorded; **candidate for
+  wiki verification against AASHTO LRFD 9th Ed §3.10.3 Tables 3.10.3.1-1/2/3.**
+- Mononobe-Okabe (1929) — seismic active/passive earth pressure. **Source basis:**
+  the M-O closed-form (AASHTO LRFD §11.6.5) is coded from the equation, and the
+  implementation is anchored to an INTERNAL numerical trial-wedge cross-check,
+  not to a published M-O coefficient table — noted honestly as a validation
+  gap (a published K_AE table would be a stronger anchor).
 - **Youd et al. (2001) — SPT-based liquefaction triggering (NCEER/NSF workshop;
   the updated Seed-Idriss simplified procedure).** The triggering procedure in
   `liquefaction.py` is NCEER / Youd-2001 (NCEER CRR fit, NCEER MSF, Youd fines

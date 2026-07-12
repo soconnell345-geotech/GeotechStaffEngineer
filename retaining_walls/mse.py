@@ -7,8 +7,21 @@ internal stability (tensile rupture, pullout) per FHWA GEC-11.
 All units are SI: kN, kPa, kN/m³, degrees, meters.
 
 References:
-    FHWA GEC-11 (FHWA-NHI-10-024), Chapters 4-5
+    FHWA GEC-11 (Berg, Christopher & Samtani 2009), a TWO-VOLUME publication:
+      - Vol I  = FHWA-NHI-10-024 — design method, Chapters 4-5 (in the in-house
+                 geotech-references `gec_11` module, ch 1-11).
+      - Vol II = FHWA-NHI-10-025 — appendices incl. Appendix E worked example
+                 E4 (the external-stability validation anchor). Vol II is NOT in
+                 the in-house reference module.
+    Both citations below are correct — they name the two volumes, not a typo.
     AASHTO LRFD Section 11.10
+
+    Source basis (Kr/K0 ratio and F* pullout curves): DIGITIZED from GEC-11
+    Figs 4-10/4-11/E4-5 (also AASHTO Fig. 11.10.6.2.1-3). Authoring-time in-hand
+    status not recorded, but the curves are anchored by the GEC-11 Example E4
+    reproduction (CDRs and F* within ~3%; see tests). The reinforcement PRODUCT
+    constants (W11 grid geometry, 75x4 mm strip T_allowable) are representative
+    values, NOT a specific manufacturer catalog — see DESIGN.md.
 """
 
 import math

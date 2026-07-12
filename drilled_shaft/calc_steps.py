@@ -411,12 +411,12 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     L_over_D = shaft.length / shaft.diameter
 
     if tip_layer.soil_type == "cohesive":
-        Nc = min(6.0 + L_over_D, 9.0)
+        Nc = min(6.0 * (1.0 + 0.2 * L_over_D), 9.0)
         qb = Nc * tip_layer.cu
         eb_items.append(CalcStep(
             title="Bearing Capacity Factor N_c (Cohesive Tip)",
-            equation="N_c = min(6.0 + L/D, 9.0)",
-            substitution=f"N_c = min(6.0 + {L_over_D:.1f}, 9.0)",
+            equation="N_c = min(6.0 × (1 + 0.2 × L/D), 9.0)",
+            substitution=f"N_c = min(6.0 × (1 + 0.2 × {L_over_D:.1f}), 9.0)",
             result_name="N_c",
             result_value=f"{Nc:.2f}",
             reference="GEC-10 Section 13.3.4.2; O'Neill & Reese (1999)",

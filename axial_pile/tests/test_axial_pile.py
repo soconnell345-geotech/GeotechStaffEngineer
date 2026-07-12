@@ -581,5 +581,23 @@ class TestOpenEndedPlugging:
         )
 
 
+def test_Nt_from_phi_consistent_with_gec12_table_7_9():
+    """Provenance pin (audit): Nt_from_phi is a piecewise Nt(phi) INTERPOLATION,
+    not a literal copy of GEC-12 Table 7-9 (which gives Nt RANGES by soil type).
+    Verified 2026-07-12 against the in-house GEC-12 reference
+    (geotech_references/gec_12/tables.py _TABLE_7_9): clay phi25-30 -> Nt 3-30,
+    silt phi28-34 -> Nt 20-40, sand phi32-40 -> Nt 30-150, gravel phi35-45 ->
+    Nt 60-300. The curve stays WITHIN those ranges in the overlapping phi bands;
+    this pins the transcription so drift is caught. (The same curve is duplicated
+    in downdrag/analysis._Nt_from_phi.)"""
+    from axial_pile.beta_method import Nt_from_phi
+    assert 20 <= Nt_from_phi(28) <= 40      # silt band
+    assert 30 <= Nt_from_phi(33) <= 150     # sand band
+    assert 30 <= Nt_from_phi(38) <= 150     # sand upper band
+    assert Nt_from_phi(25) <= 30            # within clay range top
+    # above the tabulated sand max phi it enters gravel territory (<=300)
+    assert 60 <= Nt_from_phi(40) <= 300
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

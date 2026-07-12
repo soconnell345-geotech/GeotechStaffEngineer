@@ -142,7 +142,13 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_value=f"{result.immediate * 1000:.2f}",
             result_unit="mm",
             reference="Timoshenko & Goodier; FHWA GEC-6, Eq. 8-1",
-            notes="I_w = 1.0 (flexible footing on surface)" if result.immediate > 0 else "",
+            notes=(
+                f"I_w = {_immediate_Iw(analysis):.3f} "
+                + ("(user-supplied)"
+                   if getattr(analysis, "Iw_immediate", None) is not None
+                   else "(Schleicher flexible-footing value; 1.12 for a square, "
+                        "grows with L/B; a circular footing uses 1.0)")
+                if result.immediate > 0 else ""),
         ))
     elif analysis.immediate_method == "schmertmann":
         imm_items.append(CalcStep(
@@ -453,6 +459,20 @@ def get_figures(result, analysis) -> List[FigureData]:
 
 # -- Helper functions -------------------------------------------------------
 
+def _immediate_Iw(analysis) -> float:
+    """The elastic influence factor actually used for immediate settlement.
+
+    Mirrors ``Analysis.immediate`` exactly: the explicit ``Iw_immediate`` when
+    supplied, else the Schleicher shape/aspect-ratio value from
+    ``elastic_influence_factor`` (~1.12 for a square). Used so the calc package
+    displays the SAME Iw the analysis applied (previously it hardcoded 1.0).
+    """
+    if getattr(analysis, "Iw_immediate", None) is not None:
+        return analysis.Iw_immediate
+    from settlement.immediate import elastic_influence_factor
+    return elastic_influence_factor(analysis.footing_shape, analysis.L, analysis.B)
+
+
 def _elastic_substitution(analysis) -> str:
     """Build substitution string for elastic settlement equation."""
     if analysis.Es_immediate is None or analysis.Es_immediate <= 0:
@@ -461,7 +481,8 @@ def _elastic_substitution(analysis) -> str:
         return "q_net \u2264 0; S_e = 0"
     return (
         f"S_e = {analysis.q_net:.1f} \u00d7 {analysis.B:.2f} \u00d7 "
-        f"(1 - {analysis.nu:.2f}\u00b2) / {analysis.Es_immediate:.0f} \u00d7 1.0"
+        f"(1 - {analysis.nu:.2f}\u00b2) / {analysis.Es_immediate:.0f} \u00d7 "
+        f"{_immediate_Iw(analysis):.3f}"
     )
 
 
