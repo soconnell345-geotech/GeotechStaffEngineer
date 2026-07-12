@@ -66,12 +66,14 @@ def _build_response(module: str, result, analysis, params: dict,
     fmt = params.get("format", "html")
     output_path = params.get("output_path") or _default_output_path(module, fmt)
 
+    render_report = {}
     content = generate_calc_package(
         module=module,
         result=result,
         analysis=analysis,
         output_path=output_path,
         format=fmt,
+        render_report=render_report,
         **meta,
     )
 
@@ -99,6 +101,13 @@ def _build_response(module: str, result, analysis, params: dict,
         "format": fmt,
         "html_length": len(content) if isinstance(content, str) else None,
     }
+    # For PDFs, surface which engine produced the file (pdflatex vs the
+    # pure-Python PyMuPDF Story fallback) so environment differences are
+    # diagnosable, plus any renderer warnings (e.g. "pdflatex not found").
+    if fmt == "pdf" and render_report.get("renderer"):
+        response["renderer"] = render_report["renderer"]
+        if render_report.get("warnings"):
+            response["renderer_warnings"] = render_report["warnings"]
     if problem:
         rescue = rescue_write(abs_path, expected) if expected is not None else None
         response["status"] = "error"

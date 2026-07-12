@@ -84,6 +84,20 @@ class TestBearingCapacityPackage:
         assert os.path.exists(outfile)
         assert result["html_length"] > 100
 
+    def test_pdf_response_carries_renderer(self, tmp_path):
+        """A PDF package response reports which engine produced it (F7 QC:
+        renderer propagation) — here the pure-Python Story fallback."""
+        pytest.importorskip("fitz")
+        from funhouse_agent.adapters.calc_package import _generate_bearing_capacity_package
+        out = str(tmp_path / "bc.pdf")
+        result = _generate_bearing_capacity_package({
+            "width": 2.0, "unit_weight": 18.0, "friction_angle": 30.0,
+            "depth": 1.5, "shape": "square",
+            "format": "pdf", "output_path": out,
+        })
+        assert result["status"] == "success"
+        assert result["renderer"] in ("pdflatex", "pymupdf_story")
+
 
 class TestLateralPilePackage:
     def test_basic(self, tmp_path):
