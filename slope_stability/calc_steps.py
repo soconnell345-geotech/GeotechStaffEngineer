@@ -183,7 +183,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             description="Slope stability adequacy",
             demand=FOS_required,
             demand_label="FOS_required",
-            capacity=result.FOS,
+            capacity=round(result.FOS, 3),
             capacity_label="FOS_computed",
             unit="",
             passes=result.FOS >= FOS_required,
@@ -625,6 +625,25 @@ def _search_section(search) -> CalcSection:
     rows = [
         ["Surfaces evaluated", str(search.n_surfaces_evaluated)],
     ]
+    # Rejection diagnostics — surfaces discarded before scoring (noncircular
+    # searches only; circular searches leave these at zero). Surfacing WHY
+    # trial surfaces were dropped is part of the search story.
+    n_rej_geom = getattr(search, "n_rejected_geometry", 0)
+    n_rej_nonconv = getattr(search, "n_rejected_nonconverged", 0)
+    n_rej_jagged = getattr(search, "n_rejected_jagged", 0)
+    n_rejected = n_rej_geom + n_rej_nonconv + n_rej_jagged
+    if n_rejected:
+        n_total = search.n_surfaces_evaluated + n_rejected
+        rows.append([
+            "Trial surfaces rejected (pre-scoring)",
+            f"{n_rejected} of {n_total} generated"])
+        if n_rej_geom:
+            rows.append(["  — degenerate / inadmissible geometry",
+                         str(n_rej_geom)])
+        if n_rej_nonconv:
+            rows.append(["  — non-converged rigorous GLE", str(n_rej_nonconv)])
+        if n_rej_jagged:
+            rows.append(["  — jagged low-FOS artifact", str(n_rej_jagged)])
     if crit is not None:
         rows.append(["Method", crit.method])
         rows.append(["Minimum FOS", f"{crit.FOS:.3f}"])
@@ -640,12 +659,19 @@ def _search_section(search) -> CalcSection:
         rows.append(["Entry / exit",
                      f"x = {crit.x_entry:.2f} m / "
                      f"x = {crit.x_exit:.2f} m"])
+    search_notes = ("The trial-surface map in the Figures section shows "
+                    "every evaluated surface colored by FOS.")
+    if n_rejected:
+        search_notes += (
+            " Rejected trials are kinematically/numerically inadmissible "
+            "surfaces removed before scoring (they never compete for the "
+            "minimum FOS); a search that rejects most of its trials is "
+            "under-resolved for the geometry.")
     items.append(TableData(
         title="Critical Surface Search Summary",
         headers=["Item", "Value"],
         rows=rows,
-        notes="The trial-surface map in the Figures section shows "
-              "every evaluated surface colored by FOS.",
+        notes=search_notes,
     ))
 
     if crit is not None and not crit.is_circular and crit.slip_points:

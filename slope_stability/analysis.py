@@ -228,7 +228,21 @@ def analyze_slope(geom: SlopeGeometry,
                 X_right_kN=X_r,
             ))
         if rich is not None and rich.boundary_x:
-            thrust_line = list(zip(rich.boundary_x, rich.thrust_elevation))
+            # Clamp the line of thrust to the physical section (between the slip
+            # surface and the ground) for display. Near the slip exit the
+            # interslice normal E -> 0, so the point of application
+            # z = z_base - m/E (gle.py) can spike to a non-physical elevation;
+            # the thrust must lie within the slice height. The engine's raw
+            # GLEResult.thrust_elevation is left unchanged (diagnostic).
+            thrust_line = []
+            for bx, tz in zip(rich.boundary_x, rich.thrust_elevation):
+                z_slip = slip.slip_elevation_at(bx)
+                z_ground = geom.ground_elevation_at(bx)
+                if z_slip is not None and z_ground is not None:
+                    lo, hi = ((z_slip, z_ground) if z_slip <= z_ground
+                              else (z_ground, z_slip))
+                    tz = min(max(tz, lo), hi)
+                thrust_line.append((bx, tz))
 
     return SlopeStabilityResult(
         FOS=fos,

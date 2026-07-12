@@ -173,7 +173,8 @@ search_critical_surface(geom, surface_type="noncircular",
   surface to (γ'/γ)·that. Validated vs Slide2 #79 (1.44) / #81 (1.15). This is
   the exact answer for the c'=0 circular-overestimate limitation noted above.
 - **Rapid drawdown (v5.3 B2a)** — `rapid_drawdown.rapid_drawdown_fos(geom, from_el,
-  to_el, xc/yc/radius, method='corps_2stage'|'duncan_3stage')` → `RapidDrawdownResult`
+  to_el, xc/yc/radius, method='corps_2stage'|'lowe_karafiath'|'duncan_3stage')`
+  → `RapidDrawdownResult`
   (also `analysis.rapid_drawdown_fos`). Low-permeability layers carry the total-stress
   **R-envelope** (`R_c`, `R_phi`) alongside the effective `c_prime`/`phi`; `R_phi is
   None` = free-draining. The method is wired to the GLE engine by OVERRIDING each
@@ -183,13 +184,39 @@ search_critical_surface(geom, surface_type="noncircular",
     GLE per-slice effective normal / mobilized shear).
   * **Stage 2** — undrained strength τ_ff. Corps 2-stage: τ_ff = min(R-envelope,
     drained) at σ'_fc (the "combined" envelope, capping R-envelope over-strength at
-    low σ'). Duncan 3-stage: linear interpolation with the consolidation stress ratio
-    Kc = σ'_1c/σ'_3c between the Kc=1 (R / IC-U, lower) and Kc=Kf (drained, upper)
-    envelopes: τ_ff = τ_R + (Kc−1)/(Kf−1)·(τ_drained − τ_R), capped at the drained
-    (Kf) bound. Kc per slice is back-figured from σ'_fc, τ_fc and the base angle α
-    assuming a vertical major principal consolidation stress; Kf = (1+sinφ')/(1−sinφ').
-  * **Stage 3** (3-stage only) — where the post-drawdown DRAINED strength (low-pool
-    effective stress) is less than the stage-2 undrained strength, it is substituted
+    low σ'). Duncan 3-stage AND Lowe-Karafiath 2-stage: linear interpolation with the
+    consolidation stress ratio Kc = σ'_1c/σ'_3c between the Kc=1 (R / IC-U, lower) and
+    Kc=Kf (drained, upper) envelopes: τ_ff = τ_R + (Kc−1)/(Kf−1)·(τ_drained − τ_R),
+    capped at the drained (Kf) bound. Kc per slice is back-figured from σ'_fc, τ_fc
+    and the base angle α assuming a vertical major principal consolidation stress;
+    Kf = (1+sinφ')/(1−sinφ'). **Lowe-Karafiath (1960)** uses this identical stage-2
+    strength but stops here (no stage 3); Duncan-Wright-Wong (1990) is Lowe-Karafiath
+    plus the stage-3 drained check, so `lowe_karafiath` FOS ≥ `duncan_3stage` FOS
+    always (stage 3 only ever *substitutes a lower* strength). On the exact #95/#96
+    dam `lowe_karafiath` lands at 1.36 flat / 1.45 seepage — the seepage value sits
+    on the published Duncan-Wright-Wong 1.443, corroborating that the Kc stage-2 is
+    sound and the default 3-stage's deficit is entirely the Fellenius stage-3 normal
+    (see the E2 note below), not the interpolation.
+  * **R-envelope input convention — the Kc=1 line (EM G-12 reconciliation).** The
+    Kc=1 (R / IC-U) envelope is taken DIRECTLY as `τ_R = R_c + σ'_fc·tan(R_phi)`,
+    i.e. `(R_c, R_phi)` are the strength envelope ALREADY plotted as τ_ff vs the
+    effective consolidation stress σ'_fc — the "Total Stress R Envelope (linear)"
+    Slide2/GeoStudio expose and that the EM 1110-2-1902 App. G verification
+    problems (#95–#99) tabulate. This is NOT the raw isotropically-consolidated CU
+    triaxial envelope: EM Eq. G-12 maps that raw envelope onto the τ_ff-vs-σ'_fc
+    plane via d = R_c·cos(R_phi)·cos(φ')/(1−sin R_phi) and ψ = atan[sin(R_phi)·
+    cos(φ')/(1−sin R_phi)]. Feeding the raw parameters through *and* letting the
+    module treat them as the plotted line would double-apply that transform and
+    OVER-predict: for #96 (R_c=1200 psf, R_phi=16°, φ'=30°) the G-12 image is
+    (d=1379 psf, ψ=18.24°), which drives `lowe_karafiath` to 1.53 seepage —
+    overshooting the published 1.443 that the raw (as-plotted) inputs reproduce at
+    1.45. So supply `(R_c, R_phi)` as the τ_ff-vs-σ'_fc envelope (Slide2
+    convention, validated by V-037/V-048); a user starting from raw CU triaxial
+    data applies EM G-12 first. Confirmed empirically (raw 1.45 vs G-12 1.53 on
+    #95/#96; published 1.443).
+  * **Stage 3** (3-stage only, `duncan_3stage`) — where the post-drawdown DRAINED
+    strength (low-pool effective stress) is less than the stage-2 undrained strength,
+    it is substituted
     (Duncan, Wright & Brandon 2014, Ch. 9: third-stage drained strength on the
     drawn-down effective stresses).
   * The final FOS is a GLE/Spencer solve at the DRAWN-DOWN pool (external water load
@@ -390,6 +417,50 @@ search_critical_surface(geom, surface_type="noncircular",
   spread than `gamma_sat` itself), so varying the dry `gamma` alone is inert. Closes the
   Duncan (2000) LASH input-COV FOSM gap — see VALIDATION / RESULTS V-030 and
   `validation_examples/test_published_v030_fosm_slope.py`.
+- **Probabilistic FOS — correlated SCALAR pairs (v5.4.1)**: the same correlation
+  machinery generalizes from the su-law `(a,b)` pair to arbitrary scalar variable
+  pairs via the `correlations` argument of `fosm_fos` / `monte_carlo_fos` — a list
+  of `(key1, key2, rho)` triples over the scalar variable keys (e.g.
+  `[("c_prime", "phi", -0.5)]`, keys optionally `:LayerName`-scoped). FOSM adds
+  the Taylor cross-term `2*rho*(dF1/2)*(dF2/2)` as a signed `corr(k1,k2)` entry in
+  `variable_variance_pct` (so the per-variable shares still total 100%); Monte
+  Carlo draws the pair from a bivariate normal via Cholesky, mapped through each
+  variable's own marginal (normal/lognormal) so the correlation does not change
+  either marginal distribution. Default `None` = every variable independent
+  (byte-identical to the classic Taylor series). For a c'-φ' pair both raising the
+  FOS, a NEGATIVE correlation reduces the FOS variance. Adapter-exposed
+  (`correlations`). Validated against Slide2 #34's published Table 34.1
+  coefficients — see RESULTS/INVENTORY V-045 and
+  `validation_examples/test_published_v045_slope_correlated.py`. (At very high COV,
+  φ' COV≈1.2 in #34, FOSM's linear Taylor series diverges from MC by ~8% — a
+  documented linearization limit, not a defect; the machinery matches MC to <1% at
+  moderate COV.)
+- **Anisotropic undrained strength su(α) (v5.4 F6)**: `SlopeSoilLayer.strength_model
+  = 'anisotropic'` makes the undrained strength vary with the slice-base inclination
+  α (the ADP active/DSS/passive anisotropy common in soft-clay practice; φ=0).
+  Parameters `su_active` / `su_dss` / `su_passive`. The interpolation follows
+  Casagrande & Carrillo (1944), `su(i) = su_H + (su_V − su_H)·sin²(i)` with `i` the
+  MAJOR-PRINCIPAL-STRESS inclination from horizontal and the failure plane at 45° to
+  σ1 (φ_u=0, so `i = α + 45°`); since `2·sin²(α+45°) − 1 = sin(2α)` this reduces to a
+  clean sin(2α) form on the base angle:
+    * `α ≥ +45°` → `su_active` (triaxial-compression / active); `α ≤ −45°` → `su_passive`
+      (triaxial-extension / passive); `α = 0` → `su_dss` (direct simple shear);
+    * `0 ≤ α < 45°`: `su_dss + (su_active − su_dss)·sin(2α)`;
+    * `−45° < α < 0`: `su_dss + (su_passive − su_dss)·sin(2|α|)`.
+  `_anisotropic_su(α)` (geometry.py) is called per slice from `build_slices` with the
+  slice-base α threaded through `strength_at(…, alpha=α)`. **α SIGN CONVENTION (the #1
+  error source — α is the failure-PLANE angle, not the σ1 inclination; they differ by
+  ~45°):** positive α = base dipping toward +x = the ACTIVE (driving/crest) side for
+  the module's standard slope (toe at low x, crest at high x — every validation
+  geometry). A mirrored slope must swap su_active/su_passive. With equal su's the
+  model reduces to `mohr_coulomb` cu EXACTLY (isotropic identity). Adapter-exposed
+  (`strength_model='anisotropic'` + `su_active`/`su_dss`/`su_passive`). Validated —
+  RESULTS/INVENTORY V-054 and `test_published_v054_anisotropic_su.py`: isotropic
+  anchor FOS 2.29 vs published ~2.16–2.2 (Taylor/FLAC, H=5/45°/su=40); the Bakklandet
+  ADP ratios (DSS/A=0.63, P/A=0.35) drop the FOS ~21% (critical-vs-critical),
+  bracketing the published FEM 24% (1.43→1.09) — CONVENTION (FEM vs LEM). Refs: Lo
+  (1965), Su & Liao (1999), Al-Karni & Al-Shamrani (2000) — anisotropy matters mainly
+  for slopes flatter than ~53°.
 
 ## Duncan Verification Examples (test_duncan_verification.py)
 

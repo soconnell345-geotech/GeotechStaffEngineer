@@ -642,6 +642,12 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   on the exact #95/#96 section (search min ≤ published specified-circle FOS;
   stage detail reproduces the search FOS to machine precision). NOT tuned. See
   test_published_v041.py and slope_stability VALIDATION.md §B7.
+- **Lowe-Karafiath column (v5.4, F4): VALIDATED in V-048.** The third published
+  #98 search-minimum column, Lowe-Karafiath 1.075, is reproduced at 0.964 (~10%
+  low, the SAME recovered-geometry offset as Corps/DWW) with the published method
+  ordering L&K (1.075) > DWW (1.039) > Corps (0.931) preserved (ours 0.964 > 0.938
+  > 0.837). `method='lowe_karafiath'` = the DWW Kc stage-2 without stage 3. See
+  test_published_v048_drawdown_methods.py.
 
 ## V-039 Slide2 #104 — Newmark seismic sliding-block displacement (B2b)
 - Source: Slide2 Verification #104 (manual pp. 330-331), based on Slide2 Tutorial 28
@@ -745,7 +751,43 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   spurious degenerate surface on this ponded geometry; Bishop centre-grid is the robust
   path (Slide auto-refine). Tests: test_published_v044_slope_submerged.py (2).
 
-## V-085/086 Slide2 #85/#86 — Duncan & Wright grouted tiebacks — CONVENTION (guard-improved)
+## V-045 Slide2 #34 — Wolff & Harr (1987) Cannon Dam, correlated c'-φ' (v5.4.1)
+- Source: Slide2 Verification #34 (manual pp. 132-133); Wolff & Harr (1987).
+- Target: `slope_stability.probabilistic` correlated scalar-pair capability
+  (`correlations`), the train-item-1 generalization of the F1 su-law (a,b)
+  correlation to arbitrary scalar pairs.
+- Data (Table 34.1, lb/ft units): Phase I fill c'=2230±1150, φ'=6.34±7.87,
+  rho(c',φ')=+0.11, γ=150; Phase II fill c'=2901.6±1079.8, φ'=14.8±9.44,
+  rho=−0.51, γ=150; Sand drain c'=0/φ'=30 (not varied). Given non-circular
+  surface. Bishop/GLE/Spencer; Monte Carlo Pf.
+- Published: FOS 2.333 GLE / 2.383 Spencer / 2.36 Wolff-Harr; Pf 3.55e-3 (Slide).
+- Verdict: **PASS (correlated-pair capability) / N/A-scope (full FOS+Pf).** The
+  feature consumes #34's OWN published rho values on a representative 2-material
+  embankment (FOSM COV_F 0.396 indep → 0.413 corr; MC 0.381; corr(...) variance
+  entries surfaced), FOSM≈MC in the high-COV band (~8% gap = FOSM Taylor limit at
+  #34's extreme φ' COV≈1.2). The full slope FOS 2.36 / Pf is N/A-scope: Fig 34.2
+  is a rendered multi-material section with no labeled coords, a figure-only
+  non-circular surface, omitted layers, and Slide-tuned γ (the manual's note).
+  Tests: test_published_v045_slope_correlated.py (2).
+
+## V-046 Slide2 #33 — El-Ramly (2003) Syncrude dyke — N/A (geometry)
+- Source: Slide2 Verification #33 (manual pp. 130-131); El-Ramly et al (2003).
+- Table 33.1: c'=0 for all layers; only Sandy till φ' (std 2) and Kca clay-shale
+  φ' (std 2.1) are varied — INDEPENDENT (c'=0 → no c'-φ' correlation; does not
+  exercise the new feature). Published Slide FOS 1.305, Pf 1.54e-3.
+- Verdict: **N/A (geometry).** Fig 33.2 is a rendered 4-material dyke section with
+  phreatic surfaces and no labeled coordinates — geometry does not survive honest
+  extraction; the Pf is not reproduced. Recorded, not pinned.
+
+## V-047 Slide2 #35 — Hassan & Wolff (1999) Cannon Dam RIs — SKIPPED (source)
+- Source: Slide2 Verification #35 (manual pp. 134-136); Hassan & Wolff (1999).
+- Verdict: **SKIPPED (source).** The manual states outright that "the paper does
+  not provide all the required input parameters, we selected values for the
+  missing parameters that allowed us to match factors of safety" — Slide tuned
+  missing inputs to the target, and the published RIs are physically scattered
+  (4–11 across the 9 surfaces). Not a clean independent anchor.
+
+## V-049/050 Slide2 #85/#86 — Duncan & Wright grouted tiebacks — CONVENTION (guard-improved)
 - Source: Slide2 #85 (Fig 6.34) / #86 (Fig 7.28); Duncan & Wright (2005).
 - Geometry recovered (labeled): #85 saturated clay c=350 psf/φ=0, single 9,000 lb/ft
   support at mid-height, steep 0.5:1 20-ft face; #86 c'=0/φ=37 fill on rigid rock, five
@@ -768,6 +810,74 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   omitted) yet the given circular surface dips below the L3/L4 boundary into Layer 4; and
   the surface centre/radius, the piecewise water table, and the tension-crack depth are
   all unlabeled in Fig 51.1. Cannot recover honestly without the missing parameters.
+
+## V-052 Slide2 #97 — Pilarcitos Dam rapid-drawdown method ordering (F4)
+- Source: Slide2 Verification #97 (Tables 97.1/97.2); Duncan, Wright & Wong (1990);
+  GEO-SLOPE "Rapid Drawdown – Multi-Stage" Ex 3.
+- Recovered (all published): homogeneous rolled earth-fill γ=135 pcf, effective
+  c'=0/φ'=45, total-stress R-envelope c_R=60 psf/φ_R=23; toe El. 620, crest ~El. 698
+  (H=78 ft); full pool El. 692 (72 ft) drawn to El. 657 (37 ft).
+- Published: Corps 2-stage 0.823 / Lowe-Karafiath 1.047 / DWW 3-stage 1.043
+  (Duncan-Wright-Wong 1990: 0.82 / 1.05 / 1.05). Historic upstream failure Oct-Nov 1969.
+- Geometry caveat: the upstream SLOPE ANGLE / vertices are NOT published in prose (only
+  the vertical elevations). A representative 2.5H:1V face is used; the asserted ORDERING
+  is slope-invariant (holds at 2:1, 2.5:1, 3:1).
+- Verdict: **CONVENTION (ordering validated; magnitudes geometry/φ'-limited).** The
+  three-method ORDERING Corps < DWW < LK is reproduced with DWW ~ LK (the stage-3 check
+  barely fires, as published where DWW 1.043 ~ LK 1.047). Corps 2-stage (R-governed here)
+  lands ~0.79 near the published 0.823 and BELOW 1.0, reproducing the observed failure.
+  Lowe-Karafiath / DWW OVERSHOOT (~1.35 vs published ~1.05): the assumed slope plus the
+  steep published φ'=45 (Kf=(1+sin45)/(1-sin45)=5.83) inflate the Kc interpolation gain
+  vs Slide2's narrow LK-Corps spread — on the moderate-φ' #98 dam our spacing matched to
+  ~10% (V-048), so the wide spread is specific to this steep-φ' case. Not tuned. Tests:
+  test_published_v052_drawdown_pilarcitos.py (2).
+
+## V-053 Slide2 #99 — Pumped-Storage Project Dam rapid drawdown — N/A (geometry)
+- Source: Slide2 Verification #99 (Tables 99.1/99.2); Duncan, Wright & Wong (1990);
+  GEO-SLOPE "Rapid Drawdown – Multi-Stage" Ex 2.
+- Recovered (all published): ~300 ft high ZONED dam; toe El. 260, crest ~El. 560,
+  mid-height bench El. 380; drawdown El. 545 (285 ft) -> 380 (120 ft). Materials:
+  (1) Compacted Rockfill γ=142, c'=0/φ'=37, FREE-DRAINING (no R-envelope); (2) Silty
+  Clay Core γ=140, c'=0/φ'=36, R c_R=2000 psf/φ_R=18; (3) Silty Clay Random Zone =
+  identical to the core.
+- Published: Corps 2-stage 1.345 / Lowe-Karafiath 1.620 / DWW 3-stage 1.534
+  (Duncan-Wright-Wong 1990: 1.37 / 1.58 / 1.56).
+- Verdict: **N/A (geometry).** Unlike #97 (homogeneous — one unknown slope), #99 is a
+  ZONED core/shell/bench section whose zone boundaries (core width, rockfill-shell slopes,
+  bench width) are NOT published in prose — only the vertical elevations + material
+  properties are. The mechanism (free-draining upstream shell dewaters; undrained silty-
+  clay core carries the R-envelope) depends entirely on where the core sits relative to
+  the slip surface, so the section cannot be reconstructed honestly from figure-only
+  zoning. Soil data + elevations recorded above for a future figure-digitization pass.
+  Not pinned.
+
+## V-054 Anisotropic undrained strength su(α) (ADP) — isotropic anchor + Bakklandet (F6)
+- Source: Casagrande & Carrillo (1944); isotropic sanity = Frontiers Earth Sci
+  13:1581457; Bakklandet natural slope = IOP EES 1523 (2025) 012038 (NGI-ADP FEM);
+  Slide2 #105 (anisotropic). Refs: Lo (1965), Su & Liao (1999), Al-Karni &
+  Al-Shamrani (2000).
+- Target: `SlopeSoilLayer.strength_model='anisotropic'` (su_active/su_dss/su_passive;
+  su(α) = Casagrande-Carrillo sin(2α) interpolation on the slice-base angle, φ=0).
+- Verdict: **PASS (isotropic anchor + exact isotropic reduction) / CONVENTION
+  (Bakklandet anisotropy magnitude).**
+  * Isotropic sanity (H=5 m, 45° slope, γ=20, su=40): critical toe circle Bishop
+    2.287 vs published 2.16 (FLAC 2.18; Taylor φ=0 ~2.2) — within ~5%. AND the
+    anisotropic model with su_active=su_dss=su_passive reproduces the mohr_coulomb
+    cu=40 FOS EXACTLY (structural isotropic identity). NOTE the auto centre-grid
+    SEARCH over-estimates (~2.74) because it under-samples the small toe circle — a
+    search-coverage limit, unrelated to the strength model (brute-force critical
+    used as the anchor surface).
+  * Bakklandet (DSS/A=0.63, P/A=0.35): the anisotropy reduces the FOS from the
+    isotropic critical 2.287 to 1.850 on that circle (19%) / 1.796 on the anisotropic
+    critical (21.5% critical-vs-critical), bracketing the published FEM ~24%
+    (1.43→1.09). CONVENTION — direction + magnitude reproduced; exact value not pinned
+    (FEM vs LEM, different geometry, Bakklandet's depth-varying su_A vs a representative
+    constant su here).
+  * Slide2 #105 (Bishop 0.970/Janbu 0.935/Spencer 1.086/GLE 1.017): the cross-section
+    lives in Slide2 Tutorial 32, NOT the verification manual — geometry does not survive
+    honest extraction. **N/A (source).** Recorded, not pinned.
+  Tests: test_published_v054_anisotropic_su.py (4) + slope_stability/tests/
+  test_strength_models.py::TestAnisotropicSu (5).
 
 ## Slide2 #50 / #30 / #31 / #32 — reinforced (multi-material) — SKIPPED (complexity)
 - **#50** (SNAILZ, 2 materials, predefined surface): 14 geotextile rows each with a

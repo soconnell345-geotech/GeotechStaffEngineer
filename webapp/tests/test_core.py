@@ -129,6 +129,27 @@ def test_classify_artifact_by_extension():
     assert core.classify_artifact("mystery.xyz") == "other"
 
 
+def test_classify_plotly_sidecar():
+    # A *.plotly.json sidecar renders natively; the compound suffix is checked
+    # before the plain-extension lookup (which would see only .json -> text).
+    assert core.classify_artifact("plot.plotly.json") == "plotly"
+    assert core.classify_artifact("/tmp/a/b/fig.PLOTLY.JSON") == "plotly"
+    assert core.classify_artifact("data.json") == "text"       # plain json unchanged
+
+
+def test_plotly_sidecar_round_trips_via_from_json(tmp_path):
+    # The sidecar app.py renders with plotly.io.from_json must be loadable.
+    pio = pytest.importorskip("plotly.io")
+    import plotly.graph_objects as go
+    fig = go.Figure(go.Scatter(x=[1, 2, 3], y=[4, 5, 6]))
+    sidecar = tmp_path / "fig.plotly.json"
+    sidecar.write_text(fig.to_json(), encoding="utf-8")
+    assert core.classify_artifact(str(sidecar)) == "plotly"
+    loaded = pio.from_json(core.read_text(str(sidecar)))
+    assert len(loaded.data) == 1
+    assert list(loaded.data[0].y) == [4, 5, 6]
+
+
 def test_describe_artifact(tmp_path):
     p = tmp_path / "calc_package.html"
     p.write_text("<html>x</html>", encoding="utf-8")

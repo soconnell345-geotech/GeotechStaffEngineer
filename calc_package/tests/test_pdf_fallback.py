@@ -13,9 +13,12 @@ import pytest
 
 from calc_package.data_model import (
     CalcPackageData, CalcSection, CalcStep, InputItem, CheckItem,
+    FigureData, TableData,
 )
 from calc_package import latex_renderer
-from calc_package.latex_renderer import render_pdf, save_pdf
+from calc_package.latex_renderer import (
+    render_pdf, save_pdf, _compress_pdf_images, _fit_wide_tables_for_pdf,
+)
 
 
 def _sample() -> CalcPackageData:
@@ -105,3 +108,64 @@ def test_save_pdf_returns_path_string(tmp_path):
     out = str(tmp_path / "calc.pdf")
     path = save_pdf(_sample(), out, renderer="pymupdf_story")
     assert isinstance(path, str) and path == out and os.path.getsize(out) > 0
+
+
+# ---------------------------------------------------------------------------
+# Story-path size + wide-table fixes (F7 QC)
+# ---------------------------------------------------------------------------
+
+def _big_png_b64() -> str:
+    """A 1400x900 PNG that would embed as a ~3.8 MB RAW image in a Story PDF."""
+    import base64
+    import fitz
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 1400, 900), False)
+    pix.clear_with(210)
+    return base64.b64encode(pix.tobytes("png")).decode("ascii")
+
+
+def _sample_with_figure_and_wide_table() -> CalcPackageData:
+    headers = [f"C{i}" for i in range(15)]           # 15-column (wide) table
+    rows = [[str(r)] + ["18.84"] * 14 for r in range(1, 8)]
+    return CalcPackageData(
+        project_name="T", analysis_type="Slope",
+        sections=[
+            CalcSection(title="Slice", items=[
+                TableData(title="Per-Slice", headers=headers, rows=rows)]),
+            CalcSection(title="Figures", items=[
+                FigureData(title="F", image_base64=_big_png_b64(),
+                           caption="c", width_percent=90)]),
+        ],
+    )
+
+
+def test_compress_pdf_images_reencodes_png_to_jpeg():
+    html = f'<img src="data:image/png;base64,{_big_png_b64()}">'
+    out = _compress_pdf_images(html)
+    assert 'data:image/jpeg;base64,' in out
+    assert 'data:image/png;base64,' not in out
+
+
+def test_fit_wide_tables_only_tags_wide_tables():
+    def _tbl(n):
+        ths = "".join(f"<th>H{i}</th>" for i in range(n))
+        return (f'<table class="data-table"><thead><tr>{ths}</tr></thead>'
+                "<tbody></tbody></table>")
+    out = _fit_wide_tables_for_pdf(_tbl(3) + _tbl(15))
+    assert out.count("wide-pdf-table") == 1              # only the 15-col table
+    assert '<table class="data-table"><thead><tr><th>H0</th>' in out  # 3-col untouched
+
+
+def test_story_pdf_is_compact_and_wide_table_not_clipped(tmp_path):
+    """The Story PDF re-encodes figures to JPEG (so it stays small) and compacts
+    a wide table so every column survives (no right-edge clip)."""
+    import fitz
+    out = str(tmp_path / "r.pdf")
+    rep = render_pdf(_sample_with_figure_and_wide_table(), out,
+                     renderer="pymupdf_story")
+    assert rep["renderer"] == "pymupdf_story"
+    # raw-embedding one 1400x900 figure alone would be ~3.8 MB; JPEG keeps it small
+    assert os.path.getsize(out) < 2_000_000, os.path.getsize(out)
+    doc = fitz.open(out)
+    text = "".join(doc[i].get_text() for i in range(doc.page_count))
+    doc.close()
+    assert all(f"C{i}" in text for i in range(15)), "wide table columns clipped"

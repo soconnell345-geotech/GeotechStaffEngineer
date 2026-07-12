@@ -12,6 +12,25 @@ from funhouse_agent.adapters import (
 )
 
 
+def _plotly_figure_json(result, params):
+    """Compact Plotly figure JSON for the ``.plotly.json`` sidecar, or None.
+
+    Only produced when a save is actually happening (``output_path`` set) — the
+    sidecar lets a front-end render the figure natively (st.plotly_chart)
+    instead of an HTML iframe. Best-effort: returns None if there is no figure
+    or it cannot be serialized.
+    """
+    if not params.get("output_path"):
+        return None
+    fig = getattr(result, "figure", None)
+    if fig is None:
+        return None
+    try:
+        return fig.to_json()
+    except Exception:
+        return None
+
+
 def _require_file_or_content(params: dict, *, method: str):
     """Raise a clear ValueError when neither file_path nor content is given."""
     if params.get("file_path") is None and params.get("content") is None:
@@ -151,7 +170,8 @@ def _run_plot_parameter_vs_depth(params: dict) -> dict:
     )
     output_format = figure_output_format(params)
     return save_html_output(
-        clean_result(result.to_dict(output_format=output_format)), params)
+        clean_result(result.to_dict(output_format=output_format)), params,
+        figure_json=_plotly_figure_json(result, params))
 
 
 def _run_plot_atterberg_limits(params: dict) -> dict:
@@ -164,7 +184,8 @@ def _run_plot_atterberg_limits(params: dict) -> dict:
     )
     output_format = figure_output_format(params)
     return save_html_output(
-        clean_result(result.to_dict(output_format=output_format)), params)
+        clean_result(result.to_dict(output_format=output_format)), params,
+        figure_json=_plotly_figure_json(result, params))
 
 
 def _run_plot_multi_parameter(params: dict) -> dict:
@@ -179,7 +200,8 @@ def _run_plot_multi_parameter(params: dict) -> dict:
     )
     output_format = figure_output_format(params)
     return save_html_output(
-        clean_result(result.to_dict(output_format=output_format)), params)
+        clean_result(result.to_dict(output_format=output_format)), params,
+        figure_json=_plotly_figure_json(result, params))
 
 
 def _run_plot_plan_view(params: dict) -> dict:
@@ -194,7 +216,8 @@ def _run_plot_plan_view(params: dict) -> dict:
     )
     output_format = figure_output_format(params)
     return save_html_output(
-        clean_result(result.to_dict(output_format=output_format)), params)
+        clean_result(result.to_dict(output_format=output_format)), params,
+        figure_json=_plotly_figure_json(result, params))
 
 
 def _run_plot_cross_section(params: dict) -> dict:
@@ -212,7 +235,8 @@ def _run_plot_cross_section(params: dict) -> dict:
     )
     output_format = figure_output_format(params)
     return save_html_output(
-        clean_result(result.to_dict(output_format=output_format)), params)
+        clean_result(result.to_dict(output_format=output_format)), params,
+        figure_json=_plotly_figure_json(result, params))
 
 
 # ---------------------------------------------------------------------------

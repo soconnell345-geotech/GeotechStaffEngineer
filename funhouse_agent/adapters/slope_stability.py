@@ -13,7 +13,7 @@ _WATER_CONDITIONS = ["dry", "seepage_parallel", "ru"]
 _F_INTERSLICE = ["constant", "half_sine", "clipped_sine", "trapezoidal"]
 _SURFACE_TYPES = ["circular", "entry_exit", "noncircular", "noncircular_de",
                   "pso", "weak_layer"]
-_STRENGTH_MODELS = ["mohr_coulomb", "shansep", "hoek_brown"]
+_STRENGTH_MODELS = ["mohr_coulomb", "shansep", "hoek_brown", "anisotropic"]
 _NEWMARK_POLARITY = ["downslope", "rectified"]
 _CRACK_SIDES = ["entry", "exit"]
 _CRACK_MODELS = ["strength", "truncation"]
@@ -66,6 +66,9 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
             hb_gsi=d.get("hb_gsi", 50.0),
             hb_mi=d.get("hb_mi", 10.0),
             hb_D=d.get("hb_D", 0.0),
+            su_active=d.get("su_active", 0.0),
+            su_dss=d.get("su_dss", 0.0),
+            su_passive=d.get("su_passive", 0.0),
             R_c=d.get("R_c", 0.0),
             R_phi=d.get("R_phi"),
         ))
@@ -250,7 +253,7 @@ def _run_fosm(params: dict) -> dict:
     reject_unknown_params(
         params,
         _GEOM_PARAMS + _SURFACE_PARAMS + ("variables", "method", "n_slices",
-                                          "tol"),
+                                          "tol", "correlations"),
         method="fosm_fos")
     geom = _build_geometry(params, method="fosm_fos")
     require_params(params, ["variables"], method="fosm_fos")
@@ -262,6 +265,7 @@ def _run_fosm(params: dict) -> dict:
         slip_surface=_slip_surface_from(params),
         method=method, n_slices=params.get("n_slices", 30),
         tol=params.get("tol", 1e-4),
+        correlations=params.get("correlations"),
     )
     return result.to_dict()
 
@@ -272,7 +276,7 @@ def _run_monte_carlo(params: dict) -> dict:
         params,
         _GEOM_PARAMS + _SURFACE_PARAMS + (
             "variables", "method", "n", "seed", "n_slices", "tol",
-            "research_surface"),
+            "research_surface", "correlations"),
         method="monte_carlo_fos")
     geom = _build_geometry(params, method="monte_carlo_fos")
     require_params(params, ["variables"], method="monte_carlo_fos")
@@ -285,6 +289,7 @@ def _run_monte_carlo(params: dict) -> dict:
         method=method, n=params.get("n", 1000), seed=params.get("seed"),
         n_slices=params.get("n_slices", 30), tol=params.get("tol", 1e-4),
         research_surface=params.get("research_surface", False),
+        correlations=params.get("correlations"),
     )
     return result.to_dict()
 
@@ -310,7 +315,7 @@ def _run_infinite_slope(params: dict) -> dict:
     return result.to_dict()
 
 
-_RD_METHODS = ["corps_2stage", "duncan_3stage"]
+_RD_METHODS = ["corps_2stage", "duncan_3stage", "lowe_karafiath"]
 _RD_STAGE3_NORMAL = ["fellenius", "gle"]
 _RD_SURFACE_TYPES = ["circular", "entry_exit", "noncircular", "noncircular_de"]
 
@@ -431,6 +436,19 @@ def _run_newmark_jibson2007(params: dict) -> dict:
     return result.to_dict()
 
 
+def _run_bray_travasarou_2007(params: dict) -> dict:
+    from slope_stability.newmark import bray_travasarou_2007
+    reject_unknown_params(
+        params, ("ky", "ts", "sa_1p5ts", "magnitude", "rigid"),
+        method="bray_travasarou_2007")
+    require_params(params, ["ky", "ts", "sa_1p5ts", "magnitude"],
+                   method="bray_travasarou_2007")
+    result = bray_travasarou_2007(
+        ky=params["ky"], ts=params["ts"], sa_1p5ts=params["sa_1p5ts"],
+        magnitude=params["magnitude"], rigid=params.get("rigid"))
+    return result.to_dict()
+
+
 METHOD_REGISTRY = {
     "analyze_slope": _run_analyze_slope,
     "search_critical_surface": _run_search_critical_surface,
@@ -441,13 +459,14 @@ METHOD_REGISTRY = {
     "yield_acceleration": _run_yield_acceleration,
     "newmark_displacement": _run_newmark_displacement,
     "newmark_jibson2007": _run_newmark_jibson2007,
+    "bray_travasarou_2007": _run_bray_travasarou_2007,
     "fosm_fos": _run_fosm,
     "monte_carlo_fos": _run_monte_carlo,
 }
 
 _GEOMETRY_PARAMS = {
     "surface_points": {"type": "array", "required": True, "description": "Ground surface as [[x,y], ...] array (x increasing)."},
-    "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {top_elevation, bottom_elevation, gamma (all required); name, gamma_sat, phi, c_prime, cu, analysis_mode ('drained'|'undrained'), ru, bottom_boundary_points optional}. Per-layer strength_model: 'mohr_coulomb' (default), 'shansep' (su = shansep_S * ocr^shansep_m * sigma'_v; fields shansep_S, shansep_m, ocr, su_min) or 'hoek_brown' (Generalized Hoek-Brown; fields hb_sigci kPa, hb_gsi, hb_mi, hb_D). For rapid_drawdown_fos, low-permeability layers also take the total-stress R-envelope R_c (kPa) and R_phi (deg); R_phi omitted/null => free-draining."},
+    "soil_layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts: {top_elevation, bottom_elevation, gamma (all required); name, gamma_sat, phi, c_prime, cu, analysis_mode ('drained'|'undrained'), ru, bottom_boundary_points optional}. Per-layer strength_model: 'mohr_coulomb' (default), 'shansep' (su = shansep_S * ocr^shansep_m * sigma'_v; fields shansep_S, shansep_m, ocr, su_min) 'hoek_brown' (Generalized Hoek-Brown; fields hb_sigci kPa, hb_gsi, hb_mi, hb_D) or 'anisotropic' (undrained su varies with the slice-base inclination alpha; fields su_active [kPa, ACTIVE/crest zone, alpha>=+45deg], su_dss [direct simple shear, alpha=0], su_passive [PASSIVE/toe zone, alpha<=-45deg] — su_active>=su_dss>=su_passive for K>1 clays; Casagrande-Carrillo sin(2alpha) interpolation; standard toe-at-low-x slope). For rapid_drawdown_fos, low-permeability layers also take the total-stress R-envelope R_c (kPa) and R_phi (deg); R_phi omitted/null => free-draining."},
     "gwt_points": {"type": "array", "required": False, "description": "Groundwater table [[x,y],...]. If above the ground surface, ponded water is auto-detected (water weight + horizontal hydrostatic thrust applied as external loads)."},
     "kh": {"type": "float", "required": False, "default": 0.0, "description": "Horizontal pseudo-static seismic coefficient (acts on soil weight only)."},
     "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Vertical surcharge (kPa). A single loaded zone; use 'surcharges' for several distinct loaded areas."},
@@ -475,6 +494,10 @@ _SURFACE_SPEC_PARAMS = {
 
 _VARIABLES_PARAM = {
     "variables": {"type": "object", "required": True, "description": "Random variables: {'phi': {cov: 0.1}, 'cu:Clay': {mean: 30, std: 5, dist: 'lognormal'}, ...}. Keys are layer parameters (phi, c_prime, cu, gamma, gamma_sat, ru) optionally scoped ':LayerName'; each spec needs cov or std (mean defaults to the layer value); dist is 'normal' (default) or 'lognormal'. Use gamma_sat (not dry gamma) for the unit weight of a submerged slope. A depth-varying undrained-strength law su(z)=a+b*(datum_z-z) is ONE correlated (a,b) variable applied coherently across layers — give an entry with a 'law':'linear_su' key: {'a':{mean,std|cov}, 'b':{mean,std|cov}, 'rho_ab':0..1, 'datum_z': elevation where su=a, 'z_ref':'mid'|'top'|'bottom', 'su_min': floor, 'layers': names|null}. A std-0 component (e.g. fixed intercept) drops out."},
+}
+
+_CORRELATIONS_PARAM = {
+    "correlations": {"type": "array", "required": False, "description": "Optional correlated scalar pairs: [['c_prime','phi',-0.5], ...] (or [{'var1','var2','rho'}]). Each references two SCALAR variable keys from 'variables' (optionally scoped ':LayerName') and a correlation rho in [-1,1]. FOSM adds the Taylor cross-term 2*rho*(dF1/2)*(dF2/2); Monte Carlo draws the pair from a bivariate normal. Omit for independent variables (default). A c'-phi' negative correlation typically lowers the FOS variance."},
 }
 
 METHOD_INFO = {
@@ -521,13 +544,13 @@ METHOD_INFO = {
     },
     "rapid_drawdown_fos": {
         "category": "Slope Stability",
-        "brief": "Rapid-drawdown FOS on a SPECIFIED slip surface: USACE/Army-Corps 2-stage or Duncan-Wright-Wong 3-stage. Low-permeability layers respond undrained after fast reservoir drawdown; give them the total-stress R-envelope (soil_layers[].R_c, R_phi) alongside c_prime/phi (R_phi=null => free-draining). Stage 1 = full-pool effective stresses; stage 2 = undrained strength from the R and effective envelopes (Kc-interpolated for 3-stage); stage 3 (3-stage) substitutes the drained strength where lower; final FOS is solved at the drawn-down pool.",
+        "brief": "Rapid-drawdown FOS on a SPECIFIED slip surface: USACE/Army-Corps 2-stage, Lowe-Karafiath 2-stage, or Duncan-Wright-Wong 3-stage. Low-permeability layers respond undrained after fast reservoir drawdown; give them the total-stress R-envelope (soil_layers[].R_c, R_phi) alongside c_prime/phi (R_phi=null => free-draining). Stage 1 = full-pool effective stresses; stage 2 = undrained strength from the R and effective envelopes (Kc-interpolated for Lowe-Karafiath and 3-stage); stage 3 (3-stage only) substitutes the drained strength where lower; final FOS is solved at the drawn-down pool.",
         "parameters": {
             **_GEOMETRY_PARAMS,
             **_SURFACE_SPEC_PARAMS,
             "drawdown_from_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation BEFORE drawdown (m)."},
             "drawdown_to_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation AFTER drawdown (m); must be below drawdown_from_elevation."},
-            "method": {"type": "str", "required": False, "default": "duncan_3stage", "allowed_values": _RD_METHODS, "description": "'duncan_3stage' (Duncan-Wright-Wong, Kc-interpolated undrained strength + drained substitution) or 'corps_2stage' (USACE combined R/effective envelope)."},
+            "method": {"type": "str", "required": False, "default": "duncan_3stage", "allowed_values": _RD_METHODS, "description": "'duncan_3stage' (Duncan-Wright-Wong, Kc-interpolated undrained strength + stage-3 drained substitution), 'lowe_karafiath' (the SAME Kc-interpolated stage-2 strength but NO stage 3, so >= duncan_3stage), or 'corps_2stage' (USACE combined min(R, effective) envelope, no stage 3)."},
             "f_interslice": {"type": "str", "required": False, "default": "constant", "allowed_values": _F_INTERSLICE, "description": "GLE interslice function ('constant' = Spencer)."},
             "n_slices": {"type": "int", "required": False, "default": 50, "description": "Number of slices."},
             "stage1_phreatic_points": {"type": "array", "required": False, "description": "Optional steady-seepage phreatic surface [[x,z],...] for the STAGE-1 consolidation stresses only. Default (omitted) uses a flat full-pool phreatic (hydrostatic to the reservoir) -- the conservative no-through-seepage bound. Supply the flow-net/Casagrande phreatic line (declining from the pool level at the upstream face through the dam) to reproduce the steady-seepage condition Slide2/EM 1110-2-1902 use, which raises the mobilized undrained strengths and the FOS."},
@@ -537,12 +560,12 @@ METHOD_INFO = {
     },
     "search_rapid_drawdown": {
         "category": "Slope Stability",
-        "brief": "SEARCH for the critical (minimum-FOS) slip surface under RAPID-DRAWDOWN strengths (Corps 2-stage / Duncan-Wright-Wong 3-stage). Like search_critical_surface but the per-trial FOS is the rapid-drawdown solve; supports circular and noncircular searches. Use this (not rapid_drawdown_fos) when you do NOT already have a specific trial surface. Low-permeability layers need the R-envelope (soil_layers[].R_c, R_phi).",
+        "brief": "SEARCH for the critical (minimum-FOS) slip surface under RAPID-DRAWDOWN strengths (Corps 2-stage / Lowe-Karafiath 2-stage / Duncan-Wright-Wong 3-stage). Like search_critical_surface but the per-trial FOS is the rapid-drawdown solve; supports circular and noncircular searches. Use this (not rapid_drawdown_fos) when you do NOT already have a specific trial surface. Low-permeability layers need the R-envelope (soil_layers[].R_c, R_phi).",
         "parameters": {
             **_GEOMETRY_PARAMS,
             "drawdown_from_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation BEFORE drawdown (m)."},
             "drawdown_to_elevation": {"type": "float", "required": True, "description": "Reservoir surface elevation AFTER drawdown (m); must be below drawdown_from_elevation."},
-            "method": {"type": "str", "required": False, "default": "corps_2stage", "allowed_values": _RD_METHODS, "description": "Rapid-drawdown stage method: 'corps_2stage' (default) or 'duncan_3stage'."},
+            "method": {"type": "str", "required": False, "default": "corps_2stage", "allowed_values": _RD_METHODS, "description": "Rapid-drawdown stage method: 'corps_2stage' (default), 'lowe_karafiath', or 'duncan_3stage'. See rapid_drawdown_fos."},
             "surface_type": {"type": "str", "required": False, "default": "circular", "allowed_values": _RD_SURFACE_TYPES, "description": "Search strategy: 'circular' (centre grid), 'entry_exit' (arcs between entry/exit windows), 'noncircular' (random polylines), 'noncircular_de' (differential-evolution refinement)."},
             "x_range": {"type": "array", "required": False, "description": "[xmin, xmax] for the circle-centre grid (circular)."},
             "y_range": {"type": "array", "required": False, "description": "[ymin, ymax] for the circle-centre grid (circular)."},
@@ -593,6 +616,18 @@ METHOD_INFO = {
         },
         "returns": {"displacement_cm": "Estimated Newmark displacement (cm).", "displacement_m": "Same in m.", "amax_g": "PGA used."},
     },
+    "bray_travasarou_2007": {
+        "category": "Slope Stability",
+        "brief": "Bray & Travasarou (2007) simplified seismic DEVIATORIC slope displacement — a fully-coupled stick-slip sliding-block regression that captures sliding-mass flexibility (via the fundamental period Ts) and spectral demand at 1.5*Ts, which the rigid-block Jibson/integration models don't. Returns P(D=0) (prob. of negligible <=1 cm displacement) and the median non-zero displacement (16/84% via sigma_ln=0.66). A period-dependent cross-check for Jibson.",
+        "parameters": {
+            "ky": {"type": "float", "required": True, "description": "Yield / critical seismic coefficient (fraction of g)."},
+            "ts": {"type": "float", "required": True, "description": "Initial fundamental period of the potential sliding mass (s); ~4H/Vs (deep/wide) or 2.6H/Vs (surface). Ts<0.05 s auto-uses the rigid-block branch (then sa_1p5ts is the PGA)."},
+            "sa_1p5ts": {"type": "float", "required": True, "description": "5%-damped elastic spectral acceleration at the degraded period 1.5*Ts (g)."},
+            "magnitude": {"type": "float", "required": True, "description": "Moment magnitude Mw."},
+            "rigid": {"type": "bool", "required": False, "description": "Force the rigid (True) / flexible (False) branch; default auto-selects rigid when ts<0.05 s."},
+        },
+        "returns": {"displacement_cm": "Median deviatoric displacement (cm).", "displacement_16pct_cm": "16th-percentile displacement.", "displacement_84pct_cm": "84th-percentile displacement.", "p_zero": "P(D=0): probability of negligible (<=1 cm) displacement.", "displacement_m": "Median in m."},
+    },
     "search_critical_surface": {
         "category": "Slope Stability",
         "brief": "Search for the critical slip surface (minimum FOS): circular centre-grid, entry-exit arcs, random noncircular polylines, differential-evolution noncircular refinement, PSO, or weak-layer-biased search.",
@@ -622,8 +657,9 @@ METHOD_INFO = {
             **_VARIABLES_PARAM,
             "method": {"type": "str", "required": False, "default": "bishop", "allowed_values": _METHODS, "description": "Limit-equilibrium method for each FOS evaluation."},
             "n_slices": {"type": "int", "required": False, "default": 30, "description": "Number of slices."},
+            **_CORRELATIONS_PARAM,
         },
-        "returns": {"FOS_mean_values": "FOS at mean (most-likely) values.", "COV_F": "Coefficient of variation of FOS.", "beta_lognormal": "Lognormal reliability index (Duncan 2000).", "pf_lognormal": "Probability of failure.", "variable_variance_pct": "Per-variable share of Var[FOS]."},
+        "returns": {"FOS_mean_values": "FOS at mean (most-likely) values.", "COV_F": "Coefficient of variation of FOS.", "beta_lognormal": "Lognormal reliability index (Duncan 2000).", "pf_lognormal": "Probability of failure.", "variable_variance_pct": "Per-variable share of Var[FOS] (with a 'corr(k1,k2)' entry per correlated pair)."},
     },
     "monte_carlo_fos": {
         "category": "Slope Stability",
@@ -637,6 +673,7 @@ METHOD_INFO = {
             "seed": {"type": "int", "required": False, "description": "Random seed for reproducibility."},
             "research_surface": {"type": "bool", "required": False, "default": False, "description": "Re-search the critical surface for every realization (slow; default keeps the surface fixed, standard practice)."},
             "n_slices": {"type": "int", "required": False, "default": 30, "description": "Number of slices."},
+            **_CORRELATIONS_PARAM,
         },
         "returns": {"pf": "Probability of failure (FOS < 1).", "FOS_mean": "Mean FOS.", "FOS_std": "Std of FOS.", "beta_lognormal": "Lognormal reliability index from the sample moments.", "histogram_bins": "Histogram bin edges.", "histogram_counts": "Histogram counts."},
     },

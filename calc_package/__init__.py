@@ -121,6 +121,7 @@ def generate_calc_package(
     format: str = "html",
     keep_tex: bool = False,
     compiler: str = "pdflatex",
+    render_report: dict = None,
 ) -> str:
     """Generate a Mathcad-style calculation package.
 
@@ -152,6 +153,12 @@ def generate_calc_package(
         For ``format="pdf"``: keep the .tex source alongside the PDF.
     compiler : str
         For ``format="pdf"``: LaTeX compiler (``"pdflatex"`` or ``"xelatex"``).
+    render_report : dict, optional
+        For ``format="pdf"``: if a dict is passed, it is populated in place with
+        the :func:`~calc_package.latex_renderer.render_pdf` report
+        (``{"renderer": "pdflatex"|"pymupdf_story", "warnings": [...], ...}``)
+        so the caller can learn which engine produced the PDF. Ignored for
+        HTML/LaTeX.
 
     Returns
     -------
@@ -204,7 +211,15 @@ def generate_calc_package(
     if format == "pdf":
         if not output_path:
             raise ValueError("output_path is required for format='pdf'")
-        return save_pdf(data, output_path, keep_tex=keep_tex, compiler=compiler)
+        # Use render_pdf (not save_pdf) so the chosen renderer + warnings can be
+        # threaded back to the caller via ``render_report`` (which engine
+        # produced the PDF helps diagnose environment differences). The return
+        # value stays the PDF path, unchanged.
+        report = render_pdf(data, output_path, keep_tex=keep_tex,
+                            compiler=compiler)
+        if render_report is not None:
+            render_report.update(report)
+        return report["path"]
 
     elif format == "latex":
         tex = render_latex(data)

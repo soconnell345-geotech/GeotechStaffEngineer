@@ -18,6 +18,7 @@ from slope_stability.slip_surface import CircularSlipSurface
 from slope_stability.analysis import analyze_slope
 from slope_stability.newmark import (
     yield_acceleration, newmark_displacement, newmark_jibson2007,
+    bray_travasarou_2007,
     YieldAccelerationResult, NewmarkResult, _G,
 )
 
@@ -175,3 +176,81 @@ def test_yield_acceleration_zero_when_static_unstable():
                            n_slices=40)
     if r.fos_static <= 1.0:
         assert r.ky == 0.0 and r.converged
+
+
+# ── Bray & Travasarou (2007) seismic displacement ──────────────────────
+
+def test_bray_travasarou_matches_paper_worked_example():
+    """Two published anchor points from the Bray (2007) Ch.14 worked example
+    (ky=0.14, Ts=0.4 s, Sa(1.5Ts)=0.48 g, M=7.2): ln(D)=2.29 (D≈9.9 cm) and
+    P(D=0)=0.01. Reproduce both to the paper's stated precision."""
+    r = bray_travasarou_2007(ky=0.14, ts=0.4, sa_1p5ts=0.48, magnitude=7.2)
+    assert r.ln_d_cm == pytest.approx(2.29, abs=0.01)          # paper: 2.29
+    assert r.displacement_cm == pytest.approx(math.exp(2.29), rel=0.02)  # ~9.9 cm
+    assert r.p_zero == pytest.approx(0.01, abs=0.005)           # paper: 0.01
+    assert r.sigma_ln == 0.66 and r.rigid is False
+    # 16/84% band is median * e^-/+sigma
+    assert r.d16_cm == pytest.approx(r.displacement_cm * math.exp(-0.66), rel=1e-9)
+    assert r.d84_cm == pytest.approx(r.displacement_cm * math.exp(0.66), rel=1e-9)
+
+
+def test_bray_travasarou_monotone_behaviours():
+    """Closed-form limiting behaviours: displacement falls as ky rises, rises with
+    Sa and with magnitude; P(D=0) rises as ky rises (stronger slope, less likely
+    to displace)."""
+    base = dict(ts=0.4, sa_1p5ts=0.48, magnitude=7.2)
+    d_lo = bray_travasarou_2007(ky=0.05, **base).displacement_cm
+    d_mid = bray_travasarou_2007(ky=0.14, **base).displacement_cm
+    d_hi = bray_travasarou_2007(ky=0.25, **base).displacement_cm
+    assert d_lo > d_mid > d_hi
+    # more spectral demand -> more displacement
+    assert (bray_travasarou_2007(ky=0.14, ts=0.4, sa_1p5ts=0.70, magnitude=7.2)
+            .displacement_cm >
+            bray_travasarou_2007(ky=0.14, ts=0.4, sa_1p5ts=0.30, magnitude=7.2)
+            .displacement_cm)
+    # larger magnitude -> more displacement
+    assert (bray_travasarou_2007(ky=0.14, ts=0.4, sa_1p5ts=0.48, magnitude=8.0)
+            .displacement_cm >
+            bray_travasarou_2007(ky=0.14, ts=0.4, sa_1p5ts=0.48, magnitude=6.5)
+            .displacement_cm)
+    # P(D=0) rises with ky
+    assert (bray_travasarou_2007(ky=0.30, **base).p_zero >
+            bray_travasarou_2007(ky=0.05, **base).p_zero)
+
+
+def test_bray_travasarou_orders_with_jibson():
+    """Cross-check: B&T and the rigid-block Jibson (2007) model order the same way
+    in ky at a fixed shaking level — both give MORE displacement for a weaker
+    slope (lower ky)."""
+    amax = 0.5   # PGA for Jibson; use it as Sa for the near-rigid B&T comparison
+    bt_lo = bray_travasarou_2007(ky=0.08, ts=0.05, sa_1p5ts=amax, magnitude=7.0)
+    bt_hi = bray_travasarou_2007(ky=0.25, ts=0.05, sa_1p5ts=amax, magnitude=7.0)
+    jb_lo = newmark_jibson2007(0.08, amax)
+    jb_hi = newmark_jibson2007(0.25, amax)
+    assert bt_lo.displacement_cm > bt_hi.displacement_cm      # B&T ordering
+    assert jb_lo.displacement_cm > jb_hi.displacement_cm      # Jibson ordering
+    # same direction (both decrease with ky)
+
+
+def test_bray_travasarou_rigid_branch():
+    """Ts < 0.05 s auto-selects the rigid branch (intercept -0.22, no 1.5*Ts
+    term); an explicit rigid flag overrides the auto-selection."""
+    r = bray_travasarou_2007(ky=0.1, ts=0.0, sa_1p5ts=0.4, magnitude=7.0)
+    assert r.rigid is True
+    # matches the closed-form rigid equation (a0=-0.22, no Ts term)
+    lnky, lnsa = math.log(0.1), math.log(0.4)
+    expect = (-0.22 - 2.83 * lnky - 0.333 * lnky ** 2 + 0.566 * lnky * lnsa
+              + 3.04 * lnsa - 0.244 * lnsa ** 2 + 0.278 * (7.0 - 7.0))
+    assert r.ln_d_cm == pytest.approx(expect, rel=1e-9)
+    # explicit override: force flexible on a small Ts
+    assert bray_travasarou_2007(ky=0.1, ts=0.04, sa_1p5ts=0.4, magnitude=7.0,
+                                rigid=False).rigid is False
+
+
+def test_bray_travasarou_input_validation():
+    with pytest.raises(ValueError):
+        bray_travasarou_2007(ky=0.0, ts=0.4, sa_1p5ts=0.48, magnitude=7.2)
+    with pytest.raises(ValueError):
+        bray_travasarou_2007(ky=0.14, ts=0.4, sa_1p5ts=0.0, magnitude=7.2)
+    with pytest.raises(ValueError):
+        bray_travasarou_2007(ky=0.14, ts=-0.1, sa_1p5ts=0.48, magnitude=7.2)

@@ -282,16 +282,112 @@ def _save_pdf_latex(
     return str(output_path)
 
 
+# Wide-table styling injected ONLY into the Story-engine HTML (not the HTML or
+# LaTeX outputs). The Story engine ignores ``table-layout:fixed``/``width`` and
+# lays tables out at their natural width, and the base ``.data-table th/td``
+# rule uses ``padding: 3px 8px`` — 16 px of horizontal padding per column, which
+# for a 15-column table (the interslice slice-force table) pushes the table past
+# the letter page and clips it at the right edge (the HTML output scrolls, but a
+# PDF page cannot). ``_fit_wide_tables_for_pdf`` tags such tables with an extra
+# ``wide-pdf-table`` class; this class-scoped rule (compound selector, so it
+# out-specifies the base rule) collapses the padding and shrinks the font so all
+# columns fit. Narrow tables are untouched.
+_WIDE_TABLE_CLASS = "wide-pdf-table"
+_PDF_STORY_CSS = (
+    "<style>"
+    f".data-table.{_WIDE_TABLE_CLASS} th,"
+    f".data-table.{_WIDE_TABLE_CLASS} td"
+    "{padding:0px 1px;font-size:6.5pt;"
+    "word-break:break-word;overflow-wrap:anywhere;}"
+    "</style>"
+)
+
+#: Header-column count above which a table is treated as "wide" and compacted.
+_WIDE_TABLE_COLS = 11
+
+
+def _fit_wide_tables_for_pdf(html: str, wide_cols: int = _WIDE_TABLE_COLS) -> str:
+    """Tag WIDE tables so the Story PDF compacts them to fit the page width.
+
+    A table with more than ``wide_cols`` columns (e.g. the 15-column interslice
+    slice-force table) overflows the fixed letter page in the Story engine and
+    clips at the right edge. Such tables get an extra ``wide-pdf-table`` class
+    that :data:`_PDF_STORY_CSS` styles with collapsed padding + a smaller font;
+    narrow tables keep the normal size. Column count is read from the ``<th>``
+    cells of the table's first row.
+    """
+    import re
+
+    def _proc(match: "re.Match") -> str:
+        table = match.group(0)
+        head = re.search(r"<tr.*?</tr>", table, re.DOTALL)
+        n_cols = len(re.findall(r"<th\b", head.group(0))) if head else 0
+        if n_cols > wide_cols:
+            return table.replace(
+                '<table class="data-table"',
+                f'<table class="data-table {_WIDE_TABLE_CLASS}"', 1)
+        return table
+
+    return re.sub(r'<table class="data-table".*?</table>', _proc, html,
+                  flags=re.DOTALL)
+
+
+def _compress_pdf_images(html: str, jpg_quality: int = 90,
+                         max_px: int = 1100) -> str:
+    """Re-encode inline base64 PNG figures to JPEG for the Story PDF.
+
+    ``fitz.Story`` embeds a PNG ``<img>`` by decoding it to a RAW, uncompressed
+    pixmap — a 72 kB PNG plot balloons to a ~4 MB raw image in the PDF, so a
+    handful of figures made the report ~13-19 MB. A JPEG source, by contrast, is
+    preserved as DCT-compressed image data. So every figure is re-encoded to
+    JPEG here (ALWAYS — even when the JPEG *base64* is larger than the PNG, its
+    *embedded* form is far smaller), and downscaled if wildly oversampled for a
+    letter page. This cuts the PDF to ~1-2 MB with no visible loss on line
+    plots. Best-effort: an image that cannot be re-encoded is left untouched.
+    Only the Story PDF path calls this; HTML/LaTeX outputs are unaffected.
+    """
+    import base64
+    import re
+
+    try:
+        import fitz
+    except Exception:  # pragma: no cover - fitz is required to reach here
+        return html
+
+    def _repl(match: "re.Match") -> str:
+        try:
+            raw = base64.b64decode(match.group(1))
+            pix = fitz.Pixmap(raw)
+            if pix.alpha:                       # JPEG has no alpha channel
+                pix = fitz.Pixmap(pix, 0)
+            longest = max(pix.width, pix.height)
+            if longest > max_px:                # halve until within the cap
+                n = 0
+                while longest > max_px and n < 4:
+                    n += 1
+                    longest /= 2
+                pix.shrink(n)
+            jpg = pix.tobytes("jpeg", jpg_quality=jpg_quality)
+            return ('src="data:image/jpeg;base64,'
+                    + base64.b64encode(jpg).decode("ascii") + '"')
+        except Exception:
+            return match.group(0)
+
+    return re.sub(r'src="data:image/png;base64,([^"]+)"', _repl, html)
+
+
 def _save_pdf_story(data: CalcPackageData, filepath: str) -> str:
     """Pure-Python HTML -> PDF via PyMuPDF's Story engine (no LaTeX needed).
 
     Renders the SAME self-contained HTML as ``format="html"`` (``render_html``)
-    into a paginated PDF. The Story engine supports a SUBSET of CSS: it lays out
-    text, headings, tables, colours and inline base64 ``<img>`` figures, but
-    ignores advanced CSS (flexbox/grid, positioned layout, some border/spacing
-    rules), so the result is a plainer-looking document than the LaTeX PDF. The
-    CONTENT is complete — only the styling fidelity differs. Returns the absolute
-    PDF path.
+    into a paginated PDF, with two Story-only adjustments: inline PNG figures are
+    re-encoded to JPEG (so they stay compressed in the PDF instead of bloating
+    it) and wide tables are wrapped to the page width (so they cannot clip at the
+    right edge). The Story engine supports a SUBSET of CSS: it lays out text,
+    headings, tables, colours and inline base64 ``<img>`` figures, but ignores
+    advanced CSS (flexbox/grid, positioned layout, some border/spacing rules), so
+    the result is a plainer-looking document than the LaTeX PDF. The CONTENT is
+    complete — only the styling fidelity differs. Returns the absolute PDF path.
     """
     try:
         import fitz  # PyMuPDF, installed via the [pdf] extra
@@ -303,6 +399,12 @@ def _save_pdf_story(data: CalcPackageData, filepath: str) -> str:
         ) from exc
 
     html = render_html(data)
+    html = _compress_pdf_images(html)
+    html = _fit_wide_tables_for_pdf(html)
+    if "</head>" in html:
+        html = html.replace("</head>", _PDF_STORY_CSS + "</head>", 1)
+    else:
+        html = _PDF_STORY_CSS + html
     output_path = Path(filepath).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
 

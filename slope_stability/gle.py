@@ -623,6 +623,14 @@ def gle_fos(slices: List[Slice],
     thrust = [0.0] * (n + 1)
     zb0 = ns[0].z_base
     thrust[0] = zb0
+    # E ~ 0 threshold must be RELATIVE to the peak interslice force: near the
+    # slip exit E is small-but-nonzero (e.g. 0.01 kN/m vs hundreds mid-slope)
+    # and dividing the residual moment by it produced a spurious vertical
+    # spike in the line of thrust. Where E is negligible the point of
+    # application is undefined and the documented convention (base elevation)
+    # applies.
+    e_ref = max((abs(e) for e in E), default=0.0)
+    e_tol = max(1e-6, 1e-3 * e_ref)
     for i, s in enumerate(ns):
         # Moment balance of slice i about its base midpoint:
         # E_i applied at (zE_i), E_{i+1} at zE_{i+1} (unknown), V at faces.
@@ -638,7 +646,7 @@ def gle_fos(slices: List[Slice],
             m += s.Fc * (s.z_crack - s.z_base)
         if s.Ph:
             m -= s.Ph * (s.z_pond - s.z_base)
-        if abs(E[i + 1]) > 1e-6:
+        if abs(E[i + 1]) > e_tol:
             zE = s.z_base - m / E[i + 1]
         else:
             zE = ns[min(i + 1, n - 1)].z_base

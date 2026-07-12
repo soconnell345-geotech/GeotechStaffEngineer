@@ -58,6 +58,7 @@ class TestMethodInfo:
             "rapid_drawdown_fos", "search_rapid_drawdown",
             "yield_acceleration",
             "newmark_displacement", "newmark_jibson2007",
+            "bray_travasarou_2007",
             "fosm_fos", "monte_carlo_fos",
         }
 
@@ -243,6 +244,20 @@ class TestStrengthModels:
             "hb_gsi": 45, "hb_mi": 10}]))
         assert r["FOS"] > 1.0
 
+    def test_anisotropic_routes_and_reduces_to_mohr(self):
+        """'anisotropic' routes through; equal su's reproduce the mohr_coulomb
+        cu FOS, and K>1 (softer DSS/passive) lowers the FOS."""
+        def run(sm, **kw):
+            return METHOD_REGISTRY["analyze_slope"](_base(soil_layers=[{
+                "top_elevation": 20, "bottom_elevation": -15, "gamma": 18,
+                "analysis_mode": "undrained", "cu": 40,
+                "strength_model": sm, **kw}]))["FOS"]
+        mc = run("mohr_coulomb")
+        equal = run("anisotropic", su_active=40, su_dss=40, su_passive=40)
+        aniso = run("anisotropic", su_active=40, su_dss=25, su_passive=14)
+        assert equal == pytest.approx(mc, rel=1e-9)
+        assert aniso < equal
+
     def test_invalid_strength_model(self):
         with pytest.raises(ValueError, match="strength_model 'tresca'"):
             METHOD_REGISTRY["analyze_slope"](_base(soil_layers=[{
@@ -319,11 +334,22 @@ class TestNewmark:
         r = METHOD_REGISTRY["newmark_jibson2007"]({"ky": 0.10, "amax": 0.20})
         assert r["displacement_cm"] == pytest.approx(0.877, abs=1e-2)
 
+    def test_bray_travasarou_2007_worked_example(self):
+        """Routes through and reproduces the Bray (2007) worked example
+        (ky=0.14, Ts=0.4, Sa=0.48, M=7.2 -> D~9.9 cm, P(D=0)~0.01)."""
+        r = METHOD_REGISTRY["bray_travasarou_2007"](
+            {"ky": 0.14, "ts": 0.4, "sa_1p5ts": 0.48, "magnitude": 7.2})
+        assert r["displacement_cm"] == pytest.approx(9.86, rel=0.03)
+        assert r["p_zero"] == pytest.approx(0.01, abs=0.005)
+        assert "displacement_16pct_cm" in r and "displacement_84pct_cm" in r
+
     def test_newmark_requires_params(self):
         with pytest.raises(ValueError):
             METHOD_REGISTRY["newmark_jibson2007"]({"ky": 0.1})
         with pytest.raises(ValueError):
             METHOD_REGISTRY["newmark_displacement"]({"ky": 0.1, "dt": 0.01})
+        with pytest.raises(ValueError):
+            METHOD_REGISTRY["bray_travasarou_2007"]({"ky": 0.14, "ts": 0.4})
 
 
 # ----------------------------------------------------------------------------
@@ -368,6 +394,18 @@ class TestProbabilistic:
         assert r["variable_variance_pct"]["su_law"] > 0
         assert sum(r["variable_variance_pct"].values()) == pytest.approx(
             100.0, abs=0.5)
+
+    def test_fosm_correlated_scalar_pair_routes_through(self):
+        """A correlated c'-phi' pair is accepted; the cross-term shows up as a
+        corr(...) variance entry and a negative correlation lowers COV_F."""
+        base = dict(method="bishop",
+                    variables={"c_prime": {"std": 3.0}, "phi": {"std": 3.0}})
+        indep = METHOD_REGISTRY["fosm_fos"](_base(**base))
+        corr = METHOD_REGISTRY["fosm_fos"](_base(
+            correlations=[["c_prime", "phi", -0.5]], **base))
+        assert "corr(c_prime,phi)" in corr["variable_variance_pct"]
+        # both raise the FOS, so a negative correlation reduces the FOS variance
+        assert corr["COV_F"] < indep["COV_F"]
 
     def test_monte_carlo_seeded_reproducible(self):
         kw = _base(method="bishop", n=150, seed=42,
@@ -509,6 +547,33 @@ class TestV54RapidDrawdown:
         assert gle > fell
         assert METHOD_INFO["rapid_drawdown_fos"]["parameters"][
             "stage3_effective_normal"]["allowed_values"] == ["fellenius", "gle"]
+
+    def test_lowe_karafiath_routes_and_is_ge_duncan(self):
+        """'lowe_karafiath' is exposed and routes through; it uses the Duncan
+        Kc-interpolated stage-2 strength but omits stage 3, so its FOS is >=
+        the duncan_3stage FOS and it reports zero drained substitutions."""
+        _FACE = [[0, 0], [220 * _FT, 73 * _FT], [312 * _FT, 110 * _FT],
+                 [380 * _FT, 110 * _FT]]
+        base = {
+            "surface_points": _FACE,
+            "soil_layers": [{"top_elevation": 110 * _FT,
+                             "bottom_elevation": -1.0 * _FT,
+                             "gamma": 135 * _PCF, "phi": 30.0, "c_prime": 0.0,
+                             "R_c": 1200 * _PSF, "R_phi": 16.0}],
+            "xc": 169.5 * _FT, "yc": 210 * _FT, "radius": 210 * _FT,
+            "drawdown_from_elevation": 110 * _FT,
+            "drawdown_to_elevation": 24 * _FT, "n_slices": 50,
+        }
+        lk = METHOD_REGISTRY["rapid_drawdown_fos"](
+            {**base, "method": "lowe_karafiath"})
+        dww = METHOD_REGISTRY["rapid_drawdown_fos"](
+            {**base, "method": "duncan_3stage"})
+        assert lk["method"] == "lowe_karafiath"
+        assert lk["FOS"] >= dww["FOS"] - 1e-6
+        assert lk["n_drained_substituted"] == 0
+        assert "lowe_karafiath" in \
+            METHOD_INFO["rapid_drawdown_fos"]["parameters"]["method"][
+                "allowed_values"]
 
     def test_bad_stage3_normal_rejected(self):
         with pytest.raises(ValueError, match="stage3_effective_normal"):

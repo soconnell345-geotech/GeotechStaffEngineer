@@ -1,5 +1,6 @@
 """
-Rapid-drawdown slope stability — USACE 2-stage and Duncan-Wright-Wong 3-stage.
+Rapid-drawdown slope stability — USACE 2-stage, Lowe & Karafiath, and
+Duncan-Wright-Wong 3-stage.
 
 When a reservoir is drawn down faster than the low-permeability zones of an
 embankment can drain, those zones respond UNDRAINED: the pore pressures set up
@@ -8,25 +9,35 @@ the upstream face is removed. The available strength is the undrained strength
 mobilized from the pre-drawdown CONSOLIDATION stresses, not the (higher) drained
 strength that the post-drawdown effective stresses would imply.
 
-Two established procedures are implemented, both wired to the rigorous GLE /
-Spencer engine by overriding each slice's base strength:
+All procedures share STAGE 1 — an effective-stress ("S") analysis at the FULL
+pool that gives the consolidation stress on each slice base: the effective
+normal sigma'_fc and (for the Kc methods) the shear tau_fc. They differ only in
+how STAGE 2 turns those consolidation stresses into an undrained strength
+tau_ff, and whether a third (drained-substitution) stage is run. Every method is
+wired to the rigorous GLE / Spencer engine by overriding each low-permeability
+slice's base strength to c = tau_ff, phi = 0 and re-solving at the DRAWN-DOWN
+pool. Three methods are implemented (``method=``):
 
-USACE / Army Corps 2-stage (EM 1110-2-1902, 1970; Lowe & Karafiath):
-  Stage 1  Effective-stress ("S") analysis with the FULL pool -> effective
-           normal stress sigma'_fc on each slice base (the consolidation stress).
+``corps_2stage`` — USACE / Army Corps 2-stage (EM 1110-2-1902, 1970):
   Stage 2  Undrained strength of each low-permeability slice =
            min( R-envelope(sigma'_fc), drained-envelope(sigma'_fc) )
            (the "combined" envelope — the R strength capped by the effective
            strength so negative-pore-pressure over-strength is not used).
-           The factor of safety is then computed with the DRAWN-DOWN pool.
+           No third stage.
 
-Duncan, Wright & Wong 3-stage (1990; Duncan, Wright & Brandon 2014, Ch. 9):
-  Stage 1  as above, plus the shear stress tau_fc on each base.
+``lowe_karafiath`` — Lowe & Karafiath 2-stage (1960):
   Stage 2  Undrained strength interpolated with the consolidation stress ratio
            Kc = sigma'_1c/sigma'_3c between two envelopes plotted as tau_ff vs
-           sigma'_fc:  the Kc=1 (isotropically-consolidated / R) envelope (lower
+           sigma'_fc: the Kc=1 (isotropically-consolidated / R) envelope (lower
            bound) and the Kc=Kf (effective-stress / drained) envelope (upper
            bound).  tau_ff = tau_R + (Kc-1)/(Kf-1) * (tau_drained - tau_R).
+           No third stage. This is exactly the Duncan-Wright-Wong procedure
+           below WITHOUT its stage 3 (Duncan, Wright & Wong 1990 note the DWW
+           method is Lowe & Karafiath's with the drained-strength check added).
+
+``duncan_3stage`` — Duncan, Wright & Wong 3-stage (1990; Duncan, Wright &
+  Brandon 2014, Ch. 9):
+  Stage 2  the SAME Kc-interpolated undrained strength as Lowe & Karafiath.
   Stage 3  For each slice the post-drawdown DRAINED strength is computed with
            the drawn-down pore pressures; where it is LESS than the stage-2
            undrained strength it is substituted, and the FOS re-computed.
@@ -38,6 +49,8 @@ References
 ----------
 US Army Corps of Engineers (1970). EM 1110-2-1902, Stability of Earth and
     Rock-Fill Dams, Appendix G.
+Lowe, J., Karafiath, L. (1960). "Stability of earth dams upon drawdown." Proc.
+    1st Pan-American Conf. on Soil Mech. and Found. Eng., Vol. 2, 537-552.
 Duncan, J.M., Wright, S.G., Wong, K.S. (1990). "Slope stability during rapid
     drawdown." H. Bolton Seed Memorial Symposium, Vol. 2, 253-272.
 Duncan, Wright & Brandon (2014). Soil Strength and Slope Stability, Ch. 9.
@@ -56,8 +69,15 @@ from slope_stability.gle import gle_fos
 from slope_stability.results import SearchResult
 
 
-_METHODS = ("corps_2stage", "duncan_3stage")
+_METHODS = ("corps_2stage", "duncan_3stage", "lowe_karafiath")
 _SURFACE_TYPES = ("circular", "entry_exit", "noncircular", "noncircular_de")
+
+# Methods whose stage-2 undrained strength is the Kc-interpolated value between
+# the Kc=1 (R / IC-U) and Kc=Kf (drained) envelopes (Lowe & Karafiath 1960; also
+# the Duncan-Wright-Wong stage-2). The rest use the Corps combined R/effective
+# envelope. Only ``duncan_3stage`` runs the third (drained-substitution) stage.
+_KC_INTERP_METHODS = ("duncan_3stage", "lowe_karafiath")
+_STAGE3_METHODS = ("duncan_3stage",)
 
 
 def _nearest_index(sorted_xs: List[float], x: float) -> int:
@@ -274,7 +294,11 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
     xc, yc, radius / slip_surface :
         The (specified) slip surface. Provide a circle or an explicit surface.
     method : str
-        'duncan_3stage' (default) or 'corps_2stage'.
+        'duncan_3stage' (default), 'lowe_karafiath', or 'corps_2stage'.
+        'lowe_karafiath' uses the same Kc-interpolated stage-2 undrained strength
+        as 'duncan_3stage' but omits stage 3 (the drained-strength check), so it
+        is never more conservative than the 3-stage; 'corps_2stage' uses the
+        combined min(R, drained) envelope. See the module docstring.
     f_interslice : str
         Interslice function for the GLE engine ('constant' = Spencer).
     n_slices, tol : usual meanings.
@@ -379,15 +403,16 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         tanphiR = math.tan(math.radians(lay.R_phi))
         s_R = lay.R_c + sfc * tanphiR                    # Kc=1 (R / IC-U) envelope
         s_D = lay.c_prime + sfc * tanphi                 # Kc=Kf (drained) envelope
-        if method == "corps_2stage":
+        if method not in _KC_INTERP_METHODS:      # corps_2stage
             s_und = min(s_R, s_D)
             Kc_list.append(1.0)
-        else:  # duncan_3stage
+        else:  # duncan_3stage / lowe_karafiath (Kc-interpolated stage-2)
             # Interpolate between the Kc=1 (R / IC-U) envelope and the Kc=Kf
             # (drained) envelope. The R envelope is the lower bound as-plotted;
             # over-strength from its cohesion intercept at low sigma' is caught
             # by the STAGE-3 drained substitution (not by capping here — capping
-            # here would erase the interpolation range for a c'=0 soil).
+            # here would erase the interpolation range for a c'=0 soil). Lowe &
+            # Karafiath uses this SAME stage-2 strength but omits stage 3.
             Kc = _consolidation_Kc(sfc, tau_fc[i], s.alpha, lay.phi)
             sinphi = math.sin(math.radians(lay.phi))
             Kf = (1.0 + sinphi) / (1.0 - sinphi) if sinphi < 1 else 1e6
@@ -407,7 +432,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
     # strengths still on the slices (before the undrained override below), so it
     # is the same base_normal_eff basis stage 1 uses for sigma'_fc.
     sig_post_gle: Optional[List[float]] = None
-    if method == "duncan_3stage" and stage3_effective_normal == "gle":
+    if method in _STAGE3_METHODS and stage3_effective_normal == "gle":
         try:
             res3d = gle_fos(sl3, slip, f_interslice=f_interslice,
                             tol=min(tol, 1e-4) * 0.1)
@@ -434,7 +459,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         if tau_ff[i] is None:
             continue                     # free-draining: keep drained c'/phi'
         s_und = tau_ff[i]
-        if method == "duncan_3stage":
+        if method in _STAGE3_METHODS:
             # post-drawdown drained strength (low-pool effective normal stress)
             lay = _base_layer(g_draw, s)
             if sig_post_gle is not None:
@@ -516,7 +541,8 @@ def search_rapid_drawdown(geom: SlopeGeometry,
     drawdown_from_elevation, drawdown_to_elevation : float
         Reservoir surface elevation before / after drawdown (m).
     method : str
-        Drawdown stage method: 'corps_2stage' (default) or 'duncan_3stage'.
+        Drawdown stage method: 'corps_2stage' (default), 'lowe_karafiath', or
+        'duncan_3stage'. See ``rapid_drawdown_fos``.
     surface_type : str
         'circular' (default, centre-grid + radius optimisation), 'entry_exit'
         (circular arcs between entry/exit windows), 'noncircular' (random

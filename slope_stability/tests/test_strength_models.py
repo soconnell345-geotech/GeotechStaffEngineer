@@ -205,3 +205,76 @@ class TestMixedProfiles:
         assert deep
         assert all(s.phi == 0.0 for s in deep)
         assert all(s.c > 0 for s in deep)
+
+
+class TestAnisotropicSu:
+    """F6 — anisotropic undrained strength su(alpha) (ADP active/DSS/passive)."""
+
+    def _geom(self, **kw):
+        layer = SlopeSoilLayer(
+            name="clay", top_elevation=20.0, bottom_elevation=-15.0,
+            gamma=18.0, analysis_mode="undrained", cu=1.0,   # cu unused
+            strength_model="anisotropic", **kw)
+        return SlopeGeometry(surface_points=SURFACE, soil_layers=[layer])
+
+    def test_su_alpha_formula_hand_calc(self):
+        """su(alpha) = piecewise sin(2*alpha) interpolation between su_passive
+        (<=-45), su_dss (0) and su_active (>=+45), held constant beyond +/-45."""
+        lay = self._geom(su_active=50.0, su_dss=30.0, su_passive=10.0
+                         ).soil_layers[0]
+        cases = {
+            -60.0: 10.0, -45.0: 10.0, 0.0: 30.0, 45.0: 50.0, 60.0: 50.0,
+            22.5: 30.0 + (50.0 - 30.0) * math.sin(math.radians(45.0)),
+            -22.5: 30.0 + (10.0 - 30.0) * math.sin(math.radians(45.0)),
+        }
+        for adeg, expect in cases.items():
+            assert lay._anisotropic_su(math.radians(adeg)) == \
+                pytest.approx(expect, rel=1e-12)
+
+    def test_isotropic_reduces_to_mohr_coulomb(self):
+        """su_active = su_dss = su_passive => isotropic; the anisotropic model
+        reproduces the mohr_coulomb cu FOS EXACTLY on the same surface."""
+        cu = 35.0
+        mc = SlopeGeometry(surface_points=SURFACE, soil_layers=[SlopeSoilLayer(
+            name="clay", top_elevation=20.0, bottom_elevation=-15.0, gamma=18.0,
+            analysis_mode="undrained", cu=cu)])
+        aniso = self._geom(su_active=cu, su_dss=cu, su_passive=cu)
+        for m in ("bishop", "spencer", "gle"):
+            f_mc = analyze_slope(mc, method=m, n_slices=40, **CIRCLE).FOS
+            f_an = analyze_slope(aniso, method=m, n_slices=40, **CIRCLE).FOS
+            assert f_an == pytest.approx(f_mc, rel=1e-9)
+
+    def test_per_slice_su_follows_base_angle(self):
+        """Each slice base carries su(alpha) for its own inclination, phi=0."""
+        lay_kw = dict(su_active=60.0, su_dss=36.0, su_passive=20.0)
+        geom = self._geom(**lay_kw)
+        lay = geom.soil_layers[0]
+        slices = build_slices(geom, CircularSlipSurface(**CIRCLE), 40)
+        for s in slices:
+            assert s.phi == 0.0
+            assert s.c == pytest.approx(lay._anisotropic_su(s.alpha), rel=1e-9)
+        # active-zone (alpha>0) slices are stronger than passive-zone (alpha<0)
+        act = [s.c for s in slices if s.alpha > 0.1]
+        pas = [s.c for s in slices if s.alpha < -0.1]
+        assert act and pas and min(act) > max(pas)
+
+    def test_anisotropy_lowers_fos(self):
+        """K = su_active/su_passive > 1 (softer DSS/passive) gives a LOWER FOS
+        than the isotropic case anchored at su_active."""
+        iso = self._geom(su_active=40.0, su_dss=40.0, su_passive=40.0)
+        ani = self._geom(su_active=40.0, su_dss=25.2, su_passive=14.0)
+        f_iso = analyze_slope(iso, method="bishop", n_slices=40, **CIRCLE).FOS
+        f_ani = analyze_slope(ani, method="bishop", n_slices=40, **CIRCLE).FOS
+        assert f_ani < f_iso
+
+    def test_validation_errors(self):
+        with pytest.raises(ValueError):
+            SlopeSoilLayer(name="c", top_elevation=10.0, bottom_elevation=-5.0,
+                           gamma=18.0, strength_model="bogus")
+        with pytest.raises(ValueError):      # all-zero su
+            SlopeSoilLayer(name="c", top_elevation=10.0, bottom_elevation=-5.0,
+                           gamma=18.0, strength_model="anisotropic")
+        with pytest.raises(ValueError):      # negative su
+            SlopeSoilLayer(name="c", top_elevation=10.0, bottom_elevation=-5.0,
+                           gamma=18.0, strength_model="anisotropic",
+                           su_active=30.0, su_passive=-1.0)

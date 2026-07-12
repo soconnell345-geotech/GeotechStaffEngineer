@@ -30,12 +30,23 @@ Three pieces, all operating on a SPECIFIED slip surface:
    displacement from the critical-acceleration ratio ky/amax, an independent
    cross-check that needs no time history.
 
+4. ``bray_travasarou_2007`` — Bray & Travasarou's (2007) simplified semi-empirical
+   estimate of earthquake-induced DEVIATORIC slope displacement from a nonlinear
+   fully-coupled stick-slip sliding-block model. A period-dependent cross-check
+   that captures the sliding-mass flexibility (via the initial fundamental period
+   Ts) and the spectral demand at the degraded period, which the rigid-block
+   Jibson/integration models do not. Two parts: the probability of negligible
+   (<= ~1 cm) displacement P(D=0), and the median non-zero displacement.
+
 References
 ----------
 Newmark, N.M. (1965). "Effects of earthquakes on dams and embankments."
     Geotechnique 15(2), 139-160.
 Jibson, R.W. (2007). "Regression models for estimating coseismic landslide
     displacement." Engineering Geology 91(2-4), 209-218. (Eq. 6.)
+Bray, J.D. & Travasarou, T. (2007). "Simplified procedure for estimating
+    earthquake-induced deviatoric slope displacements." J. Geotech. Geoenviron.
+    Eng. 133(4), 381-392. (Also Bray 2007, Ch. 14, Eqs. 14.3-14.5.)
 Duncan, Wright & Brandon (2014). Soil Strength and Slope Stability, Ch. 10.
 """
 
@@ -333,3 +344,138 @@ def newmark_jibson2007(ky: float, amax: float) -> NewmarkResult:
     d_cm = 10.0 ** log_d
     return NewmarkResult(displacement=d_cm / 100.0, ky=ky, method="jibson2007",
                          amax=amax, sigma_log10=0.510)
+
+
+def _std_normal_cdf(x: float) -> float:
+    """Standard-normal CDF (self-contained, via erf)."""
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+@dataclass
+class BrayTravasarou2007Result:
+    """Bray & Travasarou (2007) seismic slope-displacement estimate."""
+    displacement: float = 0.0      # median deviatoric displacement (m)
+    p_zero: float = 0.0            # P(D=0): prob. of negligible (<= ~1 cm) displ.
+    ky: float = 0.0               # yield coefficient
+    ts: float = 0.0               # initial fundamental period of the mass (s)
+    sa_1p5ts: float = 0.0         # 5%-damped spectral accel at 1.5*Ts (g)
+    magnitude: float = 0.0        # moment magnitude Mw
+    ln_d_cm: float = 0.0          # ln of the median displacement in cm
+    sigma_ln: float = 0.66        # dispersion of ln(D) (Bray & Travasarou 2007)
+    rigid: bool = False           # Ts < 0.05 s branch used
+    method: str = "bray_travasarou_2007"
+
+    @property
+    def displacement_cm(self) -> float:
+        return self.displacement * 100.0
+
+    @property
+    def d16_cm(self) -> float:
+        """16th-percentile displacement (median / e^sigma), cm."""
+        return self.displacement_cm * math.exp(-self.sigma_ln)
+
+    @property
+    def d84_cm(self) -> float:
+        """84th-percentile displacement (median * e^sigma), cm."""
+        return self.displacement_cm * math.exp(self.sigma_ln)
+
+    def summary(self) -> str:
+        return (f"Bray & Travasarou (2007): median D = {self.displacement_cm:.2f} "
+                f"cm (16-84%: {self.d16_cm:.2f}-{self.d84_cm:.2f}); "
+                f"P(D=0) = {self.p_zero:.3f}  "
+                f"(ky={self.ky:g}, Ts={self.ts:g}s, Sa(1.5Ts)={self.sa_1p5ts:g}g, "
+                f"M={self.magnitude:g})")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "method": self.method,
+            "displacement_m": round(self.displacement, 5),
+            "displacement_cm": round(self.displacement_cm, 3),
+            "displacement_16pct_cm": round(self.d16_cm, 3),
+            "displacement_84pct_cm": round(self.d84_cm, 3),
+            "p_zero": round(self.p_zero, 5),
+            "ky": round(self.ky, 5),
+            "ts_s": round(self.ts, 4),
+            "sa_1p5ts_g": round(self.sa_1p5ts, 5),
+            "magnitude": round(self.magnitude, 3),
+            "sigma_ln": self.sigma_ln,
+            "rigid": self.rigid,
+        }
+
+
+def bray_travasarou_2007(ky: float, ts: float, sa_1p5ts: float,
+                         magnitude: float,
+                         rigid: Optional[bool] = None) -> BrayTravasarou2007Result:
+    """Bray & Travasarou (2007) simplified seismic slope-displacement estimate.
+
+    A fully-coupled stick-slip sliding-block regression (688 records) that, unlike
+    the rigid-block Jibson / integration models, captures the sliding-mass
+    flexibility through its initial fundamental period ``ts`` and the spectral
+    demand at the degraded period ``1.5*ts``. Two published equations
+    (Bray 2007, Ch. 14):
+
+    P(D=0) = 1 - Phi( -1.76 - 3.22 ln(ky) - 0.484 Ts ln(ky)
+                      + 3.52 ln(Sa(1.5Ts)) )                          (Eq. 14.4)
+
+    ln(D[cm]) = a0 - 2.83 ln(ky) - 0.333 (ln ky)^2
+                + 0.566 ln(ky) ln(Sa) + 3.04 ln(Sa) - 0.244 (ln Sa)^2
+                + [1.5 Ts]  + 0.278 (M - 7)                          (Eq. 14.5)
+
+    with a0 = -1.10 for a flexible mass (Ts >= 0.05 s) and a0 = -0.22 with the
+    ``1.5 Ts`` term dropped for a rigid mass (Ts < 0.05 s); dispersion of ln(D) is
+    sigma = 0.66 (so D_16/D_84 = median * e^-/+0.66).
+
+    Parameters
+    ----------
+    ky : float
+        Yield (critical) seismic coefficient (fraction of g), > 0.
+    ts : float
+        Initial fundamental period of the potential sliding mass (s), >= 0.
+        For a flexible mass Ts ~ 4H/Vs (deep, wide) or 2.6H/Vs (surface);
+        Ts = 0 is a rigid block.
+    sa_1p5ts : float
+        5%-damped elastic spectral acceleration at the degraded period 1.5*Ts (g),
+        > 0. For a rigid block (Ts -> 0) this is the peak ground acceleration.
+    magnitude : float
+        Moment magnitude Mw.
+    rigid : bool, optional
+        Force the rigid (True) / flexible (False) branch. Default None auto-selects
+        rigid when ts < 0.05 s.
+
+    Returns
+    -------
+    BrayTravasarou2007Result
+        ``displacement`` (median, m), ``p_zero`` = P(D=0), plus the 16/84%
+        displacements and the inputs.
+
+    Notes
+    -----
+    Anchor (Bray 2007 Ch. 14 worked example): ky=0.14, Ts=0.4 s, Sa(1.5Ts)=0.48 g,
+    M=7.2 -> ln(D)=2.29 (D~9.9 cm), P(D=0)=0.01. Validation V-062bt.
+    """
+    if ky <= 0:
+        raise ValueError("ky must be positive (fraction of g)")
+    if sa_1p5ts <= 0:
+        raise ValueError("sa_1p5ts must be positive (g)")
+    if ts < 0:
+        raise ValueError("ts must be non-negative (s)")
+
+    lnky = math.log(ky)
+    lnsa = math.log(sa_1p5ts)
+
+    # P(D=0) — probability of negligible displacement (Eq. 14.4).
+    p_arg = -1.76 - 3.22 * lnky - 0.484 * ts * lnky + 3.52 * lnsa
+    p_zero = 1.0 - _std_normal_cdf(p_arg)
+
+    # Median non-zero displacement (Eq. 14.5); D in cm.
+    is_rigid = (ts < 0.05) if rigid is None else bool(rigid)
+    a0 = -0.22 if is_rigid else -1.10
+    ts_term = 0.0 if is_rigid else 1.5 * ts
+    ln_d = (a0 - 2.83 * lnky - 0.333 * lnky ** 2 + 0.566 * lnky * lnsa
+            + 3.04 * lnsa - 0.244 * lnsa ** 2 + ts_term
+            + 0.278 * (magnitude - 7.0))
+    d_cm = math.exp(ln_d)
+
+    return BrayTravasarou2007Result(
+        displacement=d_cm / 100.0, p_zero=p_zero, ky=ky, ts=ts,
+        sa_1p5ts=sa_1p5ts, magnitude=magnitude, ln_d_cm=ln_d, rigid=is_rigid)

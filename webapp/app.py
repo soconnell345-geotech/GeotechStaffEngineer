@@ -157,8 +157,9 @@ with st.sidebar:
 # Artifact card (inline, in the chat flow at the turn that produced the file)
 # ---------------------------------------------------------------------------
 
-_KIND_ICON = {"html": "📄", "pdf": "📕", "png": "🖼️", "image": "🖼️",
-              "svg": "🖼️", "dxf": "📐", "csv": "📊", "text": "📄", "other": "📎"}
+_KIND_ICON = {"plotly": "📈", "html": "📄", "pdf": "📕", "png": "🖼️",
+              "image": "🖼️", "svg": "🖼️", "dxf": "📐", "csv": "📊",
+              "text": "📄", "other": "📎"}
 
 
 def _render_artifact_card(path: str) -> None:
@@ -179,7 +180,19 @@ def _render_artifact_card(path: str) -> None:
             return
         st.download_button("Download", data=data, file_name=card.name,
                            key=f"dlcard_{path}")
-        if card.kind in ("png", "image", "svg"):
+        if card.kind == "plotly":
+            # Native interactive chart from a *.plotly.json sidecar. plotly is
+            # imported lazily/guarded so the app still runs without it (then the
+            # figure is just download-only). Any parse error falls back to the
+            # download button already rendered above.
+            try:
+                import plotly.io as pio
+                fig = pio.from_json(core.read_text(path))
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception:
+                st.caption("(could not render Plotly figure inline — "
+                           "download above)")
+        elif card.kind in ("png", "image", "svg"):
             try:
                 st.image(path)
             except Exception:

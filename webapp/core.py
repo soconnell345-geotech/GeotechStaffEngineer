@@ -229,7 +229,15 @@ class ArtifactCard:
 
 def classify_artifact(path) -> str:
     """Map a file path to an artifact kind by extension
-    (``html``/``pdf``/``png``/``image``/``svg``/``dxf``/``csv``/``text``/``other``)."""
+    (``plotly``/``html``/``pdf``/``png``/``image``/``svg``/``dxf``/``csv``/``text``/``other``).
+
+    A ``*.plotly.json`` sidecar (a Plotly figure serialized with
+    ``figure.to_json()``) classifies as ``plotly`` so the app can render it
+    natively with ``st.plotly_chart`` — checked before the plain-extension
+    lookup, which would otherwise see only ``.json`` and return ``text``.
+    """
+    if str(path).lower().endswith(".plotly.json"):
+        return "plotly"
     return _ARTIFACT_KIND_BY_EXT.get(os.path.splitext(str(path))[1].lower(),
                                      "other")
 
