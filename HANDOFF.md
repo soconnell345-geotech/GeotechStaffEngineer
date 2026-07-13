@@ -17,7 +17,7 @@ only for the detailed Phase-E history; this file supersedes it.
 | Version string | `5.5.2` in `pyproject.toml` (master) |
 | Validation suite | `validation_examples/` — 191+ passed (offline; V-001..V-054) |
 | Full repo suite | **8557 passed / 48 skipped** (5.5.2 release gate, 2026-07-13) |
-| **Publish status** | 5.5.2 + refs 1.3.1 PUBLISHED. Owner-gated next: GPT-5.4 eval rerun (quota); TinyApp hosting feedback (form submitted 2026-07-10) → fold env answers into webapp/; owner reference-wiki integration (next big effort; priority map = module_work/provenance_audit_*.md wiki-wishlists). Deferred: toe-circle search under-sampling, steep-phi Kc sensitivity, E2 default stays fellenius (owner). |
+| **Publish status** | 5.5.2 + refs 1.3.1 PUBLISHED. Owner-gated next: GPT-5.4 eval rerun (quota); TinyApp hosting feedback (form submitted 2026-07-10) → fold env answers into webapp/; APP WORKSTREAM (plan of record: module_work/APP_PLAN.md, A1-A8); reference-wiki integration PARKED (owner 2026-07-13). Deferred: toe-circle search under-sampling, steep-phi Kc sensitivity, E2 default stays fellenius (owner). |
 
 **⚠️ Release gate (still applies):** a `v*` git tag push **auto-publishes to
 PyPI** via `.github/workflows/publish.yml` (OIDC trusted publishing). Do **not**
