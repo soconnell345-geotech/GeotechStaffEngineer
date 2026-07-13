@@ -159,6 +159,9 @@ def test_render_bootstrap_script_registers_prompter_with_fallback():
     # In-process streamlit start with the proxy flags.
     assert "bootstrap.run(APP_PATH, False, [], _FLAGS)" in src
     assert '"server_baseUrlPath": BASE_PATH' in src
+    # Production posture: no file watcher (no rerun prompt) + viewer toolbar.
+    assert '"server_fileWatcherType": "none"' in src
+    assert '"client_toolbarMode": "viewer"' in src
     # Injected values present as literals.
     assert "'/repo'" in src and "8080" in src and "'funhouse-gpt-high'" in src
 

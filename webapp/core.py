@@ -519,6 +519,90 @@ def conversation_files_dir(thread_id: str, root: Optional[str] = None) -> str:
     return d
 
 
+def working_dir_for(thread_id: str, meta: Optional[dict] = None,
+                    root: Optional[str] = None) -> str:
+    """The conversation's WORKING FOLDER — where the agent's saves (calc
+    packages, plots, ``save_file``) default. ``meta['working_dir']`` if set
+    (``~`` expanded, absolute), else the conversation ``files/`` dir. The
+    directory is created on demand."""
+    if meta is None:
+        meta = load_meta(thread_id, root)
+    wd = (meta or {}).get("working_dir")
+    if wd and str(wd).strip():
+        path = os.path.abspath(os.path.expanduser(str(wd).strip()))
+    else:
+        path = conversation_files_dir(thread_id, root)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def set_working_dir(thread_id: str, path: Optional[str],
+                    root: Optional[str] = None) -> str:
+    """Persist the conversation's working folder in meta. A blank/None ``path``
+    resets it to the ``files/`` default. Returns the resolved absolute dir."""
+    p = str(path or "").strip()
+    resolved = os.path.abspath(os.path.expanduser(p)) if p else None
+    meta = ensure_conversation(thread_id, root=root)
+    meta["working_dir"] = resolved          # None => default (files dir)
+    meta["updated"] = _time.time()
+    save_meta(thread_id, meta, root)
+    return working_dir_for(thread_id, meta, root)
+
+
+def apply_default_output_dir(path: Optional[str]) -> None:
+    """Point the agent's default output dir at ``path`` (via the
+    ``GEOTECH_DEFAULT_OUTPUT_DIR`` env the tool layer reads in
+    ``funhouse_agent._fileio.default_output_dir``), so tool saves default INTO
+    the conversation working folder instead of the system temp dir. Falsy clears
+    it (restores the pre-app default). Precedence: an explicit tool
+    ``output_path`` > this working folder > the temp fallback."""
+    try:
+        from funhouse_agent._fileio import DEFAULT_OUTPUT_DIR_ENV as _ENV
+    except Exception:
+        _ENV = "GEOTECH_DEFAULT_OUTPUT_DIR"
+    if path:
+        os.environ[_ENV] = str(path)
+    else:
+        os.environ.pop(_ENV, None)
+
+
+def _unique_dest(path: str) -> str:
+    """A destination path that does not overwrite a DIFFERENT existing file:
+    return ``path`` if free, else append ``_1``/``_2``/… to the stem."""
+    if not os.path.exists(path):
+        return path
+    stem, ext = os.path.splitext(path)
+    n = 1
+    while os.path.exists(f"{stem}_{n}{ext}"):
+        n += 1
+    return f"{stem}_{n}{ext}"
+
+
+def import_external_artifacts(working_dir: str, files_dir: str, before: set,
+                              input_paths: Iterable[str]) -> List[str]:
+    """Copy files newly produced in ``working_dir`` (since the ``before``
+    snapshot, excluding staged ``input_paths``) INTO ``files_dir`` so they
+    persist with the conversation and render as durable cards. Returns the
+    destination paths under ``files_dir`` (sorted). A no-op returning ``[]`` when
+    the working dir IS the files dir (the default — normal capture covers it)."""
+    wd = os.path.abspath(working_dir)
+    fd = os.path.abspath(files_dir)
+    if wd == fd:
+        return []
+    inputs = set(input_paths or ())
+    new = sorted(p for p in (snapshot_dir(wd) - set(before or ()))
+                 if p not in inputs)
+    out: List[str] = []
+    for src in new:
+        dst = _unique_dest(os.path.join(fd, os.path.basename(src)))
+        try:
+            _shutil.copy2(src, dst)
+        except OSError:
+            continue
+        out.append(dst)
+    return out
+
+
 def auto_title(text, n_words: int = 8) -> str:
     """First ~``n_words`` words of the first user message, as a conversation
     title. Falls back to 'New conversation' for empty input."""
