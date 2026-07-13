@@ -666,24 +666,74 @@ def load_transcript(thread_id: str, root: Optional[str] = None) -> List[dict]:
     return out
 
 
+def _msg_to_plain(m) -> dict:
+    """A LangChain BaseMessage (or a dict) -> a plain ``{role, content}`` dict."""
+    if isinstance(m, dict):
+        return m
+    role = {"human": "user", "ai": "assistant", "system": "system",
+            "tool": "tool", "function": "tool"}.get(
+                getattr(m, "type", ""), "assistant")
+    return {"role": role, "content": getattr(m, "content", "")}
+
+
+def serialize_messages(messages: list) -> list:
+    """Turn the agent-facing history into a JSON-safe list. The history may hold
+    plain ``{role, content}`` dicts AND/OR LangChain message OBJECTS
+    (HumanMessage / AIMessage) — the latter are NOT json-serializable, which is
+    the crash this guards. ``convert_to_messages`` normalizes the mixed list to
+    BaseMessage, then ``messages_to_dict`` makes it JSON-safe; on any failure a
+    per-item best-effort keeps the save from ever raising."""
+    msgs = list(messages or [])
+    try:
+        from langchain_core.messages import (messages_to_dict,
+                                             convert_to_messages)
+        return messages_to_dict(convert_to_messages(msgs))
+    except Exception:
+        out = []
+        for m in msgs:
+            if isinstance(m, dict):
+                out.append(m)
+            else:
+                out.append({"role": getattr(m, "type", "assistant"),
+                            "content": str(getattr(m, "content", m))})
+        return out
+
+
+def deserialize_messages(data) -> list:
+    """Inverse of :func:`serialize_messages` -> plain ``{role, content}`` dicts
+    (the form the replay path feeds ``agent.stream``). Handles BOTH the
+    ``messages_to_dict`` form (``{type, data}``) and older plain-dict files."""
+    if not isinstance(data, list) or not data:
+        return []
+    if all(isinstance(m, dict) and "type" in m and "data" in m for m in data):
+        try:
+            from langchain_core.messages import messages_from_dict
+            return [_msg_to_plain(m) for m in messages_from_dict(data)]
+        except Exception:
+            pass
+    return [m if isinstance(m, dict) else _msg_to_plain(m) for m in data]
+
+
 def save_messages(thread_id: str, messages: list,
                   root: Optional[str] = None) -> None:
-    """Persist the agent-facing message history (small; full rewrite)."""
+    """Persist the agent-facing message history (small; full rewrite). Robust to
+    LangChain message objects in the history (see :func:`serialize_messages`)."""
     os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
     with open(_conv_path(thread_id, "messages.json", root), "w",
               encoding="utf-8") as fh:
-        _json.dump(list(messages or []), fh, ensure_ascii=False)
+        _json.dump(serialize_messages(messages), fh, ensure_ascii=False)
 
 
 def load_messages(thread_id: str, root: Optional[str] = None) -> list:
-    """Load the agent-facing message history (replayed on resume)."""
+    """Load the agent-facing message history (replayed on resume) as plain
+    ``{role, content}`` dicts."""
     p = _conv_path(thread_id, "messages.json", root)
     try:
         with open(p, encoding="utf-8") as fh:
             data = _json.load(fh)
-        return data if isinstance(data, list) else []
     except (OSError, ValueError):
         return []
+    return deserialize_messages(data)
 
 
 def save_attachments_index(thread_id: str, keys: Iterable[str],

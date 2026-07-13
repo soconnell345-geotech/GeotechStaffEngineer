@@ -517,3 +517,54 @@ def test_resolve_engine_explicit_model_overrides_env(monkeypatch):
     assert res.source in ("anthropic", "error")
     # no explicit id -> falls back to GEOTECH_WEBAPP_MODEL
     assert engine_config.resolve_engine().model_name == "claude-sonnet-5"
+
+
+# ---------------------------------------------------------------------------
+# Message-serialization hardening (5.5.1 crash: HumanMessage not JSON-serializable)
+# ---------------------------------------------------------------------------
+
+def test_messages_roundtrip_with_langchain_objects(tmp_path):
+    """The reported crash: an agent-facing history holding REAL LangChain message
+    OBJECTS (not dicts) must serialize + round-trip (json.dumps of a HumanMessage
+    was throwing and losing a completed turn)."""
+    from langchain_core.messages import HumanMessage, AIMessage
+    root = str(tmp_path)
+    # a MIXED history — a plain dict AND message objects (the mid-session state)
+    msgs = [{"role": "user", "content": "first"},
+            HumanMessage(content="analyze the boring log"),
+            AIMessage(content="FOS = 1.47")]
+    core.save_messages("obj", msgs, root=root)          # must NOT raise
+    loaded = core.load_messages("obj", root=root)
+    assert [m["role"] for m in loaded] == ["user", "user", "assistant"]
+    assert [m["content"] for m in loaded] == \
+        ["first", "analyze the boring log", "FOS = 1.47"]
+    # re-saving the loaded (plain-dict) form round-trips identically
+    core.save_messages("obj", loaded, root=root)
+    assert core.load_messages("obj", root=root) == loaded
+
+
+def test_serialize_messages_never_raises_on_odd_object():
+    """serialize_messages falls back per item, so a save can never crash a turn
+    even on an object langchain can't convert."""
+    import json
+
+    class _Weird:                     # not a dict, not a BaseMessage
+        type = "assistant"
+        content = "weird"
+
+    out = core.serialize_messages([{"role": "user", "content": "hi"}, _Weird()])
+    json.dumps(out)                   # the point: JSON-safe, no exception
+
+
+def test_load_messages_reads_legacy_plaindict_file(tmp_path):
+    """Pre-fix messages.json files (plain {role,content}) still load unchanged."""
+    import json as _j
+    root = str(tmp_path)
+    core.conversation_files_dir("legacy", root=root)     # ensure the dir exists
+    with open(core._conv_path("legacy", "messages.json", root),
+              "w", encoding="utf-8") as fh:
+        _j.dump([{"role": "user", "content": "old"},
+                 {"role": "assistant", "content": "reply"}], fh)
+    assert core.load_messages("legacy", root=root) == \
+        [{"role": "user", "content": "old"},
+         {"role": "assistant", "content": "reply"}]

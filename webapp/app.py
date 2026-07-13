@@ -35,6 +35,20 @@ st.set_page_config(page_title="GeotechStaffEngineer", page_icon="⛰️",
 # Session bootstrap
 # ---------------------------------------------------------------------------
 
+#: Bump when the session-state SHAPE changes. On a streamlit hot-reload the old
+#: session_state survives into new code; if the schema differs we re-init cleanly
+#: rather than run half-alive (the model-picker reload is what surfaced this).
+_SCHEMA_VERSION = 2
+
+#: App-owned session-state keys cleared on a schema-mismatch re-init (widget keys
+#: like open_*/model_pick/uploader_* are left alone — they re-key per thread).
+_APP_STATE_KEYS = (
+    "initialized", "thread_id", "temp_dir", "attachments", "artifacts",
+    "messages", "transcript", "pending_notes", "total_tokens",
+    "last_turn_tokens", "agent", "agent_error", "engine", "model", "save_error",
+)
+
+
 def _build_agent_for_session() -> None:
     """(Re)build the compiled agent wired to the current attachments dict +
     persistent files dir. Surfaces build errors without crashing the app."""
@@ -75,6 +89,7 @@ def _new_conversation() -> None:
     ss.pending_notes = []               # attachment notes for the next turn
     ss.total_tokens = 0
     ss.last_turn_tokens = 0
+    ss.save_error = None
     _resolve_and_build(core.default_model_id())
 
 
@@ -94,6 +109,7 @@ def _open_conversation(thread_id: str) -> None:
     ss.pending_notes = []
     ss.total_tokens = 0
     ss.last_turn_tokens = 0
+    ss.save_error = None
     _meta = core.load_meta(thread_id) or {}
     _resolve_and_build(_meta.get("model") or core.default_model_id())
 
@@ -113,8 +129,13 @@ def _persist_turn(first_user_text: Optional[str]) -> None:
 
 def _init_session() -> None:
     ss = st.session_state
-    if ss.get("initialized"):
+    if ss.get("initialized") and ss.get("_schema_version") == _SCHEMA_VERSION:
         return
+    # first run OR a post-hot-reload schema mismatch: drop app state + re-init
+    # cleanly (persisted conversations are unaffected and remain resumable).
+    for k in _APP_STATE_KEYS:
+        ss.pop(k, None)
+    ss._schema_version = _SCHEMA_VERSION
     _new_conversation()
     ss.initialized = True
 
@@ -136,6 +157,11 @@ st.warning(_disc.splitlines()[0] if _disc else "Professional-use disclaimer.")
 with st.expander("Professional-use disclaimer — read before relying on any result",
                  expanded=False):
     st.text(_disc)
+
+if ss.get("save_error"):
+    st.warning(f"⚠️ This conversation could not be auto-saved: {ss.save_error}. "
+               "Your current chat is intact on screen; the next successful turn "
+               "will re-save it.")
 
 
 # ---------------------------------------------------------------------------
@@ -242,11 +268,16 @@ with st.sidebar:
         if fresh:
             atts = core.stage_uploads(ss.attachments, ss.temp_dir, fresh)
             ss.pending_notes.append(core.attachment_note(atts))
-            for a in atts:
-                entry = {"role": "attach", "text": f"{a.key} ({a.size:,} bytes)"}
-                ss.transcript.append(entry)
-                core.append_transcript(ss.thread_id, entry)      # persist
-            core.save_attachments_index(ss.thread_id, list(ss.attachments))
+            entries = [{"role": "attach", "text": f"{a.key} ({a.size:,} bytes)"}
+                       for a in atts]
+            ss.transcript.extend(entries)                # in-memory (always)
+            try:                                          # persist — never crash
+                for entry in entries:
+                    core.append_transcript(ss.thread_id, entry)
+                core.save_attachments_index(ss.thread_id, list(ss.attachments))
+                ss.save_error = None
+            except Exception as exc:
+                ss.save_error = f"{type(exc).__name__}: {exc}"
             st.rerun()
 
     if ss.attachments:
@@ -377,7 +408,10 @@ if prompt:
         st.chat_message("user").markdown(prompt)
         user_entry = {"role": "user", "text": prompt}
         ss.transcript.append(user_entry)
-        core.append_transcript(ss.thread_id, user_entry)         # persist
+        try:
+            core.append_transcript(ss.thread_id, user_entry)     # persist
+        except Exception as exc:
+            ss.save_error = f"{type(exc).__name__}: {exc}"
 
         agent_content = core.assemble_user_message(ss.pending_notes, prompt)
         ss.pending_notes = []
@@ -432,6 +466,13 @@ if prompt:
         assistant_entry = {"role": "assistant", "text": final,
                            "artifacts": turn_paths}
         ss.transcript.append(assistant_entry)
-        core.append_transcript(ss.thread_id, assistant_entry)    # persist
-        _persist_turn(prompt)          # rewrite messages.json + update meta
+        # Persist — a save failure must NEVER lose a completed turn. The counters
+        # and the in-memory transcript are already updated above; guard only the
+        # disk writes and surface a small banner (rendered near the top) on error.
+        try:
+            core.append_transcript(ss.thread_id, assistant_entry)
+            _persist_turn(prompt)      # rewrite messages.json + update meta
+            ss.save_error = None
+        except Exception as exc:
+            ss.save_error = f"{type(exc).__name__}: {exc}"
         st.rerun()
