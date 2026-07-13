@@ -90,6 +90,7 @@ def _new_conversation() -> None:
     ss.total_tokens = 0
     ss.last_turn_tokens = 0
     ss.save_error = None
+    ss.recovered_notice = False
     _resolve_and_build(core.default_model_id())
 
 
@@ -102,8 +103,19 @@ def _open_conversation(thread_id: str) -> None:
     ss.thread_id = thread_id
     ss.temp_dir = core.conversation_files_dir(thread_id)
     ss.attachments = {}
+    ss.recovered_notice = False
     core.load_attachments(thread_id, ss.attachments)   # re-register upload bytes
     ss.transcript = core.load_transcript(thread_id)
+    # A3 crash recovery: a turn interrupted mid-stream (kill/OOM/reload) left a
+    # partial checkpoint — fold it in as a clearly-marked "recovered" entry.
+    _rec = core.recover_partial(thread_id)
+    if _rec is not None:
+        ss.transcript.append(_rec)
+        try:
+            core.append_transcript(thread_id, _rec)
+        except Exception:
+            pass
+        ss.recovered_notice = True
     ss.messages = core.load_messages(thread_id)         # replayed → agent memory
     ss.artifacts = core.artifacts_from_transcript(ss.transcript)
     ss.pending_notes = []
@@ -162,6 +174,11 @@ if ss.get("save_error"):
     st.warning(f"⚠️ This conversation could not be auto-saved: {ss.save_error}. "
                "Your current chat is intact on screen; the next successful turn "
                "will re-save it.")
+
+if ss.get("recovered_notice"):
+    st.info("♻️ A previous turn was interrupted before it finished saving. The "
+            "partial response was recovered and added to this conversation "
+            "(marked below).")
 
 
 # ---------------------------------------------------------------------------
@@ -445,12 +462,15 @@ if prompt:
             _os.path.join(ss.temp_dir, k) for k in ss.attachments
         }
 
+        core.begin_partial(ss.thread_id, prompt)   # A3: mark in-progress turn
+        turn_error = None
         with st.chat_message("assistant"):
             answer_box = st.empty()
             status = st.status("Working…", expanded=False)
             answer = ""
             final = ""
             turn_tokens = 0
+            _chunks = 0
             try:
                 for item in core.stream_turn(ss.agent, ss.messages,
                                              ss.thread_id):
@@ -458,15 +478,20 @@ if prompt:
                     if kind == "token":
                         answer += item["text"]
                         answer_box.markdown(answer)
+                        _chunks += 1
+                        if _chunks % 8 == 0:        # A3: checkpoint partial text
+                            core.checkpoint_partial(ss.thread_id, answer)
                     elif kind in ("tool_call", "todos", "tool_result"):
                         status.write(item["text"])
+                        core.checkpoint_partial(ss.thread_id, answer)
                     elif kind == "turn_done":
                         final = item["answer"]
                         turn_tokens = item["turn_tokens"]
                 status.update(label="Done", state="complete")
             except Exception as exc:
+                turn_error = f"{type(exc).__name__}: {exc}"
                 status.update(label="Error", state="error")
-                st.error(f"{type(exc).__name__}: {exc}")
+                st.error(turn_error)
 
             final = final or answer or "(no answer text)"
             answer_box.markdown(final)
@@ -486,6 +511,8 @@ if prompt:
         turn_paths = core.collect_turn_artifacts(save_new, dir_new)
         assistant_entry = {"role": "assistant", "text": final,
                            "artifacts": turn_paths}
+        if turn_error:                 # A3(c): the turn crashed mid-stream —
+            assistant_entry["error"] = turn_error   # keep the partial, mark it
         ss.transcript.append(assistant_entry)
         # Persist — a save failure must NEVER lose a completed turn. The counters
         # and the in-memory transcript are already updated above; guard only the
@@ -493,6 +520,7 @@ if prompt:
         try:
             core.append_transcript(ss.thread_id, assistant_entry)
             _persist_turn(prompt)      # rewrite messages.json + update meta
+            core.clear_partial(ss.thread_id)   # A3: turn is durably saved now
             ss.save_error = None
         except Exception as exc:
             ss.save_error = f"{type(exc).__name__}: {exc}"

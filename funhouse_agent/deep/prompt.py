@@ -27,6 +27,14 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   settlement), or asks you to run several methods and compare them, open a todo
   list first, then keep it updated — mark each item done as you finish it. Skip
   it for a single one-shot calculation.
+- **Show figures by SAVING them, not describing them.** When a chart would make
+  the answer clearer — a subsurface plot (parameter-vs-depth, cross-section,
+  plan view, Atterberg), a slope/FEM result, a settlement or p-y curve — SAVE
+  the figure by passing an `output_path` to the plotting tool (a bare filename
+  like `"cross_section.html"` is fine; it lands in the working folder) instead
+  of narrating the coordinates. The chat UI renders a saved figure INLINE
+  automatically, so a saved plot is far more useful to the reader than a
+  paragraph of numbers. Prefer this whenever the data is inherently visual.
 - **Use the scratch filesystem to stay organized.** You have `write_file` /
   `read_file` / `edit_file` / `ls`. Stash intermediate results, large tool
   outputs (e.g. a full method dump or a long reference excerpt), and tables you

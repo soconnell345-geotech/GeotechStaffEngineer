@@ -568,3 +568,58 @@ def test_load_messages_reads_legacy_plaindict_file(tmp_path):
     assert core.load_messages("legacy", root=root) == \
         [{"role": "user", "content": "old"},
          {"role": "assistant", "content": "reply"}]
+
+
+# ---------------------------------------------------------------------------
+# A3 — mid-turn crash safety (partial checkpoint + recovery)
+# ---------------------------------------------------------------------------
+
+def test_partial_lifecycle_begin_checkpoint_clear(tmp_path):
+    import json
+    root, tid = str(tmp_path), "T1"
+    core.begin_partial(tid, "my prompt", root=root)
+    assert os.path.isfile(core.partial_path(tid, root=root))
+    core.checkpoint_partial(tid, "streamed so far", root=root)
+    data = json.load(open(core.partial_path(tid, root=root), encoding="utf-8"))
+    assert data["text"] == "streamed so far" and data["prompt"] == "my prompt"
+    core.clear_partial(tid, root=root)
+    assert not os.path.isfile(core.partial_path(tid, root=root))
+
+
+def test_recover_partial_folds_interrupted_stream(tmp_path):
+    root, tid = str(tmp_path), "T2"
+    core.begin_partial(tid, "q", root=root)
+    core.checkpoint_partial(tid, "partial answer text", root=root)  # then "crash"
+    rec = core.recover_partial(tid, root=root)
+    assert rec is not None and rec["recovered"] is True
+    assert "partial answer text" in rec["text"]
+    assert "recovered" in rec["text"].lower()
+    assert not os.path.isfile(core.partial_path(tid, root=root))   # cleared
+    assert core.recover_partial(tid, root=root) is None            # not twice
+
+
+def test_recover_partial_none_when_no_partial(tmp_path):
+    assert core.recover_partial("nope", root=str(tmp_path)) is None
+
+
+def test_recover_partial_empty_text_notes_interruption(tmp_path):
+    root, tid = str(tmp_path), "T3"
+    core.begin_partial(tid, "q", root=root)
+    rec = core.recover_partial(tid, root=root)
+    assert rec is not None
+    assert "interrupted before any output" in rec["text"].lower()
+
+
+def test_recover_partial_dedupes_completed_turn(tmp_path):
+    root, tid = str(tmp_path), "T4"
+    core.append_transcript(tid, {"role": "user", "text": "q"}, root=root)
+    core.append_transcript(tid, {"role": "assistant",
+                                 "text": "the full final answer"}, root=root)
+    core.begin_partial(tid, "q", root=root)
+    core.checkpoint_partial(tid, "the full final answer", root=root)
+    assert core.recover_partial(tid, root=root) is None
+    assert not os.path.isfile(core.partial_path(tid, root=root))
+
+
+def test_checkpoint_partial_never_raises(tmp_path):
+    core.checkpoint_partial("Z", "text", root=str(tmp_path / "made" / "on demand"))

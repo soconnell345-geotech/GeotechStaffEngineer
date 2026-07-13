@@ -750,6 +750,89 @@ def load_transcript(thread_id: str, root: Optional[str] = None) -> List[dict]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# Mid-turn crash safety (A3): a per-turn "partial" checkpoint file
+# ---------------------------------------------------------------------------
+# A hard interruption mid-stream (process kill, OOM, browser close, forced
+# rerun — not a Python exception) would lose the streamed text. ``begin_partial``
+# marks an in-progress turn before streaming, ``checkpoint_partial`` overwrites
+# the accumulating text every few chunks, and a clean completion calls
+# ``clear_partial``. On the next boot ``recover_partial`` folds any leftover
+# partial into the transcript as a clearly-marked "recovered" entry.
+
+def partial_path(thread_id: str, root: Optional[str] = None) -> str:
+    return _conv_path(thread_id, "partial.json", root)
+
+
+def begin_partial(thread_id: str, prompt: str,
+                  root: Optional[str] = None) -> None:
+    """Mark an in-progress assistant turn BEFORE streaming (the A3 placeholder).
+    Best-effort — never raises into the turn loop."""
+    try:
+        os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+        with open(partial_path(thread_id, root), "w", encoding="utf-8") as fh:
+            _json.dump({"prompt": prompt, "text": "", "started": _time.time()},
+                       fh, ensure_ascii=False)
+    except OSError:
+        pass
+
+
+def checkpoint_partial(thread_id: str, text: str,
+                       root: Optional[str] = None) -> None:
+    """Overwrite the in-progress assistant text (called every N stream chunks).
+    Best-effort: a checkpoint failure must NEVER break the stream."""
+    try:
+        p = partial_path(thread_id, root)
+        prompt = ""
+        try:
+            with open(p, encoding="utf-8") as fh:
+                prompt = (_json.load(fh) or {}).get("prompt", "")
+        except (OSError, ValueError):
+            pass
+        os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as fh:
+            _json.dump({"prompt": prompt, "text": text,
+                        "updated": _time.time()}, fh, ensure_ascii=False)
+    except OSError:
+        pass
+
+
+def clear_partial(thread_id: str, root: Optional[str] = None) -> None:
+    """Remove the partial checkpoint after a turn is durably persisted."""
+    try:
+        os.remove(partial_path(thread_id, root))
+    except OSError:
+        pass
+
+
+def recover_partial(thread_id: str, root: Optional[str] = None) -> Optional[dict]:
+    """If a turn was interrupted (``partial.json`` present), return a recovered
+    display entry to append to the transcript, else ``None``. Dedupes the rare
+    append-succeeded-but-clear-failed case by comparing against the last
+    assistant entry already on disk. Clears the partial file either way."""
+    p = partial_path(thread_id, root)
+    if not os.path.isfile(p):
+        return None
+    try:
+        with open(p, encoding="utf-8") as fh:
+            data = _json.load(fh) or {}
+    except (OSError, ValueError):
+        clear_partial(thread_id, root)
+        return None
+    text = (data.get("text") or "").strip()
+    if text:
+        for e in reversed(load_transcript(thread_id, root)):
+            if e.get("role") == "assistant":
+                if text in (e.get("text") or ""):
+                    clear_partial(thread_id, root)
+                    return None
+                break
+    clear_partial(thread_id, root)
+    body = text or "_(this turn was interrupted before any output was produced)_"
+    return {"role": "assistant", "recovered": True,
+            "text": body + "\n\n_(recovered after an interrupted session)_"}
+
+
 def _msg_to_plain(m) -> dict:
     """A LangChain BaseMessage (or a dict) -> a plain ``{role, content}`` dict."""
     if isinstance(m, dict):
