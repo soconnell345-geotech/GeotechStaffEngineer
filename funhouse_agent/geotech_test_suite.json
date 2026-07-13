@@ -898,7 +898,7 @@
     "id": "RDD-2",
     "module": "slope_stability",
     "complexity": "high",
-    "question": "For the SAME 20 m homogeneous dam (fill gamma=20, c'=0/phi'=32, R-envelope cR=25 kPa/phiR=18), circle centre (35,42) radius 40 m, reservoir drawn down from el 18 m to 3 m: compute the rapid-drawdown FOS by the Duncan-Wright-Wong 3-stage method.",
+    "question": "A homogeneous 20 m earth-fill dam (ground surface (0,0)-(60,20)-(90,20) m, fill gamma=20 kN/m3, c'=0/phi'=32 deg, total-stress R-envelope cR=25 kPa/phiR=18 deg), trial circle centre (35,42) radius 40 m, reservoir drawn down from el 18 m to 3 m: compute the rapid-drawdown FOS by the Duncan-Wright-Wong 3-stage method.",
     "expected": {
       "values": [
         {
@@ -914,7 +914,7 @@
     "id": "RDD-3",
     "module": "slope_stability",
     "complexity": "high",
-    "question": "For the SAME 20 m homogeneous dam and circle (centre (35,42), R=40 m, drawdown el 18->3 m, fill gamma=20/c'=0/phi'=32, R-envelope cR=25/phiR=18): compute the Duncan-Wright-Wong 3-stage rapid-drawdown FOS using the RIGOROUS ('gle') stage-3 effective-normal option instead of the default Fellenius estimate.",
+    "question": "A homogeneous 20 m earth-fill dam (ground surface (0,0)-(60,20)-(90,20) m, fill gamma=20 kN/m3, c'=0/phi'=32 deg, total-stress R-envelope cR=25 kPa/phiR=18 deg), trial circle centre (35,42) radius 40 m, reservoir drawn down from el 18 m to 3 m: compute the Duncan-Wright-Wong 3-stage rapid-drawdown FOS using the RIGOROUS ('gle') stage-3 effective-normal option instead of the default Fellenius estimate.",
     "expected": {
       "values": [
         {
@@ -930,7 +930,7 @@
     "id": "RDD-4",
     "module": "slope_stability",
     "complexity": "high",
-    "question": "For the SAME 20 m homogeneous dam and circle (centre (35,42), R=40 m, drawdown el 18->3 m), compute the USACE 2-stage rapid-drawdown FOS when a steady-state seepage phreatic line is used for the stage-1 consolidation stresses, declining from el 18 m at the upstream limit (x=0) to el 12 m at x=90 m.",
+    "question": "A homogeneous 20 m earth-fill dam (ground surface (0,0)-(60,20)-(90,20) m, fill gamma=20 kN/m3, c'=0/phi'=32 deg, total-stress R-envelope cR=25 kPa/phiR=18 deg), trial circle centre (35,42) radius 40 m, reservoir drawn down from el 18 m to 3 m: compute the USACE 2-stage rapid-drawdown FOS when a steady-state seepage phreatic line is used for the stage-1 consolidation stresses, declining from el 18 m at the upstream limit (x=0) to el 12 m at x=90 m.",
     "expected": {
       "values": [
         {
@@ -946,7 +946,7 @@
     "id": "RDS-1",
     "module": "slope_stability",
     "complexity": "high",
-    "question": "For the SAME 20 m homogeneous dam (fill gamma=20, c'=0/phi'=32, R-envelope cR=25 kPa/phiR=18 deg), SEARCH for the critical circular slip surface under USACE 2-stage rapid drawdown (reservoir el 18->3 m) over circle centres x in [10,55], y in [25,70] with entry window x in [0,30] and exit x in [35,60]. Report the minimum rapid-drawdown factor of safety.",
+    "question": "A homogeneous 20 m earth-fill dam (ground surface (0,0)-(60,20)-(90,20) m, fill gamma=20 kN/m3, c'=0/phi'=32 deg, total-stress R-envelope cR=25 kPa/phiR=18 deg): SEARCH for the critical circular slip surface under USACE 2-stage rapid drawdown (reservoir drawn down from el 18 m to 3 m) over circle centres x in [10,55], y in [25,70] with entry window x in [0,30] and exit x in [35,60]. Report the minimum rapid-drawdown factor of safety.",
     "expected": {
       "values": [
         {
@@ -1080,7 +1080,7 @@
     "id": "SPL-2",
     "module": "slope_stability",
     "complexity": "high",
-    "question": "For the SAME slope, circle, and pile row (30 kN/pile at 1.5 m spacing at x=8.75 m), compute the Bishop factor of safety using the PASSIVE support convention (the pile force added to the resisting side, Slide2 Method B) instead of the default active convention.",
+    "question": "A homogeneous slope (surface (-6,0)-(0,0)-(8,4)-(12,4) m, soil gamma=15.68 kN/m3, phi'=10 deg, c'=4.9 kPa) has a circular slip surface centred at (2, 8.89) with radius 9.11 m and a single row of stabilizing piles at x=8.75 m (shear capacity 30 kN per pile at 1.5 m spacing). Compute the Bishop factor of safety using the PASSIVE support convention (the pile force added to the resisting side, Slide2 Method B) instead of the default active convention.",
     "expected": {
       "values": [
         {
@@ -1282,7 +1282,8 @@
     "id": "DIR-1",
     "module": "drawing_ir",
     "complexity": "medium",
-    "question": "Digitize the DXF cross-section drawing at funhouse_agent/eval_samples/sample_section.dxf into the Drawing IR and report how many polyline entities and how many text entities it contains.",
+    "question": "Digitize the DXF cross-section drawing at {sample_path} into the Drawing IR and report how many polyline entities and how many text entities it contains.",
+    "sample_file": "sample_section.dxf",
     "expected": {
       "values": [
         {

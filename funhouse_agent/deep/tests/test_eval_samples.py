@@ -85,6 +85,29 @@ def test_suite_sample_files_are_all_bundled():
         assert name in SAMPLES, f"suite references unbundled sample {name}"
 
 
+def test_no_question_hardcodes_a_repo_relative_sample_path():
+    """Regression (DIR-1): a sample-file question must reference its file via the
+    {sample_path} token (which resolves to the installed absolute path), NEVER a
+    repo-relative path like 'funhouse_agent/eval_samples/...' — the latter is a
+    FileNotFoundError on an installed wheel. Checks the AUTHORED suite (before
+    token expansion; the expanded absolute path legitimately contains
+    'eval_samples')."""
+    import json
+    with open(eh._FUNHOUSE_DIR / "geotech_test_suite.json", encoding="utf-8") as f:
+        data = json.load(f)
+    raw = data if isinstance(data, list) else data.get("questions", data)
+    for q in raw:
+        text = q.get("question", "")
+        assert "eval_samples" not in text, (
+            f"{q.get('id')}: question hardcodes a repo-relative eval_samples "
+            "path; use a sample_file field + the {sample_path} token instead")
+        for name in SAMPLES:
+            if name in text:
+                assert q.get("sample_file") == name and eh.SAMPLE_PATH_TOKEN in text, (
+                    f"{q.get('id')}: names sample '{name}' inline; it must use "
+                    "sample_file + the {sample_path} token")
+
+
 # ===========================================================================
 # THE GATE: every sample parses through the REAL module API
 # ===========================================================================

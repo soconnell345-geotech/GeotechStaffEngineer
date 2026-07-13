@@ -50,6 +50,13 @@ ROUTING_CASES = [
     ("liquefaction", "cpt_based_triggering", "liquefaction_analysis", None),
     ("gstools", "ordinary_kriging", "kriging", None),
     ("dxf_import", "discover_dxf", "discover_layers", None),
+    # Curated from the 2026-07-13 100-question eval run (NMK-2, EPC-3).
+    ("slope_stability", "newmark", "newmark_displacement", None),
+    ("slope_stability", "newmark_analysis", "newmark_displacement", None),
+    ("slope_stability", "sliding_block", "newmark_displacement", None),
+    ("retaining_walls", "caquot", "earth_pressure_coefficient", ("theory", "caquot_kerisel")),
+    ("retaining_walls", "log_spiral", "earth_pressure_coefficient", ("theory", "caquot_kerisel")),
+    ("retaining_walls", "passive_coefficient", "earth_pressure_coefficient", ("state", "passive")),
 ]
 
 
