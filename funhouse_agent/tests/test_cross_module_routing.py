@@ -35,6 +35,27 @@ class TestWrongModuleRedirects:
         assert "bearing_capacity" in r["error"]      # what you called
         assert "retaining_walls" in r["error"]       # where it lives
 
+    def test_seismic_caquot_redirects_to_earth_pressure(self):
+        """Eval EPC-3: 'caquot'/'log_spiral' guessed on seismic_geotech (the
+        agent used M-O with kh=0 for a static Caquot question) points at
+        retaining_walls.earth_pressure_coefficient — not an execution."""
+        for guess in ("caquot", "caquot_kerisel", "log_spiral", "passive_coefficient"):
+            r = call_agent("seismic_geotech", guess, {"phi_deg": 35})
+            assert "error" in r, guess
+            assert "retaining_walls" in r["error"], guess
+            assert "earth_pressure_coefficient" in r["error"], guess
+            assert "K" not in r and "coefficient" not in r, guess
+
+    def test_newmark_redirects_to_slope_stability(self):
+        """Eval NMK-2: 'newmark'/'sliding_block' guessed on the wrong module
+        points at slope_stability.newmark_displacement (the integrator), so the
+        agent never concludes no Newmark integrator exists."""
+        for guess in ("newmark", "newmark_analysis", "sliding_block"):
+            r = call_agent("seismic_geotech", guess, {"ky": 0.2})
+            assert "error" in r, guess
+            assert "slope_stability" in r["error"], guess
+            assert "newmark_displacement" in r["error"], guess
+
 
 class TestRightModuleStillExecutes:
     def test_same_module_alias_executes(self):

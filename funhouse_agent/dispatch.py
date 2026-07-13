@@ -325,9 +325,34 @@ _METHOD_ALIASES = {
     ("retaining_walls", "coulomb_coefficients"): "earth_pressure_coefficient",
     ("retaining_walls", "active_earth_pressure"): "earth_pressure_coefficient",
     ("retaining_walls", "passive_earth_pressure"): "earth_pressure_coefficient",
+    # Caquot-Kerisel log-spiral passive Kp guessed by name ON retaining_walls
+    # (the right module) — route to the earth-pressure helper with the
+    # theory/state injected (eval EPC-3, 2026-07-13). The SAME names guessed on
+    # the WRONG module are handled by _CROSS_MODULE_REDIRECTS.
+    ("retaining_walls", "caquot"):
+        ("earth_pressure_coefficient", {"theory": "caquot_kerisel", "state": "passive"}),
+    ("retaining_walls", "caquot_kerisel"):
+        ("earth_pressure_coefficient", {"theory": "caquot_kerisel", "state": "passive"}),
+    ("retaining_walls", "caquot_kerisel_kp"):
+        ("earth_pressure_coefficient", {"theory": "caquot_kerisel", "state": "passive"}),
+    ("retaining_walls", "log_spiral"):
+        ("earth_pressure_coefficient", {"theory": "caquot_kerisel", "state": "passive"}),
+    ("retaining_walls", "log_spiral_passive"):
+        ("earth_pressure_coefficient", {"theory": "caquot_kerisel", "state": "passive"}),
+    ("retaining_walls", "passive_coefficient"):
+        ("earth_pressure_coefficient", {"state": "passive"}),
     ("ground_improvement", "aggregate_pier_design"): "aggregate_piers",
     # --- slope / FEM ---
     ("fem2d", "slope_strength_reduction"): "fem2d_slope_srm",
+    # Newmark sliding-block seismic-displacement names the agent guesses ON
+    # slope_stability (the right module) — route to the real integrator so the
+    # agent never concludes "no Newmark integrator exists" (eval NMK-2,
+    # 2026-07-13). Cross-module guesses are handled by _CROSS_MODULE_REDIRECTS.
+    ("slope_stability", "newmark"): "newmark_displacement",
+    ("slope_stability", "newmark_analysis"): "newmark_displacement",
+    ("slope_stability", "newmark_sliding_block"): "newmark_displacement",
+    ("slope_stability", "sliding_block"): "newmark_displacement",
+    ("slope_stability", "seismic_displacement"): "newmark_displacement",
     # --- unified liquefaction tool ---
     # The single liquefaction method auto-routes by input type + method; map the
     # names the agent commonly guesses onto it (CPT/SPT, B&I-2014, NCEER/Youd).
@@ -379,6 +404,29 @@ _CROSS_MODULE_REDIRECTS = {
     "earth_pressure_coefficients": ("retaining_walls", "earth_pressure_coefficient"),
     "active_earth_pressure": ("retaining_walls", "earth_pressure_coefficient"),
     "passive_earth_pressure": ("retaining_walls", "earth_pressure_coefficient"),
+    # Caquot-Kerisel log-spiral + generic passive/rankine coefficient guessed on
+    # the WRONG module (eval EPC-2/EPC-3, 2026-07-13: the agent used
+    # seismic_geotech Mononobe-Okabe with kh=0 for a STATIC Rankine/Caquot
+    # question). earth_pressure_coefficient does rankine/coulomb/caquot_kerisel.
+    "caquot": ("retaining_walls", "earth_pressure_coefficient"),
+    "caquot_kerisel": ("retaining_walls", "earth_pressure_coefficient"),
+    "caquot_kerisel_kp": ("retaining_walls", "earth_pressure_coefficient"),
+    "log_spiral": ("retaining_walls", "earth_pressure_coefficient"),
+    "log_spiral_passive": ("retaining_walls", "earth_pressure_coefficient"),
+    "rankine": ("retaining_walls", "earth_pressure_coefficient"),
+    "rankine_coefficient": ("retaining_walls", "earth_pressure_coefficient"),
+    "passive_coefficient": ("retaining_walls", "earth_pressure_coefficient"),
+    "passive_pressure_coefficient": ("retaining_walls", "earth_pressure_coefficient"),
+    # Newmark sliding-block seismic displacement guessed on the WRONG module
+    # (eval NMK-2, 2026-07-13: the agent concluded "no Newmark integrator
+    # exists"). The rigorous integrator is slope_stability.newmark_displacement;
+    # yield_acceleration and the Jibson-2007 regression are siblings there.
+    "newmark": ("slope_stability", "newmark_displacement"),
+    "newmark_analysis": ("slope_stability", "newmark_displacement"),
+    "newmark_displacement": ("slope_stability", "newmark_displacement"),
+    "newmark_sliding_block": ("slope_stability", "newmark_displacement"),
+    "sliding_block": ("slope_stability", "newmark_displacement"),
+    "yield_acceleration": ("slope_stability", "yield_acceleration"),
 }
 
 

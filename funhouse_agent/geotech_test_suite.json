@@ -1282,7 +1282,8 @@
     "id": "DIR-1",
     "module": "drawing_ir",
     "complexity": "medium",
-    "question": "Digitize the DXF cross-section drawing at funhouse_agent/eval_samples/sample_section.dxf into the Drawing IR and report how many polyline entities and how many text entities it contains.",
+    "question": "Digitize the DXF cross-section drawing at {sample_path} into the Drawing IR and report how many polyline entities and how many text entities it contains.",
+    "sample_file": "sample_section.dxf",
     "expected": {
       "values": [
         {
