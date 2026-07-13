@@ -27,16 +27,49 @@ def _is_workspace_path(path: str) -> bool:
     return str(path).replace("\\", "/").startswith("/Workspace")
 
 
+#: Env var naming the directory auto-generated tool outputs default INTO — set
+#: by a host (e.g. the web app, per conversation) so calc packages / plots land
+#: in a chosen working folder instead of the system temp dir. An explicit
+#: ``output_path`` passed to a tool still takes precedence over this default.
+DEFAULT_OUTPUT_DIR_ENV = "GEOTECH_DEFAULT_OUTPUT_DIR"
+
+
 def default_output_dir() -> str:
     """Directory for auto-generated output files.
 
-    Empty string (current directory) locally; the system temp dir on
-    Databricks or whenever the current directory is a /Workspace FUSE path,
-    where plain file writes are unreliable.
+    Resolution (first that applies):
+
+    1. ``$GEOTECH_DEFAULT_OUTPUT_DIR`` if set — the host-chosen working folder
+       (``~`` expanded, made absolute). This is the highest-precedence DEFAULT;
+       an explicit ``output_path`` passed to a tool still wins over it.
+    2. the system temp dir on Databricks or whenever the current directory is a
+       /Workspace FUSE path, where plain file writes are unreliable.
+    3. the current directory ("") locally.
     """
+    env = os.environ.get(DEFAULT_OUTPUT_DIR_ENV)
+    if env and env.strip():
+        return os.path.abspath(os.path.expanduser(env.strip()))
     if is_databricks() or _is_workspace_path(os.getcwd()):
         return tempfile.gettempdir()
     return ""
+
+
+def resolve_output_path(output_path: str) -> str:
+    """Resolve a tool's ``output_path`` against :func:`default_output_dir`.
+
+    An absolute path (or a ``~`` path) is honored as given. A bare or relative
+    path is placed INTO ``default_output_dir()`` — so when a host has set the
+    working-folder env, a bare filename such as ``"cross_section.html"`` lands
+    in that folder (e.g. the web app's per-conversation ``files/`` dir) instead
+    of the process CWD. With no env set and off Databricks, ``default_output_dir``
+    is ``""`` and the path is returned unchanged, i.e. byte-identical to the
+    prior CWD-relative behavior.
+    """
+    p = os.path.expanduser(str(output_path))
+    if os.path.isabs(p):
+        return p
+    base = default_output_dir()
+    return os.path.join(base, p) if base else p
 
 
 def written_file_problem(abs_path: str, expected: bytes = None):
@@ -308,7 +341,8 @@ def save_verified(path: str, content) -> dict:
 
 
 __all__ = [
-    "is_databricks", "default_output_dir", "written_file_problem",
-    "rescue_write", "workspace_write_hint", "workspace_api_upload",
-    "save_verified",
+    "is_databricks", "default_output_dir", "resolve_output_path",
+    "DEFAULT_OUTPUT_DIR_ENV",
+    "written_file_problem", "rescue_write", "workspace_write_hint",
+    "workspace_api_upload", "save_verified",
 ]

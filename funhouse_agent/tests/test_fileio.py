@@ -16,8 +16,8 @@ import types
 import pytest
 
 from funhouse_agent._fileio import (
-    default_output_dir, rescue_write, save_verified, workspace_api_upload,
-    workspace_write_hint, written_file_problem,
+    default_output_dir, rescue_write, resolve_output_path, save_verified,
+    workspace_api_upload, workspace_write_hint, written_file_problem,
 )
 
 
@@ -139,11 +139,61 @@ class TestRescueWrite:
 class TestDefaultOutputDir:
     def test_local_default_is_cwd(self, monkeypatch):
         monkeypatch.delenv("DATABRICKS_RUNTIME_VERSION", raising=False)
+        monkeypatch.delenv("GEOTECH_DEFAULT_OUTPUT_DIR", raising=False)
         assert default_output_dir() == ""
 
     def test_databricks_uses_tempdir(self, monkeypatch):
+        monkeypatch.delenv("GEOTECH_DEFAULT_OUTPUT_DIR", raising=False)
         monkeypatch.setenv("DATABRICKS_RUNTIME_VERSION", "15.4")
         assert default_output_dir() == tempfile.gettempdir()
+
+    def test_env_override_wins_and_is_absolute(self, monkeypatch, tmp_path):
+        # The host-chosen working folder (GEOTECH_DEFAULT_OUTPUT_DIR) is the
+        # highest-precedence DEFAULT — it beats even the Databricks temp fallback.
+        monkeypatch.setenv("DATABRICKS_RUNTIME_VERSION", "15.4")
+        monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+        assert default_output_dir() == os.path.abspath(str(tmp_path))
+
+    def test_blank_env_is_ignored(self, monkeypatch):
+        monkeypatch.delenv("DATABRICKS_RUNTIME_VERSION", raising=False)
+        monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", "   ")
+        assert default_output_dir() == ""
+
+
+class TestResolveOutputPath:
+    """A1(a): a bare/relative output_path defaults INTO the working folder."""
+
+    def test_bare_name_unchanged_when_no_env(self, monkeypatch):
+        # No env, off Databricks: byte-identical to the old CWD-relative behavior.
+        monkeypatch.delenv("DATABRICKS_RUNTIME_VERSION", raising=False)
+        monkeypatch.delenv("GEOTECH_DEFAULT_OUTPUT_DIR", raising=False)
+        assert resolve_output_path("cross_section.html") == "cross_section.html"
+
+    def test_bare_name_lands_in_working_folder(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("DATABRICKS_RUNTIME_VERSION", raising=False)
+        monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+        got = resolve_output_path("cross_section.html")
+        assert got == os.path.join(os.path.abspath(str(tmp_path)),
+                                   "cross_section.html")
+
+    def test_absolute_path_honored_even_with_env(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+        abs_target = os.path.abspath(str(tmp_path / "sub" / "fig.html"))
+        assert resolve_output_path(abs_target) == abs_target
+
+    def test_relative_subdir_joined_under_working_folder(self, monkeypatch,
+                                                         tmp_path):
+        monkeypatch.delenv("DATABRICKS_RUNTIME_VERSION", raising=False)
+        monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+        got = resolve_output_path(os.path.join("plots", "a.html"))
+        assert got == os.path.join(os.path.abspath(str(tmp_path)),
+                                   "plots", "a.html")
+
+    def test_databricks_bare_name_lands_in_tempdir(self, monkeypatch):
+        monkeypatch.delenv("GEOTECH_DEFAULT_OUTPUT_DIR", raising=False)
+        monkeypatch.setenv("DATABRICKS_RUNTIME_VERSION", "15.4")
+        got = resolve_output_path("fig.html")
+        assert got == os.path.join(tempfile.gettempdir(), "fig.html")
 
 
 class TestWorkspaceHint:

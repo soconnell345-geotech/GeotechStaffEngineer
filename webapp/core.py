@@ -519,6 +519,90 @@ def conversation_files_dir(thread_id: str, root: Optional[str] = None) -> str:
     return d
 
 
+def working_dir_for(thread_id: str, meta: Optional[dict] = None,
+                    root: Optional[str] = None) -> str:
+    """The conversation's WORKING FOLDER — where the agent's saves (calc
+    packages, plots, ``save_file``) default. ``meta['working_dir']`` if set
+    (``~`` expanded, absolute), else the conversation ``files/`` dir. The
+    directory is created on demand."""
+    if meta is None:
+        meta = load_meta(thread_id, root)
+    wd = (meta or {}).get("working_dir")
+    if wd and str(wd).strip():
+        path = os.path.abspath(os.path.expanduser(str(wd).strip()))
+    else:
+        path = conversation_files_dir(thread_id, root)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def set_working_dir(thread_id: str, path: Optional[str],
+                    root: Optional[str] = None) -> str:
+    """Persist the conversation's working folder in meta. A blank/None ``path``
+    resets it to the ``files/`` default. Returns the resolved absolute dir."""
+    p = str(path or "").strip()
+    resolved = os.path.abspath(os.path.expanduser(p)) if p else None
+    meta = ensure_conversation(thread_id, root=root)
+    meta["working_dir"] = resolved          # None => default (files dir)
+    meta["updated"] = _time.time()
+    save_meta(thread_id, meta, root)
+    return working_dir_for(thread_id, meta, root)
+
+
+def apply_default_output_dir(path: Optional[str]) -> None:
+    """Point the agent's default output dir at ``path`` (via the
+    ``GEOTECH_DEFAULT_OUTPUT_DIR`` env the tool layer reads in
+    ``funhouse_agent._fileio.default_output_dir``), so tool saves default INTO
+    the conversation working folder instead of the system temp dir. Falsy clears
+    it (restores the pre-app default). Precedence: an explicit tool
+    ``output_path`` > this working folder > the temp fallback."""
+    try:
+        from funhouse_agent._fileio import DEFAULT_OUTPUT_DIR_ENV as _ENV
+    except Exception:
+        _ENV = "GEOTECH_DEFAULT_OUTPUT_DIR"
+    if path:
+        os.environ[_ENV] = str(path)
+    else:
+        os.environ.pop(_ENV, None)
+
+
+def _unique_dest(path: str) -> str:
+    """A destination path that does not overwrite a DIFFERENT existing file:
+    return ``path`` if free, else append ``_1``/``_2``/… to the stem."""
+    if not os.path.exists(path):
+        return path
+    stem, ext = os.path.splitext(path)
+    n = 1
+    while os.path.exists(f"{stem}_{n}{ext}"):
+        n += 1
+    return f"{stem}_{n}{ext}"
+
+
+def import_external_artifacts(working_dir: str, files_dir: str, before: set,
+                              input_paths: Iterable[str]) -> List[str]:
+    """Copy files newly produced in ``working_dir`` (since the ``before``
+    snapshot, excluding staged ``input_paths``) INTO ``files_dir`` so they
+    persist with the conversation and render as durable cards. Returns the
+    destination paths under ``files_dir`` (sorted). A no-op returning ``[]`` when
+    the working dir IS the files dir (the default — normal capture covers it)."""
+    wd = os.path.abspath(working_dir)
+    fd = os.path.abspath(files_dir)
+    if wd == fd:
+        return []
+    inputs = set(input_paths or ())
+    new = sorted(p for p in (snapshot_dir(wd) - set(before or ()))
+                 if p not in inputs)
+    out: List[str] = []
+    for src in new:
+        dst = _unique_dest(os.path.join(fd, os.path.basename(src)))
+        try:
+            _shutil.copy2(src, dst)
+        except OSError:
+            continue
+        out.append(dst)
+    return out
+
+
 def auto_title(text, n_words: int = 8) -> str:
     """First ~``n_words`` words of the first user message, as a conversation
     title. Falls back to 'New conversation' for empty input."""
@@ -664,6 +748,89 @@ def load_transcript(thread_id: str, root: Optional[str] = None) -> List[dict]:
                                     for r in rec["artifacts"]]
             out.append(rec)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Mid-turn crash safety (A3): a per-turn "partial" checkpoint file
+# ---------------------------------------------------------------------------
+# A hard interruption mid-stream (process kill, OOM, browser close, forced
+# rerun — not a Python exception) would lose the streamed text. ``begin_partial``
+# marks an in-progress turn before streaming, ``checkpoint_partial`` overwrites
+# the accumulating text every few chunks, and a clean completion calls
+# ``clear_partial``. On the next boot ``recover_partial`` folds any leftover
+# partial into the transcript as a clearly-marked "recovered" entry.
+
+def partial_path(thread_id: str, root: Optional[str] = None) -> str:
+    return _conv_path(thread_id, "partial.json", root)
+
+
+def begin_partial(thread_id: str, prompt: str,
+                  root: Optional[str] = None) -> None:
+    """Mark an in-progress assistant turn BEFORE streaming (the A3 placeholder).
+    Best-effort — never raises into the turn loop."""
+    try:
+        os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+        with open(partial_path(thread_id, root), "w", encoding="utf-8") as fh:
+            _json.dump({"prompt": prompt, "text": "", "started": _time.time()},
+                       fh, ensure_ascii=False)
+    except OSError:
+        pass
+
+
+def checkpoint_partial(thread_id: str, text: str,
+                       root: Optional[str] = None) -> None:
+    """Overwrite the in-progress assistant text (called every N stream chunks).
+    Best-effort: a checkpoint failure must NEVER break the stream."""
+    try:
+        p = partial_path(thread_id, root)
+        prompt = ""
+        try:
+            with open(p, encoding="utf-8") as fh:
+                prompt = (_json.load(fh) or {}).get("prompt", "")
+        except (OSError, ValueError):
+            pass
+        os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as fh:
+            _json.dump({"prompt": prompt, "text": text,
+                        "updated": _time.time()}, fh, ensure_ascii=False)
+    except OSError:
+        pass
+
+
+def clear_partial(thread_id: str, root: Optional[str] = None) -> None:
+    """Remove the partial checkpoint after a turn is durably persisted."""
+    try:
+        os.remove(partial_path(thread_id, root))
+    except OSError:
+        pass
+
+
+def recover_partial(thread_id: str, root: Optional[str] = None) -> Optional[dict]:
+    """If a turn was interrupted (``partial.json`` present), return a recovered
+    display entry to append to the transcript, else ``None``. Dedupes the rare
+    append-succeeded-but-clear-failed case by comparing against the last
+    assistant entry already on disk. Clears the partial file either way."""
+    p = partial_path(thread_id, root)
+    if not os.path.isfile(p):
+        return None
+    try:
+        with open(p, encoding="utf-8") as fh:
+            data = _json.load(fh) or {}
+    except (OSError, ValueError):
+        clear_partial(thread_id, root)
+        return None
+    text = (data.get("text") or "").strip()
+    if text:
+        for e in reversed(load_transcript(thread_id, root)):
+            if e.get("role") == "assistant":
+                if text in (e.get("text") or ""):
+                    clear_partial(thread_id, root)
+                    return None
+                break
+    clear_partial(thread_id, root)
+    body = text or "_(this turn was interrupted before any output was produced)_"
+    return {"role": "assistant", "recovered": True,
+            "text": body + "\n\n_(recovered after an interrupted session)_"}
 
 
 def _msg_to_plain(m) -> dict:

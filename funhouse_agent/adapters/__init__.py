@@ -145,10 +145,13 @@ def save_html_output(result: dict, params: dict, *, html_key: str = "html",
     output_path = params.get("output_path")
     if not output_path or html_key not in result:
         return result
-    from funhouse_agent._fileio import save_verified
+    from funhouse_agent._fileio import resolve_output_path, save_verified
 
+    # A bare/relative name defaults INTO the host working folder (e.g. the
+    # webapp conversation's files/ dir); an absolute path is honored as given.
+    output_path = resolve_output_path(str(output_path))
     html = result.pop(html_key)
-    saved = save_verified(str(output_path), html)
+    saved = save_verified(output_path, html)
     # Present the saved path as ``output_path`` to match the calc_package
     # response shape (output_path / file_exists / file_size_bytes).
     if "saved" in saved:

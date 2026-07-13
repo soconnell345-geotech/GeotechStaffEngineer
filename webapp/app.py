@@ -90,6 +90,7 @@ def _new_conversation() -> None:
     ss.total_tokens = 0
     ss.last_turn_tokens = 0
     ss.save_error = None
+    ss.recovered_notice = False
     _resolve_and_build(core.default_model_id())
 
 
@@ -102,8 +103,19 @@ def _open_conversation(thread_id: str) -> None:
     ss.thread_id = thread_id
     ss.temp_dir = core.conversation_files_dir(thread_id)
     ss.attachments = {}
+    ss.recovered_notice = False
     core.load_attachments(thread_id, ss.attachments)   # re-register upload bytes
     ss.transcript = core.load_transcript(thread_id)
+    # A3 crash recovery: a turn interrupted mid-stream (kill/OOM/reload) left a
+    # partial checkpoint — fold it in as a clearly-marked "recovered" entry.
+    _rec = core.recover_partial(thread_id)
+    if _rec is not None:
+        ss.transcript.append(_rec)
+        try:
+            core.append_transcript(thread_id, _rec)
+        except Exception:
+            pass
+        ss.recovered_notice = True
     ss.messages = core.load_messages(thread_id)         # replayed → agent memory
     ss.artifacts = core.artifacts_from_transcript(ss.transcript)
     ss.pending_notes = []
@@ -162,6 +174,11 @@ if ss.get("save_error"):
     st.warning(f"⚠️ This conversation could not be auto-saved: {ss.save_error}. "
                "Your current chat is intact on screen; the next successful turn "
                "will re-save it.")
+
+if ss.get("recovered_notice"):
+    st.info("♻️ A previous turn was interrupted before it finished saving. The "
+            "partial response was recovered and added to this conversation "
+            "(marked below).")
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +270,23 @@ with st.sidebar:
     if eng.source == "prompter":
         st.caption("Model is fixed by the deployment; the picker doesn't apply.")
 
+    # Working folder — where the agent's saves (calc packages, plots, files)
+    # land. Default = this conversation's files/ dir (durable; shown as download
+    # cards). Point it elsewhere (e.g. a project folder) and a durable copy is
+    # still kept with the conversation. Persisted per conversation; applied to
+    # the tool default-output-dir env each render so the next turn saves here.
+    _wd = core.working_dir_for(ss.thread_id)
+    _wd_in = st.text_input(
+        "Working folder (agent saves land here)", value=_wd,
+        key=f"workdir_{ss.thread_id}",
+        help="Calc packages, plots and saved files default into this folder. "
+             "Default is the conversation's files/ dir (kept with the chat, "
+             "shown as download cards). Clear the box to reset to that default.")
+    if (_wd_in or "").strip() != _wd:
+        core.set_working_dir(ss.thread_id, _wd_in)
+        st.rerun()
+    core.apply_default_output_dir(_wd)
+
     st.divider()
     st.subheader("Attachments")
     uploaded = st.file_uploader(
@@ -322,6 +356,10 @@ def _render_artifact_card(path: str) -> None:
     iframe, images inline). Big files are download-only."""
     card = core.describe_artifact(path)
     if not card.exists:
+        # Fail soft: the file is gone (e.g. produced in an external working
+        # folder and not copied in, or deleted after the fact) — show a small
+        # note instead of silently dropping the card or crashing on resume.
+        st.caption(f"📎 {card.name} — file no longer available")
         return
     icon = _KIND_ICON.get(card.kind, "📎")
     with st.container(border=True):
@@ -424,12 +462,25 @@ if prompt:
             _os.path.join(ss.temp_dir, k) for k in ss.attachments
         }
 
+        # A6/A4: the working folder may point OUTSIDE the conversation files/ dir
+        # (the agent's calc packages / plots default there via the output-dir
+        # env). Snapshot it so those saves can be bridged back into files/ below
+        # for durable, portable cards. None => same dir (the default), where the
+        # files/ diff already covers everything and no bridging is needed.
+        working_dir = core.working_dir_for(ss.thread_id)
+        before_wd = (core.snapshot_dir(working_dir)
+                     if os.path.abspath(working_dir) != os.path.abspath(ss.temp_dir)
+                     else None)
+
+        core.begin_partial(ss.thread_id, prompt)   # A3: mark in-progress turn
+        turn_error = None
         with st.chat_message("assistant"):
             answer_box = st.empty()
             status = st.status("Working…", expanded=False)
             answer = ""
             final = ""
             turn_tokens = 0
+            _chunks = 0
             try:
                 for item in core.stream_turn(ss.agent, ss.messages,
                                              ss.thread_id):
@@ -437,15 +488,20 @@ if prompt:
                     if kind == "token":
                         answer += item["text"]
                         answer_box.markdown(answer)
+                        _chunks += 1
+                        if _chunks % 8 == 0:        # A3: checkpoint partial text
+                            core.checkpoint_partial(ss.thread_id, answer)
                     elif kind in ("tool_call", "todos", "tool_result"):
                         status.write(item["text"])
+                        core.checkpoint_partial(ss.thread_id, answer)
                     elif kind == "turn_done":
                         final = item["answer"]
                         turn_tokens = item["turn_tokens"]
                 status.update(label="Done", state="complete")
             except Exception as exc:
+                turn_error = f"{type(exc).__name__}: {exc}"
                 status.update(label="Error", state="error")
-                st.error(f"{type(exc).__name__}: {exc}")
+                st.error(turn_error)
 
             final = final or answer or "(no answer text)"
             answer_box.markdown(final)
@@ -459,12 +515,19 @@ if prompt:
         # else written to the session dir (calc packages, DXFs, plots).
         save_new = ss.artifacts[artifacts_before_len:]
         dir_new = core.new_artifacts(ss.temp_dir, before, staged_inputs)
+        if before_wd is not None:               # A6/A4: bridge saves made in an
+            for p in core.import_external_artifacts(  # external working folder
+                    working_dir, ss.temp_dir, before_wd, staged_inputs):
+                if p not in dir_new:            # into files/ (durable + portable)
+                    dir_new.append(p)
         for p in dir_new:                       # add dir-only files to the list
             if p not in ss.artifacts:
                 ss.artifacts.append(p)
         turn_paths = core.collect_turn_artifacts(save_new, dir_new)
         assistant_entry = {"role": "assistant", "text": final,
                            "artifacts": turn_paths}
+        if turn_error:                 # A3(c): the turn crashed mid-stream —
+            assistant_entry["error"] = turn_error   # keep the partial, mark it
         ss.transcript.append(assistant_entry)
         # Persist — a save failure must NEVER lose a completed turn. The counters
         # and the in-memory transcript are already updated above; guard only the
@@ -472,6 +535,7 @@ if prompt:
         try:
             core.append_transcript(ss.thread_id, assistant_entry)
             _persist_turn(prompt)      # rewrite messages.json + update meta
+            core.clear_partial(ss.thread_id)   # A3: turn is durably saved now
             ss.save_error = None
         except Exception as exc:
             ss.save_error = f"{type(exc).__name__}: {exc}"

@@ -1,0 +1,27 @@
+# Production Streamlit config for the GeotechStaffEngineer web app
+# (`streamlit run webapp/app.py`, run from the repo root — this file is read
+# from `$CWD/.streamlit/config.toml`).
+#
+# It suppresses the dev-mode "Source file changed — Rerun / Always rerun" prompt
+# (that toast comes from Streamlit's source-file watcher, which fires because we
+# hot-deploy into the folder the app runs from — it is NOT a project feature)
+# and hides the developer toolbar for a clean deployed UI.
+#
+# DEV OVERRIDE — when you are hot-deploying and WANT auto-rerun on file change,
+# a CLI flag beats this file:
+#   streamlit run webapp/app.py --server.fileWatcherType auto --client.toolbarMode developer
+# or set env before launching (equivalent):
+#   STREAMLIT_SERVER_FILE_WATCHER_TYPE=auto STREAMLIT_CLIENT_TOOLBAR_MODE=developer
+
+[server]
+# No source-file watcher -> no "Rerun / Always rerun" prompt after edits.
+fileWatcherType = "none"
+
+[client]
+# "viewer" hides the developer menu (Rerun / Clear cache / Deploy) and the
+# "Source file changed" toast controls; use "developer" to get them back.
+toolbarMode = "viewer"
+
+[browser]
+# Don't phone home from a deployed instance.
+gatherUsageStats = false

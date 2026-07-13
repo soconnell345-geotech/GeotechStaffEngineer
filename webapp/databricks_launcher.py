@@ -227,7 +227,10 @@ from streamlit.web import bootstrap
 
 # flag_options keys are the CLI-flag form; streamlit maps "_" -> "." internally
 # (server_port -> server.port). CORS + XSRF are disabled so the driver proxy can
-# frame/serve the app; headless suppresses the browser-open attempt.
+# frame/serve the app; headless suppresses the browser-open attempt. The watcher
+# is off (no "Rerun / Always rerun" prompt) and the toolbar is viewer-mode — the
+# same production posture as .streamlit/config.toml, set here too because the
+# subprocess CWD may not be the repo root where that file is read from.
 _FLAGS = {
     "server_port": PORT,
     "server_address": "0.0.0.0",
@@ -235,6 +238,8 @@ _FLAGS = {
     "server_enableCORS": False,
     "server_enableXsrfProtection": False,
     "server_headless": True,
+    "server_fileWatcherType": "none",
+    "client_toolbarMode": "viewer",
     "browser_gatherUsageStats": False,
 }
 bootstrap.run(APP_PATH, False, [], _FLAGS)

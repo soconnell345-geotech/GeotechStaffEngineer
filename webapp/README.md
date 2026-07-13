@@ -99,6 +99,26 @@ in-tree `InMemorySaver` covers within-session thread state.
 > only for the container's lifetime (the app still works; it just won't persist
 > across a redeploy). Confirm with the hosting team.
 
+### Where your files live (and the working folder)
+
+Everything a conversation produces is kept **with that conversation**, under
+`<data root>/conversations/<thread_id>/files/` (the data root is
+`$GEOTECH_WEBAPP_DATA` or `~/.geotech_webapp`). Uploads you attach and artifacts
+the agent makes (calc packages, plots, DXFs) both land there, so the download
+cards keep working when you reopen the chat later — even after an app restart or
+an upgrade. Artifact links are stored **relative** to that `files/` dir, so the
+whole data root can be moved or copied to another machine and the cards still
+resolve. If a file is later deleted, its card degrades to a small "file no
+longer available" note rather than breaking the page.
+
+The sidebar **Working folder** setting (per conversation) is where the agent's
+saves default. It starts at the conversation's `files/` dir — the durable
+default — which is why calc packages and plots show up as download cards. Point
+it at another folder (e.g. a project directory) if you want the originals there;
+a durable copy is still kept with the conversation. Clear the box to reset to the
+default. (Under the hood the app sets `GEOTECH_DEFAULT_OUTPUT_DIR`, which the
+tool layer reads; an explicit `output_path` you ask for in a request still wins.)
+
 ---
 
 ## 3. Databricks (notebook-launched, via the driver proxy)
