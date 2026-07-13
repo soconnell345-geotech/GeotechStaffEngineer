@@ -72,3 +72,64 @@ class TestNormalizeGwt:
     def test_empty_list_passthrough(self):
         # empty list is not a polyline → passed through unchanged (not ndarray)
         assert _normalize_gwt([]) == []
+
+
+# ---------------------------------------------------------------------------
+# Eval CON-1 / MRS-1 (2026-07-13): schema completeness + depth guard
+# ---------------------------------------------------------------------------
+
+class TestMethodInfoDeclaresHandlerParams:
+    """Every param a handler accepts (its ``_valid`` tuple) must be declared in
+    METHOD_INFO so describe_method advertises it. Regression for CON-1: the
+    Biot modulus n_w was accepted by fem2d_consolidation but undocumented, so
+    the agent could not set it and defaulted to a wrong M."""
+
+    def test_no_handler_param_missing_from_method_info(self):
+        import ast
+        import re
+        from funhouse_agent.adapters import fem2d_adapter as fa
+        src = open(fa.__file__, encoding="utf-8").read()
+        offenders = {}
+        for m in fa.METHOD_REGISTRY:
+            declared = set((fa.METHOD_INFO.get(m, {}).get("parameters") or {}))
+            mo = re.search(
+                r"_valid = (\([^)]*\))\s*\n\s*reject_unknown_params\("
+                r"params, _valid, method=\"" + re.escape(m) + r"\"",
+                src, re.DOTALL)
+            if not mo:
+                continue
+            missing = set(ast.literal_eval(mo.group(1))) - declared
+            if missing:
+                offenders[m] = sorted(missing)
+        assert not offenders, f"handler params absent from METHOD_INFO: {offenders}"
+
+    def test_consolidation_declares_biot_modulus(self):
+        from funhouse_agent.adapters.fem2d_adapter import METHOD_INFO
+        assert "n_w" in METHOD_INFO["fem2d_consolidation"]["parameters"]
+
+
+class TestPositiveDepthGuard:
+    """A negative/zero domain depth silently produced non-converged garbage
+    (eval MRS-1: the agent passed depth=-20 to fem2d_slope_srm). It now raises a
+    clear error before any FEM runs."""
+
+    def test_require_positive_rejects_negative(self):
+        from funhouse_agent.adapters.fem2d_adapter import _require_positive
+        with pytest.raises(ValueError, match="positive distance"):
+            _require_positive(-20, name="depth", method="m")
+
+    def test_require_positive_allows_none_and_positive(self):
+        from funhouse_agent.adapters.fem2d_adapter import _require_positive
+        assert _require_positive(None, name="depth", method="m") is None
+        assert _require_positive(5.0, name="depth", method="m") is None
+
+    def test_slope_srm_negative_depth_hints_mesh_study(self):
+        from funhouse_agent.dispatch import call_agent
+        r = call_agent("fem2d", "fem2d_slope_srm", {
+            "surface_points": [[0, 0], [10, 0], [30, 10], [50, 10]],
+            "soil_layers": [{"name": "l", "bottom_elevation": -10, "E": 20000,
+                             "nu": 0.3, "c": 10, "phi": 15, "gamma": 18}],
+            "depth": -20, "nx": 16, "ny": 8})
+        assert "error" in r
+        assert "positive" in r["error"].lower()
+        assert "srm_mesh_refinement_study" in r["error"]
