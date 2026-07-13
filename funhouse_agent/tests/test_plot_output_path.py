@@ -90,6 +90,22 @@ class TestSaveHtmlOutput:
         assert "plotly_json_path" not in res
         assert not (tmp_path / "fig.plotly.json").exists()
 
+    def test_bare_name_lands_in_working_folder(self, tmp_path, monkeypatch):
+        # A1(a): a bare output_path defaults INTO the host working folder
+        # (GEOTECH_DEFAULT_OUTPUT_DIR) rather than the process CWD, and the
+        # sidecar follows it.
+        monkeypatch.delenv("DATABRICKS_RUNTIME_VERSION", raising=False)
+        monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+        res = save_html_output(
+            {"html": "<html>FIG</html>"}, {"output_path": "cross_section.html"},
+            figure_json='{"data": [], "layout": {}}')
+        assert res["file_exists"] is True
+        assert os.path.abspath(res["output_path"]) == \
+            str(tmp_path / "cross_section.html")
+        assert (tmp_path / "cross_section.html").is_file()
+        assert os.path.abspath(res["plotly_json_path"]) == \
+            str(tmp_path / "cross_section.plotly.json")
+
     def test_save_failure_surfaces_rescue(self, tmp_path, monkeypatch):
         import funhouse_agent._fileio as fio
 
@@ -178,6 +194,23 @@ def test_plot_output_path_emits_plotly_sidecar(site_key, tmp_path):
     import plotly.io as pio
     fig = pio.from_json(open(sidecar, encoding="utf-8").read())
     assert len(fig.data) >= 1
+
+
+def test_plot_bare_output_path_lands_in_working_folder(site_key, tmp_path,
+                                                       monkeypatch):
+    """A1(a) end-to-end: with the working-folder env set, a subsurface plot
+    given a BARE output_path writes its HTML + sidecar INTO that folder."""
+    monkeypatch.delenv("DATABRICKS_RUNTIME_VERSION", raising=False)
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+    res = call_agent("subsurface", "plot_parameter_vs_depth",
+                     {"site_key": site_key, "parameter": "N_spt",
+                      "output_path": "pvd.html"})
+    assert "error" not in res, res
+    assert os.path.abspath(res["output_path"]) == str(tmp_path / "pvd.html")
+    assert (tmp_path / "pvd.html").is_file()
+    assert os.path.abspath(res["plotly_json_path"]) == \
+        str(tmp_path / "pvd.plotly.json")
+    assert (tmp_path / "pvd.plotly.json").is_file()
 
 
 def test_plot_default_unchanged_no_html_no_output_path(site_key):
