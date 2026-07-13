@@ -253,6 +253,23 @@ with st.sidebar:
     if eng.source == "prompter":
         st.caption("Model is fixed by the deployment; the picker doesn't apply.")
 
+    # Working folder — where the agent's saves (calc packages, plots, files)
+    # land. Default = this conversation's files/ dir (durable; shown as download
+    # cards). Point it elsewhere (e.g. a project folder) and a durable copy is
+    # still kept with the conversation. Persisted per conversation; applied to
+    # the tool default-output-dir env each render so the next turn saves here.
+    _wd = core.working_dir_for(ss.thread_id)
+    _wd_in = st.text_input(
+        "Working folder (agent saves land here)", value=_wd,
+        key=f"workdir_{ss.thread_id}",
+        help="Calc packages, plots and saved files default into this folder. "
+             "Default is the conversation's files/ dir (kept with the chat, "
+             "shown as download cards). Clear the box to reset to that default.")
+    if (_wd_in or "").strip() != _wd:
+        core.set_working_dir(ss.thread_id, _wd_in)
+        st.rerun()
+    core.apply_default_output_dir(_wd)
+
     st.divider()
     st.subheader("Attachments")
     uploaded = st.file_uploader(
@@ -322,6 +339,10 @@ def _render_artifact_card(path: str) -> None:
     iframe, images inline). Big files are download-only."""
     card = core.describe_artifact(path)
     if not card.exists:
+        # Fail soft: the file is gone (e.g. produced in an external working
+        # folder and not copied in, or deleted after the fact) — show a small
+        # note instead of silently dropping the card or crashing on resume.
+        st.caption(f"📎 {card.name} — file no longer available")
         return
     icon = _KIND_ICON.get(card.kind, "📎")
     with st.container(border=True):
