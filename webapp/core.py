@@ -420,6 +420,57 @@ def stream_turn(agent, messages: list, thread_id: str,
 
 
 # ---------------------------------------------------------------------------
+# Model choices (the in-app picker)
+# ---------------------------------------------------------------------------
+#
+# Curated Claude models offered in the sidebar picker, as DATA (id/label/blurb)
+# so it is testable and trivial to extend. The first entry is the default unless
+# ``GEOTECH_WEBAPP_MODEL`` is set (then that id is prepended and becomes the
+# default). Keep the first id aligned with ``engine_config.DEFAULT_MODEL``.
+
+MODEL_CHOICES = [
+    {"id": "claude-opus-4-8", "label": "Opus 4.8",
+     "blurb": "deepest reasoning, default"},
+    {"id": "claude-sonnet-5", "label": "Sonnet 5",
+     "blurb": "fast + capable"},
+    {"id": "claude-haiku-4-5-20251001", "label": "Haiku 4.5",
+     "blurb": "quick questions"},
+]
+
+
+def model_choices(env_model: Optional[str] = None) -> List[dict]:
+    """The picker list ``[{id,label,blurb}, ...]``. If ``GEOTECH_WEBAPP_MODEL``
+    (or the ``env_model`` override) names a model not already curated, it is
+    PREPENDED (and so becomes the default). Returns fresh dicts (safe to mutate)."""
+    envm = (env_model if env_model is not None
+            else os.environ.get("GEOTECH_WEBAPP_MODEL"))
+    choices = [dict(c) for c in MODEL_CHOICES]
+    if envm and not any(c["id"] == envm for c in choices):
+        choices.insert(0, {"id": envm, "label": envm,
+                           "blurb": "from GEOTECH_WEBAPP_MODEL"})
+    return choices
+
+
+def default_model_id(env_model: Optional[str] = None) -> str:
+    """The default selected model id: ``GEOTECH_WEBAPP_MODEL`` if set (whether or
+    not it is already curated), else the first curated choice."""
+    envm = (env_model if env_model is not None
+            else os.environ.get("GEOTECH_WEBAPP_MODEL"))
+    return envm or MODEL_CHOICES[0]["id"]
+
+
+def model_label(model_id: Optional[str]) -> str:
+    """Short display label for a model id (falls back to the id; ``""`` for
+    ``None``/empty)."""
+    if not model_id:
+        return ""
+    for c in MODEL_CHOICES:
+        if c["id"] == model_id:
+            return c["label"]
+    return model_id
+
+
+# ---------------------------------------------------------------------------
 # Persistence — durable, resumable conversations
 # ---------------------------------------------------------------------------
 #
@@ -509,21 +560,24 @@ def ensure_conversation(thread_id: str, title: Optional[str] = None,
     if meta is None:
         now = _time.time()
         meta = {"thread_id": thread_id, "title": title or "New conversation",
-                "created": now, "updated": now, "turn_count": 0}
+                "created": now, "updated": now, "turn_count": 0, "model": None}
         save_meta(thread_id, meta, root)
     return meta
 
 
 def touch_conversation(thread_id: str, *, title: Optional[str] = None,
                        turn_count: Optional[int] = None,
+                       model: Optional[str] = None,
                        root: Optional[str] = None) -> dict:
-    """Update ``updated`` (and optionally ``title`` / ``turn_count``) on a
-    conversation's meta; creates it if missing."""
+    """Update ``updated`` (and optionally ``title`` / ``turn_count`` / ``model``)
+    on a conversation's meta; creates it if missing."""
     meta = ensure_conversation(thread_id, title=title, root=root)
     if title is not None:
         meta["title"] = title
     if turn_count is not None:
         meta["turn_count"] = turn_count
+    if model is not None:
+        meta["model"] = model
     meta["updated"] = _time.time()
     save_meta(thread_id, meta, root)
     return meta

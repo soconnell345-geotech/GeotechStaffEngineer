@@ -49,6 +49,18 @@ def _build_agent_for_session() -> None:
             ss.agent_error = f"{type(exc).__name__}: {exc}"
 
 
+def _resolve_and_build(model_id: str) -> None:
+    """Set the active model, (re)resolve the engine for it, and rebuild the agent
+    on the CURRENT conversation — keeping thread/messages/attachments/artifacts.
+    The persist+replay design makes a mid-conversation model switch safe: the next
+    turn replays the existing history into the newly-built model. (The deployment
+    Prompter engine is fixed and ignores the picked id — see engine_config.)"""
+    ss = st.session_state
+    ss.model = model_id
+    ss.engine = engine_config.resolve_engine(model_id=model_id)
+    _build_agent_for_session()
+
+
 def _new_conversation() -> None:
     """Start a fresh conversation: new thread id + persistent files dir + agent.
     The conversation's meta is not written until its first turn, so an unused
@@ -63,13 +75,14 @@ def _new_conversation() -> None:
     ss.pending_notes = []               # attachment notes for the next turn
     ss.total_tokens = 0
     ss.last_turn_tokens = 0
-    _build_agent_for_session()
+    _resolve_and_build(core.default_model_id())
 
 
 def _open_conversation(thread_id: str) -> None:
     """Resume a saved conversation: reload the display transcript, replay the
     agent-facing messages, re-register staged attachments, rebuild the download
-    list, and rebuild the agent on the SAME thread + persistent files dir."""
+    list, restore the conversation's model, and rebuild the agent on the SAME
+    thread + persistent files dir."""
     ss = st.session_state
     ss.thread_id = thread_id
     ss.temp_dir = core.conversation_files_dir(thread_id)
@@ -81,25 +94,27 @@ def _open_conversation(thread_id: str) -> None:
     ss.pending_notes = []
     ss.total_tokens = 0
     ss.last_turn_tokens = 0
-    _build_agent_for_session()
+    _meta = core.load_meta(thread_id) or {}
+    _resolve_and_build(_meta.get("model") or core.default_model_id())
 
 
 def _persist_turn(first_user_text: Optional[str]) -> None:
     """After a completed turn: rewrite the agent-facing messages, and update the
-    conversation meta (title from the first user message, running turn count)."""
+    conversation meta (title from the first user message, running turn count,
+    the active model)."""
     ss = st.session_state
     user_turns = sum(1 for e in ss.transcript if e.get("role") == "user")
     title = core.auto_title(first_user_text) if (user_turns == 1 and
                                                  first_user_text) else None
     core.save_messages(ss.thread_id, ss.messages)
-    core.touch_conversation(ss.thread_id, title=title, turn_count=user_turns)
+    core.touch_conversation(ss.thread_id, title=title, turn_count=user_turns,
+                            model=ss.model)
 
 
 def _init_session() -> None:
     ss = st.session_state
     if ss.get("initialized"):
         return
-    ss.engine = engine_config.resolve_engine()
     _new_conversation()
     ss.initialized = True
 
@@ -154,7 +169,9 @@ with st.sidebar:
         with _row[0]:
             if st.button(("● " if _current else "") + _title, key=f"open_{_tid}",
                          help=f"{_relative_time(_m.get('updated'))} · "
-                              f"{_m.get('turn_count', 0)} turns",
+                              f"{_m.get('turn_count', 0)} turns" +
+                              (f" · {core.model_label(_m['model'])}"
+                               if _m.get("model") else ""),
                          use_container_width=True):
                 if not _current:
                     _open_conversation(_tid)
@@ -189,6 +206,26 @@ with st.sidebar:
         st.error(eng.message)
     else:
         st.warning(eng.message)
+
+    # Model picker — applies to the CURRENT conversation going forward; the
+    # persist+replay design keeps history/uploads/artifacts across the switch.
+    _opts = core.model_choices()
+    _ids = [c["id"] for c in _opts]
+    _labels = {c["id"]: f"{c['label']} — {c['blurb']}" for c in _opts}
+    _cur = ss.model if ss.model in _ids else _ids[0]
+    _picked = st.selectbox(
+        "Model", _ids, index=_ids.index(_cur),
+        format_func=lambda i: _labels.get(i, i), key="model_pick",
+        help="Switch the model for this conversation going forward (cheaper/"
+             "faster models for quick questions). History, uploads and artifacts "
+             "are kept; the next turn replays the conversation into the new model.")
+    if _picked != ss.model:
+        _resolve_and_build(_picked)
+        if core.load_meta(ss.thread_id) is not None:
+            core.touch_conversation(ss.thread_id, model=_picked)
+        st.rerun()
+    if eng.source == "prompter":
+        st.caption("Model is fixed by the deployment; the picker doesn't apply.")
 
     st.divider()
     st.subheader("Attachments")
@@ -234,7 +271,8 @@ with st.sidebar:
 
     st.divider()
     st.caption(core.token_line(ss.last_turn_tokens, ss.total_tokens))
-    st.caption(f"thread `{ss.thread_id[:8]}` · {len(ss.messages)} msgs · "
+    st.caption(f"model: {core.model_label(ss.model)} · "
+               f"thread `{ss.thread_id[:8]}` · {len(ss.messages)} msgs · "
                f"auto-saved")
 
 

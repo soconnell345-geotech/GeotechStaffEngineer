@@ -41,11 +41,18 @@ add streamlit to the project venv and run:
 
 ### Choosing the model
 
-The local/dev path uses Claude via the Anthropic API. The model defaults to
-`claude-opus-4-8`; override with:
+Pick the model **in the sidebar** ("Model"): **Opus 4.8** (deepest reasoning,
+default), **Sonnet 5** (fast + capable), **Haiku 4.5** (quick questions) — trading
+speed/cost against depth. The choice applies to the **current conversation going
+forward** (your history, uploads and artifacts are kept; the next turn replays the
+conversation into the new model) and is remembered when you resume it.
+
+`GEOTECH_WEBAPP_MODEL` still sets the startup default (and, if it names a model not
+in the curated list, adds it to the picker). `GEOTECH_WEBAPP_MAX_TOKENS` caps the
+per-response output.
 
 ```bash
-export GEOTECH_WEBAPP_MODEL=claude-sonnet-5      # any Claude model id
+export GEOTECH_WEBAPP_MODEL=claude-sonnet-5      # startup default (any Claude id)
 export GEOTECH_WEBAPP_MAX_TOKENS=8192            # per-response output cap
 ```
 

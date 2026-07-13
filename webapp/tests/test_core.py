@@ -462,3 +462,58 @@ def test_persist_and_resume_conversation_roundtrip(tmp_path):
     assert meta["title"] == "analyze it" and meta["turn_count"] == 1
     assert tid in [c["thread_id"]
                    for c in core.list_conversations(root=root)]
+
+
+# ---------------------------------------------------------------------------
+# Model picker
+# ---------------------------------------------------------------------------
+
+def test_model_choices_data_and_labels(monkeypatch):
+    monkeypatch.delenv("GEOTECH_WEBAPP_MODEL", raising=False)
+    choices = core.model_choices()
+    ids = [c["id"] for c in choices]
+    assert ids[0] == "claude-opus-4-8"                    # curated default first
+    assert "claude-sonnet-5" in ids
+    assert "claude-haiku-4-5-20251001" in ids
+    assert all(c.get("label") and c.get("blurb") for c in choices)
+    assert core.default_model_id() == "claude-opus-4-8"
+    assert core.model_label("claude-sonnet-5") == "Sonnet 5"
+    assert core.model_label(None) == ""
+    assert core.model_label("unknown-x") == "unknown-x"   # unknown -> the id
+
+
+def test_model_choices_env_override(monkeypatch):
+    monkeypatch.delenv("GEOTECH_WEBAPP_MODEL", raising=False)
+    # a non-curated env model is prepended AND becomes the default
+    choices = core.model_choices(env_model="claude-custom-9")
+    assert choices[0]["id"] == "claude-custom-9"
+    assert core.default_model_id(env_model="claude-custom-9") == "claude-custom-9"
+    # a curated env model is the default without being duplicated
+    c2 = core.model_choices(env_model="claude-sonnet-5")
+    assert [c["id"] for c in c2].count("claude-sonnet-5") == 1
+    assert core.default_model_id(env_model="claude-sonnet-5") == "claude-sonnet-5"
+
+
+def test_conversation_meta_records_model(tmp_path):
+    root = str(tmp_path)
+    core.ensure_conversation("m", title="x", root=root)
+    assert core.load_meta("m", root=root)["model"] is None
+    core.touch_conversation("m", model="claude-sonnet-5", turn_count=1, root=root)
+    reloaded = core.load_meta("m", root=root)
+    assert reloaded["model"] == "claude-sonnet-5"          # survives round-trip
+    # switching model on resume overrides
+    core.touch_conversation("m", model="claude-haiku-4-5-20251001", root=root)
+    assert core.load_meta("m", root=root)["model"] == "claude-haiku-4-5-20251001"
+
+
+def test_resolve_engine_explicit_model_overrides_env(monkeypatch):
+    engine_config.register_model_builder(None)
+    monkeypatch.setenv(engine_config.KEY_ENV, "sk-test-not-a-real-key")
+    monkeypatch.setenv(engine_config.MODEL_ENV, "claude-sonnet-5")
+    # the picker's explicit id wins over GEOTECH_WEBAPP_MODEL (built or clean
+    # error, but the reported model name is the explicit one — never the env one)
+    res = engine_config.resolve_engine(model_id="claude-haiku-4-5-20251001")
+    assert res.model_name == "claude-haiku-4-5-20251001"
+    assert res.source in ("anthropic", "error")
+    # no explicit id -> falls back to GEOTECH_WEBAPP_MODEL
+    assert engine_config.resolve_engine().model_name == "claude-sonnet-5"

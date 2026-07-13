@@ -103,9 +103,16 @@ def _default_max_tokens() -> int:
     return DEFAULT_MAX_TOKENS
 
 
-def resolve_engine() -> EngineResolution:
-    """Resolve the chat engine from the environment. Never raises."""
-    # 1) Deployment-injected builder (Prompter hook).
+def resolve_engine(model_id: Optional[str] = None) -> EngineResolution:
+    """Resolve the chat engine from the environment. Never raises.
+
+    ``model_id`` (optional) is the in-app model-picker selection: it OVERRIDES
+    ``GEOTECH_WEBAPP_MODEL`` and the default for the ANTHROPIC_API_KEY path.
+    The deployment Prompter engine is fixed by the deployment and ignores it.
+    ``None`` (the default) is byte-identical to the pre-picker behaviour.
+    """
+    # 1) Deployment-injected builder (Prompter hook). Model is deployment-fixed;
+    #    the picker selection does not apply here.
     if _MODEL_BUILDER is not None:
         try:
             model = _MODEL_BUILDER()
@@ -120,7 +127,7 @@ def resolve_engine() -> EngineResolution:
 
     # 2) ANTHROPIC_API_KEY -> ChatAnthropic (local / dev path).
     if os.environ.get(KEY_ENV):
-        model_id = os.environ.get(MODEL_ENV) or DEFAULT_MODEL
+        model_id = model_id or os.environ.get(MODEL_ENV) or DEFAULT_MODEL
         try:
             from langchain_anthropic import ChatAnthropic
         except Exception as exc:

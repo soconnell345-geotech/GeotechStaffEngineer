@@ -22,6 +22,12 @@ analysis code of its own — it's UI and glue over the shipped modules.
   key and the file path automatically.
 - **Download artifacts** — when the agent produces a calc package (HTML), a DXF,
   or a plot, it appears as a download button in the sidebar.
+- **Model picker** — a sidebar **Model** selector: Opus 4.8 (deepest reasoning,
+  default), Sonnet 5 (fast + capable), Haiku 4.5 (quick questions). Switch to a
+  cheaper/faster model any time — the choice applies to the current conversation
+  going forward (history/uploads/artifacts are kept) and is remembered on resume.
+  Per-model speed and price are the point: use Haiku/Sonnet for quick lookups,
+  Opus for the hard reasoning.
 - **Token counts** — per-turn and running conversation totals (the same metering
   the notebook chat uses), so you can watch spend.
 - **Persistent conversations** — every chat is **saved automatically** and
