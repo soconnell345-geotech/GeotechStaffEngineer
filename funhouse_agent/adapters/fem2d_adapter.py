@@ -28,6 +28,19 @@ def _require_choice(value, allowed, *, name, method):
             f"{method}: {name} must be one of {list(allowed)}, got {value!r}.")
 
 
+def _require_positive(value, *, name, method, hint=""):
+    """Reject a non-positive value for an input that must be a positive physical
+    dimension (e.g. a domain depth). A negative or zero value silently builds a
+    degenerate FE mesh and returns non-converged garbage rather than erroring —
+    so guard it with a clear message. ``None`` (use the default) is allowed.
+    """
+    if value is not None and value <= 0:
+        raise ValueError(
+            f"{method}: '{name}' must be a positive distance in metres; got "
+            f"{value}. A negative or zero value makes the FE domain degenerate "
+            f"and the solve will not converge.{hint}")
+
+
 def _normalize_gwt(gwt):
     """Coerce a groundwater-table polyline [[x, y], ...] to an ndarray; pass a
     scalar elevation (or an already-array value) through unchanged.
@@ -45,6 +58,7 @@ def _run_analyze_gravity(params: dict) -> dict:
     reject_unknown_params(params, _valid, method="fem2d_gravity")
     require_params(params, ["width", "depth", "gamma", "E", "nu"],
                    method="fem2d_gravity", valid=_valid)
+    _require_positive(params.get("depth"), name="depth", method="fem2d_gravity")
     result = analyze_gravity(
         width=params["width"],
         depth=params["depth"],
@@ -64,6 +78,8 @@ def _run_analyze_foundation(params: dict) -> dict:
     reject_unknown_params(params, _valid, method="fem2d_foundation")
     require_params(params, ["B", "q", "depth", "E", "nu"],
                    method="fem2d_foundation", valid=_valid)
+    _require_positive(params.get("depth"), name="depth",
+                      method="fem2d_foundation")
     result = analyze_foundation(
         B=params["B"],
         q=params["q"],
@@ -140,6 +156,11 @@ def _run_analyze_slope_srm(params: dict) -> dict:
     if n_gp is not None:
         _require_choice(int(n_gp), (3, 6),
                         name="n_gp", method="fem2d_slope_srm")
+    _require_positive(
+        params.get("depth"), name="depth", method="fem2d_slope_srm",
+        hint=" Omit 'depth' for the 2*H default. To compare FOS across several "
+             "meshes (a mesh-refinement / mesh-consistency study), use the "
+             "srm_mesh_refinement_study method instead of driving this per mesh.")
 
     kwargs = dict(
         surface_points=surface_points,
@@ -192,6 +213,9 @@ def _run_analyze_local_fos(params: dict) -> dict:
     require_params(params, ["surface_points", "soil_layers"],
                    method="fem2d_local_fos", valid=_valid)
     _require_layer_elevations(params["soil_layers"], method="fem2d_local_fos")
+    _require_positive(
+        params.get("depth"), name="depth", method="fem2d_local_fos",
+        hint=" Omit 'depth' for the 2*H default.")
     element_type = params.get("element_type", "t6")
     _require_choice(element_type, ("t6", "cst"),
                     name="element_type", method="fem2d_local_fos")
@@ -234,6 +258,8 @@ def _run_analyze_excavation(params: dict) -> dict:
                             "wall_EI", "wall_EA"],
                    method="fem2d_excavation", valid=_valid)
     _require_layer_elevations(params["soil_layers"], method="fem2d_excavation")
+    _require_positive(params.get("depth"), name="depth",
+                      method="fem2d_excavation")
     kwargs = dict(
         width=params["width"],
         depth=params["depth"],
@@ -294,6 +320,8 @@ def _run_analyze_consolidation(params: dict) -> dict:
                             "time_points"],
                    method="fem2d_consolidation", valid=_valid)
     _require_layer_elevations(params["soil_layers"], method="fem2d_consolidation")
+    _require_positive(params.get("depth"), name="depth",
+                      method="fem2d_consolidation")
     scheme = params.get("consolidation_scheme", "staggered")
     _require_choice(scheme, ("staggered", "monolithic"),
                     name="consolidation_scheme", method="fem2d_consolidation")
@@ -568,11 +596,17 @@ METHOD_INFO = {
         "parameters": {
             "width": {"type": "float", "required": True, "description": "Domain width (m)."},
             "depth": {"type": "float", "required": True, "description": "Domain depth (m)."},
-            "soil_layers": {"type": "array", "required": True, "description": "Soil property dicts with 'E','nu','gamma'."},
-            "k": {"type": "float", "required": True, "description": "Hydraulic conductivity (m/s)."},
+            "soil_layers": {"type": "array", "required": True, "description": "Soil property dicts, each with 'E' (kPa), 'nu', 'gamma' (kN/m3) AND 'bottom_elevation' (m; 'top_elevation' optional, defaults to the domain top / the layer above)."},
+            "k": {"type": "float", "required": True, "description": "Hydraulic conductivity (m/s) for 'staggered'; for 'monolithic' pass the MOBILITY m^2/(kPa.s)."},
             "load_q": {"type": "float", "required": True, "description": "Surface load (kPa, positive downward)."},
             "time_points": {"type": "array", "required": True, "description": "Time points (seconds) for output."},
             "gwt": {"type": "float", "required": False, "default": 0.0, "description": "GWT elevation (m)."},
+            "n_w": {"type": "float", "required": False, "default": 2.2e6, "description": "For 'monolithic': the Biot modulus M (kPa) (~2.2e6 for near-incompressible water). Governs the undrained load response p0. Ignored by 'staggered'."},
+            "nx": {"type": "int", "required": False, "default": 10, "description": "Mesh divisions in x (horizontal)."},
+            "ny": {"type": "int", "required": False, "default": 20, "description": "Mesh divisions in y (vertical)."},
+            "t": {"type": "float", "required": False, "default": 1.0, "description": "Out-of-plane thickness (m) for plane-strain assembly."},
+            "gamma_w": {"type": "float", "required": False, "default": 9.81, "description": "Unit weight of water (kN/m3)."},
+            "layer_polylines": {"type": "array", "required": False, "description": "Optional explicit layer-boundary polylines [[[x,z],...],...] for non-horizontal layering."},
             "consolidation_scheme": {"type": "string", "required": False, "default": "staggered",
                                      "allowed_values": ["staggered", "monolithic"],
                                      "description": "Biot solver: 'staggered' (default, sequential split) or 'monolithic' (coupled u-p, Taylor-Hood T6/T3, reproduces the load-induced undrained response p0 and the Terzaghi transient). For 'monolithic', pass k as the MOBILITY m^2/(kPa.s) and n_w as the Biot modulus M (kPa)."},
@@ -604,3 +638,68 @@ METHOD_INFO = {
         },
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# METHOD_INFO parameter backfill (eval CON-1 class)
+# ---------------------------------------------------------------------------
+# Several handlers accept optional controls (Biot modulus n_w, mesh nx/ny,
+# thickness t, unit weight of water gamma_w, Newton max_iter/tol, SRM knobs)
+# that were historically absent from their METHOD_INFO ``parameters`` schema, so
+# describe_method did not advertise them and the agent could not discover how to
+# set them (the CON-1 miss: no discoverable n_w → wrong Biot modulus). This
+# backfill declares the missing-but-accepted params so they are discoverable.
+# Docs-only: handler behavior (which already accepts these) is unchanged; a
+# ``setdefault`` never overrides a hand-written declaration.
+_FEM_PARAM_DECLS = {
+    "t": {"type": "float", "required": False, "default": 1.0,
+          "description": "Out-of-plane thickness (m) for plane-strain assembly."},
+    "gamma_w": {"type": "float", "required": False, "default": 9.81,
+                "description": "Unit weight of water (kN/m3)."},
+    "nx": {"type": "int", "required": False,
+           "description": "Mesh divisions in x (horizontal)."},
+    "ny": {"type": "int", "required": False,
+           "description": "Mesh divisions in y (vertical)."},
+    "max_iter": {"type": "int", "required": False,
+                 "description": "Max Newton-Raphson iterations per load step "
+                 "(raise for a hard-to-converge model)."},
+    "tol": {"type": "float", "required": False,
+            "description": "Convergence tolerance (residual norm)."},
+    "n_load_steps": {"type": "int", "required": False,
+                     "description": "Number of load increments applied before "
+                     "the analysis / SRF sweep."},
+    "domain_depth": {"type": "float", "required": False,
+                     "description": "FE domain depth below the footing (m). "
+                     "Positive; default auto-sized."},
+    "domain_half_width": {"type": "float", "required": False,
+                          "description": "FE domain half-width (m). Positive; "
+                          "default auto-sized."},
+    "gwt": {"type": "float|array", "required": False,
+            "description": "Groundwater table: scalar elevation (m) or "
+            "[[x,z],...] polyline."},
+    "srf_range": {"type": "array", "required": False,
+                  "description": "[min, max] strength-reduction-factor search "
+                  "bracket (default (0.5, 3.0))."},
+    "blowup_factor": {"type": "float", "required": False, "default": 15.0,
+                      "description": "Displacement blow-up factor that flags "
+                      "SRM non-convergence."},
+    "n_gp": {"type": "int", "required": False, "allowed_values": [3, 6],
+             "description": "Gauss points per T6 element (3 or 6)."},
+    "layer_polylines": {"type": "array", "required": False,
+                        "description": "Explicit layer-boundary polylines for "
+                        "non-horizontal layering."},
+}
+_FEM_PARAM_BACKFILL = {
+    "fem2d_foundation": ["t"],
+    "fem2d_footing_capacity": ["domain_depth", "domain_half_width", "max_iter", "tol"],
+    "fem2d_slope_srm": ["gamma_w", "n_load_steps", "t", "tol"],
+    "fem2d_local_fos": ["blowup_factor", "gamma_w", "gwt", "layer_polylines",
+                        "max_iter", "n_gp", "n_load_steps", "srf_range", "t", "tol"],
+    "fem2d_excavation": ["gamma_w", "max_iter", "nx", "ny", "t", "tol"],
+    "fem2d_seepage": ["t"],
+    "fem2d_staged": ["gamma_w", "max_iter", "t", "tol"],
+}
+for _m, _names in _FEM_PARAM_BACKFILL.items():
+    _pp = METHOD_INFO[_m]["parameters"]
+    for _n in _names:
+        _pp.setdefault(_n, dict(_FEM_PARAM_DECLS[_n]))
