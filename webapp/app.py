@@ -462,6 +462,16 @@ if prompt:
             _os.path.join(ss.temp_dir, k) for k in ss.attachments
         }
 
+        # A6/A4: the working folder may point OUTSIDE the conversation files/ dir
+        # (the agent's calc packages / plots default there via the output-dir
+        # env). Snapshot it so those saves can be bridged back into files/ below
+        # for durable, portable cards. None => same dir (the default), where the
+        # files/ diff already covers everything and no bridging is needed.
+        working_dir = core.working_dir_for(ss.thread_id)
+        before_wd = (core.snapshot_dir(working_dir)
+                     if os.path.abspath(working_dir) != os.path.abspath(ss.temp_dir)
+                     else None)
+
         core.begin_partial(ss.thread_id, prompt)   # A3: mark in-progress turn
         turn_error = None
         with st.chat_message("assistant"):
@@ -505,6 +515,11 @@ if prompt:
         # else written to the session dir (calc packages, DXFs, plots).
         save_new = ss.artifacts[artifacts_before_len:]
         dir_new = core.new_artifacts(ss.temp_dir, before, staged_inputs)
+        if before_wd is not None:               # A6/A4: bridge saves made in an
+            for p in core.import_external_artifacts(  # external working folder
+                    working_dir, ss.temp_dir, before_wd, staged_inputs):
+                if p not in dir_new:            # into files/ (durable + portable)
+                    dir_new.append(p)
         for p in dir_new:                       # add dir-only files to the list
             if p not in ss.artifacts:
                 ss.artifacts.append(p)

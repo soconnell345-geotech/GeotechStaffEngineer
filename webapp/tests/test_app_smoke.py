@@ -90,3 +90,42 @@ def test_stream_exception_keeps_conversation(monkeypatch, tmp_path):
     reloaded = core.load_transcript(tid)
     assert [e["role"] for e in reloaded] == ["user", "assistant"]
     assert reloaded[1].get("error")
+
+
+def _stream_saves_external(_agent, _messages, _thread_id):
+    # Simulate a plot / calc-package adapter saving into the host working folder
+    # — the dir the app advertises via GEOTECH_DEFAULT_OUTPUT_DIR (which is what
+    # funhouse_agent._fileio.default_output_dir() returns for a bare output_path).
+    d = os.environ.get("GEOTECH_DEFAULT_OUTPUT_DIR") or ""
+    if d:
+        with open(os.path.join(d, "plot.html"), "w", encoding="utf-8") as fh:
+            fh.write("<html>fig</html>")
+    yield {"kind": "token", "text": "saved a plot"}
+    yield {"kind": "turn_done", "answer": "saved a plot", "turn_tokens": 3}
+
+
+def test_external_working_folder_artifact_bridged_into_files(monkeypatch, tmp_path):
+    """A6/A4 wiring: a save into an EXTERNAL working folder is copied INTO the
+    conversation files/ dir, so it persists and renders as a durable card
+    (portable relative ref) instead of being lost or left as a non-portable
+    absolute path. Regression guard for the turn-loop bridge call."""
+    external = tmp_path / "project_out"
+    external.mkdir()
+    at = _mk_at(monkeypatch, tmp_path, _stream_saves_external).run()
+    tid = at.session_state["thread_id"]
+    # Point the agent's saves OUT via the real sidebar control (driving the
+    # widget so the app persists it, rather than editing meta out of band).
+    wd_widget = next(w for w in at.text_input if w.key == f"workdir_{tid}")
+    wd_widget.set_value(str(external)).run()
+    at.chat_input[0].set_value("make a plot").run()
+    assert not at.exception
+
+    files_dir = core.conversation_files_dir(tid)
+    # the external save was bridged into files/ (durable with the conversation)
+    assert os.path.isfile(os.path.join(files_dir, "plot.html"))
+    # the assistant turn records it as an artifact resolving under files/
+    arts = (at.session_state["transcript"][-1].get("artifacts") or [])
+    assert any(os.path.basename(a) == "plot.html" for a in arts)
+    ref = core.load_transcript(tid)[-1]["artifacts"][0]
+    assert os.path.abspath(ref).startswith(os.path.abspath(files_dir))
+    assert core.describe_artifact(ref).exists is True
