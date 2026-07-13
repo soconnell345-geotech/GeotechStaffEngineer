@@ -103,13 +103,15 @@ in-tree `InMemorySaver` covers within-session thread state.
 
 ## 3. Databricks (notebook-launched, via the driver proxy)
 
-You can run the app on a Databricks cluster and reach it through the **driver
-proxy URL**. Run streamlit on the driver node bound to a port, then open the
-proxy URL for that port.
+Run the app on a Databricks cluster and reach it through the **driver proxy
+URL** — and drive it with the **Funhouse Prompter** engine, no Anthropic key.
+This is the TinyApp dress rehearsal: same Prompter data connection, same app.
 
-> ⚠️ **Needs live verification.** The exact proxy path and the streamlit server
-> flags vary by workspace/runtime; treat the recipe below as a starting point
-> and confirm on your cluster.
+> ⚠️ **Needs live verification.** The exact proxy path and server flags vary by
+> workspace/runtime; the launcher encodes the recipe below, but confirm on your
+> cluster.
+
+### Preferred: the one-cell launcher
 
 ```python
 # In a Databricks notebook cell:
@@ -118,28 +120,65 @@ dbutils.library.restartPython()
 ```
 
 ```python
-import os
-os.environ["ANTHROPIC_API_KEY"] = dbutils.secrets.get("scope", "anthropic_key")
+from webapp.databricks_launcher import run_on_databricks
 
+handle = run_on_databricks(port=8501, model="funhouse-gpt-high")
+print(handle.url)          # open this in your browser (prints automatically too)
+# ... when you're done:
+# handle.stop()
+```
+
+That's the whole thing. `run_on_databricks` reads the driver-proxy identifiers
+from spark, writes a small **bootstrap script**, and launches streamlit as a
+background process on the driver. The bootstrap runs *in the streamlit process*
+and, before the app resolves its engine:
+
+1. **reconstructs a `PrompterAPI` on the driver** and registers a
+   `PrompterChatModel` on it as the app's engine, then
+2. starts streamlit under the proxy base path.
+
+**Why reconstruct instead of passing `fh_prompter`?** The streamlit process is a
+separate process — it never sees the notebook's `register_model_builder(...)`
+call, and the notebook's live `fh_prompter` object can't cross the process
+boundary. But `PrompterAPI` **self-configures** from the driver's Funhouse config
+/ environment (the SDK's own code constructs `PrompterAPI()` with no arguments),
+so the bootstrap rebuilds an equivalent client on the driver. If that fails (no
+Funhouse config present), it **falls back automatically to `ANTHROPIC_API_KEY`**.
+
+**Using the Anthropic key instead of (or as a fallback to) Prompter:**
+
+```python
+handle = run_on_databricks(
+    port=8501,
+    anthropic_key=dbutils.secrets.get("scope", "anthropic_key"),
+)
+```
+
+The key is threaded into the streamlit subprocess env; if the Prompter can't be
+built on the driver, the app uses the key. Other options: `spark=spark` (if not
+auto-detected), `org_id=`/`cluster_id=` (override the proxy ids),
+`workspace_host=` (if the host can't be read from spark, so the URL prints).
+
+### Fallback: manual subprocess (loses the Prompter registration)
+
+If you can't use the launcher, run streamlit directly — but note this plain
+subprocess **does not** register the Prompter (a fresh process can't reach the
+notebook's `fh_prompter`), so you must supply `ANTHROPIC_API_KEY`:
+
+```python
+import os, subprocess, sys
+os.environ["ANTHROPIC_API_KEY"] = dbutils.secrets.get("scope", "anthropic_key")
 org_id = spark.conf.get("spark.databricks.clusterUsageTags.clusterOwnerOrgId")
 cluster_id = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
 port = 8501
 base = f"/driver-proxy/o/{org_id}/{cluster_id}/{port}"
-
-# Run streamlit on the driver, under the proxy base path (background):
-import subprocess, sys
 subprocess.Popen([
     sys.executable, "-m", "streamlit", "run", "webapp/app.py",
-    "--server.port", str(port),
-    "--server.address", "0.0.0.0",
-    "--server.baseUrlPath", base,
-    "--server.enableCORS", "false",
-    "--server.enableXsrfProtection", "false",
-    "--server.headless", "true",
+    "--server.port", str(port), "--server.address", "0.0.0.0",
+    "--server.baseUrlPath", base, "--server.enableCORS", "false",
+    "--server.enableXsrfProtection", "false", "--server.headless", "true",
 ])
-
-workspace_host = "https://<your-workspace>.cloud.databricks.com"   # your host
-print(f"Open: {workspace_host}{base}/")
+print(f"Open: https://<your-workspace-host>{base}/")
 ```
 
 If the page doesn't load, check: the port isn't already in use; the
@@ -193,6 +232,7 @@ click.
 | `app.py` | Streamlit shell — a thin view over `core.py` (no logic). |
 | `core.py` | All logic: attachment staging, artifact capture, streaming, disclaimer, and conversation **persistence** (per-conversation dir under `GEOTECH_WEBAPP_DATA`: transcript / messages / attachments / artifacts / meta; list / resume / rename / delete-to-trash). Import-testable without streamlit. |
 | `engine_config.py` | Env-driven engine resolution (Anthropic key / Prompter hook / no-engine). |
+| `databricks_launcher.py` | One-cell Databricks launcher (`run_on_databricks`): reconstructs the Prompter engine on the driver and runs streamlit under the driver proxy (§3). |
 | `requirements.txt` | TinyApp dependency pin. |
 | `tests/` | Offline tests for `core.py` + `engine_config.py` (no streamlit, no live model). |
 
