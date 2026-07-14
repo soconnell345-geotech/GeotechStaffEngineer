@@ -24,6 +24,7 @@ from funhouse_agent.dispatch import ANALYSIS_MODULES, REFERENCE_MODULES
 from funhouse_agent.deep.agent import (
     build_deep_agent,
     build_references_subagent,
+    build_calc_subagent,
     build_reviewer_subagent,
 )
 from funhouse_agent.deep.tools import make_core_tools, make_vision_tools
@@ -360,6 +361,55 @@ def test_reference_mode_off_omits_named_subagents():
     assert listed == {"general-purpose"}
     # Core domain tools still present.
     assert "call_agent" in _compiled_tool_names(agent)
+
+
+# ---------------------------------------------------------------------------
+# A2 — calc sub-agent (context isolation)
+# ---------------------------------------------------------------------------
+
+def test_calc_subagent_configured():
+    """The calc sub-agent is analysis-scoped, can save, and is told not to lose
+    data (compact answer + full payload to a file)."""
+    from funhouse_agent.reviewer import CONSULTANT_FRAMING
+    spec = build_calc_subagent()
+    assert spec["name"] == "calc"
+    assert spec["system_prompt"].startswith(CONSULTANT_FRAMING)
+    assert "NO DATA LOSS" in spec["system_prompt"]
+    assert spec.get("middleware")                       # model-call budget attached
+
+    names = {t.name for t in spec["tools"]}
+    assert "call_agent" in names
+    assert "save_file" in names                         # can persist the full payload
+
+    # Scoped to ANALYSIS modules: call_agent accepts an analysis module and
+    # refuses a reference module (mirror of the references-scope assertion).
+    call = _tool_by_name(spec["tools"], "call_agent")
+    analysis_raw = call.invoke({"agent_name": "bearing_capacity",
+                                "method": "__nope__", "parameters": {}})
+    assert "Unknown module" not in analysis_raw         # analysis module allowed
+    ref_attempt = json.loads(
+        call.invoke({"agent_name": "dm7", "method": "x", "parameters": {}}))
+    assert "Unknown module" in ref_attempt["error"]     # reference module refused
+
+
+def test_calc_subagent_off_by_default():
+    """Default build is unchanged (additive / default-preserving) — no calc
+    sub-agent, so the library + eval suite are not affected."""
+    agent = build_deep_agent(model=_fake_model())
+    assert "calc" not in _listed_subagents(agent)
+
+
+def test_calc_subagent_on_when_enabled():
+    """enable_calc_subagent=True wires the delegable calc sub-agent."""
+    agent = build_deep_agent(model=_fake_model(), enable_calc_subagent=True)
+    assert "calc" in _listed_subagents(agent)
+
+
+def test_calc_subagent_budget_default():
+    from funhouse_agent.deep.agent import DEFAULT_CALC_MAX_MODEL_CALLS
+    assert DEFAULT_CALC_MAX_MODEL_CALLS >= 1
+    # None/0 disables the middleware.
+    assert "middleware" not in build_calc_subagent(max_model_calls=0)
 
 
 if __name__ == "__main__":

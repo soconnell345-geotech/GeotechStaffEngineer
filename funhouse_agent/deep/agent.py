@@ -304,6 +304,103 @@ def build_references_subagent(
     return spec
 
 
+# ---------------------------------------------------------------------------
+# A2: calc sub-agent — context isolation for tool-heavy calculation work
+# ---------------------------------------------------------------------------
+# Measured (module_work/A2_CONTEXT_DESIGN.md): the ~10k/turn of calc-package /
+# method-dump / reference output is what makes a persist+replay chat grow ~84%
+# more expensive over 10 turns. Delegating the tool-heavy calc to a sub-agent
+# keeps that bulky trace in the sub-agent's own context; only a compact result
+# (values + units + method + saved-file path) returns to the main thread — which
+# is what replays forward. NO DATA LOSS: the sub-agent saves the full payload to
+# a file, so the detail stays retrievable on demand.
+
+#: The calc sub-agent's model-call budget (a calc chain — multiple methods +
+#: a package — runs longer than a reference lookup, so a bit above the 8 that
+#: bounds the references consultant). ``None``/``0`` disables the budget.
+DEFAULT_CALC_MAX_MODEL_CALLS = 16
+
+_CALC_DESCRIPTION = (
+    "The calculation engine. Delegate TOOL-HEAVY calculation work to it: running "
+    "an analysis method (bearing capacity, settlement, slope stability, FEM, "
+    "liquefaction, downdrag, …), a parameter sweep, or building a calc package. "
+    "It runs the method(s), returns the KEY numeric results (governing value(s) + "
+    "units + the method used + any FoS/utilization) and the saved calc-package / "
+    "plot path, and keeps the bulky intermediate tool output in its OWN context "
+    "instead of yours — so a long chat does not carry every calc dump forward."
+)
+
+_CALC_FRAMING = (
+    "\n\nYou are the calculation engine for a geotechnical agent. Run the "
+    "requested analysis method(s) with the given inputs, then reply with a "
+    "COMPACT result the delegating agent can carry forward WITHOUT re-running the "
+    "calc: the governing value(s) with units, the method/standard used, the key "
+    "inputs, and any factor of safety / utilization. Do NOT paste the full method "
+    "dump or calc-package text into your reply.\n"
+    "NO DATA LOSS: whenever you produce a large result (a calc package, a full "
+    "method dump, a big table, a plot), SAVE it to a file — pass an output_path to "
+    "the tool, or use save_file — and include the saved path in your reply, so the "
+    "full detail can be re-read on demand. Never discard a result you were asked "
+    "to compute: summarize it and point to the saved file."
+)
+
+#: Appended to the PRIMARY agent's system prompt when the calc sub-agent is on,
+#: nudging it to delegate tool-heavy calc rather than run those tools inline.
+_CALC_DELEGATION_NUDGE = (
+    "CONTEXT DISCIPLINE: a `calc` sub-agent is available. For any tool-heavy "
+    "calculation — running an analysis method, a parameter sweep, or building a "
+    "calc package — DELEGATE it to `calc` instead of running those tools yourself, "
+    "so the bulky intermediate output stays out of this conversation. `calc` "
+    "returns the key values + units + method and the saved file path; carry those "
+    "forward and do the reasoning and final synthesis here. (A prior calc's values "
+    "stay in this conversation, so re-use them rather than recomputing.)"
+)
+
+
+def build_calc_subagent(
+    engine=None,
+    attachments=None,
+    save_fn: Optional[Callable] = None,
+    allowed_agents=None,
+    max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
+    reference_result_chars: Optional[int] = None,
+    max_model_calls: Optional[int] = DEFAULT_CALC_MAX_MODEL_CALLS,
+) -> dict:
+    """Build the ``calc`` sub-agent spec (A2 context isolation).
+
+    Scoped to the analysis modules (``allowed_agents``, default
+    :data:`ANALYSIS_MODULES`) plus ``save_file`` so it can persist the full
+    payload. Mirrors :func:`build_references_subagent`: a concise, no-data-loss
+    framing plus a :class:`~funhouse_agent.deep.limits.ModelCallBudgetMiddleware`
+    budget. The sub-agent runs the tool-heavy calc in its OWN context and returns
+    only a compact result (values + units + method + saved-file path) to the
+    delegating agent.
+    """
+    allowed = frozenset(ANALYSIS_MODULES if allowed_agents is None
+                        else allowed_agents)
+    tools = make_core_tools(
+        allowed_agents=allowed,
+        max_result_chars=max_result_chars,
+        reference_result_chars=reference_result_chars,
+    ) + make_vision_tools(
+        engine=engine,
+        attachments=attachments,
+        save_fn=save_fn,
+        include={"save_file"},
+        max_result_chars=max_result_chars,
+        reference_result_chars=reference_result_chars,
+    )
+    spec = {
+        "name": "calc",
+        "description": _CALC_DESCRIPTION,
+        "system_prompt": CONSULTANT_FRAMING + _CALC_FRAMING,
+        "tools": tools,
+    }
+    if max_model_calls:
+        spec["middleware"] = [ModelCallBudgetMiddleware(max_model_calls)]
+    return spec
+
+
 def build_reviewer_subagent(
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
     reference_result_chars: Optional[int] = None,
@@ -386,6 +483,8 @@ def build_deep_agent(
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
     reference_result_chars: Optional[int] = None,
     references_max_model_calls: Optional[int] = DEFAULT_REFERENCES_MAX_MODEL_CALLS,
+    enable_calc_subagent: bool = False,
+    calc_max_model_calls: Optional[int] = DEFAULT_CALC_MAX_MODEL_CALLS,
     enable_setup_agent: bool = False,
     setup_store=None,
     setup_render_dir: Optional[str] = None,
@@ -467,6 +566,19 @@ def build_deep_agent(
         69% of all tokens via unbounded internal rounds). The last budgeted
         call is forced to summarize-and-answer from what was gathered, so a
         final answer is ALWAYS returned (never an error). Defaults to ``8``;
+        ``None``/``0`` disables the budget.
+    enable_calc_subagent : bool
+        Attach the ``calc`` sub-agent (A2 context isolation) and nudge the primary
+        to delegate tool-heavy calculation to it, so the bulky calc-package /
+        method-dump trace stays in the sub-agent's context instead of the main
+        conversation (which is what a persist+replay chat re-sends each turn).
+        The sub-agent returns a compact result (values + units + method + saved
+        file path) and saves the full payload to a file (no data loss). OFF by
+        default (additive / default-preserving — the library and the eval suite
+        are unchanged); the web app turns it ON per conversation.
+    calc_max_model_calls : int, optional
+        Per-delegation model-call budget for the ``calc`` sub-agent (as
+        ``references_max_model_calls`` is for references). Defaults to ``16``;
         ``None``/``0`` disables the budget.
     enable_setup_agent : bool
         Attach the ``model_setup`` sub-agent (staged LE/FEM model building
@@ -579,6 +691,10 @@ def build_deep_agent(
         # checklist (funhouse_agent.reviewers.make_seismic_reviewer_deep). Default
         # None leaves the prompt unchanged.
         system_prompt = system_prompt + "\n\n" + extra_system_prompt
+    if enable_calc_subagent:
+        # A2: nudge the primary to delegate tool-heavy calc to the `calc`
+        # sub-agent so the bulky trace stays out of the main conversation.
+        system_prompt = system_prompt + "\n\n" + _CALC_DELEGATION_NUDGE
 
     subagents = []
     if reference_mode != "off":
@@ -596,6 +712,18 @@ def build_deep_agent(
             build_reviewer_subagent(
                 max_result_chars=max_result_chars,
                 reference_result_chars=reference_result_chars,
+            )
+        )
+    if enable_calc_subagent:                                   # A2 context isolation
+        subagents.append(
+            build_calc_subagent(
+                engine=engine,
+                attachments=attachments,
+                save_fn=save_fn,
+                allowed_agents=allowed_agents,
+                max_result_chars=max_result_chars,
+                reference_result_chars=reference_result_chars,
+                max_model_calls=calc_max_model_calls,
             )
         )
     if enable_setup_agent:
@@ -733,6 +861,7 @@ __all__ = [
     "build_deep_agent",
     "build_primary_tools",
     "build_references_subagent",
+    "build_calc_subagent",
     "build_reviewer_subagent",
     "build_setup_subagent",
     "build_memory_backend",

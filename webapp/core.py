@@ -650,9 +650,13 @@ def import_external_artifacts(working_dir: str, files_dir: str, before: set,
 #                     module_work/APP_PLAN.md A5 notes).
 #   agent_type     -- "full" (general agent) | a narrow domain reviewer
 #                     (seismic / foundations / earth_retention / slope_fem)
-# Defaults reproduce today's behavior EXACTLY (references anytime, ref budget 8,
-# LangGraph's default recursion_limit 25, analysis_depth "standard" == no preset,
-# agent_type "full").
+#   route_calc     -- bool: delegate tool-heavy calc to a `calc` sub-agent so the
+#                     bulky calc trace stays out of the conversation (A2). ON by
+#                     default in the app (the owner-approved A2 default-on; the
+#                     build_deep_agent library default stays OFF).
+# Defaults reproduce today's behavior EXACTLY EXCEPT route_calc (the one owner-
+# approved A2 default-on): references anytime, ref budget 8, LangGraph's default
+# recursion_limit 25, analysis_depth "standard" == no preset, agent_type "full".
 
 ANALYSIS_DEPTHS = ("screening", "standard", "comprehensive")
 REFERENCE_CHOICES = ("anytime", "off")
@@ -675,6 +679,7 @@ DEFAULT_BEHAVIOR = {
     "recursion_limit": 25,
     "analysis_depth": "standard",
     "agent_type": "full",
+    "route_calc": True,
 }
 
 
@@ -747,6 +752,8 @@ def behavior_build_kwargs(behavior: Optional[dict]) -> dict:
     preset = depth_prompt(b["analysis_depth"])
     if preset:
         kw["extra_system_prompt"] = preset
+    if b.get("route_calc", True):          # A2: delegate heavy calc to `calc`
+        kw["enable_calc_subagent"] = True
     return kw
 
 

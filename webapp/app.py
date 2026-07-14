@@ -340,6 +340,15 @@ with st.sidebar:
                  "second-approach cross-check + a short sensitivity on governing "
                  "inputs + governing conditions & confidence + an offer to build a "
                  "calc package.")
+        _route_calc = st.checkbox(
+            "Route calculations through a calc agent (recommended)",
+            value=bool(_b.get("route_calc", True)),
+            key=f"routecalc_{ss.thread_id}",
+            help="Runs tool-heavy calculations in a scoped sub-agent so the bulky "
+                 "calc output stays out of this conversation — cheaper long chats "
+                 "(A2). The key results (values + units + method) and the saved "
+                 "calc-package path come back; the full detail is saved to a file "
+                 "so nothing is lost.")
         with st.expander("Advanced caps", expanded=False):
             _refcalls = st.number_input(
                 "Reference consult budget (model calls)", min_value=1,
@@ -355,7 +364,7 @@ with st.sidebar:
                      "(LangGraph recursion limit).")
         _new_b = {**_b, "references": "anytime" if _refs_on else "off",
                   "analysis_depth": _depth, "ref_max_calls": int(_refcalls),
-                  "recursion_limit": int(_rlim)}
+                  "recursion_limit": int(_rlim), "route_calc": bool(_route_calc)}
         if _new_b != _b:
             ss.behavior = _new_b
             if core.load_meta(ss.thread_id) is not None:

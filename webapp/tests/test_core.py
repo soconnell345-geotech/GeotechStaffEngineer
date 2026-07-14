@@ -632,7 +632,7 @@ def test_checkpoint_partial_never_raises(tmp_path):
 def test_default_behavior_matches_current_defaults():
     assert core.default_behavior() == {
         "references": "anytime", "ref_max_calls": 8, "recursion_limit": 25,
-        "analysis_depth": "standard", "agent_type": "full"}
+        "analysis_depth": "standard", "agent_type": "full", "route_calc": True}
     b = core.default_behavior()          # fresh copy each call, not shared
     b["analysis_depth"] = "comprehensive"
     assert core.default_behavior()["analysis_depth"] == "standard"
@@ -656,7 +656,8 @@ def test_set_behavior_round_trips(tmp_path):
                             "ref_max_calls": 12, "recursion_limit": 40}, root=root)
     assert core.behavior_from_meta(core.load_meta(tid, root=root)) == {
         "references": "off", "analysis_depth": "comprehensive",
-        "ref_max_calls": 12, "recursion_limit": 40, "agent_type": "full"}
+        "ref_max_calls": 12, "recursion_limit": 40, "agent_type": "full",
+        "route_calc": True}
 
 
 def test_depth_prompt_levels():
@@ -669,7 +670,14 @@ def test_behavior_build_kwargs_defaults_preserve():
     kw = core.behavior_build_kwargs(None)
     assert kw["reference_mode"] == "anytime"
     assert kw["references_max_model_calls"] == 8
-    assert "extra_system_prompt" not in kw          # medium => no preset
+    assert "extra_system_prompt" not in kw          # standard => no preset
+    assert kw["enable_calc_subagent"] is True       # A2 default-on in the app
+
+
+def test_behavior_build_kwargs_route_calc_off():
+    kw = core.behavior_build_kwargs({**core.default_behavior(),
+                                     "route_calc": False})
+    assert "enable_calc_subagent" not in kw         # off => library default (off)
 
 
 def test_behavior_build_kwargs_off_and_comprehensive():
