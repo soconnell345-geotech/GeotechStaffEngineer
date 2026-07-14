@@ -31,6 +31,20 @@ from webapp import core, engine_config
 st.set_page_config(page_title="GeotechStaffEngineer", page_icon="⛰️",
                    layout="wide")
 
+# MIME by extension for download buttons — without an explicit mime the
+# browser guesses from application/octet-stream and can save e.g. a .md as
+# ".bin" (owner-reported, wall session 2026-07-14).
+_MIME_BY_EXT = {".pdf": "application/pdf", ".html": "text/html",
+                ".md": "text/markdown", ".txt": "text/plain",
+                ".csv": "text/csv", ".json": "application/json",
+                ".png": "image/png", ".svg": "image/svg+xml",
+                ".dxf": "application/dxf"}
+
+
+def _mime_for(name: str) -> str:
+    return _MIME_BY_EXT.get(os.path.splitext(name)[1].lower(),
+                            "application/octet-stream")
+
 
 # ---------------------------------------------------------------------------
 # Session bootstrap
@@ -416,6 +430,7 @@ with st.sidebar:
                     data = fh.read()
                 st.download_button(_os.path.basename(path), data=data,
                                    file_name=_os.path.basename(path),
+                                   mime=_mime_for(path),
                                    key=f"dl_{path}")
             except OSError:
                 pass
@@ -460,6 +475,7 @@ def _render_artifact_card(path: str) -> None:
             st.caption("(file unavailable)")
             return
         st.download_button("Download", data=data, file_name=card.name,
+                           mime=_mime_for(card.name),
                            key=f"dlcard_{path}")
         if card.kind == "plotly":
             # Native interactive chart from a *.plotly.json sidecar. plotly is
