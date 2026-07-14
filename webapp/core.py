@@ -342,6 +342,35 @@ def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
     )
 
 
+#: agent_type value -> deep reviewer builder name in funhouse_agent.reviewers.
+_REVIEWER_BUILDERS = {
+    "seismic": "make_seismic_reviewer_deep",
+    "foundations": "make_foundations_reviewer_deep",
+    "earth_retention": "make_earth_retention_reviewer_deep",
+    "slope_fem": "make_slope_fem_reviewer_deep",
+}
+
+
+def build_reviewer_agent(kind, model, attachments: dict, temp_dir: str,
+                         artifacts: List[str], **build_kwargs):
+    """Build a NARROW reviewer deep-agent (A5e) for ``kind``, wired to the SAME
+    shared attachments dict + session-dir save_fn as the full agent (the reviewer
+    ``make_*_reviewer_deep`` builders forward these to ``build_deep_agent``).
+
+    An unknown ``kind`` (including ``"full"``) falls back to the full agent build.
+    A reviewer manages its own scope + review-mode prompt + ``reference_mode``, so
+    the behavior reference/analysis-depth build-kwargs are deliberately NOT applied
+    to it; the recursion cap still applies at stream time.
+    """
+    name = _REVIEWER_BUILDERS.get(kind)
+    if name is None:
+        return build_agent(model, attachments, temp_dir, artifacts, **build_kwargs)
+    from funhouse_agent import reviewers as _reviewers
+    builder = getattr(_reviewers, name)
+    return builder(model, attachments=attachments,
+                   save_fn=make_save_fn(temp_dir, artifacts), **build_kwargs)
+
+
 # ---------------------------------------------------------------------------
 # Streaming one turn
 # ---------------------------------------------------------------------------
@@ -362,7 +391,8 @@ def token_line(turn_tokens: int, total_tokens: int) -> str:
 
 
 def stream_turn(agent, messages: list, thread_id: str,
-                max_result_chars: int = 2000):
+                max_result_chars: int = 2000,
+                recursion_limit: Optional[int] = None):
     """Stream ONE turn from the compiled deep agent.
 
     ``messages`` is the full agent-facing history INCLUDING the new user turn
@@ -384,6 +414,8 @@ def stream_turn(agent, messages: list, thread_id: str,
 
     answer_parts: List[str] = []
     config = {"configurable": {"thread_id": thread_id}}
+    if recursion_limit:                     # A5(b): primary-agent step cap
+        config["recursion_limit"] = int(recursion_limit)
     try:
         from langchain_core.callbacks import get_usage_metadata_callback
         cb_ctx = get_usage_metadata_callback()
@@ -601,6 +633,121 @@ def import_external_artifacts(working_dir: str, files_dir: str, before: set,
             continue
         out.append(dst)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Behavior settings (A5): per-conversation pickers, persisted in meta
+# ---------------------------------------------------------------------------
+# Five knobs the sidebar exposes and stores under meta["behavior"]:
+#   references     -- "anytime" (consult sub-agent offered) | "off" (no refs)
+#   ref_max_calls  -- the reference consult model-call budget
+#   recursion_limit-- the PRIMARY agent's LangGraph step cap (per-turn)
+#   analysis_depth -- "screening" | "standard" | "comprehensive": a system-prompt
+#                     preset applied on ALL engines (Anthropic + Prompter). This is
+#                     NOT LLM "thinking" — that name is reserved for the future
+#                     API-level control (deferred adaptive-thinking follow-up;
+#                     budget_tokens 400s on Opus 4.8 / Sonnet 5 — see
+#                     module_work/APP_PLAN.md A5 notes).
+#   agent_type     -- "full" (general agent) | a narrow domain reviewer
+#                     (seismic / foundations / earth_retention / slope_fem)
+# Defaults reproduce today's behavior EXACTLY (references anytime, ref budget 8,
+# LangGraph's default recursion_limit 25, analysis_depth "standard" == no preset,
+# agent_type "full").
+
+ANALYSIS_DEPTHS = ("screening", "standard", "comprehensive")
+REFERENCE_CHOICES = ("anytime", "off")
+
+#: Selectable agent variants (value -> sidebar label). "full" is the default
+#: general geotech agent; the rest are the narrow domain reviewers (F8/D6),
+#: each scoped to one discipline's methods + references and prompted in review
+#: mode (built via funhouse_agent.reviewers.make_*_reviewer_deep).
+AGENT_TYPES = {
+    "full": "Full geotech agent",
+    "seismic": "Seismic reviewer",
+    "foundations": "Foundations reviewer",
+    "earth_retention": "Earth-retention reviewer",
+    "slope_fem": "Slope / FEM reviewer",
+}
+
+DEFAULT_BEHAVIOR = {
+    "references": "anytime",
+    "ref_max_calls": 8,
+    "recursion_limit": 25,
+    "analysis_depth": "standard",
+    "agent_type": "full",
+}
+
+
+def agent_type_label(kind: Optional[str]) -> str:
+    """Human label for an agent-type value (defaults to the 'full' label)."""
+    return AGENT_TYPES.get(kind or "full", str(kind))
+
+_DEPTH_SCREENING = (
+    "ANALYSIS DEPTH: SCREENING. Give a fast, concise screening answer. Run the "
+    "single most appropriate method, report the result with its key assumptions, "
+    "and stop. Do not run multiple methods, cross-checks, sensitivity studies, or "
+    "other elective extras unless the user explicitly asks.")
+_DEPTH_COMPREHENSIVE = (
+    "ANALYSIS DEPTH: COMPREHENSIVE. Be thorough. Where the question warrants it: "
+    "run multiple applicable methods and compare them; cross-check the governing "
+    "result via a second, independent approach; run a short sensitivity on the "
+    "governing inputs and state the resulting range/spread (the true answer is a "
+    "distribution, not a point); state the governing conditions and your "
+    "confidence; and offer to produce a calc package.")
+
+
+def default_behavior() -> dict:
+    """A fresh copy of the default behavior settings."""
+    return dict(DEFAULT_BEHAVIOR)
+
+
+def behavior_from_meta(meta: Optional[dict]) -> dict:
+    """Behavior settings for a conversation: ``meta['behavior']`` merged over the
+    defaults (unknown keys ignored, missing keys defaulted), so an old meta with
+    no behavior block reads as today's defaults."""
+    b = dict(DEFAULT_BEHAVIOR)
+    src = (meta or {}).get("behavior")
+    if isinstance(src, dict):
+        for k in DEFAULT_BEHAVIOR:
+            if src.get(k) is not None:
+                b[k] = src[k]
+    return b
+
+
+def set_behavior(thread_id: str, behavior: dict,
+                 root: Optional[str] = None) -> dict:
+    """Persist a conversation's behavior settings in meta. Returns the resolved
+    (defaulted) settings."""
+    meta = ensure_conversation(thread_id, root=root)
+    meta["behavior"] = {k: behavior[k] for k in DEFAULT_BEHAVIOR if k in behavior}
+    meta["updated"] = _time.time()
+    save_meta(thread_id, meta, root)
+    return behavior_from_meta(meta)
+
+
+def depth_prompt(depth: str) -> str:
+    """The system-prompt preset appended for an analysis-depth level ("" for
+    "standard"/unknown == today's default behavior, byte-identical)."""
+    return {"screening": _DEPTH_SCREENING,
+            "comprehensive": _DEPTH_COMPREHENSIVE}.get(depth, "")
+
+
+def behavior_build_kwargs(behavior: Optional[dict]) -> dict:
+    """Translate behavior settings into ``build_deep_agent`` kwargs (via
+    ``build_agent``): reference mode, the reference call budget, and the
+    analysis-depth prompt preset. Recursion is applied at stream time, not here.
+    Defaults produce an EMPTY-of-overrides-equivalent build (reference_mode
+    anytime, ref budget 8, no extra prompt)."""
+    b = behavior_from_meta({"behavior": behavior}) if behavior is not None \
+        else default_behavior()
+    kw: dict = {
+        "reference_mode": "off" if b["references"] == "off" else "anytime",
+        "references_max_model_calls": int(b["ref_max_calls"]),
+    }
+    preset = depth_prompt(b["analysis_depth"])
+    if preset:
+        kw["extra_system_prompt"] = preset
+    return kw
 
 
 def auto_title(text, n_words: int = 8) -> str:
