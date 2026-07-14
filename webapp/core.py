@@ -757,6 +757,61 @@ def behavior_build_kwargs(behavior: Optional[dict]) -> dict:
     return kw
 
 
+# ---------------------------------------------------------------------------
+# Run tracing (A7 rec 1): optional, OFF by default
+# ---------------------------------------------------------------------------
+# Two independent paths, both opt-in:
+#   * LangSmith (SaaS) — set LANGCHAIN_TRACING_V2=true + LANGCHAIN_API_KEY; the
+#     langchain/langgraph stack auto-traces every run, no code here.
+#   * Local (no SaaS) — set GEOTECH_TRACE=1; the app writes ONE compact JSONL
+#     line per turn (duration, tokens, tool calls incl. sub-agent hops, error)
+#     to <conversation>/trace.jsonl and shows a "turn details" expander.
+
+def tracing_enabled() -> bool:
+    """True when the local per-turn tracer is on (``GEOTECH_TRACE`` truthy)."""
+    return str(os.environ.get("GEOTECH_TRACE", "")).strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+def trace_path(thread_id: str, root: Optional[str] = None) -> str:
+    return _conv_path(thread_id, "trace.jsonl", root)
+
+
+def write_turn_trace(thread_id: str, record: dict,
+                     root: Optional[str] = None) -> None:
+    """Append one per-turn trace ``record`` as a JSONL line in the conversation
+    dir. Best-effort — a trace failure must NEVER affect the turn."""
+    try:
+        os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+        with open(trace_path(thread_id, root), "a", encoding="utf-8") as fh:
+            fh.write(_json.dumps(record, ensure_ascii=False) + "\n")
+    except (OSError, TypeError, ValueError):
+        pass
+
+
+def load_recent_traces(thread_id: str, n: int = 1,
+                       root: Optional[str] = None) -> List[dict]:
+    """The last ``n`` per-turn trace records (oldest→newest), or ``[]``."""
+    p = trace_path(thread_id, root)
+    if not os.path.isfile(p):
+        return []
+    try:
+        with open(p, encoding="utf-8") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return []
+    out: List[dict] = []
+    for line in lines[-int(max(1, n)):]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(_json.loads(line))
+        except ValueError:
+            continue
+    return out
+
+
 def auto_title(text, n_words: int = 8) -> str:
     """First ~``n_words`` words of the first user message, as a conversation
     title. Falls back to 'New conversation' for empty input."""

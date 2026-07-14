@@ -680,6 +680,36 @@ def test_behavior_build_kwargs_route_calc_off():
     assert "enable_calc_subagent" not in kw         # off => library default (off)
 
 
+# ---------------------------------------------------------------------------
+# A7 — local per-turn tracer (GEOTECH_TRACE)
+# ---------------------------------------------------------------------------
+
+def test_tracing_enabled_env(monkeypatch):
+    monkeypatch.delenv("GEOTECH_TRACE", raising=False)
+    assert core.tracing_enabled() is False
+    for v in ("1", "true", "YES", "on"):
+        monkeypatch.setenv("GEOTECH_TRACE", v)
+        assert core.tracing_enabled() is True
+    monkeypatch.setenv("GEOTECH_TRACE", "0")
+    assert core.tracing_enabled() is False
+
+
+def test_write_and_load_turn_trace(tmp_path):
+    root, tid = str(tmp_path), "TR1"
+    assert core.load_recent_traces(tid, root=root) == []
+    core.write_turn_trace(tid, {"turn_tokens": 100, "n_tool_calls": 2}, root=root)
+    core.write_turn_trace(tid, {"turn_tokens": 250, "n_tool_calls": 5}, root=root)
+    recent = core.load_recent_traces(tid, n=1, root=root)
+    assert len(recent) == 1 and recent[0]["turn_tokens"] == 250   # newest
+    both = core.load_recent_traces(tid, n=5, root=root)
+    assert [r["turn_tokens"] for r in both] == [100, 250]         # oldest->newest
+
+
+def test_write_turn_trace_never_raises(tmp_path):
+    # a non-serializable value must be swallowed, never raised into the turn loop
+    core.write_turn_trace("Z", {"bad": object()}, root=str(tmp_path))
+
+
 def test_behavior_build_kwargs_off_and_comprehensive():
     kw = core.behavior_build_kwargs(
         {"references": "off", "analysis_depth": "comprehensive",

@@ -91,9 +91,19 @@ commits, lead reviews everything.
   Standard / Comprehensive; all engines). "Thinking" is reserved for this future
   API control. Follow-up: wire adaptive-thinking+effort with per-model gating,
   owner-gated live verification.
+- **A2(ii) summarization backstop — SKIPPED by owner (2026-07-14).** In persist+
+  replay the `/memories` key-fact pinning needs a durable store (the parked
+  checkpointer), and enabling summarization without the pinning ships the
+  compaction risk without its mitigation. Revisit only if a store is adopted (or
+  a webapp-level compaction+pinning mechanism is built). A2 shipped part (i), the
+  calc sub-agent, only.
 - **A2(iii) durable LangGraph checkpointer / drop-replay — PARKED** (owner verdict
   2026-07-13). Extra ~6% context saving over the calc-subagent; touches persistence
-  + adds a dependency; revisit after the calc-subagent + summarization backstop land.
+  + adds a dependency; also what would unblock A2(ii). Revisit after the calc
+  sub-agent beds in.
+- **Run tracing — SHIPPED (A7 rec 1, owner-approved 2026-07-14):** optional,
+  off by default — LangSmith via env (`LANGCHAIN_TRACING_V2`) + a local per-turn
+  JSONL tracer behind `GEOTECH_TRACE=1` (webapp/README.md § Tracing).
 
 ## Awaiting externals
 - Owner GPT-5.4 eval rerun (quota). TinyApp env answer (form 2026-07-10).
