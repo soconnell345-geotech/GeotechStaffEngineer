@@ -112,3 +112,29 @@ commits, lead reviews everything.
 ## Record correction (2026-07-14)
 - Commit 90b1451's message overstates: A2 part (i) calc sub-agent SHIPPED (default ON via webapp toggle); part (ii) summarization backstop NOT built - /memories pinning requires the parked durable store; shipping compaction without pinning = risk without mitigation. Backstop = owner decision, likely LOW VALUE now: with calc isolation, sessions peak ~16k/turn and would rarely reach any trigger.
 - A7 memo: module_work/A7_INDUSTRY_MEMO.md (d20136b).
+
+## Status close-out (2026-07-14) — A-workstream COMPLETE
+All A-items DONE + deployed locally (NOT released to PyPI yet; next release =
+5.6.0 on owner word). Commits fc1a2e6..09f2fa6 on v5.4, merged to master
+(aad984e): A1 inline plotly, A2 calc sub-agent (default ON, -84% measured;
+backstop SKIPPED per owner; checkpointer parked), A3 crash-proof turns,
+A4 durable files/links, A5 pickers (Agent full/4 reviewers, Analysis depth
+Screening/Standard/Comprehensive, references on/off, caps; API thinking layer
+deferred), A6 working folder (+GEOTECH_DEFAULT_OUTPUT_DIR), A7 memo
+(rec 1 tracing BUILT: GEOTECH_TRACE=1 local JSONL + LangSmith envs;
+rec 3 CI eval subset = open backlog), A8 rerun prompt suppressed.
+Post-A fixes from owner wall session (2026-07-14): bounded auto-continue for
+mid-turn "Let me..." stops (fd93f57, owner wording = regression test);
+recursion cap + limit visibility (a0e7dd7); download MIME fix .md-as-.bin
+(09f2fa6); streamlit first-run credentials nag fixed (~/.streamlit).
+
+## Open backlog (next cycle)
+- INVESTIGATE retaining_walls sliding-check conventions: owner wall session
+  showed built-in sliding FoS (Coulomb c=5: 0.92) well below the agent free-body
+  check (1.42) — inclined-thrust vertical component + cohesion crediting differ.
+  Agent bracketed honestly; module convention needs a documented verdict.
+- A7 rec 3: small mock eval subset in the normal test gate.
+- Deferred: API thinking layer (per-model gating + live smoke); durable
+  checkpointer; SqliteSaver extra; wiki integration (parked).
+- Externals: TinyApp env answer; owner GPT-5.4 eval rerun; Databricks
+  launcher live verification; 5.6.0 release word.

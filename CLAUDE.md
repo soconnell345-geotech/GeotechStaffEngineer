@@ -49,6 +49,19 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
+## Post-5.5.2 app workstream (2026-07-13/14, on master, UNRELEASED — candidate 5.6.0 on owner word)
+
+Owner pivot to app-heavy work (`webapp/`); wiki integration PARKED. All A-items
+A1–A8 built + deployed locally: inline Plotly, calc sub-agent context isolation
+(default ON, −84% measured), crash-proof turn persistence, durable files/links,
+Agent + Analysis-depth + model pickers, per-conversation working folder
+(`GEOTECH_DEFAULT_OUTPUT_DIR`), optional tracing (`GEOTECH_TRACE=1` / LangSmith
+envs), industry memo. Post-A owner-session fixes: bounded auto-continue for
+mid-turn stops, download MIME types, recursion-cap visibility. Owner decisions:
+summarization backstop SKIPPED, durable checkpointer PARKED, API thinking layer
+DEFERRED. Plan of record + close-out + open backlog: `module_work/APP_PLAN.md`.
+Webapp tests: 105 (`pytest webapp/tests -q`).
+
 ## v5.5.0 status (RELEASED 2026-07-12 to PyPI; owner OK'd)
 
 The post-5.4.1 train, merged and released; close-out gate **8539 passed /

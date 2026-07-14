@@ -1,6 +1,6 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-07-13.** This is the authoritative, always-current handoff
+**Last updated: 2026-07-14.** This is the authoritative, always-current handoff
 for a fresh LLM session (any model). The older `HANDOFF_2026-06-14.md` is kept
 only for the detailed Phase-E history; this file supersedes it.
 
@@ -11,8 +11,8 @@ only for the detailed Phase-E history; this file supersedes it.
 | Item | Value |
 |------|-------|
 | Repo | github.com/soconnell345-geotech/GeotechStaffEngineer (private) |
-| **master HEAD** | `b81ddaa` = **v5.5.2 release** (tag `v5.5.2`) — PUBLISHED to PyPI 2026-07-13. Line: 5.5.0 (post-5.4.1 train: correlated pairs, Bray-Travasarou, Lowe-Karafiath, aniso su, slope_report_package, inline Plotly) → 5.5.1 (provenance-audit doc fixes, persistent conversations, model picker, save hardening) → 5.5.2 (Databricks Prompter launcher run_on_databricks, eval-suite fixes: self-contained questions + DIR-1 path + discoverability aliases, fem2d schema backfill + positive-depth guards). Eval: owner ran the 100-Q suite live (GPT-5.1 driver, docs/geotech_eval_20260713.json) — 72% graded pass, 0 exceptions, all misses triaged (2 real fem2d issues FIXED, 1 suite bug FIXED, 5 questions rewritten, rest = weak-model behavior) |
-| **Branch `v5.4`** | tip `0bd7bba`, PUSHED, fully MERGED into master through 5.5.2; stays checked out in the worktree for the next train |
+| **master HEAD** | `aad984e` = 5.5.2 + the UNRELEASED **app A-workstream** (A1–A8 all built 2026-07-13/14 — see `module_work/APP_PLAN.md` §"Status close-out"; candidate **5.6.0 on owner word**). Prior release tag `b81ddaa` = **v5.5.2** — PUBLISHED to PyPI 2026-07-13. Line: 5.5.0 (post-5.4.1 train: correlated pairs, Bray-Travasarou, Lowe-Karafiath, aniso su, slope_report_package, inline Plotly) → 5.5.1 (provenance-audit doc fixes, persistent conversations, model picker, save hardening) → 5.5.2 (Databricks Prompter launcher run_on_databricks, eval-suite fixes: self-contained questions + DIR-1 path + discoverability aliases, fem2d schema backfill + positive-depth guards). Eval: owner ran the 100-Q suite live (GPT-5.1 driver, docs/geotech_eval_20260713.json) — 72% graded pass, 0 exceptions, all misses triaged (2 real fem2d issues FIXED, 1 suite bug FIXED, 5 questions rewritten, rest = weak-model behavior) |
+| **Branch `v5.4`** | tip `eb38615`, PUSHED, fully MERGED into master (`aad984e`); stays checked out in the worktree for the next train |
 | Submodule `geotech-references` | `3b25e0e` = **v1.3.1 on PyPI** (owner OK'd 2026-07-08; ufc_expansive figures complete, 42/42 page-accurate); parent pin `>=1.3.1` |
 | Version string | `5.5.2` in `pyproject.toml` (master) |
 | Validation suite | `validation_examples/` — 191+ passed (offline; V-001..V-054) |
@@ -23,6 +23,27 @@ only for the detailed Phase-E history; this file supersedes it.
 PyPI** via `.github/workflows/publish.yml` (OIDC trusted publishing). Do **not**
 push a tag, bump the version, or merge `v5.4` to master without the owner's
 explicit OK.
+
+---
+
+## 1b. Post-5.5.2 app workstream (2026-07-13/14, on master, UNRELEASED)
+
+Owner pivoted to app-heavy work (wiki integration PARKED). **All A-items built +
+deployed locally** — plan of record + close-out: `module_work/APP_PLAN.md`
+(owner copy `APP_PLAN_copy.md` at repo root). Headlines: calc sub-agent context
+isolation (default ON, −84% measured, `module_work/A2_CONTEXT_DESIGN.md`),
+crash-proof turn persistence, Agent/Analysis-depth/model pickers, per-conversation
+working folder (`GEOTECH_DEFAULT_OUTPUT_DIR`), optional tracing (`GEOTECH_TRACE=1`
++ LangSmith envs, webapp/README §Tracing), industry memo
+(`module_work/A7_INDUSTRY_MEMO.md`). Post-A owner-session fixes: bounded
+auto-continue for mid-turn "Let me…" stops, download-button MIME types
+(.md-as-.bin), recursion-cap visibility. Owner decisions: summarization backstop
+SKIPPED; durable checkpointer PARKED; API thinking layer DEFERRED (per-model
+gating needed); "Analysis depth" naming reserved "Thinking" for future API
+control. Open backlog (next cycle): retaining_walls sliding-check convention vs
+free-body discrepancy (owner wall session); CI mock eval subset. Webapp tests:
+105 (`pytest webapp/tests -q`). Launch: `"Start Geotech App.bat"` /
+`streamlit run webapp\app.py --server.headless true`.
 
 ---
 
