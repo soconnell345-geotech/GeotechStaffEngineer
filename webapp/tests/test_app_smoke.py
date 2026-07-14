@@ -147,3 +147,17 @@ def test_agent_picker_builds_reviewer_and_persists(monkeypatch, tmp_path):
     at.chat_input[0].set_value("review this liquefaction calc").run()
     assert core.behavior_from_meta(
         core.load_meta(tid))["agent_type"] == "seismic"        # durable → resumes
+
+
+def test_local_tracer_writes_turn_trace(monkeypatch, tmp_path):
+    """A7: with GEOTECH_TRACE=1 a turn writes one compact JSONL trace line to the
+    conversation dir (duration + tokens + tool calls)."""
+    monkeypatch.setenv("GEOTECH_TRACE", "1")
+    at = _mk_at(monkeypatch, tmp_path, _stream_ok).run()
+    tid = at.session_state["thread_id"]
+    at.chat_input[0].set_value("what is bearing capacity?").run()
+    assert not at.exception
+    recent = core.load_recent_traces(tid, n=1)
+    assert recent and "duration_s" in recent[-1]
+    assert recent[-1]["turn_tokens"] == 5          # from _stream_ok's turn_done
+    assert recent[-1]["error"] is None

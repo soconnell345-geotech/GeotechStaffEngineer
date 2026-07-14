@@ -680,6 +680,36 @@ def test_behavior_build_kwargs_route_calc_off():
     assert "enable_calc_subagent" not in kw         # off => library default (off)
 
 
+# ---------------------------------------------------------------------------
+# A7 — local per-turn tracer (GEOTECH_TRACE)
+# ---------------------------------------------------------------------------
+
+def test_tracing_enabled_env(monkeypatch):
+    monkeypatch.delenv("GEOTECH_TRACE", raising=False)
+    assert core.tracing_enabled() is False
+    for v in ("1", "true", "YES", "on"):
+        monkeypatch.setenv("GEOTECH_TRACE", v)
+        assert core.tracing_enabled() is True
+    monkeypatch.setenv("GEOTECH_TRACE", "0")
+    assert core.tracing_enabled() is False
+
+
+def test_write_and_load_turn_trace(tmp_path):
+    root, tid = str(tmp_path), "TR1"
+    assert core.load_recent_traces(tid, root=root) == []
+    core.write_turn_trace(tid, {"turn_tokens": 100, "n_tool_calls": 2}, root=root)
+    core.write_turn_trace(tid, {"turn_tokens": 250, "n_tool_calls": 5}, root=root)
+    recent = core.load_recent_traces(tid, n=1, root=root)
+    assert len(recent) == 1 and recent[0]["turn_tokens"] == 250   # newest
+    both = core.load_recent_traces(tid, n=5, root=root)
+    assert [r["turn_tokens"] for r in both] == [100, 250]         # oldest->newest
+
+
+def test_write_turn_trace_never_raises(tmp_path):
+    # a non-serializable value must be swallowed, never raised into the turn loop
+    core.write_turn_trace("Z", {"bad": object()}, root=str(tmp_path))
+
+
 def test_behavior_build_kwargs_off_and_comprehensive():
     kw = core.behavior_build_kwargs(
         {"references": "off", "analysis_depth": "comprehensive",
@@ -741,3 +771,89 @@ def test_stream_turn_omits_recursion_limit_by_default():
     a = _ConfigRecordingAgent()
     list(core.stream_turn(a, [{"role": "user", "content": "hi"}], "tid"))
     assert a.configs and "recursion_limit" not in a.configs[0]
+
+
+# ---------------------------------------------------------------------------
+# Mid-turn-stop fix: ends_mid_task heuristic + bounded auto-continue
+# ---------------------------------------------------------------------------
+
+def test_ends_mid_task_heuristic():
+    owner_case = ("This is important. Let me get that Ka and also Ka at "
+                  "d=22 deg for comparison in the report")
+    assert core.ends_mid_task(owner_case, saw_tool_call=True)
+    # never without tool activity in the turn
+    assert not core.ends_mid_task(owner_case, saw_tool_call=False)
+    # questions and user-addressed offers never trigger
+    assert not core.ends_mid_task("Shall I proceed?", True)
+    assert not core.ends_mid_task(
+        "The FOS is 1.85. Let me know if you want the calc package.", True)
+    assert not core.ends_mid_task(
+        "Done. I'll be happy to refine if needed.", True)
+    assert not core.ends_mid_task(
+        "Would you prefer Coulomb or Rankine?", True)
+    # a completed answer with no intent tail never triggers
+    assert not core.ends_mid_task("The sliding FOS is 1.12 (fails).", True)
+    assert not core.ends_mid_task("", True)
+
+
+class _TwoPassAgent:
+    """First pass ends on a stated next step; second pass completes it."""
+    def __init__(self):
+        self.calls = []
+
+    def stream(self, inp, config=None, stream_mode=None):
+        self.calls.append([dict(m) for m in inp["messages"]])
+        if len(self.calls) == 1:
+            for t in ["Ka computed. ", "Now let me build the report."]:
+                yield ("messages", (_Msg(t), {"langgraph_node": "model"}))
+        else:
+            yield ("messages", (_Msg("Report saved: report.pdf."),
+                                {"langgraph_node": "model"}))
+
+
+def test_stream_turn_auto_continues_once(monkeypatch):
+    # Force the tool-activity precondition (the fake emits no tool entries).
+    monkeypatch.setattr(core, "ends_mid_task",
+                        lambda text, saw: "let me build" in text.lower())
+    agent = _TwoPassAgent()
+    entries = list(core.stream_turn(
+        agent, [{"role": "user", "content": "analyze the wall"}], "tid"))
+    assert len(agent.calls) == 2                      # nudged exactly once
+    nudge = agent.calls[1][-1]
+    assert nudge["role"] == "user"
+    assert nudge["content"] == core.CONTINUE_NUDGE
+    assert agent.calls[1][-2]["role"] == "assistant"  # first pass carried over
+    done = entries[-1]
+    assert done["kind"] == "turn_done"
+    assert "Now let me build the report." in done["answer"]
+    assert "Report saved: report.pdf." in done["answer"]
+    assert any(e["kind"] == "tool_call" and "auto-continue" in e["text"]
+               for e in entries)
+
+
+class _AlwaysIntentAgent:
+    def __init__(self):
+        self.n = 0
+
+    def stream(self, inp, config=None, stream_mode=None):
+        self.n += 1
+        yield ("messages", (_Msg("Now let me run the next step."),
+                            {"langgraph_node": "model"}))
+
+
+def test_stream_turn_auto_continue_is_bounded(monkeypatch):
+    monkeypatch.setattr(core, "ends_mid_task", lambda text, saw: True)
+    agent = _AlwaysIntentAgent()
+    entries = list(core.stream_turn(
+        agent, [{"role": "user", "content": "go"}], "tid"))
+    assert agent.n == 1 + core.MAX_AUTO_CONTINUES     # hard bound
+    assert entries[-1]["kind"] == "turn_done"
+
+
+def test_stream_turn_no_nudge_on_completed_answer():
+    agent = _FakeAgent(["The sliding FOS is 1.12 (fails)."])
+    entries = list(core.stream_turn(
+        agent, [{"role": "user", "content": "hi"}], "tid"))
+    assert not any(e["kind"] == "tool_call" and "auto-continue" in e["text"]
+                   for e in entries)
+    assert entries[-1]["answer"] == "The sliding FOS is 1.12 (fails)."

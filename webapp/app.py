@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from typing import Optional
 
 # streamlit runs this file with webapp/ as the script dir; the repo/site root
@@ -517,6 +518,19 @@ for entry in ss.transcript:
                 _render_artifact_card(_path)
 
 
+# Turn details (A7 local tracer) — the latest turn's trace, when GEOTECH_TRACE=1.
+if core.tracing_enabled():
+    _recent = core.load_recent_traces(ss.thread_id, n=1)
+    if _recent:
+        _tr = _recent[-1]
+        _lbl = (f"turn details · {_tr.get('duration_s', '?')}s · "
+                f"{_tr.get('turn_tokens', 0):,} tok · "
+                f"{_tr.get('n_tool_calls', 0)} tool calls"
+                + (" · error" if _tr.get("error") else ""))
+        with st.expander(_lbl, expanded=False):
+            st.json(_tr)
+
+
 # ---------------------------------------------------------------------------
 # Chat input + streaming
 # ---------------------------------------------------------------------------
@@ -562,6 +576,9 @@ if prompt:
 
         core.begin_partial(ss.thread_id, prompt)   # A3: mark in-progress turn
         turn_error = None
+        _trace_on = core.tracing_enabled()          # A7: local per-turn tracer
+        _trace_t0 = time.time()
+        _trace_tools = []
         with st.chat_message("assistant"):
             answer_box = st.empty()
             status = st.status("Working…", expanded=False)
@@ -583,6 +600,10 @@ if prompt:
                     elif kind in ("tool_call", "todos", "tool_result"):
                         status.write(item["text"])
                         core.checkpoint_partial(ss.thread_id, answer)
+                        if _trace_on and kind == "tool_call":   # A7 trace hop
+                            _trace_tools.append(
+                                {"t": round(time.time() - _trace_t0, 3),
+                                 "call": (item.get("text") or "")[:80]})
                     elif kind == "turn_done":
                         final = item["answer"]
                         turn_tokens = item["turn_tokens"]
@@ -628,4 +649,13 @@ if prompt:
             ss.save_error = None
         except Exception as exc:
             ss.save_error = f"{type(exc).__name__}: {exc}"
+        if _trace_on:                       # A7: one compact JSONL line per turn
+            core.write_turn_trace(ss.thread_id, {
+                "ts": time.time(),
+                "duration_s": round(time.time() - _trace_t0, 3),
+                "turn_tokens": turn_tokens,
+                "n_tool_calls": len(_trace_tools),
+                "tools": _trace_tools,
+                "error": turn_error,
+            })
         st.rerun()

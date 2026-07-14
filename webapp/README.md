@@ -56,6 +56,21 @@ export GEOTECH_WEBAPP_MODEL=claude-sonnet-5      # startup default (any Claude i
 export GEOTECH_WEBAPP_MAX_TOKENS=8192            # per-response output cap
 ```
 
+### Tracing (optional, off by default)
+
+Two independent opt-in ways to see what a turn actually did:
+
+- **Local trace (no account needed):** set `GEOTECH_TRACE=1`. The app writes one
+  compact JSON line per turn to `conversations/<thread>/trace.jsonl` (duration,
+  tokens, tool calls including sub-agent hops, error) and shows a **"turn
+  details"** expander under the chat.
+- **LangSmith (SaaS):** set `LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY=…`
+  before launching — the LangChain/LangGraph stack then auto-traces every run to
+  your LangSmith project with no code change (the `langsmith` client ships with
+  the `[deep]` extra). Optionally set `LANGCHAIN_PROJECT=geotech-webapp`.
+
+Both are inert unless their env var is set.
+
 ### No key configured?
 
 If neither `ANTHROPIC_API_KEY` nor a deployment-provided engine is present, the
