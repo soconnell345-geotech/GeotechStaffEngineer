@@ -27,6 +27,7 @@ Responsibilities:
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from typing import Callable, Iterable, List, Optional, Tuple
@@ -390,6 +391,41 @@ def token_line(turn_tokens: int, total_tokens: int) -> str:
                 f"conversation total: {total_tokens:,}")
 
 
+# --- Mid-turn-stop fix (owner bug, 2026-07-14 retaining-wall session) --------
+# A model sometimes ENDS its reply on a stated-but-unperformed next step
+# ("Let me get that Ka …") with no tool call behind it — the graph sees no tool
+# call and the turn ends silently mid-analysis. stream_turn detects that shape
+# and re-invokes with a terse nudge, at most MAX_AUTO_CONTINUES times.
+
+CONTINUE_NUDGE = "Continue — complete the action you just stated."
+MAX_AUTO_CONTINUES = 2
+
+_INTENT_RE = re.compile(
+    r"\b(let me|let's|i'?ll|i will|now i|next,? i)\b", re.IGNORECASE)
+# Endings addressed TO the user (offers/questions) must never trigger a nudge.
+_ADDRESSED_RE = re.compile(
+    r"\b(would you|should i|do you|let me know|if you|if needed|happy to|"
+    r"feel free|want me to|prefer)\b", re.IGNORECASE)
+
+
+def ends_mid_task(text: str, saw_tool_call: bool) -> bool:
+    """True when an assistant reply looks like it STOPPED on a stated next step.
+
+    Conservative by design (a false nudge costs one extra model call; a missed
+    one just reproduces the old behavior): fires only when the turn actually
+    used tools, the reply doesn't end with a question, and the FINAL sentence
+    contains first-person intent language ("let me …", "I'll …") that is not
+    addressed to the user ("let me know if …", "would you …").
+    """
+    t = (text or "").strip()
+    if not t or not saw_tool_call or t.endswith("?"):
+        return False
+    tail = re.split(r"(?<=[.!?])\s+|\n+", t)[-1].strip()
+    if not tail or _ADDRESSED_RE.search(tail):
+        return False
+    return bool(_INTENT_RE.search(tail))
+
+
 def stream_turn(agent, messages: list, thread_id: str,
                 max_result_chars: int = 2000,
                 recursion_limit: Optional[int] = None):
@@ -413,6 +449,9 @@ def stream_turn(agent, messages: list, thread_id: str,
     from funhouse_agent.deep.notebook import _format_update, _sum_callback_tokens
 
     answer_parts: List[str] = []
+    saw_tool = False
+    work_messages = list(messages)
+    continuations = 0
     config = {"configurable": {"thread_id": thread_id}}
     if recursion_limit:                     # A5(b): primary-agent step cap
         config["recursion_limit"] = int(recursion_limit)
@@ -422,15 +461,43 @@ def stream_turn(agent, messages: list, thread_id: str,
     except Exception:
         cb_ctx = None
 
+    def _run_passes(run_config):
+        # One or more graph invocations: the extra passes are the bounded
+        # auto-continue for replies that end on a stated-but-unperformed step.
+        nonlocal work_messages, continuations, saw_tool
+        while True:
+            pass_parts: List[str] = []
+            for mode, chunk in agent.stream(
+                    {"messages": work_messages}, config=run_config,
+                    stream_mode=["updates", "messages"]):
+                for entry in _format_update(mode, chunk,
+                                            max_result_chars=max_result_chars):
+                    if entry["kind"] == "token":
+                        pass_parts.append(entry["text"])
+                    elif entry["kind"] == "tool_call":
+                        saw_tool = True
+                    yield entry
+            pass_text = "".join(pass_parts)
+            if answer_parts and pass_text:
+                answer_parts.append("\n\n")
+            answer_parts.append(pass_text)
+            if (continuations < MAX_AUTO_CONTINUES
+                    and ends_mid_task(pass_text, saw_tool)):
+                continuations += 1
+                work_messages = work_messages + [
+                    {"role": "assistant", "content": pass_text},
+                    {"role": "user", "content": CONTINUE_NUDGE},
+                ]
+                yield {"kind": "tool_call",
+                       "text": (f"auto-continue {continuations}/"
+                                f"{MAX_AUTO_CONTINUES}: finishing the stated "
+                                "next step")}
+                continue
+            return
+
     if cb_ctx is None:
-        for mode, chunk in agent.stream(
-                {"messages": messages}, config=config,
-                stream_mode=["updates", "messages"]):
-            for entry in _format_update(mode, chunk,
-                                        max_result_chars=max_result_chars):
-                if entry["kind"] == "token":
-                    answer_parts.append(entry["text"])
-                yield entry
+        for entry in _run_passes(dict(config)):
+            yield entry
         yield {"kind": "turn_done", "answer": "".join(answer_parts),
                "turn_tokens": 0}
         return
@@ -438,14 +505,8 @@ def stream_turn(agent, messages: list, thread_id: str,
     with cb_ctx as cb:
         run_config = dict(config)
         run_config["callbacks"] = [cb]
-        for mode, chunk in agent.stream(
-                {"messages": messages}, config=run_config,
-                stream_mode=["updates", "messages"]):
-            for entry in _format_update(mode, chunk,
-                                        max_result_chars=max_result_chars):
-                if entry["kind"] == "token":
-                    answer_parts.append(entry["text"])
-                yield entry
+        for entry in _run_passes(run_config):
+            yield entry
         turn_tokens = _sum_callback_tokens(dict(cb.usage_metadata))
     yield {"kind": "turn_done", "answer": "".join(answer_parts),
            "turn_tokens": turn_tokens}
