@@ -46,6 +46,7 @@ _APP_STATE_KEYS = (
     "initialized", "thread_id", "temp_dir", "attachments", "artifacts",
     "messages", "transcript", "pending_notes", "total_tokens",
     "last_turn_tokens", "agent", "agent_error", "engine", "model", "save_error",
+    "behavior",
 )
 
 
@@ -57,8 +58,15 @@ def _build_agent_for_session() -> None:
     ss.agent_error = None
     if ss.engine.ok:
         try:
-            ss.agent = core.build_agent(
-                ss.engine.model, ss.attachments, ss.temp_dir, ss.artifacts)
+            _kind = (ss.get("behavior") or {}).get("agent_type", "full")
+            if _kind == "full":
+                ss.agent = core.build_agent(
+                    ss.engine.model, ss.attachments, ss.temp_dir, ss.artifacts,
+                    **core.behavior_build_kwargs(ss.get("behavior")))     # A5
+            else:                                                         # A5e
+                ss.agent = core.build_reviewer_agent(
+                    _kind, ss.engine.model, ss.attachments, ss.temp_dir,
+                    ss.artifacts)
         except Exception as exc:  # surface, don't crash the app
             ss.agent_error = f"{type(exc).__name__}: {exc}"
 
@@ -91,6 +99,7 @@ def _new_conversation() -> None:
     ss.last_turn_tokens = 0
     ss.save_error = None
     ss.recovered_notice = False
+    ss.behavior = core.default_behavior()       # A5: per-conversation pickers
     _resolve_and_build(core.default_model_id())
 
 
@@ -123,6 +132,7 @@ def _open_conversation(thread_id: str) -> None:
     ss.last_turn_tokens = 0
     ss.save_error = None
     _meta = core.load_meta(thread_id) or {}
+    ss.behavior = core.behavior_from_meta(_meta)     # A5: restore pickers
     _resolve_and_build(_meta.get("model") or core.default_model_id())
 
 
@@ -137,6 +147,7 @@ def _persist_turn(first_user_text: Optional[str]) -> None:
     core.save_messages(ss.thread_id, ss.messages)
     core.touch_conversation(ss.thread_id, title=title, turn_count=user_turns,
                             model=ss.model)
+    core.set_behavior(ss.thread_id, ss.get("behavior") or core.default_behavior())
 
 
 def _init_session() -> None:
@@ -208,13 +219,16 @@ with st.sidebar:
         _tid = _m["thread_id"]
         _current = (_tid == ss.thread_id)
         _title = _m.get("title") or "Untitled"
+        _at = (_m.get("behavior") or {}).get("agent_type")
+        _at_lbl = (f" · {core.agent_type_label(_at)}"
+                   if _at and _at != "full" else "")
         _row = st.columns([0.72, 0.14, 0.14])
         with _row[0]:
             if st.button(("● " if _current else "") + _title, key=f"open_{_tid}",
                          help=f"{_relative_time(_m.get('updated'))} · "
                               f"{_m.get('turn_count', 0)} turns" +
                               (f" · {core.model_label(_m['model'])}"
-                               if _m.get("model") else ""),
+                               if _m.get("model") else "") + _at_lbl,
                          use_container_width=True):
                 if not _current:
                     _open_conversation(_tid)
@@ -270,6 +284,24 @@ with st.sidebar:
     if eng.source == "prompter":
         st.caption("Model is fixed by the deployment; the picker doesn't apply.")
 
+    # Agent picker (A5e) — the full geotech agent, or a narrow domain reviewer.
+    # Per conversation, persisted in meta, shown on the conversation list line.
+    _atypes = list(core.AGENT_TYPES)
+    _cur_at = (ss.behavior or {}).get("agent_type", "full")
+    _cur_at = _cur_at if _cur_at in _atypes else "full"
+    _picked_at = st.selectbox(
+        "Agent", _atypes, index=_atypes.index(_cur_at),
+        format_func=lambda k: core.AGENT_TYPES[k], key=f"agent_{ss.thread_id}",
+        help="The full geotech agent, or a narrow domain reviewer scoped to one "
+             "discipline's methods + references and prompted in review mode. "
+             "Applies to this conversation going forward; kept when you resume it.")
+    if _picked_at != _cur_at:
+        ss.behavior = {**ss.behavior, "agent_type": _picked_at}
+        if core.load_meta(ss.thread_id) is not None:
+            core.set_behavior(ss.thread_id, ss.behavior)
+        _resolve_and_build(ss.model)          # rebuild as the selected variant
+        st.rerun()
+
     # Working folder — where the agent's saves (calc packages, plots, files)
     # land. Default = this conversation's files/ dir (durable; shown as download
     # cards). Point it elsewhere (e.g. a project folder) and a durable copy is
@@ -286,6 +318,50 @@ with st.sidebar:
         core.set_working_dir(ss.thread_id, _wd_in)
         st.rerun()
     core.apply_default_output_dir(_wd)
+
+    # Behavior (A5): per-conversation pickers, persisted in meta. A change
+    # rebuilds the agent for THIS conversation going forward (defaults reproduce
+    # today's behavior exactly).
+    _b = ss.behavior
+    with st.expander("Behavior", expanded=False):
+        _refs_on = st.checkbox(
+            "Consult references", value=(_b["references"] != "off"),
+            key=f"refs_{ss.thread_id}",
+            help="When on, the agent can consult the reference library (DM7 / GEC "
+                 "/ UFC …) through a scoped sub-agent. Turn off for pure-calc "
+                 "sessions to save tokens.")
+        _depth = st.select_slider(
+            "Analysis depth", options=list(core.ANALYSIS_DEPTHS),
+            value=_b["analysis_depth"], format_func=str.title,
+            key=f"depth_{ss.thread_id}",
+            help="How much analysis the agent does (a prompt preset, every "
+                 "engine). Screening: single most appropriate method, concise. "
+                 "Standard: default. Comprehensive: multiple methods compared + a "
+                 "second-approach cross-check + a short sensitivity on governing "
+                 "inputs + governing conditions & confidence + an offer to build a "
+                 "calc package.")
+        with st.expander("Advanced caps", expanded=False):
+            _refcalls = st.number_input(
+                "Reference consult budget (model calls)", min_value=1,
+                max_value=40, value=int(_b["ref_max_calls"]), step=1,
+                key=f"refcalls_{ss.thread_id}",
+                help="Max model calls the reference consultant spends per consult "
+                     "before it must summarize and answer.")
+            _rlim = st.number_input(
+                "Primary step cap (recursion limit)", min_value=5, max_value=200,
+                value=int(_b["recursion_limit"]), step=5,
+                key=f"rlim_{ss.thread_id}",
+                help="Max reasoning/tool steps the main agent may take in one turn "
+                     "(LangGraph recursion limit).")
+        _new_b = {**_b, "references": "anytime" if _refs_on else "off",
+                  "analysis_depth": _depth, "ref_max_calls": int(_refcalls),
+                  "recursion_limit": int(_rlim)}
+        if _new_b != _b:
+            ss.behavior = _new_b
+            if core.load_meta(ss.thread_id) is not None:
+                core.set_behavior(ss.thread_id, _new_b)
+            _resolve_and_build(ss.model)     # references/depth/caps -> rebuild
+            st.rerun()
 
     st.divider()
     st.subheader("Attachments")
@@ -336,9 +412,12 @@ with st.sidebar:
 
     st.divider()
     st.caption(core.token_line(ss.last_turn_tokens, ss.total_tokens))
-    st.caption(f"model: {core.model_label(ss.model)} · "
-               f"thread `{ss.thread_id[:8]}` · {len(ss.messages)} msgs · "
-               f"auto-saved")
+    _at_now = (ss.behavior or {}).get("agent_type", "full")
+    st.caption(f"model: {core.model_label(ss.model)}"
+               + (f" · {core.agent_type_label(_at_now)}" if _at_now != "full"
+                  else "")
+               + f" · thread `{ss.thread_id[:8]}` · {len(ss.messages)} msgs · "
+               "auto-saved")
 
 
 # ---------------------------------------------------------------------------
@@ -482,8 +561,9 @@ if prompt:
             turn_tokens = 0
             _chunks = 0
             try:
-                for item in core.stream_turn(ss.agent, ss.messages,
-                                             ss.thread_id):
+                for item in core.stream_turn(
+                        ss.agent, ss.messages, ss.thread_id,
+                        recursion_limit=ss.behavior.get("recursion_limit")):
                     kind = item["kind"]
                     if kind == "token":
                         answer += item["text"]

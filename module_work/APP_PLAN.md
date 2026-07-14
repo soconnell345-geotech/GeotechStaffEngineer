@@ -75,11 +75,25 @@ commits, lead reviews everything.
       config (`.streamlit/config.toml`: fileWatcherType none, toolbarMode
       viewer/minimal) + keep dev behavior available via a flag.
 
-## Parked
+## Parked / deferred
 - Reference-wiki integration (owner 2026-07-13: wiki needs more work first).
   Priority map when revived: module_work/provenance_audit_*.md wishlists.
 - Deferred follow-ups list in V5.4_PLAN.md (toe-circle search sampling,
   steep-φ' Kc, SqliteSaver extra, E2 default).
+- **A5(c) API extended-thinking layer — DEFERRED.** The budget_tokens shape the
+  directive named (`thinking={type:enabled,budget_tokens}` + temperature) 400s on
+  Opus 4.8 / Sonnet 5 (removed API-wide on 4.7+). The modern lever
+  (`thinking={type:adaptive}` + `output_config.effort`) IS supported by our pinned
+  langchain-anthropic 1.4.4, but it is model-dependent (Haiku 4.5 rejects `effort`;
+  Opus 4.8 already defaults to effort "high") and needs a per-model mapping + a live
+  smoke test per model before shipping (else 400s / silent default-depth changes).
+  A5 ships the engine-agnostic **Analysis-depth prompt preset** now (Screening /
+  Standard / Comprehensive; all engines). "Thinking" is reserved for this future
+  API control. Follow-up: wire adaptive-thinking+effort with per-model gating,
+  owner-gated live verification.
+- **A2(iii) durable LangGraph checkpointer / drop-replay — PARKED** (owner verdict
+  2026-07-13). Extra ~6% context saving over the calc-subagent; touches persistence
+  + adds a dependency; revisit after the calc-subagent + summarization backstop land.
 
 ## Awaiting externals
 - Owner GPT-5.4 eval rerun (quota). TinyApp env answer (form 2026-07-10).

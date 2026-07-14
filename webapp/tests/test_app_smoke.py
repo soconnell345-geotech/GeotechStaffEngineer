@@ -34,13 +34,13 @@ def _fake_engine(*_a, **_k):
                             model_name="fake-model", message="")
 
 
-def _stream_ok(_agent, _messages, _thread_id):
+def _stream_ok(_agent, _messages, _thread_id, **_kw):
     yield {"kind": "token", "text": "Hello "}
     yield {"kind": "token", "text": "world."}
     yield {"kind": "turn_done", "answer": "Hello world.", "turn_tokens": 5}
 
 
-def _stream_boom(_agent, _messages, _thread_id):
+def _stream_boom(_agent, _messages, _thread_id, **_kw):
     yield {"kind": "token", "text": "partial answer "}
     raise RuntimeError("stream blew up")
 
@@ -49,6 +49,8 @@ def _mk_at(monkeypatch, tmp_path, stream_fn):
     monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path))
     monkeypatch.setattr(engine_config, "resolve_engine", _fake_engine)
     monkeypatch.setattr(core, "build_agent", lambda *_a, **_k: object())
+    monkeypatch.setattr(core, "build_reviewer_agent",
+                        lambda kind, *_a, **_k: f"reviewer:{kind}")
     monkeypatch.setattr(core, "stream_turn", stream_fn)
     return AppTest.from_file(_APP, default_timeout=30)
 
@@ -92,7 +94,7 @@ def test_stream_exception_keeps_conversation(monkeypatch, tmp_path):
     assert reloaded[1].get("error")
 
 
-def _stream_saves_external(_agent, _messages, _thread_id):
+def _stream_saves_external(_agent, _messages, _thread_id, **_kw):
     # Simulate a plot / calc-package adapter saving into the host working folder
     # — the dir the app advertises via GEOTECH_DEFAULT_OUTPUT_DIR (which is what
     # funhouse_agent._fileio.default_output_dir() returns for a bare output_path).
@@ -129,3 +131,19 @@ def test_external_working_folder_artifact_bridged_into_files(monkeypatch, tmp_pa
     ref = core.load_transcript(tid)[-1]["artifacts"][0]
     assert os.path.abspath(ref).startswith(os.path.abspath(files_dir))
     assert core.describe_artifact(ref).exists is True
+
+
+def test_agent_picker_builds_reviewer_and_persists(monkeypatch, tmp_path):
+    """A5e: choosing a reviewer in the sidebar rebuilds via the reviewer builder,
+    records it in the conversation's behavior, and persists it to meta on the
+    turn (so a resume via behavior_from_meta restores the agent type)."""
+    at = _mk_at(monkeypatch, tmp_path, _stream_ok).run()
+    tid = at.session_state["thread_id"]
+    sel = next(w for w in at.selectbox if w.key == f"agent_{tid}")
+    sel.set_value("seismic").run()
+    assert not at.exception
+    assert at.session_state["behavior"]["agent_type"] == "seismic"
+    assert at.session_state["agent"] == "reviewer:seismic"     # reviewer branch
+    at.chat_input[0].set_value("review this liquefaction calc").run()
+    assert core.behavior_from_meta(
+        core.load_meta(tid))["agent_type"] == "seismic"        # durable → resumes

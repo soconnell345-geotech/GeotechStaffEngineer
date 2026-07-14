@@ -623,3 +623,113 @@ def test_recover_partial_dedupes_completed_turn(tmp_path):
 
 def test_checkpoint_partial_never_raises(tmp_path):
     core.checkpoint_partial("Z", "text", root=str(tmp_path / "made" / "on demand"))
+
+
+# ---------------------------------------------------------------------------
+# A5 — behavior pickers (references / caps / analysis depth)
+# ---------------------------------------------------------------------------
+
+def test_default_behavior_matches_current_defaults():
+    assert core.default_behavior() == {
+        "references": "anytime", "ref_max_calls": 8, "recursion_limit": 25,
+        "analysis_depth": "standard", "agent_type": "full"}
+    b = core.default_behavior()          # fresh copy each call, not shared
+    b["analysis_depth"] = "comprehensive"
+    assert core.default_behavior()["analysis_depth"] == "standard"
+
+
+def test_behavior_from_meta_defaults_and_merges():
+    assert core.behavior_from_meta(None) == core.default_behavior()
+    assert core.behavior_from_meta({}) == core.default_behavior()
+    merged = core.behavior_from_meta(
+        {"behavior": {"references": "off", "analysis_depth": "comprehensive",
+                      "bogus": 1}})
+    assert merged["references"] == "off"
+    assert merged["analysis_depth"] == "comprehensive"
+    assert merged["ref_max_calls"] == 8          # missing key -> default
+    assert "bogus" not in merged                 # unknown key ignored
+
+
+def test_set_behavior_round_trips(tmp_path):
+    root, tid = str(tmp_path), "B1"
+    core.set_behavior(tid, {"references": "off", "analysis_depth": "comprehensive",
+                            "ref_max_calls": 12, "recursion_limit": 40}, root=root)
+    assert core.behavior_from_meta(core.load_meta(tid, root=root)) == {
+        "references": "off", "analysis_depth": "comprehensive",
+        "ref_max_calls": 12, "recursion_limit": 40, "agent_type": "full"}
+
+
+def test_depth_prompt_levels():
+    assert core.depth_prompt("standard") == "" and core.depth_prompt("x") == ""
+    assert "SCREENING" in core.depth_prompt("screening")
+    assert "COMPREHENSIVE" in core.depth_prompt("comprehensive")
+
+
+def test_behavior_build_kwargs_defaults_preserve():
+    kw = core.behavior_build_kwargs(None)
+    assert kw["reference_mode"] == "anytime"
+    assert kw["references_max_model_calls"] == 8
+    assert "extra_system_prompt" not in kw          # medium => no preset
+
+
+def test_behavior_build_kwargs_off_and_comprehensive():
+    kw = core.behavior_build_kwargs(
+        {"references": "off", "analysis_depth": "comprehensive",
+         "ref_max_calls": 5, "recursion_limit": 30})
+    assert kw["reference_mode"] == "off"
+    assert kw["references_max_model_calls"] == 5
+    assert "COMPREHENSIVE" in kw["extra_system_prompt"]
+    assert "agent_type" not in kw          # not a build_deep_agent kwarg
+
+
+# ---------------------------------------------------------------------------
+# A5e — agent picker (full agent + narrow domain reviewers)
+# ---------------------------------------------------------------------------
+
+def test_agent_type_label():
+    assert core.agent_type_label("full") == "Full geotech agent"
+    assert core.agent_type_label("slope_fem") == "Slope / FEM reviewer"
+    assert core.agent_type_label(None) == core.AGENT_TYPES["full"]
+
+
+def test_agent_type_round_trips_in_meta(tmp_path):
+    root, tid = str(tmp_path), "AT1"
+    core.set_behavior(tid, {**core.default_behavior(), "agent_type": "seismic"},
+                      root=root)
+    # resume path: behavior_from_meta restores the agent type
+    assert core.behavior_from_meta(
+        core.load_meta(tid, root=root))["agent_type"] == "seismic"
+
+
+def test_build_reviewer_agent_builds_each_kind(tmp_path):
+    pytest.importorskip("deepagents")
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage
+    model = GenericFakeChatModel(messages=iter([AIMessage(content="ok")]))
+    d = str(tmp_path)
+    for kind in ("seismic", "foundations", "earth_retention", "slope_fem"):
+        assert core.build_reviewer_agent(kind, model, {}, d, []) is not None
+    # unknown / "full" falls back to the full agent build (no exception)
+    assert core.build_reviewer_agent("full", model, {}, d, []) is not None
+
+
+class _ConfigRecordingAgent:
+    def __init__(self):
+        self.configs = []
+
+    def stream(self, inp, config=None, stream_mode=None):
+        self.configs.append(config)
+        return iter(())                 # no chunks; just record the config
+
+
+def test_stream_turn_passes_recursion_limit():
+    a = _ConfigRecordingAgent()
+    list(core.stream_turn(a, [{"role": "user", "content": "hi"}], "tid",
+                          recursion_limit=15))
+    assert a.configs and a.configs[0].get("recursion_limit") == 15
+
+
+def test_stream_turn_omits_recursion_limit_by_default():
+    a = _ConfigRecordingAgent()
+    list(core.stream_turn(a, [{"role": "user", "content": "hi"}], "tid"))
+    assert a.configs and "recursion_limit" not in a.configs[0]
