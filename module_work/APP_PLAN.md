@@ -98,3 +98,7 @@ commits, lead reviews everything.
 ## Awaiting externals
 - Owner GPT-5.4 eval rerun (quota). TinyApp env answer (form 2026-07-10).
 - Databricks launcher live verification (owner's next Funhouse session).
+
+## Record correction (2026-07-14)
+- Commit 90b1451's message overstates: A2 part (i) calc sub-agent SHIPPED (default ON via webapp toggle); part (ii) summarization backstop NOT built - /memories pinning requires the parked durable store; shipping compaction without pinning = risk without mitigation. Backstop = owner decision, likely LOW VALUE now: with calc isolation, sessions peak ~16k/turn and would rarely reach any trigger.
+- A7 memo: module_work/A7_INDUSTRY_MEMO.md (d20136b).
