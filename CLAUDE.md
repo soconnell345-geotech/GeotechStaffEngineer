@@ -171,7 +171,7 @@ check: `funhouse_agent/deep/rc_wheel_check.py` (`run_rc_check(fh_prompter)`); th
 suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save outputs to
 `/tmp` or `/Volumes`, NOT `/Workspace` (FUSE writes are non-durable / permission-blocked).
 
-## Module Inventory (30 analysis + geo_project setup layer + 21 reference, + foundry harness; reference layer fully QC'd, all figure catalogs 100% page-accurate)
+## Module Inventory (30 analysis + geo_project setup layer + 24 reference, + foundry harness; reference layer fully QC'd, all figure catalogs 100% page-accurate)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -387,7 +387,7 @@ decisions. See memory `feedback-reference-layer-autonomy`.
   registry wiring in both repos): **`fema_p2082`** (FEMA P-2082 / 2020 NEHRP — site classes
   BC/CD/DE with BC baseline, Fa/Fv removed), **`california_trenching`** (Caltrans T&S Manual —
   shoring/excavation), **`fhwa_pavements`** (FHWA-NHI-05-037 — Mr/CBR/frost/drainage; distinct
-  from `ufc_pavement`). Reference layer is now **21 modules** (`dispatch.REFERENCE_MODULES`).
+  from `ufc_pavement`). Reference layer is now **24 modules** (EC7-1/EC7-2/AASHTO-1993 added 2026-07-15) (`dispatch.REFERENCE_MODULES`).
 - **Deep QC** (4-agent fan-out) found & fixed 3 critical + 4 major content/functional errors
   (incl. a broken figure `pdf_path` that disabled vision for 2 refs, and the FEMA Ch-19 SSI
   equations that a build agent had mis-reconstructed); ~640 reference methods verified 0-bug.
