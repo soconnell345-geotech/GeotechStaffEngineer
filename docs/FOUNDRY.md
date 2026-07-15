@@ -1,0 +1,83 @@
+# Running the geotech web chat app on Palantir Foundry (Code Workspaces)
+
+Design + rationale: `module_work/FOUNDRY_APP_PLAN.md`. This is the do-it page.
+Everything lives in the pip package; the Foundry side is one workspace, a
+2-line file, and a few environment variables.
+
+## 1. Create the workspace and install the package
+
+1. In Foundry: **Code Workspaces → New workspace → JupyterLab**.
+2. In the workspace **Libraries** panel, install (PyPI):
+   - `geotech-staff-engineer[deep,full,pdf]`
+   - `streamlit`
+   - `langchain-openai`  ← needed for GPT-family Foundry model RIDs
+     (`langchain-anthropic` comes with `[deep]` and covers Claude RIDs)
+
+## 2. The app file (the only code that lives in Foundry)
+
+Create `app.py` at the repo root of the workspace:
+
+```python
+from webapp.foundry_entry import main
+main()
+```
+
+## 3. Point the app at your models (Foundry RIDs)
+
+Find the model RIDs in the **Model catalog** app (each enabled model shows a
+resource id like `ri.language-model-service..language-model.gpt-5-2`). Then
+set environment variables for the workspace/app:
+
+| Variable | Value | Why |
+|---|---|---|
+| `GEOTECH_FOUNDRY_MODELS` | `GPT 5.2=ri.language-model-service..language-model.gpt-5-2` (comma-separate several; `Label=RID` or bare RID) | Populates the in-app model picker; the FIRST entry is the default |
+| `FOUNDRY_TOKEN` / `GEOTECH_FOUNDRY_TOKEN` | your Foundry token (Code Workspaces usually provides `FOUNDRY_TOKEN` already — check `env \| grep -i foundry` in the terminal) | Auth to the LLM proxy |
+| `FOUNDRY_HOSTNAME` / `GEOTECH_FOUNDRY_HOST` | the stack host, e.g. `yourstack.palantirfoundry.com` (often preset too) | Where the proxy lives |
+| `GEOTECH_WEBAPP_DATA` | a durable writable folder, e.g. a path under the workspace files | Saved conversations survive restarts |
+| `GEOTECH_REFERENCES_DOCS` | folder of reference PDFs (optional) | Enables figure read-off, same as Databricks |
+
+Any model id starting with `ri.` routes through the Foundry LLM proxy
+automatically — RIDs containing `anthropic` use the Anthropic-messages proxy,
+everything else uses the OpenAI-chat-completions proxy. **When Claude models
+are enabled later, no code change is needed**: add the RID to
+`GEOTECH_FOUNDRY_MODELS` (or paste it into the app's "Custom model id
+(advanced)" box in the sidebar).
+
+## 4. The 30-second proxy smoke test ("one curl")
+
+Before publishing, open the workspace **Terminal** and paste (substitute your
+RID; `$FOUNDRY_TOKEN` is usually already set):
+
+```bash
+curl -s "https://$FOUNDRY_HOSTNAME/api/v2/llm/proxy/openai/v1/chat/completions" \
+  -H "Authorization: Bearer $FOUNDRY_TOKEN" -H "Content-Type: application/json" \
+  -d '{"model":"ri.language-model-service..language-model.gpt-5-2","messages":[{"role":"user","content":"Say ok."}]}'
+```
+
+A JSON reply containing the model's answer = the proxy is enabled and the RID
+is right. (For a Claude RID later, the same test against
+`/api/v2/llm/proxy/anthropic/v1/messages` with the Anthropic request shape.)
+An error page or 404 = the LLM-provider-compatible API isn't enabled on the
+enrollment — ask the platform admin.
+
+## 5. Preview, then publish
+
+1. In JupyterLab, use the Streamlit **preview** on `app.py` to try it in the
+   workspace.
+2. **Publish application** → choose a Files-and-Projects location → file name
+   `app.py`. The app gets a Foundry URL behind Foundry auth, shareable like
+   any resource.
+3. To upgrade later: bump `geotech-staff-engineer` in the Libraries panel and
+   republish. The 2-line `app.py` never changes.
+
+## Notes / current limits
+
+- Tool calling, streaming, and sub-agents ride the provider-compatible proxy
+  unchanged. Vision (attachment analysis, figure read-off) depends on the
+  enrollment's model supporting images through the proxy — try it, and prefer
+  a multimodal RID for the default model.
+- Conversations persist under `GEOTECH_WEBAPP_DATA`; if the published app's
+  filesystem turns out not to be durable, point it at a durable mount (or
+  accept per-session conversations until we wire a dataset-backed store).
+- The old `foundry/` wrapper files (tools for the prepackaged AIP agent) are
+  RETIRED and unrelated to this deployment.

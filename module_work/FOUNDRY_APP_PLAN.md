@@ -110,3 +110,19 @@ this plan hosts OUR agent + UI as a Foundry app. They can coexist.
   https://www.palantir.com/docs/foundry/compute-modules/execution-modes
 - Community: Anthropic SDK auth vs the proxy:
   https://community.palantir.com/t/auth-failing-for-anthropic-agents-sdk-and-llm-proxy/6255
+
+## Status update (2026-07-15) — F-A + F-B BUILT (offline)
+Owner confirmed: app publishing enabled; Libraries panel reaches PyPI; durable
+path assumed; OpenAI models now, Claude RIDs later; foundry/ wrappers RETIRED
+(prepackaged AIP chatbot could not create files/visualizations - route dead).
+Built: engine_config Foundry path (RID-prefix routing: "ri." -> LLM proxy;
+"anthropic" in RID -> Anthropic-messages proxy via ChatAnthropic w/ bearer
+header, else OpenAI proxy via ChatOpenAI), GEOTECH_FOUNDRY_MODELS picker env
+(Label=RID list, first = default), in-app "Custom model id (advanced)" box
+(paste new RIDs, e.g. Claude when enabled - no code change), custom ids stay
+selectable in the picker, webapp/foundry_entry.py 2-line stub, docs/FOUNDRY.md
+click-path + curl smoke test. 10 offline tests (webapp suite 115).
+REMAINING (owner, on-platform): curl the proxy once; read RIDs from Model
+catalog; set envs; preview + publish. Follow-ups if needed: vision-through-
+proxy check; dataset-backed conversation store if the published FS proves
+non-durable; retire foundry/ mentions in CLAUDE.md (housekeeping).

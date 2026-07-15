@@ -531,13 +531,41 @@ MODEL_CHOICES = [
 ]
 
 
+#: Env listing Foundry model RIDs for the picker, comma-separated; each entry
+#: is either a bare RID or "Label=RID" (e.g. "GPT 5.2=ri.language-model-
+#: service..language-model.gpt-5-2"). Set in the Foundry workspace so new RIDs
+#: (e.g. Claude once enabled) plug in with no code change.
+FOUNDRY_MODELS_ENV = "GEOTECH_FOUNDRY_MODELS"
+
+
+def foundry_model_choices(raw: Optional[str] = None) -> List[dict]:
+    """Parse ``GEOTECH_FOUNDRY_MODELS`` (or ``raw``) into picker entries."""
+    text = raw if raw is not None else os.environ.get(FOUNDRY_MODELS_ENV, "")
+    out: List[dict] = []
+    for item in (text or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "=" in item:
+            label, rid = item.split("=", 1)
+            label, rid = label.strip(), rid.strip()
+        else:
+            label, rid = item, item
+        if rid and not any(c["id"] == rid for c in out):
+            out.append({"id": rid, "label": label or rid,
+                        "blurb": "Foundry model"})
+    return out
+
+
 def model_choices(env_model: Optional[str] = None) -> List[dict]:
-    """The picker list ``[{id,label,blurb}, ...]``. If ``GEOTECH_WEBAPP_MODEL``
-    (or the ``env_model`` override) names a model not already curated, it is
-    PREPENDED (and so becomes the default). Returns fresh dicts (safe to mutate)."""
+    """The picker list ``[{id,label,blurb}, ...]``. Foundry RIDs from
+    ``GEOTECH_FOUNDRY_MODELS`` are PREPENDED (first one = default on a Foundry
+    deployment); then, if ``GEOTECH_WEBAPP_MODEL`` (or the ``env_model``
+    override) names a model not already listed, it is prepended above those.
+    Returns fresh dicts (safe to mutate)."""
     envm = (env_model if env_model is not None
             else os.environ.get("GEOTECH_WEBAPP_MODEL"))
-    choices = [dict(c) for c in MODEL_CHOICES]
+    choices = foundry_model_choices() + [dict(c) for c in MODEL_CHOICES]
     if envm and not any(c["id"] == envm for c in choices):
         choices.insert(0, {"id": envm, "label": envm,
                            "blurb": "from GEOTECH_WEBAPP_MODEL"})
@@ -545,11 +573,16 @@ def model_choices(env_model: Optional[str] = None) -> List[dict]:
 
 
 def default_model_id(env_model: Optional[str] = None) -> str:
-    """The default selected model id: ``GEOTECH_WEBAPP_MODEL`` if set (whether or
-    not it is already curated), else the first curated choice."""
+    """The default selected model id: ``GEOTECH_WEBAPP_MODEL`` if set (whether
+    or not it is already curated), else the first ``GEOTECH_FOUNDRY_MODELS``
+    entry (a Foundry deployment defaults to its own models), else the first
+    curated choice."""
     envm = (env_model if env_model is not None
             else os.environ.get("GEOTECH_WEBAPP_MODEL"))
-    return envm or MODEL_CHOICES[0]["id"]
+    if envm:
+        return envm
+    fm = foundry_model_choices()
+    return fm[0]["id"] if fm else MODEL_CHOICES[0]["id"]
 
 
 def model_label(model_id: Optional[str]) -> str:
@@ -557,7 +590,7 @@ def model_label(model_id: Optional[str]) -> str:
     ``None``/empty)."""
     if not model_id:
         return ""
-    for c in MODEL_CHOICES:
+    for c in MODEL_CHOICES + foundry_model_choices():
         if c["id"] == model_id:
             return c["label"]
     return model_id
