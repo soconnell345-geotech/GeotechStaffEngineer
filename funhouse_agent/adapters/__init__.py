@@ -395,4 +395,16 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.fhwa_pavements_adapter",
         "brief": "FHWA-NHI-05-037 Geotechnical Aspects of Pavements (the broad GEOTECH-aspects pavement reference, distinct from UFC 3-250-01 roads/parking design): resilient modulus Mr (default values by AASHTO/USCS soil class, Mr from CBR/R-value/DCP/plasticity, stress-dependent granular Mr, seasonal + backcalc-to-design adjustment), typical CBR by soil class, soil suitability as a pavement material, drainage modifier mi / coefficient Cd and permeability, frost-susceptibility F1-F4, swell potential, lime/cement/asphalt stabilization, compaction. US customary units (Mr in psi, CBR/R in %)",
     },
+    "eurocode_7_1": {
+        "adapter": "funhouse_agent.adapters.eurocode_7_1_adapter",
+        "brief": "EN 1997-1:2004 (Eurocode 7 Part 1 General Rules): Annex A partial factors (sets A/M/R, piles, anchors, UPL/HYD, xi factors) + Design Approaches DA1/DA2/DA3; Annex C earth pressures, D bearing resistance, E pressuremeter, F settlement, G rock, H movement limits. SI units",
+    },
+    "eurocode_7_2": {
+        "adapter": "funhouse_agent.adapters.eurocode_7_2_adapter",
+        "brief": "EN 1997-2:2007 (Eurocode 7 Part 2 Ground Investigation): derived-value correlations — CPT (phi'/E/Dutch pile factors), Menard PMT, SPT, dynamic probing, field vane mu, DMT, plate load; cu/Eoed from tests; lab minima. SI units",
+    },
+    "aashto_1993": {
+        "adapter": "funhouse_agent.adapters.aashto_1993_adapter",
+        "brief": "AASHTO 1993 Pavement Design Guide: flexible SN + rigid slab-D design equations (W18 solve both ways), layer coefficients a1/a2/a3, effective roadbed Mr, reliability ZR/So, drainage mi/Cd, load transfer J, ESAL factors. US customary units",
+    },
 }

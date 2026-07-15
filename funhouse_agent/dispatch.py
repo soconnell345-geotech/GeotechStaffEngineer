@@ -55,6 +55,7 @@ REFERENCE_MODULES = frozenset({
     "micropile",
     "ufc_backfill", "ufc_expansive", "ufc_pavement",
     "fema_p2082", "california_trenching", "fhwa_pavements",
+    "eurocode_7_1", "eurocode_7_2", "aashto_1993",
 })
 
 # Analysis (computation) modules: everything the primary agent may call directly.
