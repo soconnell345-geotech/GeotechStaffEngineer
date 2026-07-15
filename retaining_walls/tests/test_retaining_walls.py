@@ -1096,3 +1096,78 @@ class TestBarMatCurves:
         assert top["Kr_Ka"] > 2.0
         assert top["F_star"] == pytest.approx(
             round(F_star_metallic(top["depth_m"], 34.0), 3), abs=0.002)
+
+
+class TestBaseInterfaceOverrides:
+    """delta_base / base_adhesion overrides (owner wall session 2026-07-14).
+
+    The session wall (short 0.5 m heel, 2.6 m toe, H=5.55 m, gamma=15,
+    phi=33, c=5, q=7.5) exposed the double-2/3 trap: passing
+    phi_foundation=22 to mean "delta_b = 22 deg" yields delta_b = 14.7 deg.
+    These tests lock in (a) the trap numbers, (b) the override path matching
+    the session's independent free-body statics (FoS 1.42 Coulomb / 1.01
+    Rankine).
+    """
+
+    def _geom(self):
+        from retaining_walls.geometry import CantileverWallGeometry
+        return CantileverWallGeometry(
+            wall_height=5.55, base_width=3.5, base_thickness=0.4,
+            toe_length=2.6, stem_thickness_base=0.4, stem_thickness_top=0.4,
+            surcharge=7.5)
+
+    def test_double_two_thirds_trap_reproduced(self):
+        from retaining_walls.cantilever import check_sliding
+        r = check_sliding(self._geom(), 15.0, 33.0, c_backfill=0.0,
+                          phi_foundation=22.0, c_foundation=0.0,
+                          pressure_method="coulomb")
+        assert r["delta_base_deg"] == pytest.approx(14.67, abs=0.01)
+        assert r["FOS_sliding"] == pytest.approx(0.60, abs=0.01)
+
+    def test_delta_base_override_matches_free_body_coulomb(self):
+        from retaining_walls.cantilever import check_sliding
+        r = check_sliding(self._geom(), 15.0, 33.0, c_backfill=5.0,
+                          phi_foundation=33.0, c_foundation=0.0,
+                          pressure_method="coulomb", delta_base=22.0)
+        assert r["delta_base_deg"] == 22.0
+        assert r["base_adhesion_kPa"] == 0.0
+        assert r["FOS_sliding"] == pytest.approx(1.42, abs=0.01)
+
+    def test_delta_base_override_matches_free_body_rankine(self):
+        from retaining_walls.cantilever import check_sliding
+        r = check_sliding(self._geom(), 15.0, 33.0, c_backfill=5.0,
+                          phi_foundation=33.0, c_foundation=0.0,
+                          pressure_method="rankine", delta_base=22.0)
+        assert r["FOS_sliding"] == pytest.approx(1.01, abs=0.01)
+
+    def test_defaults_unchanged_without_overrides(self):
+        from retaining_walls.cantilever import check_sliding
+        r = check_sliding(self._geom(), 15.0, 33.0, c_backfill=5.0,
+                          phi_foundation=33.0, c_foundation=6.0,
+                          pressure_method="coulomb")
+        assert r["delta_base_deg"] == pytest.approx(22.0, abs=0.01)
+        assert r["base_adhesion_kPa"] == pytest.approx(4.0, abs=0.01)
+
+    def test_base_adhesion_override_direct(self):
+        from retaining_walls.cantilever import check_sliding
+        base = check_sliding(self._geom(), 15.0, 33.0,
+                             phi_foundation=33.0, c_foundation=0.0)
+        r = check_sliding(self._geom(), 15.0, 33.0,
+                          phi_foundation=33.0, c_foundation=0.0,
+                          base_adhesion=10.0)
+        assert r["base_adhesion_kPa"] == 10.0
+        extra = 10.0 * 3.5  # ca * B
+        assert (r["resisting_force_kN_per_m"]
+                == pytest.approx(base["resisting_force_kN_per_m"] + extra, abs=0.2))
+
+    def test_analyze_wall_passes_overrides_through(self):
+        from retaining_walls.cantilever import analyze_cantilever_wall
+        r_trap = analyze_cantilever_wall(self._geom(), 15.0, 33.0,
+                                         c_backfill=5.0, phi_foundation=22.0,
+                                         pressure_method="coulomb")
+        r_fix = analyze_cantilever_wall(self._geom(), 15.0, 33.0,
+                                        c_backfill=5.0, phi_foundation=33.0,
+                                        pressure_method="coulomb",
+                                        delta_base=22.0)
+        assert r_fix.FOS_sliding > r_trap.FOS_sliding
+        assert r_fix.FOS_sliding == pytest.approx(1.42, abs=0.01)

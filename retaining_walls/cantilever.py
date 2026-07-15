@@ -137,10 +137,22 @@ def check_sliding(geom: CantileverWallGeometry,
                   FOS_required: float = 1.5,
                   pressure_method: str = "rankine",
                   include_passive: bool = False,
-                  gamma_foundation: float = None) -> Dict[str, Any]:
+                  gamma_foundation: float = None,
+                  delta_base: float = None,
+                  base_adhesion: float = None) -> Dict[str, Any]:
     """Check sliding stability.
 
     FOS_sliding = (V * tan(delta_b) + ca * B + Pp) / (Pa * cos(delta))
+
+    By DEFAULT the base interface parameters are derived from the foundation
+    soil: ``delta_b = (2/3)*phi_foundation`` and ``ca = (2/3)*c_foundation``
+    (Das Ch. 13 / GEC-11 practice for a footing cast against soil with a
+    reduced interface). Pass the FULL foundation soil strengths — do NOT
+    pre-reduce them, or the 2/3 factor is applied twice (owner wall session
+    2026-07-14: phi_foundation=22 intended as "delta_b = 22 deg" produced
+    delta_b = 14.7 deg). To set the interface directly (e.g. delta_b = phi
+    for cast-in-place concrete failing soil-on-soil, or a measured adhesion),
+    use ``delta_base`` / ``base_adhesion``, which BYPASS the 2/3 factors.
 
     The active thrust is decomposed per the chosen earth-pressure method
     (RW-1): only the horizontal component Pa*cos(delta) drives sliding, and
@@ -173,11 +185,19 @@ def check_sliding(geom: CantileverWallGeometry,
         otherwise on base_thickness. Default False.
     gamma_foundation : float, optional
         Foundation soil unit weight (kN/m³). If None, uses gamma_backfill.
+    delta_base : float, optional
+        Base interface friction angle (degrees), used DIRECTLY (no 2/3
+        factor). If None (default), delta_b = (2/3)*phi_foundation.
+    base_adhesion : float, optional
+        Base adhesion ca (kPa), used DIRECTLY (no 2/3 factor). If None
+        (default), ca = (2/3)*c_foundation.
 
     Returns
     -------
     dict
-        FOS_sliding, driving_force, resisting_force, Pp_kN_per_m, passes.
+        FOS_sliding, driving_force, resisting_force, Pp_kN_per_m, passes,
+        plus the interface values actually used (delta_base_deg,
+        base_adhesion_kPa).
     """
     if phi_foundation is None:
         phi_foundation = phi_backfill
@@ -202,9 +222,10 @@ def check_sliding(geom: CantileverWallGeometry,
     # Vertical component of the active thrust (stabilizing)
     V += Pv
 
-    # Base friction: delta_b = 2/3 * phi_foundation
-    delta_b = 2.0 / 3.0 * phi_foundation
-    ca = 2.0 / 3.0 * c_foundation
+    # Base interface: default delta_b = 2/3 * phi_foundation and
+    # ca = 2/3 * c_foundation; explicit overrides bypass the 2/3 factors.
+    delta_b = delta_base if delta_base is not None else 2.0 / 3.0 * phi_foundation
+    ca = base_adhesion if base_adhesion is not None else 2.0 / 3.0 * c_foundation
 
     resisting = V * math.tan(math.radians(delta_b)) + ca * B
 
@@ -233,6 +254,8 @@ def check_sliding(geom: CantileverWallGeometry,
         "Pa_kN_per_m": round(Pa, 1),
         "Pa_vertical_kN_per_m": round(Pv, 1),
         "thrust_inclination_deg": round(delta_deg, 2),
+        "delta_base_deg": round(delta_b, 2),
+        "base_adhesion_kPa": round(ca, 2),
         "passes": FOS >= FOS_required,
     }
 
@@ -406,7 +429,9 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
                             FOS_overturning: float = 2.0,
                             pressure_method: str = "rankine",
                             include_passive: bool = False,
-                            gamma_foundation: float = None) -> CantileverWallResult:
+                            gamma_foundation: float = None,
+                            delta_base: float = None,
+                            base_adhesion: float = None) -> CantileverWallResult:
     """Run complete cantilever wall stability analysis.
 
     Parameters
@@ -437,6 +462,12 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         If True, include passive resistance in sliding check. Default False.
     gamma_foundation : float, optional
         Foundation soil unit weight (kN/m³). If None, uses gamma_backfill.
+    delta_base : float, optional
+        Base interface friction angle (degrees), used DIRECTLY in the sliding
+        check (no 2/3 factor). Default None → (2/3)*phi_foundation.
+    base_adhesion : float, optional
+        Base adhesion ca (kPa), used DIRECTLY (no 2/3 factor). Default
+        None → (2/3)*c_foundation.
 
     Returns
     -------
@@ -445,7 +476,8 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
     sliding = check_sliding(
         geom, gamma_backfill, phi_backfill, c_backfill,
         phi_foundation, c_foundation, gamma_concrete,
-        FOS_sliding, pressure_method, include_passive, gamma_foundation
+        FOS_sliding, pressure_method, include_passive, gamma_foundation,
+        delta_base=delta_base, base_adhesion=base_adhesion,
     )
 
     overturning = check_overturning(

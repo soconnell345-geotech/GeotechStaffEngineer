@@ -148,3 +148,13 @@ recursion cap + limit visibility (a0e7dd7); download MIME fix .md-as-.bin
   walls (no toe/heel dims, footing thickness, c=0 override, foundation-δ) — the
   wall session had to bypass it; widen alongside the sliding-convention
   investigation.
+
+## Backlog close-out (2026-07-15)
+- SLIDING DISCREPANCY RESOLVED: not a module bug — the double-2/3 trap
+  (phi_foundation=22 meant as delta_b -> module applied 2/3 again). Module
+  matches the session free-body EXACTLY when driven correctly (1.42/1.01).
+  Fixed by delta_base/base_adhesion direct overrides + loud METHOD_INFO
+  warnings + sliding_basis echo in results. Verdict: retaining_walls/DESIGN.md.
+- retaining_wall_package param surface WIDENED: full geometry (base_width,
+  toe, stem, base thickness, shear key), c_backfill, foundation params,
+  delta_base/base_adhesion, include_passive now documented + passed through.
