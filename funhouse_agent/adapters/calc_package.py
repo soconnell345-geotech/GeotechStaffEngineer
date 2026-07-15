@@ -1084,10 +1084,72 @@ def _generate_sheet_pile_package(params: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Generic HTML -> PDF report render (owner wall session 2026-07-14: no canned
+# package matched an atypical wall, and the agent had no way to turn its own
+# composed report into a PDF)
+# ---------------------------------------------------------------------------
+
+def _generate_html_to_pdf(params: dict) -> dict:
+    from calc_package.latex_renderer import save_html_pdf_story
+
+    reject_unknown_params(params, {"html", "html_path", "output_path"},
+                          method="html_to_pdf")
+    html = params.get("html")
+    html_path = params.get("html_path")
+    if not html and not html_path:
+        return {"status": "error",
+                "error": "Provide 'html' (self-contained HTML content) or "
+                         "'html_path' (an existing HTML file on the REAL "
+                         "filesystem, e.g. a save_file or calc-package path)."}
+    if not html:
+        src = os.path.abspath(html_path)
+        if not os.path.isfile(src):
+            return {"status": "error",
+                    "error": f"html_path not found on the real filesystem: "
+                             f"'{src}'. Agent-side scratch filesystems are "
+                             "sandboxed and not on the real disk — pass the "
+                             "HTML content directly via 'html' instead."}
+        with open(src, "r", encoding="utf-8", errors="replace") as f:
+            html = f.read()
+
+    output_path = params.get("output_path") or _default_output_path(
+        "report", "pdf")
+    if not output_path.lower().endswith(".pdf"):
+        output_path += ".pdf"
+    abs_path = os.path.abspath(output_path)
+    try:
+        save_html_pdf_story(html, abs_path)
+    except Exception as exc:
+        return {"status": "error",
+                "error": f"PDF render failed ({type(exc).__name__}: {exc}). "
+                         "The Story engine handles headings/tables/colours and "
+                         "base64 PNG/JPEG <img> figures, but NOT inline <svg> "
+                         "or advanced CSS — simplify the HTML and retry."}
+
+    problem = written_file_problem(abs_path, None)
+    file_exists = os.path.isfile(abs_path)
+    response = {
+        "status": "success",
+        "analysis_type": "HTML report to PDF",
+        "output_path": abs_path,
+        "file_exists": file_exists and problem is None,
+        "file_size_bytes": os.path.getsize(abs_path) if file_exists else 0,
+        "format": "pdf",
+        "renderer": "story",
+    }
+    if problem:
+        response["status"] = "error"
+        response["error"] = (f"PDF was generated but {problem}."
+                             + workspace_write_hint(abs_path))
+    return response
+
+
+# ---------------------------------------------------------------------------
 # Method registry
 # ---------------------------------------------------------------------------
 
 METHOD_REGISTRY = {
+    "html_to_pdf": _generate_html_to_pdf,
     "bearing_capacity_package": _generate_bearing_capacity_package,
     "lateral_pile_package": _generate_lateral_pile_package,
     "slope_stability_package": _generate_slope_stability_package,
@@ -1146,6 +1208,36 @@ _COMMON_RETURNS = {
 }
 
 METHOD_INFO = {
+    "html_to_pdf": {
+        "category": "Calculation Package",
+        "brief": "Render self-contained HTML (e.g. a custom report YOU composed) to a "
+                 "paginated PDF on the REAL filesystem. Use when no canned *_package "
+                 "method matches the analysis — compose the report HTML yourself "
+                 "(inline CSS, figures as base64 PNG/JPEG data URIs; inline <svg> is "
+                 "NOT rendered) and pass it here. Pure-Python (PyMuPDF Story engine).",
+        "parameters": {
+            "html": {"type": "str", "required": False,
+                     "description": "Self-contained HTML content to render. Inline all "
+                                    "CSS; embed figures as base64 PNG/JPEG data URIs "
+                                    "(convert SVG to PNG first — inline <svg> is ignored). "
+                                    "Provide this or 'html_path'."},
+            "html_path": {"type": "str", "required": False,
+                          "description": "Path to an existing HTML file on the REAL "
+                                         "filesystem (a save_file or calc-package output "
+                                         "path — NOT a sandboxed scratch-filesystem path)."},
+            "output_path": {"type": "str", "required": False,
+                            "description": "PDF output path. Auto-generated if omitted."},
+        },
+        "returns": {
+            "status": "success or error.",
+            "output_path": "Absolute path of the saved PDF.",
+            "file_exists": "True if the file was verified on disk after writing. "
+                           "Trust this field — do NOT try to verify the file with "
+                           "agent-side filesystem tools (they may be sandboxed).",
+            "file_size_bytes": "Size of the saved PDF.",
+            "renderer": "'story' (pure-Python PyMuPDF engine).",
+        },
+    },
     "bearing_capacity_package": {
         "category": "Calculation Package",
         "brief": "Run bearing capacity analysis and generate Mathcad-style calc package.",

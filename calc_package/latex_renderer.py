@@ -380,14 +380,25 @@ def _save_pdf_story(data: CalcPackageData, filepath: str) -> str:
     """Pure-Python HTML -> PDF via PyMuPDF's Story engine (no LaTeX needed).
 
     Renders the SAME self-contained HTML as ``format="html"`` (``render_html``)
-    into a paginated PDF, with two Story-only adjustments: inline PNG figures are
-    re-encoded to JPEG (so they stay compressed in the PDF instead of bloating
-    it) and wide tables are wrapped to the page width (so they cannot clip at the
-    right edge). The Story engine supports a SUBSET of CSS: it lays out text,
-    headings, tables, colours and inline base64 ``<img>`` figures, but ignores
-    advanced CSS (flexbox/grid, positioned layout, some border/spacing rules), so
-    the result is a plainer-looking document than the LaTeX PDF. The CONTENT is
-    complete — only the styling fidelity differs. Returns the absolute PDF path.
+    into a paginated PDF. See :func:`save_html_pdf_story` for the engine's
+    capabilities and limits. Returns the absolute PDF path.
+    """
+    return save_html_pdf_story(render_html(data), filepath)
+
+
+def save_html_pdf_story(html: str, filepath: str) -> str:
+    """Render ARBITRARY self-contained HTML to a paginated PDF (fitz.Story).
+
+    Public generic entry point (also exposed to LLM agents as the
+    ``calc_package.html_to_pdf`` method) for report content that no canned
+    ``*_package`` generator covers. Two Story-only adjustments are applied:
+    inline base64 PNG figures are re-encoded to JPEG (so they stay compressed
+    in the PDF instead of bloating it) and wide tables are wrapped to the page
+    width (so they cannot clip at the right edge). The Story engine supports a
+    SUBSET of CSS: it lays out text, headings, tables, colours and inline
+    base64 PNG/JPEG ``<img>`` figures, but ignores advanced CSS (flexbox/grid,
+    positioned layout, some border/spacing rules) and does NOT render inline
+    ``<svg>`` elements. Returns the absolute PDF path.
     """
     try:
         import fitz  # PyMuPDF, installed via the [pdf] extra
@@ -398,7 +409,6 @@ def _save_pdf_story(data: CalcPackageData, filepath: str) -> str:
             "pip install 'geotech-staff-engineer[pdf]'."
         ) from exc
 
-    html = render_html(data)
     html = _compress_pdf_images(html)
     html = _fit_wide_tables_for_pdf(html)
     if "</head>" in html:
