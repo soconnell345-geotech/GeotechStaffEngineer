@@ -341,7 +341,15 @@ _CALC_FRAMING = (
     "method dump, a big table, a plot), SAVE it to a file — pass an output_path to "
     "the tool, or use save_file — and include the saved path in your reply, so the "
     "full detail can be re-read on demand. Never discard a result you were asked "
-    "to compute: summarize it and point to the saved file."
+    "to compute: summarize it and point to the saved file.\n"
+    "REAL DISK ONLY for deliverables: any built-in scratch filesystem "
+    "(write_file/read_file/ls) is a SANDBOX — files written there are NOT on the "
+    "real disk and the user can never see them. Every file meant for the user MUST "
+    "be produced by a tool that returns a verified real path: pass output_path to "
+    "the analysis/package tool, or use save_file. If no canned *_package method "
+    "fits the analysis, compose the report as self-contained HTML yourself and "
+    "render it with calc_package method html_to_pdf (figures as base64 PNG/JPEG "
+    "data URIs, not SVG); save_file the HTML too if an HTML copy is wanted."
 )
 
 #: Appended to the PRIMARY agent's system prompt when the calc sub-agent is on,

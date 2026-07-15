@@ -60,9 +60,57 @@ class TestHelpers:
         from funhouse_agent.adapters.calc_package import METHOD_INFO
         for name, info in METHOD_INFO.items():
             params = info["parameters"]
-            assert "project_name" in params, f"{name} missing project_name"
             assert "output_path" in params, f"{name} missing output_path"
+            if name == "html_to_pdf":  # renderer utility, not an analysis package
+                continue
+            assert "project_name" in params, f"{name} missing project_name"
             assert "format" in params, f"{name} missing format"
+
+
+class TestHtmlToPdf:
+    HTML = ("<html><head><style>h1{color:#345;}</style></head><body>"
+            "<h1>Wall stability report</h1><table><tr><td>Sliding FoS</td>"
+            "<td>1.42</td></tr></table></body></html>")
+
+    def test_html_content_to_pdf(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import _generate_html_to_pdf
+        outfile = str(tmp_path / "report.pdf")
+        result = _generate_html_to_pdf({"html": self.HTML,
+                                        "output_path": outfile})
+        assert result["status"] == "success"
+        assert result["file_exists"] is True
+        assert result["file_size_bytes"] > 500
+        assert result["renderer"] == "story"
+        with open(outfile, "rb") as f:
+            assert f.read(5) == b"%PDF-"
+
+    def test_html_path_to_pdf(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import _generate_html_to_pdf
+        src = tmp_path / "report.html"
+        src.write_text(self.HTML, encoding="utf-8")
+        result = _generate_html_to_pdf({"html_path": str(src),
+                                        "output_path": str(tmp_path / "r")})
+        assert result["status"] == "success"
+        assert result["output_path"].endswith(".pdf")   # extension appended
+        assert result["file_exists"] is True
+
+    def test_missing_inputs_is_clear_error(self):
+        from funhouse_agent.adapters.calc_package import _generate_html_to_pdf
+        result = _generate_html_to_pdf({})
+        assert result["status"] == "error"
+        assert "html" in result["error"]
+
+    def test_sandboxed_path_names_the_problem(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import _generate_html_to_pdf
+        result = _generate_html_to_pdf(
+            {"html_path": str(tmp_path / "not_there.html")})
+        assert result["status"] == "error"
+        assert "sandboxed" in result["error"]
+
+    def test_unknown_param_rejected(self):
+        from funhouse_agent.adapters.calc_package import _generate_html_to_pdf
+        with pytest.raises(ValueError, match="html_to_pdf"):
+            _generate_html_to_pdf({"html": "<p>x</p>", "renderer": "latex"})
 
 
 # ---------------------------------------------------------------------------
@@ -498,7 +546,7 @@ class TestDispatchIntegration:
         methods = list_methods("calc_package")
         # list_methods returns {category: {method: brief}}
         total = sum(len(v) for v in methods.values())
-        assert total == 14
+        assert total == 15  # 14 packages + html_to_pdf
 
     def test_describe_method(self):
         from funhouse_agent.dispatch import describe_method
