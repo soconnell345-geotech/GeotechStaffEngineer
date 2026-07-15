@@ -138,3 +138,13 @@ recursion cap + limit visibility (a0e7dd7); download MIME fix .md-as-.bin
   checkpointer; SqliteSaver extra; wiki integration (parked).
 - Externals: TinyApp env answer; owner GPT-5.4 eval rerun; Databricks
   launcher live verification; 5.6.0 release word.
+
+## Post-close-out fixes (2026-07-15, from owner wall-session follow-up)
+- calc_package.html_to_pdf: generic verified HTML->PDF render (PyMuPDF Story)
+  for reports no canned *_package covers (ee44509).
+- Calc sub-agent framing: REAL DISK ONLY rule — scratch-FS writes are sandboxed
+  and invisible to the user; deliverables via output_path/save_file/html_to_pdf.
+- Backlog add: retaining_wall_package parameter surface too narrow for atypical
+  walls (no toe/heel dims, footing thickness, c=0 override, foundation-δ) — the
+  wall session had to bypass it; widen alongside the sliding-convention
+  investigation.
