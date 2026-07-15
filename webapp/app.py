@@ -586,6 +586,10 @@ if prompt:
         # for durable, portable cards. None => same dir (the default), where the
         # files/ diff already covers everything and no bridging is needed.
         working_dir = core.working_dir_for(ss.thread_id)
+        # Re-apply at TURN START: the output-dir env is process-wide, so another
+        # browser tab's sidebar rerun (a different conversation) could have
+        # repointed it since this tab's last rerun (QC 2026-07-15).
+        core.apply_default_output_dir(working_dir)
         before_wd = (core.snapshot_dir(working_dir)
                      if os.path.abspath(working_dir) != os.path.abspath(ss.temp_dir)
                      else None)
