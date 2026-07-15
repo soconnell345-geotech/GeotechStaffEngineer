@@ -284,6 +284,9 @@ with st.sidebar:
     _opts = core.model_choices()
     _ids = [c["id"] for c in _opts]
     _labels = {c["id"]: f"{c['label']} — {c['blurb']}" for c in _opts}
+    if ss.model and ss.model not in _ids:   # a custom id/RID stays selectable
+        _ids.insert(0, ss.model)
+        _labels[ss.model] = f"{ss.model} — custom"
     _cur = ss.model if ss.model in _ids else _ids[0]
     _picked = st.selectbox(
         "Model", _ids, index=_ids.index(_cur),
@@ -298,6 +301,23 @@ with st.sidebar:
         st.rerun()
     if eng.source == "prompter":
         st.caption("Model is fixed by the deployment; the picker doesn't apply.")
+
+    # Custom model id / Foundry RID — lets a deployment plug in a newly-enabled
+    # model (e.g. a Claude RID on Foundry) without a code change or env edit.
+    with st.expander("Custom model id (advanced)", expanded=False):
+        _rid = st.text_input(
+            "Model id or Foundry RID", value="",
+            key=f"custom_model_{ss.thread_id}",
+            help="e.g. ri.language-model-service..language-model.gpt-5-2 — "
+                 "'ri.…' ids route through the Foundry LLM proxy automatically "
+                 "(see docs/FOUNDRY.md). Applies to this conversation going "
+                 "forward.")
+        if st.button("Use this model", key=f"use_custom_{ss.thread_id}") \
+                and _rid.strip():
+            _resolve_and_build(_rid.strip())
+            if core.load_meta(ss.thread_id) is not None:
+                core.touch_conversation(ss.thread_id, model=_rid.strip())
+            st.rerun()
 
     # Agent picker (A5e) — the full geotech agent, or a narrow domain reviewer.
     # Per conversation, persisted in meta, shown on the conversation list line.

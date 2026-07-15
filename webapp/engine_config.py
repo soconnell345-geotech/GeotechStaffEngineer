@@ -48,6 +48,120 @@ DEFAULT_MAX_TOKENS = 8192
 #: register_model_builder; None means "not injected".
 _MODEL_BUILDER: Optional[Callable[[], object]] = None
 
+# --- Palantir Foundry LLM proxy path (FOUNDRY_APP_PLAN.md) -------------------
+# Foundry exposes provider-compatible proxies on the stack itself:
+#   OpenAI shape:    https://<host>/api/v2/llm/proxy/openai/v1/chat/completions
+#   Anthropic shape: https://<host>/api/v2/llm/proxy/anthropic/v1/messages
+# Auth is the FOUNDRY token (bearer); the model is a Foundry RID like
+# "ri.language-model-service..language-model.gpt-5-2". A model id starting with
+# "ri." routes here automatically — by provider, from the RID text — so new
+# model RIDs (e.g. Claude, once enabled on the enrollment) plug in with NO code
+# change: type the RID in the app or list it in GEOTECH_FOUNDRY_MODELS.
+
+FOUNDRY_TOKEN_ENVS = ("GEOTECH_FOUNDRY_TOKEN", "FOUNDRY_TOKEN")
+FOUNDRY_HOST_ENVS = ("GEOTECH_FOUNDRY_HOST", "FOUNDRY_HOSTNAME", "FOUNDRY_URL")
+
+
+def foundry_token() -> Optional[str]:
+    """The Foundry bearer token from the first set env var, else None."""
+    for env in FOUNDRY_TOKEN_ENVS:
+        val = os.environ.get(env)
+        if val and val.strip():
+            return val.strip()
+    return None
+
+
+def foundry_base_url() -> Optional[str]:
+    """The stack base URL (``https://<host>``) from the first set env var,
+    normalized (scheme added, trailing slash stripped), else None."""
+    for env in FOUNDRY_HOST_ENVS:
+        val = os.environ.get(env)
+        if val and val.strip():
+            host = val.strip().rstrip("/")
+            if not host.startswith(("http://", "https://")):
+                host = "https://" + host
+            return host
+    return None
+
+
+def is_foundry_model_id(model_id: Optional[str]) -> bool:
+    """True for a Foundry model RID (``ri.…``)."""
+    return bool(model_id) and str(model_id).startswith("ri.")
+
+
+def _resolve_foundry(model_id: str) -> "EngineResolution":
+    """Build a chat model against the Foundry LLM proxy for a model RID.
+
+    Routes by provider inferred from the RID text: ``anthropic`` in the RID →
+    the Anthropic-messages proxy via ``ChatAnthropic``; anything else → the
+    OpenAI-chat-completions proxy via ``ChatOpenAI``. Never raises.
+    """
+    token = foundry_token()
+    base = foundry_base_url()
+    if not token or not base:
+        missing = []
+        if not token:
+            missing.append("token (GEOTECH_FOUNDRY_TOKEN or FOUNDRY_TOKEN)")
+        if not base:
+            missing.append("host (GEOTECH_FOUNDRY_HOST or FOUNDRY_HOSTNAME)")
+        return EngineResolution(
+            None, "error", model_id,
+            f"Model id '{model_id}' looks like a Foundry RID, but the Foundry "
+            f"{' and '.join(missing)} env var(s) are not set. See docs/FOUNDRY.md.")
+
+    if "anthropic" in model_id.lower():
+        try:
+            from langchain_anthropic import ChatAnthropic
+        except Exception as exc:
+            return EngineResolution(
+                None, "error", model_id,
+                f"'langchain_anthropic' is not installed ({type(exc).__name__}) "
+                "— add it in the workspace Libraries panel.")
+        try:
+            # The proxy authenticates with "Authorization: Bearer <token>"; the
+            # Anthropic client's own x-api-key header is sent too and ignored.
+            model = ChatAnthropic(
+                model=model_id,
+                max_tokens=_default_max_tokens(),
+                anthropic_api_url=f"{base}/api/v2/llm/proxy/anthropic",
+                anthropic_api_key=token,
+                default_headers={"Authorization": f"Bearer {token}"},
+            )
+        except Exception as exc:
+            return EngineResolution(
+                None, "error", model_id,
+                f"Could not construct ChatAnthropic for the Foundry proxy: "
+                f"{type(exc).__name__}: {exc}")
+        return EngineResolution(
+            model, "foundry", model_id,
+            f"Using the Foundry Anthropic proxy ({model_id}).")
+
+    try:
+        from langchain_openai import ChatOpenAI
+    except Exception as exc:
+        return EngineResolution(
+            None, "error", model_id,
+            f"'langchain_openai' is not installed ({type(exc).__name__}) — add "
+            "'langchain-openai' in the workspace Libraries panel (needed for "
+            "GPT-family Foundry RIDs).")
+    try:
+        # The OpenAI client sends the api_key as "Authorization: Bearer …",
+        # which is exactly what the Foundry proxy expects.
+        model = ChatOpenAI(
+            model=model_id,
+            max_tokens=_default_max_tokens(),
+            api_key=token,
+            base_url=f"{base}/api/v2/llm/proxy/openai/v1",
+        )
+    except Exception as exc:
+        return EngineResolution(
+            None, "error", model_id,
+            f"Could not construct ChatOpenAI for the Foundry proxy: "
+            f"{type(exc).__name__}: {exc}")
+    return EngineResolution(
+        model, "foundry", model_id,
+        f"Using the Foundry OpenAI proxy ({model_id}).")
+
 
 def register_model_builder(builder: Optional[Callable[[], object]]) -> None:
     """Install (or clear, with ``None``) the deployment model builder.
@@ -125,7 +239,12 @@ def resolve_engine(model_id: Optional[str] = None) -> EngineResolution:
             model, "prompter", name,
             f"Using the deployment-provided engine ({name}).")
 
-    # 2) ANTHROPIC_API_KEY -> ChatAnthropic (local / dev path).
+    # 2) Foundry model RID -> the stack's LLM proxy (routes by provider).
+    _mid = model_id or os.environ.get(MODEL_ENV)
+    if is_foundry_model_id(_mid):
+        return _resolve_foundry(_mid)
+
+    # 3) ANTHROPIC_API_KEY -> ChatAnthropic (local / dev path).
     if os.environ.get(KEY_ENV):
         model_id = model_id or os.environ.get(MODEL_ENV) or DEFAULT_MODEL
         try:
