@@ -14,7 +14,9 @@ from retaining_walls.reinforcement import (
 _WALL_ALIASES = {"phi": "phi_backfill", "gamma": "gamma_backfill",
                  "friction_angle": "phi_backfill", "unit_weight": "gamma_backfill",
                  "c": "c_backfill", "cohesion": "c_backfill",
-                 "height": "wall_height", "H": "wall_height"}
+                 "height": "wall_height", "H": "wall_height",
+                 "delta_b": "delta_base", "base_friction_angle": "delta_base",
+                 "adhesion": "base_adhesion", "ca": "base_adhesion"}
 
 # MSE reinforced fill is select granular — there is no cohesion input, so do
 # not alias c/cohesion to c_backfill (the reject message would name a key the
@@ -82,7 +84,8 @@ def _run_cantilever_wall(params):
          "backfill_slope", "surcharge", "gamma_backfill", "phi_backfill",
          "c_backfill", "phi_foundation", "c_foundation", "q_allowable",
          "gamma_concrete", "FOS_sliding_required", "FOS_overturning_required",
-         "pressure_method"),
+         "pressure_method", "include_passive", "gamma_foundation",
+         "delta_base", "base_adhesion"),
         method="cantilever_wall")
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
                    method="cantilever_wall")
@@ -105,9 +108,33 @@ def _run_cantilever_wall(params):
         FOS_sliding=params.get("FOS_sliding_required", 1.5),
         FOS_overturning=params.get("FOS_overturning_required", 2.0),
         pressure_method=params.get("pressure_method", "rankine"),
+        include_passive=params.get("include_passive", False),
+        gamma_foundation=params.get("gamma_foundation"),
+        delta_base=params.get("delta_base"),
+        base_adhesion=params.get("base_adhesion"),
     )
     output = result.to_dict()
     output["geometry"] = {"wall_height_m": geom.wall_height, "base_width_m": geom.base_width}
+    # Surface the sliding-interface values actually used, so the caller can
+    # verify the basis instead of guessing (owner wall session 2026-07-14).
+    from retaining_walls.cantilever import check_sliding as _cs
+    sl = _cs(geom, params["gamma_backfill"], params["phi_backfill"],
+             params.get("c_backfill", 0.0), params.get("phi_foundation"),
+             params.get("c_foundation", 0.0), params.get("gamma_concrete", 24.0),
+             params.get("FOS_sliding_required", 1.5),
+             params.get("pressure_method", "rankine"),
+             params.get("include_passive", False), params.get("gamma_foundation"),
+             delta_base=params.get("delta_base"),
+             base_adhesion=params.get("base_adhesion"))
+    output["sliding_basis"] = {
+        "delta_base_deg": sl["delta_base_deg"],
+        "base_adhesion_kPa": sl["base_adhesion_kPa"],
+        "driving_force_kN_per_m": sl["driving_force_kN_per_m"],
+        "resisting_force_kN_per_m": sl["resisting_force_kN_per_m"],
+        "Pa_kN_per_m": sl["Pa_kN_per_m"],
+        "Pa_vertical_kN_per_m": sl["Pa_vertical_kN_per_m"],
+        "thrust_inclination_deg": sl["thrust_inclination_deg"],
+    }
     return output
 
 
@@ -280,15 +307,19 @@ METHOD_INFO = {
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surcharge (kPa)."},
             "backfill_slope": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees)."},
             "c_backfill": {"type": "float", "required": False, "default": 0.0, "description": "Backfill cohesion (kPa)."},
-            "phi_foundation": {"type": "float", "required": False, "description": "Foundation soil friction angle (deg). Defaults to phi_backfill."},
-            "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation soil cohesion (kPa)."},
+            "phi_foundation": {"type": "float", "required": False, "description": "Foundation soil friction angle (deg), FULL value — the sliding check applies delta_b = (2/3)*phi_foundation INTERNALLY. Do NOT pre-reduce (passing 2/3*phi here double-counts the reduction). To set the base friction angle directly, use delta_base instead. Defaults to phi_backfill."},
+            "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation soil cohesion (kPa), FULL value — the sliding check applies adhesion ca = (2/3)*c_foundation INTERNALLY. Do NOT pre-reduce. To set the adhesion directly, use base_adhesion instead."},
+            "delta_base": {"type": "float", "required": False, "description": "Base interface friction angle delta_b (deg), used DIRECTLY in the sliding check with NO 2/3 factor (e.g. delta_b = phi for cast-in-place concrete failing soil-on-soil, or a chosen 2/3*phi). Overrides the (2/3)*phi_foundation default."},
+            "base_adhesion": {"type": "float", "required": False, "description": "Base adhesion ca (kPa), used DIRECTLY with NO 2/3 factor (0 = no adhesion). Overrides the (2/3)*c_foundation default."},
+            "include_passive": {"type": "bool", "required": False, "default": False, "description": "Include passive resistance in front of the wall (on key_depth if has_shear_key, else on base_thickness) in the sliding check."},
+            "gamma_foundation": {"type": "float", "required": False, "description": "Foundation soil unit weight (kN/m3) for passive resistance. Defaults to gamma_backfill."},
             "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa) for the bearing check."},
             "gamma_concrete": {"type": "float", "required": False, "default": 24.0, "description": "Concrete unit weight (kN/m3)."},
             "FOS_sliding_required": {"type": "float", "required": False, "default": 1.5, "description": "Required sliding FOS."},
             "FOS_overturning_required": {"type": "float", "required": False, "default": 2.0, "description": "Required overturning FOS."},
             "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb"], "description": "Earth pressure theory."},
         },
-        "returns": {"FOS_sliding": "Factor of safety against sliding.", "FOS_overturning": "Factor of safety against overturning."},
+        "returns": {"FOS_sliding": "Factor of safety against sliding.", "FOS_overturning": "Factor of safety against overturning.", "sliding_basis": "The sliding-check basis actually used: delta_base_deg, base_adhesion_kPa, driving/resisting forces, Pa and its vertical component + inclination — verify these match your intended assumptions."},
     },
     "earth_pressure_coefficient": {
         "category": "Earth Pressure",

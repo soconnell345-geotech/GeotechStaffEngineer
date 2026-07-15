@@ -939,3 +939,32 @@ class TestMseCustomReinforcement:
                 "reinforcement_Tallowable": 150.0,
                 "reinforcement_transverse_spacing": 0.15, "bogus_key": 1,
             })
+
+
+class TestWallSlidingBasis:
+    """cantilever_wall surfaces its sliding basis + direct interface overrides
+    (owner wall session 2026-07-14: double-2/3 trap)."""
+
+    WALL = {"wall_height": 5.55, "base_width": 3.5, "toe_length": 2.6,
+            "stem_thickness_base": 0.4, "stem_thickness_top": 0.4,
+            "base_thickness": 0.4, "surcharge": 7.5,
+            "gamma_backfill": 15.0, "phi_backfill": 33.0, "c_backfill": 5.0,
+            "pressure_method": "coulomb"}
+
+    def test_sliding_basis_surfaced(self):
+        from funhouse_agent.adapters.retaining_walls import _run_cantilever_wall
+        p = dict(self.WALL)
+        p["c_foundation"] = 5.0
+        out = _run_cantilever_wall(p)
+        basis = out["sliding_basis"]
+        assert basis["delta_base_deg"] == pytest.approx(22.0, abs=0.01)
+        assert basis["base_adhesion_kPa"] == pytest.approx(10.0 / 3.0, abs=0.01)
+
+    def test_delta_base_override_and_alias(self):
+        from funhouse_agent.adapters.retaining_walls import _run_cantilever_wall
+        p = dict(self.WALL)
+        p.update({"phi_foundation": 33.0, "c_foundation": 0.0,
+                  "base_friction_angle": 22.0})   # alias -> delta_base
+        out = _run_cantilever_wall(p)
+        assert out["sliding_basis"]["delta_base_deg"] == 22.0
+        assert out["FOS_sliding"] == pytest.approx(1.42, abs=0.01)

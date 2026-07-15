@@ -94,3 +94,23 @@ Two external-stability paths are available; both are default-preserving.
 - MSE external bearing uses the Meyerhof uniform pressure over the effective
   width, σ_v = W/(L−2e), per AASHTO 11.10.5.4 (RW-3) — not trapezoidal q_toe
 - SoilProfile adapter: to_retaining_wall_input(wall_height, surcharge)
+
+## Sliding-check base interface (verdict, 2026-07-15)
+
+Owner wall session 2026-07-14 (short-heel wall: 0.5 m heel, 2.6 m toe,
+H=5.55 m, gamma=15, phi=33, c=5, q=7.5) showed the built-in sliding FoS
+(0.60-0.92) far below an independent free-body check (1.01-1.42). ROOT CAUSE
+was NOT the module physics: check_sliding hardwired delta_b = (2/3)*
+phi_foundation and ca = (2/3)*c_foundation, and the caller passed
+phi_foundation=22 intending "delta_b = 22 deg" -> the module applied 2/3
+AGAIN (delta_b = 14.7 deg). With phi_foundation passed correctly (33) the
+module reproduces the free-body EXACTLY (Coulomb 1.42 / Rankine 1.01) -
+vertical thrust component and full-height cohesion conventions agree.
+
+Resolution (additive, default-preserving): `delta_base` / `base_adhesion`
+params on check_sliding + analyze_cantilever_wall BYPASS the 2/3 factors for
+direct interface control (e.g. delta_b = phi for CIP concrete soil-on-soil
+shear per GEC-11/AASHTO); results now report delta_base_deg /
+base_adhesion_kPa actually used, and the funhouse adapter returns a
+`sliding_basis` block. Regression tests: TestBaseInterfaceOverrides
+(session numbers 0.60/1.42/1.01 locked in).
