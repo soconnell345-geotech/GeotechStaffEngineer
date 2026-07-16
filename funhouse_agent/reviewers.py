@@ -26,12 +26,14 @@ from funhouse_agent.dispatch import (
     FOUNDATIONS_MODULES, FOUNDATIONS_REFERENCES,
     EARTH_RETENTION_MODULES, EARTH_RETENTION_REFERENCES,
     SLOPE_FEM_MODULES, SLOPE_FEM_REFERENCES,
+    PAVEMENT_MODULES, PAVEMENT_REFERENCES,
 )
 from funhouse_agent.review_checklists import (
     SEISMIC_REVIEWER_PREAMBLE,
     FOUNDATIONS_REVIEWER_PREAMBLE,
     EARTH_RETENTION_REVIEWER_PREAMBLE,
     SLOPE_FEM_REVIEWER_PREAMBLE,
+    PAVEMENT_SPECIALIST_PREAMBLE,
 )
 
 #: The seismic reviewer's full direct-call scope: the seismic analysis modules
@@ -240,6 +242,40 @@ def make_slope_fem_reviewer_deep(model, *, extra_modules=None, **kwargs):
                                extra_modules=extra_modules, **kwargs)
 
 
+# ---------------------------------------------------------------------------
+# Pavement design specialist — DESIGN mode (not a reviewer), same two-surface
+# scoped-agent machinery: pavement_design + calc_package + the pavement
+# references, prompted as a senior AASHTO 1993 pavement engineer.
+# ---------------------------------------------------------------------------
+
+#: Pavement specialist scope: the AASHTO 1993 design module + report generator
+#: it drives, plus the pavement/roadbed reference modules it cites from.
+PAVEMENT_SPECIALIST_SCOPE = frozenset(PAVEMENT_MODULES | PAVEMENT_REFERENCES)
+
+
+def make_pavement_specialist(genai_engine, *, extra_modules=None, **kwargs):
+    """Build the pavement design specialist (Funhouse scoped sub-agent).
+
+    Scoped to ``pavement_design`` + ``calc_package`` and the pavement
+    reference modules (aashto_1993, fhwa_pavements, ufc_pavement,
+    ufc_expansive, reference_db/figure_db), prompted in DESIGN mode as a
+    senior AASHTO 1993 pavement engineer (full workflow: ESAL traffic →
+    effective subgrade MR → SN / slab D solve → swelling/frost heave →
+    calc package). See :func:`make_seismic_reviewer` for the parameter
+    contract; ``reference_mode="off"`` for the same scoping reason.
+    """
+    return _make_reviewer(PAVEMENT_SPECIALIST_SCOPE,
+                          PAVEMENT_SPECIALIST_PREAMBLE, genai_engine,
+                          extra_modules=extra_modules, **kwargs)
+
+
+def make_pavement_specialist_deep(model, *, extra_modules=None, **kwargs):
+    """Deepagents variant of :func:`make_pavement_specialist`."""
+    return _make_reviewer_deep(PAVEMENT_SPECIALIST_SCOPE,
+                               PAVEMENT_SPECIALIST_PREAMBLE, model,
+                               extra_modules=extra_modules, **kwargs)
+
+
 __all__ = [
     "make_seismic_reviewer",
     "make_seismic_reviewer_deep",
@@ -253,4 +289,7 @@ __all__ = [
     "make_slope_fem_reviewer",
     "make_slope_fem_reviewer_deep",
     "SLOPE_FEM_REVIEWER_SCOPE",
+    "make_pavement_specialist",
+    "make_pavement_specialist_deep",
+    "PAVEMENT_SPECIALIST_SCOPE",
 ]

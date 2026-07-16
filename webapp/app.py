@@ -327,9 +327,10 @@ with st.sidebar:
     _picked_at = st.selectbox(
         "Agent", _atypes, index=_atypes.index(_cur_at),
         format_func=lambda k: core.AGENT_TYPES[k], key=f"agent_{ss.thread_id}",
-        help="The full geotech agent, or a narrow domain reviewer scoped to one "
-             "discipline's methods + references and prompted in review mode. "
-             "Applies to this conversation going forward; kept when you resume it.")
+        help="The full geotech agent, or a narrow domain agent scoped to one "
+             "discipline's methods + references (the reviewers check work in "
+             "review mode; the pavement specialist designs). Applies to this "
+             "conversation going forward; kept when you resume it.")
     if _picked_at != _cur_at:
         ss.behavior = {**ss.behavior, "agent_type": _picked_at}
         if core.load_meta(ss.thread_id) is not None:

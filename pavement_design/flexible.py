@@ -288,7 +288,7 @@ def design_flexible_pavement(
         environmental = dict(environmental, delta_psi_design=dpsi,
                              delta_psi_traffic=dpsi_traffic)
         dpsi = dpsi_traffic
-    mr_eff, ref, n, _detail = resolve_effective_mr(mr_psi, monthly_mr_psi)
+    mr_eff, ref, n, mr_detail = resolve_effective_mr(mr_psi, monthly_mr_psi)
     add_ref(references, ref)
     notes.extend(n)
 
@@ -436,6 +436,7 @@ def design_flexible_pavement(
         w18_capacity=w18_capacity,
         adequate=adequate,
         environmental=environmental,
+        effective_mr_detail=mr_detail,
         minimums_applied=minimums_applied,
         notes=notes,
         warnings=warnings,

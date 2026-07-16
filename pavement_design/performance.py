@@ -58,6 +58,10 @@ def resolve_environmental_loss(design_period_yr, swelling, frost,
     r = _env_mod.total_environmental_loss(design_period_yr,
                                           swelling=swelling, frost=frost)
     add_ref(references, r.get("reference"))
+    # Keep the input specs in the block so downstream consumers (plots,
+    # performance iteration) can re-evaluate the loss-vs-time curve.
+    r = dict(r, swelling_spec=dict(swelling) if swelling else None,
+             frost_spec=dict(frost) if frost else None)
     notes.append(
         f"Environmental serviceability loss at {design_period_yr} yr: "
         f"dPSI_sw = {r.get('delta_psi_sw', 0)}, dPSI_fh = "

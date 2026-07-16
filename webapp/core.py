@@ -349,6 +349,7 @@ _REVIEWER_BUILDERS = {
     "foundations": "make_foundations_reviewer_deep",
     "earth_retention": "make_earth_retention_reviewer_deep",
     "slope_fem": "make_slope_fem_reviewer_deep",
+    "pavement": "make_pavement_specialist_deep",
 }
 
 
@@ -765,6 +766,7 @@ AGENT_TYPES = {
     "foundations": "Foundations reviewer",
     "earth_retention": "Earth-retention reviewer",
     "slope_fem": "Slope / FEM reviewer",
+    "pavement": "Pavement design specialist",
 }
 
 DEFAULT_BEHAVIOR = {

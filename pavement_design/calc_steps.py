@@ -6,7 +6,7 @@ sections for ``calc_package.generate_calc_package``. UNITS: US customary
 """
 
 from calc_package.data_model import (CalcSection, CalcStep, CheckItem,
-                                     InputItem, TableData)
+                                     FigureData, InputItem, TableData)
 
 from .results import FlexiblePavementResult, RigidPavementResult
 
@@ -230,4 +230,50 @@ def get_calc_steps(result, analysis=None):
 
 
 def get_figures(result, analysis=None):
-    return []
+    """Design-chart figures: the guide's nomograph relationships re-plotted
+    from the digitized equations with the design solution overlaid, plus the
+    section diagram and (when applicable) seasonal-MR and environmental-loss
+    plots. Empty list when matplotlib is unavailable."""
+    try:
+        from calc_package.renderer import figure_to_base64
+        import matplotlib.pyplot as plt
+        from . import plots as _plots
+    except ImportError:
+        return []
+
+    figures = []
+
+    def _add(fig, title, caption, width=80):
+        if fig is None:
+            return
+        figures.append(FigureData(
+            title=title, image_base64=figure_to_base64(fig, dpi=150),
+            caption=caption, width_percent=width))
+        plt.close(fig)
+
+    if isinstance(result, FlexiblePavementResult):
+        _add(_plots.plot_flexible_design_chart(result),
+             "Flexible design chart",
+             "Computed Figure 3.1: W18 capacity vs SN from the digitized "
+             "design equation for each foundation modulus, with the "
+             "required-SN solutions and the provided SN overlaid.")
+        _add(_plots.plot_layer_section(result),
+             "Designed section",
+             "Layered section with per-course thickness, layer coefficient, "
+             "and drainage m.", 65)
+        _add(_plots.plot_seasonal_mr(result),
+             "Effective roadbed MR",
+             "Seasonal MR and relative damage uf (Figure 2.3/2.4 "
+             "procedure) with the effective design MR.")
+    elif isinstance(result, RigidPavementResult):
+        _add(_plots.plot_rigid_design_chart(result),
+             "Rigid design chart",
+             "Computed Figure 3.7: W18 capacity vs slab thickness from the "
+             "digitized design equation, with the required and provided D "
+             "overlaid.")
+    _add(_plots.plot_environmental_loss(result),
+         "Environmental serviceability loss",
+         "Computed Figure 2.2: swelling / frost-heave serviceability loss "
+         "vs time (Appendix G equations), the analysis period, and the "
+         "design dPSI budget.")
+    return figures

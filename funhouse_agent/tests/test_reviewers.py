@@ -239,6 +239,52 @@ _Rev = namedtuple("_Rev", [
     "markers", "md_file",
 ])
 
+class TestPavementSpecialist:
+    """The pavement specialist is DESIGN-mode (no checklist) but rides the
+    same scoped-agent machinery as the reviewer family."""
+
+    def _imports(self):
+        from funhouse_agent.dispatch import (PAVEMENT_MODULES,
+                                             PAVEMENT_REFERENCES)
+        from funhouse_agent.review_checklists import \
+            PAVEMENT_SPECIALIST_PREAMBLE
+        from funhouse_agent.reviewers import (PAVEMENT_SPECIALIST_SCOPE,
+                                              make_pavement_specialist)
+        return (PAVEMENT_MODULES, PAVEMENT_REFERENCES,
+                PAVEMENT_SPECIALIST_PREAMBLE, PAVEMENT_SPECIALIST_SCOPE,
+                make_pavement_specialist)
+
+    def test_scope_subsets_and_union(self):
+        mods, refs, _, scope, _ = self._imports()
+        assert mods <= ANALYSIS_MODULES
+        assert refs <= REFERENCE_MODULES
+        assert scope == (mods | refs)
+        assert "pavement_design" in mods and "calc_package" in mods
+        assert "aashto_1993" in refs
+        for name in scope:
+            assert name in MODULE_REGISTRY, f"{name} not in MODULE_REGISTRY"
+
+    def test_builds_scoped_design_mode_agent(self):
+        _, _, preamble, scope, make = self._imports()
+        agent = make(MockEngine([]))
+        assert isinstance(agent, GeotechAgent)
+        assert set(agent._allowed_agents) == set(scope)
+        assert agent._reference_mode == "off"
+        assert "PAVEMENT DESIGN SPECIALIST" in preamble
+        assert "US-CUSTOMARY" in preamble
+        assert "ufc_pavement CAUTION" in preamble
+        # Design mode, not review mode.
+        assert "REVIEW MODE" not in preamble
+
+    def test_webapp_builder_registered(self):
+        import webapp.core as core
+        assert core.AGENT_TYPES.get("pavement") == "Pavement design specialist"
+        assert core._REVIEWER_BUILDERS.get("pavement") == \
+            "make_pavement_specialist_deep"
+        from funhouse_agent import reviewers
+        assert hasattr(reviewers, "make_pavement_specialist_deep")
+
+
 _F8 = [
     _Rev("foundations", make_foundations_reviewer, make_foundations_reviewer_deep,
          FOUNDATIONS_REVIEWER_SCOPE, FOUNDATIONS_MODULES, FOUNDATIONS_REFERENCES,

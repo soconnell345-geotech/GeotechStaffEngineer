@@ -39,6 +39,8 @@ from funhouse_agent.reviewers import (
     make_earth_retention_reviewer_deep,
     make_slope_fem_reviewer,
     make_slope_fem_reviewer_deep,
+    make_pavement_specialist,
+    make_pavement_specialist_deep,
 )
 from funhouse_agent._disclaimer import disclaimer
 
@@ -58,6 +60,8 @@ __all__ = [
     "make_earth_retention_reviewer_deep",
     "make_slope_fem_reviewer",
     "make_slope_fem_reviewer_deep",
+    "make_pavement_specialist",
+    "make_pavement_specialist_deep",
     "disclaimer",
 ]
 
