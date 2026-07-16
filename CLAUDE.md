@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-30 analysis modules + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + hvsrpy agent + GSTools agent + SALib agent + swprocess agent + pystra agent + subsurface characterization (DIGGS/GEF/AGS4 data I/O — folds in the former pygef/ags4/pydiggs wrappers as format adapters) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM: T6 quadratic elements, 3D-principal MC return, GL99 strength reduction, staged construction) + reliability (FOSM/PEM/Monte Carlo/native FORM + published COV database) + geo_project (staged, human-gated LLM model setup) + funhouse_agent (engine-agnostic agent with vision).
+31 analysis modules (incl. pavement_design, AASHTO 1993) + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + hvsrpy agent + GSTools agent + SALib agent + swprocess agent + pystra agent + subsurface characterization (DIGGS/GEF/AGS4 data I/O — folds in the former pygef/ags4/pydiggs wrappers as format adapters) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM: T6 quadratic elements, 3D-principal MC return, GL99 strength reduction, staged construction) + reliability (FOSM/PEM/Monte Carlo/native FORM + published COV database) + geo_project (staged, human-gated LLM model setup) + funhouse_agent (engine-agnostic agent with vision).
 
 ## What this is for (framing — use this voice in user-facing docs)
 
@@ -171,7 +171,7 @@ check: `funhouse_agent/deep/rc_wheel_check.py` (`run_rc_check(fh_prompter)`); th
 suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save outputs to
 `/tmp` or `/Volumes`, NOT `/Workspace` (FUSE writes are non-durable / permission-blocked).
 
-## Module Inventory (30 analysis + geo_project setup layer + 24 reference, + foundry harness; reference layer fully QC'd, all figure catalogs 100% page-accurate)
+## Module Inventory (31 analysis + geo_project setup layer + 24 reference, + foundry harness; reference layer fully QC'd, all figure catalogs 100% page-accurate)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -186,6 +186,7 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | drilled_shaft | 60 | GEC-10 alpha/beta/rock socket (clay end-bearing cap, N60 side reduction) |
 | seismic_geotech | 82 | Site class, M-O pressures (battered-wall-correct), Fpga(PGA), SPT liquefaction (NCEER/Youd-2001) |
 | retaining_walls | 93 | Cantilever + MSE walls (GEC-11; thrust decomposition, coherent-gravity MSE, Meyerhof bearing) |
+| pavement_design | 42+ | AASHTO 1993 pavement design (US customary): flexible SN + Fig 3.2 layer split, rigid slab D (direct/MR-19.4/composite-k), ESAL traffic (Appendix D LEFs), calc-package template; orchestrates geotech_references.aashto_1993 |
 | ground_improvement | 49 | Aggregate piers (incl. Priebe n0), wick drains, surcharge, vibro (GEC-13) |
 | slope_stability | 384+17skip | Rigorous GLE/M-P (Fredlund-Krahn) + Bishop/Janbu/Spencer/OMS, entry-exit + DE noncircular search, nails/anchors/geosynthetics, SHANSEP/Hoek-Brown, ponded water, probabilistic FOS (FOSM/MC), SLOPE/W-grade plots; validated vs F&K-1977/ACADS/Duncan (VALIDATION.md) |
 | reliability | 176 | Probabilistic geotech engines (FOSM/PEM/Monte Carlo/native FORM), published COV knowledge base (Duncan 2000/TC304/Phoon-Kulhawy), Vanmarcke spatial averaging, bearing/pile/slope wrappers |

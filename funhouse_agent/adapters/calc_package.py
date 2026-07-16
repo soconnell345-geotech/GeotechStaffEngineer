@@ -19,8 +19,8 @@ logic, adapted to the funhouse adapter pattern (METHOD_REGISTRY + METHOD_INFO).
 import os
 from datetime import datetime
 
-from funhouse_agent.adapters import (require_keys, require_params,
-                                     reject_unknown_params)
+from funhouse_agent.adapters import (apply_aliases, require_keys,
+                                     require_params, reject_unknown_params)
 from funhouse_agent._fileio import (
     default_output_dir, rescue_write, workspace_write_hint,
     written_file_problem,
@@ -1153,9 +1153,72 @@ def _generate_html_to_pdf(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Method registry
 # ---------------------------------------------------------------------------
+# Pavement design (AASHTO 1993)
+# ---------------------------------------------------------------------------
+
+def _generate_pavement_design_package(params: dict) -> dict:
+    """AASHTO 1993 flexible or rigid pavement design calc package.
+
+    ``design_type`` selects the procedure ('flexible' default | 'rigid');
+    the remaining parameters are those of the pavement_design adapter
+    methods (US customary units). Note: for rigid designs,
+    ``pavement_type`` keeps its Table 2.6 meaning (JCP/JRCP vs CRCP).
+    """
+    from funhouse_agent.adapters.pavement_design_adapter import (
+        _FLEX_ALIASES, _FLEX_VALID, _RIGID_ALIASES, _RIGID_VALID)
+    from pavement_design import (design_flexible_pavement,
+                                 design_rigid_pavement)
+
+    design_type = str(params.get("design_type", "flexible")).strip().lower()
+    meta_keys = set(_COMMON_PARAMS) | {"design_type"}
+    design_params = {k: v for k, v in params.items() if k not in meta_keys}
+
+    if design_type == "flexible":
+        p = apply_aliases(design_params, _FLEX_ALIASES)
+        reject_unknown_params(p, _FLEX_VALID,
+                              method="pavement_design_package (flexible)",
+                              aliases=_FLEX_ALIASES)
+        require_params(p, ["w18", "layers"],
+                       method="pavement_design_package", valid=_FLEX_VALID)
+        result = design_flexible_pavement(**p)
+        extra = {
+            "sn_required": result.sn_required,
+            "sn_provided": result.sn_provided,
+            "layer_thicknesses_in": {
+                lay["layer_type"]: lay.get("thickness_in")
+                for lay in result.layers},
+            "adequate": result.adequate,
+        }
+        label = "AASHTO 1993 Flexible Pavement Design"
+    elif design_type == "rigid":
+        p = apply_aliases(design_params, _RIGID_ALIASES)
+        reject_unknown_params(p, _RIGID_VALID,
+                              method="pavement_design_package (rigid)",
+                              aliases=_RIGID_ALIASES)
+        require_params(p, ["w18", "sc_psi", "ec_psi"],
+                       method="pavement_design_package", valid=_RIGID_VALID)
+        result = design_rigid_pavement(**p)
+        extra = {
+            "d_required_in": result.d_required_in,
+            "d_provided_in": result.d_provided_in,
+            "k_pci": result.k_pci,
+            "adequate": result.adequate,
+        }
+        label = "AASHTO 1993 Rigid Pavement Design"
+    else:
+        raise ValueError(
+            f"design_type must be 'flexible' or 'rigid', got '{design_type}'"
+        )
+
+    return _build_response("pavement_design", result, None, params,
+                           analysis_type=label, extra=extra)
+
+
+# ---------------------------------------------------------------------------
 
 METHOD_REGISTRY = {
     "html_to_pdf": _generate_html_to_pdf,
+    "pavement_design_package": _generate_pavement_design_package,
     "bearing_capacity_package": _generate_bearing_capacity_package,
     "lateral_pile_package": _generate_lateral_pile_package,
     "slope_stability_package": _generate_slope_stability_package,
@@ -1214,6 +1277,58 @@ _COMMON_RETURNS = {
 }
 
 METHOD_INFO = {
+    "pavement_design_package": {
+        "category": "Calculation Package",
+        "brief": ("AASHTO 1993 pavement design calc package: flexible "
+                  "(required SN + layer split) or rigid (slab D) with "
+                  "reliability, drainage, and forward checks. US customary "
+                  "units. Same parameters as the pavement_design module "
+                  "methods, plus design_type."),
+        "parameters": {
+            "design_type": {"type": "str", "required": False,
+                            "default": "flexible",
+                            "allowed_values": ["flexible", "rigid"],
+                            "description": "Which AASHTO 1993 procedure to "
+                                           "run and report."},
+            "w18": {"type": "number", "required": True,
+                    "description": "Design-lane 18-kip ESALs."},
+            "layers": {"type": "array", "required": False,
+                       "description": "Flexible only -- layer dicts, "
+                                      "top-down (see pavement_design."
+                                      "flexible_pavement_design)."},
+            "sc_psi": {"type": "number", "required": False,
+                       "description": "Rigid only -- PCC modulus of "
+                                      "rupture, psi."},
+            "ec_psi": {"type": "number", "required": False,
+                       "description": "Rigid only -- PCC elastic modulus, "
+                                      "psi."},
+            "reliability_pct": {"type": "number", "required": False,
+                                "description": "Design reliability R %."},
+            "mr_psi": {"type": "number", "required": False,
+                       "description": "Roadbed resilient modulus, psi "
+                                      "(flexible), or simplified-k source "
+                                      "(rigid)."},
+            "k_pci": {"type": "number", "required": False,
+                      "description": "Rigid: effective k directly, pci."},
+            "composite_k": {"type": "object", "required": False,
+                            "description": "Rigid: Section 3.2 worksheet "
+                                           "spec (see pavement_design."
+                                           "rigid_pavement_design)."},
+            "slab_thickness_in": {"type": "number", "required": False,
+                                  "description": "Rigid: check an existing "
+                                                 "slab instead."},
+            "**other": {"type": "any", "required": False,
+                        "description": "All other pavement_design method "
+                                       "parameters pass through (so, pt, "
+                                       "po, delta_psi, j, cd, "
+                                       "drainage_quality, ...)."},
+            **_COMMON_PARAMS,
+        },
+        "returns": {**_COMMON_RETURNS,
+                    "extra": "sn_required/sn_provided + layer thicknesses "
+                             "(flexible) or d_required_in/d_provided_in + "
+                             "k_pci (rigid), and adequate."},
+    },
     "html_to_pdf": {
         "category": "Calculation Package",
         "brief": "Render self-contained HTML (e.g. a custom report YOU composed) to a "

@@ -879,6 +879,26 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   Tests: test_published_v054_anisotropic_su.py (4) + slope_stability/tests/
   test_strength_models.py::TestAnisotropicSu (5).
 
+## V-055 AASHTO 1993 pavement design — Guide printed worked examples
+- Source: AASHTO Guide for Design of Pavement Structures (1993): Figure 3.1
+  worked example (printed II-32), Figure 3.7 worked example (printed
+  II-45/46), Figure 2.4 effective-MR example (printed II-15).
+- Target: `pavement_design.design_flexible_pavement` /
+  `design_rigid_pavement` — the full orchestrator (Table 4.1 ZR ->
+  solve -> layer split/rounding -> forward check), built on the digitized
+  `geotech_references.aashto_1993` equations.
+- Verdict: **PASS.**
+  * Flexible: W18=5e6, R=95%, So=0.35, MR=5000 psi, dPSI=1.9 -> printed
+    SN=5.0 (nomograph); module SN_required 4.95-5.0 and the designed
+    3-layer section passes its own forward check.
+  * Rigid: W18=5.1e6, k=72 pci, Ec=5e6, Sc'=650, J=3.2, Cd=1.0, So=0.29,
+    dPSI=1.7 -> printed D=10.0 in (nearest half-inch); module D_required
+    ~9.7-10.0, rounds to 10.0.
+  * Effective MR: the guide's 12-month seasonal example -> printed
+    5,000 psi, reproduced through `monthly_mr_psi`.
+  Tests: test_published_v055_aashto1993_pavement.py (3) +
+  pavement_design/tests/test_pavement_design.py (module suite).
+
 ## Slide2 #50 / #30 / #31 / #32 — reinforced (multi-material) — SKIPPED (complexity)
 - **#50** (SNAILZ, 2 materials, predefined surface): 14 geotextile rows each with a
   distinct bond strength/length modelled as bond-controlled soil nails; figure-only

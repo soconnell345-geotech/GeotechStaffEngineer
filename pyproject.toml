@@ -122,6 +122,7 @@ include = [
     "drilled_shaft*",
     "seismic_geotech*",
     "retaining_walls*",
+    "pavement_design*",
     "ground_improvement*",
     "slope_stability*",
     "reliability*",
@@ -174,7 +175,8 @@ python_files = ["test_*.py", "validation.py"]
 testpaths = [
     "bearing_capacity", "settlement", "axial_pile", "sheet_pile", "soe",
     "lateral_pile", "pile_group", "wave_equation", "drilled_shaft",
-    "seismic_geotech", "retaining_walls", "ground_improvement",
+    "seismic_geotech", "retaining_walls", "pavement_design",
+    "ground_improvement",
     "slope_stability", "reliability", "downdrag", "geotech_common",
     "opensees_agent", "pystrata_agent", "seismic_signals_agent",
     "liquepy_agent", "hvsrpy_agent", "gstools_agent",
