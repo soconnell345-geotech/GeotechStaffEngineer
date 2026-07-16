@@ -21,7 +21,8 @@ _FLEX_ALIASES = {
 
 _FLEX_VALID = ("w18", "reliability_pct", "zr", "so", "mr_psi",
                "monthly_mr_psi", "pt", "po", "delta_psi", "layers",
-               "thickness_increment_in", "enforce_minimums")
+               "thickness_increment_in", "enforce_minimums",
+               "swelling", "frost", "design_period_yr")
 
 
 def _run_flexible(params: dict) -> dict:
@@ -51,7 +52,8 @@ _RIGID_VALID = ("w18", "sc_psi", "ec_psi", "reliability_pct", "zr", "so",
                 "pt", "po", "delta_psi", "j", "pavement_type",
                 "shoulder_type", "load_transfer_devices", "cd",
                 "drainage_quality", "pct_saturation_time", "k_pci", "mr_psi",
-                "composite_k", "slab_thickness_in", "thickness_increment_in")
+                "composite_k", "slab_thickness_in", "thickness_increment_in",
+                "swelling", "frost", "design_period_yr")
 
 
 def _run_rigid(params: dict) -> dict:
@@ -105,11 +107,63 @@ def _run_effective_mr(params: dict) -> dict:
         p["monthly_mr_psi"]))
 
 
+_PERF_ALIASES = {
+    "reliability": "reliability_pct",
+    "growth_rate": "growth_rate_pct",
+    "base_year_esals": "base_year_w18",
+    "k": "k_pci", "sc": "sc_psi", "ec": "ec_psi",
+}
+
+_PERF_VALID = ("pavement_type", "delta_psi_design", "base_year_w18",
+               "growth_rate_pct", "swelling", "frost",
+               "max_performance_period_yr", "initial_trial_yr", "sn",
+               "mr_psi", "d_in", "sc_psi", "ec_psi", "j", "cd", "k_pci",
+               "pt", "zr", "so", "reliability_pct")
+
+
+def _run_performance(params: dict) -> dict:
+    from geotech_references.aashto_1993.tables import \
+        standard_normal_deviate_zr
+    from pavement_design import estimate_performance_period
+
+    p = apply_aliases(params, _PERF_ALIASES)
+    reject_unknown_params(p, _PERF_VALID, method="performance_period",
+                          aliases=_PERF_ALIASES)
+    require_params(p, ["pavement_type", "delta_psi_design", "base_year_w18"],
+                   method="performance_period", valid=_PERF_VALID)
+    if p.get("zr") is None and p.get("reliability_pct") is not None:
+        p["zr"] = standard_normal_deviate_zr(p.pop("reliability_pct"))["zr"]
+    else:
+        p.pop("reliability_pct", None)
+    return clean_result(estimate_performance_period(**p))
+
+
 METHOD_REGISTRY = {
     "flexible_pavement_design": _run_flexible,
     "rigid_pavement_design": _run_rigid,
     "design_traffic_esals": _run_traffic,
     "effective_subgrade_modulus": _run_effective_mr,
+    "performance_period": _run_performance,
+}
+
+_SWELL_DESC = ("Roadbed swelling spec (Appendix G / Fig G.4): {vr_in: "
+               "potential vertical rise (in), ps_pct: percent of area "
+               "subject to swell, theta: swell rate constant (~0.04-0.20)}. "
+               "Requires design_period_yr.")
+_FROST_DESC = ("Frost heave spec (Appendix G / Fig G.8): {phi_mm_day: heave "
+               "rate, pf_pct: percent of area subject to heave, "
+               "delta_psi_max: max loss (Fig G.7, from drainage quality x "
+               "frost depth)}. Requires design_period_yr.")
+_ENV_PARAMS = {
+    "swelling": {"type": "object", "required": False,
+                 "description": _SWELL_DESC},
+    "frost": {"type": "object", "required": False,
+              "description": _FROST_DESC},
+    "design_period_yr": {"type": "number", "required": False,
+                         "description": "Analysis period (yr); required "
+                                        "with swelling/frost -- their dPSI "
+                                        "loss is subtracted from the design "
+                                        "budget before the solve."},
 }
 
 _LAYER_DESC = (
@@ -168,6 +222,7 @@ METHOD_INFO = {
                                  "default": True,
                                  "description": "Apply Sec 3.1.4 minimum "
                                                 "AC/base thicknesses."},
+            **_ENV_PARAMS,
         },
         "returns": {"sn_required": "SN over the roadbed",
                     "sn_provided": "SN of the final section",
@@ -256,6 +311,7 @@ METHOD_INFO = {
             "thickness_increment_in": {"type": "number", "required": False,
                                        "default": 0.5,
                                        "description": "Round-UP increment."},
+            **_ENV_PARAMS,
         },
         "returns": {"d_required_in": "unrounded required slab thickness",
                     "d_provided_in": "rounded / supplied slab",
@@ -324,5 +380,65 @@ METHOD_INFO = {
         },
         "returns": {"effective_mr_psi": "design MR",
                     "uf_values": "per-season relative damage"},
+    },
+    "performance_period": {
+        "category": "pavement design",
+        "brief": ("Predicted performance period of a DESIGNED section under "
+                  "roadbed swelling / frost heave (the guide's Table 3.1 "
+                  "iteration): environmental dPSI shrinks the traffic "
+                  "budget until trial period and traffic-derived period "
+                  "converge."),
+        "parameters": {
+            "pavement_type": {"type": "string", "required": True,
+                              "allowed_values": ["flexible", "rigid"],
+                              "description": "Which design equation gives "
+                                             "the section's W18 capacity."},
+            "delta_psi_design": {"type": "number", "required": True,
+                                 "description": "Total design dPSI "
+                                                "(po - pt)."},
+            "base_year_w18": {"type": "number", "required": True,
+                              "description": "First-year design-lane "
+                                             "ESALs."},
+            "growth_rate_pct": {"type": "number", "required": False,
+                                "default": 0,
+                                "description": "Annual traffic growth %."},
+            "swelling": {"type": "object", "required": False,
+                         "description": _SWELL_DESC},
+            "frost": {"type": "object", "required": False,
+                      "description": _FROST_DESC},
+            "max_performance_period_yr": {"type": "number",
+                                          "required": False, "default": 20,
+                                          "description": "Cap / default "
+                                                         "trial seed."},
+            "sn": {"type": "number", "required": False,
+                   "description": "Flexible: as-built structural number."},
+            "mr_psi": {"type": "number", "required": False,
+                       "description": "Flexible: effective roadbed MR."},
+            "d_in": {"type": "number", "required": False,
+                     "description": "Rigid: as-built slab thickness."},
+            "sc_psi": {"type": "number", "required": False,
+                       "description": "Rigid: PCC modulus of rupture."},
+            "ec_psi": {"type": "number", "required": False,
+                       "description": "Rigid: PCC elastic modulus."},
+            "j": {"type": "number", "required": False,
+                  "description": "Rigid: load transfer J."},
+            "cd": {"type": "number", "required": False,
+                   "description": "Rigid: drainage Cd."},
+            "k_pci": {"type": "number", "required": False,
+                      "description": "Rigid: design k."},
+            "pt": {"type": "number", "required": False, "default": 2.5,
+                   "description": "Terminal serviceability."},
+            "zr": {"type": "number", "required": False,
+                   "description": "Standard normal deviate (or give "
+                                  "reliability_pct)."},
+            "reliability_pct": {"type": "number", "required": False,
+                                "description": "Reliability R % -> ZR."},
+            "so": {"type": "number", "required": True,
+                   "description": "Overall standard deviation (same as the "
+                                  "design)."},
+        },
+        "returns": {"performance_period_yr": "converged period",
+                    "rows": "per-iteration Table 3.1 worksheet",
+                    "converged": "bool"},
     },
 }

@@ -23,14 +23,16 @@ from funhouse_agent.adapters._reference_common import (
 
 
 def _build():
-    from geotech_references.aashto_1993 import (composite_k, equations, lef,
-                                                tables)
+    from geotech_references.aashto_1993 import (composite_k, environmental,
+                                                equations, lef, tables)
     registry, info = build_lookup_registry([
         (tables, "AASHTO 1993 Tables", "AASHTO 1993 Pavement Design Guide"),
         (equations, "AASHTO 1993 Equations", "AASHTO 1993 Pavement Design Guide"),
         (lef, "AASHTO 1993 Appendix D LEF Tables",
          "AASHTO 1993 Pavement Design Guide"),
         (composite_k, "AASHTO 1993 Composite-k (Section 3.2)",
+         "AASHTO 1993 Pavement Design Guide"),
+        (environmental, "AASHTO 1993 Swelling/Frost Heave (Appendix G)",
          "AASHTO 1993 Pavement Design Guide"),
     ])
     add_text_retrieval(registry, info, "aashto_1993",

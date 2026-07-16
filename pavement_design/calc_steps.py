@@ -189,6 +189,34 @@ def get_calc_steps(result, analysis=None):
             f"Unsupported result type for pavement_design calc package: "
             f"{type(result).__name__}"
         )
+    env = getattr(result, "environmental", None)
+    if env:
+        env_steps = [
+            CalcStep(
+                title="Environmental serviceability loss (swelling / frost heave)",
+                equation=("&Delta;PSI<sub>SW</sub> = 0.00335&middot;V<sub>R</sub>&middot;P<sub>s</sub>&middot;"
+                          "(1 &minus; e<sup>&minus;&theta;t</sup>);  "
+                          "&Delta;PSI<sub>FH</sub> = 0.01&middot;P<sub>F</sub>&middot;&Delta;PSI<sub>MAX</sub>&middot;"
+                          "(1 &minus; e<sup>&minus;0.02&middot;&phi;t</sup>)"),
+                substitution=(f"at t = {env.get('design_period_yr')} yr: "
+                              f"&Delta;PSI<sub>SW</sub> = {env.get('delta_psi_sw', 0)}, "
+                              f"&Delta;PSI<sub>FH</sub> = {env.get('delta_psi_fh', 0)}"),
+                result_name="dPSI environmental",
+                result_value=env.get("delta_psi_total"),
+                reference="AASHTO 1993 Guide, Appendix G (Figures G.4/G.8) / Figure 2.2",
+            ),
+            CalcStep(
+                title="Traffic-available serviceability loss (Table 3.1 Step 4)",
+                equation="&Delta;PSI<sub>TR</sub> = &Delta;PSI &minus; &Delta;PSI<sub>SW,FH</sub>",
+                substitution=(f"{env.get('delta_psi_design')} &minus; "
+                              f"{env.get('delta_psi_total')}"),
+                result_name="dPSI traffic",
+                result_value=env.get("delta_psi_traffic"),
+                reference="AASHTO 1993 Guide, Table 3.1 (pdf_page 123, printed II-34)",
+            ),
+        ]
+        sections.insert(0, CalcSection(
+            title="Environmental Serviceability Loss", items=env_steps))
     basis = list(result.notes) + [f"WARNING: {w}" for w in result.warnings]
     if basis:
         sections.append(CalcSection(title="Basis and Assumptions",

@@ -87,6 +87,7 @@ class FlexiblePavementResult:
     sn_stack: list              # SN required over each interface, top-down
     w18_capacity: float         # forward-check capacity of the provided section
     adequate: bool
+    environmental: dict = None  # swelling/frost dPSI block (None if not used)
     minimums_applied: dict = field(default_factory=dict)
     notes: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
@@ -109,6 +110,7 @@ class FlexiblePavementResult:
             "sn_stack": self.sn_stack,
             "w18_capacity": self.w18_capacity,
             "adequate": self.adequate,
+            "environmental": self.environmental,
             "minimums_applied": self.minimums_applied,
             "notes": self.notes,
             "warnings": self.warnings,
@@ -163,6 +165,7 @@ class RigidPavementResult:
     d_provided_in: float        # rounded-up (design) or supplied (check)
     w18_capacity: float
     adequate: bool
+    environmental: dict = None  # swelling/frost dPSI block (None if not used)
     iterations: int = 0         # composite-k <-> D iterations (0 if k not D-dependent)
     notes: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
@@ -188,6 +191,7 @@ class RigidPavementResult:
             "d_provided_in": self.d_provided_in,
             "w18_capacity": self.w18_capacity,
             "adequate": self.adequate,
+            "environmental": self.environmental,
             "iterations": self.iterations,
             "notes": self.notes,
             "warnings": self.warnings,

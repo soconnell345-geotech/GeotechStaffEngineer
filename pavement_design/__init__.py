@@ -16,19 +16,26 @@ design_rigid_pavement : required slab thickness D (Figure 3.7) with direct,
 compute_design_esals : design-lane W18 from an axle spectrum (Appendix D
     LEFs), truck factors, or a base-year total, with growth/DD/DL.
 growth_factor : compound traffic growth factor.
+estimate_performance_period : Table 3.1 iteration -- predicted performance
+    period of a designed section under roadbed swelling / frost heave.
 PavementLayer : one course of a flexible section.
+
+Both design functions accept ``swelling`` / ``frost`` specs (Appendix G):
+the environmental serviceability loss at the analysis period is subtracted
+from the design dPSI before the structural solve.
 
 UNITS: US customary (psi, pci, inches, kips, 18-kip ESALs) -- a documented
 exception to the repo SI convention, because the 1993 Guide is
 US-customary native (same precedent as ``geotech_references.aashto_1993``).
 
 Scope limits (see DESIGN.md): new construction only -- overlays/
-rehabilitation (Part III), swelling/frost-heave serviceability loss,
-rigid joint/reinforcement design, and low-volume catalog designs are not
-computed here (the reference layer carries the guide text for those).
+rehabilitation (Part III), rigid joint/reinforcement design, and
+low-volume catalog designs are not computed here (the reference layer
+carries the guide text for those).
 """
 
 from .flexible import PavementLayer, design_flexible_pavement
+from .performance import estimate_performance_period
 from .results import (DesignTrafficResult, FlexiblePavementResult,
                       RigidPavementResult)
 from .rigid import design_rigid_pavement
@@ -40,6 +47,7 @@ __all__ = [
     "design_rigid_pavement",
     "compute_design_esals",
     "growth_factor",
+    "estimate_performance_period",
     "DesignTrafficResult",
     "FlexiblePavementResult",
     "RigidPavementResult",
