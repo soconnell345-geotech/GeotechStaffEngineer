@@ -242,6 +242,10 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.soe",
         "brief": "Support of excavation (braced/cantilever walls, stability, anchors)",
     },
+    "pavement_design": {
+        "adapter": "funhouse_agent.adapters.pavement_design_adapter",
+        "brief": "AASHTO 1993 pavement design (SN, slab D, ESALs)",
+    },
     "dxf_export": {
         "adapter": "funhouse_agent.adapters.dxf_export",
         "brief": "Export cross-section geometry to DXF file format",

@@ -71,6 +71,7 @@ def _ensure_registered(module_name: str) -> dict:
         "downdrag": "downdrag.calc_steps",
         "seismic_geotech": "seismic_geotech.calc_steps",
         "retaining_walls": "retaining_walls.calc_steps",
+        "pavement_design": "pavement_design.calc_steps",
         "ground_improvement": "ground_improvement.calc_steps",
         "wave_equation": "wave_equation.calc_steps",
         "pile_group": "pile_group.calc_steps",

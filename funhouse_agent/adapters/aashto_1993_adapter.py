@@ -7,10 +7,14 @@ layered minimum-thickness cascade, layer coefficients (a1 asphalt chart, a2/a3
 printed regressions, cement/bituminous-treated base charts), effective roadbed
 resilient modulus (seasonal relative-damage averaging), reliability (ZR table,
 recommended levels by functional class, So guidance, stage compounding),
-drainage coefficients mi/Cd, load transfer J, serviceability, representative
-ESAL load-equivalency factors (SN=5 flexible / D=9 rigid, pt=2.5), and
-aggregate-surfaced road models. NATIVE US CUSTOMARY UNITS (psi, pci, kips,
-inches) per the source nomographs — units documented on every method.
+drainage coefficients mi/Cd, load transfer J, serviceability, the FULL
+Appendix D axle load-equivalency factor tables D.1-D.18 (single/tandem/triple,
+pt 2.0/2.5/3.0, any SN 1-6 / D 6-14 in), the Section 3.2 composite/effective
+modulus of subgrade reaction worksheet (Figures 3.3-3.6, Table 2.7 loss of
+support), and aggregate-surfaced road models. NATIVE US CUSTOMARY UNITS (psi,
+pci, kips, inches) per the source nomographs — units documented on every
+method. (For complete DESIGNS use the 'pavement_design' analysis module,
+which orchestrates these.)
 """
 
 from funhouse_agent.adapters._reference_common import (
@@ -19,10 +23,15 @@ from funhouse_agent.adapters._reference_common import (
 
 
 def _build():
-    from geotech_references.aashto_1993 import equations, tables
+    from geotech_references.aashto_1993 import (composite_k, equations, lef,
+                                                tables)
     registry, info = build_lookup_registry([
         (tables, "AASHTO 1993 Tables", "AASHTO 1993 Pavement Design Guide"),
         (equations, "AASHTO 1993 Equations", "AASHTO 1993 Pavement Design Guide"),
+        (lef, "AASHTO 1993 Appendix D LEF Tables",
+         "AASHTO 1993 Pavement Design Guide"),
+        (composite_k, "AASHTO 1993 Composite-k (Section 3.2)",
+         "AASHTO 1993 Pavement Design Guide"),
     ])
     add_text_retrieval(registry, info, "aashto_1993",
                        "AASHTO 1993 Pavement Design Guide")
