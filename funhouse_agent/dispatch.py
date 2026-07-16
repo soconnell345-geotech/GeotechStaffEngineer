@@ -174,6 +174,21 @@ SLOPE_FEM_REFERENCES = frozenset({
     "gec11",   # reinforced soil slopes (geosynthetic-reinforced slopes)
 })
 
+#: Pavement specialist scope: the AASHTO 1993 design module + the report
+#: generator it uses, plus the pavement/roadbed reference modules.
+PAVEMENT_MODULES = frozenset({
+    "pavement_design",   # AASHTO 1993 flexible SN / rigid D / ESALs / swell-frost
+    "calc_package",      # pavement_design_package + html_to_pdf report rendering
+})
+
+PAVEMENT_REFERENCES = frozenset({
+    "reference_db", "figure_db",
+    "aashto_1993",      # THE design basis: Figs 3.1/3.7, Appendix D LEFs, composite-k, Appendix G
+    "fhwa_pavements",   # FHWA-NHI-05-037 — Mr/CBR correlations, drainage, frost, stabilization
+    "ufc_pavement",     # UFC roads/parking (CAUTION: equations coded from the airfield UFC, pending audit)
+    "ufc_expansive",    # expansive-soil roadbeds (feeds the Appendix G swelling inputs)
+})
+
 
 def _scoped_names(allowed_agents):
     """Return the visible agent names given an optional whitelist."""

@@ -730,10 +730,10 @@ def _generate_seismic_package(params: dict) -> dict:
         )
         result = SeismicEarthPressureResult(
             KAE=KAE, KPE=0.0,
-            PAE_total=result_dict["PAE_total"],
-            PA_static=result_dict["PA_static"],
-            delta_PAE=result_dict["delta_PAE"],
-            height_of_application=result_dict["height_of_application"],
+            PAE_total=result_dict["PAE_total_kN_per_m"],
+            PA_static=result_dict["PA_static_kN_per_m"],
+            delta_PAE=result_dict["delta_PAE_kN_per_m"],
+            height_of_application=result_dict["height_of_application_m"],
             phi=params["phi"],
             delta=params.get("delta", params["phi"] * 2 / 3),
             kh=params["kh"], kv=params.get("kv", 0.0),
@@ -856,36 +856,50 @@ def _generate_ground_improvement_package(params: dict) -> dict:
             kh_ks_ratio=params.get("kh_ks_ratio", 2.0),
         )
     elif method == "aggregate_piers":
-        require_params(params, ["diameter", "spacing", "length"],
+        # Aliases from the pre-GEC-13 parameterization this package once used.
+        p = apply_aliases(params, {"diameter": "column_diameter",
+                                   "E_pier": "E_column"})
+        require_params(p, ["column_diameter", "spacing"],
                        method="ground_improvement_package (aggregate_piers)")
         result = analyze_aggregate_piers(
-            diameter=params["diameter"],
-            spacing=params["spacing"],
-            length=params["length"],
-            E_pier=params.get("E_pier", 50000.0),
-            E_soil=params.get("E_soil", 5000.0),
-            phi_pier=params.get("phi_pier", 45.0),
-            applied_stress=params.get("applied_stress", 100.0),
+            column_diameter=p["column_diameter"],
+            spacing=p["spacing"],
+            pattern=p.get("pattern", "triangular"),
+            E_column=p.get("E_column", 80000.0),
+            E_soil=p.get("E_soil", 5000.0),
+            n=p.get("n", 5.0),
+            q_unreinforced=p.get("q_unreinforced", 0.0),
+            S_unreinforced=p.get("S_unreinforced", 0.0),
         )
     elif method == "surcharge":
-        require_params(params, ["H_clay", "cv", "surcharge", "sigma_v0", "Cc", "e0"],
+        p = apply_aliases(params, {"surcharge": "surcharge_kPa",
+                                   "target_consolidation": "target_U"})
+        require_params(p, ["S_ultimate", "surcharge_kPa", "cv", "Hdr"],
                        method="ground_improvement_package (surcharge)")
         result = analyze_surcharge_preloading(
-            H_clay=params["H_clay"],
-            cv=params["cv"],
-            surcharge=params["surcharge"],
-            sigma_v0=params["sigma_v0"],
-            Cc=params["Cc"], e0=params["e0"],
-            sigma_p=params.get("sigma_p"),
-            target_consolidation=params.get("target_consolidation", 90.0),
+            S_ultimate=p["S_ultimate"],
+            surcharge_kPa=p["surcharge_kPa"],
+            cv=p["cv"], Hdr=p["Hdr"],
+            target_U=p.get("target_U", 90.0),
+            ch=p.get("ch"),
+            drain_spacing=p.get("drain_spacing"),
+            dw=p.get("dw", 0.066),
+            pattern=p.get("pattern", "triangular"),
+            smear_ratio=p.get("smear_ratio", 2.0),
+            kh_ks_ratio=p.get("kh_ks_ratio", 2.0),
+            sigma_v0=p.get("sigma_v0", 0.0),
         )
     elif method == "vibro":
-        require_params(params, ["spacing", "N1_before", "depth"],
+        p = apply_aliases(params, {"N1_before": "initial_N_spt",
+                                   "N1_target": "target_N_spt"})
+        require_params(p, ["fines_content", "initial_N_spt"],
                        method="ground_improvement_package (vibro)")
         result = analyze_vibro_compaction(
-            spacing=params["spacing"],
-            N1_before=params["N1_before"],
-            depth=params["depth"],
+            fines_content=p["fines_content"],
+            initial_N_spt=p["initial_N_spt"],
+            target_N_spt=p.get("target_N_spt", 25.0),
+            D50=p.get("D50"),
+            pattern=p.get("pattern", "triangular"),
         )
     else:
         raise ValueError(
@@ -1552,13 +1566,25 @@ METHOD_INFO = {
         "brief": "Run ground improvement analysis and generate calc package.",
         "parameters": {
             "method": {"type": "str", "required": True, "allowed_values": ["wick_drains", "aggregate_piers", "surcharge", "vibro"], "description": "Ground improvement method."},
-            "spacing": {"type": "float", "required": False, "description": "Element spacing (m) — wick drains, agg piers, vibro."},
-            "ch": {"type": "float", "required": False, "description": "Horizontal cv (m2/yr) — wick drains."},
+            "spacing": {"type": "float", "required": False, "description": "Element spacing (m) — wick drains, aggregate piers."},
+            "ch": {"type": "float", "required": False, "description": "Horizontal cv (m2/yr) — wick drains, surcharge (optional drains)."},
             "cv": {"type": "float", "required": False, "description": "Vertical cv (m2/yr) — wick drains, surcharge."},
-            "Hdr": {"type": "float", "required": False, "description": "Drainage path (m) — wick drains."},
+            "Hdr": {"type": "float", "required": False, "description": "Drainage path (m) — wick drains, surcharge."},
             "time": {"type": "float", "required": False, "description": "Design time (years) — wick drains."},
-            "diameter": {"type": "float", "required": False, "description": "Pier diameter (m) — aggregate piers."},
-            "length": {"type": "float", "required": False, "description": "Pier length (m) — aggregate piers."},
+            "column_diameter": {"type": "float", "required": False, "description": "Stone-column/pier diameter (m) — aggregate piers (alias: diameter)."},
+            "E_column": {"type": "float", "required": False, "default": 80000.0, "description": "Column modulus (kPa) — aggregate piers (alias: E_pier)."},
+            "E_soil": {"type": "float", "required": False, "default": 5000.0, "description": "Matrix soil modulus (kPa) — aggregate piers."},
+            "n": {"type": "float", "required": False, "default": 5.0, "description": "Stress concentration ratio — aggregate piers."},
+            "S_unreinforced": {"type": "float", "required": False, "description": "Unreinforced settlement (m) — aggregate piers (enables the improvement figures)."},
+            "q_unreinforced": {"type": "float", "required": False, "description": "Unreinforced bearing (kPa) — aggregate piers."},
+            "S_ultimate": {"type": "float", "required": False, "description": "Ultimate primary settlement (m) — surcharge."},
+            "surcharge_kPa": {"type": "float", "required": False, "description": "Surcharge fill stress (kPa) — surcharge (alias: surcharge)."},
+            "target_U": {"type": "float", "required": False, "default": 90.0, "description": "Target consolidation (%) — surcharge (alias: target_consolidation)."},
+            "drain_spacing": {"type": "float", "required": False, "description": "Optional wick-drain spacing (m) under the surcharge."},
+            "fines_content": {"type": "float", "required": False, "description": "Fines content (%) — vibro feasibility."},
+            "initial_N_spt": {"type": "float", "required": False, "description": "Pre-improvement (N1)60 — vibro (alias: N1_before)."},
+            "target_N_spt": {"type": "float", "required": False, "default": 25.0, "description": "Target (N1)60 — vibro."},
+            "pattern": {"type": "str", "required": False, "default": "triangular", "allowed_values": ["triangular", "square"], "description": "Element pattern — piers/drains/vibro."},
             **_COMMON_PARAMS,
         },
         "returns": {**_COMMON_RETURNS, "method": "Ground improvement method used."},

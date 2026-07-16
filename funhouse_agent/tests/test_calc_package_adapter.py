@@ -471,6 +471,67 @@ class TestGroundImprovementPackage:
         assert result["method"] == "wick_drains"
         assert os.path.exists(outfile)
 
+    # The three non-wick variants drifted against the rebuilt GEC-13 module
+    # signatures and failed for several releases (caught by the 2026-07
+    # plot-pipeline sweep) — keep one regression per variant.
+
+    def test_aggregate_piers(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import _generate_ground_improvement_package
+        outfile = str(tmp_path / "gi_ap.html")
+        result = _generate_ground_improvement_package({
+            "method": "aggregate_piers",
+            "column_diameter": 0.76, "spacing": 2.0,
+            "E_column": 80000, "E_soil": 5000,
+            "S_unreinforced": 0.05, "q_unreinforced": 150,
+            "output_path": outfile,
+        })
+        assert result["status"] == "success"
+        assert os.path.exists(outfile)
+        # Pre-GEC-13 aliases keep working.
+        result2 = _generate_ground_improvement_package({
+            "method": "aggregate_piers", "diameter": 0.76, "spacing": 2.0,
+            "E_pier": 80000, "output_path": str(tmp_path / "gi_ap2.html"),
+        })
+        assert result2["status"] == "success"
+
+    def test_surcharge(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import _generate_ground_improvement_package
+        outfile = str(tmp_path / "gi_su.html")
+        result = _generate_ground_improvement_package({
+            "method": "surcharge",
+            "S_ultimate": 0.30, "surcharge": 50, "cv": 3.0, "Hdr": 4.0,
+            "target_consolidation": 90,
+            "output_path": outfile,
+        })
+        assert result["status"] == "success"
+        assert os.path.exists(outfile)
+
+    def test_vibro(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import _generate_ground_improvement_package
+        outfile = str(tmp_path / "gi_vb.html")
+        result = _generate_ground_improvement_package({
+            "method": "vibro",
+            "fines_content": 8, "N1_before": 12, "target_N_spt": 25,
+            "output_path": outfile,
+        })
+        assert result["status"] == "success"
+        assert os.path.exists(outfile)
+
+
+class TestSeismicEarthPressurePackage:
+    def test_mononobe_okabe(self, tmp_path):
+        """Regression: the M-O result keys gained unit suffixes and the
+        package read the old bare names (KeyError 'PAE_total')."""
+        from funhouse_agent.adapters.calc_package import _generate_seismic_package
+        outfile = str(tmp_path / "mo.html")
+        result = _generate_seismic_package({
+            "analysis_type": "seismic_earth_pressure",
+            "phi": 32, "kh": 0.2, "gamma": 19, "H": 5.0,
+            "output_path": outfile,
+        })
+        assert result["status"] == "success"
+        assert os.path.exists(outfile)
+
 
 class TestWaveEquationPackage:
     def test_basic(self, tmp_path):

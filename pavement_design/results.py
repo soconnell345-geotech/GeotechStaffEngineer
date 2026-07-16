@@ -88,6 +88,7 @@ class FlexiblePavementResult:
     w18_capacity: float         # forward-check capacity of the provided section
     adequate: bool
     environmental: dict = None  # swelling/frost dPSI block (None if not used)
+    effective_mr_detail: dict = None  # seasonal uf worksheet (if monthly given)
     minimums_applied: dict = field(default_factory=dict)
     notes: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
@@ -111,6 +112,7 @@ class FlexiblePavementResult:
             "w18_capacity": self.w18_capacity,
             "adequate": self.adequate,
             "environmental": self.environmental,
+            "effective_mr_detail": self.effective_mr_detail,
             "minimums_applied": self.minimums_applied,
             "notes": self.notes,
             "warnings": self.warnings,

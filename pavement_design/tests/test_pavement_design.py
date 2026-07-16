@@ -512,6 +512,39 @@ class TestEnvironmentalLoss:
         assert res.environmental is None
 
 
+class TestFigures:
+    def test_flexible_figures(self):
+        pytest.importorskip("matplotlib")
+        from pavement_design.calc_steps import get_figures
+        res = design_flexible_pavement(
+            layers=THREE_LAYERS, monthly_mr_psi=MONTHLY_MR,
+            swelling=SWELL_G4, design_period_yr=15,
+            **{k: v for k, v in FLEX_EXAMPLE.items() if k != "mr_psi"})
+        figs = get_figures(res)
+        titles = [f.title for f in figs]
+        assert "Flexible design chart" in titles
+        assert "Designed section" in titles
+        assert "Effective roadbed MR" in titles
+        assert "Environmental serviceability loss" in titles
+        assert all(len(f.image_base64) > 5000 for f in figs)
+
+    def test_rigid_figures(self):
+        pytest.importorskip("matplotlib")
+        from pavement_design.calc_steps import get_figures
+        res = design_rigid_pavement(**RIGID_EXAMPLE)
+        figs = get_figures(res)
+        assert [f.title for f in figs] == ["Rigid design chart"]
+
+    def test_no_optional_figures_without_inputs(self):
+        pytest.importorskip("matplotlib")
+        from pavement_design.calc_steps import get_figures
+        res = design_flexible_pavement(
+            layers=[PavementLayer("asphalt", a=0.44)], **FLEX_EXAMPLE)
+        titles = [f.title for f in get_figures(res)]
+        assert "Effective roadbed MR" not in titles
+        assert "Environmental serviceability loss" not in titles
+
+
 class TestPerformancePeriod:
     def test_flexible_iteration_converges(self):
         pytest.importorskip("geotech_references.aashto_1993.environmental")
