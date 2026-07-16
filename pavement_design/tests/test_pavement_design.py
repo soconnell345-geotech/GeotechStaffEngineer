@@ -444,3 +444,108 @@ class TestCompositeK:
         assert res.k_basis["basis"] == "composite_section_3.2"
         assert res.d_provided_in >= res.d_required_in
         assert res.iterations >= 1
+
+
+# ---------------------------------------------------------------------------
+# Environmental serviceability loss (requires ...aashto_1993.environmental)
+# Guide anchors: Fig G.4 example (t=15, theta=0.10, Ps=60%, VR=2 -> 0.3);
+# Fig G.8 example (t=15, phi=5, PF=30%, dPSI_MAX=2.0 -> 0.47).
+# ---------------------------------------------------------------------------
+
+SWELL_G4 = {"vr_in": 2.0, "ps_pct": 60, "theta": 0.10}
+FROST_G8 = {"phi_mm_day": 5, "pf_pct": 30, "delta_psi_max": 2.0}
+
+
+class TestEnvironmentalLoss:
+    def test_flexible_swelling_reduces_budget_and_grows_sn(self):
+        pytest.importorskip("geotech_references.aashto_1993.environmental")
+        base = design_flexible_pavement(
+            layers=[PavementLayer("asphalt", a=0.44)], **FLEX_EXAMPLE)
+        env = design_flexible_pavement(
+            layers=[PavementLayer("asphalt", a=0.44)],
+            swelling=SWELL_G4, design_period_yr=15, **FLEX_EXAMPLE)
+        # Fig G.4 printed example: dPSI_sw ~ 0.3 at 15 yr.
+        assert env.environmental["delta_psi_sw"] == pytest.approx(0.31,
+                                                                  abs=0.02)
+        assert env.environmental["delta_psi_traffic"] == pytest.approx(
+            1.9 - env.environmental["delta_psi_sw"], abs=1e-6)
+        # Less serviceability for traffic -> a larger required SN.
+        assert env.sn_required > base.sn_required
+        assert env.adequate
+
+    def test_rigid_frost_heave(self):
+        pytest.importorskip("geotech_references.aashto_1993.environmental")
+        base = design_rigid_pavement(**RIGID_EXAMPLE)
+        env = design_rigid_pavement(frost=FROST_G8, design_period_yr=15,
+                                    **RIGID_EXAMPLE)
+        # Fig G.8 printed example: dPSI_fh ~ 0.47 at 15 yr.
+        assert env.environmental["delta_psi_fh"] == pytest.approx(0.47,
+                                                                  abs=0.02)
+        assert env.d_required_in > base.d_required_in
+        assert env.adequate
+
+    def test_combined_loss_and_overconsumption_error(self):
+        pytest.importorskip("geotech_references.aashto_1993.environmental")
+        both = design_flexible_pavement(
+            layers=[PavementLayer("asphalt", a=0.44)],
+            swelling=SWELL_G4, frost=FROST_G8, design_period_yr=15,
+            **FLEX_EXAMPLE)
+        assert both.environmental["delta_psi_total"] == pytest.approx(
+            0.78, abs=0.03)
+        # A severe case that eats the whole budget must error, not design.
+        with pytest.raises(ValueError, match="consumes"):
+            design_flexible_pavement(
+                layers=[PavementLayer("asphalt", a=0.44)],
+                swelling={"vr_in": 10.0, "ps_pct": 100, "theta": 0.20},
+                frost=FROST_G8, design_period_yr=30, **FLEX_EXAMPLE)
+
+    def test_env_requires_design_period(self):
+        pytest.importorskip("geotech_references.aashto_1993.environmental")
+        with pytest.raises(ValueError, match="design_period_yr"):
+            design_flexible_pavement(
+                layers=[PavementLayer("asphalt", a=0.44)],
+                swelling=SWELL_G4, **FLEX_EXAMPLE)
+
+    def test_no_env_leaves_result_none(self):
+        res = design_flexible_pavement(
+            layers=[PavementLayer("asphalt", a=0.44)], **FLEX_EXAMPLE)
+        assert res.environmental is None
+
+
+class TestPerformancePeriod:
+    def test_flexible_iteration_converges(self):
+        pytest.importorskip("geotech_references.aashto_1993.environmental")
+        from pavement_design import estimate_performance_period
+        res = estimate_performance_period(
+            "flexible", delta_psi_design=1.9, base_year_w18=300000,
+            growth_rate_pct=2.0, swelling=SWELL_G4, frost=FROST_G8,
+            max_performance_period_yr=15, sn=5.0, mr_psi=5000,
+            zr=-1.645, so=0.35)
+        assert res["converged"]
+        assert 0 < res["performance_period_yr"] <= 15
+        assert len(res["rows"]) >= 2
+        # Environmental loss must shorten the period vs the no-env horizon.
+        # (With SN=5 the section carries ~5e6 ESALs on the full budget.)
+
+    def test_rigid_iteration_runs(self):
+        pytest.importorskip("geotech_references.aashto_1993.environmental")
+        from pavement_design import estimate_performance_period
+        res = estimate_performance_period(
+            "rigid", delta_psi_design=1.7, base_year_w18=400000,
+            growth_rate_pct=0.0, swelling=SWELL_G4,
+            max_performance_period_yr=20, d_in=10.0, sc_psi=650,
+            ec_psi=5e6, j=3.2, cd=1.0, k_pci=72, zr=-1.645, so=0.29)
+        assert res["converged"]
+        assert res["performance_period_yr"] > 0
+
+    def test_requires_env_and_structure(self):
+        pytest.importorskip("geotech_references.aashto_1993.environmental")
+        from pavement_design import estimate_performance_period
+        with pytest.raises(ValueError, match="swelling"):
+            estimate_performance_period(
+                "flexible", delta_psi_design=1.9, base_year_w18=1e5,
+                sn=5.0, mr_psi=5000, zr=-1.645, so=0.35)
+        with pytest.raises(ValueError, match="sn"):
+            estimate_performance_period(
+                "flexible", delta_psi_design=1.9, base_year_w18=1e5,
+                swelling=SWELL_G4, mr_psi=None, sn=None, zr=-1.645, so=0.35)

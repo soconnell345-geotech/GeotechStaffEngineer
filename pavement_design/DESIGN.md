@@ -29,6 +29,7 @@ suffixes (`mr_psi`, `thickness_in`, `load_kips`).
 | File | Contents |
 |------|----------|
 | `traffic.py` | `growth_factor`, `compute_design_esals` (axle spectrum / truck factors / direct, growth + DD + DL) |
+| `performance.py` | environmental (swelling/frost) dPSI resolution + `estimate_performance_period` (Table 3.1 iteration) |
 | `flexible.py` | `PavementLayer`, `design_flexible_pavement` (Figure 3.1 solve + Figure 3.2 layered split) |
 | `rigid.py` | `design_rigid_pavement` (Figure 3.7 solve; direct / MR-19.4 / composite k) |
 | `common.py` | input resolution helpers (ZR, So, ΔPSI, effective MR, round-up) |
@@ -65,6 +66,23 @@ suffixes (`mr_psi`, `thickness_in`, `load_kips`).
 Check mode (every layer has `thickness_in`): computes provided SN + the
 same forward check, changes nothing.
 
+### Environmental serviceability loss (Section 2.1.4 / 3.1.3, Appendix G)
+
+Both design functions accept `swelling={vr_in, ps_pct, theta}` (the
+PRINTED Figure G.4 equation ΔPSI_SW = 0.00335·VR·Ps·(1−e^(−θt))) and
+`frost={phi_mm_day, pf_pct, delta_psi_max}` (the PRINTED Figure G.8
+equation ΔPSI_FH = 0.01·PF·ΔPSI_MAX·(1−e^(−0.02φt))), evaluated at
+`design_period_yr` and subtracted from the design ΔPSI before the
+structural solve (Table 3.1 Step 4). Errors if the environmental loss
+consumes the whole budget; warns above 50%. Supporting inputs come from
+the reference layer: θ (Fig G.2 nomograph, exact reconstruction), VR
+(Fig G.3, coarse chart read ±20–40%), φ (Fig G.6 chart read),
+ΔPSI_MAX (Fig G.7, exact linear slopes by drainage quality).
+`estimate_performance_period` runs the full printed Table 3.1 iteration
+on a DESIGNED section (fixed SN or D), converting allowable traffic to
+calendar years via the compound-growth inverse; reproduces the guide's
+printed 3-row example (po=4.4 case) within its own rounding.
+
 Sections supported: 1–3 layers (full-depth AC / AC + base / AC + base +
 subbase). Top layer must be `asphalt`; a subbase requires a base above it.
 
@@ -99,7 +117,10 @@ subbase). Top layer must be `asphalt`; a subbase requires a base above it.
 | Growth factor | 4%/yr, 20 yr → GF 29.78 (standard value) | reproduced ✔ |
 | LEF identity | 18-kip single axle → LEF 1.000 at any SN/pt (definition) | reproduced (table and closed-form paths) ✔ |
 | Composite-k worksheet | Guide §3.2 Table 3.3 printed example (avg u_r 0.6042, eff. k 540 pci, LS-corrected 170 pci) | reproduced +1.2% / −2.7% / −2.2% (71 tests in `geotech-references/tests/test_aashto_1993_composite_k.py`); Fig 3.3 printed example 400 pci → 390 (−2.5%) |
-| Appendix D LEF tables | FULL Tables D.1–D.18 transcribed (~5,850 cells; closed-form equations are in Volume 2 App. MM, not in this scan); lead visual QC of 4 tables (~130 cells) zero discrepancies; exact match to the 4 pre-existing independent curves | 143 tests in `geotech-references/tests/test_aashto_1993_lef.py` |
+| Appendix D LEF tables | FULL Tables D.1–D.18 transcribed (~5,850 cells; the derivation equations live in the 1986 edition's separate Volume 2 App. MM — the 1993 Guide is a single volume and only carries the citation); lead visual QC of 4 tables (~130 cells) zero discrepancies; exact match to the 4 pre-existing independent curves | 143 tests in `geotech-references/tests/test_aashto_1993_lef.py` |
+| Swelling loss (Fig G.4) | printed example t=15, θ=0.10, Ps=60%, VR=2 in → 0.3 | 0.312 through the design function ✔ (printed equation, lead page-verified) |
+| Frost heave loss (Fig G.8) | printed example t=15, φ=5, PF=30%, ΔPSI_MAX=2.0 → 0.47 | 0.466 ✔ (printed equation incl. the 0.02 constant, lead page-verified) |
+| Table 3.1 iteration | printed 3-row example (po=4.4, ΔPSI=1.9, trial 13.0 → 9.7 → 8.5 yr) | rows reproduced within the guide's rounding (63 tests in `geotech-references/tests/test_aashto_1993_environmental.py`) |
 
 Composite-k chart-read confidence (documented per function): Fig 3.4 is
 EXACT at Dsg=5 ft (4 printed Table 3.3 triples) with chart-read depth
@@ -113,8 +134,6 @@ Results carry `chart_read` flags and these tolerances in docstrings.
 
 - **Overlays / rehabilitation (Part III)** — text-only in the reference
   layer; not computed.
-- **Swelling / frost-heave serviceability loss** (Fig 2.2 / G.4, Table 3.1
-  iterative loss) — not computed; the stated ΔPSI is traffic-only.
 - **Rigid joint / reinforcement / prestressed design** (Section 3.3+) —
   not computed.
 - **Low-volume road catalog** (Part II Ch 4) — only the aggregate-loss

@@ -136,6 +136,9 @@ def design_rigid_pavement(
     slab_thickness_in=None,
     thickness_increment_in=0.5,
     max_k_iterations=12,
+    swelling=None,
+    frost=None,
+    design_period_yr=None,
 ) -> RigidPavementResult:
     """Complete AASHTO 1993 rigid pavement design or adequacy check.
 
@@ -177,6 +180,13 @@ def design_rigid_pavement(
         rounded UP).
     max_k_iterations : int, optional
         Cap on the composite-k <-> D fixed-point iteration.
+    swelling, frost : dict, optional
+        Roadbed swelling {vr_in, ps_pct, theta} (Figure G.4) and/or frost
+        heave {phi_mm_day, pf_pct, delta_psi_max} (Figure G.8) specs; the
+        environmental loss at ``design_period_yr`` is subtracted from the
+        design dPSI before the slab solve (Table 3.1 Step 4).
+    design_period_yr : float, optional
+        Analysis period, years -- required when swelling/frost are given.
 
     Returns
     -------
@@ -198,6 +208,29 @@ def design_rigid_pavement(
     dpsi, po_val, pt_val, ref, n = resolve_delta_psi("rigid", delta_psi, po, pt)
     add_ref(references, ref)
     notes.extend(n)
+    from .performance import resolve_environmental_loss
+    environmental = resolve_environmental_loss(design_period_yr, swelling,
+                                               frost, references, notes)
+    if environmental is not None:
+        dpsi_env = environmental["delta_psi_total"]
+        if dpsi_env >= dpsi:
+            raise ValueError(
+                f"Environmental serviceability loss ({dpsi_env}) consumes "
+                f"the entire design dPSI ({dpsi}) at {design_period_yr} yr "
+                "-- shorten the analysis period, mitigate the roadbed "
+                "(see the guide's Appendix G options), or raise po/lower pt."
+            )
+        if dpsi_env > 0.5 * dpsi:
+            warnings.append(
+                f"Environmental loss ({dpsi_env}) exceeds half the design "
+                f"dPSI ({dpsi}); the guide recommends considering roadbed "
+                "mitigation before designing around swelling/frost of this "
+                "magnitude."
+            )
+        dpsi_traffic = round(dpsi - dpsi_env, 4)
+        environmental = dict(environmental, delta_psi_design=dpsi,
+                             delta_psi_traffic=dpsi_traffic)
+        dpsi = dpsi_traffic
     j_val, _ = _resolve_j(j, pavement_type, shoulder_type,
                           load_transfer_devices, references, notes)
     cd_val, _ = _resolve_cd(cd, drainage_quality, pct_saturation_time,
@@ -273,6 +306,7 @@ def design_rigid_pavement(
         d_provided_in=d_provided,
         w18_capacity=w18_capacity,
         adequate=adequate,
+        environmental=environmental,
         iterations=iterations,
         notes=notes,
         warnings=warnings,

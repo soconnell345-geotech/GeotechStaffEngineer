@@ -165,6 +165,9 @@ def design_flexible_pavement(
     layers=None,
     thickness_increment_in=0.5,
     enforce_minimums=True,
+    swelling=None,
+    frost=None,
+    design_period_yr=None,
 ) -> FlexiblePavementResult:
     """Complete AASHTO 1993 flexible pavement design or adequacy check.
 
@@ -207,6 +210,16 @@ def design_flexible_pavement(
         rounded UP, guide practice).
     enforce_minimums : bool, optional
         Apply the Section 3.1.4 minimum AC/base thicknesses (design mode).
+    swelling, frost : dict, optional
+        Roadbed swelling {vr_in, ps_pct, theta} (Figure G.4) and/or frost
+        heave {phi_mm_day, pf_pct, delta_psi_max} (Figure G.8) specs. The
+        environmental serviceability loss at ``design_period_yr`` is
+        subtracted from the design dPSI before the SN solves (Table 3.1
+        Step 4), so the section is designed on the traffic-available
+        budget. See ``performance.estimate_performance_period`` for the
+        full printed performance-period iteration on the designed section.
+    design_period_yr : float, optional
+        Analysis period, years -- required when swelling/frost are given.
 
     Returns
     -------
@@ -252,6 +265,29 @@ def design_flexible_pavement(
         "flexible", delta_psi, po, pt)
     add_ref(references, ref)
     notes.extend(n)
+    from .performance import resolve_environmental_loss
+    environmental = resolve_environmental_loss(design_period_yr, swelling,
+                                               frost, references, notes)
+    if environmental is not None:
+        dpsi_env = environmental["delta_psi_total"]
+        if dpsi_env >= dpsi:
+            raise ValueError(
+                f"Environmental serviceability loss ({dpsi_env}) consumes "
+                f"the entire design dPSI ({dpsi}) at {design_period_yr} yr "
+                "-- shorten the analysis period, mitigate the roadbed "
+                "(see the guide's Appendix G options), or raise po/lower pt."
+            )
+        if dpsi_env > 0.5 * dpsi:
+            warnings.append(
+                f"Environmental loss ({dpsi_env}) exceeds half the design "
+                f"dPSI ({dpsi}); the guide recommends considering roadbed "
+                "mitigation before designing around swelling/frost of this "
+                "magnitude."
+            )
+        dpsi_traffic = round(dpsi - dpsi_env, 4)
+        environmental = dict(environmental, delta_psi_design=dpsi,
+                             delta_psi_traffic=dpsi_traffic)
+        dpsi = dpsi_traffic
     mr_eff, ref, n, _detail = resolve_effective_mr(mr_psi, monthly_mr_psi)
     add_ref(references, ref)
     notes.extend(n)
@@ -399,6 +435,7 @@ def design_flexible_pavement(
         sn_stack=sn_stack,
         w18_capacity=w18_capacity,
         adequate=adequate,
+        environmental=environmental,
         minimums_applied=minimums_applied,
         notes=notes,
         warnings=warnings,

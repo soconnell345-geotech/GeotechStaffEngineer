@@ -101,6 +101,33 @@ class TestCalls:
         assert "sc_psi" in str(res["error"])
 
 
+class TestEnvironmental:
+    def test_flexible_with_swelling(self):
+        pytest.importorskip("geotech_references.aashto_1993.environmental")
+        p = dict(FLEX_PARAMS, swelling={"vr_in": 2.0, "ps_pct": 60,
+                                        "theta": 0.10},
+                 design_period_yr=15)
+        res = call_agent("pavement_design", "flexible_pavement_design", p)
+        assert "error" not in res, res.get("error")
+        assert res["environmental"]["delta_psi_sw"] == pytest.approx(
+            0.31, abs=0.02)
+        assert res["sn_required"] > 4.976  # env loss grows the required SN
+
+    def test_performance_period_method(self):
+        pytest.importorskip("geotech_references.aashto_1993.environmental")
+        res = call_agent("pavement_design", "performance_period", {
+            "pavement_type": "flexible", "delta_psi_design": 1.9,
+            "base_year_w18": 300000, "growth_rate_pct": 2.0,
+            "swelling": {"vr_in": 2.0, "ps_pct": 60, "theta": 0.10},
+            "max_performance_period_yr": 15,
+            "sn": 5.0, "mr_psi": 5000, "reliability_pct": 95, "so": 0.35,
+        })
+        assert "error" not in res, res.get("error")
+        assert res["converged"] is True
+        assert res["performance_period_yr"] > 0
+        assert isinstance(res["rows"], list) and len(res["rows"]) >= 1
+
+
 class TestCalcPackage:
     def test_flexible_package(self, tmp_path):
         out = str(tmp_path / "flex_pavement.html")
