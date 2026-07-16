@@ -49,6 +49,24 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
+## v5.7.0 status (RELEASED 2026-07-16 to PyPI; owner OK'd — pavement design)
+
+New `pavement_design/` analysis module (31st): complete AASHTO 1993 flexible
+(Fig 3.1 SN + Fig 3.2 layer split + §3.1.4 minimums + forward check) and rigid
+(Fig 3.7; k = direct | MR/19.4 | full §3.2 composite-k worksheet, LS-corrected,
+iterated with D) design, ESAL traffic (full Appendix D LEF tables incl. triple
+axles), Appendix G swelling/frost-heave serviceability loss (printed G.4/G.8
+equations) + Table 3.1 performance-period iteration, calc-package template +
+`pavement_design_package`, adapter with 5 methods. US customary (documented
+exception). Validation V-055 (guide worked examples SN 5.0 / D 10.0 / MR 5000
+end-to-end); DESIGN.md carries the full ledger + chart-read tolerances. Ships
+with **geotech-references 1.3.2** (pin >=1.3.2): EC7-1/EC7-2/AASHTO-1993 +
+lef.py (~5,850 cells, lead visual QC) + composite_k.py (read-grid digitization)
++ environmental.py. The 1993 Guide is a SINGLE volume — the D-2 "Appendix MM of
+Volume 2" citation is stale 1986 text (owner-verified). Overlays (Part III)
+PARKED. list_agents catalog at 7,995/8,000 chars — rebalance briefs before
+adding the next module.
+
 ## v5.6.0 status (RELEASED 2026-07-15 to PyPI; owner OK'd — the app train)
 
 Owner pivot to app-heavy work (`webapp/`); wiki integration PARKED. All A-items
