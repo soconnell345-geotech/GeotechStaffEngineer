@@ -1800,6 +1800,11 @@ def main(argv=None) -> int:
         help="Skip the live-run cost confirmation prompt (for non-interactive "
              "use). Ignored under --dry-run.",
     )
+    parser.add_argument(
+        "--ids", default=None,
+        help="Comma-separated question-id prefixes to run (e.g. 'PAV' for the "
+             "pavement questions, or 'PAV-1,BC-2'). Applied before --limit.",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -1809,6 +1814,16 @@ def main(argv=None) -> int:
         pass
 
     questions = load_suite()
+    if args.ids:
+        prefixes = [s.strip() for s in args.ids.split(",") if s.strip()]
+        questions = [
+            q for q in questions
+            if any(str(q.get("id", "")).startswith(p) for p in prefixes)
+        ]
+        if not questions:
+            raise SystemExit(f"--ids {args.ids!r} matched no suite questions.")
+        print(f"[--ids {args.ids}] {len(questions)} question(s) selected: "
+              + ", ".join(str(q.get("id")) for q in questions))
     n = len(questions) if args.limit is None else min(args.limit, len(questions))
 
     # ----- v2-only suite runner (local Anthropic model) -----
@@ -1834,7 +1849,8 @@ def main(argv=None) -> int:
                 f"{e}\n  pip install langchain-anthropic"
             )
         model = ChatAnthropic(model=args.model, max_tokens=4096, temperature=0)
-        suite_result = run_suite(model, limit=args.limit, out=Path(args.out))
+        suite_result = run_suite(model, questions=questions, limit=args.limit,
+                                 out=Path(args.out))
         print("\n" + render_suite_markdown(suite_result))
         return 0
 
