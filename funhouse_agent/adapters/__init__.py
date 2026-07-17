@@ -385,7 +385,19 @@ MODULE_REGISTRY = {
     },
     "ufc_pavement": {
         "adapter": "funhouse_agent.adapters.ufc_pavement_adapter",
-        "brief": "UFC 3-250-01 roads/parking pavement design (subgrade categories, frost classification, equivalency factors, minimum thickness, k-subgrade)",
+        "brief": "UFC 3-250-01 roads/parking design: CBR flexible curve E-1, rigid Eq 13-1, overlays, frost, drainage, joints/dowels, mixed-traffic ESALs (US units)",
+    },
+    "ufc_stabilization": {
+        "adapter": "funhouse_agent.adapters.ufc_stabilization_adapter",
+        "brief": "UFC 3-250-11 soil stabilization: additive selection, strength/durability criteria, equivalency factors",
+    },
+    "ufc_flexible_practice": {
+        "adapter": "funhouse_agent.adapters.ufc_flexible_practice_adapter",
+        "brief": "UFC 3-250-03 asphalt practice: HMA gradations, Marshall/Superpave, spray rates, seal coats",
+    },
+    "ufc_concrete_practice": {
+        "adapter": "funhouse_agent.adapters.ufc_concrete_practice_adapter",
+        "brief": "UFC 3-250-04 concrete practice: materials tables, dowel tolerances, joint spacing, RCC",
     },
     "fema_p2082": {
         "adapter": "funhouse_agent.adapters.fema_p2082_adapter",
@@ -393,11 +405,11 @@ MODULE_REGISTRY = {
     },
     "california_trenching": {
         "adapter": "funhouse_agent.adapters.california_trenching_adapter",
-        "brief": "California (Caltrans) Trenching and Shoring Manual: temporary excavation support. Cal/OSHA Type A/B/C soil classification + maximum allowable slopes (A 3/4:1, B 1:1, C 1-1/2:1), Rankine/Coulomb/Bell earth pressure coefficients, apparent active coefficient (>=0.25), log-spiral passive Kp (Caquot-Kerisel), apparent earth pressure (AEP) envelopes for braced/anchored walls, soldier-pile arching, bottom-heave FS. US customary units (psf, pcf, tsf, ft)",
+        "brief": "Caltrans Trenching and Shoring Manual: Cal/OSHA soil types + max slopes, earth pressure coefficients incl. log-spiral Kp, braced/anchored AEP envelopes, bottom heave (US units)",
     },
     "fhwa_pavements": {
         "adapter": "funhouse_agent.adapters.fhwa_pavements_adapter",
-        "brief": "FHWA-NHI-05-037 Geotechnical Aspects of Pavements (the broad GEOTECH-aspects pavement reference, distinct from UFC 3-250-01 roads/parking design): resilient modulus Mr (default values by AASHTO/USCS soil class, Mr from CBR/R-value/DCP/plasticity, stress-dependent granular Mr, seasonal + backcalc-to-design adjustment), typical CBR by soil class, soil suitability as a pavement material, drainage modifier mi / coefficient Cd and permeability, frost-susceptibility F1-F4, swell potential, lime/cement/asphalt stabilization, compaction. US customary units (Mr in psi, CBR/R in %)",
+        "brief": "FHWA-NHI-05-037 Geotechnical Aspects of Pavements: Mr from CBR/R/DCP + defaults by soil class, drainage mi/Cd, frost F1-F4, swell, stabilization, compaction (US units)",
     },
     "eurocode_7_1": {
         "adapter": "funhouse_agent.adapters.eurocode_7_1_adapter",

@@ -27,11 +27,16 @@ two in sync if you edit either.** The scope sets live in
 - **`calc_package`** — `pavement_design_package` (Mathcad-style report with
   the computed Figure 3.1/3.7 design charts, section diagram, seasonal-MR
   and environmental-loss plots) and `html_to_pdf`.
-- **References**: `aashto_1993` (the design basis — full digitization incl.
-  Appendix D/G and composite-k), `fhwa_pavements` (Mr/CBR correlations,
-  drainage, frost), `ufc_pavement` (CAUTION: equations coded from the
-  airfield UFC, pending audit — context only), `ufc_expansive` (expansive
+- **References**: `aashto_1993` (serviceability/ESAL design basis — full
+  digitization incl. Appendix D/G and composite-k), `ufc_pavement`
+  (UFC 3-250-01 roads/parking — the DoD design alternative: CBR flexible
+  curves, rigid Eq 13-1, overlays, frost, drainage, joints; rebuilt 2026-07
+  from the real document), `ufc_stabilization` (3-250-11),
+  `ufc_flexible_practice` (3-250-03), `ufc_concrete_practice` (3-250-04),
+  `fhwa_pavements` (Mr/CBR correlations), `ufc_expansive` (expansive
   roadbeds → Appendix G swelling inputs), plus reference_db / figure_db.
+  Two design bases — run both and compare when the question allows; UFC
+  and AASHTO ESALs are different damage models, never mix them silently.
 
 ## Conventions
 

@@ -209,9 +209,19 @@ class TestUFCExpansive:
 
 class TestUFCPavement:
     def test_method_count(self):
+        # Rebuilt 2026-07 from the real UFC 3-250-01 (2016): 26 equations +
+        # 25 tables + text retrieval (was 11 airfield-derived methods).
         methods = list_methods("ufc_pavement")
         total = sum(len(v) for v in methods.values())
-        assert total == 11  # 3 equations + 8 tables (UFC 3-250-01 roads)
+        assert total >= 50
+
+    def test_new_ufc_reference_modules(self):
+        for name, expected_min in (("ufc_stabilization", 17),
+                                   ("ufc_flexible_practice", 30),
+                                   ("ufc_concrete_practice", 17)):
+            methods = list_methods(name)
+            total = sum(len(v) for v in methods.values())
+            assert total >= expected_min, (name, total)
 
 
 # ──────────────────────────────────────────────────────────────────────

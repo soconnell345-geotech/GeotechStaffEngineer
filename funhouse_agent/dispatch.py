@@ -54,6 +54,7 @@ REFERENCE_MODULES = frozenset({
     "gec10", "gec11", "gec12", "gec13", "gec14",
     "micropile",
     "ufc_backfill", "ufc_expansive", "ufc_pavement",
+    "ufc_stabilization", "ufc_flexible_practice", "ufc_concrete_practice",
     "fema_p2082", "california_trenching", "fhwa_pavements",
     "eurocode_7_1", "eurocode_7_2", "aashto_1993",
 })
@@ -183,9 +184,12 @@ PAVEMENT_MODULES = frozenset({
 
 PAVEMENT_REFERENCES = frozenset({
     "reference_db", "figure_db",
-    "aashto_1993",      # THE design basis: Figs 3.1/3.7, Appendix D LEFs, composite-k, Appendix G
+    "aashto_1993",      # AASHTO design basis: Figs 3.1/3.7, Appendix D LEFs, composite-k, Appendix G
+    "ufc_pavement",     # UFC 3-250-01 roads/parking design (rebuilt 2026-07 from the real doc: CBR curves, overlays, frost, drainage)
     "fhwa_pavements",   # FHWA-NHI-05-037 — Mr/CBR correlations, drainage, frost, stabilization
-    "ufc_pavement",     # UFC roads/parking (CAUTION: equations coded from the airfield UFC, pending audit)
+    "ufc_stabilization",       # UFC 3-250-11 — stabilizer selection, criteria, equivalency
+    "ufc_flexible_practice",   # UFC 3-250-03 — asphalt materials/construction practice
+    "ufc_concrete_practice",   # UFC 3-250-04 — concrete materials/construction practice
     "ufc_expansive",    # expansive-soil roadbeds (feeds the Appendix G swelling inputs)
 })
 

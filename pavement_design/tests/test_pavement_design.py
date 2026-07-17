@@ -512,6 +512,112 @@ class TestEnvironmentalLoss:
         assert res.environmental is None
 
 
+class TestUfcAlternative:
+    """UFC 3-250-01 alt method (refs digitization is Appendix-G-anchored;
+    these tests exercise the module-side orchestration)."""
+
+    def test_flexible_ufc_section(self):
+        from pavement_design import design_flexible_pavement_ufc
+        r = design_flexible_pavement_ufc(passes_18kip=1e6, cbr_subgrade=6,
+                                         cbr_subbase=30)
+        sec = r["section"]
+        assert sec["provided_total_thickness_in"] >= \
+            sec["required_total_thickness_in"] - 0.51
+        names = [l["layer"] for l in sec["layers"]]
+        assert names == ["asphalt_surface", "base", "subbase"]
+        # Table 7-2 minimums respected.
+        assert sec["layers"][0]["thickness_in"] >= 3.0
+        assert sec["layers"][1]["thickness_in"] >= 4.0
+        assert "Figure E-1" in " ".join(r["references"])
+
+    def test_flexible_ufc_two_layer(self):
+        from pavement_design import design_flexible_pavement_ufc
+        r = design_flexible_pavement_ufc(passes_18kip=1e5, cbr_subgrade=10)
+        assert len(r["section"]["layers"]) == 2
+
+    def test_frost_governs_for_f3_subgrade(self):
+        from pavement_design import design_flexible_pavement_ufc
+        r = design_flexible_pavement_ufc(passes_18kip=1e6, cbr_subgrade=6,
+                                         cbr_subbase=30,
+                                         frost={"uscs_class": "CL"})
+        assert r["frost_group"] == "F3"
+        # FSI 3.5 < CBR 6 -> thicker frost section governs.
+        assert r["frost_governs"] is True
+        assert (r["frost_section"]["provided_total_thickness_in"]
+                > r["section"]["provided_total_thickness_in"])
+
+    def test_high_cbr_off_curve_handled(self):
+        from pavement_design import design_flexible_pavement_ufc
+        # CBR 80 base is off the E-1 curve at 1e6 passes -> minimums govern,
+        # no exception.
+        r = design_flexible_pavement_ufc(passes_18kip=1e6, cbr_subgrade=6)
+        assert any("off the high-CBR end" in n for n in r["notes"])
+
+    def test_rigid_ufc_guard_or_runs(self):
+        from pavement_design import design_rigid_pavement_ufc
+        try:
+            r = design_rigid_pavement_ufc(passes_18kip=1e6,
+                                          flexural_strength_psi=650,
+                                          k_pci=200)
+        except NotImplementedError as exc:
+            assert "F-1" in str(exc)
+        else:
+            assert r["slab_provided_in"] >= r["hd_required_in"] - 0.51
+
+    def test_rigid_ufc_appendix_g_anchors(self):
+        """The F-1 solve reproduces both Appendix G worked examples
+        through the orchestrator (G-7: 8.1 in; G-8.11: 6.3 in)."""
+        pytest.importorskip("geotech_references.ufc_pavement")
+        from geotech_references.ufc_pavement import tables as utb
+        if not hasattr(utb, "figure_f1_rigid_thickness"):
+            pytest.skip("F-1 not digitized in this refs install")
+        from pavement_design import design_rigid_pavement_ufc
+        g7 = design_rigid_pavement_ufc(passes_18kip=20000000,
+                                       flexural_strength_psi=650, k_pci=100)
+        assert g7["hd_required_in"] == pytest.approx(8.1, abs=0.05)
+        g8 = design_rigid_pavement_ufc(passes_18kip=1200000,
+                                       flexural_strength_psi=650, k_pci=325)
+        assert g8["hd_required_in"] == pytest.approx(6.3, abs=0.05)
+
+    def test_rigid_ufc_stabilized_foundation(self):
+        pytest.importorskip("geotech_references.ufc_pavement")
+        from geotech_references.ufc_pavement import tables as utb
+        if not hasattr(utb, "figure_f1_rigid_thickness"):
+            pytest.skip("F-1 not digitized in this refs install")
+        from pavement_design import design_rigid_pavement_ufc
+        base = design_rigid_pavement_ufc(passes_18kip=5e6,
+                                         flexural_strength_psi=650,
+                                         k_pci=200)
+        stab = design_rigid_pavement_ufc(
+            passes_18kip=5e6, flexural_strength_psi=650, k_pci=200,
+            stabilized_foundation={"ef_psi": 650000, "hs_in": 6.0})
+        # Eq 13-1 reduces the slab on a stabilized foundation.
+        assert stab["ho_on_stabilized_in"] < base["hd_required_in"]
+        assert stab["slab_provided_in"] <= base["slab_provided_in"]
+
+    def test_compare_methods(self):
+        from pavement_design import compare_flexible_pavement_methods
+        c = compare_flexible_pavement_methods(passes_18kip=1e6,
+                                              cbr_subgrade=6)
+        assert c["aashto_1993"]["total_thickness_in"] > 0
+        assert c["ufc_3_250_01"]["total_thickness_in"] > 0
+        assert c["delta_total_thickness_in"] == pytest.approx(
+            c["ufc_3_250_01"]["total_thickness_in"]
+            - c["aashto_1993"]["total_thickness_in"], abs=0.02)
+        joined = " ".join(c["notes"])
+        assert "damage models" in joined      # basis caveat stated
+        assert "2555" in joined               # CBR->Mr correlation stated
+        assert "deterministic" in joined      # reliability asymmetry stated
+
+    def test_compare_requires_one_subgrade_basis(self):
+        from pavement_design import compare_flexible_pavement_methods
+        with pytest.raises(ValueError, match="exactly one"):
+            compare_flexible_pavement_methods(passes_18kip=1e6)
+        with pytest.raises(ValueError, match="exactly one"):
+            compare_flexible_pavement_methods(passes_18kip=1e6,
+                                              cbr_subgrade=6, mr_psi=9000)
+
+
 class TestFigures:
     def test_flexible_figures(self):
         pytest.importorskip("matplotlib")
