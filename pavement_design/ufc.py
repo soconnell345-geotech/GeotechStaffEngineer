@@ -231,11 +231,12 @@ def design_rigid_pavement_ufc(
     f1 = getattr(_utb, "figure_f1_rigid_thickness", None)
     if f1 is None:
         raise NotImplementedError(
-            "The Figure F-1 rigid design curve is not yet digitized in "
-            "geotech_references.ufc_pavement — the UFC rigid path needs it. "
-            "(In progress; the flexible UFC path and Eq 13-1 are available.)"
+            "The Figure F-1 rigid design curve is not available in this "
+            "geotech-references install — upgrade the reference package "
+            "for the UFC rigid path (the flexible UFC path and Eq 13-1 "
+            "remain available)."
         )
-    hd_r = f1(flexural_strength_psi=flexural_strength_psi, k_pci=k_pci,
+    hd_r = f1(flexural_psi=flexural_strength_psi, k_psi_in=k_pci,
               passes=passes_18kip)
     add_ref(references, hd_r["reference"])
     if "tolerance" in hd_r:

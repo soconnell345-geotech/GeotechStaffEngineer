@@ -564,6 +564,37 @@ class TestUfcAlternative:
         else:
             assert r["slab_provided_in"] >= r["hd_required_in"] - 0.51
 
+    def test_rigid_ufc_appendix_g_anchors(self):
+        """The F-1 solve reproduces both Appendix G worked examples
+        through the orchestrator (G-7: 8.1 in; G-8.11: 6.3 in)."""
+        pytest.importorskip("geotech_references.ufc_pavement")
+        from geotech_references.ufc_pavement import tables as utb
+        if not hasattr(utb, "figure_f1_rigid_thickness"):
+            pytest.skip("F-1 not digitized in this refs install")
+        from pavement_design import design_rigid_pavement_ufc
+        g7 = design_rigid_pavement_ufc(passes_18kip=20000000,
+                                       flexural_strength_psi=650, k_pci=100)
+        assert g7["hd_required_in"] == pytest.approx(8.1, abs=0.05)
+        g8 = design_rigid_pavement_ufc(passes_18kip=1200000,
+                                       flexural_strength_psi=650, k_pci=325)
+        assert g8["hd_required_in"] == pytest.approx(6.3, abs=0.05)
+
+    def test_rigid_ufc_stabilized_foundation(self):
+        pytest.importorskip("geotech_references.ufc_pavement")
+        from geotech_references.ufc_pavement import tables as utb
+        if not hasattr(utb, "figure_f1_rigid_thickness"):
+            pytest.skip("F-1 not digitized in this refs install")
+        from pavement_design import design_rigid_pavement_ufc
+        base = design_rigid_pavement_ufc(passes_18kip=5e6,
+                                         flexural_strength_psi=650,
+                                         k_pci=200)
+        stab = design_rigid_pavement_ufc(
+            passes_18kip=5e6, flexural_strength_psi=650, k_pci=200,
+            stabilized_foundation={"ef_psi": 650000, "hs_in": 6.0})
+        # Eq 13-1 reduces the slab on a stabilized foundation.
+        assert stab["ho_on_stabilized_in"] < base["hd_required_in"]
+        assert stab["slab_provided_in"] <= base["slab_provided_in"]
+
     def test_compare_methods(self):
         from pavement_design import compare_flexible_pavement_methods
         c = compare_flexible_pavement_methods(passes_18kip=1e6,
