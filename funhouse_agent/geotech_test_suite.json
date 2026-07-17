@@ -1382,5 +1382,188 @@
       ],
       "source": "v5.4 worktree ground truth, 2026-07-07 (recomputed by the E11 offline test); exercises the srm_mesh_refinement_study fem2d utility (wraps fem2d_slope_srm)"
     }
+  },
+  {
+    "id": "PAV-1",
+    "module": "pavement_design",
+    "complexity": "medium",
+    "question": "Design a flexible pavement per the AASHTO 1993 Guide: W18 = 5,000,000 design-lane 18-kip ESALs, reliability 95%, overall standard deviation So = 0.45, effective roadbed resilient modulus 5,000 psi, po = 4.2, pt = 2.5. Section top-down: asphalt concrete (elastic modulus 400,000 psi) over granular base (EBS = 30,000 psi, drainage m = 1.0) over granular subbase (ESB = 11,000 psi, m = 1.0). Report the required structural number SN and the design layer thicknesses in inches.",
+    "expected": {
+      "values": [
+        {
+          "name": "sn_required",
+          "value": 5.413,
+          "rtol": 0.03
+        },
+        {
+          "name": "asphalt_in",
+          "value": 7.0,
+          "rtol": 0.1
+        },
+        {
+          "name": "base_in",
+          "value": 9.0,
+          "rtol": 0.1
+        },
+        {
+          "name": "subbase_in",
+          "value": 16.0,
+          "rtol": 0.1
+        }
+      ],
+      "source": "v5.8.0 master ground truth (pavement_design via call_agent, 2026-07-17)"
+    }
+  },
+  {
+    "id": "PAV-2",
+    "module": "pavement_design",
+    "complexity": "medium",
+    "question": "Design a rigid (PCC) pavement slab per the AASHTO 1993 Guide: W18 = 5,000,000 design-lane ESALs, reliability 95%, So = 0.35, concrete modulus of rupture Sc = 650 psi, concrete elastic modulus Ec = 5,000,000 psi, load transfer J = 3.2, drainage Cd = 1.0, modulus of subgrade reaction k = 72 pci, po = 4.5, pt = 2.5. Report the required slab thickness D in inches.",
+    "expected": {
+      "values": [
+        {
+          "name": "d_required_in",
+          "value": 9.793,
+          "rtol": 0.03
+        }
+      ],
+      "source": "v5.8.0 master ground truth (pavement_design via call_agent, 2026-07-17)"
+    }
+  },
+  {
+    "id": "PAV-3",
+    "module": "pavement_design",
+    "complexity": "low",
+    "question": "Compute the design-lane cumulative 18-kip ESALs for an AASHTO 1993 pavement design: base-year two-way ESALs = 200,000, annual traffic growth 3%, 20-year performance period, directional factor 0.5, two lanes in the design direction. Report the design-lane W18 and the growth factor used.",
+    "expected": {
+      "values": [
+        {
+          "name": "w18_design_lane",
+          "value": 2418336,
+          "rtol": 0.05
+        },
+        {
+          "name": "growth_factor",
+          "value": 26.87,
+          "rtol": 0.02
+        }
+      ],
+      "source": "v5.8.0 master ground truth (pavement_design via call_agent, 2026-07-17)"
+    }
+  },
+  {
+    "id": "PAV-4",
+    "module": "pavement_design",
+    "complexity": "medium",
+    "question": "Using the UFC 3-250-01 Corps CBR method (the DoD alternative to AASHTO), design a flexible road section for 500,000 passes of the 18-kip single axle: subgrade CBR 8, base course CBR 80, subbase CBR 30. Report the required total thickness above the subgrade and the asphalt surface and base thicknesses in inches.",
+    "expected": {
+      "values": [
+        {
+          "name": "required_total_in",
+          "value": 6.9,
+          "rtol": 0.05,
+          "alt": [
+            7.0
+          ]
+        },
+        {
+          "name": "asphalt_surface_in",
+          "value": 2.5,
+          "rtol": 0.05
+        },
+        {
+          "name": "base_in",
+          "value": 4.0,
+          "rtol": 0.05
+        }
+      ],
+      "source": "v5.8.0 master ground truth (pavement_design via call_agent, 2026-07-17)"
+    }
+  },
+  {
+    "id": "PAV-5",
+    "module": "pavement_design",
+    "complexity": "medium",
+    "question": "Using UFC 3-250-01 (rigid pavement, Figure F-1), find the required plain concrete slab thickness for a road carrying 300,000 passes of the 18-kip single axle, concrete flexural strength 650 psi, modulus of subgrade reaction k = 100 pci. Report the required thickness and the provided (rounded-up) slab thickness in inches.",
+    "expected": {
+      "values": [
+        {
+          "name": "hd_required_in",
+          "value": 5.7,
+          "rtol": 0.08,
+          "alt": [
+            6.0
+          ]
+        }
+      ],
+      "source": "v5.8.0 master ground truth (pavement_design via call_agent, 2026-07-17)"
+    }
+  },
+  {
+    "id": "PAV-6",
+    "module": "pavement_design",
+    "complexity": "high",
+    "question": "Compare the AASHTO 1993 and UFC 3-250-01 flexible pavement designs for the same traffic: 1,000,000 passes of the 18-kip single axle, subgrade CBR 6, AASHTO reliability 90% (defaults otherwise; subgrade Mr from the FHWA Mr = 2555*CBR^0.64 correlation). Report the AASHTO required SN and the total section thickness from each method in inches.",
+    "expected": {
+      "values": [
+        {
+          "name": "aashto_sn_required",
+          "value": 3.383,
+          "rtol": 0.04
+        },
+        {
+          "name": "aashto_total_in",
+          "value": 13.5,
+          "rtol": 0.08
+        },
+        {
+          "name": "ufc_total_in",
+          "value": 9.5,
+          "rtol": 0.08,
+          "alt": [
+            9.1
+          ]
+        }
+      ],
+      "keywords": [
+        "UFC"
+      ],
+      "source": "v5.8.0 master ground truth (pavement_design via call_agent, 2026-07-17)"
+    }
+  },
+  {
+    "id": "PAV-7",
+    "module": "pavement_design",
+    "complexity": "medium",
+    "question": "Convert this mixed traffic stream to equivalent 18-kip single-axle passes per the UFC 3-250-01 Appendix G controlling-vehicle procedure, using representative CBR 3 for the equivalency step: 18-kip ESAL (curve E-1) 1,000,000 passes; 5-axle truck (curve E-28) 100,000 passes; 3-axle truck (curve E-26) 500,000 passes; passenger car (curve E-2) 20,000,000 passes. Report the total equivalent passes and which vehicle controls.",
+    "expected": {
+      "values": [
+        {
+          "name": "total_equivalent_passes",
+          "value": 1316228,
+          "rtol": 0.05
+        }
+      ],
+      "keywords": [
+        "18-kip"
+      ],
+      "source": "v5.8.0 master ground truth (pavement_design via call_agent, 2026-07-17)"
+    }
+  },
+  {
+    "id": "PAV-8",
+    "module": "pavement_design",
+    "complexity": "low",
+    "question": "Compute the effective roadbed resilient modulus per the AASHTO 1993 seasonal relative-damage procedure (uf = 1.18e8 * MR^-2.32) for these 12 monthly MR values in psi: 20000, 20000, 2500, 4000, 4000, 7000, 7000, 7000, 7000, 7000, 4000, 20000. Report the effective MR in psi.",
+    "expected": {
+      "values": [
+        {
+          "name": "effective_mr_psi",
+          "value": 4923,
+          "rtol": 0.03
+        }
+      ],
+      "source": "v5.8.0 master ground truth (pavement_design via call_agent, 2026-07-17)"
+    }
   }
 ]
