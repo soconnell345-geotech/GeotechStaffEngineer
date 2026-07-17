@@ -49,6 +49,26 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
+## v5.8.1 status (RELEASED 2026-07-17 to PyPI; owner OK'd — Foundry-deployment fixes)
+
+Patch driven by the owner's first live Foundry publish (same night as 5.8.0):
+(1) custom-model-RID clobber FIXED — the keyed Model selectbox's sticky state
+reverted programmatic model changes (custom RID box AND conversation resume)
+within one render; `_model_dirty` flag now syncs the widget pre-instantiation
+(AppTest regression tests in webapp/tests/test_custom_model_rid.py). (2)
+Extras consolidation (owner request): plain `pip install geotech-staff-engineer`
+now brings the WHOLE stack (deep agent, webapp, all backends, PDF, both LLM
+clients incl. langchain-openai); the 23 old extra names remain as empty
+aliases. (3) `websockets>=14,<16` pin — Foundry's Streamlit base image ships
+websockets 16.x, which leaked into the app lockfile and made the publish-time
+reinstall unsatisfiable vs langgraph-sdk (<16). Also: eval suite now 108 Q /
+68 keyed (PAV-1..PAV-8, ground truth run on v5.8.0), eval_harness `--ids`
+prefix filter, description says 31 modules. Foundry ops notes: published-app
+"failed to run startup scripts" = read the env-restore log (the websockets
+conflict presented there); preview needs `streamlit run <file> --server.port
+8501` in the terminal first. Single-namespace package restructure (kill the 35
+top-level modules) assessed and PARKED as the 6.0.0 candidate.
+
 ## v5.8.0 status (RELEASED 2026-07-17 to PyPI; owner OK'd — UFC alternative method + pavement specialist)
 
 UFC 3-250-01 (2016) roads/parking design as a full alternative method in
