@@ -49,6 +49,26 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
+## v5.8.0 status (RELEASED 2026-07-17 to PyPI; owner OK'd — UFC alternative method + pavement specialist)
+
+UFC 3-250-01 (2016) roads/parking design as a full alternative method in
+`pavement_design/ufc.py`: `design_flexible_pavement_ufc` (Corps CBR / Figure E-1
+cover cascade + Table 7-2 minimums + Ch 19 reduced-subgrade-strength frost),
+`design_rigid_pavement_ufc` (Figure F-1 Westergaard-based + Eq 13-1 stabilized
+foundation), `compare_flexible_pavement_methods` (AASHTO vs UFC side by side,
+FHWA Mr=2555·CBR^0.64 bridge, caveats echoed), `ufc_mixed_traffic` (Table G-1
+controlling-vehicle equivalent-18-kip passes; light vehicles below controlling
+thickness → unlimited passes; reproduces printed G-1 within 6%). Plots module
+(nomograph-overlay design charts, layer sections, UFC charts, method
+comparison); calc-package design_type flexible_ufc/rigid_ufc/compare; pavement
+specialist agent (app picker + reviewer + Claude Code twin). F-1 stands at
+exact-at-anchors ±10% — no printed equation exists; N-densification provably
+fails (documented in refs docstring). Ships with **geotech-references 1.3.3**
+(pin >=1.3.3): ufc_pavement REBUILT from the real UFC 3-250-01 (closing the old
+airfield-source audit gap) + all 30 Appendix E vehicle curves + 3 companion
+practice modules (refs now 27 modules). Airfield (UFC 3-260-02) and rigid
+vehicle curves F-2..F-31 PARKED.
+
 ## v5.7.0 status (RELEASED 2026-07-16 to PyPI; owner OK'd — pavement design)
 
 New `pavement_design/` analysis module (31st): complete AASHTO 1993 flexible
