@@ -94,6 +94,12 @@ def _resolve_and_build(model_id: str) -> None:
     Prompter engine is fixed and ignores the picked id — see engine_config.)"""
     ss = st.session_state
     ss.model = model_id
+    # The keyed Model selectbox keeps its own sticky state across reruns and
+    # would otherwise clobber a programmatic model change (custom RID box,
+    # conversation resume) back to the widget's remembered value on the next
+    # render. Flag the change so the sidebar pushes ss.model INTO the widget
+    # before it is instantiated.
+    ss._model_dirty = True
     ss.engine = engine_config.resolve_engine(model_id=model_id)
     _build_agent_for_session()
 
@@ -288,6 +294,13 @@ with st.sidebar:
         _ids.insert(0, ss.model)
         _labels[ss.model] = f"{ss.model} — custom"
     _cur = ss.model if ss.model in _ids else _ids[0]
+    # Programmatic model change (custom RID box, conversation resume): sync the
+    # widget's sticky state to ss.model BEFORE instantiating it, else the widget
+    # reports its old value as "the user's pick" and reverts the change.
+    if ss.get("_model_dirty"):
+        ss._model_dirty = False
+        if st.session_state.get("model_pick") not in (None, _cur):
+            st.session_state["model_pick"] = _cur
     _picked = st.selectbox(
         "Model", _ids, index=_ids.index(_cur),
         format_func=lambda i: _labels.get(i, i), key="model_pick",
