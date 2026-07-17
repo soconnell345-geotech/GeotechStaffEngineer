@@ -71,3 +71,18 @@ def test_custom_rid_shows_specific_foundry_message(monkeypatch, tmp_path):
     _apply_rid(at)
     texts = [str(el.value) for el in list(at.error) + list(at.warning)]
     assert any("Foundry RID" in t and "token" in t for t in texts), texts
+
+
+def test_dropdown_switching_still_works(monkeypatch, tmp_path):
+    """Model switches now ride the on_change callback (stale-echo hardening);
+    a genuine dropdown pick must still switch the session model."""
+    at = _mk_at(monkeypatch, tmp_path).run()
+    before = at.session_state["model"]
+    sb = _model_pick(at)
+    assert len(sb.options) >= 2, "expected at least two model choices"
+    idx = (sb.index + 1) % len(sb.options)
+    sb.select_index(idx)
+    at.run()
+    after = at.session_state["model"]
+    assert after != before, "dropdown pick did not switch the model"
+    assert _model_pick(at).value == after

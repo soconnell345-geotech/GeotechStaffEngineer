@@ -301,17 +301,26 @@ with st.sidebar:
         ss._model_dirty = False
         if st.session_state.get("model_pick") not in (None, _cur):
             st.session_state["model_pick"] = _cur
-    _picked = st.selectbox(
+    # Model switches fire ONLY from the widget's own change event (on_change),
+    # never from comparing the widget value to ss.model after the fact: through
+    # a proxy (Foundry preview/publish) the client can deliver a queued rerun
+    # still carrying the dropdown's OLD value, and a value-comparison would
+    # misread that stale echo as "the user picked the old model" and revert a
+    # just-applied custom RID within one render.
+    def _on_model_pick() -> None:
+        picked = st.session_state.get("model_pick")
+        if picked and picked != st.session_state.model:
+            _resolve_and_build(picked)
+            if core.load_meta(st.session_state.thread_id) is not None:
+                core.touch_conversation(st.session_state.thread_id, model=picked)
+
+    st.selectbox(
         "Model", _ids, index=_ids.index(_cur),
         format_func=lambda i: _labels.get(i, i), key="model_pick",
+        on_change=_on_model_pick,
         help="Switch the model for this conversation going forward (cheaper/"
              "faster models for quick questions). History, uploads and artifacts "
              "are kept; the next turn replays the conversation into the new model.")
-    if _picked != ss.model:
-        _resolve_and_build(_picked)
-        if core.load_meta(ss.thread_id) is not None:
-            core.touch_conversation(ss.thread_id, model=_picked)
-        st.rerun()
     if eng.source == "prompter":
         st.caption("Model is fixed by the deployment; the picker doesn't apply.")
 
