@@ -1183,9 +1183,67 @@ def _generate_pavement_design_package(params: dict) -> dict:
     from pavement_design import (design_flexible_pavement,
                                  design_rigid_pavement)
 
+    from funhouse_agent.adapters.pavement_design_adapter import (
+        _COMPARE_VALID, _UFC_ALIASES, _UFC_FLEX_VALID, _UFC_RIGID_VALID)
+    from pavement_design import (compare_flexible_pavement_methods,
+                                 design_flexible_pavement_ufc,
+                                 design_rigid_pavement_ufc)
+
     design_type = str(params.get("design_type", "flexible")).strip().lower()
     meta_keys = set(_COMMON_PARAMS) | {"design_type"}
     design_params = {k: v for k, v in params.items() if k not in meta_keys}
+
+    if design_type in ("flexible_ufc", "ufc_flexible", "ufc"):
+        p = apply_aliases(design_params, _UFC_ALIASES)
+        reject_unknown_params(p, _UFC_FLEX_VALID,
+                              method="pavement_design_package (flexible_ufc)",
+                              aliases=_UFC_ALIASES)
+        require_params(p, ["passes_18kip", "cbr_subgrade"],
+                       method="pavement_design_package",
+                       valid=_UFC_FLEX_VALID)
+        result = design_flexible_pavement_ufc(**p)
+        extra = {
+            "required_total_thickness_in":
+                result["section"]["required_total_thickness_in"],
+            "provided_total_thickness_in":
+                result["section"]["provided_total_thickness_in"],
+            "frost_governs": result.get("frost_governs"),
+        }
+        return _build_response("pavement_design", result, None, params,
+                               analysis_type="UFC 3-250-01 Flexible "
+                                             "Pavement Design", extra=extra)
+    if design_type in ("rigid_ufc", "ufc_rigid"):
+        p = apply_aliases(design_params, _UFC_ALIASES)
+        reject_unknown_params(p, _UFC_RIGID_VALID,
+                              method="pavement_design_package (rigid_ufc)",
+                              aliases=_UFC_ALIASES)
+        require_params(p, ["passes_18kip", "flexural_strength_psi"],
+                       method="pavement_design_package",
+                       valid=_UFC_RIGID_VALID)
+        result = design_rigid_pavement_ufc(**p)
+        extra = {"hd_required_in": result["hd_required_in"],
+                 "slab_provided_in": result["slab_provided_in"]}
+        return _build_response("pavement_design", result, None, params,
+                               analysis_type="UFC 3-250-01 Rigid Pavement "
+                                             "Design", extra=extra)
+    if design_type in ("compare", "comparison"):
+        p = apply_aliases(design_params, _UFC_ALIASES)
+        reject_unknown_params(p, _COMPARE_VALID,
+                              method="pavement_design_package (compare)",
+                              aliases=_UFC_ALIASES)
+        require_params(p, ["passes_18kip"],
+                       method="pavement_design_package",
+                       valid=_COMPARE_VALID)
+        result = compare_flexible_pavement_methods(**p)
+        extra = {
+            "aashto_total_in": result["aashto_1993"]["total_thickness_in"],
+            "ufc_total_in": result["ufc_3_250_01"]["total_thickness_in"],
+            "delta_total_thickness_in": result["delta_total_thickness_in"],
+        }
+        return _build_response("pavement_design", result, None, params,
+                               analysis_type="Pavement Method Comparison "
+                                             "(AASHTO 1993 vs UFC 3-250-01)",
+                               extra=extra)
 
     if design_type == "flexible":
         p = apply_aliases(design_params, _FLEX_ALIASES)

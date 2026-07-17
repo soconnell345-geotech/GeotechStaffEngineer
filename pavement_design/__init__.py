@@ -41,7 +41,8 @@ from .results import (DesignTrafficResult, FlexiblePavementResult,
 from .rigid import design_rigid_pavement
 from .traffic import compute_design_esals, growth_factor
 from .ufc import (compare_flexible_pavement_methods,
-                  design_flexible_pavement_ufc, design_rigid_pavement_ufc)
+                  design_flexible_pavement_ufc, design_rigid_pavement_ufc,
+                  ufc_mixed_traffic)
 
 __all__ = [
     "PavementLayer",
@@ -53,6 +54,7 @@ __all__ = [
     "design_flexible_pavement_ufc",
     "design_rigid_pavement_ufc",
     "compare_flexible_pavement_methods",
+    "ufc_mixed_traffic",
     "DesignTrafficResult",
     "FlexiblePavementResult",
     "RigidPavementResult",

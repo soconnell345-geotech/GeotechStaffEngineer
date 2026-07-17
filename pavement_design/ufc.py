@@ -271,6 +271,131 @@ def design_rigid_pavement_ufc(
     return result
 
 
+def ufc_mixed_traffic(
+    vehicles,
+    representative_cbr,
+) -> dict:
+    """Automated UFC mixed-traffic reduction (Ch 4 / Table G-1 procedure).
+
+    Takes the raw vehicle mix and does the whole controlling-vehicle
+    procedure from the digitized Appendix E curves: per-vehicle required
+    thickness at the representative subgrade CBR (Table 4-1 category
+    value), controlling vehicle = largest thickness, allowable passes of
+    each other vehicle at the controlling thickness by curve inversion,
+    then the reference ``mixed_traffic_equivalent_esal`` roll-up.
+
+    Parameters
+    ----------
+    vehicles : list of dict
+        Each: {'vehicle': 'E-1'|'E-2'..'E-31' or a registry slug (e.g.
+        'truck_5_axle'), 'design_passes': float, 'name': optional label}.
+        Use 'E-1' for the 18-kip ESAL reference vehicle.
+    representative_cbr : float
+        Representative subgrade CBR for the equivalency step (Table 4-1
+        category A-D value — NOT the site CBR; the final design re-enters
+        the curve at the real site CBR).
+
+    Returns
+    -------
+    dict — the reference roll-up result (controlling vehicle, per-vehicle
+    equivalent passes, total) plus the per-vehicle worksheet. When the
+    controlling vehicle is E-1, ``total_equivalent_passes`` feeds
+    ``design_flexible_pavement_ufc`` directly.
+    """
+    if not vehicles:
+        raise ValueError("Provide at least one vehicle dict.")
+    references = []
+    notes = []
+
+    def _thickness(vehicle, passes):
+        if str(vehicle).strip().lower() in ("e-1", "e1", "18kip",
+                                            "18_kip_esal"):
+            r = _utb.figure_e1_flexible_thickness(cbr=representative_cbr,
+                                                  passes=passes)
+        else:
+            r = _utb.figure_e_vehicle_thickness(vehicle,
+                                                cbr=representative_cbr,
+                                                passes=passes)
+        add_ref(references, r["reference"])
+        return r["thickness_in"]
+
+    def _allowable(vehicle, thickness_in):
+        key = str(vehicle).strip().lower()
+        if key in ("e-1", "e1", "18kip", "18_kip_esal"):
+            # Invert E-1 by bisection over log10(passes).
+            import math as _math
+            lo, hi = 2.0, 8.0
+            for _ in range(60):
+                mid = 0.5 * (lo + hi)
+                try:
+                    t = _utb.figure_e1_flexible_thickness(
+                        cbr=representative_cbr,
+                        passes=10 ** mid)["thickness_in"]
+                except ValueError:
+                    hi = mid
+                    continue
+                if t < thickness_in:
+                    lo = mid
+                else:
+                    hi = mid
+            return 10 ** (0.5 * (lo + hi))
+        r = _utb.figure_e_vehicle_allowable_passes(
+            vehicle, cbr=representative_cbr, thickness_in=thickness_in)
+        clamped = r.get("clamped")
+        if clamped and "above_max_passes" in str(clamped):
+            # The controlling thickness exceeds this vehicle's entire curve
+            # family — its allowable passes are effectively UNLIMITED, so
+            # it contributes ~nothing to the equivalent total (the guide's
+            # own Table G-1 convention; see the reference docstring).
+            notes.append(
+                f"{vehicle}: controlling thickness exceeds its whole curve "
+                "family — allowable passes treated as unlimited "
+                "(negligible equivalent contribution, per Table G-1)."
+            )
+            return float("inf")
+        if clamped:
+            notes.append(
+                f"{vehicle}: allowable passes at the controlling thickness "
+                f"clamped at the curve-family bound "
+                f"({r['allowable_passes']:,.0f})."
+            )
+        return r["allowable_passes"]
+
+    worksheet = []
+    for v in vehicles:
+        t = _thickness(v["vehicle"], v["design_passes"])
+        worksheet.append({
+            "name": v.get("name", str(v["vehicle"])),
+            "vehicle": v["vehicle"],
+            "design_passes": v["design_passes"],
+            "required_thickness_in": t,
+        })
+    controlling = max(worksheet, key=lambda w: w["required_thickness_in"])
+    for w in worksheet:
+        if w is controlling:
+            w["allowable_passes_at_controlling"] = None
+        else:
+            w["allowable_passes_at_controlling"] = _allowable(
+                w["vehicle"], controlling["required_thickness_in"])
+
+    roll = _ueq.mixed_traffic_equivalent_esal([
+        {"name": w["name"], "design_passes": w["design_passes"],
+         "required_thickness_in": w["required_thickness_in"],
+         "allowable_passes_at_controlling":
+             w["allowable_passes_at_controlling"]}
+        for w in worksheet])
+    add_ref(references, roll.get("reference"))
+    out = dict(roll)
+    out.update({
+        "representative_cbr": representative_cbr,
+        "worksheet": worksheet,
+        "controlling_vehicle": controlling["name"],
+        "notes": notes,
+        "references": references,
+    })
+    return out
+
+
 def compare_flexible_pavement_methods(
     passes_18kip,
     cbr_subgrade=None,
