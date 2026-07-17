@@ -30,7 +30,167 @@ _RIGID_EQ = ("log<sub>10</sub>(W<sub>18</sub>) = Z<sub>R</sub>&middot;S<sub>o</s
              "18.42/(E<sub>c</sub>/k)<sup>0.25</sup>)]}")
 
 
+def _is_ufc_flexible(result):
+    return isinstance(result, dict) and "section" in result
+
+
+def _is_ufc_rigid(result):
+    return isinstance(result, dict) and "hd_required_in" in result
+
+
+def _is_comparison(result):
+    return isinstance(result, dict) and "aashto_1993" in result
+
+
+def _ufc_input_summary(result):
+    items = [InputItem("method", "Design basis",
+                       result.get("method", "UFC 3-250-01"), "")]
+    if "passes_18kip" in result:
+        items.append(InputItem("passes", "18-kip single-axle passes",
+                               f"{result['passes_18kip']:,.0f}", ""))
+    if _is_ufc_flexible(result):
+        items.append(InputItem("CBR", "Subgrade design CBR",
+                               result["section"]["design_cbr_subgrade"],
+                               "%"))
+    if _is_ufc_rigid(result):
+        items.extend([
+            InputItem("R", "Concrete flexural strength",
+                      result["flexural_strength_psi"], "psi"),
+            InputItem("k", "Modulus of subgrade reaction",
+                      result["k_pci"], "pci"),
+        ])
+    items.append(InputItem("units", "Unit system",
+                           "US customary (UFC 3-250-01 native)", ""))
+    return items
+
+
+def _comparison_input_summary(result):
+    return [
+        InputItem("basis", "Comparison basis",
+                  "Both guides on the SAME 18-kip single-axle pass count "
+                  "(AASHTO LEF = 1.0 by definition)", ""),
+        InputItem("passes", "18-kip passes / AASHTO W18",
+                  f"{result['traffic_18kip_passes']:,.0f}", ""),
+        InputItem("R_aashto", "AASHTO reliability",
+                  result["aashto_1993"].get("reliability_pct"), "%"),
+        InputItem("units", "Unit system", "US customary", ""),
+    ]
+
+
+def _ufc_flexible_sections(result):
+    sec = result["section"]
+    rows = [[l["layer"], l.get("cbr", "-"), l["thickness_in"]]
+            for l in sec["layers"]]
+    items = [
+        CalcStep(
+            title="Required total thickness (Figure E-1)",
+            equation="t = E-1(CBR, passes)  [Corps CBR method cover curve]",
+            substitution=(f"CBR = {sec['design_cbr_subgrade']}, passes = "
+                          f"{result['passes_18kip']:,.0f}"),
+            result_name="t required",
+            result_value=sec["required_total_thickness_in"],
+            result_unit="in",
+            reference="UFC 3-250-01, Figure E-1 (Appendix E)",
+        ),
+        TableData(title="Layered section (cover cascade + Table 7-2 minimums)",
+                  headers=["Layer", "CBR", "D (in)"], rows=rows,
+                  notes=f"Provided total "
+                        f"{sec['provided_total_thickness_in']} in."),
+        CheckItem(
+            description="Total thickness adequacy",
+            demand=sec["required_total_thickness_in"],
+            demand_label="t required (in)",
+            capacity=sec["provided_total_thickness_in"],
+            capacity_label="t provided (in)", unit="in",
+            passes=(sec["provided_total_thickness_in"]
+                    >= sec["required_total_thickness_in"] - 0.51),
+        ),
+    ]
+    sections = [CalcSection(title="UFC 3-250-01 Flexible Design (CBR method)",
+                            items=items)]
+    if result.get("frost_section"):
+        fs = result["frost_section"]
+        sections.append(CalcSection(
+            title="Seasonal Frost (reduced subgrade strength, Ch 19)",
+            items=[
+                TableData(
+                    title=f"Frost section (group {result.get('frost_group')}"
+                          f", FSI {fs['design_cbr_subgrade']})",
+                    headers=["Layer", "CBR", "D (in)"],
+                    rows=[[l["layer"], l.get("cbr", "-"),
+                           l["thickness_in"]] for l in fs["layers"]],
+                    notes=("FROST GOVERNS." if result.get("frost_governs")
+                           else "Non-frost section governs.")),
+            ]))
+    return sections
+
+
+def _ufc_rigid_sections(result):
+    items = [
+        CalcStep(
+            title="Required slab thickness (Figure F-1)",
+            equation="hd = F-1(R, k, passes)",
+            substitution=(f"R = {result['flexural_strength_psi']:,.0f} psi, "
+                          f"k = {result['k_pci']:,.0f} pci, passes = "
+                          f"{result['passes_18kip']:,.0f}"),
+            result_name="hd required",
+            result_value=result["hd_required_in"],
+            result_unit="in",
+            reference="UFC 3-250-01, Figure F-1 (Appendix F)",
+        ),
+    ]
+    if "ho_on_stabilized_in" in result:
+        items.append(CalcStep(
+            title="Stabilized-foundation reduction (Eq 13-1)",
+            equation="ho = [hd^1.4 - (0.0063*Ef^(1/3)*hs)^1.4]^(1/1.4)",
+            substitution=f"hd = {result['hd_required_in']} in",
+            result_name="ho",
+            result_value=result["ho_on_stabilized_in"],
+            result_unit="in",
+            reference="UFC 3-250-01, Eq. 13-1",
+        ))
+    items.append(CheckItem(
+        description="Slab thickness adequacy",
+        demand=result.get("ho_on_stabilized_in",
+                          result["hd_required_in"]),
+        demand_label="required (in)",
+        capacity=result["slab_provided_in"],
+        capacity_label="slab provided (in)", unit="in",
+        passes=result["slab_provided_in"] >= result.get(
+            "ho_on_stabilized_in", result["hd_required_in"]) - 0.51,
+    ))
+    return [CalcSection(title="UFC 3-250-01 Rigid Design", items=items)]
+
+
+def _comparison_sections(result):
+    a, u = result["aashto_1993"], result["ufc_3_250_01"]
+    rows = []
+    n = max(len(a["layers"]), len(u["layers"]))
+    for i in range(n):
+        al = a["layers"][i] if i < len(a["layers"]) else {}
+        ul = u["layers"][i] if i < len(u["layers"]) else {}
+        rows.append([al.get("layer", "-"), al.get("thickness_in", "-"),
+                     ul.get("layer", "-"), ul.get("thickness_in", "-")])
+    rows.append(["TOTAL", a["total_thickness_in"],
+                 "TOTAL", u["total_thickness_in"]])
+    return [CalcSection(
+        title="Method Comparison — AASHTO 1993 vs UFC 3-250-01",
+        items=[
+            TableData(
+                title="Sections side by side (same 18-kip traffic)",
+                headers=["AASHTO layer", "D (in)", "UFC layer", "D (in)"],
+                rows=rows,
+                notes=(f"AASHTO SN required {a.get('sn_required')}; "
+                       f"delta (UFC - AASHTO) = "
+                       f"{result['delta_total_thickness_in']} in.")),
+        ] + list(result.get("notes", [])))]
+
+
 def get_input_summary(result, analysis=None):
+    if _is_comparison(result):
+        return _comparison_input_summary(result)
+    if _is_ufc_flexible(result) or _is_ufc_rigid(result):
+        return _ufc_input_summary(result)
     items = [
         InputItem("W18", "Design-lane 18-kip ESALs", f"{result.w18:,.0f}", ""),
         InputItem("R", "Design reliability",
@@ -180,6 +340,24 @@ def _rigid_sections(res: RigidPavementResult):
 
 
 def get_calc_steps(result, analysis=None):
+    if _is_comparison(result):
+        return _comparison_sections(result)
+    if _is_ufc_flexible(result):
+        sections = _ufc_flexible_sections(result)
+        notes = list(result.get("notes", [])) + [
+            f"WARNING: {w}" for w in result.get("warnings", [])]
+        if notes:
+            sections.append(CalcSection(title="Basis and Assumptions",
+                                        items=notes))
+        return sections
+    if _is_ufc_rigid(result):
+        sections = _ufc_rigid_sections(result)
+        notes = list(result.get("notes", [])) + [
+            f"WARNING: {w}" for w in result.get("warnings", [])]
+        if notes:
+            sections.append(CalcSection(title="Basis and Assumptions",
+                                        items=notes))
+        return sections
     if isinstance(result, FlexiblePavementResult):
         sections = _flexible_sections(result)
     elif isinstance(result, RigidPavementResult):
@@ -251,6 +429,24 @@ def get_figures(result, analysis=None):
             caption=caption, width_percent=width))
         plt.close(fig)
 
+    if _is_comparison(result):
+        _add(_plots.plot_method_comparison(result),
+             "Method comparison",
+             "AASHTO 1993 vs UFC 3-250-01 sections on the same 18-kip "
+             "traffic (two design bases, differences expected).", 70)
+        return figures
+    if _is_ufc_flexible(result):
+        _add(_plots.plot_ufc_flexible_design_chart(result),
+             "UFC flexible design chart",
+             "Computed Figure E-1 (Corps CBR method) with the design point "
+             "and provided thickness overlaid.")
+        return figures
+    if _is_ufc_rigid(result):
+        _add(_plots.plot_ufc_rigid_design_chart(result),
+             "UFC rigid design chart",
+             "Computed Figure F-1 slice at the design flexural strength "
+             "and k, with the required and provided slab overlaid.")
+        return figures
     if isinstance(result, FlexiblePavementResult):
         _add(_plots.plot_flexible_design_chart(result),
              "Flexible design chart",

@@ -159,3 +159,45 @@ class TestCalcPackage:
         res = call_agent("calc_package", "pavement_design_package",
                          dict(FLEX_PARAMS, design_type="composite"))
         assert "error" in res
+
+    def test_flexible_ufc_package(self, tmp_path):
+        pytest.importorskip("geotech_references.ufc_pavement")
+        out = str(tmp_path / "ufc_flex.html")
+        res = call_agent("calc_package", "pavement_design_package", {
+            "design_type": "flexible_ufc", "passes_18kip": 1e6,
+            "cbr_subgrade": 6, "cbr_subbase": 30,
+            "frost": {"uscs_class": "CL"}, "output_path": out,
+        })
+        assert "error" not in res, res.get("error")
+        assert res["status"] == "success"
+        assert res["frost_governs"] is True
+        html = open(out, encoding="utf-8").read()
+        assert "UFC 3-250-01" in html
+        assert "data:image/png;base64" in html  # E-1 chart embedded
+
+    def test_rigid_ufc_package(self, tmp_path):
+        pytest.importorskip("geotech_references.ufc_pavement")
+        from geotech_references.ufc_pavement import tables as utb
+        if not hasattr(utb, "figure_f1_rigid_thickness"):
+            pytest.skip("F-1 not digitized in this refs install")
+        out = str(tmp_path / "ufc_rigid.html")
+        res = call_agent("calc_package", "pavement_design_package", {
+            "design_type": "rigid_ufc", "passes_18kip": 5e6,
+            "flexural_strength_psi": 650, "k_pci": 200,
+            "output_path": out,
+        })
+        assert res["status"] == "success"
+        assert res["slab_provided_in"] >= res["hd_required_in"] - 0.51
+
+    def test_compare_package(self, tmp_path):
+        pytest.importorskip("geotech_references.ufc_pavement")
+        out = str(tmp_path / "cmp.html")
+        res = call_agent("calc_package", "pavement_design_package", {
+            "design_type": "compare", "passes_18kip": 1e6,
+            "cbr_subgrade": 6, "output_path": out,
+        })
+        assert res["status"] == "success"
+        assert res["delta_total_thickness_in"] == pytest.approx(
+            res["ufc_total_in"] - res["aashto_total_in"], abs=0.02)
+        html = open(out, encoding="utf-8").read()
+        assert "Method Comparison" in html
