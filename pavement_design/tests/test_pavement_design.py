@@ -609,6 +609,37 @@ class TestUfcAlternative:
         assert "2555" in joined               # CBR->Mr correlation stated
         assert "deterministic" in joined      # reliability asymmetry stated
 
+    def test_ufc_mixed_traffic_table_g1(self):
+        """The automated mixed-traffic procedure reproduces the guide's
+        printed Table G-1 example structure: E-1 controls at 16.4 in,
+        light vehicles drop out as unlimited, total equivalent passes
+        within the inversion tolerance of the printed 1,395,400."""
+        pytest.importorskip("geotech_references.ufc_pavement")
+        from geotech_references.ufc_pavement import tables as utb
+        if not hasattr(utb, "figure_e_vehicle_thickness"):
+            pytest.skip("E-family vehicle curves not in this refs install")
+        from pavement_design import ufc_mixed_traffic
+        r = ufc_mixed_traffic(vehicles=[
+            {"vehicle": "E-1", "name": "18-kip ESAL",
+             "design_passes": 1000000},
+            {"vehicle": "E-28", "name": "Truck 5-axle",
+             "design_passes": 100000},
+            {"vehicle": "E-26", "name": "Truck 3-axle",
+             "design_passes": 500000},
+            {"vehicle": "E-2", "name": "Passenger car",
+             "design_passes": 20000000},
+        ], representative_cbr=3)
+        assert r["controlling_vehicle"] == "18-kip ESAL"
+        # E-1 controls at the printed 16.4 in.
+        ctrl = next(w for w in r["worksheet"] if w["name"] == "18-kip ESAL")
+        assert ctrl["required_thickness_in"] == pytest.approx(16.4, abs=0.2)
+        # Light vehicles drop out (controlling thickness above their family).
+        assert sum("unlimited" in n for n in r["notes"]) == 2
+        # Printed total 1,395,400; inversion of the near-flat 5-axle curve
+        # dominates the residual — assert within 10%.
+        assert r["total_equivalent_esal_passes"] == pytest.approx(
+            1395400, rel=0.10)
+
     def test_compare_requires_one_subgrade_basis(self):
         from pavement_design import compare_flexible_pavement_methods
         with pytest.raises(ValueError, match="exactly one"):

@@ -194,6 +194,20 @@ def _run_compare(params: dict) -> dict:
     return clean_result(compare_flexible_pavement_methods(**p))
 
 
+_MIXED_VALID = ("vehicles", "representative_cbr")
+
+
+def _run_mixed_ufc(params: dict) -> dict:
+    from pavement_design import ufc_mixed_traffic
+
+    p = apply_aliases(params, {"rep_cbr": "representative_cbr",
+                               "cbr": "representative_cbr"})
+    reject_unknown_params(p, _MIXED_VALID, method="mixed_traffic_ufc")
+    require_params(p, ["vehicles", "representative_cbr"],
+                   method="mixed_traffic_ufc", valid=_MIXED_VALID)
+    return clean_result(ufc_mixed_traffic(**p))
+
+
 METHOD_REGISTRY = {
     "flexible_pavement_design": _run_flexible,
     "rigid_pavement_design": _run_rigid,
@@ -203,6 +217,7 @@ METHOD_REGISTRY = {
     "flexible_pavement_design_ufc": _run_flexible_ufc,
     "rigid_pavement_design_ufc": _run_rigid_ufc,
     "compare_pavement_methods": _run_compare,
+    "mixed_traffic_ufc": _run_mixed_ufc,
 }
 
 _SWELL_DESC = ("Roadbed swelling spec (Appendix G / Fig G.4): {vr_in: "
@@ -536,6 +551,28 @@ METHOD_INFO = {
                     "ufc_3_250_01": "layers + total",
                     "delta_total_thickness_in": "UFC minus AASHTO",
                     "notes": "cross-guide assumptions"},
+    },
+    "mixed_traffic_ufc": {
+        "category": "pavement design",
+        "brief": ("UFC 3-250-01 automated mixed-traffic reduction (Table "
+                  "G-1 procedure): per-vehicle thickness from the Appendix "
+                  "E curves at a representative CBR, controlling vehicle, "
+                  "allowable-passes inversion, equivalent-pass roll-up. "
+                  "Feeds flexible_pavement_design_ufc."),
+        "parameters": {
+            "vehicles": {"type": "array", "required": True,
+                         "description": "[{vehicle: E-1 (18-kip ESAL) or "
+                                        "E-2..E-31 / registry slug, "
+                                        "design_passes, name?}]."},
+            "representative_cbr": {"type": "number", "required": True,
+                                   "description": "Table 4-1 category CBR "
+                                                  "for the equivalency "
+                                                  "step (NOT the site "
+                                                  "CBR)."},
+        },
+        "returns": {"total_equivalent_esal_passes": "of the controlling "
+                    "vehicle", "controlling_vehicle": "name",
+                    "worksheet": "per-vehicle rows"},
     },
     "performance_period": {
         "category": "pavement design",
