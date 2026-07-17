@@ -8,10 +8,12 @@ Everything lives in the pip package; the Foundry side is one workspace, a
 
 1. In Foundry: **Code Workspaces → New workspace → JupyterLab**.
 2. In the workspace **Libraries** panel, install (PyPI):
-   - `geotech-staff-engineer[deep,full,pdf]`
-   - `streamlit`
-   - `langchain-openai`  ← needed for GPT-family Foundry model RIDs
-     (`langchain-anthropic` comes with `[deep]` and covers Claude RIDs)
+   - `geotech-staff-engineer`  — as of the release after 5.8.0, this single
+     package brings everything: all analysis backends, the deep agent,
+     Streamlit, PDF reporting, and both LLM clients (`langchain-openai` for
+     GPT-family RIDs, `langchain-anthropic` for Claude RIDs).
+   - (On 5.8.0 or older, use the old form: `geotech-staff-engineer[deep,full,pdf]`
+     plus `streamlit` plus `langchain-openai`.)
 
 ## 2. The app file (the only code that lives in Foundry)
 

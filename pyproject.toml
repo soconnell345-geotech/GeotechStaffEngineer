@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "geotech-staff-engineer"
 version = "5.8.0"
-description = "Python toolkit for LLM-based geotechnical engineering agents — 30 analysis modules covering foundations, piles, slopes, reliability, seismic (incl. FEMA P-2082 / 2020 NEHRP site classification), excavation support (incl. the California/Caltrans Trenching and Shoring Manual reference), pavements (incl. FHWA-NHI-05-037 Geotechnical Aspects of Pavements), subsurface characterization (DIGGS/GEF/AGS4 data I/O), FEM, PDF/DXF import, and more"
+description = "Python toolkit for LLM-based geotechnical engineering agents — 31 analysis modules covering foundations, piles, slopes, reliability, seismic (incl. FEMA P-2082 / 2020 NEHRP site classification), excavation support (incl. the California/Caltrans Trenching and Shoring Manual reference), pavement design (AASHTO 1993 and UFC 3-250-01, incl. FHWA-NHI-05-037 Geotechnical Aspects of Pavements), subsurface characterization (DIGGS/GEF/AGS4 data I/O), FEM, PDF/DXF import, and more"
 readme = "README.md"
 license = "MIT"
 # Ship the MIT license and the professional-use disclaimer into BOTH the sdist
@@ -33,52 +33,25 @@ dependencies = [
     "numpy>=2.0",
     "scipy>=1.13",
     "geotech-references>=1.3.3",
-]
-
-[project.optional-dependencies]
-plot = ["matplotlib>=3.8"]
-calc = ["jinja2>=3.1"]
-groundhog = ["groundhog>=0.11"]
-opensees = ["openseespy>=3.6"]
-pystrata = ["pystrata>=0.5"]
-seismic-signals = ["eqsig>=1.2", "pyrotd>=0.6"]
-liquepy = ["liquepy>=0.3"]
-hvsrpy = ["hvsrpy>=2.0"]
-gstools = ["gstools>=1.5"]
-salib = ["SALib>=1.4"]
-swprocess = ["swprocess>=0.3"]
-pystra = ["pystra>=1.3"]
-dxf = ["ezdxf>=1.4"]
-interactive = ["plotly>=5"]
-pdf = ["PyMuPDF>=1.23"]
-# drawing_ir raster tracing leg (Hough/contour detection). The DXF and PDF legs
-# reuse the [dxf] / [pdf] deps above; only the raster leg needs OpenCV.
-raster = ["opencv-python-headless>=4.8"]
-# subsurface_characterization format adapters (optional, dependency-backed):
-# GEF/BRO-XML (pygef), AGS4 (python-ags4), DIGGS validation (pydiggs). The
-# legacy per-library extra names are kept as aliases for backward compatibility.
-subsurface = ["pygef>=0.10", "python-ags4>=0.5", "pydiggs>=0.1"]
-pygef = ["pygef>=0.10"]
-ags4 = ["python-ags4>=0.5"]
-pydiggs = ["pydiggs>=0.1"]
-# v5.0 (TEST/pre-release): the deepagents-based agent in funhouse_agent.deep.
-# OPT-IN ONLY — `import funhouse_agent` still gives the stable v1 agent. Install
-# `geotech-staff-engineer[deep]` to use `funhouse_agent.deep.build_deep_agent`.
-deep = [
+    # -- agent stack (formerly the [deep] extra) --
     "deepagents>=0.6.8",
     "langchain>=1.3",
     "langgraph>=1.2",
     "langchain-anthropic>=1.4",
+    # Foundry LLM-proxy GPT RIDs need the OpenAI chat client out of the box.
+    "langchain-openai>=1.3",
     # langchain-protocol uses typing_extensions.TypedDict(extra_items=...) (PEP 728),
     # which needs typing_extensions>=4.13. Databricks Py3.12 ships an older one and
     # langchain-protocol doesn't pin it high enough, so force the floor here.
     "typing_extensions>=4.13",
-]
-# Streamlit web chat app (webapp/). The app also needs the [deep] agent and the
-# [full] analysis backends — install them together:
-# `geotech-staff-engineer[deep,full,webapp]` (see webapp/README.md).
-webapp = ["streamlit>=1.36"]
-full = [
+    # langgraph-sdk needs websockets<16 but environments whose base image ships a
+    # newer websockets (e.g. Foundry's Streamlit container, conda websockets 16.x)
+    # end up with an unsatisfiable lockfile at app-publish time. Pin the working
+    # range here so fresh resolves never pick 16+.
+    "websockets>=14,<16",
+    # -- web chat app (formerly the [webapp] extra) --
+    "streamlit>=1.36",
+    # -- analysis backends, plotting, reporting (formerly [full] + [pdf]) --
     "matplotlib>=3.8",
     "jinja2>=3.1",
     "plotly>=5",
@@ -100,6 +73,36 @@ full = [
     "PyMuPDF>=1.23",
     "opencv-python-headless>=4.8",
 ]
+
+[project.optional-dependencies]
+# As of the extras consolidation (owner request, 2026-07-17), a plain
+# `pip install geotech-staff-engineer` brings the ENTIRE stack: every analysis
+# backend, the deep agent, the Streamlit webapp, and PDF reporting. The extra
+# names below are kept as EMPTY ALIASES so every previously documented install
+# command (e.g. `geotech-staff-engineer[deep,full,pdf]`) keeps working.
+plot = []
+calc = []
+groundhog = []
+opensees = []
+pystrata = []
+seismic-signals = []
+liquepy = []
+hvsrpy = []
+gstools = []
+salib = []
+swprocess = []
+pystra = []
+dxf = []
+interactive = []
+pdf = []
+raster = []
+subsurface = []
+pygef = []
+ags4 = []
+pydiggs = []
+deep = []
+webapp = []
+full = []
 
 [project.scripts]
 # Print the full professional-use disclaimer on demand.
