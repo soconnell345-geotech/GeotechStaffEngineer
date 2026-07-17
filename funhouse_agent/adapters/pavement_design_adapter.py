@@ -138,12 +138,71 @@ def _run_performance(params: dict) -> dict:
     return clean_result(estimate_performance_period(**p))
 
 
+_UFC_FLEX_VALID = ("passes_18kip", "cbr_subgrade", "cbr_base", "cbr_subbase",
+                   "frost", "thickness_increment_in")
+
+_UFC_RIGID_VALID = ("passes_18kip", "flexural_strength_psi", "k_pci",
+                    "subgrade", "stabilized_foundation",
+                    "thickness_increment_in")
+
+_COMPARE_VALID = ("passes_18kip", "cbr_subgrade", "mr_psi",
+                  "reliability_pct", "so", "pt", "cbr_base", "cbr_subbase",
+                  "eac_psi", "ebs_psi", "esb_psi")
+
+_UFC_ALIASES = {"passes": "passes_18kip", "esals": "passes_18kip",
+                "w18": "passes_18kip", "cbr": "cbr_subgrade",
+                "r_psi": "flexural_strength_psi",
+                "modulus_of_rupture_psi": "flexural_strength_psi",
+                "k": "k_pci", "reliability": "reliability_pct"}
+
+
+def _run_flexible_ufc(params: dict) -> dict:
+    from pavement_design import design_flexible_pavement_ufc
+
+    p = apply_aliases(params, _UFC_ALIASES)
+    reject_unknown_params(p, _UFC_FLEX_VALID,
+                          method="flexible_pavement_design_ufc",
+                          aliases=_UFC_ALIASES)
+    require_params(p, ["passes_18kip", "cbr_subgrade"],
+                   method="flexible_pavement_design_ufc",
+                   valid=_UFC_FLEX_VALID)
+    return clean_result(design_flexible_pavement_ufc(**p))
+
+
+def _run_rigid_ufc(params: dict) -> dict:
+    from pavement_design import design_rigid_pavement_ufc
+
+    p = apply_aliases(params, _UFC_ALIASES)
+    reject_unknown_params(p, _UFC_RIGID_VALID,
+                          method="rigid_pavement_design_ufc",
+                          aliases=_UFC_ALIASES)
+    require_params(p, ["passes_18kip", "flexural_strength_psi"],
+                   method="rigid_pavement_design_ufc",
+                   valid=_UFC_RIGID_VALID)
+    return clean_result(design_rigid_pavement_ufc(**p))
+
+
+def _run_compare(params: dict) -> dict:
+    from pavement_design import compare_flexible_pavement_methods
+
+    p = apply_aliases(params, _UFC_ALIASES)
+    reject_unknown_params(p, _COMPARE_VALID,
+                          method="compare_pavement_methods",
+                          aliases=_UFC_ALIASES)
+    require_params(p, ["passes_18kip"], method="compare_pavement_methods",
+                   valid=_COMPARE_VALID)
+    return clean_result(compare_flexible_pavement_methods(**p))
+
+
 METHOD_REGISTRY = {
     "flexible_pavement_design": _run_flexible,
     "rigid_pavement_design": _run_rigid,
     "design_traffic_esals": _run_traffic,
     "effective_subgrade_modulus": _run_effective_mr,
     "performance_period": _run_performance,
+    "flexible_pavement_design_ufc": _run_flexible_ufc,
+    "rigid_pavement_design_ufc": _run_rigid_ufc,
+    "compare_pavement_methods": _run_compare,
 }
 
 _SWELL_DESC = ("Roadbed swelling spec (Appendix G / Fig G.4): {vr_in: "
@@ -380,6 +439,103 @@ METHOD_INFO = {
         },
         "returns": {"effective_mr_psi": "design MR",
                     "uf_values": "per-season relative damage"},
+    },
+    "flexible_pavement_design_ufc": {
+        "category": "pavement design",
+        "brief": ("UFC 3-250-01 (DoD roads/parking) flexible design — the "
+                  "CBR-method ALTERNATIVE to AASHTO: Figure E-1 cover "
+                  "curves, Table 7-2 minimums, optional seasonal-frost "
+                  "reduced-subgrade-strength check. US customary."),
+        "parameters": {
+            "passes_18kip": {"type": "number", "required": True,
+                             "description": "Design-life passes of the "
+                                            "18-kip single axle (design "
+                                            "lane). NOT interchangeable "
+                                            "with AASHTO W18 conceptually "
+                                            "— same count, different "
+                                            "damage model."},
+            "cbr_subgrade": {"type": "number", "required": True,
+                             "description": "Subgrade design CBR (%)."},
+            "cbr_base": {"type": "number", "required": False, "default": 80,
+                         "description": "Base course design CBR."},
+            "cbr_subbase": {"type": "number", "required": False,
+                            "description": "Subbase CBR (omit for a "
+                                           "2-layer section)."},
+            "frost": {"type": "object", "required": False,
+                      "description": "{uscs_class, finer_than_0_02mm_pct} "
+                                     "-> Ch 19 reduced-subgrade-strength "
+                                     "frost check; governing section "
+                                     "reported."},
+        },
+        "returns": {"section": "layers + total (in)",
+                    "frost_section": "when frost-susceptible",
+                    "frost_governs": "bool"},
+    },
+    "rigid_pavement_design_ufc": {
+        "category": "pavement design",
+        "brief": ("UFC 3-250-01 rigid (plain concrete) design — Figure F-1 "
+                  "(flexural strength x k x 18-kip passes) with the Eq 13-1 "
+                  "stabilized-foundation reduction. US customary."),
+        "parameters": {
+            "passes_18kip": {"type": "number", "required": True,
+                             "description": "18-kip single-axle passes."},
+            "flexural_strength_psi": {"type": "number", "required": True,
+                                      "description": "Concrete flexural "
+                                                     "strength R (psi)."},
+            "k_pci": {"type": "number", "required": False,
+                      "description": "Modulus of subgrade reaction (or "
+                                     "give subgrade for Table 10-1)."},
+            "subgrade": {"type": "object", "required": False,
+                         "description": "{uscs_group, moisture_pct} -> "
+                                        "Table 10-1 k."},
+            "stabilized_foundation": {"type": "object", "required": False,
+                                      "description": "{ef_psi, hs_in} -> "
+                                                     "Eq 13-1 reduction."},
+        },
+        "returns": {"hd_required_in": "F-1 solve",
+                    "slab_provided_in": "rounded design slab"},
+    },
+    "compare_pavement_methods": {
+        "category": "pavement design",
+        "brief": ("Run AASHTO 1993 AND UFC 3-250-01 flexible designs on a "
+                  "shared 18-kip pass count and compare sections side by "
+                  "side, with every cross-guide assumption (CBR<->Mr "
+                  "correlation, AASHTO-only reliability) stated in notes."),
+        "parameters": {
+            "passes_18kip": {"type": "number", "required": True,
+                             "description": "18-kip single-axle passes "
+                                            "(= AASHTO W18; LEF 1.0 by "
+                                            "definition)."},
+            "cbr_subgrade": {"type": "number", "required": False,
+                             "description": "Subgrade CBR (Mr derived via "
+                                            "FHWA 2555*CBR^0.64). Give "
+                                            "this OR mr_psi."},
+            "mr_psi": {"type": "number", "required": False,
+                       "description": "Subgrade Mr (CBR derived by "
+                                      "inversion)."},
+            "reliability_pct": {"type": "number", "required": False,
+                                "default": 95,
+                                "description": "AASHTO-side reliability."},
+            "so": {"type": "number", "required": False, "default": 0.45,
+                   "description": "AASHTO overall standard deviation."},
+            "cbr_base": {"type": "number", "required": False, "default": 80,
+                         "description": "Base CBR (both sides; AASHTO EBS "
+                                        "derived unless ebs_psi given)."},
+            "cbr_subbase": {"type": "number", "required": False,
+                            "default": 30,
+                            "description": "Subbase CBR (both sides)."},
+            "eac_psi": {"type": "number", "required": False,
+                        "default": 400000,
+                        "description": "AASHTO asphalt modulus."},
+            "ebs_psi": {"type": "number", "required": False,
+                        "description": "AASHTO base modulus override."},
+            "esb_psi": {"type": "number", "required": False,
+                        "description": "AASHTO subbase modulus override."},
+        },
+        "returns": {"aashto_1993": "SN + layers + total",
+                    "ufc_3_250_01": "layers + total",
+                    "delta_total_thickness_in": "UFC minus AASHTO",
+                    "notes": "cross-guide assumptions"},
     },
     "performance_period": {
         "category": "pavement design",

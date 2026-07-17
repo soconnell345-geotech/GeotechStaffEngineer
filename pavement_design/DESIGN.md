@@ -106,6 +106,29 @@ subbase). Top layer must be `asphalt`; a subbase requires a base above it.
 4. Solve D by bisection (`rigid_d_from_w18`), round UP to 0.5 in, forward
    check.
 
+## UFC 3-250-01 alternative method (`ufc.py`)
+
+The DoD roads/parking procedure as a first-class alternative to AASHTO,
+built on the rebuilt `geotech_references.ufc_pavement` (Appendix-G-anchored):
+
+- `design_flexible_pavement_ufc` — Corps CBR method: Figure E-1 cover
+  curves (7 exact Appendix G anchors, ±10% elsewhere) applied at each
+  interface CBR, Table 7-2 surface/base minimums, off-curve high-CBR
+  interfaces handled (minimums govern, noted). Optional Ch 19 seasonal
+  frost via the reduced-subgrade-strength method (Table 19-2 frost group →
+  Table 19-3 frost support index replaces the subgrade CBR; the governing
+  section is reported).
+- `design_rigid_pavement_ufc` — Figure F-1 (flexural strength × k ×
+  18-kip passes) + the Eq 13-1 stabilized-foundation reduction; k direct
+  or from Table 10-1.
+- `compare_flexible_pavement_methods` — runs BOTH guides on one 18-kip
+  single-axle pass count (identical physical count: AASHTO LEF(18k)=1.0
+  by definition; E-1 is natively that axle). Differences are expected —
+  the damage models differ, and reliability exists only on the AASHTO
+  side — and every cross-guide assumption (FHWA Mr=2555·CBR^0.64
+  correlation, defaults) is stated in `notes`. UFC functions return dicts
+  (reference-layer style); the AASHTO side keeps its dataclasses.
+
 ## Validation ledger
 
 | Anchor | Source | Result |

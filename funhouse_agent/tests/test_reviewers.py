@@ -272,7 +272,8 @@ class TestPavementSpecialist:
         assert agent._reference_mode == "off"
         assert "PAVEMENT DESIGN SPECIALIST" in preamble
         assert "US-CUSTOMARY" in preamble
-        assert "ufc_pavement CAUTION" in preamble
+        assert "UFC 3-250-01" in preamble  # both design bases in scope
+        assert "both and compare" in preamble
         # Design mode, not review mode.
         assert "REVIEW MODE" not in preamble
 
