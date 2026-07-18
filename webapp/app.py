@@ -341,6 +341,26 @@ with st.sidebar:
                 core.touch_conversation(ss.thread_id, model=_rid.strip())
             st.rerun()
 
+    # Connection diagnostics — runs the same calls a chat turn makes (resolve,
+    # plain request, streaming request, tool-calling request) one stage at a
+    # time and prints every failure VERBATIM. The report persists until re-run.
+    with st.expander("Connection diagnostics", expanded=False):
+        st.caption("Tests the configured model with three tiny requests and "
+                   "prints exactly what fails (nothing flashes away).")
+        if st.button("Run connection tests", key=f"diag_{ss.thread_id}"):
+            from webapp import diagnostics as _diag
+            with st.spinner("Running connection tests…"):
+                ss.diag_report = _diag.format_report(
+                    _diag.run_diagnostics(ss.model))
+        if ss.get("diag_report"):
+            st.code(ss.diag_report, language=None)
+    try:
+        import importlib.metadata as _md
+        st.caption(f"geotech-staff-engineer {_md.version('geotech-staff-engineer')}"
+                   f" · engine: {eng.source or 'none'}")
+    except Exception:
+        pass
+
     # Agent picker (A5e) — the full geotech agent, or a narrow domain reviewer.
     # Per conversation, persisted in meta, shown on the conversation list line.
     _atypes = list(core.AGENT_TYPES)
@@ -573,6 +593,11 @@ for entry in ss.transcript:
     else:
         with st.chat_message(role):
             st.markdown(text)
+            # A turn error must STAY visible on replay — before this, st.error
+            # rendered only during the turn's own run and vanished on the next
+            # rerun (the "flashing error" seen live on Foundry).
+            if entry.get("error"):
+                st.error(entry["error"])
             for _path in entry.get("artifacts", []):
                 _render_artifact_card(_path)
 
@@ -701,6 +726,15 @@ if prompt:
                            "artifacts": turn_paths}
         if turn_error:                 # A3(c): the turn crashed mid-stream —
             assistant_entry["error"] = turn_error   # keep the partial, mark it
+        elif final == "(no answer text)":
+            # The turn "succeeded" but produced no visible text — surface a
+            # persistent, actionable note instead of a silent empty reply.
+            assistant_entry["error"] = (
+                "The model returned no visible text. Open 'Connection "
+                "diagnostics' in the sidebar and run the tests — common causes: "
+                "a reasoning model spending the whole token budget before any "
+                "output (raise GEOTECH_WEBAPP_MAX_TOKENS), or the proxy "
+                "rejecting a request parameter.")
         ss.transcript.append(assistant_entry)
         # Persist — a save failure must NEVER lose a completed turn. The counters
         # and the in-memory transcript are already updated above; guard only the

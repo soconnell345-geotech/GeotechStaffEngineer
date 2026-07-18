@@ -147,11 +147,24 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
     try:
         # The OpenAI client sends the api_key as "Authorization: Bearer …",
         # which is exactly what the Foundry proxy expects.
+        #
+        # max_completion_tokens, NOT max_tokens: the GPT-5/o-series reasoning
+        # models REJECT max_tokens, and a Foundry RID gives langchain-openai no
+        # model-name hint to translate it. max_completion_tokens is accepted by
+        # every current OpenAI chat model, so send that unconditionally.
+        #
+        # GEOTECH_FOUNDRY_DISABLE_STREAMING=1 makes .stream() fall back to a
+        # single non-streaming request — for proxies/models that reject
+        # streaming (e.g. reasoning models behind an unverified org).
+        _disable_stream = str(os.environ.get(
+            "GEOTECH_FOUNDRY_DISABLE_STREAMING", "")).strip().lower() in (
+            "1", "true", "yes", "on")
         model = ChatOpenAI(
             model=model_id,
-            max_tokens=_default_max_tokens(),
             api_key=token,
             base_url=f"{base}/api/v2/llm/proxy/openai/v1",
+            disable_streaming=_disable_stream,
+            max_completion_tokens=_default_max_tokens(),
         )
     except Exception as exc:
         return EngineResolution(

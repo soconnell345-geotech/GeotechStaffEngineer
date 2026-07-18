@@ -92,6 +92,11 @@ def test_stream_exception_keeps_conversation(monkeypatch, tmp_path):
     reloaded = core.load_transcript(tid)
     assert [e["role"] for e in reloaded] == ["user", "assistant"]
     assert reloaded[1].get("error")
+    # the error must SURVIVE a rerender — before the replay fix it rendered
+    # only during the turn's own run and vanished on the next rerun (the
+    # "flashing error" seen live on the first Foundry deployment).
+    at.run()
+    assert any("stream blew up" in e.value for e in at.error)
 
 
 def _stream_saves_external(_agent, _messages, _thread_id, **_kw):
