@@ -191,6 +191,31 @@ is a wiki-verification candidate.
 - **drilled_shaft calc package displayed & recomputed `Nc = min(6 + L/D, 9)`**,
   the superseded formula, vs the code's `min(6(1+0.2·L/D), 9)`. Fixed.
 
+## WIKI-VERIFICATION OUTCOME (2026-07-18) — wishlist items resolved
+
+The owner's WikiLLM library was connected and mined; results in
+`module_work/wiki_verification/` (TIER_A_LEDGER.md = master ledger):
+
+- **Item 2 (Reese sand p-y, COM624P) CLOSED — REAL DEFECT FOUND AND FIXED**:
+  the flagged A_c=0.55 deep asymptote conflated B_c's chart (manual prints
+  A=0.88 for both loadings); both cyclic tables were reconstructions; A_s
+  mid-depths +0.12..+0.24 high; k submerged medium/dense -32/-35% vs printed
+  Tables 3.4/3.5; stale "Figs 2.19/2.20" citations. All re-digitized from Figs
+  3.12/3.13 and fixed (opt-in reese1974 branch); top foundations RED-FLAG
+  retired.
+- **Item 6 (AASHTO seismic site factors) CLOSED**: 75/75 cells confirmed vs
+  5th Ed (2010) Tables 3.10.3.2-1/2/3 (9th-Ed library copy is DRM-locked;
+  tables edition-stable). M-O K_AE printed-table anchor still open.
+- **Item 7 (ACI Ec) CLOSED**: anchored in-hand to 318-08 §8.5.1.
+- **Item 15 (ASTM A615 areas) CLOSED**: 11/11 exact vs A615-12 Table 1.
+- **Item 8 (Duncan 2000) CORROBORATED** at Tier A (LASH values, β formula, COV
+  ranges match); per-row COV audit vs the PDF remains optional.
+- **Item 5 (PTI DC35.1-14) PARTIALLY CORROBORATED** (strand/bond/service-life
+  values); presumptive bond-stress tables still need a page check.
+- NOT-IN-WIKI (still open): items 1 (Caquot & Kerisel; DM-7.2 excerpt is
+  lateral-pile-scoped), 4 (Peck-Hanson-Thornburn book), 13 originals, 14
+  (EM 2906 IS in the library — docs-refs task pending), 9 (catalogs).
+
 ## WIKI-WISHLIST — documents that would upgrade tiers
 
 Ranked by how much a verified copy would de-risk the code:

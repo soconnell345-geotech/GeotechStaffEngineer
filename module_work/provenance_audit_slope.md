@@ -168,6 +168,26 @@ in INVENTORY.md per-entry, with raw dumps/PNGs retained under `extracts/`.
 
 ---
 
+## WIKI-VERIFICATION OUTCOME (2026-07-18) — wishlist items resolved
+
+The owner's WikiLLM library was connected and mined; results in
+`module_work/wiki_verification/` (TIER_A_LEDGER.md = master ledger):
+
+- **Item 5 (Bray & Travasarou) CLOSED**: CONFIRMED-PRIMARY, zero discrepancies,
+  incl. the rigid a0=-0.22 (printed Eq. 6); both worked examples reproduced.
+- **Items 12 + 2 (Bishop/Spencer/M-P originals + EM 1110-2-1902 App G) CLOSED**:
+  CONFIRMED-PRIMARY on every core kernel; GLE engine = equivalent-notation F&K
+  form; Eq. G-12 exact identity; min(R,S) rule confirmed. Open ticket: Kf uses
+  the c'=0 Eq. G-7 form where the EM wants stress-dependent G-8 for c'>0.
+- **Item 4 (DWW 1990) ANSWERED**: real Pilarcitos geometry recovered (2:1 lower
+  58 ft / 3:1 upper vs V-052's assumed 2.5H:1V; printed p. 262 Fig. 3);
+  published FOS set confirmed. Open ticket: V-052 re-run on the true section.
+- **Item 6 (Das anisotropic su) CLOSED**: Eq. 7.51 algebraically identical to
+  the coded form; conventions verified.
+- NOT-IN-WIKI (still open): items 1 (DWB 2014 book), 3 (L&K 1960 original),
+  7 (Jibson 2007 original — but a 2011 error-analysis paper in the library
+  documents its bias), 9 (Wolff & Harr original), 10/11 (Slide2 manual copies).
+
 ## WIKI-WISHLIST — documents that would upgrade a tier
 
 Ordered by how much a slope anchor/method would gain if the owner's reference wiki
