@@ -87,7 +87,15 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   `factor_method`/parameter values or output labels, not methods. Each module
   typically exposes ONE main analysis method (e.g. `bearing_capacity_analysis`);
   if you guess a method name and it gets redirected (a `_note` in the result),
-  use the real method it points you to."""
+  use the real method it points you to.
+- **Consult a worked example before a nontrivial design or calc report.** The
+  `worked_examples` module holds validated calculations from real published
+  design reports (FHWA GEC pile/shaft/MSE/footing examples, Caltrans shoring,
+  AASHTO/UFC pavements, dam-drawdown and probabilistic slope benchmarks). Call
+  `find_worked_examples` with your topic; a hit gives you the proven method
+  sequence + parameters, the published answer, and `report_notes` describing
+  what a professional calc report for that problem presents. Follow the
+  exemplar's structure; do NOT copy its numbers — use the user's inputs."""
 
 _MEMORY_SECTION = """\
 - **`/memories/` persists across sessions.** Files you write under `/memories/`

@@ -1,0 +1,1854 @@
+[
+ {
+  "id": "WE-PILE-1",
+  "title": "Driven H-pile axial capacity in layered sand (Nordlund, FHWA GEC-12 abutment)",
+  "domain": "axial_pile",
+  "keywords": [
+   "driven pile",
+   "H-pile",
+   "HP12x74",
+   "axial capacity",
+   "Nordlund",
+   "skin friction",
+   "end bearing",
+   "sand",
+   "abutment",
+   "pile foundation"
+  ],
+  "source": "FHWA GEC-12, Design and Construction of Driven Pile Foundations, Vol 3 (FHWA-NHI-16-064), Appendix D, North Abutment design example, Table D-6 (nominal resistance vs depth)",
+  "problem": "A bridge abutment is supported on driven HP 12x74 H-piles (box convention: perimeter ~4.06 ft, toe area ~1.03 ft2). The pile head is at the bottom of the footing, 5 ft below grade; the profile below the footing is 20 ft of loose silty sand (phi = 33 deg, gamma = 105 pcf = 16.494 kN/m3), then 25 ft of medium dense sand (phi = 36 deg, gamma = 112 pcf = 17.594 kN/m3), then dense sandy gravel (shaft phi = 36 deg, design-limit toe phi = 40 deg, gamma = 125 pcf = 19.636 kN/m3). Groundwater is 10 ft (3.048 m) below the footing. Compute the nominal axial resistance (Nordlund shaft + toe) for a pile driven 60 ft (18.288 m) below the footing. Because the footing sits in an excavation, model depths FROM the footing bottom (z=0 at the pile head), not the ground surface.",
+  "dispatch_calls": [
+   {
+    "module": "axial_pile",
+    "method": "make_pile_section",
+    "params": {
+     "pile_type": "h_pile",
+     "designation": "HP12x74"
+    }
+   },
+   {
+    "module": "axial_pile",
+    "method": "axial_pile_capacity",
+    "params": {
+     "pile_type": "h_pile",
+     "designation": "HP12x74",
+     "pile_length": 18.288,
+     "gwt_depth": 3.048,
+     "factor_of_safety": 2.5,
+     "layers": [
+      {
+       "thickness": 6.096,
+       "soil_type": "cohesionless",
+       "unit_weight": 16.494,
+       "friction_angle": 33,
+       "description": "L1 loose silty sand"
+      },
+      {
+       "thickness": 7.62,
+       "soil_type": "cohesionless",
+       "unit_weight": 17.594,
+       "friction_angle": 36,
+       "description": "L2 medium dense sand"
+      },
+      {
+       "thickness": 15.85,
+       "soil_type": "cohesionless",
+       "unit_weight": 19.636,
+       "friction_angle": 36,
+       "toe_friction_angle": 40,
+       "description": "L3 dense gravel (shaft phi=36, toe phi=40)"
+      }
+     ]
+    }
+   }
+  ],
+  "published_result": "Table D-6 at D = 60 ft below the footing: shaft resistance Rs = 344.1 kips (1531 kN), toe resistance plateau Rt = 428.1 kips (1904 kN), nominal Rn = 772.2 kips (3435 kN). Shaft at other depths: 137.5 kips @ 35 ft, 250.7 @ 50 ft, 452.5 @ 70 ft.",
+  "computed_result": {
+   "perimeter_m": 1.237,
+   "tip_area_m2": 0.095635,
+   "Q_skin_kN": 1570.6,
+   "Q_tip_kN": 1817.1,
+   "Q_ultimate_kN": 3387.7,
+   "Q_allowable_kN": 1355.1
+  },
+  "report_notes": "A good report states the H-pile box convention (shaft on box perimeter 2(d+bf), toe on box area d*bf — confirm via make_pile_section: 1.237 m = 4.06 ft, 0.0956 m2 = 1.03 ft2), the footing-bottom datum (layers clipped at the footing line, GWT shifted up accordingly — modeling from grade would add ~5 ft of spurious skin friction), and the separate design-limit toe phi = 40 deg via per-layer toe_friction_angle. Computed vs published: shaft +2.6%, toe -4.6% (module's Meyerhof q_L cap at phi=40 governs at 408.5 kips vs the 428.1 kip plateau), total -1.4% — all within the +/-15% validation tolerance. Report Q_skin/Q_tip separately with sigma_v at the tip, and the FS basis (ASD FS = 2.5 here).",
+  "provenance": "validation_examples/test_published_v001_v005.py::test_v001_hpile_box_section_convention, test_v001_nordlund_shaft_resistance_matches, test_v001_highlevel_api_toe_phi40_matches_plateau"
+ },
+ {
+  "id": "WE-SHAFT-1",
+  "title": "Drilled shaft side resistance by GEC-10 rational beta (sand) and rational alpha (clay)",
+  "domain": "drilled_shaft",
+  "keywords": [
+   "drilled shaft",
+   "bored pile",
+   "side resistance",
+   "beta method",
+   "alpha method",
+   "GEC-10",
+   "rational method",
+   "OCR",
+   "skin friction",
+   "caisson"
+  ],
+  "source": "FHWA GEC-10, Drilled Shafts: Construction Procedures and Design Methods (FHWA-NHI-18-024), Appendix A design example, Steps 11.5-11.6 (Layer 3 sand beta chain, Layer 4 clay alpha chain, base resistance)",
+  "problem": "An 8-ft (2.4384 m) diameter drilled shaft for a bridge pier passes through a permanently cased 3 m cover zone (no side resistance) into (a) a 20-ft (6.096 m) sand layer with gamma = 17.9 kN/m3, N60 = 30, (N1)60 = 21, pre-scour (no-scour) effective stress sigma_v_ref = 4645 psf = 222.4 kPa at mid-layer, and (b) a 15-ft (4.572 m) stiff clay layer with gamma = 20.3 kN/m3 and su(UU/UC) = 1750 psf = 83.79 kPa, underlain by a cohesionless bearing layer. Compute nominal side resistance using the GEC-10 rational chains: sand beta = Ko*tan(phi') with phi' from (N1)60, sigma'p = 0.47*pa*N60^0.6, OCR from the no-scour stress; clay alpha = 0.30 + 0.17/(su_CIUC/pa) after the Chen & Kulhawy UC-to-CIUC strength transform.",
+  "dispatch_calls": [
+   {
+    "module": "drilled_shaft",
+    "method": "drilled_shaft_capacity",
+    "params": {
+     "diameter": 2.4384,
+     "shaft_length": 9.096,
+     "casing_depth": 3.0,
+     "beta_method": "rational",
+     "layers": [
+      {
+       "thickness": 3.0,
+       "soil_type": "cohesionless",
+       "unit_weight": 18.0,
+       "phi": 30,
+       "description": "cased cover"
+      },
+      {
+       "thickness": 6.096,
+       "soil_type": "cohesionless",
+       "unit_weight": 17.9,
+       "phi": 40,
+       "N60": 30,
+       "N1_60": 21,
+       "sigma_v_ref": 222.4,
+       "description": "Layer 3 sand"
+      }
+     ]
+    }
+   },
+   {
+    "module": "drilled_shaft",
+    "method": "drilled_shaft_capacity",
+    "params": {
+     "diameter": 2.4384,
+     "shaft_length": 10.572,
+     "casing_depth": 3.0,
+     "alpha_method": "rational",
+     "su_test_type": "uc",
+     "layers": [
+      {
+       "thickness": 3.0,
+       "soil_type": "cohesive",
+       "unit_weight": 18.0,
+       "cu": 100.0,
+       "description": "cased cover"
+      },
+      {
+       "thickness": 4.572,
+       "soil_type": "cohesive",
+       "unit_weight": 20.3,
+       "cu": 83.79,
+       "description": "Layer 4 clay"
+      },
+      {
+       "thickness": 3.0,
+       "soil_type": "cohesionless",
+       "unit_weight": 19.0,
+       "phi": 35,
+       "description": "bearing layer"
+      }
+     ]
+    }
+   }
+  ],
+  "published_result": "Layer 3 sand: phi' = 40 deg, sigma'p = 7654 psf, OCR = 1.65, Ko = 0.49, beta = 0.41, fSN = 936 psf, RSN = 470.7 kips (2094 kN). Layer 4 clay: su(CIUC) = 2057 psf, alpha = 0.47, fSN = 976 psf, RSN = 368.1 kips (1637 kN). Base (N60 = 41 sand): qb = 0.60*N60 tsf = 49.2 ksf, RBN = 2473 kips unreduced.",
+  "computed_result": {
+   "sand_beta": 0.413,
+   "sand_fs_kPa": 44.8,
+   "sand_side_resistance_kN": 2091.4,
+   "clay_alpha": 0.475,
+   "clay_fs_kPa": 46.7,
+   "clay_side_resistance_kN": 1635.8
+  },
+  "report_notes": "A good report shows the full rational chains as intermediate values: for sand, phi' from (N1)60, sigma'p from N60, OCR computed on the NO-SCOUR sigma'v (sigma_v_ref) while fs uses the scour-adjusted design stress, Ko, then beta (0.413 vs published 0.41, side resistance 470.2 vs 470.7 kips, <0.2%); for clay, the UC-to-CIUC transform (su_test_type='uc') before alpha (0.475 vs 0.47, 367.8 vs 368.1 kips). State the GEC-10 exclusion zones (cased/top cover carries no side resistance; bottom-1D cohesive exclusion) — read them off effective_top_m/effective_bottom_m in side_resistance_by_layer. Note the tip-resistance convention: the module applies the O'Neill-Reese 1.27/Db large-diameter reduction for Db > 1.27 m, so Q_tip is ~52% of the example's unreduced RBN — cite which convention the report adopts. For LRFD factored design, follow with lrfd_capacity/get_resistance_factors.",
+  "provenance": "validation_examples/test_published_v006_v008.py::test_v006_high_level_rational_beta, test_v007_high_level_rational_alpha, test_v008_base_unit_resistance_matches, test_v008b_large_diameter_reduction_is_applied"
+ },
+ {
+  "id": "WE-FOOTING-1",
+  "title": "Bridge pier spread footing: Vesic bearing capacity plus Hough granular settlement (FHWA GEC-6)",
+  "domain": "bearing_capacity",
+  "keywords": [
+   "spread footing",
+   "shallow foundation",
+   "bearing capacity",
+   "Vesic",
+   "allowable bearing",
+   "settlement",
+   "Hough",
+   "SPT",
+   "sand",
+   "bridge pier"
+  ],
+  "source": "FHWA GEC-6, Shallow Foundations (FHWA-SA-02-054), Appendix B, Example 1 'Interior Bridge Pier on Spread Footing', Step 7 bearing capacity and Tables B1-2/B1-3 Hough settlement",
+  "problem": "An interior bridge pier bears on a 3.0 m square spread footing embedded Df = 2.3 m in silty sand: phi = 35 deg, c = 0, gamma = 19.6 kN/m3, groundwater 9.1 m below grade. First compute ultimate and allowable bearing capacity (Vesic N and shape factors, FS = 3). Then compute settlement under an applied net pressure q = 240 kPa by the Hough method for the four granular layers below the base: L2 silty sand (H = 2.1 m, mid-depth Z = 1.05 m, sigma'vo = 65.7 kPa, C' = 65), L3a sand (4.7 m, 4.45 m, 132 kPa, C' = 120), L3b sand (3.0 m, 8.3 m, 193 kPa, C' = 102), L4 sand (3.0 m, 11.3 m, 222 kPa, C' = 110), using a 2:1 stress distribution.",
+  "dispatch_calls": [
+   {
+    "module": "bearing_capacity",
+    "method": "bearing_capacity_analysis",
+    "params": {
+     "width": 3.0,
+     "shape": "square",
+     "depth": 2.3,
+     "cohesion": 0.0,
+     "friction_angle": 35.0,
+     "unit_weight": 19.6,
+     "gwt_depth": 9.1,
+     "factor_of_safety": 3.0,
+     "factor_method": "vesic",
+     "ngamma_method": "vesic"
+    }
+   },
+   {
+    "module": "settlement",
+    "method": "hough_settlement",
+    "params": {
+     "q_net": 240.0,
+     "B": 3.0,
+     "layers": [
+      {
+       "thickness": 2.1,
+       "depth_to_center": 1.05,
+       "sigma_v0": 65.7,
+       "C_prime": 65,
+       "description": "L2 silty sand"
+      },
+      {
+       "thickness": 4.7,
+       "depth_to_center": 4.45,
+       "sigma_v0": 132.0,
+       "C_prime": 120,
+       "description": "L3a well-graded sand"
+      },
+      {
+       "thickness": 3.0,
+       "depth_to_center": 8.3,
+       "sigma_v0": 193.0,
+       "C_prime": 102,
+       "description": "L3b well-graded sand (saturated)"
+      },
+      {
+       "thickness": 3.0,
+       "depth_to_center": 11.3,
+       "sigma_v0": 222.0,
+       "C_prime": 110,
+       "description": "L4 clean uniform sand"
+      }
+     ]
+    }
+   }
+  ],
+  "published_result": "Bearing (B = 3 m): qult = 2553 + 254*B = 3315 kPa, qall (FS = 3) = 1106 kPa, built from Nq = 33.3, Ngamma = 48.0, sq = 1.7, sgamma = 0.6, dq = 1.0 (cohesive overburden), AASHTO Cwq = 1.0 / Cwgamma = 0.9. Settlement (B = 3 m, q = 240 kPa): per-layer 15 + 4 + 1 + 1 = 21 mm total (Table B1-3).",
+  "computed_result": {
+   "q_ultimate_kPa": 3897.44,
+   "q_allowable_kPa": 1299.15,
+   "Nq": 33.296,
+   "Ngamma": 48.029,
+   "sq": 1.7002,
+   "total_settlement_mm": 21.45
+  },
+  "report_notes": "A good report tabulates the factor basis: N factors (module Nq = 33.30 / Ngamma = 48.03 match the published Vesic/AASHTO Table 5-1 values exactly) and shape factors (sq = 1.700, sgamma = 0.600, exact), then states the depth-factor and groundwater conventions explicitly — the module's compute() runs ~17.6% above the published 3315 kPa because it applies Vesic depth factors (dq = 1.195) where the example sets dq = 1.0 for cohesive overburden, and uses an effective-unit-weight groundwater model (GW at 9.1 m is below the bearing wedge, so no reduction) instead of the AASHTO Cwgamma = 0.9 factor; both are defensible, cite the one used. The settlement half should show per-layer delta_sigma from the 2:1 distribution, sigma'vo, C', and per-layer settlements (computed 15.4/4.4/1.1/0.6 mm vs published 15/4/1/1; total 21.45 vs 21 mm, within the source's per-layer mm rounding), and check the allowable pressure against the settlement-governed service pressure.",
+  "provenance": "validation_examples/test_published_v021_v022.py::test_v021_qult_qall_match_published_closed_form, test_v021_highlevel_compute_is_convention_depth_and_gw, test_v022_hough_worked_case_b3_q240"
+ },
+ {
+  "id": "WE-MSE-1",
+  "title": "MSE wall external stability (LRFD) — FHWA GEC-11 Appendix E, Example E4",
+  "domain": "retaining_walls",
+  "keywords": [
+   "MSE wall",
+   "mechanically stabilized earth",
+   "external stability",
+   "LRFD",
+   "sliding CDR",
+   "eccentricity",
+   "bearing",
+   "GEC-11",
+   "AASHTO Strength I",
+   "bar mat",
+   "segmental panel"
+  ],
+  "source": "FHWA GEC-11, 'Design and Construction of Mechanically Stabilized Earth Walls and Reinforced Soil Slopes', Vol 2 (FHWA-NHI-10-025), Appendix E, Example E4 (Tables E4-6.1, E4-6.2, E4-6.3).",
+  "problem": "A segmental precast-panel MSE wall has design height H = 25.64 ft (7.815 m, including 2 ft embedment) with steel bar-mat reinforcement of length L = 18 ft (5.486 m, = 0.7H). Reinforced fill: gamma = 125 pcf (19.636 kN/m3), phi = 34 deg; retained fill: phi = 30 deg, same gamma; foundation: phi = 30 deg. Level backfill with a live-load traffic surcharge q = 0.25 ksf (11.97 kPa, heq = 2 ft of soil). Factored bearing resistance is 10.50 ksf (502.7 kPa) at the strength limit and 7.50 ksf (359.1 kPa) at service. Check external stability (sliding, limiting eccentricity, bearing) per AASHTO/GEC-11 LRFD Strength I (max and min load-factor combinations) and Service I, with live load excluded from the resisting side for sliding/eccentricity but included for bearing.",
+  "dispatch_calls": [
+   {
+    "module": "retaining_walls",
+    "method": "mse_lrfd_external_stability",
+    "params": {
+     "wall_height": 7.8151,
+     "reinforcement_length": 5.4864,
+     "gamma_backfill": 19.636,
+     "phi_backfill": 34.0,
+     "phi_foundation": 30.0,
+     "phi_retained": 30.0,
+     "gamma_retained": 19.636,
+     "surcharge": 11.97,
+     "bearing_resistance_strength": 502.7,
+     "bearing_resistance_service": 359.1
+    }
+   }
+  ],
+  "published_result": "Sliding CDRs: Strength I max = 1.85, Strength I min = 2.08, critical max/min = 1.37 (governs). Eccentricity: eL = 2.87 ft (Strength I max), 3.87 ft (critical) vs limit L/4 = 4.50 ft — OK. Bearing: Strength I max eL = 2.60 ft, B' = 12.79 ft, sigma_v = 6.70 ksf, CDR = 1.57; Service I sigma_v = 4.66 ksf; critical-combination sigma_v = 5.86 ksf (source 'consistent-values' rounding). All checks pass.",
+  "computed_result": {
+   "sliding_CDR_strength_max": 1.852,
+   "sliding_CDR_strength_min": 2.073,
+   "sliding_CDR_critical_governing": 1.372,
+   "eccentricity_eL_strength_max_m": 0.8748,
+   "eccentricity_eL_critical_m": 1.1809,
+   "eccentricity_limit_m": 1.3716,
+   "bearing_sigma_v_strength_max_kPa": 321.11,
+   "bearing_CDR_strength": 1.566,
+   "bearing_sigma_v_service_kPa": 222.97,
+   "all_checks_pass": true,
+   "unit_check": "eL_strength_max 0.8748 m = 2.87 ft; eL_critical 1.1809 m = 3.87 ft; e_limit 1.3716 m = 4.50 ft; sigma_v 321.1 kPa = 6.71 ksf (pub 6.70); 222.97 kPa = 4.66 ksf; critical 275.41 kPa = 5.75 ksf vs pub 5.86 (within the source's own rounding note, ~2%)"
+  },
+  "report_notes": "A good report tabulates the unfactored loads (V1, Vs, F1, F2 and moment arms about the toe) first, then shows each AASHTO load-factor combination (Strength I max/min, Service I) explicitly, flagging that live load is excluded from the resisting side for sliding/eccentricity but included for bearing. Report CDRs (capacity:demand), not ASD factors of safety — the dispatch method mse_wall reports ASD FOS and is NOT the LRFD path. State the governing combination for each check (critical max/min governs sliding here) and compare eL against the L/4 limit for walls on soil.",
+  "provenance": "validation_examples/test_published_v009_v011.py::test_v009_lrfd_external_stability_high_level_path, test_v009_sliding_CDR_lrfd, test_v009_eccentricity_lrfd, test_v009_bearing_lrfd"
+ },
+ {
+  "id": "WE-SOE-1",
+  "title": "Cantilever soldier-pile wall — Caltrans Trenching & Shoring Manual Ch. 7, Example 7-1B (simplified method)",
+  "domain": "sheet_pile",
+  "keywords": [
+   "cantilever wall",
+   "soldier pile",
+   "lagging",
+   "embedment",
+   "Caltrans",
+   "trenching and shoring",
+   "simplified method",
+   "Rankine",
+   "arching",
+   "effective width",
+   "shoring"
+  ],
+  "source": "Caltrans Trenching & Shoring Manual (July 2025), Chapter 7, Example 7-1B: cantilever soldier-pile wall by the AASHTO Simplified method (pp. 133-139).",
+  "problem": "A 15-ft (4.572 m) cantilever soldier-pile wall retains sand with gamma = 125 pcf (19.636 kN/m3), phi = 35 deg, c = 0, no groundwater. W14x120 soldier piles at 8 ft spacing are set in 2-ft-diameter drilled holes; a 72 psf (3.447 kPa) construction surcharge acts over the retained height (driving side only). Find the earth pressure coefficients and the required embedment (published simplified method: active on the 2-ft hole width, passive on the arching-amplified width f*b = 0.08*phi*b = 5.6 ft, design D = 1.2*D0).",
+  "dispatch_calls": [
+   {
+    "module": "retaining_walls",
+    "method": "earth_pressure_coefficient",
+    "params": {
+     "phi_deg": 35.0,
+     "theory": "rankine",
+     "state": "active"
+    }
+   },
+   {
+    "module": "retaining_walls",
+    "method": "earth_pressure_coefficient",
+    "params": {
+     "phi_deg": 35.0,
+     "theory": "rankine",
+     "state": "passive"
+    }
+   },
+   {
+    "module": "sheet_pile",
+    "method": "cantilever_wall",
+    "params": {
+     "excavation_depth": 4.572,
+     "layers": [
+      {
+       "thickness": 45.0,
+       "unit_weight": 19.636,
+       "friction_angle": 35.0,
+       "cohesion": 0.0
+      }
+     ],
+     "surcharge": 3.447,
+     "FOS_passive": 1.0,
+     "embedment_increase": 1.2
+    }
+   }
+  ],
+  "published_result": "Rankine Ka = 0.271, Kp = 3.69 (exact module matches). Published simplified soldier-pile results (per pile): toe-moment cubic gives D0 = 12.27 ft, design D = 1.2*D0 = 14.73 ft, zero shear at 6.0 ft below dredge, Mmax = 379.7 kip-ft/pile (= 514.9 kN-m per pile), Vmax = 137.7 kips.",
+  "computed_result": {
+   "Ka": 0.271,
+   "Kp": 3.6902,
+   "embedment_converged_m": 3.45,
+   "embedment_design_m": 4.14,
+   "total_wall_length_m": 8.712,
+   "max_moment_kNm_per_m": 238.5,
+   "unit_check": "Ka and Kp match the published 0.271 / 3.69 exactly. Continuous-wall converged embedment 3.45 m = 11.3 ft (x1.2 -> 4.14 m = 13.6 ft) vs the published PER-PILE simplified D0 = 12.27 ft (D = 14.73 ft) — different frameworks, values are close but not equivalent."
+  },
+  "report_notes": "The report must state the framework explicitly: the published example uses the soldier-pile SIMPLIFIED method (active pressure on the 2-ft hole width, passive on the arching-amplified width f*b = 0.08*phi*b = 5.6 ft, per-pile toe-moment cubic), while the sheet_pile.cantilever_wall solver is a continuous per-metre free-earth-support wall with no soldier-pile arching logic — its embedment is comparable but NOT the same number. Present Ka/Kp with their theory (Rankine, delta = 0), the FOS basis (FOS_passive = 1.0 with the traditional 20% embedment increase here — never both a passive FOS and the 20% rule), and per-pile demands via the tributary spacing when soldier piles are specified. Flag that Caltrans notes Rankine underestimates passive resistance.",
+  "provenance": "validation_examples/test_published_v012_v025.py::test_v012_rankine_coefficients_match_module, test_v012_simplified_embedment_and_demands_by_hand, test_v012_module_continuous_solver_is_a_different_framework"
+ },
+ {
+  "id": "WE-SOE-2",
+  "title": "Two-tier anchored soldier-beam wall (FHWA apparent pressure) — GEC-4 Appendix A, Design Example 1",
+  "domain": "soe",
+  "keywords": [
+   "anchored wall",
+   "ground anchor",
+   "tieback",
+   "apparent earth pressure",
+   "trapezoid",
+   "FHWA",
+   "GEC-4",
+   "soldier beam",
+   "tributary method",
+   "hinge method",
+   "anchor design load"
+  ],
+  "source": "FHWA GEC-4, 'Ground Anchors and Anchored Systems' (FHWA-IF-99-015), Appendix A, Design Example 1: two-tier anchored soldier-beam wall.",
+  "problem": "A 10 m anchored soldier-beam wall in medium dense silty sand (gamma = 18 kN/m3, phi' = 33 deg, no groundwater) has two anchor levels at 2.5 m and 6.25 m below the top (H1 = 2.5 m, H2 = H3 = 3.75 m). Soldier beams are spaced 2.5 m horizontally and anchors are inclined 15 deg. A traffic surcharge qs = 11 kPa (0.6 m of soil) acts at the surface. Compute the FHWA apparent-pressure trapezoid ordinate pe, the surcharge pressure ps, the tributary horizontal anchor loads, the subgrade reaction, the hinge-method moments, and the inclined anchor design loads.",
+  "dispatch_calls": [
+   {
+    "module": "soe",
+    "method": "fhwa_apparent_pressure_anchored_wall",
+    "params": {
+     "H": 10.0,
+     "anchor_depths": [
+      2.5,
+      6.25
+     ],
+     "gamma": 18.0,
+     "phi": 33.0,
+     "surcharge": 11.0,
+     "spacing": 2.5,
+     "inclination_deg": 15.0
+    }
+   }
+  ],
+  "published_result": "Ka = 0.295; apparent-pressure ordinate pe = 43.6 kN/m2; surcharge ps = 3.2 kPa; tributary horizontal anchor loads TH1 = 168 kN/m, TH2 = 172 kN/m; subgrade reaction R = 37 kN/m; anchor design loads DL1 = 435 kN, DL2 = 445 kN; hinge moments M2/M3 = 66 kN-m/m, published M1 = 76 kN-m/m (governs).",
+  "computed_result": {
+   "Ka": 0.2948,
+   "pe_kPa": 43.568,
+   "ps_kPa": 3.243,
+   "PT_total_kN_per_m": 344.92,
+   "TH1_kN_per_m": 168.492,
+   "TH2_kN_per_m": 172.139,
+   "DL1_kN": 436.09,
+   "DL2_kN": 445.53,
+   "subgrade_reaction_kN_per_m": 36.714,
+   "max_moment_kN_m_per_m": 70.434,
+   "note": "All quantities within 2% of published. max_moment uses the compact (13/54)*H1^2*(pe+ps) top-hinge form = 70.4 kN-m/m — a documented CONVENTION vs the published 76 (GEC-4 applies the uniform surcharge over a larger tributary in the top region); the dominant earth-pressure part (13/54)*pe*H1^2 = 65.6 is exact."
+  },
+  "report_notes": "A good report draws the trapezoidal apparent-pressure diagram (2/3-H1 top transition, 2/3-Hn+1 bottom transition), shows pe = 0.65*Ka*gamma*H^2 / (H - H1/3 - Hn+1/3) with the Ka basis, and tabulates the tributary calculation for each anchor (TH), the subgrade reaction R, and the design loads DL = TH * spacing / cos(inclination). Note the top-hinge moment convention: the compact (13/54)H1^2(pe+ps) form gives 70.4 vs the published 76 kN-m/m due to the surcharge-tributary treatment — state which was used. Apparent-pressure envelopes are for anchor loads and wall moments; embedment comes from a separate toe analysis.",
+  "provenance": "validation_examples/test_published_v012_v025.py::test_v016_fhwa_apparent_pressure_high_level, test_v016_Ka_and_pe, test_v016_tributary_anchor_loads, test_v016_anchor_design_loads, test_v016_hinge_moments"
+ },
+ {
+  "id": "WE-GI-1",
+  "title": "PVD / wick-drain design (Barron-Hansbo radial consolidation) — FHWA GEC-13 Ch. 2 example",
+  "domain": "ground_improvement",
+  "keywords": [
+   "wick drains",
+   "PVD",
+   "prefabricated vertical drains",
+   "radial consolidation",
+   "Barron",
+   "Hansbo",
+   "t90",
+   "drain spacing",
+   "GEC-13",
+   "soft clay",
+   "consolidation time"
+  ],
+  "source": "FHWA GEC-13, 'Ground Modification Methods Reference Manual', Vol 1 (FHWA-NHI-16-027), Chapter 2, Section 4.4, PVD design example (t90 vs drain spacing).",
+  "problem": "A 20-ft (6.096 m) normally consolidated clay layer (with sand lenses) over rock is to be consolidated with prefabricated vertical drains in a triangular pattern (de = 1.05*s). Properties: cv = 0.1 ft2/day (3.391 m2/yr), ch = 2*cv = 0.2 ft2/day (6.782 m2/yr); drain equivalent diameter dw = 2.5 in (0.0635 m); ideal drains (no smear, no well resistance). Find the time to reach U = 90% radial consolidation for drain spacings of 8 ft (2.438 m) and 10 ft (3.048 m).",
+  "dispatch_calls": [
+   {
+    "module": "ground_improvement",
+    "method": "wick_drains",
+    "params": {
+     "spacing": 2.4384,
+     "ch": 6.782,
+     "cv": 3.391,
+     "Hdr": 6.096,
+     "time": 0.8219,
+     "dw": 0.0635,
+     "pattern": "triangular",
+     "smear_ratio": 1.0,
+     "kh_ks_ratio": 1.0
+    }
+   },
+   {
+    "module": "ground_improvement",
+    "method": "wick_drains",
+    "params": {
+     "spacing": 3.048,
+     "ch": 6.782,
+     "cv": 3.391,
+     "Hdr": 6.096,
+     "time": 1.3781,
+     "dw": 0.0635,
+     "pattern": "triangular",
+     "smear_ratio": 1.0,
+     "kh_ks_ratio": 1.0
+    }
+   }
+  ],
+  "published_result": "t90 approximately 300 days at s = 8 ft and approximately 500 days at s = 10 ft ('on the order of'), by radial-only ideal Barron-Hansbo consolidation. Module reproduces t90 = 299 days (8 ft) and 503 days (10 ft) — essentially exact.",
+  "computed_result": {
+   "s8ft_Ur_percent_at_300d": 90.1,
+   "s8ft_n": 40.3,
+   "s8ft_Fn": 2.947,
+   "s10ft_Ur_percent_at_503d": 90.0,
+   "s10ft_n": 50.4,
+   "s10ft_Fn": 3.17,
+   "note": "Ur (radial) hits 90% at exactly the published times, confirming radial-only Barron-Hansbo with F(n) = ln(n) - 0.75, de = 1.05*s. The published example is RADIAL-ONLY: the module's combined U_total = 1-(1-Uv)(1-Ur) adds ~31-40% vertical consolidation (20-ft clay over rock, single drainage) and exceeds 90% at those times — quote Ur_percent against the published t90, not U_total_percent."
+  },
+  "report_notes": "The report should show the unit cell explicitly (de = 1.05*s triangular, n = de/dw, F(n) = ln(n) - 0.75 for ideal drains) and the Barron equation t = (de^2/(8*ch))*F(n)*ln(1/(1-U)), then present t90 vs spacing as a small table or curve so the owner can trade spacing against schedule. State the drainage convention used (radial-only here, matching the source) and whether vertical consolidation, smear (ds/dw), and well resistance were included — these are the assumptions reviewers check first. Carry units carefully: ch in m2/yr with time in years.",
+  "provenance": "validation_examples/test_published_v018_v020.py::test_v020_radial_only_t90_pass, test_v020_de_unit_cell_and_dw_plumbing, test_v020_combined_vertical_radial_overpredicts"
+ },
+ {
+  "id": "WE-GI-2",
+  "title": "Stone-column settlement improvement (Priebe factor) — FHWA GEC-13 Ch. 5, Example Problem 2",
+  "domain": "ground_improvement",
+  "keywords": [
+   "stone columns",
+   "vibro replacement",
+   "Priebe",
+   "improvement factor",
+   "settlement reduction",
+   "area replacement ratio",
+   "GEC-13",
+   "soft clay",
+   "embankment",
+   "ground improvement"
+  ],
+  "source": "FHWA GEC-13, 'Ground Modification Methods Reference Manual', Vol 1 (FHWA-NHI-16-027), Chapter 5, Section 4.3.2, Example Problem 2 with Figure 5-27 (settlement-improvement ratio chart, after Wallays et al. 1983).",
+  "problem": "A 15-ft embankment (q = 125 pcf * 15 ft = 1,875 psf) loads 50 ft of soft clay (gamma_sat = 120 pcf, WT at surface, Cc = 0.2, eo = 0.6, po at mid-depth = 1,440 psf) over dense sand. Unimproved consolidation settlement is 27 in. Stone columns of d = 3.0 ft at s = 5.7 ft spacing give an area ratio A/Ac = (s/d)^2 = 3.6, i.e. as = Ac/A = 0.277. Estimate the settlement-improvement ratio and the improved settlement (published chart read: ratio = 2.7, improved S = 27/2.7 = 10 in).",
+  "dispatch_calls": [
+   {
+    "module": "ground_improvement",
+    "method": "priebe_improvement_factor",
+    "params": {
+     "as_ratio": 0.277,
+     "phi_column": 42.5
+    }
+   },
+   {
+    "module": "ground_improvement",
+    "method": "priebe_improvement_factor",
+    "params": {
+     "as_ratio": 0.277,
+     "phi_column": 39.0
+    }
+   }
+  ],
+  "published_result": "Settlement-improvement ratio = 2.7 (chart read from Figure 5-27); improved settlement = 27 in / 2.7 = 10 in (unimproved S = 27 in reproduced exactly by the consolidation closed form Cc/(1+eo)*H*log10((po+dq)/po)).",
+  "computed_result": {
+   "n0_phi42p5_default": 3.06,
+   "n0_phi39": 2.711,
+   "improved_settlement_range_in": "27/3.06 = 8.8 in (module default phi_column = 42.5) to 27/2.71 = 10.0 in (phi_column = 39, matching the chart)",
+   "note": "The published 2.7 is a chart read; the Priebe (1995) formula result depends on the area-ratio convention and phi_column. At the source's as = 0.277: n0 = 3.06 with the default phi_column = 42.5 (+13%), and n0 = 2.71 at phi_column = 39 (matches the chart). Both bracket the published improved settlement of 10 in from below — within chart-read latitude."
+  },
+  "report_notes": "The report should state the area-ratio convention up front (as = Ac/A = 1/(s/d)^2 here vs the geometric triangular-tributary value — they differ by ~10%) and the assumed column friction angle, since n0 is sensitive to both; presenting n0 for two or three phi_column values honestly reflects the chart-read latitude of the source. Pair the improvement factor with the unimproved consolidation settlement calculation (settlement module) so the improved settlement S/n0 is traceable end-to-end. Note this is the Priebe BASIC factor n0 (no depth or compressibility corrections).",
+  "provenance": "validation_examples/test_published_v018_v020.py::test_v019_priebe_improvement_factor_convention, test_v019_unimproved_consolidation_pass"
+ },
+ {
+  "id": "WE-SLOPE-1",
+  "title": "Caltrans Trenching & Shoring Manual Ch. 10 — Ordinary Method of Slices and Simplified Bishop on a specified toe circle",
+  "domain": "slope_stability",
+  "keywords": [
+   "ordinary method of slices",
+   "Fellenius",
+   "simplified Bishop",
+   "specified circle",
+   "toe circle",
+   "method comparison",
+   "Caltrans",
+   "drained c-phi soil",
+   "hand-calculation benchmark"
+  ],
+  "source": "California Department of Transportation (Caltrans), California Trenching & Shoring Manual, July 2025 edition, Chapter 10, Examples 10-3 (Ordinary Method of Slices) and 10-4 (Simplified Bishop), pp. 240-243.",
+  "problem": "A homogeneous slope rises at 4V:3H from a toe at (0, 0) m to a crest at (18.288, 24.384) m (60 ft run, 80 ft rise), with flat ground beyond the crest and left of the toe. Soil: gamma = 18.065 kN/m3 (115 pcf), phi' = 30 deg, c' = 9.576 kPa (200 psf), no groundwater. Compute the factor of safety on a SPECIFIED (pinned, not searched) toe circle centered directly above the toe at (0, 18.288) m with radius 18.288 m (60 ft), by the Ordinary Method of Slices (Fellenius) and by Simplified Bishop. The circle is tangent to the flat ground at the toe, so the analysis radius is nudged to 18.2885 m to give a proper 2-point ground intersection. Published: OMS FS = 0.87; Bishop hand-iterated to '~0.90' (the source stopped one iteration short — the true fixed point of the source's own 6-slice table is 0.96).",
+  "dispatch_calls": [
+   {
+    "module": "slope_stability",
+    "method": "analyze_slope",
+    "params": {
+     "surface_points": [
+      [
+       -6.096,
+       0.0
+      ],
+      [
+       0.0,
+       0.0
+      ],
+      [
+       18.288,
+       24.384
+      ],
+      [
+       36.576,
+       24.384
+      ]
+     ],
+     "soil_layers": [
+      {
+       "name": "fill",
+       "top_elevation": 24.384,
+       "bottom_elevation": -3.0,
+       "gamma": 18.065,
+       "phi": 30.0,
+       "c_prime": 9.576,
+       "analysis_mode": "drained"
+      }
+     ],
+     "xc": 0.0,
+     "yc": 18.288,
+     "radius": 18.2885,
+     "method": "fellenius",
+     "n_slices": 30,
+     "compare_methods": true
+    }
+   }
+  ],
+  "published_result": "OMS/Fellenius FS = 0.87 (using the source's hand arc length L = 113.55 ft); Simplified Bishop declared '~0.90' after two hand iterations, but the converged fixed point of the source's own slice table is FS = 0.96.",
+  "computed_result": {
+   "FOS_fellenius": 0.8328,
+   "FOS_bishop": 0.9709,
+   "FOS_spencer": 0.956,
+   "FOS_morgenstern_price": 0.9602,
+   "FOS_janbu_corrected": 0.8721,
+   "x_entry_m": -0.14,
+   "x_exit_m": 18.29,
+   "tolerance": "Fellenius 0.833 vs published 0.87 within +/-0.05 (the spread is the source's over-stated hand arc length in the c'*L term plus the module's geometric exit at x~18.3 m vs the source's 17.56 m); Bishop 0.971 matches the CONVERGED fixed point 0.96 within 1.2% — the published 0.90 is under-iterated, not a module error."
+  },
+  "report_notes": "A good report states the method basis explicitly (OMS neglects interslice forces and is conservative; Bishop satisfies vertical equilibrium and must be ITERATED to the FS = FSa fixed point) and presents the per-slice table (alpha, W, W sin, W cos) so the geometry reconstruction is checkable against the source. Because this is a pinned-circle check, the report must say so — no search story is claimed — and should show the circle, entry/exit points, and slope face on a section figure. A method-comparison table (compare_methods=true) is the right exhibit: it shows the OMS-vs-rigorous spread (~0.83 vs ~0.96) and flags that FS < 1 either way. When a published value disagrees, report both and explain the discrepancy (here: under-iterated source Bishop; hand arc-length convention in the cohesion term).",
+  "provenance": "validation_examples/test_published_v015_v017.py::test_v015_slice_table_matches_source_exactly, test_v015_fellenius_module_pipeline, test_v015_bishop_module_is_the_converged_fixed_point"
+ },
+ {
+  "id": "WE-SLOPE-2",
+  "title": "Duncan (2000) LASH Terminal underwater slope — FOSM reliability with a depth-varying correlated su gradient",
+  "domain": "slope_stability",
+  "keywords": [
+   "FOSM",
+   "Taylor series reliability",
+   "probability of failure",
+   "underwater slope",
+   "San Francisco Bay Mud",
+   "linear su law",
+   "correlated variables",
+   "buoyancy amplification",
+   "Duncan 2000",
+   "Spencer",
+   "noncircular slip surface"
+  ],
+  "source": "Duncan, J.M. (2000). 'Factors of Safety and Reliability in Geotechnical Engineering.' ASCE Journal of Geotechnical and Geoenvironmental Engineering, 126(4), pp. 307-316 — LASH Terminal underwater slope; also reproduced as Rocscience Slide2 Verification Problem #29 (manual pp. 121-122, Table 29.2).",
+  "problem": "A 100-ft-high underwater excavated slope in San Francisco Bay Mud at the LASH terminal, fully submerged (water surface at elevation 0). Section (m, converted from the labeled figure in feet): mudline runs from (-8.53, -12.19) down the excavated face to a base bench at elevation -36.58 m between x = 21.64 and 42.06, then back up natural ground to a crest at elevation +6.71 m. Undrained strength increases linearly with depth: su = 4.788 kPa (100 psf) at elevation -6.096 m (el -20 ft), gradient b = 1.539 kPa/m (9.8 psf/ft), floored at 0.718 kPa; gamma_sat = 15.709 kN/m3 (100 pcf). The observed/critical noncircular failure surface (polyline from (42.06, -36.58) to (106.68, -2.44)) is analyzed with Spencer's method. Probabilistic inputs (Duncan Table): unit-weight std 3.3 pcf (COV 0.033, applied to gamma_sat — buoyancy amplifies it) and su-gradient std 1.2 psf/ft (0.1885 kPa/m), the (a, b) pair treated as ONE coherent random law across all sub-layers. An alternative characterization (Duncan's full-profile su COV = 0.16 on intercept AND gradient, perfectly correlated) reproduces his COV_F ~ 0.16 / Pf ~ 18%. Published anchors: F = 1.17, COV_F ~= 0.16, Pf ~= 18% (Duncan closed-form Taylor series); Slide2 per-method simulated Pf 13-18%.",
+  "dispatch_calls": [
+   {
+    "module": "slope_stability",
+    "method": "fosm_fos",
+    "params": {
+     "surface_points": [
+      [
+       -8.5344,
+       -12.192
+      ],
+      [
+       0.0,
+       -12.192
+      ],
+      [
+       21.6408,
+       -36.576
+      ],
+      [
+       42.0624,
+       -36.576
+      ],
+      [
+       69.4944,
+       -5.4864
+      ],
+      [
+       86.2584,
+       -5.1816
+      ],
+      [
+       106.68,
+       -2.4384
+      ],
+      [
+       118.5672,
+       6.7056
+      ],
+      [
+       140.5128,
+       6.7056
+      ]
+     ],
+     "soil_layers": [
+      {
+       "name": "baymud_0",
+       "top_elevation": 6.7056,
+       "bottom_elevation": 5.0292,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 0.718,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_1",
+       "top_elevation": 5.0292,
+       "bottom_elevation": 3.3528,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 0.718,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_2",
+       "top_elevation": 3.3528,
+       "bottom_elevation": 1.6764,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 0.718,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_3",
+       "top_elevation": 1.6764,
+       "bottom_elevation": 0.0,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 0.718,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_4",
+       "top_elevation": 0.0,
+       "bottom_elevation": -1.6764,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 0.718,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_5",
+       "top_elevation": -1.6764,
+       "bottom_elevation": -3.3528,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 0.718,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_6",
+       "top_elevation": -3.3528,
+       "bottom_elevation": -5.0292,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 1.855,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_7",
+       "top_elevation": -5.0292,
+       "bottom_elevation": -6.7056,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 4.436,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_8",
+       "top_elevation": -6.7056,
+       "bottom_elevation": -8.382,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 7.017,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_9",
+       "top_elevation": -8.382,
+       "bottom_elevation": -10.0584,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 9.598,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_10",
+       "top_elevation": -10.0584,
+       "bottom_elevation": -11.7348,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 12.178,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_11",
+       "top_elevation": -11.7348,
+       "bottom_elevation": -13.4112,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 14.759,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_12",
+       "top_elevation": -13.4112,
+       "bottom_elevation": -15.0876,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 17.34,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_13",
+       "top_elevation": -15.0876,
+       "bottom_elevation": -16.764,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 19.92,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_14",
+       "top_elevation": -16.764,
+       "bottom_elevation": -18.4404,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 22.501,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_15",
+       "top_elevation": -18.4404,
+       "bottom_elevation": -20.1168,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 25.082,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_16",
+       "top_elevation": -20.1168,
+       "bottom_elevation": -21.7932,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 27.663,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_17",
+       "top_elevation": -21.7932,
+       "bottom_elevation": -23.4696,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 30.243,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_18",
+       "top_elevation": -23.4696,
+       "bottom_elevation": -25.146,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 32.824,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_19",
+       "top_elevation": -25.146,
+       "bottom_elevation": -26.8224,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 35.405,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_20",
+       "top_elevation": -26.8224,
+       "bottom_elevation": -28.4988,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 37.986,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_21",
+       "top_elevation": -28.4988,
+       "bottom_elevation": -30.1752,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 40.566,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_22",
+       "top_elevation": -30.1752,
+       "bottom_elevation": -31.8516,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 43.147,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_23",
+       "top_elevation": -31.8516,
+       "bottom_elevation": -33.528,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 45.728,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_24",
+       "top_elevation": -33.528,
+       "bottom_elevation": -35.2044,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 48.309,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_25",
+       "top_elevation": -35.2044,
+       "bottom_elevation": -36.8808,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 50.889,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_26",
+       "top_elevation": -36.8808,
+       "bottom_elevation": -38.5572,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 53.47,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_27",
+       "top_elevation": -38.5572,
+       "bottom_elevation": -40.2336,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 56.051,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_28",
+       "top_elevation": -40.2336,
+       "bottom_elevation": -41.91,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 58.631,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "baymud_29",
+       "top_elevation": -41.91,
+       "bottom_elevation": -43.5864,
+       "gamma": 15.7087,
+       "gamma_sat": 15.7087,
+       "cu": 61.212,
+       "analysis_mode": "undrained"
+      }
+     ],
+     "gwt_points": [
+      [
+       -8.5344,
+       0.0
+      ],
+      [
+       140.5128,
+       0.0
+      ]
+     ],
+     "slip_points": [
+      [
+       42.0624,
+       -36.576
+      ],
+      [
+       45.72,
+       -35.6616
+      ],
+      [
+       51.816,
+       -32.004
+      ],
+      [
+       56.388,
+       -30.48
+      ],
+      [
+       62.484,
+       -28.3464
+      ],
+      [
+       67.3608,
+       -25.908
+      ],
+      [
+       73.152,
+       -22.86
+      ],
+      [
+       78.3336,
+       -19.5072
+      ],
+      [
+       83.82,
+       -16.1544
+      ],
+      [
+       89.3064,
+       -11.8872
+      ],
+      [
+       94.7928,
+       -7.0104
+      ],
+      [
+       106.68,
+       -2.4384
+      ]
+     ],
+     "variables": {
+      "gamma_sat": {
+       "cov": 0.033
+      },
+      "bay_mud_su": {
+       "law": "linear_su",
+       "a": {
+        "mean": 4.788,
+        "std": 0.0
+       },
+       "b": {
+        "mean": 1.53945,
+        "std": 0.1885
+       },
+       "rho_ab": 0.0,
+       "datum_z": -6.096,
+       "z_ref": "mid",
+       "su_min": 0.7182
+      }
+     },
+     "method": "spencer",
+     "n_slices": 60
+    }
+   }
+  ],
+  "published_result": "Duncan (2000) closed-form Taylor series: F = 1.17, COV_F ~= 0.16, Pf ~= 18%. Slide2 #29 per-method simulated Pf: 13-18%.",
+  "computed_result": {
+   "FOS_mean_values": 1.1918,
+   "COV_F_stated_inputs": 0.1333,
+   "beta_lognormal": 1.255,
+   "pf_lognormal": 0.1047,
+   "variance_pct_gamma_sat": 42.0,
+   "variance_pct_su_law": 58.0,
+   "alt_full_profile_su_cov_0p16": "COV_F = 0.1599, pf = 0.1527 — reproduces Duncan's COV_F ~ 0.16 / Pf ~ 18% at his F = 1.17 (run the same call with variables = {bay_mud_su: {law: linear_su, a: {mean: 4.788, cov: 0.16}, b: {mean: 1.53945, cov: 0.16}, rho_ab: 1.0, datum_z: -6.096, z_ref: mid, su_min: 0.7182}})",
+   "tolerance": "Deterministic Spencer 1.192 vs Duncan 1.17 within 2%. With the STATED input stds: COV_F 0.133, Pf ~10-13% — inside the Slide2 per-method band.",
+   "key_physics": "gamma_sat (not dry gamma) must be the varied unit weight on a submerged slope: buoyancy amplifies its COV 0.033 into ~0.088 on the buoyant weight, contributing ~42% of Var[FOS]."
+  },
+  "report_notes": "A slope reliability report should present the deterministic FOS at mean values first, then the propagation: per-variable variance contributions (a tornado-style table from variable_variance_pct), COV_F, the lognormal reliability index, and Pf — stating that the true answer is a distribution, not the point FOS. It must document HOW each uncertainty was characterized (regression-slope std vs full-profile COV changes Pf from ~11% to ~18% here) and why gamma_sat is the varied unit weight on a submerged slope (buoyancy amplification). Show the analyzed slip surface on the section with the su(z) profile and its uncertainty band, and cross-check FOSM against Monte Carlo when practical.",
+  "provenance": "validation_examples/test_published_v030_fosm_slope.py::test_v030_fosm_law_at_means_reproduces_deterministic_fos, test_v030_fosm_stated_input_covs_land_in_slide_band, test_v030_fosm_full_su_cov_reproduces_duncan"
+ },
+ {
+  "id": "WE-SLOPE-3",
+  "title": "Slide2 #36 (Li & Lumb 1987 / Hassan & Wolff 1999) — critical-surface search plus FOSM/Monte Carlo reliability index",
+  "domain": "slope_stability",
+  "keywords": [
+   "reliability index",
+   "probabilistic slope stability",
+   "FOSM",
+   "Monte Carlo",
+   "Bishop",
+   "entry-exit search",
+   "critical surface",
+   "ru pore pressure ratio",
+   "lognormal FOS",
+   "Hassan Wolff",
+   "Li Lumb"
+  ],
+  "source": "Rocscience Slide2 Verification Manual, Verification Problem #36, pp. 137-139; after Li, K.S. & Lumb, P. (1987), Canadian Geotechnical Journal 24(4), and Hassan, A.M. & Wolff, T.F. (1999), ASCE JGGE 125(4), Table 36.1/36.2.",
+  "problem": "A homogeneous 10-m-high 1H:1V slope: ground surface (0, 5), (5, 5), (15, 15), (20, 15) m with the soil extending down to elevation 0. Mean properties: c' = 18 kPa, phi' = 30 deg, gamma = 18 kN/m3, pore-pressure ratio ru = 0.20 (drained analysis). Random variables (normal): c' std 3.6 kPa (COV 0.20), phi std 3.0 deg (COV 0.10), gamma std 0.9 kN/m3 (COV 0.05), ru std 0.02. Task: find the deterministic critical circle by Simplified Bishop, then compute the lognormal reliability index of the FOS on that surface. Published (Table 36.2): Slide2 Bishop deterministic-minimum FOS 1.340 with RI_LN 2.482 (overall 1.350/2.393); Hassan & Wolff FOS 1.334, RI_LN 2.336.",
+  "dispatch_calls": [
+   {
+    "module": "slope_stability",
+    "method": "search_critical_surface",
+    "params": {
+     "surface_points": [
+      [
+       0,
+       5
+      ],
+      [
+       5,
+       5
+      ],
+      [
+       15,
+       15
+      ],
+      [
+       20,
+       15
+      ]
+     ],
+     "soil_layers": [
+      {
+       "name": "mat1",
+       "top_elevation": 15.0,
+       "bottom_elevation": 0.0,
+       "gamma": 18.0,
+       "gamma_sat": 18.0,
+       "phi": 30.0,
+       "c_prime": 18.0,
+       "ru": 0.2,
+       "analysis_mode": "drained"
+      }
+     ],
+     "method": "bishop",
+     "surface_type": "entry_exit",
+     "n_trials": 800,
+     "n_slices": 30,
+     "seed": 1
+    }
+   },
+   {
+    "module": "slope_stability",
+    "method": "fosm_fos",
+    "params": {
+     "surface_points": [
+      [
+       0,
+       5
+      ],
+      [
+       5,
+       5
+      ],
+      [
+       15,
+       15
+      ],
+      [
+       20,
+       15
+      ]
+     ],
+     "soil_layers": [
+      {
+       "name": "mat1",
+       "top_elevation": 15.0,
+       "bottom_elevation": 0.0,
+       "gamma": 18.0,
+       "gamma_sat": 18.0,
+       "phi": 30.0,
+       "c_prime": 18.0,
+       "ru": 0.2,
+       "analysis_mode": "drained"
+      }
+     ],
+     "variables": {
+      "c_prime": {
+       "std": 3.6
+      },
+      "phi": {
+       "std": 3.0
+      },
+      "gamma": {
+       "std": 0.9
+      },
+      "ru": {
+       "std": 0.02
+      }
+     },
+     "xc": 4.3736565339749305,
+     "yc": 19.588888034671577,
+     "radius": 14.589059771501798,
+     "method": "bishop",
+     "n_slices": 30
+    }
+   },
+   {
+    "module": "slope_stability",
+    "method": "monte_carlo_fos",
+    "params": {
+     "surface_points": [
+      [
+       0,
+       5
+      ],
+      [
+       5,
+       5
+      ],
+      [
+       15,
+       15
+      ],
+      [
+       20,
+       15
+      ]
+     ],
+     "soil_layers": [
+      {
+       "name": "mat1",
+       "top_elevation": 15.0,
+       "bottom_elevation": 0.0,
+       "gamma": 18.0,
+       "gamma_sat": 18.0,
+       "phi": 30.0,
+       "c_prime": 18.0,
+       "ru": 0.2,
+       "analysis_mode": "drained"
+      }
+     ],
+     "variables": {
+      "c_prime": {
+       "std": 3.6
+      },
+      "phi": {
+       "std": 3.0
+      },
+      "gamma": {
+       "std": 0.9
+      },
+      "ru": {
+       "std": 0.02
+      }
+     },
+     "xc": 4.3736565339749305,
+     "yc": 19.588888034671577,
+     "radius": 14.589059771501798,
+     "method": "bishop",
+     "n": 2000,
+     "seed": 5,
+     "n_slices": 30
+    }
+   }
+  ],
+  "published_result": "Slide2 Bishop: deterministic-minimum FOS 1.340, RI_LN 2.482 (overall-slope FOS 1.350, RI 2.393). Hassan & Wolff (1999): FOS 1.334, RI_LN 2.336.",
+  "computed_result": {
+   "search_critical_FOS": 1.3249,
+   "search_xc": 4.37,
+   "search_yc": 19.59,
+   "search_radius": 14.59,
+   "n_surfaces_evaluated": 3810,
+   "fosm_COV_F": 0.1225,
+   "fosm_beta_lognormal": 2.244,
+   "fosm_pf_lognormal": 0.0124,
+   "variance_pct": {
+    "c_prime": 69.5,
+    "phi": 23.4,
+    "gamma": 4.4,
+    "ru": 2.7
+   },
+   "mc_FOS_mean": 1.3351,
+   "mc_cov": 0.1224,
+   "mc_beta_lognormal": 2.257,
+   "tolerance": "Searched Bishop FOS 1.325 within 0.7% of Hassan-Wolff 1.334 and 1.1% of Slide2 1.340. Module RI_LN 2.244 within ~4% of Hassan-Wolff 2.336; the FOSM COV_F 0.1225 evaluated at the published FOS 1.334 gives RI 2.30, within 1.6%. Monte Carlo confirms FOSM (COV 0.1224 vs 0.1225)."
+  },
+  "report_notes": "The report should tell the search story: search strategy (entry-exit circular grid), number of surfaces evaluated (3,810), seed for reproducibility, and the critical circle's center/radius/entry-exit — with a figure of the critical surface and FOS contours. The reliability annex then fixes that surface and presents COV_F, RI (state the lognormal-FOS assumption explicitly), Pf, and the variance breakdown showing the design is c'-dominated (~70%) — which directs any site-investigation spend toward cohesion. Cross-validate FOSM with Monte Carlo and, when comparing to published RIs, note whether they are on the deterministic-minimum or overall-slope surface.",
+  "provenance": "validation_examples/test_published_v042_slope_probabilistic.py::test_v042_deterministic_bishop_fos, test_v042_fosm_reliability_index_matches_hassan_wolff, test_v042_monte_carlo_agrees_with_fosm"
+ },
+ {
+  "id": "WE-SLOPE-4",
+  "title": "Slide2 #39 (Tandjiria 2002) — sand embankment on soft clay: unreinforced Spencer FOS and required geosynthetic force for FS = 1.35",
+  "domain": "slope_stability",
+  "keywords": [
+   "geosynthetic reinforcement",
+   "reinforced embankment",
+   "soft clay foundation",
+   "Spencer",
+   "required reinforcement force",
+   "two-layer profile",
+   "undrained clay",
+   "target factor of safety",
+   "Tandjiria"
+  ],
+  "source": "Rocscience Slide2 Verification Manual, Verification Problem #39, pp. 147-150; after Tandjiria, V., Teh, C.I. & Low, B.K. (2002), sand-fill case (Table 39.2).",
+  "problem": "A 6-m-high sand embankment on a 3-m soft-clay foundation: ground surface (0, 9), (10, 9), (20, 3), (30, 3) m — crest at elevation 9 m for x in [0, 10], a 2H:1V face down to (20, 3), then a bench at elevation 3 m. Fill (el 3-9 m): c' = 0, phi' = 37 deg, gamma = 17 kN/m3, drained. Soft clay (el 0-3 m): cu = 20 kPa, phi = 0, gamma = 20 kN/m3, undrained. No groundwater modeled. Tasks: (1) Spencer FOS on the critical circle without reinforcement (pinned circle from an entry-exit search, center (15.19, 10.24) m, R = 9.94 m); (2) the horizontal geosynthetic force (single layer at the fill base, elevation 3 m) required to raise that surface to FS = 1.35, found by bisection on T_allow. Published: unreinforced Spencer circular FS 1.209 (Slide2) / 1.219 (Tandjiria); required force 44 (circular) to 56 (noncircular) kN/m.",
+  "dispatch_calls": [
+   {
+    "module": "slope_stability",
+    "method": "analyze_slope",
+    "params": {
+     "surface_points": [
+      [
+       0,
+       9
+      ],
+      [
+       10,
+       9
+      ],
+      [
+       20,
+       3
+      ],
+      [
+       30,
+       3
+      ]
+     ],
+     "soil_layers": [
+      {
+       "name": "fill",
+       "top_elevation": 9.0,
+       "bottom_elevation": 3.0,
+       "gamma": 17.0,
+       "gamma_sat": 17.0,
+       "phi": 37.0,
+       "c_prime": 0.0,
+       "analysis_mode": "drained"
+      },
+      {
+       "name": "softclay",
+       "top_elevation": 3.0,
+       "bottom_elevation": 0.0,
+       "gamma": 20.0,
+       "gamma_sat": 20.0,
+       "phi": 0.0,
+       "c_prime": 20.0,
+       "cu": 20.0,
+       "analysis_mode": "undrained"
+      }
+     ],
+     "xc": 15.193905105454997,
+     "yc": 10.242328996634253,
+     "radius": 9.938523884815131,
+     "method": "spencer"
+    }
+   },
+   {
+    "module": "slope_stability",
+    "method": "analyze_slope",
+    "params": {
+     "surface_points": [
+      [
+       0,
+       9
+      ],
+      [
+       10,
+       9
+      ],
+      [
+       20,
+       3
+      ],
+      [
+       30,
+       3
+      ]
+     ],
+     "soil_layers": [
+      {
+       "name": "fill",
+       "top_elevation": 9.0,
+       "bottom_elevation": 3.0,
+       "gamma": 17.0,
+       "gamma_sat": 17.0,
+       "phi": 37.0,
+       "c_prime": 0.0,
+       "analysis_mode": "drained"
+      },
+      {
+       "name": "softclay",
+       "top_elevation": 3.0,
+       "bottom_elevation": 0.0,
+       "gamma": 20.0,
+       "gamma_sat": 20.0,
+       "phi": 0.0,
+       "c_prime": 20.0,
+       "cu": 20.0,
+       "analysis_mode": "undrained"
+      }
+     ],
+     "geosynthetics": [
+      {
+       "elevation": 3.0,
+       "T_allow": 55.5
+      }
+     ],
+     "xc": 15.193905105454997,
+     "yc": 10.242328996634253,
+     "radius": 9.938523884815131,
+     "method": "spencer"
+    }
+   }
+  ],
+  "published_result": "Unreinforced sand-fill Spencer FOS: 1.209 circular / 1.188 noncircular (Slide2); 1.219 / 1.192 (Tandjiria 2002). Geosynthetic force to reach FS = 1.35: 44-45 kN/m circular, 56 kN/m noncircular.",
+  "computed_result": {
+   "unreinforced_FOS_spencer": 1.1798,
+   "required_T_kN_per_m": 55.5,
+   "FOS_at_T": 1.3501,
+   "x_entry_m": 5.33,
+   "x_exit_m": 22.0,
+   "tolerance": "Unreinforced 1.180 within 2.4% of Slide2 1.209. The solved force 55.5 kN/m brackets the published 44-56 kN/m band; the reinforcement force is highly critical-surface-sensitive, so the circular/noncircular split differs from Slide2's (the manual itself attributes such spreads to search-method differences)."
+  },
+  "report_notes": "The report should present the unreinforced baseline first (method, critical surface through the soft clay, FOS vs the 1.35 requirement), then the reinforcement design as a demand curve: FOS vs T_allow from the bisection, with the required force where it crosses the target. State the reinforcement model (active horizontal force at the fill-base elevation where the layer crosses the slip surface) and flag that required force is strongly critical-surface-dependent — re-search the critical surface WITH reinforcement as a check, since the reinforced critical surface can migrate. A sensitivity note on cu of the soft clay and on circular vs noncircular surfaces closes the loop against the published 44-56 kN/m spread.",
+  "provenance": "validation_examples/test_published_v043_slope_reinforced.py::test_v043_sand_no_reinforcement_circular, test_v043_sand_reinforcement_force_brackets_published"
+ },
+ {
+  "id": "WE-SLOPE-5",
+  "title": "Pilarcitos Dam (1969 upstream failure) — rapid-drawdown critical-surface search, three total-stress methods",
+  "domain": "slope_stability",
+  "keywords": [
+   "rapid drawdown",
+   "Pilarcitos Dam",
+   "case history",
+   "dam failure",
+   "Corps two-stage",
+   "Lowe-Karafiath",
+   "Duncan-Wright-Wong three-stage",
+   "R-envelope",
+   "total stress",
+   "earth dam",
+   "upstream slope"
+  ],
+  "source": "Rocscience Slide2 Verification Manual, Verification Problem #97; Duncan, J.M., Wright, S.G. & Wong, K.S. (1990), 'Slope stability during rapid drawdown,' H. Bolton Seed Memorial Symposium, Vol. 2; also GEO-SLOPE rapid-drawdown Example 3. Pilarcitos Dam, California — a real homogeneous rolled earth-fill dam whose upstream slope failed during the Oct-Nov 1969 reservoir drawdown from El. 692 to El. 657 ft.",
+  "problem": "Pilarcitos Dam: homogeneous rolled earth fill, height 78 ft (toe at relative el 0, crest el 78 ft = 23.77 m). Fill properties (published): gamma = 21.207 kN/m3 (135 pcf); effective-stress envelope c' = 0, phi' = 45 deg; total-stress R-envelope (undrained response of the low-permeability fill) R_c = 2.873 kPa (60 psf), R_phi = 23 deg. Reservoir drawn down from El. 72 ft (21.946 m) to El. 37 ft (11.278 m) above the toe. The upstream slope angle is NOT published; a representative 2.5H:1V face is used ((0,0) to (59.44, 23.77) m, crest to (83.82, 23.77) m; fill base at -2.44 m), and the three-method ORDERING is slope-invariant (holds at 2:1, 2.5:1, 3:1). Search for the critical circular surface under each total-stress rapid-drawdown method: USACE Corps 2-stage, Lowe-Karafiath 2-stage, and Duncan-Wright-Wong 3-stage. Published (Slide2 #97): Corps 0.823, Lowe-Karafiath 1.047, DWW 1.043 (DWW 1990: 0.82 / 1.05 / 1.05).",
+  "dispatch_calls": [
+   {
+    "module": "slope_stability",
+    "method": "search_rapid_drawdown",
+    "params": {
+     "surface_points": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       59.436,
+       23.7744
+      ],
+      [
+       83.82,
+       23.7744
+      ]
+     ],
+     "soil_layers": [
+      {
+       "name": "fill",
+       "top_elevation": 23.7744,
+       "bottom_elevation": -2.4384,
+       "gamma": 21.2067,
+       "phi": 45.0,
+       "c_prime": 0.0,
+       "R_c": 2.8728,
+       "R_phi": 23.0
+      }
+     ],
+     "drawdown_from_elevation": 21.9456,
+     "drawdown_to_elevation": 11.2776,
+     "method": "corps_2stage",
+     "surface_type": "circular",
+     "nx": 7,
+     "ny": 6,
+     "x_range": [
+      11.8872,
+      59.436
+     ],
+     "y_range": [
+      24.384,
+      74.9808
+     ],
+     "n_slices": 20
+    }
+   },
+   {
+    "module": "slope_stability",
+    "method": "search_rapid_drawdown",
+    "params": {
+     "surface_points": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       59.436,
+       23.7744
+      ],
+      [
+       83.82,
+       23.7744
+      ]
+     ],
+     "soil_layers": [
+      {
+       "name": "fill",
+       "top_elevation": 23.7744,
+       "bottom_elevation": -2.4384,
+       "gamma": 21.2067,
+       "phi": 45.0,
+       "c_prime": 0.0,
+       "R_c": 2.8728,
+       "R_phi": 23.0
+      }
+     ],
+     "drawdown_from_elevation": 21.9456,
+     "drawdown_to_elevation": 11.2776,
+     "method": "lowe_karafiath",
+     "surface_type": "circular",
+     "nx": 7,
+     "ny": 6,
+     "x_range": [
+      11.8872,
+      59.436
+     ],
+     "y_range": [
+      24.384,
+      74.9808
+     ],
+     "n_slices": 20
+    }
+   },
+   {
+    "module": "slope_stability",
+    "method": "search_rapid_drawdown",
+    "params": {
+     "surface_points": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       59.436,
+       23.7744
+      ],
+      [
+       83.82,
+       23.7744
+      ]
+     ],
+     "soil_layers": [
+      {
+       "name": "fill",
+       "top_elevation": 23.7744,
+       "bottom_elevation": -2.4384,
+       "gamma": 21.2067,
+       "phi": 45.0,
+       "c_prime": 0.0,
+       "R_c": 2.8728,
+       "R_phi": 23.0
+      }
+     ],
+     "drawdown_from_elevation": 21.9456,
+     "drawdown_to_elevation": 11.2776,
+     "method": "duncan_3stage",
+     "surface_type": "circular",
+     "nx": 7,
+     "ny": 6,
+     "x_range": [
+      11.8872,
+      59.436
+     ],
+     "y_range": [
+      24.384,
+      74.9808
+     ],
+     "n_slices": 20
+    }
+   }
+  ],
+  "published_result": "Slide2 #97: Corps 2-stage FOS 0.823, Lowe-Karafiath 1.047, Duncan-Wright-Wong 3-stage 1.043 (Duncan, Wright & Wong 1990: 0.82 / 1.05 / 1.05). The dam actually failed on the upstream slope during the 1969 drawdown.",
+  "computed_result": {
+   "corps_2stage_FOS": 0.7866,
+   "lowe_karafiath_FOS": 1.3526,
+   "duncan_3stage_FOS": 1.349,
+   "n_surfaces_per_search": 42,
+   "tolerance": "Corps 2-stage 0.787 lands near the published 0.823 (within ~0.05) and BELOW 1.0, reproducing the observed failure on the representative section. The three-method ordering Corps < DWW <= LK (with DWW ~= LK, the stage-3 drained check barely firing) matches the published signature and is slope-invariant. LK/DWW magnitudes overshoot the published ~1.05 (~1.35 here) for two documented, un-tuned reasons: the upstream slope geometry is assumed (not published), and the very steep published phi' = 45 deg inflates the Kc-interpolated strength gain (Kf = 5.83); on the moderate-phi' Slide2 #98 dam the same code matched published spacing to ~10%."
+  },
+  "report_notes": "A rapid-drawdown report must state the staged method basis (Corps 2-stage min(R, effective) envelope vs Kc-interpolated Lowe-Karafiath vs DWW 3-stage with drained substitution) and present all three as a method-comparison table, since they can span FS < 1 to FS > 1 on the same section — the Corps method is the conservative screening value. Document the drawdown range, the stage-1 phreatic assumption (flat full-pool here, the conservative no-through-seepage bound), the R-envelope source, and the search story (center-grid extent, surfaces evaluated, critical circle). When geometry is reconstructed rather than published, say so explicitly and demonstrate which conclusions are geometry-invariant (the method ordering) versus geometry-dependent (the magnitudes); a case history that failed in service should be shown to be predicted unstable by the design method.",
+  "provenance": "validation_examples/test_published_v052_drawdown_pilarcitos.py::test_v052_pilarcitos_method_ordering_is_slope_invariant, test_v052_pilarcitos_corps_reproduces_failure"
+ },
+ {
+  "id": "WE-FEM-1",
+  "title": "1-D coupled Biot consolidation column (Itasca FLAC verification V-023) via fem2d monolithic u-p solve",
+  "domain": "fem2d",
+  "keywords": [
+   "consolidation",
+   "Biot",
+   "Terzaghi",
+   "pore pressure dissipation",
+   "undrained response",
+   "coupled u-p",
+   "FLAC verification",
+   "settlement-time",
+   "fem2d",
+   "monolithic",
+   "Taylor-Hood"
+  ],
+  "source": "Itasca FLAC2D/FLAC3D Verification Manual, 'One-Dimensional Consolidation' (Terzaghi/Biot column)",
+  "problem": "A laterally confined saturated soil column, H = 20 m deep and 2 m wide, has a fixed impermeable base and a drained top surface (p = 0). A surface load pz = 1e5 Pa (100 kPa) is applied instantaneously. Elastic bulk modulus K = 5e8 Pa and shear modulus G = 2e8 Pa (equivalent E = 5.294e8 Pa = 5.294e5 kPa, nu = 0.3235); Biot coefficient alpha = 1.0, Biot modulus M = 4e9 Pa (= 4e6 kPa); mobility coefficient k = 1e-10 m^2/(Pa.s) (= 1e-7 m^2/(kPa.s)). Compute the undrained pore-pressure response p0, the consolidation transient, and the final drained settlement. Closed-form targets: p0 = alpha*M/(K + 4G/3 + alpha^2*M)*pz = 0.839e5 Pa; final settlement w = pz*H/(K + 4G/3) = 2.609 mm; coefficient of consolidation c = k/S = 0.0643 m^2/s.",
+  "dispatch_calls": [
+   {
+    "module": "fem2d",
+    "method": "fem2d_consolidation",
+    "params": {
+     "width": 2.0,
+     "depth": 20.0,
+     "soil_layers": [
+      {
+       "name": "column",
+       "bottom_elevation": -20.0,
+       "E": 529400.0,
+       "nu": 0.3235,
+       "gamma": 0.0
+      }
+     ],
+     "k": 1e-07,
+     "n_w": 4000000.0,
+     "load_q": 100.0,
+     "time_points": [
+      0.0,
+      311.0,
+      622.0,
+      933.0,
+      1244.0,
+      1555.0,
+      1866.0,
+      2177.0,
+      2488.0,
+      2799.0,
+      3110.0,
+      3421.0,
+      3732.0,
+      4043.0,
+      4354.0,
+      4665.0,
+      4976.0,
+      5287.0,
+      5598.0,
+      5909.0,
+      6220.0,
+      6531.0,
+      6842.0,
+      7153.0,
+      7464.0,
+      7775.0,
+      8086.0,
+      8397.0,
+      8708.0,
+      9019.0,
+      9330.0,
+      9641.0,
+      9952.0,
+      10263.0,
+      10574.0,
+      10885.0,
+      11196.0,
+      11507.0,
+      11818.0,
+      12129.0,
+      12440.0
+     ],
+     "consolidation_scheme": "monolithic",
+     "theta": 0.5,
+     "nx": 2,
+     "ny": 40
+    }
+   }
+  ],
+  "published_result": "Final drained settlement w = pz*H/(K+4G/3) = 2.609 mm (Itasca quotes 2.61 mm); load-induced undrained pore pressure p0 = 0.839e5 Pa (the value consistent with the stated M = 4e9 Pa); pore pressure dissipates per the Terzaghi/Biot solution with c = 0.0643 m^2/s, FLAC matching within <5%.",
+  "computed_result": {
+   "converged": true,
+   "max_settlement_m": -0.002606,
+   "final_settlement_mm_vs_analytic": "2.606 mm computed vs 2.609 mm analytic (0.1%)",
+   "degree_of_consolidation": 0.9802,
+   "interior_undrained_p0_kPa": 83.92,
+   "notes": "Interior (median) t=0 excess pore pressure = 83.92 kPa vs analytical p0 = 83.9 kPa (<0.1%). The field max of 118.85 kPa is a localized t=0 spatial overshoot in the first pressure nodes below the drained top boundary (known Taylor-Hood undrained-boundary artifact), NOT the physical p0. Final time point corresponds to time factor T = 2.0 (U = 0.98). Tolerance: settlement and p0 within 1%; Terzaghi decay within 5% with theta = 0.5 (Crank-Nicolson)."
+  },
+  "report_notes": "A good report states the unit mapping explicitly (fem2d works in kPa: stresses/moduli Pa/1000; for the monolithic scheme k is the MOBILITY in m^2/(kPa.s) and n_w is the Biot modulus M in kPa), and why the monolithic u-p scheme was chosen (the default staggered split cannot generate load-induced undrained pore pressure). Present the settlement-time curve and pore-pressure dissipation against the closed-form anchors (p0, final drained settlement, c), quoting the interior p0 rather than the boundary-overshoot field max.",
+  "provenance": "validation_examples/test_published_v023_v024.py::test_v023_monolithic_undrained_p0_pass, test_v023_monolithic_terzaghi_decay_within_envelope, test_v023_monolithic_drained_endstate_pass"
+ },
+ {
+  "id": "WE-PAVE-1",
+  "title": "AASHTO 1993 flexible pavement design — Figure 3.1 printed worked example (SN = 5.0)",
+  "domain": "pavement_design",
+  "keywords": [
+   "AASHTO 1993",
+   "flexible pavement",
+   "structural number",
+   "SN",
+   "nomograph",
+   "Figure 3.1",
+   "reliability",
+   "resilient modulus",
+   "layer coefficients",
+   "ESAL",
+   "layer thickness design"
+  ],
+  "source": "AASHTO Guide for Design of Pavement Structures (1993), Part II, Figure 3.1 design chart worked example (printed p. II-32)",
+  "problem": "Design a flexible pavement for W18 = 5,000,000 18-kip ESALs in the design lane, reliability R = 95% (ZR = -1.645), overall standard deviation So = 0.35, effective roadbed resilient modulus MR = 5,000 psi, and design serviceability loss dPSI = 1.9. Layer materials: asphalt concrete EAC = 400,000 psi, granular base EBS = 30,000 psi, granular subbase ESB = 11,000 psi. Find the required structural number SN and a layered section (US customary units).",
+  "dispatch_calls": [
+   {
+    "module": "pavement_design",
+    "method": "flexible_pavement_design",
+    "params": {
+     "w18": 5000000,
+     "reliability_pct": 95,
+     "so": 0.35,
+     "mr_psi": 5000,
+     "delta_psi": 1.9,
+     "layers": [
+      {
+       "layer_type": "asphalt",
+       "modulus_psi": 400000
+      },
+      {
+       "layer_type": "granular_base",
+       "modulus_psi": 30000
+      },
+      {
+       "layer_type": "granular_subbase",
+       "modulus_psi": 11000
+      }
+     ]
+    }
+   }
+  ],
+  "published_result": "Printed chart solution SN = 5.0 (nomograph read-off, ~0.1 resolution; the equation solve gives 4.95-5.0).",
+  "computed_result": {
+   "sn_required": 4.976,
+   "zr": -1.645,
+   "sn_provided": 5.008,
+   "layers_in": {
+    "asphalt": 6.5,
+    "granular_base": 8.0,
+    "granular_subbase": 15.0
+   },
+   "w18_capacity": 5238279,
+   "adequate": true,
+   "notes": "sn_required = 4.976 vs printed 5.0 — within the 0.1 nomograph read-off tolerance. The module also returns the Figure 3.2 layer split (a1 = 0.42 from Figure 2.5, a2 = 0.1378 and a3 = 0.0784 from the printed regressions, m = 1.0 defaults) and a forward check (w18_capacity >= w18)."
+  },
+  "report_notes": "A good calc report presents the design-equation inputs (W18, ZR from Table 4.1, So, MR, dPSI) with their guide-section citations, the solved SN against the printed nomograph value with the chart-read tolerance stated, and the Figure 3.2 top-down layer split showing each layer's coefficient a_i, drainage m_i, its basis, and the cumulative SN over each foundation. It should close with the forward check (ESAL capacity of the provided section >= design W18) and echo defaulted values (m = 1.0; So outside the recommended flexible 0.40-0.50 range is flagged in notes).",
+  "provenance": "validation_examples/test_published_v055_aashto1993_pavement.py::test_v055a_flexible_figure_3_1_example"
+ },
+ {
+  "id": "WE-PAVE-2",
+  "title": "AASHTO 1993 rigid pavement design — Figure 3.7 printed worked example (D = 10.0 in)",
+  "domain": "pavement_design",
+  "keywords": [
+   "AASHTO 1993",
+   "rigid pavement",
+   "PCC slab thickness",
+   "Figure 3.7",
+   "nomograph",
+   "modulus of subgrade reaction",
+   "k-value",
+   "modulus of rupture",
+   "load transfer coefficient J",
+   "drainage coefficient Cd",
+   "ESAL"
+  ],
+  "source": "AASHTO Guide for Design of Pavement Structures (1993), Part II, Figure 3.7 rigid design chart worked example (printed pp. II-45/46)",
+  "problem": "Design a jointed PCC slab for W18 = 5,100,000 18-kip ESALs with effective modulus of subgrade reaction k = 72 pci, concrete elastic modulus Ec = 5,000,000 psi, modulus of rupture S'c = 650 psi, load transfer coefficient J = 3.2, drainage coefficient Cd = 1.0, overall standard deviation So = 0.29, reliability R = 95%, terminal serviceability pt = 2.5, and design serviceability loss dPSI = 4.5 - 2.5 = 1.7. Find the required slab thickness D (US customary units).",
+  "dispatch_calls": [
+   {
+    "module": "pavement_design",
+    "method": "rigid_pavement_design",
+    "params": {
+     "w18": 5100000,
+     "sc_psi": 650,
+     "ec_psi": 5000000,
+     "reliability_pct": 95,
+     "so": 0.29,
+     "delta_psi": 1.7,
+     "j": 3.2,
+     "cd": 1.0,
+     "k_pci": 72,
+     "pt": 2.5
+    }
+   }
+  ],
+  "published_result": "Printed chart solution D = 10.0 in (nomograph, nearest half-inch; the equation solve gives ~9.7-10.0 in).",
+  "computed_result": {
+   "d_required_in": 9.719,
+   "d_provided_in": 10.0,
+   "zr": -1.645,
+   "k_basis": "direct (k = 72 pci given)",
+   "w18_capacity": 6147825,
+   "adequate": true,
+   "notes": "d_required = 9.72 in, rounded up to the 10.0-in provided slab — matches the printed 10.0 in at the guide's half-inch nomograph resolution."
+  },
+  "report_notes": "A good calc report tabulates every rigid design-equation input (W18, ZR, So, S'c, Ec, J, Cd, k, dPSI, pt) with its source (Table 4.1 for ZR; how k was obtained — here direct, otherwise MR/19.4 or the Section 3.2 composite-k worksheet iterated with D), presents the unrounded required D beside the rounded provided slab, and states the half-inch chart-read tolerance against the printed solution. It should include the forward check (capacity at the provided D exceeds design W18) and note that pt enters both the serviceability term and the strength-term exponent.",
+  "provenance": "validation_examples/test_published_v055_aashto1993_pavement.py::test_v055b_rigid_figure_3_7_example"
+ },
+ {
+  "id": "WE-PAVE-3",
+  "title": "UFC 3-250-01 alternative method — AASHTO vs UFC flexible comparison and Table G-1 mixed-traffic equivalency",
+  "domain": "pavement_design",
+  "keywords": [
+   "UFC 3-250-01",
+   "CBR method",
+   "cover curves",
+   "Figure E-1",
+   "mixed traffic",
+   "Table G-1",
+   "equivalent passes",
+   "controlling vehicle",
+   "AASHTO comparison",
+   "method comparison",
+   "CBR to Mr correlation",
+   "military roads"
+  ],
+  "source": "UFC 3-250-01 (2016), Pavement Design for Roads and Parking Areas: Section 4-3.3 mixed-traffic procedure with worked example Table G-1 (printed p. 257), Appendix E vehicle curves; AASHTO 1993 Guide for the comparison leg; FHWA-NHI-05-037 Table 5-34 Mr = 2555*CBR^0.64 bridge correlation",
+  "problem": "(a) Comparison: for 1,000,000 passes of the 18-kip single axle on a subgrade with CBR = 6 (Mr = 2555*6^0.64 = 8,043 psi via the FHWA correlation), base CBR 80 and subbase CBR 30, design the flexible section by BOTH the AASHTO 1993 procedure (R = 95%, So = 0.45, pt = 2.5) and the UFC 3-250-01 CBR cover-curve procedure, and compare totals. (b) Mixed traffic (Table G-1 example): traffic of 1,000,000 passes of the 18-kip ESAL (E-1), 100,000 passes of a 5-axle truck (E-28), 500,000 passes of a 3-axle truck (E-26), and 20,000,000 passenger cars (E-2) at representative subgrade CBR = 3; find the controlling vehicle and the total equivalent 18-kip passes.",
+  "dispatch_calls": [
+   {
+    "module": "pavement_design",
+    "method": "compare_pavement_methods",
+    "params": {
+     "passes_18kip": 1000000,
+     "cbr_subgrade": 6
+    }
+   },
+   {
+    "module": "pavement_design",
+    "method": "mixed_traffic_ufc",
+    "params": {
+     "vehicles": [
+      {
+       "vehicle": "E-1",
+       "name": "18-kip ESAL",
+       "design_passes": 1000000
+      },
+      {
+       "vehicle": "E-28",
+       "name": "Truck 5-axle",
+       "design_passes": 100000
+      },
+      {
+       "vehicle": "E-26",
+       "name": "Truck 3-axle",
+       "design_passes": 500000
+      },
+      {
+       "vehicle": "E-2",
+       "name": "Passenger car",
+       "design_passes": 20000000
+      }
+     ],
+     "representative_cbr": 3
+    }
+   }
+  ],
+  "published_result": "Table G-1 printed worked example: the 18-kip ESAL (E-1) controls at 16.4 in required thickness; light vehicles whose required thickness falls below the controlling thickness contribute unlimited allowable passes (negligible equivalent contribution); total equivalent 18-kip passes = 1,395,400. The comparison leg has no single printed answer — differing AASHTO vs UFC sections are expected because the damage models differ.",
+  "computed_result": {
+   "aashto_sn_required": 3.598,
+   "aashto_total_thickness_in": 14.5,
+   "ufc_total_thickness_in": 9.5,
+   "ufc_required_total_thickness_in": 9.1,
+   "delta_total_thickness_in": -5.0,
+   "mixed_controlling_vehicle": "18-kip ESAL",
+   "mixed_controlling_thickness_in": 16.4,
+   "mixed_total_equivalent_esal_passes": 1316228,
+   "notes": "Comparison: same physical 18-kip pass count on both sides (AASHTO LEF(18k single) = 1.0 by definition); reliability exists only in AASHTO (R = 95%, So = 0.45) — the UFC procedure is deterministic; CBR<->Mr bridged via Mr = 2555*CBR^0.64. Mixed traffic: 1,316,228 computed vs printed 1,395,400 (-5.7%, within the stated 6% inversion tolerance; the near-flat E-28 5-axle curve inversion dominates the residual); E-26 and E-2 drop out as unlimited."
+  },
+  "report_notes": "A good report keeps the two guides' results side by side and explicitly states the cross-guide assumptions the module echoes in notes: the shared 18-kip traffic basis, the CBR-to-Mr correlation used for the bridge, and that reliability is an AASHTO-only concept (UFC is deterministic) — so a thinner/thicker UFC section is a damage-model difference, not an error. For the mixed-traffic leg, reproduce the Table G-1 worksheet (per-vehicle required thickness at the representative CBR, controlling vehicle, allowable passes at the controlling thickness, equivalent-pass ratios), note which light vehicles drop out as unlimited, and state the curve-inversion tolerance (within ~6% of the printed total); the resulting equivalent E-1 passes then feed flexible_pavement_design_ufc at the real site CBR.",
+  "provenance": "pavement_design/ufc.py::compare_flexible_pavement_methods + ufc_mixed_traffic; pavement_design/tests/test_pavement_design.py::test_ufc_mixed_traffic_table_g1, test_compare_methods"
+ }
+]

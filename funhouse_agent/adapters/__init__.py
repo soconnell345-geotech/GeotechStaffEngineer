@@ -254,6 +254,10 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.calc_package",
         "brief": "Generate Mathcad-style calc packages (HTML/LaTeX/PDF) for 13 analysis modules",
     },
+    "worked_examples": {
+        "adapter": "funhouse_agent.adapters.worked_examples_adapter",
+        "brief": "Validated worked examples from real published reports (GEC/Caltrans/AASHTO/UFC/Slide2): problem, method calls, published answer, report notes. Consult before nontrivial designs/reports.",
+    },
     "pystra": {
         "adapter": "funhouse_agent.adapters.pystra_adapter",
         "brief": "Structural reliability analysis (FORM/SORM/Monte Carlo)",
