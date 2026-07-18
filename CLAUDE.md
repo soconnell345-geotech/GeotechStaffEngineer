@@ -47,7 +47,7 @@ Key conventions:
 - **Dict-based I/O** for LLM agents: analyze_*() returns dataclass, .to_dict() for JSON
 - **No cross-module imports** between analysis modules (geotech_common is the exception)
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
-- **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
+- **Foundry deployment** goes through `webapp/foundry_entry.py` + docs/FOUNDRY.md (Code Workspaces Streamlit publish). The old per-agent AIP wrapper route (`foundry/` dir + `foundry_test_harness/`) was RETIRED and deleted 2026-07-18; `geotech-references/agents/` (14 wrappers) still exists in the submodule — remove in a future refs release.
 
 ## v5.8.2 status (RELEASED 2026-07-17 to PyPI; owner OK'd — Foundry diagnostics)
 
