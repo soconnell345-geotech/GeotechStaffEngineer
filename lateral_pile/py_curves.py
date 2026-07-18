@@ -659,7 +659,15 @@ def _sand_coefficients(phi: float) -> Tuple[float, float, float]:
 def _sand_k_recommendation(phi: float, below_wt: bool = True) -> float:
     """Recommended initial modulus of subgrade reaction k for sand.
 
-    From COM624P Manual Table 2.2 (approximate values).
+    From COM624P Manual (FHWA-SA-91-048) Tables 3.4 (submerged) and 3.5 (above
+    water table), printed p. 346 — verified against the source PDF 2026-07-18
+    (ledger: module_work/wiki_verification/reese_sand_com624p.md). The manual
+    keys k by RELATIVE DENSITY (Loose/Medium/Dense); the phi keying here maps
+    Loose=25 / Medium=30 / Dense=35 deg (an interpretation, applied identically
+    to both branches). Printed anchors, converted at 1 lb/in^3 = 271.45 kN/m^3:
+    submerged 20/60/125 lb/in^3 -> 5,400/16,300/33,900 kN/m^3; above-WT
+    25/90/225 -> 6,800/24,400/61,100. The phi=40 points are NOT in the manual
+    (extrapolations retained for continuity; flagged non-primary).
 
     Parameters
     ----------
@@ -675,10 +683,10 @@ def _sand_k_recommendation(phi: float, below_wt: bool = True) -> float:
     """
     if below_wt:
         phi_tab = [25, 30, 35, 40]
-        k_tab = [5400, 11000, 22000, 45000]
+        k_tab = [5400, 16300, 33900, 45000]
     else:
         phi_tab = [25, 30, 35, 40]
-        k_tab = [6800, 24000, 61000, 170000]
+        k_tab = [6800, 24400, 61100, 170000]
 
     phi_clamped = max(25, min(40, phi))
     return float(np.interp(phi_clamped, phi_tab, k_tab))
@@ -688,23 +696,27 @@ def _sand_k_recommendation(phi: float, below_wt: bool = True) -> float:
 # 4. Sand — Reese, Cox & Koop (1974)
 # =============================================================================
 
-# Reese (1974) non-dimensional A and B coefficients vs depth ratio z/b, digitized
-# from the Reese, Cox & Koop (1974) charts (Reese & Van Impe 2001, Figs 3.30/3.31;
-# COM624P FHWA-SA-91-048 Figs 2.19/2.20). A scales the ultimate curve resistance
-# (pu = A*ps at yu = 3b/80); B scales the m-point (pm = B*ps at ym = b/60).
-# Because the m-point precedes the ultimate point on the (monotonic) curve, A
-# MUST stay >= B at every depth for BOTH loadings; the cyclic ultimate and
-# m-point coincide at the deep asymptote (A_c = B_c = 0.55). Asymptotes
-# (z/b >= 5): A_s=0.88, A_c=0.55, B_s=0.50, B_c=0.55.
-# (The earlier _REESE_A_CYCLIC dipped below _REESE_B_CYCLIC from z/b~1.4 down, so
-# pm >= pu_curve and the four-segment curve silently degenerated to linear-
-# plateau for nearly every cyclic depth; corrected here to descend 2.9 -> 0.55
-# staying >= B_c.)
+# Reese (1974) non-dimensional A and B coefficients vs depth ratio z/b,
+# RE-DIGITIZED 2026-07-18 from the COM624P Manual (FHWA-SA-91-048) Figures 3.12
+# (A) and 3.13 (B), printed pp. 344-345 — the source PDF in the owner's library
+# (page-calibrated marker reads, tolerance +/-0.05 nominal / 0.10 outer; printed
+# asymptote annotations exact). Full ledger:
+# module_work/wiki_verification/reese_sand_com624p.md.
+# A scales the ultimate curve resistance (pu = A*ps at yu = 3b/80); B scales the
+# m-point (pm = B*ps at ym = b/60).
+# Printed asymptotes (x/b > 5.0): Fig 3.12 "A = 0.88" (ONE annotation — static
+# and cyclic merge at depth); Fig 3.13 "B_c = 0.55, B_s = 0.5".
+# The manual's A_c is a LOW hump curve (~0.75 surface -> ~1.08 at z/b 1.5 ->
+# 0.88 deep), NOT a descent from 2.9; likewise B_c (~0.50 -> ~0.86 -> 0.55).
+# A >= B holds everywhere in the printed charts as-is (A_c >= B_c: 0.75/0.50,
+# 1.08/0.86, 0.88/0.55) — the pre-2026-07-18 tables' fabricated cyclic descents
+# (2.9 -> 0.55, premised on a wrong A_c asymptote of 0.55, which is actually
+# B_c's) are retired.
 _REESE_AB_ZB = [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0]
-_REESE_A_STATIC = [2.90, 2.60, 2.25, 1.90, 1.62, 1.42, 1.28, 1.02, 0.88]
-_REESE_A_CYCLIC = [2.90, 2.55, 2.20, 1.85, 1.55, 1.30, 1.05, 0.80, 0.55]
-_REESE_B_STATIC = [2.20, 1.85, 1.55, 1.28, 1.05, 0.90, 0.80, 0.62, 0.50]
-_REESE_B_CYCLIC = [2.20, 1.90, 1.62, 1.35, 1.12, 0.95, 0.80, 0.65, 0.55]
+_REESE_A_STATIC = [2.90, 2.54, 2.13, 1.77, 1.48, 1.24, 1.04, 0.88, 0.88]
+_REESE_A_CYCLIC = [0.75, 0.91, 1.06, 1.08, 1.01, 0.97, 0.93, 0.88, 0.88]
+_REESE_B_STATIC = [2.20, 1.85, 1.56, 1.26, 1.05, 0.88, 0.70, 0.54, 0.50]
+_REESE_B_CYCLIC = [0.50, 0.71, 0.84, 0.86, 0.82, 0.78, 0.69, 0.56, 0.55]
 
 
 def _reese_A(zb: float, cyclic: bool) -> float:

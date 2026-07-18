@@ -380,26 +380,28 @@ class TestPYCurves:
                 == pytest.approx(pm_expected + m_expected * 0.5 * (yu - ym), rel=0.02))
 
     def test_sand_reese_A_B_coefficients_asymptotes(self):
-        """The digitized Reese A/B coefficients hit the published asymptotes at
-        z/b >= 5 (A_s=0.88, A_c=0.55, B_s=0.50, B_c=0.55) and the m-point stays at
-        or below the ultimate (B <= A) for BOTH loadings at every tabulated depth
-        -- the geometric requirement the corrected cyclic A table restores (the
-        old A_c dipped below B_c from z/b~1.4 down)."""
+        """The re-digitized Reese A/B coefficients hit the PRINTED asymptotes of
+        COM624P (FHWA-SA-91-048) Figs 3.12/3.13 at x/b > 5 — Fig 3.12 prints ONE
+        annotation "A = 0.88" (static and cyclic merge at depth); Fig 3.13 prints
+        "B_c = 0.55, B_s = 0.5" — and the m-point stays below the ultimate
+        (B < A) for BOTH loadings at every tabulated depth, which the manual's
+        curves satisfy as printed (verified 2026-07-18,
+        module_work/wiki_verification/reese_sand_com624p.md)."""
         from lateral_pile.py_curves import _reese_A, _reese_B, _REESE_AB_ZB
         assert _reese_A(5.0, False) == pytest.approx(0.88, abs=0.001)
-        assert _reese_A(6.0, True) == pytest.approx(0.55, abs=0.001)
+        assert _reese_A(6.0, True) == pytest.approx(0.88, abs=0.001)
         assert _reese_B(5.0, False) == pytest.approx(0.50, abs=0.001)
         assert _reese_B(6.0, True) == pytest.approx(0.55, abs=0.001)
         for zb in _REESE_AB_ZB:
-            assert _reese_B(zb, False) < _reese_A(zb, False)         # static m < ult
-            assert _reese_B(zb, True) <= _reese_A(zb, True) + 1e-12  # cyclic m <= ult
+            assert _reese_B(zb, False) < _reese_A(zb, False)  # static m < ult
+            assert _reese_B(zb, True) < _reese_A(zb, True)    # cyclic m < ult
 
     def test_sand_reese_cyclic_four_segment_and_deep_degeneracy(self):
-        """The corrected cyclic A table restores a genuine four-segment curve at
-        depth instead of the old linear-plateau degeneration. At z/b=2 A_c > B_c so
-        pm < pu_curve (a proper m-segment); at z/b=5 the coefficients coincide
-        (A_c = B_c = 0.55) -- a valid zero-length m-segment (parabola straight to
-        the plateau) that must not divide-by-zero, warn, or lose monotonicity."""
+        """With the manual-verified cyclic tables (COM624P Figs 3.12/3.13), the
+        cyclic curve is a genuine four-segment shape at EVERY depth: A_c > B_c
+        both at z/b=2 (1.01 vs 0.82) and at the deep asymptotes (A=0.88 vs
+        B_c=0.55 — the old premise that they coincide at 0.55 conflated B_c's
+        printed asymptote with A's). No warnings, monotone non-decreasing."""
         import warnings
         from lateral_pile.py_curves import _reese_A, _reese_B
         b = 0.6
@@ -416,14 +418,17 @@ class TestPYCurves:
         assert model.get_p(2.0 * yu, z2, b) == pytest.approx(puc2, rel=1e-9)  # plateau
         y2, p2 = model.get_py_curve(z2, b, n_points=300)
         assert np.all(np.diff(p2) >= -1e-9)
-        # z/b = 5: A_c == B_c == 0.55; zero-length m-segment, no warning/crash.
+        # z/b = 5: printed asymptotes A = 0.88 > B_c = 0.55 — still a proper
+        # m-segment at depth; no warning/crash, plateau at A*pu.
         z5 = 5.0 * b
         pu5 = min(*model.get_pu(z5, b))
+        pm5, puc5 = _reese_B(5.0, True) * pu5, _reese_A(5.0, True) * pu5
+        assert pm5 < puc5
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             y5, p5 = model.get_py_curve(z5, b, n_points=300)
         assert np.all(np.diff(p5) >= -1e-9)
-        assert model.get_p(3.0 * yu, z5, b) == pytest.approx(0.55 * pu5, rel=1e-9)
+        assert model.get_p(3.0 * yu, z5, b) == pytest.approx(0.88 * pu5, rel=1e-9)
 
     def test_stiff_clay_below_wt_basics(self):
         """StiffClayBelowWT should produce reasonable results."""
