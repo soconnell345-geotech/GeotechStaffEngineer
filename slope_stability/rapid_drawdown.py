@@ -54,6 +54,15 @@ Lowe, J., Karafiath, L. (1960). "Stability of earth dams upon drawdown." Proc.
 Duncan, J.M., Wright, S.G., Wong, K.S. (1990). "Slope stability during rapid
     drawdown." H. Bolton Seed Memorial Symposium, Vol. 2, 253-272.
 Duncan, Wright & Brandon (2014). Soil Strength and Slope Stability, Ch. 9.
+
+Provenance (VERIFIED-PRIMARY, 2026-07-18 wiki-verification): EM 1110-2-1902
+(31 Oct 2003, in the owner's library) App. G confirmed first-hand — Eq. G-12
+(p. G-8) is an exact algebraic identity with the coded s_R + w*(s_D - s_R)
+interpolation, and the Corps 2-stage composite rule "lower bound of the R and S
+envelopes" (p. G-2) matches min(s_R, s_D) exactly. One flagged limitation: the
+Kf used in the interpolation weight is the c'=0 closed form (Eq. G-7) even when
+c' > 0 (EM prescribes stress-dependent Eq. G-8) — see _consolidation_Kc.
+Ledger: module_work/wiki_verification/le_method_originals.md.
 """
 
 import bisect
@@ -255,6 +264,13 @@ def _consolidation_Kc(sigma_fc: float, tau_fc: float, alpha: float,
     is indeterminate from the plane stresses, so the at-rest value 1/(1-sin phi')
     is used.
     """
+    # KNOWN LIMITATION (wiki-verification 2026-07-18, EM 1110-2-1902 App. G in
+    # hand): this Kf is the c'=0 closed form (EM Eq. G-7). For c' > 0 the EM
+    # prescribes the stress-dependent Eq. G-8 (Kf grows with c'/sigma'_3); using
+    # G-7 with c' > 0 slightly OVERSTATES the interpolation weight w=(Kc-1)/(Kf-1)
+    # (unconservative in the usual s_D > s_R case), bounded by the w <= 1 clamp
+    # and, in duncan_3stage, by the stage-3 drained substitution. Follow-up
+    # ticket: module_work/wiki_verification/le_method_originals.md.
     sinphi = math.sin(math.radians(phi_deg))
     Kf = (1.0 + sinphi) / (1.0 - sinphi) if sinphi < 1 else 1e6
     s2a = math.sin(2.0 * alpha)

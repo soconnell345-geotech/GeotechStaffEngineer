@@ -17,6 +17,14 @@ References:
     Bishop (1955) — Geotechnique, Vol. 5, pp. 7-17
     Spencer (1967) — Geotechnique, Vol. 17, pp. 11-26
     Duncan, Wright & Brandon (2014) — Chapters 6-7
+
+Provenance (VERIFIED-PRIMARY, 2026-07-18 wiki-verification): the Bishop
+simplified m_alpha/FOS expression (Bishop 1955, p. 10 Eqs. 12/13; the
+X_n - X_{n+1} = 0 assumption stated p. 11) and Spencer's Eq. 5 kernel with the
+cos(alpha-theta)[1 + (tan phi'/F) tan(alpha-theta)] denominator plus the
+F_f = F_m crossing (Spencer 1967, pp. 14-15 Eqs. 5/7/8) were verified
+equation-by-equation against the ORIGINAL papers in the owner's library.
+Ledger: module_work/wiki_verification/le_method_originals.md.
 """
 
 import math

@@ -17,11 +17,24 @@ still requires a Tier-B page check. Wishlist item codes refer to
 | O6 M-O anchor | Library holds seismic-wall docs with printed P_AE form and the K_AE ≈ K_A + (3/4)k_h approximation ("Seismic Design and Behavior of Gravity Retaining Walls"); log-spiral caveat (M-O unconservative for passive when δ>φ/2) also captured. | Anchor SOURCE located; a printed K_AE table still needs Tier-B to anchor our M-O implementation numerically. |
 | S8 Ito-Matsui | 1977 DISCUSSION is in the library (record confirms it re-derives the plastic-deformation solution and the Caquot corresponding-states treatment; original is Soils & Foundations 15(4) pp. 45-59). 1975 original NOT in wiki. | Partial: keeps SECONDARY tier but with an in-library primary-adjacent source; Tier-B on the discussion could check Eq. forms. |
 
-## Verified at Tier B already (wave 1)
+## Verified at Tier B
 
 | Item | Verdict |
 |---|---|
-| S5 Bray & Travasarou 2007 | **CONFIRMED-PRIMARY, zero discrepancies** — every coefficient (incl. rigid a0=-0.22 via printed Eq. 6), both published worked examples reproduced. Report: `bray_travasarou_2007.md`. Docstring caveat retired in `slope_stability/newmark.py`. AUDIT FLAG CLOSED. |
+| S5 Bray & Travasarou 2007 (wave 1) | **CONFIRMED-PRIMARY, zero discrepancies** — every coefficient (incl. rigid a0=-0.22 via printed Eq. 6), both published worked examples reproduced. Report: `bray_travasarou_2007.md`. Docstring caveat retired in `slope_stability/newmark.py`. AUDIT FLAG CLOSED. |
+| S12 + S2 LE originals (wave 2) | **CONFIRMED-PRIMARY on every core kernel, zero equation discrepancies**: Bishop 1955 m_alpha/FOS (p. 10 Eqs. 12/13), Spencer 1967 Eq. 5 kernel + F_f=F_m crossing (pp. 14-15), M-P 1965 X=λf(x)E (p. 85 Eq. 18) with the GLE engine classified EQUIVALENT-NOTATION (Fredlund-Krahn discrete form, identical statics), EM 1110-2-1902 App. G Eq. G-12 (p. G-8, exact identity) + min(R,S) rule (p. G-2). Report: `le_method_originals.md`. Docstring provenance upgraded in methods.py/gle.py/rapid_drawdown.py. |
+
+## Open follow-up tickets (from Tier-B findings)
+
+1. **rapid_drawdown Kf for c' > 0** — `_consolidation_Kc` uses the c'=0 closed
+   form (EM Eq. G-7) where the EM prescribes stress-dependent Eq. G-8 when
+   c' > 0; slightly unconservative interpolation weight, bounded by the w<=1
+   clamp and the 3-stage drained substitution. Fix = implement G-8 + re-run the
+   FULL drawdown validation set (V-037/041/048/052) before merging. Flagged
+   in-code at `_consolidation_Kc`.
+2. **V-052 Pilarcitos re-run on the true two-slope section** (2:1 lower 58 ft /
+   3:1 upper, printed p. 262 Fig. 3) — would let LK/DWW magnitudes be compared
+   against published directly instead of ordering-only.
 
 ## NEEDS-PAGE-CHECK (records too shallow for the specific values)
 

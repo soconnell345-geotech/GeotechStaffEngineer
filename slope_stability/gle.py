@@ -32,6 +32,14 @@ Spencer, E. (1967). Geotechnique, 17(1), 11-26.
 GEO-SLOPE / Seequent (2022). "Stability Modeling with GeoStudio /
     SLOPE/W", Chapter 2 (GLE formulation) and Chapter 3 (method details).
 Duncan, Wright & Brandon (2014). Soil Strength and Slope Stability, Ch. 6-7.
+
+Provenance (VERIFIED vs the ORIGINAL, 2026-07-18 wiki-verification): the
+X = lambda*f(x)*E closure (M-P 1965, p. 85 Eq. 18) and the strength-reduction
+FOS definition (pp. 82-83 Eq. 5) were verified against the printed paper in the
+owner's library; this engine solves the identical statics in the Fredlund-Krahn
+discrete-slice form (EQUIVALENT-NOTATION — same assumptions, FOS definition,
+and boundary conditions as M-P's differential formulation). Ledger:
+module_work/wiki_verification/le_method_originals.md.
 """
 
 import math
