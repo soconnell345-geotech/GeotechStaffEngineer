@@ -72,6 +72,49 @@ enrollment — ask the platform admin.
 3. To upgrade later: bump `geotech-staff-engineer` in the Libraries panel and
    republish. The 2-line `app.py` never changes.
 
+## Troubleshooting a live deployment (learned 2026-07-17/18, State gov enclave)
+
+Field notes from the first real publish (PDCS Sandbox, stateobo.palantirgov.com):
+
+- **Upgrade recipe** (the only steps that matter):
+  `maestro env pip install "geotech-staff-engineer==X.Y.Z"` in the workspace
+  terminal → **Publish and sync** in the Applications tab → hard-reload the app
+  (Ctrl+F5). Never `pip` directly (breaks the maestro lockfile), never
+  uninstall first, and note "Restart workspace" does NOT update the published
+  app — workspace and app are separate containers with separate lifecycles.
+- **Which version is the app running?** The sidebar footer prints
+  `geotech-staff-engineer X.Y.Z · engine: <source>` (5.8.2+). If the
+  "Connection diagnostics" expander is missing, the app is on old code.
+- **Publish fails with "failed to run startup scripts"**: read the log — the
+  likely cause is an environment-restore pip conflict. Seen live: the
+  Streamlit base image ships conda websockets 16.x, which leaked into the
+  lockfile and clashed with langgraph-sdk (<16). Fixed by
+  `maestro env pip install "websockets>=14,<16"` (and the package now pins
+  this range itself).
+- **Empty answers / flashing errors**: run the sidebar **Connection
+  diagnostics** — it tests resolve / plain / streaming / tool-calling
+  requests and prints failures verbatim.
+- **401 Unauthorized from the LLM proxy on a gov enclave**: the container's
+  `FOUNDRY_HOSTNAME` may point at a local sidecar (seen: `localhost:8080`)
+  that rejects LLM-proxy paths, and direct egress to the stack domain is
+  DNS-blocked. This is an enrollment/permission question, not an app bug.
+  Ask the platform admin: (1) is the LLM provider-compatible API enabled for
+  the enrollment; (2) is this account/project authorized for the enabled
+  models; (3) what base URL + auth should Code Workspace containers use for
+  the LLM proxy in this enclave. Their answer goes into
+  `GEOTECH_FOUNDRY_HOST` (explicit `http://`/`https://` schemes are honored)
+  in the app file — no package change needed.
+- **Non-secret config lives in the app file** (there is no env-var panel):
+  ```python
+  import os
+  os.environ["GEOTECH_FOUNDRY_MODELS"] = "GPT 5.1=ri.language-model-service..language-model.gpt-5-1"
+  os.environ["GEOTECH_WEBAPP_MAX_TOKENS"] = "32000"
+  os.environ["GEOTECH_TRACE"] = "1"
+  from webapp.foundry_entry import main
+  main()
+  ```
+  Secrets (tokens) must NOT go there — Foundry injects `FOUNDRY_TOKEN`.
+
 ## Notes / current limits
 
 - Tool calling, streaming, and sub-agents ride the provider-compatible proxy
