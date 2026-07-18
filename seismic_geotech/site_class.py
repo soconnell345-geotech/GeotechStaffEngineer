@@ -218,7 +218,17 @@ def site_coefficients(site_class: str, Ss: float, S1: float,
     References
     ----------
     AASHTO LRFD Tables 3.10.3.2-1 (Fpga vs PGA), 3.10.3.2-2 (Fa vs Ss),
-    3.10.3.2-3 (Fv vs S1)
+    3.10.3.2-3 (Fv vs S1) — 5th Edition numbering; the 9th Edition renumbers
+    the identical tables 3.10.3.1-1/2/3.
+
+    Provenance (VERIFIED, 2026-07-18 wiki-verification): all 75 table cells,
+    the column breakpoints, the straight-line-interpolation rule, and the
+    Class-F site-specific footnote verified cell-by-cell against AASHTO LRFD
+    5th Edition (2010) Tables 3.10.3.2-1/2/3 (printed pp. 3-88/3-89, source
+    PDF in the owner's library) — 75/75 match, incl. the Fpga=Fa value-set
+    aliasing, which is faithful to print. The 9th-Ed copy in the library is
+    DRM-locked; the tables are edition-stable (renumbered only). Ledger:
+    module_work/wiki_verification/aashto_site_factors.md.
     """
     # Fa table: rows = site class, columns = Ss values
     # Ss:     0.25  0.50  0.75  1.00  1.25
