@@ -1,8 +1,42 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-07-14.** This is the authoritative, always-current handoff
-for a fresh LLM session (any model). The older `HANDOFF_2026-06-14.md` is kept
-only for the detailed Phase-E history; this file supersedes it.
+**Last updated: 2026-07-18.** This is the authoritative handoff for a fresh LLM
+session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
+detailed Phase-E history; this file supersedes it.
+
+---
+
+## 0. Delta since the table below (2026-07-15 → 07-18; table not yet rewritten)
+
+Everything here is also in CLAUDE.md's release sections (read those) and the
+auto-memory. Headlines:
+
+- **Releases 5.7.0 → 5.8.0 → 5.8.1 → 5.8.2** (all owner-OK'd, all on PyPI, tags
+  `v5.7.0`..`v5.8.2`; refs 1.3.2 + 1.3.3 released too): the complete pavement
+  stack (AASHTO 1993 module + UFC 3-250-01 alternative method + pavement
+  specialist agent), then two same-night Foundry-deployment patch releases
+  (custom-RID clobber fix; Connection-diagnostics panel + persistent errors +
+  `max_completion_tokens` for GPT-5 RIDs; extras folded into the core install —
+  plain `pip install geotech-staff-engineer` now brings everything).
+- **Owner's Foundry app IS PUBLISHED and running** (State gov enclave,
+  stateobo.palantirgov.com, PDCS Sandbox / geotechStaffChatbot) but **blocked on
+  a 401 from the LLM proxy = enrollment/permissions**, NOT our code. Full field
+  notes + the admin ticket text: `docs/FOUNDRY.md` troubleshooting section. When
+  the admin answers, the fix is likely one `GEOTECH_FOUNDRY_HOST` line in the
+  owner's app file.
+- **UNRELEASED on master (5.9.0 candidate, owner-gated):** the
+  `worked_examples` system — 17 verified-by-execution exemplar calculations
+  from real published design reports (`funhouse_agent/worked_examples.json`,
+  adapter `find_worked_examples`/`get_worked_example`, prompt wiring, gate
+  tests); webapp/tests added to the pytest gate; FOUNDRY.md troubleshooting;
+  `module_work/FUTURE_IDEAS.md` (8 forward specs incl. phase-2 harvesting of
+  the owner's own reports, playbooks, recompute-from-report QC).
+- **Eval suite is now 108 questions / 68 keyed** (PAV-1..PAV-8 added, ground
+  truth run on v5.8.0) and `eval_harness --ids PAV` runs a subset.
+- **Do NOT casually delete `foundry/`** — attempted 2026-07-18, reverted: 9
+  agent-wrapper test suites import it throughout (scope in CLAUDE.md).
+- Gate at handoff: 9,169 + 844 (slope/fem2d) + wrapper suites green, ~9,950
+  tests + 48-ish skips.
 
 ---
 
