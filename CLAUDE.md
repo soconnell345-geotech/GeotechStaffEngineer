@@ -49,6 +49,20 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). These are standalone Foundry deployment files, NOT part of the pip package.
 
+## v5.8.2 status (RELEASED 2026-07-17 to PyPI; owner OK'd — Foundry diagnostics)
+
+Owner's live Foundry debugging (GPT-5.1 RID → "(no answer text)", error
+flashing one render): sidebar **Connection diagnostics** panel (staged
+resolve/plain/stream/tool-call self-tests, failures printed verbatim,
+webapp/diagnostics.py is streamlit-free and terminal-callable); turn errors
+persist on transcript replay; empty answers get an actionable note; Foundry
+OpenAI path sends **max_completion_tokens** (GPT-5/o-series reject max_tokens,
+RID names give langchain-openai no hint) + `GEOTECH_FOUNDRY_DISABLE_STREAMING=1`
+fallback; version+engine caption. Model switches ride on_change only (stale
+proxy echoes can't revert). Foundry ops: workspace "Restart" beats pkill;
+app view ≠ Jupyter container (files invisible across); engine via
+GEOTECH_FOUNDRY_MODELS env line in the owner's app.py.
+
 ## v5.8.1 status (RELEASED 2026-07-17 to PyPI; owner OK'd — Foundry-deployment fixes)
 
 Patch driven by the owner's first live Foundry publish (same night as 5.8.0):
