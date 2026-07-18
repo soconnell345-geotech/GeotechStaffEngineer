@@ -14,11 +14,15 @@ homogeneous fill gamma=135 pcf, effective c'=0 / phi'=45 deg, total-stress
 R-envelope c_R=60 psf / phi_R=23 deg; toe El. 620, crest ~El. 698 (height 78 ft),
 full pool El. 692 (72 ft), drawn to El. 657 (37 ft).
 
-GEOMETRY CAVEAT (honest): the upstream SLOPE ANGLE and vertices are NOT published
-in any prose source (only the vertical elevations are). A representative 2.5H:1V
-upstream face is used here; the ORDERING asserted below is slope-INVARIANT (it
-holds at 2:1, 2.5:1 and 3:1 alike), so it is not geometry-tuned. The magnitudes
-are geometry-dependent and are NOT pinned to the published values.
+GEOMETRY CAVEAT (updated 2026-07-18, wiki-verification): the original DWW 1990
+paper IS in the owner's library, and its record (WikiLLM) gives the real
+upstream face as a TWO-SLOPE section — "~2:1 (lower 58 ft) then 3:1" — not the
+uniform 2.5H:1V used here (which sits between the two real inclinations). The
+wave-1 verification agent also located the printed cross-section (paper p. 262,
+Fig. 3). The ORDERING asserted below is slope-INVARIANT (holds at 2:1, 2.5:1 and
+3:1 alike), so nothing below changes; re-running on the true two-slope section
+is an open Tier-B follow-up (module_work/wiki_verification/TIER_A_LEDGER.md)
+that would let the magnitudes be compared against published directly.
 
 VERDICT: **CONVENTION (ordering validated; magnitudes geometry/phi'-limited).**
 * The three-method ORDERING Corps < DWW < LK (the strength-rule signature) is
