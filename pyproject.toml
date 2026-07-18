@@ -193,6 +193,7 @@ testpaths = [
     "fem2d",
     "geo_project",
     "funhouse_agent",
+    "foundry_test_harness",
     "webapp/tests",
     "geotech-references/tests",
 ]
