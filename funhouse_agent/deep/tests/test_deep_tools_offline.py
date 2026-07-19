@@ -208,7 +208,8 @@ def test_vision_tools_build_and_error_without_engine():
     tools = make_vision_tools(engine=None)
     names = {t.name for t in tools}
     assert names == {"list_files", "read_pdf_text", "analyze_image",
-                     "analyze_pdf_page", "read_reference_figure", "save_file"}
+                     "analyze_pdf_page", "read_reference_figure",
+                     "view_worked_example_source", "save_file"}
 
     # read_reference_figure without args → clear error (no raise).
     out = _invoke(

@@ -130,6 +130,41 @@ def summarize(entry: dict) -> dict:
     }
 
 
+#: Env var pointing at the folder holding the source PDFs (same convention —
+#: and typically the same folder — as the reference layer's figure read-off).
+SOURCE_DOCS_ENV = "GEOTECH_REFERENCES_DOCS"
+
+
+def resolve_source_pdf(entry: dict):
+    """Absolute Path of an entry's ``source_doc`` PDF, or raise.
+
+    Resolution mirrors ``geotech_references._figures_db.resolve_pdf``: the
+    ``GEOTECH_REFERENCES_DOCS`` folder when set (pip-installed deployments —
+    the PDFs are too large/license-sensitive to ship in the wheel), else the
+    source checkout's ``geotech-references/docs/`` folder. Raises ``KeyError``
+    when the entry has no ``source_doc``; ``FileNotFoundError`` when the PDF
+    is absent.
+    """
+    from pathlib import Path
+    doc = entry.get("source_doc")
+    if not doc:
+        raise KeyError(
+            f"worked example {entry.get('id')!r} has no source_doc "
+            "(no source PDF catalogued for it)")
+    override = os.environ.get(SOURCE_DOCS_ENV)
+    if override:
+        p = Path(override) / Path(doc).name
+    else:
+        repo_root = Path(os.path.dirname(os.path.abspath(__file__))).parent
+        p = repo_root / "geotech-references" / "docs" / doc
+    p = p.resolve()
+    if not p.is_file():
+        raise FileNotFoundError(
+            f"source PDF for {entry.get('id')} not found: {p}. Set "
+            f"{SOURCE_DOCS_ENV} to the folder containing the source PDFs.")
+    return p
+
+
 def verify_example(entry: dict) -> List[str]:
     """Run the entry's dispatch calls; return error strings ([] = clean).
     Used by the offline corpus test so every packaged example stays runnable."""

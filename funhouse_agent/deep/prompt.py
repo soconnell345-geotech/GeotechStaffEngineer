@@ -94,8 +94,11 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   AASHTO/UFC pavements, dam-drawdown and probabilistic slope benchmarks). Call
   `find_worked_examples` with your topic; a hit gives you the proven method
   sequence + parameters, the published answer, and `report_notes` describing
-  what a professional calc report for that problem presents. Follow the
-  exemplar's structure; do NOT copy its numbers — use the user's inputs."""
+  what a professional calc report for that problem presents. When the entry
+  lists `source_pdf_pages`, `view_worked_example_source` renders the PRINTED
+  page of the original design example (figures and all) so you can follow the
+  real thing. Follow the exemplar's structure; do NOT copy its numbers — use
+  the user's inputs."""
 
 _MEMORY_SECTION = """\
 - **`/memories/` persists across sessions.** Files you write under `/memories/`

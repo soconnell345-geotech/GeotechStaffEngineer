@@ -529,7 +529,7 @@ def make_vision_tools(
     save_fn = save_fn or _default_save_fn
     include = include if include is not None else {
         "list_files", "read_pdf_text", "analyze_image", "analyze_pdf_page",
-        "read_reference_figure", "save_file",
+        "read_reference_figure", "view_worked_example_source", "save_file",
     }
     reference_cap = _resolve_reference_cap(max_result_chars,
                                            reference_result_chars)
@@ -540,7 +540,7 @@ def make_vision_tools(
         # so they get the larger reference budget.
         cap = (reference_cap
                if tool_name in ("read_reference_figure", "read_pdf_text",
-                                "list_files")
+                                "list_files", "view_worked_example_source")
                else max_result_chars)
         return _truncate(
             _dispatch_extended_tool(
@@ -638,6 +638,27 @@ def make_vision_tools(
             },
         )
 
+    def view_worked_example_source(
+        example_id: str,
+        pdf_page: int = 0,
+        prompt: str = "",
+    ) -> str:
+        """Render a worked example's PRINTED SOURCE PAGE (design-report
+        example, incl. its figures) and analyze it with vision. Use this after
+        ``find_worked_examples``/``get_worked_example`` when following an
+        exemplar whose entry lists ``source_pdf_pages`` — seeing the printed
+        page (chart, cross-section, tabulated steps) beats re-deriving it from
+        the text summary. ``pdf_page`` is 1-based; omit (0) for the first
+        catalogued page; ``prompt`` says what to extract. Page numbers were
+        located by text search and may be off by one — page around if needed.
+        Values read off charts are estimates; verify against a digitized
+        method where one exists.
+        """
+        args = {"example_id": example_id, "prompt": prompt}
+        if pdf_page:
+            args["pdf_page"] = pdf_page
+        return _dispatch("view_worked_example_source", args)
+
     def save_file(path: str, content: str, encoding: str = "text") -> str:
         """Save raw text or data to a file. Returns the saved file path. For
         formatted calculation documents, use the ``calc_package`` module via
@@ -683,6 +704,13 @@ def make_vision_tools(
             "and read a value off it with vision. Find the figure first via "
             "figure_db.figure_search, then read the value off the actual "
             "chart. Returns a chart read-off estimate.",
+        ),
+        "view_worked_example_source": (
+            view_worked_example_source,
+            "Render a worked example's PRINTED SOURCE PAGE (design-report "
+            "example incl. figures) and analyze it with vision. Use after "
+            "find_worked_examples when the entry lists source_pdf_pages; "
+            "pdf_page is 1-based (0 = first catalogued page).",
         ),
         "save_file": (
             save_file,

@@ -196,6 +196,8 @@ def dispatch_extended_tool(
         return _dispatch_analyze_pdf_page(arguments, engine, attachments)
     elif tool_name == "read_reference_figure":
         return _dispatch_read_reference_figure(arguments, engine)
+    elif tool_name == "view_worked_example_source":
+        return _dispatch_view_worked_example(arguments, engine)
     elif tool_name == "save_file":
         return _dispatch_save_file(arguments, save_fn or _default_save_fn)
     else:
@@ -601,6 +603,82 @@ _READ_OFF_NOTE = (
     "percent on linear axes, looser on log axes or dense curve families. Verify "
     "against a closed-form or digitized method where one exists."
 )
+
+
+def _dispatch_view_worked_example(arguments, engine):
+    """Render a worked example's printed source page and analyze it via vision.
+
+    The corpus (funhouse_agent/worked_examples.json) catalogues, per entry with
+    a source PDF in the docs folder, ``source_doc`` + 1-based
+    ``source_pdf_pages`` (page-search located — treated as estimated). This is
+    the sample-calc twin of ``read_reference_figure``: same PDF resolution
+    convention (GEOTECH_REFERENCES_DOCS / repo docs), same 220-dpi render, same
+    read-off caveat.
+    """
+    example_id = arguments.get("example_id", "")
+    pdf_page = arguments.get("pdf_page")           # 1-based; optional
+    question = (arguments.get("prompt", "")
+                or "Describe the worked example on this page: the given "
+                   "values, the calculation steps shown, and any figures.")
+
+    if not example_id:
+        return json.dumps({"error": "'example_id' is required "
+                                    "(find one via find_worked_examples)."})
+    try:
+        from funhouse_agent import worked_examples as _we
+        entry = _we.get_example(example_id)
+        if entry is None:
+            known = [e.get("id") for e in _we.load_examples()]
+            return json.dumps({"error": f"Unknown worked example "
+                                        f"'{example_id}'. Known ids: {known}"})
+        pages = entry.get("source_pdf_pages") or []
+        if not pages and pdf_page is None:
+            return json.dumps({
+                "error": f"Worked example {example_id} has no catalogued "
+                         "source pages (source PDF not in the docs folder — "
+                         "e.g. the Slide2 verification manual). Its problem/"
+                         "dispatch_calls text is still available via "
+                         "get_worked_example."})
+        page_1b = int(pdf_page) if pdf_page is not None else int(pages[0])
+        pdf_abs = _we.resolve_source_pdf(entry)
+    except (KeyError, FileNotFoundError) as e:
+        return json.dumps({"error": str(e)})
+    except Exception as e:
+        return json.dumps({"error": f"{type(e).__name__}: {e}"})
+
+    try:
+        from pdf_import.vision import _render_pdf_page
+        image_bytes = _render_pdf_page(filepath=str(pdf_abs),
+                                       page=page_1b - 1, dpi=220)
+    except ImportError:
+        return json.dumps({
+            "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"})
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+
+    framing = (
+        f"This is page {page_1b} (of the pages catalogued for worked example "
+        f"{entry['id']}: {pages or [page_1b]}) from \"{entry.get('source', '')}\" "
+        f"— the printed source of: {entry.get('title', '')}. The catalogued "
+        "page numbers were located by text search and may be off by a page — "
+        "if this page does not show the expected content, say so plainly. "
+        f"Task: {question}"
+    )
+    try:
+        analysis = engine.analyze_image(image_bytes, framing)
+    except (NotImplementedError, AttributeError) as e:
+        return json.dumps({"error": f"Vision not available on this engine: {e}"})
+    except Exception as e:
+        return json.dumps({"error": f"{type(e).__name__}: {e}"})
+
+    return json.dumps({
+        "example_id": entry["id"],
+        "source_doc": entry.get("source_doc"),
+        "pdf_page": page_1b,
+        "catalogued_pages": pages,
+        "analysis": analysis,
+        "note": _READ_OFF_NOTE,
+    })
 
 
 def _dispatch_read_reference_figure(arguments, engine):

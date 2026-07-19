@@ -72,7 +72,15 @@
    "Q_allowable_kN": 1355.1
   },
   "report_notes": "A good report states the H-pile box convention (shaft on box perimeter 2(d+bf), toe on box area d*bf — confirm via make_pile_section: 1.237 m = 4.06 ft, 0.0956 m2 = 1.03 ft2), the footing-bottom datum (layers clipped at the footing line, GWT shifted up accordingly — modeling from grade would add ~5 ft of spurious skin friction), and the separate design-limit toe phi = 40 deg via per-layer toe_friction_angle. Computed vs published: shaft +2.6%, toe -4.6% (module's Meyerhof q_L cap at phi=40 governs at 408.5 kips vs the 428.1 kip plateau), total -1.4% — all within the +/-15% validation tolerance. Report Q_skin/Q_tip separately with sigma_v at the tip, and the FS basis (ASD FS = 2.5 here).",
-  "provenance": "validation_examples/test_published_v001_v005.py::test_v001_hpile_box_section_convention, test_v001_nordlund_shaft_resistance_matches, test_v001_highlevel_api_toe_phi40_matches_plateau"
+  "provenance": "validation_examples/test_published_v001_v005.py::test_v001_hpile_box_section_convention, test_v001_nordlund_shaft_resistance_matches, test_v001_highlevel_api_toe_phi40_matches_plateau",
+  "source_doc": "GEC 12 vol 3.pdf",
+  "source_pdf_pages": [
+   12,
+   13,
+   14,
+   15
+  ],
+  "source_pages_estimated": true
  },
  {
   "id": "WE-SHAFT-1",
@@ -167,7 +175,19 @@
    "clay_side_resistance_kN": 1635.8
   },
   "report_notes": "A good report shows the full rational chains as intermediate values: for sand, phi' from (N1)60, sigma'p from N60, OCR computed on the NO-SCOUR sigma'v (sigma_v_ref) while fs uses the scour-adjusted design stress, Ko, then beta (0.413 vs published 0.41, side resistance 470.2 vs 470.7 kips, <0.2%); for clay, the UC-to-CIUC transform (su_test_type='uc') before alpha (0.475 vs 0.47, 367.8 vs 368.1 kips). State the GEC-10 exclusion zones (cased/top cover carries no side resistance; bottom-1D cohesive exclusion) — read them off effective_top_m/effective_bottom_m in side_resistance_by_layer. Note the tip-resistance convention: the module applies the O'Neill-Reese 1.27/Db large-diameter reduction for Db > 1.27 m, so Q_tip is ~52% of the example's unreduced RBN — cite which convention the report adopts. For LRFD factored design, follow with lrfd_capacity/get_resistance_factors.",
-  "provenance": "validation_examples/test_published_v006_v008.py::test_v006_high_level_rational_beta, test_v007_high_level_rational_alpha, test_v008_base_unit_resistance_matches, test_v008b_large_diameter_reduction_is_applied"
+  "provenance": "validation_examples/test_published_v006_v008.py::test_v006_high_level_rational_beta, test_v007_high_level_rational_alpha, test_v008_base_unit_resistance_matches, test_v008b_large_diameter_reduction_is_applied",
+  "source_doc": "GEC 10.pdf",
+  "source_pdf_pages": [
+   584,
+   585,
+   586,
+   587,
+   588,
+   589,
+   590,
+   591
+  ],
+  "source_pages_estimated": true
  },
  {
   "id": "WE-FOOTING-1",
@@ -253,7 +273,15 @@
    "total_settlement_mm": 21.45
   },
   "report_notes": "A good report tabulates the factor basis: N factors (module Nq = 33.30 / Ngamma = 48.03 match the published Vesic/AASHTO Table 5-1 values exactly) and shape factors (sq = 1.700, sgamma = 0.600, exact), then states the depth-factor and groundwater conventions explicitly — the module's compute() runs ~17.6% above the published 3315 kPa because it applies Vesic depth factors (dq = 1.195) where the example sets dq = 1.0 for cohesive overburden, and uses an effective-unit-weight groundwater model (GW at 9.1 m is below the bearing wedge, so no reduction) instead of the AASHTO Cwgamma = 0.9 factor; both are defensible, cite the one used. The settlement half should show per-layer delta_sigma from the 2:1 distribution, sigma'vo, C', and per-layer settlements (computed 15.4/4.4/1.1/0.6 mm vs published 15/4/1/1; total 21.45 vs 21 mm, within the source's per-layer mm rounding), and check the allowable pressure against the settlement-governed service pressure.",
-  "provenance": "validation_examples/test_published_v021_v022.py::test_v021_qult_qall_match_published_closed_form, test_v021_highlevel_compute_is_convention_depth_and_gw, test_v022_hough_worked_case_b3_q240"
+  "provenance": "validation_examples/test_published_v021_v022.py::test_v021_qult_qall_match_published_closed_form, test_v021_highlevel_compute_is_convention_depth_and_gw, test_v022_hough_worked_case_b3_q240",
+  "source_doc": "GEC 6.pdf",
+  "source_pdf_pages": [
+   159,
+   160,
+   161,
+   162
+  ],
+  "source_pages_estimated": true
  },
  {
   "id": "WE-MSE-1",
@@ -307,7 +335,15 @@
    "unit_check": "eL_strength_max 0.8748 m = 2.87 ft; eL_critical 1.1809 m = 3.87 ft; e_limit 1.3716 m = 4.50 ft; sigma_v 321.1 kPa = 6.71 ksf (pub 6.70); 222.97 kPa = 4.66 ksf; critical 275.41 kPa = 5.75 ksf vs pub 5.86 (within the source's own rounding note, ~2%)"
   },
   "report_notes": "A good report tabulates the unfactored loads (V1, Vs, F1, F2 and moment arms about the toe) first, then shows each AASHTO load-factor combination (Strength I max/min, Service I) explicitly, flagging that live load is excluded from the resisting side for sliding/eccentricity but included for bearing. Report CDRs (capacity:demand), not ASD factors of safety — the dispatch method mse_wall reports ASD FOS and is NOT the LRFD path. State the governing combination for each check (critical max/min governs sliding here) and compare eL against the L/4 limit for walls on soil.",
-  "provenance": "validation_examples/test_published_v009_v011.py::test_v009_lrfd_external_stability_high_level_path, test_v009_sliding_CDR_lrfd, test_v009_eccentricity_lrfd, test_v009_bearing_lrfd"
+  "provenance": "validation_examples/test_published_v009_v011.py::test_v009_lrfd_external_stability_high_level_path, test_v009_sliding_CDR_lrfd, test_v009_eccentricity_lrfd, test_v009_bearing_lrfd",
+  "source_doc": "GEC 11 VOL 2.pdf",
+  "source_pdf_pages": [
+   285,
+   286,
+   287,
+   288
+  ],
+  "source_pages_estimated": true
  },
  {
   "id": "WE-SOE-1",
@@ -377,7 +413,15 @@
    "unit_check": "Ka and Kp match the published 0.271 / 3.69 exactly. Continuous-wall converged embedment 3.45 m = 11.3 ft (x1.2 -> 4.14 m = 13.6 ft) vs the published PER-PILE simplified D0 = 12.27 ft (D = 14.73 ft) — different frameworks, values are close but not equivalent."
   },
   "report_notes": "The report must state the framework explicitly: the published example uses the soldier-pile SIMPLIFIED method (active pressure on the 2-ft hole width, passive on the arching-amplified width f*b = 0.08*phi*b = 5.6 ft, per-pile toe-moment cubic), while the sheet_pile.cantilever_wall solver is a continuous per-metre free-earth-support wall with no soldier-pile arching logic — its embedment is comparable but NOT the same number. Present Ka/Kp with their theory (Rankine, delta = 0), the FOS basis (FOS_passive = 1.0 with the traditional 20% embedment increase here — never both a passive FOS and the 20% rule), and per-pile demands via the tributary spacing when soldier piles are specified. Flag that Caltrans notes Rankine underestimates passive resistance.",
-  "provenance": "validation_examples/test_published_v012_v025.py::test_v012_rankine_coefficients_match_module, test_v012_simplified_embedment_and_demands_by_hand, test_v012_module_continuous_solver_is_a_different_framework"
+  "provenance": "validation_examples/test_published_v012_v025.py::test_v012_rankine_coefficients_match_module, test_v012_simplified_embedment_and_demands_by_hand, test_v012_module_continuous_solver_is_a_different_framework",
+  "source_doc": "California Trenching and Shoring Manual.pdf",
+  "source_pdf_pages": [
+   108,
+   109,
+   110,
+   111
+  ],
+  "source_pages_estimated": true
  },
  {
   "id": "WE-SOE-2",
@@ -431,7 +475,15 @@
    "note": "All quantities within 2% of published. max_moment uses the compact (13/54)*H1^2*(pe+ps) top-hinge form = 70.4 kN-m/m — a documented CONVENTION vs the published 76 (GEC-4 applies the uniform surcharge over a larger tributary in the top region); the dominant earth-pressure part (13/54)*pe*H1^2 = 65.6 is exact."
   },
   "report_notes": "A good report draws the trapezoidal apparent-pressure diagram (2/3-H1 top transition, 2/3-Hn+1 bottom transition), shows pe = 0.65*Ka*gamma*H^2 / (H - H1/3 - Hn+1/3) with the Ka basis, and tabulates the tributary calculation for each anchor (TH), the subgrade reaction R, and the design loads DL = TH * spacing / cos(inclination). Note the top-hinge moment convention: the compact (13/54)H1^2(pe+ps) form gives 70.4 vs the published 76 kN-m/m due to the surcharge-tributary treatment — state which was used. Apparent-pressure envelopes are for anchor loads and wall moments; embedment comes from a separate toe analysis.",
-  "provenance": "validation_examples/test_published_v012_v025.py::test_v016_fhwa_apparent_pressure_high_level, test_v016_Ka_and_pe, test_v016_tributary_anchor_loads, test_v016_anchor_design_loads, test_v016_hinge_moments"
+  "provenance": "validation_examples/test_published_v012_v025.py::test_v016_fhwa_apparent_pressure_high_level, test_v016_Ka_and_pe, test_v016_tributary_anchor_loads, test_v016_anchor_design_loads, test_v016_hinge_moments",
+  "source_doc": "GEC 4.pdf",
+  "source_pdf_pages": [
+   207,
+   208,
+   209,
+   210
+  ],
+  "source_pages_estimated": true
  },
  {
   "id": "WE-GI-1",
@@ -541,7 +593,14 @@
    "note": "The published 2.7 is a chart read; the Priebe (1995) formula result depends on the area-ratio convention and phi_column. At the source's as = 0.277: n0 = 3.06 with the default phi_column = 42.5 (+13%), and n0 = 2.71 at phi_column = 39 (matches the chart). Both bracket the published improved settlement of 10 in from below — within chart-read latitude."
   },
   "report_notes": "The report should state the area-ratio convention up front (as = Ac/A = 1/(s/d)^2 here vs the geometric triangular-tributary value — they differ by ~10%) and the assumed column friction angle, since n0 is sensitive to both; presenting n0 for two or three phi_column values honestly reflects the chart-read latitude of the source. Pair the improvement factor with the unimproved consolidation settlement calculation (settlement module) so the improved settlement S/n0 is traceable end-to-end. Note this is the Priebe BASIC factor n0 (no depth or compressibility corrections).",
-  "provenance": "validation_examples/test_published_v018_v020.py::test_v019_priebe_improvement_factor_convention, test_v019_unimproved_consolidation_pass"
+  "provenance": "validation_examples/test_published_v018_v020.py::test_v019_priebe_improvement_factor_convention, test_v019_unimproved_consolidation_pass",
+  "source_doc": "GEC 13 Vol 1.pdf",
+  "source_pdf_pages": [
+   325,
+   326,
+   327
+  ],
+  "source_pages_estimated": true
  },
  {
   "id": "WE-SLOPE-1",
@@ -615,7 +674,15 @@
    "tolerance": "Fellenius 0.833 vs published 0.87 within +/-0.05 (the spread is the source's over-stated hand arc length in the c'*L term plus the module's geometric exit at x~18.3 m vs the source's 17.56 m); Bishop 0.971 matches the CONVERGED fixed point 0.96 within 1.2% — the published 0.90 is under-iterated, not a module error."
   },
   "report_notes": "A good report states the method basis explicitly (OMS neglects interslice forces and is conservative; Bishop satisfies vertical equilibrium and must be ITERATED to the FS = FSa fixed point) and presents the per-slice table (alpha, W, W sin, W cos) so the geometry reconstruction is checkable against the source. Because this is a pinned-circle check, the report must say so — no search story is claimed — and should show the circle, entry/exit points, and slope face on a section figure. A method-comparison table (compare_methods=true) is the right exhibit: it shows the OMS-vs-rigorous spread (~0.83 vs ~0.96) and flags that FS < 1 either way. When a published value disagrees, report both and explain the discrepancy (here: under-iterated source Bishop; hand arc-length convention in the cohesion term).",
-  "provenance": "validation_examples/test_published_v015_v017.py::test_v015_slice_table_matches_source_exactly, test_v015_fellenius_module_pipeline, test_v015_bishop_module_is_the_converged_fixed_point"
+  "provenance": "validation_examples/test_published_v015_v017.py::test_v015_slice_table_matches_source_exactly, test_v015_fellenius_module_pipeline, test_v015_bishop_module_is_the_converged_fixed_point",
+  "source_doc": "California Trenching and Shoring Manual.pdf",
+  "source_pdf_pages": [
+   240,
+   241,
+   242,
+   243
+  ],
+  "source_pages_estimated": true
  },
  {
   "id": "WE-SLOPE-2",
@@ -1725,7 +1792,12 @@
    "notes": "sn_required = 4.976 vs printed 5.0 — within the 0.1 nomograph read-off tolerance. The module also returns the Figure 3.2 layer split (a1 = 0.42 from Figure 2.5, a2 = 0.1378 and a3 = 0.0784 from the printed regressions, m = 1.0 defaults) and a forward check (w18_capacity >= w18)."
   },
   "report_notes": "A good calc report presents the design-equation inputs (W18, ZR from Table 4.1, So, MR, dPSI) with their guide-section citations, the solved SN against the printed nomograph value with the chart-read tolerance stated, and the Figure 3.2 top-down layer split showing each layer's coefficient a_i, drainage m_i, its basis, and the cumulative SN over each foundation. It should close with the forward check (ESAL capacity of the provided section >= design W18) and echo defaulted values (m = 1.0; So outside the recommended flexible 0.40-0.50 range is flagged in notes).",
-  "provenance": "validation_examples/test_published_v055_aashto1993_pavement.py::test_v055a_flexible_figure_3_1_example"
+  "provenance": "validation_examples/test_published_v055_aashto1993_pavement.py::test_v055a_flexible_figure_3_1_example",
+  "source_doc": "aashto1993.pdf",
+  "source_pdf_pages": [
+   122
+  ],
+  "source_pages_estimated": true
  },
  {
   "id": "WE-PAVE-2",
@@ -1775,7 +1847,12 @@
    "notes": "d_required = 9.72 in, rounded up to the 10.0-in provided slab — matches the printed 10.0 in at the guide's half-inch nomograph resolution."
   },
   "report_notes": "A good calc report tabulates every rigid design-equation input (W18, ZR, So, S'c, Ec, J, Cd, k, dPSI, pt) with its source (Table 4.1 for ZR; how k was obtained — here direct, otherwise MR/19.4 or the Section 3.2 composite-k worksheet iterated with D), presents the unrounded required D beside the rounded provided slab, and states the half-inch chart-read tolerance against the printed solution. It should include the forward check (capacity at the provided D exceeds design W18) and note that pt enters both the serviceability term and the strength-term exponent.",
-  "provenance": "validation_examples/test_published_v055_aashto1993_pavement.py::test_v055b_rigid_figure_3_7_example"
+  "provenance": "validation_examples/test_published_v055_aashto1993_pavement.py::test_v055b_rigid_figure_3_7_example",
+  "source_doc": "aashto1993.pdf",
+  "source_pdf_pages": [
+   135
+  ],
+  "source_pages_estimated": true
  },
  {
   "id": "WE-PAVE-3",
@@ -1849,6 +1926,12 @@
    "notes": "Comparison: same physical 18-kip pass count on both sides (AASHTO LEF(18k single) = 1.0 by definition); reliability exists only in AASHTO (R = 95%, So = 0.45) — the UFC procedure is deterministic; CBR<->Mr bridged via Mr = 2555*CBR^0.64. Mixed traffic: 1,316,228 computed vs printed 1,395,400 (-5.7%, within the stated 6% inversion tolerance; the near-flat E-28 5-axle curve inversion dominates the residual); E-26 and E-2 drop out as unlimited."
   },
   "report_notes": "A good report keeps the two guides' results side by side and explicitly states the cross-guide assumptions the module echoes in notes: the shared 18-kip traffic basis, the CBR-to-Mr correlation used for the bridge, and that reliability is an AASHTO-only concept (UFC is deterministic) — so a thinner/thicker UFC section is a damage-model difference, not an error. For the mixed-traffic leg, reproduce the Table G-1 worksheet (per-vehicle required thickness at the representative CBR, controlling vehicle, allowable passes at the controlling thickness, equivalent-pass ratios), note which light vehicles drop out as unlimited, and state the curve-inversion tolerance (within ~6% of the printed total); the resulting equivalent E-1 passes then feed flexible_pavement_design_ufc at the real site CBR.",
-  "provenance": "pavement_design/ufc.py::compare_flexible_pavement_methods + ufc_mixed_traffic; pavement_design/tests/test_pavement_design.py::test_ufc_mixed_traffic_table_g1, test_compare_methods"
+  "provenance": "pavement_design/ufc.py::compare_flexible_pavement_methods + ufc_mixed_traffic; pavement_design/tests/test_pavement_design.py::test_ufc_mixed_traffic_table_g1, test_compare_methods",
+  "source_doc": "ufc_3_250_01_2016.pdf",
+  "source_pdf_pages": [
+   276,
+   277
+  ],
+  "source_pages_estimated": true
  }
 ]
