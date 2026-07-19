@@ -38,6 +38,17 @@ assembly, solution, and pile-force back-calculation):
 References:
     CPGA User's Guide (ITL-89-4, Hartman et al., 1989)
     USACE EM 1110-2-2906, Chapter 4
+
+Provenance (VERIFIED vs the EM, 2026-07-19 wiki-verification): the Ch. 4
+stiffness method (para. 4-5b, Saul/CPGA approach) as printed in the
+owner-library EM — {q}_i = [B]_i{u}_i and [K] = sum([K]_i) with per-pile
+stiffness transformed to global coordinates (EM p. 4-29), rigid-body load
+distribution (p. 4-30), axial b33 = C33*AE/L (p. 4-31), torsional
+b66 = C66*JG/L (p. 4-38), plane-remains-plane cap kinematics (p. 4-45) — is
+the SAME formulation as this engine's K = sum(B^T k B) congruence-transform
+notation (EQUIVALENT-NOTATION). The documented PG-1 simplifications (no
+per-pile rotational stiffnesses / batter cross-couplings) are unchanged.
+Ledger: module_work/wiki_verification/wave7_em2906_pti_mo.md.
 """
 
 import math

@@ -39,12 +39,21 @@ still requires a Tier-B page check. Wishlist item codes refer to
    1.266 (published ~1.05) — overshoot shrinks ~29% → ~22%, residual isolated
    to the steep phi'=45 Kc gain (moderate-phi' #98 matches ~10%).
 
-## Remaining queue (for a future session)
+## Wave 7 (final) — EM 2906 / PTI / M-O
 
-- EM 1110-2-2906 → pile_group DESIGN.md refs task (both copies in library).
-- PTI DC35.1-14 presumptive grout-bond stress tables (page check, soe anchors).
-- M-O K_AE printed-table anchor (library seismic-wall docs located).
+| Item | Verdict |
+|---|---|
+| O14 EM 1110-2-2906 pile_group basis | **EQUIVALENT-NOTATION confirmed**: the EM Ch. 4 Saul/CPGA stiffness method (pp. 4-29/30/31/38/45) is the engine's K = ΣBᵀkB in congruence-transform form; PG-1 simplifications already documented. Cosmetic "Eq. 4-1" citation in calc_steps.py corrected (the EM's Ch. 4 equations are unnumbered; the simplified formula isn't printed there). rigid_cap.py provenance upgraded. |
+| O5 PTI bond stresses | **FUTURE-ANCHOR recorded**: module codes GEC-4 Table 4 values (correctly cited; PTI's Tables C6.1-C6.3 printed pp. 47-49 hold DIFFERENT bins — 9 representative values recorded in the report for a future GEC-4-vs-PTI presentation). Bond-length equation + FS=2.0 match PTI §6.7/§6.6. |
+| O6 M-O numeric anchor | **CONFIRMED TO THE POUND**: Whitman (1990, ASCE GSP 25) Fig. 11 worked wall (printed p. 831) — φ=35, kh=0.2, H=25 ft → printed P_A=8892 / ΔP_AE=4088 lb/ft reproduced exactly by `mononobe_okabe_KAE` (K_AE=0.3956); Seed-Whitman K_A+(3/4)kh fallback symbol-exact. NEW anchor test in seismic_geotech tests. Long-open "no published M-O anchor" audit gap CLOSED. |
+
+Report: `wave7_em2906_pti_mo.md`.
+
+## Remaining (small, for a future session)
+
 - Optional: Slide2-manual-copy hunt for the raster-recovered geometries.
+- Optional: Duncan 2000 closure/Christian-Baecher discussion PDF (N<6 rule).
+- Optional: GEC-4-vs-PTI bond-value comparison exhibit for soe anchor reports.
 
 ## NEEDS-PAGE-CHECK (records too shallow for the specific values)
 

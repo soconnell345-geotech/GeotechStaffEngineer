@@ -571,3 +571,26 @@ class TestLiquefactionCitation:
         assert crr == pytest.approx(0.22, abs=0.02)
         # Too-dense cap at >= 30.
         assert CRR_from_N160cs(30.0) == 2.0
+
+
+class TestMononobeOkabeWhitmanAnchor:
+    """PUBLISHED NUMERIC ANCHOR (wiki-verification wave 7, 2026-07-19):
+    Whitman (1990), "Seismic Design and Behavior of Gravity Retaining Walls",
+    ASCE GSP 25, Fig. 11 worked wall (printed p. 831, owner-library scan):
+    phi = 35 deg, delta = 0, kh = 0.2, kv = 0, H = 25 ft, with printed static
+    thrust P_A = 8892 lb/ft and dynamic increment dP_AE = 4088 lb/ft (which
+    back out gamma = 105.00 pcf exactly). Closes the long-open "no published
+    M-O anchor" audit gap. Ledger:
+    module_work/wiki_verification/wave7_em2906_pti_mo.md."""
+
+    def test_whitman_fig11_thrusts_to_the_pound(self):
+        from seismic_geotech import mononobe_okabe_KAE
+        import math
+        gamma_pcf, H_ft = 105.0, 25.0
+        KA = math.tan(math.radians(45.0 - 35.0 / 2.0)) ** 2
+        KAE = mononobe_okabe_KAE(35.0, 0.0, 0.2)
+        PA = 0.5 * KA * gamma_pcf * H_ft ** 2
+        dPAE = 0.5 * (KAE - KA) * gamma_pcf * H_ft ** 2
+        assert PA == pytest.approx(8892, abs=10)     # printed 8892 lb/ft
+        assert dPAE == pytest.approx(4088, abs=10)   # printed 4088 lb/ft
+        assert KAE == pytest.approx(0.3956, abs=0.001)

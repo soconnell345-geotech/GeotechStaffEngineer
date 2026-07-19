@@ -369,7 +369,10 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             substitution=_simple_load_substitution(n_piles, Vz, My, Mx, piles),
             result_name="Method",
             result_value="Simplified Elastic",
-            reference="USACE EM 1110-2-2906, Eq. 4-1",
+            reference=("classical rigid-cap combined-stress formula (the EM "
+                       "1110-2-2906 Ch. 4 equations are unnumbered and this "
+                       "approximate method is described, not printed, there — "
+                       "citation corrected 2026-07-19, wiki-verification)"),
             notes=(
                 "Assumes vertical piles, rigid cap, and elastic behavior. "
                 "Right-hand-rule convention (z up, V_z positive down): "
