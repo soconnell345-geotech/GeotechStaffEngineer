@@ -100,3 +100,11 @@ Report: `wave7_em2906_pti_mo.md`.
   candidate for pile_group/lateral_pile p-multiplier defaults (GEC-12 Table 9-2).
 - Vesic lecture set + cavity-expansion originals (1972) — would upgrade
   bearing-factor lineage docs if ever needed.
+
+## Sample-calc curation defects (NHI-06-089 onboarding, 2026-07-19)
+
+| Finding | Status |
+|---|---|
+| `drilled_shaft` depth-based beta unit-mixing — metric coefficient 0.245 applied to FEET-converted depth (decayed ~1.81x too fast, floored at 0.25 below ~8 m; Ex 9-5 Q_skin -64%; tests/DESIGN.md encoded the same expression) | **FIXED**: beta = 1.5 - 0.245*sqrt(z_m) = 1.5 - 0.135*sqrt(z_ft); tests corrected incl. the one that asserted the bugs consequence; GEC-10 rational path unaffected. Ex 9-5 is now curatable as a future worked example. |
+| `axial_pile` nordlund `_limiting_tip_resistance` low-phi qL suspicion (~10,000 kPa at phi=30 vs manual ~479 kPa; phi=40 end verified OK) | OPEN — verify vs printed GEC-12 Fig 7-15 before changing. |
+| Ex 8-2 Schmertmann: manual uses the FHWA-interpolated variant (L/B-interpolated Iz + X-factor on Es); our module is classic 1978 binary square/strip | NOTED — possible future enhancement (fhwa variant flag), not a defect. |

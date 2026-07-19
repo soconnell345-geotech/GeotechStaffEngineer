@@ -39,7 +39,7 @@ defaults reproduce the pre-v5.3 behavior byte-for-byte; the GEC-10 (2018)
 
 **Cohesionless — `beta_method`:**
 - `"depth"` (default) — O'Neill & Reese (1999) depth-based
-  `beta = 1.5 - 0.245*sqrt(z_ft)`, clamped to [0.25, 1.2] (with the N60<15
+  `beta = 1.5 - 0.135*sqrt(z_ft) = 1.5 - 0.245*sqrt(z_m)` (unit-mixing defect FIXED 2026-07-19 — the old code applied 0.245 to feet, decaying ~1.81x too fast; found by NHI-06-089 Ex 9-5 curation), clamped to [0.25, 1.2] (with the N60<15
   reduction). `beta_cohesionless(z, N60)`.
 - `"rational"` — GEC-10 Appendix A OCR/Ko chain (`beta_cohesionless_rational`):
   - `phi' = 27.5 + 9.2*log10[(N1)60]`   (`phi_prime_from_N1_60`, per-layer `N1_60`;

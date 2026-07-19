@@ -2288,5 +2288,508 @@
    448
   ],
   "source_pages_estimated": false
+ },
+ {
+  "id": "WE-SF-6",
+  "title": "Vertical stress increments under a strip footing plotted on a po-diagram (FHWA Soils & Foundations Examples 2-1 and 2-2)",
+  "domain": "settlement",
+  "keywords": [
+   "stress distribution",
+   "Boussinesq",
+   "strip footing",
+   "pressure isobars",
+   "po diagram",
+   "effective overburden pressure",
+   "stress increment",
+   "FHWA Soils and Foundations"
+  ],
+  "source": "FHWA NHI-06-088, Soils and Foundations Reference Manual Vol I (Dec 2006), Chapter 2, Example 2-2 (printed pp. 2-28 to 2-29), building on the Example 2-1 po-diagram (printed p. 2-21)",
+  "problem": "A 5-ft (1.524 m) wide strip footing with a loading intensity qo = 1,000 psf (47.88 kPa) sits on the ground surface of the Example 2-1 sand deposit: total unit weight 110 pcf (17.28 kN/m3), groundwater at 10 ft (3.048 m), so po = 275 / 550 / 825 / 1,100 / 1,219 / 1,338 / 1,457 / 1,576 psf at depths 2.5 / 5 / 7.5 / 10 / 12.5 / 15 / 17.5 / 20 ft. Using the Boussinesq strip-load pressure isobars (manual Figure 2-9), compute the stress increment delta_p under the footing centerline at those eight depths and the final pressures pf = po + delta_p. The module surface used here is consolidation_settlement with stress_method='boussinesq' and eight thin 'probe' layers - its layer_breakdown echoes the module-computed delta_sigma at each depth (the dummy Cc = 0.001 makes the settlement output negligible; the stress echo is the target). L = 152.4 m (100B) represents the strip condition. Conversions: 1 ft = 0.3048 m, 1 psf = 0.04788 kPa.",
+  "dispatch_calls": [
+   {
+    "module": "settlement",
+    "method": "consolidation_settlement",
+    "params": {
+     "layers": [
+      {
+       "thickness": 0.3048,
+       "depth_to_center": 0.762,
+       "e0": 1.0,
+       "Cc": 0.001,
+       "Cr": 0.0001,
+       "sigma_v0": 13.167,
+       "description": "probe at z=2.5 ft (po = 275 psf)"
+      },
+      {
+       "thickness": 0.3048,
+       "depth_to_center": 1.524,
+       "e0": 1.0,
+       "Cc": 0.001,
+       "Cr": 0.0001,
+       "sigma_v0": 26.334,
+       "description": "probe at z=5 ft (po = 550 psf)"
+      },
+      {
+       "thickness": 0.3048,
+       "depth_to_center": 2.286,
+       "e0": 1.0,
+       "Cc": 0.001,
+       "Cr": 0.0001,
+       "sigma_v0": 39.501,
+       "description": "probe at z=7.5 ft (po = 825 psf)"
+      },
+      {
+       "thickness": 0.3048,
+       "depth_to_center": 3.048,
+       "e0": 1.0,
+       "Cc": 0.001,
+       "Cr": 0.0001,
+       "sigma_v0": 52.668,
+       "description": "probe at z=10 ft (po = 1100 psf)"
+      },
+      {
+       "thickness": 0.3048,
+       "depth_to_center": 3.81,
+       "e0": 1.0,
+       "Cc": 0.001,
+       "Cr": 0.0001,
+       "sigma_v0": 58.366,
+       "description": "probe at z=12.5 ft (po = 1219 psf)"
+      },
+      {
+       "thickness": 0.3048,
+       "depth_to_center": 4.572,
+       "e0": 1.0,
+       "Cc": 0.001,
+       "Cr": 0.0001,
+       "sigma_v0": 64.063,
+       "description": "probe at z=15 ft (po = 1338 psf)"
+      },
+      {
+       "thickness": 0.3048,
+       "depth_to_center": 5.334,
+       "e0": 1.0,
+       "Cc": 0.001,
+       "Cr": 0.0001,
+       "sigma_v0": 69.761,
+       "description": "probe at z=17.5 ft (po = 1457 psf)"
+      },
+      {
+       "thickness": 0.3048,
+       "depth_to_center": 6.096,
+       "e0": 1.0,
+       "Cc": 0.001,
+       "Cr": 0.0001,
+       "sigma_v0": 75.459,
+       "description": "probe at z=20 ft (po = 1576 psf)"
+      }
+     ],
+     "q_net": 47.88,
+     "B": 1.524,
+     "L": 152.4,
+     "stress_method": "boussinesq"
+    }
+   }
+  ],
+  "published_result": "Example 2-2 table (isobar chart reads x qo): delta_p = 800 / 550 / 400 / 320 / 250 / 200 / 180 / 160 psf at z = 2.5 / 5 / 7.5 / 10 / 12.5 / 15 / 17.5 / 20 ft, giving pf = po + delta_p = 1,075 / 1,100 / 1,225 / 1,420 / 1,469 / 1,538 / 1,637 / 1,736 psf. Example 2-1: po at 20 ft = 2,200 - 624 = 1,576 psf.",
+  "computed_result": {
+   "delta_sigma_kPa_by_depth": [
+    39.18,
+    26.33,
+    18.95,
+    14.64,
+    11.88,
+    9.98,
+    8.59,
+    7.54
+   ],
+   "chart_values_kPa": [
+    38.3,
+    26.33,
+    19.15,
+    15.32,
+    11.97,
+    9.58,
+    8.62,
+    7.66
+   ],
+   "percent_diff_by_depth": [
+    "+2.3%",
+    "0.0%",
+    "-1.1%",
+    "-4.4%",
+    "-0.8%",
+    "+4.2%",
+    "-0.3%",
+    "-1.6%"
+   ],
+   "vs_published": "All eight depths within +/-4.4% of the manual's chart-read isobar values - chart-read precision (the printed values are read off Figure 2-9 to 2 significant figures; e.g. the 0.32 isobar read at z/B = 2 vs the exact strip-solution influence 0.306). The module evaluates the closed-form Boussinesq rectangle solution with L/B = 100 to represent the strip.",
+   "settlement_output_mm": "0.22 mm total - meaningless by design (dummy Cc = 0.001); this call is used for its per-layer delta_sigma echo."
+  },
+  "report_notes": "Demonstrates the manual's Chapter 2 workflow (po-diagram + spatial attenuation of applied stress) on the settlement module's stress-distribution surface: the layer_breakdown echoes the Boussinesq delta_sigma at each probe depth so the reviewer can rebuild Figure 2-12's pf = po + delta_p profile line by line. A report should state the method (Boussinesq elastic strip vs the 2:1 approximation - at z = B the 2:1 method gives 0.5qo vs Boussinesq 0.55qo), the location (centerline - stresses off-center are lower), and that chart-read published values carry ~5% read tolerance. For a real consolidation problem the probe-layer trick is unnecessary: supply the actual compressible layers and the same call distributes stress and sums settlement in one pass.",
+  "provenance": "NHI-06-088 Examples 2-1 and 2-2, pdf pp.77, 84-85",
+  "source_doc": "FHWA NHI-06-088 Soils and Foundations Vol 1.pdf",
+  "source_pdf_pages": [
+   77,
+   84,
+   85
+  ],
+  "source_pages_estimated": false
+ },
+ {
+  "id": "WE-SF-7",
+  "title": "Immediate settlement of a wide embankment on silty sand by the Modified Hough method (FHWA Soils & Foundations Example 7-2)",
+  "domain": "settlement",
+  "keywords": [
+   "Hough method",
+   "bearing capacity index",
+   "immediate settlement",
+   "embankment",
+   "silty sand",
+   "granular settlement",
+   "SPT",
+   "FHWA Soils and Foundations"
+  ],
+  "source": "FHWA NHI-06-088, Soils and Foundations Reference Manual Vol I (Dec 2006), Chapter 7, Example 7-2, printed p. 7-18 (C' from Figure 7-7, printed p. 7-17)",
+  "problem": "A 20-ft (6.096 m) high wide embankment (fill gamma = 120 pcf = 18.851 kN/m3) is placed on a 10-ft (3.048 m) thick silty sand layer (gamma = 120 pcf, N160 = 20). Because the embankment is wide, the applied stress does not dissipate with depth: delta_p = 20 ft x 120 pcf = 2,400 psf (114.91 kPa); po at the sand mid-depth = 5 ft x 120 pcf = 600 psf (28.73 kPa). From Figure 7-7 ('silty sand' curve at N160 = 20), the bearing capacity index C' = 58. Compute the immediate settlement by the Modified Hough method, delta_H = (H/C') log10[(po + delta_p)/po]. The wide-fill condition is modeled by B = L = 1000 m so the module's 2:1 spread is negligible (0.3% at the layer center). Conversions: 1 ft = 0.3048 m, 1 psf = 0.04788 kPa.",
+  "dispatch_calls": [
+   {
+    "module": "settlement",
+    "method": "hough_settlement",
+    "params": {
+     "q_net": 114.913,
+     "B": 1000.0,
+     "L": 1000.0,
+     "layers": [
+      {
+       "thickness": 3.048,
+       "depth_to_center": 1.524,
+       "sigma_v0": 28.728,
+       "C_prime": 58.0,
+       "description": "silty sand, N160 = 20, C' = 58 (Figure 7-7)"
+      }
+     ]
+    }
+   }
+  ],
+  "published_result": "delta_H = (10 ft / 58) x log10(3,000/600) = 0.12 ft = 1.44 in (36.6 mm).",
+  "computed_result": {
+   "total_settlement_m": 0.036677,
+   "total_settlement_mm": 36.68,
+   "delta_sigma_at_center_kPa": 114.56,
+   "vs_published": "+0.3% vs the printed 1.44 in (36.58 mm). The tiny residue is the module's 2:1 spread over the 1000 m pseudo-width (delta_sigma = 114.56 vs the manual's undissipated 114.91 kPa) plus the manual's 2-digit rounding; the no-dissipation hand value is (3.048/58) x log10(5) = 36.73 mm."
+  },
+  "report_notes": "Textbook Modified Hough application. A report should state that C' is the Hough BEARING CAPACITY INDEX read from Figure 7-7 (AASHTO 2004) using the corrected N160 and the soil-description curve - it is NOT Cc/(1+e0) - and that the module takes C' directly (chart reading is the engineer's step; the 'silty sand' curve at N160 = 20 gives C' ~ 58, and using the wrong curve easily shifts the answer 30%+). State the wide-fill assumption (here forced with a large B; for a finite fill give the real B/L and let the built-in 2:1 spread attenuate delta_sigma), the minimum-po rule (manual: use po >= 200 psf near the surface to avoid unrealistic predictions), and that Hough is intentionally conservative for granular immediate settlement (the manual itself notes this bias is often acceptable for embankment quantity estimates).",
+  "provenance": "NHI-06-088 Example 7-2, pdf p.428 (Figure 7-7 pdf p.427)",
+  "source_doc": "FHWA NHI-06-088 Soils and Foundations Vol 1.pdf",
+  "source_pdf_pages": [
+   427,
+   428
+  ],
+  "source_pages_estimated": false
+ },
+ {
+  "id": "WE-SF-8",
+  "title": "Consolidation settlement of a square footing on NC clay with 2:1 stress distribution (FHWA Soils & Foundations Example 8-3)",
+  "domain": "settlement",
+  "keywords": [
+   "consolidation settlement",
+   "square footing",
+   "2:1 stress distribution",
+   "normally consolidated clay",
+   "compression index",
+   "spread footing",
+   "buoyant unit weight",
+   "FHWA Soils and Foundations"
+  ],
+  "source": "FHWA NHI-06-089, Soils and Foundations Reference Manual Vol II (Dec 2006), Chapter 8, Example 8-3, printed pp. 8-54 to 8-55",
+  "problem": "A 10 ft x 10 ft (3.048 x 3.048 m) footing carrying a 130-kip axial load (q = 1,300 psf = 62.24 kPa) is founded 4 ft deep in a 14-ft gravel layer (gamma_t = 130 pcf), which overlies a 10-ft (3.048 m) normally consolidated clay layer (gamma' = 65 pcf, e0 = 0.75, Cc = 0.4) on rock. The gravel is assumed incompressible. Overburden at the clay mid-depth: po = 14 ft x 130 + 5 ft x 65 = 2,145 psf (102.70 kPa). The stress increase at the clay center (15 ft = 4.572 m below the footing base) uses the approximate 2:1 method: delta_p = 130 kips / (10+15 ft)^2 = 208 psf. Compute the consolidation settlement. Cr = 0.04 (~Cc/10) is a placeholder - the layer is NC (no sigma_p entered) so Cr is unused. Conversions: 1 ft = 0.3048 m, 1 psf = 0.04788 kPa.",
+  "dispatch_calls": [
+   {
+    "module": "settlement",
+    "method": "consolidation_settlement",
+    "params": {
+     "layers": [
+      {
+       "thickness": 3.048,
+       "depth_to_center": 4.572,
+       "e0": 0.75,
+       "Cc": 0.4,
+       "Cr": 0.04,
+       "sigma_v0": 102.702,
+       "description": "NC clay 10 ft thick, center 15 ft below footing base"
+      }
+     ],
+     "q_net": 62.244,
+     "B": 3.048,
+     "L": 3.048,
+     "stress_method": "2:1"
+    }
+   }
+  ],
+  "published_result": "delta_p = 130 kips/(25 ft)^2 = 0.208 ksf = 208 psf (2:1 method). delta_H = 10 ft x (0.4/1.75) x log10[(2,145+208)/2,145] = 0.09 ft = 1.1 in (28 mm).",
+  "computed_result": {
+   "consolidation_settlement_m": 0.028003,
+   "consolidation_settlement_mm": 28.0,
+   "delta_sigma_at_clay_center_kPa": 9.96,
+   "vs_published": "Settlement 28.0 mm vs printed 1.1 in (27.9 mm): +0.2% (the printed 0.09 ft is 2-digit rounding of the same number - the unrounded hand value is 0.0919 ft = 28.0 mm). The module's 2:1 stress echo 9.96 kPa = 208 psf matches the manual exactly: q*B*L/((B+z)(L+z)) = 62.24 x 3.048^2 / 7.62^2."
+  },
+  "report_notes": "Single-layer NC consolidation under a finite footing - the case where the stress-distribution choice matters (contrast WE-SF-5's wide embankment, where delta_p is constant). A report should state: the 2:1 method basis (z measured from the FOOTING BASE, not the ground surface - the manual's 15 ft is footing-base to clay-center), the NC basis (sigma_p omitted so the full Cc line applies; Cr is a required schema field but inert here), that po uses the buoyant clay weight (gamma' = 65 pcf, i.e. water table at/above the clay), and the manual's own caveat that total settlement would add the immediate settlement of the gravel (neglected here by the incompressibility assumption). Subdividing the 10-ft clay into 2-3 sublayers with per-sublayer 2:1 stresses refines the mid-depth approximation by a few percent.",
+  "provenance": "NHI-06-089 Example 8-3, pdf pp.88-89",
+  "source_doc": "FHWA NHI-06-089 Soils and Foundations Vol 2.pdf",
+  "source_pdf_pages": [
+   88,
+   89
+  ],
+  "source_pages_estimated": false
+ },
+ {
+  "id": "WE-SF-9",
+  "title": "Lateral pressure diagram for a smooth wall with sloping backfill and groundwater - Coulomb Ka (FHWA Soils & Foundations Example 10-1)",
+  "domain": "retaining_walls",
+  "keywords": [
+   "earth pressure",
+   "Coulomb",
+   "active pressure",
+   "sloping backfill",
+   "lateral pressure diagram",
+   "hydrostatic pressure",
+   "earth pressure coefficient",
+   "FHWA Soils and Foundations"
+  ],
+  "source": "FHWA NHI-06-089, Soils and Foundations Reference Manual Vol II (Dec 2006), Chapter 10, Example 10-1, printed pp. 10-28 to 10-29",
+  "problem": "An 18-ft (5.486 m) wall retains a backfill sloping at beta = 10 deg: upper 6 ft (1.829 m) moist sand (gamma = 115 pcf = 18.065 kN/m3, phi = 30 deg) above the water table, lower 12 ft (3.658 m) saturated sand (gamma_sat = 120 pcf = 18.851 kN/m3, phi = 30 deg) below it. The wall face is smooth and vertical (delta = 0, cw = 0, theta = 0). Construct the lateral pressure diagram: compute the Coulomb active coefficient Ka (phi = 30, beta = 10, delta = 0), the effective lateral earth pressures p'a = Ka x po at z = 6 ft and 18 ft (using the buoyant weight 120 - 62.4 = 57.6 pcf below the water table), and the hydrostatic pressure u at the base. Conversions: 1 ft = 0.3048 m, 1 pcf = 0.15709 kN/m3, 1 psf = 0.04788 kPa.",
+  "dispatch_calls": [
+   {
+    "module": "retaining_walls",
+    "method": "earth_pressure_coefficient",
+    "params": {
+     "theory": "coulomb",
+     "state": "active",
+     "phi_deg": 30.0,
+     "delta_deg": 0.0,
+     "beta_deg": 10.0,
+     "alpha_deg": 90.0
+    }
+   },
+   {
+    "module": "retaining_walls",
+    "method": "earth_pressure_coefficient",
+    "params": {
+     "theory": "rankine",
+     "state": "active",
+     "phi_deg": 30.0,
+     "beta_deg": 10.0
+    }
+   }
+  ],
+  "published_result": "Ka = 0.374 (Coulomb, phi = 30, beta = 10, theta = 0, delta = 0; Figure 10-5). Effective earth pressures: p'a = 0.374 x 690 psf = 258.1 psf at z = 6 ft; p'a = 0.374 x 1,381.2 psf = 516.6 psf at z = 18 ft (po = 690 + 57.6 x 12 = 1,381.2 psf). Water pressure at base: u = 12 ft x 62.4 pcf = 748.8 psf. Total diagram = earth + water.",
+  "computed_result": {
+   "Ka_coulomb": 0.3737,
+   "Ka_rankine_sloped": 0.3495,
+   "pressure_diagram_from_module_Ka": "p'a(6 ft) = 0.3737 x 33.04 kPa = 12.35 kPa = 257.9 psf (-0.1% vs 258.1); p'a(18 ft) = 0.3737 x 66.13 kPa = 24.71 kPa = 516.2 psf (-0.1% vs 516.6); u(18 ft) = 3.658 m x 9.81 = 35.88 kPa = 749.4 psf (+0.1% vs 748.8 - the residue is gamma_w 9.81 kN/m3 vs 62.4 pcf = 9.802).",
+   "vs_published": "Ka 0.3737 vs printed 0.374: -0.1% (the printed value is the closed-form Coulomb coefficient rounded to 3 digits). The pressure ordinates follow as Ka x po products using the module coefficient. Rankine with the same sloping backfill gives Ka = 0.3495, 6.5% lower - the manual deliberately uses Coulomb here."
+  },
+  "report_notes": "The module reproduces the manual's Coulomb coefficient exactly; the diagram ordinates are then Ka x po at the layer break and base, with hydrostatic water added separately (Kw = 1 - NEVER multiply water pressure by Ka). A report should state: the theory and inputs (Coulomb, phi = 30, delta = 0, beta = +10 upslope, vertical wall alpha = 90 - in this adapter alpha is measured from horizontal, 90 = vertical face), that effective stress uses the buoyant weight below the water table, and that with delta = 0 on a vertical wall Coulomb and Rankine coincide ONLY for level backfill - with beta = 10 they differ by 6.5% because sloped-backfill Rankine forces the thrust parallel to the slope while Coulomb with delta = 0 keeps it horizontal. For the full force system on a real wall (thrust magnitude, application point, sliding/overturning), use cantilever_wall; this method is the coefficient-level check.",
+  "provenance": "NHI-06-089 Example 10-1, pdf pp.318-319",
+  "source_doc": "FHWA NHI-06-089 Soils and Foundations Vol 2.pdf",
+  "source_pdf_pages": [
+   318,
+   319
+  ],
+  "source_pages_estimated": false
+ },
+ {
+  "id": "WE-SF-10",
+  "title": "Sliding block (translational) failure of an embankment over a thin soft clay seam (FHWA Soils & Foundations Example 6-3)",
+  "domain": "slope_stability",
+  "keywords": [
+   "sliding block",
+   "translational failure",
+   "Rankine wedge",
+   "soft clay seam",
+   "embankment stability",
+   "noncircular slip surface",
+   "Spencer",
+   "Janbu",
+   "FHWA Soils and Foundations"
+  ],
+  "source": "FHWA NHI-06-088, Soils and Foundations Reference Manual Vol I (Dec 2006), Chapter 6, Example 6-3 and Figure 6-23, printed pp. 6-46 to 6-47",
+  "problem": "A 20-ft (6.096 m) high embankment (2H:1V slope, gamma = 110 pcf = 17.28 kN/m3, phi = 30 deg, c = 0) sits on 10 ft (3.048 m) of the same granular soil, underlain by a thin (1 ft = 0.305 m) soft clay seam (c = 400 psf = 19.15 kPa, phi = 0) over firm material. Water table below the failure plane. The manual computes the factor of safety by the simple sliding block method with Rankine coefficients (per 1-ft strip): active driving force Pa = 0.5 x gamma x H^2 x Ka with H = 30 ft (crest to seam), central block resistance c x l with l = 40 ft (the horizontal slope projection), passive resistance Pp = 0.5 x gamma x H^2 x Kp with H = 10 ft at the toe, FS = (Pp + cl)/Pa. Model in SI with toe at x = 12.19 m: surface (0,3.048)-(12.19,3.048)-(24.38,9.144)-(42.67,9.144); seam from el. 0 to -0.305. Verify the Rankine coefficients with the module, then run the SAME block mechanism as a specified noncircular (polyline) surface - Rankine wedge inclinations 45+phi/2 = 60 deg (active) and 45-phi/2 = 30 deg (passive), horizontal leg inside the seam - through the rigorous limit-equilibrium methods (Janbu, Spencer). Conversions: 1 ft = 0.3048 m, 1 pcf = 0.15709 kN/m3, 1 psf = 0.04788 kPa.",
+  "dispatch_calls": [
+   {
+    "module": "retaining_walls",
+    "method": "earth_pressure_coefficient",
+    "params": {
+     "theory": "rankine",
+     "state": "active",
+     "phi_deg": 30.0
+    }
+   },
+   {
+    "module": "retaining_walls",
+    "method": "earth_pressure_coefficient",
+    "params": {
+     "theory": "rankine",
+     "state": "passive",
+     "phi_deg": 30.0
+    }
+   },
+   {
+    "module": "slope_stability",
+    "method": "analyze_slope",
+    "params": {
+     "surface_points": [
+      [
+       0.0,
+       3.048
+      ],
+      [
+       12.192,
+       3.048
+      ],
+      [
+       24.384,
+       9.144
+      ],
+      [
+       42.672,
+       9.144
+      ]
+     ],
+     "soil_layers": [
+      {
+       "name": "embankment+foundation sand",
+       "top_elevation": 9.144,
+       "bottom_elevation": 0.0,
+       "gamma": 17.28,
+       "phi": 30.0,
+       "c_prime": 0.0
+      },
+      {
+       "name": "soft clay seam",
+       "top_elevation": 0.0,
+       "bottom_elevation": -0.3048,
+       "gamma": 17.28,
+       "cu": 19.152,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "firm material",
+       "top_elevation": -0.3048,
+       "bottom_elevation": -3.048,
+       "gamma": 20.0,
+       "phi": 40.0,
+       "c_prime": 200.0
+      }
+     ],
+     "slip_points": [
+      [
+       6.9129,
+       3.048
+      ],
+      [
+       12.4568,
+       -0.1524
+      ],
+      [
+       24.2963,
+       -0.1524
+      ],
+      [
+       29.6625,
+       9.144
+      ]
+     ],
+     "method": "janbu"
+    }
+   },
+   {
+    "module": "slope_stability",
+    "method": "analyze_slope",
+    "params": {
+     "surface_points": [
+      [
+       0.0,
+       3.048
+      ],
+      [
+       12.192,
+       3.048
+      ],
+      [
+       24.384,
+       9.144
+      ],
+      [
+       42.672,
+       9.144
+      ]
+     ],
+     "soil_layers": [
+      {
+       "name": "embankment+foundation sand",
+       "top_elevation": 9.144,
+       "bottom_elevation": 0.0,
+       "gamma": 17.28,
+       "phi": 30.0,
+       "c_prime": 0.0
+      },
+      {
+       "name": "soft clay seam",
+       "top_elevation": 0.0,
+       "bottom_elevation": -0.3048,
+       "gamma": 17.28,
+       "cu": 19.152,
+       "analysis_mode": "undrained"
+      },
+      {
+       "name": "firm material",
+       "top_elevation": -0.3048,
+       "bottom_elevation": -3.048,
+       "gamma": 20.0,
+       "phi": 40.0,
+       "c_prime": 200.0
+      }
+     ],
+     "slip_points": [
+      [
+       6.9129,
+       3.048
+      ],
+      [
+       12.4568,
+       -0.1524
+      ],
+      [
+       24.2963,
+       -0.1524
+      ],
+      [
+       29.6625,
+       9.144
+      ]
+     ],
+     "method": "spencer"
+    }
+   }
+  ],
+  "published_result": "Ka = tan^2(45-15) = 0.33; Kp = tan^2(45+15) = 3.0. Pa = 0.5(0.110 kcf)(30 ft)^2(0.33) = 16.5 kips; central block cl = (0.400 ksf)(40 ft) = 16.0 kips (71.1 kN); Pp = 0.5(0.110)(10 ft)^2(3.0) = 16.5 kips. FS = (16.5 + 16.0)/16.5 = 1.97.",
+  "computed_result": {
+   "Ka": 0.3333,
+   "Kp": 3.0,
+   "sliding_block_FS_from_module_coefficients": "Assembling the manual's force balance with the module coefficients: Pa = 0.5 x 17.28 x 9.144^2 x 0.3333 = 240.8 kN/m (16.5 kips/ft); cl = 19.152 x 12.19 m = 233.5 kN/m (16.0 kips/ft); Pp = 0.5 x 17.28 x 3.048^2 x 3.0 = 240.8 kN/m (16.5 kips/ft); FS = (240.8 + 233.5)/240.8 = 1.97 - matches the printed 1.97 exactly.",
+   "FOS_janbu_specified_block_surface": 1.5921,
+   "FOS_spencer_specified_block_surface": 1.8103,
+   "vs_published": "Rankine coefficients exact (0.3333/3.0 vs printed 0.33/3.0) and the hand-assembled block FS reproduces 1.97 to 3 digits. The rigorous LE runs on the same wedge geometry give Spencer 1.81 (-8.1%) and Janbu-corrected 1.59 (-19%): a METHOD-DEFINITION gap, not an input gap - the sliding block method computes Pa/Pp with FULL soil strength (Ka, Kp at phi = 30) and puts the safety factor only on the resisting/driving force ratio, while Janbu/Spencer factor the strength everywhere along the surface (including the wedge segments) and enforce interslice equilibrium. The manual itself (Section 6.7) calls the Rankine block a simplified portrayal of the translational mechanism."
+  },
+  "report_notes": "Two-level check for translational failures over weak seams. Level 1: the classic sliding block hand method - verify Ka/Kp with earth_pressure_coefficient and assemble FS = (Pp + cl)/Pa; this reproduces the manual exactly and is the right cross-check vocabulary for reviewers of a certain vintage. Level 2: the same block as a specified polyline surface in analyze_slope (60/30-deg Rankine wedge inclinations, horizontal leg run just inside the seam at el. -0.152 m so the seam strength governs) - expect rigorous LE to sit BELOW the hand block value (here Spencer -8%) because strength is factored consistently; report Spencer (moments + forces) over Janbu (forces only) when they disagree. A real design would also SEARCH (noncircular/noncircular_de) rather than assume the Rankine block is critical, and would check the passive wedge daylighting condition at the toe. State the water assumption (table below the failure plane - total = effective here).",
+  "provenance": "NHI-06-088 Example 6-3, pdf pp.396-397",
+  "source_doc": "FHWA NHI-06-088 Soils and Foundations Vol 1.pdf",
+  "source_pdf_pages": [
+   396,
+   397
+  ],
+  "source_pages_estimated": false
  }
 ]

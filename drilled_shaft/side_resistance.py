@@ -171,10 +171,21 @@ def side_resistance_cohesive(cu: float, shaft_perimeter: float,
 def beta_cohesionless(z: float, N60: float = None) -> float:
     """Beta factor for side resistance in cohesionless soil per GEC-10.
 
-    beta = 1.5 - 0.245 * sqrt(z_ft), clamped to [0.25, 1.2]
+    beta = 1.5 - 0.135 * sqrt(z_ft) = 1.5 - 0.245 * sqrt(z_m),
+    clamped to [0.25, 1.2].
 
-    The original O'Neill & Reese (1999) formula uses z in feet.
-    This implementation converts internally: z_ft = z_m * 3.28084.
+    The original O'Neill & Reese (1999) formula uses z in FEET with
+    coefficient 0.135; the metric-equivalent coefficient is
+    0.135*sqrt(3.28084) = 0.245, applied to z in METERS directly.
+
+    FIXED 2026-07-19 (worked-examples curation, NHI-06-089 Ex 9-5): the
+    previous implementation applied the METRIC coefficient (0.245) to a
+    FEET-converted depth — beta decayed sqrt(3.28) ~ 1.81x too fast and
+    clamped to 0.25 below ~8 m, under-predicting cohesionless side
+    resistance by up to ~64% on the manual's worked example (conservative
+    direction, but wrong). The module's own tests/DESIGN.md encoded the
+    same expression (self-consistent digitization error); all corrected
+    together against the printed feet-form identity.
 
     The formula (and the 200 kPa fs cap) presumes N60 >= 15. For looser
     sands (N60 < 15), O'Neill & Reese reduce beta proportionally:
@@ -204,7 +215,7 @@ def beta_cohesionless(z: float, N60: float = None) -> float:
     O'Neill & Reese (1999), FHWA-RD-99-049
     AASHTO LRFD 10.8.3.5.2b (N60 < 15 reduction)
     """
-    beta = 1.5 - 0.245 * math.sqrt(max(z, 0) * 3.28084)
+    beta = 1.5 - 0.245 * math.sqrt(max(z, 0.0))
     beta = max(0.25, min(beta, 1.2))
     if N60 is not None and 0 < N60 < 15:
         beta *= N60 / 15.0

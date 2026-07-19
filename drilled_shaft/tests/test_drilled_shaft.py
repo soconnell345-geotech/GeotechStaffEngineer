@@ -146,10 +146,14 @@ class TestBetaMethod:
         assert beta_cohesionless(0) == 1.2
 
     def test_moderate_depth(self):
-        """At z=4m (13.1 ft), beta = 1.5 - 0.245*sqrt(13.1) = 0.612."""
+        """At z=4 m (13.12 ft): beta = 1.5 - 0.135*sqrt(13.12) = 1.5 -
+        0.245*sqrt(4) = 1.011 (the pre-2026-07-19 code applied the metric
+        0.245 coefficient to FEET — the unit-mixing defect found by the
+        NHI-06-089 Ex 9-5 curation)."""
         beta = beta_cohesionless(4.0)
-        expected = 1.5 - 0.245 * math.sqrt(4.0 * 3.28084)
-        assert abs(beta - expected) < 0.001
+        expected = 1.5 - 0.135 * math.sqrt(4.0 * 3.28084)
+        assert abs(beta - expected) < 0.002
+        assert abs(beta - (1.5 - 0.245 * math.sqrt(4.0))) < 0.001
 
     def test_deep(self):
         """At very deep, beta clamped to 0.25."""
@@ -173,23 +177,26 @@ class TestBetaMethod:
         assert abs(Qs - expected) < 0.1
 
     def test_beta_at_5m(self):
-        """At z=5m (16.4ft), beta = 1.5 - 0.245*sqrt(16.4) = 0.508."""
+        """At z=5 m (16.4 ft): beta = 1.5 - 0.135*sqrt(16.4) = 0.953."""
         beta = beta_cohesionless(5.0)
-        expected = 1.5 - 0.245 * math.sqrt(5.0 * 3.28084)
-        assert abs(beta - expected) < 0.001
+        expected = 1.5 - 0.135 * math.sqrt(5.0 * 3.28084)
+        assert abs(beta - expected) < 0.002
 
-    def test_beta_at_10m_clamped(self):
-        """At z=10m (32.8ft), raw beta < 0.25, clamped to 0.25."""
-        beta = beta_cohesionless(10.0)
-        assert beta == 0.25
+    def test_beta_deep_clamped(self):
+        """Raw beta reaches the 0.25 floor at z = (1.25/0.245)^2 = 26.0 m
+        (85.4 ft — matching the feet-form floor at (1.25/0.135)^2 = 85.7 ft)."""
+        assert beta_cohesionless(26.5) == 0.25
+        assert beta_cohesionless(25.0) > 0.25
 
     def test_beta_matches_imperial(self):
-        """SI formula must produce same result as imperial formula."""
-        for z_m in [1.0, 2.0, 3.0, 5.0, 7.5]:
+        """The SI form (0.245, z in m) must equal the O'Neill & Reese
+        feet form (0.135, z in ft) — the identity 0.135*sqrt(3.28084)=0.2445
+        that the pre-fix code violated by double-converting."""
+        for z_m in [1.0, 2.0, 3.0, 5.0, 7.5, 15.0]:
             z_ft = z_m * 3.28084
-            beta_imperial = max(0.25, min(1.5 - 0.245 * math.sqrt(z_ft), 1.2))
+            beta_imperial = max(0.25, min(1.5 - 0.135 * math.sqrt(z_ft), 1.2))
             beta_si = beta_cohesionless(z_m)
-            assert abs(beta_si - beta_imperial) < 1e-6, \
+            assert abs(beta_si - beta_imperial) < 2e-3, \
                 f"Mismatch at z={z_m}m: SI={beta_si:.6f} vs imperial={beta_imperial:.6f}"
 
 
@@ -693,8 +700,16 @@ class TestRationalSideResistance:
         sand_d = next(lb for lb in depth.layer_breakdown if lb.get("description") == "sand")
         assert "rational" in sand_r["method"]
         assert "rational" not in sand_d["method"]
-        # rational beta 0.413 vs depth-floored 0.25 -> larger side resistance
-        assert sand_r["side_resistance_kN"] > sand_d["side_resistance_kN"]
+        # The two beta bases give genuinely different results (rational beta
+        # 0.413 here vs the corrected depth-based O'Neill & Reese values ~0.9
+        # at mid-layer). The pre-2026-07-19 assertion "rational > depth" only
+        # held because the depth beta was unit-mixing-broken (floored at 0.25
+        # everywhere below ~8 m); with the corrected formula the depth basis
+        # exceeds rational for this profile, and both are positive/distinct.
+        assert sand_r["side_resistance_kN"] > 0
+        assert sand_d["side_resistance_kN"] > 0
+        assert (abs(sand_r["side_resistance_kN"] - sand_d["side_resistance_kN"])
+                / sand_d["side_resistance_kN"] > 0.05)
 
     def test_high_level_alpha_rational_vs_aashto_default(self):
         shaft = DrillShaft(diameter=8 * 0.3048, length=3.0 + 15 * 0.3048 + 3.0, casing_depth=3.0)
