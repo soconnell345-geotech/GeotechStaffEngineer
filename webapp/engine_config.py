@@ -61,6 +61,19 @@ _MODEL_BUILDER: Optional[Callable[[], object]] = None
 FOUNDRY_TOKEN_ENVS = ("GEOTECH_FOUNDRY_TOKEN", "FOUNDRY_TOKEN")
 FOUNDRY_HOST_ENVS = ("GEOTECH_FOUNDRY_HOST", "FOUNDRY_HOSTNAME", "FOUNDRY_URL")
 
+#: Deployment-mode marker. ``webapp.foundry_entry.main()`` sets this to
+#: "foundry" so the app KNOWS it is running on a Foundry deployment: the
+#: Anthropic-key path is then skipped entirely (never looked up, never
+#: mentioned in any user-facing message — a hard requirement for enclave
+#: deployments where an "API key" reference would raise IT flags) and the
+#: model surface is Foundry RIDs only.
+DEPLOYMENT_ENV = "GEOTECH_DEPLOYMENT"
+
+
+def is_foundry_deployment() -> bool:
+    """True when running as a Foundry deployment (set by foundry_entry)."""
+    return os.environ.get(DEPLOYMENT_ENV, "").strip().lower() == "foundry"
+
 
 def foundry_token() -> Optional[str]:
     """The Foundry bearer token from the first set env var, else None."""
@@ -256,6 +269,17 @@ def resolve_engine(model_id: Optional[str] = None) -> EngineResolution:
     _mid = model_id or os.environ.get(MODEL_ENV)
     if is_foundry_model_id(_mid):
         return _resolve_foundry(_mid)
+
+    # On a Foundry deployment the Anthropic-key path does not exist: the key
+    # env is never read and no message references it — the only engine surface
+    # is a model RID (or the deployment Prompter hook above).
+    if is_foundry_deployment():
+        return EngineResolution(
+            None, "none", "",
+            "No model configured. Enter your Foundry model RID in the sidebar "
+            "('Model RID'), or set GEOTECH_FOUNDRY_MODELS "
+            "(Label=ri....) on the deployment and republish. The app is "
+            "running, but cannot answer questions until a model is selected.")
 
     # 3) ANTHROPIC_API_KEY -> ChatAnthropic (local / dev path).
     if os.environ.get(KEY_ENV):

@@ -69,12 +69,19 @@ def _versions_check() -> dict:
 
 
 def _env_check() -> dict:
-    """Which engine-relevant env vars are set (values masked)."""
-    envs = ("ANTHROPIC_API_KEY",
-            "GEOTECH_FOUNDRY_TOKEN", "FOUNDRY_TOKEN",
+    """Which engine-relevant env vars are set (values masked).
+
+    On a Foundry deployment the Anthropic key is NOT part of the engine
+    surface — it is neither read nor mentioned (enclave-IT requirement), so it
+    is omitted from the report there.
+    """
+    from webapp import engine_config
+    envs = ("GEOTECH_FOUNDRY_TOKEN", "FOUNDRY_TOKEN",
             "GEOTECH_FOUNDRY_HOST", "FOUNDRY_HOSTNAME", "FOUNDRY_URL",
             "GEOTECH_FOUNDRY_MODELS", "GEOTECH_WEBAPP_MAX_TOKENS",
             "GEOTECH_FOUNDRY_DISABLE_STREAMING", "GEOTECH_TRACE")
+    if not engine_config.is_foundry_deployment():
+        envs = ("ANTHROPIC_API_KEY",) + envs
     parts = []
     for e in envs:
         v = os.environ.get(e)

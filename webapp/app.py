@@ -293,13 +293,14 @@ with st.sidebar:
     if ss.model and ss.model not in _ids:   # a custom id/RID stays selectable
         _ids.insert(0, ss.model)
         _labels[ss.model] = f"{ss.model} — custom"
-    _cur = ss.model if ss.model in _ids else _ids[0]
+    _foundry_mode = engine_config.is_foundry_deployment()
+    _cur = ss.model if ss.model in _ids else (_ids[0] if _ids else "")
     # Programmatic model change (custom RID box, conversation resume): sync the
     # widget's sticky state to ss.model BEFORE instantiating it, else the widget
     # reports its old value as "the user's pick" and reverts the change.
     if ss.get("_model_dirty"):
         ss._model_dirty = False
-        if st.session_state.get("model_pick") not in (None, _cur):
+        if _ids and st.session_state.get("model_pick") not in (None, _cur):
             st.session_state["model_pick"] = _cur
     # Model switches fire ONLY from the widget's own change event (on_change),
     # never from comparing the widget value to ss.model after the fact: through
@@ -314,22 +315,24 @@ with st.sidebar:
             if core.load_meta(st.session_state.thread_id) is not None:
                 core.touch_conversation(st.session_state.thread_id, model=picked)
 
-    st.selectbox(
-        "Model", _ids, index=_ids.index(_cur),
-        format_func=lambda i: _labels.get(i, i), key="model_pick",
-        on_change=_on_model_pick,
-        help="Switch the model for this conversation going forward (cheaper/"
-             "faster models for quick questions). History, uploads and artifacts "
-             "are kept; the next turn replays the conversation into the new model.")
+    if _ids:
+        st.selectbox(
+            "Model", _ids, index=_ids.index(_cur),
+            format_func=lambda i: _labels.get(i, i), key="model_pick",
+            on_change=_on_model_pick,
+            help="Switch the model for this conversation going forward (cheaper/"
+                 "faster models for quick questions). History, uploads and artifacts "
+                 "are kept; the next turn replays the conversation into the new model.")
     if eng.source == "prompter":
         st.caption("Model is fixed by the deployment; the picker doesn't apply.")
 
-    # Custom model id / Foundry RID — lets a deployment plug in a newly-enabled
-    # model (e.g. a Claude RID on Foundry) without a code change or env edit.
-    with st.expander("Custom model id (advanced)", expanded=False):
+    # Model RID input. On a Foundry deployment this is the PRIMARY (often only)
+    # model surface, shown inline; elsewhere it stays tucked in an "advanced"
+    # expander. Same widget keys either way (regression tests rely on them).
+    def _render_rid_input():
         _rid = st.text_input(
-            "Model id or Foundry RID", value="",
-            key=f"custom_model_{ss.thread_id}",
+            "Model RID" if _foundry_mode else "Model id or Foundry RID",
+            value="", key=f"custom_model_{ss.thread_id}",
             help="e.g. ri.language-model-service..language-model.gpt-5-2 — "
                  "'ri.…' ids route through the Foundry LLM proxy automatically "
                  "(see docs/FOUNDRY.md). Applies to this conversation going "
@@ -340,6 +343,12 @@ with st.sidebar:
             if core.load_meta(ss.thread_id) is not None:
                 core.touch_conversation(ss.thread_id, model=_rid.strip())
             st.rerun()
+
+    if _foundry_mode:
+        _render_rid_input()
+    else:
+        with st.expander("Custom model id (advanced)", expanded=False):
+            _render_rid_input()
 
     # Connection diagnostics — runs the same calls a chat turn makes (resolve,
     # plain request, streaming request, tool-calling request) one stage at a

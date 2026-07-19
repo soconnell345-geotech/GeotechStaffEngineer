@@ -29,7 +29,14 @@ def app_path() -> str:
 
 
 def main() -> None:
-    """Run the packaged app in the current Streamlit script context."""
+    """Run the packaged app in the current Streamlit script context.
+
+    Marks the process as a Foundry deployment (``GEOTECH_DEPLOYMENT=foundry``)
+    BEFORE the app runs: the app then presents Foundry model RIDs as the ONLY
+    engine surface — the Anthropic API-key path is never looked up and never
+    mentioned in any message (enclave-IT requirement).
+    """
+    os.environ.setdefault("GEOTECH_DEPLOYMENT", "foundry")
     runpy.run_path(app_path(), run_name="__main__")
 
 

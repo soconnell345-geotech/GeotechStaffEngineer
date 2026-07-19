@@ -566,7 +566,14 @@ def model_choices(env_model: Optional[str] = None) -> List[dict]:
     Returns fresh dicts (safe to mutate)."""
     envm = (env_model if env_model is not None
             else os.environ.get("GEOTECH_WEBAPP_MODEL"))
-    choices = foundry_model_choices() + [dict(c) for c in MODEL_CHOICES]
+    from webapp import engine_config
+    # Foundry deployment: RIDs are the ONLY model surface — the curated
+    # Anthropic list is not offered (and the key path is disabled in
+    # engine_config), so an unconfigured deployment shows just the RID input.
+    if engine_config.is_foundry_deployment():
+        choices = foundry_model_choices()
+    else:
+        choices = foundry_model_choices() + [dict(c) for c in MODEL_CHOICES]
     if envm and not any(c["id"] == envm for c in choices):
         choices.insert(0, {"id": envm, "label": envm,
                            "blurb": "from GEOTECH_WEBAPP_MODEL"})
@@ -583,7 +590,14 @@ def default_model_id(env_model: Optional[str] = None) -> str:
     if envm:
         return envm
     fm = foundry_model_choices()
-    return fm[0]["id"] if fm else MODEL_CHOICES[0]["id"]
+    if fm:
+        return fm[0]["id"]
+    from webapp import engine_config
+    # Foundry deployment with nothing configured: no default model exists —
+    # the app boots engineless and offers the RID input only.
+    if engine_config.is_foundry_deployment():
+        return ""
+    return MODEL_CHOICES[0]["id"]
 
 
 def model_label(model_id: Optional[str]) -> str:
