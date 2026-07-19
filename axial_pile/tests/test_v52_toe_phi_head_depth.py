@@ -194,8 +194,10 @@ class TestV001ToePhi40:
             )
 
     def test_highlevel_toe_phi40_beats_single_phi(self):
-        """Setting toe phi=40 raises the high-level toe well above the old
-        single-phi (phi=36) result (~301 kips)."""
+        """Setting toe phi=40 raises the high-level toe well above the
+        single-phi (phi=36) result — ~154 kips with the corrected Fig 7-15 qL
+        digitization (2026-07-19; the old 301-kip pin encoded the wrong
+        table's qL(36)=14,000 kPa, ~2x the printed chart)."""
         pile = make_h_pile("HP12x74")
         soil40 = self._footing_datum_profile()
         soil36 = AxialSoilProfile(layers=[
@@ -205,7 +207,7 @@ class TestV001ToePhi40:
         ], gwt_depth=10 * FT)
         r40 = AxialPileAnalysis(pile=pile, soil=soil40, pile_length=60 * FT).compute()
         r36 = AxialPileAnalysis(pile=pile, soil=soil36, pile_length=60 * FT).compute()
-        assert r36.Q_tip / KIP == pytest.approx(301.0, rel=0.05)  # old single-phi
+        assert r36.Q_tip / KIP == pytest.approx(154.4, rel=0.05)  # single-phi=36
         assert r40.Q_tip > r36.Q_tip
         assert r40.Q_skin == pytest.approx(r36.Q_skin, rel=1e-12)  # shaft unchanged
 

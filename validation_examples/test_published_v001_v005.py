@@ -132,17 +132,21 @@ def test_v001_toe_with_design_limit_phi40_matches():
 
 
 def test_v001_toe_single_phi_api_is_default_behaviour():
-    """DEFAULT BEHAVIOUR (preserved): with NO per-layer toe phi set, the
-    high-level AxialPileAnalysis API uses ONE phi per layer, so it applies
-    phi=36 (shaft) at the toe too, giving ~301 kips in Layer 3 (-30% vs the
-    published 428.1). This pins the unchanged default — the v5.2 toe-phi
-    feature is purely additive (see the next test)."""
+    """DEFAULT BEHAVIOUR: with NO per-layer toe phi set, the high-level
+    AxialPileAnalysis API uses ONE phi per layer, so it applies phi=36
+    (shaft) at the toe too. With the CORRECTED Fig 7-15 qL digitization
+    (2026-07-19: qL(36)=7,182 kPa per the printed tsf chart — the old table's
+    14,000 was ~2x unconservative there), that gives ~154 kips in Layer 3
+    (-64% vs the published 428.1, which REQUIRES the design-limit toe phi=40
+    that GEC-12's own example selects — see the next test). The pre-fix pin
+    here (301 kips) was a regression pin of the wrong table, not a published
+    value."""
     pile = make_h_pile("HP12x74")
     soil = _v001_profile()           # no toe_friction_angle anywhere
     r = AxialPileAnalysis(pile=pile, soil=soil,
                           pile_length=60 * FT, method="auto").compute()
     Rt_single_phi = r.Q_tip / KIP
-    assert Rt_single_phi == pytest.approx(301.0, rel=0.05)   # module, phi=36 toe
+    assert Rt_single_phi == pytest.approx(154.4, rel=0.05)   # module, phi=36 toe
     assert abs(Rt_single_phi - 428.1) / 428.1 > 0.15         # off vs published
 
 

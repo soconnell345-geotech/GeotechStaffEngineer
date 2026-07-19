@@ -425,49 +425,58 @@ class TestNordlundCosOmega:
 # ═══════════════════════════════════════════════════════════════════════
 
 class TestLimitingTipResistance:
-    """Verify limiting tip resistance from GEC-12 Figure 7-15 (Meyerhof 1976)."""
+    """Verify limiting tip resistance from GEC-12 Figure 7-15 (Meyerhof 1976).
+
+    VALUES CORRECTED 2026-07-19 (sample-calc defect detection): the printed
+    chart is qL in TSF on a linear axis, strongly convex — ~10 tsf (958 kPa)
+    at phi=30, 200 tsf (19,152 kPa) at phi=40, extending to 45 deg. The old
+    table (5,000..19,000 kPa over 26-40) matched print only at phi=40 and was
+    ~10x UNCONSERVATIVE at phi=30; these tests pinned that wrong table
+    (self-consistent digitization error). New pins = the page-QC'd refs
+    digitization x 95.76 kPa/tsf, chart re-confirmed visually (GEC 12 Vol 1
+    pdf p. 284)."""
 
     def test_phi_26(self):
-        assert _limiting_tip_resistance(26) == pytest.approx(5000, rel=1e-6)
+        assert _limiting_tip_resistance(26) == pytest.approx(192, rel=1e-3)
 
     def test_phi_28(self):
-        assert _limiting_tip_resistance(28) == pytest.approx(7000, rel=1e-6)
+        assert _limiting_tip_resistance(28) == pytest.approx(479, rel=1e-3)
 
     def test_phi_30(self):
-        assert _limiting_tip_resistance(30) == pytest.approx(10000, rel=1e-6)
+        assert _limiting_tip_resistance(30) == pytest.approx(958, rel=1e-3)
 
     def test_phi_34(self):
-        assert _limiting_tip_resistance(34) == pytest.approx(12000, rel=1e-6)
+        assert _limiting_tip_resistance(34) == pytest.approx(3830, rel=1e-3)
 
     def test_phi_38(self):
-        assert _limiting_tip_resistance(38) == pytest.approx(16500, rel=1e-6)
+        assert _limiting_tip_resistance(38) == pytest.approx(12449, rel=1e-3)
 
     def test_phi_40(self):
-        assert _limiting_tip_resistance(40) == pytest.approx(19000, rel=1e-6)
+        assert _limiting_tip_resistance(40) == pytest.approx(19152, rel=1e-3)
 
-    def test_phi_below_26_conservative(self):
-        """phi < 26 should return 3000 kPa (conservative minimum)."""
-        assert _limiting_tip_resistance(20) == pytest.approx(3000, rel=1e-6)
-        assert _limiting_tip_resistance(25) == pytest.approx(3000, rel=1e-6)
+    def test_phi_below_26_clamped(self):
+        """phi < 26: clamped to the chart floor (printed curve ~0 below 30)."""
+        assert _limiting_tip_resistance(20) == pytest.approx(192, rel=1e-3)
+        assert _limiting_tip_resistance(25) == pytest.approx(192, rel=1e-3)
 
-    def test_phi_above_40_capped(self):
-        """phi > 40 should be capped at 19000 kPa."""
-        assert _limiting_tip_resistance(42) == pytest.approx(19000, rel=1e-6)
-        assert _limiting_tip_resistance(45) == pytest.approx(19000, rel=1e-6)
+    def test_phi_above_45_capped(self):
+        """The printed chart extends to 45 deg (old 40-deg cap was wrong)."""
+        assert _limiting_tip_resistance(42) == pytest.approx(26813, rel=1e-3)
+        assert _limiting_tip_resistance(45) == pytest.approx(38304, rel=1e-3)
+        assert _limiting_tip_resistance(47) == pytest.approx(38304, rel=1e-3)
 
     def test_interpolation_phi_29(self):
-        """phi=29 should interpolate between 7000 (phi=28) and 10000 (phi=30)."""
-        expected = 7000 + (10000 - 7000) * (29 - 28) / (30 - 28)
-        assert _limiting_tip_resistance(29) == pytest.approx(expected, rel=1e-6)
+        """phi=29 interpolates between the phi=28 and phi=30 chart points."""
+        expected = 479 + (958 - 479) * (29 - 28) / (30 - 28)
+        assert _limiting_tip_resistance(29) == pytest.approx(expected, rel=1e-3)
 
     def test_end_bearing_respects_limit(self):
         """End bearing should be capped by the limiting tip resistance."""
         # Very high sigma_v to force qt > qt_limit
         Qt = end_bearing_cohesionless(30, 5000, 0.1, 20, 0.3)
-        # qt = alpha_t * Nq' * sigma_v = 1.0 * 35 * 5000 = 175000 kPa
-        # qt_limit for phi=30 = 10000 kPa
-        # So Qt should be limited: 10000 * 0.1 = 1000 kN
-        assert Qt == pytest.approx(10000 * 0.1, rel=0.01)
+        # qt = alpha_t * Nq' * sigma_v >> qt_limit(phi=30) = 958 kPa
+        # So Qt is limited: 958 * 0.1 kN
+        assert Qt == pytest.approx(958 * 0.1, rel=0.01)
 
 
 # ═══════════════════════════════════════════════════════════════════════

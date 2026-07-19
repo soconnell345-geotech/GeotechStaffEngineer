@@ -108,3 +108,16 @@ Report: `wave7_em2906_pti_mo.md`.
 | `drilled_shaft` depth-based beta unit-mixing — metric coefficient 0.245 applied to FEET-converted depth (decayed ~1.81x too fast, floored at 0.25 below ~8 m; Ex 9-5 Q_skin -64%; tests/DESIGN.md encoded the same expression) | **FIXED**: beta = 1.5 - 0.245*sqrt(z_m) = 1.5 - 0.135*sqrt(z_ft); tests corrected incl. the one that asserted the bugs consequence; GEC-10 rational path unaffected. Ex 9-5 is now curatable as a future worked example. |
 | `axial_pile` nordlund `_limiting_tip_resistance` low-phi qL suspicion (~10,000 kPa at phi=30 vs manual ~479 kPa; phi=40 end verified OK) | OPEN — verify vs printed GEC-12 Fig 7-15 before changing. |
 | Ex 8-2 Schmertmann: manual uses the FHWA-interpolated variant (L/B-interpolated Iz + X-factor on Es); our module is classic 1978 binary square/strip | NOTED — possible future enhancement (fhwa variant flag), not a defect. |
+
+## Defect #4 — Nordlund/Meyerhof qL (2026-07-19, CLOSED)
+
+`axial_pile/nordlund.py` `_limiting_tip_resistance`: old table matched the
+printed GEC-12 Fig 7-15 ONLY at phi=40 — at phi=30 it read 10,000 kPa vs the
+printed ~10 tsf (958 kPa), ~10x UNCONSERVATIVE at low phi (curve is strongly
+convex in tsf; the old near-linear kPa table missed it; the 40-deg cap was
+also wrong — chart spans 26-45). FIXED with the page-QC'd refs digitization
+(gec_12.figure_7_15_limiting_toe_resistance x 95.76), chart re-confirmed
+visually (Vol 1 pdf p. 284). Tests corrected (incl. two pins of the wrong
+table's consequences: single-phi=36 toe 301 -> 154.4 kips); published V-001
+phi=40 anchor now -3.8% vs plateau (was -4.6%). Flag raised by the NHI-06-089
+Ex 9-2 curation. Four real defects total from the sample-calc detector.

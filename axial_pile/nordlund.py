@@ -294,15 +294,29 @@ def _limiting_tip_resistance(phi_deg: float) -> float:
     References
     ----------
     FHWA GEC-12, Figure 7-15 (after Meyerhof, 1976).
+
+    Provenance (FIXED 2026-07-19, sample-calc defect detection): the previous
+    table (5,000..19,000 kPa over phi 26-40) matched the printed chart ONLY at
+    the phi=40 end — at phi=30 it read 10,000 kPa where the chart prints
+    ~10 tsf (958 kPa), i.e. ~10x UNCONSERVATIVE at low phi (the curve is
+    strongly convex, near-zero below phi=30; the old near-linear table missed
+    that entirely). Values below are the page-QC'd digitization from
+    geotech_references.gec_12.figure_7_15_limiting_toe_resistance (tsf,
+    x 95.76 kPa/tsf), re-confirmed visually against the printed chart
+    (GEC 12 Vol 1, pdf p. 284) — flagged by the NHI-06-089 Ex 9-2 curation,
+    which found the manual's worked answer governed by a ~10 ksf limit our
+    table exceeded 20x. The chart spans 26-45 deg (old cap at 40 was also
+    wrong); clamped to the printed end values outside.
     """
-    # Chart data points: (phi_deg, q_L in kPa)
-    _phi_values = [26, 28, 30, 32, 34, 36, 38, 40]
-    _ql_values = [5000, 7000, 10000, 11000, 12000, 14000, 16500, 19000]
+    # (phi_deg, q_L kPa) = refs Fig 7-15 digitization (tsf) * 95.76
+    _phi_values = [26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 45]
+    _ql_values = [192, 479, 958, 1915, 3830, 7182,
+                  12449, 19152, 26813, 34474, 38304]
 
     if phi_deg < 26:
-        return 3000.0  # conservative minimum for low phi
-    if phi_deg > 40:
-        return 19000.0  # cap at phi=40
+        return 192.0   # chart floor (printed curve is ~0 below phi=30)
+    if phi_deg > 45:
+        return 38304.0
 
     return float(np.interp(phi_deg, _phi_values, _ql_values))
 
