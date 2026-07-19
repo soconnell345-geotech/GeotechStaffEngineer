@@ -121,3 +121,28 @@ visually (Vol 1 pdf p. 284). Tests corrected (incl. two pins of the wrong
 table's consequences: single-phi=36 toe 301 -> 154.4 kips); published V-001
 phi=40 anchor now -3.8% vs plateau (was -4.6%). Flag raised by the NHI-06-089
 Ex 9-2 curation. Four real defects total from the sample-calc detector.
+
+## Das 6e solutions sweep (2026-07-19/20) — CLEAN BILL + ergonomics backlog
+
+8 problems (consolidation+t50, inclined/eccentric/two-way bearing, Schmertmann,
+cantilever wall chain, anchored sheet pile, alpha/beta pile): **zero suspected
+defects** — every discrepancy reconciled to <=0.3% under the printed
+convention (report: das_solutions_sweep.md, INTERNAL-ONLY source). Confirms
+the four fixed defects stand and the kernels match an independent textbook.
+
+**Ergonomics/coverage backlog surfaced (not defects, recorded for a future
+session, roughly by priority):**
+1. axial_pile beta method uses one global cohesive_phi for ALL cohesive layers
+   (per-layer phi ignored; adapter doc wrongly implies tip-only) — a naive
+   user gets exactly beta(25)/beta(20) = +12.4% error. Doc-vs-behavior
+   mismatch: closest to a defect of the six.
+2. Schmertmann adapter does not expose gamma_soil (silently inflates Izp) and
+   samples Iz once per user layer (should subdivide at the peak).
+3. sheet_pile.anchored_wall embedment grid has a 0.5 m floor with no
+   refinement (D=0.35 m problems unresolvable); no balanced-water waterfront
+   mode (effective-gamma workaround needed).
+4. bearing_capacity_analysis cannot take separate moist/saturated gamma about
+   a GWT (single-gamma encoding is conservative but inexact).
+5. No Highter-Anders two-way-eccentricity option (Meyerhof-1953 rectangle
+   only; -6.5% raw on Das 3.13, exact when fed H-A B-prime/L-prime).
+6. No lambda (Vijayvergiya-Focht) pile method.
