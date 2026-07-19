@@ -133,3 +133,52 @@ def test_validation_errors():
                            xc=169.5 * FT, yc=210 * FT, radius=210 * FT)
     with pytest.raises(ValueError):
         rapid_drawdown_fos(g, 110 * FT, 24 * FT)     # no slip surface
+
+
+# ---------------------------------------------------------------------------
+# Kf per EM 1110-2-1902 App. G (wiki-verification 2026-07-18): Eq. G-7 closed
+# form for c'=0; printed stress-dependent Eq. G-8 for c'>0 (p. G-7).
+# ---------------------------------------------------------------------------
+
+def test_Kf_G7_closed_form_when_c_zero():
+    from slope_stability.rapid_drawdown import _Kf
+    phi = 30.0
+    K7 = (1 + math.sin(math.radians(phi))) / (1 - math.sin(math.radians(phi)))
+    assert _Kf(phi) == pytest.approx(K7)
+    assert _Kf(phi, 0.0, 100.0) == pytest.approx(K7)
+
+
+def test_Kf_G8_exceeds_G7_and_converges():
+    """G-8 with c'>0 exceeds G-7 at finite stress (conservative: smaller w)
+    and converges to G-7 as sigma'_fc >> c'."""
+    from slope_stability.rapid_drawdown import _Kf
+    phi, c = 30.0, 10.0
+    K7 = _Kf(phi)
+    k_low, k_mid, k_high = _Kf(phi, c, 30.0), _Kf(phi, c, 300.0), _Kf(phi, c, 3e5)
+    assert k_low > k_mid > K7          # monotone toward G-7 from above
+    assert k_high == pytest.approx(K7, rel=1e-3)
+    # Printed G-8 hand check: phi=30, c'=10, sigma=100:
+    # (100+8.6603)(1.5) / ((100-8.6603)(0.5)) = 162.99/45.67 = 3.569
+    assert _Kf(30.0, 10.0, 100.0) == pytest.approx(3.5690, rel=1e-3)
+
+
+def test_Kf_G8_capped_below_c_cos_phi():
+    from slope_stability.rapid_drawdown import _Kf
+    assert _Kf(30.0, 10.0, 5.0) == pytest.approx(1e6)   # sigma < c'*cos(phi)
+
+
+def test_G8_conservative_direction_on_c_prime_soil():
+    """For c' > 0 the G-8 Kf exceeds G-7, so the interpolation weight
+    w = (Kc-1)/(Kf-1) shrinks and the stage-2 strength s_R + w*(s_D - s_R)
+    moves TOWARD the R envelope (conservative when s_D > s_R). The c'=0 case
+    is byte-identical to pre-G-8 behaviour by construction (G-8 -> G-7), which
+    the published validations V-037/041/048/052 pin."""
+    from slope_stability.rapid_drawdown import _Kf
+    phi, c, sfc, Kc = 30.0, 10.0, 100.0, 2.0
+    s_R, s_D = 40.0, 90.0                      # s_D > s_R (usual case)
+    w7 = (Kc - 1.0) / (_Kf(phi) - 1.0)
+    w8 = (Kc - 1.0) / (_Kf(phi, c, sfc) - 1.0)
+    assert w8 < w7
+    s7 = s_R + w7 * (s_D - s_R)
+    s8 = s_R + w8 * (s_D - s_R)
+    assert s_R < s8 < s7 < s_D
