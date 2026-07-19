@@ -29,17 +29,22 @@ still requires a Tier-B page check. Wishlist item codes refer to
 | O6 AASHTO site factors (wave 4) | **CONFIRMED — 75/75 cells match** AASHTO LRFD 5th Ed (2010) Tables 3.10.3.2-1/2/3 (printed pp. 3-88/89; 9th-Ed copy is DRM-locked, tables edition-stable, renumbered 3.10.3.1-x). Interpolation + Class-F footnotes conform; Fpga=Fa aliasing faithful to print. Report: `aashto_site_factors.md`. site_class.py provenance upgraded. |
 | O2 COM624P Reese sand (wave 3) | **REAL DISCREPANCIES FOUND AND FIXED**: the audited A_c=0.55 deep asymptote was WRONG (0.55 is B_c's; Fig 3.12 prints A=0.88 for both loadings), both cyclic tables were v5.3 reconstructions matching the manual at no depth (real A_c/B_c are low hump curves), A_s mid-depths ran +0.12..+0.24 high, k submerged medium/dense −32/−35% vs printed Tables 3.4/3.5, and the "Figs 2.19/2.20 / Table 2.2" citations were stale. ALL FIXED: four tables re-digitized from Figs 3.12/3.13 (page-calibrated reads), k anchors set to printed values, citations corrected, tests updated to the printed asymptotes (127 lateral_pile + V-017 + funhouse green). Report: `reese_sand_com624p.md`. Scope: opt-in `construction="reese1974"` branch + `_sand_k_recommendation`; default "simplified" branch untouched. AUDIT RED-FLAG CLOSED. |
 
-## Open follow-up tickets (from Tier-B findings)
+## Follow-up tickets — BOTH CLOSED (2026-07-19)
 
-1. **rapid_drawdown Kf for c' > 0** — `_consolidation_Kc` uses the c'=0 closed
-   form (EM Eq. G-7) where the EM prescribes stress-dependent Eq. G-8 when
-   c' > 0; slightly unconservative interpolation weight, bounded by the w<=1
-   clamp and the 3-stage drained substitution. Fix = implement G-8 + re-run the
-   FULL drawdown validation set (V-037/041/048/052) before merging. Flagged
-   in-code at `_consolidation_Kc`.
-2. **V-052 Pilarcitos re-run on the true two-slope section** (2:1 lower 58 ft /
-   3:1 upper, printed p. 262 Fig. 3) — would let LK/DWW magnitudes be compared
-   against published directly instead of ordering-only.
+1. ~~rapid_drawdown Kf for c' > 0~~ — **FIXED**: `_Kf` implements printed
+   Eq. G-8; reduces to G-7 at c'=0 (published validations byte-identical);
+   V-037/041/048/052 green.
+2. ~~V-052 true-section re-run~~ — **DONE (V-052b)**: on the real 2:1/3:1
+   section, Corps 0.726 (published 0.823, failure reproduced), LK 1.279 / DWW
+   1.266 (published ~1.05) — overshoot shrinks ~29% → ~22%, residual isolated
+   to the steep phi'=45 Kc gain (moderate-phi' #98 matches ~10%).
+
+## Remaining queue (for a future session)
+
+- EM 1110-2-2906 → pile_group DESIGN.md refs task (both copies in library).
+- PTI DC35.1-14 presumptive grout-bond stress tables (page check, soe anchors).
+- M-O K_AE printed-table anchor (library seismic-wall docs located).
+- Optional: Slide2-manual-copy hunt for the raster-recovered geometries.
 
 ## NEEDS-PAGE-CHECK (records too shallow for the specific values)
 
