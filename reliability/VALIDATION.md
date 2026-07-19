@@ -19,7 +19,7 @@ python -m pytest reliability -q
 | 6 | UFC 3-220-20 ch. 7, Eq. 7-16 | 10% exceedance in 50 yr | lambda = 0.002107 (≈475-yr return) | exact match | test_validation::test_seismic_rate_of_exceedance |
 | 7 | USACE ETL 1110-2-547 App. B / Ang & Tang | exact normal margin R−S: R(15,2), S(10,1.5) | beta = 2.000 exact | FOSM 2.000, PEM 2.000, FORM 2.0000, MC pf = 0.0228 (n=200k, exact 0.02275) | test_validation::test_normal_margin_all_engines |
 | 8 | USACE ETL 1110-2-547 App. B (lognormal R/S closed form) | R LN(20, 20%), S LN(10, 25%) | beta = 2.2275 exact | FORM beta = 2.2275 | test_validation::test_lognormal_quotient_exact |
-| 9 | Duncan (2000) Table 1 COV values | gamma 3–7%, phi' 2–13%, su 13–40%, SPT 15–45%, ... | stored verbatim (verified against the published paper) | provenance-locked | test_cov_spatial::TestPublishedValues |
+| 9 | Duncan (2000) Table 3 COV values | gamma 3–7%, phi' 2–13%, su 13–40%, SPT 15–45%, ... | stored verbatim (all 15 rows verified digit-for-digit against the in-hand paper 2026-07-18, module_work/wiki_verification/duncan_2000_cov.md) | provenance-locked | test_cov_spatial::TestPublishedValues |
 | 10 | ISSMGE-TC304 (2021) Tables 1.2/1.3, 3.1 | site-specific COVs (su clay mean 28.2%, phi sand mean 7.9%) + scales of fluctuation (clay delta_v avg 2.47 m) | stored verbatim from the report PDF | provenance-locked | test_cov_spatial |
 
 ## 2. FORM vs pystra cross-check (live, pystra installed)

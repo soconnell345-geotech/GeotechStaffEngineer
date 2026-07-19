@@ -4,7 +4,7 @@ provenance.
 
 Datasets
 --------
-1. ``duncan_2000``  — Duncan (2000) Table 1 "Values of COV for geotechnical
+1. ``duncan_2000``  — Duncan (2000) Table 3 "Values of COV for geotechnical
    properties and in situ tests" (sources Harr 1984; Kulhawy 1992; Lacasse &
    Nadim 1997; Benson et al. 1999; Duncan 2000). Verified against the
    published paper.
@@ -15,7 +15,7 @@ Datasets
 3. ``transformation`` — transformation (correlation-model) uncertainty,
    Phoon & Kulhawy (1999b) examples as quoted in UFC 3-220-20 sec. 7-3.1.3.
 4. ``measurement``  — total in-situ test variability ranges (Kulhawy 1992;
-   Kulhawy & Trautmann 1996), as reproduced in Duncan (2000) Table 1.
+   Harr 1984; Kulhawy 1992), as reproduced in Duncan (2000) Table 3.
 
 All COV values are stored in PERCENT, as published. Combine components with
 :func:`reliability.stats.combined_cov` (which takes fractions —
@@ -24,7 +24,7 @@ divide by 100).
 References
 ----------
 Duncan, J.M. (2000). "Factors of safety and reliability in geotechnical
-    engineering." J. Geotech. Geoenviron. Eng., 126(4), 307-316, Table 1.
+    engineering." J. Geotech. Geoenviron. Eng., 126(4), 307-316, Table 3 (p. 310; table number verified in-hand 2026-07-18, module_work/wiki_verification/duncan_2000_cov.md).
 Phoon, K.K. & Kulhawy, F.H. (1999a, b). Can. Geotech. J., 36(4), 612-624 and
     625-639.
 ISSMGE-TC304 (2021). State-of-the-art review of inherent variability and
@@ -60,17 +60,17 @@ def _e(prop, label, lo, hi, mean, cat, soil, test, source):
     return CovEntry(prop, label, lo, hi, mean, cat, soil, test, source)
 
 
-_DUNCAN = "Duncan (2000) Table 1"
+_DUNCAN = "Duncan (2000) Table 3"
 _TC304_CLAY = "ISSMGE-TC304 (2021) Table 1.2 (clay, site-specific)"
 _TC304_SAND = "ISSMGE-TC304 (2021) Table 1.3 (sand, site-specific)"
 _TC304_ROCK = "ISSMGE-TC304 (2021) Table 1.4 (rock/rock mass, site-specific)"
 _UFC_TRANS = ("Phoon & Kulhawy (1999b), quoted in UFC 3-220-20 "
               "sec. 7-3.1.3")
-_KT = ("Kulhawy (1992); Kulhawy & Trautmann (1996); reproduced in "
-       "Duncan (2000) Table 1")
+_KT = ("Harr (1984); Kulhawy (1992); reproduced in "
+       "Duncan (2000) Table 3")
 
 COV_DATABASE: List[CovEntry] = [
-    # --- Duncan (2000) Table 1 -------------------------------------------
+    # --- Duncan (2000) Table 3 -------------------------------------------
     _e("gamma", "Unit weight", 3, 7, None, "inherent", None, None,
        _DUNCAN + " [Harr 1984; Kulhawy 1992]"),
     _e("gamma_b", "Buoyant unit weight", 0, 10, None, "inherent", None, None,

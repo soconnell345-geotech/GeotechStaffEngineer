@@ -72,9 +72,12 @@ def cov_from_params(std: float, mean: float) -> float:
 def std_from_range(hcv: float, lcv: float, n_sigma: float = 6.0) -> float:
     """Std dev from highest/lowest conceivable values (UFC Eq. 7-6).
 
-    sigma = (HCV - LCV) / N. N=6 is the UFC recommendation ("six-sigma");
-    Duncan (2000) discusses N=4 (or even 2*"three-sigma" judgment ranges
-    that people actually estimate) as conservatively larger sigma.
+    sigma = (HCV - LCV) / N. N=6 is the UFC recommendation and Duncan (2000)
+    Eq. 5 ("three-sigma rule"). Duncan's paper notes people underestimate the
+    conceivable range (often by about a factor of two); the smaller divisors
+    (N < 6) that compensate come from the Christian & Baecher discussion and
+    Duncan's closure, not the 2000 paper itself (verified in-hand 2026-07-18,
+    module_work/wiki_verification/duncan_2000_cov.md).
     """
     if hcv <= lcv:
         raise ValueError("hcv must be greater than lcv.")
@@ -113,7 +116,8 @@ def combined_cov(cov_inherent: float,
 # ---------------------------------------------------------------------------
 
 def beta_normal(mu: float, sigma: float, threshold: float = 0.0) -> float:
-    """Normal reliability index (UFC Eq. 7-7; Duncan 2000).
+    """Normal reliability index (UFC Eq. 7-7; this form is not printed in
+    Duncan 2000, which works in the lognormal index — see beta_lognormal).
 
     beta = (mu - threshold) / sigma. Use threshold=0 for a margin
     g = R - S, threshold=1 for a factor of safety.
