@@ -54,6 +54,13 @@ Report: `wave7_em2906_pti_mo.md`.
 - Optional: Slide2-manual-copy hunt for the raster-recovered geometries.
 - Optional: Duncan 2000 closure/Christian-Baecher discussion PDF (N<6 rule).
 - Optional: GEC-4-vs-PTI bond-value comparison exhibit for soe anchor reports.
+- **FOLLOW-UP FLAG (from the NHI-06-089 Ex 9-2 curation attempt, 2026-07-19):**
+  `axial_pile/nordlund.py` `_limiting_tip_resistance` reads ~10,000 kPa at
+  φ=30° where the manual's Meyerhof qL limit is ~479 kPa (10 ksf) — a possible
+  over-read of the log-scale GEC-12 Fig 7-15 qL curve at LOW φ (the φ=40 end
+  was verified within 5% by V-001/WE-PILE-1). Verify against the printed
+  Fig 7-15 low-φ end (GEC 12 Vol 1 PDF in docs/) before changing anything;
+  if real, it is unconservative for low-φ toe capacity in the Nordlund path.
 
 ## NEEDS-PAGE-CHECK (records too shallow for the specific values)
 

@@ -1933,5 +1933,360 @@
    277
   ],
   "source_pages_estimated": true
+ },
+ {
+  "id": "WE-SF-1",
+  "title": "Ultimate bearing capacity of a strip footing, dry and with GWT at footing base (FHWA Soils & Foundations Example 8-1)",
+  "domain": "bearing_capacity",
+  "keywords": [
+   "bearing capacity",
+   "strip footing",
+   "shallow foundation",
+   "AASHTO bearing capacity factors",
+   "groundwater effect",
+   "surcharge term",
+   "depth factors",
+   "FHWA Soils and Foundations"
+  ],
+  "source": "FHWA NHI-06-089, Soils and Foundations Reference Manual Vol II (Dec 2006), Chapter 8, Example 8-1, printed p. 8-21 (bearing capacity factors from Table 8-2, printed p. 8-20)",
+  "problem": "A rigid, rough-based, concentrically loaded strip footing is Bf = 6 ft (1.8288 m) wide and embedded Df = 5 ft (1.524 m). Soil above and below the base is identical: total unit weight 125 pcf (19.636 kN/m3), phi = 20 deg, c = 500 psf (23.94 kPa). Compute the ultimate bearing capacity qult (a) with groundwater well below the footing and (b) with the groundwater table at the footing base (5 ft depth), using the AASHTO (2004) three-term formula qult = c*Nc + gamma*Df*Nq + 0.5*gamma*Bf*Ngamma with Nc = 14.8, Nq = 6.4, Ngamma = 5.4 at phi = 20 deg. Conversions used: 1 psf = 0.04788 kPa, 1 pcf = 0.15709 kN/m3, 1 ft = 0.3048 m.",
+  "dispatch_calls": [
+   {
+    "module": "bearing_capacity",
+    "method": "bearing_capacity_factors",
+    "params": {
+     "friction_angle": 20.0,
+     "method": "vesic"
+    }
+   },
+   {
+    "module": "bearing_capacity",
+    "method": "bearing_capacity_analysis",
+    "params": {
+     "width": 1.8288,
+     "depth": 1.524,
+     "shape": "strip",
+     "cohesion": 23.94,
+     "friction_angle": 20.0,
+     "unit_weight": 19.636,
+     "factor_method": "vesic",
+     "ngamma_method": "vesic"
+    }
+   },
+   {
+    "module": "bearing_capacity",
+    "method": "bearing_capacity_analysis",
+    "params": {
+     "width": 1.8288,
+     "depth": 1.524,
+     "shape": "strip",
+     "cohesion": 23.94,
+     "friction_angle": 20.0,
+     "unit_weight": 19.636,
+     "gwt_depth": 1.524,
+     "factor_method": "vesic",
+     "ngamma_method": "vesic"
+    }
+   }
+  ],
+  "published_result": "Nc = 14.8, Nq = 6.4, Ngamma = 5.4 (Table 8-2 at phi = 20 deg). Dry case: qult = 7,400 + 4,000 + 2,025 = 13,425 psf (642.8 kPa). GWT at footing base (buoyant unit weight 125 - 62.4 = 62.6 pcf in the weight term): qult = 7,400 + 4,000 + 1,014 = 12,414 psf (594.4 kPa).",
+  "computed_result": {
+   "factors": "Nc = 14.83, Nq = 6.40, Ngamma = 5.39 - matches Table 8-2 (14.8 / 6.4 / 5.4) to the printed precision (Ngamma = 2(Nq+1)tan(phi) is the same AASHTO/Vesic expression).",
+   "q_ultimate_dry_kPa": 804.2,
+   "q_ultimate_gwt_kPa": 755.9,
+   "vs_published": "Dry +25.1% (804.2 vs 642.8 kPa); GWT case +27.2% (755.9 vs 594.4 kPa). The entire difference is the Vesic/Hansen DEPTH FACTORS (dc = 1.311, dq = 1.263, dgamma = 1.0 at Df/B = 0.83) that our GEC-6-style analysis applies but the manual's plain Eq. 8-1 omits.",
+   "depth_factor_reconciliation": "Dividing the returned terms by the returned depth factors reproduces the manual: (465.69/1.3113) + (241.8/1.2626) + 96.71 = 643.4 kPa vs printed 642.8 kPa (+0.1%); GWT case (355.2 + 191.5 + 48.4) = 595.1 kPa vs printed 594.4 kPa (+0.1%). The GWT effect itself (weight term halved via gamma' = gamma - 9.81) matches the manual's buoyant-weight treatment."
+  },
+  "report_notes": "The module reproduces the manual's bearing capacity factors exactly and its three-term assembly to 0.1% once the depth-factor convention is accounted for: FHWA NHI-06-089 Eq. 8-1 is the bare Terzaghi-form equation with NO depth factors, while bearing_capacity_analysis follows AASHTO/GEC-6 practice and applies Vesic depth factors for embedded footings (here +25%). A report should state which convention is used and note that omitting depth factors is conservative. The result echoes dc/dq/dgamma explicitly so the reviewer can reconcile the two conventions line by line, as done here.",
+  "provenance": "NHI-06-089 Example 8-1, pdf p.55",
+  "source_doc": "FHWA NHI-06-089 Soils and Foundations Vol 2.pdf",
+  "source_pdf_pages": [
+   54,
+   55
+  ],
+  "source_pages_estimated": false
+ },
+ {
+  "id": "WE-SF-2",
+  "title": "Required length of a precast concrete pile in two clay layers by the alpha-method (FHWA Soils & Foundations Example 9-3)",
+  "domain": "axial_pile",
+  "keywords": [
+   "driven pile",
+   "precast concrete pile",
+   "alpha method",
+   "adhesion",
+   "clay",
+   "pile length",
+   "Tomlinson",
+   "total stress",
+   "FHWA Soils and Foundations"
+  ],
+  "source": "FHWA NHI-06-089, Soils and Foundations Reference Manual Vol II (Dec 2006), Chapter 9, Example 9-3, printed pp. 9-58 to 9-59",
+  "problem": "A 1 ft x 1 ft (0.3048 m) square precast concrete pile must carry an allowable load of 40 tons (355.9 kN) with FS = 2, i.e. required Qu = 80 tons (711.7 kN). Toe resistance is neglected. Profile: upper clay D1 = 10 ft (3.048 m), gamma = 120 pcf (18.85 kN/m3), c1 = 500 psf (23.94 kPa), phi = 0; below it a stiffer clay, gamma = 130 pcf (20.42 kN/m3), c2 = 1,100 psf (52.67 kPa), phi = 0. Site-specific tests indicate adhesion = cohesion (alpha = 1.0) in BOTH layers. The manual solves for the required penetration D2 into the lower clay (~32 ft) giving a total length of ~42 ft (12.80 m). Here we verify the 42-ft pile by computing its capacity. Conversions: 1 psf = 0.04788 kPa, 1 pcf = 0.15709 kN/m3, 1 ton = 8.896 kN.",
+  "dispatch_calls": [
+   {
+    "module": "axial_pile",
+    "method": "make_pile_section",
+    "params": {
+     "pile_type": "concrete_square",
+     "width": 0.3048
+    }
+   },
+   {
+    "module": "axial_pile",
+    "method": "axial_pile_capacity",
+    "params": {
+     "pile_type": "concrete_square",
+     "width": 0.3048,
+     "pile_length": 12.8016,
+     "factor_of_safety": 2.0,
+     "layers": [
+      {
+       "thickness": 3.048,
+       "soil_type": "cohesive",
+       "unit_weight": 18.851,
+       "cohesion": 23.94,
+       "description": "upper clay c=500 psf"
+      },
+      {
+       "thickness": 12.192,
+       "soil_type": "cohesive",
+       "unit_weight": 20.421,
+       "cohesion": 52.67,
+       "description": "lower clay c=1,100 psf"
+      }
+     ]
+    }
+   }
+  ],
+  "published_result": "Qu = ca1*Cd1*D1 + ca2*Cd2*D2 with Cd = 4 ft, adhesion = cohesion: 80 tons = 10 tons (upper clay, 89.0 kN) + 2.2 tons/ft x D2, giving D2 ~ 32 ft and total pile length ~ 42 ft. So at 42 ft: Rs1 = 10 tons (89.0 kN), Rs2 = 70 tons (622.7 kN), toe neglected, Qu = 80 tons = 711.7 kN; Qa = 40 tons = 355.9 kN.",
+  "computed_result": {
+   "perimeter_m": 1.2192,
+   "tip_area_m2": 0.092903,
+   "Q_skin_kN": 491.1,
+   "Q_tip_kN": 44.0,
+   "Q_ultimate_kN": 535.1,
+   "Q_allowable_kN": 267.5,
+   "vs_published": "Q_ultimate 535.1 vs 711.7 kN (-24.8%). The gap is an input-assumption difference, not an arithmetic one: the manual's site-specific stipulation is adhesion = cohesion (alpha = 1.0) in both layers, while axial_pile_capacity applies the standard Tomlinson design curve for concrete piles, which gives alpha = 1.0 for the soft clay (upper-layer skin 89.0 kN matches the printed 10 tons EXACTLY) but alpha = 0.642 at cu = 52.7 kPa in the lower clay.",
+   "reconciliation": "Lower-layer skin computed 402.1 kN; dividing out the module's alpha (402.1/0.642 = 626.4 kN) reproduces the printed 622.7 kN within +0.6%. With alpha = 1 in both layers and the toe dropped (the manual neglects 9*cu*At; the module includes it, +44.0 kN) the kernel reproduces the printed 711.7 kN within 0.5%. Perimeter (1.2192 m = 4 ft) and tip area (0.0929 m2 = 1 ft2) match the manual's Cd and At exactly."
+  },
+  "report_notes": "A capacity report should state the adhesion basis explicitly: the manual uses a site-specific load-test-backed alpha = 1.0, whereas without such data standard practice (and this module) reads alpha from the Tomlinson curves, which is 36% lower in the 1,100-psf clay - a defensible, conservative difference that directly lengthens the required pile. Also state whether toe resistance in clay is counted (the manual neglects it; the module reports it separately as Q_tip so it can be excluded). The reconciliation above shows the module's alpha-method kernel matches the printed arithmetic to <1% once those two assumptions are aligned.",
+  "provenance": "NHI-06-089 Example 9-3, pdf pp.168-169",
+  "source_doc": "FHWA NHI-06-089 Soils and Foundations Vol 2.pdf",
+  "source_pdf_pages": [
+   168,
+   169
+  ],
+  "source_pages_estimated": false
+ },
+ {
+  "id": "WE-SF-3",
+  "title": "External stability of a CIP cantilever retaining wall with sloping backfill (FHWA Soils & Foundations Example 10-3)",
+  "domain": "retaining_walls",
+  "keywords": [
+   "cantilever wall",
+   "CIP wall",
+   "external stability",
+   "sliding",
+   "overturning",
+   "eccentricity",
+   "bearing pressure",
+   "sloping backfill",
+   "earth pressure",
+   "FHWA Soils and Foundations"
+  ],
+  "source": "FHWA NHI-06-089, Soils and Foundations Reference Manual Vol II (Dec 2006), Chapter 10, Example 10-3, printed pp. 10-52 to 10-56",
+  "problem": "Check sliding, eccentricity, and bearing for a CIP cantilever wall: stem height 18 ft with top thickness 1.6 ft and base thickness 2.3 ft (front-face batter), base slab 13.1 ft wide x 2.3 ft thick, toe projection 2.3 ft, heel slab 8.5 ft; total height base-of-footing to top-of-stem 20.3 ft (6.187 m). Backfill: clean fine-to-medium sand, gamma = 115 pcf (18.065 kN/m3), phi = 30 deg, backfill slope beta = 10 deg. Foundation soil: gamma = 120 pcf (18.851 kN/m3), phi_b = 38 deg; base interface friction delta_b = (3/4)phi_b = 28.5 deg (NAVFAC); passive resistance in front of the wall neglected; groundwater well below the base; concrete 150 pcf (23.563 kN/m3). Earth pressure on the vertical plane at the back of the heel with thrust inclined at delta = beta = 10 deg (the manual's Coulomb Ka with delta = beta equals the sloping-backfill Rankine coefficient used here), pressure height H = 21.8 ft including the heel slope rise. Conversions: 1 ft = 0.3048 m, 1 pcf = 0.15709 kN/m3, 1 lb/ft = 0.014594 kN/m, 1 psf = 0.04788 kPa.",
+  "dispatch_calls": [
+   {
+    "module": "retaining_walls",
+    "method": "earth_pressure_coefficient",
+    "params": {
+     "phi_deg": 30.0,
+     "theory": "coulomb",
+     "state": "active",
+     "delta_deg": 10.0,
+     "beta_deg": 10.0
+    }
+   },
+   {
+    "module": "retaining_walls",
+    "method": "cantilever_wall",
+    "params": {
+     "wall_height": 6.1874,
+     "base_width": 3.9929,
+     "toe_length": 0.701,
+     "stem_thickness_top": 0.4877,
+     "stem_thickness_base": 0.701,
+     "base_thickness": 0.701,
+     "backfill_slope": 10.0,
+     "gamma_backfill": 18.065,
+     "phi_backfill": 30.0,
+     "phi_foundation": 38.0,
+     "gamma_foundation": 18.851,
+     "delta_base": 28.5,
+     "gamma_concrete": 23.563,
+     "pressure_method": "rankine",
+     "include_passive": false
+    }
+   }
+  ],
+  "published_result": "Ka = 0.35 (Coulomb, phi = 30, beta = delta = 10 deg); Pa = 9,564.2 lb/ft (139.6 kN/m) with Ph = 9,418.9 lb/ft and Pv = 1,660.8 lb/ft; total weight W = 28,112.6 lb/ft; FS_sliding = 1.72 (delta_b = 28.5 deg, passive neglected); eccentricity e = 1.0 ft (0.305 m) < B/6 = 2.18 ft; q_max = 3,318.1 psf (158.9 kPa), q_min = 1,227.3 psf (58.8 kPa); FS_bearing = 6.03 using an ASSUMED qult = 20,000 psf.",
+  "computed_result": {
+   "Ka_coulomb_call": "0.3495 vs printed 0.35 (-0.1%); the analysis call's sloped-Rankine coefficient is numerically identical (Coulomb with delta = beta on a vertical plane).",
+   "FOS_sliding": 1.719,
+   "Pa_kN_per_m": 139.4,
+   "Pa_vertical_kN_per_m": 24.2,
+   "thrust_inclination_deg": 10.0,
+   "eccentricity_m": 0.322,
+   "q_toe_kPa": 161.5,
+   "q_heel_kPa": 56.1,
+   "FOS_overturning": 3.393,
+   "vs_published": "FS_sliding 1.719 vs 1.72 (-0.1%); Pa 139.4 vs 139.6 kN/m (-0.1%); Pv 24.2 vs 24.2 kN/m (0%); q_toe 161.5 vs 158.9 kPa (+1.6%); q_heel 56.1 vs 58.8 kPa (-4.5%); eccentricity 0.322 vs 0.305 m (+5.6%). The small e/q differences come from the stem-taper orientation: the module places the stem taper on the back face while the manual's wall batters the front face - identical weights (sliding unaffected), slightly different moment arms (~0.8% of the total moment). The module's FOS_bearing (reported 99.9, i.e. capped) computes its own Meyerhof qult from phi_foundation = 38 deg, which is far above the manual's assumed 20,000 psf, so the printed FS_bc = 6.03 is not comparable; q_max vs the assumed qult can be checked by hand (20,000 psf / 3,373 psf computed = 5.9)."
+  },
+  "report_notes": "This is the manual's flagship gravity-wall external-stability check and the module reproduces the governing numbers (Pa, Pv, FS_sliding, bearing pressures) to within 2%. A report should state the earth-pressure plane and inclination convention (vertical plane at the heel back, thrust at delta = beta), the base-interface basis (delta_b = 3/4 phi_b entered directly via delta_base - the sliding_basis echo confirms 28.5 deg with no extra 2/3 factor), and that passive resistance was conservatively neglected. Bearing FOS should be quoted against a properly computed qult for the eccentric, inclined resultant rather than the module's default full-strength Meyerhof value; the manual simply assumes qult = 20 ksf for illustration.",
+  "provenance": "NHI-06-089 Example 10-3, pdf pp.342-346",
+  "source_doc": "FHWA NHI-06-089 Soils and Foundations Vol 2.pdf",
+  "source_pdf_pages": [
+   342,
+   343,
+   344,
+   345,
+   346
+  ],
+  "source_pages_estimated": false
+ },
+ {
+  "id": "WE-SF-4",
+  "title": "Factor of safety of a homogeneous fill slope - Taylor chart hand solution vs critical-surface search (FHWA Soils & Foundations Example 6-1)",
+  "domain": "slope_stability",
+  "keywords": [
+   "slope stability",
+   "Taylor stability chart",
+   "fill slope",
+   "factor of safety",
+   "critical surface search",
+   "Bishop",
+   "c-phi soil",
+   "ReSSA",
+   "FHWA Soils and Foundations"
+  ],
+  "source": "FHWA NHI-06-088, Soils and Foundations Reference Manual Vol I (Dec 2006), Chapter 6, Examples 6-1 and 6-1a, printed pp. 6-30 to 6-32 (ReSSA computer check cited on p. 6-32)",
+  "problem": "Determine the factor of safety of a 30-ft (9.144 m) high fill slope inclined at 30 deg. Homogeneous fill: total unit weight 120 pcf (18.851 kN/m3), c' = 500 psf (23.94 kPa), phi' = 20 deg; no groundwater. Geometry modeled as level ground at elev 0 from x = -15 m to the toe at (0, 0), slope face rising at 30 deg to the crest at (15.84, 9.144), level crest beyond; soil extends to elev -15 m. Search for the critical circular surface (Bishop simplified). Conversions: 1 ft = 0.3048 m, 1 psf = 0.04788 kPa, 1 pcf = 0.15709 kN/m3.",
+  "dispatch_calls": [
+   {
+    "module": "slope_stability",
+    "method": "search_critical_surface",
+    "params": {
+     "surface_points": [
+      [
+       -15.0,
+       0.0
+      ],
+      [
+       0.0,
+       0.0
+      ],
+      [
+       15.838,
+       9.144
+      ],
+      [
+       50.838,
+       9.144
+      ]
+     ],
+     "soil_layers": [
+      {
+       "name": "fill",
+       "top_elevation": 9.144,
+       "bottom_elevation": -15.0,
+       "gamma": 18.851,
+       "phi": 20.0,
+       "c_prime": 23.94
+      }
+     ],
+     "method": "bishop",
+     "surface_type": "entry_exit",
+     "x_entry_range": [
+      -8.0,
+      2.0
+     ],
+     "x_exit_range": [
+      16.0,
+      40.0
+     ],
+     "n_trials": 1500,
+     "seed": 42
+    }
+   }
+  ],
+  "published_result": "Taylor-chart iterative solution (Fc = Fphi): FS ~ 1.9 (converged at Ns = 0.073, phi_d = 10.8 deg, back-computed H = 30.04 ft). Alternate graphical Fc-vs-Fphi intersection (Example 6-1a): FS = 1.95. The same problem run in the ReSSA computer program (Appendix D) gives FS = 1.96.",
+  "computed_result": {
+   "FOS": 1.9641,
+   "critical_surface": "xc = 4.19 m, yc = 14.96 m, R = 15.60 m; entry x = -0.22 m (essentially the toe), exit x = 18.67 m on the crest - a toe circle, consistent with Taylor's chart assumption for phi > 0.",
+   "n_trials": 1500,
+   "vs_published": "+0.2% vs the ReSSA computer solution (1.9641 vs 1.96), +0.7% vs the graphical chart solution (1.95), +3.4% vs the coarser iterative chart read (1.9). Chart solutions carry ~0.005 read-off precision on Ns, so all three printed values bracket the search result."
+  },
+  "report_notes": "A clean anchor for chart-vs-computer agreement: the Bishop entry-exit search lands on the toe circle Taylor's chart presumes and matches the manual's own ReSSA computer check to 0.2%. A report should quote the search coverage (entry/exit windows and trial count) and note that stability-chart hand solutions are read-limited to roughly +/-0.05 in FS, which is exactly the spread between the manual's 1.9 iterative and 1.95-1.96 graphical/computer answers. A grid-based circular search with default sampling returned 2.09-2.12 here; the entry-exit search is the appropriate high-resolution verification tool.",
+  "provenance": "NHI-06-088 Example 6-1, pdf pp.380-382",
+  "source_doc": "FHWA NHI-06-088 Soils and Foundations Vol 1.pdf",
+  "source_pdf_pages": [
+   380,
+   381,
+   382
+  ],
+  "source_pages_estimated": false
+ },
+ {
+  "id": "WE-SF-5",
+  "title": "Primary consolidation settlement of a wide embankment on normally consolidated clay (FHWA Soils & Foundations Example 7-3)",
+  "domain": "settlement",
+  "keywords": [
+   "consolidation settlement",
+   "primary consolidation",
+   "embankment",
+   "normally consolidated clay",
+   "compression index",
+   "po diagram",
+   "time rate",
+   "FHWA Soils and Foundations"
+  ],
+  "source": "FHWA NHI-06-088, Soils and Foundations Reference Manual Vol I (Dec 2006), Chapter 7, Example 7-3, printed pp. 7-37 to 7-38",
+  "problem": "A 'wide' 20-ft (6.096 m) high embankment (fill gamma = 120 pcf = 18.851 kN/m3) is placed over a 10-ft (3.048 m) thick normally consolidated clay layer (gamma = 120 pcf, Cc = 0.5, e0 = 1.0, cv = 0.2 ft2/day) underlain by impervious rock. Because the embankment is wide, the applied stress does not dissipate with depth: delta_p = 20 ft x 120 pcf = 2,400 psf (114.91 kPa) throughout the clay. Initial effective stress at the clay mid-depth: po = 5 ft x 120 pcf = 600 psf (28.73 kPa). Compute the primary consolidation settlement (and, by hand, the time for 90% consolidation with single drainage). Conversions: 1 ft = 0.3048 m, 1 psf = 0.04788 kPa.",
+  "dispatch_calls": [
+   {
+    "module": "settlement",
+    "method": "consolidation_settlement",
+    "params": {
+     "layers": [
+      {
+       "thickness": 3.048,
+       "depth_to_center": 1.524,
+       "e0": 1.0,
+       "Cc": 0.5,
+       "Cr": 0.05,
+       "sigma_v0": 28.728,
+       "description": "NC clay under wide embankment"
+      }
+     ],
+     "delta_sigma": 114.913
+    }
+   }
+  ],
+  "published_result": "delta_H = H * Cc/(1+e0) * log10((po + delta_p)/po) = 10 ft x (0.5/2) x log10(3,000/600) = 1.75 ft = 21 in (0.53 m). Time for 90% consolidation (Tv = 0.848, single drainage, Hd = 10 ft): t90 = 0.848 x (10 ft)2 / 0.2 ft2/day = 424 days.",
+  "computed_result": {
+   "consolidation_settlement_m": 0.5326,
+   "consolidation_settlement_mm": 532.62,
+   "vs_published": "-0.15% vs the printed 1.75 ft (0.5334 m); the layer is treated as normally consolidated (sigma_p omitted, so OCR = 1 and Cr is unused). The t90 = 424 days time-rate check is not part of this dispatch method; hand verification with Tv = 0.848, Hd = 3.048 m and cv = 0.2 ft2/day (0.01858 m2/day) gives 0.848 x 3.048^2 / 0.01858 = 424 days, matching the manual exactly."
+  },
+  "report_notes": "Textbook single-layer NC consolidation: the module reproduces the manual to 0.15% (the residue is unit rounding). A report should state the wide-fill assumption (no stress dissipation with depth - for narrower fills use a stress-distribution delta_sigma per layer instead of a constant), the NC basis (sigma_p not entered, so the full Cc line is used), and the drainage condition driving the time estimate (single drainage against impervious rock doubles the drainage path versus double drainage, quadrupling t90). Subdividing thick layers reduces the mid-depth-stress approximation error.",
+  "provenance": "NHI-06-088 Example 7-3, pdf pp.447-448",
+  "source_doc": "FHWA NHI-06-088 Soils and Foundations Vol 1.pdf",
+  "source_pdf_pages": [
+   447,
+   448
+  ],
+  "source_pages_estimated": false
  }
 ]
