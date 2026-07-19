@@ -49,6 +49,29 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 9 agent-wrapper test suites (opensees/pystrata/hvsrpy/gstools/swprocess/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
+## v5.9.0 status (RELEASED 2026-07-19 to PyPI; owner OK'd — worked examples + wiki verification)
+
+Two owner-driven trains. (1) **worked_examples** (32nd module):
+`funhouse_agent/worked_examples.json` — 17 validated calculations from real
+published design reports (GEC-12/10/11/6, Caltrans, GEC-4, GEC-13, Slide2
+benchmarks incl. Pilarcitos, FLAC, AASHTO/UFC pavements), each with a
+self-contained problem, runnable dispatch calls, published-vs-computed results
+and report-writing notes; adapter `find_worked_examples`/`get_worked_example`;
+prompt nudge; every entry verified-by-execution in the gate. (2) **WikiLLM
+verification campaign** (owner's 7,300-record library index over ~8k PDFs used
+to verify module content vs the provenance-audit wishlist; ledger
+`module_work/wiki_verification/TIER_A_LEDGER.md`): 2 REAL defects fixed
+(lateral_pile Reese sand A/B cyclic tables were reconstructions with a wrong
+asymptote — re-digitized from COM624P Figs 3.12/3.13; rapid_drawdown Kf now
+implements printed EM Eq. G-8 for c'>0), Duncan-2000 citation family corrected
+(Table 1→3; fabricated "Kulhawy & Trautmann" attribution), 6 zero-discrepancy
+primary confirmations (B&T incl. rigid a0, Bishop/Spencer/M-P/App-G kernels,
+AASHTO site factors 75/75, ACI Ec, ASTM A615 11/11, Das aniso-su), V-052b
+Pilarcitos on the TRUE 2:1/3:1 section, and a to-the-pound Whitman M-O anchor
+(oldest audit gap closed). Also: webapp/tests joined the gate; FOUNDRY.md
+troubleshooting field guide; FUTURE_IDEAS.md; HANDOFF delta. Foundry app
+remains blocked on the enclave LLM-proxy 401 (admin ticket pending).
+
 ## v5.8.2 status (RELEASED 2026-07-17 to PyPI; owner OK'd — Foundry diagnostics)
 
 Owner's live Foundry debugging (GPT-5.1 RID → "(no answer text)", error
