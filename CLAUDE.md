@@ -49,6 +49,27 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 9 agent-wrapper test suites (opensees/pystrata/hvsrpy/gstools/swprocess/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
+## v5.9.1 status (RELEASED 2026-07-20 to PyPI; owner OK'd — defect fixes + figure retrieval + Foundry mode)
+
+The sample-calc-as-defect-detector train (doctrine: FUTURE_IDEAS.md header;
+ledger: module_work/wiki_verification/TIER_A_LEDGER.md). (1) **Two more REAL
+defect fixes**: drilled_shaft depth-beta unit-mixing (metric 0.245 coeff was
+applied to feet-converted depth — 1.81x-too-fast decay, -64% skin on NHI Ex
+9-5; GEC-10 rational path unaffected) and axial_pile Nordlund/Meyerhof qL
+re-digitized from printed GEC-12 Fig 7-15 (old table ~10x UNCONSERVATIVE at
+phi=30, wrong 40-deg cap; now the page-QC'd refs digitization, chart visually
+re-confirmed). (2) **view_worked_example_source** vision tool — renders a
+worked example's printed source page (220 dpi, same docs-folder resolution as
+read_reference_figure); FHWA NHI-06-088/089 Soils & Foundations manuals
+onboarded (refs docs/, submodule 669bae0) with 10 execution-verified entries
+(corpus 27, 21 with page retrieval). (3) **Foundry deployment mode** — the
+published app never reads or mentions ANTHROPIC_API_KEY (enclave-IT ask):
+RID-only model surface, promoted "Model RID" input, key-free diagnostics;
+local/dev unchanged (webapp/tests/test_foundry_mode.py). (4) Das 6e solutions
+sweep (internal-only): 8/8 reconciled <=0.3% — clean bill; six-item ergonomics
+backlog recorded (top: beta global cohesive_phi trap). Handoff pickup list:
+HANDOFF.md §0a.
+
 ## v5.9.0 status (RELEASED 2026-07-19 to PyPI; owner OK'd — worked examples + wiki verification)
 
 Two owner-driven trains. (1) **worked_examples** (32nd module):

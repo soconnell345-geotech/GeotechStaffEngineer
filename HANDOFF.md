@@ -6,6 +6,46 @@ detailed Phase-E history; this file supersedes it.
 
 ---
 
+## 0a. FOR THE NEXT AGENT (written 2026-07-20 at the Fable→Opus handoff) — prioritized pickup list
+
+Current release: **5.9.1** (PyPI; refs 1.3.3). Master == released. Full gate
+green (~10k tests). Auto-memory carries the running narrative; CLAUDE.md
+release sections carry per-release detail; `module_work/wiki_verification/
+TIER_A_LEDGER.md` is the verification/defect master ledger.
+
+1. **Foundry 401 follow-up (owner-blocking):** the published app awaits the
+   enclave admins' answer on LLM-proxy access (ticket text in docs/FOUNDRY.md
+   troubleshooting). When it arrives, the fix is likely ONE
+   `GEOTECH_FOUNDRY_HOST` line in the owner's app file. Then: upgrade app to
+   5.9.1 (`maestro env pip install` → Publish and sync), run the sidebar
+   Connection diagnostics, then the pavement shakedown prompts.
+2. **axial_pile beta cohesive_phi trap** (nearest-to-defect ergonomics item,
+   +12.4% naive-user error; doc claims tip-only, behavior is all cohesive
+   layers) — fix per-layer, keep global as fallback; details in the ledger's
+   Das-sweep section.
+3. **Continue the sample-calc detector** (owner standing directive; doctrine +
+   next targets in module_work/FUTURE_IDEAS.md header): SCDOT design examples
+   next; then USACE EM appendices; more NHI manuals live in the owner's
+   OneDrive Lib (search the WikiLLM at C:\Users\socon\OneDrive\Lib\_WikiLLM,
+   library.db — copy WITHOUT its stale journal to read).
+4. **Ergonomics backlog items 2-6** (ledger): Schmertmann gamma_soil +
+   Iz subdivision; anchored_wall embedment-grid refinement + waterfront mode;
+   two-gamma GWT bearing; Highter-Anders option; lambda method.
+5. **Eval:** owner's GPT-5.x live rerun of the 108-Q suite (PAV questions
+   new; `eval_harness --ids PAV` for the subset); triage vs the 68 keys.
+6. **Parked/major:** 6.0.0 single-namespace restructure (assessed, ledgered in
+   FUTURE_IDEAS); worked-examples phase-2 (owner's firm reports, private);
+   playbooks + recompute-from-report QC specs; Databricks launcher
+   live-verify; foundry/ dir cleanup (NOT quick — 9 test suites import it).
+
+Standing rules that must survive the handoff: releases/tags ONLY on the
+owner's word (a v* tag push auto-publishes via OIDC); additive
+default-preserving changes; validate against published values, never tune;
+verify against the printed page before changing chart-derived code; ONE
+agent per wave (parallel fan-outs burn the session limit); owner is a
+practicing geotech engineer, not a developer — actionable results, no git
+lectures; wiki/Das content = internal anchors only, never shipped.
+
 ## 0. Delta since the table below (2026-07-15 → 07-18; table not yet rewritten)
 
 Everything here is also in CLAUDE.md's release sections (read those) and the

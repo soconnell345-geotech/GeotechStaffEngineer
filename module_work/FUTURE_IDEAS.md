@@ -1,5 +1,22 @@
 # Future possibilities — considered 2026-07-18 (owner-requested ideas pass)
 
+> **UPDATE 2026-07-20 — the sample-calc-as-defect-detector doctrine (proven).**
+> Items 1-2 below evolved into an operating doctrine that FOUND FOUR REAL
+> DEFECTS in three days (Reese cyclic tables, drawdown Kf c'>0, shaft
+> depth-beta units, Nordlund qL — two conservative, two UNCONSERVATIVE up to
+> 10x), all invisible to the self-consistent test suite. The working recipe:
+> (a) onboard a public worked-example source (PDF -> refs docs/ -> text-search
+> the example pages -> ONE curation agent drafts execution-verified corpus
+> entries), (b) run internal-only sweeps against solved-problem sources (Das
+> manuals: 8/8 reconciled <=0.3% — clean bill confirming the fixes), (c) treat
+> every unexplained discrepancy as a defect investigation, verify against the
+> printed page before changing code, and pin the corrected value with tests.
+> NEXT TARGETS: SCDOT design examples (public web), USACE EM appendices,
+> remaining NHI manuals in the owner's library, CGPR #20-style program
+> comparisons; plus the six-item ergonomics backlog in
+> `wiki_verification/TIER_A_LEDGER.md` (top: axial_pile beta global
+> cohesive_phi doc-vs-behavior trap, +12.4%).
+
 Written at the owner's request ("consider and build future possibilities...
 creative ideas welcome") during the final Fable session. Ordered roughly by
 value-per-effort. Items 1 and 2 got a v1 BUILT this weekend; the rest are

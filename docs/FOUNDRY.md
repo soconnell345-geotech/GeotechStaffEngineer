@@ -72,6 +72,16 @@ enrollment — ask the platform admin.
 3. To upgrade later: bump `geotech-staff-engineer` in the Libraries panel and
    republish. The 2-line `app.py` never changes.
 
+## Foundry deployment mode (5.9.1+): no API-key surface
+
+The Foundry entry (`webapp/foundry_entry.py`) marks the process as a Foundry
+deployment, and in that mode the app **never reads or mentions the Anthropic
+API key** (enclave-IT requirement): the model surface is Foundry RIDs only —
+the `GEOTECH_FOUNDRY_MODELS` entries populate the picker, and with nothing
+configured the sidebar shows a single **"Model RID"** input (no "advanced"
+expander, no built-in Claude model list, no key references in banners or the
+diagnostics report). Local/dev behaviour is unchanged.
+
 ## Troubleshooting a live deployment (learned 2026-07-17/18, State gov enclave)
 
 Field notes from the first real publish (PDCS Sandbox, stateobo.palantirgov.com):
