@@ -33,8 +33,10 @@ TIER_A_LEDGER.md` is the verification/defect master ledger.
    two-gamma GWT bearing; Highter-Anders option; lambda method.
 5. **Eval:** owner's GPT-5.x live rerun of the 108-Q suite (PAV questions
    new; `eval_harness --ids PAV` for the subset); triage vs the 68 keys.
-6. **Parked/major:** 6.0.0 single-namespace restructure (assessed, ledgered in
-   FUTURE_IDEAS); worked-examples phase-2 (owner's firm reports, private);
+6. **Parked/major:** 6.0.0 single-namespace restructure — now FULLY PLANNED
+   with a measured surface (2,795 imports/517 files + enumerated string/path
+   traps) and an owner-approved step-by-step:
+   **module_work/V6.0_RESTRUCTURE_PLAN.md** (one dedicated session); worked-examples phase-2 (owner's firm reports, private);
    playbooks + recompute-from-report QC specs; Databricks launcher
    live-verify; foundry/ dir cleanup (NOT quick — 9 test suites import it).
 
