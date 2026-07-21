@@ -83,7 +83,10 @@ question through the chat returns the same qult/qall the driver computes.
 
 Conversation data (transcripts, uploads) persists under `~/.geotech_webapp/`
 — set `GEOTECH_WEBAPP_DATA=<tmpdir>` to sandbox a session away from the
-owner's real conversations. Stop with Ctrl-C (or kill the streamlit process).
+owner's real conversations. Stop with Ctrl-C. If launched as a background
+shell task, killing the wrapper shell leaves `streamlit.exe` alive on Windows
+— finish with `Get-Process | Where-Object { $_.ProcessName -match 'streamlit' }
+| Stop-Process -Force` and confirm the port is closed.
 
 ## Gotchas (all hit for real)
 
