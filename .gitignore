@@ -4,6 +4,7 @@ __pycache__/
 .idea/
 .claude/*
 !.claude/agents/
+!.claude/skills/
 nul
 
 # Generated test artifacts
