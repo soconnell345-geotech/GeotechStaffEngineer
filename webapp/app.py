@@ -46,6 +46,25 @@ def _mime_for(name: str) -> str:
                             "application/octet-stream")
 
 
+def _embed_frame(src: str, height: int) -> None:
+    """Embed raw HTML or a data: URI in an iframe, on any Streamlit version.
+
+    ``st.iframe`` (which auto-detects both forms) replaced the deprecated
+    ``st.components.v1.html`` after Streamlit 1.59; deployment base images
+    (e.g. Foundry) may pin an older version without it.
+    """
+    if hasattr(st, "iframe"):
+        st.iframe(src, height=height)
+        return
+    import streamlit.components.v1 as components
+    if src.startswith("data:"):
+        components.html(
+            f'<iframe src="{src}" width="100%" height="{height - 20}" '
+            f'style="border:none"></iframe>', height=height)
+    else:
+        components.html(src, height=height, scrolling=True)
+
+
 # ---------------------------------------------------------------------------
 # Session bootstrap
 # ---------------------------------------------------------------------------
@@ -569,9 +588,7 @@ def _render_artifact_card(path: str) -> None:
         elif card.kind == "html":
             with st.expander("Preview (HTML)", expanded=False):
                 if card.size <= core.HTML_PREVIEW_MAX_BYTES:
-                    import streamlit.components.v1 as components
-                    components.html(core.read_text(path), height=600,
-                                    scrolling=True)
+                    _embed_frame(core.read_text(path), height=600)
                 else:
                     st.caption(f"Too large to preview inline "
                                f"({card.size:,} bytes) — download above.")
@@ -579,10 +596,7 @@ def _render_artifact_card(path: str) -> None:
             with st.expander("Preview (PDF)", expanded=False):
                 uri = core.pdf_data_uri(path)
                 if uri:
-                    import streamlit.components.v1 as components
-                    components.html(
-                        f'<iframe src="{uri}" width="100%" height="600" '
-                        f'style="border:none"></iframe>', height=620)
+                    _embed_frame(uri, height=620)
                 else:
                     st.caption(
                         f"Too large to preview inline "
