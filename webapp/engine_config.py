@@ -102,6 +102,43 @@ def is_foundry_model_id(model_id: Optional[str]) -> bool:
     return bool(model_id) and str(model_id).startswith("ri.")
 
 
+def _resolve_palantir_sdk(model_id: str) -> "EngineResolution":
+    """Build the in-platform ``palantir_models`` engine for a model API name.
+
+    On a Foundry deployment, a model id that is NOT an ``ri....`` RID (e.g.
+    ``GPT_5_1``) is treated as a Palantir model API name and served through the
+    ``palantir_models`` SDK — auth is handled by the workspace itself, so no
+    host/token/proxy is involved. Never raises.
+    """
+    try:
+        from webapp.palantir_sdk_engine import PalantirSdkChatModel, \
+            sdk_available
+    except Exception as exc:
+        return EngineResolution(
+            None, "error", model_id,
+            f"Could not load the palantir_models engine wrapper: "
+            f"{type(exc).__name__}: {exc}")
+    if not sdk_available():
+        return EngineResolution(
+            None, "error", model_id,
+            f"Model id '{model_id}' is not an 'ri....' RID, so it is treated "
+            "as a Palantir model API name — but the 'palantir-models' package "
+            "is not installed. Add 'palantir-models' and "
+            "'language-model-service-api' in the workspace Libraries panel, "
+            "or use an 'ri....' RID for the LLM-proxy route.")
+    try:
+        model = PalantirSdkChatModel(model_api_name=model_id,
+                                     max_tokens=_default_max_tokens())
+    except Exception as exc:
+        return EngineResolution(
+            None, "error", model_id,
+            f"Could not construct the palantir_models engine: "
+            f"{type(exc).__name__}: {exc}")
+    return EngineResolution(
+        model, "foundry_sdk", model_id,
+        f"Using the in-platform palantir_models SDK ({model_id}).")
+
+
 def _resolve_foundry(model_id: str) -> "EngineResolution":
     """Build a chat model against the Foundry LLM proxy for a model RID.
 
@@ -270,16 +307,24 @@ def resolve_engine(model_id: Optional[str] = None) -> EngineResolution:
     if is_foundry_model_id(_mid):
         return _resolve_foundry(_mid)
 
+    # 2b) Foundry deployment, non-RID model id -> the in-platform
+    #     palantir_models SDK (model API name, e.g. "GPT_5_1"). No host, token,
+    #     or proxy involved — the workspace authenticates the SDK itself.
+    if is_foundry_deployment() and _mid:
+        return _resolve_palantir_sdk(_mid)
+
     # On a Foundry deployment the Anthropic-key path does not exist: the key
     # env is never read and no message references it — the only engine surface
-    # is a model RID (or the deployment Prompter hook above).
+    # is a model RID / API name (or the deployment Prompter hook above).
     if is_foundry_deployment():
         return EngineResolution(
             None, "none", "",
-            "No model configured. Enter your Foundry model RID in the sidebar "
-            "('Model RID'), or set GEOTECH_FOUNDRY_MODELS "
-            "(Label=ri....) on the deployment and republish. The app is "
-            "running, but cannot answer questions until a model is selected.")
+            "No model configured. Enter a model in the sidebar ('Model RID or "
+            "API name') — an 'ri....' RID uses the LLM proxy, a model API name "
+            "like GPT_5_1 uses the in-platform palantir_models SDK — or set "
+            "GEOTECH_FOUNDRY_MODELS (Label=id, comma-separated) on the "
+            "deployment and republish. The app is running, but cannot answer "
+            "questions until a model is selected.")
 
     # 3) ANTHROPIC_API_KEY -> ChatAnthropic (local / dev path).
     if os.environ.get(KEY_ENV):

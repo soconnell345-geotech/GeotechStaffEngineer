@@ -350,12 +350,13 @@ with st.sidebar:
     # expander. Same widget keys either way (regression tests rely on them).
     def _render_rid_input():
         _rid = st.text_input(
-            "Model RID" if _foundry_mode else "Model id or Foundry RID",
+            "Model RID or API name" if _foundry_mode
+            else "Model id or Foundry RID",
             value="", key=f"custom_model_{ss.thread_id}",
-            help="e.g. ri.language-model-service..language-model.gpt-5-2 — "
-                 "'ri.…' ids route through the Foundry LLM proxy automatically "
-                 "(see docs/FOUNDRY.md). Applies to this conversation going "
-                 "forward.")
+            help="An 'ri.…' RID routes through the Foundry LLM proxy; a model "
+                 "API name (e.g. GPT_5_1) uses the in-platform palantir_models "
+                 "SDK — no proxy or token needed (see docs/FOUNDRY.md). "
+                 "Applies to this conversation going forward.")
         if st.button("Use this model", key=f"use_custom_{ss.thread_id}") \
                 and _rid.strip():
             _resolve_and_build(_rid.strip())

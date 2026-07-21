@@ -83,7 +83,7 @@ def test_cold_boot_renders_no_key_mention_and_promoted_rid_input(
     assert not [s for s in at.selectbox if s.key == "model_pick"]
     rid_inputs = [t for t in at.text_input
                   if str(t.key or "").startswith("custom_model_")]
-    assert rid_inputs and rid_inputs[0].label == "Model RID"
+    assert rid_inputs and rid_inputs[0].label == "Model RID or API name"
 
 
 def test_configured_rid_boots_with_picker(monkeypatch, tmp_path):

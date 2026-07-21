@@ -45,6 +45,41 @@ are enabled later, no code change is needed**: add the RID to
 `GEOTECH_FOUNDRY_MODELS` (or paste it into the app's "Custom model id
 (advanced)" box in the sidebar).
 
+### 3b. Alternative engine: the in-platform `palantir_models` SDK (no proxy, no token)
+
+On a Foundry deployment, a model id that is **not** an `ri....` RID is treated
+as a **Palantir model API name** (e.g. `GPT_5_1`) and served through the
+in-platform `palantir_models` SDK instead of the LLM proxy. The workspace
+authenticates the SDK itself — **no token, host, or proxy enrollment is
+involved**, which makes this the route of choice when the proxy returns
+401/403 (`LlmProxyNotEnabled` and friends). Discovered live 2026-07-21: the
+name resolves against `/llm/v3/completion/<modelApiName>`; a **404
+`LanguageModelNotFound`** means a wrong name, a **403** means the name is right
+but model access isn't granted yet (an AIP/model-permissions grant, not the
+proxy enrollment).
+
+Setup: add `palantir-models` and `language-model-service-api` in the workspace
+**Libraries** panel, then either list the name in the picker env —
+`GEOTECH_FOUNDRY_MODELS=GPT 5.1=GPT_5_1` — or type `GPT_5_1` into the sidebar
+"Model RID or API name" box. Full tool calling is supported (the v3 request
+carries OpenAI-style `tools`); wrapper: `webapp/palantir_sdk_engine.py`.
+Current limit: image inputs are flattened to text on this route (the vision
+tools' image legs need the proxy route or a future `MultiContentChatMessage`
+leg).
+
+Notebook smoke test for the SDK route (also how to find the right name — 404 =
+wrong name, 403 = needs a model-access grant, answer text = working):
+
+```python
+from palantir_models.models import OpenAiGptChatLanguageModel
+import language_model_service_api.languagemodelservice_api as base
+import language_model_service_api.languagemodelservice_api_completion_v3 as v3
+m = OpenAiGptChatLanguageModel.get("GPT_5_1")
+r = m.create_chat_completion(v3.GptChatCompletionRequest(
+    [base.ChatMessage(base.ChatMessageRole.USER, "Say OK")], max_tokens=20))
+print(r.choices[0].message.content)
+```
+
 ## 4. The 30-second proxy smoke test ("one curl")
 
 Before publishing, open the workspace **Terminal** and paste (substitute your
@@ -78,7 +113,7 @@ The Foundry entry (`webapp/foundry_entry.py`) marks the process as a Foundry
 deployment, and in that mode the app **never reads or mentions the Anthropic
 API key** (enclave-IT requirement): the model surface is Foundry RIDs only —
 the `GEOTECH_FOUNDRY_MODELS` entries populate the picker, and with nothing
-configured the sidebar shows a single **"Model RID"** input (no "advanced"
+configured the sidebar shows a single **"Model RID or API name"** input (no "advanced"
 expander, no built-in Claude model list, no key references in banners or the
 diagnostics report). Local/dev behaviour is unchanged.
 
