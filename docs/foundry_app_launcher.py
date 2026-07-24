@@ -1,11 +1,16 @@
-"""One-file VS Code (Foundry Code Workspaces) launcher for the geotech web app.
+"""Universal Foundry entry/launcher for the geotech web app (one file).
 
-USAGE — copy this single file into the VS Code workspace, then in a terminal:
+TWO WAYS TO USE IT:
 
-    python foundry_vscode_launcher.py
+* **JupyterLab Code Workspace (the app path)** — make this file the
+  workspace's ``app.py`` (or point Applications → Preview / Publish at it).
+  Streamlit executes it directly; it enables Foundry deployment mode,
+  registers the in-platform ``palantir_models`` engine, and runs the
+  packaged app.
 
-It starts the Streamlit app on port 8501 (VS Code auto-forwards the port and
-offers "Open in Browser"; or open http://localhost:8501 yourself).
+* **VS Code workspace / any terminal** — ``python foundry_app_launcher.py``.
+  It re-launches itself under ``streamlit run`` on port 8501 (``PORT`` env
+  overrides).
 
 WHAT IT DOES beyond a plain launch:
 
@@ -25,9 +30,10 @@ WHAT IT DOES beyond a plain launch:
 Errors from the model (403 access-not-granted, 404 wrong name, ...) appear
 verbatim in the app's sidebar "Connection diagnostics" panel — run that first.
 
-HOW IT WORKS: run as ``python <file>`` it re-launches itself under
-``streamlit run``; the re-launched copy (detected via a sentinel env var)
-registers the engine and then executes the installed app in-process.
+HOW IT WORKS: when streamlit is executing this file (detected via the script
+run context, or the sentinel env var set by the self-relaunch), it registers
+the engine and runs the installed app in-process. Run as plain ``python``, it
+re-launches itself under ``streamlit run``.
 """
 
 from __future__ import annotations
@@ -280,7 +286,17 @@ def _launch() -> None:
         env=env, check=False)
 
 
-if os.environ.get(_SENTINEL):
+def _under_streamlit() -> bool:
+    """True when streamlit itself is executing this file (Jupyter Preview /
+    published app / the self-relaunch) rather than a plain ``python`` run."""
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        return get_script_run_ctx(suppress_warning=True) is not None
+    except Exception:
+        return False
+
+
+if os.environ.get(_SENTINEL) or _under_streamlit():
     _bootstrap()
 elif __name__ == "__main__":
     _launch()
