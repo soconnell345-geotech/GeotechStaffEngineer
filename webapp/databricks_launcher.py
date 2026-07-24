@@ -40,10 +40,19 @@ like the README recipe).
 Owner usage (one notebook cell)::
 
     from webapp.databricks_launcher import run_on_databricks
-    handle = run_on_databricks(port=8501, model="funhouse-gpt-high")
+    handle = run_on_databricks(port=8501, model="funhouse-gpt-high",
+                               prompter=fh_prompter)   # pass the live object!
     print(handle.url)      # open this in your browser
     # ... later ...
     handle.stop()
+
+``prompter=fh_prompter`` is the reliable engine path (live-verified findings
+2026-07-24): Prompter auth is **NTLM with a domain service account** — the
+username/password/base_url are plain strings on the live object, so the
+launcher threads them to the app process, which reconstructs a fully working
+client with no dbutils/Py4J. Without ``prompter=``, the bootstrap's bare
+``PrompterAPI()`` self-config is attempted; on workspaces where FunhouseConfig
+needs the notebook's live session that DIES with Py4J "Object ID unknown".
 
 If the workspace host cannot be read from spark, pass ``workspace_host=...`` or
 build the URL yourself from the printed ``base_path``.
@@ -201,11 +210,26 @@ if REPO_ROOT and REPO_ROOT not in sys.path:
 def _register_prompter():
     """Reconstruct a PrompterAPI ON THE DRIVER (the notebook's live fh_prompter
     cannot cross the process boundary) and register it as the webapp engine.
-    PrompterAPI self-configures from the driver's FunhouseConfig / environment."""
+
+    Preferred path: explicit credentials threaded from the notebook's live
+    ``fh_prompter`` via env vars (``GEOTECH_FH_*``) — Prompter auth is NTLM
+    with a domain service account, and username/password/base_url are plain
+    strings, so they reconstruct a fully working client with NO dbutils/Py4J
+    involvement. Fallback: bare ``PrompterAPI(chat_model=...)`` self-config."""
+    import os as _os
     from webapp.engine_config import register_model_builder
     from funhouse.services.prompter.prompter_api import PrompterAPI
     from funhouse_agent.deep.databricks_bridge import PrompterChatModel
-    prompter = PrompterAPI(chat_model=MODEL)
+    _user = _os.environ.get("GEOTECH_FH_USERNAME")
+    _pw = _os.environ.get("GEOTECH_FH_PASSWORD")
+    _burl = _os.environ.get("GEOTECH_FH_BASE_URL")
+    if _user and _pw and _burl:
+        prompter = PrompterAPI(
+            backend="prompter", username=_user, password=_pw, base_url=_burl,
+            verify=_os.environ.get("GEOTECH_FH_VERIFY", "1") == "1",
+            chat_model=MODEL)
+    else:
+        prompter = PrompterAPI(chat_model=MODEL)
     register_model_builder(
         lambda: PrompterChatModel(prompter=prompter, model=MODEL))
 
@@ -267,13 +291,29 @@ def build_launch_env(
     base_env: dict,
     anthropic_key: Optional[str] = None,
     repo_root: Optional[str] = None,
+    prompter: Any = None,
 ) -> dict:
     """Build the subprocess environment: inherit ``base_env`` (so the driver's
     Funhouse config env reaches the bootstrap), optionally inject
-    ``ANTHROPIC_API_KEY``, and prepend ``repo_root`` to ``PYTHONPATH``."""
+    ``ANTHROPIC_API_KEY``, and prepend ``repo_root`` to ``PYTHONPATH``.
+
+    When the notebook's live ``prompter`` (``fh_prompter``) is given, its
+    Prompter credentials — plain strings: NTLM ``username``/``password`` plus
+    ``base_url``/``verify`` — are threaded through ``GEOTECH_FH_*`` env vars so
+    the bootstrap reconstructs a working client with no dbutils/Py4J."""
     env = dict(base_env)
     if anthropic_key:
         env["ANTHROPIC_API_KEY"] = anthropic_key
+    if prompter is not None:
+        user = getattr(prompter, "username", None)
+        pw = getattr(prompter, "password", None)
+        burl = getattr(prompter, "base_url", None)
+        if user and pw and burl:
+            env["GEOTECH_FH_USERNAME"] = str(user)
+            env["GEOTECH_FH_PASSWORD"] = str(pw)
+            env["GEOTECH_FH_BASE_URL"] = str(burl)
+            env["GEOTECH_FH_VERIFY"] = (
+                "1" if getattr(prompter, "verify", True) else "0")
     if repo_root:
         parts = [p for p in env.get("PYTHONPATH", "").split(os.pathsep) if p]
         if repo_root not in parts:
@@ -340,6 +380,7 @@ def run_on_databricks(
     port: int = DEFAULT_PORT,
     model: str = DEFAULT_MODEL,
     *,
+    prompter: Any = None,
     spark: Any = None,
     org_id: Optional[str] = None,
     cluster_id: Optional[str] = None,
@@ -362,6 +403,13 @@ def run_on_databricks(
         Driver port to serve on (default ``8501``).
     model : str
         Prompter chat-model id (default ``"funhouse-gpt-high"``).
+    prompter : PrompterAPI, optional
+        **Pass the notebook's live ``fh_prompter`` — the reliable path.** Its
+        NTLM credentials (plain strings) are threaded to the app process,
+        which reconstructs a working client with no dbutils/Py4J. Without it,
+        the bootstrap falls back to bare ``PrompterAPI()`` self-configuration,
+        which fails on workspaces whose Funhouse config needs the notebook's
+        live session (observed live 2026-07-24: Py4J "Object ID unknown").
     spark : SparkSession, optional
         The notebook's spark session; auto-detected if omitted.
     org_id, cluster_id : str, optional
@@ -396,7 +444,8 @@ def run_on_databricks(
         fh.write(script)
 
     env = build_launch_env(
-        os.environ, anthropic_key=anthropic_key, repo_root=repo_root)
+        os.environ, anthropic_key=anthropic_key, repo_root=repo_root,
+        prompter=prompter)
     python_exe = python_executable or sys.executable
     process = _popen([python_exe, script_path], env=env)
 

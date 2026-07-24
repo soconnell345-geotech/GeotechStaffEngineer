@@ -189,6 +189,45 @@ def test_build_launch_env_does_not_duplicate_repo_root():
     assert env["PYTHONPATH"].split(os.pathsep).count("/repo") == 1
 
 
+class _FakePrompter:
+    """Live-fh_prompter stand-in with the NTLM credential attributes."""
+
+    def __init__(self, verify=False):
+        self.username = "appservices.state.sbu\\svcAccount"
+        self.password = "s3cret"
+        self.base_url = "https://dsaaiapi.example/api/v1"
+        self.verify = verify
+        self.chat_model = "funhouse-gpt-high"
+
+
+def test_build_launch_env_threads_prompter_credentials():
+    env = dl.build_launch_env({}, prompter=_FakePrompter(verify=False))
+    assert env["GEOTECH_FH_USERNAME"] == "appservices.state.sbu\\svcAccount"
+    assert env["GEOTECH_FH_PASSWORD"] == "s3cret"
+    assert env["GEOTECH_FH_BASE_URL"] == "https://dsaaiapi.example/api/v1"
+    assert env["GEOTECH_FH_VERIFY"] == "0"
+    assert dl.build_launch_env(
+        {}, prompter=_FakePrompter(verify=True))["GEOTECH_FH_VERIFY"] == "1"
+
+
+def test_build_launch_env_incomplete_prompter_sets_nothing():
+    class _NoCreds:
+        username = password = base_url = None
+    env = dl.build_launch_env({}, prompter=_NoCreds())
+    assert not [k for k in env if k.startswith("GEOTECH_FH_")]
+
+
+def test_bootstrap_script_reconstructs_from_env_creds():
+    src = dl.render_bootstrap_script(
+        app_path="/x/app.py", repo_root="/repo", base="/b", port=8080,
+        model="funhouse-gpt-high")
+    # Preferred path: explicit-credential PrompterAPI from GEOTECH_FH_* envs,
+    # with the bare self-config retained as fallback.
+    assert 'GEOTECH_FH_USERNAME' in src and 'GEOTECH_FH_PASSWORD' in src
+    assert 'backend="prompter"' in src
+    assert "PrompterAPI(chat_model=MODEL)" in src
+
+
 # ---------------------------------------------------------------------------
 # run_on_databricks (orchestration, fake Popen + fake spark)
 # ---------------------------------------------------------------------------
