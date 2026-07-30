@@ -335,6 +335,19 @@ def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
     kw = dict(build_kwargs)
     if checkpointer is not None:
         kw["checkpointer"] = checkpointer
+    # SharePoint file tools (browse/search/download/upload) — injected ONLY
+    # when the deployment is configured for SharePoint, so everyone else
+    # carries zero extra tool surface. Best-effort: a tools-layer problem
+    # must never block building the agent.
+    try:
+        from webapp import sharepoint_tools
+        _sp_tools, _sp_prompt = sharepoint_tools.tools_if_configured()
+    except Exception:
+        _sp_tools, _sp_prompt = [], ""
+    if _sp_tools:
+        kw["extra_tools"] = list(kw.get("extra_tools") or []) + _sp_tools
+        kw["extra_system_prompt"] = "\n\n".join(
+            p for p in (kw.get("extra_system_prompt"), _sp_prompt) if p)
     return build_deep_agent(
         model,
         attachments=attachments,

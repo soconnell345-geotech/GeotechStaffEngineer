@@ -180,6 +180,11 @@ class SharePointStore:
             self._fm = _build_file_manager()
         return self._fm
 
+    def file_manager(self):
+        """The Funhouse SharePoint file manager (built lazily from env).
+        Raises on missing config/SDK — callers wanting best-effort must wrap."""
+        return self._file_manager()
+
     def root(self) -> str:
         return (os.environ.get(ENV_ROOT, "").strip() or DEFAULT_ROOT).strip("/")
 

@@ -485,6 +485,7 @@ def build_deep_agent(
     allowed_agents=None,
     reference_mode: str = "anytime",
     extra_system_prompt: Optional[str] = None,
+    extra_tools=None,
     save_fn: Optional[Callable] = None,
     engine=None,
     attachments=None,
@@ -537,6 +538,13 @@ def build_deep_agent(
         seismic reviewer (``funhouse_agent.reviewers.make_seismic_reviewer_deep``)
         injects its review-mode checklist here. Default ``None`` leaves the
         prompt unchanged.
+    extra_tools : list, optional
+        Additional LangChain tools appended to the PRIMARY agent's tool list
+        (after the standard meta/vision/file tools). Lets a host wire
+        deployment-specific capabilities — e.g. the webapp's SharePoint
+        file tools — without touching the module catalog. Default ``None``
+        adds nothing. Pair with ``extra_system_prompt`` so the agent knows
+        the tools exist.
     save_fn : callable, optional
         ``(path, content) -> saved_path`` for ``save_file``. Defaults to local
         filesystem write.
@@ -691,6 +699,8 @@ def build_deep_agent(
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
     )
+    if extra_tools:
+        tools = list(tools) + list(extra_tools)
 
     system_prompt = build_domain_prompt(allowed_agents, memory_enabled=enable_memory)
     if extra_system_prompt:
