@@ -18,10 +18,15 @@ Design rules:
 Configuration (env vars; the launcher subprocess inherits the notebook env):
 
     GEOTECH_SHAREPOINT_SITE_URL       https://<tenant>.sharepoint.com/sites/<site>   (required)
+    GEOTECH_SHAREPOINT_TOKEN_FILE     **the delegated-OAuth path (State/Funhouse
+                                      setup)**: a driver-local file holding the
+                                      current Graph bearer token, staged AND
+                                      kept fresh by the notebook (see
+                                      databricks_launcher.stage_sharepoint)
     GEOTECH_SHAREPOINT_CLIENT_ID      \\ app-registration auth (office365 backend --
-    GEOTECH_SHAREPOINT_CLIENT_SECRET  /  non-interactive, indefinitely valid)
-    GEOTECH_SHAREPOINT_TOKEN          alternative: pre-minted Graph bearer token
-                                      (non-interactive but expires ~60-90 min)
+    GEOTECH_SHAREPOINT_CLIENT_SECRET  /  non-interactive; only if the tenant has one)
+    GEOTECH_SHAREPOINT_TOKEN          a one-shot Graph bearer token (expires
+                                      ~60-90 min; prefer TOKEN_FILE)
     GEOTECH_SHAREPOINT_DRIVE_NAME     optional (Graph): document-library name
     GEOTECH_SHAREPOINT_ROOT           base folder, default
                                       "Shared Documents/GeotechStaffEngineer"
@@ -49,6 +54,7 @@ ENV_SITE = "GEOTECH_SHAREPOINT_SITE_URL"
 ENV_CLIENT_ID = "GEOTECH_SHAREPOINT_CLIENT_ID"
 ENV_CLIENT_SECRET = "GEOTECH_SHAREPOINT_CLIENT_SECRET"
 ENV_TOKEN = "GEOTECH_SHAREPOINT_TOKEN"
+ENV_TOKEN_FILE = "GEOTECH_SHAREPOINT_TOKEN_FILE"
 ENV_DRIVE = "GEOTECH_SHAREPOINT_DRIVE_NAME"
 ENV_ROOT = "GEOTECH_SHAREPOINT_ROOT"
 
@@ -64,6 +70,8 @@ def configured() -> bool:
         return False
     if (os.environ.get(ENV_CLIENT_ID, "").strip()
             and os.environ.get(ENV_CLIENT_SECRET, "").strip()):
+        return True
+    if os.environ.get(ENV_TOKEN_FILE, "").strip():
         return True
     return bool(os.environ.get(ENV_TOKEN, "").strip())
 
@@ -84,19 +92,40 @@ def _build_file_manager():
         client = SharePointClient(site_url=site, client_id=cid,
                                   client_secret=secret, backend="office365")
         return client.file_manager
+
+    drive_kwargs: Dict[str, Any] = {}
+    drive = os.environ.get(ENV_DRIVE, "").strip()
+    if drive:
+        drive_kwargs["drive_name"] = drive
+
+    token_file = os.environ.get(ENV_TOKEN_FILE, "").strip()
+    if token_file:
+        # Delegated-OAuth path: the notebook stages the current Graph token in
+        # a driver-local file and keeps it FRESH with a refresher thread (see
+        # databricks_launcher.stage_sharepoint). A provider that re-reads the
+        # file per request means the client's 401-retry picks up refreshed
+        # tokens automatically.
+        from funhouse.services.sharepoint.graph.graph_client import (
+            create_sharepoint_client_from_token_provider)
+
+        def _read_token() -> str:
+            with open(token_file, "r", encoding="utf-8") as fh:
+                return fh.read().strip()
+
+        client = create_sharepoint_client_from_token_provider(
+            site, _read_token, **drive_kwargs)
+        return client.file_manager
+
     token = os.environ.get(ENV_TOKEN, "").strip()
     if token:
         from funhouse.services.sharepoint.graph.graph_client import (
             create_sharepoint_client_from_token)
-        kwargs: Dict[str, Any] = {}
-        drive = os.environ.get(ENV_DRIVE, "").strip()
-        if drive:
-            kwargs["drive_name"] = drive
-        client = create_sharepoint_client_from_token(site, token, **kwargs)
+        client = create_sharepoint_client_from_token(site, token,
+                                                     **drive_kwargs)
         return client.file_manager
     raise RuntimeError(
-        f"SharePoint storage needs {ENV_CLIENT_ID}+{ENV_CLIENT_SECRET} "
-        f"or {ENV_TOKEN}")
+        f"SharePoint storage needs {ENV_CLIENT_ID}+{ENV_CLIENT_SECRET}, "
+        f"{ENV_TOKEN_FILE}, or {ENV_TOKEN}")
 
 
 def _manifest_path(conv_dir: str) -> str:

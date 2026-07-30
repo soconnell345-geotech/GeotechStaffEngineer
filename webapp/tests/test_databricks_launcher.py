@@ -217,6 +217,36 @@ def test_build_launch_env_incomplete_prompter_sets_nothing():
     assert not [k for k in env if k.startswith("GEOTECH_FH_")]
 
 
+def test_stage_sharepoint_writes_token_and_envs(tmp_path):
+    tok_path = str(tmp_path / "tok.txt")
+    env = {}
+    calls = []
+
+    def getter():
+        calls.append(1)
+        return f"token-{len(calls)}"
+
+    out = dl.stage_sharepoint(
+        "https://usdos.sharepoint.com/sites/CSEGeotechGroup/",
+        root="/Shared Documents/General/GSE_app/",
+        token_getter=getter, token_path=tok_path,
+        start_refresher=False, env=env)
+    assert open(tok_path).read() == "token-1"
+    assert env["GEOTECH_SHAREPOINT_SITE_URL"] == \
+        "https://usdos.sharepoint.com/sites/CSEGeotechGroup"
+    assert env["GEOTECH_SHAREPOINT_TOKEN_FILE"] == tok_path
+    assert env["GEOTECH_SHAREPOINT_ROOT"] == "Shared Documents/General/GSE_app"
+    assert out["refresher"] is False
+
+
+def test_stage_sharepoint_no_token_raises(tmp_path):
+    with pytest.raises(RuntimeError):
+        dl.stage_sharepoint("https://x.sharepoint.com/sites/y",
+                            token_getter=lambda: None,
+                            token_path=str(tmp_path / "t.txt"),
+                            start_refresher=False, env={})
+
+
 def test_bootstrap_script_reconstructs_from_env_creds():
     src = dl.render_bootstrap_script(
         app_path="/x/app.py", repo_root="/repo", base="/b", port=8080,

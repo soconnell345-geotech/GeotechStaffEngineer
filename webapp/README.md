@@ -145,16 +145,25 @@ manifest skips unchanged files). The sidebar gains a **Permanent storage**
 block with the sync result, a link to the session folder, and a "Sync now"
 button. Mirroring is best-effort: a SharePoint failure never affects the turn.
 
+**Delegated-OAuth setup (the State/Funhouse pattern — `%run setup_sharepoint`,
+device-code sign-in, years-long refresh token):** one call in the notebook
+before launching stages everything — it writes the current Graph token to a
+driver-local file, sets the `GEOTECH_SHAREPOINT_*` env vars, and starts a
+daemon thread re-minting a fresh token every 30 min (silently, via the cached
+refresh token), so the app's token never goes stale:
+
 ```python
-env["GEOTECH_SHAREPOINT_SITE_URL"] = "https://<tenant>.sharepoint.com/sites/<site>"
-# EITHER app-registration credentials (non-interactive, long-lived — preferred):
-env["GEOTECH_SHAREPOINT_CLIENT_ID"] = dbutils.secrets.get(scope, "sp_client_id")
-env["GEOTECH_SHAREPOINT_CLIENT_SECRET"] = dbutils.secrets.get(scope, "sp_client_secret")
-# OR a pre-minted Graph bearer token (expires ~60-90 min):
-# env["GEOTECH_SHAREPOINT_TOKEN"] = "<token>"; env["GEOTECH_SHAREPOINT_DRIVE_NAME"] = "Documents"
-# Optional base folder (default "Shared Documents/GeotechStaffEngineer"):
-# env["GEOTECH_SHAREPOINT_ROOT"] = "Shared Documents/GeotechApp"
+from webapp.databricks_launcher import stage_sharepoint
+stage_sharepoint("https://usdos.sharepoint.com/sites/CSEGeotechGroup",
+                 root="Shared Documents/General/GSE_app")
 ```
+
+**Alternative (tenants with an app registration):** set
+`GEOTECH_SHAREPOINT_SITE_URL` + `GEOTECH_SHAREPOINT_CLIENT_ID` +
+`GEOTECH_SHAREPOINT_CLIENT_SECRET` (office365 client-credential backend,
+non-interactive, long-lived). A one-shot `GEOTECH_SHAREPOINT_TOKEN` is also
+accepted (expires ~60–90 min). `GEOTECH_SHAREPOINT_ROOT` overrides the base
+folder (default `"Shared Documents/GeotechStaffEngineer"`).
 
 Remote layout mirrors the local one:
 `<ROOT>/conversations/<thread_id>/{meta.json, transcript…, files/…}`. Uses the

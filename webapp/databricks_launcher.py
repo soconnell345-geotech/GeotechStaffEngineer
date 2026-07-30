@@ -65,11 +65,13 @@ import string
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 __all__ = [
     "run_on_databricks",
+    "stage_sharepoint",
     "LaunchHandle",
     "driver_proxy_base_path",
     "resolve_cluster_ids",
@@ -325,6 +327,103 @@ def build_launch_env(
 def _default_app_path() -> str:
     """Absolute path to ``webapp/app.py`` shipped alongside this module."""
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py")
+
+
+# ---------------------------------------------------------------------------
+# SharePoint staging (delegated OAuth -> token file + refresher)
+# ---------------------------------------------------------------------------
+
+def _default_sp_token_getter() -> Callable[[], Optional[str]]:
+    """Token getter for the State/Funhouse delegated-OAuth setup.
+
+    ``MSALAuth(cache_storage="secret_manager")`` holds the user's years-long
+    refresh token (established by ``%run setup_sharepoint``), so
+    ``get_access_token_silent()`` mints a fresh ~90-min Graph token with no
+    browser prompt. Falls back to a full ``authenticate()`` (which may prompt
+    device-code — fine in a notebook) if the silent path returns nothing.
+    """
+    from funhouse.services.auth.msal_auth import MSALAuth
+    ma = MSALAuth(cache_storage="secret_manager")
+
+    def _get() -> Optional[str]:
+        token = ma.get_access_token_silent()
+        if token:
+            return token
+        result = ma.authenticate() or {}
+        auth = (result.get("headers") or {}).get("Authorization", "")
+        return auth.split()[-1] if auth else None
+
+    return _get
+
+
+def stage_sharepoint(
+    site_url: str,
+    root: str = "Shared Documents/GeotechStaffEngineer",
+    *,
+    token_getter: Optional[Callable[[], Optional[str]]] = None,
+    token_path: str = "/tmp/geotech_sp_token.txt",
+    refresh_interval_s: int = 1800,
+    start_refresher: bool = True,
+    env: Any = None,
+) -> dict:
+    """Stage SharePoint permanent storage for the app subprocess (notebook-side).
+
+    Run this in the notebook BEFORE launching the app. It writes the current
+    Graph token to a driver-local file, points the ``GEOTECH_SHAREPOINT_*``
+    env vars at it (inherited by the launched app), and starts a daemon thread
+    that re-mints a fresh token every ``refresh_interval_s`` seconds — so the
+    app's token never goes stale while the notebook kernel lives (the app's
+    token provider re-reads the file on every request/401-retry).
+
+    Typical use::
+
+        from webapp.databricks_launcher import stage_sharepoint, run_on_databricks
+        stage_sharepoint("https://usdos.sharepoint.com/sites/CSEGeotechGroup",
+                         root="Shared Documents/General/GSE_app")
+        handle = run_on_databricks(prompter=fh_prompter)
+
+    ``token_getter`` defaults to the Funhouse ``MSALAuth`` silent flow (the
+    ``%run setup_sharepoint`` refresh token); pass a callable to override.
+    """
+    import threading
+
+    if env is None:
+        env = os.environ
+    if token_getter is None:
+        token_getter = _default_sp_token_getter()
+
+    token = token_getter()
+    if not token:
+        raise RuntimeError(
+            "Could not obtain a SharePoint Graph token — run "
+            "'%run setup_sharepoint' first, then retry.")
+    with open(token_path, "w", encoding="utf-8") as fh:
+        fh.write(token)
+
+    env["GEOTECH_SHAREPOINT_SITE_URL"] = site_url.strip().rstrip("/")
+    env["GEOTECH_SHAREPOINT_TOKEN_FILE"] = token_path
+    if root:
+        env["GEOTECH_SHAREPOINT_ROOT"] = root.strip().strip("/")
+
+    if start_refresher:
+        def _refresh_loop() -> None:
+            while True:
+                time.sleep(refresh_interval_s)
+                try:
+                    fresh = token_getter()
+                    if fresh:
+                        with open(token_path, "w", encoding="utf-8") as fh:
+                            fh.write(fresh)
+                except Exception:
+                    pass                     # keep last token; retry next tick
+
+        threading.Thread(target=_refresh_loop, daemon=True,
+                         name="geotech-sp-token-refresher").start()
+
+    return {"site_url": env["GEOTECH_SHAREPOINT_SITE_URL"],
+            "root": env.get("GEOTECH_SHAREPOINT_ROOT", ""),
+            "token_path": token_path,
+            "refresher": bool(start_refresher)}
 
 
 # ---------------------------------------------------------------------------

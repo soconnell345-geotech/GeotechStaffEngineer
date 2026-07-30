@@ -14,7 +14,7 @@ import webapp.core as core
 import webapp.sharepoint_store as sp
 
 _ENVS = (sp.ENV_SITE, sp.ENV_CLIENT_ID, sp.ENV_CLIENT_SECRET, sp.ENV_TOKEN,
-         sp.ENV_DRIVE, sp.ENV_ROOT)
+         sp.ENV_TOKEN_FILE, sp.ENV_DRIVE, sp.ENV_ROOT)
 
 
 @pytest.fixture(autouse=True)
@@ -67,10 +67,54 @@ def test_configured_env_logic(monkeypatch):
     monkeypatch.setenv(sp.ENV_TOKEN, "tok")
     assert sp.configured()                           # site + token
     monkeypatch.delenv(sp.ENV_TOKEN)
+    monkeypatch.setenv(sp.ENV_TOKEN_FILE, "/tmp/tok.txt")
+    assert sp.configured()                           # site + token file
+    monkeypatch.delenv(sp.ENV_TOKEN_FILE)
     monkeypatch.setenv(sp.ENV_CLIENT_ID, "cid")
     assert not sp.configured()                       # id without secret
     monkeypatch.setenv(sp.ENV_CLIENT_SECRET, "sec")
     assert sp.configured()                           # site + id + secret
+
+
+def test_token_file_route_reads_fresh_token(tmp_path, monkeypatch):
+    """The token-file route builds a provider that re-reads the file each call
+    (so the notebook-side refresher's new tokens are picked up)."""
+    import sys, types
+    tok_file = tmp_path / "sp_token.txt"
+    tok_file.write_text("tok-1")
+    monkeypatch.setenv(sp.ENV_SITE, "https://t.sharepoint.com/sites/x")
+    monkeypatch.setenv(sp.ENV_TOKEN_FILE, str(tok_file))
+    monkeypatch.setenv(sp.ENV_DRIVE, "Documents")
+
+    captured = {}
+
+    def fake_create_from_provider(site, provider, **kwargs):
+        captured["site"], captured["provider"] = site, provider
+        captured["kwargs"] = kwargs
+        return types.SimpleNamespace(file_manager="FAKE_FM")
+
+    graph_mod = types.ModuleType(
+        "funhouse.services.sharepoint.graph.graph_client")
+    graph_mod.create_sharepoint_client_from_token_provider = \
+        fake_create_from_provider
+    for name, mod in (
+        ("funhouse", types.ModuleType("funhouse")),
+        ("funhouse.services", types.ModuleType("funhouse.services")),
+        ("funhouse.services.sharepoint",
+         types.ModuleType("funhouse.services.sharepoint")),
+        ("funhouse.services.sharepoint.graph",
+         types.ModuleType("funhouse.services.sharepoint.graph")),
+        ("funhouse.services.sharepoint.graph.graph_client", graph_mod),
+    ):
+        monkeypatch.setitem(sys.modules, name, mod)
+
+    fm = sp._build_file_manager()
+    assert fm == "FAKE_FM"
+    assert captured["site"] == "https://t.sharepoint.com/sites/x"
+    assert captured["kwargs"] == {"drive_name": "Documents"}
+    assert captured["provider"]() == "tok-1"
+    tok_file.write_text("tok-2")                    # refresher rotated it
+    assert captured["provider"]() == "tok-2"
 
 
 # ---------------------------------------------------------------------------
