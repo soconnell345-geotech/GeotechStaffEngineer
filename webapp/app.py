@@ -26,7 +26,7 @@ if _PKG_ROOT not in sys.path:
 
 import streamlit as st
 
-from webapp import core, engine_config
+from webapp import core, engine_config, sharepoint_store
 
 st.set_page_config(page_title="GeotechStaffEngineer", page_icon="⛰️",
                    layout="wide")
@@ -541,6 +541,36 @@ with st.sidebar:
             except OSError:
                 pass
 
+    # Permanent storage (SharePoint mirror) — rendered only when configured
+    # via the GEOTECH_SHAREPOINT_* env vars. The mirror runs after each turn;
+    # this block shows the result and offers a manual sync.
+    _sp = sharepoint_store.get_store()
+    if _sp.configured:
+        st.divider()
+        st.subheader("Permanent storage")
+        _sync = ss.get("sp_sync") or _sp.last_sync
+        if _sync:
+            _n_err = len(_sync.get("errors") or [])
+            _line = (f"SharePoint: {_sync['uploaded']} uploaded, "
+                     f"{_sync['skipped']} up-to-date"
+                     + (f", {_n_err} failed" if _n_err else "")
+                     + f" · {_sync['duration_s']}s")
+            if _n_err:
+                st.warning(_line)
+                with st.expander("Sync errors", expanded=False):
+                    for e in _sync["errors"]:
+                        st.caption(e)
+            else:
+                st.caption(_line)
+            if _sync.get("web_url"):
+                st.markdown(f"[Open session folder]({_sync['web_url']})")
+        else:
+            st.caption("SharePoint mirroring is on — this conversation's "
+                       "files sync after each turn.")
+        if st.button("Sync now", key=f"spsync_{ss.thread_id}"):
+            ss.sp_sync = _sp.mirror_conversation(ss.thread_id)
+            st.rerun()
+
     st.divider()
     st.caption(core.token_line(ss.last_turn_tokens, ss.total_tokens))
     _at_now = (ss.behavior or {}).get("agent_type", "full")
@@ -795,4 +825,9 @@ if prompt:
                 "tools": _trace_tools,
                 "error": turn_error,
             })
+        # Permanent storage: mirror this conversation to SharePoint
+        # (incremental, best-effort — mirror_conversation never raises).
+        _sp = sharepoint_store.get_store()
+        if _sp.configured:
+            ss.sp_sync = _sp.mirror_conversation(ss.thread_id)
         st.rerun()

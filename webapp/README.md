@@ -134,6 +134,35 @@ a durable copy is still kept with the conversation. Clear the box to reset to th
 default. (Under the hood the app sets `GEOTECH_DEFAULT_OUTPUT_DIR`, which the
 tool layer reads; an explicit `output_path` you ask for in a request still wins.)
 
+### Permanent storage: SharePoint mirror (optional)
+
+On Databricks the driver's disk is ephemeral — conversations and calc packages
+die with the cluster. Set the env vars below (in the notebook before launching;
+the app subprocess inherits them) and the app **mirrors each conversation's
+folder to SharePoint after every turn** — session record (meta/transcript/
+trace), user uploads, and agent-generated files, incrementally (a local
+manifest skips unchanged files). The sidebar gains a **Permanent storage**
+block with the sync result, a link to the session folder, and a "Sync now"
+button. Mirroring is best-effort: a SharePoint failure never affects the turn.
+
+```python
+env["GEOTECH_SHAREPOINT_SITE_URL"] = "https://<tenant>.sharepoint.com/sites/<site>"
+# EITHER app-registration credentials (non-interactive, long-lived — preferred):
+env["GEOTECH_SHAREPOINT_CLIENT_ID"] = dbutils.secrets.get(scope, "sp_client_id")
+env["GEOTECH_SHAREPOINT_CLIENT_SECRET"] = dbutils.secrets.get(scope, "sp_client_secret")
+# OR a pre-minted Graph bearer token (expires ~60-90 min):
+# env["GEOTECH_SHAREPOINT_TOKEN"] = "<token>"; env["GEOTECH_SHAREPOINT_DRIVE_NAME"] = "Documents"
+# Optional base folder (default "Shared Documents/GeotechStaffEngineer"):
+# env["GEOTECH_SHAREPOINT_ROOT"] = "Shared Documents/GeotechApp"
+```
+
+Remote layout mirrors the local one:
+`<ROOT>/conversations/<thread_id>/{meta.json, transcript…, files/…}`. Uses the
+Funhouse SDK's SharePoint service (`funhouse.services.sharepoint`) — the
+`office365` client-credential backend or a direct Graph token; the SDK must be
+installed in the app environment (it is, on Funhouse clusters). Implementation:
+`webapp/sharepoint_store.py`.
+
 ---
 
 ## 3. Databricks (notebook-launched, via the driver proxy)
