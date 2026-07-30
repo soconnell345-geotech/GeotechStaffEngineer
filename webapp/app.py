@@ -456,6 +456,14 @@ with st.sidebar:
                  "(A2). The key results (values + units + method) and the saved "
                  "calc-package path come back; the full detail is saved to a file "
                  "so nothing is lost.")
+        _trace_cb = st.checkbox(
+            "Show turn details (time, tokens, tool calls)",
+            value=core.tracing_enabled(_b.get("trace")),
+            key=f"trace_{ss.thread_id}",
+            help="After each answer, adds a 'turn details' expander with the "
+                 "turn's duration, token count and every tool call (including "
+                 "sub-agent hops), and logs one JSON line per turn to the "
+                 "conversation's trace.jsonl. Applies from the next turn.")
         with st.expander("Advanced caps", expanded=False):
             _refcalls = st.number_input(
                 "Reference consult budget (model calls)", min_value=1,
@@ -472,12 +480,18 @@ with st.sidebar:
         _new_b = {**_b, "references": "anytime" if _refs_on else "off",
                   "analysis_depth": _depth, "ref_max_calls": int(_refcalls),
                   "recursion_limit": int(_rlim), "route_calc": bool(_route_calc)}
+        if bool(_trace_cb) != core.tracing_enabled(_b.get("trace")):
+            _new_b["trace"] = bool(_trace_cb)   # explicit once touched
         if _new_b != _b:
             ss.behavior = _new_b
             if core.load_meta(ss.thread_id) is not None:
                 core.set_behavior(ss.thread_id, _new_b)
-            _resolve_and_build(ss.model)     # references/depth/caps -> rebuild
-            st.rerun()
+            if {k: v for k, v in _new_b.items() if k != "trace"} == \
+                    {k: v for k, v in _b.items() if k != "trace"}:
+                st.rerun()                   # trace-only change: no rebuild
+            else:
+                _resolve_and_build(ss.model)  # references/depth/caps -> rebuild
+                st.rerun()
 
     st.divider()
     st.subheader("Attachments")
@@ -626,8 +640,9 @@ for entry in ss.transcript:
                 _render_artifact_card(_path)
 
 
-# Turn details (A7 local tracer) — the latest turn's trace, when GEOTECH_TRACE=1.
-if core.tracing_enabled():
+# Turn details (A7 local tracer) — the latest turn's trace, when tracing is on
+# (sidebar Behavior toggle, defaulting to the GEOTECH_TRACE env).
+if core.tracing_enabled(ss.behavior.get("trace")):
     _recent = core.load_recent_traces(ss.thread_id, n=1)
     if _recent:
         _tr = _recent[-1]
@@ -688,7 +703,8 @@ if prompt:
 
         core.begin_partial(ss.thread_id, prompt)   # A3: mark in-progress turn
         turn_error = None
-        _trace_on = core.tracing_enabled()          # A7: local per-turn tracer
+        _trace_on = core.tracing_enabled(           # A7: local per-turn tracer
+            ss.behavior.get("trace"))
         _trace_t0 = time.time()
         _trace_tools = []
         with st.chat_message("assistant"):

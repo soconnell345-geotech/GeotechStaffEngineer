@@ -632,7 +632,8 @@ def test_checkpoint_partial_never_raises(tmp_path):
 def test_default_behavior_matches_current_defaults():
     assert core.default_behavior() == {
         "references": "anytime", "ref_max_calls": 8, "recursion_limit": 25,
-        "analysis_depth": "standard", "agent_type": "full", "route_calc": True}
+        "analysis_depth": "standard", "agent_type": "full", "route_calc": True,
+        "trace": None}
     b = core.default_behavior()          # fresh copy each call, not shared
     b["analysis_depth"] = "comprehensive"
     assert core.default_behavior()["analysis_depth"] == "standard"
@@ -657,7 +658,7 @@ def test_set_behavior_round_trips(tmp_path):
     assert core.behavior_from_meta(core.load_meta(tid, root=root)) == {
         "references": "off", "analysis_depth": "comprehensive",
         "ref_max_calls": 12, "recursion_limit": 40, "agent_type": "full",
-        "route_calc": True}
+        "route_calc": True, "trace": None}
 
 
 def test_depth_prompt_levels():
@@ -692,6 +693,30 @@ def test_tracing_enabled_env(monkeypatch):
         assert core.tracing_enabled() is True
     monkeypatch.setenv("GEOTECH_TRACE", "0")
     assert core.tracing_enabled() is False
+
+
+def test_tracing_enabled_behavior_override(monkeypatch):
+    """The sidebar toggle (behavior['trace']) wins over the env; None follows it."""
+    monkeypatch.delenv("GEOTECH_TRACE", raising=False)
+    assert core.tracing_enabled(True) is True       # toggle on, env off
+    assert core.tracing_enabled(None) is False
+    monkeypatch.setenv("GEOTECH_TRACE", "1")
+    assert core.tracing_enabled(False) is False     # toggle off, env on
+    assert core.tracing_enabled(None) is True
+
+
+def test_behavior_trace_round_trip(tmp_path):
+    """An explicit trace=False persists through meta (None-default merge keeps
+    explicit False)."""
+    root, tid = str(tmp_path), "TRB1"
+    assert core.default_behavior()["trace"] is None
+    b = dict(core.default_behavior(), trace=False)
+    core.set_behavior(tid, b, root=root)
+    loaded = core.behavior_from_meta(core.load_meta(tid, root=root))
+    assert loaded["trace"] is False
+    core.set_behavior(tid, dict(b, trace=True), root=root)
+    assert core.behavior_from_meta(
+        core.load_meta(tid, root=root))["trace"] is True
 
 
 def test_write_and_load_turn_trace(tmp_path):

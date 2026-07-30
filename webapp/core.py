@@ -763,6 +763,8 @@ def import_external_artifacts(working_dir: str, files_dir: str, before: set,
 #                     bulky calc trace stays out of the conversation (A2). ON by
 #                     default in the app (the owner-approved A2 default-on; the
 #                     build_deep_agent library default stays OFF).
+#   trace          -- per-conversation "turn details" tracer toggle: True/False
+#                     explicit, None = follow the GEOTECH_TRACE env default.
 # Defaults reproduce today's behavior EXACTLY EXCEPT route_calc (the one owner-
 # approved A2 default-on): references anytime, ref budget 8, LangGraph's default
 # recursion_limit 25, analysis_depth "standard" == no preset, agent_type "full".
@@ -790,6 +792,9 @@ DEFAULT_BEHAVIOR = {
     "analysis_depth": "standard",
     "agent_type": "full",
     "route_calc": True,
+    # Per-conversation tracer override: True/False = explicit sidebar choice,
+    # None = follow the GEOTECH_TRACE env default (see tracing_enabled()).
+    "trace": None,
 }
 
 
@@ -877,8 +882,14 @@ def behavior_build_kwargs(behavior: Optional[dict]) -> dict:
 #     line per turn (duration, tokens, tool calls incl. sub-agent hops, error)
 #     to <conversation>/trace.jsonl and shows a "turn details" expander.
 
-def tracing_enabled() -> bool:
-    """True when the local per-turn tracer is on (``GEOTECH_TRACE`` truthy)."""
+def tracing_enabled(override: Optional[bool] = None) -> bool:
+    """True when the local per-turn tracer is on.
+
+    ``override`` is the per-conversation sidebar choice (``behavior["trace"]``):
+    an explicit ``True``/``False`` wins; ``None`` falls back to the
+    ``GEOTECH_TRACE`` env default."""
+    if override is not None:
+        return bool(override)
     return str(os.environ.get("GEOTECH_TRACE", "")).strip().lower() in (
         "1", "true", "yes", "on")
 
