@@ -49,6 +49,33 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 9 agent-wrapper test suites (opensees/pystrata/hvsrpy/gstools/swprocess/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
+## v5.10.0 status (RELEASED 2026-07-30 to PyPI; owner OK'd — the Funhouse/Databricks train)
+
+Owner pivot: their Palantir team retired the Foundry option — **Databricks/
+Funhouse is THE deployment target.** (1) **SharePoint permanent storage**
+(`webapp/sharepoint_store.py`): after every turn the conversation dir (meta/
+transcript/trace/uploads/artifacts) mirrors incrementally (local manifest) to
+`<ROOT>/conversations/<thread_id>/`; sidebar "Permanent storage" block +
+Sync now; best-effort, never breaks a turn. Owner target: site
+CSEGeotechGroup, root "Shared Documents/General/GSE_app". Auth =
+`stage_sharepoint(site, root)` in `databricks_launcher` (delegated-OAuth:
+writes the Graph token to a driver-local file + 30-min silent-refresh daemon
+via MSALAuth secret_manager cache; store reads via
+create_sharepoint_client_from_token_provider). NO client_id/secret in this
+org; the SDK's default graph backend is device-code INTERACTIVE — never use
+it in the app process. (2) **Databricks launcher**:
+`run_on_databricks(prompter=fh_prompter)` threads the Prompter's NTLM creds
+(plain strings on the live object) via GEOTECH_FH_* envs — bare
+`PrompterAPI()` self-config dies with Py4J "Object ID unknown"
+(live-verified). (3) **In-app trace toggle** (Behavior > "Show turn
+details"; behavior["trace"] tri-state, None = GEOTECH_TRACE env). (4)
+**axial_pile beta fix**: per-layer friction_angle on a cohesive layer WINS
+over global cohesive_phi (Das-sweep +12.4% trap); global stays the fallback.
+(5) st.iframe deprecation fix; Foundry-side work (palantir_sdk_engine,
+foundry_app_launcher, "Model RID or API name") ships dormant/parked. Gate
+10,063 passed / 48 skipped. 6.0 restructure still PARKED
+(module_work/V6.0_RESTRUCTURE_PLAN.md — dedicated session).
+
 ## v5.9.1 status (RELEASED 2026-07-20 to PyPI; owner OK'd — defect fixes + figure retrieval + Foundry mode)
 
 The sample-calc-as-defect-detector train (doctrine: FUTURE_IDEAS.md header;
