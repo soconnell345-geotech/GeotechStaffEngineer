@@ -132,7 +132,7 @@ METHOD_INFO = {
             "factor_of_safety": {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety."},
             "method": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "beta"], "description": "auto = Nordlund (sand) / Tomlinson (clay); beta = effective-stress method for all layers."},
             "include_uplift": {"type": "bool", "required": False, "default": False, "description": "Also report uplift (tension) capacity."},
-            "cohesive_phi": {"type": "float", "required": False, "default": 25.0, "description": "Friction angle (deg) assumed for cohesive layers in Nordlund tip term."},
+            "cohesive_phi": {"type": "float", "required": False, "default": 25.0, "description": "FALLBACK drained phi' (deg) for cohesive layers under method='beta' (skin AND tip); a per-layer friction_angle on a cohesive layer wins over this global."},
             "uplift_skin_fraction": {"type": "float", "required": False, "default": 0.75, "description": "Fraction of outside skin friction credited in uplift (with include_uplift)."},
             "pile_weight": {"type": "float", "required": False, "description": "Pile self-weight (kN) added to uplift capacity (with include_uplift)."},
         },

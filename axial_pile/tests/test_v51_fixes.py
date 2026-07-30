@@ -110,6 +110,39 @@ class TestCohesivePhiOverride:
             cohesive_phi=35.0).compute()
         assert r_a.Q_ultimate == r_b.Q_ultimate
 
+    def test_per_layer_phi_wins_over_global(self):
+        """Das-sweep ergonomics fix: a friction_angle supplied ON a cohesive
+        layer beats the global cohesive_phi (which is only the fallback)."""
+        pile = make_pipe_pile(0.3239, 0.00953, closed_end=True)
+        soil_explicit = AxialSoilProfile(layers=[
+            AxialSoilLayer(12.0, "cohesive", 17.0, cohesion=60.0,
+                           friction_angle=20.0)])
+        # Per-layer 20 under the default global (25) == global forced to 20.
+        r_layer = AxialPileAnalysis(
+            pile=pile, soil=soil_explicit, pile_length=12.0,
+            method="beta").compute()
+        r_global20 = AxialPileAnalysis(
+            pile=pile, soil=self._clay_profile(), pile_length=12.0,
+            method="beta", cohesive_phi=20.0).compute()
+        assert r_layer.Q_skin == pytest.approx(r_global20.Q_skin, rel=1e-12)
+        assert r_layer.Q_tip == pytest.approx(r_global20.Q_tip, rel=1e-12)
+        # And it is NOT the old (global-25) answer.
+        r_old25 = AxialPileAnalysis(
+            pile=pile, soil=self._clay_profile(), pile_length=12.0,
+            method="beta").compute()
+        assert r_layer.Q_skin < r_old25.Q_skin
+
+    def test_layers_without_phi_still_use_global(self):
+        """No per-layer angle -> the global fallback behaviour is unchanged."""
+        pile = make_pipe_pile(0.3239, 0.00953, closed_end=True)
+        r_default = AxialPileAnalysis(
+            pile=pile, soil=self._clay_profile(), pile_length=12.0,
+            method="beta").compute()
+        r_25 = AxialPileAnalysis(
+            pile=pile, soil=self._clay_profile(), pile_length=12.0,
+            method="beta", cohesive_phi=25.0).compute()
+        assert r_default.Q_ultimate == r_25.Q_ultimate
+
 
 # ---------------------------------------------------------------------------
 # AP-5: uplift refinement

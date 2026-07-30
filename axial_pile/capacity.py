@@ -50,11 +50,13 @@ class AxialPileAnalysis:
     include_uplift : bool, optional
         If True, also compute uplift (tension) capacity. Default False.
     cohesive_phi : float, optional
-        Effective friction angle (degrees) assumed for COHESIVE layers when
+        FALLBACK effective friction angle (degrees) for COHESIVE layers when
         ``method="beta"`` (used for both skin friction and end bearing).
-        Default 25.0 — a typical drained phi' for clay per GEC-12 Table 7-9
-        guidance; override per-project when drained clay strength is known.
-        Ignored for cohesionless layers (which use their own
+        A per-layer ``friction_angle`` supplied on a cohesive layer WINS over
+        this global; ``cohesive_phi`` applies only to cohesive layers without
+        one. Default 25.0 — a typical drained phi' for clay per GEC-12
+        Table 7-9 guidance; override per-project when drained clay strength
+        is known. Ignored for cohesionless layers (which use their own
         ``friction_angle``) and for the "auto" method.
     uplift_skin_fraction : float, optional
         Fraction of the OUTSIDE skin friction credited in tension
@@ -186,9 +188,12 @@ class AxialPileAnalysis:
         # it is unset, ``toe_phi`` falls back to the shaft friction_angle, so
         # the single-phi behaviour is preserved exactly.
         if self.method == "beta":
+            # Cohesive tip layer: same per-layer-wins rule as skin friction
+            # (toe_phi falls back to the layer friction_angle; 0/unset ->
+            # the global cohesive_phi).
             phi_tip = (tip_layer.toe_phi
                        if tip_layer.soil_type == "cohesionless"
-                       else self.cohesive_phi)
+                       else (tip_layer.toe_phi or self.cohesive_phi))
             Nt = Nt_from_phi(phi_tip)
             Qt = end_bearing_beta(sigma_v_tip, Nt, self.pile.tip_area)
         elif tip_layer.soil_type == "cohesionless":
@@ -294,9 +299,14 @@ class AxialPileAnalysis:
             sigma_v = self.soil.effective_stress_at_depth((za + zb) / 2)
 
             if self.method == "beta":
+                # Cohesive layers: an explicitly supplied per-layer
+                # friction_angle WINS; the global cohesive_phi is only the
+                # fallback for layers without one (Das-sweep finding 2026-07:
+                # the global silently overrode per-layer phi', +12.4% for a
+                # user who set phi'=20 clay against the 25 deg default).
                 phi = (layer.friction_angle
                        if layer.soil_type == "cohesionless"
-                       else self.cohesive_phi)
+                       else (layer.friction_angle or self.cohesive_phi))
                 beta = beta_from_phi(phi)
                 Qs += skin_friction_beta(
                     sigma_v, beta, perimeter, seg_thickness
