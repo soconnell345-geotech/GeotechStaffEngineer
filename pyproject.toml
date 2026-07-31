@@ -68,7 +68,13 @@ dependencies = [
     "SALib>=1.4",
     "swprocess>=0.3",
     "pystra>=1.3",
-    "pydiggs>=0.1",
+    # pydiggs is NOT in core (5.10.1): it drags in myst-parser -> sphinx,
+    # whose Pygments>=2.17 floor force-UPGRADES the Pygments that Databricks'
+    # notebook kernel (IPython) was started with — the platform then flags
+    # UNSUPPORTED_IPYTHON_DEPENDENCY_VERSION and SIGTERMs the REPL (observed
+    # live 2026-07-31: "random detaches" after every install). DIGGS schema/
+    # dictionary validation degrades gracefully (has_pydiggs); install the
+    # [pydiggs] extra where kernel stability is not a concern.
     "ezdxf>=1.4",
     "PyMuPDF>=1.23",
     "opencv-python-headless>=4.8",
@@ -99,7 +105,7 @@ raster = []
 subsurface = []
 pygef = []
 ags4 = []
-pydiggs = []
+pydiggs = ["pydiggs>=0.1"]   # real extra again (see core-deps note above)
 deep = []
 webapp = []
 full = []
