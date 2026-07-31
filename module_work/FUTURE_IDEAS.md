@@ -95,8 +95,30 @@ iteration ("find B such that β ≥ 3.0"), and probabilistic PAVEMENT design
   container-local disk, so published-app restarts keep history.
 - Claude RIDs via the Anthropic proxy path when the enrollment enables them
   (code already routes by RID text; zero change expected).
-- run_on_databricks launcher still NEEDS-LIVE-VERIFICATION on the owner's
-  cluster.
+- run_on_databricks launcher LIVE-VERIFIED 2026-07-31 (5.10.0 first run:
+  engine + driver-proxy + token counter all working).
+- **TODO (owner 2026-07-31): Prompter model picker.** The deployment-provided
+  engine fixes the model at launch (`run_on_databricks(model=...)`) and the
+  sidebar picker is inert ("Model is fixed by the deployment"). Owner wants an
+  in-app choice incl. the cheaper `funhouse-gpt-medium` (GPT 5.1). Design:
+  registered-builder hook accepts an optional model_id (resolve_engine
+  inspects the builder's signature), launcher exposes e.g.
+  GEOTECH_PROMPTER_MODELS ("Label=id,..." like the Foundry env) to populate
+  the picker; PrompterChatModel(model=picked) per conversation.
+- **TODO (owner 2026-07-31): file-upload 403 through the driver proxy.**
+  Streamlit uploads use HTTP PUT (/_stcore/upload_file); first live run
+  403'd on both drag-drop and file-picker. Launcher now force-sets the
+  STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION/CORS env vars (in case the flag
+  spelling drifted on the uvicorn-server streamlit). If the localhost PUT
+  probe shows the proxy itself blocks PUT, the workaround is the
+  agent-facing SharePoint tools (files staged in GSE_app; agent downloads
+  them) — document as the supported attach path on Databricks.
+- **Ref-agent text refusals (owner observation 2026-07-31, GPT engine):**
+  reference subagent answered a capability question but refused/omitted
+  actual chapter text in the same session. Collect a concrete failing
+  exchange next run (turn-details trace) — likely model-level
+  copyright-style refusal on funhouse-gpt-high; consider a prompt line
+  distinguishing licensed in-library retrieval from reproduction.
 
 ## 7. Eval + CI
 

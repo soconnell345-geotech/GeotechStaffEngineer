@@ -251,6 +251,13 @@ except Exception as exc:  # fall back to the ANTHROPIC_API_KEY path
 
 from streamlit.web import bootstrap
 
+# Belt-and-braces: ALSO set the streamlit config env vars. flag_options
+# naming has churned across streamlit majors (tornado -> uvicorn server);
+# env vars are honored by every version, and XSRF being accidentally ON
+# behind the driver proxy 403s every file-upload PUT.
+os.environ.setdefault("STREAMLIT_SERVER_ENABLE_CORS", "false")
+os.environ.setdefault("STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION", "false")
+
 # flag_options keys are the CLI-flag form; streamlit maps "_" -> "." internally
 # (server_port -> server.port). CORS + XSRF are disabled so the driver proxy can
 # frame/serve the app; headless suppresses the browser-open attempt. The watcher
