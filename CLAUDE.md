@@ -49,6 +49,24 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 9 agent-wrapper test suites (opensees/pystrata/hvsrpy/gstools/swprocess/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
+## v5.10.1 status (RELEASED 2026-07-31 to PyPI; owner OK'd — Databricks stability + agent SharePoint tools)
+
+**The detach root cause, fixed:** pip-installing the app upgraded the notebook
+env's Pygments (2.15.1→2.20.0) via `pydiggs → myst-parser → sphinx`;
+Databricks flags UNSUPPORTED_IPYTHON_DEPENDENCY_VERSION and SIGTERMs (143)
+the REPL minutes later — presenting as "random detaches" / Py4J "Object ID
+unknown" all week. pydiggs demoted to the `[pydiggs]` extra (DIGGS validation
+degrades gracefully via has_pydiggs; native DIGGS parser unaffected). Also:
+**agent-facing SharePoint tools** (`webapp/sharepoint_tools.py` — list/
+search/download-to-working-folder/upload; injected via new
+`build_deep_agent(extra_tools=…)` ONLY when SharePoint is configured; zero
+catalog cost); launcher hardening (app log at /tmp/geotech_webapp_<port>.log
++ handle.log_path, POSIX setsid, streamlit CORS/XSRF env force-off, 502-boot
+banner note). Live-verified on the owner's cluster 2026-07-31: mirror
+uploaded a conversation to GSE_app ✅. Still open: browser upload 403 (PUT
+probe pending on a stable kernel; SharePoint-fetch is the fallback attach
+path), Prompter model picker TODO (FUTURE_IDEAS §6).
+
 ## v5.10.0 status (RELEASED 2026-07-30 to PyPI; owner OK'd — the Funhouse/Databricks train)
 
 Owner pivot: their Palantir team retired the Foundry option — **Databricks/
