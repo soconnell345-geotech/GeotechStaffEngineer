@@ -455,6 +455,10 @@ class LaunchHandle:
         The full openable URL, or ``None`` if the workspace host was unknown.
     workspace_host : str | None
         The resolved workspace host (``https://…``), if any.
+    log_path : str | None
+        Driver-local file receiving the app's stdout/stderr (bootstrap
+        messages, streamlit banner, tracebacks). ``print(open(h.log_path
+        ).read())`` to inspect.
     """
 
     process: Any
@@ -464,6 +468,7 @@ class LaunchHandle:
     script_path: str
     url: Optional[str] = None
     workspace_host: Optional[str] = None
+    log_path: Optional[str] = None
 
     def poll(self) -> Optional[int]:
         """Return the process exit code, or ``None`` while it is still running."""
@@ -553,7 +558,29 @@ def run_on_databricks(
         os.environ, anthropic_key=anthropic_key, repo_root=repo_root,
         prompter=prompter)
     python_exe = python_executable or sys.executable
-    process = _popen([python_exe, script_path], env=env)
+
+    # Detach the app process from the notebook session: its own log file
+    # (instead of inheriting the kernel's console pipes — which entangles the
+    # child with the notebook's session plumbing and was correlated with
+    # spurious Py4J errors on subsequent cells) and, on POSIX, its own
+    # session/process group so kernel restarts can't signal it.
+    log_path = os.path.join(tempfile.gettempdir(),
+                            f"geotech_webapp_{int(port)}.log")
+    popen_kwargs: dict = {"env": env}
+    try:
+        log_fh = open(log_path, "ab")
+        popen_kwargs["stdout"] = log_fh
+        popen_kwargs["stderr"] = subprocess.STDOUT
+    except OSError:
+        log_fh, log_path = None, None
+    if os.name == "posix":
+        popen_kwargs["start_new_session"] = True
+    try:
+        process = _popen([python_exe, script_path], **popen_kwargs)
+    except TypeError:      # an injected _popen with a narrower signature
+        process = _popen([python_exe, script_path], env=env)
+    if log_fh is not None:
+        log_fh.close()                    # the child holds its own copy
 
     if workspace_host is None:
         workspace_host = workspace_host_from_spark(spark or _active_spark())
@@ -561,11 +588,16 @@ def run_on_databricks(
 
     handle = LaunchHandle(
         process=process, base_path=base, port=port, model=model,
-        script_path=script_path, url=url, workspace_host=workspace_host)
+        script_path=script_path, url=url, workspace_host=workspace_host,
+        log_path=log_path)
 
     if not quiet:
         print(f"[databricks_launcher] streamlit starting on port {port} "
               f"(model={model}).")
+        print("[databricks_launcher] First click may show '502 Bad Gateway' "
+              "while the app boots (~20-30 s) — just reload.")
+        if log_path:
+            print(f"[databricks_launcher] App log: {log_path}")
         if url:
             print(f"[databricks_launcher] Open: {url}")
         else:

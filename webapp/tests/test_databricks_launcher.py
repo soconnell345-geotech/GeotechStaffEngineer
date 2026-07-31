@@ -33,9 +33,10 @@ class _FakeSpark:
 
 
 class _FakeProc:
-    def __init__(self, argv, env=None):
+    def __init__(self, argv, env=None, **kwargs):
         self.argv = argv
         self.env = env
+        self.popen_kwargs = kwargs
         self.terminated = False
 
     def terminate(self):
@@ -45,8 +46,8 @@ class _FakeProc:
         return None
 
 
-def _fake_popen(argv, env=None):
-    return _FakeProc(argv, env)
+def _fake_popen(argv, env=None, **kwargs):
+    return _FakeProc(argv, env, **kwargs)
 
 
 _CLUSTER_CONF = {
