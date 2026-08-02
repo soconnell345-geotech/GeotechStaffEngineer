@@ -232,8 +232,13 @@ def _register_prompter():
             chat_model=MODEL)
     else:
         prompter = PrompterAPI(chat_model=MODEL)
-    register_model_builder(
-        lambda: PrompterChatModel(prompter=prompter, model=MODEL))
+
+    def _build(model_id=None):
+        # The in-app picker selection (GEOTECH_PROMPTER_MODELS entries)
+        # arrives as model_id; None -> the launch-time default.
+        return PrompterChatModel(prompter=prompter, model=model_id or MODEL)
+
+    register_model_builder(_build)
 
 
 try:
@@ -491,6 +496,7 @@ def run_on_databricks(
     port: int = DEFAULT_PORT,
     model: str = DEFAULT_MODEL,
     *,
+    models: Optional[list] = None,
     prompter: Any = None,
     spark: Any = None,
     org_id: Optional[str] = None,
@@ -513,7 +519,13 @@ def run_on_databricks(
     port : int
         Driver port to serve on (default ``8501``).
     model : str
-        Prompter chat-model id (default ``"funhouse-gpt-high"``).
+        Prompter chat-model id the app STARTS on (default
+        ``"funhouse-gpt-high"``).
+    models : list of str, optional
+        Entries for the in-app model picker (``"Label=id"`` or bare ids),
+        published via ``GEOTECH_PROMPTER_MODELS``. Default: the launch
+        ``model`` plus ``funhouse-gpt-medium`` (GPT 5.1 — the cheaper tier),
+        deduplicated. Pass ``[]`` to disable the picker (model fixed).
     prompter : PrompterAPI, optional
         **Pass the notebook's live ``fh_prompter`` — the reliable path.** Its
         NTLM credentials (plain strings) are threaded to the app process,
@@ -557,6 +569,14 @@ def run_on_databricks(
     env = build_launch_env(
         os.environ, anthropic_key=anthropic_key, repo_root=repo_root,
         prompter=prompter)
+    # In-app Prompter model picker: publish the choices (None -> launch model
+    # + the cheaper funhouse-gpt-medium; [] -> no picker, model fixed).
+    if models is None:
+        models = [model] + (["funhouse-gpt-medium"]
+                            if model != "funhouse-gpt-medium" else [])
+    if models:
+        env["GEOTECH_PROMPTER_MODELS"] = ",".join(
+            str(m).strip() for m in models if str(m).strip())
     python_exe = python_executable or sys.executable
 
     # Detach the app process from the notebook session: its own log file

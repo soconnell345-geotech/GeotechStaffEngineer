@@ -154,7 +154,8 @@ def test_render_bootstrap_script_registers_prompter_with_fallback():
     # The reconstruct-on-driver branch we ship.
     assert "PrompterAPI(chat_model=MODEL)" in src
     assert "register_model_builder(" in src
-    assert "PrompterChatModel(prompter=prompter, model=MODEL)" in src
+    # Model-aware builder (in-app Prompter picker; None -> launch default).
+    assert "PrompterChatModel(prompter=prompter, model=model_id or MODEL)" in src
     # The automatic ANTHROPIC_API_KEY fallback.
     assert "ANTHROPIC_API_KEY" in src
     # In-process streamlit start with the proxy flags.
