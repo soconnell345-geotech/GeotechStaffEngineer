@@ -202,4 +202,7 @@ testpaths = [
     "foundry_test_harness",
     "webapp/tests",
     "geotech-references/tests",
+    # In the gate since 2026-08-02: a stale V-006 pin of pre-5.9.1 buggy
+    # beta behavior sat undetected here because this dir was NOT in testpaths.
+    "validation_examples",
 ]
