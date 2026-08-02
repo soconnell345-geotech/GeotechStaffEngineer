@@ -434,3 +434,41 @@ class TestCalcStepsCoulomb:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ============================================================================
+# Das-sweep ergonomics (2026-08) — embedment bracket + bisection refinement
+# ============================================================================
+
+class TestEmbedmentRefinement:
+    """The D-search now bisects the bracketing grid interval to 1 mm instead
+    of returning the first coarse-grid crossing (which overshot by up to one
+    grid step — the Das 9.14 "grid quantization" ±3 %), and the old 0.5 m
+    grid start no longer acts as an embedment floor."""
+
+    def test_cantilever_no_grid_quantization_jumps(self):
+        sand = [WallSoilLayer(thickness=30, unit_weight=18,
+                              friction_angle=36)]
+        D1 = analyze_cantilever(excavation_depth=5.0,
+                                soil_layers=sand).embedment_converged
+        D2 = analyze_cantilever(excavation_depth=5.02,
+                                soil_layers=sand).embedment_converged
+        # Pre-refinement the ~0.1 m grid step made dD jump 0 or ~0.1 m;
+        # refined roots move smoothly with H.
+        assert 0.0 < abs(D2 - D1) < 0.05
+
+    def test_cantilever_embedment_below_old_floor(self):
+        strong = [WallSoilLayer(thickness=20, unit_weight=20,
+                                friction_angle=42)]
+        D = analyze_cantilever(excavation_depth=0.5,
+                               soil_layers=strong).embedment_converged
+        assert 0.05 < D < 0.5              # old code returned exactly 0.5
+
+    def test_anchored_no_grid_quantization_jumps(self):
+        sand = [WallSoilLayer(thickness=30, unit_weight=18,
+                              friction_angle=34)]
+        D1 = analyze_anchored(excavation_depth=6.0, anchor_depth=1.5,
+                              soil_layers=sand).embedment_depth
+        D2 = analyze_anchored(excavation_depth=6.05, anchor_depth=1.5,
+                              soil_layers=sand).embedment_depth
+        assert 0.0 < abs(D2 - D1) < 0.06

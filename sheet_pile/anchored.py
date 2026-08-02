@@ -124,9 +124,12 @@ def analyze_anchored(
     H = excavation_depth
     n_points = 500
 
-    # Find embedment by summing moments about the anchor
-    D_found = None
-    for D_trial in np.linspace(0.5, 4 * H, 300):
+    # Find embedment by summing moments about the anchor (free earth support).
+    # Coarse-grid bracket + 1 mm bisection: the previous first-grid-crossing
+    # return overshot the true root by up to one grid step (the Das 9.14
+    # "grid quantization" ±3 %), and the 0.5 m grid start acted as an
+    # artificial embedment floor.
+    def _net_moment(D_trial):
         total_length = H + D_trial
         dz = total_length / n_points
 
@@ -169,9 +172,26 @@ def analyze_anchored(
                 moment_driving += net_active * arm
                 moment_resisting += net_passive * arm
 
-        if moment_resisting >= moment_driving and D_found is None:
-            D_found = D_trial
+        return moment_resisting - moment_driving
+
+    def _bisect(lo, hi):
+        for _ in range(60):
+            if hi - lo <= 1e-3:
+                break
+            mid = (lo + hi) / 2.0
+            if _net_moment(mid) >= 0:
+                hi = mid
+            else:
+                lo = mid
+        return hi
+
+    D_found = None
+    D_prev = None
+    for D_trial in np.linspace(0.5, 4 * H, 300):
+        if _net_moment(D_trial) >= 0:
+            D_found = _bisect(0.01 if D_prev is None else D_prev, D_trial)
             break
+        D_prev = D_trial
 
     if D_found is None:
         D_found = 4 * H

@@ -240,7 +240,12 @@ def schmertmann_settlement(q_net: float, q0: float, B: float,
             return Iz_0 + (Iz_peak - Iz_0) * z / z_peak
         return Iz_peak * (z_max - z) / (z_max - z_peak)
 
-    # Summation: SUM(Iz/Es * dz) over all sublayers
+    # Summation: SUM(Iz/Es * dz) over all sublayers. Midpoint x thickness is
+    # EXACT on each linear segment of the triangular Iz diagram, so any
+    # sublayer straddling the z_peak kink is split there internally — a
+    # coarse user layering can no longer clip the peak (Das-sweep ergonomics
+    # note 2026-07: 4- vs 3-layer encodings of the same profile differed by
+    # ~1 % from the lost kink; now both integrate the diagram exactly).
     total = 0.0
     for layer in layers:
         if layer.depth_top >= z_max:
@@ -251,10 +256,10 @@ def schmertmann_settlement(q_net: float, q0: float, B: float,
         if zb <= zt:
             continue
 
-        z_mid = (zt + zb) / 2.0
-        dz = zb - zt
-        Iz = strain_influence(z_mid)
-        total += Iz / layer.Es * dz
+        cuts = [zt, z_peak, zb] if zt < z_peak < zb else [zt, zb]
+        for za, zc in zip(cuts[:-1], cuts[1:]):
+            z_mid = (za + zc) / 2.0
+            total += strain_influence(z_mid) / layer.Es * (zc - za)
 
     Se = C1 * C2 * C3 * q_net * total
     return Se
