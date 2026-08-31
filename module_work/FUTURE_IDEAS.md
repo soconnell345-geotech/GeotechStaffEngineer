@@ -113,6 +113,17 @@ iteration ("find B such that β ≥ 3.0"), and probabilistic PAVEMENT design
   probe shows the proxy itself blocks PUT, the workaround is the
   agent-facing SharePoint tools (files staged in GSE_app; agent downloads
   them) — document as the supported attach path on Databricks.
+- **PrompterChatModel true streaming (`_stream`) — conditional on live
+  evidence post-5.10.2.** The engine implements only `_generate`: every model
+  call is one long silent HTTP request, so with a slow reasoning model
+  (funhouse-gpt-high) the browser<->app websocket can idle out through the
+  driver proxy ("Connecting" flaps, observed 2026-08-03 alongside the
+  write_todos loop). IF flaps persist once 5.10.2 kills the loop: implement
+  `_stream` driving `prompter.client.chat.completions.create(stream=True)`
+  with an OpenAI-delta accumulator for tool-call chunks and automatic
+  fallback to `_generate` on proxy rejection. Benefits regardless: live
+  token-by-token output instead of a long "Working...". Offline-testable
+  with canned chunk sequences.
 - **Ref-agent text refusals (owner observation 2026-07-31, GPT engine):**
   reference subagent answered a capability question but refused/omitted
   actual chapter text in the same session. Collect a concrete failing

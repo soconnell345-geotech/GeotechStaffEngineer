@@ -191,6 +191,9 @@ def sharepoint_search_files(query: str, path: str = "") -> str:
     query: filename text to search for (e.g. "boring log", "Kinshasa").
     path: optional folder to scope the search — relative to the base folder,
     or absolute. Default searches from the base folder.
+
+    NOTE: search uses an index that lags NEW uploads by several minutes; for
+    a file added in the last ~15 minutes use sharepoint_list_files instead.
     """
     if not sharepoint_store.configured():
         return _NOT_CONFIGURED
@@ -224,7 +227,10 @@ SHAREPOINT_PROMPT = (
     "as a calc package). Paths are relative to the app's base SharePoint "
     "folder unless given as 'Shared Documents/...', '/sites/...', or a full "
     "URL. When the user references project files 'on SharePoint', use these "
-    "tools rather than asking for an upload.")
+    "tools rather than asking for an upload. For files uploaded RECENTLY "
+    "(within the last ~15 minutes), prefer sharepoint_list_files over "
+    "sharepoint_search_files: search rides an index that lags new uploads by "
+    "several minutes, while listing a folder sees them immediately.")
 
 
 def tools_if_configured() -> tuple:
