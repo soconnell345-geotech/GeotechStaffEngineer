@@ -30,6 +30,21 @@ from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 from deepagents.middleware import SummarizationMiddleware
 
+# Planning middleware (the ``write_todos`` tool). deepagents auto-attached it
+# through 0.7.1; 0.7.2+ dropped the auto-attach, while our domain prompt still
+# nudges the model to plan with write_todos — on the newer versions the model
+# then loops calling a nonexistent tool until the recursion cap (observed live
+# 2026-08: EVERY question failed with GraphRecursionError on deepagents
+# 0.7.11). Import it from whichever home exists so we can attach it EXPLICITLY.
+try:
+    from deepagents.middleware import TodoListMiddleware as _TodoMiddleware
+except ImportError:                                       # deepagents >= 0.7.2
+    try:
+        from langchain.agents.middleware import (
+            TodoListMiddleware as _TodoMiddleware)
+    except ImportError:                                   # no planning available
+        _TodoMiddleware = None
+
 from funhouse_agent.dispatch import ANALYSIS_MODULES, REFERENCE_MODULES
 from funhouse_agent.reviewer import CONSULTANT_FRAMING, REVIEWER_SYSTEM_PROMPT
 
@@ -790,6 +805,29 @@ def build_deep_agent(
         subagents=subagents,
         **create_kwargs,
     )
+
+    # Planning guarantee: the domain prompt tells the model to plan with
+    # ``write_todos``, so that tool MUST exist. deepagents <= 0.7.1 attaches
+    # the todo middleware automatically; newer versions don't — attach it
+    # explicitly and rebuild (cheap, offline) when it is missing. Checking the
+    # COMPILED agent (rather than version-sniffing) stays correct on both old
+    # and new deepagents without ever double-attaching.
+    if _TodoMiddleware is not None:
+        try:
+            _tool_names = set(agent.nodes["tools"].bound.tools_by_name)
+        except Exception:
+            _tool_names = None
+        if _tool_names is not None and "write_todos" not in _tool_names:
+            create_kwargs["middleware"] = (
+                list(create_kwargs.get("middleware", []) or [])
+                + [_TodoMiddleware()])
+            agent = create_deep_agent(
+                model=model,
+                tools=tools,
+                system_prompt=system_prompt,
+                subagents=subagents,
+                **create_kwargs,
+            )
     # Expose the shared attachments dict so a UI (DeepNotebookChat FileUpload)
     # can add files that reach the already-built tools. Best-effort: if the
     # compiled object rejects attribute assignment, the caller can still pass
