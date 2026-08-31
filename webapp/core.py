@@ -778,9 +778,10 @@ def import_external_artifacts(working_dir: str, files_dir: str, before: set,
 #                     build_deep_agent library default stays OFF).
 #   trace          -- per-conversation "turn details" tracer toggle: True/False
 #                     explicit, None = follow the GEOTECH_TRACE env default.
-# Defaults reproduce today's behavior EXACTLY EXCEPT route_calc (the one owner-
-# approved A2 default-on): references anytime, ref budget 8, LangGraph's default
-# recursion_limit 25, analysis_depth "standard" == no preset, agent_type "full".
+# Defaults: references anytime, ref budget 8, recursion_limit 50 (raised from
+# the LangGraph-default 25 in 5.10.2 — see the inline note), route_calc ON
+# (owner-approved A2), analysis_depth "standard" == no preset, agent_type
+# "full".
 
 ANALYSIS_DEPTHS = ("screening", "standard", "comprehensive")
 REFERENCE_CHOICES = ("anytime", "off")
@@ -801,7 +802,10 @@ AGENT_TYPES = {
 DEFAULT_BEHAVIOR = {
     "references": "anytime",
     "ref_max_calls": 8,
-    "recursion_limit": 25,
+    # 25 (the LangGraph default) proved too tight once SharePoint fetch +
+    # multi-page PDF reads entered normal workflows (owner hit the cap on the
+    # downdrag task 2026-08); 50 covers those while still bounding runaways.
+    "recursion_limit": 50,
     "analysis_depth": "standard",
     "agent_type": "full",
     "route_calc": True,
@@ -856,6 +860,22 @@ def set_behavior(thread_id: str, behavior: dict,
     meta["updated"] = _time.time()
     save_meta(thread_id, meta, root)
     return behavior_from_meta(meta)
+
+
+def friendly_turn_error(exc: BaseException) -> str:
+    """Turn-failure text for the transcript: the raw error plus, for known
+    cases, plain-language advice (owner ask 2026-08: a raw GraphRecursionError
+    traceback reads as a crash, when the fix is one sidebar setting)."""
+    text = f"{type(exc).__name__}: {exc}"
+    low = text.lower()
+    if "recursion" in low and "limit" in low:
+        return (text + "\n\nThe agent ran out of its per-turn step budget "
+                "before finishing. For document-heavy or multi-part requests, "
+                "raise 'Primary step cap (recursion limit)' under Behavior > "
+                "Advanced caps in the sidebar (e.g. 50-100) and re-ask — "
+                "or split the request across turns; work done so far "
+                "(downloads, saved files) is kept.")
+    return text
 
 
 def depth_prompt(depth: str) -> str:

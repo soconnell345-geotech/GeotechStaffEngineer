@@ -631,7 +631,7 @@ def test_checkpoint_partial_never_raises(tmp_path):
 
 def test_default_behavior_matches_current_defaults():
     assert core.default_behavior() == {
-        "references": "anytime", "ref_max_calls": 8, "recursion_limit": 25,
+        "references": "anytime", "ref_max_calls": 8, "recursion_limit": 50,
         "analysis_depth": "standard", "agent_type": "full", "route_calc": True,
         "trace": None}
     b = core.default_behavior()          # fresh copy each call, not shared
@@ -693,6 +693,18 @@ def test_tracing_enabled_env(monkeypatch):
         assert core.tracing_enabled() is True
     monkeypatch.setenv("GEOTECH_TRACE", "0")
     assert core.tracing_enabled() is False
+
+
+def test_friendly_turn_error_translates_recursion():
+    class FakeRecursion(Exception):
+        pass
+    err = core.friendly_turn_error(
+        FakeRecursion("Recursion limit of 25 reached without hitting a stop "
+                      "condition."))
+    assert "Recursion limit of 25" in err            # raw error preserved
+    assert "Advanced caps" in err and "step budget" in err
+    plain = core.friendly_turn_error(ValueError("boom"))
+    assert plain == "ValueError: boom"               # others untouched
 
 
 def test_tracing_enabled_behavior_override(monkeypatch):

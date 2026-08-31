@@ -49,6 +49,26 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 9 agent-wrapper test suites (opensees/pystrata/hvsrpy/gstools/swprocess/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
+## v5.10.2 status (RELEASED 2026-08-03 to PyPI; owner OK'd — deepagents-drift hotfix)
+
+**Every-question GraphRecursionError on the cluster (2026-08), root-caused
+and fixed:** unpinned drift resolved deepagents 0.7.11, which no longer
+auto-attaches the todo/planning middleware — while our domain prompt still
+tells the model to plan with `write_todos`, so the model looped calling a
+nonexistent tool until the recursion cap (25 AND 75), on even trivial
+questions. `build_deep_agent` now checks the COMPILED agent and rebuilds
+once with `TodoListMiddleware` (from `deepagents.middleware` or its new
+`langchain.agents.middleware` home) when `write_todos` is missing —
+verified green on BOTH stacks (0.6.8/1.3.4 baseline and
+0.7.11/1.3.18/streamlit-1.62 drifted). Plus: agent-stack UPPER BOUNDS in
+pyproject (deepagents<0.8, langchain<1.4, langgraph<1.3 — raise only after
+running deep+webapp suites on the newer version); recursion_limit default
+25→50 (SharePoint+PDF turns are step-hungry); `friendly_turn_error` (raw
+GraphRecursionError + plain-language sidebar advice). Reproduce-drift
+recipe: pip install the cluster's versions, `pytest funhouse_agent/deep/tests
+webapp/tests`. NOTE: deepagents 0.7.11 also adds ls/glob/grep/delete/execute
+tools; `execute` fails safely on our StateBackend (not a sandbox backend).
+
 ## v5.10.1 status (RELEASED 2026-07-31 to PyPI; owner OK'd — Databricks stability + agent SharePoint tools)
 
 **The detach root cause, fixed:** pip-installing the app upgraded the notebook

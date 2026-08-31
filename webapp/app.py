@@ -767,7 +767,7 @@ if prompt:
                         turn_tokens = item["turn_tokens"]
                 status.update(label="Done", state="complete")
             except Exception as exc:
-                turn_error = f"{type(exc).__name__}: {exc}"
+                turn_error = core.friendly_turn_error(exc)
                 status.update(label="Error", state="error")
                 st.error(turn_error)
 
