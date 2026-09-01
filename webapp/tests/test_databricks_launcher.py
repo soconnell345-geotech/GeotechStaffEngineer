@@ -303,3 +303,53 @@ def test_run_on_databricks_unknown_host_leaves_url_none():
         assert handle.url is None                          # host unknown → None
     finally:
         handle.stop()
+
+
+# ============================================================================
+# SDK-example alignment (2026-09): adb-dp host, free-port scan, auto-shutdown
+# ============================================================================
+
+def test_proxy_url_gov_cloud_uses_dp_host():
+    """Azure Gov driver proxy lives on the adb-dp- host (SDK examples force
+    this rewrite); other clouds untouched."""
+    url = dl.proxy_url("https://adb-429679569790375.3.databricks.azure.us",
+                       "/driver-proxy/o/O/C/8501")
+    assert url.startswith("https://adb-dp-429679569790375.3.databricks.azure.us/")
+    # Already-dp stays; commercial Azure and AWS untouched.
+    assert dl.proxy_url("https://adb-dp-9.3.databricks.azure.us", "/p"
+                        ).count("adb-dp-") == 1
+    assert dl.proxy_url("adb-99.11.azuredatabricks.net", "/p"
+                        ).startswith("https://adb-99.11.azuredatabricks.net")
+    assert dl.proxy_url("dbc-x.cloud.databricks.com", "/p"
+                        ).startswith("https://dbc-x.cloud.databricks.com")
+
+
+def test_find_available_port_returns_bindable():
+    import socket
+    port = dl.find_available_port(8501, 8899)
+    assert 8501 <= port <= 8899
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("localhost", port))               # genuinely free
+
+
+def test_run_on_databricks_default_port_auto_picks(monkeypatch):
+    monkeypatch.setattr(dl, "find_available_port", lambda *a, **k: 8517)
+    spark = _FakeSpark(_CLUSTER_CONF)
+    handle = dl.run_on_databricks(spark=spark, quiet=True, _popen=_fake_popen)
+    try:
+        assert handle.port == 8517
+        assert handle.base_path.endswith("/8517")
+    finally:
+        handle.stop()
+
+
+def test_bootstrap_auto_shutdown_rendering():
+    on = dl.render_bootstrap_script(
+        app_path="/x/app.py", repo_root="/r", base="/b", port=8501,
+        model="m", auto_shutdown_min=120)
+    assert "AUTO_SHUTDOWN_MIN = 120" in on and "_auto_shutdown" in on
+    compile(on, "<boot>", "exec")
+    off = dl.render_bootstrap_script(
+        app_path="/x/app.py", repo_root="/r", base="/b", port=8501, model="m")
+    assert "AUTO_SHUTDOWN_MIN = None" in off
+    compile(off, "<boot>", "exec")

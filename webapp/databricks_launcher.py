@@ -180,13 +180,38 @@ def proxy_url(workspace_host: Optional[str], base_path: str) -> Optional[str]:
 
     Returns ``None`` when the host is unknown (the caller then prints the
     ``base_path`` and instructs the owner to prepend their workspace host).
+
+    On Azure **Government** workspaces (``*.databricks.azure.us``) the driver
+    proxy is served from a dedicated host with an ``adb-dp-`` prefix, NOT the
+    workspace host — the Funhouse SDK's own web-app examples force this
+    rewrite ("Driver proxy requires 'adb-dp-' prefix"). Applied here so the
+    printed URL is the sanctioned direct one instead of relying on a
+    redirect. Other clouds are left untouched.
     """
     host = (workspace_host or "").strip().rstrip("/")
     if not host:
         return None
     if not host.startswith("http"):
         host = f"https://{host}"
+    if ".databricks.azure.us" in host and "https://adb-dp-" not in host:
+        host = host.replace("https://adb-", "https://adb-dp-")
     return f"{host}{base_path}/"
+
+
+def find_available_port(start_port: int = 8501, end_port: int = 8899) -> int:
+    """First locally-bindable port in ``[start_port, end_port]`` (SDK-example
+    pattern) — sidesteps collisions with orphaned app processes on a shared
+    driver. Raises ``RuntimeError`` when the whole range is taken."""
+    import socket
+    for port in range(start_port, end_port + 1):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("localhost", port))
+                return port
+            except OSError:
+                continue
+    raise RuntimeError(
+        f"No available ports between {start_port} and {end_port}")
 
 
 # The bootstrap script run AS the streamlit process. ``$name`` placeholders are
@@ -204,9 +229,24 @@ APP_PATH = $app_path
 BASE_PATH = $base
 PORT = $port
 MODEL = $model
+AUTO_SHUTDOWN_MIN = $auto_shutdown_min
 
 if REPO_ROOT and REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
+
+if AUTO_SHUTDOWN_MIN:
+    # Shared-cluster etiquette (mirrors the Funhouse SDK examples' 10-minute
+    # auto-kill): terminate this app process after the configured runtime.
+    import threading as _threading
+    import time as _time
+
+    def _auto_shutdown():
+        _time.sleep(AUTO_SHUTDOWN_MIN * 60)
+        print("[databricks_launcher] auto-shutdown after "
+              f"{AUTO_SHUTDOWN_MIN} min (auto_shutdown_min).", flush=True)
+        os._exit(0)
+
+    _threading.Thread(target=_auto_shutdown, daemon=True).start()
 
 
 def _register_prompter():
@@ -281,6 +321,7 @@ bootstrap.run(APP_PATH, False, [], _FLAGS)
 
 def render_bootstrap_script(
     *, app_path: str, repo_root: str, base: str, port: int, model: str,
+    auto_shutdown_min: Optional[int] = None,
 ) -> str:
     """Render the standalone bootstrap-script source (pure; unit-tested).
 
@@ -293,6 +334,8 @@ def render_bootstrap_script(
         base=repr(base),
         port=repr(int(port)),
         model=repr(model),
+        auto_shutdown_min=repr(
+            int(auto_shutdown_min) if auto_shutdown_min else None),
     )
 
 
@@ -488,9 +531,10 @@ class LaunchHandle:
 
 
 def run_on_databricks(
-    port: int = DEFAULT_PORT,
+    port: Optional[int] = None,
     model: str = DEFAULT_MODEL,
     *,
+    auto_shutdown_min: Optional[int] = None,
     prompter: Any = None,
     spark: Any = None,
     org_id: Optional[str] = None,
@@ -510,10 +554,16 @@ def run_on_databricks(
 
     Parameters
     ----------
-    port : int
-        Driver port to serve on (default ``8501``).
+    port : int, optional
+        Driver port to serve on. Default ``None`` = the first FREE port from
+        8501 upward (SDK-example pattern — avoids collisions with orphaned
+        app processes on a shared driver). Pass an explicit port to pin it.
     model : str
         Prompter chat-model id (default ``"funhouse-gpt-high"``).
+    auto_shutdown_min : int, optional
+        Auto-terminate the app process after this many minutes (the Funhouse
+        SDK examples enforce 10 on their apps as shared-cluster etiquette).
+        Default ``None`` = run until ``handle.stop()`` / cluster shutdown.
     prompter : PrompterAPI, optional
         **Pass the notebook's live ``fh_prompter`` — the reliable path.** Its
         NTLM credentials (plain strings) are threaded to the app process,
@@ -540,6 +590,11 @@ def run_on_databricks(
     _popen : callable
         Injection seam for testing (defaults to ``subprocess.Popen``).
     """
+    if port is None:
+        try:
+            port = find_available_port(DEFAULT_PORT)
+        except RuntimeError:
+            port = DEFAULT_PORT
     org_id, cluster_id = resolve_cluster_ids(
         spark=spark, org_id=org_id, cluster_id=cluster_id)
     base = driver_proxy_base_path(org_id, cluster_id, port)
@@ -548,7 +603,8 @@ def run_on_databricks(
     repo_root = os.path.dirname(os.path.dirname(app_path))
 
     script = render_bootstrap_script(
-        app_path=app_path, repo_root=repo_root, base=base, port=port, model=model)
+        app_path=app_path, repo_root=repo_root, base=base, port=port, model=model,
+        auto_shutdown_min=auto_shutdown_min)
     fd, script_path = tempfile.mkstemp(
         prefix="geotech_streamlit_boot_", suffix=".py")
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
