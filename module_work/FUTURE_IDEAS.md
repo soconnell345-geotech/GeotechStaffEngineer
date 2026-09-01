@@ -113,6 +113,57 @@ iteration ("find B such that β ≥ 3.0"), and probabilistic PAVEMENT design
   probe shows the proxy itself blocks PUT, the workaround is the
   agent-facing SharePoint tools (files staged in GSE_app; agent downloads
   them) — document as the supported attach path on Databricks.
+- **SDK SURVEY 2026-09-01 (full report in the session; source =
+  Funhouse_for_Reference/funhouse-sdk-python + examples_python, 23 topics).**
+  Key items, ranked:
+  1. **_stream landmines (for the streaming build):** the SDK never streams
+     tokens — no recipe exists. `wrap_all_openai_methods` INJECTS
+     `collect_usage=True` on any `stream=True` call (prompter_api.py:113) →
+     TypeError on naive streaming; bypass via `create.__wrapped__` or a clean
+     `OpenAI(http_client=prompter.http_client, base_url=...)` — and then
+     RE-ADD usage metering (`logger.meter_log` + `stream_options={"include_
+     usage": True}`) because unmetered AI = Terms breach per funhouse-gotchas.
+     Steal the `_last_chat_error` re-raise (langchain_prompter_chat.py:452).
+     NOTE our databricks_bridge already sends real messages arrays (the SDK's
+     own bridge string-flattens; ours is ahead).
+  2. **Tiny Apps = the sanctioned durable tier and it SUPPORTS STREAMLIT**
+     ("Scaffold Flask/Streamlit for Data.State Tiny Apps") — the original
+     webapp design target. Driver-proxy = demo tier (their words). Need the
+     owner to export `18. Web App Development/Tiny App Development/` (incl.
+     sharepoint-chatbot-app OAuth example) — missing from the zip.
+  3. **Auto-continue taxonomy** (apps/agents/agent_auto_continue.py):
+     goal-evidence auditing (incomplete_todos, false_completion_claim,
+     deferral_after_execution_request...) → richer than our bounded
+     auto-continue; portable in an afternoon.
+  4. **Azure Document Intelligence** (`fh_doc`): `extract_tables_as_
+     dataframes` + the Searchable OCR Overlay recipe (04\04) written for
+     engineering drawings — candidate upgrade for scanned boring logs.
+     CAVEAT: High-Res OCR add-on DISABLED in tenant; run the folder-14 OCR
+     bake-off on real logs first. `fh_prompter.analyze_image` "may silently
+     fix typos" — never use it to transcribe measured values.
+  5. **Budget sidebar**: `fh_budget.get_current_spend()` + config
+     `budget.monthly_budget` (default $50) → "$X of $Y used" caption;
+     catch BudgetExceededError explicitly (budget exhaustion = the next
+     mystery-failure ticket otherwise). Cache per session.
+  6. **Email calc packages**: `FunhouseEmail.send_email(attachments=[(name,
+     bytes)])` — shared no-reply mailbox, .gov/.mil/.sbu recipients only;
+     `fh_outlook` sends as the user instead.
+  7. **fh_secrets** for launch-time credential reads (driver-side only — the
+     app subprocess still needs the env hop until/unless Tiny App).
+  8. **Skills system**: their deepagents fork loads Claude-Code-style
+     SKILL.md files; an example `geotech-deepagent-demo` skill ALREADY
+     references a "geotechnical_engineering_query" tool — someone in the org
+     is wiring geotech into their framework; reconcile tool naming. Do NOT
+     import their deepagent_builder (global monkeypatches for a
+     notebook-reload problem we don't have).
+  9. **Environment facts**: clusters idle out at 30 min (the detach cause,
+     documented); packages from CfA Nexus only; egress firewalled (API-First
+     gateway = only external-data route); Plotly static export BROKEN in
+     tenant (Kaleido incompat) — matplotlib savefig for emailed PNGs;
+     `fh_web` = public static blob publishing (shareable report links,
+     non-sensitive only); DuckDB sanctioned for driver-side table queries;
+     local embeddings (LocalEmbeddingService) don't hit the budget —
+     domain-adapted geotech embeddings = retrieval win.
 - **PrompterChatModel true streaming (`_stream`) — conditional on live
   evidence post-5.10.2.** The engine implements only `_generate`: every model
   call is one long silent HTTP request, so with a slow reasoning model
