@@ -348,6 +348,17 @@ def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
         kw["extra_tools"] = list(kw.get("extra_tools") or []) + _sp_tools
         kw["extra_system_prompt"] = "\n\n".join(
             p for p in (kw.get("extra_system_prompt"), _sp_prompt) if p)
+    # Email tool (email a produced file to a colleague) — injected ONLY when
+    # the Funhouse email SDK is importable. Same best-effort rule as above.
+    try:
+        from webapp import email_tools
+        _em_tools, _em_prompt = email_tools.tools_if_available()
+    except Exception:
+        _em_tools, _em_prompt = [], ""
+    if _em_tools:
+        kw["extra_tools"] = list(kw.get("extra_tools") or []) + _em_tools
+        kw["extra_system_prompt"] = "\n\n".join(
+            p for p in (kw.get("extra_system_prompt"), _em_prompt) if p)
     return build_deep_agent(
         model,
         attachments=attachments,
@@ -875,6 +886,10 @@ def friendly_turn_error(exc: BaseException) -> str:
                 "Advanced caps in the sidebar (e.g. 50-100) and re-ask — "
                 "or split the request across turns; work done so far "
                 "(downloads, saved files) is kept.")
+    if "budgetexceeded" in type(exc).__name__.lower():
+        return (text + "\n\nYour monthly Funhouse AI budget is exhausted; "
+                "it resets next month — contact the Funhouse admins to "
+                "raise it.")
     return text
 
 

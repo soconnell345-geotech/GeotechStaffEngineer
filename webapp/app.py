@@ -26,7 +26,7 @@ if _PKG_ROOT not in sys.path:
 
 import streamlit as st
 
-from webapp import core, engine_config, sharepoint_store
+from webapp import budget_panel, core, engine_config, sharepoint_store
 
 st.set_page_config(page_title="GeotechStaffEngineer", page_icon="⛰️",
                    layout="wide")
@@ -582,6 +582,28 @@ with st.sidebar:
 
     st.divider()
     st.caption(core.token_line(ss.last_turn_tokens, ss.total_tokens))
+    # AI budget line (Funhouse metered spend vs the monthly cap) — rendered
+    # only when the Funhouse budget SDK is present. get_current_spend() is an
+    # expensive month rollup, so the status is fetched ONCE per session and
+    # cached in session state; the small refresh button re-reads on demand.
+    # Best-effort: a budget hiccup must never crash the sidebar.
+    try:
+        if budget_panel.available():
+            if "budget_status" not in ss:
+                ss.budget_status = budget_panel.get_budget_status()
+            _bs = ss.budget_status
+            if _bs:
+                _bline = budget_panel.format_line(_bs)
+                if _bs["cap"] > 0 and _bs["spent"] / _bs["cap"] >= 0.9:
+                    st.warning(_bline + " — nearly exhausted; metered AI "
+                               "calls stop at the cap.")
+                else:
+                    st.caption(_bline)
+            if st.button("Refresh budget", key="budget_refresh"):
+                ss.budget_status = budget_panel.get_budget_status()
+                st.rerun()
+    except Exception:
+        pass
     _at_now = (ss.behavior or {}).get("agent_type", "full")
     st.caption(f"model: {core.model_label(ss.model)}"
                + (f" · {core.agent_type_label(_at_now)}" if _at_now != "full"
