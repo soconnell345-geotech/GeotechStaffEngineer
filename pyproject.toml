@@ -43,6 +43,11 @@ dependencies = [
     "deepagents>=0.6.8,<0.8",
     "langchain>=1.3,<1.4",
     "langgraph>=1.2,<1.3",
+    # openai 3.x (via uncapped langchain-openai) swaps in the httpx2/httpcore2
+    # fork stack that the Funhouse SDK's NTLM http_client path was never built
+    # against (observed arriving 2026-09-01 on the owner's cluster). 2.x is
+    # what every live-verified session ran; langchain-openai 1.6 accepts both.
+    "openai<3",
     "langchain-anthropic>=1.4",
     # Foundry LLM-proxy GPT RIDs need the OpenAI chat client out of the box.
     "langchain-openai>=1.3",
