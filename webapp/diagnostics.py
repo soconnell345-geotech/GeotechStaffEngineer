@@ -68,6 +68,24 @@ def _versions_check() -> dict:
     return _check("versions", PASS, " | ".join(parts))
 
 
+def _drift_check() -> dict:
+    """Agent-stack versions vs the tested range (webapp.version_guard).
+
+    WARN (not FAIL) — the app may still work, but untested versions are the
+    prime suspect for weird agent behavior (see the 2026-08 deepagents-drift
+    outage), so surface it prominently in every diagnostics run."""
+    try:
+        from webapp import version_guard
+        warnings = version_guard.check_versions()
+    except Exception as exc:
+        return _check("version drift", SKIP,
+                      f"guard unavailable: {type(exc).__name__}: {exc}")
+    if not warnings:
+        return _check("version drift", PASS,
+                      "all agent-stack packages within the tested range")
+    return _check("version drift", WARN, " || ".join(warnings))
+
+
 def _env_check() -> dict:
     """Which engine-relevant env vars are set (values masked).
 
@@ -200,7 +218,8 @@ def run_diagnostics(model_id: Optional[str] = None) -> List[dict]:
     """Run every stage against the CURRENTLY CONFIGURED engine and return the
     check list. Never raises. Live checks each make one tiny model call (a few
     tokens) — three calls total when everything passes."""
-    checks = [_versions_check(), _env_check(), _resolution_check(model_id)]
+    checks = [_versions_check(), _drift_check(), _env_check(),
+              _resolution_check(model_id)]
     if checks[-1]["status"] != PASS:
         checks.append(_check("plain request (invoke)", SKIP,
                              "engine did not resolve"))

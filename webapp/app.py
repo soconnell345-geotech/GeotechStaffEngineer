@@ -389,6 +389,15 @@ with st.sidebar:
                    f" · engine: {eng.source or 'none'}")
     except Exception:
         pass
+    # Runtime drift guard: warn when the agent stack is running versions the
+    # offline gate never exercised (base-image shadowing / unpinned installs —
+    # the root of the 2026-08 outage). Never crashes the sidebar.
+    try:
+        from webapp import version_guard
+        for _w in version_guard.check_versions():
+            st.warning(_w, icon="⚠️")
+    except Exception:
+        pass
 
     # Agent picker (A5e) — the full geotech agent, or a narrow domain reviewer.
     # Per conversation, persisted in meta, shown on the conversation list line.
