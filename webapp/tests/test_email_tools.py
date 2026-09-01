@@ -78,7 +78,7 @@ def test_custom_subject_and_body_pass_through(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("addr", [
     "someone@gmail.com", "x@contractor.example.org", "not-an-email",
-    "", "gov@x.commercial",
+    "gov@x.commercial",   # NOTE: "" now means "send to me" (own-address path)
 ])
 def test_blocked_domain_rejected_client_side(monkeypatch, tmp_path, addr):
     sent = _install_fake_sdk(monkeypatch)
@@ -137,3 +137,43 @@ def test_tool_without_sdk_reports_not_raises(monkeypatch, tmp_path):
     f.write_bytes(b"x")
     out = et.email_file.invoke({"to": "a@state.gov", "file_path": str(f)})
     assert "Email error" in out
+
+# ============================================================================
+# "email it to me" — own-address resolution (session.user_name pattern)
+# ============================================================================
+
+def test_me_resolves_from_env(monkeypatch, tmp_path):
+    sent = _install_fake_sdk(monkeypatch)
+    monkeypatch.setenv(et.USER_EMAIL_ENV, "OConnellSJ@state.gov")
+    f = tmp_path / "pkg.pdf"
+    f.write_bytes(b"x")
+    out = et.email_file.invoke({"to": "me", "file_path": str(f)})
+    assert "Emailed" in out and "OConnellSJ@state.gov" in out
+    assert sent["to"] == "OConnellSJ@state.gov"
+
+
+def test_empty_to_resolves_from_env(monkeypatch, tmp_path):
+    sent = _install_fake_sdk(monkeypatch)
+    monkeypatch.setenv(et.USER_EMAIL_ENV, "user@agency.mil")
+    f = tmp_path / "pkg.pdf"
+    f.write_bytes(b"x")
+    out = et.email_file.invoke({"to": "", "file_path": str(f)})
+    assert sent["to"] == "user@agency.mil" and "Emailed" in out
+
+
+def test_me_without_identity_gives_guidance(monkeypatch, tmp_path):
+    _install_fake_sdk(monkeypatch)
+    monkeypatch.delenv(et.USER_EMAIL_ENV, raising=False)
+    f = tmp_path / "pkg.pdf"
+    f.write_bytes(b"x")
+    out = et.email_file.invoke({"to": "me", "file_path": str(f)})
+    assert "ask the user" in out and "no email was sent" in out
+
+
+def test_env_own_address_still_domain_checked(monkeypatch, tmp_path):
+    _install_fake_sdk(monkeypatch)
+    monkeypatch.setenv(et.USER_EMAIL_ENV, "user@gmail.com")
+    f = tmp_path / "pkg.pdf"
+    f.write_bytes(b"x")
+    out = et.email_file.invoke({"to": "me", "file_path": str(f)})
+    assert "not allowed" in out

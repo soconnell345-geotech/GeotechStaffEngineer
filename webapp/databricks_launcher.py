@@ -356,6 +356,18 @@ def build_launch_env(
     env = dict(base_env)
     if anthropic_key:
         env["ANTHROPIC_API_KEY"] = anthropic_key
+    # The app user's own email, for the agent's "email it to me" (the
+    # sanctioned resolution — fh_config session.user_name, per the SDK email
+    # example — only works notebook-side, so capture it here). Best-effort.
+    if not env.get("GEOTECH_USER_EMAIL"):
+        try:
+            from funhouse.config.funhouse_config import FunhouseConfig
+            _ue = str(FunhouseConfig.get_instance().get(
+                "session.user_name", default="") or "").strip()
+            if "@" in _ue:
+                env["GEOTECH_USER_EMAIL"] = _ue
+        except Exception:
+            pass
     if prompter is not None:
         user = getattr(prompter, "username", None)
         pw = getattr(prompter, "password", None)

@@ -33,6 +33,26 @@ from langchain_core.tools import tool
 #: Recipient domains the Funhouse relay accepts (SDK default allowlist).
 ALLOWED_SUFFIXES = (".gov", ".mil", ".sbu")
 
+#: Env carrying the app user's own email, captured notebook-side at launch
+#: (the sanctioned resolution is ``fh_config.get("session.user_name")`` — the
+#: SDK's email example does exactly this; the launcher threads it through so
+#: "email it to me" works in the app subprocess, where the session is absent).
+USER_EMAIL_ENV = "GEOTECH_USER_EMAIL"
+
+
+def _own_address() -> str:
+    """The app user's own email: launch-captured env first, then a best-effort
+    live session read (works when serving in-process on a driver)."""
+    addr = os.environ.get(USER_EMAIL_ENV, "").strip()
+    if addr:
+        return addr
+    try:
+        from funhouse.config.funhouse_config import FunhouseConfig
+        return str(FunhouseConfig.get_instance().get(
+            "session.user_name", default="") or "").strip()
+    except Exception:
+        return ""
+
 
 def available() -> bool:
     """True when the Funhouse email SDK is importable."""
@@ -57,7 +77,9 @@ def email_file(to: str, file_path: str, subject: str = "",
     folder) to a colleague as an attachment.
 
     to: the recipient's email address — must be a .gov, .mil, or .sbu
-    address (the mail relay accepts nothing else).
+    address (the mail relay accepts nothing else). Pass "me" (or leave
+    empty) to send to the app user's own address, which the app knows from
+    the launch session — do NOT guess their address.
     file_path: the local file to attach (as returned by save_file /
     calc-package tools).
     subject, body: optional; sensible defaults mention GeotechStaffEngineer
@@ -67,6 +89,13 @@ def email_file(to: str, file_path: str, subject: str = "",
     address), so tell the user who it went to.
     """
     addr = (to or "").strip()
+    if not addr or addr.lower() in ("me", "myself", "self", "my email"):
+        addr = _own_address()
+        if not addr:
+            return ("I don't know the user's own email address in this "
+                    "deployment (no session identity was captured at launch) "
+                    "— ask the user for their .gov/.mil/.sbu address "
+                    "(no email was sent).")
     if not _domain_allowed(addr):
         return (f"Recipient not allowed: '{addr}'. The Funhouse mail relay "
                 "only delivers to .gov, .mil, or .sbu addresses — check the "
@@ -107,7 +136,9 @@ EMAIL_PROMPT = (
     "Recipients must be .gov, .mil, or .sbu addresses — anything else is "
     "rejected. Mail is sent from a shared Funhouse no-reply mailbox (NOT the "
     "user's own address), so recipients cannot reply; mention that when "
-    "confirming a send. Never invent recipient addresses — only use "
+    "confirming a send. When the user says 'email it to me', call the tool "
+    "with to='me' — the app resolves their own address from the launch "
+    "session. Never invent recipient addresses — only use to='me' or "
     "addresses the user supplied.")
 
 
