@@ -894,3 +894,56 @@ def test_stream_turn_no_nudge_on_completed_answer():
     assert not any(e["kind"] == "tool_call" and "auto-continue" in e["text"]
                    for e in entries)
     assert entries[-1]["answer"] == "The sliding FOS is 1.12 (fails)."
+
+
+# ---------------------------------------------------------------------------
+# Heartbeat wrapper (proxy websocket keepalive, 2026-09)
+# ---------------------------------------------------------------------------
+
+def test_heartbeat_passthrough_preserves_items_and_order():
+    def gen():
+        yield {"kind": "token", "text": "a"}
+        yield {"kind": "token", "text": "b"}
+    out = list(core.with_heartbeat(gen(), interval_s=5.0))
+    assert [o.get("text") for o in out if o["kind"] == "token"] == ["a", "b"]
+
+
+def test_heartbeat_emitted_during_silence():
+    import time as _t
+
+    def slow_gen():
+        yield {"kind": "token", "text": "start"}
+        _t.sleep(0.25)
+        yield {"kind": "turn_done", "answer": "start", "turn_tokens": 1}
+    out = list(core.with_heartbeat(slow_gen(), interval_s=0.05))
+    kinds = [o["kind"] for o in out]
+    assert kinds[0] == "token" and kinds[-1] == "turn_done"
+    hbs = [o for o in out if o["kind"] == "heartbeat"]
+    assert len(hbs) >= 2                       # several beats in a 0.25s gap
+    assert all(o["elapsed_s"] >= 0 for o in hbs)
+
+
+def test_heartbeat_reraises_generator_exception():
+    def bad_gen():
+        yield {"kind": "token", "text": "x"}
+        raise RuntimeError("stream died")
+    it = core.with_heartbeat(bad_gen(), interval_s=5.0)
+    assert next(it)["kind"] == "token"
+    with pytest.raises(RuntimeError, match="stream died"):
+        list(it)
+
+
+def test_heartbeat_disabled_passes_through_inline():
+    def gen():
+        yield {"kind": "token", "text": "only"}
+    out = list(core.with_heartbeat(gen(), interval_s=0))
+    assert out == [{"kind": "token", "text": "only"}]
+
+
+def test_heartbeat_interval_env_override(monkeypatch):
+    monkeypatch.setenv("GEOTECH_HEARTBEAT_S", "7.5")
+    assert core.heartbeat_interval() == 7.5
+    monkeypatch.setenv("GEOTECH_HEARTBEAT_S", "junk")
+    assert core.heartbeat_interval() == core.HEARTBEAT_INTERVAL_S
+    monkeypatch.delenv("GEOTECH_HEARTBEAT_S")
+    assert core.heartbeat_interval() == core.HEARTBEAT_INTERVAL_S

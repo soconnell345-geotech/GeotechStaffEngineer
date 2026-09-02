@@ -754,10 +754,19 @@ if prompt:
             turn_tokens = 0
             _chunks = 0
             try:
-                for item in core.stream_turn(
+                for item in core.with_heartbeat(core.stream_turn(
                         ss.agent, ss.messages, ss.thread_id,
-                        recursion_limit=ss.behavior.get("recursion_limit")):
+                        recursion_limit=ss.behavior.get("recursion_limit"))):
                     kind = item["kind"]
+                    if kind == "heartbeat":
+                        # Keepalive: a status-label change is websocket traffic
+                        # — it stops the driver proxy idling out the connection
+                        # during long silent model/tool phases.
+                        _hb_m, _hb_s = divmod(int(item.get("elapsed_s", 0)), 60)
+                        status.update(label=(
+                            f"Working… {_hb_m}m {_hb_s:02d}s (long step — "
+                            "connection kept alive)"))
+                        continue
                     if kind == "token":
                         answer += item["text"]
                         answer_box.markdown(answer)

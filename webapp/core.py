@@ -440,6 +440,73 @@ def ends_mid_task(text: str, saw_tool_call: bool) -> bool:
     return bool(_INTENT_RE.search(tail))
 
 
+#: Seconds of stream silence before a heartbeat item is emitted. Behind the
+#: Databricks driver proxy, a websocket with no traffic for ~1-2 min gets
+#: killed ("Connecting" flaps, orphaned turns — observed live through 5.10.2):
+#: a long reasoning-model call or a slow tool (big PDF read, SharePoint
+#: download) produces exactly that silence. The app turns each heartbeat into
+#: a status-label update, which IS websocket traffic, keeping the connection
+#: alive. Override via GEOTECH_HEARTBEAT_S (<=0 disables).
+HEARTBEAT_INTERVAL_S = 15.0
+
+
+def heartbeat_interval() -> float:
+    raw = os.environ.get("GEOTECH_HEARTBEAT_S", "").strip()
+    if raw:
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    return HEARTBEAT_INTERVAL_S
+
+
+def with_heartbeat(gen, interval_s: Optional[float] = None):
+    """Yield ``gen``'s items as they arrive, inserting
+    ``{"kind": "heartbeat", "elapsed_s": float}`` items whenever the stream is
+    silent for ``interval_s`` seconds.
+
+    The wrapped generator runs in a daemon worker thread feeding a queue; the
+    consumer polls with a timeout. Exceptions from ``gen`` re-raise here (same
+    surface as consuming ``gen`` directly). ``interval_s <= 0`` disables the
+    wrapper entirely (items pass straight through on the caller's thread).
+    """
+    import queue as _queue
+    import threading as _threading
+    import time as _time
+
+    interval = heartbeat_interval() if interval_s is None else float(interval_s)
+    if interval <= 0:
+        yield from gen
+        return
+
+    q: "_queue.Queue" = _queue.Queue()
+
+    def _pump():
+        try:
+            for item in gen:
+                q.put(("item", item))
+            q.put(("done", None))
+        except BaseException as exc:                    # re-raised on consumer
+            q.put(("exc", exc))
+
+    _threading.Thread(target=_pump, daemon=True,
+                      name="geotech-turn-pump").start()
+    t0 = _time.monotonic()
+    while True:
+        try:
+            kind, payload = q.get(timeout=interval)
+        except _queue.Empty:
+            yield {"kind": "heartbeat",
+                   "elapsed_s": round(_time.monotonic() - t0, 1)}
+            continue
+        if kind == "item":
+            yield payload
+        elif kind == "done":
+            return
+        else:
+            raise payload
+
+
 def stream_turn(agent, messages: list, thread_id: str,
                 max_result_chars: int = 2000,
                 recursion_limit: Optional[int] = None):
