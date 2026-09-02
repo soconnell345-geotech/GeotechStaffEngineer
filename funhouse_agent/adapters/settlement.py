@@ -30,7 +30,7 @@ def _run_schmertmann_settlement(params: dict) -> dict:
     params = apply_aliases(params, {"q": "q_net", "q_applied": "q_net"})
     reject_unknown_params(
         params, ("q_net", "q_overburden", "B", "L", "layers", "shape",
-                 "time_years"),
+                 "time_years", "gamma_soil"),
         method="schmertmann_settlement")
     require_params(params, ["q_net", "B", "layers"], method="schmertmann_settlement")
     for l in params["layers"]:
@@ -41,6 +41,7 @@ def _run_schmertmann_settlement(params: dict) -> dict:
         B=params["B"], L=params.get("L", params["B"]),
         layers=layers, footing_shape=params.get("shape", "square"),
         time_years=params.get("time_years", 0.0),
+        gamma_soil=params.get("gamma_soil"),
     )
     return {"schmertmann_settlement_m": round(Se, 6), "schmertmann_settlement_mm": round(Se * 1000, 2), "method": "schmertmann"}
 
@@ -199,6 +200,7 @@ METHOD_INFO = {
             "q_overburden": {"type": "float", "required": False, "default": 0.0, "description": "Overburden pressure at footing base (kPa)."},
             "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "strip"], "description": "Footing shape."},
             "time_years": {"type": "float", "required": False, "default": 0.0, "description": "Time for creep factor."},
+            "gamma_soil": {"type": "float", "required": False, "description": "Effective unit weight (kN/m3) below the base, used for sigma'_vp at the PEAK-influence depth in Izp = 0.5 + 0.1*sqrt(dq/sigma'_vp). STRONGLY recommended for embedded footings: without it sigma'_vp falls back to the base overburden q_overburden, which OVERSTATES Izp (and settlement)."},
         },
         "returns": {"schmertmann_settlement_mm": "Settlement in mm."},
     },

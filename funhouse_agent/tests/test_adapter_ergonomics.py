@@ -968,3 +968,30 @@ class TestWallSlidingBasis:
         out = _run_cantilever_wall(p)
         assert out["sliding_basis"]["delta_base_deg"] == 22.0
         assert out["FOS_sliding"] == pytest.approx(1.42, abs=0.01)
+
+
+# ============================================================================
+# Das-sweep ergonomics (2026-08) — Schmertmann gamma_soil exposure
+# ============================================================================
+
+class TestSchmertmannGammaSoil:
+    BASE = {"q_net": 164.0, "q_overburden": 27.5, "B": 2.44,
+            "shape": "strip", "time_years": 10.0,
+            "layers": [{"depth_top": 0, "depth_bottom": 1.83, "Es": 6033},
+                       {"depth_top": 1.83, "depth_bottom": 6.10, "Es": 11997},
+                       {"depth_top": 6.10, "depth_bottom": 9.76, "Es": 9998}]}
+
+    def test_gamma_soil_lowers_izp_and_settlement(self):
+        """gamma_soil (sigma_vp at the PEAK depth) is now exposed on the flat
+        schmertmann_settlement adapter; without it sigma_vp falls back to the
+        base overburden, overstating Izp (Das 5.18: 0.744 vs 0.651)."""
+        from funhouse_agent.adapters.settlement import METHOD_REGISTRY as R
+        no_g = R["schmertmann_settlement"](dict(self.BASE))
+        with_g = R["schmertmann_settlement"](dict(self.BASE, gamma_soil=18.1))
+        assert (with_g["schmertmann_settlement_mm"]
+                < no_g["schmertmann_settlement_mm"])
+
+    def test_gamma_soil_documented(self):
+        from funhouse_agent.adapters.settlement import METHOD_INFO
+        p = METHOD_INFO["schmertmann_settlement"]["parameters"]
+        assert "gamma_soil" in p and "PEAK" in p["gamma_soil"]["description"]

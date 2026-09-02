@@ -120,10 +120,17 @@ def test_v006_high_level_rational_beta():
 
 
 def test_v006_default_beta_still_depth_based():
-    """Default beta_method='depth' is byte-identical to the pre-v5.3 behavior:
-    the deep Layer-3 sand floors at the O'Neill-Reese beta=0.25."""
-    for z_ft in (40, 60, 80, 100):
-        assert beta_cohesionless(z_ft * FT) == pytest.approx(0.25, abs=1e-6)
+    """Default beta_method='depth' follows the CORRECTED metric O'Neill-Reese
+    decay beta = 1.5 - 0.245*sqrt(z_m) (5.9.1 unit-mixing fix, verified vs
+    NHI Ex 9-5): the 0.25 floor is reached at z ~ 26 m (~85 ft), NOT by 40 ft
+    as the pre-fix feet-based decay implied (this test previously pinned that
+    buggy behavior)."""
+    import math
+    for z_ft in (40, 60, 80):
+        z_m = z_ft * FT
+        expected = max(0.25, min(1.2, 1.5 - 0.245 * math.sqrt(z_m)))
+        assert beta_cohesionless(z_m) == pytest.approx(expected, rel=1e-6)
+    assert beta_cohesionless(100 * FT) == pytest.approx(0.25, abs=1e-6)
 
 
 # --- V-007 alpha (clay): GEC-10 rational su-transform chain reproduces 0.47 ---

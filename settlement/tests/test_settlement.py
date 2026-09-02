@@ -163,6 +163,27 @@ class TestSchmertmannSettlement:
         Se_10 = schmertmann_settlement(100, 20, 2.0, layers, time_years=10)
         assert Se_10 > Se_0
 
+    def test_schmertmann_layering_invariant(self):
+        """Das-sweep ergonomics fix: the integrator subdivides internally at
+        the Iz-peak kink, so coarse and fine encodings of the SAME uniform
+        profile integrate the diagram identically (midpoint rule is exact on
+        each linear segment)."""
+        coarse = [SchmertmannLayer(0, 4.0, 10000)]           # straddles z_peak
+        fine = [SchmertmannLayer(0, 1.0, 10000),             # split at z_peak=1
+                SchmertmannLayer(1.0, 2.5, 10000),
+                SchmertmannLayer(2.5, 4.0, 10000)]
+        Se_c = schmertmann_settlement(100, 20, 2.0, coarse)
+        Se_f = schmertmann_settlement(100, 20, 2.0, fine)
+        assert Se_c == pytest.approx(Se_f, rel=1e-12)
+        # Strip diagram too (peak at B, tail to 4B).
+        coarse_s = [SchmertmannLayer(0, 8.0, 10000)]
+        fine_s = [SchmertmannLayer(0, 2.0, 10000),
+                  SchmertmannLayer(2.0, 8.0, 10000)]
+        assert schmertmann_settlement(100, 20, 2.0, coarse_s,
+                                      footing_shape="strip") == pytest.approx(
+            schmertmann_settlement(100, 20, 2.0, fine_s,
+                                   footing_shape="strip"), rel=1e-12)
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # TEST 4: Primary Consolidation Settlement

@@ -315,11 +315,18 @@ def _effective_gamma(depth: float, layer: WallSoilLayer,
 def _find_embedment(excavation_depth, soil_layers, gwt_active, gwt_passive,
                     surcharge, FOS_passive, gamma_w,
                     pressure_method="rankine", n_points=500):
-    """Find embedment depth by summing moments about the base."""
+    """Find embedment depth by summing moments about the base.
+
+    Scans a coarse grid for the first moment balance, then BISECTS the
+    bracketing interval to 1 mm — the previous first-grid-crossing return
+    overshot the true root by up to one grid step (~2-3 % on typical walls,
+    the "grid quantization" reconciliation of the Das 9.14 sweep), and the
+    0.5 m grid start acted as an artificial embedment floor for small walls.
+    """
     H = excavation_depth
 
-    # Try embedment depths from 0.5m to 4*H
-    for D_trial in np.linspace(0.5, 4 * H, 200):
+    def _net_moment(D_trial):
+        """Resisting minus driving moment about the base for a trial D."""
         total_length = H + D_trial
         dz = total_length / n_points
 
@@ -379,8 +386,26 @@ def _find_embedment(excavation_depth, soil_layers, gwt_active, gwt_passive,
                 if net_water > 0:
                     moment_active += net_water * dz * arm
 
-        if moment_passive >= moment_active:
-            return D_trial
+        return moment_passive - moment_active
+
+    def _bisect(lo, hi):
+        for _ in range(60):
+            if hi - lo <= 1e-3:
+                break
+            mid = (lo + hi) / 2.0
+            if _net_moment(mid) >= 0:
+                hi = mid
+            else:
+                lo = mid
+        return hi
+
+    D_prev = None
+    for D_trial in np.linspace(0.5, 4 * H, 200):
+        if _net_moment(D_trial) >= 0:
+            # Balanced at the FIRST grid point: the true root is below the
+            # old 0.5 m floor — refine down instead of returning the floor.
+            return _bisect(0.01 if D_prev is None else D_prev, D_trial)
+        D_prev = D_trial
 
     warnings.warn("Embedment depth did not converge; using maximum trial depth")
     return 4 * H
