@@ -342,7 +342,7 @@ with st.sidebar:
             help="Switch the model for this conversation going forward (cheaper/"
                  "faster models for quick questions). History, uploads and artifacts "
                  "are kept; the next turn replays the conversation into the new model.")
-    if eng.source == "prompter":
+    if eng.source == "prompter" and not core.prompter_model_choices():
         st.caption("Model is fixed by the deployment; the picker doesn't apply.")
 
     # Model RID input. On a Foundry deployment this is the PRIMARY (often only)

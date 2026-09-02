@@ -630,23 +630,41 @@ MODEL_CHOICES = [
 FOUNDRY_MODELS_ENV = "GEOTECH_FOUNDRY_MODELS"
 
 
-def foundry_model_choices(raw: Optional[str] = None) -> List[dict]:
-    """Parse ``GEOTECH_FOUNDRY_MODELS`` (or ``raw``) into picker entries."""
-    text = raw if raw is not None else os.environ.get(FOUNDRY_MODELS_ENV, "")
+def _parse_model_env(text: str, blurb: str) -> List[dict]:
+    """Parse a ``Label=id,...`` model-list env value into picker entries."""
     out: List[dict] = []
     for item in (text or "").split(","):
         item = item.strip()
         if not item:
             continue
         if "=" in item:
-            label, rid = item.split("=", 1)
-            label, rid = label.strip(), rid.strip()
+            label, mid = item.split("=", 1)
+            label, mid = label.strip(), mid.strip()
         else:
-            label, rid = item, item
-        if rid and not any(c["id"] == rid for c in out):
-            out.append({"id": rid, "label": label or rid,
-                        "blurb": "Foundry model"})
+            label, mid = item, item
+        if mid and not any(c["id"] == mid for c in out):
+            out.append({"id": mid, "label": label or mid, "blurb": blurb})
     return out
+
+
+def foundry_model_choices(raw: Optional[str] = None) -> List[dict]:
+    """Parse ``GEOTECH_FOUNDRY_MODELS`` (or ``raw``) into picker entries."""
+    text = raw if raw is not None else os.environ.get(FOUNDRY_MODELS_ENV, "")
+    return _parse_model_env(text, "Foundry model")
+
+
+#: Env listing Prompter model ids for the picker on a deployment-provided
+#: (registered-builder) engine, comma-separated ``Label=id`` or bare ids —
+#: e.g. "GPT deep=funhouse-gpt-high,GPT 5.1 fast=funhouse-gpt-medium". Only
+#: honored when the registered builder accepts a model id (see
+#: engine_config.register_model_builder); the databricks launcher sets it.
+PROMPTER_MODELS_ENV = "GEOTECH_PROMPTER_MODELS"
+
+
+def prompter_model_choices(raw: Optional[str] = None) -> List[dict]:
+    """Parse ``GEOTECH_PROMPTER_MODELS`` (or ``raw``) into picker entries."""
+    text = raw if raw is not None else os.environ.get(PROMPTER_MODELS_ENV, "")
+    return _parse_model_env(text, "Prompter model")
 
 
 def model_choices(env_model: Optional[str] = None) -> List[dict]:
@@ -658,6 +676,13 @@ def model_choices(env_model: Optional[str] = None) -> List[dict]:
     envm = (env_model if env_model is not None
             else os.environ.get("GEOTECH_WEBAPP_MODEL"))
     from webapp import engine_config
+    # Deployment-provided engine (registered builder) with a configured
+    # Prompter model list: those are the ONLY sensible choices — the curated
+    # Anthropic list cannot be served by the Prompter.
+    if engine_config.has_model_builder():
+        pm = prompter_model_choices()
+        if pm:
+            return pm
     # Foundry deployment: RIDs are the ONLY model surface — the curated
     # Anthropic list is not offered (and the key path is disabled in
     # engine_config), so an unconfigured deployment shows just the RID input.
@@ -680,10 +705,14 @@ def default_model_id(env_model: Optional[str] = None) -> str:
             else os.environ.get("GEOTECH_WEBAPP_MODEL"))
     if envm:
         return envm
+    from webapp import engine_config
+    if engine_config.has_model_builder():
+        pm = prompter_model_choices()
+        if pm:
+            return pm[0]["id"]
     fm = foundry_model_choices()
     if fm:
         return fm[0]["id"]
-    from webapp import engine_config
     # Foundry deployment with nothing configured: no default model exists —
     # the app boots engineless and offers the RID input only.
     if engine_config.is_foundry_deployment():
@@ -696,7 +725,7 @@ def model_label(model_id: Optional[str]) -> str:
     ``None``/empty)."""
     if not model_id:
         return ""
-    for c in MODEL_CHOICES + foundry_model_choices():
+    for c in MODEL_CHOICES + foundry_model_choices() + prompter_model_choices():
         if c["id"] == model_id:
             return c["label"]
     return model_id

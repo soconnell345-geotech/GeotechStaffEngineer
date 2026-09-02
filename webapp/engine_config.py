@@ -226,19 +226,44 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
         f"Using the Foundry OpenAI proxy ({model_id}).")
 
 
-def register_model_builder(builder: Optional[Callable[[], object]]) -> None:
+def register_model_builder(builder: Optional[Callable[..., object]]) -> None:
     """Install (or clear, with ``None``) the deployment model builder.
 
-    The TinyApp deployment supplies a Prompter-backed LangChain chat model by
-    calling this at startup::
+    The deployment supplies a Prompter-backed LangChain chat model by calling
+    this at startup::
 
         from webapp.engine_config import register_model_builder
         register_model_builder(lambda: PrompterChatModel(fh_prompter))
 
     ``resolve_engine`` then prefers that model over the ANTHROPIC_API_KEY path.
+
+    A builder that accepts an argument gets the in-app model-picker selection
+    (a model id string, or ``None`` on first build)::
+
+        register_model_builder(
+            lambda model_id=None: PrompterChatModel(fh_prompter,
+                                                    model=model_id or DEFAULT))
+
+    Pair with ``GEOTECH_PROMPTER_MODELS`` (``Label=id,...``) so the sidebar
+    picker offers the choices (see ``core.prompter_model_choices``). Zero-arg
+    builders keep the pre-5.11 behavior: model fixed by the deployment.
     """
     global _MODEL_BUILDER
     _MODEL_BUILDER = builder
+
+
+def has_model_builder() -> bool:
+    """True when a deployment model builder is registered."""
+    return _MODEL_BUILDER is not None
+
+
+def _builder_takes_model_id(builder: Callable) -> bool:
+    """True when the registered builder can accept the picker model id."""
+    import inspect
+    try:
+        return bool(inspect.signature(builder).parameters)
+    except (TypeError, ValueError):
+        return False
 
 
 @dataclass
@@ -284,20 +309,27 @@ def resolve_engine(model_id: Optional[str] = None) -> EngineResolution:
     """Resolve the chat engine from the environment. Never raises.
 
     ``model_id`` (optional) is the in-app model-picker selection: it OVERRIDES
-    ``GEOTECH_WEBAPP_MODEL`` and the default for the ANTHROPIC_API_KEY path.
-    The deployment Prompter engine is fixed by the deployment and ignores it.
+    ``GEOTECH_WEBAPP_MODEL`` and the default for the ANTHROPIC_API_KEY path,
+    and is forwarded to a deployment builder that accepts an argument (Prompter
+    model switching; zero-arg builders stay deployment-fixed).
     ``None`` (the default) is byte-identical to the pre-picker behaviour.
     """
-    # 1) Deployment-injected builder (Prompter hook). Model is deployment-fixed;
-    #    the picker selection does not apply here.
+    # 1) Deployment-injected builder (Prompter hook). A builder that accepts
+    #    an argument gets the picker selection (Prompter model switching); a
+    #    zero-arg builder keeps the model deployment-fixed.
     if _MODEL_BUILDER is not None:
+        _picked = model_id or None
         try:
-            model = _MODEL_BUILDER()
+            if _builder_takes_model_id(_MODEL_BUILDER):
+                model = _MODEL_BUILDER(_picked)
+            else:
+                model = _MODEL_BUILDER()
+                _picked = None            # selection cannot apply
         except Exception as exc:  # a bad builder must not crash the app
             return EngineResolution(
                 None, "error", "prompter",
                 f"Injected model builder failed: {type(exc).__name__}: {exc}")
-        name = type(model).__name__
+        name = _picked or type(model).__name__
         return EngineResolution(
             model, "prompter", name,
             f"Using the deployment-provided engine ({name}).")
