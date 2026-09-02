@@ -5,6 +5,10 @@ from seismic_geotech.site_class import compute_vs30, compute_n_bar, compute_su_b
 from seismic_geotech.mononobe_okabe import mononobe_okabe_KAE, mononobe_okabe_KPE, seismic_earth_pressure
 from seismic_geotech.liquefaction import evaluate_liquefaction, CRR_from_N160cs, compute_CSR, stress_reduction_rd, magnitude_scaling_factor, fines_correction
 from seismic_geotech.residual_strength import post_liquefaction_strength
+from seismic_geotech.dynamic_properties import (
+    gmax_from_vs, gmax_cpt_sand_rix_stokoe, gmax_cpt_clay_mayne_rix,
+    gmax_hardin_black, gmax_clay_andersen, modulus_reduction_ishibashi_zhang,
+)
 from sheet_pile.earth_pressure import rankine_Ka
 
 
@@ -125,8 +129,62 @@ def _run_csr_crr_check(params: dict) -> dict:
     return {"CSR": round(CSR, 4), "CRR": round(CRR, 4), "FOS_liq": round(FOS, 3), "N160cs": round(N160cs, 1), "rd": round(rd, 4), "MSF": round(MSF, 3), "liquefiable": FOS < 1.0}
 
 
+def _run_gmax(params: dict) -> dict:
+    _valid = ("correlation", "Vs", "unit_weight", "qc_MPa", "sigma_vo_eff",
+              "sigma_m_eff", "void_ratio", "coefficient_B", "PI", "OCR")
+    reject_unknown_params(params, _valid, method="gmax")
+    require_params(params, ["correlation"], method="gmax", valid=_valid)
+    corr = params["correlation"]
+    if corr == "vs":
+        require_params(params, ["Vs", "unit_weight"], method="gmax", valid=_valid)
+        r = gmax_from_vs(params["Vs"], params["unit_weight"])
+    elif corr == "cpt_sand":
+        require_params(params, ["qc_MPa", "sigma_vo_eff"], method="gmax",
+                       valid=_valid)
+        r = gmax_cpt_sand_rix_stokoe(params["qc_MPa"], params["sigma_vo_eff"])
+    elif corr == "cpt_clay":
+        require_params(params, ["qc_MPa"], method="gmax", valid=_valid)
+        r = gmax_cpt_clay_mayne_rix(params["qc_MPa"])
+    elif corr == "hardin_black":
+        require_params(params, ["sigma_m_eff", "void_ratio"], method="gmax",
+                       valid=_valid)
+        r = gmax_hardin_black(params["sigma_m_eff"], params["void_ratio"],
+                              params.get("coefficient_B", 875.0))
+    elif corr == "andersen":
+        require_params(params, ["PI", "OCR", "sigma_vo_eff"], method="gmax",
+                       valid=_valid)
+        r = gmax_clay_andersen(params["PI"], params["OCR"],
+                               params["sigma_vo_eff"])
+    else:
+        raise ValueError(
+            f"gmax: unknown correlation '{corr}' "
+            "(vs | cpt_sand | cpt_clay | hardin_black | andersen)")
+    out = {"correlation": corr,
+           "Gmax_kPa": round(r["Gmax_kPa"], 1),
+           "Gmax_MPa": round(r["Gmax_kPa"] / 1000.0, 2)}
+    for k, v in r.items():
+        if k != "Gmax_kPa":
+            out[k] = round(v, 2)
+    return out
+
+
+def _run_modulus_reduction(params: dict) -> dict:
+    _valid = ("strain_pct", "PI", "sigma_m_eff")
+    reject_unknown_params(params, _valid, method="modulus_reduction")
+    require_params(params, ["strain_pct", "sigma_m_eff"],
+                   method="modulus_reduction", valid=_valid)
+    r = modulus_reduction_ishibashi_zhang(
+        params["strain_pct"], params.get("PI", 0.0), params["sigma_m_eff"])
+    return {"G_over_Gmax": round(r["G_over_Gmax"], 4),
+            "damping_pct": round(r["damping_pct"], 3),
+            "strain_pct": params["strain_pct"],
+            "PI": params.get("PI", 0.0)}
+
+
 METHOD_REGISTRY = {
     "site_classification": _run_site_classification,
+    "gmax": _run_gmax,
+    "modulus_reduction": _run_modulus_reduction,
     "seismic_earth_pressure": _run_seismic_earth_pressure,
     "liquefaction_evaluation": _run_liquefaction_evaluation,
     "residual_strength": _run_residual_strength,
@@ -134,6 +192,35 @@ METHOD_REGISTRY = {
 }
 
 METHOD_INFO = {
+    "gmax": {
+        "category": "Dynamic Properties",
+        "brief": "Small-strain shear modulus Gmax from Vs, CPT, void ratio, or PI/OCR.",
+        "parameters": {
+            "correlation": {"type": "str", "required": True,
+                            "allowed_values": ["vs", "cpt_sand", "cpt_clay", "hardin_black", "andersen"],
+                            "description": "vs: G=rho*Vs^2; cpt_sand: Rix & Stokoe (1991); cpt_clay: Mayne & Rix (1993); hardin_black: Hardin & Black (1968) from void ratio; andersen: Andersen (2015) clay from PI/OCR."},
+            "Vs": {"type": "float", "required": False, "description": "Shear wave velocity (m/s) — for 'vs'."},
+            "unit_weight": {"type": "float", "required": False, "description": "Bulk unit weight (kN/m3) — for 'vs'."},
+            "qc_MPa": {"type": "float", "required": False, "description": "CPT tip resistance (MPa) — for 'cpt_sand'/'cpt_clay'."},
+            "sigma_vo_eff": {"type": "float", "required": False, "description": "Vertical effective stress (kPa) — for 'cpt_sand'/'andersen'."},
+            "sigma_m_eff": {"type": "float", "required": False, "description": "Mean effective stress (kPa) — for 'hardin_black'."},
+            "void_ratio": {"type": "float", "required": False, "description": "Void ratio e0 — for 'hardin_black'."},
+            "coefficient_B": {"type": "float", "required": False, "default": 875.0, "description": "Hardin-Black calibration coefficient (default: PISA dense marine sand)."},
+            "PI": {"type": "float", "required": False, "description": "Plasticity index (%) — for 'andersen'."},
+            "OCR": {"type": "float", "required": False, "description": "Overconsolidation ratio — for 'andersen'."},
+        },
+        "returns": {"Gmax_kPa": "Small-strain shear modulus (kPa).", "Gmax_MPa": "Same in MPa."},
+    },
+    "modulus_reduction": {
+        "category": "Dynamic Properties",
+        "brief": "Ishibashi & Zhang (1993) G/Gmax and damping vs cyclic strain.",
+        "parameters": {
+            "strain_pct": {"type": "float", "required": True, "description": "Cyclic shear strain in PERCENT (e.g. 0.01 = 1e-4 strain)."},
+            "PI": {"type": "float", "required": False, "default": 0.0, "description": "Plasticity index (%); 0 for sands."},
+            "sigma_m_eff": {"type": "float", "required": True, "description": "Mean effective confining stress (kPa)."},
+        },
+        "returns": {"G_over_Gmax": "Modulus reduction ratio.", "damping_pct": "Damping ratio (%)."},
+    },
     "site_classification": {
         "category": "Site Classification",
         "brief": "ASCE 7 site classification and coefficients from Vs30, N-bar, or Su-bar.",

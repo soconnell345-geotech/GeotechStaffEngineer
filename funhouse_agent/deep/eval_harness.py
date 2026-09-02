@@ -158,7 +158,6 @@ OPTIONAL_DEPS: dict[str, str] = {
     "python_ags4": "subsurface",
     "pydiggs": "subsurface",
     "ezdxf": "dxf",
-    "groundhog": "groundhog",
 }
 
 

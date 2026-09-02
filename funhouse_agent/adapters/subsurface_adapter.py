@@ -358,11 +358,47 @@ def _run_compute_trend(params: dict) -> dict:
     return clean_result(result.to_dict())
 
 
+def _run_spt_correction(params: dict) -> dict:
+    from geotech_common.soil_properties import spt_n1_60
+    _valid = ("N_field", "sigma_vo_eff", "energy_ratio_pct", "rod_length_m",
+              "borehole_diameter_mm", "sampler_correction", "overburden_method")
+    from funhouse_agent.adapters import reject_unknown_params
+    reject_unknown_params(params, _valid, method="spt_correction")
+    require_params(params, ["N_field", "sigma_vo_eff"],
+                   method="spt_correction", valid=_valid)
+    r = spt_n1_60(
+        params["N_field"], params["sigma_vo_eff"],
+        energy_ratio_pct=params.get("energy_ratio_pct", 60.0),
+        rod_length_m=params.get("rod_length_m", 10.0),
+        borehole_diameter_mm=params.get("borehole_diameter_mm", 100.0),
+        sampler_correction=params.get("sampler_correction", 1.0),
+        overburden_method=params.get("overburden_method", "liao_whitman"),
+    )
+    return {k: round(v, 4) for k, v in r.items()}
+
+
+def _run_stress_dilatancy(params: dict) -> dict:
+    from geotech_common.soil_properties import stress_dilatancy_bolton
+    _valid = ("relative_density", "p_eff", "Q", "R", "stress_condition")
+    from funhouse_agent.adapters import reject_unknown_params
+    reject_unknown_params(params, _valid, method="stress_dilatancy")
+    require_params(params, ["relative_density", "p_eff"],
+                   method="stress_dilatancy", valid=_valid)
+    r = stress_dilatancy_bolton(
+        params["relative_density"], params["p_eff"],
+        Q=params.get("Q", 10.0), R=params.get("R", 1.0),
+        stress_condition=params.get("stress_condition", "triaxial"),
+    )
+    return {k: round(v, 4) for k, v in r.items()}
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 
 METHOD_REGISTRY = {
+    "spt_correction": _run_spt_correction,
+    "stress_dilatancy": _run_stress_dilatancy,
     "parse_diggs": _run_parse_diggs,
     "load_site": _run_load_site,
     "plot_parameter_vs_depth": _run_plot_parameter_vs_depth,
@@ -384,6 +420,32 @@ _SITE_KEY_DOC = "Key returned by parse_diggs or load_site (preferred). Alternati
 _SITE_DATA_DOC = "Nested dict with project_name, investigations. Alternative to site_key."
 
 METHOD_INFO = {
+    "spt_correction": {
+        "category": "Field Test Corrections",
+        "brief": "Raw field SPT N -> N60 -> (N1)60 (energy + overburden corrections, Youd et al. 2001 / Liao-Whitman).",
+        "parameters": {
+            "N_field": {"type": "float", "required": True, "description": "Raw field SPT blow count."},
+            "sigma_vo_eff": {"type": "float", "required": True, "description": "Vertical effective stress at test depth (kPa)."},
+            "energy_ratio_pct": {"type": "float", "required": False, "default": 60.0, "description": "Hammer energy ratio ER (%). Donut 45-60, safety 55-72, automatic 80-100."},
+            "rod_length_m": {"type": "float", "required": False, "default": 10.0, "description": "Rod length (m); sets CR band (0.75 below 3 m up to 1.0 beyond 10 m)."},
+            "borehole_diameter_mm": {"type": "float", "required": False, "default": 100.0, "description": "Borehole diameter (mm); CB = 1.0/1.05/1.15."},
+            "sampler_correction": {"type": "float", "required": False, "default": 1.0, "description": "CS: 1.0 standard sampler, 1.1-1.3 without liners."},
+            "overburden_method": {"type": "str", "required": False, "default": "liao_whitman", "allowed_values": ["liao_whitman", "iso"], "description": "C_N form: Liao & Whitman (1986, cap 1.7) or EN ISO 22476-3 (cap 2.0)."},
+        },
+        "returns": {"N60": "Energy-corrected blow count.", "N1_60": "Fully corrected (N1)60.", "CN": "Overburden factor."},
+    },
+    "stress_dilatancy": {
+        "category": "Strength Correlations",
+        "brief": "Bolton (1986) dilatancy: peak-friction excess and dilation angle from Dr and p'.",
+        "parameters": {
+            "relative_density": {"type": "float", "required": True, "description": "Relative density Dr as a FRACTION (0-1)."},
+            "p_eff": {"type": "float", "required": True, "description": "Mean effective stress p' (kPa)."},
+            "Q": {"type": "float", "required": False, "default": 10.0, "description": "Bolton mineralogy constant (10 for silica sand)."},
+            "R": {"type": "float", "required": False, "default": 1.0, "description": "Bolton fitting constant."},
+            "stress_condition": {"type": "str", "required": False, "default": "triaxial", "allowed_values": ["triaxial", "plane_strain"], "description": "Loading mode."},
+        },
+        "returns": {"IR": "Relative dilatancy index.", "phi_excess_deg": "phi_peak - phi_crit (deg).", "dilation_angle_deg": "Dilation angle psi (deg)."},
+    },
     "parse_diggs": {
         "category": "Subsurface Characterization",
         "brief": "Parse DIGGS 2.6/2.5.a XML into site model. Returns site_key for use in subsequent plot calls.",

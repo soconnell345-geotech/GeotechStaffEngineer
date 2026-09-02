@@ -1,9 +1,8 @@
 """
 Tier 3: Cross-agent consistency checks.
 
-Where multiple agents can solve the same problem (e.g., bearing capacity
-via bearing_capacity_agent vs groundhog_agent),
-run all and verify results agree within engineering tolerance.
+Where multiple agents can solve the same problem, run all and verify
+results agree within engineering tolerance.
 """
 
 import pytest
@@ -15,7 +14,6 @@ from foundry.bearing_capacity_agent_foundry import bearing_capacity_agent
 from foundry.settlement_agent_foundry import settlement_agent
 from foundry.axial_pile_agent_foundry import axial_pile_agent
 from foundry.seismic_geotech_agent_foundry import seismic_geotech_agent
-from foundry.groundhog_agent_foundry import groundhog_agent
 
 H = FoundryAgentHarness()
 
@@ -42,16 +40,12 @@ class TestBearingCapacityCrossCheck:
         assert r["Nq"] == pytest.approx(18.40, rel=0.02)
 
     def test_spt_to_friction_angle(self):
-        """groundhog SPT → friction angle correlation gives a reasonable phi.
+        """Native SPT → friction angle correlation gives a reasonable phi.
 
-        For N=20 at sigma'v=100 kPa, phi should fall in the 20-50° range.
+        For N60=20, phi should fall in the 20-50° range.
         """
-        # Groundhog: use SPT to estimate friction angle
-        r_gh_phi = H.call(groundhog_agent, "spt_friction_angle_kulhawymayne", {
-            "N": 20.0,
-            "sigma_vo_eff": 100.0,
-        })
-        phi_est = r_gh_phi["Phi [deg]"]
+        from geotech_common.soil_properties import spt_to_phi
+        phi_est = spt_to_phi(20.0)
         assert phi_est > 20
         assert phi_est < 50
 
@@ -78,13 +72,11 @@ class TestEarthPressureCrossCheck:
         # With kh=0 and delta=0, KAE should equal Ka (Rankine)
         assert r_seis["KAE"] == pytest.approx(0.333, rel=0.02)
 
-    def test_groundhog_earth_pressure(self):
-        """Groundhog earth pressure coefficients vs Rankine theory."""
-        r = H.call(groundhog_agent, "earth_pressure_basic", {
-            "phi_eff": 30.0,
-        })
-        assert r["Ka [-]"] == pytest.approx(0.333, rel=0.02)
-        assert r["Kp [-]"] == pytest.approx(3.0, rel=0.02)
+    def test_native_earth_pressure(self):
+        """Native earth pressure coefficients vs Rankine theory."""
+        from geotech_common.soil_properties import phi_to_Ka, phi_to_Kp
+        assert phi_to_Ka(30.0) == pytest.approx(0.333, rel=0.02)
+        assert phi_to_Kp(30.0) == pytest.approx(3.0, rel=0.02)
 
 
 # ============================================================================
@@ -92,22 +84,20 @@ class TestEarthPressureCrossCheck:
 # ============================================================================
 
 class TestSPTCrossCheck:
-    """SPT correlation checks via groundhog."""
+    """SPT correction + correlation chain checks (native)."""
 
     def test_spt_to_phi_consistency(self):
-        """SPT N → friction angle should be consistent.
+        """Corrected N → friction angle should be consistent.
 
-        Multiple correlations exist; all should give phi in a reasonable range
-        for a given N value.
+        Multiple correlations exist; both native methods should give phi in
+        a reasonable range for the same corrected blow count.
         """
-        # Groundhog: Kulhawy & Mayne
-        r = H.call(groundhog_agent, "spt_friction_angle_kulhawymayne", {
-            "N": 25.0,
-            "sigma_vo_eff": 100.0,
-        })
-        phi = r["Phi [deg]"]
-        # N=25 at 100 kPa should give phi ≈ 32-45°
-        assert 28 < phi < 50
+        from geotech_common.soil_properties import spt_n1_60, spt_to_phi
+        chain = spt_n1_60(25.0, sigma_vo_eff_kPa=100.0)
+        phi_peck = spt_to_phi(chain["N60"], method="peck")
+        phi_mey = spt_to_phi(chain["N60"], method="meyerhof")
+        assert 28 < phi_peck < 50
+        assert 28 < phi_mey < 50
 
 
 # ============================================================================

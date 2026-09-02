@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-31 analysis modules (incl. pavement_design, AASHTO 1993) + groundhog wrapper + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + hvsrpy agent + GSTools agent + SALib agent + swprocess agent + pystra agent + subsurface characterization (DIGGS/GEF/AGS4 data I/O — folds in the former pygef/ags4/pydiggs wrappers as format adapters) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM: T6 quadratic elements, 3D-principal MC return, GL99 strength reduction, staged construction) + reliability (FOSM/PEM/Monte Carlo/native FORM + published COV database) + geo_project (staged, human-gated LLM model setup) + funhouse_agent (engine-agnostic agent with vision).
+31 analysis modules (incl. pavement_design, AASHTO 1993) + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + hvsrpy agent + GSTools agent + SALib agent + swprocess agent + pystra agent + subsurface characterization (DIGGS/GEF/AGS4 data I/O — folds in the former pygef/ags4/pydiggs wrappers as format adapters) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM: T6 quadratic elements, 3D-principal MC return, GL99 strength reduction, staged construction) + reliability (FOSM/PEM/Monte Carlo/native FORM + published COV database) + geo_project (staged, human-gated LLM model setup) + funhouse_agent (engine-agnostic agent with vision).
 
 ## What this is for (framing — use this voice in user-facing docs)
 
@@ -48,6 +48,37 @@ Key conventions:
 - **No cross-module imports** between analysis modules (geotech_common is the exception)
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 9 agent-wrapper test suites (opensees/pystrata/hvsrpy/gstools/swprocess/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
+
+## Post-5.11.0 on master (UNRELEASED — groundhog removal + native correlations)
+
+**groundhog dependency DELETED (owner-directed, 2026-09-02):** DT's Nexus
+security sweep (end of Sept) removes groundhog 0.15.0 — its ONLY release —
+flagged HIGH (bundled-jQuery CVEs), so `pip install geotech-staff-engineer`
+would fail on the cluster once it's gone. Capability audit (90 wrapped
+methods vs our 31+27 modules): 7 of 11 categories already covered; the real
+gaps were RE-IMPLEMENTED NATIVELY from the original published sources
+(groundhog is GPL-3 — no code copied; its outputs used only as numerical
+test oracles, pinned before deletion):
+- `geotech_common.soil_properties`: `spt_energy_correction` /
+  `spt_overburden_correction` / `spt_n1_60` (Youd et al. 2001 Table 2 +
+  Liao-Whitman/ISO C_N — the repo previously CONSUMED N1_60 everywhere but
+  nothing produced it) + `stress_dilatancy_bolton` (Bolton 1986).
+- `seismic_geotech.dynamic_properties`: Gmax family (Vs, Rix-Stokoe CPT
+  sand, Mayne-Rix CPT clay, Hardin-Black, Andersen 2015) + Ishibashi &
+  Zhang (1993) G/Gmax + damping. First Gmax functions in the repo.
+- `fem2d.hs_correlations.estimate_hs_parameters_sand` (Brinkgreve et al.
+  2010) — feeds the HS model that previously had no parameter estimator.
+- Agent surface: subsurface `spt_correction`/`stress_dilatancy`, seismic
+  `gmax`/`modulus_reduction`, fem2d `fem2d_hs_parameters`.
+Deleted: groundhog_agent.py (+test), foundry/groundhog_agent_foundry.py,
+SoilProfile.to_groundhog_profile()/to_logplot(); tier3 crosschecks
+repointed native; `[groundhog]` extra now an empty alias; py-modules line
+dropped. Deliberately NOT replaced: API RP2GEO offshore pile/bearing,
+Alm & Hamre driving fatigue (offshore, out of scope), pumping-test k,
+LogPlot boring-log plots. Coverage map in the 2026-09-02 session; DT
+package-violation list also noted pandas-2.x critical-flag watch item
+(pandas 3 jump risk vs streamlit pin — drift canary covers) and matplotlib
+"License-Threat Not Assigned" (scanner artifact, owner to confirm w/ DT).
 
 ## v5.11.0 status (RELEASED 2026-09-01 to PyPI; owner OK'd — the connection-stability + capability train)
 
@@ -428,7 +459,7 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | fem2d | 353 | 2D plane-strain FEM (T6 default + CST/Q4/beam, 3D-principal MC return, HS, GL99 SRM, seepage, consolidation, staged construction, PLAXIS-style calc-package plots); validated vs Griffiths-Lane/Prandtl (VALIDATION.md) |
 | geo_project | 89 | Canonical Project document for staged, human-gated LE/FEM model setup (schema+validators, builders, templates, DXF/PDF/vision ingest w/ provenance quarantine, echo-back renderer) |
 
-Other components: groundhog_agent (90 methods), geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions + DM7 figure catalogs, 3529 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 + 25 + 31 + 5 = 479 tests)
+Other components: geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions + DM7 figure catalogs, 3529 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 + 25 + 31 + 5 = 479 tests)
 
 ## Foundry Test Harness
 

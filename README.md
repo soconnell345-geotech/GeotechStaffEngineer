@@ -58,7 +58,7 @@ flowchart TB
     subgraph AGENT["Agent harness - engine-agnostic LLM driver"]
         FA["funhouse_agent: GeotechAgent, dispatch, vision"]
         FD["foundry wrappers: 48 standalone tool agents"]
-        LIB["groundhog plus 9 library agents"]
+        LIB["9 library agents"]
         GP["geo_project: staged human-gated setup"]
     end
 
@@ -157,7 +157,7 @@ Thirty analysis modules grouped by discipline, plus the shared layers. Native mo
 | **earth retention** | `sheet_pile` · `soe` · `retaining_walls` · `ground_improvement` | Cantilever/anchored walls, support-of-excavation, cantilever & MSE walls, aggregate piers / wick drains / vibro |
 | **slope · FEM · CAD** | `slope_stability` · `fem2d` · `dxf_import` · `dxf_export` · `pdf_import` | Rigorous limit-equilibrium (GLE/M-P, Bishop/Spencer/Janbu) + probabilistic FOS; 2D plane-strain FEM with strength reduction; geometry I/O |
 | **seismic** | `seismic_geotech` · `opensees_agent` · `pystrata_agent` · `liquepy_agent` · `seismic_signals_agent` · `hvsrpy_agent` | Site class, M-O pressures, liquefaction triggering (B&I-2014 / NCEER), 1D site response, ground-motion processing, HVSR |
-| **characterization** | `subsurface_characterization` · `gstools_agent` · `swprocess_agent` · `groundhog_agent` | DIGGS/GEF/AGS4 data I/O + plots, geostatistical kriging/random fields, MASW dispersion, 90+ groundhog correlations |
+| **characterization** | `subsurface_characterization` · `gstools_agent` · `swprocess_agent` | DIGGS/GEF/AGS4 data I/O + plots, geostatistical kriging/random fields, MASW dispersion |
 | **variability** | `reliability` · `salib_agent` · `pystra_agent` | FOSM/PEM/MC/FORM + COV database + spatial averaging; Sobol/Morris sensitivity; structural FORM/SORM/MC |
 | **shared / setup** | `geotech_common` · `geo_project` · `calc_package` | SoilProfile spine + checks + adapters + plots; staged human-gated model setup; calculation-package report generation |
 | **references** | `geotech-references` (21) | Digitized tables/figures/equations + searchable chapter text from DM7, FHWA GEC series, UFC, FHWA standards |
@@ -177,7 +177,6 @@ Each wraps a third-party geotechnical library behind a dict-based API for LLM to
 | `salib_agent` | SALib | Sobol and Morris sensitivity analysis |
 | `swprocess_agent` | swprocess | MASW surface wave dispersion |
 | `pystra_agent` | pystra | FORM/SORM/Monte Carlo reliability |
-| `groundhog_agent` | groundhog | Site investigation and soil mechanics |
 
 > The former `pygef_agent`, `ags4_agent`, and `pydiggs_agent` wrappers were folded into `subsurface_characterization` as optional, dependency-backed format adapters — one module now covers ingest + validate + visualize across DIGGS, GEF/BRO-XML, and AGS4.
 
@@ -204,7 +203,7 @@ pip install geotech-staff-engineer
 pip install geotech-staff-engineer[full]
 
 # Or install individual extras
-pip install geotech-staff-engineer[plot,groundhog,opensees]
+pip install geotech-staff-engineer[plot,opensees]
 ```
 
 ## Quick start — three ways in
@@ -252,7 +251,6 @@ At every altitude it's the *same* validated method underneath. The deterministic
 |-------|-----------|
 | `plot` | matplotlib |
 | `calc` | jinja2 |
-| `groundhog` | groundhog |
 | `opensees` | openseespy |
 | `pystrata` | pystrata |
 | `seismic-signals` | eqsig, pyrotd |

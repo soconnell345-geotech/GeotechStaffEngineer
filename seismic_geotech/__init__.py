@@ -22,6 +22,10 @@ from seismic_geotech.mononobe_okabe import (
 )
 from seismic_geotech.liquefaction import evaluate_liquefaction
 from seismic_geotech.residual_strength import post_liquefaction_strength
+from seismic_geotech.dynamic_properties import (
+    gmax_from_vs, gmax_cpt_sand_rix_stokoe, gmax_cpt_clay_mayne_rix,
+    gmax_hardin_black, gmax_clay_andersen, modulus_reduction_ishibashi_zhang,
+)
 from seismic_geotech.results import (
     SiteClassResult, SeismicEarthPressureResult, LiquefactionResult,
 )

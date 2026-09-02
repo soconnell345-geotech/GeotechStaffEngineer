@@ -423,7 +423,18 @@ def _run_analyze_staged(params: dict) -> dict:
     return clean_result(result.to_dict())
 
 
+def _run_hs_parameters(params: dict) -> dict:
+    from fem2d.hs_correlations import estimate_hs_parameters_sand
+    _valid = ("relative_density_pct",)
+    reject_unknown_params(params, _valid, method="fem2d_hs_parameters")
+    require_params(params, ["relative_density_pct"],
+                   method="fem2d_hs_parameters", valid=_valid)
+    return {k: round(v, 6) for k, v in
+            estimate_hs_parameters_sand(params["relative_density_pct"]).items()}
+
+
 METHOD_REGISTRY = {
+    "fem2d_hs_parameters": _run_hs_parameters,
     "fem2d_gravity": _run_analyze_gravity,
     "fem2d_foundation": _run_analyze_foundation,
     "fem2d_footing_capacity": _run_analyze_footing_capacity,
@@ -436,6 +447,14 @@ METHOD_REGISTRY = {
 }
 
 METHOD_INFO = {
+    "fem2d_hs_parameters": {
+        "category": "FEM 2D",
+        "brief": "Estimate HS/HSsmall model parameters for sand from relative density (Brinkgreve et al. 2010).",
+        "parameters": {
+            "relative_density_pct": {"type": "float", "required": True, "description": "Relative density Dr in PERCENT (10-100)."},
+        },
+        "returns": {"E50_ref_kPa": "Reference secant stiffness (kPa).", "Eur_ref_kPa": "Unload-reload stiffness (kPa).", "phi_eff_deg": "Friction angle (deg).", "psi_deg": "Dilation angle (deg).", "m": "Stress-dependency exponent."},
+    },
     "fem2d_gravity": {
         "category": "FEM 2D",
         "brief": "Elastic gravity analysis of a rectangular soil column (plane strain FEM).",

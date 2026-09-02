@@ -16,6 +16,8 @@ from geotech_common.water import GAMMA_W, pore_pressure
 from geotech_common.soil_properties import (
     spt_to_phi, spt_to_cu, spt_to_relative_density,
     phi_to_Ka, phi_to_Kp, phi_to_K0,
+    spt_energy_correction, spt_overburden_correction, spt_n1_60,
+    stress_dilatancy_bolton,
 )
 from geotech_common.soil_profile import (
     SoilLayer, GroundwaterCondition, SoilProfile, SoilProfileBuilder,
@@ -39,6 +41,8 @@ __all__ = [
     # Soil properties
     'spt_to_phi', 'spt_to_cu', 'spt_to_relative_density',
     'phi_to_Ka', 'phi_to_Kp', 'phi_to_K0',
+    'spt_energy_correction', 'spt_overburden_correction', 'spt_n1_60',
+    'stress_dilatancy_bolton',
     # Soil profile
     'SoilLayer', 'GroundwaterCondition', 'SoilProfile', 'SoilProfileBuilder',
     # Engineering checks

@@ -1131,7 +1131,6 @@ def _ch2_install(ctx):
         "interactive": "Plotly single-file interactive viewers",
         "pdf": "PDF cross-section import (vector + vision)",
         "dxf": "DXF CAD import and export",
-        "groundhog": "the groundhog correlation library",
         "opensees": "OpenSeesPy nonlinear FE (PM4Sand, 1D site response)",
         "pystrata": "equivalent-linear 1D site response",
         "seismic-signals": "eqsig + pyrotd ground-motion processing",
@@ -1311,13 +1310,18 @@ def _ch4_catalog(ctx):
         for mod in modules:
             _module_entry(ctx, mod)
 
-    # groundhog note
-    ctx.section("Also available: groundhog correlations")
+    # native correlations note
+    ctx.section("Also available: native soil correlations")
     ctx.para(
-        "Beyond the dispatch registry, the package ships <code>groundhog_agent</code> (about 90 methods) "
-        "wrapping the <code>groundhog</code> site-investigation and soil-mechanics library &mdash; SPT/CPT "
-        "correlations, lab-test interpretation, and unit conversions. It is available with the "
-        "<code>[groundhog]</code> extra.")
+        "SPT field corrections (N &rarr; N60 &rarr; (N1)60 per Youd et al. 2001 / "
+        "Liao &amp; Whitman), Bolton stress-dilatancy, the small-strain Gmax family "
+        "(Vs, CPT, Hardin-Black, Andersen), Ishibashi &amp; Zhang modulus-reduction/damping "
+        "curves, and Brinkgreve HS-parameter estimation are implemented natively "
+        "(<code>geotech_common.soil_properties</code>, "
+        "<code>seismic_geotech.dynamic_properties</code>, "
+        "<code>fem2d.hs_correlations</code>) and exposed through the subsurface, "
+        "seismic, and fem2d agents. The former third-party groundhog wrapper was "
+        "removed in favor of these.")
 
 
 def _module_entry(ctx, mod):

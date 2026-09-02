@@ -66,7 +66,13 @@ dependencies = [
     "matplotlib>=3.8",
     "jinja2>=3.1",
     "plotly>=5",
-    "groundhog>=0.11",
+    # groundhog REMOVED 2026-09 (DT Nexus security removal: its only release,
+    # 0.15.0, is flagged HIGH with no clean version to resolve to; GPL-3
+    # anyway). Unique capabilities were re-implemented natively from the
+    # original published sources: SPT corrections + Bolton dilatancy in
+    # geotech_common.soil_properties, Gmax family + Ishibashi-Zhang in
+    # seismic_geotech.dynamic_properties, HS parameter estimation in
+    # fem2d.hs_correlations.
     "openseespy>=3.6",
     "pystrata>=0.5",
     "eqsig>=1.2",
@@ -177,9 +183,6 @@ exclude = [
     "docs*",
     "geotech-references*",
 ]
-
-[tool.setuptools]
-py-modules = ["groundhog_agent"]
 
 [tool.setuptools.package-data]
 calc_package = ["templates/*.html", "templates/*.tex"]
