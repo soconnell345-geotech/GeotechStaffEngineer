@@ -49,6 +49,44 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 9 agent-wrapper test suites (opensees/pystrata/hvsrpy/gstools/swprocess/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
+## v5.11.0 status (RELEASED 2026-09-01 to PyPI; owner OK'd — the connection-stability + capability train)
+
+All four parked branches merged + the live-evidence fixes, packed per owner
+("mirror takes a day or two — pack more in"). **Connection stability** (the
+"Connecting"-flap fix, two layers): (1) `core.with_heartbeat` wraps
+stream_turn — worker thread + queue; >15s silences (GEOTECH_HEARTBEAT_S)
+emit heartbeat items the app renders as status-label updates = websocket
+traffic through the driver proxy (covers silent tool phases AND model
+thinking); ALWAYS on. (2) PrompterChatModel `_stream` (token streaming) —
+clean unwrapped OpenAI client over the NTLM transport (the SDK wrapper
+injects collect_usage=True on stream=True → TypeError), meter_log re-added
+(Terms), tool-call delta chunks, default OFF via `streaming_enabled` /
+`GEOTECH_PROMPTER_STREAMING=1`, auto-fallback to _generate. **Model
+picker**: registered builders that accept a model id get the picker
+selection; `GEOTECH_PROMPTER_MODELS` populates the sidebar;
+run_on_databricks publishes [launch model, funhouse-gpt-medium] by default.
+**Budget/email**: sidebar "AI budget: $X of $Y" (once/session + refresh,
+warn ≥90%), BudgetExceeded friendly error, `email_file` agent tool
+(.gov/.mil/.sbu guard, to="me" resolves the session user email captured at
+launch into GEOTECH_USER_EMAIL). **SharePoint**: fix_web_url repairs the
+SDK's single-slash redaction-dodging URLs (dead sidebar link); list-vs-
+search nudge (search index lags ~5 min). **Das ergonomics**: Schmertmann
+peak-kink-exact integrator + adapter gamma_soil; sheet-pile D bracket+1mm
+bisection (kills ~3% grid quantization + the 0.5 m floor);
+validation_examples ADDED TO GATE testpaths (a stale V-006 pin of
+pre-5.9.1 beta had hidden there). **Launcher**: adb-dp- proxy-host rewrite
+(*.databricks.azure.us), port=None → free-port scan from 8501,
+auto_shutdown_min=, openai<3 cap (SDK pins openai==2.28; 3.x brings the
+httpx2 fork). **Version guard** (webapp/version_guard.py): runtime
+agent-stack drift warnings in sidebar + diagnostics, lockstep-tested
+against the pyproject caps; weekly cloud drift canary armed (Mondays).
+Env notes: cluster idle timeout is 30 min (documented — the "random
+detach" ghost); Plotly static export broken in tenant. Funhouse SDK
+reference tree (source+23 example topics+docs) at
+Funhouse_for_Reference/funhouse-sdk-python; survey ledger in
+FUTURE_IDEAS. Tiny Apps = sanctioned durable tier (supports Streamlit),
+owner pursuing via Funhouse office hours.
+
 ## v5.10.2 status (RELEASED 2026-08-03 to PyPI; owner OK'd — deepagents-drift hotfix)
 
 **Every-question GraphRecursionError on the cluster (2026-08), root-caused
