@@ -531,13 +531,39 @@ with st.sidebar:
 
     st.divider()
     st.subheader("Attachments")
-    uploaded = st.file_uploader(
-        "Attach files (PDF, image, DXF, CSV, DIGGS…)",
-        type=core.ACCEPTED_UPLOAD_TYPES, accept_multiple_files=True,
-        key=f"uploader_{ss.thread_id}",
-    )
-    if uploaded:
-        pairs = [(f.name, f.getvalue()) for f in uploaded]
+    # Two attach transports, same downstream staging. "ws" sends the bytes
+    # over the app websocket (the Databricks driver proxy 403s the native
+    # uploader's HTTP PUT); "http" is the stock st.file_uploader.
+    from webapp import ws_upload
+    pairs = []
+    if ws_upload.upload_mode() == "ws":
+        try:
+            pairs, _up_errors = ws_upload.ws_file_uploader(
+                core.ACCEPTED_UPLOAD_TYPES, key=f"ws_uploader_{ss.thread_id}")
+        except Exception as exc:      # component missing/old streamlit
+            _up_errors = [f"ws uploader unavailable ({type(exc).__name__}: "
+                          f"{exc}) — falling back to the standard uploader"]
+            pairs = []
+        if _up_errors:
+            for _e in _up_errors:
+                st.caption(f"⚠️ {_e}")
+        if not pairs and _up_errors:
+            uploaded = st.file_uploader(
+                "Attach files (PDF, image, DXF, CSV, DIGGS…)",
+                type=core.ACCEPTED_UPLOAD_TYPES, accept_multiple_files=True,
+                key=f"uploader_{ss.thread_id}",
+            )
+            if uploaded:
+                pairs = [(f.name, f.getvalue()) for f in uploaded]
+    else:
+        uploaded = st.file_uploader(
+            "Attach files (PDF, image, DXF, CSV, DIGGS…)",
+            type=core.ACCEPTED_UPLOAD_TYPES, accept_multiple_files=True,
+            key=f"uploader_{ss.thread_id}",
+        )
+        if uploaded:
+            pairs = [(f.name, f.getvalue()) for f in uploaded]
+    if pairs:
         # Only stage names not already registered this session.
         fresh = [(n, d) for (n, d) in pairs
                  if core.sanitize_key(n) not in ss.attachments]

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  body { margin: 0; font-family: "Source Sans Pro", sans-serif; }
+  .box {
+    border: 1px dashed rgba(128,128,128,.55); border-radius: 8px;
+    padding: 10px 12px; font-size: 14px; color: inherit;
+  }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .hint { font-size: 12px; opacity: .7; margin-top: 6px; }
+  .err  { font-size: 12px; color: #d33; margin-top: 6px; white-space: pre-wrap; }
+  .ok   { font-size: 12px; color: #2a2; margin-top: 6px; white-space: pre-wrap; }
+  input[type=file] { font-size: 13px; max-width: 100%; }
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="row">
+    <input type="file" id="picker" multiple />
+  </div>
+  <div class="hint" id="hint"></div>
+  <div class="ok" id="ok"></div>
+  <div class="err" id="err"></div>
+</div>
+
+<script>
+// Minimal hand-rolled Streamlit component protocol (no build toolchain):
+//   iframe -> parent: streamlit:componentReady / setFrameHeight / setComponentValue
+//   parent -> iframe: streamlit:render (carries args)
+// The file bytes travel as the component VALUE over the app's websocket —
+// deliberately avoiding the HTTP PUT that 403s behind the Databricks
+// driver proxy.
+"use strict";
+
+let maxMb = 25;
+
+function send(type, data) {
+  window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), "*");
+}
+function setHeight() {
+  send("streamlit:setFrameHeight", { height: document.body.scrollHeight + 8 });
+}
+function setValue(v) {
+  send("streamlit:setComponentValue", { value: v, dataType: "json" });
+}
+
+window.addEventListener("message", function (ev) {
+  const msg = ev.data;
+  if (!msg || msg.type !== "streamlit:render") return;
+  const args = msg.args || {};
+  const picker = document.getElementById("picker");
+  if (args.accept) picker.setAttribute("accept", args.accept);
+  if (args.max_mb) maxMb = args.max_mb;
+  document.getElementById("hint").textContent =
+    "Proxy-safe attach (over the app connection) — up to " + maxMb + " MB per file.";
+  setHeight();
+});
+
+function readOne(file) {
+  return new Promise(function (resolve, reject) {
+    const r = new FileReader();
+    r.onerror = function () { reject(new Error("read failed: " + file.name)); };
+    r.onload = function () {
+      // result = data URL "data:<mime>;base64,<b64>"
+      const s = String(r.result);
+      resolve({ name: file.name, b64: s.slice(s.indexOf(",") + 1), size: file.size });
+    };
+    r.readAsDataURL(file);
+  });
+}
+
+document.getElementById("picker").addEventListener("change", async function (ev) {
+  const okEl = document.getElementById("ok");
+  const errEl = document.getElementById("err");
+  okEl.textContent = ""; errEl.textContent = "";
+  const files = Array.from(ev.target.files || []);
+  if (!files.length) return;
+  const good = [], bad = [];
+  for (const f of files) {
+    if (f.size > maxMb * 1024 * 1024) {
+      bad.push(f.name + " is over the " + maxMb + " MB cap");
+      continue;
+    }
+    try { good.push(await readOne(f)); }
+    catch (e) { bad.push(String(e && e.message || e)); }
+  }
+  if (bad.length) errEl.textContent = bad.join("\n");
+  if (good.length) {
+    okEl.textContent = "Sending " + good.map(g => g.name).join(", ") + " …";
+    setValue(good);
+    okEl.textContent = "Sent " + good.map(g => g.name).join(", ") +
+      " — it will appear under Attachments.";
+  }
+  setHeight();
+});
+
+send("streamlit:componentReady", { apiVersion: 1 });
+setHeight();
+</script>
+</body>
+</html>

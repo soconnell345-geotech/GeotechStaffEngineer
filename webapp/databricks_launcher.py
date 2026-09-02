@@ -302,6 +302,10 @@ from streamlit.web import bootstrap
 # behind the driver proxy 403s every file-upload PUT.
 os.environ.setdefault("STREAMLIT_SERVER_ENABLE_CORS", "false")
 os.environ.setdefault("STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION", "false")
+# Attach files over the websocket instead of HTTP PUT — the driver proxy
+# 403s the native uploader's PUT (POSTs pass; suspected method filter).
+# Override with GEOTECH_UPLOAD_MODE=http to A/B test the native path.
+os.environ.setdefault("GEOTECH_UPLOAD_MODE", "ws")
 
 # flag_options keys are the CLI-flag form; streamlit maps "_" -> "." internally
 # (server_port -> server.port). CORS + XSRF are disabled so the driver proxy can

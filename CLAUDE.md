@@ -74,6 +74,24 @@ and close-code diagnostics. DevTools console noise that is NOT the
 problem: data.streamlit.io metrics CSP blocks + `POST .../8501/ 405`
 (streamlit telemetry; gatherUsageStats already off via _FLAGS).
 
+**Upload-403 workarounds (same train, 2026-09-02):** (1) **websocket
+uploader** — `webapp/ws_upload.py` + `webapp/ws_upload_component/index.html`
+(hand-rolled component protocol, no build toolchain; wheel ships the HTML
+via package-data): file bytes ride the app websocket as a base64 component
+value, so the driver proxy's suspected PUT-method block never applies;
+25 MB/file cap; `GEOTECH_UPLOAD_MODE` env (http default; launcher bootstrap
+sets ws on Databricks — override =http to A/B); app.py falls back to the
+native uploader on component errors. Evidence basis: owner's DevTools
+showed `POST .../8501/ 405` — POST bodies reach Streamlit through the
+proxy, so the wholesale-write-block theory is dead and PUT (what
+st.file_uploader uses) is the prime suspect. (2) **diagnostics upload
+probe** — `_upload_probe_check` in webapp/diagnostics.py PUT/POSTs the
+localhost `_stcore/upload_file` endpoint (no proxy in path) and prints the
+verdict in the sidebar Connection-diagnostics panel: non-403 locally =
+proxy is the blocker; 403 locally = Streamlit-side XSRF/origin. NOTE:
+stale `build/` dir was contaminating local wheel checks (groundhog_agent.py
+ghost) — deleted; CI builds clean.
+
 ## (same train — groundhog removal + native correlations)
 
 **groundhog dependency DELETED (owner-directed, 2026-09-02):** DT's Nexus

@@ -214,11 +214,48 @@ def _tool_check(model: Any) -> dict:
 # The battery
 # ---------------------------------------------------------------------------
 
+def _upload_probe_check() -> dict:
+    """PUT and POST a tiny body at the local Streamlit upload endpoint.
+
+    Discriminates the browser-upload 403 (open since 5.10.0 behind the
+    Databricks driver proxy): this probe goes to LOCALHOST — no proxy in the
+    path. If localhost processes the PUT (any status except 403), the proxy
+    is the blocker and the websocket uploader / SharePoint-fetch paths are
+    the answer; a 403 HERE would mean Streamlit itself is still enforcing
+    something (XSRF/origin) despite the launch flags.
+    """
+    try:
+        import requests
+        try:
+            from streamlit import config as _st_config
+            port = int(_st_config.get_option("server.port") or 8501)
+        except Exception:
+            port = int(os.environ.get("GEOTECH_APP_PORT", "8501"))
+        results = []
+        for method in ("PUT", "POST"):
+            r = requests.request(
+                method, f"http://localhost:{port}/_stcore/upload_file/diag/diag",
+                data=b"x", timeout=5)
+            results.append(f"{method} -> {r.status_code}")
+        detail = "; ".join(results) + " (localhost, no proxy in path)"
+        if any(s.endswith("403") for s in results):
+            return _check("upload endpoint (localhost probe)", WARN,
+                          detail + " — 403 WITHOUT the proxy: Streamlit-side "
+                          "block (XSRF/origin), not the proxy")
+        return _check("upload endpoint (localhost probe)", PASS,
+                      detail + " — methods reach Streamlit; a 403 seen only "
+                      "through the browser therefore implicates the proxy")
+    except Exception as exc:                     # noqa: BLE001
+        return _check("upload endpoint (localhost probe)", SKIP,
+                      f"probe not possible here: {type(exc).__name__}: {exc}")
+
+
 def run_diagnostics(model_id: Optional[str] = None) -> List[dict]:
     """Run every stage against the CURRENTLY CONFIGURED engine and return the
     check list. Never raises. Live checks each make one tiny model call (a few
     tokens) — three calls total when everything passes."""
     checks = [_versions_check(), _drift_check(), _env_check(),
+              _upload_probe_check(),
               _resolution_check(model_id)]
     if checks[-1]["status"] != PASS:
         checks.append(_check("plain request (invoke)", SKIP,

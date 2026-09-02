@@ -186,6 +186,8 @@ exclude = [
 
 [tool.setuptools.package-data]
 calc_package = ["templates/*.html", "templates/*.tex"]
+# The websocket-upload custom component (proxy-safe attach path).
+webapp = ["ws_upload_component/*.html"]
 # Ship the eval question set so funhouse_agent.deep.eval_harness works from an
 # installed wheel (the v5.0 A/B self-test). Tests themselves are not shipped.
 funhouse_agent = ["geotech_test_suite.json", "eval_samples/*",
