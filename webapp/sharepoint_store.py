@@ -154,6 +154,23 @@ def _stamp(path: str) -> List:
     return [st.st_size, round(st.st_mtime, 3)]
 
 
+def fix_web_url(url) -> str:
+    """Repair the Funhouse SDK's redaction-dodging web URLs.
+
+    The SDK intentionally emits ``https:/host/...`` (ONE slash) so Databricks
+    log redaction doesn't eat the link — but that is an invalid URL: browsers
+    resolve it as a RELATIVE path against the current page, producing e.g.
+    ``https://adb-dp-.../usdos.sharepoint.com/...`` (owner-reported dead
+    sidebar link, 2026-09). Normalize back to ``https://``.
+    """
+    text = str(url or "")
+    for scheme in ("https", "http"):
+        broken = f"{scheme}:/"
+        if text.startswith(broken) and not text.startswith(f"{scheme}://"):
+            return f"{scheme}://" + text[len(broken):]
+    return text
+
+
 class SharePointStore:
     """Mirrors conversation directories to SharePoint, incrementally.
 
@@ -257,7 +274,8 @@ class SharePointStore:
         _save_manifest(conv_dir, manifest)
         if thread_id not in self._folder_urls:
             try:
-                self._folder_urls[thread_id] = fm.get_web_url(remote_base)
+                self._folder_urls[thread_id] = fix_web_url(
+                    fm.get_web_url(remote_base))
             except Exception:
                 pass
         summary["web_url"] = self._folder_urls.get(thread_id)

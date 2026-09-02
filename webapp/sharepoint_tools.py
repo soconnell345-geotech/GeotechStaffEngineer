@@ -175,7 +175,8 @@ def sharepoint_upload_file(local_path: str, dest_folder: str = "") -> str:
         if not ok:
             return f"SharePoint upload failed for {remote} (upload rejected)."
         try:
-            url = fm.get_web_url(remote)
+            from webapp.sharepoint_store import fix_web_url
+            url = fix_web_url(fm.get_web_url(remote))
         except Exception:
             url = ""
         return (f"Uploaded {local_path} -> {remote}."

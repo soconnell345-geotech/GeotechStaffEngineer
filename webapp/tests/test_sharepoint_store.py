@@ -216,3 +216,24 @@ def test_folder_chain_created_once(tmp_path):
     assert len(fm.folders) == len(set(fm.folders))
     base = f"{sp.DEFAULT_ROOT}/conversations/{tid}"
     assert f"{base}/files" in fm.folders
+
+
+def test_fix_web_url_repairs_single_slash():
+    assert sp.fix_web_url("https:/usdos.sharepoint.com/sites/X?web=1") == \
+        "https://usdos.sharepoint.com/sites/X?web=1"
+    assert sp.fix_web_url("http:/host/p") == "http://host/p"
+    # already-valid and non-URL inputs untouched
+    assert sp.fix_web_url("https://ok.example/p") == "https://ok.example/p"
+    assert sp.fix_web_url("") == "" and sp.fix_web_url(None) == ""
+
+
+def test_mirror_web_url_is_normalized(tmp_path):
+    root = str(tmp_path)
+    tid, _ = _make_conversation(root, "SPURL1")
+
+    class SlashFM(FakeFM):
+        def get_web_url(self, path):
+            return f"https:/sp.example/{path}?web=1"     # SDK single-slash form
+    store = sp.SharePointStore(file_manager=SlashFM())
+    s = store.mirror_conversation(tid, root=root)
+    assert s["web_url"].startswith("https://sp.example/")
