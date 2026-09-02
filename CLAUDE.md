@@ -49,7 +49,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 9 agent-wrapper test suites (opensees/pystrata/hvsrpy/gstools/swprocess/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## Post-5.11.0 on master (UNRELEASED — websocket ROOT CAUSE + groundhog removal)
+## v5.11.1 status (RELEASED 2026-09-02 to PyPI; owner word "Yes, release" — websocket root cause + upload workarounds + groundhog removal)
 
 **"Connecting"-flap ROOT CAUSE FOUND AND FIXED (2026-09-02, corroborated by
 the funhouse dev's WS proof-of-concept):** the Databricks driver proxy
