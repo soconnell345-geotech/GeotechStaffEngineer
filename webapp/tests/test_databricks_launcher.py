@@ -164,6 +164,10 @@ def test_render_bootstrap_script_registers_prompter_with_fallback():
     # Production posture: no file watcher (no rerun prompt) + viewer toolbar.
     assert '"server_fileWatcherType": "none"' in src
     assert '"client_toolbarMode": "viewer"' in src
+    # Driver-proxy websocket fix: the proxy swallows ping/pong control
+    # frames, so the default 30s ping + 30s timeout made the SERVER hang up
+    # every socket ~60s after open ("Connecting" flaps). Ping horizon = 1 hr.
+    assert '"server_websocketPingInterval": 3600' in src
     # Injected values present as literals.
     assert "'/repo'" in src and "8080" in src and "'funhouse-gpt-high'" in src
 

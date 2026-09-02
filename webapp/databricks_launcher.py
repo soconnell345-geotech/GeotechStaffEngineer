@@ -319,6 +319,14 @@ _FLAGS = {
     "server_fileWatcherType": "none",
     "client_toolbarMode": "viewer",
     "browser_gatherUsageStats": False,
+    # THE "Connecting"-flap root cause (2026-09-02, confirmed by the funhouse
+    # dev's WS probe): the driver proxy swallows WebSocket control frames, so
+    # the server's protocol pings (default 30s interval + 30s timeout) never
+    # get a pong back and the SERVER hangs up every socket ~60s after open.
+    # Push the ping horizon out to an hour; liveness during turns comes from
+    # the app-level heartbeat (core.with_heartbeat) whose DATA frames do
+    # traverse the proxy.
+    "server_websocketPingInterval": 3600,
 }
 bootstrap.run(APP_PATH, False, [], _FLAGS)
 ''')

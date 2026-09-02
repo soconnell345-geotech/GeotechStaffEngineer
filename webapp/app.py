@@ -31,6 +31,33 @@ from webapp import budget_panel, core, engine_config, sharepoint_store
 st.set_page_config(page_title="GeotechStaffEngineer", page_icon="⛰️",
                    layout="wide")
 
+
+# Idle websocket keepalive: a timed fragment that re-renders an invisible
+# element, generating periodic server->browser DATA frames even when nobody
+# is typing. Complements the launcher's server_websocketPingInterval fix
+# (protocol ping/pong frames are swallowed by the Databricks driver proxy)
+# in case the proxy also runs a data-idle timer. GEOTECH_IDLE_KEEPALIVE_S=0
+# disables; default 20 s.
+def _install_idle_keepalive() -> None:
+    try:
+        interval = float(os.environ.get("GEOTECH_IDLE_KEEPALIVE_S", "20") or 0)
+    except ValueError:
+        interval = 20.0
+    if interval <= 0 or not hasattr(st, "fragment"):
+        return
+
+    @st.fragment(run_every=interval)
+    def _idle_keepalive() -> None:
+        st.empty()
+
+    try:
+        _idle_keepalive()
+    except Exception:
+        pass                       # keepalive must never break a render
+
+
+_install_idle_keepalive()
+
 # MIME by extension for download buttons — without an explicit mime the
 # browser guesses from application/octet-stream and can save e.g. a .md as
 # ".bin" (owner-reported, wall session 2026-07-14).

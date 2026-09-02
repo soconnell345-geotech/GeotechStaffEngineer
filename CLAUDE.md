@@ -49,7 +49,32 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 9 agent-wrapper test suites (opensees/pystrata/hvsrpy/gstools/swprocess/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## Post-5.11.0 on master (UNRELEASED — groundhog removal + native correlations)
+## Post-5.11.0 on master (UNRELEASED — websocket ROOT CAUSE + groundhog removal)
+
+**"Connecting"-flap ROOT CAUSE FOUND AND FIXED (2026-09-02, corroborated by
+the funhouse dev's WS proof-of-concept):** the Databricks driver proxy
+SWALLOWS WebSocket control frames (ping/pong). Streamlit 1.59's uvicorn
+server defaults to a 30 s protocol ping + 30 s pong timeout
+(starlette_server_config DEFAULT_WEBSOCKET_PING_INTERVAL/TIMEOUT = 30) —
+pings go unanswered through the proxy, so OUR OWN SERVER hung up every
+socket ~60 s after open (matches the owner's DevTools capture: each
+`stream` websocket lives exactly ~1 min, then `WebSocket onclose`, forever
+cycling; the dev's POC hit 1011 at ping_interval+ping_timeout ~30 s with
+the raw `websockets` lib). Fix: launcher bootstrap `_FLAGS` now sets
+`server_websocketPingInterval: 3600` (streamlit sets timeout=interval),
+verified end-to-end vs `_get_websocket_settings()`. Plus
+`_install_idle_keepalive()` in app.py — a `st.fragment(run_every=20s)`
+invisible re-render generating server->browser DATA frames while idle
+(`GEOTECH_IDLE_KEEPALIVE_S`, 0 disables) in case the proxy also runs a
+data-idle timer; the 5.11.0 turn heartbeat covers in-turn liveness.
+App-level DATA frames traverse the proxy fine — the dev's POC keepalive
+finding validates the 5.11.0 heartbeat design. The dev's probe rig lives
+at the owner's upload (ws_poc); its README documents proxy launch flags
+and close-code diagnostics. DevTools console noise that is NOT the
+problem: data.streamlit.io metrics CSP blocks + `POST .../8501/ 405`
+(streamlit telemetry; gatherUsageStats already off via _FLAGS).
+
+## (same train — groundhog removal + native correlations)
 
 **groundhog dependency DELETED (owner-directed, 2026-09-02):** DT's Nexus
 security sweep (end of Sept) removes groundhog 0.15.0 — its ONLY release —
