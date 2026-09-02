@@ -1,12 +1,58 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-07-18.** This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-09-01.** This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a. FOR THE NEXT AGENT (written 2026-07-20 at the Fable→Opus handoff) — prioritized pickup list
+## 0a-current. PICKUP LIST (2026-09-01, supersedes the 07-20 §0a below)
+
+Current release: **5.11.0** (PyPI, verified live; refs 1.3.3). Master ==
+released (`ae126e8`). Gate green (1,778 on the release chunk; full gate needs
+detached >10-min chunks). CLAUDE.md release sections + auto-memory carry the
+narrative; `module_work/FUTURE_IDEAS.md` holds the **Funhouse SDK survey
+ledger** (9 ranked findings — streaming landmines, Tiny Apps, auto-continue
+taxonomy, Document Intelligence, environment facts) and the forward specs.
+
+**OWNER PIVOT (2026-07-30): Foundry is RETIRED** (their Palantir team shut it
+down) — **Databricks/Funhouse is THE deployment target.** Ignore the
+Foundry-401 items in the old §0a; Foundry code ships dormant/parked.
+
+1. **5.11.0 live shakedown (owner's next cluster session):** pinned install
+   `%pip install "geotech-staff-engineer==5.11.0"` (no extra pins — openai<3
+   is in core; mirror lags PyPI 1–2 days). Verify: heartbeat survives
+   follow-up questions (the "Connecting" flap), SharePoint sidebar link now
+   clickable, model picker (funhouse-gpt-medium), budget line, email_file,
+   opt-in streaming (`GEOTECH_PROMPTER_STREAMING=1`), and the localhost PUT
+   probe for the still-open browser-upload 403 (SharePoint-fetch = fallback).
+2. **Funhouse office hours follow-ups (owner):** Tiny Apps intake status
+   (form submitted >1 month ago; Tiny Apps = sanctioned durable tier,
+   SUPPORTS Streamlit), the vanished `Tiny App Development/` example folder,
+   streaming/metering blessing, 30-min cluster idle timeout.
+3. **Monday drift canary:** `geotech-drift-canary` cloud routine (Mondays
+   10:00 UTC) force-upgrades the agent stack past the pyproject caps in a
+   scratch venv and runs the deep+webapp gate — read its report before
+   raising any cap.
+4. **axial_pile beta cohesive_phi trap** — still item #1 in the ledger's
+   Das-sweep ergonomics section (per-layer fix, global fallback).
+5. **Sample-calc detector next targets:** SCDOT design examples, USACE EM
+   appendices, more NHI manuals (doctrine in FUTURE_IDEAS header; ledger =
+   module_work/wiki_verification/TIER_A_LEDGER.md).
+6. **Eval:** GPT-5.x live rerun of the 108-Q suite (`eval_harness --ids PAV`
+   for the pavement subset).
+7. **Parked/major:** 6.0.0 restructure (module_work/V6.0_RESTRUCTURE_PLAN.md,
+   dedicated session); auto-continue gap-taxonomy port; Document Intelligence
+   OCR bake-off (needs live tenant); λ-method; Highter-Anders; foundry/ dir
+   cleanup (NOT quick — 9 test suites import it).
+
+Standing rules (unchanged, restated in the old §0a below): releases/tags ONLY
+on the owner's word (v* tag push auto-publishes); additive default-preserving
+changes; validate against published values, never tune; never run unpinned
+installs on the cluster; owner is a practicing geotech engineer, not a
+developer — actionable results, no git lectures.
+
+## 0a. FOR THE NEXT AGENT (written 2026-07-20 at the Fable→Opus handoff) — prioritized pickup list [HISTORICAL — Foundry items superseded]
 
 Current release: **5.9.1** (PyPI; refs 1.3.3). Master == released. Full gate
 green (~10k tests). Auto-memory carries the running narrative; CLAUDE.md
