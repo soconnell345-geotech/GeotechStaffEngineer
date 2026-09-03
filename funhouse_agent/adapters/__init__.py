@@ -306,9 +306,21 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.gstools_adapter",
         "brief": "Geostatistical kriging, variogram fitting, and random field generation",
     },
+    "section_props": {
+        "adapter": "funhouse_agent.adapters.section_props_adapter",
+        "brief": "Cross-section properties: A, I, Z, S, J, warping — steel shapes + polygons",
+    },
+    "concrete_props": {
+        "adapter": "funhouse_agent.adapters.concrete_props_adapter",
+        "brief": "RC section: cracked props, nominal Mn, N-M interaction",
+    },
+    "pynite": {
+        "adapter": "funhouse_agent.adapters.pynite_adapter",
+        "brief": "Elastic 2D/3D frames + continuous beams: reactions, M/V/deflection envelopes",
+    },
     "subsurface": {
         "adapter": "funhouse_agent.adapters.subsurface_adapter",
-        "brief": "Subsurface data I/O — the single home for ingest+validate+visualize. DIGGS XML parse, Plotly plots (parameter vs depth, Atterberg, plan view, cross-section), trend stats, PLUS format adapters: GEF/BRO-XML CPT & borehole parse (pygef), AGS4 read/validate (python-ags4), DIGGS schema/dictionary validation (pydiggs)",
+        "brief": "Subsurface data I/O — the single home for ingest+validate+visualize. DIGGS XML parse, Plotly plots (parameter vs depth, Atterberg, plan view, cross-section), trend stats, PLUS format adapters: GEF/BRO-XML CPT & borehole parse (pygef), AGS4 read/validate (python-ags4), DIGGS validation (pydiggs)",
     },
     # --- geotech-references agents (reference modules + cross-reference DB) ---
     "reference_db": {

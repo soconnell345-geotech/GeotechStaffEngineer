@@ -136,6 +136,10 @@ MODULE_ORDER = [
      "The variability engine: propagate parameter uncertainty to a reliability index and a "
      "probability of failure, and find which input governs.",
      ["reliability", "salib", "pystra"]),
+    ("Structural analysis",
+     "Cross-section properties, reinforced-concrete section capacity, and elastic "
+     "frame / continuous-beam analysis.",
+     ["section_props", "concrete_props", "pynite"]),
     ("Geometry import &amp; reporting",
      "Get a real cross-section in from CAD or a PDF drawing, and get a calc package out.",
      ["dxf_import", "pdf_import", "dxf_export", "calc_package"]),
@@ -167,6 +171,9 @@ MODULE_TITLES = {
     "reliability": "Reliability engine",
     "salib": "Global sensitivity analysis (SALib)",
     "pystra": "Structural reliability (pystra)",
+    "section_props": "Cross-section properties (sectionproperties)",
+    "concrete_props": "RC section analysis (concreteproperties)",
+    "pynite": "Frame &amp; beam analysis (PyNite)",
     "dxf_import": "DXF import",
     "pdf_import": "PDF cross-section import",
     "dxf_export": "DXF export",
@@ -205,6 +212,9 @@ HEADLINE_METHOD = {
     "pystrata": "eql_site_response",
     "seismic_signals": None,
     "liquepy": None,
+    "section_props": None,
+    "concrete_props": None,
+    "pynite": None,
 }
 
 # Worked example: agent -> (worked_examples.json key, natural-language ask, note)
@@ -749,6 +759,46 @@ MODULE_NARRATIVE: dict[str, dict] = {
         "limits": [
             "Equivalent-linear (not fully nonlinear); large-strain problems may warrant the OpenSees "
             "nonlinear path.",
+        ],
+    },
+
+    "section_props": {
+        "problems": "Structural cross-section properties for steel and generic shapes: area, moments "
+            "of inertia, elastic and plastic moduli, radii of gyration, torsion and warping constants "
+            "&mdash; the inputs every member check starts from. Dimensions in mm.",
+        "methods": [
+            "FE-based section analysis (**sectionproperties**, MIT): parametric rectangle / circle / "
+            "CHS / RHS / I-section, plus arbitrary polygon outlines.",
+        ],
+        "limits": [
+            "Geometric properties only &mdash; no member design checks; nominal member capacity comes "
+            "from the design reference layer as it grows.",
+        ],
+    },
+
+    "concrete_props": {
+        "problems": "Reinforced-concrete rectangular sections: gross and cracked stiffness, cracking "
+            "moment, nominal moment capacity (sagging/hogging), and the N-M interaction diagram. "
+            "mm and MPa in, kN&middot;m out.",
+        "methods": [
+            "Fibre/stress-block section analysis (**concreteproperties**, MIT) with ACI-style defaults "
+            "(Ec = 4700&radic;f&rsquo;c, rectangular stress block with ACI &beta;1, fr = 0.62&radic;f&rsquo;c).",
+            "Capacities are NOMINAL &mdash; apply code &phi; factors separately.",
+        ],
+        "limits": [
+            "Rectangular sections with edge bar layers; requires Python &ge; 3.12.",
+        ],
+    },
+
+    "pynite": {
+        "problems": "Elastic frame and continuous-beam analysis: reactions, member moment/shear/axial "
+            "envelopes, and deflections for 2D/3D skeletal structures. SI units (m, kN, kPa).",
+        "methods": [
+            "Matrix displacement analysis (**PyNiteFEA**, MIT); plane frames are auto-stabilized "
+            "out-of-plane; the continuous-beam method reports textbook sagging-positive conventions.",
+        ],
+        "limits": [
+            "Linear-static only &mdash; nonlinear/dynamic problems belong to the OpenSees module.",
         ],
     },
 

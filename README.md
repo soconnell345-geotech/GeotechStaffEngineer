@@ -157,6 +157,7 @@ Thirty analysis modules grouped by discipline, plus the shared layers. Native mo
 | **earth retention** | `sheet_pile` · `soe` · `retaining_walls` · `ground_improvement` | Cantilever/anchored walls, support-of-excavation, cantilever & MSE walls, aggregate piers / wick drains / vibro |
 | **slope · FEM · CAD** | `slope_stability` · `fem2d` · `dxf_import` · `dxf_export` · `pdf_import` | Rigorous limit-equilibrium (GLE/M-P, Bishop/Spencer/Janbu) + probabilistic FOS; 2D plane-strain FEM with strength reduction; geometry I/O |
 | **seismic** | `seismic_geotech` · `opensees_agent` · `pystrata_agent` · `liquepy_agent` · `seismic_signals_agent` | Site class, M-O pressures, liquefaction triggering (B&I-2014 / NCEER), 1D site response, ground-motion processing |
+| **structural** | `section_props_agent` · `concrete_props_agent` · `pynite_agent` | Cross-section properties, RC section capacity/cracked properties, elastic frame + continuous-beam analysis |
 | **characterization** | `subsurface_characterization` · `gstools_agent` | DIGGS/GEF/AGS4 data I/O + plots, geostatistical kriging/random fields |
 | **variability** | `reliability` · `salib_agent` · `pystra_agent` | FOSM/PEM/MC/FORM + COV database + spatial averaging; Sobol/Morris sensitivity; structural FORM/SORM/MC |
 | **shared / setup** | `geotech_common` · `geo_project` · `calc_package` | SoilProfile spine + checks + adapters + plots; staged human-gated model setup; calculation-package report generation |

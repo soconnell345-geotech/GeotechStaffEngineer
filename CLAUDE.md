@@ -1,7 +1,7 @@
 # GeotechStaffEngineer
 
 Python toolkit for LLM-based geotechnical engineering agents.
-31 analysis modules (incl. pavement_design, AASHTO 1993) + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + GSTools agent + SALib agent + pystra agent + subsurface characterization (DIGGS/GEF/AGS4 data I/O — folds in the former pygef/ags4/pydiggs wrappers as format adapters) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM: T6 quadratic elements, 3D-principal MC return, GL99 strength reduction, staged construction) + reliability (FOSM/PEM/Monte Carlo/native FORM + published COV database) + geo_project (staged, human-gated LLM model setup) + funhouse_agent (engine-agnostic agent with vision).
+32 analysis modules (incl. pavement_design AASHTO 1993 + structural section/RC/frame analysis: section_props, concrete_props, pynite) + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + GSTools agent + SALib agent + pystra agent + subsurface characterization (DIGGS/GEF/AGS4 data I/O — folds in the former pygef/ags4/pydiggs wrappers as format adapters) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM: T6 quadratic elements, 3D-principal MC return, GL99 strength reduction, staged construction) + reliability (FOSM/PEM/Monte Carlo/native FORM + published COV database) + geo_project (staged, human-gated LLM model setup) + funhouse_agent (engine-agnostic agent with vision).
 
 ## What this is for (framing — use this voice in user-facing docs)
 
@@ -539,6 +539,9 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | gstools_agent | 69 | Geostatistical kriging, variogram fitting, random fields |
 | salib_agent | 35 | Sobol & Morris sensitivity analysis |
 | pystra_agent | 43 | FORM/SORM/Monte Carlo structural reliability analysis |
+| section_props_agent | 21 | Cross-section properties via sectionproperties (A, I, Z, S, J, warping; steel shapes + polygons, mm units) |
+| concrete_props_agent | 13 | RC rectangular sections via concreteproperties (cracked/gross Ixx, M_cr, nominal Mn, N-M interaction; Py>=3.12) |
+| pynite_agent | 21 | Elastic 2D/3D frames + continuous beams via PyNiteFEA (reactions, M/V/deflection envelopes) |
 | subsurface_characterization | 231 | Subsurface data I/O: DIGGS parser (20 test types) + Plotly plots + trend stats; PLUS folded format adapters — GEF/BRO-XML CPT/borehole parse (pygef), AGS4 read/validate (python-ags4), DIGGS schema/dictionary validation (pydiggs) |
 | dxf_import | 97 | DXF CAD import for slope stability + FEM (discover layers, parse geometry, build SlopeGeometry/FEM inputs) |
 | dxf_export | 37 | DXF export for cross-section geometry (surface, boundaries, GWT, nails, annotations) |
