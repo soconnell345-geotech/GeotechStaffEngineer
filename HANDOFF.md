@@ -6,7 +6,49 @@ detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-09-01, supersedes the 07-20 §0a below)
+## 0a-current. PICKUP LIST (2026-09-03, supersedes everything below)
+
+Current release: **5.11.2** (websocket saga CLOSED + upload workarounds +
+detached turns + groundhog removal; refs 1.3.3). **TINYAPPS PILOT AWARDED
+2026-09-03** — the strategic hosting path is live; plan + wrapper-repo
+skeleton + office-hours question list = `tinyapps/TINYAPPS.md`. The
+Funhouse/Databricks app stays as fast tester + backup (owner directive).
+
+**The websocket saga, final ledger (do not relitigate):** three stacked
+causes, all fixed — (1) the proxy swallows ws ping/pong control frames;
+(2) streamlit's server pings 30 s / hangs up 60 s (code 1011) when pongs
+never return; (3) the launcher's `bootstrap.run(flag_options)` NEVER
+APPLIED flags — `load_config_options()` was the missing call (76e21ff), so
+the 5.11.1 ping fix was inert and EVERY launcher flag had been ignored
+since birth. Lab probe rig: aiohttp `ws_connect(autoping=False)` against
+`/_stcore/stream` (session tmp scripts; recipe in CLAUDE.md). Plus
+`webapp/turn_jobs.py`: turns now run in a socket-independent worker and
+reattach across reconnects — belt and braces. "Hard proxy TTL" was an
+interim theory, RETIRED.
+
+1. **TinyApps onboarding (owner + agents):** MOU → GitHub Enterprise
+   license → init wrapper repo (thin: app.py/packages.txt/run.sh from
+   tinyapps/wrapper_repo/, package via Nexus). Blockers to resolve at
+   office hours: key-auth Prompter client, SharePoint-from-App-Service
+   auth, boundary/CAB status. `webapp/tinyapps_entry.py` stub exists;
+   engine wiring lands after answer #1.
+2. **5.11.2 live shakedown on Funhouse:** the 60 s flap should now be
+   GONE (probe: PING should never arrive). Then: ws uploader, diagnostics
+   upload-probe verdict, model picker, budget line, email_file,
+   SharePoint link, streaming opt-in.
+3. **Old backlog (unchanged):** axial_pile beta cohesive_phi trap; SCDOT
+   examples onboarding; GPT-5.x 108-Q eval rerun; auto-continue taxonomy
+   port; Document Intelligence bake-off; λ-method; Highter-Anders;
+   6.0 restructure (dedicated session); foundry/ cleanup; Monday drift
+   canary reports; pandas-2.x DT-sweep watch.
+
+Standing rules: releases/tags ONLY on owner word (v* tag auto-publishes);
+additive default-preserving changes; validate vs published values; never
+unpinned installs on the cluster; owner is a practicing engineer, not a
+developer — actionable results, no lectures; use Fable subagents freely
+for build work (owner directive, Max plan).
+
+## 0a-prev. PICKUP LIST (2026-09-01) [HISTORICAL]
 
 Current release: **5.11.0** (PyPI, verified live; refs 1.3.3). Master ==
 released (`ae126e8`). Gate green (1,778 on the release chunk; full gate needs

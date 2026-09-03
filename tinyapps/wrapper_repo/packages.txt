@@ -1,0 +1,8 @@
+# TinyApps package manifest (pip via Data.State Nexus).
+# The whole toolkit arrives as one released package; an app update is a
+# one-line pin bump + an App Services sync request.
+geotech-staff-engineer==5.11.2
+
+# Key Vault secret loading (Tiny Apps User Guide §3.4 pattern)
+azure-identity>=1.17
+azure-keyvault-secrets>=4.8

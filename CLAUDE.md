@@ -49,7 +49,21 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 9 agent-wrapper test suites (opensees/pystrata/hvsrpy/gstools/swprocess/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## Post-5.11.1 on master (UNRELEASED — websocket FINAL root cause + detached turns)
+## TinyApps pilot (AWARDED 2026-09-03 — the strategic hosting path)
+
+CfA's Azure Web Apps pilot selected the team: shared Azure App Service
+slot behind Entra ID (NO driver proxy — the websocket saga does not apply
+there), free Prompter API key ($50/mo, 1 model), native Funhouse
+connectivity, 30 days to POC, 6-month pilot, successful apps stay hosted.
+**Plan of record: `tinyapps/TINYAPPS.md`** (environment facts, thin-wrapper
+repo architecture — app repo = app.py/packages.txt/run.sh, toolkit via
+Nexus as the released PyPI package — approval path, office-hours question
+list). Stubs: `webapp/tinyapps_entry.py` (GEOTECH_DEPLOYMENT=tinyapps) +
+`tinyapps/wrapper_repo/` templates. Engine wiring (key-auth Prompter)
+blocked on office-hours answer #1. Funhouse/Databricks app stays as the
+fast tester + backup per owner.
+
+## v5.11.2 status (RELEASED 2026-09-03 to PyPI; owner word "cut the release" — websocket FINAL root cause + detached turns)
 
 **FINAL websocket verdict (2026-09-03, closed by lab ws probes on the
 exact cluster stack): the 60 s deaths were OUR OWN SERVER all along — the
