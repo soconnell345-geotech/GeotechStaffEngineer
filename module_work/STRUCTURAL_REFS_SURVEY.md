@@ -64,3 +64,19 @@ modules exist); FHWA bridge set only if bridges enter scope.
 Pairing with round-1 wrappers: sectionproperties/concreteproperties/PyNite
 give the ANALYSIS engines; these references supply the DESIGN checks and
 worked-example validation the same way GEC/DM7 anchor the geotech side.
+
+## Verified download links (for the onboarding campaign)
+
+- UFC 3-301-01: wbdg.org/ffc/dod/unified-facilities-criteria-ufc/ufc-3-301-01
+  (2023 C4 PDF: nibs-s3-wbdg3-production.s3.us-east-1.amazonaws.com/FFC/DOD/UFC/ufc_3_301_01_2023_c4.pdf)
+- UFC 4-023-03 (C4): wbdg.org/ffc/dod/unified-facilities-criteria-ufc/ufc-4-023-03
+- EM 1110-2-2104 (2025): publications.usace.army.mil/Portals/76/Publications/EngineerManuals/EM%201110-2-2104_2025%2001%2008%20-%20Final.pdf
+- EM 1110-2-2107 (2022): publications.usace.army.mil/Portals/76/Users/182/86/2486/EM%201110-2-2107.pdf
+- FEMA P-2192 Vol 1: fema.gov/sites/default/files/documents/fema_nehrp_design-examples-training-materials_volume-1.pdf
+- NIST briefs (nvlpubs pattern, e.g. #13): nvlpubs.nist.gov/nistpubs/gcr/2017/NIST.GCR.17-917-47.pdf
+- FHWA-NHI-15-058: fhwa.dot.gov/bridge/pubs/nhi15058.pdf
+- GSA 2016: gsa.gov/system/files/Progressive_Collapse_2016.pdf
+- NASA-STD-5020: standards.nasa.gov/standard/NASA/NASA-STD-5020
+- USDA Wood Handbook: research.fs.usda.gov/treesearch/62200
+- Paywall confirmations: store.transportation.org (AASHTO LRFD 10th);
+  aisc.org current standards = free-but-copyrighted (verification only).
