@@ -190,6 +190,29 @@ PAVEMENT_REFERENCES = frozenset({
     "ufc_expansive",    # expansive-soil roadbeds (feeds the Appendix G swelling inputs)
 })
 
+#: Structural specialist scope: the cross-section / RC-section / frame
+#: analysis engines, plus the general-purpose probabilistic wrap and report
+#: renderer, that a structural calc normally chains together.
+STRUCTURAL_MODULES = frozenset({
+    "section_props",   # cross-section properties engine (A, I, Z, S, J, warping — steel shapes + polygons)
+    "concrete_props",  # RC rectangular-section capacity (cracked/gross Ixx, Mcr, nominal Mn, N-M interaction)
+    "pynite",          # linear elastic 2D/3D frame + continuous-beam analysis (reactions, M/V/deflection)
+    "opensees",        # nonlinear / dynamic FE analyses (PM4Sand cyclic DSS, 1D site response)
+    "fem2d",           # 2D continuum FEM (plane-strain; foundation / soil-structure interaction)
+    "reliability",     # FOSM/PEM/MC/FORM probabilistic wrap around load/capacity variability
+    "calc_package",    # report rendering (html_to_pdf + module calc-package templates)
+})
+
+# NOTE: the structural reference layer is still being onboarded (candidates:
+# UFC 3-301-01 structural loads/design criteria, EM 1110-2-2104 strength
+# design for RC hydraulic structures, EM 1110-2-2107 steel structures). Add
+# modules here as they land; for now this carries the one structural-adjacent
+# reference already in the library plus the whole-library search DBs.
+STRUCTURAL_REFERENCES = frozenset({
+    "reference_db", "figure_db",
+    "ufc_concrete_practice",   # UFC 3-250-04 — concrete materials/construction practice
+})
+
 
 def _scoped_names(allowed_agents):
     """Return the visible agent names given an optional whitelist."""

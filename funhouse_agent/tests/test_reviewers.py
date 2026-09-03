@@ -286,6 +286,56 @@ class TestPavementSpecialist:
         assert hasattr(reviewers, "make_pavement_specialist_deep")
 
 
+class TestStructuralSpecialist:
+    """The structural specialist is DESIGN-mode (no checklist) but rides the
+    same scoped-agent machinery as the reviewer family."""
+
+    def _imports(self):
+        from funhouse_agent.dispatch import (STRUCTURAL_MODULES,
+                                             STRUCTURAL_REFERENCES)
+        from funhouse_agent.review_checklists import \
+            STRUCTURAL_SPECIALIST_PREAMBLE
+        from funhouse_agent.reviewers import (STRUCTURAL_SPECIALIST_SCOPE,
+                                              make_structural_specialist)
+        return (STRUCTURAL_MODULES, STRUCTURAL_REFERENCES,
+                STRUCTURAL_SPECIALIST_PREAMBLE, STRUCTURAL_SPECIALIST_SCOPE,
+                make_structural_specialist)
+
+    def test_scope_subsets_and_union(self):
+        mods, refs, _, scope, _ = self._imports()
+        assert mods <= ANALYSIS_MODULES
+        assert refs <= REFERENCE_MODULES
+        assert scope == (mods | refs)
+        assert len(mods) == 7
+        for name in ("section_props", "concrete_props", "pynite", "opensees",
+                     "fem2d", "reliability", "calc_package"):
+            assert name in mods
+        assert "ufc_concrete_practice" in refs
+        for name in scope:
+            assert name in MODULE_REGISTRY, f"{name} not in MODULE_REGISTRY"
+
+    def test_builds_scoped_design_mode_agent(self):
+        _, _, preamble, scope, make = self._imports()
+        agent = make(MockEngine([]))
+        assert isinstance(agent, GeotechAgent)
+        assert set(agent._allowed_agents) == set(scope)
+        assert agent._reference_mode == "off"
+        assert "STRUCTURAL CALC SPECIALIST" in preamble
+        assert "mm-native" in preamble
+        assert "NOMINAL" in preamble  # never a code-compliance sign-off
+        assert "professional review is required" in preamble
+        # Design mode, not review mode.
+        assert "REVIEW MODE" not in preamble
+
+    def test_webapp_builder_registered(self):
+        import webapp.core as core
+        assert core.AGENT_TYPES.get("structural") == "Structural calc specialist"
+        assert core._REVIEWER_BUILDERS.get("structural") == \
+            "make_structural_specialist_deep"
+        from funhouse_agent import reviewers
+        assert hasattr(reviewers, "make_structural_specialist_deep")
+
+
 _F8 = [
     _Rev("foundations", make_foundations_reviewer, make_foundations_reviewer_deep,
          FOUNDATIONS_REVIEWER_SCOPE, FOUNDATIONS_MODULES, FOUNDATIONS_REFERENCES,

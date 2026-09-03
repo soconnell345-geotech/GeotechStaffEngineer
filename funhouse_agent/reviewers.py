@@ -27,6 +27,7 @@ from funhouse_agent.dispatch import (
     EARTH_RETENTION_MODULES, EARTH_RETENTION_REFERENCES,
     SLOPE_FEM_MODULES, SLOPE_FEM_REFERENCES,
     PAVEMENT_MODULES, PAVEMENT_REFERENCES,
+    STRUCTURAL_MODULES, STRUCTURAL_REFERENCES,
 )
 from funhouse_agent.review_checklists import (
     SEISMIC_REVIEWER_PREAMBLE,
@@ -34,6 +35,7 @@ from funhouse_agent.review_checklists import (
     EARTH_RETENTION_REVIEWER_PREAMBLE,
     SLOPE_FEM_REVIEWER_PREAMBLE,
     PAVEMENT_SPECIALIST_PREAMBLE,
+    STRUCTURAL_SPECIALIST_PREAMBLE,
 )
 
 #: The seismic reviewer's full direct-call scope: the seismic analysis modules
@@ -276,6 +278,43 @@ def make_pavement_specialist_deep(model, *, extra_modules=None, **kwargs):
                                extra_modules=extra_modules, **kwargs)
 
 
+# ---------------------------------------------------------------------------
+# Structural calc specialist — DESIGN mode (not a reviewer), same two-surface
+# scoped-agent machinery: section_props/concrete_props/pynite/opensees/fem2d/
+# reliability + calc_package + the structural references, prompted as a
+# senior structural engineer.
+# ---------------------------------------------------------------------------
+
+#: Structural specialist scope: the section/RC/frame analysis engines +
+#: probabilistic wrap + report generator, plus the structural reference
+#: modules onboarded so far.
+STRUCTURAL_SPECIALIST_SCOPE = frozenset(STRUCTURAL_MODULES | STRUCTURAL_REFERENCES)
+
+
+def make_structural_specialist(genai_engine, *, extra_modules=None, **kwargs):
+    """Build the structural calc specialist (Funhouse scoped sub-agent).
+
+    Scoped to ``section_props``, ``concrete_props``, ``pynite``, ``opensees``,
+    ``fem2d``, ``reliability``, and ``calc_package``, plus the structural
+    reference modules (``ufc_concrete_practice``, ``reference_db``/
+    ``figure_db``), prompted in DESIGN mode as a senior structural engineer
+    (workflow: section properties → member/frame analysis → RC section
+    capacity → optional probabilistic variation → calc package). See
+    :func:`make_seismic_reviewer` for the parameter contract;
+    ``reference_mode="off"`` for the same scoping reason.
+    """
+    return _make_reviewer(STRUCTURAL_SPECIALIST_SCOPE,
+                          STRUCTURAL_SPECIALIST_PREAMBLE, genai_engine,
+                          extra_modules=extra_modules, **kwargs)
+
+
+def make_structural_specialist_deep(model, *, extra_modules=None, **kwargs):
+    """Deepagents variant of :func:`make_structural_specialist`."""
+    return _make_reviewer_deep(STRUCTURAL_SPECIALIST_SCOPE,
+                               STRUCTURAL_SPECIALIST_PREAMBLE, model,
+                               extra_modules=extra_modules, **kwargs)
+
+
 __all__ = [
     "make_seismic_reviewer",
     "make_seismic_reviewer_deep",
@@ -292,4 +331,7 @@ __all__ = [
     "make_pavement_specialist",
     "make_pavement_specialist_deep",
     "PAVEMENT_SPECIALIST_SCOPE",
+    "make_structural_specialist",
+    "make_structural_specialist_deep",
+    "STRUCTURAL_SPECIALIST_SCOPE",
 ]
