@@ -26,7 +26,7 @@ if _PKG_ROOT not in sys.path:
 
 import streamlit as st
 
-from webapp import budget_panel, core, engine_config, sharepoint_store
+from webapp import budget_panel, core, engine_config, sharepoint_store, turn_jobs
 
 st.set_page_config(page_title="GeotechStaffEngineer", page_icon="⛰️",
                    layout="wide")
@@ -184,7 +184,10 @@ def _open_conversation(thread_id: str) -> None:
     ss.transcript = core.load_transcript(thread_id)
     # A3 crash recovery: a turn interrupted mid-stream (kill/OOM/reload) left a
     # partial checkpoint — fold it in as a clearly-marked "recovered" entry.
-    _rec = core.recover_partial(thread_id)
+    # NOT when a detached worker is still running this conversation's turn
+    # (post-reconnect resume): that partial is live, not crashed.
+    _rec = (None if turn_jobs.get_turn_job(thread_id) is not None
+            else core.recover_partial(thread_id))
     if _rec is not None:
         ss.transcript.append(_rec)
         try:
@@ -203,18 +206,55 @@ def _open_conversation(thread_id: str) -> None:
     _resolve_and_build(_meta.get("model") or core.default_model_id())
 
 
-def _persist_turn(first_user_text: Optional[str]) -> None:
-    """After a completed turn: rewrite the agent-facing messages, and update the
-    conversation meta (title from the first user message, running turn count,
-    the active model)."""
+def _follow_turn_job(job) -> None:
+    """Render a detached turn's live progress; fold in the result when done.
+
+    Reattachable by design: when the driver proxy kills the websocket (hard
+    ~60 s TTL, live-confirmed 2026-09-03), this script thread dies but the
+    worker keeps computing; the next script run — same session or a fresh
+    one after reconnect — calls this again and resumes the display.
+    """
     ss = st.session_state
-    user_turns = sum(1 for e in ss.transcript if e.get("role") == "user")
-    title = core.auto_title(first_user_text) if (user_turns == 1 and
-                                                 first_user_text) else None
-    core.save_messages(ss.thread_id, ss.messages)
-    core.touch_conversation(ss.thread_id, title=title, turn_count=user_turns,
-                            model=ss.model)
-    core.set_behavior(ss.thread_id, ss.get("behavior") or core.default_behavior())
+    with st.chat_message("assistant"):
+        answer_box = st.empty()
+        status = st.status("Working…", expanded=False)
+        answer = ""
+        for item in job.follow():
+            kind = item.get("kind")
+            if kind == "heartbeat":
+                _m, _s = divmod(int(item.get("elapsed_s", 0)), 60)
+                status.update(label=f"Working… {_m}m {_s:02d}s (long step)")
+            elif kind == "token":
+                answer += item.get("text", "")
+                answer_box.markdown(answer)
+            elif kind in ("tool_call", "todos", "tool_result"):
+                status.write(item.get("text", ""))
+        res = job.result
+        final = res.get("final") or answer or "(no answer text)"
+        answer_box.markdown(final)
+        if res.get("error"):
+            status.update(label="Error", state="error")
+            st.error(res["error"])
+        else:
+            status.update(label="Done", state="complete")
+
+    # Sync THIS session with what the worker persisted. Same-session case:
+    # the worker mutated ss.messages / ss.transcript / ss.artifacts in place
+    # — already consistent. Reconnected-new-session case: reload from disk.
+    synced = bool(ss.transcript) and \
+        ss.transcript[-1].get("role") == "assistant" and \
+        ss.transcript[-1].get("text") == res.get("final")
+    if not synced:
+        ss.transcript = core.load_transcript(ss.thread_id)
+        ss.messages = core.load_messages(ss.thread_id)
+        ss.artifacts = core.artifacts_from_transcript(ss.transcript)
+    ss.last_turn_tokens = res.get("turn_tokens", 0)
+    ss.total_tokens += res.get("turn_tokens", 0)
+    ss.save_error = res.get("save_error")
+    if res.get("sp_sync") is not None:
+        ss.sp_sync = res["sp_sync"]
+    job.consumed = True
+    st.rerun()
 
 
 def _init_session() -> None:
@@ -772,6 +812,16 @@ if core.tracing_enabled(ss.behavior.get("trace")):
 # Chat input + streaming
 # ---------------------------------------------------------------------------
 
+# Detached-turn resume: if a worker is still computing (or finished while we
+# were disconnected — the proxy's hard ~60 s websocket TTL), re-attach and
+# follow it instead of offering the input box. Ends in st.rerun().
+_active_job = turn_jobs.get_turn_job(ss.thread_id)
+if _active_job is not None:
+    st.info("⏳ Reconnected — your analysis kept running in the background "
+            "and is being followed live below. Connection blips don't stop "
+            "the work.")
+    _follow_turn_job(_active_job)
+
 prompt = st.chat_input("Ask a geotechnical question…"
                        if ss.agent is not None else
                        "Configure an engine to start (see the sidebar)")
@@ -782,6 +832,10 @@ if prompt:
             "No engine is configured, so I can't answer yet. "
             + ss.engine.message)
     else:
+        if turn_jobs.get_turn_job(ss.thread_id) is not None:
+            st.warning("An analysis is already running for this conversation "
+                       "— re-send your question after it finishes.")
+            st.rerun()
         st.chat_message("user").markdown(prompt)
         user_entry = {"role": "user", "text": prompt}
         ss.transcript.append(user_entry)
@@ -816,111 +870,26 @@ if prompt:
                      else None)
 
         core.begin_partial(ss.thread_id, prompt)   # A3: mark in-progress turn
-        turn_error = None
-        _trace_on = core.tracing_enabled(           # A7: local per-turn tracer
-            ss.behavior.get("trace"))
-        _trace_t0 = time.time()
-        _trace_tools = []
-        with st.chat_message("assistant"):
-            answer_box = st.empty()
-            status = st.status("Working…", expanded=False)
-            answer = ""
-            final = ""
-            turn_tokens = 0
-            _chunks = 0
-            try:
-                for item in core.with_heartbeat(core.stream_turn(
-                        ss.agent, ss.messages, ss.thread_id,
-                        recursion_limit=ss.behavior.get("recursion_limit"))):
-                    kind = item["kind"]
-                    if kind == "heartbeat":
-                        # Keepalive: a status-label change is websocket traffic
-                        # — it stops the driver proxy idling out the connection
-                        # during long silent model/tool phases.
-                        _hb_m, _hb_s = divmod(int(item.get("elapsed_s", 0)), 60)
-                        status.update(label=(
-                            f"Working… {_hb_m}m {_hb_s:02d}s (long step — "
-                            "connection kept alive)"))
-                        continue
-                    if kind == "token":
-                        answer += item["text"]
-                        answer_box.markdown(answer)
-                        _chunks += 1
-                        if _chunks % 8 == 0:        # A3: checkpoint partial text
-                            core.checkpoint_partial(ss.thread_id, answer)
-                    elif kind in ("tool_call", "todos", "tool_result"):
-                        status.write(item["text"])
-                        core.checkpoint_partial(ss.thread_id, answer)
-                        if _trace_on and kind == "tool_call":   # A7 trace hop
-                            _trace_tools.append(
-                                {"t": round(time.time() - _trace_t0, 3),
-                                 "call": (item.get("text") or "")[:80]})
-                    elif kind == "turn_done":
-                        final = item["answer"]
-                        turn_tokens = item["turn_tokens"]
-                status.update(label="Done", state="complete")
-            except Exception as exc:
-                turn_error = core.friendly_turn_error(exc)
-                status.update(label="Error", state="error")
-                st.error(turn_error)
-
-            final = final or answer or "(no answer text)"
-            answer_box.markdown(final)
-
-        ss.messages.append({"role": "assistant", "content": final})
-        ss.last_turn_tokens = turn_tokens
-        ss.total_tokens += turn_tokens
-
-        # Associate this turn's artifacts: save_fn appended save_file outputs to
-        # ss.artifacts live during the turn; the directory diff catches anything
-        # else written to the session dir (calc packages, DXFs, plots).
-        save_new = ss.artifacts[artifacts_before_len:]
-        dir_new = core.new_artifacts(ss.temp_dir, before, staged_inputs)
-        if before_wd is not None:               # A6/A4: bridge saves made in an
-            for p in core.import_external_artifacts(  # external working folder
-                    working_dir, ss.temp_dir, before_wd, staged_inputs):
-                if p not in dir_new:            # into files/ (durable + portable)
-                    dir_new.append(p)
-        for p in dir_new:                       # add dir-only files to the list
-            if p not in ss.artifacts:
-                ss.artifacts.append(p)
-        turn_paths = core.collect_turn_artifacts(save_new, dir_new)
-        assistant_entry = {"role": "assistant", "text": final,
-                           "artifacts": turn_paths}
-        if turn_error:                 # A3(c): the turn crashed mid-stream —
-            assistant_entry["error"] = turn_error   # keep the partial, mark it
-        elif final == "(no answer text)":
-            # The turn "succeeded" but produced no visible text — surface a
-            # persistent, actionable note instead of a silent empty reply.
-            assistant_entry["error"] = (
-                "The model returned no visible text. Open 'Connection "
-                "diagnostics' in the sidebar and run the tests — common causes: "
-                "a reasoning model spending the whole token budget before any "
-                "output (raise GEOTECH_WEBAPP_MAX_TOKENS), or the proxy "
-                "rejecting a request parameter.")
-        ss.transcript.append(assistant_entry)
-        # Persist — a save failure must NEVER lose a completed turn. The counters
-        # and the in-memory transcript are already updated above; guard only the
-        # disk writes and surface a small banner (rendered near the top) on error.
-        try:
-            core.append_transcript(ss.thread_id, assistant_entry)
-            _persist_turn(prompt)      # rewrite messages.json + update meta
-            core.clear_partial(ss.thread_id)   # A3: turn is durably saved now
-            ss.save_error = None
-        except Exception as exc:
-            ss.save_error = f"{type(exc).__name__}: {exc}"
-        if _trace_on:                       # A7: one compact JSONL line per turn
-            core.write_turn_trace(ss.thread_id, {
-                "ts": time.time(),
-                "duration_s": round(time.time() - _trace_t0, 3),
-                "turn_tokens": turn_tokens,
-                "n_tool_calls": len(_trace_tools),
-                "tools": _trace_tools,
-                "error": turn_error,
+        # Detached execution: the ENTIRE turn pipeline (streaming, partial
+        # checkpoints, artifact diffing, transcript/messages persistence,
+        # tracing, SharePoint mirror) runs in a background worker thread that
+        # survives the driver proxy's hard ~60 s websocket TTL. This script
+        # only DISPLAYS progress — and re-attaches after every reconnect.
+        job = turn_jobs.start_turn_job(
+            ss.agent, ss.messages, ss.thread_id,
+            ss.behavior.get("recursion_limit"),
+            ctx={
+                "prompt": prompt,
+                "temp_dir": ss.temp_dir,
+                "before": before,
+                "staged_inputs": staged_inputs,
+                "working_dir": working_dir,
+                "before_wd": before_wd,
+                "artifacts": ss.artifacts,
+                "artifacts_before_len": artifacts_before_len,
+                "transcript": ss.transcript,
+                "trace_on": core.tracing_enabled(ss.behavior.get("trace")),
+                "model": ss.model,
+                "behavior": ss.behavior,
             })
-        # Permanent storage: mirror this conversation to SharePoint
-        # (incremental, best-effort — mirror_conversation never raises).
-        _sp = sharepoint_store.get_store()
-        if _sp.configured:
-            ss.sp_sync = _sp.mirror_conversation(ss.thread_id)
-        st.rerun()
+        _follow_turn_job(job)          # renders live; ends in st.rerun()

@@ -49,6 +49,29 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 9 agent-wrapper test suites (opensees/pystrata/hvsrpy/gstools/swprocess/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
+## Post-5.11.1 on master (UNRELEASED — detached turns: the REAL websocket answer)
+
+**Live 5.11.1 shakedown (2026-09-03) falsified the ping theory as the whole
+story: the driver proxy enforces a HARD ~60 s websocket TTL.** Evidence:
+app confirmed on 5.11.1 (ping horizon 3600 verified to plumb through on
+streamlit 1.63 via the drift venv), bidirectional app-level traffic every
+20 s visible in the owner's console (`autoRerun` BackMsgs), and sockets
+STILL died at exactly ~60 s; the dev's POC with protocol pings disabled
+died identically. NO keepalive prevents the close. **Fix = make socket
+death harmless: `webapp/turn_jobs.py` detached turn execution.** The
+entire turn pipeline (stream consumption, partial checkpoints, artifact
+diffing, transcript/messages persistence, meta/title, tracing, SharePoint
+mirror) runs in a daemon worker thread keyed by thread_id
+(process-global, one per conversation); app.py only FOLLOWS the job's
+recorded events (`_follow_turn_job`) and RE-ATTACHES after every
+reconnect (resume block before chat_input; recover_partial skipped while
+a job is live; busy-guard on double submit; same-session sync is in-place
+list mutation, new-session sync reloads transcript/messages/artifacts
+from disk). A reconnect now costs a ~1 s display blink — never the
+analysis. `_persist_turn` folded into the worker. Chrome-AI's 405-POST
+theory in the owner's console = streamlit telemetry noise, NOT the reload
+cause (fires after each reconnect, doesn't cause it). webapp suite 239.
+
 ## v5.11.1 status (RELEASED 2026-09-02 to PyPI; owner word "Yes, release" — websocket root cause + upload workarounds + groundhog removal)
 
 **"Connecting"-flap ROOT CAUSE FOUND AND FIXED (2026-09-02, corroborated by
