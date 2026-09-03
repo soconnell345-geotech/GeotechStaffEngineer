@@ -49,16 +49,26 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 34 + 14 = 48 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 9 agent-wrapper test suites (opensees/pystrata/hvsrpy/gstools/swprocess/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## Post-5.11.1 on master (UNRELEASED — detached turns: the REAL websocket answer)
+## Post-5.11.1 on master (UNRELEASED — websocket FINAL root cause + detached turns)
 
-**Live 5.11.1 shakedown (2026-09-03) falsified the ping theory as the whole
-story: the driver proxy enforces a HARD ~60 s websocket TTL.** Evidence:
-app confirmed on 5.11.1 (ping horizon 3600 verified to plumb through on
-streamlit 1.63 via the drift venv), bidirectional app-level traffic every
-20 s visible in the owner's console (`autoRerun` BackMsgs), and sockets
-STILL died at exactly ~60 s; the dev's POC with protocol pings disabled
-died identically. NO keepalive prevents the close. **Fix = make socket
-death harmless: `webapp/turn_jobs.py` detached turn execution.** The
+**FINAL websocket verdict (2026-09-03, closed by lab ws probes on the
+exact cluster stack): the 60 s deaths were OUR OWN SERVER all along — the
+5.11.1 ping fix never activated because `bootstrap.run()` NEVER APPLIES
+`flag_options` (it only installs config watchers; the streamlit CLI
+applies flags via `load_config_options()` first, which the launcher
+bootstrap never called). Every `_FLAGS` entry has been silently ignored
+since the launcher was born** — masked by the env-var backups and by
+server_port coinciding with the 8501 default; corroborated by telemetry
+POSTs firing despite gatherUsageStats False. Probe evidence: owner's
+live-app localhost probe = PING 30.0 s → close 60.0 s code 1011; lab
+repro of the bootstrap path identical; adding ONE line
+(`bootstrap.load_config_options(flag_options=_FLAGS)`, commit 76e21ff)
+→ flags applied, zero pings, socket open past 75 s. The interim
+"hard proxy TTL" theory is RETIRED (the funhouse dev's ping-free game
+app surviving long sessions was the tell). Probe tooling worth keeping:
+aiohttp ws_connect(autoping=False) against `/_stcore/stream` simulates
+the proxy swallowing control frames. **Plus, belt-and-braces regardless:
+`webapp/turn_jobs.py` detached turn execution.** The
 entire turn pipeline (stream consumption, partial checkpoints, artifact
 diffing, transcript/messages persistence, meta/title, tracing, SharePoint
 mirror) runs in a daemon worker thread keyed by thread_id
