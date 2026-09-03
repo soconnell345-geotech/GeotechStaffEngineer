@@ -228,3 +228,12 @@ free substitute for seismic = USGS design-maps web services (keyless,
 ASCE 7 values by coordinate) + USGS RTGM calculator Python source — note
 TinyApps egress is firewalled, external APIs must route via API-First.
 NIST: BAM-DB archetype dataset (OpenSees + P-58 models) — data, not lib.
+
+### Structural round 1 decisions (owner, 2026-09-03)
+BUILD NOW: sectionproperties + concreteproperties + PyNite wrappers.
+DEFERRED (promising, next round): (a) **pelicun** — FEMA P-58 loss layer on
+top of our seismic outputs (BSD-3, SimCenter; bundles the P-58 damage/loss
+library since v3.10); (b) **ASCE 7 values via the free keyless USGS
+design-maps web services** (+ USGS RTGM Python source) — needs the
+TinyApps API-First egress route, so wait for pilot networking answers.
+DROPPED: XC, OOFEM, Code_Aster/CalculiX, anaStruct (GPL), HazPy.
