@@ -38,7 +38,9 @@ def _make_env():
         variable_end_string="}",
         comment_start_string=r"\#{",
         comment_end_string="}",
-        autoescape=False,
+        autoescape=False,   # nosec B701 — this env renders LaTeX, not HTML;
+                            # HTML-escaping would corrupt TeX markup. The
+                            # HTML pipeline (renderer.py) autoescapes (CP-1).
     )
     return env
 

@@ -3,6 +3,7 @@ optional deps): FOSM, Rosenblueth PEM, Monte Carlo, FORM + the property-
 variability knowledge base (COV guidance, combined COV, Vanmarcke spatial
 averaging)."""
 
+import ast
 import math
 import re
 
@@ -46,12 +47,44 @@ def _compile_g(expr: str, var_names):
                 f"Unknown identifier '{token}' in g_expression. Allowed "
                 f"variables: {sorted(var_names)}; plus math functions "
                 f"like sqrt/log/exp/tan/radians.")
+    # Defense in depth beyond the identifier allowlist above: parse the
+    # expression and refuse any AST construct outside pure arithmetic —
+    # no attribute access, subscripts, strings, f-strings, lambdas,
+    # comprehensions, or starred/keyword call tricks can reach execution.
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError as exc:
+        raise ValueError(f"g_expression is not a valid expression: {exc}")
+    _OK = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Call, ast.Name,
+           ast.Constant, ast.Load, ast.IfExp, ast.Compare, ast.BoolOp,
+           ast.And, ast.Or,
+           ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow, ast.Mod,
+           ast.FloorDiv, ast.USub, ast.UAdd,
+           ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq)
+    for node in ast.walk(tree):
+        if not isinstance(node, _OK):
+            raise ValueError(
+                f"g_expression may only contain arithmetic, comparisons, "
+                f"and the allowed math functions (rejected: "
+                f"{type(node).__name__}).")
+        if isinstance(node, ast.Call):
+            if node.keywords or not (isinstance(node.func, ast.Name)
+                                     and node.func.id in _MATH_FUNCS):
+                raise ValueError(
+                    "g_expression function calls are limited to the "
+                    f"allowed math functions: {sorted(_MATH_FUNCS)}")
+        if isinstance(node, ast.Constant) and \
+                not isinstance(node.value, (int, float)):
+            raise ValueError(
+                "g_expression constants must be numbers, got "
+                f"{type(node.value).__name__}.")
+    code = compile(tree, "<g_expression>", "eval")
     ns = {"__builtins__": {}}
-    ns.update(_MATH_FUNCS)  # lambda resolves names via its __globals__
-    fn = eval(f"lambda {', '.join(var_names)}: {expr}", ns)
+    ns.update(_MATH_FUNCS)
 
     def g(values):
-        return fn(**{k: values[k] for k in var_names})
+        local = {k: values[k] for k in var_names}
+        return eval(code, ns, local)   # nosec B307 — AST-whitelisted above
 
     return g
 
