@@ -158,7 +158,12 @@ def test_render_bootstrap_script_registers_prompter_with_fallback():
     assert "PrompterChatModel(prompter=prompter, model=model_id or MODEL)" in src
     # The automatic ANTHROPIC_API_KEY fallback.
     assert "ANTHROPIC_API_KEY" in src
-    # In-process streamlit start with the proxy flags.
+    # In-process streamlit start with the proxy flags. load_config_options
+    # MUST precede run(): run() only installs config watchers — it never
+    # applies flag_options (the 5.11.1 60s-socket-death root cause).
+    assert "bootstrap.load_config_options(flag_options=_FLAGS)" in src
+    assert src.index("bootstrap.load_config_options") < \
+        src.index("bootstrap.run(APP_PATH")
     assert "bootstrap.run(APP_PATH, False, [], _FLAGS)" in src
     assert '"server_baseUrlPath": BASE_PATH' in src
     # Production posture: no file watcher (no rerun prompt) + viewer toolbar.

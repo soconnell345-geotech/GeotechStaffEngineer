@@ -332,6 +332,14 @@ _FLAGS = {
     # traverse the proxy.
     "server_websocketPingInterval": 3600,
 }
+# THE missing call (found 2026-09-03 via a lab ws probe replicating the live
+# 30s-ping/60s-1011 signature exactly): bootstrap.run() only installs config
+# WATCHERS for flag_options — it never applies them; the streamlit CLI does
+# that via load_config_options() before calling run(). Without this line
+# every _FLAGS entry was silently ignored (masked by env-var backups and by
+# server_port matching the 8501 default) — including websocketPingInterval,
+# which is why sockets kept dying at exactly 60s on 5.11.1.
+bootstrap.load_config_options(flag_options=_FLAGS)
 bootstrap.run(APP_PATH, False, [], _FLAGS)
 ''')
 
