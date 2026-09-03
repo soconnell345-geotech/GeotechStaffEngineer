@@ -197,3 +197,34 @@ iteration ("find B such that β ≥ 3.0"), and probabilistic PAVEMENT design
 - foundry/ retired AIP-wrapper directory cleanup (+ foundry_test_harness) —
   deletes ~50 files; owner-sanctioned housekeeping, do in a quiet moment with
   a full gate after.
+
+## STRUCTURAL SURVEY 2026-09-03 (web-verified; owner asked re openseespy-pedigree peers)
+
+Candidates for the structural direction, filtered for TinyApps posture
+(pip-installable, permissive license, no GUI toolkits, light deps):
+- **pelicun** (NSF NHERI SimCenter/Stanford, BSD-3, v3.10 Aug 2026, light
+  numpy/scipy/pandas): FEMA P-58 loss assessment; v3.10 bundles the
+  SimCenter Damage & Loss library in the pip install (no runtime fetch).
+  STRONGEST institutional candidate; bridges our seismic outputs to
+  performance-based structural risk.
+- **sectionproperties + concreteproperties** (R. van Leeuwen, MIT, both
+  active 2026): section analysis + RC section capacity. Natural
+  module-wrapper targets. concreteproperties needs Py>=3.12.
+- **PyNite** (MIT, v3.0, individual maintainer, slower cadence): elastic
+  3D frame FE; viz deps now optional extras. Good everyday-frame layer
+  below openseespy.
+- **structuralcodes** (fib GitHub org, Apache-2.0, v0.7.1 Jun 2026):
+  EC2-2004/EC2-2023/fib MC2010 provisions in Python (MC2020 = roadmap;
+  pre-1.0 API). The one association-adjacent open library that exists.
+AVOID for license (DT GPL sensitivity): anaStruct (GPL-3, though active),
+XC (GPL-3, Docker-only, small-practice pedigree not university), FEMA
+HazPy (GPL-3, stagnant). Not pip-fit: Code_Aster (EDF), CalculiX, OOFEM
+(official 3.0 not on PyPI; only a dev pre-release wheel).
+ASSOCIATIONS: AISC Shapes DB v16.0 free BUT readme forbids reproduction
+without written permission — CANNOT embed tables in a package without an
+AISC letter (worth requesting if we build steel modules). ACI: nothing
+open (318 PLUS = subscription). ASCE Hazard Tool API = paid/key-gated;
+free substitute for seismic = USGS design-maps web services (keyless,
+ASCE 7 values by coordinate) + USGS RTGM calculator Python source — note
+TinyApps egress is firewalled, external APIs must route via API-First.
+NIST: BAM-DB archetype dataset (OpenSees + P-58 models) — data, not lib.
