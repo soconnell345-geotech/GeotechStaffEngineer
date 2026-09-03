@@ -127,11 +127,11 @@ MODULE_ORDER = [
      "Site response, seismic earth pressures, liquefaction triggering, and ground-motion "
      "processing.",
      ["seismic_geotech", "liquefaction", "liquepy", "opensees", "pystrata",
-      "seismic_signals", "hvsrpy"]),
+      "seismic_signals"]),
     ("Site characterization &amp; geostatistics",
      "Turning borings, cones, and lab data into a modelled ground &mdash; parse, visualize, "
      "correlate, and interpolate.",
-     ["subsurface", "gstools", "swprocess"]),
+     ["subsurface", "gstools"]),
     ("Reliability &amp; sensitivity",
      "The variability engine: propagate parameter uncertainty to a reliability index and a "
      "probability of failure, and find which input governs.",
@@ -162,10 +162,8 @@ MODULE_TITLES = {
     "opensees": "Nonlinear site response &amp; PM4Sand (OpenSees)",
     "pystrata": "Equivalent-linear site response (pyStrata)",
     "seismic_signals": "Ground-motion signal processing",
-    "hvsrpy": "HVSR site characterization",
     "subsurface": "Subsurface data I/O (DIGGS / GEF / AGS4)",
     "gstools": "Geostatistics (kriging &amp; random fields)",
-    "swprocess": "MASW surface-wave dispersion",
     "reliability": "Reliability engine",
     "salib": "Global sensitivity analysis (SALib)",
     "pystra": "Structural reliability (pystra)",
@@ -206,9 +204,7 @@ HEADLINE_METHOD = {
     "opensees": None,
     "pystrata": "eql_site_response",
     "seismic_signals": None,
-    "hvsrpy": None,
     "liquepy": None,
-    "swprocess": None,
 }
 
 # Worked example: agent -> (worked_examples.json key, natural-language ask, note)
@@ -767,17 +763,6 @@ MODULE_NARRATIVE: dict[str, dict] = {
         "limits": [],
     },
 
-    "hvsrpy": {
-        "problems": "Site characterization from ambient-noise measurements: the horizontal-to-vertical "
-            "spectral ratio (HVSR) and its peak frequency, an estimate of the fundamental site period.",
-        "methods": [
-            "HVSR processing of ambient-noise records with the modern statistical framework, wrapping "
-            "**hvsrpy**.",
-            "References: the hvsrpy library (Cheng, Vantassel et al.). Requires the <code>[hvsrpy]</code> "
-            "extra.",
-        ],
-        "limits": [],
-    },
 
     "subsurface": {
         "problems": "Getting field and lab data into a modelled ground: parse and validate DIGGS, GEF/"
@@ -808,17 +793,6 @@ MODULE_NARRATIVE: dict[str, dict] = {
         "limits": [],
     },
 
-    "swprocess": {
-        "problems": "Surface-wave site characterization: process multichannel analysis of surface waves "
-            "(MASW) into a dispersion curve &mdash; the field data behind a shear-wave-velocity profile.",
-        "methods": [
-            "MASW dispersion processing and curve extraction, wrapping **swprocess**.",
-            "References: the swprocess library (Vantassel). Requires the <code>[swprocess]</code> extra.",
-        ],
-        "limits": [
-            "Produces the dispersion curve; inversion to a V<sub>s</sub> profile is a separate step.",
-        ],
-    },
 
     "reliability": {
         "problems": "The variability engine: turn any deterministic method into a probabilistic one and "
@@ -1135,11 +1109,9 @@ def _ch2_install(ctx):
         "pystrata": "equivalent-linear 1D site response",
         "seismic-signals": "eqsig + pyrotd ground-motion processing",
         "liquepy": "Boulanger &amp; Idriss liquepy triggering",
-        "hvsrpy": "HVSR ambient-noise site characterization",
         "gstools": "geostatistical kriging and random fields",
         "salib": "Sobol / Morris sensitivity analysis",
-        "swprocess": "MASW surface-wave dispersion",
-        "pystra": "structural FORM/SORM/Monte-Carlo reliability",
+            "pystra": "structural FORM/SORM/Monte-Carlo reliability",
         "subsurface": "GEF/BRO-XML, AGS4, and DIGGS data I/O",
         "deep": "the deepagents-based v2 agent (<code>funhouse_agent.deep</code>)",
         "full": "all of the analysis backends above",

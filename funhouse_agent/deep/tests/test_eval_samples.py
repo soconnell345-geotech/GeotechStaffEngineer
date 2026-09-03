@@ -12,7 +12,7 @@ them. THE GATE: every sample must parse through the REAL underlying module API
   * sample_section.dxf     -> dxf_import.discover_layers (+ parse_dxf_geometry)
   * sample_section.pdf     -> pdf_import.discover_pdf_content (+ extract_vector_geometry)
 
-hvsrpy / swprocess get NO sample file on purpose: their adapters take in-memory
+(historical note: the former hvsrpy / swprocess adapters took in-memory
 arrays (ns/ew/vt or traces + dt), not file paths — there is nothing for a file
 to feed (see funhouse_agent/adapters/hvsrpy_adapter.py / swprocess_adapter.py).
 
@@ -200,14 +200,3 @@ def test_pdf_sample_discovers_and_extracts_vectors():
     assert n_geom > 0, f"no vector geometry extracted: {list(extracted)}"
 
 
-def test_hvsrpy_swprocess_need_no_sample_file():
-    """hvsrpy/swprocess adapters are array-in (no file path parameter) — the
-    documented reason they get no sample file. Guard that this stays true; if a
-    file_path parameter ever appears, a sample should be added."""
-    from funhouse_agent.adapters import hvsrpy_adapter, swprocess_adapter
-    for adapter in (hvsrpy_adapter, swprocess_adapter):
-        for method, info in adapter.METHOD_INFO.items():
-            assert "file_path" not in info["parameters"], (
-                f"{adapter.__name__}.{method} grew a file_path parameter — "
-                "add an eval sample for it"
-            )

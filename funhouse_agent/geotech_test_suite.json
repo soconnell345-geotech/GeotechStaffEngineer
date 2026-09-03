@@ -705,18 +705,6 @@
     }
   },
   {
-    "id": "HV-1",
-    "module": "hvsrpy_agent",
-    "complexity": "medium",
-    "question": "What does an HVSR (horizontal-to-vertical spectral ratio) analysis from ambient noise tell me about a site, and what input data do you need to run it?"
-  },
-  {
-    "id": "SW-1",
-    "module": "swprocess_agent",
-    "complexity": "medium",
-    "question": "Explain a MASW surface-wave dispersion analysis and the inputs needed to derive a shear wave velocity profile."
-  },
-  {
     "id": "SUB-1",
     "module": "subsurface_characterization",
     "complexity": "medium",

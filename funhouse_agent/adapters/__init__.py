@@ -306,14 +306,6 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.gstools_adapter",
         "brief": "Geostatistical kriging, variogram fitting, and random field generation",
     },
-    "hvsrpy": {
-        "adapter": "funhouse_agent.adapters.hvsrpy_adapter",
-        "brief": "HVSR site characterization from ambient noise (resonant frequency, amplification)",
-    },
-    "swprocess": {
-        "adapter": "funhouse_agent.adapters.swprocess_adapter",
-        "brief": "MASW surface wave dispersion analysis",
-    },
     "subsurface": {
         "adapter": "funhouse_agent.adapters.subsurface_adapter",
         "brief": "Subsurface data I/O — the single home for ingest+validate+visualize. DIGGS XML parse, Plotly plots (parameter vs depth, Atterberg, plan view, cross-section), trend stats, PLUS format adapters: GEF/BRO-XML CPT & borehole parse (pygef), AGS4 read/validate (python-ags4), DIGGS schema/dictionary validation (pydiggs)",

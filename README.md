@@ -156,8 +156,8 @@ Thirty analysis modules grouped by discipline, plus the shared layers. Native mo
 | **deep foundations** | `axial_pile` · `lateral_pile` · `pile_group` · `drilled_shaft` · `wave_equation` · `downdrag` | Driven & bored pile capacity, p-y lateral analysis, rigid-cap groups, Smith wave-equation drivability, neutral-plane downdrag |
 | **earth retention** | `sheet_pile` · `soe` · `retaining_walls` · `ground_improvement` | Cantilever/anchored walls, support-of-excavation, cantilever & MSE walls, aggregate piers / wick drains / vibro |
 | **slope · FEM · CAD** | `slope_stability` · `fem2d` · `dxf_import` · `dxf_export` · `pdf_import` | Rigorous limit-equilibrium (GLE/M-P, Bishop/Spencer/Janbu) + probabilistic FOS; 2D plane-strain FEM with strength reduction; geometry I/O |
-| **seismic** | `seismic_geotech` · `opensees_agent` · `pystrata_agent` · `liquepy_agent` · `seismic_signals_agent` · `hvsrpy_agent` | Site class, M-O pressures, liquefaction triggering (B&I-2014 / NCEER), 1D site response, ground-motion processing, HVSR |
-| **characterization** | `subsurface_characterization` · `gstools_agent` · `swprocess_agent` | DIGGS/GEF/AGS4 data I/O + plots, geostatistical kriging/random fields, MASW dispersion |
+| **seismic** | `seismic_geotech` · `opensees_agent` · `pystrata_agent` · `liquepy_agent` · `seismic_signals_agent` | Site class, M-O pressures, liquefaction triggering (B&I-2014 / NCEER), 1D site response, ground-motion processing |
+| **characterization** | `subsurface_characterization` · `gstools_agent` | DIGGS/GEF/AGS4 data I/O + plots, geostatistical kriging/random fields |
 | **variability** | `reliability` · `salib_agent` · `pystra_agent` | FOSM/PEM/MC/FORM + COV database + spatial averaging; Sobol/Morris sensitivity; structural FORM/SORM/MC |
 | **shared / setup** | `geotech_common` · `geo_project` · `calc_package` | SoilProfile spine + checks + adapters + plots; staged human-gated model setup; calculation-package report generation |
 | **references** | `geotech-references` (21) | Digitized tables/figures/equations + searchable chapter text from DM7, FHWA GEC series, UFC, FHWA standards |
@@ -172,10 +172,8 @@ Each wraps a third-party geotechnical library behind a dict-based API for LLM to
 | `pystrata_agent` | pystrata | 1D equivalent-linear site response |
 | `seismic_signals_agent` | eqsig + pyrotd | Earthquake signal processing |
 | `liquepy_agent` | liquepy | Boulanger & Idriss (2014) liquefaction triggering — CPT (LPI/LSN/LDI) and SPT |
-| `hvsrpy_agent` | hvsrpy | HVSR site characterization |
 | `gstools_agent` | gstools | Geostatistical kriging and random fields |
 | `salib_agent` | SALib | Sobol and Morris sensitivity analysis |
-| `swprocess_agent` | swprocess | MASW surface wave dispersion |
 | `pystra_agent` | pystra | FORM/SORM/Monte Carlo reliability |
 
 > The former `pygef_agent`, `ags4_agent`, and `pydiggs_agent` wrappers were folded into `subsurface_characterization` as optional, dependency-backed format adapters — one module now covers ingest + validate + visualize across DIGGS, GEF/BRO-XML, and AGS4.
@@ -255,10 +253,8 @@ At every altitude it's the *same* validated method underneath. The deterministic
 | `pystrata` | pystrata |
 | `seismic-signals` | eqsig, pyrotd |
 | `liquepy` | liquepy |
-| `hvsrpy` | hvsrpy |
 | `gstools` | gstools |
 | `salib` | SALib |
-| `swprocess` | swprocess |
 | `pystra` | pystra |
 | `subsurface` | pygef, python-ags4, pydiggs (subsurface_characterization format adapters) |
 | `pygef` / `ags4` / `pydiggs` | aliases for the individual format-adapter libraries |

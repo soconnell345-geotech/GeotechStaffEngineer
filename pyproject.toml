@@ -79,11 +79,9 @@ dependencies = [
     "pyrotd>=0.6",
     "liquepy>=0.3",
     "pygef>=0.10",
-    "hvsrpy>=2.0",
     "gstools>=1.5",
     "python-ags4>=0.5",
     "SALib>=1.4",
-    "swprocess>=0.3",
     "pystra>=1.3",
     # pydiggs is NOT in core (5.10.1): it drags in myst-parser -> sphinx,
     # whose Pygments>=2.17 floor force-UPGRADES the Pygments that Databricks'
@@ -110,10 +108,10 @@ opensees = []
 pystrata = []
 seismic-signals = []
 liquepy = []
-hvsrpy = []
+hvsrpy = []      # module REMOVED 2026-09 (geophysical processing cut)
 gstools = []
 salib = []
-swprocess = []
+swprocess = []   # module REMOVED 2026-09 (geophysical processing cut)
 pystra = []
 dxf = []
 interactive = []
@@ -159,10 +157,8 @@ include = [
     "pystrata_agent*",
     "seismic_signals_agent*",
     "liquepy_agent*",
-    "hvsrpy_agent*",
     "gstools_agent*",
     "salib_agent*",
-    "swprocess_agent*",
     "pystra_agent*",
     "subsurface_characterization*",
     "dxf_import*",
@@ -205,8 +201,8 @@ testpaths = [
     "ground_improvement",
     "slope_stability", "reliability", "downdrag", "geotech_common",
     "opensees_agent", "pystrata_agent", "seismic_signals_agent",
-    "liquepy_agent", "hvsrpy_agent", "gstools_agent",
-    "salib_agent", "swprocess_agent",
+    "liquepy_agent", "gstools_agent",
+    "salib_agent",
     "pystra_agent",
     "subsurface_characterization",
     "dxf_import",

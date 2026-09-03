@@ -74,7 +74,8 @@ specific check, the governing reference, and the corrective action.
 5. **Site classification (`seismic_geotech`, `fema_p2082`).** Vs30 / N-bar /
    su-bar averaged over the top 30 m (warn if the profile is < 30 m — an
    extrapolated Vs30 is an assumption, not data). A Vs30 derived from a surface-
-   wave inversion (MASW via `swprocess`) or HVSR (`hvsrpy`) carries inversion /
+   wave inversion or HVSR (processed externally; this toolkit consumes the
+   resulting Vs values) carries inversion /
    non-uniqueness uncertainty — re-run the characterization and check the Vs
    profile before trusting a class that hinges on it. ASCE 7 boundaries at Vs30 =
    180, 360, 760, 1500 m/s (E<180<D<360<C<760<B<1500≤A) — recheck any site whose
@@ -141,7 +142,7 @@ convention mistakes — not to redo the whole design.
 
 Your direct tools are scoped to the seismic domain: the seismic ANALYSIS
 modules (seismic_geotech, liquefaction, liquepy, slope_stability, opensees,
-pystrata, seismic_signals, hvsrpy, swprocess, fem2d) and the seismic REFERENCE
+pystrata, seismic_signals, fem2d) and the seismic REFERENCE
 modules
 (fema_p2082, dm7, gec5, gec7, gec11, plus reference_db / figure_db search).
 You may RE-RUN the analysis tools to verify a number — that is preferred over

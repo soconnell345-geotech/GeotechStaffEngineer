@@ -39,7 +39,7 @@ DOMAINS = {
     "slope-fem": ["slope_stability", "fem2d"],
     "seismic": ["seismic_geotech", "pystrata_agent", "opensees_agent",
                 "liquepy_agent", "seismic_signals_agent"],
-    "characterization": ["hvsrpy_agent", "swprocess_agent", "gstools_agent",
+    "characterization": ["gstools_agent",
                          "subsurface_characterization", "salib_agent", "pystra_agent"],
     "io-cad": ["dxf_import", "dxf_export", "pdf_import"],
     "references": ["dm7",

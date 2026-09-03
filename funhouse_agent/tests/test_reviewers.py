@@ -84,12 +84,12 @@ class TestSeismicScopeSets:
     def test_core_seismic_modules_present(self):
         for name in ("seismic_geotech", "liquefaction", "liquepy",
                      "slope_stability", "opensees", "pystrata",
-                     "seismic_signals", "hvsrpy", "swprocess", "fem2d"):
+                     "seismic_signals", "fem2d"):
             assert name in SEISMIC_MODULES
 
     def test_seismic_modules_count(self):
-        # 9 core seismic-native/-adjacent + swprocess (MASW -> Vs30 -> site class).
-        assert len(SEISMIC_MODULES) == 10
+        # 8 seismic-native/-adjacent (geophysical processing cut 2026-09).
+        assert len(SEISMIC_MODULES) == 8
 
     def test_core_seismic_references_present(self):
         for name in ("fema_p2082", "gec11", "gec7", "gec5", "dm7",

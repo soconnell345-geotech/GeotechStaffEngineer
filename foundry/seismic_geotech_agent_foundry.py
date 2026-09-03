@@ -278,7 +278,6 @@ METHOD_INFO = {
             "seismic_earth_pressure": "Use site coefficients to determine kh for seismic earth pressure.",
             "liquefaction_evaluation": "Use site coefficients and PGA for liquefaction analysis.",
             "pystrata_agent.eql_site_response": "Detailed 1D site response for site-specific analysis.",
-            "hvsrpy_agent.hvsr_analysis": "Field measurement for site period / f0.",
         },
         "typical_workflow": (
             "1. Determine site class from Vs30, SPT, or su data (this method)\n"

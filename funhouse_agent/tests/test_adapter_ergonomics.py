@@ -63,10 +63,10 @@ class TestSharedHelpers:
 ADAPTERS_WITH_ALLOWED_VALUES = [
     "axial_pile", "bearing_capacity", "calc_package", "drilled_shaft",
     "dxf_export", "dxf_import_adapter", "ground_improvement",
-    "gstools_adapter", "hvsrpy_adapter", "lateral_pile",
+    "gstools_adapter", "lateral_pile",
     "liquefaction_adapter", "liquepy_adapter", "pdf_import_adapter",
     "retaining_walls", "seismic_geotech", "settlement", "sheet_pile",
-    "slope_stability", "soe", "subsurface_adapter", "swprocess_adapter",
+    "slope_stability", "soe", "subsurface_adapter",
     "wave_equation",
 ]
 

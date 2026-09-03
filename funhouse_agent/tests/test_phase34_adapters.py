@@ -3,9 +3,7 @@
 Covers:
 - fem2d_adapter (7 methods, no external dep)
 - gstools_adapter (3 methods, has_gstools guard)
-- hvsrpy_adapter (1 method, has_hvsrpy guard)
-- swprocess_adapter (1 method, has_swprocess guard)
-- subsurface_adapter (14 methods: 8 native + 6 folded format adapters)
+- subsurface_adapter (16 methods: 8 native + 6 folded format adapters + 2 correlations)
 
 Each adapter gets:
 - TestXxxMethodInfo: METHOD_INFO/REGISTRY key match, required fields
@@ -171,107 +169,6 @@ class TestGstoolsCalls:
         # if gstools IS installed -> success (all params optional)
         # Either way, no crash
         assert isinstance(result, dict)
-
-
-# ===================================================================
-# HVSRPY adapter
-# ===================================================================
-
-class TestHvsrpyMethodInfo:
-    def test_keys_match(self):
-        from funhouse_agent.adapters.hvsrpy_adapter import METHOD_INFO, METHOD_REGISTRY
-        assert set(METHOD_INFO.keys()) == set(METHOD_REGISTRY.keys())
-
-    def test_required_fields(self):
-        from funhouse_agent.adapters.hvsrpy_adapter import METHOD_INFO
-        for name, info in METHOD_INFO.items():
-            assert "category" in info, f"{name} missing category"
-            assert "brief" in info, f"{name} missing brief"
-            assert "parameters" in info, f"{name} missing parameters"
-            assert "returns" in info, f"{name} missing returns"
-
-    def test_method_count(self):
-        from funhouse_agent.adapters.hvsrpy_adapter import METHOD_INFO
-        assert len(METHOD_INFO) == 1
-
-
-class TestHvsrpyDispatch:
-    def test_list_methods(self):
-        from funhouse_agent.dispatch import list_methods
-        methods = list_methods("hvsrpy")
-        assert "error" not in methods
-        all_methods = []
-        for cat_methods in methods.values():
-            all_methods.extend(cat_methods.keys())
-        assert "analyze_hvsr" in all_methods
-        assert len(all_methods) == 1
-
-    def test_describe_method(self):
-        from funhouse_agent.dispatch import describe_method
-        info = describe_method("hvsrpy", "analyze_hvsr")
-        assert "parameters" in info
-        assert "ns" in info["parameters"]
-        assert "ew" in info["parameters"]
-        assert "vt" in info["parameters"]
-        assert "dt" in info["parameters"]
-
-
-class TestHvsrpyCalls:
-    def test_hvsr_missing_or_unavailable(self):
-        """call_agent with empty params returns error (dep missing or param error)."""
-        from funhouse_agent.dispatch import call_agent
-        result = call_agent("hvsrpy", "analyze_hvsr", {})
-        assert "error" in result
-
-
-# ===================================================================
-# swprocess adapter
-# ===================================================================
-
-class TestSwprocessMethodInfo:
-    def test_keys_match(self):
-        from funhouse_agent.adapters.swprocess_adapter import METHOD_INFO, METHOD_REGISTRY
-        assert set(METHOD_INFO.keys()) == set(METHOD_REGISTRY.keys())
-
-    def test_required_fields(self):
-        from funhouse_agent.adapters.swprocess_adapter import METHOD_INFO
-        for name, info in METHOD_INFO.items():
-            assert "category" in info, f"{name} missing category"
-            assert "brief" in info, f"{name} missing brief"
-            assert "parameters" in info, f"{name} missing parameters"
-            assert "returns" in info, f"{name} missing returns"
-
-    def test_method_count(self):
-        from funhouse_agent.adapters.swprocess_adapter import METHOD_INFO
-        assert len(METHOD_INFO) == 1
-
-
-class TestSwprocessDispatch:
-    def test_list_methods(self):
-        from funhouse_agent.dispatch import list_methods
-        methods = list_methods("swprocess")
-        assert "error" not in methods
-        all_methods = []
-        for cat_methods in methods.values():
-            all_methods.extend(cat_methods.keys())
-        assert "analyze_masw" in all_methods
-        assert len(all_methods) == 1
-
-    def test_describe_method(self):
-        from funhouse_agent.dispatch import describe_method
-        info = describe_method("swprocess", "analyze_masw")
-        assert "parameters" in info
-        assert "traces" in info["parameters"]
-        assert "offsets" in info["parameters"]
-        assert "dt" in info["parameters"]
-
-
-class TestSwprocessCalls:
-    def test_masw_missing_or_unavailable(self):
-        """call_agent with empty params returns error (dep missing or param error)."""
-        from funhouse_agent.dispatch import call_agent
-        result = call_agent("swprocess", "analyze_masw", {})
-        assert "error" in result
 
 
 # ===================================================================
