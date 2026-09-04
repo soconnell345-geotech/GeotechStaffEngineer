@@ -19,14 +19,18 @@ from funhouse_agent.adapters import MODULE_REGISTRY
 
 REFERENCE_MODULES = [
     "dm7",
+    "em_2104", "em_2107",
     "gec4", "gec5", "gec6", "gec7", "gec8", "gec9",
     "gec10", "gec11", "gec12", "gec13", "gec14",
     "micropile",
-    "ufc_backfill", "ufc_expansive", "ufc_pavement",
+    "ufc_backfill", "ufc_expansive", "ufc_pavement", "ufc_structural",
+    "ufc_collapse", "gsa_collapse", "wood_handbook",
 ]
 
 # Modules with text retrieval (retrieve_section, search_sections, etc.)
 TEXT_MODULES = [
+    "em_2104", "em_2107", "ufc_structural", "ufc_collapse", "gsa_collapse",
+    "wood_handbook",
     "gec4", "gec5", "gec6", "gec7", "gec8", "gec9",
     "gec10", "gec11", "gec12", "gec13", "gec14",
     "micropile",
@@ -170,6 +174,191 @@ class TestDM7:
         mod = importlib.import_module(spec["adapter"])
         # Check that no methods are lost — should have 300+
         assert len(mod.METHOD_REGISTRY) >= 300
+
+
+# ──────────────────────────────────────────────────────────────────────
+# EM 1110-2-2104 specific tests (USACE RC hydraulic structures)
+# ──────────────────────────────────────────────────────────────────────
+
+class TestEM2104:
+    def test_method_count(self):
+        # 4 detailing + 8 loads + 6 serviceability + 20 flexure/axial +
+        # 5 design + 4 shear + 4 text retrieval = 51 (some digitized
+        # functions collapse under semantic aliasing, which list_methods
+        # hides from the count on purpose — see _reference_common).
+        methods = list_methods("em_2104")
+        total = sum(len(v) for v in methods.values())
+        assert total >= 45, f"em_2104: expected >= 45, got {total}"
+
+    def test_pure_flexure_singly_appendix_c2(self):
+        """Appendix C-2 anchor: As=1.58in^2, fc'=4ksi, fy=60ksi, b=12in,
+        d=20.5in, phi=0.9 -> phi*Mn = 137.5 k-ft = 1650 k-in."""
+        r = call_agent("em_2104", "pure_flexure_singly", {
+            "as_": 1.58, "fy": 60, "fc_prime": 4, "b": 12, "d": 20.5,
+            "phi": 0.9,
+        })
+        assert "error" not in r
+        assert r["phi_mn"] == pytest.approx(1650.0, rel=2e-3)
+
+    def test_unknown_method(self):
+        result = call_agent("em_2104", "nonexistent_method_xyz", {})
+        assert "error" in result
+
+
+# ──────────────────────────────────────────────────────────────────────
+# EM 1110-2-2107 specific tests (USACE hydraulic steel structures)
+# ──────────────────────────────────────────────────────────────────────
+
+class TestEM2107:
+    def test_method_count(self):
+        # 3 design basis + 9 loads + 8 seismic amplification +
+        # 3 fatigue/fracture + 3 connections + 23 tainter-gate loads +
+        # 4 text retrieval = 53.
+        methods = list_methods("em_2107")
+        total = sum(len(v) for v in methods.values())
+        assert total >= 45, f"em_2107: expected >= 45, got {total}"
+
+    def test_side_seal_friction_appendix_f(self):
+        """Appendix F worked example (printed pp. 438-440): mu_s=0.5,
+        S=7.03 lb/ft, l_total=42.20 ft, gamma_w=0.0625 kcf, d2=0.5 ft,
+        l1=42.20 ft, l2=0, h=40 ft -> Fs = 6.74 kips."""
+        r = call_agent("em_2107", "side_seal_friction_force", {
+            "mu_s": 0.5, "s_preset": 7.03, "l_total": 42.20,
+            "gamma_w": 0.0625, "d2": 0.5, "l1": 42.20, "l2": 0, "h": 40,
+        })
+        assert "error" not in r
+        assert r["fs_total"] == pytest.approx(6.74, rel=1e-3)
+
+    def test_unknown_method(self):
+        result = call_agent("em_2107", "nonexistent_method_xyz", {})
+        assert "error" in result
+
+
+# ──────────────────────────────────────────────────────────────────────
+# UFC 3-301-01 specific tests (DoD structural engineering)
+# ──────────────────────────────────────────────────────────────────────
+
+class TestUFCStructural:
+    def test_method_count(self):
+        # 4 general provisions + 10 risk category/loads + 8 seismic
+        # force-resisting systems + 6 seismic load combinations +
+        # 6 evaluation/retrofit + 4 healthcare + 2 nonbuilding +
+        # 13 nonstructural seismic + 8 GFRP + 5 best practices +
+        # 4 text retrieval = 70.
+        methods = list_methods("ufc_structural")
+        total = sum(len(v) for v in methods.values())
+        assert total >= 60, f"ufc_structural: expected >= 60, got {total}"
+
+    def test_table_3_1_seismic_system(self):
+        """Table 3-1 (REPLACES ASCE 7-22 Table 12.2-1): Category B special
+        reinforced concrete shear walls -> R=6, Omega0=2.5, Cd=5."""
+        r = call_agent("ufc_structural", "table_3_1_seismic_system", {
+            "category": "B", "system": "special_reinforced_concrete_shear_walls",
+        })
+        assert "error" not in r
+        assert r["R"] == 6
+        assert r["omega0"] == pytest.approx(2.5)
+        assert r["cd"] == 5
+
+    def test_table_2_2_risk_category_v(self):
+        """Table 2-2: DoD-added Risk Category V (national strategic military
+        assets) -> seismic Ie = 1.0."""
+        r = call_agent("ufc_structural", "table_2_2_risk_category",
+                       {"risk_category": "V"})
+        assert "error" not in r
+        assert r["seismic_factor_ie"] == pytest.approx(1.0)
+
+    def test_unknown_method(self):
+        result = call_agent("ufc_structural", "nonexistent_method_xyz", {})
+        assert "error" in result
+
+
+# ──────────────────────────────────────────────────────────────────────
+# UFC 4-023-03 specific tests (DoD progressive collapse)
+# ──────────────────────────────────────────────────────────────────────
+
+class TestUFCCollapse:
+    def test_method_count(self):
+        # 6 applicability + 16 tie forces + 17 alternate path +
+        # 6 enhanced local resistance + 9 RC + 9 steel + 9 masonry/wood/CFS
+        # + 5 IBC modifications + 4 text retrieval = 81.
+        methods = list_methods("ufc_collapse")
+        total = sum(len(v) for v in methods.values())
+        assert total >= 70, f"ufc_collapse: expected >= 70, got {total}"
+
+    def test_peripheral_tie_force_appendix_d(self):
+        """Appendix D worked RC example (printed p. 126): wF=214.5 psf,
+        L1=37.5 ft, Lp=3 ft, WC=35,100 lb -> Fp=250,088 lb (250.1 kip)."""
+        r = call_agent("ufc_collapse", "peripheral_tie_force_two_way", {
+            "wf": 214.5, "l1": 37.5, "wc": 35100, "lp": 3,
+        })
+        assert "error" not in r
+        assert r["fp"] == pytest.approx(250087.5, rel=1e-4)
+
+    def test_required_tie_area_appendix_d(self):
+        """Appendix D: Ru=250.1 kip, fy=60 ksi, Phi=0.75, overstrength=1.25
+        -> As_req'd = 4.45 in^2."""
+        r = call_agent("ufc_collapse", "required_tie_area",
+                       {"ru": 250.1, "fy": 60})
+        assert "error" not in r
+        assert r["as_required"] == pytest.approx(4.45, rel=2e-3)
+
+    def test_unknown_method(self):
+        result = call_agent("ufc_collapse", "nonexistent_method_xyz", {})
+        assert "error" in result
+
+
+# ──────────────────────────────────────────────────────────────────────
+# GSA Alternate Path specific tests (civilian progressive collapse)
+# ──────────────────────────────────────────────────────────────────────
+
+class TestGSACollapse:
+    def test_method_count(self):
+        # 3 applicability + 25 alternate path + 8 redundancy + 9 RC +
+        # 9 steel + 9 masonry/wood/CFS + 4 text retrieval = 67.
+        methods = list_methods("gsa_collapse")
+        total = sum(len(v) for v in methods.values())
+        assert total >= 55, f"gsa_collapse: expected >= 55, got {total}"
+
+    def test_minimum_load_redistribution_systems_appendix_d(self):
+        """Appendix D worked redundancy example (printed p. D48): an
+        8-story building requires n = ceil(8/3) = 3 load-redistribution
+        systems (Equation 3.13)."""
+        r = call_agent("gsa_collapse", "minimum_load_redistribution_systems",
+                       {"total_floors": 8})
+        assert "error" not in r
+        assert r["n"] == 3
+
+    def test_unknown_method(self):
+        result = call_agent("gsa_collapse", "nonexistent_method_xyz", {})
+        assert "error" in result
+
+
+# ──────────────────────────────────────────────────────────────────────
+# USDA Wood Handbook specific tests (FPL-GTR-282)
+# ──────────────────────────────────────────────────────────────────────
+
+class TestWoodHandbook:
+    def test_method_count(self):
+        # 15 moisture relations + 5 mechanical properties + 16 fastenings +
+        # 12 structural deformation + 16 structural stress + 17 structural
+        # stability + 4 text retrieval = 85.
+        methods = list_methods("wood_handbook")
+        total = sum(len(v) for v in methods.values())
+        assert total >= 70, f"wood_handbook: expected >= 70, got {total}"
+
+    def test_moisture_content_adjustment_eq_5_3(self):
+        """Printed worked example: white ash MOR at 8% MC, P12=103,000 kPa,
+        Pg=66,000 kPa, Mp=24 -> P8 = 119,500 kPa (Eq 5-3)."""
+        r = call_agent("wood_handbook", "adjust_property_for_moisture_content", {
+            "p12": 103000, "pg": 66000, "moisture_content_pct": 8, "mp_pct": 24,
+        })
+        assert "error" not in r
+        assert r["property_value"] == pytest.approx(119500, rel=2e-3)
+
+    def test_unknown_method(self):
+        result = call_agent("wood_handbook", "nonexistent_method_xyz", {})
+        assert "error" in result
 
 
 # ──────────────────────────────────────────────────────────────────────

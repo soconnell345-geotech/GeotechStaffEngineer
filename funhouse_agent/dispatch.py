@@ -50,11 +50,13 @@ AGENT_NAMES = sorted(MODULE_REGISTRY.keys())
 REFERENCE_MODULES = frozenset({
     "reference_db", "figure_db",
     "dm7",
+    "em_2104", "em_2107",
     "gec4", "gec5", "gec6", "gec7", "gec8", "gec9",
     "gec10", "gec11", "gec12", "gec13", "gec14",
     "micropile",
     "ufc_backfill", "ufc_expansive", "ufc_pavement",
     "ufc_stabilization", "ufc_flexible_practice", "ufc_concrete_practice",
+    "ufc_structural", "ufc_collapse", "gsa_collapse", "wood_handbook",
     "fema_p2082", "california_trenching", "fhwa_pavements",
     "eurocode_7_1", "eurocode_7_2", "aashto_1993",
 })
@@ -203,13 +205,19 @@ STRUCTURAL_MODULES = frozenset({
     "calc_package",    # report rendering (html_to_pdf + module calc-package templates)
 })
 
-# NOTE: the structural reference layer is still being onboarded (candidates:
-# UFC 3-301-01 structural loads/design criteria, EM 1110-2-2104 strength
-# design for RC hydraulic structures, EM 1110-2-2107 steel structures). Add
-# modules here as they land; for now this carries the one structural-adjacent
-# reference already in the library plus the whole-library search DBs.
+# Structural reference layer: USACE EM 1110-2-2104/2107 (hydraulic RC/steel
+# structures), UFC 3-301-01 (DoD structural design criteria, IBC/ASCE 7-22
+# modifications), the progressive-collapse pair (UFC 4-023-03 + its GSA
+# civilian sibling), the USDA Wood Handbook, plus the one structural-
+# adjacent UFC practice module and the whole-library search DBs.
 STRUCTURAL_REFERENCES = frozenset({
     "reference_db", "figure_db",
+    "em_2104",                 # EM 1110-2-2104 — RC hydraulic structures: loads, flexure/axial, shear
+    "em_2107",                 # EM 1110-2-2107 — hydraulic steel structures: LRFD loads, seismic amplification, Tainter-gate loads
+    "ufc_structural",          # UFC 3-301-01 — DoD structural criteria: risk categories, live loads, Table 3-1 seismic systems
+    "ufc_collapse",            # UFC 4-023-03 — DoD progressive collapse: tie forces, Alternate Path, ELR, RC/steel m-factors
+    "gsa_collapse",            # GSA Alternate Path 2016 — civilian progressive collapse: FSL applicability, Redundancy Requirements
+    "wood_handbook",           # USDA Wood Handbook — clear-wood properties, EMC/shrinkage, Ch 9 structural equations, fastenings
     "ufc_concrete_practice",   # UFC 3-250-04 — concrete materials/construction practice
 })
 
