@@ -85,6 +85,23 @@ not a fallback. Priority order changes:
 - DXF-native ingest (B1) drops to opportunistic (still cheap; do it
   when convenient, mainly benefits any consultant-supplied DXFs).
 
+## PRODUCT FRAMING (owner, 2026-09-04): chatbot-first, maximally flexible
+
+End users are NOT tool-aware — they use the familiar chat interface:
+"tell me X about this drawing", "find how many times Y occurs in this
+drawing SET", "does this drawing set align with our standards
+(standards provided separately)". Design consequences:
+1. Every tool = a generic composable primitive the AGENT orchestrates;
+   no per-question plumbing, all parameters runtime-supplied.
+2. DRAWING SETS are first-class (Phase 2+): multi-page/multi-file
+   ingest, per-sheet iteration, cross-sheet aggregation (counts,
+   inventories, sheet-index awareness).
+3. STANDARDS-CONFORMANCE scenarios (later phase): compare detected
+   constructs/content against standards supplied as uploads or as
+   reference-layer modules — the agent composes detection + reference
+   lookup + judgment, with every claim citing the sheet region and the
+   standard clause it compared against.
+
 ## Build plan
 
 Phase 1 (B2+B4+B5-leaders): region-snip + endpoint search + PDF-vector
