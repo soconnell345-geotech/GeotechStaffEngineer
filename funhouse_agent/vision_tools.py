@@ -565,6 +565,82 @@ def _dispatch_analyze_image(arguments, engine, attachments):
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
 
+def _dispatch_render_region(arguments, engine, attachments):
+    """Handle a render_region tool call — the region-snip "zoom in" primitive.
+
+    NOT wired into the live agent dispatch catalog yet (that is Phase 2/B6 of
+    the drawing-intelligence build — module_work/DRAWING_INTELLIGENCE_DESIGN.md):
+    "render_region" is absent from ``EXTENDED_TOOLS``/``VISION_TOOL_DESCRIPTIONS``,
+    and ``dispatch_extended_tool`` does not route to this function, so the live
+    agent cannot reach it. Implemented here, in the same shape/conventions as
+    ``_dispatch_analyze_pdf_page`` (same attachment-or-path resolution, same
+    "render then vision-analyze" flow), so it is ready to register once Phase
+    2 wires it in. Callable directly today by calling this function itself
+    (e.g. from drawing_ir composition callers or tests).
+
+    Arguments: ``attachment_key`` (or a real path), ``page`` (0-indexed,
+    default 0), ``bbox`` ([x0,y0,x1,y1] in PDF points, PyMuPDF page space —
+    see ``drawing_ir.render`` for the coordinate contract), ``dpi`` (default
+    300), ``pad_frac`` (default 0.15), ``marks`` (optional list of [x,y,label]
+    for set-of-marks prompting), ``prompt``.
+    """
+    key = arguments.get("attachment_key", "")
+    page = arguments.get("page", 0)
+    bbox = arguments.get("bbox")
+    dpi = arguments.get("dpi", 300)
+    pad_frac = arguments.get("pad_frac", 0.15)
+    marks = arguments.get("marks")
+    prompt = arguments.get("prompt", "Describe what this zoomed-in region shows.")
+
+    try:
+        pdf_bytes, _src = _resolve_attachment_or_path(key, attachments)
+    except FileNotFoundError as e:
+        return json.dumps({"error": str(e)})
+
+    try:
+        from drawing_ir.render import render_region
+        image_bytes = render_region(
+            content=pdf_bytes, page=page,
+            bbox=tuple(bbox) if bbox is not None else None,
+            dpi=dpi, pad_frac=pad_frac,
+            marks=[tuple(m) for m in marks] if marks else None,
+        )
+    except ImportError:
+        return json.dumps({
+            "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
+        })
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+
+    try:
+        result = engine.analyze_image(image_bytes, prompt)
+        return json.dumps({"page": page, "bbox": bbox, "analysis": result})
+    except (NotImplementedError, AttributeError) as e:
+        return json.dumps({
+            "error": f"Vision not available on this engine: {e}"
+        })
+    except Exception as e:
+        return json.dumps({"error": f"{type(e).__name__}: {e}"})
+
+
+def render_region_to_file(path, filepath=None, content=None, page=0,
+                          bbox=None, dpi=300, pad_frac=0.15, marks=None,
+                          save_fn=None):
+    """Render a PDF region (``drawing_ir.render.render_region``) and save it.
+
+    The save-to-file counterpart to ``render_region``/``_dispatch_render_region``,
+    following the same local-write convention as ``save_file``/
+    ``_default_save_fn``: makes parent directories, writes the PNG bytes, and
+    returns the absolute saved path.
+    """
+    from drawing_ir.render import render_region as _render_region
+    png_bytes = _render_region(filepath=filepath, content=content, page=page,
+                               bbox=bbox, dpi=dpi, pad_frac=pad_frac,
+                               marks=marks)
+    writer = save_fn or _default_save_fn
+    return writer(path, png_bytes)
+
+
 def _dispatch_analyze_pdf_page(arguments, engine, attachments):
     """Handle analyze_pdf_page tool call."""
     key = arguments.get("attachment_key", "")

@@ -36,6 +36,7 @@ from drawing_ir.results import (
     entity_from_dict,
 )
 from drawing_ir.ingest import from_dxf, from_pdf_vector, from_raster
+from drawing_ir.render import render_region
 from drawing_ir import queries
 
 __all__ = [
@@ -53,6 +54,8 @@ __all__ = [
     "from_dxf",
     "from_pdf_vector",
     "from_raster",
+    # region-snip vision primitive (PyMuPDF imported lazily inside)
+    "render_region",
     # queries (module)
     "queries",
 ]

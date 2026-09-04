@@ -25,7 +25,9 @@ drawing_ir/
   ingest.py    # from_dxf / from_pdf_vector / from_raster
   raster.py    # the OpenCV tracing leg (isolated so cv2 stays optional)
   queries.py   # the LLM-facing slice queries
+  render.py    # render_region — the region-snip "zoom in" vision primitive
   tests/       # programmatic DXF/PDF/raster fixtures + query correctness
+               # (leader_fixtures.py: synthetic multi-leader + decoy PDF sheets)
 ```
 
 ## The IR schema (`results.py`)
@@ -165,10 +167,74 @@ The agent narrows with queries, then pulls exact coordinates for a shortlist via
   radius)`
 - `entities_on_layer(layer)`, `entities_by_color(color)`
 - `get_entities(ids)` — full exact coordinates for a shortlist
+- `entities_ending_near(point, radius, entity_types=None)` — entities with an
+  ENDPOINT (not just bbox/full-geometry) within radius; each hit carries
+  `end` ("start"|"end"), `end_point`, and `other_end` (the far endpoint —
+  e.g. where a leader points FROM). Circle/TextItem never match (no
+  endpoints). The primitive "what terminates here" query.
+- `text_anchored_geometry(pattern, radius=None)` — composes `text_items` with
+  `entities_ending_near` around each match's insertion point: "find text X ->
+  the geometry terminating there -> the far endpoint it points at"
+  (`points_at`). `radius` defaults per-match from that text's own height.
+  **PROPOSAL** (`proposal_only`) — adjacency is not proof of a leader
+  relationship, confirm against the drawing.
 - `candidate_ground_surface()` — **PROPOSAL only**: the widest left-to-right
   path (tie → upper). A heuristic suggestion the caller confirms, never an
   assertion. (Soil properties never come from a drawing.)
+- `find_leaders(max_arrowhead_size=None, search_radius=None, text_radius=None,
+  min_confidence=0.0)` — **PROPOSAL only**: composes a leader (bent shaft +
+  arrowhead + tail text) from primitives — small closed 3-5-vertex
+  Polyline/Region "arrowhead" candidates, the nearest Line/open-Polyline
+  endpoint as the shaft, alignment of the shaft's terminal direction with the
+  arrowhead's own apex-from-base direction, and the nearest TextItem to the
+  shaft's far end as tail text. Confidence = weighted alignment + text
+  proximity + shaft simplicity (see the docstring for the exact weights and
+  the documented false-positive source: a dimension line's arrowheads are
+  geometrically identical and can also surface as low/moderate-confidence
+  proposals). Validated on synthetic PDF-vector fixtures
+  (`drawing_ir/tests/leader_fixtures.py` + `test_find_leaders.py`): 100%
+  recall, 100% precision at confidence >= 0.5 (planted leaders score
+  ~0.94-0.96; the dimension-decoy arrowheads that DO surface score ~0.32) —
+  fixture-scoped numbers, not a general benchmark claim.
 - `summary_stats()` — counts by type/layer, page metadata, extent, scale
+
+### The region-snip vision primitive (`render.py`)
+
+`render_region(filepath|content, page, bbox=None, dpi=300, pad_frac=0.15,
+marks=None)` renders a zoomed-in PNG crop of a PDF page — turns a WHERE
+(a bbox from any exact source, typically a query result) into a high-DPI
+image a vision model can answer WHAT about, instead of feeding a whole page
+(illegible small annotations) or asking the model to guess pixel coordinates.
+`marks` draws numbered circles at given points for set-of-marks prompting.
+
+**Coordinate contract**: `bbox`/`marks` are PDF points in PyMuPDF's own page
+space — origin top-left, y DOWN (`page.rect`/`fitz.Rect` convention) — NOT
+the `origin="bottom_left"` convention `from_pdf_vector` defaults to. Convert
+an IR point before calling: `x_pdf = x_ir; y_pdf = page_height_pt - y_ir`.
+
+Implemented in `funhouse_agent/vision_tools.py` as `_dispatch_render_region`
+(same conventions as `_dispatch_analyze_pdf_page`) plus a save-to-file
+counterpart `render_region_to_file`, but **not yet registered** in
+`EXTENDED_TOOLS`/`VISION_TOOL_DESCRIPTIONS`/`dispatch_extended_tool`'s
+catalog — that wiring is Phase 2 (B6) of the drawing-intelligence build
+(`module_work/DRAWING_INTELLIGENCE_DESIGN.md`). Both are directly callable
+today (e.g. by drawing_ir composition callers or tests).
+
+### A verified ingest fact `find_leaders` depends on
+
+`from_pdf_vector` **never emits a `Region`** entity (only Line/Polyline/
+TextItem — see `ingest.py`'s `from_pdf_vector` loop). A filled-triangle
+arrowhead therefore arrives as a **closed Polyline with 3 vertices and a
+small bbox** — verified empirically by round-tripping a synthetic PyMuPDF
+leader through `from_pdf_vector` (see `drawing_ir/tests/leader_fixtures.py`).
+Gotcha along the way: PyMuPDF's `Shape.finish()` defaults `closePath=True`
+even for plain multi-segment line-work, so a NAIVELY-drawn shaft (without
+`closePath=False`) also comes back `closed=True` — geometrically
+indistinguishable from an arrowhead by the `closed` flag alone. Real CAD/plot
+PDF exporters normally leave a stroke-only path open, and the fixture
+generator draws shafts with `closePath=False` explicitly to match; the
+`closed` flag alone is therefore NOT a reliable arrowhead signal on its
+own — `find_leaders` also gates on vertex count (3-5) and bbox size.
 
 ## Funhouse adapter
 
