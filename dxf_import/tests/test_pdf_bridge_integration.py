@@ -6,8 +6,9 @@ Tests the conversion bridge between PDF results and slope_stability/fem2d inputs
 import json
 import pytest
 
-from pdf_import import to_dxf_parse_result, PdfParseResult
-from pdf_import.results import PdfParseResult as PdfResult
+from planlens.pdf import PdfParseResult
+from dxf_import.pdf_bridge import to_dxf_parse_result
+from planlens.pdf.results import PdfParseResult as PdfResult
 from dxf_import.results import DxfParseResult
 from dxf_import.converter import (
     SoilPropertyAssignment,
