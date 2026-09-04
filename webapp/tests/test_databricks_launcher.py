@@ -165,7 +165,11 @@ def test_render_bootstrap_script_registers_prompter_with_fallback():
     assert src.index("bootstrap.load_config_options") < \
         src.index("bootstrap.run(APP_PATH")
     assert "bootstrap.run(APP_PATH, False, [], _FLAGS)" in src
-    assert '"server_baseUrlPath": BASE_PATH' in src
+    # baseUrlPath must NOT be set: the driver proxy strips the
+    # /driver-proxy/... prefix before forwarding, so the app serves at root.
+    # Applying it 404s every request ("Not Found") — live-proven 2026-09-04
+    # on 5.11.2, the first release where flag_options were actually applied.
+    assert '"server_baseUrlPath"' not in src
     # Production posture: no file watcher (no rerun prompt) + viewer toolbar.
     assert '"server_fileWatcherType": "none"' in src
     assert '"client_toolbarMode": "viewer"' in src

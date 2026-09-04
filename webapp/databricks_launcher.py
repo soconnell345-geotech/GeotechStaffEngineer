@@ -316,7 +316,13 @@ os.environ.setdefault("GEOTECH_UPLOAD_MODE", "ws")
 _FLAGS = {
     "server_port": PORT,
     "server_address": "0.0.0.0",
-    "server_baseUrlPath": BASE_PATH,
+    # server_baseUrlPath is deliberately ABSENT. The driver proxy STRIPS the
+    # /driver-proxy/o/{org}/{cluster}/{port} prefix before forwarding, so the
+    # app must serve at root. Setting baseUrlPath here 404s every request
+    # ("Not Found") — proven live 2026-09-04 on 5.11.2, the first release
+    # where load_config_options() made these flags real (5.10.x-5.11.1
+    # worked only because the flag was silently ignored). BASE_PATH is still
+    # used for the browser-facing URL.
     "server_enableCORS": False,
     "server_enableXsrfProtection": False,
     "server_headless": True,
