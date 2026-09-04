@@ -111,3 +111,28 @@ family, agent wiring, raster/OCR leg. Phase 3 (B3 + B1): marks A/B +
 opportunistic DXF-native ingest. Build on owner
 word; needs 2-3 representative sheets from the owner's team as fixtures
 (scrubbed of anything sensitive).
+
+## Ground-truth fixture sources (scout survey, 2026-09-04)
+
+Owner's insight: agencies publishing the SAME detail as CAD + PDF give
+machine-readable ground truth (native LEADER/DIMENSION entities in CAD)
+against the PDF as test input — real-drafting-practice scoring with no
+manual labeling. Findings:
+- **Key wrinkle: state DOTs are MicroStation DGN shops** (TxDOT, FDOT,
+  Caltrans, WSDOT, NYSDOT, PennDOT, ODOT) — the free ODA File Converter
+  does DWG<->DXF only, NOT DGN; DGN needs Bentley View export (free but
+  manual) — a conversion tax.
+- **Top picks (DWG-native, no login, direct ODA->DXF path):**
+  1. Mecklenburg County NC Stormwater Services standard drawings
+     (stormwaterservices.mecknc.gov/Standard-Drawings) — DWG+PDF pairs,
+     drainage/culvert details with dimension callouts.
+  2. Jacksonville FL City Standard Details (jacksonville.gov public
+     works, "(dwg-pdf-formats)" page) — roadway/curb/drainage series.
+  3. Caltrans 2025 Standard Plans — best structural/bridge leader
+     density, but DGN (use only if the DWG sources prove insufficient).
+- Pages bot-block scripted fetches (403 on WebFetch) — harvest the
+  specific file links via a real browser session when Phase-1
+  verification needs real-truth fixtures (5-10 pairs). DWG->DXF via ODA
+  File Converter locally; then: parse DXF LEADER/DIMENSION entities =
+  truth, run find_leaders on the paired PDF, score recall/precision.
+- FloorPlanCAD (academic) = wrong format/domain; pattern reference only.
