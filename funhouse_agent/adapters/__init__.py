@@ -280,7 +280,7 @@ MODULE_REGISTRY = {
     },
     "drawing_ir": {
         "adapter": "funhouse_agent.adapters.drawing_ir_adapter",
-        "brief": "LLM-ready drawing digitization: DXF/PDF-vector/raster to a unified IR (lines/arcs/text + coords/provenance/confidence), cached; query SLICES (bbox/angle/text/layer) not pixels",
+        "brief": "Drawing/submittal intelligence: DXF/PDF/raster to a unified IR; slice queries (bbox/angle/text/layer); annotation-construct PROPOSALS (leaders, dimensions, title block, bubbles, rev clouds); text/construct search across whole drawing SETS; region snip to PNG for vision",
     },
     "opensees": {
         "adapter": "funhouse_agent.adapters.opensees_adapter",

@@ -1445,9 +1445,19 @@ def find_title_block(ir: DrawingIR, edge_frac: float = 0.40,
 
 
 def summary_stats(ir: DrawingIR) -> Dict[str, Any]:
-    """Counts by type/layer, page metadata, extent, and scale/provenance."""
+    """Counts by type/layer, page metadata, extent, and scale/provenance.
+
+    Also reports whether the sheet carries any extractable TEXT — real
+    agency PDFs are frequently plotted with SHX (stroked) lettering, which
+    has NO text layer at all: every glyph is vector line-work, so
+    text_items/text_anchored_geometry/pattern searches return nothing and
+    reading the lettering needs the raster/OCR leg (or vision on a region
+    snip). ``has_text`` + ``text_note`` make that visible up front instead
+    of letting a text query silently come back empty.
+    """
     bb = ir.bbox()
-    return {
+    n_text = sum(1 for e in ir.entities if isinstance(e, TextItem))
+    out = {
         "source": ir.source,
         "n_entities": len(ir.entities),
         "counts_by_type": ir.counts_by_type(),
@@ -1461,4 +1471,14 @@ def summary_stats(ir: DrawingIR) -> Dict[str, Any]:
         "scale_provenance": ir.scale_provenance,
         "bbox": [_r(v) for v in bb] if bb is not None else None,
         "warnings": list(ir.warnings),
+        "has_text": n_text > 0,
     }
+    if n_text == 0 and ir.entities:
+        out["text_note"] = (
+            "No extractable text on this sheet — likely SHX/stroked "
+            "lettering (each glyph is plain line-work). Text queries "
+            "(text_items, text_anchored_geometry, pattern search) will "
+            "return nothing; geometry queries and construct proposals "
+            "still work. Read lettering via a region snip + vision, or "
+            "the raster/OCR leg.")
+    return out

@@ -51,6 +51,7 @@ EXTENDED_TOOLS = STANDARD_TOOLS | {
     "read_pdf_text",
     "analyze_image",
     "analyze_pdf_page",
+    "render_region",
     "read_reference_figure",
     "save_file",
 }
@@ -105,7 +106,24 @@ a boring-log sheet, or a plotted cross-section. For a text-layer report prefer
 </tool_call>
 ```
 
-### 9. read_reference_figure
+### 9. render_region
+Render a ZOOMED-IN crop of a PDF page and analyze it with vision — the
+"geometry says WHERE, vision says WHAT" primitive for drawings. Get exact
+coordinates first from the `drawing_ir` module (digitize_drawing →
+query_drawing: e.g. a leader's tip, a title block's region), then zoom here to
+see WHAT is at that location. `bbox` is [x0,y0,x1,y1] in PDF points, TOP-LEFT
+origin with y DOWN (drawing_ir query coordinates are bottom-left/y-up: convert
+with y_pdf = page_height − y_ir, or use the drawing_ir `snip_region` method
+which converts for you). Optional `marks` = [[x,y,label], ...] draws numbered
+circles so the question becomes "what is mark 1 pointing at?". `dpi` defaults
+to 300.
+```
+<tool_call>
+{"tool_name": "render_region", "attachment_key": "sheet.pdf", "page": 0, "bbox": [400, 180, 480, 240], "marks": [[440, 210, "1"]], "prompt": "What is mark 1 pointing at?"}
+</tool_call>
+```
+
+### 10. read_reference_figure
 Render a digitized reference figure (e.g. a DM7 design chart) and read a value
 off it with vision. **Use this whenever a numeric value must come from a chart —
 do not read values off a chart from the caption or from memory.** Find the figure
@@ -119,7 +137,7 @@ where one exists.
 </tool_call>
 ```
 
-### 10. save_file
+### 11. save_file
 Save raw text or data to a file. Returns the saved file path. The write is
 VERIFIED on the real filesystem; report the `saved` path the tool returns (or
 its `rescue_path` if the target could not store the file). A `/Workspace` save
@@ -194,6 +212,8 @@ def dispatch_extended_tool(
         return _dispatch_analyze_image(arguments, engine, attachments)
     elif tool_name == "analyze_pdf_page":
         return _dispatch_analyze_pdf_page(arguments, engine, attachments)
+    elif tool_name == "render_region":
+        return _dispatch_render_region(arguments, engine, attachments)
     elif tool_name == "read_reference_figure":
         return _dispatch_read_reference_figure(arguments, engine)
     elif tool_name == "view_worked_example_source":
@@ -568,15 +588,13 @@ def _dispatch_analyze_image(arguments, engine, attachments):
 def _dispatch_render_region(arguments, engine, attachments):
     """Handle a render_region tool call — the region-snip "zoom in" primitive.
 
-    NOT wired into the live agent dispatch catalog yet (that is Phase 2/B6 of
-    the drawing-intelligence build — module_work/DRAWING_INTELLIGENCE_DESIGN.md):
-    "render_region" is absent from ``EXTENDED_TOOLS``/``VISION_TOOL_DESCRIPTIONS``,
-    and ``dispatch_extended_tool`` does not route to this function, so the live
-    agent cannot reach it. Implemented here, in the same shape/conventions as
-    ``_dispatch_analyze_pdf_page`` (same attachment-or-path resolution, same
-    "render then vision-analyze" flow), so it is ready to register once Phase
-    2 wires it in. Callable directly today by calling this function itself
-    (e.g. from drawing_ir composition callers or tests).
+    Live in the agent catalog since Phase 2/B6 of the drawing-intelligence
+    build (module_work/DRAWING_INTELLIGENCE_DESIGN.md): registered in
+    ``EXTENDED_TOOLS``/``VISION_TOOL_DESCRIPTIONS``, routed by
+    ``dispatch_extended_tool``, and exposed on both the deep-agent
+    (``deep/tools.py``) and native (``native_tools.py``) surfaces. Same
+    shape/conventions as ``_dispatch_analyze_pdf_page`` (same
+    attachment-or-path resolution, same "render then vision-analyze" flow).
 
     Arguments: ``attachment_key`` (or a real path), ``page`` (0-indexed,
     default 0), ``bbox`` ([x0,y0,x1,y1] in PDF points, PyMuPDF page space —

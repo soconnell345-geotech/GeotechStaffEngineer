@@ -529,7 +529,8 @@ def make_vision_tools(
     save_fn = save_fn or _default_save_fn
     include = include if include is not None else {
         "list_files", "read_pdf_text", "analyze_image", "analyze_pdf_page",
-        "read_reference_figure", "view_worked_example_source", "save_file",
+        "render_region", "read_reference_figure",
+        "view_worked_example_source", "save_file",
     }
     reference_cap = _resolve_reference_cap(max_result_chars,
                                            reference_result_chars)
@@ -615,6 +616,36 @@ def make_vision_tools(
             {"attachment_key": attachment_key, "page": page, "prompt": prompt},
         )
 
+    def render_region(
+        attachment_key: str,
+        page: int = 0,
+        bbox: Optional[list] = None,
+        marks: Optional[list] = None,
+        dpi: int = 300,
+        prompt: str = "Describe what this zoomed-in region shows.",
+    ) -> str:
+        """Render a ZOOMED-IN crop of a PDF page and analyze it with vision —
+        the "geometry says WHERE, vision says WHAT" primitive for drawings.
+
+        Get exact coordinates first from the ``drawing_ir`` module
+        (digitize_drawing → query_drawing — e.g. a leader's tip_xy, a title
+        block's region_bbox), then zoom here to see WHAT is at that location.
+        ``bbox`` is [x0, y0, x1, y1] in PDF points, TOP-LEFT origin with y
+        DOWN (drawing_ir query coordinates are bottom-left/y-up — convert
+        with y_pdf = page_height − y_ir, or use drawing_ir's ``snip_region``
+        method, which converts for you and saves a PNG instead). Optional
+        ``marks`` = [[x, y, label], ...] draws numbered circles at points of
+        interest so the question becomes "what is mark 1 pointing at?".
+        ``attachment_key`` is an attachment key or a real PDF path.
+        """
+        args = {"attachment_key": attachment_key, "page": page,
+                "prompt": prompt, "dpi": dpi}
+        if bbox is not None:
+            args["bbox"] = bbox
+        if marks is not None:
+            args["marks"] = marks
+        return _dispatch("render_region", args)
+
     def read_reference_figure(
         reference: str,
         figure_number: str,
@@ -697,6 +728,15 @@ def make_vision_tools(
         "analyze_pdf_page": (
             analyze_pdf_page,
             "Render a PDF page and analyze it using vision.",
+        ),
+        "render_region": (
+            render_region,
+            "Render a ZOOMED-IN crop of a PDF page and analyze it with "
+            "vision — for drawings: get exact coordinates from the "
+            "drawing_ir module first (geometry says WHERE), then zoom here "
+            "to see WHAT is there. bbox is [x0,y0,x1,y1] in PDF points "
+            "(top-left origin, y down); optional marks = [[x,y,label],...] "
+            "draws numbered circles at points of interest.",
         ),
         "read_reference_figure": (
             read_reference_figure,

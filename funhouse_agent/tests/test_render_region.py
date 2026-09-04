@@ -42,18 +42,44 @@ def _ir_to_pdf(xy, page_height=PAGE_HEIGHT):
     return (xy[0], page_height - xy[1])
 
 
-class TestDispatchRenderRegionUnwired:
-    """render_region is implemented but NOT registered in the live catalog
-    (that is Phase 2/B6 of the drawing-intelligence build) -- confirm both
-    halves of that: callable directly, absent from what the agent sees."""
+class TestDispatchRenderRegionWired:
+    """Phase 2/B6 wiring: render_region IS registered in the live catalog —
+    in EXTENDED_TOOLS, routed by the public dispatch, and present on the
+    deep-agent and native tool surfaces."""
 
-    def test_not_in_extended_tools(self):
-        assert "render_region" not in EXTENDED_TOOLS
+    def test_in_extended_tools(self):
+        assert "render_region" in EXTENDED_TOOLS
 
-    def test_not_reachable_via_public_dispatch(self):
+    def test_reachable_via_public_dispatch(self, tmp_path):
+        path, _gt = build_synthetic_leader_pdf(tmp_path, n_leaders=1,
+                                               include_decoys=False)
+        with open(path, "rb") as f:
+            pdf_bytes = f.read()
+        engine = MockVisionEngine()
         out = json.loads(dispatch_extended_tool(
-            "render_region", {}, MockVisionEngine(), {}))
-        assert "error" in out and "Unknown extended tool" in out["error"]
+            "render_region",
+            {"attachment_key": "sheet", "page": 0,
+             "bbox": [100, 100, 130, 130], "prompt": "what is here?"},
+            engine, {"sheet": pdf_bytes}))
+        assert "error" not in out
+        assert out["analysis"] == engine._analysis
+
+    def test_on_deep_agent_surface(self):
+        from funhouse_agent.deep.tools import make_vision_tools
+        names = {t.name for t in make_vision_tools(engine=None)}
+        assert "render_region" in names
+
+    def test_on_native_surface(self):
+        from funhouse_agent.native_tools import (
+            EXTENDED_TOOL_NAMES, OPENAI_TOOLS,
+        )
+        assert "render_region" in EXTENDED_TOOL_NAMES
+        assert "render_region" in {t["function"]["name"]
+                                   for t in OPENAI_TOOLS}
+
+    def test_described_to_the_v1_agent(self):
+        from funhouse_agent.vision_tools import VISION_TOOL_DESCRIPTIONS
+        assert "render_region" in VISION_TOOL_DESCRIPTIONS
 
     def test_directly_callable(self, tmp_path):
         path, _gt = build_synthetic_leader_pdf(tmp_path, n_leaders=1,

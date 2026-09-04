@@ -257,6 +257,61 @@ OPENAI_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "render_region",
+            "description": (
+                "Render a ZOOMED-IN crop of a PDF page and analyze it with "
+                "vision — for drawings: get exact coordinates from the "
+                "drawing_ir module first (geometry says WHERE), then zoom "
+                "here to see WHAT is there. bbox is [x0,y0,x1,y1] in PDF "
+                "points (top-left origin, y down; drawing_ir query "
+                "coordinates are bottom-left/y-up — y_pdf = page_height - "
+                "y_ir). Optional marks draw numbered circles at points of "
+                "interest."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "attachment_key": {
+                        "type": "string",
+                        "description": ("Key of the attached PDF, or a real "
+                                        "PDF path."),
+                    },
+                    "page": {
+                        "type": "integer",
+                        "description": "Page number (0-indexed).",
+                        "default": 0,
+                    },
+                    "bbox": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": ("[x0,y0,x1,y1] region in PDF points "
+                                        "(top-left origin). Omit for the "
+                                        "full page."),
+                    },
+                    "marks": {
+                        "type": "array",
+                        "items": {"type": "array"},
+                        "description": ("[[x,y,label], ...] numbered marker "
+                                        "circles (same frame as bbox)."),
+                    },
+                    "dpi": {
+                        "type": "integer",
+                        "description": "Render resolution.",
+                        "default": 300,
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "What to extract from the region.",
+                        "default": "Describe what this zoomed-in region shows.",
+                    },
+                },
+                "required": ["attachment_key"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "save_file",
             "description": (
                 "Save raw text or data to a file. Returns the saved file "
@@ -290,7 +345,7 @@ OPENAI_TOOLS = [
 
 # Tool names that are dispatched via vision_tools (not dispatch.py)
 EXTENDED_TOOL_NAMES = {"list_files", "read_pdf_text", "analyze_image",
-                       "analyze_pdf_page", "save_file"}
+                       "analyze_pdf_page", "render_region", "save_file"}
 
 # Consult-references tool — added to the primary's tool list conditionally
 # (per the agent's ``reference_mode``), NOT part of OPENAI_TOOLS. It routes a
