@@ -1,0 +1,288 @@
+{
+ "source_dxf": "3000.dxf",
+ "spaces": {
+  "model": {
+   "leaders": [],
+   "multileaders": [],
+   "dimensions": [],
+   "text": [
+    {
+     "type": "TEXT",
+     "text": "ROLLED EROSION CONTROL PRODUCTS",
+     "insert": [
+      2.0423,
+      5.4513
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "",
+     "insert": [
+      99.5151,
+      34.1029
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "LEADERS"
+    },
+    {
+     "type": "TEXT",
+     "text": "6.17",
+     "insert": [
+      1.2085,
+      5.4513
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "HARDWARE CLOTH & GRAVEL INLET PROTECTION",
+     "insert": [
+      2.0423,
+      5.1997
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "6.51",
+     "insert": [
+      1.2085,
+      5.1997
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "TEMPORARY SEDIMENT TRAP",
+     "insert": [
+      2.0423,
+      4.9555
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "6.60",
+     "insert": [
+      1.2085,
+      4.9555
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "WEIR TOP WIDTH 10' MIN., BOTTOM 7' MIN.",
+     "insert": [
+      5.9768,
+      4.9506
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SEDIMENT BASIN",
+     "insert": [
+      2.0423,
+      4.6958
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "6.61",
+     "insert": [
+      1.2085,
+      4.6958
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "FLASH BOARD RISER NOT PERMITTED",
+     "insert": [
+      5.9768,
+      4.6908
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SKIMMER SEDIMENT BASIN",
+     "insert": [
+      2.0423,
+      4.077
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "6.64",
+     "insert": [
+      1.2085,
+      4.077
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "1ST BAFFLE: RIP RAP & WASHED STONE BERM\\P2ND BAFFLE: STANDARD BAFFLE  \\P3RD BAFFLE: HARDWARE CLOTH SURROUNDING     \\P^I^I   THE SKIMMER   ",
+     "insert": [
+      5.9768,
+      4.4416
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "SPECIAL \\PEROSION CONTROL \\PREQUIREMENTS & NOTES",
+     "insert": [
+      6.6265,
+      0.7422
+     ],
+     "height": 0.15,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "STD. &\\PSPEC. #",
+     "insert": [
+      1.0112,
+      6.1287
+     ],
+     "height": 0.12,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "TITLE",
+     "insert": [
+      2.0617,
+      5.9388
+     ],
+     "height": 0.12,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "SPECIAL REQUIREMENTS & NOTES",
+     "insert": [
+      5.9995,
+      5.9305
+     ],
+     "height": 0.12,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "THE STANDARDS & SPECIFICATIONS SHOWN ARE FROM THE \"NORTH CAROLINA EROSION AND SEDIMENT CONTROL PLANNING AND DESIGN MANUAL\" (NCESCPDM) PREPARED BY NC DEPT. OF ENVIRONMENT AND NATURAL RESOURCES (NCDENR).  ",
+     "insert": [
+      1.2371,
+      3.1179
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "STD. NO.",
+     "insert": [
+      9.5879,
+      0.3049
+     ],
+     "height": 0.068,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REV.",
+     "insert": [
+      10.2202,
+      0.3041
+     ],
+     "height": 0.068,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "30.00",
+     "insert": [
+      9.5288,
+      0.0818
+     ],
+     "height": 0.1255,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    }
+   ],
+   "inserts": [
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      0.0,
+      0.0
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "MECKCOUNTYSEAL2",
+     "insert": [
+      0.2413,
+      -0.0
+     ],
+     "layer": "MECK-DETAIL"
+    }
+   ]
+  },
+  "Layout1": {
+   "leaders": [],
+   "multileaders": [],
+   "dimensions": [],
+   "text": [],
+   "inserts": [
+    {
+     "name": "ADCADD_ZZ",
+     "insert": [
+      0.0,
+      0.0
+     ],
+     "layer": "TEXT"
+    }
+   ]
+  }
+ }
+}

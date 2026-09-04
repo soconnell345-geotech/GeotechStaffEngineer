@@ -1,0 +1,1512 @@
+{
+ "source_dxf": "11.01.dxf",
+ "spaces": {
+  "model": {
+   "leaders": [],
+   "multileaders": [],
+   "dimensions": [],
+   "text": [
+    {
+     "type": "TEXT",
+     "text": "KEY",
+     "insert": [
+      4.2887,
+      2.2927
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "",
+     "insert": [
+      83.3929,
+      75.2381
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "TEXT"
+    },
+    {
+     "type": "TEXT",
+     "text": "COMPREHENSIVE STREET CLASSIFICATION SYSTEM (CLASS VI)",
+     "insert": [
+      4.0611,
+      0.04
+     ],
+     "height": 0.102,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "TYPICAL SECTION",
+     "insert": [
+      5.3563,
+      0.2692
+     ],
+     "height": 0.17,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "LOCAL RESIDENTIAL STREET",
+     "insert": [
+      4.6335,
+      0.5153
+     ],
+     "height": 0.17,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "%%ULOCAL RESIDENTIAL STREET%%U",
+     "insert": [
+      3.938,
+      4.5279
+     ],
+     "height": 0.12,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "",
+     "insert": [
+      164.5262,
+      16.1441
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "TEXT"
+    },
+    {
+     "type": "TEXT",
+     "text": "50' R/W (MINIMUM)",
+     "insert": [
+      4.6352,
+      7.272
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "C",
+     "insert": [
+      5.1136,
+      7.129
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "L",
+     "insert": [
+      5.1373,
+      7.0855
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "(MIN)",
+     "insert": [
+      1.9859,
+      5.9956
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "   ",
+     "insert": [
+      1247.3829,
+      151.7098
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "",
+     "insert": [
+      990.9207,
+      135.4921
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "  ",
+     "insert": [
+      1250.4558,
+      -32.6144
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "  ",
+     "insert": [
+      1162.713,
+      -173.1635
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "  ",
+     "insert": [
+      1162.2118,
+      -173.6644
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "  ",
+     "insert": [
+      1242.4139,
+      -53.5496
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": " ",
+     "insert": [
+      1021.0641,
+      588.3174
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "VARIABLE",
+     "insert": [
+      1.5091,
+      6.5714
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "VARIABLE",
+     "insert": [
+      8.2907,
+      6.5598
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "(MIN)",
+     "insert": [
+      1.2396,
+      5.9891
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "R",
+     "insert": [
+      4.226,
+      2.0156
+     ],
+     "height": 0.0823,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "R",
+     "insert": [
+      2.1843,
+      4.7803
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "R",
+     "insert": [
+      7.3229,
+      4.8151
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "S",
+     "insert": [
+      1.6532,
+      4.7529
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "2'-0\" VALLEY GUTTER OR 2'-6\" STD. CURB AND GUTTER",
+     "insert": [
+      4.5003,
+      2.0148
+     ],
+     "height": 0.0823,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "4\" CONCRETE SIDEWALK",
+     "insert": [
+      4.5003,
+      1.7969
+     ],
+     "height": 0.0823,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "S",
+     "insert": [
+      4.2361,
+      1.7977
+     ],
+     "height": 0.0823,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "1/4\"/FT.",
+     "insert": [
+      8.7169,
+      5.3132
+     ],
+     "height": 0.0748,
+     "rotation": 1.77,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "1/4\" FT",
+     "insert": [
+      1.1557,
+      5.3315
+     ],
+     "height": 0.0748,
+     "rotation": 359.16,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "(MIN)",
+     "insert": [
+      8.7746,
+      5.9826
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "(MIN)",
+     "insert": [
+      8.0283,
+      5.9892
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "S",
+     "insert": [
+      8.6224,
+      4.7488
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "11'-0\"",
+     "insert": [
+      3.8216,
+      5.8395
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "13'-0\"",
+     "insert": [
+      3.6332,
+      6.4192
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "25' (MIN)",
+     "insert": [
+      2.435,
+      6.9514
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "10'-0\" (MIN.)",
+     "insert": [
+      1.3062,
+      6.4192
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "1'-0\"",
+     "insert": [
+      0.355,
+      6.2029
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "5'-0\"",
+     "insert": [
+      8.7748,
+      5.8395
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "10'-0\" (MIN.)",
+     "insert": [
+      8.1459,
+      6.4192
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "25' (MIN)",
+     "insert": [
+      7.3335,
+      6.9514
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "2'-0\"",
+     "insert": [
+      7.4477,
+      5.8352
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "11'-0\"",
+     "insert": [
+      6.0822,
+      5.8395
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "13'-0\"",
+     "insert": [
+      6.2706,
+      6.4192
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "4'-0\"",
+     "insert": [
+      8.0345,
+      5.8395
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "2'-0\"",
+     "insert": [
+      2.5513,
+      5.836
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "4'-0\"",
+     "insert": [
+      1.9791,
+      5.8395
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "5'-0\"",
+     "insert": [
+      1.2388,
+      5.8395
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "3:1 FILL MAX.",
+     "insert": [
+      9.5789,
+      4.5411
+     ],
+     "height": 0.0825,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "1.  SIDEWALK SHALL BE PROVIDED ON BOTH SIDES OF",
+     "insert": [
+      6.8995,
+      3.3533
+     ],
+     "height": 0.0816,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "STREET, MINIMUM 4' FROM BACK OF CURB.",
+     "insert": [
+      7.1585,
+      3.2078
+     ],
+     "height": 0.0816,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "%%UNOTES:",
+     "insert": [
+      8.3322,
+      3.7143
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REFERENCED FROM TOP OF CURB",
+     "insert": [
+      8.5846,
+      1.442
+     ],
+     "height": 0.0476,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "FOR STONEBASE",
+     "insert": [
+      9.1892,
+      1.3147
+     ],
+     "height": 0.0476,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "FOR ASPHALT",
+     "insert": [
+      9.8348,
+      1.3147
+     ],
+     "height": 0.0476,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SUBGRADE",
+     "insert": [
+      8.4729,
+      1.1756
+     ],
+     "height": 0.0476,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "BASE COURSE",
+     "insert": [
+      8.4026,
+      1.0365
+     ],
+     "height": 0.0476,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "-1-7/8\"",
+     "insert": [
+      9.6496,
+      1.0302
+     ],
+     "height": 0.0476,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "- 9-7/8\"",
+     "insert": [
+      9.2912,
+      1.179
+     ],
+     "height": 0.0476,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "- 5-7/8\"",
+     "insert": [
+      9.8869,
+      1.179
+     ],
+     "height": 0.0476,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "ELEVATION CHANGE AT CENTER LINE",
+     "insert": [
+      8.5484,
+      1.5575
+     ],
+     "height": 0.0476,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "\\A1;",
+     "insert": [
+      17.5821,
+      12.1517
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "TEXT"
+    },
+    {
+     "type": "MTEXT",
+     "text": "\\A1;",
+     "insert": [
+      17.5752,
+      12.1447
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "TEXT"
+    },
+    {
+     "type": "TEXT",
+     "text": "INTERMEDIATE  COURSE",
+     "insert": [
+      8.2304,
+      0.9002
+     ],
+     "height": 0.0476,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "-3/8\"",
+     "insert": [
+      9.7107,
+      0.9048
+     ],
+     "height": 0.0476,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SLOPE 3/8\" PER FT.",
+     "insert": [
+      5.7608,
+      5.3293
+     ],
+     "height": 0.0748,
+     "rotation": 359.16,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SURFACE COURSE",
+     "insert": [
+      2.4734,
+      4.3474
+     ],
+     "height": 0.0669,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SUBGRADE",
+     "insert": [
+      2.435,
+      2.7381
+     ],
+     "height": 0.0669,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "BASE COURSE",
+     "insert": [
+      2.4426,
+      3.407
+     ],
+     "height": 0.0669,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "TACK COAT",
+     "insert": [
+      0.5079,
+      4.0021
+     ],
+     "height": 0.0669,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "1 1/2\" S9.5B",
+     "insert": [
+      2.6257,
+      3.5707
+     ],
+     "height": 0.0669,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "1 1/2\" S9.5B",
+     "insert": [
+      2.6257,
+      4.2099
+     ],
+     "height": 0.0669,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "COMPACTED SUBGRADE (SEE SECTION 1.A.18)",
+     "insert": [
+      2.6042,
+      2.6074
+     ],
+     "height": 0.0669,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "FINAL LIFT TO BE APPLIED AFTER MEETING %%% DEVELOPMENT OCCUPANCY OR",
+     "insert": [
+      2.6428,
+      4.0732
+     ],
+     "height": 0.0669,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "INTERMEDIATE COURSE",
+     "insert": [
+      2.4761,
+      3.7223
+     ],
+     "height": 0.0669,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "%%UTYPICAL PAVEMENT SECTION%%U",
+     "insert": [
+      0.737,
+      2.2377
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "2.  SEE SECTION 1.F. SIDEWALKS AND DRIVEWAYS.",
+     "insert": [
+      6.9115,
+      3.0043
+     ],
+     "height": 0.0816,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "(SEE SECTION 1.E.4)",
+     "insert": [
+      0.2391,
+      3.8099
+     ],
+     "height": 0.0669,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "1'-0\"",
+     "insert": [
+      9.711,
+      6.2503
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "(MIN)",
+     "insert": [
+      9.7339,
+      6.4263
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "(MIN)",
+     "insert": [
+      0.35,
+      6.3738
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "1 YEAR AFTER BASE COURSE ACCEPTANCE (WHICHEVER OCCURS FIRST).",
+     "insert": [
+      2.6439,
+      3.9571
+     ],
+     "height": 0.0669,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "2:1 CUT MAX.",
+     "insert": [
+      9.581,
+      4.6803
+     ],
+     "height": 0.0825,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "2:1 CUT MAX.",
+     "insert": [
+      0.2893,
+      4.7761
+     ],
+     "height": 0.0825,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "3:1 FILL MAX.",
+     "insert": [
+      0.2872,
+      4.6369
+     ],
+     "height": 0.0825,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "(FIXED)",
+     "insert": [
+      3.8374,
+      5.995
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "(FIXED)",
+     "insert": [
+      6.0922,
+      6.0169
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "(13'-6\" W/ 2'-6\" STANDARD CURB)",
+     "insert": [
+      2.8947,
+      6.5747
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "(13'-6\" W/ 2'-6\" STANDARD CURB)",
+     "insert": [
+      5.4212,
+      6.5886
+     ],
+     "height": 0.0748,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "%%UAPPROVED DATE: 02/2007",
+     "insert": [
+      4.7965,
+      0.9815
+     ],
+     "height": 0.09,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "STD. NO.",
+     "insert": [
+      9.5879,
+      0.3049
+     ],
+     "height": 0.068,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REV.",
+     "insert": [
+      10.2131,
+      0.3049
+     ],
+     "height": 0.068,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "11.01",
+     "insert": [
+      9.5378,
+      0.0818
+     ],
+     "height": 0.1255,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "8\" COMPACTED AGGREGATE BASE COURSE, OR 4\" ACBC TYPE B25.0C (OR 4\" BCBC TYPE HB, INDIVIDUAL APPROVAL REQUIRED). SHOULD ENTIRE DEVELOPMENT HAVE A CBR OF 6 OR GREATER, THEN AN ALTERNATIVE BASE COURSE PAVEMENT DESIGN MAY BE SUBMITTED TO THE COUNTY ENGINEER FOR APPROVAL.",
+     "insert": [
+      2.623,
+      3.3332
+     ],
+     "height": 0.0669,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "DESCRIPTION",
+     "insert": [
+      1.0257,
+      1.5341
+     ],
+     "height": 0.0678,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "NO.",
+     "insert": [
+      0.0666,
+      1.5331
+     ],
+     "height": 0.0678,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "DATE",
+     "insert": [
+      0.3577,
+      1.5359
+     ],
+     "height": 0.0678,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REVISIONS",
+     "insert": [
+      0.7622,
+      1.6792
+     ],
+     "height": 0.0678,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REVISED PVMT. SECT.",
+     "insert": [
+      0.7507,
+      1.3815
+     ],
+     "height": 0.0678,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "1",
+     "insert": [
+      0.0666,
+      1.3806
+     ],
+     "height": 0.0678,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "5/09",
+     "insert": [
+      0.3577,
+      1.3834
+     ],
+     "height": 0.0678,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REVISED SURFACE COURSE AMOUNT",
+     "insert": [
+      0.7507,
+      1.229
+     ],
+     "height": 0.0678,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "2",
+     "insert": [
+      0.0666,
+      1.228
+     ],
+     "height": 0.0678,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "11/16",
+     "insert": [
+      0.3097,
+      1.2308
+     ],
+     "height": 0.0678,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "3",
+     "insert": [
+      10.2603,
+      0.0818
+     ],
+     "height": 0.1255,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REVISED PAVEMENT MIX TYPES (S9.5B, B25.0C), ADDED NOTE #3",
+     "insert": [
+      0.7507,
+      1.0764
+     ],
+     "height": 0.0678,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "3",
+     "insert": [
+      0.0666,
+      1.0755
+     ],
+     "height": 0.0678,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "9/22",
+     "insert": [
+      0.337,
+      1.0783
+     ],
+     "height": 0.0678,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "3.  FOR LOCAL RESIDENTIAL STREETS IN THE TOWN OF",
+     "insert": [
+      6.8995,
+      2.7728
+     ],
+     "height": 0.0816,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "MATTHEWS, USE DETAIL 11.51.",
+     "insert": [
+      7.1585,
+      2.6273
+     ],
+     "height": 0.0816,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    }
+   ],
+   "inserts": [
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      0.0,
+      0.0
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "*X1",
+     "insert": [
+      -16.8387,
+      -10.4699
+     ],
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      -567.3527,
+      -279.825
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      -567.3527,
+      -279.825
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      -434.9387,
+      -206.6125
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      421.1064,
+      250.4789
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      437.7424,
+      274.575
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "*X2",
+     "insert": [
+      437.7424,
+      274.575
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X3",
+     "insert": [
+      437.7424,
+      274.575
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X4",
+     "insert": [
+      437.7424,
+      274.575
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      421.1064,
+      250.4789
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      421.1064,
+      250.4789
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      421.1064,
+      250.4789
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      877.4538,
+      -88.2531
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      1147.6003,
+      229.3831
+     ],
+     "layer": "LETTER"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      2003.6454,
+      686.4744
+     ],
+     "layer": "LETTER"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      2020.2814,
+      710.5705
+     ],
+     "layer": "LETTER"
+    },
+    {
+     "name": "*X8",
+     "insert": [
+      2020.2814,
+      710.5705
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X9",
+     "insert": [
+      2020.2814,
+      710.5705
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X10",
+     "insert": [
+      2020.2814,
+      710.5705
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      1147.6003,
+      229.3831
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      497.3674,
+      -364.7565
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "*X11",
+     "insert": [
+      497.3674,
+      -364.7565
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X12",
+     "insert": [
+      497.3674,
+      -364.7565
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X13",
+     "insert": [
+      497.3674,
+      -364.7565
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      1229.722,
+      528.5669
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "*X15",
+     "insert": [
+      1247.0735,
+      548.6089
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      1247.0735,
+      548.6089
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "AME_NIL",
+     "insert": [
+      -434.9387,
+      -206.6125
+     ],
+     "layer": "AME_FRZ"
+    },
+    {
+     "name": "AME_NIL",
+     "insert": [
+      -567.3527,
+      -279.825
+     ],
+     "layer": "AME_FRZ"
+    },
+    {
+     "name": "AME_SOL",
+     "insert": [
+      -567.3527,
+      -279.825
+     ],
+     "layer": "AME_FRZ"
+    },
+    {
+     "name": "AME_MAT",
+     "insert": [
+      -567.3527,
+      -279.825
+     ],
+     "layer": "AME_FRZ"
+    },
+    {
+     "name": "*X16",
+     "insert": [
+      -7.165,
+      1.2772
+     ],
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "name": "MECKCOUNTYSEAL",
+     "insert": [
+      0.2303,
+      -0.0
+     ],
+     "layer": "MECK-DETAIL"
+    }
+   ]
+  },
+  "Layout1": {
+   "leaders": [],
+   "multileaders": [],
+   "dimensions": [],
+   "text": [],
+   "inserts": [
+    {
+     "name": "ADCADD_ZZ",
+     "insert": [
+      0.0,
+      0.0
+     ],
+     "layer": "TEXT"
+    }
+   ]
+  }
+ }
+}

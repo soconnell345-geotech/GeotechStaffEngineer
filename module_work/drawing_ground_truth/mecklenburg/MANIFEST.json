@@ -1,0 +1,169 @@
+{
+ "source": "Mecklenburg County NC Stormwater Services \u2014 Land Development Standard Drawings",
+ "portal": "https://stormwaterservices.mecknc.gov/Standard-Drawings (redirects to mecknc.widencollective.com/portals/fvxy5jq4)",
+ "harvested": "2026-09-04",
+ "license_note": "Public municipal standard drawings; used as test fixtures only, not redistributed as a product feature.",
+ "total_pairs_available": 179,
+ "pairs": {
+  "2000a": {
+   "dwg": {
+    "filename": "2000a.dwg",
+    "external_id": "cpvd1sguhv",
+    "url": "https://mecknc.widen.net/content/cpvd1sguhv/original/2000a.dwg",
+    "bytes": 521019,
+    "sha256": "28aa3b34c87f5555"
+   },
+   "pdf": {
+    "filename": "2000a.pdf",
+    "external_id": "ozwam6yqq1",
+    "url": "https://mecknc.widen.net/content/ozwam6yqq1/original/2000a.pdf",
+    "bytes": 306139,
+    "sha256": "a2f9d57e52c6c4ee"
+   }
+  },
+  "2000b": {
+   "dwg": {
+    "filename": "2000b.dwg",
+    "external_id": "1lxrgjskkj",
+    "url": "https://mecknc.widen.net/content/1lxrgjskkj/original/2000b.dwg",
+    "bytes": 537213,
+    "sha256": "33c81d2d65f7083c"
+   },
+   "pdf": {
+    "filename": "2000b.pdf",
+    "external_id": "qfs0acrcta",
+    "url": "https://mecknc.widen.net/content/qfs0acrcta/original/2000b.pdf",
+    "bytes": 306721,
+    "sha256": "9315f059841c6195"
+   }
+  },
+  "3000": {
+   "pdf": {
+    "filename": "3000.pdf",
+    "external_id": "ye9yqkxqsh",
+    "url": "https://mecknc.widen.net/content/ye9yqkxqsh/original/3000.pdf",
+    "bytes": 236821,
+    "sha256": "0a63d79d6b3583f0"
+   },
+   "dwg": {
+    "filename": "3000.dwg",
+    "external_id": "86qi2durzx",
+    "url": "https://mecknc.widen.net/content/86qi2durzx/original/3000.dwg",
+    "bytes": 300193,
+    "sha256": "27297b89e0d4a89f"
+   }
+  },
+  "3001": {
+   "pdf": {
+    "filename": "3001.pdf",
+    "external_id": "glbxrvefcd",
+    "url": "https://mecknc.widen.net/content/glbxrvefcd/original/3001.pdf",
+    "bytes": 195105,
+    "sha256": "c597dd2593dffe88"
+   },
+   "dwg": {
+    "filename": "3001.dwg",
+    "external_id": "xssgcustgd",
+    "url": "https://mecknc.widen.net/content/xssgcustgd/original/3001.dwg",
+    "bytes": 345994,
+    "sha256": "750d699f78b9a65b"
+   }
+  },
+  "5003": {
+   "pdf": {
+    "filename": "5003.pdf",
+    "external_id": "ajdtttkcyi",
+    "url": "https://mecknc.widen.net/content/ajdtttkcyi/original/5003.pdf",
+    "bytes": 244924,
+    "sha256": "12f5af74957823c2"
+   },
+   "dwg": {
+    "filename": "5003.dwg",
+    "external_id": "vtmelzqnoj",
+    "url": "https://mecknc.widen.net/content/vtmelzqnoj/original/5003.dwg",
+    "bytes": 346997,
+    "sha256": "d96d108d2dbedd29"
+   }
+  },
+  "10.25a": {
+   "pdf": {
+    "filename": "10.25a.pdf",
+    "external_id": "5rezubevto",
+    "url": "https://mecknc.widen.net/content/5rezubevto/original/10.25a.pdf",
+    "bytes": 259153,
+    "sha256": "48b26dabd3716a64"
+   },
+   "dwg": {
+    "filename": "10.25a.dwg",
+    "external_id": "raesurbgx2",
+    "url": "https://mecknc.widen.net/content/raesurbgx2/original/10.25a.dwg",
+    "bytes": 329033,
+    "sha256": "12b1f189fe7689e7"
+   }
+  },
+  "10.31a": {
+   "pdf": {
+    "filename": "10.31A.pdf",
+    "external_id": "dbbm7mghzv",
+    "url": "https://mecknc.widen.net/content/dbbm7mghzv/original/10.31A.pdf",
+    "bytes": 94492,
+    "sha256": "d9b1c717d845117a"
+   },
+   "dwg": {
+    "filename": "10.31A.dwg",
+    "external_id": "hxnrphgyt4",
+    "url": "https://mecknc.widen.net/content/hxnrphgyt4/original/10.31A.dwg",
+    "bytes": 767580,
+    "sha256": "9424d0e3d977d228"
+   }
+  },
+  "11.01": {
+   "dwg": {
+    "filename": "11.01.dwg",
+    "external_id": "ff2jhpa3ew",
+    "url": "https://mecknc.widen.net/content/ff2jhpa3ew/original/11.01.dwg",
+    "bytes": 776960,
+    "sha256": "289fca0b52806883"
+   },
+   "pdf": {
+    "filename": "11.01.pdf",
+    "external_id": "ex3sg4cmw6",
+    "url": "https://mecknc.widen.net/content/ex3sg4cmw6/original/11.01.pdf",
+    "bytes": 69898,
+    "sha256": "88a3cef718e57808"
+   }
+  },
+  "21.01": {
+   "dwg": {
+    "filename": "21.01.dwg",
+    "external_id": "20jgryi6tc",
+    "url": "https://mecknc.widen.net/content/20jgryi6tc/original/21.01.dwg",
+    "bytes": 819693,
+    "sha256": "4be7f0f8851a0e75"
+   },
+   "pdf": {
+    "filename": "21.01.pdf",
+    "external_id": "v8xnj7iyhp",
+    "url": "https://mecknc.widen.net/content/v8xnj7iyhp/original/21.01.pdf",
+    "bytes": 85118,
+    "sha256": "878f18f07005460f"
+   }
+  },
+  "10.17a": {
+   "pdf": {
+    "filename": "10.17a.pdf",
+    "external_id": "chmkpn5ccu",
+    "url": "https://mecknc.widen.net/content/chmkpn5ccu/original/10.17a.pdf",
+    "bytes": 68678,
+    "sha256": "8fdce4c709da10ff"
+   },
+   "dwg": {
+    "filename": "10.17a.dwg",
+    "external_id": "5165kgjt11",
+    "url": "https://mecknc.widen.net/content/5165kgjt11/original/10.17a.dwg",
+    "bytes": 312512,
+    "sha256": "444a8e61f5ce94a7"
+   }
+  }
+ }
+}

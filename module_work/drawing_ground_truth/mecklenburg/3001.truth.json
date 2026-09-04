@@ -1,0 +1,1329 @@
+{
+ "source_dxf": "3001.dxf",
+ "spaces": {
+  "model": {
+   "leaders": [
+    {
+     "vertices": [
+      [
+       6.6939,
+       6.7477
+      ],
+      [
+       6.3179,
+       7.0564
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": ""
+    },
+    {
+     "vertices": [
+      [
+       7.595,
+       5.6898
+      ],
+      [
+       8.0007,
+       5.0639
+      ],
+      [
+       8.1007,
+       5.0639
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": "187"
+    },
+    {
+     "vertices": [
+      [
+       8.2196,
+       4.0125
+      ],
+      [
+       8.4652,
+       4.2224
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": ""
+    },
+    {
+     "vertices": [
+      [
+       3.9628,
+       3.9083
+      ],
+      [
+       3.5852,
+       4.4167
+      ],
+      [
+       3.4496,
+       4.4167
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": "18F"
+    },
+    {
+     "vertices": [
+      [
+       7.8444,
+       3.0353
+      ],
+      [
+       8.1165,
+       2.7264
+      ],
+      [
+       8.2896,
+       2.7264
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": "1CB"
+    },
+    {
+     "vertices": [
+      [
+       8.8226,
+       3.8596
+      ],
+      [
+       9.2482,
+       3.5533
+      ],
+      [
+       9.4757,
+       3.5533
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": "1CD"
+    },
+    {
+     "vertices": [
+      [
+       5.4441,
+       3.1251
+      ],
+      [
+       5.2066,
+       2.53
+      ],
+      [
+       5.093,
+       2.53
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": "1EB"
+    }
+   ],
+   "multileaders": [],
+   "dimensions": [
+    {
+     "dimtype": 1,
+     "text": "H",
+     "defpoint": [
+      5.2181,
+      6.6956
+     ],
+     "text_midpoint": [
+      5.1414,
+      6.0021
+     ],
+     "measurement": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "dimtype": 1,
+     "text": "5' MAX",
+     "defpoint": [
+      9.9857,
+      7.0595
+     ],
+     "text_midpoint": [
+      9.9857,
+      6.309
+     ],
+     "measurement": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "dimtype": 1,
+     "text": "T=",
+     "defpoint": [
+      8.5474,
+      7.0595
+     ],
+     "text_midpoint": [
+      8.4288,
+      6.8914
+     ],
+     "measurement": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "dimtype": 128,
+     "text": "W=5' MIN.",
+     "defpoint": [
+      7.8437,
+      7.1877
+     ],
+     "text_midpoint": [
+      7.4428,
+      7.1877
+     ],
+     "measurement": 0.8018,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "dimtype": 128,
+     "text": "2' TO 3.5'",
+     "defpoint": [
+      3.3224,
+      2.7602
+     ],
+     "text_midpoint": [
+      3.3224,
+      3.0501
+     ],
+     "measurement": 0.5799,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "dimtype": 128,
+     "text": "5' MAX FILL",
+     "defpoint": [
+      4.2039,
+      2.7602
+     ],
+     "text_midpoint": [
+      4.2039,
+      3.5149
+     ],
+     "measurement": 1.146,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "dimtype": 128,
+     "text": "L=10' MIN.",
+     "defpoint": [
+      6.8512,
+      3.4731
+     ],
+     "text_midpoint": [
+      6.1617,
+      3.4731
+     ],
+     "measurement": 1.3791,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "dimtype": 128,
+     "text": "X=7' MIN.",
+     "defpoint": [
+      6.451,
+      2.6683
+     ],
+     "text_midpoint": [
+      6.2457,
+      2.6683
+     ],
+     "measurement": 0.4105,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "dimtype": 128,
+     "text": "21\" MIN.",
+     "defpoint": [
+      4.8196,
+      4.0853
+     ],
+     "text_midpoint": [
+      4.6258,
+      4.0853
+     ],
+     "measurement": 0.3876,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "dimtype": 0,
+     "text": "1.5' MIN.",
+     "defpoint": [
+      5.9057,
+      5.2294
+     ],
+     "text_midpoint": [
+      5.9057,
+      5.5339
+     ],
+     "measurement": 0.6091,
+     "layer": "MECK-DETAIL"
+    }
+   ],
+   "text": [
+    {
+     "type": "TEXT",
+     "text": "TEMPORARY SEDIMENT TRAP",
+     "insert": [
+      4.7392,
+      0.3126
+     ],
+     "height": 0.176,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "",
+     "insert": [
+      134.9094,
+      90.9307
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "TEXT"
+    },
+    {
+     "type": "TEXT",
+     "text": "   ",
+     "insert": [
+      2161.5983,
+      481.1119
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "",
+     "insert": [
+      1905.1361,
+      464.8941
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "  ",
+     "insert": [
+      2164.6712,
+      296.7876
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "  ",
+     "insert": [
+      2076.9284,
+      156.2386
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "  ",
+     "insert": [
+      2076.4273,
+      155.7377
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "  ",
+     "insert": [
+      2156.6294,
+      275.8525
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": " ",
+     "insert": [
+      1935.2795,
+      917.7194
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "   ",
+     "insert": [
+      1950.2786,
+      226.2713
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "",
+     "insert": [
+      1693.8164,
+      210.0535
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "  ",
+     "insert": [
+      1953.3515,
+      41.947
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "  ",
+     "insert": [
+      1865.6087,
+      -98.6021
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "  ",
+     "insert": [
+      1865.1075,
+      -99.103
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "  ",
+     "insert": [
+      1945.3097,
+      21.0118
+     ],
+     "height": 4.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": " ",
+     "insert": [
+      1723.9598,
+      662.8788
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "",
+     "insert": [
+      -52.7881,
+      -62.312
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "TEXT"
+    },
+    {
+     "type": "TEXT",
+     "text": "",
+     "insert": [
+      -32.8051,
+      -62.312
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "TEXT"
+    },
+    {
+     "type": "TEXT",
+     "text": "    ",
+     "insert": [
+      209.3175,
+      188.7637
+     ],
+     "height": 2.0,
+     "rotation": 324.08,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "         ",
+     "insert": [
+      445.2737,
+      210.6687
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "TEXT",
+     "text": "NOT TO SCALE",
+     "insert": [
+      8.9562,
+      2.1866
+     ],
+     "height": 0.1275,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "DATA BLOCK",
+     "insert": [
+      5.1599,
+      2.1541
+     ],
+     "height": 0.0972,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "{\\H1.389x;NOTE:  \\P\\P\\pi-0.216,l0.216,t0.216;}1.^IPLEASE REFER TO NCESCPDM SECTION #6.60 FOR ADDITIONAL DESIGN SPECIFICATIONS REGARDING TEMPORARY SEDIMENT TRAPS.\\P\\pi0,l0,tz;\\P\\pi-0.216,l0.216,t0.216;2.^IREFER TO STD. #30.19 FOR BAFFLE SPACING AND INSTALLATION.",
+     "insert": [
+      0.2453,
+      3.8099
+     ],
+     "height": 0.072,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "DRAINAGE AREA (ACRES)\\P\\P\\PMIN. \\PLENGTH TO WIDTH \\PRATIO\\P\\P\\PMIN.\\PVOLUME REQUIRED\\P\\P\\P\\PSURFACE\\PAREA\\PREQUIRED",
+     "insert": [
+      0.5783,
+      6.4483
+     ],
+     "height": 0.0648,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "\\P< 5 AC.\\P\\P\\P\\P\\P2:1 \\P\\P\\P\\P3600\\P(CU. FT. \\PPER AC.\\PDISTURBED)\\P\\P\\P435\\P(SQ. FT. PER CFS Q10)",
+     "insert": [
+      1.35,
+      6.4496
+     ],
+     "height": 0.0648,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "\\A1;",
+     "insert": [
+      597.9977,
+      6.7934
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "MTEXT",
+     "text": "\\A1;",
+     "insert": [
+      578.5682,
+      5.8018
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "MTEXT",
+     "text": "1.5' MIN.",
+     "insert": [
+      8.651,
+      6.9432
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "TEMPORARY SEDIMENT TRAP DESIGN CRITERIA",
+     "insert": [
+      0.9598,
+      6.8798
+     ],
+     "height": 0.0648,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "2:1",
+     "insert": [
+      6.1362,
+      6.3337
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "1:1",
+     "insert": [
+      5.2782,
+      5.5664
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "12\" MIN OF NCDOT #5 OR #57 WASHED STONE",
+     "insert": [
+      4.8213,
+      7.2727
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "\\A1;",
+     "insert": [
+      579.306,
+      7.4773
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "0"
+    },
+    {
+     "type": "MTEXT",
+     "text": "{\\LCROSS-SECTION}",
+     "insert": [
+      2.0751,
+      7.2598
+     ],
+     "height": 0.123,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "{\\W0.8;3600 CU FT / ACRE}",
+     "insert": [
+      3.847,
+      6.6493
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "2:1",
+     "insert": [
+      8.545,
+      6.5432
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "\\A1;FILTER FABRIC",
+     "insert": [
+      8.1507,
+      5.1139
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "OVERFILL 6\" FOR SETTLEMENT",
+     "insert": [
+      8.4801,
+      4.4128
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "{\\LPLAN VIEW}",
+     "insert": [
+      2.1079,
+      4.7898
+     ],
+     "height": 0.123,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "\\A1;DESIGN SETTLED TOP",
+     "insert": [
+      2.1234,
+      4.3767
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "\\A1;NATURAL GROUND",
+     "insert": [
+      8.3396,
+      2.7664
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "EMERGENCY BY-PASS 6\" BELOW SETTLED TOP OF DAM",
+     "insert": [
+      9.5257,
+      3.5933
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "FILTER FABRIC",
+     "insert": [
+      4.1859,
+      2.49
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "{\\C256;1:1 SIDE SLOPE MAX}",
+     "insert": [
+      6.9772,
+      3.108
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "{\\C256;2:1 SIDE SLOPE MAX}",
+     "insert": [
+      7.6089,
+      3.7211
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "STD. NO.",
+     "insert": [
+      9.5879,
+      0.3049
+     ],
+     "height": 0.068,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REV.",
+     "insert": [
+      10.2202,
+      0.3041
+     ],
+     "height": 0.068,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "30.01",
+     "insert": [
+      9.5467,
+      0.0818
+     ],
+     "height": 0.1255,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    }
+   ],
+   "inserts": [
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      0.0,
+      0.0
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      304.3433,
+      20.2688
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      346.8627,
+      49.5771
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      479.2767,
+      122.7896
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      1335.3219,
+      579.8809
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      1351.9578,
+      603.977
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "*X1",
+     "insert": [
+      1351.9578,
+      603.977
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X2",
+     "insert": [
+      1351.9578,
+      603.977
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X3",
+     "insert": [
+      1351.9578,
+      603.977
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      1335.3219,
+      579.8809
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      1335.3219,
+      579.8809
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      1335.3219,
+      579.8809
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      1791.6693,
+      241.149
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      2061.8157,
+      558.7851
+     ],
+     "layer": "LETTER"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      2917.8608,
+      1015.8765
+     ],
+     "layer": "LETTER"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      2934.4968,
+      1039.9726
+     ],
+     "layer": "LETTER"
+    },
+    {
+     "name": "*X7",
+     "insert": [
+      2934.4968,
+      1039.9726
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X8",
+     "insert": [
+      2934.4968,
+      1039.9726
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X9",
+     "insert": [
+      2934.4968,
+      1039.9726
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      2061.8157,
+      558.7851
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      1411.5829,
+      -35.3544
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "*X10",
+     "insert": [
+      1411.5829,
+      -35.3544
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X11",
+     "insert": [
+      1411.5829,
+      -35.3544
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X12",
+     "insert": [
+      1411.5829,
+      -35.3544
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      2143.9374,
+      857.9689
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "*X14",
+     "insert": [
+      2161.2889,
+      878.011
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      2161.2889,
+      878.011
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "AME_NIL",
+     "insert": [
+      479.2767,
+      122.7896
+     ],
+     "layer": "AME_FRZ"
+    },
+    {
+     "name": "AME_NIL",
+     "insert": [
+      346.8627,
+      49.5771
+     ],
+     "layer": "AME_FRZ"
+    },
+    {
+     "name": "AME_SOL",
+     "insert": [
+      346.8627,
+      49.5771
+     ],
+     "layer": "AME_FRZ"
+    },
+    {
+     "name": "AME_MAT",
+     "insert": [
+      346.8627,
+      49.5771
+     ],
+     "layer": "AME_FRZ"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      702.8957,
+      74.5614
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      135.543,
+      -205.2635
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      135.543,
+      -205.2635
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      267.957,
+      -132.051
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      1124.0022,
+      325.0403
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      1140.6381,
+      349.1364
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "*X15",
+     "insert": [
+      1140.6381,
+      349.1364
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X16",
+     "insert": [
+      1140.6381,
+      349.1364
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X17",
+     "insert": [
+      1140.6381,
+      349.1364
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      1124.0022,
+      325.0403
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      1124.0022,
+      325.0403
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      1124.0022,
+      325.0403
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      1580.3496,
+      -13.6917
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      1850.496,
+      303.9445
+     ],
+     "layer": "LETTER"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      2706.5411,
+      761.0358
+     ],
+     "layer": "LETTER"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      2723.1771,
+      785.1319
+     ],
+     "layer": "LETTER"
+    },
+    {
+     "name": "*X18",
+     "insert": [
+      2723.1771,
+      785.1319
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X19",
+     "insert": [
+      2723.1771,
+      785.1319
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X20",
+     "insert": [
+      2723.1771,
+      785.1319
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      1850.496,
+      303.9445
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      1200.2632,
+      -290.1951
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "*X21",
+     "insert": [
+      1200.2632,
+      -290.1951
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X22",
+     "insert": [
+      1200.2632,
+      -290.1951
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "*X23",
+     "insert": [
+      1200.2632,
+      -290.1951
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      1932.6177,
+      603.1283
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "*X24",
+     "insert": [
+      1949.9692,
+      623.1703
+     ],
+     "layer": "0"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      1949.9692,
+      623.1703
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "AME_NIL",
+     "insert": [
+      267.957,
+      -132.051
+     ],
+     "layer": "AME_FRZ"
+    },
+    {
+     "name": "AME_NIL",
+     "insert": [
+      135.543,
+      -205.2635
+     ],
+     "layer": "AME_FRZ"
+    },
+    {
+     "name": "AME_SOL",
+     "insert": [
+      135.543,
+      -205.2635
+     ],
+     "layer": "AME_FRZ"
+    },
+    {
+     "name": "AME_MAT",
+     "insert": [
+      135.543,
+      -205.2635
+     ],
+     "layer": "AME_FRZ"
+    },
+    {
+     "name": "MECKCOUNTYSEAL2",
+     "insert": [
+      0.2413,
+      -0.0
+     ],
+     "layer": "MECK-DETAIL"
+    }
+   ]
+  },
+  "Layout1": {
+   "leaders": [],
+   "multileaders": [],
+   "dimensions": [],
+   "text": [],
+   "inserts": [
+    {
+     "name": "ADCADD_ZZ",
+     "insert": [
+      0.0,
+      0.0
+     ],
+     "layer": "0"
+    }
+   ]
+  }
+ }
+}

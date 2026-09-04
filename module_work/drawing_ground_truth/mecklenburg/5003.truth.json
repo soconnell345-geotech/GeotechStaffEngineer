@@ -1,0 +1,439 @@
+{
+ "source_dxf": "5003.dxf",
+ "spaces": {
+  "model": {
+   "leaders": [],
+   "multileaders": [],
+   "dimensions": [],
+   "text": [
+    {
+     "type": "TEXT",
+     "text": "TYPICAL CONCRETE CONTROL MONUMENT",
+     "insert": [
+      3.988,
+      0.4904
+     ],
+     "height": 0.1878,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "BRASS PLATE WITH",
+     "insert": [
+      7.1883,
+      5.0632
+     ],
+     "height": 0.0666,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "GROOVED DOWEL",
+     "insert": [
+      7.1883,
+      4.9402
+     ],
+     "height": 0.0666,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "TO KEEP PLATE",
+     "insert": [
+      7.1883,
+      4.8171
+     ],
+     "height": 0.0666,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "IN PLACE",
+     "insert": [
+      7.1883,
+      4.6941
+     ],
+     "height": 0.0666,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "IRON PIN",
+     "insert": [
+      2.9365,
+      6.4296
+     ],
+     "height": 0.0666,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "STEEL REINFORCING RODS",
+     "insert": [
+      7.5672,
+      3.6922
+     ],
+     "height": 0.0666,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "EXISTING GRADE",
+     "insert": [
+      7.5718,
+      6.5724
+     ],
+     "height": 0.0666,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "EXISTING GRADE",
+     "insert": [
+      0.6043,
+      6.5724
+     ],
+     "height": 0.0666,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "4\"",
+     "insert": [
+      9.607,
+      5.8732
+     ],
+     "height": 0.0666,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "4\"",
+     "insert": [
+      8.5531,
+      4.9514
+     ],
+     "height": 0.0666,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "6\"",
+     "insert": [
+      6.7292,
+      1.2573
+     ],
+     "height": 0.0666,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "30\"",
+     "insert": [
+      5.9082,
+      3.7539
+     ],
+     "height": 0.0666,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "4\"",
+     "insert": [
+      6.7308,
+      6.364
+     ],
+     "height": 0.0666,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "4\"",
+     "insert": [
+      1.8111,
+      6.3614
+     ],
+     "height": 0.0666,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "12\"",
+     "insert": [
+      2.6664,
+      5.1087
+     ],
+     "height": 0.0666,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "4\"",
+     "insert": [
+      3.3153,
+      4.8556
+     ],
+     "height": 0.0666,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "4\"",
+     "insert": [
+      4.3979,
+      5.8061
+     ],
+     "height": 0.0666,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "30\"",
+     "insert": [
+      0.9885,
+      3.7513
+     ],
+     "height": 0.0666,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "6\"",
+     "insert": [
+      1.8095,
+      1.2546
+     ],
+     "height": 0.0666,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "4\"",
+     "insert": [
+      7.4925,
+      5.8038
+     ],
+     "height": 0.0666,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "FERROUS MATERIALS REQUIRED",
+     "insert": [
+      3.501,
+      3.7383
+     ],
+     "height": 0.0666,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "NOT TO SCALE",
+     "insert": [
+      9.0279,
+      0.9075
+     ],
+     "height": 0.1275,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "%%UAPPROVED DATE: 02/2007",
+     "insert": [
+      0.3776,
+      0.9794
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "STD. NO.",
+     "insert": [
+      9.5879,
+      0.3049
+     ],
+     "height": 0.068,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REV.",
+     "insert": [
+      10.2202,
+      0.3041
+     ],
+     "height": 0.068,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "50.03",
+     "insert": [
+      9.5288,
+      0.0818
+     ],
+     "height": 0.1255,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    }
+   ],
+   "inserts": [
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      0.0,
+      0.0
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "*X1",
+     "insert": [
+      -7.286,
+      -0.14
+     ],
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "name": "*X2",
+     "insert": [
+      -6.6222,
+      -0.14
+     ],
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "name": "*X3",
+     "insert": [
+      -17.1708,
+      -4.3888
+     ],
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "name": "*X4",
+     "insert": [
+      -6.6222,
+      -0.14
+     ],
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "name": "*X5",
+     "insert": [
+      -17.1708,
+      -4.3888
+     ],
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "name": "*X6",
+     "insert": [
+      -0.6992,
+      -0.7024
+     ],
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "name": "*X7",
+     "insert": [
+      -0.0354,
+      -0.7024
+     ],
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "name": "*X8",
+     "insert": [
+      -0.6992,
+      -0.7024
+     ],
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "name": "*X9",
+     "insert": [
+      -0.0354,
+      -0.7024
+     ],
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "name": "*X10",
+     "insert": [
+      -0.0354,
+      -0.7024
+     ],
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "name": "*X10",
+     "insert": [
+      -4.9678,
+      -0.6732
+     ],
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "name": "*X9",
+     "insert": [
+      -4.9678,
+      -0.7024
+     ],
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "name": "MECKCOUNTYSEAL2",
+     "insert": [
+      0.2413,
+      -0.0
+     ],
+     "layer": "MECK-DETAIL"
+    }
+   ]
+  },
+  "Layout1": {
+   "leaders": [],
+   "multileaders": [],
+   "dimensions": [],
+   "text": [],
+   "inserts": [
+    {
+     "name": "ADCADD_ZZ",
+     "insert": [
+      0.0,
+      0.0
+     ],
+     "layer": "0"
+    }
+   ]
+  }
+ }
+}

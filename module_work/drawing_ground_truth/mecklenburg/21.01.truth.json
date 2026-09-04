@@ -1,0 +1,646 @@
+{
+ "source_dxf": "21.01.dxf",
+ "spaces": {
+  "model": {
+   "leaders": [
+    {
+     "vertices": [
+      [
+       3.9399,
+       2.4258
+      ],
+      [
+       4.4439,
+       2.4258
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": ""
+    },
+    {
+     "vertices": [
+      [
+       5.8717,
+       4.5328
+      ],
+      [
+       5.5041,
+       5.2367
+      ],
+      [
+       5.4408,
+       5.2367
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": ""
+    },
+    {
+     "vertices": [
+      [
+       6.5273,
+       2.3739
+      ],
+      [
+       6.948,
+       1.8694
+      ],
+      [
+       7.0188,
+       1.8689
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": ""
+    },
+    {
+     "vertices": [
+      [
+       2.8393,
+       4.5822
+      ],
+      [
+       3.2803,
+       6.4493
+      ],
+      [
+       3.3957,
+       6.4494
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": "1EBE"
+    },
+    {
+     "vertices": [
+      [
+       3.2236,
+       4.5702
+      ],
+      [
+       3.5213,
+       5.8506
+      ],
+      [
+       3.6604,
+       5.8511
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": ""
+    },
+    {
+     "vertices": [
+      [
+       3.9712,
+       4.4207
+      ],
+      [
+       4.1183,
+       4.7647
+      ],
+      [
+       4.1992,
+       4.7647
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": ""
+    },
+    {
+     "vertices": [
+      [
+       6.9158,
+       3.8721
+      ],
+      [
+       6.7008,
+       5.0698
+      ],
+      [
+       6.5939,
+       5.0698
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": ""
+    },
+    {
+     "vertices": [
+      [
+       7.4256,
+       3.8568
+      ],
+      [
+       7.9318,
+       3.296
+      ],
+      [
+       8.0307,
+       3.296
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": ""
+    },
+    {
+     "vertices": [
+      [
+       6.8525,
+       2.5241
+      ],
+      [
+       6.948,
+       1.8694
+      ],
+      [
+       7.0188,
+       1.8689
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": ""
+    },
+    {
+     "vertices": [
+      [
+       7.0891,
+       2.7405
+      ],
+      [
+       7.3921,
+       2.7857
+      ],
+      [
+       7.47,
+       2.7963
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": ""
+    },
+    {
+     "vertices": [
+      [
+       3.8269,
+       4.5854
+      ],
+      [
+       3.4919,
+       4.6253
+      ],
+      [
+       3.3721,
+       4.6399
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": ""
+    },
+    {
+     "vertices": [
+      [
+       8.0165,
+       4.5041
+      ],
+      [
+       7.9537,
+       5.0766
+      ],
+      [
+       7.8562,
+       5.0766
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": ""
+    },
+    {
+     "vertices": [
+      [
+       8.7744,
+       3.85
+      ],
+      [
+       9.7909,
+       3.763
+      ]
+     ],
+     "layer": "MECK-DETAIL",
+     "has_arrowhead": true,
+     "annotation_handle": ""
+    }
+   ],
+   "multileaders": [],
+   "dimensions": [
+    {
+     "dimtype": 32,
+     "text": " ",
+     "defpoint": [
+      8.7323,
+      3.8683
+     ],
+     "text_midpoint": [
+      8.7323,
+      4.0806
+     ],
+     "measurement": 0.4245,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "dimtype": 32,
+     "text": " ",
+     "defpoint": [
+      8.7323,
+      2.7465
+     ],
+     "text_midpoint": [
+      8.7323,
+      3.293
+     ],
+     "measurement": 1.093,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "dimtype": 32,
+     "text": " ",
+     "defpoint": [
+      8.7323,
+      2.3736
+     ],
+     "text_midpoint": [
+      8.7323,
+      2.56
+     ],
+     "measurement": 0.3729,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "dimtype": 161,
+     "text": "4' MIN.",
+     "defpoint": [
+      6.6878,
+      3.3096
+     ],
+     "text_midpoint": [
+      6.1679,
+      3.3119
+     ],
+     "measurement": 1.0394,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "dimtype": 161,
+     "text": "10' MIN.",
+     "defpoint": [
+      7.5637,
+      3.5732
+     ],
+     "text_midpoint": [
+      6.1679,
+      3.5766
+     ],
+     "measurement": 2.7895,
+     "layer": "MECK-DETAIL"
+    }
+   ],
+   "text": [
+    {
+     "type": "TEXT",
+     "text": "%%USECTION A-A",
+     "insert": [
+      5.253,
+      1.28
+     ],
+     "height": 0.1548,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "1'-0\"   PONDING MAXIMUM FOR\\PWQv & CPv",
+     "insert": [
+      8.8595,
+      4.3172
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "2'-0\" TO 4'-0\" FILTER MEDIA SEE BMP DESIGN MANUAL FOR SOIL PARAMETERS.",
+     "insert": [
+      8.8616,
+      3.6273
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "1'-0\" GRAVEL LAYER AROUND\\PUNDERDRAIN",
+     "insert": [
+      8.8593,
+      2.7196
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "OVERFLOW OUTLET COVERED WITH WIRE MESH\\P(BEYOND)",
+     "insert": [
+      5.3607,
+      4.9373
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "BIORETENTION CROSS-SECTION ",
+     "insert": [
+      4.7325,
+      0.4531
+     ],
+     "height": 0.1707,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "NOT TO SCALE",
+     "insert": [
+      8.7284,
+      0.9522
+     ],
+     "height": 0.1006,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "BMP FIG. 4.1.3",
+     "insert": [
+      6.1698,
+      0.2864
+     ],
+     "height": 0.0774,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "{\\L\\C256;NOTES:\\l\\P\\P\\pi-0.26,l0.26,t0.26;1.^IALL BIORETENTION FACILITIES SHALL HAVE A MINIMUM 20 FOOT ACCESS EASEMENT CONNECTING TO A DEDICATED PUBLIC RIGHT OF WAY.  ACCESS ROAD SHALL HAVE MIN. 12' STABILIZED WIDTH, MAX. LONG. GRADE OF 15%, MAX. CROSS-SLOPE 5%. \\H1.116x;IN ADDITION, A 10-FOOT WIDE PERMANENT MAINTENANCE ACCESS EASEMENT MUST BE PROVIDED AROUND THE PERIMETER OF ALL BMPS TO ALLOW FOR ADEQUATE MAINTENANCE AND REPAIR.\\P\\pi0,l0,tz;\\H0.8961x;\\P\\pi-0.26,l0.26,t0.26;2.^IALL DRAINAGE AREAS TO A BIORETENTION  FACILITY ARE TO BE STABILIZED PRIOR TO  INSTALLATION OF AMENDED SOILS, MULCH OR PLANTINGS. \\P\\pi0,l0,tz;\\P\\pi-0.26,l0.26,t0.26;3.^IAMENDED SOIL WILL ONLY BE PERMITTED WITH A VALID SOIL ANALYSIS REPORT. NO AMENDED SOIL SHALL BE ALLOWED ON THE SIDE SLOPES.\\P\\pi0,l0,tz;\\P\\pi-0.26,l0.26,t0.26;4.^IINSTALL WIRE SCREENING AROUND ALL OUTLET OPENINGS TO PREVENT LOSS OF MULCH.\\P\\pi0,l0,tz;\\P\\pi-0.26,l0.26,t0.26;5.^IUNDERDRAIN PIPE SHOULD BE MIN. 6\" PERFORATED SCHEDULE 40 PVC (PER AASHTO M278) OR DOUBLE WALL HDPE (PER AASHTO M252).   PERFORATIONS SHOULD BE 3/8\" SPACED 3\" ON CENTER ALONG 4 LONGITUDINAL ROWS SPACED 90\u00b0 APART.\\P\\pi0,l0,tz;\\P\\pi-0.26,l0.26,t0.26;6.^IUNDERDRAIN CLEANOUTS SHOULD EXTEND A MIN. OF 6\" ABOVE MAXIMUM PONDING ELEVATION. ONE CLEANOUT MAY BE FLUSH WITH TOP OF SURFACE TO ALLOW DRAWDOWN.  \\P\\pi0,l0,tz;\\P\\pi-0.225,l0.225;7.  ONLY SMALL MATURING TREES ARE ALLOWED TO BE PLANTED IN THE AMENDED SOILS.}",
+     "insert": [
+      0.212,
+      7.3622
+     ],
+     "height": 0.075,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "OUTLET PIPE",
+     "insert": [
+      3.8633,
+      2.6141
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "UNDERDRAIN GRAVEL BED \\P(#57 WASHED STONE) WITH\\PNON-WOVEN FILTER FABRIC AROUND TOP, BOTTOM AND SIDES, TYP.",
+     "insert": [
+      7.0718,
+      1.9308
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "SOD ON SIDE-SLOPES ",
+     "insert": [
+      4.2855,
+      4.7934
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "3:1 MAXIMUM",
+     "insert": [
+      4.4143,
+      4.4181
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "ASPHALT PAVEMENT\\POR OTHER STRUCTURAL \\PCOMPONENTS",
+     "insert": [
+      3.4931,
+      6.5382
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "1:1 SLOPE\\PFROM STRUCTURAL COMPONENTS",
+     "insert": [
+      3.741,
+      3.7993
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "OPTIONAL 2\"-3\" STONE WITH FILTER \\PFABRIC AROUND BOTTOM AND SIDES \\P(RECOMMENDED ADJACENT TO PAVEMENT\\P1' MIN WIDTH, 1' MIN DEPTH)",
+     "insert": [
+      3.7229,
+      5.9983
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "\\A1;2% MAX",
+     "insert": [
+      3.5302,
+      4.7342
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "3\" DOUBLE\\PHAMMERED \\PHARDWOOD \\PMULCH LAYER",
+     "insert": [
+      6.5222,
+      5.2465
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "MEDIA \\PSURFACE AREA ",
+     "insert": [
+      8.0653,
+      3.3359
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "\\A1;0.5% MIN\\PSLOPE",
+     "insert": [
+      7.2154,
+      3.0084
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": ".5%%% MIN SLOPE",
+     "insert": [
+      3.8324,
+      2.5029
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "15\" PONDING MAXIMUM FOR STORMS GREATER \\PTHAN CPv {\\H0.66667x; \\P} ",
+     "insert": [
+      7.7913,
+      5.1777
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REV.",
+     "insert": [
+      10.2183,
+      0.3041
+     ],
+     "height": 0.068,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "STD. NO.",
+     "insert": [
+      9.5604,
+      0.3049
+     ],
+     "height": 0.068,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "21.01",
+     "insert": [
+      9.5577,
+      0.0927
+     ],
+     "height": 0.1255,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "2",
+     "insert": [
+      10.2548,
+      0.0986
+     ],
+     "height": 0.1255,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "MTEXT",
+     "text": "3\" MULCH LAYER",
+     "insert": [
+      9.8398,
+      3.8101
+     ],
+     "height": 0.0697,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    }
+   ],
+   "inserts": [
+    {
+     "name": "MECKCOUNTYSEAL2",
+     "insert": [
+      0.2413,
+      -0.0
+     ],
+     "layer": "MECK-DETAIL"
+    }
+   ]
+  },
+  "Layout1": {
+   "leaders": [],
+   "multileaders": [],
+   "dimensions": [],
+   "text": [],
+   "inserts": [
+    {
+     "name": "ADCADD_ZZ",
+     "insert": [
+      0.0,
+      0.0
+     ],
+     "layer": "0"
+    }
+   ]
+  }
+ }
+}

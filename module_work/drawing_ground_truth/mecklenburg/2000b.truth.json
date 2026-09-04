@@ -1,0 +1,1267 @@
+{
+ "source_dxf": "2000b.dxf",
+ "spaces": {
+  "model": {
+   "leaders": [],
+   "multileaders": [],
+   "dimensions": [],
+   "text": [
+    {
+     "type": "TEXT",
+     "text": "",
+     "insert": [
+      24.3515,
+      -33.5299
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "TEXT"
+    },
+    {
+     "type": "TEXT",
+     "text": "",
+     "insert": [
+      24.3515,
+      -26.1404
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "TEXT"
+    },
+    {
+     "type": "TEXT",
+     "text": "",
+     "insert": [
+      24.3515,
+      -15.056
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "TEXT"
+    },
+    {
+     "type": "TEXT",
+     "text": "",
+     "insert": [
+      24.3515,
+      -11.3612
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "TEXT"
+    },
+    {
+     "type": "TEXT",
+     "text": "",
+     "insert": [
+      24.3515,
+      -18.7508
+     ],
+     "height": 2.0,
+     "rotation": 0.0,
+     "layer": "TEXT"
+    },
+    {
+     "type": "TEXT",
+     "text": "838.45",
+     "insert": [
+      13.2976,
+      7.1854
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "NOTES FOR REINFORCED CONCRETE ENDWALL STANDARD DRAWINGS",
+     "insert": [
+      13.8652,
+      7.1851
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "838.21 THRU 838.40",
+     "insert": [
+      13.8652,
+      7.0401
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "838.51",
+     "insert": [
+      13.2976,
+      6.8927
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REINFORCED BRICK ENDWALL FOR SINGLE 54\" PIPE 90%%D SKEW",
+     "insert": [
+      13.8652,
+      6.8925
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "838.52",
+     "insert": [
+      13.2961,
+      6.7224
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REINFORCED BRICK ENDWALL FOR DOUBLE & TRIPLE 54\" PIPES 90%%D SKEW",
+     "insert": [
+      13.8636,
+      6.7221
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "NOTE 1 SEE MCLDS 20.17 FOR SPLASH PAD",
+     "insert": [
+      18.8088,
+      7.1705
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SEE MCLDS 20.17 FOR SPLASH PAD",
+     "insert": [
+      18.8136,
+      6.8616
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "838.57",
+     "insert": [
+      13.3002,
+      6.5729
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REINFORCED BRICK ENDWALL FOR SINGLE 60\" PIPE 90%%D SKEW",
+     "insert": [
+      13.8856,
+      6.5713
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "838.58",
+     "insert": [
+      13.3008,
+      6.418
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REINFORCED BRICK ENDWALL FOR DOUBLE & TRIPLE 60\" PIPES 90%%D SKEW",
+     "insert": [
+      13.8748,
+      6.4149
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "838.63",
+     "insert": [
+      13.3073,
+      6.2749
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REINFORCED BRICK ENDWALL FOR SINGLE 66\" PIPE 90%%D SKEW",
+     "insert": [
+      13.8748,
+      6.2746
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "838.64",
+     "insert": [
+      13.3082,
+      6.113
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REINFORCED BRICK ENDWALL FOR DOUBLE & TRIPLE 66\" PIPES 90%%D SKEW",
+     "insert": [
+      13.8757,
+      6.1127
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "838.69",
+     "insert": [
+      13.3082,
+      5.9679
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REINFORCED BRICK ENDWALL FOR SINGLE 72\" PIPE 90%%D SKEW",
+     "insert": [
+      13.8757,
+      5.9677
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "838.70",
+     "insert": [
+      13.3082,
+      5.8158
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REINFORCED BRICK ENDWALL FOR DOUBLE & TRIPLE 72\" PIPES 90%%D SKEW",
+     "insert": [
+      13.8757,
+      5.8155
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "838.75",
+     "insert": [
+      13.2985,
+      5.6701
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "NOTES FOR REINFORCED BRICK ENDWALL STANDARD DRAWINGS 838.51 THRU 838.70",
+     "insert": [
+      13.8661,
+      5.6698
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "PRECAST CONCRETE ENDWALLS FOR SINGLE 12\" THRU 72\" PIPE 90%%D SKEW",
+     "insert": [
+      13.867,
+      5.5155
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.00",
+     "insert": [
+      13.2985,
+      5.3717
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "CONCRETE BASE PAD FOR DRAINAGE STRUCTURES",
+     "insert": [
+      13.8661,
+      5.3714
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.01",
+     "insert": [
+      13.2986,
+      5.2185
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "BRICK CATCH BASIN 12\" THRU 54\" PIPE",
+     "insert": [
+      13.8661,
+      5.2182
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "CONCRETE CATCH BASIN 12\" THRU 54\" PIPE",
+     "insert": [
+      13.8661,
+      5.0665
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.03",
+     "insert": [
+      13.2995,
+      4.9162
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "FRAME, GRATES AND HOOD FOR USE ON STANDARD BASIN 12\" THRU 54\" PIPE",
+     "insert": [
+      13.867,
+      4.916
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.04",
+     "insert": [
+      13.2995,
+      4.7664
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "CONCRETE OPEN THROAT CATCH BASIN 12\" THRU 48\" PIPE",
+     "insert": [
+      13.867,
+      4.7662
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "838.80",
+     "insert": [
+      13.3005,
+      5.5201
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.02",
+     "insert": [
+      13.2991,
+      5.068
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "TYPE F AND G GRATES ARE OPTIONAL WITHIN THE TOWN LIMITS",
+     "insert": [
+      18.8889,
+      4.9169
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "NOTE 1 - OPENINGS PERMITTED IN 4 SIDES OUTSIDE OF STREET R/W",
+     "insert": [
+      18.8827,
+      4.767
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "MANHOLE RING AND COVER REQUIRED IN TOP SLAB SEE STD. 840.54",
+     "insert": [
+      18.8827,
+      4.6277
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.29",
+     "insert": [
+      13.3118,
+      2.2072
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "FRAMES AND NARROW SLOT FLAT GRATES",
+     "insert": [
+      13.8794,
+      2.2069
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "DRIVEWAY DROP INLET",
+     "insert": [
+      13.8803,
+      2.0459
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.30",
+     "insert": [
+      13.3103,
+      2.0525
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.05",
+     "insert": [
+      13.3114,
+      4.4619
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "BRICK OPEN THROAT CATCH BASIN 12\" THRU 48\" PIPE",
+     "insert": [
+      13.8789,
+      4.4616
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "CONCRETE DROP INLET 12\" THRU 30\" PIPE",
+     "insert": [
+      13.8808,
+      4.1603
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.15",
+     "insert": [
+      13.3114,
+      4.0146
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "BRICK DROP INLET 12\" THRU 30\" PIPE",
+     "insert": [
+      13.8789,
+      4.0143
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "DROP INLET FRAME AND GRATES FOR USE WITH STANDARD DWGS. 840.14 & 840.15",
+     "insert": [
+      13.8808,
+      3.861
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.17",
+     "insert": [
+      13.3124,
+      3.7162
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "CONCRETE GRATED DROP INLET TYPE \"A\" 12\" THRU 72\" PIPE",
+     "insert": [
+      13.8799,
+      3.716
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.18",
+     "insert": [
+      13.3128,
+      3.5659
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "CONCRETE GRATED DROP INLET TYPE \"B\" 12\" THRU 36\" PIPE",
+     "insert": [
+      13.8803,
+      3.5656
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.20",
+     "insert": [
+      13.3137,
+      3.2657
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "FRAMES AND WIDE SLOT FLAT GRATES",
+     "insert": [
+      13.8813,
+      3.2654
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "FRAMES AND WIDE SLOT SAG GRATES",
+     "insert": [
+      13.8794,
+      3.1137
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.24",
+     "insert": [
+      13.3147,
+      2.9589
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "FRAMES AND NARROW SLOT SAG GRATES",
+     "insert": [
+      13.8822,
+      2.9587
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.25",
+     "insert": [
+      13.3137,
+      2.8158
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "ANCHORAGE FOR FRAMES BRICK OR CONCRETE",
+     "insert": [
+      13.8813,
+      2.8156
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "BRICK GRATED DROP INLET TYPE \"A\" 12\" THRU 72\" PIPE",
+     "insert": [
+      13.8803,
+      2.6613
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.27",
+     "insert": [
+      13.3137,
+      2.5194
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "BRICK GRATED DROP INLET TYPE \"B\" 12\" THRU 36\" PIPE",
+     "insert": [
+      13.8812,
+      2.5192
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "BRICK GRATED DROP INLET TYPE \"D\" 12\" THRU 36\" PIPE",
+     "insert": [
+      13.8822,
+      2.3669
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.14",
+     "insert": [
+      13.3123,
+      4.1671
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.16",
+     "insert": [
+      13.3099,
+      3.8718
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.19",
+     "insert": [
+      13.3145,
+      3.4105
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "CONCRETE GRATED DROP INLET TYPE \"D\" 12\" THRU 36\" PIPE",
+     "insert": [
+      13.8785,
+      3.4145
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.22",
+     "insert": [
+      13.314,
+      3.1125
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.26",
+     "insert": [
+      13.3116,
+      2.6603
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "840.28",
+     "insert": [
+      13.3201,
+      2.3676
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "OPENINGS PERMITTED IN 4 SIDES OUTSIDE OF STREET R/W",
+     "insert": [
+      18.89,
+      4.473
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "MANHOLE RING AND COVER REQUIRED IN TOP SLAB SEE STD. 840.54",
+     "insert": [
+      18.89,
+      4.3337
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "NOTE 1",
+     "insert": [
+      18.8904,
+      4.1652
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "NOTE 1",
+     "insert": [
+      18.8903,
+      3.7195
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "NOTE 1",
+     "insert": [
+      18.8882,
+      3.5726
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "NOTE 1",
+     "insert": [
+      18.8903,
+      3.4237
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "NOT FOR USE IN PEDESTRIAN AREAS",
+     "insert": [
+      18.8906,
+      3.2686
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "NOT FOR USE IN PEDESTRIAN AREAS",
+     "insert": [
+      18.8906,
+      3.1171
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "NCDOT STANDARDS",
+     "insert": [
+      18.557,
+      0.8302
+     ],
+     "height": 0.1408,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "APPROVED FOR USE IN MECKLENBURG COUNTY",
+     "insert": [
+      17.0303,
+      0.619
+     ],
+     "height": 0.1408,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "AND TOWNS, INCLUDING ETJ",
+     "insert": [
+      18.1682,
+      0.4117
+     ],
+     "height": 0.1408,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "NOTE 1: FOR ALL STRUCTURES - NCDOT REQUIRES CLASS B CONCRETE (2500PSI). THE COUNTY REQUIRES 3600 PSI CONCRETE STRENGTH @ 28 DAYS. 3600 PSI",
+     "insert": [
+      13.1183,
+      1.7156
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "CONCRETE SHALL BE USED IN ALL PROJECTS.",
+     "insert": [
+      13.65,
+      1.5673
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SHEET TITLE",
+     "insert": [
+      15.3136,
+      7.3244
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SPECIAL REQUIREMENTS AND NOTES",
+     "insert": [
+      19.2449,
+      7.3227
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "DWG",
+     "insert": [
+      13.3812,
+      7.3204
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SEE MCLDS 20.17 FOR SPLASH PAD",
+     "insert": [
+      18.8109,
+      6.7228
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SEE MCLDS 20.17 FOR SPLASH PAD",
+     "insert": [
+      18.8109,
+      6.5728
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SEE MCLDS 20.17 FOR SPLASH PAD",
+     "insert": [
+      18.8109,
+      6.4228
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SEE MCLDS 20.17 FOR SPLASH PAD",
+     "insert": [
+      18.8109,
+      5.6728
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SEE MCLDS 20.17 FOR SPLASH PAD",
+     "insert": [
+      18.8109,
+      5.8228
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SEE MCLDS 20.17 FOR SPLASH PAD",
+     "insert": [
+      18.8109,
+      5.9728
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SEE MCLDS 20.17 FOR SPLASH PAD",
+     "insert": [
+      18.8109,
+      6.1228
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "SEE MCLDS 20.17 FOR SPLASH PAD",
+     "insert": [
+      18.8109,
+      6.2728
+     ],
+     "height": 0.0743,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "%%UAPPROVED DATE: 02/2007",
+     "insert": [
+      13.3551,
+      1.2623
+     ],
+     "height": 0.1,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "STD. NO.",
+     "insert": [
+      22.5763,
+      0.5651
+     ],
+     "height": 0.068,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REV.",
+     "insert": [
+      23.2014,
+      0.5651
+     ],
+     "height": 0.068,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "20.00B",
+     "insert": [
+      22.4544,
+      0.342
+     ],
+     "height": 0.1255,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    }
+   ],
+   "inserts": [
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      0.0,
+      0.0
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      313.7659,
+      -97.8152
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      313.7659,
+      -97.8152
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      313.7659,
+      -97.8152
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      313.7659,
+      -97.8152
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      715.7749,
+      266.8589
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      12.3527,
+      26.3526
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      326.1186,
+      -71.4626
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      326.1186,
+      -71.4626
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      326.1186,
+      -71.4626
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      326.1186,
+      -71.4626
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      728.1276,
+      293.2115
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "MECKCOUNTYSEAL",
+     "insert": [
+      13.2187,
+      0.2602
+     ],
+     "layer": "MECK-DETAIL"
+    }
+   ]
+  },
+  "Layout1": {
+   "leaders": [],
+   "multileaders": [],
+   "dimensions": [],
+   "text": [],
+   "inserts": [
+    {
+     "name": "ADCADD_ZZ",
+     "insert": [
+      0.0,
+      0.0
+     ],
+     "layer": "BORDER"
+    }
+   ]
+  }
+ }
+}

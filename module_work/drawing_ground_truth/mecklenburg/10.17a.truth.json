@@ -1,0 +1,608 @@
+{
+ "source_dxf": "10.17a.dxf",
+ "spaces": {
+  "model": {
+   "leaders": [],
+   "multileaders": [],
+   "dimensions": [],
+   "text": [
+    {
+     "type": "TEXT",
+     "text": "%%U1'-6\" STANDARD CURB AND GUTTER",
+     "insert": [
+      6.8816,
+      4.8314
+     ],
+     "height": 0.0948,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "6\"",
+     "insert": [
+      6.5902,
+      5.5289
+     ],
+     "height": 0.0632,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "12\"",
+     "insert": [
+      6.3548,
+      5.7384
+     ],
+     "height": 0.0632,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "1/2\" RADIUS",
+     "insert": [
+      5.9255,
+      6.4813
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "6\"",
+     "insert": [
+      7.1206,
+      6.52
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "%%USTANDARD 2'-6\" CURB AND GUTTER",
+     "insert": [
+      1.3862,
+      5.04
+     ],
+     "height": 0.0948,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "STANDARD CURB AND GUTTER",
+     "insert": [
+      4.3409,
+      0.3242
+     ],
+     "height": 0.1897,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "2'-6\"",
+     "insert": [
+      2.661,
+      5.2891
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "1/8\" RADIUS",
+     "insert": [
+      8.7574,
+      5.9645
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "3\" RADIUS",
+     "insert": [
+      7.7315,
+      6.3531
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "1'-6\"",
+     "insert": [
+      7.5446,
+      5.0846
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "6 1/2\"",
+     "insert": [
+      8.8914,
+      5.4598
+     ],
+     "height": 0.0474,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "1'-0\"",
+     "insert": [
+      7.7982,
+      6.52
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "%%U2'-0\" STANDARD CURB & GUTTER",
+     "insert": [
+      1.3441,
+      2.0161
+     ],
+     "height": 0.0948,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "12\"",
+     "insert": [
+      1.0045,
+      5.8907
+     ],
+     "height": 0.0632,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "1/2\" RADIUS",
+     "insert": [
+      0.509,
+      6.6578
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "6\"",
+     "insert": [
+      1.7217,
+      6.6276
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "6\"",
+     "insert": [
+      1.2789,
+      5.6864
+     ],
+     "height": 0.0632,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": " 3\" RADIUS",
+     "insert": [
+      2.3005,
+      6.4645
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "2'-0\"",
+     "insert": [
+      2.9165,
+      6.6276
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": " 1/8\" RADIUS",
+     "insert": [
+      4.5693,
+      6.3399
+     ],
+     "height": 0.0632,
+     "rotation": 360.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "7\"",
+     "insert": [
+      4.4993,
+      5.7226
+     ],
+     "height": 0.0632,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "6\"",
+     "insert": [
+      1.6918,
+      3.7737
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "1'-6\"",
+     "insert": [
+      2.658,
+      3.7737
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "3\" RADIUS",
+     "insert": [
+      2.3027,
+      3.6068
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "2'-0\"",
+     "insert": [
+      2.4431,
+      2.3585
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "12\"",
+     "insert": [
+      1.1279,
+      3.0057
+     ],
+     "height": 0.0632,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "6\"",
+     "insert": [
+      1.3633,
+      2.7962
+     ],
+     "height": 0.0632,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "7\"",
+     "insert": [
+      4.0547,
+      2.8126
+     ],
+     "height": 0.0632,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "12\"",
+     "insert": [
+      6.164,
+      3.0057
+     ],
+     "height": 0.0632,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "3\" RADIUS",
+     "insert": [
+      7.3388,
+      3.6068
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "1'-6\"",
+     "insert": [
+      7.694,
+      3.7737
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "%%USLOPE FOR VARIABLE",
+     "insert": [
+      6.8418,
+      1.6708
+     ],
+     "height": 0.0948,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "6\"",
+     "insert": [
+      6.7278,
+      3.7737
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "6\"",
+     "insert": [
+      6.3994,
+      2.7962
+     ],
+     "height": 0.0632,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "2'-0\"",
+     "insert": [
+      7.4792,
+      2.0564
+     ],
+     "height": 0.0632,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "7\"",
+     "insert": [
+      9.0908,
+      2.8126
+     ],
+     "height": 0.0632,
+     "rotation": 90.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": ".03 FT/FT",
+     "insert": [
+      7.293,
+      2.4041
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": ".03 FT/FT",
+     "insert": [
+      9.1913,
+      3.3228
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": ".02 FT/FT",
+     "insert": [
+      7.7794,
+      3.3477
+     ],
+     "height": 0.08,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "%%USUPERELEVATION RATES",
+     "insert": [
+      6.765,
+      1.4442
+     ],
+     "height": 0.0948,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "NOT TO SCALE",
+     "insert": [
+      9.017,
+      0.8965
+     ],
+     "height": 0.1275,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "%%UAPPROVED DATE: 02/2007",
+     "insert": [
+      0.4384,
+      1.0928
+     ],
+     "height": 0.0948,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "STD. NO.",
+     "insert": [
+      9.5879,
+      0.3049
+     ],
+     "height": 0.068,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "REV.",
+     "insert": [
+      10.2202,
+      0.3041
+     ],
+     "height": 0.068,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "type": "TEXT",
+     "text": "10.17A",
+     "insert": [
+      9.4601,
+      0.0818
+     ],
+     "height": 0.1255,
+     "rotation": 0.0,
+     "layer": "MECK-DETAIL"
+    }
+   ],
+   "inserts": [
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      0.0,
+      0.0
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      313.7659,
+      -97.8152
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      313.7659,
+      -97.8152
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      313.7659,
+      -97.8152
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "AVE_RENDER",
+     "insert": [
+      313.7659,
+      -97.8152
+     ],
+     "layer": "ASHADE"
+    },
+    {
+     "name": "PROJ_NAM",
+     "insert": [
+      715.7749,
+      266.8589
+     ],
+     "layer": "DCA_INFO"
+    },
+    {
+     "name": "*X1",
+     "insert": [
+      39.491,
+      91.0432
+     ],
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "name": "*X0",
+     "insert": [
+      34.0932,
+      88.7132
+     ],
+     "layer": "MECK-DETAIL"
+    },
+    {
+     "name": "MECKCOUNTYSEAL2",
+     "insert": [
+      0.2413,
+      -0.0
+     ],
+     "layer": "MECK-DETAIL"
+    }
+   ]
+  },
+  "Layout1": {
+   "leaders": [],
+   "multileaders": [],
+   "dimensions": [],
+   "text": [],
+   "inserts": [
+    {
+     "name": "ADCADD_ZZ",
+     "insert": [
+      0.0,
+      0.0
+     ],
+     "layer": "0"
+    }
+   ]
+  }
+ }
+}
