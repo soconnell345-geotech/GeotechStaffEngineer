@@ -16,9 +16,12 @@ from drawing_ir import from_pdf_vector, queries
 from drawing_ir.tests.leader_fixtures import build_synthetic_leader_pdf
 
 #: Confidence at/above which a proposal is treated as a confirmed leader for
-#: recall/precision purposes -- chosen from the measured gap between genuine
-#: leaders (~0.94-0.96 in this fixture family) and the dimension decoy
-#: (~0.32), not tuned to force a particular pass/fail outcome.
+#: recall/precision purposes. Genuine leaders measure ~0.94-0.96 in this
+#: fixture family. Since Phase 2, a dimension arrowhead scores ~0.78
+#: unfiltered (the Phase-1 ~0.32 came from an extension-line-steals-shaft
+#: artifact, since fixed), so this threshold alone no longer separates the
+#: two -- precision against dimensions is delivered by
+#: find_leaders(exclude_dimensions=True), which the precision tests use.
 CONFIDENCE_THRESHOLD = 0.5
 
 TIP_TOLERANCE = 0.6  # PDF points

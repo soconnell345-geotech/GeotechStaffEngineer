@@ -374,8 +374,15 @@ def _run_search_drawing_set(params):
                 props = finders[construct](ir)
                 if pattern is not None:
                     low = str(pattern).lower()
-                    props = [p for p in props
-                             if low in str(p.get("text") or "").lower()]
+                    # Proposals carry text under "text" (leaders/bubbles) or
+                    # "texts" (title blocks: a list of contained text items);
+                    # cloud proposals have no text and never match a pattern.
+                    def _prop_text(p):
+                        if p.get("text"):
+                            return str(p["text"])
+                        return " ".join(str(t.get("content", ""))
+                                        for t in (p.get("texts") or []))
+                    props = [p for p in props if low in _prop_text(p).lower()]
                 entries = [_construct_summary(construct, p) for p in props]
             else:
                 entries = [{"text": t["content"], "at": t["position"]}
@@ -585,7 +592,11 @@ METHOD_INFO = {
                         "description": ("Text to find (regex, else literal "
                                         "substring; case-insensitive). Any "
                                         "runtime string. With 'construct', "
-                                        "filters constructs by their text. "
+                                        "filters constructs by their text "
+                                        "(title blocks: matched against all "
+                                        "contained text; revision clouds "
+                                        "carry no text and never match a "
+                                        "pattern). "
                                         "NOTE: sheets plotted with SHX/"
                                         "stroked lettering have NO text "
                                         "layer — such pages are flagged "

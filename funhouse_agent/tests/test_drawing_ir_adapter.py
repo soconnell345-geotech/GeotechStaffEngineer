@@ -277,6 +277,22 @@ class TestSearchDrawingSet:
                         "pattern": "W1", "min_confidence": 0.5})
         assert r["total_count"] == sum(gt["w1_counts_by_page"].values())
 
+    def test_title_block_pattern_matches_contained_texts(self, tmp_path):
+        # Title-block proposals carry "texts" (a list of contained text
+        # items), not "text" — the pattern filter must match against them.
+        from drawing_ir.tests.construct_fixtures import (
+            build_synthetic_title_block_pdf)
+        path, gt = build_synthetic_title_block_pdf(tmp_path)
+        hit = call_agent("drawing_ir", "search_drawing_set",
+                         {"file_paths": path, "construct": "title_block",
+                          "pattern": "S-101"})
+        assert "error" not in hit
+        assert hit["total_count"] >= 1
+        miss = call_agent("drawing_ir", "search_drawing_set",
+                          {"file_paths": path, "construct": "title_block",
+                           "pattern": "NOT-ON-THIS-SHEET"})
+        assert miss["total_count"] == 0
+
     def test_requires_pattern_or_construct(self, tmp_path):
         path, _gt = build_synthetic_drawing_set_pdf(tmp_path)
         r = call_agent("drawing_ir", "search_drawing_set",
