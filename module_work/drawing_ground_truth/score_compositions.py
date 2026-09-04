@@ -16,28 +16,40 @@ approximate.
 
 Usage:  python module_work/drawing_ground_truth/score_compositions.py
 
-RESULTS (2026-09-04 run, post Phase-2 hardening — the honest read):
+RESULTS LEDGER (do not tune to these; grow the representation and re-run):
 
-- Leader/dimension tip recall vs native truth: 0/25 and 0/16. NOT a
-  scoring artifact: probing a truth tip on sheet 21.01 shows Mecklenburg
-  plots render arrowheads as clusters of ~0.06-pt micro-segments (solid
-  fill dots), not triangles — invisible to the closed/open-triangle
-  candidate model by representation, and micro-dot clustering can't be
-  naively added because line-style dots flood the sheets (3,417 tiny
-  segments, 205 clusters on 21.01). A fill-cluster arrowhead leg is
-  Phase-3 work alongside B7 (these SHX sheets need a raster pass for
-  text anyway).
-- False-positive floor after hardening: 5 of 10 sheets report ZERO
-  spurious dimensions; dense sheets (3001) still over-propose
-  (36 D vs 10 truth) — some may be visually-real leaders drafted as
-  plain lines (native-entity truth undercounts those); unverified.
-- Bubbles: 10.31A proposes exactly 40 vs 40 native circles (count
-  match; positions not yet cross-checked).
-- Perf on real sheets after the endpoint-grid + id-map work: worst
-  sheet 6 s (was >600 s before indexing).
+Phase-2 baseline (2026-09-04, translation-only transform): 0/25, 0/16.
 
-These numbers are the drawing memo's real-drafting baseline — do not
-tune to them; grow the representation model (Phase 3) and re-run.
+Phase 3 (2026-09-04, same day — after the rotation+scale+offset fit,
+fill-cluster arrowheads, fold-blind triangle alignment, and no-text
+confidence renormalization):
+
+- TRANSFORM TRUTH: the Mecklenburg sheets plot ROTATED 270 deg at
+  exactly 72 pt/model-inch (fit rms 0.02-0.03 pt, 100% of anchor
+  points matched) — Phase 2's 0/25 was PARTLY a transform artifact.
+  The old translation-only fit could never land on these plots.
+- Leader tip recall 11/25 (21.01: 3/13, 3001: 5/7, 10.31A: 3/5).
+  Residual misses, diagnosed per tip on 21.01: four tips have NO
+  plotted fragments at all within arrow range (arrowheads suppressed
+  or off-window), and the rest are sparse micro-dot tips (1-3 dots)
+  sitting inside stipple texture whose local density spike is below
+  the 2x background gate — indistinguishable from texture by pure
+  local geometry at this scale.
+- Dimension end recall 1/16 — DIAGNOSED, distinct root cause: native
+  dims plot their shaft as TWO collinear halves around a centered
+  text gap; each half carries one arrowhead, so the both-ends-on-one-
+  shaft model never fires on them (the high-confidence dim proposals
+  found are the sheet's OTHER, manually-drafted dims). Fix = a
+  split-shaft pairing leg in find_dimensions (v2, documented in the
+  drawing memo; not attempted this phase).
+- Bubbles: 40/40 count match on 10.31A (unchanged).
+- OCR leg (planlens.ocr, RapidOCR, auto-rotation): on-page truth-text
+  coverage 92% / 92% / 88% exact+partial on 21.01 / 3001 / 10.31A,
+  with median coordinate error 5.8 / 7.0 / 1.4 pt after the page-
+  /Rotate derotation fix. Full end-to-end: search_drawing_set with
+  ocr_text=true finds "MECKLENBURG" on the no-text-layer 21.01 sheet
+  (0 without OCR, flagged inconclusive; ~2.5 min first pass at 300
+  dpi, instant cached follow-ups).
 """
 
 from __future__ import annotations

@@ -163,10 +163,10 @@ class TestErrors:
 
 fitz = pytest.importorskip("fitz")
 
-from drawing_ir.tests.construct_fixtures import (  # noqa: E402
+from planlens.ir.tests.construct_fixtures import (  # noqa: E402
     build_synthetic_dimension_pdf, build_synthetic_drawing_set_pdf,
 )
-from drawing_ir.tests.leader_fixtures import (  # noqa: E402
+from planlens.ir.tests.leader_fixtures import (  # noqa: E402
     build_synthetic_leader_pdf,
 )
 
@@ -280,7 +280,7 @@ class TestSearchDrawingSet:
     def test_title_block_pattern_matches_contained_texts(self, tmp_path):
         # Title-block proposals carry "texts" (a list of contained text
         # items), not "text" — the pattern filter must match against them.
-        from drawing_ir.tests.construct_fixtures import (
+        from planlens.ir.tests.construct_fixtures import (
             build_synthetic_title_block_pdf)
         path, gt = build_synthetic_title_block_pdf(tmp_path)
         hit = call_agent("drawing_ir", "search_drawing_set",
@@ -292,6 +292,32 @@ class TestSearchDrawingSet:
                           {"file_paths": path, "construct": "title_block",
                            "pattern": "NOT-ON-THIS-SHEET"})
         assert miss["total_count"] == 0
+
+    def test_set_ir_cache_reuse(self, tmp_path):
+        # Phase 3: repeated set queries over the same file reuse the
+        # digitized IR (identical results, one cache entry per page).
+        from funhouse_agent.adapters import drawing_ir_adapter as mod
+        path, gt = build_synthetic_drawing_set_pdf(tmp_path)
+        mod._SET_IR_CACHE.clear()
+        mod._SET_IR_ORDER.clear()
+        r1 = call_agent("drawing_ir", "search_drawing_set",
+                        {"file_paths": path, "pattern": "W1"})
+        n_cached = len(mod._SET_IR_CACHE)
+        assert n_cached >= 1
+        r2 = call_agent("drawing_ir", "search_drawing_set",
+                        {"file_paths": path, "pattern": "W1"})
+        assert len(mod._SET_IR_CACHE) == n_cached  # no re-digitization
+        assert r1["total_count"] == r2["total_count"]
+
+    def test_ocr_text_param_accepted_without_engine_use(self, tmp_path):
+        # ocr_text=true on a page that HAS a text layer must not invoke
+        # the OCR engine at all (the trigger is no_text_layer only).
+        path, gt = build_synthetic_drawing_set_pdf(tmp_path)
+        r = call_agent("drawing_ir", "search_drawing_set",
+                       {"file_paths": path, "pattern": "W1",
+                        "ocr_text": True})
+        assert "error" not in r
+        assert r["total_count"] == sum(gt["w1_counts_by_page"].values())
 
     def test_requires_pattern_or_construct(self, tmp_path):
         path, _gt = build_synthetic_drawing_set_pdf(tmp_path)

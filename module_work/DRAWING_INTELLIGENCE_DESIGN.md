@@ -1,5 +1,43 @@
 # Drawing & submittal intelligence — design memo (2026-09-04)
 
+> **PHASE 3: COMPLETE (planlens commits 5b7147c + the OCR commit,
+> 2026-09-04).** The two legs the Phase-2 baseline demanded:
+> (1) **Fill-cluster arrowheads** — find_leaders/find_dimensions now
+> also detect arrowheads drawn as clusters of tiny strokes (micro-dot
+> fills, hatch fans; the real Mecklenburg style), tagged
+> `arrowhead_kind: fill_cluster` in evidence. Gates: density-spike vs
+> local background (stipple guard), centroid anchoring, union-bbox
+> aspect (running-lettering guard). Plus fold-blind best-vertex
+> triangle alignment (base-anchored multileader shafts scored ~0.1
+> before) and no-text confidence renormalization (`text_unavailable`
+> evidence flag). New `planlens.ir.align.fit_plot_transform`:
+> rotation/scale/offset anchor-voting fit — revealed the ground-truth
+> plots are ROTATED 270 at exactly 72 pt/in (rms 0.02 pt), so Phase
+> 2's 0/25 was partly transform artifact. **Real recall now 11/25
+> leader tips** (residuals diagnosed in score_compositions.py:
+> no-fragment tips + sparse dots inside stipple); dimensions stay
+> 1/16 with a NEW diagnosis — native dims plot as TWO collinear
+> one-arrow halves around a text gap → `find_dimensions` v2 needs a
+> split-shaft pairing leg (next).
+> (2) **B7 OCR leg** — `planlens.ocr` (extra `planlens[ocr]`,
+> RapidOCR/onnxruntime, Apache-2.0, ~60 MB, models in-wheel, no GPL/
+> system binaries/runtime downloads): render → OCR → TextItems mapped
+> into the IR frame (auto-detects sideways plots; handles PDF /Rotate;
+> `augment_ir_with_ocr` merges at model scale). Truth-text coverage
+> 88-92% per sheet, median coordinate error 1.4-7 pt. Agent wiring:
+> `digitize_drawing(ocr_text=true)` + `search_drawing_set(ocr_text=
+> true)` — live-verified: "MECKLENBURG" found on the no-text 21.01
+> sheet end-to-end. Set-level IR caching landed (repeat set queries
+> are instant). **Deferred: B1 DXF-native LEADER/DIMENSION ingest;
+> find_dimensions split-shaft v2; B3 marks A/B.**
+
+> **PLANLENS SPLIT (2026-09-04, owner-named):** the code this memo
+> describes now lives in the separate `planlens` package repo
+> (../planlens; import `planlens.ir` / `planlens.pdf` /
+> `planlens.dxf`). Module paths below (drawing_ir/, pdf_import/) are
+> historical. Phase 3 builds in planlens; this memo remains the plan
+> of record. No OBO branding in the package (owner).
+
 > **PHASE 2: COMPLETE (commits 8a817fa + b050124 + the hardening commit,
 > 2026-09-04).** Shipped: (1) bezier-sampled PDF ingest (circles/scallops
 > survive as curves); (2) the full composition family — find_dimensions

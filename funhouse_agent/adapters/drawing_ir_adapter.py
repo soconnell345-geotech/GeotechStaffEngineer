@@ -44,6 +44,32 @@ def _get_ir(handle):
 
 _RASTER_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".gif"}
 
+# Set-level digitization cache for search_drawing_set: repeated queries over
+# the same drawing set (the chatbot norm: "how many X", then "where", then
+# "show me") re-digitize nothing. Keyed by (path, mtime, page); bounded like
+# the handle cache. Real dense sheets cost 0.1-13 s each to digitize.
+_SET_IR_CACHE = {}
+_SET_IR_ORDER = []
+_SET_IR_CACHE_MAX = 64
+
+
+def _digitized_cached(fp, page, source):
+    try:
+        mtime = os.path.getmtime(fp)
+    except OSError:
+        mtime = None
+    key = (os.path.abspath(str(fp)), mtime, page, source)
+    ir = _SET_IR_CACHE.get(key)
+    if ir is None:
+        from planlens.ir import from_dxf, from_pdf_vector
+        ir = (from_pdf_vector(filepath=fp, page=page)
+              if source == "pdf_vector" else from_dxf(filepath=fp))
+        _SET_IR_CACHE[key] = ir
+        _SET_IR_ORDER.append(key)
+        while len(_SET_IR_ORDER) > _SET_IR_CACHE_MAX:
+            _SET_IR_CACHE.pop(_SET_IR_ORDER.pop(0), None)
+    return ir
+
 
 def _auto_source(file_path):
     ext = os.path.splitext(str(file_path))[1].lower()
@@ -67,11 +93,11 @@ def _point_xy(p):
 # ---------------------------------------------------------------------------
 
 def _run_digitize_drawing(params):
-    from drawing_ir import from_dxf, from_pdf_vector, from_raster, queries
+    from planlens.ir import from_dxf, from_pdf_vector, from_raster, queries
 
     _valid = ("file_path", "source", "page", "scale", "units", "origin",
               "calibration", "detect_lines", "detect_circles",
-              "detect_contours", "ocr")
+              "detect_contours", "ocr", "ocr_text")
     reject_unknown_params(params, _valid, method="digitize_drawing")
     require_params(params, ["file_path"], method="digitize_drawing",
                    valid=_valid)
@@ -99,14 +125,28 @@ def _run_digitize_drawing(params):
         raise ValueError(
             f"Unknown source '{source}'. Use dxf/pdf_vector/raster/auto.")
 
+    ocr_out = None
+    if params.get("ocr_text") and source == "pdf_vector":
+        from planlens.ocr import augment_ir_with_ocr
+        ocr_out = augment_ir_with_ocr(ir, filepath=file_path,
+                                      page=params.get("page", 0))
+
     handle = _store_ir(ir)
     out = {"handle": handle, "source": ir.source}
     out.update(queries.summary_stats(ir))
+    if ocr_out is not None:
+        out["ocr"] = ocr_out
     if ir.metadata.get("scale_candidates"):
         out["scale_candidates"] = ir.metadata["scale_candidates"]
     out["note"] = ("IR cached under 'handle'. Use query_drawing to request "
                    "slices and get_entities for exact coordinates of specific "
-                   "ids. Confidence < 1.0 marks raster detections.")
+                   "ids. Confidence < 1.0 marks raster/OCR detections.")
+    if not out.get("has_text") and source == "pdf_vector" \
+            and ocr_out is None:
+        out["note"] += (
+            " This sheet has NO extractable text layer (SHX/stroked "
+            "lettering): re-digitize with ocr_text=true to read the "
+            "lettering optically before running text queries.")
     return clean_result(out)
 
 
@@ -116,7 +156,7 @@ def _run_digitize_drawing(params):
 
 # name -> (function, required-param-names, all-param-names)
 def _query_registry():
-    from drawing_ir import queries as q
+    from planlens.ir import queries as q
 
     def _ending_near(ir, x, y, radius, entity_types=None):
         return q.entities_ending_near(ir, (x, y), radius,
@@ -211,7 +251,7 @@ def _run_query_drawing(params):
 # ---------------------------------------------------------------------------
 
 def _run_get_entities(params):
-    from drawing_ir import queries
+    from planlens.ir import queries
 
     reject_unknown_params(params, ("handle", "ids"), method="get_entities")
     require_params(params, ["handle", "ids"], method="get_entities",
@@ -311,10 +351,10 @@ def _construct_summary(name, p):
 
 
 def _run_search_drawing_set(params):
-    from drawing_ir import from_dxf, from_pdf_vector, queries as q
+    from planlens.ir import from_dxf, from_pdf_vector, queries as q
 
     _valid = ("file_paths", "pattern", "construct", "pages",
-              "min_confidence")
+              "min_confidence", "ocr_text")
     reject_unknown_params(params, _valid, method="search_drawing_set")
     require_params(params, ["file_paths"], method="search_drawing_set",
                    valid=_valid)
@@ -323,6 +363,7 @@ def _run_search_drawing_set(params):
         file_paths = [file_paths]
     pattern = params.get("pattern")
     construct = params.get("construct")
+    ocr_text = bool(params.get("ocr_text", False))
     min_conf = params.get("min_confidence", 0.5)
     if construct is not None and construct not in _CONSTRUCT_FINDERS:
         raise ValueError(f"Unknown construct '{construct}'. "
@@ -368,8 +409,14 @@ def _run_search_drawing_set(params):
         pages_out = []
         file_total = 0
         for pg in page_list:
-            ir = (from_pdf_vector(filepath=fp, page=pg)
-                  if source == "pdf_vector" else from_dxf(filepath=fp))
+            ir = _digitized_cached(fp, pg, source)
+            if (ocr_text and source == "pdf_vector"
+                    and not (ir.metadata or {}).get("ocr")
+                    and not any(e.KIND == "text" for e in ir.entities)):
+                # Read the lettering optically on no-text-layer pages so
+                # pattern searches see it. Cached IRs are augmented once.
+                from planlens.ocr import augment_ir_with_ocr
+                augment_ir_with_ocr(ir, filepath=fp, page=pg)
             if construct is not None:
                 props = finders[construct](ir)
                 if pattern is not None:
@@ -397,8 +444,9 @@ def _run_search_drawing_set(params):
                 page_out["note"] = (
                     "This page has NO extractable text at all (likely SHX/"
                     "stroked lettering) — a zero count here does not mean "
-                    "the string is absent from the sheet. Read it via "
-                    "snip_region + vision or the raster/OCR leg.")
+                    "the string is absent from the sheet. Re-run with "
+                    "ocr_text=true to read the lettering optically "
+                    "(planlens[ocr]), or inspect via snip_region + vision.")
             if n:
                 page_out["matches"] = entries[:_SET_PAGE_RESULT_CAP]
                 if n > _SET_PAGE_RESULT_CAP:
@@ -465,6 +513,15 @@ METHOD_INFO = {
                                 "description": "Raster: trace closed shapes (contours). May overlap Hough lines on line-work."},
             "ocr": {"type": "bool", "required": False, "default": True,
                     "description": "Raster: attempt OCR text (needs pytesseract + Tesseract; skipped with a warning if absent)."},
+            "ocr_text": {"type": "bool", "required": False, "default": False,
+                         "description": (
+                             "PDF only: additionally OCR the rendered page "
+                             "and merge recognized text into the IR as "
+                             "confidence<1 text entities (source='ocr'). "
+                             "THE way to read SHX/stroked-lettering sheets "
+                             "(has_text=false) — needs planlens[ocr] "
+                             "(RapidOCR; auto-detects sideways plots). "
+                             "Adds seconds to a-minute-ish per page.")},
         },
         "returns": {
             "handle": "Cache handle for query_drawing / get_entities.",
@@ -477,8 +534,9 @@ METHOD_INFO = {
             "scale_candidates": "PDF-only: proposed scales from page text (proposals, not applied).",
             "has_text": ("Whether the sheet carries ANY extractable text. "
                          "False = likely SHX/stroked lettering (common on "
-                         "agency PDFs): text queries return nothing there; "
-                         "geometry/construct queries still work."),
+                         "agency PDFs): text queries return nothing there "
+                         "unless digitized with ocr_text=true; geometry/"
+                         "construct queries still work."),
         },
     },
     "query_drawing": {
@@ -583,7 +641,9 @@ METHOD_INFO = {
                   "does X occur in this set') or annotation constructs "
                   "(leaders, dimensions, title_block, bubble_callouts, "
                   "revision_clouds — confidence-scored proposals). Returns "
-                  "per-file, per-page counts + compact match locations."),
+                  "per-file, per-page counts + compact match locations. "
+                  "Digitized pages are cached across calls (first pass on a "
+                  "dense sheet can take seconds)."),
         "parameters": {
             "file_paths": {"type": "array", "required": True,
                            "description": ("One path or a list of paths "
@@ -601,8 +661,13 @@ METHOD_INFO = {
                                         "stroked lettering have NO text "
                                         "layer — such pages are flagged "
                                         "no_text_layer and a zero count is "
-                                        "inconclusive (use snip_region + "
-                                        "vision there).")},
+                                        "inconclusive; pass ocr_text=true "
+                                        "to read them optically.")},
+            "ocr_text": {"type": "bool", "required": False, "default": False,
+                         "description": (
+                             "OCR pages that have no text layer before the "
+                             "pattern search (planlens[ocr]; adds seconds "
+                             "per no-text page, cached across calls).")},
             "construct": {"type": "str", "required": False,
                           "allowed_values": list(_CONSTRUCT_FINDERS),
                           "description": ("Annotation construct to search "
