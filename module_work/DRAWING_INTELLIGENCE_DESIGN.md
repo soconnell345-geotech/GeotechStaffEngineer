@@ -68,11 +68,28 @@ callouts; enumerate keynote bubbles with their numbers and locations.
   every composed construct stays a flagged proposal, and vision answers
   cite the zoomed region they were shown.
 
+## FLEET REALITY (owner, 2026-09-04) — reprioritization
+
+The team usually has NO DXF files — PDFs (vector or scanned) are the
+working format, and producing DXFs manually is too arduous. Note also:
+PDF->DXF conversion cannot help even in principle for annotations —
+LEADER/DIMENSION entity semantics are destroyed at plot time (the PDF
+contains only their geometry), so a converter returns plain lines, not
+labeled entities. Direct PDF processing is therefore the PRIMARY path,
+not a fallback. Priority order changes:
+- PDF-VECTOR composition (B5, esp. find_leaders arrowhead heuristic) is
+  now Phase 1 alongside B2 (region snip) + B4 (endpoint search).
+- Raster/scan path (B7 + raster composition) rises — many team PDFs are
+  scans.
+- DXF-native ingest (B1) drops to opportunistic (still cheap; do it
+  when convenient, mainly benefits any consultant-supplied DXFs).
+
 ## Build plan
 
-Phase 1 (B1+B2+B4, ~one wave): DXF native entities + region-snip +
-endpoint search — enough to run the SAE scenario on DXF end-to-end.
-Phase 2 (B5+B6): composition family + agent wiring + vector-PDF fixture
-validation. Phase 3 (B3+B7): marks A/B + raster/OCR leg. Build on owner
+Phase 1 (B2+B4+B5-leaders): region-snip + endpoint search + PDF-vector
+leader composition — the SAE scenario end-to-end ON A VECTOR PDF (the
+fleet's real format). Phase 2 (rest of B5 + B6 + B7): full composition
+family, agent wiring, raster/OCR leg. Phase 3 (B3 + B1): marks A/B +
+opportunistic DXF-native ingest. Build on owner
 word; needs 2-3 representative sheets from the owner's team as fixtures
 (scrubbed of anything sensitive).
