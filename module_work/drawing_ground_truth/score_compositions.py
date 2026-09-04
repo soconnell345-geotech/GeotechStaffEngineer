@@ -86,20 +86,33 @@ def _match(truth_xy, prop_xy, tol=MATCH_TOL):
     return n
 
 
+def _leader_tips(m):
+    """Model-space tip points: LEADER vertices[0] + each MULTILEADER
+    leader-line's first vertex (the arrow end in both)."""
+    tips = [L["vertices"][0] for L in m.get("leaders", [])
+            if L.get("vertices")]
+    for ML in m.get("multileaders", []):
+        for ln in ML.get("leader_lines", []):
+            if ln:
+                tips.append(ln[0])
+                break  # one tip per multileader (avoid double-count)
+    return tips
+
+
 def main():
-    from drawing_ir import from_pdf_vector, queries as q
+    from planlens.ir import from_pdf_vector, queries as q
+    from planlens.ir.align import fit_plot_transform
 
     sheets = sorted(f[:-11] for f in os.listdir(MECK)
                     if f.endswith(".truth.json"))
-    print(f"{'sheet':8s} {'ents':>6s} | truth L/D/C | props L/D/B "
-          f"(conf>={MIN_CONF:g}) | matched L D | secs")
+    print(f"{'sheet':8s} {'ents':>6s} | truth L/D | fit(rot,scale,rms) | "
+          f"props L/D | matched L D | secs")
     totals = dict(tl=0, td=0, ml=0, md=0)
     for s in sheets:
         truth = json.load(open(os.path.join(MECK, s + ".truth.json")))
         m = truth["spaces"]["model"]
-        t_lead = m.get("leaders", []) + m.get("multileaders", [])
+        n_lead = (len(m.get("leaders", [])) + len(m.get("multileaders", [])))
         t_dim = m.get("dimensions", [])
-        n_circ = len(m.get("circles", []))
 
         pdf = os.path.join(MECK, s + ".pdf")
         t0 = time.time()
@@ -107,44 +120,46 @@ def main():
         leads = q.find_leaders(ir, min_confidence=MIN_CONF,
                                exclude_dimensions=True)
         dims = q.find_dimensions(ir, min_confidence=MIN_CONF)
-        bubbles = q.find_bubble_callouts(ir, min_confidence=MIN_CONF)
         dt = time.time() - t0
 
-        # Transform truth into IR page points via bbox-center alignment on
-        # ALL truth geometry (leaders+dims+text inserts).
-        all_pts = ([v for L in t_lead for v in L.get("vertices", [])]
-                   + [d["defpoint"] for d in t_dim if d.get("defpoint")]
-                   + [t.get("insert") for t in m.get("text", [])
-                      if t.get("insert")])
-        off = _fit_offset(all_pts, ir.bbox())
+        # Transform: rotation/scale/offset fit on annotation anchor chains
+        # (leader + multileader vertices + dimension defpoints) — the
+        # translation-only fit failed on rotated/real-scale plots.
+        chains = [L["vertices"] for L in m.get("leaders", [])
+                  if L.get("vertices")]
+        chains += [ln for ML in m.get("multileaders", [])
+                   for ln in ML.get("leader_lines", []) if ln]
+        anchors = [v for c in chains for v in c]
+        anchors += [d["defpoint"] for d in t_dim if d.get("defpoint")]
+        fit = (fit_plot_transform(anchors, ir, anchor_chains=chains)
+               if len(anchors) >= 3 else None)
 
         ml = md = 0
-        if off is not None:
-            tips = [(L["vertices"][0][0] * SCALE + off[0],
-                     L["vertices"][0][1] * SCALE + off[1])
-                    for L in t_lead if L.get("vertices")]
+        fit_desc = "no-fit"
+        if fit is not None:
+            fit_desc = (f"r{fit['rotation_deg']:<3d}s{fit['scale']:6.2f} "
+                        f"rms{fit['rms']:.2f}")
+            tips = [fit["apply"](tuple(v)) for v in _leader_tips(m)]
             ml = _match(tips, [p["tip_xy"] for p in leads])
-            dps = [(d["defpoint"][0] * SCALE + off[0],
-                    d["defpoint"][1] * SCALE + off[1])
-                   for d in t_dim if d.get("defpoint")]
+            dps = [fit["apply"](tuple(d["defpoint"])) for d in t_dim
+                   if d.get("defpoint")]
             # A dimension defpoint sits at one END of the dimension line.
             ends = ([tuple(p["end_a_xy"]) for p in dims]
                     + [tuple(p["end_b_xy"]) for p in dims])
             md = _match(dps, ends)
 
-        totals["tl"] += len(t_lead)
+        totals["tl"] += n_lead
         totals["td"] += len(t_dim)
         totals["ml"] += ml
         totals["md"] += md
         print(f"{s:8s} {len(ir.entities):>6d} | "
-              f"{len(t_lead):2d}/{len(t_dim):2d}/{n_circ:2d}   | "
-              f"{len(leads):3d}/{len(dims):3d}/{len(bubbles):3d}        | "
-              f"{ml:2d}/{len(t_lead):2d} {md:2d}/{len(t_dim):2d} | "
-              f"{dt:5.1f}")
+              f"{n_lead:2d}/{len(t_dim):2d}     | {fit_desc:18s} | "
+              f"{len(leads):3d}/{len(dims):3d}   | "
+              f"{ml:2d}/{n_lead:2d} {md:2d}/{len(t_dim):2d} | {dt:5.1f}")
     print(f"\nTOTAL leader tip recall  {totals['ml']}/{totals['tl']}"
           f"  dimension end recall {totals['md']}/{totals['td']}")
     print("(observational; greedy match within "
-          f"{MATCH_TOL:g} pt after bbox-center transform fit)")
+          f"{MATCH_TOL:g} pt after rotation+scale+offset anchor fit)")
 
 
 if __name__ == "__main__":
