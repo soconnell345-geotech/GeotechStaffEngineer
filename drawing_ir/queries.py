@@ -618,7 +618,9 @@ def _chain_simplicity_score(n_vertices: int) -> float:
 def find_leaders(ir: DrawingIR, max_arrowhead_size: Optional[float] = None,
                  search_radius: Optional[float] = None,
                  text_radius: Optional[float] = None,
-                 min_confidence: float = 0.0) -> List[Dict[str, Any]]:
+                 min_confidence: float = 0.0,
+                 exclude_dimensions: bool = False,
+                 dimension_confidence: float = 0.5) -> List[Dict[str, Any]]:
     """PROPOSE leader constructs (bent arrow + tail text) from primitives.
 
     A "leader" (AutoCAD sense): a shaft (Line, or a Polyline with one or more
@@ -659,11 +661,13 @@ def find_leaders(ir: DrawingIR, max_arrowhead_size: Optional[float] = None,
     end arrow is geometrically identical to a leader arrowhead (a small
     filled triangle at a line end), and a dimension VALUE sitting near the
     line's other end can score as "tail text" — so a true dimension can also
-    surface here as a lower/moderate-confidence leader proposal. This
-    heuristic composes primitives; it does not (yet) distinguish leader
-    semantics from dimension semantics (that is :func:`find_dimensions`,
-    Phase 2). Confirm visually (e.g. ``drawing_ir.render.render_region`` on
-    ``tip_xy``) before treating a proposal as a true annotation leader.
+    surface here as a lower/moderate-confidence leader proposal. Pass
+    ``exclude_dimensions=True`` to run :func:`find_dimensions` first and drop
+    any leader proposal whose arrowhead is claimed by a dimension proposal
+    with confidence >= ``dimension_confidence`` (a dimension arrowhead pairs
+    with a SECOND arrowhead across a shared shaft — structure a true leader
+    never has). Confirm visually (e.g. ``drawing_ir.render.render_region``
+    on ``tip_xy``) before treating a proposal as a true annotation leader.
 
     Returns proposals sorted by confidence (descending), each:
     ``{tip_xy, tail_xy, vertices, arrowhead_id, shaft_id, text, text_id,
@@ -742,8 +746,702 @@ def find_leaders(ir: DrawingIR, max_arrowhead_size: Optional[float] = None,
             "proposal_only": True,
         })
 
+    if exclude_dimensions:
+        dims = find_dimensions(ir, max_arrowhead_size=max_arrowhead_size,
+                               search_radius=search_radius,
+                               text_radius=text_radius,
+                               min_confidence=dimension_confidence)
+        claimed = {aid for d in dims for aid in d["arrowhead_ids"]}
+        proposals = [p for p in proposals
+                     if p["arrowhead_id"] not in claimed]
+
     proposals.sort(key=lambda p: p["confidence"], reverse=True)
     return proposals
+
+
+# ---------------------------------------------------------------------------
+# Composition family (Phase 2) — dimensions, title block, bubbles, rev clouds.
+# All are confidence-scored PROPOSALS over the shared primitives, same house
+# pattern as find_leaders/candidate_ground_surface: never asserted facts.
+# ---------------------------------------------------------------------------
+
+def _fold_alignment(u: Point, v: Point) -> float:
+    """|cos| alignment of two directions, sign-blind (1.0 = collinear)."""
+    return abs(u[0] * v[0] + u[1] * v[1])
+
+
+def _median(vals: List[float]) -> float:
+    s = sorted(vals)
+    return s[len(s) // 2] if s else 0.0
+
+
+def _median_text_height(ir: DrawingIR) -> float:
+    hs = [e.height for e in ir.entities
+          if isinstance(e, TextItem) and (e.height or 0) > 0]
+    return _median(hs)
+
+
+def _shaft_terminal_dir(shaft_pts: List[Point], end_label: str) -> Point:
+    """Unit direction of the shaft's terminal segment, pointing OUT the end."""
+    if end_label == "end":
+        a, b = shaft_pts[-2], shaft_pts[-1]
+    else:
+        a, b = shaft_pts[1], shaft_pts[0]
+    return _unit_vec(b[0] - a[0], b[1] - a[1])
+
+
+def find_dimensions(ir: DrawingIR, max_arrowhead_size: Optional[float] = None,
+                    search_radius: Optional[float] = None,
+                    text_radius: Optional[float] = None,
+                    min_confidence: float = 0.0) -> List[Dict[str, Any]]:
+    """PROPOSE dimension constructs (shaft with arrowheads at BOTH ends).
+
+    A dimension line: a straight shaft with an arrowhead at EACH end, usually
+    bracketed by perpendicular extension (witness) lines terminating near the
+    tips, with the dimension VALUE text near the shaft midpoint. The
+    both-ends-arrowed structure is what distinguishes it from a leader (one
+    arrowhead) — which also makes this the disambiguator for
+    :func:`find_leaders`'s documented dimension false-positive source (see
+    its ``exclude_dimensions`` option).
+
+    Heuristic: for every Line/open-Polyline shaft, look for an arrowhead
+    candidate (:func:`_arrowhead_candidates`) whose centroid lies within
+    ``search_radius`` of EACH shaft endpoint; score
+
+    - **alignment** (0.40) — mean, over both ends, of the |cos| between the
+      arrowhead's apex-from-base direction and the shaft's terminal-segment
+      axis (dimension arrows point along the shaft, inward or outward, so the
+      score is sign-blind);
+    - **text** (0.30) — nearest TextItem to the shaft midpoint within
+      ``text_radius`` (the dimension value);
+    - **extension lines** (0.30) — at each tip, any OTHER entity ending
+      within ``search_radius`` whose terminal direction is roughly
+      perpendicular (>= 55 deg) to the shaft (0, 1, or 2 ends satisfied).
+
+    Defaults follow :func:`find_leaders` (``max_arrowhead_size`` from
+    :func:`_default_max_arrowhead_size`; ``search_radius`` = 1.5x;
+    ``text_radius`` = 4x). Returns proposals sorted by confidence:
+    ``{end_a_xy, end_b_xy, midpoint_xy, length, angle_deg, shaft_id,
+    arrowhead_ids, extension_line_ids, text, text_id, text_distance,
+    confidence, evidence, proposal_only: True}``.
+    """
+    max_arrowhead_size = max_arrowhead_size or _default_max_arrowhead_size(ir)
+    search_radius = (search_radius if search_radius is not None
+                     else max_arrowhead_size * 1.5)
+    text_radius = (text_radius if text_radius is not None
+                   else max_arrowhead_size * 4.0)
+
+    arrowheads = list(_arrowhead_candidates(ir, max_arrowhead_size))
+    if not arrowheads:
+        return []
+    arrow_ids = {e.id for e, _ in arrowheads}
+
+    proposals = []
+    for shaft in ir.entities:
+        if isinstance(shaft, Line):
+            pass
+        elif isinstance(shaft, Polyline) and not shaft.closed:
+            pass
+        else:
+            continue
+        if shaft.id in arrow_ids:
+            continue
+        shaft_pts = shaft.points()
+        if len(shaft_pts) < 2:
+            continue
+        ends = [("start", shaft_pts[0]), ("end", shaft_pts[-1])]
+
+        per_end = []
+        for end_label, tip in ends:
+            best = None
+            for cand, verts in arrowheads:
+                c = _centroid(verts)
+                d = math.hypot(c[0] - tip[0], c[1] - tip[1])
+                if d <= search_radius and (best is None or d < best[1]):
+                    apex = min(verts, key=lambda p: math.hypot(
+                        p[0] - tip[0], p[1] - tip[1]))
+                    others = [p for p in verts if p != apex] or verts
+                    arrow_dir = _unit_vec(apex[0] - _centroid(others)[0],
+                                          apex[1] - _centroid(others)[1])
+                    best = (cand, d, arrow_dir)
+            per_end.append((end_label, tip, best))
+
+        if any(b is None for _, _, b in per_end):
+            continue  # a dimension needs an arrowhead at BOTH ends
+
+        align_scores = []
+        for end_label, tip, (cand, d, arrow_dir) in per_end:
+            shaft_dir = _shaft_terminal_dir(shaft_pts, end_label)
+            align_scores.append(_fold_alignment(shaft_dir, arrow_dir))
+        align = sum(align_scores) / len(align_scores)
+
+        # Extension (witness) lines: something ELSE terminating near each tip,
+        # roughly perpendicular to the shaft's terminal axis at that end.
+        used_ids = {shaft.id} | {b[0].id for _, _, b in per_end}
+        ext_ids: List[str] = []
+        ext_ends = 0
+        for end_label, tip, _b in per_end:
+            shaft_dir = _shaft_terminal_dir(shaft_pts, end_label)
+            found_here = False
+            for hit in entities_ending_near(ir, tip, search_radius,
+                                            entity_types=["line", "polyline"]):
+                if hit["id"] in used_ids or hit.get("closed"):
+                    continue
+                other = ir.by_id(hit["id"])
+                opts = other.points()
+                if len(opts) < 2:
+                    continue
+                odir = _shaft_terminal_dir(opts, hit["end"])
+                if _fold_alignment(shaft_dir, odir) <= math.cos(
+                        math.radians(55.0)):
+                    ext_ids.append(hit["id"])
+                    found_here = True
+            if found_here:
+                ext_ends += 1
+        ext_score = ext_ends / 2.0
+
+        mid = (0.5 * (ends[0][1][0] + ends[1][1][0]),
+               0.5 * (ends[0][1][1] + ends[1][1][1]))
+        text_hit, text_dist = None, None
+        near_text = nearest_entity(ir, mid[0], mid[1], entity_type="text", k=1)
+        if near_text and near_text[0]["distance"] <= text_radius:
+            text_hit = near_text[0]
+            text_dist = text_hit["distance"]
+        text_score = _text_proximity_score(text_dist, text_radius)
+
+        confidence = round(0.40 * align + 0.30 * text_score
+                           + 0.30 * ext_score, 3)
+        if confidence < min_confidence:
+            continue
+
+        a_xy, b_xy = ends[0][1], ends[1][1]
+        proposals.append({
+            "end_a_xy": [_r(a_xy[0]), _r(a_xy[1])],
+            "end_b_xy": [_r(b_xy[0]), _r(b_xy[1])],
+            "midpoint_xy": [_r(mid[0]), _r(mid[1])],
+            "length": _r(math.hypot(b_xy[0] - a_xy[0], b_xy[1] - a_xy[1])),
+            "angle_deg": _r(_seg_angle(a_xy, b_xy), 2),
+            "shaft_id": shaft.id,
+            "arrowhead_ids": [b[0].id for _, _, b in per_end],
+            "extension_line_ids": sorted(set(ext_ids)),
+            "text": text_hit["content"] if text_hit else None,
+            "text_id": text_hit["id"] if text_hit else None,
+            "text_distance": _r(text_dist) if text_dist is not None else None,
+            "confidence": confidence,
+            "evidence": {
+                "alignment_score": _r(align, 3),
+                "text_proximity_score": _r(text_score, 3),
+                "extension_line_score": _r(ext_score, 3),
+                "n_extension_ends": ext_ends,
+            },
+            "proposal_only": True,
+        })
+
+    proposals.sort(key=lambda p: p["confidence"], reverse=True)
+    return proposals
+
+
+def _circle_fit(verts: List[Point]) -> Tuple[Point, float, float]:
+    """Centroid-based circle fit: (center, mean radius, rms/r roundness).
+
+    ``rms/r`` near 0 = circle-like; a square scores ~0.1, elongated shapes
+    higher. Cheap and adequate for classification (not metrology).
+    """
+    c = _centroid(verts)
+    rs = [math.hypot(p[0] - c[0], p[1] - c[1]) for p in verts]
+    rmean = sum(rs) / len(rs)
+    if rmean <= 0:
+        return c, 0.0, math.inf
+    rms = math.sqrt(sum((r - rmean) ** 2 for r in rs) / len(rs))
+    return c, rmean, rms / rmean
+
+
+#: Roundness (rms/r) threshold for treating a closed ring as a circle.
+_CIRCLE_RMS_MAX = 0.08
+
+
+def _circle_like_candidates(ir: DrawingIR, max_radius: float,
+                            min_vertices: int = 6):
+    """Yield (entity, center, radius) for circles + circle-like closed rings.
+
+    Native ``Circle`` entities pass directly. Closed Polylines/Regions with
+    >= ``min_vertices`` vertices qualify when their centroid circle-fit
+    roundness is under :data:`_CIRCLE_RMS_MAX` — with bezier-sampled PDF
+    ingest a drawn circle arrives as a ~32-vertex closed ring that fits
+    almost exactly. (A pre-bezier-sampling 4-vertex diamond is deliberately
+    excluded by ``min_vertices``: indistinguishable from a real diamond.)
+    """
+    for e in ir.entities:
+        if isinstance(e, Circle):
+            if e.radius <= max_radius:
+                yield e, tuple(e.center), e.radius
+            continue
+        if isinstance(e, Polyline) and e.closed:
+            verts = e.vertices
+        elif isinstance(e, Region):
+            verts = e.boundary
+        else:
+            continue
+        if len(verts) < min_vertices:
+            continue
+        c, r, rms = _circle_fit([tuple(p) for p in verts])
+        if r > 0 and r <= max_radius and rms <= _CIRCLE_RMS_MAX:
+            yield e, c, r
+
+
+def find_bubble_callouts(ir: DrawingIR, max_radius: Optional[float] = None,
+                         text_max_chars: int = 4,
+                         min_confidence: float = 0.0) -> List[Dict[str, Any]]:
+    """PROPOSE bubble callouts: a small circle with short centered text.
+
+    Covers the "number in a circle" family — keynotes, grid bubbles, detail/
+    section marks. Candidates are native ``Circle`` entities and circle-like
+    closed rings (:func:`_circle_like_candidates`), radius <=
+    ``max_radius`` (default 4x the drawing's median text height, falling
+    back to 25.0 units when no sized text exists). Each is scored on
+
+    - **roundness** (0.35) — circle-fit quality (native circles = 1.0);
+    - **text centering** (0.45) — a TextItem of <= ``text_max_chars``
+      (stripped) whose insertion point lies within ~0.9r of the center;
+    - **size plausibility** (0.20) — radius between 0.8x and 4x the median
+      text height (when known; neutral 0.5 otherwise).
+
+    Classification hints (evidence, not assertions): a Line/Polyline whose
+    endpoint lands on the ring (within 0.2r) marks a probable
+    ``grid_bubble``/attached callout; a chord passing within 0.25r of the
+    center marks a probable ``detail_callout`` (split circle); otherwise
+    ``keynote``. Bubbles with no text still surface at reduced confidence.
+
+    Returns proposals sorted by confidence: ``{center_xy, radius, kind,
+    text, text_id, entity_id, attached_line_ids, confidence, evidence,
+    proposal_only: True}``.
+    """
+    med_h = _median_text_height(ir)
+    if max_radius is None:
+        max_radius = 4.0 * med_h if med_h > 0 else 25.0
+
+    proposals = []
+    for e, center, radius in _circle_like_candidates(ir, max_radius):
+        if isinstance(e, Circle):
+            roundness = 1.0
+        else:
+            verts = e.vertices if isinstance(e, Polyline) else e.boundary
+            _, _, rms = _circle_fit([tuple(p) for p in verts])
+            roundness = max(0.0, 1.0 - rms / _CIRCLE_RMS_MAX)
+
+        # Short text centered in the bubble.
+        text_hit = None
+        best_d = None
+        for t in ir.entities:
+            if not isinstance(t, TextItem):
+                continue
+            if len(t.content.strip()) > text_max_chars:
+                continue
+            d = math.hypot(t.position[0] - center[0],
+                           t.position[1] - center[1])
+            if d <= 0.9 * radius and (best_d is None or d < best_d):
+                text_hit, best_d = t, d
+        text_score = (max(0.0, 1.0 - best_d / max(radius, 1e-9))
+                      if text_hit is not None else 0.0)
+
+        if med_h > 0:
+            size_score = 1.0 if 0.8 * med_h <= radius <= 4.0 * med_h else 0.4
+        else:
+            size_score = 0.5
+
+        # Attached line-work: endpoints on the ring; chords through center.
+        attached: List[str] = []
+        kind = "keynote"
+        for hit in entities_ending_near(ir, center, radius * 1.2,
+                                        entity_types=["line", "polyline"]):
+            if hit["id"] == e.id or hit.get("closed"):
+                continue
+            ex, ey = hit["end_point"]
+            ring_dev = abs(math.hypot(ex - center[0], ey - center[1]) - radius)
+            if ring_dev <= 0.2 * radius:
+                attached.append(hit["id"])
+        if attached:
+            kind = "grid_bubble"
+        for ln in ir.entities:
+            if not isinstance(ln, Line) or ln.id == e.id:
+                continue
+            d_center = _point_seg_dist(center[0], center[1],
+                                       ln.start[0], ln.start[1],
+                                       ln.end[0], ln.end[1])
+            on_ring = (abs(math.hypot(ln.start[0] - center[0],
+                                      ln.start[1] - center[1]) - radius)
+                       <= 0.2 * radius
+                       and abs(math.hypot(ln.end[0] - center[0],
+                                          ln.end[1] - center[1]) - radius)
+                       <= 0.2 * radius)
+            if on_ring and d_center <= 0.25 * radius:
+                kind = "detail_callout"
+                if ln.id not in attached:
+                    attached.append(ln.id)
+                break
+
+        confidence = round(0.35 * roundness + 0.45 * text_score
+                           + 0.20 * size_score, 3)
+        if confidence < min_confidence:
+            continue
+        proposals.append({
+            "center_xy": [_r(center[0]), _r(center[1])],
+            "radius": _r(radius),
+            "kind": kind,
+            "text": text_hit.content if text_hit is not None else None,
+            "text_id": text_hit.id if text_hit is not None else None,
+            "entity_id": e.id,
+            "attached_line_ids": attached,
+            "confidence": confidence,
+            "evidence": {
+                "roundness_score": _r(roundness, 3),
+                "text_centering_score": _r(text_score, 3),
+                "size_score": _r(size_score, 3),
+            },
+            "proposal_only": True,
+        })
+
+    proposals.sort(key=lambda p: p["confidence"], reverse=True)
+    return proposals
+
+
+def _turn_angles(verts: List[Point]) -> List[float]:
+    """Signed turn angle (degrees) at each vertex of a closed ring."""
+    n = len(verts)
+    out = []
+    for i in range(n):
+        a, b, c = verts[i - 1], verts[i], verts[(i + 1) % n]
+        v1 = (b[0] - a[0], b[1] - a[1])
+        v2 = (c[0] - b[0], c[1] - b[1])
+        if math.hypot(*v1) < 1e-9 or math.hypot(*v2) < 1e-9:
+            continue
+        cross = v1[0] * v2[1] - v1[1] * v2[0]
+        dot = v1[0] * v2[0] + v1[1] * v2[1]
+        out.append(math.degrees(math.atan2(cross, dot)))
+    return out
+
+
+def find_revision_clouds(ir: DrawingIR, min_arcs: int = 3,
+                         min_confidence: float = 0.0) -> List[Dict[str, Any]]:
+    """PROPOSE revision clouds and revision-delta markers. BEST-EFFORT tier.
+
+    Cloud shapes are drafter-practice-dependent (scallop size, closure,
+    single path vs separate arcs), so every proposal here sits in a LOW
+    confidence band (<= ~0.65) by design — treat these as "worth a look",
+    and confirm with a vision zoom.
+
+    Two detection paths:
+
+    - **Native arcs** (DXF): chains of ``Arc`` entities joined endpoint-to-
+      endpoint (tolerance 25% of the mean radius); a chain of >=
+      ``min_arcs`` arcs is a cloud proposal (closed chains score higher).
+    - **Scalloped rings** (bezier-sampled PDF): a closed Polyline with >= 12
+      vertices whose turn-angle sequence shows smooth low-angle runs (median
+      |turn| 2-25 deg) broken by >= 2 cusp junctions — a spike of the
+      OPPOSITE sign to the dominant turning direction, the signature of
+      adjacent outward bumps meeting in a concave notch (empirically
+      verified against PyMuPDF ``draw_curve`` scallops; a rounded rectangle
+      has same-sign corners and is rejected).
+
+    Revision DELTAS: a small closed triangle (3-4 vertices) with short text
+    (<= 3 chars) centered within ~1.5x its size and NO line-work terminating
+    at it (an arrowhead has a shaft; a delta marker does not).
+
+    Returns proposals sorted by confidence: ``{kind: "cloud"|"revision_delta",
+    bbox | center_xy, entity_ids, text?, confidence, evidence,
+    proposal_only: True}``.
+    """
+    proposals: List[Dict[str, Any]] = []
+
+    # --- Path A: native Arc chains (DXF ingest) ---
+    arcs = [e for e in ir.entities if isinstance(e, Arc)]
+    if len(arcs) >= min_arcs:
+        arc_ends = {}
+        for a in arcs:
+            eps = _entity_endpoints(a)
+            arc_ends[a.id] = [pt for _, pt in eps]
+        mean_r = sum(a.radius for a in arcs) / len(arcs)
+        tol = max(mean_r * 0.25, 1e-6)
+        # Union-find over arcs sharing an endpoint.
+        parent = {a.id: a.id for a in arcs}
+
+        def _find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        for i, a in enumerate(arcs):
+            for b in arcs[i + 1:]:
+                if any(math.hypot(p[0] - q[0], p[1] - q[1]) <= tol
+                       for p in arc_ends[a.id] for q in arc_ends[b.id]):
+                    parent[_find(a.id)] = _find(b.id)
+        groups: Dict[str, List[Arc]] = {}
+        for a in arcs:
+            groups.setdefault(_find(a.id), []).append(a)
+        for members in groups.values():
+            if len(members) < min_arcs:
+                continue
+            boxes = [m.bbox for m in members if m.bbox]
+            bb = (min(b[0] for b in boxes), min(b[1] for b in boxes),
+                  max(b[2] for b in boxes), max(b[3] for b in boxes))
+            # Closed-ish: every endpoint shared with another arc in the chain.
+            shared = 0
+            total = 0
+            for m in members:
+                for p in arc_ends[m.id]:
+                    total += 1
+                    if any(o is not m and any(
+                            math.hypot(p[0] - q[0], p[1] - q[1]) <= tol
+                            for q in arc_ends[o.id]) for o in members):
+                        shared += 1
+            closure = shared / total if total else 0.0
+            confidence = round(min(0.65, 0.30 + 0.03 * len(members)
+                                   + 0.15 * closure), 3)
+            if confidence < min_confidence:
+                continue
+            proposals.append({
+                "kind": "cloud",
+                "bbox": [_r(v) for v in bb],
+                "entity_ids": [m.id for m in members],
+                "confidence": confidence,
+                "evidence": {"n_arcs": len(members),
+                             "endpoint_closure": _r(closure, 3),
+                             "path": "native_arcs"},
+                "proposal_only": True,
+            })
+
+    # --- Path B: scalloped closed rings (bezier-sampled PDF polylines) ---
+    for e in ir.entities:
+        if not (isinstance(e, Polyline) and e.closed
+                and len(e.vertices) >= 12):
+            continue
+        turns = _turn_angles([tuple(p) for p in e.vertices])
+        if len(turns) < 12:
+            continue
+        med = _median([abs(t) for t in turns])
+        if not (2.0 <= med <= 25.0):
+            continue
+        neg = sum(1 for t in turns if t < 0)
+        dom_sign = -1.0 if neg >= len(turns) / 2 else 1.0
+        cusps = [t for t in turns
+                 if abs(t) > 2.5 * med and (t * dom_sign) < 0]
+        if len(cusps) < 2:
+            continue
+        confidence = round(min(0.60, 0.30 + 0.05 * len(cusps)), 3)
+        if confidence < min_confidence:
+            continue
+        proposals.append({
+            "kind": "cloud",
+            "bbox": [_r(v) for v in e.bbox] if e.bbox else None,
+            "entity_ids": [e.id],
+            "confidence": confidence,
+            "evidence": {"n_cusps": len(cusps),
+                         "median_abs_turn_deg": _r(med, 1),
+                         "path": "scalloped_ring"},
+            "proposal_only": True,
+        })
+
+    # --- Revision deltas: small labelled triangles with no shaft ---
+    max_size = _default_max_arrowhead_size(ir)
+    for cand, verts in _arrowhead_candidates(ir, max_size):
+        if len(verts) > 4:
+            continue
+        c = _centroid(verts)
+        size = _bbox_diag(cand.bbox) if cand.bbox else 0.0
+        if size <= 0:
+            continue
+        # A delta has NO line-work terminating at it (an arrowhead does).
+        shaft_hits = [h for h in entities_ending_near(
+            ir, c, size * 1.5, entity_types=["line", "polyline"])
+            if h["id"] != cand.id and not h.get("closed")]
+        if shaft_hits:
+            continue
+        text_hit, best_d = None, None
+        for t in ir.entities:
+            if not isinstance(t, TextItem):
+                continue
+            if len(t.content.strip()) > 3:
+                continue
+            d = math.hypot(t.position[0] - c[0], t.position[1] - c[1])
+            if d <= 1.5 * size and (best_d is None or d < best_d):
+                text_hit, best_d = t, d
+        if text_hit is None:
+            continue
+        confidence = round(min(0.6, 0.35 + 0.25 * max(
+            0.0, 1.0 - best_d / (1.5 * size))), 3)
+        if confidence < min_confidence:
+            continue
+        proposals.append({
+            "kind": "revision_delta",
+            "center_xy": [_r(c[0]), _r(c[1])],
+            "entity_ids": [cand.id],
+            "text": text_hit.content,
+            "text_id": text_hit.id,
+            "confidence": confidence,
+            "evidence": {"marker_size": _r(size, 2),
+                         "text_distance": _r(best_d, 2)},
+            "proposal_only": True,
+        })
+
+    proposals.sort(key=lambda p: p["confidence"], reverse=True)
+    return proposals
+
+
+def _rect_like(e: Entity) -> Optional[Tuple[List[Point], float]]:
+    """(vertices, rectangularity 0..1) for closed 4-5-vertex rings, else None.
+
+    Rectangularity = polygon area / bbox area (1.0 = an axis-aligned
+    rectangle; a rotated rectangle or triangle scores lower). Open 4-vertex
+    polylines are ACCEPTED with an implied closing segment: a PDF ``re``
+    rectangle ingests as an open 4-corner polyline (empirically verified —
+    the corner list carries no closing repeat), and the shoelace area with
+    implied closure still scores a true rectangle at 1.0 while an open
+    zigzag scores low.
+    """
+    if isinstance(e, Polyline) and (
+            (e.closed and 4 <= len(e.vertices) <= 5)
+            or (not e.closed and len(e.vertices) == 4)):
+        verts = [tuple(p) for p in e.vertices]
+    elif isinstance(e, Region) and 4 <= len(e.boundary) <= 5:
+        verts = [tuple(p) for p in e.boundary]
+    else:
+        return None
+    if e.bbox is None:
+        return None
+    bw = e.bbox[2] - e.bbox[0]
+    bh = e.bbox[3] - e.bbox[1]
+    if bw <= 0 or bh <= 0:
+        return None
+    s = 0.0
+    for a, b in zip(verts, verts[1:] + verts[:1]):
+        s += a[0] * b[1] - b[0] * a[1]
+    area = abs(s) * 0.5
+    return verts, area / (bw * bh)
+
+
+def find_title_block(ir: DrawingIR, edge_frac: float = 0.40,
+                     min_confidence: float = 0.0) -> List[Dict[str, Any]]:
+    """PROPOSE the sheet's title block region and hand back its text payload.
+
+    Standard drafting puts the title block along the sheet's RIGHT edge or
+    BOTTOM-RIGHT corner: a rectangle (often subdivided into cells) dense
+    with short text (sheet number, title, revision, scale, firm). Heuristic:
+
+    1. Page extent = ``ir.width/height`` when set, else the entity bbox.
+    2. Candidate outer rectangles: closed 4-5-vertex rings with
+       rectangularity >= 0.8 (:func:`_rect_like`) whose bbox lies in the
+       right or bottom ``edge_frac`` band of the sheet and touches within 5%
+       of a sheet edge, spanning >= 5% of the sheet area's linear scale.
+    3. Best candidate = highest score of **edge adjacency** (0.35, how close
+       to the sheet corner/edge), **text density** (0.35, text items inside,
+       saturating at 6), **nesting** (0.30, other rectangles fully inside,
+       saturating at 4).
+    4. Fallback (no rectangles at all — e.g. raster trace): the bbox of a
+       >= 4-item text cluster in the bottom-right corner band, at low
+       confidence.
+
+    Returns at most a few proposals sorted by confidence, each:
+    ``{region_bbox, entity_id | None, n_nested_rects, texts:
+    [{content, position, text_id}, ...] (top-to-bottom), confidence,
+    evidence, proposal_only: True}``. The ``texts`` payload IS the metadata
+    read — hand it (or a render of ``region_bbox``) to the LLM to parse
+    sheet number / title / revision semantics.
+    """
+    if ir.width and ir.height:
+        page = (0.0, 0.0, ir.width, ir.height)
+    else:
+        page = ir.bbox()
+        if page is None:
+            return []
+    pw, ph = page[2] - page[0], page[3] - page[1]
+    if pw <= 0 or ph <= 0:
+        return []
+
+    rects = []
+    for e in ir.entities:
+        rl = _rect_like(e)
+        if rl is None or rl[1] < 0.8:
+            continue
+        rects.append(e)
+
+    texts = [t for t in ir.entities if isinstance(t, TextItem)]
+
+    def _edge_adjacency(bb) -> float:
+        d_right = abs(page[2] - bb[2]) / pw
+        d_bottom = abs(bb[1] - page[1]) / ph
+        return max(0.0, 1.0 - 2.0 * min(d_right, d_bottom))
+
+    proposals = []
+    page_area = pw * ph
+    for e in rects:
+        bb = e.bbox
+        w, h = bb[2] - bb[0], bb[3] - bb[1]
+        if w * h < 0.0025 * page_area:      # < 5% linear scale: a cell, not a block
+            continue
+        if w * h > 0.90 * page_area:        # the sheet border itself
+            continue
+        in_right = bb[0] >= page[0] + (1.0 - edge_frac) * pw
+        in_bottom = bb[3] <= page[1] + edge_frac * ph
+        if not (in_right or in_bottom):
+            continue
+        inside_texts = [t for t in texts
+                        if bb[0] <= t.position[0] <= bb[2]
+                        and bb[1] <= t.position[1] <= bb[3]]
+        nested = [r for r in rects
+                  if r is not e and r.bbox is not None
+                  and _bbox_contains(bb, r.bbox)
+                  and (r.bbox[2] - r.bbox[0]) * (r.bbox[3] - r.bbox[1])
+                  < 0.95 * w * h]
+        text_score = min(1.0, len(inside_texts) / 6.0)
+        nest_score = min(1.0, len(nested) / 4.0)
+        edge_score = _edge_adjacency(bb)
+        confidence = round(0.35 * edge_score + 0.35 * text_score
+                           + 0.30 * nest_score, 3)
+        if confidence < min_confidence or not inside_texts:
+            continue
+        inside_texts.sort(key=lambda t: (-t.position[1], t.position[0]))
+        proposals.append({
+            "region_bbox": [_r(v) for v in bb],
+            "entity_id": e.id,
+            "n_nested_rects": len(nested),
+            "texts": [{"content": t.content,
+                       "position": [_r(t.position[0]), _r(t.position[1])],
+                       "text_id": t.id} for t in inside_texts],
+            "confidence": confidence,
+            "evidence": {"edge_adjacency_score": _r(edge_score, 3),
+                         "text_density_score": _r(text_score, 3),
+                         "nesting_score": _r(nest_score, 3),
+                         "path": "rectangle"},
+            "proposal_only": True,
+        })
+
+    if not proposals:
+        # Fallback: text cluster in the bottom-right corner band.
+        corner = [t for t in texts
+                  if t.position[0] >= page[0] + (1.0 - edge_frac) * pw
+                  and t.position[1] <= page[1] + edge_frac * ph]
+        if len(corner) >= 4:
+            xs = [t.position[0] for t in corner]
+            ys = [t.position[1] for t in corner]
+            bb = (min(xs), min(ys), max(xs), max(ys))
+            corner.sort(key=lambda t: (-t.position[1], t.position[0]))
+            proposals.append({
+                "region_bbox": [_r(v) for v in bb],
+                "entity_id": None,
+                "n_nested_rects": 0,
+                "texts": [{"content": t.content,
+                           "position": [_r(t.position[0]),
+                                        _r(t.position[1])],
+                           "text_id": t.id} for t in corner],
+                "confidence": 0.3,
+                "evidence": {"n_corner_texts": len(corner),
+                             "path": "text_cluster_fallback"},
+                "proposal_only": True,
+            })
+
+    proposals.sort(key=lambda p: p["confidence"], reverse=True)
+    return proposals[:3]
 
 
 def summary_stats(ir: DrawingIR) -> Dict[str, Any]:

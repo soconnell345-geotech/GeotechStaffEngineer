@@ -298,6 +298,27 @@ def extract_colored_paths(
     return regions
 
 
+#: Cubic-bezier subdivisions per curve segment. 8 keeps a 4-bezier circle to
+#: ~1.3% radial error while adding only ~32 points per circle.
+_BEZIER_SAMPLES = 8
+
+
+def _sample_cubic_bezier(p1, p2, p3, p4, n: int = _BEZIER_SAMPLES
+                         ) -> List[Tuple[float, float]]:
+    """Sample a cubic bezier (PyMuPDF Points) at n+1 parameter steps."""
+    out = []
+    for i in range(n + 1):
+        t = i / n
+        mt = 1.0 - t
+        a = mt * mt * mt
+        b = 3.0 * mt * mt * t
+        c = 3.0 * mt * t * t
+        d = t * t * t
+        out.append((a * p1.x + b * p2.x + c * p3.x + d * p4.x,
+                    a * p1.y + b * p2.y + c * p3.y + d * p4.y))
+    return out
+
+
 def _extract_path_points(items) -> List[Tuple[float, float]]:
     """Extract (x, y) points from PyMuPDF drawing items."""
     points = []
@@ -309,10 +330,13 @@ def _extract_path_points(items) -> List[Tuple[float, float]]:
             points.append((p1.x, p1.y))
             points.append((p2.x, p2.y))
         elif kind == "c":
-            # Bezier curve: ("c", p1, p2, p3, p4)
-            # Use start and end points
-            points.append((item[1].x, item[1].y))
-            points.append((item[4].x, item[4].y))
+            # Bezier curve: ("c", p1, p2, p3, p4) — cubic control points.
+            # Sampled along the curve (not just endpoints): a circle drawn as
+            # 4 beziers must arrive as a circle-like point ring, and a
+            # revision-cloud scallop must keep its bump, or downstream
+            # curve-aware detection (bubbles, clouds) is impossible.
+            points.extend(_sample_cubic_bezier(item[1], item[2],
+                                               item[3], item[4]))
         elif kind == "re":
             # Rectangle: ("re", Rect)
             r = item[1]
