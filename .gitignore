@@ -23,3 +23,4 @@ build/
 # Copyrighted reference materials — not for distribution
 Duncan book excerpts/
 module_work/drawing_ground_truth/**/dxf/
+module_work/field_feedback/**/raw/

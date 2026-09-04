@@ -6,42 +6,65 @@ detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-09-04, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-09-04 EVENING, supersedes everything below)
 
-Current release: **5.11.2** (PyPI; refs 1.3.3 — the six structural ref
-modules are in the SUBMODULE but not yet in a refs PyPI release).
-Master carries a large UNRELEASED train (candidate **5.12.0**, owner-
-gated): security hardening, geophysics excision, the full structural
-stack (3 analysis engines + specialist + 6 wired reference modules),
-and drawing-intelligence Phase 1. CLAUDE.md "Post-5.11.2" section =
-the authoritative summary; memory HANDOFF block = running narrative.
+Current release: **5.11.2** (PyPI; refs 1.3.3). Master carries the big
+UNRELEASED 5.12.0-candidate train: security hardening, geophysics
+excision, structural stack, drawing Phases 1+2 (verified ship-as-is),
+ground-truth harvest, the **planlens split**, and the launcher
+baseUrlPath fix. CLAUDE.md "Post-5.11.2" + "PLANLENS SPLIT" = summary.
 
-1. **Drawing intelligence Phase 2 (owner-approved direction, wave on
-   word):** agent-catalog wiring of render_region + the query trio;
-   find_dimensions (also kills the known dimension-arrowhead false
-   positive), find_title_block_region, find_bubble_callouts,
-   find_revision_clouds (best-effort); DRAWING-SET operations
-   (multi-sheet iterate/aggregate); later: standards-conformance
-   scenarios. Plan: module_work/DRAWING_INTELLIGENCE_DESIGN.md.
-   Model policy: Fable for code, Sonnet for digitization; builder +
-   independent-verifier pattern is now house practice; CONFIRM a
-   teammate's termination before relaunching into the same files.
-2. **Real ground-truth harvest:** 5-10 DWG+PDF paired standard details
-   from Mecklenburg NC Stormwater / Jacksonville FL (no login; pages
-   bot-block curl — use a real browser session); DWG→DXF via free ODA
-   converter; score find_leaders vs DXF-native LEADER truth.
-3. **Next release (5.12.0)** on owner word — big train, worth shipping
-   before serious TinyApps demos. Refs also need a PyPI release
-   (1.4.0?) + parent pin bump to deliver the six structural modules
-   to installed environments.
-4. **TinyApps onboarding** unchanged (tinyapps/TINYAPPS.md): MOU →
-   GitHub license → wrapper repo; office-hours questions incl.
-   key-auth Prompter client (engine stub waiting).
-5. **Funhouse 5.11.2 live shakedown still pending** (owner): flap fix
-   verification (ws probe: PING should never arrive), ws uploader,
-   diagnostics upload-probe verdict, model picker, budget, email_file.
-6. **FEMA P-2192**: fema.gov 502s persist — owner browser fallback;
+DONE TODAY (2026-09-04): drawing Phase 2 COMPLETE + independently
+verified; Mecklenburg ground truth harvested (10 DWG+PDF pairs + truth
+JSON; SHX no-text-layer finding); 5.11.2 live shakedown PASSED after
+the "Not Found" root cause (launcher baseUrlPath vs prefix-stripping
+proxy — fixed b6683a6; live via notebook template patch) — heartbeat
+holds, uploads work; **planlens split executed** (owner-named).
+
+1. **planlens finish-out:** owner creates
+   github.com/soconnell345-geotech/planlens → push the local repo
+   (C:/Users/socon/OneDrive/dev/planlens, branch main) → `git submodule
+   add https://github.com/soconnell345-geotech/planlens.git planlens`
+   in the app repo (refs pattern). **5.12.0 CANNOT ship until planlens
+   0.1.0 is on PyPI** (app now depends on planlens[raster]>=0.1;
+   publish owner-gated). Dev environments: `pip install -e ../planlens`
+   (already done in .venv).
+2. **Drawing Phase 3 (owner GO 2026-09-04, build in planlens):**
+   fill-cluster arrowhead detection (micro-dot fills — THE real-sheet
+   leader/dimension recall gap) + B7 raster/OCR leg (REQUIRED even for
+   vector PDFs: SHX sheets have no text layer); then B3 set-of-marks
+   A/B + B1 DXF-native LEADER/DIMENSION ingest + set-level IR caching.
+   Ground truth stays app-side: module_work/drawing_ground_truth/.
+3. **Next release (5.12.0)** — owner decision 2026-09-04: HOLD until
+   Phase 3 is built and tested. Order: planlens 0.1.0 to PyPI → refs
+   release (1.4.0?) + pin bump → 5.12.0. Until then the cluster needs
+   the notebook baseUrlPath patch cell each fresh kernel.
+4. **TinyApps onboarding** (tinyapps/TINYAPPS.md): MOU → GitHub license
+   → wrapper repo; planlens is the pitch's banner app (OBO branding at
+   app-setup time, NOT in the package).
+5. **FEMA P-2192**: fema.gov 502s persist — owner browser fallback;
    it's a worked-examples corpus play (discuss usage before building).
+6. **FIELD FEEDBACK (owner, 2026-09-04 — the Praia_Downdrag session,
+   triage = module_work/field_feedback/2026-09-04_praia-downdrag_v5.11.2/
+   FINDINGS.md; intake convention = field_feedback/README.md). Six
+   PLANNED items, priority order:**
+   (a) false "sources unavailable" in calc reports — calc sub-agent
+       isolation likely drops working-folder visibility (TRUST issue);
+   (b) subsurface `profile_figure` tool (matplotlib schematic: layers +
+       GWT + pile/wall overlay → PNG) + prompt default "calc packages
+       include a profile viz" + html_to_pdf fails LOUDLY on
+       un-embeddable figures (model shipped "[image]" placeholders and
+       a color-table fake figure);
+   (c) CGPR #56 downdrag method family — downdrag.py has ONLY Fellenius
+       neutral plane; implement the report's other methods w/ citations
+       (CHECK CGPR distribution terms before any digitization);
+   (d) conversations-tab rename/delete icons lost (streamlit 1.63
+       glyph regression — repro, fix, consider version cap);
+   (e) attachment awareness — model disclaims "can't attach in chat"
+       while writing into the conversation files dir (which IS the
+       attach surface): prompt + tool-result note;
+   (f) SharePoint mirror folders named by custom conversation name +
+       date stamp instead of thread-id hex.
 7. Old backlog unchanged: axial_pile cohesive_phi trap; SCDOT
    onboarding; 108-Q eval rerun; auto-continue taxonomy; λ-method;
    Highter-Anders; 6.0 restructure (dedicated session); foundry/
