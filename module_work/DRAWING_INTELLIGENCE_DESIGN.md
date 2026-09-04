@@ -45,7 +45,8 @@ gap, validated by project fixtures rather than leaderboards.
 | B6 | Agent tool wiring: expose B2+B4+B5 as agent tools | funhouse_agent | the agent's loop becomes query→zoom→look→report |
 | B7 | Raster-leg OCR decision: local OCR default (tenant DI High-Res OCR disabled), Azure DI as optional route for SCANNED title blocks/notes ONLY | drawing_ir.raster | DI verdict: OCR/tables only — categorically no geometry; never ask it to find constructs |
 
-## Acceptance scenario (fixture #1 = the owner's SAE hunt, generalized)
+## Acceptance scenario: find-text-X (owner: "SAE" was an ARBITRARY example
+## string — could be anything; nothing is built specific to it)
 
 "Find all leaders whose tail text contains 'SAE'; report each callout's
 location, the arrow-tip coordinates, and a vision-grounded description
