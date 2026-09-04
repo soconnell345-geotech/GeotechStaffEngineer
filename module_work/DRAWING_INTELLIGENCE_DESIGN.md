@@ -120,6 +120,29 @@ opportunistic DXF-native ingest. Build on owner
 word; needs 2-3 representative sheets from the owner's team as fixtures
 (scrubbed of anything sensitive).
 
+## GROUND-TRUTH HARVEST: COMPLETE (2026-09-04, commit 03e4ff5)
+
+10 Mecklenburg DWG+PDF pairs live in
+module_work/drawing_ground_truth/mecklenburg/ with per-sheet
+native-entity truth JSON (21.01: 13 LEADER + 5 DIMENSION; 3001: 7+10;
+10.31A: 5 MULTILEADER + 40 circles; TEXT everywhere). 179 pairs remain
+available on the portal (MANIFEST.json documents the public API + URL
+pattern — no browser needed for future pulls). DWG→DXF via ODA File
+Converter 27.1 silent MSI (unsigned LibreDWG is blocked by Windows App
+Control on this machine).
+
+**FLEET-REALITY FINDING #2 (verified on all 10 real PDFs): zero text
+layer.** Agency AutoCAD plots letter with SHX-stroked geometry — no
+fonts embedded, nothing extractable as text, while vector linework
+stays rich. Consequence: `find_text`/text-anchored queries on such
+sheets require the B7 raster/OCR leg (render → OCR → map boxes to IR
+coords) EVEN ON VECTOR PDFS; geometry-side composition is unaffected.
+B7 is therefore promoted from "scanned sheets only" to a required leg
+of the primary path. TrueType-font plots do carry a text layer — both
+realities must be handled, and ingest should REPORT which kind of
+sheet it sees (fonts/words present vs not) so the agent knows whether
+text queries need OCR.
+
 ## Ground-truth fixture sources (scout survey, 2026-09-04)
 
 Owner's insight: agencies publishing the SAME detail as CAD + PDF give
