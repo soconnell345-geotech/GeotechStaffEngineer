@@ -6,7 +6,49 @@ detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-09-03, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-09-04, supersedes everything below)
+
+Current release: **5.11.2** (PyPI; refs 1.3.3 — the six structural ref
+modules are in the SUBMODULE but not yet in a refs PyPI release).
+Master carries a large UNRELEASED train (candidate **5.12.0**, owner-
+gated): security hardening, geophysics excision, the full structural
+stack (3 analysis engines + specialist + 6 wired reference modules),
+and drawing-intelligence Phase 1. CLAUDE.md "Post-5.11.2" section =
+the authoritative summary; memory HANDOFF block = running narrative.
+
+1. **Drawing intelligence Phase 2 (owner-approved direction, wave on
+   word):** agent-catalog wiring of render_region + the query trio;
+   find_dimensions (also kills the known dimension-arrowhead false
+   positive), find_title_block_region, find_bubble_callouts,
+   find_revision_clouds (best-effort); DRAWING-SET operations
+   (multi-sheet iterate/aggregate); later: standards-conformance
+   scenarios. Plan: module_work/DRAWING_INTELLIGENCE_DESIGN.md.
+   Model policy: Fable for code, Sonnet for digitization; builder +
+   independent-verifier pattern is now house practice; CONFIRM a
+   teammate's termination before relaunching into the same files.
+2. **Real ground-truth harvest:** 5-10 DWG+PDF paired standard details
+   from Mecklenburg NC Stormwater / Jacksonville FL (no login; pages
+   bot-block curl — use a real browser session); DWG→DXF via free ODA
+   converter; score find_leaders vs DXF-native LEADER truth.
+3. **Next release (5.12.0)** on owner word — big train, worth shipping
+   before serious TinyApps demos. Refs also need a PyPI release
+   (1.4.0?) + parent pin bump to deliver the six structural modules
+   to installed environments.
+4. **TinyApps onboarding** unchanged (tinyapps/TINYAPPS.md): MOU →
+   GitHub license → wrapper repo; office-hours questions incl.
+   key-auth Prompter client (engine stub waiting).
+5. **Funhouse 5.11.2 live shakedown still pending** (owner): flap fix
+   verification (ws probe: PING should never arrive), ws uploader,
+   diagnostics upload-probe verdict, model picker, budget, email_file.
+6. **FEMA P-2192**: fema.gov 502s persist — owner browser fallback;
+   it's a worked-examples corpus play (discuss usage before building).
+7. Old backlog unchanged: axial_pile cohesive_phi trap; SCDOT
+   onboarding; 108-Q eval rerun; auto-continue taxonomy; λ-method;
+   Highter-Anders; 6.0 restructure (dedicated session); foundry/
+   cleanup; Monday drift canary; pandas-2.x DT-sweep watch; deferred
+   structural: pelicun + USGS design-maps route (FUTURE_IDEAS).
+
+## 0a-prev. PICKUP LIST (2026-09-03) [HISTORICAL]
 
 Current release: **5.11.2** (websocket saga CLOSED + upload workarounds +
 detached turns + groundhog removal; refs 1.3.3). **TINYAPPS PILOT AWARDED

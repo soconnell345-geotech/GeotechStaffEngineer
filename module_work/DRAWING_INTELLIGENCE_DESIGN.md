@@ -1,5 +1,13 @@
 # Drawing & submittal intelligence — design memo (2026-09-04)
 
+> **PHASE 1: COMPLETE (committed d6bccf4, 2026-09-04).** render_region +
+> entities_ending_near/text_anchored_geometry + find_leaders shipped with
+> synthetic-fixture validation (100% recall, 100% precision@0.5;
+> dimension-arrowhead decoys pinned ~0.3 as the documented false-positive
+> source). Fable-verified; a model-space radius unit bug was caught and
+> fixed pre-commit. Phase 2 = agent wiring + remaining composition family
+> + drawing sets + real DWG+PDF ground-truth scoring (sources below).
+
 Companion to DRAWING_INTELLIGENCE_TASK.md (the owner's spec). Research
 basis: web+literature survey, code-verified against drawing_ir/
 pdf_import/vision_tools (full findings in the 2026-09-04 research

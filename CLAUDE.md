@@ -49,6 +49,53 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
+## Post-5.11.2 on master (UNRELEASED — the structural + drawing-intelligence trains, 2026-09-03/04)
+
+Everything below is committed on master awaiting the next owner-gated
+release (candidate 5.12.0 given the scope):
+
+**Security/lean-and-clean (pre-TinyApps posture):** g-expression eval
+AST-whitelisted (8fb7565); geophysics excision — hvsrpy + swprocess
+modules DELETED outright (owner: field-geophysics processing out of
+scope; sheds obspy + PyQt5(GPL)+Qt5 ~90 MB; eval suite 108→106 Qs;
+openseespy KEPT — PM4Sand + 1D site response + structural future);
+wheel audited clean; GUI archaeology confirmed nothing survives.
+
+**STRUCTURAL STACK (owner-directed; Sonnet waves, lead-QC'd each):**
+(1) Analysis engines e36a0ae: section_props_agent (sectionproperties
+3.10.2, mm-units exception), concrete_props_agent (concreteproperties
+0.8.0, py>=3.12 env marker; Mn == ACI hand calc exactly), pynite_agent
+(PyNiteFEA 3.0.0; beams textbook-exact) — 32 analysis modules now.
+(2) Structural calc specialist 2a95e6f (webapp Agent picker "Structural
+calc specialist" + .claude/agents twin; nominal-capacities/no-sign-off
+language). (3) SIX public-domain reference modules in the refs
+submodule (tip ead7573; refs suite 5,793): em_2104 (USACE concrete
+LRFD), em_2107 (USACE steel/gates), ufc_structural (UFC 3-301-01
+loads/seismic incl. the 92-system Table 3-1 replacement),
+ufc_collapse + gsa_collapse (progressive collapse, DoD + GSA, with
+lead-adjudicated genuine inter-document m-factor divergences noted in
+both), wood_handbook (USDA FPL-GTR-282; 104 MB PDF local-only w/
+download URL in manifest) — 387 functions, ~895 tests, ~10 source-
+document errata caught+documented; wired into the agent 3b6ce28
+(6 adapters, 407 dispatch methods, catalog 7,837/8,000 + budget-guard
+test). Survey + links: module_work/STRUCTURAL_REFS_SURVEY.md. FEMA
+P-2192 download still blocked (fema.gov 502s).
+
+**DRAWING INTELLIGENCE Phase 1 (d6bccf4; plan of record =
+module_work/DRAWING_INTELLIGENCE_DESIGN.md + _TASK.md):** chatbot-first
+generic find-text-X on PDF-vector drawings — drawing_ir/render.py
+render_region (bbox clip + set-of-marks; top-left-PDF-pts contract),
+entities_ending_near / text_anchored_geometry / find_leaders
+(proposal-only, documented confidence formula); synthetic fixtures
+100% recall, 100% precision@0.5, dimension-arrowhead decoys pinned
+~0.3 as THE documented false-positive source. Vision glue deliberately
+NOT in the agent catalog — that is Phase 2 (wiring + find_dimensions/
+title-blocks/bubbles/rev-clouds + drawing-set operations + real
+DWG+PDF ground-truth harvest from Mecklenburg NC / Jacksonville FL).
+Process note: Fable for code builds, Sonnet for document digitization
+(owner); builder + independent-verifier pattern caught a 5-meter
+radius-floor unit bug pre-commit.
+
 ## TinyApps pilot (AWARDED 2026-09-03 — the strategic hosting path)
 
 CfA's Azure Web Apps pilot selected the team: shared Azure App Service

@@ -1,5 +1,11 @@
 # Public-domain structural reference survey (2026-09-03, web-verified)
 
+> **CAMPAIGN OUTCOME (2026-09-04): the start-here shortlist is FULLY
+> BUILT** — em_2104, em_2107, ufc_structural, ufc_collapse, gsa_collapse,
+> wood_handbook are live in the submodule and wired into the agent.
+> Remaining from this survey: FEMA P-2192 (download blocked; worked-
+> examples corpus play), NIST briefs + FHWA bridge set (future rounds).
+
 Purpose: identify the structural-engineering equivalents of DM7/GEC/UFC for
 the reference layer — free, US-government public-domain documents whose
 equations/tables/figures can be digitized with page-accurate citations.
