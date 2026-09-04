@@ -1,5 +1,31 @@
 # Drawing & submittal intelligence — design memo (2026-09-04)
 
+> **PHASE 2: COMPLETE (commits 8a817fa + b050124 + the hardening commit,
+> 2026-09-04).** Shipped: (1) bezier-sampled PDF ingest (circles/scallops
+> survive as curves); (2) the full composition family — find_dimensions
+> (+ the leader<->dimension disambiguation via
+> `find_leaders(exclude_dimensions=True)`, now the DOCUMENTED precision
+> contract: a dimension is geometrically a one-arrow leader and scores
+> ~0.78 unfiltered), find_title_block, find_bubble_callouts,
+> find_revision_clouds (best-effort tier) — all confidence+evidence
+> proposals; (3) B6 agent wiring on every surface: render_region vision
+> tool (v1/deep/native), 7 new query_drawing queries, snip_region
+> (IR->PDF frame conversion + marks), search_drawing_set (multi-page/
+> multi-file counts — the "how many times does X occur in this set"
+> primitive); (4) SHX no-text-layer reporting end-to-end (has_text /
+> no_text_layer flags — zero text counts on SHX sheets are called
+> inconclusive); (5) real-sheet performance (endpoint grid + id map:
+> 10k-entity sheets in seconds, was minutes) and glyph-flood hardening
+> (non-degenerate arrowheads, shaft straightness/scale gates: 5/10 real
+> sheets report zero spurious dimensions). **Real-truth baseline run**
+> (module_work/drawing_ground_truth/score_compositions.py): leader/dim
+> tip recall vs native truth 0/25, 0/16 — Mecklenburg plots render
+> arrowheads as MICRO-DOT FILL CLUSTERS (~0.06-pt segments), a
+> representation the triangle model cannot see; that + SHX text = the
+> two Phase-3 legs (fill-cluster arrowheads, B7 raster/OCR). Bubbles:
+> 40/40 count match on 10.31A. Numbers are the baseline — grow the
+> representation model, don't tune to them.
+
 > **PHASE 1: COMPLETE (committed d6bccf4, 2026-09-04).** render_region +
 > entities_ending_near/text_anchored_geometry + find_leaders shipped with
 > synthetic-fixture validation (100% recall, 100% precision@0.5;
@@ -114,11 +140,16 @@ drawing SET", "does this drawing set align with our standards
 
 Phase 1 (B2+B4+B5-leaders): region-snip + endpoint search + PDF-vector
 leader composition — the SAE scenario end-to-end ON A VECTOR PDF (the
-fleet's real format). Phase 2 (rest of B5 + B6 + B7): full composition
-family, agent wiring, raster/OCR leg. Phase 3 (B3 + B1): marks A/B +
-opportunistic DXF-native ingest. Build on owner
-word; needs 2-3 representative sheets from the owner's team as fixtures
-(scrubbed of anything sensitive).
+fleet's real format). Phase 2 — DONE (see banner): rest of B5 (vector
+composition family) + B6 (agent wiring) + drawing sets; B7 was scoped out
+of the Phase-2 build and is now the TOP Phase-3 item (promoted to a
+required leg by the SHX finding). Phase 3: B7 raster/OCR leg,
+fill-cluster arrowhead representation (the Mecklenburg micro-dot
+finding), B3 marks A/B, opportunistic B1 DXF-native LEADER/DIMENSION
+ingest (would also let search_drawing_set use native entities at
+confidence 1.0 on DXF input). Build on owner word; still worth 2-3
+representative sheets from the owner's team as fixtures (scrubbed of
+anything sensitive).
 
 ## GROUND-TRUTH HARVEST: COMPLETE (2026-09-04, commit 03e4ff5)
 

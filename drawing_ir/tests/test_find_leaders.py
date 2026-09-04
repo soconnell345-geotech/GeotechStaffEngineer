@@ -37,7 +37,11 @@ class TestRecallAndPrecision:
         path, gt = build_synthetic_leader_pdf(tmp_path, n_leaders=6,
                                               include_decoys=True)
         ir = from_pdf_vector(path)
-        proposals = queries.find_leaders(ir)
+        # Precision at threshold is measured under the DOCUMENTED contract:
+        # exclude_dimensions=True (Phase 2's find_dimensions claims the
+        # dimension-decoy arrowheads; without it, a dimension line is
+        # geometrically a one-arrow leader and legitimately scores high).
+        proposals = queries.find_leaders(ir, exclude_dimensions=True)
 
         confirmed = [p for p in proposals if p["confidence"] >= CONFIDENCE_THRESHOLD]
         matched_gt_ids = set()
@@ -59,7 +63,7 @@ class TestRecallAndPrecision:
         path, gt = build_synthetic_leader_pdf(tmp_path, n_leaders=6,
                                               include_decoys=True)
         ir = from_pdf_vector(path)
-        proposals = [p for p in queries.find_leaders(ir)
+        proposals = [p for p in queries.find_leaders(ir, exclude_dimensions=True)
                     if p["confidence"] >= CONFIDENCE_THRESHOLD]
         for p in proposals:
             gt_leader = _match_gt(p["tip_xy"], gt["leaders"])
@@ -70,11 +74,14 @@ class TestRecallAndPrecision:
         path, gt = build_synthetic_leader_pdf(tmp_path, n_leaders=4,
                                               include_decoys=True)
         ir = from_pdf_vector(path)
-        proposals = queries.find_leaders(ir)
+        proposals = queries.find_leaders(ir, exclude_dimensions=True)
         confirmed = [p for p in proposals if p["confidence"] >= CONFIDENCE_THRESHOLD]
-        # Every confirmed proposal must trace to a planted leader -- i.e. the
-        # dimension-decoy arrowheads (and everything else on the sheet) stay
-        # below threshold. This is precision at the threshold, measured.
+        # Every confirmed proposal must trace to a planted leader. Since
+        # Phase 2, precision at the threshold is delivered by the
+        # exclude_dimensions disambiguation (find_dimensions claims the
+        # decoy arrowheads); WITHOUT it a dimension line scores ~0.78 as a
+        # geometrically-valid one-arrow leader -- see the unthresholded
+        # visibility test below, which keeps that honest.
         for p in confirmed:
             assert _match_gt(p["tip_xy"], gt["leaders"]) is not None
         n_planted = len(gt["leaders"])

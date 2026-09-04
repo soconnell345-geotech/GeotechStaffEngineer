@@ -534,6 +534,47 @@ def _bbox_diag(bbox) -> float:
     return math.hypot(bbox[2] - bbox[0], bbox[3] - bbox[1])
 
 
+class _EndpointGrid:
+    """Uniform-grid index over entity ENDPOINTS for radius lookups.
+
+    The composition heuristics ask "what terminates near this point?" once
+    per candidate; a linear scan makes that O(candidates x entities), which
+    hits a wall on dense real sheets (~10k entities on a Mecklenburg
+    standard detail). The grid keeps each lookup to the 3x3 neighborhood of
+    cells around the query point. Cell size = the largest radius the caller
+    intends to query (queries beyond it fall back to widening the cell
+    scan, still correct).
+    """
+
+    def __init__(self, ir: DrawingIR, cell: float,
+                 entity_types: Optional[List[str]] = None):
+        self.cell = max(cell, 1e-9)
+        self.cells: Dict[Tuple[int, int], list] = {}
+        for e in ir.entities:
+            if entity_types and e.KIND not in entity_types:
+                continue
+            endpoints = _entity_endpoints(e)
+            if len(endpoints) < 2:
+                continue
+            for i, (label, pt) in enumerate(endpoints):
+                other = endpoints[1 - i][1]
+                key = (int(pt[0] // self.cell), int(pt[1] // self.cell))
+                self.cells.setdefault(key, []).append((e, label, pt, other))
+
+    def near(self, point: Point, radius: float):
+        """Yield (entity, end_label, end_point, other_end, distance) within
+        radius, unsorted."""
+        px, py = point
+        reach = max(1, int(math.ceil(radius / self.cell)))
+        cx, cy = int(px // self.cell), int(py // self.cell)
+        for gx in range(cx - reach, cx + reach + 1):
+            for gy in range(cy - reach, cy + reach + 1):
+                for e, label, pt, other in self.cells.get((gx, gy), ()):
+                    d = math.hypot(px - pt[0], py - pt[1])
+                    if d <= radius:
+                        yield e, label, pt, other, d
+
+
 def _centroid(pts: List[Point]) -> Point:
     n = len(pts)
     return (sum(p[0] for p in pts) / n, sum(p[1] for p in pts) / n)
@@ -560,15 +601,23 @@ def _default_max_arrowhead_size(ir: DrawingIR) -> float:
               if (isinstance(e, Line)
                   or (isinstance(e, Polyline) and not e.closed))
               and e.length() > 0]
+    # Page-diagonal floor: on SHX-plotted sheets (lettering stroked as
+    # thousands of tiny glyph segments) the median shaft length collapses to
+    # glyph-stroke scale and would exclude every real arrowhead — verified
+    # against the Mecklenburg ground-truth plots (median segment 2.2 pt on a
+    # sheet whose real arrowheads are ~7 pt). 1% of the page diagonal keeps
+    # the threshold at plausible plotted-arrowhead scale regardless of how
+    # much lettering floods the statistics.
+    diag_floor = 0.0
+    bb = ir.bbox()
+    if bb is not None:
+        diag_floor = _bbox_diag(bb) * 0.01
     if lengths:
         lengths.sort()
         median = lengths[len(lengths) // 2]
-        return max(median * 0.25, 1.0)
-    bb = ir.bbox()
-    if bb is not None:
-        diag = _bbox_diag(bb)
-        if diag > 0:
-            return max(diag * 0.03, 1.0)
+        return max(median * 0.25, diag_floor, 1.0)
+    if diag_floor > 0:
+        return max(diag_floor * 3.0, 1.0)
     return 20.0
 
 
@@ -588,11 +637,54 @@ def _arrowhead_candidates(ir: DrawingIR, max_arrowhead_size: float):
             verts = e.vertices
         elif isinstance(e, Region) and 3 <= len(e.boundary) <= 5:
             verts = e.boundary
+        elif isinstance(e, Polyline) and not e.closed and len(e.vertices) in (3, 4):
+            # OPEN near-triangle: some plotters emit a filled arrowhead's
+            # outline without repeating the first point (the same reason a
+            # PDF "re" rectangle ingests as an open 4-corner polyline), so
+            # accept an open 3-4-vertex chain whose implied closing gap is
+            # small relative to its perimeter — a glyph stroke or zigzag has
+            # a large gap and is rejected here (and by the shaft/alignment
+            # gates after).
+            verts = e.vertices
+            per = e.length()
+            gap = math.hypot(verts[0][0] - verts[-1][0],
+                             verts[0][1] - verts[-1][1])
+            if per <= 0 or gap > 0.35 * per:
+                continue
         else:
             continue
         if e.bbox is None or _bbox_diag(e.bbox) > max_arrowhead_size:
             continue
-        yield e, [tuple(p) for p in verts]
+        pts = [tuple(p) for p in verts]
+        # Non-degeneracy: a real arrowhead encloses area (an equilateral
+        # triangle scores ~0.048 area/perimeter^2, our reference arrowhead
+        # ~0.045); a flat sliver — a dash artifact or a near-collinear
+        # glyph stroke whose ends happen to sit close — scores ~0.
+        s = 0.0
+        for a, b in zip(pts, pts[1:] + pts[:1]):
+            s += a[0] * b[1] - b[0] * a[1]
+        area = abs(s) * 0.5
+        per = sum(math.hypot(b[0] - a[0], b[1] - a[1])
+                  for a, b in zip(pts, pts[1:] + pts[:1]))
+        if per <= 0 or area / (per * per) < 0.02:
+            continue
+        yield e, pts
+
+
+def _ending_near_from_grid(grid: "_EndpointGrid", point: Point,
+                           radius: float) -> List[Dict[str, Any]]:
+    """Same result shape/order as :func:`entities_ending_near`, via a
+    prebuilt :class:`_EndpointGrid` (the fast path for composition loops)."""
+    scored = []
+    for e, label, pt, other, d in grid.near(point, radius):
+        ref = _ref(e)
+        ref["end"] = label
+        ref["end_point"] = [_r(pt[0]), _r(pt[1])]
+        ref["other_end"] = [_r(other[0]), _r(other[1])]
+        ref["distance"] = _r(d)
+        scored.append((d, ref))
+    scored.sort(key=lambda t: t[0])
+    return [ref for _, ref in scored]
 
 
 def _alignment_score(u: Point, v: Point) -> Tuple[float, float]:
@@ -660,8 +752,9 @@ def find_leaders(ir: DrawingIR, max_arrowhead_size: Optional[float] = None,
     Known false-positive source (by design, not a bug): a dimension line's
     end arrow is geometrically identical to a leader arrowhead (a small
     filled triangle at a line end), and a dimension VALUE sitting near the
-    line's other end can score as "tail text" — so a true dimension can also
-    surface here as a lower/moderate-confidence leader proposal. Pass
+    line's other end can score as "tail text" — a true dimension is
+    geometrically a one-arrow leader and can score HIGH here (~0.78 on the
+    reference fixture), so thresholding alone does not remove it. Pass
     ``exclude_dimensions=True`` to run :func:`find_dimensions` first and drop
     any leader proposal whose arrowhead is claimed by a dimension proposal
     with confidence >= ``dimension_confidence`` (a dimension arrowhead pairs
@@ -680,13 +773,22 @@ def find_leaders(ir: DrawingIR, max_arrowhead_size: Optional[float] = None,
     text_radius = (text_radius if text_radius is not None
                    else max_arrowhead_size * 4.0)
 
+    # A leader's shaft is LONG relative to its arrowhead — by construction
+    # (the default max_arrowhead_size is a fraction of typical shaft
+    # length). Gating on it keeps glyph-scale micro-strokes on SHX-plotted
+    # sheets from pairing into thousands of junk proposals.
+    min_shaft_length = 2.0 * max_arrowhead_size
+
+    grid = _EndpointGrid(ir, cell=search_radius,
+                         entity_types=["line", "polyline"])
+    texts = [e for e in ir.entities if isinstance(e, TextItem)]
     proposals = []
     for cand, verts in _arrowhead_candidates(ir, max_arrowhead_size):
         centroid = _centroid(verts)
-        shaft_hits = entities_ending_near(ir, centroid, search_radius,
-                                          entity_types=["line", "polyline"])
+        shaft_hits = _ending_near_from_grid(grid, centroid, search_radius)
         shaft_hits = [h for h in shaft_hits if h["id"] != cand.id
-                     and not (h["type"] == "polyline" and h.get("closed"))]
+                     and not (h["type"] == "polyline" and h.get("closed"))
+                     and h.get("length", 0.0) >= min_shaft_length]
         if not shaft_hits:
             continue
         shaft_ref = shaft_hits[0]
@@ -712,10 +814,12 @@ def find_leaders(ir: DrawingIR, max_arrowhead_size: Optional[float] = None,
         align_score, align_deg = _alignment_score(shaft_dir, arrow_dir)
 
         text_hit, text_dist = None, None
-        near_text = nearest_entity(ir, far_xy[0], far_xy[1], entity_type="text", k=1)
-        if near_text and near_text[0]["distance"] <= text_radius:
-            text_hit = near_text[0]
-            text_dist = text_hit["distance"]
+        for t in texts:
+            d = math.hypot(t.position[0] - far_xy[0],
+                           t.position[1] - far_xy[1])
+            if d <= text_radius and (text_dist is None or d < text_dist):
+                text_hit = {"content": t.content, "id": t.id, "distance": _r(d)}
+                text_dist = d
         text_score = _text_proximity_score(text_dist, text_radius)
 
         n_vertices_shaft = shaft_ref.get("n_vertices", 2)
@@ -836,6 +940,32 @@ def find_dimensions(ir: DrawingIR, max_arrowhead_size: Optional[float] = None,
         return []
     arrow_ids = {e.id for e, _ in arrowheads}
 
+    # Grid the arrowhead centroids (dense sheets carry thousands of shafts;
+    # a per-shaft linear scan over candidates is O(n*m) and hits a wall).
+    cell = max(search_radius, 1e-9)
+    acells: Dict[Tuple[int, int], list] = {}
+    for cand, verts in arrowheads:
+        c = _centroid(verts)
+        key = (int(c[0] // cell), int(c[1] // cell))
+        acells.setdefault(key, []).append((cand, verts, c))
+
+    def _arrow_near(tip):
+        cx, cy = int(tip[0] // cell), int(tip[1] // cell)
+        for gx in range(cx - 1, cx + 2):
+            for gy in range(cy - 1, cy + 2):
+                yield from acells.get((gx, gy), ())
+
+    end_grid = _EndpointGrid(ir, cell=search_radius,
+                             entity_types=["line", "polyline"])
+    texts = [e for e in ir.entities if isinstance(e, TextItem)]
+    # O(1) entity lookup: DrawingIR.by_id is a linear scan, and dashed
+    # linework can put thousands of endpoints near one tip (profiled at
+    # 49 s of by_id on a real 10k-entity sheet).
+    ent_by_id = {e.id: e for e in ir.entities}
+    # Same shaft-vs-arrowhead scale gate as find_leaders (see there): keeps
+    # glyph-scale micro-strokes from pairing into junk dimension proposals.
+    min_shaft_length = 2.0 * max_arrowhead_size
+
     proposals = []
     for shaft in ir.entities:
         if isinstance(shaft, Line):
@@ -849,13 +979,21 @@ def find_dimensions(ir: DrawingIR, max_arrowhead_size: Optional[float] = None,
         shaft_pts = shaft.points()
         if len(shaft_pts) < 2:
             continue
+        # A dimension shaft is LONG relative to its arrowheads and
+        # essentially STRAIGHT: gate on the end-to-end separation (a glyph
+        # squiggle has a long PATH but near-coincident endpoints) and on
+        # separation/path-length straightness. (Curved/angular dimensions
+        # are out of scope — documented limitation.)
+        sep = math.hypot(shaft_pts[-1][0] - shaft_pts[0][0],
+                         shaft_pts[-1][1] - shaft_pts[0][1])
+        if sep < min_shaft_length or sep < 0.9 * shaft.length():
+            continue
         ends = [("start", shaft_pts[0]), ("end", shaft_pts[-1])]
 
         per_end = []
         for end_label, tip in ends:
             best = None
-            for cand, verts in arrowheads:
-                c = _centroid(verts)
+            for cand, verts, c in _arrow_near(tip):
                 d = math.hypot(c[0] - tip[0], c[1] - tip[1])
                 if d <= search_radius and (best is None or d < best[1]):
                     apex = min(verts, key=lambda p: math.hypot(
@@ -868,6 +1006,8 @@ def find_dimensions(ir: DrawingIR, max_arrowhead_size: Optional[float] = None,
 
         if any(b is None for _, _, b in per_end):
             continue  # a dimension needs an arrowhead at BOTH ends
+        if per_end[0][2][0].id == per_end[1][2][0].id:
+            continue  # ... and they must be two DISTINCT arrowheads
 
         align_scores = []
         for end_label, tip, (cand, d, arrow_dir) in per_end:
@@ -883,11 +1023,16 @@ def find_dimensions(ir: DrawingIR, max_arrowhead_size: Optional[float] = None,
         for end_label, tip, _b in per_end:
             shaft_dir = _shaft_terminal_dir(shaft_pts, end_label)
             found_here = False
-            for hit in entities_ending_near(ir, tip, search_radius,
-                                            entity_types=["line", "polyline"]):
+            # Nearest 50 endpoint hits suffice for a witness-line check —
+            # dashed/stippled linework can put thousands of endpoints in
+            # range, and a real extension line terminates AT the tip.
+            for hit in _ending_near_from_grid(end_grid, tip,
+                                              search_radius)[:50]:
                 if hit["id"] in used_ids or hit.get("closed"):
                     continue
-                other = ir.by_id(hit["id"])
+                other = ent_by_id.get(hit["id"])
+                if other is None:
+                    continue
                 opts = other.points()
                 if len(opts) < 2:
                     continue
@@ -903,10 +1048,11 @@ def find_dimensions(ir: DrawingIR, max_arrowhead_size: Optional[float] = None,
         mid = (0.5 * (ends[0][1][0] + ends[1][1][0]),
                0.5 * (ends[0][1][1] + ends[1][1][1]))
         text_hit, text_dist = None, None
-        near_text = nearest_entity(ir, mid[0], mid[1], entity_type="text", k=1)
-        if near_text and near_text[0]["distance"] <= text_radius:
-            text_hit = near_text[0]
-            text_dist = text_hit["distance"]
+        for t in texts:
+            d = math.hypot(t.position[0] - mid[0], t.position[1] - mid[1])
+            if d <= text_radius and (text_dist is None or d < text_dist):
+                text_hit = {"content": t.content, "id": t.id}
+                text_dist = d
         text_score = _text_proximity_score(text_dist, text_radius)
 
         confidence = round(0.40 * align + 0.30 * text_score
@@ -1020,6 +1166,11 @@ def find_bubble_callouts(ir: DrawingIR, max_radius: Optional[float] = None,
     if max_radius is None:
         max_radius = 4.0 * med_h if med_h > 0 else 25.0
 
+    grid = _EndpointGrid(ir, cell=max(max_radius * 1.2, 1e-9),
+                         entity_types=["line", "polyline"])
+    all_texts = [t for t in ir.entities if isinstance(t, TextItem)]
+    lines_by_id = {e.id: e for e in ir.entities if isinstance(e, Line)}
+
     proposals = []
     for e, center, radius in _circle_like_candidates(ir, max_radius):
         if isinstance(e, Circle):
@@ -1032,9 +1183,7 @@ def find_bubble_callouts(ir: DrawingIR, max_radius: Optional[float] = None,
         # Short text centered in the bubble.
         text_hit = None
         best_d = None
-        for t in ir.entities:
-            if not isinstance(t, TextItem):
-                continue
+        for t in all_texts:
             if len(t.content.strip()) > text_max_chars:
                 continue
             d = math.hypot(t.position[0] - center[0],
@@ -1050,20 +1199,27 @@ def find_bubble_callouts(ir: DrawingIR, max_radius: Optional[float] = None,
             size_score = 0.5
 
         # Attached line-work: endpoints on the ring; chords through center.
+        # Both checks run off the shared endpoint grid (a chord's endpoints
+        # both sit within 1.2r of the center too) — a linear scan per
+        # candidate is O(candidates x entities) and glyph 'o's on dense
+        # SHX sheets make candidates plentiful.
         attached: List[str] = []
         kind = "keynote"
-        for hit in entities_ending_near(ir, center, radius * 1.2,
-                                        entity_types=["line", "polyline"]):
+        near_ring_ids = set()
+        for hit in _ending_near_from_grid(grid, center, radius * 1.2):
             if hit["id"] == e.id or hit.get("closed"):
                 continue
             ex, ey = hit["end_point"]
             ring_dev = abs(math.hypot(ex - center[0], ey - center[1]) - radius)
             if ring_dev <= 0.2 * radius:
-                attached.append(hit["id"])
+                near_ring_ids.add(hit["id"])
+                if hit["id"] not in attached:
+                    attached.append(hit["id"])
         if attached:
             kind = "grid_bubble"
-        for ln in ir.entities:
-            if not isinstance(ln, Line) or ln.id == e.id:
+        for lid in near_ring_ids:
+            ln = lines_by_id.get(lid)
+            if ln is None:
                 continue
             d_center = _point_seg_dist(center[0], center[1],
                                        ln.start[0], ln.start[1],
@@ -1076,8 +1232,6 @@ def find_bubble_callouts(ir: DrawingIR, max_radius: Optional[float] = None,
                        <= 0.2 * radius)
             if on_ring and d_center <= 0.25 * radius:
                 kind = "detail_callout"
-                if ln.id not in attached:
-                    attached.append(ln.id)
                 break
 
         confidence = round(0.35 * roundness + 0.45 * text_score
@@ -1244,6 +1398,8 @@ def find_revision_clouds(ir: DrawingIR, min_arcs: int = 3,
 
     # --- Revision deltas: small labelled triangles with no shaft ---
     max_size = _default_max_arrowhead_size(ir)
+    delta_grid = _EndpointGrid(ir, cell=max(max_size * 1.5, 1e-9),
+                               entity_types=["line", "polyline"])
     for cand, verts in _arrowhead_candidates(ir, max_size):
         if len(verts) > 4:
             continue
@@ -1252,8 +1408,8 @@ def find_revision_clouds(ir: DrawingIR, min_arcs: int = 3,
         if size <= 0:
             continue
         # A delta has NO line-work terminating at it (an arrowhead does).
-        shaft_hits = [h for h in entities_ending_near(
-            ir, c, size * 1.5, entity_types=["line", "polyline"])
+        shaft_hits = [h for h in _ending_near_from_grid(
+            delta_grid, c, size * 1.5)
             if h["id"] != cand.id and not h.get("closed")]
         if shaft_hits:
             continue

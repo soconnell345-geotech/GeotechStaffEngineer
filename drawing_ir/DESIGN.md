@@ -108,8 +108,11 @@ Reuses `pdf_import.extract_colored_paths` (per-path point lists + color) and
 `pdf_import.calibrate_scale`), coordinates are promoted to model meters;
 otherwise the IR stays in page points and **scale candidates** parsed from the
 page text (`pdf_import.propose_scale`) are attached to `metadata` as *proposals,
-never applied*. PDF has no layers; bezier curves are represented by their
-chord polyline (an honest limitation).
+never applied*. PDF has no layers. Bezier curves are SAMPLED (8 subdivisions
+per cubic, `pdf_import.extractor._sample_cubic_bezier`, Phase 2) — a drawn
+circle arrives as a ~32-vertex circle-like ring and a cloud scallop keeps its
+bump; before Phase 2 curves collapsed to their chord, which made curve-aware
+construct detection impossible.
 
 ### `from_raster` (OpenCV) — confidence < 1.0
 Delegates to `drawing_ir.raster.trace_raster` (keeps `cv2` optional). See below.
@@ -190,13 +193,47 @@ The agent narrows with queries, then pulls exact coordinates for a shortlist via
   shaft's far end as tail text. Confidence = weighted alignment + text
   proximity + shaft simplicity (see the docstring for the exact weights and
   the documented false-positive source: a dimension line's arrowheads are
-  geometrically identical and can also surface as low/moderate-confidence
-  proposals). Validated on synthetic PDF-vector fixtures
-  (`drawing_ir/tests/leader_fixtures.py` + `test_find_leaders.py`): 100%
-  recall, 100% precision at confidence >= 0.5 (planted leaders score
-  ~0.94-0.96; the dimension-decoy arrowheads that DO surface score ~0.32) —
-  fixture-scoped numbers, not a general benchmark claim.
-- `summary_stats()` — counts by type/layer, page metadata, extent, scale
+  geometrically identical — a true dimension is a one-arrow leader
+  geometrically and scores HIGH (~0.78), so the DOCUMENTED precision
+  contract is `exclude_dimensions=True`, which lets `find_dimensions`
+  claim those arrowheads first). Validated on synthetic PDF-vector
+  fixtures (`drawing_ir/tests/leader_fixtures.py` + `test_find_leaders.py`):
+  100% recall, 100% precision at confidence >= 0.5 *under
+  exclude_dimensions* — fixture-scoped numbers, not a general benchmark
+  claim.
+- **Composition family (Phase 2)** — same proposal pattern
+  (confidence + `evidence`, `proposal_only: True`, never asserted):
+  - `find_dimensions()` — shaft with two DISTINCT arrowheads + roughly
+    perpendicular extension lines + midpoint value text; straight shafts
+    only (curved/angular dimensions out of scope). THE disambiguator for
+    `find_leaders`' dimension false positive.
+  - `find_title_block(edge_frac)` — edge-adjacent rectangle scored on
+    edge adjacency + text density + rectangle nesting; returns the
+    region bbox AND its text payload; text-cluster fallback (low
+    confidence) when the sheet has no rectangles.
+  - `find_bubble_callouts(max_radius, text_max_chars)` — native circles +
+    circle-like closed rings (centroid circle-fit, rms/r <= 0.08) with
+    short centered text; kinds keynote / grid_bubble (line ends on ring) /
+    detail_callout (chord through center).
+  - `find_revision_clouds(min_arcs)` — BEST-EFFORT tier (<= ~0.65 by
+    design): native DXF Arc chains (endpoint union-find) + scalloped
+    closed rings via the turn-angle cusp signature (smooth low-angle runs
+    broken by opposite-sign junction spikes — empirically verified against
+    PyMuPDF scallops; a rounded rectangle's same-sign corners are
+    rejected); plus revision DELTAS (small labelled triangle with NO
+    shaft terminating at it).
+- **Performance (real-sheet scale)**: the composition loops index entity
+  endpoints in a uniform grid (`_EndpointGrid`) and use O(1) id lookup —
+  a 10k-entity Mecklenburg sheet runs in seconds (a linear-scan
+  implementation profiled at minutes). Arrowhead candidates are gated on
+  non-degeneracy (area/perimeter² >= 0.02) and shafts on
+  length-vs-arrowhead scale, which keeps SHX glyph strokes from flooding
+  the proposals; `_default_max_arrowhead_size` carries a page-diagonal
+  floor because glyph-stroked sheets collapse the median segment length.
+- `summary_stats()` — counts by type/layer, page metadata, extent, scale;
+  reports `has_text` + an explicit note when a sheet has NO extractable
+  text (SHX/stroked lettering — verified on all 10 Mecklenburg plots):
+  text queries return nothing there and a zero count is inconclusive.
 
 ### The region-snip vision primitive (`render.py`)
 
@@ -214,11 +251,12 @@ an IR point before calling: `x_pdf = x_ir; y_pdf = page_height_pt - y_ir`.
 
 Implemented in `funhouse_agent/vision_tools.py` as `_dispatch_render_region`
 (same conventions as `_dispatch_analyze_pdf_page`) plus a save-to-file
-counterpart `render_region_to_file`, but **not yet registered** in
-`EXTENDED_TOOLS`/`VISION_TOOL_DESCRIPTIONS`/`dispatch_extended_tool`'s
-catalog — that wiring is Phase 2 (B6) of the drawing-intelligence build
-(`module_work/DRAWING_INTELLIGENCE_DESIGN.md`). Both are directly callable
-today (e.g. by drawing_ir composition callers or tests).
+counterpart `render_region_to_file`. **Live on every agent surface since
+Phase 2 (B6)**: `EXTENDED_TOOLS` + `VISION_TOOL_DESCRIPTIONS` + the
+dispatch route (v1 agent), `make_vision_tools` (deep agent), and
+`OPENAI_TOOLS`/`EXTENDED_TOOL_NAMES` (native). The drawing_ir adapter's
+`snip_region` method is the save-to-disk twin and converts IR bottom-left
+coordinates to this frame for the caller.
 
 ### A verified ingest fact `find_leaders` depends on
 
@@ -238,14 +276,25 @@ own — `find_leaders` also gates on vertex count (3-5) and bbox size.
 
 ## Funhouse adapter
 
-`funhouse_agent/adapters/drawing_ir_adapter.py` exposes three methods and
+`funhouse_agent/adapters/drawing_ir_adapter.py` exposes five methods and
 **caches the IR server-side keyed by a `handle`** (a full IR can be large):
 
 - `digitize_drawing(file_path, source=auto|dxf|pdf_vector|raster, …)` → `handle`
-  + summary/stats (+ PDF `scale_candidates`). The full IR is never returned.
+  + summary/stats (+ PDF `scale_candidates`, `has_text`). The full IR is
+  never returned.
 - `query_drawing(handle, query, params)` → one slice (`allowed_values` on the
-  query name; per-query required/allowed params validated).
+  query name; per-query required/allowed params validated). Includes the
+  whole composition family + `entities_ending_near`/`text_anchored_geometry`.
 - `get_entities(handle, ids)` → exact coordinates for specific ids.
+- `snip_region(file_path, output_path, bbox, frame=ir|pdf, marks, …)` →
+  zoomed PNG crop on disk (converts IR bottom-left coords to the render
+  frame; set-of-marks supported) for a follow-up `analyze_image`, or use
+  the one-step `render_region` vision tool.
+- `search_drawing_set(file_paths, pattern|construct, pages, min_confidence)`
+  → every page of one or more PDF/DXF files: per-file/per-page counts +
+  compact match locations ("how many times does X occur in this set");
+  pages with no text layer are flagged `no_text_layer` (zero counts there
+  are inconclusive — SHX).
 
 `drawing_ir` is registered in `MODULE_REGISTRY`, so it is a directly-callable
 analysis-layer tool for the primary agent (it is an I/O tool, not a reference).
