@@ -15,6 +15,24 @@ points AT. Feeding a whole-page image to the model worked poorly —
 consistent with research that LLMs are good at image patterns but bad
 at raw geometry.
 
+## SCOPE CLARIFICATION (owner, 2026-09-04): GENERAL, not leader-specific
+
+The SAE-leader hunt is an EXAMPLE, not the scope. The target is generic
+drawing-annotation understanding composed from primitives. Owner's
+enumerated examples of visually-detectable constructs:
+- **leaders/arrows** (the original example)
+- **title blocks** (sheet metadata: number, title, revision, scale, firm)
+- **dimensions** (dimension lines, extension lines, dimension text)
+- **revision bubbles and markers** (clouds, deltas/triangles w/ numbers)
+- **general visual keys** — e.g., a number in a circle (keynotes, detail
+  callouts, section marks, grid bubbles)
+Owner's architectural point (verbatim spirit): "if it can pick up lines,
+arcs, circles, arrows, shapes and the location and orientation of text,
+it can piece a lot of this together" — i.e., a PRIMITIVE-EXTRACTION layer
+plus a COMPOSITION layer that assembles primitives into named annotation
+constructs. The research and design must treat annotation constructs as
+a pluggable family over shared primitives, not one-off detectors.
+
 ## Owner's initial ideas (evaluate all)
 - Azure **Document Intelligence** as an agent tool when asked to review
   a drawing (note: prior finding — High-Res OCR add-on DISABLED in the
