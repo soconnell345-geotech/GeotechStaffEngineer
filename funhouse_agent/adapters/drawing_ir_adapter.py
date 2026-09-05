@@ -51,6 +51,24 @@ _RASTER_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".gif"}
 _SET_IR_CACHE = {}
 _SET_IR_ORDER = []
 _SET_IR_CACHE_MAX = 64
+# Cached IRs are shared, mutable objects (OCR augmentation extends them in
+# place, guarded by ir.metadata["ocr"]) and OCR takes minutes — without a
+# lock, two concurrent conversations hitting the same uncached sheet both
+# pass the guard and permanently DOUBLE the OCR text items (verifier
+# finding, 2026-09-05). One lock per cache key serializes digitize+augment;
+# _SET_IR_LOCKS is only ever mutated under _SET_IR_LOCKS_GUARD.
+import threading
+
+_SET_IR_LOCKS = {}
+_SET_IR_LOCKS_GUARD = threading.Lock()
+
+
+def _set_ir_lock(key):
+    with _SET_IR_LOCKS_GUARD:
+        lock = _SET_IR_LOCKS.get(key)
+        if lock is None:
+            lock = _SET_IR_LOCKS[key] = threading.Lock()
+        return lock
 
 
 def _digitized_cached(fp, page, source):
@@ -59,15 +77,16 @@ def _digitized_cached(fp, page, source):
     except OSError:
         mtime = None
     key = (os.path.abspath(str(fp)), mtime, page, source)
-    ir = _SET_IR_CACHE.get(key)
-    if ir is None:
-        from planlens.ir import from_dxf, from_pdf_vector
-        ir = (from_pdf_vector(filepath=fp, page=page)
-              if source == "pdf_vector" else from_dxf(filepath=fp))
-        _SET_IR_CACHE[key] = ir
-        _SET_IR_ORDER.append(key)
-        while len(_SET_IR_ORDER) > _SET_IR_CACHE_MAX:
-            _SET_IR_CACHE.pop(_SET_IR_ORDER.pop(0), None)
+    with _set_ir_lock(key):
+        ir = _SET_IR_CACHE.get(key)
+        if ir is None:
+            from planlens.ir import from_dxf, from_pdf_vector
+            ir = (from_pdf_vector(filepath=fp, page=page)
+                  if source == "pdf_vector" else from_dxf(filepath=fp))
+            _SET_IR_CACHE[key] = ir
+            _SET_IR_ORDER.append(key)
+            while len(_SET_IR_ORDER) > _SET_IR_CACHE_MAX:
+                _SET_IR_CACHE.pop(_SET_IR_ORDER.pop(0), None)
     return ir
 
 
@@ -410,13 +429,22 @@ def _run_search_drawing_set(params):
         file_total = 0
         for pg in page_list:
             ir = _digitized_cached(fp, pg, source)
-            if (ocr_text and source == "pdf_vector"
-                    and not (ir.metadata or {}).get("ocr")
-                    and not any(e.KIND == "text" for e in ir.entities)):
+            if ocr_text and source == "pdf_vector":
                 # Read the lettering optically on no-text-layer pages so
-                # pattern searches see it. Cached IRs are augmented once.
-                from planlens.ocr import augment_ir_with_ocr
-                augment_ir_with_ocr(ir, filepath=fp, page=pg)
+                # pattern searches see it. Cached IRs are augmented once —
+                # the check and the minutes-long augment share the cache
+                # key's lock so concurrent callers can't double-augment.
+                try:
+                    mtime = os.path.getmtime(fp)
+                except OSError:
+                    mtime = None
+                key = (os.path.abspath(str(fp)), mtime, pg, source)
+                with _set_ir_lock(key):
+                    if (not (ir.metadata or {}).get("ocr")
+                            and not any(e.KIND == "text"
+                                        for e in ir.entities)):
+                        from planlens.ocr import augment_ir_with_ocr
+                        augment_ir_with_ocr(ir, filepath=fp, page=pg)
             if construct is not None:
                 props = finders[construct](ir)
                 if pattern is not None:
@@ -569,7 +597,11 @@ METHOD_INFO = {
                                        "find_dimensions/find_title_block/find_bubble_callouts/"
                                        "find_revision_clouds: {min_confidence?,...} "
                                        "(annotation-construct PROPOSALS with confidence + "
-                                       "evidence — never asserted facts; confirm visually); "
+                                       "evidence — never asserted facts; confirm visually). "
+                                       "WARNING: on no-text-layer (SHX-stroked) sheets, "
+                                       "find_dimensions is measured near-ZERO precision at "
+                                       "default confidence — treat its output there as noise "
+                                       "and verify via snip_region before reporting any; "
                                        "entities_on_layer: {layer}; "
                                        "entities_by_color: {color}; "
                                        "candidate_ground_surface/summary_stats: {}.")},

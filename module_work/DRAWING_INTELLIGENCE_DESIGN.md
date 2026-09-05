@@ -1,35 +1,46 @@
 # Drawing & submittal intelligence — design memo (2026-09-04)
 
-> **PHASE 3: COMPLETE (planlens commits 5b7147c + the OCR commit,
-> 2026-09-04).** The two legs the Phase-2 baseline demanded:
-> (1) **Fill-cluster arrowheads** — find_leaders/find_dimensions now
-> also detect arrowheads drawn as clusters of tiny strokes (micro-dot
-> fills, hatch fans; the real Mecklenburg style), tagged
-> `arrowhead_kind: fill_cluster` in evidence. Gates: density-spike vs
-> local background (stipple guard), centroid anchoring, union-bbox
-> aspect (running-lettering guard). Plus fold-blind best-vertex
-> triangle alignment (base-anchored multileader shafts scored ~0.1
-> before) and no-text confidence renormalization (`text_unavailable`
-> evidence flag). New `planlens.ir.align.fit_plot_transform`:
-> rotation/scale/offset anchor-voting fit — revealed the ground-truth
-> plots are ROTATED 270 at exactly 72 pt/in (rms 0.02 pt), so Phase
-> 2's 0/25 was partly transform artifact. **Real recall now 11/25
-> leader tips** (residuals diagnosed in score_compositions.py:
-> no-fragment tips + sparse dots inside stipple); dimensions stay
-> 1/16 with a NEW diagnosis — native dims plot as TWO collinear
-> one-arrow halves around a text gap → `find_dimensions` v2 needs a
-> split-shaft pairing leg (next).
-> (2) **B7 OCR leg** — `planlens.ocr` (extra `planlens[ocr]`,
-> RapidOCR/onnxruntime, Apache-2.0, ~60 MB, models in-wheel, no GPL/
-> system binaries/runtime downloads): render → OCR → TextItems mapped
-> into the IR frame (auto-detects sideways plots; handles PDF /Rotate;
-> `augment_ir_with_ocr` merges at model scale). Truth-text coverage
-> 88-92% per sheet, median coordinate error 1.4-7 pt. Agent wiring:
-> `digitize_drawing(ocr_text=true)` + `search_drawing_set(ocr_text=
-> true)` — live-verified: "MECKLENBURG" found on the no-text 21.01
-> sheet end-to-end. Set-level IR caching landed (repeat set queries
-> are instant). **Deferred: B1 DXF-native LEADER/DIMENSION ingest;
-> find_dimensions split-shaft v2; B3 marks A/B.**
+> **PHASE 3: COMPLETE + INDEPENDENTLY VERIFIED (ship-with-fixes,
+> fixes applied; planlens commits 5b7147c/3aae54f + close-out,
+> 2026-09-04/05).** What the verifier's measurements say actually
+> moved the numbers (attribution matters — pitch honestly):
+> (1) **The transform-fit discovery is the win.**
+> `planlens.ir.align.fit_plot_transform` (rotation/scale/offset
+> anchor-voting) revealed the ground-truth plots are ROTATED 270 at
+> exactly 72 pt/in (rms 0.02-0.03 pt, 100% anchors matched). Under
+> the corrected transform plus fold-blind triangle alignment, leader
+> recall is **11/25** — and the verifier proved triangles-alone score
+> the SAME 11/25: the new fill-cluster arrowhead model contributes
+> ZERO marginal recall today. It ships as tagged groundwork
+> (`arrowhead_kind: fill_cluster`, density/aspect gates) for the
+> sparse-dot regime; residuals are diagnosed per tip in
+> score_compositions.py (4 tips have NO plotted arrow fragments; the
+> rest sit in stipple below any principled density gate — verifier
+> measured the distributions and concurred). Dimensions stay 1/16,
+> and on stipple no-text sheets find_dimensions is measured ~ZERO
+> precision at default confidence (44 proposals vs 10 truth on 3001,
+> none near truth) — flagged in the adapter WARNING; real-sheet
+> dimension output = noise until the split-shaft v2 (native dims plot
+> as TWO collinear one-arrow halves around a text gap) + a no-text
+> confidence cap land.
+> (2) **B7 OCR leg is solid and fairly stated** — `planlens.ocr`
+> (extra `planlens[ocr]`, RapidOCR/onnxruntime, permissive licenses,
+> models in-wheel, no runtime downloads; ~170 MB clean-env incl. the
+> full-opencv dependency — see README for the opencv-variant caveat):
+> render → OCR → TextItems mapped into the IR frame. Coverage 88-92%
+> per sheet held up under independent rematching (exact-only is
+> 22-45% — "partial" containment matches carry the headline; medians
+> 1.4-7 pt are convention-dependent). Committed check:
+> ocr_coverage_check.py. Verifier property-tested _unrotate_px exact
+> for all four rotations; auto-rotation now probes all four (a
+> cls-flip residual for tied 180 pairs is documented in ocr.py).
+> Agent wiring: `digitize_drawing(ocr_text=true)` +
+> `search_drawing_set(ocr_text=true)` live-verified on the no-text
+> 21.01 sheet; set-level IR cache now lock-guarded (verifier caught a
+> concurrent double-augment race). **Deferred: B1 DXF-native ingest;
+> find_dimensions split-shaft v2 + no-text confidence cap; B3 marks
+> A/B; fit_plot_transform degenerate-scale extent guard (docstring
+> caveat in place); opencv full-vs-headless resolution.**
 
 > **PLANLENS SPLIT (2026-09-04, owner-named):** the code this memo
 > describes now lives in the separate `planlens` package repo

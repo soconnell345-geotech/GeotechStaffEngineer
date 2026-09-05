@@ -6,13 +6,16 @@ Mecklenburg PDFs and compares against the native-entity truth JSON
 is the known-unknown being measured — do not tune the heuristics to these
 numbers; document them.
 
-Coordinate mapping: sheets are drawn at paper scale in inches and plotted
-at 72 pt/in; the residual offset between model space and the PDF page is
-estimated by aligning the truth text bbox with the IR text... SHX sheets
-have no IR text, so alignment uses the overall linework bbox instead
-(median-shift fit). Matches are counted within a tolerance of 18 pt
-(0.25 in) after transform — generous on purpose, since the fit itself is
-approximate.
+Coordinate mapping: planlens.ir.align.fit_plot_transform fits the full
+plot transform (rotation 0/90/180/270 + uniform scale + offset) by anchor
+voting on native leader/dimension/text anchor points — the Mecklenburg
+sheets plot at 72 pt/in ROTATED 270 degrees, which a translation-only fit
+cannot see (the Phase-3 discovery; rms 0.02-0.03 pt, 100% anchors matched
+on the annotation-rich sheets). Matches are counted within 18 pt (0.25 in)
+after transform. OCR coverage has its own committed check:
+ocr_coverage_check.py (independent-verifier methodology; 'partial' =
+containment matches carry much of the headline coverage number, exact-only
+is far lower — both are printed).
 
 Usage:  python module_work/drawing_ground_truth/score_compositions.py
 
@@ -67,18 +70,6 @@ MECK = os.path.join(HERE, "mecklenburg")
 SCALE = 72.0          # points per model inch (paper-scale sheets)
 MATCH_TOL = 18.0      # pt (0.25 in) after transform
 MIN_CONF = 0.3        # observational: look at the permissive band too
-
-
-def _fit_offset(truth_pts, ir_bbox):
-    """Median offset mapping SCALE*model -> IR page points (no rotation)."""
-    if not truth_pts or ir_bbox is None:
-        return None
-    xs = sorted(p[0] * SCALE for p in truth_pts)
-    ys = sorted(p[1] * SCALE for p in truth_pts)
-    tb = (xs[0], ys[0], xs[-1], ys[-1])
-    # Align centers of the truth extent and the IR linework extent.
-    return (0.5 * (ir_bbox[0] + ir_bbox[2]) - 0.5 * (tb[0] + tb[2]),
-            0.5 * (ir_bbox[1] + ir_bbox[3]) - 0.5 * (tb[1] + tb[3]))
 
 
 def _match(truth_xy, prop_xy, tol=MATCH_TOL):
