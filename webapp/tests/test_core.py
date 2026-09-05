@@ -101,6 +101,33 @@ def test_save_fn_bytes_and_absolute_path(tmp_path):
     assert artifacts == [abs_target]
 
 
+def test_save_fn_advertises_the_attachment_note_for_conversation_files(tmp_path):
+    """A save into the conversation files dir tells the model, via the tool
+    result, that the file is already attached to the chat — the 2026-09-04
+    field-feedback fix for the agent saving a report there and then claiming it
+    could not attach files."""
+    files_dir = str(tmp_path / "files")
+    os.makedirs(files_dir)
+    save_fn = core.make_save_fn(files_dir, [])
+    saved = save_fn("report.pdf", b"%PDF")
+    note = save_fn.saved_note(saved)
+    assert note == core.ATTACHMENT_NOTE
+    assert "ATTACHED" in note and "cannot attach" in note
+
+
+def test_attachment_note_only_for_paths_inside_the_files_dir(tmp_path):
+    files_dir = str(tmp_path / "files")
+    os.makedirs(files_dir)
+    assert core.attachment_note_for(
+        os.path.join(files_dir, "sub", "a.pdf"), files_dir)
+    assert core.attachment_note_for(files_dir, files_dir)
+    # a sibling whose name merely starts with the dir name is NOT inside it
+    assert core.attachment_note_for(files_dir + "_other/a.pdf", files_dir) is None
+    assert core.attachment_note_for(str(tmp_path / "elsewhere.pdf"),
+                                    files_dir) is None
+    assert core.attachment_note_for(None, files_dir) is None
+
+
 def test_new_artifacts_detects_new_files_and_excludes_inputs(tmp_path):
     d = str(tmp_path)
     staged = os.path.join(d, "input.pdf")

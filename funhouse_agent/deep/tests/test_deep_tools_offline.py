@@ -13,6 +13,7 @@ Run from the worktree root with the venv python::
 """
 
 import json
+import os
 import re
 
 import pytest
@@ -273,6 +274,47 @@ def test_save_file_works_offline(tmp_path):
     )
     assert "saved" in out, out
     assert target.read_text() == "x,y\n1,2\n"
+    assert "note" not in out           # no host hook -> result unchanged
+
+
+def test_save_file_carries_the_host_saved_note(tmp_path):
+    """A host save_fn may expose ``saved_note(path)`` to say what its
+    destination means. The webapp uses it to tell the model a file written into
+    the conversation folder is now attached to the chat (field feedback
+    2026-09-04: the agent saved reports there and denied it could attach)."""
+    def save_fn(path, content):
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        return str(path)
+    save_fn.saved_note = lambda p: f"attached: {os.path.basename(p)}"
+
+    tools = make_vision_tools(engine=None, save_fn=save_fn)
+    out = _invoke(_tool_by_name(tools, "save_file"),
+                  path=str(tmp_path / "report.md"), content="# hi")
+    assert out["note"] == "attached: report.md"
+    assert out["saved"].endswith("report.md")
+
+
+def test_saved_note_hook_never_breaks_a_save(tmp_path):
+    """A raising / silent hook, and an errored save, leave the result alone."""
+    from funhouse_agent.deep.tools import _with_saved_note
+
+    def boom(_p):
+        raise RuntimeError("hook exploded")
+
+    def hook_fn(path, content):
+        return str(path)
+
+    hook_fn.saved_note = boom
+    ok = json.dumps({"saved": "/tmp/a.pdf"})
+    assert _with_saved_note(ok, hook_fn) == ok            # raising hook
+    hook_fn.saved_note = lambda _p: None
+    assert _with_saved_note(ok, hook_fn) == ok            # nothing to say
+    hook_fn.saved_note = lambda _p: "note!"
+    err = json.dumps({"error": "disk full"})
+    assert _with_saved_note(err, hook_fn) == err          # errored save
+    assert _with_saved_note("not json", hook_fn) == "not json"
+    assert _with_saved_note(ok, object()) == ok           # no hook at all
 
 
 # ---------------------------------------------------------------------------

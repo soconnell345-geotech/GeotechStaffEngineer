@@ -75,6 +75,40 @@ SEARCH_NARROWER_NUDGE = (
 )
 
 
+def _with_saved_note(result: str, save_fn) -> str:
+    """Let the host annotate a successful ``save_file`` result.
+
+    A host ``save_fn`` may expose ``saved_note(saved_path) -> str | None`` to
+    say what its destination means for the user. The webapp uses it to state
+    that a file written into the conversation folder is now attached to the
+    chat — field feedback 2026-09-04 caught the agent saving reports there and
+    telling the user in the same turn that it could not attach files, because
+    nothing in the tool result said otherwise.
+
+    Best-effort by design: no hook, a hook that raises, an errored save, or a
+    result that is not parseable JSON (e.g. truncated) all leave ``result``
+    exactly as it was.
+    """
+    hook = getattr(save_fn, "saved_note", None)
+    if not callable(hook):
+        return result
+    try:
+        data = json.loads(result)
+    except (TypeError, ValueError):
+        return result
+    if not isinstance(data, dict) or data.get("error") or not data.get("saved"):
+        return result
+    try:
+        note = hook(data["saved"])
+    except Exception:
+        return result
+    if not note:
+        return result
+    existing = data.get("note")
+    data["note"] = f"{existing} {note}" if existing else str(note)
+    return json.dumps(data)
+
+
 def _truncate(text: str, max_chars: int) -> str:
     """Truncate a tool-result string to ``max_chars``, marking any cut.
 
@@ -699,9 +733,12 @@ def make_vision_tools(
         (text or base64); ``encoding`` is 'text' (default) or 'base64' for
         binary.
         """
-        return _dispatch(
-            "save_file",
-            {"path": path, "content": content, "encoding": encoding},
+        return _with_saved_note(
+            _dispatch(
+                "save_file",
+                {"path": path, "content": content, "encoding": encoding},
+            ),
+            save_fn,
         )
 
     _builders = {

@@ -167,6 +167,38 @@ def assemble_user_message(pending_notes: Iterable[str], user_text: str) -> str:
 # Artifacts — save_fn capture + directory watch
 # ---------------------------------------------------------------------------
 
+#: What the ``save_file`` tool result says once a file lands in the conversation
+#: files dir. That directory IS the chat-attachment surface — its contents show
+#: up as download cards in the transcript and in the sidebar — but the model had
+#: no way to know it, so it wrote reports there and told the user in the same
+#: breath that it "can't directly attach the binary PDF into the chat stream"
+#: (field feedback 2026-09-04, Praia_Downdrag). Awareness gap, not a capability
+#: gap: the tool result now says what the save already accomplished.
+ATTACHMENT_NOTE = (
+    "This file is now ATTACHED to this conversation — it appears as a download "
+    "card in the chat and in the sidebar file list, so the user can already "
+    "open it. Tell the user it is attached; do NOT say you cannot attach files."
+)
+
+
+def attachment_note_for(path, files_dir: str) -> Optional[str]:
+    """``ATTACHMENT_NOTE`` when ``path`` landed inside ``files_dir`` (the
+    conversation's chat-attachment surface), else ``None``.
+
+    Saves into a custom working folder are bridged into ``files_dir`` after the
+    turn (see ``import_external_artifacts``) and so become attachments too, but
+    only at turn end — this note describes what is already true at save time.
+    """
+    try:
+        ap = os.path.abspath(str(path))
+        fd = os.path.abspath(files_dir)
+    except (TypeError, ValueError):
+        return None
+    if ap == fd or ap.startswith(fd + os.sep):
+        return ATTACHMENT_NOTE
+    return None
+
+
 def make_save_fn(temp_dir: str, artifacts: List[str]) -> Callable[[str, object], str]:
     """Build a ``save_fn(path, content) -> saved_path`` for ``build_deep_agent``.
 
@@ -174,6 +206,10 @@ def make_save_fn(temp_dir: str, artifacts: List[str]) -> Callable[[str, object],
     basename) so the app can serve it; an absolute path is honored as-is. Every
     resolved path is appended to ``artifacts`` (deduplicated) for the download
     list. Bytes or text content are both handled.
+
+    The returned callable also carries a ``saved_note(path) -> str | None``
+    attribute, the hook ``funhouse_agent.deep.tools`` uses to let the host add
+    a line to the ``save_file`` tool result (here: "this file is now attached").
     """
     def save_fn(path, content) -> str:
         p = str(path)
@@ -191,6 +227,8 @@ def make_save_fn(temp_dir: str, artifacts: List[str]) -> Callable[[str, object],
         if p not in artifacts:
             artifacts.append(p)
         return p
+
+    save_fn.saved_note = lambda saved: attachment_note_for(saved, temp_dir)
     return save_fn
 
 
