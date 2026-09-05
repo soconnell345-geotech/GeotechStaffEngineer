@@ -360,7 +360,7 @@ class TestExportParseResult:
         assert result.text_annotations_written == 1
 
     def test_from_pdf_parse_result(self, tmp_path):
-        from pdf_import.results import PdfParseResult
+        from planlens.pdf.results import PdfParseResult
 
         pr = PdfParseResult(
             surface_points=SURFACE_PTS,
@@ -493,7 +493,7 @@ class TestRoundTrip:
 
     def test_pdf_parse_result_round_trip(self, tmp_path):
         """PdfParseResult -> export -> re-import -> verify readable."""
-        from pdf_import.results import PdfParseResult
+        from planlens.pdf.results import PdfParseResult
 
         pdf_result = PdfParseResult(
             surface_points=[(0, 10), (20, 10), (40, 5)],

@@ -159,7 +159,7 @@ def test_vision_draft_blocks_then_unblocks():
 
 
 def test_vision_draft_from_pdf_parse_result():
-    from pdf_import.results import PdfParseResult
+    from planlens.pdf.results import PdfParseResult
     draft = PdfParseResult(
         surface_points=[(0, 8), (26, 0), (36, 0)],
         boundary_profiles={"Clay": [(0, 2.0), (36, 1.5)]},

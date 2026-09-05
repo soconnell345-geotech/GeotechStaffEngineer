@@ -598,7 +598,7 @@ def _dispatch_render_region(arguments, engine, attachments):
 
     Arguments: ``attachment_key`` (or a real path), ``page`` (0-indexed,
     default 0), ``bbox`` ([x0,y0,x1,y1] in PDF points, PyMuPDF page space —
-    see ``drawing_ir.render`` for the coordinate contract), ``dpi`` (default
+    see ``planlens.ir.render`` for the coordinate contract), ``dpi`` (default
     300), ``pad_frac`` (default 0.15), ``marks`` (optional list of [x,y,label]
     for set-of-marks prompting), ``prompt``.
     """
@@ -616,7 +616,7 @@ def _dispatch_render_region(arguments, engine, attachments):
         return json.dumps({"error": str(e)})
 
     try:
-        from drawing_ir.render import render_region
+        from planlens.ir.render import render_region
         image_bytes = render_region(
             content=pdf_bytes, page=page,
             bbox=tuple(bbox) if bbox is not None else None,
@@ -644,14 +644,14 @@ def _dispatch_render_region(arguments, engine, attachments):
 def render_region_to_file(path, filepath=None, content=None, page=0,
                           bbox=None, dpi=300, pad_frac=0.15, marks=None,
                           save_fn=None):
-    """Render a PDF region (``drawing_ir.render.render_region``) and save it.
+    """Render a PDF region (``planlens.ir.render.render_region``) and save it.
 
     The save-to-file counterpart to ``render_region``/``_dispatch_render_region``,
     following the same local-write convention as ``save_file``/
     ``_default_save_fn``: makes parent directories, writes the PNG bytes, and
     returns the absolute saved path.
     """
-    from drawing_ir.render import render_region as _render_region
+    from planlens.ir.render import render_region as _render_region
     png_bytes = _render_region(filepath=filepath, content=content, page=page,
                                bbox=bbox, dpi=dpi, pad_frac=pad_frac,
                                marks=marks)
@@ -672,7 +672,7 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
 
     # Render PDF page to PNG
     try:
-        from pdf_import.vision import _render_pdf_page
+        from planlens.pdf.vision import _render_pdf_page
         image_bytes = _render_pdf_page(content=pdf_bytes, page=page)
     except ImportError:
         return json.dumps({
@@ -741,7 +741,7 @@ def _dispatch_view_worked_example(arguments, engine):
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
     try:
-        from pdf_import.vision import _render_pdf_page
+        from planlens.pdf.vision import _render_pdf_page
         image_bytes = _render_pdf_page(filepath=str(pdf_abs),
                                        page=page_1b - 1, dpi=220)
     except ImportError:
@@ -801,7 +801,7 @@ def _dispatch_read_reference_figure(arguments, engine):
 
     # Render the page at high DPI for legible curves/labels.
     try:
-        from pdf_import.vision import _render_pdf_page
+        from planlens.pdf.vision import _render_pdf_page
         image_bytes = _render_pdf_page(filepath=str(pdf_abs), page=page_idx, dpi=220)
     except ImportError:
         return json.dumps({

@@ -22,9 +22,9 @@ from funhouse_agent.vision_tools import (
     EXTENDED_TOOLS, _dispatch_render_region, dispatch_extended_tool,
     render_region_to_file,
 )
-from drawing_ir import from_pdf_vector, queries
-from drawing_ir.render import render_region
-from drawing_ir.tests.leader_fixtures import PAGE_HEIGHT, build_synthetic_leader_pdf
+from planlens.ir import from_pdf_vector, queries
+from planlens.ir.render import render_region
+from planlens.ir.tests.leader_fixtures import PAGE_HEIGHT, build_synthetic_leader_pdf
 
 
 class MockVisionEngine:

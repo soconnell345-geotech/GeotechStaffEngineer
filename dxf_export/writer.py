@@ -246,7 +246,7 @@ def export_parse_result(parse_result, filepath: str) -> DxfExportResult:
     """Export a DxfParseResult or PdfParseResult directly to a DXF file.
 
     If a PdfParseResult is given, it is automatically converted via
-    ``pdf_import.to_dxf_parse_result()`` first.
+    ``dxf_import.pdf_bridge.to_dxf_parse_result()`` first.
 
     Parameters
     ----------
@@ -261,7 +261,7 @@ def export_parse_result(parse_result, filepath: str) -> DxfExportResult:
     """
     # Duck-type: PdfParseResult has 'extraction_method', DxfParseResult does not
     if hasattr(parse_result, "extraction_method"):
-        from pdf_import import to_dxf_parse_result
+        from dxf_import.pdf_bridge import to_dxf_parse_result
         parse_result = to_dxf_parse_result(parse_result)
 
     return export_to_dxf(

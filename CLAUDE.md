@@ -81,6 +81,21 @@ document errata caught+documented; wired into the agent 3b6ce28
 test). Survey + links: module_work/STRUCTURAL_REFS_SURVEY.md. FEMA
 P-2192 download still blocked (fema.gov 502s).
 
+**PLANLENS SPLIT (2026-09-04, owner-named):** the entire drawing stack
+now lives in the SEPARATE package repo `C:/Users/socon/OneDrive/dev/
+planlens` (import as `planlens.ir` / `planlens.pdf` / `planlens.dxf`;
+former drawing_ir/, pdf_import/, dxf_import/units.py — every mention of
+those module paths below is historical). It is the owner's TinyApp
+"banner application" for office-wide architects/engineers (funding
+pitch; geotech package rides along). App depends on `planlens[raster]
+>=0.1` (editable install in dev; NOT on PyPI yet — 5.12.0 CANNOT ship
+until planlens is published, refs-pattern, owner-gated). The
+geotech-facing `to_dxf_parse_result` bridge moved app-side to
+`dxf_import/pdf_bridge.py`. Agent names "drawing_ir"/"pdf_import" in
+the dispatch registry are UNCHANGED (user-facing strings, not
+imports). GitHub repo + submodule wiring pending owner; NO OBO
+branding in planlens by owner instruction.
+
 **DRAWING INTELLIGENCE Phase 1 (d6bccf4; plan of record =
 module_work/DRAWING_INTELLIGENCE_DESIGN.md + _TASK.md):** chatbot-first
 generic find-text-X on PDF-vector drawings — drawing_ir/render.py

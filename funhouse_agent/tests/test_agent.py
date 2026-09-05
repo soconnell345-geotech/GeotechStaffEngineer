@@ -249,7 +249,7 @@ class TestDirectMethods:
         engine.analyze_image = mock_vision
         agent = GeotechAgent(genai_engine=engine)
         result = agent.extract_geometry_from_image(b"fake png")
-        from pdf_import.results import PdfParseResult
+        from planlens.pdf.results import PdfParseResult
         assert isinstance(result, PdfParseResult)
         assert len(result.surface_points) == 2
 
@@ -272,7 +272,7 @@ class TestDirectMethods:
         engine.analyze_image = mock_vision
         agent = GeotechAgent(genai_engine=engine)
         result = agent.extract_geometry_from_pdf(pdf_bytes, page=0)
-        from pdf_import.results import PdfParseResult
+        from planlens.pdf.results import PdfParseResult
         assert isinstance(result, PdfParseResult)
         assert "Clay" in result.boundary_profiles
 

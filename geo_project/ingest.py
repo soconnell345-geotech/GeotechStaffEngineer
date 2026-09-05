@@ -219,14 +219,14 @@ def from_pdf_vector(filepath: str = None, content: bytes = None,
                     name: str = "PDF vector import") -> Project:
     """Build a Project from a PDF's VECTOR line work (exact coordinates).
 
-    Uses :func:`pdf_import.extractor.extract_vector_geometry` with a
+    Uses :func:`planlens.pdf.extractor.extract_vector_geometry` with a
     color→role mapping the user confirms (e.g. ``{"#000000": "surface",
     "#0000ff": "gwt", "#808080": "boundary_Clay"}``), then adapts via
-    ``pdf_import.to_dxf_parse_result``. NOT the vision path — vector
+    ``dxf_import.pdf_bridge.to_dxf_parse_result``. NOT the vision path — vector
     extraction reads the drawing's actual path coordinates.
     """
-    from pdf_import import to_dxf_parse_result
-    from pdf_import.extractor import extract_vector_geometry
+    from dxf_import.pdf_bridge import to_dxf_parse_result
+    from planlens.pdf.extractor import extract_vector_geometry
 
     pdf_result = extract_vector_geometry(
         filepath=filepath, content=content, page=page, scale=scale,
@@ -294,8 +294,8 @@ def from_vision_draft(draft: Any, name: str = "Vision draft (UNCONFIRMED)",
                       section_bottom: Optional[float] = None) -> Project:
     """Build a QUARANTINED Project from a vision-extracted draft.
 
-    ``draft`` may be a :class:`pdf_import.results.PdfParseResult` (from
-    ``pdf_import.vision.extract_geometry_vision``), a DxfParseResult, or a
+    ``draft`` may be a :class:`planlens.pdf.results.PdfParseResult` (from
+    ``planlens.pdf.vision.extract_geometry_vision``), a DxfParseResult, or a
     plain dict with ``surface_points`` / ``boundary_profiles`` /
     ``gwt_points``.
 
@@ -322,7 +322,7 @@ def from_vision_draft(draft: Any, name: str = "Vision draft (UNCONFIRMED)",
             parsed = draft  # already DxfParseResult-shaped
         else:
             # PdfParseResult → adapt
-            from pdf_import import to_dxf_parse_result
+            from dxf_import.pdf_bridge import to_dxf_parse_result
             parsed = to_dxf_parse_result(draft)
     else:
         raise TypeError(

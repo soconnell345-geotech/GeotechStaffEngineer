@@ -183,7 +183,7 @@ def test_dxf_sample_discovers_and_parses_geometry():
 def test_pdf_sample_discovers_and_extracts_vectors():
     """sample_section.pdf: discover_pdf_content sees the drawing AND
     extract_vector_geometry pulls vector paths from it."""
-    from pdf_import import discover_pdf_content, extract_vector_geometry
+    from planlens.pdf import discover_pdf_content, extract_vector_geometry
     path = str(eh.resolve_sample_path("sample_section.pdf"))
 
     disc = discover_pdf_content(filepath=path)

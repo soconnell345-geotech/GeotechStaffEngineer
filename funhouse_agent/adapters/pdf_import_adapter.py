@@ -11,7 +11,7 @@ def _point_xz(p):
 
 
 def _run_discover_pdf_content(params):
-    from pdf_import import discover_pdf_content
+    from planlens.pdf import discover_pdf_content
 
     reject_unknown_params(params, ("file_path", "page"),
                           method="discover_pdf_content")
@@ -28,7 +28,7 @@ def _run_discover_pdf_content(params):
 
 
 def _run_extract_vector_geometry(params):
-    from pdf_import import extract_vector_geometry
+    from planlens.pdf import extract_vector_geometry
 
     _valid = ("file_path", "page", "scale", "origin", "role_mapping")
     reject_unknown_params(params, _valid, method="extract_vector_geometry")
@@ -51,7 +51,7 @@ def _run_extract_vector_geometry(params):
 
 
 def _run_calibrate_scale(params):
-    from pdf_import import calibrate_scale
+    from planlens.pdf import calibrate_scale
 
     reject_unknown_params(params, ("p1", "p2", "distance_m"),
                           method="calibrate_scale")
@@ -64,7 +64,7 @@ def _run_calibrate_scale(params):
 
 
 def _run_propose_scale(params):
-    from pdf_import import propose_scale
+    from planlens.pdf import propose_scale
 
     reject_unknown_params(params, ("text_blocks", "calibration"),
                           method="propose_scale")
@@ -75,7 +75,7 @@ def _run_propose_scale(params):
 
 
 def _run_propose_role_mapping(params):
-    from pdf_import import (
+    from planlens.pdf import (
         propose_role_mapping, extract_colored_paths, discover_pdf_content,
     )
 
@@ -102,7 +102,7 @@ def _run_propose_role_mapping(params):
 
 
 def _run_cross_check(params):
-    from pdf_import import cross_check
+    from planlens.pdf import cross_check
 
     _valid = ("vector_result", "vision_result", "tol", "n_samples")
     reject_unknown_params(params, _valid, method="cross_check")
@@ -114,7 +114,7 @@ def _run_cross_check(params):
 
 
 def _run_cleanup_geometry(params):
-    from pdf_import import cleanup_geometry
+    from planlens.pdf import cleanup_geometry
 
     _valid = ("parse_result", "tol", "snap_tol", "angle_tol_deg", "join")
     reject_unknown_params(params, _valid, method="cleanup_geometry")
@@ -153,7 +153,8 @@ def _dxf_result_from_params(params, method):
     from the flat ``parse_result`` dict. Both build methods differ only in the
     soil-property class and the final build call, so this front half is shared.
     """
-    from pdf_import import to_dxf_parse_result, PdfParseResult
+    from planlens.pdf import PdfParseResult
+    from dxf_import.pdf_bridge import to_dxf_parse_result
     reject_unknown_params(params, ("parse_result", "soil_properties"),
                           method=method)
     require_params(params, ["parse_result", "soil_properties"], method=method,

@@ -47,7 +47,7 @@ class LangChainVisionEngine:
         ``.invoke`` returns an ``AIMessage`` works.
     media_type : str
         MIME type embedded in the data URI. Defaults to ``"image/png"`` (the
-        PDF renderer in :mod:`pdf_import.vision` emits PNG, matching v1).
+        PDF renderer in :mod:`planlens.pdf.vision` emits PNG, matching v1).
     """
 
     # Marks this as a vision-capable engine (parity with the v1 engines, which

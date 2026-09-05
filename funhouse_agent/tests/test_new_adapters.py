@@ -697,7 +697,7 @@ class TestPdfImportCalls:
             "text_blocks": [{"text": "Section A-A", "x": 100, "y": 700, "size": 12}],
             "has_images": False,
         }
-        with patch("pdf_import.discover_pdf_content", return_value=mock_result) as mock_fn:
+        with patch("planlens.pdf.discover_pdf_content", return_value=mock_result) as mock_fn:
             from funhouse_agent.dispatch import call_agent
             result = call_agent("pdf_import", "discover_pdf_content", {
                 "file_path": "section.pdf",
@@ -718,7 +718,7 @@ class TestPdfImportCalls:
             "extraction_method": "vector",
             "confidence": 1.0,
         }
-        with patch("pdf_import.extract_vector_geometry", return_value=mock_result) as mock_fn:
+        with patch("planlens.pdf.extract_vector_geometry", return_value=mock_result) as mock_fn:
             from funhouse_agent.dispatch import call_agent
             result = call_agent("pdf_import", "extract_vector_geometry", {
                 "file_path": "section.pdf",

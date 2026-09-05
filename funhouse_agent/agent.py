@@ -685,7 +685,7 @@ class GeotechAgent:
         PdfParseResult
             Extracted geometry.
         """
-        from pdf_import.vision import extract_geometry_vision
+        from planlens.pdf.vision import extract_geometry_vision
         return extract_geometry_vision(
             image_fn=self._engine.analyze_image,
             content=image_bytes,
@@ -707,7 +707,7 @@ class GeotechAgent:
         PdfParseResult
             Extracted geometry.
         """
-        from pdf_import.vision import extract_geometry_vision
+        from planlens.pdf.vision import extract_geometry_vision
         return extract_geometry_vision(
             image_fn=self._engine.analyze_image,
             content=pdf_bytes,
@@ -729,7 +729,7 @@ class GeotechAgent:
         str
             Engine's analysis text.
         """
-        from pdf_import.vision import _render_pdf_page
+        from planlens.pdf.vision import _render_pdf_page
         image_bytes = _render_pdf_page(content=pdf_bytes, page=0)
         return self._engine.analyze_image(
             image_bytes,

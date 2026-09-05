@@ -1264,9 +1264,9 @@ def ex_wave_equation() -> Exhibit:
 @exhibit(12)
 def ex_pdf_import() -> Exhibit:
     import numpy as np
-    from pdf_import import (extract_vector_geometry, render_page_with_grid,
+    from planlens.pdf import (extract_vector_geometry, render_page_with_grid,
                             cross_check)
-    from pdf_import.results import PdfParseResult
+    from planlens.pdf.results import PdfParseResult
 
     pdf_path = os.path.join(_REPO, "funhouse_agent", "eval_samples",
                             "sample_section.pdf")

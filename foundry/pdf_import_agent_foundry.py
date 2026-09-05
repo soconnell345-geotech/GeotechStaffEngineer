@@ -27,7 +27,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 def _run_discover_pdf_content(params):
-    from pdf_import import discover_pdf_content
+    from planlens.pdf import discover_pdf_content
     filepath = params.get("filepath")
     content_b64 = params.get("content_base64")
     content = None
@@ -38,7 +38,7 @@ def _run_discover_pdf_content(params):
 
 
 def _run_extract_vector_geometry(params):
-    from pdf_import import extract_vector_geometry
+    from planlens.pdf import extract_vector_geometry
     filepath = params.get("filepath")
     content_b64 = params.get("content_base64")
     content = None
@@ -56,7 +56,7 @@ def _run_extract_vector_geometry(params):
 
 
 def _run_extract_geometry_vision(params):
-    from pdf_import import extract_geometry_vision
+    from planlens.pdf import extract_geometry_vision
     # Vision extraction requires an image_fn — not available in Foundry
     # This method returns an error directing users to use vector extraction
     # or supply geometry directly
@@ -71,7 +71,8 @@ def _run_extract_geometry_vision(params):
 
 
 def _run_build_slope_geometry(params):
-    from pdf_import import to_dxf_parse_result, PdfParseResult
+    from planlens.pdf import PdfParseResult
+    from dxf_import.pdf_bridge import to_dxf_parse_result
     from dxf_import.converter import SoilPropertyAssignment, build_slope_geometry
     # Reconstruct PdfParseResult from dict
     pr_dict = params.get("parse_result", {})
@@ -125,7 +126,8 @@ def _run_build_slope_geometry(params):
 
 
 def _run_build_fem_inputs(params):
-    from pdf_import import to_dxf_parse_result, PdfParseResult
+    from planlens.pdf import PdfParseResult
+    from dxf_import.pdf_bridge import to_dxf_parse_result
     from dxf_import.converter import FEMSoilPropertyAssignment, build_fem_inputs
     # Reconstruct PdfParseResult from dict
     pr_dict = params.get("parse_result", {})
