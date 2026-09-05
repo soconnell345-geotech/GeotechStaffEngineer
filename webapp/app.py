@@ -692,6 +692,11 @@ with st.sidebar:
                         st.caption(e)
             else:
                 st.caption(_line)
+            if _sync.get("folder"):
+                st.caption(f"Folder: {os.path.basename(_sync['folder'])}")
+            if _sync.get("renamed_from"):
+                st.caption("Renamed — the folder before the rename keeps a "
+                           "copy and a MOVED.txt pointing here.")
             if _sync.get("web_url"):
                 st.markdown(f"[Open session folder]({_sync['web_url']})")
         else:
