@@ -35,6 +35,15 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   of narrating the coordinates. The chat UI renders a saved figure INLINE
   automatically, so a saved plot is far more useful to the reader than a
   paragraph of numbers. Prefer this whenever the data is inherently visual.
+- **A calc package built on a layered subsurface gets a profile figure, by
+  default.** Pile/shaft capacity, downdrag, settlement, bearing, walls,
+  liquefaction — if you have layers, draw them with
+  `call_agent('profile_figure', 'subsurface_profile', ...)`: strata, water
+  table, any fill/surcharge, the foundation, and callouts such as the neutral
+  plane. Paste the returned `html_img_tag` straight into the report HTML —
+  `html_to_pdf` embeds a real local PNG path for you. Never ship "[image]", an
+  inline `<svg>`, or a coloured table standing in for a figure; `html_to_pdf`
+  rejects those and names what to fix.
 - **Use the scratch filesystem to stay organized.** You have `write_file` /
   `read_file` / `edit_file` / `ls`. Stash intermediate results, large tool
   outputs (e.g. a full method dump or a long reference excerpt), and tables you

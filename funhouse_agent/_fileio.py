@@ -97,6 +97,11 @@ def written_file_problem(abs_path: str, expected: bytes = None):
             head = f.read(257)
     except OSError as exc:
         return f"the file at '{abs_path}' could not be read back ({exc})"
+    # Exact match first: BINARY content (PNG figures, PDFs) may legitimately
+    # contain \r\n — the PNG signature does — and newline-normalizing it would
+    # report a perfectly good file as corrupt.
+    if expected.startswith(head[: min(len(head), 200)]):
+        return None
     norm = head.replace(b"\r\n", b"\n")
     # A fixed-size read can split a CRLF pair; drop the orphaned \r rather
     # than fail the comparison on a correctly-written file.

@@ -306,9 +306,9 @@ class TestStructuralSpecialist:
         assert mods <= ANALYSIS_MODULES
         assert refs <= REFERENCE_MODULES
         assert scope == (mods | refs)
-        assert len(mods) == 7
+        assert len(mods) == 8
         for name in ("section_props", "concrete_props", "pynite", "opensees",
-                     "fem2d", "reliability", "calc_package"):
+                     "fem2d", "reliability", "calc_package", "profile_figure"):
             assert name in mods
         assert "ufc_concrete_practice" in refs
         for name in scope:

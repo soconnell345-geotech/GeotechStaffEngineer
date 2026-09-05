@@ -179,6 +179,7 @@ SLOPE_FEM_REFERENCES = frozenset({
 PAVEMENT_MODULES = frozenset({
     "pavement_design",   # AASHTO 1993 flexible SN / rigid D / ESALs / swell-frost
     "calc_package",      # pavement_design_package + html_to_pdf report rendering
+    "profile_figure",    # pavement/subgrade section schematic for the report
 })
 
 PAVEMENT_REFERENCES = frozenset({
@@ -203,6 +204,7 @@ STRUCTURAL_MODULES = frozenset({
     "fem2d",           # 2D continuum FEM (plane-strain; foundation / soil-structure interaction)
     "reliability",     # FOSM/PEM/MC/FORM probabilistic wrap around load/capacity variability
     "calc_package",    # report rendering (html_to_pdf + module calc-package templates)
+    "profile_figure",  # subsurface/foundation section schematic for the report
 })
 
 # Structural reference layer: USACE EM 1110-2-2104/2107 (hydraulic RC/steel
@@ -427,6 +429,17 @@ _METHOD_ALIASES = {
     # pygef/ags4/pydiggs modules are folded in as format-adapter methods.
     ("subsurface", "read_and_validate"): "read_ags4",
     ("dxf_export", "export_cross_section"): "export_geometry_to_dxf",
+    # --- figures ---
+    # profile_figure has ONE method; the agent reaches for the module name or a
+    # verb form when it wants a subsurface schematic.
+    ("profile_figure", "profile_figure"): "subsurface_profile",
+    ("profile_figure", "render_profile_figure"): "subsurface_profile",
+    ("profile_figure", "subsurface_profile_figure"): "subsurface_profile",
+    ("profile_figure", "plot_profile"): "subsurface_profile",
+    ("profile_figure", "plot_subsurface_profile"): "subsurface_profile",
+    ("profile_figure", "draw_profile"): "subsurface_profile",
+    ("profile_figure", "soil_profile_figure"): "subsurface_profile",
+    ("profile_figure", "profile_schematic"): "subsurface_profile",
 }
 
 
@@ -475,6 +488,15 @@ _CROSS_MODULE_REDIRECTS = {
     "newmark_sliding_block": ("slope_stability", "newmark_displacement"),
     "sliding_block": ("slope_stability", "newmark_displacement"),
     "yield_acceleration": ("slope_stability", "yield_acceleration"),
+    # Subsurface profile SCHEMATIC guessed on an analysis module (the module
+    # whose layers are being drawn) instead of the figure module. Note
+    # subsurface.plot_* are real data plots and are unaffected.
+    "subsurface_profile": ("profile_figure", "subsurface_profile"),
+    "subsurface_profile_figure": ("profile_figure", "subsurface_profile"),
+    "profile_figure": ("profile_figure", "subsurface_profile"),
+    "plot_subsurface_profile": ("profile_figure", "subsurface_profile"),
+    "soil_profile_figure": ("profile_figure", "subsurface_profile"),
+    "profile_schematic": ("profile_figure", "subsurface_profile"),
 }
 
 

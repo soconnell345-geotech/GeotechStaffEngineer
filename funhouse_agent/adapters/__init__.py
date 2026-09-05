@@ -200,7 +200,7 @@ MODULE_REGISTRY = {
     },
     "liquefaction": {
         "adapter": "funhouse_agent.adapters.liquefaction_adapter",
-        "brief": "UNIFIED liquefaction triggering, auto-routed by input: CPT -> Boulanger & Idriss 2014 (LPI/LSN/LDI); SPT (N160) -> B&I-2014 default or NCEER/Youd-2001 via method='nceer2001'.",
+        "brief": "UNIFIED liquefaction triggering, auto-routed: CPT -> Boulanger & Idriss 2014 (LPI/LSN/LDI); SPT (N160) -> B&I-2014, or NCEER/Youd-2001 via method='nceer2001'.",
     },
     "retaining_walls": {
         "adapter": "funhouse_agent.adapters.retaining_walls",
@@ -254,6 +254,10 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.calc_package",
         "brief": "Generate Mathcad-style calc packages (HTML/LaTeX/PDF) for 13 analysis modules",
     },
+    "profile_figure": {
+        "adapter": "funhouse_agent.adapters.profile_figure_adapter",
+        "brief": "Subsurface profile FIGURE (PNG schematic): soil layers, water table, fill/surcharge, pile/footing/wall overlay, callouts",
+    },
     "worked_examples": {
         "adapter": "funhouse_agent.adapters.worked_examples_adapter",
         "brief": "Validated worked examples from published reports (GEC/Caltrans/AASHTO/UFC/Slide2): problem, method calls, published answer. Consult before nontrivial designs.",
@@ -264,7 +268,7 @@ MODULE_REGISTRY = {
     },
     "reliability": {
         "adapter": "funhouse_agent.adapters.reliability_adapter",
-        "brief": "GEOTECH probabilistic analysis: FOSM/Duncan-2000, Rosenblueth PEM, Monte Carlo, FORM + published COV (Duncan/TC304/Phoon-Kulhawy), Vanmarcke averaging. SORM/pystra: use 'pystra'.",
+        "brief": "GEOTECH probabilistic analysis: FOSM/Duncan-2000, Rosenblueth PEM, Monte Carlo, FORM + published COV (Duncan/TC304/Phoon-Kulhawy), Vanmarcke averaging. SORM: use 'pystra'.",
     },
     "salib": {
         "adapter": "funhouse_agent.adapters.salib_adapter",
@@ -292,7 +296,7 @@ MODULE_REGISTRY = {
     },
     "liquepy": {
         "adapter": "funhouse_agent.adapters.liquepy_adapter",
-        "brief": "liquepy CPT/SPT B&I-2014 triggering + CPT field correlations (Vs/Dr/su/k). Routine use: 'liquefaction'; call directly for post-triggering indices (LPI/LSN/LDI) or correlations.",
+        "brief": "liquepy CPT/SPT B&I-2014 triggering + CPT correlations (Vs/Dr/su/k). Routine use: 'liquefaction'; call directly for indices (LPI/LSN/LDI) or correlations.",
     },
     "seismic_signals": {
         "adapter": "funhouse_agent.adapters.seismic_signals_adapter",
@@ -320,7 +324,7 @@ MODULE_REGISTRY = {
     },
     "subsurface": {
         "adapter": "funhouse_agent.adapters.subsurface_adapter",
-        "brief": "Subsurface data I/O: DIGGS parse, Plotly plots (depth profiles, Atterberg, plan/cross-section); adapters: GEF/BRO-XML CPT/borehole (pygef), AGS4, DIGGS validation (pydiggs)",
+        "brief": "Subsurface data I/O: DIGGS parse, Plotly plots (depth profile, Atterberg, plan/section); GEF/BRO-XML CPT+borehole (pygef), AGS4, DIGGS validation (pydiggs)",
     },
     # --- geotech-references agents (reference modules + cross-reference DB) ---
     "reference_db": {
@@ -345,11 +349,11 @@ MODULE_REGISTRY = {
     },
     "gec4": {
         "adapter": "funhouse_agent.adapters.gec4_adapter",
-        "brief": "GEC-4 ground anchors reference (FHWA-IF-99-015, 1999): bond stresses, anchor load transfer, corrosion protection, anchored wall design (ASD)",
+        "brief": "GEC-4 ground anchors (FHWA-IF-99-015): bond stresses, load transfer, corrosion protection, anchored wall design (ASD)",
     },
     "gec5": {
         "adapter": "funhouse_agent.adapters.gec5_adapter",
-        "brief": "GEC-5 geotechnical site characterization (FHWA NHI-16-072): investigation planning, soil/rock classification, strength, stiffness, hazards",
+        "brief": "GEC-5 site characterization (FHWA NHI-16-072): investigation planning, soil/rock classification, strength, stiffness, hazards",
     },
     "gec6": {
         "adapter": "funhouse_agent.adapters.gec6_adapter",
@@ -361,11 +365,11 @@ MODULE_REGISTRY = {
     },
     "gec8": {
         "adapter": "funhouse_agent.adapters.gec8_adapter",
-        "brief": "GEC-8 CFA pile design (FHWA-HIF-07-03, 2007): DD pile capacity (NeSmith), ASD design, grout volume factor, p-multipliers, group efficiency",
+        "brief": "GEC-8 CFA pile design (FHWA-HIF-07-03): DD pile capacity (NeSmith), ASD, grout volume factor, p-multipliers, group efficiency",
     },
     "gec9": {
         "adapter": "funhouse_agent.adapters.gec9_adapter",
-        "brief": "GEC-9 laterally loaded piles (FHWA-HIF-18-031, 2018): lateral resistance factors, p-multipliers, p-y parameters for stiff clay and sand",
+        "brief": "GEC-9 laterally loaded piles (FHWA-HIF-18-031): resistance factors, p-multipliers, p-y parameters for stiff clay and sand",
     },
     "gec10": {
         "adapter": "funhouse_agent.adapters.gec10_adapter",
@@ -385,7 +389,7 @@ MODULE_REGISTRY = {
     },
     "gec14": {
         "adapter": "funhouse_agent.adapters.gec14_adapter",
-        "brief": "GEC-14 QA for geotechnical reporting documents (FHWA-HIF-17-016, 2016): GRD types, ACMs/ADMs, QA process, checklists",
+        "brief": "GEC-14 QA for geotech reporting documents (FHWA-HIF-17-016): GRD types, ACMs/ADMs, QA process, checklists",
     },
     "micropile": {
         "adapter": "funhouse_agent.adapters.micropile_adapter",
@@ -437,7 +441,7 @@ MODULE_REGISTRY = {
     },
     "california_trenching": {
         "adapter": "funhouse_agent.adapters.california_trenching_adapter",
-        "brief": "Caltrans Trenching and Shoring Manual: Cal/OSHA soil types + max slopes, earth pressure coeffs incl. log-spiral Kp, AEP envelopes, bottom heave (US units)",
+        "brief": "Caltrans Trenching and Shoring Manual: Cal/OSHA soil types + max slopes, earth pressure coeffs incl. log-spiral Kp, AEP envelopes, bottom heave (US)",
     },
     "fhwa_pavements": {
         "adapter": "funhouse_agent.adapters.fhwa_pavements_adapter",
@@ -445,14 +449,14 @@ MODULE_REGISTRY = {
     },
     "eurocode_7_1": {
         "adapter": "funhouse_agent.adapters.eurocode_7_1_adapter",
-        "brief": "EN 1997-1:2004 (Eurocode 7-1): Annex A partial factors (A/M/R, piles, anchors, UPL/HYD, xi) + DA1-DA3; Annex C-H pressures/bearing/pressuremeter/settlement/rock/movement. SI units",
+        "brief": "EN 1997-1:2004 (Eurocode 7-1): Annex A partial factors (A/M/R, piles, anchors, UPL/HYD, xi) + DA1-DA3; Annex C-H pressures/bearing/PMT/settlement/rock/movement. SI",
     },
     "eurocode_7_2": {
         "adapter": "funhouse_agent.adapters.eurocode_7_2_adapter",
-        "brief": "EN 1997-2:2007 (Eurocode 7-2): CPT (phi'/E/Dutch pile), Menard PMT, SPT, dynamic probing, field vane mu, DMT, plate load; cu/Eoed; lab minima. SI units",
+        "brief": "EN 1997-2:2007 (Eurocode 7-2): CPT (phi'/E/Dutch pile), Menard PMT, SPT, dynamic probing, field vane mu, DMT, plate load; cu/Eoed; lab minima. SI",
     },
     "aashto_1993": {
         "adapter": "funhouse_agent.adapters.aashto_1993_adapter",
-        "brief": "AASHTO 1993 Pavement Design Guide: flexible SN + rigid slab-D (solve W18 either way), layer coeffs a1/a2/a3, roadbed Mr, reliability ZR/So, drainage mi/Cd, ESALs. US units",
+        "brief": "AASHTO 1993 Pavement Design Guide: flexible SN + rigid slab-D (solve W18 either way), layer coeffs a1/a2/a3, roadbed Mr, reliability ZR/So, drainage mi/Cd, ESALs. US",
     },
 }
