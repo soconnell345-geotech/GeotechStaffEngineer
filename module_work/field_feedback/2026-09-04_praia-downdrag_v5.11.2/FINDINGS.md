@@ -96,17 +96,17 @@ mirror (sanitize for path safety, `<custom-name>_YYYY-MM-DD`, fall
 back to thread id when unnamed; handle the rename event when a user
 renames later). Straightforward webapp feature.
 
-## Disposition summary
+## Disposition summary — ALL SIX FIXED (owner ordered execution
+## 2026-09-05; landed same night, all on master, UNRELEASED until 5.12)
 
 | # | Item | Disposition |
 |---|------|-------------|
-| 1 | CGPR #56 multi-method downdrag | PLANNED — module extension + license-gated reference eval |
-| 2 | Lost rename/delete icons | PLANNED — streamlit 1.63 repro + fix (quick win) |
-| 3 | Profile figure capability | PLANNED — new profile_figure tool + prompt default + loud html_to_pdf |
-| 4 | Attachment awareness | PLANNED — prompt/tool-result note (cheap) |
-| 5 | False "sources unavailable" | PLANNED — calc sub-agent working-folder visibility (trust issue, prioritize) |
-| 6 | SharePoint folder naming | PLANNED — mirror rename feature |
+| 1 | CGPR #56 multi-method downdrag | FIXED c5d6299+0f9f4ad — Endo/Poulos/Fellenius-CGPR/PILENEG + groups + method_comparison; §3.4 worked example fully reproduced; methods-only (no digitization) |
+| 2 | Lost rename/delete icons | FIXED d886638 — streamlit 1.62+ truncates narrow column labels; glyphs moved to the icon= slot (screenshot-verified on 1.59 AND 1.63); floor bumped to >=1.39 (d833c7b) |
+| 3 | Profile figure capability | FIXED 18a2300+d2aecc0+3de0965 — profile_figure module (33rd) + calc-package default nudge + html_to_pdf auto-embeds local images / refuses loudly; bonus: _fileio binary-verify CRLF bug fixed |
+| 4 | Attachment awareness | FIXED d96e712 — save_fn saved_note hook; tool result says the file is attached in chat |
+| 5 | False "sources unavailable" | FIXED a310d5a — calc sub-agent gains list_files+read_pdf_text + never-claim-unavailable-without-checking rule |
+| 6 | SharePoint folder naming | FIXED 0548f70 — <sanitized title>_<YYYY-MM-DD>, thread-id fallback, re-mirror+MOVED.txt on rename, shard suffix on collisions |
 
-All six queued behind the current planlens/Phase-3 push per the
-owner's "heavy development period → make plans" instruction; items 2
-and 4 are small enough to ride along with the next webapp touch.
+All live on the cluster only after the next release (5.12.0, held for
+drawing-vision Phase 3.1 per owner).

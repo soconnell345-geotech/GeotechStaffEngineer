@@ -44,10 +44,10 @@ holds, uploads work; **planlens split executed** (owner-named).
    app-setup time, NOT in the package).
 5. **FEMA P-2192**: fema.gov 502s persist — owner browser fallback;
    it's a worked-examples corpus play (discuss usage before building).
-6. **FIELD FEEDBACK (owner, 2026-09-04 — the Praia_Downdrag session,
-   triage = module_work/field_feedback/2026-09-04_praia-downdrag_v5.11.2/
-   FINDINGS.md; intake convention = field_feedback/README.md). Six
-   PLANNED items, priority order:**
+6. **FIELD FEEDBACK — ALL SIX FIXED 2026-09-05 (owner ordered
+   execution; commits + details in the FINDINGS.md disposition table:
+   module_work/field_feedback/2026-09-04_praia-downdrag_v5.11.2/).
+   Ships with 5.12.0. Original items for reference:**
    (a) false "sources unavailable" in calc reports — calc sub-agent
        isolation likely drops working-folder visibility (TRUST issue);
    (b) subsurface `profile_figure` tool (matplotlib schematic: layers +
