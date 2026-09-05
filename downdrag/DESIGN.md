@@ -172,3 +172,41 @@ The bearing stratum settlement below the pile tip uses:
 5. FHWA GEC-12 (FHWA-NHI-16-009), Chapter 7 (Beta method).
 6. Briaud, J.-L. & Tucker, L.M. (1997). "Design and construction guidelines
    for downdrag on uncoated and bitumen-coated piles." NCHRP Report 393.
+
+## CGPR #56 Method Family (`cgpr56.py`)
+
+Added 2026-09-04 from "Downdrag and Drag Load on Piles" (Greenfield & Filz,
+Virginia Tech CGPR #56, Feb 2009): `endo_method` (Section 3.2.1),
+`poulos_method` (3.2.2), `fellenius_method_cgpr56` (3.2.3),
+`pileneg_procedure` (3.2.4 — the PILENEG program's calculation procedure as
+documented in the report, not the original code), `rigid_block_method`
+(4.3.1), `drag_load_reduction_method` (4.3.2, Jeong & Briaud 1994 Table 4.1
+with the Figure 4.2 conservative extensions: constant below s/d = 2.5, step
+to A = 1.0 above s/d = 5), plus `downdrag_method_comparison` and
+`consolidation_settlement_profile`. All take user-supplied piecewise-linear
+skin-friction / settlement profiles and are dimensionally consistent (any
+one unit system). Validation: the report's Section 3.4 worked example is
+reproduced method-by-method in `tests/test_cgpr56.py` (Table 3.7 within
+0.5% on forces, 0.1 ft on neutral planes with the report's discretization;
+achieved-vs-published stated in each test docstring).
+
+### `fellenius_method_cgpr56` vs the existing `DowndragAnalysis`
+
+Both implement the Fellenius neutral-plane force equilibrium (load curve vs
+resistance curve). Documented differences — the existing `DowndragAnalysis`
+behavior is unchanged:
+
+1. **Inputs**: `DowndragAnalysis` builds unit skin friction from soil
+   parameters (beta/alpha per layer) and effective stress; the CGPR #56
+   function takes the fs-vs-depth profile directly (report convention).
+2. **Pile self-weight**: `DowndragAnalysis` includes it in the load curve
+   (UFC-consistent); the CGPR #56 / Hannigan et al. (1997) formulation
+   omits it. With pile weight zeroed and matched fs/toe inputs the two
+   implementations agree on the worked example within 1.5%
+   (`tests/test_cgpr56.py::TestCrossCheckExistingFellenius`).
+3. **Settlement**: `DowndragAnalysis` reports settlement as elastic
+   shortening + toe-zone consolidation below the tip; CGPR #56 reports
+   free-field settlement at the neutral plane (with the pile/group load
+   spread 2:1 from an equivalent footing AT the neutral plane) + elastic
+   compression above it. These answer slightly different questions; the
+   CGPR #56 form matches the report's published example.
