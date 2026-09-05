@@ -305,28 +305,34 @@ def _run_snip_region(params):
                          "or 'pdf' (top-left points, y down).")
 
     if frame == "ir" and (bbox is not None or marks):
+        # Rotation-aware IR->render conversion via planlens (a bare y-flip
+        # mispoints on /Rotate pages — every real Mecklenburg sheet is
+        # /Rotate 270; independent-verifier finding, fixed 2026-09-05).
         import fitz
+        from planlens.ir.render import ir_to_page_point
         with fitz.open(file_path) as doc:
             if page >= len(doc):
                 raise ValueError(f"Page {page} out of range "
                                  f"(document has {len(doc)} pages)")
-            height_pt = doc[page].rect.height
+            pg = doc[page]
 
-        def to_pdf(x, y):
-            if scale:
-                x, y = x / scale, y / scale
-            return x, height_pt - y
+            def to_pdf(x, y):
+                if scale:
+                    x, y = x / scale, y / scale
+                return ir_to_page_point(x, y, pg)
 
-        if bbox is not None:
-            x0, y0 = to_pdf(bbox[0], bbox[1])
-            x1, y1 = to_pdf(bbox[2], bbox[3])
-            bbox = [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
-        if marks:
-            conv = []
-            for m in marks:
-                mx, my = to_pdf(m[0], m[1])
-                conv.append((mx, my) + tuple(m[2:3]))
-            marks = conv
+            if bbox is not None:
+                corners = [to_pdf(bbox[0], bbox[1]), to_pdf(bbox[2], bbox[3]),
+                           to_pdf(bbox[0], bbox[3]), to_pdf(bbox[2], bbox[1])]
+                xs = [c[0] for c in corners]
+                ys = [c[1] for c in corners]
+                bbox = [min(xs), min(ys), max(xs), max(ys)]
+            if marks:
+                conv = []
+                for m in marks:
+                    mx, my = to_pdf(m[0], m[1])
+                    conv.append((mx, my) + tuple(m[2:3]))
+                marks = conv
 
     from funhouse_agent.vision_tools import render_region_to_file
     saved = render_region_to_file(
