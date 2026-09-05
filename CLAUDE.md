@@ -81,6 +81,25 @@ document errata caught+documented; wired into the agent 3b6ce28
 test). Survey + links: module_work/STRUCTURAL_REFS_SURVEY.md. FEMA
 P-2192 download still blocked (fema.gov 502s).
 
+**FIELD-FEEDBACK TRAIN (2026-09-05, all six items FIXED same night —
+ledger: module_work/field_feedback/2026-09-04_praia-downdrag_v5.11.2/
+FINDINGS.md):** calc sub-agent gained working-folder READ access (the
+"sources unavailable" trust fix); **profile_figure = the 33rd module**
+(subsurface schematic renderer — layers/GWT/pile overlay → PNG;
+general-pool, deliberately NOT in specialist scopes, see its
+DESIGN.md; a rendering module like calc_package, not in the analysis
+inventory table); calc packages now DEFAULT to a profile figure;
+html_to_pdf auto-embeds local images and refuses un-embeddable ones
+LOUDLY; **downdrag gained the CGPR #56 method family** (Endo, Poulos,
+Fellenius-CGPR, PILENEG, groups + method_comparison; §3.4 worked
+example fully reproduced; methods-only, no digitization — CGPR is not
+public-domain); conversations-tab icons fixed for streamlit 1.62+
+(icon= slot; floor now >=1.39); saved files announce themselves as
+chat-attached; SharePoint mirror folders named
+<title>_<date>. Bonus fix: _fileio.py verified BINARY saves always
+reported corruption (CRLF-normalized comparison vs PNG signature
+bytes). Catalog 7,909/8,000.
+
 **PLANLENS SPLIT (2026-09-04, owner-named):** the entire drawing stack
 now lives in the SEPARATE package repo `C:/Users/socon/OneDrive/dev/
 planlens` (import as `planlens.ir` / `planlens.pdf` / `planlens.dxf`;
