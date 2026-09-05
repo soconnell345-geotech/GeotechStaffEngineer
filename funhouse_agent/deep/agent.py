@@ -364,7 +364,13 @@ _CALC_FRAMING = (
     "the analysis/package tool, or use save_file. If no canned *_package method "
     "fits the analysis, compose the report as self-contained HTML yourself and "
     "render it with calc_package method html_to_pdf (figures as base64 PNG/JPEG "
-    "data URIs, not SVG); save_file the HTML too if an HTML copy is wanted."
+    "data URIs, not SVG); save_file the HTML too if an HTML copy is wanted.\n"
+    "SOURCE DOCUMENTS: you HAVE read access to the working folder — list_files "
+    "shows what the user supplied and read_pdf_text reads it. When a delegation "
+    "references source documents (a profile PDF, a reference report), CONSULT "
+    "them before writing any provenance statement. NEVER write that sources "
+    "were unavailable without having run list_files to check; if a document "
+    "truly is not there, name what you looked for and where."
 )
 
 #: Appended to the PRIMARY agent's system prompt when the calc sub-agent is on,
@@ -409,7 +415,14 @@ def build_calc_subagent(
         engine=engine,
         attachments=attachments,
         save_fn=save_fn,
-        include={"save_file"},
+        # save_file for persisting the calc package, PLUS read access to the
+        # working folder. Field feedback 2026-09-04 (Praia_Downdrag): with
+        # save_file alone the calc sub-agent could not open the source PDFs
+        # the user supplied and wrote "source PDFs weren't available" into a
+        # delivered report — a false provenance claim. Isolation is about
+        # keeping bulky OUTPUT out of the primary context, not blinding the
+        # sub-agent to the job's inputs.
+        include={"save_file", "list_files", "read_pdf_text"},
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
     )
