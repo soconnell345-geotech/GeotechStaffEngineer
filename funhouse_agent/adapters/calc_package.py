@@ -16,14 +16,16 @@ Ported from foundry/calc_package_agent_foundry.py — same object construction
 logic, adapted to the funhouse adapter pattern (METHOD_REGISTRY + METHOD_INFO).
 """
 
+import base64
 import os
+import re
 from datetime import datetime
 
 from funhouse_agent.adapters import (apply_aliases, require_keys,
                                      require_params, reject_unknown_params)
 from funhouse_agent._fileio import (
-    default_output_dir, rescue_write, workspace_write_hint,
-    written_file_problem,
+    default_output_dir, rescue_write, resolve_output_path,
+    workspace_write_hint, written_file_problem,
 )
 
 
@@ -1109,11 +1111,163 @@ def _generate_sheet_pile_package(params: dict) -> dict:
 # composed report into a PDF)
 # ---------------------------------------------------------------------------
 
+# --- figure embedding -------------------------------------------------------
+# Field feedback 2026-09-04 (Praia downdrag): the model shipped a report PDF
+# containing a literal "[image]" placeholder, because the Story renderer drops
+# anything it cannot embed WITHOUT complaining. So: inline what we can (a real
+# local PNG/JPEG path), and refuse loudly for the rest.
+
+_IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+_SRC_RE = re.compile(
+    r"""\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""", re.IGNORECASE)
+_SVG_RE = re.compile(r"<svg\b[^>]*>", re.IGNORECASE)
+_PLACEHOLDER_RE = re.compile(
+    r"\[\s*(?:insert\s+|add\s+|see\s+)?"
+    r"(?:images?|figures?|fig|charts?|plots?|diagrams?|graphics?|photos?|"
+    r"screenshots?)"
+    r"(?:\s+(?:placeholder|here|omitted|goes\s+here|to\s+be\s+inserted|"
+    r"not\s+available|tbd|missing))?\s*\]",
+    re.IGNORECASE)
+_EMBEDDABLE_URI_RE = re.compile(r"\s*data:image/(?:png|jpe?g);base64,",
+                                re.IGNORECASE)
+_DATA_URI_RE = re.compile(r"\s*data:", re.IGNORECASE)
+_REMOTE_RE = re.compile(r"\s*(?:https?|ftp|s3|gs)://", re.IGNORECASE)
+_EMBEDDABLE_EXT = (".png", ".jpg", ".jpeg")
+#: Refuse to inline a single image bigger than this (bytes).
+_MAX_INLINE_BYTES = 12 * 1024 * 1024
+
+_EMBED_FIX = (
+    "Fix: render each figure to a PNG file, then reference it either as "
+    '<img src="/real/absolute/path/fig.png"> (a real local PNG/JPEG path is '
+    'read and embedded for you) or as a base64 data URI (<img '
+    'src="data:image/png;base64,...">). For a layered subsurface profile call '
+    "call_agent('profile_figure', 'subsurface_profile', {...}) — it saves the "
+    "PNG and hands back a ready-to-paste html_img_tag. Every other analysis "
+    "plot tool takes an output_path. Pass allow_unembeddable=true to render "
+    "anyway, accepting that those figures will be MISSING from the PDF.")
+
+
+def _resolve_image_path(src: str, base_dir: str = None) -> str:
+    """Local filesystem path for an <img> src (file: URI or plain path).
+
+    A relative path is tried next to the source HTML file first (``base_dir``,
+    when the caller passed ``html_path``), then against the working folder.
+    """
+    path = src.strip()
+    if path.lower().startswith("file:///"):
+        path = path[8:]
+    elif path.lower().startswith("file://"):
+        path = path[7:]
+    if base_dir and not os.path.isabs(path):
+        beside = os.path.abspath(os.path.join(base_dir, path))
+        if os.path.isfile(beside):
+            return beside
+    return os.path.abspath(resolve_output_path(path))
+
+
+def _embed_local_images(html: str, base_dir: str = None):
+    """Inline real local PNG/JPEG ``<img>`` files as base64 data URIs.
+
+    Returns ``(html, inlined, problems)`` — ``inlined`` lists what was embedded,
+    ``problems`` describes every ``<img>`` that could NOT be embedded.
+    """
+    inlined, problems, out, cursor = [], [], [], 0
+
+    for tag_match in _IMG_TAG_RE.finditer(html):
+        tag = tag_match.group(0)
+        snippet = tag if len(tag) <= 120 else tag[:117] + "..."
+        src_match = _SRC_RE.search(tag)
+        src = None
+        if src_match:
+            src = next(g for g in src_match.groups() if g is not None)
+
+        if not src:
+            problems.append(f'{snippet} — <img> with no src attribute')
+            continue
+        if _EMBEDDABLE_URI_RE.match(src):
+            continue  # already an embeddable base64 PNG/JPEG
+        if _DATA_URI_RE.match(src):
+            kind = src.split(";", 1)[0].split(":", 1)[-1] or "unknown"
+            problems.append(
+                f'{snippet} — data URI of type "{kind}"; the PDF engine embeds '
+                "only base64 PNG or JPEG")
+            continue
+        if _REMOTE_RE.match(src):
+            problems.append(
+                f'{snippet} — remote image URL; the PDF engine does not fetch '
+                "anything over the network")
+            continue
+
+        path = _resolve_image_path(src, base_dir)
+        ext = os.path.splitext(path)[1].lower()
+        if not os.path.isfile(path):
+            problems.append(
+                f'{snippet} — no such file on the REAL filesystem '
+                f'("{path}")')
+            continue
+        if ext not in _EMBEDDABLE_EXT:
+            problems.append(
+                f'{snippet} — "{ext or "no extension"}" is not an embeddable '
+                "image format (PNG or JPEG only)")
+            continue
+        size = os.path.getsize(path)
+        if size > _MAX_INLINE_BYTES:
+            problems.append(
+                f"{snippet} — image is {size / 1e6:.1f} MB, over the "
+                f"{_MAX_INLINE_BYTES / 1e6:.0f} MB embed limit; re-render it "
+                "smaller (e.g. dpi=150)")
+            continue
+
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        mime = "image/jpeg" if ext in (".jpg", ".jpeg") else "image/png"
+        data_uri = (f"data:{mime};base64,"
+                    + base64.b64encode(raw).decode("ascii"))
+        new_tag = _SRC_RE.sub(lambda _m: f'src="{data_uri}"', tag, count=1)
+
+        out.append(html[cursor:tag_match.start()])
+        out.append(new_tag)
+        cursor = tag_match.end()
+        inlined.append({"src": src, "path": path, "bytes": size})
+
+    out.append(html[cursor:])
+    return "".join(out), inlined, problems
+
+
+def _unembeddable_findings(html: str, img_problems) -> list:
+    """Everything in the HTML that would silently vanish from the PDF."""
+    findings = list(img_problems)
+    for match in _SVG_RE.finditer(html):
+        tag = match.group(0)
+        snippet = tag if len(tag) <= 120 else tag[:117] + "..."
+        findings.append(
+            f"{snippet} — inline <svg> is NOT rendered by the PDF engine")
+    for match in _PLACEHOLDER_RE.finditer(html):
+        findings.append(
+            f'literal placeholder text "{match.group(0)}" at character '
+            f"{match.start()} — a placeholder is not a figure")
+    return findings
+
+
+def _unembeddable_error(findings: list) -> str:
+    shown = findings[:12]
+    lines = "\n".join(f"  {i}. {f}" for i, f in enumerate(shown, 1))
+    more = ("\n  ... and "
+            f"{len(findings) - len(shown)} more" if len(findings) > len(shown)
+            else "")
+    return (f"html_to_pdf: {len(findings)} figure reference(s) in this HTML "
+            "cannot be embedded, and the PDF engine drops them WITHOUT "
+            "warning — the report would show blank space or a literal "
+            "placeholder where a figure belongs:\n" + lines + more + "\n"
+            + _EMBED_FIX)
+
+
 def _generate_html_to_pdf(params: dict) -> dict:
     from calc_package.latex_renderer import save_html_pdf_story
 
-    reject_unknown_params(params, {"html", "html_path", "output_path"},
-                          method="html_to_pdf")
+    reject_unknown_params(
+        params, {"html", "html_path", "output_path", "allow_unembeddable"},
+        method="html_to_pdf")
     html = params.get("html")
     html_path = params.get("html_path")
     if not html and not html_path:
@@ -1121,6 +1275,7 @@ def _generate_html_to_pdf(params: dict) -> dict:
                 "error": "Provide 'html' (self-contained HTML content) or "
                          "'html_path' (an existing HTML file on the REAL "
                          "filesystem, e.g. a save_file or calc-package path)."}
+    base_dir = None
     if not html:
         src = os.path.abspath(html_path)
         if not os.path.isfile(src):
@@ -1131,6 +1286,19 @@ def _generate_html_to_pdf(params: dict) -> dict:
                              "HTML content directly via 'html' instead."}
         with open(src, "r", encoding="utf-8", errors="replace") as f:
             html = f.read()
+        base_dir = os.path.dirname(src)  # relative <img> paths sit beside it
+
+    # Embed what can be embedded (real local PNG/JPEG paths), then refuse
+    # loudly if anything the engine would silently drop is left.
+    html, inlined, img_problems = _embed_local_images(html, base_dir)
+    findings = _unembeddable_findings(html, img_problems)
+    allow = bool(params.get("allow_unembeddable", False))
+    if findings and not allow:
+        return {"status": "error",
+                "analysis_type": "HTML report to PDF",
+                "error": _unembeddable_error(findings),
+                "unembeddable": findings[:12],
+                "images_embedded": len(inlined)}
 
     output_path = params.get("output_path") or _default_output_path(
         "report", "pdf")
@@ -1157,6 +1325,15 @@ def _generate_html_to_pdf(params: dict) -> dict:
         "format": "pdf",
         "renderer": "story",
     }
+    if inlined:
+        response["images_embedded"] = len(inlined)
+        response["embedded_images"] = [item["path"] for item in inlined]
+    if findings:  # only reachable with allow_unembeddable=true
+        response["unembeddable"] = findings[:12]
+        response["renderer_warnings"] = [
+            f"{len(findings)} figure reference(s) were NOT embedded and are "
+            "missing from the PDF (allow_unembeddable=true). Tell the user "
+            "which figures are absent — do not describe the PDF as complete."]
     if problem:
         response["status"] = "error"
         response["error"] = (f"PDF was generated but {problem}."
@@ -1406,20 +1583,36 @@ METHOD_INFO = {
         "brief": "Render self-contained HTML (e.g. a custom report YOU composed) to a "
                  "paginated PDF on the REAL filesystem. Use when no canned *_package "
                  "method matches the analysis — compose the report HTML yourself "
-                 "(inline CSS, figures as base64 PNG/JPEG data URIs; inline <svg> is "
-                 "NOT rendered) and pass it here. Pure-Python (PyMuPDF Story engine).",
+                 "(inline CSS; figures as a real local PNG path or a base64 PNG/JPEG "
+                 "data URI) and pass it here. Figures it cannot embed are a hard ERROR, "
+                 "never a silent blank. Pure-Python (PyMuPDF Story engine).",
         "parameters": {
             "html": {"type": "str", "required": False,
                      "description": "Self-contained HTML content to render. Inline all "
-                                    "CSS; embed figures as base64 PNG/JPEG data URIs "
-                                    "(convert SVG to PNG first — inline <svg> is ignored). "
+                                    "CSS. FIGURES: use <img src=\"/real/path/fig.png\"> "
+                                    "(a real local PNG/JPEG file is read and embedded "
+                                    "for you — this is the easy path, e.g. the "
+                                    "html_img_tag returned by profile_figure) or a "
+                                    "base64 PNG/JPEG data URI. Inline <svg>, remote "
+                                    "image URLs and literal '[image]' placeholders are "
+                                    "REJECTED with a list of what to fix. "
                                     "Provide this or 'html_path'."},
             "html_path": {"type": "str", "required": False,
                           "description": "Path to an existing HTML file on the REAL "
                                          "filesystem (a save_file or calc-package output "
-                                         "path — NOT a sandboxed scratch-filesystem path)."},
+                                         "path — NOT a sandboxed scratch-filesystem path). "
+                                         "Relative <img> paths inside it resolve against "
+                                         "the working folder."},
             "output_path": {"type": "str", "required": False,
                             "description": "PDF output path. Auto-generated if omitted."},
+            "allow_unembeddable": {
+                "type": "bool", "required": False, "default": False,
+                "description": "Escape hatch: render anyway when the HTML references "
+                               "figures that cannot be embedded, instead of erroring. "
+                               "Those figures WILL BE MISSING from the PDF — the "
+                               "response then carries 'unembeddable' and "
+                               "'renderer_warnings', and you must tell the user which "
+                               "figures are absent. Prefer fixing the figures."},
         },
         "returns": {
             "status": "success or error.",
@@ -1429,6 +1622,9 @@ METHOD_INFO = {
                            "agent-side filesystem tools (they may be sandboxed).",
             "file_size_bytes": "Size of the saved PDF.",
             "renderer": "'story' (pure-Python PyMuPDF engine).",
+            "images_embedded": "How many local image files were inlined into the PDF.",
+            "unembeddable": "On error (or with allow_unembeddable=true): each figure "
+                            "reference that cannot be embedded, and why.",
         },
     },
     "bearing_capacity_package": {
