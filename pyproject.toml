@@ -61,7 +61,7 @@ dependencies = [
     # range here so fresh resolves never pick 16+.
     "websockets>=14,<16",
     # -- web chat app (formerly the [webapp] extra) --
-    "streamlit>=1.36",
+    "streamlit>=1.39",  # icon= slot on st.button (1.62+ truncates column labels; icons ride the icon slot)
     # -- analysis backends, plotting, reporting (formerly [full] + [pdf]) --
     "matplotlib>=3.8",
     "jinja2>=3.1",
@@ -92,7 +92,14 @@ dependencies = [
     # [pydiggs] extra where kernel stability is not a concern.
     "ezdxf>=1.4",
     "PyMuPDF>=1.23",
-    "opencv-python-headless>=4.8",
+    # Drawing & submittal intelligence — split out 2026-09-04 (owner:
+    # independently importable/publishable package). Carries the former
+    # drawing_ir/ (as planlens.ir), pdf_import/ (planlens.pdf), and
+    # dxf_import/units.py (planlens.dxf.units). [raster] keeps the
+    # opencv-based scanned-sheet leg that used to ride on our direct
+    # opencv-python-headless dep. NOT on PyPI yet — 5.12.0 cannot ship
+    # until planlens 0.1.0 is published (refs-pattern; owner-gated).
+    "planlens[raster]>=0.1",
     # -- structural round 1 (owner, 2026-09-03): section/RC/frame analysis --
     "sectionproperties>=3.10",
     # concreteproperties' floor is Python 3.12; below that the wrapper
@@ -159,6 +166,7 @@ include = [
     "downdrag*",
     "geotech_common*",
     "calc_package*",
+    "profile_figure*",
     "opensees_agent*",
     "pystrata_agent*",
     "section_props_agent*",
@@ -172,8 +180,6 @@ include = [
     "subsurface_characterization*",
     "dxf_import*",
     "dxf_export*",
-    "pdf_import*",
-    "drawing_ir*",
     "fem2d*",
     "geo_project*",
     "funhouse_agent*",
@@ -209,6 +215,7 @@ testpaths = [
     "seismic_geotech", "retaining_walls", "pavement_design",
     "ground_improvement",
     "slope_stability", "reliability", "downdrag", "geotech_common",
+    "profile_figure",
     "opensees_agent", "pystrata_agent", "seismic_signals_agent",
     "liquepy_agent", "gstools_agent",
     "salib_agent",
@@ -217,7 +224,6 @@ testpaths = [
     "subsurface_characterization",
     "dxf_import",
     "dxf_export",
-    "pdf_import",
     "fem2d",
     "geo_project",
     "funhouse_agent",
