@@ -6,7 +6,24 @@ detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-09-04 EVENING, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-09-05, supersedes everything below)
+
+**5.12.0 RELEASED TO PYPI 2026-09-05, VERIFIED LIVE** (with planlens
+0.1.0 + geotech-references 1.4.0, both first published the same hour;
+full gate 11,468/0 beforehand). Cluster install:
+`%pip install "geotech-staff-engineer==5.12.0"` — the launcher
+baseUrlPath fix ships, so NO notebook patch cell. Release gotcha for
+the future: PyPI enforces a 512-char cap on the pyproject description
+SERVER-SIDE only (twine check passes longer) — the 5.12.0 publish
+400'd twice on a 513-char description. OPEN after release: owner's
+live 5.12.0 cluster shakedown; SoM A/B live run (Funhouse recipe in
+som_ab_check.py docstring); drawing Phase 3.2 list (design memo
+banner); planlens submodule wiring; master CI Tests should self-heal
+now that planlens is on PyPI (was red only for that reason — VERIFY);
+TinyApps onboarding; cluster OCR needs the planlens README headless
+recipe.
+
+## 0a-prev-b. PICKUP LIST (2026-09-04 EVENING) [HISTORICAL]
 
 Current release: **5.11.2** (PyPI; refs 1.3.3). Master carries the big
 UNRELEASED 5.12.0-candidate train: security hardening, geophysics
