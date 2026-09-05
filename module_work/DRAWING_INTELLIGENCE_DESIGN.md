@@ -274,6 +274,23 @@ manual labeling. Findings:
 
 ## Phase 3.2 banner (2026-09-05) — recall closed, precision measured
 
+**INDEPENDENTLY VERIFIED, SHIP-AS-IS (2026-09-05):** every number
+below reproduced to the digit; render-audit of the default-confidence
+survivors found the detail-sheet "FP" counts are MOSTLY real
+hand-drafted annotations native truth can't record, plus a letterform
+tail (e.g. 2000b's 10 survivors at ~0.83 are junk — confidence ranks
+within a sheet but is NOT calibrated across sheets). Two verified
+sharp edges, accepted as documented behavior: (1) a dimension whose
+arrows sit >30 deg off-axis is silently LOST entirely (leaders are
+capped to 0.45 instead) — a non-issue for CAD plots (true arrows
+measure +1.000 exactly) but a hand-sloppy manual dim beyond 30 deg
+vanishes without trace; (2) "dim proposals zero at 0.3+ on pure-notes
+sheets" holds for 2000a/2000b/3000 — the DETAIL sheets 10.17a/11.01
+still emit 17-18 dim proposals, covered by the ~14/15-real
+render-adjudication caveat. The 0.75x detach bound has ~23% margin
+over the measured true population — a plot style with a longer arrow
+gap would cap (not lose) real leaders.
+
 Built in planlens (commits 2b4eee1..1f6551c), scored against the
 committed Mecklenburg corpus. **Leader tips 25/25 and dimension
 defpoints 16/16** at the scorer's 0.3 threshold (23/25 at the 0.5
