@@ -154,6 +154,26 @@ def test_agent_picker_builds_reviewer_and_persists(monkeypatch, tmp_path):
         core.load_meta(tid))["agent_type"] == "seismic"        # durable → resumes
 
 
+def test_conversation_row_icons_use_the_icon_slot(monkeypatch, tmp_path):
+    """Rename/delete glyphs must live in the button's ``icon``, never its label.
+
+    Streamlit >= 1.62 truncates an overflowing LABEL inside a column with an
+    ellipsis instead of wrapping it, which blanked these one-glyph buttons on
+    the cluster's 1.63.0 (owner report; reproduced against 1.59.1 side by side).
+    Icons are exempt from that truncation.
+    """
+    at = _mk_at(monkeypatch, tmp_path, _stream_ok).run()
+    at.chat_input[0].set_value("hello").run()        # a conversation to list
+    tid = at.session_state["thread_id"]
+    rows = {b.key: b.proto for b in at.sidebar.button
+            if b.key in (f"rn_{tid}", f"del_{tid}")}
+    assert set(rows) == {f"rn_{tid}", f"del_{tid}"}, "row actions missing"
+    for proto in rows.values():
+        assert proto.icon, "the glyph must be in the icon slot"
+        assert proto.label == "", f"label must stay empty, got {proto.label!r}"
+        assert proto.help, "the hover name is the only text affordance"
+
+
 def test_local_tracer_writes_turn_trace(monkeypatch, tmp_path):
     """A7: with GEOTECH_TRACE=1 a turn writes one compact JSONL trace line to the
     conversation dir (duration + tokens + tool calls)."""

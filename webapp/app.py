@@ -303,6 +303,33 @@ if ss.get("recovered_notice"):
 # Sidebar: engine status, attachments, artifacts, tokens, reset
 # ---------------------------------------------------------------------------
 
+# Row-action glyphs for the conversation list. The glyph goes in the button's
+# `icon` slot, NOT in its label: streamlit >= 1.62 stopped WRAPPING a control's
+# label inside a column and truncates it with an ellipsis instead, which erased
+# these one-glyph labels entirely in the narrow rename/delete columns (owner
+# report against the cluster's 1.63.0; reproduced side by side with 1.59.1 —
+# blank buttons on 1.63, visible on 1.59). Icons are exempt from that
+# truncation, and render identically on both lines.
+_ICON_RENAME = ":material/edit:"
+_ICON_DELETE = ":material/delete:"
+
+#: Emoji shown instead when streamlit predates the button `icon` parameter
+#: (added in 1.39; pyproject's floor is still 1.36).
+_ICON_FALLBACK = {_ICON_RENAME: "✏️", _ICON_DELETE: "🗑️"}
+
+_HAS_BUTTON_ICON = "icon" in __import__("inspect").signature(
+    st.button).parameters
+
+
+def _row_action(icon: str, *, key: str, help: str) -> bool:
+    """A one-glyph conversation-row button (rename / delete)."""
+    if _HAS_BUTTON_ICON:
+        return st.button("", key=key, icon=icon, help=help,
+                         use_container_width=True)
+    return st.button(_ICON_FALLBACK[icon], key=key, help=help,
+                     use_container_width=True)
+
+
 def _relative_time(updated: float) -> str:
     import time as _t
     ago = max(0, int(_t.time() - (updated or 0)))
@@ -329,7 +356,7 @@ with st.sidebar:
         _at = (_m.get("behavior") or {}).get("agent_type")
         _at_lbl = (f" · {core.agent_type_label(_at)}"
                    if _at and _at != "full" else "")
-        _row = st.columns([0.72, 0.14, 0.14])
+        _row = st.columns([0.64, 0.18, 0.18])
         with _row[0]:
             if st.button(("● " if _current else "") + _title, key=f"open_{_tid}",
                          help=f"{_relative_time(_m.get('updated'))} · "
@@ -341,10 +368,11 @@ with st.sidebar:
                     _open_conversation(_tid)
                     st.rerun()
         with _row[1]:
-            if st.button("✏️", key=f"rn_{_tid}", help="Rename"):
+            if _row_action(_ICON_RENAME, key=f"rn_{_tid}", help="Rename"):
                 ss[f"renaming_{_tid}"] = not ss.get(f"renaming_{_tid}", False)
         with _row[2]:
-            if st.button("🗑️", key=f"del_{_tid}", help="Delete (to trash)"):
+            if _row_action(_ICON_DELETE, key=f"del_{_tid}",
+                           help="Delete (to trash)"):
                 core.delete_conversation(_tid)
                 if _current:
                     _new_conversation()
