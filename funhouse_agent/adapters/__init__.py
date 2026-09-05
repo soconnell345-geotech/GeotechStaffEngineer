@@ -236,7 +236,7 @@ MODULE_REGISTRY = {
     },
     "downdrag": {
         "adapter": "funhouse_agent.adapters.downdrag",
-        "brief": "Pile downdrag (Fellenius neutral plane, UFC 3-220-20)",
+        "brief": "Pile downdrag (Fellenius NP + CGPR-56 methods, groups)",
     },
     "soe": {
         "adapter": "funhouse_agent.adapters.soe",
