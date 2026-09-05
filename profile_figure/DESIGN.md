@@ -16,6 +16,16 @@ axial pile, bearing, walls, liquefaction, …) can call it with the profile it
 already has. Anything computed must be passed in, either as a layer
 `description` or as an `annotation`.
 
+**General pool, not a specialist scope.** The agent tool is deliberately NOT a
+member of `PAVEMENT_MODULES` / `STRUCTURAL_MODULES` or any reviewer scope in
+`funhouse_agent/dispatch.py`: subsurface stratigraphy is a geotech capability,
+and those scopes are minimal by doctrine (see their comments). The unscoped
+agent — the one the prompt nudge is written for — sees every analysis module,
+so it reaches this tool without a scope entry. `worked_examples` is the same
+shape: named in the shared prompt, in no specialist scope. Add it to a scope
+only if that specialist's owner decides it belongs there, and bump the pinned
+count in `test_reviewers.py` with it (2026-09-05 decision).
+
 ## Conventions
 
 - **SI, elevations internally.** Every input may be given as an elevation

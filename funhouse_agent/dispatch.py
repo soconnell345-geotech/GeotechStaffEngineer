@@ -179,7 +179,6 @@ SLOPE_FEM_REFERENCES = frozenset({
 PAVEMENT_MODULES = frozenset({
     "pavement_design",   # AASHTO 1993 flexible SN / rigid D / ESALs / swell-frost
     "calc_package",      # pavement_design_package + html_to_pdf report rendering
-    "profile_figure",    # pavement/subgrade section schematic for the report
 })
 
 PAVEMENT_REFERENCES = frozenset({
@@ -204,7 +203,6 @@ STRUCTURAL_MODULES = frozenset({
     "fem2d",           # 2D continuum FEM (plane-strain; foundation / soil-structure interaction)
     "reliability",     # FOSM/PEM/MC/FORM probabilistic wrap around load/capacity variability
     "calc_package",    # report rendering (html_to_pdf + module calc-package templates)
-    "profile_figure",  # subsurface/foundation section schematic for the report
 })
 
 # Structural reference layer: USACE EM 1110-2-2104/2107 (hydraulic RC/steel
