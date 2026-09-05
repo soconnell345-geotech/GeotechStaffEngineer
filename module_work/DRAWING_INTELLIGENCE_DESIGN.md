@@ -1,5 +1,29 @@
 # Drawing & submittal intelligence — design memo (2026-09-04)
 
+> **PHASE 3.1: COMPLETE + INDEPENDENTLY VERIFIED (ship-with-fixes,
+> fixes applied 2026-09-05; planlens tip 7a611df, app 4505e46).**
+> Verified real-sheet numbers: **leaders 21/25** (open-arrow
+> representation: real plotters draw 3-vertex arrow outlines minus an
+> edge, base+leg and chevron flavors), **dimensions 13/16** (split-shaft
+> pairing, ends = CAD defpoints), worst-sheet FPs **44→11 (8 touching
+> truth)**. Render-adjudicated precision is SHEET-CLASS dependent:
+> curb-ramp "false" dims are mostly REAL drafted dims the native truth
+> can't record (~14/15); note-heavy SHX sheets admit glyph junk at
+> conf 1.0 (~5/14); leaders have NO precision story on lettering-heavy
+> annotation-free sheets (letterform FPs — documented). Align guard:
+> 0/160 random-anchor fits, all true fits intact (Poisson-significance
+> + extent guard = the operative defenses). OCR corner-role fix: all 4
+> /Rotate values within ~2 pt; rapidocr bounded <1.3. B1 DXF-native
+> ingest live (conf-1.0 leaders/dims/attribs; planlens.dxf.truth =
+> model-space corpus extractor). **Verifier's pre-existing find, fixed
+> same day: render/snip's IR conversion was rotation-blind — the zoom
+> loop mispointed on every /Rotate sheet; frame='ir' now does the full
+> empirically-pinned conversion (bbox + marks), 13 pixel-check tests.**
+> Deferred → Phase 3.2: flared two-stroke curved arrows (4 leader
+> misses), witness-crossing verticals (3 dim misses), INSERT block
+> explosion, live SoM A/B (owner-gated), layout blocks in
+> planlens.dxf.truth.
+
 > **PHASE 3: COMPLETE + INDEPENDENTLY VERIFIED (ship-with-fixes,
 > fixes applied; planlens commits 5b7147c/3aae54f + close-out,
 > 2026-09-04/05).** What the verifier's measurements say actually
