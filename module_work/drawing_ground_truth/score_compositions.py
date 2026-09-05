@@ -46,6 +46,49 @@ confidence renormalization):
   split-shaft pairing leg in find_dimensions (v2, documented in the
   drawing memo; not attempted this phase).
 - Bubbles: 40/40 count match on 10.31A (unchanged).
+
+Phase 3.1 (2026-09-05 — arrowhead-representation growth + split-shaft
+find_dimensions v2 + no-text FP discipline; planlens c0978a6):
+
+- Leader tip recall 21/25 (21.01: 12/13, 3001: 6/7, 10.31A: 3/5).
+  Source of the gain: 3-vertex OPEN arrow chains accepted in both
+  verified plot flavors (base+leg from native dims, chevron from
+  native leaders) behind a shape gate — near-equal legs, base <=
+  0.55x leg, size >= 0.5x arrowhead scale, 1.5x size-cap allowance
+  for shape-verified chains (21.01's real 12.3 pt arrows exceeded
+  the 10.0 pt sheet-statistic estimate).
+- Dimension defpoint recall 13/16 (21.01: 4/5, 3001: 8/10, 10.31A:
+  1/1) via the split-shaft pairing leg: collinear opposed-arrow
+  half-shafts, outward (centered-text-gap) AND inward
+  (outside-arrows narrow) arrangements; proposal ends = arrow
+  apexes = CAD defpoints; dimension arrows must TOUCH their shaft
+  end (attach radius 0.75x scale).
+- No-text FP discipline: witness lines need >= 0.5x-scale length
+  (392 sub-3-pt stipple 'witnesses' had corroborated junk on 3001);
+  renormalized confidence capped at 0.45 unless witnessed BOTH ends
+  with >= 1 drawn (triangle) arrowhead. 3001 find_dimensions at the
+  0.5 default: 44 proposals ~0 precision -> 11 proposals, 8 touching
+  native truth. Survivors flagged false-vs-native on 21.01/10.31A
+  include what appear to be manually drafted dimensions (native
+  truth cannot see those) — unverified, treat as caveat.
+- Remaining leader misses: 10.31A x2 (multileader tips whose closed
+  triangles sit > 1.5x the estimated arrowhead scale... diagnosed
+  as no candidate at tip), 21.01 tip 3 / 3001 tip 2-style flared
+  two-stroke arrows (drawn as two separate curved polylines — not
+  yet a representation). Remaining dim misses: witness-crossing
+  vertical dims (21.01 defpoint 2 empty-text chain dim, 3001 'T='
+  and X= layouts where the arrow rides ON a witness line).
+- B1 landed in planlens (f8fa13a): DXF-native LEADER/MULTILEADER/
+  DIMENSION/ATTRIB ingest -> first-class Leader/Dimension IR
+  entities at confidence 1.0; find_leaders/find_dimensions surface
+  natives with evidence path 'native_dxf' and skip composed
+  duplicates. On the DXF side of these very pairs, recall is
+  therefore 100% by construction; this scorer keeps measuring the
+  PLOTTED-PDF composition path. The truth extractor that generated
+  the *.truth.json files now lives IN planlens as
+  planlens.dxf.truth.extract_native_annotations (verified to
+  reproduce all 10 committed truth files exactly; regeneration:
+  extract_native_annotations(dxf_path) -> json.dump).
 - OCR leg (planlens.ocr, RapidOCR, auto-rotation): on-page truth-text
   coverage 92% / 92% / 88% exact+partial on 21.01 / 3001 / 10.31A,
   with median coordinate error 5.8 / 7.0 / 1.4 pt after the page-
