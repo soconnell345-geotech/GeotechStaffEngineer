@@ -772,7 +772,18 @@
       0.0,
       0.0
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "393102",
+       "insert": [
+        -0.1499,
+        0.0001
+       ],
+       "height": 0.2
+      }
+     ]
     },
     {
      "name": "PROJ_NAM",
@@ -780,7 +791,18 @@
       18.01,
       -5.0135
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "393102",
+       "insert": [
+        18.005,
+        -5.0135
+       ],
+       "height": 0.0067
+      }
+     ]
     },
     {
      "name": "MECKCOUNTYSEAL2",

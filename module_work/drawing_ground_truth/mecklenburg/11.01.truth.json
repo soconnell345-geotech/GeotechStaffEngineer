@@ -1224,7 +1224,18 @@
       0.0,
       0.0
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "LAND",
+       "insert": [
+        0.0096,
+        0.0001
+       ],
+       "height": 0.2
+      }
+     ]
     },
     {
      "name": "*X1",
@@ -1240,7 +1251,18 @@
       -567.3527,
       -279.825
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "393102_b",
+       "insert": [
+        -567.7098,
+        -279.8249
+       ],
+       "height": 0.2
+      }
+     ]
     },
     {
      "name": "PROJ_NAM",
@@ -1248,7 +1270,18 @@
       -567.3527,
       -279.825
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "LAND",
+       "insert": [
+        -567.3432,
+        -279.8249
+       ],
+       "height": 0.2
+      }
+     ]
     },
     {
      "name": "PROJ_NAM",
@@ -1256,7 +1289,18 @@
       -434.9387,
       -206.6125
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "LAND",
+       "insert": [
+        -434.9291,
+        -206.6124
+       ],
+       "height": 0.2
+      }
+     ]
     },
     {
      "name": "PROJ_NAM",
@@ -1264,7 +1308,18 @@
       421.1064,
       250.4789
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "LAND",
+       "insert": [
+        421.1544,
+        250.4792
+       ],
+       "height": 1.0
+      }
+     ]
     },
     {
      "name": "PROJ_NAM",
@@ -1272,7 +1327,18 @@
       437.7424,
       274.575
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "LAND",
+       "insert": [
+        437.7903,
+        274.5753
+       ],
+       "height": 1.0
+      }
+     ]
     },
     {
      "name": "*X2",
@@ -1328,7 +1394,18 @@
       877.4538,
       -88.2531
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "00000",
+       "insert": [
+        877.3729,
+        -88.253
+       ],
+       "height": 0.2
+      }
+     ]
     },
     {
      "name": "PROJ_NAM",
@@ -1336,7 +1413,18 @@
       1147.6003,
       229.3831
      ],
-     "layer": "LETTER"
+     "layer": "LETTER",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "LAND",
+       "insert": [
+        1147.6099,
+        229.3831
+       ],
+       "height": 0.2
+      }
+     ]
     },
     {
      "name": "PROJ_NAM",
@@ -1344,7 +1432,18 @@
       2003.6454,
       686.4744
      ],
-     "layer": "LETTER"
+     "layer": "LETTER",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "LAND",
+       "insert": [
+        2003.6934,
+        686.4747
+       ],
+       "height": 1.0
+      }
+     ]
     },
     {
      "name": "PROJ_NAM",
@@ -1352,7 +1451,18 @@
       2020.2814,
       710.5705
      ],
-     "layer": "LETTER"
+     "layer": "LETTER",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "LAND",
+       "insert": [
+        2020.3293,
+        710.5708
+       ],
+       "height": 1.0
+      }
+     ]
     },
     {
      "name": "*X8",
@@ -1384,7 +1494,18 @@
       1147.6003,
       229.3831
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "LAND",
+       "insert": [
+        1147.6099,
+        229.3831
+       ],
+       "height": 0.2
+      }
+     ]
     },
     {
      "name": "PROJ_NAM",
@@ -1392,7 +1513,18 @@
       497.3674,
       -364.7565
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "LAND",
+       "insert": [
+        497.377,
+        -364.7564
+       ],
+       "height": 0.2
+      }
+     ]
     },
     {
      "name": "*X11",
@@ -1424,7 +1556,18 @@
       1229.722,
       528.5669
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "CEDRIC",
+       "insert": [
+        1229.4554,
+        528.567
+       ],
+       "height": 0.4
+      }
+     ]
     },
     {
      "name": "*X15",
@@ -1440,7 +1583,18 @@
       1247.0735,
       548.6089
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "LAND",
+       "insert": [
+        1247.0926,
+        548.609
+       ],
+       "height": 0.4
+      }
+     ]
     },
     {
      "name": "AME_NIL",

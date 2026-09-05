@@ -520,7 +520,18 @@
       0.0,
       0.0
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "393102_b",
+       "insert": [
+        -0.3571,
+        0.0001
+       ],
+       "height": 0.2
+      }
+     ]
     },
     {
      "name": "PROJ_NAM",
@@ -528,7 +539,18 @@
       313.7659,
       -97.8152
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "393102_b",
+       "insert": [
+        313.4088,
+        -97.8151
+       ],
+       "height": 0.2
+      }
+     ]
     },
     {
      "name": "AVE_RENDER",
@@ -560,7 +582,18 @@
       715.7749,
       266.8589
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "393102_b",
+       "insert": [
+        715.4179,
+        266.8589
+       ],
+       "height": 0.2
+      }
+     ]
     },
     {
      "name": "*X1",

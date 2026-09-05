@@ -89,6 +89,42 @@ find_dimensions v2 + no-text FP discipline; planlens c0978a6):
   planlens.dxf.truth.extract_native_annotations (verified to
   reproduce all 10 committed truth files exactly; regeneration:
   extract_native_annotations(dxf_path) -> json.dump).
+Phase 3.2 (2026-09-05 — signed arrow-direction attach + letterform caps
++ short continuous dims + INSERT explosion; planlens 1f6551c):
+
+- Leader tip recall 25/25, dimension defpoint recall 16/16 (at this
+  scorer's 0.3 threshold; at the DEFAULT 0.5 confidence 23/25 — two
+  sparse-dot tips surface only at the 0.45 cap). The 4 leader misses
+  were NOT representation gaps (the verifier's flared-two-stroke
+  theory did not survive direct measurement — every missed tip's
+  arrow was already a candidate): FALSE continuous-dimension
+  proposals were claiming the true leaders' arrowheads and
+  exclude_dimensions dropped them. Root cause: fold-blind best-vertex
+  alignment can't fall below ~cos30 for ANY triangle vs ANY crossing
+  line. Fix: dimension-arrow attach is now SIGNED (intrinsic apex
+  axis must point outward along the shaft within 30 deg; measured
+  true arrows +1.000 vs impostors -0.998..+0.208).
+- The 3 dimension misses were narrow constructs: 3001's 'T='/'X='
+  and 21.01's chain dim plot as a SHORT shaft (9.7-15.2 pt) between
+  two outward arrows — recovered by accepting short both-triangle
+  continuous shafts; continuous proposal ends are now the arrow
+  APEXES (the CAD defpoints; recovered dims match at ~0.0 pt).
+- Leader precision at default confidence on the zero-native-
+  annotation sheets, before -> after two structural CAPS (to 0.45,
+  never deletions: arrow must point along the shaft, shaft must END
+  at the arrow within 0.75x scale): 2000a 295->2, 2000b 273->10,
+  3000 91->6, 5003 77->19, 10.17a 57->23, 10.25a 151->20,
+  11.01 137->38. Some detail-sheet survivors may be REAL manual
+  leaders native truth can't see — render-verify. Dimension
+  proposals on the pure-notes sheets: ZERO at 0.3+.
+- DXF-side after INSERT explosion (block geometry now ingests;
+  style="block:<name>"): entity counts 10.17a 227->788, 5003
+  170->1870, 11.01 415->577; native Leader/Dimension counts on every
+  sheet unchanged and equal to truth (5/1, 13/5, 7/10). Corpus
+  truth files regenerated with planlens.dxf.truth (adds paper-space
+  Layout1 + additive attribs field): 10/10 byte-identical
+  regeneration verified; this scorer's numbers unchanged.
+
 - OCR leg (planlens.ocr, RapidOCR, auto-rotation): on-page truth-text
   coverage 92% / 92% / 88% exact+partial on 21.01 / 3001 / 10.31A,
   with median coordinate error 5.8 / 7.0 / 1.4 pt after the page-

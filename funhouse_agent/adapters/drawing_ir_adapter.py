@@ -606,7 +606,7 @@ METHOD_INFO = {
                                        "evidence — never asserted facts; confirm visually). "
                                        "On no-text-layer (SHX-stroked) sheets find_dimensions "
                                        "detects real plotted dims (split-shaft + continuous "
-                                       "legs, 13/16 native defpoints on validation sheets; "
+                                       "legs, 16/16 native defpoints on validation sheets; "
                                        "ends = arrow apexes) but some high-confidence hits "
                                        "may be other line-plus-arrows constructs — verify "
                                        "via snip_region before reporting values; "

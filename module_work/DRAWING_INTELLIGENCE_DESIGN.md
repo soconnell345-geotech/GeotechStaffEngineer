@@ -271,3 +271,51 @@ manual labeling. Findings:
   File Converter locally; then: parse DXF LEADER/DIMENSION entities =
   truth, run find_leaders on the paired PDF, score recall/precision.
 - FloorPlanCAD (academic) = wrong format/domain; pattern reference only.
+
+## Phase 3.2 banner (2026-09-05) — recall closed, precision measured
+
+Built in planlens (commits 2b4eee1..1f6551c), scored against the
+committed Mecklenburg corpus. **Leader tips 25/25 and dimension
+defpoints 16/16** at the scorer's 0.3 threshold (23/25 at the 0.5
+default — two sparse-dot tips live at the 0.45 cap).
+
+What actually moved the numbers (the plan's flared-two-stroke
+arrowhead theory did NOT survive measurement — every missed tip's
+arrow was already a candidate):
+
+1. **Signed arrow-direction attach** (`_dim_arrow_attach`): a
+   dimension arrow must point OUTWARD along its line within 30 deg of
+   its intrinsic apex axis. The old fold-blind best-vertex alignment
+   can't score below ~cos30 for any triangle vs any crossing line, so
+   false dimensions were claiming true leaders' arrowheads and
+   `exclude_dimensions` silently dropped the leaders — all 4 residual
+   leader misses. Measured separation: true dim arrows +1.000,
+   impostors -0.998..+0.208.
+2. **Short both-arrowed continuous dims**: 3001's 'T='/'X=' and
+   21.01's chain dim are narrow constructs (9.7-15.2 pt shafts between
+   two outward arrows) that the min-shaft-length floor rejected — all
+   3 residual dim misses. Continuous proposal ends are now the arrow
+   APEXES (CAD defpoints; recovered dims match at ~0.0 pt).
+3. **Letterform precision caps** (cap to 0.45, never delete): arrow
+   must point along its shaft (signed axis) AND the shaft must END at
+   the arrowhead (<= 0.75x scale; measured true 2.2-5.4 pt vs junk
+   p50 9.6 pt). Worst notes sheet: 295 -> 2 leader proposals at
+   default confidence (all seven zero-annotation sheets in the scorer
+   ledger); corpus recall unchanged. Rejected candidate vetos, with
+   measurements: small-stroke density and same-scale-neighbor counts
+   both fail BOTH ways (real arrows sit inside stipple at n up to
+   1155; big isolated title letters have n=0-1).
+4. **DXF INSERT explosion** (`from_dxf explode_blocks=True` default):
+   block geometry ingests with exact transforms + `block:<name>`
+   provenance, depth-8/50k-entity caps (10.17a 227->788 entities,
+   5003 170->1870); native annotation counts unchanged.
+5. **Ledger items**: `planlens.dxf.truth` now extracts paper-space
+   layouts; the corpus truth files were regenerated (additive attribs
+   field) and verify 10/10 byte-identical. SoM A/B verdict still
+   owner-gated (som_ab_check.py not run).
+
+Residual, documented per tip: the two 21.01/3001 sparse-dot tips
+surface only at 0.45 (below-default; capped junk-luck proposals near
+the tips carry the 0.3-threshold match). Detail-sheet survivors at
+default confidence may be REAL manual annotations native truth cannot
+record — the standing render-verification caveat applies.

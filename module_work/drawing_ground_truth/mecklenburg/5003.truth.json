@@ -311,7 +311,18 @@
       0.0,
       0.0
      ],
-     "layer": "DCA_INFO"
+     "layer": "DCA_INFO",
+     "attribs": [
+      {
+       "tag": "NAME",
+       "text": "393102_b",
+       "insert": [
+        -0.3571,
+        0.0001
+       ],
+       "height": 0.2
+      }
+     ]
     },
     {
      "name": "*X1",
