@@ -177,21 +177,65 @@ def _ask_vision(client, png_path, prompt):
     return "".join(b.text for b in resp.content if b.type == "text").strip()
 
 
-def run_live(outdir, manifest):
-    import anthropic
-    client = anthropic.Anthropic()
+def _ask_vision_chat_model(chat_model, png_path, prompt):
+    """Ask through any LangChain chat model (the Funhouse/Prompter path).
+
+    Accepts the SAME model object the deployed app runs on
+    (``PrompterChatModel`` from funhouse_agent.deep.databricks_bridge) —
+    which makes a cluster-side A/B measure the PRODUCTION vision model,
+    the comparison that actually gates default-on marks for users.
+    OpenAI-style image_url content block; works for any multimodal
+    BaseChatModel.
+    """
+    from langchain_core.messages import HumanMessage
+    data = base64.standard_b64encode(open(png_path, "rb").read()).decode()
+    msg = HumanMessage(content=[
+        {"type": "image_url",
+         "image_url": {"url": f"data:image/png;base64,{data}"}},
+        {"type": "text", "text": prompt},
+    ])
+    resp = chat_model.invoke([msg])
+    return (resp.content if isinstance(resp.content, str)
+            else "".join(str(b) for b in resp.content)).strip()
+
+
+def run_live(outdir, manifest, chat_model=None):
+    """Run the A/B. ``chat_model=None`` -> Anthropic SDK (needs
+    ANTHROPIC_API_KEY). Pass a LangChain chat model to run against any
+    engine instead — FUNHOUSE NOTEBOOK RECIPE (production-model A/B,
+    metered through the existing Prompter account, no new keys)::
+
+        from funhouse.services.prompter.prompter_api import PrompterAPI
+        from funhouse_agent.deep.databricks_bridge import PrompterChatModel
+        from module_work.drawing_ground_truth import som_ab_check as ab
+
+        cm = PrompterChatModel(prompter=PrompterAPI(chat_model="funhouse-gpt-high"),
+                               model="funhouse-gpt-high")
+        outdir, manifest = ab.build_fixtures("21.01")
+        ab.run_live(outdir, manifest, chat_model=cm)
+
+    (Run from a checkout with planlens installed; ~26 vision calls.)
+    """
+    if chat_model is not None:
+        client = None
+        ask = lambda path, prompt: _ask_vision_chat_model(  # noqa: E731
+            chat_model, path, prompt)
+    else:
+        import anthropic
+        client = anthropic.Anthropic()
+        ask = lambda path, prompt: _ask_vision(client, path, prompt)  # noqa: E731
     zoom = DPI / 72.0
     a_right = b_right = n = 0
     for qd in manifest["questions"]:
         n += 1
-        ans_a = _ask_vision(client, os.path.join(outdir, qd["marked_png"]),
-                            manifest["prompt_marked"])
+        ans_a = ask(os.path.join(outdir, qd["marked_png"]),
+                    manifest["prompt_marked"])
         m = re.search(r"\d+", ans_a)
         ok_a = bool(m) and m.group(0) == qd["true_mark"]
         a_right += ok_a
 
-        ans_b = _ask_vision(client, os.path.join(outdir, qd["plain_png"]),
-                            manifest["prompt_plain"])
+        ans_b = ask(os.path.join(outdir, qd["plain_png"]),
+                    manifest["prompt_plain"])
         m = re.search(r"(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)", ans_b)
         ok_b = False
         if m:
