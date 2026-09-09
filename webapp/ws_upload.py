@@ -14,6 +14,18 @@ whole file rides one websocket message — so uploads are capped (default
 25 MB per file) to stay well inside Streamlit's message limits. Fine for
 reports, boring logs, DXF/PDF sections; not for point clouds.
 
+THE ONE-SHOT RULE (5.11.3). A component value is WIDGET STATE, and Streamlit's
+browser client re-sends **every** widget state on **every** rerun and on every
+reconnect — ``createWidgetStatesMsg()`` pushes the whole map with no delta, and
+``AppSession`` reads ``client_state.widget_states`` off each rerun BackMsg. So
+a file left sitting in this component's value is re-uploaded forever: a 22 MB
+attachment (~29 MB base64) cannot finish crossing the driver proxy before the
+socket is torn down, the client reconnects, re-sends the same 29 MB, and dies
+again — an unbreakable ~14 s reconnect loop (live-observed 2026-09-09 on
+5.11.2). The caller MUST therefore retire the widget key once the bytes are
+staged (``next_upload_key``), which drops the payload from the client's state
+map (``WidgetStateManager.removeInactive``) as well as the server's.
+
 Selection: ``GEOTECH_UPLOAD_MODE`` env — ``http`` (default; native
 uploader) or ``ws`` (this component). The Databricks launcher bootstrap
 sets ``ws`` because the native path 403s there anyway.
@@ -76,6 +88,16 @@ def decode_component_value(value) -> Tuple[List[Tuple[str, bytes]], List[str]]:
             continue
         pairs.append((name, raw))
     return pairs, errors
+
+
+def next_upload_key(thread_id: str, epoch: int) -> str:
+    """Widget key for the uploader on ``thread_id`` at staging generation ``epoch``.
+
+    Bumping ``epoch`` after a successful stage gives the component a NEW widget
+    id, which is the only way to get the previous file's bytes out of the
+    browser's widget-state map — see THE ONE-SHOT RULE in the module docstring.
+    """
+    return f"ws_uploader_{thread_id}_{int(epoch)}"
 
 
 def ws_file_uploader(accepted_types: Optional[List[str]] = None,

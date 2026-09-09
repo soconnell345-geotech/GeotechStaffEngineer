@@ -95,3 +95,53 @@ class TestWsModeAppBoot:
             os.path.abspath(__file__))), "app.py")
         at = AppTest.from_file(app, default_timeout=60).run()
         assert not at.exception, [str(e.value) for e in at.exception]
+
+
+class TestOneShotWidgetKey:
+    """The 22 MB reconnect loop (2026-09-09, 5.11.2).
+
+    A component value IS widget state, and Streamlit's browser client re-sends
+    every widget state on every rerun and reconnect. A file left in the
+    uploader's value is therefore re-uploaded forever; at 22 MB (~29 MB base64)
+    it cannot cross the Databricks driver proxy inside one socket lifetime, so
+    the app never stops reconnecting. The cure is to retire the widget id once
+    the bytes are staged.
+    """
+
+    def test_key_changes_with_epoch(self):
+        a = ws_upload.next_upload_key("t1", 0)
+        b = ws_upload.next_upload_key("t1", 1)
+        assert a != b, "a new staging generation must produce a new widget id"
+
+    def test_key_is_stable_within_an_epoch(self):
+        assert ws_upload.next_upload_key("t1", 3) == \
+            ws_upload.next_upload_key("t1", 3)
+
+    def test_key_separates_conversations(self):
+        assert ws_upload.next_upload_key("t1", 0) != \
+            ws_upload.next_upload_key("t2", 0)
+
+    def test_key_accepts_int_like_epoch(self):
+        assert ws_upload.next_upload_key("t1", "2") == \
+            ws_upload.next_upload_key("t1", 2)
+
+    def test_app_retires_the_widget_after_staging(self):
+        """app.py must bump the epoch whenever the ws uploader yields bytes.
+
+        Guarded at source level: the component cannot be driven through
+        AppTest (custom components do not render there), and this invariant is
+        the whole fix -- if the bump is ever dropped, the loop comes back.
+        """
+        app_src = open(os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "app.py"), encoding="utf-8").read()
+        assert "next_upload_key(" in app_src, \
+            "the uploader key must come from ws_upload.next_upload_key"
+        assert "ss.upload_epoch = ss.get(\"upload_epoch\", 0) + 1" in app_src, \
+            "app.py must bump upload_epoch once the uploaded bytes are in hand"
+        # and the bump must live in the branch that handles received files
+        head = app_src.split("ss.upload_epoch = ss.get")[0]
+        assert head.rstrip().endswith("== \"ws\":"), \
+            "the epoch bump must be guarded by the ws upload mode"
+
+    def test_module_documents_the_rule(self):
+        assert "ONE-SHOT RULE" in ws_upload.__doc__

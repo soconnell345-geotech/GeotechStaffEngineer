@@ -107,7 +107,7 @@ _APP_STATE_KEYS = (
     "initialized", "thread_id", "temp_dir", "attachments", "artifacts",
     "messages", "transcript", "pending_notes", "total_tokens",
     "last_turn_tokens", "agent", "agent_error", "engine", "model", "save_error",
-    "behavior",
+    "behavior", "upload_epoch",
 )
 
 
@@ -607,7 +607,9 @@ with st.sidebar:
     if ws_upload.upload_mode() == "ws":
         try:
             pairs, _up_errors = ws_upload.ws_file_uploader(
-                core.ACCEPTED_UPLOAD_TYPES, key=f"ws_uploader_{ss.thread_id}")
+                core.ACCEPTED_UPLOAD_TYPES,
+                key=ws_upload.next_upload_key(
+                    ss.thread_id, ss.get("upload_epoch", 0)))
         except Exception as exc:      # component missing/old streamlit
             _up_errors = [f"ws uploader unavailable ({type(exc).__name__}: "
                           f"{exc}) — falling back to the standard uploader"]
@@ -632,9 +634,24 @@ with st.sidebar:
         if uploaded:
             pairs = [(f.name, f.getvalue()) for f in uploaded]
     if pairs:
+        # Retire the uploader's widget id NOW that the bytes are in hand. A
+        # component value is widget state, and the browser re-sends every
+        # widget state on every rerun and reconnect, so a file left in the
+        # widget is re-uploaded forever — a 22 MB attachment cannot cross the
+        # driver proxy inside one socket lifetime, so the app falls into a
+        # permanent ~14 s reconnect loop (live 2026-09-09). Bumping the epoch
+        # gives the component a fresh id, which drops the payload from the
+        # client's state map as well as ours. Do this whether or not the file
+        # is new: a duplicate name is still 29 MB sitting in widget state.
+        _retired = False
+        if ws_upload.upload_mode() == "ws":
+            ss.upload_epoch = ss.get("upload_epoch", 0) + 1
+            _retired = True
         # Only stage names not already registered this session.
         fresh = [(n, d) for (n, d) in pairs
                  if core.sanitize_key(n) not in ss.attachments]
+        if not fresh and _retired:
+            st.rerun()      # nothing new to stage, but retire the widget now
         if fresh:
             atts = core.stage_uploads(ss.attachments, ss.temp_dir, fresh)
             ss.pending_notes.append(core.attachment_note(atts))
