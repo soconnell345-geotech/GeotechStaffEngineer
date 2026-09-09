@@ -24,7 +24,9 @@ from funhouse_agent.vision_tools import (
 )
 from planlens.ir import from_pdf_vector, queries
 from planlens.ir.render import render_region
-from planlens.ir.tests.leader_fixtures import PAGE_HEIGHT, build_synthetic_leader_pdf
+# planlens.testing = the SHIPPED fixture home (planlens.ir.tests is excluded
+# from the wheel, so that path only ever resolved in a source checkout).
+from planlens.testing.leader_fixtures import PAGE_HEIGHT, build_synthetic_leader_pdf
 
 
 class MockVisionEngine:

@@ -158,17 +158,226 @@ class TestErrors:
 
 
 # ---------------------------------------------------------------------------
+# DXF block explosion: the ingest flag must be reachable AND reported
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def blocks_dxf_path(tmp_path):
+    """A sheet whose title-block border lives in a BLOCK, with the real
+    section line-work drawn directly in model space — the shape that makes
+    the two populations distinguishable (2 direct entities, +2 exploded)."""
+    doc = ezdxf.new("R2010")
+    doc.header["$INSUNITS"] = 6
+    blk = doc.blocks.new("TITLEBLK")
+    blk.add_lwpolyline([(0, 0), (120, 0), (120, 90), (0, 90)], close=True)
+    blk.add_line((0, 10), (120, 10))
+    msp = doc.modelspace()
+    msp.add_lwpolyline([(2, 40), (30, 44), (60, 41), (100, 38)],
+                       dxfattribs={"layer": "SURFACE"})
+    msp.add_line((5, 20), (95, 20), dxfattribs={"layer": "BASE"})
+    msp.add_blockref("TITLEBLK", (0, 0))
+    p = tmp_path / "blocks.dxf"
+    doc.saveas(str(p))
+    return str(p)
+
+
+def _n_entities(result):
+    return sum((result.get("counts_by_type") or {}).values())
+
+
+class TestBlockExplosionPassthrough:
+    """explode_blocks silently changes the entity population every raw
+    geometry query ranks over, so it must be BOTH steerable and visible."""
+
+    def test_default_explodes_and_reports_block_share(self, blocks_dxf_path):
+        r = call_agent("drawing_ir", "digitize_drawing",
+                       {"file_path": blocks_dxf_path})
+        assert "error" not in r
+        # 2 directly drawn + the INSERT itself + 2 exploded block primitives.
+        assert r["n_block_entities"] == 2
+        assert _n_entities(r) > r["n_block_entities"]
+
+    def test_explode_blocks_false_is_accepted(self, blocks_dxf_path):
+        # Used to raise "unknown parameter(s) ['explode_blocks']" — there was
+        # no way to ask for only the directly drawn model-space work.
+        r = call_agent("drawing_ir", "digitize_drawing",
+                       {"file_path": blocks_dxf_path, "explode_blocks": False})
+        assert "error" not in r
+        assert "n_block_entities" not in r
+        on = call_agent("drawing_ir", "digitize_drawing",
+                        {"file_path": blocks_dxf_path})
+        assert _n_entities(r) == _n_entities(on) - on["n_block_entities"]
+
+    def test_flag_changes_what_geometry_queries_rank_over(
+            self, blocks_dxf_path):
+        # The consequence that matters: with the block exploded, the widest
+        # path on the sheet is the stamped title-block border (120 wide), not
+        # the directly drawn surface (98 wide).
+        def widest(params):
+            r = call_agent("drawing_ir", "digitize_drawing", params)
+            q = call_agent("drawing_ir", "query_drawing",
+                           {"handle": r["handle"],
+                            "query": "candidate_ground_surface"})
+            return q["result"]["width"]
+
+        direct_only = widest({"file_path": blocks_dxf_path,
+                              "explode_blocks": False})
+        assert direct_only == pytest.approx(98.0)
+        assert widest({"file_path": blocks_dxf_path}) >= direct_only
+
+    def test_documented_in_method_info(self):
+        p = METHOD_INFO["digitize_drawing"]["parameters"]["explode_blocks"]
+        assert p["default"] is True
+        assert "block" in p["description"].lower()
+        assert "n_block_entities" in METHOD_INFO["digitize_drawing"]["returns"]
+
+
+class TestExplodeFlagAgainstAnOlderPlanlens:
+    """The DXF leg used to pass ``explode_blocks=`` unconditionally, so on a
+    RELEASED planlens 0.1.0 — which the app pin ``>=0.1`` resolved to, and
+    whose ``from_dxf`` has no such parameter (verified against the published
+    wheel) — every ``source='dxf'`` call raised TypeError. Neither repo's
+    suite reached it: both develop against editable installs. The pin is now
+    ``>=0.2``; this is the belt-and-braces half, so a mismatched environment
+    degrades visibly instead of crashing."""
+
+    @staticmethod
+    def _pin_floor():
+        import pathlib
+        import re
+        root = pathlib.Path(__file__).resolve().parents[2]
+        text = (root / "pyproject.toml").read_text(encoding="utf-8")
+        m = re.search(r'"planlens\[raster\]>=([0-9.]+)"', text)
+        assert m, "planlens dependency line not found in pyproject.toml"
+        return tuple(int(v) for v in m.group(1).split("."))
+
+    def test_pin_floor_covers_the_explode_blocks_parameter(self):
+        # The floor must not be below the version that introduced the
+        # parameter the adapter's DXF leg wants to pass.
+        assert self._pin_floor() >= (0, 2)
+
+    def test_installed_planlens_supports_the_flag(self):
+        from funhouse_agent.adapters.drawing_ir_adapter import (
+            _dxf_supports_explode,
+        )
+        assert _dxf_supports_explode() is True
+
+    def _old_planlens(self, monkeypatch, blocks_dxf_path):
+        """Stand in a 0.1.x-shaped ``from_dxf`` (no ``explode_blocks``)."""
+        import planlens.ir as pir
+        real = pir.from_dxf
+
+        def old_from_dxf(filepath=None, content=None, units=None,
+                         flip_y=False, name="DXF import"):
+            return real(filepath=filepath, content=content, units=units,
+                        flip_y=flip_y, name=name, explode_blocks=False)
+
+        monkeypatch.setattr(pir, "from_dxf", old_from_dxf)
+
+    def test_degrades_with_a_loud_note_instead_of_typeerror(
+            self, monkeypatch, blocks_dxf_path):
+        self._old_planlens(monkeypatch, blocks_dxf_path)
+        r = call_agent("drawing_ir", "digitize_drawing",
+                       {"file_path": blocks_dxf_path})
+        assert "error" not in r          # was: TypeError from from_dxf
+        assert r["blocks_exploded"] is False
+        assert "planlens>=0.2" in r["note"]
+        # And it really is the unexploded population, not a silent success.
+        assert "n_block_entities" not in r
+
+    def test_explode_false_on_an_old_planlens_is_not_a_degrade(
+            self, monkeypatch, blocks_dxf_path):
+        # 0.1.x ingest IS explode_blocks=false, so that request is served
+        # exactly — no warning, because nothing was lost.
+        self._old_planlens(monkeypatch, blocks_dxf_path)
+        r = call_agent("drawing_ir", "digitize_drawing",
+                       {"file_path": blocks_dxf_path,
+                        "explode_blocks": False})
+        assert "error" not in r
+        assert "blocks_exploded" not in r
+        assert "planlens>=0.2" not in r["note"]
+
+
+class TestGroundSurfaceBlockProvenance:
+    """candidate_ground_surface ranks by widest x-extent over WHATEVER is in
+    the IR. With explosion on that includes stamped block line-work, and the
+    entity ref carries no provenance to say so — so the reply must at least
+    tell the caller how much block geometry the ranking competed against."""
+
+    def test_reply_echoes_block_share_and_the_escape_hatch(
+            self, blocks_dxf_path):
+        r = call_agent("drawing_ir", "digitize_drawing",
+                       {"file_path": blocks_dxf_path})
+        q = call_agent("drawing_ir", "query_drawing",
+                       {"handle": r["handle"],
+                        "query": "candidate_ground_surface"})
+        assert "error" not in q
+        assert q["n_block_entities"] == r["n_block_entities"] == 2
+        assert "explode_blocks=false" in q["note"]
+        # The provenance gap this documents: the winning candidate is the
+        # 120-wide stamped border, and its ref does not say 'block'.
+        assert q["result"]["width"] == pytest.approx(120.0)
+
+    def test_no_echo_when_the_ir_has_no_block_geometry(self, blocks_dxf_path):
+        r = call_agent("drawing_ir", "digitize_drawing",
+                       {"file_path": blocks_dxf_path,
+                        "explode_blocks": False})
+        q = call_agent("drawing_ir", "query_drawing",
+                       {"handle": r["handle"],
+                        "query": "candidate_ground_surface"})
+        assert "n_block_entities" not in q
+        assert "note" not in q
+
+    def test_block_risk_is_in_the_tool_description(self):
+        desc = METHOD_INFO["query_drawing"]["parameters"]["params"][
+            "description"]
+        assert "candidate_ground_surface" in desc
+        assert "explode_blocks=false" in desc
+        assert "n_block_entities" in METHOD_INFO["query_drawing"]["returns"]
+
+
+# ---------------------------------------------------------------------------
 # Phase 2: composition queries, snip_region, search_drawing_set
 # ---------------------------------------------------------------------------
 
 fitz = pytest.importorskip("fitz")
 
-from planlens.ir.tests.construct_fixtures import (  # noqa: E402
+# planlens.testing, NOT planlens.ir.tests: the *.tests packages are excluded
+# from the planlens wheel, so importing fixtures from there works in a source
+# checkout and dies with ModuleNotFoundError on a released install.
+from planlens.testing.construct_fixtures import (  # noqa: E402
     build_synthetic_dimension_pdf, build_synthetic_drawing_set_pdf,
 )
-from planlens.ir.tests.leader_fixtures import (  # noqa: E402
+from planlens.testing.leader_fixtures import (  # noqa: E402
     build_synthetic_leader_pdf,
 )
+
+
+class TestFixtureImportsSurviveARelease:
+    """planlens ships no ``*.tests`` package (its pyproject excludes them), so
+    an app test importing ``planlens.ir.tests.*`` passes here and dies on a
+    pip-installed planlens — measured: all 45 tests in these two modules were
+    lost to a collection-time ModuleNotFoundError under a simulated wheel."""
+
+    def test_no_module_imports_the_excluded_package(self):
+        import pathlib
+        import re
+        # Import statements only — the surrounding comments name the old path
+        # on purpose, to explain why nothing may import it.
+        bad = re.compile(r"^\s*(?:from|import)\s+planlens\.ir\.tests\b")
+        here = pathlib.Path(__file__).parent
+        for name in ("test_drawing_ir_adapter.py", "test_render_region.py"):
+            src = (here / name).read_text(encoding="utf-8").splitlines()
+            offenders = [ln for ln in src if bad.match(ln)]
+            assert not offenders, (
+                f"{name} imports fixtures from a package the planlens wheel "
+                f"excludes; use planlens.testing.*: {offenders}")
+
+    def test_fixture_home_is_a_shipped_package(self):
+        import planlens.testing.construct_fixtures as cf
+        import planlens.testing.leader_fixtures as lf
+        for mod in (lf, cf):
+            assert "tests" not in mod.__name__.split(".")
 
 
 class TestCompositionQueriesViaAdapter:
@@ -280,7 +489,7 @@ class TestSearchDrawingSet:
     def test_title_block_pattern_matches_contained_texts(self, tmp_path):
         # Title-block proposals carry "texts" (a list of contained text
         # items), not "text" — the pattern filter must match against them.
-        from planlens.ir.tests.construct_fixtures import (
+        from planlens.testing.construct_fixtures import (
             build_synthetic_title_block_pdf)
         path, gt = build_synthetic_title_block_pdf(tmp_path)
         hit = call_agent("drawing_ir", "search_drawing_set",

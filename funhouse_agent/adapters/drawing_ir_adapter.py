@@ -81,6 +81,14 @@ def _digitized_cached(fp, page, source):
         ir = _SET_IR_CACHE.get(key)
         if ir is None:
             from planlens.ir import from_dxf, from_pdf_vector
+            # DXF ingest keeps planlens' explode_blocks=True default and takes
+            # NO per-call flag: this path only feeds text_items + the five
+            # construct finders, where block geometry (title blocks, standard
+            # details, stamped callouts) is exactly what must be visible.
+            # TRAP if that ever changes: the cache key is
+            # (abspath, mtime, page, source) — an ingest flag MUST become part
+            # of it, or two callers passing different flags silently share one
+            # IR.
             ir = (from_pdf_vector(filepath=fp, page=page)
                   if source == "pdf_vector" else from_dxf(filepath=fp))
             _SET_IR_CACHE[key] = ir
@@ -107,6 +115,32 @@ def _point_xy(p):
     return (p["x"], p["y"]) if isinstance(p, dict) else tuple(p)
 
 
+def _dxf_supports_explode():
+    """Whether the INSTALLED planlens' ``from_dxf`` takes ``explode_blocks``.
+
+    planlens gained block explosion in 0.2.0; pyproject pins >=0.2. But an
+    environment resolved before that publish (or pinned back) carries a
+    0.1.x ``from_dxf`` whose signature has no such parameter — and passing
+    it there raised ``TypeError`` on EVERY ``digitize_drawing(source=
+    'dxf')`` call, invisibly to both repos' suites (they run editable
+    installs).
+
+    Passing the flag "only when it differs from the default" would be
+    exactly backwards: 0.1.x ingests blocks unexploded, so ``False`` is
+    the one request it already satisfies, while the ``True`` default is
+    the one it cannot. So the flag is dropped when unsupported and the
+    result SAYS SO whenever explosion was actually wanted — degraded and
+    visible, never silently different.
+    """
+    import inspect
+
+    from planlens.ir import from_dxf
+    try:
+        return "explode_blocks" in inspect.signature(from_dxf).parameters
+    except (TypeError, ValueError):  # unintrospectable — assume current
+        return True
+
+
 # ---------------------------------------------------------------------------
 # digitize_drawing
 # ---------------------------------------------------------------------------
@@ -116,7 +150,7 @@ def _run_digitize_drawing(params):
 
     _valid = ("file_path", "source", "page", "scale", "units", "origin",
               "calibration", "detect_lines", "detect_circles",
-              "detect_contours", "ocr", "ocr_text")
+              "detect_contours", "ocr", "ocr_text", "explode_blocks")
     reject_unknown_params(params, _valid, method="digitize_drawing")
     require_params(params, ["file_path"], method="digitize_drawing",
                    valid=_valid)
@@ -125,8 +159,26 @@ def _run_digitize_drawing(params):
     if source == "auto":
         source = _auto_source(file_path)
 
+    no_explosion_leg = False
     if source == "dxf":
-        ir = from_dxf(filepath=file_path, units=params.get("units"))
+        # explode_blocks defaults TRUE (planlens' own default): this tool
+        # exists for drawing review, and on a real agency sheet most of the
+        # annotation line-work is stamped from blocks — 5003.dxf goes 170 ->
+        # 1870 entities when exploded. The escape hatch matters because
+        # explosion silently CHANGES the population every raw-geometry query
+        # ranks over (a title-block border exploded out of a block can outrank
+        # a directly drawn section surface by width); false = only work drawn
+        # in model space.
+        explode = params.get("explode_blocks", True)
+        if _dxf_supports_explode():
+            ir = from_dxf(filepath=file_path, units=params.get("units"),
+                          explode_blocks=explode)
+        else:
+            # planlens < 0.2 (below the pin): ingest is unexploded and the
+            # flag does not exist. Report the degrade only when explosion
+            # was actually asked for — 'false' is what this leg already does.
+            no_explosion_leg = bool(explode)
+            ir = from_dxf(filepath=file_path, units=params.get("units"))
     elif source == "pdf_vector":
         ir = from_pdf_vector(
             filepath=file_path, page=params.get("page", 0),
@@ -157,9 +209,25 @@ def _run_digitize_drawing(params):
         out["ocr"] = ocr_out
     if ir.metadata.get("scale_candidates"):
         out["scale_candidates"] = ir.metadata["scale_candidates"]
+    if ir.metadata.get("n_block_entities"):
+        # How much of the entity count came from exploded INSERTs rather than
+        # directly drawn model-space work — without it the caller cannot tell
+        # a 1,870-entity sheet with 1,700 stamped entities from a genuinely
+        # dense one, and cannot judge whether to re-digitize with
+        # explode_blocks=false.
+        out["n_block_entities"] = ir.metadata["n_block_entities"]
     out["note"] = ("IR cached under 'handle'. Use query_drawing to request "
                    "slices and get_entities for exact coordinates of specific "
                    "ids. Confidence < 1.0 marks raster/OCR detections.")
+    if no_explosion_leg:
+        out["blocks_exploded"] = False
+        out["note"] += (
+            " WARNING: the installed planlens predates block explosion "
+            "(<0.2), so block references were NOT expanded — stamped "
+            "line-work (title blocks, standard details, callouts) is "
+            "ABSENT from this IR and n_block_entities is unavailable. "
+            "Upgrade to planlens>=0.2 before trusting counts or any "
+            "'not found on this sheet' conclusion.")
     if not out.get("has_text") and source == "pdf_vector" \
             and ocr_out is None:
         out["note"] += (
@@ -262,6 +330,25 @@ def _run_query_drawing(params):
     payload = {"handle": params["handle"], "query": query, "result": result}
     if isinstance(result, list):
         payload["n_results"] = len(result)
+    if query == "candidate_ground_surface":
+        # PROVENANCE, not a filter: this query ranks by widest x-extent over
+        # WHATEVER is in the IR, and with explosion on that population
+        # includes stamped block line-work — a 120-wide title-block border
+        # out-ranks a 98-wide drawn surface (measured on the synthetic
+        # blocks sheet in tests/test_drawing_ir_adapter.py). The candidate
+        # ref itself does not yet say which entities came from a block, so
+        # echo how many of them could have, and say what to do about it.
+        n_blk = (ir.metadata or {}).get("n_block_entities")
+        if n_blk:
+            payload["n_block_entities"] = n_blk
+            payload["note"] = (
+                f"This IR contains {n_blk} entities exploded out of DXF "
+                "block references (stamped borders, standard details). "
+                "This query ranks purely by horizontal extent, so a "
+                "stamped title-block border can out-rank the drawn "
+                "section surface. If the candidate looks like sheet "
+                "furniture, re-digitize with explode_blocks=false and "
+                "re-run this query on the directly drawn work.")
     return clean_result(payload)
 
 
@@ -534,6 +621,20 @@ METHOD_INFO = {
             "units": {"type": "str", "required": False,
                       "allowed_values": ["m", "mm", "cm", "ft", "in"],
                       "description": "DXF drawing units override (default: the DXF $INSUNITS header, else meters). dxf only."},
+            "explode_blocks": {"type": "bool", "required": False,
+                               "default": True,
+                               "description": (
+                                   "DXF only: explode block references "
+                                   "(INSERTs) into IR primitives tagged "
+                                   "style='block:<NAME>'. Default true — most "
+                                   "annotation line-work on a real sheet is "
+                                   "stamped from blocks and is otherwise "
+                                   "invisible (n_block_entities reports how "
+                                   "many entities came from blocks). Set "
+                                   "false to see ONLY geometry drawn directly "
+                                   "in model space, e.g. when a stamped "
+                                   "title-block border outranks the section "
+                                   "line-work you asked about.")},
             "origin": {"type": "str", "required": False, "default": "bottom_left",
                        "allowed_values": ["bottom_left", "top_left"],
                        "description": "Y-orientation for PDF/raster (bottom_left = engineering up-positive)."},
@@ -566,6 +667,10 @@ METHOD_INFO = {
             "scale": "Applied model scale (or null for page space).",
             "bbox": "Overall extent [x_min,y_min,x_max,y_max].",
             "scale_candidates": "PDF-only: proposed scales from page text (proposals, not applied).",
+            "n_block_entities": ("DXF-only: how many of the entities came "
+                                 "from exploded block references rather than "
+                                 "directly drawn model-space work (absent "
+                                 "when none did)."),
             "has_text": ("Whether the sheet carries ANY extractable text. "
                          "False = likely SHX/stroked lettering (common on "
                          "agency PDFs): text queries return nothing there "
@@ -612,11 +717,27 @@ METHOD_INFO = {
                                        "via snip_region before reporting values; "
                                        "entities_on_layer: {layer}; "
                                        "entities_by_color: {color}; "
-                                       "candidate_ground_surface/summary_stats: {}.")},
+                                       "candidate_ground_surface: {} — "
+                                       "widest-horizontal-extent PROPOSAL; on "
+                                       "a DXF digitized with the default "
+                                       "explode_blocks=true it ranks over "
+                                       "stamped block line-work too, so a "
+                                       "title-block border can out-rank the "
+                                       "drawn section surface (the reply "
+                                       "echoes n_block_entities when the IR "
+                                       "has any) — re-digitize with "
+                                       "explode_blocks=false to rank over "
+                                       "only directly drawn model-space work; "
+                                       "summary_stats: {}.")},
         },
         "returns": {
             "result": "Query output — a list of entity refs or a stats/proposal dict.",
             "n_results": "List length when the result is a list.",
+            "n_block_entities": ("candidate_ground_surface only: how many "
+                                 "entities in this IR came from exploded DXF "
+                                 "blocks, i.e. how much sheet furniture the "
+                                 "widest-extent ranking competed against "
+                                 "(absent when none did)."),
         },
     },
     "get_entities": {
