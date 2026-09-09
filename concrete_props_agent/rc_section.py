@@ -1,7 +1,7 @@
-"""Rectangular RC section analysis via concreteproperties.
+"""Rectangular RC section analysis.
 
-Interface units: dimensions mm, strengths MPa (library-native N/mm);
-moments converted to kN*m and axial forces to kN on output.
+Interface units: dimensions mm, strengths MPa (N/mm^2); moments converted to
+kN*m and axial forces to kN on output.
 
 Material model defaults (all overridable; see DESIGN.md):
 - Ec = 4700*sqrt(f'c) MPa (ACI 318-19 Eq. 19.2.2.1.b, normal weight)
@@ -10,12 +10,16 @@ Material model defaults (all overridable; see DESIGN.md):
 - modulus of rupture fr = 0.62*sqrt(f'c) MPa (ACI 318-19 Eq. 19.2.3.1)
 - steel: elastic-perfectly-plastic, Es = 200 GPa
 
+The mechanics live in ``rc_native`` -- strain compatibility and transformed
+sections computed directly from the ACI material model, with no third-party
+section library (see the module docstring in ``concrete_props_agent``).
+
 Capacities are NOMINAL (no phi factors applied).
 """
 
 import math
 
-from concrete_props_agent.concrete_utils import import_concreteproperties
+from concrete_props_agent import rc_native
 from concrete_props_agent.results import RCSectionResult
 
 
@@ -86,75 +90,57 @@ def analyze_rc_rectangle(
     if cover_mm <= 0 or 2 * cover_mm + dia_bot_mm >= h_mm:
         raise ValueError("cover_mm inconsistent with section depth")
 
-    (ConcreteSection, Concrete, SteelBar, ssp,
-     concrete_rectangular_section) = import_concreteproperties()
-
     if ec_MPa is None:
         ec_MPa = 4700.0 * math.sqrt(fc_MPa)
     fr = 0.62 * math.sqrt(fc_MPa)
-    gamma = aci_beta1(fc_MPa)
-
-    concrete = Concrete(
-        name=f"{fc_MPa:.0f} MPa",
-        density=2.4e-6,
-        stress_strain_profile=ssp.ConcreteLinear(elastic_modulus=ec_MPa),
-        ultimate_stress_strain_profile=ssp.RectangularStressBlock(
-            compressive_strength=fc_MPa, alpha=0.85, gamma=gamma,
-            ultimate_strain=0.003),
-        flexural_tensile_strength=fr,
-        colour="lightgrey",
-    )
-    steel = SteelBar(
-        name=f"fy {fy_MPa:.0f}",
-        density=7.85e-6,
-        stress_strain_profile=ssp.SteelElasticPlastic(
-            yield_strength=fy_MPa, elastic_modulus=es_MPa,
-            fracture_strain=0.05),
-        colour="grey",
-    )
+    beta1 = aci_beta1(fc_MPa)
+    n_modular = rc_native.modular_ratio(es_MPa, ec_MPa)
 
     area_bot = _bar_area(dia_bot_mm)
     area_top = _bar_area(dia_top_mm) if n_top else 0.0
-    geom = concrete_rectangular_section(
-        b=b_mm, d=h_mm,
-        dia_top=dia_top_mm if n_top else 0,
-        area_top=area_top, n_top=n_top, c_top=cover_mm if n_top else 0,
-        dia_bot=dia_bot_mm, area_bot=area_bot, n_bot=n_bot, c_bot=cover_mm,
-        n_circle=4, conc_mat=concrete, steel_mat=steel)
-    sec = ConcreteSection(geom)
+    as_bot = n_bot * area_bot
+    as_top = n_top * area_top
 
-    gross = sec.get_gross_properties()
-    # transformed gross Ixx about the centroid
-    tr = sec.get_transformed_gross_properties(elastic_modulus=ec_MPa)
-    ixx_gross = float(tr.ixx_c)
+    layers = [rc_native.Layer(as_bot, cover_mm + dia_bot_mm / 2.0)]
+    if n_top:
+        layers.append(
+            rc_native.Layer(as_top, h_mm - cover_mm - dia_top_mm / 2.0))
 
-    cracked = sec.calculate_cracked_properties(theta=0)
-    cracked.calculate_transformed_properties(elastic_modulus=ec_MPa)
-    ixx_cr = float(cracked.ixx_c_cr)
-    m_cr = float(cracked.m_cr) / 1e6
+    # -- elastic (service) properties -----------------------------------
+    _, y_c_tr, ixx_gross = rc_native.transformed_gross(
+        b_mm, h_mm, layers, n_modular)
+    ixx_cr, _ = rc_native.cracked_properties(
+        b_mm, h_mm, layers, n_modular, sagging=True)
+    m_cr = rc_native.cracking_moment(fr, ixx_gross, y_c_tr, h_mm,
+                                     sagging=True) / 1e6
 
-    ult_pos = sec.ultimate_bending_capacity(theta=0)
-    mn_pos = abs(float(ult_pos.m_x)) / 1e6
+    # -- ultimate capacities --------------------------------------------
+    mn_pos = rc_native.ultimate_capacity(
+        b_mm, h_mm, layers, fc_MPa, fy_MPa, es_MPa,
+        alpha=0.85, beta1=beta1, eps_cu=0.003, sagging=True)[0] / 1e6
 
     mn_neg = None
     if n_top:
-        ult_neg = sec.ultimate_bending_capacity(theta=math.pi)
-        mn_neg = abs(float(ult_neg.m_x)) / 1e6
+        mn_neg = rc_native.ultimate_capacity(
+            b_mm, h_mm, layers, fc_MPa, fy_MPa, es_MPa,
+            alpha=0.85, beta1=beta1, eps_cu=0.003, sagging=False)[0] / 1e6
 
     interaction = []
     if include_interaction:
-        mi = sec.moment_interaction_diagram(
-            theta=0, n_points=n_interaction_points, progress_bar=False)
-        n_list, m_list = mi.get_results_lists(moment="m_x")
-        interaction = [(float(n) / 1e3, float(m) / 1e6)
-                       for n, m in zip(n_list, m_list)]
+        interaction = [
+            (n / 1e3, m / 1e6)
+            for n, m in rc_native.interaction_diagram(
+                b_mm, h_mm, layers, fc_MPa, fy_MPa, es_MPa,
+                alpha=0.85, beta1=beta1, eps_cu=0.003,
+                n_points=n_interaction_points)
+        ]
 
     d_eff = h_mm - cover_mm - dia_bot_mm / 2.0
     return RCSectionResult(
         b_mm=b_mm, h_mm=h_mm, fc_MPa=fc_MPa, fy_MPa=fy_MPa, ec_MPa=ec_MPa,
-        as_bot_mm2=n_bot * area_bot, as_top_mm2=n_top * area_top,
+        as_bot_mm2=as_bot, as_top_mm2=as_top,
         d_eff_mm=d_eff,
-        gross_area_mm2=float(gross.total_area),
+        gross_area_mm2=b_mm * h_mm,
         ixx_gross_mm4=ixx_gross,
         ixx_cracked_mm4=ixx_cr,
         m_cr_kNm=m_cr,

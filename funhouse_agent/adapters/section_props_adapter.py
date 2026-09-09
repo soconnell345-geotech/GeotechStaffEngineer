@@ -6,14 +6,8 @@ from funhouse_agent.adapters import (
 
 _SHAPES = ["rectangle", "circle", "chs", "rhs", "i_section"]
 
-_ERR = ("sectionproperties is not installed. "
-        "Install with: pip install sectionproperties")
-
-
 def _run_section_properties(params: dict) -> dict:
-    from section_props_agent import analyze_section, has_sectionproperties
-    if not has_sectionproperties():
-        return {"error": _ERR}
+    from section_props_agent import analyze_section
     reject_unknown_params(
         params,
         ("shape", "d", "b", "t", "t_f", "t_w", "r", "r_out", "mesh_size",
@@ -29,10 +23,7 @@ def _run_section_properties(params: dict) -> dict:
 
 
 def _run_polygon_section(params: dict) -> dict:
-    from section_props_agent import (
-        analyze_polygon_section, has_sectionproperties)
-    if not has_sectionproperties():
-        return {"error": _ERR}
+    from section_props_agent import analyze_polygon_section
     reject_unknown_params(
         params, ("points", "mesh_size", "warping"), method="polygon_section")
     require_params(params, ["points"], method="polygon_section")

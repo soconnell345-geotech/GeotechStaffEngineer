@@ -4,10 +4,9 @@ import math
 
 import pytest
 
-pytest.importorskip("sectionproperties")
 
 from section_props_agent import (
-    analyze_section, analyze_polygon_section, has_sectionproperties,
+    analyze_section, analyze_polygon_section,
     SECTION_SHAPES,
 )
 
@@ -105,4 +104,3 @@ class TestValidation:
     def test_shape_registry(self):
         assert set(SECTION_SHAPES) == {"rectangle", "circle", "chs", "rhs",
                                        "i_section"}
-        assert has_sectionproperties()

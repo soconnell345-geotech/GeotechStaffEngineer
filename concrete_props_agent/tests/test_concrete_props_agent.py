@@ -5,9 +5,8 @@ import math
 
 import pytest
 
-pytest.importorskip("concreteproperties")
 
-from concrete_props_agent import analyze_rc_rectangle, has_concreteproperties
+from concrete_props_agent import analyze_rc_rectangle
 from concrete_props_agent.rc_section import aci_beta1
 
 
@@ -101,5 +100,7 @@ class TestValidation:
             analyze_rc_rectangle(b_mm=300, h_mm=550, fc_MPa=32, fy_MPa=500,
                                  n_bot=3, dia_bot_mm=28, n_top=2)
 
-    def test_has_flag(self):
-        assert has_concreteproperties()
+    def test_no_reinforcement_rejected(self):
+        with pytest.raises(ValueError, match="n_bot"):
+            analyze_rc_rectangle(b_mm=300, h_mm=550, fc_MPa=32, fy_MPa=500,
+                                 n_bot=0, dia_bot_mm=28)

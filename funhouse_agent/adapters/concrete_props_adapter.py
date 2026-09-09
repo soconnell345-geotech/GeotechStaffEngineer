@@ -4,15 +4,8 @@ from funhouse_agent.adapters import (
     clean_result, reject_unknown_params, require_params,
 )
 
-_ERR = ("concreteproperties is not installed (requires Python >= 3.12). "
-        "Install with: pip install concreteproperties")
-
-
 def _run_rc_section(params: dict) -> dict:
-    from concrete_props_agent import (
-        analyze_rc_rectangle, has_concreteproperties)
-    if not has_concreteproperties():
-        return {"error": _ERR}
+    from concrete_props_agent import analyze_rc_rectangle
     reject_unknown_params(
         params,
         ("b", "h", "fc", "fy", "n_bot", "dia_bot", "cover", "n_top",

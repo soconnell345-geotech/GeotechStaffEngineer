@@ -33,7 +33,6 @@ class TestSectionPropsDispatch:
         assert "shape" in info["parameters"]
 
     def test_call_rectangle(self):
-        pytest.importorskip("sectionproperties")
         from funhouse_agent.dispatch import call_agent
         r = call_agent("section_props", "section_properties",
                        {"shape": "rectangle", "d": 200, "b": 100,
@@ -76,7 +75,6 @@ class TestConcretePropsDispatch:
         assert "fc" in info["parameters"]
 
     def test_call_rc_section(self):
-        pytest.importorskip("concreteproperties")
         from funhouse_agent.dispatch import call_agent
         r = call_agent("concrete_props", "rc_rectangular_section",
                        {"b": 300, "h": 550, "fc": 32, "fy": 500,
