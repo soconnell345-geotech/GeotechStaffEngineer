@@ -171,8 +171,8 @@ MODULE_TITLES = {
     "reliability": "Reliability engine",
     "salib": "Global sensitivity analysis (SALib)",
     "pystra": "Structural reliability (pystra)",
-    "section_props": "Cross-section properties (sectionproperties)",
-    "concrete_props": "RC section analysis (concreteproperties)",
+    "section_props": "Cross-section properties",
+    "concrete_props": "RC section analysis",
     "pynite": "Frame &amp; beam analysis (PyNite)",
     "dxf_import": "DXF import",
     "pdf_import": "PDF cross-section import",
@@ -767,8 +767,11 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "of inertia, elastic and plastic moduli, radii of gyration, torsion and warping constants "
             "&mdash; the inputs every member check starts from. Dimensions in mm.",
         "methods": [
-            "FE-based section analysis (**sectionproperties**, MIT): parametric rectangle / circle / "
-            "CHS / RHS / I-section, plus arbitrary polygon outlines.",
+            "Exact closed-form integration over the section outline (Green&rsquo;s theorem): parametric "
+            "rectangle / circle / CHS / RHS / I-section, plus arbitrary polygon outlines.",
+            "Torsion and warping constants from the published closed forms &mdash; the exact St.&nbsp;Venant "
+            "series for a rectangle, Bredt for closed boxes, El&nbsp;Darwish &amp; Johnston / AISC for "
+            "I-sections; arbitrary outlines fall back to a finite-difference Prandtl solve.",
         ],
         "limits": [
             "Geometric properties only &mdash; no member design checks; nominal member capacity comes "
@@ -781,12 +784,12 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "moment, nominal moment capacity (sagging/hogging), and the N-M interaction diagram. "
             "mm and MPa in, kN&middot;m out.",
         "methods": [
-            "Fibre/stress-block section analysis (**concreteproperties**, MIT) with ACI-style defaults "
+            "Strain-compatibility section analysis against the ACI&nbsp;318-19 material model "
             "(Ec = 4700&radic;f&rsquo;c, rectangular stress block with ACI &beta;1, fr = 0.62&radic;f&rsquo;c).",
             "Capacities are NOMINAL &mdash; apply code &phi; factors separately.",
         ],
         "limits": [
-            "Rectangular sections with edge bar layers; requires Python &ge; 3.12.",
+            "Rectangular sections with edge bar layers, one layer per face.",
         ],
     },
 
@@ -1136,10 +1139,11 @@ def _ch1_what(ctx):
 def _ch2_install(ctx):
     ctx.chapter("Installation &amp; environments")
     ctx.section("Install from PyPI")
-    ctx.raw("<pre class='call'><code># core: numpy + scipy + the digitized reference library\n"
+    ctx.raw("<pre class='call'><code># the whole stack: analysis modules, reference library, deep agent, webapp\n"
             "pip install geotech-staff-engineer\n\n"
             "# everything (all optional analysis backends + the deep agent)\n"
-            "pip install \"geotech-staff-engineer[deep,full]\"</code></pre>")
+            "pip install \"geotech-staff-engineer[deep,full]\"\n\n"
+            "pip install geotech-staff-engineer</code></pre>")
     ctx.para(
         "The core install already covers the native modules &mdash; bearing capacity, settlement, piles, "
         "walls, slope stability, the reliability engine, fem2d, and the reference library "
@@ -1188,9 +1192,18 @@ def _ch2_install(ctx):
         "Install from a cluster-accessible location &mdash; <code>/tmp</code> or a Unity Catalog "
         "Volume, <em>not</em> <code>/Workspace</code> (the workspace FUSE mount mangles wheel filenames "
         "and does not durably store output files):")
-    ctx.raw("<pre class='call'><code>%pip install \"geotech-staff-engineer[deep,full]\"\n"
+    ctx.raw("<pre class='call'><code>%pip install \"geotech-staff-engineer\"\n"
             "# or a test wheel uploaded to /tmp or a UC Volume:\n"
-            "%pip install \"/tmp/geotech_staff_engineer-<ver>-py3-none-any.whl[deep,full]\"</code></pre>")
+            "%pip install \"/tmp/geotech_staff_engineer-<ver>-py3-none-any.whl\"</code></pre>")
+    ctx.callout("No compiled meshing dependency",
+        "<p>The cross-section and RC-section engines used to wrap "
+        "<code>sectionproperties</code> and <code>concreteproperties</code>, which both "
+        "require <code>cytriangle</code> &mdash; a compiled wheel corporate package proxies "
+        "quarantine. A Nexus malware-defense 403 on it failed the entire 5.12.0 install on "
+        "the cluster, so in 5.13.0 both were re-implemented natively on numpy/scipy: exact "
+        "closed-form integration for the geometry, published closed forms for torsion, and "
+        "ACI strain compatibility for the RC section. The retired libraries&rsquo; outputs were "
+        "pinned as regression oracles first; every RC scalar agrees to better than 0.04%.</p>")
     ctx.callout("The typing_extensions / restart-Python note (now handled automatically)",
         "<p>Databricks cluster runtimes pre-import an old <code>typing_extensions</code> (&lt;4.13) at "
         "kernel startup, which used to break the langgraph imports behind the <code>[deep]</code> agent "

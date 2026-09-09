@@ -1,12 +1,311 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-09-01.** This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-09-08.** This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-09-05, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
+
+### FIELD FEEDBACK 2026-09-09 — Nairobi SoE: the 401 was the MODEL, not SharePoint
+
+Drop triaged into `module_work/field_feedback/2026-09-09_nairobi-soe_v5.11.2/`
+(FINDINGS.md committed, raw/ gitignored). The owner's read was that the agent
+"did some search it didn't have credentials for". The evidence says otherwise
+and the correction matters: `AuthenticationError` is the **openai** exception
+class, every SharePoint tool catches and stringifies its own errors (so none
+can kill a turn), and the file was fetched successfully at its true
+23,006,108 bytes. The agent's own model call to the Funhouse proxy came back
+as an **IIS 401 HTML page**, which `friendly_turn_error` then dumped raw into
+the chat — and that raw page is what made a model-proxy failure look like a
+SharePoint permissions failure.
+
+Transient, not mis-permissioned: turn 2 succeeded seconds later on the same
+credentials. Working hypothesis is NTLM's per-connection auth going stale
+during the 23 MB download that preceded the model call.
+
+Two planned fixes, neither landed (mid-release, and neither is verifiable off
+the cluster): (1) retry the main model call once on `AuthenticationError` with
+a fresh client — there is currently NO retry on that path, so one 401 ends the
+turn; (2) give `friendly_turn_error` an auth case that names the failing
+surface and strips an HTML body to its title. Backlog: `_render_pdf_page` has
+no output-size cap (measured 2.13 MB base64 for a D-size sheet at 220 dpi —
+fine here, but unbounded by design).
+
+---
+
+### THE 22 MB UPLOAD LOOP — root-caused and fixed (2026-09-09)
+
+Live on 5.11.2: uploading a 22 MB file put the app into a permanent
+websocket reconnect loop, sockets dying every ~14 s (owner's devtools trace:
+`stream` 101 at 14.37 / 13.48 / 17.30 / 14.28 s, each followed by the stock
+`health` + `host-config` refetch). Everything was stable before the upload --
+this is NOT the old ping/TTL family, which 5.11.2 closed.
+
+**Root cause: a component value is WIDGET STATE, and widget state is re-sent
+by the browser on every rerun and every reconnect.** Confirmed in Streamlit's
+own source, not inferred:
+
+* frontend bundle: `createWidgetStatesMsg(){ let e=new be; return
+  this.widgetStates.forEach(t=>e.widgets.push(t)), e }` -- the WHOLE map, no
+  delta, no filtering.
+* `runtime/app_session.py`: each rerun BackMsg is read as
+  `widget_states=client_state.widget_states`.
+
+So the ws uploader (`webapp/ws_upload.py`, the proxy-safe attach path the
+Databricks launcher forces via `GEOTECH_UPLOAD_MODE=ws`) leaves the file's
+base64 in its component value, and the browser re-uploads it forever. 22 MB
+inflates to ~29 MB of base64; that cannot cross the driver proxy inside one
+socket lifetime, so the socket dies mid-send, the client reconnects, re-sends
+the same 29 MB, and dies again. Unbreakable by design -- the payload rides
+the very reconnect that is supposed to recover it.
+
+Note the asymmetry that hid this: the DOWNWARD direction is protected.
+`runtime/forward_msg_cache.py` (`populate_hash_if_needed` /
+`create_reference_msg` / `global.minCachedMessageSize`) re-sends a large
+repeated ForwardMsg as a hash reference, which is why `st.download_button`
+with big artifact bytes has never behaved this way. There is no equivalent
+cache browser -> server.
+
+**Fix (in the tree, unreleased):** retire the uploader's widget id the moment
+its bytes are in hand. `ws_upload.next_upload_key(thread_id, epoch)` +
+`ss.upload_epoch`, bumped in `app.py` whenever the ws uploader yields pairs
+(including a duplicate filename, which is still 29 MB sitting in state). A
+new widget id makes the old one inactive, and the client's
+`WidgetStateManager.removeInactive` deletes its state -- so the file crosses
+the wire exactly once. Guarded by 6 tests in
+`webapp/tests/test_ws_upload.py::TestOneShotWidgetKey`, one of which asserts
+the bump still exists in `app.py` (the component cannot be driven through
+AppTest, and losing that one line brings the loop straight back).
+
+**Immediate workaround on the running 5.11.2, no release needed:** reload the
+app tab. Widget state lives in the page's JS memory, so a reload starts an
+empty state map and the loop stops. Until the fix ships, keep ws-mode
+attachments small -- the 25 MB cap is about a single crossing, and anything
+over roughly 10 MB is re-sent on every interaction.
+
+**Still worth doing later:** chunk the ws upload (send the file in N
+messages, reassemble server-side) so the per-file cap stops being a function
+of what survives one socket lifetime.
+
+---
+
+### 5.13.0 — the quarantined structural libraries are GONE (2026-09-08)
+
+`%pip install "geotech-staff-engineer==5.12.0"` died on the cluster with a
+Nexus **403 "Requested item is quarantined"** on `cytriangle`. That package is
+a transitive dep of BOTH `sectionproperties` and `concreteproperties`
+(verified from installed metadata -- not concreteproperties-only, which the
+pip traceback makes it look like), and both were core deps, so one blocked
+wheel failed the WHOLE install: no agent stack, no planlens, nothing.
+
+**Owner's call:** no security waiver is available for a project this size, so
+the two libraries were REMOVED and their capability re-implemented natively --
+the groundhog precedent from 5.11.2. A 5.12.1 hotfix that merely moved them to
+an opt-in extra was built and verified first, but the owner chose to wait for
+the rebuild rather than release it (branch `hotfix/5.12.1-structural-extra`
+survives as a fallback; it is cut from the v5.12.0 tag so it can still ship
+without planlens 0.2.0).
+
+**What was built (all native, numpy/scipy only):**
+
+* `section_props_agent/polygon_props.py` -- exact Green's-theorem integration
+  of area, centroid, Ixx/Iyy/Ixy, principal axes, elastic moduli; plastic
+  moduli by half-plane clipping + area-halving bisection; native
+  self-intersection check replacing shapely.
+* `section_props_agent/torsion.py` -- published closed forms (exact St.
+  Venant series for rectangles, polar for circular, Bredt for closed boxes,
+  El Darwish & Johnston/AISC for I-sections) plus a finite-difference Prandtl
+  solve, Richardson-extrapolated, for arbitrary outlines.
+* `concrete_props_agent/rc_native.py` -- transformed and cracked sections,
+  cracking moment, ultimate capacity by ACI strain compatibility, and an
+  N-M interaction diagram sampled uniformly in axial force.
+
+**Verification.** The libraries' outputs were pinned as oracles BEFORE
+deletion (`module_work/structural_native/pin_oracles.py` -> `oracles.json`,
+23 cases); no library code was copied. Measured against them: every RC scalar
+within **0.037%**; all section geometry within **0.5%**; polygon torsion
+within **0.5%** (and within 0.013% of the exact series where one exists).
+Two deliberate differences are declared in the oracle tests with reasons --
+the warping constant is no longer reported for solid rectangles, closed boxes
+or arbitrary polygons (no defensible closed form; design practice neglects
+it), and the interaction curve differs above 70% of the squash load, which is
+above ACI's own 0.80*P0 cap. Structural suites went 58 -> **150 tests** and
+got ~17x faster (no meshing).
+
+**Packaging.** `sectionproperties` and `concreteproperties` are gone from
+`pyproject.toml`; `[structural]` is an empty alias like every other retired
+extra name. **PyNiteFEA stays in core** (owner's call -- it is on no block
+list and installs through the proxy fine). Watch one thing on the first
+cluster install: PyNite 3.x requires `numpy>=2.4` and the runtime boots with
+2.1.3, so pip will upgrade numpy under the kernel -- the failure mode that
+SIGTERMed the REPL via Pygments in 5.10.0. If that bites, moving PyNiteFEA to
+an extra is the one-line fix.
+
+**Still open:** version is bumped to 5.13.0 in the working tree but NOT
+released, and the tree still carries the uncommitted planlens Phase-3.2 work
+plus the `planlens[raster]>=0.2` pin -- so the publish order (planlens 0.2.0
+first, then the app) still applies. Ask the DT Nexus admins to release
+`cytriangle` from quarantine anyway; it is a Cython wrapper around Shewchuk's
+Triangle and the flag looks like the usual binary-wheel false positive.
+
+---
+
+### The staging trap (read first)
+
+Six planlens paths MUST enter the same commit or the SOURCE tree breaks --
+the tracked-and-modified shims `planlens/ir/tests/{leader,construct}_fixtures.py`
+already delegate to them, and the guard that would catch the mistake is
+itself in the untracked set:
+
+    planlens/testing/{__init__,leader_fixtures,construct_fixtures}.py
+    planlens/tests/{test_packaging,test_readme_claims}.py
+    planlens/ir/tests/test_text_bearing_scenes.py
+
+Measured consequence of missing them: planlens 412 -> 369 collected + 4
+collection errors; the app repo 58 -> **0 collected**. Also untracked and
+wanted: `planlens/ir/{measure,spatial}.py` + their tests (new work, below),
+and app-side `module_work/code_review/2026-09-06_planlens_phase32/FINDINGS.md`
++ `module_work/drawing_ground_truth/doc_claims_check.py`.
+Do NOT stage the stray `Screenshot 2026-09-07 204229.png` in planlens.
+
+### Publish order: DECOUPLED (owner's call, 2026-09-09)
+
+The app no longer waits on planlens. The pin is back to
+`planlens[raster]>=0.1` and **app 5.13.0 publishes alone**, because its two
+fixes -- the cytriangle install failure and the 22 MB websocket loop -- are
+urgent, unrelated to planlens, and the cluster is broken in both ways today.
+planlens 0.2.0 is HELD pending the round-4 repair (see the section above).
+
+Verified before relaxing the pin, so this is not a hope: every planlens symbol
+the app imports at RUNTIME exists in the published 0.1.0 wheel (checked by
+parsing the wheel, not by installing it), and `planlens.testing` is imported
+only by tests, which the wheel does not ship. The single live cost is that DXF
+block line-work is absent, which `_dxf_supports_explode`
+(`adapters/drawing_ir_adapter.py:118`) already handles by falling back to an
+unexploded ingest.
+
+**The follow-up release must restore `planlens[raster]>=0.2`** once 0.2.0
+publishes. The comment at that pin in `pyproject.toml` says so too.
+
+The `geotech-references` pointer still moves to `d8ff52e` (1.4.0, already on
+PyPI) in the same commit.
+
+### The remediation train: the caveat is CLOSED, and it found two regressions
+
+The round-4 adversarial pass was run (2026-09-09, independent verifier, no
+build context). Full report + runnable repro fixtures for all three trees:
+`module_work/code_review/2026-09-06_planlens_phase32/ROUND4_VERIFICATION.md`
+and `round4_repro.py` alongside it.
+
+**Verdict: DO NOT SHIP as 0.2.0** until findings 1 and 2 are fixed.
+
+What held up: **every measured number in the ledger reproduces** (632 / 58 /
+25/25 / 16/16 / 23/25 / FPs 2·10·6·19·23·20·38 / precision 5·10·12·10 / blunt
+19·17·0 / layer-0 557·158·1696), no README figure disagrees with
+`doc_claims_check.py`, and — the strongest evidence for the tree, which the
+ledger never claimed — **all 41 matched corpus defpoint residuals are identical
+to `1f6551c` to three decimals.** On the corpus the remediation is provably
+inert.
+
+What broke, in six-line fixtures, on terminator styles the corpus does not
+contain:
+
+1. **Box-like (diamond / trapezoid) terminators**: `_arrow_geometry` computes
+   the apex correctly and the blunt branch then discards it for a centroid
+   projection — length 100.0 -> **94.0**, confidence 0.952 -> **0.45**, never
+   called. Clean on v0.1.0 AND on the tip: a regression from the uncommitted
+   work.
+2. **A fill-cluster arrowhead loses its end to a farther foreign chevron** (the
+   cluster is 0.04 pt away, the chevron 3.24 pt) because distance is only
+   consulted *within* a tier. No cap, no flag, confidence stays 0.944 — and the
+   foreign arrowhead lands in `arrowhead_ids`, so `exclude_dimensions=True`
+   deletes whichever leader owns it. That is the arbitration steal round 4's
+   headline claims to have closed, reached by a route its fixture does not
+   cover. **On a corpus whose real arrowheads ARE clusters, this is the
+   highest-risk line in round 4.** Also clean on 0.1.0 and the tip.
+
+Findings 3-5 are regressions vs the published 0.1.0 but pre-existing at the
+tip; 6 is pre-existing everywhere (a concave dart is deleted at every
+threshold — document it, do not fix it); 7-10 are docs/staging, minutes each.
+Finding 7: `"632 passed (from 316)"` — the tip actually collects **350**.
+
+**Repair is TWO changes, not four (~1.5 days):**
+- **Change A — finding 1.** Independent and corpus-inert (0 blunt proposals at
+  0.5). One-line coordinate substitution at `queries.py:1275` using the
+  primitive the cluster leg already has (`_reach_on_ray`, which returns
+  `(100,0)` exactly on the diamond), plus a policy call on the unconditional
+  0.45 blunt cap. Half a day. Land it first.
+- **Change B — findings 2, 3 and 4 together.** Three halves of one question:
+  who wins the end (2), what a win costs (4), whether the winner's coordinate
+  is publishable (3). They pull against each other — repairing 3 makes 4 worse;
+  repairing 4 re-opens the steal unless 2's distance-dominance rule lands with
+  it. Four sites: `_end_tier` `:1360-1366`, the per-end comparison
+  `:2111-2130`, the continuous apex publication `:2227`, the cap ladder
+  `:2264-2272`. A day, with fixtures pinning BOTH directions plus a corpus and
+  residual re-run.
+
+**The structural lesson, which outlives these fixes:** the corpus cannot
+falsify a change to a terminator style it does not contain, and its 18 pt match
+tolerance would hide a 9 pt error. Five of the six code findings live in
+exactly that blind spot. Any future gate on this code needs synthetic
+terminator fixtures alongside the corpus — `round4_repro.py` is the start of
+that set.
+
+### Published numbers now have a command
+
+Two rounds running, prose was edited with figures no run reproduced. The fix:
+`module_work/drawing_ground_truth/doc_claims_check.py` regenerates every
+corpus figure the planlens docs publish, and ten guards in
+`planlens/tests/test_readme_claims.py` pin them. **If a number disagrees with
+that script, the DOCUMENT is wrong.** Current measured values: blunt
+terminators fire on 19 proposals @0.0, 17 @0.3, **0 @0.5** (only sheets 11.01
+and 21.01); layer-0 inheritance re-homes 557/158/1696 entities on
+10.17a/11.01/5003 -- and note the `n_layers` METADATA field counts something
+different and does NOT follow the inheritance.
+
+### NEW DIRECTION (owner correction, approved plan)
+
+Recognition of CAD constructs was never the goal -- the goal is engineers
+reviewing design and construction documents, and an uploaded artifact is
+usually a REPORT (thirty pages of narrative, then tables, then figures), not
+a sheet. The user must not have to say whether they want a language review or
+a visual review.
+
+**Plan of record: `C:/Users/socon/.claude/plans/delightful-swinging-sky.md`.**
+Driving example: *"what is the average spacing of the borings in this plan?"*
+over a Langan Subsurface Investigation Plan. Surveyed verdict: today that
+fails as a plausible wrong number rather than a refusal.
+
+Owner decisions taken: source documents are **PDF nearly always**; build the
+**vertical slice** (one question end to end); output shape is "whatever the
+reviewer asked for", so findings are data, not a fixed deliverable.
+
+Started and green (new, untracked): `planlens/ir/measure.py` (the `Quantity`
+envelope -- units mandatory, confidence composes by `min` not product, and a
+page-point value REFUSES to become feet without a resolved scale) and
+`planlens/ir/spatial.py` (point-pattern maths, numpy only, no scipy). 37
+tests. Notable measured result: on a perfectly regular 3x3 grid the three
+spacing conventions differ by **2.45x**, which is why the API deliberately
+has no key named `average_spacing` at any depth.
+
+**Blocked on the owner:** the Langan sheet is in NEITHER repo. Real ground
+truth needs it plus 2-4 more subsurface investigation plans.
+
+Next in the plan's own order: the two ingest representation fixes (PDF fill
+is absent from the IR entirely, and multi-subpath drawings are fused into one
+polyline) -- both are load-bearing for symbol work and both move every
+published corpus number, so they are a re-baselining milestone, not a patch.
+
+### Still open from before
+
+Owner's live 5.12.0 cluster shakedown; SoM A/B live run (recipe in
+`som_ab_check.py` docstring); planlens submodule wiring in the app repo;
+TinyApps onboarding; cluster OCR needs the planlens README headless recipe;
+master CI Tests should have self-healed now planlens is on PyPI (VERIFY).
+
+## 0a-prev-c. PICKUP LIST (2026-09-05) [HISTORICAL]
 
 **5.12.0 RELEASED TO PYPI 2026-09-05, VERIFIED LIVE** (with planlens
 0.1.0 + geotech-references 1.4.0, both first published the same hour;
