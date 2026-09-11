@@ -120,10 +120,26 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
     _chunks = 0
     trace_t0 = time.time()
     trace_tools: list[dict] = []
+    # Always-on activity log (owner feedback 2026-09-11): every tool call /
+    # result / model call, primary AND sub-agents, into <conv>/activity.jsonl
+    # — independent of the "Show turn details" toggle (which only gates the
+    # per-turn SUMMARY in trace.jsonl and its expander). Best-effort: a
+    # logger problem must never cost the turn.
+    activity = None
+    try:
+        from webapp import activity_log
+        _turn_no = sum(1 for e in (ctx.get("transcript") or [])
+                       if e.get("role") == "user")
+        activity = activity_log.ActivityLogger(
+            core.conversation_dir(thread_id), turn=_turn_no)
+        activity.turn_start(prompt=ctx.get("prompt"), model=ctx.get("model"))
+    except Exception:                                  # noqa: BLE001
+        activity = None
     try:
         for item in core.with_heartbeat(core.stream_turn(
                 agent, messages, thread_id,
-                recursion_limit=recursion_limit)):
+                recursion_limit=recursion_limit,
+                callbacks=[activity] if activity is not None else None)):
             kind = item.get("kind")
             job._add(item)
             if kind == "token":
@@ -147,6 +163,12 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
             turn_error = f"{type(exc).__name__}: {exc}"
 
     final = final or answer or "(no answer text)"
+    if activity is not None:
+        try:
+            activity.turn_end(turn_tokens=turn_tokens, error=turn_error,
+                              answer_chars=len(final))
+        except Exception:                              # noqa: BLE001
+            pass
     save_error = None
     sp_sync = None
     try:

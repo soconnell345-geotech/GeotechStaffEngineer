@@ -24,7 +24,7 @@ def _tmp_data_root(tmp_path, monkeypatch):
 
 
 def _fake_stream(events):
-    def stream_turn(agent, messages, thread_id, recursion_limit=None):
+    def stream_turn(agent, messages, thread_id, recursion_limit=None, **_kw):
         yield from events
     return stream_turn
 
@@ -91,7 +91,7 @@ class TestWorkerPersistsWithoutFollower:
         assert transcript[-1]["role"] == "assistant"
 
     def test_error_turn_is_persisted_with_friendly_error(self, monkeypatch):
-        def boom(agent, messages, thread_id, recursion_limit=None):
+        def boom(agent, messages, thread_id, recursion_limit=None, **_kw):
             yield {"kind": "token", "text": "partial "}
             raise RuntimeError("engine exploded")
         monkeypatch.setattr(core, "stream_turn", boom)
@@ -119,7 +119,7 @@ class TestFollowSemantics:
         assert kinds == ["tool_call", "token", "token", "turn_done"]
 
     def test_live_follower_sees_stream(self, monkeypatch):
-        def slow(agent, messages, thread_id, recursion_limit=None):
+        def slow(agent, messages, thread_id, recursion_limit=None, **_kw):
             for e in EVENTS_OK:
                 time.sleep(0.05)
                 yield e

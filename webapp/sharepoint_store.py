@@ -2,7 +2,8 @@
 
 The Databricks driver's disk is ephemeral — conversations, uploads and calc
 packages die with the cluster. This module mirrors each conversation's
-directory (meta, transcript, trace, staged uploads, produced artifacts) to a
+directory (meta, transcript, trace, activity log, feedback, staged uploads,
+produced artifacts) to a
 per-conversation SharePoint folder after every turn:
 
     <ROOT>/conversations/<name>_<YYYY-MM-DD>/...  (same layout as the local dir)

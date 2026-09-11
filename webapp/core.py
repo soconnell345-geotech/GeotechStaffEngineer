@@ -590,8 +590,13 @@ def with_heartbeat(gen, interval_s: Optional[float] = None):
 
 def stream_turn(agent, messages: list, thread_id: str,
                 max_result_chars: int = 2000,
-                recursion_limit: Optional[int] = None):
+                recursion_limit: Optional[int] = None,
+                callbacks: Optional[list] = None):
     """Stream ONE turn from the compiled deep agent.
+
+    ``callbacks`` (optional) are LangChain callback handlers attached to the
+    run config alongside the usage-metadata callback; they propagate into
+    sub-agent invocations (the ``activity_log.ActivityLogger`` rides here).
 
     ``messages`` is the full agent-facing history INCLUDING the new user turn
     (the caller appends it and, on completion, appends the assistant answer from
@@ -657,8 +662,13 @@ def stream_turn(agent, messages: list, thread_id: str,
                 continue
             return
 
+    extra_cbs = list(callbacks or [])
+
     if cb_ctx is None:
-        for entry in _run_passes(dict(config)):
+        run_config = dict(config)
+        if extra_cbs:
+            run_config["callbacks"] = extra_cbs
+        for entry in _run_passes(run_config):
             yield entry
         yield {"kind": "turn_done", "answer": "".join(answer_parts),
                "turn_tokens": 0}
@@ -666,7 +676,7 @@ def stream_turn(agent, messages: list, thread_id: str,
 
     with cb_ctx as cb:
         run_config = dict(config)
-        run_config["callbacks"] = [cb]
+        run_config["callbacks"] = [cb] + extra_cbs
         for entry in _run_passes(run_config):
             yield entry
         turn_tokens = _sum_callback_tokens(dict(cb.usage_metadata))
@@ -1093,9 +1103,16 @@ def behavior_build_kwargs(behavior: Optional[dict]) -> dict:
 # Two independent paths, both opt-in:
 #   * LangSmith (SaaS) — set LANGCHAIN_TRACING_V2=true + LANGCHAIN_API_KEY; the
 #     langchain/langgraph stack auto-traces every run, no code here.
-#   * Local (no SaaS) — set GEOTECH_TRACE=1; the app writes ONE compact JSONL
-#     line per turn (duration, tokens, tool calls incl. sub-agent hops, error)
-#     to <conversation>/trace.jsonl and shows a "turn details" expander.
+#   * Local (no SaaS) — set GEOTECH_TRACE=1 (or tick "Show turn details");
+#     the app writes ONE compact JSONL SUMMARY line per turn (duration,
+#     tokens, an 80-char one-liner per PRIMARY tool call, error) to
+#     <conversation>/trace.jsonl and shows a "turn details" expander.
+#     It does NOT see sub-agent internals.
+# Independent of both, and ALWAYS on: <conversation>/activity.jsonl
+# (webapp/activity_log.py) — every tool call with full args, every tool
+# result (capped at 32 KB), every model call's usage, for the primary AND
+# the calc/references sub-agents, attributed by `task` nesting. That file
+# is the archive; trace.jsonl is the on-screen summary.
 
 def tracing_enabled(override: Optional[bool] = None) -> bool:
     """True when the local per-turn tracer is on.
