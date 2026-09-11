@@ -51,7 +51,18 @@ planlens has the one stray screenshot, never staged.
 5. planlens findings 5 (60-deg+ triangles) and 6 (concave dart), documented
    not fixed; a synthetic-terminator fixture set alongside the corpus is the
    standing lesson of rounds 4-6 (`round4_repro.py`, `round5_attack.py`).
-6. Chunked websocket upload for files past the 25 MB cap.
+6. Large uploads (owner feedback 2026-09-11 — decided: DOCUMENT the route,
+   build nothing yet). The 25 MB cap is OURS (`ws_upload.MAX_FILE_MB`), not
+   Streamlit's (200 MB default, untouched): one base64 message must cross
+   the driver proxy in one socket lifetime. Documented in `webapp/README.md`
+   "Large files" + the Attachments caption: put the file in SharePoint and
+   ask the agent to fetch it (`sharepoint_download_file`). Backlog, in order:
+   (a) sidebar "Attach from SharePoint" box — filename/path in, staged like
+   an upload, no LLM turn, no cap; (b) chunked websocket upload (N component
+   values reassembled server-side — each chunk is widget state that reruns,
+   so it needs the one-shot-key dance per chunk; real risk of re-opening the
+   22 MB loop). WON'T: browser->SharePoint direct upload — the delegated
+   Graph token would have to live in page JS.
 
 ### 5.14.0 INSTALLED AND VERIFIED ON THE CLUSTER (2026-09-11) — install-log triage now has a home
 

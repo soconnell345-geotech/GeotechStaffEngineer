@@ -90,7 +90,7 @@ class TestWsModeAppBoot:
         pytest.importorskip("streamlit")
         from streamlit.testing.v1 import AppTest
         monkeypatch.setenv("GEOTECH_UPLOAD_MODE", "ws")
-        monkeypatch.setenv("GEOTECH_CONVERSATIONS_DIR", str(tmp_path))
+        monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path))
         app = os.path.join(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__))), "app.py")
         at = AppTest.from_file(app, default_timeout=60).run()

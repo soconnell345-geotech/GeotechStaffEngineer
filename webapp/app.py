@@ -326,6 +326,15 @@ _HAS_BUTTON_ICON = "icon" in __import__("inspect").signature(
     st.button).parameters
 
 
+def _sp_configured() -> bool:
+    """True when the SharePoint mirror/tools are configured (best-effort)."""
+    try:
+        from webapp import sharepoint_store
+        return bool(sharepoint_store.get_store().configured)
+    except Exception:                                  # noqa: BLE001
+        return False
+
+
 def _row_action(icon: str, *, key: str, help: str) -> bool:
     """A one-glyph conversation-row button (rename / delete)."""
     if _HAS_BUTTON_ICON:
@@ -609,6 +618,19 @@ with st.sidebar:
     # uploader's HTTP PUT); "http" is the stock st.file_uploader.
     from webapp import ws_upload
     pairs = []
+    if ws_upload.upload_mode() == "ws":
+        # The cap is OURS (ws_upload.MAX_FILE_MB), not Streamlit's: the whole
+        # file rides ONE websocket message through the driver proxy. Larger
+        # files take the SharePoint route — no proxy crossing, no cap.
+        # Owner feedback 2026-09-11; the "attach from SharePoint" sidebar
+        # widget (no LLM turn) is a recorded future item in HANDOFF §0a.
+        _sp_hint = (" Put it in SharePoint (the GSE_app folder) and ask the "
+                    "agent to fetch it by name — it lands in this "
+                    "conversation's working folder."
+                    if _sp_configured() else
+                    " Ask the agent to read it from a SharePoint or /Volumes "
+                    "path instead.")
+        st.caption(f"Up to {ws_upload.MAX_FILE_MB} MB per file.{_sp_hint}")
     if ws_upload.upload_mode() == "ws":
         try:
             pairs, _up_errors = ws_upload.ws_file_uploader(

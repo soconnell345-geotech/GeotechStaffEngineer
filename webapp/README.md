@@ -134,6 +134,25 @@ a durable copy is still kept with the conversation. Clear the box to reset to th
 default. (Under the hood the app sets `GEOTECH_DEFAULT_OUTPUT_DIR`, which the
 tool layer reads; an explicit `output_path` you ask for in a request still wins.)
 
+### Large files (over 25 MB)
+
+The browser uploader caps each file at **25 MB**. That number is the app's own
+(`webapp/ws_upload.py: MAX_FILE_MB`), not a Streamlit limit: on Databricks the
+file rides the app websocket as one base64 message and has to cross the driver
+proxy inside a single socket lifetime — a 22 MB PDF once put 5.11.2 into a
+permanent reconnect loop, which is where the cap comes from. Streamlit's own
+`server.maxUploadSize` (200 MB) never comes into play because the proxy 403s
+the native uploader's HTTP PUT.
+
+For anything bigger, **go around the proxy**: put the file in SharePoint with
+SharePoint's own uploader (no size problem there) and ask the agent to fetch it
+— *"read `Excavation Support Calcs.pdf` from the GSE_app folder"*. The agent's
+`sharepoint_download_file` tool pulls it into this conversation's working
+folder, where every file tool can read it, and it shows up as an attachment.
+Requires the SharePoint setup below. (A sidebar "attach from SharePoint" box
+that does this without an agent turn, and a chunked websocket upload that
+raises the cap, are both on the backlog — `HANDOFF.md` §0a.)
+
 ### Permanent storage: SharePoint mirror (optional)
 
 On Databricks the driver's disk is ephemeral — conversations and calc packages
