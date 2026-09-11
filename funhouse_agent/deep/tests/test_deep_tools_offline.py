@@ -414,10 +414,12 @@ def test_reference_mode_off_omits_named_subagents():
 def test_calc_subagent_configured():
     """The calc sub-agent is analysis-scoped, can save, and is told not to lose
     data (compact answer + full payload to a file)."""
-    from funhouse_agent.reviewer import CONSULTANT_FRAMING
+    from funhouse_agent.deep.agent import _CALC_PREAMBLE
     spec = build_calc_subagent()
     assert spec["name"] == "calc"
-    assert spec["system_prompt"].startswith(CONSULTANT_FRAMING)
+    # Its OWN preamble since 2026-09-11 — not the references consultant's
+    # librarian framing (see test_deep_calc_figures_offline.py).
+    assert spec["system_prompt"].startswith(_CALC_PREAMBLE)
     assert "NO DATA LOSS" in spec["system_prompt"]
     assert spec.get("middleware")                       # model-call budget attached
 

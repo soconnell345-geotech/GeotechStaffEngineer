@@ -345,13 +345,58 @@ _CALC_DESCRIPTION = (
     "instead of yours — so a long chat does not carry every calc dump forward."
 )
 
+#: The calc sub-agent's OWN preamble. Until 2026-09-11 the spec prefixed
+#: ``_CALC_FRAMING`` with ``reviewer.CONSULTANT_FRAMING`` — the reference-
+#: LIBRARIAN text ("Do NOT perform engineering calculations — reference lookup
+#: only ... Question: ") — so the agent that builds every calc package was
+#: first told not to calculate, then given a compactness brief, and never the
+#: figure rules (those live in the PRIMARY prompt, which deepagents does not
+#: pass down to sub-agents). Owner feedback: "calc packages tend to lack
+#: figures". This preamble names what the calc agent actually has.
+_CALC_PREAMBLE = (
+    "You are the CALCULATION ENGINE of a geotechnical agent. You have the "
+    "analysis modules (call_agent / list_methods / describe_method), the "
+    "`calc_package` module (canned *_package reports, render_figures, "
+    "html_to_pdf), the `profile_figure` module (subsurface_profile schematic, "
+    "plot_data data plots), save_file, and read access to the working folder "
+    "(list_files, read_pdf_text). You run the numbers AND build the "
+    "deliverable — report and figures — for the delegating agent."
+)
+
+#: The figure rules for a deliverable, in the calc agent's own prompt.
+_CALC_FIGURES = (
+    "FIGURES ARE PART OF EVERY DELIVERABLE. A calc package or report with no "
+    "figure is incomplete unless the analysis genuinely has nothing to draw. "
+    "Default content, in this order: (1) a SUBSURFACE PROFILE whenever you "
+    "have layers — call_agent('profile_figure', 'subsurface_profile', "
+    "{layers, water table, fill/surcharge, the foundation, callouts such as "
+    "the neutral plane}) and paste the returned html_img_tag; (2) the "
+    "ANALYSIS'S OWN FIGURES — a canned *_package already includes them (slope "
+    "section + trial-surface map, p-y curves, settlement plots, wall pressure "
+    "diagrams, pavement charts), so PREFER the canned package when one fits; "
+    "for a bespoke html_to_pdf report get the same figures as PNGs with "
+    "call_agent('calc_package', 'render_figures', {package: '<x>_package', "
+    "...that package's inputs}) and paste each html_img_tag; (3) PLOTS OF "
+    "DATA — SPT/CPT vs depth, settlement vs time, load vs displacement, a "
+    "sensitivity sweep or method comparison — with call_agent("
+    "'profile_figure', 'plot_data', {series: [{x, y, label}], xlabel, ylabel, "
+    "depth_axis}). Report skeleton for a bespoke report: Inputs -> Subsurface "
+    "profile figure -> Method -> Results (with result figures and data plots) "
+    "-> Checks. Every figure is a saved PNG whose html_img_tag html_to_pdf "
+    "embeds for you; never write '[image]', an inline <svg>, or a coloured "
+    "table standing in for a figure (html_to_pdf rejects those). If the "
+    "figure the task needs cannot be made with these tools, say so in the "
+    "reply and record it with record_feedback when that tool is available."
+)
+
 _CALC_FRAMING = (
-    "\n\nYou are the calculation engine for a geotechnical agent. Run the "
-    "requested analysis method(s) with the given inputs, then reply with a "
-    "COMPACT result the delegating agent can carry forward WITHOUT re-running the "
-    "calc: the governing value(s) with units, the method/standard used, the key "
-    "inputs, and any factor of safety / utilization. Do NOT paste the full method "
-    "dump or calc-package text into your reply.\n"
+    "\n\nRun the requested analysis method(s) with the given inputs, then "
+    "reply with a COMPACT result the delegating agent can carry forward "
+    "WITHOUT re-running the calc: the governing value(s) with units, the "
+    "method/standard used, the key inputs, any factor of safety / "
+    "utilization, and the saved paths (report AND each figure). Do NOT paste "
+    "the full method dump or calc-package text into your reply.\n"
+    + _CALC_FIGURES + "\n"
     "NO DATA LOSS: whenever you produce a large result (a calc package, a full "
     "method dump, a big table, a plot), SAVE it to a file — pass an output_path to "
     "the tool, or use save_file — and include the saved path in your reply, so the "
@@ -363,8 +408,9 @@ _CALC_FRAMING = (
     "be produced by a tool that returns a verified real path: pass output_path to "
     "the analysis/package tool, or use save_file. If no canned *_package method "
     "fits the analysis, compose the report as self-contained HTML yourself and "
-    "render it with calc_package method html_to_pdf (figures as base64 PNG/JPEG "
-    "data URIs, not SVG); save_file the HTML too if an HTML copy is wanted.\n"
+    "render it with calc_package method html_to_pdf (figures as the "
+    "html_img_tag of a saved PNG, or a base64 PNG/JPEG data URI — not SVG); "
+    "save_file the HTML too if an HTML copy is wanted.\n"
     "SOURCE DOCUMENTS: you HAVE read access to the working folder — list_files "
     "shows what the user supplied and read_pdf_text reads it. When a delegation "
     "references source documents (a profile PDF, a reference report), CONSULT "
@@ -382,7 +428,14 @@ _CALC_DELEGATION_NUDGE = (
     "so the bulky intermediate output stays out of this conversation. `calc` "
     "returns the key values + units + method and the saved file path; carry those "
     "forward and do the reasoning and final synthesis here. (A prior calc's values "
-    "stay in this conversation, so re-use them rather than recomputing.)"
+    "stay in this conversation, so re-use them rather than recomputing.) When "
+    "you delegate a calc package or report, PASS THE DATA THE FIGURES NEED — "
+    "the layer stack with names/thicknesses/properties, the water table, the "
+    "foundation geometry, any depth-wise data (SPT, CPT, su) — and SAY which "
+    "figures you expect (subsurface profile, the analysis figures, data plots). "
+    "The calc agent draws only what it is handed; a report delegated as "
+    "'q_ult for B=2 m, phi=30' comes back without a profile figure because it "
+    "was never given the profile."
 )
 
 
@@ -435,7 +488,9 @@ def build_calc_subagent(
     )
     if extra_tools:
         tools = list(tools) + list(extra_tools)
-    system_prompt = CONSULTANT_FRAMING + _CALC_FRAMING
+    # NOT CONSULTANT_FRAMING: that is the references sub-agent's librarian
+    # preamble ("Do NOT perform engineering calculations"). See _CALC_PREAMBLE.
+    system_prompt = _CALC_PREAMBLE + _CALC_FRAMING
     if extra_system_prompt:
         system_prompt = system_prompt + "\n\n" + extra_system_prompt
     spec = {

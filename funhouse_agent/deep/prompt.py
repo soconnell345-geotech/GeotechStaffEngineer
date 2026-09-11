@@ -28,22 +28,31 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   list first, then keep it updated — mark each item done as you finish it. Skip
   it for a single one-shot calculation.
 - **Show figures by SAVING them, not describing them.** When a chart would make
-  the answer clearer — a subsurface plot (parameter-vs-depth, cross-section,
-  plan view, Atterberg), a slope/FEM result, a settlement or p-y curve — SAVE
-  the figure by passing an `output_path` to the plotting tool (a bare filename
-  like `"cross_section.html"` is fine; it lands in the working folder) instead
-  of narrating the coordinates. The chat UI renders a saved figure INLINE
-  automatically, so a saved plot is far more useful to the reader than a
-  paragraph of numbers. Prefer this whenever the data is inherently visual.
+  the answer clearer, make one with the figure tools you actually have — the
+  chat UI renders a saved PNG/HTML figure INLINE, so a saved plot beats a
+  paragraph of numbers whenever the data is inherently visual:
+  `profile_figure.subsurface_profile` (layered profile schematic → PNG),
+  `profile_figure.plot_data` (any x/y or depth data → PNG: SPT/CPT vs depth,
+  settlement vs time, a sweep), `calc_package.render_figures` (a canned
+  package's own figures — slope section/trial surfaces, p-y curves, settlement
+  plots, wall diagrams — as PNGs without building the package), and the
+  `subsurface.plot_*` methods for interactive Plotly views of DIGGS/site data
+  (HTML — for the chat, not for a PDF). A bare `output_path` filename lands in
+  the working folder.
 - **A calc package built on a layered subsurface gets a profile figure, by
-  default.** Pile/shaft capacity, downdrag, settlement, bearing, walls,
-  liquefaction — if you have layers, draw them with
-  `call_agent('profile_figure', 'subsurface_profile', ...)`: strata, water
-  table, any fill/surcharge, the foundation, and callouts such as the neutral
-  plane. Paste the returned `html_img_tag` straight into the report HTML —
-  `html_to_pdf` embeds a real local PNG path for you. Never ship "[image]", an
-  inline `<svg>`, or a coloured table standing in for a figure; `html_to_pdf`
-  rejects those and names what to fix.
+  default — and the analysis's own figures, and plots of the data.**
+  Pile/shaft capacity, downdrag, settlement, bearing, walls, liquefaction — if
+  you have layers, draw them with `call_agent('profile_figure',
+  'subsurface_profile', ...)`: strata, water table, any fill/surcharge, the
+  foundation, and callouts such as the neutral plane. A canned `*_package`
+  already carries the analysis figures; a bespoke `html_to_pdf` report gets
+  them from `render_figures` and its data plots from `plot_data`. Paste each
+  returned `html_img_tag` straight into the report HTML — `html_to_pdf` embeds
+  a real local PNG path for you. Never ship "[image]", an inline `<svg>`, or a
+  coloured table standing in for a figure; `html_to_pdf` rejects those and
+  names what to fix. When you DELEGATE the package to `calc`, hand it the
+  layer stack, water table, foundation geometry and any depth-wise data — it
+  draws only what it is given.
 - **Use the scratch filesystem to stay organized.** You have `write_file` /
   `read_file` / `edit_file` / `ls`. Stash intermediate results, large tool
   outputs (e.g. a full method dump or a long reference excerpt), and tables you
