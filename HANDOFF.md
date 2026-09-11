@@ -8,7 +8,21 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
-### APP FEEDBACK TRAIN on master, UNRELEASED (2026-09-11) — candidate 5.15.0
+### 5.15.0 RELEASED (2026-09-11, tag `v5.15.0`) — the app feedback train + ultra-review fixes
+
+Release gate 11,651 passed / 33 skipped / 0 failed (2026-09-11); no dependency changes; published by the `v*` tag
+workflow. **Cluster:** `%pip install "geotech-staff-engineer==5.15.0"` then
+`%restart_python` — first cluster install not yet confirmed (install guide
+§11). The owner's `/code-review ultra` on the branch found five things,
+all applied in `21e0465`: the `render_figures` mode rode a private key
+inside the package params, which the strictly-validating packages
+(`slope_report_package`, `pavement_design_package`) would have rejected —
+now a contextvar set around the call, with tests for exactly those two; a
+duplicated `if` in the uploader; an O(n²) folder-name loop in the restore
+block; `tomllib` in the docs-currency gate (3.11+ while pyproject says
+>=3.10 — the gate would have vanished at collection on 3.10); and a
+`GEOTECH_DEFAULT_OUTPUT_DIR` leak from AppTest boots that made a
+funhouse_agent test order-dependent (`webapp/tests/conftest.py`).
 
 Six owner items from real 5.13/5.14 sessions, all landed as separate commits
 (`8bde466` disclaimer, `7681352` large-upload docs, `0dbec49` feedback,
@@ -38,10 +52,10 @@ What the next agent must know:
 * Catalog is at **7,965 / 8,000** chars — the next new method needs a brief
   trimmed somewhere.
 
-Suites at the tip: webapp 308; deep 284/1 skipped; calc_package +
-profile_figure + funhouse_agent/tests 1,552/7 skipped. Release 5.15.0 on
-owner word (the docs-currency gate will demand this block, CLAUDE.md's state
-block and the install guide's history row be refreshed at the bump).
+Suites at the tip before the review: webapp 308; deep 284/1 skipped;
+calc_package + profile_figure + funhouse_agent/tests 1,552/7 skipped; after
+the review fixes, webapp + calc_package adapter 364. Full gate at release:
+11,651 passed / 33 skipped / 0 failed (2026-09-11).
 
 **NEXT TRAIN (owner ask 2026-09-11): Ensoft-style TABLES of calculation
 data.** "Punch up the documentation we get from the python calcs — tables

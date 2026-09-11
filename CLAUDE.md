@@ -70,7 +70,7 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## CURRENT WORKING STATE (2026-09-11) — 5.14.0 RELEASED, both trees COMMITTED
+## CURRENT WORKING STATE (2026-09-11) — 5.15.0 RELEASED (tag `v5.15.0`), both trees COMMITTED
 
 **`HANDOFF.md` §0a-current is authoritative; read it before touching either
 repo.** Short version:
@@ -85,6 +85,15 @@ repo.** Short version:
 > in.
 
 
+- **app 5.15.0** (tag `v5.15.0`, 2026-09-11) **released** — the app feedback
+  train plus the ultra code-review fixes, 12 commits over 5.14.0, **no
+  dependency changes**. Release gate 11,651 passed / 33 skipped / 0 failed (2026-09-11). Ledger:
+  `module_work/field_feedback/2026-09-11_app-usage_v5.14.0/FINDINGS.md`.
+  Cluster: `%pip install "geotech-staff-engineer==5.15.0"` — first
+  cluster install NOT yet confirmed (install guide §11 row says so; same
+  log as 5.14.0 expected). First live check: a calc-package question →
+  figures in the PDF; `activity.jsonl` + `FEEDBACK.md` in the SharePoint
+  folder; a pre-restart conversation restored from the sidebar.
 - **app 5.14.0** (`47f3c8a`, tag `v5.14.0`) and **planlens 0.2.0** (`f0a2b9d`,
   tag `v0.2.0`) are both **released to PyPI and committed**, published in that
   order because the app pins `planlens[raster]>=0.2`. Release-tree gate
@@ -126,14 +135,16 @@ repo.** Short version:
   `planlens/tests/test_readme_claims.py` pin them. If a number disagrees with
   that script, the DOCUMENT is wrong — fix the prose, never the script.
 
-**On master since 5.14.0, UNRELEASED (2026-09-11 app feedback train, candidate
-5.15.0):** feedback capture (sidebar box + `record_feedback` tool, saved with
+**What 5.15.0 carries (the 2026-09-11 app feedback train):** feedback capture (sidebar box + `record_feedback` tool, saved with
 the conversation), the always-on `activity.jsonl` archive (every tool call /
 result / model call incl. sub-agents — read THAT when a session went wrong),
 the calc sub-agent's own prompt with the figure rules (it had carried the
 references LIBRARIAN preamble all along), `calc_package.render_figures` +
 `profile_figure.plot_data`, restore-from-SharePoint + a conversation filter,
-one disclaimer widget, large-upload docs. Ledger:
+one disclaimer widget, large-upload docs; plus the ultra code-review's five
+fixes (headline: `render_figures` mode moved off the params dict onto a
+contextvar — strictly-validating packages would have rejected the injected
+key). Ledger:
 `module_work/field_feedback/2026-09-11_app-usage_v5.14.0/FINDINGS.md`; next
 train = Ensoft-style calculation TABLES (HANDOFF §0a). Owner rules for app
 trains: sequential, no parallel agents; planlens = todo list only.
