@@ -663,7 +663,6 @@ with st.sidebar:
                     " Ask the agent to read it from a SharePoint or /Volumes "
                     "path instead.")
         st.caption(f"Up to {ws_upload.MAX_FILE_MB} MB per file.{_sp_hint}")
-    if ws_upload.upload_mode() == "ws":
         try:
             pairs, _up_errors = ws_upload.ws_file_uploader(
                 core.ACCEPTED_UPLOAD_TYPES,
@@ -858,8 +857,14 @@ with st.sidebar:
             _remote = ss.sp_remote_list or []
             _local_folders = set()
             try:
-                _local_folders = {_sp.folder_name(m["thread_id"])
-                                  for m in _all_convs}
+                # conversation_folder(), not _sp.folder_name(): that reloads
+                # the meta AND re-lists every conversation per call, and this
+                # runs once per conversation on every sidebar rerun.
+                # _all_convs is already the list_conversations() metas.
+                _local_folders = {
+                    sharepoint_store.conversation_folder(
+                        m["thread_id"], m, _all_convs)
+                    for m in _all_convs}
             except Exception:                          # noqa: BLE001
                 pass
             _q = _rq.strip().lower()

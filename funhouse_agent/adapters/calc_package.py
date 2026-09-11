@@ -17,6 +17,7 @@ logic, adapted to the funhouse adapter pattern (METHOD_REGISTRY + METHOD_INFO).
 """
 
 import base64
+import contextvars
 import os
 import re
 from datetime import datetime
@@ -56,8 +57,15 @@ def _default_output_path(module_name: str, fmt: str = "html") -> str:
     return os.path.join(default_output_dir(), f"{module_name}_calc_{ts}.{fmt}")
 
 
-#: Private params key: run the analysis, skip the package, save the figures.
-_FIGURES_ONLY = "_figures_only"
+#: Figure-only mode for the CURRENT ``render_figures`` call: ``None`` normally,
+#: else ``{"output_dir": ..., "name_prefix": ...}``. It rides a context var
+#: rather than the params dict because a package handler validates its params
+#: strictly (``reject_unknown_params``) and forwards them as ``**kwargs`` into
+#: the module function — a router-injected key would be rejected as unknown
+#: (slope_report_package) or arrive as an unexpected kwarg (pavement_design_
+#: package). Keeping it out of band means every package, present and future,
+#: renders figures without knowing this mode exists.
+_FIGURE_MODE = contextvars.ContextVar("calc_package_figure_mode", default=None)
 
 #: Packages that cannot be rendered figures-only (no analysis behind them).
 _NO_FIGURES = {"html_to_pdf", "render_figures"}
@@ -69,9 +77,12 @@ def _slug(text: str, n: int = 40) -> str:
     return (t or "figure")[:n]
 
 
-def _figures_response(module: str, result, analysis, params: dict,
+def _figures_response(module: str, result, analysis, opts: dict,
                       analysis_type: str, extra: dict = None) -> dict:
     """Save the module's calc-package figures as standalone PNGs.
+
+    ``opts`` is the ``_FIGURE_MODE`` payload (``output_dir``/``name_prefix``),
+    not the package's own params.
 
     Owner feedback 2026-09-11: ~25 ready matplotlib figures (slope sections,
     trial-surface maps, p-y curves, settlement plots, pavement charts, FEM
@@ -86,11 +97,11 @@ def _figures_response(module: str, result, analysis, params: dict,
 
     reg = _ensure_registered(module)
     figures = reg["get_figures"](result, analysis) or []
-    out_dir = params.get("output_dir")
+    out_dir = opts.get("output_dir")
     out_dir = (resolve_output_path(str(out_dir)) if out_dir
                else default_output_dir())
     os.makedirs(out_dir, exist_ok=True)
-    stem = params.get("name_prefix") or module
+    stem = opts.get("name_prefix") or module
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     saved_figs = []
@@ -168,10 +179,15 @@ def _render_figures(params: dict) -> dict:
                 "error": f"'{package}' is not a renderable package. Options: "
                          + ", ".join(sorted(k for k in METHOD_REGISTRY
                                             if k not in _NO_FIGURES))}
-    p[_FIGURES_ONLY] = True
     p.pop("format", None)          # meaningless without a package
     p.pop("output_path", None)     # figures go to output_dir, one PNG each
-    return METHOD_REGISTRY[package](p)
+    mode = {"output_dir": p.pop("output_dir", None),
+            "name_prefix": p.pop("name_prefix", None)}
+    token = _FIGURE_MODE.set(mode)
+    try:
+        return METHOD_REGISTRY[package](p)
+    finally:
+        _FIGURE_MODE.reset(token)
 
 
 def _build_response(module: str, result, analysis, params: dict,
@@ -180,14 +196,15 @@ def _build_response(module: str, result, analysis, params: dict,
 
     Always saves to disk.  Auto-generates output_path if not provided.
 
-    With ``params[_FIGURES_ONLY]`` set (the ``render_figures`` method), the
-    package is NOT generated: the module's ``get_figures`` runs on the same
-    result and each figure is saved as a standalone PNG instead.
+    Inside a ``render_figures`` call (``_FIGURE_MODE`` set), the package is NOT
+    generated: the module's ``get_figures`` runs on the same result and each
+    figure is saved as a standalone PNG instead.
     """
     from calc_package import generate_calc_package
 
-    if params.get(_FIGURES_ONLY):
-        return _figures_response(module, result, analysis, params,
+    figure_mode = _FIGURE_MODE.get()
+    if figure_mode is not None:
+        return _figures_response(module, result, analysis, figure_mode,
                                  analysis_type=analysis_type, extra=extra)
 
     meta = _extract_metadata(params)

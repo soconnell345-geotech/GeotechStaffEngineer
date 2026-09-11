@@ -795,6 +795,49 @@ class TestRenderFigures:
         titles = " ".join(f["title"].lower() for f in res["figures"])
         assert "section" in titles or "surface" in titles
 
+    def test_strictly_validated_packages_render_figures(self, tmp_path):
+        """slope_report_package and pavement_design_package validate their
+        params with reject_unknown_params and forward them as **kwargs, so a
+        router-injected key would fail the call before any figure ran."""
+        from funhouse_agent.adapters.calc_package import _render_figures
+        slope = _render_figures({
+            "package": "slope_report_package",
+            "surface_points": [[0, 10], [10, 10], [20, 5], [30, 5]],
+            "soil_layers": [{
+                "name": "Clay", "top_elevation": 10, "bottom_elevation": 0,
+                "gamma": 18.0, "phi": 25, "c_prime": 10}],
+            "nx": 4, "ny": 4, "output_dir": str(tmp_path)})
+        assert slope["status"] == "success", slope.get("error")
+        assert slope["n_figures"] >= 2
+
+        pav = _render_figures({
+            "package": "pavement_design_package", "design_type": "flexible",
+            "w18": 2e6, "mr_psi": 5000, "delta_psi": 1.9,
+            "reliability_pct": 95, "so": 0.45,
+            "layers": [
+                {"layer_type": "asphalt", "a": 0.44, "modulus_psi": 400000},
+                {"layer_type": "granular_base", "a": 0.14, "m": 1.0,
+                 "modulus_psi": 30000}],
+            "output_dir": str(tmp_path), "name_prefix": "pav"})
+        assert pav["status"] == "success", pav.get("error")
+        assert pav["n_figures"] >= 1
+        assert all(os.path.basename(f["output_path"]).startswith("pav_")
+                   for f in pav["figures"])
+
+    def test_figure_mode_does_not_leak_into_a_later_package(self, tmp_path):
+        """The mode is scoped to one render_figures call — a package run
+        afterwards still writes its HTML."""
+        from funhouse_agent.adapters.calc_package import (
+            _generate_bearing_capacity_package, _render_figures)
+        _render_figures({"package": "bearing_capacity_package",
+                         **self.BEARING, "output_dir": str(tmp_path)})
+        pkg = _generate_bearing_capacity_package({
+            **self.BEARING,
+            "output_path": str(tmp_path / "bc.html")})
+        assert pkg["status"] == "success", pkg.get("error")
+        assert pkg["output_path"].endswith("bc.html")
+        assert os.path.exists(pkg["output_path"])
+
     def test_rejects_non_packages_and_names_options(self):
         from funhouse_agent.adapters.calc_package import _render_figures
         for bad in ({}, {"package": "html_to_pdf"},

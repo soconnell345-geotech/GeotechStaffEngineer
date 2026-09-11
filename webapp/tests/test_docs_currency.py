@@ -21,7 +21,6 @@ and once it is open the surrounding staleness is obvious.
 
 import pathlib
 import re
-import tomllib
 
 import pytest
 
@@ -29,8 +28,21 @@ ROOT = pathlib.Path(__file__).parents[2]
 
 
 def _version() -> str:
-    with open(ROOT / "pyproject.toml", "rb") as fh:
-        return tomllib.load(fh)["project"]["version"]
+    """The ``[project]`` version from pyproject.toml, read with a regex.
+
+    Deliberately NOT tomllib: that is 3.11+ stdlib while pyproject declares
+    ``requires-python = ">=3.10"``, and on 3.10 the ImportError would take this
+    whole file out at collection — silently disabling every guard in it, which
+    is the drift it exists to catch.
+    """
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    for line in text.split("[project]", 1)[-1].splitlines():
+        if line.startswith("["):
+            break                      # next table; version must precede it
+        match = re.match(r"""version\s*=\s*["']([^"']+)""", line.strip())
+        if match:
+            return match.group(1)
+    raise AssertionError("no [project] version in pyproject.toml")
 
 
 def _section(path: pathlib.Path, heading_startswith: str) -> str:

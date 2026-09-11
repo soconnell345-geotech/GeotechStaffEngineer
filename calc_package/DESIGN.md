@@ -44,13 +44,20 @@ calc_steps.get_figures(result, analysis) → list[FigureData]
 ### Figures-only rendering (`render_figures`, added 2026-09-11)
 
 The agent adapter (`funhouse_agent/adapters/calc_package.py`) can run the same
-pipeline and stop after `get_figures()`: with the private `_figures_only`
-params flag, `_build_response` decodes each `FigureData.image_base64` and
-saves it as a standalone PNG (`save_verified`, one file per figure, in the
-working folder or `output_dir`) instead of assembling a package, returning
+pipeline and stop after `get_figures()`: inside a `render_figures` call
+`_build_response` decodes each `FigureData.image_base64` and saves it as a
+standalone PNG (`save_verified`, one file per figure, in the working folder or
+`output_dir`) instead of assembling a package, returning
 `[{title, caption, output_path, html_img_tag}]` plus the package's key
 results. Every `*_package` generator routes through `_build_response`, so all
-15 modules get it for free. Purpose: a bespoke `html_to_pdf` report (SOE, a
+15 modules get it for free.
+
+The mode rides a context var (`_FIGURE_MODE`), NOT a key in the params dict:
+package handlers validate their params strictly (`reject_unknown_params`) and
+forward them as `**kwargs` into the module function, so a router-injected key
+would be rejected as unknown (`slope_report_package`) or arrive as an
+unexpected kwarg (`pavement_design_package`). Out of band, a package needs to
+know nothing about figure mode — which is what makes "all 15 for free" true. Purpose: a bespoke `html_to_pdf` report (SOE, a
 multi-analysis narrative, anything with no canned template) can carry the
 module's figures — before this they were reachable only inside a whole canned
 package (owner feedback 2026-09-11).
