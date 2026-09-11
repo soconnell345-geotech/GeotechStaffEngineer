@@ -22,3 +22,8 @@ Conventions:
   (their words, 2026-09-04) — but trivial fixes may land immediately.
 - Cross-reference: durable backlog items also go in HANDOFF.md §0a so
   they survive session handoffs.
+- Since 5.15.0 a conversation export carries `FEEDBACK.md` / `feedback.jsonl`
+  (`webapp/feedback.py`): the owner's sidebar notes (`source: user`) and the
+  agent's own `record_feedback` calls (`source: agent` — capability gaps,
+  tool errors, feedback given in chat). Read those FIRST when triaging a
+  drop; they name the gap in the agent's words, with the turn index.

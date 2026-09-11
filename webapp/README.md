@@ -153,13 +153,23 @@ Requires the SharePoint setup below. (A sidebar "attach from SharePoint" box
 that does this without an agent turn, and a chunked websocket upload that
 raises the cap, are both on the backlog — `HANDOFF.md` §0a.)
 
+### Feedback — yours and the agent's
+
+The sidebar **Feedback** box saves a note with the conversation
+(`FEEDBACK.md` + `feedback.jsonl` in the conversation folder, mirrored to
+SharePoint with everything else). The agent has the matching
+`record_feedback` tool and is told to use it when it lacks a tool or
+capability the task needs, when a tool fails in a way it cannot work around,
+or when you comment on the app in chat — so the export of a session carries
+the gaps in the agent's own words, with the turn they happened on.
+
 ### Permanent storage: SharePoint mirror (optional)
 
 On Databricks the driver's disk is ephemeral — conversations and calc packages
 die with the cluster. Set the env vars below (in the notebook before launching;
 the app subprocess inherits them) and the app **mirrors each conversation's
 folder to SharePoint after every turn** — session record (meta/transcript/
-trace), user uploads, and agent-generated files, incrementally (a local
+trace/feedback), user uploads, and agent-generated files, incrementally (a local
 manifest skips unchanged files). The sidebar gains a **Permanent storage**
 block with the sync result, a link to the session folder, and a "Sync now"
 button. Mirroring is best-effort: a SharePoint failure never affects the turn.

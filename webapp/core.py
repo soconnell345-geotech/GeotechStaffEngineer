@@ -397,6 +397,37 @@ def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
         kw["extra_tools"] = list(kw.get("extra_tools") or []) + _em_tools
         kw["extra_system_prompt"] = "\n\n".join(
             p for p in (kw.get("extra_system_prompt"), _em_prompt) if p)
+    # Feedback tool (owner feedback 2026-09-11): the agent records capability
+    # gaps / tool errors / in-chat feedback into the CONVERSATION directory
+    # (temp_dir is <conversation>/files, so its parent is the record dir).
+    # Handed to the primary AND the calc sub-agent — the calc agent is where
+    # "no tool draws this" is discovered. Best-effort like the others.
+    try:
+        from webapp import feedback as _fb
+        _conv_dir = os.path.dirname(os.path.abspath(temp_dir))
+        _thread_id = os.path.basename(_conv_dir)
+
+        def _fb_context(_tid=_thread_id):
+            try:
+                tr = load_transcript(_tid)
+                turn = sum(1 for e in tr if e.get("role") == "user")
+                meta = load_meta(_tid) or {}
+                return {"thread_id": _tid, "turn": turn,
+                        "model": meta.get("model")}
+            except Exception:                              # noqa: BLE001
+                return {"thread_id": _tid}
+
+        _fb_tools, _fb_prompt = _fb.tools_for(_conv_dir, _fb_context)
+    except Exception:
+        _fb_tools, _fb_prompt = [], ""
+    if _fb_tools:
+        kw["extra_tools"] = list(kw.get("extra_tools") or []) + _fb_tools
+        kw["extra_system_prompt"] = "\n\n".join(
+            p for p in (kw.get("extra_system_prompt"), _fb_prompt) if p)
+        kw["calc_extra_tools"] = (list(kw.get("calc_extra_tools") or [])
+                                  + _fb_tools)
+        kw["calc_extra_system_prompt"] = "\n\n".join(
+            p for p in (kw.get("calc_extra_system_prompt"), _fb_prompt) if p)
     return build_deep_agent(
         model,
         attachments=attachments,

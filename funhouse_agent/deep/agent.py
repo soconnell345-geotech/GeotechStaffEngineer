@@ -394,8 +394,15 @@ def build_calc_subagent(
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
     reference_result_chars: Optional[int] = None,
     max_model_calls: Optional[int] = DEFAULT_CALC_MAX_MODEL_CALLS,
+    extra_tools=None,
+    extra_system_prompt: Optional[str] = None,
 ) -> dict:
     """Build the ``calc`` sub-agent spec (A2 context isolation).
+
+    ``extra_tools`` / ``extra_system_prompt`` are appended to the sub-agent's
+    tools and prompt (the web app hands it the ``record_feedback`` tool —
+    "there is no tool for this" is most often discovered HERE, while building
+    a deliverable). Defaults leave the spec unchanged.
 
     Scoped to the analysis modules (``allowed_agents``, default
     :data:`ANALYSIS_MODULES`) plus ``save_file`` so it can persist the full
@@ -426,10 +433,15 @@ def build_calc_subagent(
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
     )
+    if extra_tools:
+        tools = list(tools) + list(extra_tools)
+    system_prompt = CONSULTANT_FRAMING + _CALC_FRAMING
+    if extra_system_prompt:
+        system_prompt = system_prompt + "\n\n" + extra_system_prompt
     spec = {
         "name": "calc",
         "description": _CALC_DESCRIPTION,
-        "system_prompt": CONSULTANT_FRAMING + _CALC_FRAMING,
+        "system_prompt": system_prompt,
         "tools": tools,
     }
     if max_model_calls:
@@ -521,6 +533,8 @@ def build_deep_agent(
     reference_result_chars: Optional[int] = None,
     references_max_model_calls: Optional[int] = DEFAULT_REFERENCES_MAX_MODEL_CALLS,
     enable_calc_subagent: bool = False,
+    calc_extra_tools=None,
+    calc_extra_system_prompt: Optional[str] = None,
     calc_max_model_calls: Optional[int] = DEFAULT_CALC_MAX_MODEL_CALLS,
     enable_setup_agent: bool = False,
     setup_store=None,
@@ -620,6 +634,12 @@ def build_deep_agent(
         file path) and saves the full payload to a file (no data loss). OFF by
         default (additive / default-preserving — the library and the eval suite
         are unchanged); the web app turns it ON per conversation.
+    calc_extra_tools : list, optional
+        Extra tools for the ``calc`` sub-agent ONLY (e.g. the web app's
+        ``record_feedback``). ``extra_tools`` reaches the primary agent, not
+        the sub-agents; this is the calc-side counterpart.
+    calc_extra_system_prompt : str, optional
+        Appended to the ``calc`` sub-agent's prompt.
     calc_max_model_calls : int, optional
         Per-delegation model-call budget for the ``calc`` sub-agent (as
         ``references_max_model_calls`` is for references). Defaults to ``16``;
@@ -770,6 +790,8 @@ def build_deep_agent(
                 max_result_chars=max_result_chars,
                 reference_result_chars=reference_result_chars,
                 max_model_calls=calc_max_model_calls,
+                extra_tools=calc_extra_tools,
+                extra_system_prompt=calc_extra_system_prompt,
             )
         )
     if enable_setup_agent:

@@ -165,6 +165,7 @@ def _new_conversation() -> None:
     ss.total_tokens = 0
     ss.last_turn_tokens = 0
     ss.save_error = None
+    ss.feedback_saved = None
     ss.recovered_notice = False
     ss.behavior = core.default_behavior()       # A5: per-conversation pickers
     _resolve_and_build(core.default_model_id())
@@ -201,6 +202,7 @@ def _open_conversation(thread_id: str) -> None:
     ss.total_tokens = 0
     ss.last_turn_tokens = 0
     ss.save_error = None
+    ss.feedback_saved = None
     _meta = core.load_meta(thread_id) or {}
     ss.behavior = core.behavior_from_meta(_meta)     # A5: restore pickers
     _resolve_and_build(_meta.get("model") or core.default_model_id())
@@ -714,6 +716,54 @@ with st.sidebar:
                                    key=f"dl_{path}")
             except OSError:
                 pass
+
+    # Feedback (owner feedback 2026-09-11): a note from the user, saved WITH
+    # the conversation (feedback.jsonl + FEEDBACK.md in the record dir, so
+    # the SharePoint mirror carries it up). The agent has the matching
+    # record_feedback tool for capability gaps — see webapp/feedback.py.
+    st.divider()
+    with st.expander("Feedback", expanded=False):
+        with st.form(key=f"feedback_form_{ss.thread_id}",
+                     clear_on_submit=True, border=False):
+            _fb_text = st.text_area(
+                "Tell the developers what worked, what didn't, or what you "
+                "wish the app could do",
+                key=f"feedback_text_{ss.thread_id}", height=120,
+                label_visibility="collapsed",
+                placeholder="What worked, what didn't, what you wish it could do…")
+            _fb_submit = st.form_submit_button("Save feedback")
+        if _fb_submit:
+            _fb_note = (_fb_text or "").strip()
+            if not _fb_note:
+                st.caption("Nothing to save — the box was empty.")
+            else:
+                try:
+                    from webapp import feedback as _feedback
+                    core.ensure_conversation(ss.thread_id)
+                    _entry = _feedback.record(
+                        core.conversation_dir(ss.thread_id),
+                        source="user", kind="user_feedback",
+                        summary=_fb_note.splitlines()[0][:120],
+                        details=_fb_note,
+                        context={"thread_id": ss.thread_id,
+                                 "turn": sum(1 for e in ss.transcript
+                                             if e.get("role") == "user"),
+                                 "model": ss.get("model")})
+                    ss.feedback_saved = _entry["iso"]
+                    # Mirror now (incremental) so the note reaches permanent
+                    # storage even if this is the last thing done today.
+                    try:
+                        _sp0 = sharepoint_store.get_store()
+                        if _sp0.configured:
+                            ss.sp_sync = _sp0.mirror_conversation(ss.thread_id)
+                    except Exception:                  # noqa: BLE001
+                        pass
+                except Exception as exc:               # noqa: BLE001
+                    st.error(f"Could not save feedback: "
+                             f"{type(exc).__name__}: {exc}")
+        if ss.get("feedback_saved"):
+            st.caption(f"✅ Saved with this conversation ({ss.feedback_saved}). "
+                       "It travels with the conversation record.")
 
     # Permanent storage (SharePoint mirror) — rendered only when configured
     # via the GEOTECH_SHAREPOINT_* env vars. The mirror runs after each turn;
