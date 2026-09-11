@@ -282,11 +282,16 @@ st.title("⛰️ GeotechStaffEngineer")
 st.caption("An LLM agent that drives industry-standard geotechnical analysis "
            "methods. Research/analysis aid — not a design deliverable.")
 
+# ONE disclaimer widget. There used to be an ``st.warning`` above the expander
+# that printed ``disclaimer_text().splitlines()[0]`` — the notice's TITLE line
+# — so the page carried two banners both reading "Professional-use disclaimer"
+# and the solid one said nothing (owner feedback 2026-09-11). The expander
+# holds the full text; that is the disclaimer.
 _disc = core.disclaimer_text()
-st.warning(_disc.splitlines()[0] if _disc else "Professional-use disclaimer.")
 with st.expander("Professional-use disclaimer — read before relying on any result",
                  expanded=False):
-    st.text(_disc)
+    st.text(_disc or "Professional-use disclaimer: research/analysis aid, "
+            "not a design deliverable.")
 
 if ss.get("save_error"):
     st.warning(f"⚠️ This conversation could not be auto-saved: {ss.save_error}. "

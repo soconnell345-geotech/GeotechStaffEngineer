@@ -186,3 +186,21 @@ def test_local_tracer_writes_turn_trace(monkeypatch, tmp_path):
     assert recent and "duration_s" in recent[-1]
     assert recent[-1]["turn_tokens"] == 5          # from _stream_ok's turn_done
     assert recent[-1]["error"] is None
+
+
+def test_header_has_exactly_one_disclaimer_widget(monkeypatch, tmp_path):
+    """Owner feedback 2026-09-11: two banners both read "Professional-use
+    disclaimer". The solid ``st.warning`` printed only the notice's title
+    line and was removed; the expander holding the full text is the one
+    disclaimer. Guard both halves so the duplicate cannot quietly return."""
+    at = _mk_at(monkeypatch, tmp_path, _stream_ok).run()
+    assert not at.exception
+    warnings = [w for w in at.warning if "disclaimer" in str(w.value).lower()]
+    assert warnings == [], (
+        "a disclaimer st.warning is back above the expander: "
+        f"{[str(w.value) for w in warnings]}")
+    disc_expanders = [e for e in at.expander
+                      if "disclaimer" in e.label.lower()]
+    assert len(disc_expanders) == 1, (
+        f"expected exactly one disclaimer expander, got "
+        f"{[e.label for e in disc_expanders]}")
