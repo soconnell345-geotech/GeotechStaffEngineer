@@ -40,6 +40,19 @@ analysis code of its own — it's UI and glue over the shipped modules.
   **➕ New conversation** to start fresh, ✏️ to rename, 🗑️ to delete (a soft
   delete — moved to a `.trash/` folder, not erased). Conversations live under
   `~/.geotech_webapp/` by default, or wherever you point `GEOTECH_WEBAPP_DATA`.
+- **Find and restore** — a filter box searches every saved conversation by
+  title once there are more than a few; on Databricks, **Find a past
+  conversation** under Permanent storage lists what is mirrored in SharePoint
+  and **Restore** pulls a conversation (record and files) back after a
+  cluster restart has wiped the driver disk.
+- **Feedback** — a sidebar box saves a note with the conversation
+  (`FEEDBACK.md`); the agent has a matching `record_feedback` tool it uses
+  when it lacks a capability the task needs, so exports carry the gaps in its
+  own words.
+- **Full activity archive** — every tool call, result and model call of every
+  turn, sub-agents included, goes to `activity.jsonl` in the conversation
+  folder regardless of the "Show turn details" toggle (which only controls the
+  on-screen summary).
 - **Prominent professional-use disclaimer** at the top of every session.
 
 ---

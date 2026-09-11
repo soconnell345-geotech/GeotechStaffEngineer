@@ -76,11 +76,28 @@ two consumers differ:
   `<img src="/abs/path/profile.png">` and never handle base64 itself; a data
   URI still works for callers that already have one.
 
+## `plot_data` — the generic data plot (added 2026-09-11)
+
+Second method, same module, same contract (PNG on the real disk + an
+`html_img_tag`), from the owner's 2026-09-11 feedback that calc packages lacked
+"plots of data". `profile_figure/data_plot.py::render_data_plot` draws one or
+more `{x, y, label, style, color}` series with matplotlib: `depth_axis=True`
+inverts y and puts the x axis on top (boring-log convention), `logx`/`logy`,
+`hlines`/`vlines` as labelled reference lines (a water table, an allowable
+value). It knows no analysis and does no unit conversion — the caller labels
+the axes WITH units. Non-finite points are dropped with a warning; unequal
+`x`/`y` lengths, an empty series and an unknown style are errors that name the
+series index. It exists because the agent has no code-execution tool: without
+it, SPT-vs-depth or settlement-vs-time in a bespoke report was impossible.
+It lives here rather than in a new module because the agent catalog is within
+~35 characters of its 8,000-char budget — a method costs less than a module.
+
 ## Deliberate non-goals
 
-- **Not a boring log.** No sample intervals, blow counts by depth, or lab
-  results columns. `subsurface_characterization` owns real log data and its
-  Plotly depth profiles.
+- **Not a boring log.** No sample intervals or lab-results columns on the
+  schematic. `subsurface_characterization` owns real log data and its Plotly
+  depth profiles; `plot_data` can draw a plain blow-count-vs-depth line, which
+  is a chart, not a log.
 - **Not a cross-section.** Horizontally varying stratigraphy, slope geometry
   and slip surfaces belong to `slope_stability.plotting` / `dxf_export`, which
   draw true 2-D sections. This is the 1-D column at a boring/pile location.

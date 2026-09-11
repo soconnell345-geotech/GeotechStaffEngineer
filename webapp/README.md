@@ -56,14 +56,18 @@ export GEOTECH_WEBAPP_MODEL=claude-sonnet-5      # startup default (any Claude i
 export GEOTECH_WEBAPP_MAX_TOKENS=8192            # per-response output cap
 ```
 
-### Tracing (optional, off by default)
+### Tracing (optional, off by default) — and the always-on activity log
 
-Two independent opt-in ways to see what a turn actually did:
+Every turn is archived to `conversations/<thread>/activity.jsonl` whether or
+not tracing is on (see "What the record holds" below). On top of that, two
+independent opt-in ways to see a turn's summary on screen:
 
-- **Local trace (no account needed):** set `GEOTECH_TRACE=1`. The app writes one
-  compact JSON line per turn to `conversations/<thread>/trace.jsonl` (duration,
-  tokens, tool calls including sub-agent hops, error) and shows a **"turn
-  details"** expander under the chat.
+- **Local trace (no account needed):** set `GEOTECH_TRACE=1` or tick **Show
+  turn details** in the sidebar. The app writes one compact JSON line per turn
+  to `conversations/<thread>/trace.jsonl` (duration, tokens, an 80-character
+  one-liner per primary tool call, error) and shows a **"turn details"**
+  expander under the chat. It is a summary; sub-agent internals are in
+  `activity.jsonl`, not here.
 - **LangSmith (SaaS):** set `LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY=…`
   before launching — the LangChain/LangGraph stack then auto-traces every run to
   your LangSmith project with no code change (the `langsmith` client ships with
@@ -357,8 +361,16 @@ click.
 | `core.py` | All logic: attachment staging, artifact capture, streaming, disclaimer, and conversation **persistence** (per-conversation dir under `GEOTECH_WEBAPP_DATA`: transcript / messages / attachments / artifacts / meta; list / resume / rename / delete-to-trash). Import-testable without streamlit. |
 | `engine_config.py` | Env-driven engine resolution (Anthropic key / Prompter hook / no-engine). |
 | `databricks_launcher.py` | One-cell Databricks launcher (`run_on_databricks`): reconstructs the Prompter engine on the driver and runs streamlit under the driver proxy (§3). |
+| `turn_jobs.py` | Detached turn execution: the whole turn pipeline runs in a worker thread keyed by conversation, so a websocket death never kills an analysis; the page re-attaches. |
+| `activity_log.py` | Always-on per-turn archive `activity.jsonl` — every tool call (full args), tool result (capped 32 KB), model call (usage), primary AND sub-agents, attributed by `task` nesting. A LangChain callback handler on the run config. |
+| `feedback.py` | Feedback writer (`FEEDBACK.md` + `feedback.jsonl` in the conversation dir) behind the sidebar box and the agent's `record_feedback` tool. |
+| `sharepoint_store.py` | Permanent storage: mirror a conversation dir to SharePoint after each turn (incremental manifest), list mirrored conversations, restore one back. |
+| `sharepoint_tools.py` | Agent-facing SharePoint tools (list / search / download-to-working-folder / upload), injected only when configured. |
+| `ws_upload.py` + `ws_upload_component/` | Websocket file uploader used on Databricks (the driver proxy 403s the native uploader's PUT); 25 MB per file. |
+| `diagnostics.py` | Sidebar "Connection diagnostics" battery (resolve / plain / stream / tool-call / upload probe); terminal-callable. |
+| `budget_panel.py`, `version_guard.py`, `email_tools.py` | AI-budget line, agent-stack drift warnings, and the `email_file` tool. |
 | `requirements.txt` | TinyApp dependency pin. |
-| `tests/` | Offline tests for `core.py` + `engine_config.py` (no streamlit, no live model). |
+| `tests/` | Offline tests (AppTest for the shell, fakes for SharePoint / the agent stream; no live model). |
 
 Owner-facing overview: `docs/webapp_guide.md`.
 

@@ -234,6 +234,7 @@ Stop and investigate only for these:
 | 5.12.0 | 2026-09-05 | Clean. |
 | 5.13.0 | 2026-09-10 | Clean. numpy cascade fired as predicted; numba 0.67 verified numerically identical. |
 | 5.14.0 | 2026-09-11 | Clean. OpenCV 5.0.0.93 arrived and was verified safe; deepagents 0.7.13 vs gate's 0.6.8 held via the compiled-agent guard; app confirmed working live by the owner. |
+| 5.15.0 | — | Not yet installed (app feedback train: no dependency changes, so the same log is expected). Replace this row when the cluster install is confirmed. |
 
 Earlier, 5.12.0's **first** attempt failed: pip 403 on `cytriangle`, pulled in by
 `sectionproperties` **and** `concreteproperties`. Both were removed and rebuilt

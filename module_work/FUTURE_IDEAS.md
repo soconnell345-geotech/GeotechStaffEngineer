@@ -190,6 +190,26 @@ iteration ("find B such that β ≥ 3.0"), and probabilistic PAVEMENT design
   subset through a stub in GitHub Actions so dispatch regressions surface on
   push, not at release.
 
+## 9. App feedback train follow-ups (2026-09-11; ledger in module_work/field_feedback/2026-09-11_app-usage_v5.14.0/)
+
+- **Ensoft-style TABLES of calculation data (owner ask — the next train).**
+  `calc_package.export_tables` as a sibling of `render_figures`; each
+  module's `calc_steps` gains `get_tables(result, analysis)` (several already
+  build `TableData`); CSV + an HTML table block per report; the calc prompt's
+  deliverable skeleton gains a Tables section. Per-depth p-y / load-transfer
+  tables, per-slice tables, per-layer capacity contributions, iteration
+  histories — what LPILE/APILE/GROUP print.
+- **Attach from SharePoint** sidebar box: filename/path in, staged like an
+  upload, no LLM turn, no size cap (the large-file route without a turn).
+- **Chunked websocket upload** (raise the 25 MB cap) — each chunk is widget
+  state that reruns; needs the one-shot-key dance per chunk.
+- **Specialist agents cannot draw or report**: foundations / earth-retention /
+  slope-fem / seismic scopes exclude both `calc_package` and `profile_figure`.
+- **Plotly -> PNG twin** for `subsurface.plot_*` — blocked while static export
+  is broken in the tenant.
+- WON'T: browser -> SharePoint direct upload (delegated Graph token would
+  have to live in page JS).
+
 ## 8. Smaller punch-ups (old backlog, unchanged)
 
 - slope_stability toe-circle search under-sampling; steep-φ' Kc validation.

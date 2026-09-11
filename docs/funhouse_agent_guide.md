@@ -174,7 +174,10 @@ The agent uses these tools automatically during the ReAct loop:
 | `list_methods(agent, category)` | List methods for a module |
 | `describe_method(agent, method)` | Get parameter details |
 
-### Available Modules (43)
+### Available Modules
+
+(The live catalog is `list_agents()`; this list is hand-maintained and
+may lag it. `hvsrpy`/`swprocess` were removed in 5.12.)
 
 #### Core Analysis (17)
 
@@ -195,7 +198,7 @@ The agent uses these tools automatically during the ReAct loop:
 | `downdrag` | Pile downdrag (Fellenius neutral plane, UFC 3-220-20) |
 | `soe` | Support of excavation (braced/cantilever walls, stability, anchors) |
 | `dxf_export` | Export cross-section geometry to DXF file format |
-| `calc_package` | Generate Mathcad-style calc packages (HTML/LaTeX/PDF) for 13 modules |
+| `calc_package` | Calc packages (HTML/LaTeX/PDF) for 15 modules; `render_figures` = a package's figures as standalone PNGs; `html_to_pdf` for bespoke reports |
 
 #### External Library Adapters (6)
 
@@ -219,20 +222,19 @@ The agent uses these tools automatically during the ReAct loop:
 > and DIGGS schema/dictionary validation (pydiggs) were folded into the
 > `subsurface` adapter as format-adapter methods — see below.
 
-#### FEM & Visualization (2)
+#### FEM, Figures & Visualization (3)
 
 | Module | Description |
 |--------|-------------|
+| `profile_figure` | Figures for any report (PNG + ready `html_img_tag`): `subsurface_profile` layered schematic (strata, water table, fill/surcharge, pile/shaft/footing/wall overlay, callouts) and `plot_data` generic x/y or depth data plot (SPT/CPT vs depth, settlement vs time, sweeps) |
 | `fem2d` | 2D plane-strain FEM (gravity, foundation, slope SRM, excavation, seepage, consolidation) |
 | `subsurface` | Subsurface data I/O — DIGGS parse + Plotly viz (parameter vs depth, Atterberg, trends) + folded format adapters: GEF/BRO-XML CPT/borehole parse (pygef), AGS4 read/validate (python-ags4), DIGGS schema/dictionary validation (pydiggs) |
 
-#### Additional Analysis (3)
+#### Additional Analysis (1)
 
 | Module | Description |
 |--------|-------------|
 | `gstools` | Geostatistical kriging, variogram fitting, and random field generation |
-| `hvsrpy` | HVSR site characterization from ambient noise |
-| `swprocess` | MASW surface wave dispersion analysis |
 
 #### Geotech-References (14)
 
