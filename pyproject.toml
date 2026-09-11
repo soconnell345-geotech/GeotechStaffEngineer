@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geotech-staff-engineer"
-version = "5.13.0"
+version = "5.14.0"
 description = "Python toolkit for LLM-based geotechnical engineering agents - 33 analysis modules covering foundations, piles, slopes, structural section/RC/frame analysis, reliability, seismic site response, excavation support, pavement design (AASHTO 1993 / UFC 3-250-01), subsurface characterization (DIGGS/GEF/AGS4), FEM, drawing & profile rendering, and a cited public-domain reference layer."
 readme = "README.md"
 license = "MIT"
@@ -99,22 +99,14 @@ dependencies = [
     # opencv-based scanned-sheet leg that used to ride on our direct
     # opencv-python-headless dep. planlens 0.1.0 published to PyPI
     # with the 5.12.0 release train (2026-09-05).
-    # FLOOR DELIBERATELY BACK AT 0.1 (5.13.0, owner's call 2026-09-09).
-    # It was raised to 0.2 for DXF block explosion
-    # (from_dxf(explode_blocks=...)), but planlens 0.2.0 is BLOCKED: the
-    # round-4 adversarial pass found two regressions against both 0.1.0 and
-    # the committed tip (see module_work/code_review/
-    # 2026-09-06_planlens_phase32/ROUND4_VERIFICATION.md). Rather than hold
-    # this release -- which carries the cytriangle install fix and the 22 MB
-    # websocket-loop fix, both urgent and both unrelated to planlens -- the
-    # app ships against the PUBLISHED 0.1.0 and the drawing leg degrades.
-    # Verified before relaxing: every planlens symbol the app imports at
-    # runtime exists in the 0.1.0 wheel, and planlens.testing is imported
-    # only by tests (which the wheel does not ship). The one live cost is
-    # that DXF block line-work is absent -- the adapter already handles this
-    # via _dxf_supports_explode in adapters/drawing_ir_adapter.py.
-    # RESTORE >=0.2 in the follow-up release once planlens 0.2.0 publishes.
-    "planlens[raster]>=0.1",
+    # FLOOR RESTORED TO 0.2 (5.14.0, 2026-09-11). 5.13.0 shipped against the
+    # published 0.1.0 so the cytriangle and websocket fixes were not held
+    # hostage to the planlens remediation; that remediation is now complete --
+    # six builder-plus-independent-checker rounds, verdict SHIP -- and 0.2.0
+    # is published. 0.2.0 brings DXF block explosion (the adapter's degrade
+    # path for 0.1.x stays as belt-and-braces), the planlens.testing fixture
+    # package the app's drawing tests import, and the OCR render cap.
+    "planlens[raster]>=0.2",
     # -- structural round 1 (owner, 2026-09-03): section/RC/frame analysis --
     # sectionproperties and concreteproperties were REMOVED in 5.13.0: both
     # require `cytriangle`, whose only manylinux wheel is quarantined by the

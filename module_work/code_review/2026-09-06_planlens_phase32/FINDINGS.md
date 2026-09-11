@@ -259,7 +259,7 @@ against, though it depends only on the candidate.
 
 Five design agents reproduced every finding before proposing anything, three
 builders applied fixes split by file, and an integration pass re-measured.
-Result: all fifteen addressed, planlens suite 316 → 375 tests green, and the
+Result: all fifteen addressed, planlens suite 350 → 375 tests green (the "316" this line carried until 2026-09-11 did not reproduce — the reviewed tip collects 350; corrected by the round-5 builder), and the
 corpus **bit-for-bit unchanged** — 25/25 and 16/16 at the 0.3 observational
 threshold, 23/25 and 16/16 at the 0.5 default, all seven false-positive counts
 identical.
@@ -378,7 +378,7 @@ original finding did not ask for: duplication now means the same SPAN, not
 a shared endpoint. Two dimensions sharing a witness line is ordinary
 drafting, and matching on loose defpoints was deleting real constructs for it.
 
-**Measured on the close-out tree** — planlens 595 tests green (316 at the
+**Measured on the close-out tree** — planlens 595 tests green (350 at the
 start of this remediation), app drawing tests 58 green; corpus 25/25 and
 16/16 at 0.3, 23/25 and 16/16 at the 0.5 default; leader false positives
 2/10/6/19/23/20/38, all seven identical to baseline; the dimension precision

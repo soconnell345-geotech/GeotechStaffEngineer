@@ -162,3 +162,48 @@ def test_errors_never_raise(fake_sp, monkeypatch):
     monkeypatch.setattr(fake_sp, "ls", boom)
     out = spt.sharepoint_list_files.invoke({"path": ""})
     assert "SharePoint list error" in out and "proxy down" in out
+
+
+class TestBaseFolderNotDoubled:
+    """Naming the folder you can see must not double it (live 2026-09-09/10).
+
+    The root ends in the base folder, so "GSE_app/uploaded references/x.pdf"
+    used to resolve under ".../GSE_app/GSE_app/..." and 404. The agent burned
+    4-5 SharePoint round trips per turn rediscovering that, twice.
+    """
+
+    def test_leading_base_segment_is_dropped(self, fake_sp):
+        assert spt._resolve("GSE_app/uploaded references/x.pdf") == \
+            "Shared Documents/General/GSE_app/uploaded references/x.pdf"
+
+    def test_case_insensitive(self, fake_sp):
+        assert spt._resolve("gse_app/uploaded references") == \
+            "Shared Documents/General/GSE_app/uploaded references"
+
+    def test_plain_relative_path_is_untouched(self, fake_sp):
+        assert spt._resolve("uploaded references/x.pdf") == \
+            "Shared Documents/General/GSE_app/uploaded references/x.pdf"
+
+    def test_only_the_first_segment_is_considered(self, fake_sp):
+        """A nested folder that happens to share the name still resolves."""
+        assert spt._resolve("uploaded references/GSE_app/x.pdf") == \
+            "Shared Documents/General/GSE_app/uploaded references/GSE_app/x.pdf"
+
+    def test_bare_base_name_alone_is_not_stripped(self, fake_sp):
+        """"GSE_app" on its own is a real (if odd) child request — keep it.
+
+        Stripping it would silently turn a request for a child folder into a
+        request for the root, which is a different answer, not a fixed one.
+        """
+        assert spt._resolve("GSE_app") == \
+            "Shared Documents/General/GSE_app/GSE_app"
+
+    def test_absolute_paths_still_pass_through(self, fake_sp):
+        for p in ("Shared Documents/General/GSE_app/x.pdf",
+                  "/sites/CSEGeotechGroup/Shared Documents/x.pdf",
+                  "https://t.sharepoint.com/sites/x/y.pdf"):
+            assert spt._resolve(p) == p
+
+    def test_empty_still_returns_the_root(self, fake_sp):
+        assert spt._resolve("") == "Shared Documents/General/GSE_app"
+        assert spt._resolve("/") == "Shared Documents/General/GSE_app"

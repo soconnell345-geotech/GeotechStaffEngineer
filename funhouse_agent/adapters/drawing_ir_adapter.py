@@ -150,7 +150,8 @@ def _run_digitize_drawing(params):
 
     _valid = ("file_path", "source", "page", "scale", "units", "origin",
               "calibration", "detect_lines", "detect_circles",
-              "detect_contours", "ocr", "ocr_text", "explode_blocks")
+              "detect_contours", "ocr", "ocr_text", "ocr_force",
+              "explode_blocks")
     reject_unknown_params(params, _valid, method="digitize_drawing")
     require_params(params, ["file_path"], method="digitize_drawing",
                    valid=_valid)
@@ -197,16 +198,33 @@ def _run_digitize_drawing(params):
             f"Unknown source '{source}'. Use dxf/pdf_vector/raster/auto.")
 
     ocr_out = None
+    ocr_skipped = None
     if params.get("ocr_text") and source == "pdf_vector":
-        from planlens.ocr import augment_ir_with_ocr
-        ocr_out = augment_ir_with_ocr(ir, filepath=file_path,
-                                      page=params.get("page", 0))
+        # OCR is for sheets with NO text layer — SHX-stroked plots and scans.
+        # On a page whose text is already in the vector layer it can only add
+        # noisier duplicates of text we already have exactly, and it is the
+        # most expensive thing this tool can do: a D-size sheet at the 300 dpi
+        # default is a 70-megapixel image, which took a notebook driver (and
+        # its websocket) down on 2026-09-10. So skip it when the page already
+        # read as text, and say so rather than silently doing nothing.
+        n_text = sum(1 for e in ir.entities if getattr(e, "KIND", "") == "text")
+        if n_text and not params.get("ocr_force"):
+            ocr_skipped = (
+                f"skipped: the page already carries {n_text} vector text items, "
+                "which are exact — OCR is for sheets with no text layer. Pass "
+                "ocr_force=true to OCR anyway, or snip a region and OCR that.")
+        else:
+            from planlens.ocr import augment_ir_with_ocr
+            ocr_out = augment_ir_with_ocr(ir, filepath=file_path,
+                                          page=params.get("page", 0))
 
     handle = _store_ir(ir)
     out = {"handle": handle, "source": ir.source}
     out.update(queries.summary_stats(ir))
     if ocr_out is not None:
         out["ocr"] = ocr_out
+    if ocr_skipped is not None:
+        out["ocr"] = ocr_skipped
     if ir.metadata.get("scale_candidates"):
         out["scale_candidates"] = ir.metadata["scale_candidates"]
     if ir.metadata.get("n_block_entities"):
@@ -656,7 +674,18 @@ METHOD_INFO = {
                              "THE way to read SHX/stroked-lettering sheets "
                              "(has_text=false) — needs planlens[ocr] "
                              "(RapidOCR; auto-detects sideways plots). "
-                             "Adds seconds to a-minute-ish per page.")},
+                             "Adds seconds to a-minute-ish per page. "
+                             "SKIPPED, with a reason in the result, when the "
+                             "page already carries vector text: that text is "
+                             "exact and OCR could only add noisier copies. "
+                             "Check has_text/n_text in the summary first.")},
+            "ocr_force": {"type": "bool", "required": False, "default": False,
+                          "description": (
+                              "Run the OCR pass even though the page already "
+                              "has a text layer (e.g. a sheet that is part "
+                              "vector text, part scanned inset). Expensive: "
+                              "a large sheet is a many-megapixel render, so "
+                              "prefer snipping the region and OCRing that.")},
         },
         "returns": {
             "handle": "Cache handle for query_drawing / get_entities.",

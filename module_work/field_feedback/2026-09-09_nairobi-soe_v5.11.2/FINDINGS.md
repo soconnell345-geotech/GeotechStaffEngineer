@@ -70,6 +70,26 @@ This also fits every observation: credentials valid seconds later (turn 2),
 failure only on the tool-heavy turn, and an IIS page rather than a JSON API
 error.
 
+**>>> MECHANISM NOT CONFIRMED — COUNTER-EVIDENCE 2026-09-10 <<<**
+The size-threshold reading above predicted that any request over ~48 KB would
+401. It did not survive contact. On 5.13.0 a document-heavy turn against the
+SAME 23 MB file — SharePoint fetch, 7 tool calls, a delegated sub-agent and
+**194,802 tokens** — completed cleanly in 83.7 s. Individual requests in that
+turn were far over 48 KB, so a hard read-ahead threshold cannot be the whole
+story.
+
+What survives: the 401 is real, it is intermittent, and it is not a
+permissions problem (a small request on the same credentials succeeded seconds
+later). The `ExHttpNtlmAuth` double-body-send at `prompter_api.py:61-79` is
+still a genuine defect and still a plausible contributor — a body that must
+cross the challenge twice is more exposed to a connection being recycled
+mid-handshake — but "requests over N bytes always fail" is now falsified.
+Treat the mechanism as OPEN, and the connection-scoped/transient reading (the
+original hypothesis) as the leading one.
+
+Do not assert the read-ahead mechanism to the admins as established. Ask them
+to look up the gateway log for the failing timestamp instead.
+
 **Confirming test (cheap, on-cluster, no SharePoint involved).** Ask a
 trivial question with ~60 KB of pasted filler text in it. If it 401s while
 the same question without the filler succeeds, size is the variable and this
@@ -158,3 +178,67 @@ planlens, when the drawing work next opens.
 - **`analyze_pdf_page` cannot kill a turn** — `vision_tools.py:684-692` catches
   `Exception` and returns a JSON error, so the vision path was not the source.
 - **Credentials are not mis-scoped.** Turn 2 succeeded seconds later.
+
+
+---
+
+# Second session — drawing tests on 5.13.0 (2026-09-10)
+
+Two turns run against the same file to exercise the planlens 0.1.0 path.
+
+## F6 — Turn 1 succeeded, and the extraction quality is genuinely good
+
+Page 11 digitized to **7,882 IR entities** (6,438 lines / 1,199 polylines / 245
+text). It recovered the title block (project 25230022.000, "NAIROBI CAA ANNEX
+/ TEMPORARY SOE DESIGN", sheet 5 of 7 "SECTIONS", the PE number and the
+designed/drawn/checked initials), real dimensions (H = 6300 mm, MIN. EMBEDMENT
+11700/13700 mm, TIP EL 1684 m, 21° TYP) and real leader callouts (HP260X87
+RAKER, HP 305X126 WALER, TANGENT PILE (TYP), "APPLY 171 kN PRE-LOAD"). That is
+the drawing stack working on planlens 0.1.0, on a real agency sheet.
+
+**Cost note: 194,802 tokens and 83.7 s for that one turn.** Worth watching.
+
+## F7 — The connection died inside `digitize_drawing(ocr_text=True)` on a D-size sheet
+
+The trace's last call before the drop:
+`drawing_ir.digitize_drawing(..., source: pdf_vector, page: 10, ocr_text: True)`.
+
+`augment_ir_with_ocr` (`planlens/ocr.py:285`) defaults to **dpi=300**. Measured
+on this document's page 10 (33.1 x 23.4 in): **9,933 x 7,017 px = 69.7
+megapixels**, a 0.21 GB pixmap, handed to RapidOCR. The render itself is cheap
+(0.9 s); it is ONNX detection over a 70 MP image that is ruinous in both CPU
+and working set — the most likely cause of the driver starving and the socket
+dying.
+
+Two things make this pure waste here:
+1. **The page already had a text layer.** Turn 1 recovered 245 vector text
+   entities on the neighbouring sheet. `augment_ir_with_ocr` even counts
+   `n_existing_text` — and then OCRs anyway. OCR is for scanned sheets.
+2. **Nothing bounds the render.** No megapixel cap, no downscale, and `dpi` is
+   a caller-supplied number with no ceiling.
+
+**Disposition: PLANNED, two guards (small, both worth doing).**
+- In `augment_ir_with_ocr`: clamp the render to a maximum pixel count
+  (downscale proportionally) so a large sheet degrades in resolution rather
+  than in survivability.
+- In the adapter's `ocr_text` branch (`drawing_ir_adapter.py:200`): skip OCR
+  when the page already carries vector text unless explicitly forced, and say
+  so in the result. On a vector PDF the text is already exact; OCR can only
+  add noise.
+
+Rides with the planlens repair, since one guard lives in each repo.
+
+## F8 — SharePoint path doubling burns 4-5 tool calls per turn
+
+Both turns opened with the same failure: `sharepoint_download_file(path:
+"GSE_app/uploaded references/...")` resolving to
+`Shared Documents/General/GSE_app/**GSE_app**/uploaded references/...`.
+`_resolve()` (`sharepoint_tools.py:53`) joins any non-absolute path under the
+configured root, and the root already ENDS in `GSE_app` — so a user or agent
+who names the folder they can see doubles it. The agent recovered both times by
+dropping the prefix, but spent 4-5 SharePoint round-trips doing it, twice.
+
+**Disposition: PLANNED (one-liner).** In `_resolve`, strip a leading segment
+that duplicates the root's last segment before joining. It cannot break an
+absolute path (those already return early) and it makes the natural phrasing —
+the folder name the user actually sees in SharePoint — just work.

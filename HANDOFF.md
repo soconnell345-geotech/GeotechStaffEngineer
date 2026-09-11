@@ -8,6 +8,134 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### 5.14.0 RELEASED with planlens 0.2.0 (2026-09-11) — both trees COMMITTED
+
+The publish order finally ran as designed: **planlens 0.2.0** (`f0a2b9d`, tag
+`v0.2.0`, trusted-publisher workflow, live on PyPI) then **app 5.14.0**
+restoring `planlens[raster]>=0.2`. Gate on the release tree 11,594 / 33
+skipped / 0 failed; real PyPI resolve of the built wheel: 149 packages,
+planlens 0.2.0, refs 1.4.0, no cytriangle chain anywhere.
+
+**Cluster:** `%pip install "geotech-staff-engineer==5.14.0"` then
+`%restart_python`. Carries, on top of 5.13.0: the Prompter METERING fix
+(`_child_env` threads the kernel's meter config to the app subprocess — see
+the metering section; verify with §8 of
+`module_work/prompter_metering/DIAGNOSIS.md`), the OCR render cap (planlens)
+and OCR-skipped-when-the-page-already-has-text (adapter, `ocr_force` escape
+hatch), the SharePoint base-folder de-dup, and DXF block explosion back via
+planlens 0.2.0. The PyNiteFEA numpy>=2.4 cascade is unchanged (owner's
+call to keep it in core; site response verified numerically identical on
+numba 0.67).
+
+**Both working trees are now clean of release work.** The app tree still has
+the owner's untracked scratch (the `*_copy.md` plans, docs PDFs, the .bat,
+`bamako_agent_cell.py`, `suite_trial.json`) — deliberately never staged.
+planlens has the one stray screenshot, never staged.
+
+**Open, in priority order:**
+1. Cluster verification of the metering fix (§8 snippet) and of DXF block
+   explosion (`blocks_exploded` no longer appears; `n_block_entities` does).
+2. The Prompter 401 — send the revised admin note; run the confirming test
+   when convenient. Two app-side items still PLANNED: retry-once on
+   `AuthenticationError`, `friendly_turn_error` auth case.
+3. Owner decision: PyNiteFEA -> extra to undo the numpy cascade (TF /
+   mosaicml / ydata-profiling broken in that kernel).
+4. The `openai<3` pin comment now lies — httpx2/httpcore2 arrive via
+   langsmith; fix the comment (and decide whether the pin still earns its
+   place).
+5. planlens findings 5 (60-deg+ triangles) and 6 (concave dart), documented
+   not fixed; a synthetic-terminator fixture set alongside the corpus is the
+   standing lesson of rounds 4-6 (`round4_repro.py`, `round5_attack.py`).
+6. Chunked websocket upload for files past the 25 MB cap.
+
+### FUNHOUSE METERING WAS SILENTLY DROPPING EVERY APP RECORD (2026-09-10)
+
+The owner noticed Funhouse's token counter was not picking up app usage.
+Diagnosed with executed proof; full report committed at
+`module_work/prompter_metering/DIAGNOSIS.md`.
+
+**Two plausible theories were DISPROVEN by execution before the real one was
+found** — worth knowing, because both are the kind of thing a reader would
+accept on reasoning alone. LangChain is NOT building its own unwrapped OpenAI
+client (we use our own `PrompterChatModel`,
+`funhouse_agent/deep/databricks_bridge.py:397`, which calls the SDK's wrapped
+client directly), and the `is_logging_active` ContextVar guard is innocent.
+`wrap_all_openai_methods` really does fire `meter_log` with real usage.
+
+**The cause is one layer below the wrapper.** `meter_log` writes to a LOCAL
+SQLite file whose path exists only in the notebook kernel's in-memory
+`FunhouseConfig` singleton. The app is `Popen`'d as a fresh process
+(`databricks_launcher.py:695`) and builds `PrompterAPI` with no `config=`, so
+it sees DEFAULTS: `should_write_sqlite_for_user -> False`,
+`get_budget_sqlite_store -> None`, every record dropped. The one diagnostic it
+emits is INFO, below the default WARNING stdout level, so nothing ever said
+so. Gap is TOTAL for app traffic (every turn, sub-agent, tool call, streamed
+or not); the notebook kernel's own usage still meters, which is why the
+counter read low rather than empty.
+
+**Fixed ours-side, no SDK or admin change:** `_child_env` in
+`webapp/databricks_launcher.py` now threads the kernel's meter config to the
+child as `FUNHOUSE_BUDGET__*` / `FUNHOUSE_SESSION__USER_NAME` /
+`CURRENT_USER_NAME` (`FunhouseConfig._load_env_vars` maps `FUNHOUSE_A__B` ->
+`a.b`). Five tests in `webapp/tests/test_databricks_launcher.py`, including
+that an explicit override wins, a broken kernel config never blocks a launch,
+and that it is a no-op off-cluster where no SDK exists.
+
+**Deliberately NOT done, and why.** The `user_name` column may read
+`unknown_user` in a subprocess; the report's fix for that pokes a private SDK
+attribute. Skipped — the user's identity is in the sqlite PATH
+(`/Workspace/Users/<user>/.funhouse_meter`), which is what the admin
+cross-user report keys on, so compliance is satisfied without touching
+internals. Only worth revisiting if the column itself matters.
+
+**Still theirs, not ours:** the pricing table matches models by exact string
+and carries no `funhouse-*` chat aliases, so rows may meter tokens at cost
+0.00 — numbers WRONG rather than missing. Raise it once tokens are landing.
+Also the SDK's `collect_usage` streaming injection raises TypeError before the
+wire (we already route around it).
+
+**Verify on the cluster:** §8 of the diagnosis is a 30-second notebook snippet
+contrasting kernel vs child, plus a post-fix check that the money column is
+right too.
+
+### 5.13.0 INSTALLED ON THE CLUSTER — what the numpy cascade actually did (2026-09-10)
+
+`%pip install "geotech-staff-engineer==5.13.0"` **succeeds**. No cytriangle, no
+waiver, planlens 0.1.0 as designed. App boots and answers.
+
+**The PyNiteFEA numpy watch item fired, exactly as predicted.** numpy went
+2.1.3 -> 2.4.6, and because numba 0.61 caps numpy<2.2 it cascaded: numba
+0.61 -> 0.67, llvmlite 0.44 -> 0.49. Three Databricks runtime packages are now
+unsatisfied IN THAT KERNEL: `tensorflow 2.19` , `mosaicml-streaming 0.12`,
+`ydata-profiling 4.16` (all want numpy<2.2; ydata also numba<=0.61). Harmless
+unless that kernel needs them. PyNiteFEA is the SOLE cause — nothing else in
+core wants numpy above 2.1.3 — so moving it to an extra reverts the whole
+cascade in one line if the owner ever wants the runtime left alone.
+
+**numba 0.67 is VERIFIED SAFE, not assumed.** pystrata JITs its wave
+propagation core (`propagation.py:67`, `@numba.jit(nopython=True)`), and the
+gate had only ever run on numba 0.65.1. Live comparison on the cluster vs the
+gate machine, same profile (30 m Vs=180 PI=15 over Vs=760 rock,
+`synthetic_long`):
+
+| | cluster (numba 0.67) | local (numba 0.65.1) |
+|---|---|---|
+| EQL surface PGA / amp / max strain | 0.1736 g / 1.157 / 0.2218% | identical to 4 dp |
+| Linear surface PGA / amp | 0.5564 g / 3.709 | identical once the same 2% linear damping is used |
+
+The linear case first looked like a mismatch (3.709 vs 3.988) — it was the
+agent substituting `linear, damping=2%` for the requested Darendeli PI=15,
+which it disclosed in its answer. Re-running locally with that substitution
+reproduces 0.5564/3.709 exactly. Numerics are unchanged across the numba
+upgrade.
+
+**Still open from that install:** `httpx2`/`httpcore2` reached the cluster via
+`langsmith 0.12.4` (a deepagents dependency), NOT via openai. The `openai<3`
+pin was written specifically to keep that fork stack off the cluster and no
+longer achieves it. Not currently breaking anything — the gate machine runs the
+same stack, and the Prompter's NTLM path still uses the untouched httpx 0.28.1
+— but the pin's rationale comment is now wrong about what protects what.
+
 ### FIELD FEEDBACK 2026-09-09 — Nairobi SoE: the 401 was the MODEL, not SharePoint
 
 Drop triaged into `module_work/field_feedback/2026-09-09_nairobi-soe_v5.11.2/`
@@ -191,6 +319,106 @@ publishes. The comment at that pin in `pyproject.toml` says so too.
 
 The `geotech-references` pointer still moves to `d8ff52e` (1.4.0, already on
 PyPI) in the same commit.
+
+### Round 6 — independently verified SHIP (2026-09-11 morning); release sequence in progress
+
+Round 6 (same Fable builder, resumed after a session-limit reset on a tree
+verified byte-identical to its freeze) answered every round-5 defect, and a
+fresh pass by the same independent verifier measured it: **SHIP.** Reports:
+`ROUND6_BUILDER_REPORT.md`, `ROUND6_VERIFICATION.md` beside the ledger.
+
+- **D1 closed the way the tip had it right.** A fill cluster seats at its
+  NEAREST MEMBER (was centroid); between the two sound tiers the better-seated
+  candidate wins outright, tie -> directional; `_SEAT_DOMINANCE` REMOVED (a
+  test asserts its absence). Verifier: cluster keeps its end in all 42
+  shift x seat cells; the leader owning the foreign chevron survives with the
+  CORRECT reading at every shift. Rationale: at shift 2.0 the cluster is
+  0.5 pt off and the chevron 0.94, so any ratio > 1.9 fails and a scale
+  threshold would need a 0.01 pt margin — nearer-wins has no constant.
+- **D3:** oriented now also requires arrow scale (`_MIN_ARROW_SIZE_SCALE`
+  0.5x, one home with the open-3 gate) AND a taper toward the end in the
+  shape's own PCA frame. Every rectangle is blunt however turned (closes the
+  scale-bar hole); every former "oriented" corpus member was a sub-scale
+  fragment. **Oriented corpus population 0/0/0, so the README blunt figure is
+  BACK at 19/17/0 = round 4 exactly; round 5's 18/16/0 is superseded.**
+  `doc_claims_check.py` now prints the ORIENTED row too; both pinned.
+- **D2 became a large win:** cProfile put 64% of the round-5 cost in the
+  witness search building ~1,050 rounded dicts per tip to keep 50;
+  `_ending_near_from_grid(limit=50)` is proven output-inert (vcheck
+  byte-identical) and takes 3001 from 3.6 s to 0.68 s. Verifier's own
+  timing vs round 4: -54% / -35% / -10% on the three totals (round 5 was
+  +34/+15/+16). Exact prune kept, now bound against the best SOUND seat with
+  the cluster's REAL radius (a zero radius had been pruning real clusters at
+  shift 1-2 — caught by the verifier's D1 table).
+- **D4:** tie-break `(seat, -alignment, d)`, order-independent, pinned.
+- **Corpus:** every acceptance number, all 41 residuals, the 322-row called
+  set AND the 1662-row leader set byte-identical to 1f6551c. Suites 798 / 61
+  / 11. Observational churn vs round 4: +57 at <=0.25 and 15 rows at 0.3, all
+  0.45 junk >= 30 pt from truth, per-row accounted in the builder report.
+- **R1, the one accepted residual (documented, pinned, not a code change):**
+  a stipple splash centred on a shaft end takes the end from a drawn arrow at
+  ANY non-zero crookedness (the README had said "> ~9.6 deg"; measured 0.5 deg
+  already loses, publishing 94.3 for 100 at 0.947). Corpus-inert, identical to
+  the tip, a regression vs round 4 only for 0.3-9.6 deg arrows. Shipped as-is
+  because a splash on the end IS a real stipple arrowhead's anatomy and the
+  scene needs two terminators at one end; README sentence corrected and the
+  0.5/1.0/2.4/5.0 deg rows pinned as the accepted residual
+  (`TestTheAcceptedResidualAtItsRealThreshold`). Two low observations added to
+  the README sharp edges (size floor is a sheet statistic; mirror-image ties
+  resolve by grid order).
+- Findings 5 and 6 remain documented, not fixed.
+
+Final tree: `queries.py` md5 `e2b2b3de5820fe12f8400348108e098b` (the verdict's
+file, unchanged through the doc pass); README `83685e33…`,
+`test_end_ownership.py` `c40e863c…`. Release sequence from here: lead's own
+planlens full suite + app drawing tests (61 green) -> commit planlens (six
+staging-trap paths in ONE commit, screenshot excluded) -> tag v0.2.0 -> push
+(trusted-publisher workflow) -> app: restore `planlens[raster]>=0.2`, version
+bump, final gate, commit, tag, push.
+
+### Round 5 (the repair) was independently verified: DO NOT SHIP as-is — round 6 in flight (2026-09-10 evening)
+
+Builder (Fable, fresh) implemented Change A + Change B; a fresh Fable verifier
+then measured the frozen tree (`queries.py` md5 `c0c67b34…`). Both reports are
+committed beside the ledger: `ROUND5_BUILDER_REPORT.md`,
+`ROUND5_VERIFICATION.md`, `round5_attack.py` (three-tree probes) in
+`module_work/code_review/2026-09-06_planlens_phase32/`.
+
+**What verified sound (RUN by the verifier):** every headline number
+reproduces; findings 1, 3, 4 fixed on the fixtures; the restored pre-prune is
+proven exact (triangle inequality) and measured inert on all ten sheets; 41
+residuals and the 322-row called set byte-identical; suites 724 / 61 green.
+
+**D1 — BLOCKER.** Finding 2 (the cluster anatomy, the highest-risk line) is
+fixed only inside a 0.05-0.4 pt window. The 10x seat-dominance ratio needs
+`seat_cluster*10 < seat_chevron`; real clusters seat 0.5-2 pt and an attached
+foreign chevron seats up to ~4.6 pt, so at every realistic offset the foreign
+chevron still takes the end and `exclude_dimensions` still deletes the owning
+leader. Tip 1f6551c gets every shift right; round 4 none; the repair moved the
+boundary from "never" to "sub-half-point". Corpus-inert — the corpus has no
+such case, the same non-evidence three rounds already recorded. The builder
+had flagged this exact judgement call (ratio vs absolute) as unsure; the
+measurement settled it. Fix shape (verifier + lead agree): a cluster's seat
+should be its REACH on the ray (`_reach_on_ray` exists), i.e. 0.0 whenever the
+end lies inside the splash's axial extent, so real clusters always win and
+round 4's splash-5-pt-off case stays capped.
+
+**D3 — policy.** The "oriented" rank's real corpus population is 6/6 sub-2-pt
+SHX glyph fragments, 0/6 terminators; with other rungs absent it CALLS a
+[true arrow + 0.8 pt oblong fragment] at 1.0 and a graphic SCALE BAR with 2:1
+end blocks as a dimension at 0.944 (tip: no proposal). Decision: oriented must
+be commensurate with the arrowhead scale; scale-bar anatomy pinned as not a
+dimension; fallback is clamp-only with all tipless capped.
+
+**D2 cost** (+34% @0.0, +15-16% at the default, driven by 3001; 4.3 s absolute
+max — the builder never timed the shipped tree). **D4** entity-order tie
+(2.5 pt swing). **D5** docs: "+60 from the prune" wrong (60 removed / 120
+added by seat ordering un-colliding the DISTINCT rule), "6 rows" is 8, the
+"six oriented" README figure has no command.
+
+Round 6 routed to the builder with all of the above and the verifier's drop-in
+pytest; verifier re-runs after. Ledger correction applied: the two stale "316"
+test counts now read 350.
 
 ### The remediation train: the caveat is CLOSED, and it found two regressions
 

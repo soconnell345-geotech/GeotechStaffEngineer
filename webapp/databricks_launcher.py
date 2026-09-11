@@ -399,6 +399,41 @@ def build_launch_env(
                 env["GEOTECH_USER_EMAIL"] = _ue
         except Exception:
             pass
+    # METERING OBLIGATION. Funhouse meters Prompter usage per user by writing
+    # to a LOCAL SQLite file whose path lives only in the notebook kernel's
+    # in-memory FunhouseConfig singleton. This app is Popen'd as a fresh
+    # process, so it sees config DEFAULTS, `should_write_sqlite_for_user`
+    # returns False, and meter_log silently drops EVERY record — the one
+    # diagnostic it emits is INFO, below the default WARNING stdout level, so
+    # nothing ever says so. Diagnosed 2026-09-10 with executed proof; the
+    # notebook kernel's own usage still meters, which is why the counter looked
+    # low rather than empty. See module_work/prompter_metering/DIAGNOSIS.md.
+    #
+    # FunhouseConfig._load_env_vars maps FUNHOUSE_<A>__<B> -> a.b, so handing
+    # the child these env vars restores the meter with no SDK change. The
+    # per-user sqlite DIRECTORY carries the user's identity in its path, which
+    # is what the admin cross-user report keys on — so attribution survives
+    # even if the user_name column reads unknown_user.
+    try:
+        from funhouse.config.funhouse_config import FunhouseConfig
+        _cfg = FunhouseConfig.get_instance()
+        for _key, _env in (
+            ("budget.storage_backend", "FUNHOUSE_BUDGET__STORAGE_BACKEND"),
+            ("budget.sqlite_directory", "FUNHOUSE_BUDGET__SQLITE_DIRECTORY"),
+            ("budget.sqlite_path", "FUNHOUSE_BUDGET__SQLITE_PATH"),
+            ("budget.sqlite_filename", "FUNHOUSE_BUDGET__SQLITE_FILENAME"),
+            ("budget.monthly_budget", "FUNHOUSE_BUDGET__MONTHLY_BUDGET"),
+            ("session.user_name", "FUNHOUSE_SESSION__USER_NAME"),
+        ):
+            _val = _cfg.get(_key, default=None)
+            if _val not in (None, "") and not env.get(_env):
+                env[_env] = str(_val)
+        _who = str(_cfg.get("session.user_name", default="") or "").strip()
+        if _who and not env.get("CURRENT_USER_NAME"):
+            env["CURRENT_USER_NAME"] = _who
+    except Exception:
+        pass          # a launch must never fail over metering setup
+
     if prompter is not None:
         user = getattr(prompter, "username", None)
         pw = getattr(prompter, "password", None)

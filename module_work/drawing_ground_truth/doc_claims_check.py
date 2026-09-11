@@ -26,23 +26,37 @@ SUPPORTED = {"LINE", "LWPOLYLINE", "POLYLINE", "ARC", "CIRCLE", "ELLIPSE",
 
 
 def blunt_terminator_counts():
-    """Proposals carrying `blunt_terminators` evidence, per threshold.
+    """Proposals carrying `blunt_terminators` evidence, per threshold,
+    and — since the 2026-09-10 split of tipless terminators into blunt
+    (capped) and oriented (admitted) — proposals carrying an
+    `oriented_terminator_ids` end, per threshold.
 
-    The branch is validated only by synthetic fixtures, so what matters
-    is whether it reaches the CALL threshold on real drafting.
+    Both branches are validated only by synthetic fixtures, so what
+    matters is whether either reaches the CALL threshold on real
+    drafting. Returns ``(blunt_rows, blunt_totals, oriented_rows,
+    oriented_totals)``.
     """
     from planlens.ir import from_pdf_vector, queries as q
     rows, totals = [], [0, 0, 0]
+    orows, ototals = [], [0, 0, 0]
     for pdf in sorted(glob.glob(os.path.join(MECK, "*.pdf"))):
         ir = from_pdf_vector(pdf)
-        row = [sum(1 for p in q.find_dimensions(ir, min_confidence=c)
-                   if p["evidence"].get("blunt_terminators"))
-               for c in (0.0, 0.3, 0.5)]
+        props = [q.find_dimensions(ir, min_confidence=c)
+                 for c in (0.0, 0.3, 0.5)]
+        row = [sum(1 for p in ps if p["evidence"].get("blunt_terminators"))
+               for ps in props]
+        orow = [sum(1 for p in ps
+                    if p["evidence"].get("oriented_terminator_ids"))
+                for ps in props]
         for i, v in enumerate(row):
             totals[i] += v
+        for i, v in enumerate(orow):
+            ototals[i] += v
         if any(row):
             rows.append((os.path.basename(pdf)[:-4], row))
-    return rows, totals
+        if any(orow):
+            orows.append((os.path.basename(pdf)[:-4], orow))
+    return rows, totals, orows, ototals
 
 
 def layer_inheritance():
@@ -89,7 +103,7 @@ def layer_inheritance():
 
 
 def main():
-    rows, totals = blunt_terminator_counts()
+    rows, totals, orows, ototals = blunt_terminator_counts()
     print("BLUNT-TERMINATOR proposals (evidence 'blunt_terminators')")
     print("  %-8s %6s %6s %6s" % ("sheet", "@0.0", "@0.3", "@0.5"))
     for name, row in rows:
@@ -97,6 +111,16 @@ def main():
     print("  %-8s %6d %6d %6d   <- ALL TEN SHEETS"
           % ("total", totals[0], totals[1], totals[2]))
     print("  (sheets not listed contribute none at any threshold)")
+
+    print()
+    print("ORIENTED-TERMINATOR proposals (evidence 'oriented_terminator_ids')")
+    print("  %-8s %6s %6s %6s" % ("sheet", "@0.0", "@0.3", "@0.5"))
+    for name, row in orows:
+        print("  %-8s %6d %6d %6d" % (name, row[0], row[1], row[2]))
+    print("  %-8s %6d %6d %6d   <- ALL TEN SHEETS"
+          % ("total", ototals[0], ototals[1], ototals[2]))
+    print("  README form: oriented-terminator proposals: %d / %d / %d"
+          % tuple(ototals))
 
     print()
     print('LAYER-"0" INHERITANCE (needs the gitignored dxf/ conversions)')

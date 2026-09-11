@@ -367,3 +367,99 @@ def test_bootstrap_auto_shutdown_rendering():
         app_path="/x/app.py", repo_root="/r", base="/b", port=8501, model="m")
     assert "AUTO_SHUTDOWN_MIN = None" in off
     compile(off, "<boot>", "exec")
+
+
+# ---------------------------------------------------------------------------
+# Metering: the child process must inherit the kernel's meter config
+# ---------------------------------------------------------------------------
+
+class TestMeterConfigCrossesTheProcessBoundary:
+    """Funhouse meters Prompter usage per user into a LOCAL SQLite file whose
+    path lives only in the notebook kernel's in-memory FunhouseConfig. This app
+    is Popen'd as a fresh process, so without threading that config across, the
+    meter silently drops every record (diagnosed 2026-09-10 — and it fails
+    silently, which is why it went unnoticed). Metering is an obligation of
+    using the service, so this is a compliance guard, not a nicety.
+    """
+
+    @staticmethod
+    def _fake_config(monkeypatch, values):
+        """Stand in a kernel FunhouseConfig carrying ``values``."""
+        import sys
+        import types
+
+        class _Cfg:
+            @staticmethod
+            def get_instance():
+                return _Cfg()
+
+            def get(self, key, default=None):
+                return values.get(key, default)
+
+        mod = types.ModuleType("funhouse.config.funhouse_config")
+        mod.FunhouseConfig = _Cfg
+        pkg = types.ModuleType("funhouse.config")
+        pkg.funhouse_config = mod
+        root = types.ModuleType("funhouse")
+        root.config = pkg
+        for name, m in (("funhouse", root), ("funhouse.config", pkg),
+                        ("funhouse.config.funhouse_config", mod)):
+            monkeypatch.setitem(sys.modules, name, m)
+
+    def test_meter_config_is_threaded_into_the_child(self, monkeypatch):
+        self._fake_config(monkeypatch, {
+            "budget.sqlite_directory": "/Workspace/Users/a@b.gov/.funhouse_meter",
+            "budget.storage_backend": "sqlite",
+            "session.user_name": "a@b.gov",
+        })
+        env = dl.build_launch_env({})
+        assert env["FUNHOUSE_BUDGET__SQLITE_DIRECTORY"] == \
+            "/Workspace/Users/a@b.gov/.funhouse_meter"
+        assert env["FUNHOUSE_BUDGET__STORAGE_BACKEND"] == "sqlite"
+        assert env["FUNHOUSE_SESSION__USER_NAME"] == "a@b.gov"
+        assert env["CURRENT_USER_NAME"] == "a@b.gov"
+
+    def test_absent_config_keys_are_not_invented(self, monkeypatch):
+        self._fake_config(monkeypatch, {"budget.sqlite_directory": "/d"})
+        env = dl.build_launch_env({})
+        assert env["FUNHOUSE_BUDGET__SQLITE_DIRECTORY"] == "/d"
+        for absent in ("FUNHOUSE_BUDGET__SQLITE_PATH",
+                       "FUNHOUSE_SESSION__USER_NAME", "CURRENT_USER_NAME"):
+            assert absent not in env
+
+    def test_an_explicit_env_value_wins(self, monkeypatch):
+        """A deliberately-set override must not be clobbered by the kernel."""
+        self._fake_config(monkeypatch, {"budget.sqlite_directory": "/kernel"})
+        env = dl.build_launch_env(
+            {"FUNHOUSE_BUDGET__SQLITE_DIRECTORY": "/explicit"})
+        assert env["FUNHOUSE_BUDGET__SQLITE_DIRECTORY"] == "/explicit"
+
+    def test_a_broken_config_never_blocks_the_launch(self, monkeypatch):
+        import sys
+        import types
+
+        class _Boom:
+            @staticmethod
+            def get_instance():
+                raise RuntimeError("no kernel config here")
+
+        mod = types.ModuleType("funhouse.config.funhouse_config")
+        mod.FunhouseConfig = _Boom
+        monkeypatch.setitem(sys.modules, "funhouse.config.funhouse_config", mod)
+        env = dl.build_launch_env({"X": "1"}, anthropic_key="k")
+        assert env["X"] == "1" and env["ANTHROPIC_API_KEY"] == "k"
+
+    def test_no_funhouse_sdk_at_all_is_fine(self, monkeypatch):
+        """Off-cluster (dev laptop, CI) there is no funhouse package."""
+        import builtins
+        real_import = builtins.__import__
+
+        def _no_funhouse(name, *a, **kw):
+            if name.startswith("funhouse"):
+                raise ImportError("no funhouse SDK")
+            return real_import(name, *a, **kw)
+
+        monkeypatch.setattr(builtins, "__import__", _no_funhouse)
+        env = dl.build_launch_env({"X": "1"})
+        assert env["X"] == "1"
+        assert not any(k.startswith("FUNHOUSE_") for k in env)

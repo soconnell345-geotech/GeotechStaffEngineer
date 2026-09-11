@@ -1,5 +1,7 @@
 """Tests for the drawing_ir funhouse adapter (digitize -> query -> get_entities)."""
 
+import inspect
+
 import pytest
 
 ezdxf = pytest.importorskip("ezdxf")
@@ -251,10 +253,31 @@ class TestExplodeFlagAgainstAnOlderPlanlens:
         assert m, "planlens dependency line not found in pyproject.toml"
         return tuple(int(v) for v in m.group(1).split("."))
 
-    def test_pin_floor_covers_the_explode_blocks_parameter(self):
-        # The floor must not be below the version that introduced the
-        # parameter the adapter's DXF leg wants to pass.
-        assert self._pin_floor() >= (0, 2)
+    def test_pin_floor_is_covered_or_the_degrade_is_in_place(self):
+        """Either pin high enough for the parameter, or degrade visibly.
+
+        The floor went BACK to 0.1 in 5.13.0 (deliberate): planlens 0.2.0 is
+        blocked on the round-4 repair, and this release carries two urgent
+        fixes unrelated to planlens, so the app ships against the published
+        0.1.0 and the DXF leg loses block explosion. That is only acceptable
+        while the degrade is visible, so this test now checks the actual
+        invariant rather than a version number — and it will start demanding
+        the floor again the moment someone removes the fallback.
+
+        RESTORE >=0.2 when planlens 0.2.0 publishes.
+        """
+        from funhouse_agent.adapters import drawing_ir_adapter as mod
+
+        if self._pin_floor() >= (0, 2):
+            return                      # parameter guaranteed by the pin
+        assert hasattr(mod, "_dxf_supports_explode"), (
+            "the pin is below 0.2, so the runtime signature check is the only "
+            "thing standing between a 0.1.x install and a TypeError on every "
+            "source='dxf' call")
+        src = inspect.getsource(mod._run_digitize_drawing)
+        assert "_dxf_supports_explode()" in src
+        assert "blocks_exploded" in src, (
+            "a degraded ingest must SAY it was degraded")
 
     def test_installed_planlens_supports_the_flag(self):
         from funhouse_agent.adapters.drawing_ir_adapter import (
@@ -539,3 +562,47 @@ class TestSearchDrawingSet:
         r = call_agent("drawing_ir", "search_drawing_set",
                        {"file_paths": path, "construct": "flux_capacitors"})
         assert "error" in r
+
+
+class TestOcrIsNotRunPointlessly:
+    """OCR on a page that already has vector text is waste, and expensive.
+
+    Live 2026-09-10: digitize_drawing(ocr_text=True) on a 33x23 in sheet
+    renders 69.7 megapixels at the 300 dpi default and took the notebook
+    driver's websocket down with it — on a page whose text was already in the
+    vector layer, so it could only have added noisier copies of exact text.
+    """
+
+    @pytest.fixture
+    def pdf_with_text(self, tmp_path):
+        fitz = pytest.importorskip("fitz")
+        doc = fitz.open()
+        page = doc.new_page(width=400, height=300)
+        page.insert_text((50, 100), "TANGENT PILE (TYP)", fontsize=11)
+        page.draw_line(fitz.Point(20, 20), fitz.Point(380, 20))
+        p = tmp_path / "sheet.pdf"
+        doc.save(str(p))
+        doc.close()
+        return str(p)
+
+    def test_skipped_when_the_page_already_has_text(self, pdf_with_text):
+        r = call_agent("drawing_ir", "digitize_drawing",
+                       {"file_path": pdf_with_text, "source": "pdf_vector",
+                        "ocr_text": True})
+        assert "error" not in r, r
+        assert isinstance(r.get("ocr"), str), \
+            "a skipped OCR pass must say so, not vanish"
+        assert "skipped" in r["ocr"] and "ocr_force" in r["ocr"]
+
+    def test_ocr_force_is_an_accepted_parameter(self):
+        """The escape hatch must exist and be documented, not just tolerated."""
+        assert "ocr_force" in METHOD_INFO["digitize_drawing"]["parameters"]
+        r = call_agent("drawing_ir", "digitize_drawing",
+                       {"file_path": "/nonexistent.pdf", "ocr_force": True})
+        # rejected for the missing file, NOT for an unknown parameter
+        assert "ocr_force" not in str(r.get("error", ""))
+
+    def test_no_ocr_key_when_not_requested(self, pdf_with_text):
+        r = call_agent("drawing_ir", "digitize_drawing",
+                       {"file_path": pdf_with_text, "source": "pdf_vector"})
+        assert "ocr" not in r

@@ -64,7 +64,18 @@ def _resolve(path: Optional[str]) -> str:
     if (low.startswith("http") or low.startswith("sites/")
             or low.startswith("shared documents")):
         return p
-    return f"{_root()}/{p.lstrip('/')}"
+    rel = p.lstrip("/")
+    # Naming the folder you can SEE is the obvious thing to do, and it used to
+    # double: the root already ENDS in the base folder, so "GSE_app/uploaded
+    # references/x.pdf" resolved to ".../GSE_app/GSE_app/uploaded references/
+    # x.pdf" and 404'd. Live 2026-09-09/10 that cost 4-5 SharePoint round trips
+    # per turn, twice, before the agent guessed the prefix away. Drop one
+    # leading segment that repeats the root's last segment.
+    base = _root().rstrip("/").rsplit("/", 1)[-1]
+    head, _, tail = rel.partition("/")
+    if base and tail and head.lower() == base.lower():
+        rel = tail
+    return f"{_root()}/{rel}"
 
 
 def _working_dir() -> str:
