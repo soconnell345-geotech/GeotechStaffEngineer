@@ -1,5 +1,26 @@
 # GeotechStaffEngineer
 
+## READ-FIRST TRIGGERS (this file is 73 KB — these four lines are the ones that matter)
+
+This file and `MEMORY.md` are the only docs auto-loaded into your context.
+Everything else below is reached ONLY if you go and read it. When one of these
+triggers fires, open the named file BEFORE you answer — each exists because the
+answer was re-derived from scratch at least twice:
+
+| When the owner... | Read this FIRST |
+|---|---|
+| pastes a `%pip install` / cluster install log, or asks "any concerns?" about one | `docs/DATABRICKS_INSTALL.md` — do NOT re-derive the numpy cascade, the seven conflict warnings, or whether a new major version is safe. They are settled and written down. |
+| asks what state things are in, or you are picking up work | `HANDOFF.md` §0a-current — authoritative pickup list |
+| asks about a number published in planlens docs/README | `module_work/drawing_ground_truth/doc_claims_check.py` — if a number disagrees with that script, the DOCUMENT is wrong |
+| bumps the version / cuts a release | `webapp/tests/test_docs_currency.py` will fail until CLAUDE.md's state block, HANDOFF §0a-current and the install guide's history table each name the new version. Refresh the prose, don't just paste the version in. |
+
+**Why this block is here.** After a context compaction a fresh agent keeps only
+this file and `MEMORY.md`. Three releases running, an install log arrived and
+the same conclusions were rebuilt from the raw log instead of read off the
+guide; separately, this file told every agent "BOTH TREES UNCOMMITTED" for two
+days after 5.14.0 shipped. Pointers buried deeper in a 73 KB file get skimmed —
+these are at the top on purpose.
+
 Python toolkit for LLM-based geotechnical engineering agents.
 32 analysis modules (incl. pavement_design AASHTO 1993 + structural section/RC/frame analysis: section_props, concrete_props, pynite) + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + GSTools agent + SALib agent + pystra agent + subsurface characterization (DIGGS/GEF/AGS4 data I/O — folds in the former pygef/ags4/pydiggs wrappers as format adapters) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM: T6 quadratic elements, 3D-principal MC return, GL99 strength reduction, staged construction) + reliability (FOSM/PEM/Monte Carlo/native FORM + published COV database) + geo_project (staged, human-gated LLM model setup) + funhouse_agent (engine-agnostic agent with vision).
 

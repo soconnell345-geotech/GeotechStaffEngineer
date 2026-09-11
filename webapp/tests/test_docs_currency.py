@@ -90,6 +90,25 @@ def test_install_triage_history_has_a_row_for_this_version():
         "version has ever actually been installed.")
 
 
+def test_claude_md_triggers_are_near_the_top():
+    """The pointer must survive a SKIM, not merely exist.
+
+    CLAUDE.md is ~73 KB and is auto-loaded whole; a pointer buried at line 52
+    is a pointer that gets skimmed past. After a context compaction this file
+    and MEMORY.md are the only docs a fresh agent still has, so the triggers
+    that send it to HANDOFF.md and the install guide have to be at the top.
+    2500 chars is roughly the first screen.
+    """
+    head = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")[:2500]
+    for target in ("docs/DATABRICKS_INSTALL.md", "HANDOFF.md"):
+        assert target in head, (
+            f"{target} is no longer pointed at in the first 2500 chars of "
+            "CLAUDE.md. Keep the READ-FIRST TRIGGERS block at the top: it is "
+            "the only thing a post-compaction agent sees before it starts "
+            "answering, and re-deriving the install triage from the raw log "
+            "is exactly what it exists to prevent.")
+
+
 @pytest.mark.parametrize("doc", ["CLAUDE.md", "HANDOFF.md"])
 def test_state_docs_point_at_the_install_triage_guide(doc):
     """Both orientation docs must route an install-log question to the guide,
