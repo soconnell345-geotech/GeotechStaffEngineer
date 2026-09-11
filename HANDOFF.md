@@ -1,12 +1,57 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-09-08.** This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-09-11.** This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
 ---
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
+
+### APP FEEDBACK TRAIN on master, UNRELEASED (2026-09-11) — candidate 5.15.0
+
+Six owner items from real 5.13/5.14 sessions, all landed as separate commits
+(`8bde466` disclaimer, `7681352` large-upload docs, `0dbec49` feedback,
+`af76521` activity log, `eaced20` figure tools, `6150236` calc-prompt figure
+rules, `7ff13cf` restore + filter). Ledger with diagnosis per item:
+`module_work/field_feedback/2026-09-11_app-usage_v5.14.0/FINDINGS.md`. Owner
+instructions that governed it: app only (planlens = todo list), sequential
+work, no parallel agents.
+
+What the next agent must know:
+
+* **`activity.jsonl` is now the archive** (`webapp/activity_log.py`, always
+  on, sub-agents attributed by `task` nesting). When a session went wrong,
+  read that file from the SharePoint folder — not `trace.jsonl`, which is
+  the on-screen summary and only exists when the toggle was on.
+* **`FEEDBACK.md` / `feedback.jsonl`** travel with every conversation:
+  sidebar notes (`user`) and the agent's own `record_feedback` calls
+  (`agent`: capability gaps, tool errors). Triage reads them first.
+* **The calc sub-agent has its own prompt now** (`_CALC_PREAMBLE` +
+  `_CALC_FIGURES` in `deep/agent.py`). It was prefixed with the references
+  LIBRARIAN framing for its entire life — never again put
+  `CONSULTANT_FRAMING` on a calculating agent. Figures for bespoke reports
+  come from `calc_package.render_figures` and `profile_figure.plot_data`.
+* **Restore** = the mirror backwards (`sharepoint_store.restore_conversation`).
+  The Graph token refresher lives in the launching notebook; after it
+  clears, mirror AND restore fail until `stage_sharepoint(...)` is re-run.
+* Catalog is at **7,965 / 8,000** chars — the next new method needs a brief
+  trimmed somewhere.
+
+Suites at the tip: webapp 308; deep 284/1 skipped; calc_package +
+profile_figure + funhouse_agent/tests 1,552/7 skipped. Release 5.15.0 on
+owner word (the docs-currency gate will demand this block, CLAUDE.md's state
+block and the install guide's history row be refreshed at the bump).
+
+**NEXT TRAIN (owner ask 2026-09-11): Ensoft-style TABLES of calculation
+data.** "Punch up the documentation we get from the python calcs — tables
+saved of calculation data, similar to the way an Ensoft program would handle
+it" (LPILE/APILE/GROUP-style per-depth p-y / load-transfer tables, per-slice
+tables, per-layer capacity contributions, iteration histories). Shape:
+`calc_package.export_tables` as a sibling of `render_figures`; each module's
+`calc_steps` gains `get_tables(result, analysis)` (several already build
+`TableData`); CSV + an HTML table block per report; the calc prompt's
+deliverable skeleton gains a Tables section. Plan it as its own train.
 
 ### 5.14.0 RELEASED with planlens 0.2.0 (2026-09-11) — both trees COMMITTED
 
@@ -51,6 +96,13 @@ planlens has the one stray screenshot, never staged.
 5. planlens findings 5 (60-deg+ triangles) and 6 (concave dart), documented
    not fixed; a synthetic-terminator fixture set alongside the corpus is the
    standing lesson of rounds 4-6 (`round4_repro.py`, `round5_attack.py`).
+5b. Figure follow-ups (2026-09-11 train): specialist agents (foundations /
+   earth-retention / slope-fem / seismic, `dispatch.py:119-205`) scope out
+   BOTH `calc_package` and `profile_figure` — they cannot produce a report
+   or a figure; decide whether specialists carry the rendering modules.
+   Plotly->PNG twin for `subsurface.plot_*` stays blocked (static export
+   broken in the tenant). `fem2d` HAS calc_steps/get_figures and so works
+   with `render_figures`; `soe` has no package at all.
 6. Large uploads (owner feedback 2026-09-11 — decided: DOCUMENT the route,
    build nothing yet). The 25 MB cap is OURS (`ws_upload.MAX_FILE_MB`), not
    Streamlit's (200 MB default, untouched): one base64 message must cross

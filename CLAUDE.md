@@ -126,6 +126,18 @@ repo.** Short version:
   `planlens/tests/test_readme_claims.py` pin them. If a number disagrees with
   that script, the DOCUMENT is wrong — fix the prose, never the script.
 
+**On master since 5.14.0, UNRELEASED (2026-09-11 app feedback train, candidate
+5.15.0):** feedback capture (sidebar box + `record_feedback` tool, saved with
+the conversation), the always-on `activity.jsonl` archive (every tool call /
+result / model call incl. sub-agents — read THAT when a session went wrong),
+the calc sub-agent's own prompt with the figure rules (it had carried the
+references LIBRARIAN preamble all along), `calc_package.render_figures` +
+`profile_figure.plot_data`, restore-from-SharePoint + a conversation filter,
+one disclaimer widget, large-upload docs. Ledger:
+`module_work/field_feedback/2026-09-11_app-usage_v5.14.0/FINDINGS.md`; next
+train = Ensoft-style calculation TABLES (HANDOFF §0a). Owner rules for app
+trains: sequential, no parallel agents; planlens = todo list only.
+
 **OWNER CORRECTION — the goal is DOCUMENT REVIEW, not CAD-object recognition.**
 Engineers reviewing design and construction documents; an upload is usually a
 geotechnical REPORT (narrative, then tables, then figures), not a sheet; and
