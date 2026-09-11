@@ -393,3 +393,176 @@ def test_mirror_web_url_is_normalized(tmp_path):
     store = sp.SharePointStore(file_manager=SlashFM())
     s = store.mirror_conversation(tid, root=root)
     assert s["web_url"].startswith("https://sp.example/")
+
+
+# ---------------------------------------------------------------------------
+# the mirror, backwards: list + restore (owner feedback 2026-09-11)
+# ---------------------------------------------------------------------------
+
+class RemoteFM(FakeFM):
+    """A FakeFM that also holds a remote tree: ``{remote_path: bytes}``.
+    Uploads land in the tree, ``ls``/``download_file`` read it."""
+
+    def __init__(self, fail_names=()):
+        super().__init__(fail_names)
+        self.tree = {}
+        self.downloads = []
+
+    def upload_file(self, local, remote, overwrite=False):
+        ok = super().upload_file(local, remote, overwrite)
+        with open(local, "rb") as fh:
+            self.tree[remote] = fh.read()
+        return ok
+
+    def put(self, remote, data: bytes):
+        self.tree[remote] = data
+
+    def ls(self, path):
+        path = path.rstrip("/")
+        seen = {}
+        for rp in self.tree:
+            if not rp.startswith(path + "/"):
+                continue
+            rest = rp[len(path) + 1:]
+            head, _, tail = rest.partition("/")
+            if tail:
+                seen.setdefault(head, {"name": head, "type": "folder",
+                                       "path": f"{path}/{head}"})
+            else:
+                seen[head] = {"name": head, "type": "file",
+                              "path": rp, "size": len(self.tree[rp])}
+        return list(seen.values())
+
+    def download_file(self, path, local_path=None, return_bytes=True,
+                      overwrite=False):
+        if path not in self.tree:
+            raise FileNotFoundError(path)
+        self.downloads.append(path)
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        with open(local_path, "wb") as fh:
+            fh.write(self.tree[path])
+        return True
+
+
+def _configured_store(monkeypatch, fm):
+    monkeypatch.setenv(sp.ENV_SITE, "https://t.sharepoint.com/sites/x")
+    monkeypatch.setenv(sp.ENV_TOKEN, "tok")
+    monkeypatch.setenv(sp.ENV_ROOT, "Shared Documents/General/GSE_app")
+    return sp.SharePointStore(file_manager=fm)
+
+
+def _rich_conversation(root, tid, title, created):
+    core.ensure_conversation(tid, title=title, root=root)
+    meta = core.load_meta(tid, root)
+    meta["created"] = created
+    core.save_meta(tid, meta, root)
+    conv = core.conversation_dir(tid, root)
+    with open(os.path.join(conv, "transcript.jsonl"), "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"role": "user", "text": "hello"}) + "\n")
+    with open(os.path.join(conv, "activity.jsonl"), "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"turn": 1, "event": "turn_start"}) + "\n")
+    files = os.path.join(conv, "files")
+    os.makedirs(files, exist_ok=True)
+    with open(os.path.join(files, "report.pdf"), "wb") as fh:
+        fh.write(b"%PDF " + b"x" * 5000)
+    with open(os.path.join(files, "profile.png"), "wb") as fh:
+        fh.write(b"\x89PNG\r\n\x1a\n" + b"p" * 300)
+    return conv
+
+
+class TestListAndRestore:
+    def test_list_remote_is_newest_first_and_folders_only(self, tmp_path,
+                                                          monkeypatch):
+        fm = RemoteFM()
+        store = _configured_store(monkeypatch, fm)
+        base = store.root() + "/conversations"
+        fm.put(f"{base}/Praia_downdrag_2026-09-04/meta.json", b"{}")
+        fm.put(f"{base}/Nairobi_SOE_2026-09-09/meta.json", b"{}")
+        fm.put(f"{base}/abc123hex/meta.json", b"{}")           # unnamed
+        fm.put(f"{base}/stray_file.txt", b"nope")
+        names = [r["name"] for r in store.list_remote_conversations()]
+        assert names == ["Nairobi_SOE_2026-09-09", "Praia_downdrag_2026-09-04",
+                         "abc123hex"]
+        assert "stray_file.txt" not in names
+
+    def test_list_never_raises_when_unconfigured_or_broken(self, monkeypatch):
+        assert sp.SharePointStore(file_manager=None).list_remote_conversations() == []
+
+        class Boom(RemoteFM):
+            def ls(self, path):
+                raise RuntimeError("no token")
+        assert _configured_store(monkeypatch, Boom()).list_remote_conversations() == []
+
+    def test_restore_round_trip_is_byte_identical_and_mirror_then_skips(
+            self, tmp_path, monkeypatch):
+        """mirror -> wipe local -> restore reproduces every file, and the
+        restored manifest makes the next mirror report everything skipped."""
+        root_a = str(tmp_path / "driver_before_restart")
+        root_b = str(tmp_path / "driver_after_restart")
+        fm = RemoteFM()
+        store = _configured_store(monkeypatch, fm)
+        conv_a = _rich_conversation(root_a, "T-REST", "Praia downdrag",
+                                    created=time.mktime((2026, 9, 4, 12, 0, 0,
+                                                         0, 0, -1)))
+        up = store.mirror_conversation("T-REST", root=root_a)
+        assert not up["errors"] and up["uploaded"] == 5
+
+        listing = store.list_remote_conversations()
+        assert listing[0]["name"] == "Praia_downdrag_2026-09-04"
+
+        res = store.restore_conversation("Praia_downdrag_2026-09-04", root=root_b)
+        assert res["status"] == "restored", res
+        assert res["thread_id"] == "T-REST" and res["title"] == "Praia downdrag"
+        assert res["downloaded"] == 5 and not res["errors"]
+
+        conv_b = core.conversation_dir("T-REST", root_b)
+        for rel in ("meta.json", "transcript.jsonl", "activity.jsonl",
+                    "files/report.pdf", "files/profile.png"):
+            a = open(os.path.join(conv_a, *rel.split("/")), "rb").read()
+            b = open(os.path.join(conv_b, *rel.split("/")), "rb").read()
+            assert a == b, rel
+        # it is listed like any other local conversation
+        assert [m["thread_id"] for m in core.list_conversations(root_b)] == ["T-REST"]
+        # and the manifest is complete: re-mirroring uploads nothing
+        again = store.mirror_conversation("T-REST", root=root_b)
+        assert again["uploaded"] == 0 and again["skipped"] == 5, again
+        # the stale manifest itself was never downloaded
+        assert not any(p.endswith(sp.MANIFEST_NAME) for p in fm.downloads)
+
+    def test_restore_refuses_to_clobber_a_local_copy(self, tmp_path,
+                                                     monkeypatch):
+        root = str(tmp_path)
+        fm = RemoteFM()
+        store = _configured_store(monkeypatch, fm)
+        _rich_conversation(root, "T-DUP", "Dup", created=time.time())
+        store.mirror_conversation("T-DUP", root=root)
+        name = store.folder_name("T-DUP", root)
+        res = store.restore_conversation(name, root=root)
+        assert res["status"] == "exists" and res["thread_id"] == "T-DUP"
+        assert res["downloaded"] == 0
+        res2 = store.restore_conversation(name, root=root, overwrite=True)
+        assert res2["status"] == "restored" and res2["downloaded"] == 5
+
+    def test_restore_reports_a_moved_folder(self, tmp_path, monkeypatch):
+        fm = RemoteFM()
+        store = _configured_store(monkeypatch, fm)
+        base = store.root() + "/conversations"
+        fm.put(f"{base}/Old_name_2026-09-01/{sp.MOVED_NAME}",
+               ("This conversation was renamed.\n\nIts files now mirror to:\n"
+                f"    {base}/New_name_2026-09-01\n").encode())
+        res = store.restore_conversation("Old_name_2026-09-01", root=str(tmp_path))
+        assert res["status"] == "moved"
+        assert res["moved_to"].endswith("/conversations/New_name_2026-09-01")
+
+    def test_restore_errors_are_reported_not_raised(self, tmp_path, monkeypatch):
+        fm = RemoteFM()
+        store = _configured_store(monkeypatch, fm)
+        for bad in ("", "../etc", "does_not_exist_2026-01-01"):
+            res = store.restore_conversation(bad, root=str(tmp_path))
+            assert res["status"] == "error" and res["errors"], bad
+        base = store.root() + "/conversations"
+        fm.put(f"{base}/no_meta_2026-01-01/transcript.jsonl", b"{}")
+        res = store.restore_conversation("no_meta_2026-01-01", root=str(tmp_path))
+        assert res["status"] == "error" and "meta.json" in res["errors"][0]
+        assert not os.path.exists(core.conversations_root(str(tmp_path))) or \
+            core.list_conversations(str(tmp_path)) == []

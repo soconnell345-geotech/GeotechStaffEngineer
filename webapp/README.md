@@ -184,6 +184,18 @@ manifest skips unchanged files). The sidebar gains a **Permanent storage**
 block with the sync result, a link to the session folder, and a "Sync now"
 button. Mirroring is best-effort: a SharePoint failure never affects the turn.
 
+**Getting a conversation back after the cluster restarts.** The sidebar list
+only shows what is on the driver's disk, so after a cluster restart (or the
+30-minute idle termination) it starts empty while every mirrored conversation
+is still in SharePoint. Open **Find a past conversation** under Permanent
+storage, type part of the title or date, and click **Restore**: the record
+and its files (uploads, calc packages, figures) download back into the app
+and the conversation opens. Above the list, a filter box searches every
+saved conversation by title once there are more than a few. One caveat: the
+Graph token refresher runs in the launching notebook — if that notebook was
+cleared, mirror AND restore fail with a token error until you re-run
+`stage_sharepoint(...)` there; the sidebar says so when it sees one.
+
 **Delegated-OAuth setup (the State/Funhouse pattern — `%run setup_sharepoint`,
 device-code sign-in, years-long refresh token):** one call in the notebook
 before launching stages everything — it writes the current Graph token to a

@@ -204,3 +204,66 @@ def test_header_has_exactly_one_disclaimer_widget(monkeypatch, tmp_path):
     assert len(disc_expanders) == 1, (
         f"expected exactly one disclaimer expander, got "
         f"{[e.label for e in disc_expanders]}")
+
+
+# ---------------------------------------------------------------------------
+# Finding conversations (owner feedback 2026-09-11): a filter over the local
+# list, and Restore from the SharePoint mirror when the driver disk was wiped.
+# ---------------------------------------------------------------------------
+
+def test_conversation_filter_searches_past_the_cap(monkeypatch, tmp_path):
+    monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path))
+    # 60 saved conversations: the list shows 50, the filter searches all 60
+    import time as _t
+    for i in range(60):
+        tid = f"T{i:03d}"
+        core.ensure_conversation(tid, title=f"Job {i} bearing")
+        m = core.load_meta(tid)
+        m["updated"] = _t.time() - i          # T000 newest ... T059 oldest
+        if i == 59:
+            m["title"] = "Nairobi SOE oldest"   # set in meta: rename() would
+        core.save_meta(tid, m)                   # bump updated -> newest
+    at = _mk_at(monkeypatch, tmp_path, _stream_ok).run()
+    assert not at.exception
+    opens = [b for b in at.sidebar.button if str(b.key).startswith("open_")]
+    assert len(opens) == 50
+    assert not any("Nairobi" in str(b.label) for b in opens)
+    box = next(t for t in at.sidebar.text_input if t.key == "conv_filter")
+    box.set_value("nairobi").run()
+    assert not at.exception
+    opens = [b for b in at.sidebar.button if str(b.key).startswith("open_")]
+    assert len(opens) == 1 and "Nairobi" in str(opens[0].label)
+
+
+def test_restore_from_permanent_storage_opens_the_conversation(monkeypatch,
+                                                              tmp_path):
+    import webapp.sharepoint_store as sp
+    from webapp.tests.test_sharepoint_store import (RemoteFM,
+                                                    _rich_conversation)
+    monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path / "after"))
+    monkeypatch.setenv(sp.ENV_SITE, "https://t.sharepoint.com/sites/x")
+    monkeypatch.setenv(sp.ENV_TOKEN, "tok")
+    monkeypatch.setenv(sp.ENV_ROOT, "Shared Documents/General/GSE_app")
+    fm = RemoteFM()
+    store = sp.SharePointStore(file_manager=fm)
+    monkeypatch.setattr(sp, "_STORE", store)
+    # a conversation mirrored from the "old" driver, gone from the new one
+    before = str(tmp_path / "before")
+    _rich_conversation(before, "T-OLD", "Praia downdrag", created=1_757_000_000)
+    assert not store.mirror_conversation("T-OLD", root=before)["errors"]
+    folder = store.folder_name("T-OLD", before)
+
+    at = _mk_at(monkeypatch, tmp_path / "after", _stream_ok).run()
+    assert not at.exception
+    assert not [b for b in at.sidebar.button if str(b.key) == "open_T-OLD"]
+    restore = next(b for b in at.sidebar.button
+                   if str(b.key) == f"sp_restore_{folder}")
+    assert "Restore" in str(restore.label)
+    restore.click().run()
+    assert not at.exception
+    # restored, opened, and now in the local list
+    assert at.session_state["thread_id"] == "T-OLD"
+    assert [b for b in at.sidebar.button if str(b.key) == "open_T-OLD"]
+    conv = core.conversation_dir("T-OLD")
+    assert os.path.isfile(os.path.join(conv, "files", "report.pdf"))
+    assert at.session_state["sp_restore_result"]["status"] == "restored"

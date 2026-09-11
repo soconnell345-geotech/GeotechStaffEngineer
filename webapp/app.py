@@ -328,6 +328,18 @@ _HAS_BUTTON_ICON = "icon" in __import__("inspect").signature(
     st.button).parameters
 
 
+def _sp_auth_problem(summary) -> bool:
+    """True when a sync/restore summary's errors smell like an expired or
+    rejected token (401/403/unauthorized/token/auth)."""
+    try:
+        text = " ".join(str(e) for e in (summary or {}).get("errors") or [])
+    except Exception:                                  # noqa: BLE001
+        return False
+    low = text.lower()
+    return any(k in low for k in ("401", "403", "unauthor", "token",
+                                  "authenticat", "forbidden"))
+
+
 def _sp_configured() -> bool:
     """True when the SharePoint mirror/tools are configured (best-effort)."""
     try:
@@ -365,7 +377,25 @@ with st.sidebar:
         _new_conversation()
         st.rerun()
 
-    for _m in core.list_conversations()[:50]:
+    # Filter box (owner feedback 2026-09-11): the list was capped at 50 with
+    # no way to find an older one. With a filter typed, every conversation
+    # on disk is searched by title; without one the newest 50 show as before.
+    _all_convs = core.list_conversations()
+    _filter = ""
+    if len(_all_convs) > 8:
+        _filter = (st.text_input(
+            "Find a conversation", key="conv_filter",
+            placeholder="Filter by title…",
+            label_visibility="collapsed") or "").strip().lower()
+    if _filter:
+        _shown = [m for m in _all_convs
+                  if _filter in str(m.get("title") or "").lower()]
+        if not _shown:
+            st.caption("No saved conversation matches — try Permanent "
+                       "storage below to restore an older one.")
+    else:
+        _shown = _all_convs[:50]
+    for _m in _shown:
         _tid = _m["thread_id"]
         _current = (_tid == ss.thread_id)
         _title = _m.get("title") or "Untitled"
@@ -799,6 +829,85 @@ with st.sidebar:
         if st.button("Sync now", key=f"spsync_{ss.thread_id}"):
             ss.sp_sync = _sp.mirror_conversation(ss.thread_id)
             st.rerun()
+        if _sp_auth_problem(_sync):
+            st.warning("SharePoint rejected the app's token — it has probably "
+                       "expired (the refresher lives in the launching "
+                       "notebook and stops when that notebook clears). "
+                       "Re-run `stage_sharepoint(...)` in the notebook, "
+                       "then Sync now.")
+
+        # Restore (owner feedback 2026-09-11): the driver disk is wiped on
+        # a cluster restart, so old conversations vanish from the list
+        # above while their mirrors sit in SharePoint. The folder name
+        # (<title>_<date>) is the search key; Restore pulls the record AND
+        # its files back and opens it.
+        with st.expander("Find a past conversation (permanent storage)",
+                         expanded=False):
+            _rc1, _rc2 = st.columns([0.75, 0.25])
+            with _rc1:
+                _rq = (st.text_input("Search mirrored conversations",
+                                     key="sp_restore_query",
+                                     placeholder="Part of the title or date…",
+                                     label_visibility="collapsed") or "")
+            with _rc2:
+                if st.button("Refresh", key="sp_restore_refresh",
+                             use_container_width=True):
+                    ss.pop("sp_remote_list", None)
+            if "sp_remote_list" not in ss:
+                ss.sp_remote_list = _sp.list_remote_conversations()
+            _remote = ss.sp_remote_list or []
+            _local_folders = set()
+            try:
+                _local_folders = {_sp.folder_name(m["thread_id"])
+                                  for m in _all_convs}
+            except Exception:                          # noqa: BLE001
+                pass
+            _q = _rq.strip().lower()
+            _hits = [r for r in _remote
+                     if not _q or _q in r["name"].lower()]
+            if not _remote:
+                st.caption("Nothing mirrored yet (or SharePoint could not "
+                           "be listed — check the token).")
+            else:
+                st.caption(f"{len(_hits)} of {len(_remote)} mirrored "
+                           "conversations" + (" match" if _q else ""))
+            for _r in _hits[:25]:
+                _here = _r["name"] in _local_folders
+                _c1, _c2 = st.columns([0.72, 0.28])
+                with _c1:
+                    st.caption(("✓ " if _here else "") + _r["name"])
+                with _c2:
+                    if st.button("Open" if _here else "Restore",
+                                 key=f"sp_restore_{_r['name']}",
+                                 use_container_width=True,
+                                 help=("Already on this machine" if _here
+                                       else "Download the record and its "
+                                            "files back into the app")):
+                        _res = _sp.restore_conversation(_r["name"])
+                        ss.sp_restore_result = _res
+                        if _res.get("thread_id") and _res.get("status") in (
+                                "restored", "exists"):
+                            _open_conversation(_res["thread_id"])
+                        st.rerun()
+            _rr = ss.get("sp_restore_result")
+            if _rr:
+                if _rr.get("status") == "restored":
+                    st.success(f"Restored '{_rr.get('title') or _rr['thread_id']}'"
+                               f" — {_rr['downloaded']} files in "
+                               f"{_rr['duration_s']}s.")
+                elif _rr.get("status") == "exists":
+                    st.info("That conversation is already on this machine — "
+                            "opened it.")
+                elif _rr.get("status") == "moved":
+                    st.warning("That folder is the copy left behind by a "
+                               "rename. Restore the current one instead: "
+                               f"{_rr.get('moved_to') or 'see MOVED.txt'}")
+                else:
+                    st.error("Restore failed: "
+                             + "; ".join(_rr.get("errors") or ["unknown"]))
+                if _sp_auth_problem(_rr):
+                    st.warning("Looks like an expired token — re-run "
+                               "`stage_sharepoint(...)` in the notebook.")
 
     st.divider()
     st.caption(core.token_line(ss.last_turn_tokens, ss.total_tokens))

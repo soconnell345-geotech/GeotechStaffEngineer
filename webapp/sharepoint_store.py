@@ -13,6 +13,14 @@ the date is when the conversation was created; an unnamed conversation falls
 back to its thread id (owner request 2026-09-04 — the hex thread ids made the
 library unbrowsable). See :func:`conversation_folder`.
 
+The mirror also runs BACKWARDS (owner feedback 2026-09-11: "after I close the
+browser and the notebook clears, old conversations are gone from the
+toolbar"): :meth:`SharePointStore.list_remote_conversations` lists the
+mirrored folders — the folder name IS the search key — and
+:meth:`SharePointStore.restore_conversation` downloads one back into the
+local conversations directory (record files AND ``files/``), writing the
+manifest so the next mirror does not re-upload everything.
+
 Design rules:
 
 * **Best-effort, never raises into the app** — a SharePoint hiccup must not
@@ -420,6 +428,128 @@ class SharePointStore:
                 pass
         summary["web_url"] = self._folder_urls.get(thread_id)
 
+    # -- the mirror, backwards: list + restore ------------------------------
+
+    def list_remote_conversations(self) -> List[dict]:
+        """Mirrored conversation folders, newest date first. Never raises.
+
+        Each entry: ``{"name": "<title>_<YYYY-MM-DD>", "path": <remote>}``.
+        The folder name carries the title and the creation date, so it is
+        the search key — no per-folder reads are made here.
+        """
+        if not self.configured:
+            return []
+        try:
+            fm = self.file_manager()
+            base = f"{self.root()}/conversations"
+            entries = fm.ls(base) or []
+        except Exception:
+            return []
+        out = []
+        for e in entries:
+            if not _is_folder(e):
+                continue
+            name = str(e.get("name") or "").strip()
+            if not name:
+                continue
+            out.append({"name": name,
+                        "path": str(e.get("path") or f"{base}/{name}"),
+                        "date": _trailing_date(name)})
+        out.sort(key=lambda d: (d["date"], d["name"]), reverse=True)
+        return out
+
+    def restore_conversation(self, folder_name: str,
+                             root: Optional[str] = None,
+                             overwrite: bool = False) -> dict:
+        """Download one mirrored conversation back into the local store.
+
+        Downloads ``meta.json`` first to learn the thread id, then every other
+        file (record files and ``files/`` — uploads and artifacts) into
+        ``conversations/<thread_id>/``, and writes ``sp_manifest.json`` from
+        the downloaded stamps so the next mirror reports everything
+        up-to-date. Never raises. Returns ``{"status": "restored" |
+        "exists" | "moved" | "error", "thread_id", "title", "downloaded",
+        "errors", "duration_s", "folder", "moved_to"}``.
+        """
+        t0 = time.time()
+        summary: dict = {"status": "error", "thread_id": None, "title": None,
+                         "downloaded": 0, "errors": [], "folder": None,
+                         "duration_s": 0.0}
+        try:
+            self._restore(folder_name, root, overwrite, summary)
+        except Exception as exc:
+            summary["errors"].append(f"{type(exc).__name__}: {exc}")
+        summary["duration_s"] = round(time.time() - t0, 2)
+        return summary
+
+    def _restore(self, folder_name: str, root, overwrite: bool,
+                 summary: dict) -> None:
+        from webapp import core
+
+        if not self.configured:
+            summary["errors"].append("SharePoint is not configured")
+            return
+        fm = self.file_manager()
+        name = str(folder_name or "").strip().strip("/")
+        if not name or "/" in name or name in (".", ".."):
+            summary["errors"].append(f"not a conversation folder: {name!r}")
+            return
+        remote_base = f"{self.root()}/conversations/{name}"
+        summary["folder"] = remote_base
+
+        files = _walk_remote(fm, remote_base)
+        if not files:
+            summary["errors"].append(f"empty or missing folder: {remote_base}")
+            return
+        names = {rel for rel, _ in files}
+        if "meta.json" not in names:
+            if MOVED_NAME in names:
+                summary["status"] = "moved"
+                summary["moved_to"] = _read_moved_target(fm, remote_base)
+                summary["errors"].append(
+                    "this folder is the copy left behind by a rename — "
+                    "restore the folder named in MOVED.txt instead")
+            else:
+                summary["errors"].append("no meta.json in the folder — not a "
+                                         "conversation record")
+            return
+
+        with tempfile.TemporaryDirectory() as td:
+            meta_local = os.path.join(td, "meta.json")
+            fm.download_file(f"{remote_base}/meta.json", local_path=meta_local,
+                             return_bytes=False, overwrite=True)
+            with open(meta_local, "r", encoding="utf-8") as fh:
+                meta = json.load(fh)
+        thread_id = str((meta or {}).get("thread_id") or "").strip()
+        if not thread_id or "/" in thread_id or "\\" in thread_id \
+                or thread_id in (".", ".."):
+            summary["errors"].append("meta.json carries no usable thread_id")
+            return
+        summary["thread_id"] = thread_id
+        summary["title"] = (meta or {}).get("title")
+
+        conv_dir = core.conversation_dir(thread_id, root)
+        if os.path.isfile(os.path.join(conv_dir, "meta.json")) and not overwrite:
+            summary["status"] = "exists"
+            return
+
+        stamps: Dict[str, List] = {}
+        for rel, remote_path in files:
+            if rel == MANIFEST_NAME:
+                continue                     # never restore a stale manifest
+            local = os.path.join(conv_dir, *rel.split("/"))
+            os.makedirs(os.path.dirname(local), exist_ok=True)
+            try:
+                fm.download_file(remote_path, local_path=local,
+                                 return_bytes=False, overwrite=True)
+                stamps[rel] = _stamp(local)
+                summary["downloaded"] += 1
+            except Exception as exc:
+                summary["errors"].append(
+                    f"{rel}: {type(exc).__name__}: {exc}")
+        _save_manifest(conv_dir, stamps, remote_base)
+        summary["status"] = "restored" if summary["downloaded"] else "error"
+
     def _leave_moved_pointer(self, fm, old_base: str, new_base: str,
                              summary: dict) -> None:
         """Write ``MOVED.txt`` into the conversation's previous folder so the
@@ -458,6 +588,56 @@ class SharePointStore:
 
 
 _STORE: Optional[SharePointStore] = None
+
+
+def _is_folder(entry: dict) -> bool:
+    """Best-effort folder test over the Funhouse file-manager entry shape."""
+    if not isinstance(entry, dict):
+        return False
+    kind = str(entry.get("type") or entry.get("kind") or "").lower()
+    if kind:
+        return kind.startswith("folder") or kind.startswith("dir")
+    return bool(entry.get("is_folder") or entry.get("folder"))
+
+
+def _trailing_date(name: str) -> str:
+    """``YYYY-MM-DD`` suffix of a mirrored folder name, else ``""``."""
+    m = re.search(r"(\d{4}-\d{2}-\d{2})$", name or "")
+    return m.group(1) if m else ""
+
+
+def _walk_remote(fm, base: str, _depth: int = 0) -> List[tuple]:
+    """``[(rel_path, remote_path), ...]`` for every file under ``base``."""
+    out: List[tuple] = []
+    if _depth > 6:
+        return out
+    for e in (fm.ls(base) or []):
+        name = str(e.get("name") or "").strip()
+        if not name:
+            continue
+        remote = str(e.get("path") or f"{base}/{name}")
+        if _is_folder(e):
+            for rel, rp in _walk_remote(fm, remote, _depth + 1):
+                out.append((f"{name}/{rel}", rp))
+        else:
+            out.append((name, remote))
+    return out
+
+
+def _read_moved_target(fm, base: str) -> Optional[str]:
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            local = os.path.join(td, MOVED_NAME)
+            fm.download_file(f"{base}/{MOVED_NAME}", local_path=local,
+                             return_bytes=False, overwrite=True)
+            with open(local, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if "/conversations/" in line:
+                        return line
+    except Exception:
+        pass
+    return None
 
 
 def get_store(refresh: bool = False) -> SharePointStore:
