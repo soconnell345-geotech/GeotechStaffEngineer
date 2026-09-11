@@ -438,6 +438,20 @@ _METHOD_ALIASES = {
     ("profile_figure", "draw_profile"): "subsurface_profile",
     ("profile_figure", "soil_profile_figure"): "subsurface_profile",
     ("profile_figure", "profile_schematic"): "subsurface_profile",
+    # generic data plot (owner feedback 2026-09-11) — verbs the model reaches for
+    ("profile_figure", "plot"): "plot_data",
+    ("profile_figure", "plot_xy"): "plot_data",
+    ("profile_figure", "xy_plot"): "plot_data",
+    ("profile_figure", "data_plot"): "plot_data",
+    ("profile_figure", "line_plot"): "plot_data",
+    ("profile_figure", "plot_series"): "plot_data",
+    ("profile_figure", "plot_vs_depth"): "plot_data",
+    # a package's figures on their own
+    ("calc_package", "figures"): "render_figures",
+    ("calc_package", "package_figures"): "render_figures",
+    ("calc_package", "render_figure"): "render_figures",
+    ("calc_package", "get_figures"): "render_figures",
+    ("calc_package", "plot_results"): "render_figures",
 }
 
 
@@ -495,6 +509,9 @@ _CROSS_MODULE_REDIRECTS = {
     "plot_subsurface_profile": ("profile_figure", "subsurface_profile"),
     "soil_profile_figure": ("profile_figure", "subsurface_profile"),
     "profile_schematic": ("profile_figure", "subsurface_profile"),
+    "plot_data": ("profile_figure", "plot_data"),
+    "data_plot": ("profile_figure", "plot_data"),
+    "render_figures": ("calc_package", "render_figures"),
 }
 
 

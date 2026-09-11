@@ -146,3 +146,85 @@ def _tiny_png() -> bytes:
     return base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAE"
         "hQGAhKmMIQAAAABJRU5ErkJggg==")
+
+
+# ---------------------------------------------------------------------------
+# plot_data — the generic data plot (owner feedback 2026-09-11: calc packages
+# lacked figures and the agent had no general plotting tool to make one)
+# ---------------------------------------------------------------------------
+
+SERIES = [{"x": [4, 8, 12, 9], "y": [1.5, 3.0, 4.5, 6.0], "label": "B-1 SPT N"},
+          {"x": [6, 10, 15, 11], "y": [1.5, 3.0, 4.5, 6.0], "label": "B-2",
+           "style": "markers"}]
+
+
+class TestPlotData:
+    def test_saves_a_png_and_echoes_the_series(self, tmp_path):
+        from funhouse_agent.adapters.profile_figure_adapter import _run_plot_data
+        out = tmp_path / "spt.png"
+        res = _run_plot_data({
+            "series": SERIES, "depth_axis": True, "title": "SPT vs depth",
+            "xlabel": "N (blows/0.3 m)", "ylabel": "Depth (m)",
+            "hlines": [{"value": 2.0, "label": "GWT"}],
+            "output_path": str(out)})
+        assert res["status"] == "success" and res["file_exists"] is True
+        assert out.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+        assert res["file_size_bytes"] > 5_000
+        assert [s["label"] for s in res["series"]] == ["B-1 SPT N", "B-2"]
+        assert res["series"][0]["n"] == 4
+        assert res["series"][0]["y_range"] == [1.5, 6.0]
+        assert res["output_path"] in res["html_img_tag"]
+        assert "image_base64" not in res
+        assert len(json.dumps(res)) < 4000
+
+    def test_bare_filename_lands_in_the_working_folder(self, tmp_path,
+                                                       monkeypatch):
+        from funhouse_agent.adapters.profile_figure_adapter import _run_plot_data
+        monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+        res = _run_plot_data({"series": SERIES[:1], "output_path": "sweep"})
+        assert res["output_path"].endswith("sweep.png")
+        assert os.path.dirname(res["output_path"]) == str(tmp_path)
+
+    def test_validation_is_actionable(self, tmp_path):
+        from funhouse_agent.adapters.profile_figure_adapter import _run_plot_data
+        with pytest.raises(ValueError, match="x has 3 values, y has 2"):
+            _run_plot_data({"series": [{"x": [1, 2, 3], "y": [1, 2]}],
+                            "output_path": str(tmp_path / "a.png")})
+        with pytest.raises(ValueError, match="non-empty list"):
+            _run_plot_data({"series": [], "output_path": str(tmp_path / "b.png")})
+        with pytest.raises(ValueError):                # unknown param
+            _run_plot_data({"series": SERIES, "colour": "red",
+                            "output_path": str(tmp_path / "c.png")})
+
+    def test_non_finite_points_are_dropped_with_a_warning(self, tmp_path):
+        from funhouse_agent.adapters.profile_figure_adapter import _run_plot_data
+        res = _run_plot_data({
+            "series": [{"x": [1, 2, float("nan"), 4], "y": [1, 2, 3, 4]}],
+            "output_path": str(tmp_path / "n.png")})
+        assert res["status"] == "success"
+        assert res["series"][0]["n"] == 3
+        assert any("non-finite" in w for w in res["warnings"])
+
+    def test_html_to_pdf_embeds_the_saved_plot(self, tmp_path):
+        """The whole point: a plot_data PNG goes straight into a bespoke
+        report via html_img_tag and html_to_pdf does not refuse it."""
+        pytest.importorskip("fitz")
+        from funhouse_agent.adapters.profile_figure_adapter import _run_plot_data
+        from funhouse_agent.adapters.calc_package import _generate_html_to_pdf
+        res = _run_plot_data({"series": SERIES,
+                              "output_path": str(tmp_path / "p.png")})
+        pdf = _generate_html_to_pdf({
+            "html": f"<html><body><h1>R</h1>{res['html_img_tag']}</body></html>",
+            "output_path": str(tmp_path / "r.pdf")})
+        assert pdf["status"] == "success", pdf.get("error")
+        assert pdf["file_size_bytes"] > 10_000
+
+    def test_dispatch_aliases_reach_plot_data(self, tmp_path):
+        for verb in ("plot_data", "plot_xy", "plot", "data_plot"):
+            res = call_agent("profile_figure", verb,
+                             {"series": SERIES[:1],
+                              "output_path": str(tmp_path / f"{verb}.png")})
+            assert res["status"] == "success", (verb, res)
+        info = describe_method("profile_figure", "plot_data")
+        assert "series" in json.dumps(info)
+        assert len(json.dumps(list_agents())) < 8000

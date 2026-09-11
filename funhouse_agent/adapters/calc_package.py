@@ -24,7 +24,7 @@ from datetime import datetime
 from funhouse_agent.adapters import (apply_aliases, require_keys,
                                      require_params, reject_unknown_params)
 from funhouse_agent._fileio import (
-    default_output_dir, rescue_write, resolve_output_path,
+    default_output_dir, rescue_write, resolve_output_path, save_verified,
     workspace_write_hint, written_file_problem,
 )
 
@@ -56,13 +56,139 @@ def _default_output_path(module_name: str, fmt: str = "html") -> str:
     return os.path.join(default_output_dir(), f"{module_name}_calc_{ts}.{fmt}")
 
 
+#: Private params key: run the analysis, skip the package, save the figures.
+_FIGURES_ONLY = "_figures_only"
+
+#: Packages that cannot be rendered figures-only (no analysis behind them).
+_NO_FIGURES = {"html_to_pdf", "render_figures"}
+
+
+def _slug(text: str, n: int = 40) -> str:
+    import re
+    t = re.sub(r"[^A-Za-z0-9]+", "_", str(text or "")).strip("_").lower()
+    return (t or "figure")[:n]
+
+
+def _figures_response(module: str, result, analysis, params: dict,
+                      analysis_type: str, extra: dict = None) -> dict:
+    """Save the module's calc-package figures as standalone PNGs.
+
+    Owner feedback 2026-09-11: ~25 ready matplotlib figures (slope sections,
+    trial-surface maps, p-y curves, settlement plots, pavement charts, FEM
+    contours) were reachable ONLY inside a whole canned package. A bespoke
+    ``html_to_pdf`` report — SOE, a multi-analysis narrative, anything with
+    no canned template — could not carry them. Now any package's figures can
+    be rendered on their own and pasted in via ``html_img_tag``.
+    """
+    import base64
+
+    from calc_package import _ensure_registered
+
+    reg = _ensure_registered(module)
+    figures = reg["get_figures"](result, analysis) or []
+    out_dir = params.get("output_dir")
+    out_dir = (resolve_output_path(str(out_dir)) if out_dir
+               else default_output_dir())
+    os.makedirs(out_dir, exist_ok=True)
+    stem = params.get("name_prefix") or module
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    saved_figs = []
+    problems = []
+    for i, fig in enumerate(figures, start=1):
+        title = getattr(fig, "title", "") or f"Figure {i}"
+        b64 = getattr(fig, "image_base64", "") or ""
+        try:
+            png = base64.b64decode(b64)
+        except Exception as exc:                       # noqa: BLE001
+            problems.append(f"figure {i} ('{title}'): undecodable image "
+                            f"({type(exc).__name__})")
+            continue
+        path = os.path.join(out_dir, f"{stem}_{ts}_fig{i}_{_slug(title)}.png")
+        saved = save_verified(path, png)
+        abs_path = saved.get("saved", os.path.abspath(path))
+        entry = {
+            "index": i,
+            "title": title,
+            "caption": getattr(fig, "caption", "") or "",
+            "output_path": abs_path,
+            "file_exists": bool(saved.get("file_exists")),
+            "file_size_bytes": saved.get("file_size_bytes", 0),
+            "html_img_tag": (
+                f'<img src="{abs_path}" alt="{title}" '
+                f'style="width:100%;max-width:640px;">'),
+        }
+        for key in ("error", "rescue_path", "workspace_api_note"):
+            if saved.get(key):
+                entry[key] = saved[key]
+        if not entry["file_exists"]:
+            problems.append(f"figure {i} ('{title}'): {saved.get('error')}")
+        saved_figs.append(entry)
+
+    response = {
+        "status": "success" if not problems else "error",
+        "analysis_type": f"{analysis_type} — figures only",
+        "module": module,
+        "output_dir": os.path.abspath(out_dir),
+        "n_figures": len(saved_figs),
+        "figures": saved_figs,
+        "embed_note": (
+            "Each figure is a saved PNG: the chat UI renders it inline, and "
+            "html_to_pdf embeds the real local path when you paste its "
+            "html_img_tag into report HTML. Use the caption text under it."),
+    }
+    if not figures:
+        response["note"] = (f"{reg.get('display_name', module)} produces no "
+                            "figures for this analysis.")
+    if problems:
+        response["error"] = "; ".join(problems)
+    if extra:
+        response.update(extra)
+    return response
+
+
+def _render_figures(params: dict) -> dict:
+    """``render_figures``: a canned package's figures as standalone PNGs.
+
+    ``params`` = ``{"package": "<name>_package", ...that package's inputs,
+    optional "output_dir", "name_prefix"}``. The analysis runs exactly as the
+    package would run it; only the figures are written.
+    """
+    p = dict(params)
+    package = p.pop("package", None) or p.pop("method", None)
+    if not package:
+        return {"status": "error",
+                "error": "Provide 'package' — the *_package method whose "
+                         "figures you want, e.g. 'slope_stability_package', "
+                         "plus that package's own inputs. Options: "
+                         + ", ".join(sorted(k for k in METHOD_REGISTRY
+                                            if k not in _NO_FIGURES))}
+    if package in _NO_FIGURES or package not in METHOD_REGISTRY:
+        return {"status": "error",
+                "error": f"'{package}' is not a renderable package. Options: "
+                         + ", ".join(sorted(k for k in METHOD_REGISTRY
+                                            if k not in _NO_FIGURES))}
+    p[_FIGURES_ONLY] = True
+    p.pop("format", None)          # meaningless without a package
+    p.pop("output_path", None)     # figures go to output_dir, one PNG each
+    return METHOD_REGISTRY[package](p)
+
+
 def _build_response(module: str, result, analysis, params: dict,
                     analysis_type: str, extra: dict = None) -> dict:
     """Run generate_calc_package and return a summary response dict.
 
     Always saves to disk.  Auto-generates output_path if not provided.
+
+    With ``params[_FIGURES_ONLY]`` set (the ``render_figures`` method), the
+    package is NOT generated: the module's ``get_figures`` runs on the same
+    result and each figure is saved as a standalone PNG instead.
     """
     from calc_package import generate_calc_package
+
+    if params.get(_FIGURES_ONLY):
+        return _figures_response(module, result, analysis, params,
+                                 analysis_type=analysis_type, extra=extra)
 
     meta = _extract_metadata(params)
     fmt = params.get("format", "html")
@@ -1467,6 +1593,7 @@ def _generate_pavement_design_package(params: dict) -> dict:
 
 METHOD_REGISTRY = {
     "html_to_pdf": _generate_html_to_pdf,
+    "render_figures": _render_figures,
     "pavement_design_package": _generate_pavement_design_package,
     "bearing_capacity_package": _generate_bearing_capacity_package,
     "lateral_pile_package": _generate_lateral_pile_package,
@@ -1577,6 +1704,48 @@ METHOD_INFO = {
                     "extra": "sn_required/sn_provided + layer thicknesses "
                              "(flexible) or d_required_in/d_provided_in + "
                              "k_pci (rigid), and adequate."},
+    },
+    "render_figures": {
+        "category": "Calculation Package",
+        "brief": ("The FIGURES of any canned *_package — slope section + "
+                  "trial-surface map, p-y curves, settlement/consolidation "
+                  "plots, wall pressure diagrams, pavement charts, FEM "
+                  "mesh/contours — saved as standalone PNGs WITHOUT building "
+                  "the package. For a bespoke html_to_pdf report (SOE, a "
+                  "multi-analysis narrative, anything with no canned "
+                  "template): run the analysis here, paste each figure's "
+                  "html_img_tag into your HTML. Same inputs as the package."),
+        "parameters": {
+            "package": {"type": "str", "required": True,
+                        "description": ("Which package's figures: e.g. "
+                                        "'slope_stability_package', "
+                                        "'axial_pile_package', "
+                                        "'settlement_package'. Any *_package "
+                                        "method of this module except "
+                                        "html_to_pdf.")},
+            "output_dir": {"type": "str", "required": False,
+                           "description": ("Folder for the PNGs (one per "
+                                           "figure). Defaults to the working "
+                                           "folder.")},
+            "name_prefix": {"type": "str", "required": False,
+                            "description": "File-name prefix (default: module)."},
+            "...": {"type": "any", "required": False,
+                    "description": ("PLUS every input the named package "
+                                    "takes — describe_method('calc_package', "
+                                    "'<package>') lists them. The analysis "
+                                    "runs exactly as the package would.")},
+        },
+        "returns": {
+            "status": "success or error.",
+            "n_figures": "How many figures were saved.",
+            "figures": ("[{index, title, caption, output_path, file_exists, "
+                        "file_size_bytes, html_img_tag}] — paste html_img_tag "
+                        "into report HTML; html_to_pdf embeds the PNG."),
+            "output_dir": "Where the PNGs went.",
+            "note": "Present when the analysis produces no figures.",
+            "...": ("The package's own key results (e.g. q_ultimate_kPa, "
+                    "fos) are echoed too."),
+        },
     },
     "html_to_pdf": {
         "category": "Calculation Package",

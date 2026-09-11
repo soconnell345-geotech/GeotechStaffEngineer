@@ -31,11 +31,14 @@ from profile_figure.geometry import (AXIS_MODES, FOUNDATION_TYPES,
                                      resolve_profile)
 from profile_figure.plotting import (LAYER_COLORS, LAYER_HATCHES,
                                      build_profile_figure, figure_to_png)
+from profile_figure.data_plot import DataPlotResult, render_data_plot
 from profile_figure.profile import render_profile_figure
 from profile_figure.results import ProfileFigureResult
 
 __all__ = [
     "render_profile_figure",
+    "render_data_plot",
+    "DataPlotResult",
     "ProfileFigureResult",
     "resolve_profile",
     "build_profile_figure",

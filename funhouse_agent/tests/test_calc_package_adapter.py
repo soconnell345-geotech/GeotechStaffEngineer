@@ -7,6 +7,7 @@ Covers:
 - Edge cases (auto output path, METHOD_INFO completeness)
 """
 
+import json
 import os
 import pytest
 import matplotlib
@@ -60,6 +61,9 @@ class TestHelpers:
         from funhouse_agent.adapters.calc_package import METHOD_INFO
         for name, info in METHOD_INFO.items():
             params = info["parameters"]
+            if name == "render_figures":   # figures-only: output_dir, no package
+                assert "output_dir" in params and "package" in params
+                continue
             assert "output_path" in params, f"{name} missing output_path"
             if name == "html_to_pdf":  # renderer utility, not an analysis package
                 continue
@@ -607,7 +611,7 @@ class TestDispatchIntegration:
         methods = list_methods("calc_package")
         # list_methods returns {category: {method: brief}}
         total = sum(len(v) for v in methods.values())
-        assert total == 16  # 15 packages + html_to_pdf
+        assert total == 17  # 15 packages + html_to_pdf + render_figures
 
     def test_describe_method(self):
         from funhouse_agent.dispatch import describe_method
@@ -731,3 +735,88 @@ class TestLateralPilePackageErgonomics:
         })
         y_direct_mm = direct["deflection_m"][0] * 1000
         assert abs(pkg["y_top_mm"] - y_direct_mm) < 0.05
+
+
+# ---------------------------------------------------------------------------
+# render_figures — a canned package's figures as standalone PNGs (owner
+# feedback 2026-09-11: ~25 ready figures were reachable only inside a whole
+# package, so bespoke html_to_pdf reports could not carry them)
+# ---------------------------------------------------------------------------
+
+class TestRenderFigures:
+    BEARING = {"width": 2.0, "unit_weight": 18.0, "friction_angle": 30.0,
+               "depth": 1.5, "shape": "square"}
+
+    def test_bearing_figures_land_as_pngs_without_a_package(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import _render_figures
+        res = _render_figures({"package": "bearing_capacity_package",
+                               **self.BEARING, "output_dir": str(tmp_path)})
+        assert res["status"] == "success", res.get("error")
+        assert res["n_figures"] >= 1
+        for fig in res["figures"]:
+            assert fig["file_exists"] is True
+            with open(fig["output_path"], "rb") as fh:
+                data = fh.read()
+            assert data[:8] == b"\x89PNG\r\n\x1a\n"
+            assert fig["title"] and fig["caption"]
+            assert fig["output_path"] in fig["html_img_tag"]
+        # no HTML/PDF package was written — figures only
+        assert not [p for p in os.listdir(tmp_path)
+                    if p.endswith((".html", ".pdf"))]
+        # the package's key results are echoed alongside
+        assert res["q_ultimate_kPa"] > 0
+
+    def test_html_to_pdf_embeds_rendered_figures(self, tmp_path):
+        pytest.importorskip("fitz")
+        from funhouse_agent.adapters.calc_package import (
+            _generate_html_to_pdf, _render_figures)
+        res = _render_figures({"package": "bearing_capacity_package",
+                               **self.BEARING, "output_dir": str(tmp_path)})
+        tags = "".join(f["html_img_tag"] for f in res["figures"])
+        pdf = _generate_html_to_pdf({
+            "html": f"<html><body><h1>Bespoke</h1>{tags}</body></html>",
+            "output_path": str(tmp_path / "bespoke.pdf")})
+        assert pdf["status"] == "success", pdf.get("error")
+
+    def test_slope_package_yields_section_figures(self, tmp_path):
+        """The richest figure set in the library (section, trial-surface map,
+        slice forces) becomes reachable for a bespoke report."""
+        from funhouse_agent.adapters.calc_package import _render_figures
+        res = _render_figures({
+            "package": "slope_stability_package",
+            "surface_points": [[0, 10], [10, 10], [20, 5], [30, 5]],
+            "soil_layers": [{
+                "name": "Clay", "top_elevation": 10, "bottom_elevation": 0,
+                "gamma": 18.0, "phi": 25, "c_prime": 10}],
+            "xc": 15, "yc": 18, "radius": 13,
+            "output_dir": str(tmp_path)})
+        assert res["status"] == "success", res.get("error")
+        assert res["n_figures"] >= 2
+        titles = " ".join(f["title"].lower() for f in res["figures"])
+        assert "section" in titles or "surface" in titles
+
+    def test_rejects_non_packages_and_names_options(self):
+        from funhouse_agent.adapters.calc_package import _render_figures
+        for bad in ({}, {"package": "html_to_pdf"},
+                    {"package": "render_figures"}, {"package": "nope"}):
+            res = _render_figures(bad)
+            assert res["status"] == "error"
+            assert "slope_stability_package" in res["error"]
+
+    def test_registered_documented_and_aliased(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import (
+            METHOD_INFO, METHOD_REGISTRY)
+        from funhouse_agent.dispatch import call_agent, list_agents
+        assert "render_figures" in METHOD_REGISTRY
+        assert "render_figures" in METHOD_INFO
+        assert METHOD_INFO["render_figures"]["parameters"]["package"]["required"]
+        res = call_agent("calc_package", "figures",
+                         {"package": "bearing_capacity_package",
+                          **self.BEARING, "output_dir": str(tmp_path)})
+        assert res["status"] == "success"
+        assert len(json.dumps(list_agents())) < 8000
+
+    def test_list_supported_modules_matches_the_import_map(self):
+        from calc_package import _IMPORT_MAP, list_supported_modules
+        assert list_supported_modules() == list(_IMPORT_MAP)
+        assert "pavement_design" in list_supported_modules()

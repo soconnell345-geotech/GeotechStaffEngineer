@@ -55,29 +55,34 @@ from calc_package.equation_converter import unicode_to_latex, escape_latex
 # Registry of supported modules — populated lazily on first use
 _MODULE_REGISTRY = {}
 
+#: module name -> its calc_steps module. ONE list, so ``list_supported_modules``
+#: cannot drift from what ``_ensure_registered`` accepts (pavement_design was
+#: importable but unlisted until 2026-09-11).
+_IMPORT_MAP = {
+    "bearing_capacity": "bearing_capacity.calc_steps",
+    "lateral_pile": "lateral_pile.calc_steps",
+    "slope_stability": "slope_stability.calc_steps",
+    "settlement": "settlement.calc_steps",
+    "axial_pile": "axial_pile.calc_steps",
+    "drilled_shaft": "drilled_shaft.calc_steps",
+    "downdrag": "downdrag.calc_steps",
+    "seismic_geotech": "seismic_geotech.calc_steps",
+    "retaining_walls": "retaining_walls.calc_steps",
+    "pavement_design": "pavement_design.calc_steps",
+    "ground_improvement": "ground_improvement.calc_steps",
+    "wave_equation": "wave_equation.calc_steps",
+    "pile_group": "pile_group.calc_steps",
+    "sheet_pile": "sheet_pile.calc_steps",
+    "fem2d": "fem2d.calc_steps",
+}
+
 
 def _ensure_registered(module_name: str) -> dict:
     """Lazy-import a module's calc_steps and register it."""
     if module_name in _MODULE_REGISTRY:
         return _MODULE_REGISTRY[module_name]
 
-    _import_map = {
-        "bearing_capacity": "bearing_capacity.calc_steps",
-        "lateral_pile": "lateral_pile.calc_steps",
-        "slope_stability": "slope_stability.calc_steps",
-        "settlement": "settlement.calc_steps",
-        "axial_pile": "axial_pile.calc_steps",
-        "drilled_shaft": "drilled_shaft.calc_steps",
-        "downdrag": "downdrag.calc_steps",
-        "seismic_geotech": "seismic_geotech.calc_steps",
-        "retaining_walls": "retaining_walls.calc_steps",
-        "pavement_design": "pavement_design.calc_steps",
-        "ground_improvement": "ground_improvement.calc_steps",
-        "wave_equation": "wave_equation.calc_steps",
-        "pile_group": "pile_group.calc_steps",
-        "sheet_pile": "sheet_pile.calc_steps",
-        "fem2d": "fem2d.calc_steps",
-    }
+    _import_map = _IMPORT_MAP
 
     if module_name not in _import_map:
         raise ValueError(
@@ -100,12 +105,7 @@ def _ensure_registered(module_name: str) -> dict:
 
 def list_supported_modules() -> list:
     """Return list of module names that support calc package generation."""
-    return [
-        "bearing_capacity", "lateral_pile", "slope_stability",
-        "settlement", "axial_pile", "drilled_shaft", "downdrag",
-        "seismic_geotech", "retaining_walls", "ground_improvement",
-        "wave_equation", "pile_group", "sheet_pile", "fem2d",
-    ]
+    return list(_IMPORT_MAP)
 
 
 def generate_calc_package(

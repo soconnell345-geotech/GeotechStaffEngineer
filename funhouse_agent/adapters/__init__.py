@@ -252,11 +252,11 @@ MODULE_REGISTRY = {
     },
     "calc_package": {
         "adapter": "funhouse_agent.adapters.calc_package",
-        "brief": "Generate Mathcad-style calc packages (HTML/LaTeX/PDF) for 13 analysis modules",
+        "brief": "Calc packages (HTML/LaTeX/PDF) for 15 modules; render_figures = a package's figures as PNGs; html_to_pdf for bespoke reports",
     },
     "profile_figure": {
         "adapter": "funhouse_agent.adapters.profile_figure_adapter",
-        "brief": "Subsurface profile FIGURE (PNG schematic): soil layers, water table, fill/surcharge, pile/footing/wall overlay, callouts",
+        "brief": "FIGURES (PNG): subsurface_profile schematic (layers, water table, foundation, callouts); plot_data generic x/y or depth data plot",
     },
     "worked_examples": {
         "adapter": "funhouse_agent.adapters.worked_examples_adapter",
