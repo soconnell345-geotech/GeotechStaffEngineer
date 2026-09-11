@@ -39,14 +39,62 @@ planlens has the one stray screenshot, never staged.
    when convenient. Two app-side items still PLANNED: retry-once on
    `AuthenticationError`, `friendly_turn_error` auth case.
 3. Owner decision: PyNiteFEA -> extra to undo the numpy cascade (TF /
-   mosaicml / ydata-profiling broken in that kernel).
+   mosaicml / ydata-profiling broken in that kernel). CONFIRMED from published
+   metadata that PyNiteFEA 3.1.0 requires numpy>=2.4.0 and is the SOLE driver,
+   so this one line removes all four warnings. `docs/DATABRICKS_INSTALL.md` §4.
 4. The `openai<3` pin comment now lies — httpx2/httpcore2 arrive via
    langsmith; fix the comment (and decide whether the pin still earns its
-   place).
+   place). This is also what makes the install slow (resolver backtracking):
+   `docs/DATABRICKS_INSTALL.md` §5.
+4b. Optional: bound planlens' raster extra to `opencv-python-headless>=4.8,<6`
+   so the next OpenCV major is a decision rather than a discovery (§7).
 5. planlens findings 5 (60-deg+ triangles) and 6 (concave dart), documented
    not fixed; a synthetic-terminator fixture set alongside the corpus is the
    standing lesson of rounds 4-6 (`round4_repro.py`, `round5_attack.py`).
 6. Chunked websocket upload for files past the 25 MB cap.
+
+### 5.14.0 INSTALLED AND VERIFIED ON THE CLUSTER (2026-09-11) — install-log triage now has a home
+
+`%pip install "geotech-staff-engineer==5.14.0"` **succeeds and the app runs**
+(owner confirmed live). No 403, no quarantine, no cytriangle chain. planlens
+0.2.0 and refs 1.4.0 both landed.
+
+**READ `docs/DATABRICKS_INSTALL.md` BEFORE TRIAGING ANY INSTALL LOG.** Three
+releases running, an agent re-derived the same answers from scratch — which
+package drives the numpy cascade, whether the seven conflict warnings matter,
+whether a new major version is safe. That file is now the standing answer:
+what "good" looks like in three lines, every expected-and-benign log line with
+what would change its verdict, the real red flags, and copy-paste snippets to
+re-check a numpy driver or a major bump. Keep its §11 history table current.
+
+Two findings from the 5.14.0 log that were NOT previously recorded:
+
+**OpenCV arrived at a new MAJOR version, unbounded and unannounced.** The
+cluster installed `opencv-python-headless 5.0.0.93` because planlens pins
+`>=4.8` with no ceiling. **Verified safe**: the full planlens suite (792
+passed / 1 skipped) was run against OpenCV 5.0.0, and the local gate machine
+turns out to have been on cv2 5.0.0 already — so it was tested, but by
+accident rather than by design. The cv2 surface we use is small and
+long-stable, and `findContours` is already unpacked version-agnostically.
+Optional hardening: bound the planlens raster extra to `>=4.8,<6` so the next
+major version is a decision, not a discovery — needs a planlens point release,
+so it is the owner's call. Watch table: `docs/DATABRICKS_INSTALL.md` §7.
+
+**The gate runs the FLOOR of our agent-stack ranges; the cluster runs the
+CEILING.** 5.14.0 shipped with the gate on deepagents **0.6.8** and the cluster
+resolving **0.7.13** — the exact shape of the 5.10.2 outage. It held, and by
+design rather than luck: `build_deep_agent` inspects the **compiled agent** for
+`write_todos` and re-attaches `TodoListMiddleware` when missing, instead of
+sniffing versions, so it self-corrects on deepagents releases that did not
+exist when the guard was written. The red flag to watch for is the agent
+failing *every* question with a recursion error right after an install.
+
+**PyNiteFEA's numpy floor is now CONFIRMED, not inferred**: `PyNiteFEA 3.1.0`
+declares `numpy>=2.4.0` in its published metadata. With numba capping
+numpy<2.5 the resolver lands on exactly 2.4.6 every time, and nothing else in
+the tree wants numpy above 2.1.3 — so moving PyNiteFEA to an extra removes
+**all four** numpy/numba conflict lines, not merely some of them. The watch
+item written into `pyproject.toml` at the 5.13.0 pin is hereby closed.
 
 ### FUNHOUSE METERING WAS SILENTLY DROPPING EVERY APP RECORD (2026-09-10)
 

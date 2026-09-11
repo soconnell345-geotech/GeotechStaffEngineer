@@ -49,28 +49,59 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## CURRENT WORKING STATE (2026-09-08) — BOTH TREES UNCOMMITTED
+## CURRENT WORKING STATE (2026-09-11) — 5.14.0 RELEASED, both trees COMMITTED
 
 **`HANDOFF.md` §0a-current is authoritative; read it before touching either
 repo.** Short version:
 
-- **Nothing is committed** in GeotechStaffEngineer or planlens. Six planlens
-  paths must enter the SAME commit or the source tree breaks (the tracked
-  fixture shims already delegate to the untracked `planlens/testing/`); the
-  measured cost of missing them is the app repo collecting **0 tests**.
-- A four-round remediation of a 15-finding `/code-review` of the unreleased
-  planlens Phase-3.2 commits is complete. Ledger:
-  `module_work/code_review/2026-09-06_planlens_phase32/FINDINGS.md`.
-  planlens suite **632 passed**; corpus 25/25 and 16/16 @0.3, 23/25 and 16/16
-  @0.5; leader FPs 2/10/6/19/23/20/38 unchanged. **Round 4 was NOT
-  independently verified** — an adversarial pass over that delta is the
-  highest-value next step before any 0.2.0 tag.
-- The app pin is now `planlens[raster]>=0.2`, so **publish planlens 0.2.0
-  BEFORE the app**; until then the app is unresolvable from PyPI. The
-  `geotech-references` pointer also wants moving to `d8ff52e` (1.4.0).
-- **Published numbers now have a command.** Two rounds running, docs carried
-  figures no run reproduced. `module_work/drawing_ground_truth/doc_claims_check.py`
-  regenerates every corpus figure the planlens docs publish, and ten guards in
+> **This block is gate-enforced.** `webapp/tests/test_docs_currency.py` fails
+> if the version in `pyproject.toml` is bumped without this section,
+> `HANDOFF.md` §0a-current and `docs/DATABRICKS_INSTALL.md` §11 each naming
+> the new version. It exists because this file told every agent "BOTH TREES
+> UNCOMMITTED" for two days after 5.14.0 shipped — written truthfully at
+> 5.13.0, then left behind when the release touched `HANDOFF.md` and not this
+> one. If that test is red, refresh the prose; do not just paste the version
+> in.
+
+
+- **app 5.14.0** (`47f3c8a`, tag `v5.14.0`) and **planlens 0.2.0** (`f0a2b9d`,
+  tag `v0.2.0`) are both **released to PyPI and committed**, published in that
+  order because the app pins `planlens[raster]>=0.2`. Release-tree gate
+  **11,594 passed / 33 skipped / 0 failed**; planlens suite 804. The
+  `geotech-references` pointer is at 1.4.0. Both trees are clean of release
+  work — what remains untracked is the owner's scratch (plans, PDFs, a .bat,
+  `bamako_agent_cell.py`) and one planlens screenshot, all deliberately never
+  staged.
+- **Installed and verified on the cluster** (owner confirmed the app runs).
+  **Before triaging any `%pip install` log, read
+  `docs/DATABRICKS_INSTALL.md`** — it is the standing answer to "any
+  concerns?": what good looks like in three lines, every expected-and-benign
+  warning with what would change its verdict, the real red flags, and
+  copy-paste checks. Three releases running, an agent re-derived the same
+  conclusions from scratch; that file exists so it stops happening.
+- **Two standing traps that file records.** (1) The local gate resolves the
+  **floor** of our agent-stack ranges while the cluster resolves the
+  **ceiling** — 5.14.0 shipped tested on deepagents 0.6.8 against a cluster
+  running 0.7.13. It holds because `build_deep_agent` checks the *compiled
+  agent* for `write_todos` rather than sniffing versions. (2) Pins without an
+  upper bound let a **new major version** in unannounced: OpenCV 5.0.0.93
+  arrived this way and was verified safe after the fact.
+- **The staging trap is now historical but the rule stands.** Six planlens
+  paths (`planlens/testing/*`, `tests/test_packaging.py`,
+  `tests/test_readme_claims.py`, `ir/tests/test_text_bearing_scenes.py`) had to
+  enter the SAME commit or the source tree breaks; they did. If you ever split
+  them again the app repo collects **0 tests**.
+- A **six-round** builder+independent-verifier remediation of a 15-finding
+  `/code-review` of the planlens Phase-3.2 work is complete and shipped.
+  Ledger: `module_work/code_review/2026-09-06_planlens_phase32/FINDINGS.md`
+  plus both agents' per-round reports. Standing lesson: the Mecklenburg corpus
+  **cannot** falsify changes to terminator styles it does not contain (an 18 pt
+  tolerance hides a 9 pt error), so synthetic fixtures must sit beside it —
+  `round4_repro.py`, `round5_attack.py`.
+- **Published numbers have a command.** Two rounds running, docs carried
+  figures no run reproduced.
+  `module_work/drawing_ground_truth/doc_claims_check.py` regenerates every
+  corpus figure the planlens docs publish, and ten guards in
   `planlens/tests/test_readme_claims.py` pin them. If a number disagrees with
   that script, the DOCUMENT is wrong — fix the prose, never the script.
 
@@ -83,12 +114,13 @@ visual one. Approved plan of record:
 *"what is the average spacing of the borings in this plan?"*, PDF-first,
 findings as data rather than a fixed deliverable.
 
-Started and green under that plan (untracked): `planlens/ir/measure.py` — the
+Green and now **committed** under that plan: `planlens/ir/measure.py` — the
 `Quantity` envelope, where units are mandatory, confidence composes by `min`
 rather than a product, and a page-point value REFUSES to become feet without a
-resolved scale; and `planlens/ir/spatial.py` — point-pattern maths, numpy only.
-Blocked on the owner for real ground truth: the Langan Subsurface Investigation
-Plan is in neither repo.
+resolved scale; and `planlens/ir/spatial.py` — point-pattern maths, numpy only,
+with no key named `average_spacing` at any depth (conventions differ 2.45x on a
+regular grid). Still blocked on the owner for real ground truth: the Langan
+Subsurface Investigation Plan is in neither repo.
 
 ## Post-5.11.2 on master (UNRELEASED — the structural + drawing-intelligence trains, 2026-09-03/04)
 

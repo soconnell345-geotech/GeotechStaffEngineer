@@ -118,9 +118,21 @@ dependencies = [
     # pinned before deletion (module_work/structural_native/).
     #
     # PyNiteFEA is NOT on any block list and installs through the proxy
-    # fine, so it stays in core. Note it requires numpy>=2.4, which upgrades
-    # the numpy a Databricks runtime boots with (2.1.3) -- watch it on the
-    # first cluster install after this release.
+    # fine, so it stays in core.
+    #
+    # WATCH ITEM CLOSED (5.13.0 and 5.14.0 cluster installs, 2026-09-10/11):
+    # PyNiteFEA 3.1.0 declares numpy>=2.4.0 in its published metadata, and it
+    # is the SOLE reason numpy moves off the 2.1.3 a Databricks runtime boots
+    # with -- nothing else in this tree wants numpy above 2.1.3. numba caps
+    # numpy<2.5, so the resolver lands on exactly 2.4.6 every time, which then
+    # drags numba 0.61 -> 0.67 and llvmlite 0.44 -> 0.49. Consequence: FOUR
+    # runtime packages go unsatisfied in that kernel (tensorflow,
+    # mosaicml-streaming, ydata-profiling x2). Harmless unless the kernel needs
+    # them, and numba 0.67 is verified numerically identical for pystrata.
+    # Moving this one line to an optional extra reverts the ENTIRE cascade --
+    # it is the whole fix, not part of one. Owner's call; the cost is that
+    # frame analysis would then need an extra. See docs/DATABRICKS_INSTALL.md
+    # section 4 (including a snippet that re-derives the driver from metadata).
     "PyNiteFEA>=3.0",
 ]
 
