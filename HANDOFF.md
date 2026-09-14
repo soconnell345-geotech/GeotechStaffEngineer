@@ -1223,8 +1223,15 @@ just-added file): unzip and confirm the new files/tokens are present.
 - `validation_examples/INVENTORY.md` + `RESULTS.md` — published problems,
   verdicts, owner notes (coverage-gap backlog lives in the notes).
 - `validation_examples/test_published_v0*.py` — the 136+ offline validation tests.
-- `drawing_ir/` — NEW (v5.4): LLM-ready drawing IR + query surface; DESIGN.md
-  carries the geo_project-wiring follow-up flag.
+- **planlens** (`C:/Users/socon/OneDrive/dev/planlens`, PyPI `planlens`,
+  0.3.0) — the document-review + drawing-geometry package: `planlens/document/`
+  (page map, structure, text, tables, markups, thumbnails; DESIGN.md),
+  `planlens/tools/` (the LLM tool layer), `planlens/ir/` (the drawing IR;
+  DESIGN.md), `CHANGELOG.md`. App-side bridge: `funhouse_agent/document_tools.py`
+  (the seven document tools) + `funhouse_agent/adapters/drawing_ir_adapter.py`
+  (the drawing tools).
+- `drawing_ir/` — HISTORICAL PATH (v5.4 → split out as planlens 2026-09-04);
+  the geo_project-wiring follow-up flag now lives in `planlens/ir/DESIGN.md`.
 - `docs/GeotechStaffEngineer_User_Manual_v5.3.pdf` + `docs/user_manual/` —
   the 132-pp manual + regenerable builder (rebuild each release).
 - `docs/gallery/` — 12-exhibit module visualization gallery + build_gallery.py.

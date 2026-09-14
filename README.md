@@ -155,7 +155,8 @@ Thirty analysis modules grouped by discipline, plus the shared layers. Native mo
 | **foundations** | `bearing_capacity` · `settlement` | Shallow footing capacity (Vesic/Meyerhof/Hansen, two-layer); consolidation + immediate settlement |
 | **deep foundations** | `axial_pile` · `lateral_pile` · `pile_group` · `drilled_shaft` · `wave_equation` · `downdrag` | Driven & bored pile capacity, p-y lateral analysis, rigid-cap groups, Smith wave-equation drivability, neutral-plane downdrag |
 | **earth retention** | `sheet_pile` · `soe` · `retaining_walls` · `ground_improvement` | Cantilever/anchored walls, support-of-excavation, cantilever & MSE walls, aggregate piers / wick drains / vibro |
-| **slope · FEM · CAD** | `slope_stability` · `fem2d` · `dxf_import` · `dxf_export` · `pdf_import` | Rigorous limit-equilibrium (GLE/M-P, Bishop/Spencer/Janbu) + probabilistic FOS; 2D plane-strain FEM with strength reduction; geometry I/O |
+| **slope · FEM · CAD** | `slope_stability` · `fem2d` · `dxf_import` · `dxf_export` · `planlens.pdf` | Rigorous limit-equilibrium (GLE/M-P, Bishop/Spencer/Janbu) + probabilistic FOS; 2D plane-strain FEM with strength reduction; geometry I/O |
+| **document review** | [`planlens`](https://pypi.org/project/planlens/) (separate package, installed as a dependency) | Any PDF or image as review-ready data for the agent: a page map and the document's structure (from the pages' own headers, footers and printed numbering), text with exact locations, tables, the review markups (who said what, where it points), AutoCAD hidden text, contact sheets; plus drawing geometry and annotation constructs (leaders, dimensions, callouts). The agent reads first and is told when to look. |
 | **seismic** | `seismic_geotech` · `opensees_agent` · `pystrata_agent` · `liquepy_agent` · `seismic_signals_agent` | Site class, M-O pressures, liquefaction triggering (B&I-2014 / NCEER), 1D site response, ground-motion processing |
 | **structural** | `section_props_agent` · `concrete_props_agent` · `pynite_agent` | Cross-section properties (exact polygon integration + closed-form torsion), RC section capacity/cracked properties (ACI strain compatibility), elastic frame + continuous-beam analysis |
 | **characterization** | `subsurface_characterization` · `gstools_agent` | DIGGS/GEF/AGS4 data I/O + plots, geostatistical kriging/random fields |
@@ -268,9 +269,11 @@ Liquefaction triggering is exposed to the agent through a single `liquefaction` 
 
 B&I-2014 is the default for both. The underlying per-module functions remain available directly: `liquepy_agent.analyze_cpt_liquefaction` / `analyze_spt_liquefaction` (B&I-2014) and `seismic_geotech.evaluate_liquefaction` (NCEER/Youd-2001 SPT).
 
-## Related package
+## Related packages
 
 [geotech-references](https://pypi.org/project/geotech-references/) — Digitized NAVFAC DM7 and FHWA GEC reference library (installed automatically as a dependency). For how the agent searches and cites it — full-text search, figure + vision read-off, and a scoped consult sub-agent — see the [agentic retrieval developer guide](docs/agentic_retrieval_devguide.html).
+
+[planlens](https://pypi.org/project/planlens/) — Review-ready data from AEC documents for LLMs (installed automatically as a dependency): the whole-document layer behind the agent's `open_document` / `read_document` / `document_markups` tools and the drawing-geometry layer behind its drawing tools. Independent of this package; usable from any LLM harness.
 
 ## License
 

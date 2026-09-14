@@ -17,8 +17,9 @@ analysis code of its own — it's UI and glue over the shipped modules.
   collapsible status area.
 - **Upload files** — PDF cross-sections, DXF drawings, CSV/DIGGS data, images.
   Each upload is both registered for the vision tools *and* written to a
-  session temp folder so the real-path importers (`pdf_import`, `dxf_import`,
-  `drawing_ir`, `read_pdf_text`) can open it. The agent is told the attachment
+  session temp folder so the real-path importers (`open_document` and the
+  other document-review tools, `pdf_import`, `dxf_import`, `drawing_ir`,
+  `read_pdf_text`) can open it. The agent is told the attachment
   key and the file path automatically. Uploads are capped at **25 MB** per
   file (the app's own websocket-transport limit, not Streamlit's); for bigger
   documents put the file in SharePoint and ask the agent to fetch it by name —

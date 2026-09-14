@@ -266,6 +266,27 @@ may lag it. `hvsrpy`/`swprocess` were removed in 5.12.)
 | `read_reference_figure` | Render a digitized reference chart and read a value off it via vision |
 | `save_file` | Save content to a file (text or base64 binary), **write-verified** |
 
+### Document review tools (planlens, 5.16.0 — deep agent's primary surface)
+
+Whole-document tools served by the `planlens` package's `ReviewToolkit`
+through `funhouse_agent/document_tools.py`. `source` is an attachment key or
+a real path; results page through a `next` cursor and never truncate mid-JSON.
+
+| Tool | Purpose |
+|------|---------|
+| `open_document` | Open a PDF or image: handle + a map of the whole document (page kinds, sheet labels, segments, markup counts by author, `pages_to_view`) — call first for any document question |
+| `document_structure` | The constituent documents (transmittal, drawing set, calc package, nested reports, appendices) with the page numbers PRINTED on their pages |
+| `document_page_map` | One row per page: kind, segment, heading, words, printed page, sheet ref, scale notes, markups, hidden CAD text, duplicates |
+| `read_document` | Text (optionally with boxes in `render_region`'s frame), tables as markdown, review markups; `! look:` lines say when the text is not the page |
+| `search_document` | Find text across page text, hidden CAD text and markup comments, phrases across line breaks included |
+| `document_markups` | The review record: every comment, callout, cloud, arrow and stamp — author, date, what it says or shows, where it points, reply links |
+| `render_page_thumbnails` | Contact sheets of every page (thumbnail + page number + kind, red frame = marked up), to view with `analyze_image` |
+
+The policy the deep-agent prompt states: text first, then LOOK — with
+`analyze_pdf_page` (a page), `render_region` (a spot) or `analyze_image` (a
+thumbnail sheet) — whenever a result carries a look cue or seems wrong for
+the page kind, and say what was read vs seen.
+
 `list_files`, `read_pdf_text`, `analyze_image`, and `analyze_pdf_page` each
 accept an attachment key **or** a real filesystem path (`/tmp/...`,
 `/Volumes/...`, `/Workspace/...`). The agent's own scratch filesystem

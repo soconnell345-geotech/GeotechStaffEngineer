@@ -164,7 +164,9 @@ contextvar — strictly-validating packages would have rejected the injected
 key). Ledger:
 `module_work/field_feedback/2026-09-11_app-usage_v5.14.0/FINDINGS.md`; next
 train = Ensoft-style calculation TABLES (HANDOFF §0a). Owner rules for app
-trains: sequential, no parallel agents; planlens = todo list only.
+trains: sequential, no parallel agents. (The "planlens = todo list only"
+rule was lifted by the owner on 2026-09-13 for the document-review train; a
+subagent for a narrow task is fine — one at a time, never concurrent.)
 
 **OWNER CORRECTION — the goal is DOCUMENT REVIEW, not CAD-object recognition.**
 Engineers reviewing design and construction documents; an upload is usually a
@@ -174,6 +176,19 @@ visual one. Approved plan of record:
 `C:/Users/socon/.claude/plans/delightful-swinging-sky.md` — vertical slice on
 *"what is the average spacing of the borings in this plan?"*, PDF-first,
 findings as data rather than a fixed deliverable.
+
+**2026-09-13/14 — the document-review reset, RELEASED as 5.16.0 / planlens
+0.3.0.** A high-level review found planlens had drifted into arrowhead tuning
+on ten no-text-layer sheets with no document layer at all; the owner approved
+a reset. planlens now carries `planlens.document` (page map + structure from
+the pages' own headers/footers/printed numbering, located text, tables,
+review markups, hidden CAD text, Azure DI as an optional text source) and
+`planlens.tools` (the framework-neutral LLM tool layer); the app's primary
+agent has seven document tools via `funhouse_agent/document_tools.py` and a
+text-first-then-look policy (`! look:` cues → `analyze_pdf_page` /
+`render_region` / `analyze_image`). The boring-spacing vertical slice above
+remains the driving example and is still blocked on the owner's real plans.
+Pickup list: HANDOFF §0a-current ("DOCUMENT-REVIEW RESET").
 
 Green and now **committed** under that plan: `planlens/ir/measure.py` — the
 `Quantity` envelope, where units are mandatory, confidence composes by `min`
@@ -766,8 +781,8 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | subsurface_characterization | 231 | Subsurface data I/O: DIGGS parser (20 test types) + Plotly plots + trend stats; PLUS folded format adapters — GEF/BRO-XML CPT/borehole parse (pygef), AGS4 read/validate (python-ags4), DIGGS schema/dictionary validation (pydiggs) |
 | dxf_import | 97 | DXF CAD import for slope stability + FEM (discover layers, parse geometry, build SlopeGeometry/FEM inputs) |
 | dxf_export | 37 | DXF export for cross-section geometry (surface, boundaries, GWT, nails, annotations) |
-| pdf_import | 56 | PDF cross-section import (PyMuPDF vector extraction, LLM vision extraction, geometry conversion) |
-| drawing_ir | 61 | LLM-ready drawing digitization ("Drawing IR"): deterministic extractor owns coordinates, LLM owns semantics. Unified JSON IR (Line/Polyline/Arc/Circle/Text/Region w/ coords+layer/color+provenance+per-entity confidence) from DXF (ezdxf, conf 1.0), PDF vector (pdf_import+scale module, conf 1.0), raster (NEW OpenCV Hough/contour tracing, conf <1); slice-query interface (bbox/angle/text/layer/nearest) so the LLM requests slices, not pixels |
+| pdf_import → `planlens.pdf` | (planlens) | HISTORICAL PATH. The PDF cross-section importer ships in the separate `planlens` package since 2026-09-04 (`planlens.pdf`; app-side bridge `dxf_import/pdf_bridge.py`). |
+| drawing_ir → `planlens.ir` + `planlens.document` + `planlens.tools` | (planlens, 875 tests) | HISTORICAL PATH. The drawing IR (DXF / vector-PDF / raster ingest, slice queries, leader / dimension / title-block / bubble / cloud finders, `render_region`) is `planlens.ir`; since planlens 0.3.0 the WHOLE-DOCUMENT layer (`planlens.document`: page map + structure, located text, tables, review markups, hidden CAD text, Azure DI text source) and the LLM tool layer (`planlens.tools`) sit beside it. See "Document review & drawing geometry (planlens)" below. |
 | fem2d | 353 | 2D plane-strain FEM (T6 default + CST/Q4/beam, 3D-principal MC return, HS, GL99 SRM, seepage, consolidation, staged construction, PLAXIS-style calc-package plots); validated vs Griffiths-Lane/Prandtl (VALIDATION.md) |
 | geo_project | 89 | Canonical Project document for staged, human-gated LE/FEM model setup (schema+validators, builders, templates, DXF/PDF/vision ingest w/ provenance quarantine, echo-back renderer) |
 
@@ -788,26 +803,44 @@ Supporting files: `harness.py` (FoundryAgentHarness class), `scenarios.py` (reus
 
 Run: `pytest foundry_test_harness/ -v`
 
-## PDF Import (Cross-Section Geometry Extraction)
+## Document review & drawing geometry (planlens)
 
-`pdf_import/` extracts cross-section geometry from PDF drawings using two methods:
+Everything that reads a PDF, an image or a DXF lives in the separate,
+published package **planlens** (`C:/Users/socon/OneDrive/dev/planlens`,
+PyPI `planlens`, editable-installed in dev; app pin `planlens[raster]>=0.3`).
+It is the owner's TinyApp "banner application" for any architect or engineer
+reviewing documents; the geotech package rides along. No OBO branding, and do
+not pitch it as CAD-object recognition — the goal is document review.
 
-1. **Vector extraction** — PyMuPDF `page.get_drawings()` for exact geometry
-2. **Vision extraction** — LLM image analysis via pluggable `image_fn`
+| Layer | What it gives the agent |
+|-------|-------------------------|
+| `planlens.document` | Any PDF (or image) as review-ready data: a page map (kinds text / drawing_sheet / form / figure / scanned / blank / mixed, with evidence, word density, the page number PRINTED on the page, sheet refs, scale notes); the document's STRUCTURE (segments from running headers/footers, printed numbering, dividers, duplicates); text lines with exact boxes and reading direction; tables; review markups (author, date, says/shows, the point a callout or arrow aims at, reply links); AutoCAD hidden SHX text; search; contact sheets. Azure Document Intelligence results as an optional text source (never called by planlens). One frame: displayed-page points, top-left origin — `render_region`'s frame. |
+| `planlens.ir` | Drawing geometry: DXF / vector-PDF / raster ingest into a provenance-and-confidence-bearing IR, slice queries, the construct finders (leaders, dimensions, title blocks, bubbles, clouds), `render_region` (zoom with set-of-marks), `measure` / `spatial`. |
+| `planlens.tools` | The framework-neutral LLM tool layer (`ReviewToolkit`): nine tools, JSON-Schema specs in Anthropic / OpenAI style, every result valid JSON inside a size limit, cursors for anything longer. |
+| `planlens.pdf` | The PDF ingest leg + the geotechnical cross-section importer (role mappings, soil-layer vision prompts) that predates the split; app-side bridge `dxf_import/pdf_bridge.py` → `build_slope_geometry()` / `build_fem_inputs()`. Moving the geotech part back here is on planlens' open list. |
 
-| File | Purpose |
-|------|---------|
-| `__init__.py` | Exports + `to_dxf_parse_result()` adapter |
-| `results.py` | `PdfParseResult` dataclass (mirrors DxfParseResult fields) |
-| `extractor.py` | PyMuPDF vector path extraction + `discover_pdf_content()` |
-| `vision.py` | LLM vision extraction + JSON parsing |
-| `tests/` | 56 tests (programmatic PDFs + mock vision functions) |
+**In this app** (5.16.0): `funhouse_agent/document_tools.py` bridges
+`ReviewToolkit` to the deep agent — seven tools on the PRIMARY agent
+(`open_document`, `document_structure`, `document_page_map`,
+`read_document`, `search_document`, `document_markups`,
+`render_page_thumbnails`; the toolkit's own `render_page` / `render_region`
+stay off the app surface because the app has its own vision tools).
+Attachments resolve through a contextvar per call; one process-wide toolkit
+keeps handles across turns; planlens budgets each result just under the
+reference cap so nothing is string-truncated mid-JSON. Every `! look:` cue
+names the app's eyes — `analyze_pdf_page` (page), `render_region` (spot),
+`analyze_image` (the thumbnail sheets) — and the deep-agent prompt states the
+policy: text first, then look whenever a result carries a look cue or seems
+wrong for the page kind, and say what was read vs seen. The drawing-geometry
+tools (`digitize_drawing` / `query_drawing` / `get_entities` / `snip_region` /
+`search_drawing_set`) are still served by
+`funhouse_agent/adapters/drawing_ir_adapter.py`. The tools hide themselves on
+a planlens older than 0.3 rather than failing.
 
-Workflow: `discover_pdf_content()` → `extract_vector_geometry()` → `to_dxf_parse_result()` → `build_slope_geometry()` / `build_fem_inputs()`
-
-Requires: `PyMuPDF >= 1.23` (optional: `pip install geotech-staff-engineer[pdf]`)
-
-Run: `pytest pdf_import/ -v`
+Run: `cd ../planlens && pytest planlens -q` (planlens suite, 875) and
+`pytest funhouse_agent/deep/tests/test_document_tools_offline.py -q` (the
+app-side wiring). Design notes: `planlens/document/DESIGN.md`,
+`planlens/ir/DESIGN.md`; changelog `planlens/CHANGELOG.md`.
 
 ## Funhouse Agent (Engine-Agnostic Geotechnical Agent)
 
@@ -822,7 +855,8 @@ Run: `pytest pdf_import/ -v`
 | `reviewer.py` | Reference consult sub-agent (`consult_references`) + legacy post-hoc reviewer (`run_review`/`needs_revision`) |
 | `system_prompt.py` | Self-contained system prompt (50 modules) |
 | `native_tools.py` | OpenAI tool schemas + dispatch for NativeToolEngine |
-| `vision_tools.py` | Vision tools: `analyze_image`, `analyze_pdf_page`, `read_reference_figure` (render a catalogued figure + read a value off it), `save_file` |
+| `vision_tools.py` | File and vision tools: `list_files`, `read_pdf_text`, `analyze_image`, `analyze_pdf_page`, `render_region` (zoom + set-of-marks), `read_reference_figure` (render a catalogued figure + read a value off it), `view_worked_example_source`, `save_file` |
+| `document_tools.py` | The whole-document review tools (planlens `ReviewToolkit` bridge, 5.16.0): `open_document`, `document_structure`, `document_page_map`, `read_document`, `search_document`, `document_markups`, `render_page_thumbnails` — attachments via contextvar, one process-wide toolkit, look cues naming the app's vision tools |
 | `notebook.py` | `NotebookChat` — ipywidgets chat interface for Jupyter/Databricks |
 | `adapters/` | analysis-module adapters + 16 reference adapters bridging flat JSON → module APIs (the former pygef/ags4/pydiggs adapters were folded into `subsurface_adapter`) |
 | `tests/` | 106 tests (mock engines, no API key needed) |

@@ -315,7 +315,7 @@
           <rect x="602" y="436" width="58" height="26" rx="6" fill="#101f1a" stroke="#3a6a55"/><text x="631" y="453" text-anchor="middle" class="chip">fem2d</text>
           <rect x="668" y="436" width="88" height="26" rx="6" fill="#101f1a" stroke="#3a6a55"/><text x="712" y="453" text-anchor="middle" class="chip">dxf_import</text>
           <rect x="764" y="436" width="88" height="26" rx="6" fill="#101f1a" stroke="#3a6a55"/><text x="808" y="453" text-anchor="middle" class="chip">dxf_export</text>
-          <rect x="860" y="436" width="86" height="26" rx="6" fill="#101f1a" stroke="#3a6a55"/><text x="903" y="453" text-anchor="middle" class="chip">pdf_import</text>
+          <rect x="860" y="436" width="86" height="26" rx="6" fill="#101f1a" stroke="#3a6a55"/><text x="903" y="453" text-anchor="middle" class="chip">planlens</text>
 
           <!-- group: seismic -->
           <text x="58" y="484" class="s" fill="#9aa7bd">seismic</text>
@@ -428,7 +428,7 @@ print(mc.beta, mc.pf)     <span class="c"># reliability index & probability of f
         <tr><td class="dom">foundations</td><td><code>bearing_capacity</code> · <code>settlement</code></td><td>Shallow footing capacity (Vesic/Meyerhof/Hansen, two-layer) and consolidation + immediate settlement.</td></tr>
         <tr><td class="dom">deep foundations</td><td><code>axial_pile</code> · <code>lateral_pile</code> · <code>pile_group</code> · <code>drilled_shaft</code> · <code>wave_equation</code> · <code>downdrag</code></td><td>Driven &amp; bored pile capacity, p-y lateral analysis, rigid-cap groups, Smith wave-equation drivability, neutral-plane downdrag.</td></tr>
         <tr><td class="dom">earth retention</td><td><code>sheet_pile</code> · <code>soe</code> · <code>retaining_walls</code> · <code>ground_improvement</code></td><td>Cantilever/anchored walls, support-of-excavation, cantilever &amp; MSE walls, aggregate piers / wick drains / vibro.</td></tr>
-        <tr><td class="dom">slope · FEM · CAD</td><td><code>slope_stability</code> · <code>fem2d</code> · <code>dxf_import</code> · <code>dxf_export</code> · <code>pdf_import</code></td><td>Rigorous limit-equilibrium (GLE/M-P, Bishop/Spencer/Janbu) + probabilistic FOS; 2D plane-strain FEM with strength reduction; geometry I/O.</td></tr>
+        <tr><td class="dom">slope · FEM · CAD</td><td><code>slope_stability</code> · <code>fem2d</code> · <code>dxf_import</code> · <code>dxf_export</code> · <code>planlens</code></td><td>Rigorous limit-equilibrium (GLE/M-P, Bishop/Spencer/Janbu) + probabilistic FOS; 2D plane-strain FEM with strength reduction; geometry I/O.</td></tr>
         <tr><td class="dom">seismic</td><td><code>seismic_geotech</code> · <code>opensees_agent</code> · <code>pystrata_agent</code> · <code>liquepy_agent</code> · <code>seismic_signals_agent</code> · <code>hvsrpy_agent</code></td><td>Site class, M-O pressures, liquefaction triggering (B&amp;I-2014 / NCEER), 1D site response, ground-motion processing, HVSR.</td></tr>
         <tr><td class="dom">characterization</td><td><code>subsurface_characterization</code> · <code>gstools_agent</code> · <code>swprocess_agent</code> · <code>groundhog_agent</code></td><td>DIGGS/GEF/AGS4 data I/O + plots, geostatistical kriging/random fields, MASW dispersion, 90+ groundhog correlations.</td></tr>
         <tr><td class="dom">variability</td><td><code>reliability</code> · <code>salib_agent</code> · <code>pystra_agent</code></td><td>FOSM/PEM/MC/FORM + COV database + spatial averaging; Sobol/Morris sensitivity; structural FORM/SORM/MC.</td></tr>

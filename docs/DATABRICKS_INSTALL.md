@@ -30,8 +30,8 @@ that the already-running Python process cannot see.
 
 Three lines decide it. Find them and you're done:
 
-1. **`Successfully installed ... geotech-staff-engineer-5.15.0 ...`** — with
-   `planlens-0.2.0` and `geotech-references-1.4.0` in the same list.
+1. **`Successfully installed ... geotech-staff-engineer-5.16.0 ...`** — with
+   `planlens-0.3.0` and `geotech-references-1.4.0` in the same list.
 2. **No `403` and no `quarantined` anywhere.**
 3. The final `ERROR: pip's dependency resolver ...` block lists **only** the
    conflicts in §3. That block is a *warning printed as ERROR* — pip says

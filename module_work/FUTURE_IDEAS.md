@@ -67,6 +67,12 @@ exists (webapp review mode); this adds the extraction+diff harness. Killer
 app for the owner's actual job (reviewing others' geotech reports). Start
 narrow: our own calc-package PDFs (known layout), then generalize.
 
+*Status 2026-09-14:* the EXTRACTION half now exists — planlens 0.3.0's
+document layer and the app's seven document tools (5.16.0) give the agent a
+page map, the document's structure with printed page numbers, located text,
+tables and the review markups, with look cues into vision. The
+recompute-and-diff harness is still the open part.
+
 ## 4. Single-namespace restructure (ASSESSED — parked as 6.0.0)
 
 35 top-level modules → one `geotech_staff_engineer.*` package; kills the
