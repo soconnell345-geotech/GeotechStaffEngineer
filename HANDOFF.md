@@ -8,7 +8,17 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
-### DOCUMENT-REVIEW RESET (2026-09-13, UNRELEASED) — planlens `feature/document-layer`, app `feature/document-review-tools`
+### 5.16.0 RELEASED (2026-09-14, tag `v5.16.0`) with planlens 0.3.0 (tag `v0.3.0`) — the document-review train
+
+Owner word "push and publish" 2026-09-14. planlens 0.3.0 published FIRST
+(tag-triggered trusted publishing), then the app with the pin raised to
+`planlens[raster]>=0.3`. Both feature branches fast-forwarded into
+main/master. Cluster install of 5.16.0 NOT yet confirmed (install guide §11);
+no new third-party dependencies. First live checks: upload a real submittal
+and ask a review question — does the agent open_document first, follow the
+`! look:` cues into vision, and cite printed page numbers?
+
+### DOCUMENT-REVIEW RESET (2026-09-13) — the train's record (released as 5.16.0 / planlens 0.3.0 above)
 
 **Why.** Owner asked for a high-level review of planlens against the goal: a
 flexible package an LLM harness uses to review ANY AEC document — geometry into
@@ -25,8 +35,8 @@ text. Owner approved the reset plan the same day ("don't move too quick, no
 parallel agents"; one subagent at a time is fine for narrow tasks).
 **Supersedes the "planlens = todo list only" rule for this work.**
 
-**planlens (branch `feature/document-layer`, 4 commits on 0.2.0 `5a58e10`, suite
-845 passed, NOT pushed, version still 0.2.0):**
+**planlens (was branch `feature/document-layer`; now main, released 0.3.0, suite
+875):**
 - `c54d6c0` `planlens.document` — `open_document` / `Document`: page map
   (kinds with evidence), text lines with true direction + exact boxes, tables
   (`find_tables`), review markups (author, date, the point a callout/arrow aims
@@ -50,9 +60,9 @@ reviews; attachment note mentions it. Real submittal through the app surface:
 open 1,281 chars, all 7 drawing sheets with locations in 7 results each
 <= 15,438 chars (cap 16,000), 40 markups in one result.
 
-**Release order when the owner says go:** planlens 0.3.0 FIRST (version bump +
-README), then the app pin `planlens[raster]>=0.3` — until then the app hides the
-tools on an older planlens rather than failing.
+**Release order (done 2026-09-14):** planlens 0.3.0 first, then the app pin
+`planlens[raster]>=0.3`; on an older planlens the app hides the tools rather
+than failing.
 
 **Owner gut check, 2026-09-14 (Fable): "we may be undervaluing the agent's
 own vision."** Confirmed by probe — the scanned figure, the boring log and the

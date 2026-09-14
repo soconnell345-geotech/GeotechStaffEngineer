@@ -70,7 +70,24 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## CURRENT WORKING STATE (2026-09-11) — 5.15.0 RELEASED (tag `v5.15.0`), both trees COMMITTED
+## CURRENT WORKING STATE (2026-09-14) — 5.16.0 RELEASED (tag `v5.16.0`) with planlens 0.3.0
+
+- **app 5.16.0** (tag `v5.16.0`, 2026-09-14) — the DOCUMENT-REVIEW train:
+  seven whole-document tools on the primary agent (`open_document`,
+  `document_structure`, `document_page_map`, `read_document`,
+  `search_document`, `document_markups`, `render_page_thumbnails`) served by
+  **planlens 0.3.0** (pin `planlens[raster]>=0.3`; planlens gained
+  `planlens.document` — page map with structure from the pages' own
+  headers/footers/printed numbering, located text, tables, review markups,
+  hidden CAD text, Azure DI as an optional text source — and
+  `planlens.tools`, the framework-neutral LLM tool layer; the drawing-IR text
+  leg fixed: real rotation, reviewer comments no longer read as drawing
+  text). The agent is told when text is not the page (`! look:` cues) and
+  looks with `analyze_pdf_page` / `render_region` / `analyze_image`. Cluster
+  install NOT yet confirmed; no new third-party dependencies (planlens 0.3's
+  additions are pure Python over PyMuPDF). Full record: HANDOFF §0a-current
+  "DOCUMENT-REVIEW RESET". Prior state (5.15.0, 2026-09-11) follows.
+
 
 **`HANDOFF.md` §0a-current is authoritative; read it before touching either
 repo.** Short version:
