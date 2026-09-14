@@ -131,6 +131,25 @@ def test_an_image_upload_is_reviewable(gt):
     assert opened["kind"] == "image" and opened["pages_by_kind"] == {"scanned": "0"}
 
 
+def test_structure_and_thumbnails_reach_the_agent(tmp_path):
+    from planlens.testing import build_synthetic_submittal
+    sub = build_synthetic_submittal()
+    tools = make_vision_tools(engine=None, attachments={"sub.pdf": sub.pdf})
+    opened = _invoke(_tool(tools, "open_document"), source="sub.pdf")
+    assert any(s["title"] == sub.appendix_title for s in opened["segments"])
+    structure = _invoke(_tool(tools, "document_structure"),
+                        handle=opened["handle"])
+    assert structure["n_segments"] == len(sub.expected_segments)
+    thumbs = _invoke(_tool(tools, "render_page_thumbnails"),
+                     handle=opened["handle"], pages="0-3")
+    assert thumbs["sheets"][0]["pages"] == "0-3"
+    assert "analyze_image(attachment_key=" in thumbs["note"]
+    # The written PNG resolves through the same path the vision tools use.
+    from funhouse_agent.vision_tools import _resolve_attachment_or_path
+    data, kind = _resolve_attachment_or_path(thumbs["sheets"][0]["image_path"], {})
+    assert kind == "path" and data[:8] == b"\x89PNG\r\n\x1a\n"
+
+
 def test_without_the_tool_layer_the_tools_are_hidden(monkeypatch):
     monkeypatch.setattr(document_tools, "available", lambda: False)
     names = {t.name for t in make_vision_tools(engine=None)}

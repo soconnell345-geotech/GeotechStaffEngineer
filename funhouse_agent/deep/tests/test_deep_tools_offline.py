@@ -213,8 +213,10 @@ def test_vision_tools_build_and_error_without_engine():
                      "read_reference_figure",
                      "view_worked_example_source", "save_file",
                      # planlens.tools whole-document review tools
-                     "open_document", "document_page_map", "read_document",
-                     "search_document", "document_markups"}
+                     "open_document", "document_structure",
+                     "document_page_map", "read_document",
+                     "search_document", "document_markups",
+                     "render_page_thumbnails"}
 
     # read_reference_figure without args → clear error (no raise).
     out = _invoke(

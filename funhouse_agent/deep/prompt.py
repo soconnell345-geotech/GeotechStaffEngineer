@@ -80,8 +80,15 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   calc package, where the answer may be in prose, a table, a drawing sheet or a
   reviewer's markup — start with **`open_document`** (attachment key or real
   path as `source`). It returns a handle and a map of the WHOLE document: which
-  pages are text, drawing sheets, figures or scans, sheet labels, and how many
-  review markups there are and by whom. Then `search_document` finds a topic,
+  pages are text, drawing sheets, forms, figures or scans, sheet labels, the
+  document's segments (transmittal, drawing set, calc package, the reports
+  nested inside it, appendices — `document_structure` gives each with the page
+  numbers PRINTED on its pages, so "page 24 of the calcs" becomes a PDF page
+  and you can cite printed numbers back), and how many review markups there
+  are and by whom. `render_page_thumbnails` shows the whole document as
+  contact sheets (page number and kind under each thumbnail, red frame =
+  marked up) — look at them with `analyze_image` to take a long document in at
+  a glance before reading. Then `search_document` finds a topic,
   value or id across page text, hidden CAD text and markup comments, and
   `read_document` reads those pages with their tables and markups;
   `with_locations=true` gives each line's box in PDF points, top-left origin —

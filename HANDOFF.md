@@ -67,6 +67,19 @@ result carries a look cue or seems wrong for the page kind, and say what was
 read vs seen. The `source` a caller opened with is echoed back so the model can
 pass it to `analyze_pdf_page(attachment_key=...)`.
 
+**Page map deepened (2026-09-14, owner's ask "what else could the map
+say?"):** planlens `structure.py` reads each page's header/footer bands, the
+page number PRINTED there, sheet refs, dividers, duplicates, and cuts the
+document into SEGMENTS (constituent documents) — on the real submittal 29 of
+them, incl. the 7-sheet drawing set as one, Appendices A-E, the boring logs as
+one `form` run and four nested calc sheets with their own "Page 1 of 4". New
+`form` page kind (ruled grid). Metrics on every row: words, density, ruling
+lines, printed_page/of, sheet, scales, divider_title, duplicate_of, segment.
+Contact sheets (`render_page_thumbnails`, like Bluebeam's page panel, red frame
+= marked up; 3.2 s / 260 pages). App surface now has seven document tools
+(`document_structure`, `render_page_thumbnails` added; thumbnails are viewed
+with `analyze_image(attachment_key=<image_path>)`, which accepts a real path).
+
 **Open, in order:** live cluster run on a real review question; port the
 drawing tools (digitize/query/get_entities/snip/search_drawing_set) from
 `drawing_ir_adapter.py` into `planlens.tools`; move the geotech cross-section

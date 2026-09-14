@@ -745,6 +745,21 @@ def make_vision_tools(
         """Open a PDF for review; returns a handle and a map of the document."""
         return _dispatch("open_document", {"source": source})
 
+    def document_structure(handle: str, offset: int = 0) -> str:
+        """The constituent documents of a stapled PDF, with the page
+        numbers printed on them."""
+        return _dispatch("document_structure",
+                         {"handle": handle, "offset": offset})
+
+    def render_page_thumbnails(handle: str, pages: Any = None,
+                               columns: int = 6) -> str:
+        """Contact sheets of every page (thumbnail + page number + kind),
+        written as PNG files to look at with analyze_image."""
+        args = {"handle": handle, "columns": columns}
+        if pages not in (None, ""):
+            args["pages"] = pages
+        return _dispatch("render_page_thumbnails", args)
+
     def document_page_map(handle: str, pages: Any = None, kind: str = "",
                           with_evidence: bool = False) -> str:
         """One row per page: kind, label, heading, counts."""
@@ -859,10 +874,13 @@ def make_vision_tools(
         ),
         **({name: (fn, _document_tools.tool_description(name))
             for name, fn in (("open_document", open_document),
+                             ("document_structure", document_structure),
                              ("document_page_map", document_page_map),
                              ("read_document", read_document),
                              ("search_document", search_document),
-                             ("document_markups", document_markups))}
+                             ("document_markups", document_markups),
+                             ("render_page_thumbnails",
+                              render_page_thumbnails))}
            if _document_tools.available() else {}),
         "save_file": (
             save_file,

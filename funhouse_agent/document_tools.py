@@ -32,11 +32,18 @@ from typing import Any, Dict, Optional
 
 DOCUMENT_TOOL_NAMES = (
     "open_document",
+    "document_structure",
     "document_page_map",
     "read_document",
     "search_document",
     "document_markups",
+    "render_page_thumbnails",
 )
+
+#: How the model views a PNG planlens wrote (the thumbnail contact sheets):
+#: the app's analyze_image accepts a real path as its attachment_key.
+IMAGE_VIEW_HINT = ("view the image with analyze_image(attachment_key="
+                   "<image_path>, prompt=<what to look for>)")
 
 #: Appended by planlens to every "! look:" line. It must name the app's own
 #: vision tools and their argument conventions, because that line is the
@@ -106,7 +113,8 @@ def _toolkit():
         if _KIT is None:
             from planlens.tools import ReviewToolkit
             _KIT = ReviewToolkit(resolve_source=_resolve,
-                                 vision_hint=VISION_HINT)
+                                 vision_hint=VISION_HINT,
+                                 image_view_hint=IMAGE_VIEW_HINT)
         return _KIT
 
 
