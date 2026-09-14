@@ -14,7 +14,12 @@ cursors). This module only connects it to the app:
   by handle, in the next;
 - attachments reach the resolver through a context variable set for the
   duration of each call, so concurrent conversations resolve only their own
-  uploads.
+  uploads;
+- the "how to look" instruction planlens appends to every ``! look:`` line
+  names THIS app's vision tools (``analyze_pdf_page``, ``render_region``),
+  which take the same ``source`` and the same displayed-frame boxes. The
+  toolkit's own ``render_page`` / ``render_region`` are not exposed here —
+  the app already routes images to the model through its vision engine.
 """
 
 from __future__ import annotations
@@ -31,6 +36,17 @@ DOCUMENT_TOOL_NAMES = (
     "read_document",
     "search_document",
     "document_markups",
+)
+
+#: Appended by planlens to every "! look:" line. It must name the app's own
+#: vision tools and their argument conventions, because that line is the
+#: model's cue to switch from reading to looking.
+VISION_HINT = (
+    "to look: analyze_pdf_page(attachment_key=<the source you opened>, "
+    "page=N, prompt=<what to find>) views the whole page; "
+    "render_region(attachment_key=<source>, page=N, bbox=[x0,y0,x1,y1], "
+    "prompt=...) zooms on a box from read_document or a markup (same frame, "
+    "no conversion); marks=[[x,y,label],...] numbers spots to ask about"
 )
 
 #: Budget used when the host has disabled truncation: generous, still a bound.
@@ -89,7 +105,8 @@ def _toolkit():
     with _KIT_LOCK:
         if _KIT is None:
             from planlens.tools import ReviewToolkit
-            _KIT = ReviewToolkit(resolve_source=_resolve)
+            _KIT = ReviewToolkit(resolve_source=_resolve,
+                                 vision_hint=VISION_HINT)
         return _KIT
 
 

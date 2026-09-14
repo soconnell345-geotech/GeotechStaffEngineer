@@ -54,6 +54,19 @@ open 1,281 chars, all 7 drawing sheets with locations in 7 results each
 README), then the app pin `planlens[raster]>=0.3` — until then the app hides the
 tools on an older planlens rather than failing.
 
+**Owner gut check, 2026-09-14 (Fable): "we may be undervaluing the agent's
+own vision."** Confirmed by probe — the scanned figure, the boring log and the
+plan sheet of the real submittal gave the model no cue to look. Fixed in
+planlens (`page_advice` + `! look:` lines / `pages_to_view` / `look` /
+`pages_not_searchable_as_text` in every tool result, `render_page` /
+`render_region` tools, image files as one-page documents) and in the app:
+`document_tools.VISION_HINT` names `analyze_pdf_page` / `render_region` (the
+app keeps its own vision tools; planlens' render tools are NOT on the app
+surface), and the prompt states the policy — text first, then look whenever a
+result carries a look cue or seems wrong for the page kind, and say what was
+read vs seen. The `source` a caller opened with is echoed back so the model can
+pass it to `analyze_pdf_page(attachment_key=...)`.
+
 **Open, in order:** live cluster run on a real review question; port the
 drawing tools (digitize/query/get_entities/snip/search_drawing_set) from
 `drawing_ir_adapter.py` into `planlens.tools`; move the geotech cross-section

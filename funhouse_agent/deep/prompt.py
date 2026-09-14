@@ -88,9 +88,22 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   the frame `render_region` takes, so you can zoom straight into a cited spot.
   `document_markups` is the review record: every comment, cloud, arrow and stamp
   with author, date and the point it aims at. These results continue through a
-  `next` cursor — follow it rather than assuming you saw everything. For a quick
-  plain read, **`read_pdf_text`** (PyMuPDF text layer; `pages` like `"0-9"`)
-  still works. `read_pdf_text` flags any page that has no text layer
+  `next` cursor — follow it rather than assuming you saw everything.
+  **Text first, then your eyes.** The text tools are exact and cheap, so read
+  first — but a scan, a figure, a boring log, a plan or section sheet is a
+  PICTURE with labels on it, and its transcript is not the page. Whenever a
+  result carries a `! look:` line, `pages_to_view`, a `look` flag or
+  `pages_not_searchable_as_text`, LOOK at that page with `analyze_pdf_page`
+  (whole page, with a prompt saying what you are after) or `render_region`
+  (zoom on a box from `with_locations` or a markup's `points at`; add `marks`
+  to number the spots you ask about). Also look whenever a result seems
+  incomplete or wrong for the page kind — a table that came back as a sparse
+  grid, labels with no figure, a dimension or symbol you are about to quote,
+  a drawing-tool proposal below full confidence — and say in your answer what
+  you read from text and what you saw. A search miss on such pages is NOT
+  absence. For a quick plain read, **`read_pdf_text`** (PyMuPDF text layer;
+  `pages` like `"0-9"`) still works. `read_pdf_text` flags any page that has
+  no text layer
   ("no text layer — use analyze_pdf_page") — for those scanned pages, and for
   figures / plotted cross-sections / a boring-log sheet, use **`analyze_pdf_page`**
   (vision, one page). `analyze_image`, and the `pdf_import` / `dxf_import` /

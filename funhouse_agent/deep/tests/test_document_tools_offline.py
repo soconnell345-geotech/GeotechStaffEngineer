@@ -108,6 +108,29 @@ def test_attachments_do_not_leak_between_conversations(gt):
                               source="mine.pdf")
 
 
+def test_look_lines_name_the_apps_vision_tools(gt):
+    tools = make_vision_tools(engine=None, attachments={"s.pdf": gt.pdf})
+    opened = _invoke(_tool(tools, "open_document"), source="s.pdf")
+    assert opened["source"] == "s.pdf"          # what analyze_pdf_page takes
+    assert opened["pages_to_view"] == f"{gt.sheet_page},{gt.scanned_page}"
+    assert "analyze_pdf_page(attachment_key=" in opened["pages_to_view_note"]
+    text = _invoke(_tool(tools, "read_document"), handle=opened["handle"],
+                   pages=str(gt.scanned_page))["text"]
+    assert "! look: image-only page" in text
+    assert "render_region(attachment_key=" in text
+    names = {t.name for t in tools}
+    assert "render_page" not in names            # the app's own vision tools
+
+
+def test_an_image_upload_is_reviewable(gt):
+    src = fitz.open("pdf", gt.pdf)
+    png = src[gt.scanned_page].get_pixmap(dpi=40).tobytes("png")
+    src.close()
+    tools = make_vision_tools(engine=None, attachments={"scan.png": png})
+    opened = _invoke(_tool(tools, "open_document"), source="scan.png")
+    assert opened["kind"] == "image" and opened["pages_by_kind"] == {"scanned": "0"}
+
+
 def test_without_the_tool_layer_the_tools_are_hidden(monkeypatch):
     monkeypatch.setattr(document_tools, "available", lambda: False)
     names = {t.name for t in make_vision_tools(engine=None)}
