@@ -8,6 +8,62 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### DOCUMENT-REVIEW RESET (2026-09-13, UNRELEASED) — planlens `feature/document-layer`, app `feature/document-review-tools`
+
+**Why.** Owner asked for a high-level review of planlens against the goal: a
+flexible package an LLM harness uses to review ANY AEC document — geometry into
+hard data, common drawing objects, text with location (Azure DI allowed).
+Verdict: mostly drifted. Months of effort had gone into arrowhead/leader/
+dimension tuning on ten no-text-layer Mecklenburg sheets, while the package had
+no document layer at all. Measured on the real 260-page Nairobi submittal
+(field_feedback 2026-09-09): every PDF text item said rotation 0 (215 of 245
+wrong on a /Rotate 270 sheet); reviewer comments were read as drawing text; the
+submittal's whole review record (Bluebeam callouts, replies, stamps, checker
+calcs) and 320 hidden AutoCAD SHX-text annotations were invisible; on a
+text-bearing sheet 24 of 33 default-confidence "dimensions" were bound to note
+text. Owner approved the reset plan the same day ("don't move too quick, no
+parallel agents"; one subagent at a time is fine for narrow tasks).
+**Supersedes the "planlens = todo list only" rule for this work.**
+
+**planlens (branch `feature/document-layer`, 4 commits on 0.2.0 `5a58e10`, suite
+845 passed, NOT pushed, version still 0.2.0):**
+- `c54d6c0` `planlens.document` — `open_document` / `Document`: page map
+  (kinds with evidence), text lines with true direction + exact boxes, tables
+  (`find_tables`), review markups (author, date, the point a callout/arrow aims
+  at, /IRT links, reply-aimed-at-comment, stamp wording), hidden CAD text,
+  search; `AzureLayout` reads an Azure DI prebuilt-layout result as an optional
+  text source (never calls Azure). ONE frame: displayed-page points, top-left —
+  the frame `render_region` uses. Design: `planlens/document/DESIGN.md`.
+- `fc7c104` drawing-IR text fixes: real rotation, annotation text excluded,
+  opt-in `include_cad_hidden_text`. `doc_claims_check.py` re-run: published
+  corpus figures UNCHANGED.
+- `a56dd93` `planlens.tools.ReviewToolkit` — five LLM tools, framework-neutral
+  specs, every result valid JSON inside a per-call size limit, lossless paging.
+
+**App (branch `feature/document-review-tools`):** `funhouse_agent/document_tools.py`
+bridges the toolkit (attachments via contextvar, one process-wide toolkit so
+handles survive turns); `make_vision_tools` adds `open_document`,
+`document_page_map`, `read_document`, `search_document`, `document_markups` to
+the PRIMARY agent's default set only when `planlens.tools` is importable (calc
+sub-agent and figure reader unchanged); prompt now says open_document first for
+reviews; attachment note mentions it. Real submittal through the app surface:
+open 1,281 chars, all 7 drawing sheets with locations in 7 results each
+<= 15,438 chars (cap 16,000), 40 markups in one result.
+
+**Release order when the owner says go:** planlens 0.3.0 FIRST (version bump +
+README), then the app pin `planlens[raster]>=0.3` — until then the app hides the
+tools on an older planlens rather than failing.
+
+**Open, in order:** live cluster run on a real review question; port the
+drawing tools (digitize/query/get_entities/snip/search_drawing_set) from
+`drawing_ir_adapter.py` into `planlens.tools`; move the geotech cross-section
+code (`planlens.pdf` vision prompts, `candidate_ground_surface`) back into the
+app with a deprecation path; a multi-firm TEXT-BEARING evaluation set (the
+Nairobi submittal first — private, never into planlens' public repo);
+`planlens.ocr` as a text source; a visual-reading-order option for form pages
+(boring logs read in drafting order today); give the calc sub-agent read-only
+document tools. Arrowhead tuning is FROZEN.
+
 ### 5.15.0 RELEASED (2026-09-11, tag `v5.15.0`) — the app feedback train + ultra-review fixes
 
 Release gate 11,651 passed / 33 skipped / 0 failed (2026-09-11); no dependency changes; published by the `v*` tag

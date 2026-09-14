@@ -145,7 +145,8 @@ def attachment_note(atts: List[Attachment]) -> str:
     for a in atts:
         lines.append(
             f"- '{a.key}': attachment key '{a.key}' "
-            f"(use analyze_image / analyze_pdf_page / read_pdf_text with "
+            f"(to review a PDF, open_document with source='{a.key}'; use "
+            f"analyze_image / analyze_pdf_page / read_pdf_text with "
             f"attachment_key='{a.key}'); also staged on disk at '{a.path}' "
             f"(pass this path to pdf_import / dxf_import / drawing_ir tools that "
             f"need a real file path)."

@@ -28,6 +28,8 @@ import json
 from typing import Any, Callable, Dict, Optional
 
 from langchain_core.tools import StructuredTool
+
+from funhouse_agent import document_tools as _document_tools
 from pydantic import BaseModel, ConfigDict, Field
 
 from funhouse_agent.dispatch import (
@@ -561,15 +563,30 @@ def make_vision_tools(
     """
     attachments = attachments if attachments is not None else {}
     save_fn = save_fn or _default_save_fn
-    include = include if include is not None else {
-        "list_files", "read_pdf_text", "analyze_image", "analyze_pdf_page",
-        "render_region", "read_reference_figure",
-        "view_worked_example_source", "save_file",
-    }
+    if include is None:
+        include = {
+            "list_files", "read_pdf_text", "analyze_image", "analyze_pdf_page",
+            "render_region", "read_reference_figure",
+            "view_worked_example_source", "save_file",
+        }
+        # Whole-document review tools (planlens.tools), when the installed
+        # planlens has them — never advertised to the model otherwise.
+        if _document_tools.available():
+            include |= set(_document_tools.DOCUMENT_TOOL_NAMES)
     reference_cap = _resolve_reference_cap(max_result_chars,
                                            reference_result_chars)
 
     def _dispatch(tool_name: str, arguments: dict) -> str:
+        if tool_name in _document_tools.DOCUMENT_TOOL_NAMES:
+            # Text-payload reads, budgeted by planlens itself: its limit sits
+            # just under the reference cap, so results page through cursors
+            # as valid JSON instead of being string-truncated here.
+            return _truncate(
+                _document_tools.dispatch_document_tool(
+                    tool_name, arguments, attachments=attachments,
+                    max_chars=_document_tools.budget_for_cap(reference_cap)),
+                reference_cap,
+            )
         # read_reference_figure / read_pdf_text are text-payload reads and
         # list_files can be a long directory dump: the content IS the answer,
         # so they get the larger reference budget.
@@ -724,6 +741,57 @@ def make_vision_tools(
             args["pdf_page"] = pdf_page
         return _dispatch("view_worked_example_source", args)
 
+    def open_document(source: str) -> str:
+        """Open a PDF for review; returns a handle and a map of the document."""
+        return _dispatch("open_document", {"source": source})
+
+    def document_page_map(handle: str, pages: Any = None, kind: str = "",
+                          with_evidence: bool = False) -> str:
+        """One row per page: kind, label, heading, counts."""
+        args = {"handle": handle}
+        if pages not in (None, ""):
+            args["pages"] = pages
+        if kind:
+            args["kind"] = kind
+        if with_evidence:
+            args["with_evidence"] = True
+        return _dispatch("document_page_map", args)
+
+    def read_document(handle: str, pages: Any = None, start_line: int = 0,
+                      with_locations: bool = False,
+                      include_tables: bool = True,
+                      include_markups: bool = True) -> str:
+        """Read pages: text (optionally with boxes), tables, markups."""
+        args = {"handle": handle, "start_line": start_line,
+                "with_locations": with_locations,
+                "include_tables": include_tables,
+                "include_markups": include_markups}
+        if pages not in (None, ""):
+            args["pages"] = pages
+        return _dispatch("read_document", args)
+
+    def search_document(handle: str, pattern: str, pages: Any = None,
+                        regex: bool = False, case_sensitive: bool = False,
+                        include_markups: bool = True,
+                        max_hits: int = 100) -> str:
+        """Find text, hidden CAD text and markup comments."""
+        args = {"handle": handle, "pattern": pattern, "regex": regex,
+                "case_sensitive": case_sensitive,
+                "include_markups": include_markups, "max_hits": max_hits}
+        if pages not in (None, ""):
+            args["pages"] = pages
+        return _dispatch("search_document", args)
+
+    def document_markups(handle: str, pages: Any = None, author: str = "",
+                         offset: int = 0) -> str:
+        """The review record: every markup with author, date and target."""
+        args = {"handle": handle, "offset": offset}
+        if pages not in (None, ""):
+            args["pages"] = pages
+        if author:
+            args["author"] = author
+        return _dispatch("document_markups", args)
+
     def save_file(path: str, content: str, encoding: str = "text") -> str:
         """Save raw text or data to a file. Returns the saved file path. For
         formatted calculation documents, use the ``calc_package`` module via
@@ -789,6 +857,13 @@ def make_vision_tools(
             "find_worked_examples when the entry lists source_pdf_pages; "
             "pdf_page is 1-based (0 = first catalogued page).",
         ),
+        **({name: (fn, _document_tools.tool_description(name))
+            for name, fn in (("open_document", open_document),
+                             ("document_page_map", document_page_map),
+                             ("read_document", read_document),
+                             ("search_document", search_document),
+                             ("document_markups", document_markups))}
+           if _document_tools.available() else {}),
         "save_file": (
             save_file,
             "Save raw text or data to a file. Returns the saved file path. "

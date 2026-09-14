@@ -211,7 +211,10 @@ def test_vision_tools_build_and_error_without_engine():
     assert names == {"list_files", "read_pdf_text", "analyze_image",
                      "analyze_pdf_page", "render_region",
                      "read_reference_figure",
-                     "view_worked_example_source", "save_file"}
+                     "view_worked_example_source", "save_file",
+                     # planlens.tools whole-document review tools
+                     "open_document", "document_page_map", "read_document",
+                     "search_document", "document_markups"}
 
     # read_reference_figure without args → clear error (no raise).
     out = _invoke(

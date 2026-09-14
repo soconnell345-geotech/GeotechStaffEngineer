@@ -76,10 +76,21 @@ _PLANNING_AND_SCRATCH_SECTION = """\
 - **Reading a REAL file the user gives you (PDF report, DXF, image): use the
   file-reading TOOLS, not the scratch filesystem.** `read_file` failing on a
   real path does NOT mean the file is unreachable — the file-reading tools open
-  REAL paths directly. For a PDF report, start with **`read_pdf_text`** (cheap
-  PyMuPDF text-layer extraction — pass the path as `source`, and `pages` like
-  `"0-9"`): read the table of contents, boring logs, lab summary and
-  recommendations as TEXT. `read_pdf_text` flags any page that has no text layer
+  REAL paths directly. To REVIEW a PDF — a report, drawing set, submittal or
+  calc package, where the answer may be in prose, a table, a drawing sheet or a
+  reviewer's markup — start with **`open_document`** (attachment key or real
+  path as `source`). It returns a handle and a map of the WHOLE document: which
+  pages are text, drawing sheets, figures or scans, sheet labels, and how many
+  review markups there are and by whom. Then `search_document` finds a topic,
+  value or id across page text, hidden CAD text and markup comments, and
+  `read_document` reads those pages with their tables and markups;
+  `with_locations=true` gives each line's box in PDF points, top-left origin —
+  the frame `render_region` takes, so you can zoom straight into a cited spot.
+  `document_markups` is the review record: every comment, cloud, arrow and stamp
+  with author, date and the point it aims at. These results continue through a
+  `next` cursor — follow it rather than assuming you saw everything. For a quick
+  plain read, **`read_pdf_text`** (PyMuPDF text layer; `pages` like `"0-9"`)
+  still works. `read_pdf_text` flags any page that has no text layer
   ("no text layer — use analyze_pdf_page") — for those scanned pages, and for
   figures / plotted cross-sections / a boring-log sheet, use **`analyze_pdf_page`**
   (vision, one page). `analyze_image`, and the `pdf_import` / `dxf_import` /
