@@ -246,18 +246,23 @@ def _resolve_attachment_or_path(key, attachments):
     attachments = attachments or {}
     if key and key in attachments:
         return attachments[key], "attachment"
-    if key and os.path.isfile(key):
+    path = key if key and os.path.isfile(key) else None
+    if path is None and key:
+        from funhouse_agent._fileio import find_in_working_folder
+        path = find_in_working_folder(key)
+    if path:
         try:
-            with open(key, "rb") as fh:
+            with open(path, "rb") as fh:
                 return fh.read(), "path"
         except OSError as e:
             raise FileNotFoundError(f"'{key}' exists but could not be read: {e}")
     available = sorted(attachments.keys())
     raise FileNotFoundError(
-        f"'{key}' not found as an attachment key or a readable file path. "
-        f"Available attachment keys: {available}. Real filesystem paths are "
-        f"also accepted (driver-local /tmp/... or a /Volumes/... path; "
-        f"/Workspace reads are unreliable on Databricks)."
+        f"'{key}' not found as an attachment key, a readable file path, or a "
+        f"file name in the working folder. Available attachment keys: "
+        f"{available}. Real filesystem paths are also accepted (driver-local "
+        f"/tmp/... or a /Volumes/... path; /Workspace reads are unreliable on "
+        f"Databricks)."
     )
 
 
@@ -279,13 +284,8 @@ def _real_path_for(path: str) -> str:
     p = os.path.expanduser(path)
     if os.path.exists(p) or os.path.isabs(p):
         return os.path.abspath(p)
-    try:
-        from funhouse_agent._fileio import default_output_dir
-        base = default_output_dir()
-    except Exception:  # noqa: BLE001
-        base = ""
-    candidate = os.path.join(base, p) if base else p
-    return os.path.abspath(candidate if os.path.exists(candidate) else p)
+    from funhouse_agent._fileio import find_in_working_folder
+    return find_in_working_folder(p) or os.path.abspath(p)
 
 
 def _dispatch_read_text_file(arguments):

@@ -1297,10 +1297,20 @@ def _resolve_image_path(src: str, base_dir: str = None) -> str:
     when the caller passed ``html_path``), then against the working folder.
     """
     path = src.strip()
-    if path.lower().startswith("file:///"):
-        path = path[8:]
-    elif path.lower().startswith("file://"):
-        path = path[7:]
+    if path.lower().startswith("file:"):
+        # file:///tmp/x.png -> /tmp/x.png; file:///C:/x.png -> C:/x.png. Until
+        # 2026-09-15 the whole "file:///" was sliced off, which made a Linux
+        # path RELATIVE ("tmp/x.png") and sent it to the working folder, so
+        # every figure referenced that way was refused (field feedback N7).
+        from urllib.parse import unquote
+        path = unquote(path[5:])
+        if path.startswith("//"):
+            path = path[2:]
+            if path.lower().startswith("localhost/"):
+                path = path[len("localhost"):]
+        if (len(path) >= 3 and path[0] == "/" and path[1].isalpha()
+                and path[2] == ":"):
+            path = path[1:]
     if base_dir and not os.path.isabs(path):
         beside = os.path.abspath(os.path.join(base_dir, path))
         if os.path.isfile(beside):

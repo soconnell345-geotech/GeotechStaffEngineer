@@ -229,6 +229,16 @@ def _scoped_names(allowed_agents):
     return sorted(name for name in MODULE_REGISTRY if name in allowed_agents)
 
 
+def _canonical_agent_name(agent_name):
+    """The registry spelling of a module name given as 'SOE', 'Soe', ' soe ',
+    'sheet-pile'... Field feedback 2026-09-15 (N11): the calc sub-agent's
+    first three lookups failed on 'SOE'. Unknown names pass through."""
+    if not isinstance(agent_name, str) or agent_name in MODULE_REGISTRY:
+        return agent_name
+    key = agent_name.strip().lower().replace("-", "_").replace(" ", "_")
+    return key if key in MODULE_REGISTRY else agent_name
+
+
 def _is_visible(agent_name: str, allowed_agents) -> bool:
     if agent_name not in MODULE_REGISTRY:
         return False
@@ -252,6 +262,7 @@ def list_agents(allowed_agents=None) -> dict:
 
 def list_methods(agent_name: str, category: str = "", allowed_agents=None) -> dict:
     """List available methods for a specific module."""
+    agent_name = _canonical_agent_name(agent_name)
     if not _is_visible(agent_name, allowed_agents):
         return {
             "error": f"Unknown module '{agent_name}'. "
@@ -277,6 +288,7 @@ def list_methods(agent_name: str, category: str = "", allowed_agents=None) -> di
 
 def describe_method(agent_name: str, method: str, allowed_agents=None) -> dict:
     """Get full parameter documentation for a method."""
+    agent_name = _canonical_agent_name(agent_name)
     if not _is_visible(agent_name, allowed_agents):
         return {
             "error": f"Unknown module '{agent_name}'. "
@@ -598,6 +610,7 @@ def call_agent(
     dict
         Calculation results or {"error": "..."}.
     """
+    agent_name = _canonical_agent_name(agent_name)
     if not _is_visible(agent_name, allowed_agents):
         return {
             "error": f"Unknown module '{agent_name}'. "

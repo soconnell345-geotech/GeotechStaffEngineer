@@ -54,6 +54,27 @@ def default_output_dir() -> str:
     return ""
 
 
+def find_in_working_folder(name: str):
+    """Absolute path of a bare or relative file ``name`` that exists in
+    :func:`default_output_dir`, else ``None``.
+
+    A downloaded or saved file is announced by name ("the file is now in the
+    working folder"), and agents then pass that name to the file tools; before
+    2026-09-15 those tools accepted only a full path or an attachment key and
+    answered "not found" (field feedback N9).
+    """
+    if not name:
+        return None
+    p = os.path.expanduser(str(name).strip())
+    if not p or os.path.isabs(p):
+        return None
+    base = default_output_dir()
+    if not base:
+        return None
+    candidate = os.path.join(base, p)
+    return os.path.abspath(candidate) if os.path.isfile(candidate) else None
+
+
 def resolve_output_path(output_path: str) -> str:
     """Resolve a tool's ``output_path`` against :func:`default_output_dir`.
 

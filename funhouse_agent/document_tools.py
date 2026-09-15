@@ -101,6 +101,10 @@ def _resolve(source: str):
         return attachments[source]
     if source and os.path.isfile(source):
         return source
+    from funhouse_agent._fileio import find_in_working_folder
+    found = find_in_working_folder(source)
+    if found:
+        return found
     raise ToolError(
         f"'{source}' is not an attachment key or a readable file path",
         hint=(f"attachment keys: {sorted(attachments) or 'none'}; real paths "
