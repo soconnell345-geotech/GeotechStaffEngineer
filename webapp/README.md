@@ -297,24 +297,35 @@ Two agent tools open a published source PDF and look at the page:
 `read_reference_figure` (reads a value off a chart in DM7, a GEC, a UFC…;
 used mostly by the `references` sub-agent) and `view_worked_example_source`.
 The PDFs are **not** in the pip package (all 38 come to about 750 MB), so on
-the cluster you put them in one folder and tell the app where it is:
+the cluster you keep them in one folder and tell the app where it is. This
+follows the pattern already used for attaching reports: store in your
+Workspace folder, copy to the driver's `/tmp` before use (reading straight
+from `/Workspace` has been unreliable, see `funhouse_agent/_fileio.py`).
 
-1. **Copy the PDFs** from your checkout's `geotech-references/docs/` into ONE
-   flat folder the cluster can read. A Unity Catalog volume is the right
-   place, e.g. `/Volumes/<catalog>/<schema>/<volume>/reference_pdfs/`
-   (Catalog Explorer → the volume → *Upload to this volume*). Not `/tmp`: the
-   driver's disk is wiped when the cluster restarts. **Keep every filename
-   exactly as it is**, capitals included: the cluster's disk treats
-   `GEC 12 vol 1.pdf` and `GEC 12 Vol 1.pdf` as different files.
-2. **Point the app at the folder** in the notebook, before launching (the app
-   process inherits it, like the SharePoint settings; changing it later needs
-   a relaunch):
+1. **Upload once.** In the Databricks Workspace browser, make a folder under
+   your user folder, e.g. `/Workspace/Users/<you>/geotech_agents/reference_pdfs/`,
+   and upload the PDFs from your checkout's `geotech-references/docs/` into
+   it. **Keep every filename exactly as it is**, capitals included: the
+   cluster's disk treats `GEC 12 vol 1.pdf` and `GEC 12 Vol 1.pdf` as
+   different files. If the upload refuses a very large file, skip it; that
+   only disables that one reference.
+2. **Every launch**, in the same notebook cell as `run_on_databricks`: copy the
+   folder to `/tmp` (wiped when the cluster restarts, hence every launch) and
+   point the app at the copy. The app process inherits the setting, like the
+   SharePoint settings; changing it later needs a relaunch.
 
    ```python
    import os
-   os.environ["GEOTECH_REFERENCES_DOCS"] = "/Volumes/<catalog>/<schema>/<volume>/reference_pdfs"
+   dbutils.fs.cp("file:/Workspace/Users/<you>/geotech_agents/reference_pdfs",
+                 "file:/tmp/reference_pdfs", recurse=True)
+   os.environ["GEOTECH_REFERENCES_DOCS"] = "/tmp/reference_pdfs"
    handle = run_on_databricks(port=8501, model="funhouse-gpt-high")
    ```
+
+   If your workspace has a Unity Catalog volume you can write to (a
+   `/Volumes/...` path, set up by workspace admins, not by Funhouse), you can
+   upload there instead and point `GEOTECH_REFERENCES_DOCS` straight at it
+   with no copy.
 3. **Check it** without spending a model call: sidebar → *Connection
    diagnostics* → the **reference PDFs (chart read-off)** row shows how many
    were found and lists each missing file by name. Then ask a chart question

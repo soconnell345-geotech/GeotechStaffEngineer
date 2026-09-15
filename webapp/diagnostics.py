@@ -321,11 +321,12 @@ def _reference_docs_check() -> dict:
             return _check(name, WARN, (
                 f"{REFERENCE_DOCS_ENV} is not set, so the agent cannot open "
                 "any reference PDF: reading a value off a design chart and "
-                "viewing a worked example's source page will both fail. Put "
-                "the PDFs in one folder (on Databricks, a Unity Catalog "
-                "volume), set os.environ['GEOTECH_REFERENCES_DOCS'] to it in "
-                "the notebook BEFORE run_on_databricks, and relaunch. "
-                "webapp/README.md section 3."))
+                "viewing a worked example's source page will both fail. On "
+                "Databricks: keep the PDFs in a Workspace folder, and in the "
+                "launch cell copy it to /tmp (dbutils.fs.cp(..., "
+                "recurse=True)) and set os.environ['GEOTECH_REFERENCES_DOCS'] "
+                "to the copy BEFORE run_on_databricks; then relaunch. "
+                "webapp/README.md section 3, 'Reference PDFs'."))
         where = f"source checkout {docs} ({REFERENCE_DOCS_ENV} unset)"
     try:
         present = set(os.listdir(docs))
