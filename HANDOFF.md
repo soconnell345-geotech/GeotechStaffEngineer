@@ -8,6 +8,26 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### FIELD FEEDBACK 2026-09-15 — Nairobi SOE re-run on 5.15.0 (triaged; nothing fixed yet)
+
+`module_work/field_feedback/2026-09-15_nairobi-soe-rerun_v5.15.0/FINDINGS.md`,
+17 items with a proposed order. Three wrong things reached the owner:
+1. The rebuilt calc package lost every number. The delegation carried no data,
+   and deepagents' scratch `read_file` reported the real earlier file "not found".
+2. `soe.cantilever_excavation` is defective. It uses the first layer only, and
+   its passive moment arm is H + D/3, so embedment comes out about a third of the
+   correct value (`sheet_pile.cantilever_wall` is right).
+   `soe.embedment.compute_embedment` is suspect for the same reason.
+3. FHWA single-anchor results are partial, but nothing in the result says so.
+
+App side: deliverables written to `/tmp` never become download cards or reach
+SharePoint, which is the owner's main complaint. Also the SharePoint upload
+path doubling and an `html_to_pdf` `file:///tmp` bug.
+
+Branch `feature/subagent-feedback-reference-pdfs` (unreleased) carries:
+`record_feedback` on every sub-agent and specialist, the reference-PDF
+diagnostics row, and the WE-PILE-1 filename-case fix.
+
 ### 5.16.0 RELEASED (2026-09-14, tag `v5.16.0`) with planlens 0.3.0 (tag `v0.3.0`) — the document-review train
 
 Owner word "push and publish" 2026-09-14. planlens 0.3.0 published FIRST
@@ -99,6 +119,21 @@ Nairobi submittal first — private, never into planlens' public repo);
 `planlens.ocr` as a text source; a visual-reading-order option for form pages
 (boring logs read in drafting order today); give the calc sub-agent read-only
 document tools. Arrowhead tuning is FROZEN.
+
+**PARKED (2026-09-14, owner pivoting to app work): planlens package survey.**
+`module_work/PLANLENS_PACKAGE_SURVEY.md` — a web-verified survey of packages
+that could extend planlens (three no-new-dependency wins first: calibrated page
+scale from PDF viewport/measure dictionaries, PDF layer names, path fill; then
+fuzzy search, quantity extraction from prose, scanned-table structure, an MCP
+server). Two owner conditions before it is picked up: (1) **translate it into
+plain English for the owner** (what a reviewer gains, what it costs, what the
+package firewall blocks — no package names in the headline); (2) **it was NOT
+checked against the organisation's banned-package list** — the Nexus inventory
+404s from outside the enclave and no local copy exists; every new pin must first
+pass the on-cluster `nexus_pip_install` probe in the survey's Part E. Also
+recorded there: the cluster egress firewall makes any package that downloads
+model weights at runtime unusable as published (models must be vendored, as
+`planlens.ocr` already does).
 
 ### 5.15.0 RELEASED (2026-09-11, tag `v5.15.0`) — the app feedback train + ultra-review fixes
 
