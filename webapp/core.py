@@ -418,7 +418,10 @@ def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
     # must never block building the agent.
     try:
         from webapp import sharepoint_tools
-        _sp_tools, _sp_prompt = sharepoint_tools.tools_if_configured()
+        # thread id = the conversation dir name (temp_dir is <conv>/files), so
+        # an upload with no destination lands in this conversation's folder.
+        _sp_tools, _sp_prompt = sharepoint_tools.tools_if_configured(
+            thread_id=os.path.basename(os.path.dirname(os.path.abspath(temp_dir))))
     except Exception:
         _sp_tools, _sp_prompt = [], ""
     if _sp_tools:

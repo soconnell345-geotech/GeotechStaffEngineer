@@ -207,3 +207,95 @@ class TestBaseFolderNotDoubled:
     def test_empty_still_returns_the_root(self, fake_sp):
         assert spt._resolve("") == "Shared Documents/General/GSE_app"
         assert spt._resolve("/") == "Shared Documents/General/GSE_app"
+
+
+# ---------------------------------------------------------------------------
+# Field feedback 2026-09-15 (Nairobi SOE re-run): N5 and N8
+# ---------------------------------------------------------------------------
+
+class TestConversationFolder:
+    """Asked to save a report to SharePoint, the agent used "uploaded
+    references", then "General/GSE_app/conversations/<thread id>", which
+    doubled two base segments; the real folder is named by title and date."""
+
+    FOLDER = "Shared Documents/General/GSE_app/conversations/Review_2026-09-15"
+
+    def test_two_repeated_root_segments_are_dropped(self, fake_sp):
+        assert spt._resolve("General/GSE_app/conversations/b9ef") == \
+            "Shared Documents/General/GSE_app/conversations/b9ef"
+
+    def test_upload_without_dest_goes_to_this_conversation(
+            self, fake_sp, tmp_path, monkeypatch):
+        monkeypatch.setattr(sp.SharePointStore, "session_folder",
+                            lambda self, tid, root=None: self_folder(tid))
+        tools, prompt = spt.tools_if_configured(thread_id="t1")
+        up = next(t for t in tools if t.name == "sharepoint_upload_file")
+        local = tmp_path / "SOE_sensitivity_review_embedded.pdf"
+        local.write_bytes(b"x")
+        out = up.invoke({"local_path": str(local)})
+        assert fake_sp.uploads[-1][1] == \
+            f"{self.FOLDER}/files/SOE_sensitivity_review_embedded.pdf"
+        assert "this conversation's SharePoint folder" in out
+        assert "uploaded references" in prompt
+        assert "WITHOUT dest_folder" in prompt
+
+    def test_explicit_dest_is_still_honoured(self, fake_sp, tmp_path,
+                                             monkeypatch):
+        monkeypatch.setattr(sp.SharePointStore, "session_folder",
+                            lambda self, tid, root=None: self_folder(tid))
+        up = next(t for t in spt.tools_if_configured(thread_id="t1")[0]
+                  if t.name == "sharepoint_upload_file")
+        local = tmp_path / "a.pdf"
+        local.write_bytes(b"x")
+        up.invoke({"local_path": str(local), "dest_folder": "deliverables"})
+        assert fake_sp.uploads[-1][1] == \
+            "Shared Documents/General/GSE_app/deliverables/a.pdf"
+
+
+def self_folder(tid):
+    return TestConversationFolder.FOLDER
+
+
+class TestDownloadReuse:
+    """The same 23 MB submittal was downloaded four times under two names."""
+
+    def test_second_download_reuses_the_copy(self, fake_sp, monkeypatch):
+        calls = []
+        original = fake_sp.download_file
+
+        def counting(path, **kw):
+            calls.append(path)
+            return original(path, **kw)
+
+        monkeypatch.setattr(fake_sp, "download_file", counting)
+        first = spt.sharepoint_download_file.invoke(
+            {"path": "uploaded references/sub.pdf", "save_as": "sub.pdf"})
+        again = spt.sharepoint_download_file.invoke(
+            {"path": "uploaded references/sub.pdf", "save_as": "renamed.pdf"})
+        assert len(calls) == 1
+        assert "reusing" in again and "input to read" in again
+        assert "input to read" in first
+        spt.sharepoint_download_file.invoke(
+            {"path": "uploaded references/sub.pdf", "refresh": True})
+        assert len(calls) == 2
+
+
+def test_build_agent_binds_the_upload_tool_to_the_conversation(
+        fake_sp, tmp_path, monkeypatch):
+    import webapp.core as core
+    import funhouse_agent.deep.agent as deep_agent
+    seen = {}
+    real = spt.tools_if_configured
+
+    def spy(thread_id=None):
+        seen["thread_id"] = thread_id
+        return real(thread_id=thread_id)
+
+    monkeypatch.setattr(spt, "tools_if_configured", spy)
+    monkeypatch.setattr(deep_agent, "build_deep_agent",
+                        lambda model, **kw: object())
+    monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path / "data"))
+    files = os.path.join(core.conversation_dir("conv42"), "files")
+    os.makedirs(files)
+    core.build_agent(object(), {}, files, [])
+    assert seen["thread_id"] == "conv42"

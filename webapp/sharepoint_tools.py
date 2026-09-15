@@ -68,14 +68,20 @@ def _resolve(path: Optional[str]) -> str:
     # Naming the folder you can SEE is the obvious thing to do, and it used to
     # double: the root already ENDS in the base folder, so "GSE_app/uploaded
     # references/x.pdf" resolved to ".../GSE_app/GSE_app/uploaded references/
-    # x.pdf" and 404'd. Live 2026-09-09/10 that cost 4-5 SharePoint round trips
-    # per turn, twice, before the agent guessed the prefix away. Drop one
-    # leading segment that repeats the root's last segment.
-    base = _root().rstrip("/").rsplit("/", 1)[-1]
-    head, _, tail = rel.partition("/")
-    if base and tail and head.lower() == base.lower():
-        rel = tail
-    return f"{_root()}/{rel}"
+    # x.pdf" and 404'd (live 2026-09-09/10, 4-5 wasted round trips per turn).
+    # On 2026-09-15 the agent named TWO of the root's segments
+    # ("General/GSE_app/conversations/...") and an upload landed under
+    # ".../General/GSE_app/General/GSE_app/..." (field feedback N5). Drop the
+    # longest leading run that repeats the end of the root, as long as
+    # something is left after it.
+    root_parts = [s for s in _root().split("/") if s]
+    parts = rel.split("/")
+    for k in range(min(len(root_parts), len(parts) - 1), 0, -1):
+        if ([s.lower() for s in parts[:k]]
+                == [s.lower() for s in root_parts[-k:]]):
+            parts = parts[k:]
+            break
+    return f"{_root()}/{'/'.join(parts)}"
 
 
 def _working_dir() -> str:
@@ -124,29 +130,47 @@ def sharepoint_list_files(path: str = "") -> str:
         return f"SharePoint list error: {type(exc).__name__}: {exc}"
 
 
+#: (working folder, remote path) -> local copy: a file already fetched is
+#: reused instead of downloaded again (field feedback 2026-09-15, N8: the same
+#: 23 MB submittal was downloaded four times under two names).
+_DOWNLOADS: dict = {}
+
+
 @tool
-def sharepoint_download_file(path: str, save_as: str = "") -> str:
+def sharepoint_download_file(path: str, save_as: str = "",
+                             refresh: bool = False) -> str:
     """Download a file from SharePoint into the session working folder, so it
-    can be read/analyzed with the file tools (read_pdf_text, subsurface
-    parsers, ...) or attached to results.
+    can be READ with the file tools (read_pdf_text, open_document, subsurface
+    parsers, ...). It is an input, not a deliverable. A file already
+    downloaded in this session is reused unless ``refresh`` is true.
 
     path: the SharePoint file — relative to the base folder, or absolute.
     save_as: optional local filename override (defaults to the SharePoint name).
+    refresh: download again even if this file was already fetched.
     """
     if not sharepoint_store.configured():
         return _NOT_CONFIGURED
     try:
         remote = _resolve(path)
-        name = (save_as or os.path.basename(remote.rstrip("/"))).strip()
         dest_dir = _working_dir()
+        key = (os.path.abspath(dest_dir), remote.lower())
+        prior = _DOWNLOADS.get(key)
+        if prior and not refresh and os.path.isfile(prior):
+            return (f"Downloaded {remote} -> {prior} "
+                    f"({os.path.getsize(prior):,} bytes) earlier in this "
+                    "session; reusing that copy (refresh=true fetches it "
+                    "again). It is an input to read, not a deliverable.")
+        name = (save_as or os.path.basename(remote.rstrip("/"))).strip()
         os.makedirs(dest_dir, exist_ok=True)
         local = os.path.join(dest_dir, name)
         _fm().download_file(remote, local_path=local, return_bytes=False,
                             overwrite=True)
         size = os.path.getsize(local) if os.path.exists(local) else 0
+        _DOWNLOADS[key] = local
         return (f"Downloaded {remote} -> {local} ({size:,} bytes). The file "
                 "is now in the working folder and available to the file "
-                "tools.")
+                "tools by this path or by its name. It is an input to read, "
+                "not a deliverable.")
     except FileNotFoundError:
         return (f"SharePoint file not found: {_resolve(path)} — check the "
                 "path with sharepoint_list_files or sharepoint_search_files.")
@@ -154,24 +178,20 @@ def sharepoint_download_file(path: str, save_as: str = "") -> str:
         return f"SharePoint download error: {type(exc).__name__}: {exc}"
 
 
-@tool
-def sharepoint_upload_file(local_path: str, dest_folder: str = "") -> str:
-    """Upload a local file (e.g. a calc package or plot from the working
-    folder) to SharePoint.
-
-    local_path: the local file to upload (as returned by save_file /
-    calc-package tools).
-    dest_folder: SharePoint folder — relative to the base folder (default ""
-    = the base folder), or absolute. Created if missing. An existing file of
-    the same name is NOT overwritten — a timestamped name is used instead.
-    """
+def _upload(local_path: str, dest_folder: str, default_folder=None,
+            default_label: str = "") -> str:
+    """Shared body of both upload tools; ``default_folder`` (a callable
+    returning the remote folder) applies when ``dest_folder`` is empty."""
     if not sharepoint_store.configured():
         return _NOT_CONFIGURED
     if not os.path.isfile(local_path):
         return f"Local file not found: {local_path}"
     try:
         fm = _fm()
-        folder = _resolve(dest_folder)
+        if (dest_folder or "").strip() or default_folder is None:
+            folder, label = _resolve(dest_folder), ""
+        else:
+            folder, label = default_folder(), default_label
         try:
             fm.create_folder(folder)
         except Exception:
@@ -190,10 +210,55 @@ def sharepoint_upload_file(local_path: str, dest_folder: str = "") -> str:
             url = fix_web_url(fm.get_web_url(remote))
         except Exception:
             url = ""
-        return (f"Uploaded {local_path} -> {remote}."
+        return (f"Uploaded {local_path} -> {remote}{label}."
                 + (f" Link: {url}" if url else ""))
     except Exception as exc:
         return f"SharePoint upload error: {type(exc).__name__}: {exc}"
+
+
+@tool
+def sharepoint_upload_file(local_path: str, dest_folder: str = "") -> str:
+    """Upload a local file (e.g. a calc package or plot from the working
+    folder) to SharePoint.
+
+    local_path: the local file to upload (as returned by save_file /
+    calc-package tools).
+    dest_folder: SharePoint folder — relative to the base folder (default ""
+    = the base folder), or absolute. Created if missing. An existing file of
+    the same name is NOT overwritten — a timestamped name is used instead.
+    """
+    return _upload(local_path, dest_folder)
+
+
+def make_conversation_upload_tool(thread_id: str):
+    """``sharepoint_upload_file`` bound to one conversation: with no
+    ``dest_folder`` the file goes to that conversation's SharePoint folder
+    (``<root>/conversations/<title>_<date>/files``, beside everything the
+    mirror keeps there).
+
+    Field feedback 2026-09-15 (N5): asked to save a report to SharePoint, the
+    agent chose the users' "uploaded references" folder, then guessed a
+    conversation path by thread id -- but the mirror names the folder by title
+    and date, which the agent had no way to know.
+    """
+    def _folder():
+        return f"{sharepoint_store.get_store().session_folder(thread_id)}/files"
+
+    @tool
+    def sharepoint_upload_file(local_path: str, dest_folder: str = "") -> str:
+        """Upload a local file (a report, figure or calc package) to SharePoint.
+
+        local_path: the local file (as returned by save_file or the tool that
+        built it).
+        dest_folder: leave EMPTY to put the file in this conversation's
+        SharePoint folder (the usual choice). Otherwise a folder relative to
+        the base folder, or absolute. Created if missing. An existing file of
+        the same name is not overwritten; a timestamped name is used instead.
+        """
+        return _upload(local_path, dest_folder, default_folder=_folder,
+                       default_label=" (this conversation's SharePoint folder)")
+
+    return sharepoint_upload_file
 
 
 @tool
@@ -235,23 +300,32 @@ SHAREPOINT_PROMPT = (
     "SHAREPOINT: This deployment is connected to the team SharePoint. You "
     "have sharepoint_list_files / sharepoint_search_files (browse + find), "
     "sharepoint_download_file (fetch a project file into the working folder "
-    "for analysis), and sharepoint_upload_file (publish a deliverable such "
-    "as a calc package). Paths are relative to the app's base SharePoint "
-    "folder unless given as 'Shared Documents/...', '/sites/...', or a full "
-    "URL. When the user references project files 'on SharePoint', use these "
-    "tools rather than asking for an upload. For files uploaded RECENTLY "
-    "(within the last ~15 minutes), prefer sharepoint_list_files over "
-    "sharepoint_search_files: search rides an index that lags new uploads by "
-    "several minutes, while listing a folder sees them immediately.")
+    "to READ -- an input, not a deliverable), and sharepoint_upload_file. "
+    "Paths are relative to the app's base SharePoint folder unless given as "
+    "'Shared Documents/...', '/sites/...', or a full URL. When the user "
+    "references project files 'on SharePoint', use these tools rather than "
+    "asking for an upload. For files uploaded RECENTLY (within the last ~15 "
+    "minutes), prefer sharepoint_list_files over sharepoint_search_files: "
+    "search rides an index that lags new uploads by several minutes, while "
+    "listing a folder sees them immediately. Files you produce (reports, "
+    "figures, files written to /tmp) are copied into this conversation and "
+    "mirrored to its SharePoint folder after every turn, so a deliverable "
+    "needs no upload; if the user asks for one anyway, call "
+    "sharepoint_upload_file WITHOUT dest_folder and it goes to this "
+    "conversation's folder. The 'uploaded references' folder holds the users' "
+    "input documents: never upload there.")
 
 
-def tools_if_configured() -> tuple:
-    """``(tools, prompt)`` when SharePoint is configured, else ``([], "")``."""
+def tools_if_configured(thread_id: Optional[str] = None) -> tuple:
+    """``(tools, prompt)`` when SharePoint is configured, else ``([], "")``.
+    With ``thread_id`` the upload tool defaults to that conversation's
+    SharePoint folder."""
     if not sharepoint_store.configured():
         return [], ""
-    return ([sharepoint_list_files, sharepoint_download_file,
-             sharepoint_upload_file, sharepoint_search_files],
-            SHAREPOINT_PROMPT)
+    upload = (make_conversation_upload_tool(thread_id) if thread_id
+              else sharepoint_upload_file)
+    return ([sharepoint_list_files, sharepoint_download_file, upload,
+             sharepoint_search_files], SHAREPOINT_PROMPT)
 
 
 __all__ = ["tools_if_configured", "SHAREPOINT_PROMPT", "MAX_ENTRIES",
