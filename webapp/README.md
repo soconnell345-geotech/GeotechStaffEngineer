@@ -296,47 +296,43 @@ auto-detected), `org_id=`/`cluster_id=` (override the proxy ids),
 Two agent tools open a published source PDF and look at the page:
 `read_reference_figure` (reads a value off a chart in DM7, a GEC, a UFC…;
 used mostly by the `references` sub-agent) and `view_worked_example_source`.
-The PDFs are **not** in the pip package (all 38 come to about 750 MB), so on
-the cluster you keep them in one folder and tell the app where it is. This
-follows the pattern already used for attaching reports: store in your
-Workspace folder, copy to the driver's `/tmp` before use (reading straight
-from `/Workspace` has been unreliable, see `funhouse_agent/_fileio.py`).
+The PDFs are **not** in the pip package (all 38 come to about 750 MB).
 
-1. **Upload once.** In the Databricks Workspace browser, make a folder under
-   your user folder, e.g. `/Workspace/Users/<you>/geotech_agents/reference_pdfs/`,
-   and upload the PDFs from your checkout's `geotech-references/docs/` into
-   it. **Keep every filename exactly as it is**, capitals included: the
-   cluster's disk treats `GEC 12 vol 1.pdf` and `GEC 12 Vol 1.pdf` as
-   different files. If the upload refuses a very large file, skip it; that
-   only disables that one reference.
-2. **Every launch**, in the same notebook cell as `run_on_databricks`: copy the
-   folder to `/tmp` (wiped when the cluster restarts, hence every launch) and
-   point the app at the copy. The app process inherits the setting, like the
-   SharePoint settings; changing it later needs a relaunch.
+**Where they live: SharePoint, fetched when needed.** Put the PDFs in the
+SharePoint folder `GSE_app/primary_references` (under the base folder given to
+`stage_sharepoint`). The app downloads a PDF the first time a chart or worked
+example page from it is needed and keeps it on the driver for the rest of the
+session. Nothing is downloaded at launch. A 23 MB file took about 1.3 s in
+testing, so the first chart from DM7.2 (54 MB) waits a few seconds and later
+ones don't wait at all. **Keep every filename exactly as it is** in
+`geotech-references/docs/`, capitals included. To use a different folder, set
+`os.environ["GEOTECH_REFERENCES_SHAREPOINT_DIR"] = "some/folder"` before
+launching.
 
-   ```python
-   import os
-   dbutils.fs.cp("file:/Workspace/Users/<you>/geotech_agents/reference_pdfs",
-                 "file:/tmp/reference_pdfs", recurse=True)
-   os.environ["GEOTECH_REFERENCES_DOCS"] = "/tmp/reference_pdfs"
-   handle = run_on_databricks(port=8501, model="funhouse-gpt-high")
-   ```
-
-   If your workspace has a Unity Catalog volume you can write to (a
-   `/Volumes/...` path, set up by workspace admins, not by Funhouse), you can
-   upload there instead and point `GEOTECH_REFERENCES_DOCS` straight at it
-   with no copy.
-3. **Check it** without spending a model call: sidebar → *Connection
-   diagnostics* → the **reference PDFs (chart read-off)** row shows how many
-   were found and lists each missing file by name. Then ask a chart question
-   (e.g. "read Kp off DM7.2 Figure 4-12 for φ = 30°") and confirm the answer
-   says it read the figure.
+**Check it** without spending a model call: sidebar → *Connection
+diagnostics* → the **reference PDFs (chart read-off)** row says how many PDFs
+the app can reach and names each missing file. Then ask a chart question (e.g.
+"read Kp off DM7.2 Figure 4-12 for φ = 30°") and confirm the answer says it
+read the figure.
 
 You don't need all of them. A missing PDF only disables charts from that one
-reference; DM7 (`ufc_3_220_10_2026.pdf`, `ufc_3_220_20_2025.pdf`) and the GECs
-are the ones geotechnical questions reach most. When a chart's PDF is missing
-the agent gets a "source PDF … not found" error, and should log it with
+reference: the agent says the PDF was not found and logs it with
 `record_feedback`.
+
+**Without SharePoint**, or to avoid downloads, put the PDFs in one local
+folder and set `GEOTECH_REFERENCES_DOCS` to it in the notebook before
+launching. For example, copy a Workspace folder to `/tmp` in the launch cell
+(`/tmp` is wiped when the cluster restarts, so this runs on every launch):
+
+```python
+import os
+dbutils.fs.cp("file:/Workspace/Users/<you>/geotech_agents/reference_pdfs",
+              "file:/tmp/reference_pdfs", recurse=True)
+os.environ["GEOTECH_REFERENCES_DOCS"] = "/tmp/reference_pdfs"
+handle = run_on_databricks(port=8501, model="funhouse-gpt-high")
+```
+
+A local folder is always tried first; SharePoint supplies only what it lacks.
 
 ### Fallback: manual subprocess (loses the Prompter registration)
 

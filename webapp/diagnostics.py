@@ -290,61 +290,111 @@ def reference_pdf_names() -> dict:
                                             key=lambda kv: kv[0].lower())}
 
 
+_UNSET_MESSAGE = (
+    f"{REFERENCE_DOCS_ENV} is not set and SharePoint is not connected, so the "
+    "agent cannot open any reference PDF: reading a value off a design chart "
+    "and viewing a worked example's source page will both fail. Keep the PDFs "
+    "in SharePoint GSE_app/primary_references and connect SharePoint "
+    "(stage_sharepoint) -- each PDF is then fetched the first time it is "
+    "needed -- or point GEOTECH_REFERENCES_DOCS at a local folder before "
+    "run_on_databricks and relaunch. webapp/README.md section 3, 'Reference "
+    "PDFs'.")
+
+
 def _reference_docs_check() -> dict:
     """Can the agent open the reference PDFs it reads charts off?
 
-    The PDFs are not in the wheel, so a pip-installed app (Databricks) finds
-    them only through ``GEOTECH_REFERENCES_DOCS``. Without this row the first
-    sign of a wrong folder is a chart question answered with "source PDF not
-    found". Lists every missing filename, so the report doubles as the upload
-    list. No model call.
+    Looks in the local folder (``GEOTECH_REFERENCES_DOCS``, else a source
+    checkout's docs/), the cache of PDFs already fetched this session and --
+    when SharePoint is connected -- the SharePoint folder the app fetches from
+    on first use (``primary_references`` under the base folder). Every PDF
+    available nowhere is listed by name, so the report doubles as the upload
+    list. At most one SharePoint folder listing; no model call.
     """
     name = "reference PDFs (chart read-off)"
     needed = reference_pdf_names()
     if not needed:
         return _check(name, SKIP, "no figure catalogs found "
                                   "(geotech-references not installed?)")
+
+    # -- local folder -------------------------------------------------------
     folder = (os.environ.get(REFERENCE_DOCS_ENV) or "").strip()
+    docs, where, local_problem = None, None, None
     if folder:
         where = f"{REFERENCE_DOCS_ENV}={folder}"
-        docs = Path(folder)
-        if not docs.is_dir():
-            return _check(name, FAIL, f"{where} — that folder does not exist "
-                          "or this app process cannot read it.")
+        if Path(folder).is_dir():
+            docs = Path(folder)
+        else:
+            local_problem = (f"{where} — that folder does not exist or this "
+                             "app process cannot read it.")
     else:
         try:
             from geotech_references import _figures_db
-            docs = _figures_db._REPO_ROOT / "docs"
+            candidate = _figures_db._REPO_ROOT / "docs"
+            if candidate.is_dir():
+                docs = candidate
+                where = f"source checkout {docs} ({REFERENCE_DOCS_ENV} unset)"
         except Exception:                               # noqa: BLE001
-            docs = None
-        if docs is None or not docs.is_dir():
-            return _check(name, WARN, (
-                f"{REFERENCE_DOCS_ENV} is not set, so the agent cannot open "
-                "any reference PDF: reading a value off a design chart and "
-                "viewing a worked example's source page will both fail. On "
-                "Databricks: keep the PDFs in a Workspace folder, and in the "
-                "launch cell copy it to /tmp (dbutils.fs.cp(..., "
-                "recurse=True)) and set os.environ['GEOTECH_REFERENCES_DOCS'] "
-                "to the copy BEFORE run_on_databricks; then relaunch. "
-                "webapp/README.md section 3, 'Reference PDFs'."))
-        where = f"source checkout {docs} ({REFERENCE_DOCS_ENV} unset)"
+            pass
+    present = set()
+    if docs is not None:
+        try:
+            present = set(os.listdir(docs))
+        except OSError as exc:
+            local_problem = f"{where} — cannot list the folder: {exc}"
+
+    # -- PDFs already fetched this session ---------------------------------
     try:
-        present = set(os.listdir(docs))
-    except OSError as exc:
-        return _check(name, FAIL, f"{where} — cannot list the folder: {exc}")
-    missing = [n for n in needed if n not in present]
+        from funhouse_agent import reference_docs
+        cache = reference_docs.cache_dir()
+        if os.path.isdir(cache):
+            present |= {n for n in os.listdir(cache) if not n.endswith(".part")}
+    except Exception:                                   # noqa: BLE001
+        pass
+
+    # -- SharePoint (fetched on first use) ---------------------------------
+    remote, sp_label, sp_problem = set(), None, None
+    try:
+        from webapp import reference_fetch, sharepoint_store
+        if sharepoint_store.configured():
+            sp_label = f"SharePoint {reference_fetch.folder()}/"
+            listed = reference_fetch.available_names()
+            if listed is None:
+                sp_problem = f"could not list {sp_label} (check the folder name)"
+            else:
+                remote = listed
+    except Exception as exc:                            # noqa: BLE001
+        sp_problem = f"SharePoint check failed: {type(exc).__name__}: {exc}"
+
+    if sp_label is None and not present:
+        if local_problem:
+            return _check(name, FAIL, local_problem)
+        if not folder:
+            return _check(name, WARN, _UNSET_MESSAGE)
+
+    sources = [s for s in (where,
+                           sp_label and f"{sp_label} (fetched on first use)")
+               if s]
+    src = " + ".join(sources) or "the fetched-PDF cache"
+    missing = [n for n in needed if n not in present and n not in remote]
+    n_remote = sum(1 for n in needed if n not in present and n in remote)
+    extra = [p for p in (local_problem, sp_problem) if p]
     if not missing:
-        return _check(name, PASS, f"{where}: all {len(needed)} PDFs found")
-    lower = {p.lower(): p for p in present}
-    lines = [f"{where}: {len(needed) - len(missing)} of {len(needed)} PDFs "
+        detail = f"{src}: all {len(needed)} PDFs found"
+        if n_remote:
+            detail += (f" ({len(needed) - n_remote} local, {n_remote} from "
+                       f"{sp_label})")
+        return _check(name, PASS, "\n".join([detail] + extra))
+    lower = {p.lower(): p for p in present | remote}
+    lines = [f"{src}: {len(needed) - len(missing)} of {len(needed)} PDFs "
              "found. Charts from a missing PDF cannot be read. Missing:"]
     for n in missing:
-        hint = (f"  <- the folder has {lower[n.lower()]!r}: names must match "
-                "capital letters exactly on the cluster"
+        hint = (f"  <- found {lower[n.lower()]!r}: names must match capital "
+                "letters exactly on the cluster"
                 if n.lower() in lower else "")
         lines.append(f"- {n}  ({', '.join(needed[n])}){hint}")
     return _check(name, FAIL if len(missing) == len(needed) else WARN,
-                  "\n".join(lines))
+                  "\n".join(lines + extra))
 
 
 def run_diagnostics(model_id: Optional[str] = None) -> List[dict]:

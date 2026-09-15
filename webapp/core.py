@@ -356,6 +356,17 @@ def new_artifacts(temp_dir: str, before: set, input_paths: Iterable[str]) -> Lis
 # Agent construction
 # ---------------------------------------------------------------------------
 
+def _register_reference_fetcher() -> None:
+    """Reference PDFs from SharePoint ``primary_references/``, fetched the
+    first time a chart needs one (owner decision 2026-09-15). Process-wide and
+    harmless to repeat; a no-op without SharePoint."""
+    try:
+        from webapp import reference_fetch
+        reference_fetch.register_if_configured()
+    except Exception:                                  # noqa: BLE001
+        pass
+
+
 def _add_feedback_tool(kw: dict, temp_dir: str) -> None:
     """Splice the ``record_feedback`` tool and its instructions into
     ``build_deep_agent`` kwargs (owner feedback 2026-09-11).
@@ -440,6 +451,7 @@ def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
         kw["extra_system_prompt"] = "\n\n".join(
             p for p in (kw.get("extra_system_prompt"), _em_prompt) if p)
     _add_feedback_tool(kw, temp_dir)
+    _register_reference_fetcher()
     return build_deep_agent(
         model,
         attachments=attachments,
@@ -479,6 +491,7 @@ def build_reviewer_agent(kind, model, attachments: dict, temp_dir: str,
     # Specialists never pass through build_agent, so they had no feedback
     # tool at all before 2026-09-15.
     _add_feedback_tool(kw, temp_dir)
+    _register_reference_fetcher()
     return builder(model, attachments=attachments,
                    save_fn=make_save_fn(temp_dir, artifacts), **kw)
 

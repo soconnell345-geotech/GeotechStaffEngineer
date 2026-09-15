@@ -204,11 +204,11 @@ Two things can only be checked on the cluster:
 - **DXF block explosion** — in a drawing result, `blocks_exploded: false`
   should be **gone** and `n_block_entities` should **appear**.
 - **Reference PDFs for chart read-off** — not part of the install at all: the
-  PDFs live in the owner's Workspace folder, are copied to `/tmp` in the
-  launch cell, and `GEOTECH_REFERENCES_DOCS` names the copy (set in the
-  notebook before launch). The sidebar's Connection diagnostics row
-  "reference PDFs (chart read-off)" says how many it found. Setup:
-  `webapp/README.md` §3 "Reference PDFs".
+  PDFs live in SharePoint `GSE_app/primary_references`, and each is downloaded
+  the first time a chart from it is needed (a local folder named by
+  `GEOTECH_REFERENCES_DOCS` is tried first when set). The sidebar's Connection
+  diagnostics row "reference PDFs (chart read-off)" says how many it can
+  reach. Setup: `webapp/README.md` §3 "Reference PDFs".
 
 ---
 

@@ -202,3 +202,45 @@ def test_reference_pdf_names_reads_the_real_catalogs():
     assert "dm7_2" in names.get("ufc_3_220_20_2025.pdf", [])
     assert "worked examples" in names.get("GEC 12 Vol 3.pdf", [])
     assert len(names) >= 30
+
+
+@pytest.fixture(autouse=True)
+def _empty_reference_cache(monkeypatch, tmp_path):
+    """PDFs fetched in other tests/sessions must not count as available here."""
+    monkeypatch.setenv("GEOTECH_REFERENCES_CACHE", str(tmp_path / "ref_cache"))
+
+
+def test_reference_docs_counts_what_sharepoint_can_supply(monkeypatch, tmp_path):
+    """Owner decision 2026-09-15: PDFs in SharePoint primary_references/,
+    fetched on first use. The row counts those and lists only what is
+    available nowhere."""
+    from geotech_references import _figures_db
+    from webapp import reference_fetch, sharepoint_store
+    monkeypatch.setattr(diag, "reference_pdf_names", lambda: _NEEDED)
+    monkeypatch.delenv("GEOTECH_REFERENCES_DOCS", raising=False)
+    monkeypatch.setattr(_figures_db, "_REPO_ROOT", tmp_path)
+    monkeypatch.setattr(sharepoint_store, "configured", lambda: True)
+    monkeypatch.setattr(reference_fetch, "available_names",
+                        lambda: {"A Doc.pdf", "b.pdf"})
+    c = diag._reference_docs_check()
+    assert c["status"] == diag.WARN
+    assert "SharePoint primary_references/" in c["detail"]
+    assert "- C.pdf  (gec_7)" in c["detail"]
+    assert "- b.pdf" not in c["detail"]
+    monkeypatch.setattr(reference_fetch, "available_names", lambda: set(_NEEDED))
+    c = diag._reference_docs_check()
+    assert c["status"] == diag.PASS and "all 3" in c["detail"]
+    assert "3 from SharePoint primary_references/" in c["detail"]
+
+
+def test_reference_docs_unlistable_sharepoint_folder_is_reported(monkeypatch,
+                                                                 tmp_path):
+    from geotech_references import _figures_db
+    from webapp import reference_fetch, sharepoint_store
+    monkeypatch.setattr(diag, "reference_pdf_names", lambda: _NEEDED)
+    monkeypatch.delenv("GEOTECH_REFERENCES_DOCS", raising=False)
+    monkeypatch.setattr(_figures_db, "_REPO_ROOT", tmp_path)
+    monkeypatch.setattr(sharepoint_store, "configured", lambda: True)
+    monkeypatch.setattr(reference_fetch, "available_names", lambda: None)
+    c = diag._reference_docs_check()
+    assert c["status"] == diag.FAIL and "could not list" in c["detail"]

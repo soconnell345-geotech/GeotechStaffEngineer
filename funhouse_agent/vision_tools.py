@@ -819,7 +819,14 @@ def _dispatch_view_worked_example(arguments, engine):
                          "dispatch_calls text is still available via "
                          "get_worked_example."})
         page_1b = int(pdf_page) if pdf_page is not None else int(pages[0])
-        pdf_abs = _we.resolve_source_pdf(entry)
+        try:
+            pdf_abs = _we.resolve_source_pdf(entry)
+        except FileNotFoundError as e:
+            from funhouse_agent import reference_docs
+            pdf_abs = reference_docs.fetch(entry.get("source_doc", ""))
+            if not pdf_abs:
+                return json.dumps({"error": reference_docs.missing_message(
+                    str(e), entry.get("source_doc", ""))})
     except (KeyError, FileNotFoundError) as e:
         return json.dumps({"error": str(e)})
     except Exception as e:
@@ -880,7 +887,14 @@ def _dispatch_read_reference_figure(arguments, engine):
     except KeyError as e:
         return json.dumps({"error": f"Figure not found: {e}"})
     except FileNotFoundError as e:
-        return json.dumps({"error": str(e)})
+        # Not in the local docs folder: a host-registered source (the web
+        # app's SharePoint primary_references/) fetches it on first use.
+        from funhouse_agent import reference_docs
+        pdf_abs = reference_docs.fetch(rec.get("pdf_path", ""))
+        if not pdf_abs:
+            return json.dumps({"error": reference_docs.missing_message(
+                str(e), rec.get("pdf_path", ""))})
+        page_idx = int(rec["pdf_page_index"])
     except Exception as e:
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
