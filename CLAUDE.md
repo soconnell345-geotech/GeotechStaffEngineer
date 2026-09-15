@@ -70,7 +70,45 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## CURRENT WORKING STATE (2026-09-14) — 5.16.0 RELEASED (tag `v5.16.0`) with planlens 0.3.0
+## CURRENT WORKING STATE (2026-09-15) — 5.17.0 RELEASED (tag `v5.17.0`)
+
+- **app 5.17.0** (tag `v5.17.0`, 2026-09-15) — the NAIROBI SOE FIX TRAIN, out
+  of a real review session (ledger:
+  `module_work/field_feedback/2026-09-15_nairobi-soe-rerun_v5.15.0/FINDINGS.md`,
+  17 items, commit per item in its "Train record").
+  **Analysis-module defects fixed:** `soe/free_earth.py` replaces the
+  cantilever and braced-embedment routines. The cantilever used the FIRST
+  LAYER ONLY and put the passive resultant at H + D/3 about the wall base, so
+  embedment came out about a third of the correct value (0.60 m on the
+  session's profile, ~9.7 m correct); `soe.embedment.compute_embedment` had
+  the same class of error. Both are now layered effective-stress free earth
+  support with water (Caltrans T&S Simplified Method for cantilevers, hinge
+  method about the lowest support for braced walls), **pinned to Caltrans
+  Example 8-1** (D 6.09 ft, D′ 4.89 ft, T 14,254 lb/ft, M 22,494 ft-lb/ft, all
+  within 1 %) and cross-checked against `sheet_pile.analyze_cantilever` (D0
+  within 0.5 %). Found in the same pass: the braced span above the first
+  support was treated as simply supported (p·d²/8 instead of the cantilever
+  p·d²/2), surcharge and water were never added to braced loads (GEC-4 5.2.4),
+  and the FHWA single-anchor result stopped at the upper tributary load — it
+  now returns the TOTAL anchor load, D and the wall moment (closes the V-013
+  residual). **Numbers change** for cantilever embedment, braced support loads
+  and braced embedment.
+  **App:** files a tool writes anywhere (e.g. `/tmp`) are copied into the
+  conversation folder, so they get a download card, an inline image and the
+  SharePoint mirror — the owner's "where is the PDF?"; a scratch-filesystem
+  guard (`funhouse_agent/deep/scratch_guard.py`) answers `read_file`/`grep`/
+  `ls` on a REAL path with the real-disk tool instead of "not found" (a calc
+  sub-agent had rebuilt a report with placeholders that way, losing every
+  number); new `read_text_file`; SharePoint uploads default to this
+  conversation's folder and path doubling is gone; reference PDFs are fetched
+  from SharePoint `GSE_app/primary_references` on first use
+  (`funhouse_agent/reference_docs.py` + `webapp/reference_fetch.py`);
+  `record_feedback` on every sub-agent and specialist; the activity log
+  attributes parallel sub-agents by run ancestry; reviewer prompts forbid
+  citing what the tools did not return.
+  Release gate **11,743 passed / 33 skipped / 0 failed** (run in batches).
+  **No dependency changes.** Cluster install NOT yet confirmed (install guide
+  §11). Prior state (5.16.0) follows.
 
 - **app 5.16.0** (tag `v5.16.0`, 2026-09-14) — the DOCUMENT-REVIEW train:
   seven whole-document tools on the primary agent (`open_document`,

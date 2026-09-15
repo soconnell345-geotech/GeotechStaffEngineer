@@ -8,16 +8,28 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
-### FIELD FEEDBACK 2026-09-15 — Nairobi SOE re-run on 5.15.0 (FIXED on branch `feature/nairobi-rerun-fixes`, unreleased)
+### 5.17.0 RELEASED (2026-09-15, tag `v5.17.0`) — the Nairobi SOE fix train
 
 `module_work/field_feedback/2026-09-15_nairobi-soe-rerun_v5.15.0/FINDINGS.md`,
-17 items. Fixed in seven commits `349191e`..`5cd3e7f`; the FINDINGS "Train
+17 items from one real review session, fixed the same day. The FINDINGS "Train
 record" has the commit per item, what to check on the next live run, and what
-was noticed but not done. The branch also carries `5c1058b` (feedback tool on
-every sub-agent) and `1eee64e` (reference-PDF docs), and it was cut from
-master at 5.16.0. **Not released:** no version bump, owner-gated. Reference
-PDFs now come from SharePoint `GSE_app/primary_references` on first use
-(`webapp/reference_fetch.py`). Three wrong things had reached the owner:
+was noticed but not done. Ten commits `5c1058b`..`380e3f8` on top of 5.16.0;
+release gate **11,743 passed / 33 skipped / 0 failed** (run in eight batches —
+the whole suite in one process ran the machine out of memory). **No dependency
+changes**, so the cluster install should read exactly like 5.16.0's
+(§11 row: not yet confirmed).
+
+**First live checks:** a report or plot written anywhere shows as a download
+card and reaches the conversation's SharePoint folder; "save it to SharePoint"
+lands in that folder; a chart question fetches its PDF from SharePoint
+`GSE_app/primary_references` (`webapp/reference_fetch.py`); a rebuild
+delegation carries its numbers; the reviewer cites only what it looked up. The
+last three are prompt-level, so they need a live run to confirm.
+
+**Numbers change** (analysis): cantilever embedment (about 3x longer),
+braced support loads (surcharge and water now included) and braced embedment.
+
+Three wrong things had reached the owner:
 1. The rebuilt calc package lost every number. The delegation carried no data,
    and deepagents' scratch `read_file` reported the real earlier file "not found".
 2. `soe.cantilever_excavation` is defective. It uses the first layer only, and
