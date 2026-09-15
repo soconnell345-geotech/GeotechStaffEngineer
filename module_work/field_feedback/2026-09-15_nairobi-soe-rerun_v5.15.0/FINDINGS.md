@@ -350,6 +350,8 @@ search) target exactly this; measure it on the next live run.
 Owner said "start on the fixes in that order". Every item except N16 (cost;
 measure on the next live run) and N17 (notes on the answers) is fixed:
 
+**Full gate on the branch tip (4782aea): 11,743 passed / 33 skipped / 0 failed** (2026-09-15, run in eight batches because one process ran out of memory).
+
 | Commit | Items |
 |---|---|
 | `349191e` | N2, N3, N10: SOE free-earth-support solver |
