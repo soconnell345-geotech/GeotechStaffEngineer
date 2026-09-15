@@ -957,6 +957,75 @@ def import_external_artifacts(working_dir: str, files_dir: str, before: set,
     return out
 
 
+#: Files larger than this are not copied into the conversation folder.
+IMPORT_MAX_BYTES = 200 * 1024 * 1024
+
+
+def import_reported_outputs(paths: Iterable[str], files_dir: str,
+                            exclude: Iterable[str] = ()) -> dict:
+    """Copy files a tool REPORTED writing outside the conversation folder into
+    ``files_dir``, so they get a download card, show inline and reach the
+    SharePoint mirror (field feedback 2026-09-15, N4: the calc package and its
+    figures were written to /tmp and the owner never received them).
+
+    Files already inside the conversation directory, missing files, excluded
+    paths (staged uploads, files fetched only to be read) and files over
+    ``IMPORT_MAX_BYTES`` are skipped. A same-named file with identical content
+    is reused; different content gets ``_1``/``_2``... Returns
+    ``{source_abs_path: destination_path}``.
+    """
+    import filecmp
+
+    fd = os.path.abspath(files_dir)
+    conv = os.path.dirname(fd)
+    skip = set()
+    for p in exclude or ():
+        try:
+            skip.add(os.path.abspath(p))
+        except (TypeError, ValueError):
+            continue
+    copied: dict = {}
+    for p in dict.fromkeys(paths or ()):
+        try:
+            src = os.path.abspath(str(p))
+        except (TypeError, ValueError):
+            continue
+        if (src in skip or src in copied or not os.path.isfile(src)
+                or src.startswith(conv + os.sep)):
+            continue
+        try:
+            if os.path.getsize(src) > IMPORT_MAX_BYTES:
+                continue
+            os.makedirs(fd, exist_ok=True)
+            dst = os.path.join(fd, os.path.basename(src))
+            if not (os.path.isfile(dst) and filecmp.cmp(src, dst, shallow=False)):
+                dst = _unique_dest(dst)
+                _shutil.copy2(src, dst)
+        except OSError:
+            continue
+        copied[src] = dst
+    return copied
+
+
+_LOCAL_MD_IMAGE = re.compile(r"!\[([^\]]*)\]\((?!https?:|data:)([^)\s]+)[^)]*\)")
+
+
+def displayable_markdown(text: str, artifact_paths: Iterable[str] = ()) -> str:
+    """Replace markdown images that point at local files -- which the chat
+    cannot display (field feedback N6: a broken-image icon where the PYWall
+    plot should have been) -- with a pointer to the card shown under the
+    reply, or a plain note when there is no such card."""
+    names = {os.path.basename(str(p)) for p in artifact_paths or ()}
+
+    def _swap(m):
+        alt = m.group(1).strip() or "figure"
+        if os.path.basename(m.group(2)) in names:
+            return f"*({alt} — shown below)*"
+        return f"*({alt} — local file `{m.group(2)}`, not viewable in chat)*"
+
+    return _LOCAL_MD_IMAGE.sub(_swap, text or "")
+
+
 # ---------------------------------------------------------------------------
 # Behavior settings (A5): per-conversation pickers, persisted in meta
 # ---------------------------------------------------------------------------

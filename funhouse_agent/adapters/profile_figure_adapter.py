@@ -85,11 +85,13 @@ def _run_subsurface_profile(params: dict) -> dict:
             f'<img src="{abs_path}" alt="{result.title}" '
             f'style="width:100%;max-width:640px;">'),
         "embed_note": (
-            "The figure is saved as a PNG — the chat UI renders a saved PNG "
-            "inline automatically, so point the user at output_path rather "
-            "than describing the figure. To put it in an HTML report, paste "
-            "html_img_tag as-is: html_to_pdf reads a real local PNG path and "
-            "embeds it for you. Never write '[image]' or an inline <svg>."),
+            "The figure is saved as a PNG. The web app shows it under your "
+            "reply (a file written outside the conversation folder is copied "
+            "in at the end of the turn) -- do not put a markdown image link "
+            "to a local path in the reply; it cannot display. To put it in an "
+            "HTML report, paste html_img_tag as-is: html_to_pdf reads a real "
+            "local PNG path and embeds it for you. Never write '[image]' or an "
+            "inline <svg>."),
     }
     if result.warnings:
         response["warnings"] = list(result.warnings)
@@ -157,9 +159,12 @@ def _run_plot_data(params: dict) -> dict:
             f'<img src="{abs_path}" alt="{alt}" '
             f'style="width:100%;max-width:640px;">'),
         "embed_note": (
-            "Saved as a PNG: the chat UI renders it inline, and html_to_pdf "
-            "embeds the real local path when you paste html_img_tag into "
-            "report HTML. Never write '[image]' or an inline <svg>."),
+            "Saved as a PNG. The web app shows it under your reply (a file "
+            "written outside the conversation folder is copied in at the end "
+            "of the turn) -- do not put a markdown image link to a local path "
+            "in the reply; it cannot display. html_to_pdf embeds the real "
+            "local path when you paste html_img_tag into report HTML. Never "
+            "write '[image]' or an inline <svg>."),
     }
     if result.warnings:
         response["warnings"] = list(result.warnings)

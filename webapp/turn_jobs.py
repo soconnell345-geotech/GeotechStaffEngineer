@@ -21,6 +21,7 @@ keyed by conversation thread_id, one active job per conversation.
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from typing import Optional
@@ -135,11 +136,20 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
         activity.turn_start(prompt=ctx.get("prompt"), model=ctx.get("model"))
     except Exception:                                  # noqa: BLE001
         activity = None
+    # Which files the turn wrote / only read (field feedback 2026-09-15, N4/N8)
+    # -- see webapp/output_capture.py. Best-effort like the activity log.
+    collector = None
+    try:
+        from webapp.output_capture import OutputCollector
+        collector = OutputCollector()
+    except Exception:                                  # noqa: BLE001
+        collector = None
+    callbacks = [c for c in (activity, collector) if c is not None]
     try:
         for item in core.with_heartbeat(core.stream_turn(
                 agent, messages, thread_id,
                 recursion_limit=recursion_limit,
-                callbacks=[activity] if activity is not None else None)):
+                callbacks=callbacks or None)):
             kind = item.get("kind")
             job._add(item)
             if kind == "token":
@@ -174,15 +184,34 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
     try:
         # -- artifact association (mirrors the old in-script logic) --------
         artifacts = ctx["artifacts"]
-        save_new = artifacts[ctx["artifacts_before_len"]:]
-        dir_new = core.new_artifacts(ctx["temp_dir"], ctx["before"],
-                                     ctx["staged_inputs"])
+        fetched = set(collector.inputs) if collector is not None else set()
+        dir_new = [p for p in core.new_artifacts(ctx["temp_dir"], ctx["before"],
+                                                 ctx["staged_inputs"])
+                   if os.path.abspath(p) not in fetched]
         if ctx.get("before_wd") is not None:
             for p in core.import_external_artifacts(
                     ctx["working_dir"], ctx["temp_dir"], ctx["before_wd"],
-                    ctx["staged_inputs"]):
+                    list(ctx["staged_inputs"]) + sorted(fetched)):
                 if p not in dir_new:
                     dir_new.append(p)
+        # Files a tool reported writing OUTSIDE the conversation folder (e.g.
+        # /tmp) are copied in, and their cards point at the copy.
+        copied = {}
+        if collector is not None:
+            try:
+                copied = core.import_reported_outputs(
+                    collector.outputs, ctx["temp_dir"],
+                    exclude=list(ctx["staged_inputs"]) + sorted(fetched))
+            except Exception:                          # noqa: BLE001
+                copied = {}
+        for i, p in enumerate(artifacts):
+            dst = copied.get(os.path.abspath(p))
+            if dst is not None:
+                artifacts[i] = dst
+        for dst in copied.values():
+            if dst not in dir_new:
+                dir_new.append(dst)
+        save_new = artifacts[ctx["artifacts_before_len"]:]
         for p in dir_new:
             if p not in artifacts:
                 artifacts.append(p)
@@ -190,6 +219,9 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
 
         assistant_entry = {"role": "assistant", "text": final,
                            "artifacts": turn_paths}
+        if fetched:
+            assistant_entry["inputs"] = sorted(os.path.basename(p)
+                                               for p in fetched)
         if turn_error:
             assistant_entry["error"] = turn_error
         elif final == "(no answer text)":

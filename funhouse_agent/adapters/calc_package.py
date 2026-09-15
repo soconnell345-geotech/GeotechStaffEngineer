@@ -144,9 +144,12 @@ def _figures_response(module: str, result, analysis, opts: dict,
         "n_figures": len(saved_figs),
         "figures": saved_figs,
         "embed_note": (
-            "Each figure is a saved PNG: the chat UI renders it inline, and "
-            "html_to_pdf embeds the real local path when you paste its "
-            "html_img_tag into report HTML. Use the caption text under it."),
+            "Each figure is a saved PNG. The web app shows it under your reply "
+            "(files written outside the conversation folder are copied in at "
+            "the end of the turn) -- do not put markdown image links to local "
+            "paths in the reply. html_to_pdf embeds the real local path when "
+            "you paste its html_img_tag into report HTML. Use the caption text "
+            "under it."),
     }
     if not figures:
         response["note"] = (f"{reg.get('display_name', module)} produces no "

@@ -1025,7 +1025,8 @@ for entry in ss.transcript:
         st.chat_message("user").caption(f"📎 attached {text}")
     else:
         with st.chat_message(role):
-            st.markdown(text)
+            st.markdown(core.displayable_markdown(text, entry.get("artifacts", []))
+                        if role == "assistant" else text)
             # A turn error must STAY visible on replay — before this, st.error
             # rendered only during the turn's own run and vanished on the next
             # rerun (the "flashing error" seen live on Foundry).
@@ -1033,6 +1034,9 @@ for entry in ss.transcript:
                 st.error(entry["error"])
             for _path in entry.get("artifacts", []):
                 _render_artifact_card(_path)
+            if entry.get("inputs"):
+                # Fetched to read, not produced (field feedback N8).
+                st.caption("Read from SharePoint: " + ", ".join(entry["inputs"]))
 
 
 # Turn details (A7 local tracer) — the latest turn's trace, when tracing is on
