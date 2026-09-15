@@ -58,7 +58,8 @@ How it happened:
 it was the `calc` sub-agent. See N15.)
 
 **5.16:** not addressed.
-**Disposition: PLANNED (app, first of the app items).**
+**Disposition: FIXED in `6640446`.** All four below, plus the guard on the
+scratch tools (N12):
 - Calc prompt: never write placeholder text where results belong. If the
   numbers are missing, return and say exactly what is missing.
 - Delegation nudge: a redo, rebuild or reformat must carry the numbers, or the
@@ -102,11 +103,23 @@ one at excavation level. Not hand-checked yet; verify in the fix.
 Reached the owner in the turn-4 table and calc package ("Cantilever embedment
 0.60 m → 0.60 m, unchanged; max moment 213.47 kN·m/m").
 
-**Disposition: PLANNED (first engineering fix).** Rebuild the cantilever on
-layered net pressures (or route to `sheet_pile.cantilever_wall`, which is right).
-Pin it to a published cantilever example and cross-check against `sheet_pile`.
-Hand-check `compute_embedment` against a free-earth-support example and fix it
-in the same pass.
+**Disposition: FIXED in `349191e`.**
+- New `soe/free_earth.py`: layered effective-stress Rankine pressures with
+  water on both sides.
+- Cantilevers now use the Caltrans Simplified Method (moments about O,
+  D = 1.2 D0).
+- Braced embedment now uses free earth support about the lowest support
+  (MR = FS x MD). The old `compute_embedment` was confirmed wrong and replaced.
+- Pinned to Caltrans Example 8-1 (D 6.09 ft, D′ 4.89 ft, T 14,254 lb/ft,
+  M 22,494 ft-lb/ft, all within 1 %), to the closed form for a uniform sand,
+  and to `sheet_pile.analyze_cantilever` (D0 within 0.5 %).
+- Two more defects of the same class were found in the pass and fixed: the
+  braced span above the first support was treated as simply supported
+  (p·d²/8 instead of the cantilever p·d²/2), and surcharge and water were
+  never added to braced loads (GEC-4 5.2.4).
+
+On the session's own inputs the cantilever now needs about 9.7 m of
+embedment; it had said 0.60 m.
 
 ## N3 — FHWA single-anchor results are partial but unlabelled **[HIGH]**
 
@@ -127,9 +140,12 @@ a moment of 62 kN·m/m. PYWall's raker load of 353.2 kN (Table 5) comes to about
 (spacing and load factoring not checked). `TH_upper` is roughly a quarter to a
 third of the real support load.
 
-**Disposition: PLANNED.** For n = 1, either compute the total through the
-free-earth-support solve, or return a `note` saying the result is partial and
-drop `max_moment`/`R`. The adapter brief should say the same.
+**Disposition: FIXED in `349191e`.** One anchor level is now solved by free
+earth support about the anchor (a `Kp` override for a log-spiral passive
+coefficient, `FOS_embedment` default 1.3). It returns the total TH, the design
+load, D, D′ and the wall moment, and reproduces Caltrans Example 8-1, which
+closes the V-013 residual. `subgrade_reaction_kN_per_m` is None for one
+anchor.
 
 ## N4 — Deliverables were written outside the conversation folder, so the owner never got them **[HIGH]**
 
@@ -145,12 +161,12 @@ plus new files in the launch working directory (which is why the two
 location, so the turn-5 **HTML source** got a card. `html_to_pdf` does not
 go through it, so the **PDF** got none. Nothing in `/tmp` ever reached SharePoint.
 
-**Disposition: PLANNED (app).** Copy any file a tool reports writing
-(`output_path` / `saved`) into the conversation's `files/` folder and show it as
-a card. It then downloads from the chat and mirrors to the conversation's
-SharePoint folder automatically, which is the "save to SharePoint by default"
-the owner asked for. Also point default output paths at `files/`, and say so
-in the prompt. This fixes N6 as well.
+**Disposition: FIXED in `68f668e`.** A turn callback (`webapp/output_capture.py`)
+records every path a tool reports writing, for the primary and every
+sub-agent. After the turn, files outside the conversation folder are copied
+into `files/`. They get a download card and a preview, and mirror to the
+conversation's SharePoint folder, which is the "save to SharePoint as
+standard" the owner asked for.
 
 ## N5 — SharePoint upload went to the wrong folder, then to a doubled path **[MED]**
 
@@ -162,10 +178,12 @@ to the root's last segment; `General/GSE_app/…` repeats two. The mirror also
 names the folder `<title>_<date>` (`sharepoint_store.conversation_folder`),
 which the agent cannot know, so it guessed the thread id.
 
-**Disposition: PLANNED.** Default `sharepoint_upload_file` to this
-conversation's mirror folder and name that folder in the result. Strip the
-longest leading run of segments that repeats the root's tail. Prompt: "uploaded
-references" is for user inputs only. Mostly moot once N4 lands.
+**Disposition: FIXED in `de65407`.** The upload tool is now built per
+conversation and, with no `dest_folder`, uploads to that conversation's
+SharePoint folder (`.../conversations/<title>_<date>/files`). Path resolution
+drops the longest leading run that repeats the base folder's segments. The
+prompt says deliverables are already mirrored and that "uploaded references"
+is for the users' inputs.
 
 ## N6 — Inline plot did not render **[MED]** (owner screenshot)
 
@@ -175,7 +193,10 @@ The chat cannot display a local path; images render only from file cards
 "Saved as a PNG: the chat UI renders it inline", which is true only inside the
 conversation folder.
 
-**Disposition: folded into N4.** Also correct that `embed_note` wording.
+**Disposition: FIXED in `68f668e`.** The figure is copied in and shown as a
+card under the reply. A markdown image that points at a local path is replaced
+with "shown below", and the figure tools' notes no longer promise that a local
+PNG renders by itself.
 
 ## N7 — `html_to_pdf` rejected `file:///tmp/…` images **[MED]** (agent note, turn 4) — code bug
 
@@ -185,8 +206,8 @@ conversation folder (`…/files/tmp/x.png`). That is correct for Windows
 (`file:///C:/…`) and wrong on the Linux driver. It is why the first PDF shipped
 without figures.
 
-**Disposition: PLANNED, trivial.** Strip `file://` and keep the leading slash;
-drop the slash only before a drive letter; percent-decode.
+**Disposition: FIXED in `b06001f`** (the leading slash is kept; drive letters
+and %-escapes are handled; an end-to-end embed test was added).
 
 ## N8 — "It gives the document it reviewed back to you" **[LOW]** (owner note, turn 2)
 
@@ -195,8 +216,9 @@ cards, so the 23 MB submittal looked like something the agent produced. The
 same file was downloaded four times under two names (turns 1, 2, 3, 5), about
 92 MB of copies.
 
-**Disposition: PLANNED.** Record downloads as inputs rather than outputs. The
-download tool should reuse an existing copy.
+**Disposition: FIXED in `68f668e` and `de65407`.** Fetched files are kept off
+the produced-files list and shown as "Read from SharePoint: …", and a file
+already downloaded in the session is reused.
 
 ## N9 — `analyze_pdf_page` would not take the downloaded file's name **[LOW]** (agent note, turn 1)
 
@@ -206,8 +228,9 @@ only an attachment key or a full path (`vision_tools.py:235-259`). Downloads
 are not registered as keys. It happened again in turn 5 (4 calls).
 
 **5.16:** not addressed. `document_tools._resolve` has the same rule.
-**Disposition: PLANNED, trivial.** Resolve a bare filename against the working
-folder in both resolvers, and have the download result print the full path.
+**Disposition: FIXED in `b06001f`.** A bare name now resolves in the working
+folder for the vision tools, `read_pdf_text`, the document tools and
+`read_text_file`.
 
 ## N10 — `soe` `soil_type: 'clay'` is documented but rejected **[LOW]** (agent note, turn 2)
 
@@ -215,12 +238,13 @@ The adapter brief (`adapters/soe.py:184`) says `'sand' or 'clay'`; the module
 takes `sand` / `soft_clay` / `stiff_clay` (`geometry.py:111`). Four failed calls
 across turns 2–4.
 
-**Disposition: PLANNED, trivial.** Correct the brief and allowed values;
-optionally map `clay` by stability number.
+**Disposition: FIXED in `349191e`.** The brief now lists the real values, and
+`clay` maps to soft or stiff by N = γH/cu.
 
 ## N11 — Module name `SOE` rejected over capitalisation **[LOW]** (agent note, turn 4)
 
-**Disposition: PLANNED, trivial.** Case-insensitive module lookup in `dispatch`.
+**Disposition: FIXED in `b06001f`.** Module names now match regardless of
+case, spaces or hyphens.
 
 ## N12 — Scratch-filesystem tools used on real files about 35 times **[MED]**
 
@@ -231,8 +255,11 @@ real. This is the root of N1.
 
 **5.16:** partly addressed. `search_document` gives the primary a real in-PDF
 search; sub-agents still have only the scratch tools.
-**Disposition: PLANNED.** Remove or re-describe the scratch read/search tools
-on our agents, and give sub-agents real-disk read and search.
+**Disposition: FIXED in `6640446`.** A middleware on the primary and every
+sub-agent (deepagents' general-purpose one re-declared to carry it) answers a
+scratch-tool call on a real path with the tool to use instead.
+`read_text_file` reads real text files on the primary and the calc sub-agent.
+Still open: sub-agents have no in-PDF search of their own.
 
 ## N13 — Reviewer sub-agent cited a reference it never found **[MED]**
 
@@ -245,10 +272,11 @@ reach the owner. This is the standing hallucination-after-failed-lookup risk
 (CLAUDE.md figure TODO P1). Separately, a category filter that matches nothing
 returns `{}` without saying so.
 
-**Disposition: PLANNED.** Reviewer prompt: a citation must come from a tool
-result in this consult. `list_methods` with a category that matches nothing
-returns the available categories. (Branch `feature/subagent-feedback-reference-pdfs`
-gives the reviewer `record_feedback`.)
+**Disposition: FIXED in `5cd3e7f`.** The reviewer and references prompts
+allow citations only from tool results in that consult, and a category filter
+that matches nothing lists the module's real categories. It is a prompt rule,
+so check it on the next live review. (`5c1058b` also gives the reviewer
+`record_feedback`.)
 
 ## N14 — Turn 3 changed the wrong layers, and the answer said otherwise **[MED, engineering]**
 
@@ -260,8 +288,10 @@ The owner was told "the required embedment increased significantly when
 cohesion was removed". That change (1.16 → 2.33 m) came from the layers below
 the excavation, not Stratum C, and from the suspect embedment routine (N2).
 
-**Disposition: PLANNED.** Calc prompt: keep layer names exactly as delegated,
-and echo which layers were changed.
+**Disposition: FIXED in `6640446`.** The calc prompt says to keep layer names
+as delegated and to name the layers changed; the delegation nudge tells the
+primary to pass the named layer list. Prompt-level, so check it on the next
+live run.
 
 ## N15 — `activity.jsonl` mislabels sub-agents that run in parallel **[LOW, triage tooling]**
 
@@ -270,7 +300,8 @@ calls through a stack of `task` calls (`activity_log.py` docstring), so
 everything nested was labelled `general-purpose`, and the two task-end records
 carry each other's names (the "calc" end record holds the PYWall table).
 
-**Disposition: PLANNED, small.** Attribute through the `parent_run_id` chain.
+**Disposition: FIXED in `5cd3e7f`.** Events are now attributed by following
+each run's parents to the task call it ran inside.
 
 ## N16 — About 2.25 M tokens in five turns **[NOTE]**
 
@@ -314,13 +345,36 @@ search) target exactly this; measure it on the next live run.
 - N12 and N16, partly: document tools for the primary agent.
 - Nothing else in this list.
 
-## Proposed order
+## Train record (2026-09-15, branch `feature/nairobi-rerun-fixes`, unreleased)
 
-1. **N2 + N3.** Module defects that produce wrong numbers.
-2. **N1 + N12 + N14.** Delegation and read tools; silent content loss.
-3. **N4 + N6 + N5 + N8.** The deliverables train (the owner's main complaint).
-   The trivial fixes N7, N9, N10 and N11 ride along.
-4. **N13, N15.**
+Owner said "start on the fixes in that order". Every item except N16 (cost;
+measure on the next live run) and N17 (notes on the answers) is fixed:
+
+| Commit | Items |
+|---|---|
+| `349191e` | N2, N3, N10: SOE free-earth-support solver |
+| `6640446` | N1, N12, N14: scratch-tool guard, `read_text_file`, delegation rules |
+| `b06001f` | N7, N9, N11: file:// paths, bare names, module-name case |
+| `68f668e` | N4, N6, N8: deliverables copied in, fetched files not outputs |
+| `de65407` | N5, N8: conversation upload folder, doubled paths, download reuse |
+| `b3ab1d5` | Owner decision: reference PDFs from SharePoint `primary_references` on first use |
+| `5cd3e7f` | N13, N15: citations from tool results only; parallel sub-agent attribution |
+
+**Check on the next live run:**
+- a calc package or plot written anywhere shows as a card and reaches the
+  conversation's SharePoint folder;
+- "save it to SharePoint" lands in the conversation folder;
+- a chart question fetches its PDF from `primary_references`;
+- a rebuild delegation carries the numbers;
+- the reviewer cites nothing it did not look up.
+
+**Noticed, not done:**
+- Braced support loads still send the bottom span's load wholly to the lowest
+  support (conservative); the free-earth load is reported alongside.
+- The user manual's SOE braced example will change when the manual is
+  regenerated.
+- The Agent-picker specialists still have no SharePoint or email tools.
+- Sub-agents have no in-PDF search.
 
 ## Side answer recorded here: SharePoint download speed
 
@@ -329,5 +383,5 @@ the app. This session measured it: the 23 MB submittal downloaded in 1.2–1.3 s
 four times over. At that rate all 38 reference PDFs (~750 MB) would add roughly
 40 s to every launch, so **not at launch**. Fetching a PDF the first time a
 chart from it is needed, and keeping it for the rest of the cluster session,
-costs 1–6 s once per reference and nothing at launch. Not built; owner to
-decide.
+costs 1–6 s once per reference and nothing at launch. **Owner chose on-demand,
+folder `GSE_app/primary_references`; built in `b3ab1d5`.**

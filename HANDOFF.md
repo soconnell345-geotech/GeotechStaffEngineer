@@ -8,10 +8,16 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
-### FIELD FEEDBACK 2026-09-15 — Nairobi SOE re-run on 5.15.0 (triaged; nothing fixed yet)
+### FIELD FEEDBACK 2026-09-15 — Nairobi SOE re-run on 5.15.0 (FIXED on branch `feature/nairobi-rerun-fixes`, unreleased)
 
 `module_work/field_feedback/2026-09-15_nairobi-soe-rerun_v5.15.0/FINDINGS.md`,
-17 items with a proposed order. Three wrong things reached the owner:
+17 items. Fixed in seven commits `349191e`..`5cd3e7f`; the FINDINGS "Train
+record" has the commit per item, what to check on the next live run, and what
+was noticed but not done. The branch also carries `5c1058b` (feedback tool on
+every sub-agent) and `1eee64e` (reference-PDF docs), and it was cut from
+master at 5.16.0. **Not released:** no version bump, owner-gated. Reference
+PDFs now come from SharePoint `GSE_app/primary_references` on first use
+(`webapp/reference_fetch.py`). Three wrong things had reached the owner:
 1. The rebuilt calc package lost every number. The delegation carried no data,
    and deepagents' scratch `read_file` reported the real earlier file "not found".
 2. `soe.cantilever_excavation` is defective. It uses the first layer only, and
