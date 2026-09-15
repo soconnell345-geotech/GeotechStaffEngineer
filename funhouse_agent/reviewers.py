@@ -107,8 +107,10 @@ def make_seismic_reviewer_deep(model, *, extra_modules=None, **kwargs):
     extra_modules : iterable of str, optional
         Additional module names to add to the reviewer's direct scope.
     **kwargs
-        Forwarded to ``build_deep_agent``. ``allowed_agents``,
-        ``reference_mode``, and ``extra_system_prompt`` are managed here.
+        Forwarded to ``build_deep_agent``. ``allowed_agents`` and
+        ``reference_mode`` are managed here; a caller's ``extra_system_prompt``
+        (e.g. the web app's feedback instructions) is appended after the
+        review-mode preamble.
     """
     from funhouse_agent.deep.agent import build_deep_agent
 
@@ -118,10 +120,12 @@ def make_seismic_reviewer_deep(model, *, extra_modules=None, **kwargs):
     # reference_mode="off" → do not attach the whole-library references/reviewer
     # sub-agents; the seismic references are already in the primary's scope.
     kwargs.setdefault("reference_mode", "off")
+    extra = kwargs.pop("extra_system_prompt", None)
     return build_deep_agent(
         model=model,
         allowed_agents=frozenset(allowed),
-        extra_system_prompt=SEISMIC_REVIEWER_PREAMBLE,
+        extra_system_prompt="\n\n".join(
+            p for p in (SEISMIC_REVIEWER_PREAMBLE, extra) if p),
         **kwargs,
     )
 
@@ -175,10 +179,11 @@ def _make_reviewer_deep(scope, preamble, model, extra_modules=None, **kwargs):
     if extra_modules:
         allowed |= set(extra_modules)
     kwargs.setdefault("reference_mode", "off")
+    extra = kwargs.pop("extra_system_prompt", None)
     return build_deep_agent(
         model=model,
         allowed_agents=frozenset(allowed),
-        extra_system_prompt=preamble,
+        extra_system_prompt="\n\n".join(p for p in (preamble, extra) if p),
         **kwargs,
     )
 

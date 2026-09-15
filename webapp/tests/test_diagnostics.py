@@ -145,3 +145,60 @@ def test_foundry_disable_streaming_env(monkeypatch):
     monkeypatch.setenv("GEOTECH_FOUNDRY_DISABLE_STREAMING", "1")
     eng = engine_config.resolve_engine(model_id="ri.some..language-model.gpt-5-1")
     assert eng.ok and eng.model.disable_streaming is True
+
+
+# ---------------------------------------------------------------------------
+# reference PDFs (chart read-off) — no model call
+# ---------------------------------------------------------------------------
+
+_NEEDED = {"A Doc.pdf": ["dm7_1"], "b.pdf": ["gec_6", "worked examples"],
+           "C.pdf": ["gec_7"]}
+
+
+def test_reference_docs_partial_folder_names_the_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(diag, "reference_pdf_names", lambda: _NEEDED)
+    (tmp_path / "A Doc.pdf").write_bytes(b"%PDF")
+    (tmp_path / "c.pdf").write_bytes(b"%PDF")          # wrong capitals
+    monkeypatch.setenv("GEOTECH_REFERENCES_DOCS", str(tmp_path))
+    c = diag._reference_docs_check()
+    assert c["status"] == diag.WARN
+    assert "1 of 3" in c["detail"]
+    assert "- b.pdf  (gec_6, worked examples)" in c["detail"]
+    assert "capital letters" in c["detail"] and "'c.pdf'" in c["detail"]
+
+
+def test_reference_docs_all_found_passes(monkeypatch, tmp_path):
+    monkeypatch.setattr(diag, "reference_pdf_names", lambda: _NEEDED)
+    for n in _NEEDED:
+        (tmp_path / n).write_bytes(b"%PDF")
+    monkeypatch.setenv("GEOTECH_REFERENCES_DOCS", str(tmp_path))
+    c = diag._reference_docs_check()
+    assert c["status"] == diag.PASS and "all 3" in c["detail"]
+
+
+def test_reference_docs_empty_or_absent_folder_fails(monkeypatch, tmp_path):
+    monkeypatch.setattr(diag, "reference_pdf_names", lambda: _NEEDED)
+    monkeypatch.setenv("GEOTECH_REFERENCES_DOCS", str(tmp_path))
+    assert diag._reference_docs_check()["status"] == diag.FAIL   # none found
+    monkeypatch.setenv("GEOTECH_REFERENCES_DOCS", str(tmp_path / "nope"))
+    c = diag._reference_docs_check()
+    assert c["status"] == diag.FAIL and "does not exist" in c["detail"]
+
+
+def test_reference_docs_unset_on_an_install_warns(monkeypatch, tmp_path):
+    """A wheel install has no repo docs/ to fall back on."""
+    from geotech_references import _figures_db
+    monkeypatch.setattr(diag, "reference_pdf_names", lambda: _NEEDED)
+    monkeypatch.delenv("GEOTECH_REFERENCES_DOCS", raising=False)
+    monkeypatch.setattr(_figures_db, "_REPO_ROOT", tmp_path)
+    c = diag._reference_docs_check()
+    assert c["status"] == diag.WARN
+    assert "GEOTECH_REFERENCES_DOCS" in c["detail"]
+
+
+def test_reference_pdf_names_reads_the_real_catalogs():
+    pytest.importorskip("geotech_references")
+    names = diag.reference_pdf_names()
+    assert "dm7_2" in names.get("ufc_3_220_20_2025.pdf", [])
+    assert "worked examples" in names.get("GEC 12 Vol 3.pdf", [])
+    assert len(names) >= 30

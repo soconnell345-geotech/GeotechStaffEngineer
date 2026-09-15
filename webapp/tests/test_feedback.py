@@ -135,9 +135,9 @@ def test_calc_subagent_spec_accepts_extra_tools():
     assert "record_feedback" not in [t.name for t in base["tools"]]
 
 
-def test_build_agent_hands_tool_to_primary_and_calc(monkeypatch, tmp_path):
-    """``core.build_agent`` must route record_feedback to BOTH the primary
-    (extra_tools) and the calc sub-agent (calc_extra_tools), bound to the
+def test_build_agent_hands_tool_to_primary_and_subagents(monkeypatch, tmp_path):
+    """``core.build_agent`` must route record_feedback to the primary
+    (extra_tools) AND every sub-agent (subagent_extra_tools), bound to the
     conversation dir = parent of temp_dir."""
     import webapp.core as core
     captured = {}
@@ -154,18 +154,75 @@ def test_build_agent_hands_tool_to_primary_and_calc(monkeypatch, tmp_path):
     os.makedirs(files)
     core.build_agent(object(), {}, files, [])
     prim = [t.name for t in captured.get("extra_tools") or []]
-    calc = [t.name for t in captured.get("calc_extra_tools") or []]
+    subs = [t.name for t in captured.get("subagent_extra_tools") or []]
     assert "record_feedback" in prim
-    assert "record_feedback" in calc
+    assert subs.count("record_feedback") == 1
     assert "record_feedback" in captured.get("extra_system_prompt", "")
-    assert "record_feedback" in captured.get("calc_extra_system_prompt", "")
+    assert "record_feedback" in captured.get("subagent_extra_system_prompt", "")
     # the tool is bound to THIS conversation's record dir
-    tool = next(t for t in captured["calc_extra_tools"]
+    tool = next(t for t in captured["subagent_extra_tools"]
                 if t.name == "record_feedback")
     tool.invoke({"kind": "capability_gap", "summary": "bound to conv"})
     assert os.path.isfile(os.path.join(conv, feedback.JSONL_NAME))
     rows = feedback.load(conv)
     assert rows[0]["context"]["thread_id"] == "t123"
+
+
+def test_every_builtin_subagent_carries_the_tool(monkeypatch):
+    """Owner question 2026-09-15: does feedback work for the sub-agents? Until
+    then only primary + calc had it — references (where a chart whose source
+    PDF is missing surfaces), reviewer and model_setup did not."""
+    pytest.importorskip("deepagents")
+    import funhouse_agent.deep.agent as deep_agent
+    from langchain_core.language_models.fake_chat_models import (
+        GenericFakeChatModel)
+    from langchain_core.messages import AIMessage
+    captured = {}
+
+    def fake_create_deep_agent(**kw):
+        captured.update(kw)
+        return object()
+
+    monkeypatch.setattr(deep_agent, "create_deep_agent", fake_create_deep_agent)
+    tool = feedback.make_record_feedback_tool("/nowhere")
+    deep_agent.build_deep_agent(
+        GenericFakeChatModel(messages=iter([AIMessage(content="ok")])),
+        enable_calc_subagent=True, enable_setup_agent=True,
+        subagent_extra_tools=[tool],
+        subagent_extra_system_prompt=feedback.FEEDBACK_PROMPT,
+        calc_extra_tools=[tool])          # same tool twice -> attached once
+    specs = {s["name"]: s for s in captured["subagents"]}
+    assert set(specs) >= {"references", "reviewer", "calc", "model_setup"}
+    for name, spec in specs.items():
+        names = [t.name for t in spec["tools"]]
+        assert names.count("record_feedback") == 1, name
+        assert feedback.FEEDBACK_PROMPT in spec["system_prompt"], name
+    # the primary's own tool list is untouched by subagent_extra_tools
+    assert "record_feedback" not in [t.name for t in captured["tools"]]
+
+
+def test_specialist_agents_carry_the_tool(monkeypatch, tmp_path):
+    """The Agent picker's specialists (seismic, foundations, ...) are built by
+    ``core.build_reviewer_agent``, which never went through ``build_agent`` —
+    so they had no record_feedback at all. Their preamble must survive."""
+    import webapp.core as core
+    import funhouse_agent.deep.agent as deep_agent
+    calls = []
+    monkeypatch.setattr(deep_agent, "build_deep_agent",
+                        lambda model=None, **kw: calls.append(kw) or object())
+    monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path))
+    files = os.path.join(core.conversation_dir("t-spec"), "files")
+    os.makedirs(files)
+    for kind in core._REVIEWER_BUILDERS:
+        calls.clear()
+        core.build_reviewer_agent(kind, object(), {}, files, [])
+        kw = calls[-1]
+        assert "record_feedback" in [t.name for t in kw["extra_tools"]], kind
+        assert "record_feedback" in [
+            t.name for t in kw["subagent_extra_tools"]], kind
+        prompt = kw["extra_system_prompt"]
+        assert prompt.endswith(feedback.FEEDBACK_PROMPT), kind
+        assert len(prompt) > len(feedback.FEEDBACK_PROMPT) + 200, kind
 
 
 # ---------------------------------------------------------------------------

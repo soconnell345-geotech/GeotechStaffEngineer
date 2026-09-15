@@ -107,6 +107,8 @@ def build_setup_subagent(
     store: Optional[ProjectStore] = None,
     render_dir: Optional[str] = None,
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
+    extra_tools=None,
+    extra_system_prompt: Optional[str] = None,
 ) -> dict:
     """Build the ``model_setup`` sub-agent spec (deepagents SubAgent dict).
 
@@ -121,6 +123,9 @@ def build_setup_subagent(
         Directory for echo-back PNGs (default ``model_setup_renders/``).
     max_result_chars : int, optional
         Tool-result size cap (mirrors the other deep tool factories).
+    extra_tools, extra_system_prompt
+        Appended to the sub-agent's tools and prompt (e.g. the web app's
+        ``record_feedback``). Defaults leave the spec unchanged.
 
     Returns
     -------
@@ -128,12 +133,18 @@ def build_setup_subagent(
         ``{name, description, system_prompt, tools}`` ready for
         ``create_deep_agent(subagents=[...])``.
     """
+    tools = make_setup_tools(store=store, render_dir=render_dir,
+                             max_result_chars=max_result_chars)
+    if extra_tools:
+        tools = list(tools) + list(extra_tools)
+    system_prompt = SETUP_SYSTEM_PROMPT
+    if extra_system_prompt:
+        system_prompt = system_prompt + "\n\n" + extra_system_prompt
     return {
         "name": "model_setup",
         "description": SETUP_AGENT_DESCRIPTION,
-        "system_prompt": SETUP_SYSTEM_PROMPT,
-        "tools": make_setup_tools(store=store, render_dir=render_dir,
-                                  max_result_chars=max_result_chars),
+        "system_prompt": system_prompt,
+        "tools": tools,
     }
 
 

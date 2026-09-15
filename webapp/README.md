@@ -175,7 +175,11 @@ SharePoint with everything else). The agent has the matching
 `record_feedback` tool and is told to use it when it lacks a tool or
 capability the task needs, when a tool fails in a way it cannot work around,
 or when you comment on the app in chat — so the export of a session carries
-the gaps in the agent's own words, with the turn they happened on.
+the gaps in the agent's own words, with the turn they happened on. Every
+agent in the app has it: the main agent, each specialist in the Agent picker,
+and the sub-agents they hand work to (`calc`, `references`, `reviewer`,
+`model_setup`, and the built-in `general-purpose` one). Entries all land in
+the same `FEEDBACK.md`.
 
 ### Permanent storage: SharePoint mirror (optional)
 
@@ -286,6 +290,42 @@ The key is threaded into the streamlit subprocess env; if the Prompter can't be
 built on the driver, the app uses the key. Other options: `spark=spark` (if not
 auto-detected), `org_id=`/`cluster_id=` (override the proxy ids),
 `workspace_host=` (if the host can't be read from spark, so the URL prints).
+
+### Reference PDFs (reading values off design charts)
+
+Two agent tools open a published source PDF and look at the page:
+`read_reference_figure` (reads a value off a chart in DM7, a GEC, a UFC…;
+used mostly by the `references` sub-agent) and `view_worked_example_source`.
+The PDFs are **not** in the pip package (all 38 come to about 750 MB), so on
+the cluster you put them in one folder and tell the app where it is:
+
+1. **Copy the PDFs** from your checkout's `geotech-references/docs/` into ONE
+   flat folder the cluster can read. A Unity Catalog volume is the right
+   place, e.g. `/Volumes/<catalog>/<schema>/<volume>/reference_pdfs/`
+   (Catalog Explorer → the volume → *Upload to this volume*). Not `/tmp`: the
+   driver's disk is wiped when the cluster restarts. **Keep every filename
+   exactly as it is**, capitals included: the cluster's disk treats
+   `GEC 12 vol 1.pdf` and `GEC 12 Vol 1.pdf` as different files.
+2. **Point the app at the folder** in the notebook, before launching (the app
+   process inherits it, like the SharePoint settings; changing it later needs
+   a relaunch):
+
+   ```python
+   import os
+   os.environ["GEOTECH_REFERENCES_DOCS"] = "/Volumes/<catalog>/<schema>/<volume>/reference_pdfs"
+   handle = run_on_databricks(port=8501, model="funhouse-gpt-high")
+   ```
+3. **Check it** without spending a model call: sidebar → *Connection
+   diagnostics* → the **reference PDFs (chart read-off)** row shows how many
+   were found and lists each missing file by name. Then ask a chart question
+   (e.g. "read Kp off DM7.2 Figure 4-12 for φ = 30°") and confirm the answer
+   says it read the figure.
+
+You don't need all of them. A missing PDF only disables charts from that one
+reference; DM7 (`ufc_3_220_10_2026.pdf`, `ufc_3_220_20_2025.pdf`) and the GECs
+are the ones geotechnical questions reach most. When a chart's PDF is missing
+the agent gets a "source PDF … not found" error, and should log it with
+`record_feedback`.
 
 ### Fallback: manual subprocess (loses the Prompter registration)
 

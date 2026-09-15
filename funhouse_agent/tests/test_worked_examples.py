@@ -102,6 +102,11 @@ def test_seeded_entries_resolve_and_pages_sane():
     for e in entries:
         p = we.resolve_source_pdf(e)
         assert p.is_file(), e["id"]
+        # EXACT name, not just "opens here": Windows matches filenames without
+        # regard to capitals, the Databricks driver (Linux) does not. WE-PILE-1
+        # said "GEC 12 vol 3.pdf" for the file "GEC 12 Vol 3.pdf" until
+        # 2026-09-15 and would have failed only on the cluster.
+        assert e["source_doc"] in _os.listdir(_DOCS), e["id"]
         assert all(pg >= 1 for pg in e["source_pdf_pages"]), e["id"]
 
 

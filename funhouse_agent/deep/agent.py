@@ -260,6 +260,8 @@ def build_references_subagent(
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
     reference_result_chars: Optional[int] = None,
     max_model_calls: Optional[int] = DEFAULT_REFERENCES_MAX_MODEL_CALLS,
+    extra_tools=None,
+    extra_system_prompt: Optional[str] = None,
 ) -> dict:
     """Build the ``references`` sub-agent spec (reference librarian).
 
@@ -293,6 +295,10 @@ def build_references_subagent(
         budgeted call is forced to summarize-and-answer from what was already
         gathered (graceful — a final answer is always returned, never an
         error). Defaults to ``8``; ``None``/``0`` disables the budget.
+    extra_tools, extra_system_prompt
+        Appended to the sub-agent's tools and prompt (the web app hands it
+        ``record_feedback`` — a figure whose source PDF is missing is found
+        HERE). Defaults leave the spec unchanged.
     """
     tools = make_core_tools(
         allowed_agents=REFERENCE_MODULES,
@@ -306,10 +312,15 @@ def build_references_subagent(
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
     )
+    if extra_tools:
+        tools = list(tools) + list(extra_tools)
+    system_prompt = CONSULTANT_FRAMING + _REFERENCES_CONCISION
+    if extra_system_prompt:
+        system_prompt = system_prompt + "\n\n" + extra_system_prompt
     spec = {
         "name": "references",
         "description": _REFERENCES_DESCRIPTION,
-        "system_prompt": CONSULTANT_FRAMING + _REFERENCES_CONCISION,
+        "system_prompt": system_prompt,
         "tools": tools,
     }
     if max_model_calls:
@@ -507,6 +518,8 @@ def build_calc_subagent(
 def build_reviewer_subagent(
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
     reference_result_chars: Optional[int] = None,
+    extra_tools=None,
+    extra_system_prompt: Optional[str] = None,
 ) -> dict:
     """Build the ``reviewer`` sub-agent spec.
 
@@ -521,16 +534,25 @@ def build_reviewer_subagent(
     reference_result_chars : int, optional
         Larger cap for the reviewer's reference reads; see
         :func:`build_references_subagent`.
+    extra_tools, extra_system_prompt
+        Appended to the sub-agent's tools and prompt (e.g. the web app's
+        ``record_feedback``). Defaults leave the spec unchanged.
     """
+    tools = make_core_tools(
+        allowed_agents=REFERENCE_MODULES,
+        max_result_chars=max_result_chars,
+        reference_result_chars=reference_result_chars,
+    )
+    if extra_tools:
+        tools = list(tools) + list(extra_tools)
+    system_prompt = REVIEWER_SYSTEM_PROMPT
+    if extra_system_prompt:
+        system_prompt = system_prompt + "\n\n" + extra_system_prompt
     return {
         "name": "reviewer",
         "description": _REVIEWER_DESCRIPTION,
-        "system_prompt": REVIEWER_SYSTEM_PROMPT,
-        "tools": make_core_tools(
-            allowed_agents=REFERENCE_MODULES,
-            max_result_chars=max_result_chars,
-            reference_result_chars=reference_result_chars,
-        ),
+        "system_prompt": system_prompt,
+        "tools": tools,
     }
 
 
@@ -574,6 +596,24 @@ def build_primary_tools(
     )
 
 
+def _merge_tools(*groups):
+    """Concatenate tool lists, keeping the first tool of each name."""
+    out, seen = [], set()
+    for group in groups:
+        for t in group or ():
+            name = getattr(t, "name", None)
+            if name is not None:
+                if name in seen:
+                    continue
+                seen.add(name)
+            out.append(t)
+    return out or None
+
+
+def _join_prompts(*parts):
+    return "\n\n".join(p for p in parts if p) or None
+
+
 def build_deep_agent(
     model,
     *,
@@ -591,6 +631,8 @@ def build_deep_agent(
     calc_extra_tools=None,
     calc_extra_system_prompt: Optional[str] = None,
     calc_max_model_calls: Optional[int] = DEFAULT_CALC_MAX_MODEL_CALLS,
+    subagent_extra_tools=None,
+    subagent_extra_system_prompt: Optional[str] = None,
     enable_setup_agent: bool = False,
     setup_store=None,
     setup_render_dir: Optional[str] = None,
@@ -690,15 +732,24 @@ def build_deep_agent(
         default (additive / default-preserving — the library and the eval suite
         are unchanged); the web app turns it ON per conversation.
     calc_extra_tools : list, optional
-        Extra tools for the ``calc`` sub-agent ONLY (e.g. the web app's
-        ``record_feedback``). ``extra_tools`` reaches the primary agent, not
-        the sub-agents; this is the calc-side counterpart.
+        Extra tools for the ``calc`` sub-agent ONLY, on top of
+        ``subagent_extra_tools`` (a tool present in both is attached once).
     calc_extra_system_prompt : str, optional
-        Appended to the ``calc`` sub-agent's prompt.
+        Appended to the ``calc`` sub-agent's prompt, after
+        ``subagent_extra_system_prompt``.
     calc_max_model_calls : int, optional
         Per-delegation model-call budget for the ``calc`` sub-agent (as
         ``references_max_model_calls`` is for references). Defaults to ``16``;
         ``None``/``0`` disables the budget.
+    subagent_extra_tools : list, optional
+        Extra tools for EVERY sub-agent this builder attaches — ``references``,
+        ``reviewer``, ``calc``, ``model_setup``. Each of those declares its own
+        tool list, so ``extra_tools`` never reaches them (it does reach
+        deepagents' built-in ``general-purpose`` sub-agent, which inherits the
+        primary's tools). A host capability meant for the whole team — the web
+        app's ``record_feedback`` — goes in both.
+    subagent_extra_system_prompt : str, optional
+        Appended to each of those sub-agents' prompts.
     enable_setup_agent : bool
         Attach the ``model_setup`` sub-agent (staged LE/FEM model building
         with human confirmation gates and echo-back renders — see
@@ -827,12 +878,16 @@ def build_deep_agent(
                 max_result_chars=max_result_chars,
                 reference_result_chars=reference_result_chars,
                 max_model_calls=references_max_model_calls,
+                extra_tools=subagent_extra_tools,
+                extra_system_prompt=subagent_extra_system_prompt,
             )
         )
         subagents.append(
             build_reviewer_subagent(
                 max_result_chars=max_result_chars,
                 reference_result_chars=reference_result_chars,
+                extra_tools=subagent_extra_tools,
+                extra_system_prompt=subagent_extra_system_prompt,
             )
         )
     if enable_calc_subagent:                                   # A2 context isolation
@@ -845,8 +900,9 @@ def build_deep_agent(
                 max_result_chars=max_result_chars,
                 reference_result_chars=reference_result_chars,
                 max_model_calls=calc_max_model_calls,
-                extra_tools=calc_extra_tools,
-                extra_system_prompt=calc_extra_system_prompt,
+                extra_tools=_merge_tools(subagent_extra_tools, calc_extra_tools),
+                extra_system_prompt=_join_prompts(subagent_extra_system_prompt,
+                                                  calc_extra_system_prompt),
             )
         )
     if enable_setup_agent:
@@ -855,6 +911,8 @@ def build_deep_agent(
                 store=setup_store,
                 render_dir=setup_render_dir,
                 max_result_chars=max_result_chars,
+                extra_tools=subagent_extra_tools,
+                extra_system_prompt=subagent_extra_system_prompt,
             )
         )
 

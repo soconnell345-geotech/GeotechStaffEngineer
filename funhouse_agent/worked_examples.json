@@ -74,7 +74,7 @@
   },
   "report_notes": "A good report states the H-pile box convention (shaft on box perimeter 2(d+bf), toe on box area d*bf — confirm via make_pile_section: 1.237 m = 4.06 ft, 0.0956 m2 = 1.03 ft2), the footing-bottom datum (layers clipped at the footing line, GWT shifted up accordingly — modeling from grade would add ~5 ft of spurious skin friction), and the separate design-limit toe phi = 40 deg via per-layer toe_friction_angle. Computed vs published: shaft +2.6%, toe -4.6% (module's Meyerhof q_L cap at phi=40 governs at 408.5 kips vs the 428.1 kip plateau), total -1.4% — all within the +/-15% validation tolerance. Report Q_skin/Q_tip separately with sigma_v at the tip, and the FS basis (ASD FS = 2.5 here).",
   "provenance": "validation_examples/test_published_v001_v005.py::test_v001_hpile_box_section_convention, test_v001_nordlund_shaft_resistance_matches, test_v001_highlevel_api_toe_phi40_matches_plateau",
-  "source_doc": "GEC 12 vol 3.pdf",
+  "source_doc": "GEC 12 Vol 3.pdf",
   "source_pdf_pages": [
    12,
    13,

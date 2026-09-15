@@ -356,6 +356,44 @@ def new_artifacts(temp_dir: str, before: set, input_paths: Iterable[str]) -> Lis
 # Agent construction
 # ---------------------------------------------------------------------------
 
+def _add_feedback_tool(kw: dict, temp_dir: str) -> None:
+    """Splice the ``record_feedback`` tool and its instructions into
+    ``build_deep_agent`` kwargs (owner feedback 2026-09-11).
+
+    The agent records capability gaps / tool errors / in-chat feedback into
+    the CONVERSATION directory (temp_dir is <conversation>/files, so its parent
+    is the record dir). It reaches the primary (``extra_tools``) and EVERY
+    sub-agent (``subagent_extra_tools``: references, reviewer, calc,
+    model_setup) — a sub-agent is where most gaps are found: calc when no tool
+    draws the figure, references when a chart's source PDF is missing. Until
+    2026-09-15 only primary + calc had it. Best-effort: never blocks a build.
+    """
+    try:
+        from webapp import feedback as _fb
+        _conv_dir = os.path.dirname(os.path.abspath(temp_dir))
+        _thread_id = os.path.basename(_conv_dir)
+
+        def _fb_context(_tid=_thread_id):
+            try:
+                tr = load_transcript(_tid)
+                turn = sum(1 for e in tr if e.get("role") == "user")
+                meta = load_meta(_tid) or {}
+                return {"thread_id": _tid, "turn": turn,
+                        "model": meta.get("model")}
+            except Exception:                              # noqa: BLE001
+                return {"thread_id": _tid}
+
+        _fb_tools, _fb_prompt = _fb.tools_for(_conv_dir, _fb_context)
+    except Exception:
+        return
+    for tools_key, prompt_key in (
+            ("extra_tools", "extra_system_prompt"),
+            ("subagent_extra_tools", "subagent_extra_system_prompt")):
+        kw[tools_key] = list(kw.get(tools_key) or []) + _fb_tools
+        kw[prompt_key] = "\n\n".join(
+            p for p in (kw.get(prompt_key), _fb_prompt) if p)
+
+
 def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
                 checkpointer=None, **build_kwargs):
     """Build the compiled deep agent wired to the SHARED attachments dict and a
@@ -398,37 +436,7 @@ def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
         kw["extra_tools"] = list(kw.get("extra_tools") or []) + _em_tools
         kw["extra_system_prompt"] = "\n\n".join(
             p for p in (kw.get("extra_system_prompt"), _em_prompt) if p)
-    # Feedback tool (owner feedback 2026-09-11): the agent records capability
-    # gaps / tool errors / in-chat feedback into the CONVERSATION directory
-    # (temp_dir is <conversation>/files, so its parent is the record dir).
-    # Handed to the primary AND the calc sub-agent — the calc agent is where
-    # "no tool draws this" is discovered. Best-effort like the others.
-    try:
-        from webapp import feedback as _fb
-        _conv_dir = os.path.dirname(os.path.abspath(temp_dir))
-        _thread_id = os.path.basename(_conv_dir)
-
-        def _fb_context(_tid=_thread_id):
-            try:
-                tr = load_transcript(_tid)
-                turn = sum(1 for e in tr if e.get("role") == "user")
-                meta = load_meta(_tid) or {}
-                return {"thread_id": _tid, "turn": turn,
-                        "model": meta.get("model")}
-            except Exception:                              # noqa: BLE001
-                return {"thread_id": _tid}
-
-        _fb_tools, _fb_prompt = _fb.tools_for(_conv_dir, _fb_context)
-    except Exception:
-        _fb_tools, _fb_prompt = [], ""
-    if _fb_tools:
-        kw["extra_tools"] = list(kw.get("extra_tools") or []) + _fb_tools
-        kw["extra_system_prompt"] = "\n\n".join(
-            p for p in (kw.get("extra_system_prompt"), _fb_prompt) if p)
-        kw["calc_extra_tools"] = (list(kw.get("calc_extra_tools") or [])
-                                  + _fb_tools)
-        kw["calc_extra_system_prompt"] = "\n\n".join(
-            p for p in (kw.get("calc_extra_system_prompt"), _fb_prompt) if p)
+    _add_feedback_tool(kw, temp_dir)
     return build_deep_agent(
         model,
         attachments=attachments,
@@ -464,8 +472,12 @@ def build_reviewer_agent(kind, model, attachments: dict, temp_dir: str,
         return build_agent(model, attachments, temp_dir, artifacts, **build_kwargs)
     from funhouse_agent import reviewers as _reviewers
     builder = getattr(_reviewers, name)
+    kw = dict(build_kwargs)
+    # Specialists never pass through build_agent, so they had no feedback
+    # tool at all before 2026-09-15.
+    _add_feedback_tool(kw, temp_dir)
     return builder(model, attachments=attachments,
-                   save_fn=make_save_fn(temp_dir, artifacts), **build_kwargs)
+                   save_fn=make_save_fn(temp_dir, artifacts), **kw)
 
 
 # ---------------------------------------------------------------------------

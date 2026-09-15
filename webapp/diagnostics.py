@@ -21,6 +21,7 @@ diagnosis.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, List, Optional
 
 # ---------------------------------------------------------------------------
@@ -250,12 +251,107 @@ def _upload_probe_check() -> dict:
                       f"probe not possible here: {type(exc).__name__}: {exc}")
 
 
+REFERENCE_DOCS_ENV = "GEOTECH_REFERENCES_DOCS"
+
+
+def reference_pdf_names() -> dict:
+    """``{pdf filename: [what needs it]}`` for every source PDF the agent can
+    open to look at a page — ``read_reference_figure`` (the installed figure
+    catalogs) and ``view_worked_example_source`` (the worked-example corpus).
+    Both resolve a PDF by its bare filename inside ``GEOTECH_REFERENCES_DOCS``.
+    """
+    import json
+    names: dict = {}
+    try:
+        import geotech_references
+        pkg = Path(geotech_references.__file__).parent
+        for cat in sorted(pkg.glob("*/figures_catalog.json")):
+            try:
+                data = json.loads(cat.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            figs = data if isinstance(data, list) else (data.get("figures") or [])
+            top = None if isinstance(data, list) else data.get("pdf_path")
+            for fig in figs:
+                pdf = fig.get("pdf_path") or top
+                if pdf:
+                    names.setdefault(Path(pdf).name, set()).add(cat.parent.name)
+    except Exception:                                   # noqa: BLE001
+        pass
+    try:
+        from funhouse_agent import worked_examples as _we
+        for e in _we.load_examples():
+            if e.get("source_doc") and e.get("source_pdf_pages"):
+                names.setdefault(Path(e["source_doc"]).name,
+                                 set()).add("worked examples")
+    except Exception:                                   # noqa: BLE001
+        pass
+    return {n: sorted(v) for n, v in sorted(names.items(),
+                                            key=lambda kv: kv[0].lower())}
+
+
+def _reference_docs_check() -> dict:
+    """Can the agent open the reference PDFs it reads charts off?
+
+    The PDFs are not in the wheel, so a pip-installed app (Databricks) finds
+    them only through ``GEOTECH_REFERENCES_DOCS``. Without this row the first
+    sign of a wrong folder is a chart question answered with "source PDF not
+    found". Lists every missing filename, so the report doubles as the upload
+    list. No model call.
+    """
+    name = "reference PDFs (chart read-off)"
+    needed = reference_pdf_names()
+    if not needed:
+        return _check(name, SKIP, "no figure catalogs found "
+                                  "(geotech-references not installed?)")
+    folder = (os.environ.get(REFERENCE_DOCS_ENV) or "").strip()
+    if folder:
+        where = f"{REFERENCE_DOCS_ENV}={folder}"
+        docs = Path(folder)
+        if not docs.is_dir():
+            return _check(name, FAIL, f"{where} — that folder does not exist "
+                          "or this app process cannot read it.")
+    else:
+        try:
+            from geotech_references import _figures_db
+            docs = _figures_db._REPO_ROOT / "docs"
+        except Exception:                               # noqa: BLE001
+            docs = None
+        if docs is None or not docs.is_dir():
+            return _check(name, WARN, (
+                f"{REFERENCE_DOCS_ENV} is not set, so the agent cannot open "
+                "any reference PDF: reading a value off a design chart and "
+                "viewing a worked example's source page will both fail. Put "
+                "the PDFs in one folder (on Databricks, a Unity Catalog "
+                "volume), set os.environ['GEOTECH_REFERENCES_DOCS'] to it in "
+                "the notebook BEFORE run_on_databricks, and relaunch. "
+                "webapp/README.md section 3."))
+        where = f"source checkout {docs} ({REFERENCE_DOCS_ENV} unset)"
+    try:
+        present = set(os.listdir(docs))
+    except OSError as exc:
+        return _check(name, FAIL, f"{where} — cannot list the folder: {exc}")
+    missing = [n for n in needed if n not in present]
+    if not missing:
+        return _check(name, PASS, f"{where}: all {len(needed)} PDFs found")
+    lower = {p.lower(): p for p in present}
+    lines = [f"{where}: {len(needed) - len(missing)} of {len(needed)} PDFs "
+             "found. Charts from a missing PDF cannot be read. Missing:"]
+    for n in missing:
+        hint = (f"  <- the folder has {lower[n.lower()]!r}: names must match "
+                "capital letters exactly on the cluster"
+                if n.lower() in lower else "")
+        lines.append(f"- {n}  ({', '.join(needed[n])}){hint}")
+    return _check(name, FAIL if len(missing) == len(needed) else WARN,
+                  "\n".join(lines))
+
+
 def run_diagnostics(model_id: Optional[str] = None) -> List[dict]:
     """Run every stage against the CURRENTLY CONFIGURED engine and return the
     check list. Never raises. Live checks each make one tiny model call (a few
     tokens) — three calls total when everything passes."""
     checks = [_versions_check(), _drift_check(), _env_check(),
-              _upload_probe_check(),
+              _upload_probe_check(), _reference_docs_check(),
               _resolution_check(model_id)]
     if checks[-1]["status"] != PASS:
         checks.append(_check("plain request (invoke)", SKIP,
