@@ -31,8 +31,12 @@ Record shape (one JSON object per line)::
 ``event`` is one of ``turn_start``, ``tool_start``, ``tool_end``,
 ``tool_error``, ``model_start``, ``model_end``, ``model_error``,
 ``turn_end``. ``agent`` is ``primary`` or the sub-agent's name, attributed
-by nesting: a ``task`` tool call pushes its ``subagent_type`` on a stack
-until that call ends, and everything nested inside belongs to it. No
+by run ancestry: each event's parent-run chain is followed up to the ``task``
+call it ran inside (whose ``subagent_type`` names the sub-agent), or to the
+top of the turn (primary). Until 2026-09-15 this was a stack of open ``task``
+calls, which mislabelled two sub-agents running at once -- in the Nairobi
+session every call of a parallel calc/general-purpose pair was filed under
+the second, and the two task results swapped names (field feedback N15). No
 deepagents internals are read, so this stays correct across versions.
 
 Tool arguments are logged in full (JSON), tool results and errors in full up
@@ -173,7 +177,9 @@ class ActivityLogger(BaseCallbackHandler):
         self.max_chars = int(max_chars)
         self._clock = clock
         self._t0 = clock()
-        self._stack: list = []            # [(run_id, subagent_name), ...]
+        self._active: dict = {}           # open task run_id -> subagent name
+        self._task_sub: dict = {}         # every task run_id -> subagent name
+        self._parent: dict = {}           # run_id -> parent run_id (or None)
         self._names: dict = {}            # run_id -> tool name
         self._starts: dict = {}           # run_id -> start time
         self.records_written = 0
@@ -182,7 +188,35 @@ class ActivityLogger(BaseCallbackHandler):
     # -- attribution ------------------------------------------------------
     @property
     def agent(self) -> str:
-        return self._stack[-1][1] if self._stack else PRIMARY
+        """The most recently opened sub-agent still running, else primary
+        (a best guess; records use :meth:`_agent_of`)."""
+        return next(reversed(self._active.values())) if self._active else PRIMARY
+
+    def _note(self, run_id, parent_run_id) -> None:
+        self._parent[str(run_id)] = str(parent_run_id) if parent_run_id else None
+
+    def _agent_of(self, parent_run_id) -> str:
+        """The agent whose run contains a run with this parent: walk up to a
+        ``task`` call (that sub-agent) or to the top (primary)."""
+        pid = str(parent_run_id) if parent_run_id else None
+        seen = set()
+        while pid and pid not in seen:
+            if pid in self._task_sub:
+                return self._task_sub[pid]
+            seen.add(pid)
+            if pid not in self._parent:       # a run we never saw start
+                return self.agent
+            pid = self._parent[pid]
+        return PRIMARY
+
+    def on_chain_start(self, serialized, inputs, *, run_id, parent_run_id=None,
+                       **kwargs):
+        # Graph and node runs sit between a task call and the sub-agent's own
+        # model/tool runs; only their parentage is needed.
+        try:
+            self._note(run_id, parent_run_id)
+        except Exception as exc:                       # noqa: BLE001
+            self.last_error = f"{type(exc).__name__}: {exc}"
 
     # -- writer -----------------------------------------------------------
     def _write(self, rec: dict) -> None:
@@ -221,9 +255,10 @@ class ActivityLogger(BaseCallbackHandler):
             rid = str(run_id)
             self._names[rid] = name
             self._starts[rid] = self._clock()
+            self._note(rid, parent_run_id)
             args = inputs if inputs is not None else input_str
-            rec = {"agent": self.agent, "event": "tool_start", "name": name,
-                   "run_id": rid,
+            rec = {"agent": self._agent_of(parent_run_id), "event": "tool_start",
+                   "name": name, "run_id": rid,
                    "parent_run_id": str(parent_run_id) if parent_run_id else None,
                    "args": _json_safe(args)}
             if name == TASK_TOOL:
@@ -233,7 +268,8 @@ class ActivityLogger(BaseCallbackHandler):
                 sub = str(sub or "subagent")
                 rec["subagent"] = sub
                 self._write(rec)
-                self._stack.append((rid, sub))
+                self._task_sub[rid] = sub
+                self._active[rid] = sub
                 return
             self._write(rec)
         except Exception as exc:                       # noqa: BLE001
@@ -245,13 +281,12 @@ class ActivityLogger(BaseCallbackHandler):
         name = self._names.pop(rid, "tool")
         t_start = self._starts.pop(rid, None)
         # Attribute the RESULT to the agent that made the call: a task's
-        # result belongs to the primary, so pop before attributing.
-        if self._stack and self._stack[-1][0] == rid:
-            sub = self._stack.pop()[1]
-            agent = self.agent
-        else:
-            sub = None
-            agent = self.agent
+        # result belongs to whoever delegated it, found through its parent.
+        self._active.pop(rid, None)
+        sub = self._task_sub.get(rid)
+        if parent_run_id is None:
+            parent_run_id = self._parent.get(rid)
+        agent = self._agent_of(parent_run_id)
         text, truncated, full_len = _cap(payload, self.max_chars)
         rec = {"agent": agent, "event": event, "name": name, "run_id": rid,
                "parent_run_id": str(parent_run_id) if parent_run_id else None,
@@ -284,6 +319,7 @@ class ActivityLogger(BaseCallbackHandler):
         try:
             rid = str(run_id)
             self._starts[rid] = self._clock()
+            self._note(rid, parent_run_id)
             n_msgs = sum(len(m) for m in (messages or []))
             model = None
             try:
@@ -292,7 +328,8 @@ class ActivityLogger(BaseCallbackHandler):
                     or (serialized or {}).get("name")
             except Exception:                          # noqa: BLE001
                 model = None
-            self._write({"agent": self.agent, "event": "model_start",
+            self._write({"agent": self._agent_of(parent_run_id),
+                         "event": "model_start",
                          "run_id": rid,
                          "parent_run_id": (str(parent_run_id)
                                            if parent_run_id else None),
@@ -304,7 +341,8 @@ class ActivityLogger(BaseCallbackHandler):
         try:
             rid = str(run_id)
             t_start = self._starts.pop(rid, None)
-            self._write({"agent": self.agent, "event": "model_end",
+            parent = parent_run_id or self._parent.get(rid)
+            self._write({"agent": self._agent_of(parent), "event": "model_end",
                          "run_id": rid,
                          "parent_run_id": (str(parent_run_id)
                                            if parent_run_id else None),
@@ -321,7 +359,8 @@ class ActivityLogger(BaseCallbackHandler):
             t_start = self._starts.pop(rid, None)
             text, truncated, _n = _cap(f"{type(error).__name__}: {error}",
                                        self.max_chars)
-            self._write({"agent": self.agent, "event": "model_error",
+            parent = parent_run_id or self._parent.get(rid)
+            self._write({"agent": self._agent_of(parent), "event": "model_error",
                          "run_id": rid,
                          "parent_run_id": (str(parent_run_id)
                                            if parent_run_id else None),

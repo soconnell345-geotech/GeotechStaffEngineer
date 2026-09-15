@@ -274,15 +274,23 @@ def list_methods(agent_name: str, category: str = "", allowed_agents=None) -> di
         return {"error": f"Failed to load module '{agent_name}': {e}"}
     # Each adapter exports METHOD_INFO with method_name -> {category, brief, ...}
     result = {}
+    categories = set()
     for method_name, info in mod.METHOD_INFO.items():
         if info.get("alias_of"):
             continue  # semantic alias — callable/describable but not listed
         cat = info.get("category", "General")
+        categories.add(cat)
         if category and cat.lower() != category.lower():
             continue
         if cat not in result:
             result[cat] = {}
         result[cat][method_name] = info["brief"]
+    if category and not result:
+        # An empty {} read as "this module has nothing on that" (field
+        # feedback 2026-09-15, N13: a reviewer filtered gec7 by "earth
+        # retaining structures", got {}, and went on to cite from memory).
+        return {"error": f"No '{agent_name}' methods in category '{category}'.",
+                "available_categories": sorted(categories)}
     return result
 
 

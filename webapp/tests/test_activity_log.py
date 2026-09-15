@@ -268,3 +268,40 @@ def test_turn_job_writes_activity_with_trace_off(monkeypatch, tmp_path):
     assert recs[1]["turn_tokens"] == 7 and recs[1]["error"] is None
     # trace.jsonl still gated by the toggle
     assert not os.path.isfile(core.trace_path(tid))
+
+
+def test_parallel_subagents_are_attributed_by_run(tmp_path):
+    """Field feedback 2026-09-15 (N15): a calc and a general-purpose task ran
+    at once; the old stack filed everything under the second and swapped the
+    two task results' names. Attribution now follows each run's parents."""
+    log = al.ActivityLogger(str(tmp_path))
+    calc, gp = _u(), _u()
+    log.on_tool_start({"name": "task"}, "", run_id=calc,
+                      inputs={"subagent_type": "calc"})
+    log.on_tool_start({"name": "task"}, "", run_id=gp,
+                      inputs={"subagent_type": "general-purpose"})
+    graph_c, graph_g = _u(), _u()
+    log.on_chain_start({}, {}, run_id=graph_c, parent_run_id=calc)
+    log.on_chain_start({}, {}, run_id=graph_g, parent_run_id=gp)
+    save, fetch = _u(), _u()
+    log.on_tool_start({"name": "save_file"}, "", run_id=save,
+                      parent_run_id=graph_c, inputs={})
+    log.on_tool_start({"name": "sharepoint_download_file"}, "", run_id=fetch,
+                      parent_run_id=graph_g, inputs={})
+    log.on_tool_end("saved", run_id=save, parent_run_id=graph_c)
+    log.on_tool_end("downloaded", run_id=fetch, parent_run_id=graph_g)
+    log.on_tool_end("PDF rebuilt", run_id=calc)      # calc ends first
+    log.on_tool_end("PYWall table", run_id=gp)
+    got = [(r["event"], r["name"], r["agent"], r.get("subagent"))
+           for r in al.load(str(tmp_path))]
+    assert got == [
+        ("tool_start", "task", "primary", "calc"),
+        ("tool_start", "task", "primary", "general-purpose"),
+        ("tool_start", "save_file", "calc", None),
+        ("tool_start", "sharepoint_download_file", "general-purpose", None),
+        ("tool_end", "save_file", "calc", None),
+        ("tool_end", "sharepoint_download_file", "general-purpose", None),
+        ("tool_end", "task", "primary", "calc"),
+        ("tool_end", "task", "primary", "general-purpose"),
+    ]
+    assert al.load(str(tmp_path))[6]["result"] == "PDF rebuilt"

@@ -66,6 +66,15 @@ REVISIONS_NEEDED:
 Use status PASS if everything checks out, FLAG if there are items worth \
 noting but no errors, REVISE if corrections are needed.
 
+## Citations
+
+Cite ONLY a reference, section, table or figure that a tool returned during \
+THIS review. If your lookups returned nothing useful, say so and mark the \
+points that rest on general practice as uncited. Never attach a reference \
+title or number from memory: a review once cited "FHWA GEC-12 (Design and \
+Construction of Deep Excavations)" about ten times after every lookup had \
+come back empty, and GEC-12 is Driven Piles.
+
 ## ReAct Protocol
 
 You solve problems by alternating between Thought and Action steps.
@@ -83,7 +92,7 @@ gec11, gec12, gec13, micropile, ufc_backfill, ufc_expansive, ufc_pavement.
 1. Include EXACTLY ONE <tool_call> block per response, or NONE for final review.
 2. Always call describe_method before using a method you haven't used before.
 3. Be concise — focus on what matters, not exhaustive lookups.
-4. Cite specific reference sections (e.g., "DM7.1 Table 3", "GEC-10 Section 13.3").
+4. Cite specific reference sections (e.g., "DM7.1 Table 3", "GEC-10 Section 13.3") — only ones a tool returned in this review.
 5. Do NOT repeat the full analysis — only comment on what needs checking.
 6. Limit yourself to 3-4 reference lookups maximum. Focus on the most critical checks.
 """
@@ -221,7 +230,9 @@ CONSULTANT_FRAMING = (
     "reference lookup tools available to you (NAVFAC DM7, the FHWA GEC series, "
     "UFC, micropile, FEMA, NOAA — via chapter-text search, table/equation "
     "lookups, and figure search), answer the question below. CITE the specific "
-    "reference and section/table/figure number for every value or statement. If "
+    "reference and section/table/figure number for every value or statement — "
+    "only references your tools returned in this consult; if the lookups find "
+    "nothing, say so rather than citing from memory. If "
     "a value lives in a design chart, find it with figure_search and read it off "
     "with read_reference_figure (never infer chart values from memory). Do NOT "
     "perform engineering calculations — reference lookup only.\n\nQuestion: "
