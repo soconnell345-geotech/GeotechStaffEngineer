@@ -330,19 +330,25 @@ def test_v013_log_spiral_passive_Kp_now_in_module():
 
 
 def test_v013_fhwa_apparent_pressure_high_level():
-    """PASS (v5.3): the new `fhwa_apparent_pressure_anchored_wall` reproduces the
-    single-anchor FHWA apparent-diagram envelope through the high-level path — the
-    max ordinate pe (= published sigma_a = 934.4 psf), the total apparent load
-    PT = 1.3*P = 15,574 lb/ft, and the upper-tributary anchor load T1U = 6,228
-    lb/ft. (The single-anchor TOTAL anchor force + embedment D=6.09 ft come from the
-    free-earth-support solve with the new log-spiral passive.)"""
+    """PASS (v5.3; completed 2026-09-15): `fhwa_apparent_pressure_anchored_wall`
+    reproduces the single-anchor FHWA apparent-diagram envelope through the
+    high-level path — the max ordinate pe (= published sigma_a = 934.4 psf), the
+    total apparent load PT = 1.3*P = 15,574 lb/ft, the upper-tributary anchor load
+    T1U = 6,228 lb/ft — and, since field feedback N3, the TOTAL anchor force
+    T1 = 14,254 lb/ft and embedment D = 6.09 ft by free earth support about the
+    anchor with the published log-spiral Kp = 4.7 and FS = 1.3. Before that fix the
+    single-anchor result stopped at T1U and nothing said it was partial."""
     r = fhwa_apparent_pressure_anchored_wall(
         H=_V013_H * FT, anchor_depths=[10.0 * FT], gamma=115 * PCF,
-        phi=_V013_PHI, surcharge=0.0, spacing=10.0 * FT, inclination_deg=15.0)
+        phi=_V013_PHI, surcharge=0.0, spacing=10.0 * FT, inclination_deg=15.0,
+        Kp=4.7, FOS_embedment=1.3)
     assert r["pe_kPa"] / PSF == pytest.approx(934.4, rel=0.01)          # sigma_a
     assert r["PT_total_kN_per_m"] / (PSF * FT) == pytest.approx(15574.0, rel=0.01)
     T1U = r["anchors"][0]["TH_upper_kN_per_m"]
     assert T1U / (PSF * FT) == pytest.approx(6228.0, rel=0.01)          # upper tributary
+    T1 = r["anchors"][0]["TH_kN_per_m"]
+    assert T1 / (PSF * FT) == pytest.approx(14254.0, rel=0.01)          # total anchor
+    assert r["embedment_D_m"] / FT == pytest.approx(6.09, rel=0.01)     # D, FS = 1.3
 
 
 def test_v013_apparent_diagram_quantities_by_hand():

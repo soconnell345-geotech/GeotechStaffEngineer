@@ -502,13 +502,14 @@ class TestEmbedment:
         D = compute_embedment(geo)
         assert D > 0
 
-    def test_embedment_includes_20pct_increase(self):
-        """Embedment should include the 20% USACE increase."""
+    def test_embedment_increase_multiplies_free_earth_depth(self):
+        """Braced walls: no depth increase by default (FS carries safety, as
+        in Caltrans Example 8-1); an explicit increase multiplies the depth."""
         geo = _sand_geometry(H=6.0, n_supports=1)
         D = compute_embedment(geo, FOS_passive=1.5)
-        # The function returns D * 1.2, so D should be > 1.2 * something
-        # Just check it's reasonably larger than 0
         assert D > 0.1
+        assert compute_embedment(geo, FOS_passive=1.5,
+                                 embedment_increase=1.2) == pytest.approx(1.2 * D)
 
     def test_higher_FOS_more_embedment(self):
         geo = _sand_geometry(H=6.0, n_supports=1)

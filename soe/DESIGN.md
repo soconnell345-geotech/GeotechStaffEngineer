@@ -28,31 +28,82 @@ empirical apparent pressure envelopes from field measurements:
 
 Where N = γH/cu is the stability number and m = 1.0 for most cases.
 
+### Pressure above the excavation (braced walls)
+
+The apparent-pressure envelope carries no surcharge or water. FHWA GEC-4
+Sec 5.2.4: "Water pressures and surcharge pressures should be added
+explicitly to the diagram" — so the braced design pressure
+(`free_earth.apparent_pressure_profile`) is:
+
+    p(z) = envelope(z) + K·q + u(z)
+
+- Sand envelope: effective stress, 0.65·Ka·γ'avg·H with γ' = γ − γw below the
+  water table; K = envelope Ka; hydrostatic water u added below `gwt_depth`.
+- Clay envelopes: total stress; K = 1.0 (undrained, φ = 0); no water added.
+
 ### Tributary Area Method
 
-From the California Trenching and Shoring Manual:
+From the California Trenching and Shoring Manual and GEC-4 Sec 5.4:
 1. Divide the wall into spans between support levels
-2. Load each span with the apparent pressure envelope
-3. Treat each span as simply supported
-4. Support reactions = tributary loads from adjacent spans
-5. Max moment in critical span governs wall section
+2. Load each span with the design pressure p(z) above
+3. The span above the first support is a **cantilever** (moment p·d1²/2 for a
+   uniform envelope); the spans below are simply supported (hinge method)
+4. Support reactions = tributary loads; the bottom span's load goes wholly to
+   the lowest support (conservative for that support — the free-earth-support
+   load from below is reported alongside in `free_earth`)
+5. Max moment = the larger of the span moments and the embedded-portion moment
+   from the free-earth-support body
 
-### Embedment (Below Lowest Support)
+### Embedment (free earth support about the lowest support)
 
-Below the lowest support level, the wall acts as a cantilever resisting
-passive earth pressure. Embedment D is found by moment balance about
-the lowest support until:
+`embedment.compute_embedment` / `free_earth.solve_about_support`, Caltrans T&S
+Manual Sec 8-4.02 (hinge method):
+- Free body: the whole wall for one support level; for two or more, the wall
+  below the lowest support (moments at the supports above taken as zero).
+- Pressure: p(z) above the excavation; below it, layered Rankine active
+  pressure (overburden from the ground surface, surcharge included) plus net
+  water, against Rankine passive pressure on the excavation side.
+- D solves MR = FS·MD (FS = `FOS_passive`, default 1.5; the manual uses 1.3);
+  D′ solves MR = MD, and horizontal equilibrium at D′ gives the support load.
+- No depth increase by default (`embedment_increase` = 1.0), as in Example 8-1.
+- **Pinned to Caltrans Example 8-1** (`tests/test_free_earth.py`): D = 6.09 ft,
+  D′ = 4.89 ft, T = 14,254 lb/ft, M = 22,494 ft-lb/ft at the anchor, zero shear
+  9.69 ft below it — all within 1 %.
 
-    M_passive ≥ M_active
+### Cantilever Walls (Caltrans Simplified Method)
 
-Then D_design = 1.2 × D (20% increase per USACE EM 1110-2-2504).
+`beam_analysis.analyze_cantilever_excavation` / `free_earth.solve_cantilever`,
+Caltrans T&S Manual Sec 7-5.02: layered Rankine active and passive pressures,
+water on both sides, moments about the rotation point O at depth D0 below the
+excavation; D = 1.2·D0 (AASHTO 3.11.5.6 — the increase accounts for rotation
+below O and is **not** a factor of safety, so it sits alongside
+`FOS_passive`; this differs from `sheet_pile.analyze_cantilever`, which since
+v5.1 carries safety on FOS alone). The net horizontal force to O is reported;
+a positive value means embedment must increase (step 4). Max moment and shear
+come from the same diagram. Ka/Kp in the result are those of the embedment
+layer; every depth uses its own layer. A note is added past H = 5.5 m (18 ft,
+Caltrans 7-1). **Pinned** to the closed form for uniform dry sand and to
+`sheet_pile.analyze_cantilever` (layered, wet, surcharge; D0 within 0.5 %).
 
-### Cantilever Walls
+### Water on the two sides
 
-For unbraced walls (typically H ≤ 4–5 m in sand, H ≤ 3 m in clay),
-classical Rankine active/passive pressure is used with limit equilibrium
-to find embedment. Moments about the wall base determine embedment
-depth and maximum moment.
+Retained side: hydrostatic from `gwt_depth`. Excavation side: from
+`gwt_depth_excavation` (default = `gwt_depth`), never above the excavation
+base. Below the base the net water pressure is a driving pressure.
+
+### Defect history (2026-09-15, field feedback N2)
+
+Found on a real review session (`module_work/field_feedback/2026-09-15_nairobi-soe-rerun_v5.15.0/FINDINGS.md`):
+- `analyze_cantilever_excavation` took γ, φ, c from the **first layer only**
+  and put the passive resultant at **H + D/3 about the wall base** (should be
+  D/3); max moment was taken at the dredge line. A 6.3 m wall in uniform sand
+  got D = 2.5 m (correct 6.9 m before the 1.2 increase); the session's profile,
+  topped by a φ = 0 clay, got Ka = Kp = 1.0 and D = 0.60 m.
+- `compute_embedment` used one layer, started the active triangle at zero at
+  the support (ignoring overburden) and used arms d/3 and D/3.
+- The braced top span was treated as simply supported (p·d1²/8 instead of
+  p·d1²/2), and surcharge and water were not applied to braced loads.
+The tests had only checked signs and monotonicity.
 
 ## Units
 
@@ -121,7 +172,12 @@ anchor to base; total load = 1.3× the triangular Rankine total). Returns pe, th
 surcharge term ps = Ka·q, per-anchor tributary loads TH_i (top/interior/bottom
 formulas), subgrade reaction R, hinge moments, and anchor design loads
 DL = TH·s/cos(incl). Reproduces GEC-4 Design Example 1 (V-016, 2-anchor) natively
-and the Caltrans Ex 8-1 single-anchor envelope (pe = σ_a, PT, upper tributary).
+and Caltrans Ex 8-1 for a single anchor. With ONE anchor level the tributary
+formulas do not apply: the wall is solved by free earth support about the anchor
+(`free_earth.solve_about_support`; `Kp` override for a log-spiral passive,
+`FOS_embedment` default 1.3), returning the total TH, D, D′ and the wall moment —
+D = 6.09 ft, T1 = 14,254 lb/ft, M = 22,494 ft-lb/ft (V-013). Until 2026-09-15 the
+single-anchor result stopped at the upper tributary load without saying so (N3).
 
 ## Log-spiral passive coefficient (v5.3)
 `earth_pressure.caquot_kerisel_Kp(phi, delta)` — the Caquot-Kerisel (1948)

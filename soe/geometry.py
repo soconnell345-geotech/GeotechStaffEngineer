@@ -77,10 +77,16 @@ class ExcavationGeometry:
     surcharge : float
         Uniform surface surcharge (kPa). Default 10 (construction).
     gwt_depth : float or None
-        Groundwater depth from surface (m). None = no water.
+        Groundwater depth from surface on the retained side (m).
+        None = no water.
     excavation_width : float
         Plan width of excavation B (m). Used for basal heave.
         0 = infinitely long (strip condition).
+    gwt_depth_excavation : float or None
+        Groundwater depth on the excavation side (m from the top of the
+        wall), never taken above the excavation level. None = same as
+        ``gwt_depth`` (so water stands at the excavation base when the
+        retained-side water table is higher).
     """
     excavation_depth: float
     soil_layers: List[SOEWallLayer] = field(default_factory=list)
@@ -88,6 +94,7 @@ class ExcavationGeometry:
     surcharge: float = 10.0
     gwt_depth: Optional[float] = None
     excavation_width: float = 0.0
+    gwt_depth_excavation: Optional[float] = None
 
     def validate(self):
         """Check geometry for common errors."""

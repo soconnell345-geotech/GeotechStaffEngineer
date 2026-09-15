@@ -249,6 +249,11 @@ class BracedExcavationResult:
     required_embedment_m: float = 0.0
     total_wall_length_m: float = 0.0
     required_Sx_cm3: float = 0.0
+    embedment_FS: float = 1.5
+    surcharge_pressure_kPa: float = 0.0
+    water_pressure_included: bool = False
+    free_earth: Dict[str, Any] = field(default_factory=dict)
+    notes: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         """Return formatted summary string."""
@@ -276,11 +281,13 @@ class BracedExcavationResult:
             f"  Max shear:           {self.max_shear_kN_per_m:.2f} kN/m",
             f"  Required Sx (ASD):   {self.required_Sx_cm3:.1f} cm³",
             "",
-            f"  Required embedment:  {self.required_embedment_m:.2f} m",
+            f"  Required embedment:  {self.required_embedment_m:.2f} m"
+            f"  (free earth support, FS = {self.embedment_FS:g})",
             f"  Total wall length:   {self.total_wall_length_m:.2f} m",
             "",
-            "=" * 60,
         ])
+        lines.extend(f"  Note: {n}" for n in self.notes)
+        lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -290,13 +297,18 @@ class BracedExcavationResult:
             "n_support_levels": self.n_support_levels,
             "apparent_pressure_type": self.apparent_pressure_type,
             "max_apparent_pressure_kPa": self.max_apparent_pressure_kPa,
+            "surcharge_pressure_kPa": self.surcharge_pressure_kPa,
+            "water_pressure_included": self.water_pressure_included,
             "support_reactions": self.support_reactions,
             "max_moment_kNm_per_m": self.max_moment_kNm_per_m,
             "max_moment_depth_m": self.max_moment_depth_m,
             "max_shear_kN_per_m": self.max_shear_kN_per_m,
             "required_embedment_m": self.required_embedment_m,
+            "embedment_FS": self.embedment_FS,
             "total_wall_length_m": self.total_wall_length_m,
             "required_Sx_cm3": self.required_Sx_cm3,
+            "free_earth": self.free_earth,
+            "notes": self.notes,
         }
 
 
@@ -324,6 +336,20 @@ class CantileverExcavationResult:
         Maximum wall shear (kN/m).
     required_Sx_cm3 : float
         Required section modulus for ASD (cm³).
+    embedment_converged_m : float
+        D0, the depth of the rotation point O below the excavation (m).
+    embedment_increase : float
+        required_embedment_m / D0 (1.2 per Caltrans / AASHTO 3.11.5.6).
+    max_moment_depth_m : float
+        Depth of the maximum moment below the top of the wall (m).
+    net_force_at_O_kN_per_m : float
+        Driving minus resisting force to O; positive means embedment must
+        increase (Caltrans 7-5.02 step 4).
+    notes : list of str
+        Method and applicability notes.
+
+    Ka and Kp are those of the layer the wall is embedded in (at the
+    excavation level); every depth uses its own layer's coefficients.
     """
     excavation_depth: float = 0.0
     FOS_passive: float = 1.5
@@ -334,6 +360,11 @@ class CantileverExcavationResult:
     max_moment_kNm_per_m: float = 0.0
     max_shear_kN_per_m: float = 0.0
     required_Sx_cm3: float = 0.0
+    embedment_converged_m: float = 0.0
+    embedment_increase: float = 1.2
+    max_moment_depth_m: float = 0.0
+    net_force_at_O_kN_per_m: float = 0.0
+    notes: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         """Return formatted summary string."""
@@ -344,17 +375,21 @@ class CantileverExcavationResult:
             "",
             f"  Excavation depth:   H = {self.excavation_depth:.2f} m",
             f"  FOS (passive):          {self.FOS_passive:.2f}",
-            f"  Ka = {self.Ka:.4f}    Kp = {self.Kp:.4f}",
+            f"  Ka = {self.Ka:.4f}    Kp = {self.Kp:.4f}  (embedment layer)",
             "",
-            f"  Max bending moment: {self.max_moment_kNm_per_m:.2f} kN·m/m",
+            f"  Max bending moment: {self.max_moment_kNm_per_m:.2f} kN·m/m"
+            f"  (at z = {self.max_moment_depth_m:.2f} m)",
             f"  Max shear:          {self.max_shear_kN_per_m:.2f} kN/m",
             f"  Required Sx (ASD):  {self.required_Sx_cm3:.1f} cm³",
             "",
-            f"  Required embedment: {self.required_embedment_m:.2f} m",
+            f"  Required embedment: {self.required_embedment_m:.2f} m"
+            f"  (= {self.embedment_increase:g} x D0 = "
+            f"{self.embedment_increase:g} x {self.embedment_converged_m:.2f})",
             f"  Total wall length:  {self.total_wall_length_m:.2f} m",
             "",
-            "=" * 60,
         ]
+        lines.extend(f"  Note: {n}" for n in self.notes)
+        lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -365,8 +400,15 @@ class CantileverExcavationResult:
             "Ka": self.Ka,
             "Kp": self.Kp,
             "required_embedment_m": self.required_embedment_m,
+            "embedment_converged_m": self.embedment_converged_m,
+            "embedment_increase": self.embedment_increase,
             "total_wall_length_m": self.total_wall_length_m,
             "max_moment_kNm_per_m": self.max_moment_kNm_per_m,
+            "max_moment_depth_m": self.max_moment_depth_m,
             "max_shear_kN_per_m": self.max_shear_kN_per_m,
+            "net_force_at_O_kN_per_m": self.net_force_at_O_kN_per_m,
             "required_Sx_cm3": self.required_Sx_cm3,
+            "method": "Caltrans T&S Manual 7-5.02 Simplified Method, layered "
+                      "Rankine pressures with water",
+            "notes": self.notes,
         }

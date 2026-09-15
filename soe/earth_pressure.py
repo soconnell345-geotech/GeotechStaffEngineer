@@ -328,11 +328,15 @@ def apparent_pressure_stiff_clay(gamma: float, H: float,
 
 
 def select_apparent_pressure(soil_layers, H: float,
-                             surcharge: float = 0.0) -> dict:
+                             surcharge: float = 0.0,
+                             gwt_depth: Optional[float] = None) -> dict:
     """Auto-select apparent pressure diagram from soil profile.
 
     Determines the controlling soil type over the excavation depth and
-    returns the appropriate apparent pressure envelope.
+    returns the appropriate apparent pressure envelope. The envelope itself
+    carries no surcharge or water pressure; GEC-4 Sec 5.2.4 adds those
+    explicitly (``soe.free_earth.apparent_pressure_profile`` does, for the
+    braced-wall analysis).
 
     Parameters
     ----------
@@ -341,7 +345,11 @@ def select_apparent_pressure(soil_layers, H: float,
     H : float
         Excavation depth (m).
     surcharge : float
-        Surface surcharge (kPa). Default 0.
+        Surface surcharge (kPa). Default 0. Not part of the envelope.
+    gwt_depth : float, optional
+        Water table depth (m). For the (effective-stress) sand envelope the
+        average unit weight uses gamma - gamma_w below it; clay envelopes are
+        total-stress and ignore it.
 
     Returns
     -------
@@ -356,26 +364,33 @@ def select_apparent_pressure(soil_layers, H: float,
     if not soil_layers:
         raise ValueError("At least one soil layer is required")
 
+    from geotech_common.water import GAMMA_W
+
     # Compute weighted averages over excavation depth
     total_gamma_h = 0.0
+    total_gamma_eff_h = 0.0
     total_cu_h = 0.0
     total_phi_h = 0.0
     sand_thickness = 0.0
     clay_thickness = 0.0
-    remaining = H
+    z_top = 0.0
 
     for layer in soil_layers:
-        h = min(layer.thickness, remaining)
+        h = min(layer.thickness, H - z_top)
+        if h <= 0:
+            break
         total_gamma_h += layer.unit_weight * h
+        wet = 0.0
+        if gwt_depth is not None:
+            wet = min(max(z_top + h - gwt_depth, 0.0), h)
+        total_gamma_eff_h += layer.unit_weight * h - GAMMA_W * wet
         total_cu_h += layer.cohesion * h
         total_phi_h += layer.friction_angle * h
         if layer.soil_type == "sand":
             sand_thickness += h
         else:
             clay_thickness += h
-        remaining -= h
-        if remaining <= 0:
-            break
+        z_top += h
 
     gamma_avg = total_gamma_h / H
     cu_avg = total_cu_h / H
@@ -383,16 +398,18 @@ def select_apparent_pressure(soil_layers, H: float,
 
     # Determine controlling soil type
     if sand_thickness >= clay_thickness:
-        # Predominantly sand
+        # Predominantly sand: effective-stress envelope
+        gamma_eff = total_gamma_eff_h / H
         Ka = rankine_Ka(phi_avg)
-        p_max = apparent_pressure_sand(gamma_avg, H, Ka)
+        p_max = apparent_pressure_sand(gamma_eff, H, Ka)
         return {
             "type": "sand",
             "shape": "uniform",
             "max_pressure_kPa": round(p_max, 2),
             "stability_number": None,
             "Ka": round(Ka, 4),
-            "gamma_avg": round(gamma_avg, 2),
+            "gamma_avg": round(gamma_eff, 2),
+            "effective_stress": gwt_depth is not None and gwt_depth < H,
         }
     else:
         # Predominantly clay
@@ -433,6 +450,8 @@ def fhwa_apparent_pressure_anchored_wall(
     spacing: float = 1.0,
     inclination_deg: float = 0.0,
     Ka: float = None,
+    Kp: float = None,
+    FOS_embedment: float = 1.3,
 ) -> dict:
     """FHWA/GEC-4 apparent-pressure anchored-wall design (tributary method).
 
@@ -458,11 +477,20 @@ def fhwa_apparent_pressure_anchored_wall(
     spans (1/10) Hi^2 (pe+ps). Anchor design loads DL = TH * spacing / cos(incl).
 
     Validated vs GEC-4 Design Example 1 (2-anchor, SI): pe=43.6, ps=3.2,
-    TH1=168, TH2=172, R=37, M=66 kN-m/m, DL1=435, DL2=445 kN. For a SINGLE
-    anchor (n=1) the envelope pe (= the Caltrans Ex 8-1 max ordinate sigma_a),
-    the total load PT, and the upper-tributary load are returned; the single-
-    anchor TOTAL anchor force and embedment come from the free-earth-support
-    solve (``sheet_pile.analyze_anchored(pressure_method="log_spiral")``).
+    TH1=168, TH2=172, R=37, M=66 kN-m/m, DL1=435, DL2=445 kN.
+
+    SINGLE anchor (n=1): the tributary formulas do not apply, so the wall is
+    solved by free earth support about the anchor, as in the Caltrans
+    Trenching and Shoring Manual Sec 8-4 / Example 8-1 (``soe.free_earth``):
+    the trapezoid (+ ps) above the excavation, Rankine active pressure below
+    it against passive pressure ``Kp`` (Rankine by default; pass a log-spiral
+    value), embedment D from MR = FOS_embedment x MD, the anchor load from
+    MR = MD and horizontal equilibrium, and the wall moment from that body.
+    Reproduces Example 8-1 (D = 6.09 ft, T1 = 14,254 lb/ft, M = 22,494
+    ft-lb/ft). Until 2026-09-15 the n=1 result carried only the upper
+    tributary load and the moment above the anchor, unlabelled as partial
+    (field feedback N3). The soil below the excavation is taken as the same
+    gamma/phi as the retained soil, dry.
 
     Parameters
     ----------
@@ -482,13 +510,22 @@ def fhwa_apparent_pressure_anchored_wall(
         Anchor inclination from horizontal (deg). Default 0.
     Ka : float, optional
         Active coefficient. If None, Rankine Ka(phi).
+    Kp : float, optional
+        Passive coefficient below the excavation, single anchor only. If
+        None, Rankine Kp(phi).
+    FOS_embedment : float, optional
+        Single anchor only: MR = FOS x MD for the embedment. Default 1.3
+        (Caltrans T&S Manual).
 
     Returns
     -------
     dict
         {Ka, pe_kPa, ps_kPa, PT_total_kN_per_m, anchors[], subgrade_reaction_kN_per_m,
          max_moment_kN_m_per_m, ...}. Each anchors[] entry: {depth_m,
-         TH_kN_per_m (horizontal tributary load), design_load_kN}.
+         TH_kN_per_m (horizontal load), design_load_kN}. For n=1 also
+         TH_upper/TH_lower, embedment_D_m, embedment_D_FS1_m,
+         max_moment_depth_m, and subgrade_reaction_kN_per_m = None (the
+         passive pressure below the excavation takes the base load).
 
     References
     ----------
@@ -518,17 +555,55 @@ def fhwa_apparent_pressure_anchored_wall(
     anchors = []
     moments = []
 
+    single = {}
     if n == 1:
-        # Single anchor: report the upper tributary (well-defined); the total
-        # anchor force needs the FES embedment solve.
+        # Single anchor: free earth support about the anchor (Caltrans T&S 8-4,
+        # Example 8-1) -- the tributary formulas below need two or more levels.
+        import numpy as np
+        from soe.free_earth import LayeredProfile, solve_about_support
+        from soe.geometry import SOEWallLayer
+
+        if FOS_embedment <= 0:
+            raise ValueError("FOS_embedment must be positive")
+        Kp_used = rankine_Kp(phi) if Kp is None else float(Kp)
+        prof = LayeredProfile(
+            [SOEWallLayer(thickness=max(10.0 * H, 50.0), unit_weight=gamma,
+                          friction_angle=phi)],
+            H, surcharge=surcharge, Ka=Ka, Kp=Kp_used)
+        top_len = (2.0 / 3.0) * H1
+        bot_start = H - (2.0 / 3.0) * Hn1
+
+        def above(z):
+            z = np.asarray(z, dtype=float)
+            env = np.where(z < top_len, pe * z / top_len,
+                           np.where(z <= bot_start, pe,
+                                    pe * (H - z) / (H - bot_start)))
+            return np.where((z >= 0.0) & (z <= H), env + ps, 0.0)
+
+        sol = solve_about_support(prof, pivot=d[0], body_top=0.0,
+                                  FS=FOS_embedment, above=above)
         TH_upper = (2.0 / 3.0) * H1 * pe + H1 * ps
+        TH = sol.support_load
         anchors.append({
             "depth_m": round(d[0], 3),
             "TH_upper_kN_per_m": round(TH_upper, 3),
-            "TH_kN_per_m": None,   # total needs FES solve (see docstring)
-            "design_load_kN": None,
+            "TH_lower_kN_per_m": round(TH - TH_upper, 3),
+            "TH_kN_per_m": round(TH, 3),
+            "design_load_kN": round(TH * spacing / cos_incl, 2),
         })
-        moments.append((13.0 / 54.0) * H1 ** 2 * (pe + ps))
+        moments.append(sol.max_moment)
+        single = {
+            "single_anchor_method": "free earth support about the anchor "
+                                    "(Caltrans T&S Manual 8-4, Example 8-1)",
+            "Kp": round(Kp_used, 4),
+            "FOS_embedment": FOS_embedment,
+            "embedment_D_m": round(sol.D, 3),
+            "embedment_D_FS1_m": round(sol.D_prime, 3),
+            "max_moment_depth_m": round(sol.max_moment_depth, 3),
+            "zero_shear_depth_m": (None if sol.zero_shear_depth is None
+                                   else round(sol.zero_shear_depth, 3)),
+            "notes": list(sol.notes),
+        }
     else:
         for i in range(n):
             if i == 0:
@@ -553,9 +628,9 @@ def fhwa_apparent_pressure_anchored_wall(
             moments.append((1.0 / 10.0) * span ** 2 * (pe + ps))
         moments.append((1.0 / 10.0) * Hn1 ** 2 * (pe + ps))
 
-    R = (3.0 / 16.0) * Hn1 * pe + (Hn1 / 2.0) * ps
+    R = None if n == 1 else (3.0 / 16.0) * Hn1 * pe + (Hn1 / 2.0) * ps
 
-    return {
+    out = {
         "Ka": round(Ka, 4),
         "pe_kPa": round(pe, 3),
         "ps_kPa": round(ps, 3),
@@ -564,11 +639,13 @@ def fhwa_apparent_pressure_anchored_wall(
         "Hn1_m": round(Hn1, 3),
         "n_anchors": n,
         "anchors": anchors,
-        "subgrade_reaction_kN_per_m": round(R, 3),
+        "subgrade_reaction_kN_per_m": None if R is None else round(R, 3),
         "max_moment_kN_m_per_m": round(max(moments), 3),
         "spacing_m": spacing,
         "inclination_deg": inclination_deg,
     }
+    out.update(single)
+    return out
 
 
 def get_pressure_at_depth(z: float, H: float, shape: str,
