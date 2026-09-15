@@ -977,6 +977,29 @@ def import_external_artifacts(working_dir: str, files_dir: str, before: set,
 IMPORT_MAX_BYTES = 200 * 1024 * 1024
 
 
+def _same_bytes(a: str, b: str, chunk: int = 1 << 20) -> bool:
+    """True when two files hold the same bytes.
+
+    NOT ``filecmp.cmp``: that caches by (size, mtime), so a rebuilt file of
+    the SAME byte size written in the same clock tick reads as unchanged — and
+    the conversation would keep showing the previous version, which is the
+    very failure this import exists to prevent (caught 2026-09-15 when the
+    suite's ordering made the cache hit).
+    """
+    try:
+        if os.path.getsize(a) != os.path.getsize(b):
+            return False
+        with open(a, "rb") as fa, open(b, "rb") as fb:
+            while True:
+                ba, bb = fa.read(chunk), fb.read(chunk)
+                if ba != bb:
+                    return False
+                if not ba:
+                    return True
+    except OSError:
+        return False
+
+
 def import_reported_outputs(paths: Iterable[str], files_dir: str,
                             exclude: Iterable[str] = ()) -> dict:
     """Copy files a tool REPORTED writing outside the conversation folder into
@@ -990,8 +1013,6 @@ def import_reported_outputs(paths: Iterable[str], files_dir: str,
     is reused; different content gets ``_1``/``_2``... Returns
     ``{source_abs_path: destination_path}``.
     """
-    import filecmp
-
     fd = os.path.abspath(files_dir)
     conv = os.path.dirname(fd)
     skip = set()
@@ -1014,7 +1035,7 @@ def import_reported_outputs(paths: Iterable[str], files_dir: str,
                 continue
             os.makedirs(fd, exist_ok=True)
             dst = os.path.join(fd, os.path.basename(src))
-            if not (os.path.isfile(dst) and filecmp.cmp(src, dst, shallow=False)):
+            if not (os.path.isfile(dst) and _same_bytes(src, dst)):
                 dst = _unique_dest(dst)
                 _shutil.copy2(src, dst)
         except OSError:

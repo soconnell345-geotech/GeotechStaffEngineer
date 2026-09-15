@@ -66,9 +66,17 @@ def test_import_copies_outside_files_in_and_dedupes(tmp_path):
     # same content again: reuse; changed content: a new name, history kept
     assert core.import_reported_outputs([str(pdf)], str(files))[
         os.path.abspath(pdf)] == dst
+    # Rebuilt with DIFFERENT content of the SAME size, and the same
+    # timestamp: filecmp.cmp caches by (size, mtime) and would call these
+    # equal, leaving the conversation showing the old version.
+    stamp = os.stat(pdf).st_mtime
     pdf.write_bytes(b"%PDF-1.4 rebuilt")
+    assert len(b"%PDF-1.4 rebuilt") == len(b"%PDF-1.4 numbers")
+    os.utime(pdf, (stamp, stamp))
     dst2 = core.import_reported_outputs([str(pdf)], str(files))[os.path.abspath(pdf)]
     assert dst2 != dst and dst2.endswith("_1.pdf")
+    assert open(dst2, "rb").read() == b"%PDF-1.4 rebuilt"
+    assert open(dst, "rb").read() == b"%PDF-1.4 numbers"
 
 
 def test_displayable_markdown_points_local_images_at_the_card():
