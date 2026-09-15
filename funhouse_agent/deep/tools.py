@@ -565,8 +565,8 @@ def make_vision_tools(
     save_fn = save_fn or _default_save_fn
     if include is None:
         include = {
-            "list_files", "read_pdf_text", "analyze_image", "analyze_pdf_page",
-            "render_region", "read_reference_figure",
+            "list_files", "read_pdf_text", "read_text_file", "analyze_image",
+            "analyze_pdf_page", "render_region", "read_reference_figure",
             "view_worked_example_source", "save_file",
         }
         # Whole-document review tools (planlens.tools), when the installed
@@ -592,7 +592,8 @@ def make_vision_tools(
         # so they get the larger reference budget.
         cap = (reference_cap
                if tool_name in ("read_reference_figure", "read_pdf_text",
-                                "list_files", "view_worked_example_source")
+                                "read_text_file", "list_files",
+                                "view_worked_example_source")
                else max_result_chars)
         return _truncate(
             _dispatch_extended_tool(
@@ -638,6 +639,15 @@ def make_vision_tools(
         if pages != "":
             args["pages"] = pages
         return _dispatch("read_pdf_text", args)
+
+    def read_text_file(path: str, offset: int = 0, max_chars: int = 6000) -> str:
+        """Read a REAL text file from disk -- HTML, TXT, CSV, JSON, MD, such
+        as a report source written earlier. The scratch filesystem's
+        ``read_file`` cannot see real files. ``path`` is a real path (a bare
+        name is looked up in the working folder); long files page with
+        ``offset`` (the result gives ``next_offset``)."""
+        return _dispatch("read_text_file",
+                         {"path": path, "offset": offset, "max_chars": max_chars})
 
     def analyze_image(attachment_key: str,
                       prompt: str = "Describe this image.") -> str:
@@ -839,6 +849,12 @@ def make_vision_tools(
             "First-choice reader for a text-based report; a scanned page with "
             "no text layer is flagged per-page (use analyze_pdf_page there). "
             "source is an attachment key or a real filesystem path.",
+        ),
+        "read_text_file": (
+            read_text_file,
+            "Read a REAL text file from disk (HTML, TXT, CSV, JSON, MD -- e.g. "
+            "a report source written earlier). The scratch read_file cannot "
+            "see real files. Pages with offset / next_offset.",
         ),
         "analyze_image": (
             analyze_image,

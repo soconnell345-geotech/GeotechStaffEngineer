@@ -208,6 +208,8 @@ def dispatch_extended_tool(
         return _dispatch_list_files(arguments)
     elif tool_name == "read_pdf_text":
         return _dispatch_read_pdf_text(arguments, attachments)
+    elif tool_name == "read_text_file":
+        return _dispatch_read_text_file(arguments)
     elif tool_name == "analyze_image":
         return _dispatch_analyze_image(arguments, engine, attachments)
     elif tool_name == "analyze_pdf_page":
@@ -257,6 +259,89 @@ def _resolve_attachment_or_path(key, attachments):
         f"also accepted (driver-local /tmp/... or a /Volumes/... path; "
         f"/Workspace reads are unreliable on Databricks)."
     )
+
+
+# ---------------------------------------------------------------------------
+# read_text_file — a REAL text file from disk (HTML, TXT, CSV, JSON, MD)
+# ---------------------------------------------------------------------------
+
+#: Characters returned per call. JSON escaping can nearly double HTML, so this
+#: stays well under the 16,000-character reference cap and the result is
+#: never cut into invalid JSON; longer files page with ``offset``.
+_TEXT_READ_MAX_CHARS = 6000
+#: Files larger than this are refused rather than read into memory.
+_TEXT_READ_MAX_BYTES = 20 * 1024 * 1024
+
+
+def _real_path_for(path: str) -> str:
+    """``path`` as given if it exists; a bare or relative name that does not
+    is tried in the working folder (``default_output_dir``)."""
+    p = os.path.expanduser(path)
+    if os.path.exists(p) or os.path.isabs(p):
+        return os.path.abspath(p)
+    try:
+        from funhouse_agent._fileio import default_output_dir
+        base = default_output_dir()
+    except Exception:  # noqa: BLE001
+        base = ""
+    candidate = os.path.join(base, p) if base else p
+    return os.path.abspath(candidate if os.path.exists(candidate) else p)
+
+
+def _dispatch_read_text_file(arguments):
+    """Read a real text file in pages of characters.
+
+    Field feedback 2026-09-15 (N1): the calc sub-agent had no way to read the
+    HTML report it had written earlier -- deepagents' ``read_file`` sees only
+    scratch space and said "not found" -- so it rebuilt the report with
+    placeholders where the numbers belonged.
+    """
+    path = str(arguments.get("path") or arguments.get("file_path") or "").strip()
+    if not path:
+        return json.dumps({"error": "'path' is required (a real file path)."})
+    resolved = _real_path_for(path)
+    if not os.path.isfile(resolved):
+        return json.dumps({"error": (
+            f"No such file: '{path}' (looked at '{resolved}'). Use list_files "
+            "to find it.")})
+    try:
+        size = os.path.getsize(resolved)
+    except OSError as exc:
+        return json.dumps({"error": f"Could not stat '{resolved}': {exc}"})
+    if size > _TEXT_READ_MAX_BYTES:
+        return json.dumps({"error": (
+            f"'{resolved}' is {size / 1e6:.1f} MB, too large to read as text.")})
+    try:
+        with open(resolved, "rb") as fh:
+            data = fh.read()
+    except OSError as exc:
+        return json.dumps({"error": f"Could not read '{resolved}': {exc}"})
+    if b"\x00" in data[:4096]:
+        ext = os.path.splitext(resolved)[1].lower()
+        hint = ("read_pdf_text or open_document" if ext == ".pdf"
+                else "analyze_image" if ext in (".png", ".jpg", ".jpeg", ".gif",
+                                                ".bmp", ".tif", ".tiff", ".webp")
+                else "a tool made for that file type")
+        return json.dumps({"error": (
+            f"'{resolved}' is a binary file, not text. Use {hint}.")})
+    text = data.decode("utf-8", errors="replace")
+    try:
+        offset = max(0, int(arguments.get("offset", 0) or 0))
+    except (TypeError, ValueError):
+        offset = 0
+    try:
+        max_chars = int(arguments.get("max_chars", _TEXT_READ_MAX_CHARS)
+                        or _TEXT_READ_MAX_CHARS)
+    except (TypeError, ValueError):
+        max_chars = _TEXT_READ_MAX_CHARS
+    max_chars = max(200, min(max_chars, _TEXT_READ_MAX_CHARS))
+    chunk = text[offset:offset + max_chars]
+    result = {"path": resolved, "chars_total": len(text), "offset": offset,
+              "returned_chars": len(chunk), "text": chunk}
+    if offset + max_chars < len(text):
+        result["truncated"] = True
+        result["next_offset"] = offset + max_chars
+    return json.dumps(result)
 
 
 # ---------------------------------------------------------------------------

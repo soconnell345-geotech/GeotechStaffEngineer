@@ -59,8 +59,8 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   will reuse, instead of re-deriving or re-quoting them. These scratch files
   live only for the current session.
 - **The scratch filesystem is NOT the real disk.** `ls` / `read_file` / `glob` /
-  `grep` see only your own scratch files — they always return empty/not-found
-  for real paths (e.g. /tmp, /Workspace), even for files that exist. Never use
+  `grep` see only your own scratch files — pointed at a real path (e.g. /tmp,
+  /Workspace) they answer with the real-disk tool to use instead. Never use
   them to verify a file written by an analysis tool (calc packages, DXF
   exports, saved plots). Trust the tool's own response instead: if it reports
   `file_exists: true` with a size and `output_path`, the file IS on disk at
@@ -76,7 +76,9 @@ _PLANNING_AND_SCRATCH_SECTION = """\
 - **Reading a REAL file the user gives you (PDF report, DXF, image): use the
   file-reading TOOLS, not the scratch filesystem.** `read_file` failing on a
   real path does NOT mean the file is unreachable — the file-reading tools open
-  REAL paths directly. To REVIEW a PDF — a report, drawing set, submittal or
+  REAL paths directly. A text file (HTML, TXT, CSV, JSON — including a report
+  source written earlier in the conversation) is `read_text_file`. To REVIEW a
+  PDF — a report, drawing set, submittal or
   calc package, where the answer may be in prose, a table, a drawing sheet or a
   reviewer's markup — start with **`open_document`** (attachment key or real
   path as `source`). It returns a handle and a map of the WHOLE document: which

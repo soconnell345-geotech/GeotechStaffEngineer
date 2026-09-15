@@ -194,6 +194,11 @@ def test_every_builtin_subagent_carries_the_tool(monkeypatch):
     specs = {s["name"]: s for s in captured["subagents"]}
     assert set(specs) >= {"references", "reviewer", "calc", "model_setup"}
     for name, spec in specs.items():
+        if name == "general-purpose":
+            # re-declared to carry the scratch guard; no "tools" key, so it
+            # inherits the primary's tools (record_feedback via extra_tools)
+            assert "tools" not in spec
+            continue
         names = [t.name for t in spec["tools"]]
         assert names.count("record_feedback") == 1, name
         assert feedback.FEEDBACK_PROMPT in spec["system_prompt"], name

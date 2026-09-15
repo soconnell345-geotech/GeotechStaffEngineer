@@ -52,6 +52,14 @@ from funhouse_agent.deep.limits import (
     DEFAULT_REFERENCES_MAX_MODEL_CALLS,
     ModelCallBudgetMiddleware,
 )
+from funhouse_agent.deep.scratch_guard import ScratchFilesystemGuard
+
+try:  # the spec deepagents auto-adds; re-declared below to carry the guard
+    from deepagents.middleware.subagents import (
+        GENERAL_PURPOSE_SUBAGENT as _GENERAL_PURPOSE_SPEC,
+    )
+except Exception:  # noqa: BLE001 - layout differs: leave deepagents' default
+    _GENERAL_PURPOSE_SPEC = None
 from funhouse_agent.deep.prompt import build_domain_prompt
 from funhouse_agent.deep.setup_agent import build_setup_subagent
 from funhouse_agent.deep.tools import (
@@ -370,7 +378,8 @@ _CALC_PREAMBLE = (
     "`calc_package` module (canned *_package reports, render_figures, "
     "html_to_pdf), the `profile_figure` module (subsurface_profile schematic, "
     "plot_data data plots), save_file, and read access to the working folder "
-    "(list_files, read_pdf_text). You run the numbers AND build the "
+    "(list_files, read_pdf_text, read_text_file). You run the numbers AND "
+    "build the "
     "deliverable — report and figures — for the delegating agent."
 )
 
@@ -422,8 +431,20 @@ _CALC_FRAMING = (
     "render it with calc_package method html_to_pdf (figures as the "
     "html_img_tag of a saved PNG, or a base64 PNG/JPEG data URI — not SVG); "
     "save_file the HTML too if an HTML copy is wanted.\n"
+    "NEVER WRITE PLACEHOLDERS: every number, table row and label in a "
+    "deliverable comes from a tool result or from the delegation text. If you "
+    "are asked to rebuild, reformat or reuse earlier results and the numbers "
+    "are not in the delegation, open the earlier file first (read_text_file "
+    "for HTML/TXT/CSV, read_pdf_text for a PDF). If you still do not have "
+    "them, stop and reply saying exactly what is missing — never write 'per "
+    "prior analysis', 'see previous table' or labels you made up, and never "
+    "describe a case differently from how it was defined.\n"
+    "LAYER NAMES: keep soil layer names exactly as the delegation gives them. "
+    "When asked to change a property of named layers, change only those, and "
+    "say in your reply which layers (name and depth range) you changed.\n"
     "SOURCE DOCUMENTS: you HAVE read access to the working folder — list_files "
-    "shows what the user supplied and read_pdf_text reads it. When a delegation "
+    "shows what the user supplied, read_pdf_text reads a PDF and read_text_file "
+    "a text file (the scratch read_file sees neither). When a delegation "
     "references source documents (a profile PDF, a reference report), CONSULT "
     "them before writing any provenance statement. NEVER write that sources "
     "were unavailable without having run list_files to check; if a document "
@@ -446,7 +467,13 @@ _CALC_DELEGATION_NUDGE = (
     "figures you expect (subsurface profile, the analysis figures, data plots). "
     "The calc agent draws only what it is handed; a report delegated as "
     "'q_ult for B=2 m, phi=30' comes back without a profile figure because it "
-    "was never given the profile."
+    "was never given the profile. "
+    "The calc agent has NO memory of this conversation: a redo, rebuild or "
+    "reformat must carry the numbers themselves (paste the table) or the real "
+    "path of the earlier file. When it reports a rebuilt deliverable, open the "
+    "file (read_pdf_text) and check the numbers are in it before you tell the "
+    "user it is fixed. When you ask for a change to named soil layers, pass the "
+    "layer list with those names and say exactly which layers to change."
 )
 
 
@@ -493,7 +520,7 @@ def build_calc_subagent(
         # delivered report — a false provenance claim. Isolation is about
         # keeping bulky OUTPUT out of the primary context, not blinding the
         # sub-agent to the job's inputs.
-        include={"save_file", "list_files", "read_pdf_text"},
+        include={"save_file", "list_files", "read_pdf_text", "read_text_file"},
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
     )
@@ -916,6 +943,22 @@ def build_deep_agent(
             )
         )
 
+    # Scratch-filesystem guard on every agent in the build (field feedback
+    # 2026-09-15, N1/N12): deepagents' ls/read_file/grep/glob/write_file/
+    # edit_file see only scratch space and answered "not found" for real
+    # files. Each named sub-agent gets its own instance; deepagents'
+    # general-purpose sub-agent is re-declared with its stock description and
+    # prompt so it carries the guard too (naming a spec "general-purpose" is
+    # how deepagents lets a caller replace it; without "tools" it inherits
+    # the primary's tools, as the stock one does).
+    for spec in subagents:
+        spec["middleware"] = (list(spec.get("middleware") or [])
+                              + [ScratchFilesystemGuard()])
+    if (_GENERAL_PURPOSE_SPEC is not None
+            and not any(s.get("name") == "general-purpose" for s in subagents)):
+        subagents.append({**_GENERAL_PURPOSE_SPEC,
+                          "middleware": [ScratchFilesystemGuard()]})
+
     # ----- Phase-3: persistent /memories/ backend + memory= source -----
     create_kwargs = dict(kwargs)
     backend = None
@@ -938,8 +981,8 @@ def build_deep_agent(
                 keep=summarization_keep,
             )
         )
-    if middleware:
-        create_kwargs["middleware"] = middleware
+    middleware.append(ScratchFilesystemGuard())
+    create_kwargs["middleware"] = middleware
 
     if store is not None:
         create_kwargs["store"] = store
