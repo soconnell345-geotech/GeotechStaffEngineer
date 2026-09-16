@@ -193,10 +193,23 @@ The chat cannot display a local path; images render only from file cards
 "Saved as a PNG: the chat UI renders it inline", which is true only inside the
 conversation folder.
 
-**Disposition: FIXED in `68f668e`.** The figure is copied in and shown as a
-card under the reply. A markdown image that points at a local path is replaced
-with "shown below", and the figure tools' notes no longer promise that a local
-PNG renders by itself.
+**Disposition: DELIVERY FIXED in `68f668e`; the KIND of figure fixed on
+`feature/plotly-plot-data` (2026-09-16).** `68f668e` fixed the delivery half:
+the figure is copied in and shown as a card under the reply, a markdown image
+pointing at a local path is replaced with "shown below", and the figure tools'
+notes no longer promise that a local PNG renders by itself.
+
+What the owner had actually asked for was an INTERACTIVE line graph, and the
+agent had picked the right tool — `profile_figure.plot_data` was
+matplotlib-only, so a static PNG was all it could produce (only the
+`subsurface.plot_*` family, which needs a parsed site, emitted the
+`.plotly.json` sidecar the app renders with `st.plotly_chart`). `plot_data`
+now builds the Plotly twin of the same cleaned series by default and writes it
+beside the PNG; the chat shows the interactive chart and suppresses the PNG
+card for that same figure, while the PNG stays on disk for the SharePoint
+mirror and for `html_to_pdf`. `interactive: false` opts out. The deep prompt's
+stale "renders a saved PNG/HTML figure INLINE" claim was corrected in the same
+change.
 
 ## N7 — `html_to_pdf` rejected `file:///tmp/…` images **[MED]** (agent note, turn 4) — code bug
 

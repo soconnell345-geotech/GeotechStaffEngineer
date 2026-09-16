@@ -32,6 +32,18 @@ def test_paths_in_json_repr_and_sharepoint_results():
     assert paths_in(up)[0] == ["/tmp/SOE.pdf"]
 
 
+def test_paths_in_picks_up_the_plotly_sidecar():
+    """The interactive chart is a separate file the tool reports under its own
+    key. Missed here, a sidecar written to /tmp never reaches the conversation
+    folder and the chat has nothing to render (the N6 failure mode)."""
+    js = json.dumps({"status": "success", "output_path": "/tmp/plot.png",
+                     "plotly_json_path": "/tmp/plot.plotly.json"})
+    outs, _ = paths_in(js)
+    assert outs == ["/tmp/plot.png", "/tmp/plot.plotly.json"]
+    outs, _ = paths_in("{'plotly_json_path': '/tmp/p.plotly.json'}")
+    assert outs == ["/tmp/p.plotly.json"]
+
+
 def test_collector_reads_tool_messages_and_dedupes():
     c = OutputCollector()
     msg = ToolMessage(content=json.dumps({"saved": "/tmp/a.html"}),
@@ -87,3 +99,13 @@ def test_displayable_markdown_points_local_images_at_the_card():
     assert "*(PYWall lateral earth pressures — shown below)*" in out
     assert "![web](https://example.com/a.png)" in out
     assert "not viewable in chat" in out and "/tmp/other.png" in out
+
+
+def test_displayable_markdown_counts_a_plotly_sidecar_as_the_figure():
+    """The PNG card is replaced by the interactive chart of the same figure,
+    so its markdown link still resolves to "shown below" — the figure IS under
+    the reply, just as a chart instead of an image."""
+    text = "![Lateral pressure](/tmp/pywall.png)"
+    out = core.displayable_markdown(text, ["/root/c/files/pywall.plotly.json"])
+    assert "*(Lateral pressure — shown below)*" in out
+    assert "not viewable" not in out

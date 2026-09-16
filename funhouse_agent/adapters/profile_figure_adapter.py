@@ -18,7 +18,8 @@ is there for the rare caller that does.
 import os
 from datetime import datetime
 
-from funhouse_agent.adapters import reject_unknown_params, require_params
+from funhouse_agent.adapters import (reject_unknown_params, require_params,
+                                     write_plotly_sidecar)
 from funhouse_agent._fileio import (default_output_dir, resolve_output_path,
                                     save_verified)
 
@@ -106,7 +107,7 @@ def _run_subsurface_profile(params: dict) -> dict:
 _VALID_PLOT = {
     "series", "title", "xlabel", "ylabel", "depth_axis", "logx", "logy",
     "hlines", "vlines", "grid", "legend", "output_path", "dpi", "width_in",
-    "height_in", "include_base64",
+    "height_in", "include_base64", "interactive",
 }
 
 
@@ -141,6 +142,7 @@ def _run_plot_data(params: dict) -> dict:
         dpi=params.get("dpi", 150),
         width_in=params.get("width_in", 6.5),
         height_in=params.get("height_in", 4.5),
+        interactive=bool(params.get("interactive", True)),
     )
     saved = save_verified(output_path, result.png_bytes)
     abs_path = saved.get("saved", os.path.abspath(output_path))
@@ -159,13 +161,27 @@ def _run_plot_data(params: dict) -> dict:
             f'<img src="{abs_path}" alt="{alt}" '
             f'style="width:100%;max-width:640px;">'),
         "embed_note": (
-            "Saved as a PNG. The web app shows it under your reply (a file "
-            "written outside the conversation folder is copied in at the end "
-            "of the turn) -- do not put a markdown image link to a local path "
-            "in the reply; it cannot display. html_to_pdf embeds the real "
-            "local path when you paste html_img_tag into report HTML. Never "
-            "write '[image]' or an inline <svg>."),
+            "Saved as a PNG plus an INTERACTIVE chart (unless "
+            "interactive=false). The web app shows the interactive chart "
+            "under your reply -- zoom and hover, one card; the PNG is the "
+            "report copy (a file written outside the conversation folder is "
+            "copied in at the end of the turn). Paste html_img_tag into "
+            "report HTML and html_to_pdf embeds the real local PNG. Do not "
+            "put a markdown image link to a local path in the reply; it "
+            "cannot display. Never write '[image]' or an inline <svg>."),
     }
+    # The interactive twin, written beside the PNG as <name>.plotly.json —
+    # what the chat actually renders (webapp/core.classify_artifact -> the
+    # st.plotly_chart card). Additive and best-effort: the PNG response above
+    # stands whether or not this works.
+    if saved.get("file_exists") and getattr(result, "figure", None) is not None:
+        try:
+            figure_json = result.figure.to_json()
+        except Exception:                                  # noqa: BLE001
+            figure_json = None
+        side = write_plotly_sidecar(abs_path, figure_json)
+        if side:
+            response.update(side)
     if result.warnings:
         response["warnings"] = list(result.warnings)
     for key in ("error", "rescue_path", "workspace_api_note"):
@@ -293,10 +309,11 @@ METHOD_INFO = {
     },
     "plot_data": {
         "category": "Figure",
-        "brief": ("Generic data plot (PNG): one or more x/y series — SPT or "
-                  "CPT vs depth, settlement vs time, load vs displacement, a "
-                  "parameter sweep or method comparison. Saves the file and "
-                  "returns an <img> tag ready for a report."),
+        "brief": ("Generic data plot: one or more x/y series — SPT or CPT vs "
+                  "depth, settlement vs time, load vs displacement, a "
+                  "parameter sweep or method comparison. Shows in chat as an "
+                  "INTERACTIVE chart (zoom/hover) and saves a PNG for "
+                  "reports, with an <img> tag ready to paste."),
         "parameters": {
             "series": {
                 "type": "array", "required": True,
@@ -337,6 +354,12 @@ METHOD_INFO = {
                             "description": ("PNG path. A bare filename lands in "
                                             "the working folder. "
                                             "Auto-generated if omitted.")},
+            "interactive": {
+                "type": "bool", "required": False, "default": True,
+                "description": ("Also write the interactive chart beside the "
+                                "PNG (<name>.plotly.json) — that is what the "
+                                "chat displays. Set false only when a static "
+                                "image is all you want.")},
             "dpi": {"type": "int", "required": False, "default": 150,
                     "description": "Raster resolution."},
             "width_in": {"type": "float", "required": False, "default": 6.5,
@@ -361,6 +384,9 @@ METHOD_INFO = {
             "html_img_tag": ("Ready-to-paste <img> tag referencing the saved "
                              "PNG — drop it straight into report HTML for "
                              "html_to_pdf."),
+            "plotly_json_path": ("Path of the interactive chart written beside "
+                                 "the PNG; this is what the chat shows. Absent "
+                                 "when interactive=false."),
             "warnings": "Non-fatal notes (e.g. non-finite points dropped).",
         },
     },
