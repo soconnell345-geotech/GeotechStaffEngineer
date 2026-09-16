@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geotech-staff-engineer"
-version = "5.17.1"
+version = "5.18.0"
 description = "Python toolkit for LLM-based geotechnical engineering agents - 33 analysis modules covering foundations, piles, slopes, structural section/RC/frame analysis, reliability, seismic site response, excavation support, pavement design (AASHTO 1993 / UFC 3-250-01), subsurface characterization (DIGGS/GEF/AGS4), FEM, drawing & profile rendering, and a cited public-domain reference layer."
 readme = "README.md"
 license = "MIT"
@@ -95,18 +95,20 @@ dependencies = [
     # Drawing & submittal intelligence — split out 2026-09-04 (owner:
     # independently importable/publishable package). Carries the former
     # drawing_ir/ (as planlens.ir), pdf_import/ (planlens.pdf), and
-    # dxf_import/units.py (planlens.dxf.units). [raster] keeps the
-    # opencv-based scanned-sheet leg that used to ride on our direct
-    # opencv-python-headless dep. planlens 0.1.0 published to PyPI
-    # with the 5.12.0 release train (2026-09-05).
-    # FLOOR RESTORED TO 0.2 (5.14.0, 2026-09-11). 5.13.0 shipped against the
-    # published 0.1.0 so the cytriangle and websocket fixes were not held
-    # hostage to the planlens remediation; that remediation is now complete --
-    # six builder-plus-independent-checker rounds, verdict SHIP -- and 0.2.0
-    # is published. 0.2.0 brings DXF block explosion (the adapter's degrade
-    # path for 0.1.x stays as belt-and-braces), the planlens.testing fixture
-    # package the app's drawing tests import, and the OCR render cap.
-    "planlens[raster]>=0.3",
+    # dxf_import/units.py (planlens.dxf.units). planlens 0.1.0 published to
+    # PyPI with the 5.12.0 release train (2026-09-05).
+    # NO EXTRA FROM 0.4 (5.18.0, 2026-09-16). The pin is plain
+    # `planlens>=0.4`: planlens 0.4.0 moved `opencv-python-headless` and
+    # `rapidfuzz` into its CORE dependencies, and `[raster]` / `[text]` are
+    # now EMPTY ALIAS EXTRAS kept only so older pins keep resolving. The
+    # scanned-sheet leg and fuzzy search therefore arrive with a plain
+    # install, and the app adds NO new direct dependency of its own --
+    # rapidfuzz is new on the cluster but it comes in through planlens.
+    # 0.4.0 also brings the stored PDF scale (`/Measure` viewports and
+    # measurement markups), layer names and path fill in the IR,
+    # duplicate-scan detection, quantities out of narrative text, fuzzy
+    # search, and an MCP server this app does not use.
+    "planlens>=0.4",
     # -- structural round 1 (owner, 2026-09-03): section/RC/frame analysis --
     # sectionproperties and concreteproperties were REMOVED in 5.13.0: both
     # require `cytriangle`, whose only manylinux wheel is quarantined by the

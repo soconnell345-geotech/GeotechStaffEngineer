@@ -249,7 +249,12 @@ class TestExplodeFlagAgainstAnOlderPlanlens:
         import re
         root = pathlib.Path(__file__).resolve().parents[2]
         text = (root / "pyproject.toml").read_text(encoding="utf-8")
-        m = re.search(r'"planlens\[raster\]>=([0-9.]+)"', text)
+        # The extras bracket is OPTIONAL: 5.18.0 dropped it because planlens
+        # 0.4.0 folded opencv-python-headless and rapidfuzz into its core and
+        # left [raster] / [text] as empty alias extras. Matching the bare name
+        # too keeps this guard reading the real floor instead of silently
+        # asserting its way out of the comparison below.
+        m = re.search(r'"planlens(?:\[[^\]]*\])?>=([0-9.]+)"', text)
         assert m, "planlens dependency line not found in pyproject.toml"
         return tuple(int(v) for v in m.group(1).split("."))
 

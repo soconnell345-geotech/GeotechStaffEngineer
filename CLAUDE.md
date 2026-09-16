@@ -70,7 +70,46 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## CURRENT WORKING STATE (2026-09-15) — 5.17.1 RELEASED (tag `v5.17.1`)
+## CURRENT WORKING STATE (2026-09-16) — 5.18.0 RELEASED (tag `v5.18.0`)
+
+- **app 5.18.0** (tag `v5.18.0`, 2026-09-16) — two feature branches merged, no
+  new direct dependency. **Charts the reader can use:** `plot_data` now draws
+  an interactive Plotly twin from the SAME cleaned series as the PNG
+  (`profile_figure.build_data_plot_figure`; `interactive: false` opts out),
+  written as a `*.plotly.json` sidecar the app has rendered with
+  `st.plotly_chart` since 5.4 but that only `subsurface.plot_*` ever produced.
+  The owner asked for an interactive plot of PYWall lateral pressures and got a
+  static image; the agent had picked the right tool, the generic x/y tool was
+  matplotlib-only. The app now also copies a sidecar written to `/tmp` into the
+  conversation folder (the Nairobi failure mode) and **hides the PNG card when
+  a sidecar stands beside it**, so the reader sees one card, the interactive
+  one — the CARD list only, so the SharePoint mirror, the sidebar downloads and
+  `html_to_pdf` still get the image. The deep prompt's figure wording is now
+  honest: a figure is a card BELOW the reply, some tools show as interactive
+  charts and some as images, and a markdown link to a local path still cannot
+  display. **Eighth document tool:** `find_quantities` — every number the
+  document STATES with a unit, with its wording, qualifier, page and box, so a
+  report's claims can be set beside what a drawing measures — plus `fuzzy` /
+  `min_score` on `search_document` for text read optically or plotted as
+  strokes. Both are FEATURE-DETECTED from the installed planlens' own published
+  specs, because the cluster installs from PyPI: on an older planlens
+  `find_quantities` is never advertised and a `fuzzy=true` search returns a
+  JSON error instead of calling the toolkit. **Pin is now plain
+  `planlens>=0.4`** (planlens 0.4.0 on PyPI 2026-09-16): that release moved
+  `opencv-python-headless` and `rapidfuzz` into planlens' CORE dependencies and
+  left `[raster]` / `[text]` as EMPTY ALIAS extras, so the extra is gone from
+  the pin and **the app adds no new direct dependency** — rapidfuzz is new on
+  the cluster but arrives through planlens (it cleared the Nexus probe
+  2026-09-16 as 3.14.6). planlens 0.4.0 also brings, unused by this app so far:
+  the scale Bluebeam/Acrobat already store in the PDF (`/VP` viewports and
+  measurement markups), PDF layer names and path fill in the IR,
+  duplicate-scan detection by image hash, and an MCP server over its own
+  toolkit. Release gate **11,773 passed / 33 skipped / 0 failed** (run in three
+  chunks). Cluster install NOT yet confirmed (install guide §11). **First live
+  checks:** ask for a plot and get an interactive chart card with zoom and
+  hover and NO second PNG card; `find_quantities` on a geotechnical report;
+  a `fuzzy=true` search on a drawing sheet whose text was plotted as strokes.
+  5.17.1 follows.
 
 - **app 5.17.1** (tag `v5.17.1`, 2026-09-15) — one fix on 5.17.0, found by the
   suite's ordering minutes after 5.17.0 went out: the deliverable import
@@ -854,7 +893,9 @@ Run: `pytest foundry_test_harness/ -v`
 
 Everything that reads a PDF, an image or a DXF lives in the separate,
 published package **planlens** (`C:/Users/socon/OneDrive/dev/planlens`,
-PyPI `planlens`, editable-installed in dev; app pin `planlens[raster]>=0.3`).
+PyPI `planlens`, editable-installed in dev; app pin `planlens>=0.4` — plain,
+no extra, because 0.4.0 moved `opencv-python-headless` and `rapidfuzz` into
+planlens' core and left `[raster]` / `[text]` as empty alias extras).
 It is the owner's TinyApp "banner application" for any architect or engineer
 reviewing documents; the geotech package rides along. No OBO branding, and do
 not pitch it as CAD-object recognition — the goal is document review.
@@ -863,15 +904,16 @@ not pitch it as CAD-object recognition — the goal is document review.
 |-------|-------------------------|
 | `planlens.document` | Any PDF (or image) as review-ready data: a page map (kinds text / drawing_sheet / form / figure / scanned / blank / mixed, with evidence, word density, the page number PRINTED on the page, sheet refs, scale notes); the document's STRUCTURE (segments from running headers/footers, printed numbering, dividers, duplicates); text lines with exact boxes and reading direction; tables; review markups (author, date, says/shows, the point a callout or arrow aims at, reply links); AutoCAD hidden SHX text; search; contact sheets. Azure Document Intelligence results as an optional text source (never called by planlens). One frame: displayed-page points, top-left origin — `render_region`'s frame. |
 | `planlens.ir` | Drawing geometry: DXF / vector-PDF / raster ingest into a provenance-and-confidence-bearing IR, slice queries, the construct finders (leaders, dimensions, title blocks, bubbles, clouds), `render_region` (zoom with set-of-marks), `measure` / `spatial`. |
-| `planlens.tools` | The framework-neutral LLM tool layer (`ReviewToolkit`): nine tools, JSON-Schema specs in Anthropic / OpenAI style, every result valid JSON inside a size limit, cursors for anything longer. |
+| `planlens.tools` | The framework-neutral LLM tool layer (`ReviewToolkit`): ten tools, JSON-Schema specs in Anthropic / OpenAI style, every result valid JSON inside a size limit, cursors for anything longer. |
 | `planlens.pdf` | The PDF ingest leg + the geotechnical cross-section importer (role mappings, soil-layer vision prompts) that predates the split; app-side bridge `dxf_import/pdf_bridge.py` → `build_slope_geometry()` / `build_fem_inputs()`. Moving the geotech part back here is on planlens' open list. |
 
-**In this app** (5.16.0): `funhouse_agent/document_tools.py` bridges
-`ReviewToolkit` to the deep agent — seven tools on the PRIMARY agent
+**In this app** (5.18.0): `funhouse_agent/document_tools.py` bridges
+`ReviewToolkit` to the deep agent — eight tools on the PRIMARY agent
 (`open_document`, `document_structure`, `document_page_map`,
 `read_document`, `search_document`, `document_markups`,
-`render_page_thumbnails`; the toolkit's own `render_page` / `render_region`
-stay off the app surface because the app has its own vision tools).
+`render_page_thumbnails`, `find_quantities`; the toolkit's own `render_page` /
+`render_region` stay off the app surface because the app has its own vision
+tools).
 Attachments resolve through a contextvar per call; one process-wide toolkit
 keeps handles across turns; planlens budgets each result just under the
 reference cap so nothing is string-truncated mid-JSON. Every `! look:` cue
@@ -884,19 +926,24 @@ tools (`digitize_drawing` / `query_drawing` / `get_entities` / `snip_region` /
 `funhouse_agent/adapters/drawing_ir_adapter.py`. The tools hide themselves on
 a planlens older than 0.3 rather than failing.
 
-**Eight tools on a planlens 0.4 or later**: `find_quantities` joins them —
-every number the document STATES with a unit, with its wording, qualifier,
-page and box, so the agent can set what a report says beside what a drawing
-measures. `search_document` also gains `fuzzy` / `min_score` there (default
-80, about 75 for a single word under eight letters) for text read optically
-or plotted as strokes. Both are FEATURE-DETECTED from the installed
-package's own specs (`document_tools.has_tool` /
+**The eighth tool and fuzzy search need planlens 0.4** (the pin floor since
+5.18.0). `find_quantities` returns every number the document STATES with a
+unit, with its wording, qualifier, page and box, so the agent can set what a
+report says beside what a drawing measures; `search_document` gains `fuzzy` /
+`min_score` (default 80, about 75 for a single word under eight letters) for
+text read optically or plotted as strokes. Both stay FEATURE-DETECTED from
+the installed package's own specs (`document_tools.has_tool` /
 `document_tools.search_supports_fuzzy`, the surface built by
-`document_tools.document_tool_names()`): the cluster installs planlens from
-PyPI, so on an older planlens `find_quantities` is never advertised and a
+`document_tools.document_tool_names()`) rather than trusting the pin: the
+cluster installs planlens from PyPI and has resolved older than the pin
+before, and on an older planlens `find_quantities` is never advertised and a
 `fuzzy=true` search returns a JSON error instead of calling the toolkit.
+**This added no new third-party dependency to the app** — fuzzy search rides
+on `rapidfuzz`, which planlens 0.4.0 carries in its own core alongside
+`opencv-python-headless`.
 
-Run: `cd ../planlens && pytest planlens -q` (planlens suite, 875) and
+Run: `cd ../planlens && pytest planlens -q` (planlens' own suite, which that
+repo gates — it grew past 1,100 at 0.4.0; do not quote a count from here) and
 `pytest funhouse_agent/deep/tests/test_document_tools_offline.py -q` (the
 app-side wiring). Design notes: `planlens/document/DESIGN.md`,
 `planlens/ir/DESIGN.md`; changelog `planlens/CHANGELOG.md`.

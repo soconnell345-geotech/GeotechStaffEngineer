@@ -8,6 +8,57 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### 5.18.0 RELEASED (2026-09-16, tag `v5.18.0`) — interactive `plot_data`, planlens 0.4 quantities + fuzzy search
+
+Two feature branches merged into master, no conflicts, **no new direct
+dependency**. `feature/plotly-plot-data`: `plot_data` draws an interactive
+Plotly twin from the same cleaned series as the PNG and writes it as a
+`*.plotly.json` sidecar (the format the app has rendered with
+`st.plotly_chart` since 5.4, which only `subsurface.plot_*` ever produced);
+`output_capture` now copies a sidecar written to `/tmp` into the conversation
+folder, and the PNG **card** is suppressed when a sidecar stands beside it, so
+the reader sees one card — the interactive one. Only the card list is
+filtered: the artifact list keeps the image, so the SharePoint mirror, the
+sidebar downloads and `html_to_pdf` are unaffected. The deep prompt's figure
+wording is now honest about what the chat actually does with a saved figure.
+`feature/planlens-survey-wiring`: `find_quantities` as the EIGHTH document
+tool, plus `fuzzy` / `min_score` on `search_document`, both feature-detected
+from the installed planlens rather than trusted from the pin (details in the
+"APP WIRING" entry below).
+
+Pin raised to plain **`planlens>=0.4`** (0.4.0 on PyPI 2026-09-16). No extra:
+0.4.0 folded `opencv-python-headless` and `rapidfuzz` into planlens' core and
+kept `[raster]` / `[text]` as empty alias extras. `rapidfuzz` is therefore new
+on the cluster but arrives through planlens, not as an app dependency; it
+cleared the Nexus probe 2026-09-16 as 3.14.6. planlens 0.4.0 also carries, and
+this app does NOT yet use: the scale Bluebeam/Acrobat store in the PDF, PDF
+layer names and path fill in the IR, duplicate-scan detection, and an MCP
+server over its own toolkit.
+
+Release gate **11,773 passed / 33 skipped / 0 failed**, run in three chunks
+(analysis modules incl. the slow FEM and slope suites, 3,793 / 28; the
+references submodule, 5,793; then `funhouse_agent` + `foundry_test_harness` +
+`webapp/tests`, 2,187 / 5) and gated on pytest's exit code, never on a piped
+tail — the 5.17.0 lesson. The pin change broke exactly one test and it was
+fixed:
+`test_drawing_ir_adapter.py::TestExplodeFlagAgainstAnOlderPlanlens::test_pin_floor_is_covered_or_the_degrade_is_in_place`
+read the floor with a regex that hard-coded `planlens[raster]>=`, so dropping
+the extra made it fail its own "dependency line not found" assertion. The
+extras bracket is now optional in that regex. Worth knowing: had the assert
+not been there, the guard would have silently stopped comparing floors.
+Cluster install of 5.18.0 **NOT yet confirmed** (install guide §11).
+
+**First live checks:** (1) ask for a plot of lateral pressures — one card, an
+interactive chart with zoom and hover, no second PNG card, no broken image
+link, both files in the SharePoint folder, and the PDF still embeds the image;
+(2) `find_quantities` on a geotechnical report — every stated value with its
+unit, wording and page; (3) a `fuzzy=true` search on a drawing sheet whose
+text was plotted as strokes, with the answer saying the match was approximate.
+Edge noted during the build and deliberately NOT fixed (pre-existing since
+5.4): a re-imported sidecar that collides with different content is renamed
+`plot.plotly_1.json` by `_unique_dest`, which stops classifying as plotly and
+stops suppressing the PNG — it degrades to a static card, no crash.
+
 ### 5.17.1 RELEASED (2026-09-15, tag `v5.17.1`) — one fix on 5.17.0
 
 `webapp/core.import_reported_outputs` compared files with `filecmp.cmp`, which
@@ -178,10 +229,11 @@ app wiring for `find_quantities` and the `fuzzy`/`min_score` search params in
 the agents: calc-printout quantity form `Pc (kip): 437.0` is not extracted;
 the positive duplicate-scan case is exercised only synthetically.
 
-**APP WIRING DONE (branch `feature/planlens-survey-wiring`, not pushed, not
-merged; no version bump, no dependency change).** `find_quantities` and
-`search_document`'s `fuzzy` / `min_score` reach the primary agent, both
-FEATURE-DETECTED from the installed planlens' own specs —
+**APP WIRING — DONE AND SHIPPED in 5.18.0** (branch
+`feature/planlens-survey-wiring`, merged to master 2026-09-16; the pin bump
+this note was waiting on is done too, see the 5.18.0 entry at the top).
+`find_quantities` and `search_document`'s `fuzzy` / `min_score` reach the
+primary agent, both FEATURE-DETECTED from the installed planlens' own specs —
 `document_tools.has_tool()` / `search_supports_fuzzy()`, surface built by
 `document_tools.document_tool_names()` — so a PyPI planlens 0.3 never sees
 them and a `fuzzy=true` search there returns a JSON error instead of calling
@@ -192,9 +244,11 @@ search with `fuzzy=true` and say the match was approximate), plus
 `funhouse_agent/deep/tests/test_document_tools_offline.py` (11 → 16; the
 older-planlens path is proven by monkeypatched specs, not by reinstalling) and
 one exact-surface assertion in `test_deep_tools_offline.py`. Deep suite 316
-passed / 1 skipped. **After planlens 0.4.0 is on PyPI, bump the pin to
-`planlens[raster,text]>=0.4`** (`pyproject.toml`, deliberately untouched here;
-rapidfuzz cleared the Nexus probe 2026-09-16 as 3.14.6).
+passed / 1 skipped. The pin landed as plain **`planlens>=0.4`**, NOT the
+`planlens[raster,text]>=0.4` this note originally predicted: 0.4.0 moved
+`opencv-python-headless` and `rapidfuzz` into planlens' core and kept
+`[raster]` / `[text]` as empty alias extras, so there is nothing to opt into
+(rapidfuzz cleared the Nexus probe 2026-09-16 as 3.14.6).
 
 **Earlier same day — APPROVED IN PART 2026-09-16 (owner word: "move through
 the step-one changes, small add-ons, and then the MCP plug"; Opus 5 subagents,

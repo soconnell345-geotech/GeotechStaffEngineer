@@ -266,7 +266,7 @@ may lag it. `hvsrpy`/`swprocess` were removed in 5.12.)
 | `read_reference_figure` | Render a digitized reference chart and read a value off it via vision |
 | `save_file` | Save content to a file (text or base64 binary), **write-verified** |
 
-### Document review tools (planlens, 5.16.0 — deep agent's primary surface)
+### Document review tools (planlens, 5.18.0 — deep agent's primary surface)
 
 Whole-document tools served by the `planlens` package's `ReviewToolkit`
 through `funhouse_agent/document_tools.py`. `source` is an attachment key or
@@ -278,9 +278,16 @@ a real path; results page through a `next` cursor and never truncate mid-JSON.
 | `document_structure` | The constituent documents (transmittal, drawing set, calc package, nested reports, appendices) with the page numbers PRINTED on their pages |
 | `document_page_map` | One row per page: kind, segment, heading, words, printed page, sheet ref, scale notes, markups, hidden CAD text, duplicates |
 | `read_document` | Text (optionally with boxes in `render_region`'s frame), tables as markdown, review markups; `! look:` lines say when the text is not the page |
-| `search_document` | Find text across page text, hidden CAD text and markup comments, phrases across line breaks included |
+| `search_document` | Find text across page text, hidden CAD text and markup comments, phrases across line breaks included; `fuzzy=true` (with `min_score`, default 80) forgives errors in text read optically or plotted as strokes |
 | `document_markups` | The review record: every comment, callout, cloud, arrow and stamp — author, date, what it says or shows, where it points, reply links |
 | `render_page_thumbnails` | Contact sheets of every page (thumbnail + page number + kind, red frame = marked up), to view with `analyze_image` |
+| `find_quantities` | Every number the document STATES with a unit — the value, its wording, any qualifier (minimum, approximate), the page and the box — so what a report claims can be set beside what a drawing measures |
+
+`find_quantities`, and `search_document`'s `fuzzy` / `min_score`, need
+planlens 0.4 or later. They are feature-detected from the installed package's
+own specs rather than assumed from the pin: on an older planlens
+`find_quantities` is not advertised at all and a `fuzzy=true` search returns a
+JSON error instead of calling the toolkit.
 
 The policy the deep-agent prompt states: text first, then LOOK — with
 `analyze_pdf_page` (a page), `render_region` (a spot) or `analyze_image` (a
