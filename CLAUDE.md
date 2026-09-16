@@ -70,7 +70,16 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## CURRENT WORKING STATE (2026-09-15) — 5.17.0 RELEASED (tag `v5.17.0`)
+## CURRENT WORKING STATE (2026-09-15) — 5.17.1 RELEASED (tag `v5.17.1`)
+
+- **app 5.17.1** (tag `v5.17.1`, 2026-09-15) — one fix on 5.17.0, found by the
+  suite's ordering minutes after 5.17.0 went out: the deliverable import
+  compared files with `filecmp.cmp`, which caches by (size, mtime), so a
+  rebuilt file of the SAME byte size written in the same clock tick read as
+  unchanged and was not re-copied — the conversation would have kept showing
+  the previous version, the very failure the import exists to prevent. Now a
+  byte comparison (`webapp/core._same_bytes`), with the case pinned (same
+  size, same timestamp, different bytes). 5.17.0 follows.
 
 - **app 5.17.0** (tag `v5.17.0`, 2026-09-15) — the NAIROBI SOE FIX TRAIN, out
   of a real review session (ledger:

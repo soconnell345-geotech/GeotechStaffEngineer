@@ -8,6 +8,18 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### 5.17.1 RELEASED (2026-09-15, tag `v5.17.1`) — one fix on 5.17.0
+
+`webapp/core.import_reported_outputs` compared files with `filecmp.cmp`, which
+caches by (size, mtime): a rebuilt deliverable of the same byte size written in
+the same clock tick counted as unchanged, was not re-copied, and the
+conversation kept the earlier version — the failure the import exists to
+prevent. It now compares bytes (`_same_bytes`), and the test pins the case
+(same size, same timestamp, different content). Caught by the webapp suite's
+ordering minutes after 5.17.0 was tagged; a release command whose pytest output
+went through `tail` had hidden the failing status. **Lesson for the next
+release: gate on pytest's exit code, never on a piped tail.**
+
 ### 5.17.0 RELEASED (2026-09-15, tag `v5.17.0`) — the Nairobi SOE fix train
 
 `module_work/field_feedback/2026-09-15_nairobi-soe-rerun_v5.15.0/FINDINGS.md`,

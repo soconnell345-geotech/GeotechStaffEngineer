@@ -14,7 +14,7 @@ Last verified against a real cluster log: **5.14.0, 2026-09-11** (clean).
 ## 1. The install
 
 ```python
-%pip install "geotech-staff-engineer==5.17.0"
+%pip install "geotech-staff-engineer==5.17.1"
 %restart_python
 ```
 
@@ -30,7 +30,7 @@ that the already-running Python process cannot see.
 
 Three lines decide it. Find them and you're done:
 
-1. **`Successfully installed ... geotech-staff-engineer-5.17.0 ...`** — with
+1. **`Successfully installed ... geotech-staff-engineer-5.17.1 ...`** — with
    `planlens-0.3.0` and `geotech-references-1.4.0` in the same list.
 2. **No `403` and no `quarantined` anywhere.**
 3. The final `ERROR: pip's dependency resolver ...` block lists **only** the
@@ -242,7 +242,8 @@ Stop and investigate only for these:
 | 5.14.0 | 2026-09-11 | Clean. OpenCV 5.0.0.93 arrived and was verified safe; deepagents 0.7.13 vs gate's 0.6.8 held via the compiled-agent guard; app confirmed working live by the owner. |
 | 5.15.0 | — | Not yet installed (app feedback train: no dependency changes, so the same log is expected). Replace this row when the cluster install is confirmed. |
 | 5.16.0 | — | Not yet installed (document-review train: pin `planlens[raster]>=0.3`; planlens 0.3.0 adds pure-Python subpackages over PyMuPDF, no new third-party packages, so the same log plus `planlens-0.3.0` is expected). Replace this row when the cluster install is confirmed. |
-| 5.17.0 | — | Not yet installed (Nairobi SOE fix train: **no dependency changes**, so the log should read exactly like 5.16.0's). Replace this row when the cluster install is confirmed. |
+| 5.17.0 | — | Superseded by 5.17.1 the same day (deliverable-import fix); install 5.17.1 instead. |
+| 5.17.1 | — | Not yet installed (Nairobi SOE fix train + one follow-up fix: **no dependency changes**, so the log should read exactly like 5.16.0's). Replace this row when the cluster install is confirmed. |
 
 Earlier, 5.12.0's **first** attempt failed: pip 403 on `cytriangle`, pulled in by
 `sectionproperties` **and** `concreteproperties`. Both were removed and rebuilt
