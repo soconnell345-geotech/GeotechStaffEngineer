@@ -884,6 +884,18 @@ tools (`digitize_drawing` / `query_drawing` / `get_entities` / `snip_region` /
 `funhouse_agent/adapters/drawing_ir_adapter.py`. The tools hide themselves on
 a planlens older than 0.3 rather than failing.
 
+**Eight tools on a planlens 0.4 or later**: `find_quantities` joins them —
+every number the document STATES with a unit, with its wording, qualifier,
+page and box, so the agent can set what a report says beside what a drawing
+measures. `search_document` also gains `fuzzy` / `min_score` there (default
+80, about 75 for a single word under eight letters) for text read optically
+or plotted as strokes. Both are FEATURE-DETECTED from the installed
+package's own specs (`document_tools.has_tool` /
+`document_tools.search_supports_fuzzy`, the surface built by
+`document_tools.document_tool_names()`): the cluster installs planlens from
+PyPI, so on an older planlens `find_quantities` is never advertised and a
+`fuzzy=true` search returns a JSON error instead of calling the toolkit.
+
 Run: `cd ../planlens && pytest planlens -q` (planlens suite, 875) and
 `pytest funhouse_agent/deep/tests/test_document_tools_offline.py -q` (the
 app-side wiring). Design notes: `planlens/document/DESIGN.md`,

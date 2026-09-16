@@ -5,6 +5,7 @@ Uses planlens' synthetic review document: a report page with a review stamp, a
 cloud, an arrow and hidden CAD text, a ruled table, a blank page and a scan.
 """
 
+import copy
 import json
 
 import pytest
@@ -30,6 +31,27 @@ def _tool(tools, name):
 
 def _invoke(tool, **kwargs):
     return json.loads(tool.invoke(kwargs))
+
+
+def _older_planlens(monkeypatch, *, without=(), drop_search_params=()):
+    """Make the installed planlens look like one that predates a feature.
+
+    The app is wired against a planlens the cluster may not have yet: the
+    cluster installs from PyPI. Editing the published specs is exactly what a
+    older package looks like to the bridge, and it proves the older-planlens
+    path without installing one.
+    """
+    from planlens.tools import specs as planlens_specs
+    kept = []
+    for spec in planlens_specs.TOOL_SPECS:
+        if spec["name"] in without:
+            continue
+        if spec["name"] == "search_document" and drop_search_params:
+            spec = copy.deepcopy(spec)
+            for param in drop_search_params:
+                spec["parameters"]["properties"].pop(param, None)
+        kept.append(spec)
+    monkeypatch.setattr(planlens_specs, "TOOL_SPECS", kept)
 
 
 def test_document_tools_are_on_the_primary_surface():
@@ -157,3 +179,79 @@ def test_without_the_tool_layer_the_tools_are_hidden(monkeypatch):
     out = json.loads(document_tools.dispatch_document_tool(
         "open_document", {"source": "x.pdf"}))
     assert "planlens" in out["error"]
+
+
+# -- tools and parameters a newer planlens adds --------------------------------
+
+def test_find_quantities_is_offered_when_the_installed_planlens_has_it():
+    if not document_tools.has_tool("find_quantities"):
+        pytest.skip("installed planlens predates find_quantities")
+    names = {t.name for t in make_vision_tools(engine=None)}
+    assert "find_quantities" in names
+    assert "find_quantities" in document_tools.document_tool_names()
+
+
+def test_find_quantities_is_hidden_on_an_older_planlens(monkeypatch):
+    _older_planlens(monkeypatch, without=("find_quantities",))
+    names = {t.name for t in make_vision_tools(engine=None)}
+    assert "find_quantities" not in names
+    assert NAMES <= names                      # the seven are unaffected
+    assert "find_quantities" not in document_tools.document_tool_names()
+
+
+def test_stated_quantities_come_back_located_and_within_the_cap(gt):
+    if not document_tools.has_tool("find_quantities"):
+        pytest.skip("installed planlens predates find_quantities")
+    tools = make_vision_tools(engine=None, attachments={"report.pdf": gt.pdf},
+                              max_result_chars=3000,
+                              reference_result_chars=3000)
+    handle = _invoke(_tool(tools, "open_document"),
+                     source="report.pdf")["handle"]
+    raw = _tool(tools, "find_quantities").invoke(
+        {"handle": handle, "pages": str(gt.narrative_page)})
+    assert len(raw) <= 3000
+    out = json.loads(raw)                      # valid JSON, not truncated
+    assert "error" not in out
+    assert out["n_mentions"] >= 1
+    rows = out["quantities"]
+    # The narrative states "approximately 40-foot centers" and "20 to 35 feet":
+    # a mention carries the unit the page wrote, its kind and its page.
+    assert any("ft" in row for row in rows)
+    assert any("[length]" in row for row in rows)
+    assert any(f"p{gt.narrative_page}" in row for row in rows)
+    # Filtering reaches planlens with the spec's own parameter names.
+    none = _invoke(_tool(tools, "find_quantities"), handle=handle,
+                   pages=str(gt.narrative_page), kinds=["volume"])
+    assert none["n_mentions"] == 0
+
+
+def test_fuzzy_search_finds_a_word_with_a_letter_wrong(gt):
+    if not document_tools.search_supports_fuzzy():
+        pytest.skip("installed planlens predates fuzzy search")
+    pytest.importorskip("rapidfuzz",
+                        reason="fuzzy search needs the planlens 'text' extra")
+    tools = make_vision_tools(engine=None, attachments={"s.pdf": gt.pdf})
+    search = _tool(tools, "search_document")
+    handle = _invoke(_tool(tools, "open_document"), source="s.pdf")["handle"]
+    # The reviewer's callout says EMBEDMENT; this asks for it with one letter
+    # substituted, the way a scan or SHX lettering comes back.
+    exact = _invoke(search, handle=handle, pattern="EMBEDMANT")
+    assert exact["n_hits"] == 0
+    loose = _invoke(search, handle=handle, pattern="EMBEDMANT", fuzzy=True)
+    assert loose["n_hits"] >= 1
+    assert any("EMBEDMENT" in json.dumps(hit) for hit in loose["hits"])
+
+
+def test_fuzzy_on_an_older_planlens_is_refused_without_a_call(gt, monkeypatch):
+    tools = make_vision_tools(engine=None, attachments={"s.pdf": gt.pdf})
+    search = _tool(tools, "search_document")
+    handle = _invoke(_tool(tools, "open_document"), source="s.pdf")["handle"]
+    _older_planlens(monkeypatch, drop_search_params=("fuzzy", "min_score"))
+    calls = []
+    monkeypatch.setattr(document_tools, "dispatch_document_tool",
+                        lambda *a, **k: calls.append(a) or "{}")
+    out = _invoke(search, handle=handle, pattern="EMBEDMANT", fuzzy=True)
+    assert "fuzzy" in out["error"] and not calls
+    # An exact search still goes through untouched.
+    _invoke(search, handle=handle, pattern="EMBEDMENT")
+    assert calls

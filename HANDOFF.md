@@ -150,14 +150,70 @@ Nairobi submittal first — private, never into planlens' public repo);
 (boring logs read in drafting order today); give the calc sub-agent read-only
 document tools. Arrowhead tuning is FROZEN.
 
+**planlens survey train BUILT 2026-09-16 — planlens branch `feature/survey-step1`
+(10 commits on 0.3.0, NOT pushed, NOT released; suite 875 → 1,109; corpus
+figures identical; core deps unchanged; new OPTIONAL extras `[text]`=rapidfuzz and
+`[mcp]`=mcp>=2,<3).** What landed: stored PDF scale (`/VP` viewports + measurement
+markups → `Viewport`, `Markup.measure`, bridge to `measure.Quantity`; NO real
+Bluebeam-calibrated page exists in our corpus yet — re-probe when one arrives);
+PDF layer names + fill in the IR (`include_hidden_layers`; page map faster);
+`Document.search(fuzzy=True)` default 80 (measured); `Document.quantities` +
+`find_quantities` tool (regex; quantulum3 REJECTED on measurement);
+image-hash duplicates on scans (dHash, distance 2); `open_document` size-budget
+bug fixed; `planlens.mcp_server` / `planlens-mcp` (mcp 2.2 low-level Server, ten
+tools generated from the plain specs, images attached, stdio + `--http`).
+Private measurements: `module_work/field_feedback/2026-09-09_nairobi-soe_v5.11.2/
+PLANLENS_SURVEY_MEASUREMENTS.md` (+ four probe scripts, untracked).
+**Nexus probe DONE 2026-09-16 (owner ran `nexus_pip_install` on the cluster,
+858 blocked versions loaded): both cleared.** Reproducible pins the helper
+printed: `rapidfuzz==3.14.6`; `mcp==2.2.0 idna==3.19 pydantic==2.12.5
+pyjwt==2.10.1 starlette==1.6.0` — the helper pins a transitive dep only when
+some of its versions are blocked, so idna / pydantic / pyjwt / starlette each
+have quarantined versions. BEFORE the app pins `[mcp]`, check those four
+against the streamlit / langchain stack the cluster resolves (install guide
+§7 procedure); `[text]` has no such coupling.
+**NEXT (owner-gated):** review + push branch;
+app wiring for `find_quantities` and the `fuzzy`/`min_score` search params in
+`funhouse_agent/document_tools.py`; then planlens 0.4.0. Two follow-ups noted by
+the agents: calc-printout quantity form `Pc (kip): 437.0` is not extracted;
+the positive duplicate-scan case is exercised only synthetically.
+
+**APP WIRING DONE (branch `feature/planlens-survey-wiring`, not pushed, not
+merged; no version bump, no dependency change).** `find_quantities` and
+`search_document`'s `fuzzy` / `min_score` reach the primary agent, both
+FEATURE-DETECTED from the installed planlens' own specs —
+`document_tools.has_tool()` / `search_supports_fuzzy()`, surface built by
+`document_tools.document_tool_names()` — so a PyPI planlens 0.3 never sees
+them and a `fuzzy=true` search there returns a JSON error instead of calling
+the toolkit. Files: `funhouse_agent/document_tools.py`,
+`funhouse_agent/deep/tools.py`, `funhouse_agent/deep/prompt.py` (two policy
+sentences: stated numbers vs what the drawing measures; retry a missed exact
+search with `fuzzy=true` and say the match was approximate), plus
+`funhouse_agent/deep/tests/test_document_tools_offline.py` (11 → 16; the
+older-planlens path is proven by monkeypatched specs, not by reinstalling) and
+one exact-surface assertion in `test_deep_tools_offline.py`. Deep suite 316
+passed / 1 skipped. **After planlens 0.4.0 is on PyPI, bump the pin to
+`planlens[raster,text]>=0.4`** (`pyproject.toml`, deliberately untouched here;
+rapidfuzz cleared the Nexus probe 2026-09-16 as 3.14.6).
+
+**Earlier same day — APPROVED IN PART 2026-09-16 (owner word: "move through
+the step-one changes, small add-ons, and then the MCP plug"; Opus 5 subagents,
+one at a time, Fable reviews).** In progress on planlens branch
+`feature/survey-step1`: (1) stored PDF scale from `/VP` viewports and measurement
+markups, PDF layer names and path fill in the IR; (2) fuzzy search, quantities
+from prose, duplicate-scan detection; (3) an MCP server over `ReviewToolkit`.
+**TODO, parked:** the scanned-page engines ("local AI models for OCR / tables /
+layout", survey Tier 2) — owner may take them next week IF the Funhouse team
+confirms model files can be vendored through Nexus; and drawing revision
+comparison (survey Part A4). Original parking note follows.
+
 **PARKED (2026-09-14, owner pivoting to app work): planlens package survey.**
 `module_work/PLANLENS_PACKAGE_SURVEY.md` — a web-verified survey of packages
 that could extend planlens (three no-new-dependency wins first: calibrated page
 scale from PDF viewport/measure dictionaries, PDF layer names, path fill; then
 fuzzy search, quantity extraction from prose, scanned-table structure, an MCP
-server). Two owner conditions before it is picked up: (1) **translate it into
-plain English for the owner** (what a reviewer gains, what it costs, what the
-package firewall blocks — no package names in the headline); (2) **it was NOT
+server). Two owner conditions before it is picked up: (1) **plain-English summary for the owner — DONE 2026-09-16**, at the top of
+the survey file; (2) **it was NOT
 checked against the organisation's banned-package list** — the Nexus inventory
 404s from outside the enclave and no local copy exists; every new pin must first
 pass the on-cluster `nexus_pip_install` probe in the survey's Part E. Also

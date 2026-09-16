@@ -572,12 +572,14 @@ def make_vision_tools(
         # Whole-document review tools (planlens.tools), when the installed
         # planlens has them — never advertised to the model otherwise.
         if _document_tools.available():
-            include |= set(_document_tools.DOCUMENT_TOOL_NAMES)
+            include |= set(_document_tools.document_tool_names())
     reference_cap = _resolve_reference_cap(max_result_chars,
                                            reference_result_chars)
+    # Resolved once per build: the newer tools depend on the installed planlens.
+    document_names = set(_document_tools.document_tool_names())
 
     def _dispatch(tool_name: str, arguments: dict) -> str:
-        if tool_name in _document_tools.DOCUMENT_TOOL_NAMES:
+        if tool_name in document_names:
             # Text-payload reads, budgeted by planlens itself: its limit sits
             # just under the reference cap, so results page through cursors
             # as valid JSON instead of being string-truncated here.
@@ -798,14 +800,42 @@ def make_vision_tools(
     def search_document(handle: str, pattern: str, pages: Any = None,
                         regex: bool = False, case_sensitive: bool = False,
                         include_markups: bool = True,
-                        max_hits: int = 100) -> str:
-        """Find text, hidden CAD text and markup comments."""
+                        max_hits: int = 100, fuzzy: bool = False,
+                        min_score: int = 80) -> str:
+        """Find text, hidden CAD text and markup comments. ``fuzzy=True``
+        matches approximately (score 0-100, best first) for text read
+        optically or plotted as strokes; ``min_score`` defaults to 80."""
+        if fuzzy and not _document_tools.search_supports_fuzzy():
+            return json.dumps({
+                "error": "the installed planlens does not support fuzzy "
+                         "search (it arrived in planlens 0.4)",
+                "hint": "search again without fuzzy; an exact miss on a "
+                        "scan, a figure or a drawing sheet is not absence — "
+                        "look at the page instead"})
         args = {"handle": handle, "pattern": pattern, "regex": regex,
                 "case_sensitive": case_sensitive,
                 "include_markups": include_markups, "max_hits": max_hits}
         if pages not in (None, ""):
             args["pages"] = pages
+        if fuzzy:
+            args["fuzzy"] = True
+            args["min_score"] = min_score
         return _dispatch("search_document", args)
+
+    def find_quantities(handle: str, pages: Any = None, kinds: Any = None,
+                        units: Any = None, include_markups: bool = True,
+                        offset: int = 0) -> str:
+        """Every number WITH A UNIT the document states, with its wording,
+        qualifier, page and box."""
+        args = {"handle": handle, "include_markups": include_markups,
+                "offset": offset}
+        if pages not in (None, ""):
+            args["pages"] = pages
+        if kinds not in (None, "", [], ()):
+            args["kinds"] = kinds
+        if units not in (None, "", [], ()):
+            args["units"] = units
+        return _dispatch("find_quantities", args)
 
     def document_markups(handle: str, pages: Any = None, author: str = "",
                          offset: int = 0) -> str:
@@ -833,6 +863,20 @@ def make_vision_tools(
             ),
             save_fn,
         )
+
+    # Each document tool is described to the model in planlens' own words, and
+    # the ones a newer planlens added appear only where they exist.
+    document_review_builders = [
+        ("open_document", open_document),
+        ("document_structure", document_structure),
+        ("document_page_map", document_page_map),
+        ("read_document", read_document),
+        ("search_document", search_document),
+        ("document_markups", document_markups),
+        ("render_page_thumbnails", render_page_thumbnails),
+    ]
+    if _document_tools.has_tool("find_quantities"):
+        document_review_builders.append(("find_quantities", find_quantities))
 
     _builders = {
         "list_files": (
@@ -889,14 +933,7 @@ def make_vision_tools(
             "pdf_page is 1-based (0 = first catalogued page).",
         ),
         **({name: (fn, _document_tools.tool_description(name))
-            for name, fn in (("open_document", open_document),
-                             ("document_structure", document_structure),
-                             ("document_page_map", document_page_map),
-                             ("read_document", read_document),
-                             ("search_document", search_document),
-                             ("document_markups", document_markups),
-                             ("render_page_thumbnails",
-                              render_page_thumbnails))}
+            for name, fn in document_review_builders}
            if _document_tools.available() else {}),
         "save_file": (
             save_file,

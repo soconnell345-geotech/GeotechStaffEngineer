@@ -206,18 +206,21 @@ def test_analysis_scope_hides_reference_in_catalog():
 # ---------------------------------------------------------------------------
 
 def test_vision_tools_build_and_error_without_engine():
+    from funhouse_agent import document_tools
+
     tools = make_vision_tools(engine=None)
     names = {t.name for t in tools}
+    # The whole-document review tools are planlens.tools': the fixed seven,
+    # plus whatever later planlens added and this install actually publishes.
+    document_names = (set(document_tools.document_tool_names())
+                      if document_tools.available() else set())
+    if document_names:
+        assert set(document_tools.DOCUMENT_TOOL_NAMES) <= document_names
     assert names == {"list_files", "read_pdf_text", "read_text_file",
                      "analyze_image",
                      "analyze_pdf_page", "render_region",
                      "read_reference_figure",
-                     "view_worked_example_source", "save_file",
-                     # planlens.tools whole-document review tools
-                     "open_document", "document_structure",
-                     "document_page_map", "read_document",
-                     "search_document", "document_markups",
-                     "render_page_thumbnails"}
+                     "view_worked_example_source", "save_file"} | document_names
 
     # read_reference_figure without args → clear error (no raise).
     out = _invoke(
