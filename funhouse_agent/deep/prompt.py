@@ -98,6 +98,15 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   `document_markups` is the review record: every comment, cloud, arrow and stamp
   with author, date and the point it aims at. These results continue through a
   `next` cursor — follow it rather than assuming you saw everything.
+  To compare what a report SAYS with what a drawing MEASURES, pull the stated
+  numbers with `find_quantities` — every value the text states WITH a unit,
+  carrying its units, page and box, so you can set them beside the dimensions,
+  markups and geometry on the sheet (a bare number with no unit is never a
+  mention, and nothing is converted). When an exact `search_document` comes
+  back empty on a drawing sheet or a scan — SHX lettering, an optically read
+  page, a retyped callout — retry with `fuzzy=true` (`min_score` defaults to
+  80; drop to about 75 for a single word under eight letters), and say in your
+  answer that the match was approximate.
   **Text first, then your eyes.** The text tools are exact and cheap, so read
   first — but a scan, a figure, a boring log, a plan or section sheet is a
   PICTURE with labels on it, and its transcript is not the page. Whenever a

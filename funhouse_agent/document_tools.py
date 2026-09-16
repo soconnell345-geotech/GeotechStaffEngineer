@@ -1,12 +1,13 @@
 """Whole-document review tools for the agent, served by ``planlens.tools``.
 
-The deep agent's primary tool surface gets five tools — ``open_document``,
-``document_page_map``, ``read_document``, ``search_document`` and
-``document_markups`` — that read a whole PDF as located, attributed data: a
-page map, text with boxes, tables, the review markups and the hidden text CAD
-programs leave behind. planlens owns the behaviour and the size discipline
-(every result valid JSON inside the budget, longer results paged through
-cursors). This module only connects it to the app:
+The deep agent's primary tool surface gets ``open_document``,
+``document_structure``, ``document_page_map``, ``read_document``,
+``search_document``, ``document_markups`` and ``render_page_thumbnails`` —
+tools that read a whole PDF as located, attributed data: a page map, text with
+boxes, tables, the review markups and the hidden text CAD programs leave
+behind. planlens owns the behaviour and the size discipline (every result valid
+JSON inside the budget, longer results paged through cursors). This module only
+connects it to the app:
 
 - a ``source`` resolves against the conversation's attachments first, then
   real file paths — the same order as ``read_pdf_text``;
@@ -20,6 +21,12 @@ cursors). This module only connects it to the app:
   which take the same ``source`` and the same displayed-frame boxes. The
   toolkit's own ``render_page`` / ``render_region`` are not exposed here —
   the app already routes images to the model through its vision engine.
+
+Tools and parameters planlens gained after the version this app pins are
+FEATURE-DETECTED from the installed package's own specs
+(:func:`has_tool`, :func:`search_supports_fuzzy`) and stay off the surface
+otherwise — the cluster installs planlens from PyPI, which can be older than
+the development checkout.
 """
 
 from __future__ import annotations
@@ -30,6 +37,9 @@ import threading
 from contextvars import ContextVar
 from typing import Any, Dict, Optional
 
+#: The tools every planlens with the tool layer serves (0.3 and later). Kept as
+#: a module constant because callers import it; ``document_tool_names()`` is
+#: what the INSTALLED planlens actually offers.
 DOCUMENT_TOOL_NAMES = (
     "open_document",
     "document_structure",
@@ -38,6 +48,12 @@ DOCUMENT_TOOL_NAMES = (
     "search_document",
     "document_markups",
     "render_page_thumbnails",
+)
+
+#: Served only by a newer planlens. Each one is advertised to the model only
+#: when the installed package publishes a spec for it.
+OPTIONAL_DOCUMENT_TOOL_NAMES = (
+    "find_quantities",
 )
 
 #: How the model views a PNG planlens wrote (the thumbnail contact sheets):
@@ -87,11 +103,47 @@ def budget_for_cap(cap: int) -> int:
 
 def tool_description(name: str) -> str:
     """The model-facing description planlens publishes for ``name``."""
-    from planlens.tools.specs import TOOL_SPECS
+    spec = _spec(name)
+    if spec is None:
+        raise KeyError(name)
+    return spec["description"]
+
+
+def _spec(name: str) -> Optional[Dict[str, Any]]:
+    """The installed planlens' spec for ``name``, or ``None``."""
+    try:
+        from planlens.tools.specs import TOOL_SPECS
+    except ImportError:
+        return None
     for spec in TOOL_SPECS:
-        if spec["name"] == name:
-            return spec["description"]
-    raise KeyError(name)
+        if spec.get("name") == name:
+            return spec
+    return None
+
+
+def has_tool(name: str) -> bool:
+    """Whether the installed planlens publishes a tool called ``name``."""
+    return _spec(name) is not None
+
+
+def document_tool_names() -> tuple:
+    """The document tools to put on the agent's surface.
+
+    The fixed seven, plus every optional tool the installed planlens actually
+    publishes. Computed per call, not at import, so the set follows the package
+    that is installed rather than the one this app was written against.
+    """
+    return DOCUMENT_TOOL_NAMES + tuple(
+        name for name in OPTIONAL_DOCUMENT_TOOL_NAMES if has_tool(name))
+
+
+def search_supports_fuzzy() -> bool:
+    """Whether the installed ``search_document`` takes ``fuzzy``."""
+    spec = _spec("search_document")
+    if spec is None:
+        return False
+    schema = spec.get("parameters") or spec.get("input_schema") or {}
+    return "fuzzy" in (schema.get("properties") or {})
 
 
 def _resolve(source: str):
