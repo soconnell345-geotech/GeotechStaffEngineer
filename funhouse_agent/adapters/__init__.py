@@ -120,6 +120,34 @@ def figure_output_format(params: dict, default: str = "metadata") -> str:
     return params.get("output_format", default)
 
 
+def write_plotly_sidecar(output_path, figure_json):
+    """Write ``figure_json`` as ``<name>.plotly.json`` beside ``output_path``.
+
+    One Plotly figure serialized with ``figure.to_json()``, saved next to the
+    file it belongs to (the same stem, whatever that file's extension) so a
+    front-end can render it natively with ``st.plotly_chart`` instead of an
+    HTML iframe or a static image. Returns ``{"plotly_json_path": ...}`` on a
+    verified write and ``None`` otherwise — the sidecar is always additive and
+    best-effort, so a caller merges the dict and never fails on it.
+
+    The naming rule and the :func:`funhouse_agent._fileio.save_verified` call
+    live HERE only, so ``/Workspace`` durability and read-back verification
+    come free for every producer of a sidecar.
+    """
+    if not output_path or not figure_json:
+        return None
+    import os as _os
+    try:
+        from funhouse_agent._fileio import save_verified
+        sidecar = _os.path.splitext(str(output_path))[0] + ".plotly.json"
+        saved = save_verified(sidecar, figure_json)
+    except Exception:                                      # noqa: BLE001
+        return None
+    if saved.get("file_exists"):
+        return {"plotly_json_path": saved.get("saved", sidecar)}
+    return None
+
+
 def save_html_output(result: dict, params: dict, *, html_key: str = "html",
                      figure_json: str = None) -> dict:
     """Save a plot result's HTML to ``params['output_path']`` when given.
@@ -134,9 +162,10 @@ def save_html_output(result: dict, params: dict, *, html_key: str = "html",
     When ``figure_json`` (a Plotly ``figure.to_json()`` string) is supplied, a
     compact ``<name>.plotly.json`` sidecar is written next to the HTML so a
     front-end (e.g. the webapp) can render the figure natively with
-    ``st.plotly_chart`` instead of an HTML iframe. The sidecar is additive and
-    best-effort — a sidecar failure never affects the HTML save. Its path is
-    returned under ``plotly_json_path``.
+    ``st.plotly_chart`` instead of an HTML iframe (see
+    :func:`write_plotly_sidecar`). The sidecar is additive and best-effort — a
+    sidecar failure never affects the HTML save. Its path is returned under
+    ``plotly_json_path``.
 
     Reuses :func:`funhouse_agent._fileio.save_verified`, so a ``/Workspace``
     target goes through the durable Databricks workspace API and every write is
@@ -163,12 +192,9 @@ def save_html_output(result: dict, params: dict, *, html_key: str = "html",
             "instead of returned inline (open it in a browser). Omit "
             "output_path to receive the HTML in the response."
         )
-        if figure_json:
-            import os as _os
-            sidecar = _os.path.splitext(str(output_path))[0] + ".plotly.json"
-            side = save_verified(sidecar, figure_json)
-            if side.get("file_exists"):
-                result["plotly_json_path"] = side.get("saved", sidecar)
+        side = write_plotly_sidecar(output_path, figure_json)
+        if side:
+            result.update(side)
     else:
         result["renderer_note"] = (
             "The figure HTML could NOT be stored at output_path — see 'error' "

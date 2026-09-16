@@ -320,18 +320,53 @@ def pdf_data_uri(path, max_bytes: int = PDF_PREVIEW_MAX_BYTES) -> Optional[str]:
         base64.b64encode(artifact_bytes(path)).decode("ascii")
 
 
+#: A Plotly sidecar and the static image it supersedes share everything but
+#: this suffix (``lateral_pressure.png`` / ``lateral_pressure.plotly.json``).
+PLOTLY_SIDECAR_SUFFIX = ".plotly.json"
+_SUPERSEDED_IMAGE_EXTS = (".png", ".jpg", ".jpeg")
+
+
+def _plotly_sidecar_stems(paths: Iterable[str]) -> set:
+    """Lower-cased paths-without-suffix of every ``*.plotly.json`` in ``paths``."""
+    stems = set()
+    for p in paths or ():
+        low = str(p).lower()
+        if low.endswith(PLOTLY_SIDECAR_SUFFIX):
+            stems.add(low[:-len(PLOTLY_SIDECAR_SUFFIX)])
+    return stems
+
+
+def _superseded_by_plotly(path: str, stems: set) -> bool:
+    """True when ``path`` is the static image of a figure that also has an
+    interactive sidecar in the same list."""
+    low = str(path).lower()
+    if not low.endswith(_SUPERSEDED_IMAGE_EXTS):
+        return False
+    return os.path.splitext(low)[0] in stems
+
+
 def collect_turn_artifacts(save_new: Iterable[str],
                            dir_new: Iterable[str]) -> List[str]:
     """Associate a turn's artifacts: the union of the paths the save_fn recorded
     during the turn and the new files the directory diff found, deduplicated and
-    order-preserving (save_fn first)."""
+    order-preserving (save_fn first).
+
+    One figure, one card: when a ``*.plotly.json`` sidecar is present, the PNG
+    (or JPG) of the SAME figure is dropped from this list, so the chat shows
+    the interactive chart rather than a chart and a picture of it. Only the
+    CARD list is filtered — the caller's own artifact list still carries the
+    image, so the SharePoint mirror, the sidebar downloads and ``html_to_pdf``
+    are untouched."""
     out: List[str] = []
     seen = set()
     for p in list(save_new or []) + list(dir_new or []):
         if p not in seen:
             seen.add(p)
             out.append(p)
-    return out
+    stems = _plotly_sidecar_stems(out)
+    if not stems:
+        return out
+    return [p for p in out if not _superseded_by_plotly(p, stems)]
 
 
 def snapshot_dir(temp_dir: str) -> set:
@@ -1051,8 +1086,17 @@ def displayable_markdown(text: str, artifact_paths: Iterable[str] = ()) -> str:
     """Replace markdown images that point at local files -- which the chat
     cannot display (field feedback N6: a broken-image icon where the PYWall
     plot should have been) -- with a pointer to the card shown under the
-    reply, or a plain note when there is no such card."""
+    reply, or a plain note when there is no such card.
+
+    A figure whose PNG card was replaced by its interactive Plotly chart
+    (:func:`collect_turn_artifacts`) still counts as shown: the reader sees
+    that figure below the reply, so the PNG link must not read "not viewable"."""
     names = {os.path.basename(str(p)) for p in artifact_paths or ()}
+    for name in list(names):                   # the sidecar stands in for its
+        low = name.lower()                     # image — same figure, one card
+        if low.endswith(PLOTLY_SIDECAR_SUFFIX):
+            stem = name[:-len(PLOTLY_SIDECAR_SUFFIX)]
+            names.update(stem + ext for ext in _SUPERSEDED_IMAGE_EXTS)
 
     def _swap(m):
         alt = m.group(1).strip() or "figure"

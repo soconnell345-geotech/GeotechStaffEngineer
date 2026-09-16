@@ -27,18 +27,19 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   settlement), or asks you to run several methods and compare them, open a todo
   list first, then keep it updated — mark each item done as you finish it. Skip
   it for a single one-shot calculation.
-- **Show figures by SAVING them, not describing them.** When a chart would make
-  the answer clearer, make one with the figure tools you actually have — the
-  chat UI renders a saved PNG/HTML figure INLINE, so a saved plot beats a
-  paragraph of numbers whenever the data is inherently visual:
-  `profile_figure.subsurface_profile` (layered profile schematic → PNG),
-  `profile_figure.plot_data` (any x/y or depth data → PNG: SPT/CPT vs depth,
-  settlement vs time, a sweep), `calc_package.render_figures` (a canned
+- **Show figures by SAVING them, not describing them.** A saved figure beats a
+  paragraph of numbers whenever the data is visual. It appears as a CARD UNDER
+  your reply — never inline in the text, and never as a markdown image link to
+  a local path (that cannot display). What each tool shows:
+  `profile_figure.plot_data` (any x/y or depth data — SPT/CPT vs depth,
+  settlement vs time, a sweep) and the `subsurface.plot_*` methods (DIGGS/site
+  data) show as INTERACTIVE charts; `profile_figure.subsurface_profile`
+  (layered profile schematic) and `calc_package.render_figures` (a canned
   package's own figures — slope section/trial surfaces, p-y curves, settlement
-  plots, wall diagrams — as PNGs without building the package), and the
-  `subsurface.plot_*` methods for interactive Plotly views of DIGGS/site data
-  (HTML — for the chat, not for a PDF). A bare `output_path` filename lands in
-  the working folder.
+  plots, wall diagrams — without building the package) show as images. Always
+  pass `output_path`: it is what writes the interactive chart the chat renders,
+  and a saved Plotly `.html` on its own is only a download with a collapsed
+  preview. A bare filename lands in the working folder.
 - **A calc package built on a layered subsurface gets a profile figure, by
   default — and the analysis's own figures, and plots of the data.**
   Pile/shaft capacity, downdrag, settlement, bearing, walls, liquefaction — if

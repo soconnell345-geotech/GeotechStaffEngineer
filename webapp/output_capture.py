@@ -13,7 +13,8 @@ primary's and every sub-agent's tool results, as the activity log does) that
 records:
 
 * ``outputs`` -- paths a tool reports having written: ``"output_path"`` /
-  ``"saved"`` in its JSON result, and the local side of a SharePoint upload;
+  ``"saved"`` / ``"plotly_json_path"`` in its JSON result, and the local side
+  of a SharePoint upload;
 * ``inputs``  -- the local copies of files downloaded from SharePoint.
 
 After the turn ``core.import_reported_outputs`` copies outputs that landed
@@ -33,8 +34,13 @@ try:
 except Exception:  # pragma: no cover - langchain always present in the app
     BaseCallbackHandler = object  # type: ignore[misc,assignment]
 
-_JSON_KEY = re.compile(r'"(?:output_path|saved)"\s*:\s*"((?:[^"\\]|\\.)+)"')
-_REPR_KEY = re.compile(r"'(?:output_path|saved)'\s*:\s*'([^']+)'")
+# ``plotly_json_path`` is the interactive-chart sidecar a figure tool writes
+# beside its image/HTML. It must be captured too: a sidecar left in /tmp is
+# exactly the Nairobi failure mode — the chat would have nothing to render.
+_JSON_KEY = re.compile(
+    r'"(?:output_path|saved|plotly_json_path)"\s*:\s*"((?:[^"\\]|\\.)+)"')
+_REPR_KEY = re.compile(
+    r"'(?:output_path|saved|plotly_json_path)'\s*:\s*'([^']+)'")
 _DOWNLOADED = re.compile(r"^Downloaded .+? -> (.+?) \([\d,]+ bytes\)", re.M)
 _UPLOADED = re.compile(r"^Uploaded (.+?) -> ", re.M)
 

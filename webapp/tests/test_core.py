@@ -214,6 +214,28 @@ def test_collect_turn_artifacts_unions_and_dedupes():
     assert core.collect_turn_artifacts([], []) == []
 
 
+def test_collect_turn_artifacts_hides_the_png_of_an_interactive_figure():
+    """One figure, one card: with the interactive sidecar present the chat
+    shows the chart, not a chart AND a picture of it. Every other file — and
+    the PNG when it has no sidecar — is untouched."""
+    cards = core.collect_turn_artifacts(
+        ["/t/plot.png", "/t/plot.plotly.json"], ["/t/other.png", "/t/r.pdf"])
+    assert cards == ["/t/plot.plotly.json", "/t/other.png", "/t/r.pdf"]
+    # a JPG of the same figure is suppressed the same way
+    assert core.collect_turn_artifacts(
+        ["/t/f.jpg", "/t/f.plotly.json"], []) == ["/t/f.plotly.json"]
+    # no sidecar -> the PNG card stays
+    assert core.collect_turn_artifacts(["/t/plot.png"], []) == ["/t/plot.png"]
+    # a sidecar for a DIFFERENT figure hides nothing
+    assert core.collect_turn_artifacts(
+        ["/t/a.png", "/t/b.plotly.json"], []) == ["/t/a.png",
+                                                  "/t/b.plotly.json"]
+    # the image only loses its card in the same FOLDER as its sidecar
+    assert core.collect_turn_artifacts(
+        ["/t/sub/plot.png", "/t/plot.plotly.json"], []) == \
+        ["/t/sub/plot.png", "/t/plot.plotly.json"]
+
+
 # ---------------------------------------------------------------------------
 # Disclaimer
 # ---------------------------------------------------------------------------

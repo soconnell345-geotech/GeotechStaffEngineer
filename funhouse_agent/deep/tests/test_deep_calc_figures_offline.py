@@ -66,7 +66,20 @@ def test_primary_bullet_names_the_real_inventory():
     for name in ("profile_figure.subsurface_profile", "profile_figure.plot_data",
                  "calc_package.render_figures", "subsurface.plot_*"):
         assert name in sec, name
-    assert "HTML — for the chat, not for a PDF" in sec
+
+
+def test_primary_bullet_describes_what_the_app_really_shows():
+    """The prompt promised a saved figure renders INLINE. It does not: it is a
+    card UNDER the reply, interactive for plot_data / subsurface.plot_*, an
+    image otherwise, and a saved Plotly HTML is a collapsed preview. Three
+    places say this — here and the two figure tools' embed_notes — so they
+    must agree."""
+    sec = _PLANNING_AND_SCRATCH_SECTION
+    assert "INLINE" not in sec
+    assert "CARD UNDER" in sec
+    assert "INTERACTIVE" in sec
+    assert "collapsed" in sec                      # the saved-HTML caveat
+    assert "markdown image link to" in sec         # still forbidden
 
 
 def test_delegation_nudge_tells_primary_to_pass_figure_data():

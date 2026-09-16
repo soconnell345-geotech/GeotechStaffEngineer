@@ -232,3 +232,105 @@ def test_plot_output_format_html_still_returns_blob_inline(site_key):
                       "output_format": "html"})
     assert "html" in res and res["html"].lstrip().lower().startswith("<html")
     assert "renderer_note" not in res
+
+
+# ---------------------------------------------------------------------------
+# write_plotly_sidecar — the one place the naming rule lives
+# ---------------------------------------------------------------------------
+
+class TestWritePlotlySidecar:
+    def test_writes_beside_the_file_with_the_plotly_json_suffix(self, tmp_path):
+        from funhouse_agent.adapters import write_plotly_sidecar
+        res = write_plotly_sidecar(str(tmp_path / "lateral_pressure.png"),
+                                   '{"data": [], "layout": {}}')
+        sidecar = tmp_path / "lateral_pressure.plotly.json"
+        assert os.path.abspath(res["plotly_json_path"]) == str(sidecar)
+        assert sidecar.read_text() == '{"data": [], "layout": {}}'
+
+    def test_no_path_or_no_json_is_a_no_op(self, tmp_path):
+        from funhouse_agent.adapters import write_plotly_sidecar
+        assert write_plotly_sidecar("", '{"data": []}') is None
+        assert write_plotly_sidecar(str(tmp_path / "x.png"), None) is None
+        assert list(tmp_path.iterdir()) == []
+
+    def test_a_failed_save_returns_none(self, tmp_path, monkeypatch):
+        import funhouse_agent._fileio as fio
+        from funhouse_agent.adapters import write_plotly_sidecar
+
+        monkeypatch.setattr(fio, "save_verified",
+                            lambda path, content: {"file_exists": False,
+                                                   "error": "no"})
+        assert write_plotly_sidecar(str(tmp_path / "x.png"), '{"a": 1}') is None
+
+
+# ---------------------------------------------------------------------------
+# plot_data — the generic x/y tool the agent reaches for (field feedback N6:
+# the owner asked for an interactive plot and got a static PNG)
+# ---------------------------------------------------------------------------
+
+_PLOT_SERIES = [{"x": [4, 8, 12, 9], "y": [1.5, 3.0, 4.5, 6.0],
+                 "label": "Lateral pressure"}]
+
+
+def test_plot_data_writes_an_interactive_sidecar_beside_the_png(tmp_path):
+    pytest.importorskip("plotly")
+    out = tmp_path / "pywall_lateral_pressures.png"
+    res = call_agent("profile_figure", "plot_data",
+                     {"series": _PLOT_SERIES, "depth_axis": True,
+                      "xlabel": "Pressure (kPa)", "ylabel": "Depth (m)",
+                      "output_path": str(out)})
+    assert res["status"] == "success", res
+    assert out.is_file()                              # the PNG is still there
+    sidecar = res.get("plotly_json_path")
+    assert sidecar and os.path.isfile(sidecar)
+    assert os.path.abspath(sidecar) == \
+        str(tmp_path / "pywall_lateral_pressures.plotly.json")
+    import plotly.io as pio
+    fig = pio.from_json(open(sidecar, encoding="utf-8").read())
+    assert len(fig.data) == 1
+    assert list(fig.data[0].y) == [1.5, 3.0, 4.5, 6.0]
+    assert fig.layout.yaxis.autorange == "reversed"
+
+
+def test_plot_data_bare_output_path_puts_both_in_the_working_folder(
+        tmp_path, monkeypatch):
+    pytest.importorskip("plotly")
+    monkeypatch.delenv("DATABRICKS_RUNTIME_VERSION", raising=False)
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+    res = call_agent("profile_figure", "plot_data",
+                     {"series": _PLOT_SERIES, "output_path": "sweep"})
+    assert os.path.abspath(res["output_path"]) == str(tmp_path / "sweep.png")
+    assert os.path.abspath(res["plotly_json_path"]) == \
+        str(tmp_path / "sweep.plotly.json")
+    assert (tmp_path / "sweep.png").is_file()
+    assert (tmp_path / "sweep.plotly.json").is_file()
+
+
+def test_plot_data_interactive_false_writes_only_the_png(tmp_path):
+    res = call_agent("profile_figure", "plot_data",
+                     {"series": _PLOT_SERIES, "interactive": False,
+                      "output_path": str(tmp_path / "static.png")})
+    assert res["status"] == "success", res
+    assert "plotly_json_path" not in res
+    assert not (tmp_path / "static.plotly.json").exists()
+    assert (tmp_path / "static.png").is_file()
+
+
+def test_plot_data_survives_a_plotly_failure_with_a_good_png(tmp_path,
+                                                             monkeypatch):
+    """A sidecar failure must never cost the figure — the PNG response, the
+    file and html_img_tag all stand."""
+    import profile_figure.data_plot as dp
+
+    def boom(*_a, **_kw):
+        raise RuntimeError("plotly exploded")
+
+    monkeypatch.setattr(dp, "build_data_plot_figure", boom)
+    out = tmp_path / "resilient.png"
+    res = call_agent("profile_figure", "plot_data",
+                     {"series": _PLOT_SERIES, "output_path": str(out)})
+    assert res["status"] == "success" and res["file_exists"] is True
+    assert "plotly_json_path" not in res
+    assert out.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    assert res["output_path"] in res["html_img_tag"]
+    assert any("interactive chart not built" in w for w in res["warnings"])

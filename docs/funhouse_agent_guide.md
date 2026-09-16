@@ -226,7 +226,7 @@ may lag it. `hvsrpy`/`swprocess` were removed in 5.12.)
 
 | Module | Description |
 |--------|-------------|
-| `profile_figure` | Figures for any report (PNG + ready `html_img_tag`): `subsurface_profile` layered schematic (strata, water table, fill/surcharge, pile/shaft/footing/wall overlay, callouts) and `plot_data` generic x/y or depth data plot (SPT/CPT vs depth, settlement vs time, sweeps) |
+| `profile_figure` | Figures for any report (PNG + ready `html_img_tag`): `subsurface_profile` layered schematic (strata, water table, fill/surcharge, pile/shaft/footing/wall overlay, callouts) and `plot_data` generic x/y or depth data plot (SPT/CPT vs depth, settlement vs time, sweeps) — `plot_data` shows in chat as an INTERACTIVE chart (a `.plotly.json` sidecar beside the image; `interactive: false` opts out) while the PNG remains the copy embedded in reports |
 | `fem2d` | 2D plane-strain FEM (gravity, foundation, slope SRM, excavation, seepage, consolidation) |
 | `subsurface` | Subsurface data I/O — DIGGS parse + Plotly viz (parameter vs depth, Atterberg, trends) + folded format adapters: GEF/BRO-XML CPT/borehole parse (pygef), AGS4 read/validate (python-ags4), DIGGS schema/dictionary validation (pydiggs) |
 
