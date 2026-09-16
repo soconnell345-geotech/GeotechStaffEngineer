@@ -10,6 +10,15 @@ detailed Phase-E history; this file supersedes it.
 
 ### 5.18.0 RELEASED (2026-09-16, tag `v5.18.0`) — interactive `plot_data`, planlens 0.4 quantities + fuzzy search
 
+**Both packages verified LIVE on PyPI 2026-09-16: planlens 0.4.0 (18:14 UTC) and
+geotech-staff-engineer 5.18.0 (19:45 UTC, requires `planlens>=0.4`). Cluster install
+NOT yet confirmed (`%pip install "geotech-staff-engineer==5.18.0"`, install guide §1
+says what a good log looks like). Parked from the same train, recorded in
+`module_work/FUTURE_IDEAS.md`: Tier 2 scanned-page engines (need Funhouse to OK
+vendored model files), drawing revision comparison, a toolkit MCP server (after
+Funhouse names an in-enclave host). Private measurements + probe scripts:
+`module_work/field_feedback/2026-09-09_nairobi-soe_v5.11.2/PLANLENS_SURVEY_MEASUREMENTS.md`.**
+
 Two feature branches merged into master, no conflicts, **no new direct
 dependency**. `feature/plotly-plot-data`: `plot_data` draws an interactive
 Plotly twin from the same cleaned series as the PNG and writes it as a

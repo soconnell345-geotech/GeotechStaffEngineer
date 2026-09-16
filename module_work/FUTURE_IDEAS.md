@@ -266,16 +266,16 @@ DROPPED: XC, OOFEM, Code_Aster/CalculiX, anaStruct (GPL), HazPy.
 
 ## PLANLENS PACKAGE SURVEY 2026-09-14 (web-verified; PARKED — todo, not a train)
 
-**2026-09-16 status:** Part A (scale / layers / fill), Tier 1 (fuzzy search,
-quantities, duplicate scans) and the MCP server are BUILT on planlens
-`feature/survey-step1` (10 commits, unpushed; see HANDOFF §0a-current).
+**2026-09-16 status: SHIPPED.** Part A (scale / layers / fill), Tier 1 (fuzzy search,
+quantities, duplicate scans) and the MCP server are in planlens 0.4.0 on PyPI;
+the app wiring + interactive plot_data are in app 5.18.0 on PyPI (see HANDOFF §0a-current).
 App wiring (find_quantities + fuzzy search, feature-detected) is BUILT on app
 branch `feature/planlens-survey-wiring` (25ba9ed, unpushed, unmerged; carries the
 HANDOFF survey paragraph). Pin bump to plain `planlens>=0.4` (0.4.0 is LIVE on PyPI 2026-09-16; raster and
 rapidfuzz are in its core now, so no extras).
 
-**APP MERGE CHECKLIST (owner-held release, 2026-09-16).** Two branches on origin,
-both unmerged, both green on their own gates, no version bumps:
+**APP MERGE CHECKLIST — DONE 2026-09-16 as 5.18.0** (both branches merged --no-ff,
+gate 11,773 / 33 / 0, tag pushed, live on PyPI). Kept for the record:
 1. `feature/planlens-survey-wiring` (25ba9ed) — find_quantities + fuzzy search,
    feature-detected; carries the HANDOFF survey paragraph.
 2. `feature/plotly-plot-data` (d07fe81, a48e723) — interactive Plotly sidecar for
