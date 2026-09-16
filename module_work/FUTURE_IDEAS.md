@@ -263,3 +263,72 @@ library since v3.10); (b) **ASCE 7 values via the free keyless USGS
 design-maps web services** (+ USGS RTGM Python source) — needs the
 TinyApps API-First egress route, so wait for pilot networking answers.
 DROPPED: XC, OOFEM, Code_Aster/CalculiX, anaStruct (GPL), HazPy.
+
+## PLANLENS PACKAGE SURVEY 2026-09-14 (web-verified; PARKED — todo, not a train)
+
+**2026-09-16 status:** Part A (scale / layers / fill), Tier 1 (fuzzy search,
+quantities, duplicate scans) and the MCP server are BUILT on planlens
+`feature/survey-step1` (10 commits, unpushed; see HANDOFF §0a-current).
+App wiring (find_quantities + fuzzy search, feature-detected) is BUILT on app
+branch `feature/planlens-survey-wiring` (25ba9ed, unpushed, unmerged; carries the
+HANDOFF survey paragraph). Pin bump to plain `planlens>=0.4` (0.4.0 is LIVE on PyPI 2026-09-16; raster and
+rapidfuzz are in its core now, so no extras).
+
+**APP MERGE CHECKLIST (owner-held release, 2026-09-16).** Two branches on origin,
+both unmerged, both green on their own gates, no version bumps:
+1. `feature/planlens-survey-wiring` (25ba9ed) — find_quantities + fuzzy search,
+   feature-detected; carries the HANDOFF survey paragraph.
+2. `feature/plotly-plot-data` (d07fe81, a48e723) — interactive Plotly sidecar for
+   `plot_data`, PNG card hidden when a sidecar exists, honest figure wording in
+   the deep prompt; plan `~/.claude/plans/whimsical-nibbling-scroll.md`; N6 in the
+   2026-09-15 field-feedback ledger re-dispositioned.
+At merge: pin `planlens>=0.4`; refresh CLAUDE.md state block (planlens 0.4, eight
+document tools, rapidfuzz now a planlens core dep — no new direct app deps); bump
+version; HANDOFF §0a + install guide §11 row; full gate in chunks; then tag.
+Edge noted by the Plotly agent (pre-existing since 5.4, not fixed): a re-imported
+sidecar that collides with different content is renamed `plot.plotly_1.json` by
+`_unique_dest`, which stops classifying as plotly and stops suppressing the PNG —
+degrades to a static card, no crash. Live check after release: one interactive
+card, no broken image link, both files in the SharePoint folder, PDF still embeds.
+ **Still todo:** Tier 2 scanned-page engines
+(local OCR / table / layout models — needs Funhouse to confirm model vendoring
+through Nexus; owner may pick up next week) and revision comparison (A4).
+
+**TODO (owner agreed 2026-09-16): toolkit MCP server.** One thin MCP server over
+the DISPATCH layer — `list_agents` / `list_methods` / `describe_method` /
+`call_agent` plus `find_worked_examples` / `get_worked_example` — generated
+from the existing native tool specs (`funhouse_agent/native_tools.py`), the
+way `planlens/mcp_server.py` is generated from `planlens.tools.specs`. NOT one
+server per module. Build it right after (a) the Funhouse team names an MCP host
+that exists inside the enclave and (b) the planlens server has been proven live
+in it. Decisions to make when building: calc packages write PDFs to a working
+folder (return a path, a resource, or attach?); reference figures need the
+source PDFs on disk (`GEOTECH_REFERENCES_DOCS`); the vision-backed tools
+(`read_reference_figure`, `analyze_pdf_page`) must hand the image to the HOST's
+model as MCP image content instead of calling the app's engine; the layered
+engineering disclaimers must appear in the server's instructions so a host
+model sees them before quoting a capacity. Optional extra `[mcp]` on the app
+(mcp cleared the Nexus probe 2026-09-16 as 2.2.0 with helper-pinned idna /
+pydantic / pyjwt / starlette — check those against the streamlit stack first).
+Size: one Opus agent, ~150 lines + tests, same shape as the planlens one.
+
+Full survey: `module_work/PLANLENS_PACKAGE_SURVEY.md` (copy of the plan file;
+private repo only). Headline: the three biggest wins need NO new package —
+read the calibrated scale that Bluebeam/Acrobat store in the PDF (viewport
+`/Measure` dictionaries and measurement markups), carry PDF layer names from
+`get_drawings()`, keep path fill. Then, in order: rapidfuzz (fuzzy search over
+OCR/SHX text), quantulum3 (quantities out of narrative for narrative-vs-drawing
+reconciliation), imagehash (duplicate scans / revision matching); ONNX-only
+engines for scanned tables and page layout (RapidAI TableStructureRec,
+rapid-layout, OnnxTR with a headless-OpenCV extra); an MCP server over the
+existing ReviewToolkit. Rejected with reasons: pymupdf-layout / pymupdf4llm
+(Polyform NONCOMMERCIAL), surya/marker (restricted weights), MinerU and
+DocLayout-YOLO (AGPL), docling (torch unavoidable — optional only).
+
+**Two conditions before pickup (owner, 2026-09-14):**
+1. Translate the survey into plain English for the owner first.
+2. It was NOT checked against the org's banned-package list (Nexus inventory
+   404s from outside; DT list never saved). Gate = on-cluster
+   `nexus_pip_install` probe per package (survey Part E). Cluster egress is
+   firewalled: any package that downloads model weights at runtime is unusable
+   as published — vendor the models or skip.
