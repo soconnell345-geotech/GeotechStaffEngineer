@@ -73,8 +73,20 @@ COLUMN_FAMILY = {
     "pi": ("plasticity_index", "tests"),
     "fines": ("fines", "tests"),
     "qu": ("qu", "tests"),
+    "rqd": ("rqd", "recovery", "tests"),
+    "pp_kpa": ("pocket_pen", "qu", "tests"),
     "recovery": ("recovery", "sample_id", "tests"),
 }
+
+#: The per-sample values scored as index properties, in the truth's spelling.
+INDEX_KEYS = ("wc", "duw", "ll", "pl", "pi", "fines", "qu", "rqd", "pp_kpa")
+
+#: A truth file may say, in its own ``form`` note, that the sheet carries no
+#: depth scale at all — a tabular list of borings rather than a plotted log.
+#: Then the RIGHT answer is no ruler and no depths, and the scorer inverts
+#: the ruler check instead of counting correct behaviour as a failure.
+NO_RULER_DECLARED = "no depth ruler"
+NO_RULER_SAID = "no depth ruler was found"
 
 #: Truth field keys that the grid's canonical keys answer. The truth was
 #: written to the record's vocabulary, the grid to the page's; this is the
@@ -193,6 +205,13 @@ class LogScore:
     fields: Score = field(default_factory=Score)
     n_cells: int = 0
     n_unmatched_cells: int = 0
+    n_truth_layers: int = 0
+    n_truth_samples: int = 0
+    #: Cells the grid placed in a blow-count column on a sheet the truth says
+    #: samples nothing. None where the truth does state samples.
+    stray_sample_cells: Optional[int] = None
+    #: Why a log was deliberately left unscored, when it was.
+    not_scored: Optional[str] = None
     warnings: List[str] = field(default_factory=list)
     error: Optional[str] = None
 
@@ -216,6 +235,31 @@ def score_one(truth: Dict[str, Any], di: str = "auto") -> LogScore:
 
     out.warnings = list(grid.warnings)
     truth_unit = truth.get("depth_unit")
+
+    # A tabular sheet carries several borings at once; its layers and samples
+    # hang off each of them rather than off the sheet.
+    truth_layers = list(truth.get("layers") or [])
+    truth_samples = list(truth.get("samples") or [])
+    for investigation in truth.get("investigations") or ():
+        truth_layers.extend(investigation.get("layers") or [])
+        truth_samples.extend(investigation.get("samples") or [])
+    out.n_truth_layers = len(truth_layers)
+    out.n_truth_samples = len(truth_samples)
+
+    no_ruler_expected = NO_RULER_DECLARED in str(truth.get("form") or "").lower()
+    if no_ruler_expected:
+        # The whole answer for such a sheet is that it has no scale and says
+        # so. Nothing below it can be scored by depth, and pretending to is
+        # worse than recording that it was not scored.
+        said = any(NO_RULER_SAID in w for w in grid.warnings)
+        out.ruler.add(not grid.rulers and said,
+                      "a ruler was claimed on a sheet that has none"
+                      if grid.rulers else "no warning said the page has no "
+                                          "depth ruler")
+        out.not_scored = (f"tabular sheet with no depth scale: "
+                          f"{len(truth_layers)} layers and "
+                          f"{len(truth_samples)} samples not scored by depth")
+        return out
 
     def truth_m(value):
         return _to_m(value, truth_unit)
@@ -290,7 +334,7 @@ def score_one(truth: Dict[str, Any], di: str = "auto") -> LogScore:
         return (lo - SAMPLE_TOL_M, hi + SAMPLE_TOL_M)
 
     # (b) samples: the blow record and the N value
-    for sample in truth.get("samples") or ():
+    for sample in truth_samples:
         depth = sample.get("top")
         window = window_of(sample)
         if window is None:
@@ -323,12 +367,12 @@ def score_one(truth: Dict[str, Any], di: str = "auto") -> LogScore:
                 matched.add(hit)
 
     # (d) index values on the log face
-    for sample in truth.get("samples") or ():
+    for sample in truth_samples:
         depth = sample.get("top")
         window = window_of(sample)
         if window is None:
             continue
-        for key in ("wc", "duw", "ll", "pl", "pi", "fines", "qu"):
+        for key in INDEX_KEYS:
             value = sample.get(key)
             if value is None:
                 continue
@@ -341,7 +385,7 @@ def score_one(truth: Dict[str, Any], di: str = "auto") -> LogScore:
     # (c) layer tops
     tops = [ly.top for ly in grid.layers if ly.top is not None]
     tops_m = [cell_m(t) for t in tops]
-    for layer in truth.get("layers") or ():
+    for layer in truth_layers:
         top = layer.get("top")
         if top is None:
             continue
@@ -372,6 +416,17 @@ def score_one(truth: Dict[str, Any], di: str = "auto") -> LogScore:
 
     # precision proxy: cells that match nothing the truth states
     out.n_unmatched_cells = len(cells) - len(matched)
+    if not truth_samples:
+        # The truth says this sheet samples nothing. Whatever the grid put in
+        # a sampler column is then a false placement and worth counting, and
+        # it is the only clean precision number on the scorecard.
+        stray = 0
+        for cell in cells:
+            col = grid.column(cell.column_id)
+            names = set(col.names) if col else set()
+            if names & {"blows", "n_value"} and cell.numbers:
+                stray += 1
+        out.stray_sample_cells = stray
     return out
 
 
@@ -453,6 +508,19 @@ def report(scores: Sequence[LogScore], openset: Sequence[str],
                 f"{total.n_cells:>7}{total.n_unmatched_cells:>10}"
                 .replace("  ", " ", 0))
             lines.append("")
+    notes = [s for s in scores
+             if s.not_scored or s.stray_sample_cells is not None]
+    if notes:
+        lines.append("notes:")
+        for s in notes:
+            if s.not_scored:
+                lines.append(f"  {s.log_id}: {s.not_scored}")
+            if s.stray_sample_cells is not None:
+                lines.append(
+                    f"  {s.log_id}: the truth states no samples; the grid put "
+                    f"{s.stray_sample_cells} numeric cell(s) in a blow-count "
+                    f"column")
+        lines.append("")
     warned = [s for s in scores if s.warnings]
     if warned:
         lines.append("warnings seen:")

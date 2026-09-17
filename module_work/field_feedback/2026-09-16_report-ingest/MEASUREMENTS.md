@@ -2589,3 +2589,62 @@ that set it beside it. The four that did real work:
   text on a crowded form footer was 134 pt away and had been read as the
   value before the cap.
 
+
+### log_grid scorecard, revised after the lead confirmed the truth schema
+
+The six BLIND logs are scored exactly as the truth states them: a sheet whose
+`form` note says it carries no depth scale is scored on REFUSING (no ruler,
+and a warning saying so), and its layers and samples are recorded as not
+scored by depth rather than counted as misses; a sheet with several borings
+on it (a tabular list) has its layers and samples flattened out of the
+`investigations` list; `rqd` and `pp_kpa` joined the index values; and a sheet
+the truth says samples nothing is checked for cells the grid put in a
+blow-count column anyway. Nothing about the reader was tuned on a blind log.
+
+### log_grid scorecard, 2026-09-17
+
+Tolerances: sample and index values 0.15 m, layer tops 0.3 m; depths compared in metres whatever the log prints. Open set = R36, R37, R06, R07, R15, R28.
+
+```
+log         set      ruler   unit      samples       layers        index       fields  cells unmatched
+------------------------------------------------------------------------------------------------------
+R06_p51     open       yes    yes     100% 4/4     100% 5/5     100% 4/4      75% 6/8     62        54
+R07_p30     open       yes    yes     100% 8/8     100% 9/9     100% 6/6   100% 13/13    103        93
+R15_p46     open       yes    yes     100% 8/8     100% 4/4   100% 14/14   100% 13/13     75        58
+R28_p57     open       yes    yes   100% 16/16     100% 5/5      75% 3/4   100% 13/13     78        66
+R36_p38     open       yes    yes     100% 8/8     100% 6/6     100% 8/8     82% 9/11     34        19
+R37_p26     open       yes    yes   100% 13/13     100% 5/5            -     90% 9/10     55        42
+ALL         open    100% 6/6 100% 6/6   100% 57/57   100% 34/34    97% 35/36    93% 63/68    407       332
+
+R02_p123    blind      yes     NO            -     100% 1/1            -      33% 2/6     67        67
+R03_p135    blind      yes    yes            -     100% 1/1       0% 0/1      40% 2/5     65        65
+R04_p59     blind      yes     NO            -     100% 5/5            -      33% 2/6     42        42
+R13_p45     blind      yes    yes    92% 24/26     100% 5/5     54% 7/13    83% 10/12    105        92
+R21_p96     blind       NO     NO       0% 0/6       0% 0/3       0% 0/2      40% 2/5     81         0
+R25_p19     blind      yes     NO            -            -            -            -      0         0
+R30_p65     blind       NO     NO       0% 0/8       0% 0/1            -      40% 2/5     74         0
+R31_p278    blind      yes    yes            -     100% 2/2            -   100% 11/11     27        27
+R34_p49     blind      yes    yes      0% 0/10       0% 0/8       0% 0/1      50% 2/4    115       115
+ALL         blind    78% 7/9  50% 4/8    48% 24/50    54% 14/26     41% 7/17    61% 33/54    576       408
+
+notes:
+  R02_p123: the truth states no samples; the grid put 0 numeric cell(s) in a blow-count column
+  R25_p19: tabular sheet with no depth scale: 10 layers and 1 samples not scored by depth
+  R31_p278: the truth states no samples; the grid put 0 numeric cell(s) in a blow-count column
+
+warnings seen:
+  R02_p123: the depth unit is not stated on these pages and could not be read from their text; depths are in whatever the ruler prints
+  R03_p135: no column header states the depth unit; ft was read off depths written into the log's own text
+  R04_p59: the depth unit is not stated on these pages and could not be read from their text; depths are in whatever the ruler prints
+  R13_p45: page 45: the text was read optically (azure_di); boxes and column edges are softer than on an embedded text layer
+  R13_p45: page 45: no ruled column edges were found; the columns below come from the header labels alone and their x bands are approximate
+  R15_p46: page 46: 1 text line(s) run diagonally across the page (a watermark or a stamp) and were left out of the grid
+  R21_p96: page 96: no depth ruler was found — no column holds three or more numbers that fall on a straight line, so nothing on this page carries a depth
+  R25_p19: page 19: no ruled column edges were found; the columns below come from the header labels alone and their x bands are approximate
+  R25_p19: page 19: no columns could be laid out — nothing on this page is placed
+  R25_p19: page 19: no depth ruler was found — nothing on this page carries a depth
+  R25_p19: no description column was identified, so no layers were read
+  R30_p65: page 65: no depth ruler was found — no column holds three or more numbers that fall on a straight line, so nothing on this page carries a depth
+  R34_p49: no column header states the depth unit; m was read off depths written into the log's own text
+
+```
