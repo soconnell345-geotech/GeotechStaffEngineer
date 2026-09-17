@@ -2401,6 +2401,16 @@ review pass exists for. WP1 closes here; the rules are frozen for WP1b.
 
 Triage claude-sonnet-5; review claude-opus-5. Cost checkpoint: the first six reports, before the lead's go for the full sets. Triage and review as first written; no tuning on these numbers.
 
+**This is ROUND 1, on the prompts as first written.** Read it as the baseline,
+not as the result. It is what diagnosed the review's one large error class --
+fifteen of its nineteen wrong changes were an exploration's own results,
+plotted rather than tabulated, called `figure`, or one kind of sounding called
+another -- and the prompts were changed afterwards to name that case (commit
+`c9569fb`). The round-2 numbers are a separate section below once all six
+reports have re-run; four had re-run when the API credit ran out. The four
+disputed hand labels the lead later confirmed are still scored as review misses
+here, so the after-accuracy below understates by about 0.006.
+
 ```
 checkpoint: 6 report(s), 677 scored pages
                             before     after
