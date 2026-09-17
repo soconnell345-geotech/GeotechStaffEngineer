@@ -245,3 +245,140 @@ class _EmptyDoc:
 
     def page(self, index, **kwargs):
         raise IndexError(index)
+
+
+class TestTheTruthFilesOwnRules:
+    """``_alternates`` and ``_skip``: the hand's two ways of being fair."""
+
+    def test_an_alternate_answer_scores_as_correct(self):
+        hand = truth(general={"boringCount": 14})
+        hand["_alternates"] = {"boringCount": [18]}
+
+        assert score(hand, GeneralFacts(boringCount=18)).recall.found == 1
+        assert score(hand, GeneralFacts(boringCount=14)).recall.found == 1
+        assert score(hand, GeneralFacts(boringCount=9)).recall.found == 0
+
+    def test_a_null_among_the_alternates_accepts_not_stated(self):
+        hand = truth(general={"tableCount": 6})
+        hand["_alternates"] = {"tableCount": [None]}
+        result = score(hand)
+
+        assert result.recall.found == 1
+        assert [row.verdict for row in result.fields
+                if row.field == "tableCount"] == ["missed"]
+
+    def test_an_alternate_list_is_a_whole_alternative_answer(self):
+        hand = truth(natural_hazards={"earthHazardsExposed": ["flooding"]})
+        hand["_alternates"] = {"earthHazardsExposed": [
+            ["flooding", "landslide"], ["flooding", "volcanos"]]}
+
+        exact = score(hand, hazards=NaturalHazardFacts(
+            earthHazardsExposed=["flooding", "landslide"]))
+        wrong = score(hand, hazards=NaturalHazardFacts(
+            earthHazardsExposed=["karst"]))
+
+        assert exact.recall.found == 1
+        assert wrong.recall.found == 0
+
+    def test_an_empty_list_among_the_alternates_accepts_silence(self):
+        hand = truth(natural_hazards={
+            "earthHazardsExposed": ["liquefaction-induced settlement"]})
+        hand["_alternates"] = {"earthHazardsExposed": [[]]}
+
+        assert score(hand).recall.found == 1
+
+    def test_the_items_of_the_best_matching_list_are_the_ones_pooled(self):
+        hand = truth(general={"boringDictionary": ["B-1"]})
+        hand["_alternates"] = {"boringDictionary": [["B-1", "B-2", "B-3"]]}
+        result = score(hand, GeneralFacts(
+            boringDictionary=["B-1", "B-2", "B-3"]))
+
+        assert result.recall.found == 1
+        assert result.list_item_recall.found == 3
+        assert result.list_item_recall.total == 3
+
+    def test_a_skipped_field_is_in_no_count_at_all(self):
+        hand = truth(general={"tableCount": 6, "boringCount": 4})
+        hand["_skip"] = ["tableCount"]
+        result = score(hand, GeneralFacts(tableCount=99, boringCount=4))
+
+        assert result.skipped == ["tableCount"]
+        assert result.recall.total == 1            # boringCount alone
+        assert result.precision.total == 1
+        assert result.kind("int").total == 1
+        assert [row.verdict for row in result.fields
+                if row.field == "tableCount"] == ["skipped"]
+
+    def test_a_skipped_field_is_not_counted_in_agreement_either(self):
+        hand = truth(general={"tableCount": 6})
+        hand["_skip"] = ["tableCount"]
+        with_skip = score(hand)
+        without = score(truth(general={"tableCount": 6}))
+
+        assert with_skip.agreement.total == without.agreement.total - 1
+
+    def test_a_skipped_summary_is_not_scored_for_presence(self):
+        hand = truth(general={"quickSummary": "A due diligence study."})
+        hand["_skip"] = ["quickSummary"]
+
+        assert score(hand).summaries_present.total == 0
+
+
+class TestTheTwoKindsOfList:
+
+    def test_an_identifier_survives_its_punctuation(self):
+        assert same_value("boringDictionary", ["B-1", "B-2"], ["B1", "b 2"])
+
+    def test_two_identifiers_that_merely_look_alike_are_two(self):
+        # B-1 is a substring of B-12: a fuzzy matcher would call them one.
+        result = score(truth(general={"boringDictionary": ["B-1", "B-2"]}),
+                       GeneralFacts(boringDictionary=["B-12", "B-21"]))
+
+        assert result.recall.found == 0
+        assert result.list_item_recall.found == 0
+
+    def test_a_prose_item_matches_on_resemblance(self):
+        # The hand's bearingCapacity runs to fifteen words an item; exact
+        # matching would score transcription rather than reading.
+        assert same_value(
+            "bearingCapacity",
+            ["An allowable bearing pressure of 3,000 psf is recommended for "
+             "spread footings bearing on the dense residual soil"],
+            ["an allowable bearing pressure of 3,000 psf is recommended for "
+             "spread footings"])
+
+    def test_one_truth_item_cannot_be_matched_twice(self):
+        result = score(
+            truth(general={"recommendedFoundations": ["spread footings"]}),
+            GeneralFacts(recommendedFoundations=["spread footings",
+                                                 "spread footings on fill"]))
+
+        # Two predictions, one truth item: one hit, so the items' precision
+        # is one of two rather than two of two.
+        assert result.list_items.found == 1
+        assert result.list_items.total == 2
+
+
+class TestTheVerdictQuestions:
+
+    def test_the_verdict_is_the_answer_and_the_reason_is_not_scored(self):
+        assert same_value(
+            "geophysicalTestingMention",
+            "yes - six seismic refraction and MASW lines across the site",
+            "yes - a shear wave velocity survey was carried out")
+
+    def test_a_different_verdict_is_a_different_answer(self):
+        assert not same_value("soilCorrosion",
+                              "yes - highly corrosive, chloride to 9,151 ppm",
+                              "no - not corrosive")
+
+    def test_mixed_is_its_own_verdict(self):
+        assert same_value("soilCorrosion", "mixed - non-corrosive to pipe",
+                          "mixed - corrosive to steel only")
+        assert not same_value("soilCorrosion", "mixed - non-corrosive to pipe",
+                              "yes - corrosive")
+
+    def test_an_answer_with_no_verdict_matches_nothing(self):
+        assert not same_value("siteResponseMention",
+                              "a site response analysis was performed",
+                              "yes - a one-dimensional analysis")

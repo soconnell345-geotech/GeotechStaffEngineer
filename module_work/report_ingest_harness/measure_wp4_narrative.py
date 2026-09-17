@@ -13,7 +13,10 @@ WHAT IT MEASURES. For each report with a hand answer
 work item, runs ``report_ingest.narrative_reader.read_narrative`` over it, and
 scores the two schemas field by field through
 ``report_ingest.narrative_scoring`` -- the same module the cluster run uses, so
-the two cannot drift.
+the two cannot drift. The truth file's own ``_alternates`` (other answers this
+report's hand will accept) and ``_skip`` (questions this report does not
+settle) are honoured by that module, so they apply here and on the cluster
+identically.
 
 THREE NUMBERS, AND THE THIRD IS THERE TO BE DISTRUSTED. Most reports answer
 most of the general list and only part of the hazards list, so a reader that

@@ -346,9 +346,16 @@ Four rules the prompt is built around, each of them a way of not inventing:
   a scorer has to tell a report that did not say from a reader that did not
   read — and the builder turns "N/A", "unknown" and their friends back into
   null on the way in.
-- **The enumerations are the owner's words.** An answer outside a vocabulary is
-  REFUSED into `unresolved` rather than stored, after folding case and
-  punctuation. A value nothing downstream recognises is worse than a blank.
+- **The enumerations are the owner's words, and only two lists are closed.**
+  `documentType` and `outsideProject` are the owner's own lists and an answer
+  outside one is REFUSED into `unresolved`. The rest are the values seen in the
+  hand answers so far: a spelling variant folds onto one of them and anything
+  else is kept in the report's own words. That split is not fastidiousness. The
+  first draft of this package guessed those vocabularies (government owned /
+  leased, planning / feasibility / design, high / moderate / low) and every
+  guess was wrong against the first hand answers that arrived, so the schema
+  refused the true answer, the reader stored nothing, and the scorer marked
+  seven fields wrong on all eight reports for a reading that was correct.
 - **A public report about somebody else's project names no post.** `postName`
   and `propertyType` stay null and `outsideProject` becomes `"yes"`. Inferring
   a post from a city name is exactly the guess that makes a library of answers
@@ -716,6 +723,15 @@ by hand with **null** where the report does not say) and scores it field by
 field. It reads the truth files that are PRESENT and skips every report without
 one, because the hand answers arrive a few reports at a time.
 
+A truth file carries two things beyond the answers. **`_alternates`** is the
+hand's fairness valve: other answers it will accept for this report, keyed by
+field and always a list, because a report can say a thing in more than one
+defensible way and the hand is one reading of it rather than the only one. A
+`null` among them means "not stated is acceptable too"; a list among them is a
+whole alternative list answer. **`_skip`** names the questions this report does
+not settle, and they are excluded from every count rather than scored as
+misses. Neither ever reaches the reader.
+
 ```python
 results = score_on_cluster(
     reports_dir         = "/Volumes/<your volume>/reports",
@@ -749,7 +765,12 @@ noun — "Soil & Rock Consulting Engineers" and "Soil and Rock Consulting
 Engineers, Inc." are one firm, and `siteClass` and `reportDate` also pass on
 their normalised forms); **lists** by set overlap, with the items' own precision
 and recall pooled across every list field and the field counting as right at a
-Jaccard of 0.6; **the four prose summaries on presence and word limit ONLY**
+Jaccard of 0.6 — and two kinds of list, since `boringDictionary` and
+`testPitDictionary` hold identifiers and are matched exactly (B-1 and B-12 are
+two holes) while the prose lists are matched item by item by the string rule;
+**the four verdict questions on their verdict alone**, because two readers who
+both find the geophysical survey will not word the reason the same way; and
+**the four prose summaries on presence and word limit ONLY**
 (≤ 100 / 100 / 200 / 100 words), because whether a summary is a good summary is
 a person's call and a scorer that pretended otherwise would be scoring its own
 opinion. Null against anything is a miss either way; null against null is

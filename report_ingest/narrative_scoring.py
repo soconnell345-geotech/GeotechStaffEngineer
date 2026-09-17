@@ -1,8 +1,19 @@
 """Scoring the narrative reading, question by question, against a hand answer.
 
-THE TRUTH FILE is one JSON per report: ``{"general": {...}, "natural_hazards":
-{...}, "notes": "..."}``, the owner's field names, and **null where the report
-does not say**. That null is the whole difficulty of scoring this pass. Most
+THE TRUTH FILE is one JSON per report: ``{"id", "source", "general": {...},
+"natural_hazards": {...}, "_alternates": {...}, "_skip": [...], "notes"}``, the
+owner's field names, and **null where the report does not say**.
+
+``_alternates`` is the hand's fairness valve: other answers it will accept for
+this report, keyed by field, always as a LIST. A report can say a thing in more
+than one defensible way -- 14 borings or 18 counting the ones abandoned -- and
+the hand is one reading of it, not the only one. A ``null`` among them means
+"not stated is acceptable too"; a LIST among them is a whole alternative list
+answer. ``_skip`` names the fields not to score at all for this report, for a
+question the report genuinely does not settle. Neither is a thing the reader
+ever sees.
+
+That null is the whole difficulty of scoring this pass. Most
 reports answer most of the general list and only part of the hazards list, so
 a reader that answers nothing agrees with the truth on a great many fields,
 and a reader that answers everything is right about some of them by accident.
@@ -31,9 +42,18 @@ HOW EACH KIND OF FIELD IS JUDGED.
              measuring punctuation. ``siteClass`` and ``reportDate`` also
              pass on their NORMALISED forms, because "Site Class D" and "D"
              are the same answer and so are "14 March 2026" and "2026-03-14".
-``list``     set overlap. The items' own precision and recall are accumulated
-             across every list field, and the field counts as right when the
-             Jaccard overlap reaches :data:`LIST_HIT_JACCARD`.
+``list``     set overlap, and TWO KINDS of list. ``boringDictionary`` and
+             ``testPitDictionary`` hold identifiers and are compared exactly
+             (folded), because B-1 and B-12 are two holes however alike they
+             look. The others hold prose -- the hand's ``bearingCapacity``
+             runs to fifteen words an item -- and are compared item by item by
+             the string rule, paired one to one. The items' own precision and
+             recall are accumulated across every list field, and the field
+             counts as right at :data:`LIST_HIT_JACCARD`.
+``verdict``  the four questions answered "yes"/"no"/"mixed"/"unclear" and then
+             a reason are scored on the VERDICT alone. Two readers who both
+             find the geophysical survey will not word the reason the same
+             way, and the question asked was whether the report mentions it.
 ``summary``  presence and length ONLY. Whether a summary is a good summary is
              a person's judgement, and a scorer that pretended to make it
              would be scoring its own opinion. What can be checked is that one
@@ -62,6 +82,7 @@ __all__ = [
     "FIELD_KINDS", "KINDS", "LIST_HIT_JACCARD", "FUZZY_RATIO",
     "Score", "FieldResult", "NarrativeScore", "kind_of", "same_value",
     "score_narrative", "score_one_report", "narrative_pages_of",
+    "alternates_for", "skipped_fields",
 ]
 
 #: A string answer matches when rapidfuzz's partial ratio reaches this.
@@ -87,6 +108,10 @@ _LIST_FIELDS = frozenset((
     "structureList", "boringDictionary", "testPitDictionary",
     "recommendedFoundations", "bearingCapacity", "earthHazardsExposed",
 ))
+#: The two list fields whose items are IDENTIFIERS rather than prose, and are
+#: therefore compared exactly (folded) rather than by resemblance. B-1 and
+#: B-12 are two holes, however alike they look to a fuzzy matcher.
+_IDENTIFIER_LISTS = frozenset(("boringDictionary", "testPitDictionary"))
 
 #: ``field -> kind``, for every field of both schemas.
 FIELD_KINDS: Dict[str, str] = {}
@@ -174,22 +199,60 @@ def _strings_match(field_name: str, hand: Any, got: Any) -> bool:
     return bool(shared)
 
 
-def _list_overlap(hand: Any, got: Any) -> Tuple[float, int, int, int]:
-    """``(jaccard, hits, in the answer, in the truth)`` over folded items."""
-    left = {_fold(item) for item in (hand or []) if _fold(item)}
-    right = {_fold(item) for item in (got or []) if _fold(item)}
+def _list_overlap(field_name: str, hand: Any,
+                  got: Any) -> Tuple[float, int, int, int]:
+    """``(jaccard, hits, in the answer, in the truth)``.
+
+    TWO KINDS OF LIST, judged differently, because they are two kinds of
+    thing. ``boringDictionary`` and ``testPitDictionary`` are IDENTIFIERS and
+    are compared exactly, folded the way the reconciler folds a hole's name,
+    so that B-1, "B 1" and b1 are one hole and B-1 and B-12 are two. The rest
+    are PROSE -- the hand-written ``bearingCapacity`` runs to fifteen words an
+    item and ``recommendedFoundations`` to nineteen -- and are compared item by
+    item with the same rule strings get, paired one to one so a single truth
+    item cannot be matched twice and flatter the precision.
+    """
+    left = [item for item in (hand or []) if str(item).strip()]
+    right = [item for item in (got or []) if str(item).strip()]
     if not left and not right:
         return 1.0, 0, 0, 0
-    hits = len(left & right)
-    union = len(left | right)
+    if field_name in _IDENTIFIER_LISTS:
+        from report_ingest.reconciler import fold_id
+        wanted = {fold_id(item) for item in left}
+        given = {fold_id(item) for item in right}
+        hits = len(wanted & given)
+        union = len(wanted | given)
+        return (hits / union if union else 1.0), hits, len(given), len(wanted)
+
+    taken: List[int] = []
+    hits = 0
+    for item in left:
+        for index, candidate in enumerate(right):
+            if index in taken:
+                continue
+            if _strings_match(field_name, item, candidate):
+                taken.append(index)
+                hits += 1
+                break
+    union = len(left) + len(right) - hits
     return (hits / union if union else 1.0), hits, len(right), len(left)
 
 
-def same_value(field_name: str, hand: Any, got: Any) -> bool:
-    """Do these two answers to one question agree?"""
+def _matches(field_name: str, hand: Any, got: Any) -> bool:
+    """Does this ONE accepted answer agree with the prediction?"""
+    from report_ingest.narrative_reader import VERDICT_FIELDS, verdict_token
+
     kind = kind_of(field_name)
     if hand is None or got is None:
         return hand is None and got is None
+    if field_name in VERDICT_FIELDS:
+        # THE VERDICT IS THE ANSWER. The hand writes "yes - six seismic
+        # refraction and MASW lines across the site" and a reader that finds
+        # the same testing will not word its reason the same way. Scoring the
+        # reason would be scoring a paraphrase; the question asked was whether
+        # the report mentions it.
+        one, two = verdict_token(hand), verdict_token(got)
+        return one is not None and one == two
     if kind == "enum":
         return _fold(hand) == _fold(got)
     if kind == "int":
@@ -198,11 +261,28 @@ def same_value(field_name: str, hand: Any, got: Any) -> bool:
         except (TypeError, ValueError):
             return False
     if kind == "list":
-        jaccard, *_ = _list_overlap(hand, got)
+        jaccard, *_ = _list_overlap(field_name, hand, got)
         return jaccard >= LIST_HIT_JACCARD
     if kind == "summary":
         return bool(str(got or "").strip())
     return _strings_match(field_name, hand, got)
+
+
+def same_value(field_name: str, hand: Any, got: Any,
+               alternates: Sequence[Any] = ()) -> bool:
+    """Do these two answers to one question agree?
+
+    ``alternates`` are the truth file's own ``_alternates[field]``: other
+    answers the hand will accept for this report, because a report can say a
+    thing in more than one defensible way and the hand is not the only reading
+    of it. A ``None`` among them means "not stated" is acceptable too, and a
+    LIST among them is a whole alternative list answer. Any one of them
+    matching is a hit.
+    """
+    if _matches(field_name, hand, got):
+        return True
+    return any(_matches(field_name, _normalise(alt), got)
+               for alt in alternates)
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +368,9 @@ class NarrativeScore:
     #: inside the word limit.
     summaries_present: Score = field(default_factory=Score)
     summaries_within_limit: Score = field(default_factory=Score)
+    #: Fields this report's hand said not to score (``_skip``), excluded
+    #: from every count above.
+    skipped: List[str] = field(default_factory=list)
     unresolved: int = 0
     model_calls: int = 0
     cost: Dict[str, Any] = field(default_factory=dict)
@@ -311,6 +394,7 @@ class NarrativeScore:
                           "within_limit":
                               self.summaries_within_limit.to_dict()},
             "fields": [row.to_dict() for row in self.fields],
+            "skipped": list(self.skipped),
             "unresolved": self.unresolved,
             "model_calls": self.model_calls,
             "cost": dict(self.cost),
@@ -319,41 +403,93 @@ class NarrativeScore:
         }
 
 
-def _value(blob: Dict[str, Any], name: str) -> Any:
-    value = blob.get(name)
+def _normalise(value: Any) -> Any:
+    """One answer as the scorer holds it: a blank or an empty list is None.
+
+    AN EMPTY LIST IS READ AS "NOT STATED", and that is a decision rather than
+    a fact about the schema. The hand writes ``"testPitDictionary": []``
+    beside ``"testPitCount": 0`` -- plainly "there are none" rather than "the
+    report is silent" -- but the reader cannot express an empty list at all
+    (:mod:`report_ingest.narrative_reader` stores an empty list as None), so
+    scoring the two apart would make those fields permanent misses for a
+    reader doing exactly the right thing. Both sides are collapsed the same
+    way, which also makes ``[[]]`` in ``_alternates`` mean what the hand
+    intends: saying nothing is acceptable here.
+    """
     if isinstance(value, str) and not value.strip():
         return None
-    if isinstance(value, list) and not value:
+    if isinstance(value, (list, tuple)) and not value:
         return None
     return value
+
+
+def _value(blob: Dict[str, Any], name: str) -> Any:
+    return _normalise(blob.get(name))
+
+
+def alternates_for(truth: Dict[str, Any], field_name: str) -> List[Any]:
+    """The other answers this report's hand will accept for this field.
+
+    ``_alternates`` is the truth file's own, keyed by field, and is always a
+    LIST of accepted values: a string, a number, ``null`` for "not stated is
+    acceptable too", or a whole list where the answer is a list.
+    """
+    block = truth.get("_alternates") or {}
+    value = block.get(field_name)
+    if value is None:
+        return []
+    return list(value) if isinstance(value, (list, tuple)) else [value]
+
+
+def skipped_fields(truth: Dict[str, Any]) -> frozenset:
+    """The fields this report's hand says not to score at all.
+
+    ``_skip`` is for a question whose answer this report genuinely does not
+    settle -- what counts as a table, most often -- where any score would be
+    measuring the ambiguity rather than the reader.
+    """
+    return frozenset(str(name) for name in (truth.get("_skip") or []))
 
 
 def score_narrative(truth: Dict[str, Any], general: Any, hazards: Any,
                     report: str = "") -> NarrativeScore:
     """Score one reading against one hand answer, question by question."""
     out = NarrativeScore(report=report or str(truth.get("id") or ""))
+    skip = skipped_fields(truth)
+    out.skipped = sorted(skip)
     sections = (("general", GENERAL_FIELDS, general),
                 ("natural_hazards", NATURAL_HAZARD_FIELDS, hazards))
     for section, names, answers in sections:
         hand_section = truth.get(section) or {}
         for name in names:
             hand = _value(hand_section, name)
-            got = getattr(answers, name, None)
-            if isinstance(got, list) and not got:
-                got = None
+            got = _normalise(getattr(answers, name, None))
             kind = kind_of(name)
 
+            if name in skip:
+                # Not scored anywhere: not in recall, not in precision, not
+                # in agreement. Recorded so a reader of the per-report detail
+                # can see it was excluded rather than passed.
+                out.fields.append(FieldResult(
+                    field=name, kind=kind, hand=hand, got=got, ok=False,
+                    verdict="skipped"))
+                continue
+
+            alternates = alternates_for(truth, name)
             if kind == "summary":
                 _score_summary(out, name, hand, got)
                 continue
 
-            ok = same_value(name, hand, got)
+            ok = same_value(name, hand, got, alternates)
             jaccard = None
             if kind == "list" and hand is not None and got is not None:
                 # The ITEMS' own precision and recall, pooled across every
                 # list field: a boring dictionary that names eight of ten
-                # holes is not the same failure as one that names two.
-                jaccard, hits, given, wanted = _list_overlap(hand, got)
+                # holes is not the same failure as one that names two. Scored
+                # against whichever accepted answer the prediction matched
+                # best, so an alternate list answer counts its items too.
+                jaccard, hits, given, wanted = _best_overlap(
+                    name, hand, got, alternates)
                 out.list_items.found += hits
                 out.list_items.total += given
                 out.list_item_recall.found += hits
@@ -370,6 +506,20 @@ def score_narrative(truth: Dict[str, Any], general: Any, hazards: Any,
             if got is not None:
                 out.precision.add(ok, f"{name}: {verdict}")
     return out
+
+
+def _best_overlap(field_name: str, hand: Any, got: Any,
+                  alternates: Sequence[Any]) -> Tuple[float, int, int, int]:
+    """The overlap against whichever accepted list answer fits best."""
+    best = _list_overlap(field_name, hand, got)
+    for alternate in alternates:
+        value = _normalise(alternate)
+        if not isinstance(value, (list, tuple)):
+            continue
+        candidate = _list_overlap(field_name, value, got)
+        if candidate[0] > best[0]:
+            best = candidate
+    return best
 
 
 def _score_summary(out: NarrativeScore, name: str, hand: Any,
