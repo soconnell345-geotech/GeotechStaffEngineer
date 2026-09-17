@@ -2489,3 +2489,103 @@ R14     geotechnical report           standard             0   partial   0.02
 
 cost: 54 model calls, 108 input tokens (+1,387,633 cached), 63,672 output, $5.87, 887 s -- $0.979 and 148 s a report
 ```
+
+## WP2a -- log_grid
+
+### log_grid scorecard, 2026-09-17
+
+Tolerances: sample and index values 0.15 m, layer tops 0.3 m; depths compared in metres whatever the log prints. Open set = R36, R37, R06, R07, R15, R28.
+
+```
+log         set      ruler   unit      samples       layers        index       fields  cells unmatched
+------------------------------------------------------------------------------------------------------
+R06_p51     open       yes    yes     100% 4/4     100% 5/5     100% 4/4      75% 6/8     62        54
+R07_p30     open       yes    yes     100% 8/8     100% 9/9     100% 2/2   100% 13/13    103        97
+R15_p46     open       yes    yes     100% 8/8     100% 4/4   100% 14/14   100% 13/13     75        58
+R28_p57     open       yes    yes   100% 16/16     100% 5/5      75% 3/4   100% 13/13     78        66
+R36_p38     open       yes    yes     100% 8/8     100% 6/6     100% 8/8     82% 9/11     34        19
+R37_p26     open       yes    yes   100% 13/13     100% 5/5            -     90% 9/10     55        42
+ALL         open    100% 6/6 100% 6/6   100% 57/57   100% 34/34    97% 31/32    93% 63/68    407       336
+
+R02_p123    blind      yes     NO            -     100% 1/1            -      33% 2/6     67        67
+R04_p59     blind      yes     NO            -     100% 5/5            -      33% 2/6     42        42
+R13_p45     blind      yes    yes    92% 24/26     100% 5/5     54% 7/13    83% 10/12    105        92
+R25_p19     blind       NO     NO            -            -            -            -      0         0
+R31_p278    blind      yes    yes            -     100% 2/2            -   100% 11/11     27        27
+R34_p49     blind      yes    yes      0% 0/10       0% 0/8            -      50% 2/4    115       115
+ALL         blind    83% 5/6  50% 3/6    67% 24/36    62% 13/21     54% 7/13    69% 27/39    356       343
+
+warnings seen:
+  R02_p123: the depth unit is not stated on these pages and could not be read from their text; depths are in whatever the ruler prints
+  R04_p59: the depth unit is not stated on these pages and could not be read from their text; depths are in whatever the ruler prints
+  R13_p45: page 45: the text was read optically (azure_di); boxes and column edges are softer than on an embedded text layer
+  R13_p45: page 45: no ruled column edges were found; the columns below come from the header labels alone and their x bands are approximate
+  R15_p46: page 46: 1 text line(s) run diagonally across the page (a watermark or a stamp) and were left out of the grid
+  R25_p19: page 19: no ruled column edges were found; the columns below come from the header labels alone and their x bands are approximate
+  R25_p19: page 19: no columns could be laid out — nothing on this page is placed
+  R25_p19: no description column was identified, so no layers were read
+  R34_p49: no column header states the depth unit; m was read off depths written into the log's own text
+
+```
+
+### How to read that table, and what it does not say
+
+**The scoring rules, stated so they can be argued with.** Depths are compared
+in metres whatever the log prints. A sample is an INTERVAL, not a point, and
+half the templates print a blow record against the middle of that interval
+rather than its top, so the window is the sample interval widened by 0.15 m
+(and, where the truth states only a top, the top plus a 0.46 m drive). A blow
+record counts as found when its drives appear IN ORDER among the numbers
+standing in that window in a blows-family column, because some forms print
+the record as one cell ("5-9-12") and some print each drive on its own line.
+An N value counts as found when a cell carries it OR when the drives that
+define it (the second and third six inches) stand at that depth — half the
+templates print only the drives, the grid does no arithmetic by design, and
+counting that as a miss would score a decision, not a defect. A column counts
+as the right one when it carries the value's canonical name or one of its
+family, because a form that heads one column "SAMPLING DATA" and prints the
+sample id, the drives and the recovery inside it is not wrong.
+
+**The unmatched-cell column is a precision PROXY, not a precision.** The grid
+emits every text line on the page; the hand truth states only samples,
+layers, index values and fields. A description line, an elevation, a date and
+a ruler tick are all unmatched by construction. What the number is good for
+is watching it move: it fell from 375 to 336 on the open six as the rules
+improved, because values that used to land in no useful column started
+landing in one.
+
+**One of the blind six is not blind.** R13's scanned page is the page the
+optical path (no ruled columns, ruler found before the columns, the monotone
+run, the wider layer-binding slack) was built against, two hours before the
+truth folder and OPEN.txt existed. Its 92 % on blow records should be read as
+a development figure. The honest blind set is the other five.
+
+**What the blind failures are, from the warnings alone.** R25 draws no ruled
+columns and its header labels do not lay out either, so nothing is placed and
+the module says so three times over. R02 and R04 find their rulers but no
+header and no text on those pages states a unit, so depths are in whatever
+the ruler prints and the unit check fails by design rather than by mistake.
+R34 finds a ruler and reads its unit off the log's own text, and then scores
+zero on samples and layers; that has NOT been looked into, because looking at
+the page would spend the log.
+
+**Thresholds, and where they came from.** Every number the rules lean on is
+gathered at the top of `planlens/document/loggrid.py` with the measurement
+that set it beside it. The four that did real work:
+
+- a vertical rule is a column edge at 0.30 of the page height — real edges on
+  the corpus run 0.39 to 0.73, the longest decoy (a box around a groundwater
+  table) 0.14;
+- the header band is the full-width rule whose band NAMES the most columns,
+  not the first one and not the one above the first number — three of the six
+  open templates draw a page frame, a title block or a groundwater table
+  above their header, and one prints numeric axis labels inside it;
+- a ruler is scored 2.0 for a header that says depth, 1.5 for even steps and
+  0.1 per tick, because the tie that matters is a layer-contact column
+  (called depth, uneven, few ticks, labels set against the contacts) against
+  the printed ruler, and getting it wrong costs about 0.2 m;
+- a label takes a value up to 70 pt to its right — a boring number is set in
+  large type at the far end of its box (60 pt) while the nearest unrelated
+  text on a crowded form footer was 134 pt away and had been read as the
+  value before the cap.
+
