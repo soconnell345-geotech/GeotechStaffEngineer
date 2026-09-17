@@ -333,7 +333,7 @@ DocLayout-YOLO (AGPL), docling (torch unavoidable — optional only).
    firewalled: any package that downloads model weights at runtime is unusable
    as published — vendor the models or skip.
 
-## REPORT INGEST TRAIN (2026-09-17) — WP0–WP1b SHIPPED in 5.19.0; WP2–WP5 next
+## REPORT INGEST TRAIN (2026-09-17) — WP0–WP4 BUILT; 5.20.0 PREPARED, NOT TAGGED; WP5 next
 
 Plan: `module_work/REPORT_INGEST_PLAN.md`. Goal, in the owner's words:
 well-organised data about each geotechnical report, usable either as a
@@ -353,14 +353,34 @@ exports of it.
   development), the scorecard arithmetic, and
   `cluster_scoring.score_on_cluster` for the run on the cluster.
 
-**Next, in order:** WP2 boring logs → investigations → DIGGS borings (the
-core); WP3 lab sheets → lab tests; WP4 the narrative question set, the
-reconciler, the `report_ingest` sub-agent and the library page; WP5 calc
-printouts and the long tail. **WP2 waits on the owner's cluster scoring run**
-— the WP1b gate is measured through Prompter, not on a development engine.
+**Built and prepared as planlens 0.6.0 + app 5.20.0 (2026-09-17, NOT tagged):**
+- **WP2** — `log_grid` in planlens (a boring log read as the coordinate system
+  it is), the record model, the log reader, and a real DIGGS 2.6 writer the
+  app's own subsurface reader reads back.
+- **WP3** — the lab reader, with a typed result per test kind refused at
+  construction when the result does not match the kind, and the DIGGS lab
+  elements.
+- **WP4** — the narrative reader on the owner's two standing query schemas,
+  the reconciler that records a disagreement rather than settling it, the
+  writers (record, summary page, WikiLLM-style library page, SQLite index),
+  the deterministic resumable graph, the folder runner, and the
+  `report_ingest` sub-agent on the app's tool surface behind
+  `enable_report_ingest=False`.
+
+**Next:** WP5 — calculation printouts and the long tail. It is the one work
+package of the plan not built.
+
+**What WP5 waits on, and so does turning the sub-agent on:** the owner's
+four-stage `score_on_cluster` run. Every reader's accuracy is still unmeasured
+against a model — the ledger holds the grid-alone and tables-alone baselines
+and nothing more, and the development-engine checkpoints were never run for
+the logs, the lab or the narrative. The gate that matters is measured through
+Prompter, on the tier the app actually runs on.
 
 **Parked with it:** the four disputed hand labels stay disputed (the
 spreadsheet is never edited — a hand label records what a person decided);
-Azure DI results for R02, R31, R32 and R38 would help and do not exist yet;
-one label sheet matches no corpus report and stays unmatched rather than being
-force-fitted to one of the same length.
+Azure DI results for four reports would help and do not exist yet; one label
+sheet matches no corpus report and stays unmatched rather than being
+force-fitted to one of the same length. And before any of it is pushed, the
+two corpus-naming vocabulary strings in `report_ingest/model.py` have to come
+out of the public tree (HANDOFF §0a-current).

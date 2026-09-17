@@ -670,3 +670,70 @@ class TestTheNarrativeStage:
             DEFAULT_OPEN_NARRATIVE
         (tmp_path / "OPEN.txt").write_text("R15\nR28\n", encoding="utf-8")
         assert _open_set_or(tmp_path, DEFAULT_OPEN_NARRATIVE) == ("R15", "R28")
+
+
+class TestOneTruthRoot:
+    """The three sets of hand truth travel to the cluster as ONE folder.
+
+    They are private, so they are uploaded by hand before every run. Three
+    Volume paths that must each be right is three chances for one to be
+    stale while the run still starts and scores against it; a root holding
+    ``logs/``, ``lab/`` and ``narrative/`` is one thing to get right.
+    """
+
+    def test_a_root_with_the_three_subfolders_is_split_by_stage(self,
+                                                               tmp_path):
+        for name in ("logs", "lab", "narrative"):
+            (tmp_path / name).mkdir()
+
+        logs, lab, narrative = cs._truth_dirs(tmp_path, None, None)
+
+        assert logs == tmp_path / "logs"
+        assert lab == tmp_path / "lab"
+        assert narrative == tmp_path / "narrative"
+
+    def test_a_folder_of_log_truth_files_is_still_used_as_it_stands(self,
+                                                                   tmp_path):
+        """The older single-folder form: no `logs/` inside, so it IS the
+        log truth folder. Breaking this would silently stop finding truth
+        that is right there."""
+        (tmp_path / "R06_p51.json").write_text("{}", encoding="utf-8")
+
+        logs, lab, narrative = cs._truth_dirs(tmp_path, None, None)
+
+        assert logs == tmp_path
+        assert lab is None and narrative is None
+
+    def test_an_explicit_per_stage_folder_wins_over_the_root(self, tmp_path):
+        for name in ("logs", "lab", "narrative"):
+            (tmp_path / name).mkdir()
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+
+        logs, lab, narrative = cs._truth_dirs(tmp_path, elsewhere, elsewhere)
+
+        assert logs == tmp_path / "logs"
+        assert lab == elsewhere and narrative == elsewhere
+
+    def test_no_truth_at_all_is_three_nones(self):
+        assert cs._truth_dirs(None, None, None) == (None, None, None)
+
+    def test_a_root_missing_a_stages_folder_is_refused_by_that_stage(
+            self, tmp_path):
+        """A root with logs/ but no narrative/ must not start the narrative
+        stage against the root itself."""
+        (tmp_path / "logs").mkdir()
+
+        with pytest.raises(ValueError, match="narrative/"):
+            cs.score_on_cluster(reports_dir=tmp_path, prompter=object(),
+                                stages=("narrative",), truth_dir=tmp_path)
+
+    def test_the_lab_stage_reads_its_folder_out_of_the_root(self, tmp_path):
+        """Refused for a MISSING lab folder, accepted past the check once the
+        root has one -- it then fails later, on the corpus, not on truth."""
+        (tmp_path / "lab").mkdir()
+
+        with pytest.raises(FileNotFoundError, match="no reports"):
+            cs.score_on_cluster(reports_dir=tmp_path, prompter=object(),
+                                stages=("lab",), truth_dir=tmp_path,
+                                out_dir=tmp_path / "out")

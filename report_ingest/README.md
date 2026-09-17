@@ -583,14 +583,38 @@ This is the run that produces the real numbers, and the owner makes it.
 **The reports stay where they already are.** They do not have to be renamed,
 copied or re-uploaded: point `reports_dir` at the folder that holds them under
 the names their authors gave them, and the manifest's source-file column is
-what turns each file name into an ID. Three small private files travel with
-the run and can sit anywhere the cluster can read:
+what turns each file name into an ID.
 
-| File | What it is | Without it |
-|---|---|---|
-| `MANIFEST.md` | the corpus manifest; its `file` column names each report | IDs cannot be resolved at all, unless the PDFs are already named `R01.pdf` … |
-| `trial_pages_working_r2.xlsx` | the hand page labels | the in-sample set runs and produces profiles, but scores nothing |
-| `oos_labels.json` | the lead's out-of-sample labels | the two out-of-sample sets run and score nothing |
+**One folder of small private files travels with the run**, and the whole of
+it is what gets uploaded. The hand truth is private and does not ship in the
+wheel, so it is put on a Volume before a run; three separate Volume paths that
+must each be right is three chances for one to be stale while the run starts
+anyway and scores against it. Upload this, and nothing else:
+
+```
+<your volume>/report_ingest/
+    MANIFEST.md                      the corpus manifest; its `file` column names each report
+    trial_pages_working_r2.xlsx      the hand page labels
+    oos_labels.json                  the lead's out-of-sample labels
+    truth/
+        logs/       <ID>_p<page>.json …, OPEN.txt, BLIND2.txt
+        lab/        <kind>__<ID>_p<page>.json …, OPEN.txt
+        narrative/  <ID>.json …
+```
+
+| File | Without it |
+|---|---|
+| `MANIFEST.md` | IDs cannot be resolved at all, unless the PDFs are already named `R01.pdf` … |
+| `trial_pages_working_r2.xlsx` | the in-sample set runs and produces profiles, but scores nothing |
+| `oos_labels.json` | the two out-of-sample sets run and score nothing |
+| `truth/logs/`, `truth/lab/`, `truth/narrative/` | that stage refuses to start rather than running unscored |
+
+`truth/` is what `truth_dir` points at: each stage takes its own subfolder out
+of it, and the subfolders are named after the stages. `OPEN.txt` beside a
+stage's truth files names the reports whose pages the prompts were allowed to
+be tuned against, so the blind figure stays blind; without one the built-in
+open set is used. (`lab_truth_dir` and `narrative_truth_dir` still override
+the root, for truth that is not in one place.)
 
 The Azure Document Intelligence results are read in **either** form —
 `<ID>.json.gz` or the uncompressed `DI_data_<original stem>.json` that
@@ -598,30 +622,40 @@ Funhouse wrote — from whatever folder `di_dir` names. Without them the scanned
 pages are read from their own text layer alone.
 
 ```python
-# 1. From PyPI through Nexus. planlens 0.5.0 arrives with it.
-%pip install "geotech-staff-engineer==5.19.0"
+# 1. From PyPI through Nexus. planlens 0.6.0 arrives with it.
+%pip install "geotech-staff-engineer==5.20.0"
 dbutils.library.restartPython()
 ```
 
 ```python
-# 2. One cell. fh_prompter is the object you already have.
+# 2. One cell, all four stages. fh_prompter is the object you already have.
 from report_ingest.cluster_scoring import score_on_cluster
 
 results = score_on_cluster(
     reports_dir  = "/Volumes/<your volume>/reports",          # the PDFs, under their own names
-    manifest     = "/Volumes/<your volume>/wp1b/MANIFEST.md",
-    labels_xlsx  = "/Volumes/<your volume>/wp1b/trial_pages_working_r2.xlsx",
-    oos_labels   = "/Volumes/<your volume>/wp1b/oos_labels.json",
+    manifest     = "/Volumes/<your volume>/report_ingest/MANIFEST.md",
+    labels_xlsx  = "/Volumes/<your volume>/report_ingest/trial_pages_working_r2.xlsx",
+    oos_labels   = "/Volumes/<your volume>/report_ingest/oos_labels.json",
+    truth_dir    = "/Volumes/<your volume>/report_ingest/truth",   # holds logs/ lab/ narrative/
     di_dir       = "/Volumes/<your volume>/report_di",
-    out_dir      = "/tmp/report_ingest_wp1b",                 # /tmp or a Volume, never /Workspace
+    out_dir      = "/tmp/report_ingest_520",                  # /tmp or a Volume, never /Workspace
     prompter     = fh_prompter,
-    model        = "funhouse-gpt-high",     # the label review, on the tier the app runs on
+    model        = "funhouse-gpt-high",     # every reader, on the tier the app runs on
     triage_model = "funhouse-gpt-medium",   # one call over a ledger; a cheaper tier does
     sets         = ("insample", "oos_open", "oos_blind"),
-    stages       = ("labels",),             # or ("labels", "logs", "lab")
+    stages       = ("labels", "logs", "lab", "narrative"),
     max_reports  = 2,                       # drop this line after the first run
 )
 ```
+
+Bring back **`/tmp/report_ingest_520/RESULTS.md`**. Run it with
+`max_reports=2` first. It caps every stage at two — two reports reviewed, two
+logs, two laboratory sheets, two narratives — which proves the paths, the
+prompter and all three truth folders for a few minutes of calls, and it
+resumes, so the full run afterwards does not redo them.
+
+The four stages are described one at a time below, each with the cell that
+runs it alone.
 
 ### Scoring the log reader as well (`stages=("labels", "logs")`)
 
@@ -638,8 +672,8 @@ results = score_on_cluster(
     reports_dir  = "/Volumes/<your volume>/reports",
     manifest     = "/Volumes/<your volume>/wp1b/MANIFEST.md",
     di_dir       = "/Volumes/<your volume>/report_di",
-    truth_dir    = "/Volumes/<your volume>/wp2b/truth/logs",   # <ID>_p<page>.json + OPEN.txt
-    out_dir      = "/tmp/report_ingest_wp2b",
+    truth_dir    = "/Volumes/<your volume>/report_ingest/truth",   # its logs/ holds <ID>_p<page>.json + OPEN.txt
+    out_dir      = "/tmp/report_ingest_logs",
     prompter     = fh_prompter,
     model        = "funhouse-gpt-high",
     stages       = ("logs",),       # or ("labels", "logs") for both in one run
@@ -668,9 +702,8 @@ results = score_on_cluster(
     reports_dir   = "/Volumes/<your volume>/reports",
     manifest      = "/Volumes/<your volume>/wp1b/MANIFEST.md",
     di_dir        = "/Volumes/<your volume>/report_di",
-    truth_dir     = "/Volumes/<your volume>/wp2b/truth/logs",
-    lab_truth_dir = "/Volumes/<your volume>/wp3/truth/lab",  # <kind>__<ID>_p<page>.json + OPEN.txt
-    out_dir       = "/tmp/report_ingest_wp3",
+    truth_dir     = "/Volumes/<your volume>/report_ingest/truth",  # its lab/ holds <kind>__<ID>_p<page>.json + OPEN.txt
+    out_dir       = "/tmp/report_ingest_lab",
     prompter      = fh_prompter,
     model         = "funhouse-gpt-high",
     stages        = ("labels", "logs", "lab"),
@@ -737,10 +770,8 @@ results = score_on_cluster(
     reports_dir         = "/Volumes/<your volume>/reports",
     manifest            = "/Volumes/<your volume>/wp1b/MANIFEST.md",
     di_dir              = "/Volumes/<your volume>/report_di",
-    truth_dir           = "/Volumes/<your volume>/wp2b/truth/logs",
-    lab_truth_dir       = "/Volumes/<your volume>/wp3/truth/lab",
-    narrative_truth_dir = "/Volumes/<your volume>/wp4/truth/narrative",  # <ID>.json + OPEN.txt
-    out_dir             = "/tmp/report_ingest_wp4",
+    truth_dir           = "/Volumes/<your volume>/report_ingest/truth",  # its narrative/ holds <ID>.json
+    out_dir             = "/tmp/report_ingest_narrative",
     prompter            = fh_prompter,
     model               = "funhouse-gpt-high",
     stages              = ("labels", "logs", "lab", "narrative"),
@@ -787,7 +818,7 @@ same scoring against the development engine (`--fields` for the per-question
 table, `--detail` for every miss on the open reports).
 
 
-Bring back **`/tmp/report_ingest_wp1b/RESULTS.md`**. That is the whole report,
+Bring back **`RESULTS.md`** from whatever `out_dir` was. That is the whole report,
 and it carries IDs, labels, counts and rates only. The per-report runs and the
 triage profiles stay on the cluster in `runs/` and `triage/` unless you move
 them deliberately, because a change's reason and a triage rationale can name a
@@ -1020,10 +1051,13 @@ and a later editor who does not know why will delete it.
 
 ## How this package ships
 
-It shipped in the wheel as of **5.19.0** (2026-09-17) as a library. Since WP4
-the app CAN call it — `build_deep_agent(enable_report_ingest=True)` adds one
-primary tool and one sub-agent — but the flag is **OFF by default**, so nothing
-on the chat surface changes until a release turns it on.
+It shipped in the wheel as of **5.19.0** (2026-09-17) as a library, and
+**5.20.0** adds the rest of it: the record, the three readers, the reconciler,
+the writers, the graph and the sub-agent. Since WP4 the app CAN call it —
+`build_deep_agent(enable_report_ingest=True)` adds one primary tool and one
+sub-agent — but the flag is **OFF by default**, so nothing on the chat surface
+changes until a release turns it on. It stays off until the owner's four-stage
+cluster run has measured the readers on the tier that will do the work.
 
 - **`report_ingest*` is in `[tool.setuptools.packages.find]`.** Until that line
   landed, a wheel built from this repo did **not** contain this package, and
@@ -1033,9 +1067,14 @@ on the chat surface changes until a release turns it on.
 - **`report_ingest` is in pytest's `testpaths`**, so this suite runs in the
   release gate. The WP0/WP1 harness under `module_work/` is dev-only and is
   deliberately not.
-- **`planlens>=0.5`** — the page roles, the printed outline and the per-page
-  ledger these passes read are 0.5.0's. planlens 0.5.0 declares exactly the
-  dependencies 0.4.0 did, so the pin adds no new package to the cluster.
+- **`planlens>=0.6`** (5.20.0) — the page roles, the printed outline and the
+  per-page ledger are 0.5.0's; `log_grid`, which the log reader is built on,
+  and the text extraction that returns an overprinted line ONCE are 0.6.0's.
+  That second one is not a nicety: a depth scale drawn twice reads "5, 5, 10,
+  10", which holds no strictly rising run of three, so the ruler was refused
+  and the sheet came back with no depths at all. planlens 0.6.0 declares
+  exactly the dependencies 0.4.0 did, so the pin adds no new package to the
+  cluster.
 - `pydantic` and `openpyxl`, both already there: pydantic through the agent
   stack, openpyxl as a hard requirement of `python-ags4`, which this app
   depends on directly. The hand-label reader imports openpyxl lazily anyway,

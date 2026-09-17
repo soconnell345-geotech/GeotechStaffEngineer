@@ -8,6 +8,92 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### 5.20.0 PREPARED, NOT YET TAGGED (2026-09-17) — the report read end to end, with planlens 0.6.0
+
+**Prepared, not tagged.** Everything up to the tag is done on
+`feature/report-ingest-wp2` (app) and `feature/log-grid` (planlens): versions,
+the pin, the docs, the gate and the wheel check. **Nothing is merged, tagged,
+pushed or published** — the owner gives the word. planlens 0.6.0 publishes
+FIRST, as it did for 0.5.0, then the app.
+
+**STOP BEFORE THE TAG — one open item.** `report_ingest/model.py` (lines 1252
+and 1253, and `report_ingest/tests/test_narrative_reader.py` lines 257 and
+264) publishes two vocabulary strings read off the hand answers that NAME THE
+PRIVATE CORPUS. Both files ship in the wheel and this repo is public, so the
+words reach GitHub on the first push and PyPI on the first publish. They
+arrived in commit `5628ce1`. They are not in any earlier release and nothing
+else on either branch trips the privacy grep. **Do not push until this is
+settled.** The recommended fix: the two fields are already plain `str` rather
+than `Literal`, so the vocabulary is only a prompt hint and a folding table
+and nothing refuses an answer — give `model.py` a GENERIC default list and
+load the owner's real wording at runtime from a private file that travels
+with the truth folders. Shortening the published strings instead would move
+the numbers, because the narrative scorer matches strings at a rapidfuzz
+partial ratio of 85 and the hand answers are the long form.
+
+**What shipped.** WP2 through WP4 of the report-ingest train, on top of the
+WP0/WP1b library that went out in 5.19.0. `ReportRecord` is the product and
+the summary page, the library page and the DIGGS file are exports of it. A
+number keeps the unit it was printed in; every value carries the page, the
+box and how it was read (`text` / `di` / `ocr` / `grid` / `vision` /
+`derived`); what could not be read is recorded rather than guessed. The three
+readers: the **log reader**, one `Investigation` per boring with its
+continuation sheets folded in, gated on the sheet's own fitted ruler so a
+depth off the paper is refused rather than accepted, and computing nothing —
+an N value the log never printed stays `None`, because half the templates
+print it and half do not and adding drives would invent a number; the **lab
+reader**, a typed result per test kind, refused at construction when the
+result does not match the kind, because `kind` is what every consumer
+dispatches on and a mis-filed result would be invisible in the JSON; the
+**narrative reader**, the owner's two standing query schemas answered field
+for field and cited, `None` where the report is silent. The **reconciler**
+links lab tests to the ground and RECORDS a disagreement rather than settling
+it. The **writers** produce `report.record.json`, a summary page, a
+WikiLLM-style library page with a SQLite index over many reports, and **real
+DIGGS 2.6** through both gates, which the app's existing subsurface reader
+now reads back. `graph.ingest_report` is the deterministic resumable loop,
+`run_folder` drives it over a folder, and `subagent` puts the whole thing on
+the app as one `CompiledSubAgent` plus one primary `report_ingest` tool,
+**OFF by default** — `build_deep_agent(enable_report_ingest=False)` — because
+none of it has been checked on the cluster yet.
+
+**The scoring cell changed shape.** `score_on_cluster` now takes four stages
+(`labels`, `logs`, `lab`, `narrative`) and **one truth root**: `truth_dir`
+may be a folder holding `logs/`, `lab/` and `narrative/`, named after the
+stages. The hand truth is private and is uploaded by hand before every run,
+and three Volume paths that must each be right is three chances for one to be
+stale while the run starts anyway and scores against it. The older
+three-argument form still works and still wins where it is passed. The folder
+to upload is staged, with its own README naming every Volume path:
+`module_work/field_feedback/2026-09-16_report-ingest/raw/cluster_upload/`
+(gitignored; about 2 MB).
+
+**Dependencies.** Pin raised to **`planlens>=0.6`** (0.6.0, 2026-09-17: the
+log grid, and the text-extraction fix that returns an overprinted line once —
+which was fatal rather than untidy, since a doubled depth scale holds no
+strictly rising run of three and the ruler was refused outright). planlens
+0.6.0 declares exactly what 0.4.0 declared, so **no new third-party package
+reaches the cluster**. `anthropic` stays optional and uninstalled.
+
+Release gate **12,326 passed / 33 skipped / 0 failed**, three chunks, each
+gated on pytest's exit code and never on a piped tail.
+
+**First live checks:** (1) `%pip install "geotech-staff-engineer==5.20.0"`
+with `planlens-0.6.0` in the same `Successfully installed` line and nothing
+new beside it; (2) one four-stage `score_on_cluster(...)` cell with
+`max_reports=2` and `truth_dir` pointing at the uploaded `truth/` root, and
+`RESULTS.md` comes back.
+
+**Parked, deliberately:** WP5, the calculation reader — the one work package
+of the plan not built. The Azure Document Intelligence results the owner does
+not yet have for four reports. The one hand label sheet that matches no
+corpus report and stays unmatched rather than being force-fitted. The
+development-engine checkpoints were never run for the logs, the lab or the
+narrative: every number in the ledger for those three is either the grid
+alone, the tables alone, or nothing yet, and the model numbers arrive with
+the owner's cluster run. And the sub-agent's flag default stays `False` until
+that run says the readers work on the tier that will do the work.
+
 ### 5.19.0 RELEASED (2026-09-17, tag `v5.19.0`) — the `report_ingest` package, with planlens 0.5.0
 
 **Both packages verified LIVE on PyPI 2026-09-17: planlens 0.5.0 (11:03 UTC)

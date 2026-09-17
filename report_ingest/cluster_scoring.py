@@ -102,6 +102,46 @@ def _check_out_dir(out_dir: Path) -> None:
                 f"/tmp/... or a Volume path (/Volumes/...).")
 
 
+#: The subfolder each scoring stage keeps its hand truth in, under one truth
+#: root. The names are the stage names, so ``stages`` and the folder listing
+#: read the same way.
+TRUTH_SUBDIRS: Dict[str, str] = {"logs": "logs", "lab": "lab",
+                                 "narrative": "narrative"}
+
+
+def _truth_dirs(truth_dir: Any, lab_truth_dir: Any, narrative_truth_dir: Any
+                ) -> Tuple[Optional[Path], Optional[Path], Optional[Path]]:
+    """``(logs, lab, narrative)`` truth folders, from a ROOT or from three.
+
+    ONE FOLDER TRAVELS TO THE CLUSTER, not three. The hand truth is private,
+    so it is uploaded by hand before every run; asking for three Volume paths
+    that must each be right invites one of them to be stale while the run
+    still starts and scores the wrong thing. So ``truth_dir`` may be a root
+    holding ``logs/``, ``lab/`` and ``narrative/`` -- the stage names -- and
+    each stage takes its own folder from it.
+
+    The older three-argument form still works and always wins: an explicit
+    ``lab_truth_dir`` or ``narrative_truth_dir`` overrides the root, and a
+    ``truth_dir`` that holds the log truth files DIRECTLY, with no ``logs/``
+    in it, is used as-is the way it always was. Nothing here touches the
+    disk beyond asking whether a subfolder exists, and a missing folder is
+    left as ``None`` so the caller raises the message that names the stage.
+    """
+    root = Path(truth_dir) if truth_dir is not None else None
+
+    def under(name: str) -> Optional[Path]:
+        if root is None:
+            return None
+        candidate = root / TRUTH_SUBDIRS[name]
+        return candidate if candidate.is_dir() else None
+
+    logs = under("logs") or root
+    lab = Path(lab_truth_dir) if lab_truth_dir is not None else under("lab")
+    narrative = (Path(narrative_truth_dir)
+                 if narrative_truth_dir is not None else under("narrative"))
+    return logs, lab, narrative
+
+
 def _set_ids(name: str, corpus: Corpus) -> Tuple[str, ...]:
     if name == "insample":
         return tuple(corpus.mapped_ids()) if corpus.labels_available else ()
@@ -254,16 +294,25 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         and then the log reader over each hand-truthed log, scored before
         (the grid alone) and after (the record the reader built). ``"lab"``
         is WP3 -- the page's own detected tables and then the lab reader over
-        each hand-truthed laboratory sheet, scored the same two ways. Pass
-        any combination: ``stages=("labels", "logs", "lab")``.
-    truth_dir, lab_truth_dir
-        Required by the ``logs`` and ``lab`` stages: the folders of
-        hand-truthed logs and laboratory sheets
-        (``<kind>__<ID>_p<page>.json``). They are private, so they travel to
-        the cluster with the run rather than living in the wheel. An
-        ``OPEN.txt`` beside the truth files names the reports whose pages the
-        prompts were allowed to be tuned against; everything else is scored
-        as blind.
+        each hand-truthed laboratory sheet, scored the same two ways.
+        ``"narrative"`` is WP4 -- the narrative reader over every report that
+        has a hand answer, scored field by field on recall, precision and the
+        flattering agreement. Pass any combination; all four is
+        ``stages=("labels", "logs", "lab", "narrative")``.
+    truth_dir
+        ONE truth root for every scoring stage: a folder holding ``logs/``,
+        ``lab/`` and ``narrative/``, named after the stages that read them.
+        The hand truth is private, so it is uploaded by hand before a run and
+        does not live in the wheel; one folder to upload is one thing to get
+        right rather than three. A ``truth_dir`` holding the log truth files
+        directly, with no ``logs/`` in it, still works as it always did.
+    lab_truth_dir, narrative_truth_dir
+        The older per-stage form, and it still overrides the root. Pass them
+        when the three sets of truth are not in one place.
+
+        In every case an ``OPEN.txt`` beside the truth files names the
+        reports whose pages the prompts were allowed to be tuned against;
+        everything else is scored as blind.
     log_budget, lab_budget
         Model calls a reader may spend per log and per sheet. Each reader's
         own ceiling -- six and four -- holds whatever these say.
@@ -284,24 +333,30 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
             f"unknown stage(s) {unknown}; the stages are {list(STAGE_NAMES)}")
     if not stages:
         raise ValueError(f"pass at least one stage: {list(STAGE_NAMES)}")
-    if "logs" in stages and truth_dir is None:
+    logs_truth, lab_truth, narrative_truth = _truth_dirs(
+        truth_dir, lab_truth_dir, narrative_truth_dir)
+    if "logs" in stages and logs_truth is None:
         raise ValueError(
             "the 'logs' stage scores the reader against the hand-truthed "
-            "logs, so it needs truth_dir -- the folder of <ID>_p<page>.json "
-            "files. They are private and do not ship in the wheel.")
-    if "lab" in stages and lab_truth_dir is None:
+            "logs, so it needs truth_dir -- either the folder of "
+            "<ID>_p<page>.json files itself, or one truth root with a "
+            "'logs/' folder in it. They are private and do not ship in the "
+            "wheel.")
+    if "lab" in stages and lab_truth is None:
         raise ValueError(
             "the 'lab' stage scores the reader against the hand-truthed "
-            "laboratory sheets, so it needs lab_truth_dir -- the folder of "
-            "<kind>__<ID>_p<page>.json files. They are private and do not "
-            "ship in the wheel.")
-    if "narrative" in stages and narrative_truth_dir is None:
+            "laboratory sheets, so it needs them: either lab_truth_dir -- "
+            "the folder of <kind>__<ID>_p<page>.json files -- or a 'lab/' "
+            "folder inside truth_dir. They are private and do not ship in "
+            "the wheel.")
+    if "narrative" in stages and narrative_truth is None:
         raise ValueError(
             "the 'narrative' stage scores the reader against the hand "
-            "answers, so it needs narrative_truth_dir -- the folder of "
-            "<ID>.json files, each holding the owner's two schemas answered "
-            "by hand with null for 'not stated'. They are private and do not "
-            "ship in the wheel.")
+            "answers, so it needs them: either narrative_truth_dir -- the "
+            "folder of <ID>.json files, each holding the owner's two schemas "
+            "answered by hand with null for 'not stated' -- or a "
+            "'narrative/' folder inside truth_dir. They are private and do "
+            "not ship in the wheel.")
     out = Path(out_dir)
     _check_out_dir(out)
     for sub in ("runs", "triage"):
@@ -393,14 +448,14 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
     lines = _render(results) if "labels" in stages else _header(results)
 
     if "logs" in stages:
-        logs = _run_logs(corpus, prompter, model, out, Path(truth_dir),
+        logs = _run_logs(corpus, prompter, model, out, logs_truth,
                          budget=log_budget, redo=redo,
                          max_logs=max_reports, open_reports=open_reports)
         results["logs"] = logs
         lines += _render_logs(logs)
 
     if "lab" in stages:
-        lab = _run_lab(corpus, prompter, model, out, Path(lab_truth_dir),
+        lab = _run_lab(corpus, prompter, model, out, lab_truth,
                        budget=lab_budget, redo=redo, max_sheets=max_reports,
                        open_reports=open_lab_reports)
         results["lab"] = lab
@@ -408,7 +463,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
 
     if "narrative" in stages:
         narrative = _run_narrative(
-            corpus, prompter, model, out, Path(narrative_truth_dir),
+            corpus, prompter, model, out, narrative_truth,
             budget=narrative_budget, redo=redo, max_reports=max_reports,
             open_reports=open_narrative_reports)
         results["narrative"] = narrative

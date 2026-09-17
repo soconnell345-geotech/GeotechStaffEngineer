@@ -1,11 +1,23 @@
 # Report ingest — geotechnical report → organised record + summary + DIGGS 2.6
 
-**Status: WP0–WP1b SHIPPED in planlens 0.5.0 / app 5.19.0 (2026-09-17);
-cluster scoring pending the owner's run.** The `report_ingest` package is in
-the app wheel as a library — no tool of the app calls it yet — and
-`report_ingest.cluster_scoring.score_on_cluster` is the notebook cell that
-produces the WP1b numbers on the model that will do the work. WP2 starts once
-those numbers are in. (Started 2026-09-16, owner: "run with what you have".) Drafted 2026-09-16 after reviewing the report corpus (38 reports,
+**Status: WP0–WP4 BUILT; 5.20.0 PREPARED, NOT YET TAGGED (2026-09-17);
+cluster scoring pending the owner's run.** WP0 and WP1b shipped in app 5.19.0
+with planlens 0.5.0. WP2 through WP4 — the record, the log reader and DIGGS
+2.6, the lab reader, the narrative reader and the reconciler, the writers,
+the deterministic graph, the folder runner and the app sub-agent — are built
+and prepared as 5.20.0 with planlens 0.6.0, on `feature/report-ingest-wp2`
+and `feature/log-grid`. Nothing is merged, tagged, pushed or published.
+
+**Every model number for WP2–WP4 is still missing, and that is the state.**
+What the ledger holds for the three readers is the baseline WITHOUT a model:
+`log_grid` alone for the logs, the page's own detected tables alone for the
+lab sheets, and nothing yet for the narrative. The development-engine
+checkpoints were never run for any of the three. The numbers arrive from the
+owner's four-stage `score_on_cluster` run, on the tier that will do the work
+— which is why the sub-agent ships with `enable_report_ingest=False` and why
+no reader's accuracy is quoted anywhere. WP5 is the one package not built.
+
+(Started 2026-09-16, owner: "run with what you have".) Drafted 2026-09-16 after reviewing the report corpus (38 reports,
 7,829 pages) with planlens 0.4.0; revised the same day with the owner's two
 query schemas, the Azure Document Intelligence (DI) results found in the
 private repo, and the owner's steer that neither the old page labels nor the
