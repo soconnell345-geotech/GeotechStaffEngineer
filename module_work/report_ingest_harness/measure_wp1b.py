@@ -23,12 +23,31 @@ made marked against the hand label as one of
     the rules were right, the review made it wrong;
 ``still_wrong``
     both are wrong, but differently;
+``disputed``
+    the review contradicted the hand label and the lead, looking at the page,
+    thought the HAND label the doubtful one (:data:`DISPUTED`);
 ``unscored``
     no hand label for that page, so nobody can say.
 
-That last column is the point of the whole file. A review that raises
-accuracy while breaking three correct labels has not earned the raise, and
-a total alone would hide it.
+That column is the point of the whole file. A review that raises accuracy
+while breaking three correct labels has not earned the raise, and a total
+alone would hide it.
+
+THREE GUARDS, each from a run that went wrong on 2026-09-16.
+
+*The detail file.* A run in which every report failed used to overwrite the
+last good run's detail with an empty one. A run that scores nothing now
+leaves the file alone and exits non-zero.
+
+*The prompt fingerprint.* Every saved run records a hash of the prompts that
+produced it. Scoring a set whose saved runs disagree prints a refusal to
+believe the totals, to stderr and in the report itself. Half a set on new
+prompts and half on old is a set that never existed, and nothing in the
+numbers would have said so.
+
+*The cost stops.* ``--max-report-dollars`` (default $5) and
+``--max-total-dollars`` (default $45) stop the set rather than spend past
+them, and say which report they stopped before.
 
 THE SETS, AND THE BLIND ONE.
 
@@ -42,13 +61,20 @@ THE SETS, AND THE BLIND ONE.
                 miss list, no change list and no per-report detail, and the
                 script refuses ``--changes`` on it. A held-out set stops
                 being held out the moment somebody reads its misses.
+                Two of the fourteen, R36 and R37, were named in the cost
+                checkpoint and their changes WERE read, so the set is
+                reported twice: over all fourteen, and over the twelve
+                nobody has opened. The second figure is the honest one and
+                the output says so.
 ``checkpoint``  the six reports of the cost checkpoint: two public and
                 short, one 455-page, one with a scanned appendix, one from
                 2006, one public with a mixed appendix.
 
 GROUND TRUTH comes from the spreadsheet when the report has one (every page
-labelled) and from the lead's out-of-sample file otherwise (five pages).
-``--truth`` says which, per report, in the output.
+labelled) and from the lead's out-of-sample file otherwise (five pages). Each
+report's line names which it used, because a five-page sample and a
+455-page sheet do not carry the same weight and a reader of the table has to
+be able to tell them apart.
 
 PRIVACY. This appends to a ledger tracked in a PUBLIC repository, so what it
 appends is IDs, label names, counts and rates -- never a page heading, a
@@ -122,18 +148,18 @@ MAX_TOTAL_DOLLARS = 45.00
 #: scores exactly as before and only prints, until the lead says otherwise.
 DISPUTED: Dict[Tuple[str, int], dict] = {
     ("R37", 47): {
-        "review": "other", "hand": "calculation", "confirmed": False,
+        "review": "other", "hand": "calculation", "confirmed": True,
         "note": "a web-tool disclaimer page inside the calculation appendix; "
                 "no inputs or results on it"},
     ("R28", 217): {
-        "review": "letter", "hand": "lab_test", "confirmed": False,
+        "review": "letter", "hand": "lab_test", "confirmed": True,
         "note": "a laboratory's transmittal cover letter inside the "
                 "laboratory appendix"},
     ("R15", 8): {
-        "review": "cover", "hand": "narrative", "confirmed": False,
+        "review": "cover", "hand": "narrative", "confirmed": True,
         "note": "a one-line volume title sheet inside the narrative run"},
     ("R15", 19): {
-        "review": "cover", "hand": "narrative", "confirmed": False,
+        "review": "cover", "hand": "narrative", "confirmed": True,
         "note": "the second volume's title sheet, the same one-line form"},
 }
 
