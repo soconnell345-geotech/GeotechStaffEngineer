@@ -2370,3 +2370,96 @@ column here worth weighing.
   as `inner_role`.
 
 Every one of those is a row the model review pass should look at first.
+
+## WP1 -- close-out: the blind half after round 5 (planlens 04aac36)
+
+The 70 pages of the fourteen reports the builder never opened (R17, R19, R22,
+R25, R26, R27, R31-R38), scored before and after round 5:
+
+| blind half, 70 pages | strict | accepting alternates |
+|---|---|---|
+| round 2 rules (from the 120-page run above) | 0.714 | 0.771 |
+| round 5 rules | 0.786 | 0.857 |
+| round 5, excluding R38's four no-text scans | 0.833 | 0.909 |
+
+Key content on the blind half after round 5 (support / recall / precision):
+lab_test 18 / 1.00 / 0.95 (the 1991 typed data report is now right on all
+five of its pages); calculation 11 / 1.00 / 0.92; boring_log 9 / 0.78 /
+0.88; narrative 12 / 0.83 / 0.91; test_pit_log 2 / 1.00 / 1.00.
+
+Every remaining strict miss is a page that says nothing about itself: two
+photo pages and a figure under a tab that names several things (`other`
+with candidates, as designed), four scanned pages with no text source
+(R38), three INHERITED labels the alternates accept, a table of contents
+carrying the narrative's running header, a lab slip-sheet that names the
+lab, and a core-photo log with no caption. That is the population the model
+review pass exists for. WP1 closes here; the rules are frozen for WP1b.
+
+---
+
+## WP1b -- triage and label review -- checkpoint (2026-09-16)
+
+Triage claude-sonnet-5; review claude-opus-5. Cost checkpoint: the first six reports, before the lead's go for the full sets. Triage and review as first written; no tuning on these numbers.
+
+```
+checkpoint: 6 report(s), 677 scored pages
+                            before     after
+strict accuracy              0.889     0.939
+accepting alternates         0.892     0.941
+
+key content (the gate is 0.98 on both rates after review)
+label                n  P before  R before  F1 before   P after   R after  F1 after
+narrative           80     0.974     0.938      0.955     0.939     0.963     0.951
+plan                 2     0.000     0.000       --       0.400     1.000     0.571
+profile              5     0.833     1.000      0.909     1.000     1.000     1.000
+boring_log          51     0.943     0.980      0.962     0.981     1.000     0.990
+test_pit_log        53     0.976     0.774      0.863     1.000     0.774     0.872
+cpt_log              0      --        --         --       0.000      --        --  
+dcp_log             36     1.000     0.583      0.737     1.000     0.583     0.737
+lab_test           175     0.971     0.949      0.960     1.000     0.989     0.994
+calculation        197     1.000     0.995      0.997     1.000     0.995     0.997
+below the gate after review: narrative, plan, test_pit_log, dcp_log
+
+every label
+label                n  P before  R before  F1 before   P after   R after  F1 after
+narrative           80     0.974     0.938      0.955     0.939     0.963     0.951
+figure              12     0.000     0.000       --       0.290     0.750     0.419
+plan                 2     0.000     0.000       --       0.400     1.000     0.571
+profile              5     0.833     1.000      0.909     1.000     1.000     1.000
+boring_log          51     0.943     0.980      0.962     0.981     1.000     0.990
+test_pit_log        53     0.976     0.774      0.863     1.000     0.774     0.872
+dcp_log             36     1.000     0.583      0.737     1.000     0.583     0.737
+lab_test           175     0.971     0.949      0.960     1.000     0.989     0.994
+calculation        197     1.000     0.995      0.997     1.000     0.995     0.997
+photos              38     0.846     0.868      0.857     1.000     1.000     1.000
+divider              9     1.000     0.889      0.941     1.000     1.000     1.000
+cover                3      --       0.000       --       0.600     1.000     0.750
+letter               2     1.000     1.000      1.000     0.500     1.000     0.667
+toc                  5     1.000     0.400      0.571     1.000     0.600     0.750
+other                9     0.086     0.333      0.136     0.750     0.667     0.706
+
+what the review's changes did, against the hand labels
+  fixed            38
+  broke             4
+  still_wrong      19
+  unscored         50
+
+report    pages  scored   before   after  chg  tools  calls       $      s
+R36          94       5    0.800   1.000   23  20/60      8   0.889    142
+R37          48       5    1.000   0.800   13  12/60      7   0.516     93
+R05          15       5    1.000   1.000    1   3/60      5   0.161     41
+R28         455     455    0.901   0.932   32  38/113     12   2.141    257
+R15         202     202    0.871   0.960   24  30/60     12   1.492    240
+R14          48       5    0.400   0.800   18  22/60     10   0.673    112
+
+what triage said (enumerated fields only; the rationale and anomalies stay in raw/checks/triage/)
+report  document_type                 workflow         bound       toc   scan
+R36     geotechnical report           standard             0   partial   0.02
+R37     geotechnical report           standard             0   partial   0.00
+R05     recommendation letter         standard             0    no_toc   0.00
+R28     geotechnical report           standard             0   matched   0.01
+R15     geotechnical report           multi_document       1   partial   0.38
+R14     geotechnical report           standard             0   partial   0.02
+
+cost: 54 model calls, 108 input tokens (+1,387,633 cached), 63,672 output, $5.87, 887 s -- $0.979 and 148 s a report
+```

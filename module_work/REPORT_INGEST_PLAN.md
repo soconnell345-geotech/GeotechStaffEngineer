@@ -249,6 +249,49 @@ report_ingest (CompiledSubAgent: its own deepagents graph, one primary tool)
         (pydiggs XSD gate, parse_diggs round-trip gate)
 ```
 
+### Two model passes before any reader runs (owner direction, 2026-09-16)
+
+The rules in step 0 are a first draft of the page labels, never the last
+word. The owner's point stands: a page only makes sense in the context of
+the rest of the report, and near-perfect labels on the key content
+(narrative, location plan, subsurface profiles, logs, calcs, lab data)
+matter more than tokens. So two model passes sit between step 0 and the
+readers, both with tools and a generous budget:
+
+- **0b. Document triage.** One call over the whole-document ledger (one
+  line per page: kind, rule label + confidence + the rule that fired,
+  heading, running header/footer, printed page number, segment, text
+  reliability, DI used), the cover and table-of-contents text, and the
+  first contact sheet. It answers: what kind of document is this (the
+  owner's `documentType` enumeration: full report, addendum, appendix or
+  figures only, partial file, other); is it one document or several bound
+  together (volumes, appended prior reports, a data report inside a design
+  report); what is missing (no narrative, no logs, no lab); scan and
+  unreliable-text fractions; languages; whether page numbering restarts and
+  whether the table of contents matches what was found. It emits a
+  `document_profile` and a **workflow** choice: standard, appendix-only,
+  partial, multi-document, scanned, or needs-a-person. The readers that
+  follow are chosen by that workflow, and an odd report is flagged instead
+  of being forced through the standard path.
+- **0c. Label review.** An agent loop, not a single call, over the same
+  ledger plus everything the report says about itself: the table of
+  contents and its lists of figures, tables and appendices; every divider
+  and fly-sheet's text; captions of figure pages; the section headings the
+  narrative carries. It checks the rule labels against that context (the
+  figure list says Figure 2 is the boring location plan, so the page whose
+  caption reads Figure 2 is `plan`; Appendix C is "Laboratory Test Results",
+  so a `form` page inside it that the rules left as `other` is almost
+  certainly `lab_test`), spot-checks pages by rendering them, walks the
+  contact sheets as a gut check, and returns corrected labels with a reason
+  for each change, plus the structure it reconciled (TOC section → page
+  range as found). Only then are work items built.
+
+Both passes are scored the same way as the rules: rules-only versus
+rules-plus-review, on the in-sample, held-out and out-of-sample sets. The
+target after review is ≥ 0.98 recall and precision on the key-content
+labels (narrative, plan, profile, boring_log, test_pit_log, cpt_log,
+dcp_log, lab_test, calculation). Token cost is recorded, not optimised.
+
 Why a deterministic loop rather than letting the sub-agent's model plan the
 fan-out: it is budgetable (one call per log page, one per lab sheet),
 testable offline with recorded reader outputs, restartable, and it cannot
@@ -336,6 +379,32 @@ from rendered pages, kept in the private ledger for the owner to spot-check.
   miss listed in the ledger. The XGBoost benchmark is scored on the same
   table. Other labels are reported, not gated.
 - Shipped as a planlens tool (`document_labels`) so an MCP host gets it too.
+
+### WP1b: document triage + label review (the model passes of §4)
+
+- **Inputs planlens must provide** (added to WP1's deliverable): the
+  per-page ledger line; `document_outline(doc)` = table-of-contents
+  entries with their printed page numbers, the lists of figures, tables and
+  appendices, every divider or fly-sheet with its text, the caption line of
+  each figure-kind page, and the narrative's section headings; contact
+  sheets on demand.
+- **Triage** (`report_ingest/triage.py`): one structured call →
+  `document_profile` (fields in §4 0b) + `workflow`. Scored on all 38
+  reports against my hand verdict per report (kind, completeness,
+  bound-together documents, scan fraction, TOC agreement).
+- **Label review** (`report_ingest/label_review.py`): an agent loop with
+  three tools (`read_page`, `render_page`, `contact_sheet`) and a spot-check
+  budget that scales with page count; output = final labels + reasons +
+  reconciled structure. Scored rules-only vs after-review on the in-sample,
+  held-out and out-of-sample sets; every change the review makes is logged
+  so a wrong "correction" is visible.
+- Models: the Claude API from this machine for development and scoring
+  (the owner's key in the Windows user environment, never in chat);
+  Prompter on the cluster in production, through the app's existing engine.
+- Gate for WP2: ≥ 0.98 P and R on the key-content labels after review on
+  the held-out and out-of-sample sets, and the triage verdict right on every
+  report whose structure is unusual (multi-volume, appendix-only, partial,
+  scanned, appended prior reports).
 
 ### WP2: boring logs → investigations → DIGGS borings (the core)
 
@@ -462,5 +531,15 @@ page count are recorded per run in the QA section.
    used exactly as given (owner's call, 2026-09-16: "run with what you
    have"). Any question added or changed is a field in `model.py` plus a line
    in the reader prompt.
-2. Not blocking: DI for R38 and the scanned pages of R03 and R33, and a fresh
-   export of R17's truncated DI result, into `raw/di/`.
+2. Not blocking: DI into `raw/di/` for R38, the scanned pages of R03 and
+   R33, and the unreliable-text pages of R02, R31 and R32 (58 pages in R32
+   alone read as confident nonsense without it); a fresh export of R17's
+   truncated DI result. The WP0 harness prints the exact page ranges.
+3. Not blocking: the PDF behind the one unmatched hand-label sheet (153
+   pages; its DI result is already in `raw/di/` as the unmatched file). Drop
+   it into `raw/corpus/` as R39 and the scorecard returns to 15 reports.
+4. **Repo visibility.** CLAUDE.md calls this repo private; the GitHub API
+   reports it PUBLIC (checked 2026-09-16). Tracked field-feedback folders
+   carry project names in their paths. Owner's call: make the repo private,
+   or scrub. This train keeps everything private under gitignored `raw/`
+   and IDs elsewhere regardless.
