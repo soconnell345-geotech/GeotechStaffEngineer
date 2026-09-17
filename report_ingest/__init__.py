@@ -35,8 +35,55 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["triage", "review_labels", "score_on_cluster", "PrompterEngine",
+__all__ = ["triage", "review_labels", "read_log", "write_diggs",
+           "diggs_schema_gate", "diggs_roundtrip_gate", "ReportRecord",
+           "Investigation", "score_on_cluster", "PrompterEngine",
            "ClaudeEngine", "CostMeter"]
+
+
+def __getattr__(name: str) -> Any:
+    """The record's own classes, imported on first use.
+
+    ``model.py`` costs only pydantic, which the app already has, but importing
+    it from here would still pull pydantic in at app startup for a package
+    nothing has called yet. A module-level ``__getattr__`` keeps
+    ``report_ingest.ReportRecord`` spelled the obvious way and still pays
+    nothing until somebody asks for it.
+    """
+    if name in ("ReportRecord", "Investigation", "Quantity", "Provenance",
+                "Layer", "Sample", "SPT", "WaterLevel", "LabTest", "Project",
+                "QAEntry", "SCHEMA_VERSION", "record_json_schema"):
+        from report_ingest import model
+        return getattr(model, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def read_log(*args: Any, **kwargs: Any):
+    """:func:`report_ingest.log_reader.read_log`, imported on first use.
+
+    One exploration log -- continuation sheets included -- read into one
+    :class:`~report_ingest.model.Investigation`.
+    """
+    from report_ingest.log_reader import read_log as _read_log
+    return _read_log(*args, **kwargs)
+
+
+def write_diggs(*args: Any, **kwargs: Any):
+    """:func:`report_ingest.diggs_writer.write_diggs`, on first use."""
+    from report_ingest.diggs_writer import write_diggs as _write
+    return _write(*args, **kwargs)
+
+
+def diggs_schema_gate(*args: Any, **kwargs: Any):
+    """:func:`report_ingest.diggs_writer.diggs_schema_gate`, on first use."""
+    from report_ingest.diggs_writer import diggs_schema_gate as _gate
+    return _gate(*args, **kwargs)
+
+
+def diggs_roundtrip_gate(*args: Any, **kwargs: Any):
+    """:func:`report_ingest.diggs_writer.diggs_roundtrip_gate`, on first use."""
+    from report_ingest.diggs_writer import diggs_roundtrip_gate as _gate
+    return _gate(*args, **kwargs)
 
 
 def score_on_cluster(*args: Any, **kwargs: Any):
