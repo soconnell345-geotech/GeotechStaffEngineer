@@ -201,10 +201,10 @@ def test_label_counts_cover_every_mapped_page():
 from module_work.report_ingest_harness import measure_wp1_labels as wp1  # noqa: E402
 
 
-def _scored(pairs):
-    s = wp1.Scores()
+def _scored(pairs, split=wp1.DEV, rid="R09"):
+    s = wp1.Scores(split)
     for i, (hand, pred) in enumerate(pairs):
-        s.add("R99", hand, pred, i, "text", "a heading", {"rule": "test"})
+        s.add(rid, hand, pred, i, "text", "a heading", {"rule": "test"})
     return s
 
 
@@ -246,14 +246,78 @@ def test_accuracy_counts_every_page():
                  ("lab_test", "lab_test"), ("lab_test", "lab_test")])
     assert s.n_pages == 4
     assert s.accuracy == pytest.approx(0.75)
-    assert s.per_report["R99"] == [3, 4]
+    assert s.per_report["R09"] == [3, 4]
+
+
+def _both(dev_pairs, held_pairs):
+    return {wp1.DEV: _scored(dev_pairs, wp1.DEV, "R09"),
+            wp1.HELD: _scored(held_pairs, wp1.HELD, "R11")}
+
+
+def _report(scores, note="n"):
+    rounds = [wp1._round_row(scores, note, 1)]
+    return "\n".join(wp1.build_report(scores, rounds, note, wp1.GATED))
 
 
 def test_the_ledger_section_never_carries_a_page_heading():
     """The heading is the firm's title block; the ledger is public."""
-    s = _scored([("narrative", "boring_log")])
-    rounds = [{"round": 1, "date": "2026-09-16", "note": "n",
-               "accuracy": 0.5, "gated": {g: [1.0, 1.0] for g in wp1.GATED}}]
-    text = "\n".join(wp1.build_report(s, rounds, "n", wp1.GATED))
+    text = _report(_both([("narrative", "boring_log")],
+                         [("lab_test", "lab_test")]))
     assert "a heading" not in text
     assert "rule=" in text and "hand=narrative" in text
+
+
+def test_the_two_sets_are_the_reports_the_brief_named():
+    assert set(wp1.DEV_IDS) == {"R09", "R12", "R15", "R16", "R20", "R23",
+                                "R28", "R29", "R30"}
+    assert set(wp1.HELDOUT_IDS) == {"R11", "R13", "R18", "R21", "R24"}
+    assert not set(wp1.DEV_IDS) & set(wp1.HELDOUT_IDS)
+    assert wp1.split_of("R21") == wp1.HELD
+    assert wp1.split_of("R30") == wp1.DEV
+    assert wp1.split_of("R01") is None
+
+
+def test_the_gate_is_decided_by_the_held_out_set():
+    perfect = [(g, g) for g in wp1.GATED for _ in range(10)]
+    broken = perfect + [("lab_test", "other")] * 5
+    scores = _both(broken, perfect)
+    assert scores[wp1.HELD].passes()
+    assert not scores[wp1.DEV].passes()
+    assert _report(scores)
+
+
+def test_held_out_misses_are_counted_not_listed():
+    """Reading the held-out pages is how a held-out set stops being one."""
+    scores = _both([("narrative", "narrative")],
+                   [("boring_log", "lab_test")] * 4)
+    text = _report(scores)
+    held = text.split("#### Held-Out Set")[1].split("#### Development")[0]
+    assert "hand=boring_log" not in held
+    assert "`boring_log -> lab_test`" in held
+    assert "NOT listed page by page" in held
+
+
+def test_a_lag_on_a_gated_role_is_named_with_its_confusion():
+    dev = [(g, g) for g in wp1.GATED for _ in range(10)]
+    held = list(dev) + [("boring_log", "photos")] * 6
+    text = _report(_both(dev, held))
+    assert "lags by more than" in text
+    assert "`boring_log`" in text
+    assert "`boring_log -> photos`" in text
+
+
+def test_no_lag_says_so_explicitly():
+    same = [(g, g) for g in wp1.GATED for _ in range(10)]
+    assert "No gated role lags development" in _report(_both(same, same))
+
+
+def test_a_round_measured_before_the_split_still_renders():
+    """The first two rounds were scored over all 14 reports at once."""
+    same = [(g, g) for g in wp1.GATED for _ in range(10)]
+    scores = _both(same, same)
+    legacy = {"round": 1, "date": "2026-09-16", "note": "before the split",
+              "accuracy": 0.9,
+              "gated": {g: [0.95, 0.95] for g in wp1.GATED}}
+    rounds = [legacy, wp1._round_row(scores, "after", 2)]
+    text = "\n".join(wp1.build_report(scores, rounds, "after", wp1.GATED))
+    assert "measured before the split" in text

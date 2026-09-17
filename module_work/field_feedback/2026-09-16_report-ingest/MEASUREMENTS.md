@@ -1158,3 +1158,782 @@ there is at this point:
 The honest next measurement is a report outside this corpus, hand-labelled
 after the rules were frozen. Until then these numbers are a description of
 14 documents.
+
+## WP1 -- the lead's out-of-sample check (rules as of planlens 4e7ed85)
+
+120 pages: five drawn at random (seed 20260916) from each of the 24 reports
+that have NO spreadsheet labels, hand-labelled by the lead from 36-dpi
+contact sheets BEFORE the rules were run on them (labels and alternates in
+`raw/checks/oos/labels.json`; script `report_ingest_harness/measure_oos.py`;
+raw output `raw/checks/oos/result_round2.txt`). The rules never saw these
+reports (the builder's cache held only the 14 labelled ones; R36 was
+eyeballed once).
+
+| set | pages | accuracy |
+|---|---|---|
+| in-sample, 14 labelled reports (builder's round 2) | 4,147 | 0.912 |
+| out-of-sample, 24 unlabelled reports, strict | 120 | 0.742 |
+| out-of-sample, accepting the lead's alternates | 120 | 0.792 |
+
+Key content, out of sample (support / recall / precision): boring_log 15 /
+0.80 / 0.80; lab_test 20 / 0.75 / 0.83; narrative 30 / 0.87 / 0.76;
+calculation 13 / 1.00 / 0.81; test_pit_log 3 / 0.67 / 1.00; plan 3 / 0.33 /
+1.00; profile 1 / 0.00; cpt_log 1 / 0.00 (alternate accepted).
+
+The 31 strict misses fall into four classes, and the first two are the
+rules' own doing:
+
+1. **Appendix inheritance overrides the page** (13): rule "its appendix says
+   what it holds" gives a page the label its appendix tab implies even when
+   the page itself says otherwise -- logs, lab sheets and photos mixed in
+   one appendix (R02 x5, R19 x2, R01 x2, R02/R33/R31/R34 with alternates).
+2. **No appendix tab found, so everything is "prose before the first tab"**
+   (8): a 1991 typed data report with no dividers has every lab sheet called
+   narrative (R35 x5); a table of contents, a geologic-map figure and a
+   figure-plus-table page inside the narrative likewise (R22 p4, R14 p23,
+   R10 p19).
+3. **Scanned pages with no text source** (4, R38): nothing to read; a DI
+   result or OCR is the fix, not a rule.
+4. **Single-page cue misfires** (6): a distribution page called a divider
+   (R07 p11), an aerial-photo site plan called photos (R08 p22), a flood-zone
+   map called calculation (R36 p33), a core-photo log called figure (R22
+   p71), a guide-spec page called divider (R06 p117), a lab slip-sheet called
+   lab_test (R32 p111).
+
+Read together with the builder's own note above: the in-sample 0.91 is a
+description of 14 documents; 0.74 is what the rules do on the next report.
+The owner's guard rails (triage + model label review) are therefore
+necessary, not optional, and the rules' inheritance must carry LOW
+confidence so the review pass looks at exactly those pages. For the next
+round the builder gets the diagnostic from ten of these reports (R01, R02,
+R03, R04, R05, R06, R07, R08, R10, R14 -- 50 pages); the other fourteen
+(R17, R19, R22, R25, R26, R27, R31-R38 -- 70 pages) stay blind for the
+re-score.
+
+---
+
+## WP1 -- page roles -- round 3
+
+Measured 2026-09-16 with the app venv and the editable planlens checkout. 4147 hand-labelled pages, opened `di="auto"`, scored against `labels.labels_for`, split into a development set (R09, R12, R15, R16, R20, R23, R28, R29, R30) and a held-out set (R11, R13, R18, R21, R24). **The gate is on the held-out set**: precision AND recall >= 0.90 on `boring_log`, `test_pit_log`, `lab_test`, `narrative`, `calculation`.
+
+**This round:** the dev / held-out split, and document_outline + page_ledger added; NO rule changed this round
+
+**Development Set**, round by round
+
+| round | boring_log P/R | test_pit_log P/R | lab_test P/R | narrative P/R | calculation P/R | accuracy | what changed |
+|---|---|---|---|---|---|---|---|
+| 1 | 0.970 / 0.941 | 0.959 / 0.920 | 0.936 / 0.953 | 0.942 / 0.933 | 0.997 / 0.974 | 0.900 | first measurement of the rules on the live documents (all 14 reports; measured before the split) |
+| 2 | 0.970 / 0.941 | 0.959 / 0.920 | 0.936 / 0.984 | 0.942 / 0.933 | 0.997 / 0.974 | 0.912 | dynamic-probing abbreviations (DPL/DPM/DPH/DPSH/DPT/LCPT) as DCP titles; chemical and grading laboratory titles; a tab of logs no longer claims a page of prose (all 14 reports; measured before the split) |
+| 3 | 0.963 / 0.919 | 0.949 / 0.925 | 0.967 / 0.984 | 0.965 / 0.959 | 0.999 / 0.987 | 0.923 | the dev / held-out split, and document_outline + page_ledger added; NO rule changed this round |
+
+**Held-Out Set**, round by round
+
+| round | boring_log P/R | test_pit_log P/R | lab_test P/R | narrative P/R | calculation P/R | accuracy | what changed |
+|---|---|---|---|---|---|---|---|
+| 1 | - | - | - | - | - | - | first measurement of the rules on the live documents (all 14 reports; measured before the split) |
+| 2 | - | - | - | - | - | - | dynamic-probing abbreviations (DPL/DPM/DPH/DPSH/DPT/LCPT) as DCP titles; chemical and grading laboratory titles; a tab of logs no longer claims a page of prose (all 14 reports; measured before the split) |
+| 3 | 0.987 / 1.000 | 1.000 / 0.902 | 0.813 / 0.983 | 0.851 / 0.832 | 0.992 / 0.938 | 0.887 | the dev / held-out split, and document_outline + page_ledger added; NO rule changed this round |
+
+### Where held-out lags development
+
+- **`lab_test` lags by more than 0.05**: precision 0.967 to 0.813. The confusions that cost it on the held-out set: `other -> lab_test` (16 pages), `calculation -> lab_test` (14 pages), `narrative -> lab_test` (6 pages).
+- **`narrative` lags by more than 0.05**: precision 0.965 to 0.851; recall 0.959 to 0.831. The confusions that cost it on the held-out set: `figure -> narrative` (7 pages), `narrative -> lab_test` (6 pages), `narrative -> other` (6 pages).
+
+### This round in full
+
+#### Held-Out Set
+
+5 reports (R11, R13, R18, R21, R24), 1300 pages, 48 s.
+
+| role | precision | recall | F1 | hand-labelled |
+|---|---|---|---|---|
+| `narrative` **(gated)** | 0.851 | 0.831 | 0.841 | 89 |
+| `figure` | 0.250 | 0.217 | 0.233 | 23 |
+| `plan` | 0.250 | 0.500 | 0.333 | 6 |
+| `profile` | 0.875 | 0.467 | 0.609 | 15 |
+| `boring_log` **(gated)** | 0.987 | 1.000 | 0.993 | 75 |
+| `test_pit_log` **(gated)** | 1.000 | 0.902 | 0.948 | 51 |
+| `cpt_log` | 0.438 | 1.000 | 0.609 | 7 |
+| `dcp_log` | 0.000 | 0.000 | 0.000 | 0 |
+| `lab_test` **(gated)** | 0.813 | 0.983 | 0.890 | 177 |
+| `field_test` | 0.250 | 1.000 | 0.400 | 2 |
+| `calculation` **(gated)** | 0.992 | 0.938 | 0.964 | 259 |
+| `appended_report` | 1.000 | 1.000 | 1.000 | 472 |
+| `photos` | 0.000 | 0.000 | 0.000 | 0 |
+| `divider` | 0.318 | 0.824 | 0.459 | 17 |
+| `cover` | 1.000 | 0.250 | 0.400 | 8 |
+| `letter` | 1.000 | 0.500 | 0.667 | 4 |
+| `toc` | 0.875 | 1.000 | 0.933 | 7 |
+| `other` | 0.513 | 0.227 | 0.315 | 88 |
+
+Page accuracy **0.887** over 1300 pages. The gate does NOT pass.
+
+Confusion matrix (rows = hand label, columns = predicted):
+
+| hand \ pred | narr | figu | plan | prof | bori | test | cpt_ | dcp_ | lab_ | fiel | calc | appe | phot | divi | cove | lett | toc | othe |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `narrative` | 74 | . | . | . | . | . | 1 | . | 6 | . | . | . | . | 1 | . | . | 1 | 6 |
+| `figure` | 7 | 5 | 1 | . | . | . | . | . | 2 | . | . | . | . | . | . | . | . | 8 |
+| `plan` | 1 | . | 3 | 1 | . | . | . | . | . | . | . | . | . | 1 | . | . | . | . |
+| `profile` | 2 | 2 | . | 7 | . | . | . | . | . | . | 2 | . | . | . | . | . | . | 2 |
+| `boring_log` | . | . | . | . | 75 | . | . | . | . | . | . | . | . | . | . | . | . | . |
+| `test_pit_log` | . | . | 5 | . | . | 46 | . | . | . | . | . | . | . | . | . | . | . | . |
+| `cpt_log` | . | . | . | . | . | . | 7 | . | . | . | . | . | . | . | . | . | . | . |
+| `dcp_log` | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . |
+| `lab_test` | . | 2 | . | . | . | . | . | . | 174 | . | . | . | . | 1 | . | . | . | . |
+| `field_test` | . | . | . | . | . | . | . | . | . | 2 | . | . | . | . | . | . | . | . |
+| `calculation` | . | . | . | . | . | . | . | . | 14 | . | 243 | . | . | 2 | . | . | . | . |
+| `appended_report` | . | . | . | . | . | . | . | . | . | . | . | 472 | . | . | . | . | . | . |
+| `photos` | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . |
+| `divider` | . | . | 1 | . | . | . | . | . | 2 | . | . | . | . | 14 | . | . | . | . |
+| `cover` | 1 | 2 | . | . | . | . | . | . | . | . | . | . | . | . | 2 | . | . | 3 |
+| `letter` | 2 | . | . | . | . | . | . | . | . | . | . | . | . | . | . | 2 | . | . |
+| `toc` | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | 7 | . |
+| `other` | . | 9 | 2 | . | 1 | . | 8 | 1 | 16 | 6 | . | . | . | 25 | . | . | . | 20 |
+
+Column keys: `narr` = narrative, `figu` = figure, `plan` = plan, `prof` = profile, `bori` = boring_log, `test` = test_pit_log, `cpt_` = cpt_log, `dcp_` = dcp_log, `lab_` = lab_test, `fiel` = field_test, `calc` = calculation, `appe` = appended_report, `phot` = photos, `divi` = divider, `cove` = cover, `lett` = letter, `toc` = toc, `othe` = other.
+
+Per-report accuracy:
+
+| ID | pages | accuracy |
+|---|---|---|
+| R11 | 156 | 0.904 |
+| R13 | 197 | 0.883 |
+| R18 | 64 | 0.953 |
+| R21 | 729 | 0.966 |
+| R24 | 154 | 0.474 |
+
+75 pages where a gated role is involved and the rules and the hand label disagree. They are NOT listed page by page: closing a gap by reading the held-out pages is how a held-out set stops being one. The confusions, by size:
+
+| hand -> predicted | pages |
+|---|---|
+| `other -> lab_test` | 16 |
+| `calculation -> lab_test` | 14 |
+| `figure -> narrative` | 7 |
+| `narrative -> lab_test` | 6 |
+| `narrative -> other` | 6 |
+| `test_pit_log -> plan` | 5 |
+| `lab_test -> figure` | 2 |
+| `letter -> narrative` | 2 |
+| `profile -> calculation` | 2 |
+| `calculation -> divider` | 2 |
+| `profile -> narrative` | 2 |
+| `figure -> lab_test` | 2 |
+| `divider -> lab_test` | 2 |
+| `lab_test -> divider` | 1 |
+| `cover -> narrative` | 1 |
+| `plan -> narrative` | 1 |
+| `narrative -> toc` | 1 |
+| `narrative -> divider` | 1 |
+| `narrative -> cpt_log` | 1 |
+| `other -> boring_log` | 1 |
+
+#### Development Set
+
+9 reports (R09, R12, R15, R16, R20, R23, R28, R29, R30), 2847 pages, 145 s.
+
+| role | precision | recall | F1 | hand-labelled |
+|---|---|---|---|---|
+| `narrative` **(gated)** | 0.965 | 0.959 | 0.962 | 344 |
+| `figure` | 0.559 | 0.500 | 0.528 | 38 |
+| `plan` | 0.556 | 0.417 | 0.476 | 12 |
+| `profile` | 0.900 | 0.692 | 0.783 | 13 |
+| `boring_log` **(gated)** | 0.963 | 0.919 | 0.941 | 198 |
+| `test_pit_log` **(gated)** | 0.949 | 0.925 | 0.937 | 200 |
+| `cpt_log` | 1.000 | 0.875 | 0.933 | 16 |
+| `dcp_log` | 1.000 | 0.556 | 0.714 | 54 |
+| `lab_test` **(gated)** | 0.967 | 0.984 | 0.976 | 815 |
+| `field_test` | 0.739 | 1.000 | 0.850 | 17 |
+| `calculation` **(gated)** | 0.999 | 0.987 | 0.993 | 750 |
+| `appended_report` | 0.815 | 1.000 | 0.898 | 22 |
+| `photos` | 0.715 | 0.932 | 0.809 | 132 |
+| `divider` | 0.713 | 0.864 | 0.781 | 66 |
+| `cover` | 1.000 | 0.409 | 0.581 | 22 |
+| `letter` | 1.000 | 1.000 | 1.000 | 2 |
+| `toc` | 1.000 | 0.611 | 0.759 | 18 |
+| `other` | 0.546 | 0.555 | 0.550 | 128 |
+
+Page accuracy **0.923** over 2847 pages.
+
+Confusion matrix (rows = hand label, columns = predicted):
+
+| hand \ pred | narr | figu | plan | prof | bori | test | cpt_ | dcp_ | lab_ | fiel | calc | appe | phot | divi | cove | lett | toc | othe |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `narrative` | 330 | . | 1 | . | . | 1 | . | . | 2 | . | . | 1 | . | . | . | . | . | 9 |
+| `figure` | 3 | 19 | 2 | . | 1 | . | . | . | . | . | . | . | . | . | . | . | . | 13 |
+| `plan` | . | 1 | 5 | 1 | . | . | . | . | . | 2 | 1 | . | 1 | . | . | . | . | 1 |
+| `profile` | . | . | . | 9 | 1 | . | . | . | . | . | . | . | . | . | . | . | . | 3 |
+| `boring_log` | . | 9 | . | . | 182 | 6 | . | . | . | . | . | . | 1 | . | . | . | . | . |
+| `test_pit_log` | . | . | . | . | 1 | 185 | . | . | 2 | . | . | . | 11 | 1 | . | . | . | . |
+| `cpt_log` | . | . | . | . | . | . | 14 | . | . | . | . | . | . | . | . | . | . | 2 |
+| `dcp_log` | . | . | . | . | . | . | . | 30 | . | . | . | . | 10 | . | . | . | . | 14 |
+| `lab_test` | . | . | . | . | . | . | . | . | 802 | 4 | . | . | . | . | . | . | . | 9 |
+| `field_test` | . | . | . | . | . | . | . | . | . | 17 | . | . | . | . | . | . | . | . |
+| `calculation` | . | . | . | . | . | . | . | . | 1 | . | 740 | . | . | 9 | . | . | . | . |
+| `appended_report` | . | . | . | . | . | . | . | . | . | . | . | 22 | . | . | . | . | . | . |
+| `photos` | . | . | . | . | . | . | . | . | 5 | . | . | . | 123 | 4 | . | . | . | . |
+| `divider` | . | 1 | . | . | . | . | . | . | 1 | . | . | 4 | . | 57 | . | . | . | 3 |
+| `cover` | 2 | 4 | . | . | . | . | . | . | 1 | . | . | . | . | 1 | 9 | . | . | 5 |
+| `letter` | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | 2 | . | . |
+| `toc` | 5 | . | 1 | . | . | . | . | . | 1 | . | . | . | . | . | . | . | 11 | . |
+| `other` | 2 | . | . | . | 4 | 3 | . | . | 14 | . | . | . | 26 | 8 | . | . | . | 71 |
+
+Column keys: `narr` = narrative, `figu` = figure, `plan` = plan, `prof` = profile, `bori` = boring_log, `test` = test_pit_log, `cpt_` = cpt_log, `dcp_` = dcp_log, `lab_` = lab_test, `fiel` = field_test, `calc` = calculation, `appe` = appended_report, `phot` = photos, `divi` = divider, `cove` = cover, `lett` = letter, `toc` = toc, `othe` = other.
+
+Per-report accuracy:
+
+| ID | pages | accuracy |
+|---|---|---|
+| R09 | 151 | 0.934 |
+| R12 | 159 | 0.893 |
+| R15 | 202 | 0.886 |
+| R16 | 426 | 0.939 |
+| R20 | 370 | 0.978 |
+| R23 | 397 | 0.942 |
+| R28 | 455 | 0.923 |
+| R29 | 131 | 0.664 |
+| R30 | 556 | 0.941 |
+
+112 pages where a gated role is involved and the rules and the hand label disagree. `rule` and `why` are the evidence planlens itself recorded; the page HEADING is omitted on purpose -- the largest type on a log or a laboratory sheet is a firm's title block, and this file is tracked in a public repository. The same list WITH headings is written to `raw/checks/wp1_misses.txt`, which is gitignored.
+
+**R09** (6)
+
+```
+R09 p11   hand=other           pred=narrative       kind=figure        rule="prose before the report's first appendix tab" why=''
+R09 p13   hand=figure          pred=narrative       kind=figure        rule="prose before the report's first appendix tab" why=''
+R09 p14   hand=figure          pred=narrative       kind=figure        rule="prose before the report's first appendix tab" why=''
+R09 p15   hand=figure          pred=narrative       kind=figure        rule="prose before the report's first appendix tab" why=''
+R09 p17   hand=other           pred=narrative       kind=mixed         rule="prose before the report's first appendix tab" why=''
+R09 p150  hand=other           pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'laboratory testing'"
+```
+
+**R12** (13)
+
+```
+R12 p3    hand=toc             pred=narrative       kind=mixed         rule="prose before the report's first appendix tab" why=''
+R12 p54   hand=figure          pred=boring_log      kind=figure        rule='the page names itself' why="log title 'borehole no', 2 log form fields"
+R12 p61   hand=test_pit_log    pred=lab_test        kind=figure        rule='the page names itself' why="laboratory test title 'permeability' beside a reference to t"
+R12 p62   hand=test_pit_log    pred=lab_test        kind=figure        rule='the page names itself' why="laboratory test title 'permeability' beside a reference to t"
+R12 p64   hand=other           pred=lab_test        kind=figure        rule='its appendix says what it holds' why="['lab_test']"
+R12 p78   hand=other           pred=lab_test        kind=figure        rule='its appendix says what it holds' why="['lab_test']"
+R12 p96   hand=lab_test        pred=field_test      kind=figure        rule='its appendix says what it holds' why="['field_test', 'lab_test']"
+R12 p102  hand=lab_test        pred=field_test      kind=figure        rule='its appendix says what it holds' why="['field_test', 'lab_test']"
+R12 p108  hand=lab_test        pred=field_test      kind=figure        rule='its appendix says what it holds' why="['field_test', 'lab_test']"
+R12 p114  hand=lab_test        pred=field_test      kind=figure        rule='its appendix says what it holds' why="['field_test', 'lab_test']"
+R12 p122  hand=other           pred=lab_test        kind=figure        rule='the page names itself, and its appendix expects it' why='2 laboratory test terms on the page'
+R12 p132  hand=other           pred=lab_test        kind=figure        rule='the page names itself' why="laboratory test title 'water extract'"
+R12 p139  hand=other           pred=lab_test        kind=figure        rule='the page names itself, and its appendix expects it' why='2 laboratory test terms on the page'
+```
+
+**R15** (19)
+
+```
+R15 p3    hand=toc             pred=narrative       kind=text          rule="prose before the report's first appendix tab" why=''
+R15 p5    hand=narrative       pred=plan            kind=mixed         rule='the page names itself' why="plan title 'site plans'"
+R15 p8    hand=narrative       pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R15 p19   hand=narrative       pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R15 p31   hand=narrative       pred=lab_test        kind=text          rule='the page names itself' why="laboratory test title 'laboratory testing' beside a referenc"
+R15 p39   hand=other           pred=boring_log      kind=text          rule='the page names itself' why="log title 'test borings', 13 log form fields"
+R15 p42   hand=other           pred=test_pit_log    kind=mixed         rule='the page names itself' why="log title 'test pit', 5 log form fields"
+R15 p63   hand=boring_log      pred=photos          kind=form          rule='the page names itself' why='photograph caption (1)'
+R15 p67   hand=test_pit_log    pred=boring_log      kind=form          rule='the page names itself' why="log title 'boring number', 6 log form fields"
+R15 p76   hand=divider         pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'laboratory test'"
+R15 p90   hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p92   hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p102  hand=lab_test        pred=other           kind=form          rule='form page with no title of its own' why=''
+R15 p103  hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p104  hand=lab_test        pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R15 p107  hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p108  hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p109  hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p110  hand=lab_test        pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+```
+
+**R16** (8)
+
+```
+R16 p1    hand=cover           pred=narrative       kind=text          rule="prose before the report's first appendix tab" why=''
+R16 p7    hand=narrative       pred=other           kind=text          rule='text page with no title of its own' why=''
+R16 p27   hand=profile         pred=boring_log      kind=form          rule='the page names itself' why='log form shape, 6 log form fields'
+R16 p29   hand=other           pred=boring_log      kind=mixed         rule='its appendix says what it holds' why="['boring_log', 'photos']"
+R16 p79   hand=other           pred=lab_test        kind=mixed         rule='the page names itself, and its appendix expects it' why="laboratory test title 'laboratory test'"
+R16 p128  hand=cover           pred=lab_test        kind=mixed         rule='its appendix says what it holds' why="['lab_test']"
+R16 p418  hand=calculation     pred=divider         kind=text          rule='tab or cover page naming what follows' why=''
+R16 p420  hand=calculation     pred=divider         kind=text          rule='tab or cover page naming what follows' why=''
+```
+
+**R20** (4)
+
+```
+R20 p6    hand=narrative       pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R20 p29   hand=narrative       pred=appended_report kind=text          rule='inside a report bound into this one' why=''
+R20 p115  hand=test_pit_log    pred=divider         kind=mixed         rule='tab or cover page naming what follows' why=''
+R20 p354  hand=calculation     pred=divider         kind=text          rule='tab or cover page naming what follows' why=''
+```
+
+**R23** (12)
+
+```
+R23 p4    hand=narrative       pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R23 p5    hand=narrative       pred=other           kind=text          rule='text page with no title of its own' why=''
+R23 p170  hand=boring_log      pred=test_pit_log    kind=figure        rule='its appendix says what it holds' why="['test_pit_log', 'photos']"
+R23 p171  hand=boring_log      pred=test_pit_log    kind=mixed         rule='its appendix says what it holds' why="['test_pit_log', 'photos']"
+R23 p184  hand=boring_log      pred=test_pit_log    kind=mixed         rule='its appendix says what it holds' why="['test_pit_log', 'photos']"
+R23 p191  hand=boring_log      pred=test_pit_log    kind=text          rule='its appendix says what it holds' why="['test_pit_log', 'photos']"
+R23 p192  hand=boring_log      pred=test_pit_log    kind=figure        rule='its appendix says what it holds' why="['test_pit_log', 'photos']"
+R23 p194  hand=boring_log      pred=test_pit_log    kind=figure        rule='its appendix says what it holds' why="['test_pit_log', 'photos']"
+R23 p197  hand=other           pred=test_pit_log    kind=figure        rule='its appendix says what it holds' why="['test_pit_log', 'photos']"
+R23 p255  hand=other           pred=lab_test        kind=text          rule='its appendix says what it holds' why="['lab_test']"
+R23 p375  hand=calculation     pred=divider         kind=figure        rule='tab or cover page naming what follows' why=''
+R23 p376  hand=calculation     pred=divider         kind=text          rule='tab or cover page naming what follows' why=''
+```
+
+**R28** (18)
+
+```
+R28 p1    hand=cover           pred=narrative       kind=mixed         rule="prose before the report's first appendix tab" why=''
+R28 p4    hand=toc             pred=narrative       kind=text          rule="prose before the report's first appendix tab" why=''
+R28 p5    hand=toc             pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'laboratory test'"
+R28 p25   hand=narrative       pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R28 p28   hand=narrative       pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R28 p53   hand=other           pred=boring_log      kind=text          rule='the page names itself' why="log title 'test borings', 15 log form fields"
+R28 p56   hand=other           pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'sieve' beside a reference to the expl"
+R28 p233  hand=test_pit_log    pred=photos          kind=figure        rule='the page names itself' why='photograph caption (1)'
+R28 p236  hand=test_pit_log    pred=photos          kind=figure        rule='the page names itself' why='photograph caption (1)'
+R28 p238  hand=test_pit_log    pred=photos          kind=figure        rule='the page names itself' why='photograph caption (1)'
+R28 p253  hand=test_pit_log    pred=photos          kind=figure        rule='its appendix says what it holds' why="['photos', 'test_pit_log']"
+R28 p254  hand=test_pit_log    pred=photos          kind=figure        rule='its appendix says what it holds' why="['photos', 'test_pit_log']"
+R28 p255  hand=test_pit_log    pred=photos          kind=figure        rule='its appendix says what it holds' why="['photos', 'test_pit_log']"
+R28 p256  hand=test_pit_log    pred=photos          kind=figure        rule='its appendix says what it holds' why="['photos', 'test_pit_log']"
+R28 p257  hand=test_pit_log    pred=photos          kind=figure        rule='its appendix says what it holds' why="['photos', 'test_pit_log']"
+R28 p258  hand=test_pit_log    pred=photos          kind=figure        rule='its appendix says what it holds' why="['photos', 'test_pit_log']"
+R28 p259  hand=test_pit_log    pred=photos          kind=figure        rule='its appendix says what it holds' why="['photos', 'test_pit_log']"
+R28 p260  hand=test_pit_log    pred=photos          kind=figure        rule='its appendix says what it holds' why="['photos', 'test_pit_log']"
+```
+
+**R29** (14)
+
+```
+R29 p3    hand=toc             pred=narrative       kind=text          rule="prose before the report's first appendix tab" why=''
+R29 p5    hand=toc             pred=narrative       kind=text          rule="prose before the report's first appendix tab" why=''
+R29 p24   hand=narrative       pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'corrosivity'"
+R29 p40   hand=narrative       pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R29 p53   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p54   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p55   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p56   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p57   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p58   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p59   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p60   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p61   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p130  hand=calculation     pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'gradation'"
+```
+
+**R30** (18)
+
+```
+R30 p5    hand=narrative       pred=test_pit_log    kind=text          rule='the page names itself' why="log title 'test pits', 3 log form fields"
+R30 p49   hand=plan            pred=calculation     kind=form          rule='the page names itself' why="calculation heading 'global stability'"
+R30 p58   hand=other           pred=boring_log      kind=mixed         rule='its appendix says what it holds' why="['boring_log']"
+R30 p131  hand=other           pred=test_pit_log    kind=mixed         rule='its appendix says what it holds' why="['test_pit_log']"
+R30 p228  hand=other           pred=lab_test        kind=mixed         rule='the page names itself, and its appendix expects it' why="laboratory test title 'laboratory test'"
+R30 p296  hand=other           pred=lab_test        kind=mixed         rule='the page names itself, and its appendix expects it' why="laboratory test title 'laboratory test'"
+R30 p297  hand=other           pred=lab_test        kind=mixed         rule='the page names itself, and its appendix expects it' why="laboratory test title 'laboratory testing'"
+R30 p385  hand=other           pred=lab_test        kind=mixed         rule='the page names itself, and its appendix expects it' why="laboratory test title 'laboratory testing'"
+R30 p418  hand=photos          pred=lab_test        kind=figure        rule='its appendix says what it holds' why="['lab_test']"
+R30 p419  hand=photos          pred=lab_test        kind=figure        rule='its appendix says what it holds' why="['lab_test']"
+R30 p430  hand=other           pred=lab_test        kind=mixed         rule='the page names itself, and its appendix expects it' why="laboratory test title 'laboratory testing'"
+R30 p471  hand=photos          pred=lab_test        kind=figure        rule='its appendix says what it holds' why="['lab_test']"
+R30 p472  hand=photos          pred=lab_test        kind=figure        rule='its appendix says what it holds' why="['lab_test']"
+R30 p473  hand=photos          pred=lab_test        kind=figure        rule='its appendix says what it holds' why="['lab_test']"
+R30 p523  hand=calculation     pred=divider         kind=mixed         rule='tab or cover page naming what follows' why=''
+R30 p543  hand=calculation     pred=divider         kind=text          rule='tab or cover page naming what follows' why=''
+R30 p545  hand=calculation     pred=divider         kind=text          rule='tab or cover page naming what follows' why=''
+R30 p547  hand=calculation     pred=divider         kind=text          rule='tab or cover page naming what follows' why=''
+```
+
+---
+
+## WP1 -- page roles -- round 4
+
+Measured 2026-09-16 with the app venv and the editable planlens checkout. 4147 hand-labelled pages, opened `di="auto"`, scored against `labels.labels_for`, split into a development set (R09, R12, R15, R16, R20, R23, R28, R29, R30) and a held-out set (R11, R13, R18, R21, R24). **The gate is on the held-out set**: precision AND recall >= 0.90 on `boring_log`, `test_pit_log`, `lab_test`, `narrative`, `calculation`.
+
+**This round:** a role a page did NOT name itself now carries INHERITED_CONFIDENCE and says so; no prediction changed, so every rate is identical to round 3
+
+**Development Set**, round by round
+
+| round | boring_log P/R | test_pit_log P/R | lab_test P/R | narrative P/R | calculation P/R | accuracy | what changed |
+|---|---|---|---|---|---|---|---|
+| 1 | 0.970 / 0.941 | 0.959 / 0.920 | 0.936 / 0.953 | 0.942 / 0.933 | 0.997 / 0.974 | 0.900 | first measurement of the rules on the live documents (all 14 reports; measured before the split) |
+| 2 | 0.970 / 0.941 | 0.959 / 0.920 | 0.936 / 0.984 | 0.942 / 0.933 | 0.997 / 0.974 | 0.912 | dynamic-probing abbreviations (DPL/DPM/DPH/DPSH/DPT/LCPT) as DCP titles; chemical and grading laboratory titles; a tab of logs no longer claims a page of prose (all 14 reports; measured before the split) |
+| 3 | 0.963 / 0.919 | 0.949 / 0.925 | 0.967 / 0.984 | 0.965 / 0.959 | 0.999 / 0.987 | 0.923 | the dev / held-out split, and document_outline + page_ledger added; NO rule changed this round |
+| 4 | 0.963 / 0.919 | 0.949 / 0.925 | 0.967 / 0.984 | 0.965 / 0.959 | 0.999 / 0.987 | 0.923 | a role a page did NOT name itself now carries INHERITED_CONFIDENCE and says so; no prediction changed, so every rate is identical to round 3 |
+
+**Held-Out Set**, round by round
+
+| round | boring_log P/R | test_pit_log P/R | lab_test P/R | narrative P/R | calculation P/R | accuracy | what changed |
+|---|---|---|---|---|---|---|---|
+| 1 | - | - | - | - | - | - | first measurement of the rules on the live documents (all 14 reports; measured before the split) |
+| 2 | - | - | - | - | - | - | dynamic-probing abbreviations (DPL/DPM/DPH/DPSH/DPT/LCPT) as DCP titles; chemical and grading laboratory titles; a tab of logs no longer claims a page of prose (all 14 reports; measured before the split) |
+| 3 | 0.987 / 1.000 | 1.000 / 0.902 | 0.813 / 0.983 | 0.851 / 0.832 | 0.992 / 0.938 | 0.887 | the dev / held-out split, and document_outline + page_ledger added; NO rule changed this round |
+| 4 | 0.987 / 1.000 | 1.000 / 0.902 | 0.813 / 0.983 | 0.851 / 0.832 | 0.992 / 0.938 | 0.887 | a role a page did NOT name itself now carries INHERITED_CONFIDENCE and says so; no prediction changed, so every rate is identical to round 3 |
+
+### Where held-out lags development
+
+- **`lab_test` lags by more than 0.05**: precision 0.967 to 0.813. The confusions that cost it on the held-out set: `other -> lab_test` (16 pages), `calculation -> lab_test` (14 pages), `narrative -> lab_test` (6 pages).
+- **`narrative` lags by more than 0.05**: precision 0.965 to 0.851; recall 0.959 to 0.831. The confusions that cost it on the held-out set: `figure -> narrative` (7 pages), `narrative -> lab_test` (6 pages), `narrative -> other` (6 pages).
+
+### This round in full
+
+#### Held-Out Set
+
+5 reports (R11, R13, R18, R21, R24), 1300 pages, 47 s.
+
+| role | precision | recall | F1 | hand-labelled |
+|---|---|---|---|---|
+| `narrative` **(gated)** | 0.851 | 0.831 | 0.841 | 89 |
+| `figure` | 0.250 | 0.217 | 0.233 | 23 |
+| `plan` | 0.250 | 0.500 | 0.333 | 6 |
+| `profile` | 0.875 | 0.467 | 0.609 | 15 |
+| `boring_log` **(gated)** | 0.987 | 1.000 | 0.993 | 75 |
+| `test_pit_log` **(gated)** | 1.000 | 0.902 | 0.948 | 51 |
+| `cpt_log` | 0.438 | 1.000 | 0.609 | 7 |
+| `dcp_log` | 0.000 | 0.000 | 0.000 | 0 |
+| `lab_test` **(gated)** | 0.813 | 0.983 | 0.890 | 177 |
+| `field_test` | 0.250 | 1.000 | 0.400 | 2 |
+| `calculation` **(gated)** | 0.992 | 0.938 | 0.964 | 259 |
+| `appended_report` | 1.000 | 1.000 | 1.000 | 472 |
+| `photos` | 0.000 | 0.000 | 0.000 | 0 |
+| `divider` | 0.318 | 0.824 | 0.459 | 17 |
+| `cover` | 1.000 | 0.250 | 0.400 | 8 |
+| `letter` | 1.000 | 0.500 | 0.667 | 4 |
+| `toc` | 0.875 | 1.000 | 0.933 | 7 |
+| `other` | 0.513 | 0.227 | 0.315 | 88 |
+
+Page accuracy **0.887** over 1300 pages. The gate does NOT pass.
+
+Confusion matrix (rows = hand label, columns = predicted):
+
+| hand \ pred | narr | figu | plan | prof | bori | test | cpt_ | dcp_ | lab_ | fiel | calc | appe | phot | divi | cove | lett | toc | othe |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `narrative` | 74 | . | . | . | . | . | 1 | . | 6 | . | . | . | . | 1 | . | . | 1 | 6 |
+| `figure` | 7 | 5 | 1 | . | . | . | . | . | 2 | . | . | . | . | . | . | . | . | 8 |
+| `plan` | 1 | . | 3 | 1 | . | . | . | . | . | . | . | . | . | 1 | . | . | . | . |
+| `profile` | 2 | 2 | . | 7 | . | . | . | . | . | . | 2 | . | . | . | . | . | . | 2 |
+| `boring_log` | . | . | . | . | 75 | . | . | . | . | . | . | . | . | . | . | . | . | . |
+| `test_pit_log` | . | . | 5 | . | . | 46 | . | . | . | . | . | . | . | . | . | . | . | . |
+| `cpt_log` | . | . | . | . | . | . | 7 | . | . | . | . | . | . | . | . | . | . | . |
+| `dcp_log` | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . |
+| `lab_test` | . | 2 | . | . | . | . | . | . | 174 | . | . | . | . | 1 | . | . | . | . |
+| `field_test` | . | . | . | . | . | . | . | . | . | 2 | . | . | . | . | . | . | . | . |
+| `calculation` | . | . | . | . | . | . | . | . | 14 | . | 243 | . | . | 2 | . | . | . | . |
+| `appended_report` | . | . | . | . | . | . | . | . | . | . | . | 472 | . | . | . | . | . | . |
+| `photos` | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . |
+| `divider` | . | . | 1 | . | . | . | . | . | 2 | . | . | . | . | 14 | . | . | . | . |
+| `cover` | 1 | 2 | . | . | . | . | . | . | . | . | . | . | . | . | 2 | . | . | 3 |
+| `letter` | 2 | . | . | . | . | . | . | . | . | . | . | . | . | . | . | 2 | . | . |
+| `toc` | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | 7 | . |
+| `other` | . | 9 | 2 | . | 1 | . | 8 | 1 | 16 | 6 | . | . | . | 25 | . | . | . | 20 |
+
+Column keys: `narr` = narrative, `figu` = figure, `plan` = plan, `prof` = profile, `bori` = boring_log, `test` = test_pit_log, `cpt_` = cpt_log, `dcp_` = dcp_log, `lab_` = lab_test, `fiel` = field_test, `calc` = calculation, `appe` = appended_report, `phot` = photos, `divi` = divider, `cove` = cover, `lett` = letter, `toc` = toc, `othe` = other.
+
+Per-report accuracy:
+
+| ID | pages | accuracy |
+|---|---|---|
+| R11 | 156 | 0.904 |
+| R13 | 197 | 0.883 |
+| R18 | 64 | 0.953 |
+| R21 | 729 | 0.966 |
+| R24 | 154 | 0.474 |
+
+75 pages where a gated role is involved and the rules and the hand label disagree. They are NOT listed page by page: closing a gap by reading the held-out pages is how a held-out set stops being one. The confusions, by size:
+
+| hand -> predicted | pages |
+|---|---|
+| `other -> lab_test` | 16 |
+| `calculation -> lab_test` | 14 |
+| `figure -> narrative` | 7 |
+| `narrative -> lab_test` | 6 |
+| `narrative -> other` | 6 |
+| `test_pit_log -> plan` | 5 |
+| `lab_test -> figure` | 2 |
+| `letter -> narrative` | 2 |
+| `profile -> calculation` | 2 |
+| `calculation -> divider` | 2 |
+| `profile -> narrative` | 2 |
+| `figure -> lab_test` | 2 |
+| `divider -> lab_test` | 2 |
+| `lab_test -> divider` | 1 |
+| `cover -> narrative` | 1 |
+| `plan -> narrative` | 1 |
+| `narrative -> toc` | 1 |
+| `narrative -> divider` | 1 |
+| `narrative -> cpt_log` | 1 |
+| `other -> boring_log` | 1 |
+
+#### Development Set
+
+9 reports (R09, R12, R15, R16, R20, R23, R28, R29, R30), 2847 pages, 141 s.
+
+| role | precision | recall | F1 | hand-labelled |
+|---|---|---|---|---|
+| `narrative` **(gated)** | 0.965 | 0.959 | 0.962 | 344 |
+| `figure` | 0.559 | 0.500 | 0.528 | 38 |
+| `plan` | 0.556 | 0.417 | 0.476 | 12 |
+| `profile` | 0.900 | 0.692 | 0.783 | 13 |
+| `boring_log` **(gated)** | 0.963 | 0.919 | 0.941 | 198 |
+| `test_pit_log` **(gated)** | 0.949 | 0.925 | 0.937 | 200 |
+| `cpt_log` | 1.000 | 0.875 | 0.933 | 16 |
+| `dcp_log` | 1.000 | 0.556 | 0.714 | 54 |
+| `lab_test` **(gated)** | 0.967 | 0.984 | 0.976 | 815 |
+| `field_test` | 0.739 | 1.000 | 0.850 | 17 |
+| `calculation` **(gated)** | 0.999 | 0.987 | 0.993 | 750 |
+| `appended_report` | 0.815 | 1.000 | 0.898 | 22 |
+| `photos` | 0.715 | 0.932 | 0.809 | 132 |
+| `divider` | 0.713 | 0.864 | 0.781 | 66 |
+| `cover` | 1.000 | 0.409 | 0.581 | 22 |
+| `letter` | 1.000 | 1.000 | 1.000 | 2 |
+| `toc` | 1.000 | 0.611 | 0.759 | 18 |
+| `other` | 0.546 | 0.555 | 0.550 | 128 |
+
+Page accuracy **0.923** over 2847 pages.
+
+Confusion matrix (rows = hand label, columns = predicted):
+
+| hand \ pred | narr | figu | plan | prof | bori | test | cpt_ | dcp_ | lab_ | fiel | calc | appe | phot | divi | cove | lett | toc | othe |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `narrative` | 330 | . | 1 | . | . | 1 | . | . | 2 | . | . | 1 | . | . | . | . | . | 9 |
+| `figure` | 3 | 19 | 2 | . | 1 | . | . | . | . | . | . | . | . | . | . | . | . | 13 |
+| `plan` | . | 1 | 5 | 1 | . | . | . | . | . | 2 | 1 | . | 1 | . | . | . | . | 1 |
+| `profile` | . | . | . | 9 | 1 | . | . | . | . | . | . | . | . | . | . | . | . | 3 |
+| `boring_log` | . | 9 | . | . | 182 | 6 | . | . | . | . | . | . | 1 | . | . | . | . | . |
+| `test_pit_log` | . | . | . | . | 1 | 185 | . | . | 2 | . | . | . | 11 | 1 | . | . | . | . |
+| `cpt_log` | . | . | . | . | . | . | 14 | . | . | . | . | . | . | . | . | . | . | 2 |
+| `dcp_log` | . | . | . | . | . | . | . | 30 | . | . | . | . | 10 | . | . | . | . | 14 |
+| `lab_test` | . | . | . | . | . | . | . | . | 802 | 4 | . | . | . | . | . | . | . | 9 |
+| `field_test` | . | . | . | . | . | . | . | . | . | 17 | . | . | . | . | . | . | . | . |
+| `calculation` | . | . | . | . | . | . | . | . | 1 | . | 740 | . | . | 9 | . | . | . | . |
+| `appended_report` | . | . | . | . | . | . | . | . | . | . | . | 22 | . | . | . | . | . | . |
+| `photos` | . | . | . | . | . | . | . | . | 5 | . | . | . | 123 | 4 | . | . | . | . |
+| `divider` | . | 1 | . | . | . | . | . | . | 1 | . | . | 4 | . | 57 | . | . | . | 3 |
+| `cover` | 2 | 4 | . | . | . | . | . | . | 1 | . | . | . | . | 1 | 9 | . | . | 5 |
+| `letter` | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | 2 | . | . |
+| `toc` | 5 | . | 1 | . | . | . | . | . | 1 | . | . | . | . | . | . | . | 11 | . |
+| `other` | 2 | . | . | . | 4 | 3 | . | . | 14 | . | . | . | 26 | 8 | . | . | . | 71 |
+
+Column keys: `narr` = narrative, `figu` = figure, `plan` = plan, `prof` = profile, `bori` = boring_log, `test` = test_pit_log, `cpt_` = cpt_log, `dcp_` = dcp_log, `lab_` = lab_test, `fiel` = field_test, `calc` = calculation, `appe` = appended_report, `phot` = photos, `divi` = divider, `cove` = cover, `lett` = letter, `toc` = toc, `othe` = other.
+
+Per-report accuracy:
+
+| ID | pages | accuracy |
+|---|---|---|
+| R09 | 151 | 0.934 |
+| R12 | 159 | 0.893 |
+| R15 | 202 | 0.886 |
+| R16 | 426 | 0.939 |
+| R20 | 370 | 0.978 |
+| R23 | 397 | 0.942 |
+| R28 | 455 | 0.923 |
+| R29 | 131 | 0.664 |
+| R30 | 556 | 0.941 |
+
+112 pages where a gated role is involved and the rules and the hand label disagree. `rule` and `why` are the evidence planlens itself recorded; the page HEADING is omitted on purpose -- the largest type on a log or a laboratory sheet is a firm's title block, and this file is tracked in a public repository. The same list WITH headings is written to `raw/checks/wp1_misses.txt`, which is gitignored.
+
+**R09** (6)
+
+```
+R09 p11   hand=other           pred=narrative       kind=figure        rule="prose before the report's first appendix tab" why=''
+R09 p13   hand=figure          pred=narrative       kind=figure        rule="prose before the report's first appendix tab" why=''
+R09 p14   hand=figure          pred=narrative       kind=figure        rule="prose before the report's first appendix tab" why=''
+R09 p15   hand=figure          pred=narrative       kind=figure        rule="prose before the report's first appendix tab" why=''
+R09 p17   hand=other           pred=narrative       kind=mixed         rule="prose before the report's first appendix tab" why=''
+R09 p150  hand=other           pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'laboratory testing'"
+```
+
+**R12** (13)
+
+```
+R12 p3    hand=toc             pred=narrative       kind=mixed         rule="prose before the report's first appendix tab" why=''
+R12 p54   hand=figure          pred=boring_log      kind=figure        rule='the page names itself' why="log title 'borehole no', 2 log form fields"
+R12 p61   hand=test_pit_log    pred=lab_test        kind=figure        rule='the page names itself' why="laboratory test title 'permeability' beside a reference to t"
+R12 p62   hand=test_pit_log    pred=lab_test        kind=figure        rule='the page names itself' why="laboratory test title 'permeability' beside a reference to t"
+R12 p64   hand=other           pred=lab_test        kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+R12 p78   hand=other           pred=lab_test        kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+R12 p96   hand=lab_test        pred=field_test      kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['field_test', 'lab_test']"
+R12 p102  hand=lab_test        pred=field_test      kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['field_test', 'lab_test']"
+R12 p108  hand=lab_test        pred=field_test      kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['field_test', 'lab_test']"
+R12 p114  hand=lab_test        pred=field_test      kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['field_test', 'lab_test']"
+R12 p122  hand=other           pred=lab_test        kind=figure        rule='the page names itself, and its appendix expects it' why='2 laboratory test terms on the page'
+R12 p132  hand=other           pred=lab_test        kind=figure        rule='the page names itself' why="laboratory test title 'water extract'"
+R12 p139  hand=other           pred=lab_test        kind=figure        rule='the page names itself, and its appendix expects it' why='2 laboratory test terms on the page'
+```
+
+**R15** (19)
+
+```
+R15 p3    hand=toc             pred=narrative       kind=text          rule="prose before the report's first appendix tab" why=''
+R15 p5    hand=narrative       pred=plan            kind=mixed         rule='the page names itself' why="plan title 'site plans'"
+R15 p8    hand=narrative       pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R15 p19   hand=narrative       pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R15 p31   hand=narrative       pred=lab_test        kind=text          rule='the page names itself' why="laboratory test title 'laboratory testing' beside a referenc"
+R15 p39   hand=other           pred=boring_log      kind=text          rule='the page names itself' why="log title 'test borings', 13 log form fields"
+R15 p42   hand=other           pred=test_pit_log    kind=mixed         rule='the page names itself' why="log title 'test pit', 5 log form fields"
+R15 p63   hand=boring_log      pred=photos          kind=form          rule='the page names itself' why='photograph caption (1)'
+R15 p67   hand=test_pit_log    pred=boring_log      kind=form          rule='the page names itself' why="log title 'boring number', 6 log form fields"
+R15 p76   hand=divider         pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'laboratory test'"
+R15 p90   hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p92   hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p102  hand=lab_test        pred=other           kind=form          rule='form page with no title of its own' why=''
+R15 p103  hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p104  hand=lab_test        pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R15 p107  hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p108  hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p109  hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p110  hand=lab_test        pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+```
+
+**R16** (8)
+
+```
+R16 p1    hand=cover           pred=narrative       kind=text          rule="prose before the report's first appendix tab" why=''
+R16 p7    hand=narrative       pred=other           kind=text          rule='text page with no title of its own' why=''
+R16 p27   hand=profile         pred=boring_log      kind=form          rule='the page names itself' why='log form shape, 6 log form fields'
+R16 p29   hand=other           pred=boring_log      kind=mixed         rule='INHERITED from its appendix tab; the page says nothing about' why="['boring_log', 'photos']"
+R16 p79   hand=other           pred=lab_test        kind=mixed         rule='the page names itself, and its appendix expects it' why="laboratory test title 'laboratory test'"
+R16 p128  hand=cover           pred=lab_test        kind=mixed         rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+R16 p418  hand=calculation     pred=divider         kind=text          rule='tab or cover page naming what follows' why=''
+R16 p420  hand=calculation     pred=divider         kind=text          rule='tab or cover page naming what follows' why=''
+```
+
+**R20** (4)
+
+```
+R20 p6    hand=narrative       pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R20 p29   hand=narrative       pred=appended_report kind=text          rule='inside a report bound into this one' why=''
+R20 p115  hand=test_pit_log    pred=divider         kind=mixed         rule='tab or cover page naming what follows' why=''
+R20 p354  hand=calculation     pred=divider         kind=text          rule='tab or cover page naming what follows' why=''
+```
+
+**R23** (12)
+
+```
+R23 p4    hand=narrative       pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R23 p5    hand=narrative       pred=other           kind=text          rule='text page with no title of its own' why=''
+R23 p170  hand=boring_log      pred=test_pit_log    kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['test_pit_log', 'photos']"
+R23 p171  hand=boring_log      pred=test_pit_log    kind=mixed         rule='INHERITED from its appendix tab; the page says nothing about' why="['test_pit_log', 'photos']"
+R23 p184  hand=boring_log      pred=test_pit_log    kind=mixed         rule='INHERITED from its appendix tab; the page says nothing about' why="['test_pit_log', 'photos']"
+R23 p191  hand=boring_log      pred=test_pit_log    kind=text          rule='INHERITED from its appendix tab; the page says nothing about' why="['test_pit_log', 'photos']"
+R23 p192  hand=boring_log      pred=test_pit_log    kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['test_pit_log', 'photos']"
+R23 p194  hand=boring_log      pred=test_pit_log    kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['test_pit_log', 'photos']"
+R23 p197  hand=other           pred=test_pit_log    kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['test_pit_log', 'photos']"
+R23 p255  hand=other           pred=lab_test        kind=text          rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+R23 p375  hand=calculation     pred=divider         kind=figure        rule='tab or cover page naming what follows' why=''
+R23 p376  hand=calculation     pred=divider         kind=text          rule='tab or cover page naming what follows' why=''
+```
+
+**R28** (18)
+
+```
+R28 p1    hand=cover           pred=narrative       kind=mixed         rule="prose before the report's first appendix tab" why=''
+R28 p4    hand=toc             pred=narrative       kind=text          rule="prose before the report's first appendix tab" why=''
+R28 p5    hand=toc             pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'laboratory test'"
+R28 p25   hand=narrative       pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R28 p28   hand=narrative       pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R28 p53   hand=other           pred=boring_log      kind=text          rule='the page names itself' why="log title 'test borings', 15 log form fields"
+R28 p56   hand=other           pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'sieve' beside a reference to the expl"
+R28 p233  hand=test_pit_log    pred=photos          kind=figure        rule='the page names itself' why='photograph caption (1)'
+R28 p236  hand=test_pit_log    pred=photos          kind=figure        rule='the page names itself' why='photograph caption (1)'
+R28 p238  hand=test_pit_log    pred=photos          kind=figure        rule='the page names itself' why='photograph caption (1)'
+R28 p253  hand=test_pit_log    pred=photos          kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['photos', 'test_pit_log']"
+R28 p254  hand=test_pit_log    pred=photos          kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['photos', 'test_pit_log']"
+R28 p255  hand=test_pit_log    pred=photos          kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['photos', 'test_pit_log']"
+R28 p256  hand=test_pit_log    pred=photos          kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['photos', 'test_pit_log']"
+R28 p257  hand=test_pit_log    pred=photos          kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['photos', 'test_pit_log']"
+R28 p258  hand=test_pit_log    pred=photos          kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['photos', 'test_pit_log']"
+R28 p259  hand=test_pit_log    pred=photos          kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['photos', 'test_pit_log']"
+R28 p260  hand=test_pit_log    pred=photos          kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['photos', 'test_pit_log']"
+```
+
+**R29** (14)
+
+```
+R29 p3    hand=toc             pred=narrative       kind=text          rule="prose before the report's first appendix tab" why=''
+R29 p5    hand=toc             pred=narrative       kind=text          rule="prose before the report's first appendix tab" why=''
+R29 p24   hand=narrative       pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'corrosivity'"
+R29 p40   hand=narrative       pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R29 p53   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p54   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p55   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p56   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p57   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p58   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p59   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p60   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p61   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p130  hand=calculation     pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'gradation'"
+```
+
+**R30** (18)
+
+```
+R30 p5    hand=narrative       pred=test_pit_log    kind=text          rule='the page names itself' why="log title 'test pits', 3 log form fields"
+R30 p49   hand=plan            pred=calculation     kind=form          rule='the page names itself' why="calculation heading 'global stability'"
+R30 p58   hand=other           pred=boring_log      kind=mixed         rule='INHERITED from its appendix tab; the page says nothing about' why="['boring_log']"
+R30 p131  hand=other           pred=test_pit_log    kind=mixed         rule='INHERITED from its appendix tab; the page says nothing about' why="['test_pit_log']"
+R30 p228  hand=other           pred=lab_test        kind=mixed         rule='the page names itself, and its appendix expects it' why="laboratory test title 'laboratory test'"
+R30 p296  hand=other           pred=lab_test        kind=mixed         rule='the page names itself, and its appendix expects it' why="laboratory test title 'laboratory test'"
+R30 p297  hand=other           pred=lab_test        kind=mixed         rule='the page names itself, and its appendix expects it' why="laboratory test title 'laboratory testing'"
+R30 p385  hand=other           pred=lab_test        kind=mixed         rule='the page names itself, and its appendix expects it' why="laboratory test title 'laboratory testing'"
+R30 p418  hand=photos          pred=lab_test        kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+R30 p419  hand=photos          pred=lab_test        kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+R30 p430  hand=other           pred=lab_test        kind=mixed         rule='the page names itself, and its appendix expects it' why="laboratory test title 'laboratory testing'"
+R30 p471  hand=photos          pred=lab_test        kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+R30 p472  hand=photos          pred=lab_test        kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+R30 p473  hand=photos          pred=lab_test        kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+R30 p523  hand=calculation     pred=divider         kind=mixed         rule='tab or cover page naming what follows' why=''
+R30 p543  hand=calculation     pred=divider         kind=text          rule='tab or cover page naming what follows' why=''
+R30 p545  hand=calculation     pred=divider         kind=text          rule='tab or cover page naming what follows' why=''
+R30 p547  hand=calculation     pred=divider         kind=text          rule='tab or cover page naming what follows' why=''
+```
+
+---
+
+### WP1 -- the held-out five were already looked at (declare it, do not hide it)
+
+The split arrived after the rules were written, and by then every one of the
+five held-out reports had been inspected. Naming them, because a held-out set
+whose contamination is not written down is worse than no held-out set:
+
+| ID | what was looked at, and what it changed |
+|---|---|
+| R11 | Its structure was printed and its misses read. Its cover page was being read as a tab that declared an appended report, which swallowed the whole document; that is why an appended report may now be opened only by a tab that carries an appendix letter inside a document that has already opened one. |
+| R13 | Its dividers and its narrative block were printed. Its slope-stability printouts headed "SECTION A-A'" were being read as tabs; that is why "section" is not a divider word. Its first page was being read as a tab; that is why page 0 cannot be one. |
+| R18 | Used as the end-to-end smoke test throughout. Its roles, its items and its segment profile were printed repeatedly. |
+| R21 | The whole nested-document algorithm was designed against it: the appendix-letter stack, the point where the outer report resumes, and "a table of contents is not a tab" all come from reading its pages. |
+| R24 | Its misses were read and four of its pages were RENDERED and looked at. Stripping the running header from a tab's declaration, reading sub-tabs ("PART B2"), and refusing to call a page of prose a log all come from it. |
+
+So the held-out column in round 3 and round 4 is not a measurement of
+generalisation. It is the same in-sample fit, reported separately. The
+numbers are still worth having -- they show the five hardest documents
+failing differently from the nine easier ones -- but they must not be quoted
+as held-out performance.
+
+What this makes true anyway, and what it does not:
+
+- **True.** `boring_log` and `test_pit_log` hold up on the five hardest
+  documents (0.987/1.000 and 1.000/0.902) while `lab_test` precision and
+  `narrative` do not (0.813 and 0.851/0.832). The five were chosen for being
+  unalike, and the roles that depend on a page naming itself survive that
+  while the roles that lean on the appendix tab do not.
+- **Not true.** That the rules will reach the gate on a report nobody here
+  has seen. The lead's own out-of-sample check on 120 pages drawn from the
+  24 unlabelled reports is the honest number, and it is far lower.
+
+From here the discipline holds: nothing is tuned against R11, R13, R18, R21
+or R24 again, and the next rule change is measured on a set that is genuinely
+blind. The clean holdout available without any new labelling is the label
+sheet whose PDF was never copied into the corpus (153 rows, plan section 7
+item 3): drop that PDF in as R39 and it is a report with hand labels that
+nothing here has ever opened.
