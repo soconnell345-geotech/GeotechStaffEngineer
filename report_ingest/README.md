@@ -95,17 +95,28 @@ with what the rules really said, so a model that misremembers is visible.
 
 ## Running it on the cluster
 
-This is the run that produces the real numbers, and the owner makes it. Put
-the corpus somewhere the cluster can read — a Unity Catalog Volume, or a synced
-SharePoint folder — laid out as `R01.pdf` … `R38.pdf` plus `MANIFEST.md`, with
-the Azure Document Intelligence results as `<di_dir>/R01.json.gz` and the hand
-labels as the spreadsheet. Then install the two test wheels and run one cell.
+This is the run that produces the real numbers, and the owner makes it.
+
+**The reports stay where they already are.** They do not have to be renamed,
+copied or re-uploaded: point `reports_dir` at the folder that holds them under
+the names their authors gave them, and the manifest's source-file column is
+what turns each file name into an ID. Three small private files travel with
+the run and can sit anywhere the cluster can read:
+
+| File | What it is | Without it |
+|---|---|---|
+| `MANIFEST.md` | the corpus manifest; its `file` column names each report | IDs cannot be resolved at all, unless the PDFs are already named `R01.pdf` … |
+| `trial_pages_working_r2.xlsx` | the hand page labels | the in-sample set runs and produces profiles, but scores nothing |
+| `oos_labels.json` | the lead's out-of-sample labels | the two out-of-sample sets run and score nothing |
+
+The Azure Document Intelligence results are read in **either** form —
+`<ID>.json.gz` or the uncompressed `DI_data_<original stem>.json` that
+Funhouse wrote — from whatever folder `di_dir` names. Without them the scanned
+pages are read from their own text layer alone.
 
 ```python
-# 1. Both wheels in ONE command, so pip resolves them together.
-%pip install --no-deps \
-  "/Volumes/<your volume>/wheels/planlens-0.4.0+wp1b.<date>-py3-none-any.whl" \
-  "/Volumes/<your volume>/wheels/geotech_staff_engineer-5.18.0+wp1b.<date>-py3-none-any.whl"
+# 1. From PyPI through Nexus. planlens 0.5.0 arrives with it.
+%pip install "geotech-staff-engineer==5.19.0"
 dbutils.library.restartPython()
 ```
 
@@ -114,15 +125,17 @@ dbutils.library.restartPython()
 from report_ingest.cluster_scoring import score_on_cluster
 
 results = score_on_cluster(
-    corpus_dir   = "/Volumes/<your volume>/report_corpus",
-    labels_xlsx  = "/Volumes/<your volume>/report_corpus/trial_pages_working_r2.xlsx",
+    reports_dir  = "/Volumes/<your volume>/reports",          # the PDFs, under their own names
+    manifest     = "/Volumes/<your volume>/wp1b/MANIFEST.md",
+    labels_xlsx  = "/Volumes/<your volume>/wp1b/trial_pages_working_r2.xlsx",
+    oos_labels   = "/Volumes/<your volume>/wp1b/oos_labels.json",
     di_dir       = "/Volumes/<your volume>/report_di",
-    oos_labels   = "/Volumes/<your volume>/report_corpus/oos_labels.json",  # optional
-    out_dir      = "/tmp/report_ingest_wp1b",
+    out_dir      = "/tmp/report_ingest_wp1b",                 # /tmp or a Volume, never /Workspace
     prompter     = fh_prompter,
-    model        = "funhouse-gpt-medium",   # the label review
-    triage_model = "funhouse-gpt-low",      # one call over a ledger
+    model        = "funhouse-gpt-high",     # the label review, on the tier the app runs on
+    triage_model = "funhouse-gpt-medium",   # one call over a ledger; a cheaper tier does
     sets         = ("insample", "oos_open", "oos_blind"),
+    max_reports  = 2,                       # drop this line after the first run
 )
 ```
 
@@ -143,16 +156,13 @@ Notes that matter:
   start over, or delete one file to redo one report.
 - **Start small.** `max_reports=2` on the first run proves the path end to end
   for the price of two reports.
+- **A report the folder does not have is named and skipped**, once, before
+  anything runs, rather than failing one report at a time deep in the set.
 - **No credential is read.** Authentication is whatever `fh_prompter` was built
   with. Nothing here touches an environment variable or a secret scope.
 - **Tokens, not dollars.** Funhouse publishes no per-token price for a
   capability tier, so the run reports tokens and you read the spend from
   Funhouse's own budget endpoint for the same window.
-- **The test wheels are built from a branch, not released.** Their versions
-  carry a `+wp1b.<date>` local suffix so they cannot be mistaken for 0.4.0 or
-  5.18.0, and they sort *above* those, so the app's own `planlens>=0.4`
-  requirement is still satisfied. A `.dev` suffix would have sorted below and
-  broken it.
 
 ## What the Prompter engine can and cannot do
 
@@ -306,21 +316,27 @@ and a later editor who does not know why will delete it.
   ledger lines will be nearly right, which is the worst thing a scorecard field
   can be.
 
-## What this package needs to ship
+## How this package ships
 
-Nothing is wired into the app yet and `pyproject.toml` is untouched. When it
-ships it will need:
+It ships in the wheel as of **5.19.0** (2026-09-17) as a library: no tool of
+the app calls it yet, and nothing in the chat surface changed.
 
-- **`report_ingest*` added to `[tool.setuptools.packages.find]`.** Until that
-  line lands, a wheel built from this repo does **not** contain this package.
-  The test wheels get the line injected into a throwaway copy of the tree at
-  build time, so they work while the repo stays unchanged — but a release built
-  without it would silently ship without `report_ingest`, and the failure would
-  appear on the cluster as an import error, not at build time.
-- `report_ingest` added to pytest's `testpaths`, or these tests never run in
-  the gate.
-- `pydantic`, already a dependency.
-- `anthropic` kept **optional**, and on the cluster not installed at all.
+- **`report_ingest*` is in `[tool.setuptools.packages.find]`.** Until that line
+  landed, a wheel built from this repo did **not** contain this package, and
+  the failure would have appeared on the cluster as an import error rather
+  than at build time. Check it after any edit to that list:
+  `python -m build --wheel` and look for `report_ingest/` in the wheel.
+- **`report_ingest` is in pytest's `testpaths`**, so this suite runs in the
+  release gate. The WP0/WP1 harness under `module_work/` is dev-only and is
+  deliberately not.
+- **`planlens>=0.5`** — the page roles, the printed outline and the per-page
+  ledger these passes read are 0.5.0's. planlens 0.5.0 declares exactly the
+  dependencies 0.4.0 did, so the pin adds no new package to the cluster.
+- `pydantic` and `openpyxl`, both already there: pydantic through the agent
+  stack, openpyxl as a hard requirement of `python-ags4`, which this app
+  depends on directly. The hand-label reader imports openpyxl lazily anyway,
+  so a run that never touches the spreadsheet never needs it.
+- `anthropic` is **optional**, and on the cluster not installed at all.
   Nothing outside `ClaudeEngine` imports it, `report_ingest/__init__.py` reaches
   every entry point through a lazy import, and a test spawns a fresh
   interpreter to prove that importing the package pulls in neither `anthropic`
@@ -333,6 +349,18 @@ the spreadsheet — because the same corpus is a gitignored folder in this repo
 during development and a Volume on the cluster during a real run. The WP0
 harness (`module_work/report_ingest_harness/`) is now that loader bound to the
 repo's own paths, so there is one implementation and the harness's own tests
-check it. `scoring.py` holds the rates, the sets and the change verdicts for the
+check it.
+
+It reads **two layouts**, because the repo's copy was renamed and the
+cluster's was not. `R01.pdf` … is one; the reports under their original names
+plus a manifest is the other, and an ID is resolved through the manifest's
+source-file column — the path as written, then without its leading folder
+(`Reports_PDF/`), then on the base name case-insensitively, then on a
+punctuation- and accent-insensitive form of the stem. DI results are read as
+`<ID>.json.gz` or as `DI_data_<original stem>.json`, gzip preferred where both
+exist and the file sniffed rather than trusted from its suffix. Both
+resolutions and both DI forms are pinned by offline tests on synthetic files
+(`tests/test_corpus_paths.py`), because the cluster run is the one place this
+code has to work first time. `scoring.py` holds the rates, the sets and the change verdicts for the
 same reason: two copies of that arithmetic would drift, and the second copy's
 numbers would be the ones nobody checked.

@@ -1,7 +1,11 @@
 # Report ingest — geotechnical report → organised record + summary + DIGGS 2.6
 
-**Status: WP0 IN PROGRESS (started 2026-09-16, owner: "run with what you
-have").** Drafted 2026-09-16 after reviewing the report corpus (38 reports,
+**Status: WP0–WP1b SHIPPED in planlens 0.5.0 / app 5.19.0 (2026-09-17);
+cluster scoring pending the owner's run.** The `report_ingest` package is in
+the app wheel as a library — no tool of the app calls it yet — and
+`report_ingest.cluster_scoring.score_on_cluster` is the notebook cell that
+produces the WP1b numbers on the model that will do the work. WP2 starts once
+those numbers are in. (Started 2026-09-16, owner: "run with what you have".) Drafted 2026-09-16 after reviewing the report corpus (38 reports,
 7,829 pages) with planlens 0.4.0; revised the same day with the owner's two
 query schemas, the Azure Document Intelligence (DI) results found in the
 private repo, and the owner's steer that neither the old page labels nor the
@@ -398,13 +402,31 @@ from rendered pages, kept in the private ledger for the owner to spot-check.
   reconciled structure. Scored rules-only vs after-review on the in-sample,
   held-out and out-of-sample sets; every change the review makes is logged
   so a wrong "correction" is visible.
-- Models: the Claude API from this machine for development and scoring
-  (the owner's key in the Windows user environment, never in chat);
-  Prompter on the cluster in production, through the app's existing engine.
+- Models (owner correction 2026-09-17): the system runs in Funhouse through
+  the OpenAI Prompter API, so **scoring happens on the cluster through
+  Prompter, run by the owner from a notebook cell**
+  (`report_ingest.cluster_scoring.score_on_cluster`, test wheels of both
+  branches uploaded by the owner, corpus in a Volume or synced SharePoint
+  folder, results written to `/tmp` or a Volume and brought back to the
+  ledger). Offline tests use fake engines. A Claude dev engine exists for
+  prompt iteration only; its numbers are never quoted as the system's
+  accuracy. A first checkpoint on six reports with that dev engine (about
+  $1 and 2.5 min per report; 0.889 → 0.939 strict on 677 pages) is
+  recorded in the ledger as indicative only.
 - Gate for WP2: ≥ 0.98 P and R on the key-content labels after review on
   the held-out and out-of-sample sets, and the triage verdict right on every
   report whose structure is unusual (multi-volume, appendix-only, partial,
   scanned, appended prior reports).
+- **Before any release of this package:** `pyproject.toml` must add
+  `report_ingest*` to `[tool.setuptools.packages.find]` (its include-list
+  omits it today, so a release wheel would ship WITHOUT the package and fail
+  on the cluster as an import error) and `report_ingest` to pytest
+  `testpaths` (98 tests otherwise never run in the gate). The test wheels
+  in `dev/v5_test_wheel/report_ingest_test/` inject that line into a
+  throwaway copy; a release must not rely on that. Also known: on Prompter
+  a tool result cannot carry an image, so rendered pages ride in a user
+  message after the tool messages; the review does slightly different work
+  on the two engines and the README says so.
 
 ### WP2: boring logs → investigations → DIGGS borings (the core)
 

@@ -8,13 +8,21 @@ notebook with the live ``fh_prompter`` object already in hand.
     from report_ingest.cluster_scoring import score_on_cluster
 
     score_on_cluster(
-        corpus_dir="/Volumes/main/geotech/report_corpus",
-        labels_xlsx="/Volumes/main/geotech/report_corpus/trial_pages.xlsx",
-        di_dir="/Volumes/main/geotech/report_di",
-        out_dir="/tmp/report_ingest_wp1b",
-        prompter=fh_prompter,
-        model="funhouse-gpt-medium",
+        reports_dir = "/Volumes/main/geotech/reports",
+        manifest    = "/Volumes/main/geotech/wp1b/MANIFEST.md",
+        labels_xlsx = "/Volumes/main/geotech/wp1b/trial_pages_working_r2.xlsx",
+        oos_labels  = "/Volumes/main/geotech/wp1b/oos_labels.json",
+        di_dir      = "/Volumes/main/geotech/report_di",
+        out_dir     = "/tmp/report_ingest_wp1b",
+        prompter    = fh_prompter,
+        model       = "funhouse-gpt-high",   # the tier the app runs on
     )
+
+THE REPORTS STAY WHERE THEY ARE. ``reports_dir`` is the folder the owner
+already has on the cluster, under the file names their authors gave them;
+the manifest's source-file column is what turns a file name into an ID, so
+that one small file has to travel with the run. The DI results are read in
+either form -- ``<ID>.json.gz`` or ``DI_data_<original stem>.json``.
 
 NO CREDENTIAL IS READ OR STORED. Authentication is whatever the passed-in
 ``fh_prompter`` was built with. Nothing here touches an environment
@@ -162,24 +170,36 @@ def _run_one(rid: str, corpus: Corpus, prompter: Any, model: str,
     return blob
 
 
-def score_on_cluster(corpus_dir: Any, labels_xlsx: Any = None,
+def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      di_dir: Any = None, out_dir: Any = "/tmp/report_ingest",
-                     prompter: Any = None, model: str = "funhouse-gpt-medium",
+                     prompter: Any = None, model: str = "funhouse-gpt-high",
                      sets: Sequence[str] = SET_NAMES, *,
+                     manifest: Any = None,
                      triage_model: Optional[str] = None,
                      oos_labels: Any = None,
                      max_total_dollars: Optional[float] = None,
                      max_reports: Optional[int] = None,
-                     redo: bool = False) -> Dict[str, Any]:
+                     redo: bool = False,
+                     corpus_dir: Any = None) -> Dict[str, Any]:
     """Run the rules, triage and the label review over the corpus, and score.
 
     Parameters
     ----------
-    corpus_dir, labels_xlsx, di_dir
-        Where the PDFs (``R01.pdf`` ...), the hand-label spreadsheet and the
-        Azure Document Intelligence results are. Only ``corpus_dir`` is
-        required; without the spreadsheet the run measures but cannot score
-        the in-sample set.
+    reports_dir
+        The folder holding the report PDFs, named either ``R01.pdf`` ... or
+        as their authors named them. In the second case the manifest is what
+        says which file is which, so it is required. (``corpus_dir`` is the
+        older name for this argument and still works.)
+    manifest
+        The corpus manifest (``MANIFEST.md``). Defaults to one sitting beside
+        the reports; pass it when the reports folder is not yours to write
+        to, which on the cluster it is not.
+    labels_xlsx, di_dir
+        The hand-label spreadsheet and the Azure Document Intelligence
+        results (``<ID>.json.gz`` or ``DI_data_<original stem>.json``).
+        Without the spreadsheet the run measures but cannot score the
+        in-sample set; without the DI results the scanned pages are read
+        from their own text layer alone.
     out_dir
         Where everything is written. ``/tmp/...`` or a Volume, never
         ``/Workspace``.
@@ -208,16 +228,21 @@ def score_on_cluster(corpus_dir: Any, labels_xlsx: Any = None,
         raise ValueError(
             "pass the live fh_prompter; this module reads no credential of "
             "its own")
+    reports_dir = reports_dir if reports_dir is not None else corpus_dir
+    if reports_dir is None:
+        raise ValueError("pass reports_dir: the folder holding the PDFs")
     out = Path(out_dir)
     _check_out_dir(out)
     for sub in ("runs", "triage"):
         (out / sub).mkdir(parents=True, exist_ok=True)
 
-    corpus = Corpus(corpus_dir, di_dir=di_dir, labels_xlsx=labels_xlsx,
-                    cache_dir=out)
+    corpus = Corpus(reports_dir, manifest=manifest, di_dir=di_dir,
+                    labels_xlsx=labels_xlsx, cache_dir=out)
     if not corpus.available:
         raise FileNotFoundError(
-            f"no corpus at {corpus_dir}: expected R01.pdf ... R38.pdf there")
+            f"no reports at {reports_dir}: expected R01.pdf ... R38.pdf "
+            f"there, or the original file names plus a manifest "
+            f"({corpus.manifest}) whose source-file column names them")
     triage_model = triage_model or model
 
     oos: Dict[str, Dict[int, dict]] = {}
@@ -227,16 +252,26 @@ def score_on_cluster(corpus_dir: Any, labels_xlsx: Any = None,
                for rid, pages in blob.items()}
     mapped = corpus.mapped_ids() if corpus.labels_available else []
 
-    wanted: List[str] = []
+    asked: List[str] = []
     for name in sets:
         for rid in _set_ids(name, corpus):
-            if rid not in wanted:
-                wanted.append(rid)
+            if rid not in asked:
+                asked.append(rid)
+    # A cluster folder may hold a subset of the 38 the manifest lists. Say
+    # which are not there once, up front, rather than failing them one at a
+    # time deep in the run; a report already scored keeps its run file.
+    present = set(corpus.present_ids())
+    wanted = [rid for rid in asked
+              if rid in present or (out / "runs" / f"{rid}.json").is_file()]
+    absent = [rid for rid in asked if rid not in wanted]
     if max_reports:
         wanted = wanted[:int(max_reports)]
 
     print(f"WP1b on the cluster: {len(wanted)} report(s); review {model}, "
           f"triage {triage_model}; out_dir {out}")
+    if absent:
+        print(f"  not in {corpus.reports_dir} and skipped: "
+              f"{', '.join(absent)}")
     spent = 0.0
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
@@ -273,7 +308,7 @@ def score_on_cluster(corpus_dir: Any, labels_xlsx: Any = None,
               f"{blob['seconds']:.0f} s")
 
     results = _score(done, corpus, oos, mapped, sets, model, triage_model,
-                     failures)
+                     failures, absent)
     lines = _render(results)
     (out / "results.json").write_text(json.dumps(_plain(results), indent=2),
                                       encoding="utf-8")
@@ -287,7 +322,8 @@ def score_on_cluster(corpus_dir: Any, labels_xlsx: Any = None,
 def _score(done: Dict[str, dict], corpus: Corpus,
            oos: Dict[str, Dict[int, dict]], mapped: Sequence[str],
            sets: Sequence[str], model: str, triage_model: str,
-           failures: Dict[str, str]) -> Dict[str, Any]:
+           failures: Dict[str, str],
+           absent: Sequence[str] = ()) -> Dict[str, Any]:
     out: Dict[str, Any] = {
         "date": date.today().isoformat(),
         "engine": "prompter",
@@ -296,6 +332,7 @@ def _score(done: Dict[str, dict], corpus: Corpus,
         "served_by": sorted({s for b in done.values()
                              for s in (b.get("served_by") or [])}),
         "failures": dict(failures),
+        "absent": list(absent),
         "sets": {},
         "triage": [],
         "totals": {"calls": 0, "input_tokens": 0, "output_tokens": 0,
@@ -419,6 +456,9 @@ def _render(results: Dict[str, Any]) -> List[str]:
         out.append(f"Served by: {', '.join(results['served_by'])}. A Funhouse "
                    f"tier is an alias and the deployment behind it changes, "
                    f"so this is what actually answered.")
+    if results.get("absent"):
+        out += ["", f"Not in the reports folder, so not run: "
+                    f"{', '.join(results['absent'])}."]
     if results.get("failures"):
         out += ["", "**Reports that failed and are NOT in any number below:**"]
         out += [f"- {rid}: {why}" for rid, why in results["failures"].items()]

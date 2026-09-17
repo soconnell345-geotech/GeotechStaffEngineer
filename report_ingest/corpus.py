@@ -6,20 +6,39 @@ Catalog Volume or a synced SharePoint folder and the repo is not there at
 all, so the loading lives here -- in the shipped package, taking directories
 as arguments -- and the harness binds it to the repo's own paths.
 
-WHAT A CORPUS FOLDER LOOKS LIKE::
+WHAT A REPORTS FOLDER LOOKS LIKE. Either of two layouts, because the corpus
+is a renamed copy in this repo and the SAME reports already sit on the
+cluster under the names their authors gave them::
 
-    <corpus_dir>/R01.pdf ... R38.pdf
-    <corpus_dir>/MANIFEST.md          one table row per report
-    <di_dir>/R01.json.gz ...          Azure Document Intelligence results
-    <labels_xlsx>                     the hand-labelled page types
+    by ID (this repo)                  by original name (the cluster)
+    <reports_dir>/R01.pdf ... R38.pdf  <reports_dir>/<whatever it is called>.pdf
+    <reports_dir>/MANIFEST.md          <manifest>  (anywhere, passed in)
+    <di_dir>/R01.json.gz               <di_dir>/DI_data_<original stem>.json
+    <labels_xlsx>                      <labels_xlsx>
 
-Only the PDFs are required. A missing manifest costs the page counts, a
-missing DI folder means the text layer is read on its own, and a missing
-spreadsheet means a run measures but does not score.
+An ID is resolved to a file through the manifest's source-file column, which
+holds the original relative path (``Reports_PDF/<name>.pdf`` for most of
+them). The match is tried as the path itself, then with its leading folder
+stripped, then on the base name case-insensitively, then on a
+punctuation-and-accent-insensitive form of the stem. A report is still an ID
+everywhere in the output; only the resolution knows the file name.
+
+Only the PDFs are required. A missing manifest costs the page counts -- and,
+in the original-name layout, the IDs themselves, since nothing else says
+which file is which. A missing DI folder means the text layer is read on its
+own, and a missing spreadsheet means a run measures but does not score.
+
+BOTH DI FORMS ARE READ. The gzipped ``<ID>.json.gz`` is what this repo's
+copy holds; ``DI_data_<original stem>.json`` uncompressed is the form
+Funhouse produced them in and the form they are already in on the cluster.
+The gzipped one is preferred where both exist, and the file is sniffed for
+the gzip magic rather than trusted from its suffix.
 
 PRIVACY. A report is an ID everywhere. :attr:`ReportInfo.private_name` holds
 the manifest's source-file stem because the label sheets have to be matched
-to IDs, and it is the one field ``repr`` leaves out.
+to IDs and the cluster's files have to be found by name;
+:attr:`ReportInfo.private_path` holds the relative path it came from. They
+are the two fields ``repr`` leaves out.
 
 WHAT ``di`` DOES, and why ``auto`` is the useful setting. planlens'
 ``text_source`` REPLACES the PDF's text on every page it covers -- there is
@@ -111,6 +130,7 @@ class ReportInfo:
 
     id: str
     private_name: str
+    private_path: str = ""
     origin: str = ""
     pages: int = 0
     text_pages: int = 0
@@ -208,38 +228,102 @@ class _PagesOf:
 class Corpus:
     """The reports, their DI results and their hand labels, in one folder.
 
-    ``corpus_dir`` holds ``R01.pdf`` ... and ``MANIFEST.md``. ``di_dir``
-    holds ``R01.json.gz`` ...; it defaults to ``corpus_dir/../di`` and then
-    to ``corpus_dir/di``, so both the repo's layout and a flat cluster folder
+    ``reports_dir`` holds the PDFs, named either ``R01.pdf`` ... or as their
+    authors named them (see the module docstring). ``manifest`` is the
+    corpus manifest and defaults to ``MANIFEST.md`` beside the reports --
+    pass it explicitly when the reports folder is someone else's, which on
+    the cluster it is. ``di_dir`` holds the Azure Document Intelligence
+    results; it defaults to ``reports_dir/../di`` and then to
+    ``reports_dir/di``, so both the repo's layout and a flat cluster folder
     work without an argument. ``labels_xlsx`` is the hand-label spreadsheet.
     ``cache_dir`` is where the derived sheet-to-ID map is written; it
-    defaults beside the corpus and is skipped silently if unwritable, which
+    defaults beside the reports and is skipped silently if unwritable, which
     is what a read-only Volume needs.
     """
 
-    def __init__(self, corpus_dir: Any, *, di_dir: Any = None,
-                 labels_xlsx: Any = None, cache_dir: Any = None) -> None:
-        self.corpus_dir = Path(corpus_dir)
+    def __init__(self, reports_dir: Any, *, manifest: Any = None,
+                 di_dir: Any = None, labels_xlsx: Any = None,
+                 cache_dir: Any = None) -> None:
+        self.reports_dir = Path(reports_dir)
+        #: Older name for the same folder, kept so the harness and any
+        #: notebook written against it keep working.
+        self.corpus_dir = self.reports_dir
         if di_dir is not None:
             self.di_dir = Path(di_dir)
-        elif (self.corpus_dir.parent / "di").is_dir():
-            self.di_dir = self.corpus_dir.parent / "di"
+        elif (self.reports_dir.parent / "di").is_dir():
+            self.di_dir = self.reports_dir.parent / "di"
         else:
-            self.di_dir = self.corpus_dir / "di"
+            self.di_dir = self.reports_dir / "di"
         self.labels_xlsx = Path(labels_xlsx) if labels_xlsx else None
-        self.cache_dir = Path(cache_dir) if cache_dir else self.corpus_dir.parent
-        self.manifest = self.corpus_dir / "MANIFEST.md"
+        self.cache_dir = (Path(cache_dir) if cache_dir
+                          else self.reports_dir.parent)
+        self.manifest = (Path(manifest) if manifest
+                         else self.reports_dir / "MANIFEST.md")
         self.di_manifest = self.di_dir / "MANIFEST.md"
+        self._rows: Optional[List[ReportInfo]] = None
         self._reports: Optional[List[ReportInfo]] = None
+        self._pdfs: Optional[Dict[str, Path]] = None
+        self._di_paths: Optional[Dict[str, Path]] = None
         self._di_rows: Optional[Dict[str, Dict[str, Any]]] = None
         self._sheets: Optional[Tuple[List[SheetMatch], Dict[int, str]]] = None
+
+    # -- finding the files -------------------------------------------------
+    def _rows_from_manifest(self) -> List[ReportInfo]:
+        """The manifest's rows, parsed once. Empty if there is no manifest."""
+        if self._rows is None:
+            self._rows = (self._parse_manifest() if self.manifest.is_file()
+                          else [])
+        return self._rows
+
+    def _pdf_index(self, refresh: bool = False) -> Dict[str, Path]:
+        """ID to the PDF that is it, under whichever name it carries."""
+        if self._pdfs is not None and not refresh:
+            return self._pdfs
+        found: Dict[str, Path] = {}
+        if not self.reports_dir.is_dir():
+            self._pdfs = found
+            return found
+
+        for path in sorted(self.reports_dir.glob("R[0-9][0-9].pdf")):
+            found[path.stem] = path
+
+        rows = [r for r in self._rows_from_manifest() if r.id not in found]
+        if rows:
+            # One walk of the folder, then every row is a dict lookup: a
+            # synced SharePoint folder is slow to list and there are 38 rows.
+            by_name: Dict[str, Path] = {}
+            by_norm: Dict[str, Path] = {}
+            for path in sorted(self.reports_dir.rglob("*.pdf")):
+                by_name.setdefault(path.name.lower(), path)
+                by_norm.setdefault(_norm(path.stem), path)
+            for info in rows:
+                hit = self._resolve_one(info, by_name, by_norm)
+                if hit is not None:
+                    found[info.id] = hit
+        self._pdfs = found
+        return found
+
+    def _resolve_one(self, info: ReportInfo, by_name: Dict[str, Path],
+                     by_norm: Dict[str, Path]) -> Optional[Path]:
+        """The file one manifest row names, tried four ways."""
+        rel = (info.private_path or info.private_name).replace("\\", "/")
+        candidates = [rel]
+        if "/" in rel:                       # the manifest's Reports_PDF/ ...
+            candidates.append(rel.split("/", 1)[1])
+        for candidate in candidates:
+            path = self.reports_dir / candidate
+            if path.is_file():
+                return path
+        base = Path(rel).name.lower()
+        if not base.endswith(".pdf"):
+            base += ".pdf"
+        return by_name.get(base) or by_norm.get(_norm(info.private_name))
 
     # -- is it here --------------------------------------------------------
     @property
     def available(self) -> bool:
         """Is there a corpus at this path at all?"""
-        return self.corpus_dir.is_dir() and bool(
-            list(self.corpus_dir.glob("R[0-9][0-9].pdf")))
+        return self.reports_dir.is_dir() and bool(self._pdf_index())
 
     @property
     def labels_available(self) -> bool:
@@ -248,26 +332,39 @@ class Corpus:
     def _require(self) -> None:
         if not self.available:
             raise FileNotFoundError(
-                f"no corpus at {self.corpus_dir}: expected R01.pdf ... "
-                f"R38.pdf and MANIFEST.md there")
+                f"no reports at {self.reports_dir}: expected R01.pdf ... "
+                f"R38.pdf there, or the reports under their original file "
+                f"names together with a manifest ({self.manifest}) whose "
+                f"source-file column names them")
 
     # -- the reports -------------------------------------------------------
     def list_reports(self, refresh: bool = False) -> List[ReportInfo]:
         """Every report, in ID order, from the manifest or from the files."""
         if self._reports is not None and not refresh:
             return list(self._reports)
+        if refresh:
+            self._rows = None
+            self._pdfs = None
         self._require()
-        rows: List[ReportInfo] = []
-        if self.manifest.is_file():
-            rows = self._parse_manifest()
+        rows = list(self._rows_from_manifest())
         if not rows:
-            # No manifest: the PDFs themselves are the list. Page counts stay
-            # zero rather than being guessed; nothing here needs them.
+            # No manifest: the ID-named PDFs themselves are the list. Page
+            # counts stay zero rather than being guessed; nothing here needs
+            # them, and an original-name folder cannot get this far.
             rows = [ReportInfo(id=p.stem, private_name=p.stem)
-                    for p in sorted(self.corpus_dir.glob("R[0-9][0-9].pdf"))]
+                    for p in sorted(self.reports_dir.glob("R[0-9][0-9].pdf"))]
         rows.sort(key=lambda r: r.id)
         self._reports = rows
         return list(rows)
+
+    def present_ids(self) -> List[str]:
+        """IDs whose PDF is actually in the folder, in ID order.
+
+        The manifest lists all 38; a cluster folder may hold a subset, and a
+        caller that knows which is which can say so instead of failing one
+        report at a time.
+        """
+        return sorted(self._pdf_index())
 
     def _parse_manifest(self) -> List[ReportInfo]:
         def cells_of(line: str) -> List[str]:
@@ -295,9 +392,11 @@ class Corpus:
             cells = cells_of(line)
             if len(cells) < 10 or not _ID_RE.match(cells[0]):
                 continue
+            source = cells[1].strip().strip("`")
             rows.append(ReportInfo(
                 id=cells[0],
-                private_name=Path(cells[1].strip().strip("`")).stem,
+                private_name=Path(source).stem,
+                private_path=source,
                 origin=cells[2],
                 pages=as_int(cells[3]),
                 text_pages=as_int(cells[4]),
@@ -321,9 +420,12 @@ class Corpus:
 
     def pdf_path(self, rid: str) -> Path:
         self._require()
-        path = self.corpus_dir / f"{rid}.pdf"
-        if not path.is_file():
-            raise FileNotFoundError(f"no PDF for {rid} at {path}")
+        path = self._pdf_index().get(rid)
+        if path is None:
+            raise FileNotFoundError(
+                f"no PDF for {rid} in {self.reports_dir}: neither {rid}.pdf "
+                f"nor the file the manifest's source-file column names for "
+                f"it is there")
         return path
 
     # -- Azure Document Intelligence ---------------------------------------
@@ -348,7 +450,46 @@ class Corpus:
         self._di_rows = out
         return out
 
+    def _di_index(self) -> Dict[str, Path]:
+        """Every DI result in the folder, by lower-cased file name."""
+        if self._di_paths is not None:
+            return self._di_paths
+        found: Dict[str, Path] = {}
+        if self.di_dir.is_dir():
+            for path in sorted(self.di_dir.rglob("*.json*")):
+                if path.is_file():
+                    found.setdefault(path.name.lower(), path)
+        self._di_paths = found
+        return found
+
     def di_file(self, rid: str) -> Path:
+        """The DI result for one ID, in whichever form it is here.
+
+        ``<ID>.json.gz`` is this repo's form and ``DI_data_<original
+        stem>.json`` is the cluster's; gzip wins where both exist, because it
+        is the smaller read. The returned path may not exist -- callers ask
+        :meth:`has_di` or let :meth:`load_di` answer None.
+        """
+        index = self._di_index()
+        names = [f"{rid}.json.gz", f"{rid}.json"]
+        stem = ""
+        for info in self._rows_from_manifest():
+            if info.id == rid:
+                stem = info.private_name
+                break
+        if stem:
+            names += [f"di_data_{stem}.json.gz", f"di_data_{stem}.json"]
+        for name in names:
+            hit = index.get(name.lower())
+            if hit is not None:
+                return hit
+        if stem:                      # punctuation- and case-insensitive
+            wanted = _norm(f"DI_data_{stem}")
+            for suffix in (".json.gz", ".json"):
+                for name, path in index.items():
+                    if name.endswith(suffix) and _norm(
+                            name[:-len(suffix)]) == wanted:
+                        return path
         return self.di_dir / f"{rid}.json.gz"
 
     def has_di(self, rid: str) -> bool:
@@ -368,7 +509,10 @@ class Corpus:
         if not path.is_file():
             return None
         try:
-            with gzip.open(path, "rt", encoding="utf-8") as fh:
+            with path.open("rb") as probe:
+                gzipped = probe.read(2) == b"\x1f\x8b"
+            opener: Any = gzip.open if gzipped else open
+            with opener(path, "rt", encoding="utf-8") as fh:
                 return json.load(fh)
         except (OSError, EOFError, json.JSONDecodeError) as exc:
             warnings.warn(

@@ -332,3 +332,35 @@ DocLayout-YOLO (AGPL), docling (torch unavoidable — optional only).
    `nexus_pip_install` probe per package (survey Part E). Cluster egress is
    firewalled: any package that downloads model weights at runtime is unusable
    as published — vendor the models or skip.
+
+## REPORT INGEST TRAIN (2026-09-17) — WP0–WP1b SHIPPED in 5.19.0; WP2–WP5 next
+
+Plan: `module_work/REPORT_INGEST_PLAN.md`. Goal, in the owner's words:
+well-organised data about each geotechnical report, usable either as a
+sub-agent in this app or as a WikiLLM-style report-library agent. The
+**record** is the product; the one-page summary and the DIGGS file are two
+exports of it.
+
+**Shipped in planlens 0.5.0 + app 5.19.0 (2026-09-17):**
+- **WP0** — the two planlens bugs (a filled-in form read as a duplicate of the
+  sheet beside it; a text layer that is there and WRONG now says so), and the
+  38-report corpus harness (`module_work/report_ingest_harness/`, dev-only).
+- **WP1** — page roles in planlens: what each page of a report IS over
+  eighteen roles with its evidence, the work items its pages make, the
+  document's printed outline and the per-page ledger.
+- **WP1b** — `report_ingest/`: document triage and the label review, the
+  engine abstraction (`PrompterEngine` counts; `ClaudeEngine` is for
+  development), the scorecard arithmetic, and
+  `cluster_scoring.score_on_cluster` for the run on the cluster.
+
+**Next, in order:** WP2 boring logs → investigations → DIGGS borings (the
+core); WP3 lab sheets → lab tests; WP4 the narrative question set, the
+reconciler, the `report_ingest` sub-agent and the library page; WP5 calc
+printouts and the long tail. **WP2 waits on the owner's cluster scoring run**
+— the WP1b gate is measured through Prompter, not on a development engine.
+
+**Parked with it:** the four disputed hand labels stay disputed (the
+spreadsheet is never edited — a hand label records what a person decided);
+Azure DI results for R02, R31, R32 and R38 would help and do not exist yet;
+one label sheet matches no corpus report and stays unmatched rather than being
+force-fitted to one of the same length.

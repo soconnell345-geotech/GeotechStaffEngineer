@@ -1,12 +1,81 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-09-11.** This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-09-17.** This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
 ---
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
+
+### 5.19.0 RELEASED (2026-09-17, tag `v5.19.0`) — the `report_ingest` package, with planlens 0.5.0
+
+**Both packages verified LIVE on PyPI 2026-09-17: planlens 0.5.0 (11:03 UTC)
+and geotech-staff-engineer 5.19.0 (requires `planlens>=0.5`, no `anthropic`).
+Cluster install NOT yet confirmed (`%pip install
+"geotech-staff-engineer==5.19.0"`, install guide §1 says what a good log looks
+like). Plan, work packages and everything parked:
+`module_work/REPORT_INGEST_PLAN.md`. Private measurements, ID-only:
+`module_work/field_feedback/2026-09-16_report-ingest/MEASUREMENTS.md`.**
+
+**What shipped.** `report_ingest/` — WP0 through WP1b of the report-ingest
+train — as a LIBRARY in the wheel. **Nothing is on the app's tool surface
+yet**: no prompt, no tool, no chat behaviour changed, and planlens 0.5.0's
+`document_roles` is not wired either (it goes in with the ingest sub-agent).
+The package holds the two passes that need the whole document in view, which
+is the thing per-page rules cannot do: `triage()`, one structured call over
+the per-page ledger, the printed outline, the front matter and the first
+contact sheet, returning a `DocumentProfile` whose `workflow` chooses the
+readers that follow; and `review_labels()`, an agent loop with `read_page` /
+`render_page` / `contact_sheet` / `outline`, told the rules' own weak spots
+first. The review returns only CHANGES and Python applies them — a model
+re-emitting 455 page-to-label pairs drops one silently and the scorecard then
+scores the slip rather than the judgement — and each change is graded
+`fixed` / `broke` / `still_wrong` / `disputed`.
+
+**Why it is shaped this way.** The app runs in Funhouse against OpenAI models
+through Prompter, so a number measured anywhere else measures a model that
+will never do the work (owner's correction, 2026-09-17). `PrompterEngine` is
+therefore the engine that counts and `ClaudeEngine` is a DEVELOPMENT engine
+whose numbers are a checkpoint, never a result.
+`cluster_scoring.score_on_cluster(...)` is the owner's notebook cell: reports
+read **under their own file names** from the folder they are already in (IDs
+resolved through the manifest's source-file column), Azure DI results read as
+either `<ID>.json.gz` or the uncompressed `DI_data_<stem>.json`, a
+`/Workspace` out_dir refused up front, resumable report by report, and one
+`RESULTS.md` to bring home carrying IDs, labels, counts and rates only.
+
+**Dependencies.** Pin raised to plain **`planlens>=0.5`** (0.5.0 on PyPI
+2026-09-17: page roles, work items, the printed outline, the per-page ledger,
+`text_reliable`, and the fix for a scanned appendix read as 69 duplicates).
+planlens 0.5.0 declares exactly what 0.4.0 declared, so **no new third-party
+package reaches the cluster**. `anthropic` stays optional and uninstalled
+there; `openpyxl` was already a hard requirement of `python-ags4` (a direct
+app dependency) and the label reader imports it lazily anyway. Two
+`pyproject.toml` lines were the release-critical part: `report_ingest*` in
+`[tool.setuptools.packages.find]` — without it the wheel builds clean and
+simply has no package in it, failing on the cluster as an import error, so
+the built wheel was listed to prove it — and `report_ingest` in pytest
+`testpaths`, or its 117 tests never run in the gate.
+
+Release gate **11,890 passed / 33 skipped / 0 failed**, run in three chunks
+and gated on pytest's exit code, never on a piped tail.
+
+**First live checks:** (1) `%pip install "geotech-staff-engineer==5.19.0"` on
+the cluster, `planlens-0.5.0` in the same `Successfully installed` line and no
+new package beyond it; (2) one `score_on_cluster(...)` cell with
+`max_reports=2` against the reports already in Funhouse — it finds them by
+their own names, writes `runs/`, `triage/` and `RESULTS.md` under
+`/tmp/report_ingest_wp1b`, and `RESULTS.md` comes back with the WP1b numbers
+on the model that will do the work.
+
+**Parked, and deliberately so:** WP2–WP5 of the plan (boring logs →
+investigations → DIGGS, lab tests, the narrative question set, the record and
+its exports). The four disputed hand labels stay disputed — the spreadsheet is
+never edited, because a hand label records what a person decided. Four
+reports (R02, R31, R32, R38) would be worth Azure DI results the owner does
+not yet have. One label sheet matches no corpus report and stays unmatched
+rather than being force-fitted.
 
 ### 5.18.0 RELEASED (2026-09-16, tag `v5.18.0`) — interactive `plot_data`, planlens 0.4 quantities + fuzzy search
 
