@@ -19,9 +19,8 @@ from report_ingest.lab_scoring import (
     score_record, score_tables, split_unit, table_numbers,
 )
 from report_ingest.model import (
-    AtterbergResult, ChemicalResult, GradationResult, LabTest, Quantity,
-    SievePoint, StrengthResult, StrengthSpecimen, SummaryRow,
-    SummaryTableResult,
+    AtterbergResult, GradationResult, LabTest, Quantity, SievePoint,
+    StrengthResult, StrengthSpecimen,
 )
 
 

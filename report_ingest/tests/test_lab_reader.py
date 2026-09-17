@@ -168,8 +168,18 @@ class TestWhatTheModelIsShown:
     def test_the_system_prompt_states_the_four_rules(self):
         for rule in ("SHEET'S OWN TITLE", "READ THE TABLE BEFORE THE PLOT",
                      "UNITS STAY AS PRINTED", "A SUMMARY TABLE IS ONE ENTRY",
-                     "A PAGE WITH NO RESULTS IS STILL AN ANSWER"):
+                     "A PAGE WITH NO RESULTS IS STILL AN ANSWER",
+                     "ANOTHER LANGUAGE"):
             assert rule in LAB_READER_SYSTEM
+
+    def test_the_prompt_names_the_words_a_sheet_uses_in_other_languages(self):
+        """A third of these laboratories do not work in English, and what
+        says a number's meaning is the word printed next to it."""
+        for word in ("GRANULOMETRIQUE", "TENEUR EN EAU", "CORTE DIRECTO",
+                     "SONDEO"):
+            assert word in LAB_READER_SYSTEM
+        assert "do not" in LAB_READER_SYSTEM
+        assert "translate it" in LAB_READER_SYSTEM
 
     def test_a_page_with_no_text_says_so(self, tmp_path):
         """A blank page is a page to look at, and the brief says so."""

@@ -462,3 +462,91 @@ def test_a_log_whose_report_is_absent_is_named_and_skipped(logs_cluster,
     logs = _logs_run(logs_cluster)["logs"]
     assert logs["n_logs"] == 1
     assert "R31_p278" not in [r["log_id"] for r in logs["per_log"]]
+
+
+# ---------------------------------------------------------------------------
+# the lab stage
+# ---------------------------------------------------------------------------
+
+class TestTheLabStage:
+    def test_the_stage_is_offered_and_needs_its_truth(self):
+        from report_ingest.cluster_scoring import STAGE_NAMES, score_on_cluster
+
+        assert "lab" in STAGE_NAMES
+        with pytest.raises(ValueError, match="lab_truth_dir"):
+            score_on_cluster(reports_dir="anywhere", prompter=object(),
+                             stages=("lab",))
+
+    def test_the_scorecard_renders_ids_kinds_and_rates_and_nothing_else(self):
+        """RESULTS.md is the file that comes home, so it carries no wording
+        from a page."""
+        from report_ingest.cluster_scoring import _render_lab, _score_lab
+
+        done = {
+            "gradation__R36_p52": {
+                "sheet_id": "gradation__R36_p52", "report": "R36",
+                "kind": "gradation", "set": "open", "served_by": "gpt-x",
+                "before": {"scores": {"index": {"found": 4, "total": 6},
+                                      "series": {"found": 5, "total": 5}},
+                           "overall": {"found": 9, "total": 11}},
+                "after": {"scores": {"kind": {"found": 1, "total": 1},
+                                     "link": {"found": 1, "total": 1},
+                                     "index": {"found": 6, "total": 6},
+                                     "series": {"found": 5, "total": 5}},
+                          "overall": {"found": 13, "total": 13},
+                          "model_calls": 1, "tool_calls": 0,
+                          "unresolved": 0, "changes": 0, "error": None},
+                "cost": {"calls": 1, "input_tokens": 9000,
+                         "output_tokens": 700, "cache_read_tokens": 0,
+                         "dollars": 0.0},
+                "seconds": 12.0,
+            },
+            "triaxial__R35_p45": {
+                "sheet_id": "triaxial__R35_p45", "report": "R35",
+                "kind": "triaxial", "set": "blind", "served_by": "gpt-x",
+                "before": {"scores": {"index": {"found": 0, "total": 7}},
+                           "overall": {"found": 0, "total": 7}},
+                "after": {"scores": {"kind": {"found": 1, "total": 1},
+                                     "link": {"found": 1, "total": 1},
+                                     "index": {"found": 5, "total": 7}},
+                          "overall": {"found": 7, "total": 9},
+                          "model_calls": 2, "tool_calls": 1,
+                          "unresolved": 1, "changes": 1, "error": None},
+                "cost": {"calls": 2, "input_tokens": 14000,
+                         "output_tokens": 900, "cache_read_tokens": 0,
+                         "dollars": 0.0},
+                "seconds": 30.0,
+            },
+        }
+        scored = _score_lab(done, {"chemical__R17_p155": "not in the folder"},
+                            "funhouse-gpt-high", ("R36", "R28"))
+        assert scored["n_sheets"] == 2
+        assert scored["sets"]["open"]["n_sheets"] == 1
+        assert scored["sets"]["blind"]["n_sheets"] == 1
+        assert scored["kinds"]["gradation"]["n_sheets"] == 1
+        text = "\n".join(_render_lab(scored))
+        assert "gradation__R36_p52" in text and "triaxial__R35_p45" in text
+        assert "chemical__R17_p155: not in the folder" in text
+        # kind and link are the model's alone, and the table says so.
+        assert "no before column" in text
+        assert "Per kind" in text and "Per sheet" in text
+
+    def test_a_sheet_moved_into_the_open_set_moves_in_the_scorecard(self):
+        """The split is decided at scoring time, never frozen into a run."""
+        from report_ingest.cluster_scoring import _score_lab
+
+        row = {
+            "sheet_id": "gradation__R06_p67", "report": "R06",
+            "kind": "gradation", "set": "blind", "served_by": "",
+            "before": {"scores": {}, "overall": {"found": 0, "total": 0}},
+            "after": {"scores": {}, "overall": {"found": 0, "total": 0},
+                      "model_calls": 1, "tool_calls": 0, "unresolved": 0,
+                      "changes": 0, "error": None},
+            "cost": {"calls": 1, "input_tokens": 0, "output_tokens": 0,
+                     "cache_read_tokens": 0, "dollars": 0.0},
+            "seconds": 1.0,
+        }
+        row["set"] = "open"          # what _run_lab does on a resumed run
+        scored = _score_lab({"gradation__R06_p67": row}, {}, "m", ("R06",))
+        assert scored["sets"]["open"]["n_sheets"] == 1
+        assert "blind" not in scored["sets"]

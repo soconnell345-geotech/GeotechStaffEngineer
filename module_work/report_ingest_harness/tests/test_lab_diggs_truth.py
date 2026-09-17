@@ -33,7 +33,7 @@ import pytest
 
 from module_work.report_ingest_harness import lab_truth_records as T
 from report_ingest.diggs_writer import (
-    DiggsWriteNotes, diggs_roundtrip_gate, diggs_schema_gate, write_diggs,
+    diggs_roundtrip_gate, diggs_schema_gate, write_diggs,
 )
 from report_ingest.model import Project
 

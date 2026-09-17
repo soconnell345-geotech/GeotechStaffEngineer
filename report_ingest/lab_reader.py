@@ -696,6 +696,16 @@ Mg/m3 as Mg/m3, a uniaxial strength in MPa as MPa. Never convert anything.
 State the sheet's depth unit once, as 'ft' or 'm', and report every depth in
 it unchanged.
 
+A SHEET IN ANOTHER LANGUAGE IS READ THE SAME WAY. Many of these laboratories
+work in French, Spanish or Portuguese: a grading is ANALYSE GRANULOMETRIQUE or
+GRANULOMETRIA, a passing percentage is TAMISAT or QUE PASA, a water content is
+TENEUR EN EAU or HUMEDAD, a shear box is CISAILLEMENT or CORTE DIRECTO, a
+boring is a SONDAGE or a SONDEO. Set the language field ('fr', 'es', 'pt') and
+otherwise change nothing: the kind still comes from the title, the values keep
+their units, and a description stays in the sheet's own words -- do not
+translate it. Decimal commas are the same number as decimal points; report
+1,45 as 1.45.
+
 VALUES THE SHEET PRINTS AS WORDS ARE RESULTS. '<10' is not the number ten:
 put '<10' in the text field and leave the number null. So with 'Nil',
 'trace', 'positive', 'N.P.', 'non-plastic'. A liquid limit that the sheet
