@@ -2723,3 +2723,477 @@ warnings seen:
   R34_p49: page 49: no depth ruler was found — no column holds three or more numbers that fall on a straight line, so nothing on this page carries a depth
 
 ```
+
+---
+
+## WP1 -- page roles -- round 6
+
+Measured 2026-09-17 with the app venv and the editable planlens checkout. 4147 hand-labelled pages, opened `di="auto"`, scored against `labels.labels_for`, split into a development set (R09, R12, R15, R16, R20, R23, R28, R29, R30) and a held-out set (R11, R13, R18, R21, R24). **The gate is on the held-out set**: precision AND recall >= 0.90 on `boring_log`, `test_pit_log`, `lab_test`, `narrative`, `calculation`.
+
+**Development Set**, round by round
+
+| round | boring_log P/R | test_pit_log P/R | lab_test P/R | narrative P/R | calculation P/R | accuracy | what changed |
+|---|---|---|---|---|---|---|---|
+| 1 | 0.970 / 0.941 | 0.959 / 0.920 | 0.936 / 0.953 | 0.942 / 0.933 | 0.997 / 0.974 | 0.900 | first measurement of the rules on the live documents (all 14 reports; measured before the split) |
+| 2 | 0.970 / 0.941 | 0.959 / 0.920 | 0.936 / 0.984 | 0.942 / 0.933 | 0.997 / 0.974 | 0.912 | dynamic-probing abbreviations (DPL/DPM/DPH/DPSH/DPT/LCPT) as DCP titles; chemical and grading laboratory titles; a tab of logs no longer claims a page of prose (all 14 reports; measured before the split) |
+| 3 | 0.963 / 0.919 | 0.949 / 0.925 | 0.967 / 0.984 | 0.965 / 0.959 | 0.999 / 0.987 | 0.923 | the dev / held-out split, and document_outline + page_ledger added; NO rule changed this round |
+| 4 | 0.963 / 0.919 | 0.949 / 0.925 | 0.967 / 0.984 | 0.965 / 0.959 | 0.999 / 0.987 | 0.923 | a role a page did NOT name itself now carries INHERITED_CONFIDENCE and says so; no prediction changed, so every rate is identical to round 3 |
+| 5 | 0.948 / 0.919 | 0.947 / 0.885 | 0.958 / 0.989 | 0.976 / 0.948 | 0.999 / 0.995 | 0.920 | the four principles: a page that names itself beats its tab, prose needs narrative evidence, a tab that names several things chooses on the page or says other, and a nested report records its inner role |
+| 6 | 0.948 / 0.919 | 0.947 / 0.885 | 0.958 / 0.989 | 0.976 / 0.948 | 0.999 / 0.995 | 0.920 |  |
+
+**Held-Out Set**, round by round
+
+| round | boring_log P/R | test_pit_log P/R | lab_test P/R | narrative P/R | calculation P/R | accuracy | what changed |
+|---|---|---|---|---|---|---|---|
+| 1 | - | - | - | - | - | - | first measurement of the rules on the live documents (all 14 reports; measured before the split) |
+| 2 | - | - | - | - | - | - | dynamic-probing abbreviations (DPL/DPM/DPH/DPSH/DPT/LCPT) as DCP titles; chemical and grading laboratory titles; a tab of logs no longer claims a page of prose (all 14 reports; measured before the split) |
+| 3 | 0.987 / 1.000 | 1.000 / 0.902 | 0.813 / 0.983 | 0.851 / 0.832 | 0.992 / 0.938 | 0.887 | the dev / held-out split, and document_outline + page_ledger added; NO rule changed this round |
+| 4 | 0.987 / 1.000 | 1.000 / 0.902 | 0.813 / 0.983 | 0.851 / 0.832 | 0.992 / 0.938 | 0.887 | a role a page did NOT name itself now carries INHERITED_CONFIDENCE and says so; no prediction changed, so every rate is identical to round 3 |
+| 5 | 0.987 / 1.000 | 1.000 / 0.902 | 0.813 / 0.983 | 0.959 / 0.786 | 0.971 / 0.903 | 0.880 | the four principles: a page that names itself beats its tab, prose needs narrative evidence, a tab that names several things chooses on the page or says other, and a nested report records its inner role |
+| 6 | 0.987 / 1.000 | 1.000 / 0.902 | 0.813 / 0.983 | 0.959 / 0.786 | 0.971 / 0.903 | 0.880 |  |
+
+### Where held-out lags development
+
+- **`lab_test` lags by more than 0.05**: precision 0.958 to 0.813. The confusions that cost it on the held-out set: `other -> lab_test` (14 pages), `calculation -> lab_test` (14 pages), `narrative -> lab_test` (7 pages).
+- **`narrative` lags by more than 0.05**: recall 0.948 to 0.787. The confusions that cost it on the held-out set: `narrative -> lab_test` (7 pages), `narrative -> other` (7 pages), `narrative -> plan` (2 pages).
+- **`calculation` lags by more than 0.05**: recall 0.995 to 0.903. The confusions that cost it on the held-out set: `calculation -> lab_test` (14 pages), `calculation -> profile` (8 pages), `figure -> calculation` (5 pages).
+
+### This round in full
+
+#### Held-Out Set
+
+5 reports (R11, R13, R18, R21, R24), 1300 pages, 99 s.
+
+| role | precision | recall | F1 | hand-labelled |
+|---|---|---|---|---|
+| `narrative` **(gated)** | 0.959 | 0.787 | 0.864 | 89 |
+| `figure` | 0.273 | 0.261 | 0.267 | 23 |
+| `plan` | 0.312 | 0.833 | 0.455 | 6 |
+| `profile` | 0.438 | 0.467 | 0.452 | 15 |
+| `boring_log` **(gated)** | 0.987 | 1.000 | 0.993 | 75 |
+| `test_pit_log` **(gated)** | 1.000 | 0.902 | 0.948 | 51 |
+| `cpt_log` | 0.368 | 1.000 | 0.538 | 7 |
+| `dcp_log` | 0.000 | 0.000 | 0.000 | 0 |
+| `lab_test` **(gated)** | 0.813 | 0.983 | 0.890 | 177 |
+| `field_test` | 0.250 | 1.000 | 0.400 | 2 |
+| `calculation` **(gated)** | 0.971 | 0.903 | 0.936 | 259 |
+| `appended_report` | 1.000 | 1.000 | 1.000 | 472 |
+| `photos` | 0.000 | 0.000 | 0.000 | 0 |
+| `divider` | 0.333 | 0.824 | 0.475 | 17 |
+| `cover` | 1.000 | 0.250 | 0.400 | 8 |
+| `letter` | 1.000 | 0.500 | 0.667 | 4 |
+| `toc` | 0.875 | 1.000 | 0.933 | 7 |
+| `other` | 0.500 | 0.239 | 0.323 | 88 |
+
+Page accuracy **0.880** over 1300 pages. The gate does NOT pass.
+
+Confusion matrix (rows = hand label, columns = predicted):
+
+| hand \ pred | narr | figu | plan | prof | bori | test | cpt_ | dcp_ | lab_ | fiel | calc | appe | phot | divi | cove | lett | toc | othe |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `narrative` | 70 | . | 2 | . | . | . | 1 | . | 7 | . | . | . | . | 1 | . | . | 1 | 7 |
+| `figure` | . | 6 | 3 | . | . | . | . | . | 3 | . | 5 | . | . | . | . | . | . | 6 |
+| `plan` | . | . | 5 | 1 | . | . | . | . | . | . | . | . | . | . | . | . | . | . |
+| `profile` | 2 | 2 | . | 7 | . | . | . | . | . | . | 2 | . | . | . | . | . | . | 2 |
+| `boring_log` | . | . | . | . | 75 | . | . | . | . | . | . | . | . | . | . | . | . | . |
+| `test_pit_log` | . | . | 5 | . | . | 46 | . | . | . | . | . | . | . | . | . | . | . | . |
+| `cpt_log` | . | . | . | . | . | . | 7 | . | . | . | . | . | . | . | . | . | . | . |
+| `dcp_log` | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . |
+| `lab_test` | . | 2 | . | . | . | . | . | . | 174 | . | . | . | . | 1 | . | . | . | . |
+| `field_test` | . | . | . | . | . | . | . | . | . | 2 | . | . | . | . | . | . | . | . |
+| `calculation` | . | . | 1 | 8 | . | . | 1 | . | 14 | . | 234 | . | . | 1 | . | . | . | . |
+| `appended_report` | . | . | . | . | . | . | . | . | . | . | . | 472 | . | . | . | . | . | . |
+| `photos` | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . |
+| `divider` | . | . | . | . | . | . | . | . | 2 | . | . | . | . | 14 | . | . | . | 1 |
+| `cover` | . | 2 | . | . | . | . | . | . | . | . | . | . | . | . | 2 | . | . | 4 |
+| `letter` | 1 | . | . | . | . | . | . | . | . | . | . | . | . | . | . | 2 | . | 1 |
+| `toc` | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | 7 | . |
+| `other` | . | 10 | . | . | 1 | . | 10 | 1 | 14 | 6 | . | . | . | 25 | . | . | . | 21 |
+
+Column keys: `narr` = narrative, `figu` = figure, `plan` = plan, `prof` = profile, `bori` = boring_log, `test` = test_pit_log, `cpt_` = cpt_log, `dcp_` = dcp_log, `lab_` = lab_test, `fiel` = field_test, `calc` = calculation, `appe` = appended_report, `phot` = photos, `divi` = divider, `cove` = cover, `lett` = letter, `toc` = toc, `othe` = other.
+
+Per-report accuracy:
+
+| ID | pages | accuracy |
+|---|---|---|
+| R11 | 156 | 0.904 |
+| R13 | 197 | 0.843 |
+| R18 | 64 | 0.969 |
+| R21 | 729 | 0.962 |
+| R24 | 154 | 0.481 |
+
+82 pages where a gated role is involved and the rules and the hand label disagree. They are NOT listed page by page: closing a gap by reading the held-out pages is how a held-out set stops being one. The confusions, by size:
+
+| hand -> predicted | pages |
+|---|---|
+| `other -> lab_test` | 14 |
+| `calculation -> lab_test` | 14 |
+| `calculation -> profile` | 8 |
+| `narrative -> lab_test` | 7 |
+| `narrative -> other` | 7 |
+| `figure -> calculation` | 5 |
+| `test_pit_log -> plan` | 5 |
+| `figure -> lab_test` | 3 |
+| `lab_test -> figure` | 2 |
+| `narrative -> plan` | 2 |
+| `profile -> calculation` | 2 |
+| `profile -> narrative` | 2 |
+| `divider -> lab_test` | 2 |
+| `lab_test -> divider` | 1 |
+| `letter -> narrative` | 1 |
+| `calculation -> plan` | 1 |
+| `calculation -> cpt_log` | 1 |
+| `calculation -> divider` | 1 |
+| `narrative -> toc` | 1 |
+| `narrative -> divider` | 1 |
+| `narrative -> cpt_log` | 1 |
+| `other -> boring_log` | 1 |
+
+#### Development Set
+
+9 reports (R09, R12, R15, R16, R20, R23, R28, R29, R30), 2847 pages, 346 s.
+
+| role | precision | recall | F1 | hand-labelled |
+|---|---|---|---|---|
+| `narrative` **(gated)** | 0.976 | 0.948 | 0.962 | 344 |
+| `figure` | 0.264 | 0.368 | 0.308 | 38 |
+| `plan` | 0.294 | 0.417 | 0.345 | 12 |
+| `profile` | 0.750 | 0.692 | 0.720 | 13 |
+| `boring_log` **(gated)** | 0.948 | 0.919 | 0.933 | 198 |
+| `test_pit_log` **(gated)** | 0.947 | 0.885 | 0.915 | 200 |
+| `cpt_log` | 1.000 | 0.875 | 0.933 | 16 |
+| `dcp_log` | 0.967 | 0.537 | 0.690 | 54 |
+| `lab_test` **(gated)** | 0.958 | 0.989 | 0.973 | 815 |
+| `field_test` | 0.882 | 0.882 | 0.882 | 17 |
+| `calculation` **(gated)** | 0.999 | 0.995 | 0.997 | 750 |
+| `appended_report` | 0.815 | 1.000 | 0.898 | 22 |
+| `photos` | 0.904 | 0.856 | 0.879 | 132 |
+| `divider` | 0.864 | 0.864 | 0.864 | 66 |
+| `cover` | 1.000 | 0.409 | 0.581 | 22 |
+| `letter` | 1.000 | 1.000 | 1.000 | 2 |
+| `toc` | 1.000 | 0.611 | 0.759 | 18 |
+| `other` | 0.509 | 0.648 | 0.570 | 128 |
+
+Page accuracy **0.920** over 2847 pages.
+
+Confusion matrix (rows = hand label, columns = predicted):
+
+| hand \ pred | narr | figu | plan | prof | bori | test | cpt_ | dcp_ | lab_ | fiel | calc | appe | phot | divi | cove | lett | toc | othe |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `narrative` | 326 | 2 | 4 | 1 | . | . | . | . | 5 | . | . | 1 | 1 | . | . | . | . | 4 |
+| `figure` | 3 | 14 | 6 | . | 1 | . | . | . | . | . | . | . | . | . | . | . | . | 14 |
+| `plan` | . | . | 5 | 1 | . | . | . | . | . | 2 | 1 | . | 1 | . | . | . | . | 2 |
+| `profile` | . | . | . | 9 | 1 | . | . | . | . | . | . | . | . | . | . | . | . | 3 |
+| `boring_log` | . | 9 | . | . | 182 | 3 | . | . | . | . | . | . | 1 | . | . | . | . | 3 |
+| `test_pit_log` | . | . | . | . | 1 | 177 | . | . | 2 | . | . | . | 3 | 1 | . | . | . | 16 |
+| `cpt_log` | . | . | . | . | . | . | 14 | . | . | . | . | . | . | . | . | . | . | 2 |
+| `dcp_log` | . | 15 | . | . | . | . | . | 29 | . | . | . | . | . | . | . | . | . | 10 |
+| `lab_test` | . | . | . | . | . | . | . | . | 806 | . | . | . | . | . | . | . | . | 9 |
+| `field_test` | . | . | . | . | . | . | . | . | 2 | 15 | . | . | . | . | . | . | . | . |
+| `calculation` | . | . | . | 1 | . | . | . | . | 2 | . | 746 | . | . | 1 | . | . | . | . |
+| `appended_report` | . | . | . | . | . | . | . | . | . | . | . | 22 | . | . | . | . | . | . |
+| `photos` | . | . | . | . | 1 | 2 | . | . | 5 | . | . | . | 113 | 4 | . | . | . | 7 |
+| `divider` | . | 2 | . | . | . | . | . | . | 1 | . | . | 4 | . | 57 | . | . | . | 2 |
+| `cover` | 1 | 3 | . | . | . | . | . | . | 1 | . | . | . | . | . | 9 | . | . | 8 |
+| `letter` | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | 2 | . | . |
+| `toc` | 4 | . | 1 | . | . | . | . | . | 2 | . | . | . | . | . | . | . | 11 | . |
+| `other` | . | 8 | 1 | . | 6 | 5 | . | 1 | 15 | . | . | . | 6 | 3 | . | . | . | 83 |
+
+Column keys: `narr` = narrative, `figu` = figure, `plan` = plan, `prof` = profile, `bori` = boring_log, `test` = test_pit_log, `cpt_` = cpt_log, `dcp_` = dcp_log, `lab_` = lab_test, `fiel` = field_test, `calc` = calculation, `appe` = appended_report, `phot` = photos, `divi` = divider, `cove` = cover, `lett` = letter, `toc` = toc, `othe` = other.
+
+Per-report accuracy:
+
+| ID | pages | accuracy |
+|---|---|---|
+| R09 | 151 | 0.901 |
+| R12 | 159 | 0.899 |
+| R15 | 202 | 0.871 |
+| R16 | 426 | 0.948 |
+| R20 | 370 | 0.968 |
+| R23 | 397 | 0.937 |
+| R28 | 455 | 0.901 |
+| R29 | 131 | 0.733 |
+| R30 | 556 | 0.944 |
+
+121 pages where a gated role is involved and the rules and the hand label disagree. `rule` and `why` are the evidence planlens itself recorded; the page HEADING is omitted on purpose -- the largest type on a log or a laboratory sheet is a firm's title block, and this file is tracked in a public repository. The same list WITH headings is written to `raw/checks/wp1_misses.txt`, which is gitignored.
+
+**R09** (10)
+
+```
+R09 p1    hand=narrative       pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R09 p2    hand=narrative       pred=other           kind=figure        rule='the page names itself' why="legend or notes sheet 'conversion factors'"
+R09 p4    hand=narrative       pred=lab_test        kind=figure        rule='the page names itself' why='11 laboratory test terms on the page'
+R09 p6    hand=narrative       pred=profile         kind=figure        rule='the page names itself' why="profile title 'probable soil'"
+R09 p8    hand=narrative       pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R09 p13   hand=figure          pred=narrative       kind=figure        rule="prose carrying the narrative's running footer" why=''
+R09 p14   hand=figure          pred=narrative       kind=figure        rule="prose carrying the narrative's running footer" why=''
+R09 p15   hand=figure          pred=narrative       kind=figure        rule="prose carrying the narrative's running footer" why=''
+R09 p17   hand=other           pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test name 'liquid limit' on a page of working"
+R09 p150  hand=other           pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test name 'laboratory testing' on a page of worki"
+```
+
+**R12** (13)
+
+```
+R12 p1    hand=cover           pred=narrative       kind=figure        rule="prose carrying the narrative's running header" why=''
+R12 p3    hand=toc             pred=narrative       kind=mixed         rule="prose carrying the narrative's running header" why=''
+R12 p22   hand=narrative       pred=lab_test        kind=figure        rule='the page names itself' why='7 laboratory test terms on the page'
+R12 p54   hand=figure          pred=boring_log      kind=figure        rule='the page names itself' why="log title 'borehole no', 2 log form fields"
+R12 p61   hand=test_pit_log    pred=lab_test        kind=figure        rule='the page names itself' why="laboratory test title 'permeability' beside a reference to t"
+R12 p62   hand=test_pit_log    pred=lab_test        kind=figure        rule='the page names itself' why="laboratory test title 'permeability' beside a reference to t"
+R12 p64   hand=other           pred=lab_test        kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+R12 p78   hand=other           pred=lab_test        kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+R12 p116  hand=field_test      pred=lab_test        kind=figure        rule='INHERITED from a tab that names several things; chosen on th' why='a results form or a plotted result'
+R12 p117  hand=field_test      pred=lab_test        kind=figure        rule='INHERITED from a tab that names several things; chosen on th' why='a results form or a plotted result'
+R12 p122  hand=other           pred=lab_test        kind=figure        rule='the page names itself' why='2 laboratory test terms on the page'
+R12 p132  hand=other           pred=lab_test        kind=figure        rule='the page names itself' why="laboratory test title 'water extract'"
+R12 p139  hand=other           pred=lab_test        kind=figure        rule='the page names itself' why='2 laboratory test terms on the page'
+```
+
+**R15** (18)
+
+```
+R15 p3    hand=toc             pred=narrative       kind=text          rule="prose carrying the narrative's running header" why=''
+R15 p5    hand=narrative       pred=plan            kind=mixed         rule='the page names itself' why="plan title 'site plans'"
+R15 p11   hand=narrative       pred=photos          kind=text          rule='the page names itself' why='photograph caption (2)'
+R15 p31   hand=narrative       pred=lab_test        kind=text          rule='the page names itself' why="laboratory test title 'laboratory testing' beside a referenc"
+R15 p39   hand=other           pred=boring_log      kind=text          rule='the page names itself' why="log title 'test borings', 13 log form fields"
+R15 p42   hand=other           pred=test_pit_log    kind=mixed         rule='the page names itself' why="log title 'test pit', 5 log form fields"
+R15 p63   hand=boring_log      pred=photos          kind=form          rule='the page names itself' why='photograph caption (1)'
+R15 p67   hand=test_pit_log    pred=boring_log      kind=form          rule='the page names itself' why="log title 'boring number', 6 log form fields"
+R15 p76   hand=divider         pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'laboratory test'"
+R15 p90   hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p92   hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p102  hand=lab_test        pred=other           kind=form          rule='form page with no title of its own' why=''
+R15 p103  hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p104  hand=lab_test        pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R15 p107  hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p108  hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p109  hand=lab_test        pred=other           kind=text          rule='text page with no title of its own' why=''
+R15 p110  hand=lab_test        pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+```
+
+**R16** (4)
+
+```
+R16 p7    hand=narrative       pred=other           kind=text          rule='text page with no title of its own' why=''
+R16 p27   hand=profile         pred=boring_log      kind=form          rule='the page names itself' why='log form shape, 6 log form fields'
+R16 p79   hand=other           pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'laboratory test'"
+R16 p128  hand=cover           pred=lab_test        kind=mixed         rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+```
+
+**R20** (4)
+
+```
+R20 p8    hand=narrative       pred=plan            kind=text          rule='the page names itself' why="plan title 'geologic map'"
+R20 p29   hand=narrative       pred=appended_report kind=text          rule='inside a report bound into this one' why=''
+R20 p115  hand=test_pit_log    pred=divider         kind=mixed         rule='tab or cover page naming what follows' why=''
+R20 p365  hand=calculation     pred=profile         kind=form          rule='the page names itself' why="profile title 'cross section'"
+```
+
+**R23** (16)
+
+```
+R23 p5    hand=narrative       pred=other           kind=text          rule='text page with no title of its own' why=''
+R23 p170  hand=boring_log      pred=test_pit_log    kind=figure        rule='its tab named several things and the page names none; the ru' why=''
+R23 p171  hand=boring_log      pred=test_pit_log    kind=mixed         rule='its tab named several things and the page names none; the ru' why=''
+R23 p184  hand=boring_log      pred=test_pit_log    kind=mixed         rule='its tab named several things and the page names none; the ru' why=''
+R23 p186  hand=test_pit_log    pred=other           kind=figure        rule='its appendix tab names several things and the page names non' why=''
+R23 p187  hand=test_pit_log    pred=other           kind=text          rule='its appendix tab names several things and the page names non' why=''
+R23 p188  hand=test_pit_log    pred=other           kind=figure        rule='its appendix tab names several things and the page names non' why=''
+R23 p189  hand=test_pit_log    pred=other           kind=text          rule='its appendix tab names several things and the page names non' why=''
+R23 p190  hand=test_pit_log    pred=other           kind=figure        rule='its appendix tab names several things and the page names non' why=''
+R23 p191  hand=boring_log      pred=other           kind=text          rule='its appendix tab names several things and the page names non' why=''
+R23 p192  hand=boring_log      pred=other           kind=figure        rule='its appendix tab names several things and the page names non' why=''
+R23 p193  hand=test_pit_log    pred=other           kind=text          rule='its appendix tab names several things and the page names non' why=''
+R23 p194  hand=boring_log      pred=other           kind=figure        rule='its appendix tab names several things and the page names non' why=''
+R23 p195  hand=test_pit_log    pred=other           kind=text          rule='its appendix tab names several things and the page names non' why=''
+R23 p196  hand=test_pit_log    pred=other           kind=figure        rule='its appendix tab names several things and the page names non' why=''
+R23 p255  hand=other           pred=lab_test        kind=text          rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+```
+
+**R28** (16)
+
+```
+R28 p4    hand=toc             pred=narrative       kind=text          rule="prose carrying the narrative's running header" why=''
+R28 p5    hand=toc             pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'laboratory test'"
+R28 p53   hand=other           pred=boring_log      kind=text          rule='the page names itself' why="log title 'test borings', 15 log form fields"
+R28 p56   hand=other           pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'sieve' beside a reference to the expl"
+R28 p233  hand=test_pit_log    pred=photos          kind=figure        rule='the page names itself' why='photograph caption (1)'
+R28 p236  hand=test_pit_log    pred=photos          kind=figure        rule='the page names itself' why='photograph caption (1)'
+R28 p238  hand=test_pit_log    pred=photos          kind=figure        rule='the page names itself' why='photograph caption (1)'
+R28 p253  hand=test_pit_log    pred=other           kind=figure        rule='its appendix tab names several things and the page names non' why=''
+R28 p254  hand=test_pit_log    pred=other           kind=figure        rule='its appendix tab names several things and the page names non' why=''
+R28 p255  hand=test_pit_log    pred=other           kind=figure        rule='its appendix tab names several things and the page names non' why=''
+R28 p256  hand=test_pit_log    pred=other           kind=figure        rule='its appendix tab names several things and the page names non' why=''
+R28 p257  hand=test_pit_log    pred=other           kind=figure        rule='its appendix tab names several things and the page names non' why=''
+R28 p258  hand=test_pit_log    pred=other           kind=figure        rule='its appendix tab names several things and the page names non' why=''
+R28 p259  hand=test_pit_log    pred=other           kind=figure        rule='its appendix tab names several things and the page names non' why=''
+R28 p260  hand=test_pit_log    pred=other           kind=figure        rule='its appendix tab names several things and the page names non' why=''
+R28 p414  hand=calculation     pred=lab_test        kind=text          rule='the page names itself' why="laboratory test title 'consolidation'"
+```
+
+**R29** (16)
+
+```
+R29 p3    hand=toc             pred=narrative       kind=text          rule="prose carrying the narrative's running header" why=''
+R29 p5    hand=toc             pred=lab_test        kind=text          rule='the page names itself' why="laboratory test name 'california bearing ratio' on a page of"
+R29 p8    hand=narrative       pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'moisture content'"
+R29 p11   hand=narrative       pred=plan            kind=text          rule='the page names itself' why="plan title 'geologic map'"
+R29 p24   hand=narrative       pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'corrosivity'"
+R29 p40   hand=narrative       pred=other           kind=mixed         rule='mixed page with no title of its own' why=''
+R29 p53   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p54   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p55   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p56   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p57   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p58   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p59   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p60   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p61   hand=boring_log      pred=figure          kind=figure        rule='figure page with no title of its own' why=''
+R29 p130  hand=calculation     pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'gradation'"
+```
+
+**R30** (24)
+
+```
+R30 p5    hand=narrative       pred=plan            kind=text          rule='the page names itself' why="plan title 'site and vicinity'"
+R30 p49   hand=plan            pred=calculation     kind=form          rule='the page names itself' why="calculation heading 'global stability'"
+R30 p58   hand=other           pred=boring_log      kind=mixed         rule='INHERITED from its appendix tab; the page says nothing about' why="['boring_log']"
+R30 p81   hand=other           pred=boring_log      kind=mixed         rule='INHERITED from its appendix tab; the page says nothing about' why="['boring_log']"
+R30 p82   hand=photos          pred=boring_log      kind=form          rule='INHERITED from its appendix tab; the page says nothing about' why="['boring_log']"
+R30 p83   hand=other           pred=boring_log      kind=mixed         rule='INHERITED from its appendix tab; the page says nothing about' why="['boring_log']"
+R30 p118  hand=other           pred=boring_log      kind=mixed         rule='INHERITED from its appendix tab; the page says nothing about' why="['boring_log']"
+R30 p131  hand=other           pred=test_pit_log    kind=mixed         rule='INHERITED from its appendix tab; the page says nothing about' why="['test_pit_log']"
+R30 p139  hand=other           pred=test_pit_log    kind=mixed         rule='INHERITED from its appendix tab; the page says nothing about' why="['test_pit_log']"
+R30 p150  hand=other           pred=test_pit_log    kind=mixed         rule='INHERITED from its appendix tab; the page says nothing about' why="['test_pit_log']"
+R30 p196  hand=other           pred=test_pit_log    kind=mixed         rule='INHERITED from its appendix tab; the page says nothing about' why="['test_pit_log']"
+R30 p198  hand=photos          pred=test_pit_log    kind=mixed         rule='INHERITED from its appendix tab; the page says nothing about' why="['test_pit_log']"
+R30 p199  hand=photos          pred=test_pit_log    kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['test_pit_log']"
+R30 p228  hand=other           pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'laboratory test'"
+R30 p296  hand=other           pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'laboratory test'"
+R30 p297  hand=other           pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'laboratory testing'"
+R30 p385  hand=other           pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'laboratory testing'"
+R30 p418  hand=photos          pred=lab_test        kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+R30 p419  hand=photos          pred=lab_test        kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+R30 p430  hand=other           pred=lab_test        kind=mixed         rule='the page names itself' why="laboratory test title 'laboratory testing'"
+R30 p471  hand=photos          pred=lab_test        kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+R30 p472  hand=photos          pred=lab_test        kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+R30 p473  hand=photos          pred=lab_test        kind=figure        rule='INHERITED from its appendix tab; the page says nothing about' why="['lab_test']"
+R30 p523  hand=calculation     pred=divider         kind=mixed         rule='tab or cover page naming what follows' why=''
+```
+
+---
+
+### log_grid scorecard, round 3 (overprinted lines + title-block headers)
+
+Note on the WP1 block above it: `measure_wp1_labels.py` appends by default, so
+re-running it to check the text-extraction change wrote a "round 6" block.
+That block IS the check, and it is the answer: held-out page accuracy 0.880
+over 1,300 pages, the same as the recorded baseline. Dropping overprinted
+lines moved no page role.
+
+Two defects the lead found by reading log pages I am not allowed to open.
+
+**A line drawn twice.** Some forms draw a string a second time at the same
+place to fake a bold weight. Fixed in planlens' TEXT EXTRACTION rather than in
+log_grid, because it is not a log fact: counting a line twice doubles a page's
+words, returns two search hits for one occurrence, and hands a reader "9 9 10
+10" where the page reads 9, 10. Measured over the whole 7,829-page corpus:
+4,751 overprinted lines on 523 pages of at least twelve reports (R28 922, R02
+886, R31 684, R21 540, R23 504, R34 190, R29 180, R30 176, R20 159, R03 119,
+R17 88, R16 73), up to 2.5 per cent of a report's lines. For a depth ruler it
+was fatal rather than untidy: "5, 5, 10, 10, 15, 15" has no strictly rising
+run of three in it, so three sheets refused their scale outright. The fitter
+also collapses ticks sharing a value and a y, so a duplicate reaching it by
+another route cannot do the same again.
+
+**A title block naming a column.** A header candidate must now lie inside the
+column it would name; a line crossing column boundaries is the form talking
+about the sheet. It stays available to `fields`.
+
+**Result.** The open six did not move by a single cell for the third round
+running: 407 placed, 332 unmatched. On the blind nine the ruler went 6/9 to
+9/9 -- the only sheet now without one is the tabular list that HAS no scale --
+the unit 3/8 to 5/8, and layer tops 14/26 to 22/26. Samples, index values and
+fields did not move.
+
+**What is still short, and why (numbers only; no page was opened).** Three
+sheets find their rulers and read their layers while every one of their 15 to
+19 columns comes back `other`, which is why their samples and index values
+score zero. The cause is geometric, not lexical: these forms draw NO rule
+under their header row. The only rules crossing the whole form sit at y 86.2,
+107.8 and 134.9 of a body running to 755.8, so every candidate band lies in
+the top 50 pt and none of them can hold the column labels. Scored bands, per
+sheet:
+
+```
+R34_p49  ruled y 86.2..755.8, 19 columns, full-width rules at 86.2/107.8/134.9
+         candidate body_top=107.8  band=( 86.2,107.8)  4 lines  names 0 columns
+         candidate body_top=134.9  band=(107.8,134.9)  4 lines  names 0 columns
+R21_p96  ruled y 86.3..755.9, 15 columns, full-width rules at 86.3/107.9/134.9
+         candidate body_top=107.9  band=( 86.3,107.9)  4 lines  names 0 columns
+         candidate body_top=134.9  band=(107.9,134.9)  4 lines  names 0 columns
+R15_p46  (an OPEN sheet, for contrast: the divider exists)
+         candidate body_top=241.0  band=( 89.8,241.0) 58 lines  names 2 columns
+         candidate body_top=280.6  band=(241.0,280.6) 13 lines  names 8 columns
+```
+
+Their rulers are right, which is the check that matters: R34 reads 6.00 to
+13.50 m over 9 ticks with residual 0.001, R21 8.00 to 18.00 m over 11 ticks,
+R30 5.00 to 11.00 over 7 ticks.
+
+**Rejected, with the measurement.** Deriving the header band from the ruler's
+own first tick when no drawn band names anything. It does not name those
+columns either, and on the one blind sheet where it did fire it reached up
+into the sheet's own fields: layer tops 5/5 to 3/5, fields 2/6 to 0/6, cells
+42 to 71, to buy one depth unit. The drawn line stays the only evidence for
+where a header band is.
+
+### log_grid scorecard, 2026-09-17
+
+Tolerances: sample and index values 0.15 m, layer tops 0.3 m; depths compared in metres whatever the log prints. Open set = R36, R37, R06, R07, R15, R28.
+
+```
+log         set      ruler   unit      samples       layers        index       fields  cells unmatched
+------------------------------------------------------------------------------------------------------
+R06_p51     open       yes    yes     100% 4/4     100% 5/5     100% 4/4      75% 6/8     62        54
+R07_p30     open       yes    yes     100% 8/8     100% 9/9     100% 6/6   100% 13/13    103        93
+R15_p46     open       yes    yes     100% 8/8     100% 4/4   100% 14/14   100% 13/13     75        58
+R28_p57     open       yes    yes   100% 16/16     100% 5/5      75% 3/4   100% 13/13     78        66
+R36_p38     open       yes    yes     100% 8/8     100% 6/6     100% 8/8     82% 9/11     34        19
+R37_p26     open       yes    yes   100% 13/13     100% 5/5            -     90% 9/10     55        42
+ALL         open    100% 6/6 100% 6/6   100% 57/57   100% 34/34    97% 35/36    93% 63/68    407       332
+
+R02_p123    blind      yes     NO            -     100% 1/1            -      33% 2/6     89        89
+R03_p135    blind      yes    yes            -     100% 1/1       0% 0/1      40% 2/5     69        69
+R04_p59     blind      yes     NO            -     100% 5/5            -      33% 2/6     42        42
+R13_p45     blind      yes    yes    92% 24/26     100% 5/5     54% 7/13    83% 10/12    105        92
+R21_p96     blind      yes    yes       0% 0/6      67% 2/3       0% 0/2      40% 2/5     75        75
+R25_p19     blind  refused     NO            -            -            -            -      0         0
+R30_p65     blind      yes     NO       0% 0/8     100% 1/1            -      40% 2/5     71        71
+R31_p278    blind      yes    yes            -     100% 2/2            -   100% 11/11     27        27
+R34_p49     blind      yes    yes      0% 0/10      62% 5/8       0% 0/1      50% 2/4    112       112
+ALL         blind   100% 9/9  62% 5/8    48% 24/50    85% 22/26     41% 7/17    61% 33/54    590       577
+
+notes:
+  R02_p123: the truth states no samples; the grid put 0 numeric cell(s) in a blow-count column
+  R25_p19: tabular sheet with no depth scale: 10 layers and 1 samples not scored by depth
+  R31_p278: the truth states no samples; the grid put 0 numeric cell(s) in a blow-count column
+
+warnings seen:
+  R02_p123: the depth unit is not stated on these pages and could not be read from their text; depths are in whatever the ruler prints
+  R03_p135: no column header states the depth unit; ft was read off depths written into the log's own text
+  R04_p59: the depth unit is not stated on these pages and could not be read from their text; depths are in whatever the ruler prints
+  R13_p45: page 45: the text was read optically (azure_di); boxes and column edges are softer than on an embedded text layer
+  R13_p45: page 45: no ruled column edges were found; the columns below come from the header labels alone and their x bands are approximate
+  R15_p46: page 46: 1 text line(s) run diagonally across the page (a watermark or a stamp) and were left out of the grid
+  R21_p96: no column header states the depth unit; m was read off depths written into the log's own text
+  R25_p19: page 19: no ruled column edges were found; the columns below come from the header labels alone and their x bands are approximate
+  R25_p19: page 19: no columns could be laid out — nothing on this page is placed
+  R25_p19: page 19: no depth ruler was found — nothing on this page carries a depth
+  R25_p19: no description column was identified, so no layers were read
+  R30_p65: the depth unit is not stated on these pages and could not be read from their text; depths are in whatever the ruler prints
+  R34_p49: no column header states the depth unit; m was read off depths written into the log's own text
+
+```
