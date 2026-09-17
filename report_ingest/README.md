@@ -6,10 +6,18 @@ what each page **is**; this package adds the judgement that needs the whole
 document in view. Two passes ship here today. The readers, the record and the
 DIGGS writer are later work packages.
 
-| Pass | Module | Shape | Model in development |
-|---|---|---|---|
-| 0b. Document triage | `triage.py` | one structured call | `claude-sonnet-5` |
-| 0c. Label review | `label_review.py` | an agent loop with four tools | `claude-opus-5` |
+| Pass | Module | Shape |
+|---|---|---|
+| 0b. Document triage | `triage.py` | one structured call |
+| 0c. Label review | `label_review.py` | an agent loop with four tools |
+
+**The numbers come from the cluster.** This app runs in Funhouse against
+OpenAI models through the Prompter API, so a score measured on any other model
+measures a model that will never do the work. `PrompterEngine` is the engine
+that counts and `cluster_scoring.score_on_cluster` is how a run is made.
+`ClaudeEngine` stays in the package as a development engine — it is what the
+passes were built and debugged against — but its numbers are a checkpoint, not
+a result.
 
 ## Why they exist
 
@@ -84,6 +92,98 @@ recorded in `rejected_changes` instead of applied: a page that does not exist, a
 label outside the vocabulary, a second change to a page already changed, and a
 change to the label the page already has. A change's `from` is always overwritten
 with what the rules really said, so a model that misremembers is visible.
+
+## Running it on the cluster
+
+This is the run that produces the real numbers, and the owner makes it. Put
+the corpus somewhere the cluster can read — a Unity Catalog Volume, or a synced
+SharePoint folder — laid out as `R01.pdf` … `R38.pdf` plus `MANIFEST.md`, with
+the Azure Document Intelligence results as `<di_dir>/R01.json.gz` and the hand
+labels as the spreadsheet. Then install the two test wheels and run one cell.
+
+```python
+# 1. Both wheels in ONE command, so pip resolves them together.
+%pip install --no-deps \
+  "/Volumes/<your volume>/wheels/planlens-0.4.0+wp1b.<date>-py3-none-any.whl" \
+  "/Volumes/<your volume>/wheels/geotech_staff_engineer-5.18.0+wp1b.<date>-py3-none-any.whl"
+dbutils.library.restartPython()
+```
+
+```python
+# 2. One cell. fh_prompter is the object you already have.
+from report_ingest.cluster_scoring import score_on_cluster
+
+results = score_on_cluster(
+    corpus_dir   = "/Volumes/<your volume>/report_corpus",
+    labels_xlsx  = "/Volumes/<your volume>/report_corpus/trial_pages_working_r2.xlsx",
+    di_dir       = "/Volumes/<your volume>/report_di",
+    oos_labels   = "/Volumes/<your volume>/report_corpus/oos_labels.json",  # optional
+    out_dir      = "/tmp/report_ingest_wp1b",
+    prompter     = fh_prompter,
+    model        = "funhouse-gpt-medium",   # the label review
+    triage_model = "funhouse-gpt-low",      # one call over a ledger
+    sets         = ("insample", "oos_open", "oos_blind"),
+)
+```
+
+Bring back **`/tmp/report_ingest_wp1b/RESULTS.md`**. That is the whole report,
+and it carries IDs, labels, counts and rates only. The per-report runs and the
+triage profiles stay on the cluster in `runs/` and `triage/` unless you move
+them deliberately, because a change's reason and a triage rationale can name a
+firm, a project or a person.
+
+Notes that matter:
+
+- **`out_dir` must be `/tmp` or a Volume.** A `/Workspace` path is refused up
+  front rather than discovered at the end, because those writes are
+  non-durable and permission-blocked here (`docs/DATABRICKS_INSTALL.md`).
+- **It resumes.** Each report writes its run file as it finishes and a later
+  call skips any report that already has one. A detached notebook costs the
+  reports that had not finished, not the ones that had. Pass `redo=True` to
+  start over, or delete one file to redo one report.
+- **Start small.** `max_reports=2` on the first run proves the path end to end
+  for the price of two reports.
+- **No credential is read.** Authentication is whatever `fh_prompter` was built
+  with. Nothing here touches an environment variable or a secret scope.
+- **Tokens, not dollars.** Funhouse publishes no per-token price for a
+  capability tier, so the run reports tokens and you read the spend from
+  Funhouse's own budget endpoint for the same window.
+- **The test wheels are built from a branch, not released.** Their versions
+  carry a `+wp1b.<date>` local suffix so they cannot be mistaken for 0.4.0 or
+  5.18.0, and they sort *above* those, so the app's own `planlens>=0.4`
+  requirement is still satisfied. A `.dev` suffix would have sorted below and
+  broken it.
+
+## What the Prompter engine can and cannot do
+
+| | Prompter (OpenAI through Funhouse) | Claude API (development) |
+|---|---|---|
+| Multi-turn tool loop | yes, through `prompter.client` | yes |
+| Images | yes, as `image_url` data URIs | yes |
+| Structured output | yes, `response_format` with a strict JSON schema | yes |
+| Image inside a tool result | **no** — see below | yes |
+| Explicit prompt caching | no; the provider caches what it caches | yes, and it is asked for |
+| Budget guard on every call | only on single-shot calls | not applicable |
+
+Two of those need explaining because they changed the code.
+
+**An image cannot go in a tool result.** OpenAI's `role="tool"` message takes a
+string and nothing else, and the label review's `render_page` and
+`contact_sheet` answer with a picture. So an image-bearing result is sent as a
+tool message saying the picture follows, and the picture rides in a user
+message immediately after the tool messages. The model sees both and the
+ordering rules are kept. On the Claude API the picture simply goes in the tool
+result, so the same review does slightly different work on the two engines —
+worth remembering when comparing their numbers.
+
+**The tool loop bypasses the SDK's budget guard.** Prompter's own `chat()`
+sends exactly one system and one user message, which cannot express an
+assistant turn with tool calls, so the loop drives `prompter.client` directly
+exactly as the app's `NativeToolEngine` does. Single-shot calls with no tools
+still go through `chat()`, so triage keeps the guard and the SDK's logging and
+only the review is outside it. On a backend where `prompter.client` is `None`
+(Grok) there is no loop at all, and the engine says so rather than failing
+deep in a run.
 
 ## The engine, and where it runs
 
@@ -211,10 +311,28 @@ and a later editor who does not know why will delete it.
 Nothing is wired into the app yet and `pyproject.toml` is untouched. When it
 ships it will need:
 
-- `report_ingest` added to `[tool.setuptools.packages.find]` and
-  `report_ingest` (or `report_ingest/tests`) added to pytest's `testpaths`;
-- `pydantic`, already a dependency;
-- `anthropic` kept **optional**. Nothing outside `ClaudeEngine` imports it, and
-  `report_ingest/__init__.py` reaches every entry point through a lazy import,
-  so importing the package costs an app nothing at startup and the cluster,
-  which runs the Prompter, never needs the package at all.
+- **`report_ingest*` added to `[tool.setuptools.packages.find]`.** Until that
+  line lands, a wheel built from this repo does **not** contain this package.
+  The test wheels get the line injected into a throwaway copy of the tree at
+  build time, so they work while the repo stays unchanged — but a release built
+  without it would silently ship without `report_ingest`, and the failure would
+  appear on the cluster as an import error, not at build time.
+- `report_ingest` added to pytest's `testpaths`, or these tests never run in
+  the gate.
+- `pydantic`, already a dependency.
+- `anthropic` kept **optional**, and on the cluster not installed at all.
+  Nothing outside `ClaudeEngine` imports it, `report_ingest/__init__.py` reaches
+  every entry point through a lazy import, and a test spawns a fresh
+  interpreter to prove that importing the package pulls in neither `anthropic`
+  nor `planlens`.
+
+## How the corpus is read
+
+`corpus.Corpus` takes directories as arguments — the PDFs, the Azure results,
+the spreadsheet — because the same corpus is a gitignored folder in this repo
+during development and a Volume on the cluster during a real run. The WP0
+harness (`module_work/report_ingest_harness/`) is now that loader bound to the
+repo's own paths, so there is one implementation and the harness's own tests
+check it. `scoring.py` holds the rates, the sets and the change verdicts for the
+same reason: two copies of that arithmetic would drift, and the second copy's
+numbers would be the ones nobody checked.

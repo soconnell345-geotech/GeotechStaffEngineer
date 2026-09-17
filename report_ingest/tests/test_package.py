@@ -14,7 +14,8 @@ assert "report_ingest.engine" not in sys.modules, (
     "importing report_ingest pulled in its engine module")
 assert "planlens" not in sys.modules, (
     "importing report_ingest pulled in planlens")
-for name in ("triage", "review_labels", "ClaudeEngine", "CostMeter"):
+for name in ("triage", "review_labels", "score_on_cluster",
+             "PrompterEngine", "ClaudeEngine", "CostMeter"):
     assert callable(getattr(report_ingest, name)), name
 print("ok")
 """

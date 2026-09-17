@@ -35,6 +35,7 @@ adds no dependency.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from dataclasses import dataclass, field
@@ -42,8 +43,9 @@ from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 
 __all__ = [
     "Engine", "Reply", "ToolCall", "Usage", "CostMeter", "ClaudeEngine",
-    "MODEL_PRICES", "text_block", "image_block", "tool_use_block",
-    "tool_result_block", "opaque_block", "user", "assistant",
+    "PrompterEngine", "MODEL_PRICES", "PROMPTER_MODELS", "strict_schema",
+    "text_block", "image_block", "tool_use_block", "tool_result_block",
+    "opaque_block", "user", "assistant",
 ]
 
 #: List price per MILLION tokens, ``(input, output)``, as published for the
@@ -61,6 +63,19 @@ MODEL_PRICES: Dict[str, Tuple[float, float]] = {
 #: costs a tenth. Both are multipliers on the model's INPUT price.
 CACHE_WRITE_RATE = 1.25
 CACHE_READ_RATE = 0.10
+
+#: Funhouse publishes models by CAPABILITY TIER, not by name, and the model
+#: behind a tier changes without notice. These are the three aliases, and
+#: they are what a cluster run should record -- ``response.model`` says which
+#: deployment actually served it, and the scorecard keeps that too.
+#:
+#: There is no published per-token price for a tier, so a cluster run reports
+#: TOKENS, not dollars: :meth:`Usage.dollars` returns 0.0 for a model it has
+#: no price for rather than inventing one. Spend is read from Funhouse's own
+#: budget endpoint.
+PROMPTER_MODELS: Tuple[str, ...] = (
+    "funhouse-gpt-low", "funhouse-gpt-medium", "funhouse-gpt-high",
+)
 
 DEFAULT_MAX_TOKENS = 16000
 
@@ -417,6 +432,326 @@ class ClaudeEngine:
             stop_reason=str(getattr(response, "stop_reason", "") or ""),
             usage=usage,
             model=self.model,
+            seconds=seconds,
+            content=blocks,
+        )
+
+
+# -- the production engine --------------------------------------------------
+
+def strict_schema(model: Any) -> Dict[str, Any]:
+    """A pydantic model's JSON schema, in the shape strict mode demands.
+
+    OpenAI's ``json_schema`` response format with ``strict: true`` requires
+    every object to set ``additionalProperties: false`` and to list EVERY
+    property in ``required``. Pydantic emits neither for a field with a
+    default, so the schema is walked and both are imposed. ``$defs`` and
+    ``$ref`` are left alone -- strict mode understands them -- and so is
+    ``anyOf``, which is how an optional field's null arm arrives.
+    """
+    import copy
+
+    schema = copy.deepcopy(model.model_json_schema())
+
+    #: Keys whose value is a MAP of names to schemas; each value is walked.
+    maps = ("properties", "$defs", "definitions", "patternProperties")
+    #: Keys whose value is itself a schema, or a list of them.
+    schemas = ("items", "anyOf", "allOf", "oneOf", "prefixItems", "not",
+               "additionalItems", "contains")
+
+    def walk(node: Any) -> None:
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+            return
+        if not isinstance(node, dict):
+            return
+        if node.get("type") == "object" or "properties" in node:
+            node["additionalProperties"] = False
+            node["required"] = list(node.get("properties") or {})
+        for key, value in node.items():
+            if key in maps and isinstance(value, dict):
+                for child in value.values():
+                    walk(child)
+            elif key in schemas:
+                walk(value)
+
+    walk(schema)
+    return schema
+
+
+class PrompterEngine:
+    """:class:`Engine` over Funhouse's Prompter, for the cluster.
+
+    This is the engine the numbers come from. The app runs in Funhouse
+    against OpenAI models through Prompter, so a score measured on Claude
+    measures a model that will never do the work.
+
+    It takes the live ``fh_prompter`` object the owner already has in the
+    notebook. No credential is read, stored or passed: authentication is
+    whatever that object was built with.
+
+    HOW IT DIFFERS FROM THE CLAUDE ENGINE, because the wire format differs
+    and the difference is not cosmetic:
+
+    * A tool result is its own ``role="tool"`` message rather than a block
+      inside the next user turn, and each one must follow its assistant turn
+      immediately.
+    * **A tool message's content must be a string.** The label review's
+      ``render_page`` and ``contact_sheet`` answer with a PICTURE, and there
+      is nowhere in a tool message to put one. So an image-bearing result is
+      sent as a tool message saying the picture follows, and the picture
+      itself rides in a user message straight after the tool messages. The
+      model sees both; the ordering rules are respected.
+    * Structured output is ``response_format`` with a strict JSON schema
+      (:func:`strict_schema`), not a parsed pydantic object, so the reply's
+      ``parsed`` is built here by validating the JSON that comes back.
+    * There is no explicit prompt cache to ask for. Azure reports what it
+      cached of its own accord in ``prompt_tokens_details.cached_tokens``,
+      and that is recorded, but nothing here can widen it.
+
+    THE RAW CLIENT, AND WHAT IT COSTS. A multi-turn tool loop needs
+    assistant-with-tool-calls and ``role="tool"`` messages, and Prompter's
+    own ``chat()`` only ever sends one system and one user message. So the
+    loop drives ``prompter.client`` directly, exactly as the app's
+    ``NativeToolEngine`` does. Two consequences, both deliberate and both in
+    the README: the SDK's ``@check_budget`` guard does not run on those
+    calls, and on a backend where ``prompter.client`` is ``None`` (Grok)
+    there is no loop at all. Single-shot calls with no tools go through
+    ``prompter.chat()`` instead, which keeps the budget guard and the SDK's
+    logging -- so triage is always budgeted, and only the review is not.
+    """
+
+    #: What a scorecard records when the tier's deployment is unknown.
+    name: str
+
+    def __init__(self, prompter: Any, model: str = "funhouse-gpt-medium", *,
+                 meter: Optional[CostMeter] = None,
+                 max_tokens: int = DEFAULT_MAX_TOKENS,
+                 prefer_chat_for_single_calls: bool = True) -> None:
+        self._prompter = prompter
+        self.model = str(model)
+        self.name = self.model
+        self.meter = meter if meter is not None else CostMeter()
+        self.max_tokens = int(max_tokens)
+        self.prefer_chat = bool(prefer_chat_for_single_calls)
+        #: The deployment that actually served the last call. Funhouse tiers
+        #: are aliases and the model behind one changes without notice, so a
+        #: run records what answered as well as what it asked for.
+        self.served_by: Optional[str] = None
+
+    @property
+    def client(self) -> Any:
+        """Prompter's own OpenAI client, or None on a backend without one."""
+        get = getattr(self._prompter, "get_openai_instance", None)
+        if callable(get):
+            return get()
+        return getattr(self._prompter, "client", None)
+
+    # -- translation -------------------------------------------------------
+    @staticmethod
+    def _content(blocks: Sequence[Any]) -> Any:
+        """Neutral blocks as OpenAI user content."""
+        out: List[Dict[str, Any]] = []
+        for block in blocks:
+            if isinstance(block, str):
+                out.append({"type": "text", "text": block})
+                continue
+            kind = block.get("type")
+            if kind == "text":
+                out.append({"type": "text", "text": block["text"]})
+            elif kind == "image":
+                import base64
+                b64 = base64.b64encode(block["png"]).decode("ascii")
+                out.append({"type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{b64}"}})
+            else:
+                raise ValueError(
+                    f"{kind!r} cannot go in a user message; tool calls and "
+                    f"tool results are separate messages here")
+        if len(out) == 1 and out[0]["type"] == "text":
+            return out[0]["text"]
+        return out
+
+    @classmethod
+    def _to_provider(cls, messages: Sequence[Dict[str, Any]],
+                     system: Optional[str]) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        if system:
+            out.append({"role": "system", "content": system})
+        for message in messages:
+            role = message["role"]
+            content = message["content"]
+            if isinstance(content, str):
+                out.append({"role": role, "content": content})
+                continue
+            blocks = list(content)
+            if role == "assistant":
+                text = "".join(b["text"] for b in blocks
+                               if isinstance(b, dict) and b.get("type") == "text")
+                calls = [b for b in blocks
+                         if isinstance(b, dict) and b.get("type") == "tool_use"]
+                turn: Dict[str, Any] = {"role": "assistant",
+                                        "content": text or None}
+                if calls:
+                    turn["tool_calls"] = [
+                        {"id": c["id"], "type": "function",
+                         "function": {"name": c["name"],
+                                      "arguments": json.dumps(
+                                          c.get("input") or {})}}
+                        for c in calls]
+                out.append(turn)
+                continue
+            # A user turn: tool results become their own messages, and any
+            # picture among them follows in a user message of its own.
+            results = [b for b in blocks
+                       if isinstance(b, dict) and b.get("type") == "tool_result"]
+            plain = [b for b in blocks
+                     if not (isinstance(b, dict)
+                             and b.get("type") == "tool_result")]
+            pictures: List[Dict[str, Any]] = []
+            for result in results:
+                body = result["content"]
+                if isinstance(body, str):
+                    text = body
+                else:
+                    words = [b["text"] for b in body
+                             if isinstance(b, dict) and b.get("type") == "text"]
+                    images = [b for b in body
+                              if isinstance(b, dict) and b.get("type") == "image"]
+                    text = " ".join(words)
+                    if images:
+                        text = ((text + " ") if text else "") + (
+                            "[the picture follows in the next message]")
+                        pictures.append(text_block(
+                            f"Picture for tool call {result['tool_use_id']}"
+                            + (f": {' '.join(words)}" if words else "")))
+                        pictures.extend(images)
+                out.append({"role": "tool",
+                            "tool_call_id": result["tool_use_id"],
+                            "content": text or "(no content)"})
+            trailing = plain + pictures
+            if trailing:
+                out.append({"role": "user", "content": cls._content(trailing)})
+        return out
+
+    # -- the protocol ------------------------------------------------------
+    def complete(self, messages: Sequence[Dict[str, Any]], *,
+                 system: Optional[str] = None,
+                 tools: Optional[Sequence[Dict[str, Any]]] = None,
+                 images: Optional[Sequence[bytes]] = None,
+                 output_format: Any = None,
+                 max_tokens: Optional[int] = None) -> Reply:
+        msgs = [dict(m) for m in messages]
+        if images:
+            if not msgs or msgs[-1]["role"] != "user":
+                msgs.append(user())
+            content = msgs[-1]["content"]
+            if isinstance(content, str):
+                content = [text_block(content)]
+            msgs[-1] = {"role": "user",
+                        "content": list(content)
+                        + [image_block(p) for p in images]}
+
+        response_format = None
+        if output_format is not None:
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": getattr(output_format, "__name__", "answer"),
+                    "schema": strict_schema(output_format),
+                    "strict": True,
+                },
+            }
+
+        openai_messages = self._to_provider(msgs, system)
+        simple = (not tools
+                  and len(openai_messages) <= (2 if system else 1)
+                  and all(m["role"] in ("system", "user")
+                          for m in openai_messages))
+        started = time.time()
+        if self.prefer_chat and simple and hasattr(self._prompter, "chat"):
+            # Keeps the SDK's budget guard and logging on every call that
+            # does not need a tool loop -- triage, above all.
+            last = openai_messages[-1]
+            raw = self._prompter.chat(
+                user=last["content"], system=system or
+                "You are a helpful assistant.",
+                model=self.model, temperature=0, return_raw=True,
+                max_tokens=int(max_tokens or self.max_tokens),
+                **({"response_format": response_format}
+                   if response_format else {}))
+        else:
+            client = self.client
+            if client is None:
+                raise RuntimeError(
+                    "this Prompter backend exposes no OpenAI client, so it "
+                    "cannot run a tool loop; the label review needs one")
+            kwargs: Dict[str, Any] = {
+                "model": self.model,
+                "messages": openai_messages,
+                "temperature": 0,
+                "max_tokens": int(max_tokens or self.max_tokens),
+            }
+            if tools:
+                kwargs["tools"] = [{"type": "function", "function": {
+                    "name": t["name"], "description": t["description"],
+                    "parameters": t["input_schema"]}} for t in tools]
+                kwargs["tool_choice"] = "auto"
+            if response_format:
+                kwargs["response_format"] = response_format
+            raw = client.chat.completions.create(**kwargs)
+        seconds = time.time() - started
+        return self._reply(raw, output_format, seconds)
+
+    def _reply(self, raw: Any, output_format: Any, seconds: float) -> Reply:
+        if raw is None:
+            raise RuntimeError(
+                "Prompter returned nothing; the call failed or was refused "
+                "(the SDK stashes the reason on the prompter object)")
+        self.served_by = getattr(raw, "model", None) or self.model
+        usage_raw = getattr(raw, "usage", None)
+        details = getattr(usage_raw, "prompt_tokens_details", None)
+        usage = Usage(
+            input_tokens=int(getattr(usage_raw, "prompt_tokens", 0) or 0),
+            output_tokens=int(getattr(usage_raw, "completion_tokens", 0) or 0),
+            cache_read_tokens=int(getattr(details, "cached_tokens", 0) or 0),
+        )
+        self.meter.add(self.model, usage, seconds)
+
+        choice = raw.choices[0] if getattr(raw, "choices", None) else None
+        message = getattr(choice, "message", None)
+        text = (getattr(message, "content", None) or "") if message else ""
+        blocks: List[Dict[str, Any]] = []
+        if text:
+            blocks.append(text_block(text))
+        calls: List[ToolCall] = []
+        for call in (getattr(message, "tool_calls", None) or []):
+            function = getattr(call, "function", None)
+            try:
+                arguments = json.loads(getattr(function, "arguments", "") or "{}")
+            except json.JSONDecodeError:
+                arguments = {}
+            calls.append(ToolCall(call.id, function.name, arguments))
+            blocks.append(tool_use_block(call.id, function.name, arguments))
+
+        parsed = None
+        if output_format is not None and text:
+            try:
+                parsed = output_format.model_validate_json(text)
+            except Exception:                       # noqa: BLE001 - reported
+                try:
+                    parsed = output_format.model_validate(json.loads(text))
+                except Exception:                   # noqa: BLE001
+                    parsed = None
+        return Reply(
+            text=text,
+            tool_calls=calls,
+            parsed=parsed,
+            stop_reason=str(getattr(choice, "finish_reason", "") or ""),
+            usage=usage,
+            model=self.served_by or self.model,
             seconds=seconds,
             content=blocks,
         )

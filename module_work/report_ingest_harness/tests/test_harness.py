@@ -156,7 +156,11 @@ def test_pages_of_narrows_a_layout_to_the_pages_it_is_given():
         def extract(self, page, index, words=False):
             return ("lines", index, words)
 
-    narrowed = corpus._PagesOf(FakeLayout(), [1, 3, 99])
+    # The narrowing lives in the shipped package now, because the cluster
+    # reads the same corpus from a Volume with no repo around it.
+    from report_ingest.corpus import _PagesOf
+
+    narrowed = _PagesOf(FakeLayout(), [1, 3, 99])
     assert narrowed.pages == [1, 3]        # 99 is outside the layout
     assert narrowed.covers(1) and not narrowed.covers(2)
     assert narrowed.extract(None, 3, words=True) == ("lines", 3, True)

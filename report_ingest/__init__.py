@@ -15,6 +15,11 @@ Two passes ship here today, both scored in
 ``report_ingest.label_review``
     An agent loop with four tools that checks the rule labels against the
     report's own account of itself and against the pages themselves.
+``report_ingest.cluster_scoring``
+    The run that produces the real numbers: the whole corpus through
+    Funhouse's Prompter, on the cluster, scored against the hand labels.
+    The app runs against OpenAI models there, so a score measured on any
+    other model measures a model that will never do the work.
 
 IMPORTS ARE LAZY ON PURPOSE. Importing this package pulls in nothing but the
 standard library: the passes are reached through :func:`triage` and
@@ -30,7 +35,24 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["triage", "review_labels", "ClaudeEngine", "CostMeter"]
+__all__ = ["triage", "review_labels", "score_on_cluster", "PrompterEngine",
+           "ClaudeEngine", "CostMeter"]
+
+
+def score_on_cluster(*args: Any, **kwargs: Any):
+    """:func:`report_ingest.cluster_scoring.score_on_cluster`, on first use.
+
+    The run that produces the real numbers: the whole corpus through
+    Prompter, scored, on the cluster.
+    """
+    from report_ingest.cluster_scoring import score_on_cluster as _score
+    return _score(*args, **kwargs)
+
+
+def PrompterEngine(*args: Any, **kwargs: Any):  # noqa: N802 - a class in effect
+    """:class:`report_ingest.engine.PrompterEngine`, imported on first use."""
+    from report_ingest.engine import PrompterEngine as _PrompterEngine
+    return _PrompterEngine(*args, **kwargs)
 
 
 def triage(*args: Any, **kwargs: Any):

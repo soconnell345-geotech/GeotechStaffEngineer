@@ -101,6 +101,10 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from module_work.report_ingest_harness import corpus, labels
+from report_ingest.scoring import (  # the cluster scores with these too
+    CHECKPOINT, DISPUTED, GATE, KEY_CONTENT, OOS_BLIND, OOS_OPEN, Scores,
+    disputed_drop, gate_failures, label_table, rate, verdict_for,
+)
 
 LEDGER = corpus.RAW_DIR.parent / "MEASUREMENTS.md"
 SECTION = "## WP1b -- triage and label review"
@@ -112,24 +116,6 @@ TRIAGE_DIR = corpus.CHECKS_DIR / "triage"
 #: The lead's out-of-sample hand labels.
 OOS_LABELS = corpus.CHECKS_DIR / "oos" / "labels.json"
 
-#: The labels a downstream reader depends on. The gate after review is 0.98
-#: precision AND recall on these.
-KEY_CONTENT: Tuple[str, ...] = (
-    "narrative", "plan", "profile", "boring_log", "test_pit_log", "cpt_log",
-    "dcp_log", "lab_test", "calculation",
-)
-GATE = 0.98
-
-OOS_OPEN: Tuple[str, ...] = ("R01", "R02", "R03", "R04", "R05", "R06", "R07",
-                             "R08", "R10", "R14")
-OOS_BLIND: Tuple[str, ...] = ("R17", "R19", "R22", "R25", "R26", "R27",
-                              "R31", "R32", "R33", "R34", "R35", "R36",
-                              "R37", "R38")
-#: The six the cost checkpoint runs on: two short public reports, the
-#: 455-page one, the one with a 75-page scanned appendix, and a small 2006
-#: report.
-CHECKPOINT: Tuple[str, ...] = ("R36", "R37", "R05", "R28", "R15", "R14")
-
 TRIAGE_MODEL = "claude-sonnet-5"
 REVIEW_MODEL = "claude-opus-5"
 
@@ -137,43 +123,6 @@ REVIEW_MODEL = "claude-opus-5"
 #: fire after the report it names has run, so it stops the NEXT one.
 MAX_REPORT_DOLLARS = 5.00
 MAX_TOTAL_DOLLARS = 45.00
-
-#: Pages where the review contradicted the hand label and the LEAD judged the
-#: hand label to be the doubtful one. The spreadsheet is never edited: a hand
-#: label is a record of what a person decided, and rewriting it to suit a
-#: model would destroy the only independent thing in the measurement. Instead
-#: a CONFIRMED entry drops the page from both the before and the after score,
-#: so it counts as neither a rule hit nor a review miss, and the count of
-#: dropped pages is printed. Entries wait at ``confirmed: False``, which
-#: scores exactly as before and only prints, until the lead says otherwise.
-DISPUTED: Dict[Tuple[str, int], dict] = {
-    ("R37", 47): {
-        "review": "other", "hand": "calculation", "confirmed": True,
-        "note": "a web-tool disclaimer page inside the calculation appendix; "
-                "no inputs or results on it"},
-    ("R28", 217): {
-        "review": "letter", "hand": "lab_test", "confirmed": True,
-        "note": "a laboratory's transmittal cover letter inside the "
-                "laboratory appendix"},
-    ("R15", 8): {
-        "review": "cover", "hand": "narrative", "confirmed": True,
-        "note": "a one-line volume title sheet inside the narrative run"},
-    ("R15", 19): {
-        "review": "cover", "hand": "narrative", "confirmed": True,
-        "note": "the second volume's title sheet, the same one-line form"},
-}
-
-
-def disputed_drop(rid: str, page: int, after_label: str) -> bool:
-    """Should this page be dropped from the score as a confirmed dispute?
-
-    Only when the lead has confirmed it AND the review still says what it
-    said when the dispute was raised. A later run that moves the page
-    somewhere else is a new answer and is scored.
-    """
-    row = DISPUTED.get((rid, int(page)))
-    return bool(row and row["confirmed"] and after_label == row["review"])
-
 
 def set_ids(name: str) -> Tuple[str, ...]:
     if name == "insample":
@@ -223,72 +172,6 @@ def truth_for(rid: str, oos: Dict[str, Dict[int, dict]]
 
 
 # -- scoring ----------------------------------------------------------------
-
-class Scores:
-    """Per-label counts over a set of reports, and the rates they make."""
-
-    def __init__(self) -> None:
-        self.cm: Counter = Counter()             # (hand, predicted) -> pages
-        self.lenient_hits = 0
-        self.n = 0
-
-    def add(self, hand: str, pred: str,
-            alternates: Sequence[str] = ()) -> None:
-        self.cm[(hand, pred)] += 1
-        self.n += 1
-        if pred == hand or pred in alternates:
-            self.lenient_hits += 1
-
-    @property
-    def correct(self) -> int:
-        return sum(v for (h, p), v in self.cm.items() if h == p)
-
-    @property
-    def accuracy(self) -> float:
-        return self.correct / self.n if self.n else float("nan")
-
-    @property
-    def lenient_accuracy(self) -> float:
-        return self.lenient_hits / self.n if self.n else float("nan")
-
-    def rates(self, label: str) -> Tuple[float, float, float, int]:
-        tp = self.cm[(label, label)]
-        fp = sum(v for (h, p), v in self.cm.items() if p == label and h != label)
-        fn = sum(v for (h, p), v in self.cm.items() if h == label and p != label)
-        support = tp + fn
-        precision = tp / (tp + fp) if (tp + fp) else float("nan")
-        recall = tp / support if support else float("nan")
-        f1 = (2 * precision * recall / (precision + recall)
-              if precision == precision and recall == recall
-              and (precision + recall) else float("nan"))
-        return precision, recall, f1, support
-
-    def present_labels(self) -> List[str]:
-        seen = {h for h, _ in self.cm} | {p for _, p in self.cm}
-        return [x for x in labels.LABELS if x in seen]
-
-
-def _rate(value: float) -> str:
-    return "  --  " if value != value else f"{value:6.3f}"
-
-
-def _label_table(before: Scores, after: Scores, only: Sequence[str] = ()
-                 ) -> List[str]:
-    rows = [f"{'label':<16}{'n':>6}"
-            f"{'P before':>10}{'R before':>10}{'F1 before':>11}"
-            f"{'P after':>10}{'R after':>10}{'F1 after':>10}"]
-    names = list(only) if only else after.present_labels()
-    for name in names:
-        pb, rb, fb, support = before.rates(name)
-        pa, ra, fa, support_a = after.rates(name)
-        support = max(support, support_a)
-        if not support and not only:
-            continue
-        rows.append(f"{name:<16}{support:>6}"
-                    f"{_rate(pb):>10}{_rate(rb):>10}{_rate(fb):>11}"
-                    f"{_rate(pa):>10}{_rate(ra):>10}{_rate(fa):>10}")
-    return rows
-
 
 # -- running one report -----------------------------------------------------
 
@@ -492,17 +375,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         for change in blob["review"]["changes"]:
             page = int(change["page"])
             want = hand.get(page)
-            row = DISPUTED.get((rid, page))
-            if row is not None and change["to"] == row["review"]:
-                verdict = "disputed"
-            elif want is None:
-                verdict = "unscored"
-            elif change["to"] == want:
-                verdict = "fixed" if change["from"] != want else "unscored"
-            elif change["from"] == want:
-                verdict = "broke"
-            else:
-                verdict = "still_wrong"
+            verdict = verdict_for(rid, page, change["from"], change["to"],
+                                  want)
             verdicts[verdict] += 1
             change_rows.append({"id": rid, "page": page, **change,
                                 "hand": want or "-", "verdict": verdict})
@@ -617,17 +491,9 @@ def _render(args, ids, before: Scores, after: Scores, verdicts: Counter,
     out.append("")
     out.append(f"key content (the gate is {GATE:.2f} on both rates after "
                f"review)")
-    out.extend(_label_table(before, after, KEY_CONTENT))
-    failed: List[str] = []
-    for name in KEY_CONTENT:
-        precision, recall, _f1, support = after.rates(name)
-        if not support:
-            continue                      # the set has no page of that label
-        if precision != precision or recall != recall or min(
-                precision, recall) < GATE:
-            failed.append(name)
+    out.extend(label_table(before, after, KEY_CONTENT))
     out.append("below the gate after review: "
-               + (", ".join(failed) if failed else "none"))
+               + (", ".join(gate_failures(after)) or "none"))
     if blind and never_seen_after is not None and never_seen_after.n:
         seen = [x for x in ids if x in CHECKPOINT]
         out.append("")
@@ -640,12 +506,12 @@ def _render(args, ids, before: Scores, after: Scores, verdicts: Counter,
         out.append(f"{'accepting alternates':<24}"
                    f"{never_seen_before.lenient_accuracy:>10.3f}"
                    f"{never_seen_after.lenient_accuracy:>10.3f}")
-        out.extend(_label_table(never_seen_before, never_seen_after,
+        out.extend(label_table(never_seen_before, never_seen_after,
                                 KEY_CONTENT))
     if not blind:
         out.append("")
         out.append("every label")
-        out.extend(_label_table(before, after))
+        out.extend(label_table(before, after))
         out.append("")
         out.append("what the review's changes did, against the hand labels")
         for verdict in ("fixed", "broke", "still_wrong", "disputed",
