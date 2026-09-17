@@ -1235,28 +1235,44 @@ DOCUMENT_TYPE_VALUES: Tuple[str, ...] = (
     "other",
 )
 
-#: PROVISIONAL (plan section 7, item 1). The owner's own word list for these
-#: four questions was written for runs whose outputs are gone, and it is not
-#: in this tree; these are the readings the corpus supports, with "unclear"
-#: always available so a reader is never forced to pick. Changing one is an
-#: edit HERE and a line in the reader prompt -- nothing else reads the words.
+#: KNOWN ANSWERS, not a closed list. The owner's own word lists for these
+#: questions were written for runs whose outputs are gone and are not in this
+#: tree (plan section 7, item 1); these are the values the HAND ANSWERS for
+#: eight reports actually use, read off them on 2026-09-17.
+#:
+#: The fields that take them are plain strings rather than Literals on
+#: purpose. A first draft of this file GUESSED these lists -- government
+#: owned / leased, planning / feasibility / design, high / moderate / low --
+#: and every guess was wrong against the first hand answers that arrived. A
+#: guessed vocabulary does not merely mislabel: it makes the schema refuse the
+#: true answer, so the reader stores nothing and the scorer marks the field
+#: wrong for a reader that read it correctly. A known-values list the reader
+#: is shown, and folds a spelling variant onto, cannot fail that way.
 PROPERTY_TYPE_VALUES: Tuple[str, ...] = (
-    "government owned", "leased", "private", "public", "unclear",
+    "New embassy or consulate compound",
+    "Existing embassy or consulate compound",
+    "other",
 )
 PROJECT_PHASE_VALUES: Tuple[str, ...] = (
-    "planning", "feasibility", "due diligence", "preliminary design",
-    "design", "construction", "post construction", "unclear",
+    "Technical due diligence", "Bridging", "Design-build", "other",
 )
 LIQUEFACTION_VALUES: Tuple[str, ...] = (
-    "high", "moderate", "low", "none", "not evaluated", "unclear",
+    "not liquefiable", "potentially liquefiable",
 )
+#: Hazards as the hand names them: a short phrase for what the report says the
+#: site is exposed to, in the report's own terms ("liquefaction-induced
+#: settlement" rather than "liquefaction"). Examples for the reader, never a
+#: filter on the answer.
 EARTH_HAZARD_VALUES: Tuple[str, ...] = (
-    "seismic shaking", "liquefaction", "fault rupture", "landslide",
-    "rockfall", "subsidence", "expansive soil", "collapsible soil",
-    "karst", "erosion", "flooding", "tsunami", "volcanic", "none",
+    "seismic shaking", "liquefaction", "liquefaction-induced settlement",
+    "fault rupture", "landslide", "rockfall", "subsidence",
+    "expansive soil", "collapsible soil", "karst", "erosion", "flooding",
+    "tsunami", "volcanic",
 )
-#: What a question that is asked as a question gets answered with.
-YES_NO_UNCLEAR: Tuple[str, ...] = ("yes", "no", "unclear")
+#: What a question asked as a question gets answered with. ``mixed`` is the
+#: hand's own: soil that is not corrosive to one thing and is to another is
+#: neither a yes nor a no, and flattening it either way loses the finding.
+YES_NO_UNCLEAR: Tuple[str, ...] = ("yes", "no", "mixed", "unclear")
 
 
 class Citation(BaseModel):
@@ -1276,11 +1292,11 @@ class Citation(BaseModel):
 
 
 class Mention(BaseModel):
-    """A yes/no/unclear answer with the sentence that settles it."""
+    """A yes/no/mixed/unclear verdict with the sentence that settles it."""
 
     model_config = ConfigDict(extra="forbid")
 
-    answer: Literal["yes", "no", "unclear"]
+    answer: Literal["yes", "no", "mixed", "unclear"]
     citation: List[Citation] = Field(default_factory=list)
 
 
@@ -1399,16 +1415,17 @@ class GeneralFacts(BaseModel):
         default=None,
         description="the post the site belongs to, as the report names it; "
                     "never inferred from a place name")
-    propertyType: Optional[Literal[
-        "government owned", "leased", "private", "public", "unclear"]] = Field(
-        default=None, description="what the property is")
+    propertyType: Optional[str] = Field(
+        default=None,
+        description="what the property is, in the owner's own words; "
+                    "PROPERTY_TYPE_VALUES lists the ones seen so far")
     projectNumber: Optional[str] = Field(
         default=None, description="the project or job number, as printed")
     projectName: Optional[str] = Field(default=None, description="as printed")
-    projectPhase: Optional[Literal[
-        "planning", "feasibility", "due diligence", "preliminary design",
-        "design", "construction", "post construction", "unclear"]] = Field(
-        default=None, description="the phase the work was done for")
+    projectPhase: Optional[str] = Field(
+        default=None,
+        description="the phase the work was done for, in the owner's own "
+                    "words; PROJECT_PHASE_VALUES lists the ones seen so far")
     primeContractor: Optional[str] = Field(default=None)
     primeAe: Optional[str] = Field(
         default=None, description="the prime architect-engineer")
@@ -1477,34 +1494,42 @@ class NaturalHazardFacts(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    liquefactionPotential: Optional[Literal[
-        "high", "moderate", "low", "none", "not evaluated",
-        "unclear"]] = Field(
+    liquefactionPotential: Optional[str] = Field(
         default=None,
-        description="what the report concluded about liquefaction")
+        description="what the report concluded about liquefaction, in the "
+                    "owner's words: 'not liquefiable', 'potentially "
+                    "liquefiable', or the report's own verdict")
     asceSevenVersion: Optional[str] = Field(
         default=None, description="the ASCE 7 edition cited, as printed")
-    earthHazardsExposed: Optional[List[Literal[
-        "seismic shaking", "liquefaction", "fault rupture", "landslide",
-        "rockfall", "subsidence", "expansive soil", "collapsible soil",
-        "karst", "erosion", "flooding", "tsunami", "volcanic",
-        "none"]]] = Field(
+    earthHazardsExposed: Optional[List[str]] = Field(
         default=None,
-        description="the hazards the report says the site is exposed to")
+        description="the hazards the report says the site is exposed to, one "
+                    "short phrase each in the report's own terms; an empty "
+                    "list means it names none")
     seismicCodeUsed: Optional[str] = Field(
         default=None, description="the seismic code or standard, as printed")
-    geophysicalTestingMention: Optional[Literal[
-        "yes", "no", "unclear"]] = Field(
-        default=None, description="does the report mention geophysical "
-                                  "testing")
-    soilCorrosion: Optional[Literal["yes", "no", "unclear"]] = Field(
-        default=None, description="does it address soil corrosivity")
-    siteResponseMention: Optional[Literal["yes", "no", "unclear"]] = Field(
-        default=None, description="does it mention a site response analysis")
-    hazardAnalysisMention: Optional[Literal["yes", "no", "unclear"]] = Field(
+    # THE FOUR VERDICT QUESTIONS. Each is answered "yes", "no", "mixed" or
+    # "unclear", optionally followed by " - " and what was found: the hand's
+    # own answers read "yes - six seismic refraction lines across the site".
+    # The verdict is the answer and the reason is what makes it useful, so the
+    # field keeps both and the bare verdict is carried in the twin beside it.
+    geophysicalTestingMention: Optional[str] = Field(
+        default=None,
+        description="does the report mention geophysical testing: yes / no / "
+                    "mixed / unclear, optionally ' - ' and what was done")
+    soilCorrosion: Optional[str] = Field(
+        default=None,
+        description="does it address soil corrosivity: yes / no / mixed / "
+                    "unclear, optionally ' - ' and what it found")
+    siteResponseMention: Optional[str] = Field(
+        default=None,
+        description="does it mention a site response analysis: yes / no / "
+                    "mixed / unclear, optionally ' - ' and which")
+    hazardAnalysisMention: Optional[str] = Field(
         default=None,
         description="does it mention a seismic hazard analysis, "
-                    "probabilistic or deterministic")
+                    "probabilistic or deterministic: yes / no / mixed / "
+                    "unclear, optionally ' - ' and which")
     siteClass: Optional[str] = Field(
         default=None, description="the site class, as printed")
     seismicParameterSummary: Optional[str] = Field(

@@ -195,33 +195,86 @@ class TestTheTypedTwins:
         assert result.natural_hazards.asceSevenVersionNormalized == "7-16"
         assert result.natural_hazards.reportDateISO == "2026-03-14"
 
+    def test_a_verdict_keeps_its_reason_and_the_twin_keeps_the_verdict(
+            self, doc):
+        # The hand's own answers read "yes - six seismic refraction lines
+        # across the site": the verdict is the answer and the reason is what
+        # makes it worth having, so the field keeps both.
+        reading = full_reading(
+            geophysicalTestingMention="yes - six seismic refraction and MASW "
+                                      "lines across the site",
+            soilCorrosion="mixed - non-corrosive to ductile iron but high "
+                          "chloride")
+        result = read(doc, FakeEngine([{"final": reading}]))
+
+        hazards = result.natural_hazards
+        assert hazards.geophysicalTestingMention.startswith("yes - six")
+        assert hazards.geophysicalTestingAnswer.answer == "yes"
+        assert hazards.soilCorrosion.startswith("mixed -")
+        assert hazards.soilCorrosionAnswer.answer == "mixed"
+
+    def test_a_verdict_field_that_does_not_lead_with_one_is_refused(self, doc):
+        reading = full_reading(
+            siteResponseMention="a site response analysis was performed")
+        result = read(doc, FakeEngine([{"final": reading}]))
+
+        assert result.natural_hazards.siteResponseMention is None
+        assert any(u["what"] == "siteResponseMention" and "yes, no, mixed"
+                   in u["why"] for u in result.unresolved)
+        assert result.natural_hazards.siteClassNormalized == "D"
+        assert result.natural_hazards.asceSevenVersionNormalized == "7-16"
+        assert result.natural_hazards.reportDateISO == "2026-03-14"
+
 
 class TestWhatIsRefused:
 
-    def test_a_value_outside_an_enumeration_is_not_stored(self, doc):
-        reading = full_reading(liquefactionPotential="pretty likely")
+    def test_a_value_outside_a_CLOSED_vocabulary_is_not_stored(self, doc):
+        # documentType is the owner's own list, so an answer outside it is a
+        # misreading rather than an unfamiliar answer.
+        reading = full_reading(documentType="site investigation writeup")
         result = read(doc, FakeEngine([{"final": reading}]))
 
-        assert result.natural_hazards.liquefactionPotential is None
-        assert any(u["what"] == "liquefactionPotential" and
-                   u["value"] == "pretty likely" for u in result.unresolved)
+        assert result.general.documentType is None
+        assert any(u["what"] == "documentType" and
+                   u["value"] == "site investigation writeup"
+                   for u in result.unresolved)
 
-    def test_an_enumeration_is_folded_before_it_is_refused(self, doc):
+    def test_a_value_outside_an_OPEN_vocabulary_is_kept_as_written(self, doc):
+        # The liquefaction words are only what has been seen so far. Refusing
+        # the report's own verdict would lose it; the first draft of this
+        # package did exactly that and the hand answers proved it wrong.
+        reading = full_reading(liquefactionPotential="marginally liquefiable")
+        result = read(doc, FakeEngine([{"final": reading}]))
+
+        assert result.natural_hazards.liquefactionPotential == \
+            "marginally liquefiable"
+        assert not any(u["what"] == "liquefactionPotential"
+                       for u in result.unresolved)
+
+    def test_a_known_value_is_folded_onto_the_owners_spelling(self, doc):
         reading = full_reading(documentType="Geotechnical Report",
-                               projectPhase="DUE-DILIGENCE")
+                               projectPhase="DESIGN-BUILD",
+                               propertyType="new embassy or consulate "
+                                            "compound")
         result = read(doc, FakeEngine([{"final": reading}]))
 
         assert result.general.documentType == "geotechnical report"
-        assert result.general.projectPhase == "due diligence"
+        assert result.general.projectPhase == "Design-build"
+        assert result.general.propertyType == \
+            "New embassy or consulate compound"
 
-    def test_a_hazard_outside_the_list_is_dropped_and_the_rest_kept(self, doc):
-        reading = full_reading(
-            earthHazardsExposed=["liquefaction", "meteorite", "flooding"])
+    def test_a_hazard_in_the_reports_own_terms_is_kept(self, doc):
+        reading = full_reading(earthHazardsExposed=[
+            "liquefaction-induced settlement", "flooding"])
         result = read(doc, FakeEngine([{"final": reading}]))
 
         assert result.natural_hazards.earthHazardsExposed == [
-            "liquefaction", "flooding"]
-        assert any(u["value"] == "meteorite" for u in result.unresolved)
+            "liquefaction-induced settlement", "flooding"]
+        # Nothing was thrown away for being unfamiliar. (The field still
+        # earns the standing "answered with no citation" note, which is a
+        # different complaint about a different thing.)
+        assert not any(u.get("value") for u in result.unresolved
+                       if u["what"] == "earthHazardsExposed")
 
     def test_a_not_stated_string_is_stored_as_null(self, doc):
         reading = full_reading(primeContractor="N/A", postName="not stated")

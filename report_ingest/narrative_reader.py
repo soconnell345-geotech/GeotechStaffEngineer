@@ -95,9 +95,9 @@ MAX_TABLE_CHARS = 6000
 #: find the sentence again. Longer is cut here rather than argued about.
 MAX_QUOTE_WORDS = 20
 
-#: The vocabularies the reader must answer from, by the owner's field name.
-#: One table: the prompt prints it, the builder validates against it, and a
-#: change to an enumeration is a change in :mod:`report_ingest.model` alone.
+#: The words the reader is given, by the owner's field name. One table: the
+#: prompt prints it and the builder folds against it, so a change to a
+#: vocabulary is a change in :mod:`report_ingest.model` alone.
 VOCABULARIES: Dict[str, Tuple[str, ...]] = {
     "documentType": DOCUMENT_TYPE_VALUES,
     "propertyType": PROPERTY_TYPE_VALUES,
@@ -110,6 +110,37 @@ VOCABULARIES: Dict[str, Tuple[str, ...]] = {
     "siteResponseMention": YES_NO_UNCLEAR,
     "hazardAnalysisMention": YES_NO_UNCLEAR,
 }
+
+#: The two vocabularies that are CLOSED: the owner's own list is known for
+#: these, so a value outside one is a misreading and is refused. Everywhere
+#: else the list is the values seen so far and an answer outside it is kept in
+#: the report's own words -- a guessed vocabulary that refuses the true answer
+#: costs more than an unfamiliar answer a person can read.
+CLOSED_FIELDS: Tuple[str, ...] = ("documentType", "outsideProject")
+
+#: The four questions answered with a verdict and, usually, a reason:
+#: "yes - six seismic refraction lines across the site". Only the verdict is
+#: checked; the reason is what makes the answer worth having.
+VERDICT_FIELDS: Tuple[str, ...] = (
+    "geophysicalTestingMention", "soilCorrosion", "siteResponseMention",
+    "hazardAnalysisMention",
+)
+
+#: How a verdict is separated from its reason on the way in. The hand writes
+#: an en dash as often as a hyphen and a colon now and then.
+_RE_VERDICT = re.compile(
+    r"^\s*(yes|no|mixed|unclear)\b\s*[-–—:;,]?\s*(.*)$",
+    re.IGNORECASE | re.DOTALL)
+
+
+def verdict_token(text: Any) -> Optional[str]:
+    """``"yes - six refraction lines"`` -> ``"yes"``; None when it has none.
+
+    The one place the four verdict answers are split, so the reader, the
+    record's typed twin and the scorer all agree on what the answer was.
+    """
+    match = _RE_VERDICT.match(" ".join(str(text or "").split()))
+    return match.group(1).lower() if match else None
 
 #: The fields whose answer is a list of strings as the report words them.
 _LIST_FIELDS: Tuple[str, ...] = (
@@ -562,10 +593,11 @@ THE FOUR RULES.
    write null. Most reports answer most of the general list and only part of
    the natural-hazards list, and that is the expected shape of an answer.
 
-3. THE ENUMERATED FIELDS TAKE ONE OF THEIR LISTED WORDS, EXACTLY AS SPELLED
-   in the vocabulary below. An answer that is not one of those words is
-   thrown away, so where none of them fits use the vocabulary's own
-   "unclear" or "other" if it has one, and null if it does not.
+3. THE FIELDS WITH SET WORDS TAKE THEM EXACTLY AS SPELLED, and the block
+   below says how binding each list is. Two are CLOSED and an answer outside
+   them is thrown away. The rest are the words seen so far: use one where it
+   fits, and where none does, answer in the report's own words rather than
+   forcing a bad fit. Four of them want a verdict and then the reason.
 
 4. A REPORT ABOUT SOMEBODY ELSE'S PROJECT NAMES NO POST. postName and
    propertyType are questions about one estate of government property. If
@@ -629,11 +661,32 @@ than writing a summary of nothing.
 
 
 def _vocabulary_block() -> str:
-    lines = ["THE ENUMERATED FIELDS AND THEIR WORDS"]
+    """The words for each field, and how binding each list is.
+
+    Three kinds, and the difference matters to what the reader does: a CLOSED
+    list is the owner's own and an answer outside it is thrown away; a list of
+    KNOWN VALUES is what has been seen so far and the report's own words are
+    better than a bad fit; a VERDICT question wants the verdict and then the
+    reason.
+    """
+    lines = ["THE FIELDS WITH SET WORDS, AND HOW BINDING EACH LIST IS"]
     for name, words in VOCABULARIES.items():
-        many = (" (a list; give every one that applies)"
-                if name == "earthHazardsExposed" else "")
-        lines.append(f"  {name}{many}: " + " | ".join(words))
+        if name in CLOSED_FIELDS:
+            note = "  (use one of these EXACTLY; anything else is discarded)"
+        elif name in VERDICT_FIELDS:
+            note = ("  (answer with the verdict, then ' - ' and what was "
+                    "found: \"yes - six seismic refraction lines across the "
+                    "site\". A bare \"no\" is fine.)")
+        elif name == "earthHazardsExposed":
+            note = ("  (a list; give every one that applies, one short "
+                    "phrase each IN THE REPORT'S OWN TERMS -- these are "
+                    "examples, not a closed list. Empty when it names none.)")
+        else:
+            note = ("  (use one of these where it fits; where none does, "
+                    "answer in the report's own words rather than forcing "
+                    "one)")
+        lines.append(f"  {name}: " + " | ".join(words))
+        lines.append(note)
     return "\n".join(lines)
 
 
@@ -902,22 +955,40 @@ class _Builder:
         return text
 
     def _enum(self, name: str, value: Any) -> Any:
+        """One answer folded onto the owner's words, or kept as written.
+
+        A spelling variant of a known value becomes that value, so the answers
+        stay comparable. An answer outside a CLOSED vocabulary is refused; an
+        answer outside an open one is KEPT in the report's own words, because
+        the open lists are only what has been seen so far and refusing the
+        true answer would lose it for good.
+        """
         words = VOCABULARIES[name]
         folded = {_fold(w): w for w in words}
         if name == "earthHazardsExposed":
             out: List[str] = []
             for item in (value or []):
-                got = folded.get(_fold(item))
-                if got is None:
-                    self.refuse(name, "not one of the listed hazards", item)
-                elif got not in out:
+                text = " ".join(str(item).split())
+                if not text:
+                    continue
+                got = folded.get(_fold(text), text)
+                if got not in out:
                     out.append(got)
             return out or None
+        if name in VERDICT_FIELDS:
+            text = " ".join(str(value).split())
+            if verdict_token(text) is None:
+                self.refuse(name, "does not begin with yes, no, mixed or "
+                                  "unclear", value)
+                return None
+            return text
         got = folded.get(_fold(value))
-        if got is None:
+        if got is not None:
+            return got
+        if name in CLOSED_FIELDS:
             self.refuse(name, f"not one of {', '.join(words)}", value)
             return None
-        return got
+        return " ".join(str(value).split())
 
     def _bearing(self, read: ReadBearing) -> None:
         if not (read.unit or "").strip():
@@ -1075,10 +1146,20 @@ class _Builder:
 
     def _mention(self, name: str,
                  values: Dict[str, Any]) -> Optional[Mention]:
+        """The bare verdict beside the answer, for a consumer that wants it.
+
+        ``outsideProject`` is already a bare verdict; the four hazard
+        questions carry their reason with them and the verdict is split off
+        here, in the one place that split is defined.
+        """
         answer = values.get(name)
-        if answer not in YES_NO_UNCLEAR:
+        if answer is None:
             return None
-        return Mention(answer=answer,
+        token = (answer if answer in YES_NO_UNCLEAR
+                 else verdict_token(answer))
+        if token is None:
+            return None
+        return Mention(answer=token,
                        citation=list(self.citations.get(name, [])))
 
 
