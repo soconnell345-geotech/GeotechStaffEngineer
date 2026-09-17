@@ -14,7 +14,7 @@ Last verified against a real cluster log: **5.14.0, 2026-09-11** (clean).
 ## 1. The install
 
 ```python
-%pip install "geotech-staff-engineer==5.18.0"
+%pip install "geotech-staff-engineer==5.19.0"
 %restart_python
 ```
 
@@ -30,8 +30,10 @@ that the already-running Python process cannot see.
 
 Three lines decide it. Find them and you're done:
 
-1. **`Successfully installed ... geotech-staff-engineer-5.18.0 ...`** — with
-   `planlens-0.4.0` and `geotech-references-1.4.0` in the same list.
+1. **`Successfully installed ... geotech-staff-engineer-5.19.0 ...`** — with
+   `planlens-0.5.0` and `geotech-references-1.4.0` in the same list.
+   `planlens-0.5.0` brings no package that `planlens-0.4.0` did not, so
+   nothing new should appear beside it.
 2. **No `403` and no `quarantined` anywhere.**
 3. The final `ERROR: pip's dependency resolver ...` block lists **only** the
    conflicts in §3. That block is a *warning printed as ERROR* — pip says
@@ -154,11 +156,20 @@ verified:
 | Package | Pin | Cluster has | Status |
 |---|---|---|---|
 | `opencv-python-headless` (via `planlens`) | `>=4.8` — **no ceiling** | **5.0.0.93** | **Verified safe.** Full planlens suite (792 passed / 1 skipped) run against OpenCV 5.0.0. The cv2 surface we use is small and long-stable (`imdecode`, `cvtColor`, `Canny`, `HoughLinesP`, `HoughCircles`, `findContours`, `approxPolyDP`, `threshold`, `medianBlur`, `rotate`), and `findContours` is already unpacked version-agnostically (`found[0] if len(found)==2 else found[1]`). |
-| `rapidfuzz` (via `planlens`, new at 5.18.0) | `>=3.9` — **no ceiling** | **3.14.6** expected | **New on the cluster.** Arrives with planlens 0.4.0, which moved it into its core; it is not an app dependency. Cleared the Nexus probe 2026-09-16 at 3.14.6. MIT, and it pulls **no dependencies of its own** — a C++ extension with prebuilt wheels, so it cannot disturb the numpy or streamlit resolution. |
+| `rapidfuzz` (via `planlens`, new at 5.18.0) | `>=3.9` — **no ceiling** | **3.14.6** expected | **New at 5.18.0.** Arrives with planlens 0.4.0, which moved it into its core; it is not an app dependency. Cleared the Nexus probe 2026-09-16 at 3.14.6. MIT, and it pulls **no dependencies of its own** — a C++ extension with prebuilt wheels, so it cannot disturb the numpy or streamlit resolution. |
 | `numpy` | `>=2.0` | 2.4.6 | §4 |
 | `streamlit` | `>=1.39` | 1.63.0 | fine |
 | `openai` | `<3` | 2.54.0 | bounded |
 | agent stack | ranges `<0.8` / `<1.4` / `<1.3` | ceilings | §6 |
+
+**planlens 0.5.0 (the 5.19.0 pin) adds no third-party package at all.** Its
+published requirements are exactly 0.4.0's — numpy, ezdxf, PyMuPDF,
+opencv-python-headless, rapidfuzz, with `ocr` and `mcp` as extras we do not
+install — so the 5.19.0 log should read like 5.18.0's with `planlens-0.5.0` in
+place of `planlens-0.4.0` and nothing else moved. The app's own new package
+(`report_ingest`) is pure Python over what is already installed: `anthropic`
+is optional and deliberately absent here, and `openpyxl` already arrives as a
+hard requirement of `python-ags4`.
 
 **OpenCV 5 arrived unannounced and unbounded** — we only found out by reading
 an install log. It happens to be fine. Optional hardening: bound planlens'
@@ -250,6 +261,7 @@ Stop and investigate only for these:
 | 5.17.0 | — | Superseded by 5.17.1 the same day (deliverable-import fix); install 5.17.1 instead. |
 | 5.17.1 | — | Not yet installed (Nairobi SOE fix train + one follow-up fix: **no dependency changes**, so the log should read exactly like 5.16.0's). Replace this row when the cluster install is confirmed. |
 | 5.18.0 | — | Not yet installed — pin `planlens>=0.4`; planlens 0.4.0 brings `rapidfuzz` (new on the cluster; it cleared the Nexus firewall 2026-09-16 as 3.14.6, MIT, no dependencies of its own) and keeps `opencv-python-headless`, now in planlens' core rather than the `raster` extra; **no new direct app deps**. Expect the 5.16.0 log plus `planlens-0.4.0` and `rapidfuzz-3.14.6`. Release gate 11,773 passed / 33 skipped / 0 failed. Replace this row when the cluster install is confirmed. |
+| 5.19.0 | — | Not yet installed — pin `planlens>=0.5`. planlens 0.5.0 declares **exactly** the dependencies 0.4.0 did (numpy, ezdxf, PyMuPDF, opencv-python-headless, rapidfuzz), so expect the 5.18.0 log with `planlens-0.5.0` in place of `planlens-0.4.0` and **no other package moved**. The new `report_ingest` package is pure Python over what is already there: `anthropic` stays optional and must NOT appear, and `openpyxl` (the hand-label reader, imported lazily) already arrives with `python-ags4`. Release gate 11,890 passed / 33 skipped / 0 failed. Replace this row when the cluster install is confirmed. |
 
 Earlier, 5.12.0's **first** attempt failed: pip 403 on `cytriangle`, pulled in by
 `sectionproperties` **and** `concreteproperties`. Both were removed and rebuilt

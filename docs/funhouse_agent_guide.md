@@ -266,7 +266,7 @@ may lag it. `hvsrpy`/`swprocess` were removed in 5.12.)
 | `read_reference_figure` | Render a digitized reference chart and read a value off it via vision |
 | `save_file` | Save content to a file (text or base64 binary), **write-verified** |
 
-### Document review tools (planlens, 5.18.0 — deep agent's primary surface)
+### Document review tools (planlens, 5.19.0 — deep agent's primary surface)
 
 Whole-document tools served by the `planlens` package's `ReviewToolkit`
 through `funhouse_agent/document_tools.py`. `source` is an attachment key or
@@ -288,6 +288,12 @@ planlens 0.4 or later. They are feature-detected from the installed package's
 own specs rather than assumed from the pin: on an older planlens
 `find_quantities` is not advertised at all and a `fuzzy=true` search returns a
 JSON error instead of calling the toolkit.
+
+planlens 0.5.0 (the pin floor since 5.19.0) adds a ninth toolkit tool,
+`document_roles` — what each page of a report IS, the work items its pages
+make, the document's printed outline and a per-page ledger — but it is **not
+on this app's tool surface yet**; it will be wired with the report-ingest
+sub-agent.
 
 The policy the deep-agent prompt states: text first, then LOOK — with
 `analyze_pdf_page` (a page), `render_region` (a spot) or `analyze_image` (a

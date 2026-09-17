@@ -70,7 +70,52 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## CURRENT WORKING STATE (2026-09-16) — 5.18.0 RELEASED (tag `v5.18.0`)
+## CURRENT WORKING STATE (2026-09-17) — 5.19.0 RELEASED (tag `v5.19.0`)
+
+- **app 5.19.0** (tag `v5.19.0`, 2026-09-17) — the report-ingest package, and
+  **no new direct dependency**. **What shipped:** `report_ingest/`, a LIBRARY
+  in the wheel with **nothing on the app's tool surface yet** — two model
+  passes that need a whole report in view rather than one page, plus the way
+  to score them where the work actually happens. `triage()` is one structured
+  call over the per-page ledger, the printed outline, the front matter and the
+  first contact sheet, and returns a `DocumentProfile` whose `workflow` picks
+  the readers that follow; `review_labels()` is an agent loop with four tools
+  that checks planlens' rule labels against the pages and returns only its
+  CHANGES, which Python applies — a model re-emitting 455 page-to-label pairs
+  would drop a page silently and the scorecard would score the slip. Every
+  change is graded `fixed` / `broke` / `still_wrong` / `disputed`, because a
+  review that raises accuracy while breaking three correct labels has not
+  earned the raise. `PrompterEngine` is the engine that counts (Funhouse
+  OpenAI tiers, how the app really runs); `ClaudeEngine` stays as a
+  DEVELOPMENT engine for prompt iteration and its numbers are a checkpoint,
+  never a result. `cluster_scoring.score_on_cluster(...)` is the owner's
+  notebook cell: it reads the reports **under their own file names** from the
+  folder they are already in, resolving IDs through the manifest's source-file
+  column, reads Azure DI results as either `<ID>.json.gz` or the uncompressed
+  `DI_data_<stem>.json` Funhouse wrote, refuses a `/Workspace` out_dir up
+  front, resumes report by report, and brings back one `RESULTS.md` carrying
+  IDs, labels, counts and rates and nothing that names a firm or a person.
+  **Pin is now plain `planlens>=0.5`** (planlens 0.5.0 on PyPI 2026-09-17):
+  0.5.0 adds `planlens.document.roles` — what each page of a report IS over
+  eighteen roles with its evidence, the work items its pages make, the
+  document's own printed outline and the per-page ledger these passes read —
+  plus `text_reliable` / `unmapped_fraction` (a text layer that is THERE and
+  wrong now becomes `needs_ocr` instead of being quoted as prose) and the fix
+  for a scanned appendix reported as 69 duplicates of its first page. **No new
+  third-party package:** planlens 0.5.0 declares exactly what 0.4.0 did
+  (numpy, ezdxf, PyMuPDF, opencv-python-headless, rapidfuzz). `anthropic`
+  stays OPTIONAL and is not installed on the cluster; `openpyxl` was already
+  arriving as a hard requirement of `python-ags4` and is imported lazily
+  anyway. Two pyproject lines mattered more than the code: `report_ingest*` in
+  `[tool.setuptools.packages.find]` (without it the wheel builds happily with
+  no package in it and fails on the cluster as an import error — verified by
+  listing the built wheel) and `report_ingest` in pytest `testpaths`. Release
+  gate **11,890 passed / 33 skipped / 0 failed** (three chunks). Cluster
+  install **NOT yet confirmed** (install guide §11). **First live check:** the
+  owner's own scoring run — `%pip install "geotech-staff-engineer==5.19.0"`,
+  then one `score_on_cluster(...)` cell with `max_reports=2`, and
+  `/tmp/report_ingest_wp1b/RESULTS.md` comes back. Plan and parked work:
+  `module_work/REPORT_INGEST_PLAN.md` (WP2–WP5). 5.18.0 follows.
 
 - **app 5.18.0** (tag `v5.18.0`, 2026-09-16) — two feature branches merged, no
   new direct dependency. **Charts the reader can use:** `plot_data` now draws
@@ -868,9 +913,10 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | dxf_import | 97 | DXF CAD import for slope stability + FEM (discover layers, parse geometry, build SlopeGeometry/FEM inputs) |
 | dxf_export | 37 | DXF export for cross-section geometry (surface, boundaries, GWT, nails, annotations) |
 | pdf_import → `planlens.pdf` | (planlens) | HISTORICAL PATH. The PDF cross-section importer ships in the separate `planlens` package since 2026-09-04 (`planlens.pdf`; app-side bridge `dxf_import/pdf_bridge.py`). |
-| drawing_ir → `planlens.ir` + `planlens.document` + `planlens.tools` | (planlens, 875 tests) | HISTORICAL PATH. The drawing IR (DXF / vector-PDF / raster ingest, slice queries, leader / dimension / title-block / bubble / cloud finders, `render_region`) is `planlens.ir`; since planlens 0.3.0 the WHOLE-DOCUMENT layer (`planlens.document`: page map + structure, located text, tables, review markups, hidden CAD text, Azure DI text source) and the LLM tool layer (`planlens.tools`) sit beside it. See "Document review & drawing geometry (planlens)" below. |
+| drawing_ir → `planlens.ir` + `planlens.document` + `planlens.tools` | (planlens, 1,182 tests at 0.5.0) | HISTORICAL PATH. The drawing IR (DXF / vector-PDF / raster ingest, slice queries, leader / dimension / title-block / bubble / cloud finders, `render_region`) is `planlens.ir`; since planlens 0.3.0 the WHOLE-DOCUMENT layer (`planlens.document`: page map + structure, located text, tables, review markups, hidden CAD text, Azure DI text source) and the LLM tool layer (`planlens.tools`) sit beside it. See "Document review & drawing geometry (planlens)" below. |
 | fem2d | 353 | 2D plane-strain FEM (T6 default + CST/Q4/beam, 3D-principal MC return, HS, GL99 SRM, seepage, consolidation, staged construction, PLAXIS-style calc-package plots); validated vs Griffiths-Lane/Prandtl (VALIDATION.md) |
 | geo_project | 89 | Canonical Project document for staged, human-gated LE/FEM model setup (schema+validators, builders, templates, DXF/PDF/vision ingest w/ provenance quarantine, echo-back renderer) |
+| report_ingest | 117 | The whole-report model passes over planlens' page roles: document triage (one structured call → `DocumentProfile` + workflow) and label review (an agent loop that returns CHANGES, applied in Python and each one graded). Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster` is the owner's notebook cell. A LIBRARY since 5.19.0 — no app tool calls it yet. `report_ingest/README.md`, plan in `module_work/REPORT_INGEST_PLAN.md` |
 
 Other components: geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions + DM7 figure catalogs, 3529 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 + 25 + 31 + 5 = 479 tests)
 
@@ -893,9 +939,10 @@ Run: `pytest foundry_test_harness/ -v`
 
 Everything that reads a PDF, an image or a DXF lives in the separate,
 published package **planlens** (`C:/Users/socon/OneDrive/dev/planlens`,
-PyPI `planlens`, editable-installed in dev; app pin `planlens>=0.4` — plain,
-no extra, because 0.4.0 moved `opencv-python-headless` and `rapidfuzz` into
-planlens' core and left `[raster]` / `[text]` as empty alias extras).
+PyPI `planlens`, editable-installed in dev; app pin `planlens>=0.5` since
+5.19.0 — plain, no extra, because 0.4.0 moved `opencv-python-headless` and
+`rapidfuzz` into planlens' core and left `[raster]` / `[text]` as empty alias
+extras, and 0.5.0 declares exactly the same dependencies).
 It is the owner's TinyApp "banner application" for any architect or engineer
 reviewing documents; the geotech package rides along. No OBO branding, and do
 not pitch it as CAD-object recognition — the goal is document review.
@@ -907,7 +954,9 @@ not pitch it as CAD-object recognition — the goal is document review.
 | `planlens.tools` | The framework-neutral LLM tool layer (`ReviewToolkit`): ten tools, JSON-Schema specs in Anthropic / OpenAI style, every result valid JSON inside a size limit, cursors for anything longer. |
 | `planlens.pdf` | The PDF ingest leg + the geotechnical cross-section importer (role mappings, soil-layer vision prompts) that predates the split; app-side bridge `dxf_import/pdf_bridge.py` → `build_slope_geometry()` / `build_fem_inputs()`. Moving the geotech part back here is on planlens' open list. |
 
-**In this app** (5.18.0): `funhouse_agent/document_tools.py` bridges
+**In this app** (5.19.0; the surface is unchanged from 5.18.0 — planlens
+0.5.0's `document_roles` is NOT yet wired, and will arrive with the ingest
+sub-agent): `funhouse_agent/document_tools.py` bridges
 `ReviewToolkit` to the deep agent — eight tools on the PRIMARY agent
 (`open_document`, `document_structure`, `document_page_map`,
 `read_document`, `search_document`, `document_markups`,
@@ -926,8 +975,8 @@ tools (`digitize_drawing` / `query_drawing` / `get_entities` / `snip_region` /
 `funhouse_agent/adapters/drawing_ir_adapter.py`. The tools hide themselves on
 a planlens older than 0.3 rather than failing.
 
-**The eighth tool and fuzzy search need planlens 0.4** (the pin floor since
-5.18.0). `find_quantities` returns every number the document STATES with a
+**The eighth tool and fuzzy search need planlens 0.4** (they arrived with the
+5.18.0 pin; the floor is 0.5 since 5.19.0). `find_quantities` returns every number the document STATES with a
 unit, with its wording, qualifier, page and box, so the agent can set what a
 report says beside what a drawing measures; `search_document` gains `fuzzy` /
 `min_score` (default 80, about 75 for a single word under eight letters) for
