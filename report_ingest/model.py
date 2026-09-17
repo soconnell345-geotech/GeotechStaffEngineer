@@ -27,32 +27,48 @@ missing value and a wrong value are different failures and the record keeps
 them different.
 
 WHAT IS A STUB AND WHAT IS NOT. WP2 fills :class:`Investigation` from the
-boring logs, and that part is complete. :class:`LabTest` carries its result
-as a free ``dict`` until WP3 gives each test kind a typed result;
-:class:`NarrativeFacts` names the owner's two query schemas but leaves them to
-WP4; :class:`CalcEntry` is WP5. They are here so the record's shape, its JSON
-schema and its version do not change under the later packages -- a consumer
-written against this schema keeps working as the stubs fill in.
+boring logs and WP3 fills :class:`LabTest` from the laboratory sheets; both
+are complete, and a lab test's values are now a TYPED result per test kind
+rather than a free dict. :class:`NarrativeFacts` names the owner's two query
+schemas but leaves them to WP4; :class:`CalcEntry` is WP5. They are here so
+the record's shape, its JSON schema and its version do not change under the
+later packages -- a consumer written against this schema keeps working as the
+stubs fill in.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import (
+    Annotated, Any, Dict, List, Literal, Optional, Tuple, Union,
+)
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
     "SCHEMA_VERSION", "SI_UNITS", "UNIT_TO_SI",
     "Provenance", "Quantity", "Project", "DrillingDetails", "Layer", "Sample",
     "SPT", "WaterLevel", "LabTest", "Investigation", "NarrativeFacts",
     "GeneralFacts", "NaturalHazardFacts", "CalcEntry", "QAEntry",
-    "DocumentFacts", "ReportRecord", "to_si", "record_json_schema",
+    "DocumentFacts", "ReportRecord", "to_si", "si_numbers",
+    "record_json_schema",
+    # the typed laboratory results (WP3)
+    "LabKind", "Reported", "LabResult", "RESULT_CLASS",
+    "SievePoint", "AtterbergResult", "GradationResult",
+    "ConsolidationPoint", "ConsolidationResult", "ShearPoint",
+    "StrengthSpecimen", "StrengthResult", "CompactionPoint",
+    "CompactionResult", "CBRResult", "MoistureDensityResult",
+    "ChemicalResult", "SummaryRow", "SummaryTableResult", "OtherResult",
 ]
 
 #: The record's own version. A consumer stores it and can tell whether a file
 #: predates a field it wants. Bumped when a field changes MEANING; adding an
 #: optional field is not a bump.
-SCHEMA_VERSION = "2.0"
+#:
+#: 3.0 (WP3): ``LabTest.result`` stopped being a free dict and became a typed
+#: result discriminated on ``kind``, and ``LabTest.depth`` became
+#: ``depth_top``. Both are changes of MEANING, so the version moves; a 2.0
+#: file's lab tests do not load as 3.0 ones.
+SCHEMA_VERSION = "3.0"
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +84,14 @@ SI_UNITS: Dict[str, str] = {
     "angle": "deg",
     "ratio": "1",
     "percent": "%",
+    # what a laboratory sheet adds (WP3)
+    "resistivity": "ohm.m",
+    "potential": "mV",
+    "mass_fraction": "mg/kg",
+    "temperature": "degC",
+    "volume": "m3",
+    "mass": "kg",
+    "velocity": "m/s",
 }
 
 #: Standard gravity, for the three unit-of-mass-per-volume spellings a log
@@ -107,6 +131,26 @@ UNIT_TO_SI: Dict[str, Tuple[str, float]] = {
     "blows/30cm": ("blow_rate", 1.0),
     "blows/ft": ("blow_rate", 0.9842519685039370),
     "blows/m": ("blow_rate", 0.3),
+    # what a laboratory sheet adds. A corrosivity suite reports resistivity
+    # in ohm-cm in the United States and in ohm.m almost everywhere else; a
+    # redox potential is always millivolts; an ion is milligrams per kilogram
+    # or, identically, parts per million by mass.
+    "ohm.m": ("resistivity", 1.0),
+    "ohm-cm": ("resistivity", 0.01),
+    "kohm-cm": ("resistivity", 10.0),
+    "mv": ("potential", 1.0),
+    "v": ("potential", 1000.0),
+    "mg/kg": ("mass_fraction", 1.0),
+    "ppm": ("mass_fraction", 1.0),
+    "degc": ("temperature", 1.0),
+    "m3": ("volume", 1.0),
+    "cm3": ("volume", 1e-6),
+    "ml": ("volume", 1e-6),
+    "kg": ("mass", 1.0),
+    "g": ("mass", 0.001),
+    "lb": ("mass", 0.45359237),
+    "m/s": ("velocity", 1.0),
+    "cm/s": ("velocity", 0.01),
     # dimensionless and already-SI
     "deg": ("angle", 1.0),
     "%": ("percent", 1.0),
@@ -133,6 +177,21 @@ _UNIT_ALIASES: Dict[str, str] = {
     "blows per foot": "blows/ft", "blows per 0.3m": "blows/0.3m",
     "degrees": "deg", "degree": "deg", "°": "deg",
     "percent": "%", "pct.": "%",
+    # the laboratory's own spellings
+    "ohm.cm": "ohm-cm", "ohmcm": "ohm-cm", "ohm cm": "ohm-cm",
+    "ohm-centimeter": "ohm-cm", "ohm·cm": "ohm-cm", "ω-cm": "ohm-cm",
+    "ohm-m": "ohm.m", "ohmm": "ohm.m", "ohm m": "ohm.m", "ohm·m": "ohm.m",
+    "kohm.cm": "kohm-cm", "kohmcm": "kohm-cm", "kohm cm": "kohm-cm",
+    "kilohm-cm": "kohm-cm", "k-ohm-cm": "kohm-cm",
+    "millivolt": "mv", "millivolts": "mv", "volt": "v", "volts": "v",
+    "mg/kilogram": "mg/kg", "milligram/kg": "mg/kg", "mg kg": "mg/kg",
+    "parts per million": "ppm",
+    "c": "degc", "°c": "degc", "deg c": "degc", "celsius": "degc",
+    "cc": "cm3", "cm^3": "cm3", "cm³": "cm3", "millilitre": "ml",
+    "milliliter": "ml", "m^3": "m3", "m³": "m3",
+    "gram": "g", "grams": "g", "gm": "g",
+    "kilogram": "kg", "kilograms": "kg",
+    "lbs": "lb", "pound": "lb", "pounds": "lb",
 }
 
 
@@ -488,36 +547,590 @@ class WaterLevel(BaseModel):
     prov: Optional[Provenance] = None
 
 
-class LabTest(BaseModel):
-    """One laboratory test on one sample.
+# ---------------------------------------------------------------------------
+# laboratory tests
+# ---------------------------------------------------------------------------
+#
+# WHAT A TYPED RESULT IS FOR. A lab sheet prints numbers whose MEANING is the
+# column they sit under: 31 under LIQUID LIMIT is a liquid limit, 31 under
+# PERCENT PASSING is a proportion of a sample. Until WP3 a lab test's values
+# were a free dict, so nothing downstream could ask for a liquid limit
+# without first learning what this particular sheet had called it. Each kind
+# of test now has a result class, and the class names the values.
+#
+# THE UNION IS DISCRIMINATED ON ``kind``, and every result class repeats the
+# test kinds it answers for. So a record read back off disk rebuilds the
+# right class without guessing, and a test whose kind and result disagree is
+# refused at construction rather than discovered later by a reader of the
+# JSON.
+#
+# THE UNIT RULE OF THE WHOLE RECORD HOLDS HERE. A value with a unit is a
+# Quantity in the unit the sheet printed -- a confining pressure in psf stays
+# in psf, a sieve opening in inches stays in inches. A value with no unit is
+# a plain number: a percentage, a pH, a blow count, a ratio such as Cu or Cc.
+# The DIGGS writer converts, once.
 
-    WP3 gives each ``kind`` a typed result model. Until then ``kind`` is a
-    string from a named list and ``result`` is a free dict, so a lab reader
-    can fill the record today and a consumer written against this schema
-    keeps working when the types arrive.
+#: What a laboratory sheet IS. The vocabulary is the sheet's own title; a
+#: sheet that does not say is ``other``, which is an answer.
+LabKind = Literal[
+    "atterberg",            # liquid, plastic and shrinkage limits
+    "gradation",            # sieve and/or hydrometer grading
+    "swell_consolidation",  # one-dimensional swell, collapse or oedometer
+    "triaxial",             # UU, CU or CD
+    "direct_shear",
+    "unconfined",           # unconfined compression on soil
+    "unconfined_rock",      # unconfined compression on a rock core
+    "compaction",           # Proctor
+    "cbr",
+    "moisture_content",
+    "density",
+    "organic_content",      # loss on ignition, ash content
+    "chemical",             # corrosivity: pH, resistivity, sulfate, chloride
+    "specific_gravity",
+    "permeability",
+    "summary_table",        # a table of many samples' results
+    "other",
+]
+
+#: A value a sheet prints as words rather than as a number -- ``"<10"``,
+#: ``"Nil"``, ``"trace to positive"``, ``"N.P."``. It is kept as the string
+#: the sheet printed, because "below the reporting limit" is not the number
+#: ten, and a record that stored ten would be WRONG rather than incomplete.
+Reported = Union[Quantity, float, str]
+
+
+class SievePoint(BaseModel):
+    """One point of a grading curve: a sieve, and what passed it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    percent_passing: float = Field(
+        ge=0.0, le=100.0, description="percent finer than this size")
+    size: Optional[Quantity] = Field(
+        default=None,
+        description="the opening, as printed (mm or in); None when the sheet "
+                    "gives only a sieve designation")
+    sieve: str = Field(
+        default="",
+        description="the sieve as the sheet names it: 'No. 200', '3/4 in', "
+                    "'0.075 mm', '80 um'")
+    method: str = Field(
+        default="",
+        description="sieve or hydrometer, when the sheet distinguishes them")
+
+
+class AtterbergResult(BaseModel):
+    """Liquid limit, plastic limit and plasticity index, as printed.
+
+    All three are percentages and therefore plain numbers. ``non_plastic`` is
+    the sheet printing NP rather than a figure, which is a RESULT -- this
+    soil has no plastic limit -- and not a missing value.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: str = Field(
-        description="atterberg, moisture, gradation, hydrometer, "
-                    "consolidation, triaxial_uu, triaxial_cu, triaxial_cd, "
-                    "direct_shear, unconfined, proctor, cbr, permeability, "
-                    "specific_gravity, corrosivity, swell, collapse, "
-                    "organic_content, other")
+    kind: Literal["atterberg"] = "atterberg"
+    ll: Optional[float] = Field(default=None, description="liquid limit, %")
+    pl: Optional[float] = Field(default=None, description="plastic limit, %")
+    pi: Optional[float] = Field(
+        default=None, description="plasticity index, %")
+    non_plastic: bool = Field(
+        default=False, description="the sheet printed NP rather than limits")
+    shrinkage_limit: Optional[float] = None
+    flow_curve: List[Tuple[int, float]] = Field(
+        default_factory=list,
+        description="the Casagrande trials, (blow count, water content %), "
+                    "in the order printed")
+    pl_trials: List[float] = Field(
+        default_factory=list,
+        description="each plastic-limit determination, %")
+    water_content: Optional[float] = Field(
+        default=None, description="natural water content, %, when printed")
+    uscs: str = Field(default="", description="as printed; never inferred")
+    description: str = Field(default="", description="the sheet's own words")
+
+
+class GradationResult(BaseModel):
+    """A grading curve, and the numbers the sheet derives from it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["gradation"] = "gradation"
+    percent_passing: List[SievePoint] = Field(
+        default_factory=list,
+        description="the curve, coarsest first, as printed or digitised")
+    d10: Optional[Quantity] = None
+    d30: Optional[Quantity] = None
+    d50: Optional[Quantity] = None
+    d60: Optional[Quantity] = None
+    d85: Optional[Quantity] = None
+    d90: Optional[Quantity] = None
+    d100: Optional[Quantity] = Field(
+        default=None, description="the largest particle size, when printed")
+    cu: Optional[float] = Field(
+        default=None, description="coefficient of uniformity, dimensionless")
+    cc: Optional[float] = Field(
+        default=None, description="coefficient of curvature, dimensionless")
+    cobbles_percent: Optional[float] = None
+    gravel_percent: Optional[float] = None
+    sand_percent: Optional[float] = None
+    silt_percent: Optional[float] = None
+    clay_percent: Optional[float] = None
+    fines_percent: Optional[float] = Field(
+        default=None,
+        description="silt and clay together, where the sheet prints one "
+                    "number for them")
+    hydrometer: bool = Field(
+        default=False, description="a hydrometer was run as well as sieves")
+    water_content: Optional[float] = None
+    uscs: str = Field(default="", description="as printed; never inferred")
+    description: str = Field(default="", description="the sheet's own words")
+
+
+class ConsolidationPoint(BaseModel):
+    """One load step: the pressure, and how far the specimen moved."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    stress: Quantity = Field(description="the applied pressure, as printed")
+    strain_percent: Optional[float] = Field(
+        default=None,
+        description="axial strain, %, keeping the SIGN the sheet plots it "
+                    "with: swell one way, compression the other")
+    void_ratio: Optional[float] = Field(
+        default=None,
+        description="e, where the sheet plots e rather than strain")
+    stage: str = Field(
+        default="load", description="load, unload or rebound, as printed")
+
+
+class ConsolidationResult(BaseModel):
+    """A one-dimensional swell, collapse or oedometer test.
+
+    ``test_type`` is the sub-kind the sheet names -- a swell test and an
+    oedometer are the same apparatus run for different answers -- and is a
+    field of its own rather than the discriminator, which belongs to
+    :attr:`LabTest.kind`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["swell_consolidation"] = "swell_consolidation"
+    test_type: str = Field(
+        default="",
+        description="swell, collapse, oedometer or consolidation, as the "
+                    "sheet names it")
+    points: List[ConsolidationPoint] = Field(
+        default_factory=list,
+        description="the pressure-strain or pressure-void-ratio curve")
+    swell_percent: Optional[float] = Field(
+        default=None, description="percent swell, at the pressure below")
+    swell_at: Optional[Quantity] = Field(
+        default=None,
+        description="the seating pressure the swell was measured at")
+    swell_pressure: Optional[Quantity] = None
+    pc: Optional[Quantity] = Field(
+        default=None, description="preconsolidation pressure")
+    cc: Optional[float] = Field(
+        default=None, description="compression index, dimensionless")
+    cr: Optional[float] = Field(
+        default=None, description="recompression index, dimensionless")
+    cv: Optional[Quantity] = Field(
+        default=None, description="coefficient of consolidation")
+    e0: Optional[float] = Field(default=None, description="initial void ratio")
+    dry_unit_weight: Optional[Quantity] = None
+    wc: Optional[float] = Field(default=None, description="water content, %")
+    saturation_percent: Optional[float] = None
+    uscs: str = Field(default="")
+    description: str = Field(default="")
+
+
+class ShearPoint(BaseModel):
+    """One point of a failure envelope or of a stress-strain curve."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    x: Quantity = Field(
+        description="normal stress on an envelope; axial strain (unit '%') "
+                    "on a stress-strain curve")
+    y: Quantity = Field(
+        description="shear stress on an envelope; deviator stress on a "
+                    "stress-strain curve")
+    specimen: str = Field(
+        default="", description="which specimen this point belongs to")
+
+
+class StrengthSpecimen(BaseModel):
+    """One specimen of a strength test, as the sheet reports it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    specimen_id: str = Field(default="", description="1, 2, 3 or as printed")
+    confining: Optional[Quantity] = Field(
+        default=None, description="cell or normal pressure")
+    peak_deviator: Optional[Quantity] = Field(
+        default=None,
+        description="peak deviator stress (triaxial), peak shear stress "
+                    "(direct shear), or the failure stress")
+    strain_at_peak_percent: Optional[float] = None
+    pore_pressure: Optional[Quantity] = Field(
+        default=None, description="pore pressure at failure, or its change")
+    stress_ratio: Optional[float] = Field(
+        default=None, description="maximum effective stress ratio")
+    c: Optional[Quantity] = Field(
+        default=None, description="cohesion, where reported per specimen")
+    phi_deg: Optional[float] = None
+    wc: Optional[float] = Field(default=None, description="water content, %")
+    dry_density: Optional[Quantity] = None
+    wet_density: Optional[Quantity] = None
+    height: Optional[Quantity] = None
+    diameter: Optional[Quantity] = None
+    note: str = Field(default="")
+
+
+class StrengthResult(BaseModel):
+    """A triaxial, direct shear or unconfined compression test.
+
+    One class for four kinds because a strength test has one shape of answer:
+    specimens, each sheared under a confinement, and an envelope or a single
+    strength read off them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["triaxial", "direct_shear", "unconfined",
+                  "unconfined_rock"] = "triaxial"
+    test_type: str = Field(
+        default="",
+        description="UU, CU, CD, CDS, direct_shear, unconfined or "
+                    "unconfined_rock, as the sheet names it")
+    specimens: List[StrengthSpecimen] = Field(default_factory=list)
+    c: Optional[Quantity] = Field(
+        default=None, description="cohesion intercept of the envelope")
+    phi_deg: Optional[float] = Field(
+        default=None, description="friction angle of the envelope, degrees")
+    c_residual: Optional[Quantity] = None
+    phi_residual_deg: Optional[float] = None
+    qu: Optional[Quantity] = Field(
+        default=None, description="unconfined compressive strength")
+    su: Optional[Quantity] = Field(
+        default=None,
+        description="undrained shear strength, where reported instead of qu")
+    strain_at_failure_percent: Optional[float] = None
+    points: List[ShearPoint] = Field(
+        default_factory=list,
+        description="the envelope, or the stress-strain curve, when the "
+                    "sheet plots one")
+    wc: Optional[float] = None
+    dry_density: Optional[Quantity] = None
+    wet_density: Optional[Quantity] = None
+    rock_type: str = Field(default="", description="for a rock core")
+    weathering: str = Field(default="")
+    uscs: str = Field(default="")
+    description: str = Field(default="")
+
+
+class CompactionPoint(BaseModel):
+    """One compaction trial: how wet it was, and how dense it came out."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    water_content: float = Field(description="%")
+    dry_density: Quantity = Field(description="as printed")
+
+
+class CompactionResult(BaseModel):
+    """A Proctor: the curve, its peak, and how it was run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["compaction"] = "compaction"
+    points: List[CompactionPoint] = Field(default_factory=list)
+    max_dry_density: Optional[Quantity] = None
+    optimum_wc: Optional[float] = Field(default=None, description="%")
+    method: str = Field(
+        default="",
+        description="standard, modified, or the standard's own name")
+    mould_volume: Optional[Quantity] = None
+    blows_per_layer: Optional[int] = None
+    layers: Optional[int] = None
+    rammer_mass: Optional[Quantity] = None
+    oversize_percent: Optional[float] = None
+    uscs: str = Field(default="")
+    description: str = Field(default="")
+
+
+class CBRResult(BaseModel):
+    """A laboratory California bearing ratio."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["cbr"] = "cbr"
+    cbr_percent: Optional[float] = Field(
+        default=None, description="the reported CBR, %")
+    cbr_at_0_1in: Optional[float] = None
+    cbr_at_0_2in: Optional[float] = None
+    swell_percent: Optional[float] = None
+    soaked: Optional[bool] = None
+    surcharge: Optional[Quantity] = None
+    dry_density: Optional[Quantity] = None
+    wc: Optional[float] = Field(default=None, description="%")
+    compaction_percent: Optional[float] = Field(
+        default=None, description="percent of maximum dry density")
+    points: List[Tuple[float, float]] = Field(
+        default_factory=list,
+        description="(penetration, load or stress) in the sheet's own units")
+    description: str = Field(default="")
+
+
+class MoistureDensityResult(BaseModel):
+    """Water content, density, and the loss-on-ignition pair.
+
+    One class for three kinds because these are the measurements a laboratory
+    makes on a specimen before it does anything else to it, and a sheet that
+    prints one usually prints the others beside it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["moisture_content", "density",
+                  "organic_content"] = "moisture_content"
+    wc: Optional[float] = Field(default=None, description="water content, %")
+    water_contents: List[float] = Field(
+        default_factory=list,
+        description="each determination, where the sheet prints them and an "
+                    "average")
+    wet_density: Optional[Quantity] = None
+    dry_density: Optional[Quantity] = None
+    specific_gravity: Optional[float] = None
+    void_ratio: Optional[float] = None
+    saturation_percent: Optional[float] = None
+    ash_percent: Optional[float] = Field(
+        default=None, description="ash remaining after ignition, %")
+    organic_percent: Optional[float] = Field(
+        default=None, description="loss on ignition, %")
+    uscs: str = Field(default="")
+    description: str = Field(default="")
+
+
+class ChemicalResult(BaseModel):
+    """A corrosivity suite: pH, resistivity and the ions.
+
+    Every field takes a string as well as a number, because these sheets
+    print ``<10``, ``Nil``, ``trace`` and ``positive`` as often as they print
+    figures, and those are results.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["chemical"] = "chemical"
+    pH: Optional[Reported] = None
+    resistivity: Optional[Reported] = Field(
+        default=None, description="as printed: ohm-cm, kohm-cm, ohm.m")
+    resistivity_minimum: Optional[Reported] = Field(
+        default=None,
+        description="the minimum-resistivity result, where the sheet reports "
+                    "as-received and minimum")
+    sulfate: Optional[Reported] = None
+    chloride: Optional[Reported] = None
+    sulfides: Optional[Reported] = None
+    redox: Optional[Reported] = Field(
+        default=None, description="redox potential, mV")
+    total_salts: Optional[Reported] = None
+    conductivity: Optional[Reported] = None
+    organic_percent: Optional[Reported] = None
+    temperature: Optional[Reported] = None
+    wc: Optional[Reported] = Field(default=None, description="water content, %")
+    reporting_limit: Optional[Reported] = Field(
+        default=None,
+        description="the laboratory's reporting limit, when printed, so a "
+                    "'<' value can be read")
+    lab_sample_id: str = Field(
+        default="", description="the laboratory's own sample number")
+    description: str = Field(default="")
+
+
+class SummaryRow(BaseModel):
+    """One specimen's line of a summary-of-laboratory-tests table.
+
+    A row is not a test: it is one sample's results gathered from several.
+    It is kept as a row because the table is a thing the report PRINTS, and
+    the reconciler's job is to set it beside the per-sheet values, not to
+    decide in advance which of the two is right.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    investigation_id: str = Field(default="")
+    sample_id: str = Field(default="")
+    depth_top: Optional[Quantity] = None
+    depth_bottom: Optional[Quantity] = None
+    elevation_top: Optional[Quantity] = None
+    sample_type: str = Field(default="")
+    description: str = Field(default="")
+    uscs: str = Field(default="")
+    stratum: str = Field(default="")
+    lab: str = Field(default="")
+    wc: Optional[float] = Field(default=None, description="%")
+    ll: Optional[float] = None
+    pl: Optional[Reported] = Field(
+        default=None, description="a number, or 'N.P.' as printed")
+    pi: Optional[float] = None
+    percent_passing: List[SievePoint] = Field(
+        default_factory=list,
+        description="the sieve columns this table carries, e.g. No. 4, "
+                    "No. 40, No. 200")
+    fines_percent: Optional[float] = None
+    sand_percent: Optional[float] = None
+    gravel_percent: Optional[float] = None
+    silt_clay_percent: Optional[float] = None
+    wet_density: Optional[Quantity] = None
+    dry_density: Optional[Quantity] = None
+    max_dry_density: Optional[Quantity] = None
+    optimum_wc: Optional[float] = None
+    qu: Optional[Quantity] = None
+    su: Optional[Quantity] = None
+    c: Optional[Quantity] = None
+    phi_deg: Optional[float] = None
+    swell_percent: Optional[float] = None
+    organic_percent: Optional[float] = None
+    pH: Optional[Reported] = None
+    resistivity: Optional[Reported] = None
+    sulfate: Optional[Reported] = None
+    chloride: Optional[Reported] = None
+    sulfides: Optional[Reported] = None
+    redox: Optional[Reported] = None
+    other: List[Tuple[str, str]] = Field(
+        default_factory=list,
+        description="any column this row carries that has no field here, as "
+                    "(the column's printed heading, the cell's text)")
+
+
+class SummaryTableResult(BaseModel):
+    """A whole summary-of-laboratory-tests table: one row per specimen."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["summary_table"] = "summary_table"
+    rows: List[SummaryRow] = Field(default_factory=list)
+    title: str = Field(default="", description="the table's own heading")
+    sheet: str = Field(
+        default="", description="its 'Sheet 1 of 4', as printed")
+
+
+class OtherResult(BaseModel):
+    """A sheet with no result class of its own, and the page that has none.
+
+    ``no_results`` is the certificate page that lists which samples a
+    laboratory received and reports nothing about them. It is a fact about
+    the page, and recording it is how a reconciler knows the page was read
+    and found empty rather than skipped.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["other", "specific_gravity", "permeability"] = "other"
+    no_results: bool = Field(
+        default=False,
+        description="the page carries no test result: a sample list, a chain "
+                    "of custody, a cover sheet")
+    fields: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="everything the sheet printed, keyed by the name the "
+                    "sheet gives it")
+
+
+#: The union, discriminated on ``kind``. A result read back off disk rebuilds
+#: its own class; a result whose kind does not match its test is refused by
+#: :class:`LabTest`.
+LabResult = Annotated[
+    Union[AtterbergResult, GradationResult, ConsolidationResult,
+          StrengthResult, CompactionResult, CBRResult, MoistureDensityResult,
+          ChemicalResult, SummaryTableResult, OtherResult],
+    Field(discriminator="kind"),
+]
+
+#: ``LabTest.kind -> the result class that answers for it``. Built from the
+#: classes rather than written out a second time, so a result class cannot be
+#: added without this table knowing about it.
+RESULT_CLASS: Dict[str, Any] = {}
+for _cls in (AtterbergResult, GradationResult, ConsolidationResult,
+             StrengthResult, CompactionResult, CBRResult,
+             MoistureDensityResult, ChemicalResult, SummaryTableResult,
+             OtherResult):
+    for _kind in _cls.model_fields["kind"].annotation.__args__:
+        RESULT_CLASS[_kind] = _cls
+del _cls, _kind
+
+
+class LabTest(BaseModel):
+    """One laboratory test, on one specimen, as one sheet reports it.
+
+    A sheet reporting several specimens becomes several LabTests -- except a
+    summary table, which is ONE test whose result holds a row per specimen,
+    because the table is a document the report prints and splitting it would
+    lose which values were printed together.
+
+    The link to the ground is ``investigation_id`` plus ``depth_top``, both
+    AS PRINTED ON THE SHEET. The reconciler matches them against the logs;
+    this record never invents the link, because a lab sheet that names no
+    boring is a real thing and a guessed link is worse than none.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: LabKind = Field(
+        description="what the sheet's own title says the test is")
     investigation_id: str = Field(
         default="", description="the hole the sample came from, as printed")
-    sample_id: str = Field(default="")
-    depth: Optional[Quantity] = None
+    sample_id: str = Field(
+        default="", description="the sample's own label, as printed")
+    depth_top: Optional[Quantity] = Field(
+        default=None, description="depth to the top of the specimen")
     depth_bottom: Optional[Quantity] = None
+    elevation: Optional[Quantity] = None
     standard: str = Field(
-        default="", description="ASTM D4318, AASHTO T89, NF P94-051 ...")
+        default="", description="ASTM D4318, BS 1377 Part 2, NF P94-051 ...")
     lab: str = Field(default="", description="who ran it, when printed")
-    result: Dict[str, Any] = Field(
+    date: str = Field(default="", description="as printed; never normalised")
+    language: str = Field(
+        default="",
+        description="the sheet's language as a two-letter code where it is "
+                    "not English: fr, es, pt")
+    pages: List[int] = Field(
+        default_factory=list,
+        description="0-based PDF pages this test was read from")
+    source_report: str = Field(default="")
+    curves_digitised: bool = Field(
+        default=False,
+        description="a value in the result was read off a PLOT rather than "
+                    "a table. The whole test is flagged, because a reviewer "
+                    "checks the sheet, not one number")
+    result: Optional[LabResult] = Field(
+        default=None,
+        description="the typed result; None when the kind is known and the "
+                    "values are not")
+    fields: Dict[str, str] = Field(
         default_factory=dict,
-        description="WP3 STUB: the test's values, keyed by the name the "
-                    "sheet gives them. Typed per kind in WP3")
+        description="every other key-value the sheet printed, as printed")
+    note: str = Field(default="")
     prov: List[Provenance] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _result_matches_kind(self) -> "LabTest":
+        """A result must answer for the kind it is attached to.
+
+        Checked rather than trusted because ``kind`` is what every consumer
+        dispatches on: an Atterberg result filed under a gradation test would
+        be read as a gradation by everything downstream, and the mistake
+        would be invisible in the JSON.
+        """
+        if self.result is not None and self.result.kind != self.kind:
+            raise ValueError(
+                f"a {self.kind!r} test cannot carry a {self.result.kind!r} "
+                f"result; the result class for {self.kind!r} is "
+                f"{RESULT_CLASS.get(self.kind, OtherResult).__name__}")
+        return self
 
 
 class Investigation(BaseModel):
@@ -717,6 +1330,47 @@ class ReportRecord(BaseModel):
             "calcs": len(self.calcs),
             "qa": len(self.qa),
         }
+
+
+def si_numbers(value: Any, path: str = "",
+               skip: Tuple[str, ...] = ()) -> List[Tuple[str, float, str]]:
+    """``(field, value in SI, the SI unit)`` for every number a model holds.
+
+    Walks any part of the record -- a whole test, one result, one row -- and
+    returns the numbers in it and nothing else. A :class:`Quantity` converts;
+    a plain number is dimensionless and is taken as it stands; a string, a
+    boolean and a None are not numbers and do not appear. A quantity whose
+    printed unit the table cannot convert does not appear either, because
+    there is no SI value for it to have.
+
+    It exists so that a check on a record can ask "did these numbers survive"
+    without a second copy of whatever mapping a writer or a scorer uses. That
+    independence is the point: a walk over the model cannot agree with a
+    writer by sharing its mistakes.
+    """
+    out: List[Tuple[str, float, str]] = []
+    if value is None or isinstance(value, (str, bool)):
+        return out
+    if isinstance(value, Quantity):
+        converted = value.to_si()
+        if converted is not None:
+            out.append((path, converted.value, converted.unit))
+        return out
+    if isinstance(value, (int, float)):
+        out.append((path, float(value), ""))
+        return out
+    if isinstance(value, (list, tuple)):
+        for i, item in enumerate(value):
+            out.extend(si_numbers(item, f"{path}[{i}]"))
+        return out
+    fields = getattr(type(value), "model_fields", None)
+    if fields:
+        for name in fields:
+            if name in skip:
+                continue
+            here = f"{path}.{name}" if path else name
+            out.extend(si_numbers(getattr(value, name, None), here))
+    return out
 
 
 def record_json_schema() -> Dict[str, Any]:

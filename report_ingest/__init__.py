@@ -15,6 +15,13 @@ Two passes ship here today, both scored in
 ``report_ingest.label_review``
     An agent loop with four tools that checks the rule labels against the
     report's own account of itself and against the pages themselves.
+``report_ingest.log_reader`` and ``report_ingest.lab_reader``
+    One exploration log, and one laboratory sheet, read into the record.
+    Geometry says where and the model says what; Python refuses what the
+    page cannot support.
+``report_ingest.diggs_writer``
+    The record as real DIGGS 2.6, with the two gates on the file: the
+    bundled XSD, and a round trip through the app's own readers.
 ``report_ingest.cluster_scoring``
     The run that produces the real numbers: the whole corpus through
     Funhouse's Prompter, on the cluster, scored against the hand labels.
@@ -35,10 +42,10 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["triage", "review_labels", "read_log", "write_diggs",
-           "diggs_schema_gate", "diggs_roundtrip_gate", "ReportRecord",
-           "Investigation", "score_on_cluster", "PrompterEngine",
-           "ClaudeEngine", "CostMeter"]
+__all__ = ["triage", "review_labels", "read_log", "read_lab_sheet",
+           "write_diggs", "diggs_schema_gate", "diggs_roundtrip_gate",
+           "ReportRecord", "Investigation", "LabTest", "score_on_cluster",
+           "PrompterEngine", "ClaudeEngine", "CostMeter"]
 
 
 def __getattr__(name: str) -> Any:
@@ -52,7 +59,14 @@ def __getattr__(name: str) -> Any:
     """
     if name in ("ReportRecord", "Investigation", "Quantity", "Provenance",
                 "Layer", "Sample", "SPT", "WaterLevel", "LabTest", "Project",
-                "QAEntry", "SCHEMA_VERSION", "record_json_schema"):
+                "QAEntry", "SCHEMA_VERSION", "record_json_schema",
+                "LabKind", "LabResult", "RESULT_CLASS", "SievePoint",
+                "AtterbergResult", "GradationResult", "ConsolidationPoint",
+                "ConsolidationResult", "ShearPoint", "StrengthSpecimen",
+                "StrengthResult", "CompactionPoint", "CompactionResult",
+                "CBRResult", "MoistureDensityResult", "ChemicalResult",
+                "SummaryRow", "SummaryTableResult", "OtherResult",
+                "si_numbers"):
         from report_ingest import model
         return getattr(model, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
@@ -66,6 +80,16 @@ def read_log(*args: Any, **kwargs: Any):
     """
     from report_ingest.log_reader import read_log as _read_log
     return _read_log(*args, **kwargs)
+
+
+def read_lab_sheet(*args: Any, **kwargs: Any):
+    """:func:`report_ingest.lab_reader.read_lab_sheet`, on first use.
+
+    One laboratory sheet -- a multi-page test included -- read into typed
+    :class:`~report_ingest.model.LabTest` records.
+    """
+    from report_ingest.lab_reader import read_lab_sheet as _read
+    return _read(*args, **kwargs)
 
 
 def write_diggs(*args: Any, **kwargs: Any):

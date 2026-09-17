@@ -44,10 +44,12 @@ from subsurface_characterization.site_model import (
 __all__ = [
     "PROPERTY_CLASS_MAP", "parse_diggs26_lithology", "parse_diggs26_tests",
     "parse_diggs26_samples", "parse_diggs26_water",
+    "parse_diggs26_result_sets", "ResultSetRead",
 ]
 
 _NS_GML = "http://www.opengis.net/gml/3.2"
 _NS_XLINK = "http://www.w3.org/1999/xlink"
+_NS_26 = "http://diggsml.org/schemas/2.6"
 _NS_25A = "http://diggsml.org/schemas/2.5.a"
 #: Where the test procedures live. This namespace, not the DIGGS one, is the
 #: single fact that made a conformant file read as empty.
@@ -103,6 +105,30 @@ PROPERTY_CLASS_MAP: Dict[str, Tuple[str, str, str]] = {
     "horiz_stress_index": ("KD_dmt", "field", "DMT"),
     "limit_pressure": ("p_limit_kPa", "field", "pressuremeter"),
     "modulus_youngs": ("E_pmt_kPa", "field", "pressuremeter"),
+    #: What a laboratory sheet adds (WP3). Each is a dictionary term the lab
+    #: writer emits; the right-hand names extend this package's own
+    #: vocabulary, which is what makes the value reachable from a SiteModel.
+    "shrinkage_limit": ("SL_pct", "lab", "Atterberg"),
+    "percent_cobbles": ("pct_cobbles", "lab", "gradation"),
+    "percent_silt": ("pct_silt", "lab", "gradation"),
+    "d85": ("D85_mm", "lab", "gradation"),
+    "coef_uniformity": ("Cu", "lab", "gradation"),
+    "coef_curvature": ("Cc_grading", "lab", "gradation"),
+    "coef_consolidation_vertical": ("cv_m2_per_s", "lab", "consolidation"),
+    "degree_of_saturation": ("S_pct", "lab", "density"),
+    "cohesion_residual": ("c_residual_kPa", "lab", "shear"),
+    "friction_angle_residual": ("phi_residual_deg", "lab", "shear"),
+    "LOI": ("organic_pct", "lab", "loss_on_ignition"),
+    "pH": ("pH", "lab", "chemical"),
+    "resistivity": ("resistivity_ohm_m", "lab", "chemical"),
+    "resistivity_minimum": ("resistivity_min_ohm_m", "lab", "chemical"),
+    "sulfate_content": ("sulfate", "lab", "chemical"),
+    "chloride_content": ("chloride", "lab", "chemical"),
+    "redox_potential": ("redox_mV", "lab", "chemical"),
+    "conductivity": ("conductivity", "lab", "chemical"),
+    "temperature": ("temperature_C", "lab", "chemical"),
+    "cbr_0.1": ("CBR_0p1_pct", "lab", "CBR"),
+    "cbr_0.2": ("CBR_0p2_pct", "lab", "CBR"),
     #: Not a measurement at a depth: it sets the investigation's water level.
     "water_depth": ("__water_level__", "field", "water_level"),
     "water_depth_calc": ("__water_level__", "field", "water_level"),
@@ -138,6 +164,56 @@ def _positions(element, find_text) -> List[float]:
         if numbers:
             return numbers
     return []
+
+
+def _split(text: str, separator: str) -> List[str]:
+    """Split on a separator, treating whitespace as one."""
+    if separator.strip() == "":
+        return [part for part in str(text or "").split() if part != ""]
+    return [part.strip() for part in str(text or "").split(separator)
+            if part.strip() != ""]
+
+
+def _rows(data_values, n_columns: int) -> List[List[str]]:
+    """A ``dataValues`` element as a table of cells, as its own attributes say.
+
+    ``cs`` separates the cells of a row and ``ts`` separates the rows; both
+    are written on the element, and both are read here rather than assumed,
+    because a single row of numbers is written with a space and anything with
+    text or with more than one row is written with a semicolon.
+    """
+    if data_values is None:
+        return []
+    text = (data_values.text or "").strip()
+    if not text:
+        return []
+    cs = data_values.get("cs", ",") or ","
+    ts = data_values.get("ts", " ") or " "
+    out: List[List[str]] = []
+    for chunk in _split(text, ts):
+        cells = _split(chunk, cs) if cs.strip() else [chunk]
+        out.append(cells)
+    if not out:
+        return []
+    # A row that is one cell long where several columns are declared is a
+    # separator that did not separate -- a space-separated row of one value
+    # per row, say. Re-reading it as one row keeps the file readable rather
+    # than failing on it.
+    if n_columns > 1 and all(len(row) == 1 for row in out) \
+            and len(out) == n_columns:
+        return [[row[0] for row in out]]
+    return out
+
+
+def _one_number(cell: str) -> Optional[float]:
+    """One cell as a number, or None when it is text or missing."""
+    text = str(cell or "").strip()
+    if not text or text == "-":
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
 
 
 def _ref_id(element, find, ns_map: dict, *tags: str) -> Optional[str]:
@@ -251,15 +327,25 @@ def parse_diggs26_tests(root, ns_map, investigations, gml_id_map, warnings, *,
             if not depths:
                 continue
             depth = depths[0]
+            properties = findall(result, ".//diggs:Property", ns_map)
             classes = [find_text(prop, "diggs:propertyClass")
-                       for prop in findall(result, ".//diggs:Property",
-                                           ns_map)]
-            values = _numbers(find_text(result, ".//diggs:dataValues"))
-            if not classes or not values:
+                       for prop in properties]
+            data = find(result, ".//diggs:dataValues", ns_map)
+            rows = _rows(data, len(classes))
+            if not classes or not rows:
                 continue
-            for klass, value in zip(classes, values):
-                if value != value:                    # NaN: not a number
-                    continue
+            if len(rows) > 1:
+                # More than one row is a CURVE -- a grading, a consolidation,
+                # an envelope, one row per point. A SiteModel holds values at
+                # a depth and has nowhere to put a curve, and flattening one
+                # into twelve measurements at the same depth would read as
+                # twelve tests. Curves are read by
+                # parse_diggs26_result_sets, which returns the table.
+                continue
+            for klass, cell in zip(classes, rows[0]):
+                value = _one_number(cell)
+                if value is None:
+                    continue                      # text, or a missing cell
                 mapped = PROPERTY_CLASS_MAP.get((klass or "").strip())
                 if mapped is None:
                     continue
@@ -304,6 +390,190 @@ def _drive_sets(test, procedure, ns_map, geo, inv, find, find_text) -> None:
         inv.measurements.append(PointMeasurement(
             depth_m=depth, parameter="blow_count", value=value,
             source="field", test_type="SPT"))
+
+
+class ResultSetRead:
+    """One ``Test`` read as the table it is, with nothing thrown away.
+
+    ``parse_diggs`` builds a :class:`SiteModel`, which holds a value at a
+    depth. That is the right shape for a blow count and the wrong one for a
+    grading curve, a consolidation curve or a failure envelope -- twelve
+    numbers at one depth that mean one thing together. This is the other
+    reading: every result set in the file, exactly as written, columns and
+    rows and units, whether or not the property is one the SiteModel has a
+    name for.
+
+    It is what a round-trip check compares against, and what a consumer wants
+    when it is after the laboratory data rather than a profile.
+    """
+
+    __slots__ = ("test_id", "name", "procedure", "investigation_id",
+                 "sampling_feature", "depth_m", "bottom_depth_m", "columns",
+                 "rows", "properties")
+
+    def __init__(self, test_id: str, name: str, procedure: str,
+                 investigation_id: Optional[str], sampling_feature: str,
+                 depth_m: Optional[float], bottom_depth_m: Optional[float],
+                 columns: List[Dict[str, str]],
+                 rows: List[List[Any]],
+                 properties: Dict[str, str]) -> None:
+        self.test_id = test_id
+        self.name = name
+        self.procedure = procedure
+        self.investigation_id = investigation_id
+        self.sampling_feature = sampling_feature
+        self.depth_m = depth_m
+        self.bottom_depth_m = bottom_depth_m
+        #: ``{"name", "class", "uom", "type", "codeSpace"}`` per column.
+        self.columns = columns
+        #: One list per row; a numeric cell is a float, a text cell a string,
+        #: a missing cell None.
+        self.rows = rows
+        #: What the Test carried as ``otherMeasurementProperty``: the sample
+        #: label, the laboratory, the date, the pages.
+        self.properties = properties
+
+    @property
+    def n_rows(self) -> int:
+        return len(self.rows)
+
+    def column(self, property_class: str) -> Optional[int]:
+        """The index of the column with that ``propertyClass``, or None."""
+        for i, column in enumerate(self.columns):
+            if column["class"] == property_class:
+                return i
+        return None
+
+    def values(self, property_class: str) -> List[Any]:
+        """Every cell of that column, in row order."""
+        i = self.column(property_class)
+        if i is None:
+            return []
+        return [row[i] if i < len(row) else None for row in self.rows]
+
+    def scalar(self, property_class: str) -> Any:
+        """The single value of that column, or None."""
+        got = self.values(property_class)
+        return got[0] if len(got) == 1 else None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"test_id": self.test_id, "name": self.name,
+                "procedure": self.procedure,
+                "investigation_id": self.investigation_id,
+                "depth_m": self.depth_m,
+                "bottom_depth_m": self.bottom_depth_m,
+                "columns": [dict(c) for c in self.columns],
+                "rows": [list(r) for r in self.rows],
+                "properties": dict(self.properties)}
+
+    def __repr__(self) -> str:                     # pragma: no cover - repr
+        return (f"ResultSetRead({self.name!r}, {self.investigation_id!r}, "
+                f"{self.depth_m!r} m, {len(self.columns)} column(s), "
+                f"{len(self.rows)} row(s))")
+
+
+def parse_diggs26_result_sets(filepath: Optional[str] = None,
+                              content: Optional[str] = None
+                              ) -> List[ResultSetRead]:
+    """Every ``measurement/Test`` in a DIGGS 2.6 file, as its own table.
+
+    Additive and standalone: ``parse_diggs`` is untouched and still returns a
+    SiteModel. This reads the same file a second way, for the results a
+    SiteModel has no shape for -- curves, values the dictionary has no term
+    for, and values a laboratory printed as words.
+    """
+    import xml.etree.ElementTree as ET
+
+    if filepath is None and content is None:
+        raise ValueError("Must provide either filepath or content")
+    root = (ET.fromstring(content) if content is not None
+            else ET.parse(filepath).getroot())
+    ns = _NS_26 if _NS_26 in root.tag else (
+        _NS_25A if _NS_25A in root.tag else _NS_26)
+    d = f"{{{ns}}}"
+
+    names: Dict[str, str] = {}
+    for feature in ("Borehole", "TrialPit"):
+        for element in root.iter(f"{d}{feature}"):
+            gml_id = element.get(f"{{{_NS_GML}}}id", "")
+            label = element.find(f"{{{_NS_GML}}}name")
+            if gml_id:
+                names[gml_id] = ((label.text or "").strip() if label is not None
+                                 else gml_id)
+
+    out: List[ResultSetRead] = []
+    for test in root.iter(f"{d}Test"):
+        test_id = test.get(f"{{{_NS_GML}}}id", "")
+        label = test.find(f"{{{_NS_GML}}}name")
+        name = (label.text or "").strip() if label is not None else ""
+        feature_id = ""
+        ref = test.find(f"{d}samplingFeatureRef")
+        if ref is not None:
+            feature_id = (ref.get(f"{{{_NS_XLINK}}}href", "")
+                          or ref.get("xlink:href", "")).lstrip("#")
+        procedure = ""
+        proc = test.find(f"{d}procedure")
+        if proc is not None:
+            for child in proc:
+                tag = child.tag
+                procedure = (tag.split("}", 1)[1] if tag.startswith("{")
+                             else tag)
+                break
+        properties: Dict[str, str] = {}
+        for parameter in test.iter(f"{d}Parameter"):
+            key = parameter.find(f"{d}parameterName")
+            value = parameter.find(f"{d}parameterValue")
+            if key is not None and (key.text or "").strip():
+                properties[(key.text or "").strip()] = (
+                    (value.text or "").strip() if value is not None else "")
+        for result in test.iter(f"{d}TestResult"):
+            depths: List[float] = []
+            location = result.find(f"{d}location")
+            if location is not None:
+                for path in (f".//{{{_NS_GML}}}posList",
+                             f".//{{{_NS_GML}}}pos"):
+                    element = location.find(path)
+                    if element is not None:
+                        depths = [n for n in _numbers(element.text or "")
+                                  if n == n]
+                        if depths:
+                            break
+            columns: List[Dict[str, str]] = []
+            for prop in result.iter(f"{d}Property"):
+                klass = prop.find(f"{d}propertyClass")
+                columns.append({
+                    "name": _child_text(prop, f"{d}propertyName"),
+                    "class": _child_text(prop, f"{d}propertyClass"),
+                    "uom": _child_text(prop, f"{d}uom"),
+                    "type": _child_text(prop, f"{d}typeData"),
+                    "codeSpace": (klass.get("codeSpace", "")
+                                  if klass is not None else ""),
+                })
+            data = result.find(f".//{d}dataValues")
+            rows: List[List[Any]] = []
+            for cells in _rows(data, len(columns)):
+                row: List[Any] = []
+                for i, cell in enumerate(cells):
+                    kind = columns[i]["type"] if i < len(columns) else ""
+                    if kind == "string" or _one_number(cell) is None:
+                        row.append(None if str(cell).strip() in ("", "-")
+                                   else str(cell).strip())
+                    else:
+                        row.append(_one_number(cell))
+                rows.append(row)
+            out.append(ResultSetRead(
+                test_id=test_id, name=name, procedure=procedure,
+                investigation_id=names.get(feature_id),
+                sampling_feature=feature_id,
+                depth_m=(depths[0] if depths else None),
+                bottom_depth_m=(depths[1] if len(depths) > 1 else None),
+                columns=columns, rows=rows, properties=properties))
+    return out
+
+
+def _child_text(element, tag: str) -> str:
+    child = element.find(tag)
+    return (child.text or "").strip() if child is not None else ""
 
 
 def parse_diggs26_samples(root, ns_map, investigations, gml_id_map, warnings,

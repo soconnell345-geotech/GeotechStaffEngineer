@@ -76,12 +76,16 @@ SET_NAMES: Tuple[str, ...] = ("insample", "oos_open", "oos_blind")
 #: The measurements this run can make. ``labels`` is WP1b -- triage and the
 #: label review over whole reports. ``logs`` is WP2b -- the log grid and then
 #: the log reader over each hand-truthed log, scored before and after.
-STAGE_NAMES: Tuple[str, ...] = ("labels", "logs")
+#: ``lab`` is WP3 -- the page's own tables and then the lab reader over each
+#: hand-truthed laboratory sheet, scored the same two ways.
+STAGE_NAMES: Tuple[str, ...] = ("labels", "logs", "lab")
 
 #: The reports the log rules were allowed to be tuned on, when no ``OPEN.txt``
 #: sits beside the truth files. Everything else is scored as blind.
 DEFAULT_OPEN_LOGS: Tuple[str, ...] = ("R36", "R37", "R06", "R07", "R15",
                                       "R28")
+#: The same, for the laboratory sheets.
+DEFAULT_OPEN_LAB: Tuple[str, ...] = ("R36", "R28", "R17", "R06")
 
 #: Paths a run must not write to. A Workspace write looks like it worked and
 #: then is not there.
@@ -193,8 +197,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      corpus_dir: Any = None,
                      stages: Sequence[str] = ("labels",),
                      truth_dir: Any = None,
+                     lab_truth_dir: Any = None,
                      log_budget: int = 6,
-                     open_reports: Optional[Sequence[str]] = None
+                     lab_budget: int = 4,
+                     open_reports: Optional[Sequence[str]] = None,
+                     open_lab_reports: Optional[Sequence[str]] = None
                      ) -> Dict[str, Any]:
     """Run the rules, triage and the label review over the corpus, and score.
 
@@ -242,19 +249,23 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         Which measurements to make. ``("labels",)`` is WP1b -- triage and the
         label review over whole reports. ``"logs"`` is WP2b -- ``log_grid``
         and then the log reader over each hand-truthed log, scored before
-        (the grid alone) and after (the record the reader built). Pass both
-        to do both in one run: ``stages=("labels", "logs")``.
-    truth_dir
-        Required by the ``logs`` stage: the folder of hand-truthed logs
-        (``<ID>_p<page>.json``). It is private, so it travels to the cluster
-        with the run rather than living in the wheel. An ``OPEN.txt`` beside
-        the truth files names the reports the rules were allowed to be tuned
-        on; everything else is scored as blind.
-    log_budget
-        Model calls the reader may spend per log. The reader's own ceiling is
-        six whatever this says.
-    open_reports
-        Override the open set instead of reading ``OPEN.txt``.
+        (the grid alone) and after (the record the reader built). ``"lab"``
+        is WP3 -- the page's own detected tables and then the lab reader over
+        each hand-truthed laboratory sheet, scored the same two ways. Pass
+        any combination: ``stages=("labels", "logs", "lab")``.
+    truth_dir, lab_truth_dir
+        Required by the ``logs`` and ``lab`` stages: the folders of
+        hand-truthed logs and laboratory sheets
+        (``<kind>__<ID>_p<page>.json``). They are private, so they travel to
+        the cluster with the run rather than living in the wheel. An
+        ``OPEN.txt`` beside the truth files names the reports whose pages the
+        prompts were allowed to be tuned against; everything else is scored
+        as blind.
+    log_budget, lab_budget
+        Model calls a reader may spend per log and per sheet. Each reader's
+        own ceiling -- six and four -- holds whatever these say.
+    open_reports, open_lab_reports
+        Override an open set instead of reading its ``OPEN.txt``.
     """
     if prompter is None:
         raise ValueError(
@@ -275,12 +286,20 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
             "the 'logs' stage scores the reader against the hand-truthed "
             "logs, so it needs truth_dir -- the folder of <ID>_p<page>.json "
             "files. They are private and do not ship in the wheel.")
+    if "lab" in stages and lab_truth_dir is None:
+        raise ValueError(
+            "the 'lab' stage scores the reader against the hand-truthed "
+            "laboratory sheets, so it needs lab_truth_dir -- the folder of "
+            "<kind>__<ID>_p<page>.json files. They are private and do not "
+            "ship in the wheel.")
     out = Path(out_dir)
     _check_out_dir(out)
     for sub in ("runs", "triage"):
         (out / sub).mkdir(parents=True, exist_ok=True)
     if "logs" in stages:
         (out / "logs").mkdir(parents=True, exist_ok=True)
+    if "lab" in stages:
+        (out / "lab").mkdir(parents=True, exist_ok=True)
 
     corpus = Corpus(reports_dir, manifest=manifest, di_dir=di_dir,
                     labels_xlsx=labels_xlsx, cache_dir=out)
@@ -368,6 +387,13 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         results["logs"] = logs
         lines += _render_logs(logs)
 
+    if "lab" in stages:
+        lab = _run_lab(corpus, prompter, model, out, Path(lab_truth_dir),
+                       budget=lab_budget, redo=redo, max_sheets=max_reports,
+                       open_reports=open_lab_reports)
+        results["lab"] = lab
+        lines += _render_lab(lab)
+
     (out / "results.json").write_text(json.dumps(_plain(results), indent=2),
                                       encoding="utf-8")
     (out / "RESULTS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -376,6 +402,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
     print(f"per-report runs in {out / 'runs'}, profiles in {out / 'triage'}")
     if "logs" in stages:
         print(f"per-log runs in {out / 'logs'}")
+    if "lab" in stages:
+        print(f"per-sheet runs in {out / 'lab'}")
     return results
 
 
@@ -618,6 +646,279 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{blob['seconds']:.0f} s")
 
     return _score_logs(done, failures, model, openset)
+
+
+# ---------------------------------------------------------------------------
+# the lab stage
+# ---------------------------------------------------------------------------
+
+def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
+             truth_dir: Path, *, budget: int, redo: bool,
+             max_sheets: Optional[int],
+             open_reports: Optional[Sequence[str]]) -> Dict[str, Any]:
+    """Tables and reader over every hand-truthed laboratory sheet.
+
+    Restartable the same way the other stages are: each sheet writes
+    ``lab/<sheet id>.json`` as it finishes and a later call skips it.
+    """
+    from report_ingest.engine import CostMeter, PrompterEngine
+    from report_ingest.lab_scoring import pages_of, report_of, score_one_sheet
+
+    if not truth_dir.is_dir():
+        raise FileNotFoundError(
+            f"no hand-truthed laboratory sheets at {truth_dir}; the 'lab' "
+            f"stage scores against them and cannot run without them")
+    truths = []
+    for path in sorted(truth_dir.glob("*.json")):
+        try:
+            truths.append(json.loads(path.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"  skipping {path.name}: {type(exc).__name__}: {exc}")
+    if max_sheets:
+        truths = truths[:int(max_sheets)]
+    openset = _open_set(truth_dir, open_reports) if (
+        open_reports or (truth_dir / "OPEN.txt").is_file()) \
+        else DEFAULT_OPEN_LAB
+    print(f"  lab: {len(truths)} hand-truthed sheet(s); open set "
+          f"{', '.join(openset)}")
+
+    done: Dict[str, dict] = {}
+    failures: Dict[str, str] = {}
+    for n, truth in enumerate(truths, 1):
+        sheet_id = str(truth.get("id") or f"sheet{n}")
+        report = report_of(truth)
+        run_file = out / "lab" / f"{sheet_id}.json"
+        if run_file.is_file() and not redo:
+            blob = json.loads(run_file.read_text(encoding="utf-8"))
+            # The open/blind split is decided at SCORING time, never frozen
+            # into a run file: a sheet moved into the open set after it ran
+            # has to move in the scorecard too, or the blind figure quietly
+            # keeps crediting a page somebody has since looked at.
+            blob["set"] = "open" if report in openset else "blind"
+            done[sheet_id] = blob
+            print(f"  [{n}/{len(truths)}] {sheet_id}: already done, skipping")
+            continue
+        if report not in set(corpus.present_ids()):
+            failures[sheet_id] = f"{report} is not in the reports folder"
+            print(f"  [{n}/{len(truths)}] {sheet_id}: skipped -- "
+                  f"{failures[sheet_id]}")
+            continue
+        meter = CostMeter()
+        engine = PrompterEngine(prompter, model, meter=meter)
+        started = time.time()
+        doc = None
+        try:
+            doc = corpus.open_report(report, di="auto", warn=False)
+            before, after = score_one_sheet(truth, doc, engine,
+                                            budget=budget, report_id=report)
+        except KeyboardInterrupt:
+            print("  interrupted; what is finished is on disk and a later "
+                  "call resumes")
+            break
+        except Exception as exc:                     # keep the run going
+            failures[sheet_id] = f"{type(exc).__name__}: {exc}"
+            print(f"  [{n}/{len(truths)}] {sheet_id}: FAILED -- "
+                  f"{failures[sheet_id]}")
+            traceback.print_exc()
+            continue
+        finally:
+            if doc is not None:
+                doc.close()
+        blob = {
+            "sheet_id": sheet_id,
+            "report": report,
+            "kind": str(truth.get("kind") or ""),
+            "run_date": date.today().isoformat(),
+            "set": "open" if report in openset else "blind",
+            "model": model,
+            "served_by": engine.served_by,
+            "pages": pages_of(truth),
+            "before": before.to_dict(),
+            "after": after.to_dict(),
+            "cost": meter.to_dict(),
+            "seconds": round(time.time() - started, 1),
+        }
+        run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        done[sheet_id] = blob
+        gain = after.total.found - before.total.found
+        print(f"  [{n}/{len(truths)}] {sheet_id}: "
+              f"{before.total.found}/{before.total.total} -> "
+              f"{after.total.found}/{after.total.total} "
+              f"({gain:+d}), {after.model_calls} model call(s), "
+              f"{blob['cost']['input_tokens']:,} in / "
+              f"{blob['cost']['output_tokens']:,} out, "
+              f"{blob['seconds']:.0f} s")
+    return _score_lab(done, failures, model, openset)
+
+
+def _lab_totals(rows: Sequence[dict], stage: str
+                ) -> Dict[str, Dict[str, int]]:
+    """``metric -> {found, total}`` summed over a set of sheets."""
+    from report_ingest.lab_scoring import METRICS
+
+    out = {m: {"found": 0, "total": 0} for m in METRICS}
+    for row in rows:
+        for metric, score in (row[stage].get("scores") or {}).items():
+            if metric not in out:
+                out[metric] = {"found": 0, "total": 0}
+            out[metric]["found"] += int(score.get("found") or 0)
+            out[metric]["total"] += int(score.get("total") or 0)
+    return out
+
+
+def _score_lab(done: Dict[str, dict], failures: Dict[str, str], model: str,
+               openset: Sequence[str]) -> Dict[str, Any]:
+    rows = [done[k] for k in sorted(done)]
+    sets: Dict[str, Any] = {}
+    for name in ("open", "blind", "all"):
+        group = [r for r in rows if name == "all" or r["set"] == name]
+        if not group:
+            continue
+        sets[name] = {
+            "sheets": [r["sheet_id"] for r in group],
+            "n_sheets": len(group),
+            "before": _lab_totals(group, "before"),
+            "after": _lab_totals(group, "after"),
+        }
+    by_kind: Dict[str, Any] = {}
+    for kind in sorted({r.get("kind") or "?" for r in rows}):
+        group = [r for r in rows if (r.get("kind") or "?") == kind]
+        by_kind[kind] = {
+            "n_sheets": len(group),
+            "before": _lab_totals(group, "before"),
+            "after": _lab_totals(group, "after"),
+        }
+    cost = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
+            "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
+    for row in rows:
+        for key in ("calls", "input_tokens", "output_tokens",
+                    "cache_read_tokens"):
+            cost[key] += row["cost"].get(key, 0)
+        cost["dollars"] += row["cost"].get("dollars", 0.0)
+        cost["seconds"] += row.get("seconds", 0.0)
+    return {
+        "date": date.today().isoformat(),
+        "model": model,
+        "served_by": sorted({r.get("served_by") for r in rows
+                             if r.get("served_by")}),
+        "open_set": list(openset),
+        "n_sheets": len(rows),
+        "failures": dict(failures),
+        "sets": sets,
+        "kinds": by_kind,
+        "per_sheet": [{
+            "sheet_id": r["sheet_id"], "set": r["set"],
+            "kind": r.get("kind") or "?",
+            "before": r["before"]["overall"], "after": r["after"]["overall"],
+            "model_calls": r["after"].get("model_calls", 0),
+            "tool_calls": r["after"].get("tool_calls", 0),
+            "unresolved": r["after"].get("unresolved", 0),
+            "changes": r["after"].get("changes", 0),
+            "error": r["after"].get("error"),
+            "input_tokens": r["cost"].get("input_tokens", 0),
+            "output_tokens": r["cost"].get("output_tokens", 0),
+            "dollars": r["cost"].get("dollars", 0.0),
+            "seconds": r.get("seconds", 0.0),
+        } for r in rows],
+        "cost": cost,
+    }
+
+
+def _render_lab(lab: Dict[str, Any]) -> List[str]:
+    """The lab stage, as tables that carry IDs, kinds, counts and rates only."""
+    from report_ingest.lab_scoring import (
+        DEPTH_TOL_M, EXACT_TOL, METRICS, PASSING_TOL,
+    )
+
+    out: List[str] = [
+        "", "# WP3 on the cluster: the lab reader through Prompter", "",
+        f"Run {lab['date']}. Model `{lab['model']}`, "
+        f"{lab['n_sheets']} hand-truthed sheet(s).",
+        "",
+        f"**before** is what the page's own detected TABLES hold; **after** "
+        f"is what the reader's records hold. A table has no idea what test "
+        f"it is on or which boring it belongs to, so `kind` and `link` have "
+        f"no before column at all, and the other three ask of the tables "
+        f"only whether the number is on the page. Tolerances: a depth links "
+        f"within {DEPTH_TOL_M} m, compared in metres whatever the sheet "
+        f"prints; an index value is exact to {EXACT_TOL}; a grading within "
+        f"{PASSING_TOL} percent; a curve within the tolerance its own truth "
+        f"file states.",
+    ]
+    if lab.get("served_by"):
+        out.append(f"Served by: {', '.join(lab['served_by'])}.")
+    if lab.get("failures"):
+        out += ["", "**Sheets that failed and are NOT in any number below:**"]
+        out += [f"- {sheet_id}: {why}"
+                for sheet_id, why in lab["failures"].items()]
+    out += ["", f"Open set (the reports whose lab pages were looked at): "
+                f"{', '.join(lab['open_set'])}. Everything else is blind."]
+
+    for name in ("open", "blind", "all"):
+        row = lab["sets"].get(name)
+        if not row:
+            continue
+        out += ["", f"## {name} -- {row['n_sheets']} sheet(s)", "", "```",
+                f"{'metric':<10}{'before':>14}{'after':>14}"]
+        for metric in METRICS:
+            before, after = row["before"].get(metric), row["after"].get(metric)
+            if not after or not (before["total"] or after["total"]):
+                continue
+            out.append(f"{metric:<10}{_rate(before):>14}{_rate(after):>14}")
+        before_all = {"found": sum(v["found"] for v in row["before"].values()),
+                      "total": sum(v["total"] for v in row["before"].values())}
+        after_all = {"found": sum(v["found"] for v in row["after"].values()),
+                     "total": sum(v["total"] for v in row["after"].values())}
+        out += [f"{'OVERALL':<10}{_rate(before_all):>14}"
+                f"{_rate(after_all):>14}", "```"]
+
+    out += ["", "## Per kind", "", "```",
+            f"{'kind':<20}{'sheets':>7}{'before':>14}{'after':>14}"]
+    for kind, row in lab.get("kinds", {}).items():
+        before_all = {"found": sum(v["found"] for v in row["before"].values()),
+                      "total": sum(v["total"] for v in row["before"].values())}
+        after_all = {"found": sum(v["found"] for v in row["after"].values()),
+                     "total": sum(v["total"] for v in row["after"].values())}
+        out.append(f"{kind:<20}{row['n_sheets']:>7}"
+                   f"{_rate(before_all):>14}{_rate(after_all):>14}")
+    out.append("```")
+
+    out += ["", "## Per sheet", "", "```",
+            f"{'sheet':<28}{'set':<7}{'before':>12}{'after':>12}{'calls':>7}"
+            f"{'zoom':>6}{'unres':>7}{'look':>6}{'in':>10}{'out':>8}{'s':>7}"]
+    for r in lab["per_sheet"]:
+        if r.get("error"):
+            out.append(f"{r['sheet_id']:<28}{r['set']:<7}ERROR "
+                       f"{str(r['error'])[:50]}")
+            continue
+        out.append(
+            f"{r['sheet_id']:<28}{r['set']:<7}"
+            f"{_rate(r['before']):>12}{_rate(r['after']):>12}"
+            f"{r['model_calls']:>7}{r['tool_calls']:>6}{r['unresolved']:>7}"
+            f"{r['changes']:>6}{r['input_tokens']:>10,}"
+            f"{r['output_tokens']:>8}{r['seconds']:>7.0f}")
+    out.append("```")
+    out += ["", "`zoom` is how many times the reader magnified a plot. "
+                "`unres` is what it could not settle plus what Python "
+                "refused -- an impossible depth, a percentage past 100, a "
+                "liquid limit below the plastic limit, a grading running "
+                "the wrong way. `look` is every value it took from the "
+                "picture and every curve it digitised.", ""]
+    cost = lab["cost"]
+    n = max(1, lab["n_sheets"])
+    out += ["## Cost", "", "```",
+            f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
+            f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
+            f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s",
+            f"per sheet: {cost['calls'] / n:.1f} calls, "
+            f"{cost['input_tokens'] / n:,.0f} in, "
+            f"{cost['output_tokens'] / n:,.0f} out, "
+            f"{cost['seconds'] / n:.0f} s",
+            "```", "",
+            "Funhouse publishes no per-token price for a capability tier, so "
+            "this reports TOKENS. Read the spend from Funhouse's own budget "
+            "endpoint for the same window."]
+    return out
 
 
 def _totals(rows: Sequence[dict], stage: str) -> Dict[str, Dict[str, int]]:

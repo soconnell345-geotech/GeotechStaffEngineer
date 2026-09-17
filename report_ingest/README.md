@@ -3,8 +3,7 @@
 Part of the report-ingest train (`module_work/REPORT_INGEST_PLAN.md`). planlens
 turns a PDF into pages with kinds, located text, an outline and a first draft of
 what each page **is**; this package adds the geotechnical judgement and the
-record. The lab reader, the narrative reader and the reconciler are later work
-packages.
+record. The narrative reader and the reconciler are later work packages.
 
 | Piece | Module | Shape |
 |---|---|---|
@@ -12,8 +11,10 @@ packages.
 | 0c. Label review | `label_review.py` | an agent loop with four tools |
 | The record | `model.py` | pydantic; the product everything else exports |
 | 2. Log reader | `log_reader.py` | one structured call per log, image alongside |
+| 3. Lab reader | `lab_reader.py` | one call per sheet, `zoom_plot` when a curve is only plotted |
 | 4. DIGGS writer | `diggs_writer.py` | deterministic, with two gates |
 | Scoring one log | `log_scoring.py` | the grid alone, then the reader |
+| Scoring one sheet | `lab_scoring.py` | the page's tables alone, then the reader |
 
 ## The record (`model.py`)
 
@@ -33,10 +34,37 @@ go to the page; a QA pass can ask which values rest on vision alone.
 `None`, a `QAEntry` says what was skipped and why, and
 `Investigation.units_known` is `False` when no depth unit was printed anywhere.
 
-`LabTest` keeps a free `result` dict until WP3 types it per kind,
 `NarrativeFacts` names the owner's two query schemas for WP4 and `CalcEntry` is
 WP5. They are in the schema now so a consumer written against it keeps working
 as the stubs fill in. `record_json_schema()` exports the whole thing.
+
+**`LabTest.result` is a typed result per kind** since WP3, discriminated on
+`kind`, and a result whose kind does not match its test is refused at
+construction — `kind` is what every consumer dispatches on, so an Atterberg
+result filed under a gradation would be read as a gradation by everything
+downstream and the mistake would be invisible in the JSON.
+
+| Result | For | Holds |
+|---|---|---|
+| `AtterbergResult` | atterberg | LL, PL, PI, shrinkage limit, `non_plastic`, the Casagrande flow curve, each plastic-limit trial |
+| `GradationResult` | gradation | the percent-passing curve as `SievePoint`s, D10–D100, Cu, Cc, the cobble/gravel/sand/silt/clay/fines fractions |
+| `ConsolidationResult` | swell_consolidation | `test_type` swell/collapse/oedometer, the pressure-strain (or void-ratio) curve with a stage per point, swell %, pc, Cc, Cr, cv, e0 |
+| `StrengthResult` | triaxial, direct_shear, unconfined, unconfined_rock | `test_type`, a `StrengthSpecimen` per specimen (confining, peak deviator, strain at peak, pore pressure, stress ratio, densities, dimensions), the envelope c and φ, qu, su, the envelope or stress-strain points |
+| `CompactionResult` | compaction | the Proctor points, maximum dry density, optimum water content, method, mould volume, layers and blows |
+| `CBRResult` | cbr | CBR and the 0.1/0.2 in values, swell, soaking, surcharge, the penetration points |
+| `MoistureDensityResult` | moisture_content, density, organic_content | water content and each determination, bulk and dry density, Gs, e, saturation, ash and loss on ignition |
+| `ChemicalResult` | chemical | pH, resistivity (as received and minimum), sulfate, chloride, sulfide, redox, total salts, conductivity, temperature |
+| `SummaryTableResult` | summary_table | one `SummaryRow` per specimen, each with its own boring, depth, index values, sieve columns and an `other` list for a column with no field |
+| `OtherResult` | other, specific_gravity, permeability | `no_results` for a page that reports none, and whatever the sheet printed |
+
+Every result field is a `Quantity` in the unit the sheet printed, or a plain
+number where the value has none — a percentage, a pH, a blow count, Cu, Cc.
+A chemical value takes a **string** as well, because these sheets print `<10`,
+`Nil` and `trace` as often as figures: below the reporting limit is not the
+number ten, and a record that stored ten would be *wrong* rather than
+incomplete. `si_numbers()` walks any part of the record and returns the numbers
+in it, in SI, which is how a check can ask "did these survive" without a second
+copy of whatever mapping a writer uses.
 
 ## The log reader (`log_reader.py`)
 
@@ -67,6 +95,54 @@ invent a number. A refusal stays the string the log printed.
 
 **The budget** is one call per log, a second only when the reader itself says it
 has pages left, and six at the most.
+
+## The lab reader (`lab_reader.py`)
+
+`read_lab_sheet(doc, item_pages, engine, budget=4, hint_kind=None)` turns one
+laboratory sheet into typed `LabTest` records — several, when the sheet reports
+several specimens or two different tests on one.
+
+A boring log is a form with a depth ruler, and `log_grid` can say *where* every
+number sits before any model sees it. A lab sheet is not that: every laboratory
+prints its own form, half of them are a plot with a results box beside it, and
+what says a number's meaning is the word printed next to it. So the geometry is
+weaker, the reading is more of the work, and the rules are stricter.
+
+**The sheet's own title says what the test is** — not the appendix tab, not what
+the numbers look like. The kind vocabulary is seventeen kinds each with a
+one-line definition written in no single laboratory's words, and each definition
+is about *what was measured* rather than how the sheet looks.
+
+**A tabulated value beats the plot, every time.** Most of these sheets print the
+curve **and** the values it was drawn from. A curve is digitised only where the
+values appear nowhere in text, and then the whole test is flagged
+`curves_digitised` — as a whole, because a reviewer checks the sheet, not one
+number. To digitise, the reader calls **`zoom_plot`**, its one tool: a crop of
+the plot rendered at 300 dpi with the axes and their tick labels inside the box,
+because a curve read without its own ticks in view is a guess.
+
+**The link to the ground is what the sheet prints** — the boring identifier and
+the depth, copied. This reader never matches a sample to a log; the reconciler
+does that later and records a conflict when it cannot.
+
+**A summary table is one test**, with a row per specimen, because the table is a
+thing the report prints and splitting it would lose which values were printed
+together. **A certificate that lists samples and reports nothing** is an
+`OtherResult` with `no_results` — a page read and found empty and a page skipped
+are different things.
+
+**Four Python gates**, each on something that cannot be true of a real sheet: a
+depth outside 0–300 m, a percentage outside 0–100, a liquid limit below the
+plastic limit (all three limits go, because which of them is wrong cannot be
+known from here), and a grading series in which *more* passes a smaller sieve
+(the series goes whole — a partly reversed grading is worse than none, because
+it looks like a reading). Each refusal costs that value and nothing else.
+
+**The budget** is four model calls and most sheets cost **one**: every call asks
+for the answer and offers the tool at the same time, so a tabulated sheet is
+read and answered in a single call. On the last allowed call the tool is
+withdrawn, so a reader that keeps zooming runs out of looking rather than out of
+answering.
 
 ## The DIGGS writer (`diggs_writer.py`)
 
@@ -121,6 +197,74 @@ The element map, record field to DIGGS:
 | `Sample.qu` | **compressive_strength_unconfined**, `UnconfinedCompressiveStrengthTest` |
 | `Sample.pocket_pen` | **compressive_strength_unconfined**, `PocketPenetrometerTest` |
 
+The laboratory half of the map (WP3). A `LabTest` becomes one `measurement/Test`
+for its scalars and one more for each curve it carries, both positioned in the
+same hole at the same depth; a summary table becomes one Test per **row**,
+because its rows sit in different holes.
+
+| Record | DIGGS 2.6 |
+|---|---|
+| `LabTest.kind` | the procedure element (below) |
+| `LabTest.standard` | `testProcedureMethod/Specification/standardReferenceNumber` |
+| `LabTest.sample_id`, `.lab`, `.date`, `.pages` | `otherMeasurementProperty/Parameter` — named, not linked, because an xlink to a `Sample` this file may not hold is a link to nothing |
+| `AtterbergResult` | **liquid_limit**, **plastic_limit**, **plasticity_index**, **shrinkage_limit**, **non_plastic**, `diggs_geo:AtterbergLimitsTest` |
+| `AtterbergResult.flow_curve`, `.pl_trials` | a result set of many rows: **blow_count** + **water_content_natural** |
+| `GradationResult` fractions | **percent_cobbles**, **percent_gravel**, **percent_sand**, **percent_silt**, **percent_fines**, `diggs_geo:ParticleSizeTest` |
+| `GradationResult` D-values | **d10**, **d30**, **d50**, **d60**, **d85** (dictionary), *d90*, *d100* (ours), in **mm** |
+| `GradationResult.cu`, `.cc` | **coef_uniformity**, **coef_curvature** |
+| `GradationResult.percent_passing` | a result set of many rows: *particle_size* (mm) + *percent_passing* + *sieve_designation* |
+| `ConsolidationResult` | **preconsolidation_pressure**, **compression_index**, **recompression_index**, **coef_consolidation_vertical**, *void_ratio*, *swell_percent*, *swell_pressure*, `diggs_geo:ConsolidationTest` (+ `consolidationTestType`, `swellingPressure`, `estimatedPreConsolidationStress`) |
+| `ConsolidationResult.points` | a result set of many rows: *applied_pressure* + *axial_strain* and/or *void_ratio* + *load_stage* |
+| `StrengthResult` | **compressive_strength_unconfined**, **shear_strength_undrained**, **cohesion_peak**, **friction_angle_peak**, **cohesion_residual**, **friction_angle_residual** |
+| `StrengthResult` procedure | `TriaxialTest` (**the DIGGS namespace**), `diggs_geo:DirectShearTest`, `diggs_geo:UnconfinedCompressiveStrengthTest` |
+| `StrengthResult.specimens` | a result set of many rows, one per specimen |
+| `StrengthResult.points` | a result set of many rows, told apart by the x unit: an envelope when x is a pressure, a stress-strain curve when x is a percentage |
+| `CompactionResult` | **dry_density_max**, **water_content_optimum**, `diggs_geo:LabCompactionTest` (+ `mouldVolume`, `numberOfLayers`, `blowsPerLayer`); the points as a many-row result set |
+| `CBRResult` | **cbr_0.1**, **cbr_0.2** in `diggs_geo:LabCBRTest/trial`, plus *cbr*, *swell_percent*, *surcharge* |
+| `MoistureDensityResult` | **water_content_natural**, **bulk_density**, **dry_density**, **specific_gravity_solids**, **degree_of_saturation**, **LOI**, *ash_content*; `WaterContentTest`, `LabDensityTest` or `LossOnIgnitionTest` by kind |
+| `ChemicalResult` | **pH**, **resistivity**, **sulfate_content**, **chloride_content**, **redox_potential**, **conductivity**, **temperature**, *sulfide_content*, *total_salts*, `diggs_geo:LabChemicalTest` |
+| `SummaryRow` | one Test per row, values under the dictionary terms above, with no procedure element — a row is one sample's results gathered out of several tests, and naming one procedure for it would say the laboratory ran a test it did not |
+| `OtherResult` | `diggs_geo:SpecificGravityTest`, `diggs_geo:LabPermeabilityTest`, or a Test with no procedure |
+
+**Bold** is a term of the DIGGS property dictionary pydiggs publishes;
+*italic* is one of ours, written under a codespace that says so, because the
+sheet printed the value and dropping it would be worse than naming it plainly.
+
+Four facts about 2.6 that the code exists to get right:
+
+- **`TriaxialTest` is in the DIGGS namespace, not the geotechnical one.**
+  Twelve of the thirteen laboratory procedures are in `diggs_geo`; the schema
+  declares this one in `TestProceduresAll.xsd`. A file that puts it in the other
+  namespace validates against nothing and reads as empty.
+- **A `Test` has exactly one `outcome`**, so a gradation with both derived
+  fractions and a grading curve is two Tests, not one Test with two result sets.
+- **A curve is a result set of many rows**, whatever kind of curve it is. 2.6 has
+  native homes for several, and every one demands a value these sheets do not
+  print — a `Grading` requires a particle size and half the forms label their
+  sieves by number alone, a consolidation increment requires a final axial
+  deformation, a triaxial shear stage a cell pressure. Filling a required
+  sibling with a made-up number to reach a nicer element is the one thing this
+  writer will not do.
+- **A result is positioned.** `TestResult/location` is required and is a
+  position along a hole's own linear reference system, so a lab test that names
+  no boring, or names one and no depth, **cannot be written**: there is nowhere
+  in the file for it to be. Those are named in `DiggsWriteNotes.skipped` and
+  stay in the record, which does not require a value to have a place. A test
+  that names a boring no log in the record describes gets a minimal `Borehole`
+  of its own, recorded in `DiggsWriteNotes.synthesised`.
+
+A particle size is written in **millimetres** and says so in its `uom`: in
+metres a No. 200 sieve is 7.5e-05, which the file's four decimals would round
+to 0.0001. A friction angle is written `dega`, which is the schema's own code;
+`deg` is not in its list and fails the whole file.
+
+`subsurface_characterization/diggs26.py` gained the reading side: a result set
+of more than one row is a curve and is **not** flattened into measurements at
+one depth, and `parse_diggs26_result_sets(content=...)` returns every result set
+in a file as the table it is — columns, units, rows, dictionary terms and ours,
+numbers and the values a laboratory printed as words. That is what the
+round-trip gate compares against for anything a `SiteModel` has no shape for.
+
 SI once, here, with a `uom` on every measure. A coordinate gets nine decimals,
 because a latitude to four is eleven metres. A unit not in the record's
 conversion table is **not** written with a guessed one: it is left out and named
@@ -130,10 +274,29 @@ same way — DIGGS can carry it, the app's `LithologyInterval` holds intervals
 only.
 
 **The gate that matters is deterministic and needs no model.** All fifteen
-hand-truthed logs convert to records, write, validate and round-trip:
-`module_work/report_ingest_harness/tests/test_diggs_truth.py` (skipped where the
-gitignored corpus is not). `report_ingest/tests/test_diggs_writer.py` walks the
-same path on a synthetic investigation in CI.
+hand-truthed logs and all **thirty-one** hand-truthed laboratory sheets convert
+to records, write, validate and round-trip:
+`module_work/report_ingest_harness/tests/test_diggs_truth.py` and
+`test_lab_diggs_truth.py` (skipped where the gitignored corpus is not).
+`report_ingest/tests/test_diggs_writer.py` and `test_diggs_lab.py` walk the same
+path on synthetic records in CI.
+
+**What the 31-sheet gate found, and the tolerances it needed.** It passes
+31/31 at the tolerances the writer already published — a depth to 5 mm, a
+percentage to 0.05, a stress to 0.05 kPa — with **no tolerance loosened for
+the laboratory half**. The lab comparison is tighter than that: every number in
+the record has to come back to within 5e-4, or six significant figures for a
+value below a thousandth. Getting there took three fixes rather than three
+tolerances: writing a particle size in millimetres (in metres a No. 200 sieve
+rounds to 0.0001 at the file's four decimals), writing small numbers to six
+significant figures instead of four decimals, and using the schema's own `dega`
+for an angle. Two of the thirty-one sheets write **no** DIGGS at all, because
+neither prints a depth for the specimen; the gate asserts which two they are, so
+a third appearing is a failure rather than a quietly smaller number. The lab
+half of the round trip walks the record's own models rather than a second copy
+of the writer's property table, so it cannot agree with the writer by sharing
+its mistakes: it asks whether the numbers survived, not whether they were filed
+under the names the writer chose.
 
 **The numbers come from the cluster.** This app runs in Funhouse against
 OpenAI models through the Prompter API, so a score measured on any other model
@@ -259,7 +422,7 @@ results = score_on_cluster(
     model        = "funhouse-gpt-high",     # the label review, on the tier the app runs on
     triage_model = "funhouse-gpt-medium",   # one call over a ledger; a cheaper tier does
     sets         = ("insample", "oos_open", "oos_blind"),
-    stages       = ("labels",),             # add "logs" to score the log reader too
+    stages       = ("labels",),             # or ("labels", "logs", "lab")
     max_reports  = 2,                       # drop this line after the first run
 )
 ```
@@ -297,6 +460,50 @@ matching rules are the WP2a ones — a sample is an interval, a blow record
 counts when its drives stand at that depth, and an N the log never printed
 counts as found when the drives that define it are there, because neither the
 grid nor the reader does arithmetic by design.
+
+### Scoring the lab reader as well (`stages=("labels", "logs", "lab")`)
+
+The `lab` stage scores each hand-truthed laboratory sheet twice: **before**,
+over the numbers in the page's own detected tables, and **after**, over the
+records `read_lab_sheet` built from the same open document.
+
+```python
+results = score_on_cluster(
+    reports_dir   = "/Volumes/<your volume>/reports",
+    manifest      = "/Volumes/<your volume>/wp1b/MANIFEST.md",
+    di_dir        = "/Volumes/<your volume>/report_di",
+    truth_dir     = "/Volumes/<your volume>/wp2b/truth/logs",
+    lab_truth_dir = "/Volumes/<your volume>/wp3/truth/lab",  # <kind>__<ID>_p<page>.json + OPEN.txt
+    out_dir       = "/tmp/report_ingest_wp3",
+    prompter      = fh_prompter,
+    model         = "funhouse-gpt-high",
+    stages        = ("labels", "logs", "lab"),
+    lab_budget    = 4,              # model calls per sheet; the reader's ceiling is four
+    max_reports   = 2,              # drop this line after the first run
+)
+```
+
+Five metrics: **kind** (the test, from the sheet's own title), **link** (the
+boring identifier *and* the depth printed on the sheet, within 0.15 m compared
+in metres), **index** (every scalar the sheet printed, exact), **series** (a
+grading's percent-passing values within 1 %), **curve** (a plotted curve's
+points within the tolerance that sheet's own truth file states).
+
+**`kind` and `link` have no before column at all.** A table is a grid of
+numbers: it does not know that 31 is a liquid limit, that the sheet is a direct
+shear test, or that the specimen came from B-1 at 2.5 ft. Crediting it with any
+of those would score the reader's job against the extractor's output, so the
+baseline is asked only "is this number on the page", which is the most a table
+can answer. Read the metrics rather than the OVERALL rows.
+
+**The tables-alone baseline, measured here 2026-09-17** with no model, no
+credential and no network (`measure_wp3_lab.py --tables-only`): 76 % of the
+numbers are somewhere in a detected table (354/466) — 89 % on the open sheets
+and 60 % on the blind ones, which are the scanned, optically-read and rotated
+pages where no table is detected at all. Four of the twelve kinds score zero:
+a triaxial, a rock core and two summary tables whose pages have no usable text
+layer. That gap, plus the two metrics a table cannot answer, is what the reader
+is for.
 
 `RESULTS.md` then carries a second half: before and after per metric for the
 open set, the blind set and all logs; a per-log line with model calls, what was
@@ -402,6 +609,15 @@ to say what a run cost months later.
     --set oos_blind --no-append
 ```
 
+The log and lab readers have their own scripts, each of which runs its
+deterministic half with no engine at all:
+
+```
+.venv/Scripts/python -m module_work.report_ingest_harness.measure_wp2b_logs     --grid-only
+.venv/Scripts/python -m module_work.report_ingest_harness.measure_wp3_lab     --tables-only --append --note "what changed this round"
+.venv/Scripts/python -m module_work.report_ingest_harness.measure_wp3_lab     --kind gradation --detail
+```
+
 Sets are `insample` (the reports with spreadsheet labels), `oos_open` (the
 lead's out-of-sample labels on ten reports), `oos_blind` (the other fourteen)
 and `checkpoint` (six reports chosen to span short, long, scanned and old).
@@ -458,17 +674,32 @@ because a pass that makes one more call than the test expected is the bug the
 test exists to catch.
 
 The log reader's tests run over real `log_grid` output on planlens' synthetic
-log fixtures, so the brief that is asserted on is the brief a model would
-actually be sent, and the refusals are the refusals that would actually happen:
-a depth past the ruler, a log with no scale at all, a provenance naming a page
-outside this log. The DIGGS writer is tested against the bundled 2.6 schema and
-through `parse_diggs` on a synthetic investigation carrying one of everything,
-and the log scorer on a synthetic truth where what is checked is the matching
-itself.
+log fixtures, and the lab reader's over real located text and real detected
+tables on four synthetic sheets built here (`tests/lab_fixtures.py`: a
+plasticity chart with its limits in a box, a grading curve with its values
+tabulated beneath it, a summary table of four specimens, a laboratory
+certificate that reports nothing). So the brief that is asserted on is the brief
+a model would actually be sent, and the refusals are the refusals that would
+actually happen: a depth past the ruler, a log with no scale, a provenance
+naming a page outside this sheet, a liquid limit below the plastic limit, a
+grading running the wrong way.
+
+The DIGGS writer is tested against the bundled 2.6 schema and through
+`parse_diggs` on a synthetic investigation carrying one of everything, and on
+synthetic lab records carrying one of every kind — including the namespace trap,
+the millimetre rule, the `dega` code, and the two reasons a lab test cannot be
+written at all. The two scorers are tested on synthetic truth where what is
+checked is the matching itself, and — the important one — that the scorer does
+**not** ask for a date, a description, a link field twice, or a value in the
+wrong unit, because a scorer that over-asks turns a good reader into a bad
+number.
 
 The harness suite adds the scorecard's own arithmetic, the disputed-label rule,
-the prompt fingerprint, and the deterministic fifteen-log DIGGS gate. Its
-corpus-dependent tests skip cleanly on a machine without the private data.
+the prompt fingerprint, the deterministic fifteen-log DIGGS gate, the
+thirty-one-sheet lab gate, and the floor under the lab scorecard: a flawless
+reading of all thirty-one sheets must score 100 %, or the scorer is what is
+wrong. Its corpus-dependent tests skip cleanly on a machine without the private
+data.
 
 ## What the measurements have taught the prompts
 

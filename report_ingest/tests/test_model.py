@@ -174,3 +174,90 @@ class TestInvestigation:
     def test_the_kind_vocabulary_is_closed(self):
         with pytest.raises(ValidationError):
             Investigation(investigation_id="B-1", kind="trench")
+
+
+# ---------------------------------------------------------------------------
+# the typed laboratory results (WP3)
+# ---------------------------------------------------------------------------
+
+class TestLabResults:
+    def test_a_result_rebuilds_its_own_class_off_disk(self):
+        from report_ingest.model import AtterbergResult, GradationResult
+
+        test = LabTest(kind="atterberg",
+                       result=AtterbergResult(ll=48, pl=22, pi=26))
+        back = LabTest.model_validate_json(test.model_dump_json())
+        assert isinstance(back.result, AtterbergResult)
+        assert back.result.ll == 48.0
+        grading = LabTest(kind="gradation",
+                          result=GradationResult(fines_percent=43))
+        back = LabTest.model_validate_json(grading.model_dump_json())
+        assert isinstance(back.result, GradationResult)
+
+    def test_a_result_that_does_not_answer_for_its_kind_is_refused(self):
+        from report_ingest.model import AtterbergResult
+
+        with pytest.raises(ValidationError):
+            LabTest(kind="gradation", result=AtterbergResult(ll=48))
+
+    def test_every_kind_has_a_result_class(self):
+        from report_ingest.model import LabKind, RESULT_CLASS
+
+        for kind in LabKind.__args__:
+            assert kind in RESULT_CLASS, kind
+
+    def test_one_class_answers_for_the_four_strength_kinds(self):
+        from report_ingest.model import RESULT_CLASS, StrengthResult
+
+        for kind in ("triaxial", "direct_shear", "unconfined",
+                     "unconfined_rock"):
+            assert RESULT_CLASS[kind] is StrengthResult
+
+    def test_a_kind_alone_is_a_record(self):
+        """A sheet whose kind is known and whose values are not."""
+        test = LabTest(kind="atterberg", investigation_id="B-1")
+        assert test.result is None
+
+    def test_a_value_printed_as_words_stays_a_string(self):
+        from report_ingest.model import ChemicalResult
+
+        result = ChemicalResult(chloride="<10", pH=8.43,
+                                resistivity=Quantity(value=1261,
+                                                     unit="ohm-cm"))
+        assert result.chloride == "<10"
+        assert result.pH == 8.43
+        assert result.resistivity.to_si().unit == "ohm.m"
+
+    def test_the_lab_units_convert(self):
+        for unit, si, value in (("ohm-cm", "ohm.m", 0.01),
+                                ("kohm-cm", "ohm.m", 10.0),
+                                ("mV", "mV", 1.0),
+                                ("ppm", "mg/kg", 1.0),
+                                ("cm3", "m3", 1e-6),
+                                ("Mg/m3", "kN/m3", 9.80665)):
+            got = Quantity(value=1.0, unit=unit).to_si()
+            assert got is not None, unit
+            assert got.unit == si
+            assert got.value == pytest.approx(value)
+
+    def test_si_numbers_walks_a_result_and_finds_only_numbers(self):
+        from report_ingest.model import (
+            SievePoint, StrengthResult, StrengthSpecimen, si_numbers,
+        )
+
+        result = StrengthResult(
+            kind="triaxial", test_type="CU", description="a clay",
+            phi_deg=28.5,
+            specimens=[StrengthSpecimen(specimen_id="1",
+                                        peak_deviator=Quantity(value=185,
+                                                               unit="kPa"))])
+        found = {path: value for path, value, _unit in si_numbers(result)}
+        assert found["phi_deg"] == 28.5
+        assert found["specimens[0].peak_deviator"] == 185.0
+        assert not any("description" in path for path in found)
+        assert not any("test_type" in path for path in found)
+        # A unit the table cannot convert has no SI value and is not claimed.
+        point = SievePoint(percent_passing=43.0,
+                           size=Quantity(value=1.0, unit="furlongs"))
+        paths = {path for path, _v, _u in si_numbers(point)}
+        assert "percent_passing" in paths and "size" not in paths
