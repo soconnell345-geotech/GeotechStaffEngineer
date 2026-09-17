@@ -14,9 +14,14 @@ assert "report_ingest.engine" not in sys.modules, (
     "importing report_ingest pulled in its engine module")
 assert "planlens" not in sys.modules, (
     "importing report_ingest pulled in planlens")
+assert "langgraph" not in sys.modules, (
+    "importing report_ingest pulled in langgraph; the sub-agent graph is "
+    "built on demand and the package must not cost the app that at startup")
 assert "pydantic" not in sys.modules, (
     "importing report_ingest pulled in pydantic; the record model is lazy too")
-for name in ("triage", "review_labels", "read_log", "write_diggs",
+for name in ("triage", "review_labels", "read_log", "read_lab_sheet",
+             "read_narrative", "reconcile", "write_outputs", "ingest_report",
+             "run_folder", "build_report_ingest_subagent", "write_diggs",
              "diggs_schema_gate", "diggs_roundtrip_gate", "score_on_cluster",
              "PrompterEngine", "ClaudeEngine", "CostMeter"):
     assert callable(getattr(report_ingest, name)), name
