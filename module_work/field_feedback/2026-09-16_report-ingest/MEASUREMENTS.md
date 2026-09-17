@@ -3383,3 +3383,85 @@ warnings the grid raised:
   R25_p19: no description column was identified, so no layers were read
 
 ```
+
+### WP3 lab scorecard, 2026-09-17 -- the page's tables only
+
+The deterministic baseline for WP3, taken before any model ran: every number in the page's own detected tables, on all 31 hand-truthed sheets. 'kind' and 'link' have no before column because a table cannot answer them.
+
+Tolerances: a depth links within 0.15 m, compared in metres whatever the sheet prints; an index value exact to 0.01; a grading within 1.0 percent; a curve within the tolerance its own truth file states. `kind` and `link` have no before column: a table cannot answer them. Open set = R36, R28, R17, R06.
+
+```
+open -- 16 sheet(s)
+metric            before         after
+--------------------------------------
+index        87% 202/231             -
+series         88% 38/43             -
+curve          41% 11/27             -
+OVERALL      83% 251/301
+
+blind -- 15 sheet(s)
+metric            before         after
+--------------------------------------
+index        45% 125/275             -
+series         87% 76/87             -
+curve             0% 0/4             -
+OVERALL      55% 201/366
+
+all -- 31 sheet(s)
+metric            before         after
+--------------------------------------
+index        65% 327/506             -
+series       88% 114/130             -
+curve          35% 11/31             -
+OVERALL      68% 452/667
+
+kind                 sheets        before         after
+-------------------------------------------------------
+atterberg                 2    100% 12/12
+chemical                  4     78% 21/27
+compaction                1       50% 4/8
+density                   1       88% 7/8
+direct_shear              2      47% 8/17
+gradation                 9   80% 214/269
+moisture_content          1    100% 17/17
+organic_content           1      100% 3/3
+summary_table             4   72% 155/216
+swell_consolidation       2     52% 11/21
+triaxial                  3       0% 0/64
+unconfined_rock           1        0% 0/5
+
+sheet                       set          before       after  calls  zoom  unres  look      s
+--------------------------------------------------------------------------------------------
+atterberg__R25_p87          blind   100% 106/106           -      -     -      -     -      -
+atterberg__R28_p198         open       100% 8/8           -      -     -      -     -      -
+atterberg__R36_p52          open       100% 4/4           -      -     -      -     -      -
+chemical__R17_p155          open              -           -      -     -      -     -      -
+chemical__R28_p172          open       100% 3/3           -      -     -      -     -      -
+chemical__R28_p210          open     100% 18/18           -      -     -      -     -      -
+chemical__R36_p62           open         0% 0/6           -      -     -      -     -      -
+compaction__R17_p136        open        50% 4/8           -      -     -      -     -      -
+consolidation__R36_p54      open       38% 5/13           -      -     -      -     -      -
+consolidation__R36_p56      open        75% 6/8           -      -     -      -     -      -
+direct_shear__R25_p142      blind      40% 4/10           -      -     -      -     -      -
+direct_shear__R36_p58       open        57% 4/7           -      -     -      -     -      -
+gradation__R06_p67          open      56% 14/25           -      -     -      -     -      -
+gradation__R15_p112         blind    100% 27/27           -      -     -      -     -      -
+gradation__R15_p82          blind    100% 28/28           -      -     -      -     -      -
+gradation__R17_p114         open     100% 46/46           -      -     -      -     -      -
+gradation__R25_p56          blind      25% 8/32           -      -     -      -     -      -
+gradation__R28_p163         open     100% 37/37           -      -     -      -     -      -
+gradation__R28_p176         open      71% 25/35           -      -     -      -     -      -
+gradation__R28_p177         open      83% 29/35           -      -     -      -     -      -
+gradation__R35_p29          blind        0% 0/4           -      -     -      -     -      -
+moisture_density__R03_p293  blind      100% 3/3           -      -     -      -     -      -
+moisture_density__R15_p184  blind       88% 7/8           -      -     -      -     -      -
+moisture_density__R27_p45   blind    100% 17/17           -      -     -      -     -      -
+summary_table__R28_p159     open     100% 48/48           -      -     -      -     -      -
+summary_table__R32_p114     blind       4% 1/23           -      -     -      -     -      -
+summary_table__R35_p6       blind       0% 0/39           -      -     -      -     -      -
+triaxial__R27_p85           blind       0% 0/12           -      -     -      -     -      -
+triaxial__R35_p124          blind       0% 0/24           -      -     -      -     -      -
+triaxial__R35_p45           blind       0% 0/28           -      -     -      -     -      -
+unconfined__R22_p148        blind        0% 0/5           -      -     -      -     -      -
+
+```

@@ -497,13 +497,16 @@ baseline is asked only "is this number on the page", which is the most a table
 can answer. Read the metrics rather than the OVERALL rows.
 
 **The tables-alone baseline, measured here 2026-09-17** with no model, no
-credential and no network (`measure_wp3_lab.py --tables-only`): 76 % of the
-numbers are somewhere in a detected table (354/466) — 89 % on the open sheets
-and 60 % on the blind ones, which are the scanned, optically-read and rotated
-pages where no table is detected at all. Four of the twelve kinds score zero:
-a triaxial, a rock core and two summary tables whose pages have no usable text
-layer. That gap, plus the two metrics a table cannot answer, is what the reader
-is for.
+credential and no network (`measure_wp3_lab.py --tables-only`, and in the
+ledger): **68 %** of the numbers are somewhere in a detected table (452/667) —
+83 % on the open sheets and 55 % on the blind ones, which are the scanned,
+optically-read and rotated pages where no table is detected at all. Two kinds
+score **zero**: every triaxial (0/64, all three of them) and the rock core
+(0/5), whose pages either have no usable text layer or print their values as
+nested stages no table detector groups. A grading's percent-passing series is
+the one thing a table does well (88 %), and a curve is what it does worst
+(35 %). That gap, plus the two metrics a table cannot answer at all, is what
+the reader is for.
 
 `RESULTS.md` then carries a second half: before and after per metric for the
 open set, the blind set and all logs; a per-log line with model calls, what was
