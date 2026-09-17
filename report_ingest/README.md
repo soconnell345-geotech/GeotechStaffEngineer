@@ -105,6 +105,8 @@ The element map, record field to DIGGS:
 | `Sample` | `samplingActivity/SamplingActivity` + `sample/Sample` |
 | `Sample.top`, `.bottom` | `samplingLocation/LinearExtent/gml:posList` |
 | `Sample.recovery` | `totalSampleRecoveryLength` |
+| `Sample.recovery_percent` | `otherSamplingActivityProperty/Parameter` — DIGGS has only a length |
+| `Sample.rqd_percent` | `samplingActivityRQD` (uom %) |
 | `Layer` | `observation/LithologySystem/lithologyObservation/LithologyObservation` |
 | `Layer.uscs`, `.description` | `Lithology/classificationCode`, `/lithDescription` |
 | `SPT.n` | `ResultSet` `propertyClass` **n_value** |
