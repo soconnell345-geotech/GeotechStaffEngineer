@@ -109,9 +109,9 @@ Key conventions:
   `anthropic` stays OPTIONAL and is not installed on the cluster. Release
   gate **12,326 passed / 33 skipped / 0 failed** (three chunks, each gated on
   pytest's exit code). Cluster install **NOT yet confirmed** (install guide
-  §11). **First live check:** the owner's own four-stage scoring run —
+  §11). **First live check:** the owner's own five-stage scoring run —
   `%pip install "geotech-staff-engineer==5.20.0"`, one
-  `score_on_cluster(stages=("labels","logs","lab","narrative"), truth_dir=…)`
+  `score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels"), truth_dir=…)`
   cell with `max_reports=2`, and `RESULTS.md` comes back. **The release also
   carries a vision-first page-classification experiment**
   (`report_ingest/vision_labels.py`): each page as a PICTURE to GPT-4.1 on

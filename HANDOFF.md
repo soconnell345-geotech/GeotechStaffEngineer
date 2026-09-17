@@ -62,11 +62,13 @@ none of it has been checked on the cluster yet.
 
 **The scoring cell changed shape.** `score_on_cluster` now takes five stages
 (`labels`, `logs`, `lab`, `narrative`, `vision_labels`) and **one truth
-root**: `truth_dir`
-may be a folder holding `logs/`, `lab/` and `narrative/`, named after the
-stages. The hand truth is private and is uploaded by hand before every run,
-and three Volume paths that must each be right is three chances for one to be
-stale while the run starts anyway and scores against it. The older
+root**: `truth_dir` may be a folder holding `logs/`, `lab/` and `narrative/`,
+named after the stages that read them. The fifth stage needs no hand truth of
+its own — it scores against the label spreadsheet and the out-of-sample file,
+exactly as the `labels` stage does. The hand truth is private and is uploaded
+by hand before every run, and three Volume paths that must each be right is
+three chances for one to be stale while the run starts anyway and scores
+against it. The older
 three-argument form still works and still wins where it is passed. The folder
 to upload is staged, with its own README naming every Volume path:
 `module_work/field_feedback/2026-09-16_report-ingest/raw/cluster_upload/`
