@@ -25,6 +25,7 @@ return a clear error if no engine was wired.
 """
 
 import json
+import os
 from typing import Any, Callable, Dict, Optional
 
 from langchain_core.tools import StructuredTool
@@ -955,7 +956,104 @@ def make_vision_tools(
 __all__ = [
     "make_core_tools",
     "make_vision_tools",
+    "make_report_ingest_tool",
+    "REPORT_INGEST_DESCRIPTION",
     "DEFAULT_MAX_RESULT_CHARS",
     "DEFAULT_REFERENCE_RESULT_CHARS",
     "SEARCH_NARROWER_NUDGE",
 ]
+
+
+# ---------------------------------------------------------------------------
+# the whole-report ingest (report_ingest), as ONE primary tool
+# ---------------------------------------------------------------------------
+
+#: What the model is told the tool does. Deliberately about the SHAPE of the
+#: job -- a whole report, not a lookup -- because the failure this tool exists
+#: to prevent is the primary agent reading a 400-page report page by page.
+REPORT_INGEST_DESCRIPTION = (
+    "Read a WHOLE geotechnical report PDF into one organised, cited record: "
+    "the standing questions about the report (what it is, who wrote it, how "
+    "many borings, what foundations and bearing pressures were recommended, "
+    "site class, seismic code, natural hazards), every boring and test pit "
+    "log as data, every laboratory test, and a note of what could not be "
+    "read. Writes the record, a one-page summary, a library page and a DIGGS "
+    "2.6 file, and returns counts, the paths and the first lines of the "
+    "summary -- not the whole record. USE THIS for any whole-report question; "
+    "do not read a long report page by page with the document tools. "
+    "'questions' is anything else you want asked of the report, one per line."
+)
+
+
+def make_report_ingest_tool(
+    engine=None,
+    attachments: Optional[Dict[str, bytes]] = None,
+    out_dir: Optional[str] = None,
+    budgets=None,
+    db_path: Optional[str] = None,
+    max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
+) -> list:
+    """The ``report_ingest`` primary tool, or an empty list.
+
+    Empty when the installed planlens cannot serve the ingest: it needs the
+    page roles and the log grid, which arrived in planlens 0.5. The cluster
+    installs planlens from PyPI and has resolved older than the pin before,
+    so this is checked against the INSTALLED package's own published specs
+    rather than trusted from a version number — the same rule the document
+    tools follow.
+
+    ``engine`` is whatever the host built the agent with; the live Prompter
+    inside it becomes the ingest's engine through
+    :func:`report_ingest.engine.engine_for`. With no engine to be found the
+    tool is still built and says so when called, which is a better answer
+    than a missing tool the model then invents a workaround for.
+    """
+    if not _document_tools.report_ingest_supported():
+        return []
+
+    attachments = attachments if attachments is not None else {}
+
+    def report_ingest(source: str, questions: str = "") -> str:
+        from report_ingest.engine import engine_for
+        from report_ingest.subagent import run_ingest
+
+        try:
+            resolved = _document_tools.resolve_document_source(
+                source, attachments)
+        except Exception as exc:  # noqa: BLE001 - reported to the model
+            return json.dumps({"error": f"{type(exc).__name__}: {exc}",
+                               "hint": "give the attachment key of the "
+                                       "uploaded PDF or a real file path"})
+        ingest_engine = engine_for(engine)
+        if ingest_engine is None:
+            return json.dumps({
+                "error": "no ingest engine is configured in this deployment",
+                "hint": "the ingest runs on the app's own model; tell the "
+                        "user it is unavailable here rather than reading the "
+                        "report another way"})
+        folder = out_dir or _report_ingest_out_dir(source)
+        asked = [line.strip() for line in str(questions or "").splitlines()
+                 if line.strip()]
+        try:
+            answer = run_ingest(resolved, asked, engine=ingest_engine,
+                                out_dir=folder, budgets=budgets,
+                                db_path=db_path,
+                                report_id=os.path.splitext(
+                                    os.path.basename(str(source)))[0])
+        except Exception as exc:  # noqa: BLE001 - one report, not the turn
+            return json.dumps({"error": f"the ingest failed: "
+                                        f"{type(exc).__name__}: {exc}"})
+        return _truncate(json.dumps(answer.model_dump()), max_result_chars)
+
+    report_ingest.__doc__ = REPORT_INGEST_DESCRIPTION
+    return [StructuredTool.from_function(
+        report_ingest, name="report_ingest",
+        description=REPORT_INGEST_DESCRIPTION)]
+
+
+def _report_ingest_out_dir(source: str) -> str:
+    """Where a report's outputs go: the conversation's own folder."""
+    from funhouse_agent._fileio import default_output_dir
+
+    stem = os.path.splitext(os.path.basename(str(source)))[0] or "report"
+    return os.path.join(default_output_dir(), "report_ingest", stem)

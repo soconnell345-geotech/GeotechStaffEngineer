@@ -177,6 +177,21 @@ _MEMORY_SECTION = """\
   repeat themselves."""
 
 
+#: Appended when the whole-report ingest is wired in. ONE line, because the
+#: failure it prevents is simple and specific: an agent with document tools
+#: and a 400-page geotechnical report will start reading it page by page, at
+#: enormous cost, and still miss the appendix.
+REPORT_INGEST_NUDGE = (
+    "- **A whole geotechnical report goes to `report_ingest`.** Delegate any "
+    "whole-report ingestion to it -- the record, the summary, the library "
+    "page and the DIGGS file come back as paths with counts -- and NEVER read "
+    "a long report page by page with the document tools yourself. Ask it your "
+    "own questions about the report by passing them in; use the document "
+    "tools only for looking one thing up in a document already under "
+    "discussion."
+)
+
+
 def build_domain_prompt(allowed_agents=None, *, memory_enabled: bool = False) -> str:
     """Return the domain system prompt with the ReAct XML sections stripped.
 
@@ -217,4 +232,4 @@ def build_domain_prompt(allowed_agents=None, *, memory_enabled: bool = False) ->
     return base + "\n\n" + section
 
 
-__all__ = ["build_domain_prompt"]
+__all__ = ["build_domain_prompt", "REPORT_INGEST_NUDGE"]
