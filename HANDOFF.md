@@ -19,10 +19,11 @@ FIRST, as it did for 0.5.0, then the app.
 **The published answer vocabulary — raised, ruled on, still open to the
 owner.** `report_ingest/model.py` publishes the owner's own answer vocabulary
 for four narrative questions, read off the hand answers rather than guessed
-(commit `5628ce1`), and two of its values name a building type. Both the
-module and `report_ingest/tests/test_narrative_reader.py` ship in the wheel
-and this repo is public, so it was raised against the privacy word list
-before the tag. **Ruled: it is the owner's GENERIC TAXONOMY, not text out of
+(commit `5628ce1`), and two of its values name a building type. The module
+ships in the wheel and this repo is public, so it was raised against the
+privacy word list before the tag. (`report_ingest/tests/test_narrative_reader.py`
+repeats the same strings but does NOT ship — the wheel carries no tests,
+verified by listing it — so GitHub is its only exposure.) **Ruled: it is the owner's GENERIC TAXONOMY, not text out of
 any private report — no project, site, firm or person — and the word list was
 written to catch report text.** The values stay VERBATIM, because the
 narrative scorer matches strings at a rapidfuzz partial ratio of 85 and the
