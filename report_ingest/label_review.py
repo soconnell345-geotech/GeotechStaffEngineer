@@ -51,19 +51,38 @@ __all__ = [
 #: definitions a reviewer needs to tell the neighbouring ones apart, which is
 #: where the rules' errors actually live (a location plan against a figure, a
 #: field infiltration test against a laboratory sheet).
+#:
+#: The four exploration logs say out loud that they may be PLOTTED rather
+#: than tabulated, and ``figure`` says out loud that it is not one of them.
+#: Measured on the cost checkpoint: of the review's nineteen changes that
+#: landed on the wrong label, fifteen were an exploration's own results
+#: called ``figure``, or one kind of sounding called another. The rules had
+#: been wrong about those pages and the review was right to move them; it
+#: moved them next door. A page that shows depth against blow count looks
+#: like a graph, and nothing here had said that a graph of one exploration's
+#: results is that exploration's log.
 LABEL_DEFINITIONS: Dict[str, str] = {
     "narrative": "the report's own prose: findings, discussion, "
                  "recommendations, and the tables inside that prose",
-    "figure": "a drawn or plotted figure that is not a site plan and not a "
-              "subsurface profile",
+    "figure": "a drawn or plotted figure belonging to the report's own "
+              "numbered figure series; not a site plan, not a subsurface "
+              "profile, and never one exploration's own results",
     "plan": "a plan view of the site showing where the explorations are",
     "profile": "a subsurface cross-section or fence diagram along a line",
-    "boring_log": "the log of one drilled boring: depths, samples, blow "
-                  "counts, descriptions",
-    "test_pit_log": "the log of one excavated test pit or trench",
-    "cpt_log": "a cone penetration test sounding: tip, sleeve, pore pressure "
-               "against depth",
-    "dcp_log": "a dynamic cone penetrometer record",
+    "boring_log": "the record of one drilled boring, tabulated on a form or "
+                  "plotted as a chart: depths, driven samples, blow counts "
+                  "and layer descriptions under one boring identifier",
+    "test_pit_log": "the record of one excavated test pit or trench, under "
+                    "one pit identifier: a filled-in form, a sketch or "
+                    "photograph of the pit face with its layers logged, or a "
+                    "chart of depth against blows, strength or density",
+    "cpt_log": "one cone penetration sounding, usually plotted rather than "
+               "tabulated: tip resistance, sleeve friction and pore pressure "
+               "as continuous traces against depth, under one sounding "
+               "identifier",
+    "dcp_log": "one dynamic cone penetrometer record, as a short table or a "
+               "chart: blows per increment of penetration, or a penetration "
+               "index, against depth, under one test identifier",
     "lab_test": "a laboratory test result sheet or a table of laboratory "
                 "results",
     "field_test": "a test performed in the field that is not an exploration "
@@ -367,6 +386,17 @@ How to work.
   its neighbours or the appendix it sits in.
 - A page with text_ok=N and di=N must be rendered, not read. Label it from
   the picture.
+- If a page carries ONE exploration's own results, name that exploration --
+  boring_log, test_pit_log, cpt_log or dcp_log -- and never figure. These
+  results are often PLOTTED rather than tabulated, and a plot of one
+  exploration's results is still that exploration's log however much it
+  looks like a graph. 'figure' is for the report's own numbered figure
+  series. When you can see it is an exploration's own results but not which
+  kind, decide on what is being measured, not on how it is drawn: blows per
+  increment of penetration against depth is a DCP; continuous tip
+  resistance, sleeve friction and pore pressure against depth is a CPT; a
+  pit or trench face with its layers logged is a test pit; a drilled hole
+  with driven samples and blow counts is a boring.
 - Prefer read_page when a page has text; it is cheaper and more exact than
   looking. Look when the layout, not the words, decides.
 - Do not change a label you have not checked. A confident wrong correction

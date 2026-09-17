@@ -76,6 +76,32 @@ def test_every_label_carries_a_definition_that_separates_it():
         assert len(text) > 20, f"{name} needs a definition, not a restatement"
 
 
+def test_the_exploration_logs_say_they_may_be_plotted_not_tabulated():
+    # The cost checkpoint's largest error class: an exploration's own results
+    # plotted as a chart, called "figure". Fifteen of the review's nineteen
+    # wrong changes were this or the neighbouring sounding confusion.
+    for name in ("boring_log", "test_pit_log", "cpt_log", "dcp_log"):
+        text = LABEL_DEFINITIONS[name].lower()
+        assert "chart" in text or "plotted" in text, (
+            f"{name} must say it can be a plot, not only a form")
+        assert "identifier" in text, (
+            f"{name} must say it belongs to ONE named exploration")
+    figure = LABEL_DEFINITIONS["figure"].lower()
+    assert "exploration" in figure, (
+        "the figure definition must rule out an exploration's own results")
+
+
+def test_the_review_rule_sends_a_plotted_log_to_its_exploration():
+    from report_ingest.label_review import REVIEW_SYSTEM
+
+    # The prompt is hard-wrapped, so compare on collapsed whitespace.
+    text = " ".join(REVIEW_SYSTEM.lower().split())
+    assert "never figure" in text
+    assert "blows per increment" in text, (
+        "the rule must say how to tell a DCP from a CPT, which is where four "
+        "of the checkpoint's wrong changes went")
+
+
 # -- the budget -------------------------------------------------------------
 
 def test_the_budget_is_a_floor_of_sixty_and_a_quarter_of_the_pages():

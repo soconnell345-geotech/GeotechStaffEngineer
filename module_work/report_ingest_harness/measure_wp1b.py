@@ -107,6 +107,47 @@ CHECKPOINT: Tuple[str, ...] = ("R36", "R37", "R05", "R28", "R15", "R14")
 TRIAGE_MODEL = "claude-sonnet-5"
 REVIEW_MODEL = "claude-opus-5"
 
+#: Stop the set rather than spend past these. The per-report guard can only
+#: fire after the report it names has run, so it stops the NEXT one.
+MAX_REPORT_DOLLARS = 5.00
+MAX_TOTAL_DOLLARS = 45.00
+
+#: Pages where the review contradicted the hand label and the LEAD judged the
+#: hand label to be the doubtful one. The spreadsheet is never edited: a hand
+#: label is a record of what a person decided, and rewriting it to suit a
+#: model would destroy the only independent thing in the measurement. Instead
+#: a CONFIRMED entry drops the page from both the before and the after score,
+#: so it counts as neither a rule hit nor a review miss, and the count of
+#: dropped pages is printed. Entries wait at ``confirmed: False``, which
+#: scores exactly as before and only prints, until the lead says otherwise.
+DISPUTED: Dict[Tuple[str, int], dict] = {
+    ("R37", 47): {
+        "review": "other", "hand": "calculation", "confirmed": False,
+        "note": "a web-tool disclaimer page inside the calculation appendix; "
+                "no inputs or results on it"},
+    ("R28", 217): {
+        "review": "letter", "hand": "lab_test", "confirmed": False,
+        "note": "a laboratory's transmittal cover letter inside the "
+                "laboratory appendix"},
+    ("R15", 8): {
+        "review": "cover", "hand": "narrative", "confirmed": False,
+        "note": "a one-line volume title sheet inside the narrative run"},
+    ("R15", 19): {
+        "review": "cover", "hand": "narrative", "confirmed": False,
+        "note": "the second volume's title sheet, the same one-line form"},
+}
+
+
+def disputed_drop(rid: str, page: int, after_label: str) -> bool:
+    """Should this page be dropped from the score as a confirmed dispute?
+
+    Only when the lead has confirmed it AND the review still says what it
+    said when the dispute was raised. A later run that moves the page
+    somewhere else is a new answer and is scored.
+    """
+    row = DISPUTED.get((rid, int(page)))
+    return bool(row and row["confirmed"] and after_label == row["review"])
+
 
 def set_ids(name: str) -> Tuple[str, ...]:
     if name == "insample":
@@ -225,6 +266,25 @@ def _label_table(before: Scores, after: Scores, only: Sequence[str] = ()
 
 # -- running one report -----------------------------------------------------
 
+def prompt_fingerprint() -> str:
+    """Eight hex characters naming the prompts a run was made with.
+
+    Saved with every run and checked when a set is scored. It exists because
+    a re-run with a changed prompt failed half way on 2026-09-16 and left
+    four reports on the new prompts and two on the old; ``--reuse`` would
+    then have scored a set that never existed, and nothing in the numbers
+    would have said so.
+    """
+    import hashlib
+    import report_ingest.label_review as lr
+    import report_ingest.triage as tr
+
+    blob = json.dumps({"review": lr.REVIEW_SYSTEM,
+                       "labels": lr.LABEL_DEFINITIONS,
+                       "triage": tr.TRIAGE_SYSTEM}, sort_keys=True)
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:8]
+
+
 def run_report(rid: str, *, reuse: bool = False,
                triage_model: str = TRIAGE_MODEL,
                review_model: str = REVIEW_MODEL,
@@ -268,6 +328,7 @@ def run_report(rid: str, *, reuse: bool = False,
         "n_pages": n_pages,
         "triage_model": triage_model,
         "review_model": review_model,
+        "prompt_fingerprint": prompt_fingerprint(),
         "rules_labels": {str(k): v for k, v in sorted(rules.items())},
         "profile": profile.to_dict(),
         "review": review.to_dict(),
@@ -299,6 +360,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--no-append", action="store_true",
                     help="print, do not touch the ledger")
     ap.add_argument("--note", default="", help="what changed this round")
+    ap.add_argument("--max-report-dollars", type=float,
+                    default=MAX_REPORT_DOLLARS,
+                    help="stop the set after a report costing more than this")
+    ap.add_argument("--max-total-dollars", type=float,
+                    default=MAX_TOTAL_DOLLARS,
+                    help="stop the set once it has spent more than this")
     args = ap.parse_args(argv)
 
     if not corpus.raw_available():
@@ -321,10 +388,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     oos = _oos_labels()
     before, after = Scores(), Scores()
+    #: The blind set minus the two reports the cost checkpoint used. Those
+    #: two stopped being blind the moment their changes were read, and a
+    #: blind number that quietly includes them is not one.
+    never_seen_before, never_seen_after = Scores(), Scores()
     verdicts: Counter = Counter()
     per_report: List[dict] = []
     change_rows: List[dict] = []
     triage_rows: List[dict] = []
+    n_disputed_dropped = 0
+    halted = ""
+    fingerprints: Counter = Counter()
     totals = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
               "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
 
@@ -335,6 +409,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("blind set: summary only, by design")
 
     for rid in ids:
+        if totals["dollars"] > args.max_total_dollars:
+            halted = (f"stopped before {rid}: the set has spent "
+                      f"${totals['dollars']:.2f}, past the "
+                      f"${args.max_total_dollars:.2f} ceiling")
+            print("  " + halted)
+            break
+        if per_report and per_report[-1].get("dollars", 0.0) > \
+                args.max_report_dollars:
+            halted = (f"stopped before {rid}: {per_report[-1]['id']} cost "
+                      f"${per_report[-1]['dollars']:.2f}, past the "
+                      f"${args.max_report_dollars:.2f} a report ceiling")
+            print("  " + halted)
+            break
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
@@ -347,6 +434,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             per_report.append({"id": rid, "failed": f"{type(exc).__name__}"})
             continue
 
+        fingerprints[blob.get("prompt_fingerprint", "unknown")] += 1
         rules = {int(k): v for k, v in blob["rules_labels"].items()}
         final = {int(k): v for k, v in blob["review"]["final_labels"].items()}
         hand, alternates, source = truth_for(rid, oos)
@@ -357,19 +445,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         totals["dollars"] += cost.get("dollars", 0.0)
         totals["seconds"] += blob.get("seconds", 0.0)
 
-        rb = ra = 0
+        rb = ra = scored = dropped = 0
+        blind_row = blind and rid not in CHECKPOINT
         for page, want in sorted(hand.items()):
             alts = alternates.get(page, ())
             was, now = rules.get(page, "other"), final.get(page, "other")
+            if disputed_drop(rid, page, now):
+                dropped += 1
+                continue
             before.add(want, was, alts)
             after.add(want, now, alts)
+            if blind_row:
+                never_seen_before.add(want, was, alts)
+                never_seen_after.add(want, now, alts)
+            scored += 1
             rb += int(was == want)
             ra += int(now == want)
+        n_disputed_dropped += dropped
 
         for change in blob["review"]["changes"]:
             page = int(change["page"])
             want = hand.get(page)
-            if want is None:
+            row = DISPUTED.get((rid, page))
+            if row is not None and change["to"] == row["review"]:
+                verdict = "disputed"
+            elif want is None:
                 verdict = "unscored"
             elif change["to"] == want:
                 verdict = "fixed" if change["from"] != want else "unscored"
@@ -414,8 +514,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                   f"{row['calls']} model calls, ${row['dollars']:.3f}, "
                   f"{row['seconds']:.0f} s")
 
+    if len(fingerprints) > 1:
+        print("!! THESE REPORTS WERE NOT RUN ON THE SAME PROMPTS: "
+              + ", ".join(f"{f} x{n}" for f, n in fingerprints.most_common())
+              + " -- re-run the set without --reuse before believing the "
+                "totals below.", file=sys.stderr)
     lines = _render(args, ids, before, after, verdicts, per_report,
-                    triage_rows, totals, blind)
+                    triage_rows, totals, blind, n_disputed_dropped, halted,
+                    never_seen_before, never_seen_after, fingerprints)
     print("\n".join(lines))
 
     if args.changes and change_rows:
@@ -427,6 +533,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     detail = RUNS_DIR / f"detail_{args.set_name}.json"
+    scored_any = any(not r.get("failed") for r in per_report)
+    if not scored_any:
+        # Every report failed. Overwriting the previous run's detail with an
+        # empty one would destroy the only record of the last good run --
+        # which is exactly what happened when the API credit ran out.
+        print(f"no report succeeded; {detail} left as it was")
+        return 1
     detail.write_text(json.dumps({
         "set": args.set_name, "date": date.today().isoformat(),
         "ids": list(ids), "per_report": per_report,
@@ -446,10 +559,29 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
 def _render(args, ids, before: Scores, after: Scores, verdicts: Counter,
             per_report: List[dict], triage_rows: List[dict],
-            totals: dict, blind: bool) -> List[str]:
+            totals: dict, blind: bool, n_disputed_dropped: int = 0,
+            halted: str = "", never_seen_before: Optional[Scores] = None,
+            never_seen_after: Optional[Scores] = None,
+            fingerprints: Optional[Counter] = None) -> List[str]:
     out: List[str] = []
     out.append("")
+    if halted:
+        out.append("HALTED ON THE COST GUARD -- " + halted)
+        out.append("")
+    if fingerprints and len(fingerprints) > 1:
+        out.append("NOT ONE ROUND: these reports were run on "
+                   f"{len(fingerprints)} different prompt versions ("
+                   + ", ".join(f"{f} x{n}"
+                               for f, n in fingerprints.most_common())
+                   + "). The totals below are a mixture and mean nothing "
+                     "until the set is re-run whole.")
+        out.append("")
+    elif fingerprints:
+        out.append(f"prompts: {next(iter(fingerprints))}")
     out.append(f"{args.set_name}: {len(ids)} report(s), {after.n} scored pages")
+    if n_disputed_dropped:
+        out.append(f"{n_disputed_dropped} page(s) dropped from both scores as "
+                   f"confirmed disputed hand labels")
     out.append(f"{'':<24}{'before':>10}{'after':>10}")
     out.append(f"{'strict accuracy':<24}{before.accuracy:>10.3f}"
                f"{after.accuracy:>10.3f}")
@@ -470,14 +602,41 @@ def _render(args, ids, before: Scores, after: Scores, verdicts: Counter,
             failed.append(name)
     out.append("below the gate after review: "
                + (", ".join(failed) if failed else "none"))
+    if blind and never_seen_after is not None and never_seen_after.n:
+        seen = [x for x in ids if x in CHECKPOINT]
+        out.append("")
+        out.append(f"the same set MINUS {', '.join(seen)}, which the cost "
+                   f"checkpoint used and so are no longer blind "
+                   f"({never_seen_after.n} pages)")
+        out.append(f"{'strict accuracy':<24}"
+                   f"{never_seen_before.accuracy:>10.3f}"
+                   f"{never_seen_after.accuracy:>10.3f}")
+        out.append(f"{'accepting alternates':<24}"
+                   f"{never_seen_before.lenient_accuracy:>10.3f}"
+                   f"{never_seen_after.lenient_accuracy:>10.3f}")
+        out.extend(_label_table(never_seen_before, never_seen_after,
+                                KEY_CONTENT))
     if not blind:
         out.append("")
         out.append("every label")
         out.extend(_label_table(before, after))
         out.append("")
         out.append("what the review's changes did, against the hand labels")
-        for verdict in ("fixed", "broke", "still_wrong", "unscored"):
+        for verdict in ("fixed", "broke", "still_wrong", "disputed",
+                        "unscored"):
             out.append(f"  {verdict:<14}{verdicts.get(verdict, 0):>5}")
+        seen_disputes = [(rid, page) for (rid, page) in DISPUTED
+                         if rid in ids]
+        if seen_disputes:
+            out.append("")
+            out.append("hand labels disputed by the review (the spreadsheet "
+                       "is never edited; a confirmed dispute is dropped from "
+                       "both scores)")
+            for rid, page in sorted(seen_disputes):
+                row = DISPUTED[(rid, page)]
+                state = "CONFIRMED" if row["confirmed"] else "awaiting the lead"
+                out.append(f"  {rid} p{page:<4} hand={row['hand']:<12} "
+                           f"review={row['review']:<12} {state}: {row['note']}")
         out.append("")
         out.append(f"{'report':<8}{'pages':>7}{'scored':>8}{'before':>9}"
                    f"{'after':>8}{'chg':>5}{'tools':>7}{'calls':>7}"
