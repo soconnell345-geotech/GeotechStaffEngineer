@@ -1117,3 +1117,44 @@ Per the plan (section 4, "The old XGBoost page classifier"): the rules match or 
 | R28 | 455 | 0.923 | 0.866 |
 | R29 | 131 | 0.664 | 0.710 |
 | R30 | 556 | 0.941 | 0.962 |
+
+---
+
+### WP1 -- how these numbers were arrived at (read before trusting them)
+
+The two measured rounds above are NOT held-out numbers, and the point
+deserves to be as plain here as it is about the classifier.
+
+Before round 1 the page text, page map and hand label of all 4,147 pages
+were cached to a file once, and the rules were written and rewritten against
+that cache -- roughly twenty passes, each one looking at the misses and
+changing a rule. Round 1 is the first run of the finished rules on the live
+documents; it is not the first time those rules met those pages. So the
+numbers say the rules DESCRIBE this corpus well. They do not, on their own,
+say the rules will hold on the next report.
+
+Three things are held out, and they are the only evidence of generalisation
+there is at this point:
+
+1. **A synthetic report the rules never saw** — 21 pages built page by page
+   from the wording of the trade (`planlens.testing.build_synthetic_report`):
+   a cover, a contents page, a narrative run whose prose discusses Atterberg
+   limits and test pits, an appendix tab, two sheets of one boring log, a
+   test pit log, a photograph page, two laboratory sheets, a whole report
+   bound inside an appendix with its own cover and its own APPENDIX A, and a
+   two-page program printout. 21 of 21 pages right, and the work items come
+   out as stated. It was written to the RULES' vocabulary, so it proves the
+   rules are consistent, not that they are complete.
+2. **Two corpus reports with no hand labels** (R36, 94 pages; R18's structure
+   was in the labelled set but R36 was not): the roles and the work items
+   were eyeballed and the log runs group correctly by boring id, with the
+   "Page 1 of 3" continuations folded in.
+3. **What the rules do NOT key on.** No rule mentions a firm, a project, a
+   place or a report id; the keyword tables are trade vocabulary in four
+   languages and the structural rules read running headers and appendix
+   lettering. That is a property of the code, checkable by reading it, not a
+   measurement.
+
+The honest next measurement is a report outside this corpus, hand-labelled
+after the rules were frozen. Until then these numbers are a description of
+14 documents.
