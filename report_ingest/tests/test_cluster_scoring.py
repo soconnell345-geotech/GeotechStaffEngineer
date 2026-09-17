@@ -672,6 +672,242 @@ class TestTheNarrativeStage:
         assert _open_set_or(tmp_path, DEFAULT_OPEN_NARRATIVE) == ("R15", "R28")
 
 
+# ---------------------------------------------------------------------------
+# the vision stage (WP5)
+# ---------------------------------------------------------------------------
+
+def _vision_blob(rid, n_pages, rules, seen, unresolved=(), qa=(),
+                 mode="page", dpi=100.0, calls=None):
+    """One report's saved vision run, as the stage writes it."""
+    return {
+        "id": rid, "run_date": "2026-09-17", "n_pages": n_pages,
+        "model": "funhouse-gpt-low", "served_by": "gpt-4.1-2026",
+        "mode": mode, "dpi": dpi, "outline_context": False,
+        "rules_labels": {str(k): v for k, v in rules.items()},
+        "vision": {
+            "labels": {str(k): v for k, v in seen.items()},
+            "detail": [{"page": k, "label": v, "confidence": 0.8,
+                        "reason": "the title block says so"}
+                       for k, v in seen.items()],
+            "unresolved": [dict(u) for u in unresolved],
+            "qa": [dict(q) for q in qa],
+            "mode": mode, "dpi": dpi, "outline_context": False,
+            "pages_asked": n_pages, "model_calls": calls or len(seen),
+            "budget": None, "stopped_on_budget": False,
+            "model": "gpt-4.1-2026", "cost": {},
+        },
+        "cost": {"calls": calls or len(seen), "input_tokens": 13000,
+                 "output_tokens": 900, "cache_read_tokens": 0,
+                 "dollars": 0.0, "seconds": 60.0},
+        "seconds": 62.0,
+    }
+
+
+@pytest.fixture()
+def vision_cluster(cluster):
+    """The two reports of ``cluster``, with a vision run beside each.
+
+    R36 keeps its label run, so it prints three columns; R31's is removed,
+    so it prints two. That is the state a run makes when the vision stage is
+    asked for on its own.
+    """
+    reports_dir, out, oos = cluster
+    (out / "vision").mkdir(parents=True)
+    # R36: vision agrees with the hand on page 3 and misses page 7.
+    (out / "vision" / "R36.json").write_text(json.dumps(_vision_blob(
+        "R36", 94, {3: "figure", 7: "boring_log"},
+        {3: "plan", 7: "figure"})), encoding="utf-8")
+    # R31: vision gets both right where the review broke one.
+    (out / "vision" / "R31.json").write_text(json.dumps(_vision_blob(
+        "R31", 120, {5: "lab_test", 9: "narrative"},
+        {5: "lab_test"}, unresolved=[{"page": 9, "why": "no answer"}])),
+        encoding="utf-8")
+    return reports_dir, out, oos
+
+
+def _vision_run(vision_cluster, **over):
+    reports_dir, out, oos = vision_cluster
+    kwargs = dict(reports_dir=reports_dir, out_dir=out, prompter=object(),
+                  oos_labels=oos, sets=("oos_blind",),
+                  stages=("vision_labels",))
+    kwargs.update(over)
+    return cs.score_on_cluster(**kwargs)
+
+
+class TestTheVisionStage:
+    """WP5: the same pages, labelled from their pictures, scored alike."""
+
+    def test_it_is_a_stage_name_and_the_default_is_still_labels_alone(self,
+                                                                     cluster):
+        reports_dir, out, oos = cluster
+        assert "vision_labels" in cs.STAGE_NAMES
+        results = cs.score_on_cluster(reports_dir=reports_dir, out_dir=out,
+                                      prompter=object(), oos_labels=oos)
+        assert results["stages"] == ["labels"]
+        assert "vision_labels" not in results
+
+    def test_a_report_with_a_run_file_is_skipped_so_a_resume_is_free(
+            self, vision_cluster, capsys):
+        results = _vision_run(vision_cluster)
+        printed = capsys.readouterr().out
+        assert "R36: already done, skipping" in printed
+        assert results["vision_labels"]["n_reports"] == 2
+
+    def test_an_unknown_vision_mode_is_refused(self, vision_cluster):
+        with pytest.raises(ValueError, match="unknown vision_mode"):
+            _vision_run(vision_cluster, vision_mode="contact")
+
+    def test_the_default_model_is_the_cheapest_tier(self, vision_cluster):
+        results = _vision_run(vision_cluster)
+        assert results["vision_labels"]["model"] == "funhouse-gpt-low"
+
+    def test_the_three_columns_are_scored_on_the_same_hand_labels(
+            self, vision_cluster):
+        seen = _vision_run(vision_cluster)["vision_labels"]
+        blind = seen["sets"]["oos_blind"]
+        # Four hand-labelled pages. Rules: 3/4 (R36 p3 wrong). Review: R36
+        # fixed p3 and R31 broke p5, so 3/4 as well. Vision: p3 right, p7
+        # wrong, p5 right, p9 unresolved and so scored as 'other' -- 2/4.
+        assert blind["rules"]["pages"] == 4
+        assert blind["vision"]["pages"] == 4
+        assert blind["rules"]["accuracy"] == pytest.approx(0.75)
+        assert blind["review"]["accuracy"] == pytest.approx(0.75)
+        assert blind["vision"]["accuracy"] == pytest.approx(0.5)
+
+    def test_an_unresolved_page_is_scored_and_not_excused(self,
+                                                          vision_cluster):
+        results = _vision_run(vision_cluster)["vision_labels"]
+        row = [r for r in results["per_report"] if r["id"] == "R31"][0]
+        assert row["unresolved"] == 1
+        assert row["labelled"] == 1
+        assert row["vision"] == pytest.approx(0.5), (
+            "the page with no answer counts as 'other', which is wrong here")
+
+    def test_the_review_column_only_appears_where_the_review_ran(
+            self, vision_cluster):
+        _reports_dir, out, _oos = vision_cluster
+        (out / "runs" / "R31.json").unlink()
+        results = _vision_run(vision_cluster)["vision_labels"]
+        blind = results["sets"]["oos_blind"]
+        assert blind["n_with_review"] == 1
+        assert blind["n_reports"] == 2
+        # R31 has no review, so its per-report review cell is empty rather
+        # than a copy of the rules.
+        row = [r for r in results["per_report"] if r["id"] == "R31"][0]
+        assert row["review"] is None
+        assert row["rules"] is not None and row["vision"] is not None
+
+    def test_the_blind_set_is_a_summary_with_no_per_report_line(
+            self, vision_cluster):
+        _reports_dir, out, _oos = vision_cluster
+        _vision_run(vision_cluster)
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        body = text.split("# WP5 on the cluster")[1]
+        assert "summary only" in body
+        assert "honest blind figure" in body
+        assert "R31" not in body.split("## Cost")[0], (
+            "a blind figure read report by report stops being blind")
+
+    def test_results_md_carries_the_three_columns_and_names_nobody(
+            self, vision_cluster):
+        _reports_dir, out, _oos = vision_cluster
+        _vision_run(vision_cluster)
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "# WP5 on the cluster" in text
+        for column in ("rules", "+review", "vision"):
+            assert f"P {column}" in text and f"R {column}" in text
+        assert "strict accuracy" in text
+        # A vision reason names what the model saw and can carry a firm.
+        assert "the title block says so" not in text
+
+    def test_the_settings_the_run_used_are_printed(self, vision_cluster):
+        _reports_dir, out, _oos = vision_cluster
+        results = _vision_run(vision_cluster)
+        assert results["vision_labels"]["settings"] == {
+            "mode": "page", "dpi": 100.0, "outline_context": False}
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "mode `page`" in text and "100 dpi" in text
+
+    def test_the_sheet_mode_and_the_outline_flag_reach_the_settings(
+            self, vision_cluster):
+        results = _vision_run(vision_cluster, vision_mode="sheet",
+                              vision_dpi=72.0, vision_outline_context=True)
+        assert results["vision_labels"]["settings"] == {
+            "mode": "sheet", "dpi": 72.0, "outline_context": True}
+
+    def test_cost_is_totalled_per_report(self, vision_cluster):
+        cost = _vision_run(vision_cluster)["vision_labels"]["cost"]
+        assert cost["input_tokens"] == 26000
+        assert cost["output_tokens"] == 1800
+
+    def test_the_results_are_serialisable_without_the_working_state(
+            self, vision_cluster):
+        _reports_dir, out, _oos = vision_cluster
+        _vision_run(vision_cluster)
+        blob = json.loads((out / "results.json").read_text(encoding="utf-8"))
+        assert blob["stages"] == ["vision_labels"]
+        assert "_scores" not in blob["vision_labels"]["sets"]["oos_blind"]
+        assert blob["vision_labels"]["sets"]["oos_blind"]["vision"]["pages"] \
+            == 4
+
+    def test_both_whole_report_stages_run_in_one_call(self, vision_cluster):
+        _reports_dir, out, _oos = vision_cluster
+        results = _vision_run(vision_cluster,
+                              stages=("labels", "vision_labels"))
+        assert results["stages"] == ["labels", "vision_labels"]
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "WP1b on the cluster" in text and "WP5 on the cluster" in text
+
+    def test_a_report_the_folder_does_not_have_is_named_and_skipped(
+            self, vision_cluster, tmp_path):
+        reports_dir, out, oos = vision_cluster
+        (out / "vision" / "R31.json").unlink()
+        (reports_dir / "R31.pdf").unlink()
+        (out / "runs" / "R31.json").unlink()
+        results = _vision_run(vision_cluster)
+        assert results["vision_labels"]["failures"] == {}, (
+            "a report that is in neither the folder nor a run file is absent, "
+            "not a failure")
+        assert "R31" in results["absent"]
+
+
+class TestTheThreeColumnTable:
+    """``columns_label_table`` widens the before-and-after table to N runs."""
+
+    def test_it_prints_a_pair_of_columns_per_run(self):
+        from report_ingest.scoring import Scores, columns_label_table
+
+        rules, vision = Scores(), Scores()
+        for _ in range(4):
+            rules.add("plan", "plan")
+            vision.add("plan", "figure")
+        rows = columns_label_table([("rules", rules), ("vision", vision)],
+                                   ("plan",))
+        assert "P rules" in rows[0] and "R vision" in rows[0]
+        assert rows[1].startswith("plan")
+        assert rows[1].count("1.000") == 2, "the rules got all four right"
+        assert rows[1].count("0.000") >= 1, "vision got none of them"
+
+    def test_a_run_that_did_not_happen_simply_has_no_columns(self):
+        from report_ingest.scoring import Scores, columns_label_table
+
+        only = Scores()
+        only.add("toc", "toc")
+        rows = columns_label_table([("rules", only)])
+        assert "P rules" in rows[0]
+        assert "vision" not in rows[0]
+
+    def test_an_unmeasured_label_reads_as_a_dash_not_a_zero(self):
+        from report_ingest.scoring import Scores, columns_label_table
+
+        rules = Scores()
+        rules.add("plan", "plan")
+        rows = columns_label_table([("rules", rules)], ("cpt_log",))
+        assert "--" in rows[1], (
+            "a label the set holds no page of is unmeasured, and must read as "
+            "neither a perfect score nor a failing one")
+
+
 class TestOneTruthRoot:
     """The three sets of hand truth travel to the cluster as ONE folder.
 

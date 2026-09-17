@@ -11,6 +11,7 @@ available to the app as one sub-agent. Calculation printouts are WP5.
 |---|---|---|
 | 0b. Document triage | `triage.py` | one structured call |
 | 0c. Label review | `label_review.py` | an agent loop with four tools |
+| The vision experiment | `vision_labels.py` | the page as a picture, one call a page or one a sheet |
 | The record | `model.py` | pydantic; the product everything else exports |
 | 2. Log reader | `log_reader.py` | one structured call per log, image alongside |
 | 3. Lab reader | `lab_reader.py` | one call per sheet, `zoom_plot` when a curve is only plotted |
@@ -628,7 +629,7 @@ dbutils.library.restartPython()
 ```
 
 ```python
-# 2. One cell, all four stages. fh_prompter is the object you already have.
+# 2. One cell, all five stages. fh_prompter is the object you already have.
 from report_ingest.cluster_scoring import score_on_cluster
 
 results = score_on_cluster(
@@ -643,7 +644,9 @@ results = score_on_cluster(
     model        = "funhouse-gpt-high",     # every reader, on the tier the app runs on
     triage_model = "funhouse-gpt-medium",   # one call over a ledger; a cheaper tier does
     sets         = ("insample", "oos_open", "oos_blind"),
-    stages       = ("labels", "logs", "lab", "narrative"),
+    stages       = ("labels", "logs", "lab", "narrative", "vision_labels"),
+    vision_model = "funhouse-gpt-low",      # the experiment: GPT-4.1, the cheap tier
+    vision_mode  = "page",                  # or "sheet": six pages a call
     max_reports  = 2,                       # drop this line after the first run
 )
 ```
@@ -654,7 +657,7 @@ logs, two laboratory sheets, two narratives — which proves the paths, the
 prompter and all three truth folders for a few minutes of calls, and it
 resumes, so the full run afterwards does not redo them.
 
-The four stages are described one at a time below, each with the cell that
+The five stages are described one at a time below, each with the cell that
 runs it alone.
 
 <!-- A FIFTH STAGE IS COMING: `vision_labels`, page images read with
@@ -824,6 +827,96 @@ Locally, `module_work/report_ingest_harness/measure_wp4_narrative.py` does the
 same scoring against the development engine (`--fields` for the per-question
 table, `--detail` for every miss on the open reports).
 
+### Labelling a page by looking at it (`stages=("vision_labels",)`)
+
+An experiment, and it is the one stage here that is not a reader. The rules
+label a page from what that page prints about itself; the review corrects them
+with the whole report in view. **Both read text.** This stage asks the third
+question: hand the page to a cheap model as a PICTURE, with the eighteen-label
+vocabulary and nothing else, and see what it says. It runs on the same reports
+as the `labels` stage, scores against the same hand labels with the same
+scorer, and writes one table with the three answers side by side.
+
+```python
+results = score_on_cluster(
+    reports_dir            = "/Volumes/<your volume>/reports",
+    manifest               = "/Volumes/<your volume>/report_ingest/MANIFEST.md",
+    labels_xlsx            = "/Volumes/<your volume>/report_ingest/trial_pages_working_r2.xlsx",
+    oos_labels             = "/Volumes/<your volume>/report_ingest/oos_labels.json",
+    di_dir                 = "/Volumes/<your volume>/report_di",
+    out_dir                = "/tmp/report_ingest_vision",
+    prompter               = fh_prompter,
+    stages                 = ("vision_labels",),   # or beside ("labels", ...)
+    vision_model           = "funhouse-gpt-low",   # GPT-4.1; the cheapest tier on purpose
+    vision_mode            = "page",               # or "sheet"
+    vision_dpi             = 100,                  # the default; see below
+    vision_outline_context = False,                # True = it also sees the contents list
+    max_reports            = 2,                    # drop this line after the first run
+)
+```
+
+**Why the cheapest tier.** The question is not whether a good model can label
+a page — it is whether the cheapest one can, looking, do what the rules and the
+review do by reading. Scoring it on `funhouse-gpt-high` would answer a
+different question and cost more to answer it.
+
+**The two modes are the trade being priced.** `page` is one call per page, the
+page rendered whole: a hundred pages is a hundred calls and each page gets the
+model's full attention. `sheet` is one call per contact sheet of six pages,
+each thumbnail labelled with its own page index exactly as the review's
+`contact_sheet` tool draws them: a hundred pages is seventeen calls and each
+page is a thumbnail. What the second costs in accuracy is the measurement.
+
+**The dpi is 100 because that is what the model keeps.** A 4.1-class vision
+stack scales an image to its own working size before it looks at it or charges
+for it — the short side lands around 768 px — and then prices what is left in
+512 px tiles. The arithmetic is one-sided:
+
+| render | what the model sees | tiles | tokens |
+|---|---|---|---|
+| letter at 72 dpi | 612 x 792 (not scaled: under the ceiling) | 4 | ~765 |
+| letter at 100 dpi | 768 x 994 | 4 | ~765 |
+| letter at 200 dpi | 768 x 994 | 4 | ~765 |
+
+So 72 dpi is not the cheap option, it is the same price with a quarter of the
+short side thrown away; 200 dpi is the same price again for four times the
+bytes on the wire and not one pixel the model keeps. Everything from about
+90 dpi up lands on that identical 768 px short side, and 100 leaves room for a
+page that is not letter-sized (A4 at 100 dpi is 827 x 1169, which scales to
+768 x 1086 and costs six tiles because it is taller, not because of the dpi).
+It is a parameter because the ceiling is the provider's and it moves.
+
+**`vision_outline_context=True`** prepends what the document prints about
+itself — the contents list, the lists of figures, tables and appendices, the
+dividers — to every call, so a run can put pure vision beside vision that knows
+which appendix it is standing in. In page mode that text rides on every call,
+so it is cut at 6,000 characters.
+
+**How to read the table.** `RESULTS.md` gains a WP5 section whose rows are the
+labels and whose columns come in pairs — precision and recall for `rules`
+(planlens' per-page rules), for `+review` (those rules with the label review's
+accepted changes applied) and for `vision` — over one set of hand labels and
+one scorer. A column appears only where its run exists: a report with no
+`runs/<ID>.json` beside it prints two columns rather than three, and the header
+says how many reports the `+review` column covers when it is not all of them.
+**A page the vision pass left unresolved is scored as `other`** — a non-answer
+is scored, not excused — and the per-report line carries how many there were.
+The blind set prints a summary and nothing else, because a blind figure read
+report by report stops being blind.
+
+What Python refuses rather than passes on: a label outside the vocabulary
+becomes `other` with a QA note, a confidence outside 0 to 1 is clipped, a page
+the reply left off its own contact sheet is `unresolved` and never guessed
+from its neighbours, a page the reply invented is dropped with a note, and the
+budget caps model calls so every page past it is `unresolved` too.
+
+`vision/<ID>.json` holds the per-report detail and makes the stage restartable.
+It stays on the cluster with `runs/` and `triage/`: a vision REASON says what
+the model saw on a page and can therefore quote a title block.
+
+Locally, `module_work/report_ingest_harness/measure_wp5_vision.py` does the
+same scoring against the development engine, and `--reuse` re-scores the saved
+runs with no model, no key and no network at all.
 
 Bring back **`RESULTS.md`** from whatever `out_dir` was. That is the whole report,
 and it carries IDs, labels, counts and rates only. The per-report runs and the

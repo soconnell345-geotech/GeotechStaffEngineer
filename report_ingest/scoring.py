@@ -22,8 +22,8 @@ from report_ingest.corpus import LABELS
 
 __all__ = [
     "KEY_CONTENT", "GATE", "OOS_OPEN", "OOS_BLIND", "CHECKPOINT", "DISPUTED",
-    "Scores", "disputed_drop", "verdict_for", "label_table", "rate",
-    "gate_failures",
+    "Scores", "disputed_drop", "verdict_for", "label_table",
+    "columns_label_table", "rate", "gate_failures",
 ]
 
 #: The labels a downstream reader depends on. The gate after review is 0.98
@@ -186,6 +186,48 @@ def label_table(before: Scores, after: Scores,
         rows.append(f"{name:<16}{support:>6}"
                     f"{rate(pb):>10}{rate(rb):>10}{rate(fb):>11}"
                     f"{rate(pa):>10}{rate(ra):>10}{rate(fa):>10}")
+    return rows
+
+
+def columns_label_table(columns: Sequence[Tuple[str, Scores]],
+                        only: Sequence[str] = ()) -> List[str]:
+    """Per-label precision and recall, one PAIR of columns per run.
+
+    :func:`label_table` is the two-column before-and-after form the label
+    scorecards print. This is the same table widened to however many runs
+    there are, so three ways of labelling a page -- the rules alone, the
+    rules the review corrected, and a model looking at the picture -- can be
+    read off one set of rows against one set of hand labels.
+
+    A run that did not happen simply has no columns: a report with no review
+    saved beside it prints two, and one with a review prints three. The row
+    set is the union of the labels the runs produced, so a label only one of
+    them ever emits is still visible.
+    """
+    if not columns:
+        return []
+    header = f"{'label':<16}{'n':>6}"
+    for name, _scores in columns:
+        header += f"{'P ' + name:>10}{'R ' + name:>10}"
+    rows = [header]
+    if only:
+        names: List[str] = list(only)
+    else:
+        seen: List[str] = []
+        for _name, scores in columns:
+            for label in scores.present_labels():
+                if label not in seen:
+                    seen.append(label)
+        names = [x for x in LABELS if x in seen]
+    for label in names:
+        support = max(scores.rates(label)[3] for _n, scores in columns)
+        if not support and not only:
+            continue
+        line = f"{label:<16}{support:>6}"
+        for _name, scores in columns:
+            precision, recall, _f1, _support = scores.rates(label)
+            line += f"{rate(precision):>10}{rate(recall):>10}"
+        rows.append(line)
     return rows
 
 

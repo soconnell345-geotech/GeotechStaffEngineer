@@ -293,6 +293,16 @@ card, no broken image link, both files in the SharePoint folder, PDF still embed
  **Still todo:** Tier 2 scanned-page engines
 (local OCR / table / layout models — needs Funhouse to confirm model vendoring
 through Nexus; owner may pick up next week) and revision comparison (A4).
+**A cheap HOSTED vision model is being scored first, in 5.20.0.** The local
+route needs Funhouse to bless vendored weights and cannot be measured until
+they do; a hosted model on the tier list needs nothing and can be measured
+this week. `report_ingest/vision_labels.py` sends the page IMAGE to
+`funhouse-gpt-low` with structured output and the eighteen-label vocabulary,
+and `score_on_cluster(stages=("vision_labels",))` scores it against the same
+hand labels, with the same scorer, as the rules and the review. If a cheap
+hosted model reads a scanned page well enough, the local-model question is
+smaller than it looks; if it does not, the measurement says what a local
+model would have to beat.
 
 **TODO (owner agreed 2026-09-16): toolkit MCP server.** One thin MCP server over
 the DISPATCH layer — `list_agents` / `list_methods` / `describe_method` /

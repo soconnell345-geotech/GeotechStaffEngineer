@@ -15,6 +15,10 @@ record and its exports out -- and the pieces it drives are:
 ``report_ingest.label_review``
     An agent loop with four tools that checks the rule labels against the
     report's own account of itself and against the pages themselves.
+``report_ingest.vision_labels``
+    The experiment beside those two: the page as a PICTURE to the cheapest
+    model, with the label vocabulary and nothing else. Scored against the
+    same hand labels, by the same scorer, as the rules and the review.
 ``report_ingest.log_reader`` and ``report_ingest.lab_reader``
     One exploration log, and one laboratory sheet, read into the record.
     Geometry says where and the model says what; Python refuses what the
@@ -58,7 +62,8 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["triage", "review_labels", "read_log", "read_lab_sheet",
+__all__ = ["triage", "review_labels", "classify_pages_by_vision",
+           "read_log", "read_lab_sheet",
            "read_narrative", "reconcile", "write_outputs", "ingest_report",
            "run_folder", "build_report_ingest_subagent",
            "write_diggs", "diggs_schema_gate", "diggs_roundtrip_gate",
@@ -210,6 +215,18 @@ def review_labels(*args: Any, **kwargs: Any):
     """:func:`report_ingest.label_review.review_labels`, imported on use."""
     from report_ingest.label_review import review_labels as _review
     return _review(*args, **kwargs)
+
+
+def classify_pages_by_vision(*args: Any, **kwargs: Any):
+    """:func:`report_ingest.vision_labels.classify_pages_by_vision`, on use.
+
+    The experiment: a page labelled from its PICTURE alone, by the cheapest
+    model on the tier list, scored against the same hand labels as the rules.
+    """
+    from report_ingest.vision_labels import (
+        classify_pages_by_vision as _classify,
+    )
+    return _classify(*args, **kwargs)
 
 
 def ClaudeEngine(*args: Any, **kwargs: Any):  # noqa: N802 - a class in effect

@@ -326,6 +326,13 @@ no reader has been measured against the model that will do the work yet — the
 owner's four-stage `score_on_cluster` run is what settles that (`HANDOFF.md`
 §0a-current).
 
+5.20.0 also carries a **vision-first page-classification experiment** that
+touches no tool surface: `report_ingest/vision_labels.py` sends each page as a
+picture to GPT-4.1 on the cheap tier (`funhouse-gpt-low`) with structured
+output, and `score_on_cluster(stages=("vision_labels",))` scores it against the
+same hand labels, with the same scorer, as planlens' rules and the label
+review, so RESULTS.md prints the three answers side by side.
+
 Two things can make it decline rather than fail. It is **feature-detected on
 the installed planlens**, not trusted from the pin, so on a cluster that
 resolved an older planlens than the floor the tool is not advertised at all.

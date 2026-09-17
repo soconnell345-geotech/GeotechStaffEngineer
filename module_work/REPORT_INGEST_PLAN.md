@@ -324,6 +324,7 @@ graph runs headless over a folder of PDFs for the report-library use.
 | Scanned, or text layer unreliable, DI result available | **Azure DI** through planlens `AzureLayout` | Results for 21 corpus reports are already in `raw/di/`; for new reports the owner runs DI on the cluster (Funhouse SDK); gives lines, heading roles and tables with header cells on scans; only the pages `pages_needing_ocr` names need be sent; cost is a few cents per report at the known rate |
 | Same, no DI result | **RapidOCR** via planlens `[ocr]` (`rapidocr-onnxruntime`, models inside the wheel) | Free, offline; installed in the dev venv; needs the same Nexus install check on the cluster that rapidfuzz had. Not related to rapidfuzz (which does fuzzy text matching) |
 | Neither reads it | The page image to the reader model | Last resort; every such page is a QA entry |
+| Any page | The page image to a cheap vision model with structured output (experiment, scored in 5.20.0) | Not a text source at all — it skips the text and asks what the page IS. `report_ingest/vision_labels.py`, scored against the same hand labels as the rules by `score_on_cluster(stages=("vision_labels",))` on `funhouse-gpt-low`, in one call per page or one per six-page contact sheet |
 
 Locally (this machine) DI cannot be called, so the harness accepts DI JSON
 dropped into `raw/di/` by the owner after a cluster run; RapidOCR covers the

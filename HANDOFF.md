@@ -16,27 +16,23 @@ the pin, the docs, the gate and the wheel check. **Nothing is merged, tagged,
 pushed or published** — the owner gives the word. planlens 0.6.0 publishes
 FIRST, as it did for 0.5.0, then the app.
 
-**The published answer vocabulary — raised, ruled on, still open to the
-owner.** `report_ingest/model.py` publishes the owner's own answer vocabulary
-for four narrative questions, read off the hand answers rather than guessed
-(commit `5628ce1`), and two of its values name a building type. The module
-ships in the wheel and this repo is public, so it was raised against the
-privacy word list before the tag. (`report_ingest/tests/test_narrative_reader.py`
-repeats the same strings but does NOT ship — the wheel carries no tests,
-verified by listing it — so GitHub is its only exposure.) **Ruled: it is the owner's GENERIC TAXONOMY, not text out of
-any private report — no project, site, firm or person — and the word list was
-written to catch report text.** The values stay VERBATIM, because the
-narrative scorer matches strings at a rapidfuzz partial ratio of 85 and the
-hand answers are the long form; shortening them would turn correct readings
-into misses and move the numbers. The owner has been told and can still
-object before anything is tagged. If they do, the fix that costs no accuracy
-is a GENERIC default list in `model.py` with the real wording loaded at
-runtime from a private file travelling with the truth folders — the two
-fields are already plain `str` rather than `Literal`, so the vocabulary is
-only a prompt hint and a folding table and nothing refuses an answer either
-way. That would be a follow-up commit, not a history edit: `5628ce1` and
-`17f728a` stand as they are. Nothing else on either branch trips the word
-list.
+**The published answer vocabulary — DECIDED, not a blocker.** The owner's own
+answer vocabulary (compound and phase types) ships verbatim in the package;
+the lead ruled it generic taxonomy, not corpus content, and the owner was
+informed before the tag. It lives in `report_ingest/model.py` (commit
+`5628ce1`), read off the hand answers rather than guessed.
+(`report_ingest/tests/test_narrative_reader.py` repeats the same strings but
+does NOT ship — the wheel carries no tests, verified by listing it — so GitHub
+is its only exposure.) The values stay VERBATIM because the narrative scorer
+matches strings at a rapidfuzz partial ratio of 85 and the hand answers are
+the long form; shortening them would turn correct readings into misses and
+move the numbers. **An option, not a blocker:** a GENERIC default list in
+`model.py` with the real wording loaded at runtime from a private file
+travelling with the truth folders. The two fields are already plain `str`
+rather than `Literal`, so the vocabulary is only a prompt hint and a folding
+table and nothing refuses an answer either way; it would be a follow-up
+commit, not a history edit, and `5628ce1` and `17f728a` stand as they are.
+Nothing else on either branch trips the privacy word list.
 
 **What shipped.** WP2 through WP4 of the report-ingest train, on top of the
 WP0/WP1b library that went out in 5.19.0. `ReportRecord` is the product and
@@ -64,8 +60,9 @@ the app as one `CompiledSubAgent` plus one primary `report_ingest` tool,
 **OFF by default** — `build_deep_agent(enable_report_ingest=False)` — because
 none of it has been checked on the cluster yet.
 
-**The scoring cell changed shape.** `score_on_cluster` now takes four stages
-(`labels`, `logs`, `lab`, `narrative`) and **one truth root**: `truth_dir`
+**The scoring cell changed shape.** `score_on_cluster` now takes five stages
+(`labels`, `logs`, `lab`, `narrative`, `vision_labels`) and **one truth
+root**: `truth_dir`
 may be a folder holding `logs/`, `lab/` and `narrative/`, named after the
 stages. The hand truth is private and is uploaded by hand before every run,
 and three Volume paths that must each be right is three chances for one to be
@@ -110,11 +107,21 @@ model. Follow-up: enforce the guard and the budget inside the compiled graph
 (or wrap the runnable) so the sub-agent has the same protections as the calc
 and references sub-agents.
 
-**Landing on top of this BEFORE the tag:** a FIFTH cluster-scoring stage,
-`vision_labels` — page images read with structured output as a first-pass page
-classifier — from another builder. The stage lists in this entry, in
-`CLAUDE.md` and in `report_ingest/README.md` each have one more line coming;
-leave room for it rather than rewording them.
+**The vision-first experiment, landed before the tag.**
+`report_ingest/vision_labels.py` sends each page as a PICTURE to GPT-4.1 on
+the cheap tier (`funhouse-gpt-low`) with structured output and the same
+eighteen-label vocabulary the review uses — one call per page, or one per
+six-page contact sheet, optionally with the document's own outline prepended
+— and `score_on_cluster` gains a FIFTH stage, `vision_labels`, that runs it
+over the same reports as the `labels` stage and scores it against the SAME
+hand labels with the SAME scorer. `RESULTS.md` then carries one table with
+three columns where the runs exist: the rules alone, the rules the review
+corrected, and the picture. A page the vision pass left unresolved is scored
+as `other` — a non-answer is scored, not excused — and the blind set prints a
+summary only. Nothing on the app's tool surface changed and no model was
+called here: the numbers come from the owner's cluster run. Local twin:
+`module_work/report_ingest_harness/measure_wp5_vision.py` (`--reuse`
+re-scores the saved runs with no model, no key and no network).
 
 ### 5.19.0 RELEASED (2026-09-17, tag `v5.19.0`) — the `report_ingest` package, with planlens 0.5.0
 

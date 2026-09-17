@@ -44,14 +44,15 @@ WHAT IT WRITES into ``out_dir``::
 
     runs/<ID>.json        rules, profile, review, cost -- one per report
     triage/<ID>.json      the document profile alone, for the owner's audit
+    vision/<ID>.json      the vision experiment's labels, reasons and cost
     results.json          every summary table as data
     RESULTS.md            the same tables to read, and to bring back
 
 ``RESULTS.md`` is the file to bring home. It carries IDs, labels, counts and
-rates and nothing else -- never a page heading, a change's reason or a triage
-rationale, any of which can name a firm, a project or a person. Those stay
-in ``runs/`` and ``triage/``, which stay on the cluster unless the owner
-moves them deliberately.
+rates and nothing else -- never a page heading, a change's reason, a triage
+rationale or a vision reason, any of which can name a firm, a project or a
+person. Those stay in ``runs/``, ``triage/`` and ``vision/``, which stay on
+the cluster unless the owner moves them deliberately.
 """
 
 from __future__ import annotations
@@ -65,8 +66,9 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from report_ingest.corpus import Corpus
 from report_ingest.scoring import (
-    CHECKPOINT, GATE, KEY_CONTENT, OOS_BLIND, OOS_OPEN, Scores, disputed_drop,
-    gate_failures, label_table, verdict_for,
+    CHECKPOINT, GATE, KEY_CONTENT, OOS_BLIND, OOS_OPEN, Scores,
+    columns_label_table, disputed_drop, gate_failures, label_table,
+    verdict_for,
 )
 
 __all__ = ["score_on_cluster", "SET_NAMES", "STAGE_NAMES"]
@@ -77,8 +79,12 @@ SET_NAMES: Tuple[str, ...] = ("insample", "oos_open", "oos_blind")
 #: label review over whole reports. ``logs`` is WP2b -- the log grid and then
 #: the log reader over each hand-truthed log, scored before and after.
 #: ``lab`` is WP3 -- the page's own tables and then the lab reader over each
-#: hand-truthed laboratory sheet, scored the same two ways.
-STAGE_NAMES: Tuple[str, ...] = ("labels", "logs", "lab", "narrative")
+#: hand-truthed laboratory sheet, scored the same two ways. ``vision_labels``
+#: is the WP5 experiment -- every page's PICTURE to the cheapest tier, scored
+#: against the same hand labels with the same scorer as the rules, so the
+#: three ways of labelling a page can be read side by side.
+STAGE_NAMES: Tuple[str, ...] = ("labels", "logs", "lab", "narrative",
+                                "vision_labels")
 
 #: The reports the log rules were allowed to be tuned on, when no ``OPEN.txt``
 #: sits beside the truth files. Everything else is scored as blind.
@@ -244,7 +250,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      narrative_budget: int = 8,
                      open_reports: Optional[Sequence[str]] = None,
                      open_lab_reports: Optional[Sequence[str]] = None,
-                     open_narrative_reports: Optional[Sequence[str]] = None
+                     open_narrative_reports: Optional[Sequence[str]] = None,
+                     vision_model: str = "funhouse-gpt-low",
+                     vision_mode: str = "page",
+                     vision_dpi: Optional[float] = None,
+                     vision_outline_context: bool = False
                      ) -> Dict[str, Any]:
     """Run the rules, triage and the label review over the corpus, and score.
 
@@ -297,11 +307,12 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         each hand-truthed laboratory sheet, scored the same two ways.
         ``"narrative"`` is WP4 -- the narrative reader over every report that
         has a hand answer, scored field by field on recall, precision and the
-        flattering agreement. Pass any combination; all four is
-        ``stages=("labels", "logs", "lab", "narrative")``. A fifth,
-        ``"vision_labels"``, is being added on top of this release: add it to
-        ``STAGE_NAMES``, give it a ``TRUTH_SUBDIRS`` entry if it needs hand
-        truth of its own, and it joins the rest here.
+        flattering agreement. ``"vision_labels"`` is the WP5 experiment --
+        every page's PICTURE to a cheap model, scored against the SAME hand
+        labels with the SAME scorer as the rules, so RESULTS.md can put the
+        rules, the rules plus the review and the picture side by side. Pass
+        any combination; all five is
+        ``stages=("labels", "logs", "lab", "narrative", "vision_labels")``.
     truth_dir
         ONE truth root for every scoring stage: a folder holding ``logs/``,
         ``lab/`` and ``narrative/``, named after the stages that read them.
@@ -321,6 +332,26 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         own ceiling -- six and four -- holds whatever these say.
     open_reports, open_lab_reports
         Override an open set instead of reading its ``OPEN.txt``.
+    vision_model
+        The tier the ``vision_labels`` experiment runs on. It defaults to
+        ``funhouse-gpt-low`` on purpose: the question is whether the CHEAPEST
+        model, looking at a page, can do what the rules and the review do by
+        reading it. Scoring it on the tier the readers use would answer a
+        different question.
+    vision_mode
+        ``"page"`` for one call per page, ``"sheet"`` for one call per
+        contact sheet of six pages. The second is about a sixth of the calls
+        and each page is a thumbnail; what that costs in accuracy is the
+        thing being measured.
+    vision_dpi
+        What a page is rendered at in page mode. ``None`` takes
+        :data:`report_ingest.vision_labels.DEFAULT_DPI`, which is the largest
+        render a 4.1-class vision stack keeps.
+    vision_outline_context
+        Give the model what the document prints about ITSELF -- the contents
+        list, the lists of figures, tables and appendices, the dividers --
+        on every call, so a run can put pure vision beside vision that knows
+        which appendix it is standing in.
     """
     if prompter is None:
         raise ValueError(
@@ -370,6 +401,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         (out / "lab").mkdir(parents=True, exist_ok=True)
     if "narrative" in stages:
         (out / "narrative").mkdir(parents=True, exist_ok=True)
+    if "vision_labels" in stages:
+        (out / "vision").mkdir(parents=True, exist_ok=True)
 
     corpus = Corpus(reports_dir, manifest=manifest, di_dir=di_dir,
                     labels_xlsx=labels_xlsx, cache_dir=out)
@@ -387,8 +420,12 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                for rid, pages in blob.items()}
     mapped = corpus.mapped_ids() if corpus.labels_available else []
 
+    # The two whole-report stages -- the label review and the vision
+    # experiment -- run over the same reports, because they are two answers
+    # to one question and are scored against one set of hand labels.
+    by_report = ("labels" in stages) or ("vision_labels" in stages)
     asked: List[str] = []
-    if "labels" in stages:
+    if by_report:
         for name in sets:
             for rid in _set_ids(name, corpus):
                 if rid not in asked:
@@ -398,22 +435,25 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
     # time deep in the run; a report already scored keeps its run file.
     present = set(corpus.present_ids())
     wanted = [rid for rid in asked
-              if rid in present or (out / "runs" / f"{rid}.json").is_file()]
+              if rid in present
+              or (out / "runs" / f"{rid}.json").is_file()
+              or (out / "vision" / f"{rid}.json").is_file()]
     absent = [rid for rid in asked if rid not in wanted]
     if max_reports:
         wanted = wanted[:int(max_reports)]
+    label_ids = wanted if "labels" in stages else []
 
     print(f"report ingest on the cluster: stage(s) {', '.join(stages)}; "
           f"model {model}, triage {triage_model}; out_dir {out}")
     if "labels" in stages:
-        print(f"  labels: {len(wanted)} report(s)")
+        print(f"  labels: {len(label_ids)} report(s)")
     if absent:
         print(f"  not in {corpus.reports_dir} and skipped: "
               f"{', '.join(absent)}")
     spent = 0.0
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
-    for n, rid in enumerate(wanted, 1):
+    for n, rid in enumerate(label_ids, 1):
         run_file = out / "runs" / f"{rid}.json"
         if run_file.is_file() and not redo:
             done[rid] = json.loads(run_file.read_text(encoding="utf-8"))
@@ -472,6 +512,17 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         results["narrative"] = narrative
         lines += _render_narrative(narrative)
 
+    if "vision_labels" in stages:
+        vision = _run_vision(corpus, prompter, vision_model, out, wanted,
+                             mode=vision_mode, dpi=vision_dpi,
+                             outline_context=vision_outline_context,
+                             redo=redo)
+        scored_vision = _score_vision(vision["runs"], corpus, oos, mapped,
+                                      sets, out, vision_model,
+                                      vision["failures"], vision["settings"])
+        results["vision_labels"] = scored_vision
+        lines += _render_vision(scored_vision)
+
     (out / "results.json").write_text(json.dumps(_plain(results), indent=2),
                                       encoding="utf-8")
     (out / "RESULTS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -484,6 +535,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         print(f"per-sheet runs in {out / 'lab'}")
     if "narrative" in stages:
         print(f"per-report narrative runs in {out / 'narrative'}")
+    if "vision_labels" in stages:
+        print(f"per-report vision runs in {out / 'vision'}")
     return results
 
 
@@ -1468,6 +1521,386 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
             "Funhouse publishes no per-token price for a capability tier, so "
             "this reports TOKENS. Read the spend from Funhouse's own budget "
             "endpoint for the same window."]
+    return out
+
+
+# ---------------------------------------------------------------------------
+# the vision stage (WP5): the same pages, labelled from their pictures
+# ---------------------------------------------------------------------------
+
+def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
+                report_ids: Sequence[str], *, mode: str,
+                dpi: Optional[float], outline_context: bool,
+                redo: bool) -> Dict[str, Any]:
+    """A cheap model's look at every page of every report in the set.
+
+    The rules' labels are computed here too, deterministically and with no
+    model, so the three-column table works even in a run where the label
+    review never happened.
+
+    Restartable the same way every other stage is: each report writes
+    ``vision/<ID>.json`` as it finishes and a later call skips it.
+    """
+    from planlens.document.roles import document_outline, page_roles
+
+    from report_ingest.engine import CostMeter, PrompterEngine
+    from report_ingest.vision_labels import DEFAULT_DPI, MODES
+    from report_ingest.vision_labels import (
+        classify_pages_by_vision as classify,
+    )
+
+    if mode not in MODES:
+        raise ValueError(
+            f"unknown vision_mode {mode!r}; the modes are {list(MODES)}")
+    dpi = float(DEFAULT_DPI if dpi is None else dpi)
+    settings = {"mode": mode, "dpi": dpi,
+                "outline_context": bool(outline_context)}
+    print(f"  vision_labels: {len(report_ids)} report(s); model {model}, "
+          f"mode {mode}, {dpi:.0f} dpi, outline context "
+          f"{'on' if outline_context else 'off'}")
+
+    present = set(corpus.present_ids())
+    done: Dict[str, dict] = {}
+    failures: Dict[str, str] = {}
+    for n, rid in enumerate(report_ids, 1):
+        run_file = out / "vision" / f"{rid}.json"
+        if run_file.is_file() and not redo:
+            done[rid] = json.loads(run_file.read_text(encoding="utf-8"))
+            print(f"  [{n}/{len(report_ids)}] {rid}: already done, skipping")
+            continue
+        if rid not in present:
+            failures[rid] = f"{rid} is not in the reports folder"
+            print(f"  [{n}/{len(report_ids)}] {rid}: skipped -- "
+                  f"{failures[rid]}")
+            continue
+        meter = CostMeter()
+        engine = PrompterEngine(prompter, model, meter=meter)
+        started = time.time()
+        doc = None
+        try:
+            doc = corpus.open_report(rid, di="auto", warn=False)
+            roles = page_roles(doc)
+            outline = document_outline(doc) if outline_context else None
+            seen = classify(doc, engine, mode=mode, dpi=dpi,
+                            outline_context=outline_context, outline=outline)
+            rules = {r.page: r.role for r in roles}
+            n_pages = doc.n_pages
+        except KeyboardInterrupt:
+            print("  interrupted; what is finished is on disk and a later "
+                  "call resumes")
+            break
+        except Exception as exc:                     # keep the run going
+            failures[rid] = f"{type(exc).__name__}: {exc}"
+            print(f"  [{n}/{len(report_ids)}] {rid}: FAILED -- "
+                  f"{failures[rid]}")
+            traceback.print_exc()
+            continue
+        finally:
+            if doc is not None:
+                doc.close()
+        blob = {
+            "id": rid,
+            "run_date": date.today().isoformat(),
+            "n_pages": n_pages,
+            "model": model,
+            "served_by": engine.served_by,
+            "mode": mode,
+            "dpi": dpi,
+            "outline_context": bool(outline_context),
+            "rules_labels": {str(k): v for k, v in sorted(rules.items())},
+            "vision": seen.to_dict(),
+            "cost": meter.to_dict(),
+            "seconds": round(time.time() - started, 1),
+        }
+        run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        done[rid] = blob
+        print(f"  [{n}/{len(report_ids)}] {rid}: {n_pages} pp, "
+              f"{len(seen.labels)} labelled, {len(seen.unresolved)} "
+              f"unresolved, {seen.model_calls} model calls, "
+              f"{blob['cost']['input_tokens']:,} in / "
+              f"{blob['cost']['output_tokens']:,} out, "
+              f"{blob['seconds']:.0f} s")
+    return {"runs": done, "failures": failures, "settings": settings}
+
+
+def _review_labels_on_disk(out: Path, rid: str) -> Dict[int, str]:
+    """The reviewed labels a label run left behind, or an empty map.
+
+    The review column exists only where the review was actually run -- in
+    this call or in an earlier one that wrote the same ``out_dir``. An empty
+    map means the report prints two columns rather than three, which is
+    honest; inventing a third from the rules would print the rules twice.
+    """
+    run_file = out / "runs" / f"{rid}.json"
+    if not run_file.is_file():
+        return {}
+    try:
+        blob = json.loads(run_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    final = ((blob.get("review") or {}).get("final_labels")) or {}
+    return {int(k): v for k, v in final.items()}
+
+
+def _score_vision(done: Dict[str, dict], corpus: Corpus,
+                  oos: Dict[str, Dict[int, dict]], mapped: Sequence[str],
+                  sets: Sequence[str], out: Path, model: str,
+                  failures: Dict[str, str],
+                  settings: Dict[str, Any]) -> Dict[str, Any]:
+    """The three ways of labelling a page, on one set of hand labels.
+
+    The scorer is :class:`report_ingest.scoring.Scores` -- the same one the
+    labels stage uses -- and the truth is the same spreadsheet and the same
+    out-of-sample file. That is the whole point: a vision number measured by
+    a scorer of its own would be a number nobody could set beside the rules.
+    """
+    rows: Dict[str, Any] = {}
+    cost = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
+            "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
+    per_report: List[dict] = []
+    counted: set = set()
+
+    for name in sets:
+        ids = [rid for rid in _set_ids(name, corpus) if rid in done]
+        rules, review, vision = Scores(), Scores(), Scores()
+        clean_rules, clean_review, clean_vision = Scores(), Scores(), Scores()
+        with_review: List[str] = []
+        dropped = 0
+        for rid in ids:
+            blob = done[rid]
+            rule_labels = {int(k): v
+                           for k, v in
+                           (blob.get("rules_labels") or {}).items()}
+            seen = blob.get("vision") or {}
+            vision_labels = {int(k): v
+                             for k, v in (seen.get("labels") or {}).items()}
+            reviewed = _review_labels_on_disk(out, rid)
+            if reviewed:
+                with_review.append(rid)
+            hand, alternates, source = _truth_for(rid, corpus, oos, mapped)
+            never_seen = name == "oos_blind" and rid not in CHECKPOINT
+            hits = {"rules": 0, "review": 0, "vision": 0}
+            scored = 0
+            for page, want in sorted(hand.items()):
+                alts = alternates.get(page, ())
+                was = rule_labels.get(page, "other")
+                now = reviewed.get(page, "other")
+                saw = vision_labels.get(page, "other")
+                # The same dispute rule as the labels stage, applied to all
+                # three columns at once: a page dropped from one and kept in
+                # another would make the columns incomparable, which is the
+                # only thing this table is for.
+                if reviewed and disputed_drop(rid, page, now):
+                    dropped += 1
+                    continue
+                rules.add(want, was, alts)
+                vision.add(want, saw, alts)
+                if reviewed:
+                    review.add(want, now, alts)
+                if never_seen:
+                    clean_rules.add(want, was, alts)
+                    clean_vision.add(want, saw, alts)
+                    if reviewed:
+                        clean_review.add(want, now, alts)
+                scored += 1
+                hits["rules"] += int(was == want)
+                hits["review"] += int(now == want)
+                hits["vision"] += int(saw == want)
+            if rid not in counted:
+                counted.add(rid)
+                for key in ("calls", "input_tokens", "output_tokens",
+                            "cache_read_tokens"):
+                    cost[key] += blob["cost"].get(key, 0)
+                cost["dollars"] += blob["cost"].get("dollars", 0.0)
+                cost["seconds"] += blob.get("seconds", 0.0)
+                per_report.append({
+                    "id": rid, "set": name, "pages": blob.get("n_pages", 0),
+                    "scored": scored, "truth": source,
+                    "rules": (hits["rules"] / scored) if scored else None,
+                    "review": ((hits["review"] / scored)
+                               if scored and reviewed else None),
+                    "vision": (hits["vision"] / scored) if scored else None,
+                    "labelled": len(seen.get("labels") or {}),
+                    "unresolved": len(seen.get("unresolved") or []),
+                    "qa": len(seen.get("qa") or []),
+                    "calls": blob["cost"].get("calls", 0),
+                    "input_tokens": blob["cost"].get("input_tokens", 0),
+                    "output_tokens": blob["cost"].get("output_tokens", 0),
+                    "seconds": blob.get("seconds", 0.0),
+                })
+        row: Dict[str, Any] = {
+            "reports": ids,
+            "n_reports": len(ids),
+            "n_with_review": len(with_review),
+            "disputed_dropped": dropped,
+            "rules": rules.to_dict(),
+            "review": review.to_dict(),
+            "vision": vision.to_dict(),
+            "gate_failures": gate_failures(vision),
+            "_scores": (rules, review, vision),
+        }
+        if name == "oos_blind" and clean_vision.n:
+            row["never_seen"] = {
+                "reports": [r for r in ids if r not in CHECKPOINT],
+                "excluded": [r for r in ids if r in CHECKPOINT],
+                "rules": clean_rules.to_dict(),
+                "review": clean_review.to_dict(),
+                "vision": clean_vision.to_dict(),
+                "_scores": (clean_rules, clean_review, clean_vision),
+            }
+        rows[name] = row
+
+    return {
+        "date": date.today().isoformat(),
+        "model": model,
+        "served_by": sorted({r.get("served_by") for r in done.values()
+                             if r.get("served_by")}),
+        "settings": dict(settings),
+        "n_reports": len(done),
+        "failures": dict(failures),
+        "sets": rows,
+        "per_report": per_report,
+        "cost": cost,
+    }
+
+
+def _columns(row: Dict[str, Any]) -> List[Tuple[str, Any]]:
+    """The columns this set actually has, in the order they are read."""
+    rules, review, vision = row["_scores"]
+    out = [("rules", rules)]
+    if review.n:
+        out.append(("+review", review))
+    out.append(("vision", vision))
+    return out
+
+
+def _render_vision(vision: Dict[str, Any]) -> List[str]:
+    """The WP5 table: three ways of labelling a page, one set of hand labels.
+
+    IDs, labels, counts and rates only. A vision reason names what the model
+    saw on a page and can therefore carry a firm or a project, so the reasons
+    stay in ``vision/<ID>.json`` on the cluster with the review's reasons and
+    the triage rationales.
+    """
+    settings = vision.get("settings") or {}
+    out: List[str] = [
+        "", "# WP5 on the cluster: labelling a page by looking at it", "",
+        f"Run {vision['date']}. Vision model `{vision['model']}`, mode "
+        f"`{settings.get('mode', 'page')}`, "
+        f"{float(settings.get('dpi') or 0):.0f} dpi, outline context "
+        f"{'ON' if settings.get('outline_context') else 'off'}. "
+        f"{vision['n_reports']} report(s).",
+        "",
+        "**rules** is what planlens' per-page rules said; **+review** is the "
+        "rules with the label review's accepted changes applied; **vision** "
+        "is a cheap model looking at the page and nothing else. All three "
+        "are scored against the SAME hand labels with the SAME scorer, and a "
+        "page the vision pass left unresolved counts as `other` -- a "
+        "non-answer is scored, not excused. The `+review` column appears "
+        "only where a label run sits beside the vision run in this "
+        "`out_dir`.",
+    ]
+    if vision.get("served_by"):
+        out.append(f"Served by: {', '.join(vision['served_by'])}.")
+    if vision.get("failures"):
+        out += ["", "**Reports that failed and are NOT in any number below:**"]
+        out += [f"- {rid}: {why}" for rid, why in vision["failures"].items()]
+
+    for name, row in vision["sets"].items():
+        if not row["n_reports"]:
+            continue
+        columns = _columns(row)
+        rules, review, vision_scores = row["_scores"]
+        out += ["", f"## {name} -- {row['n_reports']} report(s), "
+                    f"{vision_scores.n} scored pages", ""]
+        if review.n and row["n_with_review"] < row["n_reports"]:
+            out.append(f"The `+review` column covers "
+                       f"{row['n_with_review']} of these reports, not all "
+                       f"{row['n_reports']}; read it as that subset.")
+            out.append("")
+        if row["disputed_dropped"]:
+            out.append(f"{row['disputed_dropped']} page(s) dropped from every "
+                       f"column as confirmed disputed hand labels.")
+            out.append("")
+        header = f"{'':<24}" + "".join(f"{n:>10}" for n, _s in columns)
+        out += ["```", header,
+                f"{'strict accuracy':<24}"
+                + "".join(f"{s.accuracy:>10.3f}" for _n, s in columns),
+                f"{'accepting alternates':<24}"
+                + "".join(f"{s.lenient_accuracy:>10.3f}"
+                          for _n, s in columns),
+                "",
+                f"key content (the gate is {GATE:.2f} on both rates)"]
+        out += columns_label_table(columns, KEY_CONTENT)
+        out.append("vision below the gate: "
+                   + (", ".join(row["gate_failures"]) or "none"))
+        out += ["", "every label"]
+        out += columns_label_table(columns)
+        out.append("```")
+
+        if name == "oos_blind":
+            # The blind set is reported as a summary and nothing else: no
+            # per-report line, no per-page list. A blind figure read report
+            # by report stops being blind the moment somebody goes looking
+            # for which report dragged it down.
+            out += ["", "The blind set is reported as a summary only: no "
+                        "per-report line and no page list, so it stays "
+                        "blind."]
+            clean = row.get("never_seen")
+            if clean:
+                clean_columns = [(n, s) for n, s in
+                                 zip(("rules", "+review", "vision"),
+                                     clean["_scores"]) if s.n]
+                out += ["",
+                        f"### the same set minus "
+                        f"{', '.join(clean['excluded']) or 'nothing'}, which "
+                        f"the cost checkpoint used and so are no longer "
+                        f"blind", "",
+                        f"{len(clean['reports'])} report(s) nobody has "
+                        f"opened. **This is the honest blind figure.**", "",
+                        "```",
+                        f"{'':<24}"
+                        + "".join(f"{n:>10}" for n, _s in clean_columns),
+                        f"{'strict accuracy':<24}"
+                        + "".join(f"{s.accuracy:>10.3f}"
+                                  for _n, s in clean_columns), ""]
+                out += columns_label_table(clean_columns, KEY_CONTENT)
+                out.append("```")
+            continue
+
+        rows = [r for r in vision["per_report"] if r["set"] == name]
+        if not rows:
+            continue
+        out += ["", "```",
+                f"{'report':<8}{'pages':>7}{'scored':>8}{'rules':>8}"
+                f"{'review':>8}{'vision':>8}{'unres':>7}{'qa':>5}"
+                f"{'calls':>7}{'in':>10}{'out':>9}{'s':>7}"]
+        for r in rows:
+            def cell(value: Optional[float]) -> str:
+                return "   --   " if value is None else f"{value:>8.3f}"
+            out.append(f"{r['id']:<8}{r['pages']:>7}{r['scored']:>8}"
+                       f"{cell(r['rules'])}{cell(r['review'])}"
+                       f"{cell(r['vision'])}{r['unresolved']:>7}{r['qa']:>5}"
+                       f"{r['calls']:>7}{r['input_tokens']:>10,}"
+                       f"{r['output_tokens']:>9,}{r['seconds']:>7.0f}")
+        out.append("```")
+
+    cost = vision["cost"]
+    n = max(1, vision["n_reports"])
+    out += ["", "## Cost", "", "```",
+            f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
+            f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
+            f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s",
+            f"per report: {cost['calls'] / n:.1f} calls, "
+            f"{cost['input_tokens'] / n:,.0f} in, "
+            f"{cost['output_tokens'] / n:,.0f} out, "
+            f"{cost['seconds'] / n:.0f} s",
+            "```", "",
+            "Funhouse publishes no per-token price for a capability tier, so "
+            "this reports TOKENS. Read the spend from Funhouse's own budget "
+            "endpoint for the same window. Page mode is one call per page and "
+            "sheet mode one per six, which is the trade this stage exists to "
+            "price."]
     return out
 
 
