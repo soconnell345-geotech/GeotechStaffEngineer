@@ -176,6 +176,7 @@ def _parse_diggs26(root, ns_map, investigations, gml_id_map, warnings):
 
     for reader in (diggs26.parse_diggs26_lithology,
                    diggs26.parse_diggs26_tests,
+                   diggs26.parse_diggs26_samples,
                    diggs26.parse_diggs26_water):
         reader(root, ns_map, investigations, gml_id_map, warnings,
                find=_find, findall=_findall, text=_text)

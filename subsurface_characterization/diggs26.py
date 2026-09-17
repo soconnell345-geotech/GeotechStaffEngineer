@@ -43,7 +43,7 @@ from subsurface_characterization.site_model import (
 
 __all__ = [
     "PROPERTY_CLASS_MAP", "parse_diggs26_lithology", "parse_diggs26_tests",
-    "parse_diggs26_water",
+    "parse_diggs26_samples", "parse_diggs26_water",
 ]
 
 _NS_GML = "http://www.opengis.net/gml/3.2"
@@ -304,6 +304,52 @@ def _drive_sets(test, procedure, ns_map, geo, inv, find, find_text) -> None:
         inv.measurements.append(PointMeasurement(
             depth_m=depth, parameter="blow_count", value=value,
             source="field", test_type="SPT"))
+
+
+def parse_diggs26_samples(root, ns_map, investigations, gml_id_map, warnings,
+                          *, find, findall, text) -> None:
+    """What a ``SamplingActivity`` records about the sample it took.
+
+    Recovery and rock quality designation are properties of the ACTIVITY in
+    DIGGS, not of a test, so nothing in the Test reader reaches them. They
+    are the two numbers a rock-core log prints most often, and before this
+    they read back as nothing.
+    """
+    def find_text(element, path):
+        return text(element, path, ns_map, "")
+
+    for activity in findall(root, ".//diggs:SamplingActivity", ns_map):
+        inv_id = _resolve_feature(activity, find, ns_map, investigations,
+                                  gml_id_map)
+        if not inv_id or inv_id not in investigations:
+            continue
+        inv = investigations[inv_id]
+        depths = _positions(find(activity, "diggs:samplingLocation", ns_map),
+                            find_text)
+        if not depths:
+            continue
+        depth = depths[0]
+        rqd = find_text(activity, "diggs:samplingActivityRQD")
+        if rqd.strip():
+            try:
+                inv.measurements.append(PointMeasurement(
+                    depth_m=depth, parameter="RQD_pct", value=float(rqd),
+                    source="field", test_type="core_run"))
+            except ValueError:
+                pass
+        for parameter in findall(activity,
+                                 ".//diggs:otherSamplingActivityProperty"
+                                 "/diggs:Parameter", ns_map):
+            name = find_text(parameter, "diggs:parameterName").strip()
+            if name != "recovery_percent":
+                continue
+            try:
+                inv.measurements.append(PointMeasurement(
+                    depth_m=depth, parameter="recovery_pct",
+                    value=float(find_text(parameter, "diggs:parameterValue")),
+                    source="field", test_type="core_run"))
+            except ValueError:
+                pass
 
 
 def parse_diggs26_water(root, ns_map, investigations, gml_id_map, warnings, *,

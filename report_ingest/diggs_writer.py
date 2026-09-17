@@ -506,6 +506,10 @@ class _Writer:
                            f"{gml_id}_lsr", f"{sa_id}_le", 4)
             self.out("</samplingLocation>", 3)
             self.out("<activityType>collect</activityType>", 3)
+            if sample.rqd_percent is not None:
+                # The schema's own order: RQD before sampleProduced. It is a
+                # length-per-length ratio, so a percentage is what it takes.
+                self.measure("samplingActivityRQD", sample.rqd_percent, "%", 3)
             # The SampleProduced object: what this activity produced, and
             # where it came from. The Sample element points at THIS, which is
             # why it has to exist and why it carries the location again.
@@ -528,6 +532,18 @@ class _Writer:
             if recovery is not None:
                 self.measure("totalSampleRecoveryLength", recovery[0],
                              recovery[1], 3)
+            if sample.recovery_percent is not None:
+                # DIGGS carries recovery as a LENGTH and has no element for
+                # the percentage a log prints. Dropping it would lose the
+                # number most logs actually print, so it goes in the
+                # activity's own other-property slot, named.
+                self.out("<otherSamplingActivityProperty>", 3)
+                self.out(f'<Parameter gml:id={quoteattr(sa_id + "_rec")}>', 4)
+                self.out("<parameterName>recovery_percent</parameterName>", 5)
+                self.out(f"<parameterValue>{_num(sample.recovery_percent)}"
+                         f"</parameterValue>", 5)
+                self.out("</Parameter>", 4)
+                self.out("</otherSamplingActivityProperty>", 3)
             self.out("</SamplingActivity>", 2)
             self.out("</samplingActivity>", 1)
             self.notes.samples += 1
@@ -1087,6 +1103,8 @@ def _compare_measurements(name: str, want: Investigation, got: Any,
                                  f"not come back")
 
     checks = (
+        ("recovery_percent", "recovery_pct", None, TOLERANCE["percent"]),
+        ("rqd_percent", "RQD_pct", None, TOLERANCE["percent"]),
         ("water_content", "wn_pct", None, TOLERANCE["percent"]),
         ("liquid_limit", "LL_pct", None, TOLERANCE["percent"]),
         ("plastic_limit", "PL_pct", None, TOLERANCE["percent"]),

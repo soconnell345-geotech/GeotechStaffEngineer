@@ -360,3 +360,45 @@ def _dictionary_ids():
                         "properties.xml")
     with open(path, encoding="utf-8", errors="replace") as fh:
         return set(re.findall(r'gml:id="([^"]+)"', fh.read()))
+
+
+class TestRecoveryAndRqd:
+    """The two numbers a rock-core log prints most often.
+
+    DIGGS carries recovery as a LENGTH and has no element for the percentage
+    a log actually prints, and rock quality designation belongs to the
+    sampling ACTIVITY rather than to any test. Before both were written they
+    were dropped silently, which is the failure the record exists to prevent.
+    """
+
+    @pytest.fixture
+    def cored(self) -> Investigation:
+        return Investigation(
+            investigation_id="B-10", depth_unit="ft",
+            samples=[Sample(sample_id="R-1", top=_ft(20.0),
+                            bottom=_ft(25.0), kind="core",
+                            recovery_percent=88.0, rqd_percent=62.0)])
+
+    def test_both_are_written_where_the_schema_puts_them(self, cored):
+        text = write_diggs([cored])
+        ok, errors = diggs_schema_gate(text)
+        assert ok, errors[:3]
+        root = _root(text)
+        rqd = _all(root, ".//diggs:samplingActivityRQD")
+        assert rqd and rqd[0].get("uom") == "%"
+        assert float(rqd[0].text) == pytest.approx(62.0)
+        names = [e.text for e in _all(root, ".//diggs:parameterName")]
+        assert "recovery_percent" in names
+
+    def test_both_come_back(self, cored):
+        text = write_diggs([cored])
+        ok, diffs = diggs_roundtrip_gate(text, [cored])
+        assert ok, diffs
+
+    def test_the_gate_notices_when_they_do_not(self, cored):
+        text = write_diggs([cored])
+        wrong = cored.model_copy(deep=True)
+        wrong.samples[0].rqd_percent = 30.0
+        ok, diffs = diggs_roundtrip_gate(text, [wrong])
+        assert ok is False
+        assert any("rqd_percent" in d for d in diffs)
