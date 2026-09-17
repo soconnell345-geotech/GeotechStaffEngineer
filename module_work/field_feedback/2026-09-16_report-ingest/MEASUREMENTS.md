@@ -2397,69 +2397,85 @@ review pass exists for. WP1 closes here; the rules are frozen for WP1b.
 
 ---
 
-## WP1b -- triage and label review -- checkpoint (2026-09-16)
+## WP1b -- triage and label review -- checkpoint: CLAUDE DEV ENGINE ONLY
 
-Triage claude-sonnet-5; review claude-opus-5. Cost checkpoint: the first six reports, before the lead's go for the full sets. Triage and review as first written; no tuning on these numbers.
+**Not the production model.** These six reports were scored on the Claude API
+against `claude-opus-5` (review) and `claude-sonnet-5` (triage), which is the
+engine the two passes were BUILT and debugged against. The app runs in Funhouse
+against OpenAI models through Prompter, so this is a development checkpoint and
+nothing here is a result for the system as it will run. The numbers that count
+come from `report_ingest.cluster_scoring.score_on_cluster` on the cluster.
 
-**This is ROUND 1, on the prompts as first written.** Read it as the baseline,
-not as the result. It is what diagnosed the review's one large error class --
-fifteen of its nineteen wrong changes were an exploration's own results,
-plotted rather than tabulated, called `figure`, or one kind of sounding called
-another -- and the prompts were changed afterwards to name that case (commit
-`c9569fb`). The round-2 numbers are a separate section below once all six
-reports have re-run; four had re-run when the API credit ran out. The four
-disputed hand labels the lead later confirmed are still scored as review misses
-here, so the after-accuracy below understates by about 0.006.
+**It is also ROUND 1, on the prompts as first written.** It is what diagnosed
+the review's one large error class -- fifteen of its nineteen wrong changes were
+an exploration's own results, plotted rather than tabulated, called `figure`, or
+one kind of sounding called another -- and the prompts were changed afterwards
+to name that case (commit `c9569fb`). Four of the six re-ran on the new prompts
+before the Anthropic credit ran out; that partial round was never completed and
+is deliberately not recorded as a result.
+
+The four hand labels the lead confirmed as disputed are dropped from both the
+before and the after score here, which is why 673 pages are scored rather than
+677.
 
 ```
-checkpoint: 6 report(s), 677 scored pages
+prompts: r1-preplotfix
+checkpoint: 6 report(s), 673 scored pages
+4 page(s) dropped from both scores as confirmed disputed hand labels
                             before     after
-strict accuracy              0.889     0.939
-accepting alternates         0.892     0.941
+strict accuracy              0.889     0.945
+accepting alternates         0.892     0.945
 
 key content (the gate is 0.98 on both rates after review)
 label                n  P before  R before  F1 before   P after   R after  F1 after
-narrative           80     0.974     0.938      0.955     0.939     0.963     0.951
+narrative           78     0.973     0.936      0.954     0.939     0.987     0.963
 plan                 2     0.000     0.000       --       0.400     1.000     0.571
 profile              5     0.833     1.000      0.909     1.000     1.000     1.000
 boring_log          51     0.943     0.980      0.962     0.981     1.000     0.990
 test_pit_log        53     0.976     0.774      0.863     1.000     0.774     0.872
 cpt_log              0      --        --         --       0.000      --        --  
 dcp_log             36     1.000     0.583      0.737     1.000     0.583     0.737
-lab_test           175     0.971     0.949      0.960     1.000     0.989     0.994
-calculation        197     1.000     0.995      0.997     1.000     0.995     0.997
+lab_test           174     0.971     0.948      0.959     1.000     0.994     0.997
+calculation        196     1.000     0.995      0.997     1.000     1.000     1.000
 below the gate after review: narrative, plan, test_pit_log, dcp_log
 
 every label
 label                n  P before  R before  F1 before   P after   R after  F1 after
-narrative           80     0.974     0.938      0.955     0.939     0.963     0.951
+narrative           78     0.973     0.936      0.954     0.939     0.987     0.963
 figure              12     0.000     0.000       --       0.290     0.750     0.419
 plan                 2     0.000     0.000       --       0.400     1.000     0.571
 profile              5     0.833     1.000      0.909     1.000     1.000     1.000
 boring_log          51     0.943     0.980      0.962     0.981     1.000     0.990
 test_pit_log        53     0.976     0.774      0.863     1.000     0.774     0.872
 dcp_log             36     1.000     0.583      0.737     1.000     0.583     0.737
-lab_test           175     0.971     0.949      0.960     1.000     0.989     0.994
-calculation        197     1.000     0.995      0.997     1.000     0.995     0.997
+lab_test           174     0.971     0.948      0.959     1.000     0.994     0.997
+calculation        196     1.000     0.995      0.997     1.000     1.000     1.000
 photos              38     0.846     0.868      0.857     1.000     1.000     1.000
 divider              9     1.000     0.889      0.941     1.000     1.000     1.000
-cover                3      --       0.000       --       0.600     1.000     0.750
-letter               2     1.000     1.000      1.000     0.500     1.000     0.667
+cover                3      --       0.000       --       1.000     1.000     1.000
+letter               2     1.000     1.000      1.000     0.667     1.000     0.800
 toc                  5     1.000     0.400      0.571     1.000     0.600     0.750
-other                9     0.086     0.333      0.136     0.750     0.667     0.706
+other                9     0.086     0.333      0.136     0.857     0.667     0.750
 
 what the review's changes did, against the hand labels
   fixed            38
-  broke             4
+  broke             0
   still_wrong      19
+  disputed          4
   unscored         50
+
+hand labels disputed by the review (the spreadsheet is never edited; a confirmed dispute is dropped from both scores)
+  R15 p8    hand=narrative    review=cover        CONFIRMED: a one-line volume title sheet inside the narrative run
+  R15 p19   hand=narrative    review=cover        CONFIRMED: the second volume's title sheet, the same one-line form
+  R28 p217  hand=lab_test     review=letter       CONFIRMED: a laboratory's transmittal cover letter inside the laboratory appendix
+  R37 p47   hand=calculation  review=other        CONFIRMED: a web-tool disclaimer page inside the calculation appendix; no inputs or results on it
 
 report    pages  scored   before   after  chg  tools  calls       $      s
 R36          94       5    0.800   1.000   23  20/60      8   0.889    142
-R37          48       5    1.000   0.800   13  12/60      7   0.516     93
+R37          48       5    0.800   0.800   13  12/60      7   0.516     93
 R05          15       5    1.000   1.000    1   3/60      5   0.161     41
-R28         455     455    0.901   0.932   32  38/113     12   2.141    257
-R15         202     202    0.871   0.960   24  30/60     12   1.492    240
+R28         455     455    0.899   0.932   32  38/113     12   2.141    257
+R15         202     202    0.861   0.960   24  30/60     12   1.492    240
 R14          48       5    0.400   0.800   18  22/60     10   0.673    112
 
 what triage said (enumerated fields only; the rationale and anomalies stay in raw/checks/triage/)
