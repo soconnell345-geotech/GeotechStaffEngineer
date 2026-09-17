@@ -3283,3 +3283,103 @@ warnings seen:
   R25_p19: no description column was identified, so no layers were read
 
 ```
+
+## WP2b -- the record, the log reader and DIGGS
+
+The log reader scorecard has TWO columns from here on. **before** is what
+`log_grid` alone recovered; **after** is what the reader's record holds. The
+grid runs once and is handed to the reader, so the difference between the
+columns is the model and nothing else. Reporting only the after column would
+credit the reader with everything the geometry already had.
+
+The metrics are the plan's: N values exact; sample depths, index values and
+water levels within 0.15 m; layer tops within 0.3 m; USCS symbols matched;
+recovery and RQD where printed; header fields recovered. The matching rules
+are the WP2a ones, restated in `report_ingest/log_scoring.py` so the two
+measurements mean the same thing.
+
+### The grid-only baseline, 2026-09-17 (no model, no key, no network)
+
+Run with `measure_wp2b_logs --grid-only`. Worth re-running whenever planlens
+changes; it is the floor every reader number is measured against.
+
+### WP2b log scorecard, 2026-09-17 -- log_grid only
+
+The floor the reader is measured against. NOTE: log_grid on the current feature/log-grid branch now finds a ruler on R21, R30 and R34, which the round-3 WP2a table above lists as having none -- the grid moved, the table did not.
+
+Tolerances: samples, index values and water 0.15 m (0.15 m for water), layer tops 0.3 m; depths compared in metres whatever the log prints; N values exact. Open set = R36, R37, R06, R07, R15, R28.
+
+```
+open -- 6 log(s)
+metric                  before         after
+--------------------------------------------
+n_value             100% 24/24             -
+blows               100% 33/33             -
+sample_depth        100% 44/44             -
+layer_top           100% 34/34             -
+uscs                 43% 12/28             -
+water                 42% 5/12             -
+recovery            100% 32/32             -
+index                97% 31/32             -
+fields               93% 63/68             -
+OVERALL           91% 278/307   
+
+blind -- 9 log(s)
+metric                  before         after
+--------------------------------------------
+n_value              96% 24/25             -
+blows               100% 25/25             -
+sample_depth         90% 28/31             -
+layer_top            61% 22/36             -
+uscs                    0% 0/7             -
+water                  40% 2/5             -
+recovery            100% 15/15             -
+index                 44% 7/16             -
+fields               61% 33/54             -
+OVERALL           73% 156/214   
+
+all -- 15 log(s)
+metric                  before         after
+--------------------------------------------
+n_value              98% 48/49             -
+blows               100% 58/58             -
+sample_depth         96% 72/75             -
+layer_top            80% 56/70             -
+uscs                 34% 12/35             -
+water                 41% 7/17             -
+recovery            100% 47/47             -
+index                79% 38/48             -
+fields              79% 96/122             -
+OVERALL           83% 434/521   
+
+log           set           before        after  calls  unres  look      s
+--------------------------------------------------------------------------
+R02_p123      blind        38% 3/8            -      -      -     -      -
+R03_p135      blind        67% 6/9            -      -      -     -      -
+R04_p59       blind       57% 8/14            -      -      -     -      -
+R06_p51       open       77% 23/30            -      -      -     -      -
+R07_p30       open       86% 55/64            -      -      -     -      -
+R13_p45       blind      82% 62/76            -      -      -     -      -
+R15_p46       open       89% 57/64            -      -      -     -      -
+R21_p96       blind      73% 16/22            -      -      -     -      -
+R25_p19       blind        0% 0/14            -      -      -     -      -
+R28_p57       open       95% 56/59            -      -      -     -      -
+R30_p65       blind      86% 19/22            -      -      -     -      -
+R31_p278      blind      93% 13/14            -      -      -     -      -
+R34_p49       blind      83% 29/35            -      -      -     -      -
+R36_p38       open       95% 42/44            -      -      -     -      -
+R37_p26       open       98% 45/46            -      -      -     -      -
+
+warnings the grid raised:
+  R02_p123: the depth unit is not stated on these pages and could not be read from their text; depths are in whatever the ruler prints
+  R03_p135: no column header states the depth unit; ft was read off depths written into the log's own text
+  R04_p59: the depth unit is not stated on these pages and could not be read from their text; depths are in whatever the ruler prints
+  R13_p45: page 45: the text was read optically (azure_di); boxes and column edges are softer than on an embedded text layer
+  R13_p45: page 45: no ruled column edges were found; the columns below come from the header labels alone and their x bands are approximate
+  R15_p46: page 46: 1 text line(s) run diagonally across the page (a watermark or a stamp) and were left out of the grid
+  R25_p19: page 19: no ruled column edges were found; the columns below come from the header labels alone and their x bands are approximate
+  R25_p19: page 19: no columns could be laid out — nothing on this page is placed
+  R25_p19: page 19: no depth ruler was found — nothing on this page carries a depth
+  R25_p19: no description column was identified, so no layers were read
+
+```

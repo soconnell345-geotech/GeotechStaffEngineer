@@ -282,3 +282,183 @@ def test_tokens_are_totalled_and_reported_instead_of_dollars(cluster):
     text = (out / "RESULTS.md").read_text(encoding="utf-8")
     assert "80,000 input tokens" in text
     assert "no per-token price" in text
+
+
+# ---------------------------------------------------------------------------
+# the logs stage (WP2b)
+# ---------------------------------------------------------------------------
+
+def _log_blob(log_id, report, set_name, before, after, calls=1):
+    """A finished log run, the state a resumed notebook is in."""
+    def side(found, total):
+        return {
+            "log_id": log_id, "report": report, "stage": "x",
+            "scores": {"n_value": {"found": found, "total": total,
+                                   "rate": found / total if total else None}},
+            "overall": {"found": found, "total": total,
+                        "rate": found / total if total else None},
+            "cost": {}, "model_calls": calls, "unresolved": 0, "changes": 0,
+            "error": None,
+        }
+    return {
+        "log_id": log_id, "report": report, "run_date": "2026-09-17",
+        "set": set_name, "model": "funhouse-gpt-high",
+        "served_by": "gpt-4o-2026", "pages": [38],
+        "before": side(*before), "after": side(*after),
+        "cost": {"calls": calls, "input_tokens": 30000, "output_tokens": 2000,
+                 "cache_read_tokens": 0, "dollars": 0.0, "seconds": 40.0},
+        "seconds": 42.0,
+    }
+
+
+@pytest.fixture()
+def logs_cluster(tmp_path):
+    """A truth folder and an out_dir with every log already run."""
+    reports_dir = tmp_path / "corpus"
+    reports_dir.mkdir()
+    for rid in ("R36", "R31"):
+        (reports_dir / f"{rid}.pdf").write_bytes(b"%PDF-1.7\n")
+    truth_dir = tmp_path / "truth"
+    truth_dir.mkdir()
+    (truth_dir / "OPEN.txt").write_text("R36\n", encoding="utf-8")
+    for rid, page in (("R36", 38), ("R31", 278)):
+        (truth_dir / f"{rid}_p{page}.json").write_text(json.dumps({
+            "id": f"{rid}_p{page}", "pages": [page], "depth_unit": "ft",
+            "fields": {}, "layers": [], "samples": [], "water": []}),
+            encoding="utf-8")
+    out = tmp_path / "out"
+    (out / "runs").mkdir(parents=True)
+    (out / "triage").mkdir(parents=True)
+    (out / "logs").mkdir(parents=True)
+    (out / "logs" / "R36_p38.json").write_text(
+        json.dumps(_log_blob("R36_p38", "R36", "open", (6, 10), (9, 10))),
+        encoding="utf-8")
+    (out / "logs" / "R31_p278.json").write_text(
+        json.dumps(_log_blob("R31_p278", "R31", "blind", (4, 10), (7, 10))),
+        encoding="utf-8")
+    return reports_dir, out, truth_dir
+
+
+def _logs_run(logs_cluster, **over):
+    reports_dir, out, truth_dir = logs_cluster
+    kwargs = dict(reports_dir=reports_dir, out_dir=out, prompter=object(),
+                  stages=("logs",), truth_dir=truth_dir, sets=())
+    kwargs.update(over)
+    return cs.score_on_cluster(**kwargs)
+
+
+def test_an_unknown_stage_is_refused():
+    with pytest.raises(ValueError, match="unknown stage"):
+        cs.score_on_cluster(reports_dir=".", prompter=object(),
+                            stages=("labels", "sideways"))
+
+
+def test_no_stage_at_all_is_refused():
+    with pytest.raises(ValueError, match="at least one stage"):
+        cs.score_on_cluster(reports_dir=".", prompter=object(), stages=())
+
+
+def test_the_logs_stage_without_truth_is_refused_before_anything_runs(
+        tmp_path):
+    with pytest.raises(ValueError, match="truth_dir"):
+        cs.score_on_cluster(reports_dir=tmp_path, prompter=object(),
+                            stages=("logs",))
+
+
+def test_the_default_stage_is_still_labels_alone(cluster):
+    reports_dir, out, oos = cluster
+    results = cs.score_on_cluster(reports_dir=reports_dir, out_dir=out,
+                                  prompter=object(), oos_labels=oos)
+    assert results["stages"] == ["labels"]
+    assert "logs" not in results
+
+
+def test_a_log_with_a_run_file_is_skipped_so_a_resume_is_free(logs_cluster):
+    results = _logs_run(logs_cluster)
+    assert results["logs"]["n_logs"] == 2
+    # Nothing was opened and no model was called: object() has no chat().
+    assert [r["log_id"] for r in results["logs"]["per_log"]] == [
+        "R31_p278", "R36_p38"]
+
+
+def test_before_and_after_are_reported_apart(logs_cluster):
+    logs = _logs_run(logs_cluster)["logs"]
+    everything = logs["sets"]["all"]
+    assert everything["before"]["n_value"] == {"found": 10, "total": 20}
+    assert everything["after"]["n_value"] == {"found": 16, "total": 20}
+
+
+def test_open_and_blind_are_split_by_the_open_file(logs_cluster):
+    logs = _logs_run(logs_cluster)["logs"]
+    assert logs["open_set"] == ["R36"]
+    assert logs["sets"]["open"]["logs"] == ["R36_p38"]
+    assert logs["sets"]["blind"]["logs"] == ["R31_p278"]
+
+
+def test_the_open_set_can_be_overridden(logs_cluster):
+    logs = _logs_run(logs_cluster, open_reports=["R31"])["logs"]
+    assert logs["sets"]["open"]["logs"] == ["R31_p278"]
+
+
+def test_cost_is_totalled_per_log(logs_cluster):
+    logs = _logs_run(logs_cluster)["logs"]
+    assert logs["cost"]["input_tokens"] == 60000
+    assert logs["cost"]["calls"] == 2
+
+
+def test_results_md_carries_the_log_tables_and_names_nobody(logs_cluster):
+    _reports_dir, out, _truth = logs_cluster
+    _logs_run(logs_cluster)
+    text = (out / "RESULTS.md").read_text(encoding="utf-8")
+    assert "WP2b on the cluster" in text
+    assert "R36_p38" in text and "R31_p278" in text
+    assert "before" in text and "after" in text
+    assert ".pdf" not in text
+
+
+def test_the_logs_results_are_serialisable(logs_cluster):
+    _reports_dir, out, _truth = logs_cluster
+    _logs_run(logs_cluster)
+    blob = json.loads((out / "results.json").read_text(encoding="utf-8"))
+    assert blob["stages"] == ["logs"]
+    assert blob["logs"]["n_logs"] == 2
+
+
+def test_both_stages_run_in_one_call(logs_cluster, tmp_path):
+    reports_dir, out, truth_dir = logs_cluster
+    # The same two reports, with a finished label run each, in the same
+    # out_dir the finished log runs are in -- a notebook that asked for both.
+    (out / "runs" / "R36.json").write_text(json.dumps(_run_blob(
+        "R36", 94, {3: "figure"}, {3: "plan"},
+        changes=[{"page": 3, "from": "figure", "to": "plan",
+                  "reason": "the figure list calls it the location plan",
+                  "evidence": "read_page"}])), encoding="utf-8")
+    (out / "runs" / "R31.json").write_text(json.dumps(_run_blob(
+        "R31", 120, {5: "lab_test"}, {5: "lab_test"})), encoding="utf-8")
+    oos = tmp_path / "oos_labels.json"
+    oos.write_text(json.dumps({
+        "R36": {"3": {"label": "plan", "alternates": []}},
+        "R31": {"5": {"label": "lab_test", "alternates": []}}}),
+        encoding="utf-8")
+
+    results = cs.score_on_cluster(
+        reports_dir=reports_dir, out_dir=out, prompter=object(),
+        oos_labels=oos, stages=("labels", "logs"), truth_dir=truth_dir)
+    assert results["stages"] == ["labels", "logs"]
+    assert results["logs"]["n_logs"] == 2
+    text = (out / "RESULTS.md").read_text(encoding="utf-8")
+    assert "WP1b on the cluster" in text and "WP2b on the cluster" in text
+
+
+def test_a_truth_folder_that_is_not_there_is_refused(logs_cluster, tmp_path):
+    with pytest.raises(FileNotFoundError, match="no hand-truthed logs"):
+        _logs_run(logs_cluster, truth_dir=tmp_path / "nowhere")
+
+
+def test_a_log_whose_report_is_absent_is_named_and_skipped(logs_cluster,
+                                                           tmp_path):
+    reports_dir, out, truth_dir = logs_cluster
+    (out / "logs" / "R31_p278.json").unlink()
+    logs = _logs_run(logs_cluster)["logs"]
+    assert logs["n_logs"] == 1
+    assert "R31_p278" not in [r["log_id"] for r in logs["per_log"]]

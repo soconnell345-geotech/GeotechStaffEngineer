@@ -69,9 +69,19 @@ from report_ingest.scoring import (
     gate_failures, label_table, verdict_for,
 )
 
-__all__ = ["score_on_cluster", "SET_NAMES"]
+__all__ = ["score_on_cluster", "SET_NAMES", "STAGE_NAMES"]
 
 SET_NAMES: Tuple[str, ...] = ("insample", "oos_open", "oos_blind")
+
+#: The measurements this run can make. ``labels`` is WP1b -- triage and the
+#: label review over whole reports. ``logs`` is WP2b -- the log grid and then
+#: the log reader over each hand-truthed log, scored before and after.
+STAGE_NAMES: Tuple[str, ...] = ("labels", "logs")
+
+#: The reports the log rules were allowed to be tuned on, when no ``OPEN.txt``
+#: sits beside the truth files. Everything else is scored as blind.
+DEFAULT_OPEN_LOGS: Tuple[str, ...] = ("R36", "R37", "R06", "R07", "R15",
+                                      "R28")
 
 #: Paths a run must not write to. A Workspace write looks like it worked and
 #: then is not there.
@@ -180,7 +190,12 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      max_total_dollars: Optional[float] = None,
                      max_reports: Optional[int] = None,
                      redo: bool = False,
-                     corpus_dir: Any = None) -> Dict[str, Any]:
+                     corpus_dir: Any = None,
+                     stages: Sequence[str] = ("labels",),
+                     truth_dir: Any = None,
+                     log_budget: int = 6,
+                     open_reports: Optional[Sequence[str]] = None
+                     ) -> Dict[str, Any]:
     """Run the rules, triage and the label review over the corpus, and score.
 
     Parameters
@@ -223,6 +238,23 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
     redo
         Re-run reports that already have a run file. Off by default, which is
         what makes a detached notebook cheap to resume.
+    stages
+        Which measurements to make. ``("labels",)`` is WP1b -- triage and the
+        label review over whole reports. ``"logs"`` is WP2b -- ``log_grid``
+        and then the log reader over each hand-truthed log, scored before
+        (the grid alone) and after (the record the reader built). Pass both
+        to do both in one run: ``stages=("labels", "logs")``.
+    truth_dir
+        Required by the ``logs`` stage: the folder of hand-truthed logs
+        (``<ID>_p<page>.json``). It is private, so it travels to the cluster
+        with the run rather than living in the wheel. An ``OPEN.txt`` beside
+        the truth files names the reports the rules were allowed to be tuned
+        on; everything else is scored as blind.
+    log_budget
+        Model calls the reader may spend per log. The reader's own ceiling is
+        six whatever this says.
+    open_reports
+        Override the open set instead of reading ``OPEN.txt``.
     """
     if prompter is None:
         raise ValueError(
@@ -231,10 +263,24 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
     reports_dir = reports_dir if reports_dir is not None else corpus_dir
     if reports_dir is None:
         raise ValueError("pass reports_dir: the folder holding the PDFs")
+    stages = tuple(stages)
+    unknown = [s for s in stages if s not in STAGE_NAMES]
+    if unknown:
+        raise ValueError(
+            f"unknown stage(s) {unknown}; the stages are {list(STAGE_NAMES)}")
+    if not stages:
+        raise ValueError(f"pass at least one stage: {list(STAGE_NAMES)}")
+    if "logs" in stages and truth_dir is None:
+        raise ValueError(
+            "the 'logs' stage scores the reader against the hand-truthed "
+            "logs, so it needs truth_dir -- the folder of <ID>_p<page>.json "
+            "files. They are private and do not ship in the wheel.")
     out = Path(out_dir)
     _check_out_dir(out)
     for sub in ("runs", "triage"):
         (out / sub).mkdir(parents=True, exist_ok=True)
+    if "logs" in stages:
+        (out / "logs").mkdir(parents=True, exist_ok=True)
 
     corpus = Corpus(reports_dir, manifest=manifest, di_dir=di_dir,
                     labels_xlsx=labels_xlsx, cache_dir=out)
@@ -253,10 +299,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
     mapped = corpus.mapped_ids() if corpus.labels_available else []
 
     asked: List[str] = []
-    for name in sets:
-        for rid in _set_ids(name, corpus):
-            if rid not in asked:
-                asked.append(rid)
+    if "labels" in stages:
+        for name in sets:
+            for rid in _set_ids(name, corpus):
+                if rid not in asked:
+                    asked.append(rid)
     # A cluster folder may hold a subset of the 38 the manifest lists. Say
     # which are not there once, up front, rather than failing them one at a
     # time deep in the run; a report already scored keeps its run file.
@@ -267,8 +314,10 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
     if max_reports:
         wanted = wanted[:int(max_reports)]
 
-    print(f"WP1b on the cluster: {len(wanted)} report(s); review {model}, "
-          f"triage {triage_model}; out_dir {out}")
+    print(f"report ingest on the cluster: stage(s) {', '.join(stages)}; "
+          f"model {model}, triage {triage_model}; out_dir {out}")
+    if "labels" in stages:
+        print(f"  labels: {len(wanted)} report(s)")
     if absent:
         print(f"  not in {corpus.reports_dir} and skipped: "
               f"{', '.join(absent)}")
@@ -309,13 +358,24 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
 
     results = _score(done, corpus, oos, mapped, sets, model, triage_model,
                      failures, absent)
-    lines = _render(results)
+    results["stages"] = list(stages)
+    lines = _render(results) if "labels" in stages else _header(results)
+
+    if "logs" in stages:
+        logs = _run_logs(corpus, prompter, model, out, Path(truth_dir),
+                         budget=log_budget, redo=redo,
+                         max_logs=max_reports, open_reports=open_reports)
+        results["logs"] = logs
+        lines += _render_logs(logs)
+
     (out / "results.json").write_text(json.dumps(_plain(results), indent=2),
                                       encoding="utf-8")
     (out / "RESULTS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
     print(f"\nwrote {out / 'RESULTS.md'} -- that is the file to bring back")
     print(f"per-report runs in {out / 'runs'}, profiles in {out / 'triage'}")
+    if "logs" in stages:
+        print(f"per-log runs in {out / 'logs'}")
     return results
 
 
@@ -442,6 +502,277 @@ def _plain(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_plain(v) for v in value]
     return value
+
+
+# ---------------------------------------------------------------------------
+# the logs stage
+# ---------------------------------------------------------------------------
+
+def _open_set(truth_dir: Path,
+              override: Optional[Sequence[str]]) -> Tuple[str, ...]:
+    """The reports the log rules were allowed to be tuned on."""
+    if override:
+        return tuple(override)
+    open_file = truth_dir / "OPEN.txt"
+    if open_file.is_file():
+        names = tuple(line.strip() for line
+                      in open_file.read_text(encoding="utf-8").splitlines()
+                      if line.strip())
+        if names:
+            return names
+    return DEFAULT_OPEN_LOGS
+
+
+def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
+              truth_dir: Path, *, budget: int, redo: bool,
+              max_logs: Optional[int],
+              open_reports: Optional[Sequence[str]]) -> Dict[str, Any]:
+    """Grid and reader over every hand-truthed log, before and after.
+
+    Restartable the same way the labels stage is: each log writes
+    ``logs/<log id>.json`` as it finishes and a later call skips it.
+    """
+    from report_ingest.engine import CostMeter, PrompterEngine
+    from report_ingest.log_scoring import METRICS, score_one_log
+
+    if not truth_dir.is_dir():
+        raise FileNotFoundError(
+            f"no hand-truthed logs at {truth_dir}; the 'logs' stage scores "
+            f"against them and cannot run without them")
+    truths = []
+    for path in sorted(truth_dir.glob("*.json")):
+        try:
+            truths.append(json.loads(path.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"  skipping {path.name}: {type(exc).__name__}: {exc}")
+    if max_logs:
+        truths = truths[:int(max_logs)]
+    openset = _open_set(truth_dir, open_reports)
+    print(f"  logs: {len(truths)} hand-truthed log(s); open set "
+          f"{', '.join(openset)}")
+
+    done: Dict[str, dict] = {}
+    failures: Dict[str, str] = {}
+    for n, truth in enumerate(truths, 1):
+        log_id = str(truth.get("id") or f"log{n}")
+        report = log_id.split("_")[0]
+        run_file = out / "logs" / f"{log_id}.json"
+        if run_file.is_file() and not redo:
+            blob = json.loads(run_file.read_text(encoding="utf-8"))
+            # The open/blind split is decided at SCORING time, not frozen
+            # into the run file. A log moved into the open set after it ran
+            # must move in the scorecard too, or the blind figure quietly
+            # keeps crediting a log somebody has since looked at.
+            blob["set"] = "open" if report in openset else "blind"
+            done[log_id] = blob
+            print(f"  [{n}/{len(truths)}] {log_id}: already done, skipping")
+            continue
+        if report not in set(corpus.present_ids()):
+            failures[log_id] = f"{report} is not in the reports folder"
+            print(f"  [{n}/{len(truths)}] {log_id}: skipped -- "
+                  f"{failures[log_id]}")
+            continue
+        meter = CostMeter()
+        engine = PrompterEngine(prompter, model, meter=meter)
+        started = time.time()
+        doc = None
+        try:
+            doc = corpus.open_report(report, di="auto", warn=False)
+            before, after = score_one_log(truth, doc, engine, budget=budget,
+                                          report_id=report)
+        except KeyboardInterrupt:
+            print("  interrupted; what is finished is on disk and a later "
+                  "call resumes")
+            break
+        except Exception as exc:                     # keep the run going
+            failures[log_id] = f"{type(exc).__name__}: {exc}"
+            print(f"  [{n}/{len(truths)}] {log_id}: FAILED -- "
+                  f"{failures[log_id]}")
+            traceback.print_exc()
+            continue
+        finally:
+            if doc is not None:
+                doc.close()
+        blob = {
+            "log_id": log_id,
+            "report": report,
+            "run_date": date.today().isoformat(),
+            "set": "open" if report in openset else "blind",
+            "model": model,
+            "served_by": engine.served_by,
+            "pages": [int(p) for p in truth.get("pages") or []],
+            "before": before.to_dict(),
+            "after": after.to_dict(),
+            "cost": meter.to_dict(),
+            "seconds": round(time.time() - started, 1),
+        }
+        run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        done[log_id] = blob
+        gain = (after.total.found - before.total.found)
+        print(f"  [{n}/{len(truths)}] {log_id}: "
+              f"{before.total.found}/{before.total.total} -> "
+              f"{after.total.found}/{after.total.total} "
+              f"({gain:+d}), {after.model_calls} model call(s), "
+              f"{blob['cost']['input_tokens']:,} in / "
+              f"{blob['cost']['output_tokens']:,} out, "
+              f"{blob['seconds']:.0f} s")
+
+    return _score_logs(done, failures, model, openset)
+
+
+def _totals(rows: Sequence[dict], stage: str) -> Dict[str, Dict[str, int]]:
+    """``metric -> {found, total}`` summed over a set of logs."""
+    from report_ingest.log_scoring import METRICS
+
+    out = {m: {"found": 0, "total": 0} for m in METRICS}
+    for row in rows:
+        for metric, score in (row[stage].get("scores") or {}).items():
+            if metric not in out:
+                out[metric] = {"found": 0, "total": 0}
+            out[metric]["found"] += int(score.get("found") or 0)
+            out[metric]["total"] += int(score.get("total") or 0)
+    return out
+
+
+def _score_logs(done: Dict[str, dict], failures: Dict[str, str], model: str,
+                openset: Sequence[str]) -> Dict[str, Any]:
+    rows = [done[k] for k in sorted(done)]
+    sets: Dict[str, Any] = {}
+    for name in ("open", "blind", "all"):
+        group = [r for r in rows if name == "all" or r["set"] == name]
+        if not group:
+            continue
+        sets[name] = {
+            "logs": [r["log_id"] for r in group],
+            "n_logs": len(group),
+            "before": _totals(group, "before"),
+            "after": _totals(group, "after"),
+        }
+    cost = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
+            "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
+    for row in rows:
+        for key in ("calls", "input_tokens", "output_tokens",
+                    "cache_read_tokens"):
+            cost[key] += row["cost"].get(key, 0)
+        cost["dollars"] += row["cost"].get("dollars", 0.0)
+        cost["seconds"] += row.get("seconds", 0.0)
+    return {
+        "date": date.today().isoformat(),
+        "model": model,
+        "served_by": sorted({r.get("served_by") for r in rows
+                             if r.get("served_by")}),
+        "open_set": list(openset),
+        "n_logs": len(rows),
+        "failures": dict(failures),
+        "sets": sets,
+        "per_log": [{
+            "log_id": r["log_id"], "set": r["set"],
+            "before": r["before"]["overall"], "after": r["after"]["overall"],
+            "model_calls": r["after"].get("model_calls", 0),
+            "unresolved": r["after"].get("unresolved", 0),
+            "changes": r["after"].get("changes", 0),
+            "error": r["after"].get("error"),
+            "input_tokens": r["cost"].get("input_tokens", 0),
+            "output_tokens": r["cost"].get("output_tokens", 0),
+            "dollars": r["cost"].get("dollars", 0.0),
+            "seconds": r.get("seconds", 0.0),
+        } for r in rows],
+        "cost": cost,
+    }
+
+
+def _rate(row: Dict[str, int]) -> str:
+    if not row["total"]:
+        return "     -"
+    return f"{row['found'] / row['total']:5.0%} {row['found']}/{row['total']}"
+
+
+def _render_logs(logs: Dict[str, Any]) -> List[str]:
+    """The logs stage, as tables that carry IDs, counts and rates only."""
+    from report_ingest.log_scoring import (
+        LAYER_TOL_M, METRICS, SAMPLE_TOL_M, WATER_TOL_M,
+    )
+
+    out: List[str] = [
+        "", "# WP2b on the cluster: the log reader through Prompter", "",
+        f"Run {logs['date']}. Model `{logs['model']}`, "
+        f"{logs['n_logs']} hand-truthed log(s).",
+        "",
+        f"**before** is what `log_grid` alone recovered; **after** is what "
+        f"the reader's record holds. The grid runs once and is handed to the "
+        f"reader, so the difference between the two columns is the model and "
+        f"nothing else. Tolerances: samples, index values and water "
+        f"{SAMPLE_TOL_M} m, layer tops {LAYER_TOL_M} m "
+        f"(water {WATER_TOL_M} m); depths compared in metres whatever the "
+        f"log prints. N values exact.",
+    ]
+    if logs.get("served_by"):
+        out.append(f"Served by: {', '.join(logs['served_by'])}.")
+    if logs.get("failures"):
+        out += ["", "**Logs that failed and are NOT in any number below:**"]
+        out += [f"- {log_id}: {why}"
+                for log_id, why in logs["failures"].items()]
+    out += ["", f"Open set (the logs the rules were tuned on): "
+                f"{', '.join(logs['open_set'])}. Everything else is blind."]
+
+    for name in ("open", "blind", "all"):
+        row = logs["sets"].get(name)
+        if not row:
+            continue
+        out += ["", f"## {name} -- {row['n_logs']} log(s)", "", "```",
+                f"{'metric':<16}{'before':>14}{'after':>14}"]
+        for metric in METRICS:
+            before, after = row["before"].get(metric), row["after"].get(metric)
+            if not before or not (before["total"] or after["total"]):
+                continue
+            out.append(f"{metric:<16}{_rate(before):>14}{_rate(after):>14}")
+        before_all = {"found": sum(v["found"] for v in row["before"].values()),
+                      "total": sum(v["total"] for v in row["before"].values())}
+        after_all = {"found": sum(v["found"] for v in row["after"].values()),
+                     "total": sum(v["total"] for v in row["after"].values())}
+        out += [f"{'OVERALL':<16}{_rate(before_all):>14}"
+                f"{_rate(after_all):>14}", "```"]
+
+    out += ["", "## Per log", "", "```",
+            f"{'log':<14}{'set':<7}{'before':>12}{'after':>12}{'calls':>7}"
+            f"{'unres':>7}{'look':>6}{'in':>10}{'out':>8}{'s':>7}"]
+    for r in logs["per_log"]:
+        if r.get("error"):
+            out.append(f"{r['log_id']:<14}{r['set']:<7}ERROR "
+                       f"{str(r['error'])[:60]}")
+            continue
+        out.append(
+            f"{r['log_id']:<14}{r['set']:<7}"
+            f"{_rate(r['before']):>12}{_rate(r['after']):>12}"
+            f"{r['model_calls']:>7}{r['unresolved']:>7}{r['changes']:>6}"
+            f"{r['input_tokens']:>10,}{r['output_tokens']:>8,}"
+            f"{r['seconds']:>7.0f}")
+    out.append("```")
+    out += ["", "`unres` is what the reader could not settle plus what "
+                "Python refused (a depth off the page). `look` is how many "
+                "values it took from the picture rather than the rows.", ""]
+    cost = logs["cost"]
+    n = max(1, logs["n_logs"])
+    out += ["## Cost", "", "```",
+            f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
+            f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
+            f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s",
+            f"per log: {cost['calls'] / n:.1f} calls, "
+            f"{cost['input_tokens'] / n:,.0f} in, "
+            f"{cost['output_tokens'] / n:,.0f} out, "
+            f"{cost['seconds'] / n:.0f} s",
+            "```", "",
+            "Funhouse publishes no per-token price for a capability tier, so "
+            "this reports TOKENS. Read the spend from Funhouse's own budget "
+            "endpoint for the same window."]
+    return out
+
+
+def _header(results: Dict[str, Any]) -> List[str]:
+    """The heading a run writes when the labels stage did not run."""
+    return ["# Report ingest on the cluster", "",
+            f"Run {results['date']}. Stage(s): "
+            f"{', '.join(results.get('stages') or ())}."]
 
 
 def _render(results: Dict[str, Any]) -> List[str]:

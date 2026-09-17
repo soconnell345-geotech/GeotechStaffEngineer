@@ -1,15 +1,137 @@
-# `report_ingest` — the two model passes over a whole report
+# `report_ingest` — a geotechnical report as organised, cited data
 
 Part of the report-ingest train (`module_work/REPORT_INGEST_PLAN.md`). planlens
 turns a PDF into pages with kinds, located text, an outline and a first draft of
-what each page **is**; this package adds the judgement that needs the whole
-document in view. Two passes ship here today. The readers, the record and the
-DIGGS writer are later work packages.
+what each page **is**; this package adds the geotechnical judgement and the
+record. The lab reader, the narrative reader and the reconciler are later work
+packages.
 
-| Pass | Module | Shape |
+| Piece | Module | Shape |
 |---|---|---|
 | 0b. Document triage | `triage.py` | one structured call |
 | 0c. Label review | `label_review.py` | an agent loop with four tools |
+| The record | `model.py` | pydantic; the product everything else exports |
+| 2. Log reader | `log_reader.py` | one structured call per log, image alongside |
+| 4. DIGGS writer | `diggs_writer.py` | deterministic, with two gates |
+| Scoring one log | `log_scoring.py` | the grid alone, then the reader |
+
+## The record (`model.py`)
+
+`ReportRecord` is what the ingest is **for**; the summary page, the library page
+and the DIGGS file are three exports of it. Three rules hold it together.
+
+**A number keeps the unit it was printed in.** A log that prints 21.5 ft is
+`Quantity(21.5, "ft")`, and a `Quantity` cannot be built without a unit.
+`to_si()` converts once, in the writer that needs SI, so a reviewer setting the
+record beside the page sees the page's own numbers.
+
+**Every value-bearing field carries `Provenance`** — the page, the box, and how
+it was read: `text`, `di`, `ocr`, `grid`, `vision` or `derived`. A reviewer can
+go to the page; a QA pass can ask which values rest on vision alone.
+
+**What could not be read is recorded, not guessed.** An optional field stays
+`None`, a `QAEntry` says what was skipped and why, and
+`Investigation.units_known` is `False` when no depth unit was printed anywhere.
+
+`LabTest` keeps a free `result` dict until WP3 types it per kind,
+`NarrativeFacts` names the owner's two query schemas for WP4 and `CalcEntry` is
+WP5. They are in the schema now so a consumer written against it keeps working
+as the stubs fill in. `record_json_schema()` exports the whole thing.
+
+## The log reader (`log_reader.py`)
+
+`read_log(doc, item_pages, engine, budget=6)` turns one log — continuation
+sheets included — into one `Investigation`.
+
+**Geometry says where, the model says what.** `log_grid` has already found the
+columns, fitted the depth ruler and placed every line of text at a (column,
+depth) with its box. Those rows are the primary source. The page image at about
+110 dpi is for resolving only what the rows leave ambiguous: sample symbols,
+water symbols, refusal notation, stacked drives, which of two numbers is the N
+value. Every value the picture settled comes back in `changes`, because rows can
+be gone back to and a look cannot.
+
+**The depth gate is the point.** A ruler is a linear map from y to depth, so it
+says what depth sits at the top edge of the paper and what sits at the bottom;
+everything printed on that sheet is between them and nothing else is. A depth
+outside that window is refused into `unresolved` rather than accepted. A log
+whose pages have no ruler carries no depths at all — the header fields still
+come back, because the page still says whose log it is. Total depth is the one
+exception and is not gated: on sheet 1 of 3 it names the bottom of the whole
+hole, below that sheet's own paper.
+
+**Nothing is computed.** `n` is recorded only where the log prints it; where it
+prints only the drives, `n` stays `None`. Half the templates do one and half the
+other, and adding the second and third drives of a four-drive rock core would
+invent a number. A refusal stays the string the log printed.
+
+**The budget** is one call per log, a second only when the reader itself says it
+has pages left, and six at the most.
+
+## The DIGGS writer (`diggs_writer.py`)
+
+`write_diggs(record_or_investigations, project) -> str` produces DIGGS 2.6 XML.
+`diggs_schema_gate(xml)` validates it against the schema pydiggs bundles;
+`diggs_roundtrip_gate(xml, investigations)` reads it back with the app's own
+`parse_diggs` and compares every value. Neither gate alone is enough: a file can
+be XSD-valid and wrong, and a file the parser likes may not be DIGGS.
+
+**The 2.6 schema is not the shape the app's older fixtures use**, and this was
+checked before anything was written — the app's own fixture fails the schema on
+its second line. In real DIGGS the test procedures (`DrivenPenetrationTest`,
+`AtterbergLimitsTest`, `WaterContentTest`, `LabDensityTest`, `ParticleSizeTest`,
+`UnconfinedCompressiveStrengthTest`, `PocketPenetrometerTest`) are in the
+`.../2.6/geotechnical` namespace and carry no result; the value lives in
+`Test/outcome/TestResult/results/ResultSet`, named by a `propertyClass` from the
+DIGGS dictionary; a depth is a position along the hole's own linear reference
+system; lithology is an `observation/LithologySystem` at the document root; and
+there is no `WaterLevelObservation` or `MoistureContent` element at all — water
+is the borehole's own `waterStrike`. So the writer emits real DIGGS and
+`subsurface_characterization/diggs26.py` was added to read it, additively, after
+the flat readers. Every existing fixture reads exactly as before.
+
+The element map, record field to DIGGS:
+
+| Record | DIGGS 2.6 |
+|---|---|
+| `Project` | `project/Project` (`gml:name`, `gml:identifier`) |
+| `Investigation` (boring) | `samplingFeature/Borehole` |
+| `Investigation` (test pit) | `samplingFeature/TrialPit` |
+| `x`, `y`, `elevation` | `referencePoint/PointLocation/gml:pos` |
+| `total_depth` | `totalMeasuredDepth` (uom m) |
+| `date_started`, `date_finished` | `whenConstructed/TimeInterval` |
+| `drilling.method`, `.equipment` | `constructionMethod/BoreholeConstructionMethod` |
+| `fields` (anything else printed) | `otherSamplingFeatureProperty/Parameter` |
+| `Sample` | `samplingActivity/SamplingActivity` + `sample/Sample` |
+| `Sample.top`, `.bottom` | `samplingLocation/LinearExtent/gml:posList` |
+| `Sample.recovery` | `totalSampleRecoveryLength` |
+| `Layer` | `observation/LithologySystem/lithologyObservation/LithologyObservation` |
+| `Layer.uscs`, `.description` | `Lithology/classificationCode`, `/lithDescription` |
+| `SPT.n` | `ResultSet` `propertyClass` **n_value** |
+| `SPT.blows` (no printed N) | `ResultSet` `propertyClass` **blow_count** |
+| `SPT.blows`, `.refusal` | `DrivenPenetrationTest/driveSet/DriveSet` (`blowCount`, `penetration`) |
+| `drilling.hammer_type`, `.hammer_energy_ratio` | `hammerType`, `hammerEfficiency` |
+| `WaterLevel` | `Borehole/waterStrike/WaterStrike` |
+| `Sample.water_content` | **water_content_natural**, `WaterContentTest` |
+| `Sample.dry_unit_weight` | **dry_density**, `LabDensityTest` |
+| `Sample.liquid_limit`, `.plastic_limit`, `.plasticity_index` | **liquid_limit**, **plastic_limit**, **plasticity_index**, `AtterbergLimitsTest` |
+| `Sample.fines_percent` | **percent_fines**, `ParticleSizeTest` |
+| `Sample.qu` | **compressive_strength_unconfined**, `UnconfinedCompressiveStrengthTest` |
+| `Sample.pocket_pen` | **compressive_strength_unconfined**, `PocketPenetrometerTest` |
+
+SI once, here, with a `uom` on every measure. A coordinate gets nine decimals,
+because a latitude to four is eleven metres. A unit not in the record's
+conversion table is **not** written with a guessed one: it is left out and named
+in `DiggsWriteNotes.skipped`, which the round-trip gate then does not look for.
+A layer whose base the sheet never printed is written as a contact and named the
+same way — DIGGS can carry it, the app's `LithologyInterval` holds intervals
+only.
+
+**The gate that matters is deterministic and needs no model.** All fifteen
+hand-truthed logs convert to records, write, validate and round-trip:
+`module_work/report_ingest_harness/tests/test_diggs_truth.py` (skipped where the
+gitignored corpus is not). `report_ingest/tests/test_diggs_writer.py` walks the
+same path on a synthetic investigation in CI.
 
 **The numbers come from the cluster.** This app runs in Funhouse against
 OpenAI models through the Prompter API, so a score measured on any other model
@@ -19,7 +141,7 @@ that counts and `cluster_scoring.score_on_cluster` is how a run is made.
 passes were built and debugged against — but its numbers are a checkpoint, not
 a result.
 
-## Why they exist
+## Why the two label passes exist
 
 The rules label a page from what that page prints about itself. Measured on the
 corpus, they reach 0.91 accuracy across the fourteen reports they were built on
@@ -135,9 +257,55 @@ results = score_on_cluster(
     model        = "funhouse-gpt-high",     # the label review, on the tier the app runs on
     triage_model = "funhouse-gpt-medium",   # one call over a ledger; a cheaper tier does
     sets         = ("insample", "oos_open", "oos_blind"),
+    stages       = ("labels",),             # add "logs" to score the log reader too
     max_reports  = 2,                       # drop this line after the first run
 )
 ```
+
+### Scoring the log reader as well (`stages=("labels", "logs")`)
+
+The `logs` stage runs `log_grid` and then `read_log` over each hand-truthed
+log, and scores the result twice: **before**, from the grid's cells alone, and
+**after**, from the record the reader built. The grid runs once and is handed
+to the reader, so the difference between the two columns is the model and
+nothing else. It needs one more private file — the folder of hand-truthed logs
+— and an `OPEN.txt` beside them names the reports the rules were allowed to be
+tuned on, so the blind figure stays blind.
+
+```python
+results = score_on_cluster(
+    reports_dir  = "/Volumes/<your volume>/reports",
+    manifest     = "/Volumes/<your volume>/wp1b/MANIFEST.md",
+    di_dir       = "/Volumes/<your volume>/report_di",
+    truth_dir    = "/Volumes/<your volume>/wp2b/truth/logs",   # <ID>_p<page>.json + OPEN.txt
+    out_dir      = "/tmp/report_ingest_wp2b",
+    prompter     = fh_prompter,
+    model        = "funhouse-gpt-high",
+    stages       = ("logs",),       # or ("labels", "logs") for both in one run
+    log_budget   = 6,               # model calls per log; the reader's ceiling is six
+    max_reports  = 2,               # drop this line after the first run
+)
+```
+
+Metrics, all against the hand truth: **N values exact**; sample depths,
+index values and water levels within 0.15 m; layer tops within 0.3 m; USCS
+symbols matched; recovery and RQD where the log prints them; header fields
+recovered. Depths are compared in metres whatever the log prints, and the
+matching rules are the WP2a ones — a sample is an interval, a blow record
+counts when its drives stand at that depth, and an N the log never printed
+counts as found when the drives that define it are there, because neither the
+grid nor the reader does arithmetic by design.
+
+`RESULTS.md` then carries a second half: before and after per metric for the
+open set, the blind set and all logs; a per-log line with model calls, what was
+left unresolved and how many values came off the picture rather than the rows;
+and the cost per log. `logs/<log id>.json` holds the per-log detail and, like
+the label runs, makes the stage restartable — a log that already has one is
+skipped.
+
+Locally, `module_work/report_ingest_harness/measure_wp2b_logs.py` does the same
+scoring against the development engine, and `--grid-only` prints the before
+column with no engine, no key and no network at all.
 
 Bring back **`/tmp/report_ingest_wp1b/RESULTS.md`**. That is the whole report,
 and it carries IDs, labels, counts and rates only. The per-report runs and the
@@ -281,13 +449,24 @@ naming the report they stopped before.
 ```
 
 Offline and free: no credential, no network, no corpus. `FakeEngine` replays a
-script of turns in the engine's place, so the whole of both passes runs against
-planlens' synthetic report — the prompt each builds, the tool loop, the budget
+script of turns in the engine's place, so the whole of both label passes and the
+log reader runs for real — the prompt each builds, the tool loop, the budget
 stop, the rules for applying a change. Running past the end of a script raises,
 because a pass that makes one more call than the test expected is the bug the
-test exists to catch. The harness suite adds the scorecard's own arithmetic, the
-disputed-label rule and the prompt fingerprint; its corpus-dependent tests skip
-cleanly on a machine without the private data.
+test exists to catch.
+
+The log reader's tests run over real `log_grid` output on planlens' synthetic
+log fixtures, so the brief that is asserted on is the brief a model would
+actually be sent, and the refusals are the refusals that would actually happen:
+a depth past the ruler, a log with no scale at all, a provenance naming a page
+outside this log. The DIGGS writer is tested against the bundled 2.6 schema and
+through `parse_diggs` on a synthetic investigation carrying one of everything,
+and the log scorer on a synthetic truth where what is checked is the matching
+itself.
+
+The harness suite adds the scorecard's own arithmetic, the disputed-label rule,
+the prompt fingerprint, and the deterministic fifteen-log DIGGS gate. Its
+corpus-dependent tests skip cleanly on a machine without the private data.
 
 ## What the measurements have taught the prompts
 
