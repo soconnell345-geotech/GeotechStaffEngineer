@@ -51,6 +51,12 @@ __all__ = [
     "GeneralFacts", "NaturalHazardFacts", "CalcEntry", "QAEntry",
     "DocumentFacts", "ReportRecord", "to_si", "si_numbers",
     "record_json_schema",
+    # the narrative (WP4): the owner's two schemas and their typed twins
+    "Citation", "Mention", "BearingValue", "Stratum",
+    "DOCUMENT_TYPE_VALUES", "PROPERTY_TYPE_VALUES", "PROJECT_PHASE_VALUES",
+    "LIQUEFACTION_VALUES", "EARTH_HAZARD_VALUES", "YES_NO_UNCLEAR",
+    "GENERAL_FIELDS", "NATURAL_HAZARD_FIELDS", "SUMMARY_FIELDS",
+    "SUMMARY_WORD_LIMITS",
     # the typed laboratory results (WP3)
     "LabKind", "Reported", "LabResult", "RESULT_CLASS",
     "SievePoint", "AtterbergResult", "GradationResult",
@@ -68,7 +74,16 @@ __all__ = [
 #: result discriminated on ``kind``, and ``LabTest.depth`` became
 #: ``depth_top``. Both are changes of MEANING, so the version moves; a 2.0
 #: file's lab tests do not load as 3.0 ones.
-SCHEMA_VERSION = "3.0"
+#:
+#: 4.0 (WP4): ``GeneralFacts`` and ``NaturalHazardFacts`` stopped being a free
+#: ``answers`` dict and became the owner's two query schemas as REAL FIELDS,
+#: field name for field name, with typed twins beside the strings; and
+#: ``NarrativeFacts`` stopped carrying its own second copy of them -- the
+#: record's own ``general`` and ``natural_hazards`` are the answers, and
+#: ``narrative`` is what the reading produced BESIDE them (what the narrative
+#: stated, what Python counted, what the appendix turned out to hold). Both
+#: are changes of meaning, so the version moves.
+SCHEMA_VERSION = "4.0"
 
 
 # ---------------------------------------------------------------------------
@@ -1114,6 +1129,19 @@ class LabTest(BaseModel):
         default_factory=dict,
         description="every other key-value the sheet printed, as printed")
     note: str = Field(default="")
+    #: What the RECONCILER matched this sheet to, which is not the same thing
+    #: as what the sheet printed. ``investigation_id`` above is the sheet's own
+    #: words and never changes; these say which hole and which sample of the
+    #: record they turned out to name, and stay empty when nothing matched.
+    linked_investigation_id: str = Field(
+        default="",
+        description="the investigation this test was matched to, or empty")
+    linked_sample_id: str = Field(
+        default="", description="the sample it was matched to, or empty")
+    linked_depth_delta_m: Optional[float] = Field(
+        default=None,
+        description="how far the sheet's depth sat from the sample's, in "
+                    "metres; None when no sample matched")
     prov: List[Provenance] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -1194,53 +1222,370 @@ class Investigation(BaseModel):
 # the narrative (WP4 stubs) and the calcs (WP5 stub)
 # ---------------------------------------------------------------------------
 
-class GeneralFacts(BaseModel):
-    """WP4 STUB: the owner's GENERAL query schema.
+#: The owner's ``documentType`` enumeration, verbatim, and the same tuple
+#: :mod:`report_ingest.triage` answers with -- one list, so the triage pass
+#: and the narrative reader cannot drift apart on what a document may be.
+DOCUMENT_TYPE_VALUES: Tuple[str, ...] = (
+    "geotechnical report",
+    "environmental report",
+    "recommendation letter",
+    "report addendum",
+    "report appendix or figure(s)",
+    "partial report",
+    "other",
+)
 
-    The field names are the owner's, verbatim, so outputs stay comparable
-    with the runs they have been making for years. WP4 fills them and adds
-    the typed twins beside the strings (plan sections 3). Everything is
-    optional; a report that does not answer a question leaves it None.
+#: PROVISIONAL (plan section 7, item 1). The owner's own word list for these
+#: four questions was written for runs whose outputs are gone, and it is not
+#: in this tree; these are the readings the corpus supports, with "unclear"
+#: always available so a reader is never forced to pick. Changing one is an
+#: edit HERE and a line in the reader prompt -- nothing else reads the words.
+PROPERTY_TYPE_VALUES: Tuple[str, ...] = (
+    "government owned", "leased", "private", "public", "unclear",
+)
+PROJECT_PHASE_VALUES: Tuple[str, ...] = (
+    "planning", "feasibility", "due diligence", "preliminary design",
+    "design", "construction", "post construction", "unclear",
+)
+LIQUEFACTION_VALUES: Tuple[str, ...] = (
+    "high", "moderate", "low", "none", "not evaluated", "unclear",
+)
+EARTH_HAZARD_VALUES: Tuple[str, ...] = (
+    "seismic shaking", "liquefaction", "fault rupture", "landslide",
+    "rockfall", "subsidence", "expansive soil", "collapsible soil",
+    "karst", "erosion", "flooding", "tsunami", "volcanic", "none",
+)
+#: What a question that is asked as a question gets answered with.
+YES_NO_UNCLEAR: Tuple[str, ...] = ("yes", "no", "unclear")
+
+
+class Citation(BaseModel):
+    """Where an answer was read: the page, and the page's own words.
+
+    A short quote rather than a box, because a narrative answer comes off a
+    sentence and a reviewer checks it by finding that sentence. The quote is
+    the page's own wording, never a paraphrase.
     """
-
-    model_config = ConfigDict(extra="allow")
-
-    answers: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="WP4 STUB: the owner's general schema, field names "
-                    "verbatim (documentType, quickSummary, projectNumber, "
-                    "boringCount, recommendedFoundations, bearingCapacity "
-                    "...)")
-    citations: Dict[str, List[Provenance]] = Field(
-        default_factory=dict,
-        description="the pages each answer was read from, keyed by field")
-
-
-class NaturalHazardFacts(BaseModel):
-    """WP4 STUB: the owner's NATURAL HAZARDS query schema, names verbatim."""
-
-    model_config = ConfigDict(extra="allow")
-
-    answers: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="WP4 STUB: liquefactionPotential, asceSevenVersion, "
-                    "seismicCodeUsed, siteClass, reportDate ...")
-    citations: Dict[str, List[Provenance]] = Field(default_factory=dict)
-
-
-class NarrativeFacts(BaseModel):
-    """WP4 STUB: both query schemas, and what the narrative counted."""
 
     model_config = ConfigDict(extra="forbid")
 
-    general: GeneralFacts = Field(default_factory=GeneralFacts)
-    natural_hazards: NaturalHazardFacts = Field(
-        default_factory=NaturalHazardFacts)
+    page: int = Field(description="0-based PDF page index")
+    quote: str = Field(
+        default="",
+        description="the page's own words, 20 words or fewer, verbatim")
+
+
+class Mention(BaseModel):
+    """A yes/no/unclear answer with the sentence that settles it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    answer: Literal["yes", "no", "unclear"]
+    citation: List[Citation] = Field(default_factory=list)
+
+
+class BearingValue(BaseModel):
+    """One bearing pressure the report recommends, as a number with a unit.
+
+    The typed twin of the ``bearingCapacity`` strings. A pressure means
+    nothing without what it is for -- a strip footing on engineered fill and
+    a mat on residual soil are different recommendations -- so the foundation
+    and the condition travel with the number.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: Quantity = Field(description="the pressure, in the unit printed")
+    foundation_type: str = Field(
+        default="",
+        description="what it is for, as printed: spread footing, mat, "
+                    "drilled shaft end bearing ...")
+    condition: str = Field(
+        default="",
+        description="the condition it applies under, as printed: 'on "
+                    "engineered fill', 'net allowable', 'at 1.5 m depth'")
+    citation: List[Citation] = Field(default_factory=list)
+
+
+class Stratum(BaseModel):
+    """One stratum of the ``strata`` answer, as a record rather than prose."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(
+        default="", description="the report's own name for it, as printed")
+    description: str = Field(default="", description="as printed")
+    top: Optional[Quantity] = Field(
+        default=None, description="depth or elevation to its top, when given")
+    bottom: Optional[Quantity] = Field(default=None)
+    uscs: str = Field(
+        default="",
+        description="the group symbol the report prints for it; never "
+                    "inferred from the description")
+    citation: List[Citation] = Field(default_factory=list)
+
+
+#: The owner's general schema, in the owner's order. Kept as a tuple so a
+#: writer, a scorer and a prompt can walk the same list rather than three.
+GENERAL_FIELDS: Tuple[str, ...] = (
+    "documentType", "quickSummary", "postName", "propertyType",
+    "projectNumber", "projectName", "projectPhase", "primeContractor",
+    "primeAe", "geotechnicalEngineerFirm", "testingProgramSummary",
+    "boringCount", "testPitCount", "cptCount", "tableCount", "figureCount",
+    "previousInvestigationCount", "strata", "structureCount", "structureList",
+    "outsideProject", "boringDictionary", "testPitDictionary",
+    "recommendedFoundations", "bearingCapacity",
+)
+
+#: The owner's natural-hazards schema, in the owner's order.
+NATURAL_HAZARD_FIELDS: Tuple[str, ...] = (
+    "liquefactionPotential", "asceSevenVersion", "earthHazardsExposed",
+    "seismicCodeUsed", "geophysicalTestingMention", "soilCorrosion",
+    "siteResponseMention", "hazardAnalysisMention", "siteClass",
+    "seismicParameterSummary", "naturalHazardSummary", "reportDate",
+)
+
+#: The four fields that are PROSE. They are scored for presence and length
+#: only: whether a summary is a good summary is a person's call, and a
+#: scorer that pretended otherwise would be scoring its own opinion.
+SUMMARY_FIELDS: Tuple[str, ...] = (
+    "quickSummary", "testingProgramSummary", "naturalHazardSummary",
+    "seismicParameterSummary",
+)
+#: How long each may run, in words.
+SUMMARY_WORD_LIMITS: Dict[str, int] = {
+    "quickSummary": 100,
+    "testingProgramSummary": 100,
+    "naturalHazardSummary": 200,
+    "seismicParameterSummary": 100,
+}
+
+
+class GeneralFacts(BaseModel):
+    """The owner's GENERAL query schema, field name for field name.
+
+    The names are the owner's, verbatim and camel-cased against every
+    convention in the rest of this package, so that outputs stay comparable
+    with the runs they have been making for years. Renaming them to suit this
+    codebase would break the only continuity the answers have.
+
+    EVERY FIELD IS OPTIONAL AND NONE MEANS NOT STATED. A report that does not
+    say who the prime contractor was leaves ``primeContractor`` None; it never
+    carries an empty string, a "not stated" string or a guess, because a
+    scorer has to be able to tell a report that did not say from a reader
+    that did not read.
+
+    THE TYPED TWINS SIT BESIDE THE STRINGS, NEVER INSTEAD OF THEM.
+    ``bearingCapacity`` keeps the sentences the report printed and
+    ``bearingCapacityValues`` carries the same recommendations as numbers with
+    units; ``strata`` keeps the one-string dictionary and ``strataList``
+    carries it as records. A consumer that wants arithmetic reads the twin; a
+    reviewer checking the reading reads the string.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # -- what the document is ---------------------------------------------
+    documentType: Optional[Literal[
+        "geotechnical report", "environmental report",
+        "recommendation letter", "report addendum",
+        "report appendix or figure(s)", "partial report", "other"]] = Field(
+        default=None, description="what kind of document this is")
+    quickSummary: Optional[str] = Field(
+        default=None,
+        description="what the report is and what it concluded, 100 words or "
+                    "fewer")
+    postName: Optional[str] = Field(
+        default=None,
+        description="the post the site belongs to, as the report names it; "
+                    "never inferred from a place name")
+    propertyType: Optional[Literal[
+        "government owned", "leased", "private", "public", "unclear"]] = Field(
+        default=None, description="what the property is")
+    projectNumber: Optional[str] = Field(
+        default=None, description="the project or job number, as printed")
+    projectName: Optional[str] = Field(default=None, description="as printed")
+    projectPhase: Optional[Literal[
+        "planning", "feasibility", "due diligence", "preliminary design",
+        "design", "construction", "post construction", "unclear"]] = Field(
+        default=None, description="the phase the work was done for")
+    primeContractor: Optional[str] = Field(default=None)
+    primeAe: Optional[str] = Field(
+        default=None, description="the prime architect-engineer")
+    geotechnicalEngineerFirm: Optional[str] = Field(
+        default=None, description="the firm that wrote the report")
+
+    # -- what was done -----------------------------------------------------
+    testingProgramSummary: Optional[str] = Field(
+        default=None,
+        description="what was drilled, dug, sounded and tested, 100 words or "
+                    "fewer")
+    boringCount: Optional[int] = Field(default=None, ge=0)
+    testPitCount: Optional[int] = Field(default=None, ge=0)
+    cptCount: Optional[int] = Field(default=None, ge=0)
+    tableCount: Optional[int] = Field(default=None, ge=0)
+    figureCount: Optional[int] = Field(default=None, ge=0)
+    previousInvestigationCount: Optional[int] = Field(default=None, ge=0)
+    strata: Optional[str] = Field(
+        default=None,
+        description="the soil profile the report describes, as one string; "
+                    "the twin is strataList")
+    structureCount: Optional[int] = Field(default=None, ge=0)
+    structureList: Optional[List[str]] = Field(
+        default=None, description="the structures the report is about")
+    outsideProject: Optional[Literal["yes", "no", "unclear"]] = Field(
+        default=None,
+        description="is this a report about somebody else's project, from "
+                    "outside")
+    boringDictionary: Optional[List[str]] = Field(
+        default=None,
+        description="the boring identifiers the narrative names, as printed")
+    testPitDictionary: Optional[List[str]] = Field(default=None)
+    recommendedFoundations: Optional[List[str]] = Field(
+        default=None, description="the foundation types recommended")
+    bearingCapacity: Optional[List[str]] = Field(
+        default=None,
+        description="the bearing recommendations as the report words them; "
+                    "the twin is bearingCapacityValues")
+
+    # -- the typed twins ---------------------------------------------------
+    bearingCapacityValues: List[BearingValue] = Field(
+        default_factory=list,
+        description="the same recommendations as numbers with units")
+    strataList: List[Stratum] = Field(
+        default_factory=list, description="the same profile as records")
+    outsideProjectAnswer: Optional[Mention] = Field(
+        default=None, description="outsideProject with its citation")
+
+    #: The pages and words each answer was read from, keyed by the owner's
+    #: field name. A field with no entry here was not answered.
+    citations: Dict[str, List[Citation]] = Field(default_factory=dict)
+
+    def answered(self) -> List[str]:
+        """The owner's fields this report actually answered, in order."""
+        return [name for name in GENERAL_FIELDS
+                if getattr(self, name, None) is not None]
+
+
+class NaturalHazardFacts(BaseModel):
+    """The owner's NATURAL HAZARDS query schema, names verbatim.
+
+    Same rules as :class:`GeneralFacts`: None means the report did not say,
+    the owner's enumerations are kept as written, and the typed twins sit
+    beside the strings rather than replacing them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    liquefactionPotential: Optional[Literal[
+        "high", "moderate", "low", "none", "not evaluated",
+        "unclear"]] = Field(
+        default=None,
+        description="what the report concluded about liquefaction")
+    asceSevenVersion: Optional[str] = Field(
+        default=None, description="the ASCE 7 edition cited, as printed")
+    earthHazardsExposed: Optional[List[Literal[
+        "seismic shaking", "liquefaction", "fault rupture", "landslide",
+        "rockfall", "subsidence", "expansive soil", "collapsible soil",
+        "karst", "erosion", "flooding", "tsunami", "volcanic",
+        "none"]]] = Field(
+        default=None,
+        description="the hazards the report says the site is exposed to")
+    seismicCodeUsed: Optional[str] = Field(
+        default=None, description="the seismic code or standard, as printed")
+    geophysicalTestingMention: Optional[Literal[
+        "yes", "no", "unclear"]] = Field(
+        default=None, description="does the report mention geophysical "
+                                  "testing")
+    soilCorrosion: Optional[Literal["yes", "no", "unclear"]] = Field(
+        default=None, description="does it address soil corrosivity")
+    siteResponseMention: Optional[Literal["yes", "no", "unclear"]] = Field(
+        default=None, description="does it mention a site response analysis")
+    hazardAnalysisMention: Optional[Literal["yes", "no", "unclear"]] = Field(
+        default=None,
+        description="does it mention a seismic hazard analysis, "
+                    "probabilistic or deterministic")
+    siteClass: Optional[str] = Field(
+        default=None, description="the site class, as printed")
+    seismicParameterSummary: Optional[str] = Field(
+        default=None,
+        description="the seismic design parameters, 100 words or fewer")
+    naturalHazardSummary: Optional[str] = Field(
+        default=None,
+        description="what the report says about natural hazards, 200 words "
+                    "or fewer")
+    reportDate: Optional[str] = Field(
+        default=None,
+        description="the date on the report, as printed; the twin is "
+                    "reportDateISO")
+
+    # -- the typed twins ---------------------------------------------------
+    siteClassNormalized: Optional[str] = Field(
+        default=None,
+        description="the site class as a bare letter or letter pair: A, B, "
+                    "BC, C, CD, D, DE, E, F")
+    asceSevenVersionNormalized: Optional[str] = Field(
+        default=None,
+        description="the ASCE 7 edition as '7-16', '7-22'; None when the "
+                    "printed text names no edition")
+    reportDateISO: Optional[str] = Field(
+        default=None, description="the report date as YYYY-MM-DD")
+    geophysicalTestingAnswer: Optional[Mention] = None
+    soilCorrosionAnswer: Optional[Mention] = None
+    siteResponseAnswer: Optional[Mention] = None
+    hazardAnalysisAnswer: Optional[Mention] = None
+
+    citations: Dict[str, List[Citation]] = Field(default_factory=dict)
+
+    def answered(self) -> List[str]:
+        """The owner's fields this report actually answered, in order."""
+        return [name for name in NATURAL_HAZARD_FIELDS
+                if getattr(self, name, None) is not None]
+
+
+class NarrativeFacts(BaseModel):
+    """What the narrative reading produced BESIDE the two schemas.
+
+    The answers themselves live on the record as ``general`` and
+    ``natural_hazards``; there is one copy of them and this is not it. What
+    is here is the arithmetic around them: what the narrative SAID was done,
+    what Python COUNTED off the pages, and what the appendix turned out to
+    hold. The reconciler sets the three side by side, and a disagreement is a
+    QA entry rather than a correction -- a report that says four borings and
+    carries five logs is telling a reviewer something.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
     stated_counts: Dict[str, int] = Field(
         default_factory=dict,
-        description="counts the narrative STATES (borings, test pits, CPTs, "
-                    "tables, figures). The reconciler sets them beside what "
-                    "was found; a mismatch is a QA entry, not an error")
+        description="counts the narrative STATES: borings, test_pits, cpts, "
+                    "tables, figures, previous_investigations, structures")
+    counted: Dict[str, int] = Field(
+        default_factory=dict,
+        description="what Python counted off the pages deterministically: "
+                    "tables and figures from the captions in the main body, "
+                    "and from the printed lists of tables and figures")
+    found_counts: Dict[str, int] = Field(
+        default_factory=dict,
+        description="what the appendix turned out to hold, filled by the "
+                    "reconciler: borings, test_pits, cpts, dcps, lab_tests")
+    found_ids: Dict[str, List[str]] = Field(
+        default_factory=dict,
+        description="the identifiers actually found, by kind, filled by the "
+                    "reconciler")
+    pages: List[int] = Field(
+        default_factory=list,
+        description="the narrative pages that were read")
+    extra_answers: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="questions asked of THIS report beyond the two schemas -- "
+                    "the caller's own -- each as {question, answer, page, "
+                    "quote}, with an empty answer where the narrative does "
+                    "not say")
+    unresolved: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="what the reader could not settle, and why")
 
 
 class CalcEntry(BaseModel):
