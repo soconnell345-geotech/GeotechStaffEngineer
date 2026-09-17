@@ -191,3 +191,69 @@ def test_label_counts_cover_every_mapped_page():
     assert set(counts) == set(labels.LABELS)
     expected = sum(corpus.report(rid).pages for rid in labels.mapped_ids())
     assert sum(counts.values()) == expected
+
+
+# -- the WP1 scorer ---------------------------------------------------------
+#
+# Synthetic: the scorer is arithmetic over (hand label, predicted role) pairs
+# and needs no corpus to be checked.
+
+from module_work.report_ingest_harness import measure_wp1_labels as wp1  # noqa: E402
+
+
+def _scored(pairs):
+    s = wp1.Scores()
+    for i, (hand, pred) in enumerate(pairs):
+        s.add("R99", hand, pred, i, "text", "a heading", {"rule": "test"})
+    return s
+
+
+def test_rates_are_precision_recall_f1_and_support():
+    s = _scored([("boring_log", "boring_log")] * 8
+                + [("boring_log", "lab_test")] * 2      # 2 false negatives
+                + [("narrative", "boring_log")] * 2)    # 2 false positives
+    precision, recall, f1, support = s.rates("boring_log")
+    assert support == 10
+    assert precision == pytest.approx(8 / 10)
+    assert recall == pytest.approx(0.8)
+    assert f1 == pytest.approx(0.8)
+
+
+def test_a_label_nothing_predicted_scores_zero_not_an_error():
+    s = _scored([("narrative", "narrative")])
+    assert s.rates("cpt_log") == (0.0, 0.0, 0.0, 0)
+
+
+def test_the_gate_needs_both_rates_on_every_gated_role():
+    perfect = [(g, g) for g in wp1.GATED for _ in range(10)]
+    assert _scored(perfect).passes()
+    # One gated role at 0.8 recall fails the whole gate.
+    slipped = list(perfect) + [("lab_test", "other")] * 3
+    assert not _scored(slipped).passes()
+
+
+def test_only_gated_disagreements_are_collected_as_misses():
+    s = _scored([("figure", "plan"),                 # neither is gated
+                 ("narrative", "figure"),            # hand is gated
+                 ("other", "calculation"),           # prediction is gated
+                 ("lab_test", "lab_test")])          # agreement
+    assert [(m["hand"], m["pred"]) for m in s.misses] == [
+        ("narrative", "figure"), ("other", "calculation")]
+
+
+def test_accuracy_counts_every_page():
+    s = _scored([("narrative", "narrative"), ("narrative", "other"),
+                 ("lab_test", "lab_test"), ("lab_test", "lab_test")])
+    assert s.n_pages == 4
+    assert s.accuracy == pytest.approx(0.75)
+    assert s.per_report["R99"] == [3, 4]
+
+
+def test_the_ledger_section_never_carries_a_page_heading():
+    """The heading is the firm's title block; the ledger is public."""
+    s = _scored([("narrative", "boring_log")])
+    rounds = [{"round": 1, "date": "2026-09-16", "note": "n",
+               "accuracy": 0.5, "gated": {g: [1.0, 1.0] for g in wp1.GATED}}]
+    text = "\n".join(wp1.build_report(s, rounds, "n", wp1.GATED))
+    assert "a heading" not in text
+    assert "rule=" in text and "hand=narrative" in text

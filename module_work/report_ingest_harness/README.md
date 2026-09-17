@@ -12,8 +12,22 @@ root with the app venv, which carries the editable `planlens` checkout:
 ```
 .venv/Scripts/python -m module_work.report_ingest_harness.measure_wp0
 .venv/Scripts/python -m module_work.report_ingest_harness.measure_wp0 --only R36 --no-append
+.venv/Scripts/python -m module_work.report_ingest_harness.measure_wp1_labels
 .venv/Scripts/python -m pytest module_work/report_ingest_harness/tests -q
 ```
+
+`measure_wp1_labels` is WP1's scorecard: it runs planlens'
+`document.roles.page_roles` over every report that has hand labels and scores
+it against them — precision, recall, F1 and support per role, the confusion
+matrix, each report's accuracy, and every miss on the five GATED roles
+(`boring_log`, `test_pit_log`, `lab_test`, `narrative`, `calculation`, which
+must reach 0.90 on both rates). It appends a round to the ledger each run,
+with the gated numbers of every round so far, so the effect of a fix is
+visible; `--note` says what changed. **The ledger's miss lines carry the
+evidence planlens recorded, never the page's heading** — the largest type on
+a log or a laboratory sheet is a firm's title block, and the ledger is
+tracked. The same misses WITH headings go to `raw/checks/wp1_misses.txt`,
+which is gitignored.
 
 **The corpus is private and this repo is public.** Every PDF, DI result, hand
 label and derived cache lives under
