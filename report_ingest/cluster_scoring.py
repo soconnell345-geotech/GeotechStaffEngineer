@@ -78,7 +78,7 @@ SET_NAMES: Tuple[str, ...] = ("insample", "oos_open", "oos_blind")
 #: the log reader over each hand-truthed log, scored before and after.
 #: ``lab`` is WP3 -- the page's own tables and then the lab reader over each
 #: hand-truthed laboratory sheet, scored the same two ways.
-STAGE_NAMES: Tuple[str, ...] = ("labels", "logs", "lab")
+STAGE_NAMES: Tuple[str, ...] = ("labels", "logs", "lab", "narrative")
 
 #: The reports the log rules were allowed to be tuned on, when no ``OPEN.txt``
 #: sits beside the truth files. Everything else is scored as blind.
@@ -198,10 +198,13 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      stages: Sequence[str] = ("labels",),
                      truth_dir: Any = None,
                      lab_truth_dir: Any = None,
+                     narrative_truth_dir: Any = None,
                      log_budget: int = 6,
                      lab_budget: int = 4,
+                     narrative_budget: int = 8,
                      open_reports: Optional[Sequence[str]] = None,
-                     open_lab_reports: Optional[Sequence[str]] = None
+                     open_lab_reports: Optional[Sequence[str]] = None,
+                     open_narrative_reports: Optional[Sequence[str]] = None
                      ) -> Dict[str, Any]:
     """Run the rules, triage and the label review over the corpus, and score.
 
@@ -292,6 +295,13 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
             "laboratory sheets, so it needs lab_truth_dir -- the folder of "
             "<kind>__<ID>_p<page>.json files. They are private and do not "
             "ship in the wheel.")
+    if "narrative" in stages and narrative_truth_dir is None:
+        raise ValueError(
+            "the 'narrative' stage scores the reader against the hand "
+            "answers, so it needs narrative_truth_dir -- the folder of "
+            "<ID>.json files, each holding the owner's two schemas answered "
+            "by hand with null for 'not stated'. They are private and do not "
+            "ship in the wheel.")
     out = Path(out_dir)
     _check_out_dir(out)
     for sub in ("runs", "triage"):
@@ -300,6 +310,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         (out / "logs").mkdir(parents=True, exist_ok=True)
     if "lab" in stages:
         (out / "lab").mkdir(parents=True, exist_ok=True)
+    if "narrative" in stages:
+        (out / "narrative").mkdir(parents=True, exist_ok=True)
 
     corpus = Corpus(reports_dir, manifest=manifest, di_dir=di_dir,
                     labels_xlsx=labels_xlsx, cache_dir=out)
@@ -394,6 +406,14 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         results["lab"] = lab
         lines += _render_lab(lab)
 
+    if "narrative" in stages:
+        narrative = _run_narrative(
+            corpus, prompter, model, out, Path(narrative_truth_dir),
+            budget=narrative_budget, redo=redo, max_reports=max_reports,
+            open_reports=open_narrative_reports)
+        results["narrative"] = narrative
+        lines += _render_narrative(narrative)
+
     (out / "results.json").write_text(json.dumps(_plain(results), indent=2),
                                       encoding="utf-8")
     (out / "RESULTS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -404,6 +424,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         print(f"per-log runs in {out / 'logs'}")
     if "lab" in stages:
         print(f"per-sheet runs in {out / 'lab'}")
+    if "narrative" in stages:
+        print(f"per-report narrative runs in {out / 'narrative'}")
     return results
 
 
@@ -912,6 +934,327 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
             f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
             f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s",
             f"per sheet: {cost['calls'] / n:.1f} calls, "
+            f"{cost['input_tokens'] / n:,.0f} in, "
+            f"{cost['output_tokens'] / n:,.0f} out, "
+            f"{cost['seconds'] / n:.0f} s",
+            "```", "",
+            "Funhouse publishes no per-token price for a capability tier, so "
+            "this reports TOKENS. Read the spend from Funhouse's own budget "
+            "endpoint for the same window."]
+    return out
+
+
+# ---------------------------------------------------------------------------
+# the narrative stage (WP4)
+# ---------------------------------------------------------------------------
+
+#: The reports whose narrative answers were written with the reader's output
+#: in view, when the truth folder carries no OPEN.txt. Everything else is
+#: blind, and the blind figure is the one that means anything.
+DEFAULT_OPEN_NARRATIVE: Tuple[str, ...] = ("R36", "R05")
+
+
+def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
+                   truth_dir: Path, *, budget: int, redo: bool,
+                   max_reports: Optional[int],
+                   open_reports: Optional[Sequence[str]]) -> Dict[str, Any]:
+    """The narrative reader over every report that has a hand answer.
+
+    The stage reads the truth files that are PRESENT and skips every report
+    without one: the hand answers arrive a few reports at a time, and a stage
+    that failed on the ones not yet written would be unusable until the last
+    one was.
+
+    Restartable the same way the other stages are: each report writes
+    ``narrative/<ID>.json`` as it finishes and a later call skips it.
+    """
+    from report_ingest.engine import CostMeter, PrompterEngine
+    from report_ingest.narrative_scoring import score_one_report
+
+    if not truth_dir.is_dir():
+        raise FileNotFoundError(
+            f"no hand answers at {truth_dir}; the 'narrative' stage scores "
+            f"against them and cannot run without them")
+    truths: List[Tuple[str, dict]] = []
+    for path in sorted(truth_dir.glob("*.json")):
+        rid = path.stem
+        try:
+            truths.append((rid, json.loads(path.read_text(encoding="utf-8"))))
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"  skipping {path.name}: {type(exc).__name__}: {exc}")
+    if max_reports:
+        truths = truths[:int(max_reports)]
+    openset = (tuple(open_reports) if open_reports
+               else _open_set_or(truth_dir, DEFAULT_OPEN_NARRATIVE))
+    present = set(corpus.present_ids())
+    print(f"  narrative: {len(truths)} hand-answered report(s); open set "
+          f"{', '.join(openset)}")
+
+    done: Dict[str, dict] = {}
+    failures: Dict[str, str] = {}
+    for n, (rid, truth) in enumerate(truths, 1):
+        run_file = out / "narrative" / f"{rid}.json"
+        if run_file.is_file() and not redo:
+            blob = json.loads(run_file.read_text(encoding="utf-8"))
+            # The open/blind split is decided at SCORING time, never frozen
+            # into a run file, for the same reason the lab stage does it.
+            blob["set"] = "open" if rid in openset else "blind"
+            done[rid] = blob
+            print(f"  [{n}/{len(truths)}] {rid}: already done, skipping")
+            continue
+        if rid not in present:
+            failures[rid] = f"{rid} is not in the reports folder"
+            print(f"  [{n}/{len(truths)}] {rid}: skipped -- {failures[rid]}")
+            continue
+        meter = CostMeter()
+        engine = PrompterEngine(prompter, model, meter=meter)
+        started = time.time()
+        doc = None
+        try:
+            doc = corpus.open_report(rid, di="auto", warn=False)
+            score = score_one_report(truth, doc, engine, budget=budget,
+                                     report=rid)
+        except KeyboardInterrupt:
+            print("  interrupted; what is finished is on disk and a later "
+                  "call resumes")
+            break
+        except Exception as exc:                     # keep the run going
+            failures[rid] = f"{type(exc).__name__}: {exc}"
+            print(f"  [{n}/{len(truths)}] {rid}: FAILED -- {failures[rid]}")
+            traceback.print_exc()
+            continue
+        finally:
+            if doc is not None:
+                doc.close()
+        blob = {
+            "id": rid,
+            "run_date": date.today().isoformat(),
+            "set": "open" if rid in openset else "blind",
+            "model": model,
+            "served_by": engine.served_by,
+            "score": score.to_dict(),
+            "cost": meter.to_dict(),
+            "seconds": round(time.time() - started, 1),
+        }
+        run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        done[rid] = blob
+        recall = score.recall
+        print(f"  [{n}/{len(truths)}] {rid}: recall "
+              f"{recall.found}/{recall.total}, precision "
+              f"{score.precision.found}/{score.precision.total}, "
+              f"{score.model_calls} model call(s), "
+              f"{blob['cost']['input_tokens']:,} in / "
+              f"{blob['cost']['output_tokens']:,} out, "
+              f"{blob['seconds']:.0f} s")
+    return _score_narrative(done, failures, model, openset)
+
+
+def _open_set_or(truth_dir: Path,
+                 fallback: Sequence[str]) -> Tuple[str, ...]:
+    """The reports whose answers were written with the output in view."""
+    open_file = truth_dir / "OPEN.txt"
+    if open_file.is_file():
+        names = tuple(line.strip() for line
+                      in open_file.read_text(encoding="utf-8").splitlines()
+                      if line.strip())
+        if names:
+            return names
+    return tuple(fallback)
+
+
+def _narrative_totals(rows: Sequence[dict]) -> Dict[str, Dict[str, int]]:
+    """The three numbers, the kinds and the summaries, summed over reports."""
+    from report_ingest.narrative_scoring import KINDS
+
+    names = ["recall", "precision", "agreement"]
+    out: Dict[str, Dict[str, int]] = {
+        name: {"found": 0, "total": 0} for name in names}
+    for kind in KINDS:
+        out[f"kind.{kind}"] = {"found": 0, "total": 0}
+    for name in ("list_items.precision", "list_items.recall",
+                 "summaries.present", "summaries.within_limit"):
+        out[name] = {"found": 0, "total": 0}
+    for row in rows:
+        score = row.get("score") or {}
+        for name in names:
+            part = score.get(name) or {}
+            out[name]["found"] += int(part.get("found") or 0)
+            out[name]["total"] += int(part.get("total") or 0)
+        for kind, part in (score.get("by_kind") or {}).items():
+            key = f"kind.{kind}"
+            out.setdefault(key, {"found": 0, "total": 0})
+            out[key]["found"] += int(part.get("found") or 0)
+            out[key]["total"] += int(part.get("total") or 0)
+        for group in ("list_items", "summaries"):
+            for name, part in (score.get(group) or {}).items():
+                key = f"{group}.{name}"
+                out.setdefault(key, {"found": 0, "total": 0})
+                out[key]["found"] += int(part.get("found") or 0)
+                out[key]["total"] += int(part.get("total") or 0)
+    return out
+
+
+def _field_table(rows: Sequence[dict]) -> Dict[str, Dict[str, int]]:
+    """``field -> {right, asked, missed, invented, wrong}`` over the reports.
+
+    The per-field table is what says which QUESTIONS are hard, which is the
+    thing a prompt change is actually aimed at. A field nobody hand-answered
+    shows an asked of 0 and is not a failure.
+    """
+    out: Dict[str, Dict[str, int]] = {}
+    for row in rows:
+        for entry in ((row.get("score") or {}).get("fields") or []):
+            name = entry.get("field")
+            if not name:
+                continue
+            cell = out.setdefault(name, {"right": 0, "asked": 0, "missed": 0,
+                                         "invented": 0, "wrong": 0})
+            verdict = entry.get("verdict")
+            if verdict in ("missed", "wrong", "right", "too_long"):
+                cell["asked"] += 1
+            if verdict == "right":
+                cell["right"] += 1
+            elif verdict in ("missed", "invented", "wrong"):
+                cell[verdict] += 1
+    return out
+
+
+def _score_narrative(done: Dict[str, dict], failures: Dict[str, str],
+                     model: str, openset: Sequence[str]) -> Dict[str, Any]:
+    rows = [done[k] for k in sorted(done)]
+    sets: Dict[str, Any] = {}
+    for name in ("open", "blind", "all"):
+        group = [r for r in rows if name == "all" or r["set"] == name]
+        if not group:
+            continue
+        sets[name] = {"reports": [r["id"] for r in group],
+                      "n_reports": len(group),
+                      "totals": _narrative_totals(group)}
+    cost = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
+            "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
+    for row in rows:
+        for key in ("calls", "input_tokens", "output_tokens",
+                    "cache_read_tokens"):
+            cost[key] += row["cost"].get(key, 0)
+        cost["dollars"] += row["cost"].get("dollars", 0.0)
+        cost["seconds"] += row.get("seconds", 0.0)
+    return {
+        "date": date.today().isoformat(),
+        "model": model,
+        "served_by": sorted({r.get("served_by") for r in rows
+                             if r.get("served_by")}),
+        "open_set": list(openset),
+        "n_reports": len(rows),
+        "failures": dict(failures),
+        "sets": sets,
+        "fields": _field_table(rows),
+        "per_report": [{
+            "id": r["id"], "set": r["set"],
+            "recall": (r["score"].get("recall") or {}),
+            "precision": (r["score"].get("precision") or {}),
+            "agreement": (r["score"].get("agreement") or {}),
+            "model_calls": r["score"].get("model_calls", 0),
+            "unresolved": r["score"].get("unresolved", 0),
+            "error": r["score"].get("error"),
+            "input_tokens": r["cost"].get("input_tokens", 0),
+            "output_tokens": r["cost"].get("output_tokens", 0),
+            "seconds": r.get("seconds", 0.0),
+        } for r in rows],
+        "cost": cost,
+    }
+
+
+def _render_narrative(narrative: Dict[str, Any]) -> List[str]:
+    """The narrative stage, as tables carrying IDs, counts and rates only."""
+    from report_ingest.narrative_scoring import (
+        FUZZY_RATIO, KINDS, LIST_HIT_JACCARD,
+    )
+
+    out: List[str] = [
+        "", "# WP4 on the cluster: the narrative reader through Prompter", "",
+        f"Run {narrative['date']}. Model `{narrative['model']}`, "
+        f"{narrative['n_reports']} hand-answered report(s).",
+        "",
+        "**recall** is of the questions the report DOES answer, how many came "
+        "back right; **precision** is of the answers the reader gave, how "
+        "many were right; **agreement** counts every field including the ones "
+        "both sides left null, and flatters. Enumerations and counts are "
+        f"exact; a string matches at a partial ratio of {FUZZY_RATIO} or on a "
+        f"shared proper noun; a list at a Jaccard overlap of "
+        f"{LIST_HIT_JACCARD}; the four prose summaries are scored for "
+        "presence and word limit only, because whether a summary is a good "
+        "summary is a person's call.",
+    ]
+    if narrative.get("served_by"):
+        out.append(f"Served by: {', '.join(narrative['served_by'])}.")
+    if narrative.get("failures"):
+        out += ["", "**Reports that failed and are NOT in any number "
+                    "below:**"]
+        out += [f"- {rid}: {why}"
+                for rid, why in narrative["failures"].items()]
+    out += ["", f"Open set (answers written with the output in view): "
+                f"{', '.join(narrative['open_set'])}. Everything else is "
+                f"blind."]
+
+    for name in ("open", "blind", "all"):
+        row = narrative["sets"].get(name)
+        if not row:
+            continue
+        totals = row["totals"]
+        out += ["", f"## {name} -- {row['n_reports']} report(s)", "", "```",
+                f"{'metric':<26}{'rate':>16}"]
+        for metric in ("recall", "precision", "agreement"):
+            out.append(f"{metric:<26}{_rate(totals[metric]):>16}")
+        out.append("")
+        for kind in KINDS:
+            cell = totals.get(f"kind.{kind}")
+            if cell and cell["total"]:
+                out.append(f"{'  recall, ' + kind:<26}{_rate(cell):>16}")
+        for label, key in (("list items, precision", "list_items.precision"),
+                           ("list items, recall", "list_items.recall"),
+                           ("summaries written", "summaries.present"),
+                           ("summaries in limit",
+                            "summaries.within_limit")):
+            cell = totals.get(key)
+            if cell and cell["total"]:
+                out.append(f"{'  ' + label:<26}{_rate(cell):>16}")
+        out.append("```")
+
+    fields = narrative.get("fields") or {}
+    asked = {name: cell for name, cell in fields.items() if cell["asked"]}
+    if asked:
+        out += ["", "## Per question", "", "```",
+                f"{'field':<30}{'asked':>7}{'right':>7}{'missed':>8}"
+                f"{'wrong':>7}{'invented':>10}"]
+        for name in sorted(asked, key=lambda k: (-asked[k]["asked"], k)):
+            cell = asked[name]
+            out.append(f"{name:<30}{cell['asked']:>7}{cell['right']:>7}"
+                       f"{cell['missed']:>8}{cell['wrong']:>7}"
+                       f"{cell['invented']:>10}")
+        out.append("```")
+
+    out += ["", "## Per report", "", "```",
+            f"{'report':<8}{'set':<7}{'recall':>14}{'precision':>14}"
+            f"{'calls':>7}{'unres':>7}{'in':>10}{'out':>8}{'s':>7}"]
+    for r in narrative["per_report"]:
+        if r.get("error"):
+            out.append(f"{r['id']:<8}{r['set']:<7}ERROR "
+                       f"{str(r['error'])[:50]}")
+            continue
+        out.append(
+            f"{r['id']:<8}{r['set']:<7}{_rate(r['recall']):>14}"
+            f"{_rate(r['precision']):>14}{r['model_calls']:>7}"
+            f"{r['unresolved']:>7}{r['input_tokens']:>10,}"
+            f"{r['output_tokens']:>8,}{r['seconds']:>7.0f}")
+    out.append("```")
+
+    cost = narrative["cost"]
+    n = max(1, narrative["n_reports"])
+    out += ["", "## Cost", "", "```",
+            f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
+            f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
+            f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s",
+            f"per report: {cost['calls'] / n:.1f} calls, "
             f"{cost['input_tokens'] / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
             f"{cost['seconds'] / n:.0f} s",

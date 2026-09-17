@@ -550,3 +550,123 @@ class TestTheLabStage:
         scored = _score_lab({"gradation__R06_p67": row}, {}, "m", ("R06",))
         assert scored["sets"]["open"]["n_sheets"] == 1
         assert "blind" not in scored["sets"]
+
+
+# ---------------------------------------------------------------------------
+# the narrative stage (WP4)
+# ---------------------------------------------------------------------------
+
+def _narrative_blob(rid: str, which: str, recall, precision):
+    """One report's saved narrative run, as the stage writes it."""
+    found, total = recall
+    got, gave = precision
+    return {
+        "id": rid, "run_date": "2026-09-17", "set": which,
+        "model": "funhouse-gpt-high", "served_by": "gpt-5.1-2026",
+        "score": {
+            "report": rid,
+            "recall": {"found": found, "total": total},
+            "precision": {"found": got, "total": gave},
+            "agreement": {"found": 30, "total": 37},
+            "by_kind": {"int": {"found": 1, "total": 2},
+                        "string": {"found": found - 1, "total": total - 2},
+                        "enum": {"found": 1, "total": 1}},
+            "list_items": {"precision": {"found": 3, "total": 4},
+                           "recall": {"found": 3, "total": 5}},
+            "summaries": {"present": {"found": 2, "total": 3},
+                          "within_limit": {"found": 2, "total": 2}},
+            "fields": [
+                {"field": "boringCount", "kind": "int", "verdict": "right",
+                 "ok": True},
+                {"field": "postName", "kind": "string", "verdict": "missed",
+                 "ok": False},
+                {"field": "projectNumber", "kind": "string",
+                 "verdict": "invented", "ok": False},
+            ],
+            "unresolved": 2, "model_calls": 1,
+            "cost": {}, "pages": [2, 3, 4], "error": None,
+        },
+        "cost": {"calls": 1, "input_tokens": 21000, "output_tokens": 1200,
+                 "cache_read_tokens": 0, "dollars": 0.0},
+        "seconds": 41.0,
+    }
+
+
+class TestTheNarrativeStage:
+    """The WP4 stage: scored per report, open and blind apart, restartable."""
+
+    def test_it_is_a_stage_name(self):
+        assert "narrative" in cs.STAGE_NAMES
+
+    def test_without_hand_answers_it_is_refused_before_anything_runs(
+            self, tmp_path):
+        with pytest.raises(ValueError, match="narrative_truth_dir"):
+            cs.score_on_cluster(reports_dir=tmp_path, prompter=object(),
+                                stages=("narrative",))
+
+    def test_the_sets_are_split_and_the_totals_add_up(self):
+        from report_ingest.cluster_scoring import _score_narrative
+
+        done = {"R36": _narrative_blob("R36", "open", (9, 10), (9, 11)),
+                "R22": _narrative_blob("R22", "blind", (5, 10), (5, 12))}
+        scored = _score_narrative(done, {"R19": "no narrative item"},
+                                  "funhouse-gpt-high", ("R36",))
+
+        assert scored["n_reports"] == 2
+        assert scored["sets"]["open"]["reports"] == ["R36"]
+        assert scored["sets"]["blind"]["reports"] == ["R22"]
+        everything = scored["sets"]["all"]["totals"]
+        assert everything["recall"] == {"found": 14, "total": 20}
+        assert everything["precision"] == {"found": 14, "total": 23}
+        assert everything["summaries.present"] == {"found": 4, "total": 6}
+
+    def test_the_per_question_table_says_which_questions_are_hard(self):
+        from report_ingest.cluster_scoring import _score_narrative
+
+        done = {"R36": _narrative_blob("R36", "open", (9, 10), (9, 11)),
+                "R22": _narrative_blob("R22", "blind", (5, 10), (5, 12))}
+        scored = _score_narrative(done, {}, "m", ("R36",))
+
+        assert scored["fields"]["boringCount"] == {
+            "right": 2, "asked": 2, "missed": 0, "invented": 0, "wrong": 0}
+        assert scored["fields"]["postName"]["missed"] == 2
+        # An invented answer is counted but was never asked for.
+        assert scored["fields"]["projectNumber"]["asked"] == 0
+        assert scored["fields"]["projectNumber"]["invented"] == 2
+
+    def test_the_report_names_nobody_and_carries_the_rates(self):
+        from report_ingest.cluster_scoring import (
+            _render_narrative, _score_narrative,
+        )
+
+        done = {"R36": _narrative_blob("R36", "open", (9, 10), (9, 11)),
+                "R22": _narrative_blob("R22", "blind", (5, 10), (5, 12))}
+        scored = _score_narrative(done, {"R19": "no narrative item"}, "m",
+                                  ("R36",))
+        text = "\n".join(_render_narrative(scored))
+
+        assert "R36" in text and "R22" in text
+        assert "R19: no narrative item" in text
+        assert "Per question" in text and "Per report" in text
+        assert "90% 9/10" in text                  # R36's recall
+        assert "presence and word limit only" in text
+
+    def test_a_report_moved_into_the_open_set_moves_in_the_scorecard(self):
+        from report_ingest.cluster_scoring import _score_narrative
+
+        row = _narrative_blob("R06", "blind", (4, 8), (4, 9))
+        row["set"] = "open"           # what _run_narrative does on a resume
+        scored = _score_narrative({"R06": row}, {}, "m", ("R06",))
+
+        assert scored["sets"]["open"]["n_reports"] == 1
+        assert "blind" not in scored["sets"]
+
+    def test_the_open_set_is_read_off_the_truth_folder(self, tmp_path):
+        from report_ingest.cluster_scoring import (
+            DEFAULT_OPEN_NARRATIVE, _open_set_or,
+        )
+
+        assert _open_set_or(tmp_path, DEFAULT_OPEN_NARRATIVE) == \
+            DEFAULT_OPEN_NARRATIVE
+        (tmp_path / "OPEN.txt").write_text("R15\nR28\n", encoding="utf-8")
+        assert _open_set_or(tmp_path, DEFAULT_OPEN_NARRATIVE) == ("R15", "R28")
