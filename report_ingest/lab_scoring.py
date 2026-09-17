@@ -50,10 +50,11 @@ from report_ingest.model import Quantity, si_numbers, to_si
 
 __all__ = [
     "UNIT_SUFFIX", "SIEVE_MM", "DEPTH_TOL_M", "EXACT_TOL", "PASSING_TOL",
-    "METRICS", "Score", "LabScore", "Expectation",
+    "METRICS", "MODEL_ONLY", "Score", "LabScore", "Expectation",
     "find", "number", "quantity", "reported", "depth_unit_of", "report_of",
-    "pages_of", "sieve_points", "curve_in", "expectations_for",
-    "score_tables", "score_record", "score_one_sheet", "table_numbers",
+    "pages_of", "sieve_points", "grading_in", "curve_in", "split_unit",
+    "expectations_for", "score_tables", "score_record", "score_one_sheet",
+    "table_numbers",
 ]
 
 #: A specimen is linked when its depth lands within this, in metres. The log

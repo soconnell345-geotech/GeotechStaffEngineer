@@ -827,7 +827,7 @@ def _score_lab(done: Dict[str, dict], failures: Dict[str, str], model: str,
 def _render_lab(lab: Dict[str, Any]) -> List[str]:
     """The lab stage, as tables that carry IDs, kinds, counts and rates only."""
     from report_ingest.lab_scoring import (
-        DEPTH_TOL_M, EXACT_TOL, METRICS, PASSING_TOL,
+        DEPTH_TOL_M, EXACT_TOL, METRICS, MODEL_ONLY, PASSING_TOL,
     )
 
     out: List[str] = [
@@ -837,8 +837,9 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
         "",
         f"**before** is what the page's own detected TABLES hold; **after** "
         f"is what the reader's records hold. A table has no idea what test "
-        f"it is on or which boring it belongs to, so `kind` and `link` have "
-        f"no before column at all, and the other three ask of the tables "
+        f"it is on or which boring it belongs to, so "
+        f"{' and '.join('`' + m + '`' for m in MODEL_ONLY)} have "
+        f"no before column at all, and the others ask of the tables "
         f"only whether the number is on the page. Tolerances: a depth links "
         f"within {DEPTH_TOL_M} m, compared in metres whatever the sheet "
         f"prints; an index value is exact to {EXACT_TOL}; a grading within "
