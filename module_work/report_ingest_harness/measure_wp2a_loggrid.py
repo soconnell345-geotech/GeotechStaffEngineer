@@ -88,6 +88,14 @@ INDEX_KEYS = ("wc", "duw", "ll", "pl", "pi", "fines", "qu", "rqd", "pp_kpa")
 NO_RULER_DECLARED = "no depth ruler"
 NO_RULER_SAID = "no depth ruler was found"
 
+#: How much of the depth range the truth states a found ruler must cover
+#: before it is called right rather than merely found. A ruler fitted to the
+#: wrong column reads the page at the wrong scale or the wrong datum, and it
+#: is WORSE than no ruler: no ruler withholds every depth, while a wrong one
+#: hands back a page of confident numbers. So the scorecard tells the two
+#: apart -- "yes", "wrong" and "none" -- and only "yes" counts.
+RULER_COVERAGE = 0.50
+
 #: Truth field keys that the grid's canonical keys answer. The truth was
 #: written to the record's vocabulary, the grid to the page's; this is the
 #: join, and it is a table on purpose so it is easy to argue with.
@@ -210,6 +218,8 @@ class LogScore:
     #: Cells the grid placed in a blow-count column on a sheet the truth says
     #: samples nothing. None where the truth does state samples.
     stray_sample_cells: Optional[int] = None
+    #: "yes", "wrong" or "none" -- see RULER_COVERAGE.
+    ruler_verdict: str = "none"
     #: Why a log was deliberately left unscored, when it was.
     not_scored: Optional[str] = None
     warnings: List[str] = field(default_factory=list)
@@ -252,6 +262,8 @@ def score_one(truth: Dict[str, Any], di: str = "auto") -> LogScore:
         # so. Nothing below it can be scored by depth, and pretending to is
         # worse than recording that it was not scored.
         said = any(NO_RULER_SAID in w for w in grid.warnings)
+        out.ruler_verdict = "refused" if (not grid.rulers and said) else (
+            "wrong" if grid.rulers else "none")
         out.ruler.add(not grid.rulers and said,
                       "a ruler was claimed on a sheet that has none"
                       if grid.rulers else "no warning said the page has no "
@@ -267,8 +279,30 @@ def score_one(truth: Dict[str, Any], di: str = "auto") -> LogScore:
     def cell_m(value):
         return _to_m(value, grid.unit)
 
-    # (a) the ruler, and its unit
-    out.ruler.add(bool(grid.rulers), "no ruler on any page")
+    # (a) the ruler: found at all, and reading the page the truth describes
+    stated = [truth_m(x["top"]) for x in truth_layers
+              if x.get("top") is not None]
+    stated += [truth_m(x["top"]) for x in truth_samples
+               if x.get("top") is not None]
+    read = [cell_m(c.depth) for c in grid.rows if c.depth is not None]
+    if not grid.rulers:
+        out.ruler_verdict = "none"
+    elif not stated or not read:
+        out.ruler_verdict = "yes"
+    elif len(set(stated)) >= 2:
+        lo, hi = min(stated), max(stated)
+        span = hi - lo
+        overlap = min(hi, max(read)) - max(lo, min(read))
+        out.ruler_verdict = ("yes" if overlap >= RULER_COVERAGE * span
+                             else "wrong")
+    else:
+        # One stated depth is not a range to overlap; all it can say is
+        # whether the page the ruler read reaches that depth at all.
+        out.ruler_verdict = (
+            "yes" if (min(read) - LAYER_TOL_M <= stated[0]
+                      <= max(read) + LAYER_TOL_M) else "wrong")
+    out.ruler.add(out.ruler_verdict == "yes",
+                  f"ruler {out.ruler_verdict}")
     out.unit.add(grid.unit == truth_unit,
                  f"unit {grid.unit!r} not {truth_unit!r}")
 
@@ -482,7 +516,7 @@ def report(scores: Sequence[LogScore], openset: Sequence[str],
                 continue
             lines.append(
                 f"{s.log_id:<12}{name:<7}"
-                f"{'yes' if s.ruler.found else 'NO':>7}"
+                f"{s.ruler_verdict:>7}"
                 f"{'yes' if s.unit.found else 'NO':>7}"
                 f"{_pct(s.samples):>13}{_pct(s.layers):>13}"
                 f"{_pct(s.index):>13}{_pct(s.fields):>13}"
