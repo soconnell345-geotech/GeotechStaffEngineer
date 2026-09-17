@@ -3197,3 +3197,89 @@ warnings seen:
   R34_p49: no column header states the depth unit; m was read off depths written into the log's own text
 
 ```
+
+---
+
+### log_grid scorecard, round 4 (collinear rule segments)
+
+The lead found it from geometry alone: on the gINT sheets the rule under the
+header row IS there, drawn as four collinear segments with a 14 pt gap where
+the depth-scale column's tick marks live. Measured stroke by stroke no piece
+crosses the form, which is why round 3 concluded the rule did not exist.
+
+Collinear pieces sharing a coordinate and leaving a gap no wider than one
+narrow column (20 pt) are now joined before any length is measured -- column
+edges, the header band and stratum lines alike. That alone named every column
+on those sheets: MATERIAL SYMBOL, Elev. (m), USCS, Sample Description, Depth
+Scale (m), Number, Type, Recov. (cm), Penetr. resist BL/15cm, Remarks. Ten of
+fifteen columns each, from a vocabulary that already held the words.
+
+Two scorer rules were wrong as well, and both were the scorer imposing
+structure the grid never claims:
+
+- **A blow record spread over one cell per drive has no order.** Each cell is
+  an independent value with its own depth and its own box. Requiring page
+  order failed a sheet whose drives read 4, 6, 8 down the column against a
+  hand truth of 4, 8, 6. A record found inside ONE cell must still be in
+  order -- there the order is part of what the cell says -- but a stack of
+  cells is now matched as a multiset.
+- **The blow-count column is tried before the wider family.** A sample id
+  standing between two drives is in the family and its number is not a drive.
+  (A dash after a letter is also no longer read as a minus, so "S-7" is seven
+  and not minus seven: fixed in planlens, not here.)
+- **The ruler verdict asks of each stated depth whether the page reaches it**,
+  rather than asking whether the page covers the truth's RANGE. A range is
+  meaningless where a truth states two depths a third of a metre apart on a
+  sheet spanning eight, and asking it that way called a correct continuation
+  sheet wrong.
+
+**Result.** The open six did not move for the fourth round running: 407 cells
+placed, all rates identical. On the blind nine, blow records and N values went
+24/50 to 50/50, the unit 5/8 to 6/8 and index values 7/17 to 8/17; the ruler
+stays 9/9 with no wrong ruler anywhere and layer tops 22/26. Every gINT sheet
+that refused a ruler two rounds ago now reads its samples in full.
+
+### log_grid scorecard, 2026-09-17
+
+Tolerances: sample and index values 0.15 m, layer tops 0.3 m; depths compared in metres whatever the log prints. Open set = R36, R37, R06, R07, R15, R28.
+
+```
+log         set      ruler   unit      samples       layers        index       fields  cells unmatched
+------------------------------------------------------------------------------------------------------
+R06_p51     open       yes    yes     100% 4/4     100% 5/5     100% 4/4      75% 6/8     62        54
+R07_p30     open       yes    yes     100% 8/8     100% 9/9     100% 6/6   100% 13/13    103        93
+R15_p46     open       yes    yes     100% 8/8     100% 4/4   100% 14/14   100% 13/13     75        56
+R28_p57     open       yes    yes   100% 16/16     100% 5/5      75% 3/4   100% 13/13     78        66
+R36_p38     open       yes    yes     100% 8/8     100% 6/6     100% 8/8     82% 9/11     34        19
+R37_p26     open       yes    yes   100% 13/13     100% 5/5            -     90% 9/10     55        42
+ALL         open    100% 6/6 100% 6/6   100% 57/57   100% 34/34    97% 35/36    93% 63/68    407       330
+
+R02_p123    blind      yes     NO            -     100% 1/1            -      33% 2/6     45        45
+R03_p135    blind      yes    yes            -     100% 1/1     100% 1/1      40% 2/5     42        41
+R04_p59     blind      yes     NO            -     100% 5/5            -      33% 2/6     32        32
+R13_p45     blind      yes    yes   100% 26/26     100% 5/5     54% 7/13    83% 10/12    105        91
+R21_p96     blind      yes    yes     100% 6/6      67% 2/3       0% 0/2      40% 2/5     48        45
+R25_p19     blind  refused     NO            -            -            -            -      0         0
+R30_p65     blind      yes    yes     100% 8/8     100% 1/1            -      40% 2/5     45        41
+R31_p278    blind      yes    yes            -     100% 2/2            -   100% 11/11     27        27
+R34_p49     blind      yes    yes   100% 10/10      62% 5/8       0% 0/1      50% 2/4     85        80
+ALL         blind   100% 9/9  75% 6/8   100% 50/50    85% 22/26     47% 8/17    61% 33/54    429       402
+
+notes:
+  R02_p123: the truth states no samples; the grid put 0 numeric cell(s) in a blow-count column
+  R25_p19: tabular sheet with no depth scale: 10 layers and 1 samples not scored by depth
+  R31_p278: the truth states no samples; the grid put 0 numeric cell(s) in a blow-count column
+
+warnings seen:
+  R02_p123: the depth unit is not stated on these pages and could not be read from their text; depths are in whatever the ruler prints
+  R03_p135: no column header states the depth unit; ft was read off depths written into the log's own text
+  R04_p59: the depth unit is not stated on these pages and could not be read from their text; depths are in whatever the ruler prints
+  R13_p45: page 45: the text was read optically (azure_di); boxes and column edges are softer than on an embedded text layer
+  R13_p45: page 45: no ruled column edges were found; the columns below come from the header labels alone and their x bands are approximate
+  R15_p46: page 46: 1 text line(s) run diagonally across the page (a watermark or a stamp) and were left out of the grid
+  R25_p19: page 19: no ruled column edges were found; the columns below come from the header labels alone and their x bands are approximate
+  R25_p19: page 19: no columns could be laid out — nothing on this page is placed
+  R25_p19: page 19: no depth ruler was found — nothing on this page carries a depth
+  R25_p19: no description column was identified, so no layers were read
+
+```

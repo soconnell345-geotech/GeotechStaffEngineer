@@ -88,8 +88,8 @@ INDEX_KEYS = ("wc", "duw", "ll", "pl", "pi", "fines", "qu", "rqd", "pp_kpa")
 NO_RULER_DECLARED = "no depth ruler"
 NO_RULER_SAID = "no depth ruler was found"
 
-#: How much of the depth range the truth states a found ruler must cover
-#: before it is called right rather than merely found. A ruler fitted to the
+#: How many of the depths the truth states must fall on the page the ruler
+#: read before it is called right rather than merely found. A ruler fitted to the
 #: wrong column reads the page at the wrong scale or the wrong datum, and it
 #: is WORSE than no ruler: no ruler withholds every depth, while a wrong one
 #: hands back a page of confident numbers. So the scorecard tells the two
@@ -289,18 +289,16 @@ def score_one(truth: Dict[str, Any], di: str = "auto") -> LogScore:
         out.ruler_verdict = "none"
     elif not stated or not read:
         out.ruler_verdict = "yes"
-    elif len(set(stated)) >= 2:
-        lo, hi = min(stated), max(stated)
-        span = hi - lo
-        overlap = min(hi, max(read)) - max(lo, min(read))
-        out.ruler_verdict = ("yes" if overlap >= RULER_COVERAGE * span
-                             else "wrong")
     else:
-        # One stated depth is not a range to overlap; all it can say is
-        # whether the page the ruler read reaches that depth at all.
-        out.ruler_verdict = (
-            "yes" if (min(read) - LAYER_TOL_M <= stated[0]
-                      <= max(read) + LAYER_TOL_M) else "wrong")
+        # Does the page the ruler read reach the depths the truth states?
+        # Asked of each stated depth rather than of the truth's RANGE,
+        # because a range is meaningless where the truth states two depths a
+        # third of a metre apart on a sheet spanning eight, and asking it
+        # that way called a correct continuation sheet wrong.
+        lo, hi = min(read) - LAYER_TOL_M, max(read) + LAYER_TOL_M
+        on_page = sum(1 for d in stated if lo <= d <= hi)
+        out.ruler_verdict = ("yes" if on_page >= RULER_COVERAGE * len(stated)
+                             else "wrong")
     out.ruler.add(out.ruler_verdict == "yes",
                   f"ruler {out.ruler_verdict}")
     out.unit.add(grid.unit == truth_unit,
@@ -321,6 +319,15 @@ def score_one(truth: Dict[str, Any], di: str = "auto") -> LogScore:
         states only the top, the window is the top plus a driven sample.
         """
         lo, hi = window
+        # The truth writes an index value as a number most of the time and as
+        # a string when the log printed one ("25cm 56%", "<1"). Either way
+        # what has to be found on the page are the numbers in it.
+        if value is None or isinstance(value, (int, float)):
+            wanted = [] if value is None else [float(value)]
+        else:
+            wanted = list(_numbers(str(value)))
+        if value is not None and not wanted:
+            return None
         best = None
         run: List[Tuple[float, float, int, int, float]] = []
         for i, cell in enumerate(cells):
@@ -343,19 +350,35 @@ def score_one(truth: Dict[str, Any], di: str = "auto") -> LogScore:
                     # 4, 10, 10, 11 and no record would ever match.
                     run.append((cell.depth or 0.0, cell.bbox[0], order, i, n))
                 continue
-            if any(_close(n, value) for n in cell.numbers):
+            if any(_close(n, w) for n in cell.numbers for w in wanted):
                 if best is None:
                     best = i
         if blows is not None:
-            # Some forms print a blow record as one cell ("5-9-12") and some
-            # print each drive on its own line down the sampler column. Both
-            # are the same record at the same depth, so the numbers standing
-            # in the window are read in page order and the record is looked
-            # for in THEM, not inside any one cell.
             run.sort()
-            if _blows_match([n for *_rest, n in run], blows):
+            numbers = [n for *_rest, n in run]
+            # One cell carrying the whole record ("5-9-12") must carry it IN
+            # ORDER: the order is part of what that cell says.
+            if _blows_match(numbers, blows):
                 return run[0][3] if run else None
-            return None
+            # Spread over one cell per drive, order is not something the grid
+            # asserts -- each cell is an independent value with its own depth
+            # and its own box -- so what is asked of a stack of cells is that
+            # the drives are THERE, at the right depth, in a blow-count
+            # column. Demanding page order of them failed a sheet whose
+            # drives read 4, 6, 8 down the column against a truth of 4, 8, 6.
+            want: List[float] = []
+            for b in blows:
+                if isinstance(b, (int, float)):
+                    want.append(float(b))
+                else:
+                    want.extend(_numbers(str(b)))
+            pool = list(numbers)
+            for w in want:
+                hit = next((n for n in pool if _close(n, w)), None)
+                if hit is None:
+                    return None
+                pool.remove(hit)
+            return run[0][3] if run else None
         return best
 
     def window_of(sample):
@@ -375,7 +398,12 @@ def score_one(truth: Dict[str, Any], di: str = "auto") -> LogScore:
             continue
         blows = sample.get("blows")
         if blows:
-            hit = find(None, window, COLUMN_FAMILY["blows"], blows=blows)
+            # A blow-count column first, and only then the wider family. A
+            # sample id standing between two drives ("S-7") is in the family
+            # and its number is not a drive.
+            hit = find(None, window, ("blows", "n_value"), blows=blows)
+            if hit is None:
+                hit = find(None, window, COLUMN_FAMILY["blows"], blows=blows)
             out.samples.add(hit is not None,
                             f"blows {blows} at {depth} {truth_unit}")
             if hit is not None:
@@ -389,7 +417,7 @@ def score_one(truth: Dict[str, Any], di: str = "auto") -> LogScore:
                 # drives standing at the right depth ARE the N value being
                 # present, and the scorer says so rather than counting a
                 # miss the reader could not have avoided.
-                hit = find(None, window, COLUMN_FAMILY["blows"], blows=blows)
+                hit = find(None, window, ("blows", "n_value"), blows=blows)
                 drives = [b for b in blows if isinstance(b, (int, float))]
                 if not (hit is not None and len(drives) >= 3
                         and _close(drives[1] + drives[2],
