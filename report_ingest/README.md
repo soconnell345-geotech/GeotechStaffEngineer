@@ -657,6 +657,13 @@ resumes, so the full run afterwards does not redo them.
 The four stages are described one at a time below, each with the cell that
 runs it alone.
 
+<!-- A FIFTH STAGE IS COMING: `vision_labels`, page images read with
+     structured output as a first-pass page classifier. It gets one more line
+     in the `stages` tuple above, one more row in the upload table if it needs
+     a file of its own, and its own "### Scoring ..." section at the end of
+     this run of sections. Add it here rather than reworking the four. -->
+
+
 ### Scoring the log reader as well (`stages=("labels", "logs")`)
 
 The `logs` stage runs `log_grid` and then `read_log` over each hand-truthed

@@ -112,10 +112,15 @@ Key conventions:
   §11). **First live check:** the owner's own four-stage scoring run —
   `%pip install "geotech-staff-engineer==5.20.0"`, one
   `score_on_cluster(stages=("labels","logs","lab","narrative"), truth_dir=…)`
-  cell with `max_reports=2`, and `RESULTS.md` comes back. **Open item before
-  the tag:** `report_ingest/model.py` publishes two corpus-derived vocabulary
-  strings that name the private corpus; they must not reach a public push
-  (HANDOFF §0a-current says what to do). Plan and parked work:
+  cell with `max_reports=2`, and `RESULTS.md` comes back. **A fifth stage,
+  `vision_labels`, lands on top of this before the tag** — page images read
+  with structured output as a first-pass page classifier — so the stage lists
+  here, in HANDOFF and in `report_ingest/README.md` each have one more line
+  coming. **Raised and ruled:** `report_ingest/model.py` publishes the
+  owner's own answer vocabulary, and two values name a building type; it is
+  generic taxonomy rather than text out of a private report, it stays
+  verbatim so the hand answers still match, and the owner can object before
+  the tag (HANDOFF §0a-current). Plan and parked work:
   `module_work/REPORT_INGEST_PLAN.md` (WP5). 5.19.0 follows.
 
 - **app 5.19.0** (tag `v5.19.0`, 2026-09-17) — the report-ingest package, and

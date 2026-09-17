@@ -298,7 +298,10 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         ``"narrative"`` is WP4 -- the narrative reader over every report that
         has a hand answer, scored field by field on recall, precision and the
         flattering agreement. Pass any combination; all four is
-        ``stages=("labels", "logs", "lab", "narrative")``.
+        ``stages=("labels", "logs", "lab", "narrative")``. A fifth,
+        ``"vision_labels"``, is being added on top of this release: add it to
+        ``STAGE_NAMES``, give it a ``TRUTH_SUBDIRS`` entry if it needs hand
+        truth of its own, and it joins the rest here.
     truth_dir
         ONE truth root for every scoring stage: a folder holding ``logs/``,
         ``lab/`` and ``narrative/``, named after the stages that read them.

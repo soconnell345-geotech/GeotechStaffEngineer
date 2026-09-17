@@ -16,20 +16,26 @@ the pin, the docs, the gate and the wheel check. **Nothing is merged, tagged,
 pushed or published** — the owner gives the word. planlens 0.6.0 publishes
 FIRST, as it did for 0.5.0, then the app.
 
-**STOP BEFORE THE TAG — one open item.** `report_ingest/model.py` (lines 1252
-and 1253, and `report_ingest/tests/test_narrative_reader.py` lines 257 and
-264) publishes two vocabulary strings read off the hand answers that NAME THE
-PRIVATE CORPUS. Both files ship in the wheel and this repo is public, so the
-words reach GitHub on the first push and PyPI on the first publish. They
-arrived in commit `5628ce1`. They are not in any earlier release and nothing
-else on either branch trips the privacy grep. **Do not push until this is
-settled.** The recommended fix: the two fields are already plain `str` rather
-than `Literal`, so the vocabulary is only a prompt hint and a folding table
-and nothing refuses an answer — give `model.py` a GENERIC default list and
-load the owner's real wording at runtime from a private file that travels
-with the truth folders. Shortening the published strings instead would move
-the numbers, because the narrative scorer matches strings at a rapidfuzz
-partial ratio of 85 and the hand answers are the long form.
+**The published answer vocabulary — raised, ruled on, still open to the
+owner.** `report_ingest/model.py` publishes the owner's own answer vocabulary
+for four narrative questions, read off the hand answers rather than guessed
+(commit `5628ce1`), and two of its values name a building type. Both the
+module and `report_ingest/tests/test_narrative_reader.py` ship in the wheel
+and this repo is public, so it was raised against the privacy word list
+before the tag. **Ruled: it is the owner's GENERIC TAXONOMY, not text out of
+any private report — no project, site, firm or person — and the word list was
+written to catch report text.** The values stay VERBATIM, because the
+narrative scorer matches strings at a rapidfuzz partial ratio of 85 and the
+hand answers are the long form; shortening them would turn correct readings
+into misses and move the numbers. The owner has been told and can still
+object before anything is tagged. If they do, the fix that costs no accuracy
+is a GENERIC default list in `model.py` with the real wording loaded at
+runtime from a private file travelling with the truth folders — the two
+fields are already plain `str` rather than `Literal`, so the vocabulary is
+only a prompt hint and a folding table and nothing refuses an answer either
+way. That would be a follow-up commit, not a history edit: `5628ce1` and
+`17f728a` stand as they are. Nothing else on either branch trips the word
+list.
 
 **What shipped.** WP2 through WP4 of the report-ingest train, on top of the
 WP0/WP1b library that went out in 5.19.0. `ReportRecord` is the product and
@@ -93,6 +99,21 @@ narrative: every number in the ledger for those three is either the grid
 alone, the tables alone, or nothing yet, and the model numbers arrive with
 the owner's cluster run. And the sub-agent's flag default stays `False` until
 that run says the readers work on the tier that will do the work.
+
+**Parked follow-up — the sub-agent's middleware enforces nothing.** deepagents
+0.6.8 reads only name/description/runnable from a `CompiledSubAgent` spec, so
+`ScratchFilesystemGuard` and `ModelCallBudgetMiddleware` declared on the
+`report_ingest` sub-agent enforce nothing; the real ceilings are the
+per-reader `Budgets` in Python and the graph exposes no filesystem tool to any
+model. Follow-up: enforce the guard and the budget inside the compiled graph
+(or wrap the runnable) so the sub-agent has the same protections as the calc
+and references sub-agents.
+
+**Landing on top of this BEFORE the tag:** a FIFTH cluster-scoring stage,
+`vision_labels` — page images read with structured output as a first-pass page
+classifier — from another builder. The stage lists in this entry, in
+`CLAUDE.md` and in `report_ingest/README.md` each have one more line coming;
+leave room for it rather than rewording them.
 
 ### 5.19.0 RELEASED (2026-09-17, tag `v5.19.0`) — the `report_ingest` package, with planlens 0.5.0
 

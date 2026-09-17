@@ -381,6 +381,21 @@ Prompter, on the tier the app actually runs on.
 spreadsheet is never edited — a hand label records what a person decided);
 Azure DI results for four reports would help and do not exist yet; one label
 sheet matches no corpus report and stays unmatched rather than being
-force-fitted to one of the same length. And before any of it is pushed, the
-two corpus-naming vocabulary strings in `report_ingest/model.py` have to come
-out of the public tree (HANDOFF §0a-current).
+force-fitted to one of the same length. The owner's published answer
+vocabulary in `report_ingest/model.py` was raised against the privacy word
+list and ruled generic taxonomy rather than private report text; it stays
+verbatim so the hand answers still match, and the owner can object before the
+tag (HANDOFF §0a-current).
+
+**Follow-up — the sub-agent's middleware enforces nothing.** deepagents 0.6.8
+reads only name/description/runnable from a `CompiledSubAgent` spec, so
+`ScratchFilesystemGuard` and `ModelCallBudgetMiddleware` declared on the
+`report_ingest` sub-agent enforce nothing; the real ceilings are the
+per-reader `Budgets` in Python and the graph exposes no filesystem tool to any
+model. Follow-up: enforce the guard and the budget inside the compiled graph
+(or wrap the runnable) so the sub-agent has the same protections as the calc
+and references sub-agents.
+
+**Next on top of 5.20.0, before the tag:** a fifth cluster-scoring stage,
+`vision_labels` — page images read with structured output as a first-pass page
+classifier — added by another builder.
