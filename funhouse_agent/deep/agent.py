@@ -60,7 +60,10 @@ try:  # the spec deepagents auto-adds; re-declared below to carry the guard
     )
 except Exception:  # noqa: BLE001 - layout differs: leave deepagents' default
     _GENERAL_PURPOSE_SPEC = None
-from funhouse_agent.deep.prompt import build_domain_prompt
+from funhouse_agent.deep.prompt import (
+    REPORT_INGEST_NUDGE,
+    build_domain_prompt,
+)
 from funhouse_agent.deep.setup_agent import build_setup_subagent
 from funhouse_agent.deep.tools import (
     DEFAULT_MAX_RESULT_CHARS,
@@ -641,6 +644,36 @@ def _join_prompts(*parts):
     return "\n\n".join(p for p in parts if p) or None
 
 
+#: The model-call budget declared on the report-ingest sub-agent's spec.
+#: DECLARATIVE, and said so here because the code cannot say it: deepagents
+#: uses a CompiledSubAgent's runnable as provided and never reads a spec's
+#: middleware for one, and this sub-agent has no model of its own to budget
+#: anyway. What bounds the ingest is Python -- ``report_ingest.graph.Budgets``,
+#: applied per reader. The entry is here so that every sub-agent in this build
+#: carries the same two middlewares and a reader comparing them can see that
+#: none was forgotten.
+DEFAULT_REPORT_INGEST_MAX_MODEL_CALLS = 4
+
+
+def _report_ingest_engine_factory(engine):
+    """A factory that digs the app's live Prompter out of ``engine``.
+
+    Called once per ingest run so each run gets its own cost meter. Returns
+    None when this deployment has no Prompter to read a report with, and the
+    sub-agent then says so rather than reading it on something else.
+    """
+    def factory():
+        from report_ingest.engine import engine_for
+        return engine_for(engine)
+    return factory
+
+
+def _resolve_ingest_source(source, attachments):
+    """An attachment key or a path, resolved the way the document tools do."""
+    from funhouse_agent import document_tools as _document_tools
+    return _document_tools.resolve_document_source(source, attachments)
+
+
 def build_deep_agent(
     model,
     *,
@@ -663,6 +696,12 @@ def build_deep_agent(
     enable_setup_agent: bool = False,
     setup_store=None,
     setup_render_dir: Optional[str] = None,
+    enable_report_ingest: bool = False,
+    report_ingest_out_dir: Optional[str] = None,
+    report_ingest_budgets=None,
+    report_ingest_db: Optional[str] = None,
+    report_ingest_max_model_calls: Optional[int] =
+    DEFAULT_REPORT_INGEST_MAX_MODEL_CALLS,
     store=None,
     checkpointer=None,
     enable_memory: bool = False,
@@ -894,6 +933,20 @@ def build_deep_agent(
         # A2: nudge the primary to delegate tool-heavy calc to the `calc`
         # sub-agent so the bulky trace stays out of the main conversation.
         system_prompt = system_prompt + "\n\n" + _CALC_DELEGATION_NUDGE
+    # The whole-report ingest: one primary tool and one sub-agent, both OFF by
+    # default. The tool hides itself on a planlens too old to serve the ingest
+    # (the page roles and the log grid), so the pair is only really on when
+    # the deployment can run it.
+    ingest_tools = []
+    if enable_report_ingest:
+        from funhouse_agent.deep.tools import make_report_ingest_tool
+        ingest_tools = make_report_ingest_tool(
+            engine=engine, attachments=attachments,
+            out_dir=report_ingest_out_dir, budgets=report_ingest_budgets,
+            db_path=report_ingest_db, max_result_chars=max_result_chars)
+        if ingest_tools:
+            tools = list(tools) + list(ingest_tools)
+            system_prompt = system_prompt + "\n\n" + REPORT_INGEST_NUDGE
 
     subagents = []
     if reference_mode != "off":
@@ -930,6 +983,24 @@ def build_deep_agent(
                 extra_tools=_merge_tools(subagent_extra_tools, calc_extra_tools),
                 extra_system_prompt=_join_prompts(subagent_extra_system_prompt,
                                                   calc_extra_system_prompt),
+            )
+        )
+    if ingest_tools:
+        # A CompiledSubAgent: its own small graph, no model of its own, and a
+        # compact structured_response as the tool result. Attached only when
+        # the tool was built, so the primary is never told to delegate to a
+        # sub-agent that cannot run here.
+        from report_ingest.subagent import build_report_ingest_subagent
+        subagents.append(
+            build_report_ingest_subagent(
+                _report_ingest_engine_factory(engine),
+                out_dir_factory=(None if report_ingest_out_dir is None
+                                 else (lambda _source: report_ingest_out_dir)),
+                budgets=report_ingest_budgets,
+                db_path=report_ingest_db,
+                resolve_source=lambda source: _resolve_ingest_source(
+                    source, attachments),
+                max_model_calls=report_ingest_max_model_calls,
             )
         )
     if enable_setup_agent:

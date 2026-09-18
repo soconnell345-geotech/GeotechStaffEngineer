@@ -1,15 +1,321 @@
-# `report_ingest` — the two model passes over a whole report
+# `report_ingest` — a geotechnical report as organised, cited data
 
 Part of the report-ingest train (`module_work/REPORT_INGEST_PLAN.md`). planlens
 turns a PDF into pages with kinds, located text, an outline and a first draft of
-what each page **is**; this package adds the judgement that needs the whole
-document in view. Two passes ship here today. The readers, the record and the
-DIGGS writer are later work packages.
+what each page **is**; this package adds the geotechnical judgement and the
+record. WP4 closed the loop: a PDF now goes in one end and a record, a summary,
+a library page and a DIGGS file come out the other, with the whole thing
+available to the app as one sub-agent. Calculation printouts are WP5.
 
-| Pass | Module | Shape |
+| Piece | Module | Shape |
 |---|---|---|
 | 0b. Document triage | `triage.py` | one structured call |
 | 0c. Label review | `label_review.py` | an agent loop with four tools |
+| The vision experiment | `vision_labels.py` | the page as a picture, one call a page or one a sheet |
+| The record | `model.py` | pydantic; the product everything else exports |
+| 2. Log reader | `log_reader.py` | one structured call per log, image alongside |
+| 3. Lab reader | `lab_reader.py` | one call per sheet, `zoom_plot` when a curve is only plotted |
+| 3. Narrative reader | `narrative_reader.py` | one call for the owner's two schemas, cited |
+| 4. Reconciler | `reconciler.py` | pure Python; records disagreements, never settles them |
+| 5. Writers | `writers.py` | the record, the summary, the library page, DIGGS, the index |
+| The DIGGS writer | `diggs_writer.py` | deterministic, with two gates |
+| The whole ingest | `graph.py` | a deterministic loop, resumable per item |
+| A folder of reports | `run_folder.py` | the same graph headless, into one library |
+| The app's sub-agent | `subagent.py` | a `CompiledSubAgent` and one primary tool |
+| Scoring one log | `log_scoring.py` | the grid alone, then the reader |
+| Scoring one sheet | `lab_scoring.py` | the page's tables alone, then the reader |
+| Scoring the narrative | `narrative_scoring.py` | recall, precision and the flattering one |
+
+## The record (`model.py`)
+
+`ReportRecord` is what the ingest is **for**; the summary page, the library page
+and the DIGGS file are three exports of it. Three rules hold it together.
+
+**A number keeps the unit it was printed in.** A log that prints 21.5 ft is
+`Quantity(21.5, "ft")`, and a `Quantity` cannot be built without a unit.
+`to_si()` converts once, in the writer that needs SI, so a reviewer setting the
+record beside the page sees the page's own numbers.
+
+**Every value-bearing field carries `Provenance`** — the page, the box, and how
+it was read: `text`, `di`, `ocr`, `grid`, `vision` or `derived`. A reviewer can
+go to the page; a QA pass can ask which values rest on vision alone.
+
+**What could not be read is recorded, not guessed.** An optional field stays
+`None`, a `QAEntry` says what was skipped and why, and
+`Investigation.units_known` is `False` when no depth unit was printed anywhere.
+
+**The owner's two query schemas are real fields** since WP4 (schema 4.0):
+`general` and `natural_hazards` carry them field name for field name, camel
+case and all, because an answer is comparable with an answer given three years
+ago or it is worth nothing. Everything is optional and **None means the report
+did not say** — never an empty string, never "not stated". The typed twins sit
+BESIDE the strings rather than replacing them: `bearingCapacityValues` beside
+`bearingCapacity`, `strataList` beside `strata`, a `Mention` beside each
+yes/no question, and the normalised site class, ASCE edition and ISO date
+beside the printed ones. `NarrativeFacts` is what sits around the answers —
+what the narrative STATED, what Python COUNTED, what the appendix turned out to
+hold, and the caller's own questions. `CalcEntry` is still WP5.
+`record_json_schema()` exports the whole thing.
+
+**`LabTest.result` is a typed result per kind** since WP3, discriminated on
+`kind`, and a result whose kind does not match its test is refused at
+construction — `kind` is what every consumer dispatches on, so an Atterberg
+result filed under a gradation would be read as a gradation by everything
+downstream and the mistake would be invisible in the JSON.
+
+| Result | For | Holds |
+|---|---|---|
+| `AtterbergResult` | atterberg | LL, PL, PI, shrinkage limit, `non_plastic`, the Casagrande flow curve, each plastic-limit trial |
+| `GradationResult` | gradation | the percent-passing curve as `SievePoint`s, D10–D100, Cu, Cc, the cobble/gravel/sand/silt/clay/fines fractions |
+| `ConsolidationResult` | swell_consolidation | `test_type` swell/collapse/oedometer, the pressure-strain (or void-ratio) curve with a stage per point, swell %, pc, Cc, Cr, cv, e0 |
+| `StrengthResult` | triaxial, direct_shear, unconfined, unconfined_rock | `test_type`, a `StrengthSpecimen` per specimen (confining, peak deviator, strain at peak, pore pressure, stress ratio, densities, dimensions), the envelope c and φ, qu, su, the envelope or stress-strain points |
+| `CompactionResult` | compaction | the Proctor points, maximum dry density, optimum water content, method, mould volume, layers and blows |
+| `CBRResult` | cbr | CBR and the 0.1/0.2 in values, swell, soaking, surcharge, the penetration points |
+| `MoistureDensityResult` | moisture_content, density, organic_content | water content and each determination, bulk and dry density, Gs, e, saturation, ash and loss on ignition |
+| `ChemicalResult` | chemical | pH, resistivity (as received and minimum), sulfate, chloride, sulfide, redox, total salts, conductivity, temperature |
+| `SummaryTableResult` | summary_table | one `SummaryRow` per specimen, each with its own boring, depth, index values, sieve columns and an `other` list for a column with no field |
+| `OtherResult` | other, specific_gravity, permeability | `no_results` for a page that reports none, and whatever the sheet printed |
+
+Every result field is a `Quantity` in the unit the sheet printed, or a plain
+number where the value has none — a percentage, a pH, a blow count, Cu, Cc.
+A chemical value takes a **string** as well, because these sheets print `<10`,
+`Nil` and `trace` as often as figures: below the reporting limit is not the
+number ten, and a record that stored ten would be *wrong* rather than
+incomplete. `si_numbers()` walks any part of the record and returns the numbers
+in it, in SI, which is how a check can ask "did these survive" without a second
+copy of whatever mapping a writer uses.
+
+## The log reader (`log_reader.py`)
+
+`read_log(doc, item_pages, engine, budget=6)` turns one log — continuation
+sheets included — into one `Investigation`.
+
+**Geometry says where, the model says what.** `log_grid` has already found the
+columns, fitted the depth ruler and placed every line of text at a (column,
+depth) with its box. Those rows are the primary source. The page image at about
+110 dpi is for resolving only what the rows leave ambiguous: sample symbols,
+water symbols, refusal notation, stacked drives, which of two numbers is the N
+value. Every value the picture settled comes back in `changes`, because rows can
+be gone back to and a look cannot.
+
+**The depth gate is the point.** A ruler is a linear map from y to depth, so it
+says what depth sits at the top edge of the paper and what sits at the bottom;
+everything printed on that sheet is between them and nothing else is. A depth
+outside that window is refused into `unresolved` rather than accepted. A log
+whose pages have no ruler carries no depths at all — the header fields still
+come back, because the page still says whose log it is. Total depth is the one
+exception and is not gated: on sheet 1 of 3 it names the bottom of the whole
+hole, below that sheet's own paper.
+
+**Nothing is computed.** `n` is recorded only where the log prints it; where it
+prints only the drives, `n` stays `None`. Half the templates do one and half the
+other, and adding the second and third drives of a four-drive rock core would
+invent a number. A refusal stays the string the log printed.
+
+**The budget** is one call per log, a second only when the reader itself says it
+has pages left, and six at the most.
+
+## The lab reader (`lab_reader.py`)
+
+`read_lab_sheet(doc, item_pages, engine, budget=4, hint_kind=None)` turns one
+laboratory sheet into typed `LabTest` records — several, when the sheet reports
+several specimens or two different tests on one.
+
+A boring log is a form with a depth ruler, and `log_grid` can say *where* every
+number sits before any model sees it. A lab sheet is not that: every laboratory
+prints its own form, half of them are a plot with a results box beside it, and
+what says a number's meaning is the word printed next to it. So the geometry is
+weaker, the reading is more of the work, and the rules are stricter.
+
+**The sheet's own title says what the test is** — not the appendix tab, not what
+the numbers look like. The kind vocabulary is seventeen kinds each with a
+one-line definition written in no single laboratory's words, and each definition
+is about *what was measured* rather than how the sheet looks.
+
+**A tabulated value beats the plot, every time.** Most of these sheets print the
+curve **and** the values it was drawn from. A curve is digitised only where the
+values appear nowhere in text, and then the whole test is flagged
+`curves_digitised` — as a whole, because a reviewer checks the sheet, not one
+number. To digitise, the reader calls **`zoom_plot`**, its one tool: a crop of
+the plot rendered at 300 dpi with the axes and their tick labels inside the box,
+because a curve read without its own ticks in view is a guess.
+
+**The link to the ground is what the sheet prints** — the boring identifier and
+the depth, copied. This reader never matches a sample to a log; the reconciler
+does that later and records a conflict when it cannot.
+
+**A summary table is one test**, with a row per specimen, because the table is a
+thing the report prints and splitting it would lose which values were printed
+together. **A certificate that lists samples and reports nothing** is an
+`OtherResult` with `no_results` — a page read and found empty and a page skipped
+are different things.
+
+**Four Python gates**, each on something that cannot be true of a real sheet: a
+depth outside 0–300 m, a percentage outside 0–100, a liquid limit below the
+plastic limit (all three limits go, because which of them is wrong cannot be
+known from here), and a grading series in which *more* passes a smaller sieve
+(the series goes whole — a partly reversed grading is worse than none, because
+it looks like a reading). Each refusal costs that value and nothing else.
+
+**The budget** is four model calls and most sheets cost **one**: every call asks
+for the answer and offers the tool at the same time, so a tabulated sheet is
+read and answered in a single call. On the last allowed call the tool is
+withdrawn, so a reader that keeps zooming runs out of looking rather than out of
+answering.
+
+## The DIGGS writer (`diggs_writer.py`)
+
+`write_diggs(record_or_investigations, project) -> str` produces DIGGS 2.6 XML.
+`diggs_schema_gate(xml)` validates it against the schema pydiggs bundles;
+`diggs_roundtrip_gate(xml, investigations)` reads it back with the app's own
+`parse_diggs` and compares every value. Neither gate alone is enough: a file can
+be XSD-valid and wrong, and a file the parser likes may not be DIGGS.
+
+**The 2.6 schema is not the shape the app's older fixtures use**, and this was
+checked before anything was written — the app's own fixture fails the schema on
+its second line. In real DIGGS the test procedures (`DrivenPenetrationTest`,
+`AtterbergLimitsTest`, `WaterContentTest`, `LabDensityTest`, `ParticleSizeTest`,
+`UnconfinedCompressiveStrengthTest`, `PocketPenetrometerTest`) are in the
+`.../2.6/geotechnical` namespace and carry no result; the value lives in
+`Test/outcome/TestResult/results/ResultSet`, named by a `propertyClass` from the
+DIGGS dictionary; a depth is a position along the hole's own linear reference
+system; lithology is an `observation/LithologySystem` at the document root; and
+there is no `WaterLevelObservation` or `MoistureContent` element at all — water
+is the borehole's own `waterStrike`. So the writer emits real DIGGS and
+`subsurface_characterization/diggs26.py` was added to read it, additively, after
+the flat readers. Every existing fixture reads exactly as before.
+
+The element map, record field to DIGGS:
+
+| Record | DIGGS 2.6 |
+|---|---|
+| `Project` | `project/Project` (`gml:name`, `gml:identifier`) |
+| `Investigation` (boring) | `samplingFeature/Borehole` |
+| `Investigation` (test pit) | `samplingFeature/TrialPit` |
+| `x`, `y`, `elevation` | `referencePoint/PointLocation/gml:pos` |
+| `total_depth` | `totalMeasuredDepth` (uom m) |
+| `date_started`, `date_finished` | `whenConstructed/TimeInterval` |
+| `drilling.method`, `.equipment` | `constructionMethod/BoreholeConstructionMethod` |
+| `fields` (anything else printed) | `otherSamplingFeatureProperty/Parameter` |
+| `Sample` | `samplingActivity/SamplingActivity` + `sample/Sample` |
+| `Sample.top`, `.bottom` | `samplingLocation/LinearExtent/gml:posList` |
+| `Sample.recovery` | `totalSampleRecoveryLength` |
+| `Sample.recovery_percent` | `otherSamplingActivityProperty/Parameter` — DIGGS has only a length |
+| `Sample.rqd_percent` | `samplingActivityRQD` (uom %) |
+| `Layer` | `observation/LithologySystem/lithologyObservation/LithologyObservation` |
+| `Layer.uscs`, `.description` | `Lithology/classificationCode`, `/lithDescription` |
+| `SPT.n` | `ResultSet` `propertyClass` **n_value** |
+| `SPT.blows` (no printed N) | `ResultSet` `propertyClass` **blow_count** |
+| `SPT.blows`, `.refusal` | `DrivenPenetrationTest/driveSet/DriveSet` (`blowCount`, `penetration`) |
+| `drilling.hammer_type`, `.hammer_energy_ratio` | `hammerType`, `hammerEfficiency` |
+| `WaterLevel` | `Borehole/waterStrike/WaterStrike` |
+| `Sample.water_content` | **water_content_natural**, `WaterContentTest` |
+| `Sample.dry_unit_weight` | **dry_density**, `LabDensityTest` |
+| `Sample.liquid_limit`, `.plastic_limit`, `.plasticity_index` | **liquid_limit**, **plastic_limit**, **plasticity_index**, `AtterbergLimitsTest` |
+| `Sample.fines_percent` | **percent_fines**, `ParticleSizeTest` |
+| `Sample.qu` | **compressive_strength_unconfined**, `UnconfinedCompressiveStrengthTest` |
+| `Sample.pocket_pen` | **compressive_strength_unconfined**, `PocketPenetrometerTest` |
+
+The laboratory half of the map (WP3). A `LabTest` becomes one `measurement/Test`
+for its scalars and one more for each curve it carries, both positioned in the
+same hole at the same depth; a summary table becomes one Test per **row**,
+because its rows sit in different holes.
+
+| Record | DIGGS 2.6 |
+|---|---|
+| `LabTest.kind` | the procedure element (below) |
+| `LabTest.standard` | `testProcedureMethod/Specification/standardReferenceNumber` |
+| `LabTest.sample_id`, `.lab`, `.date`, `.pages` | `otherMeasurementProperty/Parameter` — named, not linked, because an xlink to a `Sample` this file may not hold is a link to nothing |
+| `AtterbergResult` | **liquid_limit**, **plastic_limit**, **plasticity_index**, **shrinkage_limit**, **non_plastic**, `diggs_geo:AtterbergLimitsTest` |
+| `AtterbergResult.flow_curve`, `.pl_trials` | a result set of many rows: **blow_count** + **water_content_natural** |
+| `GradationResult` fractions | **percent_cobbles**, **percent_gravel**, **percent_sand**, **percent_silt**, **percent_fines**, `diggs_geo:ParticleSizeTest` |
+| `GradationResult` D-values | **d10**, **d30**, **d50**, **d60**, **d85** (dictionary), *d90*, *d100* (ours), in **mm** |
+| `GradationResult.cu`, `.cc` | **coef_uniformity**, **coef_curvature** |
+| `GradationResult.percent_passing` | a result set of many rows: *particle_size* (mm) + *percent_passing* + *sieve_designation* |
+| `ConsolidationResult` | **preconsolidation_pressure**, **compression_index**, **recompression_index**, **coef_consolidation_vertical**, *void_ratio*, *swell_percent*, *swell_pressure*, `diggs_geo:ConsolidationTest` (+ `consolidationTestType`, `swellingPressure`, `estimatedPreConsolidationStress`) |
+| `ConsolidationResult.points` | a result set of many rows: *applied_pressure* + *axial_strain* and/or *void_ratio* + *load_stage* |
+| `StrengthResult` | **compressive_strength_unconfined**, **shear_strength_undrained**, **cohesion_peak**, **friction_angle_peak**, **cohesion_residual**, **friction_angle_residual** |
+| `StrengthResult` procedure | `TriaxialTest` (**the DIGGS namespace**), `diggs_geo:DirectShearTest`, `diggs_geo:UnconfinedCompressiveStrengthTest` |
+| `StrengthResult.specimens` | a result set of many rows, one per specimen |
+| `StrengthResult.points` | a result set of many rows, told apart by the x unit: an envelope when x is a pressure, a stress-strain curve when x is a percentage |
+| `CompactionResult` | **dry_density_max**, **water_content_optimum**, `diggs_geo:LabCompactionTest` (+ `mouldVolume`, `numberOfLayers`, `blowsPerLayer`); the points as a many-row result set |
+| `CBRResult` | **cbr_0.1**, **cbr_0.2** in `diggs_geo:LabCBRTest/trial`, plus *cbr*, *swell_percent*, *surcharge* |
+| `MoistureDensityResult` | **water_content_natural**, **bulk_density**, **dry_density**, **specific_gravity_solids**, **degree_of_saturation**, **LOI**, *ash_content*; `WaterContentTest`, `LabDensityTest` or `LossOnIgnitionTest` by kind |
+| `ChemicalResult` | **pH**, **resistivity**, **sulfate_content**, **chloride_content**, **redox_potential**, **conductivity**, **temperature**, *sulfide_content*, *total_salts*, `diggs_geo:LabChemicalTest` |
+| `SummaryRow` | one Test per row, values under the dictionary terms above, with no procedure element — a row is one sample's results gathered out of several tests, and naming one procedure for it would say the laboratory ran a test it did not |
+| `OtherResult` | `diggs_geo:SpecificGravityTest`, `diggs_geo:LabPermeabilityTest`, or a Test with no procedure |
+
+**Bold** is a term of the DIGGS property dictionary pydiggs publishes;
+*italic* is one of ours, written under a codespace that says so, because the
+sheet printed the value and dropping it would be worse than naming it plainly.
+
+Four facts about 2.6 that the code exists to get right:
+
+- **`TriaxialTest` is in the DIGGS namespace, not the geotechnical one.**
+  Twelve of the thirteen laboratory procedures are in `diggs_geo`; the schema
+  declares this one in `TestProceduresAll.xsd`. A file that puts it in the other
+  namespace validates against nothing and reads as empty.
+- **A `Test` has exactly one `outcome`**, so a gradation with both derived
+  fractions and a grading curve is two Tests, not one Test with two result sets.
+- **A curve is a result set of many rows**, whatever kind of curve it is. 2.6 has
+  native homes for several, and every one demands a value these sheets do not
+  print — a `Grading` requires a particle size and half the forms label their
+  sieves by number alone, a consolidation increment requires a final axial
+  deformation, a triaxial shear stage a cell pressure. Filling a required
+  sibling with a made-up number to reach a nicer element is the one thing this
+  writer will not do.
+- **A result is positioned.** `TestResult/location` is required and is a
+  position along a hole's own linear reference system, so a lab test that names
+  no boring, or names one and no depth, **cannot be written**: there is nowhere
+  in the file for it to be. Those are named in `DiggsWriteNotes.skipped` and
+  stay in the record, which does not require a value to have a place. A test
+  that names a boring no log in the record describes gets a minimal `Borehole`
+  of its own, recorded in `DiggsWriteNotes.synthesised`.
+
+A particle size is written in **millimetres** and says so in its `uom`: in
+metres a No. 200 sieve is 7.5e-05, which the file's four decimals would round
+to 0.0001. A friction angle is written `dega`, which is the schema's own code;
+`deg` is not in its list and fails the whole file.
+
+`subsurface_characterization/diggs26.py` gained the reading side: a result set
+of more than one row is a curve and is **not** flattened into measurements at
+one depth, and `parse_diggs26_result_sets(content=...)` returns every result set
+in a file as the table it is — columns, units, rows, dictionary terms and ours,
+numbers and the values a laboratory printed as words. That is what the
+round-trip gate compares against for anything a `SiteModel` has no shape for.
+
+SI once, here, with a `uom` on every measure. A coordinate gets nine decimals,
+because a latitude to four is eleven metres. A unit not in the record's
+conversion table is **not** written with a guessed one: it is left out and named
+in `DiggsWriteNotes.skipped`, which the round-trip gate then does not look for.
+A layer whose base the sheet never printed is written as a contact and named the
+same way — DIGGS can carry it, the app's `LithologyInterval` holds intervals
+only.
+
+**The gate that matters is deterministic and needs no model.** All fifteen
+hand-truthed logs and all **thirty-one** hand-truthed laboratory sheets convert
+to records, write, validate and round-trip:
+`module_work/report_ingest_harness/tests/test_diggs_truth.py` and
+`test_lab_diggs_truth.py` (skipped where the gitignored corpus is not).
+`report_ingest/tests/test_diggs_writer.py` and `test_diggs_lab.py` walk the same
+path on synthetic records in CI.
+
+**What the 31-sheet gate found, and the tolerances it needed.** It passes
+31/31 at the tolerances the writer already published — a depth to 5 mm, a
+percentage to 0.05, a stress to 0.05 kPa — with **no tolerance loosened for
+the laboratory half**. The lab comparison is tighter than that: every number in
+the record has to come back to within 5e-4, or six significant figures for a
+value below a thousandth. Getting there took three fixes rather than three
+tolerances: writing a particle size in millimetres (in metres a No. 200 sieve
+rounds to 0.0001 at the file's four decimals), writing small numbers to six
+significant figures instead of four decimals, and using the schema's own `dega`
+for an angle. Two of the thirty-one sheets write **no** DIGGS at all, because
+neither prints a depth for the specimen; the gate asserts which two they are, so
+a third appearing is a failure rather than a quietly smaller number. The lab
+half of the round trip walks the record's own models rather than a second copy
+of the writer's property table, so it cannot agree with the writer by sharing
+its mistakes: it asks whether the numbers survived, not whether they were filed
+under the names the writer chose.
 
 **The numbers come from the cluster.** This app runs in Funhouse against
 OpenAI models through the Prompter API, so a score measured on any other model
@@ -19,7 +325,185 @@ that counts and `cluster_scoring.score_on_cluster` is how a run is made.
 passes were built and debugged against — but its numbers are a checkpoint, not
 a result.
 
-## Why they exist
+## The narrative reader (`narrative_reader.py`)
+
+`read_narrative(doc, narrative_pages, engine, budget=8)` answers the owner's
+two query schemas off the narrative's own prose and returns them with a
+citation on every answer.
+
+**The names are the owner's, verbatim**, camel case and all, because an answer
+is comparable with an answer given three years ago or it is worth nothing.
+`general` is the twenty-five-question list (what the document is, who wrote it,
+the counts, the strata, the foundations, the bearing pressures) and
+`natural_hazards` is the twelve (liquefaction, ASCE 7 edition, the hazards,
+the seismic code, the site class, the date).
+
+Four rules the prompt is built around, each of them a way of not inventing:
+
+- **Answer only from the text in front of you.** Not from what a firm of that
+  name usually recommends, not from what a site of that description usually is.
+- **Null is an answer and the commonest one.** A field the report does not
+  address stays null. It never becomes an empty string or "not stated", because
+  a scorer has to tell a report that did not say from a reader that did not
+  read — and the builder turns "N/A", "unknown" and their friends back into
+  null on the way in.
+- **The enumerations are the owner's words, and only two lists are closed.**
+  `documentType` and `outsideProject` are the owner's own lists and an answer
+  outside one is REFUSED into `unresolved`. The rest are the values seen in the
+  hand answers so far: a spelling variant folds onto one of them and anything
+  else is kept in the report's own words. That split is not fastidiousness. The
+  first draft of this package guessed those vocabularies (government owned /
+  leased, planning / feasibility / design, high / moderate / low) and every
+  guess was wrong against the first hand answers that arrived, so the schema
+  refused the true answer, the reader stored nothing, and the scorer marked
+  seven fields wrong on all eight reports for a reading that was correct.
+- **A public report about somebody else's project names no post.** `postName`
+  and `propertyType` stay null and `outsideProject` becomes `"yes"`. Inferring
+  a post from a city name is exactly the guess that makes a library of answers
+  untrustworthy.
+
+**What Python does rather than ask.** The table and figure counts are counted
+off the captions in the main body — a line that LEADS with "Figure 3" and goes
+on to name the thing, counted by label so a caption repeated on two pages
+counts once — and handed to the model as facts. The model is asked anyway and
+a disagreement is recorded, but the number stored is the counted one. The site
+class is reduced to its letter here, the ASCE 7 edition to its year, and the
+report date to ISO; each is a small deterministic job, and each refusal (a
+"site class" that is not a letter, a date that will not parse) is an
+`unresolved` line rather than a stored guess.
+
+**The budget is eight calls and a normal report costs one.** The narrative goes
+in whole when it fits. A narrative too long for one call is sent in page chunks
+— never splitting a page — one call each, and merged in Python: first answer
+wins, lists are unioned, and every disagreement between two chunks is recorded
+rather than settled. Only a multi-part read spends a final call, and only on
+the four prose summaries, which are the one thing a merge cannot do.
+
+**The caller's own questions** ride along: pass `questions=[...]` and each is
+answered in the same call under the same rules, with an empty answer where the
+narrative does not say. They come back in `record.narrative.extra_answers` and
+in the summary page.
+
+## The reconciler (`reconciler.py`)
+
+`reconcile(record, labels=…, items=…, no_text_pages=…, di_pages=…,
+reader_unresolved=…)` is the only pass that sees every reading at once, and its
+job is the one nothing else can do: put them beside each other and say where
+they disagree.
+
+**It never resolves a disagreement.** A summary table that says 31 and a sheet
+that says 29 for the same specimen are both recorded, as a `conflict` QA entry
+carrying both values and both pages. Picking one would destroy the only
+evidence a reviewer has that there is something to look at. The same holds for
+a narrative that says four borings over an appendix that carries five: the
+count is not corrected, the mismatch is recorded.
+
+| Check | What it does |
+|---|---|
+| lab → ground | Finds the investigation the sheet NAMES and the sample at its depth, within 0.15 m and unit-aware, and writes the link into `linked_investigation_id` / `linked_sample_id`. The printed values are never touched. A sheet naming a hole this report does not carry is a QA entry, not a link. |
+| counts | `boringCount` / `testPitCount` / `cptCount` against the investigations read, and `boringDictionary` / `testPitDictionary` against the identifiers found, both ways: named-but-missing and found-but-unnamed. |
+| the summary table | Every value a row and a sheet both carry, compared in SI; only the disagreements are recorded. A value only one side carries is not a conflict, it is a column. |
+| units | Every quantity whose printed unit has no conversion, named once with its fields: stored as printed and absent from the SI view. |
+| pages | A page whose label says boring log that ended in no work item; a page with no reliable text and no Azure Document Intelligence result. |
+| the readers | Every `unresolved` line they returned, carried through as a QA entry. |
+
+`si_view(record)` is the derived all-SI view, walked off the models themselves
+so it cannot drift from the record. Pass an `engine` and ONE call is spent
+asking for a sentence about each conflict — which value looks like the
+misreading, what would settle it. The comment is appended; the values and the
+verdict are untouched.
+
+## The writers (`writers.py`)
+
+`write_outputs(record, out_dir, source=…, db_path=…)` writes five things, in
+this order, because the DIGGS verdicts are QA entries and the record has to
+carry them:
+
+| File | What it is |
+|---|---|
+| `report.diggs.xml` | DIGGS 2.6 through the existing writer, with BOTH gates run — the bundled XSD and a round trip through the app's own readers, value by value. Each verdict goes into the record's QA, because a file that failed its gate and a file nothing checked must not look the same. |
+| `report.record.json` | The record. Everything else is derived from it. |
+| `report.summary.md` | The two schemas answered, each with its pages; the bearing values and the profile as tables; the caller's own questions; what was extracted; the QA list. |
+| `report.page.md` | The owner's WikiLLM page: front matter (`id`, `report_id`, `title`, `authors`, `year`, `source`, `doc_type`, `tier`, `disciplines`, `topics`, `methods`, `materials`, `standards_referenced`, `confidence`, `status`, `n_pages`, `original_path`), then the summary, the key takeaways, the key parameters, the questions answered, and the record's sections as tables. |
+| `reports.db` | One SQLite row per report, keyed by a stable hash of the source file, so a folder of reports becomes searchable and re-ingesting one updates its row instead of adding a second. |
+
+**Every tag is earned by something in the record** — an investigation kind, a
+test kind, a USCS symbol, an answered hazard question — and nothing is tagged
+because reports usually have it. `doc_type` is the owner's own `documentType`
+answer rather than the library's document vocabulary, because that is the
+answer this pipeline produces and it is the one that has to stay comparable.
+`status` and `confidence` follow what went wrong: a page with no text and no DI
+makes the record `needs_ocr`; a conflict or a count mismatch makes it `medium`;
+a narrative that barely answered makes it `low`.
+
+## The graph (`graph.py`) and the folder run (`run_folder.py`)
+
+`ingest_report(source, engine, out_dir=…, budgets=…, questions=…,
+di_result=…)` is the whole ingest: open (with DI when given) → roles, outline
+and ledger → triage → label review → work items from the REVIEWED labels →
+one reader per item → reconcile → write.
+
+A deterministic loop, not a planning agent. It is budgetable (`Budgets` is a
+ceiling per pass, and a 150-page report is about a hundred calls), testable
+offline (every reader takes an engine), restartable (each item writes
+`items/<id>.json` as it finishes and a second run picks up where the first
+stopped), and it cannot forget an appendix.
+
+**The workflow triage chose decides what runs.** `appendix_only` skips the
+narrative reader — a reader pointed at an appendix would answer the owner's
+questions off a boring log. `needs_person` stops after triage with a QA entry.
+A scanned narrative with no DI result is skipped with a QA entry rather than
+run against nothing, because the narrative reader reads TEXT; the log and
+laboratory readers look at the page image and work regardless. Calculation
+printouts and appended reports are recorded as QA entries saying they were not
+read, so a reviewer knows the pages exist and were skipped on purpose.
+
+`run_folder(folder, engine_factory, out_dir=…)` drives the same graph headless
+over a folder into one `reports.db`, with an `INDEX.md` of what it came to. It
+resumes, one bad report cannot stop it, and two files with the same bytes are
+one document sharing one library row — which it says out loud, so a folder of
+300 files that makes 297 rows is not a mystery.
+
+## The sub-agent, and how it is gated (`subagent.py`)
+
+The primary agent must never try to read a 400-page report. Its document tools
+are built for looking one thing up in a document a person is discussing;
+pointed at a whole report they cost a fortune, fill the conversation with pages
+of text and still miss the appendix. So the ingest is one delegation and one
+tool:
+
+```python
+agent = build_deep_agent(model, enable_report_ingest=True)   # default OFF
+```
+
+That adds the `report_ingest(source, questions="")` primary tool and a
+`CompiledSubAgent` — a one-node LangGraph that runs `ingest_report` and returns
+a compact `structured_response`: counts, the paths, the first lines of the
+summary, the QA count, the workflow and the caller's answers. Never the record,
+which runs to megabytes and would be re-sent on every following turn.
+
+**Both are feature-detected**, not trusted from the pin: the tool is built only
+when the INSTALLED planlens publishes `document_roles` and `log_grid`, because
+the cluster installs from PyPI and has resolved older than the pin before. On
+an older planlens the tool is never advertised and the prompt line that tells
+the primary to delegate is never added.
+
+**The engine is the app's own.** `report_ingest.engine.engine_for` digs the
+live Prompter out of whatever the host built the agent with; when there is
+none, the tool says so rather than reading a report on a model nobody asked
+for.
+
+**About the middleware on the spec.** deepagents uses a compiled sub-agent's
+runnable AS PROVIDED — for a spec carrying a `runnable` it reads the name, the
+description and the runnable and nothing else — so the `ScratchFilesystemGuard`
+and `ModelCallBudgetMiddleware` on this spec reach no model and enforce nothing
+by themselves. They are there because every other sub-agent in this build
+carries the same two and a reader comparing the specs should not have to wonder
+which was forgotten. What actually bounds this graph is Python: `Budgets`,
+applied per reader, and a graph with no filesystem tool on any model for a
+guard to intercept.
+
+## Why the two label passes exist
 
 The rules label a page from what that page prints about itself. Measured on the
 corpus, they reach 0.91 accuracy across the fourteen reports they were built on
@@ -100,14 +584,38 @@ This is the run that produces the real numbers, and the owner makes it.
 **The reports stay where they already are.** They do not have to be renamed,
 copied or re-uploaded: point `reports_dir` at the folder that holds them under
 the names their authors gave them, and the manifest's source-file column is
-what turns each file name into an ID. Three small private files travel with
-the run and can sit anywhere the cluster can read:
+what turns each file name into an ID.
 
-| File | What it is | Without it |
-|---|---|---|
-| `MANIFEST.md` | the corpus manifest; its `file` column names each report | IDs cannot be resolved at all, unless the PDFs are already named `R01.pdf` … |
-| `trial_pages_working_r2.xlsx` | the hand page labels | the in-sample set runs and produces profiles, but scores nothing |
-| `oos_labels.json` | the lead's out-of-sample labels | the two out-of-sample sets run and score nothing |
+**One folder of small private files travels with the run**, and the whole of
+it is what gets uploaded. The hand truth is private and does not ship in the
+wheel, so it is put on a Volume before a run; three separate Volume paths that
+must each be right is three chances for one to be stale while the run starts
+anyway and scores against it. Upload this, and nothing else:
+
+```
+<your volume>/report_ingest/
+    MANIFEST.md                      the corpus manifest; its `file` column names each report
+    trial_pages_working_r2.xlsx      the hand page labels
+    oos_labels.json                  the lead's out-of-sample labels
+    truth/
+        logs/       <ID>_p<page>.json …, OPEN.txt, BLIND2.txt
+        lab/        <kind>__<ID>_p<page>.json …, OPEN.txt
+        narrative/  <ID>.json …
+```
+
+| File | Without it |
+|---|---|
+| `MANIFEST.md` | IDs cannot be resolved at all, unless the PDFs are already named `R01.pdf` … |
+| `trial_pages_working_r2.xlsx` | the in-sample set runs and produces profiles, but scores nothing |
+| `oos_labels.json` | the two out-of-sample sets run and score nothing |
+| `truth/logs/`, `truth/lab/`, `truth/narrative/` | that stage refuses to start rather than running unscored |
+
+`truth/` is what `truth_dir` points at: each stage takes its own subfolder out
+of it, and the subfolders are named after the stages. `OPEN.txt` beside a
+stage's truth files names the reports whose pages the prompts were allowed to
+be tuned against, so the blind figure stays blind; without one the built-in
+open set is used. (`lab_truth_dir` and `narrative_truth_dir` still override
+the root, for truth that is not in one place.)
 
 The Azure Document Intelligence results are read in **either** form —
 `<ID>.json.gz` or the uncompressed `DI_data_<original stem>.json` that
@@ -115,31 +623,302 @@ Funhouse wrote — from whatever folder `di_dir` names. Without them the scanned
 pages are read from their own text layer alone.
 
 ```python
-# 1. From PyPI through Nexus. planlens 0.5.0 arrives with it.
-%pip install "geotech-staff-engineer==5.19.0"
+# 1. From PyPI through Nexus. planlens 0.6.0 arrives with it.
+%pip install "geotech-staff-engineer==5.20.0"
 dbutils.library.restartPython()
 ```
 
 ```python
-# 2. One cell. fh_prompter is the object you already have.
+# 2. One cell, all five stages. fh_prompter is the object you already have.
 from report_ingest.cluster_scoring import score_on_cluster
 
 results = score_on_cluster(
     reports_dir  = "/Volumes/<your volume>/reports",          # the PDFs, under their own names
-    manifest     = "/Volumes/<your volume>/wp1b/MANIFEST.md",
-    labels_xlsx  = "/Volumes/<your volume>/wp1b/trial_pages_working_r2.xlsx",
-    oos_labels   = "/Volumes/<your volume>/wp1b/oos_labels.json",
+    manifest     = "/Volumes/<your volume>/report_ingest/MANIFEST.md",
+    labels_xlsx  = "/Volumes/<your volume>/report_ingest/trial_pages_working_r2.xlsx",
+    oos_labels   = "/Volumes/<your volume>/report_ingest/oos_labels.json",
+    truth_dir    = "/Volumes/<your volume>/report_ingest/truth",   # holds logs/ lab/ narrative/
     di_dir       = "/Volumes/<your volume>/report_di",
-    out_dir      = "/tmp/report_ingest_wp1b",                 # /tmp or a Volume, never /Workspace
+    out_dir      = "/tmp/report_ingest_520",                  # /tmp or a Volume, never /Workspace
     prompter     = fh_prompter,
-    model        = "funhouse-gpt-high",     # the label review, on the tier the app runs on
+    model        = "funhouse-gpt-high",     # every reader, on the tier the app runs on
     triage_model = "funhouse-gpt-medium",   # one call over a ledger; a cheaper tier does
     sets         = ("insample", "oos_open", "oos_blind"),
+    stages       = ("labels", "logs", "lab", "narrative", "vision_labels"),
+    vision_model = "funhouse-gpt-low",      # the experiment: GPT-4.1, the cheap tier
+    vision_mode  = "page",                  # or "sheet": six pages a call
     max_reports  = 2,                       # drop this line after the first run
 )
 ```
 
-Bring back **`/tmp/report_ingest_wp1b/RESULTS.md`**. That is the whole report,
+Bring back **`/tmp/report_ingest_520/RESULTS.md`**. Run it with
+`max_reports=2` first. It caps every stage at two — two reports reviewed, two
+logs, two laboratory sheets, two narratives — which proves the paths, the
+prompter and all three truth folders for a few minutes of calls, and it
+resumes, so the full run afterwards does not redo them.
+
+The five stages are described one at a time below, each with the cell that
+runs it alone.
+
+<!-- A FIFTH STAGE IS COMING: `vision_labels`, page images read with
+     structured output as a first-pass page classifier. It gets one more line
+     in the `stages` tuple above, one more row in the upload table if it needs
+     a file of its own, and its own "### Scoring ..." section at the end of
+     this run of sections. Add it here rather than reworking the four. -->
+
+
+### Scoring the log reader as well (`stages=("labels", "logs")`)
+
+The `logs` stage runs `log_grid` and then `read_log` over each hand-truthed
+log, and scores the result twice: **before**, from the grid's cells alone, and
+**after**, from the record the reader built. The grid runs once and is handed
+to the reader, so the difference between the two columns is the model and
+nothing else. It needs one more private file — the folder of hand-truthed logs
+— and an `OPEN.txt` beside them names the reports the rules were allowed to be
+tuned on, so the blind figure stays blind.
+
+```python
+results = score_on_cluster(
+    reports_dir  = "/Volumes/<your volume>/reports",
+    manifest     = "/Volumes/<your volume>/wp1b/MANIFEST.md",
+    di_dir       = "/Volumes/<your volume>/report_di",
+    truth_dir    = "/Volumes/<your volume>/report_ingest/truth",   # its logs/ holds <ID>_p<page>.json + OPEN.txt
+    out_dir      = "/tmp/report_ingest_logs",
+    prompter     = fh_prompter,
+    model        = "funhouse-gpt-high",
+    stages       = ("logs",),       # or ("labels", "logs") for both in one run
+    log_budget   = 6,               # model calls per log; the reader's ceiling is six
+    max_reports  = 2,               # drop this line after the first run
+)
+```
+
+Metrics, all against the hand truth: **N values exact**; sample depths,
+index values and water levels within 0.15 m; layer tops within 0.3 m; USCS
+symbols matched; recovery and RQD where the log prints them; header fields
+recovered. Depths are compared in metres whatever the log prints, and the
+matching rules are the WP2a ones — a sample is an interval, a blow record
+counts when its drives stand at that depth, and an N the log never printed
+counts as found when the drives that define it are there, because neither the
+grid nor the reader does arithmetic by design.
+
+### Scoring the lab reader as well (`stages=("labels", "logs", "lab")`)
+
+The `lab` stage scores each hand-truthed laboratory sheet twice: **before**,
+over the numbers in the page's own detected tables, and **after**, over the
+records `read_lab_sheet` built from the same open document.
+
+```python
+results = score_on_cluster(
+    reports_dir   = "/Volumes/<your volume>/reports",
+    manifest      = "/Volumes/<your volume>/wp1b/MANIFEST.md",
+    di_dir        = "/Volumes/<your volume>/report_di",
+    truth_dir     = "/Volumes/<your volume>/report_ingest/truth",  # its lab/ holds <kind>__<ID>_p<page>.json + OPEN.txt
+    out_dir       = "/tmp/report_ingest_lab",
+    prompter      = fh_prompter,
+    model         = "funhouse-gpt-high",
+    stages        = ("labels", "logs", "lab"),
+    lab_budget    = 4,              # model calls per sheet; the reader's ceiling is four
+    max_reports   = 2,              # drop this line after the first run
+)
+```
+
+Five metrics: **kind** (the test, from the sheet's own title), **link** (the
+boring identifier *and* the depth printed on the sheet, within 0.15 m compared
+in metres), **index** (every scalar the sheet printed, exact), **series** (a
+grading's percent-passing values within 1 %), **curve** (a plotted curve's
+points within the tolerance that sheet's own truth file states).
+
+**`kind` and `link` have no before column at all.** A table is a grid of
+numbers: it does not know that 31 is a liquid limit, that the sheet is a direct
+shear test, or that the specimen came from B-1 at 2.5 ft. Crediting it with any
+of those would score the reader's job against the extractor's output, so the
+baseline is asked only "is this number on the page", which is the most a table
+can answer. Read the metrics rather than the OVERALL rows.
+
+**The tables-alone baseline, measured here 2026-09-17** with no model, no
+credential and no network (`measure_wp3_lab.py --tables-only`, and in the
+ledger): **68 %** of the numbers are somewhere in a detected table (452/667) —
+83 % on the open sheets and 55 % on the blind ones, which are the scanned,
+optically-read and rotated pages where no table is detected at all. Two kinds
+score **zero**: every triaxial (0/64, all three of them) and the rock core
+(0/5), whose pages either have no usable text layer or print their values as
+nested stages no table detector groups. A grading's percent-passing series is
+the one thing a table does well (88 %), and a curve is what it does worst
+(35 %). That gap, plus the two metrics a table cannot answer at all, is what
+the reader is for.
+
+`RESULTS.md` then carries a second half: before and after per metric for the
+open set, the blind set and all logs; a per-log line with model calls, what was
+left unresolved and how many values came off the picture rather than the rows;
+and the cost per log. `logs/<log id>.json` holds the per-log detail and, like
+the label runs, makes the stage restartable — a log that already has one is
+skipped.
+
+Locally, `module_work/report_ingest_harness/measure_wp2b_logs.py` does the same
+scoring against the development engine, and `--grid-only` prints the before
+column with no engine, no key and no network at all.
+
+### Scoring the narrative reader as well (`stages=("labels", "logs", "lab", "narrative")`)
+
+The `narrative` stage runs `read_narrative` over every report that has a hand
+answer in `narrative_truth_dir` (`<ID>.json`, the owner's two schemas answered
+by hand with **null** where the report does not say) and scores it field by
+field. It reads the truth files that are PRESENT and skips every report without
+one, because the hand answers arrive a few reports at a time.
+
+A truth file carries two things beyond the answers. **`_alternates`** is the
+hand's fairness valve: other answers it will accept for this report, keyed by
+field and always a list, because a report can say a thing in more than one
+defensible way and the hand is one reading of it rather than the only one. A
+`null` among them means "not stated is acceptable too"; a list among them is a
+whole alternative list answer. **`_skip`** names the questions this report does
+not settle, and they are excluded from every count rather than scored as
+misses. Neither ever reaches the reader.
+
+```python
+results = score_on_cluster(
+    reports_dir         = "/Volumes/<your volume>/reports",
+    manifest            = "/Volumes/<your volume>/wp1b/MANIFEST.md",
+    di_dir              = "/Volumes/<your volume>/report_di",
+    truth_dir           = "/Volumes/<your volume>/report_ingest/truth",  # its narrative/ holds <ID>.json
+    out_dir             = "/tmp/report_ingest_narrative",
+    prompter            = fh_prompter,
+    model               = "funhouse-gpt-high",
+    stages              = ("labels", "logs", "lab", "narrative"),
+    narrative_budget    = 8,        # model calls per report; most cost one
+    max_reports         = 2,        # drop this line after the first run
+)
+```
+
+**Three numbers, and the third is there to be distrusted.** Most reports answer
+most of the general list and only part of the hazards list, so a reader that
+says nothing agrees with the hand on a great many fields.
+
+| | |
+|---|---|
+| `recall` | of the questions the report DOES answer, how many came back right. The one that says whether the reader reads. |
+| `precision` | of the answers the reader GAVE, how many were right. The one that catches a reader inventing plausible facts. |
+| `agreement` | every field, including the ones both sides left null. Printed because it is what a naive scorer would print, and it flatters. |
+
+How each kind of field is judged: **enumerations and counts exact**; **strings**
+by a normalised token match (rapidfuzz partial ratio ≥ 85, or a shared proper
+noun — "Soil & Rock Consulting Engineers" and "Soil and Rock Consulting
+Engineers, Inc." are one firm, and `siteClass` and `reportDate` also pass on
+their normalised forms); **lists** by set overlap, with the items' own precision
+and recall pooled across every list field and the field counting as right at a
+Jaccard of 0.6 — and two kinds of list, since `boringDictionary` and
+`testPitDictionary` hold identifiers and are matched exactly (B-1 and B-12 are
+two holes) while the prose lists are matched item by item by the string rule;
+**the four verdict questions on their verdict alone**, because two readers who
+both find the geophysical survey will not word the reason the same way; and
+**the four prose summaries on presence and word limit ONLY**
+(≤ 100 / 100 / 200 / 100 words), because whether a summary is a good summary is
+a person's call and a scorer that pretended otherwise would be scoring its own
+opinion. Null against anything is a miss either way; null against null is
+agreement and earns no recall.
+
+`RESULTS.md` carries the three numbers for the open, blind and whole sets, the
+recall broken out per kind, a **per-question** table (which questions are hard
+is what a prompt change is aimed at), a per-report line and the cost.
+`narrative/<ID>.json` holds the per-report detail and makes the stage
+restartable.
+
+Locally, `module_work/report_ingest_harness/measure_wp4_narrative.py` does the
+same scoring against the development engine (`--fields` for the per-question
+table, `--detail` for every miss on the open reports).
+
+### Labelling a page by looking at it (`stages=("vision_labels",)`)
+
+An experiment, and it is the one stage here that is not a reader. The rules
+label a page from what that page prints about itself; the review corrects them
+with the whole report in view. **Both read text.** This stage asks the third
+question: hand the page to a cheap model as a PICTURE, with the eighteen-label
+vocabulary and nothing else, and see what it says. It runs on the same reports
+as the `labels` stage, scores against the same hand labels with the same
+scorer, and writes one table with the three answers side by side.
+
+```python
+results = score_on_cluster(
+    reports_dir            = "/Volumes/<your volume>/reports",
+    manifest               = "/Volumes/<your volume>/report_ingest/MANIFEST.md",
+    labels_xlsx            = "/Volumes/<your volume>/report_ingest/trial_pages_working_r2.xlsx",
+    oos_labels             = "/Volumes/<your volume>/report_ingest/oos_labels.json",
+    di_dir                 = "/Volumes/<your volume>/report_di",
+    out_dir                = "/tmp/report_ingest_vision",
+    prompter               = fh_prompter,
+    stages                 = ("vision_labels",),   # or beside ("labels", ...)
+    vision_model           = "funhouse-gpt-low",   # GPT-4.1; the cheapest tier on purpose
+    vision_mode            = "page",               # or "sheet"
+    vision_dpi             = 100,                  # the default; see below
+    vision_outline_context = False,                # True = it also sees the contents list
+    max_reports            = 2,                    # drop this line after the first run
+)
+```
+
+**Why the cheapest tier.** The question is not whether a good model can label
+a page — it is whether the cheapest one can, looking, do what the rules and the
+review do by reading. Scoring it on `funhouse-gpt-high` would answer a
+different question and cost more to answer it.
+
+**The two modes are the trade being priced.** `page` is one call per page, the
+page rendered whole: a hundred pages is a hundred calls and each page gets the
+model's full attention. `sheet` is one call per contact sheet of six pages,
+each thumbnail labelled with its own page index exactly as the review's
+`contact_sheet` tool draws them: a hundred pages is seventeen calls and each
+page is a thumbnail. What the second costs in accuracy is the measurement.
+
+**The dpi is 100 because that is what the model keeps.** A 4.1-class vision
+stack scales an image to its own working size before it looks at it or charges
+for it — the short side lands around 768 px — and then prices what is left in
+512 px tiles. The arithmetic is one-sided:
+
+| render | what the model sees | tiles | tokens |
+|---|---|---|---|
+| letter at 72 dpi | 612 x 792 (not scaled: under the ceiling) | 4 | ~765 |
+| letter at 100 dpi | 768 x 994 | 4 | ~765 |
+| letter at 200 dpi | 768 x 994 | 4 | ~765 |
+
+So 72 dpi is not the cheap option, it is the same price with a quarter of the
+short side thrown away; 200 dpi is the same price again for four times the
+bytes on the wire and not one pixel the model keeps. Everything from about
+90 dpi up lands on that identical 768 px short side, and 100 leaves room for a
+page that is not letter-sized (A4 at 100 dpi is 827 x 1169, which scales to
+768 x 1086 and costs six tiles because it is taller, not because of the dpi).
+It is a parameter because the ceiling is the provider's and it moves.
+
+**`vision_outline_context=True`** prepends what the document prints about
+itself — the contents list, the lists of figures, tables and appendices, the
+dividers — to every call, so a run can put pure vision beside vision that knows
+which appendix it is standing in. In page mode that text rides on every call,
+so it is cut at 6,000 characters.
+
+**How to read the table.** `RESULTS.md` gains a WP5 section whose rows are the
+labels and whose columns come in pairs — precision and recall for `rules`
+(planlens' per-page rules), for `+review` (those rules with the label review's
+accepted changes applied) and for `vision` — over one set of hand labels and
+one scorer. A column appears only where its run exists: a report with no
+`runs/<ID>.json` beside it prints two columns rather than three, and the header
+says how many reports the `+review` column covers when it is not all of them.
+**A page the vision pass left unresolved is scored as `other`** — a non-answer
+is scored, not excused — and the per-report line carries how many there were.
+The blind set prints a summary and nothing else, because a blind figure read
+report by report stops being blind.
+
+What Python refuses rather than passes on: a label outside the vocabulary
+becomes `other` with a QA note, a confidence outside 0 to 1 is clipped, a page
+the reply left off its own contact sheet is `unresolved` and never guessed
+from its neighbours, a page the reply invented is dropped with a note, and the
+budget caps model calls so every page past it is `unresolved` too.
+
+`vision/<ID>.json` holds the per-report detail and makes the stage restartable.
+It stays on the cluster with `runs/` and `triage/`: a vision REASON says what
+the model saw on a page and can therefore quote a title block.
+
+Locally, `module_work/report_ingest_harness/measure_wp5_vision.py` does the
+same scoring against the development engine, and `--reuse` re-scores the saved
+runs with no model, no key and no network at all.
+
+Bring back **`RESULTS.md`** from whatever `out_dir` was. That is the whole report,
 and it carries IDs, labels, counts and rates only. The per-report runs and the
 triage profiles stay on the cluster in `runs/` and `triage/` unless you move
 them deliberately, because a change's reason and a triage rationale can name a
@@ -232,6 +1011,15 @@ to say what a run cost months later.
     --set oos_blind --no-append
 ```
 
+The log and lab readers have their own scripts, each of which runs its
+deterministic half with no engine at all:
+
+```
+.venv/Scripts/python -m module_work.report_ingest_harness.measure_wp2b_logs     --grid-only
+.venv/Scripts/python -m module_work.report_ingest_harness.measure_wp3_lab     --tables-only --append --note "what changed this round"
+.venv/Scripts/python -m module_work.report_ingest_harness.measure_wp3_lab     --kind gradation --detail
+```
+
 Sets are `insample` (the reports with spreadsheet labels), `oos_open` (the
 lead's out-of-sample labels on ten reports), `oos_blind` (the other fourteen)
 and `checkpoint` (six reports chosen to span short, long, scanned and old).
@@ -281,13 +1069,58 @@ naming the report they stopped before.
 ```
 
 Offline and free: no credential, no network, no corpus. `FakeEngine` replays a
-script of turns in the engine's place, so the whole of both passes runs against
-planlens' synthetic report — the prompt each builds, the tool loop, the budget
+script of turns in the engine's place, so the whole of every pass — both label
+passes, all three readers and the end-to-end graph — runs for real — the prompt each builds, the tool loop, the budget
 stop, the rules for applying a change. Running past the end of a script raises,
 because a pass that makes one more call than the test expected is the bug the
-test exists to catch. The harness suite adds the scorecard's own arithmetic, the
-disputed-label rule and the prompt fingerprint; its corpus-dependent tests skip
-cleanly on a machine without the private data.
+test exists to catch.
+
+The log reader's tests run over real `log_grid` output on planlens' synthetic
+log fixtures, and the lab reader's over real located text and real detected
+tables on four synthetic sheets built here (`tests/lab_fixtures.py`: a
+plasticity chart with its limits in a box, a grading curve with its values
+tabulated beneath it, a summary table of four specimens, a laboratory
+certificate that reports nothing). So the brief that is asserted on is the brief
+a model would actually be sent, and the refusals are the refusals that would
+actually happen: a depth past the ruler, a log with no scale, a provenance
+naming a page outside this sheet, a liquid limit below the plastic limit, a
+grading running the wrong way.
+
+The DIGGS writer is tested against the bundled 2.6 schema and through
+`parse_diggs` on a synthetic investigation carrying one of everything, and on
+synthetic lab records carrying one of every kind — including the namespace trap,
+the millimetre rule, the `dega` code, and the two reasons a lab test cannot be
+written at all. The two scorers are tested on synthetic truth where what is
+checked is the matching itself, and — the important one — that the scorer does
+**not** ask for a date, a description, a link field twice, or a value in the
+wrong unit, because a scorer that over-asks turns a good reader into a bad
+number.
+
+The narrative reader, the reconciler, the writers and the whole graph are
+tested the same way. The graph's test runs the synthetic report end to end on a
+scripted engine — every item to its own reader, every output written, both
+DIGGS gates green — and then proves that a second run over the same folder
+makes ZERO model calls, that `needs_person` stops after triage, that
+`appendix_only` never reaches the narrative reader, that a relabelled page
+changes which items are read, and that one reader raising does not take the
+report down with it. The writers' tests read the library row back out of
+SQLite; the reconciler's pin the rule that matters most, which is that both
+values survive a conflict, in the record, with their pages.
+
+The harness suite adds the scorecard's own arithmetic, the disputed-label rule,
+the prompt fingerprint, the deterministic fifteen-log DIGGS gate, the
+thirty-one-sheet lab gate, the floor under the lab scorecard (a flawless
+reading of all thirty-one sheets must score 100 %, or the scorer is what is
+wrong), and the WP4 table's own arithmetic — including the one that matters:
+a reader which answers nothing prints a recall of zero rather than an accuracy
+of ninety. Its corpus-dependent tests skip cleanly on a machine without the
+private data.
+
+The app-side wiring has its own offline test,
+`funhouse_agent/deep/tests/test_report_ingest_offline.py`: that the tool and
+the sub-agent appear only when asked for AND the installed planlens can serve
+them, that the spec is built like every other sub-agent spec, and that a run
+through the tool comes back as the compact result rather than the record.
 
 ## What the measurements have taught the prompts
 
@@ -318,8 +1151,13 @@ and a later editor who does not know why will delete it.
 
 ## How this package ships
 
-It ships in the wheel as of **5.19.0** (2026-09-17) as a library: no tool of
-the app calls it yet, and nothing in the chat surface changed.
+It shipped in the wheel as of **5.19.0** (2026-09-17) as a library, and
+**5.20.0** adds the rest of it: the record, the three readers, the reconciler,
+the writers, the graph and the sub-agent. Since WP4 the app CAN call it —
+`build_deep_agent(enable_report_ingest=True)` adds one primary tool and one
+sub-agent — but the flag is **OFF by default**, so nothing on the chat surface
+changes until a release turns it on. It stays off until the owner's four-stage
+cluster run has measured the readers on the tier that will do the work.
 
 - **`report_ingest*` is in `[tool.setuptools.packages.find]`.** Until that line
   landed, a wheel built from this repo did **not** contain this package, and
@@ -329,9 +1167,14 @@ the app calls it yet, and nothing in the chat surface changed.
 - **`report_ingest` is in pytest's `testpaths`**, so this suite runs in the
   release gate. The WP0/WP1 harness under `module_work/` is dev-only and is
   deliberately not.
-- **`planlens>=0.5`** — the page roles, the printed outline and the per-page
-  ledger these passes read are 0.5.0's. planlens 0.5.0 declares exactly the
-  dependencies 0.4.0 did, so the pin adds no new package to the cluster.
+- **`planlens>=0.6`** (5.20.0) — the page roles, the printed outline and the
+  per-page ledger are 0.5.0's; `log_grid`, which the log reader is built on,
+  and the text extraction that returns an overprinted line ONCE are 0.6.0's.
+  That second one is not a nicety: a depth scale drawn twice reads "5, 5, 10,
+  10", which holds no strictly rising run of three, so the ruler was refused
+  and the sheet came back with no depths at all. planlens 0.6.0 declares
+  exactly the dependencies 0.4.0 did, so the pin adds no new package to the
+  cluster.
 - `pydantic` and `openpyxl`, both already there: pydantic through the agent
   stack, openpyxl as a hard requirement of `python-ags4`, which this app
   depends on directly. The hand-label reader imports openpyxl lazily anyway,

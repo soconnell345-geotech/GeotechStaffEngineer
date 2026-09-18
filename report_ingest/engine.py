@@ -43,6 +43,7 @@ from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 
 __all__ = [
     "Engine", "Reply", "ToolCall", "Usage", "CostMeter", "ClaudeEngine",
+    "engine_for",
     "PrompterEngine", "MODEL_PRICES", "PROMPTER_MODELS", "strict_schema",
     "text_block", "image_block", "tool_use_block", "tool_result_block",
     "opaque_block", "user", "assistant",
@@ -755,3 +756,59 @@ class PrompterEngine:
             seconds=seconds,
             content=blocks,
         )
+
+
+# ---------------------------------------------------------------------------
+# finding the engine the app is already holding
+# ---------------------------------------------------------------------------
+
+def engine_for(obj: Any, model: Optional[str] = None,
+               meter: Optional[CostMeter] = None) -> Optional["Engine"]:
+    """The ingest engine for whatever the host handed the agent, or None.
+
+    The app builds its agents around its own engines -- ``NativeToolEngine``
+    and ``PrompterBridgeEngine`` on the cluster, a LangChain chat model
+    locally -- and every one of them is holding the live Prompter this
+    package's :class:`PrompterEngine` needs. This digs it out:
+
+    * something that already satisfies the :class:`Engine` protocol comes
+      back unchanged;
+    * an app engine wrapping a Prompter (``prompter`` or ``_prompter``)
+      becomes a :class:`PrompterEngine` over that Prompter;
+    * a live Prompter itself becomes one directly;
+    * anything else comes back **None**, which is an answer. A caller that
+      cannot get an engine says so rather than falling back to a model nobody
+      asked for: the app runs on Funhouse's OpenAI tiers, and quietly reading
+      a 400-page report on something else would be a bill and a number that
+      belong to nobody.
+    """
+    if obj is None:
+        return None
+    if isinstance(obj, (ClaudeEngine, PrompterEngine)):
+        return obj
+    complete = getattr(obj, "complete", None)
+    if callable(complete):
+        try:
+            import inspect
+            parameters = inspect.signature(complete).parameters
+        except (TypeError, ValueError):           # a C-level callable
+            parameters = {}
+        if "output_format" in parameters:
+            return obj                            # already one of ours
+    for name in ("prompter", "_prompter"):
+        inner = getattr(obj, name, None)
+        if inner is not None and _looks_like_prompter(inner):
+            return PrompterEngine(inner, model or PROMPTER_MODELS[1],
+                                  meter=meter)
+    if _looks_like_prompter(obj):
+        return PrompterEngine(obj, model or PROMPTER_MODELS[1], meter=meter)
+    return None
+
+
+def _looks_like_prompter(obj: Any) -> bool:
+    """Whether this object is a Funhouse Prompter, by what it offers.
+
+    By capability rather than by class: the SDK's Prompter is imported in
+    several places under several names and this package imports it nowhere.
+    """
+    return callable(getattr(obj, "chat", None)) and hasattr(obj, "client")

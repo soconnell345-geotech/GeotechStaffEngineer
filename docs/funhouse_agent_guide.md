@@ -266,7 +266,7 @@ may lag it. `hvsrpy`/`swprocess` were removed in 5.12.)
 | `read_reference_figure` | Render a digitized reference chart and read a value off it via vision |
 | `save_file` | Save content to a file (text or base64 binary), **write-verified** |
 
-### Document review tools (planlens, 5.19.0 — deep agent's primary surface)
+### Document review tools (planlens, 5.20.0 — deep agent's primary surface)
 
 Whole-document tools served by the `planlens` package's `ReviewToolkit`
 through `funhouse_agent/document_tools.py`. `source` is an attachment key or
@@ -289,11 +289,14 @@ own specs rather than assumed from the pin: on an older planlens
 `find_quantities` is not advertised at all and a `fuzzy=true` search returns a
 JSON error instead of calling the toolkit.
 
-planlens 0.5.0 (the pin floor since 5.19.0) adds a ninth toolkit tool,
-`document_roles` — what each page of a report IS, the work items its pages
-make, the document's printed outline and a per-page ledger — but it is **not
-on this app's tool surface yet**; it will be wired with the report-ingest
-sub-agent.
+planlens 0.5.0 adds a ninth toolkit tool, `document_roles` — what each page of
+a report IS, the work items its pages make, the document's printed outline and
+a per-page ledger — and planlens 0.6.0 (the pin floor since 5.20.0) adds a
+tenth, `log_grid`, which returns one boring log as columns, a fitted depth
+ruler, every cell placed at a depth, its layers and its header fields. Neither
+is on this app's tool surface directly. They are what the `report_ingest`
+sub-agent reads.
+
 
 The policy the deep-agent prompt states: text first, then LOOK — with
 `analyze_pdf_page` (a page), `render_region` (a spot) or `analyze_image` (a
@@ -305,6 +308,37 @@ accept an attachment key **or** a real filesystem path (`/tmp/...`,
 `/Volumes/...`, `/Workspace/...`). The agent's own scratch filesystem
 (`ls` / `read_file`) does NOT see real paths — `list_files` is how it discovers
 the user's actual folders before reading or saving.
+
+### `report_ingest` (5.20.0) — one whole report, OFF by default
+
+A primary tool beside `open_document`, and the only one that reads a WHOLE
+report rather than pages of it. Given an attachment key or a path, it runs the
+ingest — triage, the log reader, the lab reader, the narrative reader, the
+reconciler, the writers — and returns **counts, the paths it wrote and the
+first lines of the summary, never the whole record**, which would swamp the
+turn. `questions` is anything else to ask of the report, one per line. What it
+writes: the record as JSON, a one-page summary, a library page, and a DIGGS
+2.6 file, into the conversation's own output folder.
+
+It is **off unless the host asks for it**:
+`build_deep_agent(enable_report_ingest=True)`. The default is `False` because
+no reader has been measured against the model that will do the work yet — the
+owner's four-stage `score_on_cluster` run is what settles that (`HANDOFF.md`
+§0a-current).
+
+5.20.0 also carries a **vision-first page-classification experiment** that
+touches no tool surface: `report_ingest/vision_labels.py` sends each page as a
+picture to GPT-4.1 on the cheap tier (`funhouse-gpt-low`) with structured
+output, and `score_on_cluster(stages=("vision_labels",))` scores it against the
+same hand labels, with the same scorer, as planlens' rules and the label
+review, so RESULTS.md prints the three answers side by side.
+
+Two things can make it decline rather than fail. It is **feature-detected on
+the installed planlens**, not trusted from the pin, so on a cluster that
+resolved an older planlens than the floor the tool is not advertised at all.
+And it runs on **the app's own engine**: where the host built the agent with
+no Prompter the tool still exists and returns a plain "unavailable here",
+which is a better answer than a missing tool the model invents a way around.
 
 ## File Output (save_fn) — verified writes
 

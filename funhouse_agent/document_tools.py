@@ -189,3 +189,30 @@ def dispatch_document_tool(name: str, arguments: Dict[str, Any],
         return _toolkit().call_json(name, arguments, max_chars=max_chars)
     finally:
         _ATTACHMENTS.reset(token)
+
+
+#: The planlens tools the report ingest is built on: the page roles and work
+#: items it walks, and the log grid its log reader reads rows off. Both
+#: arrived in planlens 0.5; on anything older the ingest cannot run at all,
+#: so the app's tool hides itself rather than failing in front of the user.
+REPORT_INGEST_TOOLS = ("document_roles", "log_grid")
+
+
+def report_ingest_supported() -> bool:
+    """Whether the installed planlens can serve the whole-report ingest."""
+    return available() and all(has_tool(name) for name in REPORT_INGEST_TOOLS)
+
+
+def resolve_document_source(source: str,
+                            attachments: Optional[Dict[str, bytes]] = None):
+    """An attachment key or a path, resolved the way the document tools do.
+
+    Returns the attachment's BYTES or a real path, which is what planlens'
+    ``open_document`` takes either of. Raises planlens' ``ToolError`` when it
+    is neither, with the same wording the document tools give.
+    """
+    token = _ATTACHMENTS.set(dict(attachments or {}))
+    try:
+        return _resolve(source)
+    finally:
+        _ATTACHMENTS.reset(token)

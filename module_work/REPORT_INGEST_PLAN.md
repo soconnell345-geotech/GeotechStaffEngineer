@@ -1,11 +1,24 @@
 # Report ingest — geotechnical report → organised record + summary + DIGGS 2.6
 
-**Status: WP0–WP1b SHIPPED in planlens 0.5.0 / app 5.19.0 (2026-09-17);
-cluster scoring pending the owner's run.** The `report_ingest` package is in
-the app wheel as a library — no tool of the app calls it yet — and
-`report_ingest.cluster_scoring.score_on_cluster` is the notebook cell that
-produces the WP1b numbers on the model that will do the work. WP2 starts once
-those numbers are in. (Started 2026-09-16, owner: "run with what you have".) Drafted 2026-09-16 after reviewing the report corpus (38 reports,
+**Status: WP0–WP5 BUILT; 5.20.0 RELEASED with planlens 0.6.0 (2026-09-17);
+cluster scoring pending the owner's run.** WP0 and WP1b shipped in app 5.19.0
+with planlens 0.5.0. WP2 through WP4 — the record, the log reader and DIGGS
+2.6, the lab reader, the narrative reader and the reconciler, the writers,
+the deterministic graph, the folder runner and the app sub-agent — plus the
+WP5 vision-first label experiment (`report_ingest/vision_labels.py`, cluster
+stage `vision_labels`) shipped as 5.20.0 with planlens 0.6.0 (tags `v5.20.0`
+and `v0.6.0`). The calc reader is the one WP5 item still parked.
+
+**Every model number for WP2–WP4 is still missing, and that is the state.**
+What the ledger holds for the three readers is the baseline WITHOUT a model:
+`log_grid` alone for the logs, the page's own detected tables alone for the
+lab sheets, and nothing yet for the narrative. The development-engine
+checkpoints were never run for any of the three. The numbers arrive from the
+owner's four-stage `score_on_cluster` run, on the tier that will do the work
+— which is why the sub-agent ships with `enable_report_ingest=False` and why
+no reader's accuracy is quoted anywhere. WP5 is the one package not built.
+
+(Started 2026-09-16, owner: "run with what you have".) Drafted 2026-09-16 after reviewing the report corpus (38 reports,
 7,829 pages) with planlens 0.4.0; revised the same day with the owner's two
 query schemas, the Azure Document Intelligence (DI) results found in the
 private repo, and the owner's steer that neither the old page labels nor the
@@ -312,6 +325,7 @@ graph runs headless over a folder of PDFs for the report-library use.
 | Scanned, or text layer unreliable, DI result available | **Azure DI** through planlens `AzureLayout` | Results for 21 corpus reports are already in `raw/di/`; for new reports the owner runs DI on the cluster (Funhouse SDK); gives lines, heading roles and tables with header cells on scans; only the pages `pages_needing_ocr` names need be sent; cost is a few cents per report at the known rate |
 | Same, no DI result | **RapidOCR** via planlens `[ocr]` (`rapidocr-onnxruntime`, models inside the wheel) | Free, offline; installed in the dev venv; needs the same Nexus install check on the cluster that rapidfuzz had. Not related to rapidfuzz (which does fuzzy text matching) |
 | Neither reads it | The page image to the reader model | Last resort; every such page is a QA entry |
+| Any page | The page image to a cheap vision model with structured output (experiment, scored in 5.20.0) | Not a text source at all — it skips the text and asks what the page IS. `report_ingest/vision_labels.py`, scored against the same hand labels as the rules by `score_on_cluster(stages=("vision_labels",))` on `funhouse-gpt-low`, in one call per page or one per six-page contact sheet |
 
 Locally (this machine) DI cannot be called, so the harness accepts DI JSON
 dropped into `raw/di/` by the owner after a cluster run; RapidOCR covers the

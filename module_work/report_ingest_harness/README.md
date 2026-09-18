@@ -13,8 +13,26 @@ root with the app venv, which carries the editable `planlens` checkout:
 .venv/Scripts/python -m module_work.report_ingest_harness.measure_wp0
 .venv/Scripts/python -m module_work.report_ingest_harness.measure_wp0 --only R36 --no-append
 .venv/Scripts/python -m module_work.report_ingest_harness.measure_wp1_labels
+.venv/Scripts/python -m module_work.report_ingest_harness.measure_wp2b_logs --grid-only
+.venv/Scripts/python -m module_work.report_ingest_harness.measure_wp3_lab --tables-only
 .venv/Scripts/python -m pytest module_work/report_ingest_harness/tests -q
 ```
+
+`measure_wp2b_logs` and `measure_wp3_lab` are the reader scorecards, and each
+runs its DETERMINISTIC half with no engine, no credential and no network:
+`--grid-only` scores what `log_grid` alone recovered, `--tables-only` scores
+what a page's own detected tables hold. Those are the honest baselines and are
+worth re-running whenever planlens changes. With an engine they run the reader
+as well and print both columns side by side; the numbers that count come from
+`report_ingest.cluster_scoring.score_on_cluster`, because the app runs against
+OpenAI models through Prompter and a score measured on any other model measures
+a model that will never do the work.
+
+`lab_truth_records.py` turns the 31 hand-truthed laboratory sheets into record
+objects, and reads their keys through `report_ingest.lab_scoring` rather than a
+second copy — the scorer ships in the wheel and runs on the cluster, this
+converter is repo-only, and the two have to read a truth file the same way or
+the DIGGS gate and the scorecard would be measuring different files.
 
 `measure_wp1_labels` is WP1's scorecard: it runs planlens'
 `document.roles.page_roles` over every report that has hand labels and scores

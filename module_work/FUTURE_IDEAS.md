@@ -293,6 +293,16 @@ card, no broken image link, both files in the SharePoint folder, PDF still embed
  **Still todo:** Tier 2 scanned-page engines
 (local OCR / table / layout models — needs Funhouse to confirm model vendoring
 through Nexus; owner may pick up next week) and revision comparison (A4).
+**A cheap HOSTED vision model is being scored first, in 5.20.0.** The local
+route needs Funhouse to bless vendored weights and cannot be measured until
+they do; a hosted model on the tier list needs nothing and can be measured
+this week. `report_ingest/vision_labels.py` sends the page IMAGE to
+`funhouse-gpt-low` with structured output and the eighteen-label vocabulary,
+and `score_on_cluster(stages=("vision_labels",))` scores it against the same
+hand labels, with the same scorer, as the rules and the review. If a cheap
+hosted model reads a scanned page well enough, the local-model question is
+smaller than it looks; if it does not, the measurement says what a local
+model would have to beat.
 
 **TODO (owner agreed 2026-09-16): toolkit MCP server.** One thin MCP server over
 the DISPATCH layer — `list_agents` / `list_methods` / `describe_method` /
@@ -333,7 +343,7 @@ DocLayout-YOLO (AGPL), docling (torch unavoidable — optional only).
    firewalled: any package that downloads model weights at runtime is unusable
    as published — vendor the models or skip.
 
-## REPORT INGEST TRAIN (2026-09-17) — WP0–WP1b SHIPPED in 5.19.0; WP2–WP5 next
+## REPORT INGEST TRAIN (2026-09-17) — WP0–WP5 BUILT; 5.20.0 RELEASED; calc reader next
 
 Plan: `module_work/REPORT_INGEST_PLAN.md`. Goal, in the owner's words:
 well-organised data about each geotechnical report, usable either as a
@@ -353,14 +363,50 @@ exports of it.
   development), the scorecard arithmetic, and
   `cluster_scoring.score_on_cluster` for the run on the cluster.
 
-**Next, in order:** WP2 boring logs → investigations → DIGGS borings (the
-core); WP3 lab sheets → lab tests; WP4 the narrative question set, the
-reconciler, the `report_ingest` sub-agent and the library page; WP5 calc
-printouts and the long tail. **WP2 waits on the owner's cluster scoring run**
-— the WP1b gate is measured through Prompter, not on a development engine.
+**Built and released as planlens 0.6.0 + app 5.20.0 (2026-09-17):**
+- **WP2** — `log_grid` in planlens (a boring log read as the coordinate system
+  it is), the record model, the log reader, and a real DIGGS 2.6 writer the
+  app's own subsurface reader reads back.
+- **WP3** — the lab reader, with a typed result per test kind refused at
+  construction when the result does not match the kind, and the DIGGS lab
+  elements.
+- **WP4** — the narrative reader on the owner's two standing query schemas,
+  the reconciler that records a disagreement rather than settling it, the
+  writers (record, summary page, WikiLLM-style library page, SQLite index),
+  the deterministic resumable graph, the folder runner, and the
+  `report_ingest` sub-agent on the app's tool surface behind
+  `enable_report_ingest=False`.
+
+**Next:** WP5 — calculation printouts and the long tail. It is the one work
+package of the plan not built.
+
+**What WP5 waits on, and so does turning the sub-agent on:** the owner's
+four-stage `score_on_cluster` run. Every reader's accuracy is still unmeasured
+against a model — the ledger holds the grid-alone and tables-alone baselines
+and nothing more, and the development-engine checkpoints were never run for
+the logs, the lab or the narrative. The gate that matters is measured through
+Prompter, on the tier the app actually runs on.
 
 **Parked with it:** the four disputed hand labels stay disputed (the
 spreadsheet is never edited — a hand label records what a person decided);
-Azure DI results for R02, R31, R32 and R38 would help and do not exist yet;
-one label sheet matches no corpus report and stays unmatched rather than being
-force-fitted to one of the same length.
+Azure DI results for four reports would help and do not exist yet; one label
+sheet matches no corpus report and stays unmatched rather than being
+force-fitted to one of the same length. The owner's published answer
+vocabulary in `report_ingest/model.py` was raised against the privacy word
+list and ruled generic taxonomy rather than private report text; it stays
+verbatim so the hand answers still match, and the owner can object before the
+tag (HANDOFF §0a-current).
+
+**Follow-up — the sub-agent's middleware enforces nothing.** deepagents 0.6.8
+reads only name/description/runnable from a `CompiledSubAgent` spec, so
+`ScratchFilesystemGuard` and `ModelCallBudgetMiddleware` declared on the
+`report_ingest` sub-agent enforce nothing; the real ceilings are the
+per-reader `Budgets` in Python and the graph exposes no filesystem tool to any
+model. Follow-up: enforce the guard and the budget inside the compiled graph
+(or wrap the runnable) so the sub-agent has the same protections as the calc
+and references sub-agents.
+
+**Landed in 5.20.0 (commit 6e8750e):** the fifth cluster-scoring stage,
+`vision_labels` — page images read by GPT-4.1 on the cheap tier with
+structured output as a first-pass page classifier, scored beside the rules and
+the review. Its number, like every model number, comes from the owner's run.

@@ -96,14 +96,21 @@ def parse_diggs(
     investigations: Dict[str, Investigation] = {}
     gml_id_map: Dict[str, str] = {}  # gml:id → investigation_id
 
-    for borehole in _findall(root, ".//diggs:Borehole", ns_map):
-        inv = _parse_borehole(borehole, ns_map, warnings)
-        if inv.investigation_id:
-            investigations[inv.investigation_id] = inv
-            # Map gml:id to investigation_id for xlink resolution
-            gml_id = borehole.get(f"{{{_NS_GML}}}id", "")
-            if gml_id:
-                gml_id_map[gml_id] = inv.investigation_id
+    # Borehole is the common case. TrialPit is the DIGGS element for a test
+    # pit or trench, and an ingest that wrote one would otherwise hand back a
+    # file with nothing in it -- the pit is a sampling feature like any other
+    # and becomes an Investigation of type "test_pit".
+    for element_name, investigation_type in (("diggs:Borehole", "boring"),
+                                             ("diggs:TrialPit", "test_pit")):
+        for feature in _findall(root, f".//{element_name}", ns_map):
+            inv = _parse_borehole(feature, ns_map, warnings)
+            inv.investigation_type = investigation_type
+            if inv.investigation_id:
+                investigations[inv.investigation_id] = inv
+                # Map gml:id to investigation_id for xlink resolution
+                gml_id = feature.get(f"{{{_NS_GML}}}id", "")
+                if gml_id:
+                    gml_id_map[gml_id] = inv.investigation_id
 
     # Parse tests and associate with borings via xlink:href
     _parse_spt_tests(root, ns_map, investigations, gml_id_map, warnings)
@@ -128,6 +135,13 @@ def parse_diggs(
     _parse_pressuremeter_tests(root, ns_map, investigations, gml_id_map, warnings)
     _parse_dmt_tests(root, ns_map, investigations, gml_id_map, warnings)
 
+    # DIGGS 2.6 proper. Everything above reads the FLAT dialect this parser
+    # was built against; a file written to the published schema puts its
+    # values somewhere else entirely (see subsurface_characterization.diggs26).
+    # These run last and only ever APPEND, so a flat file reads exactly as it
+    # always did and a conformant file now reads too.
+    _parse_diggs26(root, ns_map, investigations, gml_id_map, warnings)
+
     # Count totals
     n_measurements = sum(len(inv.measurements) for inv in investigations.values())
     n_lithology = sum(len(inv.lithology) for inv in investigations.values())
@@ -149,6 +163,24 @@ def parse_diggs(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _parse_diggs26(root, ns_map, investigations, gml_id_map, warnings):
+    """Read the parts of a conformant DIGGS 2.6 file the flat readers miss.
+
+    Lithology, test results and water levels: the three things the published
+    schema puts somewhere other than where the flat dialect does. Kept in its
+    own module because it is a second way of reading the same file, not a
+    patch on the first.
+    """
+    from subsurface_characterization import diggs26
+
+    for reader in (diggs26.parse_diggs26_lithology,
+                   diggs26.parse_diggs26_tests,
+                   diggs26.parse_diggs26_samples,
+                   diggs26.parse_diggs26_water):
+        reader(root, ns_map, investigations, gml_id_map, warnings,
+               find=_find, findall=_findall, text=_text)
+
 
 def _detect_namespace(root: ET.Element) -> dict:
     """Detect DIGGS namespace version from root element."""

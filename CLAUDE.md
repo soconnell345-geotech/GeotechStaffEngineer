@@ -70,7 +70,61 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## CURRENT WORKING STATE (2026-09-17) — 5.19.0 RELEASED (tag `v5.19.0`)
+## CURRENT WORKING STATE (2026-09-17) — 5.20.0 RELEASED with planlens 0.6.0
+
+- **app 5.20.0** (tag `v5.20.0`, 2026-09-17, merge of `feature/report-ingest-wp2`
+  into master; planlens 0.6.0 tagged `v0.6.0` the same day, first) — published
+  to PyPI by the tag workflow on the owner's word. **What shipped:**
+  the whole of `report_ingest` — WP2 through WP4 on top of 5.19.0's WP0/WP1b
+  library. `ReportRecord` is the product and everything else is an export of
+  it: a number keeps the unit it was printed in, every value carries the page
+  and the box it came off and how it was read, and what could not be read is
+  recorded rather than guessed. Three readers feed it — the **log reader**
+  (one `Investigation` per boring, continuation sheets folded in, gated so a
+  depth off the sheet's own ruler is refused rather than accepted, and
+  nothing computed: an N the log never printed stays `None`), the **lab
+  reader** (a typed result per test kind, refused at construction if the
+  result does not match the kind), and the **narrative reader** (the owner's
+  two standing query schemas answered field for field, cited, `None` where
+  the report is silent). The **reconciler** links the lab tests to the ground
+  and RECORDS a disagreement instead of settling it. The **writers** produce
+  the record, a summary page, a WikiLLM-style library page with a SQLite
+  index over many reports, and **real DIGGS 2.6** with both gates, which the
+  app's existing subsurface reader now reads back. `graph.ingest_report` is
+  the deterministic resumable loop, `run_folder` drives it over a folder, and
+  `subagent` puts the whole thing on the app as one `CompiledSubAgent` plus
+  one primary `report_ingest` tool — **OFF by default**
+  (`build_deep_agent(enable_report_ingest=False)`), because nothing about it
+  has been checked on the cluster yet. `cluster_scoring.score_on_cluster` now
+  takes **four stages** (`labels`, `logs`, `lab`, `narrative`) and **ONE
+  truth root**: `truth_dir` may hold `logs/`, `lab/` and `narrative/`, so one
+  folder is uploaded before a run instead of three paths that must each be
+  right. **Pin raised to `planlens>=0.6`** (0.6.0, 2026-09-17): `log_grid`,
+  which reads a boring log as the coordinate system it is, and the text-
+  extraction fix that returns an overprinted line ONCE — not a nicety here,
+  because a doubled depth scale ("5, 5, 10, 10") holds no strictly rising run
+  of three, so the ruler was refused and the sheet came back with no depths
+  at all. **No new third-party package:** planlens 0.6.0 declares exactly
+  what 0.4.0 did (numpy, ezdxf, PyMuPDF, opencv-python-headless, rapidfuzz).
+  `anthropic` stays OPTIONAL and is not installed on the cluster. Release
+  gate **12,381 passed / 33 skipped / 0 failed** (three chunks, each gated on
+  pytest's exit code, on the final tree). Cluster install **NOT yet confirmed** (install guide
+  §11). **First live check:** the owner's own five-stage scoring run —
+  `%pip install "geotech-staff-engineer==5.20.0"`, one
+  `score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels"), truth_dir=…)`
+  cell with `max_reports=2`, and `RESULTS.md` comes back. **The release also
+  carries a vision-first page-classification experiment**
+  (`report_ingest/vision_labels.py`): each page as a PICTURE to GPT-4.1 on
+  the cheap tier (`funhouse-gpt-low`) with structured output, one call per
+  page or one per six-page contact sheet, added as the fifth stage
+  `vision_labels` and scored against the SAME hand labels with the SAME
+  scorer as the rules and the review, so `RESULTS.md` prints the three
+  answers side by side. **Raised and ruled:** `report_ingest/model.py` publishes the
+  owner's own answer vocabulary, and two values name a building type; it is
+  generic taxonomy rather than text out of a private report, it stays
+  verbatim so the hand answers still match, and the owner can object before
+  the tag (HANDOFF §0a-current). Plan and parked work:
+  `module_work/REPORT_INGEST_PLAN.md` (WP5). 5.19.0 follows.
 
 - **app 5.19.0** (tag `v5.19.0`, 2026-09-17) — the report-ingest package, and
   **no new direct dependency**. **What shipped:** `report_ingest/`, a LIBRARY
@@ -913,10 +967,10 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | dxf_import | 97 | DXF CAD import for slope stability + FEM (discover layers, parse geometry, build SlopeGeometry/FEM inputs) |
 | dxf_export | 37 | DXF export for cross-section geometry (surface, boundaries, GWT, nails, annotations) |
 | pdf_import → `planlens.pdf` | (planlens) | HISTORICAL PATH. The PDF cross-section importer ships in the separate `planlens` package since 2026-09-04 (`planlens.pdf`; app-side bridge `dxf_import/pdf_bridge.py`). |
-| drawing_ir → `planlens.ir` + `planlens.document` + `planlens.tools` | (planlens, 1,182 tests at 0.5.0) | HISTORICAL PATH. The drawing IR (DXF / vector-PDF / raster ingest, slice queries, leader / dimension / title-block / bubble / cloud finders, `render_region`) is `planlens.ir`; since planlens 0.3.0 the WHOLE-DOCUMENT layer (`planlens.document`: page map + structure, located text, tables, review markups, hidden CAD text, Azure DI text source) and the LLM tool layer (`planlens.tools`) sit beside it. See "Document review & drawing geometry (planlens)" below. |
+| drawing_ir → `planlens.ir` + `planlens.document` + `planlens.tools` | (planlens, 1,307 tests at 0.6.0) | HISTORICAL PATH. The drawing IR (DXF / vector-PDF / raster ingest, slice queries, leader / dimension / title-block / bubble / cloud finders, `render_region`) is `planlens.ir`; since planlens 0.3.0 the WHOLE-DOCUMENT layer (`planlens.document`: page map + structure, located text, tables, review markups, hidden CAD text, Azure DI text source) and the LLM tool layer (`planlens.tools`) sit beside it. See "Document review & drawing geometry (planlens)" below. |
 | fem2d | 353 | 2D plane-strain FEM (T6 default + CST/Q4/beam, 3D-principal MC return, HS, GL99 SRM, seepage, consolidation, staged construction, PLAXIS-style calc-package plots); validated vs Griffiths-Lane/Prandtl (VALIDATION.md) |
 | geo_project | 89 | Canonical Project document for staged, human-gated LE/FEM model setup (schema+validators, builders, templates, DXF/PDF/vision ingest w/ provenance quarantine, echo-back renderer) |
-| report_ingest | 117 | The whole-report model passes over planlens' page roles: document triage (one structured call → `DocumentProfile` + workflow) and label review (an agent loop that returns CHANGES, applied in Python and each one graded). Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster` is the owner's notebook cell. A LIBRARY since 5.19.0 — no app tool calls it yet. `report_ingest/README.md`, plan in `module_work/REPORT_INGEST_PLAN.md` |
+| report_ingest | 591 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop; `run_folder` drives it over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels"), truth_dir=…)` is the owner's notebook cell, and `truth_dir` is ONE root holding `logs/`, `lab/` and `narrative/` so one folder is uploaded rather than three paths kept in step. The fifth stage is the 5.20.0 EXPERIMENT: `vision_labels.py` sends each page as a picture to GPT-4.1 on the cheap tier with structured output, scored against the same hand labels by the same scorer as the rules and the review. `report_ingest/README.md`, plan in `module_work/REPORT_INGEST_PLAN.md` |
 
 Other components: geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions + DM7 figure catalogs, 3529 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 + 25 + 31 + 5 = 479 tests)
 

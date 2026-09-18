@@ -14,9 +14,28 @@ assert "report_ingest.engine" not in sys.modules, (
     "importing report_ingest pulled in its engine module")
 assert "planlens" not in sys.modules, (
     "importing report_ingest pulled in planlens")
-for name in ("triage", "review_labels", "score_on_cluster",
+assert "langgraph" not in sys.modules, (
+    "importing report_ingest pulled in langgraph; the sub-agent graph is "
+    "built on demand and the package must not cost the app that at startup")
+assert "pydantic" not in sys.modules, (
+    "importing report_ingest pulled in pydantic; the record model is lazy too")
+for name in ("triage", "review_labels", "classify_pages_by_vision",
+             "read_log", "read_lab_sheet",
+             "read_narrative", "reconcile", "write_outputs", "ingest_report",
+             "run_folder", "build_report_ingest_subagent", "write_diggs",
+             "diggs_schema_gate", "diggs_roundtrip_gate", "score_on_cluster",
              "PrompterEngine", "ClaudeEngine", "CostMeter"):
     assert callable(getattr(report_ingest, name)), name
+# The record's classes arrive through a module __getattr__, so asking for one
+# is what imports the model.
+assert report_ingest.ReportRecord().counts()["investigations"] == 0
+assert report_ingest.Quantity(value=1.0, unit="ft").to_si().unit == "m"
+try:
+    report_ingest.NoSuchThing
+except AttributeError:
+    pass
+else:
+    raise AssertionError("an unknown attribute must still raise")
 print("ok")
 """
 
@@ -37,6 +56,15 @@ def test_the_entry_points_reach_the_real_functions():
     # Same function, reached lazily: the wrapper must not shadow or copy it.
     assert report_ingest.triage.__doc__ and triage.__doc__
     assert review_labels.__name__ == "review_labels"
+
+
+def test_the_record_classes_are_reachable_from_the_package():
+    import report_ingest
+    from report_ingest.model import Investigation, ReportRecord
+
+    assert report_ingest.ReportRecord is ReportRecord
+    assert report_ingest.Investigation is Investigation
+    assert report_ingest.SCHEMA_VERSION
 
 
 def test_the_cost_meter_is_reachable_without_a_credential():

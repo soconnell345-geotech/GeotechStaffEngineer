@@ -36,6 +36,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from pydantic import BaseModel, Field
 
 from report_ingest.engine import Engine, text_block, user
+from report_ingest.model import DOCUMENT_TYPE_VALUES
 
 __all__ = [
     "DOCUMENT_TYPES", "WORKFLOWS", "TOC_AGREEMENTS", "BOUND_KINDS",
@@ -45,16 +46,11 @@ __all__ = [
 ]
 
 #: The owner's enumeration, kept verbatim so past query outputs stay
-#: comparable (plan section 3).
-DOCUMENT_TYPES: Tuple[str, ...] = (
-    "geotechnical report",
-    "environmental report",
-    "recommendation letter",
-    "report addendum",
-    "report appendix or figure(s)",
-    "partial report",
-    "other",
-)
+#: comparable (plan section 3). It lives in :mod:`report_ingest.model` beside
+#: the field that answers with it, and is imported here rather than retyped:
+#: two copies of an enumeration are two enumerations, and the one this pass
+#: answers with has to be the one the record stores.
+DOCUMENT_TYPES: Tuple[str, ...] = DOCUMENT_TYPE_VALUES
 
 #: Which readers run, and whether a person is needed first.
 WORKFLOWS: Tuple[str, ...] = (
