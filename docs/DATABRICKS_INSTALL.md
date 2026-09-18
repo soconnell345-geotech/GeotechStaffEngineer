@@ -14,7 +14,7 @@ Last verified against a real cluster log: **5.14.0, 2026-09-11** (clean).
 ## 1. The install
 
 ```python
-%pip install "geotech-staff-engineer==5.20.0"
+%pip install "geotech-staff-engineer==5.20.1"
 %restart_python
 ```
 
@@ -263,6 +263,7 @@ Stop and investigate only for these:
 | 5.18.0 | — | Not yet installed — pin `planlens>=0.4`; planlens 0.4.0 brings `rapidfuzz` (new on the cluster; it cleared the Nexus firewall 2026-09-16 as 3.14.6, MIT, no dependencies of its own) and keeps `opencv-python-headless`, now in planlens' core rather than the `raster` extra; **no new direct app deps**. Expect the 5.16.0 log plus `planlens-0.4.0` and `rapidfuzz-3.14.6`. Release gate 11,773 passed / 33 skipped / 0 failed. Replace this row when the cluster install is confirmed. |
 | 5.19.0 | — | Not yet installed — pin `planlens>=0.5`. planlens 0.5.0 declares **exactly** the dependencies 0.4.0 did (numpy, ezdxf, PyMuPDF, opencv-python-headless, rapidfuzz), so expect the 5.18.0 log with `planlens-0.5.0` in place of `planlens-0.4.0` and **no other package moved**. The new `report_ingest` package is pure Python over what is already there: `anthropic` stays optional and must NOT appear, and `openpyxl` (the hand-label reader, imported lazily) already arrives with `python-ags4`. Release gate 11,890 passed / 33 skipped / 0 failed. Replace this row when the cluster install is confirmed. |
 | 5.20.0 | — | Not yet installed — pin `planlens>=0.6`. planlens 0.6.0 declares **exactly** the dependencies 0.4.0 and 0.5.0 did (numpy, ezdxf, PyMuPDF, opencv-python-headless, rapidfuzz), so expect the 5.19.0 log with `planlens-0.6.0` in place of `planlens-0.5.0` and **no other package moved**. What is new is all pure Python inside `report_ingest` (the record, three readers, the reconciler, the writers, the DIGGS 2.6 writer, the sub-agent, five-stage cluster scoring including the vision-first experiment): `anthropic` stays optional and must NOT appear, and `openpyxl` still arrives with `python-ags4`. Release gate 12,381 passed / 33 skipped / 0 failed. Replace this row when the cluster install is confirmed. |
+| 5.20.1 | 2026-09-18 | **Installed and imported on the cluster** (the owner's first scoring run got as far as the first model call on 5.20.0, which proves the install, the planlens 0.6.0 pin and the corpus paths). 5.20.1 changes no dependency: it is 5.20.0 plus the Prompter parameter fix in `report_ingest/engine.py` (the tier's model refused `max_tokens`; now adapted and remembered). Expect the 5.20.0 log exactly. |
 
 Earlier, 5.12.0's **first** attempt failed: pip 403 on `cytriangle`, pulled in by
 `sectionproperties` **and** `concreteproperties`. Both were removed and rebuilt

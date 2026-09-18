@@ -36,6 +36,7 @@ adds no dependency.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from dataclasses import dataclass, field
@@ -521,6 +522,20 @@ class PrompterEngine:
     there is no loop at all. Single-shot calls with no tools go through
     ``prompter.chat()`` instead, which keeps the budget guard and the SDK's
     logging -- so triage is always budgeted, and only the review is not.
+
+    PARAMETERS A MODEL WILL NOT TAKE. The tiers are aliases and the model
+    behind one changes without notice. A reasoning-class deployment refuses
+    ``max_tokens`` (it wants ``max_completion_tokens``) and refuses any
+    ``temperature`` but its default, which is what stopped the first cluster
+    run on 2026-09-18. The first call that meets such a refusal is retried
+    ONCE with the parameter renamed or dropped, exactly as the app's
+    Databricks bridge does, and the lesson is kept on the engine
+    (:attr:`token_key`, :attr:`send_temperature`) so every later call sends
+    the accepted form first. ``prompter.chat()`` swallows the provider's
+    error and hands back ``None``; that case is retried on the raw client
+    with the same adaptation, and because ``chat()`` always sends a
+    temperature of its own, the engine stops offering it for the rest of the
+    run once it has failed. :attr:`adaptations` lists what was learned.
     """
 
     #: What a scorecard records when the tier's deployment is unknown.
@@ -540,6 +555,57 @@ class PrompterEngine:
         #: are aliases and the model behind one changes without notice, so a
         #: run records what answered as well as what it asked for.
         self.served_by: Optional[str] = None
+        #: Which token-cap key the deployment accepts, and whether it takes a
+        #: temperature at all. Both start at the classic OpenAI form and are
+        #: corrected by the first refusal (see the class docstring).
+        self.token_key: str = "max_tokens"
+        self.send_temperature: bool = True
+        #: One line per lesson learned from a refusal, oldest first.
+        self.adaptations: List[str] = []
+
+    @staticmethod
+    def adjust_for_param_error(request: Dict[str, Any],
+                               message: str) -> Optional[Dict[str, Any]]:
+        """The retry request with the parameter the model refused renamed or
+        dropped, or ``None`` when the error is not about a parameter."""
+        low = (message or "").lower()
+        new = dict(request)
+        changed = False
+        if "temperature" in low and "temperature" in new:
+            new.pop("temperature", None)
+            changed = True
+        if (("max_completion_tokens" in low or "max_tokens" in low)
+                and "max_tokens" in new):
+            new["max_completion_tokens"] = new.pop("max_tokens")
+            changed = True
+        return new if changed else None
+
+    def _create_adaptive(self, client: Any, kwargs: Dict[str, Any]) -> Any:
+        """One call on the raw client, retried with each refused parameter
+        fixed in turn -- the backend reports one refusal at a time -- and
+        every fix remembered for every later call."""
+        create = client.chat.completions.create
+        request = dict(kwargs)
+        for _ in range(3):                  # at most one retry per parameter
+            try:
+                return create(**request)
+            except Exception as exc:                # noqa: BLE001 - inspected
+                adjusted = self.adjust_for_param_error(request, str(exc))
+                if adjusted is None:
+                    raise
+                if "temperature" in request and "temperature" not in adjusted:
+                    self.send_temperature = False
+                if "max_completion_tokens" in adjusted:
+                    self.token_key = "max_completion_tokens"
+                first_line = str(exc).strip().splitlines()[0][:160]
+                lesson = (f"{self.model}: refused "
+                          f"{sorted(set(request) - set(adjusted))} -- "
+                          f"{first_line}")
+                self.adaptations.append(lesson)
+                logging.getLogger(__name__).info(
+                    "prompter engine adapted a request: %s", lesson)
+                request = adjusted
+        return create(**request)
 
     @property
     def client(self) -> Any:
@@ -672,18 +738,36 @@ class PrompterEngine:
                   and all(m["role"] in ("system", "user")
                           for m in openai_messages))
         started = time.time()
+        cap = int(max_tokens or self.max_tokens)
+        raw = None
+        tried_chat = False
         if self.prefer_chat and simple and hasattr(self._prompter, "chat"):
             # Keeps the SDK's budget guard and logging on every call that
             # does not need a tool loop -- triage, above all.
             last = openai_messages[-1]
+            tried_chat = True
             raw = self._prompter.chat(
                 user=last["content"], system=system or
                 "You are a helpful assistant.",
                 model=self.model, temperature=0, return_raw=True,
-                max_tokens=int(max_tokens or self.max_tokens),
+                **{self.token_key: cap},
                 **({"response_format": response_format}
                    if response_format else {}))
-        else:
+            if raw is None:
+                # The SDK logs the provider's refusal and hands back None.
+                # A parameter the deployment does not take is the usual
+                # reason, and the raw client can adapt to that, so it is
+                # tried before giving up; the SDK's stashed reason travels
+                # either way.
+                reason = getattr(self._prompter, "_last_chat_error", None)
+                if self.client is None:
+                    raise RuntimeError(
+                        "Prompter returned nothing; the call failed or was "
+                        f"refused (the SDK's reason: {reason!r})")
+                self.adaptations.append(
+                    f"{self.model}: chat() returned nothing "
+                    f"({str(reason)[:160]!r}); retried on the raw client")
+        if raw is None:
             client = self.client
             if client is None:
                 raise RuntimeError(
@@ -692,9 +776,10 @@ class PrompterEngine:
             kwargs: Dict[str, Any] = {
                 "model": self.model,
                 "messages": openai_messages,
-                "temperature": 0,
-                "max_tokens": int(max_tokens or self.max_tokens),
+                self.token_key: cap,
             }
+            if self.send_temperature:
+                kwargs["temperature"] = 0
             if tools:
                 kwargs["tools"] = [{"type": "function", "function": {
                     "name": t["name"], "description": t["description"],
@@ -702,7 +787,12 @@ class PrompterEngine:
                 kwargs["tool_choice"] = "auto"
             if response_format:
                 kwargs["response_format"] = response_format
-            raw = client.chat.completions.create(**kwargs)
+            raw = self._create_adaptive(client, kwargs)
+            if tried_chat:
+                # chat() failed where the raw client did not, and chat()
+                # always sends its own temperature, so it is not offered
+                # again this run.
+                self.prefer_chat = False
         seconds = time.time() - started
         return self._reply(raw, output_format, seconds)
 

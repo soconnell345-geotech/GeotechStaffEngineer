@@ -8,6 +8,24 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### 5.20.1 RELEASED (2026-09-18) — the first cluster run's one failure, fixed
+
+The owner's first `score_on_cluster` run on 5.20.0 stopped on its first
+report: the model behind `funhouse-gpt-medium` (triage) refused `max_tokens`
+and wanted `max_completion_tokens`; the SDK's `prompter.chat()` logged the
+refusal and returned None, and `PrompterEngine` raised "Prompter returned
+nothing". The fix is in `report_ingest/engine.py` and mirrors what
+`funhouse_agent/deep/databricks_bridge.py` has done since the GPT-5 tiers:
+a refused `max_tokens` is resent as `max_completion_tokens`, a refused
+`temperature` is dropped, one retry per refused parameter, and the lesson is
+kept on the engine (`token_key`, `send_temperature`) so later calls send the
+accepted form first. When `chat()` swallows the refusal the call is retried
+on the raw client and `chat()` is not offered again that run.
+`engine.adaptations` records every lesson. Nine tests in
+`report_ingest/tests/test_prompter_engine.py`, one of which replays the
+cluster failure verbatim. No dependency change; the wheel is 5.20.0 plus
+this. The owner reruns the same cell with `==5.20.1`.
+
 ### 5.20.0 RELEASED (2026-09-17) — the report read end to end, with planlens 0.6.0
 
 **Released on the owner's word.** `feature/report-ingest-wp2` merged into
@@ -85,7 +103,7 @@ Release gate **12,381 passed / 33 skipped / 0 failed** (3,598/28 + 8,070/5 +
 713/0, run by the lead on the final tree with the vision stage in), three
 chunks, each gated on pytest's exit code and never on a piped tail.
 
-**First live checks:** (1) `%pip install "geotech-staff-engineer==5.20.0"`
+**First live checks:** (1) `%pip install "geotech-staff-engineer==5.20.1"`
 with `planlens-0.6.0` in the same `Successfully installed` line and nothing
 new beside it; (2) one four-stage `score_on_cluster(...)` cell with
 `max_reports=2` and `truth_dir` pointing at the uploaded `truth/` root, and

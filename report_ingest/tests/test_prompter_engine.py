@@ -391,3 +391,148 @@ def test_the_chat_path_can_be_turned_off_for_a_like_for_like_comparison():
     engine.complete([user(text_block("go"))], output_format=_Answer)
     assert not prompter.chat_calls
     assert prompter.client.chat.completions.last is not None
+
+
+# -- a deployment that refuses a parameter --------------------------------------
+#
+# The first cluster run (2026-09-18) stopped on the triage call: the model
+# behind the tier refused ``max_tokens`` and wanted ``max_completion_tokens``,
+# prompter.chat() logged that and returned None, and the report FAILED. The
+# engine now adapts once and remembers, as the app's Databricks bridge does.
+
+_MAX_TOKENS_REFUSED = (
+    "Error code: 400 - {'error': {'message': \"Unsupported parameter: "
+    "'max_tokens' is not supported with this model. Use "
+    "'max_completion_tokens' instead.\", 'type': 'invalid_request_error', "
+    "'param': 'max_tokens', 'code': 'unsupported_parameter'}}")
+_TEMPERATURE_REFUSED = (
+    "Error code: 400 - {'error': {'message': \"Unsupported value: "
+    "'temperature' does not support 0 with this model. Only the default (1) "
+    "value is supported.\", 'type': 'invalid_request_error', "
+    "'param': 'temperature', 'code': 'unsupported_value'}}")
+
+_TOOL = [{"name": "t", "description": "d", "input_schema": {}}]
+
+
+class _FussyCompletions(_Completions):
+    """A reasoning-class deployment: refuses max_tokens and any temperature."""
+
+    def __init__(self, response, refuse=("max_tokens", "temperature")):
+        super().__init__(response)
+        self.refuse = set(refuse)
+        self.attempts = []
+
+    def create(self, **kwargs):
+        self.attempts.append(dict(kwargs))
+        if "max_tokens" in self.refuse and "max_tokens" in kwargs:
+            raise RuntimeError(_MAX_TOKENS_REFUSED)
+        if "temperature" in self.refuse and "temperature" in kwargs:
+            raise RuntimeError(_TEMPERATURE_REFUSED)
+        self.last = kwargs
+        return self.response
+
+
+def _fussy_engine(refuse=("max_tokens", "temperature"), chat_returns=None):
+    response = _Response(_Message("ok"))
+    prompter = FakePrompter(response)
+    prompter.client.chat.completions = _FussyCompletions(response, refuse)
+    prompter.response = chat_returns            # what chat() hands back
+    engine = PrompterEngine(prompter, meter=CostMeter())
+    return engine, prompter
+
+
+def _attempts(prompter):
+    return prompter.client.chat.completions.attempts
+
+
+def test_a_refused_max_tokens_is_resent_as_max_completion_tokens():
+    engine, prompter = _fussy_engine(refuse=("max_tokens",))
+    reply = engine.complete([user(text_block("go"))], tools=_TOOL)
+    attempts = _attempts(prompter)
+    assert reply.text == "ok"
+    assert len(attempts) == 2
+    assert "max_tokens" in attempts[0]
+    assert "max_completion_tokens" in attempts[1]
+    assert "max_tokens" not in attempts[1]
+    assert attempts[1]["max_completion_tokens"] == attempts[0]["max_tokens"]
+    assert engine.token_key == "max_completion_tokens"
+    assert engine.adaptations and "max_tokens" in engine.adaptations[0]
+
+
+def test_the_lesson_is_kept_so_the_next_call_is_not_refused_first():
+    engine, prompter = _fussy_engine(refuse=("max_tokens",))
+    engine.complete([user(text_block("go"))], tools=_TOOL)
+    engine.complete([user(text_block("again"))], tools=_TOOL)
+    attempts = _attempts(prompter)
+    assert len(attempts) == 3, "two calls, one refusal in all"
+    assert "max_completion_tokens" in attempts[2]
+
+
+def test_a_refused_temperature_is_dropped_and_stays_dropped():
+    engine, prompter = _fussy_engine(refuse=("temperature",))
+    engine.complete([user(text_block("go"))], tools=_TOOL)
+    engine.complete([user(text_block("again"))], tools=_TOOL)
+    attempts = _attempts(prompter)
+    assert "temperature" in attempts[0]
+    assert all("temperature" not in a for a in attempts[1:])
+    assert engine.send_temperature is False
+
+
+def test_both_refusals_cost_two_retries_in_all_not_two_per_call():
+    engine, prompter = _fussy_engine()
+    engine.complete([user(text_block("go"))], tools=_TOOL)
+    engine.complete([user(text_block("again"))], tools=_TOOL)
+    attempts = _attempts(prompter)
+    # call 1: max_tokens refused, renamed; temperature refused, dropped.
+    # call 2: sent in the accepted form first time.
+    assert len(attempts) == 4
+    assert "max_completion_tokens" in attempts[-1]
+    assert "temperature" not in attempts[-1]
+    assert len(engine.adaptations) == 2
+
+
+def test_an_error_that_is_not_about_a_parameter_is_not_retried():
+    engine, prompter = _fussy_engine(refuse=())
+
+    def boom(**kwargs):
+        raise RuntimeError("Error code: 429 - rate limit")
+
+    prompter.client.chat.completions.create = boom
+    with pytest.raises(RuntimeError, match="rate limit"):
+        engine.complete([user(text_block("go"))], tools=_TOOL)
+    assert not engine.adaptations
+
+
+def test_when_chat_swallows_the_refusal_the_call_falls_back_to_the_raw_client():
+    engine, prompter = _fussy_engine(refuse=("max_tokens",), chat_returns=None)
+    prompter._last_chat_error = RuntimeError(_MAX_TOKENS_REFUSED)
+    reply = engine.complete([user(text_block("go"))], system="s",
+                            output_format=_Answer)
+    assert prompter.chat_calls, "chat was tried first, to keep the guard"
+    assert reply.text == "ok", "and the raw client served the call"
+    assert engine.token_key == "max_completion_tokens"
+    assert any("chat() returned nothing" in a for a in engine.adaptations)
+
+
+def test_after_chat_fails_once_the_run_stops_offering_it():
+    engine, prompter = _fussy_engine(refuse=("max_tokens",), chat_returns=None)
+    engine.complete([user(text_block("go"))], output_format=_Answer)
+    engine.complete([user(text_block("again"))], output_format=_Answer)
+    assert len(prompter.chat_calls) == 1
+    assert engine.prefer_chat is False
+
+
+def test_the_learned_token_key_is_what_chat_is_asked_for_too():
+    engine, prompter = _fussy_engine(refuse=("max_tokens",))
+    engine.complete([user(text_block("go"))], tools=_TOOL)     # learns
+    prompter.response = _Response(_Message("ok"))
+    engine.complete([user(text_block("simple"))], output_format=_Answer)
+    assert "max_completion_tokens" in prompter.chat_calls[-1]
+    assert "max_tokens" not in prompter.chat_calls[-1]
+
+
+def test_when_chat_swallows_a_refusal_and_there_is_no_client_the_reason_is_reported():
+    engine, prompter = _engine(None, with_client=False)
+    prompter._last_chat_error = RuntimeError("quota exhausted")
+    with pytest.raises(RuntimeError, match="quota exhausted"):
+        engine.complete([user(text_block("go"))], output_format=_Answer)

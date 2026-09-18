@@ -624,7 +624,7 @@ pages are read from their own text layer alone.
 
 ```python
 # 1. From PyPI through Nexus. planlens 0.6.0 arrives with it.
-%pip install "geotech-staff-engineer==5.20.0"
+%pip install "geotech-staff-engineer==5.20.1"
 dbutils.library.restartPython()
 ```
 
@@ -656,6 +656,14 @@ results = score_on_cluster(
     max_reports  = 2,                       # drop this line after the first run
 )
 ```
+
+**If the tier's model refuses a parameter** — a reasoning-class deployment
+wants `max_completion_tokens` rather than `max_tokens` and takes no
+`temperature` — the engine resends the call with that parameter renamed or
+dropped, once per refused parameter, and keeps the lesson for the rest of the
+run (`engine.adaptations` says what it learned). The SDK's `chat()` helper
+swallows such a refusal and returns None; that case is retried on the raw
+client. This is what stopped the first run on 5.20.0 and is fixed in 5.20.1.
 
 Bring back **`/tmp/report_ingest_520/RESULTS.md`**. Run it with
 `max_reports=2` first. It caps every stage at two — two reports reviewed, two
