@@ -81,8 +81,9 @@ strictly rising run of three and the ruler was refused outright). planlens
 0.6.0 declares exactly what 0.4.0 declared, so **no new third-party package
 reaches the cluster**. `anthropic` stays optional and uninstalled.
 
-Release gate **12,326 passed / 33 skipped / 0 failed**, three chunks, each
-gated on pytest's exit code and never on a piped tail.
+Release gate **12,381 passed / 33 skipped / 0 failed** (3,598/28 + 8,070/5 +
+713/0, run by the lead on the final tree with the vision stage in), three
+chunks, each gated on pytest's exit code and never on a piped tail.
 
 **First live checks:** (1) `%pip install "geotech-staff-engineer==5.20.0"`
 with `planlens-0.6.0` in the same `Successfully installed` line and nothing

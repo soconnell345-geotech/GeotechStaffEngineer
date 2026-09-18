@@ -107,8 +107,8 @@ Key conventions:
   at all. **No new third-party package:** planlens 0.6.0 declares exactly
   what 0.4.0 did (numpy, ezdxf, PyMuPDF, opencv-python-headless, rapidfuzz).
   `anthropic` stays OPTIONAL and is not installed on the cluster. Release
-  gate **12,326 passed / 33 skipped / 0 failed** (three chunks, each gated on
-  pytest's exit code). Cluster install **NOT yet confirmed** (install guide
+  gate **12,381 passed / 33 skipped / 0 failed** (three chunks, each gated on
+  pytest's exit code, on the final tree). Cluster install **NOT yet confirmed** (install guide
   §11). **First live check:** the owner's own five-stage scoring run —
   `%pip install "geotech-staff-engineer==5.20.0"`, one
   `score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels"), truth_dir=…)`
