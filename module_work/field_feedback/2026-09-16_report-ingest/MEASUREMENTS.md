@@ -3465,3 +3465,81 @@ triaxial__R35_p45           blind       0% 0/28           -      -     -      - 
 unconfined__R22_p148        blind        0% 0/5           -      -     -      -     -      -
 
 ```
+
+---
+
+## CLUSTER RUN 1 -- 2026-09-18 -- app 5.20.0 + notebook shim, `max_reports=2`
+
+The first production numbers. Everything below came through the Funhouse
+Prompter API on the cluster; the owner ran the five-stage cell. Package was
+5.20.0 with a notebook shim (client wrapper renaming `max_tokens` to
+`max_completion_tokens`, `prefer_chat` off) because 5.20.1, which does the
+same in the package, was still behind the Nexus mirror. Two reports per
+stage. Tiers and what actually served them: `funhouse-gpt-high` =
+gpt-5.4-2026-03-05 (review, readers), `funhouse-gpt-medium` =
+gpt-5.1-2025-11-13 (triage), `funhouse-gpt-low` = gpt-4.1-mini-2025-04-14
+(vision).
+
+### Labels (WP1b): R09, R11 -- 307 hand-labelled pages
+
+```
+                            before     after
+strict accuracy              0.902     0.928
+accepting alternates         0.902     0.928
+review verdicts: fixed 9, broke 1, still_wrong 0
+
+label          n   P before  R before   P after  R after
+narrative      9      0.571     0.444     0.700    0.778   <- below the 0.98 gate
+plan           3      1.000     1.000     1.000    1.000
+profile        8      0.889     1.000     1.000    1.000
+boring_log    30      1.000     1.000     1.000    1.000
+lab_test     227      0.982     0.987     0.987    0.996
+figure         3      0.000     0.000     0.000    0.000
+divider       11      0.421     0.727     0.421    0.727   (untouched by the review)
+cover          2       --       0.000     1.000    1.000
+other         14      0.000     0.000     0.333    0.071
+
+report  pages  before  after  changes  tools   calls   in       out    s
+R09       151   0.901  0.934        7  20/60       4   63,392  1,700  43
+R11       156   0.904  0.923        3  40/60       4   86,790  2,172  43
+```
+
+Triage: R09 geotechnical report / standard / not bound / toc none / scan
+0.03; R11 "report appendix or figure(s)" / appendix_only / bound 1 / no_toc.
+Cost: 8 calls, 150,182 in (+2,432 cached), 3,872 out, 86 s.
+
+### Vision-first labels (WP5): same 307 pages, page mode, 100 dpi, no outline
+
+```
+                        rules   +review   vision
+strict accuracy         0.902     0.928    0.928
+report R09              0.901     0.934    0.947
+report R11              0.904     0.923    0.910
+
+label          n   P vision  R vision
+narrative      9      0.900     1.000   (review: 0.700 / 0.778)
+plan           3      1.000     0.667
+profile        8      1.000     1.000
+boring_log    30      1.000     1.000
+lab_test     227      0.996     0.978
+figure         3      0.300     1.000
+divider       11      0.421     0.727   (identical in all three columns)
+other         14      1.000     0.071
+```
+
+Cost: 307 calls (one per page), 761,876 in (+327,680 cached), 11,025 out,
+693 s (2.3 s/page). Sheet mode (six pages a call) is the untested cheaper
+setting. Reading: looking alone equals rules + review on 307 pages, beats
+both on narrative and figure recall, and loses on plan recall and lab_test
+recall. The obvious next experiment is vision as a third voice the review
+consults, not a replacement.
+
+### Logs / lab / narrative: NO model numbers yet
+
+All six items (R02_p123, R03_p135; atterberg R25_p87, R28_p198; R05, R06)
+failed in the FIRST run on the same parameter refusal, the scorer stored the
+failure on the score, the stage wrote the blob, and the second run skipped
+all six as "already done". That is a resume defect, fixed in 5.20.2
+(`_saved_failure`: a saved failure is retried). Grid-only baselines from the
+run: logs 9/17 (sample_depth 1/1, layer_top 2/2, uscs 0/1, recovery 2/2,
+fields 4/11); lab tables 114/114 (atterberg 8/8, summary_table 106/106).

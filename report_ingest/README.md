@@ -624,7 +624,7 @@ pages are read from their own text layer alone.
 
 ```python
 # 1. From PyPI through Nexus. planlens 0.6.0 arrives with it.
-%pip install "geotech-staff-engineer==5.20.1"
+%pip install "geotech-staff-engineer==5.20.2"
 dbutils.library.restartPython()
 ```
 

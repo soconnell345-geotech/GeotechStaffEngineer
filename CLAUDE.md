@@ -70,8 +70,22 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## CURRENT WORKING STATE (2026-09-18) — 5.20.1 RELEASED (5.20.0 + one cluster fix) with planlens 0.6.0
+## CURRENT WORKING STATE (2026-09-18) — 5.20.2 RELEASED (5.20.0 + two cluster fixes) with planlens 0.6.0
 
+- **app 5.20.2** (tag `v5.20.2`, 2026-09-18, on master) — the second thing
+  the first cluster run showed. The log, lab and narrative scorers store a
+  failed model call ON THE SCORE (`after.error`, `score.error`), the stage
+  wrote that blob like any finished run, and the next run skipped all six
+  failed items as "already done" and printed their errors as results.
+  `cluster_scoring._saved_failure` now reads a saved run for a recorded
+  failure and the stage RETRIES it ("previous attempt failed (...);
+  retrying"); `redo=True` is no longer needed to recover from a bad call.
+  Two tests. **First real numbers, 5.20.0 + shim, two reports (307 pages):**
+  label review 0.902 → 0.928 strict (fixed 9, broke 1; served by gpt-5.4
+  review, gpt-5.1 triage); vision-first labels (gpt-4.1-mini, one call a
+  page) 0.928 — equal to rules + review, better on narrative and figure
+  recall, worse on plan and lab_test recall, 2.3 s and ~2,500 input tokens a
+  page. Ledger: `module_work/field_feedback/2026-09-16_report-ingest/MEASUREMENTS.md`.
 - **app 5.20.1** (tag `v5.20.1`, 2026-09-18, on master) — the fix the first
   cluster run demanded. The model behind a Funhouse tier refused `max_tokens`
   (it wants `max_completion_tokens`); the SDK's `chat()` logged that, returned
@@ -123,7 +137,7 @@ Key conventions:
   gate **12,381 passed / 33 skipped / 0 failed** (three chunks, each gated on
   pytest's exit code, on the final tree). Cluster install **NOT yet confirmed** (install guide
   §11). **First live check:** the owner's own five-stage scoring run —
-  `%pip install "geotech-staff-engineer==5.20.1"`, one
+  `%pip install "geotech-staff-engineer==5.20.2"`, one
   `score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels"), truth_dir=…)`
   cell with `max_reports=2`, and `RESULTS.md` comes back. **The release also
   carries a vision-first page-classification experiment**

@@ -381,6 +381,33 @@ def test_a_log_with_a_run_file_is_skipped_so_a_resume_is_free(logs_cluster):
         "R31_p278", "R36_p38"]
 
 
+def test_a_saved_failure_is_retried_not_skipped(logs_cluster, capsys):
+    """The first cluster run (2026-09-18) wrote six model refusals as
+    finished runs, and the next run carried every one forward as done."""
+    reports_dir, out, truth_dir = logs_cluster
+    path = out / "logs" / "R31_p278.json"
+    blob = json.loads(path.read_text(encoding="utf-8"))
+    blob["after"]["error"] = "RuntimeError: Prompter returned nothing"
+    path.write_text(json.dumps(blob), encoding="utf-8")
+
+    _logs_run(logs_cluster)
+    printed = capsys.readouterr().out
+
+    assert "R31_p278: previous attempt failed" in printed
+    assert "R31_p278: already done" not in printed
+    assert "R36_p38: already done, skipping" in printed
+
+
+def test_a_saved_failure_is_read_off_every_stage_shape():
+    from report_ingest.cluster_scoring import _saved_failure
+
+    assert _saved_failure({"after": {"error": "x"}}) == "x"        # logs, lab
+    assert _saved_failure({"score": {"error": "y"}}) == "y"        # narrative
+    assert _saved_failure({"error": "z"}) == "z"
+    assert _saved_failure({"after": {"error": None}, "score": {}}) is None
+    assert _saved_failure({}) is None
+
+
 def test_before_and_after_are_reported_apart(logs_cluster):
     logs = _logs_run(logs_cluster)["logs"]
     everything = logs["sets"]["all"]

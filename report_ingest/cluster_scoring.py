@@ -73,6 +73,26 @@ from report_ingest.scoring import (
 
 __all__ = ["score_on_cluster", "SET_NAMES", "STAGE_NAMES"]
 
+
+def _saved_failure(blob: Dict[str, Any]) -> Optional[str]:
+    """The error a saved run file records, or ``None`` for a run that finished.
+
+    A scorer catches a failed model call and stores it on the score -- the
+    log and lab readers under ``after.error``, the narrative reader under
+    ``score.error`` -- so the stage writes the blob like any other and a
+    later call would skip it as done. A failed call is not a result: the
+    first cluster run (2026-09-18) froze six parameter refusals this way and
+    the next run carried them forward as finished. Such a run file is
+    retried instead.
+    """
+    for key in ("after", "score"):
+        part = blob.get(key)
+        if isinstance(part, dict) and part.get("error"):
+            return str(part["error"])
+    if blob.get("error"):
+        return str(blob["error"])
+    return None
+
 SET_NAMES: Tuple[str, ...] = ("insample", "oos_open", "oos_blind")
 
 #: The measurements this run can make. ``labels`` is WP1b -- triage and the
@@ -720,14 +740,21 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
         run_file = out / "logs" / f"{log_id}.json"
         if run_file.is_file() and not redo:
             blob = json.loads(run_file.read_text(encoding="utf-8"))
-            # The open/blind split is decided at SCORING time, not frozen
-            # into the run file. A log moved into the open set after it ran
-            # must move in the scorecard too, or the blind figure quietly
-            # keeps crediting a log somebody has since looked at.
-            blob["set"] = "open" if report in openset else "blind"
-            done[log_id] = blob
-            print(f"  [{n}/{len(truths)}] {log_id}: already done, skipping")
-            continue
+            failed = _saved_failure(blob)
+            if failed:
+                print(f"  [{n}/{len(truths)}] {log_id}: previous attempt "
+                      f"failed ({failed[:90]}); retrying")
+            else:
+                # The open/blind split is decided at SCORING time, not
+                # frozen into the run file. A log moved into the open set
+                # after it ran must move in the scorecard too, or the blind
+                # figure quietly keeps crediting a log somebody has since
+                # looked at.
+                blob["set"] = "open" if report in openset else "blind"
+                done[log_id] = blob
+                print(f"  [{n}/{len(truths)}] {log_id}: already done, "
+                      "skipping")
+                continue
         if report not in set(corpus.present_ids()):
             failures[log_id] = f"{report} is not in the reports folder"
             print(f"  [{n}/{len(truths)}] {log_id}: skipped -- "
@@ -823,14 +850,21 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
         run_file = out / "lab" / f"{sheet_id}.json"
         if run_file.is_file() and not redo:
             blob = json.loads(run_file.read_text(encoding="utf-8"))
-            # The open/blind split is decided at SCORING time, never frozen
-            # into a run file: a sheet moved into the open set after it ran
-            # has to move in the scorecard too, or the blind figure quietly
-            # keeps crediting a page somebody has since looked at.
-            blob["set"] = "open" if report in openset else "blind"
-            done[sheet_id] = blob
-            print(f"  [{n}/{len(truths)}] {sheet_id}: already done, skipping")
-            continue
+            failed = _saved_failure(blob)
+            if failed:
+                print(f"  [{n}/{len(truths)}] {sheet_id}: previous attempt "
+                      f"failed ({failed[:90]}); retrying")
+            else:
+                # The open/blind split is decided at SCORING time, never
+                # frozen into a run file: a sheet moved into the open set
+                # after it ran has to move in the scorecard too, or the
+                # blind figure quietly keeps crediting a page somebody has
+                # since looked at.
+                blob["set"] = "open" if report in openset else "blind"
+                done[sheet_id] = blob
+                print(f"  [{n}/{len(truths)}] {sheet_id}: already done, "
+                      "skipping")
+                continue
         if report not in set(corpus.present_ids()):
             failures[sheet_id] = f"{report} is not in the reports folder"
             print(f"  [{n}/{len(truths)}] {sheet_id}: skipped -- "
@@ -1107,12 +1141,18 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
         run_file = out / "narrative" / f"{rid}.json"
         if run_file.is_file() and not redo:
             blob = json.loads(run_file.read_text(encoding="utf-8"))
-            # The open/blind split is decided at SCORING time, never frozen
-            # into a run file, for the same reason the lab stage does it.
-            blob["set"] = "open" if rid in openset else "blind"
-            done[rid] = blob
-            print(f"  [{n}/{len(truths)}] {rid}: already done, skipping")
-            continue
+            failed = _saved_failure(blob)
+            if failed:
+                print(f"  [{n}/{len(truths)}] {rid}: previous attempt "
+                      f"failed ({failed[:90]}); retrying")
+            else:
+                # The open/blind split is decided at SCORING time, never
+                # frozen into a run file, for the same reason the lab stage
+                # does it.
+                blob["set"] = "open" if rid in openset else "blind"
+                done[rid] = blob
+                print(f"  [{n}/{len(truths)}] {rid}: already done, skipping")
+                continue
         if rid not in present:
             failures[rid] = f"{rid} is not in the reports folder"
             print(f"  [{n}/{len(truths)}] {rid}: skipped -- {failures[rid]}")

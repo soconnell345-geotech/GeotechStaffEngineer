@@ -8,6 +8,23 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### 5.20.2 RELEASED (2026-09-18) — a saved failure is retried, not skipped
+
+The first cluster run's second lesson. The log, lab and narrative scorers
+catch a failed model call and store it on the score (`after.error` for the
+log and lab readers, `score.error` for the narrative reader); the stage then
+wrote the blob as if the item had finished, and the NEXT run skipped all six
+failed items as "already done" and rendered their errors in the results
+tables. `cluster_scoring._saved_failure(blob)` reads a saved run for a
+recorded failure and each stage retries such an item, printing "previous
+attempt failed (...); retrying". Two tests (one on the logs stage end to
+end, one on the three blob shapes). Also in this release: the first real
+numbers are in the private ledger (`MEASUREMENTS.md`, "CLUSTER RUN 1") and
+summarised in CLAUDE.md's state block — labels 0.902 → 0.928 on 307 pages,
+vision-first 0.928. Like 5.20.1 this reaches the cluster a day or two after
+PyPI; until then the owner clears frozen failures with a one-off notebook
+cell that deletes any run file carrying an error.
+
 ### 5.20.1 RELEASED (2026-09-18) — the first cluster run's one failure, fixed
 
 The owner's first `score_on_cluster` run on 5.20.0 stopped on its first
@@ -108,7 +125,7 @@ Release gate **12,381 passed / 33 skipped / 0 failed** (3,598/28 + 8,070/5 +
 713/0, run by the lead on the final tree with the vision stage in), three
 chunks, each gated on pytest's exit code and never on a piped tail.
 
-**First live checks:** (1) `%pip install "geotech-staff-engineer==5.20.1"`
+**First live checks:** (1) `%pip install "geotech-staff-engineer==5.20.2"`
 with `planlens-0.6.0` in the same `Successfully installed` line and nothing
 new beside it; (2) one four-stage `score_on_cluster(...)` cell with
 `max_reports=2` and `truth_dir` pointing at the uploaded `truth/` root, and
