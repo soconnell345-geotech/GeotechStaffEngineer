@@ -14,7 +14,7 @@ Last verified against a real cluster log: **5.14.0, 2026-09-11** (clean).
 ## 1. The install
 
 ```python
-%pip install "geotech-staff-engineer==5.20.2"
+%pip install "geotech-staff-engineer==5.20.3"
 %restart_python
 ```
 
@@ -265,6 +265,7 @@ Stop and investigate only for these:
 | 5.20.0 | 2026-09-18 | **Installed and imported on the cluster**: the owner's first scoring run proved the install, the `planlens-0.6.0` pin and the corpus paths, then stopped on a model parameter (fixed in 5.20.1, shimmed meanwhile). Pin `planlens>=0.6`. planlens 0.6.0 declares **exactly** the dependencies 0.4.0 and 0.5.0 did (numpy, ezdxf, PyMuPDF, opencv-python-headless, rapidfuzz), so expect the 5.19.0 log with `planlens-0.6.0` in place of `planlens-0.5.0` and **no other package moved**. What is new is all pure Python inside `report_ingest` (the record, three readers, the reconciler, the writers, the DIGGS 2.6 writer, the sub-agent, five-stage cluster scoring including the vision-first experiment): `anthropic` stays optional and must NOT appear, and `openpyxl` still arrives with `python-ags4`. Release gate 12,381 passed / 33 skipped / 0 failed. Replace this row when the cluster install is confirmed. |
 | 5.20.1 | — | On PyPI 2026-09-18; **reaches the cluster a day or two later** (the Nexus mirror lag — never assume a release is installable the day it is cut). Changes no dependency: 5.20.0 plus the Prompter parameter fix in `report_ingest/engine.py` (the triage tier's model refused `max_tokens`; now adapted and remembered). Expect the 5.20.0 log exactly. Until it arrives, the 2026-09-18 scoring runs use **5.20.0 + a notebook shim** (a wrapper on the Prompter client renaming `max_tokens`, `prefer_chat` off), and their results are labelled that way. |
 | 5.20.2 | — | On PyPI 2026-09-18, same mirror lag. No dependency change: 5.20.1 plus the resume fix in `report_ingest/cluster_scoring.py` (a run file that recorded a failed model call is retried, not skipped as done). Expect the 5.20.0 log exactly. |
+| 5.20.3 | — | On PyPI 2026-09-18, same mirror lag. No dependency change: 5.20.2 plus the strict-schema fix in `report_ingest/engine.py` (pydantic's `default`/`minItems`/`maxItems` stripped from every structured-output schema; OpenAI refused the readers' schemas before any token was spent). Expect the 5.20.0 log exactly. **Install this one** when it arrives; 5.20.1 and 5.20.2 are superseded. |
 
 Earlier, 5.12.0's **first** attempt failed: pip 403 on `cytriangle`, pulled in by
 `sectionproperties` **and** `concreteproperties`. Both were removed and rebuilt

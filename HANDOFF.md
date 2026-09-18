@@ -8,6 +8,27 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### 5.20.3 RELEASED (2026-09-18) — the readers' schemas pass strict mode
+
+Third lesson of the first cluster day, and the one that was actually
+stopping the readers. After the parameter shim, the six reader items ran
+and every one died with 0 model calls and 0 tokens. Cause: OpenAI's strict
+`json_schema` response format validates the schema BEFORE the call and
+refuses any keyword it does not implement; pydantic emits `default` for
+every optional field and `minItems`/`maxItems` for every bounded list.
+Counted with `strict_schema` on every model a pass sends: triage 0, review
+0, vision 0 refused keywords; log reader 63, lab reader 149, narrative
+reader 52 — precisely the passes that ran and the passes that did not.
+`engine.strict_schema` now removes `STRICT_UNSUPPORTED` (default, min/max
+items, numeric bounds, length bounds, pattern, format, ...) and appends the
+limit to the field's description in words ("(1 to 3 items)", "(between 0
+and 100)"), so the model still reads it and the Python gates still enforce
+it; a single-value `const` becomes a one-entry `enum`. Two tests, one of
+which walks every `output_format` model in the package and fails on any
+refused keyword, so this class of failure cannot return unnoticed.
+`report_ingest` 604. Until 5.20.3 clears the mirror the owner's notebook
+carries a second shim that wraps `strict_schema` the same way.
+
 ### 5.20.2 RELEASED (2026-09-18) — a saved failure is retried, not skipped
 
 The first cluster run's second lesson. The log, lab and narrative scorers
@@ -125,7 +146,7 @@ Release gate **12,381 passed / 33 skipped / 0 failed** (3,598/28 + 8,070/5 +
 713/0, run by the lead on the final tree with the vision stage in), three
 chunks, each gated on pytest's exit code and never on a piped tail.
 
-**First live checks:** (1) `%pip install "geotech-staff-engineer==5.20.2"`
+**First live checks:** (1) `%pip install "geotech-staff-engineer==5.20.3"`
 with `planlens-0.6.0` in the same `Successfully installed` line and nothing
 new beside it; (2) one four-stage `score_on_cluster(...)` cell with
 `max_reports=2` and `truth_dir` pointing at the uploaded `truth/` root, and

@@ -3543,3 +3543,15 @@ all six as "already done". That is a resume defect, fixed in 5.20.2
 (`_saved_failure`: a saved failure is retried). Grid-only baselines from the
 run: logs 9/17 (sample_depth 1/1, layer_top 2/2, uscs 0/1, recovery 2/2,
 fields 4/11); lab tables 114/114 (atterberg 8/8, summary_table 106/106).
+
+### Run 3 (same day, after the frozen failures were cleared): readers still 0 calls
+
+R02_p123 3/8 -> 0/0, R03_p135 6/9 -> 0/0, atterberg R25_p87 106/106 -> 0/0,
+R28_p198 8/8 -> 0/0, R05 and R06 recall 0/0 -- every reader item "0 model
+call(s), 0 in / 0 out", 20-25 s each (the document open and the grid, then
+the refused request). Cause found offline: `strict_schema` on every
+`output_format` model -- triage 0, review 0, vision 0 refused keywords; log
+reader 63, lab reader 149, narrative reader 52 (`default`, `minItems`,
+`maxItems`). Strict mode validates the schema before the call. Fixed in
+5.20.3 (keywords stripped, limits folded into descriptions, a test walks
+every model). Reader numbers remain unmeasured.

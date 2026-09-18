@@ -70,8 +70,22 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## CURRENT WORKING STATE (2026-09-18) — 5.20.2 RELEASED (5.20.0 + two cluster fixes) with planlens 0.6.0
+## CURRENT WORKING STATE (2026-09-18) — 5.20.3 RELEASED (5.20.0 + three cluster fixes) with planlens 0.6.0
 
+- **app 5.20.3** (tag `v5.20.3`, 2026-09-18, on master) — the third and, for
+  the readers, the decisive one. With the parameter shim in place the log,
+  lab and narrative readers still died with **0 model calls, 0 tokens**:
+  OpenAI's strict mode checks the response-format schema before the call
+  and REFUSES any keyword it does not implement, and pydantic emits
+  `default` for every optional field and `minItems`/`maxItems` for every
+  bounded list — 63, 149 and 52 such keywords in the three readers'
+  schemas, none in triage, review or vision, which is exactly the split
+  between what ran and what did not. `engine.strict_schema` now strips
+  `STRICT_UNSUPPORTED` and folds each dropped limit into the field's
+  description; a test walks EVERY model a pass sends and fails on any
+  refused keyword. `report_ingest` 604. No dependency change. The reader
+  numbers are still unmeasured until this reaches the cluster (or the
+  owner's shim cell, which patches `strict_schema` in the notebook).
 - **app 5.20.2** (tag `v5.20.2`, 2026-09-18, on master) — the second thing
   the first cluster run showed. The log, lab and narrative scorers store a
   failed model call ON THE SCORE (`after.error`, `score.error`), the stage
@@ -137,7 +151,7 @@ Key conventions:
   gate **12,381 passed / 33 skipped / 0 failed** (three chunks, each gated on
   pytest's exit code, on the final tree). Cluster install **NOT yet confirmed** (install guide
   §11). **First live check:** the owner's own five-stage scoring run —
-  `%pip install "geotech-staff-engineer==5.20.2"`, one
+  `%pip install "geotech-staff-engineer==5.20.3"`, one
   `score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels"), truth_dir=…)`
   cell with `max_reports=2`, and `RESULTS.md` comes back. **The release also
   carries a vision-first page-classification experiment**

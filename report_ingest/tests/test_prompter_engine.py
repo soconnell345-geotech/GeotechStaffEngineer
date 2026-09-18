@@ -316,6 +316,70 @@ def test_strict_schema_requires_every_field_of_every_nested_object():
     assert inner["additionalProperties"] is False
 
 
+def test_strict_schema_drops_the_keywords_strict_mode_refuses():
+    """The first cluster run (2026-09-18): the three readers' schemas carried
+    pydantic's default, minItems and maxItems, OpenAI refused the schema
+    before any token was spent, and every reader call died with zero model
+    calls. The limit survives as words in the description."""
+    from typing import List, Optional
+
+    class Read(BaseModel):
+        blows: List[int] = Field(default_factory=list, min_length=1,
+                                 max_length=3, description="the drives")
+        depth: Optional[float] = Field(None, ge=0, le=100)
+        code: str = Field("x", pattern="^[A-Z]{2}$")
+        kind: str = Field("boring", description="what it is")
+
+    schema = strict_schema(Read)
+    text = json.dumps(schema)
+    for word in ("default", "minItems", "maxItems", "minimum", "maximum",
+                 "pattern"):
+        assert f'"{word}"' not in text, word
+    props = schema["properties"]
+    assert props["blows"]["description"] == "the drives (1 to 3 items)"
+    assert "(between 0 and 100)" in json.dumps(props["depth"])
+    assert props["code"]["description"] == "(matching ^[A-Z]{2}$)"
+    assert props["kind"]["description"] == "what it is"
+    assert set(schema["required"]) == {"blows", "depth", "code", "kind"}
+
+
+def test_every_structured_output_the_passes_send_is_clean_for_strict_mode():
+    """Every pydantic model a pass hands to ``output_format`` must come out
+    of strict_schema with none of the refused keywords, or the call is a
+    Bad Request on the cluster and no offline test would ever notice."""
+    import importlib
+
+    from report_ingest.engine import STRICT_UNSUPPORTED
+
+    refused = set(STRICT_UNSUPPORTED)
+
+    def walk(node, hits):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key in refused:
+                    hits.add(key)
+                walk(value, hits)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value, hits)
+
+    checked = 0
+    for name in ("report_ingest.triage", "report_ingest.label_review",
+                 "report_ingest.log_reader", "report_ingest.lab_reader",
+                 "report_ingest.narrative_reader",
+                 "report_ingest.vision_labels"):
+        mod = importlib.import_module(name)
+        for attr in dir(mod):
+            obj = getattr(mod, attr)
+            if (isinstance(obj, type) and issubclass(obj, BaseModel)
+                    and obj is not BaseModel and obj.__module__ == name):
+                hits = set()
+                walk(strict_schema(obj), hits)
+                assert not hits, f"{name}.{attr} still carries {sorted(hits)}"
+                checked += 1
+    assert checked >= 30, "the reader models were not found"
+
+
 # -- metering ------------------------------------------------------------------
 
 def test_tokens_are_read_from_the_openai_usage_shape():

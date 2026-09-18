@@ -441,6 +441,54 @@ class ClaudeEngine:
 
 # -- the production engine --------------------------------------------------
 
+#: JSON-schema keywords OpenAI's strict mode refuses. The schema is checked
+#: before the call, and a refused schema is a Bad Request with no token
+#: spent -- which is how every reader call of the first cluster run
+#: (2026-09-18) died with "0 model calls": pydantic had emitted ``default``
+#: for every optional field and ``minItems``/``maxItems`` for every bounded
+#: list. Each is dropped, and where it carried a limit the model should
+#: still know about, the limit is folded into the field's description. The
+#: Python gates in every reader enforce the real limits either way.
+STRICT_UNSUPPORTED: Tuple[str, ...] = (
+    "default", "minItems", "maxItems", "minimum", "maximum",
+    "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength",
+    "maxLength", "pattern", "format", "uniqueItems", "patternProperties",
+    "minProperties", "maxProperties", "examples", "unevaluatedItems",
+    "unevaluatedProperties", "contains", "minContains", "maxContains",
+    "propertyNames",
+)
+
+
+def _constraint_hint(node: Dict[str, Any]) -> str:
+    """The limits a node carries, as words for its description."""
+    bits: List[str] = []
+    lo, hi = node.get("minimum"), node.get("maximum")
+    if lo is not None and hi is not None:
+        bits.append(f"between {lo} and {hi}")
+    elif lo is not None:
+        bits.append(f"at least {lo}")
+    elif hi is not None:
+        bits.append(f"at most {hi}")
+    if node.get("exclusiveMinimum") is not None:
+        bits.append(f"greater than {node['exclusiveMinimum']}")
+    if node.get("exclusiveMaximum") is not None:
+        bits.append(f"less than {node['exclusiveMaximum']}")
+    for lo_key, hi_key, unit in (("minItems", "maxItems", "items"),
+                                 ("minLength", "maxLength", "characters")):
+        a, b = node.get(lo_key), node.get(hi_key)
+        if a is not None and b is not None:
+            bits.append(f"{a} to {b} {unit}")
+        elif a is not None:
+            bits.append(f"at least {a} {unit}")
+        elif b is not None:
+            bits.append(f"at most {b} {unit}")
+    if node.get("pattern"):
+        bits.append(f"matching {node['pattern']}")
+    if node.get("format"):
+        bits.append(str(node["format"]))
+    return "; ".join(bits)
+
+
 def strict_schema(model: Any) -> Dict[str, Any]:
     """A pydantic model's JSON schema, in the shape strict mode demands.
 
@@ -450,16 +498,23 @@ def strict_schema(model: Any) -> Dict[str, Any]:
     default, so the schema is walked and both are imposed. ``$defs`` and
     ``$ref`` are left alone -- strict mode understands them -- and so is
     ``anyOf``, which is how an optional field's null arm arrives.
+
+    Strict mode also REFUSES a schema that carries any keyword it does not
+    implement (:data:`STRICT_UNSUPPORTED`): pydantic's ``default`` on every
+    optional field, ``minItems``/``maxItems`` on a bounded list, numeric
+    bounds, string patterns. Those are removed here; a limit they expressed
+    is appended to the field's description so the model still reads it,
+    and a single-value ``const`` becomes a one-entry ``enum``.
     """
     import copy
 
     schema = copy.deepcopy(model.model_json_schema())
 
     #: Keys whose value is a MAP of names to schemas; each value is walked.
-    maps = ("properties", "$defs", "definitions", "patternProperties")
+    maps = ("properties", "$defs", "definitions")
     #: Keys whose value is itself a schema, or a list of them.
     schemas = ("items", "anyOf", "allOf", "oneOf", "prefixItems", "not",
-               "additionalItems", "contains")
+               "additionalItems")
 
     def walk(node: Any) -> None:
         if isinstance(node, list):
@@ -468,6 +523,15 @@ def strict_schema(model: Any) -> Dict[str, Any]:
             return
         if not isinstance(node, dict):
             return
+        hint = _constraint_hint(node)
+        for key in STRICT_UNSUPPORTED:
+            node.pop(key, None)
+        if "const" in node:
+            node["enum"] = [node.pop("const")]
+        if hint:
+            description = str(node.get("description") or "").rstrip()
+            node["description"] = (f"{description} ({hint})" if description
+                                   else f"({hint})")
         if node.get("type") == "object" or "properties" in node:
             node["additionalProperties"] = False
             node["required"] = list(node.get("properties") or {})
