@@ -629,7 +629,13 @@ dbutils.library.restartPython()
 ```
 
 ```python
-# 2. One cell, all five stages. fh_prompter is the object you already have.
+# 2. The restart wiped the fh_* objects; the Funhouse setup notebook puts them
+#    back. Use whatever path your own notebooks already use for it.
+%run /Workspace/funhouse-sdk/setup_python
+```
+
+```python
+# 3. One cell, all five stages. fh_prompter is the object setup just made.
 from report_ingest.cluster_scoring import score_on_cluster
 
 results = score_on_cluster(
