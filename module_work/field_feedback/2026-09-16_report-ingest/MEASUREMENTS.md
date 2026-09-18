@@ -3555,3 +3555,74 @@ reader 63, lab reader 149, narrative reader 52 (`default`, `minItems`,
 `maxItems`). Strict mode validates the schema before the call. Fixed in
 5.20.3 (keywords stripped, limits folded into descriptions, a test walks
 every model). Reader numbers remain unmeasured.
+
+### Run 5 (shim on the engine's client property): ALL FIVE STAGES RAN -- first reader numbers
+
+Package 5.20.0 + the order-proof notebook shim (equivalent to 5.20.4). Readers
+served by gpt-5.4-2026-03-05. Two items per stage.
+
+**Logs (WP2b), 2 blind logs, 1 model call each (budget 6):**
+
+```
+metric          grid only    reader
+sample_depth     100% 1/1   100% 1/1
+layer_top        100% 2/2   100% 2/2
+uscs               0% 0/1     0% 0/1
+recovery         100% 2/2   100% 2/2
+fields            36% 4/11   55% 6/11
+OVERALL           53% 9/17   65% 11/17
+R02_p123   38% 3/8 -> 62% 5/8   1 call, 5 unresolved, 2 from the picture, 6,033 in / 526 out, 27 s
+R03_p135   67% 6/9 -> 67% 6/9   1 call, 4 unresolved, 1 from the picture, 6,006 in / 527 out, 26 s
+```
+The reader took ONE call per log and left 4-5 items unresolved: it does not
+go back for what it could not settle. Header fields and the USCS symbol are
+where the misses are.
+
+**Lab (WP3), 2 sheets (1 open, 1 blind), 1 call each:**
+
+```
+metric        tables only     reader
+kind                   -     100% 9/9
+link                   -     100% 9/9
+index          100% 56/56   100% 56/56
+series         100% 53/53   100% 53/53
+curve            100% 5/5     100% 5/5
+OVERALL      100% 114/114  100% 132/132
+```
+Every value, every test kind, every link to boring and depth. 10-11k input
+tokens and 32-63 s a sheet; no zoom used.
+
+**Narrative (WP4), R05 (open) + R06 (blind):**
+
+```
+                    open R05      blind R06     all
+recall              63% 17/27     66% 19/29     64% 36/56
+precision           68% 17/25     79% 19/24     73% 36/49
+agreement           67% 22/33     70% 23/33     68% 45/66
+recall by type: enum 59%, int 50%, string 88%, list 56%; list items P 75% R 83%
+summaries: 8/8 written, 8/8 within limit
+calls 1 / 4; 10.9k / 69.9k in; 2.9k / 7.9k out; 28 / 100 s
+```
+Per question (2 asked each): RIGHT on both -- asceSevenVersion, boringCount,
+boringDictionary, documentType, geophysicalTestingMention,
+geotechnicalEngineerFirm, liquefactionPotential, naturalHazardSummary,
+outsideProject, projectName, projectNumber, quickSummary, reportDate,
+seismicCodeUsed, seismicParameterSummary, siteClass, tableCount,
+testingProgramSummary. MISSED (reader null, truth answered): cptCount 2,
+testPitCount 2, propertyType 2, previousInvestigationCount 1, projectPhase 1
+-- the "0 vs null" convention for counts of things the report has none of,
+and the owner's propertyType vocabulary. WRONG: siteResponseMention 2,
+strata 2 (free prose scored at partial ratio 85), bearingCapacity 1,
+figureCount 1, hazardAnalysisMention 1, recommendedFoundations 1,
+structureCount 1, structureList 1, soilCorrosion 1, earthHazardsExposed 1
+(+1 invented). Reading: identity, code and summary fields are essentially
+solved; the losses are conventions (null vs 0, yes/no mention fields) and
+long free-text matching, i.e. prompt and scorer work, not model capacity.
+
+**Cost per item, gpt-5.4:** log ~6k in / 26 s; lab sheet ~10.5k in / 48 s;
+narrative ~40k in / 64 s; label review ~75k in / 43 s per report; vision
+(gpt-4.1-mini) ~380k in / 346 s per report in page mode.
+
+**Full-run estimate (38 reports, 7,829 pages):** labels ~30 min; 15 logs +
+31 sheets + 8 narratives ~40 min; vision in PAGE mode ~5 h (2.3 s/page) --
+run vision separately in sheet mode, or after the rest.

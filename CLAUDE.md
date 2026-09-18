@@ -93,9 +93,17 @@ Key conventions:
   between what ran and what did not. `engine.strict_schema` now strips
   `STRICT_UNSUPPORTED` and folds each dropped limit into the field's
   description; a test walks EVERY model a pass sends and fails on any
-  refused keyword. `report_ingest` 604. No dependency change. The reader
-  numbers are still unmeasured until this reaches the cluster (or the
-  owner's shim cell, which patches `strict_schema` in the notebook).
+  refused keyword. `report_ingest` 604. No dependency change. **First
+  reader numbers (2026-09-18, 5.20.0 + the notebook shim, gpt-5.4, two
+  items a stage):** log reader 9/17 → 11/17 on two blind logs in ONE call
+  each (it follows continuation pages, not its own unsettled list — a
+  lever); lab reader 132/132 (kind, link, every index, series and curve) on
+  an open and a blind sheet; narrative reader recall 64 % / precision 73 %
+  on R05 and R06 — identity, code and summary fields essentially solved,
+  the misses being the null-vs-0 convention for counts of absent things,
+  the yes/no mention fields and long free text scored at partial ratio 85.
+  Ledger "CLUSTER RUN 1", run 5. Full run pending; vision in page mode is
+  ~5 h for the corpus, so it runs apart from the rest, in sheet mode.
 - **app 5.20.2** (tag `v5.20.2`, 2026-09-18, on master) — the second thing
   the first cluster run showed. The log, lab and narrative scorers store a
   failed model call ON THE SCORE (`after.error`, `score.error`), the stage
