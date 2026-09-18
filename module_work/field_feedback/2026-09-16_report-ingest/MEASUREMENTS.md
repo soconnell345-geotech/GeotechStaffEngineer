@@ -3715,3 +3715,33 @@ the grid/tables, let the model add or correct with evidence, never drop;
 vocabulary, postName = city, list scoring) -- the owner's schema review;
 (3) label review precision (it breaks nearly as much as it fixes on
 gpt-5.4: divider, toc, field_test, appended_report) and the R24/R29 class.
+
+### Run 7 -- the rate-limited items redone: the COMPLETE four-stage picture
+
+All 38 label reports and all 15 logs now in. Labels total cost 191 calls,
+6.01 M in (+1.29 M cached), 161 k out, 2,948 s (~$25 of the day's spend by
+the owner's budget reading; readers ~$3 more).
+
+**Labels, complete.** In-sample 14 reports, 4,146 pages: 0.908 -> 0.916
+(fixed 158, broke 125, still_wrong 88). OOS open 10 reports, 50 pages:
+0.760 -> 0.780 (alt 0.840 -> 0.900). OOS blind 14 reports, 69 pages:
+0.783 -> 0.870 (alt 0.855 -> 0.928); HONEST BLIND (12 reports nobody
+opened, 60 pages): **0.767 -> 0.850 strict, 0.833 -> 0.917 with
+alternates** (fixed 11, broke 5). Reading: on reports the rules were tuned
+on there is little left for the review to fix and it breaks as much as it
+fixes; on unseen reports the rules start lower and the review recovers
++8 points. Per-report blind: R19 .60->1.0, R31 .60->1.0, R38 .20->.80,
+R36 .80->1.0; R25 1.0->.60 (the one it damaged). New triage rows: R18
+multi_document, R22 multi_document 2, R31 multi 2, R32 standard, R33
+multi (scan .53), R34 multi 3, R35 "report appendix or figure(s)",
+R36/R37 standard, R38 scanned 1.00. 19 of 38 multi_document.
+
+**Logs, complete (15).** All 83% (434/521) -> 80% (418/521). Open 91% ->
+93% (uscs 43% -> 96%, water 42 -> 50%, fields 93 -> 85%). BLIND 73% -> 62%:
+n_value 24/25 -> 19/25, blows 25/25 -> 19/25, sample_depth 28/31 -> 23/31,
+recovery 15/15 -> 3/15, index 7/16 -> 0/16; uscs 0/7 -> 6/7, layer_top
+22/36 -> 24/36. Per log added this run: R04_p59 8/14 -> 8/14, R06_p51
+23/30 -> 28/30, R07_p30 55/64 -> 61/64, R13_p45 (scanned, blind) 62/76 ->
+45/76 (-17), R15_p46 57/64 -> 56/64 (22 unresolved). The reader adds USCS
+symbols (the picture) and loses grid rows on templates it has not seen.
+FLOOR under the reader stays lever #1; the blind loss is the argument.
