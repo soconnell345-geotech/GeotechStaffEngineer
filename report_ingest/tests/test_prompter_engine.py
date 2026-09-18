@@ -525,6 +525,7 @@ def _fussy_engine(refuse=("max_tokens", "temperature"), chat_returns=None):
     prompter.client.chat.completions = _FussyCompletions(response, refuse)
     prompter.response = chat_returns            # what chat() hands back
     engine = PrompterEngine(prompter, meter=CostMeter())
+    engine._sleep = lambda seconds: None        # never wait for real here
     return engine, prompter
 
 
@@ -582,12 +583,84 @@ def test_an_error_that_is_not_about_a_parameter_is_not_retried():
     engine, prompter = _fussy_engine(refuse=())
 
     def boom(**kwargs):
-        raise RuntimeError("Error code: 429 - rate limit")
+        raise RuntimeError("Error code: 500 - the server had an error")
 
     prompter.client.chat.completions.create = boom
-    with pytest.raises(RuntimeError, match="rate limit"):
+    with pytest.raises(RuntimeError, match="server had an error"):
         engine.complete([user(text_block("go"))], tools=_TOOL)
     assert not engine.adaptations
+
+
+_RATE_LIMITED = ("Error code: 429 - {'error': {'message': \"Your requests to "
+                 "gpt-5.4 for funhouse-gpt-high in eastus2 have exceeded rate "
+                 "limit.\", 'type': 'too_many_requests', 'param': None, "
+                 "'code': 'rate_limit_exceeded'}}")
+
+
+class RateLimitError(Exception):
+    """Named like the SDK's, so the engine recognises it by name too."""
+
+
+def test_a_rate_limited_call_waits_and_tries_again():
+    """The first full cluster run lost 10 label reviews and 5 logs to 429s
+    because nothing waited. Now the call waits, on the engine's ladder or
+    the provider's retry-after, and the waits are recorded."""
+    engine, prompter = _fussy_engine(refuse=())
+    completions = prompter.client.chat.completions
+    real = completions.create
+    state = {"left": 2}
+
+    def flaky(**kw):
+        if state["left"]:
+            state["left"] -= 1
+            raise RateLimitError(_RATE_LIMITED)
+        return real(**kw)
+
+    completions.create = flaky
+    slept = []
+    engine._sleep = slept.append
+    reply = engine.complete([user(text_block("go"))], tools=_TOOL)
+    assert reply.text == "ok"
+    assert slept == [15.0, 30.0], "the ladder, in order"
+    assert sum("rate limited" in a for a in engine.adaptations) == 2
+
+
+def test_a_rate_limit_that_never_lifts_is_raised_after_the_ladder():
+    engine, prompter = _fussy_engine(refuse=())
+
+    def always(**kw):
+        raise RateLimitError(_RATE_LIMITED)
+
+    prompter.client.chat.completions.create = always
+    slept = []
+    engine._sleep = slept.append
+    with pytest.raises(RateLimitError):
+        engine.complete([user(text_block("go"))], tools=_TOOL)
+    assert slept == list(PrompterEngine.RATE_LIMIT_WAITS)
+
+
+def test_the_providers_retry_after_beats_the_ladder():
+    engine, prompter = _fussy_engine(refuse=())
+    completions = prompter.client.chat.completions
+    real = completions.create
+    state = {"left": 1}
+
+    class _Resp:
+        headers = {"retry-after": "7"}
+
+    def flaky(**kw):
+        if state["left"]:
+            state["left"] -= 1
+            exc = RateLimitError(_RATE_LIMITED)
+            exc.response = _Resp()
+            raise exc
+        return real(**kw)
+
+    completions.create = flaky
+    slept = []
+    engine._sleep = slept.append
+    engine.complete([user(text_block("go"))], tools=_TOOL)
+    assert slept == [7.0]
 
 
 def test_when_chat_swallows_the_refusal_the_call_falls_back_to_the_raw_client():

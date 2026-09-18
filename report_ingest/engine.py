@@ -643,6 +643,8 @@ class PrompterEngine:
         self.send_temperature: bool = True
         #: One line per lesson learned from a refusal, oldest first.
         self.adaptations: List[str] = []
+        #: How a rate-limited call waits; a test replaces it.
+        self._sleep = time.sleep
 
     @staticmethod
     def adjust_for_param_error(request: Dict[str, Any],
@@ -661,16 +663,60 @@ class PrompterEngine:
             changed = True
         return new if changed else None
 
+    #: Seconds to wait before each retry of a rate-limited call, in order.
+    #: The provider's per-minute limit on a tier is shared with everything
+    #: else the office runs on it, and the SDK's client retries only once
+    #: with a sub-second pause, so the first full cluster run (2026-09-18)
+    #: lost 10 of 38 label reviews and 5 of 15 logs to 429s. A retry-after
+    #: header, when the provider sends one, is honoured instead.
+    RATE_LIMIT_WAITS: Tuple[float, ...] = (15.0, 30.0, 60.0, 120.0, 120.0,
+                                           120.0)
+
+    @staticmethod
+    def is_rate_limit(exc: BaseException) -> bool:
+        """Whether an exception is the provider saying 'too many requests'."""
+        name = type(exc).__name__.lower()
+        text = str(exc).lower()
+        return ("ratelimit" in name or "too many requests" in text
+                or "rate limit" in text or "rate_limit" in text
+                or "error code: 429" in text)
+
+    @staticmethod
+    def _retry_after(exc: BaseException) -> Optional[float]:
+        """The provider's own wait, when its response carried one."""
+        response = getattr(exc, "response", None)
+        headers = getattr(response, "headers", None)
+        if not headers:
+            return None
+        try:
+            value = headers.get("retry-after") or headers.get("Retry-After")
+            return float(value) if value is not None else None
+        except (TypeError, ValueError, AttributeError):
+            return None
+
     def _create_adaptive(self, client: Any, kwargs: Dict[str, Any]) -> Any:
         """One call on the raw client, retried with each refused parameter
         fixed in turn -- the backend reports one refusal at a time -- and
-        every fix remembered for every later call."""
+        every fix remembered for every later call. A rate-limited call
+        waits (:attr:`RATE_LIMIT_WAITS`, or the provider's retry-after)
+        and tries again; the waits are metered as wall clock like any
+        other second the call took."""
         create = client.chat.completions.create
         request = dict(kwargs)
-        for _ in range(3):                  # at most one retry per parameter
+        waits = list(self.RATE_LIMIT_WAITS)
+        for _ in range(3 + len(waits)):
             try:
                 return create(**request)
             except Exception as exc:                # noqa: BLE001 - inspected
+                if self.is_rate_limit(exc) and waits:
+                    wait = self._retry_after(exc) or waits.pop(0)
+                    self.adaptations.append(
+                        f"{self.model}: rate limited; waited {wait:.0f} s")
+                    logging.getLogger(__name__).info(
+                        "prompter engine rate limited on %s; waiting %.0f s",
+                        self.model, wait)
+                    self._sleep(wait)
+                    continue
                 adjusted = self.adjust_for_param_error(request, str(exc))
                 if adjusted is None:
                     raise

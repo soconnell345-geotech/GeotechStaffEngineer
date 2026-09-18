@@ -1892,10 +1892,12 @@ def _render_vision(vision: Dict[str, Any]) -> List[str]:
                                  zip(("rules", "+review", "vision"),
                                      clean["_scores"]) if s.n]
                 out += ["",
-                        f"### the same set minus "
-                        f"{', '.join(clean['excluded']) or 'nothing'}, which "
-                        f"the cost checkpoint used and so are no longer "
-                        f"blind", "",
+                        (f"### the same set minus "
+                         f"{', '.join(clean['excluded'])}, which the cost "
+                         f"checkpoint used and so are no longer blind"
+                         if clean["excluded"] else
+                         "### the same set, none of which any checkpoint "
+                         "has used"), "",
                         f"{len(clean['reports'])} report(s) nobody has "
                         f"opened. **This is the honest blind figure.**", "",
                         "```",
@@ -2019,9 +2021,11 @@ def _render(results: Dict[str, Any]) -> List[str]:
         if clean:
             cb, ca = clean["_scores"]
             out += ["",
-                    f"### the same set minus {', '.join(clean['excluded'])}, "
-                    f"which the cost checkpoint used and so are no longer "
-                    f"blind",
+                    (f"### the same set minus {', '.join(clean['excluded'])}, "
+                     f"which the cost checkpoint used and so are no longer "
+                     f"blind" if clean["excluded"] else
+                     "### the same set, none of which any checkpoint has "
+                     "used"),
                     "",
                     f"{len(clean['reports'])} reports nobody has opened, "
                     f"{ca.n} pages. **This is the honest blind figure.**",

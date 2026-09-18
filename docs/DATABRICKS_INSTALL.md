@@ -14,7 +14,7 @@ Last verified against a real cluster log: **5.14.0, 2026-09-11** (clean).
 ## 1. The install
 
 ```python
-%pip install "geotech-staff-engineer==5.20.4"
+%pip install "geotech-staff-engineer==5.20.5"
 %restart_python
 ```
 
@@ -266,7 +266,8 @@ Stop and investigate only for these:
 | 5.20.1 | — | On PyPI 2026-09-18; **reaches the cluster a day or two later** (the Nexus mirror lag — never assume a release is installable the day it is cut). Changes no dependency: 5.20.0 plus the Prompter parameter fix in `report_ingest/engine.py` (the triage tier's model refused `max_tokens`; now adapted and remembered). Expect the 5.20.0 log exactly. Until it arrives, the 2026-09-18 scoring runs use **5.20.0 + a notebook shim** (a wrapper on the Prompter client renaming `max_tokens`, `prefer_chat` off), and their results are labelled that way. |
 | 5.20.2 | — | On PyPI 2026-09-18, same mirror lag. No dependency change: 5.20.1 plus the resume fix in `report_ingest/cluster_scoring.py` (a run file that recorded a failed model call is retried, not skipped as done). Expect the 5.20.0 log exactly. |
 | 5.20.3 | — | On PyPI 2026-09-18, same mirror lag. No dependency change: 5.20.2 plus the strict-schema fix in `report_ingest/engine.py` (pydantic's `default`/`minItems`/`maxItems` stripped from every structured-output schema; OpenAI refused the readers' schemas before any token was spent). Expect the 5.20.0 log exactly. Superseded by 5.20.4. |
-| 5.20.4 | — | On PyPI 2026-09-18, same mirror lag. No dependency change: 5.20.3 plus tuple-to-array in `strict_schema` (the readers' four-number bbox). Expect the 5.20.0 log exactly. **Install this one** when it arrives; 5.20.1–5.20.3 are superseded. |
+| 5.20.4 | — | On PyPI 2026-09-18, same mirror lag. No dependency change: 5.20.3 plus tuple-to-array in `strict_schema` (the readers' four-number bbox). Expect the 5.20.0 log exactly. Superseded by 5.20.5. |
+| 5.20.5 | — | On PyPI 2026-09-18, same mirror lag. No dependency change: 5.20.4 plus a wait-and-retry on the provider's rate limit (429) in `report_ingest/engine.py`. Expect the 5.20.0 log exactly. **Install this one** when it arrives; 5.20.1–5.20.4 are superseded. |
 
 Earlier, 5.12.0's **first** attempt failed: pip 403 on `cytriangle`, pulled in by
 `sectionproperties` **and** `concreteproperties`. Both were removed and rebuilt

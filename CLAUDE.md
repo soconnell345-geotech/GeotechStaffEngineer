@@ -70,8 +70,31 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## CURRENT WORKING STATE (2026-09-18) — 5.20.4 RELEASED (5.20.0 + the first cluster day's fixes) with planlens 0.6.0
+## CURRENT WORKING STATE (2026-09-18) — 5.20.5 RELEASED (5.20.0 + the first cluster day's fixes) with planlens 0.6.0
 
+- **app 5.20.5** (tag `v5.20.5`, 2026-09-18, on master) — **the full
+  cluster run happened** (38 reports through triage + review, 15 logs, 31
+  lab sheets, 8 narratives; ledger "CLUSTER RUN 1", run 6) and it showed
+  two more things. (1) The provider's per-minute rate limit on the high
+  tier is shared and the SDK's client retries once with a sub-second
+  pause, so 10 of 38 label reviews and 5 of 15 logs died on 429s:
+  `PrompterEngine` now waits on a ladder (15/30/60/120/120/120 s, or the
+  provider's retry-after) and tries again, recording each wait. (2) The
+  results file printed an empty "the same set minus ," heading when no
+  checkpoint report had to be excluded. Three tests. **What the numbers
+  say:** label review 0.907 → 0.915 strict on 4,082 in-sample pages
+  (fixed 156 / broke 122 / still wrong 88), 0.76 → 0.78 on the open
+  out-of-sample pages, 0.92 → 0.92 blind — well short of the 0.98 gate,
+  and R24 sits at 0.48 whatever the review does; lab reader 68 % → 87 %
+  over 31 sheets (blind 55 % → 87 %; kind and link 94 %); log reader
+  LOSES ground on 7 of 10 logs because it re-emits the record and drops
+  values the grid already had (recovery, layer tops, index); narrative
+  recall 64 % / precision 74 % over 8 reports with the misses concentrated
+  in conventions (null vs 0 counts, the yes/no mention fields, hazards
+  vocabulary, post name). **Next train, in this order:** a floor under
+  both readers (never lose what the grid or the tables had), the
+  narrative conventions (owner's call on the schemas), then the review's
+  precision. **Install this one**; 5.20.1–5.20.4 are superseded.
 - **app 5.20.4** (tag `v5.20.4`, 2026-09-18, on master) — `strict_schema`
   also rewrites a fixed-length tuple (the log and lab readers' four-number
   provenance bbox, which pydantic writes as `prefixItems`, tuple validation
@@ -169,7 +192,7 @@ Key conventions:
   gate **12,381 passed / 33 skipped / 0 failed** (three chunks, each gated on
   pytest's exit code, on the final tree). Cluster install **NOT yet confirmed** (install guide
   §11). **First live check:** the owner's own five-stage scoring run —
-  `%pip install "geotech-staff-engineer==5.20.4"`, one
+  `%pip install "geotech-staff-engineer==5.20.5"`, one
   `score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels"), truth_dir=…)`
   cell with `max_reports=2`, and `RESULTS.md` comes back. **The release also
   carries a vision-first page-classification experiment**

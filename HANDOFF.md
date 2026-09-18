@@ -8,6 +8,50 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### 5.20.5 RELEASED (2026-09-18) — a rate-limited call waits; the first full run's numbers
+
+The owner ran every stage but vision over the whole corpus on 5.20.0 plus
+the notebook shim. Mechanically: 10 of 38 label reviews and 5 of 15 logs
+died on the provider's 429 ("requests to gpt-5.4 for funhouse-gpt-high in
+eastus2 have exceeded rate limit"); the SDK's client retries once with a
+sub-second pause and the engine never waited. `PrompterEngine` now waits on
+`RATE_LIMIT_WAITS` (15/30/60/120/120/120 s) or the provider's retry-after,
+retries, and records each wait in `adaptations`; three tests. The results
+file no longer prints "the same set minus ," when nothing is excluded.
+
+The numbers (ledger "CLUSTER RUN 1", run 6; every model-dependent figure
+in the plan is now REAL, gpt-5.4 for review and readers, gpt-5.1 triage):
+
+- **Label review**, 13 in-sample reports, 4,082 pages: 0.907 → 0.915 strict
+  (fixed 156, broke 122, still wrong 88). Open out-of-sample (10 reports,
+  50 pages): 0.76 → 0.78 strict, 0.84 → 0.90 with alternates. Blind (5
+  reports, 25 pages): 0.92 → 0.92. The Claude dev-engine checkpoint's
+  0.889 → 0.945 did not transfer. Narrative recall rose (0.91 → 0.985) at
+  the cost of precision (0.97 → 0.88); profile and figure improved a lot;
+  toc, divider, field_test, appended_report precision fell; R24 is 0.48
+  before and after. Triage called 17 of 28 reports `multi_document`.
+- **Lab reader**, 31 sheets: 68 % → 87 % (blind 55 % → 87 %; kind and
+  link 94 %; summary tables 100 %, gradation 86 %, triaxial 0 → 60 %,
+  chemical 54 %, compaction 10 %). Six sheets REGRESSED below the tables
+  alone (e.g. one gradation 28/28 → 11/30).
+- **Log reader**, 10 of 15 logs: 7 of 10 lost 1–3 items against the grid
+  alone (blind 73 % → 64 %); recovery 15/15 → 3/15 and layer tops are what
+  it drops. The reader re-emits the record instead of building on the grid.
+- **Narrative reader**, 8 reports: recall 64 %, precision 74 % (open 71/76,
+  blind 62/73); identity, code and summary fields 8/8; misses are
+  conventions — cptCount 7 missed (null vs 0), testPitCount 5,
+  siteResponseMention 7 WRONG, earthHazardsExposed 5 invented,
+  propertyType 4, postName 3, boringDictionary 4 — plus free-text lists
+  scored at Jaccard 0.6.
+- **Cost**: 4.3 M input tokens for the 28 reviews (~154 k a report, 37
+  min); a log 25 s; a sheet 30 s; a narrative 54 s.
+
+**Next train (owner informed 2026-09-18):** (1) a FLOOR under the log and
+lab readers — the record starts from the grid/tables and the model may add
+or correct with evidence, never drop; (2) the narrative conventions, which
+are the owner's schema decisions; (3) the review's precision and R24-class
+reports. Vision sheet-mode run over the corpus still to come.
+
 ### 5.20.4 RELEASED (2026-09-18) — a tuple in a schema becomes an array
 
 Same day, same class of fault, found offline before the cluster could:
@@ -163,7 +207,7 @@ Release gate **12,381 passed / 33 skipped / 0 failed** (3,598/28 + 8,070/5 +
 713/0, run by the lead on the final tree with the vision stage in), three
 chunks, each gated on pytest's exit code and never on a piped tail.
 
-**First live checks:** (1) `%pip install "geotech-staff-engineer==5.20.4"`
+**First live checks:** (1) `%pip install "geotech-staff-engineer==5.20.5"`
 with `planlens-0.6.0` in the same `Successfully installed` line and nothing
 new beside it; (2) one four-stage `score_on_cluster(...)` cell with
 `max_reports=2` and `truth_dir` pointing at the uploaded `truth/` root, and

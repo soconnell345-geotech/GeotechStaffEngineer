@@ -3626,3 +3626,92 @@ narrative ~40k in / 64 s; label review ~75k in / 43 s per report; vision
 **Full-run estimate (38 reports, 7,829 pages):** labels ~30 min; 15 logs +
 31 sheets + 8 narratives ~40 min; vision in PAGE mode ~5 h (2.3 s/page) --
 run vision separately in sheet mode, or after the rest.
+
+### Run 6 -- THE FULL RUN (labels, logs, lab, narrative; vision apart) -- 5.20.0 + shim
+
+Review/readers gpt-5.4-2026-03-05, triage gpt-5.1-2025-11-13. 10 label
+reports (R18, R22, R31-R38) and 5 logs (R04_p59, R06_p51, R07_p30,
+R13_p45, R15_p46) FAILED on 429 rate limits and are outside every number
+below (fixed in 5.20.5: wait-and-retry ladder).
+
+**Labels.** In-sample 13 reports, 4,082 pages (1 disputed page dropped):
+strict 0.907 -> 0.915; fixed 156, broke 122, still_wrong 88.
+```
+label            n   P before R before  P after  R after
+narrative      411     0.971   0.910     0.884    0.985
+plan            18     0.303   0.556     0.382    0.722
+profile         28     0.593   0.571     0.852    0.821
+boring_log     273     0.959   0.941     0.947    0.978
+test_pit_log   251     0.957   0.888     0.980    0.976
+cpt_log         23     0.636   0.913     0.767    1.000
+dcp_log         54     0.935   0.537     0.912    0.574
+lab_test       991     0.929   0.988     0.968    0.959
+calculation    977     0.992   0.971     0.998    0.950
+figure          57     0.225   0.281     0.644    0.667
+field_test      19     0.680   0.895     0.360    0.947
+appended_rep   494     0.990   1.000     0.915    1.000
+photos         132     0.904   0.856     0.920    0.962
+divider         81     0.651   0.852     0.464    0.790
+cover           29     1.000   0.379     1.000    0.759
+toc             23     0.941   0.696     0.529    0.783
+other          216     0.510   0.481     0.942    0.301
+per report before->after: R09 .901->.934, R11 .904->.923, R12 .899->.899,
+R13 .843->.929, R15 .871->.851, R16 .948->.955, R20 .968->.976,
+R21 .962->.951, R23 .937->.902, R24 .481->.494, R28 .901->.947,
+R29 .733->.718 (60 changes, 10 calls, tool budget exhausted), R30 .944->.959
+```
+OOS open (10 reports, 50 pages): 0.760 -> 0.780 strict, 0.840 -> 0.900
+with alternates (fixed 5, broke 4). OOS blind (5 reports, 25 pages): 0.920
+-> 0.920 (fixed 2, broke 2). The Claude dev-engine checkpoint (0.889 ->
+0.945 on 673 pages) did NOT transfer to gpt-5.4 on the full set.
+Triage: 17 of 28 reports `multi_document` (bound 1-4), R13 `scanned`
+(1.00), R19 multi_document at scan 0.96, R10 document_type `other`, R11
+appendix_only. Cost 137 calls, 4.31 M in (+0.90 M cached), 118 k out,
+2,229 s (~154 k in / 80 s per report).
+
+**Logs.** 10 of 15 ran. Grid-only vs reader, per log:
+```
+R02_p123 blind  3/8 -> 5/8     R21_p96 blind 16/22 -> 14/22   R30_p65 blind 19/22 -> 16/22
+R03_p135 blind  6/9 -> 6/9     R25_p19 blind  0/14 -> 0/14    R31_p278 blind 13/14 -> 12/14
+R28_p57  open  56/59 -> 58/59  R34_p49 blind 29/35 -> 26/35   R36_p38 open 42/44 -> 40/44
+R37_p26  open  45/46 -> 43/46
+```
+Blind (the 5 that ran): 73% -> 64%; recovery 15/15 -> 3/15, layer_top
+22/36 -> 14/26, index 7/16 -> 0/3, uscs 0/7 -> 1/2. The reader RE-EMITS the
+record and drops values the grid had. One call per log; 3-8 unresolved
+each; 25 s and ~6 k in per log. R25_p19 reads nothing either way.
+
+**Lab.** 31 sheets: tables-only 68% (452/667) -> reader 87% (716/825);
+blind 55% -> 87%; kind 94%, link 94%; index 65 -> 85%; series 88 -> 92%;
+curve 35 -> 65%. Per kind (after): summary_table 100% (260/260),
+moisture_content 100%, unconfined_rock 100%, density 100%,
+swell_consolidation 92%, gradation 86%, triaxial 60% (0 before),
+direct_shear 57%, chemical 54%, compaction 10%. REGRESSIONS below the
+tables: gradation R15_p82 28/28 -> 11/30, gradation R17_p114 46/46 ->
+42/56, chemical R28_p210 18/18 -> 14/22, chemical R28_p172 3/3 -> 1/5,
+compaction R17_p136 4/8 -> 1/10, atterberg R36_p52 4/4 -> 5/6. 1.1 calls,
+~10.7 k in, 30 s per sheet; zoom used twice.
+
+**Narrative.** 8 reports: recall 64% (151/235), precision 74% (147/200),
+agreement 66%; open (R05, R36) 71/76; blind (6) 62/73. By type: enum 71%,
+int 52%, string 78%, list 41%; list items P 64% R 48%; summaries 32/32
+written and within limit. Per report recall/precision: R05 63/68, R06
+66/79, R15 68/81, R21 70/77, R26 61/71, R28 56/55, R36 79/84, R37 52/76.
+Always right (8/8): documentType, geophysicalTestingMention,
+geotechnicalEngineerFirm, liquefactionPotential, naturalHazardSummary,
+outsideProject, projectName, projectNumber, quickSummary,
+seismicParameterSummary, testingProgramSummary. Systematic misses:
+cptCount 7 missed, testPitCount 5 missed (null vs 0), siteResponseMention
+7 WRONG, earthHazardsExposed 3 wrong + 5 invented, propertyType 4 missed,
+boringDictionary 4 missed, postName 3/4 missed, primeAe 3/5 missed,
+figureCount 4 wrong, structureCount 4 wrong, structureList 4 wrong,
+recommendedFoundations 4 wrong, strata 4 wrong, bearingCapacity 3 wrong,
+hazardAnalysisMention 3 wrong, soilCorrosion 3 wrong. 1.6 calls, 26 k
+in, 54 s per report.
+
+**Levers, in order:** (1) FLOOR under log and lab readers -- start from
+the grid/tables, let the model add or correct with evidence, never drop;
+(2) narrative conventions (null vs 0, mention fields yes/no, hazards
+vocabulary, postName = city, list scoring) -- the owner's schema review;
+(3) label review precision (it breaks nearly as much as it fixes on
+gpt-5.4: divider, toc, field_test, appended_report) and the R24/R29 class.
