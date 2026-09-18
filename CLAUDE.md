@@ -70,11 +70,11 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## CURRENT WORKING STATE (2026-09-17) — 5.20.0 PREPARED, NOT YET TAGGED
+## CURRENT WORKING STATE (2026-09-17) — 5.20.0 RELEASED with planlens 0.6.0
 
-- **app 5.20.0** — **PREPARED ON `feature/report-ingest-wp2`, NOT MERGED, NOT
-  TAGGED, NOT PUBLISHED.** The version, the pin, the docs and the gate are
-  done; the owner gives the word for the merge and the tag. **What shipped:**
+- **app 5.20.0** (tag `v5.20.0`, 2026-09-17, merge of `feature/report-ingest-wp2`
+  into master; planlens 0.6.0 tagged `v0.6.0` the same day, first) — published
+  to PyPI by the tag workflow on the owner's word. **What shipped:**
   the whole of `report_ingest` — WP2 through WP4 on top of 5.19.0's WP0/WP1b
   library. `ReportRecord` is the product and everything else is an export of
   it: a number keeps the unit it was printed in, every value carries the page

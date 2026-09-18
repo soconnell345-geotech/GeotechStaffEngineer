@@ -343,7 +343,7 @@ DocLayout-YOLO (AGPL), docling (torch unavoidable — optional only).
    firewalled: any package that downloads model weights at runtime is unusable
    as published — vendor the models or skip.
 
-## REPORT INGEST TRAIN (2026-09-17) — WP0–WP4 BUILT; 5.20.0 PREPARED, NOT TAGGED; WP5 next
+## REPORT INGEST TRAIN (2026-09-17) — WP0–WP5 BUILT; 5.20.0 RELEASED; calc reader next
 
 Plan: `module_work/REPORT_INGEST_PLAN.md`. Goal, in the owner's words:
 well-organised data about each geotechnical report, usable either as a
@@ -363,7 +363,7 @@ exports of it.
   development), the scorecard arithmetic, and
   `cluster_scoring.score_on_cluster` for the run on the cluster.
 
-**Built and prepared as planlens 0.6.0 + app 5.20.0 (2026-09-17, NOT tagged):**
+**Built and released as planlens 0.6.0 + app 5.20.0 (2026-09-17):**
 - **WP2** — `log_grid` in planlens (a boring log read as the coordinate system
   it is), the record model, the log reader, and a real DIGGS 2.6 writer the
   app's own subsurface reader reads back.
@@ -406,6 +406,7 @@ model. Follow-up: enforce the guard and the budget inside the compiled graph
 (or wrap the runnable) so the sub-agent has the same protections as the calc
 and references sub-agents.
 
-**Next on top of 5.20.0, before the tag:** a fifth cluster-scoring stage,
-`vision_labels` — page images read with structured output as a first-pass page
-classifier — added by another builder.
+**Landed in 5.20.0 (commit 6e8750e):** the fifth cluster-scoring stage,
+`vision_labels` — page images read by GPT-4.1 on the cheap tier with
+structured output as a first-pass page classifier, scored beside the rules and
+the review. Its number, like every model number, comes from the owner's run.

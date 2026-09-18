@@ -1,12 +1,13 @@
 # Report ingest — geotechnical report → organised record + summary + DIGGS 2.6
 
-**Status: WP0–WP4 BUILT; 5.20.0 PREPARED, NOT YET TAGGED (2026-09-17);
+**Status: WP0–WP5 BUILT; 5.20.0 RELEASED with planlens 0.6.0 (2026-09-17);
 cluster scoring pending the owner's run.** WP0 and WP1b shipped in app 5.19.0
 with planlens 0.5.0. WP2 through WP4 — the record, the log reader and DIGGS
 2.6, the lab reader, the narrative reader and the reconciler, the writers,
-the deterministic graph, the folder runner and the app sub-agent — are built
-and prepared as 5.20.0 with planlens 0.6.0, on `feature/report-ingest-wp2`
-and `feature/log-grid`. Nothing is merged, tagged, pushed or published.
+the deterministic graph, the folder runner and the app sub-agent — plus the
+WP5 vision-first label experiment (`report_ingest/vision_labels.py`, cluster
+stage `vision_labels`) shipped as 5.20.0 with planlens 0.6.0 (tags `v5.20.0`
+and `v0.6.0`). The calc reader is the one WP5 item still parked.
 
 **Every model number for WP2–WP4 is still missing, and that is the state.**
 What the ledger holds for the three readers is the baseline WITHOUT a model:

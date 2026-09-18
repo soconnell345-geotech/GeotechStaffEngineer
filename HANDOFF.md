@@ -8,13 +8,13 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
-### 5.20.0 PREPARED, NOT YET TAGGED (2026-09-17) — the report read end to end, with planlens 0.6.0
+### 5.20.0 RELEASED (2026-09-17) — the report read end to end, with planlens 0.6.0
 
-**Prepared, not tagged.** Everything up to the tag is done on
-`feature/report-ingest-wp2` (app) and `feature/log-grid` (planlens): versions,
-the pin, the docs, the gate and the wheel check. **Nothing is merged, tagged,
-pushed or published** — the owner gives the word. planlens 0.6.0 publishes
-FIRST, as it did for 0.5.0, then the app.
+**Released on the owner's word.** `feature/report-ingest-wp2` merged into
+master (no-ff) and tagged `v5.20.0`; planlens `feature/log-grid` fast-forwarded
+into main and tagged `v0.6.0` FIRST, as for 0.5.0. Both tags pushed; the
+`publish.yml` workflow on each repo builds and uploads to PyPI. Cluster install
+of 5.20.0 is NOT yet confirmed (install guide §11).
 
 **The published answer vocabulary — DECIDED, not a blocker.** The owner's own
 answer vocabulary (compound and phase types) ships verbatim in the package;
