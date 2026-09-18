@@ -81,7 +81,10 @@ Key conventions:
   falls back from `chat()` to the raw client when `chat()` swallows a refusal
   (`engine.adaptations` lists what it learned). Nine tests; `report_ingest`
   600; docs-currency green; no dependency change. 5.20.0 below is otherwise
-  what ships.
+  what ships. **A release reaches the cluster a day or two after PyPI** (the
+  Nexus mirror), so the 2026-09-18 scoring runs are **5.20.0 + a notebook
+  shim** that does the same renaming; 5.20.0 itself installed and imported
+  on the cluster that day.
 - **app 5.20.0** (tag `v5.20.0`, 2026-09-17, merge of `feature/report-ingest-wp2`
   into master; planlens 0.6.0 tagged `v0.6.0` the same day, first) — published
   to PyPI by the tag workflow on the owner's word. **What shipped:**

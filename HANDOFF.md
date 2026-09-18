@@ -24,7 +24,12 @@ on the raw client and `chat()` is not offered again that run.
 `engine.adaptations` records every lesson. Nine tests in
 `report_ingest/tests/test_prompter_engine.py`, one of which replays the
 cluster failure verbatim. No dependency change; the wheel is 5.20.0 plus
-this. The owner reruns the same cell with `==5.20.1`.
+this. **The Nexus mirror delivers a PyPI release a day or two later**, so
+the owner's 2026-09-18 runs are 5.20.0 plus a notebook shim (a wrapper on the
+Prompter client that renames `max_tokens` and drops a refused `temperature`,
+with `prefer_chat` forced off); label their results that way. 5.20.0
+installed and imported on the cluster that day, which closes the
+"cluster install unconfirmed" item for the 5.19/5.20 dependency set.
 
 ### 5.20.0 RELEASED (2026-09-17) — the report read end to end, with planlens 0.6.0
 
