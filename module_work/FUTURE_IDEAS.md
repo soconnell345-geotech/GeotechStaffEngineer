@@ -431,3 +431,32 @@ reporting fixed / broke / still_wrong — and its claim would be a cost claim as
 much as an accuracy one. Not started; it needs the document-mode numbers from
 the cluster first, because a consultant whose advice is worse than the rules'
 own confidence is a consultant worth not calling.
+
+### Disagreement as a signal (owner, 2026-09-18)
+
+The owner's direction after the first cluster day, standing: "even if
+something scores worse, it could still be useful. Something like 'wisdom of
+the crowd' or random forests; if multiple methods say different things, it
+could trigger an extra review or something. Would be good to have confidence
+values associated with the classifications and data extractions."
+
+What that means for this train, in order:
+
+1. **Page labels become a vote.** Three voters exist already -- planlens'
+   rules (with their own confidence and evidence), the label review (a
+   change with a reason and the tool that showed it), and the vision pass
+   (label + confidence per page, page/sheet/document mode). A page all three
+   agree on is settled at high confidence; a page they split on is the page
+   that gets the extra look -- a render, a second model, or a person. The
+   scorer already grades every review change as fixed/broke, so the value of
+   each voter on each label class is measurable from the runs on disk.
+2. **Every extracted value carries a confidence and a method.** The record
+   does this now (`Provenance`: page, bbox, method, confidence) for the
+   readers; the page labels need the same field, and the reconciler's QA
+   section should list every disagreement between grid/tables and reader,
+   between narrative counts and logs found, as a triggered second look
+   rather than a silent choice.
+3. **The floor is the first voter for the readers.** The grid and the
+   tables are the deterministic voter; the model is the second; a value
+   they disagree on is flagged, a value only one of them has is kept with
+   that voter's confidence.

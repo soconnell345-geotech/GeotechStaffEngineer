@@ -229,6 +229,73 @@ def test_a_sheet_carries_the_page_indexes_it_shows(synthetic):
     assert "labelled" in body, "the legend tells the model how to read a tile"
 
 
+# -- the sheets a vision pass may see -----------------------------------------
+#
+# planlens' contact sheets caption every tile "<index> <kind>" -- the page's
+# rule-derived shape -- for the label review's benefit. The 2026-09-18 corpus
+# run used them in sheet mode and the model read "text" as narrative and
+# "figure" as figure: 0.557 strict where page mode scored 0.928 on the same
+# reports. No vision mode may ever see a caption but the page index.
+
+def _forbid_planlens_sheets(doc, monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("render_thumbnails carries the rules' kinds "
+                             "into a vision call")
+    monkeypatch.setattr(type(doc), "render_thumbnails", forbidden,
+                        raising=False)
+
+
+def test_sheet_mode_never_shows_the_model_a_page_kind(synthetic, monkeypatch):
+    doc, _ = synthetic
+    _forbid_planlens_sheets(doc, monkeypatch)
+    engine = FakeEngine([{"final": VisionSheetAnswer(
+        pages=[_answer(p) for p in (0, 1, 2)])}])
+    out = classify_pages_by_vision(doc, engine, pages=[0, 1, 2], mode="sheet")
+    assert [r.page for r in out.labels] == [0, 1, 2]
+    body = engine.calls[0]["messages"][0]["content"][0]["text"]
+    assert "page index only" in body
+    for word in ("<kind>", "shape", "text'", "figure'", "form'"):
+        assert word not in body
+
+
+def test_document_mode_never_shows_the_model_a_page_kind(synthetic,
+                                                          monkeypatch):
+    doc, _ = synthetic
+    _forbid_planlens_sheets(doc, monkeypatch)
+    every = list(range(doc.n_pages))
+    engine = FakeEngine([{"final": VisionSheetAnswer(
+        pages=[_answer(p) for p in every])}])
+    out = classify_pages_by_vision(doc, engine, mode="document")
+    assert not out.unresolved
+    content = engine.calls[0]["messages"][0]["content"]
+    assert sum(1 for b in content if b["type"] == "image") >= 2, (
+        "the strip and the pages both travelled")
+    texts = " ".join(b["text"] for b in content if b["type"] == "text")
+    assert "page index only" in texts
+    assert "<kind>" not in texts
+
+
+def test_a_number_sheet_prints_only_the_page_index(synthetic):
+    import io
+
+    from PIL import Image
+
+    from report_ingest.vision_labels import (
+        NUMBER_SHEET_LEGEND, render_number_sheets,
+    )
+
+    doc, _ = synthetic
+    sheets = render_number_sheets(doc, [0, 1, 2, 3, 4, 5, 6], columns=3,
+                                  thumb_px=120, per_sheet=6)
+    assert [s[1]["pages"] for s in sheets] == [[0, 1, 2, 3, 4, 5], [6]]
+    assert all(s[1]["legend"] == NUMBER_SHEET_LEGEND for s in sheets)
+    first = Image.open(io.BytesIO(sheets[0][0]))
+    assert first.size[0] == 3 * (120 + 8) + 8, "three columns of 120 px tiles"
+    assert first.size[1] > 2 * 120, "two rows plus their captions"
+    single = Image.open(io.BytesIO(sheets[1][0]))
+    assert single.size[0] == 1 * (120 + 8) + 8, "one tile on the last sheet"
+
+
 def test_the_pages_are_split_into_sheets_of_the_size_asked_for(synthetic):
     doc, _ = synthetic
     shown = list(range(6))

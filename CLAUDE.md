@@ -70,10 +70,28 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## CURRENT WORKING STATE (2026-09-18) — 5.21.0 ON MASTER (whole-report vision mode + tier prices) with planlens 0.6.0
+## CURRENT WORKING STATE (2026-09-18) — 5.21.1 RELEASED (whole-report vision mode, tier prices, number-only sheets) with planlens 0.6.0
 
-- **app 5.21.0** (on master, 2026-09-18, **committed but NOT tagged or
-  pushed** — the owner's word cuts the release) — **a third vision mode,
+- **app 5.21.1** (tag `v5.21.1`, 2026-09-18, on master) — **the vision
+  passes never see a page's rule-derived kind.** The corpus run of sheet
+  mode scored 0.557 strict on 4,147 in-sample pages where page mode had
+  scored 0.928 on the same two reports, with narrative precision 0.43 and
+  figure precision 0.06: the contact sheets were planlens' own, which
+  caption every tile "<index> <kind>" (text, figure, form, scanned) for the
+  label review's benefit, and the prompt passed planlens' legend through,
+  so the model read "text" as narrative and "figure" as figure. The
+  document mode's strip used the same sheets. `vision_labels.render_number_sheets`
+  now draws the sheets itself, captioned "p. N" and nothing else, for sheet
+  and document mode; three tests, one of which forbids `render_thumbnails`
+  inside any vision call. **The 2026-09-18 sheet-mode numbers are VOID**
+  (ledger run 8); page mode's stand. No dependency change; **install this
+  one** when it clears the mirror, it supersedes 5.20.1–5.21.0. Owner's
+  standing direction the same evening: a method that scores worse can
+  still be useful as a VOTE — rules, review and vision disagreeing is a
+  signal to escalate, and every classification and extracted value should
+  carry a confidence (`FUTURE_IDEAS`, "Disagreement as a signal").
+- **app 5.21.0** (tag `v5.21.0`, 2026-09-18, on master, released the same
+  evening) — **a third vision mode,
   `document`, and dollars for the Funhouse tiers.** No dependency change.
   **Why:** page mode's cluster run (307 pages) matched rules-plus-review
   overall and beat both on narrative and figure recall, but LOST on `plan`

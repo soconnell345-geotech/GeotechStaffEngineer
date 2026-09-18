@@ -169,9 +169,9 @@ DOCUMENT_MIN_WINDOW = 12
 #: report longer than ``STRIP_SHEETS_MAX * STRIP_PER_SHEET`` pages cannot
 #: show all of itself, so the sheets NEAREST the window are the ones sent.
 STRIP_SHEETS_MAX = 12
-#: The strip is planlens' own contact sheet at its own defaults: 48 pages a
-#: sheet in 6 columns, each thumbnail labelled beneath with its page number
-#: and the page's kind.
+#: The strip: 48 pages a sheet in 6 columns, each thumbnail captioned with
+#: its page index and NOTHING else (see :func:`render_number_sheets` for why
+#: planlens' own sheets, which also print the page's kind, are not used).
 STRIP_PER_SHEET = 48
 STRIP_COLUMNS = 6
 STRIP_THUMB_PX = 140
@@ -319,9 +319,9 @@ you were given.
 
 _SHEET_TAIL = """
 You are given a CONTACT SHEET of several pages laid out in a grid. Each
-thumbnail is labelled beneath it with its 0-based page index and the page's
-shape. Answer for EVERY page on the sheet, once each, using the page index
-printed under that thumbnail. Do not answer for a page that is not on the
+thumbnail is labelled beneath it with its 0-based page index, as 'p. N',
+and nothing else. Answer for EVERY page on the sheet, once each, using the
+page index printed under that thumbnail. Do not answer for a page that is not on the
 sheet, and do not leave one out: a page you cannot make out is 'other' at a
 low confidence, which is an answer, and a page you skip is a hole.
 """
@@ -440,6 +440,76 @@ def _stamp_font(box_h: int) -> Any:
         return ImageFont.load_default(size=size)
     except TypeError:                              # Pillow < 9.2
         return ImageFont.load_default()
+
+
+#: The legend a number-only contact sheet carries into the model's message.
+NUMBER_SHEET_LEGEND = ("each thumbnail is labelled beneath with its page "
+                       "index only, as 'p. N', and nothing else")
+
+
+def render_number_sheets(doc, pages: Optional[Sequence[int]], *,
+                         columns: int, thumb_px: int, per_sheet: int
+                         ) -> List[Tuple[bytes, Dict[str, Any]]]:
+    """Contact sheets whose only caption is the page index.
+
+    planlens' own ``render_thumbnails`` writes ``"<index> <kind>"`` under
+    every tile -- the page's rule-derived shape: ``text``, ``figure``,
+    ``form``, ``scanned`` -- and its legend tells the reader so, because the
+    label review wants that evidence beside the picture. A vision pass must
+    never see it. On the 2026-09-18 corpus run the sheet mode used those
+    sheets, read "text" as narrative and "figure" as figure on thousands of
+    pages, and scored 0.557 strict where page mode, which shows a bare page,
+    scored 0.928 on the same reports. These sheets print ``p. N`` and
+    nothing else, and the legend says so.
+
+    Same shape as planlens' sheets -- ``(png, info)`` with ``info["pages"]``
+    -- so the strip helpers read either. A page that will not render is an
+    empty, captioned tile rather than a failed sheet.
+    """
+    import io
+
+    from PIL import Image, ImageDraw
+
+    wanted = (list(range(doc.n_pages)) if pages is None
+              else [int(p) for p in pages])
+    columns = max(1, int(columns))
+    per_sheet = max(1, int(per_sheet))
+    thumb = max(24, int(thumb_px))
+    gap = 8
+    label_h = max(14, thumb // 8)
+    font = _stamp_font(label_h)
+    dpi = max(12.0, thumb / 8.5)            # a letter page fills the tile
+    sheets: List[Tuple[bytes, Dict[str, Any]]] = []
+    for start in range(0, len(wanted), per_sheet):
+        shown = wanted[start:start + per_sheet]
+        cols = min(columns, len(shown))
+        rows = (len(shown) + cols - 1) // cols
+        cell_w, cell_h = thumb + gap, thumb + gap + label_h
+        canvas = Image.new("RGB", (cols * cell_w + gap, rows * cell_h + gap),
+                           (255, 255, 255))
+        draw = ImageDraw.Draw(canvas)
+        for i, page in enumerate(shown):
+            x0 = gap + (i % cols) * cell_w
+            y0 = gap + (i // cols) * cell_h
+            try:
+                png, _ = doc.render(page, dpi=dpi)
+                tile = Image.open(io.BytesIO(png)).convert("RGB")
+                tile.thumbnail((thumb, thumb))
+                canvas.paste(tile, (x0, y0))
+                draw.rectangle([(x0 - 1, y0 - 1),
+                                (x0 + tile.width, y0 + tile.height)],
+                               outline=(160, 160, 160))
+            except Exception:                     # noqa: BLE001 - empty tile
+                draw.rectangle([(x0, y0), (x0 + thumb, y0 + thumb)],
+                               outline=(160, 160, 160))
+            draw.text((x0, y0 + thumb + 2), f"p. {page}", fill=(0, 0, 0),
+                      font=font)
+        buf = io.BytesIO()
+        canvas.save(buf, format="PNG")
+        sheets.append((buf.getvalue(), {
+            "pages": list(shown), "columns": cols, "thumb_px": thumb,
+            "legend": NUMBER_SHEET_LEGEND}))
+    return sheets
 
 
 def document_windows(pages: Sequence[int], window: int,
@@ -718,10 +788,10 @@ def _one_sheet(doc, engine: Engine, chunk: Sequence[int], system: str,
                unresolved: List[Dict[str, Any]], qa: List[Dict[str, Any]],
                charge, detail: Optional[str] = None) -> None:
     shown = list(chunk)
-    sheets = doc.render_thumbnails(pages=shown, columns=min(SHEET_COLUMNS,
-                                                            len(shown)),
-                                   thumb_px=SHEET_THUMB_PX,
-                                   per_sheet=len(shown))
+    sheets = render_number_sheets(doc, shown,
+                                  columns=min(SHEET_COLUMNS, len(shown)),
+                                  thumb_px=SHEET_THUMB_PX,
+                                  per_sheet=len(shown))
     if not sheets:
         for page in shown:
             unresolved.append({"page": page,
@@ -833,16 +903,16 @@ def _runs(decided: Dict[int, str]) -> List[str]:
 
 def _strip_sheets(doc, qa: List[Dict[str, Any]]
                   ) -> List[Tuple[bytes, Dict[str, Any]]]:
-    """Contact sheets of the WHOLE report, planlens' own, at its own sizes.
+    """Contact sheets of the WHOLE report, captioned with page indexes only.
 
     A failure here is a note and an empty strip rather than a dead run: the
     strip is orientation, and a window of stamped full-size pages is still a
     usable call without it.
     """
     try:
-        return list(doc.render_thumbnails(pages=None, columns=STRIP_COLUMNS,
-                                          thumb_px=STRIP_THUMB_PX,
-                                          per_sheet=STRIP_PER_SHEET))
+        return render_number_sheets(doc, None, columns=STRIP_COLUMNS,
+                                    thumb_px=STRIP_THUMB_PX,
+                                    per_sheet=STRIP_PER_SHEET)
     except Exception as exc:                  # noqa: BLE001 - reported as QA
         qa.append({"page": None,
                    "note": f"no contact sheets of the whole report could be "

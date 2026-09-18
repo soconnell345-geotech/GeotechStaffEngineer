@@ -8,11 +8,39 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
-### 5.21.0 ON MASTER, NOT TAGGED (2026-09-18) — whole-report vision, and dollars
+### 5.21.1 RELEASED (2026-09-18) — the vision passes see page numbers, not kinds
 
-Committed on master; **not tagged and not pushed** — a `v*` tag publishes to
-PyPI and that is the owner's word to give. No dependency change. **Install
-5.21.0 when it is cut; it supersedes 5.20.1–5.20.5.**
+The sheet-mode corpus run (38 reports, 1,321 calls, ~$1.50) came back at
+0.557 strict on 4,147 in-sample pages; page mode had scored 0.928 on two of
+the same reports (R09 0.947 → 0.245, R11 0.910 → 0.308). Cause, found in the
+code rather than the model: sheet mode used planlens' `render_thumbnails`,
+whose sheets caption every tile "<index> <kind>" — the page's rule-derived
+shape (text, figure, form, scanned) that the label review wants beside the
+picture — and the vision prompt passed planlens' legend through. The model
+did the sensible thing with a caption that said "text": narrative precision
+0.43 with recall 0.89, figure precision 0.06 with recall 0.69, appended
+reports never. The document mode's strip used the same sheets. Fix:
+`vision_labels.render_number_sheets` draws the sheets in the package,
+captioned "p. N" and nothing else; sheet and document mode use it; three
+tests, one forbidding `render_thumbnails` in any vision call. **The
+sheet-mode numbers of 2026-09-18 are void** (ledger run 8). Install 5.21.1
+when it clears the mirror; it supersedes everything since 5.20.0.
+
+**Owner's direction, same evening, now standing:** "even if something
+scores worse, it could still be useful ... if multiple methods say
+different things, it could trigger an extra review ... would be good to
+have confidence values associated with the classifications and data
+extractions." Rules, review and vision are three voters; agreement is
+confidence, disagreement is the trigger for a second look. Every value in
+the record already carries a `Provenance` with confidence and method; the
+page labels need the same, and the vote is the design in
+`module_work/FUTURE_IDEAS.md`, "Disagreement as a signal".
+
+### 5.21.0 RELEASED (2026-09-18) — whole-report vision, and dollars
+
+Tagged `v5.21.0` and on PyPI the same evening (the owner's standing word
+covers releases). No dependency change. Superseded by 5.21.1 within the
+hour, before it could reach the cluster.
 
 **1. `mode="document"` in `report_ingest/vision_labels.py`.** The owner asked
 for the whole report in context rather than a page at a time, and page mode's

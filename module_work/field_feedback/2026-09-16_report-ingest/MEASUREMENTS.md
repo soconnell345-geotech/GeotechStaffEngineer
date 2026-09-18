@@ -3745,3 +3745,19 @@ recovery 15/15 -> 3/15, index 7/16 -> 0/16; uscs 0/7 -> 6/7, layer_top
 45/76 (-17), R15_p46 57/64 -> 56/64 (22 unresolved). The reader adds USCS
 symbols (the picture) and loses grid rows on templates it has not seen.
 FLOOR under the reader stays lever #1; the blind loss is the argument.
+
+### Run 8 -- vision SHEET mode over the corpus -- VOID (a design flaw, fixed in 5.21.1)
+
+38 reports, 1,321 calls, 3.56 M in (+1.66 M cached), 241 k out, 5,043 s,
+gpt-4.1-mini (~$1.50). In-sample 4,147 pages: strict 0.557 (rules 0.908);
+OOS open 0.700 (rules 0.760), OOS blind 0.757 (0.786), honest blind 0.750
+(0.767). Per report, the two page-mode reports: R09 0.947 -> 0.245, R11
+0.910 -> 0.308; R21 0.187. Label pattern: narrative P 0.431 R 0.894,
+figure P 0.063 R 0.689, appended_report R 0.000, other R 0.032, toc R 0.92
+P 0.55. CAUSE: sheet mode used planlens' `render_thumbnails`, which
+captions each tile "<index> <kind>" (text / figure / form / scanned), and
+the prompt passed planlens' legend through; the model read the caption as
+the answer. Document mode's strip used the same sheets. Fixed in 5.21.1
+(`render_number_sheets`: "p. N" only; a test forbids `render_thumbnails` in
+any vision call). These numbers measure the caption, not the model; the
+page-mode figures (run 5) stand. Sheet mode must be re-run on 5.21.1.
