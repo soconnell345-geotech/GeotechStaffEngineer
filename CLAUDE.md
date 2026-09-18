@@ -70,8 +70,18 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## CURRENT WORKING STATE (2026-09-18) — 5.20.3 RELEASED (5.20.0 + three cluster fixes) with planlens 0.6.0
+## CURRENT WORKING STATE (2026-09-18) — 5.20.4 RELEASED (5.20.0 + the first cluster day's fixes) with planlens 0.6.0
 
+- **app 5.20.4** (tag `v5.20.4`, 2026-09-18, on master) — `strict_schema`
+  also rewrites a fixed-length tuple (the log and lab readers' four-number
+  provenance bbox, which pydantic writes as `prefixItems`, tuple validation
+  strict mode does not implement) into a plain array with the length in
+  the description; `prefixItems`/`additionalItems` join `STRICT_UNSUPPORTED`.
+  Found by the offline scan before the cluster could; one test. The owner's
+  third reader failure of the day turned out to be the first shim having
+  detached when the setup cell re-created `fh_prompter` — the notebook shim
+  now attaches to whatever client the engine picks up. **Install this one**;
+  5.20.1–5.20.3 are superseded.
 - **app 5.20.3** (tag `v5.20.3`, 2026-09-18, on master) — the third and, for
   the readers, the decisive one. With the parameter shim in place the log,
   lab and narrative readers still died with **0 model calls, 0 tokens**:
@@ -151,7 +161,7 @@ Key conventions:
   gate **12,381 passed / 33 skipped / 0 failed** (three chunks, each gated on
   pytest's exit code, on the final tree). Cluster install **NOT yet confirmed** (install guide
   §11). **First live check:** the owner's own five-stage scoring run —
-  `%pip install "geotech-staff-engineer==5.20.3"`, one
+  `%pip install "geotech-staff-engineer==5.20.4"`, one
   `score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels"), truth_dir=…)`
   cell with `max_reports=2`, and `RESULTS.md` comes back. **The release also
   carries a vision-first page-classification experiment**

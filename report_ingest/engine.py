@@ -455,7 +455,7 @@ STRICT_UNSUPPORTED: Tuple[str, ...] = (
     "maxLength", "pattern", "format", "uniqueItems", "patternProperties",
     "minProperties", "maxProperties", "examples", "unevaluatedItems",
     "unevaluatedProperties", "contains", "minContains", "maxContains",
-    "propertyNames",
+    "propertyNames", "prefixItems", "additionalItems",
 )
 
 
@@ -523,7 +523,24 @@ def strict_schema(model: Any) -> Dict[str, Any]:
             return
         if not isinstance(node, dict):
             return
+        tuple_hint = ""
+        if isinstance(node.get("prefixItems"), list):
+            # A fixed-length tuple (a four-number bbox) is tuple validation,
+            # which strict mode does not implement. It becomes a plain array
+            # whose items may be any of the tuple's arm types, and the
+            # length rides in the description; pydantic still checks the
+            # tuple when the answer is parsed.
+            arms = node.pop("prefixItems")
+            distinct = [a for i, a in enumerate(arms) if a not in arms[:i]]
+            node["items"] = distinct[0] if len(distinct) == 1 else {
+                "anyOf": distinct}
+            node.pop("minItems", None)
+            node.pop("maxItems", None)
+            kinds = ", ".join(str(a.get("type", "value")) for a in arms)
+            tuple_hint = f"exactly {len(arms)} items: {kinds}"
         hint = _constraint_hint(node)
+        if tuple_hint:
+            hint = tuple_hint + (f"; {hint}" if hint else "")
         for key in STRICT_UNSUPPORTED:
             node.pop(key, None)
         if "const" in node:

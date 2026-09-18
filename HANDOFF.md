@@ -8,6 +8,23 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### 5.20.4 RELEASED (2026-09-18) — a tuple in a schema becomes an array
+
+Same day, same class of fault, found offline before the cluster could:
+`ReadProv.bbox` is `Tuple[float, float, float, float]` in the log and lab
+readers, pydantic writes it as `prefixItems` (tuple validation), and strict
+mode does not implement tuple validation. `strict_schema` now turns a
+`prefixItems` array into a plain array whose `items` is the arm type (or an
+`anyOf` of the distinct arm types) with "exactly N items: ..." in the
+description; pydantic still checks the tuple when the answer is parsed.
+`prefixItems` and `additionalItems` join `STRICT_UNSUPPORTED`, so the
+walk-every-model test covers them. One test. Also learned today: the
+owner's third reader failure carried the ORIGINAL `max_tokens` refusal,
+because the first notebook shim had patched the Prompter object that
+existed at the time and the setup cell later made a new one; the shim now
+patches the engine's `client` property so it attaches to whichever client
+is in use. **5.20.4 is the one to install**; 5.20.1–5.20.3 are superseded.
+
 ### 5.20.3 RELEASED (2026-09-18) — the readers' schemas pass strict mode
 
 Third lesson of the first cluster day, and the one that was actually
@@ -146,7 +163,7 @@ Release gate **12,381 passed / 33 skipped / 0 failed** (3,598/28 + 8,070/5 +
 713/0, run by the lead on the final tree with the vision stage in), three
 chunks, each gated on pytest's exit code and never on a piped tail.
 
-**First live checks:** (1) `%pip install "geotech-staff-engineer==5.20.3"`
+**First live checks:** (1) `%pip install "geotech-staff-engineer==5.20.4"`
 with `planlens-0.6.0` in the same `Successfully installed` line and nothing
 new beside it; (2) one four-stage `score_on_cluster(...)` cell with
 `max_reports=2` and `truth_dir` pointing at the uploaded `truth/` root, and

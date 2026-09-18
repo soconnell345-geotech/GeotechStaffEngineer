@@ -343,6 +343,29 @@ def test_strict_schema_drops_the_keywords_strict_mode_refuses():
     assert set(schema["required"]) == {"blows", "depth", "code", "kind"}
 
 
+def test_a_fixed_length_tuple_becomes_a_plain_array_with_its_length_in_words():
+    """The log and lab readers' provenance bbox is Tuple[float, float, float,
+    float]; pydantic writes that as prefixItems (tuple validation), which
+    strict mode does not implement."""
+    from typing import Tuple
+
+    class Prov(BaseModel):
+        bbox: Tuple[float, float, float, float] = Field(
+            description="left, top, right, bottom in page points")
+        cell: Tuple[int, str] = (0, "")
+
+    schema = strict_schema(Prov)
+    assert "prefixItems" not in json.dumps(schema)
+    bbox = schema["properties"]["bbox"]
+    assert bbox["type"] == "array" and bbox["items"] == {"type": "number"}
+    assert bbox["description"] == (
+        "left, top, right, bottom in page points (exactly 4 items: number, "
+        "number, number, number)")
+    cell = schema["properties"]["cell"]
+    assert cell["items"] == {"anyOf": [{"type": "integer"}, {"type": "string"}]}
+    assert Prov.model_validate_json('{"bbox": [1, 2, 3, 4], "cell": [1, "a"]}')
+
+
 def test_every_structured_output_the_passes_send_is_clean_for_strict_mode():
     """Every pydantic model a pass hands to ``output_format`` must come out
     of strict_schema with none of the refused keywords, or the call is a
