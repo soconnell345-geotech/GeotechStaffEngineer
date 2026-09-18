@@ -8,6 +8,76 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### 5.21.0 ON MASTER, NOT TAGGED (2026-09-18) — whole-report vision, and dollars
+
+Committed on master; **not tagged and not pushed** — a `v*` tag publishes to
+PyPI and that is the owner's word to give. No dependency change. **Install
+5.21.0 when it is cut; it supersedes 5.20.1–5.20.5.**
+
+**1. `mode="document"` in `report_ingest/vision_labels.py`.** The owner asked
+for the whole report in context rather than a page at a time, and page mode's
+own numbers said the same thing from the other side: it matched
+rules-plus-review overall but lost on `plan` and `lab_test`, the two labels
+that are settled by knowing which appendix a page sits in. So each call now
+carries a strip of planlens contact sheets covering the whole report plus a
+window of 36 consecutive full-size pages, each **stamped `p. N`** at its
+top-left corner (a report restarts its printed numbering in every appendix, so
+the index the pass scores by is drawn on the picture; the page size, and the
+token count, are unchanged). From the second window on, the call also carries
+the labels already decided as runs — `61-118: boring_log` — which is what an
+appendix looks like written down. Windows overlap by 3; a page skipped in one
+is answerable by the next, and where both answer the LATER answer wins.
+
+**The cap that shapes it was measured on the cluster today: 50 images in one
+request** ("Too many images in request: 51, maximum allowed: 50"). Not the
+context window — 1M tokens would hold a 400-page report at ~770 tokens a page
+and the image count would still refuse it. The strip is capped first (12
+sheets, or whatever leaves the window 12 pages) and the window takes the rest:
+
+| report | sheets it has | strip sent | window | images a call | calls |
+|---|---|---|---|---|---|
+| 151 pp | 4 | 4 | 36 | 40 | 5 |
+| 426 pp | 9 | 9 | 36 | 45 | 13 |
+| 729 pp | 16 | **12** | 36 | 48 | 22 |
+
+The 729-page report is the one that gives up seeing all of itself, and it
+gives up the far end: the twelve sheets NEAREST the window are sent.
+
+**2. `vision_detail`.** `image_block(png, detail=...)` now carries OpenAI's
+`image_url.detail` into `PrompterEngine._content` (only when set; the Claude
+engine has no such key and ignores it), threaded through all three modes and
+through `score_on_cluster(..., vision_detail=...)`. `"low"` is ~85 tokens an
+image instead of a page's four tiles: ~16,000 input tokens per 100 pages
+against ~97,000 at the default. **What it costs in accuracy is not known** —
+that is the next run, and it is cheap.
+
+**3. Dollars.** `engine.PROMPTER_PRICES` holds the owner's own four rates from
+the Funhouse budget page, read 2026-09-18, keyed by the DEPLOYMENT that
+answered (`served_by`) and never by the tier, because a tier is an alias and
+the model behind it changes. Every RESULTS `## Cost` block prints dollars
+beside its tokens; a call served by an unpriced deployment adds tokens and no
+dollars, `CostMeter.unpriced_calls` counts those, and a total is therefore a
+FLOOR. A run where nothing is priced still prints tokens alone.
+
+**Estimated cost of a 100-page report at the `gpt-4.1-mini` rate:** page mode
+~$0.11, sheet ~$0.02, document ~$0.05, document at low detail ~$0.01. Only the
+page-mode token figure is measured (~2,500 a page on the cluster); the rest is
+that overhead through the provider's tile arithmetic.
+
+**Pillow is not a new dependency, but not for the reason assumed:** it comes
+from `matplotlib>=3.8` and `streamlit>=1.39`, both core app requirements.
+planlens and PyMuPDF declare no Pillow at all (checked against the installed
+metadata, not inferred).
+
+**What to run first on the cluster:** one `score_on_cluster` cell with
+`stages=("vision_labels",)`, `vision_mode="document"`, its **own `out_dir`**
+(a run file is keyed by report, not by mode, so a second mode written into the
+first one's folder is skipped as already done) and `max_reports=2`. Then the
+same again with `vision_detail="low"` in a third folder. Three RESULTS.md
+files, three columns each, one scorer.
+
+Suites: `report_ingest` 660 (52 new), harness 213, docs-currency green.
+
 ### 5.20.5 RELEASED (2026-09-18) — a rate-limited call waits; the first full run's numbers
 
 The owner ran every stage but vision over the whole corpus on 5.20.0 plus

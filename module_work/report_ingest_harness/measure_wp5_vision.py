@@ -5,6 +5,8 @@ Run from the repo root::
     .venv/Scripts/python -m module_work.report_ingest_harness.measure_wp5_vision
     ... --set checkpoint            # which reports
     ... --mode sheet                # six pages a call instead of one
+    ... --mode document             # a window of pages, whole report in view
+    ... --detail low                # 85 tokens an image instead of a page
     ... --outline-context           # let it see what the document says it is
     ... --reuse                     # re-score the saved runs, no model at all
     ... --append --note "what changed this round"
@@ -53,7 +55,8 @@ from report_ingest.scoring import (   # the cluster scores with these too
     gate_failures,
 )
 from report_ingest.vision_labels import (
-    DEFAULT_DPI, MODES, SHEET_PAGES, classify_pages_by_vision,
+    DEFAULT_DPI, DETAIL_LEVELS, DOCUMENT_OVERLAP, DOCUMENT_WINDOW,
+    MAX_IMAGES_PER_CALL, MODES, SHEET_PAGES, classify_pages_by_vision,
 )
 
 LEDGER = corpus.RAW_DIR.parent / "MEASUREMENTS.md"
@@ -106,7 +109,11 @@ def review_labels_for(rid: str) -> Dict[int, str]:
 def run_one(rid: str, engine: Any, *, mode: str = "page",
             dpi: float = DEFAULT_DPI, outline_context: bool = False,
             sheet_pages: int = SHEET_PAGES, budget: Optional[int] = None,
-            di: str = "auto", reuse: bool = False) -> dict:
+            di: str = "auto", reuse: bool = False,
+            detail: Optional[str] = None,
+            window: int = DOCUMENT_WINDOW,
+            overlap: int = DOCUMENT_OVERLAP,
+            images_per_call: int = MAX_IMAGES_PER_CALL) -> dict:
     """One report through the vision pass, saved, and restartable.
 
     ``reuse`` re-reads the saved run instead of calling a model, which is
@@ -129,13 +136,14 @@ def run_one(rid: str, engine: Any, *, mode: str = "page",
         seen = classify_pages_by_vision(
             doc, engine, mode=mode, dpi=dpi, budget=budget,
             outline_context=outline_context, sheet_pages=sheet_pages,
-            outline=outline)
+            outline=outline, detail=detail, window=window, overlap=overlap,
+            images_per_call=images_per_call)
         blob = {
             "id": rid,
             "run_date": datetime.date.today().isoformat(),
             "n_pages": doc.n_pages,
             "model": getattr(engine, "name", ""),
-            "mode": mode, "dpi": float(dpi),
+            "mode": mode, "dpi": float(dpi), "detail": detail,
             "outline_context": bool(outline_context),
             "rules_labels": {str(r.page): r.role for r in roles},
             "vision": seen.to_dict(),
@@ -285,6 +293,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--dpi", type=float, default=DEFAULT_DPI)
     ap.add_argument("--sheet-pages", type=int, default=SHEET_PAGES,
                     help="pages per contact sheet in sheet mode")
+    ap.add_argument("--detail", default=None, choices=DETAIL_LEVELS,
+                    help="image_url.detail on every picture; 'low' is about "
+                         "85 tokens an image instead of a page's four tiles")
+    ap.add_argument("--window", type=int, default=DOCUMENT_WINDOW,
+                    help="full-size pages in one document-mode call")
+    ap.add_argument("--overlap", type=int, default=DOCUMENT_OVERLAP,
+                    help="pages the next document-mode window sees again")
+    ap.add_argument("--images-per-call", type=int,
+                    default=MAX_IMAGES_PER_CALL,
+                    help="the endpoint's ceiling on images in one request; "
+                         "50 was measured on the cluster on 2026-09-18")
     ap.add_argument("--outline-context", action="store_true",
                     help="give it what the document prints about itself")
     ap.add_argument("--budget", type=int, default=None,
@@ -318,7 +337,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         runs.append(run_one(rid, engine, mode=args.mode, dpi=args.dpi,
                             outline_context=args.outline_context,
                             sheet_pages=args.sheet_pages, budget=args.budget,
-                            di=args.di, reuse=args.reuse))
+                            di=args.di, reuse=args.reuse, detail=args.detail,
+                            window=args.window, overlap=args.overlap,
+                            images_per_call=args.images_per_call))
 
     scored = score(runs, oos_labels())
     text = report(scored, blind=args.set_name == "oos_blind")
@@ -335,7 +356,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                  + (f"{args.note}\n\n" if args.note else "")
                  + f"Set {args.set_name}, mode {args.mode}, "
                    f"{args.dpi:.0f} dpi, outline context "
-                   f"{'on' if args.outline_context else 'off'}. `rules` is "
+                   f"{'on' if args.outline_context else 'off'}"
+                 + (f", detail {args.detail}" if args.detail else "")
+                 + (f", window {args.window} pages with {args.overlap} "
+                    f"overlapping, at most {args.images_per_call} images a "
+                    f"call" if args.mode == "document" else "")
+                 + ". `rules` is "
                    f"planlens' per-page rules, `+review` the rules with the "
                    f"label review's changes applied, `vision` a model "
                    f"looking at the page and nothing else; all three scored "

@@ -39,6 +39,14 @@ class FakeEngine:
     prompt, the tool names offered, how many images were attached and
     whether a structured answer was asked for -- so a test can assert on
     what the pass actually sent.
+
+    IMAGES ARRIVE TWO WAYS and both are counted. A pass may hand them to
+    ``images=``, which a real engine appends to the last user turn, or put
+    image BLOCKS in the message content itself, which is the only way to
+    interleave captions with pictures or to give one picture its own
+    ``detail``. ``n_images`` is the total either way, and
+    ``image_blocks`` holds the blocks a call carried in its content, in
+    order, so a test can check the cap, the bytes and the detail.
     """
 
     def __init__(self, turns: Sequence[Dict[str, Any]],
@@ -57,11 +65,17 @@ class FakeEngine:
                  images: Optional[Sequence[bytes]] = None,
                  output_format: Any = None,
                  max_tokens: Optional[int] = None) -> Reply:
+        in_content = [block for m in messages
+                      for block in (m["content"]
+                                    if isinstance(m["content"], list) else [])
+                      if isinstance(block, dict)
+                      and block.get("type") == "image"]
         self.calls.append({
             "messages": [dict(m) for m in messages],
             "system": system,
             "tools": [t["name"] for t in (tools or [])],
-            "n_images": len(images or []),
+            "n_images": len(images or []) + len(in_content),
+            "image_blocks": in_content,
             "output_format": output_format,
         })
         if self._next >= len(self.turns):

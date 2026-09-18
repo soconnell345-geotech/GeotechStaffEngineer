@@ -410,3 +410,24 @@ and references sub-agents.
 `vision_labels` — page images read by GPT-4.1 on the cheap tier with
 structured output as a first-pass page classifier, scored beside the rules and
 the review. Its number, like every model number, comes from the owner's run.
+
+**PARKED (2026-09-18, built the mode but not the use): vision as a third
+voice the review consults.** 5.21.0 adds `mode="document"` to
+`report_ingest/vision_labels.py` — the whole report in thumbnail beside a
+window of stamped full-size pages — and it is still scored as a RIVAL to the
+rules and the label review, a third column in one table. That is the right way
+to measure it and the wrong way to use it. The three disagree in a patterned
+way: page-mode vision beat both on narrative and figure recall and lost on
+plan and lab_test, and the review's own worst pages are the ones no rule could
+fire on at all. A label the rules, the review and vision all agree on needs
+nobody's attention; a label where vision and the rules disagree is exactly the
+page the review should spend a tool call rendering. So the shape worth trying
+is not a fourth column but a CHEAPER REVIEW: run document-mode vision first at
+low detail (about a cent a hundred pages), hand the review the pages where the
+two answers differ as its work list instead of the rules' own low-confidence
+flags, and let it spend its budget there. That would be measured the same way
+everything else here is — against the same hand labels, with the same scorer,
+reporting fixed / broke / still_wrong — and its claim would be a cost claim as
+much as an accuracy one. Not started; it needs the document-mode numbers from
+the cluster first, because a consultant whose advice is worse than the rules'
+own confidence is a consultant worth not calling.

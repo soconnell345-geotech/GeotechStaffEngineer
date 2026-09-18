@@ -11,7 +11,7 @@ available to the app as one sub-agent. Calculation printouts are WP5.
 |---|---|---|
 | 0b. Document triage | `triage.py` | one structured call |
 | 0c. Label review | `label_review.py` | an agent loop with four tools |
-| The vision experiment | `vision_labels.py` | the page as a picture, one call a page or one a sheet |
+| The vision experiment | `vision_labels.py` | the page as a picture: one call a page, one a sheet, or one a window of the whole report |
 | The record | `model.py` | pydantic; the product everything else exports |
 | 2. Log reader | `log_reader.py` | one structured call per log, image alongside |
 | 3. Lab reader | `lab_reader.py` | one call per sheet, `zoom_plot` when a curve is only plotted |
@@ -624,7 +624,7 @@ pages are read from their own text layer alone.
 
 ```python
 # 1. From PyPI through Nexus. planlens 0.6.0 arrives with it.
-%pip install "geotech-staff-engineer==5.20.5"
+%pip install "geotech-staff-engineer==5.21.0"
 dbutils.library.restartPython()
 ```
 
@@ -652,7 +652,7 @@ results = score_on_cluster(
     sets         = ("insample", "oos_open", "oos_blind"),
     stages       = ("labels", "logs", "lab", "narrative", "vision_labels"),
     vision_model = "funhouse-gpt-low",      # the experiment: GPT-4.1, the cheap tier
-    vision_mode  = "page",                  # or "sheet": six pages a call
+    vision_mode  = "document",              # the whole report in view; or "page" / "sheet"
     max_reports  = 2,                       # drop this line after the first run
 )
 ```
@@ -858,28 +858,90 @@ results = score_on_cluster(
     labels_xlsx            = "/Volumes/<your volume>/report_ingest/trial_pages_working_r2.xlsx",
     oos_labels             = "/Volumes/<your volume>/report_ingest/oos_labels.json",
     di_dir                 = "/Volumes/<your volume>/report_di",
-    out_dir                = "/tmp/report_ingest_vision",
+    out_dir                = "/tmp/report_ingest_document",   # one out_dir per mode
     prompter               = fh_prompter,
     stages                 = ("vision_labels",),   # or beside ("labels", ...)
     vision_model           = "funhouse-gpt-low",   # GPT-4.1; the cheapest tier on purpose
-    vision_mode            = "page",               # or "sheet"
+    vision_mode            = "document",           # or "page" / "sheet"
     vision_dpi             = 100,                  # the default; see below
+    vision_detail          = None,                 # or "low": ~85 tokens an image
+    vision_window          = 36,                   # full-size pages in one call
+    vision_images_per_call = 50,                   # the endpoint's own cap; measured
     vision_outline_context = False,                # True = it also sees the contents list
     max_reports            = 2,                    # drop this line after the first run
 )
 ```
+
+Give each mode its **own `out_dir`**. A run file is keyed by report, not by
+mode, so a second mode written into the first one's folder would be skipped as
+already done rather than run.
 
 **Why the cheapest tier.** The question is not whether a good model can label
 a page — it is whether the cheapest one can, looking, do what the rules and the
 review do by reading. Scoring it on `funhouse-gpt-high` would answer a
 different question and cost more to answer it.
 
-**The two modes are the trade being priced.** `page` is one call per page, the
-page rendered whole: a hundred pages is a hundred calls and each page gets the
-model's full attention. `sheet` is one call per contact sheet of six pages,
-each thumbnail labelled with its own page index exactly as the review's
-`contact_sheet` tool draws them: a hundred pages is seventeen calls and each
-page is a thumbnail. What the second costs in accuracy is the measurement.
+**The three modes are the trade being priced.**
+
+| mode | what the model sees | calls / 100 pp | input tokens / 100 pp | ~$ / 100 pp | use it when |
+|---|---|---|---|---|---|
+| `page` | one page, rendered whole, and nothing else | 100 | ~250,000 | $0.11 | you want the page's own fine print read and no neighbour to lean on |
+| `sheet` | six thumbnails a call, each with its page number | 17 | ~43,000 | $0.02 | you want the cheapest possible sweep and can afford thumbnails |
+| `document` | a window of 36 full-size pages, stamped, with contact sheets of the WHOLE report beside them | 3 | ~97,000, or ~16,000 at `vision_detail="low"` | $0.05, or $0.01 low | the page cannot be read without knowing which appendix it is in |
+
+Only the `page` row is measured (307 pages on the cluster, 2026-09-18:
+~2,500 input tokens and 2.3 s a page). The other rows are that same measured
+per-call overhead put through the provider's own tile arithmetic — 85 tokens
+plus 170 a 512 px tile, four tiles for a letter page and six for a 48-up
+contact sheet — and the dollars are those tokens at the owner's
+`gpt-4.1-mini-2025-04-14` rate. Treat them as the arithmetic they are until a
+run replaces them.
+
+**`document` exists because of what `page` mode got wrong.** In page mode the
+cheap model matched rules-plus-review overall and beat both on narrative and
+figure recall, but lost on `plan` and `lab_test` — the two labels a human
+settles by knowing which appendix the page sits in, which is exactly what a
+page seen alone cannot say. So document mode hands the model the report's own
+shape along with the pages: a strip of contact sheets covering the whole
+report for orientation, then the window of full-size pages it is actually
+answering for, then, from the second window on, the labels already decided as
+runs (`61-118: boring_log`), which is what an appendix looks like written down.
+
+**The 50-image cap is the provider's, and it is measured.** On the owner's
+cluster on 2026-09-18 a request with 50 images went through and a 51st came
+back `Too many images in request: 51, maximum allowed: 50`. That cap, not the
+context window, is why document mode slides a window rather than sending the
+whole report in one call — GPT-4.1 on `funhouse-gpt-low` has a 1M-token
+window, which would hold a 400-page report at ~770 tokens a page with room to
+spare, and the image count would still refuse it. So one call carries the
+strip and the window and their sum never exceeds `vision_images_per_call`:
+
+| report | contact sheets | strip sent | window | images a call | calls |
+|---|---|---|---|---|---|
+| 151 pp | 4 | 4 | 36 | 40 | 5 |
+| 426 pp | 9 | 9 | 36 | 45 | 13 |
+| 729 pp | 16 | **12** | 36 | 48 | 22 |
+
+The strip is capped first — at twelve sheets, at what the document has, and at
+whatever leaves the window twelve pages — and the window takes what is left.
+So the 729-page report is the one that gives up seeing all of itself, and it
+gives up the far end: the twelve sheets NEAREST the window are the ones sent,
+because the divider that opens this appendix is a few pages back, not 500.
+Consecutive windows overlap by three pages, so a page the model skipped in one
+window can still be answered by the next; where both answer, the LATER answer
+wins, because it was made with more of the report already decided.
+
+**Every full-size page is stamped `p. N` in a box at its top-left corner**, in
+the 0-based index this pass counts in. A geotechnical report restarts its
+printed numbering in every appendix — three pages numbered "1" is normal — so a
+model told to use the number printed on the page would answer for the wrong
+page. The stamp is drawn ON the render rather than added as a margin, so the
+page size, and therefore the token count, is the render's.
+
+**`vision_detail="low"`** tells the endpoint to look at one 512 px tile of
+every image and charge about 85 tokens for it, whatever the image is. That is
+the difference between ~97,000 and ~16,000 input tokens per 100 pages. What it
+costs in accuracy has not been measured; it is the next thing to run.
 
 **The dpi is 100 because that is what the model keeps.** A 4.1-class vision
 stack scales an image to its own working size before it looks at it or charges
@@ -903,8 +965,11 @@ It is a parameter because the ceiling is the provider's and it moves.
 **`vision_outline_context=True`** prepends what the document prints about
 itself — the contents list, the lists of figures, tables and appendices, the
 dividers — to every call, so a run can put pure vision beside vision that knows
-which appendix it is standing in. In page mode that text rides on every call,
-so it is cut at 6,000 characters.
+which appendix it is standing in. It rides on EVERY call — a hundred of them
+in page mode — so it is cut at 6,000 characters. In document mode it is
+partly redundant with the contact-sheet strip, which shows the same dividers
+as pictures; running it both ways is the way to find out which the model
+actually uses.
 
 **How to read the table.** `RESULTS.md` gains a WP5 section whose rows are the
 labels and whose columns come in pairs — precision and recall for `rules`
@@ -920,17 +985,22 @@ report by report stops being blind.
 
 What Python refuses rather than passes on: a label outside the vocabulary
 becomes `other` with a QA note, a confidence outside 0 to 1 is clipped, a page
-the reply left off its own contact sheet is `unresolved` and never guessed
+the reply left off its own sheet or window is `unresolved` and never guessed
 from its neighbours, a page the reply invented is dropped with a note, and the
-budget caps model calls so every page past it is `unresolved` too.
+budget caps model calls so every page past it is `unresolved` too. In document
+mode a page left out of one window is still `unresolved` only if the window
+that overlaps it leaves it out too — the overlap is a second chance, not a
+licence to guess.
 
 `vision/<ID>.json` holds the per-report detail and makes the stage restartable.
 It stays on the cluster with `runs/` and `triage/`: a vision REASON says what
 the model saw on a page and can therefore quote a title block.
 
 Locally, `module_work/report_ingest_harness/measure_wp5_vision.py` does the
-same scoring against the development engine, and `--reuse` re-scores the saved
-runs with no model, no key and no network at all.
+same scoring against the development engine — `--mode document`, `--detail
+low`, `--window`, `--overlap` and `--images-per-call` are all there — and
+`--reuse` re-scores the saved runs with no model, no key and no network at
+all.
 
 Bring back **`RESULTS.md`** from whatever `out_dir` was. That is the whole report,
 and it carries IDs, labels, counts and rates only. The per-report runs and the
@@ -953,9 +1023,16 @@ Notes that matter:
   anything runs, rather than failing one report at a time deep in the set.
 - **No credential is read.** Authentication is whatever `fh_prompter` was built
   with. Nothing here touches an environment variable or a secret scope.
-- **Tokens, not dollars.** Funhouse publishes no per-token price for a
-  capability tier, so the run reports tokens and you read the spend from
-  Funhouse's own budget endpoint for the same window.
+- **Dollars, at your own rates.** A call is priced by the DEPLOYMENT that
+  answered it, never by the tier that was asked for: a tier is an alias and the
+  model behind it changes without notice, so a number priced by the tier would
+  be priced by a name that means something different next month. The four
+  deployments on the Funhouse budget page as of 2026-09-18 are in
+  `engine.PROMPTER_PRICES` and every `## Cost` block prints dollars beside its
+  tokens. A call served by a deployment with no rate on file adds its tokens
+  and no dollars, so read a total as a FLOOR and check Funhouse's own budget
+  endpoint for the same window. A run where nothing was priced still reports
+  tokens alone, exactly as it did before.
 
 ## What the Prompter engine can and cannot do
 

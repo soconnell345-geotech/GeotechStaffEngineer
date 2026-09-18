@@ -274,7 +274,10 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      vision_model: str = "funhouse-gpt-low",
                      vision_mode: str = "page",
                      vision_dpi: Optional[float] = None,
-                     vision_outline_context: bool = False
+                     vision_outline_context: bool = False,
+                     vision_detail: Optional[str] = None,
+                     vision_window: Optional[int] = None,
+                     vision_images_per_call: Optional[int] = None
                      ) -> Dict[str, Any]:
     """Run the rules, triage and the label review over the corpus, and score.
 
@@ -360,11 +363,14 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         different question.
     vision_mode
         ``"page"`` for one call per page, ``"sheet"`` for one call per
-        contact sheet of six pages. The second is about a sixth of the calls
-        and each page is a thumbnail; what that costs in accuracy is the
-        thing being measured.
+        contact sheet of six pages, ``"document"`` for a window of full-size
+        pages with the whole report in thumbnail beside them. The three are
+        the trade being priced: page mode gives every page the model's full
+        attention and nothing else, sheet mode a sixth of the calls and a
+        thumbnail a page, document mode the whole report in view at about a
+        thirtieth of page mode's calls.
     vision_dpi
-        What a page is rendered at in page mode. ``None`` takes
+        What a page is rendered at in page and document mode. ``None`` takes
         :data:`report_ingest.vision_labels.DEFAULT_DPI`, which is the largest
         render a 4.1-class vision stack keeps.
     vision_outline_context
@@ -372,6 +378,19 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         list, the lists of figures, tables and appendices, the dividers --
         on every call, so a run can put pure vision beside vision that knows
         which appendix it is standing in.
+    vision_detail
+        ``"low"``, ``"high"`` or ``"auto"`` for OpenAI's ``image_url.detail``
+        on every picture; ``None`` leaves it unset and the provider's own
+        default applies. ``"low"`` is about 85 tokens an image rather than a
+        page's four tiles, which is what makes a whole-corpus document-mode
+        run affordable.
+    vision_window, vision_images_per_call
+        Document mode only: full-size pages in one call, and the endpoint's
+        ceiling on images in one request. ``None`` takes
+        :data:`report_ingest.vision_labels.DOCUMENT_WINDOW` (36) and
+        :data:`report_ingest.vision_labels.MAX_IMAGES_PER_CALL` (50, measured
+        on the owner's cluster on 2026-09-18). Raise the second only for an
+        endpoint that has been shown to accept more.
     """
     if prompter is None:
         raise ValueError(
@@ -536,6 +555,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         vision = _run_vision(corpus, prompter, vision_model, out, wanted,
                              mode=vision_mode, dpi=vision_dpi,
                              outline_context=vision_outline_context,
+                             detail=vision_detail, window=vision_window,
+                             images_per_call=vision_images_per_call,
                              redo=redo)
         scored_vision = _score_vision(vision["runs"], corpus, oos, mapped,
                                       sets, out, vision_model,
@@ -1077,15 +1098,15 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
     out += ["## Cost", "", "```",
             f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
             f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
-            f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s",
+            f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
+            f"{_money(cost)}",
             f"per sheet: {cost['calls'] / n:.1f} calls, "
             f"{cost['input_tokens'] / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
-            f"{cost['seconds'] / n:.0f} s",
+            f"{cost['seconds'] / n:.0f} s"
+            f"{_money(cost, n)}",
             "```", "",
-            "Funhouse publishes no per-token price for a capability tier, so "
-            "this reports TOKENS. Read the spend from Funhouse's own budget "
-            "endpoint for the same window."]
+            _price_note(cost)]
     return out
 
 
@@ -1404,15 +1425,15 @@ def _render_narrative(narrative: Dict[str, Any]) -> List[str]:
     out += ["", "## Cost", "", "```",
             f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
             f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
-            f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s",
+            f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
+            f"{_money(cost)}",
             f"per report: {cost['calls'] / n:.1f} calls, "
             f"{cost['input_tokens'] / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
-            f"{cost['seconds'] / n:.0f} s",
+            f"{cost['seconds'] / n:.0f} s"
+            f"{_money(cost, n)}",
             "```", "",
-            "Funhouse publishes no per-token price for a capability tier, so "
-            "this reports TOKENS. Read the spend from Funhouse's own budget "
-            "endpoint for the same window."]
+            _price_note(cost)]
     return out
 
 
@@ -1552,15 +1573,15 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
     out += ["## Cost", "", "```",
             f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
             f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
-            f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s",
+            f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
+            f"{_money(cost)}",
             f"per log: {cost['calls'] / n:.1f} calls, "
             f"{cost['input_tokens'] / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
-            f"{cost['seconds'] / n:.0f} s",
+            f"{cost['seconds'] / n:.0f} s"
+            f"{_money(cost, n)}",
             "```", "",
-            "Funhouse publishes no per-token price for a capability tier, so "
-            "this reports TOKENS. Read the spend from Funhouse's own budget "
-            "endpoint for the same window."]
+            _price_note(cost)]
     return out
 
 
@@ -1571,7 +1592,9 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
 def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
                 report_ids: Sequence[str], *, mode: str,
                 dpi: Optional[float], outline_context: bool,
-                redo: bool) -> Dict[str, Any]:
+                redo: bool, detail: Optional[str] = None,
+                window: Optional[int] = None,
+                images_per_call: Optional[int] = None) -> Dict[str, Any]:
     """A cheap model's look at every page of every report in the set.
 
     The rules' labels are computed here too, deterministically and with no
@@ -1584,7 +1607,10 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
     from planlens.document.roles import document_outline, page_roles
 
     from report_ingest.engine import CostMeter, PrompterEngine
-    from report_ingest.vision_labels import DEFAULT_DPI, MODES
+    from report_ingest.vision_labels import (
+        DEFAULT_DPI, DETAIL_LEVELS, DOCUMENT_WINDOW, MAX_IMAGES_PER_CALL,
+        MODES,
+    )
     from report_ingest.vision_labels import (
         classify_pages_by_vision as classify,
     )
@@ -1592,12 +1618,32 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
     if mode not in MODES:
         raise ValueError(
             f"unknown vision_mode {mode!r}; the modes are {list(MODES)}")
+    if detail is not None and detail not in DETAIL_LEVELS:
+        raise ValueError(
+            f"unknown vision_detail {detail!r}; the levels are "
+            f"{list(DETAIL_LEVELS)}")
     dpi = float(DEFAULT_DPI if dpi is None else dpi)
-    settings = {"mode": mode, "dpi": dpi,
-                "outline_context": bool(outline_context)}
+    window = int(DOCUMENT_WINDOW if window is None else window)
+    cap = int(MAX_IMAGES_PER_CALL if images_per_call is None
+              else images_per_call)
+    # What the run USED, for the results header. A setting only a document
+    # run has is recorded only for a document run, and an unset detail is
+    # absent rather than written as a value the provider never saw.
+    settings: Dict[str, Any] = {"mode": mode, "dpi": dpi,
+                                "outline_context": bool(outline_context)}
+    if detail is not None:
+        settings["detail"] = detail
+    if mode == "document":
+        settings["window"] = window
+        settings["images_per_call"] = cap
+    extra = "".join([
+        f", detail {detail}" if detail else "",
+        f", window {window} pages, at most {cap} images a call"
+        if mode == "document" else "",
+    ])
     print(f"  vision_labels: {len(report_ids)} report(s); model {model}, "
           f"mode {mode}, {dpi:.0f} dpi, outline context "
-          f"{'on' if outline_context else 'off'}")
+          f"{'on' if outline_context else 'off'}{extra}")
 
     present = set(corpus.present_ids())
     done: Dict[str, dict] = {}
@@ -1622,7 +1668,9 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
             roles = page_roles(doc)
             outline = document_outline(doc) if outline_context else None
             seen = classify(doc, engine, mode=mode, dpi=dpi,
-                            outline_context=outline_context, outline=outline)
+                            outline_context=outline_context, outline=outline,
+                            detail=detail, window=window,
+                            images_per_call=cap)
             rules = {r.page: r.role for r in roles}
             n_pages = doc.n_pages
         except KeyboardInterrupt:
@@ -1647,6 +1695,7 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
             "mode": mode,
             "dpi": dpi,
             "outline_context": bool(outline_context),
+            "detail": detail,
             "rules_labels": {str(k): v for k, v in sorted(rules.items())},
             "vision": seen.to_dict(),
             "cost": meter.to_dict(),
@@ -1654,9 +1703,11 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
         }
         run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
         done[rid] = blob
+        windows = seen.cost.get("windows") or 0
         print(f"  [{n}/{len(report_ids)}] {rid}: {n_pages} pp, "
               f"{len(seen.labels)} labelled, {len(seen.unresolved)} "
-              f"unresolved, {seen.model_calls} model calls, "
+              f"unresolved, {seen.model_calls} model calls"
+              + (f" over {windows} window(s)" if windows else "") + ", "
               f"{blob['cost']['input_tokens']:,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s")
@@ -1764,8 +1815,13 @@ def _score_vision(done: Dict[str, dict], corpus: Corpus,
                     "unresolved": len(seen.get("unresolved") or []),
                     "qa": len(seen.get("qa") or []),
                     "calls": blob["cost"].get("calls", 0),
+                    # Windows are a document-mode count; page and sheet mode
+                    # have none and print a dash rather than a 0 that would
+                    # read as "it did no work".
+                    "windows": (seen.get("cost") or {}).get("windows") or 0,
                     "input_tokens": blob["cost"].get("input_tokens", 0),
                     "output_tokens": blob["cost"].get("output_tokens", 0),
+                    "dollars": blob["cost"].get("dollars", 0.0),
                     "seconds": blob.get("seconds", 0.0),
                 })
         row: Dict[str, Any] = {
@@ -1823,17 +1879,27 @@ def _render_vision(vision: Dict[str, Any]) -> List[str]:
     the triage rationales.
     """
     settings = vision.get("settings") or {}
+    mode = settings.get("mode", "page")
+    extra = "".join([
+        f", detail `{settings['detail']}`" if settings.get("detail") else "",
+        (f", window {settings.get('window')} pages, at most "
+         f"{settings.get('images_per_call')} images a call"
+         if mode == "document" else ""),
+    ])
+    looking = ("a cheap model looking at the page and nothing else"
+               if mode != "document" else
+               "a cheap model looking at the page with the whole report in "
+               "thumbnail beside it")
     out: List[str] = [
         "", "# WP5 on the cluster: labelling a page by looking at it", "",
         f"Run {vision['date']}. Vision model `{vision['model']}`, mode "
-        f"`{settings.get('mode', 'page')}`, "
-        f"{float(settings.get('dpi') or 0):.0f} dpi, outline context "
-        f"{'ON' if settings.get('outline_context') else 'off'}. "
-        f"{vision['n_reports']} report(s).",
+        f"`{mode}`, {float(settings.get('dpi') or 0):.0f} dpi, outline "
+        f"context {'ON' if settings.get('outline_context') else 'off'}"
+        f"{extra}. {vision['n_reports']} report(s).",
         "",
         "**rules** is what planlens' per-page rules said; **+review** is the "
-        "rules with the label review's accepted changes applied; **vision** "
-        "is a cheap model looking at the page and nothing else. All three "
+        f"rules with the label review's accepted changes applied; **vision** "
+        f"is {looking}. All three "
         "are scored against the SAME hand labels with the SAME scorer, and a "
         "page the vision pass left unresolved counts as `other` -- a "
         "non-answer is scored, not excused. The `+review` column appears "
@@ -1916,34 +1982,72 @@ def _render_vision(vision: Dict[str, Any]) -> List[str]:
         out += ["", "```",
                 f"{'report':<8}{'pages':>7}{'scored':>8}{'rules':>8}"
                 f"{'review':>8}{'vision':>8}{'unres':>7}{'qa':>5}"
-                f"{'calls':>7}{'in':>10}{'out':>9}{'s':>7}"]
+                f"{'calls':>7}{'wins':>6}{'in':>10}{'out':>9}{'s':>7}"]
         for r in rows:
             def cell(value: Optional[float]) -> str:
                 return "   --   " if value is None else f"{value:>8.3f}"
+            windows = f"{r.get('windows') or 0:>6}" if r.get("windows") \
+                else f"{'--':>6}"
             out.append(f"{r['id']:<8}{r['pages']:>7}{r['scored']:>8}"
                        f"{cell(r['rules'])}{cell(r['review'])}"
                        f"{cell(r['vision'])}{r['unresolved']:>7}{r['qa']:>5}"
-                       f"{r['calls']:>7}{r['input_tokens']:>10,}"
+                       f"{r['calls']:>7}{windows}{r['input_tokens']:>10,}"
                        f"{r['output_tokens']:>9,}{r['seconds']:>7.0f}")
         out.append("```")
+        out += ["", "`calls` is model calls and `wins` the windows they "
+                    "covered: one window is one call in document mode and "
+                    "there are none in the other two, where a call is a page "
+                    "or a sheet."]
 
     cost = vision["cost"]
     n = max(1, vision["n_reports"])
     out += ["", "## Cost", "", "```",
             f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
             f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
-            f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s",
+            f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
+            f"{_money(cost)}",
             f"per report: {cost['calls'] / n:.1f} calls, "
             f"{cost['input_tokens'] / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
-            f"{cost['seconds'] / n:.0f} s",
+            f"{cost['seconds'] / n:.0f} s"
+            f"{_money(cost, n)}",
             "```", "",
-            "Funhouse publishes no per-token price for a capability tier, so "
-            "this reports TOKENS. Read the spend from Funhouse's own budget "
-            "endpoint for the same window. Page mode is one call per page and "
-            "sheet mode one per six, which is the trade this stage exists to "
-            "price."]
+            _price_note(cost),
+            "",
+            "Page mode is one call per page, sheet mode one per six and document "
+            "mode one per window of pages: that is the trade this stage exists "
+            "to price."]
     return out
+
+
+def _money(cost: Dict[str, Any], per: float = 1.0) -> str:
+    """``", $12.34"`` for a priced cost block, or nothing at all.
+
+    Nothing, not ``$0.00``: a run whose deployment has no rate on file cost
+    real money that this package cannot name, and printing a zero would say
+    it was free.
+    """
+    dollars = float(cost.get("dollars") or 0.0)
+    if not dollars:
+        return ""
+    each = dollars / max(per, 1e-9)
+    return f", ${each:,.2f}" if each >= 0.01 else f", ${each:.4f}"
+
+
+def _price_note(cost: Dict[str, Any]) -> str:
+    """The line under a cost block saying what its dollars are, or are not."""
+    if float(cost.get("dollars") or 0.0):
+        return ("Dollars are the owner's own Funhouse rates, read from the "
+                "budget page on 2026-09-18, applied to the DEPLOYMENT that "
+                "answered rather than to the tier that was asked for -- a "
+                "tier is an alias and the deployment behind it changes. A "
+                "call served by a deployment with no rate on file adds its "
+                "tokens and no dollars, so read a total as a floor and check "
+                "Funhouse's own budget endpoint for the same window.")
+    return ("Funhouse publishes no per-token price for a capability tier, and "
+            "no deployment that answered this run has a rate on file either, "
+            "so this reports TOKENS rather than dollars. Read the spend from "
+            "Funhouse's own budget endpoint for the same window.")
 
 
 def _header(results: Dict[str, Any]) -> List[str]:
@@ -2057,9 +2161,8 @@ def _render(results: Dict[str, Any]) -> List[str]:
             f"{totals['input_tokens']:,} input tokens "
             f"(+{totals['cache_read_tokens']:,} the provider cached), "
             f"{totals['output_tokens']:,} output, "
-            f"{totals['seconds']:.0f} s",
+            f"{totals['seconds']:.0f} s"
+            f"{_money(totals)}",
             "```", "",
-            "Funhouse publishes no per-token price for a capability tier, so "
-            "this reports TOKENS. Read the spend from Funhouse's own budget "
-            "endpoint for the same window."]
+            _price_note(totals)]
     return out

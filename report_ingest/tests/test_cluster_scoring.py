@@ -704,12 +704,13 @@ class TestTheNarrativeStage:
 # ---------------------------------------------------------------------------
 
 def _vision_blob(rid, n_pages, rules, seen, unresolved=(), qa=(),
-                 mode="page", dpi=100.0, calls=None):
+                 mode="page", dpi=100.0, calls=None, windows=0,
+                 dollars=0.0):
     """One report's saved vision run, as the stage writes it."""
     return {
         "id": rid, "run_date": "2026-09-17", "n_pages": n_pages,
         "model": "funhouse-gpt-low", "served_by": "gpt-4.1-2026",
-        "mode": mode, "dpi": dpi, "outline_context": False,
+        "mode": mode, "dpi": dpi, "outline_context": False, "detail": None,
         "rules_labels": {str(k): v for k, v in rules.items()},
         "vision": {
             "labels": {str(k): v for k, v in seen.items()},
@@ -721,11 +722,12 @@ def _vision_blob(rid, n_pages, rules, seen, unresolved=(), qa=(),
             "mode": mode, "dpi": dpi, "outline_context": False,
             "pages_asked": n_pages, "model_calls": calls or len(seen),
             "budget": None, "stopped_on_budget": False,
-            "model": "gpt-4.1-2026", "cost": {},
+            "model": "gpt-4.1-2026",
+            "cost": {"mode": mode, "windows": windows},
         },
         "cost": {"calls": calls or len(seen), "input_tokens": 13000,
                  "output_tokens": 900, "cache_read_tokens": 0,
-                 "dollars": 0.0, "seconds": 60.0},
+                 "dollars": dollars, "seconds": 60.0},
         "seconds": 62.0,
     }
 
@@ -1000,3 +1002,209 @@ class TestOneTruthRoot:
             cs.score_on_cluster(reports_dir=tmp_path, prompter=object(),
                                 stages=("lab",), truth_dir=tmp_path,
                                 out_dir=tmp_path / "out")
+
+@pytest.fixture()
+def document_cluster(cluster):
+    """The same two reports, run in DOCUMENT mode: windows, not pages."""
+    reports_dir, out, oos = cluster
+    (out / "vision").mkdir(parents=True)
+    (out / "vision" / "R36.json").write_text(json.dumps(_vision_blob(
+        "R36", 94, {3: "figure", 7: "boring_log"}, {3: "plan", 7: "figure"},
+        mode="document", calls=3, windows=3)), encoding="utf-8")
+    (out / "vision" / "R31.json").write_text(json.dumps(_vision_blob(
+        "R31", 120, {5: "lab_test", 9: "narrative"},
+        {5: "lab_test", 9: "narrative"},
+        mode="document", calls=4, windows=4)), encoding="utf-8")
+    return reports_dir, out, oos
+
+
+class TestDocumentMode:
+    """The third vision mode on the cluster: the whole report in view."""
+
+    def test_it_is_a_mode_the_stage_accepts(self, document_cluster):
+        results = cs.score_on_cluster(
+            reports_dir=document_cluster[0], out_dir=document_cluster[1],
+            prompter=object(), oos_labels=document_cluster[2],
+            sets=("oos_blind",), stages=("vision_labels",),
+            vision_mode="document")
+        assert results["vision_labels"]["settings"]["mode"] == "document"
+
+    def test_the_window_and_the_image_cap_reach_the_settings(self,
+                                                             document_cluster):
+        results = cs.score_on_cluster(
+            reports_dir=document_cluster[0], out_dir=document_cluster[1],
+            prompter=object(), oos_labels=document_cluster[2],
+            sets=("oos_blind",), stages=("vision_labels",),
+            vision_mode="document", vision_window=24,
+            vision_images_per_call=40, vision_detail="low")
+        settings = results["vision_labels"]["settings"]
+        assert settings == {"mode": "document", "dpi": 100.0,
+                            "outline_context": False, "detail": "low",
+                            "window": 24, "images_per_call": 40}
+
+    def test_a_page_mode_run_records_no_window_settings(self,
+                                                        vision_cluster):
+        """A setting only document mode has is recorded only for a document
+        run, so a page-mode header does not print a window it never had."""
+        results = _vision_run(vision_cluster)
+        assert results["vision_labels"]["settings"] == {
+            "mode": "page", "dpi": 100.0, "outline_context": False}
+
+    def test_the_defaults_are_the_measured_cap_and_the_thirty_six_window(
+            self, document_cluster):
+        from report_ingest.vision_labels import (
+            DOCUMENT_WINDOW, MAX_IMAGES_PER_CALL,
+        )
+
+        results = cs.score_on_cluster(
+            reports_dir=document_cluster[0], out_dir=document_cluster[1],
+            prompter=object(), oos_labels=document_cluster[2],
+            sets=("oos_blind",), stages=("vision_labels",),
+            vision_mode="document")
+        settings = results["vision_labels"]["settings"]
+        assert settings["window"] == DOCUMENT_WINDOW == 36
+        assert settings["images_per_call"] == MAX_IMAGES_PER_CALL == 50
+
+    def test_an_unknown_detail_is_refused(self, document_cluster):
+        with pytest.raises(ValueError, match="unknown vision_detail"):
+            cs.score_on_cluster(
+                reports_dir=document_cluster[0], out_dir=document_cluster[1],
+                prompter=object(), oos_labels=document_cluster[2],
+                sets=("oos_blind",), stages=("vision_labels",),
+                vision_detail="medium")
+
+    def test_the_header_names_the_mode_the_window_and_the_detail(
+            self, document_cluster):
+        _reports_dir, out, _oos = document_cluster
+        cs.score_on_cluster(
+            reports_dir=document_cluster[0], out_dir=out,
+            prompter=object(), oos_labels=document_cluster[2],
+            sets=("oos_blind", "insample"), stages=("vision_labels",),
+            vision_mode="document", vision_detail="low")
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "mode `document`" in text
+        assert "detail `low`" in text
+        assert "window 36 pages, at most 50 images a call" in text
+        assert "whole report in thumbnail beside it" in text
+
+    def test_the_per_report_line_carries_the_windows_the_calls_covered(
+            self, document_cluster, monkeypatch):
+        # The blind set prints a summary and no per-report line, so the two
+        # reports are put in the OPEN set to exercise the table itself.
+        _reports_dir, out, _oos = document_cluster
+        monkeypatch.setattr(cs, "OOS_OPEN", ("R36", "R31"))
+        results = cs.score_on_cluster(
+            reports_dir=document_cluster[0], out_dir=out,
+            prompter=object(), oos_labels=document_cluster[2],
+            sets=("oos_open",), stages=("vision_labels",),
+            vision_mode="document")
+        rows = {r["id"]: r for r in results["vision_labels"]["per_report"]}
+        assert rows["R36"]["windows"] == 3
+        assert rows["R36"]["calls"] == 3
+        assert rows["R31"]["windows"] == 4
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "wins" in text, "the window column is in the per-report table"
+        assert "one window is one call in document mode" in text
+        line = [ln for ln in text.splitlines() if ln.startswith("R36")][0]
+        assert line.split()[-4] == "3", "the window count is on R36's line"
+
+    def test_page_mode_prints_a_dash_where_it_has_no_windows(
+            self, vision_cluster, monkeypatch):
+        _reports_dir, out, _oos = vision_cluster
+        monkeypatch.setattr(cs, "OOS_OPEN", ("R36", "R31"))
+        results = _vision_run(vision_cluster, sets=("oos_open",))
+        rows = {r["id"]: r for r in results["vision_labels"]["per_report"]}
+        assert rows["R36"]["windows"] == 0, (
+            "page mode has calls, not windows")
+        line = [ln for ln in (out / "RESULTS.md").read_text(
+            encoding="utf-8").splitlines() if ln.startswith("R36")][0]
+        assert "--" in line, "a dash, not a 0 that reads as 'it did nothing'"
+
+    def test_the_three_columns_are_still_one_scorer_on_one_truth(
+            self, document_cluster):
+        results = cs.score_on_cluster(
+            reports_dir=document_cluster[0], out_dir=document_cluster[1],
+            prompter=object(), oos_labels=document_cluster[2],
+            sets=("oos_blind",), stages=("vision_labels",),
+            vision_mode="document")
+        blind = results["vision_labels"]["sets"]["oos_blind"]
+        # R36 p3 right, p7 wrong; R31 both right. Three of four.
+        assert blind["vision"]["pages"] == 4
+        assert blind["vision"]["accuracy"] == pytest.approx(0.75)
+        assert blind["rules"]["accuracy"] == pytest.approx(0.75)
+
+
+class TestDollarsInTheResults:
+    """The Cost block prints dollars when a deployment was priced."""
+
+    def test_an_unpriced_run_still_reports_tokens_and_no_dollar_figure(
+            self, vision_cluster):
+        _reports_dir, out, _oos = vision_cluster
+        _vision_run(vision_cluster)
+        block = (out / "RESULTS.md").read_text(
+            encoding="utf-8").split("## Cost")[-1]
+        assert "26,000 input tokens" in block
+        assert "$" not in block
+        assert "no per-token price" in block
+
+    def test_a_priced_run_prints_dollars_beside_the_tokens(self, cluster):
+        reports_dir, out, oos = cluster
+        (out / "vision").mkdir(parents=True)
+        (out / "vision" / "R36.json").write_text(json.dumps(_vision_blob(
+            "R36", 94, {3: "figure", 7: "boring_log"},
+            {3: "plan", 7: "figure"}, dollars=1.25)), encoding="utf-8")
+        (out / "vision" / "R31.json").write_text(json.dumps(_vision_blob(
+            "R31", 120, {5: "lab_test", 9: "narrative"},
+            {5: "lab_test", 9: "narrative"}, dollars=0.75)), encoding="utf-8")
+        cs.score_on_cluster(reports_dir=reports_dir, out_dir=out,
+                            prompter=object(), oos_labels=oos,
+                            sets=("oos_blind",), stages=("vision_labels",))
+        block = (out / "RESULTS.md").read_text(
+            encoding="utf-8").split("# WP5 on the cluster")[1]
+        cost = block.split("## Cost")[-1]
+        assert "$2.00" in cost, "the two reports together"
+        assert "$1.00" in cost, "and per report"
+        assert "owner's own Funhouse rates" in cost
+        assert "the DEPLOYMENT that answered" in cost
+        assert "read a total as a floor" in cost
+
+
+class TestTheReadmeCell:
+    """Every keyword the README's cells pass must be one the function takes.
+
+    The README is the owner's notebook cell: a parameter renamed here and
+    not there is a TypeError on the cluster, minutes into a run, with the
+    reports already uploaded.
+    """
+
+    @staticmethod
+    def _cell_keywords():
+        import re
+        from pathlib import Path
+
+        readme = (Path(cs.__file__).parent / "README.md").read_text(
+            encoding="utf-8")
+        names = set()
+        for block in readme.split("score_on_cluster(")[1:]:
+            call = block.split(")")[0]
+            names |= set(re.findall(r"^\s*(\w+)\s*=", call, re.MULTILINE))
+        return names
+
+    def test_every_keyword_the_readme_passes_exists(self):
+        import inspect
+
+        taken = set(inspect.signature(cs.score_on_cluster).parameters)
+        used = self._cell_keywords()
+        assert used, "no score_on_cluster cell found in the README"
+        assert used <= taken, f"the README passes {sorted(used - taken)}"
+
+    def test_the_readme_shows_the_document_mode_cell(self):
+        from pathlib import Path
+
+        readme = (Path(cs.__file__).parent / "README.md").read_text(
+            encoding="utf-8")
+        assert 'vision_mode  = "document"' in readme \
+            or 'vision_mode           = "document"' in readme, (
+            "the whole-report mode is what a reader should run first")
+        assert "vision_detail" in readme
+        assert "50" in readme and "images" in readme

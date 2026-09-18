@@ -70,9 +70,59 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## CURRENT WORKING STATE (2026-09-18) — 5.20.5 RELEASED (5.20.0 + the first cluster day's fixes) with planlens 0.6.0
+## CURRENT WORKING STATE (2026-09-18) — 5.21.0 ON MASTER (whole-report vision mode + tier prices) with planlens 0.6.0
 
-- **app 5.20.5** (tag `v5.20.5`, 2026-09-18, on master) — **the full
+- **app 5.21.0** (on master, 2026-09-18, **committed but NOT tagged or
+  pushed** — the owner's word cuts the release) — **a third vision mode,
+  `document`, and dollars for the Funhouse tiers.** No dependency change.
+  **Why:** page mode's cluster run (307 pages) matched rules-plus-review
+  overall and beat both on narrative and figure recall, but LOST on `plan`
+  and `lab_test` — the two labels a reader settles by knowing which appendix
+  the page sits in, which is exactly what a page seen alone cannot say. The
+  owner's own framing: *"I was mainly thinking about loading the full
+  context up with all pages, not going one-by-one. Because the full context
+  of the report is often needed to understand what's happening."*
+  **What `mode="document"` does:** each call carries a STRIP of planlens
+  contact sheets covering the whole report (48 thumbnails a sheet) plus a
+  WINDOW of 36 consecutive full-size pages, each stamped `p. N` in a box at
+  its top-left corner with PIL — a report restarts its printed numbering in
+  every appendix, so the index the pass scores by is drawn ON the picture,
+  and the page size (and therefore the token count) is unchanged. From the
+  second window on the call also carries the labels decided so far as RUNS
+  (`61-118: boring_log`), which is what an appendix looks like written down.
+  Windows overlap by 3, so a page skipped in one is answerable by the next;
+  where both answer, the LATER answer wins. **The binding constraint is the
+  provider's image cap, measured on the cluster this day: 50 images in one
+  request, a 51st refused with "Too many images in request: 51, maximum
+  allowed: 50".** Not the context window — GPT-4.1 on `funhouse-gpt-low` has
+  1M tokens, which would hold a 400-page report and the image count would
+  still refuse it. So the strip is capped first (12 sheets, or what leaves
+  the window 12 pages) and the window takes what is left: 151 pp → 4 sheets
+  + 36 pages = 40 images over 5 calls; 426 pp → 9 + 36 = 45 over 13; 729 pp
+  → **12** (not 16) + 36 = 48 over 22, the long report giving up seeing all
+  of itself and keeping the sheets NEAREST the window. **Also:
+  `vision_detail`** ("auto"/"low"/"high") threads OpenAI's
+  `image_url.detail` through all three modes and the cluster stage;
+  `"low"` is ~85 tokens an image instead of a page's four tiles, which is
+  ~16,000 input tokens per 100 pages against ~97,000 — untested for
+  accuracy, and the next thing to run. **And dollars:**
+  `engine.PROMPTER_PRICES` carries the owner's own four Funhouse rates read
+  from the budget page 2026-09-18 (gpt-5.4 $2.50/$15.00, gpt-5.1
+  $1.25/$10.00, gpt-4.1-mini $0.40/$1.60, ada-002 $0.10), keyed by the
+  DEPLOYMENT that answered rather than by the tier asked for — a tier is an
+  alias and the model behind it changes — so every RESULTS `## Cost` block
+  now prints dollars beside its tokens, and a call whose deployment has no
+  rate on file still adds tokens and no dollars (`CostMeter.unpriced_calls`
+  says how many, so a total reads as a FLOOR). A run where nothing is priced
+  prints tokens alone exactly as before. **PIL is not a new dependency, but
+  the route is not what it looked like:** Pillow comes from `matplotlib>=3.8`
+  and `streamlit>=1.39`, both core app requirements — planlens and PyMuPDF
+  declare no Pillow at all (verified against the installed metadata).
+  Suites: `report_ingest` 660 (52 new), harness 213, docs-currency green.
+  **5.21.0 supersedes 5.20.1–5.20.5 and is the one to install.** 5.20.5
+  follows.
+
+- **app 5.20.5** (tag `v5.20.5`, 2026-09-18, on master; superseded by 5.21.0) — **the full
   cluster run happened** (38 reports through triage + review, 15 logs, 31
   lab sheets, 8 narratives; ledger "CLUSTER RUN 1", run 6) and it showed
   two more things. (1) The provider's per-minute rate limit on the high
@@ -1052,7 +1102,7 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | drawing_ir → `planlens.ir` + `planlens.document` + `planlens.tools` | (planlens, 1,307 tests at 0.6.0) | HISTORICAL PATH. The drawing IR (DXF / vector-PDF / raster ingest, slice queries, leader / dimension / title-block / bubble / cloud finders, `render_region`) is `planlens.ir`; since planlens 0.3.0 the WHOLE-DOCUMENT layer (`planlens.document`: page map + structure, located text, tables, review markups, hidden CAD text, Azure DI text source) and the LLM tool layer (`planlens.tools`) sit beside it. See "Document review & drawing geometry (planlens)" below. |
 | fem2d | 353 | 2D plane-strain FEM (T6 default + CST/Q4/beam, 3D-principal MC return, HS, GL99 SRM, seepage, consolidation, staged construction, PLAXIS-style calc-package plots); validated vs Griffiths-Lane/Prandtl (VALIDATION.md) |
 | geo_project | 89 | Canonical Project document for staged, human-gated LE/FEM model setup (schema+validators, builders, templates, DXF/PDF/vision ingest w/ provenance quarantine, echo-back renderer) |
-| report_ingest | 591 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop; `run_folder` drives it over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels"), truth_dir=…)` is the owner's notebook cell, and `truth_dir` is ONE root holding `logs/`, `lab/` and `narrative/` so one folder is uploaded rather than three paths kept in step. The fifth stage is the 5.20.0 EXPERIMENT: `vision_labels.py` sends each page as a picture to GPT-4.1 on the cheap tier with structured output, scored against the same hand labels by the same scorer as the rules and the review. `report_ingest/README.md`, plan in `module_work/REPORT_INGEST_PLAN.md` |
+| report_ingest | 660 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop; `run_folder` drives it over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels"), truth_dir=…)` is the owner's notebook cell, and `truth_dir` is ONE root holding `logs/`, `lab/` and `narrative/` so one folder is uploaded rather than three paths kept in step. The fifth stage is the 5.20.0 EXPERIMENT: `vision_labels.py` sends each page as a picture to GPT-4.1 on the cheap tier with structured output, scored against the same hand labels by the same scorer as the rules and the review — one call a page, one a six-page contact sheet, or (5.21.0) one per window of 36 stamped full-size pages with contact sheets of the WHOLE report beside them (`vision_mode="document"`), which is capped by the endpoint's measured 50-image-per-request limit rather than by its context window. `report_ingest/README.md`, plan in `module_work/REPORT_INGEST_PLAN.md` |
 
 Other components: geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions + DM7 figure catalogs, 3529 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 + 25 + 31 + 5 = 479 tests)
 

@@ -23,10 +23,14 @@ must not read or rewrite -- a thinking block has to be echoed back unchanged
 to the model that produced it, and is therefore carried, not inspected.
 
 COST. Every call is metered into a :class:`CostMeter`: calls, input and
-output tokens, cache reads and writes, wall clock, and dollars at the list
-prices in :data:`MODEL_PRICES`. The owner's rule for this work is that
-accuracy on key content beats tokens, so the meter exists to REPORT what a
-run cost, not to cut a pass short.
+output tokens, cache reads and writes, wall clock, and dollars. Dollars come
+from the model that ANSWERED -- ``response.model``, recorded as
+``served_by`` -- priced in :data:`MODEL_PRICES` for the Claude API and in
+:data:`PROMPTER_PRICES` for the owner's Funhouse deployments; a capability
+tier is an alias with no price of its own, so a call whose deployment is
+also unpriced reports tokens and nothing else. The owner's rule for this
+work is that accuracy on key content beats tokens, so the meter exists to
+REPORT what a run cost, not to cut a pass short.
 
 The ``anthropic`` package is imported inside :class:`ClaudeEngine` and
 nowhere else, so importing :mod:`report_ingest` costs an app nothing and
@@ -45,7 +49,8 @@ from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 __all__ = [
     "Engine", "Reply", "ToolCall", "Usage", "CostMeter", "ClaudeEngine",
     "engine_for",
-    "PrompterEngine", "MODEL_PRICES", "PROMPTER_MODELS", "strict_schema",
+    "PrompterEngine", "MODEL_PRICES", "PROMPTER_MODELS", "PROMPTER_PRICES",
+    "price_for", "strict_schema",
     "text_block", "image_block", "tool_use_block", "tool_result_block",
     "opaque_block", "user", "assistant",
 ]
@@ -71,13 +76,48 @@ CACHE_READ_RATE = 0.10
 #: they are what a cluster run should record -- ``response.model`` says which
 #: deployment actually served it, and the scorecard keeps that too.
 #:
-#: There is no published per-token price for a tier, so a cluster run reports
-#: TOKENS, not dollars: :meth:`Usage.dollars` returns 0.0 for a model it has
-#: no price for rather than inventing one. Spend is read from Funhouse's own
-#: budget endpoint.
+#: A TIER still has no price of its own: :meth:`Usage.dollars` returns 0.0
+#: for one rather than inventing a number. What IS priced is the deployment
+#: that answered -- see :data:`PROMPTER_PRICES`.
 PROMPTER_MODELS: Tuple[str, ...] = (
     "funhouse-gpt-low", "funhouse-gpt-medium", "funhouse-gpt-high",
 )
+
+#: Per MILLION tokens, ``(input, output)``, keyed by the DEPLOYMENT that
+#: served a call -- ``response.model``, which this package records as
+#: ``served_by`` -- and never by the tier that was asked for. **These are the
+#: owner's own rates from the Funhouse budget page, read 2026-09-18.** A tier
+#: is an alias and the deployment behind it changes without notice, so a run
+#: priced by the tier would be priced by a name that means something
+#: different next month; pricing by what actually answered is the only
+#: version of this that stays true. An embedding model has no output price,
+#: and 0.0 is its real one.
+#:
+#: Update deliberately, with the date, the way :data:`MODEL_PRICES` is
+#: updated: a scorecard has to be able to say what a run cost months later,
+#: and a price that moved under it would rewrite history.
+PROMPTER_PRICES: Dict[str, Tuple[float, float]] = {
+    "gpt-5.4-2026-03-05": (2.50, 15.00),
+    "gpt-5.1-2025-11-13": (1.25, 10.00),
+    "gpt-4.1-mini-2025-04-14": (0.40, 1.60),
+    "text-embedding-ada-002": (0.10, 0.00),
+}
+
+
+def price_for(model: str) -> Optional[Tuple[float, float]]:
+    """``(input, output)`` per million tokens for a model, or ``None``.
+
+    Both tables are consulted -- the Claude list prices this package
+    develops against and the owner's Funhouse deployment rates -- because a
+    run is metered by whatever name came back on the reply.
+    """
+    if not model:
+        return None
+    price = MODEL_PRICES.get(model)
+    if price is None:
+        price = PROMPTER_PRICES.get(model)
+    return price
+
 
 DEFAULT_MAX_TOKENS = 16000
 
@@ -89,13 +129,23 @@ def text_block(text: str) -> Dict[str, Any]:
     return {"type": "text", "text": str(text)}
 
 
-def image_block(png: bytes) -> Dict[str, Any]:
+def image_block(png: bytes, detail: Optional[str] = None) -> Dict[str, Any]:
     """A PNG for the model to look at.
 
     Bytes, not a path: the pages these passes render are held in memory and
     never written to disk, because the corpus is private.
+
+    ``detail`` is OpenAI's ``image_url.detail`` -- ``"low"``, ``"high"`` or
+    ``"auto"``. It is carried only when it is set, so a call that does not
+    ask for one is byte-for-byte the request it was before. ``"low"`` is the
+    lever that matters for a whole-report call: the provider then looks at
+    one 512 px tile and charges about 85 tokens instead of tiling the page.
+    The Claude engine has no such key and ignores it.
     """
-    return {"type": "image", "png": bytes(png)}
+    block: Dict[str, Any] = {"type": "image", "png": bytes(png)}
+    if detail:
+        block["detail"] = str(detail)
+    return block
 
 
 def tool_use_block(call_id: str, name: str,
@@ -155,8 +205,13 @@ class Usage:
     cache_write_tokens: int = 0
 
     def dollars(self, model: str) -> float:
-        """What this call cost at list price, or 0.0 for an unpriced model."""
-        price = MODEL_PRICES.get(model)
+        """What this call cost at list price, or 0.0 for an unpriced model.
+
+        ``model`` is a model, not a tier: a Funhouse tier is an alias with no
+        price of its own and gets 0.0, while the deployment behind it
+        (``served_by``) is priced in :data:`PROMPTER_PRICES`.
+        """
+        price = price_for(model)
         if price is None:
             return 0.0
         din, dout = price[0] / 1e6, price[1] / 1e6
@@ -187,7 +242,16 @@ class Reply:
 
 
 class CostMeter:
-    """What a run has spent so far, per model and in total."""
+    """What a run has spent so far, per model and in total.
+
+    A call is priced by the DEPLOYMENT that served it when that deployment
+    is priced (:data:`PROMPTER_PRICES`), and otherwise by the model that was
+    asked for (:data:`MODEL_PRICES`). A Funhouse tier is in neither table, so
+    a run on a tier whose deployment is also unpriced reports tokens and a
+    flat 0.0 -- tokens, not dollars, exactly as before. :attr:`unpriced_calls`
+    counts those, so a report can say how much of a total is really priced
+    rather than printing a dollar figure that quietly covers half the run.
+    """
 
     def __init__(self) -> None:
         self.calls = 0
@@ -197,21 +261,26 @@ class CostMeter:
         self.cache_write_tokens = 0
         self.seconds = 0.0
         self.dollars = 0.0
+        self.unpriced_calls = 0
         self.by_model: Dict[str, Dict[str, Any]] = {}
 
-    def add(self, model: str, usage: Usage, seconds: float) -> None:
+    def add(self, model: str, usage: Usage, seconds: float,
+            served_by: Optional[str] = None) -> None:
         self.calls += 1
         self.input_tokens += usage.input_tokens
         self.output_tokens += usage.output_tokens
         self.cache_read_tokens += usage.cache_read_tokens
         self.cache_write_tokens += usage.cache_write_tokens
         self.seconds += float(seconds)
-        cost = usage.dollars(model)
+        priced_as = served_by if price_for(served_by or "") else model
+        cost = usage.dollars(priced_as)
         self.dollars += cost
+        if price_for(priced_as or "") is None:
+            self.unpriced_calls += 1
         row = self.by_model.setdefault(
             model, {"calls": 0, "input_tokens": 0, "output_tokens": 0,
                     "cache_read_tokens": 0, "cache_write_tokens": 0,
-                    "seconds": 0.0, "dollars": 0.0})
+                    "seconds": 0.0, "dollars": 0.0, "priced_as": []})
         row["calls"] += 1
         row["input_tokens"] += usage.input_tokens
         row["output_tokens"] += usage.output_tokens
@@ -219,6 +288,13 @@ class CostMeter:
         row["cache_write_tokens"] += usage.cache_write_tokens
         row["seconds"] += float(seconds)
         row["dollars"] += cost
+        if priced_as and priced_as not in row["priced_as"]:
+            row["priced_as"].append(priced_as)
+
+    @property
+    def priced(self) -> bool:
+        """Whether every call this meter saw had a price."""
+        return self.calls > 0 and self.unpriced_calls == 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -229,16 +305,19 @@ class CostMeter:
             "cache_write_tokens": self.cache_write_tokens,
             "seconds": round(self.seconds, 1),
             "dollars": round(self.dollars, 4),
-            "by_model": {m: {k: (round(v, 4) if isinstance(v, float) else v)
+            "unpriced_calls": self.unpriced_calls,
+            "by_model": {m: {k: (round(v, 4) if isinstance(v, float)
+                                 else list(v) if isinstance(v, list) else v)
                              for k, v in row.items()}
                          for m, row in self.by_model.items()},
         }
 
     def summary(self) -> str:
+        money = (f", ${self.dollars:.3f}" if self.dollars
+                 else " (no priced deployment: tokens, not dollars)")
         return (f"{self.calls} calls, {self.input_tokens:,} in "
                 f"(+{self.cache_read_tokens:,} cached), "
-                f"{self.output_tokens:,} out, {self.seconds:.0f} s, "
-                f"${self.dollars:.3f}")
+                f"{self.output_tokens:,} out, {self.seconds:.0f} s{money}")
 
 
 class Engine(Protocol):
@@ -757,9 +836,13 @@ class PrompterEngine:
             elif kind == "image":
                 import base64
                 b64 = base64.b64encode(block["png"]).decode("ascii")
-                out.append({"type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{b64}"}})
+                url: Dict[str, Any] = {
+                    "url": f"data:image/png;base64,{b64}"}
+                if block.get("detail"):
+                    # Only when it was asked for: a request that never sets
+                    # it gets the provider's own default, as before.
+                    url["detail"] = str(block["detail"])
+                out.append({"type": "image_url", "image_url": url})
             else:
                 raise ValueError(
                     f"{kind!r} cannot go in a user message; tool calls and "
@@ -936,7 +1019,10 @@ class PrompterEngine:
             output_tokens=int(getattr(usage_raw, "completion_tokens", 0) or 0),
             cache_read_tokens=int(getattr(details, "cached_tokens", 0) or 0),
         )
-        self.meter.add(self.model, usage, seconds)
+        # Metered by what ANSWERED, not by the tier that was asked for: the
+        # tier is an alias with no price and the deployment behind it has
+        # one (:data:`PROMPTER_PRICES`).
+        self.meter.add(self.model, usage, seconds, served_by=self.served_by)
 
         choice = raw.choices[0] if getattr(raw, "choices", None) else None
         message = getattr(choice, "message", None)

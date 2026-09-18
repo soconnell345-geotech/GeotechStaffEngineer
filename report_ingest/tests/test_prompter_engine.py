@@ -17,8 +17,9 @@ import pytest
 from pydantic import BaseModel, Field
 
 from report_ingest.engine import (
-    CostMeter, PROMPTER_MODELS, PrompterEngine, Usage, image_block,
-    strict_schema, text_block, tool_result_block, tool_use_block, user,
+    CostMeter, PROMPTER_MODELS, PROMPTER_PRICES, PrompterEngine, Usage,
+    image_block, price_for, strict_schema, text_block, tool_result_block,
+    tool_use_block, user,
 )
 
 
@@ -696,3 +697,89 @@ def test_when_chat_swallows_a_refusal_and_there_is_no_client_the_reason_is_repor
     prompter._last_chat_error = RuntimeError("quota exhausted")
     with pytest.raises(RuntimeError, match="quota exhausted"):
         engine.complete([user(text_block("go"))], output_format=_Answer)
+
+
+# -- dollars, at the owner's own rates ----------------------------------------
+
+def test_the_funhouse_deployments_are_priced_by_what_answered():
+    """The owner's rates, read off the Funhouse budget page on 2026-09-18."""
+    assert PROMPTER_PRICES["gpt-5.4-2026-03-05"] == (2.50, 15.00)
+    assert PROMPTER_PRICES["gpt-5.1-2025-11-13"] == (1.25, 10.00)
+    assert PROMPTER_PRICES["gpt-4.1-mini-2025-04-14"] == (0.40, 1.60)
+    assert PROMPTER_PRICES["text-embedding-ada-002"] == (0.10, 0.00)
+    # A TIER is an alias with no price: pricing by the tier would price a
+    # name that means a different model next month.
+    for tier in PROMPTER_MODELS:
+        assert price_for(tier) is None
+
+
+def test_a_gpt_54_call_of_a_thousand_in_and_a_hundred_out_costs_four_mills():
+    usage = Usage(input_tokens=1000, output_tokens=100)
+    # 1000 * $2.50/M + 100 * $15.00/M = $0.0025 + $0.0015
+    assert usage.dollars("gpt-5.4-2026-03-05") == pytest.approx(0.004)
+
+
+def test_an_unknown_deployment_costs_nothing_rather_than_being_guessed_at():
+    usage = Usage(input_tokens=10**6, output_tokens=10**6)
+    assert usage.dollars("gpt-9-does-not-exist") == 0.0
+    assert usage.dollars("") == 0.0
+
+
+def test_the_meter_prices_a_call_by_the_deployment_not_by_the_tier():
+    meter = CostMeter()
+    meter.add("funhouse-gpt-high",
+              Usage(input_tokens=1000, output_tokens=100), 1.0,
+              served_by="gpt-5.4-2026-03-05")
+
+    assert meter.dollars == pytest.approx(0.004)
+    assert meter.unpriced_calls == 0
+    assert meter.priced is True
+    # The scorecard still records the TIER that was asked for, with what
+    # actually priced it beside.
+    assert set(meter.by_model) == {"funhouse-gpt-high"}
+    assert meter.by_model["funhouse-gpt-high"]["priced_as"] == [
+        "gpt-5.4-2026-03-05"]
+
+
+def test_a_tier_whose_deployment_is_unpriced_still_reports_tokens_only():
+    meter = CostMeter()
+    meter.add("funhouse-gpt-high", Usage(input_tokens=1000, output_tokens=100),
+              1.0, served_by="gpt-7-preview")
+
+    assert meter.dollars == 0.0
+    assert meter.unpriced_calls == 1
+    assert meter.priced is False
+    assert meter.to_dict()["input_tokens"] == 1000
+    assert "tokens, not dollars" in meter.summary()
+
+
+def test_a_run_that_mixes_priced_and_unpriced_calls_says_so():
+    meter = CostMeter()
+    meter.add("funhouse-gpt-high", Usage(input_tokens=1000, output_tokens=100),
+              1.0, served_by="gpt-5.4-2026-03-05")
+    meter.add("funhouse-gpt-low", Usage(input_tokens=1000), 1.0,
+              served_by="gpt-nobody-has-priced")
+
+    assert meter.calls == 2
+    assert meter.unpriced_calls == 1
+    assert meter.priced is False, (
+        "a dollar total that covers half the calls is a floor, not a total")
+    assert meter.dollars == pytest.approx(0.004)
+
+
+def test_a_reply_meters_itself_by_the_deployment_that_served_it():
+    engine, _ = _engine(_Response(_Message("hi"),
+                                  usage=_Usage(1000, 100),
+                                  model="gpt-4.1-mini-2025-04-14"))
+    engine.complete([user(text_block("go"))], tools=[{
+        "name": "t", "description": "d", "input_schema": {}}])
+
+    # 1000 * $0.40/M + 100 * $1.60/M
+    assert engine.meter.dollars == pytest.approx(0.0004 + 0.00016)
+    assert engine.meter.by_model["funhouse-gpt-medium"]["priced_as"] == [
+        "gpt-4.1-mini-2025-04-14"]
+
+
+def test_the_claude_list_prices_are_untouched():
+    assert Usage(input_tokens=10**6).dollars("claude-opus-5") == 5.00
+    assert price_for("claude-sonnet-5") == (2.00, 10.00)

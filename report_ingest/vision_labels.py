@@ -16,18 +16,44 @@ the ones it is under no handicap on. Whether that is worth its cost is a
 measurement, not an opinion, and :mod:`report_ingest.cluster_scoring` makes
 it against the SAME hand labels and the SAME scorer as the rules.
 
-TWO MODES, AND THE TRADE BETWEEN THEM.
+THREE MODES, AND THE TRADE BETWEEN THEM.
 
 ``mode="page"``
     One call per page, the page rendered whole. Every page gets the model's
     full attention and the page's own fine print is legible. A hundred pages
-    is a hundred calls.
+    is a hundred calls. **Nothing but the page is in view**, which is the
+    mode's whole point and also its ceiling: the page-mode run on the
+    cluster (2026-09-18, 307 pages) matched the rules-plus-review score and
+    beat it on narrative and figure recall, while LOSING on plan and
+    lab_test -- the two labels a reader settles by knowing which appendix
+    the page is sitting in.
 ``mode="sheet"``
     One call per contact sheet of several pages, each thumbnail carrying its
     own page index, exactly as the label review's ``contact_sheet`` tool
     draws them. A hundred pages is seventeen calls at six a sheet, and each
     page is a thumbnail rather than a page. What that costs in accuracy is
     the thing being measured.
+``mode="document"``
+    The report's pages labelled with **the whole document in view**. The
+    owner's own reason for it: *"I was mainly thinking about loading the
+    full context up with all pages, not going one-by-one. Because the full
+    context of the report is often needed to understand what's happening."*
+    Each call carries a STRIP of contact sheets covering the report end to
+    end, for orientation, and then a WINDOW of consecutive pages at full
+    size, each stamped with its own page number. The model answers for the
+    full-size pages only; the thumbnails are there so it can see that
+    page 212 sits four pages into Appendix C, whose divider it can read.
+    Consecutive windows OVERLAP, so a page skipped in one window can still
+    be answered by the next.
+
+    **The cap is the provider's, and it is 50 images in one request**
+    (measured on the owner's cluster, 2026-09-18: a 51st image is refused
+    with "Too many images in request: 51, maximum allowed: 50"). That, not
+    the context window, is what makes this a sliding window rather than one
+    call over the whole report: a 1M-token window would hold a 400-page
+    report at 770 tokens a page with room to spare, and the image count
+    would still refuse it. :data:`MAX_IMAGES_PER_CALL` is a parameter
+    because the cap belongs to the endpoint, not to us.
 
 ``outline_context=True`` prepends what the document prints about ITSELF --
 the contents list, the lists of figures, tables and appendices, and every
@@ -60,6 +86,15 @@ bytes on the wire and not one pixel the model keeps. Everything from about
 for a page that is not letter-sized. ``dpi`` is a parameter because the
 ceiling is the provider's, not ours, and it moves.
 
+THE DETAIL KEY. ``detail="low"`` tells an OpenAI-shaped endpoint to look at
+one 512 px tile of an image and charge about 85 tokens for it, whatever the
+image is; the default tiles a letter page into four and charges about 770.
+Forty-eight pages at low detail cost about what five cost at default, which
+is the difference between a window that is affordable to run over a whole
+corpus and one that is not -- and what it costs in accuracy is the next
+thing to measure. It is threaded through all three modes and defaults to
+unset, so a call that does not ask for it is the request it always was.
+
 NO CONSTRAINTS IN THE SCHEMA. ``confidence`` is described as 0 to 1 rather
 than declared with a minimum and a maximum, and ``reason`` is asked for in
 twenty words rather than capped with a maxLength. Strict structured output
@@ -75,14 +110,18 @@ from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, Field
 
-from report_ingest.engine import Engine, text_block, user
+from report_ingest.engine import Engine, image_block, text_block, user
 from report_ingest.label_review import LABEL_DEFINITIONS
 
 __all__ = [
     "VISION_LABELS", "MODES", "DEFAULT_DPI", "SHEET_PAGES", "SHEET_COLUMNS",
     "SHEET_THUMB_PX", "MAX_CONTEXT_CHARS",
+    "MAX_IMAGES_PER_CALL", "DOCUMENT_WINDOW", "DOCUMENT_OVERLAP",
+    "DOCUMENT_MIN_WINDOW", "STRIP_SHEETS_MAX", "STRIP_PER_SHEET",
+    "STRIP_COLUMNS", "STRIP_THUMB_PX", "DETAIL_LEVELS",
     "VisionPageAnswer", "VisionSheetAnswer", "VisionPageLabel", "VisionLabels",
-    "vision_system", "classify_pages_by_vision",
+    "vision_system", "classify_pages_by_vision", "stamp_page_number",
+    "document_windows",
 ]
 
 #: The vocabulary, and it is the label review's: a label this pass can return
@@ -92,7 +131,10 @@ __all__ = [
 #: and the second one's numbers would be the ones nobody checked.
 VISION_LABELS: Tuple[str, ...] = tuple(LABEL_DEFINITIONS)
 
-MODES: Tuple[str, ...] = ("page", "sheet")
+MODES: Tuple[str, ...] = ("page", "sheet", "document")
+
+#: What OpenAI's ``image_url.detail`` accepts. ``None`` leaves it unset.
+DETAIL_LEVELS: Tuple[str, ...] = ("auto", "low", "high")
 
 #: See the module docstring: the largest render a 4.1-class vision stack will
 #: keep, for a letter page and for A4.
@@ -106,6 +148,39 @@ SHEET_THUMB_PX = 400
 #: EVERY call in page mode, so a 30,000-character outline would cost more than
 #: the pictures do.
 MAX_CONTEXT_CHARS = 6000
+
+#: The endpoint's own ceiling on images in ONE request, measured on the
+#: owner's cluster on 2026-09-18: 50 went through and 51 came back "Too many
+#: images in request: 51, maximum allowed: 50". It is a parameter on the
+#: pass (``images_per_call``) because it belongs to the endpoint and a
+#: different one will have a different number.
+MAX_IMAGES_PER_CALL = 50
+#: Full-size pages in one document-mode call, and how many of them the next
+#: call sees again. The overlap is what lets a page the model skipped be
+#: answered by the window after it; it is also why a page can be answered
+#: twice, and the LATER answer -- the one made with more of the report
+#: already decided -- is the one kept.
+DOCUMENT_WINDOW = 36
+DOCUMENT_OVERLAP = 3
+#: However tight ``images_per_call`` is, a window of fewer than this many
+#: pages is not worth a call: the strip is trimmed instead.
+DOCUMENT_MIN_WINDOW = 12
+#: How many contact sheets of the whole report ride on one call, at most. A
+#: report longer than ``STRIP_SHEETS_MAX * STRIP_PER_SHEET`` pages cannot
+#: show all of itself, so the sheets NEAREST the window are the ones sent.
+STRIP_SHEETS_MAX = 12
+#: The strip is planlens' own contact sheet at its own defaults: 48 pages a
+#: sheet in 6 columns, each thumbnail labelled beneath with its page number
+#: and the page's kind.
+STRIP_PER_SHEET = 48
+STRIP_COLUMNS = 6
+STRIP_THUMB_PX = 140
+#: The stamp drawn on a full-size page in document mode: a filled box at the
+#: top-left corner with "p. N" in it, sized as a fraction of the page's
+#: short side so it is legible at any dpi and covers the same sliver of the
+#: page at every one.
+STAMP_HEIGHT_FRAC = 0.030
+STAMP_MIN_PX = 18
 
 
 # -- what the model returns -------------------------------------------------
@@ -197,12 +272,20 @@ class VisionLabels:
 
 _SYSTEM_HEAD = """\
 You are looking at pages of one engineering report and saying what each page
-IS. You are given the pages as PICTURES. There is no text layer, no rule
-label and no neighbouring context beyond what you can see: answer from the
-page in front of you.
+IS. You are given the pages as PICTURES. {context}
 
 THE LABEL VOCABULARY. Every page gets exactly one of these eighteen.
 """
+
+#: What page and sheet mode say about the context a page arrives in: none.
+_ALONE = ("There is no text layer, no rule label and no neighbouring context "
+          "beyond what you can see: answer from the page in front of you.")
+#: What document mode says instead. The sentence has to change, because in
+#: that mode there IS neighbouring context and the whole point is to use it.
+_IN_CONTEXT = ("There is no text layer and no rule label: answer from what "
+               "you can see. You are shown the WHOLE report in thumbnail as "
+               "well as the pages you are answering for, so read a page in "
+               "the light of the pages around it.")
 
 _SYSTEM_RULES = """
 How to decide.
@@ -244,14 +327,144 @@ low confidence, which is an answer, and a page you skip is a hole.
 """
 
 
+_DOCUMENT_TAIL = """
+You are given the WHOLE report and then part of it.
+
+- First come THUMBNAIL CONTACT SHEETS of the whole report, several pages to
+  a row, each thumbnail labelled beneath with its page number. They are for
+  ORIENTATION and nothing else: they show you where this report's dividers,
+  contents lists and appendices fall and how long each run of pages is. Do
+  not answer for a page you have only seen as a thumbnail.
+- Then come FULL-SIZE PAGES, in order. Each one is stamped 'p. N' in a box
+  at its top-left corner, and N is the page number to answer with -- not a
+  number printed by the report itself, which may start counting again in
+  every appendix.
+
+Answer for EVERY full-size page, once each, and for NO other page. One entry
+per full-size page: a page you cannot make out is 'other' at a low
+confidence, which is an answer, and a page you skip is a hole.
+
+USE THE WHOLE REPORT TO DECIDE. This is the point of showing it to you. A
+page that says nothing about itself is very often decidable from where it
+sits: the divider or fly sheet that opens the run it is in names what the
+run holds, the contents list and the lists of figures, tables and appendices
+say what the report contains, and a page between two logs of one boring is
+part of that log. When the pages before and after a page are all one kind
+and the page itself is silent, it is usually that kind -- say so in the
+reason, so a reader can tell a decision made from the page from a decision
+made from its neighbours.
+"""
+
+
 def vision_system(mode: str = "page") -> str:
     """The system prompt for one mode, vocabulary and all."""
     if mode not in MODES:
         raise ValueError(f"unknown mode {mode!r}; the modes are {list(MODES)}")
     vocab = "\n".join(f"  {name}: {text}"
                       for name, text in LABEL_DEFINITIONS.items())
-    tail = _PAGE_TAIL if mode == "page" else _SHEET_TAIL
-    return _SYSTEM_HEAD + vocab + "\n" + _SYSTEM_RULES + tail
+    tail = {"page": _PAGE_TAIL, "sheet": _SHEET_TAIL,
+            "document": _DOCUMENT_TAIL}[mode]
+    head = _SYSTEM_HEAD.format(
+        context=_IN_CONTEXT if mode == "document" else _ALONE)
+    return head + vocab + "\n" + _SYSTEM_RULES + tail
+
+
+# -- stamping a page, and cutting a report into windows ----------------------
+
+def stamp_page_number(png: bytes, page: int) -> bytes:
+    """The same PNG with ``p. N`` drawn in a filled box at the top left.
+
+    THE PAGE'S OWN NUMBERING IS NOT THE ANSWER. A geotechnical report
+    restarts its printed numbering in every appendix -- three pages numbered
+    "1" is normal -- so a model told to "use the page number printed on the
+    page" would answer for the wrong page half the time. The 0-based index
+    this pass counts in is stamped ON the picture instead, which is the one
+    channel that cannot be separated from the page it belongs to when
+    thirty-six of them arrive in one message.
+
+    The PAGE SIZE IS UNCHANGED: the stamp is drawn over the top-left corner,
+    not added as a margin, so the model sees the page at the dpi it was
+    rendered at and the token count is the render's.
+
+    Pillow does the drawing. It is not a new dependency -- it arrives with
+    matplotlib and streamlit, both of which this package's app requires --
+    and it is imported here rather than at module scope so that importing
+    :mod:`report_ingest` still costs nothing.
+    """
+    import io
+
+    from PIL import Image, ImageDraw
+
+    image = Image.open(io.BytesIO(png))
+    if image.mode not in ("RGB", "RGBA"):
+        image = image.convert("RGB")
+    width, height = image.size
+    box_h = max(STAMP_MIN_PX, int(min(width, height) * STAMP_HEIGHT_FRAC))
+    label = f"p. {int(page)}"
+    draw = ImageDraw.Draw(image)
+    font = _stamp_font(box_h)
+    try:
+        left, top, right, bottom = draw.textbbox((0, 0), label, font=font)
+        text_w, text_h = right - left, bottom - top
+    except (AttributeError, TypeError):            # a very old Pillow
+        text_w, text_h = draw.textlength(label, font=font), box_h
+        left = top = 0
+    pad = max(2, box_h // 4)
+    box_w = int(text_w) + 2 * pad
+    box_h = max(box_h, int(text_h) + 2 * pad)
+    draw.rectangle([(0, 0), (box_w, box_h)], fill=(255, 255, 255),
+                   outline=(0, 0, 0), width=max(1, box_h // 12))
+    draw.text((pad - left, pad - top), label, fill=(0, 0, 0), font=font)
+    out = io.BytesIO()
+    image.save(out, format="PNG")
+    return out.getvalue()
+
+
+def _stamp_font(box_h: int) -> Any:
+    """A font about ``box_h`` tall, or Pillow's own if none can be loaded.
+
+    A bitmap default font is small but legible, and a stamp the model can
+    read is the requirement; nothing here fails because a TrueType file is
+    missing from a cluster image.
+    """
+    from PIL import ImageFont
+
+    size = max(10, int(box_h * 0.8))
+    for name in ("DejaVuSans-Bold.ttf", "DejaVuSans.ttf", "arialbd.ttf",
+                 "arial.ttf"):
+        try:
+            return ImageFont.truetype(name, size)
+        except (OSError, ImportError):
+            continue
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:                              # Pillow < 9.2
+        return ImageFont.load_default()
+
+
+def document_windows(pages: Sequence[int], window: int,
+                     overlap: int) -> List[List[int]]:
+    """``pages`` cut into overlapping windows, covering every page.
+
+    The last window is not padded backwards to a full size: a report whose
+    length is not a multiple of the step ends with a short window, and a
+    short window is cheaper, not wrong. Every page appears in at least one
+    window, which is what makes "a page with no entry is unresolved" a
+    statement about the model rather than about the arithmetic.
+    """
+    wanted = list(pages)
+    if not wanted:
+        return []
+    size = max(1, int(window))
+    step = max(1, size - max(0, int(overlap)))
+    out: List[List[int]] = []
+    start = 0
+    while start < len(wanted):
+        out.append(wanted[start:start + size])
+        if start + size >= len(wanted):
+            break
+        start += step
+    return out
 
 
 def _context_text(doc, outline: Any, max_chars: int) -> str:
@@ -315,7 +528,12 @@ def classify_pages_by_vision(doc, engine: Engine, *,
                              outline_context: bool = False,
                              sheet_pages: int = SHEET_PAGES,
                              outline: Any = None,
-                             max_context_chars: int = MAX_CONTEXT_CHARS
+                             max_context_chars: int = MAX_CONTEXT_CHARS,
+                             detail: Optional[str] = None,
+                             images_per_call: int = MAX_IMAGES_PER_CALL,
+                             window: int = DOCUMENT_WINDOW,
+                             overlap: int = DOCUMENT_OVERLAP,
+                             strip_sheets_max: int = STRIP_SHEETS_MAX
                              ) -> VisionLabels:
     """Label pages from their pictures alone.
 
@@ -332,10 +550,11 @@ def classify_pages_by_vision(doc, engine: Engine, *,
         planlens accepts -- an index, ``"0-9,14"``, or a sequence.
     mode
         ``"page"`` for one call per page, ``"sheet"`` for one call per
-        contact sheet of ``sheet_pages`` pages.
+        contact sheet of ``sheet_pages`` pages, ``"document"`` for a window
+        of full-size pages with the whole report in thumbnail beside them.
     dpi
-        What a page is rendered at in page mode. See the module docstring
-        for why the default is 100.
+        What a page is rendered at in page and document mode. See the module
+        docstring for why the default is 100.
     budget
         A ceiling on MODEL CALLS. Every page past it comes back
         ``unresolved`` rather than unlabelled-and-unmentioned.
@@ -346,11 +565,30 @@ def classify_pages_by_vision(doc, engine: Engine, *,
     outline
         :func:`planlens.document.roles.document_outline` when the caller
         already has it; only read when ``outline_context`` is on.
+    detail
+        OpenAI's ``image_url.detail`` for every picture this pass sends:
+        ``"low"``, ``"high"``, ``"auto"``, or ``None`` to leave it unset and
+        get the provider's own default. ``"low"`` is about 85 tokens an
+        image instead of a page's four tiles.
+    images_per_call
+        The endpoint's ceiling on images in one request. The default is the
+        50 measured on the owner's cluster; document mode never exceeds it.
+    window, overlap
+        Full-size pages in one document-mode call, and how many of them the
+        next call sees again. ``window`` is lowered when the strip leaves it
+        no room under ``images_per_call``.
+    strip_sheets_max
+        The most contact sheets of the whole report one document-mode call
+        carries. A report too long to show all of itself sends the sheets
+        nearest the window.
     """
     from planlens.document.document import parse_pages
 
     if mode not in MODES:
         raise ValueError(f"unknown mode {mode!r}; the modes are {list(MODES)}")
+    if detail is not None and detail not in DETAIL_LEVELS:
+        raise ValueError(f"unknown detail {detail!r}; the levels are "
+                         f"{list(DETAIL_LEVELS)}")
     wanted = parse_pages(pages, doc.n_pages)
     system = vision_system(mode)
     context = (_context_text(doc, outline, max_context_chars)
@@ -359,8 +597,12 @@ def classify_pages_by_vision(doc, engine: Engine, *,
     labels: List[VisionPageLabel] = []
     unresolved: List[Dict[str, Any]] = []
     qa: List[Dict[str, Any]] = []
-    spent = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
-             "cache_read_tokens": 0, "seconds": 0.0, "dollars": 0.0}
+    spent: Dict[str, Any] = {
+        "calls": 0, "input_tokens": 0, "output_tokens": 0,
+        "cache_read_tokens": 0, "seconds": 0.0, "dollars": 0.0,
+        "mode": mode, "windows": 0, "strip_sheets": 0,
+        "detail": detail or "",
+    }
     model_name = ""
     stopped = False
 
@@ -377,28 +619,35 @@ def classify_pages_by_vision(doc, engine: Engine, *,
     def out_of_budget() -> bool:
         return budget is not None and spent["calls"] >= int(budget)
 
-    chunks: List[List[int]]
-    if mode == "page":
-        chunks = [[page] for page in wanted]
+    if mode == "document":
+        stopped = _document_pass(
+            doc, engine, wanted, system, context, dpi, detail,
+            labels, unresolved, qa, charge, out_of_budget, spent,
+            images_per_call=images_per_call, window=window, overlap=overlap,
+            strip_sheets_max=strip_sheets_max, budget=budget)
     else:
-        step = max(1, int(sheet_pages))
-        chunks = [wanted[i:i + step] for i in range(0, len(wanted), step)]
-
-    for chunk in chunks:
-        if out_of_budget():
-            stopped = True
-            for page in chunk:
-                unresolved.append({
-                    "page": page,
-                    "why": f"the budget of {budget} model call(s) was spent "
-                           f"before this page"})
-            continue
+        chunks: List[List[int]]
         if mode == "page":
-            _one_page(doc, engine, chunk[0], system, context, dpi,
-                      labels, unresolved, qa, charge, len(wanted))
+            chunks = [[page] for page in wanted]
         else:
-            _one_sheet(doc, engine, chunk, system, context,
-                       labels, unresolved, qa, charge)
+            step = max(1, int(sheet_pages))
+            chunks = [wanted[i:i + step] for i in range(0, len(wanted), step)]
+
+        for chunk in chunks:
+            if out_of_budget():
+                stopped = True
+                for page in chunk:
+                    unresolved.append({
+                        "page": page,
+                        "why": f"the budget of {budget} model call(s) was "
+                               f"spent before this page"})
+                continue
+            if mode == "page":
+                _one_page(doc, engine, chunk[0], system, context, dpi,
+                          labels, unresolved, qa, charge, len(wanted), detail)
+            else:
+                _one_sheet(doc, engine, chunk, system, context,
+                           labels, unresolved, qa, charge, detail)
 
     spent["seconds"] = round(spent["seconds"], 1)
     spent["dollars"] = round(spent["dollars"], 4)
@@ -418,11 +667,17 @@ def classify_pages_by_vision(doc, engine: Engine, *,
     )
 
 
-def _ask(engine: Engine, body: str, system: str, png: bytes,
+def _ask(engine: Engine, content: Sequence[Any], system: str,
          output_format: Any, charge) -> Any:
-    """One call: the words, the picture, the shape the answer must take."""
-    reply = engine.complete([user(text_block(body))], system=system,
-                            images=[png], output_format=output_format)
+    """One call: the words, the pictures, the shape the answer must take.
+
+    The pictures ride as image BLOCKS inside the user turn rather than in
+    the engine's ``images`` argument, because document mode interleaves
+    captions with pictures and because an image block is the only place a
+    ``detail`` can be attached to one image rather than to all of them.
+    """
+    reply = engine.complete([user(*content)], system=system,
+                            output_format=output_format)
     charge(reply)
     return reply
 
@@ -430,7 +685,7 @@ def _ask(engine: Engine, body: str, system: str, png: bytes,
 def _one_page(doc, engine: Engine, page: int, system: str, context: str,
               dpi: float, labels: List[VisionPageLabel],
               unresolved: List[Dict[str, Any]], qa: List[Dict[str, Any]],
-              charge, n_pages: int) -> None:
+              charge, n_pages: int, detail: Optional[str] = None) -> None:
     png, info = doc.render(page, dpi=float(dpi))
     body = "\n".join(filter(None, [
         ("WHAT THIS DOCUMENT PRINTS ABOUT ITSELF\n" + context + "\n"
@@ -439,7 +694,8 @@ def _one_page(doc, engine: Engine, page: int, system: str, context: str,
         f"{info['dpi']:.0f} dpi. The document has {doc.n_pages} pages. Say "
         f"what page {page} is.",
     ]))
-    reply = _ask(engine, body, system, png, VisionPageAnswer, charge)
+    reply = _ask(engine, [text_block(body), image_block(png, detail)],
+                 system, VisionPageAnswer, charge)
     answer = reply.parsed
     if answer is None:
         unresolved.append({"page": page,
@@ -460,7 +716,7 @@ def _one_page(doc, engine: Engine, page: int, system: str, context: str,
 def _one_sheet(doc, engine: Engine, chunk: Sequence[int], system: str,
                context: str, labels: List[VisionPageLabel],
                unresolved: List[Dict[str, Any]], qa: List[Dict[str, Any]],
-               charge) -> None:
+               charge, detail: Optional[str] = None) -> None:
     shown = list(chunk)
     sheets = doc.render_thumbnails(pages=shown, columns=min(SHEET_COLUMNS,
                                                             len(shown)),
@@ -480,7 +736,8 @@ def _one_sheet(doc, engine: Engine, chunk: Sequence[int], system: str,
         f"{doc.n_pages} pages. {info.get('legend', '')} Say what each of "
         f"those {len(shown)} pages is, one answer per page.",
     ]))
-    reply = _ask(engine, body, system, png, VisionSheetAnswer, charge)
+    reply = _ask(engine, [text_block(body), image_block(png, detail)],
+                 system, VisionSheetAnswer, charge)
     answer = reply.parsed
     if answer is None:
         for page in shown:
@@ -520,3 +777,259 @@ def _one_sheet(doc, engine: Engine, chunk: Sequence[int], system: str,
                        "shown on"})
             continue
         labels.append(_accept(entry, page, qa))
+
+
+# -- document mode ----------------------------------------------------------
+
+def _ranges(pages: Sequence[int]) -> str:
+    """``[33, 34, 35, 40]`` as ``"33-35, 40"``.
+
+    A window is normally a consecutive run, and printing 36 numbers where
+    two will do is 36 numbers the model has to read past. Where the caller
+    asked for a broken set of pages, the breaks show.
+    """
+    wanted = sorted(set(int(p) for p in pages))
+    if not wanted:
+        return ""
+    out: List[str] = []
+    start = previous = wanted[0]
+    for page in wanted[1:]:
+        if page == previous + 1:
+            previous = page
+            continue
+        out.append(str(start) if start == previous else f"{start}-{previous}")
+        start = previous = page
+    out.append(str(start) if start == previous else f"{start}-{previous}")
+    return ", ".join(out)
+
+
+def _runs(decided: Dict[int, str]) -> List[str]:
+    """``page: label`` collapsed into runs, one line each.
+
+    Run-length, not one line a page, for two reasons. It is far shorter on a
+    400-page report, where the decided list would otherwise be most of the
+    message. And it says the thing the model is being shown it FOR: that
+    pages 61 to 118 are all boring logs is the shape of an appendix, which
+    is exactly the evidence that settles the silent page at 119.
+    """
+    if not decided:
+        return []
+    pages = sorted(decided)
+    out: List[str] = []
+    start = previous = pages[0]
+    label = decided[start]
+    for page in pages[1:]:
+        if page == previous + 1 and decided[page] == label:
+            previous = page
+            continue
+        span = str(start) if start == previous else f"{start}-{previous}"
+        out.append(f"  {span}: {label}")
+        start = previous = page
+        label = decided[page]
+    span = str(start) if start == previous else f"{start}-{previous}"
+    out.append(f"  {span}: {label}")
+    return out
+
+
+def _strip_sheets(doc, qa: List[Dict[str, Any]]
+                  ) -> List[Tuple[bytes, Dict[str, Any]]]:
+    """Contact sheets of the WHOLE report, planlens' own, at its own sizes.
+
+    A failure here is a note and an empty strip rather than a dead run: the
+    strip is orientation, and a window of stamped full-size pages is still a
+    usable call without it.
+    """
+    try:
+        return list(doc.render_thumbnails(pages=None, columns=STRIP_COLUMNS,
+                                          thumb_px=STRIP_THUMB_PX,
+                                          per_sheet=STRIP_PER_SHEET))
+    except Exception as exc:                  # noqa: BLE001 - reported as QA
+        qa.append({"page": None,
+                   "note": f"no contact sheets of the whole report could be "
+                           f"rendered ({type(exc).__name__}: {exc}); the "
+                           f"windows went out without the strip"})
+        return []
+
+
+def _sheet_centre(sheet: Tuple[bytes, Dict[str, Any]]) -> float:
+    shown = list((sheet[1] or {}).get("pages") or [])
+    return (sum(shown) / len(shown)) if shown else 0.0
+
+
+def _strip_for(sheets: Sequence[Tuple[bytes, Dict[str, Any]]],
+               shown: Sequence[int], n_strip: int
+               ) -> List[Tuple[bytes, Dict[str, Any]]]:
+    """The sheets this window carries: all of them, or the nearest ones.
+
+    A report longer than ``STRIP_SHEETS_MAX * STRIP_PER_SHEET`` pages cannot
+    show all of itself inside the image cap, so it shows the part of itself
+    the window is standing in. Which is the part that decides a page: the
+    divider that opens this appendix is a few pages back, not 500.
+    """
+    if n_strip <= 0 or not sheets:
+        return []
+    if len(sheets) <= n_strip:
+        return list(sheets)
+    centre = (shown[0] + shown[-1]) / 2.0 if shown else 0.0
+    nearest = sorted(range(len(sheets)),
+                     key=lambda i: abs(_sheet_centre(sheets[i]) - centre))
+    return [sheets[i] for i in sorted(nearest[:n_strip])]
+
+
+def _document_message(doc, shown: Sequence[int],
+                      strip: Sequence[Tuple[bytes, Dict[str, Any]]],
+                      context: str, decided: Dict[int, str], dpi: float,
+                      detail: Optional[str], n_wanted: int
+                      ) -> List[Dict[str, Any]]:
+    """One window's user turn: the words, the strip, the pages.
+
+    The order is deliberate. The words say what is coming and what to answer
+    for; the thumbnails come next, each after a caption naming the pages it
+    shows, so a sheet is never an unlabelled picture; the full-size pages
+    come last, closest to the answer, each stamped with its own number.
+    """
+    decided_lines = _runs({p: label for p, label in decided.items()
+                           if p < shown[0]})
+    body = "\n".join(filter(None, [
+        ("WHAT THIS DOCUMENT PRINTS ABOUT ITSELF\n" + context + "\n"
+         if context else ""),
+        ("LABELS DECIDED SO FAR (earlier pages of this same report, as "
+         "runs)\n" + "\n".join(decided_lines) + "\n" if decided_lines else ""),
+        f"This document has {doc.n_pages} pages and {n_wanted} of them are "
+        f"being labelled. {len(strip)} thumbnail contact sheet(s) of the "
+        f"report follow, for orientation only, and then pages "
+        f"{_ranges(shown)} at full size, rendered at {dpi:.0f} dpi and each "
+        f"stamped 'p. N' at the top-left corner. Say what each of those "
+        f"{len(shown)} pages is, one answer per page, using the stamped "
+        f"number. Do not answer for any page you have seen only as a "
+        f"thumbnail.",
+    ]))
+    content: List[Dict[str, Any]] = [text_block(body)]
+    for png, info in strip:
+        pages_on = list((info or {}).get("pages") or [])
+        content.append(text_block(
+            f"Thumbnails of pages {_ranges(pages_on)} of this report. "
+            f"{(info or {}).get('legend', '')}".strip()))
+        content.append(image_block(png, detail))
+    content.append(text_block(
+        f"The {len(shown)} full-size pages now follow in order, pages "
+        f"{_ranges(shown)}. Answer for these and for no others."))
+    for page in shown:
+        png, _info = doc.render(page, dpi=float(dpi))
+        content.append(image_block(stamp_page_number(png, page), detail))
+    return content
+
+
+def _document_pass(doc, engine: Engine, wanted: Sequence[int], system: str,
+                   context: str, dpi: float, detail: Optional[str],
+                   labels: List[VisionPageLabel],
+                   unresolved: List[Dict[str, Any]],
+                   qa: List[Dict[str, Any]], charge, out_of_budget,
+                   spent: Dict[str, Any], *, images_per_call: int,
+                   window: int, overlap: int, strip_sheets_max: int,
+                   budget: Optional[int]) -> bool:
+    """Every page labelled with the whole report in view. Returns whether
+    the budget stopped the run.
+
+    THE ARITHMETIC, because it is the whole design. One call carries the
+    strip and the window, and their sum may not exceed ``images_per_call``.
+    The strip is capped first -- at ``strip_sheets_max``, at what the
+    document actually has, and at whatever leaves the window
+    :data:`DOCUMENT_MIN_WINDOW` pages -- and the window takes what is left,
+    up to the ``window`` asked for. So a 151-page report sends 4 sheets and
+    36 pages (40 images) and a 729-page report sends 12 sheets and 36 pages
+    (48): under the cap either way, and the long report is the one that
+    gives up seeing all of itself rather than the one that gives up pages.
+
+    WHAT IS RESOLVED WHEN. Answers accumulate into one map across the
+    windows and the LATER answer wins, because a later window was made with
+    more of the report already decided. A page nothing answered for is
+    unresolved at the end, with the reason its last chance gave -- which is
+    why a page skipped in one window and answered in the next is simply
+    answered, and why a budget that ran out is visible as the reason on
+    every page it cost.
+    """
+    sheets = _strip_sheets(doc, qa)
+    cap = max(1, int(images_per_call))
+    n_strip = min(len(sheets), max(0, int(strip_sheets_max)),
+                  max(0, cap - DOCUMENT_MIN_WINDOW))
+    per_window = max(1, min(int(window), cap - n_strip))
+    windows = document_windows(wanted, per_window, overlap)
+    spent["windows"] = len(windows)
+    spent["strip_sheets"] = n_strip
+    spent["window_pages"] = per_window
+    spent["images_per_call"] = cap
+
+    answered: Dict[int, VisionPageLabel] = {}
+    why_missing: Dict[int, str] = {}
+    stopped = False
+
+    for shown in windows:
+        if out_of_budget():
+            stopped = True
+            for page in shown:
+                why_missing[page] = (f"the budget of {budget} model call(s) "
+                                     f"was spent before this window")
+            continue
+        strip = _strip_for(sheets, shown, n_strip)
+        content = _document_message(doc, shown, strip, context,
+                                    {p: row.label
+                                     for p, row in answered.items()},
+                                    dpi, detail, len(wanted))
+        n_images = sum(1 for b in content if b.get("type") == "image")
+        if n_images > cap:                       # never reachable; say so
+            raise AssertionError(
+                f"a document-mode call was built with {n_images} images, "
+                f"over the cap of {cap}")
+        reply = _ask(engine, content, system, VisionSheetAnswer, charge)
+        answer = reply.parsed
+        if answer is None:
+            for page in shown:
+                why_missing[page] = (
+                    f"the model returned no structured answer for the window "
+                    f"holding this page (stop_reason {reply.stop_reason!r})")
+            continue
+
+        by_page: Dict[int, Any] = {}
+        for entry in (getattr(answer, "pages", None) or []):
+            try:
+                page = int(getattr(entry, "page"))
+            except (TypeError, ValueError, AttributeError):
+                qa.append({"page": None,
+                           "note": "an entry in this window named no page "
+                                   "index and was dropped"})
+                continue
+            if page not in shown:
+                qa.append({"page": page,
+                           "note": f"the reply named page {page}, which is "
+                                   f"not a full-size page of this window; "
+                                   f"dropped rather than guessed"})
+                continue
+            if page in by_page:
+                qa.append({"page": page,
+                           "note": "the reply answered for this page twice "
+                                   "within one window; the first answer is "
+                                   "the one kept"})
+                continue
+            by_page[page] = entry
+
+        for page in shown:
+            entry = by_page.get(page)
+            if entry is None:
+                why_missing[page] = ("the reply left this page out of the "
+                                     "window it was shown in")
+                continue
+            # A later window saw more of the report already decided, so its
+            # answer replaces an earlier one rather than being dropped.
+            answered[page] = _accept(entry, page, qa)
+
+    for page in wanted:
+        row = answered.get(page)
+        if row is None:
+            unresolved.append({
+                "page": page,
+                "why": why_missing.get(
+                    page, "no window produced an answer for this page")})
+            continue
+        labels.append(row)
+    return stopped
