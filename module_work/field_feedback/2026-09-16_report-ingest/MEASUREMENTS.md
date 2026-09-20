@@ -3761,3 +3761,42 @@ the answer. Document mode's strip used the same sheets. Fixed in 5.21.1
 (`render_number_sheets`: "p. N" only; a test forbids `render_thumbnails` in
 any vision call). These numbers measure the caption, not the model; the
 page-mode figures (run 5) stand. Sheet mode must be re-run on 5.21.1.
+
+### Run 9 -- 5.21.1 on the cluster: sheet mode validated, document mode hit the gateway
+
+2026-09-20, gpt-4.1-mini, the first run in which no vision call saw a page's
+rule-derived kind (run 8's defect, fixed in 5.21.1).
+
+**Sheet mode, number-only sheets: 0.932 strict on 307 pages** (R09 0.947, R11
+0.917), **26 calls and about $0.04 a report**. Page mode on the same two
+reports (run 5) scored 0.928 in 307 calls at about $0.25. Same accuracy, a
+sixth of the calls, a quarter of the money. Run 8's 0.557 measured the
+"<index> <kind>" captions and is void. **Sheet mode is the mode to run and
+needs no further work.**
+
+**Document mode, R09 (151 pp, text pages): 0.927 in 5 windows**, 254,724 input
+tokens -- about 51,000 a call. Not an anomaly: the pages are A4, and A4 at 100
+dpi scales to 768 x 1086, which is SIX 512 px tiles where a letter page is
+four. **Three pages ended unresolved** because the model skipped them and the
+window overlapping each of them skipped them too.
+
+**Document mode, R11 (156 pp, scanned pages with an OCR text layer): every
+window FAILED** -- `APIStatusError: The page was not displayed because the
+request entity is too large`. That is the gateway's limit on the REQUEST BODY.
+The 50-image cap measured on 2026-09-18 was probed with tiny images and says
+nothing about bytes: a scanned page at 100 dpi is a few hundred KB of PNG, and
+36 of them plus four contact sheets, base64 at four bytes for three, is tens
+of megabytes.
+
+**Fixed in 5.21.2** (same day, offline): page pictures travel as JPEG at
+quality 80 at the render's own pixel size, so the token count is unchanged and
+only the bytes move (measured on a scan-like page: 780 KB PNG -> 250 KB JPEG,
+ratio 0.32; on a crisp vector text page JPEG runs 0.84 to 1.20 of the PNG, and
+the rule is unconditional anyway); a window the gateway still refuses halves
+itself and re-cuts every window still queued, counted as `cost["splits"]`; and
+every page left unresolved gets one page-mode call, counted as
+`cost["fallback_pages"]`.
+
+**What run 10 must answer:** does JPEG alone get R11's windows through, or
+does the split have to fire? And `vision_detail="low"` on accuracy, which is
+still unmeasured and is the only lever that moves a document run's token bill.

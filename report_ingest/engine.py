@@ -53,6 +53,7 @@ __all__ = [
     "price_for", "strict_schema",
     "text_block", "image_block", "tool_use_block", "tool_result_block",
     "opaque_block", "user", "assistant",
+    "image_media_type", "IMAGE_SIGNATURES",
 ]
 
 #: List price per MILLION tokens, ``(input, output)``, as published for the
@@ -129,11 +130,45 @@ def text_block(text: str) -> Dict[str, Any]:
     return {"type": "text", "text": str(text)}
 
 
-def image_block(png: bytes, detail: Optional[str] = None) -> Dict[str, Any]:
-    """A PNG for the model to look at.
+#: What the leading bytes of a picture say it is. A provider is told the
+#: media type explicitly (Claude) or through a data-URI prefix (OpenAI), and
+#: a JPEG announced as a PNG is refused by both, so the bytes -- not the
+#: caller -- are what decides.
+IMAGE_SIGNATURES: Tuple[Tuple[bytes, str], ...] = (
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\x89PNG", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+)
+
+
+def image_media_type(data: bytes) -> str:
+    """``"image/png"`` or ``"image/jpeg"``, read off the bytes themselves.
+
+    Anything unrecognised is called a PNG, which is what every picture in
+    this package was until the pages started travelling as JPEG: an engine
+    that mislabels one unfamiliar byte string is a bad request the provider
+    names, while an engine that raises here would take down a whole run over
+    a picture it could perfectly well have sent.
+    """
+    head = bytes(data[:8])
+    for signature, media in IMAGE_SIGNATURES:
+        if head.startswith(signature):
+            return media
+    return "image/png"
+
+
+def image_block(data: bytes, detail: Optional[str] = None) -> Dict[str, Any]:
+    """A picture for the model to look at -- PNG or JPEG.
 
     Bytes, not a path: the pages these passes render are held in memory and
-    never written to disk, because the corpus is private.
+    never written to disk, because the corpus is private. **The key is still
+    called ``png`` and now holds either**, because every pass and every test
+    that builds or reads a block names it; what a block holds is decided by
+    :func:`image_media_type` reading the bytes, so a caller cannot mislabel
+    one. A page renders as a PNG and is sent as a JPEG
+    (:func:`report_ingest.vision_labels.encode_for_vision`): a scanned page
+    at 100 dpi is a few hundred kilobytes of PNG, and thirty-six of them
+    base64-encoded in one request is what the gateway refuses.
 
     ``detail`` is OpenAI's ``image_url.detail`` -- ``"low"``, ``"high"`` or
     ``"auto"``. It is carried only when it is set, so a call that does not
@@ -142,7 +177,7 @@ def image_block(png: bytes, detail: Optional[str] = None) -> Dict[str, Any]:
     one 512 px tile and charges about 85 tokens instead of tiling the page.
     The Claude engine has no such key and ignores it.
     """
-    block: Dict[str, Any] = {"type": "image", "png": bytes(png)}
+    block: Dict[str, Any] = {"type": "image", "png": bytes(data)}
     if detail:
         block["detail"] = str(detail)
     return block
@@ -401,8 +436,11 @@ class ClaudeEngine:
             return {"type": "text", "text": block["text"]}
         if kind == "image":
             import base64
+            # The media type is read off the bytes: the ``png`` key holds a
+            # PNG or a JPEG, and a JPEG announced as a PNG is refused.
             return {"type": "image",
-                    "source": {"type": "base64", "media_type": "image/png",
+                    "source": {"type": "base64",
+                               "media_type": image_media_type(block["png"]),
                                "data": base64.standard_b64encode(
                                    block["png"]).decode("ascii")}}
         if kind == "tool_use":
@@ -835,9 +873,12 @@ class PrompterEngine:
                 out.append({"type": "text", "text": block["text"]})
             elif kind == "image":
                 import base64
+                # The data-URI prefix is read off the bytes, for the same
+                # reason the Claude engine reads the media type off them.
+                media = image_media_type(block["png"])
                 b64 = base64.b64encode(block["png"]).decode("ascii")
                 url: Dict[str, Any] = {
-                    "url": f"data:image/png;base64,{b64}"}
+                    "url": f"data:{media};base64,{b64}"}
                 if block.get("detail"):
                     # Only when it was asked for: a request that never sets
                     # it gets the provider's own default, as before.

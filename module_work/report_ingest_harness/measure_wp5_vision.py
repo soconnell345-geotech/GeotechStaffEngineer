@@ -113,7 +113,8 @@ def run_one(rid: str, engine: Any, *, mode: str = "page",
             detail: Optional[str] = None,
             window: int = DOCUMENT_WINDOW,
             overlap: int = DOCUMENT_OVERLAP,
-            images_per_call: int = MAX_IMAGES_PER_CALL) -> dict:
+            images_per_call: int = MAX_IMAGES_PER_CALL,
+            fallback: bool = True) -> dict:
     """One report through the vision pass, saved, and restartable.
 
     ``reuse`` re-reads the saved run instead of calling a model, which is
@@ -137,7 +138,7 @@ def run_one(rid: str, engine: Any, *, mode: str = "page",
             doc, engine, mode=mode, dpi=dpi, budget=budget,
             outline_context=outline_context, sheet_pages=sheet_pages,
             outline=outline, detail=detail, window=window, overlap=overlap,
-            images_per_call=images_per_call)
+            images_per_call=images_per_call, fallback=fallback)
         blob = {
             "id": rid,
             "run_date": datetime.date.today().isoformat(),
@@ -306,6 +307,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                          "50 was measured on the cluster on 2026-09-18")
     ap.add_argument("--outline-context", action="store_true",
                     help="give it what the document prints about itself")
+    ap.add_argument("--no-fallback", action="store_true",
+                    help="do NOT give a page left unresolved by a sheet or "
+                         "a window one page-mode call of its own")
     ap.add_argument("--budget", type=int, default=None,
                     help="ceiling on model calls per report")
     ap.add_argument("--di", default="auto", choices=("auto", "all", "none"))
@@ -339,7 +343,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             sheet_pages=args.sheet_pages, budget=args.budget,
                             di=args.di, reuse=args.reuse, detail=args.detail,
                             window=args.window, overlap=args.overlap,
-                            images_per_call=args.images_per_call))
+                            images_per_call=args.images_per_call,
+                            fallback=not args.no_fallback))
 
     scored = score(runs, oos_labels())
     text = report(scored, blind=args.set_name == "oos_blind")

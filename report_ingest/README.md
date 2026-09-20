@@ -624,7 +624,7 @@ pages are read from their own text layer alone.
 
 ```python
 # 1. From PyPI through Nexus. planlens 0.6.0 arrives with it.
-%pip install "geotech-staff-engineer==5.21.1"
+%pip install "geotech-staff-engineer==5.21.2"
 dbutils.library.restartPython()
 ```
 
@@ -653,6 +653,7 @@ results = score_on_cluster(
     stages       = ("labels", "logs", "lab", "narrative", "vision_labels"),
     vision_model = "funhouse-gpt-low",      # the experiment: GPT-4.1, the cheap tier
     vision_mode  = "document",              # the whole report in view; or "page" / "sheet"
+    vision_fallback = True,                 # one page-mode call for a page nothing answered for
     max_reports  = 2,                       # drop this line after the first run
 )
 ```
@@ -867,6 +868,7 @@ results = score_on_cluster(
     vision_detail          = None,                 # or "low": ~85 tokens an image
     vision_window          = 36,                   # full-size pages in one call
     vision_images_per_call = 50,                   # the endpoint's own cap; measured
+    vision_fallback        = True,                 # one page-mode call per unresolved page
     vision_outline_context = False,                # True = it also sees the contents list
     max_reports            = 2,                    # drop this line after the first run
 )
@@ -886,16 +888,74 @@ different question and cost more to answer it.
 | mode | what the model sees | calls / 100 pp | input tokens / 100 pp | ~$ / 100 pp | use it when |
 |---|---|---|---|---|---|
 | `page` | one page, rendered whole, and nothing else | 100 | ~250,000 | $0.11 | you want the page's own fine print read and no neighbour to lean on |
-| `sheet` | six thumbnails a call, each with its page number | 17 | ~43,000 | $0.02 | you want the cheapest possible sweep and can afford thumbnails |
-| `document` | a window of 36 full-size pages, stamped, with contact sheets of the WHOLE report beside them | 3 | ~97,000, or ~16,000 at `vision_detail="low"` | $0.05, or $0.01 low | the page cannot be read without knowing which appendix it is in |
+| `sheet` | six thumbnails a call, each with its page number | 17 | ~43,000 | $0.02 | you want the cheapest sweep that still scores like page mode |
+| `document` | a window of 36 full-size pages, stamped, with contact sheets of the WHOLE report beside them | 3 | ~170,000 (A4), or ~16,000 at `vision_detail="low"` | $0.07, or $0.01 low | the page cannot be read without knowing which appendix it is in |
 
-Only the `page` row is measured (307 pages on the cluster, 2026-09-18:
-~2,500 input tokens and 2.3 s a page). The other rows are that same measured
-per-call overhead put through the provider's own tile arithmetic — 85 tokens
-plus 170 a 512 px tile, four tiles for a letter page and six for a 48-up
-contact sheet — and the dollars are those tokens at the owner's
-`gpt-4.1-mini-2025-04-14` rate. Treat them as the arithmetic they are until a
-run replaces them.
+**What the cluster has actually measured** (2026-09-20, `gpt-4.1-mini`, on
+5.21.1 — the first run in which no vision call saw a page's rule-derived kind):
+
+| mode | reports | pages | strict accuracy | calls | ~$ a report |
+|---|---|---|---|---|---|
+| `page` (2026-09-18) | 2 | 307 | 0.928 | 307 | $0.25 |
+| `sheet` | 2 | 307 | **0.932** | 26 | **$0.04** |
+| `document` | 1 (text pages) | 151 | 0.927 | 5 windows | — |
+
+**Sheet mode is the one to run.** With number-only contact sheets it scores
+what page mode scores — 0.932 against 0.928, and 0.947 / 0.917 on the two
+reports read separately — for a sixth of the calls and a quarter of the money.
+The 0.557 that sheet mode scored on 2026-09-18 measured planlens' `<index>
+<kind>` captions, not the model; those numbers are void and the fix shipped in
+5.21.1.
+
+**Document mode's own numbers, and the two things that bit it.** On a 151-page
+report of text pages it scored 0.927 in five windows — level with the other
+two — but it cost 254,724 input tokens, about 51,000 a call. The pages are A4,
+and an A4 page at 100 dpi scales to 768 x 1086, which is **six** 512 px tiles
+rather than a letter page's four. That is the arithmetic, not a defect. The
+two defects were real, and 5.21.2 fixes both:
+
+- **Three pages came back unresolved** because the model skipped them and the
+  window that overlaps each one skipped them too. The overlap is a second
+  chance, not a guarantee.
+- **Every window of a 156-page SCANNED report failed** with `APIStatusError:
+  The page was not displayed because the request entity is too large`. That is
+  the gateway's limit on the REQUEST BODY, which the 50-image probe — done
+  with tiny images — never came near.
+
+**Every page picture now travels as JPEG** at quality 80
+(`vision_labels.VISION_JPEG_QUALITY`), at the render's own pixel size. The
+provider scales and tiles the pixels, so **the token count does not change**;
+only the bytes on the wire do. On a scan-like page that is a factor of about
+three (780 KB of PNG against 250 KB of JPEG). On a crisp vector text page PNG
+is already good and JPEG runs between 0.84 and 1.20 of it — the rule is
+unconditional anyway, because the pages that refuse a request are the scanned
+ones and a per-page choice would make one report's windows a different size
+from another's for reasons no run file records.
+
+**And a window that is still refused splits itself.** When a call fails with
+`too large` / `request entity` / `413`, the pass halves that window, puts both
+halves back at the front of the queue, and **re-cuts every window still
+queued** to the new size, so one refusal is paid for once rather than at every
+window after it. A refused request bills nothing, so a split costs time and no
+money. A window already at or under `DOCUMENT_MIN_SPLIT` (4 pages) that is
+still refused raises instead: at four pages the body is small and the refusal
+means something else. The `split` column in the per-report table says how often
+it happened, and a dash means never.
+
+**`vision_fallback=True` gives every page still unresolved ONE page-mode
+call.** It runs after the sheet or document pass, spends the same budget as
+everything else, and never touches a page something already answered for. A
+page goes unresolved because the REPLY left it out, not because the page could
+not be read, and asking about that one page alone is the mode that cannot skip
+it by construction. `vision_fallback=False` leaves those pages unresolved,
+which is what every run before 5.21.2 did.
+
+Only the `page` and `sheet` rows of the cost table above are measured end to
+end; the `document` row is that same measured per-call overhead put through the
+provider's own tile arithmetic — 85 tokens plus 170 a 512 px tile, six tiles
+for an A4 page and six for a 48-up contact sheet — and the dollars are those
+tokens at the owner's `gpt-4.1-mini-2025-04-14` rate. Treat them as the
+arithmetic they are until a run replaces them.
 
 **`document` exists because of what `page` mode got wrong.** In page mode the
 cheap model matched rules-plus-review overall and beat both on narrative and
@@ -907,9 +967,12 @@ report for orientation, then the window of full-size pages it is actually
 answering for, then, from the second window on, the labels already decided as
 runs (`61-118: boring_log`), which is what an appendix looks like written down.
 
-**The 50-image cap is the provider's, and it is measured.** On the owner's
-cluster on 2026-09-18 a request with 50 images went through and a 51st came
-back `Too many images in request: 51, maximum allowed: 50`. That cap, not the
+**The 50-image cap is the provider's, and it is measured — and it is not the
+only ceiling.** On the owner's cluster on 2026-09-18 a request with 50 images
+went through and a 51st came back `Too many images in request: 51, maximum
+allowed: 50`. The gateway ALSO limits the request body, which a report of
+scanned pages reaches at far fewer than 50 images; that is what the JPEG
+encoding and the self-splitting window above are for. That cap, not the
 context window, is why document mode slides a window rather than sending the
 whole report in one call — GPT-4.1 on `funhouse-gpt-low` has a 1M-token
 window, which would hold a 400-page report at ~770 tokens a page with room to
@@ -939,9 +1002,10 @@ page. The stamp is drawn ON the render rather than added as a margin, so the
 page size, and therefore the token count, is the render's.
 
 **`vision_detail="low"`** tells the endpoint to look at one 512 px tile of
-every image and charge about 85 tokens for it, whatever the image is. That is
-the difference between ~97,000 and ~16,000 input tokens per 100 pages. What it
-costs in accuracy has not been measured; it is the next thing to run.
+every image and charge about 85 tokens for it, whatever the image is. On the
+measured document run that is the difference between ~51,000 input tokens a
+call and about 3,400. What it costs in accuracy has not been measured; it is
+the next thing to run.
 
 **The dpi is 100 because that is what the model keeps.** A 4.1-class vision
 stack scales an image to its own working size before it looks at it or charges
@@ -990,7 +1054,8 @@ from its neighbours, a page the reply invented is dropped with a note, and the
 budget caps model calls so every page past it is `unresolved` too. In document
 mode a page left out of one window is still `unresolved` only if the window
 that overlaps it leaves it out too — the overlap is a second chance, not a
-licence to guess.
+licence to guess — and with `vision_fallback` on, only if one page-mode call
+about that page alone cannot settle it either.
 
 `vision/<ID>.json` holds the per-report detail and makes the stage restartable.
 It stays on the cluster with `runs/` and `triage/`: a vision REASON says what
@@ -998,9 +1063,9 @@ the model saw on a page and can therefore quote a title block.
 
 Locally, `module_work/report_ingest_harness/measure_wp5_vision.py` does the
 same scoring against the development engine — `--mode document`, `--detail
-low`, `--window`, `--overlap` and `--images-per-call` are all there — and
-`--reuse` re-scores the saved runs with no model, no key and no network at
-all.
+low`, `--window`, `--overlap`, `--images-per-call` and `--no-fallback` are all
+there — and `--reuse` re-scores the saved runs with no model, no key and no
+network at all.
 
 Bring back **`RESULTS.md`** from whatever `out_dir` was. That is the whole report,
 and it carries IDs, labels, counts and rates only. The per-report runs and the

@@ -70,7 +70,48 @@ Key conventions:
 - **SoilProfile adapters** in `geotech_common/soil_profile.py` bridge SoilProfile -> module inputs
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
-## CURRENT WORKING STATE (2026-09-18) — 5.21.1 RELEASED (whole-report vision mode, tier prices, number-only sheets) with planlens 0.6.0
+
+## CURRENT WORKING STATE (2026-09-20) — 5.21.2 RELEASED (whole-report vision fixed: JPEG pages, self-splitting windows, page-mode fallback) with planlens 0.6.0
+
+- **app 5.21.2** (2026-09-20, on master) — **the `document` vision mode after
+  its first cluster run.** No dependency change; pure Python inside
+  `report_ingest`. **What the 5.21.1 run measured** (gpt-4.1-mini): sheet mode
+  with number-only sheets is the winner and is DONE — **0.932 strict on 307
+  pages** (0.947 and 0.917 on the two reports read separately) in **26 calls and ~$0.04 a report**, level
+  with page mode's 0.928 at a sixth of the calls. Document mode scored
+  **0.927** on the one 151-page report of text pages it finished, in 5
+  windows, for **254,724 input tokens (~51,000 a call — the pages are A4, and
+  A4 at 100 dpi is six 512 px tiles where a letter page is four)**; three
+  pages came back unresolved because the model skipped them and the
+  overlapping window skipped them too; and **every window of the 156-page
+  SCANNED report failed** with `The page was not displayed because the request
+  entity is too large` — the gateway's REQUEST-BODY limit, which the
+  50-image probe (tiny images) never reached. **The three fixes.** (1) Every
+  page picture travels as **JPEG at quality 80**
+  (`vision_labels.encode_for_vision`, `VISION_JPEG_QUALITY`), at the render's
+  own pixel size, so **the token count does not change** and only the bytes
+  do: a scan-like page is 780 KB of PNG against 250 KB of JPEG, about a third.
+  On a crisp vector text page PNG already wins and JPEG runs 0.84–1.20 of it;
+  the rule is unconditional because the pages that refuse a request are the
+  scanned ones, and `engine.image_block` now takes either with both engines
+  reading the media type off the bytes (`image_media_type`), so
+  smaller-of-the-two is a one-line change if a text-page run ever wants those
+  bytes back. (2) A window the gateway still refuses **halves itself**, puts
+  both halves at the front of the queue and **re-cuts every window still
+  queued** to the new size, so one refusal is paid for once; a refused request
+  bills nothing, so a split costs time and no money, and a window at or under
+  `DOCUMENT_MIN_SPLIT` (4) that is still refused raises. (3) **`fallback=True`
+  / `vision_fallback=True`**: every page still unresolved after a sheet or
+  document pass gets ONE page-mode call on the same budget — a page goes
+  unresolved because the REPLY left it out, and one page alone is the mode
+  that cannot skip it. `cost["splits"]` and `cost["fallback_pages"]` are
+  counted, printed on the progress line and carried into the RESULTS
+  per-report table as a `split` column (dash when none). Suites:
+  `report_ingest` 690, harness 213, docs-currency green. **Install 5.21.2**;
+  it supersedes 5.21.1 and everything back to 5.20.1. **Next:** re-run
+  document mode on the scanned report to see whether JPEG alone clears the
+  gateway or the split has to fire, then measure `vision_detail="low"` for
+  accuracy. 5.21.1 follows.
 
 - **app 5.21.1** (tag `v5.21.1`, 2026-09-18, on master) — **the vision
   passes never see a page's rule-derived kind.** The corpus run of sheet
@@ -1120,7 +1161,7 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | drawing_ir → `planlens.ir` + `planlens.document` + `planlens.tools` | (planlens, 1,307 tests at 0.6.0) | HISTORICAL PATH. The drawing IR (DXF / vector-PDF / raster ingest, slice queries, leader / dimension / title-block / bubble / cloud finders, `render_region`) is `planlens.ir`; since planlens 0.3.0 the WHOLE-DOCUMENT layer (`planlens.document`: page map + structure, located text, tables, review markups, hidden CAD text, Azure DI text source) and the LLM tool layer (`planlens.tools`) sit beside it. See "Document review & drawing geometry (planlens)" below. |
 | fem2d | 353 | 2D plane-strain FEM (T6 default + CST/Q4/beam, 3D-principal MC return, HS, GL99 SRM, seepage, consolidation, staged construction, PLAXIS-style calc-package plots); validated vs Griffiths-Lane/Prandtl (VALIDATION.md) |
 | geo_project | 89 | Canonical Project document for staged, human-gated LE/FEM model setup (schema+validators, builders, templates, DXF/PDF/vision ingest w/ provenance quarantine, echo-back renderer) |
-| report_ingest | 660 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop; `run_folder` drives it over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels"), truth_dir=…)` is the owner's notebook cell, and `truth_dir` is ONE root holding `logs/`, `lab/` and `narrative/` so one folder is uploaded rather than three paths kept in step. The fifth stage is the 5.20.0 EXPERIMENT: `vision_labels.py` sends each page as a picture to GPT-4.1 on the cheap tier with structured output, scored against the same hand labels by the same scorer as the rules and the review — one call a page, one a six-page contact sheet, or (5.21.0) one per window of 36 stamped full-size pages with contact sheets of the WHOLE report beside them (`vision_mode="document"`), which is capped by the endpoint's measured 50-image-per-request limit rather than by its context window. `report_ingest/README.md`, plan in `module_work/REPORT_INGEST_PLAN.md` |
+| report_ingest | 690 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop; `run_folder` drives it over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels"), truth_dir=…)` is the owner's notebook cell, and `truth_dir` is ONE root holding `logs/`, `lab/` and `narrative/` so one folder is uploaded rather than three paths kept in step. The fifth stage is the 5.20.0 EXPERIMENT: `vision_labels.py` sends each page as a picture to GPT-4.1 on the cheap tier with structured output, scored against the same hand labels by the same scorer as the rules and the review — one call a page, one a six-page contact sheet, or (5.21.0) one per window of 36 stamped full-size pages with contact sheets of the WHOLE report beside them (`vision_mode="document"`), which is capped by the endpoint's measured 50-image-per-request limit rather than by its context window. `report_ingest/README.md`, plan in `module_work/REPORT_INGEST_PLAN.md` |
 
 Other components: geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions + DM7 figure catalogs, 3529 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 + 25 + 31 + 5 = 479 tests)
 

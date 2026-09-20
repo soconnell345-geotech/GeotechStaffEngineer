@@ -117,11 +117,12 @@ __all__ = [
     "VISION_LABELS", "MODES", "DEFAULT_DPI", "SHEET_PAGES", "SHEET_COLUMNS",
     "SHEET_THUMB_PX", "MAX_CONTEXT_CHARS",
     "MAX_IMAGES_PER_CALL", "DOCUMENT_WINDOW", "DOCUMENT_OVERLAP",
-    "DOCUMENT_MIN_WINDOW", "STRIP_SHEETS_MAX", "STRIP_PER_SHEET",
-    "STRIP_COLUMNS", "STRIP_THUMB_PX", "DETAIL_LEVELS",
+    "DOCUMENT_MIN_WINDOW", "DOCUMENT_MIN_SPLIT", "STRIP_SHEETS_MAX",
+    "STRIP_PER_SHEET", "STRIP_COLUMNS", "STRIP_THUMB_PX", "DETAIL_LEVELS",
+    "VISION_JPEG_QUALITY",
     "VisionPageAnswer", "VisionSheetAnswer", "VisionPageLabel", "VisionLabels",
     "vision_system", "classify_pages_by_vision", "stamp_page_number",
-    "document_windows",
+    "document_windows", "encode_for_vision", "is_payload_too_large",
 ]
 
 #: The vocabulary, and it is the label review's: a label this pass can return
@@ -181,6 +182,16 @@ STRIP_THUMB_PX = 140
 #: page at every one.
 STAMP_HEIGHT_FRAC = 0.030
 STAMP_MIN_PX = 18
+#: What every page picture is re-encoded to before it is sent. The pages are
+#: RENDERED as PNG and TRAVEL as JPEG: see :func:`encode_for_vision` for the
+#: gateway refusal that made it necessary. The pixel size does not change, so
+#: neither does the token count.
+VISION_JPEG_QUALITY = 80
+#: A document-mode window smaller than this is not split again when the
+#: gateway refuses it: at four pages the body is already small and the
+#: refusal is saying something else, so the error is raised rather than
+#: hidden behind a halving that will not help.
+DOCUMENT_MIN_SPLIT = 4
 
 
 # -- what the model returns -------------------------------------------------
@@ -369,6 +380,54 @@ def vision_system(mode: str = "page") -> str:
     return head + vocab + "\n" + _SYSTEM_RULES + tail
 
 
+# -- what a picture weighs on the wire ---------------------------------------
+
+def encode_for_vision(png: bytes, quality: int = VISION_JPEG_QUALITY) -> bytes:
+    """The same picture as a JPEG, at the same pixel size.
+
+    THE GATEWAY HAS A BODY LIMIT AND IT IS NOT THE IMAGE COUNT. The 50-image
+    cap was measured with tiny probe images and says nothing about bytes; on
+    2026-09-20 every document-mode window of a 156-page SCANNED report came
+    back ``The page was not displayed because the request entity is too
+    large``, while the same windows of a text-page report went through. A
+    text page at 100 dpi is a sparse PNG of some tens of kilobytes; a scanned
+    page is a photograph, and PNG stores a photograph badly -- a few hundred
+    kilobytes each, thirty-six of them, base64 at four bytes for three, and
+    the request is tens of megabytes.
+
+    So every page picture these modes send is re-encoded here. JPEG at
+    quality 80 is the right trade for this job: the model is being asked what
+    a page IS, which is settled by layout and headings, not by whether a
+    hairline is one pixel or two. **The pixel size is unchanged**, so the
+    provider scales and tiles exactly the render it always did and the token
+    count does not move -- this is bytes on the wire, not tokens.
+
+    AND IT IS NOT A WIN ON EVERY PAGE. A crisp vector text page is the case
+    PNG is good at and JPEG is not: measured on the 22 synthetic pages, the
+    JPEG runs between 0.84 and 1.20 of the PNG, and a nearly blank page can
+    be several times it. A scan-like page is 0.32. The rule is unconditional
+    anyway, because the page that refuses a request is the scanned one and
+    picking per page would mean one report's windows were a different size
+    from another's for reasons nothing in a run file records. If a text-page
+    run ever needs those bytes back, the engines read the media type off the
+    bytes, so sending whichever is smaller is a one-line change here.
+
+    RGB, because JPEG has no alpha and a palette-mode PNG will not save as
+    one. Pillow does the work; see :func:`stamp_page_number` for why that is
+    not a new dependency.
+    """
+    import io
+
+    from PIL import Image
+
+    image = Image.open(io.BytesIO(png))
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    out = io.BytesIO()
+    image.save(out, format="JPEG", quality=int(quality), optimize=True)
+    return out.getvalue()
+
+
 # -- stamping a page, and cutting a report into windows ----------------------
 
 def stamp_page_number(png: bytes, page: int) -> bytes:
@@ -537,6 +596,38 @@ def document_windows(pages: Sequence[int], window: int,
     return out
 
 
+#: What a gateway says when the REQUEST BODY, not the image count, is what
+#: it will not take. Matched case-insensitively against the exception's text
+#: because the wording belongs to whatever sits in front of the model -- the
+#: owner's gateway answers "The page was not displayed because the request
+#: entity is too large", an HTTP layer may say only 413 -- and because the
+#: exception CLASS is the SDK's generic status error, which carries every
+#: other refusal too.
+PAYLOAD_TOO_LARGE_MARKERS: Tuple[str, ...] = (
+    "too large", "request entity", "413",
+)
+
+
+def is_payload_too_large(exc: BaseException) -> bool:
+    """Whether this exception is the gateway refusing the request BODY.
+
+    A refused request bills nothing -- no model looked at it -- so a window
+    that splits and retries costs time and no money. That is what makes
+    splitting the right answer here and a plain failure the right answer to
+    everything else: a rate limit, a refused parameter and an expired token
+    are all things a smaller window would hit just as hard.
+    """
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return any(marker in text for marker in PAYLOAD_TOO_LARGE_MARKERS)
+
+
+def _halves(shown: Sequence[int]) -> Tuple[List[int], List[int]]:
+    """One window as two, as near equal as an odd length allows."""
+    pages = list(shown)
+    cut = len(pages) // 2
+    return pages[:cut], pages[cut:]
+
+
 def _context_text(doc, outline: Any, max_chars: int) -> str:
     """What the document prints about itself, as lines a model reads."""
     from planlens.document.roles import document_outline
@@ -603,7 +694,8 @@ def classify_pages_by_vision(doc, engine: Engine, *,
                              images_per_call: int = MAX_IMAGES_PER_CALL,
                              window: int = DOCUMENT_WINDOW,
                              overlap: int = DOCUMENT_OVERLAP,
-                             strip_sheets_max: int = STRIP_SHEETS_MAX
+                             strip_sheets_max: int = STRIP_SHEETS_MAX,
+                             fallback: bool = True
                              ) -> VisionLabels:
     """Label pages from their pictures alone.
 
@@ -651,6 +743,14 @@ def classify_pages_by_vision(doc, engine: Engine, *,
         The most contact sheets of the whole report one document-mode call
         carries. A report too long to show all of itself sends the sheets
         nearest the window.
+    fallback
+        After a sheet or document pass, give every page still unresolved ONE
+        page-mode call, budget allowing. A sheet or a window that skipped a
+        page is the commonest way a page goes unlabelled -- on the cluster
+        on 2026-09-20 a 151-page document run left three pages unanswered
+        because no later window covered them -- and one call a page is a
+        cheap answer to it. Off leaves those pages unresolved, which is what
+        every run before this one did.
     """
     from planlens.document.document import parse_pages
 
@@ -672,6 +772,10 @@ def classify_pages_by_vision(doc, engine: Engine, *,
         "cache_read_tokens": 0, "seconds": 0.0, "dollars": 0.0,
         "mode": mode, "windows": 0, "strip_sheets": 0,
         "detail": detail or "",
+        # A document window the gateway refused on size and this pass halved,
+        # and a page a sheet or a window left out that one page-mode call
+        # then answered. Both stay 0 in a run that needed neither.
+        "splits": 0, "fallback_pages": 0,
     }
     model_name = ""
     stopped = False
@@ -719,6 +823,15 @@ def classify_pages_by_vision(doc, engine: Engine, *,
                 _one_sheet(doc, engine, chunk, system, context,
                            labels, unresolved, qa, charge, detail)
 
+    if fallback and mode != "page" and unresolved:
+        # The fallback is page mode, so it gets page mode's prompt: the
+        # document and sheet prompts tell the model to answer for every page
+        # it was shown, which is one page here.
+        stopped = _fallback_pass(
+            doc, engine, vision_system("page"), context, dpi, detail, wanted,
+            labels, unresolved, qa, charge, out_of_budget, spent,
+            budget) or stopped
+
     spent["seconds"] = round(spent["seconds"], 1)
     spent["dollars"] = round(spent["dollars"], 4)
     return VisionLabels(
@@ -764,7 +877,9 @@ def _one_page(doc, engine: Engine, page: int, system: str, context: str,
         f"{info['dpi']:.0f} dpi. The document has {doc.n_pages} pages. Say "
         f"what page {page} is.",
     ]))
-    reply = _ask(engine, [text_block(body), image_block(png, detail)],
+    reply = _ask(engine,
+                 [text_block(body), image_block(encode_for_vision(png),
+                                                detail)],
                  system, VisionPageAnswer, charge)
     answer = reply.parsed
     if answer is None:
@@ -781,6 +896,61 @@ def _one_page(doc, engine: Engine, page: int, system: str, context: str,
     except (TypeError, ValueError):
         pass
     labels.append(_accept(answer, page, qa))
+
+
+def _fallback_pass(doc, engine: Engine, system: str, context: str,
+                   dpi: float, detail: Optional[str],
+                   wanted: Sequence[int], labels: List[VisionPageLabel],
+                   unresolved: List[Dict[str, Any]],
+                   qa: List[Dict[str, Any]], charge, out_of_budget,
+                   spent: Dict[str, Any], budget: Optional[int]) -> bool:
+    """One page-mode call for every page the pass left unresolved.
+
+    WHY IT IS WORTH A CALL. In sheet and document mode a page goes
+    unresolved because the REPLY left it out, not because the page could not
+    be read: the model answered for the other thirty-five pages in the
+    window and simply did not mention this one. Document mode's overlap is
+    the first remedy and it is not always enough -- on the cluster on
+    2026-09-20 three pages of a 151-page report ended unlabelled because the
+    window that overlapped each of them skipped it too. Asking about that
+    one page on its own is the mode that never skips a page by construction,
+    and it costs one call.
+
+    WHAT IT DOES NOT DO. It never overwrites an answer, because it only ever
+    sees pages nothing answered for; a page it still cannot settle keeps its
+    unresolved entry, with the fallback's own reason if the fallback is what
+    failed; and it spends the same budget as everything else, so a run that
+    was already capped does not quietly buy more calls. Returns whether the
+    budget stopped it.
+    """
+    stopped = False
+    kept: List[Dict[str, Any]] = []
+    for entry in list(unresolved):
+        try:
+            page = int(entry["page"])
+        except (KeyError, TypeError, ValueError):     # not a page: keep it
+            kept.append(entry)
+            continue
+        if out_of_budget():
+            stopped = True
+            kept.append(entry)
+            continue
+        got: List[VisionPageLabel] = []
+        missed: List[Dict[str, Any]] = []
+        _one_page(doc, engine, page, system, context, dpi, got, missed, qa,
+                  charge, len(wanted), detail)
+        if not got:
+            kept.append(missed[0] if missed else entry)
+            continue
+        labels.extend(got)
+        spent["fallback_pages"] = int(spent.get("fallback_pages") or 0) + 1
+        qa.append({"page": page,
+                   "note": "the pass left this page unresolved; it was "
+                           "answered by a page-mode fallback call"})
+    unresolved[:] = kept
+    order = {page: i for i, page in enumerate(wanted)}
+    labels.sort(key=lambda row: order.get(row.page, row.page))
+    return stopped
 
 
 def _one_sheet(doc, engine: Engine, chunk: Sequence[int], system: str,
@@ -806,7 +976,9 @@ def _one_sheet(doc, engine: Engine, chunk: Sequence[int], system: str,
         f"{doc.n_pages} pages. {info.get('legend', '')} Say what each of "
         f"those {len(shown)} pages is, one answer per page.",
     ]))
-    reply = _ask(engine, [text_block(body), image_block(png, detail)],
+    reply = _ask(engine,
+                 [text_block(body), image_block(encode_for_vision(png),
+                                                detail)],
                  system, VisionSheetAnswer, charge)
     answer = reply.parsed
     if answer is None:
@@ -980,13 +1152,16 @@ def _document_message(doc, shown: Sequence[int],
         content.append(text_block(
             f"Thumbnails of pages {_ranges(pages_on)} of this report. "
             f"{(info or {}).get('legend', '')}".strip()))
-        content.append(image_block(png, detail))
+        content.append(image_block(encode_for_vision(png), detail))
     content.append(text_block(
         f"The {len(shown)} full-size pages now follow in order, pages "
         f"{_ranges(shown)}. Answer for these and for no others."))
     for page in shown:
         png, _info = doc.render(page, dpi=float(dpi))
-        content.append(image_block(stamp_page_number(png, page), detail))
+        # Stamped first, then re-encoded: the stamp keeps its PNG contract
+        # and the picture that travels is the JPEG of the stamped page.
+        content.append(image_block(
+            encode_for_vision(stamp_page_number(png, page)), detail))
     return content
 
 
@@ -1018,7 +1193,23 @@ def _document_pass(doc, engine: Engine, wanted: Sequence[int], system: str,
     why a page skipped in one window and answered in the next is simply
     answered, and why a budget that ran out is visible as the reason on
     every page it cost.
+
+    AND THE WINDOW SPLITS ITSELF. The image cap is not the only ceiling: the
+    gateway also refuses a request whose BODY is too big, which a report of
+    scanned pages reaches long before 50 images (2026-09-20: every window of
+    a 156-page scanned report came back "the request entity is too large",
+    while a text-page report of the same length went through). So the
+    windows are driven from a QUEUE rather than a list. A window the gateway
+    refuses on size is halved, both halves go back at the front, the working
+    size becomes the half, and every page still queued behind them is
+    re-windowed at that size -- so one refusal narrows the rest of the
+    report instead of being paid for again and again. A refused request
+    bills nothing, so a split costs time alone. A window already at or under
+    :data:`DOCUMENT_MIN_SPLIT` that is still refused raises: at four pages
+    the body is small and the refusal means something else.
     """
+    from collections import deque
+
     sheets = _strip_sheets(doc, qa)
     cap = max(1, int(images_per_call))
     n_strip = min(len(sheets), max(0, int(strip_sheets_max)),
@@ -1033,10 +1224,14 @@ def _document_pass(doc, engine: Engine, wanted: Sequence[int], system: str,
     answered: Dict[int, VisionPageLabel] = {}
     why_missing: Dict[int, str] = {}
     stopped = False
+    queue = deque(windows)
+    covered = 0
 
-    for shown in windows:
+    while queue:
+        shown = queue.popleft()
         if out_of_budget():
             stopped = True
+            covered += 1
             for page in shown:
                 why_missing[page] = (f"the budget of {budget} model call(s) "
                                      f"was spent before this window")
@@ -1051,7 +1246,35 @@ def _document_pass(doc, engine: Engine, wanted: Sequence[int], system: str,
             raise AssertionError(
                 f"a document-mode call was built with {n_images} images, "
                 f"over the cap of {cap}")
-        reply = _ask(engine, content, system, VisionSheetAnswer, charge)
+        try:
+            reply = _ask(engine, content, system, VisionSheetAnswer, charge)
+        except Exception as exc:                  # noqa: BLE001 - re-raised
+            if not (is_payload_too_large(exc)
+                    and len(shown) > DOCUMENT_MIN_SPLIT):
+                raise
+            first, second = _halves(shown)
+            size = max(len(first), len(second))
+            # Everything still queued is re-cut to the new size, so the
+            # refusal is paid for once rather than at every window after it.
+            seen_pending: set = set()
+            pending: List[int] = []
+            for later in queue:                   # the queue is in page order
+                for page in later:
+                    if page in seen_pending:      # the overlap repeats pages
+                        continue
+                    seen_pending.add(page)
+                    pending.append(page)
+            queue = deque([first, second]
+                          + document_windows(pending, size, overlap))
+            spent["splits"] = int(spent.get("splits") or 0) + 1
+            spent["window_pages"] = size
+            qa.append({"page": None,
+                       "note": f"the gateway refused the window of pages "
+                               f"{_ranges(shown)} as too large a request; it "
+                               f"was split and the window size is now {size} "
+                               f"page(s)"})
+            continue
+        covered += 1
         answer = reply.parsed
         if answer is None:
             for page in shown:
@@ -1093,6 +1316,10 @@ def _document_pass(doc, engine: Engine, wanted: Sequence[int], system: str,
             # answer replaces an earlier one rather than being dropped.
             answered[page] = _accept(entry, page, qa)
 
+    # The windows the run ENDED with, not the ones it planned: a split
+    # makes two where the plan had one, and the results table reads this
+    # column as "one window is one call".
+    spent["windows"] = covered
     for page in wanted:
         row = answered.get(page)
         if row is None:

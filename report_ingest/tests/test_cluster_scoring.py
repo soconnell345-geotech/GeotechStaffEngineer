@@ -853,7 +853,8 @@ class TestTheVisionStage:
         _reports_dir, out, _oos = vision_cluster
         results = _vision_run(vision_cluster)
         assert results["vision_labels"]["settings"] == {
-            "mode": "page", "dpi": 100.0, "outline_context": False}
+            "mode": "page", "dpi": 100.0, "outline_context": False,
+            "fallback": True}
         text = (out / "RESULTS.md").read_text(encoding="utf-8")
         assert "mode `page`" in text and "100 dpi" in text
 
@@ -862,7 +863,8 @@ class TestTheVisionStage:
         results = _vision_run(vision_cluster, vision_mode="sheet",
                               vision_dpi=72.0, vision_outline_context=True)
         assert results["vision_labels"]["settings"] == {
-            "mode": "sheet", "dpi": 72.0, "outline_context": True}
+            "mode": "sheet", "dpi": 72.0, "outline_context": True,
+            "fallback": True}
 
     def test_cost_is_totalled_per_report(self, vision_cluster):
         cost = _vision_run(vision_cluster)["vision_labels"]["cost"]
@@ -1039,7 +1041,8 @@ class TestDocumentMode:
             vision_images_per_call=40, vision_detail="low")
         settings = results["vision_labels"]["settings"]
         assert settings == {"mode": "document", "dpi": 100.0,
-                            "outline_context": False, "detail": "low",
+                            "outline_context": False, "fallback": True,
+                            "detail": "low",
                             "window": 24, "images_per_call": 40}
 
     def test_a_page_mode_run_records_no_window_settings(self,
@@ -1048,7 +1051,8 @@ class TestDocumentMode:
         run, so a page-mode header does not print a window it never had."""
         results = _vision_run(vision_cluster)
         assert results["vision_labels"]["settings"] == {
-            "mode": "page", "dpi": 100.0, "outline_context": False}
+            "mode": "page", "dpi": 100.0, "outline_context": False,
+            "fallback": True}
 
     def test_the_defaults_are_the_measured_cap_and_the_thirty_six_window(
             self, document_cluster):
@@ -1106,7 +1110,11 @@ class TestDocumentMode:
         assert "wins" in text, "the window column is in the per-report table"
         assert "one window is one call in document mode" in text
         line = [ln for ln in text.splitlines() if ln.startswith("R36")][0]
-        assert line.split()[-4] == "3", "the window count is on R36's line"
+        cells = line.split()
+        assert cells[-5] == "3", "the window count is on R36's line"
+        assert cells[-4] == "--", (
+            "no window was refused on size, so the split column is a dash")
+        assert "`split` is how many windows the gateway refused" in text
 
     def test_page_mode_prints_a_dash_where_it_has_no_windows(
             self, vision_cluster, monkeypatch):
@@ -1208,3 +1216,82 @@ class TestTheReadmeCell:
             "the whole-report mode is what a reader should run first")
         assert "vision_detail" in readme
         assert "50" in readme and "images" in readme
+
+
+
+class TestTheSplitAndTheFallbackOnTheCluster:
+    """What 5.21.2 added to the stage: a window that halves itself when the
+    gateway refuses its body, and one page-mode call for a page nothing
+    answered for. Both are COUNTS in the saved run, so the table and the
+    progress line read them off disk like everything else."""
+
+    def _with_counts(self, document_cluster, splits=0, fallback_pages=0):
+        reports_dir, out, oos = document_cluster
+        blob = json.loads((out / "vision" / "R36.json").read_text(
+            encoding="utf-8"))
+        blob["vision"]["cost"]["splits"] = splits
+        blob["vision"]["cost"]["fallback_pages"] = fallback_pages
+        (out / "vision" / "R36.json").write_text(json.dumps(blob),
+                                                 encoding="utf-8")
+        return reports_dir, out, oos
+
+    def test_the_split_count_reaches_the_per_report_row(self,
+                                                        document_cluster):
+        _reports, out, oos = self._with_counts(document_cluster, splits=2,
+                                               fallback_pages=3)
+        results = cs.score_on_cluster(
+            reports_dir=document_cluster[0], out_dir=out, prompter=object(),
+            oos_labels=oos, sets=("oos_blind",), stages=("vision_labels",),
+            vision_mode="document")
+        rows = {r["id"]: r for r in results["vision_labels"]["per_report"]}
+        assert rows["R36"]["splits"] == 2
+        assert rows["R36"]["fallback_pages"] == 3
+        assert rows["R31"]["splits"] == 0
+
+    def test_the_split_column_prints_the_count_and_a_dash(
+            self, document_cluster, monkeypatch):
+        _reports, out, oos = self._with_counts(document_cluster, splits=2)
+        monkeypatch.setattr(cs, "OOS_OPEN", ("R36", "R31"))
+        cs.score_on_cluster(
+            reports_dir=document_cluster[0], out_dir=out, prompter=object(),
+            oos_labels=oos, sets=("oos_open",), stages=("vision_labels",),
+            vision_mode="document")
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        header = [ln for ln in text.splitlines() if "split" in ln
+                  and "wins" in ln][0]
+        assert "split" in header
+        r36 = [ln for ln in text.splitlines() if ln.startswith("R36")][0]
+        r31 = [ln for ln in text.splitlines() if ln.startswith("R31")][0]
+        assert r36.split()[-4] == "2"
+        assert r31.split()[-4] == "--", (
+            "a report that never hit the body limit prints a dash")
+
+    def test_the_header_says_the_pictures_are_jpeg_and_what_split_means(
+            self, document_cluster):
+        _reports, out, oos = document_cluster
+        cs.score_on_cluster(
+            reports_dir=document_cluster[0], out_dir=out, prompter=object(),
+            oos_labels=oos, sets=("oos_blind",), stages=("vision_labels",),
+            vision_mode="document")
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "JPEG" in text
+        assert "request whose BODY is too large" in text
+
+    def test_the_fallback_flag_is_on_by_default_and_can_be_turned_off(
+            self, document_cluster):
+        _reports, out, oos = document_cluster
+        on = cs.score_on_cluster(
+            reports_dir=document_cluster[0], out_dir=out, prompter=object(),
+            oos_labels=oos, sets=("oos_blind",), stages=("vision_labels",),
+            vision_mode="document")
+        assert on["vision_labels"]["settings"]["fallback"] is True
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "page-mode fallback on" in text
+
+        off = cs.score_on_cluster(
+            reports_dir=document_cluster[0], out_dir=out, prompter=object(),
+            oos_labels=oos, sets=("oos_blind",), stages=("vision_labels",),
+            vision_mode="document", vision_fallback=False)
+        assert off["vision_labels"]["settings"]["fallback"] is False
+        assert "no fallback" in (out / "RESULTS.md").read_text(
+            encoding="utf-8")

@@ -312,10 +312,14 @@ def test_the_pages_are_split_into_sheets_of_the_size_asked_for(synthetic):
 
 
 def test_a_page_the_reply_left_out_is_unresolved_and_never_guessed(synthetic):
+    # fallback=False: this is about what the SHEET pass itself refuses to
+    # guess. The page-mode fallback that answers such a page is tested on
+    # its own further down.
     doc, _ = synthetic
     engine = FakeEngine([{"final": VisionSheetAnswer(
         pages=[_answer(p) for p in (0, 2)])}])
-    out = classify_pages_by_vision(doc, engine, pages=[0, 1, 2], mode="sheet")
+    out = classify_pages_by_vision(doc, engine, pages=[0, 1, 2], mode="sheet",
+                                   fallback=False)
 
     assert sorted(out.label_map) == [0, 2]
     assert [u["page"] for u in out.unresolved] == [1]
@@ -433,7 +437,8 @@ def test_a_sheet_with_no_structured_answer_loses_only_its_own_pages(synthetic):
         {"final": VisionSheetAnswer(pages=[_answer(p) for p in (2, 3)])},
     ])
     out = classify_pages_by_vision(doc, engine, pages=[0, 1, 2, 3],
-                                   mode="sheet", sheet_pages=2)
+                                   mode="sheet", sheet_pages=2,
+                                   fallback=False)
 
     assert sorted(out.label_map) == [2, 3]
     assert [u["page"] for u in out.unresolved] == [0, 1]
@@ -717,7 +722,7 @@ def test_a_page_the_model_skipped_is_unresolved_and_never_guessed(synthetic):
     engine = FakeEngine([{"final": VisionSheetAnswer(
         pages=[_answer(0), _answer(2)])}])
     out = classify_pages_by_vision(doc, engine, pages="0-2", mode="document",
-                                   window=4)
+                                   window=4, fallback=False)
 
     assert sorted(out.label_map) == [0, 2]
     assert [u["page"] for u in out.unresolved] == [1]
@@ -780,7 +785,7 @@ def test_a_window_with_no_structured_answer_loses_only_its_own_pages(
         {"final": VisionSheetAnswer(pages=[_answer(p) for p in (4, 5, 6, 7)])},
     ])
     out = classify_pages_by_vision(doc, engine, pages="0-7", mode="document",
-                                   window=4, overlap=0)
+                                   window=4, overlap=0, fallback=False)
 
     assert sorted(out.label_map) == [4, 5, 6, 7]
     assert [u["page"] for u in out.unresolved] == [0, 1, 2, 3]
@@ -932,3 +937,315 @@ def test_the_claude_engine_ignores_a_detail_it_has_no_key_for():
     assert block["type"] == "image"
     assert block["source"]["media_type"] == "image/png"
     assert "detail" not in block
+
+
+# -- the pictures travel as JPEG ----------------------------------------------
+
+def _is_jpeg(data):
+    return bytes(data[:3]) == b"\xff\xd8\xff"
+
+
+def _scan_like(png, seed=7, spread=26):
+    """A rendered page roughed up into what a SCAN of it looks like.
+
+    A scanned page is a photograph of a printed one: every white pixel is a
+    slightly different white, so the run-length coding PNG rests on has
+    nothing to collapse. That is the page the gateway refused, and there is
+    no scanned fixture in planlens' synthetic report, so one is made here.
+    """
+    import io
+    import random
+
+    from PIL import Image
+
+    image = Image.open(io.BytesIO(png)).convert("RGB")
+    rng = random.Random(seed)
+    pixels = image.load()
+    width, height = image.size
+    for y in range(height):
+        for x in range(width):
+            r, g, b = pixels[x, y]
+            noise = rng.randint(-spread, spread)
+            pixels[x, y] = (min(255, max(0, r + noise)),
+                            min(255, max(0, g + noise)),
+                            min(255, max(0, b + noise)))
+    out = io.BytesIO()
+    image.save(out, format="PNG")
+    return out.getvalue()
+
+
+def test_a_scanned_page_is_a_third_of_the_bytes_as_jpeg(synthetic):
+    """This is the page that broke the cluster run and the reason for JPEG.
+
+    Measured here: the scan-like page is about 780 KB of PNG and about
+    250 KB of JPEG at quality 80 -- a ratio near 0.32. Thirty-six of those
+    in one request, base64 at four bytes for three, is the difference
+    between a request the gateway takes and one it refuses.
+    """
+    from report_ingest.vision_labels import encode_for_vision
+
+    doc, _ = synthetic
+    png, _info = doc.render(3, dpi=DEFAULT_DPI)
+    scan = _scan_like(png)
+    jpeg = encode_for_vision(scan)
+
+    assert _is_jpeg(jpeg)
+    assert len(jpeg) < 0.5 * len(scan), (
+        f"{len(jpeg):,} JPEG bytes against {len(scan):,} PNG")
+    assert _png_size(jpeg) == _png_size(scan), (
+        "the token count is the render's pixel size; only the bytes move")
+
+
+def test_the_jpeg_keeps_the_pixel_size_of_every_page_it_re_encodes(
+        synthetic):
+    """The pixel size is the contract, on every page and at every dpi.
+
+    A PAGE OF CRISP VECTOR TEXT IS THE CASE JPEG DOES NOT WIN. PNG codes a
+    sparse black-on-white render very well and JPEG spends bytes on the
+    ringing around every glyph: across the 22 synthetic pages the JPEG runs
+    from 0.84 to 1.20 of the PNG, and a nearly blank page can be four times
+    it. The trade is taken deliberately -- the pages that refuse a request
+    are the scanned ones, where it is a third -- and it is safe to take
+    because what does not change is this: the provider scales and tiles the
+    pixels, so the token count is the same either way.
+    """
+    from report_ingest.vision_labels import (
+        VISION_JPEG_QUALITY, encode_for_vision,
+    )
+
+    doc, _ = synthetic
+    for page in (0, 3, 10):
+        for dpi in (72.0, DEFAULT_DPI):
+            png, _info = doc.render(page, dpi=dpi)
+            jpeg = encode_for_vision(png)
+            assert _is_jpeg(jpeg)
+            assert _png_size(jpeg) == _png_size(png), (page, dpi)
+    assert VISION_JPEG_QUALITY == 80
+
+
+def test_a_lower_quality_is_smaller_still_and_the_parameter_reaches_it(
+        synthetic):
+    from report_ingest.vision_labels import encode_for_vision
+
+    doc, _ = synthetic
+    png, _info = doc.render(3, dpi=DEFAULT_DPI)
+    assert len(encode_for_vision(png, quality=30)) < len(
+        encode_for_vision(png, quality=90))
+
+
+def test_every_mode_sends_jpeg_bytes_and_nothing_else(synthetic):
+    doc, _ = synthetic
+    for mode, script, pages in (("page", _page_script([0, 1]), [0, 1]),
+                                ("sheet", [_sheet([0, 1])], [0, 1]),
+                                ("document", [_sheet([0, 1])], "0-1")):
+        engine = FakeEngine(script)
+        classify_pages_by_vision(doc, engine, pages=pages, mode=mode,
+                                 window=4)
+        blocks = [b for call in engine.calls for b in call["image_blocks"]]
+        assert blocks, mode
+        assert all(_is_jpeg(b["png"]) for b in blocks), (
+            f"{mode} mode sent a picture that is not a JPEG")
+
+
+def test_the_strip_and_the_stamped_pages_are_both_jpeg(synthetic):
+    doc, _ = synthetic
+    engine = FakeEngine([_sheet(range(4))])
+    out = classify_pages_by_vision(doc, engine, pages="0-3", mode="document",
+                                   window=4)
+    blocks = engine.calls[0]["image_blocks"]
+    assert out.cost["strip_sheets"] >= 1
+    assert all(_is_jpeg(b["png"]) for b in blocks)
+
+
+def test_the_stamp_still_keeps_its_png_contract(synthetic):
+    """``stamp_page_number`` returns a PNG; the JPEG happens after it, so the
+    stamp stays testable at the byte level and lossless where it is drawn."""
+    doc, _ = synthetic
+    png, _info = doc.render(1, dpi=DEFAULT_DPI)
+    stamped = stamp_page_number(png, 1)
+    assert stamped[:4] == b"\x89PNG"
+    assert _png_size(stamped) == _png_size(png)
+
+
+# -- the window splits itself when the gateway refuses the body ---------------
+
+_TOO_LARGE = ("The page was not displayed because the request entity is too "
+              "large.")
+
+
+def test_the_marker_matches_the_gateways_wording_and_nothing_else():
+    from report_ingest.vision_labels import is_payload_too_large
+
+    assert is_payload_too_large(RuntimeError(_TOO_LARGE))
+    assert is_payload_too_large(RuntimeError("413 Request Entity Too Large"))
+    assert not is_payload_too_large(RuntimeError("429 rate limit exceeded"))
+    assert not is_payload_too_large(
+        RuntimeError("Unrecognized request argument: max_tokens"))
+
+
+def test_a_refused_window_is_split_and_every_page_is_still_labelled(
+        synthetic):
+    doc, _ = synthetic
+    every = list(range(12))
+    engine = FakeEngine([
+        {"raise": RuntimeError(_TOO_LARGE)},      # the window of 12
+        _sheet(every[:6]),                        # the first half
+        _sheet(every[6:]),                        # the second half
+    ])
+    out = classify_pages_by_vision(doc, engine, pages="0-11", mode="document",
+                                   window=12, overlap=0)
+
+    assert out.cost["splits"] == 1
+    assert sorted(out.label_map) == every, "no page was lost to the refusal"
+    assert out.unresolved == []
+    assert engine.n_calls == 3, "one refused call and the two halves"
+    for call in engine.calls[1:]:
+        pages = len(call["image_blocks"]) - out.cost["strip_sheets"]
+        assert pages <= 6, "a later call carries no more than half the window"
+    assert any("too large a request" in q["note"] for q in out.qa)
+    assert any("now 6 page(s)" in q["note"] for q in out.qa)
+
+
+def test_a_split_narrows_every_window_still_queued(synthetic):
+    """One refusal is paid for once: the rest of the report is re-cut."""
+    doc, _ = synthetic
+    engine = FakeEngine([
+        {"raise": RuntimeError(_TOO_LARGE)},      # pages 0-7
+        _sheet([0, 1, 2, 3]), _sheet([4, 5, 6, 7]),
+        _sheet([8, 9, 10, 11]), _sheet([12, 13, 14, 15]),
+    ])
+    out = classify_pages_by_vision(doc, engine, pages="0-15", mode="document",
+                                   window=8, overlap=0)
+
+    assert out.cost["splits"] == 1
+    assert out.cost["window_pages"] == 4, "the working size is the half"
+    assert out.cost["windows"] == 4, "two halves plus the re-cut remainder"
+    assert sorted(out.label_map) == list(range(16))
+    assert engine.n_calls == 5
+
+
+def test_a_window_at_the_minimum_that_is_still_refused_raises(synthetic):
+    """At four pages the body is already small: the refusal means something
+    else, and hiding it behind another halving would not help."""
+    from report_ingest.vision_labels import DOCUMENT_MIN_SPLIT
+
+    doc, _ = synthetic
+    engine = FakeEngine([{"raise": RuntimeError(_TOO_LARGE)}])
+    with pytest.raises(RuntimeError, match="too large"):
+        classify_pages_by_vision(doc, engine, pages="0-3", mode="document",
+                                 window=DOCUMENT_MIN_SPLIT, overlap=0)
+    assert engine.n_calls == 1
+
+
+def test_any_other_failure_propagates_as_it_always_did(synthetic):
+    doc, _ = synthetic
+    engine = FakeEngine([{"raise": RuntimeError("429 rate limit exceeded")}])
+    with pytest.raises(RuntimeError, match="rate limit"):
+        classify_pages_by_vision(doc, engine, pages="0-11", mode="document",
+                                 window=12, overlap=0)
+    assert engine.n_calls == 1, "a rate limit is not a reason to split"
+
+
+def test_a_run_that_never_hits_the_limit_reports_no_splits(synthetic):
+    doc, _ = synthetic
+    engine = FakeEngine([_sheet(range(4))])
+    out = classify_pages_by_vision(doc, engine, pages="0-3", mode="document",
+                                   window=4)
+    assert out.cost["splits"] == 0
+
+
+# -- the page-mode fallback ---------------------------------------------------
+
+def test_a_page_a_sheet_left_out_is_answered_by_one_page_mode_call(synthetic):
+    doc, _ = synthetic
+    shown = [0, 1, 2, 3]
+    engine = FakeEngine([
+        {"final": VisionSheetAnswer(
+            pages=[_answer(p) for p in (0, 1, 2)])},   # 3 is missing
+        {"final": _answer(3, label="figure")},         # the fallback call
+    ])
+    out = classify_pages_by_vision(doc, engine, pages=shown, mode="sheet")
+
+    assert engine.n_calls == 2, "one sheet and one page"
+    assert sorted(out.label_map) == shown
+    assert out.label_map[3] == "figure"
+    assert out.unresolved == []
+    assert out.cost["fallback_pages"] == 1
+    assert any("page-mode fallback" in q["note"] for q in out.qa)
+    assert [row.page for row in out.labels] == shown, "labels stay in order"
+    assert engine.calls[1]["n_images"] == 1, "the fallback sends one page"
+    assert engine.calls[1]["output_format"] is VisionPageAnswer
+
+
+def test_the_fallback_asks_with_page_modes_own_prompt(synthetic):
+    doc, _ = synthetic
+    engine = FakeEngine([
+        {"final": VisionSheetAnswer(pages=[_answer(0)])},
+        {"final": _answer(1)},
+    ])
+    classify_pages_by_vision(doc, engine, pages=[0, 1], mode="sheet")
+    assert engine.calls[1]["system"] == vision_system("page")
+
+
+def test_a_document_page_no_window_answered_gets_the_fallback(synthetic):
+    doc, _ = synthetic
+    engine = FakeEngine([
+        {"final": VisionSheetAnswer(pages=[_answer(0), _answer(2)])},
+        {"final": _answer(1, label="toc")},
+    ])
+    out = classify_pages_by_vision(doc, engine, pages="0-2", mode="document",
+                                   window=4)
+
+    assert out.label_map == {0: "narrative", 1: "toc", 2: "narrative"}
+    assert out.cost["fallback_pages"] == 1
+    assert out.unresolved == []
+
+
+def test_fallback_off_leaves_the_page_unresolved(synthetic):
+    doc, _ = synthetic
+    engine = FakeEngine([{"final": VisionSheetAnswer(
+        pages=[_answer(p) for p in (0, 1, 2)])}])
+    out = classify_pages_by_vision(doc, engine, pages=[0, 1, 2, 3],
+                                   mode="sheet", fallback=False)
+
+    assert engine.n_calls == 1
+    assert [u["page"] for u in out.unresolved] == [3]
+    assert out.cost["fallback_pages"] == 0
+
+
+def test_the_fallback_spends_the_same_budget_as_everything_else(synthetic):
+    doc, _ = synthetic
+    engine = FakeEngine([{"final": VisionSheetAnswer(
+        pages=[_answer(p) for p in (0, 1, 2)])}])
+    out = classify_pages_by_vision(doc, engine, pages=[0, 1, 2, 3],
+                                   mode="sheet", sheet_pages=4, budget=1)
+
+    assert engine.n_calls == 1, "the budget was spent on the sheet"
+    assert [u["page"] for u in out.unresolved] == [3]
+    assert out.cost["fallback_pages"] == 0
+    assert out.stopped_on_budget is True
+
+
+def test_a_fallback_that_cannot_settle_the_page_leaves_it_unresolved(
+        synthetic):
+    doc, _ = synthetic
+    engine = FakeEngine([
+        {"final": VisionSheetAnswer(pages=[_answer(0)])},
+        {"text": "I cannot make this page out"},
+    ])
+    out = classify_pages_by_vision(doc, engine, pages=[0, 1], mode="sheet")
+
+    assert engine.n_calls == 2
+    assert sorted(out.label_map) == [0]
+    assert [u["page"] for u in out.unresolved] == [1]
+    assert out.cost["fallback_pages"] == 0
+
+
+def test_page_mode_never_runs_a_fallback_because_it_is_the_fallback(synthetic):
+    doc, _ = synthetic
+    engine = FakeEngine([{"text": "no answer"}])
+    out = classify_pages_by_vision(doc, engine, pages=[0])
+
+    assert engine.n_calls == 1, "a page mode retry would just ask again"
+    assert [u["page"] for u in out.unresolved] == [0]
+    assert out.cost["fallback_pages"] == 0

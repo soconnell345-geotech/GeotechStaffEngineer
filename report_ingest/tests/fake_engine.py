@@ -33,7 +33,13 @@ class FakeEngine:
     ``{"final": <object>}``
         the model answers, and the object becomes ``reply.parsed``;
     ``{"text": "..."}``
-        the model answers in prose with nothing parsed.
+        the model answers in prose with nothing parsed;
+    ``{"raise": exc}``
+        the call FAILS with that exception, after the call has been
+        recorded. This is how a gateway refusing the request body is
+        exercised: the pass has to see a real exception out of
+        ``engine.complete``, and the recorded call is what a test then reads
+        to check how big the refused request was.
 
     Every call is recorded in :attr:`calls` -- the messages, the system
     prompt, the tool names offered, how many images were attached and
@@ -84,6 +90,12 @@ class FakeEngine:
                 f"{len(self.turns)} turn(s)")
         turn = self.turns[self._next]
         self._next += 1
+
+        if "raise" in turn:
+            # Recorded first, then raised: a failed call is still a call the
+            # test wants to look at, and a real engine has already built and
+            # sent the request by the time the provider refuses it.
+            raise turn["raise"]
 
         if "tools" in turn:
             wanted = turn["tools"]

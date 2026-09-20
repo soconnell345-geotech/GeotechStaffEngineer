@@ -277,7 +277,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      vision_outline_context: bool = False,
                      vision_detail: Optional[str] = None,
                      vision_window: Optional[int] = None,
-                     vision_images_per_call: Optional[int] = None
+                     vision_images_per_call: Optional[int] = None,
+                     vision_fallback: bool = True
                      ) -> Dict[str, Any]:
     """Run the rules, triage and the label review over the corpus, and score.
 
@@ -390,7 +391,15 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         :data:`report_ingest.vision_labels.DOCUMENT_WINDOW` (36) and
         :data:`report_ingest.vision_labels.MAX_IMAGES_PER_CALL` (50, measured
         on the owner's cluster on 2026-09-18). Raise the second only for an
-        endpoint that has been shown to accept more.
+        endpoint that has been shown to accept more. A window the gateway
+        refuses as too large a REQUEST BODY -- which a report of scanned
+        pages reaches well under 50 images -- halves itself and narrows the
+        rest of the report; the ``split`` column says how often.
+    vision_fallback
+        After a sheet or document pass, give every page still unresolved ONE
+        page-mode call. On by default: a page goes unresolved because the
+        reply left it out, and asking about that page alone is the mode that
+        cannot skip it. The vision budget still applies.
     """
     if prompter is None:
         raise ValueError(
@@ -557,7 +566,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                              outline_context=vision_outline_context,
                              detail=vision_detail, window=vision_window,
                              images_per_call=vision_images_per_call,
-                             redo=redo)
+                             fallback=vision_fallback, redo=redo)
         scored_vision = _score_vision(vision["runs"], corpus, oos, mapped,
                                       sets, out, vision_model,
                                       vision["failures"], vision["settings"])
@@ -1594,7 +1603,8 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
                 dpi: Optional[float], outline_context: bool,
                 redo: bool, detail: Optional[str] = None,
                 window: Optional[int] = None,
-                images_per_call: Optional[int] = None) -> Dict[str, Any]:
+                images_per_call: Optional[int] = None,
+                fallback: bool = True) -> Dict[str, Any]:
     """A cheap model's look at every page of every report in the set.
 
     The rules' labels are computed here too, deterministically and with no
@@ -1630,7 +1640,8 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
     # run has is recorded only for a document run, and an unset detail is
     # absent rather than written as a value the provider never saw.
     settings: Dict[str, Any] = {"mode": mode, "dpi": dpi,
-                                "outline_context": bool(outline_context)}
+                                "outline_context": bool(outline_context),
+                                "fallback": bool(fallback)}
     if detail is not None:
         settings["detail"] = detail
     if mode == "document":
@@ -1640,6 +1651,7 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
         f", detail {detail}" if detail else "",
         f", window {window} pages, at most {cap} images a call"
         if mode == "document" else "",
+        ", page-mode fallback on" if fallback and mode != "page" else "",
     ])
     print(f"  vision_labels: {len(report_ids)} report(s); model {model}, "
           f"mode {mode}, {dpi:.0f} dpi, outline context "
@@ -1670,7 +1682,7 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
             seen = classify(doc, engine, mode=mode, dpi=dpi,
                             outline_context=outline_context, outline=outline,
                             detail=detail, window=window,
-                            images_per_call=cap)
+                            images_per_call=cap, fallback=fallback)
             rules = {r.page: r.role for r in roles}
             n_pages = doc.n_pages
         except KeyboardInterrupt:
@@ -1696,6 +1708,7 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
             "dpi": dpi,
             "outline_context": bool(outline_context),
             "detail": detail,
+            "fallback": bool(fallback),
             "rules_labels": {str(k): v for k, v in sorted(rules.items())},
             "vision": seen.to_dict(),
             "cost": meter.to_dict(),
@@ -1704,10 +1717,15 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
         run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
         done[rid] = blob
         windows = seen.cost.get("windows") or 0
+        splits = seen.cost.get("splits") or 0
+        rescued = seen.cost.get("fallback_pages") or 0
         print(f"  [{n}/{len(report_ids)}] {rid}: {n_pages} pp, "
               f"{len(seen.labels)} labelled, {len(seen.unresolved)} "
               f"unresolved, {seen.model_calls} model calls"
-              + (f" over {windows} window(s)" if windows else "") + ", "
+              + (f" over {windows} window(s)" if windows else "")
+              + (f", {splits} split(s) on request size" if splits else "")
+              + (f", {rescued} page(s) rescued by the fallback"
+                 if rescued else "") + ", "
               f"{blob['cost']['input_tokens']:,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s")
@@ -1819,6 +1837,12 @@ def _score_vision(done: Dict[str, dict], corpus: Corpus,
                     # have none and print a dash rather than a 0 that would
                     # read as "it did no work".
                     "windows": (seen.get("cost") or {}).get("windows") or 0,
+                    # How often the gateway refused a window's request body
+                    # and the pass halved it, and how many pages one extra
+                    # page-mode call rescued. Both print a dash at 0.
+                    "splits": (seen.get("cost") or {}).get("splits") or 0,
+                    "fallback_pages": ((seen.get("cost") or {})
+                                       .get("fallback_pages") or 0),
                     "input_tokens": blob["cost"].get("input_tokens", 0),
                     "output_tokens": blob["cost"].get("output_tokens", 0),
                     "dollars": blob["cost"].get("dollars", 0.0),
@@ -1890,6 +1914,8 @@ def _render_vision(vision: Dict[str, Any]) -> List[str]:
                if mode != "document" else
                "a cheap model looking at the page with the whole report in "
                "thumbnail beside it")
+    extra += (", page-mode fallback on" if settings.get("fallback")
+              else ", no fallback")
     out: List[str] = [
         "", "# WP5 on the cluster: labelling a page by looking at it", "",
         f"Run {vision['date']}. Vision model `{vision['model']}`, mode "
@@ -1905,6 +1931,14 @@ def _render_vision(vision: Dict[str, Any]) -> List[str]:
         "non-answer is scored, not excused. The `+review` column appears "
         "only where a label run sits beside the vision run in this "
         "`out_dir`.",
+        "",
+        "Every page picture travels as **JPEG** at quality 80, at the "
+        "render's own pixel size: the provider scales and tiles exactly the "
+        "page it always did, so the token count is unchanged and only the "
+        "bytes on the wire move. A gateway refuses a request whose BODY is "
+        "too large long before the 50-image cap bites on scanned pages, and "
+        "`split` is how many times a document window was halved because it "
+        "did.",
     ]
     if vision.get("served_by"):
         out.append(f"Served by: {', '.join(vision['served_by'])}.")
@@ -1982,22 +2016,32 @@ def _render_vision(vision: Dict[str, Any]) -> List[str]:
         out += ["", "```",
                 f"{'report':<8}{'pages':>7}{'scored':>8}{'rules':>8}"
                 f"{'review':>8}{'vision':>8}{'unres':>7}{'qa':>5}"
-                f"{'calls':>7}{'wins':>6}{'in':>10}{'out':>9}{'s':>7}"]
+                f"{'calls':>7}{'wins':>6}{'split':>7}{'in':>10}"
+                f"{'out':>9}{'s':>7}"]
         for r in rows:
             def cell(value: Optional[float]) -> str:
                 return "   --   " if value is None else f"{value:>8.3f}"
             windows = f"{r.get('windows') or 0:>6}" if r.get("windows") \
                 else f"{'--':>6}"
+            # A dash, not a 0: page and sheet mode have no window to split,
+            # and a document run that never hit the body limit is the normal
+            # case rather than a run that did no work.
+            splits = f"{r.get('splits') or 0:>7}" if r.get("splits") \
+                else f"{'--':>7}"
             out.append(f"{r['id']:<8}{r['pages']:>7}{r['scored']:>8}"
                        f"{cell(r['rules'])}{cell(r['review'])}"
                        f"{cell(r['vision'])}{r['unresolved']:>7}{r['qa']:>5}"
-                       f"{r['calls']:>7}{windows}{r['input_tokens']:>10,}"
+                       f"{r['calls']:>7}{windows}{splits}"
+                       f"{r['input_tokens']:>10,}"
                        f"{r['output_tokens']:>9,}{r['seconds']:>7.0f}")
         out.append("```")
         out += ["", "`calls` is model calls and `wins` the windows they "
                     "covered: one window is one call in document mode and "
                     "there are none in the other two, where a call is a page "
-                    "or a sheet."]
+                    "or a sheet. `split` is how many windows the gateway "
+                    "refused as too large a request and the pass halved; "
+                    "each split adds windows, and therefore calls, without "
+                    "adding a page."]
 
     cost = vision["cost"]
     n = max(1, vision["n_reports"])

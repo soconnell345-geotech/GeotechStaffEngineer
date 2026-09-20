@@ -8,6 +8,62 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### 5.21.2 (2026-09-20) — the whole-report vision mode, after its first cluster run
+
+The 5.21.1 run answered the sheet-vs-page question and opened two new ones.
+**Sheet mode is the winner and needs no further work:** with number-only
+contact sheets it scored **0.932 strict on 307 pages** (0.947 and 0.917
+on the two reports read separately) in **26 calls and about $0.04 a report** — level with page mode's 0.928 at a
+sixth of the calls. **Document mode scored 0.927** on the one report of text
+pages it finished (151 pp, 5 windows) but showed two defects, and both are
+fixed here:
+
+- **It cost 254,724 input tokens, ~51,000 a call.** Not a defect: the pages
+  are A4, and A4 at 100 dpi scales to 768 x 1086, which is six 512 px tiles
+  where a letter page is four. Recorded so nobody re-derives it.
+- **Three pages came back unresolved** — the model skipped them and the
+  window that overlaps each one skipped them too.
+- **Every window of the 156-page SCANNED report failed** with
+  `APIStatusError: The page was not displayed because the request entity is
+  too large`. That is the gateway's REQUEST-BODY limit, which the 50-image
+  probe (tiny images) never came near. A scanned page at 100 dpi is a few
+  hundred KB of PNG; 36 of them plus four contact sheets, base64'd, is tens
+  of megabytes.
+
+**What 5.21.2 does about it.** (1) **Every page picture travels as JPEG** at
+quality 80 (`vision_labels.encode_for_vision`, `VISION_JPEG_QUALITY`), at the
+render's own pixel size — the provider scales and tiles the pixels, so **the
+token count is unchanged** and only the bytes move. Measured: a scan-like page
+is 780 KB of PNG and 250 KB of JPEG, a factor of about three. **On a crisp
+vector text page PNG already wins** and JPEG runs 0.84 to 1.20 of it; the rule
+is unconditional anyway, because the pages that refuse a request are the
+scanned ones and a per-page choice would make one report's windows a different
+size from another's for reasons no run file records. `engine.image_block` now
+takes PNG or JPEG and **both engines read the media type off the bytes**
+(`image_media_type`), so switching to smaller-of-the-two later is a one-line
+change. (2) **A window the gateway still refuses splits itself**: the pass
+halves it, puts both halves at the front of the queue, and **re-cuts every
+window still queued** to the new size, so one refusal is paid for once. A
+refused request bills nothing, so a split costs time and no money.
+`DOCUMENT_MIN_SPLIT` is 4 — a window at or under it that is still refused
+raises, because at four pages the body is small and the refusal means
+something else. (3) **`fallback=True`** gives every page still unresolved ONE
+page-mode call, on the same budget, after the sheet or document pass
+(`vision_fallback` on `score_on_cluster`). A page goes unresolved because the
+REPLY left it out; asking about that page alone is the mode that cannot skip
+it. `cost["splits"]` and `cost["fallback_pages"]` are counted, printed on the
+progress line and carried into the RESULTS per-report table as a `split`
+column (a dash when none).
+
+Suites: `report_ingest` 690, harness 213, docs-currency green. No dependency
+change. **Install 5.21.2**; it supersedes 5.21.1 and everything back to
+5.20.1.
+
+**Next on this stage**, in order: re-run document mode on the scanned report
+to see whether the JPEG alone clears the gateway or the split has to fire;
+then `vision_detail="low"` for accuracy, which is still unmeasured and is the
+only lever that moves a document run's token bill materially.
+
 ### 5.21.1 RELEASED (2026-09-18) — the vision passes see page numbers, not kinds
 
 The sheet-mode corpus run (38 reports, 1,321 calls, ~$1.50) came back at

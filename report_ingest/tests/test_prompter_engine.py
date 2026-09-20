@@ -23,6 +23,12 @@ from report_ingest.engine import (
 )
 
 
+#: The leading bytes of each format, which is all either engine reads to
+#: decide what it is sending.
+PNG_BYTES = b"\x89PNG-ish"
+JPEG_BYTES = b"\xff\xd8\xff-ish"
+
+
 # -- a Prompter that records what it was asked --------------------------------
 
 class _Function:
@@ -176,6 +182,53 @@ def test_an_image_rides_as_a_data_uri_image_url():
     head, b64 = content[1]["image_url"]["url"].split(",", 1)
     assert head == "data:image/png;base64"
     assert base64.b64decode(b64) == b"\x89PNG-ish"
+
+
+def test_a_jpeg_rides_as_a_jpeg_data_uri_not_a_png_one():
+    """The ``png`` key holds a PNG or a JPEG, and the bytes decide which.
+
+    The pages travel as JPEG since 5.21.2 -- a scanned page stored as PNG is
+    a photograph in a lossless container, and thirty-six of them base64'd in
+    one request is what the gateway refused. A JPEG announced as a PNG is a
+    bad request, so the prefix is read off the bytes rather than assumed.
+    """
+    engine, prompter = _engine(_Response(_Message("ok")))
+    engine.complete([user(text_block("look"), image_block(JPEG_BYTES))],
+                    tools=[{"name": "t", "description": "d",
+                            "input_schema": {}}])
+    content = _sent(prompter)["messages"][-1]["content"]
+    head, b64 = content[1]["image_url"]["url"].split(",", 1)
+    assert head == "data:image/jpeg;base64"
+    assert base64.b64decode(b64) == JPEG_BYTES
+
+
+def test_a_png_block_still_rides_as_a_png_data_uri():
+    engine, prompter = _engine(_Response(_Message("ok")))
+    engine.complete([user(text_block("look"), image_block(PNG_BYTES))],
+                    tools=[{"name": "t", "description": "d",
+                            "input_schema": {}}])
+    content = _sent(prompter)["messages"][-1]["content"]
+    head, b64 = content[1]["image_url"]["url"].split(",", 1)
+    assert head == "data:image/png;base64"
+    assert base64.b64decode(b64) == PNG_BYTES
+
+
+def test_the_claude_engine_names_the_media_type_off_the_bytes_too():
+    from report_ingest.engine import ClaudeEngine
+
+    png = ClaudeEngine._to_provider_block(image_block(PNG_BYTES))
+    jpeg = ClaudeEngine._to_provider_block(image_block(JPEG_BYTES))
+    assert png["source"]["media_type"] == "image/png"
+    assert jpeg["source"]["media_type"] == "image/jpeg"
+
+
+def test_an_unrecognised_picture_is_called_a_png_rather_than_refused():
+    """A picture this package cannot name is still sent: the provider names
+    a bad request, and raising here would lose a whole run over one page."""
+    from report_ingest.engine import image_media_type
+
+    assert image_media_type(b"GIF89a") == "image/png"
+    assert image_media_type(b"") == "image/png"
 
 
 def test_an_assistant_turn_with_tool_calls_round_trips():
