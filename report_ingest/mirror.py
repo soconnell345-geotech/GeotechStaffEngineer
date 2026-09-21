@@ -16,8 +16,9 @@ WHAT IT IS. One :class:`Mirror` over one or two backends:
   The ``fh_sp_client`` itself is accepted too: its ``.file_manager`` is taken
   when it has one.
 * a **plain filesystem path** (``durable_dir``) -- the owner's workspace
-  folder under ``geotech_app/``, which persists, or a Volume. Never ``/tmp``
-  and never DBFS: the owner's rule of 2026-09-20. Files are copied.
+  folder under ``geotech_app/``, which persists, or a Volume. Never ``/tmp``:
+  the owner's rule of 2026-09-20 names the workspace folder and SharePoint as
+  the two places that keep things here. Files are copied.
 
 Both are driven through one duck type, so a run can mirror to either, or to
 both at once.
@@ -170,13 +171,21 @@ class _FileManagerBackend:
 class _DirBackend:
     """A plain folder as a mirror: the owner's workspace folder or a Volume.
 
-    Never ``/tmp`` and never DBFS -- the owner's rule of 2026-09-20.
+    Never ``/tmp`` -- the owner's rule of 2026-09-20.
 
     ``strip`` is the remote prefix a SharePoint mirror carries and a folder
     does not need: a run mirrored to ``GeotechStaffEngineer/report_ingest/
     521_sheet`` on SharePoint lands in ``<durable_dir>/521_sheet``, not in a
     copy of the library's folder tree. A remote path that does not begin with
     the prefix is used whole.
+
+    THE RUN NAME IS NOT ADDED TWICE. ``durable_dir`` gets written both ways
+    -- as the PARENT (``.../results``, with the run's own folder made inside
+    it) and as this run's folder named in full (``.../results/521_sheet``)
+    -- and both mean the same place. So where the folder's own name already
+    IS the run's name, the run is not nested inside itself. Nothing wants
+    ``521_sheet/521_sheet``, and a restore that looked there would find an
+    empty folder and let the run pay for everything twice.
     """
 
     def __init__(self, root: Any, strip: str = "") -> None:
@@ -192,7 +201,10 @@ class _DirBackend:
         if self._strip and (rel == self._strip
                             or rel.startswith(self._strip + "/")):
             rel = rel[len(self._strip):].strip("/")
-        return self._root / rel if rel else self._root
+        parts = [p for p in rel.split("/") if p]
+        if parts and self._root.name == parts[0]:
+            parts = parts[1:]
+        return self._root.joinpath(*parts) if parts else self._root
 
     def describe(self, remote_dir: str) -> str:
         return str(self.resolve(remote_dir))
@@ -236,7 +248,7 @@ class Mirror:
         ``SharePointStore``. ``None`` for no SharePoint backend.
     durable_dir
         A folder that survives the driver: the owner's workspace folder
-        under ``geotech_app/`` or a Volume; never ``/tmp`` or DBFS. ``None``
+        under ``geotech_app/`` or a Volume; never ``/tmp``. ``None``
         for no filesystem backend.
     base_folder
         The remote folder the run folders sit under. It prefixes the

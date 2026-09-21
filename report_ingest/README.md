@@ -635,9 +635,17 @@ a narrative that barely answered makes it `low`.
 ## The graph (`graph.py`) and the folder run (`run_folder.py`)
 
 `ingest_report(source, engine, out_dir=…, budgets=…, questions=…,
-di_result=…)` is the whole ingest: open (with DI when given) → roles, outline
-and ledger → triage → label review → work items from the REVIEWED labels →
-one reader per item → reconcile → write.
+di_result=…, label_policy=…, review_mode=…, vision_engine=…)` is the whole
+ingest: open (with DI when given) → roles, outline and ledger → triage → the
+page-label VOTE (the rules, one vision pass on a cheap tier, the printed form)
+→ the label review over the pages the voters split on → work items from the
+settled labels → one reader per item → reconcile → write.
+
+See "The page labels are a vote" below for `label_policy` and `review_mode`.
+`vision_engine` should be an engine on a CHEAP tier, since that voter looks at
+every page; without one it runs on the same engine as everything else, which
+works and costs more than it needs to. `label_policy="rules"` calls no vision
+pass at all and reproduces what this graph did before the vote.
 
 A deterministic loop, not a planning agent. It is budgetable (`Budgets` is a
 ceiling per pass, and a 150-page report is about a hundred calls), testable
@@ -654,7 +662,8 @@ laboratory readers look at the page image and work regardless. Calculation
 printouts and appended reports are recorded as QA entries saying they were not
 read, so a reviewer knows the pages exist and were skipped on purpose.
 
-`run_folder(folder, engine_factory, out_dir=…)` drives the same graph headless
+`run_folder(folder, engine_factory, out_dir=…, vision_engine_factory=…,
+label_policy=…, review_mode=…)` drives the same graph headless
 over a folder into one `reports.db`, with an `INDEX.md` of what it came to. It
 resumes, one bad report cannot stop it, and two files with the same bytes are
 one document sharing one library row — which it says out loud, so a folder of
@@ -698,6 +707,78 @@ carries the same two and a reader comparing the specs should not have to wonder
 which was forgotten. What actually bounds this graph is Python: `Budgets`,
 applied per reader, and a graph with no filesystem tool on any model for a
 guard to intercept.
+
+## The page labels are a vote (`label_vote.py`)
+
+Everything downstream hangs on what each page IS, and until this train one
+voter decided it — planlens' rules — while an agent loop costing about $0.45 a
+report checked every page afterwards. The corpus run of 2026-09-20 (ledger runs
+7 and 10) says both halves of that were wrong:
+
+| | in sample | honest blind | about |
+|---|---|---|---|
+| rules | 0.908 | 0.767 | free |
+| rules + the label review | 0.916 | 0.850 | $0.45 a report |
+| vision, sheet mode, cheap tier | 0.655 | 0.867 | $0.05 a report |
+
+The two cheap voters are **complementary by label class** rather than one being
+better. The rules own `appended_report` (494 in-sample pages the vision pass
+never once emits), `other` (216, the same) and `calculation` (1,009, of which
+vision misses 41 %); vision owns `plan`, `profile`, `photos`, `cover`, `toc`
+and `figure` recall outright. And the review breaks nearly as many labels as it
+fixes on the reports its prompt was tuned against, while earning its money on
+the ones it has never seen.
+
+So: **three cheap voters label every page, and the expensive look goes where
+they split.** This is the owner's own standing direction of 2026-09-18 — *"if
+multiple methods say different things, it could trigger an extra review …
+would be good to have confidence values associated with the classifications and
+data extractions."*
+
+**The voters.**
+
+1. **The rules** — planlens' `page_roles`, with its own per-page confidence.
+   Free, deterministic, and it labels every page.
+2. **Vision** — one pass over the pages as PICTURES on the cheap tier
+   (`vision_labels.classify_pages_by_vision`, `sheet` mode by default: one
+   call per contact sheet of six pages), with its own per-page confidence.
+3. **The printed form** — `log_templates.recognise_pages` where a private
+   fingerprint file is in force, which is not the default state. It recognises
+   the FORM, not the label: a fingerprint says "this came off that firm's
+   boring-log template" and never which of the four exploration labels the page
+   should carry. So it votes for the CLASS, and the whole of what that buys is
+   one rule — where a fingerprint claims a page and the policy's own answer is
+   not one of the four log labels, a log label either of the other two voters
+   gave wins; where neither offered one, the answer stands and the page counts
+   as a disagreement.
+
+**The policies** (`label_policy`, combined by `label_vote.combine`):
+
+| policy | what it does |
+|---|---|
+| `structural` (default) | vision everywhere except `appended_report`, `other`, `calculation` and `lab_test`, which the rules own. It learns nothing — it is the ledger's reading written down — which is what makes it the one to beat. |
+| `confidence` | whichever voter said so more confidently, ties to the rules. |
+| `trust` | whichever voter a per-label trust table favours for the class the RULES put the page in. Needs a table learned in sample, which `stages=("vote",)` writes to `vote/trust_table.json`; **without one it falls back to `structural` and prints a note.** |
+| `rules` | the rules' label, always. No vision pass is called at all. This reproduces exactly what the pipeline did before the vote. |
+
+**What the review is given** (`review_mode`):
+
+| mode | what it sees |
+|---|---|
+| `disagreements` (default) | ONLY the pages the voters split on, plus two either side for context, and the outline as before. Its tool-call budget is `max(20, 0.5 × split pages)` instead of `max(60, 0.25 × pages)`. Its tools are NOT narrowed — an agent that follows a hunch two pages further is allowed to, and a change it makes on a page the voters agreed on is applied and flagged in QA. |
+| `all` | every page, which is what every run before this train did. |
+| `none` | no review; the vote's labels stand. |
+
+**What the record carries.** `ReportRecord.page_labels` is one `PageLabel` per
+page: the label the work items were built from, its confidence (the highest
+among the voters that gave that label), `agreed`, the policy, whether it was
+settled by the `vote` or by the `review`, and every voter's own label and
+confidence — the template voter's entry carrying its `family` and an empty
+label, because that is what it actually claimed. Every split the review did not
+settle is a `QAEntry(kind="label_disagreement")` naming both voters and both
+confidences. The graph also writes `labels.json` beside `vision.json` and
+`review.json` in the report's folder: the policy, the mode, the split pages,
+what the review changed, and what each pass cost.
 
 ## Why the two label passes exist
 
@@ -842,7 +923,7 @@ results = score_on_cluster(
     oos_labels   = "/Volumes/<your volume>/report_ingest/oos_labels.json",
     truth_dir    = "/Volumes/<your volume>/report_ingest/truth",   # holds logs/ lab/ narrative/
     di_dir       = "/Volumes/<your volume>/report_di",
-    out_dir      = "/tmp/report_ingest_522",                  # /tmp or a Volume, never /Workspace
+    out_dir      = "/tmp/report_ingest_522",                  # the working folder; the durable copy is below
     sharepoint   = fh_sp_client,            # the durable copy; see "Where the output goes"
     prompter     = fh_prompter,
     model        = "funhouse-gpt-high",     # every reader, on the tier the app runs on
@@ -902,11 +983,13 @@ both. Then:
 |---|---|
 | `sharepoint` | the live `fh_sp_client`, its `.file_manager`, or the app's `SharePointStore`. All three are accepted, because remembering which one this argument wants is how a run ends up mirroring nowhere. |
 | `sharepoint_folder` | the folder the run folders sit under. Default `GeotechStaffEngineer/report_ingest`, which is where the 2026-09-20 sheet-mode run was copied by hand. |
-| `durable_dir` | your workspace folder under `geotech_app/`, which persists; never `/tmp` and never DBFS (the owner's rule, 2026-09-20). The run's name is appended and the SharePoint prefix is not, so a run lands at `<durable_dir>/report_ingest_522/`. |
+| `durable_dir` | your workspace folder under `geotech_app/`, which persists; never `/tmp` (the owner's rule, 2026-09-20). The run's name is appended and the SharePoint prefix is not, so a run lands at `<durable_dir>/report_ingest_522/`. A `durable_dir` whose own name ALREADY is the run's name is not nested inside itself: `.../results` and `.../results/report_ingest_522` both put the run at `.../results/report_ingest_522`. |
 
-`out_dir` still refuses `/Workspace`. `durable_dir` does not: whether a path
-is durable on this cluster is your finding, not this package's, and the one
-place a guess would be expensive is the one it is guessing about.
+`out_dir` refuses nothing. A workspace path is allowed — that folder is one of
+the two places that keep things here — and gets a printed note saying that a
+local `out_dir` with `durable_dir=` pointing at the workspace folder writes the
+same files and syncs them in one pass, which is the shape that works when a run
+writes one small file per report per stage.
 
 **The mirror sends the WHOLE `out_dir`**, which is the point — and that means
 `runs/` and `triage/`, whose reasons and rationales can name a firm, a project
@@ -1406,8 +1489,9 @@ the same tables, with `--vision-dir` and `--append`.
 ### Ingesting whole reports and scoring the record (`stages=("ingest",)`)
 
 The stage that makes what the app would make. For each report in the chosen
-sets it runs `graph.ingest_report` end to end — triage, the label review, the
-work items, the three readers on their floors, the reconciler, the writers —
+sets it runs `graph.ingest_report` end to end — triage, the page-label VOTE,
+the label review over the pages the voters split on, the work items, the three
+readers on their floors, the reconciler, the writers —
 into `out_dir/ingest/<ID>/`: `report.record.json`, `report.summary.md`,
 `report.page.md`, `report.diggs.xml` with both gates run, `qa.json` (the
 record's QA list alone), `run.json` (the counts), and the per-item files under
@@ -1439,12 +1523,27 @@ results = score_on_cluster(
     stages       = ("ingest",),
     sets         = ("insample", "oos_open", "oos_blind"),
     review_dir   = HOME + "/results/520_labels",    # a saved label run to reuse; default is this run's own runs/
+    label_policy = "structural",                    # how the page voters are combined
+    review_mode  = "disagreements",                 # which pages the review is shown
     log_budget   = 6, lab_budget = 4, narrative_budget = 8,
     max_reports  = 2,                               # drop this line after the first run
 )
 ```
 
-`RESULTS.md` gains `# Ingest: the record and its exports`: per report — pages,
+`label_policy` and `review_mode` are the two parameters worth knowing, and
+they are the production graph's own — see "The page labels are a vote" below.
+The defaults are the ones above; `label_policy="rules"` with
+`review_mode="all"` reproduces exactly what the pipeline did before the vote,
+so the two can be run against each other on the same reports.
+
+`RESULTS.md` gains `# Ingest: the record and its exports`, and inside it
+**`## The page labels: the vote, and what went to the review`**: per report the
+pages voted on, how many the voters SPLIT on and what fraction that is, how
+many the review touched, how many of those were pages the voters had agreed on,
+how many splits are still unsettled, and — where the report has hand labels —
+the final labels' strict accuracy beside the rules' alone, by the same scorer
+the `labels` and `vision_labels` stages use. The split fraction is the number
+a production run can compute with no hand labels at all. Then, per report — pages,
 the workflow triage chose, investigations by kind, samples, driven records, lab
 tests by kind, narrative fields answered / null (37 asked), QA entries as
 `disagreement / partial / out_of_range` (the two voters splitting; what a reader
@@ -1466,9 +1565,12 @@ firm, a project or a person.
 
 Notes that matter:
 
-- **`out_dir` must be `/tmp` or a Volume.** A `/Workspace` path is refused up
-  front rather than discovered at the end, because those writes are
-  non-durable and permission-blocked here (`docs/DATABRICKS_INSTALL.md`).
+- **`out_dir` is the working folder and nothing is refused.** Local disk is
+  the sensible place for it, because a run writes one small file per report
+  per stage. A workspace path is ALLOWED — the workspace folder is one of the
+  two places that keep things here — and gets a printed note saying that a
+  local `out_dir` with `durable_dir=` pointing at the workspace folder writes
+  the same files and syncs them in one pass.
 - **It resumes.** Each report writes its run file as it finishes and a later
   call skips any report that already has one. A detached notebook costs the
   reports that had not finished, not the ones that had. Pass `redo=True` to

@@ -53,6 +53,7 @@ __all__ = [
     "MAX_EVIDENCE", "PHRASE_RATIO", "COLUMN_RATIO", "GROUP_WEIGHTS",
     "SLOT_NAMES",
     "load_templates", "templates_beside", "use_templates", "active_templates",
+    "resolve_templates",
     "recognise", "recognise_pages", "column_names", "ledger_note",
     "annotate_ledger", "page_text",
 ]
@@ -279,6 +280,19 @@ def use_templates(source: Any) -> List[Fingerprint]:
 def active_templates() -> List[Fingerprint]:
     """The fingerprints in force, which is usually none."""
     return list(_ACTIVE)
+
+
+def resolve_templates(templates: Any = None,
+                      templates_path: Any = None) -> List[Fingerprint]:
+    """The fingerprints a caller means, whichever way it said it.
+
+    A path, an iterable of :class:`Fingerprint` or of plain dicts, or
+    ``None`` for whatever :func:`use_templates` put in force -- which is
+    nothing unless something set it. The public spelling of what every entry
+    point here does with its own two arguments, for a caller (the ingest
+    graph) that has one of them and wants the same answer.
+    """
+    return _resolve(templates, templates_path)
 
 
 def _resolve(templates: Any, templates_path: Any) -> List[Fingerprint]:

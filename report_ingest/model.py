@@ -50,7 +50,8 @@ __all__ = [
     "Layer", "Sample",
     "SPT", "WaterLevel", "LabTest", "Investigation", "NarrativeFacts",
     "GeneralFacts", "NaturalHazardFacts", "CalcEntry", "QAEntry",
-    "DocumentFacts", "ReportRecord", "to_si", "si_numbers",
+    "DocumentFacts", "LabelVote", "PageLabel", "ReportRecord", "to_si",
+    "si_numbers",
     "record_json_schema",
     # the narrative (WP4): the owner's two schemas and their typed twins
     "Citation", "Mention", "BearingValue", "Stratum",
@@ -412,6 +413,84 @@ class DocumentFacts(BaseModel):
     output_tokens: int = Field(default=0, ge=0)
     dollars: float = Field(default=0.0, ge=0.0)
     seconds: float = Field(default=0.0, ge=0.0)
+    #: How the page labels were settled. See :mod:`report_ingest.label_vote`
+    #: for the policies and :attr:`ReportRecord.page_labels` for the pages.
+    label_policy: str = Field(
+        default="",
+        description="which policy combined the voters: trust, structural, "
+                    "confidence, or rules for the rules alone")
+    label_split_pages: int = Field(
+        default=0, ge=0,
+        description="pages the voters did not agree on")
+    review_mode: str = Field(
+        default="",
+        description="which pages the label review was given: disagreements, "
+                    "all, or none")
+    review_changed: int = Field(
+        default=0, ge=0,
+        description="pages the label review moved")
+
+
+# ---------------------------------------------------------------------------
+# what each page IS, and who said so
+# ---------------------------------------------------------------------------
+
+class LabelVote(BaseModel):
+    """One voter's view of one page.
+
+    ``label`` is a page label for the rules and for the vision pass. It is
+    EMPTY for the ``template`` voter, which recognises the printed FORM
+    rather than the label -- its claim is ``family``, the firm whose log
+    template the page came off, and what that claim is worth is the template
+    rule in :func:`report_ingest.label_vote.combine`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    voter: str = Field(
+        description="rules (planlens), vision (a model looking at the page), "
+                    "or template (the printed form it was recognised as)")
+    label: str = Field(
+        default="",
+        description="the page label this voter gave; empty for the template "
+                    "voter, which names a form and not a label")
+    confidence: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="how sure this voter was, 0 to 1")
+    family: str = Field(
+        default="",
+        description="the template voter's claim: whose printed form this is")
+
+
+class PageLabel(BaseModel):
+    """What one page IS, how sure the record is, and who said so.
+
+    The label the work items were built from, after the label review has had
+    its say. ``agreed`` is the honest signal a production run can compute
+    without any hand labels: the cheap voters concurring is what makes a
+    label trustworthy, and their splitting is what sends the page to the
+    expensive look.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    page: int = Field(description="0-based PDF page index", ge=0)
+    label: str = Field(description="what the record took this page to be")
+    confidence: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="the highest confidence among the voters that gave this "
+                    "label")
+    agreed: bool = Field(
+        default=True,
+        description="did every voter with a view concur")
+    policy: str = Field(
+        default="",
+        description="the policy that settled it: trust, structural, "
+                    "confidence or rules")
+    settled_by: str = Field(
+        default="vote",
+        description="vote, or review where the label review moved the page")
+    voters: List[LabelVote] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -1677,8 +1756,8 @@ class CalcEntry(BaseModel):
 #: the owner asked for: a place where methods say different things, so a
 #: reviewer is sent to look.
 QAKind = Literal[
-    "skipped", "partial", "conflict", "disagreement", "unreadable",
-    "unconverted", "count_mismatch", "out_of_range", "note"]
+    "skipped", "partial", "conflict", "disagreement", "label_disagreement",
+    "unreadable", "unconverted", "count_mismatch", "out_of_range", "note"]
 
 
 class QAEntry(BaseModel):
@@ -1713,6 +1792,11 @@ class ReportRecord(BaseModel):
 
     schema_version: str = Field(default=SCHEMA_VERSION)
     document: DocumentFacts = Field(default_factory=DocumentFacts)
+    page_labels: List[PageLabel] = Field(
+        default_factory=list,
+        description="what each page IS, with its confidence and every voter "
+                    "that had a view; empty on a record written before the "
+                    "page labels became a vote")
     project: Project = Field(default_factory=Project)
     general: GeneralFacts = Field(default_factory=GeneralFacts)
     natural_hazards: NaturalHazardFacts = Field(

@@ -28,16 +28,17 @@ NO CREDENTIAL IS READ OR STORED. Authentication is whatever the passed-in
 ``fh_prompter`` was built with. Nothing here touches an environment
 variable, a key file or a secret scope.
 
-WHERE THE OUTPUT GOES. ``out_dir`` must be ``/tmp`` or a Volume. Writes to
-``/Workspace`` are non-durable and permission-blocked on this cluster
-(``docs/DATABRICKS_INSTALL.md``), and a run that appears to succeed and
-leaves nothing behind is the worst outcome, so a ``/Workspace`` path is
-refused up front rather than discovered at the end.
+WHERE THE OUTPUT GOES. ``out_dir`` is the working folder and local disk is
+the sensible place for it: a run writes one small file per report per stage.
+No path is refused -- a workspace ``out_dir`` is allowed and gets a printed
+note (:func:`out_dir_note`), because the workspace folder is one of the two
+places that keep things on this cluster.
 
 AND IT IS MIRRORED SOMEWHERE THAT SURVIVES. ``/tmp`` does not survive a
 cluster restart: the first full run's 38 label reviews, about $17 of model
 calls, were wiped by one. Pass ``sharepoint=fh_sp_client`` (or
-``durable_dir="/Volumes/..."``) and every run file is copied to
+``durable_dir`` pointing at a workspace folder) and every run file is copied
+to
 ``<sharepoint_folder>/<the out_dir's own name>`` as soon as it is written,
 and copied BACK into a wiped ``out_dir`` at the start of the next call. A
 mirror failure prints a warning and never stops the run; see
@@ -91,7 +92,8 @@ from report_ingest.vote import (
     vision_confidences,
 )
 
-__all__ = ["score_on_cluster", "SET_NAMES", "STAGE_NAMES"]
+__all__ = ["score_on_cluster", "SET_NAMES", "STAGE_NAMES",
+           "out_dir_note"]
 
 
 def _saved_failure(blob: Dict[str, Any]) -> Optional[str]:
@@ -142,19 +144,35 @@ DEFAULT_OPEN_LOGS: Tuple[str, ...] = ("R36", "R37", "R06", "R07", "R15",
 #: The same, for the laboratory sheets.
 DEFAULT_OPEN_LAB: Tuple[str, ...] = ("R36", "R28", "R17", "R06")
 
-#: Paths a run must not write to. A Workspace write looks like it worked and
-#: then is not there.
-_REFUSED_PREFIXES = ("/Workspace", "/dbfs/Workspace", "dbfs:/Workspace")
+#: Prefixes an ``out_dir`` gets a printed note about. NOT a refusal: see
+#: :func:`out_dir_note`.
+_WORKSPACE_PREFIXES = ("/Workspace", "/workspace")
 
 
-def _check_out_dir(out_dir: Path) -> None:
+def out_dir_note(out_dir: Any) -> Optional[str]:
+    """A line to print about where this run is writing, or ``None``.
+
+    NOTHING IS REFUSED HERE ANY MORE. Until this train a ``/Workspace``
+    ``out_dir`` raised, on the strength of one observed write that appeared
+    to succeed and left nothing behind. The owner's own experience
+    supersedes that, 2026-09-20: the workspace folder under ``geotech_app/``
+    and SharePoint are the two places that KEEP things here, so refusing to
+    write to a workspace folder was refusing the durable option.
+
+    What is left is a note. A run writes one small file per report per
+    stage, and a workspace folder is a poor place for hundreds of them, so
+    the shape that works is a working ``out_dir`` on local disk with a
+    workspace folder or SharePoint as the ``durable_dir`` / ``sharepoint``
+    mirror.
+    """
     text = str(out_dir).replace("\\", "/")
-    for bad in _REFUSED_PREFIXES:
-        if text.startswith(bad):
-            raise ValueError(
-                f"out_dir {out_dir} is under {bad}, where writes are "
-                f"non-durable and permission-blocked on this cluster. Use "
-                f"/tmp/... or a Volume path (/Volumes/...).")
+    if text.startswith(_WORKSPACE_PREFIXES):
+        return (f"  note: out_dir {out_dir} is a workspace folder, which is "
+                f"durable here but takes one small file per report per "
+                f"stage. A local out_dir with durable_dir= pointing at a "
+                f"workspace folder writes the same files and syncs them in "
+                f"one pass.")
+    return None
 
 
 class _MirrorSync:
@@ -385,7 +403,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      vision_dirs: Optional[Sequence[Any]] = None,
                      review_dir: Any = None,
                      templates_path: Any = None,
-                     narrative_front_pages: int = 50
+                     narrative_front_pages: int = 50,
+                     label_policy: str = "structural",
+                     review_mode: str = "disagreements",
+                     ingest_vision_mode: str = "sheet",
+                     trust_table: Any = None
                      ) -> Dict[str, Any]:
     """Run the rules, triage and the label review over the corpus, and score.
 
@@ -458,7 +480,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         (or in ``review_dir``) rather than paying for them again, resumable
         per report and per work item, and scored against whatever hand
         truth ``truth_dir`` holds for that report, so the stage doubles as
-        the whole-pipeline score.
+        the whole-pipeline score. Its page labels are a VOTE: see
+        ``label_policy`` and ``review_mode`` below, and the
+        "The page labels" section of its RESULTS block, which prints how
+        many pages the voters split on and what the final labels scored
+        beside the rules alone.
     truth_dir
         ONE truth root for every scoring stage: a folder holding ``logs/``,
         ``lab/`` and ``narrative/``, named after the stages that read them.
@@ -543,6 +569,23 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         runs (``<ID>.json`` holding ``review.final_labels``), defaulting to
         ``out_dir/runs``; the review is a third voter only where it is
         actually there.
+    label_policy, review_mode, ingest_vision_mode, trust_table
+        The ``ingest`` stage's own page vote, and these are the parameters a
+        production run takes. ``label_policy`` combines the rules, the
+        vision pass and the printed form -- ``structural`` by default,
+        ``rules`` to reproduce what the pipeline did before the vote.
+        ``review_mode`` decides which pages the label review is given:
+        ``disagreements`` (the default: only the pages the voters split on,
+        plus two either side), ``all``, or ``none``.
+        ``ingest_vision_mode`` is the mode that pass runs in inside the
+        ingest -- ``sheet``, which is the one the corpus was measured in and
+        costs about $0.05 a report -- kept apart from ``vision_mode`` because
+        the ``vision_labels`` stage is pricing the three modes against each
+        other and the ingest is not. The tier is ``vision_model``.
+        ``trust_table`` is the path the ``vote`` stage writes to
+        (``<run>/vote/trust_table.json``), needed only by
+        ``label_policy="trust"``; without it that policy falls back to
+        ``structural`` and prints a note.
     """
     if prompter is None:
         raise ValueError(
@@ -583,7 +626,9 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
             "'narrative/' folder inside truth_dir. They are private and do "
             "not ship in the wheel.")
     out = Path(out_dir)
-    _check_out_dir(out)
+    note = out_dir_note(out)
+    if note:
+        print(note)
     for sub in ("runs", "triage"):
         (out / sub).mkdir(parents=True, exist_ok=True)
     if "logs" in stages:
@@ -746,7 +791,15 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                              log_budget=log_budget, lab_budget=lab_budget,
                              narrative_budget=narrative_budget,
                              redo=redo, review_dir=review_dir,
-                             max_total_dollars=max_total_dollars, sync=sync)
+                             max_total_dollars=max_total_dollars,
+                             label_policy=label_policy,
+                             review_mode=review_mode,
+                             vision_model=vision_model,
+                             vision_mode=ingest_vision_mode,
+                             vision_detail=vision_detail,
+                             trust_table=trust_table,
+                             templates_path=templates_path,
+                             oos=oos, mapped=mapped, sync=sync)
         results["ingest"] = ingest
         lines += _render_ingest(ingest)
 
@@ -2448,6 +2501,17 @@ def _run_vote(corpus: Corpus, oos: Dict[str, Dict[int, dict]],
     # The trust table is learned on the IN-SAMPLE reports and nothing else.
     learned_on = [rid for rid in _set_ids("insample", corpus) if rid in votes]
     table = trust_table([v for rid in learned_on for v in votes[rid]])
+    # And it is SAVED, because the production graph's ``trust`` policy takes
+    # it by path: the stage is where the table can honestly be learned, and
+    # the ingest is where it would be used. Without this file the graph's
+    # ``trust`` falls back to ``structural`` and says so.
+    table_file = out / "vote" / "trust_table.json"
+    table_file.write_text(json.dumps({
+        "date": date.today().isoformat(),
+        "learned_on": list(learned_on),
+        "policy": "trust",
+        "table": table}, indent=2), encoding="utf-8")
+    _sync(sync)
 
     for rid in wanted:
         rows = votes[rid]
@@ -2503,6 +2567,7 @@ def _run_vote(corpus: Corpus, oos: Dict[str, Dict[int, dict]],
         "disputed_dropped": dropped,
         "trust": table,
         "trust_learned_on": list(learned_on),
+        "trust_table_file": str(table_file),
         "policies": list(POLICIES),
         "structural_rules_win": list(STRUCTURAL_RULES_WIN),
         "sets": rows_by_set,
@@ -2910,6 +2975,63 @@ def _score_ingest_record(record: Any, rid: str,
     return out
 
 
+def _ingest_labels(folder: Path, record: Any, rid: str, corpus: Corpus,
+                   oos: Dict[str, Dict[int, dict]],
+                   mapped: Sequence[str]) -> Dict[str, Any]:
+    """What the vote did on one report, and what the labels scored.
+
+    The counts come off the graph's own ``labels.json``; the accuracy comes
+    from the SAME scorer the ``labels`` and ``vision_labels`` stages use, so
+    ``final`` here and ``rules`` there are the same arithmetic over the same
+    hand labels. A report with no hand labels has counts and no accuracy,
+    which is an unmeasured run rather than a failing one.
+    """
+    blob: Dict[str, Any] = {}
+    path = folder / "labels.json"
+    if path.is_file():
+        try:
+            blob = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            blob = {}
+    out: Dict[str, Any] = {
+        "policy": blob.get("policy") or record.document.label_policy,
+        "review_mode": blob.get("review_mode") or record.document.review_mode,
+        "vision_mode": blob.get("vision_mode") or "",
+        "note": blob.get("note") or "",
+        "pages_voted": int(blob.get("pages_voted") or 0),
+        "split": int(blob.get("n_split")
+                     or record.document.label_split_pages or 0),
+        "review_changed": int(blob.get("n_review_changed")
+                              or record.document.review_changed or 0),
+        "review_changed_off_split": int(
+            blob.get("n_review_changed_off_split") or 0),
+        "disagreements_left": sum(1 for e in record.qa
+                                  if e.kind == "label_disagreement"),
+        "cost": dict(blob.get("cost") or {}),
+        "accuracy": None,
+    }
+    hand, alternates, truth = _truth_for(rid, corpus, oos, mapped)
+    if not hand:
+        out["truth"] = truth
+        return out
+    final = {int(p.page): p.label for p in record.page_labels}
+    rules: Dict[int, str] = {}
+    for page_label in record.page_labels:
+        for voter in page_label.voters:
+            if voter.voter == "rules" and voter.label:
+                rules[int(page_label.page)] = voter.label
+    scored: Dict[str, Scores] = {"rules": Scores(), "final": Scores()}
+    for page, label in sorted(hand.items()):
+        alts = tuple(alternates.get(page) or ())
+        scored["rules"].add(label, rules.get(page, "other"), alts)
+        scored["final"].add(label, final.get(page, "other"), alts)
+    out["truth"] = truth
+    out["accuracy"] = {name: s.to_dict()["accuracy"]
+                       for name, s in scored.items()}
+    out["scored_pages"] = scored["final"].n
+    return out
+
+
 def _diggs_verdicts(record: Any, outputs: Dict[str, str]) -> Dict[str, str]:
     """written / validated / read back, off the record's own QA entries."""
     written = "yes" if outputs.get("diggs") else "no"
@@ -2936,6 +3058,15 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                 log_budget: int, lab_budget: int, narrative_budget: int,
                 redo: bool, review_dir: Any = None,
                 max_total_dollars: Optional[float] = None,
+                label_policy: str = "structural",
+                review_mode: str = "disagreements",
+                vision_model: str = "funhouse-gpt-low",
+                vision_mode: str = "sheet",
+                vision_detail: Optional[str] = None,
+                trust_table: Any = None,
+                templates_path: Any = None,
+                oos: Optional[Dict[str, Dict[int, dict]]] = None,
+                mapped: Sequence[str] = (),
                 sync: Optional[Any] = None) -> Dict[str, Any]:
     """The whole pipeline on each report, into ``ingest/<ID>/``.
 
@@ -2944,15 +3075,27 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
     item whose file is already under ``items/``. A saved label run is
     reused for the triage and the review, so a report that went through
     the ``labels`` stage costs only its readers here.
+
+    THE PAGE LABELS ARE A VOTE HERE TOO, on exactly the parameters a
+    production run takes: ``label_policy`` combines the rules, one vision
+    pass on ``vision_model`` and the printed form, and ``review_mode``
+    decides which pages the review is given. The reused review from a
+    ``labels`` run is the WHOLE-REPORT one, so a report that has one keeps
+    it and ``review_mode`` bites on the reports that do not -- which is what
+    makes the comparison between the two worth reading.
     """
     from report_ingest.engine import CostMeter, PrompterEngine
     from report_ingest.graph import Budgets, ingest_report, output_paths
+    from report_ingest.log_templates import load_templates
 
     runs_dir = Path(review_dir) if review_dir is not None else out / "runs"
     if (runs_dir / "runs").is_dir():
         runs_dir = runs_dir / "runs"
-    print(f"  ingest: {len(report_ids)} report(s); model {model}; a saved "
-          f"label run in {runs_dir} is reused where one exists")
+    templates = load_templates(templates_path) if templates_path else None
+    print(f"  ingest: {len(report_ids)} report(s); model {model}, vision "
+          f"{vision_model} ({vision_mode}); label_policy {label_policy}, "
+          f"review_mode {review_mode}; a saved label run in {runs_dir} is "
+          f"reused where one exists")
     present = set(corpus.present_ids())
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
@@ -2982,6 +3125,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
         triage_reused, review_reused = _reuse_label_run(folder, runs_dir, rid)
         meter = CostMeter()
         engine = PrompterEngine(prompter, model, meter=meter)
+        vision_engine = PrompterEngine(prompter, vision_model, meter=meter)
         budgets = Budgets(narrative=narrative_budget, log=log_budget,
                           lab=lab_budget)
         started = time.time()
@@ -2991,7 +3135,14 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             record = ingest_report(doc, engine, out_dir=folder,
                                    budgets=budgets, report_id=rid,
                                    resume=not redo, write=True,
-                                   db_path=out / "ingest" / "reports.db")
+                                   db_path=out / "ingest" / "reports.db",
+                                   label_policy=label_policy,
+                                   review_mode=review_mode,
+                                   vision_engine=vision_engine,
+                                   vision_mode=vision_mode,
+                                   vision_detail=vision_detail,
+                                   trust_table=trust_table,
+                                   templates=templates)
             n_pages = doc.n_pages
         except KeyboardInterrupt:
             print("  interrupted; what is finished is on disk and a later "
@@ -3037,6 +3188,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "workflow": record.document.workflow,
             "triage_reused": triage_reused,
             "review_reused": review_reused,
+            "labels": _ingest_labels(folder, record, rid, corpus,
+                                     oos or {}, mapped),
             "counts": record.counts(),
             "investigations_by_kind": by_kind,
             "lab_by_kind": lab_by_kind,
@@ -3077,6 +3230,9 @@ def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
         "lab_tests": 0, "qa": 0, "investigations_by_kind": {},
         "lab_by_kind": {}, "qa_by_kind": {},
         "narrative_answered": 0, "narrative_null": 0,
+        "labels": {"pages_voted": 0, "split": 0, "review_changed": 0,
+                   "review_changed_off_split": 0, "disagreements_left": 0,
+                   "scored_pages": 0, "modes": {}, "policies": {}},
         "diggs": {"written": 0, "valid": 0, "not_checked": 0, "invalid": 0,
                   "equal": 0, "differs": 0},
         "scores": {"logs": {"found": 0, "total": 0, "n": 0},
@@ -3102,6 +3258,16 @@ def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
         narrative = row.get("narrative") or {}
         totals["narrative_answered"] += int(narrative.get("answered") or 0)
         totals["narrative_null"] += int(narrative.get("null") or 0)
+        labels = row.get("labels") or {}
+        cell = totals["labels"]
+        for key in ("pages_voted", "split", "review_changed",
+                    "review_changed_off_split", "disagreements_left",
+                    "scored_pages"):
+            cell[key] += int(labels.get(key) or 0)
+        for key, where in (("review_mode", "modes"), ("policy", "policies")):
+            name = str(labels.get(key) or "")
+            if name:
+                cell[where][name] = cell[where].get(name, 0) + 1
         diggs = row.get("diggs") or {}
         if diggs.get("written") == "yes":
             totals["diggs"]["written"] += 1
@@ -3156,6 +3322,78 @@ def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
 def _kinds_cell(counts: Dict[str, int]) -> str:
     return ", ".join(f"{n} {kind}" for kind, n in sorted(
         counts.items(), key=lambda kv: (-kv[1], kv[0]))) or "-"
+
+
+def _render_ingest_labels(ingest: Dict[str, Any]) -> List[str]:
+    """What the page vote did inside the ingest, per report and in total.
+
+    The two numbers worth the space are the SPLIT COUNT -- how many pages a
+    production run would send to the expensive look, which it can compute
+    with no hand labels at all -- and, where hand labels exist, the final
+    labels beside the rules alone, which says whether the vote was worth
+    taking.
+    """
+    rows = [r for r in ingest["per_report"] if r.get("labels")]
+    if not rows:
+        return []
+    cell = (ingest["totals"].get("labels") or {})
+    modes = _kinds_cell(cell.get("modes") or {})
+    policies = _kinds_cell(cell.get("policies") or {})
+    out: List[str] = [
+        "", "## The page labels: the vote, and what went to the review", "",
+        f"Policy: {policies}. Review mode: {modes}. A `split` page is one "
+        f"the cheap voters -- planlens' rules, one vision pass over the "
+        f"pages as pictures, and the printed form where a fingerprint file "
+        f"is in force -- did not agree on, and in `disagreements` mode it "
+        f"is the only kind of page the review is shown. `left` is the "
+        f"splits the review did not settle; each is a "
+        f"`label_disagreement` QA entry in that report's `qa.json`, "
+        f"carrying both voters and both confidences.",
+        "", "```",
+        f"{'report':<8}{'pages':>7}{'split':>7}{'split %':>9}"
+        f"{'reviewed':>10}{'off split':>11}{'left':>7}"
+        f"{'rules':>9}{'final':>9}{'scored':>8}"]
+    for r in rows:
+        row = r["labels"]
+        voted = int(row.get("pages_voted") or 0)
+        split = int(row.get("split") or 0)
+        accuracy = row.get("accuracy") or {}
+        out.append(
+            f"{r['id']:<8}{voted:>7}{split:>7}"
+            f"{(f'{100.0 * split / voted:.1f}' if voted else '-'):>9}"
+            f"{int(row.get('review_changed') or 0):>10}"
+            f"{int(row.get('review_changed_off_split') or 0):>11}"
+            f"{int(row.get('disagreements_left') or 0):>7}"
+            f"{_pct(accuracy.get('rules')):>9}"
+            f"{_pct(accuracy.get('final')):>9}"
+            f"{int(row.get('scored_pages') or 0):>8}")
+    voted = int(cell.get("pages_voted") or 0)
+    split = int(cell.get("split") or 0)
+    out += [
+        "",
+        f"{'ALL':<8}{voted:>7}{split:>7}"
+        f"{(f'{100.0 * split / voted:.1f}' if voted else '-'):>9}"
+        f"{int(cell.get('review_changed') or 0):>10}"
+        f"{int(cell.get('review_changed_off_split') or 0):>11}"
+        f"{int(cell.get('disagreements_left') or 0):>7}"
+        f"{'':>9}{'':>9}{int(cell.get('scored_pages') or 0):>8}",
+        "```"]
+    if any((r["labels"].get("accuracy") or {}) for r in rows):
+        out += ["", "`rules` and `final` are strict accuracy over the pages "
+                    "this report has hand labels for -- the rules alone "
+                    "against what the record ended up with -- scored by the "
+                    "same scorer as the `labels` and `vision_labels` "
+                    "stages. A dash is a report with no hand labels, which "
+                    "is unmeasured rather than failing."]
+    else:
+        out += ["", "No hand labels for these reports, so the final labels "
+                    "are unscored; `split` is still the number a production "
+                    "run computes for itself."]
+    notes = sorted({str(r["labels"].get("note") or "") for r in rows
+                    if r["labels"].get("note")})
+    if notes:
+        out += [""] + [f"Note: {note}" for note in notes]
+    return out
 
 
 def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
@@ -3220,6 +3458,8 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
     out += ["", "`narr` is the owner's schema fields answered / left null "
                 "(37 asked). `qa dis/unres/ref` is disagreement / partial / "
                 "out_of_range entries; every kind is in `results.json`."]
+
+    out += _render_ingest_labels(ingest)
 
     totals = ingest["totals"]
     diggs = totals["diggs"]

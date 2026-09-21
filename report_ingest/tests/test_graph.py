@@ -10,6 +10,7 @@ with it.
 
 from __future__ import annotations
 
+import functools
 import json
 
 import pytest
@@ -25,6 +26,9 @@ from report_ingest.narrative_reader import NarrativeReading, ReadCitation
 from report_ingest.tests.fake_engine import FakeEngine
 from report_ingest.tests.narrative_fixtures import build_narrative_report
 from report_ingest.triage import TriageFindings
+from report_ingest.vision_labels import (
+    SHEET_PAGES, VisionPageAnswer, VisionSheetAnswer,
+)
 
 pytest.importorskip("planlens.document.roles")
 
@@ -34,6 +38,56 @@ def pdf(tmp_path_factory):
     path = tmp_path_factory.mktemp("corpus") / "SYN.pdf"
     path.write_bytes(build_narrative_report().pdf)
     return path
+
+
+@functools.lru_cache(maxsize=1)
+def rules_labels():
+    """What planlens' rules call each page of the synthetic report.
+
+    The vision voter's script is built from these, so a test can say "the
+    two voters agree" or "they split on page 10" without hard-coding
+    eighteen labels that planlens is free to improve.
+    """
+    from planlens.document import open_document
+    from planlens.document.roles import page_roles
+
+    doc = open_document(build_narrative_report().pdf, name="SYN")
+    try:
+        return {r.page: r.role for r in page_roles(doc)}
+    finally:
+        doc.close()
+
+
+def _rules_confidence(page: int) -> float:
+    """planlens' own confidence for one page of the synthetic report."""
+    from planlens.document import open_document
+    from planlens.document.roles import page_roles
+
+    doc = open_document(build_narrative_report().pdf, name="SYN")
+    try:
+        return next(r.confidence for r in page_roles(doc) if r.page == page)
+    finally:
+        doc.close()
+
+
+def vision_turns(overrides=None, confidence: float = 0.8):
+    """The vision voter's replies: one per contact sheet of six pages.
+
+    With no overrides it agrees with the rules on every page, which is the
+    ordinary case and the one where the expensive review never runs.
+    """
+    labels = dict(rules_labels())
+    labels.update(overrides or {})
+    pages = sorted(labels)
+    turns = []
+    for start in range(0, len(pages), SHEET_PAGES):
+        chunk = pages[start:start + SHEET_PAGES]
+        turns.append({"final": VisionSheetAnswer(pages=[
+            VisionPageAnswer(page=page, label=labels[page],
+                             confidence=confidence,
+                             reason="what the page looks like")
+            for page in chunk])})
+    return turns
 
 
 def triage_turn(workflow: str = "standard", **over):
@@ -95,11 +149,37 @@ def lab_turn(kind: str = "atterberg", page: int = 12):
         pages_read=[page])}
 
 
-def full_script():
-    """Every call one standard run of the synthetic report makes."""
-    return ([triage_turn()] + review_turns() + [narrative_turn()]
+def reader_turns():
+    """The five readers a standard run of the synthetic report calls."""
+    return ([narrative_turn()]
             + [log_turn("B-1"), log_turn("TP-1", "test_pit")]
             + [lab_turn("atterberg", 12), lab_turn("gradation", 13)])
+
+
+def main_script():
+    """What the READER tier is asked for in a standard run.
+
+    The cluster stage gives the vision voter its own engine on a cheaper
+    tier, so the two scripts are separate there: this one and
+    :func:`vision_turns`.
+    """
+    return [triage_turn()] + reader_turns()
+
+
+def full_script():
+    """Every call one standard run of the synthetic report makes.
+
+    Triage, the vision voter agreeing with the rules on every page, then
+    the readers. NO LABEL REVIEW: the voters agreed everywhere, and in the
+    default ``review_mode="disagreements"`` a report with no split pages
+    never pays for the review at all.
+    """
+    return [triage_turn()] + vision_turns() + reader_turns()
+
+
+def rules_only_script():
+    """The same run with ``label_policy="rules"``: no vision, one review."""
+    return [triage_turn()] + review_turns() + reader_turns()
 
 
 class TestAStandardRun:
@@ -215,7 +295,10 @@ class TestResuming:
         files = sorted(p.name for p in (tmp_path / "items").iterdir())
         assert len(files) == 5               # narrative, two logs, two sheets
         assert (tmp_path / "triage.json").is_file()
-        assert (tmp_path / "review.json").is_file()
+        assert (tmp_path / "vision.json").is_file()
+        assert (tmp_path / "labels.json").is_file()
+        # The voters agreed on every page, so nobody paid for the review.
+        assert not (tmp_path / "review.json").exists()
 
 
 class TestTheWorkflows:
@@ -232,7 +315,7 @@ class TestTheWorkflows:
         assert record.document.workflow == "needs_person"
 
     def test_appendix_only_skips_the_narrative_reader(self, pdf, tmp_path):
-        script = ([triage_turn("appendix_only")] + review_turns()
+        script = ([triage_turn("appendix_only")] + vision_turns()
                   + [log_turn("B-1"), log_turn("TP-1", "test_pit"),
                      lab_turn("atterberg", 12), lab_turn("gradation", 13)])
         engine = FakeEngine(script)
@@ -248,10 +331,7 @@ class TestTheWorkflows:
     def test_a_flagged_anomaly_becomes_a_qa_note(self, pdf, tmp_path):
         script = ([triage_turn(anomalies=["the contents list names an "
                                           "appendix E that is not here"])]
-                  + review_turns() + [narrative_turn(), log_turn("B-1"),
-                                      log_turn("TP-1", "test_pit"),
-                                      lab_turn("atterberg", 12),
-                                      lab_turn("gradation", 13)])
+                  + vision_turns() + reader_turns())
         record = ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
                                report_id="SYN")
 
@@ -263,10 +343,7 @@ class TestTheWorkflows:
             "multi_document",
             bound_together=[{"kind": "appended_prior_report",
                              "pages": "15-18", "title": "Former Owner Study"}])]
-            + review_turns() + [narrative_turn(), log_turn("B-1"),
-                                log_turn("TP-1", "test_pit"),
-                                lab_turn("atterberg", 12),
-                                lab_turn("gradation", 13)])
+            + vision_turns() + reader_turns())
         record = ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
                                report_id="SYN")
 
@@ -278,20 +355,35 @@ class TestTheWorkflows:
 class TestTheBudgets:
 
     def test_the_passes_can_be_turned_off(self, pdf, tmp_path):
-        script = [narrative_turn(), log_turn("B-1"),
-                  log_turn("TP-1", "test_pit"), lab_turn("atterberg", 12),
-                  lab_turn("gradation", 13)]
+        script = reader_turns()
         engine = FakeEngine(script)
         record = ingest_report(pdf, engine, out_dir=tmp_path,
-                               report_id="SYN",
+                               report_id="SYN", label_policy="rules",
                                budgets=Budgets(triage=False, review=False))
 
         assert engine.n_calls == len(script)
         assert record.document.workflow == "standard"
+        assert record.document.label_policy == "rules"
+        assert record.document.review_mode == "none"
         assert not (tmp_path / "triage.json").exists()
+        assert not (tmp_path / "vision.json").exists()
+
+    def test_rules_only_reproduces_the_old_label_path(self, pdf, tmp_path):
+        """``label_policy="rules"`` with the review over the whole report."""
+        script = rules_only_script()
+        engine = FakeEngine(script)
+        record = ingest_report(pdf, engine, out_dir=tmp_path,
+                               report_id="SYN", label_policy="rules",
+                               review_mode="all")
+
+        assert engine.n_calls == len(script)
+        assert not (tmp_path / "vision.json").exists()
+        assert (tmp_path / "review.json").is_file()
+        assert record.document.label_split_pages == 0
+        assert [v.voter for v in record.page_labels[0].voters] == ["rules"]
 
     def test_max_items_stops_the_run_early(self, pdf, tmp_path):
-        engine = FakeEngine([triage_turn()] + review_turns()
+        engine = FakeEngine([triage_turn()] + vision_turns()
                             + [narrative_turn(), log_turn("B-1")])
         record = ingest_report(pdf, engine, out_dir=tmp_path, report_id="SYN",
                                budgets=Budgets(max_items=5))
@@ -303,7 +395,7 @@ class TestTheBudgets:
                                                                tmp_path):
         # The first log's turn is prose rather than a reading, so the log
         # reader raises; everything after it must still be read.
-        script = ([triage_turn()] + review_turns() + [narrative_turn()]
+        script = ([triage_turn()] + vision_turns() + [narrative_turn()]
                   + [{"text": "I cannot read this page."},
                      log_turn("TP-1", "test_pit"),
                      lab_turn("atterberg", 12), lab_turn("gradation", 13)])
@@ -319,11 +411,12 @@ class TestTheBudgets:
 class TestTheLabelReviewChangesWhatIsRead:
 
     def test_a_relabelled_page_changes_the_work_items(self, pdf, tmp_path):
-        # The review moves the photograph page into the laboratory appendix;
-        # a third laboratory sheet then has to be read.
-        script = ([triage_turn()]
+        # The voters SPLIT on page 10 -- the rules call it photos, the
+        # picture calls it a figure -- so the review is shown it, and moves
+        # it into the laboratory appendix; a third sheet then has to be read.
+        script = ([triage_turn()] + vision_turns({10: "figure"})
                   + review_turns([LabelChange(
-                      page=10, from_label="photos", to_label="lab_test",
+                      page=10, from_label="figure", to_label="lab_test",
                       reason="the page is a results sheet, not photographs",
                       evidence="render_page")])
                   + [narrative_turn(), log_turn("B-1"),
@@ -336,3 +429,223 @@ class TestTheLabelReviewChangesWhatIsRead:
 
         assert engine.n_calls == len(script)
         assert len(record.lab_tests) == 3
+        page = next(p for p in record.page_labels if p.page == 10)
+        assert page.label == "lab_test" and page.settled_by == "review"
+
+
+class TestThePageVote:
+    """Three cheap voters label every page, and the record says who said what."""
+
+    def test_the_record_carries_a_label_per_page_with_its_voters(self, pdf,
+                                                                 tmp_path):
+        record = ingest_report(pdf, FakeEngine(full_script()),
+                               out_dir=tmp_path, report_id="SYN")
+
+        assert len(record.page_labels) == 22
+        page = record.page_labels[7]
+        assert page.model_dump() == {
+            "page": 7,
+            "label": rules_labels()[7],
+            "confidence": page.confidence,
+            "agreed": True,
+            "policy": "structural",
+            "settled_by": "vote",
+            "voters": [
+                {"voter": "rules", "label": rules_labels()[7],
+                 "confidence": page.voters[0].confidence, "family": ""},
+                {"voter": "vision", "label": rules_labels()[7],
+                 "confidence": 0.8, "family": ""},
+            ],
+        }
+        assert 0.0 < page.confidence <= 1.0
+
+    def test_the_document_block_says_how_the_labels_were_settled(self, pdf,
+                                                                 tmp_path):
+        record = ingest_report(pdf, FakeEngine(full_script()),
+                               out_dir=tmp_path, report_id="SYN")
+
+        assert record.document.label_policy == "structural"
+        assert record.document.review_mode == "disagreements"
+        assert record.document.label_split_pages == 0
+        assert record.document.review_changed == 0
+
+    def test_a_split_the_review_does_not_settle_becomes_a_qa_entry(
+            self, pdf, tmp_path):
+        # The voters split on page 10 and the review changes nothing.
+        script = ([triage_turn()] + vision_turns({10: "figure"})
+                  + review_turns() + reader_turns())
+        record = ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
+                               report_id="SYN")
+
+        (entry,) = [e for e in record.qa if e.kind == "label_disagreement"]
+        assert entry.pages == [10]
+        assert entry.values == [
+            f"rules {rules_labels()[10]} (%.2f)" % _rules_confidence(10),
+            "vision figure (0.80)"]
+        assert "did not agree" in entry.detail
+        page = next(p for p in record.page_labels if p.page == 10)
+        assert page.agreed is False and page.label == "figure"
+
+    def test_the_vote_can_change_a_label_with_no_review_at_all(self, pdf,
+                                                              tmp_path):
+        script = [triage_turn()] + vision_turns({10: "figure"}) \
+            + reader_turns()
+        record = ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
+                               report_id="SYN", review_mode="none")
+
+        page = next(p for p in record.page_labels if p.page == 10)
+        assert page.label == "figure" and page.settled_by == "vote"
+        assert record.document.review_mode == "none"
+        assert not (tmp_path / "review.json").exists()
+        # The split is still recorded, so a reviewer of the record sees it.
+        assert record.document.label_split_pages == 1
+        assert any(e.kind == "label_disagreement" for e in record.qa)
+
+
+class TestWhatTheReviewIsShown:
+
+    def _brief(self, engine):
+        """The words the review's first call carried."""
+        for call in engine.calls:
+            if call["tools"] and "read_page" in call["tools"]:
+                return call["messages"][0]["content"][0]["text"]
+        raise AssertionError("the review never ran")
+
+    def test_disagreements_mode_sends_the_split_pages_and_their_neighbours(
+            self, pdf, tmp_path):
+        script = ([triage_turn()] + vision_turns({10: "figure"})
+                  + review_turns() + reader_turns())
+        engine = FakeEngine(script)
+        ingest_report(pdf, engine, out_dir=tmp_path, report_id="SYN")
+
+        brief = self._brief(engine)
+        head, ledger = brief.split("THE PAGE LEDGER:")
+        assert sorted({int(line[1:4]) for line in ledger.splitlines()
+                       if line.startswith("p0")}) == [8, 9, 10, 11, 12]
+        assert "you are NOT being asked about all of them" in head
+        assert "THE PAGES THE LABELLERS SPLIT ON" in head
+        # The split page is named, with what each voter said about it.
+        (line,) = [row for row in head.splitlines() if row.startswith("p010")]
+        assert "vision says figure" in line and "rules says" in line
+
+    def test_the_budget_scales_with_the_split_and_not_the_report(self, pdf,
+                                                                 tmp_path):
+        from report_ingest.label_review import budget_for, budget_for_split
+
+        script = ([triage_turn()] + vision_turns({10: "figure"})
+                  + review_turns() + reader_turns())
+        engine = FakeEngine(script)
+        ingest_report(pdf, engine, out_dir=tmp_path, report_id="SYN")
+
+        saved = json.loads((tmp_path / "review.json")
+                           .read_text(encoding="utf-8"))
+        assert saved["budget"] == budget_for_split(5) == 20
+        assert saved["budget"] < budget_for(22)
+        assert saved["asked_pages"] == [8, 9, 10, 11, 12]
+
+    def test_all_mode_shows_the_whole_report_and_the_old_budget(self, pdf,
+                                                               tmp_path):
+        from report_ingest.label_review import budget_for
+
+        script = [triage_turn()] + vision_turns() + review_turns() \
+            + reader_turns()
+        engine = FakeEngine(script)
+        ingest_report(pdf, engine, out_dir=tmp_path, report_id="SYN",
+                      review_mode="all")
+
+        brief = self._brief(engine)
+        assert "NOT being asked about all of them" not in brief
+        saved = json.loads((tmp_path / "review.json")
+                           .read_text(encoding="utf-8"))
+        assert saved["budget"] == budget_for(22) == 60
+        assert saved["asked_pages"] == []
+
+    def test_a_change_on_a_page_the_voters_agreed_on_is_applied_and_flagged(
+            self, pdf, tmp_path):
+        """The agent wandered. It may be right, so the change stands -- loudly."""
+        script = ([triage_turn()] + vision_turns({10: "figure"})
+                  + review_turns([LabelChange(
+                      page=3, from_label="narrative", to_label="toc",
+                      reason="it is a contents list",
+                      evidence="read_page")])
+                  + reader_turns())
+        record = ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
+                               report_id="SYN")
+
+        page = next(p for p in record.page_labels if p.page == 3)
+        assert page.label == "toc" and page.settled_by == "review"
+        (note,) = [e for e in record.qa
+                   if e.where == "labels.page3" and e.kind == "note"]
+        assert "not one of the pages the review was asked about" in note.detail
+
+
+class TestTheTrustPolicy:
+
+    def test_without_a_table_it_falls_back_to_structural_and_says_so(
+            self, pdf, tmp_path, capsys):
+        record = ingest_report(pdf, FakeEngine(full_script()),
+                               out_dir=tmp_path, report_id="SYN",
+                               label_policy="trust")
+
+        assert record.document.label_policy == "structural"
+        printed = capsys.readouterr().out
+        assert "falls back to 'structural'" in printed
+        saved = json.loads((tmp_path / "labels.json")
+                           .read_text(encoding="utf-8"))
+        assert "trust" in saved["note"] and saved["policy"] == "structural"
+
+    def test_with_a_table_it_is_the_policy_that_ran(self, pdf, tmp_path):
+        table = tmp_path / "trust_table.json"
+        table.write_text(json.dumps({"learned_on": ["R36"], "table": {
+            "narrative": {"pages": 9, "rules": 8, "vision": 1,
+                          "winner": "rules"}}}), encoding="utf-8")
+        record = ingest_report(pdf, FakeEngine(full_script()),
+                               out_dir=tmp_path / "run", report_id="SYN",
+                               label_policy="trust", trust_table=table)
+
+        assert record.document.label_policy == "trust"
+        assert all(p.policy == "trust" for p in record.page_labels)
+
+
+class TestTheRunFile:
+
+    def test_labels_json_records_the_mode_the_splits_and_the_cost(self, pdf,
+                                                                  tmp_path):
+        script = ([triage_turn()] + vision_turns({10: "figure"})
+                  + review_turns([LabelChange(
+                      page=10, from_label="figure", to_label="lab_test",
+                      reason="a results sheet", evidence="render_page")])
+                  + [narrative_turn(), log_turn("B-1"),
+                     log_turn("TP-1", "test_pit"),
+                     lab_turn("moisture_content", 10),
+                     lab_turn("atterberg", 12), lab_turn("gradation", 13)])
+        ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
+                      report_id="SYN")
+
+        saved = json.loads((tmp_path / "labels.json")
+                           .read_text(encoding="utf-8"))
+        assert saved["policy"] == "structural"
+        assert saved["review_mode"] == "disagreements"
+        assert saved["vision_mode"] == "sheet"
+        assert saved["split_pages"] == [10] and saved["n_split"] == 1
+        assert saved["n_agreed"] == 21
+        assert saved["review_changed"] == [10]
+        assert saved["n_review_changed_off_split"] == 0
+        assert saved["labels"]["10"] == "lab_test"
+        assert saved["cost"]["vision_paid"] is True
+        assert saved["cost"]["review_paid"] is True
+        assert saved["cost"]["vision"]["calls"] == 4      # 22 pages, 6 a sheet
+        assert saved["cost"]["review"]["calls"] == 2
+
+    def test_a_resumed_run_keeps_the_numbers_and_pays_nothing(self, pdf,
+                                                              tmp_path):
+        ingest_report(pdf, FakeEngine(full_script()), out_dir=tmp_path,
+                      report_id="SYN")
+        empty = FakeEngine([])
+        ingest_report(pdf, empty, out_dir=tmp_path, report_id="SYN")
+
+        assert empty.n_calls == 0
+        saved = json.loads((tmp_path / "labels.json")
+                           .read_text(encoding="utf-8"))
+        assert saved["cost"]["vision_paid"] is False
+        assert saved["cost"]["vision"]["calls"] == 4

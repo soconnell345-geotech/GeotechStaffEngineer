@@ -138,6 +138,13 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
                resume: bool = True,
                max_reports: Optional[int] = None,
                report_ids: Optional[Sequence[str]] = None,
+               label_policy: str = "structural",
+               review_mode: str = "disagreements",
+               vision_engine_factory: Optional[Callable[[], Any]] = None,
+               vision_mode: str = "sheet",
+               vision_detail: Optional[str] = None,
+               trust_table: Any = None,
+               templates: Any = None,
                log: Callable[[str], None] = print) -> FolderRun:
     """Read every PDF in ``folder`` into one library under ``out_dir``.
 
@@ -145,6 +152,14 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
     metered on its own. ``report_ids`` limits the run to those file stems.
     Everything else is the graph's: ``budgets`` are its ceilings and
     ``questions`` are asked of every report in the folder.
+
+    THE PAGE LABELS ARE A VOTE, and the parameters are the graph's own --
+    ``label_policy``, ``review_mode``, ``trust_table`` and ``templates``,
+    documented on :func:`report_ingest.graph.ingest_report`.
+    ``vision_engine_factory`` is called once per report like
+    ``engine_factory`` and should return an engine on a CHEAP tier; without
+    one the vision voter runs on the same engine as everything else, which
+    works and costs more than it needs to.
     """
     from report_ingest.graph import ingest_report
 
@@ -184,7 +199,12 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
                 path, engine_factory(), out_dir=report_out,
                 budgets=budgets, report_id=stem, resume=resume,
                 db_path=db, questions=list(questions or []),
-                di_result=load_di_result(di_dir, stem))
+                di_result=load_di_result(di_dir, stem),
+                label_policy=label_policy, review_mode=review_mode,
+                vision_engine=(vision_engine_factory()
+                               if vision_engine_factory else None),
+                vision_mode=vision_mode, vision_detail=vision_detail,
+                trust_table=trust_table, templates=templates)
         except KeyboardInterrupt:
             log("  interrupted; what is finished is on disk and a later call "
                 "resumes")

@@ -44,7 +44,7 @@ from report_ingest.engine import (
 
 __all__ = [
     "LABEL_DEFINITIONS", "Review", "ReviewFindings", "review_labels",
-    "budget_for", "REVIEW_SYSTEM", "REVIEW_TOOLS",
+    "budget_for", "budget_for_split", "REVIEW_SYSTEM", "REVIEW_TOOLS",
 ]
 
 #: One line per label. The vocabulary is planlens' ``ROLES``; these are the
@@ -112,6 +112,15 @@ PAGE_DPI = 80.0
 #: Floor on the tool-call budget, and how many calls each page buys above it.
 MIN_BUDGET = 60
 BUDGET_PER_PAGE = 0.25
+#: The same pair for a review given only the pages the voters SPLIT on. The
+#: set is a fraction of the report, so a budget sized for the whole document
+#: would not be a budget at all; half a call per split page above a floor of
+#: twenty is a page looked at properly and a few left over for its
+#: neighbours.
+MIN_SPLIT_BUDGET = 20
+SPLIT_BUDGET_PER_PAGE = 0.5
+#: How many pages either side of a split page travel with it, for context.
+SPLIT_CONTEXT = 2
 #: Ceiling on one page's text, so a dense narrative page cannot eat the
 #: context a hundred spot-checks need.
 MAX_PAGE_CHARS = 14000
@@ -120,6 +129,11 @@ MAX_PAGE_CHARS = 14000
 def budget_for(n_pages: int) -> int:
     """Tool calls this review may spend: ``max(60, 0.25 x pages)``."""
     return max(MIN_BUDGET, int(BUDGET_PER_PAGE * int(n_pages)))
+
+
+def budget_for_split(n_split: int) -> int:
+    """The same, over the split pages alone: ``max(20, 0.5 x split pages)``."""
+    return max(MIN_SPLIT_BUDGET, int(SPLIT_BUDGET_PER_PAGE * int(n_split)))
 
 
 # -- the tools --------------------------------------------------------------
@@ -328,6 +342,10 @@ class Review:
     model: str = ""
     cost: Dict[str, Any] = field(default_factory=dict)
     rejected_changes: List[Dict[str, Any]] = field(default_factory=list)
+    #: The pages this review was ASKED about, empty when it was asked about
+    #: the whole report. A change outside the set is still applied -- the
+    #: agent looked and may be right -- and the caller flags it.
+    asked_pages: List[int] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -343,6 +361,7 @@ class Review:
             "stopped_on_budget": self.stopped_on_budget,
             "model_calls": self.model_calls,
             "model": self.model,
+            "asked_pages": list(self.asked_pages),
             "cost": dict(self.cost),
         }
 
@@ -458,8 +477,49 @@ def _weak_spots(roles: Sequence[Any], summaries: Sequence[Any],
     return out
 
 
+def _split_lines(choices: Sequence[Any]) -> List[str]:
+    """One line per split page: who voted what, and how sure they were.
+
+    Labels, page numbers and confidences only -- nothing off the page.
+    """
+    out: List[str] = []
+    for choice in choices or ():
+        if getattr(choice, "agreed", True):
+            continue
+        said: List[str] = []
+        for voter in getattr(choice, "voters", ()) or ():
+            label = getattr(voter, "label", "") or (
+                f"a {getattr(voter, 'family', '')} log form")
+            said.append(f"{getattr(voter, 'name', '?')} says {label} "
+                        f"({float(getattr(voter, 'confidence', 0.0) or 0.0):.2f})")
+        out.append(f"p{int(getattr(choice, 'page', 0)):03d} "
+                   f"currently {getattr(choice, 'label', '')}: "
+                   + "; ".join(said))
+    return out
+
+
+def _line_page(line: Any) -> Optional[int]:
+    """The page a ``pNNN ...`` line is about, or ``None`` for a heading."""
+    head = str(line).split(" ", 1)[0]
+    if head.startswith("p") and head[1:].isdigit():
+        return int(head[1:])
+    return None
+
+
+def _ledger_for(lines: Sequence[str], pages: Optional[Sequence[int]]
+                ) -> str:
+    """The page ledger, cut to the pages a targeted review was given."""
+    if pages is None:
+        return "\n".join(lines)
+    want = {int(p) for p in pages}
+    return "\n".join(str(line) for line in lines
+                     if _line_page(line) in (None, *want))
+
+
 def _brief(ledger: str, outline_text: str, profile: Any,
-           weak: Sequence[str], budget: int, n_pages: int) -> str:
+           weak: Sequence[str], budget: int, n_pages: int,
+           asked: Optional[Sequence[int]] = None,
+           split: Sequence[str] = ()) -> str:
     vocab = "\n".join(f"  {name}: {text}"
                       for name, text in LABEL_DEFINITIONS.items())
     profile_text = (json.dumps(profile.to_dict(), indent=2, default=str)
@@ -468,9 +528,31 @@ def _brief(ledger: str, outline_text: str, profile: Any,
     weak_text = "\n".join(weak) if weak else (
         "none: every page named itself and the rules were confident "
         "throughout. Still walk the contact sheets.")
-    return "\n".join([
-        f"This document has {n_pages} pages. Your tool-call budget is "
-        f"{budget}.",
+    if asked is None:
+        head = [f"This document has {n_pages} pages. Your tool-call budget "
+                f"is {budget}."]
+        flagged = ["THE RULES' WEAK SPOTS: CHECK THESE FIRST", weak_text, "",
+                   "THE PAGE LEDGER, ONE LINE PER PAGE"]
+    else:
+        head = [
+            f"This document has {n_pages} pages and you are NOT being asked "
+            f"about all of them. Two automatic labellers read every page and "
+            f"disagreed about {len(split)}; those are your pages. The ledger "
+            f"below holds them and their immediate neighbours, and the "
+            f"neighbours are there as CONTEXT, not as work -- the labellers "
+            f"agreed about those. Settle the disagreements and stop. The "
+            f"instruction below to walk every contact sheet does NOT apply "
+            f"when you are given a page list like this one: your budget is "
+            f"sized for these pages, not for the report. Your tool-call "
+            f"budget is {budget}.",
+            "",
+            "THE PAGES THE LABELLERS SPLIT ON: THESE ARE THE JOB",
+            "\n".join(split) or "none",
+        ]
+        flagged = ["WHAT THE RULES WERE UNSURE OF, AMONG THOSE PAGES",
+                   weak_text, "",
+                   "THE PAGE LEDGER: THE SPLIT PAGES AND THEIR NEIGHBOURS"]
+    return "\n".join(head + [
         "",
         "THE LABEL VOCABULARY",
         vocab,
@@ -481,22 +563,31 @@ def _brief(ledger: str, outline_text: str, profile: Any,
         "WHAT THE DOCUMENT PRINTS ABOUT ITSELF",
         outline_text,
         "",
-        "THE RULES' WEAK SPOTS: CHECK THESE FIRST",
-        weak_text,
-        "",
-        "THE PAGE LEDGER, ONE LINE PER PAGE",
-        ledger,
-    ])
+    ] + flagged + [ledger])
 
 
 def review_labels(doc, roles=None, outline=None, profile=None, budget=None, *,
-                  engine: Engine, max_model_calls: int = 60) -> Review:
+                  engine: Engine, max_model_calls: int = 60,
+                  pages: Optional[Sequence[int]] = None,
+                  choices: Optional[Sequence[Any]] = None) -> Review:
     """Run pass 0c over one open document and return the reviewed labels.
 
     ``budget`` is the tool-call ceiling; it defaults to
-    :func:`budget_for` of the page count. ``max_model_calls`` is a
+    :func:`budget_for` of the page count, or to :func:`budget_for_split` of
+    however many pages ``pages`` names. ``max_model_calls`` is a
     belt-and-braces stop on the loop itself, so a model that answers without
     spending tools cannot spin.
+
+    ``pages`` NARROWS THE JOB. Given a page list -- in production, the pages
+    the cheap voters split on plus two either side -- the brief says so, the
+    weak-spot list and the page ledger are cut to those pages, and the
+    prompt tells the model which of them are the disagreements and which are
+    context. The TOOLS are not narrowed: an agent that follows a hunch two
+    pages further is allowed to, and the caller flags what it changed
+    outside the set rather than this function refusing it. ``choices`` are
+    the per-page votes (anything with ``page``, ``label``, ``agreed`` and
+    ``voters``), printed in the brief so the model can see what the split
+    actually was.
     """
     from planlens.document.roles import document_outline, page_ledger, page_roles
     from report_ingest.triage import outline_text as _outline_text
@@ -505,16 +596,23 @@ def review_labels(doc, roles=None, outline=None, profile=None, budget=None, *,
         roles = page_roles(doc)
     if outline is None:
         outline = document_outline(doc)
+    asked = None if pages is None else sorted({int(p) for p in pages})
     if budget is None:
-        budget = budget_for(doc.n_pages)
+        budget = (budget_for(doc.n_pages) if asked is None
+                  else budget_for_split(len(asked)))
     budget = int(budget)
 
     summaries = list(doc.page_map())
     rules_labels = {r.page: r.role for r in roles}
     outline_text = _outline_text(outline)
     weak = _weak_spots(roles, summaries, bool(outline.no_dividers))
-    brief = _brief("\n".join(page_ledger(doc, roles)), outline_text, profile,
-                   weak, budget, doc.n_pages)
+    if asked is not None:
+        want = set(asked)
+        weak = [line for line in weak if _line_page(line) in (None, *want)]
+    split = _split_lines(choices or ())
+    brief = _brief(_ledger_for(page_ledger(doc, roles), asked), outline_text,
+                   profile, weak, budget, doc.n_pages, asked=asked,
+                   split=split)
 
     tools = _Tools(doc, outline_text)
     messages: List[Dict[str, Any]] = [user(text_block(brief))]
@@ -623,4 +721,5 @@ def review_labels(doc, roles=None, outline=None, profile=None, budget=None, *,
         model=final.model or getattr(engine, "name", ""),
         cost=spent,
         rejected_changes=rejected,
+        asked_pages=list(asked or ()),
     )

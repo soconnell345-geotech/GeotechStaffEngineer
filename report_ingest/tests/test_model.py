@@ -95,7 +95,7 @@ class TestRecord:
         # It has to survive the trip a consumer will make it take.
         again = json.loads(json.dumps(schema))
         assert set(again["properties"]) == {
-            "schema_version", "document", "project", "general",
+            "schema_version", "document", "page_labels", "project", "general",
             "natural_hazards", "narrative", "investigations", "lab_tests",
             "calcs", "qa"}
 

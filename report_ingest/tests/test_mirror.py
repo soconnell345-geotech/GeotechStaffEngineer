@@ -287,6 +287,31 @@ class TestTheFilesystemBackend:
         again = mirror.mirror_dir(out, remote)
         assert again["uploaded"] == 0 and again["skipped"] == 3
 
+    def test_a_durable_dir_that_already_names_the_run_is_not_nested_again(
+            self, tmp_path):
+        """Both spellings put the files in the same place.
+
+        ``durable_dir`` gets written as the PARENT (``.../results``) and as
+        this run's own folder (``.../results/521_sheet``), and both mean the
+        same thing. Nesting the second inside itself would make a restore
+        look in an empty folder and the run pay for everything twice.
+        """
+        out = _run_dir(tmp_path)
+        parent = tmp_path / "results"
+        named = tmp_path / "named" / "521_sheet"
+        remote = f"{m.DEFAULT_FOLDER}/{out.name}"
+
+        m.Mirror(durable_dir=parent).mirror_dir(out, remote)
+        m.Mirror(durable_dir=named).mirror_dir(out, remote)
+
+        assert (parent / "521_sheet" / "runs" / "R36.json").is_file()
+        assert (named / "runs" / "R36.json").is_file()
+        assert not (named / "521_sheet").exists()
+
+        wiped = tmp_path / "wiped"
+        back = m.Mirror(durable_dir=named).restore_dir(remote, wiped)
+        assert back["downloaded"] == 3
+
     def test_a_remote_path_outside_the_base_folder_is_used_whole(self,
                                                                  tmp_path):
         durable = tmp_path / "durable"

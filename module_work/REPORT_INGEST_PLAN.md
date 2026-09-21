@@ -370,6 +370,45 @@ and add nothing the rules cannot be taught).
   `qa.json` — reusing a saved label run's review, and scores the record
   against the hand truth with the same scorers. The whole-pipeline score.
 
+### The page labels are a VOTE, and that is the label path now (added after 5.24.0)
+
+**Step 0 of the architecture above -- "planlens: page labels (new)" -- is no
+longer one voter.** The corpus run of 2026-09-20 (ledger runs 7 and 10) showed
+planlens' rules and a cheap vision pass to be complementary by label class
+rather than one being better (rules 0.908 in sample / 0.767 honest blind;
+vision in sheet mode 0.655 / 0.867 at about $0.05 a report; the rules owning
+`appended_report`, `other` and `calculation`, vision owning `plan`, `profile`,
+`photos`, `cover`, `toc` and `figure` recall), and the label review breaking
+nearly as many labels as it fixed on the reports its prompt was tuned against
+while earning its $0.45 on reports it had never seen.
+
+So the label path inside `graph.ingest_report` is now:
+
+```
+0.  planlens rules  ------0a. one vision pass ------ +--> label_vote.combine(policy) --> a label per page
+    (cheap tier, sheet)    |     with its confidence, its voters
+0b. the printed form -----/      and an `agreed` flag
+    (log_templates, where a fingerprint file is in force)
+                                            |
+                                  the pages they SPLIT on
+                                            |
+0c. the label review, given ONLY those pages plus two either side,
+    on a budget of max(20, 0.5 x split pages)
+                                            |
+1.  work items from the settled labels, as before
+```
+
+`label_policy` is `structural` by default and `rules` reproduces the old
+behaviour exactly; `review_mode` is `disagreements` by default, with `all`
+(every page, as before) and `none`. The arithmetic lives in ONE module,
+`report_ingest/label_vote.py`, which the `vote` scoring stage calls too, so a
+policy cannot mean one thing in the measurement and another in production.
+`ReportRecord.page_labels` carries the chosen label, its confidence, every
+voter and the `agreed` flag per page; a split the review does not settle is a
+`QAEntry(kind="label_disagreement")`. This is item 1 of "Disagreement as a
+signal" in `FUTURE_IDEAS.md`, and what is left of it is the cluster run that
+says which policy to keep.
+
 ### Where each piece lives
 
 | Piece | Home | Why |

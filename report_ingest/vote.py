@@ -44,12 +44,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from report_ingest.label_vote import (
+    MISSING, STRUCTURAL_RULES_WIN, Voter, combine as combine_page,
+)
+
 __all__ = [
-    "PageVote", "POLICIES", "STRUCTURAL_RULES_WIN", "agreement", "combine",
-    "trust_table", "required_review_accuracy", "policy_labels",
+    "PageVote", "POLICIES", "STRUCTURAL_RULES_WIN", "MISSING", "agreement",
+    "combine", "trust_table", "required_review_accuracy", "policy_labels",
 ]
 
-#: The three ways of settling a disagreement this module can score.
+#: The three ways of settling a disagreement this module SCORES.
 #:
 #: ``trust``
 #:     believe whichever voter the in-sample trust table favours for the
@@ -60,18 +64,14 @@ __all__ = [
 #:     and it is the policy to beat.
 #: ``confidence``
 #:     believe whichever voter said so more confidently, ties to the rules.
+#:
+#: The arithmetic itself lives in :mod:`report_ingest.label_vote`, which the
+#: production graph uses too, so a policy cannot mean one thing here and
+#: another there. That module also knows a fourth, ``rules`` -- the rules'
+#: label untouched -- which the graph offers so a run can reproduce what the
+#: ingest did before the vote. It is not scored here: the ``rules`` column of
+#: every table below already IS that answer.
 POLICIES: Tuple[str, ...] = ("trust", "structural", "confidence")
-
-#: The labels the rules win on, for the ``structural`` policy. A page is
-#: ``appended_report`` or ``other`` because of where it SITS in the document,
-#: which a picture of it cannot show; ``calculation`` and ``lab_test`` are
-#: printouts and forms that read as tables or narrative when seen alone.
-STRUCTURAL_RULES_WIN: Tuple[str, ...] = ("appended_report", "other",
-                                         "calculation", "lab_test")
-
-#: What a voter's label is taken to be where it has none. The same rule the
-#: label scorer uses: a non-answer is scored, not excused.
-MISSING = "other"
 
 
 @dataclass(frozen=True)
@@ -212,21 +212,22 @@ def trust_table(votes: Iterable[PageVote]) -> Dict[str, Dict[str, Any]]:
 
 def combine(vote: PageVote, policy: str,
             table: Optional[Dict[str, Dict[str, Any]]] = None) -> str:
-    """The label one policy settles on for one page."""
+    """The label one policy settles on for one page.
+
+    ONE COPY OF THE ARITHMETIC. This is
+    :func:`report_ingest.label_vote.combine` over a :class:`PageVote`, and
+    the production graph calls the same function over the same voters -- so
+    what ``structural`` scores here is what ``structural`` does there. This
+    stage has no template voter: it runs off saved run files, and a
+    fingerprint match is not saved in one.
+    """
     if policy not in POLICIES:
         raise ValueError(
             f"unknown policy {policy!r}; the policies are {list(POLICIES)}")
-    if policy == "structural":
-        return vote.rules if vote.rules in STRUCTURAL_RULES_WIN else vote.vision
-    if policy == "confidence":
-        rules_c = float(vote.rules_confidence or 0.0)
-        vision_c = float(vote.vision_confidence or 0.0)
-        return vote.vision if vision_c > rules_c else vote.rules
-    # trust
-    if vote.agree:
-        return vote.rules
-    cell = (table or {}).get(vote.rules)
-    return vote.rules if cell and cell["winner"] == "rules" else vote.vision
+    return combine_page(
+        Voter("rules", vote.rules, vote.rules_confidence),
+        Voter("vision", vote.vision, vote.vision_confidence),
+        policy=policy, trust_table=table, page=vote.page).label
 
 
 def policy_labels(vote: PageVote,

@@ -12,9 +12,18 @@ record and its exports out -- and the pieces it drives are:
     One structured call over the whole-document ledger, the outline, the
     front matter and the first contact sheet. Answers what the document is
     and which workflow it needs.
+``report_ingest.label_vote``
+    The page labels are a VOTE: planlens' rules, one vision pass over the
+    pages as pictures on a cheap tier, and the printed form where a private
+    fingerprint file is in force, combined under one of four policies. One
+    copy of that arithmetic, shared by the production graph and the ``vote``
+    scoring stage. Every page's label carries its confidence, its voters and
+    whether they agreed.
 ``report_ingest.label_review``
-    An agent loop with four tools that checks the rule labels against the
-    report's own account of itself and against the pages themselves.
+    An agent loop with four tools that checks the labels against the
+    report's own account of itself and against the pages themselves. Since
+    the vote it is given ONLY the pages the voters split on, plus two either
+    side -- which is where the measurements say its money is earned.
 ``report_ingest.vision_labels``
     The experiment beside those two: the page as a PICTURE to the cheapest
     model, with the label vocabulary and nothing else. Scored against the
@@ -96,7 +105,8 @@ def __getattr__(name: str) -> Any:
     """
     if name in ("ReportRecord", "Investigation", "Quantity", "Provenance",
                 "Layer", "Sample", "SPT", "WaterLevel", "LabTest", "Project",
-                "QAEntry", "SCHEMA_VERSION", "record_json_schema",
+                "QAEntry", "PageLabel", "LabelVote", "SCHEMA_VERSION",
+                "record_json_schema",
                 "LabKind", "LabResult", "RESULT_CLASS", "SievePoint",
                 "AtterbergResult", "GradationResult", "ConsolidationPoint",
                 "ConsolidationResult", "ShearPoint", "StrengthSpecimen",

@@ -73,6 +73,73 @@ Key conventions:
 
 ## CURRENT WORKING STATE (2026-09-20) — 5.24.0 ON MASTER (the log-template recogniser + the narrative levers) with planlens 0.6.0
 
+- **UNRELEASED on master since 5.24.0** — the page labels are a vote, and the expensive review goes only where the voters disagree
+
+**No version bump, no tag.** Pure Python inside `report_ingest`, no dependency
+change, and the app's own ingest tool picks it up with no wiring change beyond
+one cheap-tier engine.
+
+**Why.** The corpus run of 2026-09-20 (ledger runs 7 and 10) says the old
+label path was wrong twice over. The rules and a cheap vision pass are
+COMPLEMENTARY by label class rather than one being better — rules 0.908 in
+sample / 0.767 honest blind, vision in sheet mode 0.655 / 0.867 at about $0.05
+a report, the rules owning `appended_report` (494 in-sample pages vision never
+emits), `other` (216) and `calculation` (1,009, 41 % missed) while vision owns
+`plan`, `profile`, `photos`, `cover`, `toc` and `figure` recall — and the
+label review, at about $0.45 a report over every page, breaks nearly as many
+labels as it fixes on the reports its prompt was tuned against.
+
+**What is built.**
+
+1. **One combiner, two callers** (`report_ingest/label_vote.py`).
+   `combine(rules, vision, template, policy=…, trust_table=…)` returns a
+   `PageChoice`: the label, its confidence, the voters and an `agreed` flag.
+   `vote.py` (the scoring stage) and `graph.py` (production) both call it, so
+   a policy cannot mean one thing in the measurement and another in the run.
+   Policies: `structural` (default — vision except the four labels the rules
+   own), `confidence`, `trust` (a per-label table learned in sample), and
+   `rules`, which reproduces the old behaviour and calls no vision pass at all.
+2. **The vote inside `ingest_report`.** After the rules it runs one vision
+   pass (`vision_mode="sheet"` on the cheap tier, cached in `vision.json`) and
+   the log-template recogniser where a private fingerprint file is in force —
+   that third voter names a FORM, not a label, so it votes for the exploration
+   -log CLASS and is a no-op without the file. Threaded through `ingest_report`,
+   `run_folder`, the app's `report_ingest` tool and the `ingest` stage.
+3. **`review_mode` in {`disagreements`, `all`, `none`}, default
+   `disagreements`.** The review is given ONLY the split pages plus two either
+   side, with the voters' labels and confidences printed in its brief, on a
+   budget of `max(20, 0.5 × split pages)` instead of `max(60, 0.25 × pages)`.
+   Its tools are NOT narrowed — an agent that follows a hunch may — and a
+   change it makes on a page the voters agreed on is applied and flagged in QA.
+4. **Everything carries a confidence.** `ReportRecord.page_labels` is one
+   `PageLabel` per page: the label, its confidence, `agreed`, the policy,
+   whether the vote or the review settled it, and every voter's own label and
+   confidence. A split the review did not settle is a
+   `QAEntry(kind="label_disagreement")` with both voters. The graph writes
+   `labels.json` beside `vision.json` and `review.json` with the policy, the
+   mode, the splits, what the review touched and what each pass cost.
+5. **The `vote` stage saves its trust table** to `vote/trust_table.json` and
+   the graph takes it by path for `label_policy="trust"`; without one that
+   policy falls back to `structural` and prints a note.
+6. **The `ingest` stage's RESULTS gains `## The page labels`** — split pages
+   per report and as a fraction, the review mode, pages touched, splits left,
+   and where hand labels exist the final labels' accuracy beside the rules'
+   alone, by the same scorer the `labels` and `vision_labels` stages use.
+7. **Two leftovers from the durable-mirror train.** `out_dir` no longer
+   refuses a `/Workspace` path — the workspace folder is one of the two places
+   that keep things on this cluster, so refusing it was refusing the durable
+   option; `cluster_scoring.out_dir_note` prints a note instead. And a
+   `durable_dir` whose own name already IS the run's name is not nested inside
+   itself: `.../results` and `.../results/521_sheet` both land the run at
+   `.../results/521_sheet`.
+
+**Suites:** `report_ingest` **886**, harness **229**, docs-currency green.
+**Next:** run `stages=("vote",)` over the 38 saved sheet-mode vision runs to
+pick the policy, then `stages=("ingest",)` with `label_policy` set to it and
+read `## The page labels` for the split fraction and the accuracy. The ingest
+ledger is written up as a TODO in `FUTURE_IDEAS.md` and is not built.
+
+
 - **app 5.24.0** (2026-09-20, on master, NOT yet tagged or released) —
   **a log knows what FORM it was printed on, and the narrative reader is
   shown the pages that answer the questions it was failing.** No dependency
@@ -1383,7 +1450,7 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | drawing_ir → `planlens.ir` + `planlens.document` + `planlens.tools` | (planlens, 1,307 tests at 0.6.0) | HISTORICAL PATH. The drawing IR (DXF / vector-PDF / raster ingest, slice queries, leader / dimension / title-block / bubble / cloud finders, `render_region`) is `planlens.ir`; since planlens 0.3.0 the WHOLE-DOCUMENT layer (`planlens.document`: page map + structure, located text, tables, review markups, hidden CAD text, Azure DI text source) and the LLM tool layer (`planlens.tools`) sit beside it. See "Document review & drawing geometry (planlens)" below. |
 | fem2d | 353 | 2D plane-strain FEM (T6 default + CST/Q4/beam, 3D-principal MC return, HS, GL99 SRM, seepage, consolidation, staged construction, PLAXIS-style calc-package plots); validated vs Griffiths-Lane/Prandtl (VALIDATION.md) |
 | geo_project | 89 | Canonical Project document for staged, human-gated LE/FEM model setup (schema+validators, builders, templates, DXF/PDF/vision ingest w/ provenance quarantine, echo-back renderer) |
-| report_ingest | 833 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop; `run_folder` drives it over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels","vote","ingest"), truth_dir=…, sharepoint=fh_sp_client)` is the owner's notebook cell; `truth_dir` is ONE root holding `logs/`, `lab/` and `narrative/` so one folder is uploaded rather than three paths kept in step, and `sharepoint=`/`durable_dir=` (5.22.0, `mirror.py`) copy every run file somewhere a cluster restart cannot reach and restore a wiped `out_dir` at the start. The seventh stage is `ingest` (5.23.0): the whole graph per report into `out_dir/ingest/<ID>/` with the DIGGS file gated, a saved label run reused, and the record scored against the hand truth — the whole-pipeline score; Since 5.24.0 a log is also matched against the printed FORM it came off
+| report_ingest | 886 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop -- and since the unreleased train on master its PAGE LABELS ARE A VOTE (`label_vote.py`): planlens' rules, one vision pass over the pages as pictures on the cheap tier (~$0.05 a report) and the printed form where a private fingerprint file is in force are combined under `label_policy` (default `structural`; `rules` reproduces the old single-voter path), `review_mode="disagreements"` gives the ~$0.45 label review ONLY the pages they split on plus two either side on a budget of `max(20, 0.5 x split pages)`, every page's label in the record carries its confidence, its voters and an `agreed` flag, and a split the review did not settle is a `label_disagreement` QA entry. The same combiner is what the `vote` stage scores, so a policy cannot mean two things. `run_folder` drives the loop over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels","vote","ingest"), truth_dir=…, sharepoint=fh_sp_client)` is the owner's notebook cell; `truth_dir` is ONE root holding `logs/`, `lab/` and `narrative/` so one folder is uploaded rather than three paths kept in step, and `sharepoint=`/`durable_dir=` (5.22.0, `mirror.py`) copy every run file somewhere a cluster restart cannot reach and restore a wiped `out_dir` at the start. The seventh stage is `ingest` (5.23.0): the whole graph per report into `out_dir/ingest/<ID>/` with the DIGGS file gated, a saved label run reused, and the record scored against the hand truth — the whole-pipeline score; Since 5.24.0 a log is also matched against the printed FORM it came off
 (`log_templates.py`): a page's footer stamp, title-block labels and column
 headings are scored against fingerprints kept in a PRIVATE file that travels
 with the truth folder and is never committed (`templates.json.EXAMPLE` ships

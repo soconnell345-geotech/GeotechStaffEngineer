@@ -458,20 +458,38 @@ What that means for this train, in order:
    the same scorer as the voters, the disagreement set as a fraction, and
    the accuracy a targeted review of it would need to carry the set over the
    0.98 gate. Every split is listed per report in `vote/<ID>.json`.
-   **What is left of this item:** running it over the 38 saved sheet-mode
-   vision runs beside the label runs, and deciding which policy the ingest
-   graph should actually adopt -- the measurement exists, the choice does
-   not.
+   **AND IT IS NOW THE PRODUCTION LABEL PATH (unreleased, on master since
+   5.24.0).** `report_ingest/label_vote.py` holds ONE copy of the policies
+   and both callers use it: the `vote` stage scores them, and
+   `graph.ingest_report` runs them. Inside the ingest the rules, one vision
+   pass on the cheap tier (`sheet` mode, about $0.05 a report) and the
+   printed form where a fingerprint file is in force vote on every page
+   under `label_policy` (default `structural`; `rules` reproduces the old
+   behaviour); `review_mode="disagreements"` gives the label review ONLY the
+   split pages plus two either side, on a budget of
+   `max(20, 0.5 x split pages)`; a split the review does not settle is a
+   `QAEntry(kind="label_disagreement")` carrying both voters and both
+   confidences; and `ReportRecord.page_labels` carries, per page, the chosen
+   label, its confidence, `agreed` and every voter. The `vote` stage saves
+   the in-sample trust table to `vote/trust_table.json` and the graph takes
+   it by path for `label_policy="trust"`, falling back to `structural` with
+   a printed note when there is none.
+   **What is left of this item:** running the vote over the 38 saved
+   sheet-mode vision runs beside the label runs, which is what says whether
+   `structural` stays the default; and the `ingest` stage's RESULTS block
+   now prints the split count and the final labels beside the rules alone,
+   so that comparison is one run away.
 2. **Every extracted value carries a confidence and a method. BUILT for
-   the readers, 5.23.0** -- `Provenance.method` names the voter (`grid`,
+   the readers, 5.23.0, and for the page labels since** -- `Provenance.method` names the voter (`grid`,
    `tables`, `model`, `model_from_picture`, `reconciled`), every value has a
    confidence, and a slot the voters split on carries the loser in
    `prov.alternatives` beside a `QAEntry(kind="disagreement")` with both
-   values and both confidences -- the triggered second look. **What is
-   left:** the page labels need the same field (the vote stage has the
-   arithmetic; the record has no per-page label slot yet), and the
-   reconciler's narrative-vs-appendix count check is still a
-   `count_mismatch` rather than a vote.
+   values and both confidences -- the triggered second look. The page
+   labels have the same field now: `ReportRecord.page_labels` is one
+   `PageLabel` per page with its confidence, its `agreed` flag and every
+   voter's own label and confidence. **What is left:** the reconciler's
+   narrative-vs-appendix count check is still a `count_mismatch` rather
+   than a vote.
 3. **The floor is the first voter for the readers. BUILT, 5.23.0** --
    `report_ingest/floor.py`, `log_floor.py`, `lab_floor.py`: the grid and
    the tables are seeded into the record before any call, the model is
@@ -480,3 +498,41 @@ What that means for this train, in order:
    `logs`/`lab` stages, which now print the grid, the model alone and
    floor+model), and reading the disagreement list off `qa.json` to see
    which slots a reviewer is actually sent to.
+
+
+### The ingest ledger (owner, 2026-09-21) -- TODO, not built
+
+One function the ingest calls at the END of every report, whether it ran in
+the app, on the cluster or from `run_folder`, writing ONE row about that
+report to every sink it can reach. Nothing about a report should have to be
+reconstructed from a folder of run files later.
+
+**The sinks, in the order they matter.**
+
+1. An append-only **JSON-lines file in the workspace folder**, mirrored to
+   **SharePoint**. That pair is the source of truth: it is what
+   `report_ingest.mirror` already does for run files, it survives a cluster
+   restart, and a plain text file cannot be broken by a schema change.
+2. A **Delta table** for SQL, rebuilt from that file rather than written
+   alongside it, through the Funhouse SDK's `DeltaTableManager`. Rebuilt, so
+   the file stays the thing that is true and the table is a view of it.
+3. A **SharePoint list** through the SDK's list manager, as the human view,
+   if the client supports one. This is the optional sink and its absence
+   must never fail an ingest.
+
+**The row.** File hash and file name; pages; ingested-at; package version;
+the models actually served (the deployments, not the tiers asked for);
+document type and workflow; counts found by kind (investigations, samples,
+driven records, laboratory tests by kind); narrative fields answered and
+null; QA counts by kind; DIGGS written and validated; tokens and dollars;
+where the outputs live; and the run id. **A re-ingest appends a new row** --
+it never updates one -- so the history of how a report was read is the
+history, and a row is never rewritten to look like it always said the new
+thing.
+
+**Why it is worth building.** Right now "how many reports have we ingested,
+what did they cost, and which ones have a DIGGS file that failed its schema
+gate" is answerable only by walking folders of `run.json` files, and only on
+whichever machine still has them. One row per report per ingest, appended
+somewhere durable, answers all of it in a line of SQL and makes the corpus
+itself a thing that can be reported on.

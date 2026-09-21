@@ -84,17 +84,33 @@ def cluster(tmp_path):
 
 # -- the guards ---------------------------------------------------------------
 
-@pytest.mark.parametrize("bad", ["/Workspace/Users/x/out",
-                                 "/dbfs/Workspace/out", "dbfs:/Workspace/o"])
-def test_a_workspace_out_dir_is_refused_before_anything_runs(bad):
-    with pytest.raises(ValueError, match="non-durable"):
-        cs._check_out_dir(Path(bad))
+@pytest.mark.parametrize("workspace", ["/Workspace/Users/x/out",
+                                       "/workspace/shared/out"])
+def test_a_workspace_out_dir_is_allowed_and_gets_a_note(workspace):
+    """The owner keeps things in the workspace folder; refusing it was wrong.
+
+    Until this train a workspace ``out_dir`` raised. The owner's own rule of
+    2026-09-20 names the workspace folder as one of the two durable places
+    here, so it is allowed and the note says what the better shape is.
+    """
+    note = cs.out_dir_note(Path(workspace))
+    assert note and "durable here" in note
+    assert "durable_dir" in note
 
 
-@pytest.mark.parametrize("good", ["/tmp/report_ingest",
-                                  "/Volumes/main/geo/out"])
-def test_tmp_and_volume_paths_are_accepted(good):
-    cs._check_out_dir(Path(good))
+@pytest.mark.parametrize("plain", ["/tmp/report_ingest",
+                                   "/Volumes/main/geo/out"])
+def test_an_ordinary_out_dir_says_nothing(plain):
+    assert cs.out_dir_note(Path(plain)) is None
+
+
+def test_a_workspace_out_dir_runs_rather_than_raising(tmp_path, capsys):
+    """And the note is printed where the owner will see it."""
+    with pytest.raises(FileNotFoundError):     # no reports; it got past the
+        cs.score_on_cluster(                   # guard, which is the point
+            reports_dir=tmp_path / "nothing", out_dir="/Workspace/x/out",
+            prompter=object())
+    assert "workspace folder" in capsys.readouterr().out
 
 
 def test_no_prompter_is_refused_rather_than_read_from_the_environment():
@@ -1446,11 +1462,10 @@ class TestTheDurableMirror:
                             sharepoint_folder="somewhere/else")
         assert f"somewhere/else/{out.name}/RESULTS.md" in fm.tree
 
-    def test_only_out_dir_is_refused_for_workspace(self):
-        """A durable_dir is the owner's own finding and is not second-guessed."""
-        with pytest.raises(ValueError, match="non-durable"):
-            cs._check_out_dir(Path("/Workspace/Users/x/out"))
+    def test_a_workspace_durable_dir_is_the_point_of_the_mirror(self):
+        """The workspace folder is where the owner keeps a run, not a trap."""
         assert cs.Mirror(durable_dir="/Workspace/somewhere").active
+        assert cs.out_dir_note(Path("/Workspace/Users/x/out"))
 
 
 # ---------------------------------------------------------------------------
@@ -1867,10 +1882,15 @@ def ingest_cluster(tmp_path, monkeypatch):
     monkeypatch.setattr(
         cs, "_set_ids",
         lambda name, corpus: ("R36",) if name == "oos_open" else ())
-    scripts = {"turns": [], "engines": []}
+    # Two engines per report, as in production: the readers on the tier
+    # asked for, and the page-label vision voter on the cheap one. Each
+    # replays its own script.
+    scripts = {"turns": [], "vision": tg.vision_turns(), "engines": []}
 
     def fake_engine(prompter, model, meter=None, **kwargs):
-        engine = FakeEngine(list(scripts["turns"]), name=model)
+        turns = (scripts["vision"] if model == "funhouse-gpt-low"
+                 else scripts["turns"])
+        engine = FakeEngine(list(turns or []), name=model)
         engine.served_by = "fake-deployment"
         scripts["engines"].append(engine)
         return engine
@@ -1897,13 +1917,13 @@ class TestTheIngestStage:
             self, ingest_cluster):
         from report_ingest.tests import test_graph as tg
         reports_dir, out, scripts = ingest_cluster
-        scripts["turns"] = tg.full_script()
+        scripts["turns"] = tg.main_script()
         results = _ingest_run(ingest_cluster)
 
         folder = out / "ingest" / "R36"
         for name in ("report.record.json", "report.summary.md",
                      "report.page.md", "report.diggs.xml", "qa.json",
-                     "run.json", "triage.json", "review.json"):
+                     "run.json", "triage.json", "vision.json", "labels.json"):
             assert (folder / name).is_file(), name
         assert (out / "ingest" / "reports.db").is_file()
         assert (folder / "items").is_dir()
@@ -1921,17 +1941,27 @@ class TestTheIngestStage:
         assert row["diggs"]["roundtrip"] == "equal"
         assert row["qa_by_kind"].get("disagreement", 0) >= 1
         assert row["triage_reused"] is False and row["review_reused"] is False
-        assert scripts["engines"][0].n_calls == len(tg.full_script())
+        assert scripts["engines"][0].n_calls == len(tg.main_script())
+        assert scripts["engines"][1].n_calls == len(tg.vision_turns())
+        # The voters agreed on every page, so the review never ran.
+        assert not (folder / "review.json").exists()
+        labels = row["labels"]
+        assert labels["policy"] == "structural"
+        assert labels["review_mode"] == "disagreements"
+        assert labels["split"] == 0 and labels["review_changed"] == 0
+        assert labels["pages_voted"] == 22
 
     def test_results_md_carries_the_section_and_names_nobody(
             self, ingest_cluster):
         from report_ingest.tests import test_graph as tg
         reports_dir, out, scripts = ingest_cluster
-        scripts["turns"] = tg.full_script()
+        scripts["turns"] = tg.main_script()
         _ingest_run(ingest_cluster)
         text = (out / "RESULTS.md").read_text(encoding="utf-8")
         assert "# Ingest: the record and its exports" in text
         assert "## Per report" in text and "## Totals" in text
+        assert "## The page labels: the vote, and what went to the review" \
+            in text
         assert "R36" in text and "1 boring, 1 test_pit" in text
         assert "yes/valid/equal" in text or "yes/not checked here/equal" in text
         assert "Rosewood" not in text          # the project name stays out
@@ -1941,13 +1971,16 @@ class TestTheIngestStage:
     def test_a_second_call_is_free(self, ingest_cluster, capsys):
         from report_ingest.tests import test_graph as tg
         reports_dir, out, scripts = ingest_cluster
-        scripts["turns"] = tg.full_script()
+        scripts["turns"] = tg.main_script()
         _ingest_run(ingest_cluster)
         scripts["turns"] = []
+        scripts["vision"] = []
         results = _ingest_run(ingest_cluster)
         assert "R36: already done, skipping" in capsys.readouterr().out
         assert results["ingest"]["n_reports"] == 1
-        assert len(scripts["engines"]) == 1     # no second engine was built
+        # Two engines for the one report that ran, and none for the second
+        # call: the reader tier and the vision voter's cheaper one.
+        assert len(scripts["engines"]) == 2
 
     def test_a_saved_label_run_is_reused_so_the_review_is_not_paid_twice(
             self, ingest_cluster):
@@ -1993,7 +2026,7 @@ class TestTheIngestStage:
             "layers": [{"top": 0.0, "uscs": "CL"}],
             "samples": [{"top": 1.5, "blows": [4, 6, 8]}],
             "water": []}), encoding="utf-8")
-        scripts["turns"] = tg.full_script()
+        scripts["turns"] = tg.main_script()
         results = _ingest_run(ingest_cluster, truth_dir=truth)
         (row,) = results["ingest"]["per_report"]
         (log_score,) = row["scores"]["logs"]
@@ -2013,7 +2046,7 @@ class TestTheIngestStage:
         monkeypatch.setattr(
             cs, "_set_ids",
             lambda name, corpus: ("R36", "R31") if name == "oos_open" else ())
-        scripts["turns"] = tg.full_script()
+        scripts["turns"] = tg.main_script()
         results = _ingest_run(ingest_cluster)
         assert "R31" in results["absent"]
         assert results["ingest"]["n_reports"] == 1
@@ -2022,7 +2055,7 @@ class TestTheIngestStage:
             self, ingest_cluster, tmp_path):
         from report_ingest.tests import test_graph as tg
         reports_dir, out, scripts = ingest_cluster
-        scripts["turns"] = tg.full_script()
+        scripts["turns"] = tg.main_script()
         durable = tmp_path / "durable"
         _ingest_run(ingest_cluster, durable_dir=durable)
         assert (durable / out.name / "ingest" / "R36" / "run.json").is_file()

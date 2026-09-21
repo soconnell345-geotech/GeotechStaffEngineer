@@ -330,3 +330,94 @@ def test_the_script_runs_out_rather_than_inventing_a_turn(synthetic, roles):
     engine = FakeEngine([{"tools": [("outline", {})]}])
     with pytest.raises(ScriptExhausted):
         review_labels(doc, roles, profile={}, engine=engine)
+
+
+# ---------------------------------------------------------------------------
+# the targeted review: only the pages the voters split on
+# ---------------------------------------------------------------------------
+
+class TestATargetedReview:
+    """``pages=`` narrows what the review is SHOWN, never what it may do."""
+
+    def _brief(self, engine):
+        return engine.calls[0]["messages"][0]["content"][0]["text"]
+
+    def test_the_ledger_is_cut_to_the_pages_it_was_given(self, synthetic,
+                                                         roles):
+        doc, _ = synthetic
+        engine = FakeEngine(_script())
+        review_labels(doc, roles, profile={}, engine=engine,
+                      pages=[4, 5, 6])
+
+        _head, ledger = self._brief(engine).split("THE PAGE LEDGER:")
+        assert sorted({int(line[1:4]) for line in ledger.splitlines()
+                       if line.startswith("p0")}) == [4, 5, 6]
+
+    def test_the_whole_report_is_still_the_default(self, synthetic, roles):
+        doc, _ = synthetic
+        engine = FakeEngine(_script())
+        review_labels(doc, roles, profile={}, engine=engine)
+
+        brief = self._brief(engine)
+        assert "ONE LINE PER PAGE" in brief
+        assert "NOT being asked about all of them" not in brief
+
+    def test_the_budget_is_sized_for_the_split_and_not_the_document(
+            self, synthetic, roles):
+        from report_ingest.label_review import budget_for_split
+
+        doc, _ = synthetic
+        engine = FakeEngine(_script())
+        review = review_labels(doc, roles, profile={}, engine=engine,
+                               pages=list(range(60)))
+
+        assert review.budget == budget_for_split(60) == 30
+        assert review.budget < budget_for(doc.n_pages)
+        assert review.asked_pages == list(range(60))
+
+    def test_a_given_budget_still_wins(self, synthetic, roles):
+        doc, _ = synthetic
+        engine = FakeEngine(_script())
+        review = review_labels(doc, roles, profile={}, budget=7,
+                               engine=engine, pages=[4])
+        assert review.budget == 7
+
+    def test_the_votes_are_printed_so_the_model_sees_the_split(self,
+                                                               synthetic,
+                                                               roles):
+        from report_ingest.label_vote import Voter, combine
+
+        doc, _ = synthetic
+        split = combine(Voter("rules", "photos", 0.55),
+                        Voter("vision", "plan", 0.91), page=4)
+        agreed = combine(Voter("rules", "narrative", 0.9),
+                         Voter("vision", "narrative", 0.9), page=5)
+        engine = FakeEngine(_script())
+        review_labels(doc, roles, profile={}, engine=engine, pages=[4, 5],
+                      choices=[split, agreed])
+
+        head = self._brief(engine).split("THE PAGE LEDGER:")[0]
+        (line,) = [row for row in head.splitlines() if row.startswith("p004")]
+        assert "rules says photos (0.55)" in line
+        assert "vision says plan (0.91)" in line
+        assert "p005" not in head.split("THE PAGES THE LABELLERS SPLIT ON")[1]
+
+    def test_it_is_told_not_to_walk_the_whole_report(self, synthetic, roles):
+        doc, _ = synthetic
+        engine = FakeEngine(_script())
+        review_labels(doc, roles, profile={}, engine=engine, pages=[4])
+
+        brief = self._brief(engine)
+        assert "does NOT apply" in brief
+
+    def test_the_tools_are_not_narrowed_with_the_brief(self, synthetic,
+                                                       roles):
+        """An agent that follows a hunch off the list is allowed to look."""
+        doc, _ = synthetic
+        engine = FakeEngine(_script({"tools": [("read_page", {"page": 19})]}))
+        review = review_labels(doc, roles, profile={}, engine=engine,
+                               pages=[4])
+
+        (result,) = engine.tool_results()
+        assert result["is_error"] is False
+        assert review.tool_calls == 1

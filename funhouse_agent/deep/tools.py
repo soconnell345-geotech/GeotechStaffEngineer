@@ -984,6 +984,12 @@ REPORT_INGEST_DESCRIPTION = (
     "'questions' is anything else you want asked of the report, one per line."
 )
 
+#: The tier the ingest's page-label vision voter runs on. It looks at every
+#: page of the report, so it goes on the cheapest tier the deployment has --
+#: about $0.05 a report, against $0.45 for the label review it now replaces
+#: on the pages the voters agree about.
+VISION_TIER = "funhouse-gpt-low"
+
 
 def make_report_ingest_tool(
     engine=None,
@@ -992,6 +998,8 @@ def make_report_ingest_tool(
     budgets=None,
     db_path: Optional[str] = None,
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
+    label_policy: str = "structural",
+    review_mode: str = "disagreements",
 ) -> list:
     """The ``report_ingest`` primary tool, or an empty list.
 
@@ -1007,6 +1015,11 @@ def make_report_ingest_tool(
     :func:`report_ingest.engine.engine_for`. With no engine to be found the
     tool is still built and says so when called, which is a better answer
     than a missing tool the model then invents a workaround for.
+
+    ``label_policy`` and ``review_mode`` are the ingest's page vote, passed
+    straight through to :func:`report_ingest.graph.ingest_report`. The
+    defaults are its own: three cheap voters on every page, and the
+    expensive label review shown only the pages they split on.
     """
     if not _document_tools.report_ingest_supported():
         return []
@@ -1025,6 +1038,11 @@ def make_report_ingest_tool(
                                "hint": "give the attachment key of the "
                                        "uploaded PDF or a real file path"})
         ingest_engine = engine_for(engine)
+        # The page-label vote's second voter looks at EVERY page, so it runs
+        # on the cheapest tier the deployment has rather than on the tier
+        # the readers use; on a host whose engine is not a Prompter this is
+        # None and the graph falls back to the one engine it has.
+        vision_engine = engine_for(engine, model=VISION_TIER)
         if ingest_engine is None:
             return json.dumps({
                 "error": "no ingest engine is configured in this deployment",
@@ -1038,6 +1056,9 @@ def make_report_ingest_tool(
             answer = run_ingest(resolved, asked, engine=ingest_engine,
                                 out_dir=folder, budgets=budgets,
                                 db_path=db_path,
+                                label_policy=label_policy,
+                                review_mode=review_mode,
+                                vision_engine=vision_engine,
                                 report_id=os.path.splitext(
                                     os.path.basename(str(source)))[0])
         except Exception as exc:  # noqa: BLE001 - one report, not the turn

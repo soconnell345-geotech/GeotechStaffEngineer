@@ -84,6 +84,14 @@ class IngestSummary(BaseModel):
         default=0,
         description="how many things a reviewer is told about: skipped, "
                     "partial, conflicting or unreadable")
+    label_split_pages: int = Field(
+        default=0,
+        description="pages the automatic page labellers did not agree "
+                    "on; these are the ones the label review was shown")
+    label_disagreements: int = Field(
+        default=0,
+        description="of those, how many are still unsettled in the "
+                    "record, each a label_disagreement QA entry")
     answered: int = Field(
         default=0,
         description="how many of the standing questions this report answered")
@@ -125,13 +133,27 @@ def _head(path: str, lines: int = SUMMARY_LINES) -> str:
 def run_ingest(source: str, questions: Sequence[str], *,
                engine: Any, out_dir: str, budgets: Any = None,
                report_id: str = "", db_path: Any = None,
-               di_result: Any = None) -> IngestSummary:
-    """Read one report and return the compact answer, never the record."""
+               di_result: Any = None, label_policy: str = "structural",
+               review_mode: str = "disagreements",
+               vision_engine: Any = None, vision_mode: str = "sheet",
+               trust_table: Any = None,
+               templates: Any = None) -> IngestSummary:
+    """Read one report and return the compact answer, never the record.
+
+    The label parameters are the graph's own and are documented on
+    :func:`report_ingest.graph.ingest_report`; ``vision_engine`` should be
+    an engine on a CHEAP tier, since the vision voter looks at every page.
+    """
     from report_ingest.graph import ingest_report, output_paths
 
     record = ingest_report(source, engine, out_dir=out_dir, budgets=budgets,
                            report_id=report_id, questions=list(questions),
-                           db_path=db_path, di_result=di_result)
+                           db_path=db_path, di_result=di_result,
+                           label_policy=label_policy,
+                           review_mode=review_mode,
+                           vision_engine=vision_engine,
+                           vision_mode=vision_mode,
+                           trust_table=trust_table, templates=templates)
     paths = output_paths(out_dir)
     counts = record.counts()
     verdicts = [entry for entry in record.qa
@@ -151,6 +173,9 @@ def run_ingest(source: str, questions: Sequence[str], *,
         answered=len(record.general.answered()
                      + record.natural_hazards.answered()),
         model_calls=record.document.model_calls,
+        label_split_pages=record.document.label_split_pages,
+        label_disagreements=sum(1 for entry in record.qa
+                                if entry.kind == "label_disagreement"),
         diggs_ok=diggs_ok,
         paths=paths,
         summary=_head(paths.get("summary", "")),
@@ -214,7 +239,14 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
                               budgets: Any = None,
                               db_path: Any = None,
                               resolve_source: Optional[Callable[[str], str]]
-                              = None) -> Any:
+                              = None,
+                              label_policy: str = "structural",
+                              review_mode: str = "disagreements",
+                              vision_engine_factory: Optional[
+                                  Callable[[], Any]] = None,
+                              vision_mode: str = "sheet",
+                              trust_table: Any = None,
+                              templates: Any = None) -> Any:
     """A one-node LangGraph that runs the ingest and answers with a summary.
 
     ``engine_factory`` is called once per run and must return an ingest
@@ -284,7 +316,15 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
         try:
             answer = run_ingest(source, questions, engine=engine,
                                 out_dir=out_dir, budgets=budgets,
-                                db_path=db_path)
+                                db_path=db_path,
+                                label_policy=label_policy,
+                                review_mode=review_mode,
+                                vision_engine=(vision_engine_factory()
+                                               if vision_engine_factory
+                                               else None),
+                                vision_mode=vision_mode,
+                                trust_table=trust_table,
+                                templates=templates)
         except Exception as exc:                 # one report, not the session
             answer = IngestSummary(
                 error=f"the ingest failed: {type(exc).__name__}: {exc}")
@@ -330,7 +370,14 @@ def build_report_ingest_subagent(engine_factory: Callable[[], Any], *,
                                  resolve_source: Optional[
                                      Callable[[str], str]] = None,
                                  max_model_calls: Optional[int] = None,
-                                 middleware: Optional[Sequence[Any]] = None
+                                 middleware: Optional[Sequence[Any]] = None,
+                                 label_policy: str = "structural",
+                                 review_mode: str = "disagreements",
+                                 vision_engine_factory: Optional[
+                                     Callable[[], Any]] = None,
+                                 vision_mode: str = "sheet",
+                                 trust_table: Any = None,
+                                 templates: Any = None
                                  ) -> Dict[str, Any]:
     """The deepagents ``CompiledSubAgent`` spec for the ingest.
 
@@ -345,7 +392,11 @@ def build_report_ingest_subagent(engine_factory: Callable[[], Any], *,
         "runnable": build_report_ingest_graph(
             engine_factory, out_dir_factory=out_dir_factory,
             budgets=budgets, db_path=db_path,
-            resolve_source=resolve_source),
+            resolve_source=resolve_source, label_policy=label_policy,
+            review_mode=review_mode,
+            vision_engine_factory=vision_engine_factory,
+            vision_mode=vision_mode, trust_table=trust_table,
+            templates=templates),
     }
     carried = list(middleware or [])
     if max_model_calls:

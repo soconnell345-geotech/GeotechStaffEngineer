@@ -211,7 +211,7 @@ class TestARunThroughTheTool:
     def test_the_caller_s_questions_ride_through(self, pdf, tmp_path):
         from report_ingest.narrative_reader import ReadExtra
         from report_ingest.tests.test_graph import (
-            lab_turn, log_turn, narrative_turn, review_turns, triage_turn,
+            lab_turn, log_turn, narrative_turn, triage_turn, vision_turns,
         )
         from report_ingest.narrative_reader import NarrativeReading
 
@@ -222,7 +222,7 @@ class TestARunThroughTheTool:
                 answer="A minimum of 0.6 m below finished grade.",
                 page=4, quote="a minimum embedment of 0.6 m")]})
         assert isinstance(reading, NarrativeReading)
-        script = ([triage_turn()] + review_turns() + [{"final": reading}]
+        script = ([triage_turn()] + vision_turns() + [{"final": reading}]
                   + [log_turn("B-1"), log_turn("TP-1", "test_pit"),
                      lab_turn("atterberg", 12), lab_turn("gradation", 13)])
         (tool,) = make_report_ingest_tool(engine=FakeEngine(script),

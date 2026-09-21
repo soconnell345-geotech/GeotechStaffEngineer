@@ -8,6 +8,72 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### UNRELEASED on master since 5.24.0 — the page labels are a vote, and the expensive review goes only where the voters disagree
+
+**No version bump, no tag.** Pure Python inside `report_ingest`, no dependency
+change, and the app's own ingest tool picks it up with no wiring change beyond
+one cheap-tier engine.
+
+**Why.** The corpus run of 2026-09-20 (ledger runs 7 and 10) says the old
+label path was wrong twice over. The rules and a cheap vision pass are
+COMPLEMENTARY by label class rather than one being better — rules 0.908 in
+sample / 0.767 honest blind, vision in sheet mode 0.655 / 0.867 at about $0.05
+a report, the rules owning `appended_report` (494 in-sample pages vision never
+emits), `other` (216) and `calculation` (1,009, 41 % missed) while vision owns
+`plan`, `profile`, `photos`, `cover`, `toc` and `figure` recall — and the
+label review, at about $0.45 a report over every page, breaks nearly as many
+labels as it fixes on the reports its prompt was tuned against.
+
+**What is built.**
+
+1. **One combiner, two callers** (`report_ingest/label_vote.py`).
+   `combine(rules, vision, template, policy=…, trust_table=…)` returns a
+   `PageChoice`: the label, its confidence, the voters and an `agreed` flag.
+   `vote.py` (the scoring stage) and `graph.py` (production) both call it, so
+   a policy cannot mean one thing in the measurement and another in the run.
+   Policies: `structural` (default — vision except the four labels the rules
+   own), `confidence`, `trust` (a per-label table learned in sample), and
+   `rules`, which reproduces the old behaviour and calls no vision pass at all.
+2. **The vote inside `ingest_report`.** After the rules it runs one vision
+   pass (`vision_mode="sheet"` on the cheap tier, cached in `vision.json`) and
+   the log-template recogniser where a private fingerprint file is in force —
+   that third voter names a FORM, not a label, so it votes for the exploration
+   -log CLASS and is a no-op without the file. Threaded through `ingest_report`,
+   `run_folder`, the app's `report_ingest` tool and the `ingest` stage.
+3. **`review_mode` in {`disagreements`, `all`, `none`}, default
+   `disagreements`.** The review is given ONLY the split pages plus two either
+   side, with the voters' labels and confidences printed in its brief, on a
+   budget of `max(20, 0.5 × split pages)` instead of `max(60, 0.25 × pages)`.
+   Its tools are NOT narrowed — an agent that follows a hunch may — and a
+   change it makes on a page the voters agreed on is applied and flagged in QA.
+4. **Everything carries a confidence.** `ReportRecord.page_labels` is one
+   `PageLabel` per page: the label, its confidence, `agreed`, the policy,
+   whether the vote or the review settled it, and every voter's own label and
+   confidence. A split the review did not settle is a
+   `QAEntry(kind="label_disagreement")` with both voters. The graph writes
+   `labels.json` beside `vision.json` and `review.json` with the policy, the
+   mode, the splits, what the review touched and what each pass cost.
+5. **The `vote` stage saves its trust table** to `vote/trust_table.json` and
+   the graph takes it by path for `label_policy="trust"`; without one that
+   policy falls back to `structural` and prints a note.
+6. **The `ingest` stage's RESULTS gains `## The page labels`** — split pages
+   per report and as a fraction, the review mode, pages touched, splits left,
+   and where hand labels exist the final labels' accuracy beside the rules'
+   alone, by the same scorer the `labels` and `vision_labels` stages use.
+7. **Two leftovers from the durable-mirror train.** `out_dir` no longer
+   refuses a `/Workspace` path — the workspace folder is one of the two places
+   that keep things on this cluster, so refusing it was refusing the durable
+   option; `cluster_scoring.out_dir_note` prints a note instead. And a
+   `durable_dir` whose own name already IS the run's name is not nested inside
+   itself: `.../results` and `.../results/521_sheet` both land the run at
+   `.../results/521_sheet`.
+
+**Suites:** `report_ingest` **886**, harness **229**, docs-currency green.
+**Next:** run `stages=("vote",)` over the 38 saved sheet-mode vision runs to
+pick the policy, then `stages=("ingest",)` with `label_policy` set to it and
+read `## The page labels` for the split fraction and the accuracy. The ingest
+ledger is written up as a TODO in `FUTURE_IDEAS.md` and is not built.
+
 ### 5.24.0 (2026-09-20, on master, NOT tagged) — the log-template recogniser and the narrative levers
 
 **No dependency change.** Pure Python inside `report_ingest`, and no new model
