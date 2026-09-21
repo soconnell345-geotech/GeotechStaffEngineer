@@ -71,9 +71,16 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-09-20) — 5.22.0 ON MASTER (durable mirror of every run + the `vote` stage) with planlens 0.6.0
+## CURRENT WORKING STATE (2026-09-21) — 5.22.1 RELEASED (durable mirror of every run + the `vote` stage) with planlens 0.6.0
 
-- **app 5.22.0** (2026-09-20, on master, NOT yet tagged or released) —
+- **app 5.22.1** (tag `v5.22.1`, 2026-09-21) — the same release as 5.22.0
+  with one wording fix. **5.22.0 on PyPI DOES NOT IMPORT** — a docstring
+  edit of the lead's landed inside a function of `report_ingest/mirror.py`
+  after the builder's gate, a piped test run hid the SyntaxError, and the
+  tag went out on it. Never install 5.22.0; 5.22.1 replaces it. Lesson
+  recorded: never edit a file by line number, and never read a suite's
+  result through a pipe that swallows the exit code.
+- **app 5.22.0** (tag `v5.22.0`, 2026-09-21, BROKEN on PyPI, see above) —
   **the run's output stops living only in `/tmp`, and a disagreement between
   the voters becomes a measurement.** No dependency change; pure Python
   inside `report_ingest`, and no new model call anywhere. **(1) The durable
@@ -139,7 +146,7 @@ Key conventions:
   per-page confidence, so the `confidence` policy does not need the PDF.
   Harness twin: `module_work/report_ingest_harness/measure_wp6_vote.py`.
   Suites: `report_ingest` **746** (56 new), harness **229** (16 new),
-  docs-currency green. **Install 5.22.0** once it is tagged; it supersedes
+  docs-currency green. **Install 5.22.1** (not 5.22.0); it supersedes
   5.21.2 and everything back to 5.20.1. **Next:** run the vote over the 38
   saved sheet-mode vision runs beside the label runs and read off which policy
   to build on. 5.21.2 follows.

@@ -15,13 +15,9 @@ WHAT IT IS. One :class:`Mirror` over one or two backends:
   exposing ``create_folder`` / ``upload_file`` / ``ls`` / ``download_file``.
   The ``fh_sp_client`` itself is accepted too: its ``.file_manager`` is taken
   when it has one.
-* a **plain filesystem path** (``durable_dir``) -- the WORKSPACE folder the
-  owner keeps things in, ``<your workspace>/geotech_app/report_ingest/
-  results``. Files are copied. The owner's standing rule, 2026-09-20: *"The
-  best bet for persistent is always in the local folder on funhouse
-  (geotech_app/<whatever>) or on SharePoint. Never rely on tmp or dbfs."*
-  Where the path points is still the caller's choice -- that rule is what
-  the docs recommend, not something this module enforces.
+* a **plain filesystem path** (``durable_dir``) -- the owner's workspace
+  folder under ``geotech_app/``, which persists, or a Volume. Never ``/tmp``
+  and never DBFS: the owner's rule of 2026-09-20. Files are copied.
 
 Both are driven through one duck type, so a run can mirror to either, or to
 both at once.
@@ -168,13 +164,13 @@ class _FileManagerBackend:
     def get(self, remote_path: str, local: Path) -> None:
         local.parent.mkdir(parents=True, exist_ok=True)
         self._fm.download_file(remote_path, local_path=str(local),
-    """A plain folder as a mirror: the workspace folder, a Volume, anything
-    durable; never /tmp or DBFS (the owner's rule, 2026-09-20).
+                               return_bytes=False, overwrite=True)
 
 
 class _DirBackend:
-    """A plain folder as a mirror: the workspace folder the owner keeps
-    things in. Never ``/tmp``, never dbfs -- the owner's rule.
+    """A plain folder as a mirror: the owner's workspace folder or a Volume.
+
+    Never ``/tmp`` and never DBFS -- the owner's rule of 2026-09-20.
 
     ``strip`` is the remote prefix a SharePoint mirror carries and a folder
     does not need: a run mirrored to ``GeotechStaffEngineer/report_ingest/
@@ -239,9 +235,9 @@ class Mirror:
         The live ``fh_sp_client``, its ``.file_manager``, or the app's
         ``SharePointStore``. ``None`` for no SharePoint backend.
     durable_dir
-        The workspace folder the run's output is kept in, such as
-        ``<your workspace>/geotech_app/report_ingest/results``. ``None`` for
-        no filesystem backend.
+        A folder that survives the driver: the owner's workspace folder
+        under ``geotech_app/`` or a Volume; never ``/tmp`` or DBFS. ``None``
+        for no filesystem backend.
     base_folder
         The remote folder the run folders sit under. It prefixes the
         SharePoint paths and is stripped from the filesystem ones, so one
@@ -292,7 +288,7 @@ class Mirror:
                                    "duration_s": 0.0}
         try:
             self._mirror(Path(local_dir), remote, summary)
-        except Exception as exc:              # a mirror never stops a run
+        except Exception as exc:                 # a mirror must never stop a run
             summary["errors"].append(f"{type(exc).__name__}: {exc}")
         summary["duration_s"] = round(time.time() - started, 3)
         return summary

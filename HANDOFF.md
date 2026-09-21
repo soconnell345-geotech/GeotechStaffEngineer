@@ -8,7 +8,17 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
-### 5.22.0 (2026-09-20) — the output survives a restart, and the disagreement becomes the answer
+### 5.22.1 RELEASED (2026-09-21) — 5.22.0 with its wording fixed; 5.22.0 on PyPI does not import
+
+The lead's docstring edit by line number landed inside
+`_FileManagerBackend.get` in `report_ingest/mirror.py` after the builder's
+gate; the check that should have caught it read pytest through `| tail`, so
+the exit code was tail's, and the tag went out. 5.22.1 is the builder's
+5.22.0 tree with the wording done properly. **Install 5.22.1, never 5.22.0.**
+Two rules from it: edit by exact text, never by line number; and read a
+suite's exit code directly, never through a pipe.
+
+### 5.22.0 (2026-09-21, tagged, BROKEN on PyPI) — the output survives a restart, and the disagreement becomes the answer
 
 Two things, both in `report_ingest`, no dependency change and no model call
 added anywhere.
@@ -70,7 +80,8 @@ save `rules_confidence`, planlens' own per-page confidence, so the
 `module_work/report_ingest_harness/measure_wp6_vote.py`.
 
 Suites: `report_ingest` 746 (56 new), harness 229 (16 new), docs-currency
-green. **Install 5.22.0**; it supersedes 5.21.2 and everything back to 5.20.1.
+green. **Install 5.22.1** (5.22.0 does not import); it supersedes 5.21.2 and
+everything back to 5.20.1.
 
 **Next on this stage**: run the vote over the 38 saved sheet-mode vision runs
 the owner copied to SharePoint (`vision_dirs=[...]`) beside the label runs, if
