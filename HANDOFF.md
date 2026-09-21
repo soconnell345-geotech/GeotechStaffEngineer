@@ -8,6 +8,51 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### 5.23.0 (2026-09-20, on master, NOT tagged) — the readers' floor and the `ingest` stage
+
+Built from what the first full cluster run showed (ledger runs 6–7): the log
+reader re-emitted the record from the model's answer and LOST to the grid on
+seven of ten blind logs (73 % → 62 %), and the lab reader came back below the
+tables on six sheets. No dependency change; pure Python inside `report_ingest`.
+
+**1. The floor** (`report_ingest/floor.py`, `log_floor.py`, `lab_floor.py`).
+The deterministic pass is the FIRST voter and its values are the floor:
+`seed_from_grid` (samples, blows, N, recovery, index values, layers with any
+printed USCS symbol, header fields, the groundwater field) and
+`floor_from_tables` (the title's kind, the printed link, every labelled table
+value, grading series and summary row) are built BEFORE any call, shown to the
+model as THE STARTING RECORD, and the answer is merged back: ADD accepted;
+CORRECT only with evidence (a box and a note, or a note on a picture-read
+value) — then the model's value takes the slot and the floor's stands in
+`prov.alternatives`; a contradiction without evidence keeps the floor's value
+in the slot with the model's beside it; NEVER DROP — an omitted value is kept
+with a QA note. Every split is `QAEntry(kind="disagreement")` with both values
+and both confidences. Within the scorer's tolerance = `reconciled`.
+`Provenance.method` now names the voter; `Alternative` is the new model. The
+log reader spends one follow-up call on its own unsettled list (rows
+magnified through the ruler) when the budget allows. Scorers add
+`model_alone` + disagreement/kept/added/reconciled counts; `after` IS
+floor+model. Tests: a reply that drops everything scores no lower than the
+grid/tables alone; a contradiction keeps both; evidence overrules; a symbol
+the model adds is added.
+
+**2. The `ingest` stage** (`stages=("ingest",)`, the seventh). The whole
+graph per report into `out_dir/ingest/<ID>/` (record, summary, page, DIGGS
+with both gates, `qa.json`, `run.json`; `ingest/reports.db`), reusing a saved
+label run's triage and review from `runs/` or `review_dir`, resumable per
+report and per item, mirrored, and scoring the record against the hand truth
+in `truth_dir` with the SAME scorers. `RESULTS.md` gains `# Ingest: the
+record and its exports` (per report: pages, workflow, investigations by kind,
+samples, SPT, lab tests by kind, narrative answered/null, QA
+disagreement/partial/out_of_range, DIGGS written/schema/read back, cost;
+totals; scored-against-truth table). `graph.ingest_report` accepts an open
+planlens document. README cell in "Ingesting whole reports".
+
+Suites: `report_ingest` 777, harness 229, docs-currency green. Stage by
+exact path; nothing under `raw/`. **Next:** the owner runs
+`stages=("ingest",)` with `review_dir` at the saved label run (`max_reports=2`
+first), then reads the blind-log floor effect and the whole-pipeline score.
+
 ### 5.22.1 RELEASED (2026-09-21) — 5.22.0 with its wording fixed; 5.22.0 on PyPI does not import
 
 The lead's docstring edit by line number landed inside

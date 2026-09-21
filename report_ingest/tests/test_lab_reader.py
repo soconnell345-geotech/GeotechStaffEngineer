@@ -15,12 +15,14 @@ from __future__ import annotations
 
 import pytest
 
+from report_ingest.lab_floor import floor_from_tables, kind_from_title
 from report_ingest.lab_reader import (
     KIND_DEFINITIONS, LAB_READER_SYSTEM, LAB_TOOLS, LabSheetReading,
     MAX_MODEL_CALLS, ReadPassing, ReadPoint, ReadProv, ReadQuantity,
     ReadReported, ReadRow, ReadSeries, ReadSpecimen, ReadTest, SERIES_NAMES,
     Unsettled, read_lab_sheet, serialise_page,
 )
+from report_ingest.lab_scoring import score_record, score_tables
 from report_ingest.model import (
     AtterbergResult, ChemicalResult, GradationResult, OtherResult,
     StrengthResult, SummaryTableResult,
@@ -349,26 +351,32 @@ class TestWhatPythonRefuses:
         reading = _atterberg_reading(test={"depth_top": 4000.0})
         engine = FakeEngine([{"final": reading}])
         result = read_lab_sheet(doc, [0], engine)
-        assert result.tests[0].depth_top is None
+        assert result.model_tests[0].depth_top is None
         assert any("outside 0 to" in u["why"] for u in result.unresolved)
-        # The rest of the sheet survives the refusal.
-        assert result.tests[0].result.ll == 48.0
+        # The rest of the sheet survives the refusal ...
+        assert result.model_tests[0].result.ll == 48.0
+        # ... and the record carries the depth the sheet PRINTS, from the
+        # floor, since the model's was refused and left the slot empty.
+        assert result.tests[0].depth_top.value == 7.5
 
     def test_a_negative_depth_is_refused(self, atterberg):
         doc, _gt = atterberg
         engine = FakeEngine([{"final": _atterberg_reading(
             test={"depth_top": -3.0})}])
         result = read_lab_sheet(doc, [0], engine)
-        assert result.tests[0].depth_top is None
+        assert result.model_tests[0].depth_top is None
+        assert result.tests[0].depth_top.value == 7.5     # the floor's
 
     def test_a_percentage_past_a_hundred_is_refused(self, atterberg):
         doc, _gt = atterberg
         engine = FakeEngine([{"final": _atterberg_reading(
             test={"ll": 148.0, "pl": 22.0, "pi": 26.0})}])
         result = read_lab_sheet(doc, [0], engine)
-        assert result.tests[0].result.ll is None
-        assert result.tests[0].result.pl == 22.0
+        assert result.model_tests[0].result.ll is None
+        assert result.model_tests[0].result.pl == 22.0
         assert any("not a percentage" in u["why"] for u in result.unresolved)
+        # The table prints 48; the record carries it, from the floor.
+        assert result.tests[0].result.ll == 48.0
 
     def test_a_liquid_limit_below_the_plastic_limit_takes_all_three(
             self, atterberg):
@@ -377,10 +385,13 @@ class TestWhatPythonRefuses:
         engine = FakeEngine([{"final": _atterberg_reading(
             test={"ll": 22.0, "pl": 48.0, "pi": 26.0})}])
         result = read_lab_sheet(doc, [0], engine)
-        limits = result.tests[0].result
+        limits = result.model_tests[0].result
         assert (limits.ll, limits.pl, limits.pi) == (None, None, None)
         assert any("below plastic limit" in u["why"]
                    for u in result.unresolved)
+        # The floor's three limits fill the empty slots.
+        merged = result.tests[0].result
+        assert (merged.ll, merged.pl, merged.pi) == (48.0, 22.0, 26.0)
 
     def test_a_grading_that_runs_the_wrong_way_is_refused_whole(
             self, gradation):
@@ -389,9 +400,13 @@ class TestWhatPythonRefuses:
         reading.tests[0].series[0].points[-1].y = 99.0   # more passes 0.075
         engine = FakeEngine([{"final": reading}])
         result = read_lab_sheet(doc, [0], engine)
-        assert result.tests[0].result.percent_passing == []
+        assert result.model_tests[0].result.percent_passing == []
         assert any("runs the wrong way" in u["why"]
                    for u in result.unresolved)
+        # The table under the plot tabulates the series; the record has it.
+        assert [p.percent_passing
+                for p in result.tests[0].result.percent_passing] == \
+            [100.0, 98.0, 87.0, 61.0, 43.0]
 
     def test_a_provenance_naming_another_page_loses_its_box(self, atterberg):
         doc, _gt = atterberg
@@ -449,7 +464,7 @@ class TestZoomPlot:
         engine = FakeEngine([{"final": reading}])
         result = read_lab_sheet(doc, [0], engine)
         assert result.tests[0].curves_digitised is True
-        assert result.tests[0].prov[0].method == "vision"
+        assert result.tests[0].prov[0].method == "model_from_picture"
         assert any("digitised" in c["why"] for c in result.changes)
         # The test that did NOT digitise anything is not flagged.
         assert result.tests[1].curves_digitised is False
@@ -461,7 +476,7 @@ class TestZoomPlot:
             test={"prov": _prov(from_image=True, note="the box is a scan")})
         engine = FakeEngine([{"final": reading}])
         result = read_lab_sheet(doc, [0], engine)
-        assert result.tests[0].prov[0].method == "vision"
+        assert result.tests[0].prov[0].method == "model_from_picture"
         assert any("scan" in c["why"] for c in result.changes)
 
 
@@ -536,3 +551,217 @@ def test_the_tool_surface_is_the_one_tool_it_should_be():
     assert [t["name"] for t in LAB_TOOLS] == ["zoom_plot"]
     schema = LAB_TOOLS[0]["input_schema"]
     assert schema["required"] == ["page", "bbox"]
+
+
+# ---------------------------------------------------------------------------
+# the floor: the page's tables and title are the first voter
+# ---------------------------------------------------------------------------
+
+def _truth_of(gt, kind: str, sheet_id: str) -> dict:
+    """The fixture's answers in the lab scorer's truth shape."""
+    if gt.rows:
+        rows = []
+        for row in gt.rows:
+            block = {"investigation_id": row["investigation_id"],
+                     "sample_id": row["sample_id"],
+                     "depth_top": row["depth_top"], "wc_pct": row["wc"],
+                     "percent_finer": {"No. 200": row["passing_200"]}}
+            for name in ("ll", "pl", "pi"):
+                if row.get(name) is not None:
+                    block[name] = row[name]
+            rows.append(block)
+        return {"id": sheet_id, "kind": kind, "depth_unit": gt.depth_unit,
+                "rows": rows}
+    block = {"investigation_id": gt.investigation_id,
+             "depth_top": gt.depth_top}
+    for name, value in gt.values.items():
+        if name == "uscs":
+            continue
+        key = {"water_content": "wc_pct", "gravel_percent": "gravel_pct",
+               "sand_percent": "sand_pct",
+               "fines_percent": "fines_pct"}.get(name, name)
+        block[key] = value
+    if gt.passing:
+        block["percent_finer"] = {sieve: pct for sieve, pct in gt.passing}
+    return {"id": sheet_id, "kind": kind, "depth_unit": gt.depth_unit,
+            "tests": [block]}
+
+
+class TestTheFloor:
+
+    def test_the_title_names_the_kind(self):
+        assert kind_from_title(["ATTERBERG LIMITS RESULTS"])[0] == "atterberg"
+        assert kind_from_title(["PARTICLE SIZE DISTRIBUTION"])[0] == \
+            "gradation"
+        assert kind_from_title(["SUMMARY OF LABORATORY TEST RESULTS"])[0] \
+            == "summary_table"
+        assert kind_from_title(["CERTIFICATE OF ANALYSIS"])[0] == "other"
+        assert kind_from_title(["ANALYSE GRANULOMETRIQUE"])[0] == "gradation"
+        assert kind_from_title(["Page 2 of 9"]) == ("", "")
+
+    def test_the_floor_reads_the_tables_the_title_and_the_link(
+            self, gradation):
+        doc, gt = gradation
+        floor = floor_from_tables(doc, [0], "RXX")
+        assert floor.kind == "gradation"
+        assert floor.link.investigation_id == "SB-11"
+        assert floor.link.depth_top == 12.0 and floor.link.unit == "ft"
+        assert [t.kind for t in floor.tests] == ["gradation", "atterberg"]
+        grading, limits = floor.tests
+        assert [p.percent_passing for p in grading.result.percent_passing] \
+            == [100.0, 98.0, 87.0, 61.0, 43.0]
+        assert grading.result.percent_passing[-1].size.value == 0.075
+        assert grading.result.fines_percent == 43.0
+        assert (limits.result.ll, limits.result.pl, limits.result.pi) == \
+            (31.0, 19.0, 12.0)
+        assert limits.investigation_id == "SB-11"
+        assert limits.depth_top.value == 12.0
+        assert all(p.method in ("tables", "text") for t in floor.tests
+                   for p in t.prov)
+        assert all(0.0 < p.confidence <= 1.0 for t in floor.tests
+                   for p in t.prov)
+
+    def test_a_summary_table_seeds_a_row_per_specimen(self, summary):
+        doc, gt = summary
+        floor = floor_from_tables(doc, [0], "RXX")
+        (table,) = floor.tests
+        assert table.kind == "summary_table"
+        rows = table.result.rows
+        assert [r.investigation_id for r in rows] == ["A-1", "A-1", "A-2",
+                                                      "A-3"]
+        assert rows[0].wc == 18.2 and rows[0].ll == 41.0
+        assert rows[1].ll is None                  # the blank cell stays blank
+        assert rows[3].percent_passing[0].percent_passing == 94.0
+        assert rows[0].depth_top.unit == "m"
+
+    def test_a_certificate_seeds_the_kind_and_no_results(self, certificate):
+        doc, _gt = certificate
+        floor = floor_from_tables(doc, [0], "RXX")
+        (page,) = floor.tests
+        assert page.kind == "other"
+        assert isinstance(page.result, OtherResult)
+        assert page.result.no_results is True
+
+    def test_the_model_is_shown_the_starting_record(self, atterberg):
+        doc, _gt = atterberg
+        engine = FakeEngine([{"final": _atterberg_reading()}])
+        read_lab_sheet(doc, [0], engine)
+        brief = engine.calls[0]["messages"][0]["content"][0]["text"]
+        assert "THE STARTING RECORD" in brief
+        assert "kind from the title: atterberg" in brief
+        assert "boring 'B-4'" in brief and "depth 7.5 ft" in brief
+        assert "ll 48, pl 22, pi 26" in brief
+        assert "THE STARTING RECORD, AND THE THREE THINGS" in LAB_READER_SYSTEM
+        assert "never DROP one" in LAB_READER_SYSTEM
+
+    def test_a_reply_that_drops_the_values_scores_no_lower_than_the_tables(
+            self, gradation):
+        doc, gt = gradation
+        truth = _truth_of(gt, "gradation", "gradation__RXX_p0")
+        before = score_tables(truth, doc, [0])
+        # The model names the kind and the link and returns not one number.
+        empty = LabSheetReading(
+            depth_unit="ft", pages_read=[0],
+            tests=[ReadTest(kind="gradation", investigation_id="SB-11",
+                            sample_id="3", depth_top=12.0, prov=_prov())])
+        engine = FakeEngine([{"final": empty}])
+        result = read_lab_sheet(doc, [0], engine, report_id="RXX")
+        after = score_record(truth, result.tests)
+        for metric in ("index", "series"):
+            assert after.scores[metric].found >= before.scores[metric].found
+        assert after.scores["kind"].found == 1
+        assert after.scores["link"].found == 1
+        alone = score_record(truth, result.model_tests)
+        assert alone.scores["index"].found < before.scores["index"].found
+        assert len(result.kept) >= 5
+
+    def test_a_reply_that_contradicts_a_table_value_keeps_both(
+            self, atterberg):
+        doc, _gt = atterberg
+        engine = FakeEngine([{"final": _atterberg_reading(
+            test={"ll": 58.0})}])
+        result = read_lab_sheet(doc, [0], engine)
+        limits = result.tests[0].result
+        assert limits.ll == 48.0                        # the table's stands
+        (alt,) = [a for a in result.tests[0].prov[0].alternatives
+                  if a.field == "ll"]
+        assert alt.value == "58" and alt.method == "model"
+        (row,) = [d for d in result.disagreements
+                  if d["what"].endswith(": ll")]
+        assert row["floor"] == "48" and row["model"] == "58"
+        assert row["kept"] == "floor"
+        assert row["confidence"]["floor"] > 0
+
+    def test_a_correction_with_evidence_overrules_the_table(self, atterberg):
+        doc, _gt = atterberg
+        engine = FakeEngine([{"final": _atterberg_reading(
+            test={"ll": 58.0,
+                  "prov": _prov(note="the box prints 58; the 4 is a "
+                                     "smudge")})}])
+        result = read_lab_sheet(doc, [0], engine)
+        assert result.tests[0].result.ll == 58.0
+        (alt,) = [a for a in result.tests[0].prov[0].alternatives
+                  if a.field == "ll"]
+        assert alt.value == "48" and alt.method == "tables"
+        (row,) = [d for d in result.disagreements
+                  if d["what"].endswith(": ll")]
+        assert row["kept"] == "model"
+
+    def test_a_value_within_tolerance_is_reconciled_not_disputed(
+            self, atterberg):
+        doc, _gt = atterberg
+        engine = FakeEngine([{"final": _atterberg_reading()}])
+        result = read_lab_sheet(doc, [0], engine)
+        assert result.disagreements == []
+        assert result.reconciled >= 3
+        assert result.tests[0].result.ll == 48.0
+
+    def test_a_kind_and_a_link_the_model_adds_are_added(self, atterberg):
+        doc, _gt = atterberg
+        # The model reads a chemical suite the tables did not label.
+        reading = LabSheetReading(
+            depth_unit="ft", pages_read=[0],
+            tests=[ReadTest(kind="atterberg", investigation_id="B-4",
+                            sample_id="S-2", depth_top=7.5,
+                            ll=48.0, pl=22.0, pi=26.0, prov=_prov()),
+                   ReadTest(kind="chemical", investigation_id="B-4",
+                            depth_top=7.5,
+                            pH=ReadReported(value=8.4), prov=_prov())])
+        engine = FakeEngine([{"final": reading}])
+        result = read_lab_sheet(doc, [0], engine)
+        assert result.kinds == ["atterberg", "chemical"]
+        assert any(a["what"] == "chemical test" for a in result.added)
+
+    def test_a_summary_row_the_model_left_out_is_kept(self, summary):
+        doc, gt = summary
+        rows = [ReadRow(investigation_id=r["investigation_id"],
+                        sample_id=r["sample_id"], depth_top=r["depth_top"],
+                        wc=r.get("wc"), ll=r.get("ll"),
+                        pl=(ReadReported(value=r["pl"]) if r.get("pl")
+                            else None), pi=r.get("pi"))
+                for r in gt.rows[:2]]                 # two of the four
+        reading = LabSheetReading(
+            depth_unit="m", pages_read=[0],
+            tests=[ReadTest(kind="summary_table", rows=rows, prov=_prov())])
+        engine = FakeEngine([{"final": reading}])
+        result = read_lab_sheet(doc, [0], engine)
+        table = result.tests[0].result
+        assert len(table.rows) == 4
+        assert table.rows[2].investigation_id == "A-2"
+        # ... and the No. 200 column the model's rows did not carry is in.
+        assert table.rows[0].percent_passing[0].percent_passing == 72.0
+        assert sum(1 for k in result.kept if k["what"].startswith("row")) \
+            >= 2
+
+    def test_the_result_serialises_both_voters_and_the_merge(self, gradation):
+        import json
+        doc, _gt = gradation
+        engine = FakeEngine([{"final": _gradation_reading()}])
+        blob = read_lab_sheet(doc, [0], engine).to_dict()
+        json.dumps(blob)
+        assert blob["floor_kind"] == "gradation"
+        assert [t["kind"] for t in blob["floor_tests"]] == \
+            ["gradation", "atterberg"]
+        assert [t["kind"] for t in blob["model_tests"]] == \
+            ["gradation", "atterberg"]
+        assert blob["reconciled"] > 0

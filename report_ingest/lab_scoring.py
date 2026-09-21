@@ -581,6 +581,16 @@ class LabScore:
     kinds_read: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     error: Optional[str] = None
+    #: Since 5.23.0 the reader's records are the MERGE of the tables' floor
+    #: and the model's answer, so ``after`` is "floor + model". The model's
+    #: answer scored ALONE is kept here beside it, and the merge's own
+    #: counts: how many slots the voters split on, how many floor values the
+    #: model left out, how many it added, how many both gave.
+    model_alone: Optional[Dict[str, Any]] = None
+    disagreements: int = 0
+    kept: int = 0
+    added: int = 0
+    reconciled: int = 0
 
     def score(self, name: str) -> Score:
         return self.scores.setdefault(name, Score())
@@ -604,6 +614,9 @@ class LabScore:
             "tool_calls": self.tool_calls, "unresolved": self.unresolved,
             "changes": self.changes, "kinds_read": list(self.kinds_read),
             "error": self.error,
+            "model_alone": self.model_alone,
+            "disagreements": self.disagreements, "kept": self.kept,
+            "added": self.added, "reconciled": self.reconciled,
         }
 
 
@@ -845,4 +858,15 @@ def score_one_sheet(truth: Dict[str, Any], doc: Any, engine: Any, *,
     after.unresolved = len(result.unresolved)
     after.changes = len(result.changes)
     after.warnings = list(result.warnings)
+    # The model's answer alone, before the merge with the tables' floor.
+    model_tests = getattr(result, "model_tests", None)
+    if model_tests is not None:
+        alone = score_record(truth, model_tests)
+        after.model_alone = {
+            "scores": {k: v.to_dict() for k, v in alone.scores.items()},
+            "overall": alone.total.to_dict()}
+    after.disagreements = len(getattr(result, "disagreements", ()) or ())
+    after.kept = len(getattr(result, "kept", ()) or ())
+    after.added = len(getattr(result, "added", ()) or ())
+    after.reconciled = int(getattr(result, "reconciled", 0) or 0)
     return before, after

@@ -355,6 +355,21 @@ and add nothing the rules cannot be taught).
   accuracy a targeted review of the disagreements would need to carry the
   set over the gate (`report_ingest/vote.py`).
 
+### The readers vote, and the pipeline runs on the cluster (added 5.23.0)
+
+- **The floor is the first voter.** Built: `report_ingest/floor.py`,
+  `log_floor.py`, `lab_floor.py`. The grid's rows (a log) and the page's
+  detected tables and title (a sheet) are read into the record BEFORE any
+  model call, at their own confidence; the model is shown that record and
+  may add, may correct only with evidence, and may never drop. A split is a
+  `disagreement` QA entry carrying both values and both confidences; a
+  value the model omits is kept with a note. Motivated by cluster run 6–7:
+  the log reader lost to the grid on seven of ten blind logs.
+- **The `ingest` stage** runs `graph.ingest_report` end to end per report on
+  the cluster — record, summary, library page, DIGGS with both gates,
+  `qa.json` — reusing a saved label run's review, and scores the record
+  against the hand truth with the same scorers. The whole-pipeline score.
+
 ### Where each piece lives
 
 | Piece | Home | Why |
@@ -485,6 +500,11 @@ from rendered pages, kept in the private ledger for the owner to spot-check.
   RQD when printed.
 - Acceptance: ≥ 0.95 on N-values and sample depths on text-layer logs
   before WP3 starts; scanned logs scored separately once DI results exist.
+- **Built, 5.23.0 — the floor.** `log_floor.seed_from_grid` seeds the record
+  from the grid before the call; `merge_investigations` folds the model's
+  answer onto it (add / correct with evidence / never drop); one follow-up
+  call on the reader's own unsettled list with the rows magnified. The
+  scorecard prints the grid, the model alone and floor+model.
 
 ### WP3: lab sheets → lab tests → DIGGS lab tests
 
@@ -505,6 +525,11 @@ from rendered pages, kept in the private ledger for the owner to spot-check.
 - Ground truth (mine): 30 tests across kinds and ≥ 4 labs (US firms' own
   labs, a local lab reporting in French, a 1990s typed sheet). Acceptance:
   ≥ 0.9 of index values exact; curve points within 2 % of the axis span.
+- **Built, 5.23.0 — the floor.** `lab_floor.floor_from_tables` seeds typed
+  tests from the title's kind, the printed link and the detected tables
+  (labelled values, grading series, summary rows); `merge_lab_tests` folds
+  the model's answer onto them under the same rule. No sheet can now score
+  below its tables.
 
 ### WP4: narrative + reconciler + the `report_ingest` sub-agent + library page
 

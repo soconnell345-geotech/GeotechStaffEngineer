@@ -23,6 +23,11 @@ record and its exports out -- and the pieces it drives are:
     One exploration log, and one laboratory sheet, read into the record.
     Geometry says where and the model says what; Python refuses what the
     page cannot support.
+``report_ingest.floor``, ``log_floor`` and ``lab_floor``
+    The readers vote (5.23.0): the grid's rows and the page's tables are the
+    first voter and the floor, seeded into the record before any call; the
+    model may add, correct with evidence, never drop; every split is a
+    disagreement in the QA section with both values and both confidences.
 ``report_ingest.narrative_reader``
     The narrative read into the owner's two standing query schemas, with a
     citation on every answer and null wherever the report does not say.

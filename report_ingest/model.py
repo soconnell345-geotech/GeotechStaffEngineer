@@ -46,7 +46,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
     "SCHEMA_VERSION", "SI_UNITS", "UNIT_TO_SI",
-    "Provenance", "Quantity", "Project", "DrillingDetails", "Layer", "Sample",
+    "Provenance", "Alternative", "Quantity", "Project", "DrillingDetails",
+    "Layer", "Sample",
     "SPT", "WaterLevel", "LabTest", "Investigation", "NarrativeFacts",
     "GeneralFacts", "NaturalHazardFacts", "CalcEntry", "QAEntry",
     "DocumentFacts", "ReportRecord", "to_si", "si_numbers",
@@ -245,7 +246,37 @@ def to_si(value: float, unit: str) -> Optional[Tuple[float, str]]:
 # ---------------------------------------------------------------------------
 
 #: How a value was read off the page, in falling order of exactness.
-Method = Literal["text", "di", "ocr", "grid", "vision", "derived"]
+#:
+#: The readers VOTE since 5.23.0. ``grid`` and ``tables`` are the
+#: deterministic first voter (the log grid's geometry, the page's detected
+#: tables); ``model`` and ``model_from_picture`` are the second voter, a model
+#: reading the rows or the picture; ``reconciled`` is a value both voters
+#: gave, within the scorer's own tolerance. ``vision`` is kept for the older
+#: files and the whole-page vision passes.
+Method = Literal["text", "di", "ocr", "grid", "tables", "vision", "model",
+                 "model_from_picture", "reconciled", "derived"]
+
+
+class Alternative(BaseModel):
+    """A value a second voter gave for the same slot, and did not win.
+
+    A disagreement between the floor and the model is never settled in
+    silence: the value in the record's slot is one voter's, and the other's
+    stands here beside it with its own method and confidence, so a reviewer
+    sees both and a QA entry sends them to look.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    field: str = Field(
+        default="",
+        description="the slot this is an alternative for: 'n', 'top', "
+                    "'uscs', 'll' ...; empty when the whole object is meant")
+    value: str = Field(description="the other voter's value, as text")
+    unit: str = Field(default="", description="its unit, when it had one")
+    method: Method = Field(description="which voter gave it")
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    note: str = Field(default="", description="what that voter said about it")
 
 
 class Provenance(BaseModel):
@@ -266,9 +297,13 @@ class Provenance(BaseModel):
         default="text",
         description="text: the PDF's own text layer. di: Azure Document "
                     "Intelligence. ocr: on-machine optical reading. grid: "
-                    "placed by the log grid's geometry. vision: a model read "
-                    "it off the picture. derived: computed from other "
-                    "recorded values, not printed")
+                    "placed by the log grid's geometry. tables: a detected "
+                    "table on the page. model: a model read it off the rows "
+                    "or the text. model_from_picture: a model read it off "
+                    "the picture. reconciled: the grid or tables and the "
+                    "model gave the same value. vision: a whole-page vision "
+                    "pass. derived: computed from other recorded values, "
+                    "not printed")
     confidence: float = Field(
         default=1.0, ge=0.0, le=1.0,
         description="how sure the reader is, 0 to 1")
@@ -276,6 +311,10 @@ class Provenance(BaseModel):
         default="",
         description="anything a reviewer needs: what was ambiguous, what "
                     "settled it")
+    alternatives: List[Alternative] = Field(
+        default_factory=list,
+        description="what another voter said for this slot, when the voters "
+                    "disagreed; the record keeps both and QA flags it")
 
 
 class Quantity(BaseModel):
@@ -1633,10 +1672,13 @@ class CalcEntry(BaseModel):
 
 #: What a QA entry says happened. ``conflict`` is the important one: two
 #: sources of the same value that disagree are RECORDED, never silently
-#: resolved.
+#: resolved. ``disagreement`` is its twin for the two voters inside one
+#: reader -- the grid or the tables against the model -- and is the entry
+#: the owner asked for: a place where methods say different things, so a
+#: reviewer is sent to look.
 QAKind = Literal[
-    "skipped", "partial", "conflict", "unreadable", "unconverted",
-    "count_mismatch", "out_of_range", "note"]
+    "skipped", "partial", "conflict", "disagreement", "unreadable",
+    "unconverted", "count_mismatch", "out_of_range", "note"]
 
 
 class QAEntry(BaseModel):

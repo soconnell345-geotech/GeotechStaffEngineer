@@ -71,8 +71,52 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-09-21) — 5.22.1 RELEASED (durable mirror of every run + the `vote` stage) with planlens 0.6.0
+## CURRENT WORKING STATE (2026-09-20) — 5.23.0 ON MASTER (the readers' floor + the `ingest` stage) with planlens 0.6.0
 
+- **app 5.23.0** (2026-09-20, on master, NOT yet tagged or released) —
+  **the readers vote, and the whole pipeline runs on the cluster.** No
+  dependency change; pure Python inside `report_ingest`, and no new model
+  call per item beyond ONE optional follow-up per log. **(1) The floor**
+  (`report_ingest/floor.py`, `log_floor.py`, `lab_floor.py`). The first
+  full cluster run (ledger runs 6–7, gpt-5.4, 2026-09-18) showed the log
+  reader LOSING to the grid on seven of ten blind logs (73 % → 62 %;
+  recovery 15/15 → 3/15, index 7/16 → 0/16) and the lab reader below the
+  tables on six sheets, because each re-emitted the record from the model's
+  answer. Now the deterministic pass is the FIRST voter and its values are
+  the floor: `log_floor.seed_from_grid` turns the grid's rows into an
+  `Investigation` before any call (samples, blows, N, recovery, index
+  values, layer tops with any printed USCS symbol, header fields, a water
+  level off the groundwater field, each at the grid's own confidence);
+  `lab_floor.floor_from_tables` reads the sheet's title (kind), the printed
+  link and every labelled table value, grading series and summary row into
+  typed `LabTest`s; both are shown to the model as THE STARTING RECORD, and
+  the answer is merged back under one rule — the model may ADD, may CORRECT
+  only with evidence (a box and a note, or a note on a picture-read value),
+  and may NEVER DROP: an omitted value is kept with a QA note, a
+  contradiction keeps BOTH (the floor's in the slot, the model's in
+  `prov.alternatives`, or the reverse with evidence) and raises a
+  `QAEntry(kind="disagreement")` with both values and both confidences. A
+  difference inside the scorer's tolerance (0.15 m depth, 0.30 m layer, N
+  exact, lab index 0.01, grading 1 %) is `reconciled`. `Provenance.method`
+  now names the voter (`grid`, `tables`, `model`, `model_from_picture`,
+  `reconciled`, plus the old ones); every value carries a confidence. The
+  log reader also spends ONE follow-up call on its own unsettled list when
+  the budget allows, with the rows magnified through the ruler. The scorers
+  keep before/after and add `model_alone` (the model's answer scored
+  without the floor) plus disagreement/kept/added/reconciled counts; the
+  graph turns disagreements into QA. **(2) The `ingest` stage**
+  (`stages=("ingest",)`, the seventh): `graph.ingest_report` end to end
+  per report into `out_dir/ingest/<ID>/` — record, summary, library page,
+  DIGGS with both gates, `qa.json`, `run.json` — reusing a saved label
+  run's triage and review from `runs/` (or `review_dir`) so the review is
+  never paid twice, resumable per report and per item, mirrored like every
+  run file, and scoring the record against whatever hand truth `truth_dir`
+  holds with the SAME scorers (the whole-pipeline score). RESULTS gains
+  `# Ingest: the record and its exports`. The graph accepts an OPEN planlens
+  document as `source`, so the stage hands it the corpus's DI-aware one.
+  Suites: `report_ingest` **777**, harness **229**, docs-currency green.
+  **Next:** run `stages=("ingest",)` with `review_dir` pointing at the saved
+  label run and read the floor's effect on the blind logs. 5.22.1 follows.
 - **app 5.22.1** (tag `v5.22.1`, 2026-09-21) — the same release as 5.22.0
   with one wording fix. **5.22.0 on PyPI DOES NOT IMPORT** — a docstring
   edit of the lead's landed inside a function of `report_ingest/mirror.py`
@@ -1239,7 +1283,7 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | drawing_ir → `planlens.ir` + `planlens.document` + `planlens.tools` | (planlens, 1,307 tests at 0.6.0) | HISTORICAL PATH. The drawing IR (DXF / vector-PDF / raster ingest, slice queries, leader / dimension / title-block / bubble / cloud finders, `render_region`) is `planlens.ir`; since planlens 0.3.0 the WHOLE-DOCUMENT layer (`planlens.document`: page map + structure, located text, tables, review markups, hidden CAD text, Azure DI text source) and the LLM tool layer (`planlens.tools`) sit beside it. See "Document review & drawing geometry (planlens)" below. |
 | fem2d | 353 | 2D plane-strain FEM (T6 default + CST/Q4/beam, 3D-principal MC return, HS, GL99 SRM, seepage, consolidation, staged construction, PLAXIS-style calc-package plots); validated vs Griffiths-Lane/Prandtl (VALIDATION.md) |
 | geo_project | 89 | Canonical Project document for staged, human-gated LE/FEM model setup (schema+validators, builders, templates, DXF/PDF/vision ingest w/ provenance quarantine, echo-back renderer) |
-| report_ingest | 746 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop; `run_folder` drives it over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels","vote"), truth_dir=…, sharepoint=fh_sp_client)` is the owner's notebook cell; `truth_dir` is ONE root holding `logs/`, `lab/` and `narrative/` so one folder is uploaded rather than three paths kept in step, and `sharepoint=`/`durable_dir=` (5.22.0, `mirror.py`) copy every run file somewhere a cluster restart cannot reach and restore a wiped `out_dir` at the start. The sixth stage is `vote` (5.22.0, `vote.py`): NO model — the rules, the vision labels and the review set against each other and against the hand labels, giving the agreement rate, a per-label trust table learned in sample only, three combining policies scored beside the voters, and the accuracy a targeted review of the disagreements would need. The fifth stage is the 5.20.0 EXPERIMENT: `vision_labels.py` sends each page as a picture to GPT-4.1 on the cheap tier with structured output, scored against the same hand labels by the same scorer as the rules and the review — one call a page, one a six-page contact sheet, or (5.21.0) one per window of 36 stamped full-size pages with contact sheets of the WHOLE report beside them (`vision_mode="document"`), which is capped by the endpoint's measured 50-image-per-request limit rather than by its context window. `report_ingest/README.md`, plan in `module_work/REPORT_INGEST_PLAN.md` |
+| report_ingest | 777 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop; `run_folder` drives it over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels","vote","ingest"), truth_dir=…, sharepoint=fh_sp_client)` is the owner's notebook cell; `truth_dir` is ONE root holding `logs/`, `lab/` and `narrative/` so one folder is uploaded rather than three paths kept in step, and `sharepoint=`/`durable_dir=` (5.22.0, `mirror.py`) copy every run file somewhere a cluster restart cannot reach and restore a wiped `out_dir` at the start. The seventh stage is `ingest` (5.23.0): the whole graph per report into `out_dir/ingest/<ID>/` with the DIGGS file gated, a saved label run reused, and the record scored against the hand truth — the whole-pipeline score; and since 5.23.0 the log and lab readers VOTE: the grid / the tables are the first voter and the floor (`floor.py`, `log_floor.py`, `lab_floor.py`), the model may add, correct with evidence, never drop, and every split is a `disagreement` QA entry with both values and confidences. The sixth stage is `vote` (5.22.0, `vote.py`): NO model — the rules, the vision labels and the review set against each other and against the hand labels, giving the agreement rate, a per-label trust table learned in sample only, three combining policies scored beside the voters, and the accuracy a targeted review of the disagreements would need. The fifth stage is the 5.20.0 EXPERIMENT: `vision_labels.py` sends each page as a picture to GPT-4.1 on the cheap tier with structured output, scored against the same hand labels by the same scorer as the rules and the review — one call a page, one a six-page contact sheet, or (5.21.0) one per window of 36 stamped full-size pages with contact sheets of the WHOLE report beside them (`vision_mode="document"`), which is capped by the endpoint's measured 50-image-per-request limit rather than by its context window. `report_ingest/README.md`, plan in `module_work/REPORT_INGEST_PLAN.md` |
 
 Other components: geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions + DM7 figure catalogs, 3529 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 + 25 + 31 + 5 = 479 tests)
 

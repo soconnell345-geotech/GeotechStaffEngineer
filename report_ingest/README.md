@@ -15,6 +15,7 @@ available to the app as one sub-agent. Calculation printouts are WP5.
 | The record | `model.py` | pydantic; the product everything else exports |
 | 2. Log reader | `log_reader.py` | one structured call per log, image alongside |
 | 3. Lab reader | `lab_reader.py` | one call per sheet, `zoom_plot` when a curve is only plotted |
+| The floors | `floor.py`, `log_floor.py`, `lab_floor.py` | the grid's and the tables' own record before any call, and the merge: add, correct with evidence, never drop |
 | 3. Narrative reader | `narrative_reader.py` | one call for the owner's two schemas, cited |
 | 4. Reconciler | `reconciler.py` | pure Python; records disagreements, never settles them |
 | 5. Writers | `writers.py` | the record, the summary, the library page, DIGGS, the index |
@@ -36,9 +37,18 @@ and the DIGGS file are three exports of it. Three rules hold it together.
 `to_si()` converts once, in the writer that needs SI, so a reviewer setting the
 record beside the page sees the page's own numbers.
 
-**Every value-bearing field carries `Provenance`** — the page, the box, and how
-it was read: `text`, `di`, `ocr`, `grid`, `vision` or `derived`. A reviewer can
-go to the page; a QA pass can ask which values rest on vision alone.
+**Every value-bearing field carries `Provenance`** — the page, the box, how it
+was read, and a confidence from 0 to 1. Since 5.23.0 the method names the
+VOTER: `grid` and `tables` are the deterministic first voter (the log grid's
+geometry, the page's detected tables), `model` and `model_from_picture` the
+second (a model reading the rows or the text, or looking at the picture),
+`reconciled` a value both gave within the scorer's tolerance; `text`, `di`,
+`ocr`, `vision` and `derived` are what they were. Where the two voters split,
+the slot holds one voter's value and the other's stands beside it in
+`prov.alternatives` (an `Alternative`: field, value, unit, method,
+confidence), and a `QAEntry` of kind `disagreement` sends a reviewer to look.
+A reviewer can go to the page; a QA pass can ask which values rest on the
+model alone, and which the two voters disagreed on.
 
 **What could not be read is recorded, not guessed.** An optional field stays
 `None`, a `QAEntry` says what was skipped and why, and
@@ -112,8 +122,33 @@ prints only the drives, `n` stays `None`. Half the templates do one and half the
 other, and adding the second and third drives of a four-drive rock core would
 invent a number. A refusal stays the string the log printed.
 
+**The floor.** The grid is the first voter and what it placed is the floor. Before
+any call, `log_floor.seed_from_grid` turns the rows into an `Investigation` —
+samples with their depths, blow records and N values, recoveries and index
+values, the layers the grid bound to depths with any USCS symbol the description
+prints, the header fields, a water level off the groundwater field — each with
+the grid's own confidence, and the model is shown it as THE STARTING RECORD. Its
+answer is merged back onto the floor (`log_floor.merge_investigations`) under one
+rule. It may **add** what the floor lacks: a sampler type from the symbol, a USCS
+symbol the log prints, a water level and its timing, a refusal, a layer base. It
+may **correct** a floor value only with evidence — the box of the row it read and
+a note saying what the page prints there, or a note on a value read off the
+picture — in which case the model's value takes the slot and the floor's stands
+beside it; a contradiction with no box and no note leaves the floor's value in
+the slot with the model's beside it. It may **never drop** one: a value the
+model leaves out is kept from the floor with a QA note. A difference inside the
+scorer's own tolerance (0.15 m on a depth, 0.30 m on a layer top, exact on an N)
+is not a disagreement — the model's printed number takes the slot as
+`reconciled`. Every other split is a `disagreement` in the QA section, both
+values, both confidences, and which one the record carries. The first full
+cluster run is why: the reader re-emitted the record from its own answer and
+seven of ten blind logs lost values the grid already had (recovery 15/15 →
+3/15, index 7/16 → 0/16).
+
 **The budget** is one call per log, a second only when the reader itself says it
-has pages left, and six at the most.
+has pages left, ONE more on the reader's own unsettled list when the budget
+allows — the rows in question again, magnified through the page's ruler to the
+depth the item names — and six at the most.
 
 ## The lab reader (`lab_reader.py`)
 
@@ -162,6 +197,25 @@ for the answer and offers the tool at the same time, so a tabulated sheet is
 read and answered in a single call. On the last allowed call the tool is
 withdrawn, so a reader that keeps zooming runs out of looking rather than out of
 answering.
+
+**The floor.** The page's detected tables and its title are the first voter.
+Before any call, `lab_floor.floor_from_tables` reads them into typed `LabTest`
+records: the kind the title names (seventeen title patterns, in three
+languages), the boring, sample and depth printed on the sheet, every labelled
+value in a property/value table (`Liquid limit | 31`), every row of a grading
+series (a SIEVE or SIZE column beside a PERCENT FINER column) and every row of a
+summary table (a BORING or DEPTH column and more than one row) — each with the
+table's own confidence — and the model is shown them as THE STARTING RECORD. Its
+answer is merged back (`lab_floor.merge_lab_tests`) under the same rule as the
+log's: a kind, a link, a value or a specimen the model **adds** is accepted; a
+value it **corrects** with a box and a note replaces the table's, with the
+table's kept beside it; a contradiction without evidence leaves the table's
+value in the slot with the model's beside it; a value it **omits** is kept, and
+a whole test it omits stands in the record as its own test, from the tables.
+An index value agrees to 0.01, a grading point to one percentage point. Every
+split is a `disagreement` in QA. Six sheets of the first cluster run came back
+below the tables alone (a gradation 28/28 → 11/30, a chemical 18/18 → 14/22);
+none can now.
 
 ## The DIGGS writer (`diggs_writer.py`)
 
@@ -624,7 +678,7 @@ pages are read from their own text layer alone.
 
 ```python
 # 1. From PyPI through Nexus. planlens 0.6.0 arrives with it.
-%pip install "geotech-staff-engineer==5.22.1"
+%pip install "geotech-staff-engineer==5.23.0"
 dbutils.library.restartPython()
 ```
 
@@ -635,7 +689,7 @@ dbutils.library.restartPython()
 ```
 
 ```python
-# 3. One cell, all six stages. fh_prompter is the object setup just made,
+# 3. One cell, all seven stages. fh_prompter is the object setup just made,
 #    and fh_sp_client is the SharePoint client the mirror writes through.
 from report_ingest.cluster_scoring import score_on_cluster
 
@@ -652,7 +706,7 @@ results = score_on_cluster(
     model        = "funhouse-gpt-high",     # every reader, on the tier the app runs on
     triage_model = "funhouse-gpt-medium",   # one call over a ledger; a cheaper tier does
     sets         = ("insample", "oos_open", "oos_blind"),
-    stages       = ("labels", "logs", "lab", "narrative", "vision_labels", "vote"),
+    stages       = ("labels", "logs", "lab", "narrative", "vision_labels", "vote", "ingest"),
     vision_model = "funhouse-gpt-low",      # the experiment: GPT-4.1, the cheap tier
     vision_mode  = "sheet",                 # six pages a call; or "page" / "document"
     vision_fallback = True,                 # one page-mode call for a page nothing answered for
@@ -719,7 +773,7 @@ spreadsheet's own sheet names. The remote folder is exactly as private as
 `out_dir` is, so put it where the reports themselves already live. Only
 `RESULTS.md` is written to be carried anywhere.
 
-The six stages are described one at a time below, each with the cell that
+The seven stages are described one at a time below, each with the cell that
 runs it alone.
 
 
@@ -1207,6 +1261,61 @@ Locally, `module_work/report_ingest_harness/measure_wp6_vote.py` is the twin:
 it reads the WP5 and WP1b runs the development engine left behind and prints
 the same tables, with `--vision-dir` and `--append`.
 
+### Ingesting whole reports and scoring the record (`stages=("ingest",)`)
+
+The stage that makes what the app would make. For each report in the chosen
+sets it runs `graph.ingest_report` end to end — triage, the label review, the
+work items, the three readers on their floors, the reconciler, the writers —
+into `out_dir/ingest/<ID>/`: `report.record.json`, `report.summary.md`,
+`report.page.md`, `report.diggs.xml` with both gates run, `qa.json` (the
+record's QA list alone), `run.json` (the counts), and the per-item files under
+`items/` the graph resumes from; `ingest/reports.db` is the library index over
+every report ingested. Every file is mirrored like every other run file.
+
+**It does not pay for the review twice.** Where a `labels` run has left
+`runs/<ID>.json` in this `out_dir` (or in `review_dir`), its triage profile and
+its final labels are copied into the report's ingest folder before the graph
+starts, and the graph resumes from them; a report that went through the
+`labels` stage costs only its readers here. It resumes per report (a `run.json`
+on disk is skipped) and per work item.
+
+```python
+HOME = "/Workspace/Users/<you>/geotech_app/report_ingest"     # where things are KEPT here
+
+results = score_on_cluster(
+    reports_dir  = "/Volumes/<your volume>/reports",
+    manifest     = "/Volumes/<your volume>/report_ingest/MANIFEST.md",
+    labels_xlsx  = "/Volumes/<your volume>/report_ingest/trial_pages_working_r2.xlsx",
+    oos_labels   = "/Volumes/<your volume>/report_ingest/oos_labels.json",
+    truth_dir    = "/Volumes/<your volume>/report_ingest/truth",   # optional: scores the record where truth exists
+    di_dir       = "/Volumes/<your volume>/report_di",
+    out_dir      = "/tmp/report_ingest_523",
+    durable_dir  = HOME + "/results/report_ingest_523",       # the workspace folder: kept
+    sharepoint   = fh_sp_client,                              # and/or SharePoint
+    prompter     = fh_prompter,
+    model        = "funhouse-gpt-high",
+    stages       = ("ingest",),
+    sets         = ("insample", "oos_open", "oos_blind"),
+    review_dir   = HOME + "/results/520_labels",    # a saved label run to reuse; default is this run's own runs/
+    log_budget   = 6, lab_budget = 4, narrative_budget = 8,
+    max_reports  = 2,                               # drop this line after the first run
+)
+```
+
+`RESULTS.md` gains `# Ingest: the record and its exports`: per report — pages,
+the workflow triage chose, investigations by kind, samples, driven records, lab
+tests by kind, narrative fields answered / null (37 asked), QA entries as
+`disagreement / partial / out_of_range` (the two voters splitting; what a reader
+could not settle; what Python refused), DIGGS as `written / schema / read back`
+(`valid` against the bundled 2.6 schema when pydiggs is installed, `not checked
+here` when it is not, `equal` when the app's own parser reads the file back to
+the record's values), calls, tokens, dollars, seconds — then the totals, then
+**the record scored against the hand truth** wherever `truth_dir` holds any for
+that report: each log truth against the investigations read off its pages, each
+sheet truth against the tests read off its page, the hand answers against the
+record's two schemas, with the SAME scorers the reader stages use. That last
+table is the whole-pipeline score.
+
 Bring back **`RESULTS.md`** from whatever `out_dir` was. That is the whole report,
 and it carries IDs, labels, counts and rates only. The per-report runs and the
 triage profiles stay on the cluster in `runs/` and `triage/` unless you move
@@ -1386,6 +1495,20 @@ actually happen: a depth past the ruler, a log with no scale, a provenance
 naming a page outside this sheet, a liquid limit below the plastic limit, a
 grading running the wrong way.
 
+The floors are tested the same way, on the same fixtures: what the grid's seed
+and the tables' floor carry before any call; that a reply which drops every
+seeded value scores no lower than the grid or the tables alone (and the model's
+answer, scored alone, lower); that a contradiction keeps both values with one
+disagreement and the floor's in the slot; that a contradiction with a box and a
+note overrules the floor; that a difference inside the scorer's tolerance is
+reconciled, not disputed; that a symbol, a timing, a kind, a link the model
+adds is added; that the follow-up on the unsettled list carries a magnified
+band and is not made when the budget is spent. The `ingest` stage runs the
+synthetic report through the whole graph with a fake engine in the Prompter's
+place — every export written, both DIGGS gates recorded, a saved label run
+reused so no review turn is spent, a second call free, the record scored where
+hand truth exists, the run files mirrored.
+
 The DIGGS writer is tested against the bundled 2.6 schema and through
 `parse_diggs` on a synthetic investigation carrying one of everything, and on
 synthetic lab records carrying one of every kind — including the namespace trap,
@@ -1468,6 +1591,9 @@ the writers, the graph and the sub-agent. Since WP4 the app CAN call it —
 sub-agent — but the flag is **OFF by default**, so nothing on the chat surface
 changes until a release turns it on. It stays off until the owner's four-stage
 cluster run has measured the readers on the tier that will do the work.
+**5.23.0** puts the floor under the log and lab readers and adds the `ingest`
+stage, so the record the app would produce — and its DIGGS file — can be made
+and scored on the cluster before the flag is turned on.
 
 - **`report_ingest*` is in `[tool.setuptools.packages.find]`.** Until that line
   landed, a wheel built from this repo did **not** contain this package, and

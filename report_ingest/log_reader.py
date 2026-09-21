@@ -23,11 +23,24 @@ the range it fell outside. The same holds for a depth on a page with no ruler
 at all: there is no scale, so there is no depth. Refusing costs a real value
 now and then; accepting one costs a reviewer's trust in all of them.
 
+THE FLOOR (5.23.0). The grid is the FIRST voter. Before any call, what it
+placed is turned into an :class:`Investigation` with the grid's own
+confidence on every value (:mod:`report_ingest.log_floor`), and the model is
+shown that record as its starting point. Its answer is merged back onto the
+floor: a value it adds is accepted, a value it corrects with evidence -- a
+box and a note -- replaces the floor's with the floor's kept beside it, a
+value it contradicts without evidence stays the floor's with the model's kept
+beside it, and a value it omits is kept with a note. Every contradiction is a
+disagreement for the QA section. The first full cluster run is why: the
+reader re-emitted the record from its own answer and seven of ten blind logs
+lost values the grid already had.
+
 THE BUDGET. One model call reads the log. A continuation sheet gets a call of
-its own when the first call says it could not finish, and the ceiling is
-:data:`MAX_MODEL_CALLS` per log so a confused loop cannot run away. Nothing
-here is an agent loop: there is one bounded thing to read and the reader reads
-it.
+its own when the first call says it could not finish; ONE more call is spent
+on the reader's own unsettled list when the budget allows, with the rows in
+question magnified; and the ceiling is :data:`MAX_MODEL_CALLS` per log so a
+confused loop cannot run away. Nothing here is an agent loop: there is one
+bounded thing to read and the reader reads it.
 """
 
 from __future__ import annotations
@@ -39,6 +52,10 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from pydantic import BaseModel, ConfigDict, Field
 
 from report_ingest.engine import Engine, image_block, text_block, user
+from report_ingest.floor import MergeLog
+from report_ingest.log_floor import (
+    merge_investigations, seed_from_grid, serialise_seed,
+)
 from report_ingest.model import (
     DrillingDetails, Investigation, Layer, Provenance, Quantity, Sample, SPT,
     WaterLevel,
@@ -46,7 +63,7 @@ from report_ingest.model import (
 
 __all__ = [
     "read_log", "LogReadResult", "LogReading", "LOG_READER_SYSTEM",
-    "MAX_MODEL_CALLS", "PAGE_DPI", "DEPTH_SLACK",
+    "MAX_MODEL_CALLS", "PAGE_DPI", "DEPTH_SLACK", "ZOOM_DPI", "MAX_ZOOMS",
 ]
 
 #: The ceiling in the brief: one main call plus follow-ups for continuation
@@ -57,6 +74,15 @@ MAX_MODEL_CALLS = 6
 #: to see a sample symbol and a water triangle, which is what the picture is
 #: for; the words come from the rows.
 PAGE_DPI = 110.0
+#: What a band of rows is rendered at for the follow-up call on the reader's
+#: unsettled list: fine enough to read a faint symbol beside its depth.
+ZOOM_DPI = 220.0
+#: How many magnified bands one follow-up call carries. The list is usually
+#: three to eight items; the first few are the ones with a depth to zoom to.
+MAX_ZOOMS = 4
+#: Half the height of one magnified band, in page points: about three rows
+#: either side of the depth in question.
+ZOOM_HALF_HEIGHT_PT = 40.0
 #: Fit slack, as a fraction of one printed ruler step. The window a depth has
 #: to fall in is the depth at the TOP of the paper to the depth at its
 #: BOTTOM, read off the ruler's own linear map -- so a layer contact printed
@@ -303,6 +329,20 @@ class LogReadResult:
     model: str = ""
     warnings: List[str] = field(default_factory=list)
     pages: List[int] = field(default_factory=list)
+    #: The two voters, kept apart so the scorecard can score each alone:
+    #: what the grid placed before any call, and what the model answered
+    #: before the merge. ``investigation`` above is the merge of the two.
+    floor: Optional[Investigation] = None
+    model_investigation: Optional[Investigation] = None
+    #: Every slot the two voters split on -- both values, which one the
+    #: record carries and why -- for the QA section; every floor value the
+    #: model did not return, kept with a note; every value the model added.
+    disagreements: List[Dict[str, Any]] = field(default_factory=list)
+    kept: List[Dict[str, Any]] = field(default_factory=list)
+    added: List[Dict[str, Any]] = field(default_factory=list)
+    reconciled: int = 0
+    #: Whether the follow-up call on the unsettled list was made.
+    follow_up: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -314,6 +354,16 @@ class LogReadResult:
             "model": self.model,
             "warnings": list(self.warnings),
             "pages": list(self.pages),
+            "floor": (self.floor.model_dump(mode="json")
+                      if self.floor is not None else None),
+            "model_investigation": (
+                self.model_investigation.model_dump(mode="json")
+                if self.model_investigation is not None else None),
+            "disagreements": [dict(d) for d in self.disagreements],
+            "kept": [dict(k) for k in self.kept],
+            "added": [dict(a) for a in self.added],
+            "reconciled": self.reconciled,
+            "follow_up": self.follow_up,
         }
 
 
@@ -345,6 +395,22 @@ what the rows leave ambiguous. Look at it for:
   sample number or a recovery.
 When the picture is what told you, say so: set from_image on that value's
 provenance. Do not use the picture to re-read text the rows already carry.
+
+THE STARTING RECORD, AND THE THREE THINGS YOU MAY DO TO IT. The form reader
+has already turned its rows into a first record -- the samples it placed
+with their depths, blow records, N values, recoveries and index values, the
+layers it bound to depths, the header fields -- and you are given it as
+THE STARTING RECORD. Build on it; do not start again from a blank page.
+- You may ADD what it lacks: a sampler type from the symbol, a USCS symbol
+  the log prints, a water level and its timing, a refusal, a layer base, a
+  value in a column the form reader did not name.
+- You may CORRECT a value it has, but only with evidence: copy the box of
+  the row you read it from, and say in that value's note what the page
+  prints there. A correction with no box and no note is not accepted; the
+  starting value stands and yours is kept beside it for review.
+- You may never DROP one. A value you leave out of your answer is kept from
+  the starting record anyway, so leaving it out gains nothing; return the
+  whole log with the starting values in it.
 
 NEVER INVENT A DEPTH. Every depth you report must come from the scale the
 form reader fitted, or from a depth printed on the page. If a value has no
@@ -411,6 +477,16 @@ _CONTINUE_INSTRUCTION = (
     "the sheet itself does."
 )
 
+_FOLLOW_UP_INSTRUCTION = (
+    "You listed {n} thing(s) on this log you could not settle:\n{items}\n"
+    "Here {are} the rows in question again, magnified, with the depth scale "
+    "beside them. Settle what you now can: give each settled value with the "
+    "box of the row it came from and a note saying what the picture shows. "
+    "Leave under unsettled anything the page still does not support. Return "
+    "the WHOLE log again in the same shape, with every value of the starting "
+    "record and of your first answer still in it."
+)
+
 
 # ---------------------------------------------------------------------------
 # what the model is shown
@@ -473,7 +549,8 @@ def serialise_rows(grid: Any, pages: Sequence[int]) -> str:
 
 
 def _brief(grid: Any, pages: Sequence[int], ledger: Sequence[str],
-           item_title: str, report_id: str) -> str:
+           item_title: str, report_id: str,
+           seed: Optional[Investigation] = None) -> str:
     layers = [
         {"top": ly.top, "bottom": ly.bottom,
          "description": _clip(ly.description, 300),
@@ -505,6 +582,17 @@ def _brief(grid: Any, pages: Sequence[int], ledger: Sequence[str],
         "WHAT THE FORM READER WARNS ABOUT THESE PAGES",
         ("\n".join(f"  - {w}" for w in grid.warnings) or "  (nothing)"),
         "",
+    ]
+    if seed is not None:
+        parts += [
+            "THE STARTING RECORD (the form reader's own reading of its rows, "
+            "one line per value, each with the page and box it came from and "
+            "the reader's confidence in it -- build on it; add, correct with "
+            "the box and a note, never drop)",
+            serialise_seed(seed),
+            "",
+        ]
+    parts += [
         "THE ROWS",
         serialise_rows(grid, pages),
     ]
@@ -608,9 +696,10 @@ class _Builder:
                        f"this log ({self.pages}); the box was dropped",
                 "refused_by": "python"})
             return Provenance(page=self.pages[0] if self.pages else page,
-                              method="vision" if prov.from_image else "grid",
+                              method=("model_from_picture" if prov.from_image
+                                      else "model"),
                               confidence=0.4, note=prov.note)
-        method = "vision" if prov.from_image else "grid"
+        method = "model_from_picture" if prov.from_image else "model"
         if prov.from_image:
             self.changes.append({
                 "what": what, "page": page,
@@ -782,6 +871,80 @@ def _pct(value: Optional[float]) -> Optional[float]:
 
 
 # ---------------------------------------------------------------------------
+# the follow-up on the unsettled list
+# ---------------------------------------------------------------------------
+
+def _tokens(text: str) -> List[str]:
+    return [t for t in "".join(ch.lower() if ch.isalnum() else " "
+                               for ch in str(text or "")).split()
+            if len(t) >= 3]
+
+
+def _zooms_for(doc: Any, grid: Any, pages: Sequence[int], unsettled: Any,
+               dpi: float = ZOOM_DPI
+               ) -> List[Tuple[int, Tuple[float, float, float, float],
+                               bytes]]:
+    """A magnified band of the page for each unsettled item that names a place.
+
+    The grid knows where the rows are. An item that names a depth is zoomed
+    to that depth through the page's ruler; one that names a row's text is
+    zoomed to the cells carrying those words; one that names neither gets no
+    picture, because a whole page again would be the first call again. At
+    most :data:`MAX_ZOOMS` bands, so the follow-up stays one bounded call.
+    """
+    from planlens.document.loggrid import numbers_in
+
+    out: List[Tuple[int, Tuple[float, float, float, float], bytes]] = []
+    for item in unsettled:
+        if len(out) >= MAX_ZOOMS:
+            break
+        page = int(item.page) if item.page is not None else pages[0]
+        if page not in pages:
+            page = pages[0]
+        try:
+            summary = doc.summary(page)
+            width, height = float(summary.width), float(summary.height)
+        except Exception:                        # a page that will not measure
+            width, height = 612.0, 792.0
+        box: Optional[Tuple[float, float, float, float]] = None
+        ruler = grid.rulers.get(page)
+        if ruler is not None:
+            cells = [c for c in grid.rows if c.page == page
+                     and c.depth is not None]
+            depths = [c.depth for c in cells]
+            lo, hi = (min(depths), max(depths)) if depths else (None, None)
+            for number in numbers_in(item.what):
+                if lo is None or not (lo - 1.0 <= number <= hi + 1.0):
+                    continue
+                y = ruler.y_at(number)
+                if y is None:
+                    continue
+                box = (0.0, max(0.0, y - ZOOM_HALF_HEIGHT_PT), width,
+                       min(height, y + ZOOM_HALF_HEIGHT_PT))
+                break
+        if box is None:
+            wanted = set(_tokens(item.what))
+            hits = [c for c in grid.rows if c.page == page
+                    and wanted & set(_tokens(c.text))]
+            if hits:
+                x0 = min(c.bbox[0] for c in hits)
+                y0 = min(c.bbox[1] for c in hits)
+                x1 = max(c.bbox[2] for c in hits)
+                y1 = max(c.bbox[3] for c in hits)
+                box = (0.0, max(0.0, y0 - ZOOM_HALF_HEIGHT_PT), width,
+                       min(height, y1 + ZOOM_HALF_HEIGHT_PT))
+                del x0, x1
+        if box is None:
+            continue
+        try:
+            png, _info = doc.render(page, bbox=list(box), dpi=dpi)
+        except Exception:                        # a band that will not draw
+            continue
+        out.append((page, box, png))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # the reader
 # ---------------------------------------------------------------------------
 
@@ -837,7 +1000,10 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
             out.append(png)
         return out
 
-    brief = _brief(grid, pages, ledger, item_title, report_id)
+    # THE FLOOR: the grid's own record, built before any call is spent, and
+    # shown to the model as the record it starts from.
+    floor = seed_from_grid(grid, pages, report_id)
+    brief = _brief(grid, pages, ledger, item_title, report_id, seed=floor)
     messages: List[Dict[str, Any]] = [
         user(text_block(brief),
              *[image_block(png) for png in images_for(pages)])]
@@ -876,17 +1042,53 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
             break                     # no progress: stop rather than spin
         reading = reply.parsed
 
+    # The reader's OWN unsettled list, once, when the budget allows: the
+    # rows in question again, magnified. The first cluster run showed a
+    # reader that followed continuation pages and never its own list.
+    follow_up = False
+    if reading.unsettled and model_calls < budget:
+        zooms = _zooms_for(doc, grid, pages, reading.unsettled, dpi=ZOOM_DPI)
+        items = "\n".join(
+            f"  - {u.what}" + (f" (page {u.page})" if u.page is not None
+                               else "") + f": {u.why}"
+            for u in reading.unsettled)
+        messages.append({"role": "assistant",
+                         "content": reply.content or [text_block("")]})
+        messages.append(user(
+            text_block(_FOLLOW_UP_INSTRUCTION.format(
+                n=len(reading.unsettled), items=items,
+                are="are" if zooms else "is the page again, and")),
+            *[image_block(png) for _page, _box, png in zooms]))
+        reply = engine.complete(messages, system=LOG_READER_SYSTEM,
+                                output_format=LogReading)
+        charge(reply)
+        model_calls += 1
+        follow_up = True
+        if reply.parsed is not None:
+            reading = reply.parsed
+
     builder = _Builder(reading, _depth_window(doc, grid, pages), pages,
                        report_id)
-    investigation = builder.build()
+    model_investigation = builder.build()
+    # THE MERGE: the model's answer folded onto the floor. Nothing the grid
+    # placed is lost; every contradiction is on the record.
+    merged, merge_log = merge_investigations(floor, model_investigation,
+                                             MergeLog())
     spent["seconds"] = round(spent["seconds"], 2)
     spent["dollars"] = round(spent["dollars"], 5)
     return LogReadResult(
-        investigation=investigation,
+        investigation=merged,
         changes=builder.changes,
         unresolved=builder.unresolved,
         cost=spent,
         model_calls=model_calls,
         model=reply.model or getattr(engine, "name", ""),
         warnings=list(grid.warnings),
-        pages=pages)
+        pages=pages,
+        floor=floor,
+        model_investigation=model_investigation,
+        disagreements=merge_log.disagreements,
+        kept=merge_log.kept,
+        added=merge_log.added,
+        reconciled=merge_log.reconciled,
+        follow_up=follow_up)

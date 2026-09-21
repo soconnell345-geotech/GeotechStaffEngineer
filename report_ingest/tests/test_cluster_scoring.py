@@ -1843,3 +1843,188 @@ class TestTheVoteStage:
             encoding="utf-8"))
         assert qa["rules_from"] == "saved run, no confidence"
         assert "rules_confidence" not in qa["disagreements"][0]
+
+
+# -- the ingest stage: the whole pipeline, per report --------------------------
+
+@pytest.fixture()
+def ingest_cluster(tmp_path, monkeypatch):
+    """One synthetic report on disk, and a fake engine in the Prompter's place.
+
+    The stage builds its engine through ``report_ingest.engine.PrompterEngine``
+    at call time, so that name is patched to hand back a ``FakeEngine``
+    replaying whatever script the test put in ``scripts["turns"]``. No
+    model, no credential, no network; the whole graph runs for real.
+    """
+    from report_ingest.tests import test_graph as tg
+    from report_ingest.tests.fake_engine import FakeEngine
+    import report_ingest.engine as engine_module
+
+    reports_dir = tmp_path / "corpus"
+    reports_dir.mkdir()
+    (reports_dir / "R36.pdf").write_bytes(tg.build_narrative_report().pdf)
+    out = tmp_path / "out_ingest"
+    monkeypatch.setattr(
+        cs, "_set_ids",
+        lambda name, corpus: ("R36",) if name == "oos_open" else ())
+    scripts = {"turns": [], "engines": []}
+
+    def fake_engine(prompter, model, meter=None, **kwargs):
+        engine = FakeEngine(list(scripts["turns"]), name=model)
+        engine.served_by = "fake-deployment"
+        scripts["engines"].append(engine)
+        return engine
+
+    monkeypatch.setattr(engine_module, "PrompterEngine", fake_engine)
+    return reports_dir, out, scripts
+
+
+def _ingest_run(ingest_cluster, **over):
+    reports_dir, out, _scripts = ingest_cluster
+    kwargs = dict(reports_dir=reports_dir, out_dir=out, prompter=object(),
+                  sets=("oos_open",), stages=("ingest",))
+    kwargs.update(over)
+    return cs.score_on_cluster(**kwargs)
+
+
+class TestTheIngestStage:
+
+    def test_it_is_a_stage_name_and_not_in_the_default(self):
+        assert "ingest" in cs.STAGE_NAMES
+        assert cs.STAGE_NAMES[-1] == "ingest"
+
+    def test_the_whole_pipeline_runs_and_leaves_the_record_and_its_exports(
+            self, ingest_cluster):
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.full_script()
+        results = _ingest_run(ingest_cluster)
+
+        folder = out / "ingest" / "R36"
+        for name in ("report.record.json", "report.summary.md",
+                     "report.page.md", "report.diggs.xml", "qa.json",
+                     "run.json", "triage.json", "review.json"):
+            assert (folder / name).is_file(), name
+        assert (out / "ingest" / "reports.db").is_file()
+        assert (folder / "items").is_dir()
+        ingest = results["ingest"]
+        assert ingest["n_reports"] == 1 and ingest["failures"] == {}
+        (row,) = ingest["per_report"]
+        assert row["id"] == "R36" and row["n_pages"] == 22
+        assert row["workflow"] == "standard"
+        assert row["counts"]["investigations"] == 2
+        assert row["investigations_by_kind"] == {"boring": 1, "test_pit": 1}
+        assert row["lab_by_kind"] == {"atterberg": 1, "gradation": 1}
+        assert row["narrative"]["answered"] > 0
+        assert row["diggs"]["written"] == "yes"
+        assert row["diggs"]["schema"] in ("valid", "not checked here")
+        assert row["diggs"]["roundtrip"] == "equal"
+        assert row["qa_by_kind"].get("disagreement", 0) >= 1
+        assert row["triage_reused"] is False and row["review_reused"] is False
+        assert scripts["engines"][0].n_calls == len(tg.full_script())
+
+    def test_results_md_carries_the_section_and_names_nobody(
+            self, ingest_cluster):
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.full_script()
+        _ingest_run(ingest_cluster)
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "# Ingest: the record and its exports" in text
+        assert "## Per report" in text and "## Totals" in text
+        assert "R36" in text and "1 boring, 1 test_pit" in text
+        assert "yes/valid/equal" in text or "yes/not checked here/equal" in text
+        assert "Rosewood" not in text          # the project name stays out
+        blob = json.loads((out / "results.json").read_text(encoding="utf-8"))
+        assert blob["ingest"]["per_report"][0]["id"] == "R36"
+
+    def test_a_second_call_is_free(self, ingest_cluster, capsys):
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.full_script()
+        _ingest_run(ingest_cluster)
+        scripts["turns"] = []
+        results = _ingest_run(ingest_cluster)
+        assert "R36: already done, skipping" in capsys.readouterr().out
+        assert results["ingest"]["n_reports"] == 1
+        assert len(scripts["engines"]) == 1     # no second engine was built
+
+    def test_a_saved_label_run_is_reused_so_the_review_is_not_paid_twice(
+            self, ingest_cluster):
+        from planlens.document import open_document
+        from planlens.document.roles import page_roles
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        with open_document(str(reports_dir / "R36.pdf")) as doc:
+            rules = {r.page: r.role for r in page_roles(doc)}
+        (out / "runs").mkdir(parents=True)
+        (out / "runs" / "R36.json").write_text(json.dumps(
+            _run_blob("R36", 22, rules, rules)), encoding="utf-8")
+        # No triage turn and no review turns: both come off the saved run.
+        scripts["turns"] = ([tg.narrative_turn()]
+                            + [tg.log_turn("B-1"),
+                               tg.log_turn("TP-1", "test_pit")]
+                            + [tg.lab_turn("atterberg", 12),
+                               tg.lab_turn("gradation", 13)])
+        results = _ingest_run(ingest_cluster)
+        (row,) = results["ingest"]["per_report"]
+        assert row["triage_reused"] is True and row["review_reused"] is True
+        assert scripts["engines"][0].n_calls == len(scripts["turns"])
+        review = json.loads((out / "ingest" / "R36" / "review.json")
+                            .read_text(encoding="utf-8"))
+        assert review["reused_from"].endswith("R36.json")
+        assert row["counts"]["investigations"] == 2
+
+    def test_the_record_is_scored_where_hand_truth_exists(
+            self, ingest_cluster, tmp_path):
+        from report_ingest.tests import test_graph as tg
+        from report_ingest.tests.narrative_fixtures import build_narrative_report
+        reports_dir, out, scripts = ingest_cluster
+        gt = build_narrative_report()
+        truth = tmp_path / "truth"
+        (truth / "narrative").mkdir(parents=True)
+        (truth / "logs").mkdir()
+        (truth / "narrative" / "R36.json").write_text(json.dumps({
+            "id": "R36", "general": gt.general,
+            "natural_hazards": gt.natural_hazards}), encoding="utf-8")
+        (truth / "logs" / "R36_p7.json").write_text(json.dumps({
+            "id": "R36_p7", "pages": [7, 8], "depth_unit": "m",
+            "fields": {"boring_id": "B-1"},
+            "layers": [{"top": 0.0, "uscs": "CL"}],
+            "samples": [{"top": 1.5, "blows": [4, 6, 8]}],
+            "water": []}), encoding="utf-8")
+        scripts["turns"] = tg.full_script()
+        results = _ingest_run(ingest_cluster, truth_dir=truth)
+        (row,) = results["ingest"]["per_report"]
+        (log_score,) = row["scores"]["logs"]
+        assert log_score["id"] == "R36_p7"
+        assert log_score["overall"]["found"] >= 3
+        assert row["scores"]["narrative"]["recall"]["total"] > 0
+        assert row["scores"]["lab"] == []
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "## Scored against the hand truth" in text
+        totals = results["ingest"]["totals"]["scores"]
+        assert totals["logs"]["n"] == 1 and totals["narrative"]["n"] == 1
+
+    def test_a_report_the_folder_does_not_have_is_named_and_skipped(
+            self, ingest_cluster, monkeypatch):
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        monkeypatch.setattr(
+            cs, "_set_ids",
+            lambda name, corpus: ("R36", "R31") if name == "oos_open" else ())
+        scripts["turns"] = tg.full_script()
+        results = _ingest_run(ingest_cluster)
+        assert "R31" in results["absent"]
+        assert results["ingest"]["n_reports"] == 1
+
+    def test_the_run_files_are_mirrored_like_everything_else(
+            self, ingest_cluster, tmp_path):
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.full_script()
+        durable = tmp_path / "durable"
+        _ingest_run(ingest_cluster, durable_dir=durable)
+        assert (durable / out.name / "ingest" / "R36" / "run.json").is_file()
+        assert (durable / out.name / "ingest" / "R36"
+                / "report.diggs.xml").is_file()

@@ -462,13 +462,21 @@ What that means for this train, in order:
    vision runs beside the label runs, and deciding which policy the ingest
    graph should actually adopt -- the measurement exists, the choice does
    not.
-2. **Every extracted value carries a confidence and a method.** The record
-   does this now (`Provenance`: page, bbox, method, confidence) for the
-   readers; the page labels need the same field, and the reconciler's QA
-   section should list every disagreement between grid/tables and reader,
-   between narrative counts and logs found, as a triggered second look
-   rather than a silent choice.
-3. **The floor is the first voter for the readers.** The grid and the
-   tables are the deterministic voter; the model is the second; a value
-   they disagree on is flagged, a value only one of them has is kept with
-   that voter's confidence.
+2. **Every extracted value carries a confidence and a method. BUILT for
+   the readers, 5.23.0** -- `Provenance.method` names the voter (`grid`,
+   `tables`, `model`, `model_from_picture`, `reconciled`), every value has a
+   confidence, and a slot the voters split on carries the loser in
+   `prov.alternatives` beside a `QAEntry(kind="disagreement")` with both
+   values and both confidences -- the triggered second look. **What is
+   left:** the page labels need the same field (the vote stage has the
+   arithmetic; the record has no per-page label slot yet), and the
+   reconciler's narrative-vs-appendix count check is still a
+   `count_mismatch` rather than a vote.
+3. **The floor is the first voter for the readers. BUILT, 5.23.0** --
+   `report_ingest/floor.py`, `log_floor.py`, `lab_floor.py`: the grid and
+   the tables are seeded into the record before any call, the model is
+   shown them and may add, correct with evidence, never drop. **What is
+   left:** the cluster run that measures it (`stages=("ingest",)` or the
+   `logs`/`lab` stages, which now print the grid, the model alone and
+   floor+model), and reading the disagreement list off `qa.json` to see
+   which slots a reviewer is actually sent to.

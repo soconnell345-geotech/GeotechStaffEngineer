@@ -55,6 +55,10 @@ WHAT IT WRITES into ``out_dir``::
     triage/<ID>.json      the document profile alone, for the owner's audit
     vision/<ID>.json      the vision experiment's labels, reasons and cost
     vote/<ID>.json        every page the voters split on, and who won it
+    ingest/<ID>/          the whole pipeline's output for one report: the
+                          record, the summary, the library page, the DIGGS
+                          file, qa.json, and run.json with the counts
+    ingest/reports.db     the library index over every report ingested
     results.json          every summary table as data
     RESULTS.md            the same tables to read, and to bring back
 
@@ -123,8 +127,13 @@ SET_NAMES: Tuple[str, ...] = ("insample", "oos_open", "oos_blind")
 #: the vision labels off a saved run, and the review's labels where a label
 #: run sits beside them, set against each other and against the hand labels
 #: to say what a disagreement is worth.
+#: ``ingest`` (5.23.0) is the whole pipeline: ``graph.ingest_report`` end
+#: to end on each report -- triage, labels (a saved review reused where one
+#: sits in ``runs/``), the three readers with their floors, the reconciler,
+#: the writers -- producing the record and its exports, DIGGS included, and
+#: scoring the record against whatever hand truth exists for that report.
 STAGE_NAMES: Tuple[str, ...] = ("labels", "logs", "lab", "narrative",
-                                "vision_labels", "vote")
+                                "vision_labels", "vote", "ingest")
 
 #: The reports the log rules were allowed to be tuned on, when no ``OPEN.txt``
 #: sits beside the truth files. Everything else is scored as blind.
@@ -439,7 +448,15 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         review of the splits would have to be. Pass any combination; all six
         is ``stages=("labels", "logs", "lab", "narrative", "vision_labels",
         "vote")``, though the vote is usually run on its own over run files
-        that already exist.
+        that already exist. ``"ingest"`` (5.23.0) is the whole pipeline on
+        each report in the chosen sets: ``graph.ingest_report`` end to end,
+        into ``out_dir/ingest/<ID>/`` -- the record, the summary, the
+        library page, the DIGGS file with both gates, ``qa.json`` -- reusing
+        the label review and the triage a ``labels`` run left in ``runs/``
+        (or in ``review_dir``) rather than paying for them again, resumable
+        per report and per work item, and scored against whatever hand
+        truth ``truth_dir`` holds for that report, so the stage doubles as
+        the whole-pipeline score.
     truth_dir
         ONE truth root for every scoring stage: a folder holding ``logs/``,
         ``lab/`` and ``narrative/``, named after the stages that read them.
@@ -577,6 +594,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         (out / "vision").mkdir(parents=True, exist_ok=True)
     if "vote" in stages:
         (out / "vote").mkdir(parents=True, exist_ok=True)
+    if "ingest" in stages:
+        (out / "ingest").mkdir(parents=True, exist_ok=True)
 
     # THE DURABLE COPY, before anything else: a wiped /tmp resumes from what
     # the mirror holds rather than paying the model for it a second time.
@@ -604,7 +623,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
     # The two whole-report stages -- the label review and the vision
     # experiment -- run over the same reports, because they are two answers
     # to one question and are scored against one set of hand labels.
-    by_report = ("labels" in stages) or ("vision_labels" in stages)
+    by_report = (("labels" in stages) or ("vision_labels" in stages)
+                 or ("ingest" in stages))
     asked: List[str] = []
     if by_report:
         for name in sets:
@@ -618,7 +638,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
     wanted = [rid for rid in asked
               if rid in present
               or (out / "runs" / f"{rid}.json").is_file()
-              or (out / "vision" / f"{rid}.json").is_file()]
+              or (out / "vision" / f"{rid}.json").is_file()
+              or (out / "ingest" / rid / "run.json").is_file()]
     absent = [rid for rid in asked if rid not in wanted]
     if max_reports:
         wanted = wanted[:int(max_reports)]
@@ -716,6 +737,16 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         results["vote"] = vote
         lines += _render_vote(vote)
 
+    if "ingest" in stages:
+        ingest = _run_ingest(corpus, prompter, model, out, wanted,
+                             truth=(logs_truth, lab_truth, narrative_truth),
+                             log_budget=log_budget, lab_budget=lab_budget,
+                             narrative_budget=narrative_budget,
+                             redo=redo, review_dir=review_dir,
+                             max_total_dollars=max_total_dollars, sync=sync)
+        results["ingest"] = ingest
+        lines += _render_ingest(ingest)
+
     (out / "results.json").write_text(json.dumps(_plain(results), indent=2),
                                       encoding="utf-8")
     (out / "RESULTS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -733,6 +764,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         print(f"per-report vision runs in {out / 'vision'}")
     if "vote" in stages:
         print(f"per-report disagreement lists in {out / 'vote'}")
+    if "ingest" in stages:
+        print(f"per-report records and exports in {out / 'ingest'}")
     sync.report()
     return results
 
@@ -2727,6 +2760,525 @@ def _render_vote_per_report(vote: Dict[str, Any]) -> List[str]:
                    f"{_pct(r['rules']):>8}{_pct(r['vision']):>8}"
                    f"{_pct(r['review']):>8}")
     out.append("```")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# the ingest stage: the whole pipeline, and its exports, per report
+# ---------------------------------------------------------------------------
+
+def _run_blob_on_disk(runs_dir: Path, rid: str) -> Dict[str, Any]:
+    run_file = Path(runs_dir) / f"{rid}.json"
+    if not run_file.is_file():
+        return {}
+    try:
+        return json.loads(run_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _reuse_label_run(folder: Path, runs_dir: Path, rid: str
+                     ) -> Tuple[bool, bool]:
+    """Seed the ingest folder with a saved triage and review, when present.
+
+    A ``labels`` run leaves ``runs/<ID>.json`` holding the triage profile
+    and the review's final labels; ``graph.ingest_report`` resumes from
+    ``triage.json`` and ``review.json`` in its own folder. Copying the one
+    into the other is what stops the ingest paying for ~$0.50 of review a
+    second time. Nothing already in the folder is overwritten.
+    """
+    blob = _run_blob_on_disk(runs_dir, rid)
+    if not blob:
+        return False, False
+    triage_reused = review_reused = False
+    profile = blob.get("profile") or {}
+    triage_file = folder / "triage.json"
+    if profile and not triage_file.is_file():
+        folder.mkdir(parents=True, exist_ok=True)
+        stamped = dict(profile)
+        stamped["reused_from"] = str(Path(runs_dir) / f"{rid}.json")
+        triage_file.write_text(json.dumps(stamped, indent=2),
+                               encoding="utf-8")
+        triage_reused = True
+    final = (blob.get("review") or {}).get("final_labels") or {}
+    review_file = folder / "review.json"
+    if final and not review_file.is_file():
+        folder.mkdir(parents=True, exist_ok=True)
+        review_file.write_text(json.dumps({
+            "final_labels": {str(k): v for k, v in final.items()},
+            "reused_from": str(Path(runs_dir) / f"{rid}.json")}, indent=2),
+            encoding="utf-8")
+        review_reused = True
+    return triage_reused, review_reused
+
+
+def _truth_files_for(rid: str, truth: Tuple[Optional[Path], Optional[Path],
+                                            Optional[Path]]
+                     ) -> Dict[str, List[Tuple[str, dict]]]:
+    """The hand-truth files that concern one report, by stage."""
+    logs_dir, lab_dir, narrative_dir = truth
+    out: Dict[str, List[Tuple[str, dict]]] = {"logs": [], "lab": [],
+                                              "narrative": []}
+
+    def load(path: Path) -> Optional[dict]:
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+
+    if logs_dir is not None and logs_dir.is_dir():
+        for path in sorted(logs_dir.glob(f"{rid}_p*.json")):
+            blob = load(path)
+            if blob:
+                out["logs"].append((path.stem, blob))
+    if lab_dir is not None and lab_dir.is_dir():
+        for path in sorted(lab_dir.glob(f"*__{rid}_p*.json")):
+            blob = load(path)
+            if blob:
+                out["lab"].append((path.stem, blob))
+    if narrative_dir is not None and narrative_dir.is_dir():
+        path = narrative_dir / f"{rid}.json"
+        if path.is_file():
+            blob = load(path)
+            if blob:
+                out["narrative"].append((path.stem, blob))
+    return out
+
+
+def _score_ingest_record(record: Any, rid: str,
+                         truth: Tuple[Optional[Path], Optional[Path],
+                                      Optional[Path]]) -> Dict[str, Any]:
+    """The ingest's record against every hand truth this report has.
+
+    The SAME scorers the reader stages use, on the record the whole
+    pipeline produced -- so the stage doubles as the whole-pipeline score.
+    A log truth is scored against the investigations read off its pages
+    and a lab truth against the tests read off its page, not against the
+    whole record, or a sample at the right depth in a different hole would
+    count.
+    """
+    from report_ingest.lab_scoring import pages_of
+    from report_ingest.lab_scoring import score_record as score_lab
+    from report_ingest.log_scoring import score_record as score_log
+    from report_ingest.narrative_scoring import score_narrative
+
+    files = _truth_files_for(rid, truth)
+    out: Dict[str, Any] = {"logs": [], "lab": [], "narrative": None}
+    for name, blob in files["logs"]:
+        pages = {int(p) for p in blob.get("pages") or []}
+        invs = [i for i in record.investigations
+                if not pages or set(i.pages) & pages]
+        score = score_log(blob, invs)
+        out["logs"].append({"id": name, "overall": score.total.to_dict(),
+                            "scores": {k: v.to_dict()
+                                       for k, v in score.scores.items()}})
+    for name, blob in files["lab"]:
+        pages = set(pages_of(blob))
+        tests = [t for t in record.lab_tests
+                 if not pages or set(t.pages) & pages]
+        score = score_lab(blob, tests)
+        out["lab"].append({"id": name, "kind": blob.get("kind") or "",
+                           "overall": score.total.to_dict(),
+                           "scores": {k: v.to_dict()
+                                      for k, v in score.scores.items()}})
+    for name, blob in files["narrative"]:
+        score = score_narrative(blob, record.general, record.natural_hazards,
+                                report=rid)
+        out["narrative"] = {"recall": score.recall.to_dict(),
+                            "precision": score.precision.to_dict(),
+                            "agreement": score.agreement.to_dict()}
+    return out
+
+
+def _diggs_verdicts(record: Any, outputs: Dict[str, str]) -> Dict[str, str]:
+    """written / validated / read back, off the record's own QA entries."""
+    written = "yes" if outputs.get("diggs") else "no"
+    schema = "not written"
+    roundtrip = "not written"
+    for entry in record.qa:
+        if entry.where == "diggs.schema":
+            if entry.kind == "note":
+                schema = "valid"
+            elif any("pydiggs is not installed" in v for v in entry.values):
+                schema = "not checked here"
+            else:
+                schema = "INVALID"
+        elif entry.where == "diggs.roundtrip":
+            roundtrip = "equal" if entry.kind == "note" else "DIFFERS"
+        elif entry.where == "diggs" and entry.kind == "skipped":
+            written = "no"
+    return {"written": written, "schema": schema, "roundtrip": roundtrip}
+
+
+def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
+                report_ids: Sequence[str], *,
+                truth: Tuple[Optional[Path], Optional[Path], Optional[Path]],
+                log_budget: int, lab_budget: int, narrative_budget: int,
+                redo: bool, review_dir: Any = None,
+                max_total_dollars: Optional[float] = None,
+                sync: Optional[Any] = None) -> Dict[str, Any]:
+    """The whole pipeline on each report, into ``ingest/<ID>/``.
+
+    Restartable twice over: the stage skips a report whose ``run.json`` is
+    on disk, and inside a report ``graph.ingest_report`` skips every work
+    item whose file is already under ``items/``. A saved label run is
+    reused for the triage and the review, so a report that went through
+    the ``labels`` stage costs only its readers here.
+    """
+    from report_ingest.engine import CostMeter, PrompterEngine
+    from report_ingest.graph import Budgets, ingest_report, output_paths
+
+    runs_dir = Path(review_dir) if review_dir is not None else out / "runs"
+    if (runs_dir / "runs").is_dir():
+        runs_dir = runs_dir / "runs"
+    print(f"  ingest: {len(report_ids)} report(s); model {model}; a saved "
+          f"label run in {runs_dir} is reused where one exists")
+    present = set(corpus.present_ids())
+    done: Dict[str, dict] = {}
+    failures: Dict[str, str] = {}
+    spent = 0.0
+    for n, rid in enumerate(report_ids, 1):
+        folder = out / "ingest" / rid
+        run_file = folder / "run.json"
+        if run_file.is_file() and not redo:
+            blob = json.loads(run_file.read_text(encoding="utf-8"))
+            if not blob.get("error"):
+                done[rid] = blob
+                print(f"  [{n}/{len(report_ids)}] {rid}: already done, "
+                      "skipping")
+                continue
+            print(f"  [{n}/{len(report_ids)}] {rid}: previous attempt failed "
+                  f"({str(blob.get('error'))[:90]}); retrying")
+        if rid not in present:
+            failures[rid] = f"{rid} is not in the reports folder"
+            print(f"  [{n}/{len(report_ids)}] {rid}: skipped -- "
+                  f"{failures[rid]}")
+            continue
+        if max_total_dollars is not None and spent > max_total_dollars:
+            print(f"  stopping before {rid}: spent ${spent:.2f}, past the "
+                  f"${max_total_dollars:.2f} ceiling")
+            break
+        folder.mkdir(parents=True, exist_ok=True)
+        triage_reused, review_reused = _reuse_label_run(folder, runs_dir, rid)
+        meter = CostMeter()
+        engine = PrompterEngine(prompter, model, meter=meter)
+        budgets = Budgets(narrative=narrative_budget, log=log_budget,
+                          lab=lab_budget)
+        started = time.time()
+        doc = None
+        try:
+            doc = corpus.open_report(rid, di="auto", warn=False)
+            record = ingest_report(doc, engine, out_dir=folder,
+                                   budgets=budgets, report_id=rid,
+                                   resume=not redo, write=True,
+                                   db_path=out / "ingest" / "reports.db")
+            n_pages = doc.n_pages
+        except KeyboardInterrupt:
+            print("  interrupted; what is finished is on disk and a later "
+                  "call resumes")
+            break
+        except Exception as exc:                     # keep the run going
+            failures[rid] = f"{type(exc).__name__}: {exc}"
+            print(f"  [{n}/{len(report_ids)}] {rid}: FAILED -- "
+                  f"{failures[rid]}")
+            traceback.print_exc()
+            run_file.write_text(json.dumps({
+                "id": rid, "run_date": date.today().isoformat(),
+                "error": failures[rid], "cost": meter.to_dict()}, indent=2),
+                encoding="utf-8")
+            _sync(sync)
+            continue
+        finally:
+            if doc is not None:
+                doc.close()
+        outputs = output_paths(folder)
+        (folder / "qa.json").write_text(json.dumps(
+            [e.model_dump(mode="json") for e in record.qa], indent=2),
+            encoding="utf-8")
+        by_kind: Dict[str, int] = {}
+        for inv in record.investigations:
+            by_kind[inv.kind] = by_kind.get(inv.kind, 0) + 1
+        lab_by_kind: Dict[str, int] = {}
+        for test in record.lab_tests:
+            lab_by_kind[test.kind] = lab_by_kind.get(test.kind, 0) + 1
+        qa_by_kind: Dict[str, int] = {}
+        for entry in record.qa:
+            qa_by_kind[entry.kind] = qa_by_kind.get(entry.kind, 0) + 1
+        answered = (len(record.general.answered())
+                    + len(record.natural_hazards.answered()))
+        from report_ingest.model import GENERAL_FIELDS, NATURAL_HAZARD_FIELDS
+        asked = len(GENERAL_FIELDS) + len(NATURAL_HAZARD_FIELDS)
+        blob = {
+            "id": rid,
+            "run_date": date.today().isoformat(),
+            "model": model,
+            "served_by": engine.served_by,
+            "n_pages": n_pages,
+            "workflow": record.document.workflow,
+            "triage_reused": triage_reused,
+            "review_reused": review_reused,
+            "counts": record.counts(),
+            "investigations_by_kind": by_kind,
+            "lab_by_kind": lab_by_kind,
+            "narrative": {"answered": answered, "null": asked - answered},
+            "qa_by_kind": qa_by_kind,
+            "diggs": _diggs_verdicts(record, outputs),
+            "outputs": {k: str(v) for k, v in outputs.items()},
+            "scores": _score_ingest_record(record, rid, truth),
+            "cost": meter.to_dict(),
+            "seconds": round(time.time() - started, 1),
+        }
+        run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        _sync(sync)
+        done[rid] = blob
+        spent += blob["cost"].get("dollars", 0.0)
+        counts = blob["counts"]
+        diggs = blob["diggs"]
+        print(f"  [{n}/{len(report_ids)}] {rid}: {n_pages} pp, "
+              f"{blob['workflow']}, {counts['investigations']} "
+              f"investigation(s), {counts['samples']} sample(s), "
+              f"{counts['spt']} drive(s), {counts['lab_tests']} lab test(s), "
+              f"{answered}/{asked} narrative fields, {counts['qa']} QA; "
+              f"DIGGS {diggs['written']}/{diggs['schema']}/"
+              f"{diggs['roundtrip']}; {blob['cost']['calls']} calls, "
+              f"{blob['cost']['input_tokens']:,} in / "
+              f"{blob['cost']['output_tokens']:,} out, "
+              f"{blob['seconds']:.0f} s")
+    return _score_ingest(done, failures, model)
+
+
+def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
+                  model: str) -> Dict[str, Any]:
+    rows = [done[k] for k in sorted(done)]
+    cost = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
+            "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
+    totals: Dict[str, Any] = {
+        "pages": 0, "investigations": 0, "samples": 0, "spt": 0,
+        "lab_tests": 0, "qa": 0, "investigations_by_kind": {},
+        "lab_by_kind": {}, "qa_by_kind": {},
+        "narrative_answered": 0, "narrative_null": 0,
+        "diggs": {"written": 0, "valid": 0, "not_checked": 0, "invalid": 0,
+                  "equal": 0, "differs": 0},
+        "scores": {"logs": {"found": 0, "total": 0, "n": 0},
+                   "lab": {"found": 0, "total": 0, "n": 0},
+                   "narrative": {"recall_found": 0, "recall_total": 0,
+                                 "precision_found": 0, "precision_total": 0,
+                                 "n": 0}},
+    }
+    for row in rows:
+        for key in ("calls", "input_tokens", "output_tokens",
+                    "cache_read_tokens"):
+            cost[key] += row["cost"].get(key, 0)
+        cost["dollars"] += row["cost"].get("dollars", 0.0)
+        cost["seconds"] += row.get("seconds", 0.0)
+        totals["pages"] += int(row.get("n_pages") or 0)
+        counts = row.get("counts") or {}
+        for key in ("investigations", "samples", "spt", "lab_tests", "qa"):
+            totals[key] += int(counts.get(key) or 0)
+        for group in ("investigations_by_kind", "lab_by_kind",
+                      "qa_by_kind"):
+            for kind, n in (row.get(group) or {}).items():
+                totals[group][kind] = totals[group].get(kind, 0) + int(n)
+        narrative = row.get("narrative") or {}
+        totals["narrative_answered"] += int(narrative.get("answered") or 0)
+        totals["narrative_null"] += int(narrative.get("null") or 0)
+        diggs = row.get("diggs") or {}
+        if diggs.get("written") == "yes":
+            totals["diggs"]["written"] += 1
+        if diggs.get("schema") == "valid":
+            totals["diggs"]["valid"] += 1
+        elif diggs.get("schema") == "not checked here":
+            totals["diggs"]["not_checked"] += 1
+        elif diggs.get("schema") == "INVALID":
+            totals["diggs"]["invalid"] += 1
+        if diggs.get("roundtrip") == "equal":
+            totals["diggs"]["equal"] += 1
+        elif diggs.get("roundtrip") == "DIFFERS":
+            totals["diggs"]["differs"] += 1
+        scores = row.get("scores") or {}
+        for entry in scores.get("logs") or []:
+            totals["scores"]["logs"]["found"] += int(
+                entry["overall"].get("found") or 0)
+            totals["scores"]["logs"]["total"] += int(
+                entry["overall"].get("total") or 0)
+            totals["scores"]["logs"]["n"] += 1
+        for entry in scores.get("lab") or []:
+            totals["scores"]["lab"]["found"] += int(
+                entry["overall"].get("found") or 0)
+            totals["scores"]["lab"]["total"] += int(
+                entry["overall"].get("total") or 0)
+            totals["scores"]["lab"]["n"] += 1
+        narrative_score = scores.get("narrative")
+        if narrative_score:
+            cell = totals["scores"]["narrative"]
+            cell["recall_found"] += int(
+                narrative_score["recall"].get("found") or 0)
+            cell["recall_total"] += int(
+                narrative_score["recall"].get("total") or 0)
+            cell["precision_found"] += int(
+                narrative_score["precision"].get("found") or 0)
+            cell["precision_total"] += int(
+                narrative_score["precision"].get("total") or 0)
+            cell["n"] += 1
+    return {
+        "date": date.today().isoformat(),
+        "model": model,
+        "served_by": sorted({r.get("served_by") for r in rows
+                             if r.get("served_by")}),
+        "n_reports": len(rows),
+        "failures": dict(failures),
+        "per_report": rows,
+        "totals": totals,
+        "cost": cost,
+    }
+
+
+def _kinds_cell(counts: Dict[str, int]) -> str:
+    return ", ".join(f"{n} {kind}" for kind, n in sorted(
+        counts.items(), key=lambda kv: (-kv[1], kv[0]))) or "-"
+
+
+def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
+    """The ingest stage: what each record holds, what its exports passed,
+    and the record scored against the hand truth where there is any.
+    IDs, kinds, counts and rates only."""
+    out: List[str] = [
+        "", "# Ingest: the record and its exports", "",
+        f"Run {ingest['date']}. Model `{ingest['model']}`, "
+        f"{ingest['n_reports']} report(s) through the whole pipeline -- "
+        f"triage, the label review (reused from a saved label run where one "
+        f"exists), the three readers on their floors, the reconciler and "
+        f"the writers -- into `ingest/<ID>/`: the record, the summary page, "
+        f"the library page, the DIGGS file and `qa.json`.",
+        "",
+        "**DIGGS** reads `written / schema / read back`: whether a file was "
+        "written, whether it validated against the bundled 2.6 schema "
+        "(`not checked here` when pydiggs is not installed), and whether "
+        "reading it back with the app's own parser gives the record's "
+        "values. **qa** counts the record's QA entries: `disagreement` is "
+        "the two voters inside a reader (the grid or the tables against the "
+        "model) splitting on a value, both kept; `partial` is what a reader "
+        "could not settle; `out_of_range` is what Python refused.",
+    ]
+    if ingest.get("served_by"):
+        out.append(f"Served by: {', '.join(ingest['served_by'])}.")
+    if ingest.get("failures"):
+        out += ["", "**Reports that failed and are NOT in any number below:**"]
+        out += [f"- {rid}: {why}" for rid, why in ingest["failures"].items()]
+
+    out += ["", "## Per report", "", "```",
+            f"{'report':<8}{'pages':>6}  {'workflow':<14}  "
+            f"{'investigations':<28}{'samp':>6}{'spt':>5}  "
+            f"{'lab tests':<32}{'narr':>7}  {'qa dis/unres/ref':<17}"
+            f"{'diggs written/schema/read back':<32}{'calls':>6}{'in':>10}"
+            f"{'out':>8}{'$':>7}{'s':>6}"]
+    for r in ingest["per_report"]:
+        counts = r.get("counts") or {}
+        qa = r.get("qa_by_kind") or {}
+        diggs = r.get("diggs") or {}
+        narrative = r.get("narrative") or {}
+        money = r["cost"].get("dollars", 0.0)
+        qa_cell = (f"{qa.get('disagreement', 0)}/{qa.get('partial', 0)}/"
+                   f"{qa.get('out_of_range', 0)}")
+        diggs_cell = (f"{diggs.get('written', '-')}/{diggs.get('schema', '-')}"
+                      f"/{diggs.get('roundtrip', '-')}")
+        narr_cell = (f"{narrative.get('answered', 0)}/"
+                     f"{narrative.get('null', 0)}")
+        out.append(
+            f"{r['id']:<8}{r.get('n_pages', 0):>6}  "
+            f"{str(r.get('workflow') or '-')[:14]:<14}  "
+            f"{_kinds_cell(r.get('investigations_by_kind') or {})[:27]:<28}"
+            f"{counts.get('samples', 0):>6}{counts.get('spt', 0):>5}  "
+            f"{_kinds_cell(r.get('lab_by_kind') or {})[:31]:<32}"
+            f"{narr_cell:>7}  {qa_cell:<17}{diggs_cell:<32}"
+            f"{r['cost'].get('calls', 0):>6}"
+            f"{r['cost'].get('input_tokens', 0):>10,}"
+            f"{r['cost'].get('output_tokens', 0):>8,}"
+            f"{(f'{money:.2f}' if money else '-'):>7}"
+            f"{r.get('seconds', 0.0):>6.0f}")
+    out.append("```")
+    out += ["", "`narr` is the owner's schema fields answered / left null "
+                "(37 asked). `qa dis/unres/ref` is disagreement / partial / "
+                "out_of_range entries; every kind is in `results.json`."]
+
+    totals = ingest["totals"]
+    diggs = totals["diggs"]
+    out += ["", "## Totals", "", "```",
+            f"{totals['pages']} pages, {totals['investigations']} "
+            f"investigations ({_kinds_cell(totals['investigations_by_kind'])}), "
+            f"{totals['samples']} samples, {totals['spt']} driven records, "
+            f"{totals['lab_tests']} lab tests "
+            f"({_kinds_cell(totals['lab_by_kind'])})",
+            f"narrative fields answered {totals['narrative_answered']}, "
+            f"null {totals['narrative_null']}",
+            f"QA entries {totals['qa']}: "
+            f"{_kinds_cell(totals['qa_by_kind'])}",
+            f"DIGGS: {diggs['written']} written, {diggs['valid']} valid, "
+            f"{diggs['not_checked']} not checked here, {diggs['invalid']} "
+            f"invalid; {diggs['equal']} read back equal, {diggs['differs']} "
+            f"differ",
+            "```"]
+
+    scores = totals["scores"]
+    scored_rows = [r for r in ingest["per_report"]
+                   if (r.get("scores") or {}).get("logs")
+                   or (r.get("scores") or {}).get("lab")
+                   or (r.get("scores") or {}).get("narrative")]
+    if scored_rows:
+        out += ["", "## Scored against the hand truth", "",
+                "The SAME scorers as the `logs`, `lab` and `narrative` "
+                "stages, on the record the whole pipeline produced: a log "
+                "truth against the investigations read off its pages, a "
+                "sheet truth against the tests read off its page, the hand "
+                "answers against the record's two schemas. This is the "
+                "whole-pipeline score.", "", "```",
+                f"{'report':<8}{'logs':>18}{'lab sheets':>18}"
+                f"{'narrative recall':>18}{'precision':>12}"]
+        for r in scored_rows:
+            sc = r.get("scores") or {}
+            logs = sc.get("logs") or []
+            lab = sc.get("lab") or []
+            nar = sc.get("narrative")
+
+            def agg(entries: List[dict]) -> str:
+                if not entries:
+                    return f"{'-':>18}"
+                found = sum(int(e["overall"].get("found") or 0)
+                            for e in entries)
+                total = sum(int(e["overall"].get("total") or 0)
+                            for e in entries)
+                return f"{_rate({'found': found, 'total': total}):>14}"                        f" ({len(entries)})"
+
+            out.append(
+                f"{r['id']:<8}{agg(logs)}{agg(lab)}"
+                + (f"{_rate(nar['recall']):>18}{_rate(nar['precision']):>12}"
+                   if nar else f"{'-':>18}{'-':>12}"))
+        out += ["",
+                f"{'ALL':<8}"
+                f"{_rate(scores['logs']):>14} ({scores['logs']['n']})"
+                f"{_rate(scores['lab']):>14} ({scores['lab']['n']})"
+                f"{_rate({'found': scores['narrative']['recall_found'], 'total': scores['narrative']['recall_total']}):>18}"
+                f"{_rate({'found': scores['narrative']['precision_found'], 'total': scores['narrative']['precision_total']}):>12}",
+                "```"]
+    else:
+        out += ["", "No hand truth for these reports under `truth_dir`, so "
+                    "the records are not scored; the counts above are what "
+                    "the pipeline produced."]
+
+    cost = ingest["cost"]
+    n = max(1, ingest["n_reports"])
+    out += ["", "## Cost", "", "```",
+            f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
+            f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
+            f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
+            f"{_money(cost)}",
+            f"per report: {cost['calls'] / n:.1f} calls, "
+            f"{cost['input_tokens'] / n:,.0f} in, "
+            f"{cost['output_tokens'] / n:,.0f} out, "
+            f"{cost['seconds'] / n:.0f} s"
+            f"{_money(cost, n)}",
+            "```", "",
+            _price_note(cost)]
     return out
 
 

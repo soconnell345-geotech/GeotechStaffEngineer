@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import pytest
 
+from report_ingest.log_floor import seed_from_grid
 from report_ingest.log_reader import (
     LOG_READER_SYSTEM, LogReading, MAX_MODEL_CALLS, ReadDrilling, ReadLayer,
     ReadProv, ReadSPT, ReadSample, ReadWater, Unsettled, read_log,
     serialise_rows,
 )
+from report_ingest.log_scoring import score_grid, score_record
 from report_ingest.tests.fake_engine import FakeEngine, ScriptExhausted
 
 fitz = pytest.importorskip("fitz", reason="the fixtures are drawn with PyMuPDF")
@@ -188,13 +190,17 @@ class TestTheInvestigationItBuilds:
         assert [ly.top.value for ly in inv.layers] == [0.0, 4.0, 16.0]
         assert inv.layers[0].uscs == "CL"
         assert inv.layers[2].bottom is None
-        assert [s.sample_id for s in inv.samples] == ["1", "2"]
+        # The reader returned two samples; the grid had placed four. The two
+        # it left out are KEPT from the grid, with a note, not lost.
+        assert [s.sample_id for s in inv.samples] == ["1", "2", "", ""]
         assert inv.samples[0].dry_unit_weight.unit == "pcf"
         assert inv.samples[0].dry_unit_weight.value == 112.0
-        assert [r.n for r in inv.spt] == [21, 14]
+        assert [r.n for r in inv.spt] == [21, 14, 26, 10]
         assert inv.water[0].when == "while_drilling"
         assert inv.drilling.hammer_type == "Automatic SPT Hammer"
         assert result.unresolved == []
+        assert sum(1 for k in result.kept if k["what"].startswith("sample")) \
+            == 2
 
     def test_depths_are_kept_in_the_unit_printed_never_converted(
             self, imperial):
@@ -229,10 +235,17 @@ class TestTheInvestigationItBuilds:
             spt=[ReadSPT(depth_top=18.0, blows=["12", "30", "50/5\""],
                          refusal=True, prov=_prov())])
         engine = FakeEngine([{"final": reading}])
-        inv = read_log(doc, [0], engine).investigation
-        assert inv.spt[0].blows == [12, 30, '50/5"']
-        assert inv.spt[0].refusal is True
-        assert inv.spt[0].n is None
+        result = read_log(doc, [0], engine)
+        drive = result.model_investigation.spt[0]
+        assert drive.blows == [12, 30, '50/5"']
+        assert drive.refusal is True
+        assert drive.n is None
+        # The grid placed 3-4-6, N=10 at that depth; the model's record,
+        # given with no note, does not overrule it -- both are on the record.
+        merged = result.investigation.spt[-1]
+        assert merged.blows == [3, 4, 6]
+        assert [a.value for a in merged.prov.alternatives
+                if a.field == "blows"] == ['12-30-50/5"']
 
     def test_a_water_entry_records_that_none_was_encountered(self, imperial):
         doc, _gt = imperial
@@ -240,10 +253,18 @@ class TestTheInvestigationItBuilds:
             water=[ReadWater(depth=None, when="not_encountered",
                              prov=_prov())])
         engine = FakeEngine([{"final": reading}])
-        inv = read_log(doc, [0], engine).investigation
+        result = read_log(doc, [0], engine)
+        inv = result.model_investigation
         assert len(inv.water) == 1
         assert inv.water[0].depth is None
         assert inv.water[0].when == "not_encountered"
+        # The header's groundwater field says 10 ft. Two readings that
+        # cannot be one slot: both are kept, and the split is flagged.
+        merged = result.investigation
+        assert len(merged.water) == 2
+        (row,) = [d for d in result.disagreements
+                  if d["what"].startswith("water")]
+        assert row["kept"] == "both"
 
     def test_a_vocabulary_the_reader_gets_wrong_falls_back_not_crashes(
             self, imperial):
@@ -254,10 +275,13 @@ class TestTheInvestigationItBuilds:
                                 prov=_prov())],
             water=[ReadWater(depth=10.0, when="later", prov=_prov())])
         engine = FakeEngine([{"final": reading}])
-        inv = read_log(doc, [0], engine).investigation
+        result = read_log(doc, [0], engine)
+        inv = result.model_investigation
         assert inv.kind == "other"
         assert inv.samples[0].kind == "other"
         assert inv.water[0].when == "unknown"
+        # 'other' is not an answer, so the merge takes the grid's SS code.
+        assert result.investigation.samples[0].kind == "spt"
 
 
 # ---------------------------------------------------------------------------
@@ -274,7 +298,9 @@ class TestWhatItRefuses:
                               prov=_prov())])
         engine = FakeEngine([{"final": reading}])
         result = read_log(doc, [0], engine)
-        assert result.investigation.layers == []
+        assert result.model_investigation.layers == []
+        # The record still carries the grid's three layers.
+        assert len(result.investigation.layers) == 3
         assert len(result.unresolved) == 1
         entry = result.unresolved[0]
         assert entry["value"] == 250.0
@@ -290,9 +316,13 @@ class TestWhatItRefuses:
             spt=[ReadSPT(depth_top=99.0, blows=["5"], prov=_prov())])
         engine = FakeEngine([{"final": reading}])
         result = read_log(doc, [0], engine)
-        assert [s.sample_id for s in result.investigation.samples] == ["1"]
-        assert result.investigation.spt == []
+        model = result.model_investigation
+        assert [s.sample_id for s in model.samples] == ["1"]
+        assert model.spt == []
         assert len(result.unresolved) == 2
+        # The grid's four samples and four drives are in the record anyway.
+        assert len(result.investigation.samples) == 4
+        assert len(result.investigation.spt) == 4
 
     def test_a_depth_just_past_the_last_tick_is_still_believed(self, imperial):
         doc, _gt = imperial
@@ -303,7 +333,9 @@ class TestWhatItRefuses:
                               prov=_prov())])
         engine = FakeEngine([{"final": reading}])
         result = read_log(doc, [0], engine)
-        assert [ly.top.value for ly in result.investigation.layers] == [21.0]
+        assert [ly.top.value for ly in result.model_investigation.layers] \
+            == [21.0]
+        assert 21.0 in [ly.top.value for ly in result.investigation.layers]
 
     def test_a_log_with_no_scale_yields_no_depths_at_all(self, no_ruler):
         doc, _gt = no_ruler
@@ -328,7 +360,7 @@ class TestWhatItRefuses:
                               prov=_prov(page=77))])
         engine = FakeEngine([{"final": reading}])
         result = read_log(doc, [0], engine)
-        layer = result.investigation.layers[0]
+        layer = result.model_investigation.layers[0]
         assert layer.prov.bbox is None
         assert layer.prov.confidence < 0.5
         assert any(u["page"] == 77 for u in result.unresolved)
@@ -338,8 +370,11 @@ class TestWhatItRefuses:
         reading = _good_imperial_reading(
             unsettled=[Unsettled(what="the symbol at 12 ft", page=0,
                                  why="too faint to read")])
-        engine = FakeEngine([{"final": reading}])
+        # The list earns ONE follow-up call; this reader still cannot settle
+        # it, and the item is carried through.
+        engine = FakeEngine([{"final": reading}, {"final": reading}])
         result = read_log(doc, [0], engine)
+        assert result.follow_up is True and result.model_calls == 2
         assert any(u["refused_by"] == "reader"
                    and "symbol" in u["what"] for u in result.unresolved)
 
@@ -365,15 +400,28 @@ class TestWhatItRecordsAsAChange:
         result = read_log(doc, [0], engine)
         assert len(result.changes) == 1
         assert result.changes[0]["why"] == "ring symbol, not a spoon"
-        prov = result.investigation.samples[0].prov
-        assert prov.method == "vision" and prov.bbox is None
+        sample = result.investigation.samples[0]
+        # The grid's type column printed SS; the picture said ring, with a
+        # note. That is evidence, so the picture wins -- and the grid's
+        # reading stands beside it as the alternative, flagged for review.
+        assert sample.kind == "ring"
+        (alt,) = [a for a in sample.prov.alternatives if a.field == "kind"]
+        assert alt.value == "spt" and alt.method == "grid"
+        (row,) = [d for d in result.disagreements
+                  if d["what"].endswith(": kind")]
+        assert row["kept"] == "model"
+        assert sample.prov.bbox is None
+        assert result.model_investigation.samples[0].prov.method == \
+            "model_from_picture"
 
     def test_a_value_read_off_the_rows_is_not_a_change(self, imperial):
         doc, _gt = imperial
         engine = FakeEngine([{"final": _good_imperial_reading()}])
         result = read_log(doc, [0], engine)
         assert result.changes == []
-        assert result.investigation.layers[0].prov.method == "grid"
+        # Both voters gave the layer: the record says so.
+        assert result.investigation.layers[0].prov.method == "reconciled"
+        assert result.model_investigation.layers[0].prov.method == "model"
 
 
 # ---------------------------------------------------------------------------
@@ -443,3 +491,222 @@ class TestBudget:
         read_log(doc, [0], engine)
         with pytest.raises(ScriptExhausted):
             engine.complete([], output_format=LogReading)
+
+
+# ---------------------------------------------------------------------------
+# the floor: the grid is the first voter
+# ---------------------------------------------------------------------------
+
+def _truth_for(gt) -> dict:
+    """The fixture's own answers in the scorer's truth shape."""
+    import re
+    layers = []
+    for top, bottom, words in gt.layers:
+        symbol = re.search(r"\(([A-Z]{2}(?:-[A-Z]{2})?)\)", words)
+        layers.append({"top": top, "bottom": bottom, "description": words,
+                       "uscs": symbol.group(1) if symbol else None})
+    samples = []
+    index = {depth: (wc, duw) for depth, wc, duw in gt.index_tests}
+    for depth, blows, n in gt.samples:
+        row = {"top": depth, "blows": [int(b) for b in blows.split("-")],
+               "n": int(n.split("=")[1])}
+        if depth in index:
+            row["wc"] = float(index[depth][0])
+            row["duw"] = float(index[depth][1])
+        samples.append(row)
+    return {"id": "RXX_p0", "pages": [0], "depth_unit": gt.unit,
+            "fields": {"boring_id": gt.fields["boring_id"],
+                       "hammer": gt.fields["hammer_type"],
+                       "method": gt.fields["drilling_method"],
+                       "driller": gt.fields["driller"],
+                       "date_started": gt.fields["date_started"]},
+            "layers": layers, "samples": samples,
+            "water": [{"depth": 10.0 if gt.unit == "ft" else 3.0}]}
+
+
+class TestTheFloor:
+    """The grid is the first voter and its values are the floor."""
+
+    def test_the_seed_carries_what_the_grid_placed(self, imperial):
+        doc, gt = imperial
+        from planlens.document.loggrid import log_grid
+        seed = seed_from_grid(log_grid(doc, [0]), [0], "RXX")
+        assert seed.investigation_id == "B-12"
+        assert seed.depth_unit == "ft" and seed.units_known is True
+        assert [round(s.top.value) for s in seed.samples] == [2, 7, 12, 18]
+        assert [r.n for r in seed.spt] == [21, 14, 26, 10]
+        assert seed.spt[0].blows == [5, 9, 12]
+        assert seed.samples[0].kind == "spt"          # the SS code
+        assert seed.samples[0].water_content == 18.0
+        assert seed.samples[0].dry_unit_weight.value == 112.0
+        assert seed.samples[0].dry_unit_weight.unit == "pcf"
+        assert (seed.samples[0].liquid_limit, seed.samples[0].plastic_limit,
+                seed.samples[0].plasticity_index) == (42.0, 21.0, 21.0)
+        assert [ly.top.value for ly in seed.layers] == [0.0, 4.0, 16.0]
+        assert [ly.uscs for ly in seed.layers] == ["CL", "SP-SM", "CL"]
+        assert seed.drilling.hammer_type == "Automatic SPT Hammer"
+        assert seed.total_depth.value == 25.0
+        assert seed.water[0].depth.value == 10.0
+        assert all(s.prov.method == "grid" for s in seed.samples)
+        assert all(0.0 < s.prov.confidence <= 1.0 for s in seed.samples)
+
+    def test_the_model_is_shown_the_starting_record(self, imperial):
+        doc, _gt = imperial
+        engine = FakeEngine([{"final": _good_imperial_reading()}])
+        read_log(doc, [0], engine)
+        brief = engine.calls[0]["messages"][0]["content"][0]["text"]
+        assert "THE STARTING RECORD" in brief
+        assert "sample at 2." in brief and "blows 5-9-12, N 21" in brief
+        assert "layer 0 ft to 4 ft" in brief
+        assert "THE STARTING RECORD, AND THE THREE THINGS" in LOG_READER_SYSTEM
+        assert "never DROP one" in LOG_READER_SYSTEM
+
+    def test_a_reply_that_drops_everything_scores_no_lower_than_the_grid(
+            self, imperial):
+        doc, gt = imperial
+        from planlens.document.loggrid import log_grid
+        truth = _truth_for(gt)
+        grid = log_grid(doc, [0])
+        before = score_grid(truth, grid)
+        empty = _good_imperial_reading(layers=[], samples=[], spt=[],
+                                       water=[], total_depth=None)
+        engine = FakeEngine([{"final": empty}])
+        result = read_log(doc, [0], engine, grid=grid, report_id="RXX")
+        after = score_record(truth, [result.investigation])
+        assert after.total.found >= before.total.found
+        for metric, got in before.scores.items():
+            mine = after.scores.get(metric)
+            assert mine is not None and mine.found >= got.found, metric
+        # ... and the model's own answer, scored alone, is what dropped it.
+        alone = score_record(truth, [result.model_investigation])
+        assert alone.total.found < before.total.found
+        assert len(result.kept) >= 4 + 3          # four samples, three layers
+
+    def test_a_reply_that_contradicts_a_seeded_value_keeps_both(
+            self, imperial):
+        doc, _gt = imperial
+        reading = _good_imperial_reading(
+            spt=[ReadSPT(depth_top=2.0, depth_bottom=3.5,
+                         blows=["5", "9", "12"], n=12, sample_id="1",
+                         prov=_prov())])
+        engine = FakeEngine([{"final": reading}])
+        result = read_log(doc, [0], engine)
+        drive = result.investigation.spt[0]
+        assert drive.n == 21                       # the grid's value stands
+        (alt,) = [a for a in drive.prov.alternatives if a.field == "n"]
+        assert alt.value == "12" and alt.method == "model"
+        rows = [d for d in result.disagreements if d["what"].endswith(": n")]
+        assert len(rows) == 1
+        assert rows[0]["floor"] == "21" and rows[0]["model"] == "12"
+        assert rows[0]["kept"] == "floor"
+        assert rows[0]["confidence"]["floor"] > 0
+
+    def test_a_correction_with_evidence_overrules_the_floor(self, imperial):
+        doc, _gt = imperial
+        reading = _good_imperial_reading(
+            spt=[ReadSPT(depth_top=2.0, depth_bottom=3.5,
+                         blows=["5", "9", "12"], n=12, sample_id="1",
+                         prov=_prov(bbox=(364.0, 219.0, 381.0, 229.0),
+                                    note="the cell prints N=12; the 2 is "
+                                         "overprinted"))])
+        engine = FakeEngine([{"final": reading}])
+        result = read_log(doc, [0], engine)
+        drive = result.investigation.spt[0]
+        assert drive.n == 12
+        (alt,) = [a for a in drive.prov.alternatives if a.field == "n"]
+        assert alt.value == "21" and alt.method == "grid"
+        (row,) = [d for d in result.disagreements
+                  if d["what"].endswith(": n")]
+        assert row["kept"] == "model"
+
+    def test_a_contradiction_within_tolerance_is_not_a_disagreement(
+            self, imperial):
+        doc, _gt = imperial
+        # The grid places the sample's text at 2.06 ft; the log prints 2.0.
+        engine = FakeEngine([{"final": _good_imperial_reading()}])
+        result = read_log(doc, [0], engine)
+        assert not [d for d in result.disagreements
+                    if d["what"].startswith("sample") and
+                    d["what"].endswith(": top")]
+        assert result.investigation.samples[0].top.value == 2.0
+        assert result.investigation.samples[0].top.prov.method == \
+            "reconciled"
+        assert result.reconciled > 0
+
+    def test_a_symbol_the_model_adds_is_added(self, imperial):
+        doc, _gt = imperial
+        reading = _good_imperial_reading(
+            layers=[ReadLayer(top=0.0, bottom=4.0, uscs="CL",
+                              description="SANDY LEAN CLAY (CL), dark "
+                                          "brown, very stiff", prov=_prov()),
+                    ReadLayer(top=4.0, bottom=16.0, uscs="SP-SM",
+                              description="POORLY GRADED SAND WITH SILT "
+                                          "(SP-SM), tan, medium dense",
+                              prov=_prov()),
+                    ReadLayer(top=16.0, bottom=None, uscs="CL",
+                              description="LEAN CLAY (CL), gray, stiff",
+                              consistency="stiff", color="gray",
+                              prov=_prov())],
+            water=[ReadWater(depth=10.0, when="while_drilling",
+                             prov=_prov(bbox=None, from_image=True,
+                                        note="inverted triangle at 10"))])
+        engine = FakeEngine([{"final": reading}])
+        result = read_log(doc, [0], engine)
+        inv = result.investigation
+        assert inv.layers[2].consistency == "stiff"      # model only
+        assert inv.water[0].when == "while_drilling"     # the grid said unknown
+        assert any(a["what"].endswith(": consistency") or
+                   a["what"].endswith(": when") for a in result.added) \
+            or inv.water[0].when == "while_drilling"
+
+    def test_every_value_carries_a_method_and_a_confidence(self, imperial):
+        doc, _gt = imperial
+        engine = FakeEngine([{"final": _good_imperial_reading()}])
+        result = read_log(doc, [0], engine)
+        inv = result.investigation
+        methods = {obj.prov.method for obj in
+                   inv.layers + inv.samples + inv.spt + inv.water}
+        assert methods <= {"grid", "model", "model_from_picture",
+                           "reconciled"}
+        assert "reconciled" in methods and "grid" in methods
+        assert all(0.0 < obj.prov.confidence <= 1.0
+                   for obj in inv.layers + inv.samples + inv.spt + inv.water)
+
+    def test_the_follow_up_carries_a_magnified_band_of_the_rows(
+            self, imperial):
+        doc, _gt = imperial
+        first = _good_imperial_reading(
+            unsettled=[Unsettled(what="the sampler symbol at 12 ft", page=0,
+                                 why="the rows do not say")])
+        second = _good_imperial_reading()
+        engine = FakeEngine([{"final": first}, {"final": second}])
+        result = read_log(doc, [0], engine)
+        assert result.follow_up is True
+        follow = engine.calls[1]["messages"][-1]["content"]
+        assert "could not settle" in follow[0]["text"]
+        assert "sampler symbol at 12 ft" in follow[0]["text"]
+        images = [b for b in follow if b.get("type") == "image"]
+        assert len(images) == 1
+        assert images[0]["png"][:4] == b"\x89PNG"
+        assert result.unresolved == []
+
+    def test_the_follow_up_is_not_made_when_the_budget_is_spent(
+            self, imperial):
+        doc, _gt = imperial
+        first = _good_imperial_reading(
+            unsettled=[Unsettled(what="the symbol at 12 ft", page=0,
+                                 why="faint")])
+        engine = FakeEngine([{"final": first}])
+        result = read_log(doc, [0], engine, budget=1)
+        assert result.follow_up is False and engine.n_calls == 1
+
+    def test_the_result_serialises_both_voters_and_the_merge(self, imperial):
+        import json
+        doc, _gt = imperial
+        engine = FakeEngine([{"final": _good_imperial_reading()}])
+        blob = read_log(doc, [0], engine).to_dict()
+        json.dumps(blob)
+        assert blob["floor"]["investigation_id"] == "B-12"
+        assert blob["model_investigation"]["samples"][0]["sample_id"] == "1"
+        assert isinstance(blob["disagreements"], list)
+        assert blob["reconciled"] > 0

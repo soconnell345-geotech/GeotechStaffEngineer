@@ -133,8 +133,22 @@ class _Spend:
         self.seconds += float(cost.get("seconds") or 0.0)
 
 
+def _is_document(source: Any) -> bool:
+    """Is ``source`` an already-open planlens document?
+
+    The cluster stage opens each report through the corpus, which knows
+    which pages need the Azure Document Intelligence text and wires it in;
+    the graph then reads that document rather than opening the file again
+    without it. The caller owns such a document and closes it.
+    """
+    return all(hasattr(source, name)
+               for name in ("page_map", "render", "n_pages", "page"))
+
+
 def _open(source: Any, di_result: Any, report_id: str):
     from planlens.document import open_document
+    if _is_document(source):
+        return source
     if isinstance(source, (bytes, bytearray)):
         return open_document(bytes(source), text_source=di_result,
                              name=report_id or "report")
@@ -177,8 +191,11 @@ def ingest_report(source: Any, engine: Any, *,
                   db_path: Any = None) -> ReportRecord:
     """Read one report end to end and write its record and its exports.
 
-    ``source`` is a PDF path or its bytes. ``di_result`` is an Azure Document
-    Intelligence layout for the scanned pages, when one exists --
+    ``source`` is a PDF path, its bytes, or an OPEN planlens document (the
+    caller then owns it and closes it; the cluster stage passes the corpus's
+    own document, which already carries the Azure text where it is needed).
+    ``di_result`` is an Azure Document Intelligence layout for the scanned
+    pages, when one exists --
     ``planlens.document.azure_di`` builds it and planlens puts its text into
     the same frame as everything else. ``questions`` are the caller's own
     questions, answered off the narrative beside the owner's two schemas.
@@ -202,7 +219,8 @@ def ingest_report(source: Any, engine: Any, *,
         record = _run(doc, engine, budgets, out, resume, questions or [],
                       report_id, spend, qa, unresolved, di_result)
     finally:
-        doc.close()
+        if not _is_document(source):
+            doc.close()
 
     record.qa.extend(qa)
     record.document.model_calls = spend.calls
@@ -212,10 +230,14 @@ def ingest_report(source: Any, engine: Any, *,
     record.document.seconds = round(time.time() - started, 1)
 
     if write:
-        write_outputs(record, out,
-                      source=None if isinstance(source, (bytes, bytearray))
-                      else source,
-                      db_path=db_path)
+        if _is_document(source):
+            key_source: Any = getattr(source, "path", None) or report_id \
+                or None
+        elif isinstance(source, (bytes, bytearray)):
+            key_source = None
+        else:
+            key_source = source
+        write_outputs(record, out, source=key_source, db_path=db_path)
     return record
 
 
@@ -421,6 +443,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                 record.investigations.append(
                     Investigation.model_validate(blob["investigation"]))
                 unresolved.extend(blob.get("unresolved") or [])
+                _vote_qa(qa, blob, pages)
             else:
                 blob = cached or _read_lab(doc, pages, engine, budgets,
                                            item, report_id)
@@ -430,12 +453,57 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                 for test in blob.get("tests") or []:
                     record.lab_tests.append(LabTest.model_validate(test))
                 unresolved.extend(blob.get("unresolved") or [])
+                _vote_qa(qa, blob, pages)
         except Exception as exc:                 # one item must not stop the run
             qa.append(QAEntry(
                 kind="skipped", where=f"items.{item.kind}",
                 detail=f"{item.id} could not be read: "
                        f"{type(exc).__name__}: {exc}",
                 pages=pages))
+
+
+def _vote_qa(qa: List[QAEntry], blob: Dict[str, Any],
+             pages: Sequence[int]) -> None:
+    """The two voters' splits, and what was kept from the floor, into QA.
+
+    A reader's record is the merge of its floor (the grid, the tables) and
+    the model's answer since 5.23.0. Every slot the two split on becomes a
+    ``disagreement`` entry carrying both values, which one the record holds
+    and the two confidences -- the trigger for a second look the owner
+    asked for. A floor value the model did not return is a ``note``: it is
+    in the record, and a reviewer should know the model never saw it.
+    """
+    for row in blob.get("disagreements") or []:
+        conf = row.get("confidence") or {}
+        why = str(row.get("why") or "").strip()
+        why = (why[0].upper() + why[1:] + ("" if why.endswith(".") else ".")
+               if why else "")
+        qa.append(QAEntry(
+            kind="disagreement", where=str(row.get("where") or ""),
+            detail=(f"{row.get('what', '')}: {row.get('floor_method', 'floor')} "
+                    f"read {row.get('floor', '')!s}, "
+                    f"{row.get('model_method', 'model')} read "
+                    f"{row.get('model', '')!s}; the record carries the "
+                    f"{row.get('kept', 'floor')}'s. {why}").strip(),
+            values=[f"{row.get('floor_method', 'floor')} {row.get('floor', '')} "
+                    f"({float(conf.get('floor', 0.0)):.2f})",
+                    f"{row.get('model_method', 'model')} "
+                    f"{row.get('model', '')} "
+                    f"({float(conf.get('model', 0.0)):.2f})"],
+            pages=[int(row["page"])] if row.get("page") is not None
+            else [int(p) for p in pages]))
+    kept = blob.get("kept") or []
+    if kept:
+        qa.append(QAEntry(
+            kind="note", where="floor",
+            detail=(f"{len(kept)} value(s) the model did not return were "
+                    f"kept from the floor (the grid's rows or the page's "
+                    f"tables): " + "; ".join(
+                        str(k.get("what") or "") for k in kept[:8])
+                    + (" ..." if len(kept) > 8 else "")),
+            pages=sorted({int(k["page"]) for k in kept
+                          if k.get("page") is not None})
+            or [int(p) for p in pages]))
 
 
 def _read_narrative(doc, pages, engine, budgets, outline, report_id, body,

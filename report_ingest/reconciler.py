@@ -588,7 +588,14 @@ def _carry_unresolved(qa: List[QAEntry],
         what = str(row.get("what") or row.get("field") or "reader")
         why = str(row.get("why") or row.get("detail") or "")
         values = [str(row["value"])] if row.get("value") is not None else []
-        qa.append(QAEntry(kind="partial", where=what, detail=why,
+        # What a reader could not settle is ``partial``; what PYTHON refused
+        # -- a depth off the sheet's ruler, a percentage past 100 -- is
+        # ``out_of_range``, so the two are countable apart: one is a gap in
+        # the reading, the other a value that was read and thrown out.
+        refused_by = str(row.get("refused_by") or "")
+        kind = ("out_of_range" if refused_by == "python"
+                else "skipped" if refused_by == "budget" else "partial")
+        qa.append(QAEntry(kind=kind, where=what, detail=why,
                           values=values, pages=pages))
 
 

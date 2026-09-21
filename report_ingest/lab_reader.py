@@ -40,6 +40,17 @@ and a grading series in which MORE passes a smaller sieve. Each is refused
 into ``unresolved`` rather than accepted, and the rest of the sheet is kept:
 one bad series is not a reason to lose the eleven good values beside it.
 
+THE FLOOR (5.23.0). The page's detected tables and its title are the FIRST
+voter. Before any call they are read into typed :class:`LabTest` records
+with the table's own confidence on every value
+(:mod:`report_ingest.lab_floor`), the model is shown them as its starting
+record, and its answer is merged back: a value it adds is accepted, one it
+corrects with a box and a note replaces the table's with the table's kept
+beside it, one it contradicts without evidence stays the table's with the
+model's kept beside it, and one it omits is kept with a note. Every split is
+a disagreement for the QA section. Six sheets of the first cluster run came
+back below the tables alone; none can now.
+
 THE BUDGET is four model calls per sheet, and most sheets cost ONE. Every
 call asks for the answer and offers :func:`zoom_plot` at the same time, so a
 sheet whose values are tabulated is read and answered in a single call; a
@@ -57,6 +68,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from report_ingest.engine import (
     Engine, image_block, text_block, tool_result_block, user,
+)
+from report_ingest.floor import MergeLog
+from report_ingest.lab_floor import (
+    FloorSheet, floor_from_tables, merge_lab_tests, serialise_floor,
 )
 from report_ingest.model import (
     AtterbergResult, CBRResult, ChemicalResult, CompactionPoint,
@@ -554,6 +569,18 @@ class LabReadResult:
     model: str = ""
     warnings: List[str] = field(default_factory=list)
     pages: List[int] = field(default_factory=list)
+    #: The two voters kept apart, so the scorecard can score each alone:
+    #: what the page's tables and title gave before any call, and what the
+    #: model answered before the merge. ``tests`` above is the merge.
+    floor_tests: List[LabTest] = field(default_factory=list)
+    model_tests: List[LabTest] = field(default_factory=list)
+    floor_kind: str = ""
+    #: Every slot the two voters split on, every floor value kept because
+    #: the model did not return it, every value the model added.
+    disagreements: List[Dict[str, Any]] = field(default_factory=list)
+    kept: List[Dict[str, Any]] = field(default_factory=list)
+    added: List[Dict[str, Any]] = field(default_factory=list)
+    reconciled: int = 0
 
     @property
     def kinds(self) -> List[str]:
@@ -572,6 +599,15 @@ class LabReadResult:
             "model": self.model,
             "warnings": list(self.warnings),
             "pages": list(self.pages),
+            "floor_tests": [t.model_dump(mode="json")
+                            for t in self.floor_tests],
+            "model_tests": [t.model_dump(mode="json")
+                            for t in self.model_tests],
+            "floor_kind": self.floor_kind,
+            "disagreements": [dict(d) for d in self.disagreements],
+            "kept": [dict(k) for k in self.kept],
+            "added": [dict(a) for a in self.added],
+            "reconciled": self.reconciled,
         }
 
 
@@ -679,6 +715,23 @@ sounding identifier and the depth exactly as printed. Do not reconcile them
 with anything, do not tidy them, do not guess one from a sample number. If
 the sheet names no boring, leave it empty: that is an answer and something
 else will deal with it.
+
+THE STARTING RECORD, AND THE THREE THINGS YOU MAY DO TO IT. The tables
+detected on the page, and the sheet's title, have already been read into a
+first record -- the kind the title names, the boring and depth printed on
+the sheet, every labelled value in a table, every row of a grading series
+or a summary table -- and you are given it as THE STARTING RECORD. Build on
+it; do not start again from a blank page.
+- You may ADD what it lacks: a kind the title did not name, a boring the
+  tables do not carry, a value printed outside any table, a curve read off
+  the plot where nothing is tabulated, a specimen the tables missed.
+- You may CORRECT a value it has, but only with evidence: give the box of
+  the line or cell you read it from, and say in the note what the page
+  prints there. A correction with no box and no note is not accepted; the
+  starting value stands and yours is kept beside it for review.
+- You may never DROP one. A value you leave out of your answer is kept from
+  the starting record anyway, so leaving it out gains nothing; return every
+  test with its starting values in it.
 
 READ THE TABLE BEFORE THE PLOT. Most of these sheets print a curve AND the
 values that curve was drawn from, in a table or a results box beside it.
@@ -802,7 +855,7 @@ def serialise_page(doc: Any, page: int) -> str:
 
 def _brief(doc: Any, pages: Sequence[int], ledger: Sequence[str],
            item_title: str, report_id: str, hint_kind: Optional[str],
-           budget: int) -> str:
+           budget: int, floor: Optional[FloorSheet] = None) -> str:
     vocabulary = "\n".join(f"  {name}: {text}"
                            for name, text in KIND_DEFINITIONS.items())
     series = "\n".join(f"  {name}: {text}"
@@ -832,8 +885,17 @@ def _brief(doc: Any, pages: Sequence[int], ledger: Sequence[str],
         "WHAT THE PAGE LEDGER SAYS ABOUT THESE PAGES",
         "\n".join(ledger) if ledger else "(no ledger line)",
         "",
-        "THE PAGE",
     ]
+    if floor is not None:
+        parts += [
+            "THE STARTING RECORD (read off the sheet's title and its "
+            "detected tables before you were called, with the page and box "
+            "each came from and the reader's confidence -- build on it; "
+            "add, correct with the box and a note, never drop)",
+            serialise_floor(floor),
+            "",
+        ]
+    parts += ["THE PAGE"]
     parts.extend(serialise_page(doc, page) for page in pages)
     return "\n".join(parts)
 
@@ -1043,9 +1105,11 @@ class _Builder:
                 f"page {page} is not part of this sheet ({self.pages}); the "
                 f"box was dropped", page=page)
             return Provenance(page=self.pages[0] if self.pages else page,
-                              method="vision" if prov.from_image else "text",
+                              method=("model_from_picture" if prov.from_image
+                                      else "model"),
                               confidence=0.4, note=prov.note)
-        method = "vision" if (prov.from_image or digitised) else "text"
+        method = ("model_from_picture" if (prov.from_image or digitised)
+                  else "model")
         if prov.from_image:
             self.changes.append({
                 "what": self._what, "page": page,
@@ -1053,7 +1117,8 @@ class _Builder:
         return Provenance(page=page,
                           bbox=tuple(prov.bbox) if prov.bbox else None,
                           method=method,
-                          confidence=0.8 if method == "vision" else 0.9,
+                          confidence=(0.8 if method == "model_from_picture"
+                                      else 0.9),
                           note=prov.note)
 
     def result_for(self, kind: str, test: ReadTest) -> Any:
@@ -1417,8 +1482,12 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
             continue                             # is read from its text alone
         images.append(png)
 
+    # THE FLOOR: the page's tables and title, read before any call is spent
+    # and shown to the model as the record it starts from.
+    floor = floor_from_tables(doc, pages, report_id)
+    warnings.extend(floor.warnings)
     brief = _brief(doc, pages, ledger, item_title, report_id, hint_kind,
-                   budget)
+                   budget, floor=floor)
     tools = _Tools(doc, pages)
     messages: List[Dict[str, Any]] = [
         user(text_block(brief), *[image_block(png) for png in images])]
@@ -1469,11 +1538,14 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
             f"{getattr(final, 'stop_reason', None)!r})")
 
     builder = _Builder(reading, pages, report_id, tools.zooms)
-    tests = builder.build()
+    model_tests = builder.build()
+    # THE MERGE: the model's answer folded onto the floor. Nothing a table
+    # held is lost; every contradiction is on the record.
+    merged, merge_log = merge_lab_tests(floor.tests, model_tests, MergeLog())
     spent["seconds"] = round(spent["seconds"], 2)
     spent["dollars"] = round(spent["dollars"], 5)
     return LabReadResult(
-        tests=tests,
+        tests=merged,
         changes=builder.changes,
         unresolved=builder.unresolved,
         cost=spent,
@@ -1481,4 +1553,11 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
         tool_calls=tool_calls,
         model=getattr(final, "model", "") or getattr(engine, "name", ""),
         warnings=warnings,
-        pages=pages)
+        pages=pages,
+        floor_tests=list(floor.tests),
+        model_tests=model_tests,
+        floor_kind=floor.kind,
+        disagreements=merge_log.disagreements,
+        kept=merge_log.kept,
+        added=merge_log.added,
+        reconciled=merge_log.reconciled)
