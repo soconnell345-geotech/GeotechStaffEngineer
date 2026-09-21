@@ -4143,3 +4143,48 @@ test_pit__R28_p68                 open   test_pit plotted       1      0     0% 
 test_pit__R30_p152                open   test_pit plotted       1      0   83% 15/18           -     -    -     -     -
 
 ```
+
+---
+
+### PARKED 2026-09-21 at 5.25.0
+
+The report-ingest train stops here by the owner's word, at a released version
+(tag `v5.25.0`, master `46ae949`, PyPI 2026-09-21). Nothing in 5.25.0 has run on
+the cluster. The pickup list is `HANDOFF.md` §0a-current, top entry; the next
+session's work is Tiny Apps.
+
+**The last measured number for every stage, as this ledger records it.**
+
+| Stage | Last measured | When | Model? |
+|---|---|---|---|
+| Page labels, rules alone | 0.908 in sample / **0.767 honest blind** | 2026-09-18, run 7 | yes |
+| Page labels, sheet-mode vision (number-only sheets) | 0.655 in sample / **0.867 honest blind**, about $0.05 a report | 2026-09-20, run 10 | yes |
+| Whole-page label review | about $0.45 a report; honest blind 0.767 → 0.850 (fixed 11, broke 5); in sample 0.908 → 0.916 (fixed 158, broke 125) | 2026-09-18, run 7 | yes |
+| Log reader, 15 logs | all 83 % (434/521) → 80 % (418/521); open 91 % → 93 %; **blind 73 % → 62 %** | 2026-09-18, run 7 | yes |
+| Log floor over the grid, 15 logs | 283/521 → 373/521 with no template, **386/521 with the fingerprints** | 2026-09-20 | no |
+| Log-template recogniser | 100 % recall / 100 % precision over both families; none of the five undescribed forms claimed; no false positive on 30 non-log pages | 2026-09-20 | no |
+| Lab reader, 31 sheets | tables alone 68 % (452/667) → reader **87 % (716/825)** | 2026-09-18, run 6 | yes |
+| Narrative, 8 reports | **recall 64 % (151/235), precision 74 % (147/200)** | 2026-09-18, run 6 | yes |
+| Calculation reader FLOOR, 10 runs / 44 pages | program 80 % (8/10), inputs 73 % (64/88), results 48 % (36/75) | 2026-09-21 | no |
+| Pit and sounding FLOOR, 13 sheets | 73 % overall (257/353): **96 % tabulated (217/226), 31 % plotted (40/127)** | 2026-09-21 | no |
+| Library retrieval, 20 questions / 6 synthetic records | chosen query reports 0.949 / 1.000, pages 0.939 / 1.000; search alone reports 0.647 / 0.943, pages 0.417 / 0.323 | 2026-09-21 | no |
+
+**Unmeasured when the train parked.**
+
+1. **The vote in production.** The three policies were scored on saved runs
+   (the `vote` stage), never as `structural` inside `ingest_report`: the split
+   fraction per report, what the disagreement-only review touches and what it
+   costs are all unknown.
+2. **The calculation reader itself.** Only its floor is measured, and there is
+   **no blind set** — all ten hand-truthed runs were read while the prompt was
+   written.
+3. **The pit and sounding readers themselves.** Again only the floor, again no
+   blind set over the thirteen sheets.
+4. **The 5.24.0 narrative levers** — the front-matter union, the six DRAFT
+   glossary conventions, per-question retrieval, the deterministic exploration
+   fields and the quote gate. None has met the tier that will do the work, so
+   run 6's 64 % recall / 74 % precision still stands as the last real number.
+5. **The library's model half.** The deterministic retrieval is measured above;
+   the sub-agent answering real questions over the real corpus is not.
+6. **Document-mode vision over the corpus.** Run 9 measured one 151-page report
+   (5 windows, 255 k input tokens); the corpus has never been run in that mode.

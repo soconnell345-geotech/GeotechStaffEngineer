@@ -1,7 +1,10 @@
 # Report ingest — geotechnical report → organised record + summary + DIGGS 2.6
 
-**Status: WP0–WP7 BUILT; 5.25.0 PREPARED on master (2026-09-21), not
-tagged; cluster scoring pending the owner's run.** WP0 and WP1b shipped in app
+**Status: PARKED 2026-09-21 at 5.25.0 (released — tag `v5.25.0`, master
+`46ae949`, on PyPI); pickup list in `HANDOFF.md` §0a-current.** WP0–WP7 are
+BUILT and cluster scoring is still pending the owner's run: nothing in 5.25.0
+has met the tier that will do the work. The next session's work is Tiny Apps
+(`tinyapps/TINYAPPS.md`), not this train. WP0 and WP1b shipped in app
 5.19.0 with planlens 0.5.0. WP2 through WP4 — the record, the log reader and
 DIGGS 2.6, the lab reader, the narrative reader and the reconciler, the
 writers, the deterministic graph, the folder runner and the app sub-agent —

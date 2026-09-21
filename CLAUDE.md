@@ -71,9 +71,21 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-09-21) — 5.25.0 PREPARED ON MASTER (the report read whole, and a library of the reports read) with planlens 0.6.0
+## CURRENT WORKING STATE (2026-09-21) — 5.25.0 RELEASED (the report read whole, and a library of the reports read) with planlens 0.6.0; the report-ingest train PARKED, Tiny Apps next
 
-- **app 5.25.0 (PREPARED, NOT TAGGED, 2026-09-21)** — **the pages nobody was
+- **THE REPORT-INGEST TRAIN IS PARKED at 5.25.0 (2026-09-21).** The release is
+  cut — master `46ae949` is tag `v5.25.0` and the version is on PyPI — and the
+  train stops there by the owner's word, with nothing half-built. **The pickup
+  list is `HANDOFF.md` §0a-current**, top entry: what exists, the install and
+  upload steps, the first live checks in order with their costs, the items only
+  the owner can do, what is still unmeasured and the last measured numbers.
+  **The next session's work is Tiny Apps:** plan of record `tinyapps/TINYAPPS.md`,
+  the "TinyApps pilot" section of this file, and the Tiny Apps items in
+  `HANDOFF.md`.
+
+- **app 5.25.0 (RELEASED 2026-09-21; tag `v5.25.0`, master `46ae949`, on
+  PyPI — the Nexus mirror delivers it to the cluster a day or two later)** —
+  **the pages nobody was
   reading get read, a report bound inside a report becomes its own record, the
   page labels become a vote, and the reports already read become a library that
   can be asked questions.** Five builds landed on master on 2026-09-21 and this
@@ -210,12 +222,15 @@ Key conventions:
   The first live checks, in order, are in `HANDOFF.md` §0a-current.
 
   **Gate (2026-09-21, three chunks in the foreground, each on pytest's own exit
-  code): GATE_COUNTS.** Wheel built and checked: no corpus name, no truth file,
+  code): 13,108 passed / 33 skipped / 0 failed** (3,598/28 + 8,086/5 +
+  1,424/0). Wheel built and checked: no corpus name, no truth file,
   no `raw/`, no tests and no `module_work` in it;
   `report_ingest/templates.json.EXAMPLE` and
   `report_ingest/library_questions.EXAMPLE.json` both present; metadata requires
   `planlens>=0.6` and does not require `anthropic`.
-  **NOT TAGGED, NOT PUSHED, NOT PUBLISHED** — the owner's word cuts the release.
+  **TAGGED, PUSHED AND PUBLISHED 2026-09-21** — the owner cut the release.
+  Nothing in it has run on the cluster yet; the first live checks are in
+  `HANDOFF.md` §0a-current.
 
 - **app 5.24.0** (2026-09-20, on master, NOT yet tagged or released) —
   **a log knows what FORM it was printed on, and the narrative reader is
@@ -1563,10 +1578,11 @@ Run: `pytest foundry_test_harness/ -v`
 
 Everything that reads a PDF, an image or a DXF lives in the separate,
 published package **planlens** (`C:/Users/socon/OneDrive/dev/planlens`,
-PyPI `planlens`, editable-installed in dev; app pin `planlens>=0.5` since
-5.19.0 — plain, no extra, because 0.4.0 moved `opencv-python-headless` and
-`rapidfuzz` into planlens' core and left `[raster]` / `[text]` as empty alias
-extras, and 0.5.0 declares exactly the same dependencies).
+PyPI `planlens`, editable-installed in dev; app pin `planlens>=0.6` since
+5.20.0, raised from `planlens>=0.5` at 5.19.0 — plain, no extra, because 0.4.0
+moved `opencv-python-headless` and `rapidfuzz` into planlens' core and left
+`[raster]` / `[text]` as empty alias extras, and 0.5.0 and 0.6.0 each declare
+exactly the same dependencies).
 It is the owner's TinyApp "banner application" for any architect or engineer
 reviewing documents; the geotech package rides along. No OBO branding, and do
 not pitch it as CAD-object recognition — the goal is document review.

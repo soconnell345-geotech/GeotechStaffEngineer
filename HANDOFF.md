@@ -8,7 +8,147 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-21, supersedes everything below)
 
-### app 5.25.0 — PREPARED ON MASTER, NOT TAGGED (2026-09-21)
+### PARKED 2026-09-21 — report-ingest train at 5.25.0; NEXT: Tiny Apps (new session)
+
+**The owner's word parks the train here**, at a released version, with nothing
+half-built. Start from this entry; the 5.25.0 entry immediately below it is the
+detail behind every claim made here.
+
+**(a) What exists.** One pipeline reads a geotechnical report PDF into a
+`ReportRecord` and writes four things out of it: a one-page summary, a
+WikiLLM-style library page, a DIGGS 2.6 file and a library row. Every page gets
+its label from a VOTE of three cheap voters, with the expensive review going
+only where they split; a report bound inside another becomes its own linked
+record; the boring logs, the laboratory sheets, the calculation printouts, the
+test pits, the cone soundings and the dynamic probes are all read, each over a
+deterministic floor that runs BEFORE a model call is spent; the narrative reader
+answers the owner's two schemas under the conventions in
+`report_ingest/narrative_glossary.py`; and the reports already read become a
+library that can be asked questions across them. `score_on_cluster` has **nine
+stages** — `labels`, `logs`, `lab`, `calc`, `soundings`, `narrative`,
+`vision_labels`, `vote`, `ingest` — over ONE truth root. Two sub-agents ship
+**OFF by default** (`build_deep_agent(enable_report_ingest=False)`, and
+`report_library` feature-detected on the FOLDER rather than on a package
+version), because none of it has run on the cluster yet. The hand truth, by
+count: **4,300 labelled pages** over 14 reports, **15** logs, **31** laboratory
+sheets, **10** calculation runs, **13** pits and soundings, **8** narratives —
+all private, all gitignored. The upload folder is
+`module_work/field_feedback/2026-09-16_report-ingest/raw/cluster_upload/` (about
+2 MB, re-staged 2026-09-21 for this release), with `cluster_upload.zip` beside
+it and its own README naming every path and what a run loses without it.
+
+**(b) PICKUP LIST, in order.**
+
+1. **Install 5.25.0 when the mirror delivers it.** It went to PyPI on
+   2026-09-21 and reaches the cluster a day or two later:
+   `%pip install "geotech-staff-engineer==5.25.0"` then
+   `dbutils.library.restartPython()`. The install log has a standing answer in
+   `docs/DATABRICKS_INSTALL.md` — do not re-derive the numpy cascade.
+2. **Upload the private files.** Unzip `cluster_upload.zip` into the workspace
+   folder the cells call `HOME`
+   (`/Workspace/Users/<you>/geotech_app/report_ingest`), keeping its shape:
+   `MANIFEST.md`, the hand label spreadsheet, `oos_labels.json`,
+   `templates.json` **beside** `truth/` rather than inside it, and `truth/` with
+   its five subfolders (`logs`, `lab`, `calc`, `soundings`, `narrative`). Then
+   `%run` the Funhouse setup notebook — the restart wipes `fh_prompter` and
+   `fh_sp_client` — and run the gather cell that copies `HOME` to
+   `WORK = "/tmp/ri_files"`.
+3. **The first live checks, exactly as the 5.25.0 entry lists them**, with its
+   cost estimates: (a) `stages=("vote",)` over the 38 saved sheet-mode vision
+   runs, **$0 — the stage calls no model**; (b) `stages=("ingest",)` with
+   `max_reports=2`, `label_policy="structural"` and
+   `review_mode="disagreements"`, order **$2–6**; (c)
+   `stages=("calc", "soundings")`, the first model numbers either reader has
+   ever had, order **$1–3**; (d) `stages=("logs", "lab", "narrative")`, with the
+   5.24.0 floor, the templates and the narrative levers all in force for the
+   first time, order **$3–6**; (e) `stages=("vision_labels",)` with
+   `vision_mode="document"` over the corpus, order **$4–6**. The cells
+   themselves are in `report_ingest/README.md` under "Running it on the
+   cluster", in this same order. **Bring home `RESULTS.md` only.**
+
+**(c) OWNER ITEMS — none of these can be done without the owner.**
+
+1. **Rule on the six DRAFT conventions** in
+   `report_ingest/narrative_glossary.py`. Confirming one is changing its
+   `status` to `CONFIRMED`; overruling one is editing the sentence. They are:
+   a count of explorations the report says it did NOT do is `0`, not null;
+   `null` means THE REPORT DOES NOT SAY, never zero and never a word like
+   "none" or "N/A"; the four "mention" fields answer on whether the report
+   DISCUSSES the topic anywhere, not on whether the work was done; `postName` is
+   the CITY of the post and nothing else; `primeAe` is the architect-engineer OF
+   RECORD, not the geotechnical firm and not the contractor; and
+   `earthHazardsExposed` uses the listed phrases only and never includes seismic
+   shaking.
+2. **Azure Document Intelligence is still owed** for the scanned reports, and
+   only the owner can run it: R02, R31, R32 (58 pages in R32 alone read as
+   confident nonsense without it), R38, the scanned pages of R03 and R33, and a
+   fresh export of R17's truncated result. The WP0 harness prints the exact page
+   ranges.
+3. **BLIND truth sets are owed for the calculations and for the soundings.**
+   All ten calc runs and all thirteen pit and sounding sheets were read while
+   the prompts were being written, so `OPEN.txt` names every one of them and the
+   scorecard prints that there is no blind set where the open/blind line would
+   go. No number either stage reports is evidence about a report nobody looked
+   at.
+4. **The ingest ledger is the owner's design and is NOT built** — one function
+   the ingest calls at the end of every report, writing one append-only row to
+   every sink it can reach. Written up in full in `module_work/FUTURE_IDEAS.md`
+   under "The ingest ledger"; nothing of it exists in code.
+5. **`pydiggs` is not on the cluster**, deliberately — it is an optional extra
+   demoted in 5.13.0 because it dragged Sphinx in. A DIGGS file a cluster run
+   writes is checked by the ROUND TRIP only, and `RESULTS.md` prints `not
+   checked here` where the XSD line would be. The schema gate runs in the
+   offline gate, where pydiggs is installed. **DIGGS is validated locally only.**
+
+**(d) WHAT IS UNMEASURED, and what the last measured numbers actually are.**
+
+Still unmeasured: **the vote in production** (the policies were scored on saved
+runs, never as the default inside `ingest_report`); **the calculation reader
+itself**; **the sounding and pit readers themselves**; **the 5.24.0 narrative
+levers**, which have never met the tier that will do the work; **the library's
+model half**; and **document-mode vision over the corpus**.
+
+| What | Last measured number | When |
+|---|---|---|
+| Page labels, rules alone | 0.908 in sample / **0.767 honest blind** | 2026-09-18, run 7 |
+| Page labels, sheet-mode vision | 0.655 in sample / **0.867 honest blind**, about **$0.05 a report** | 2026-09-20, run 10 |
+| Whole-page label review | about **$0.45 a report**; honest blind 0.767 → 0.850, but on in-sample reports it broke nearly as many labels as it fixed | 2026-09-18, run 7 |
+| Log reader, 15 logs | all 83 % → 80 %; **blind 73 % → 62 %** — the reader lost to the grid, which is the argument for the floor | 2026-09-18, run 7 |
+| Log floor over the grid | 283/521 → 373/521 with no template, **386/521 with the fingerprints** | 2026-09-20, no model |
+| Log-template recogniser | 100 % recall and 100 % precision over both families, and no false positive on 30 pages the hand says are not logs | 2026-09-20, no model |
+| Lab reader, 31 sheets | tables alone 68 % (452/667) → reader **87 % (716/825)** | 2026-09-18, run 6 |
+| Narrative, 8 reports | **recall 64 % (151/235), precision 74 % (147/200)** | 2026-09-18, run 6 |
+| Calculation reader FLOOR | program 80 % (8/10), inputs 73 % (64/88), results 48 % (36/75) | 2026-09-21, no model |
+| Pit and sounding FLOOR | 73 % overall (257/353): **96 % tabulated (217/226), 31 % plotted (40/127)** | 2026-09-21, no model |
+| Library retrieval | chosen query: reports 0.949 / 1.000, pages 0.939 / 1.000; search alone: reports 0.647 / 0.943, pages 0.417 / 0.323 | 2026-09-21, no model |
+
+Every row marked "no model" is a floor or a rule and stands on its own. Every
+row naming a run is from the cluster runs recorded in the private ledger,
+`module_work/field_feedback/2026-09-16_report-ingest/MEASUREMENTS.md`.
+
+**(e) Standing rules learned on this train.**
+
+- **A release reaches the cluster a day or two after PyPI** (the Nexus mirror
+  lag). Never assume a version is installable the day it is cut.
+- **Never leave a paid output only in `/tmp`.** A cluster restart takes it and
+  the money spent on it: mirror every run to the workspace folder or SharePoint.
+- **Edit by exact text, and gate on pytest's own exit code** — never on a piped
+  tail. That is how a SyntaxError shipped as 5.22.0 and had to be replaced the
+  same hour.
+- **One writer per file.** Two agents editing one document lose each other's
+  work.
+- **A cheap model reads whatever it is shown.** A whole corpus vision run was
+  void because planlens captions each contact-sheet tile with the page kind and
+  the model read the caption as the answer.
+
+**(f) NEXT: Tiny Apps (a new session).** Plan of record `tinyapps/TINYAPPS.md`;
+the "TinyApps pilot" section of `CLAUDE.md`; the Tiny Apps items further down
+this file. The stubs exist: `webapp/tinyapps_entry.py` and
+`tinyapps/wrapper_repo/` (`app.py`, `packages.txt`, `run.sh`). Engine wiring is
+blocked on office-hours answer #1, the key-auth Prompter client. Nothing about
+Tiny Apps is rewritten in this entry — those documents are the plan.
+
+### app 5.25.0 — RELEASED 2026-09-21 (tag `v5.25.0`, master `46ae949`, on PyPI)
 
 **One release carrying five builds that landed on master on 2026-09-21.** No
 dependency change — the pin stays `planlens>=0.6` — no schema bump, seven new
@@ -16,7 +156,9 @@ modules inside `report_ingest`, one new reader in
 `subsurface_characterization/diggs26.py`, and one more data file in the wheel
 (`report_ingest/library_questions.EXAMPLE.json`, which moved out of the dev
 harness so the cluster cell can read the shape from an installed copy).
-**Nothing is tagged, pushed or published: the owner's word cuts the release.**
+**The owner cut the release on 2026-09-21: master `46ae949` is tag `v5.25.0`
+and the version is on PyPI. It reaches the cluster a day or two later, when
+the Nexus mirror picks it up.**
 
 **1. The page labels are a VOTE, and the expensive review goes only where the
 voters disagree** (`label_vote.py`). Rules 0.908 in sample / **0.767 honest
@@ -113,7 +255,8 @@ deterministic retrieval is measured, the sub-agent answering real questions
 over the real corpus is not.
 
 **Gate (2026-09-21, three chunks in the foreground, each gated on pytest's own
-exit code): GATE_COUNTS.** Wheel built and checked: no corpus name, no truth
+exit code): 13,108 passed / 33 skipped / 0 failed** (3,598/28 + 8,086/5 +
+1,424/0). Wheel built and checked: no corpus name, no truth
 file, nothing from `raw/`, no tests and no `module_work`;
 `report_ingest/templates.json.EXAMPLE` and
 `report_ingest/library_questions.EXAMPLE.json` both present; metadata requires

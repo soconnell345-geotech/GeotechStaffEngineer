@@ -343,7 +343,16 @@ DocLayout-YOLO (AGPL), docling (torch unavoidable — optional only).
    firewalled: any package that downloads model weights at runtime is unusable
    as published — vendor the models or skip.
 
-## REPORT INGEST TRAIN — WP0–WP7 BUILT; 5.20.0 RELEASED; 5.25.0 PREPARED 2026-09-21 (not tagged)
+## REPORT INGEST TRAIN — WP0–WP7 BUILT; **PARKED 2026-09-21 at 5.25.0 (RELEASED)**
+
+**The train is parked at 5.25.0** (tag `v5.25.0`, master `46ae949`, on PyPI
+2026-09-21) and nothing in it has run on the cluster yet. The pickup list — the
+install, the upload, the first live checks in order with their costs, the owner
+items and the unmeasured list — is `HANDOFF.md` §0a-current, top entry. The
+three TODO items below (a blind calculation truth set, a blind sounding and
+test-pit truth set, and the ingest ledger) are the standing unbuilt work of this
+train; the narrative reader's cheap-vision SECOND VOTER is a fourth, designed in
+`REPORT_INGEST_PLAN.md` §7 and waiting on the cluster numbers.
 
 Plan: `module_work/REPORT_INGEST_PLAN.md`. Goal, in the owner's words:
 well-organised data about each geotechnical report, usable either as a
@@ -377,8 +386,9 @@ exports of it.
   `report_ingest` sub-agent on the app's tool surface behind
   `enable_report_ingest=False`.
 
-**Prepared as 5.25.0 on master, 2026-09-21 (not tagged):** the page-label
-VOTE in production with the review going only where the voters disagree
+**Released as 5.25.0 on 2026-09-21 (tag `v5.25.0`, master `46ae949`, on
+PyPI):** the page-label VOTE in production with the review going only where
+the voters disagree
 (`label_vote.py`); a report bound inside a report as its OWN record
 (`bound.py`); **WP5's calculation reader** (`calc_reader.py`); **WP6's test
 pit, cone sounding and dynamic probe readers** (`sounding_reader.py`, with
