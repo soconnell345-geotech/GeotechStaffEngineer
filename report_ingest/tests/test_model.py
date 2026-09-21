@@ -97,7 +97,7 @@ class TestRecord:
         assert set(again["properties"]) == {
             "schema_version", "document", "page_labels", "project", "general",
             "natural_hazards", "narrative", "investigations", "lab_tests",
-            "calcs", "qa"}
+            "calcs", "qa", "bound_documents", "parent"}
 
     def test_the_schema_carries_the_investigation_shape(self):
         schema = record_json_schema()

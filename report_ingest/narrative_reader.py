@@ -808,12 +808,20 @@ def serialise_page(doc: Any, page: int) -> str:
 
 def reading_pages(doc: Any, narrative_pages: Sequence[int], *,
                   roles: Any = None, front_pages: int = FRONT_PAGES,
-                  labels: Sequence[str] = FRONT_LABELS) -> List[int]:
+                  labels: Sequence[str] = FRONT_LABELS,
+                  window: Optional[Sequence[int]] = None) -> List[int]:
     """Which pages the narrative reader is given, in page order.
 
     THE RULE, in one sentence: every page labelled cover, letter, contents or
     narrative, plus the first ``front_pages`` pages of the report whatever
     they were labelled, deduplicated and in page order.
+
+    ``window`` narrows all of that to one span of the file, and is how a
+    report BOUND INSIDE another one is read: "the report" is then the bound
+    document, its front is the first ``front_pages`` pages OF IT, and the
+    parent's cover, letter and contents are not its own and are not shown.
+    Without it the whole document is the window, which is every ordinary
+    report.
 
     WHY THE FRONT GOES IN WHOLE. Four of the general schema's questions --
     who the prime contractor was, who the architect-engineer of record was,
@@ -840,8 +848,13 @@ def reading_pages(doc: Any, narrative_pages: Sequence[int], *,
         if getattr(role, "role", "") in allowed:
             wanted.add(int(role.page))
     total = int(getattr(doc, "n_pages", 0) or 0)
-    wanted.update(range(min(int(front_pages), total) if total
-                        else int(front_pages)))
+    if window is not None:
+        span = sorted({int(p) for p in window})
+        wanted = {p for p in wanted if p in set(span)}
+        wanted.update(span[:max(0, int(front_pages))])
+    else:
+        wanted.update(range(min(int(front_pages), total) if total
+                            else int(front_pages)))
     if total:
         wanted = {p for p in wanted if 0 <= p < total}
     return sorted(wanted)
@@ -901,7 +914,8 @@ def picture_pages(doc: Any, pages: Sequence[int],
 
 def retrieval_passages(doc: Any, fields: Sequence[str] = (),
                        *, phrases: Optional[Dict[str, Sequence[str]]] = None,
-                       max_chars: int = MAX_RETRIEVAL_CHARS
+                       max_chars: int = MAX_RETRIEVAL_CHARS,
+                       window: Optional[Sequence[int]] = None
                        ) -> List[Dict[str, Any]]:
     """Passages from ANYWHERE in the report for the questions that need them.
 
@@ -917,7 +931,13 @@ def retrieval_passages(doc: Any, fields: Sequence[str] = (),
     report is a full pass per phrase; the exact pass is a regex scan and
     answers most phrases. The fuzzy pass is what catches a phrase that came
     off a scan with a letter wrong, which is exactly where it is needed.
+
+    ``window`` keeps only the hits inside one span of the file, for a report
+    bound inside another one: "anywhere in the report" then means anywhere in
+    THAT report, and a bearing pressure recommended by the report it is bound
+    into is not a passage of its.
     """
+    span = None if window is None else {int(p) for p in window}
     table = dict(phrases or RETRIEVAL_PHRASES)
     wanted = list(fields) or list(table)
     out: List[Dict[str, Any]] = []
@@ -936,6 +956,8 @@ def retrieval_passages(doc: Any, fields: Sequence[str] = (),
                 page = hit.get("page")
                 snippet = " ".join(str(hit.get("snippet") or "").split())
                 if page is None or not snippet:
+                    continue
+                if span is not None and int(page) not in span:
                     continue
                 key = (int(page), snippet[:80])
                 if key in seen:
@@ -1063,7 +1085,8 @@ def _brief(pages: Sequence[int], all_pages: Sequence[int], text: str,
            headings: str, report_id: str, chunk: int, n_chunks: int,
            questions: Optional[Sequence[str]] = None,
            passages: Sequence[Dict[str, Any]] = (),
-           pictures: Sequence[int] = ()) -> str:
+           pictures: Sequence[int] = (),
+           bound: Sequence[Dict[str, Any]] = ()) -> str:
     from report_ingest.narrative_glossary import glossary_block
 
     parts: List[str] = [
@@ -1096,6 +1119,11 @@ def _brief(pages: Sequence[int], all_pages: Sequence[int], text: str,
             + ", ".join(f"{k} {v}" for k, v in sorted(outline_counts.items())))
     if headings:
         parts += ["", "THE NARRATIVE'S OWN SECTION HEADINGS", headings]
+    if bound:
+        from report_ingest.bound import narrative_block
+        block = narrative_block(bound)
+        if block:
+            parts += ["", block]
     asked = [" ".join(str(q).split()) for q in (questions or [])
              if str(q).strip()]
     if asked:
@@ -1587,6 +1615,8 @@ def read_narrative(doc: Any, narrative_pages: Sequence[int], engine: Engine,
                    front_pages: int = FRONT_PAGES,
                    token_budget: int = INPUT_TOKEN_BUDGET,
                    investigations: Optional[Sequence[Any]] = None,
+                   bound_documents: Optional[Sequence[Dict[str, Any]]] = None,
+                   window: Optional[Sequence[int]] = None,
                    retrieve: bool = True,
                    pictures: bool = True) -> NarrativeReadResult:
     """Read the narrative and answer the owner's two schemas.
@@ -1614,6 +1644,18 @@ def read_narrative(doc: Any, narrative_pages: Sequence[int], engine: Engine,
     as a disagreement. ``retrieve`` searches the WHOLE report for the seven
     questions usually answered in a table; ``pictures`` sends a page with no
     text layer as an image. Both default on and both are free to turn off.
+
+    ``bound_documents`` are the reports bound INSIDE this file, each as
+    ``{pages, title, firm, date}`` -- see :mod:`report_ingest.bound`. Given
+    them, the reader is told which page ranges are another report's, so that
+    their borings do not land in this report's ``boringDictionary`` and each
+    of them counts towards ``previousInvestigationCount`` instead.
+
+    ``window`` is the other half of that, and it is for reading the CHILD:
+    every page this reader is given, and every passage it is searched, comes
+    from inside that span. It is what stops a bound document's narrative
+    reader being shown the cover, the letter and the recommendations of the
+    report it is bound inside and answering with them.
     """
     pages = [int(p) for p in narrative_pages]
     if not pages:
@@ -1623,7 +1665,8 @@ def read_narrative(doc: Any, narrative_pages: Sequence[int], engine: Engine,
     # LEVER 1: the pages the reader is actually given -- the narrative, the
     # cover, the letter, the contents and the front of the report -- inside
     # a token budget the front wins.
-    wanted = reading_pages(doc, pages, roles=roles, front_pages=front_pages)
+    wanted = reading_pages(doc, pages, roles=roles, front_pages=front_pages,
+                           window=window)
     texts = _serialised(doc, wanted)
     wanted, dropped = _within_budget(
         wanted, texts, int(front_pages),
@@ -1637,7 +1680,7 @@ def read_narrative(doc: Any, narrative_pages: Sequence[int], engine: Engine,
 
     # LEVER 3: passages for the questions whose answers sit in a table,
     # searched over EVERY page rather than the ones the reader was given.
-    passages = retrieval_passages(doc) if retrieve else []
+    passages = retrieval_passages(doc, window=window) if retrieve else []
     # And the pages in the set with no text layer, sent as pictures.
     shown = picture_pages(doc, wanted) if pictures else []
 
@@ -1691,7 +1734,7 @@ def read_narrative(doc: Any, narrative_pages: Sequence[int], engine: Engine,
         brief = _brief(chunk_pages, wanted, text, counted, outline_counts,
                        headings, report_id, index, len(blocks), questions,
                        passages=passages if index == 1 else (),
-                       pictures=here)
+                       pictures=here, bound=bound_documents or ())
         messages = [user(text_block(brief), *_images(doc, here)),
                     user(text_block(_FINAL_INSTRUCTION))]
         reply = engine.complete(messages, system=NARRATIVE_SYSTEM,

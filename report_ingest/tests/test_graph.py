@@ -15,6 +15,7 @@ import json
 
 import pytest
 
+from report_ingest.bound import BoundIdentity
 from report_ingest.graph import Budgets, ingest_report, output_paths
 from report_ingest.label_review import LabelChange, ReviewFindings
 from report_ingest.lab_reader import LabSheetReading, ReadTest
@@ -156,6 +157,44 @@ def reader_turns():
             + [lab_turn("atterberg", 12), lab_turn("gradation", 13)])
 
 
+def identity_turn(**over):
+    """The one call a bound document's own front matter costs.
+
+    planlens' rules call pages 15-18 of the synthetic report a nested
+    document all by themselves, so EVERY default run of it finds one bound
+    report whether or not triage mentions one. That is the production
+    behaviour and these scripts carry it.
+    """
+    data = dict(title="Former Owner Site Study", firm="Older Firm & Partners",
+                date="11 June 2019", document_type="geotechnical report",
+                kind="appended_prior_report", same_site="yes")
+    data.update(over)
+    return {"final": BoundIdentity(**data)}
+
+
+def bound_narrative_turn():
+    """The bound report's OWN narrative: a different project, on purpose.
+
+    Nothing of it may reach the parent's record and nothing of the parent's
+    may reach its, so every field a test looks at is spelled differently
+    from :func:`narrative_turn`.
+    """
+    return {"final": NarrativeReading(
+        documentType="geotechnical report",
+        quickSummary="An earlier investigation of the same site by another "
+                     "firm, reproduced in this report as an appendix.",
+        projectName="Rosewood Terrace Preliminary Study",
+        geotechnicalEngineerFirm="Older Firm & Partners",
+        boringCount=1, reportDate="11 June 2019",
+        citations=[ReadCitation(field="boringCount", page=16,
+                                quote="One boring was advanced")])}
+
+
+def bound_reader_turns():
+    """The two readers the bound report's own pages call: prose and BH-1."""
+    return [bound_narrative_turn(), log_turn("BH-1")]
+
+
 def main_script():
     """What the READER tier is asked for in a standard run.
 
@@ -163,23 +202,32 @@ def main_script():
     tier, so the two scripts are separate there: this one and
     :func:`vision_turns`.
     """
-    return [triage_turn()] + reader_turns()
+    return ([triage_turn()] + [identity_turn()] + reader_turns()
+            + bound_reader_turns())
 
 
 def full_script():
     """Every call one standard run of the synthetic report makes.
 
-    Triage, the vision voter agreeing with the rules on every page, then
-    the readers. NO LABEL REVIEW: the voters agreed everywhere, and in the
-    default ``review_mode="disagreements"`` a report with no split pages
-    never pays for the review at all.
+    Triage, the vision voter agreeing with the rules on every page, the one
+    identity call for the report bound in at pages 15-18, the five readers,
+    and that bound report's own two. NO LABEL REVIEW: the voters agreed
+    everywhere, and in the default ``review_mode="disagreements"`` a report
+    with no split pages never pays for the review at all.
     """
+    return ([triage_turn()] + vision_turns() + [identity_turn()]
+            + reader_turns() + bound_reader_turns())
+
+
+def unbound_script():
+    """The same run with ``ingest_bound=False``: no child, no identity call."""
     return [triage_turn()] + vision_turns() + reader_turns()
 
 
 def rules_only_script():
     """The same run with ``label_policy="rules"``: no vision, one review."""
-    return [triage_turn()] + review_turns() + reader_turns()
+    return ([triage_turn()] + review_turns() + [identity_turn()]
+            + reader_turns() + bound_reader_turns())
 
 
 class TestAStandardRun:
@@ -316,8 +364,10 @@ class TestTheWorkflows:
 
     def test_appendix_only_skips_the_narrative_reader(self, pdf, tmp_path):
         script = ([triage_turn("appendix_only")] + vision_turns()
+                  + [identity_turn()]
                   + [log_turn("B-1"), log_turn("TP-1", "test_pit"),
-                     lab_turn("atterberg", 12), lab_turn("gradation", 13)])
+                     lab_turn("atterberg", 12), lab_turn("gradation", 13)]
+                  + bound_reader_turns())
         engine = FakeEngine(script)
         record = ingest_report(pdf, engine, out_dir=tmp_path,
                                report_id="SYN")
@@ -331,7 +381,8 @@ class TestTheWorkflows:
     def test_a_flagged_anomaly_becomes_a_qa_note(self, pdf, tmp_path):
         script = ([triage_turn(anomalies=["the contents list names an "
                                           "appendix E that is not here"])]
-                  + vision_turns() + reader_turns())
+                  + vision_turns() + [identity_turn()] + reader_turns()
+                  + bound_reader_turns())
         record = ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
                                report_id="SYN")
 
@@ -343,7 +394,8 @@ class TestTheWorkflows:
             "multi_document",
             bound_together=[{"kind": "appended_prior_report",
                              "pages": "15-18", "title": "Former Owner Study"}])]
-            + vision_turns() + reader_turns())
+            + vision_turns() + [identity_turn()] + reader_turns()
+            + bound_reader_turns())
         record = ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
                                report_id="SYN")
 
@@ -355,7 +407,8 @@ class TestTheWorkflows:
 class TestTheBudgets:
 
     def test_the_passes_can_be_turned_off(self, pdf, tmp_path):
-        script = reader_turns()
+        script = ([identity_turn()] + reader_turns()
+                  + bound_reader_turns())
         engine = FakeEngine(script)
         record = ingest_report(pdf, engine, out_dir=tmp_path,
                                report_id="SYN", label_policy="rules",
@@ -384,7 +437,9 @@ class TestTheBudgets:
 
     def test_max_items_stops_the_run_early(self, pdf, tmp_path):
         engine = FakeEngine([triage_turn()] + vision_turns()
-                            + [narrative_turn(), log_turn("B-1")])
+                            + [identity_turn()]
+                            + [narrative_turn(), log_turn("B-1")]
+                            + bound_reader_turns())
         record = ingest_report(pdf, engine, out_dir=tmp_path, report_id="SYN",
                                budgets=Budgets(max_items=5))
 
@@ -395,10 +450,12 @@ class TestTheBudgets:
                                                                tmp_path):
         # The first log's turn is prose rather than a reading, so the log
         # reader raises; everything after it must still be read.
-        script = ([triage_turn()] + vision_turns() + [narrative_turn()]
+        script = ([triage_turn()] + vision_turns() + [identity_turn()]
+                  + [narrative_turn()]
                   + [{"text": "I cannot read this page."},
                      log_turn("TP-1", "test_pit"),
-                     lab_turn("atterberg", 12), lab_turn("gradation", 13)])
+                     lab_turn("atterberg", 12), lab_turn("gradation", 13)]
+                  + bound_reader_turns())
         record = ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
                                report_id="SYN",
                                budgets=Budgets(log=1))
@@ -419,10 +476,12 @@ class TestTheLabelReviewChangesWhatIsRead:
                       page=10, from_label="figure", to_label="lab_test",
                       reason="the page is a results sheet, not photographs",
                       evidence="render_page")])
+                  + [identity_turn()]
                   + [narrative_turn(), log_turn("B-1"),
                      log_turn("TP-1", "test_pit"),
                      lab_turn("moisture_content", 10),
-                     lab_turn("atterberg", 12), lab_turn("gradation", 13)])
+                     lab_turn("atterberg", 12), lab_turn("gradation", 13)]
+                  + bound_reader_turns())
         engine = FakeEngine(script)
         record = ingest_report(pdf, engine, out_dir=tmp_path,
                                report_id="SYN")
@@ -615,10 +674,12 @@ class TestTheRunFile:
                   + review_turns([LabelChange(
                       page=10, from_label="figure", to_label="lab_test",
                       reason="a results sheet", evidence="render_page")])
+                  + [identity_turn()]
                   + [narrative_turn(), log_turn("B-1"),
                      log_turn("TP-1", "test_pit"),
                      lab_turn("moisture_content", 10),
-                     lab_turn("atterberg", 12), lab_turn("gradation", 13)])
+                     lab_turn("atterberg", 12), lab_turn("gradation", 13)]
+                  + bound_reader_turns())
         ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
                       report_id="SYN")
 
@@ -649,3 +710,210 @@ class TestTheRunFile:
                            .read_text(encoding="utf-8"))
         assert saved["cost"]["vision_paid"] is False
         assert saved["cost"]["vision"]["calls"] == 4
+
+
+class TestAReportBoundInsideAReport:
+    """pages 15-18 of the synthetic report are another firm's whole study.
+
+    Before this train they were four pages listed in a QA entry and never
+    read. Now they are a record of their own, and what every test here is
+    really checking is that NOTHING crosses the boundary in either
+    direction.
+    """
+
+    def test_the_parent_lists_the_child_with_the_right_pages(self, pdf,
+                                                             tmp_path):
+        record = ingest_report(pdf, FakeEngine(full_script()),
+                               out_dir=tmp_path, report_id="SYN")
+
+        (child,) = record.bound_documents
+        assert child.bound_id == "bound1"
+        assert child.pages == "15-18"
+        assert (child.first_page, child.last_page, child.n_pages) == (15, 18, 4)
+        assert child.title == "Former Owner Site Study"
+        assert child.firm == "Older Firm & Partners"
+        assert child.kind == "appended_prior_report"
+        assert child.report_id == "SYN.bound1"
+        assert child.folder == "bound/bound1"
+        assert child.read is True
+        # The rules alone claim those pages; triage said nothing here.
+        assert child.said_by == ["planlens"]
+
+    def test_the_child_holds_its_own_borings_and_the_parent_holds_none(
+            self, pdf, tmp_path):
+        record = ingest_report(pdf, FakeEngine(full_script()),
+                               out_dir=tmp_path, report_id="SYN")
+
+        assert [i.investigation_id for i in record.investigations] == \
+            ["B-1", "TP-1"]
+        child = ReportRecord.model_validate(json.loads(
+            (tmp_path / "bound" / "bound1" / "report.record.json")
+            .read_text(encoding="utf-8")))
+        assert [i.investigation_id for i in child.investigations] == ["BH-1"]
+        assert child.document.report_id == "SYN.bound1"
+        assert child.document.n_pages == 4
+        # And the child's narrative is its own, not its parent's.
+        assert child.general.projectName == "Rosewood Terrace Preliminary Study"
+        assert record.general.projectName == "Rosewood Terrace Development"
+
+    def test_the_child_record_points_back_at_its_parent(self, pdf, tmp_path):
+        ingest_report(pdf, FakeEngine(full_script()), out_dir=tmp_path,
+                      report_id="SYN")
+
+        child = ReportRecord.model_validate(json.loads(
+            (tmp_path / "bound" / "bound1" / "report.record.json")
+            .read_text(encoding="utf-8")))
+        assert child.parent is not None
+        assert child.parent.report_id == "SYN"
+        assert child.parent.bound_id == "bound1"
+        assert child.parent.pages == "15-18"
+        assert child.parent.n_pages == 4
+        # Its page numbers are the PARENT file's: one PDF, one numbering.
+        assert [p.page for p in child.page_labels] == [15, 16, 17, 18]
+        assert child.investigations[0].pages == [18]
+
+    def test_the_parents_summary_carries_the_section(self, pdf, tmp_path):
+        ingest_report(pdf, FakeEngine(full_script()), out_dir=tmp_path,
+                      report_id="SYN")
+
+        text = (tmp_path / "report.summary.md").read_text(encoding="utf-8")
+        assert "## Reports bound inside this one" in text
+        assert "Former Owner Site Study" in text
+        assert "an earlier report, appended whole" in text
+        assert "| 15-18 |" in text
+        assert "`bound/bound1`" in text
+        assert "is in none of the counts above" in text
+
+    def test_both_diggs_files_are_written_and_pass_their_gates(self, pdf,
+                                                              tmp_path):
+        record = ingest_report(pdf, FakeEngine(full_script()),
+                               out_dir=tmp_path, report_id="SYN")
+
+        child = ReportRecord.model_validate(json.loads(
+            (tmp_path / "bound" / "bound1" / "report.record.json")
+            .read_text(encoding="utf-8")))
+        for holder in (record, child):
+            verdicts = {e.where: e.kind for e in holder.qa
+                        if e.where.startswith("diggs")}
+            assert verdicts["diggs.schema"] == "note"
+            assert verdicts["diggs.roundtrip"] == "note"
+        assert (tmp_path / "bound" / "bound1" / "report.diggs.xml").is_file()
+        # The parent's DIGGS holds the parent's explorations and no more:
+        # DIGGS has no way to say "this one belongs to another report".
+        xml = (tmp_path / "report.diggs.xml").read_text(encoding="utf-8")
+        assert "B-1" in xml and "BH-1" not in xml
+
+    def test_the_library_has_a_row_for_each_with_the_parent_column(
+            self, pdf, tmp_path):
+        import sqlite3
+
+        ingest_report(pdf, FakeEngine(full_script()), out_dir=tmp_path,
+                      report_id="SYN")
+
+        connection = sqlite3.connect(tmp_path / "reports.db")
+        rows = {r[0]: (r[1], r[2]) for r in connection.execute(
+            "SELECT report_id, id, parent FROM reports")}
+        connection.close()
+        assert set(rows) == {"SYN", "SYN.bound1"}
+        assert rows["SYN"][1] == ""
+        assert rows["SYN.bound1"][1] == rows["SYN"][0]
+
+    def test_the_parents_qa_says_where_the_child_went(self, pdf, tmp_path):
+        record = ingest_report(pdf, FakeEngine(full_script()),
+                               out_dir=tmp_path, report_id="SYN")
+
+        (entry,) = [e for e in record.qa if e.where == "bound.bound1"]
+        assert "read into their own record" in entry.detail
+        assert entry.pages == [15, 18]
+        (item,) = [e for e in record.qa
+                   if e.where == "items.appended_report"]
+        assert item.kind == "note" and item.pages == [15, 16, 17, 18]
+
+    def test_ingest_bound_false_reproduces_the_old_behaviour(self, pdf,
+                                                             tmp_path):
+        script = unbound_script()
+        engine = FakeEngine(script)
+        record = ingest_report(pdf, engine, out_dir=tmp_path,
+                               report_id="SYN", ingest_bound=False)
+
+        assert engine.n_calls == len(script)
+        assert record.bound_documents == []
+        assert not (tmp_path / "bound").exists()
+        (entry,) = [e for e in record.qa
+                    if e.where == "items.appended_report"]
+        assert entry.kind == "skipped"
+        assert entry.pages == [15, 16, 17, 18]
+
+    def test_a_resumed_run_re_uses_the_childs_items(self, pdf, tmp_path):
+        ingest_report(pdf, FakeEngine(full_script()), out_dir=tmp_path,
+                      report_id="SYN")
+        files = sorted(p.name for p in
+                       (tmp_path / "bound" / "bound1" / "items").iterdir())
+        assert len(files) == 2                 # its narrative and its log
+        assert (tmp_path / "bound" / "bound1" / "identity.json").is_file()
+
+        empty = FakeEngine([])
+        again = ingest_report(pdf, empty, out_dir=tmp_path, report_id="SYN")
+
+        assert empty.n_calls == 0
+        (child,) = again.bound_documents
+        assert child.counts["investigations"] == 1
+        assert child.title == "Former Owner Site Study"
+
+    def test_the_narrative_reader_is_told_which_pages_are_not_its_report(
+            self, pdf, tmp_path):
+        engine = FakeEngine(full_script())
+        ingest_report(pdf, engine, out_dir=tmp_path, report_id="SYN")
+
+        briefs = [call for call in engine.calls
+                  if "REPORTS BOUND INSIDE THIS ONE" in str(call["messages"])]
+        assert briefs, "the parent's narrative brief never named the child"
+        text = str(briefs[0]["messages"])
+        assert "pages 15-18" in text
+        assert "Former Owner Site Study" in text
+        assert "previousInvestigationCount" in text
+
+    def test_the_childs_reader_is_not_shown_its_parents_pages(self, pdf,
+                                                              tmp_path):
+        engine = FakeEngine(full_script())
+        ingest_report(pdf, engine, out_dir=tmp_path, report_id="SYN")
+
+        blob = json.loads((tmp_path / "bound" / "bound1" / "items"
+                           / "item_3.json").read_text(encoding="utf-8"))
+        assert set(blob["pages"]) <= {15, 16, 17, 18}
+
+    def test_a_short_run_is_not_a_document_and_stays_in_the_parent(
+            self, pdf, tmp_path, monkeypatch):
+        import report_ingest.bound as bound_module
+
+        monkeypatch.setattr(bound_module, "MIN_BOUND_PAGES", 5)
+        script = unbound_script()
+        record = ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
+                               report_id="SYN")
+
+        assert record.bound_documents == []
+        (entry,) = [e for e in record.qa if e.where == "bound.short_run"]
+        assert entry.pages == [15, 16, 17, 18]
+        assert "under the 5-page floor" in entry.detail
+
+    def test_triage_and_the_rules_disagreeing_gives_the_union_and_a_note(
+            self, pdf, tmp_path):
+        # Triage says the bound report starts at its appendix tab, page 14;
+        # the rules say it starts at its own cover, page 15. The record
+        # takes 14-18 so that no page of it is left with its parent.
+        script = ([triage_turn(
+            "multi_document",
+            bound_together=[{"kind": "appended_prior_report",
+                             "pages": "14-17",
+                             "title": "Former Owner Study"}])]
+            + vision_turns() + [identity_turn()] + reader_turns()
+            + bound_reader_turns())
+        record = ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
+                               report_id="SYN")
+
+        (child,) = record.bound_documents
+        assert child.pages == "14-18"
+        assert child.said_by == ["planlens", "triage"]
+        (note,) = [e for e in record.qa if e.where == "bound.extent"]
+        assert "takes the union" in note.detail
+        assert note.values == ["triage 14-17", "planlens 15-18"]

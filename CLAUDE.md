@@ -73,6 +73,88 @@ Key conventions:
 
 ## CURRENT WORKING STATE (2026-09-20) — 5.24.0 ON MASTER (the log-template recogniser + the narrative levers) with planlens 0.6.0
 
+- **UNRELEASED on master since 5.24.0** — a report bound inside a report is its OWN record
+
+**No version bump, no tag.** Pure Python inside `report_ingest`, no dependency
+change, one new module (`report_ingest/bound.py`), one new optional model call
+per bound document.
+
+**Why.** A geotechnical report is very often not one report: an earlier firm's
+whole investigation reproduced as an appendix, a bridging report bound into the
+design-build report that answers it. Ledger run 7 has triage calling **19 of the
+38 corpus reports `multi_document`, with one to four bound documents each**, and
+the hand narrative notes for two of them say it plainly — the borings and test
+pits behind that tab belong to the EARLIER investigation. Until now those pages
+were listed in a QA entry and never read; reading them into the SAME record
+would have put two firms' B-1 in one list of investigations and made the boring
+count the sum of two investigations and the truth about neither.
+
+**What is built.**
+
+1. **`report_ingest/bound.py`** decides where a bound document begins and ends:
+   the UNION of triage's `bound_together` and the record's own
+   `appended_report` label runs, claims that overlap or touch folded into one,
+   a floor of `MIN_BOUND_PAGES = 4` (a reproduced log sheet is appended pages,
+   not a document) and a `QAEntry(where="bound.extent")` naming both sources
+   wherever they drew different edges — the union, because a page wrongly left
+   in the parent is an earlier investigation's boring attributed to this report.
+2. **The child goes round the same loop** (`graph._read_bound`). ONE extra
+   structured call reads its own first four pages for a title, a firm, a date, a
+   document type and how it is bound in (`identify_bound`, cached in the child's
+   folder, a failure leaving the identity empty with a QA entry rather than
+   losing the child). The RULES are re-run over its pages rebased to zero —
+   which is what makes its cover a cover and its boring log a boring log again
+   rather than four pages of `appended_report` — while the vision voter and the
+   printed-form recogniser are REUSED verbatim, since a page's picture does not
+   change when you stop calling it an appendix; `appended_report` from any voter
+   is discarded inside a child, being this record's premise rather than a claim
+   about a page. Then its own items, its own readers, its own reconcile, its own
+   exports, resumable under its own `items/`. No label review, and no second
+   level of nesting.
+3. **The record shape.** `ReportRecord.bound_documents` (`BoundReport`:
+   `bound_id report_id title firm date kind document_type pages first_page
+   last_page n_pages said_by counts folder record_path read`) on the parent;
+   `ReportRecord.parent` (`ParentReport`: `report_id bound_id pages first_page
+   last_page n_pages record_path`) on the child. **Not a schema bump** — both
+   are optional and nothing changed meaning. Page numbers are the PARENT FILE'S
+   throughout: one PDF, and a reviewer opens it at the page the record names.
+4. **Nothing crosses the boundary, in either direction.** The parent's narrative
+   reader is TOLD the ranges with each document's title, firm and date and told
+   what to do with them (not this report's borings, not this report's
+   `boringDictionary`, each one IS a previous investigation and counts towards
+   `previousInvestigationCount`); the counts and dictionaries still come from
+   the parent's own logs. The child's narrative reader gets the mirror: a
+   `window` on `read_narrative` / `reading_pages` / `retrieval_passages` that
+   keeps every page it is shown and every passage it is searched inside the
+   bound document, so it never answers off the parent's cover, letter or
+   recommendations — the front-fifty-pages lever would otherwise have handed it
+   the whole parent.
+5. **Exports.** The child gets its own record, summary, library page and DIGGS
+   file under `out_dir/bound/<id>/` and a row of its own in the SAME
+   `reports.db`, keyed by the file's hash folded with its handle (so two records
+   off one file do not collide) and carrying a new `parent` column pointing at
+   the parent's row; an older library grows the column on open. The parent's
+   summary page gains a **"Reports bound inside this one"** section — title,
+   what it is, pages, what it holds by count, the child's folder — saying that
+   what they hold is in none of the counts above. The parent's DIGGS file does
+   NOT carry the child's data: DIGGS 2.6 has no cross-report link, and a file
+   that quietly merged the two would be wrong in exactly the way this exists to
+   prevent.
+6. **The `ingest` stage's RESULTS** gains a `bound` column and a `+-` line per
+   child under its parent (id, pages, kind, what it holds, which sources said
+   so), plus a totals line; `run.json` carries `bound`; `run_folder`'s
+   `INDEX.md` gains a `Bound in` column. **Numbers will move**: a report whose
+   investigation count falls on the next cluster run is one whose appendix was
+   somebody else's investigation all along.
+7. **`ingest_bound=True` everywhere, `False` restores the old behaviour** —
+   `ingest_report`, `run_folder`, `run_ingest`, `build_report_ingest_graph`,
+   `build_report_ingest_subagent` and `score_on_cluster`. The sub-agent's
+   compact answer names each bound document and where its record went.
+
+**Suites:** `report_ingest` **938**, harness **229**, offline ingest wiring **36**, docs-currency green.
+**Next:** the cluster run reads the `bound` column and the `+-` lines, and the ledger records how many of the 19 `multi_document` reports actually yielded a child and what came out of each.
+
+
 - **UNRELEASED on master since 5.24.0** — the page labels are a vote, and the expensive review goes only where the voters disagree
 
 **No version bump, no tag.** Pure Python inside `report_ingest`, no dependency
@@ -1450,7 +1532,7 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | drawing_ir → `planlens.ir` + `planlens.document` + `planlens.tools` | (planlens, 1,307 tests at 0.6.0) | HISTORICAL PATH. The drawing IR (DXF / vector-PDF / raster ingest, slice queries, leader / dimension / title-block / bubble / cloud finders, `render_region`) is `planlens.ir`; since planlens 0.3.0 the WHOLE-DOCUMENT layer (`planlens.document`: page map + structure, located text, tables, review markups, hidden CAD text, Azure DI text source) and the LLM tool layer (`planlens.tools`) sit beside it. See "Document review & drawing geometry (planlens)" below. |
 | fem2d | 353 | 2D plane-strain FEM (T6 default + CST/Q4/beam, 3D-principal MC return, HS, GL99 SRM, seepage, consolidation, staged construction, PLAXIS-style calc-package plots); validated vs Griffiths-Lane/Prandtl (VALIDATION.md) |
 | geo_project | 89 | Canonical Project document for staged, human-gated LE/FEM model setup (schema+validators, builders, templates, DXF/PDF/vision ingest w/ provenance quarantine, echo-back renderer) |
-| report_ingest | 886 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop -- and since the unreleased train on master its PAGE LABELS ARE A VOTE (`label_vote.py`): planlens' rules, one vision pass over the pages as pictures on the cheap tier (~$0.05 a report) and the printed form where a private fingerprint file is in force are combined under `label_policy` (default `structural`; `rules` reproduces the old single-voter path), `review_mode="disagreements"` gives the ~$0.45 label review ONLY the pages they split on plus two either side on a budget of `max(20, 0.5 x split pages)`, every page's label in the record carries its confidence, its voters and an `agreed` flag, and a split the review did not settle is a `label_disagreement` QA entry. The same combiner is what the `vote` stage scores, so a policy cannot mean two things. `run_folder` drives the loop over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels","vote","ingest"), truth_dir=…, sharepoint=fh_sp_client)` is the owner's notebook cell; `truth_dir` is ONE root holding `logs/`, `lab/` and `narrative/` so one folder is uploaded rather than three paths kept in step, and `sharepoint=`/`durable_dir=` (5.22.0, `mirror.py`) copy every run file somewhere a cluster restart cannot reach and restore a wiped `out_dir` at the start. The seventh stage is `ingest` (5.23.0): the whole graph per report into `out_dir/ingest/<ID>/` with the DIGGS file gated, a saved label run reused, and the record scored against the hand truth — the whole-pipeline score; Since 5.24.0 a log is also matched against the printed FORM it came off
+| report_ingest | 938 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop. Since the second unreleased train on master a REPORT BOUND INSIDE A REPORT is its OWN record (`bound.py`): the union of triage's `bound_together` and the record's own `appended_report` runs, floor four pages, goes round the same loop into `out_dir/bound/<id>/` with `ReportRecord.bound_documents` on the parent and `ReportRecord.parent` on the child, its own library row carrying a new `parent` column -- so an earlier firm's borings are that firm's and the parent's counts are the parent's (`ingest_bound=False` restores the old listed-and-skipped behaviour). And since the first unreleased train its PAGE LABELS ARE A VOTE (`label_vote.py`): planlens' rules, one vision pass over the pages as pictures on the cheap tier (~$0.05 a report) and the printed form where a private fingerprint file is in force are combined under `label_policy` (default `structural`; `rules` reproduces the old single-voter path), `review_mode="disagreements"` gives the ~$0.45 label review ONLY the pages they split on plus two either side on a budget of `max(20, 0.5 x split pages)`, every page's label in the record carries its confidence, its voters and an `agreed` flag, and a split the review did not settle is a `label_disagreement` QA entry. The same combiner is what the `vote` stage scores, so a policy cannot mean two things. `run_folder` drives the loop over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels","vote","ingest"), truth_dir=…, sharepoint=fh_sp_client)` is the owner's notebook cell; `truth_dir` is ONE root holding `logs/`, `lab/` and `narrative/` so one folder is uploaded rather than three paths kept in step, and `sharepoint=`/`durable_dir=` (5.22.0, `mirror.py`) copy every run file somewhere a cluster restart cannot reach and restore a wiped `out_dir` at the start. The seventh stage is `ingest` (5.23.0): the whole graph per report into `out_dir/ingest/<ID>/` with the DIGGS file gated, a saved label run reused, and the record scored against the hand truth — the whole-pipeline score; Since 5.24.0 a log is also matched against the printed FORM it came off
 (`log_templates.py`): a page's footer stamp, title-block labels and column
 headings are scored against fingerprints kept in a PRIVATE file that travels
 with the truth folder and is never committed (`templates.json.EXAMPLE` ships

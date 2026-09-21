@@ -31,6 +31,16 @@ nothing here knows a fact the record does not carry.
     folder of reports becomes something searchable. Re-ingesting a report
     updates its row rather than adding a second one.
 
+A REPORT BOUND INSIDE ANOTHER ONE gets the same five outputs, in its own
+folder, and is a row of its own in the same library with ``parent`` set to the
+key of the report it is bound inside. Its DIGGS file holds ITS explorations
+and the parent's holds the parent's: DIGGS 2.6 has no way to say "this
+sampling feature belongs to a different report bound into this one", and a
+file that quietly merged the two would be wrong in the one way this whole
+exercise exists to prevent. The link lives in the record
+(``bound_documents`` and ``parent``), in the summary page's own section and
+in the library's ``parent`` column.
+
 THE ORDER MATTERS. The DIGGS file is written and gated FIRST, because its two
 verdicts are QA entries and the record JSON has to carry them. Then the
 record, then the two pages, then the database row.
@@ -51,9 +61,10 @@ from report_ingest.model import (
 )
 
 __all__ = [
-    "write_outputs", "WrittenOutputs", "record_key", "summary_markdown",
-    "library_page", "front_matter", "upsert_report", "open_library",
-    "DB_SCHEMA_VERSION", "TIERS", "STATUSES", "CONFIDENCES",
+    "write_outputs", "WrittenOutputs", "record_key", "parent_key",
+    "summary_markdown", "bound_section", "library_page", "front_matter",
+    "upsert_report", "open_library", "DB_SCHEMA_VERSION", "TIERS",
+    "STATUSES", "CONFIDENCES",
 ]
 
 #: The library database's own schema version, stored in its ``meta`` table.
@@ -85,7 +96,8 @@ HASH_BYTES = 1_000_000
 # the key
 # ---------------------------------------------------------------------------
 
-def record_key(record: ReportRecord, source: Any = None) -> str:
+def record_key(record: ReportRecord, source: Any = None,
+               parent_base: str = "") -> str:
     """A stable identifier for this report: the same file, the same key.
 
     From the SOURCE FILE when there is one -- its length and its first
@@ -94,6 +106,38 @@ def record_key(record: ReportRecord, source: Any = None) -> str:
     readable source it falls back to what the record itself says it is (the
     report id, the project number and name), which is stable across runs of
     the same report and is all there is to go on.
+
+    A record of a report BOUND INSIDE another one comes off the same file as
+    its parent, so the file's key alone would put the two of them in one
+    library row and the second written would win. Its own key is therefore
+    the file's key folded with its handle inside the parent -- stable across
+    runs, distinct from the parent's, and :func:`parent_key` recovers the
+    parent's from the same two things.
+
+    ``parent_base`` is the parent's own key, for a caller that wrote the
+    parent and KNOWS it. It matters only where there is no readable source
+    file and the fallback is the record's own identity: a bound document's
+    identity is not its parent's, so the fallback cannot reconstruct the
+    parent's key and the caller has to say. Ignored for a record with no
+    parent.
+    """
+    parent = record.parent
+    if parent is None:
+        return parent_key(record, source)
+    base = parent_base or parent_key(record, source)
+    if parent.bound_id:
+        return hashlib.sha256(
+            f"{base}|{parent.bound_id}".encode("utf-8")).hexdigest()[:16]
+    return base
+
+
+def parent_key(record: ReportRecord, source: Any = None) -> str:
+    """The key of the file this record came off, bound document or not.
+
+    For an ordinary record this IS its key. For a bound document it is the
+    key of the record it is bound inside, which is what the library's
+    ``parent`` column stores and what makes one SQL query return a report
+    and everything bound into it.
     """
     digest = hashlib.sha256()
     path = str(source) if source else ""
@@ -403,6 +447,61 @@ def _md(text: str) -> str:
     return " ".join(str(text).split()).replace("|", "\\|")
 
 
+#: ``BoundReport.kind`` as a summary page prints it.
+_BOUND_KIND_WORDS = {
+    "volume": "another volume of this report",
+    "appended_prior_report": "an earlier report, appended whole",
+    "data_report": "a data report bound into this one",
+    "other": "a report bound into this one",
+}
+
+#: What the counts cell names, in the order it names them.
+_BOUND_HOLDS = (("investigations", "exploration"), ("lab_tests", "lab test"),
+                ("samples", "sample"), ("spt", "driven record"))
+
+
+def _bound_holds(counts: Dict[str, int]) -> str:
+    """What a bound document turned out to hold, as a cell of a table."""
+    parts = []
+    for name, word in _BOUND_HOLDS:
+        value = int(counts.get(name) or 0)
+        if value:
+            parts.append(f"{value} {word}" + ("s" if value != 1 else ""))
+    return ", ".join(parts) or "nothing that was read"
+
+
+def bound_section(record: ReportRecord) -> List[str]:
+    """The reports bound inside this one, and where each of them went.
+
+    Written for the person about to decide whether to open the PDF, and it
+    has one job beyond listing: to say that the explorations in those pages
+    are NOT in the counts above. A reader who takes this report's boring
+    count as the number of borings in the file is wrong by the number in the
+    appendix, and that is the mistake reading them separately exists to stop.
+    """
+    if not record.bound_documents:
+        return []
+    out = ["", "## Reports bound inside this one", "",
+           "These page ranges are other reports reproduced whole inside this "
+           "file. Each is read into its OWN record: what they hold is theirs "
+           "and is in none of the counts above.", "",
+           "| Report | What it is | Pages | What it holds | Where |",
+           "|---|---|---|---|---|"]
+    for row in record.bound_documents:
+        named = " · ".join(x for x in (row.title, row.firm, row.date) if x)
+        where = row.folder or "-"
+        if not row.read:
+            out.append(f"| {_md(named or 'not identified')} | "
+                       f"{_md(_BOUND_KIND_WORDS.get(row.kind, row.kind))} | "
+                       f"{row.pages} | _not read; see the QA section_ | - |")
+            continue
+        out.append(f"| {_md(named or row.report_id or row.bound_id)} | "
+                   f"{_md(_BOUND_KIND_WORDS.get(row.kind, row.kind))} | "
+                   f"{row.pages} | {_md(_bound_holds(row.counts))} | "
+                   f"`{where}` |")
+    return out
+
+
 def summary_markdown(record: ReportRecord) -> str:
     """The two schemas answered in prose, then the counts and the QA list."""
     general, hazards = record.general, record.natural_hazards
@@ -415,6 +514,12 @@ def summary_markdown(record: ReportRecord) -> str:
         general.documentType or "") if x)
     if line:
         out += [line, ""]
+    parent = record.parent
+    if parent is not None:
+        out += [f"_This report is bound inside another one"
+                + (f" (`{parent.report_id}`)" if parent.report_id else "")
+                + f", at pages {parent.pages} of that file. Every page "
+                  f"number below is a page of that same file._", ""]
     if general.quickSummary:
         out += [general.quickSummary, ""]
 
@@ -441,6 +546,8 @@ def summary_markdown(record: ReportRecord) -> str:
             out.append(f"| {_md(stratum.name)} | {_md(stratum.description)} | "
                        f"{_show(stratum.top)} | {_show(stratum.bottom)} | "
                        f"{stratum.uscs} |")
+
+    out += bound_section(record)
 
     asked = record.narrative.extra_answers
     if asked:
@@ -660,6 +767,7 @@ CREATE TABLE IF NOT EXISTS reports (
     page_path            TEXT,
     summary_path         TEXT,
     diggs_path           TEXT,
+    parent               TEXT,
     updated              TEXT
 );
 CREATE INDEX IF NOT EXISTS reports_report_id ON reports (report_id);
@@ -667,9 +775,25 @@ CREATE INDEX IF NOT EXISTS reports_year ON reports (year);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
 
+#: Columns added after a library was first written, with the index each
+#: wants. A new column is not a schema-version bump -- an old row simply has
+#: NULL in it -- but an existing database will not grow one from ``CREATE
+#: TABLE IF NOT EXISTS``, so each is added here if it is missing. The index
+#: is NOT in :data:`_SCHEMA` for the same reason: an older library has no
+#: such column and indexing one that is not there yet fails the open.
+_ADDED_COLUMNS: Tuple[Tuple[str, str, str], ...] = (
+    ("parent", "TEXT", "CREATE INDEX IF NOT EXISTS reports_parent "
+                       "ON reports (parent)"),
+)
+
 
 def open_library(db_path: Any) -> sqlite3.Connection:
-    """Open (and create) the library index at ``db_path``."""
+    """Open (and create) the library index at ``db_path``.
+
+    A library written by an older version is migrated in place: the columns
+    in :data:`_ADDED_COLUMNS` are added where they are missing, so a folder
+    of reports read last month and a report read today land in one table.
+    """
     path = str(db_path)
     parent = os.path.dirname(path)
     if parent:
@@ -677,6 +801,12 @@ def open_library(db_path: Any) -> sqlite3.Connection:
     connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
     connection.executescript(_SCHEMA)
+    have = {row["name"] for row in
+            connection.execute("PRAGMA table_info(reports)")}
+    for name, kind, index in _ADDED_COLUMNS:
+        if name not in have:
+            connection.execute(f"ALTER TABLE reports ADD COLUMN {name} {kind}")
+        connection.execute(index)
     connection.execute(
         "INSERT INTO meta (key, value) VALUES ('schema_version', ?) "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -687,8 +817,15 @@ def open_library(db_path: Any) -> sqlite3.Connection:
 
 def upsert_report(connection: sqlite3.Connection, record: ReportRecord,
                   key: str, paths: Optional[Dict[str, str]] = None,
-                  source: str = "") -> None:
-    """Write this report's row, replacing the one it had if any."""
+                  source: str = "", parent: str = "") -> None:
+    """Write this report's row, replacing the one it had if any.
+
+    ``parent`` is the library key of the report this one was bound inside,
+    for a record that carries a :class:`~report_ingest.model.ParentReport`;
+    :func:`write_outputs` computes it with :func:`parent_key` off the same
+    source object the key came from. It is ignored for an ordinary record,
+    which has no parent to point at.
+    """
     meta = front_matter(record, key, source)
     paths = paths or {}
     row = {
@@ -721,6 +858,9 @@ def upsert_report(connection: sqlite3.Connection, record: ReportRecord,
         "page_path": paths.get("page", ""),
         "summary_path": paths.get("summary", ""),
         "diggs_path": paths.get("diggs", ""),
+        # Empty for an ordinary report; for one bound inside another, the
+        # library key of the report it is bound inside.
+        "parent": parent if record.parent is not None else "",
         "updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     columns = ", ".join(row)
@@ -775,13 +915,19 @@ class WrittenOutputs:
 
 def write_outputs(record: ReportRecord, out_dir: Any, *,
                   source: Any = None, db_path: Any = None,
-                  write_diggs_file: bool = True) -> WrittenOutputs:
+                  write_diggs_file: bool = True,
+                  parent_base: str = "") -> WrittenOutputs:
     """Write the record and its exports into ``out_dir``.
 
     ``source`` is the PDF this record came from, when there is one: it keys
     the library row and is recorded on the page. ``db_path`` defaults to
     ``reports.db`` beside the outputs; pass one path for a whole folder of
     reports and they land in one library.
+
+    ``parent_base`` is the library key of the report this one was bound
+    inside, for a record that carries a
+    :class:`~report_ingest.model.ParentReport`. The graph passes it because
+    it wrote that record too; see :func:`record_key` for when it matters.
 
     The DIGGS file is written and gated FIRST so that its two verdicts are in
     the record's QA before the record is written. Both verdicts are always
@@ -790,7 +936,7 @@ def write_outputs(record: ReportRecord, out_dir: Any, *,
     """
     out = str(out_dir)
     os.makedirs(out, exist_ok=True)
-    key = record_key(record, source)
+    key = record_key(record, source, parent_base)
     source_text = str(source) if source else ""
     written = WrittenOutputs(key=key)
 
@@ -815,7 +961,9 @@ def write_outputs(record: ReportRecord, out_dir: Any, *,
     db = str(db_path) if db_path else os.path.join(out, DB_NAME)
     connection = open_library(db)
     try:
-        upsert_report(connection, record, key, written.paths, source_text)
+        upsert_report(connection, record, key, written.paths, source_text,
+                      parent=(parent_base or parent_key(record, source)
+                              if record.parent is not None else ""))
     finally:
         connection.close()
     written.db = db

@@ -17,6 +17,7 @@ available to the app as one sub-agent. Calculation printouts are WP5.
 | 3. Lab reader | `lab_reader.py` | one call per sheet, `zoom_plot` when a curve is only plotted |
 | The floors | `floor.py`, `log_floor.py`, `lab_floor.py` | the grid's and the tables' own record before any call, and the merge: add, correct with evidence, never drop |
 | 3. Narrative reader | `narrative_reader.py` | one call for the owner's two schemas, cited |
+| Reports bound inside reports | `bound.py` | where a bound document begins and ends, and the one call that says what it IS |
 | 4. Reconciler | `reconciler.py` | pure Python; records disagreements, never settles them |
 | 5. Writers | `writers.py` | the record, the summary, the library page, DIGGS, the index |
 | The DIGGS writer | `diggs_writer.py` | deterministic, with two gates |
@@ -623,6 +624,14 @@ carry them:
 | `report.page.md` | The owner's WikiLLM page: front matter (`id`, `report_id`, `title`, `authors`, `year`, `source`, `doc_type`, `tier`, `disciplines`, `topics`, `methods`, `materials`, `standards_referenced`, `confidence`, `status`, `n_pages`, `original_path`), then the summary, the key takeaways, the key parameters, the questions answered, and the record's sections as tables. |
 | `reports.db` | One SQLite row per report, keyed by a stable hash of the source file, so a folder of reports becomes searchable and re-ingesting one updates its row instead of adding a second. |
 
+A report BOUND INSIDE another one gets the same five outputs in its own
+folder (`bound/<id>/`) and a row of its own in the same library, with `parent`
+set to the key of the report it came out of. Its DIGGS file holds ITS
+explorations and the parent's holds the parent's: DIGGS 2.6 has no way to say
+"this sampling feature belongs to another report bound into this one", and a
+file that quietly merged the two would be wrong in the one way the whole
+exercise exists to prevent. See "Reports bound inside reports" below.
+
 **Every tag is earned by something in the record** — an investigation kind, a
 test kind, a USCS symbol, an answered hazard question — and nothing is tagged
 because reports usually have it. `doc_type` is the owner's own `documentType`
@@ -639,7 +648,8 @@ di_result=…, label_policy=…, review_mode=…, vision_engine=…)` is the who
 ingest: open (with DI when given) → roles, outline and ledger → triage → the
 page-label VOTE (the rules, one vision pass on a cheap tier, the printed form)
 → the label review over the pages the voters split on → work items from the
-settled labels → one reader per item → reconcile → write.
+settled labels → the reports BOUND inside this one → one reader per item →
+reconcile → each bound document round the same loop → write.
 
 See "The page labels are a vote" below for `label_policy` and `review_mode`.
 `vision_engine` should be an engine on a CHEAP tier, since that voter looks at
@@ -659,15 +669,19 @@ questions off a boring log. `needs_person` stops after triage with a QA entry.
 A scanned narrative with no DI result is skipped with a QA entry rather than
 run against nothing, because the narrative reader reads TEXT; the log and
 laboratory readers look at the page image and work regardless. Calculation
-printouts and appended reports are recorded as QA entries saying they were not
-read, so a reviewer knows the pages exist and were skipped on purpose.
+printouts are recorded as a QA entry saying they were not read, so a reviewer
+knows the pages exist and were skipped on purpose; a report bound inside this
+one is read as its OWN record (`ingest_bound=True`, the default) and listed on
+`bound_documents`.
 
 `run_folder(folder, engine_factory, out_dir=…, vision_engine_factory=…,
 label_policy=…, review_mode=…)` drives the same graph headless
 over a folder into one `reports.db`, with an `INDEX.md` of what it came to. It
 resumes, one bad report cannot stop it, and two files with the same bytes are
 one document sharing one library row — which it says out loud, so a folder of
-300 files that makes 297 rows is not a mystery.
+300 files that makes 297 rows is not a mystery. It can also make MORE rows
+than files, because a report bound inside a report is a row of its own; the
+index counts them in a `Bound in` column.
 
 ## The sub-agent, and how it is gated (`subagent.py`)
 
@@ -779,6 +793,98 @@ settle is a `QAEntry(kind="label_disagreement")` naming both voters and both
 confidences. The graph also writes `labels.json` beside `vision.json` and
 `review.json` in the report's folder: the policy, the mode, the split pages,
 what the review changed, and what each pass cost.
+
+## Reports bound inside reports (`bound.py`)
+
+A geotechnical report is very often not one report. An earlier firm's whole
+investigation is reproduced as an appendix; a bridging report is bound into the
+design-build report that answers it; a data report sits inside a design report.
+The corpus measurement of 2026-09-20 (ledger run 7) has triage calling **19 of
+38 reports `multi_document`, with one to four bound documents each**, and the
+hand narrative notes for two of them say the same thing in the owner's own
+words: the borings and test pits behind that tab belong to the EARLIER
+investigation, not to the report they are bound into.
+
+Before this train those pages were listed in a QA entry and never read. The
+alternative that was never on the table is reading them into the SAME record:
+an earlier firm's B-1 and this report's B-1 in one list of investigations, a
+2009 water level beside a 2026 one, and a boring count that is the sum of two
+investigations and the truth about neither.
+
+**So a bound document becomes its own record.** The parent keeps those pages
+labelled `appended_report` and LISTS the child; the child is built from the
+same pages by the same pipeline — its own identity, its own labels, its own
+work items, its own readers, its own reconcile, its own exports — and nothing
+is attributed across the boundary.
+
+**Where the page range comes from.** Two sources, and they are not the same
+kind of evidence:
+
+| source | what it is |
+|---|---|
+| triage's `bound_together` | a model that has read the whole ledger, the outline and the front matter saying "pages 112-184 are their own document". It sees the CONTENTS LIST, so it catches a bound report the pages themselves are shy about. |
+| the record's `appended_report` labels | planlens' rules label a page `appended_report` when it sits inside a document the section builder found nested in this one. Structural, cheap, and the label class the rules demonstrably own — 494 in-sample pages a vision pass never once emits. |
+
+They usually agree. Where they do not, the record takes the **union** and says
+so in a `QAEntry(where="bound.extent")` naming both: a page wrongly included in
+the child is recoverable, and a page wrongly left in the parent is an earlier
+investigation's boring attributed to this report, which is the error the whole
+exercise is about. Two claims that overlap or merely touch are ONE document. A
+run shorter than `MIN_BOUND_PAGES` (4) is not a document — a reproduced log
+sheet, a two-page letter from a previous consultant — and stays in the parent
+with a `bound.short_run` note.
+
+**What each document costs.** One extra structured call per bound document:
+`identify_bound` reads its first four pages and answers the title, the firm,
+the date, the document type and how it is bound in, all of it printed on those
+pages or empty. It is cached in the child's folder, so a resumed run does not
+pay it twice, and a call that fails leaves the identity empty with a QA entry
+rather than losing the child. The vision voter and the log-template recogniser
+are NOT re-run: they already answered about these pages, and a page's picture
+does not change when you stop calling it an appendix. The rules ARE re-run,
+over the child's pages rebased to zero — which is what makes its cover a cover
+and its boring log a boring log again instead of four pages of
+`appended_report`. The label review does not run over a bound document; a
+split the vote leaves is a `label_disagreement` entry in the child's QA.
+
+**What the parent and the child carry.**
+
+```
+ReportRecord.bound_documents: [BoundReport]   # on the parent
+  bound_id report_id title firm date kind document_type
+  pages first_page last_page n_pages said_by counts folder record_path read
+
+ReportRecord.parent: ParentReport | None      # on the child
+  report_id bound_id pages first_page last_page n_pages record_path
+```
+
+**Page numbers are the parent file's throughout.** There is one PDF, and a
+reviewer sent to check a value opens it at the page the record names — so a
+child record's provenance, item pages and page labels are all 0-based indexes
+into that same file, and the child's own extent is recorded once, on `parent`.
+
+**The parent's narrative reader is told.** It is given the ranges with each
+document's title, firm and date, and told what to do with them: do not count
+their borings as this report's, do not put their identifiers in this report's
+`boringDictionary`, and each of them IS a previous investigation and counts
+towards `previousInvestigationCount`. The counts and dictionaries themselves
+still come from the parent's OWN logs (the deterministic path). The child's
+narrative reader gets the mirror of that: a `window` that keeps every page it
+is shown and every passage it is searched inside the bound document, so it
+never answers off the cover, the letter or the recommendations of the report it
+is bound inside.
+
+**Exports.** The child gets its own `report.record.json`, `report.summary.md`,
+`report.page.md` and `report.diggs.xml` under `out_dir/bound/<id>/`, and a row
+of its own in the SAME `reports.db` with `parent` set to the parent's key. The
+parent's summary page gains a "Reports bound inside this one" section — title,
+what it is, pages, what it holds by count, and the child's folder — with the
+sentence that matters: what they hold is in none of the counts above. The
+parent's DIGGS file does NOT carry the child's data.
+
+`ingest_bound=False` on `ingest_report`, `run_folder`, `run_ingest` and
+`build_report_ingest_subagent` turns the whole thing off and lists the pages in
+a QA entry as before.
 
 ## Why the two label passes exist
 

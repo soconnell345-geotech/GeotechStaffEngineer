@@ -57,7 +57,10 @@ SUBAGENT_DESCRIPTION = (
     "any whole-report ingestion to it and never try to read a long report "
     "page by page yourself. It returns counts, the file paths and the first "
     "lines of the summary; ask it for the report's own questions by passing "
-    "them in."
+    "them in. A report with ANOTHER report bound inside it -- an earlier "
+    "firm's investigation reproduced as an appendix -- comes back as two "
+    "records, and the answer names the second one: the borings in there are "
+    "that earlier investigation's, not this report's."
 )
 
 #: How many lines of the summary page travel back with the answer.
@@ -104,6 +107,12 @@ class IngestSummary(BaseModel):
         default_factory=dict,
         description="where the record, the summary, the library page, the "
                     "DIGGS file and the library database were written")
+    bound_documents: List[Dict[str, str]] = Field(
+        default_factory=list,
+        description="reports bound INSIDE this one, each read into its own "
+                    "record: its title, the pages of this file it occupied, "
+                    "what it holds and where its record was written. "
+                    "Nothing of theirs is in the counts above")
     summary: str = Field(
         default="", description="the first lines of the summary page")
     answers: List[Dict[str, str]] = Field(
@@ -137,12 +146,16 @@ def run_ingest(source: str, questions: Sequence[str], *,
                review_mode: str = "disagreements",
                vision_engine: Any = None, vision_mode: str = "sheet",
                trust_table: Any = None,
-               templates: Any = None) -> IngestSummary:
+               templates: Any = None,
+               ingest_bound: bool = True) -> IngestSummary:
     """Read one report and return the compact answer, never the record.
 
     The label parameters are the graph's own and are documented on
     :func:`report_ingest.graph.ingest_report`; ``vision_engine`` should be
     an engine on a CHEAP tier, since the vision voter looks at every page.
+    ``ingest_bound`` reads a report bound inside this one as its own record
+    and is on by default; the summary then names each one and where it went,
+    so the primary agent knows there is a second record to ask about.
     """
     from report_ingest.graph import ingest_report, output_paths
 
@@ -153,7 +166,8 @@ def run_ingest(source: str, questions: Sequence[str], *,
                            review_mode=review_mode,
                            vision_engine=vision_engine,
                            vision_mode=vision_mode,
-                           trust_table=trust_table, templates=templates)
+                           trust_table=trust_table, templates=templates,
+                           ingest_bound=ingest_bound)
     paths = output_paths(out_dir)
     counts = record.counts()
     verdicts = [entry for entry in record.qa
@@ -178,6 +192,15 @@ def run_ingest(source: str, questions: Sequence[str], *,
                                 if entry.kind == "label_disagreement"),
         diggs_ok=diggs_ok,
         paths=paths,
+        bound_documents=[
+            {"title": row.title or row.report_id or row.bound_id,
+             "pages": row.pages,
+             "holds": f"{row.counts.get('investigations', 0)} exploration(s), "
+                      f"{row.counts.get('lab_tests', 0)} laboratory test(s)"
+                      if row.read else "not read; see the QA section",
+             "record": os.path.join(str(out_dir), row.record_path)
+                       if row.record_path else ""}
+            for row in record.bound_documents],
         summary=_head(paths.get("summary", "")),
         answers=[{"question": str(row.get("question", "")),
                   "answer": str(row.get("answer", ""))}
@@ -246,7 +269,8 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
                                   Callable[[], Any]] = None,
                               vision_mode: str = "sheet",
                               trust_table: Any = None,
-                              templates: Any = None) -> Any:
+                              templates: Any = None,
+                              ingest_bound: bool = True) -> Any:
     """A one-node LangGraph that runs the ingest and answers with a summary.
 
     ``engine_factory`` is called once per run and must return an ingest
@@ -324,14 +348,18 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
                                                else None),
                                 vision_mode=vision_mode,
                                 trust_table=trust_table,
-                                templates=templates)
+                                templates=templates,
+                                ingest_bound=ingest_bound)
         except Exception as exc:                 # one report, not the session
             answer = IngestSummary(
                 error=f"the ingest failed: {type(exc).__name__}: {exc}")
         text = answer.error or (
             f"{answer.report}: {answer.investigations} exploration(s), "
             f"{answer.lab_tests} laboratory test(s), {answer.qa_entries} "
-            f"QA entr(ies). Written to {answer.paths.get('record', out_dir)}.")
+            f"QA entr(ies). Written to {answer.paths.get('record', out_dir)}."
+            + (f" {len(answer.bound_documents)} report(s) bound inside this "
+               f"one were read into records of their own."
+               if answer.bound_documents else ""))
         return {"messages": [AIMessage(content=text)],
                 "structured_response": answer}
 
@@ -377,7 +405,8 @@ def build_report_ingest_subagent(engine_factory: Callable[[], Any], *,
                                      Callable[[], Any]] = None,
                                  vision_mode: str = "sheet",
                                  trust_table: Any = None,
-                                 templates: Any = None
+                                 templates: Any = None,
+                                 ingest_bound: bool = True
                                  ) -> Dict[str, Any]:
     """The deepagents ``CompiledSubAgent`` spec for the ingest.
 
@@ -396,7 +425,7 @@ def build_report_ingest_subagent(engine_factory: Callable[[], Any], *,
             review_mode=review_mode,
             vision_engine_factory=vision_engine_factory,
             vision_mode=vision_mode, trust_table=trust_table,
-            templates=templates),
+            templates=templates, ingest_bound=ingest_bound),
     }
     carried = list(middleware or [])
     if max_model_calls:

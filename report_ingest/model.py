@@ -50,8 +50,8 @@ __all__ = [
     "Layer", "Sample",
     "SPT", "WaterLevel", "LabTest", "Investigation", "NarrativeFacts",
     "GeneralFacts", "NaturalHazardFacts", "CalcEntry", "QAEntry",
-    "DocumentFacts", "LabelVote", "PageLabel", "ReportRecord", "to_si",
-    "si_numbers",
+    "DocumentFacts", "LabelVote", "PageLabel", "ParentReport", "BoundReport",
+    "ReportRecord", "to_si", "si_numbers",
     "record_json_schema",
     # the narrative (WP4): the owner's two schemas and their typed twins
     "Citation", "Mention", "BearingValue", "Stratum",
@@ -85,6 +85,12 @@ __all__ = [
 #: ``narrative`` is what the reading produced BESIDE them (what the narrative
 #: stated, what Python counted, what the appendix turned out to hold). Both
 #: are changes of meaning, so the version moves.
+#:
+#: ``bound_documents`` and ``parent`` (a report bound inside another report,
+#: read into its own record) are NOT a bump: both are optional, an older
+#: record simply has an empty list and a null parent, and no existing field
+#: changed meaning. What changed is what the pipeline now DOES with pages it
+#: used to list and skip; see :mod:`report_ingest.bound`.
 SCHEMA_VERSION = "4.0"
 
 
@@ -1778,6 +1784,101 @@ class QAEntry(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# reports bound inside reports
+# ---------------------------------------------------------------------------
+
+class ParentReport(BaseModel):
+    """The report this record was bound inside, and where in it.
+
+    Present only on the record of a BOUND document: an earlier firm's
+    investigation reproduced whole as an appendix, a bridging report bound
+    into the design-build report that answers it. ``pages`` are 0-based
+    indexes into the PARENT file, which is the same PDF this record's own
+    provenance points into -- there is one file, and a reviewer sent to
+    check a value opens it at the page the record names.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    report_id: str = Field(
+        default="",
+        description="the parent record's report_id; empty when it has none")
+    bound_id: str = Field(
+        default="",
+        description="this document's handle inside the parent: bound1, "
+                    "bound2, in page order")
+    pages: str = Field(
+        default="",
+        description="the pages of the PARENT file this report occupied, "
+                    "0-based, e.g. '112-184'")
+    first_page: int = Field(default=0, ge=0)
+    last_page: int = Field(default=0, ge=0)
+    n_pages: int = Field(default=0, ge=0)
+    record_path: str = Field(
+        default="",
+        description="where the parent's record.json is, relative to this "
+                    "record's own folder")
+
+
+class BoundReport(BaseModel):
+    """One report bound inside this one, read as its own record.
+
+    Nothing of it is in THIS record: its borings are its borings and its
+    laboratory tests are its laboratory tests. What is here is the pointer --
+    what it is, which pages of this file it occupied, what its own record
+    turned out to hold, and where that record was written.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    bound_id: str = Field(
+        description="its handle inside this report: bound1, bound2, in page "
+                    "order")
+    report_id: str = Field(
+        default="",
+        description="the report_id its own record carries")
+    title: str = Field(
+        default="", description="the title it prints for itself, as printed")
+    firm: str = Field(
+        default="", description="the firm that wrote it, as printed")
+    date: str = Field(
+        default="", description="the date it prints for itself, as printed")
+    kind: str = Field(
+        default="",
+        description="how it is bound in: volume, appended_prior_report, "
+                    "data_report or other")
+    document_type: str = Field(
+        default="", description="what kind of document it is, in the owner's "
+                                "documentType vocabulary")
+    pages: str = Field(
+        default="",
+        description="the pages of THIS file it occupied, 0-based, e.g. "
+                    "'112-184'")
+    first_page: int = Field(default=0, ge=0)
+    last_page: int = Field(default=0, ge=0)
+    n_pages: int = Field(default=0, ge=0)
+    said_by: List[str] = Field(
+        default_factory=list,
+        description="which sources called this range a bound document: "
+                    "triage, planlens, or both")
+    counts: Dict[str, int] = Field(
+        default_factory=dict,
+        description="what its own record holds: investigations, layers, "
+                    "samples, spt, water_levels, lab_tests, calcs, qa")
+    folder: str = Field(
+        default="",
+        description="its output folder, relative to this record's own")
+    record_path: str = Field(
+        default="",
+        description="its record.json, relative to this record's own folder")
+    read: bool = Field(
+        default=True,
+        description="False when its pages were listed and not read as their "
+                    "own document -- ingest_bound was off, or the reading "
+                    "failed; the reason is then a QA entry")
+
+
+# ---------------------------------------------------------------------------
 # the record
 # ---------------------------------------------------------------------------
 
@@ -1786,6 +1887,11 @@ class ReportRecord(BaseModel):
 
     Written as ``report.record.json``. The summary page, the library page and
     the DIGGS file are exports of this and add nothing that is not here.
+
+    A report with another report bound inside it is TWO records, not one
+    record holding two investigations: ``bound_documents`` lists the children
+    and ``parent`` is set on each child. See :mod:`report_ingest.bound` for
+    why, and for how the boundary between them is decided.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -1806,6 +1912,16 @@ class ReportRecord(BaseModel):
     lab_tests: List[LabTest] = Field(default_factory=list)
     calcs: List[CalcEntry] = Field(default_factory=list)
     qa: List[QAEntry] = Field(default_factory=list)
+    bound_documents: List[BoundReport] = Field(
+        default_factory=list,
+        description="reports bound inside this one, each read into its own "
+                    "record; nothing of theirs is anywhere else in this "
+                    "record")
+    parent: Optional[ParentReport] = Field(
+        default=None,
+        description="set when THIS record is a report bound inside another "
+                    "one: which report, and the pages of it this one "
+                    "occupied")
 
     def investigation(self, investigation_id: str) -> Optional[Investigation]:
         """The investigation with that id, or None."""

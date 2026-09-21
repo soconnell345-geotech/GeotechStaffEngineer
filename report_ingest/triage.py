@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, Field
 
+from report_ingest.bound import BOUND_KINDS
 from report_ingest.engine import Engine, text_block, user
 from report_ingest.model import DOCUMENT_TYPE_VALUES
 
@@ -61,10 +62,10 @@ WORKFLOWS: Tuple[str, ...] = (
 #: How well the contents list matches what was found on the pages.
 TOC_AGREEMENTS: Tuple[str, ...] = ("matched", "partial", "none", "no_toc")
 
-#: What a separately-bound part of the file can be.
-BOUND_KINDS: Tuple[str, ...] = (
-    "volume", "appended_prior_report", "data_report", "other",
-)
+#: What a separately-bound part of the file can be. It lives in
+#: :mod:`report_ingest.bound`, beside the code that turns one into its own
+#: record, and is imported here rather than retyped so that what triage may
+#: ANSWER and what the pipeline can BUILD are one list.
 
 #: A page whose text layer is this fraction unreliable, or which has no text
 #: at all, cannot be read as text. Both are already decided by planlens
@@ -382,7 +383,12 @@ Rules for your answer.
 - bound_together is for a part of the file that is its OWN document: a
   second volume, a prior report appended whole, a data report inside a
   design report. A plain appendix of lab sheets is not one. Give its page
-  range in 0-based PDF page numbers, which is what the ledger uses.
+  range in 0-based PDF page numbers, which is what the ledger uses. This
+  answer is ACTED ON: each range you name is read separately into its own
+  record, so that an earlier firm's borings are that firm's and not this
+  report's. Give the range the document actually occupies, from its own
+  cover to its last page, and leave the list empty when this is one
+  document.
 - toc_agreement: 'matched' when the contents list's sections are where it
   says they are; 'partial' when some are and some are not, or the list is
   incomplete; 'none' when the list and the file disagree; 'no_toc' when the

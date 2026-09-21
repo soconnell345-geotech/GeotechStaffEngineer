@@ -61,6 +61,10 @@ class ReportRun:
     workflow: str = ""
     investigations: int = 0
     lab_tests: int = 0
+    #: Reports bound inside this one, each a record and a library row of its
+    #: own under ``<out_dir>/bound/``. Nothing of theirs is in the counts
+    #: beside this one.
+    bound: int = 0
     qa: int = 0
     answered: int = 0
     model_calls: int = 0
@@ -145,6 +149,7 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
                vision_detail: Optional[str] = None,
                trust_table: Any = None,
                templates: Any = None,
+               ingest_bound: bool = True,
                log: Callable[[str], None] = print) -> FolderRun:
     """Read every PDF in ``folder`` into one library under ``out_dir``.
 
@@ -160,6 +165,12 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
     ``engine_factory`` and should return an engine on a CHEAP tier; without
     one the vision voter runs on the same engine as everything else, which
     works and costs more than it needs to.
+
+    A REPORT BOUND INSIDE A REPORT becomes a record of its own under
+    ``<report>/bound/<id>/`` and a row of its own in the same library, with
+    ``parent`` pointing at the report it came out of. So a folder of 300
+    files can make more than 300 rows, which is right and is why the index
+    counts them. ``ingest_bound=False`` turns it off.
     """
     from report_ingest.graph import ingest_report
 
@@ -204,7 +215,8 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
                 vision_engine=(vision_engine_factory()
                                if vision_engine_factory else None),
                 vision_mode=vision_mode, vision_detail=vision_detail,
-                trust_table=trust_table, templates=templates)
+                trust_table=trust_table, templates=templates,
+                ingest_bound=ingest_bound)
         except KeyboardInterrupt:
             log("  interrupted; what is finished is on disk and a later call "
                 "resumes")
@@ -228,6 +240,7 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
             workflow=record.document.workflow,
             investigations=len(record.investigations),
             lab_tests=len(record.lab_tests),
+            bound=len(record.bound_documents),
             qa=len(record.qa),
             answered=len(record.general.answered()
                          + record.natural_hazards.answered()),
@@ -268,6 +281,7 @@ def _row_from_record(stem: str, path: str, out_dir: str,
     row.dollars = float(document.get("dollars") or 0.0)
     row.investigations = len(blob.get("investigations") or [])
     row.lab_tests = len(blob.get("lab_tests") or [])
+    row.bound = len(blob.get("bound_documents") or [])
     row.qa = len(blob.get("qa") or [])
     general = blob.get("general") or {}
     hazards = blob.get("natural_hazards") or {}
@@ -283,16 +297,21 @@ def _write_index(run: FolderRun, out: str) -> None:
              f"{len(run.reports)} report(s), {len(run.failures)} failed. "
              f"Library: `{run.db}`. Run {run.started}.", "",
              "| Report | Pages | Workflow | Explorations | Lab tests | "
-             "Questions answered | QA | Model calls |",
-             "|---|---|---|---|---|---|---|---|"]
+             "Bound in | Questions answered | QA | Model calls |",
+             "|---|---|---|---|---|---|---|---|---|"]
     for row in run.reports:
         if not row.ok:
-            lines.append(f"| {row.report_id} | | FAILED | | | | | |")
+            lines.append(f"| {row.report_id} | | FAILED | | | | | | |")
             continue
         lines.append(
             f"| {row.report_id} | {row.n_pages} | {row.workflow} | "
-            f"{row.investigations} | {row.lab_tests} | {row.answered} | "
-            f"{row.qa} | {row.model_calls} |")
+            f"{row.investigations} | {row.lab_tests} | {row.bound or ''} | "
+            f"{row.answered} | {row.qa} | {row.model_calls} |")
+    if any(row.bound for row in run.reports):
+        lines += ["", "`Bound in` counts reports bound inside that one. Each "
+                      "is its own record under `<report>/bound/<id>/` and "
+                      "its own row in the library, with `parent` set; what "
+                      "they hold is in none of the counts beside them."]
     copies = [row for row in run.reports if row.duplicate_of]
     if copies:
         lines += ["", "## The same document twice", "",

@@ -407,6 +407,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      label_policy: str = "structural",
                      review_mode: str = "disagreements",
                      ingest_vision_mode: str = "sheet",
+                     ingest_bound: bool = True,
                      trust_table: Any = None
                      ) -> Dict[str, Any]:
     """Run the rules, triage and the label review over the corpus, and score.
@@ -586,6 +587,14 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         (``<run>/vote/trust_table.json``), needed only by
         ``label_policy="trust"``; without it that policy falls back to
         ``structural`` and prints a note.
+    ingest_bound
+        Read a report bound INSIDE a report as its own record, under
+        ``ingest/<ID>/bound/<bound id>/``, and list it on the parent's
+        ``bound_documents``. On by default. What a bound document holds is
+        then in none of its parent's counts, which is the point: ledger run
+        7 has 19 of 38 corpus reports carrying one, and their borings belong
+        to the earlier investigation. ``False`` lists the pages and does not
+        read them, which is what every run before this did.
     """
     if prompter is None:
         raise ValueError(
@@ -799,6 +808,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                              vision_detail=vision_detail,
                              trust_table=trust_table,
                              templates_path=templates_path,
+                             ingest_bound=ingest_bound,
                              oos=oos, mapped=mapped, sync=sync)
         results["ingest"] = ingest
         lines += _render_ingest(ingest)
@@ -3032,6 +3042,33 @@ def _ingest_labels(folder: Path, record: Any, rid: str, corpus: Corpus,
     return out
 
 
+def _ingest_bound_rows(record: Any) -> List[Dict[str, Any]]:
+    """One row per report bound inside this one, for the RESULTS table.
+
+    IDs, kinds, page ranges and counts. NOT the title or the firm: those are
+    a private report's own words, and a scorecard is written up in a public
+    repository. The child's own record, in the run folder, carries them.
+    """
+    out: List[Dict[str, Any]] = []
+    for row in getattr(record, "bound_documents", ()) or ():
+        counts = dict(row.counts or {})
+        out.append({
+            "bound_id": row.bound_id,
+            "report_id": row.report_id,
+            "kind": row.kind,
+            "pages": row.pages,
+            "n_pages": row.n_pages,
+            "said_by": list(row.said_by),
+            "read": bool(row.read),
+            "investigations": int(counts.get("investigations") or 0),
+            "lab_tests": int(counts.get("lab_tests") or 0),
+            "samples": int(counts.get("samples") or 0),
+            "qa": int(counts.get("qa") or 0),
+            "folder": row.folder,
+        })
+    return out
+
+
 def _diggs_verdicts(record: Any, outputs: Dict[str, str]) -> Dict[str, str]:
     """written / validated / read back, off the record's own QA entries."""
     written = "yes" if outputs.get("diggs") else "no"
@@ -3065,6 +3102,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                 vision_detail: Optional[str] = None,
                 trust_table: Any = None,
                 templates_path: Any = None,
+                ingest_bound: bool = True,
                 oos: Optional[Dict[str, Dict[int, dict]]] = None,
                 mapped: Sequence[str] = (),
                 sync: Optional[Any] = None) -> Dict[str, Any]:
@@ -3083,6 +3121,14 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
     ``labels`` run is the WHOLE-REPORT one, so a report that has one keeps
     it and ``review_mode`` bites on the reports that do not -- which is what
     makes the comparison between the two worth reading.
+
+    A REPORT BOUND INSIDE A REPORT becomes its own record under
+    ``ingest/<ID>/bound/<bound id>/`` and its own row in the shared library,
+    and what it holds is in none of its parent's counts (``ingest_bound``).
+    Ledger run 7 has 19 of the 38 corpus reports carrying between one and
+    four of them, so this moves numbers in the per-report table: a report
+    whose investigation count falls is one whose appendix was somebody
+    else's investigation all along.
     """
     from report_ingest.engine import CostMeter, PrompterEngine
     from report_ingest.graph import Budgets, ingest_report, output_paths
@@ -3142,7 +3188,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                                    vision_mode=vision_mode,
                                    vision_detail=vision_detail,
                                    trust_table=trust_table,
-                                   templates=templates)
+                                   templates=templates,
+                                   ingest_bound=ingest_bound)
             n_pages = doc.n_pages
         except KeyboardInterrupt:
             print("  interrupted; what is finished is on disk and a later "
@@ -3190,6 +3237,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "review_reused": review_reused,
             "labels": _ingest_labels(folder, record, rid, corpus,
                                      oos or {}, mapped),
+            "bound": _ingest_bound_rows(record),
             "counts": record.counts(),
             "investigations_by_kind": by_kind,
             "lab_by_kind": lab_by_kind,
@@ -3227,7 +3275,10 @@ def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
             "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
     totals: Dict[str, Any] = {
         "pages": 0, "investigations": 0, "samples": 0, "spt": 0,
-        "lab_tests": 0, "qa": 0, "investigations_by_kind": {},
+        "lab_tests": 0, "qa": 0,
+        "bound": {"reports": 0, "documents": 0, "read": 0, "pages": 0,
+                  "investigations": 0, "lab_tests": 0, "by_kind": {}},
+        "investigations_by_kind": {},
         "lab_by_kind": {}, "qa_by_kind": {},
         "narrative_answered": 0, "narrative_null": 0,
         "labels": {"pages_voted": 0, "split": 0, "review_changed": 0,
@@ -3258,6 +3309,18 @@ def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
         narrative = row.get("narrative") or {}
         totals["narrative_answered"] += int(narrative.get("answered") or 0)
         totals["narrative_null"] += int(narrative.get("null") or 0)
+        bound_rows = row.get("bound") or []
+        if bound_rows:
+            cell = totals["bound"]
+            cell["reports"] += 1
+            cell["documents"] += len(bound_rows)
+            for entry in bound_rows:
+                cell["pages"] += int(entry.get("n_pages") or 0)
+                cell["read"] += 1 if entry.get("read") else 0
+                cell["investigations"] += int(entry.get("investigations") or 0)
+                cell["lab_tests"] += int(entry.get("lab_tests") or 0)
+                kind = str(entry.get("kind") or "other")
+                cell["by_kind"][kind] = cell["by_kind"].get(kind, 0) + 1
         labels = row.get("labels") or {}
         cell = totals["labels"]
         for key in ("pages_voted", "split", "review_changed",
@@ -3427,7 +3490,8 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
     out += ["", "## Per report", "", "```",
             f"{'report':<8}{'pages':>6}  {'workflow':<14}  "
             f"{'investigations':<28}{'samp':>6}{'spt':>5}  "
-            f"{'lab tests':<32}{'narr':>7}  {'qa dis/unres/ref':<17}"
+            f"{'lab tests':<32}{'narr':>7}{'bound':>7}  "
+            f"{'qa dis/unres/ref':<17}"
             f"{'diggs written/schema/read back':<32}{'calls':>6}{'in':>10}"
             f"{'out':>8}{'$':>7}{'s':>6}"]
     for r in ingest["per_report"]:
@@ -3435,6 +3499,7 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
         qa = r.get("qa_by_kind") or {}
         diggs = r.get("diggs") or {}
         narrative = r.get("narrative") or {}
+        bound_rows = r.get("bound") or []
         money = r["cost"].get("dollars", 0.0)
         qa_cell = (f"{qa.get('disagreement', 0)}/{qa.get('partial', 0)}/"
                    f"{qa.get('out_of_range', 0)}")
@@ -3448,16 +3513,37 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
             f"{_kinds_cell(r.get('investigations_by_kind') or {})[:27]:<28}"
             f"{counts.get('samples', 0):>6}{counts.get('spt', 0):>5}  "
             f"{_kinds_cell(r.get('lab_by_kind') or {})[:31]:<32}"
-            f"{narr_cell:>7}  {qa_cell:<17}{diggs_cell:<32}"
+            f"{narr_cell:>7}{(len(bound_rows) or '-'):>7}  "
+            f"{qa_cell:<17}{diggs_cell:<32}"
             f"{r['cost'].get('calls', 0):>6}"
             f"{r['cost'].get('input_tokens', 0):>10,}"
             f"{r['cost'].get('output_tokens', 0):>8,}"
             f"{(f'{money:.2f}' if money else '-'):>7}"
             f"{r.get('seconds', 0.0):>6.0f}")
+        # One line per report bound inside that one, indented under it: its
+        # own record, its own pages, its own counts. IDs and numbers only.
+        for entry in bound_rows:
+            held = (f"{entry.get('investigations', 0)} investigation(s), "
+                    f"{entry.get('lab_tests', 0)} lab test(s), "
+                    f"{entry.get('samples', 0)} sample(s)"
+                    if entry.get("read") else "NOT READ")
+            out.append(
+                f"  +- {entry.get('bound_id', ''):<6}"
+                f"{entry.get('n_pages', 0):>4} pp at "
+                f"{str(entry.get('pages') or ''):<12}"
+                f"{str(entry.get('kind') or ''):<24}"
+                f"{held:<52}"
+                f"said by {', '.join(entry.get('said_by') or []) or '-'}")
     out.append("```")
     out += ["", "`narr` is the owner's schema fields answered / left null "
                 "(37 asked). `qa dis/unres/ref` is disagreement / partial / "
-                "out_of_range entries; every kind is in `results.json`."]
+                "out_of_range entries; every kind is in `results.json`. "
+                "`bound` counts reports bound INSIDE that report; each gets "
+                "the `+-` line under it and is a record of its own under "
+                "`ingest/<ID>/bound/<bound id>/`, with its own summary, "
+                "library page and DIGGS file. What a bound document holds is "
+                "in NONE of the counts on its parent's line: an earlier "
+                "firm's borings are that firm's."]
 
     out += _render_ingest_labels(ingest)
 
@@ -3478,6 +3564,16 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
             f"invalid; {diggs['equal']} read back equal, {diggs['differs']} "
             f"differ",
             "```"]
+    bound = totals.get("bound") or {}
+    if bound.get("documents"):
+        out += ["", "```",
+                f"bound documents: {bound['documents']} inside "
+                f"{bound['reports']} report(s) ({_kinds_cell(bound['by_kind'])}), "
+                f"{bound['read']} read as their own record, "
+                f"{bound['pages']} pages, holding {bound['investigations']} "
+                f"investigations and {bound['lab_tests']} lab tests that are "
+                f"NOT counted above",
+                "```"]
 
     scores = totals["scores"]
     scored_rows = [r for r in ingest["per_report"]

@@ -409,6 +409,16 @@ voter and the `agreed` flag per page; a split the review does not settle is a
 signal" in `FUTURE_IDEAS.md`, and what is left of it is the cluster run that
 says which policy to keep.
 
+### A report bound inside a report is its own record (added after 5.24.0)
+
+Triage's `bound_together` was a flag; it is now ACTED ON. Each bound page range
+-- the union of what triage said and the record's own `appended_report` labels,
+floor `MIN_BOUND_PAGES` = 4 -- goes round this same loop into its own record
+under `out_dir/bound/<id>/`, with `ReportRecord.bound_documents` on the parent
+and `ReportRecord.parent` on the child, so that an earlier firm's borings are
+that firm's and the parent's counts are the parent's (`report_ingest/bound.py`;
+`ingest_bound=False` restores the old listed-and-skipped behaviour).
+
 ### Where each piece lives
 
 | Piece | Home | Why |

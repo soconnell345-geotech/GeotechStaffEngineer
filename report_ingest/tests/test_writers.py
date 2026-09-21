@@ -14,7 +14,10 @@ import sqlite3
 
 import pytest
 
-from report_ingest.model import GeneralFacts, NaturalHazardFacts, ReportRecord
+from report_ingest.model import (
+    BoundReport, DocumentFacts, GeneralFacts, NaturalHazardFacts,
+    ParentReport, ReportRecord,
+)
 from report_ingest.reconciler import reconcile
 from report_ingest.tests.record_fixtures import (
     atterberg, boring, build_record, general_facts, gradation, page_context,
@@ -22,8 +25,8 @@ from report_ingest.tests.record_fixtures import (
 )
 from report_ingest.writers import (
     DB_SCHEMA_VERSION, confidence_of, front_matter, key_parameters,
-    library_page, record_key, status_of, summary_markdown, tags_for, tier_of,
-    write_outputs,
+    library_page, open_library, parent_key, record_key, status_of,
+    summary_markdown, tags_for, tier_of, write_outputs,
 )
 
 
@@ -279,3 +282,134 @@ class TestTheKey:
         assert record_key(record) == record_key(again)
         other = build_record(general=GeneralFacts(projectName="Elsewhere"))
         assert record_key(record) != record_key(other)
+
+
+class TestReportsBoundInsideThisOne:
+    """The parent's own section, and the library row the child gets.
+
+    The record here is hand-built rather than ingested: these are the
+    writers, and what they have to get right is that a reader of the summary
+    cannot mistake the bound report's explorations for this report's, and
+    that two records off ONE file do not collide on one library row.
+    """
+
+    def _with_child(self, **over):
+        row = BoundReport(
+            bound_id="bound1", report_id="SYN.bound1",
+            title="Former Owner Site Study", firm="Older Firm & Partners",
+            date="11 June 2019", kind="appended_prior_report",
+            document_type="geotechnical report",
+            pages="15-18", first_page=15, last_page=18, n_pages=4,
+            said_by=["planlens", "triage"],
+            counts={"investigations": 1, "lab_tests": 2, "samples": 7,
+                    "spt": 7, "qa": 4},
+            folder="bound/bound1",
+            record_path="bound/bound1/report.record.json")
+        for name, value in over.items():
+            setattr(row, name, value)
+        record = build_record()
+        record.bound_documents = [row]
+        return record
+
+    def _child_record(self):
+        record = build_record()
+        record.document = DocumentFacts(report_id="SYN.bound1", n_pages=4,
+                                        workflow="standard")
+        record.parent = ParentReport(
+            report_id="SYN", bound_id="bound1", pages="15-18",
+            first_page=15, last_page=18, n_pages=4,
+            record_path="../../report.record.json")
+        return record
+
+    def test_the_section_names_it_and_says_what_it_holds(self):
+        text = summary_markdown(self._with_child())
+
+        assert "## Reports bound inside this one" in text
+        assert "Former Owner Site Study · Older Firm & Partners · 11 June 2019" \
+            in text
+        assert "an earlier report, appended whole" in text
+        assert "| 15-18 |" in text
+        assert "1 exploration, 2 lab tests, 7 samples, 7 driven records" in text
+        assert "`bound/bound1`" in text
+
+    def test_it_says_the_counts_above_do_not_include_it(self):
+        text = summary_markdown(self._with_child())
+
+        assert "is in none of the counts above" in text
+
+    def test_a_document_that_was_not_read_says_so_instead(self):
+        text = summary_markdown(self._with_child(read=False))
+
+        assert "_not read; see the QA section_" in text
+
+    def test_a_record_with_nothing_bound_has_no_section(self):
+        assert "Reports bound inside this one" not in \
+            summary_markdown(build_record())
+
+    def test_the_childs_own_summary_says_where_it_came_from(self):
+        text = summary_markdown(self._child_record())
+
+        assert "bound inside another one (`SYN`)" in text
+        assert "at pages 15-18 of that file" in text
+        assert "Every page number below is a page of that same file" in text
+
+    def test_the_child_gets_its_own_key_off_the_same_file(self, tmp_path):
+        pdf = tmp_path / "report.pdf"
+        pdf.write_bytes(b"%PDF-1.7\n" + b"x" * 5000)
+        parent, child = build_record(), self._child_record()
+
+        assert record_key(child, pdf) != record_key(parent, pdf)
+        assert parent_key(child, pdf) == record_key(parent, pdf)
+        # And it is stable: the same file and the same handle, twice.
+        assert record_key(child, pdf) == record_key(child, pdf)
+
+    def test_two_bound_documents_of_one_file_key_apart(self, tmp_path):
+        pdf = tmp_path / "report.pdf"
+        pdf.write_bytes(b"%PDF-1.7\n" + b"x" * 5000)
+        one, two = self._child_record(), self._child_record()
+        two.parent.bound_id = "bound2"
+
+        assert record_key(one, pdf) != record_key(two, pdf)
+
+    def test_the_library_row_points_at_the_parents_row(self, tmp_path):
+        pdf = tmp_path / "report.pdf"
+        pdf.write_bytes(b"%PDF-1.7\n" + b"x" * 5000)
+        out = tmp_path / "out"
+        write_outputs(build_record(), out, source=pdf,
+                      db_path=tmp_path / "reports.db")
+        write_outputs(self._child_record(), out / "bound" / "bound1",
+                      source=pdf, db_path=tmp_path / "reports.db")
+
+        connection = sqlite3.connect(tmp_path / "reports.db")
+        rows = {r[0]: (r[1], r[2]) for r in connection.execute(
+            "SELECT report_id, id, parent FROM reports")}
+        connection.close()
+        assert rows["SYN"][1] == ""
+        assert rows["SYN.bound1"][1] == rows["SYN"][0]
+
+    def test_an_older_library_grows_the_parent_column(self, tmp_path):
+        # A library written before this train has no `parent`; opening it
+        # must add the column rather than refuse the row.
+        from report_ingest.writers import _SCHEMA
+
+        db = tmp_path / "old.db"
+        before = "\n".join(line for line in _SCHEMA.splitlines()
+                           if "parent" not in line)
+        assert "parent" not in before
+        connection = sqlite3.connect(db)
+        connection.executescript(before)
+        connection.execute("INSERT INTO reports (id, report_id) "
+                           "VALUES ('abc', 'R01')")
+        connection.commit()
+        connection.close()
+
+        connection = open_library(db)
+        try:
+            names = {r["name"] for r in
+                     connection.execute("PRAGMA table_info(reports)")}
+            kept = [tuple(row) for row in connection.execute(
+                "SELECT report_id, parent FROM reports")]
+        finally:
+            connection.close()
+        assert "parent" in names
+        assert kept == [("R01", None)]

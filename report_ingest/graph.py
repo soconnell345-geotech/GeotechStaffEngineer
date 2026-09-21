@@ -50,6 +50,19 @@ that count. A split the review does not settle becomes a
 ``QAEntry(kind="label_disagreement")``; every page's label in the record
 carries its confidence, its voters and whether they agreed.
 
+A REPORT BOUND INSIDE THIS ONE IS ITS OWN RECORD. An earlier firm's whole
+investigation reproduced as an appendix, a bridging report bound into the
+design-build report that answers it: 19 of the corpus's 38 reports have at
+least one. Its pages stay labelled ``appended_report`` in THIS record and are
+listed on ``ReportRecord.bound_documents``; the pages themselves go round
+this same loop again, into their own record under ``out_dir/bound/<id>/``
+with ``parent`` set. Nothing crosses the boundary -- a boring in the child is
+the child's, the parent's narrative reader is TOLD the ranges so it answers
+``previousInvestigationCount`` with them, and the parent's counts and
+dictionaries come from the parent's own logs. ``ingest_bound=False`` turns it
+off and the pages are listed and skipped, as they were before. See
+:mod:`report_ingest.bound` for how the boundary is decided.
+
 WHAT IS NOT READ YET. Calculation printouts are work package 5; every calc
 item is recorded as a QA entry saying it was not read, so a reviewer of the
 record knows the pages exist and were skipped on purpose.
@@ -63,18 +76,24 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from report_ingest.bound import APPENDED_LABEL
 from report_ingest.label_vote import (
     DEFAULT_POLICY, POLICIES, PageChoice, Voter, combine, load_trust_table,
     neighbourhood, split_pages,
 )
 from report_ingest.model import (
-    DocumentFacts, LabelVote, PageLabel, Project, QAEntry, ReportRecord,
+    BoundReport, DocumentFacts, LabelVote, PageLabel, ParentReport, Project,
+    QAEntry, ReportRecord,
 )
 
 __all__ = [
     "ingest_report", "Budgets", "output_paths", "ITEM_READERS",
-    "OUTPUT_NAMES", "REVIEW_MODES",
+    "OUTPUT_NAMES", "REVIEW_MODES", "BOUND_DIR",
 ]
+
+#: Where a bound document's own folder goes, under the parent's ``out_dir``.
+#: One level, named by the child's handle: ``bound/bound1/``.
+BOUND_DIR = "bound"
 
 #: Which pages the label review is given.
 #:
@@ -269,7 +288,8 @@ def ingest_report(source: Any, engine: Any, *,
                   vision_mode: str = "sheet",
                   vision_detail: Optional[str] = None,
                   trust_table: Any = None,
-                  templates: Any = None) -> ReportRecord:
+                  templates: Any = None,
+                  ingest_bound: bool = True) -> ReportRecord:
     """Read one report end to end and write its record and its exports.
 
     ``source`` is a PDF path, its bytes, or an OPEN planlens document (the
@@ -311,8 +331,17 @@ def ingest_report(source: Any, engine: Any, *,
         of :class:`~report_ingest.log_templates.Fingerprint`, or ``None`` to
         use whatever ``log_templates.use_templates`` put in force -- which
         is nothing unless something set it, and then the voter is a no-op.
+    ingest_bound
+        Read a report bound inside this one as its OWN record, under
+        ``out_dir/bound/<id>/``, and list it on
+        ``ReportRecord.bound_documents``. On by default. ``False`` lists the
+        pages in a QA entry and does not read them, which is what every run
+        before this did. See :mod:`report_ingest.bound`.
+
+    The cost on ``record.document`` is the WHOLE run's, the children
+    included; each child's own block says what that child cost.
     """
-    from report_ingest.writers import write_outputs
+    from report_ingest.writers import record_key, write_outputs
 
     budgets = budgets or Budgets()
     if label_policy not in POLICIES:
@@ -333,11 +362,13 @@ def ingest_report(source: Any, engine: Any, *,
     spend = _Spend()
     qa: List[QAEntry] = []
     unresolved: List[Dict[str, Any]] = []
+    children: List[Tuple[ReportRecord, str]] = []
 
     doc = _open(source, di_result, report_id)
     try:
         record = _run(doc, engine, budgets, out, resume, questions or [],
-                      report_id, spend, qa, unresolved, di_result, labelling)
+                      report_id, spend, qa, unresolved, di_result, labelling,
+                      children, ingest_bound)
     finally:
         if not _is_document(source):
             doc.close()
@@ -357,6 +388,24 @@ def ingest_report(source: Any, engine: Any, *,
             key_source = None
         else:
             key_source = source
+        # The children FIRST: their records carry the DIGGS verdicts their
+        # own writers add, and the parent's summary counts what each of them
+        # came to. Both are settled by the time the parent is written.
+        by_id = {child.parent.bound_id: child for child, _ in children
+                 if child.parent is not None}
+        # A bound document belongs in the SAME library as the report it came
+        # out of. With no db_path the parent's default is beside its own
+        # outputs, so the children are pointed at that rather than each
+        # making a one-row database in its own folder.
+        library = db_path or os.path.join(out, "reports.db")
+        base = record_key(record, key_source)
+        for child, child_dir in children:
+            write_outputs(child, child_dir, source=key_source,
+                          db_path=library, parent_base=base)
+        for row in record.bound_documents:
+            child = by_id.get(row.bound_id)
+            if child is not None:
+                row.counts = child.counts()
         write_outputs(record, out, source=key_source, db_path=db_path)
     return record
 
@@ -364,8 +413,16 @@ def ingest_report(source: Any, engine: Any, *,
 def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
          questions: Sequence[str], report_id: str, spend: _Spend,
          qa: List[QAEntry], unresolved: List[Dict[str, Any]],
-         di_result: Any, labelling: "_Labelling") -> ReportRecord:
-    """The loop itself, with the document open."""
+         di_result: Any, labelling: "_Labelling",
+         children: List[Tuple[ReportRecord, str]],
+         ingest_bound: bool = True) -> ReportRecord:
+    """The loop itself, with the document open.
+
+    ``children`` is filled with ``(record, folder)`` for every report bound
+    inside this one, for the caller to write; they are not written here
+    because the library key and the database both belong to the caller's
+    ``source``, which this function does not have.
+    """
     from planlens.document.model import SOURCE_AZURE_DI
     from planlens.document.roles import (
         assign, build_items, document_outline, facts_from_document,
@@ -418,6 +475,10 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
             qa.append(QAEntry(
                 kind="note", where="triage.bound_together",
                 detail=f"{len(bound)} separately-bound document(s) are in "
+                       f"this file; each is read into its own record and "
+                       f"nothing of theirs is counted as this report's"
+                       if ingest_bound else
+                       f"{len(bound)} separately-bound document(s) are in "
                        f"this file; the answers below mix them until somebody "
                        f"splits it",
                 values=[f"{b.get('kind')} {b.get('pages')}" for b in bound]))
@@ -430,8 +491,8 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
         return record
 
     # -- 0c. the vote: the rules, the picture and the printed form ----------
-    choices = _vote_labels(doc, engine, budgets, out, resume, roles,
-                           labelling, spend, qa)
+    choices, vision, templates = _vote_labels(
+        doc, engine, budgets, out, resume, roles, labelling, spend, qa)
     labels = {c.page: c.label for c in choices}
     split = split_pages(choices)
     confidence = {c.page: c.confidence for c in choices}
@@ -460,15 +521,28 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
     if budgets.max_items:
         items = items[:int(budgets.max_items)]
 
+    # -- 0e. the reports bound inside this one ------------------------------
+    # Decided BEFORE the readers, because the parent's narrative reader is
+    # told the ranges: the borings behind that tab are a previous
+    # investigation's and the counts it answers are about this report.
+    ranges = _bound_ranges(profile, labels, doc.n_pages, qa, ingest_bound)
+    told = _identify_bound(doc, engine, out, resume, ranges, spend, qa)
+
     # -- 1-2. the readers ---------------------------------------------------
     _read_items(doc, engine, budgets, out, resume, questions, report_id,
                 items, labels, outline, record, spend, qa, unresolved,
-                workflow, no_text, di_pages)
+                workflow, no_text, di_pages, told, bool(ranges))
 
     # -- 3. the reconciler --------------------------------------------------
     reconcile(record, labels=labels, items=items, no_text_pages=no_text,
               di_pages=di_pages, reader_unresolved=unresolved)
     record.project = _project_from(record)
+
+    # -- 4. each bound document, round this same loop, into its own record --
+    if ranges:
+        _read_bound(doc, engine, budgets, out, resume, report_id, facts,
+                    vision, templates, labelling, ranges, told, record,
+                    children, spend, qa, no_text, di_pages)
     return record
 
 
@@ -504,13 +578,20 @@ def _relabel(roles: Sequence[Any], labels: Dict[int, str],
 
 def _vote_labels(doc: Any, engine: Any, budgets: Budgets, out: str,
                  resume: bool, roles: Sequence[Any], labelling: "_Labelling",
-                 spend: _Spend, qa: List[QAEntry]) -> List[PageChoice]:
+                 spend: _Spend, qa: List[QAEntry]
+                 ) -> Tuple[List[PageChoice], Dict[int, Tuple[str, float]],
+                            Dict[int, Any]]:
     """One :class:`PageChoice` per page, from the voters this run has.
 
     The rules always vote. The vision pass votes unless the policy is
     ``rules``, and a pass that will not run is a QA note and one voter
     fewer rather than a failed report. The template votes only where a
     fingerprint file is in force, which is not the default state.
+
+    The two non-rules voters' answers come back with the choices so that a
+    bound document, whose RULES answer has to be recomputed over its own
+    pages, can be voted on without paying for a second vision pass over
+    pages this one has already looked at.
     """
     table = labelling.resolve()
     rules = {int(r.page): (r.role, float(r.confidence)) for r in roles}
@@ -529,7 +610,7 @@ def _vote_labels(doc: Any, engine: Any, budgets: Budgets, out: str,
             Voter("template", "", match.confidence, match.family)
             if match else None,
             policy=labelling.policy, trust_table=table, page=page))
-    return out_rows
+    return out_rows, vision, templates
 
 
 def _vision_labels(doc: Any, engine: Any, budgets: Budgets, out: str,
@@ -770,6 +851,378 @@ def _labels_blob(choices: Sequence[PageChoice], split: Sequence[int],
     }
 
 
+# ---------------------------------------------------------------------------
+# 0e / 4. the reports bound inside this one
+# ---------------------------------------------------------------------------
+
+def _bound_ranges(profile: Any, labels: Dict[int, str], n_pages: int,
+                  qa: List[QAEntry], ingest_bound: bool) -> List[Any]:
+    """The bound documents' page ranges, or nothing when the pass is off."""
+    from report_ingest.bound import bound_ranges
+
+    if not ingest_bound:
+        return []
+    ranges, notes = bound_ranges(profile, labels, n_pages)
+    qa.extend(notes)
+    return ranges
+
+
+def _identify_bound(doc: Any, engine: Any, out: str, resume: bool,
+                    ranges: Sequence[Any], spend: _Spend,
+                    qa: List[QAEntry]) -> List[Dict[str, Any]]:
+    """One small call per bound document: what it says it IS.
+
+    Cached under the child's own folder, so a resumed run does not pay for
+    it again, and the answer is needed BEFORE the parent's narrative reader
+    runs -- a narrative told "pages 112-184 are a 2009 study by another
+    firm" answers the previous-investigation questions differently from one
+    told only that some pages are bound in.
+    """
+    from report_ingest.bound import identify_bound
+
+    told: List[Dict[str, Any]] = []
+    for row in ranges:
+        path = os.path.join(out, BOUND_DIR, row.bound_id, "identity.json")
+        blob = _cached(path, resume)
+        if blob is None:
+            result = identify_bound(doc, row.pages, engine,
+                                    title_hint=row.title)
+            blob = result.to_dict()
+            _save(path, blob)
+            spend.add(blob.get("cost"))
+        identity = dict(blob.get("identity") or {})
+        warning = str(blob.get("warning") or "")
+        if warning:
+            qa.append(QAEntry(
+                kind="partial", where=f"bound.{row.bound_id}",
+                detail=f"{warning}; the bound document is still read, with "
+                       f"whatever the report it is bound into called it",
+                pages=[row.first_page, row.last_page]))
+        told.append({
+            "bound_id": row.bound_id,
+            "pages": row.spec,
+            "title": identity.get("title") or row.title,
+            "firm": identity.get("firm") or "",
+            "date": identity.get("date") or "",
+            "document_type": identity.get("document_type") or "",
+            "kind": identity.get("kind") or row.kind,
+            "same_site": identity.get("same_site") or "",
+        })
+    return told
+
+
+def _read_bound(doc: Any, engine: Any, budgets: Budgets, out: str,
+                resume: bool, report_id: str, facts: Sequence[Any],
+                vision: Dict[int, Tuple[str, float]],
+                templates: Dict[int, Any], labelling: "_Labelling",
+                ranges: Sequence[Any], told: Sequence[Dict[str, Any]],
+                record: ReportRecord,
+                children: List[Tuple[ReportRecord, str]], spend: _Spend,
+                qa: List[QAEntry], no_text: Sequence[int],
+                di_pages: Sequence[int]) -> None:
+    """Each bound document round this same loop, into its own record."""
+    by_id = {row["bound_id"]: row for row in told}
+    for row in ranges:
+        folder = os.path.join(out, BOUND_DIR, row.bound_id)
+        identity = by_id.get(row.bound_id, {})
+        entry = BoundReport(
+            bound_id=row.bound_id,
+            title=str(identity.get("title") or row.title),
+            firm=str(identity.get("firm") or ""),
+            date=str(identity.get("date") or ""),
+            kind=str(identity.get("kind") or row.kind),
+            document_type=str(identity.get("document_type") or ""),
+            pages=row.spec, first_page=row.first_page,
+            last_page=row.last_page, n_pages=row.n_pages,
+            said_by=list(row.said_by),
+            folder=f"{BOUND_DIR}/{row.bound_id}",
+            record_path=f"{BOUND_DIR}/{row.bound_id}/{OUTPUT_NAMES[0]}")
+        try:
+            child = _one_bound(doc, engine, budgets, folder, resume,
+                               report_id, facts, vision, templates,
+                               labelling, row, identity, record, spend,
+                               no_text, di_pages)
+        except Exception as exc:              # one child, not the report
+            entry.read = False
+            entry.report_id = _bound_report_id(report_id, row.bound_id)
+            qa.append(QAEntry(
+                kind="skipped", where=f"bound.{row.bound_id}",
+                detail=f"the report bound in at pages {row.spec} could not "
+                       f"be read as its own document: "
+                       f"{type(exc).__name__}: {exc}; its pages stay listed "
+                       f"here and nothing of it is in this record",
+                pages=[row.first_page, row.last_page]))
+            record.bound_documents.append(entry)
+            continue
+        entry.report_id = child.document.report_id
+        entry.counts = child.counts()
+        record.bound_documents.append(entry)
+        children.append((child, folder))
+        qa.append(QAEntry(
+            kind="note", where=f"bound.{row.bound_id}",
+            detail=(f"pages {row.spec} are a report bound inside this one "
+                    f"({', '.join(row.said_by) or 'triage'} said so) and "
+                    f"were read into their own record at "
+                    f"{entry.record_path}; its "
+                    f"{entry.counts.get('investigations', 0)} "
+                    f"exploration(s) and {entry.counts.get('lab_tests', 0)} "
+                    f"laboratory test(s) are ITS and are not in this "
+                    f"record"),
+            pages=[row.first_page, row.last_page]))
+
+
+def _bound_report_id(report_id: str, bound_id: str) -> str:
+    """The child's own handle: the parent's, then its own, or just its own."""
+    return f"{report_id}.{bound_id}" if report_id else bound_id
+
+
+def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
+               resume: bool, report_id: str, facts: Sequence[Any],
+               vision: Dict[int, Tuple[str, float]],
+               templates: Dict[int, Any], labelling: "_Labelling",
+               row: Any, identity: Dict[str, Any], parent: ReportRecord,
+               spend: _Spend, no_text: Sequence[int],
+               di_pages: Sequence[int]) -> ReportRecord:
+    """One bound document as its own record, on the parent's page numbers.
+
+    THE RULES ARE RE-RUN, THE OTHER VOTERS ARE NOT. planlens labels every
+    page of a nested document ``appended_report`` -- that is the rules'
+    answer about the BINDING, and it is right about the parent. So the rules
+    are re-run over the child's pages REBASED to 0, which is what makes a
+    cover a cover and a boring log a boring log again; the vision pass and
+    the printed-form recogniser already answered about these pages and their
+    answers are reused verbatim, because a page's picture does not change
+    when you stop calling it an appendix.
+
+    Everything the child stores is on the PARENT file's page numbers. There
+    is one PDF.
+    """
+    import dataclasses
+
+    from planlens.document.roles import assign, build_items, outline_from
+    from report_ingest.label_vote import Voter, combine
+    from report_ingest.reconciler import reconcile
+
+    os.makedirs(os.path.join(folder, "items"), exist_ok=True)
+    window = [int(p) for p in row.pages]
+    at = {page: index for index, page in enumerate(window)}
+
+    inner = [dataclasses.replace(f, page=at[f.page]) for f in facts
+             if f.page in at]
+    inner_roles = assign(inner)
+    rules = {window[r.page]: (r.role, float(r.confidence))
+             for r in inner_roles}
+
+    table = labelling.resolve()
+    choices = []
+    for page in window:
+        role, confidence = rules.get(page, ("", None))
+        if role == APPENDED_LABEL:
+            role, confidence = "", None
+        seen = vision.get(page)
+        # INSIDE a bound document, ``appended_report`` is not an answer about
+        # what a page is -- it is the whole document's situation, and it is
+        # this record's premise. A voter that says it has no view here, which
+        # is different from voting for it and being outvoted: it must not
+        # count as a disagreement either.
+        if seen and seen[0] == APPENDED_LABEL:
+            seen = None
+        match = templates.get(page)
+        choices.append(combine(
+            Voter("rules", role, confidence),
+            Voter("vision", seen[0], seen[1]) if seen else None,
+            Voter("template", "", match.confidence, match.family)
+            if match else None,
+            policy=labelling.policy, trust_table=table, page=page))
+    labels = {c.page: c.label for c in choices}
+    split = split_pages(choices)
+
+    # The items, built on the child's own numbering and translated back.
+    voted = [dataclasses.replace(f, page=at[f.page]) for f in facts
+             if f.page in at]
+    roles = _relabel([r for r in inner_roles],
+                     {at[p]: label for p, label in labels.items()},
+                     {at[c.page]: c.confidence for c in choices})
+    items = [_rebase_item(item, window) for item in build_items(voted, roles)]
+    if budgets.max_items:
+        # The same ceiling as the parent's, applied to this document: a
+        # smoke run over a big report must not turn into a full run of the
+        # report bound inside it.
+        items = items[:int(budgets.max_items)]
+
+    def lines_of(index: int) -> List[str]:
+        return [line.text for line in doc.page(index, tables=False).lines
+                if (line.text or "").strip()]
+
+    outline = outline_from(
+        [f for f in facts if f.page in at],
+        _relabel([dataclasses.replace(r, page=window[r.page])
+                  for r in inner_roles], labels,
+                 {c.page: c.confidence for c in choices}),
+        lines_of)
+
+    child = ReportRecord()
+    child.document = DocumentFacts(
+        report_id=_bound_report_id(report_id, row.bound_id),
+        n_pages=len(window),
+        page_roles=_role_counts(labels),
+        scan_fraction=_scan_fraction(facts, at),
+        di_pages=len([p for p in di_pages if p in at]),
+        planlens_version=_planlens_version(),
+        workflow=_bound_workflow(labels),
+        label_policy=labelling.policy,
+        label_split_pages=len(split),
+        review_mode="none")
+    child.parent = ParentReport(
+        report_id=parent.document.report_id,
+        bound_id=row.bound_id,
+        pages=row.spec, first_page=row.first_page,
+        last_page=row.last_page, n_pages=row.n_pages,
+        record_path=f"../../{OUTPUT_NAMES[0]}")
+    child.page_labels = [_page_label(c, {}) for c in choices]
+
+    qa: List[QAEntry] = [QAEntry(
+        kind="note", where="bound",
+        detail=(f"this record is a report bound inside another one, at pages "
+                f"{row.spec} of that file; every page number in it is a page "
+                f"of that same file. The page labels are the vote's "
+                f"(planlens' rules re-run over these pages alone, with the "
+                f"whole file's vision pass reused); the label review does "
+                f"not run over a bound document"),
+        pages=[row.first_page, row.last_page])]
+    for name, value in (("title", identity.get("title")),
+                        ("firm", identity.get("firm")),
+                        ("date", identity.get("date"))):
+        if not value:
+            qa.append(QAEntry(
+                kind="partial", where=f"bound.identity.{name}",
+                detail=f"this bound report prints no {name} on the pages it "
+                       f"was identified from",
+                pages=[row.first_page]))
+    for choice in choices:
+        if choice.agreed:
+            continue
+        qa.append(QAEntry(
+            kind="label_disagreement", where=f"labels.page{choice.page}",
+            detail=(f"the page labellers did not agree, and a bound document "
+                    f"does not get the label review; the record calls page "
+                    f"{choice.page} '{choice.label}' under the "
+                    f"'{choice.policy}' policy"),
+            values=[_voter_line(v) for v in choice.voters],
+            pages=[choice.page]))
+
+    unresolved: List[Dict[str, Any]] = []
+    inner_spend = _Spend()
+    started = time.time()
+    # A report bound inside a report bound inside a report is where this
+    # stops: the child's own ``appended_report`` pages are listed in its QA
+    # and not read again. One level is what the corpus has and what a record
+    # of a record of a record would be worth.
+    _read_items(doc, engine, budgets, folder, resume, (),
+                child.document.report_id, items, labels, outline, child,
+                inner_spend, qa, unresolved, child.document.workflow,
+                [p for p in no_text if p in at],
+                [p for p in di_pages if p in at],
+                window=window)
+    _save(os.path.join(folder, "labels.json"),
+          _labels_blob(choices, split, {},
+                       dataclasses.replace(labelling, review_mode="none"),
+                       len(window)))
+    _seed_from_identity(child, identity, qa, row)
+
+    reconcile(child, labels=labels, items=items,
+              no_text_pages=[p for p in no_text if p in at],
+              di_pages=[p for p in di_pages if p in at],
+              reader_unresolved=unresolved)
+    child.project = _project_from(child)
+    child.qa.extend(qa)
+    child.document.model_calls = inner_spend.calls
+    child.document.input_tokens = inner_spend.input_tokens
+    child.document.output_tokens = inner_spend.output_tokens
+    child.document.dollars = round(inner_spend.dollars, 5)
+    child.document.seconds = round(time.time() - started, 1)
+    spend.add({"calls": inner_spend.calls,
+               "input_tokens": inner_spend.input_tokens,
+               "output_tokens": inner_spend.output_tokens,
+               "dollars": inner_spend.dollars,
+               "seconds": inner_spend.seconds})
+    return child
+
+
+def _seed_from_identity(child: ReportRecord, identity: Dict[str, Any],
+                        qa: List[QAEntry], row: Any) -> None:
+    """What the bound document's own cover said, where the prose said nothing.
+
+    A data report bound into a design report often has no narrative at all --
+    its workflow is ``appendix_only`` and the reader that answers the owner's
+    schemas never runs. Its cover still names the firm and the date, and the
+    identity call read them off it. Filling ONLY the nulls keeps the
+    narrative's answer wherever there is one, and the QA entry says which
+    fields came off a cover rather than out of the prose, because those two
+    are not the same kind of answer.
+    """
+    from report_ingest.model import DOCUMENT_TYPE_VALUES
+
+    filled: List[str] = []
+    kind = str(identity.get("document_type") or "")
+    if child.general.documentType is None and kind in DOCUMENT_TYPE_VALUES:
+        child.general.documentType = kind          # type: ignore[assignment]
+        filled.append("documentType")
+    firm = str(identity.get("firm") or "").strip()
+    if not child.general.geotechnicalEngineerFirm and firm:
+        child.general.geotechnicalEngineerFirm = firm
+        filled.append("geotechnicalEngineerFirm")
+    date = str(identity.get("date") or "").strip()
+    if not child.natural_hazards.reportDate and date:
+        child.natural_hazards.reportDate = date
+        filled.append("reportDate")
+    if filled:
+        qa.append(QAEntry(
+            kind="note", where="bound.identity",
+            detail=f"{', '.join(filled)} came off this bound report's own "
+                   f"cover or letterhead rather than out of its narrative",
+            pages=[row.first_page]))
+
+
+def _rebase_item(item: Any, window: Sequence[int]) -> Any:
+    """One work item's pages back onto the parent file's numbering."""
+    import dataclasses
+
+    return dataclasses.replace(
+        item, pages=[int(window[p]) for p in item.pages],
+        evidence={**dict(item.evidence),
+                  "first_page": int(window[item.pages[0]])}
+        if item.pages else dict(item.evidence))
+
+
+def _role_counts(labels: Dict[int, str]) -> Dict[str, int]:
+    out: Dict[str, int] = {}
+    for label in labels.values():
+        out[label] = out.get(label, 0) + 1
+    return out
+
+
+def _scan_fraction(facts: Sequence[Any], at: Dict[int, int]) -> float:
+    rows = [f for f in facts if f.page in at]
+    if not rows:
+        return 0.0
+    scanned = sum(1 for f in rows if getattr(f, "kind", "") == "scanned")
+    return scanned / len(rows)
+
+
+def _bound_workflow(labels: Dict[int, str]) -> str:
+    """A bound document's workflow, from its own pages and no model call.
+
+    There is nothing for a triage pass to choose here: the file was already
+    triaged, and what is left to decide is whether this document has a
+    narrative to read. ``appendix_only`` is the honest answer for a data
+    report bound into a design report, and it is what stops the narrative
+    reader answering the owner's schemas off a boring log.
+    """
+    return "standard" if "narrative" in set(labels.values()) \
+        else "appendix_only"
+
+
 def _project_from(record: ReportRecord) -> Project:
     """The project block, from what the narrative answered about it."""
     general = record.general
@@ -783,7 +1236,10 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                 items: Sequence[Any], labels: Dict[int, str], outline: Any,
                 record: ReportRecord, spend: _Spend, qa: List[QAEntry],
                 unresolved: List[Dict[str, Any]], workflow: str,
-                no_text: Sequence[int], di_pages: Sequence[int]) -> None:
+                no_text: Sequence[int], di_pages: Sequence[int],
+                bound_told: Sequence[Dict[str, Any]] = (),
+                bound_read: bool = False,
+                window: Optional[Sequence[int]] = None) -> None:
     from report_ingest.model import (
         GeneralFacts, Investigation, LabTest, NarrativeFacts,
         NaturalHazardFacts,
@@ -797,15 +1253,26 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
         reader = ITEM_READERS.get(item.kind)
         pages = [int(p) for p in item.pages]
         if reader is None:
-            if item.kind in ("calculation", "appended_report"):
+            if item.kind == "calculation":
                 qa.append(QAEntry(
-                    kind="skipped", where=f"items.{item.kind}",
-                    detail=(
-                        "calculation printouts are not read yet (work package "
-                        "5); the pages are listed here so they are not "
-                        "forgotten" if item.kind == "calculation" else
-                        "a report bound inside this one was not read as its "
-                        "own document; its pages are listed here"),
+                    kind="skipped", where="items.calculation",
+                    detail="calculation printouts are not read yet (work "
+                           "package 5); the pages are listed here so they "
+                           "are not forgotten",
+                    pages=pages))
+            elif item.kind == "appended_report":
+                # Whether these pages became a record of their own is
+                # decided by the bound pass, not here: this item is one run
+                # of ``appended_report`` pages and a bound document may be
+                # the union of this run and what triage said around it.
+                qa.append(QAEntry(
+                    kind="note" if bound_read else "skipped",
+                    where="items.appended_report",
+                    detail=("a report bound inside this one; its pages are "
+                            "read into their own record and are listed on "
+                            "bound_documents" if bound_read else
+                            "a report bound inside this one was not read as "
+                            "its own document; its pages are listed here"),
                     pages=pages))
             continue
 
@@ -832,7 +1299,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
             if reader == "narrative":
                 blob = cached or _read_narrative(
                     doc, pages, engine, budgets, outline, report_id, body,
-                    questions)
+                    questions, bound_told, window)
                 if cached is None:
                     _save(path, blob)
                 spend.add(blob.get("cost"))
@@ -915,11 +1382,12 @@ def _vote_qa(qa: List[QAEntry], blob: Dict[str, Any],
 
 
 def _read_narrative(doc, pages, engine, budgets, outline, report_id, body,
-                    questions) -> Dict[str, Any]:
+                    questions, bound_told=(), window=None) -> Dict[str, Any]:
     from report_ingest.narrative_reader import read_narrative
     result = read_narrative(doc, pages, engine, budget=budgets.narrative,
                             outline=outline, report_id=report_id,
-                            body_pages=body or pages, questions=questions)
+                            body_pages=body or pages, questions=questions,
+                            bound_documents=bound_told, window=window)
     return result.to_dict()
 
 

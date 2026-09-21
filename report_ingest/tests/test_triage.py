@@ -175,6 +175,30 @@ def test_a_bound_together_document_survives_into_the_profile(synthetic, roles):
     assert profile.to_dict()["bound_together"][0]["pages"] == "14-18"
 
 
+def test_the_bound_kinds_are_the_ones_the_pipeline_can_build():
+    """One list, in the module that turns a bound document into a record.
+
+    Two copies of this enumeration would be two enumerations, and the one
+    triage may answer with has to be the one the rest of the pipeline knows
+    what to do with.
+    """
+    from report_ingest import bound, triage as triage_module
+
+    assert triage_module.BOUND_KINDS is bound.BOUND_KINDS
+    for kind in bound.BOUND_KINDS:
+        assert kind in triage_module.BoundDocument.model_fields[
+            "kind"].description
+
+
+def test_the_prompt_says_the_answer_is_acted_on():
+    """A model told its answer is ACTED ON answers differently from one told
+    only that its answer is read."""
+    from report_ingest.triage import TRIAGE_SYSTEM
+
+    assert "answer is ACTED ON" in TRIAGE_SYSTEM
+    assert "leave the list empty when this is one" in TRIAGE_SYSTEM
+
+
 def test_no_structured_answer_is_an_error_not_an_empty_profile(synthetic,
                                                               roles):
     doc, _ = synthetic

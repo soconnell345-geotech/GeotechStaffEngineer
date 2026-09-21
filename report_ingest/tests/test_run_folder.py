@@ -58,7 +58,28 @@ class TestAFolderRun:
             "SELECT report_id, n_investigations FROM reports "
             "ORDER BY report_id").fetchall()
         connection.close()
-        assert rows == [("R01", 2), ("R02", 2)]
+        # FOUR rows from two files: each carries a report bound inside it
+        # (the synthetic report's pages 15-18), and a bound document is a
+        # record and a library row of its own. Its one boring is ITS one
+        # boring -- the two on its parent's row do not include it.
+        assert rows == [("R01", 2), ("R01.bound1", 1),
+                        ("R02", 2), ("R02.bound1", 1)]
+
+    def test_a_bound_document_points_at_the_report_it_came_out_of(
+            self, folder, tmp_path):
+        run = _run(folder, tmp_path / "out")
+
+        connection = sqlite3.connect(run.db)
+        rows = dict(connection.execute(
+            "SELECT report_id, parent FROM reports").fetchall())
+        ids = dict(connection.execute(
+            "SELECT report_id, id FROM reports").fetchall())
+        connection.close()
+        assert rows["R01"] == "" and rows["R02"] == ""
+        assert rows["R01.bound1"] == ids["R01"]
+        assert rows["R02.bound1"] == ids["R02"]
+        assert (tmp_path / "out" / "R01" / "bound" / "bound1"
+                / "report.record.json").is_file()
 
     def test_each_report_has_its_own_folder_of_outputs(self, folder,
                                                        tmp_path):
@@ -75,7 +96,8 @@ class TestAFolderRun:
 
         text = (tmp_path / "out" / "INDEX.md").read_text(encoding="utf-8")
         assert "2 report(s), 0 failed" in text
-        assert "| R01 | 22 | standard | 2 | 2 |" in text
+        assert "| R01 | 22 | standard | 2 | 2 | 1 |" in text
+        assert "`Bound in` counts reports bound inside that one" in text
         blob = json.loads(
             (tmp_path / "out" / "index.json").read_text(encoding="utf-8"))
         assert blob["n_reports"] == 2 and blob["n_failed"] == 0
@@ -121,7 +143,10 @@ class TestSurvival:
         (count,) = connection.execute(
             "SELECT count(*) FROM reports").fetchone()
         connection.close()
-        assert count == 1
+        # Two rows, not four: the file's own record and the one report bound
+        # inside it. The copy is the same bytes, so it is the same document
+        # and the same two rows, written twice.
+        assert count == 2
         text = (tmp_path / "out" / "INDEX.md").read_text(encoding="utf-8")
         assert "## The same document twice" in text
 

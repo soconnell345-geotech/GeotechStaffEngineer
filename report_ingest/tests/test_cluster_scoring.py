@@ -1994,11 +1994,14 @@ class TestTheIngestStage:
         (out / "runs" / "R36.json").write_text(json.dumps(
             _run_blob("R36", 22, rules, rules)), encoding="utf-8")
         # No triage turn and no review turns: both come off the saved run.
-        scripts["turns"] = ([tg.narrative_turn()]
+        # The identity call for the report bound in at pages 15-18 and that
+        # report's own two readers are NOT saved by a label run and are paid.
+        scripts["turns"] = ([tg.identity_turn(), tg.narrative_turn()]
                             + [tg.log_turn("B-1"),
                                tg.log_turn("TP-1", "test_pit")]
                             + [tg.lab_turn("atterberg", 12),
-                               tg.lab_turn("gradation", 13)])
+                               tg.lab_turn("gradation", 13)]
+                            + tg.bound_reader_turns())
         results = _ingest_run(ingest_cluster)
         (row,) = results["ingest"]["per_report"]
         assert row["triage_reused"] is True and row["review_reused"] is True

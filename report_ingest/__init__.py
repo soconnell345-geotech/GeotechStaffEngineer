@@ -40,6 +40,12 @@ record and its exports out -- and the pieces it drives are:
 ``report_ingest.narrative_reader``
     The narrative read into the owner's two standing query schemas, with a
     citation on every answer and null wherever the report does not say.
+``report_ingest.bound``
+    A report bound INSIDE a report -- an earlier firm's investigation
+    reproduced as an appendix, a bridging report bound into the design-build
+    report that answers it -- and where its pages begin and end. Each becomes
+    its OWN record under ``out_dir/bound/<id>/``, so that its borings are its
+    own and the report they are bound into does not count them as its.
 ``report_ingest.reconciler``
     The only pass that sees every reading at once: it links the laboratory
     tests to the ground, counts what the narrative claimed against what the

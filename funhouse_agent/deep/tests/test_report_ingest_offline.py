@@ -211,7 +211,8 @@ class TestARunThroughTheTool:
     def test_the_caller_s_questions_ride_through(self, pdf, tmp_path):
         from report_ingest.narrative_reader import ReadExtra
         from report_ingest.tests.test_graph import (
-            lab_turn, log_turn, narrative_turn, triage_turn, vision_turns,
+            bound_reader_turns, identity_turn, lab_turn, log_turn,
+            narrative_turn, triage_turn, vision_turns,
         )
         from report_ingest.narrative_reader import NarrativeReading
 
@@ -222,9 +223,11 @@ class TestARunThroughTheTool:
                 answer="A minimum of 0.6 m below finished grade.",
                 page=4, quote="a minimum embedment of 0.6 m")]})
         assert isinstance(reading, NarrativeReading)
-        script = ([triage_turn()] + vision_turns() + [{"final": reading}]
+        script = ([triage_turn()] + vision_turns() + [identity_turn()]
+                  + [{"final": reading}]
                   + [log_turn("B-1"), log_turn("TP-1", "test_pit"),
-                     lab_turn("atterberg", 12), lab_turn("gradation", 13)])
+                     lab_turn("atterberg", 12), lab_turn("gradation", 13)]
+                  + bound_reader_turns())
         (tool,) = make_report_ingest_tool(engine=FakeEngine(script),
                                           out_dir=str(tmp_path))
         answer = json.loads(tool.invoke(
@@ -234,6 +237,21 @@ class TestARunThroughTheTool:
         assert answer["answers"] == [
             {"question": "What embedment is required?",
              "answer": "A minimum of 0.6 m below finished grade."}]
+
+    def test_a_report_bound_inside_the_one_asked_for_comes_back_named(
+            self, pdf, tmp_path):
+        engine = FakeEngine(full_script())
+        (tool,) = make_report_ingest_tool(engine=engine,
+                                          out_dir=str(tmp_path))
+        answer = json.loads(tool.invoke({"source": str(pdf)}))
+
+        (child,) = answer["bound_documents"]
+        assert child["title"] == "Former Owner Site Study"
+        assert child["pages"] == "15-18"
+        assert child["holds"].startswith("1 exploration(s)")
+        assert child["record"].endswith("report.record.json")
+        # The primary agent is told, but never handed the second record.
+        assert len(json.dumps(answer)) < 4000
 
     def test_an_attachment_key_resolves(self, tmp_path):
         engine = FakeEngine(full_script())
