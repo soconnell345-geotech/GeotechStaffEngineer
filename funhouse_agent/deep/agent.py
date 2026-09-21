@@ -62,6 +62,7 @@ except Exception:  # noqa: BLE001 - layout differs: leave deepagents' default
     _GENERAL_PURPOSE_SPEC = None
 from funhouse_agent.deep.prompt import (
     REPORT_INGEST_NUDGE,
+    REPORT_LIBRARY_NUDGE,
     build_domain_prompt,
 )
 from funhouse_agent.deep.setup_agent import build_setup_subagent
@@ -654,6 +655,13 @@ def _join_prompts(*parts):
 #: none was forgotten.
 DEFAULT_REPORT_INGEST_MAX_MODEL_CALLS = 4
 
+#: The library sub-agent's ceilings. Unlike the ingest's, the tool-call one is
+#: REAL: the graph counts queries in Python and refuses the next one, because
+#: middleware on a CompiledSubAgent's spec reaches no model. The model-call
+#: entry beside it is the same declaration every other sub-agent carries.
+DEFAULT_REPORT_LIBRARY_MAX_TOOL_CALLS = 8
+DEFAULT_REPORT_LIBRARY_MAX_MODEL_CALLS = 10
+
 
 def _report_ingest_engine_factory(engine):
     """A factory that digs the app's live Prompter out of ``engine``.
@@ -702,6 +710,10 @@ def build_deep_agent(
     report_ingest_db: Optional[str] = None,
     report_ingest_max_model_calls: Optional[int] =
     DEFAULT_REPORT_INGEST_MAX_MODEL_CALLS,
+    enable_report_library: bool = False,
+    library_root: Optional[str] = None,
+    library_db: Optional[str] = None,
+    library_max_tool_calls: Optional[int] = None,
     store=None,
     checkpointer=None,
     enable_memory: bool = False,
@@ -947,6 +959,21 @@ def build_deep_agent(
         if ingest_tools:
             tools = list(tools) + list(ingest_tools)
             system_prompt = system_prompt + "\n\n" + REPORT_INGEST_NUDGE
+    # The report LIBRARY: the same shape, the other half of the job. Its
+    # feature detection is the FOLDER rather than a package version — a
+    # deployment either has reports read into it or does not, and a library
+    # agent over an empty folder would only teach the primary to ask it
+    # things nothing can answer.
+    library_tools = []
+    if enable_report_library:
+        from funhouse_agent.deep.tools import make_report_library_tool
+        library_tools = make_report_library_tool(
+            model=model, library_root=library_root, db_path=library_db,
+            max_result_chars=max_result_chars,
+            max_tool_calls=library_max_tool_calls)
+        if library_tools:
+            tools = list(tools) + list(library_tools)
+            system_prompt = system_prompt + "\n\n" + REPORT_LIBRARY_NUDGE
 
     subagents = []
     if reference_mode != "off":
@@ -1001,6 +1028,23 @@ def build_deep_agent(
                 resolve_source=lambda source: _resolve_ingest_source(
                     source, attachments),
                 max_model_calls=report_ingest_max_model_calls,
+            )
+        )
+    if library_tools:
+        # The library's twin CompiledSubAgent: a model with the query layer
+        # bound as tools, answering only from the records. Attached only when
+        # the tool was built, so the primary is never told to delegate to a
+        # library that is not there.
+        from report_ingest.library_agent import build_report_library_subagent
+        subagents.append(
+            build_report_library_subagent(
+                model,
+                library_root=library_root,
+                db_path=library_db,
+                max_tool_calls=(library_max_tool_calls
+                                or DEFAULT_REPORT_LIBRARY_MAX_TOOL_CALLS),
+                max_result_chars=max_result_chars,
+                max_model_calls=DEFAULT_REPORT_LIBRARY_MAX_MODEL_CALLS,
             )
         )
     if enable_setup_agent:

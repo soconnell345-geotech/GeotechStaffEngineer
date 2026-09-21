@@ -1,0 +1,45 @@
+{
+  "_what_this_is": "The shape of the private library_questions.json the cluster half of the WP7 measurement reads. The REAL file lives in the truth folder (gitignored) and names the corpus ids (R01-R38); the five questions here are synthetic, against the synthetic library that report_ingest/tests/library_fixtures.py builds, and are committed only so the shape is readable without the corpus.",
+  "_how_it_is_scored": "Each question goes to the report_library sub-agent. The answer's citations[] carry the report ids it actually cited and the pages behind them; the score is precision and recall of those report ids against 'reports' below, plus how often a question whose answer is not in the library was answered with a gap rather than with prose. 'pages' is optional and scored only where it is given.",
+  "_conventions": {
+    "reports": "every report id a correct answer must cite; an empty list means the library does not hold the answer and the right answer says so",
+    "pages": "optional [report, page] pairs a correct answer must cite; 0-based PDF pages, the same numbering the records use",
+    "must_say_no": "true where the question is deliberately unanswerable from the library"
+  },
+  "questions": [
+    {
+      "id": "Q01",
+      "question": "Which reports in the library were written for the Vale Harbour post?",
+      "reports": ["L02", "L02-bound1", "L05"],
+      "note": "a filter question; list_reports(post=...) answers it, and the report bound inside L02 belongs to the same post"
+    },
+    {
+      "id": "Q02",
+      "question": "Which of these sites was called potentially liquefiable, and on what page does the report say so?",
+      "reports": ["L02"],
+      "pages": [["L02", 3]],
+      "note": "a compare question with a page the answer must cite"
+    },
+    {
+      "id": "Q03",
+      "question": "Which report and page prints an allowable bearing pressure of 3,000 psf?",
+      "reports": ["L01"],
+      "pages": [["L01", 4]],
+      "note": "a where_is question; the retrieval also hits a second report that recommends spread footings, so the answer has to pick the one that prints the number"
+    },
+    {
+      "id": "Q04",
+      "question": "Who wrote the earlier study bound inside the Harbour Gate report, and which pages of that report did it occupy?",
+      "reports": ["L02-bound1"],
+      "pages": [["L02-bound1", 15]],
+      "note": "a bound document is its own report of the library; the answer must name it as such rather than crediting its boring to the parent"
+    },
+    {
+      "id": "Q05",
+      "question": "What pile driving records does the library hold for the Larkspur Ridge parcel?",
+      "reports": [],
+      "must_say_no": true,
+      "note": "the library holds no pile driving record for any report; the right answer says the library does not hold it and does not describe what such a record usually contains"
+    }
+  ]
+}

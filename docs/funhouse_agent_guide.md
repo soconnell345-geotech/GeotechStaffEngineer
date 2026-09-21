@@ -346,6 +346,30 @@ And it runs on **the app's own engine**: where the host built the agent with
 no Prompter the tool still exists and returns a plain "unavailable here",
 which is a better answer than a missing tool the model invents a way around.
 
+### `report_ingest` and `report_library` — the two halves, both OFF by default
+
+They are a pair and the boundary between them is the point. **`report_ingest`
+READS a report nobody has read yet**: one PDF in, a record and its four exports
+out, on the app's own engine, one bounded reader call at a time.
+**`report_library` ANSWERS from the reports already read**:
+`build_deep_agent(enable_report_library=True, library_root=…)` adds a
+`report_library(question)` primary tool and a sub-agent over the folder the
+ingest wrote, with ten queries — list and filter the reports, search their text,
+pull or compare any of the 37 narrative fields, list the explorations, the
+laboratory tests, the calculations, the things a person should look at, and what
+the library holds altogether. It opens no PDF and calls no reader, so it costs
+the model that writes the sentence and nothing else. Every fact it states is
+cited `(report id, page)`, and those citations are CHECKED against what the
+queries returned before the answer reaches the primary: one the queries did not
+produce is reported as a gap rather than passed on. Where the library holds no
+answer it says so — a report nobody ingested is not in the library, and
+`report_ingest` is what puts it there. Like the ingest it is feature-detected,
+but on the FOLDER rather than on a package version: with no `report.record.json`
+under `library_root` the tool is never advertised and the prompt line telling
+the primary to delegate is never added. A freshly ingested report is queryable
+in the same session — the ingest's result now names the `library_root` its row
+landed in.
+
 ## File Output (save_fn) — verified writes
 
 By default, files save to the local filesystem, and every `save_file` write is

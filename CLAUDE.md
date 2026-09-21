@@ -73,6 +73,97 @@ Key conventions:
 
 ## CURRENT WORKING STATE (2026-09-20) — 5.24.0 ON MASTER (the log-template recogniser + the narrative levers) with planlens 0.6.0
 
+- **UNRELEASED on master since 5.24.0** — the reports already read become a LIBRARY that can be asked questions
+
+**No version bump, no tag.** Pure Python inside `report_ingest`, no dependency
+change, two new modules (`report_ingest/library.py`,
+`report_ingest/library_agent.py`), one new sub-agent and one new primary tool,
+both **OFF by default**, and no new model call anywhere in the ingest.
+
+**Why.** The ingest reads ONE report; every question the owner actually asks
+spans many. "Which of these sites was called potentially liquefiable", "what
+did each firm recommend", "which report and page prints that bearing pressure",
+"where do two readings disagree" — all of it was answerable only by opening
+records by hand, one folder at a time, on whichever machine still had them.
+`run_folder` has written a `reports.db` since the first version and nothing
+read it back.
+
+**What is built.**
+
+1. **`Library(root)` over the folder the ingest writes** —
+   `<root>/<ID>/report.record.json`, `report.page.md`, `report.summary.md`,
+   `bound/<child>/...`, plus `reports.db`. **The index is DERIVED and the
+   records are the truth**: a folder restored from SharePoint with no database
+   beside it, or one whose records were rewritten since, rebuilds on the next
+   question — both the `reports` rows the writers own and the full-text index
+   the library adds — checked by mtimes against a stamp in `meta`. A rebuild
+   reads each report's key off its own `report.page.md` front matter, so a
+   report keeps the identity the ingest gave it from its source file's bytes
+   rather than acquiring a second one. **Nothing is written back into a
+   record.**
+2. **Ten query functions, every row carrying the report id and the PDF
+   pages**: `list_reports` (post, property type, phase, firm, date range,
+   document type, has-kind), `find` (FTS5 + fuzzy, snippet and pages),
+   `where_is`, `facts` (any of the 37 narrative fields with its pages and the
+   quote; a field the report did not answer is NAMED, not returned empty),
+   `compare` (one field across reports, with the silent ones named),
+   `explorations`, `lab_summary`, `calculations`, `disagreements` (the six QA
+   kinds a person should look at — a `note` and a `skipped` are not among
+   them), `library_stats`.
+3. **Search is FTS5 the way the reference layer does it** — contentless
+   external-content table, `porter unicode61`, BM25 with the subject weighted
+   over the text. The chunks come from the RECORD, because the record is what
+   carries pages, AND from the written page and summary block by block. The
+   **rapidfuzz fallback runs on the field VALUES**, not on whole chunks: a
+   twenty-character query against four hundred characters scores as a mismatch
+   however close the firm's name inside it is. It fires only when the
+   full-text query comes back thin, and never under four characters.
+4. **A report bound inside another is a report of the library in its own
+   right** — its own row, its own id, `parent` naming the one it came out of.
+   Its borings are its borings and the parent's counts stay the parent's.
+5. **`report_library`, a `CompiledSubAgent` + one primary tool**, both OFF by
+   default (`build_deep_agent(enable_report_library=True, library_root=…)`)
+   and **feature-detected on the FOLDER** rather than on a version: a
+   deployment either has reports read into it or does not. The ten queries are
+   JSON-Schema tool specs bound to **the app's own chat model** (unlike the
+   ingest, which runs readers on its own engine). Its prompt states the one
+   rule — every fact comes from a tool result in that conversation — plus cite
+   `(report id, page)` after every fact, say plainly when the library holds no
+   answer, and end with a `Gap:` line per thing unsettled.
+6. **The ceilings are Python**, because deepagents reads no middleware on a
+   CompiledSubAgent: the graph counts its own queries (8 per answer, refused
+   with a message telling the model to answer from what it has) and caps every
+   result at 25 rows and 4,000 characters.
+7. **The citations are CHECKED, not copied.** The structured response is
+   `answer`, `citations[]`, `reports_consulted[]`, `gaps[]`, `queries`,
+   `error`; a `(report, page)` the answer claims and no query returned is left
+   OUT of `citations` and NAMED in `gaps`, so an invented page is visible
+   rather than silently dropped or silently kept. An empty query and a failed
+   query are gaps too.
+8. **The ingest's own result gains `library_root`** — the folder its database
+   sits in — so a report read this turn is queryable this turn.
+
+**Measured 2026-09-21, no model and no network**
+(`module_work/report_ingest_harness/measure_wp7_library.py`): twenty
+hand-written questions over a synthetic library of six records (seven rows,
+one bound), each with the report ids and pages a correct answer must carry.
+**The chosen query — what the sub-agent's tool call returns — scores reports
+0.949 precision / 1.000 recall and pages 0.939 / 1.000.** **Search alone —
+the question's own prose into `find()` and nothing else, the floor a model
+gets when it reaches for search instead of the right query — scores reports
+0.647 / 0.943 and pages 0.417 / 0.323.** The two remaining false positives
+are honest: a second report genuinely prints "spread footings", and a second
+one genuinely discusses seismic hazard. **THE MODEL HALF IS UNMEASURED** —
+the cell for it is in `report_ingest/README.md` ("The report library"), it
+needs no PDF and no page truth, only a private `library_questions.json`
+beside the library, and it is scored on the report ids the answer CITES.
+
+**Suites:** `report_ingest` **1,296**, harness **266**, deep-agent wiring
+**350**, docs-currency green.
+**Next:** run the library questions on the cluster against the real corpus
+library, and read whether the answers cite the right reports and whether an
+unanswerable question comes back as a gap.
+
 - **UNRELEASED on master since 5.24.0** — the test pits, the cone soundings and the dynamic probes are read
 
 **No version bump, no tag.** Pure Python inside `report_ingest`, no dependency

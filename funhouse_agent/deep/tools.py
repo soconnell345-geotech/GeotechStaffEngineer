@@ -957,7 +957,9 @@ __all__ = [
     "make_core_tools",
     "make_vision_tools",
     "make_report_ingest_tool",
+    "make_report_library_tool",
     "REPORT_INGEST_DESCRIPTION",
+    "REPORT_LIBRARY_DESCRIPTION",
     "DEFAULT_MAX_RESULT_CHARS",
     "DEFAULT_REFERENCE_RESULT_CHARS",
     "SEARCH_NARROWER_NUDGE",
@@ -1078,3 +1080,76 @@ def _report_ingest_out_dir(source: str) -> str:
 
     stem = os.path.splitext(os.path.basename(str(source)))[0] or "report"
     return os.path.join(default_output_dir(), "report_ingest", stem)
+
+
+# ---------------------------------------------------------------------------
+# the report LIBRARY (report_library), as ONE primary tool
+# ---------------------------------------------------------------------------
+
+#: What the model is told the library tool does. About the SHAPE of the job
+#: again, and about the boundary with the ingest: this one answers from the
+#: reports already read and cannot read a new one.
+REPORT_LIBRARY_DESCRIPTION = (
+    "Ask a question ACROSS the geotechnical reports that have already been "
+    "read into records -- which reports belong to a post, what each one "
+    "recommended, how a value compares between them, which report and page "
+    "prints something, where two readings of one report disagree, what the "
+    "library holds altogether. It answers from those records ONLY and cites "
+    "the report id and the page behind every fact; where the library holds "
+    "no answer it says so rather than guessing. It CANNOT read a new PDF: a "
+    "report nobody has ingested is not in the library, and 'report_ingest' "
+    "is what puts it there."
+)
+
+
+def make_report_library_tool(
+    model=None,
+    library_root: Optional[str] = None,
+    db_path: Optional[str] = None,
+    max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
+    max_tool_calls: Optional[int] = None,
+) -> list:
+    """The ``report_library`` primary tool, or an empty list.
+
+    Empty when there is no library to ask: ``library_root`` unset, or a
+    folder holding no ``report.record.json``. The feature detection is the
+    FOLDER rather than a version, because a deployment either has reports
+    read into it or does not, and advertising a library agent over an empty
+    folder would only teach the primary to ask it things it cannot answer.
+
+    ``model`` is the app's own chat model, which is what the library
+    sub-agent reads query results with; without one the tool is still built
+    and says so when called, the same choice the ingest tool makes.
+    """
+    from report_ingest.library_agent import library_available
+
+    if not library_available(library_root):
+        return []
+
+    def report_library(question: str) -> str:
+        from report_ingest.library_agent import (
+            MAX_TOOL_CALLS, answer_as_json, answer_question,
+        )
+
+        if model is None:
+            return json.dumps({
+                "error": "no model is configured for the report library in "
+                         "this deployment",
+                "hint": "the library agent answers with the app's own model; "
+                        "tell the user it is unavailable here rather than "
+                        "answering the question from memory"})
+        try:
+            answer = answer_question(
+                question, model=model, library_root=library_root,
+                db_path=db_path,
+                max_tool_calls=max_tool_calls or MAX_TOOL_CALLS)
+        except Exception as exc:  # noqa: BLE001 - one question, not the turn
+            return json.dumps({"error": f"the library query failed: "
+                                        f"{type(exc).__name__}: {exc}"})
+        return _truncate(answer_as_json(answer, max_result_chars),
+                         max_result_chars)
+
+    report_library.__doc__ = REPORT_LIBRARY_DESCRIPTION
+    return [StructuredTool.from_function(
+        report_library, name="report_library",
+        description=REPORT_LIBRARY_DESCRIPTION)]

@@ -266,8 +266,17 @@ report_ingest (CompiledSubAgent: its own deepagents graph, one primary tool)
 |       normalisation; the QA section
 |
 +- 4. writers                                                        deterministic
-        record.json -> summary.md, page.md (+ SQLite row), diggs.xml
-        (pydiggs XSD gate, parse_diggs round-trip gate)
+|       record.json -> summary.md, page.md (+ SQLite row), diggs.xml
+|       (pydiggs XSD gate, parse_diggs round-trip gate)
+|
++- 5. the library (added 2026-09-21)                     deterministic + 1 model
+        report_library (CompiledSubAgent, one primary tool, OFF by default):
+        Library(root) rebuilds its FTS5 index from the records whenever they
+        are newer than it, and ten query functions answer ACROSS reports --
+        list/filter, search, facts, compare, explorations, lab, calculations,
+        disagreements, stats -- every row carrying the report id and the pages.
+        The model is the APP's, the ceilings are Python, and every citation is
+        checked against what the queries returned before the answer goes back.
 ```
 
 ### Two model passes before any reader runs (owner direction, 2026-09-16)

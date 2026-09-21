@@ -8,6 +8,79 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### UNRELEASED on master since 5.24.0 — the reports already read become a LIBRARY that can be asked questions
+
+**No version bump, no tag.** Pure Python inside `report_ingest`, no dependency
+change, two new modules (`report_ingest/library.py`,
+`report_ingest/library_agent.py`), one new sub-agent and one new primary tool,
+both OFF by default, and no new model call anywhere in the ingest.
+
+**Why.** The ingest reads one report; the questions the owner asks span many —
+which of these sites was called potentially liquefiable, what did each firm
+recommend, which report and page prints that bearing pressure, where do two
+readings disagree. `run_folder` has written a `reports.db` since the first
+version and nothing read it back, so the answer was to open records by hand on
+whichever machine still had them.
+
+**What is built.**
+
+1. **`Library(root)`** over the folder the ingest writes — the records, the
+   library pages, the summaries, `bound/<child>/` and `reports.db`. **The index
+   is DERIVED and the records are the truth**: a folder restored from
+   SharePoint with no database, or one whose records were rewritten since,
+   rebuilds on the next question (the writers' own `reports` rows AND the
+   full-text index), checked by mtimes against a stamp in `meta`. The rebuild
+   reads each key off `report.page.md`'s front matter so a report does not
+   acquire a second identity. Nothing is written back into a record.
+2. **Ten query functions**, each row carrying the report id and the PDF pages:
+   `list_reports` (post, property type, phase, firm, date range, document type,
+   has-kind), `find`, `where_is`, `facts` (the 37 narrative fields, with the
+   unanswered ones NAMED rather than returned empty), `compare`,
+   `explorations`, `lab_summary`, `calculations`, `disagreements` (the six QA
+   kinds a person should look at), `library_stats`.
+3. **FTS5 the way the reference layer does it** (contentless external content,
+   `porter unicode61`, BM25 with the subject weighted), over chunks from the
+   RECORD — which is what carries pages — and from the written page and summary
+   block by block. The **rapidfuzz fallback runs on the field VALUES**, not on
+   whole chunks, and only when the full-text query comes back thin.
+4. **A bound report is a report of the library in its own right**, with
+   `parent` naming the one it came out of.
+5. **`report_library`, a CompiledSubAgent + one primary tool**, OFF by default
+   (`build_deep_agent(enable_report_library=True, library_root=…)`) and
+   **feature-detected on the FOLDER**, not on a version. The queries are
+   JSON-Schema tool specs bound to the APP'S OWN chat model. The prompt's one
+   rule: every fact comes from a tool result in that conversation; cite
+   `(report id, page)`; say plainly when the library holds no answer; end with
+   a `Gap:` line per thing unsettled.
+6. **The ceilings are Python** — deepagents reads no middleware on a
+   CompiledSubAgent — so the graph counts its own queries (8 an answer) and
+   caps every result at 25 rows and 4,000 characters.
+7. **The citations are CHECKED**: the structured response is `answer`,
+   `citations[]`, `reports_consulted[]`, `gaps[]`, `queries`, `error`, and a
+   `(report, page)` the answer claims that no query returned is left out of
+   `citations` and named in `gaps`.
+8. **`IngestSummary.library_root`** names the folder the database sits in, so a
+   report read this turn is queryable this turn.
+
+**Measured 2026-09-21, NO model and NO network**
+(`module_work/report_ingest_harness/measure_wp7_library.py`, twenty
+hand-written questions over a synthetic library of six records / seven rows):
+**the chosen query scores reports 0.949 / 1.000 and pages 0.939 / 1.000
+(precision / recall)**; **search alone — the question's prose into `find()`
+and nothing else — scores reports 0.647 / 0.943 and pages 0.417 / 0.323.**
+The two remaining false positives are honest ones (a second report really does
+print "spread footings"). **THE MODEL HALF IS UNMEASURED**: the cell is in
+`report_ingest/README.md` under "The report library", it needs no PDF and no
+page truth, only a private `library_questions.json` beside the library
+(`module_work/report_ingest_harness/library_questions.EXAMPLE.json` shows the
+shape), and it is scored on the report ids the answer CITES.
+
+**Suites:** `report_ingest` **1,296**, harness **266**, deep-agent wiring
+**350**, docs-currency green.
+**Next:** run the library questions on the cluster against the corpus library
+and read whether the answers cite the right reports and whether an
+unanswerable question comes back as a gap rather than as prose.
+
 ### UNRELEASED on master since 5.24.0 — the test pits, the cone soundings and the dynamic probes are read
 
 **No version bump, no tag.** Pure Python inside `report_ingest`, no dependency

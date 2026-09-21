@@ -191,6 +191,21 @@ REPORT_INGEST_NUDGE = (
     "discussion."
 )
 
+#: Appended when the report LIBRARY is wired in. ONE line, and its whole job
+#: is to keep two things apart: `report_ingest` READS a report that has not
+#: been read, `report_library` ANSWERS from the ones that have. An agent
+#: that confuses them either re-ingests a report the library already holds or
+#: answers a library question from memory.
+REPORT_LIBRARY_NUDGE = (
+    "- **A question ACROSS the reports already read goes to "
+    "`report_library`.** It answers from the ingested records ONLY and cites "
+    "the report id and page behind every fact -- which reports name a post "
+    "or a phase, what each recommended, where a value is printed, where two "
+    "readings disagree. It cannot read a new PDF: a report nobody has "
+    "ingested is not in the library, and `report_ingest` is what puts it "
+    "there."
+)
+
 
 def build_domain_prompt(allowed_agents=None, *, memory_enabled: bool = False) -> str:
     """Return the domain system prompt with the ReAct XML sections stripped.
@@ -232,4 +247,5 @@ def build_domain_prompt(allowed_agents=None, *, memory_enabled: bool = False) ->
     return base + "\n\n" + section
 
 
-__all__ = ["build_domain_prompt", "REPORT_INGEST_NUDGE"]
+__all__ = ["build_domain_prompt", "REPORT_INGEST_NUDGE",
+           "REPORT_LIBRARY_NUDGE"]

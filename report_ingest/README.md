@@ -953,6 +953,179 @@ which was forgotten. What actually bounds this graph is Python: `Budgets`,
 applied per reader, and a graph with no filesystem tool on any model for a
 guard to intercept.
 
+## The report library (`library.py`, `library_agent.py`)
+
+The ingest reads ONE report. The library answers questions ACROSS all of them:
+which reports belong to a post, what each one recommended, where a value is
+printed, where two readings disagree. It reads records that were already
+written — no PDF is opened, no reader runs — which is what makes every answer
+citable and what makes the whole thing cost nothing but the model that writes
+the sentence.
+
+### The folder is the library
+
+```
+<root>/reports.db                  the index (writers.upsert_report)
+<root>/<ID>/report.record.json     the record
+<root>/<ID>/report.page.md         the WikiLLM page
+<root>/<ID>/report.summary.md      the summary
+<root>/<ID>/bound/<child>/...      a report bound inside that one
+```
+
+That is exactly what `run_folder` writes, and what one `ingest_report` writes
+for a single report — so a single ingest's own output folder is a library of
+one, and the report just read is askable in the same session.
+
+**The index is DERIVED and the records are the truth.** A folder restored from
+SharePoint with no `reports.db` beside it, or one whose records were rewritten
+after the database was built, rebuilds on the next question — both the
+`reports` rows the writers own and the full-text index the library adds. The
+check is mtimes: the newest record, page or summary under the root against a
+stamp in the database's `meta` table. A rebuild reads the key off each
+`report.page.md`'s front matter, so a report keeps the identity the ingest gave
+it from its source file's own bytes rather than acquiring a second one. Nothing
+is ever written back into a record.
+
+A REPORT BOUND INSIDE ANOTHER is a report of the library in its own right, with
+its own row, its own id and `parent` naming the one it came out of. Its borings
+are its borings; the parent's counts stay the parent's.
+
+### The query layer (`library.py`)
+
+`Library(root)` and ten functions, each returning plain data with the report id
+and the PDF pages behind every row:
+
+| Query | What it answers |
+|---|---|
+| `list_reports(post, property_type, phase, firm, date_from, date_to, document_type, has_kind)` | the reports matching every filter given; `has_kind` takes an exploration kind, a laboratory test kind, `calculations` or `bound` |
+| `find(text, k, section, report_id)` | FTS5 over the records, the library pages and the summaries, with a rapidfuzz fallback on the field values; a snippet and the pages per hit |
+| `where_is(text)` | the same search shaped as places: one row per report and page |
+| `facts(report_id, fields)` | any of the 37 narrative fields with its pages and the quote it came off, plus the counts and the QA summary; a field the report did not answer is NAMED rather than returned empty |
+| `compare(field, report_ids)` | one field across several reports as a table, with the reports that did not answer it named |
+| `explorations(report_id, kind)` | the holes, pits and soundings with depths, layers, samples, driven records and water |
+| `lab_summary(report_id, kind)` | how many of each test kind, and each test with its link, depth, standard and values |
+| `calculations(report_id)` | each printout: the program, the method, what it was for, what it concluded |
+| `disagreements(report_id)` | the six QA kinds a PERSON should look at — a `note` and a `skipped` are not among them |
+| `library_stats()` | what the library holds, by document type, status, confidence, firm, post and kind |
+
+**Search is FTS5 the way the reference layer does it**: a contentless external
+-content table over chunks, `porter unicode61`, BM25 with the chunk's subject
+weighted over its text. The chunks come from the RECORD, because the record is
+what carries pages — a hit that cannot name the page it came off is not a
+citation — and from the written page and summary block by block, so anything
+those print is findable too. The **fuzzy fallback runs on the field VALUES**
+rather than on whole chunks: a twenty-character query against four hundred
+characters of text scores as a mismatch however close the firm's name inside it
+is. It only runs when the full-text query comes back thin, and never on a query
+under four characters.
+
+Every answer stops at `max_rows` (40) and says `truncated` when it did.
+
+### The sub-agent (`library_agent.py`)
+
+```python
+agent = build_deep_agent(model, enable_report_library=True,
+                         library_root="…/report_ingest_out")   # default OFF
+```
+
+That adds the `report_library(question)` primary tool and a `CompiledSubAgent`
+named `report_library` — the query layer as ten JSON-Schema tool specs bound to
+the app's OWN chat model (unlike the ingest, which runs readers on its own
+engine). **Feature-detected on the FOLDER**, not on a package version: a
+deployment either has reports read into it or does not, and a library agent over
+an empty folder would only teach the primary to ask it things nothing can
+answer.
+
+Its system prompt says the one rule — every fact comes from a tool result in
+that conversation, never from what a geotechnical report usually says — plus
+cite `(report id, page)` after every fact, say plainly when the library holds no
+answer, and end with a `Gap:` line per thing left unsettled.
+
+**The ceilings are Python**, for the same reason as the ingest's: deepagents
+uses a CompiledSubAgent's runnable as provided and reads no middleware for one.
+So the graph counts queries itself — `MAX_TOOL_CALLS = 8` per answer, refused
+with a message telling the model to answer from what it has — and every result
+is capped at 25 rows and 4,000 characters before it reaches the model.
+
+**The structured response**: `answer`, `citations[]`, `reports_consulted[]`,
+`gaps[]`, `queries`, `error`. The citations are CHECKED rather than copied: a
+`(report, page)` the answer claims and no query returned is left out of
+`citations` and named in `gaps`, so an invented page is visible instead of being
+either silently dropped or silently kept. A query that came back empty and a
+query that failed are gaps too.
+
+**The ingest's own result now carries `library_root`** — the folder its database
+sits in — so a freshly ingested report is queryable with `report_library` in the
+same session rather than after a restart.
+
+### Measuring it
+
+The deterministic half runs locally with no model and no network:
+
+```
+.venv/Scripts/python -m module_work.report_ingest_harness.measure_wp7_library
+```
+
+Twenty hand-written questions over a synthetic library of six records (seven
+rows — one carries a bound report), each with the report ids and pages a
+correct answer must carry. It prints two columns: **the chosen query**, which
+is what the sub-agent's tool call returns once the model has picked the right
+query, and **search alone**, which puts the question's own prose into `find()`
+and nothing else — the floor a model gets when it reaches for search instead.
+On 2026-09-21 the chosen query scores **reports 0.949 / 1.000** and **pages
+0.939 / 1.000** (precision / recall), and search alone **reports 0.647 /
+0.943**, **pages 0.417 / 0.323**. The two remaining false positives are honest
+ones: a second report genuinely prints "spread footings", and a second one
+genuinely discusses seismic hazard.
+
+**The model half is measured on the cluster**, because the model that will do
+the work is the app's. It needs no PDF and no truth folder of pages — just a
+`library_questions.json` beside the library (see
+`module_work/report_ingest_harness/library_questions.EXAMPLE.json` for the
+shape) and the library folder itself:
+
+```python
+# %pip install "geotech-staff-engineer==<the release with the library>"
+import json
+from funhouse_agent.deep.databricks_bridge import PrompterChatModel
+from report_ingest.library_agent import answer_question
+
+LIBRARY   = "/Workspace/.../report_ingest_out"        # what run_folder wrote
+QUESTIONS = "/Workspace/.../library_questions.json"   # the private truth
+
+model = PrompterChatModel(prompter=fh_prompter, model="funhouse-gpt-high")
+asked = json.load(open(QUESTIONS, encoding="utf-8"))["questions"]
+
+rows, hit, missed, extra, said_no = [], 0, 0, 0, 0
+for item in asked:
+    answer = answer_question(item["question"], model=model,
+                             library_root=LIBRARY)
+    cited = {c.report for c in answer.citations}
+    want = set(item.get("reports") or ())
+    hit += len(cited & want); missed += len(want - cited)
+    extra += len(cited - want)
+    if item.get("must_say_no"):
+        # The unanswerable ones: the right answer cites nothing and says so.
+        said_no += int(not cited and bool(answer.gaps))
+    rows.append({"id": item["id"], "cited": sorted(cited),
+                 "want": sorted(want), "queries": answer.queries,
+                 "gaps": answer.gaps, "answer": answer.answer})
+
+print(f"cited report ids: precision {hit / max(hit + extra, 1):.3f}, "
+      f"recall {hit / max(hit + missed, 1):.3f}")
+print(f"unanswerable questions answered as unanswerable: {said_no}")
+for row in rows:
+    print(row["id"], row["cited"], "want", row["want"],
+          f"({row['queries']} quer(ies))")
+```
+
+Score it on the CITED report ids rather than on the prose: what the answer
+cited is what a reader can check, and an answer that is right about the ground
+and cites the wrong report is wrong in the way that matters. Print the `gaps`
+beside them — a question the library genuinely cannot answer should come back
+as a gap, and an answer with no gaps to a question with no answer is the
+failure this design exists to prevent.
+
 ## The page labels are a vote (`label_vote.py`)
 
 Everything downstream hangs on what each page IS, and until this train one

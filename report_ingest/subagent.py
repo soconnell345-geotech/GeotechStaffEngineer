@@ -111,6 +111,12 @@ class IngestSummary(BaseModel):
         default_factory=dict,
         description="where the record, the summary, the library page, the "
                     "DIGGS file and the library database were written")
+    library_root: str = Field(
+        default="",
+        description="the folder this report's library database sits in, so "
+                    "the report just read is queryable with the report "
+                    "library in the same session; empty when no database "
+                    "was written")
     bound_documents: List[Dict[str, str]] = Field(
         default_factory=list,
         description="reports bound INSIDE this one, each read into its own "
@@ -197,6 +203,12 @@ def run_ingest(source: str, questions: Sequence[str], *,
                                 if entry.kind == "label_disagreement"),
         diggs_ok=diggs_ok,
         paths=paths,
+        # The library the row went into is the folder the database sits in:
+        # one report's own folder for a single ingest, the whole run's folder
+        # where the caller passed a shared db_path. Either way the report is
+        # askable with report_library without waiting for a restart.
+        library_root=(os.path.dirname(str(db_path)) if db_path
+                      else os.path.dirname(paths.get("db", "")) or ""),
         bound_documents=[
             {"title": row.title or row.report_id or row.bound_id,
              "pages": row.pages,

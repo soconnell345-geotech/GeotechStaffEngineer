@@ -596,3 +596,11 @@ gate" is answerable only by walking folders of `run.json` files, and only on
 whichever machine still has them. One row per report per ingest, appended
 somewhere durable, answers all of it in a line of SQL and makes the corpus
 itself a thing that can be reported on.
+
+**It now also feeds the LIBRARY index.** `report_ingest.library` rebuilds
+`reports.db` from the record files whenever they are newer than it, so the
+ledger's append-only JSON-lines file is the natural place for the run facts a
+record does not carry — what a report cost, which deployments served it, how
+long it took, and the history of every earlier reading of the same file — and
+the library can index them beside the records instead of a second walk of the
+folders.
