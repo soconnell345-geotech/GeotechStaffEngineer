@@ -99,11 +99,11 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from xml.sax.saxutils import escape, quoteattr
 
 from report_ingest.model import (
-    AtterbergResult, CBRResult, ChemicalResult, CompactionResult,
-    ConsolidationResult, GradationResult, Investigation, LabTest, Layer,
-    MoistureDensityResult, OtherResult, Project, Quantity, ReportRecord,
-    Sample, SPT, StrengthResult, SummaryRow, SummaryTableResult, WaterLevel,
-    si_numbers,
+    AtterbergResult, CBRResult, CPTData, ChemicalResult, CompactionResult,
+    ConsolidationResult, DCPData, GradationResult, Investigation, LabTest,
+    Layer, MoistureDensityResult, OtherResult, Project, Quantity,
+    ReportRecord, Sample, SPT, StrengthResult, SummaryRow,
+    SummaryTableResult, WaterLevel, si_numbers,
 )
 
 __all__ = [
@@ -319,13 +319,18 @@ class DiggsWriteNotes:
     water: int = 0
     tests: int = 0
     lab_tests: int = 0
+    #: Soundings written as one positioned result set each: a cone sounding
+    #: as a StaticConePenetrationTest, a dynamic probe as a DynamicProbeTest.
+    cpt: int = 0
+    dcp: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {"skipped": list(self.skipped),
                 "synthesised": list(self.synthesised),
                 "investigations": self.investigations, "layers": self.layers,
                 "samples": self.samples, "spt": self.spt, "water": self.water,
-                "tests": self.tests, "lab_tests": self.lab_tests}
+                "tests": self.tests, "lab_tests": self.lab_tests,
+                "cpt": self.cpt, "dcp": self.dcp}
 
 
 # ---------------------------------------------------------------------------
@@ -834,6 +839,227 @@ class _Writer:
             self.spt_test(inv, record, gml_id, n)
         for n, sample in enumerate(inv.samples):
             self.index_tests(inv, sample, gml_id, n)
+        if inv.cpt is not None and inv.cpt.points:
+            self.cone_test(inv, gml_id)
+        if inv.dcp is not None and inv.dcp.points:
+            self.probe_test(inv, gml_id)
+
+    # -- the two soundings -------------------------------------------------
+    def _sounding_extent(self, inv: Investigation, data: Any
+                         ) -> Optional[Tuple[float, Optional[float]]]:
+        """``(top, base)`` of a sounding in metres, off its own series.
+
+        A sounding's result is POSITIONED like every other result in the
+        file, and what it is positioned at is the RUN it covers: the linear
+        extent from its shallowest reading to its deepest. The depths of the
+        individual readings live in the result set's own depth column, which
+        is what a table of many rows against one position is for.
+        """
+        depths = [q.si_value for q in (p.depth for p in data.points)]
+        depths = [d for d in depths if d is not None]
+        if not depths:
+            self.notes.skipped.append(
+                f"{inv.investigation_id}: the sounding's depths are in "
+                f"{inv.depth_unit!r}, which is not in the conversion table; "
+                f"the series was not written")
+            return None
+        if data.vertical_axis == "elevation" if isinstance(data, CPTData) \
+                else False:
+            # An elevation is not a depth along the hole. Turning one into a
+            # depth needs the ground level, and where the sheet printed one
+            # the conversion is the record's, not this writer's -- so the
+            # extent is written from the elevations' own span and the file
+            # says which in the procedure's notes.
+            return min(depths), max(depths)
+        return min(depths), max(depths)
+
+    def cone_test(self, inv: Investigation, gml_id: str) -> None:
+        """One cone sounding: its series as ONE positioned result set.
+
+        THE SHAPE, and why it is this one. DIGGS 2.6 has a real home for a
+        cone sounding -- ``diggs_geo:StaticConePenetrationTest``, whose
+        dictionary entry names ``tip_resistance``, ``sleeve_friction`` and
+        ``pore_pressure_u2`` as the properties that occur under it -- and a
+        ResultSet is a TABLE, so a sounding of four hundred readings is one
+        Test with four hundred ROWS and not four hundred Tests. The first
+        column is the depth each row stands at; the rest are the channels.
+        The test's own ``location`` is the linear extent the sounding ran
+        over, because a result must be positioned and the run is where it is.
+        """
+        data = inv.cpt
+        extent = self._sounding_extent(inv, data)
+        if extent is None:
+            return
+        top, bottom = extent
+        columns: List[_Column] = [
+            _Column("Depth", "sounding_depth", "m", dictionary=False)]
+        channels: List[Tuple[str, str, str, str]] = [
+            ("Tip resistance", "tip_resistance", "qc", "kPa"),
+            ("Sleeve friction", "sleeve_friction", "fs", "kPa"),
+            ("Pore pressure u2", "pore_pressure_u2", "u2", "kPa"),
+        ]
+        present = [c for c in channels
+                   if any(getattr(p, c[2]) is not None for p in data.points)]
+        for label, klass, _field, uom in present:
+            columns.append(_Column(label, klass, uom))
+        ratio = any(p.rf_percent is not None for p in data.points)
+        if ratio:
+            columns.append(_Column("Friction ratio", "friction_ratio", "%"))
+        if len(columns) == 1:
+            self.notes.skipped.append(
+                f"{inv.investigation_id}: the cone sounding carries no "
+                f"channel this writer can put in a result set")
+            return
+        rows: List[List[Any]] = []
+        dropped = 0
+        for point in data.points:
+            depth = _si(point.depth)
+            if depth is None:
+                dropped += 1
+                continue
+            row: List[Any] = [depth[0]]
+            for _label, _klass, field_name, _uom in present:
+                value = _si(getattr(point, field_name))
+                row.append(value[0] if value is not None else "-")
+            if ratio:
+                row.append(point.rf_percent if point.rf_percent is not None
+                           else "-")
+            rows.append(row)
+        if dropped:
+            self.notes.skipped.append(
+                f"{inv.investigation_id}: {dropped} cone reading(s) are in a "
+                f"unit not in the conversion table and are not in the file")
+        if not rows:
+            return
+        test_id = self.uid(f"cpt_{_ncname(gml_id)}")
+        self._test_open("CPT", test_id, gml_id)
+        self._result_table(test_id, gml_id, top, bottom, columns, rows)
+        self.out("<procedure>", 3)
+        self.out(f'<diggs_geo:StaticConePenetrationTest gml:id='
+                 f'{quoteattr(test_id + "_proc")}>', 4)
+        if data.cone_type.strip():
+            self.out(f"<diggs_geo:penetrometerType>"
+                     f"{escape(data.cone_type.strip())}"
+                     f"</diggs_geo:penetrometerType>", 5)
+        rate = _si(data.penetration_rate)
+        if rate is not None and rate[1] == "m/s":
+            self.measure("diggs_geo:penetrationRate", rate[0], rate[1], 5)
+        sleeve = _si(data.sleeve_area)
+        if sleeve is not None and sleeve[1] == "m3":
+            sleeve = None        # a volume is not an area; say nothing
+        if sleeve is not None:
+            self.measure("diggs_geo:frictionSleeveArea", sleeve[0],
+                         sleeve[1], 5)
+        tip = _si(data.cone_area)
+        if tip is not None:
+            self.measure("diggs_geo:tipArea", tip[0], tip[1], 5)
+        self.out("</diggs_geo:StaticConePenetrationTest>", 4)
+        self.out("</procedure>", 3)
+        self.out("</Test>", 2)
+        self.out("</measurement>", 1)
+        self.notes.cpt += 1
+        self.notes.tests += 1
+
+    def probe_test(self, inv: Investigation, gml_id: str) -> None:
+        """One dynamic cone or dynamic probe record, as its series.
+
+        WHICH PROCEDURE, AND WHY. **DIGGS 2.6 has no
+        ``DynamicConePenetrometerTest``** -- the name does not appear
+        anywhere in the published schema. What it HAS is
+        ``diggs_geo:DynamicProbeTest``, whose own documentation is "all
+        methods that involve driving a rod by impact hammer" and whose
+        elements are exactly what a DCP record needs: a required
+        ``penetrationTestType``, then ``hammerMass``, ``hammerDropHeight``,
+        ``selfWeightPenetration`` and ``totalPenetration``. So a DCP is a
+        ``DynamicProbeTest`` with its printed test type on it, and the
+        blows, the penetration and any printed index go in the result set
+        beside the depth. Nothing generic is needed and nothing is invented.
+
+        The blow count is the dictionary's own ``blow_count``; a penetration
+        and a printed index have no dictionary term and are written under
+        this package's codespace, which says out loud that they are ours.
+        """
+        data = inv.dcp
+        extent = self._sounding_extent(inv, data)
+        if extent is None:
+            return
+        top, bottom = extent
+        columns: List[_Column] = [
+            _Column("Depth", "sounding_depth", "m", dictionary=False)]
+        wanted: List[Tuple[str, str, str, str, bool]] = [
+            ("Blow count", "blow_count", "blows", "", True),
+            ("Penetration", "penetration", "penetration", "m", False),
+            ("Penetration index", "penetration_index", "index", "", False),
+            ("CBR", "cbr_estimated", "cbr_percent", "%", False),
+        ]
+        present = [w for w in wanted
+                   if any(getattr(p, w[2]) is not None for p in data.points)]
+        for label, klass, _f, uom, in_dictionary in present:
+            columns.append(_Column(label, klass, uom,
+                                   dictionary=in_dictionary))
+        if len(columns) == 1:
+            self.notes.skipped.append(
+                f"{inv.investigation_id}: the dynamic probe record carries "
+                f"no value this writer can put in a result set")
+            return
+        rows: List[List[Any]] = []
+        index_uom = ""
+        for point in data.points:
+            depth = _si(point.depth)
+            if depth is None:
+                continue
+            row: List[Any] = [depth[0]]
+            for _label, _klass, field_name, _uom, _d in present:
+                raw = getattr(point, field_name)
+                if raw is None:
+                    row.append("-")
+                elif isinstance(raw, Quantity):
+                    got = _si(raw)
+                    if got is None:
+                        row.append("-")
+                    else:
+                        row.append(got[0])
+                        if field_name == "index":
+                            index_uom = got[1]
+                else:
+                    row.append(float(raw))
+            rows.append(row)
+        if not rows:
+            return
+        # The index column's unit is whatever the sheet's own index
+        # converted to, and it is only known after the rows are walked --
+        # a mm/blow index and an MPa dynamic resistance are both "the index
+        # column" and convert to different things.
+        for column in columns:
+            if column.klass == "penetration_index":
+                column.uom = index_uom
+        test_id = self.uid(f"dcp_{_ncname(gml_id)}")
+        self._test_open("DCP", test_id, gml_id)
+        self._result_table(test_id, gml_id, top, bottom, columns, rows)
+        self.out("<procedure>", 3)
+        self.out(f'<diggs_geo:DynamicProbeTest gml:id='
+                 f'{quoteattr(test_id + "_proc")}>', 4)
+        # penetrationTestType is REQUIRED by the schema, so a record whose
+        # sheet named no type still says what it is rather than failing the
+        # whole file.
+        self.out(f"<diggs_geo:penetrationTestType>"
+                 f"{escape(data.test_type.strip() or 'DCP')}"
+                 f"</diggs_geo:penetrationTestType>", 5)
+        mass = _si(data.hammer_mass)
+        if mass is not None and mass[1] == "kg":
+            self.measure("diggs_geo:hammerMass", mass[0], mass[1], 5)
+        drop = _si(data.hammer_drop)
+        if drop is not None and drop[1] == "m":
+            self.measure("diggs_geo:hammerDropHeight", drop[0], drop[1], 5)
+        total = _si(data.refusal_depth)
+        if total is not None and total[1] == "m":
+            self.measure("diggs_geo:totalPenetration", total[0], total[1], 5)
+        self.out("</diggs_geo:DynamicProbeTest>", 4)
+        self.out("</procedure>", 3)
+        self.out("</Test>", 2)
+        self.out("</measurement>", 1)
+        self.notes.dcp += 1
+        self.notes.tests += 1
 
     def _test_open(self, name: str, test_id: str, gml_id: str) -> None:
         self.out("<measurement>", 1)
@@ -2103,6 +2329,7 @@ def diggs_roundtrip_gate(xml: str, investigations: Any, *,
         _compare_layers(name, want, got, diffs, dt)
         _compare_water(name, want, got, diffs, dt)
         _compare_measurements(name, want, got, diffs, dt)
+        _compare_soundings(name, want, got, diffs, dt)
     if lab:
         _compare_lab(xml, lab, diffs)
     return (not diffs), diffs
@@ -2310,6 +2537,68 @@ def _compare_water(name: str, want: Investigation, got: Any,
     elif not _close(got.gwl_depth_m, depths[0], dt):
         diffs.append(f"{name}: water level came back {got.gwl_depth_m} not "
                      f"{depths[0]:.4f} m")
+
+
+#: What each channel of a sounding must come back as, and how close. The
+#: parameter names are the ones ``parse_diggs`` puts on a PointMeasurement;
+#: the tolerances absorb the four decimals the file is written to and
+#: nothing else.
+_CPT_CHANNELS: Tuple[Tuple[str, str, str, float], ...] = (
+    ("qc", "qc_kPa", "kPa", TOLERANCE["stress_kPa"]),
+    ("fs", "fs_kPa", "kPa", TOLERANCE["stress_kPa"]),
+    ("u2", "u2_kPa", "kPa", TOLERANCE["stress_kPa"]),
+)
+_DCP_CHANNELS: Tuple[Tuple[str, str, str, float], ...] = (
+    ("blows", "blow_count", "", TOLERANCE["n_value"]),
+    ("penetration", "penetration_m", "m", TOLERANCE["depth_m"]),
+    ("index", "DPI", "", 0.05),
+    ("cbr_percent", "CBR_pct", "", TOLERANCE["percent"]),
+)
+
+
+def _compare_soundings(name: str, want: Investigation, got: Any,
+                       diffs: List[str], dt: float) -> None:
+    """Every reading of a cone sounding or a dynamic probe, value for value.
+
+    A sounding's whole point is the series, so every point of it is checked
+    at its own depth -- not a count, not a spot check. A file that validates
+    and comes back with half a sounding is the failure this catches.
+    """
+    data = want.cpt or want.dcp
+    if data is None or not data.points:
+        return
+    channels = _CPT_CHANNELS if want.cpt is not None else _DCP_CHANNELS
+    by_parameter: Dict[str, List[Tuple[float, float]]] = {}
+    for m in got.measurements:
+        by_parameter.setdefault(m.parameter, []).append((m.depth_m, m.value))
+    missing = 0
+    first = ""
+    for point in data.points:
+        depth = _si_value(point.depth)
+        if depth is None:
+            continue                  # the writer's notes say it was skipped
+        for field_name, parameter, unit, tol in channels:
+            raw = getattr(point, field_name, None)
+            if raw is None:
+                continue
+            # A channel is a Quantity on some kinds and a plain number on
+            # others -- a blow count has no unit, a penetration index is
+            # printed in whatever the sheet chose. Both are compared in SI,
+            # which is what the file holds.
+            value = _si_value(raw) if isinstance(raw, Quantity) \
+                else float(raw)
+            if value is None:
+                continue              # the writer said it could not convert
+            if not _nearest(by_parameter.get(parameter, []), depth, value,
+                            dt, tol):
+                missing += 1
+                if not first:
+                    first = (f"{field_name} {value:.4g} at {depth:.3f} m did "
+                             f"not come back as {parameter}")
+    if missing:
+        diffs.append(
+            f"{name}: {missing} sounding reading(s) did not come back; the "
+            f"first is {first}")
 
 
 def _compare_measurements(name: str, want: Investigation, got: Any,

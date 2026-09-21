@@ -955,3 +955,50 @@ class TestAReportBoundInsideAReport:
         (note,) = [e for e in record.qa if e.where == "bound.extent"]
         assert "takes the union" in note.detail
         assert note.values == ["triage 14-17", "planlens 15-18"]
+
+
+# ---------------------------------------------------------------------------
+# a sounding is not a log
+# ---------------------------------------------------------------------------
+
+class TestTheSoundingReaders:
+
+    def test_a_cone_page_and_a_probe_page_go_to_their_own_readers(self):
+        from report_ingest.graph import ITEM_READERS
+        assert ITEM_READERS["cpt_log"] == "cpt"
+        assert ITEM_READERS["dcp_log"] == "dcp"
+        # A pit IS a log: a ruler, a description column and samples.
+        assert ITEM_READERS["test_pit_log"] == "log"
+
+    def test_the_budget_has_a_ceiling_for_them(self):
+        from report_ingest.graph import Budgets
+        assert Budgets().sounding >= 1
+
+    def test_a_sounding_item_becomes_an_investigation(self, tmp_path):
+        from planlens.document import open_document
+        from report_ingest.graph import Budgets, _read_sounding
+        from report_ingest.model import Investigation
+        from report_ingest.sounding_reader import SoundingReading
+        from report_ingest.tests.fake_engine import FakeEngine
+        from report_ingest.tests.sounding_fixtures import build_tabulated_cpt
+
+        gt = build_tabulated_cpt()
+        path = tmp_path / "cpt.pdf"
+        path.write_bytes(gt.pdf)
+        doc = open_document(str(path))
+        try:
+            engine = FakeEngine([{"final": SoundingReading(
+                investigation_id="CPT-4", kind="cpt", depth_unit="m",
+                qc_unit="MPa", points=[])}])
+
+            class _Item:
+                id = "item_1"
+                title = "CPT-4"
+
+            blob = _read_sounding(doc, [0], engine, Budgets(), _Item(),
+                                  "RXX", "cpt")
+            record = Investigation.model_validate(blob["investigation"])
+            assert record.kind == "cpt"
+            assert record.cpt.n_points == len(gt.series)
+        finally:
+            doc.close()

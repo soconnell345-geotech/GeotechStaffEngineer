@@ -57,8 +57,8 @@ from report_ingest.log_floor import (
     merge_investigations, seed_from_grid, serialise_seed,
 )
 from report_ingest.model import (
-    DrillingDetails, Investigation, Layer, Provenance, Quantity, Sample, SPT,
-    WaterLevel,
+    DrillingDetails, Investigation, Layer, PitDimensions, Provenance,
+    Quantity, Sample, SPT, WaterLevel,
 )
 
 __all__ = [
@@ -245,6 +245,31 @@ class ReadDrilling(BaseModel):
     logged_by: str = Field(default="")
 
 
+class ReadPit(BaseModel):
+    """A test pit's plan size, as the header prints it.
+
+    Only for a PIT. A borehole has a diameter and no plan size, and a
+    reader that filled this in for one would be inventing an excavation.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    length: Optional[float] = Field(
+        default=None, description="the pit's long plan dimension, as printed")
+    width: Optional[float] = Field(
+        default=None, description="its short plan dimension, as printed")
+    depth: Optional[float] = Field(
+        default=None,
+        description="the pit's own printed depth, where the header prints "
+                    "one apart from the total depth; null otherwise")
+    unit: str = Field(
+        default="",
+        description="the unit these three are printed in: m, ft, cm, in. "
+                    "Empty when the header prints none and the log's depth "
+                    "unit is to be taken")
+    prov: Optional[ReadProv] = None
+
+
 class Unsettled(BaseModel):
     """Something on this log you could not read."""
 
@@ -291,6 +316,11 @@ class LogReading(BaseModel):
     sheet: str = Field(
         default="", description="the log's own 'Page 1 of 3', as printed")
     drilling: ReadDrilling = Field(default_factory=ReadDrilling)
+    pit: Optional[ReadPit] = Field(
+        default=None,
+        description="a TEST PIT's plan dimensions, when the header prints "
+                    "them; null on a borehole and on a pit whose header "
+                    "prints no size")
     layers: List[ReadLayer] = Field(default_factory=list)
     samples: List[ReadSample] = Field(default_factory=list)
     spt: List[ReadSPT] = Field(default_factory=list)
@@ -423,9 +453,11 @@ NEVER INVENT A DEPTH. Every depth you report must come from the scale the
 form reader fitted, or from a depth printed on the page. If a value has no
 depth you can point at, leave it out and list it under unsettled. If the form
 reader found no scale at all, the page carries no depths: report the header
-fields and the descriptions, report NO depths, and say so in unsettled. A
-depth that is not on the page will be thrown away and counted against this
-reading.
+fields and the descriptions, report NO depths, and say so in unsettled --
+UNLESS this is a test pit whose depths are written on a sketch or beside a
+photograph, in which case those printed numbers are the log and you report
+them, from_image true. A depth that is not on the page will be thrown away
+and counted against this reading.
 
 THE UNIT. Every depth you report is in ONE unit, and you state it:
 depth_unit 'ft' or 'm'. Take it from the form reader when it found one,
@@ -463,6 +495,36 @@ WHAT TO RECORD, WHEN THE LOG PRINTS IT.
   caved depths. A log that says water was not encountered is a water entry
   with when 'not_encountered' and a null depth, not an empty list.
 - The log's remarks, verbatim.
+
+A TEST PIT IS NOT A HOLE, AND ITS SIZE IS PART OF THE RECORD. Set kind
+'test_pit' when the form titles itself a test pit, a trial pit, a trench, a
+calicata, a puits d'essai or a poco de inspeccao. On a pit, ALSO fill pit:
+its length, its width and, where the header prints a pit depth of its own,
+its depth -- with the unit those three are printed in, which is not always
+the depth unit. A header reading "Dimensions (L x W x D): 2.5 m x 1.0 m x
+3.5 m" is length 2.5, width 1.0, depth 3.5, unit 'm'; one reading "Bucket
+width: 600 mm" is width 600, unit 'mm'.
+
+THE BUCKET IS THE WIDTH, and on most pit logs it is the only size printed.
+An equipment field reading "backhoe with a 55 cm bucket", "rubber tire
+backhoe 90 cm bucket" or "1.06 m Wide Mechanical Bucket" is telling you how
+wide the trench is: report that as the pit's width, in the unit the bucket
+is printed in, and say in the note that it is the bucket's width. Take it
+ONLY from a field naming the machine -- a bucket mentioned in a remark
+("backfilled with the bucket") says nothing about how wide the pit was.
+
+Where the header prints no size and names no bucket, leave pit null -- a pit
+whose size was not printed is not a pit 1 m wide. Never fill pit on a
+borehole: a hole has a diameter and no plan size.
+
+A PIT PHOTOGRAPHED WITH A SKETCH is the one log you read from the picture
+first. There is no printed form and no depth scale to fit: there is a
+photograph of the excavated face, a hand or drawn section beside it, and the
+contact depths, the sample depths and the water written on. Read those
+printed numbers off the picture, set from_image true and say in the note
+what the sketch shows. Report the header fields whatever else you can read.
+Do not estimate a depth from how deep the hole LOOKS in a photograph: a
+number that is not written on the page is not a reading.
 
 PROVENANCE. Every layer, sample, driven record and water level carries a
 provenance: the page, and the box copied EXACTLY from the grid row it came
@@ -557,7 +619,8 @@ def serialise_rows(grid: Any, pages: Sequence[int]) -> str:
 
 def _brief(grid: Any, pages: Sequence[int], ledger: Sequence[str],
            item_title: str, report_id: str,
-           seed: Optional[Investigation] = None) -> str:
+           seed: Optional[Investigation] = None,
+           no_ruler: bool = False) -> str:
     layers = [
         {"top": ly.top, "bottom": ly.bottom,
          "description": _clip(ly.description, 300),
@@ -597,6 +660,21 @@ def _brief(grid: Any, pages: Sequence[int], ledger: Sequence[str],
             "the reader's confidence in it -- build on it; add, correct with "
             "the box and a note, never drop)",
             serialise_seed(seed),
+            "",
+        ]
+    if no_ruler:
+        parts += [
+            "THERE IS NO DEPTH SCALE ON THESE PAGES. The form reader fitted "
+            "no ruler, so nothing here places a row at a depth and the rows "
+            "below carry none.",
+            "If this is a TEST PIT photographed with a sketch beside it, "
+            "READ IT FROM THE PICTURE: the contact depths, the sample "
+            "depths and the water are written on the sketch or beside the "
+            "face, and those printed numbers are the log. Say so in the "
+            "note on every value, and set from_image true.",
+            "If it is a BORING, report only what the rows and the header "
+            "state and leave the depths out: a depth you estimate off a "
+            "picture of a hole with no scale is not a reading.",
             "",
         ]
     parts += [
@@ -653,7 +731,8 @@ class _Builder:
     """
 
     def __init__(self, reading: LogReading, window: Optional[Tuple[float, float]],
-                 pages: Sequence[int], report_id: str) -> None:
+                 pages: Sequence[int], report_id: str,
+                 no_ruler: bool = False) -> None:
         self.reading = reading
         self.window = window
         self.pages = list(pages)
@@ -662,6 +741,17 @@ class _Builder:
         self.changes: List[Dict[str, Any]] = []
         self.unit = (reading.depth_unit or "").strip()
         self.units_known = bool(reading.units_known and self.unit)
+        #: THE ONE LOG WITH NO SCALE THAT STILL HAS DEPTHS. A photographed
+        #: test pit is a picture of a face with a hand sketch beside it and
+        #: the contact depths written on: there is no ruler for a ruler
+        #: fitter to find, and the numbers are still printed on the paper.
+        #: Refusing them would refuse every depth such a pit ever states,
+        #: so on a PIT with no ruler a depth is accepted when the model
+        #: brought a box or said it read it off the picture, at a reduced
+        #: confidence and listed as a change. Nothing changes for a hole:
+        #: a boring log with no scale still refuses, because its depths
+        #: belong to a column the grid would have found.
+        self.no_scale_pit = bool(no_ruler) and reading.kind == "test_pit"
 
     # -- the gate ----------------------------------------------------------
     def _depth(self, value: Optional[float], what: str,
@@ -670,6 +760,22 @@ class _Builder:
         if value is None:
             return None
         value = float(value)
+        if self.window is None and self.no_scale_pit:
+            if value < 0.0 or not self.unit:
+                self.unresolved.append({
+                    "what": what, "page": page, "value": value,
+                    "why": ("this pit has no depth scale and the depth is "
+                            "negative" if value < 0.0 else
+                            "this pit has no depth scale and no depth unit "
+                            "was printed, so the number has no meaning"),
+                    "refused_by": "python"})
+                return None
+            self.changes.append({
+                "what": what, "page": page,
+                "why": "read off a pit log with no depth scale; the number "
+                       "is the one printed on the sheet and nothing checked "
+                       "it against a ruler"})
+            return Quantity(value=value, unit=self.unit)
         if self.window is None:
             self.unresolved.append({
                 "what": what, "page": page, "value": value,
@@ -863,10 +969,54 @@ class _Builder:
                 contractor=r.drilling.contractor,
                 logged_by=r.drilling.logged_by),
             layers=self.layers(), samples=self.samples(), spt=self.spt(),
-            water=self.water(), remarks=r.remarks,
+            water=self.water(), pit=self.pit(), remarks=r.remarks,
             station=r.station, offset=r.offset,
             pages=list(self.pages), source_report=self.report_id,
             sheet=r.sheet)
+
+    def pit(self) -> Optional[PitDimensions]:
+        """The pit's dimensions as the model read them.
+
+        A plan dimension is NOT a depth and is not checked against the
+        ruler's window: a 2.5 m long pit on a log whose ruler runs to 3 m is
+        an ordinary pit, and refusing it would be refusing arithmetic that
+        was never done. What IS refused is a negative or zero dimension,
+        which is a misreading of a dash or a blank.
+        """
+        read = self.reading.pit
+        if read is None:
+            return None
+        unit = (read.unit or self.unit).strip()
+
+        def one(name: str, value: Optional[float]) -> Optional[Quantity]:
+            if value is None:
+                return None
+            if float(value) <= 0.0:
+                self.unresolved.append({
+                    "what": f"pit {name}", "page": None,
+                    "value": float(value),
+                    "why": "a pit dimension must be greater than zero",
+                    "refused_by": "python"})
+                return None
+            if not unit:
+                self.unresolved.append({
+                    "what": f"pit {name}", "page": None,
+                    "value": float(value),
+                    "why": "no unit was printed for it and the log states "
+                           "none, so the number has no meaning",
+                    "refused_by": "python"})
+                return None
+            return Quantity(value=float(value), unit=unit)
+
+        length = one("length", read.length)
+        width = one("width", read.width)
+        depth = one("depth", read.depth)
+        if length is None and width is None and depth is None:
+            return None
+        return PitDimensions(
+            length=length, width=width, depth=depth,
+            method=self.reading.drilling.method,
+            prov=self._prov(read.prov, "pit dimensions"))
 
 
 def _pct(value: Optional[float]) -> Optional[float]:
@@ -1019,9 +1169,20 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
         return out
 
     # THE FLOOR: the grid's own record, built before any call is spent, and
-    # shown to the model as the record it starts from.
-    floor = seed_from_grid(grid, pages, report_id, template=template)
-    brief = _brief(grid, pages, ledger, item_title, report_id, seed=floor)
+    # shown to the model as the record it starts from. The pages' text lines
+    # go with it, because a PIT states its plan size in words the grid's
+    # borehole header vocabulary has no term for.
+    header_lines: List[Any] = []
+    for page in pages:
+        try:
+            header_lines.extend(doc.page(page).lines)
+        except Exception:                        # a page that will not read
+            continue                             # simply contributes nothing
+    floor = seed_from_grid(grid, pages, report_id, template=template,
+                           lines=header_lines)
+    no_ruler = not bool(getattr(grid, "rulers", None))
+    brief = _brief(grid, pages, ledger, item_title, report_id, seed=floor,
+                   no_ruler=no_ruler)
     messages: List[Dict[str, Any]] = [
         user(text_block(brief),
              *[image_block(png) for png in images_for(pages)])]
@@ -1086,7 +1247,7 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
             reading = reply.parsed
 
     builder = _Builder(reading, _depth_window(doc, grid, pages), pages,
-                       report_id)
+                       report_id, no_ruler=no_ruler)
     model_investigation = builder.build()
     # THE MERGE: the model's answer folded onto the floor. Nothing the grid
     # placed is lost; every contradiction is on the record.

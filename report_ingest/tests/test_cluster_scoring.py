@@ -1098,26 +1098,27 @@ class TestTheThreeColumnTable:
 
 
 class TestOneTruthRoot:
-    """The four sets of hand truth travel to the cluster as ONE folder.
+    """The five sets of hand truth travel to the cluster as ONE folder.
 
-    They are private, so they are uploaded by hand before every run. Four
-    Volume paths that must each be right is four chances for one to be
+    They are private, so they are uploaded by hand before every run. Five
+    Volume paths that must each be right is five chances for one to be
     stale while the run still starts and scores against it; a root holding
-    ``logs/``, ``lab/``, ``calc/`` and ``narrative/`` is one thing to get
-    right.
+    ``logs/``, ``lab/``, ``calc/``, ``soundings/`` and ``narrative/`` is one
+    thing to get right.
     """
 
-    def test_a_root_with_the_four_subfolders_is_split_by_stage(self,
-                                                              tmp_path):
-        for name in ("logs", "lab", "calc", "narrative"):
+    def test_a_root_with_the_subfolders_is_split_by_stage(self, tmp_path):
+        for name in ("logs", "lab", "calc", "soundings", "narrative"):
             (tmp_path / name).mkdir()
 
-        logs, lab, narrative, calc = cs._truth_dirs(tmp_path, None, None)
+        logs, lab, narrative, calc, soundings = cs._truth_dirs(
+            tmp_path, None, None)
 
         assert logs == tmp_path / "logs"
         assert lab == tmp_path / "lab"
         assert narrative == tmp_path / "narrative"
         assert calc == tmp_path / "calc"
+        assert soundings == tmp_path / "soundings"
 
     def test_a_folder_of_log_truth_files_is_still_used_as_it_stands(self,
                                                                    tmp_path):
@@ -1126,10 +1127,12 @@ class TestOneTruthRoot:
         that is right there."""
         (tmp_path / "R06_p51.json").write_text("{}", encoding="utf-8")
 
-        logs, lab, narrative, calc = cs._truth_dirs(tmp_path, None, None)
+        logs, lab, narrative, calc, soundings = cs._truth_dirs(
+            tmp_path, None, None)
 
         assert logs == tmp_path
         assert lab is None and narrative is None and calc is None
+        assert soundings is None
 
     def test_an_explicit_per_stage_folder_wins_over_the_root(self, tmp_path):
         for name in ("logs", "lab", "calc", "narrative"):
@@ -1137,8 +1140,8 @@ class TestOneTruthRoot:
         elsewhere = tmp_path / "elsewhere"
         elsewhere.mkdir()
 
-        logs, lab, narrative, calc = cs._truth_dirs(tmp_path, elsewhere,
-                                                    elsewhere)
+        logs, lab, narrative, calc, _soundings = cs._truth_dirs(
+            tmp_path, elsewhere, elsewhere)
 
         assert logs == tmp_path / "logs"
         assert lab == elsewhere and narrative == elsewhere
@@ -1150,13 +1153,28 @@ class TestOneTruthRoot:
         elsewhere = tmp_path / "elsewhere"
         elsewhere.mkdir()
 
-        _logs, _lab, _narr, calc = cs._truth_dirs(tmp_path, None, None,
-                                                  elsewhere)
+        _logs, _lab, _narr, calc, _snd = cs._truth_dirs(
+            tmp_path, None, None, elsewhere)
 
         assert calc == elsewhere
 
-    def test_no_truth_at_all_is_four_nones(self):
-        assert cs._truth_dirs(None, None, None) == (None, None, None, None)
+    def test_an_explicit_sounding_folder_wins_over_the_root(self, tmp_path):
+        for name in ("logs", "soundings"):
+            (tmp_path / name).mkdir()
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+
+        *_rest, soundings = cs._truth_dirs(tmp_path, None, None, None,
+                                           elsewhere)
+
+        assert soundings == elsewhere
+
+    def test_no_truth_at_all_is_all_nones(self):
+        assert cs._truth_dirs(None, None, None) == (None,) * 5
+
+    def test_the_soundings_stage_is_one_of_the_stages(self):
+        assert "soundings" in cs.STAGE_NAMES
+        assert cs.TRUTH_SUBDIRS["soundings"] == "soundings"
 
     def test_a_root_missing_the_calc_folder_is_refused_by_that_stage(
             self, tmp_path):

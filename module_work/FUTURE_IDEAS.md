@@ -530,6 +530,36 @@ quote.
 as the scorecard does.
 
 
+### A BLIND sounding and test-pit truth set is OWED (2026-09-21) -- TODO, not built
+
+Thirteen sheets of hand truth were written for the test pits, the cone
+soundings and the dynamic probes, and **every one of them was read while those
+readers were being written**. So every number the `soundings` stage prints is
+an IN-SAMPLE number: it says the readers can do this on sheets they were tuned
+against, and nothing about a report nobody has opened.
+
+What is owed is three to five hand-truthed TEST PITS in reports whose pit
+pages were not looked at for this train. The candidates are in the truth
+folder's own README, named there rather than here because this file is
+tracked and the corpus IDs are private. The cone soundings cannot have a blind
+half: the corpus holds true cone traces in one report only, and the other
+report's "CPT log" pages are interpreted-strength figures carrying no measured
+channel (one of them is in the open set as a negative case, where the right
+answer is an empty series).
+
+Two findings from writing the truth are worth keeping whatever happens to the
+blind set:
+
+* **A plotted cone sounding on this corpus cannot be hand-truthed as a
+  digitised series.** The traces oscillate faster than the sheet's own printed
+  grid -- tip resistance goes from 0.24 to 9.85 MPa across a fifth of the 1 m
+  grid spacing -- so at most whole-metre levels there is no single value of the
+  trace to read, and a truth written there would be noise dressed as a
+  measurement.
+* **No test pit in this corpus prints a labelled plan dimension.** Fourteen
+  were checked across four reports. Every one names its bucket in the
+  equipment field instead, which is what the reader now takes the width from.
+
 ### The ingest ledger (owner, 2026-09-21) -- TODO, not built
 
 One function the ingest calls at the END of every report, whether it ran in

@@ -48,6 +48,7 @@ __all__ = [
     "SCHEMA_VERSION", "SI_UNITS", "UNIT_TO_SI",
     "Provenance", "Alternative", "Quantity", "Project", "DrillingDetails",
     "Layer", "Sample",
+    "PitDimensions", "CPTPoint", "CPTData", "DCPPoint", "DCPData",
     "SPT", "WaterLevel", "LabTest", "Investigation", "NarrativeFacts",
     "GeneralFacts", "NaturalHazardFacts", "CalcEntry", "QAEntry",
     "CALC_KINDS", "CalcKind", "NamedQuantity", "Calculation",
@@ -92,6 +93,13 @@ __all__ = [
 #: record simply has an empty list and a null parent, and no existing field
 #: changed meaning. What changed is what the pipeline now DOES with pages it
 #: used to list and skip; see :mod:`report_ingest.bound`.
+#:
+#: ``Investigation.pit``, ``Investigation.cpt`` and ``Investigation.dcp`` --
+#: a test pit's plan size, a cone sounding's depth series and a dynamic
+#: probe's drives -- are NOT a bump either. All three are optional, no
+#: existing field changed meaning, and a record written before them loads as
+#: one whose explorations carry none. What changed is that three kinds
+#: ``InvestigationKind`` could always NAME can now be HELD.
 SCHEMA_VERSION = "4.0"
 
 
@@ -685,6 +693,278 @@ class WaterLevel(BaseModel):
     elevation: Optional[Quantity] = None
     note: str = Field(default="")
     prov: Optional[Provenance] = None
+
+
+# ---------------------------------------------------------------------------
+# what a pit, a cone sounding and a dynamic probe add
+# ---------------------------------------------------------------------------
+#
+# THREE EXPLORATION RECORDS THE MODEL COULD NAME AND NOT HOLD. ``kind`` has
+# said ``test_pit``, ``cpt`` and ``dcp`` since the first version of this
+# file, and until this train every one of them was read as though it were a
+# boring: a pit lost the hole it actually was (a rectangle with a length and
+# a width, not a 100 mm cylinder), and a sounding lost the whole of what it
+# measured, because a depth SERIES of three channels has nowhere to go among
+# layers, samples and driven records.
+#
+# WHAT IS HERE AND WHAT IS NOT. A pit's dimensions and a sounding's series
+# are new; everything else about those explorations is already on
+# :class:`Investigation` and stays there. A pit's strata are ``layers``, its
+# samples are ``samples``, its water is ``water``. A cone sounding's
+# INTERPRETED strata -- the soil behaviour types a sheet prints beside its
+# traces -- are ``layers`` too, with the provenance saying they were
+# interpreted from the sounding rather than logged from the ground, because
+# an SBT band is a reading of a curve and a logged stratum is a look at the
+# soil, and a consumer that could not tell them apart would be misled.
+#
+# EVERY FIELD HERE IS OPTIONAL AND ADDITIVE, so the schema version does not
+# move: a record written before this train loads as one with no pit
+# dimensions and no series, which is exactly what it was.
+
+
+class PitDimensions(BaseModel):
+    """How big the pit was, as the log prints it.
+
+    A test pit is an EXCAVATION and its plan size is part of the record: a
+    0.6 m wide bucket trench and a 3 m square pit expose different things and
+    are backfilled differently. ``depth`` is the pit's own final depth where
+    the header prints one of its own; where it does not, the
+    investigation's ``total_depth`` is the depth and this stays None rather
+    than repeating it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    length: Optional[Quantity] = Field(
+        default=None, description="the pit's long plan dimension, as printed")
+    width: Optional[Quantity] = Field(
+        default=None, description="its short plan dimension, as printed")
+    depth: Optional[Quantity] = Field(
+        default=None,
+        description="the pit's own printed depth, when the header states one "
+                    "apart from the total depth")
+    method: str = Field(
+        default="",
+        description="how it was dug -- backhoe, excavator, hand -- as "
+                    "printed; the same words DrillingDetails.method takes, "
+                    "and set there as well when the header prints it once")
+    prov: Optional[Provenance] = None
+
+
+class CPTPoint(BaseModel):
+    """One depth of a cone sounding: what the three channels read there.
+
+    ``depth`` is the sheet's own vertical axis value -- a depth below ground
+    on most sheets and an ELEVATION on the Continental ones, which is why
+    :attr:`CPTData.vertical_axis` says which. Every channel is a
+    :class:`Quantity` in the unit the sheet printed, so a sounding in MPa and
+    one in tsf both keep their own numbers.
+
+    ``prov`` carries the confidence for this point. A point digitised off a
+    plot where one trace crosses another is worth less than one read off a
+    tabulated row, and the reader says so there rather than in a second
+    parallel list.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    depth: Quantity = Field(description="the vertical axis value, as printed")
+    qc: Optional[Quantity] = Field(
+        default=None, description="cone tip resistance, as printed")
+    fs: Optional[Quantity] = Field(
+        default=None, description="sleeve friction, as printed")
+    u2: Optional[Quantity] = Field(
+        default=None,
+        description="pore pressure behind the tip, as printed; None on a "
+                    "mechanical cone, which measures none")
+    rf_percent: Optional[float] = Field(
+        default=None,
+        description="friction ratio as a PERCENT, where the sheet prints or "
+                    "plots one; never computed from qc and fs here")
+    sbt: str = Field(
+        default="",
+        description="the soil behaviour type printed against this depth, in "
+                    "the sheet's own words or code; empty when none is")
+    prov: Optional[Provenance] = None
+
+
+class CPTData(BaseModel):
+    """One cone penetration sounding: the series, and the cone that made it.
+
+    THE SERIES IS THE RECORD. A CPT is not a log with strata on it; it is
+    three traces against depth, and everything a reader wants from it --
+    a profile, an SBT classification, a bearing estimate -- is computed from
+    those traces. So the points are the payload and the rest of this class
+    says how to read them.
+
+    ``digitised`` is the flag a reviewer checks first. A sounding whose
+    sheet TABULATES its values is exact; one read off the plotted traces is
+    not, and the two must never be confused. Where the values were
+    digitised, ``step`` is the depth interval they were read at and each
+    point's provenance carries its own confidence.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    points: List[CPTPoint] = Field(
+        default_factory=list, description="the series, in depth order")
+    vertical_axis: Literal["depth", "elevation"] = Field(
+        default="depth",
+        description="what the points' 'depth' value IS: a depth below the "
+                    "ground surface, or an elevation on a datum")
+    datum: str = Field(
+        default="",
+        description="the elevation datum, as printed, when the axis is an "
+                    "elevation ('m TAW', 'mean sea level')")
+    depth_interval: Optional[Quantity] = Field(
+        default=None,
+        description="the interval the sheet states its readings were taken "
+                    "at, when it states one")
+    step: Optional[Quantity] = Field(
+        default=None,
+        description="the interval the points in this record actually stand "
+                    "at: the printed interval on a tabulated sheet, the step "
+                    "the reader digitised at on a plotted one")
+    digitised: bool = Field(
+        default=False,
+        description="True when the points were read off PLOTTED traces "
+                    "because the sheet tabulates them nowhere")
+    cone_type: str = Field(
+        default="",
+        description="the cone or penetrometer as printed: its model, its "
+                    "class, 'piezocone', 'mechanical'")
+    cone_area: Optional[Quantity] = Field(
+        default=None, description="the cone's base area, as printed")
+    sleeve_area: Optional[Quantity] = Field(
+        default=None, description="the friction sleeve's area, as printed")
+    standard: str = Field(
+        default="",
+        description="the standard the sheet names: 'ASTM D5778', "
+                    "'NEN 5140 class 1', 'EN ISO 22476-1'")
+    penetration_rate: Optional[Quantity] = Field(
+        default=None, description="the rate of advance, when printed")
+    qc_unit: str = Field(
+        default="",
+        description="the unit the qc axis or column is printed in; repeated "
+                    "here so a consumer can read the series' unit without "
+                    "walking every point")
+    fs_unit: str = Field(default="", description="the same, for fs")
+    u2_unit: str = Field(default="", description="the same, for u2")
+    refusal_depth: Optional[Quantity] = Field(
+        default=None,
+        description="the depth the sheet says the cone refused at, when it "
+                    "says so")
+    prov: List[Provenance] = Field(default_factory=list)
+
+    @property
+    def n_points(self) -> int:
+        return len(self.points)
+
+
+class DCPPoint(BaseModel):
+    """One increment of a dynamic penetrometer record.
+
+    A dynamic cone record is printed one of two ways round, and both are
+    here: BLOWS FOR A FIXED INCREMENT (the increment on
+    :attr:`DCPData.increment`, the count in :attr:`blows`) or PENETRATION FOR
+    A FIXED NUMBER OF BLOWS (:attr:`penetration` against
+    :attr:`blows`). Nothing converts one to the other, because the
+    conversion needs the increment and half the sheets that print
+    penetration-per-blow do not state one.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    depth: Quantity = Field(
+        description="the depth this increment ENDS at, as printed")
+    depth_top: Optional[Quantity] = Field(
+        default=None,
+        description="the depth it starts at, where the sheet prints an "
+                    "interval rather than a single depth")
+    blows: Optional[float] = Field(
+        default=None,
+        description="blows driven over this increment, as printed; a float "
+                    "because a few sheets print a fractional rate")
+    penetration: Optional[Quantity] = Field(
+        default=None,
+        description="how far it went, where the sheet prints penetration "
+                    "against a fixed number of blows")
+    index: Optional[Quantity] = Field(
+        default=None,
+        description="the printed penetration index (DPI, DN) in the unit "
+                    "printed: mm/blow, mm per blow, in/blow")
+    cbr_percent: Optional[float] = Field(
+        default=None,
+        description="the CBR the sheet DERIVES from the index and prints; "
+                    "never computed here")
+    resistance: Optional[Quantity] = Field(
+        default=None,
+        description="a dynamic resistance the sheet prints or plots (qd, Rd), "
+                    "as printed")
+    refusal: bool = Field(
+        default=False,
+        description="the sheet records refusal at this increment")
+    note: str = Field(default="", description="as printed")
+    prov: Optional[Provenance] = None
+
+
+class DCPData(BaseModel):
+    """One dynamic cone or dynamic probe record: the drives, and the hammer.
+
+    The hammer is why this is not an SPT list. A DCP is an 8 kg mass on a
+    575 mm drop and a DPSH is 63.5 kg on 750 mm; the blow counts mean
+    nothing without them, and a record that dropped them would be numbers
+    with no meaning. They are recorded only where the sheet prints them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    points: List[DCPPoint] = Field(
+        default_factory=list, description="the record, in depth order")
+    increment: Optional[Quantity] = Field(
+        default=None,
+        description="the fixed increment the blows are counted over, as "
+                    "printed (100 mm, 0.2 m, 15 cm)")
+    blows_per_set: Optional[int] = Field(
+        default=None,
+        description="the fixed number of blows a penetration is measured "
+                    "over, on a sheet printed that way round")
+    test_type: str = Field(
+        default="",
+        description="what the sheet calls it: 'DCP', 'DPL', 'DPSH', "
+                    "'penetrometre dynamique lourd', 'DPT'")
+    standard: str = Field(
+        default="",
+        description="the standard named: 'ASTM D6951', 'NF P 94-115', "
+                    "'EN ISO 22476-2'")
+    hammer_mass: Optional[Quantity] = Field(
+        default=None,
+        description="the mass of the hammer, as printed; 8 kg on a DCP and "
+                    "63.5 kg on a DPSH, and the blow counts mean different "
+                    "things behind each")
+    hammer_drop: Optional[Quantity] = Field(
+        default=None, description="how far the hammer fell, as printed")
+    cone_area: Optional[Quantity] = Field(
+        default=None, description="the driven cone's base area, as printed")
+    index_name: str = Field(
+        default="",
+        description="what the sheet CALLS its index column, as printed: "
+                    "'DPI', 'DN', 'mm/blow', 'Rd (MPa)'")
+    digitised: bool = Field(
+        default=False,
+        description="True when the record was read off a PLOTTED trace")
+    step: Optional[Quantity] = Field(
+        default=None,
+        description="the depth step the points stand at: the printed "
+                    "increment on a tabulated sheet, the digitising step on "
+                    "a plotted one")
+    refusal_depth: Optional[Quantity] = Field(
+        default=None, description="where the sheet says it refused")
+    prov: List[Provenance] = Field(default_factory=list)
+
+    @property
+    def n_points(self) -> int:
+        return len(self.points)
 
 
 # ---------------------------------------------------------------------------
@@ -1324,6 +1604,21 @@ class Investigation(BaseModel):
     samples: List[Sample] = Field(default_factory=list)
     spt: List[SPT] = Field(default_factory=list)
     water: List[WaterLevel] = Field(default_factory=list)
+    #: What each KIND of exploration adds that a boring has no room for. All
+    #: three are None on an exploration that is not of that kind, and on one
+    #: whose sheet printed none of it: a pit whose header states no plan size
+    #: has no ``pit``, and that is the honest state of the record.
+    pit: Optional[PitDimensions] = Field(
+        default=None,
+        description="a test pit's plan size and its own depth, when printed")
+    cpt: Optional[CPTData] = Field(
+        default=None,
+        description="a cone sounding's depth series and the cone that made "
+                    "it; set only on kind 'cpt'")
+    dcp: Optional[DCPData] = Field(
+        default=None,
+        description="a dynamic cone or dynamic probe record and its hammer; "
+                    "set only on kind 'dcp'")
     remarks: str = Field(
         default="", description="the log's own notes, verbatim")
     station: str = Field(default="", description="as printed")
@@ -2096,6 +2391,10 @@ class ReportRecord(BaseModel):
             "samples": sum(len(i.samples) for i in self.investigations),
             "spt": sum(len(i.spt) for i in self.investigations),
             "water_levels": sum(len(i.water) for i in self.investigations),
+            "cpt_points": sum(i.cpt.n_points for i in self.investigations
+                              if i.cpt is not None),
+            "dcp_points": sum(i.dcp.n_points for i in self.investigations
+                              if i.dcp is not None),
             "lab_tests": len(self.lab_tests),
             "calculations": len(self.calculations),
             "calcs": len(self.calcs),

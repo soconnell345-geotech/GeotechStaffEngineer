@@ -370,6 +370,152 @@ six reports, seven kinds, no model at all): program 80 % (8/10), inputs 73 %
 were read while this reader's prompt was written — so a blind calculation
 truth set is owed (`FUTURE_IDEAS.md`).
 
+## The pit, the cone sounding and the dynamic probe (`sounding_reader.py`)
+
+Three kinds `InvestigationKind` could always NAME and the record could not
+HOLD. A `test_pit` came back as a hole with strata in it; a `cpt` and a `dcp`
+came back as a hole with nothing in it at all, because a depth SERIES of three
+channels has nowhere to go among layers, samples and driven records. The
+corpus has **251 test pit pages, 54 DCP pages and 23 CPT pages**, and every one
+of them was read as a boring or not at all.
+
+### A test pit is a log, and the log reader reads it
+
+A pit form IS a form - a depth ruler, a description column, samples - so
+`log_reader.read_log` takes it, `log_floor.seed_from_grid` seeds it, and the
+merge rules are the ones every reader shares. What the train added is the one
+thing a pit has that a hole does not: `Investigation.pit`, a `PitDimensions`
+of a length, a width and the pit's own depth.
+
+**No test pit in the corpus prints a labelled plan dimension.** Fourteen pit
+logs across four reports were checked and not one carries a length or a width
+as a field. Every one of them names the machine and its BUCKET - *"... with a
+55 cm bucket"*, *"... Rubber Tire Backhoe 90 cm Bucket"*, *"... w/ 1 m wide
+bucket"* - and a trench dug with a 90 cm bucket is 90 cm wide. So
+`log_floor.bucket_width` reads it out of the equipment field, records it as the
+pit's WIDTH at a lower confidence than a labelled dimension would carry, and
+says in the provenance note exactly where it came from. The prompt tells the
+model the same rule, and tells it that a bucket mentioned in a *remark*
+("backfilled with the bucket") says nothing about how wide the pit was.
+
+A printed form sets a label and its value as two separate text runs on one
+baseline, so nothing splits on a colon; `log_floor.header_pairs` reads both
+shapes, which is what made the bucket visible at all.
+
+**A pit photographed with a sketch** - a picture of the excavated face with the
+contact depths written beside it and no ruler for a ruler-fitter to find - is
+the one log that is read from the picture first. Its floor is the header fields
+alone. The depth gate normally REFUSES every depth on a log with no scale, and
+that stays true for a borehole; on a PIT with no ruler a depth is accepted, at
+a reduced confidence and listed as a change, because the numbers printed on the
+sketch are the log and refusing them would refuse every depth such a pit ever
+states.
+
+### A sounding is not a log
+
+`read_sounding(doc, item_pages, engine, kind="cpt"|"dcp", budget=2)` returns an
+`Investigation` carrying a `CPTData` or a `DCPData`: a depth series of `qc`,
+`fs` and `u2` in the units printed, or blows over the printed increment with
+any printed index column, plus the cone or the hammer that made it.
+
+**Two shapes of sheet, read differently, and the scorecard prints the split.**
+
+* **TABULATED.** The sheet prints the series as a table and THE TABLE IS THE
+  RECORD, read deterministically. planlens' detected tables first; then, where
+  a sheet rules no table at all - which the corpus's tabulated soundings mostly
+  do not - the text lines banded by their own geometry. That band reader had to
+  learn three things the real sheets do: a header can be **staggered over five
+  printed lines** (*"Nbre de | Resist. | Contrainte dyn."*, the plot's title,
+  *"Profondeur"* alone, *"coups | dynamique | Admissible"*, *"[m] |
+  (daN/cm2)"*), so a window of lines is clustered by x-overlap into columns; a
+  column with no role is still READ, so its numbers cannot snap into a named
+  neighbour; and a long table's depth cell drifts onto its own printed line, so
+  the series ends after three depth-less lines rather than the first. One model
+  call then goes on the HEADER, and the brief tells it **not to re-type** two
+  hundred rows it would get wrong.
+* **PLOTTED.** The floor is the header fields and THE AXIS RANGES read off the
+  plot's own text - the axis titles with their units and the tick labels. Those
+  ranges are what makes a digitised reading checkable: a qc of 42 MPa on an
+  axis that runs to 20 is refused here rather than argued about later. The
+  traces are digitised through the picture with `zoom_plot` at a fixed depth
+  step, one point per depth with every trace's value at it, and a point where
+  one trace CROSSES another says so and carries a lower confidence.
+
+Reading the axes took three passes to get right, and each failure is worth
+knowing: a tick label belongs to ONE axis (a cone sheet prints tip resistance
+and friction ratio along the same printed line, one rising and one falling, and
+the first version gave both scales to whichever title it met first); a scale is
+EVENLY SPACED, linearly or in decades, which is what tells a real axis from the
+three rising numbers inside the little cone symbol every Dutch sounding prints
+in its corner; and a depth axis is always LINEAR, which is what stops a
+logarithmic resistance scale being read as one.
+
+**The vertical axis is not always a depth.** Many Continental sheets plot
+against an ELEVATION on a datum with the numbers going up the page;
+`CPTData.vertical_axis` says which, and nothing converts one to the other.
+
+### What Python refuses
+
+A depth outside the sheet's own depth axis. A channel value outside its printed
+range by more than one tick. A negative tip resistance. A series with no depth
+unit. Each refusal is recorded with the range it fell outside, because a
+reviewer needs to know the reader tried.
+
+### DIGGS
+
+`diggs_geo:StaticConePenetrationTest` for a cone sounding, whose dictionary
+entry names `tip_resistance`, `sleeve_friction` and `pore_pressure_u2` as the
+properties that occur under it. A sounding of four hundred readings is ONE Test
+with four hundred ROWS - a ResultSet is a table - so the depth of each reading
+is a COLUMN of the set and the test's own `location` is the linear extent the
+sounding ran over.
+
+**DIGGS 2.6 has no `DynamicConePenetrometerTest`**; the name is nowhere in the
+published schema. What it has is `diggs_geo:DynamicProbeTest`, whose own
+documentation is *"all methods that involve driving a rod by impact hammer"*
+and whose elements are exactly what a DCP record needs - a required
+`penetrationTestType`, then `hammerMass`, `hammerDropHeight`,
+`totalPenetration`. So that is what a dynamic probe is written as.
+`diggs26.parse_diggs26_soundings` reads both back, row by row, at each row's
+own depth, and the round-trip gate checks **every reading**, not a count and
+not a spot check.
+
+### The hand truth and what it produced
+
+**Thirteen sheets over six reports**: five test pits (five different firms'
+forms, one of them a photograph, one under a DRAFT watermark the grid reads
+nothing off), four cone soundings (two tabulated, one the SAME sounding
+plotted, one a negative case) and four dynamic probes (three tabulated, one
+four-soundings-to-a-page).
+
+**The floor alone, measured 2026-09-21** (no model, no network): **73 %
+overall (257/353)**, which splits into **96 % on the four TABULATED sheets
+(217/226)** - 100 % of every series metric, the misses being header fields a
+pattern cannot read - and **31 % on the nine PLOTTED ones (40/127)**, where the
+floor holds no points at all by construction and the whole of the reader's job
+is the digitising. Averaging the two would hide the only number anyone wants.
+**Every sheet is in sample**, so a blind set is owed (`FUTURE_IDEAS.md`).
+
+One finding is recorded in the truth's own README and is worth repeating here:
+**a plotted cone sounding cannot be hand-truthed as a digitised series on this
+corpus.** The traces oscillate faster than the sheet's own printed grid - tip
+resistance goes from 0.24 to 9.85 MPa across a fifth of the 1 m grid spacing -
+so at most whole-metre levels there is no single value of the trace to read.
+That is why `default_step` takes the FINER of the printed grid and
+`CPT_STEP_M`, never the coarser.
+
+### Scoring (`sounding_scoring.py`), and the stage
+
+A test pit is scored by the log scorer's own metrics - which it CALLS rather
+than copies, so the two cannot drift - plus `dimensions`. A sounding is scored
+per depth step: a truth point is found when the reader has a reading within
+0.05 m of that depth and its value is within **max(5 %, one axis tick)** for
+tip resistance, sleeve friction and the printed index, **10 %** for pore
+pressure, and **exactly** for a blow count, which is a count. Cluster stage
+**`"soundings"`** with `sounding_budget=2` and a `soundings/` truth subdir; the
+local twin is `measure_wp6_soundings.py`; the `ingest` stage's record scoring
+includes them.
+
 ## The DIGGS writer (`diggs_writer.py`)
 
 `write_diggs(record_or_investigations, project) -> str` produces DIGGS 2.6 XML.
@@ -1107,7 +1253,7 @@ dbutils.library.restartPython()
 ```
 
 ```python
-# 3. One cell, all eight stages. fh_prompter is the object setup just made,
+# 3. One cell, all nine stages. fh_prompter is the object setup just made,
 #    and fh_sp_client is the SharePoint client the mirror writes through.
 from report_ingest.cluster_scoring import score_on_cluster
 
@@ -1116,7 +1262,7 @@ results = score_on_cluster(
     manifest     = "/Volumes/<your volume>/report_ingest/MANIFEST.md",
     labels_xlsx  = "/Volumes/<your volume>/report_ingest/trial_pages_working_r2.xlsx",
     oos_labels   = "/Volumes/<your volume>/report_ingest/oos_labels.json",
-    truth_dir    = "/Volumes/<your volume>/report_ingest/truth",   # holds logs/ lab/ narrative/
+    truth_dir    = "/Volumes/<your volume>/report_ingest/truth",   # holds logs/ lab/ calc/ soundings/ narrative/
     di_dir       = "/Volumes/<your volume>/report_di",
     out_dir      = "/tmp/report_ingest_522",                  # the working folder; the durable copy is below
     sharepoint   = fh_sp_client,            # the durable copy; see "Where the output goes"
@@ -1124,8 +1270,8 @@ results = score_on_cluster(
     model        = "funhouse-gpt-high",     # every reader, on the tier the app runs on
     triage_model = "funhouse-gpt-medium",   # one call over a ledger; a cheaper tier does
     sets         = ("insample", "oos_open", "oos_blind"),
-    stages       = ("labels", "logs", "lab", "calc", "narrative",
-                    "vision_labels", "vote", "ingest"),
+    stages       = ("labels", "logs", "lab", "calc", "soundings",
+                    "narrative", "vision_labels", "vote", "ingest"),
     vision_model = "funhouse-gpt-low",      # the experiment: GPT-4.1, the cheap tier
     vision_mode  = "sheet",                 # six pages a call; or "page" / "document"
     vision_fallback = True,                 # one page-mode call for a page nothing answered for
@@ -1990,6 +2136,13 @@ passes, all three readers and the end-to-end graph — runs for real — the pro
 stop, the rules for applying a change. Running past the end of a script raises,
 because a pass that makes one more call than the test expected is the bug the
 test exists to catch.
+
+The sounding readers' tests run over five synthetic sheets built here
+(`tests/sounding_fixtures.py`: a pit form with a ruler and a bucket in its
+header, a cone sounding printed as an unruled column table, the same kind of
+sounding drawn as traces with nothing but its axes in text, a dynamic probe
+whose column header runs over three printed lines, and a four-page calculation
+run carrying two program banners for the item split).
 
 The log reader's tests run over real `log_grid` output on planlens' synthetic
 log fixtures, and the lab reader's over real located text and real detected

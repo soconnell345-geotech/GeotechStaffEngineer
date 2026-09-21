@@ -36,12 +36,13 @@ from report_ingest.floor import (
     has_evidence, same_depth, same_number, same_text, settle, show,
 )
 from report_ingest.model import (
-    DrillingDetails, Investigation, Layer, Provenance, Quantity, SPT, Sample,
-    WaterLevel, _canonical_unit,
+    DrillingDetails, Investigation, Layer, PitDimensions, Provenance,
+    Quantity, SPT, Sample, WaterLevel, _canonical_unit,
 )
 
 __all__ = ["seed_from_grid", "serialise_seed", "merge_investigations",
-           "GROUP_SPAN_M"]
+           "GROUP_SPAN_M", "pit_dimensions", "bucket_width", "header_pairs",
+           "PIT_METHOD_KEYS"]
 
 #: How far apart two placed cells may be and still belong to one sample: a
 #: driven sample is 0.46 m (18 in) long and its blow record, its N and its
@@ -498,9 +499,302 @@ def _pct(value: Optional[float]) -> Optional[float]:
     return max(0.0, min(100.0, float(value)))
 
 
+# ---------------------------------------------------------------------------
+# what a PIT has and a hole does not
+# ---------------------------------------------------------------------------
+#
+# A test pit is an EXCAVATION with a plan size. The grid's header vocabulary
+# was written for boreholes and has no term for a length, a width or a
+# bucket, so those never reached the record: a pit came back as a hole with
+# strata in it. They are read here, off the header lines of the first page,
+# by the same rule as everything else in this module -- a printed label
+# beside a printed number, and nothing inferred.
+
+#: ``normalised label -> which dimension``, in the four languages the corpus
+#: prints its pit logs in. A label that names two or three dimensions at
+#: once ("Dimensions (L x W x D)") is handled by :data:`_DIM_RUN` below.
+_DIM_KEYS: Dict[str, str] = {
+    "length": "length", "pit length": "length", "trench length": "length",
+    "excavation length": "length", "longueur": "length",
+    "comprimento": "length", "largo": "length", "longitud": "length",
+    "width": "width", "pit width": "width", "trench width": "width",
+    "excavation width": "width", "bucket width": "width",
+    "largeur": "width", "largura": "width", "ancho": "width",
+    "depth": "depth", "pit depth": "depth", "trench depth": "depth",
+    "excavation depth": "depth", "depth of pit": "depth",
+    "depth of excavation": "depth", "profondeur de la fouille": "depth",
+    "profundidade": "depth", "profundidad": "depth",
+}
+
+#: Labels that introduce a run of dimensions in one value:
+#: ``Pit Dimensions: 2.5 m x 1.0 m x 3.5 m``, ``Size (L x W x D)``.
+_DIM_RUN_KEYS: Tuple[str, ...] = (
+    "dimensions", "pit dimensions", "test pit dimensions",
+    "excavation dimensions", "trench dimensions", "pit size", "size",
+    "plan dimensions", "dimension", "dimensoes", "dimensiones",
+)
+
+#: How a pit log names how it was dug. Set on ``DrillingDetails.method``,
+#: which is where the record keeps "how the hole was made" whatever made it.
+PIT_METHOD_KEYS: Tuple[str, ...] = (
+    "excavation method", "method of excavation", "excavated by",
+    "excavation equipment", "metodo de escavacao", "metodo de excavacion",
+    "methode d excavation", "methode de fouille", "equipment",
+)
+
+#: ``label : value`` on one header line, in either punctuation a form uses.
+_HEADER_PAIR = re.compile(r"^\s*([^:=]{2,40}?)\s*[:=]\s*(.+?)\s*$")
+#: A label with nothing after it, which is how a printed form sets one: the
+#: label is its own text run and the value is another run to the right of it
+#: on the same baseline.
+_BARE_LABEL = re.compile(r"^\s*([^:=]{2,40}?)\s*[:=]\s*$")
+#: How far apart two text runs' tops may be and still be on one printed line.
+_PAIR_BAND_PT = 4.0
+
+
+def header_pairs(lines: Sequence[Any]) -> List[Tuple[str, str]]:
+    """``(label, value)`` for every header field these lines state.
+
+    BOTH SHAPES, because forms use both. A line reading ``Equipment: CAT
+    428E, 55 cm bucket`` is one text run and splits on its colon; a printed
+    form sets ``Equipment:`` as its own run with the value as a second run
+    to the right of it on the same baseline, and nothing splits at all. The
+    second is the commoner of the two on a drawn form and was invisible to a
+    colon-splitting reader.
+    """
+    out: List[Tuple[str, str]] = []
+    placed: List[Tuple[float, float, str]] = []      # (top, x0, text)
+    for raw in lines:
+        text = " ".join(str(getattr(raw, "text", raw) or "").split())
+        if not text or len(text) > 160:
+            continue
+        pair = _HEADER_PAIR.match(text)
+        if pair is not None and pair.group(2).strip():
+            out.append((pair.group(1).strip(), pair.group(2).strip()))
+        bbox = getattr(raw, "bbox", None)
+        if bbox is not None:
+            placed.append((float(bbox[1]), float(bbox[0]), text))
+    placed.sort()
+    for top, x0, text in placed:
+        label = _BARE_LABEL.match(text)
+        if label is None:
+            continue
+        # The nearest run to the RIGHT on the same printed line. Sorting by
+        # the top alone is not enough to find it: a form sets a label and
+        # its value a tenth of a point apart vertically, so either can come
+        # first in a sort, and the whole band has to be looked at.
+        on_the_line = [(other_x0, other)
+                       for other_top, other_x0, other in placed
+                       if abs(other_top - top) <= _PAIR_BAND_PT
+                       and other_x0 > x0 and other.strip()]
+        on_the_line.sort()
+        for _x, other in on_the_line:
+            if _BARE_LABEL.match(other) is not None:
+                break               # the next label, not this one's value
+            out.append((label.group(1).strip(), other.strip()))
+            break
+    return out
+#: ``2.5 m x 1.0 m x 3.5 m``, ``8' x 3' x 10'``, ``2,5 x 1,0 x 3,5 m``.
+_DIM_RUN = re.compile(
+    r"(-?\d+(?:[.,]\d+)?)\s*"
+    r"(mm|cm|m|ft|in|'|\")?\s*"
+    r"(?:x|×|by|par|por)\s*"
+    r"(-?\d+(?:[.,]\d+)?)\s*"
+    r"(mm|cm|m|ft|in|'|\")?"
+    r"(?:\s*(?:x|×|by|par|por)\s*(-?\d+(?:[.,]\d+)?)\s*"
+    r"(mm|cm|m|ft|in|'|\")?)?", re.I)
+#: One number with the unit printed beside it.
+_DIM_ONE = re.compile(
+    r"(-?\d+(?:[.,]\d+)?)\s*(mm|cm|m|ft|in|'|\")?", re.I)
+
+#: THE BUCKET, which is how a test pit log actually states its width.
+#: Fourteen pits across four reports of this corpus were checked and NOT ONE
+#: prints a labelled length or width; every one of them names the machine and
+#: its bucket -- "... with a 55 cm bucket", "... Rubber Tire Backhoe 90 cm
+#: Bucket", "... w/ 1 m wide bucket", "1.06 m Wide Mechanical Bucket". A
+#: trench dug with a 90 cm bucket is 90 cm wide, and that is what
+#: the page is telling a reader. It is recorded as the pit's WIDTH at a
+#: lower confidence than a labelled field, with the provenance saying it
+#: came off the bucket, so a reviewer can see exactly what was read and what
+#: was taken from it.
+_BUCKET = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*(mm|cm|m|ft|in|'|\")\s*(?:\w+\s+){0,2}"
+    r"(?:bucket|godet|balde|cazo|cuchar[oa])"
+    r"|(?:bucket|godet|balde)\D{0,12}?(\d+(?:[.,]\d+)?)\s*(mm|cm|m|ft|in|'|\")",
+    re.I)
+#: The header fields whose VALUE may name the bucket. Only these: a bucket
+#: mentioned in a remark ("backfilled with the bucket") says nothing about
+#: how wide the pit was.
+_BUCKET_FIELDS: Tuple[str, ...] = (
+    "equipment", "drilling equipment", "excavation equipment", "machine",
+    "rig", "drill rig", "equipement", "equipo", "maquina", "material",
+    "excavation method", "method of excavation", "excavated by",
+)
+
+
+#: The grid's own field keys whose VALUE may name the bucket. A printed form
+#: sets its label and its value as two separate text spans, so a
+#: ``label: value`` pattern over the lines never sees them as one string --
+#: the grid has already paired them by geometry and that pairing is what is
+#: read here.
+_BUCKET_GRID_KEYS: Tuple[str, ...] = (
+    "drilling_equipment", "drilling_method", "abandonment",
+)
+
+
+def bucket_width(lines: Sequence[Any] = (), unit: str = "",
+                 fields: Optional[Dict[str, Any]] = None
+                 ) -> Optional[Tuple[Quantity, str]]:
+    """``(the bucket's width, what it was printed in)``, or None.
+
+    Both the grid's own header FIELDS and the raw lines are looked at: a
+    a printed form pairs "Equipment:" with its value geometrically and sets
+    them as two spans, while a form that writes "Equipment: backhoe with a
+    55 cm bucket" on one line is read straight off the line.
+    """
+    candidates: List[str] = []
+    for key in _BUCKET_GRID_KEYS:
+        value = str((fields or {}).get(key) or "").strip()
+        if value:
+            candidates.append(value)
+    for raw_label, value in header_pairs(lines):
+        if _norm_label(raw_label) in _BUCKET_FIELDS:
+            candidates.append(value)
+    for value in candidates:
+        match = _BUCKET.search(value)
+        if match is None:
+            continue
+        number = _dim_number(match.group(1) or match.group(3))
+        token = match.group(2) or match.group(4)
+        if number is None or number <= 0.0:
+            continue
+        return (Quantity(value=number, unit=_dim_unit(token, unit)),
+                value.strip())
+    return None
+
+
+def _dim_number(text: str) -> Optional[float]:
+    """A dimension as a number, decimal comma and all."""
+    try:
+        return float(str(text).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
+def _dim_unit(token: Optional[str], fallback: str) -> str:
+    key = _canonical_unit(str(token or "")) if token else None
+    return key or fallback
+
+
+def _norm_label(text: str) -> str:
+    """A header label folded to words, for the dimension tables above."""
+    cleaned = re.sub(r"[^a-z0-9 ]+", " ", str(text or "").lower())
+    return " ".join(cleaned.split())
+
+
+def pit_dimensions(lines: Sequence[Any], unit: str = "",
+                   page: int = 0,
+                   fields: Optional[Dict[str, Any]] = None
+                   ) -> Optional[PitDimensions]:
+    """The pit's plan size and its own depth, off the header lines.
+
+    ``lines`` are text lines (anything with a ``.text``) or plain strings.
+    Two shapes are read and no others: a label naming ONE dimension with a
+    number beside it, and a label introducing a RUN of two or three
+    (``Dimensions: 2.5 m x 1.0 m x 3.5 m``), in which case the first is the
+    length, the second the width and the third, if any, the depth. A unit
+    printed against a number wins; where none is, the log's depth unit
+    stands in, because a pit log that prints its depths in feet does not
+    print its width in metres.
+
+    Returns None when the header printed nothing about the pit's size,
+    which is the common case and is not a failure.
+    """
+    length = width = depth = None
+    seen: List[str] = []
+    for raw_label, value in header_pairs(lines):
+        label = _norm_label(raw_label)
+        if not value:
+            continue
+        if label in _DIM_RUN_KEYS or (
+                label.endswith(" dimensions") or label.startswith("dimension")
+                or label.startswith("size ") or label == "size"):
+            run = _DIM_RUN.search(value)
+            if run is None:
+                continue
+            numbers = [(_dim_number(run.group(1)), run.group(2)),
+                       (_dim_number(run.group(3)), run.group(4))]
+            if run.group(5) is not None:
+                numbers.append((_dim_number(run.group(5)), run.group(6)))
+            # A run states its unit once, usually on the LAST number. So a
+            # number with no unit of its own takes the run's own unit before
+            # it falls back to the log's.
+            stated = next((u for _n, u in reversed(numbers) if u), None)
+            slots = ["length", "width", "depth"]
+            for (number, token), slot in zip(numbers, slots):
+                if number is None:
+                    continue
+                quantity = Quantity(
+                    value=number, unit=_dim_unit(token or stated, unit))
+                if slot == "length":
+                    length = quantity
+                elif slot == "width":
+                    width = quantity
+                else:
+                    depth = quantity
+            seen.append(raw_label)
+            continue
+        slot = _DIM_KEYS.get(label)
+        if slot is None:
+            continue
+        one = _DIM_ONE.search(value)
+        if one is None:
+            continue
+        number = _dim_number(one.group(1))
+        if number is None:
+            continue
+        quantity = Quantity(value=number, unit=_dim_unit(one.group(2), unit))
+        if slot == "length" and length is None:
+            length = quantity
+        elif slot == "width" and width is None:
+            width = quantity
+        elif slot == "depth" and depth is None:
+            depth = quantity
+        else:
+            continue
+        seen.append(raw_label)
+    note = ("pit dimensions from the header field(s) "
+            + ", ".join(sorted(set(seen)))) if seen else ""
+    confidence = 0.7
+    if width is None:
+        bucket = bucket_width(lines, unit, fields)
+        if bucket is not None:
+            width, said = bucket
+            confidence = 0.6
+            note = (note + "; " if note else "") + (
+                f"the width is the BUCKET the equipment field names "
+                f"({said[:60]!r}); the header states no pit dimension of its "
+                f"own")
+    if length is None and width is None and depth is None:
+        return None
+    return PitDimensions(
+        length=length, width=width, depth=depth,
+        prov=Provenance(page=int(page), method="grid", confidence=confidence,
+                        note=note or "pit dimensions read off the header"))
+
+
+def _pit_method(lines: Sequence[Any]) -> str:
+    """How the pit was dug, off a header field, or an empty string."""
+    for raw_label, value in header_pairs(lines):
+        if _norm_label(raw_label) in PIT_METHOD_KEYS and value:
+            return value
+    return ""
+
+
 def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
                    confidence_floor: float = 0.3,
-                   template: Any = None) -> Investigation:
+                   template: Any = None,
+                   lines: Sequence[Any] = ()) -> Investigation:
     """The grid's own reading of one log as an :class:`Investigation`.
 
     Every value carries a ``grid`` provenance at the grid's own confidence
@@ -518,6 +812,12 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
     method stays ``grid``, with the template named in the note, because the
     value was still placed by geometry and nothing was inferred from the
     form beyond what its own columns carry.
+
+    ``lines`` are the text lines of the log's pages, when the caller has
+    them. They are read for the two things a HEADER states that the grid's
+    borehole vocabulary has no term for: a test pit's plan dimensions and
+    how the pit was dug. Left empty, nothing changes and no pit gets
+    dimensions -- which is what every caller before this got.
     """
     pages = [int(p) for p in pages]
     unit = (grid.unit or "").strip()
@@ -594,6 +894,26 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
         prov=[fprov(k) for k in ("drilling_method", "drilling_equipment",
                                  "hammer_type", "driller", "contractor",
                                  "logged_by") if k in used])
+
+    # THE PIT. A pit's plan size and the way it was dug are printed in the
+    # header, in words the grid's borehole vocabulary has no term for, so
+    # they are read off the lines rather than off the fields.
+    pit = pit_dimensions(lines, unit, pages[0], fields)         if (lines or fields) else None
+    if pit is not None and kind != "test_pit":
+        # A hole with a length and a width is a pit however the header
+        # titled itself: a borehole has a diameter, not a plan size. The
+        # grid's own answer is kept in the fields so a reviewer sees both.
+        if pit.length is not None and pit.width is not None:
+            fields["grid_kind"] = kind
+            kind = "test_pit"
+    if pit is not None:
+        method = _pit_method(lines)
+        if method and not drilling.method.strip():
+            drilling.method = method
+            drilling.prov.append(Provenance(
+                page=pages[0], method="grid", confidence=0.7,
+                note="how the pit was dug, from its header"))
+        pit.method = method or drilling.method
 
     water: List[WaterLevel] = []
     raw = text("groundwater")
@@ -675,7 +995,7 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
         date_started=text("date_started"),
         date_finished=text("date_finished"),
         drilling=drilling, layers=layers, samples=samples, spt=spt,
-        water=water, sheet=text("sheet"),
+        water=water, pit=pit, sheet=text("sheet"),
         pages=pages, source_report=report_id, fields=extra,
         prov=header_prov)
 
@@ -712,6 +1032,12 @@ def serialise_seed(inv: Investigation) -> str:
         if value:
             header.append(f"{name} '{value}'")
     out.append("header: " + "; ".join(header))
+    if inv.pit is not None:
+        size = [f"{name} {show(getattr(inv.pit, name))}"
+                for name in ("length", "width", "depth")
+                if getattr(inv.pit, name) is not None]
+        out.append(f"pit dimensions ({_where(inv.pit.prov)}): "
+                   + ", ".join(size))
     for key, value in sorted(inv.fields.items()):
         out.append(f"header field {key} = '{value[:80]}'")
     for ly in inv.layers:
@@ -1215,10 +1541,42 @@ class _Merger:
         merged.samples = self.samples()
         merged.spt = self.spt()
         merged.water = self.water()
+        merged.pit = self.pit()
         for r in merged.spt:
             if not r.hammer:
                 r.hammer = merged.drilling.hammer_type
         return merged
+
+    # -- the pit ---------------------------------------------------------
+    def pit(self) -> Optional[PitDimensions]:
+        """The pit's dimensions, slot by slot, under the same rule.
+
+        Three numbers and a word, so there is nothing to pair up: each slot
+        is settled on its own, the floor's value stands where the model
+        brought no evidence, and every split is a disagreement.
+        """
+        f, m = self.floor.pit, self.model.pit
+        if f is None and m is None:
+            return None
+        if f is None:
+            return m
+        if m is None:
+            return self.keep_whole(f"investigations[{self.inv_id}].pit",
+                                   "the pit's dimensions", f)
+        where = f"investigations[{self.inv_id}].pit"
+        out = PitDimensions(prov=f.prov or m.prov)
+        for name in ("length", "width", "depth"):
+            fv, mv = getattr(f, name), getattr(m, name)
+            s = self.slot(where, "pit", name, fv, mv, _same_quantity(fv, mv),
+                          f.prov, m.prov,
+                          has_evidence(m.prov, f.prov.bbox if f.prov else None),
+                          f.prov.page if f.prov else None)
+            setattr(out, name, s.value)
+            if s.alternative is not None and out.prov is not None:
+                out.prov = out.prov.model_copy(deep=True)
+                out.prov.alternatives.append(s.alternative)
+        out.method = m.method or f.method
+        return out
 
 
 def merge_investigations(floor: Investigation, model: Investigation,

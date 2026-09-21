@@ -452,6 +452,56 @@ and no home for a chosen thickness. The record, the summary page's
 "Calculations" section and the library page carry them instead, each value
 with the page it was printed on.
 
+### The pits and the soundings are read (added 2026-09-21)
+
+`InvestigationKind` has said `test_pit`, `cpt` and `dcp` since the first
+version of the record, and until now every one of them was read as though it
+were a boring. A pit lost the hole it actually was; a sounding lost the whole
+of what it measured, because a depth SERIES of three channels has nowhere to
+go among layers, samples and driven records. The corpus carries **251 test pit
+pages, 54 DCP pages and 23 CPT pages** in nine of the fourteen labelled
+reports.
+
+**A test pit is a LOG.** A pit form has a ruler, a description column and
+samples, so the log reader takes it and the log's floor seeds it. What is new
+is `Investigation.pit`: a length, a width and the pit's own depth. **No pit in
+this corpus prints a labelled plan size** -- fourteen were checked across four
+reports -- but every one names its BUCKET in the equipment field, and a trench
+dug with a 90 cm bucket is 90 cm wide. That is read as the WIDTH at a lower
+confidence, with the provenance saying where it came from. A pit photographed
+with a sketch (no ruler) goes to the model from the picture with a floor of
+header fields only, and is the one log whose depths are accepted without a
+fitted scale.
+
+**A sounding is NOT a log**, and `sounding_reader.read_sounding` is the FIFTH
+reader. Two shapes of sheet, read differently, and the scorecard prints the
+split:
+
+* **TABULATED** -- the sheet's own table is the record, read deterministically
+  off planlens' detected tables or, where a sheet rules no table at all, off
+  the text lines clustered into columns. One call then goes on the header, and
+  the brief tells the model NOT to re-type the rows.
+* **PLOTTED** -- the floor is the header and the AXIS RANGES read off the
+  plot's own text, and the traces are digitised through `zoom_plot` at a fixed
+  step, a point per depth, with a confidence that falls where one trace crosses
+  another. The axis ranges are what makes a digitised reading checkable.
+
+**DIGGS 2.6 has a home for a cone sounding and none for a dynamic cone.**
+`StaticConePenetrationTest` is the schema's own procedure for the first, whose
+dictionary entry names `tip_resistance`, `sleeve_friction` and
+`pore_pressure_u2` as the properties that occur under it. There is no
+`DynamicConePenetrometerTest` anywhere in the published schema, so a dynamic
+probe is written as the `DynamicProbeTest` the schema DOES declare -- "all
+methods that involve driving a rod by impact hammer". A sounding is ONE Test
+with a ResultSet of many ROWS and the depth of each reading is a COLUMN of the
+set; `parse_diggs26_soundings` reads it back row by row.
+
+**And the calculation grouping defect is fixed.** The calc reader's own hand
+truth found the item grouping folding four different calculations into one
+fifteen-page item where an appendix runs printouts back to back;
+`split_calc_items` splits a run on a changed running header or title block or
+a page that opens with a program banner, capped at `MAX_CALC_PAGES`.
+
 ### Where each piece lives
 
 | Piece | Home | Why |
@@ -664,6 +714,31 @@ from rendered pages, kept in the private ledger for the owner to spot-check.
   R38 after the cluster install check.
 - Boring locations from the plan figure (the old repo's coordinate work);
   planlens IR plus `find_quantities` make this feasible.
+
+### WP6: test pits, cone soundings and dynamic probes (2026-09-21)
+
+- **`sounding_reader.py`** reads a `cpt_log` or `dcp_log` item into an
+  `Investigation` with a `CPTData` or a `DCPData`; the log reader gained the
+  pit's dimensions and the no-ruler photograph path.
+- **Floor:** the sheet's own table where it tabulates, the axis ranges where it
+  plots. Merged under the package's one rule -- add, correct only with
+  evidence, never drop.
+- **Gates:** a depth outside the sheet's own depth axis, a channel outside its
+  printed range by more than a tick, a negative tip resistance and a series
+  with no depth unit are refused with the range they fell outside.
+- **DIGGS:** `StaticConePenetrationTest` and `DynamicProbeTest`, through both
+  gates, read back at each row's own depth.
+- **Scoring:** `sounding_scoring.py` (a pit by the log scorer's metrics plus
+  `dimensions`; a sounding per depth step, within max(5 %, one axis tick) for
+  qc, fs and the index, 10 % for u2, exactly for a blow count), cluster stage
+  `"soundings"`, the local twin `measure_wp6_soundings.py`, and the `ingest`
+  stage's record scoring.
+- **Hand truth:** thirteen sheets over six reports, all OPEN.
+- **The floor alone, 2026-09-21:** 73 % overall (257/353), which is 96 % on the
+  four tabulated sheets and 31 % on the nine plotted ones. **The readers
+  themselves are unmeasured** until the cluster run.
+- **OPEN ONLY -- there is no blind sounding truth set**, and every number the
+  stage prints is in sample until there is one.
 
 ### Parked
 

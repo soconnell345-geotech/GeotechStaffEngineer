@@ -132,8 +132,8 @@ class TestRecord:
             qa=[QAEntry(kind="partial", detail="one sheet unreadable")])
         assert record.counts() == {
             "investigations": 1, "layers": 1, "samples": 1, "spt": 1,
-            "water_levels": 1, "lab_tests": 1, "calculations": 0,
-            "calcs": 0, "qa": 1}
+            "water_levels": 1, "cpt_points": 0, "dcp_points": 0,
+            "lab_tests": 1, "calculations": 0, "calcs": 0, "qa": 1}
         assert record.investigation("B-2") is not None
         assert record.investigation("B-9") is None
 
@@ -322,3 +322,116 @@ class TestLabResults:
                            size=Quantity(value=1.0, unit="furlongs"))
         paths = {path for path, _v, _u in si_numbers(point)}
         assert "percent_passing" in paths and "size" not in paths
+
+
+# ---------------------------------------------------------------------------
+# what a pit, a cone sounding and a dynamic probe add
+# ---------------------------------------------------------------------------
+
+class TestTheSoundings:
+    """Three kinds ``InvestigationKind`` could always NAME and the record
+    could not HOLD until this train."""
+
+    @staticmethod
+    def _cone():
+        from report_ingest.model import CPTData, CPTPoint
+        return Investigation(
+            investigation_id="CPT-1", kind="cpt", depth_unit="m",
+            cpt=CPTData(
+                points=[CPTPoint(depth=Quantity(value=0.5, unit="m"),
+                                 qc=Quantity(value=5.5, unit="MPa"),
+                                 fs=Quantity(value=0.06, unit="MPa"),
+                                 u2=Quantity(value=5.0, unit="kPa"),
+                                 rf_percent=1.1, sbt="sand")],
+                vertical_axis="elevation", datum="m TAW",
+                cone_area=Quantity(value=15.0, unit="cm3"),
+                qc_unit="MPa", digitised=True))
+
+    @staticmethod
+    def _probe():
+        from report_ingest.model import DCPData, DCPPoint
+        return Investigation(
+            investigation_id="DP-1", kind="dcp", depth_unit="m",
+            dcp=DCPData(
+                points=[DCPPoint(depth=Quantity(value=0.2, unit="m"),
+                                 blows=4.0,
+                                 index=Quantity(value=21.5, unit="MPa"),
+                                 cbr_percent=12.0, refusal=False)],
+                increment=Quantity(value=0.2, unit="m"),
+                hammer_mass=Quantity(value=63.5, unit="kg"),
+                index_name="Rd (MPa)"))
+
+    def test_a_cone_sounding_round_trips_through_json(self):
+        from report_ingest.model import CPTData
+        inv = self._cone()
+        again = Investigation.model_validate(inv.model_dump(mode="json"))
+        assert isinstance(again.cpt, CPTData)
+        assert again.cpt.n_points == 1
+        assert again.cpt.points[0].qc.unit == "MPa"
+        assert again.cpt.vertical_axis == "elevation"
+
+    def test_a_dynamic_probe_round_trips_through_json(self):
+        from report_ingest.model import DCPData
+        inv = self._probe()
+        again = Investigation.model_validate(inv.model_dump(mode="json"))
+        assert isinstance(again.dcp, DCPData)
+        assert again.dcp.points[0].blows == 4.0
+        assert again.dcp.hammer_mass.value == 63.5
+
+    def test_a_pit_carries_its_plan_size(self):
+        from report_ingest.model import PitDimensions
+        inv = Investigation(
+            investigation_id="TP-1", kind="test_pit", depth_unit="m",
+            pit=PitDimensions(length=Quantity(value=2.5, unit="m"),
+                              width=Quantity(value=1.0, unit="m"),
+                              method="Backhoe"))
+        again = Investigation.model_validate(inv.model_dump(mode="json"))
+        assert again.pit.length.value == 2.5
+        assert again.pit.depth is None
+
+    def test_an_exploration_of_another_kind_carries_none_of_them(self):
+        boring = Investigation(investigation_id="B-1", kind="boring")
+        assert boring.pit is None and boring.cpt is None
+        assert boring.dcp is None
+
+    def test_the_counts_report_the_series(self):
+        record = ReportRecord(investigations=[self._cone(), self._probe()])
+        counts = record.counts()
+        assert counts["cpt_points"] == 1
+        assert counts["dcp_points"] == 1
+
+    def test_the_si_walk_reaches_a_soundings_numbers(self):
+        numbers = dict((path, value)
+                       for path, value, _unit in si_numbers(self._cone()))
+        assert any(p.endswith("qc.value") or p.endswith(".qc")
+                   for p in numbers)
+        assert any(abs(v - 5500.0) < 1e-6 for v in numbers.values())
+
+    def test_the_schema_carries_the_sounding_shape(self):
+        schema = record_json_schema()
+        names = set(schema["$defs"])
+        assert {"CPTData", "CPTPoint", "DCPData", "DCPPoint",
+                "PitDimensions"} <= names
+        investigation = schema["$defs"]["Investigation"]["properties"]
+        assert {"pit", "cpt", "dcp"} <= set(investigation)
+
+    def test_every_new_model_is_walkable_and_forbids_extras(self):
+        from report_ingest.model import (
+            CPTData, CPTPoint, DCPData, DCPPoint, PitDimensions,
+        )
+        for cls in (PitDimensions, CPTPoint, CPTData, DCPPoint, DCPData):
+            assert cls.model_config.get("extra") == "forbid", cls.__name__
+            for name, field in cls.model_fields.items():
+                assert field.description or name in (
+                    "kind", "points", "prov"), f"{cls.__name__}.{name}"
+
+    def test_adding_these_did_not_move_the_schema_version(self):
+        # All three are optional and nothing changed meaning, so a record
+        # written before them loads as one whose explorations carry none.
+        from report_ingest.model import SCHEMA_VERSION
+        assert SCHEMA_VERSION == "4.0"
+        old = {"schema_version": "4.0",
+               "investigations": [{"investigation_id": "B-1",
+                                   "kind": "boring"}]}
+        again = ReportRecord.model_validate(old)
+        assert again.investigations[0].cpt is None

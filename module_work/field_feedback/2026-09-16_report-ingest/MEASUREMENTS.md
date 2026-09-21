@@ -4050,3 +4050,96 @@ site_response__R30_p555                 open      1    11     62% 5/8           
 slope_stability__R23_p386               open      4     9    12% 2/17           -     -    -     -    -     -
 
 ```
+
+### WP6 soundings -- the floor alone, 2026-09-21
+
+The floor alone, before any model call: the log grid on a test pit, and on a sounding either the sheet's own tabulated table or, where it plots its traces, the axis ranges and nothing else. No engine, no key, no network.
+
+A truth point counts as found when the reader has a reading within 0.05 m of that depth and its value is within 5% or one axis tick (tip resistance, sleeve friction, the printed index), 10% (pore pressure), or EXACTLY (a blow count). A test pit is scored by the log scorer's own metrics plus its plan dimensions. THERE IS NO BLIND SET -- every sheet was read while the readers were written, so every number here is in sample.
+
+```
+open -- 13 sheet(s)
+metric              before         after
+----------------------------------------
+depth            93% 70/75
+qc               94% 32/34
+fs               94% 32/34
+blows            93% 38/41
+index            90% 38/42
+header           35% 11/31
+layer_top         40% 8/20
+uscs                0% 0/8
+sample_depth       0% 0/12
+water               0% 0/3
+fields           53% 27/51
+dimensions         50% 1/2
+OVERALL        73% 257/353
+
+all -- 13 sheet(s)
+metric              before         after
+----------------------------------------
+depth            93% 70/75
+qc               94% 32/34
+fs               94% 32/34
+blows            93% 38/41
+index            90% 38/42
+header           35% 11/31
+layer_top         40% 8/20
+uscs                0% 0/8
+sample_depth       0% 0/12
+water               0% 0/3
+fields           53% 27/51
+dimensions         50% 1/2
+OVERALL        73% 257/353
+
+tabulated -- 4 sheet(s)
+metric              before         after
+----------------------------------------
+depth           100% 70/70
+qc              100% 32/32
+fs              100% 32/32
+blows           100% 38/38
+index           100% 38/38
+header            44% 7/16
+OVERALL        96% 217/226
+
+plotted -- 9 sheet(s)
+metric              before         after
+----------------------------------------
+depth               0% 0/5
+qc                  0% 0/2
+fs                  0% 0/2
+blows               0% 0/3
+index               0% 0/4
+header            27% 4/15
+layer_top         40% 8/20
+uscs                0% 0/8
+sample_depth       0% 0/12
+water               0% 0/3
+fields           53% 27/51
+dimensions         50% 1/2
+OVERALL         31% 40/127
+
+kind          sheets  pages        before         after
+-------------------------------------------------------
+cpt                4      4   88% 103/117
+dcp                4      4   87% 118/136
+test_pit           5      6    36% 36/100
+
+sheet                             set    kind     shape        pp  floor      before       after calls zoom unres     s
+-----------------------------------------------------------------------------------------------------------------------
+cpt__R20_p46                      open   cpt      plotted       1      0    10% 1/10           -     -    -     -     -
+cpt__R20_p47                      open   cpt      tabulated     1     12   95% 38/40           -     -    -     -     -
+cpt__R20_p57                      open   cpt      tabulated     1     27   97% 62/64           -     -    -     -     -
+cpt__R24_p41                      open   cpt      plotted       1      0     67% 2/3           -     -    -     -     -
+dcp__R28_p112                     open   dcp      tabulated     1     26   99% 80/81           -     -    -     -     -
+dcp__R28_p89                      open   dcp      tabulated     1     53   90% 37/41           -     -    -     -     -
+dcp__R29_p63                      open   dcp      plotted       1      0     0% 0/10           -     -    -     -     -
+dcp__R29_p79                      open   dcp      plotted       1      0     25% 1/4           -     -    -     -     -
+test_pit__R15_p68                 open   test_pit plotted       1      0     0% 0/16           -     -    -     -     -
+test_pit__R21_p43                 open   test_pit plotted       1      0    27% 3/11           -     -    -     -     -
+test_pit__R23_p91                 open   test_pit plotted       2      0   53% 18/34           -     -    -     -     -
+test_pit__R28_p68                 open   test_pit plotted       1      0     0% 0/21           -     -    -     -     -
+test_pit__R30_p152                open   test_pit plotted       1      0   83% 15/18           -     -    -     -     -
+
+```

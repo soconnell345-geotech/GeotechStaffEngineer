@@ -675,3 +675,67 @@ class TestPrintedNumbers:
                                                              spreadsheet):
         doc, _gt = spreadsheet
         assert printed_numbers(doc, [99]) == []
+
+
+# ---------------------------------------------------------------------------
+# where one printout ends and the next begins
+# ---------------------------------------------------------------------------
+
+class TestSplittingACalculationRun:
+    """The defect the hand truth found: an appendix of printouts run back to
+    back came back as ONE item folding four different calculations."""
+
+    @pytest.fixture
+    def two_banners(self, tmp_path):
+        from report_ingest.tests.sounding_fixtures import build_two_banner_run
+        doc = _open(build_two_banner_run(), tmp_path)
+        yield doc
+        doc.close()
+
+    def test_a_run_with_two_banners_becomes_two_items(self, two_banners):
+        from report_ingest.calc_reader import split_calc_runs
+        assert split_calc_runs(two_banners, [0, 1, 2, 3]) == [[0, 1], [2, 3]]
+
+    def test_a_single_page_is_its_own_run(self, two_banners):
+        from report_ingest.calc_reader import split_calc_runs
+        assert split_calc_runs(two_banners, [2]) == [[2]]
+
+    def test_a_run_of_one_printout_is_not_split(self, two_banners):
+        from report_ingest.calc_reader import split_calc_runs
+        assert split_calc_runs(two_banners, [0, 1]) == [[0, 1]]
+
+    def test_a_run_is_capped_at_the_readers_own_ceiling(self, two_banners):
+        from report_ingest.calc_reader import MAX_CALC_PAGES, split_calc_runs
+        # Pages the document does not have read as nothing, which does not
+        # split; the cap still bites.
+        runs = split_calc_runs(two_banners, list(range(MAX_CALC_PAGES + 4)))
+        assert all(len(run) <= MAX_CALC_PAGES for run in runs)
+        assert len(runs) >= 2
+
+    def test_the_items_keep_their_title_and_say_they_were_split(
+            self, two_banners):
+        from planlens.document.roles import Item
+        from report_ingest.calc_reader import split_calc_items
+        item = Item(id="item_3", kind="calculation", pages=[0, 1, 2, 3],
+                    title="Appendix C", evidence={"first_page": 0})
+        out = split_calc_items(two_banners, [item])
+        assert [i.id for i in out] == ["item_3a", "item_3b"]
+        assert [i.pages for i in out] == [[0, 1], [2, 3]]
+        assert all(i.title == "Appendix C" for i in out)
+        assert all(i.evidence["split_from"] == "item_3" for i in out)
+        assert out[1].evidence["first_page"] == 2
+
+    def test_an_item_of_another_kind_passes_through_untouched(
+            self, two_banners):
+        from planlens.document.roles import Item
+        from report_ingest.calc_reader import split_calc_items
+        item = Item(id="item_1", kind="boring_log", pages=[0, 1])
+        assert split_calc_items(two_banners, [item]) == [item]
+
+    def test_each_split_item_reads_as_its_own_calculation(self, two_banners):
+        from report_ingest.calc_reader import split_calc_runs
+        runs = split_calc_runs(two_banners, [0, 1, 2, 3])
+        first = floor_from_pages(two_banners, runs[0], "RXX")
+        second = floor_from_pages(two_banners, runs[1], "RXX")
+        assert "lpile" in (first.program or "").lower()
+        assert "stabl" in (second.program or "").lower()

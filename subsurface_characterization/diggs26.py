@@ -44,6 +44,8 @@ from subsurface_characterization.site_model import (
 __all__ = [
     "PROPERTY_CLASS_MAP", "parse_diggs26_lithology", "parse_diggs26_tests",
     "parse_diggs26_samples", "parse_diggs26_water",
+    "parse_diggs26_soundings", "SOUNDING_PROCEDURES",
+    "SOUNDING_DEPTH_CLASS", "SOUNDING_EXTRA_MAP",
     "parse_diggs26_result_sets", "ResultSetRead",
 ]
 
@@ -321,6 +323,11 @@ def parse_diggs26_tests(root, ns_map, investigations, gml_id_map, warnings, *,
                 tag = child.tag
                 procedure = tag.split("}", 1)[1] if tag.startswith("{") else tag
                 break
+        if procedure in SOUNDING_PROCEDURES:
+            # A sounding's rows are read by parse_diggs26_soundings, which
+            # takes each row's depth off the set's own depth column. Reading
+            # it here as well would place a one-row sounding twice.
+            continue
         for result in findall(test, ".//diggs:TestResult", ns_map):
             location = find(result, "diggs:location", ns_map)
             depths = _positions(location, find_text)
@@ -360,6 +367,116 @@ def parse_diggs26_tests(root, ns_map, investigations, gml_id_map, warnings, *,
                 ))
         if procedure == "DrivenPenetrationTest" and proc is not None:
             _drive_sets(test, proc, ns_map, geo, inv, find, find_text)
+
+
+#: The two procedures whose result set is a SOUNDING: many rows against one
+#: position, with the depth of each row in a column of the set rather than in
+#: the test's own location. Everything else with many rows is a curve at one
+#: depth (a grading, a consolidation) and is read by
+#: :func:`parse_diggs26_result_sets`, which returns the table whole.
+SOUNDING_PROCEDURES: Dict[str, str] = {
+    "StaticConePenetrationTest": "CPTu",
+    "DynamicProbeTest": "DCP",
+}
+
+#: What the depth column of a sounding's result set is named. Not a term of
+#: the DIGGS property dictionary -- the dictionary has no depth property,
+#: because in DIGGS a depth is a POSITION and not a value -- so a table of
+#: readings against depth has to name its own, and this is the name
+#: :mod:`report_ingest.diggs_writer` writes it under.
+SOUNDING_DEPTH_CLASS = "sounding_depth"
+
+#: The properties a sounding's result set carries that the dictionary does
+#: not name, and what this package calls them. The dictionary's own terms
+#: (``tip_resistance``, ``sleeve_friction``, ``pore_pressure_u2``,
+#: ``blow_count``) come through :data:`PROPERTY_CLASS_MAP` like everything
+#: else; these are the two a DCP sheet prints that DIGGS has no term for.
+SOUNDING_EXTRA_MAP: Dict[str, Tuple[str, str, str]] = {
+    "penetration": ("penetration_m", "field", "DCP"),
+    "penetration_index": ("DPI", "field", "DCP"),
+    "cbr_estimated": ("CBR_pct", "field", "DCP"),
+}
+
+
+def parse_diggs26_soundings(root, ns_map, investigations, gml_id_map,
+                            warnings, *, find, findall, text) -> None:
+    """A cone sounding or a dynamic probe: every row at its own depth.
+
+    WHY THIS IS A SECOND READER AND NOT A BRANCH OF THE FIRST.
+    :func:`parse_diggs26_tests` reads a result at THE TEST'S OWN POSITION,
+    which is right for a blow count and a water content -- one value, one
+    depth. A sounding is four hundred readings over a run of hole, written
+    as ONE Test with one linear extent and a result set of four hundred
+    rows, because that is what a ResultSet is for and writing four hundred
+    Tests would be writing four hundred soundings. Its depth is therefore a
+    COLUMN, and reading it means reading down the table rather than off the
+    location.
+
+    The procedures that get this treatment are named in
+    :data:`SOUNDING_PROCEDURES` and nothing else does: a many-rowed result
+    set under any other procedure is a curve at one depth and is left to
+    :func:`parse_diggs26_result_sets`, which hands it back as a table.
+    """
+    def find_text(element, path):
+        return text(element, path, ns_map, "")
+
+    for test in findall(root, ".//diggs:Test", ns_map):
+        procedure = ""
+        proc = find(test, "diggs:procedure", ns_map)
+        if proc is not None:
+            for child in proc:
+                tag = child.tag
+                procedure = tag.split("}", 1)[1] if tag.startswith("{") \
+                    else tag
+                break
+        if procedure not in SOUNDING_PROCEDURES:
+            continue
+        inv_id = _resolve_feature(test, find, ns_map, investigations,
+                                  gml_id_map)
+        if not inv_id or inv_id not in investigations:
+            continue
+        inv = investigations[inv_id]
+        for result in findall(test, ".//diggs:TestResult", ns_map):
+            properties = findall(result, ".//diggs:Property", ns_map)
+            classes = [find_text(prop, "diggs:propertyClass")
+                       for prop in properties]
+            data = find(result, ".//diggs:dataValues", ns_map)
+            rows = _rows(data, len(classes))
+            if not classes or not rows:
+                continue
+            try:
+                depth_at = classes.index(SOUNDING_DEPTH_CLASS)
+            except ValueError:
+                warnings.append(
+                    f"{inv_id}: a {procedure} result set carries no "
+                    f"{SOUNDING_DEPTH_CLASS!r} column, so its rows have no "
+                    f"depth and none of them was read")
+                continue
+            for row in rows:
+                if depth_at >= len(row):
+                    continue
+                depth = _one_number(row[depth_at])
+                if depth is None:
+                    continue
+                for i, (klass, cell) in enumerate(zip(classes, row)):
+                    if i == depth_at:
+                        continue
+                    value = _one_number(cell)
+                    if value is None:
+                        continue      # a channel this reading did not carry
+                    key = (klass or "").strip()
+                    mapped = PROPERTY_CLASS_MAP.get(key) \
+                        or SOUNDING_EXTRA_MAP.get(key)
+                    if mapped is None:
+                        continue
+                    parameter, source, _test_type = mapped
+                    if parameter == "__water_level__":
+                        continue
+                    inv.measurements.append(PointMeasurement(
+                        depth_m=depth, parameter=parameter, value=value,
+                        source=source,
+                        test_type=SOUNDING_PROCEDURES[procedure],
+                    ))
 
 
 def _drive_sets(test, procedure, ns_map, geo, inv, find, find_text) -> None:

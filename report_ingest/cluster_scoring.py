@@ -138,8 +138,8 @@ SET_NAMES: Tuple[str, ...] = ("insample", "oos_open", "oos_blind")
 #: the writers -- producing the record and its exports, DIGGS included, and
 #: scoring the record against whatever hand truth exists for that report.
 STAGE_NAMES: Tuple[str, ...] = ("labels", "logs", "lab", "calc",
-                                "narrative", "vision_labels", "vote",
-                                "ingest")
+                                "soundings", "narrative", "vision_labels",
+                                "vote", "ingest")
 
 #: The reports the log rules were allowed to be tuned on, when no ``OPEN.txt``
 #: sits beside the truth files. Everything else is scored as blind.
@@ -249,13 +249,14 @@ def _sync(sync: Optional[Any]) -> None:
 #: read the same way.
 TRUTH_SUBDIRS: Dict[str, str] = {"logs": "logs", "lab": "lab",
                                  "calc": "calc",
+                                 "soundings": "soundings",
                                  "narrative": "narrative"}
 
 
 def _truth_dirs(truth_dir: Any, lab_truth_dir: Any, narrative_truth_dir: Any,
-                calc_truth_dir: Any = None
+                calc_truth_dir: Any = None, sounding_truth_dir: Any = None
                 ) -> Tuple[Optional[Path], Optional[Path], Optional[Path],
-                           Optional[Path]]:
+                           Optional[Path], Optional[Path]]:
     """``(logs, lab, narrative, calc)`` folders, from a ROOT or from four.
 
     ONE FOLDER TRAVELS TO THE CLUSTER, not three. The hand truth is private,
@@ -284,9 +285,11 @@ def _truth_dirs(truth_dir: Any, lab_truth_dir: Any, narrative_truth_dir: Any,
     lab = Path(lab_truth_dir) if lab_truth_dir is not None else under("lab")
     calc = Path(calc_truth_dir) if calc_truth_dir is not None \
         else under("calc")
+    soundings = Path(sounding_truth_dir) if sounding_truth_dir is not None \
+        else under("soundings")
     narrative = (Path(narrative_truth_dir)
                  if narrative_truth_dir is not None else under("narrative"))
-    return logs, lab, narrative, calc
+    return logs, lab, narrative, calc, soundings
 
 
 def _set_ids(name: str, corpus: Corpus) -> Tuple[str, ...]:
@@ -392,14 +395,17 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      truth_dir: Any = None,
                      lab_truth_dir: Any = None,
                      calc_truth_dir: Any = None,
+                     sounding_truth_dir: Any = None,
                      narrative_truth_dir: Any = None,
                      log_budget: int = 6,
                      lab_budget: int = 4,
                      calc_budget: int = 2,
+                     sounding_budget: int = 2,
                      narrative_budget: int = 8,
                      open_reports: Optional[Sequence[str]] = None,
                      open_lab_reports: Optional[Sequence[str]] = None,
                      open_calc_reports: Optional[Sequence[str]] = None,
+                     open_sounding_reports: Optional[Sequence[str]] = None,
                      open_narrative_reports: Optional[Sequence[str]] = None,
                      vision_model: str = "funhouse-gpt-low",
                      vision_mode: str = "page",
@@ -471,6 +477,13 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         (the grid alone) and after (the record the reader built). ``"lab"``
         is WP3 -- the page's own detected tables and then the lab reader over
         each hand-truthed laboratory sheet, scored the same two ways.
+        ``"soundings"`` is WP6 -- the log grid on each hand-truthed TEST
+        PIT and the sounding floor on each hand-truthed CONE SOUNDING and
+        DYNAMIC PROBE, then the reader over the same pages, scored the same
+        two ways. Its numbers split on one fact and the scorecard prints
+        the split: a TABULATED sheet's floor already holds the series, and
+        a PLOTTED one's holds nothing but the axis ranges, so the reader's
+        job on the second is the whole of the digitising.
         ``"narrative"`` is WP4 -- the narrative reader over every report that
         has a hand answer, scored field by field on recall, precision and the
         flattering agreement. ``"vision_labels"`` is the WP5 experiment --
@@ -509,6 +522,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         The folder of hand-truthed CALCULATIONS
         (``<kind>__<ID>_p<first page>.json``), if not the ``calc/`` folder
         inside ``truth_dir``.
+    sounding_truth_dir
+        The folder of hand-truthed TEST PITS, CONE SOUNDINGS and DYNAMIC
+        PROBES (``<kind>__<ID>_p<page>.json``, the kind being ``test_pit``,
+        ``cpt`` or ``dcp``), if not the ``soundings/`` folder inside
+        ``truth_dir``.
     lab_truth_dir, narrative_truth_dir
         The older per-stage form, and it still overrides the root. Pass them
         when the three sets of truth are not in one place.
@@ -516,9 +534,13 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         In every case an ``OPEN.txt`` beside the truth files names the
         reports whose pages the prompts were allowed to be tuned against;
         everything else is scored as blind.
-    log_budget, lab_budget, calc_budget
+    log_budget, lab_budget, calc_budget, sounding_budget
         Model calls a reader may spend per log and per sheet. Each reader's
-        own ceiling -- six and four -- holds whatever these say.
+        own ceiling -- six, four and two -- holds whatever these say. The
+        sounding readers' two are spent as one on a TABULATED sheet (the
+        table is the record and the call goes on the header) and both on a
+        PLOTTED one (one per plot panel group, one for the header and the
+        unsettled list).
     open_reports, open_lab_reports
         Override an open set instead of reading its ``OPEN.txt``.
     vision_model
@@ -626,8 +648,10 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
             f"unknown stage(s) {unknown}; the stages are {list(STAGE_NAMES)}")
     if not stages:
         raise ValueError(f"pass at least one stage: {list(STAGE_NAMES)}")
-    logs_truth, lab_truth, narrative_truth, calc_truth = _truth_dirs(
-        truth_dir, lab_truth_dir, narrative_truth_dir, calc_truth_dir)
+    (logs_truth, lab_truth, narrative_truth, calc_truth,
+     sounding_truth) = _truth_dirs(
+        truth_dir, lab_truth_dir, narrative_truth_dir, calc_truth_dir,
+        sounding_truth_dir)
     if "logs" in stages and logs_truth is None:
         raise ValueError(
             "the 'logs' stage scores the reader against the hand-truthed "
@@ -649,6 +673,14 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
             "-- the folder of <kind>__<ID>_p<first page>.json files -- or a "
             "'calc/' folder inside truth_dir. They are private and do not "
             "ship in the wheel.")
+    if "soundings" in stages and sounding_truth is None:
+        raise ValueError(
+            "the 'soundings' stage scores the readers against the "
+            "hand-truthed test pits, cone soundings and dynamic probes, so "
+            "it needs them: either sounding_truth_dir -- the folder of "
+            "<kind>__<ID>_p<page>.json files -- or a 'soundings/' folder "
+            "inside truth_dir. They are private and do not ship in the "
+            "wheel.")
     if "narrative" in stages and narrative_truth is None:
         raise ValueError(
             "the 'narrative' stage scores the reader against the hand "
@@ -669,6 +701,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         (out / "lab").mkdir(parents=True, exist_ok=True)
     if "calc" in stages:
         (out / "calc").mkdir(parents=True, exist_ok=True)
+    if "soundings" in stages:
+        (out / "soundings").mkdir(parents=True, exist_ok=True)
     if "narrative" in stages:
         (out / "narrative").mkdir(parents=True, exist_ok=True)
     if "vision_labels" in stages:
@@ -797,6 +831,14 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         results["calc"] = calc
         lines += _render_calc(calc)
 
+    if "soundings" in stages:
+        soundings = _run_soundings(
+            corpus, prompter, model, out, sounding_truth,
+            budget=sounding_budget, redo=redo, max_sheets=max_reports,
+            open_reports=open_sounding_reports, sync=sync)
+        results["soundings"] = soundings
+        lines += _render_soundings(soundings)
+
     if "narrative" in stages:
         narrative = _run_narrative(
             corpus, prompter, model, out, narrative_truth,
@@ -830,7 +872,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
     if "ingest" in stages:
         ingest = _run_ingest(corpus, prompter, model, out, wanted,
                              truth=(logs_truth, lab_truth,
-                                    narrative_truth, calc_truth),
+                                    narrative_truth, calc_truth,
+                                    sounding_truth),
                              log_budget=log_budget, lab_budget=lab_budget,
                              narrative_budget=narrative_budget,
                              redo=redo, review_dir=review_dir,
@@ -860,6 +903,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         print(f"per-sheet runs in {out / 'lab'}")
     if "calc" in stages:
         print(f"per-calculation runs in {out / 'calc'}")
+    if "soundings" in stages:
+        print(f"per-sounding runs in {out / 'soundings'}")
     if "narrative" in stages:
         print(f"per-report narrative runs in {out / 'narrative'}")
     if "vision_labels" in stages:
@@ -1750,6 +1795,350 @@ def _render_calc(calc: Dict[str, Any]) -> List[str]:
             "```", "",
             _price_note(cost)]
     return out
+
+
+# ---------------------------------------------------------------------------
+# the soundings stage (WP6): test pits, cone soundings and dynamic probes
+# ---------------------------------------------------------------------------
+
+#: Every hand-truthed sounding and pit was read while these readers were
+#: being written, so with no ``OPEN.txt`` beside the truth files there is no
+#: blind set at all and the scorecard says so rather than printing a blind
+#: column of nothing.
+DEFAULT_OPEN_SOUNDINGS: Tuple[str, ...] = ()
+
+
+def _run_soundings(corpus: Corpus, prompter: Any, model: str, out: Path,
+                   truth_dir: Path, *, budget: int, redo: bool,
+                   max_sheets: Optional[int],
+                   open_reports: Optional[Sequence[str]],
+                   sync: Optional[Any] = None) -> Dict[str, Any]:
+    """The floor and then the reader over every hand-truthed pit and sounding.
+
+    Restartable the same way the other stages are: each sheet writes
+    ``soundings/<id>.json`` as it finishes and a later call skips it.
+    """
+    from report_ingest.engine import CostMeter, PrompterEngine
+    from report_ingest.sounding_scoring import (
+        kind_of, pages_of, report_of, score_one_sounding,
+    )
+
+    if not truth_dir.is_dir():
+        raise FileNotFoundError(
+            f"no hand-truthed soundings at {truth_dir}; the 'soundings' "
+            f"stage scores against them and cannot run without them")
+    truths = []
+    for path in sorted(truth_dir.glob("*.json")):
+        try:
+            truths.append(json.loads(path.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"  skipping {path.name}: {type(exc).__name__}: {exc}")
+    if max_sheets:
+        truths = truths[:int(max_sheets)]
+    openset = _open_set(truth_dir, open_reports) if (
+        open_reports or (truth_dir / "OPEN.txt").is_file()) \
+        else DEFAULT_OPEN_SOUNDINGS
+    print(f"  soundings: {len(truths)} hand-truthed sheet(s); open set "
+          f"{', '.join(openset) or '(none named)'}")
+
+    done: Dict[str, dict] = {}
+    failures: Dict[str, str] = {}
+    for n, truth in enumerate(truths, 1):
+        sheet_id = str(truth.get("id") or f"sounding{n}")
+        report = report_of(truth)
+        kind = kind_of(truth)
+        run_file = out / "soundings" / f"{sheet_id}.json"
+        if run_file.is_file() and not redo:
+            blob = json.loads(run_file.read_text(encoding="utf-8"))
+            failed = _saved_failure(blob)
+            if failed:
+                print(f"  [{n}/{len(truths)}] {sheet_id}: previous attempt "
+                      f"failed ({failed[:90]}); retrying")
+            else:
+                blob["set"] = "open" if report in openset else "blind"
+                done[sheet_id] = blob
+                print(f"  [{n}/{len(truths)}] {sheet_id}: already done, "
+                      "skipping")
+                continue
+        if report not in set(corpus.present_ids()):
+            failures[sheet_id] = f"{report} is not in the reports folder"
+            print(f"  [{n}/{len(truths)}] {sheet_id}: skipped -- "
+                  f"{failures[sheet_id]}")
+            continue
+        meter = CostMeter()
+        engine = PrompterEngine(prompter, model, meter=meter)
+        started = time.time()
+        doc = None
+        try:
+            doc = corpus.open_report(report, di="auto", warn=False)
+            before, after = score_one_sounding(truth, doc, engine,
+                                               budget=budget,
+                                               report_id=report)
+        except KeyboardInterrupt:
+            print("  interrupted; what is finished is on disk and a later "
+                  "call resumes")
+            break
+        except Exception as exc:                     # keep the run going
+            failures[sheet_id] = f"{type(exc).__name__}: {exc}"
+            print(f"  [{n}/{len(truths)}] {sheet_id}: FAILED -- "
+                  f"{failures[sheet_id]}")
+            traceback.print_exc()
+            continue
+        finally:
+            if doc is not None:
+                doc.close()
+        pages = pages_of(truth)
+        blob = {
+            "sounding_id": sheet_id,
+            "report": report,
+            "kind": kind,
+            "run_date": date.today().isoformat(),
+            "set": "open" if report in openset else "blind",
+            "model": model,
+            "served_by": engine.served_by,
+            "pages": pages,
+            "n_pages": len(pages),
+            "tabulated": bool(after.tabulated or before.tabulated),
+            "before": before.to_dict(),
+            "after": after.to_dict(),
+            "cost": meter.to_dict(),
+            "seconds": round(time.time() - started, 1),
+        }
+        run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        _sync(sync)
+        done[sheet_id] = blob
+        gain = after.total.found - before.total.found
+        print(f"  [{n}/{len(truths)}] {sheet_id} ({kind}, "
+              f"{'tabulated' if blob['tabulated'] else 'plotted'}): "
+              f"{before.total.found}/{before.total.total} -> "
+              f"{after.total.found}/{after.total.total} ({gain:+d}), "
+              f"{after.model_calls} model call(s), "
+              f"{blob['cost']['input_tokens']:,} in / "
+              f"{blob['cost']['output_tokens']:,} out, "
+              f"{blob['seconds']:.0f} s")
+    return _score_soundings(done, failures, model, openset)
+
+
+def _sounding_totals(rows: Sequence[dict], stage: str
+                     ) -> Dict[str, Dict[str, int]]:
+    """``metric -> {found, total}`` summed over a set of sheets."""
+    from report_ingest.sounding_scoring import METRICS
+
+    out = {m: {"found": 0, "total": 0} for m in METRICS}
+    for row in rows:
+        for metric, score in (row[stage].get("scores") or {}).items():
+            if metric not in out:
+                out[metric] = {"found": 0, "total": 0}
+            out[metric]["found"] += int(score.get("found") or 0)
+            out[metric]["total"] += int(score.get("total") or 0)
+    return out
+
+
+def _score_soundings(done: Dict[str, dict], failures: Dict[str, str],
+                     model: str, openset: Sequence[str]) -> Dict[str, Any]:
+    rows = [done[k] for k in sorted(done)]
+    sets: Dict[str, Any] = {}
+    for name in ("open", "blind", "all"):
+        group = [r for r in rows if name == "all" or r["set"] == name]
+        if not group:
+            continue
+        sets[name] = {
+            "soundings": [r["sounding_id"] for r in group],
+            "n_sheets": len(group),
+            "before": _sounding_totals(group, "before"),
+            "after": _sounding_totals(group, "after"),
+        }
+    by_kind: Dict[str, Any] = {}
+    for kind in sorted({r.get("kind") or "?" for r in rows}):
+        group = [r for r in rows if (r.get("kind") or "?") == kind]
+        by_kind[kind] = {
+            "n_sheets": len(group),
+            "n_pages": sum(int(r.get("n_pages") or 0) for r in group),
+            "before": _sounding_totals(group, "before"),
+            "after": _sounding_totals(group, "after"),
+        }
+    # The one split that decides how to read every number above: a tabulated
+    # sheet's floor already holds the series and a plotted one's holds none.
+    by_shape: Dict[str, Any] = {}
+    for shape, wanted in (("tabulated", True), ("plotted", False)):
+        group = [r for r in rows if bool(r.get("tabulated")) is wanted]
+        if not group:
+            continue
+        by_shape[shape] = {
+            "n_sheets": len(group),
+            "before": _sounding_totals(group, "before"),
+            "after": _sounding_totals(group, "after"),
+        }
+    cost = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
+            "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
+    for row in rows:
+        for key in ("calls", "input_tokens", "output_tokens",
+                    "cache_read_tokens"):
+            cost[key] += row["cost"].get(key, 0)
+        cost["dollars"] += row["cost"].get("dollars", 0.0)
+        cost["seconds"] += row.get("seconds", 0.0)
+    return {
+        "date": date.today().isoformat(),
+        "model": model,
+        "served_by": sorted({r.get("served_by") for r in rows
+                             if r.get("served_by")}),
+        "open_set": list(openset),
+        "n_sheets": len(rows),
+        "n_pages": sum(int(r.get("n_pages") or 0) for r in rows),
+        "failures": dict(failures),
+        "sets": sets,
+        "kinds": by_kind,
+        "shapes": by_shape,
+        "per_sounding": [{
+            "sounding_id": r["sounding_id"], "set": r["set"],
+            "kind": r.get("kind") or "?",
+            "shape": "tabulated" if r.get("tabulated") else "plotted",
+            "n_pages": int(r.get("n_pages") or 0),
+            "before": r["before"]["overall"], "after": r["after"]["overall"],
+            "floor_points": r["after"].get("floor_points", 0),
+            "model_calls": r["after"].get("model_calls", 0),
+            "tool_calls": r["after"].get("tool_calls", 0),
+            "unresolved": r["after"].get("unresolved", 0),
+            "disagreements": r["after"].get("disagreements", 0),
+            "kept": r["after"].get("kept", 0),
+            "added": r["after"].get("added", 0),
+            "reconciled": r["after"].get("reconciled", 0),
+            "error": r["after"].get("error"),
+            "input_tokens": r["cost"].get("input_tokens", 0),
+            "output_tokens": r["cost"].get("output_tokens", 0),
+            "dollars": r["cost"].get("dollars", 0.0),
+            "seconds": r.get("seconds", 0.0),
+        } for r in rows],
+        "cost": cost,
+    }
+
+
+def _render_soundings(soundings: Dict[str, Any]) -> List[str]:
+    """The soundings stage, as tables of IDs, kinds, counts and rates only."""
+    from report_ingest.sounding_scoring import (
+        CHANNEL_TOL, DEPTH_TOL, METRICS, U2_TOL,
+    )
+
+    out: List[str] = [
+        "", "# WP6 on the cluster: test pits, cone soundings and dynamic "
+            "probes", "",
+        f"Run {soundings['date']}. Model `{soundings['model']}`, "
+        f"{soundings['n_sheets']} hand-truthed sheet(s) over "
+        f"{soundings['n_pages']} page(s).",
+        "",
+        f"**before** is the FLOOR alone -- the log grid on a pit, and on a "
+        f"sounding either the sheet's own TABULATED table or, where it "
+        f"plots its traces, nothing at all but the axis ranges. **after** is "
+        f"what the reader's record holds. A truth point counts as found when "
+        f"the reader has a reading within {DEPTH_TOL:g} m of that depth and "
+        f"its value is within {CHANNEL_TOL:.0%} or one axis tick (tip "
+        f"resistance, sleeve friction, the printed index), {U2_TOL:.0%} "
+        f"(pore pressure), or EXACTLY (a blow count, which is a count).",
+    ]
+    if soundings.get("served_by"):
+        out.append(f"Served by: {', '.join(soundings['served_by'])}.")
+    if soundings.get("failures"):
+        out += ["", "**Sheets that failed and are NOT in any number below:**"]
+        out += [f"- {sheet}: {why}"
+                for sheet, why in soundings["failures"].items()]
+    openset = soundings.get("open_set") or []
+    out += ["", (f"Open set (the reports whose sounding pages were looked "
+                 f"at): {', '.join(openset)}. Everything else is blind."
+                 if openset else
+                 "**There is no blind set.** Every hand-truthed sheet was "
+                 "read while these readers were written, so every number "
+                 "below is an IN-SAMPLE number and none of them is evidence "
+                 "about an unseen report. A blind set is owed.")]
+
+    for name in ("open", "blind", "all"):
+        row = soundings["sets"].get(name)
+        if not row:
+            continue
+        out += ["", f"## {name} -- {row['n_sheets']} sheet(s)", "", "```",
+                f"{'metric':<12}{'before':>14}{'after':>14}"]
+        for metric in METRICS:
+            before = row["before"].get(metric)
+            after = row["after"].get(metric)
+            if not after or not (before["total"] or after["total"]):
+                continue
+            out.append(f"{metric:<12}{_rate(before):>14}{_rate(after):>14}")
+        out += [f"{'OVERALL':<12}"
+                f"{_rate(_sum_of(row['before'])):>14}"
+                f"{_rate(_sum_of(row['after'])):>14}", "```"]
+
+    if soundings.get("shapes"):
+        out += ["", "## Tabulated against plotted", "", "```",
+                f"{'shape':<12}{'sheets':>8}{'before':>14}{'after':>14}"]
+        for shape, row in soundings["shapes"].items():
+            out.append(f"{shape:<12}{row['n_sheets']:>8}"
+                       f"{_rate(_sum_of(row['before'])):>14}"
+                       f"{_rate(_sum_of(row['after'])):>14}")
+        out += ["```", "",
+                "A TABULATED sheet's floor is the table, so its before "
+                "column is a real baseline and the reader's job is the "
+                "header. A PLOTTED sheet's floor holds no points at all, so "
+                "its before column is near zero by construction and its "
+                "after column IS the digitising. Averaging the two would "
+                "hide the only number anyone wants."]
+
+    out += ["", "## Per kind", "", "```",
+            f"{'kind':<12}{'sheets':>8}{'pages':>7}{'before':>14}"
+            f"{'after':>14}"]
+    for kind, row in soundings.get("kinds", {}).items():
+        out.append(f"{kind:<12}{row['n_sheets']:>8}{row['n_pages']:>7}"
+                   f"{_rate(_sum_of(row['before'])):>14}"
+                   f"{_rate(_sum_of(row['after'])):>14}")
+    out.append("```")
+
+    out += ["", "## Per sheet", "", "```",
+            f"{'sheet':<34}{'set':<7}{'kind':<9}{'shape':<11}{'pp':>4}"
+            f"{'before':>12}{'after':>12}{'floor':>7}{'calls':>6}{'zoom':>5}"
+            f"{'unres':>6}{'dis':>4}{'kept':>5}{'add':>4}{'rec':>4}"
+            f"{'in':>9}{'out':>7}{'s':>6}"]
+    for r in soundings["per_sounding"]:
+        if r.get("error"):
+            out.append(f"{r['sounding_id']:<34}{r['set']:<7}ERROR "
+                       f"{str(r['error'])[:60]}")
+            continue
+        out.append(
+            f"{r['sounding_id']:<34}{r['set']:<7}{r['kind']:<9}"
+            f"{r['shape']:<11}{r['n_pages']:>4}"
+            f"{_rate(r['before']):>12}{_rate(r['after']):>12}"
+            f"{r['floor_points']:>7}{r['model_calls']:>6}"
+            f"{r['tool_calls']:>5}{r['unresolved']:>6}"
+            f"{r['disagreements']:>4}{r['kept']:>5}{r['added']:>4}"
+            f"{r['reconciled']:>4}{r['input_tokens']:>9,}"
+            f"{r['output_tokens']:>7}{r['seconds']:>6.0f}")
+    out.append("```")
+    out += ["", "`floor` is how many points the deterministic pass placed "
+                "before any call -- the tabulated rows, or zero on a plotted "
+                "sheet. `zoom` is how many times the reader magnified a "
+                "plotted panel. `unres` is what it could not settle plus "
+                "what Python refused: a depth outside the sheet's own depth "
+                "axis, a channel value outside its printed range, a "
+                "negative tip resistance. `dis`, `kept`, `add` and `rec` are "
+                "the merge.", ""]
+    cost = soundings["cost"]
+    n = max(1, soundings["n_sheets"])
+    out += ["## Cost", "", "```",
+            f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
+            f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
+            f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
+            f"{_money(cost)}",
+            f"per sheet: {cost['calls'] / n:.1f} calls, "
+            f"{cost['input_tokens'] / n:,.0f} in, "
+            f"{cost['output_tokens'] / n:,.0f} out, "
+            f"{cost['seconds'] / n:.0f} s"
+            f"{_money(cost, n)}",
+            "```", "",
+            _price_note(cost)]
+    return out
+
+
+def _sum_of(totals: Dict[str, Dict[str, int]]) -> Dict[str, int]:
+    """Every metric of one column added together."""
+    return {"found": sum(v["found"] for v in totals.values()),
+            "total": sum(v["total"] for v in totals.values())}
 
 
 # ---------------------------------------------------------------------------
@@ -3279,8 +3668,9 @@ def _truth_files_for(rid: str, truth: Sequence[Optional[Path]]
     """The hand-truth files that concern one report, by stage."""
     logs_dir, lab_dir, narrative_dir = truth[0], truth[1], truth[2]
     calc_dir = truth[3] if len(truth) > 3 else None
-    out: Dict[str, List[Tuple[str, dict]]] = {"logs": [], "lab": [],
-                                              "narrative": [], "calc": []}
+    sounding_dir = truth[4] if len(truth) > 4 else None
+    out: Dict[str, List[Tuple[str, dict]]] = {
+        "logs": [], "lab": [], "narrative": [], "calc": [], "soundings": []}
 
     def load(path: Path) -> Optional[dict]:
         try:
@@ -3303,6 +3693,11 @@ def _truth_files_for(rid: str, truth: Sequence[Optional[Path]]
             blob = load(path)
             if blob:
                 out["calc"].append((path.stem, blob))
+    if sounding_dir is not None and sounding_dir.is_dir():
+        for path in sorted(sounding_dir.glob(f"*__{rid}_p*.json")):
+            blob = load(path)
+            if blob:
+                out["soundings"].append((path.stem, blob))
     if narrative_dir is not None and narrative_dir.is_dir():
         path = narrative_dir / f"{rid}.json"
         if path.is_file():
@@ -3329,10 +3724,13 @@ def _score_ingest_record(record: Any, rid: str,
     from report_ingest.lab_scoring import score_record as score_lab
     from report_ingest.log_scoring import score_record as score_log
     from report_ingest.narrative_scoring import score_narrative
+    from report_ingest.sounding_scoring import kind_of as sounding_kind
+    from report_ingest.sounding_scoring import pages_of as sounding_pages_of
+    from report_ingest.sounding_scoring import score_record as score_sounding
 
     files = _truth_files_for(rid, truth)
     out: Dict[str, Any] = {"logs": [], "lab": [], "narrative": None,
-                           "calc": []}
+                           "calc": [], "soundings": []}
     for name, blob in files["logs"]:
         pages = {int(p) for p in blob.get("pages") or []}
         invs = [i for i in record.investigations
@@ -3371,6 +3769,15 @@ def _score_ingest_record(record: Any, rid: str,
                             "scores": {k: v.to_dict()
                                        for k, v in score.scores.items()},
                             "read": True})
+    for name, blob in files["soundings"]:
+        pages = set(sounding_pages_of(blob))
+        invs = [i for i in record.investigations
+                if not pages or set(i.pages) & pages]
+        score = score_sounding(blob, invs)
+        out["soundings"].append({
+            "id": name, "kind": sounding_kind(blob),
+            "overall": score.total.to_dict(),
+            "scores": {k: v.to_dict() for k, v in score.scores.items()}})
     for name, blob in files["narrative"]:
         score = score_narrative(blob, record.general, record.natural_hazards,
                                 report=rid)
@@ -3684,6 +4091,7 @@ def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
         "scores": {"logs": {"found": 0, "total": 0, "n": 0},
                    "lab": {"found": 0, "total": 0, "n": 0},
                    "calc": {"found": 0, "total": 0, "n": 0},
+                   "soundings": {"found": 0, "total": 0, "n": 0},
                    "narrative": {"recall_found": 0, "recall_total": 0,
                                  "precision_found": 0, "precision_total": 0,
                                  "n": 0}},
@@ -3760,6 +4168,12 @@ def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
             totals["scores"]["calc"]["total"] += int(
                 entry["overall"].get("total") or 0)
             totals["scores"]["calc"]["n"] += 1
+        for entry in scores.get("soundings") or []:
+            totals["scores"]["soundings"]["found"] += int(
+                entry["overall"].get("found") or 0)
+            totals["scores"]["soundings"]["total"] += int(
+                entry["overall"].get("total") or 0)
+            totals["scores"]["soundings"]["n"] += 1
         narrative_score = scores.get("narrative")
         if narrative_score:
             cell = totals["scores"]["narrative"]
@@ -3987,25 +4401,28 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
                    if (r.get("scores") or {}).get("logs")
                    or (r.get("scores") or {}).get("lab")
                    or (r.get("scores") or {}).get("calc")
+                   or (r.get("scores") or {}).get("soundings")
                    or (r.get("scores") or {}).get("narrative")]
     if scored_rows:
         out += ["", "## Scored against the hand truth", "",
-                "The SAME scorers as the `logs`, `lab`, `calc` and "
-                "`narrative` stages, on the record the whole pipeline "
-                "produced: a log "
+                "The SAME scorers as the `logs`, `lab`, `calc`, "
+                "`soundings` and `narrative` stages, on the record the "
+                "whole pipeline produced: a log "
                 "truth against the investigations read off its pages, a "
                 "sheet truth against the tests read off its page, a "
                 "calculation truth against the calculation read off its "
-                "run, the hand answers against the record's two schemas. "
+                "run, a sounding truth against the series read off its "
+                "sheet, the hand answers against the record's two schemas. "
                 "This is the whole-pipeline score.", "", "```",
                 f"{'report':<8}{'logs':>18}{'lab sheets':>18}"
-                f"{'calculations':>18}{'narrative recall':>18}"
-                f"{'precision':>12}"]
+                f"{'calculations':>18}{'soundings':>18}"
+                f"{'narrative recall':>18}{'precision':>12}"]
         for r in scored_rows:
             sc = r.get("scores") or {}
             logs = sc.get("logs") or []
             lab = sc.get("lab") or []
             calcs = sc.get("calc") or []
+            sounds = sc.get("soundings") or []
             nar = sc.get("narrative")
 
             def agg(entries: List[dict]) -> str:
@@ -4019,6 +4436,7 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
 
             out.append(
                 f"{r['id']:<8}{agg(logs)}{agg(lab)}{agg(calcs)}"
+                f"{agg(sounds)}"
                 + (f"{_rate(nar['recall']):>18}{_rate(nar['precision']):>12}"
                    if nar else f"{'-':>18}{'-':>12}"))
         out += ["",
@@ -4026,6 +4444,8 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
                 f"{_rate(scores['logs']):>14} ({scores['logs']['n']})"
                 f"{_rate(scores['lab']):>14} ({scores['lab']['n']})"
                 f"{_rate(scores['calc']):>14} ({scores['calc']['n']})"
+                f"{_rate(scores['soundings']):>14} "
+                f"({scores['soundings']['n']})"
                 f"{_rate({'found': scores['narrative']['recall_found'], 'total': scores['narrative']['recall_total']}):>18}"
                 f"{_rate({'found': scores['narrative']['precision_found'], 'total': scores['narrative']['precision_total']}):>12}",
                 "```"]

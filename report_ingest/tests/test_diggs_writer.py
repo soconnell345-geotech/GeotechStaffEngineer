@@ -402,3 +402,131 @@ class TestRecoveryAndRqd:
         ok, diffs = diggs_roundtrip_gate(text, [wrong])
         assert ok is False
         assert any("rqd_percent" in d for d in diffs)
+
+
+# ---------------------------------------------------------------------------
+# the soundings
+# ---------------------------------------------------------------------------
+
+class TestTheSoundings:
+    """A cone sounding and a dynamic probe through both gates.
+
+    DIGGS 2.6 has a real home for a cone sounding
+    (``diggs_geo:StaticConePenetrationTest``) and none at all for something
+    called a DynamicConePenetrometerTest -- the name is nowhere in the
+    published schema -- so a dynamic probe is written as the
+    ``diggs_geo:DynamicProbeTest`` the schema DOES declare, whose own
+    documentation is "all methods that involve driving a rod by impact
+    hammer".
+    """
+
+    @staticmethod
+    def _cone(**kwargs):
+        from report_ingest.model import CPTData, CPTPoint
+        points = [CPTPoint(depth=Quantity(value=d, unit="m"),
+                           qc=Quantity(value=5.0 + d, unit="MPa"),
+                           fs=Quantity(value=0.05 * d + 0.01, unit="MPa"),
+                           u2=Quantity(value=10.0 * d, unit="kPa"),
+                           rf_percent=1.2)
+                  for d in (0.5, 1.0, 1.5, 2.0, 2.5, 3.0)]
+        return Investigation(
+            investigation_id="CPT-1", kind="cpt", depth_unit="m",
+            elevation=Quantity(value=12.5, unit="m"),
+            total_depth=Quantity(value=3.0, unit="m"),
+            cpt=CPTData(points=points, cone_type="piezocone S15",
+                        standard="EN ISO 22476-1", qc_unit="MPa",
+                        fs_unit="MPa", u2_unit="kPa",
+                        step=Quantity(value=0.5, unit="m"), **kwargs))
+
+    @staticmethod
+    def _probe(**kwargs):
+        from report_ingest.model import DCPData, DCPPoint
+        points = [DCPPoint(depth=Quantity(value=d, unit="m"),
+                           blows=float(int(10 + 10 * d)),
+                           index=Quantity(value=7.0 + d, unit="MPa"),
+                           cbr_percent=12.0)
+                  for d in (0.2, 0.4, 0.6, 0.8, 1.0)]
+        return Investigation(
+            investigation_id="DPT-1", kind="dcp", depth_unit="m",
+            dcp=DCPData(points=points,
+                        increment=Quantity(value=0.2, unit="m"),
+                        test_type="DPT",
+                        hammer_mass=Quantity(value=63.5, unit="kg"),
+                        hammer_drop=Quantity(value=0.75, unit="m"),
+                        index_name="Rd (MPa)", **kwargs))
+
+    def test_a_cone_sounding_is_one_positioned_result_set(self):
+        xml = write_diggs([self._cone()])
+        assert xml.count("<Test ") == 1
+        assert "diggs_geo:StaticConePenetrationTest" in xml
+        assert "tip_resistance" in xml
+        assert "sleeve_friction" in xml
+        assert "pore_pressure_u2" in xml
+
+    def test_a_dynamic_probe_uses_the_procedure_the_schema_has(self):
+        xml = write_diggs([self._probe()])
+        assert "diggs_geo:DynamicProbeTest" in xml
+        # The name a reader might expect is not in the 2.6 schema at all.
+        assert "DynamicConePenetrometerTest" not in xml
+        assert "diggs_geo:penetrationTestType" in xml
+        assert "diggs_geo:hammerMass" in xml
+
+    def test_the_depth_of_each_reading_is_a_column_of_the_set(self):
+        xml = write_diggs([self._cone()])
+        # A sounding is one Test with many ROWS, so the depth cannot be the
+        # test's own position; it is a column.
+        assert "sounding_depth" in xml
+        assert 'ts=";"' in xml
+
+    def test_both_soundings_pass_the_schema_gate(self):
+        record = ReportRecord(investigations=[self._cone(), self._probe()])
+        xml = write_diggs(record)
+        ok, errors = diggs_schema_gate(xml)
+        assert ok, errors[:3]
+
+    def test_both_soundings_come_back_value_for_value(self):
+        record = ReportRecord(investigations=[self._cone(), self._probe()])
+        xml = write_diggs(record)
+        ok, diffs = diggs_roundtrip_gate(xml, record)
+        assert ok, diffs[:5]
+
+    def test_the_parser_gives_every_reading_its_own_depth(self):
+        from subsurface_characterization import parse_diggs
+        xml = write_diggs([self._cone()])
+        site = parse_diggs(content=xml).site
+        qc = [(m.depth_m, m.value) for m in site.investigations[0].measurements
+              if m.parameter == "qc_kPa"]
+        assert len(qc) == 6
+        assert sorted(d for d, _v in qc) == [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+
+    def test_a_changed_value_fails_the_round_trip(self):
+        # The gate has to be able to FAIL, or it is measuring nothing.
+        cone = self._cone()
+        record = ReportRecord(investigations=[cone])
+        xml = write_diggs(record)
+        cone.cpt.points[2].qc = Quantity(value=99.0, unit="MPa")
+        ok, diffs = diggs_roundtrip_gate(xml, record)
+        assert not ok
+        assert any("sounding reading" in d for d in diffs)
+
+    def test_the_writers_notes_count_what_it_wrote(self):
+        notes = []
+        write_diggs(ReportRecord(
+            investigations=[self._cone(), self._probe()]), notes=notes)
+        assert notes[0].cpt == 1
+        assert notes[0].dcp == 1
+
+    def test_a_sounding_whose_unit_cannot_convert_is_said_not_guessed(self):
+        from report_ingest.model import DCPData, DCPPoint
+        inv = Investigation(
+            investigation_id="DPT-2", kind="dcp", depth_unit="m",
+            dcp=DCPData(points=[
+                DCPPoint(depth=Quantity(value=d, unit="m"),
+                         blows=5.0,
+                         index=Quantity(value=44.8, unit="daN/cm2"))
+                for d in (0.2, 0.4, 0.6)]))
+        xml = write_diggs([inv])
+        # The blows are written; the unconvertible index is not guessed at.
+        assert "blow_count" in xml
+        ok, _errors = diggs_schema_gate(xml)
+        assert ok

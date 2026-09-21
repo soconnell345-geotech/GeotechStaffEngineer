@@ -86,6 +86,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from report_ingest.bound import APPENDED_LABEL
+from report_ingest.calc_reader import split_calc_items
 from report_ingest.label_vote import (
     DEFAULT_POLICY, POLICIES, PageChoice, Voter, combine, load_trust_table,
     neighbourhood, split_pages,
@@ -122,8 +123,14 @@ REVIEW_MODES: Tuple[str, ...] = ("disagreements", "all", "none")
 #: recorded and not read -- ``figures``, ``photos``, ``front_matter`` and
 #: ``appended_report``, which becomes a record of its own instead.
 ITEM_READERS: Dict[str, str] = {
-    "boring_log": "log", "test_pit_log": "log", "cpt_log": "log",
-    "dcp_log": "log", "lab_test": "lab", "narrative": "narrative",
+    "boring_log": "log", "test_pit_log": "log",
+    # A sounding is not a log. A cone sounding and a dynamic probe measure a
+    # SERIES against depth and print no strata, no samples and no drives, so
+    # they go to the sounding reader, which reads a series; a test pit IS a
+    # log -- a ruler, a description column and samples -- and stays with the
+    # log reader, which now seeds a pit's dimensions as well.
+    "cpt_log": "cpt", "dcp_log": "dcp",
+    "lab_test": "lab", "narrative": "narrative",
     "calculation": "calc",
 }
 
@@ -151,6 +158,12 @@ class Budgets:
     #: the second is spent only on a run too long to show at once or on the
     #: reader's own unsettled list.
     calc: int = 2
+    #: The sounding readers' ceiling, shared by the cone sounding and the
+    #: dynamic probe. A TABULATED sheet costs one of its two -- the table is
+    #: the record and the call only checks the header. A PLOTTED one costs
+    #: both: one call per plot panel group for the traces, one for the
+    #: header and whatever the first call could not settle.
+    sounding: int = 2
     #: The label review's tool-call budget. None takes the one that fits the
     #: mode: ``max(60, 0.25 x pages)`` over a whole report, and
     #: ``max(20, 0.5 x split pages)`` over the pages the voters split on,
@@ -530,7 +543,7 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
           _labels_blob(choices, split, changed, labelling, doc.n_pages))
 
     roles = _relabel(roles, labels, confidence)
-    items = build_items(facts, roles)
+    items = split_calc_items(doc, build_items(facts, roles))
 
     if budgets.max_items:
         items = items[:int(budgets.max_items)]
@@ -1057,7 +1070,11 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
     roles = _relabel([r for r in inner_roles],
                      {at[p]: label for p, label in labels.items()},
                      {at[c.page]: c.confidence for c in choices})
-    items = [_rebase_item(item, window) for item in build_items(voted, roles)]
+    # The split runs on the PARENT file's numbering, because that is where
+    # the pages the signature is read off actually live.
+    items = split_calc_items(
+        doc, [_rebase_item(item, window)
+              for item in build_items(voted, roles)])
     if budgets.max_items:
         # The same ceiling as the parent's, applied to this document: a
         # smoke run over a big report must not turn into a full run of the
@@ -1326,6 +1343,17 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                     Investigation.model_validate(blob["investigation"]))
                 unresolved.extend(blob.get("unresolved") or [])
                 _vote_qa(qa, blob, pages)
+            elif reader in ("cpt", "dcp"):
+                blob = cached or _read_sounding(doc, pages, engine, budgets,
+                                                item, report_id, reader)
+                if cached is None:
+                    _save(path, blob)
+                spend.add(blob.get("cost"))
+                if blob.get("investigation"):
+                    record.investigations.append(
+                        Investigation.model_validate(blob["investigation"]))
+                unresolved.extend(blob.get("unresolved") or [])
+                _vote_qa(qa, blob, pages)
             elif reader == "calc":
                 blob = cached or _read_calc(doc, pages, engine, budgets,
                                             item, report_id)
@@ -1429,4 +1457,13 @@ def _read_calc(doc, pages, engine, budgets, item, report_id
     result = read_calculation(doc, pages, engine, budget=budgets.calc,
                               item_title=item.title or "",
                               report_id=report_id)
+    return result.to_dict()
+
+
+def _read_sounding(doc, pages, engine, budgets, item, report_id, kind
+                   ) -> Dict[str, Any]:
+    from report_ingest.sounding_reader import read_sounding
+    result = read_sounding(doc, pages, engine, kind=kind,
+                           budget=budgets.sounding,
+                           item_title=item.title or "", report_id=report_id)
     return result.to_dict()

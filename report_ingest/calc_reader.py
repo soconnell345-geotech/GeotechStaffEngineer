@@ -96,6 +96,7 @@ __all__ = [
     "PROGRAM_PATTERNS", "FloorValue", "CalcFloor", "floor_from_pages",
     "serialise_floor", "merge_calculation", "page_window", "printed_numbers",
     "NAME_RATIO", "SUMMARY_WORDS",
+    "split_calc_runs", "split_calc_items", "HEADER_BAND_FRAC",
 ]
 
 #: The ceiling in the brief: two model calls for one printout, the first of
@@ -1342,6 +1343,179 @@ def page_window(pages: Sequence[int], start: int = 0,
     if not take and start:
         return []
     return [first] + take + [last]
+
+
+# ---------------------------------------------------------------------------
+# where one printout ends and the next begins
+# ---------------------------------------------------------------------------
+#
+# THE DEFECT THIS FIXES, found by the calculation reader's own hand truth.
+# ``planlens.document.roles.build_items`` opens a calculation item on a
+# banner or a title and keeps it open across every page that carries neither
+# -- which is right for a program printout, whose later pages carry nothing
+# of their own. It is wrong for an APPENDIX, where several printouts run back
+# to back and only the first of them gets a fresh title out of the page's
+# largest line. One truthed run came back as an item of fifteen pages folding
+# FOUR different calculations, and the reader was asked to return one record
+# for all four.
+#
+# The split is made HERE rather than in planlens because planlens sees a
+# page's facts and this sees the pages themselves: the running header, the
+# title block and the banner, read off the top band of each page.
+
+#: The fraction of a page's height the running header and title block sit in.
+#: A calculation sheet's title is in the top fifth of the paper; a body line
+#: that happened to be set large is not.
+HEADER_BAND_FRAC = 0.22
+#: Lines of the top band that make up a page's signature. A title block is a
+#: few short lines; taking more of them would put a load case number in the
+#: signature and split the item on every page.
+HEADER_LINES = 4
+#: How long one signature line may be. A running header is short; a
+#: paragraph that begins in the top band is not a header.
+MAX_HEADER_CHARS = 90
+
+
+def _header_signature(doc: Any, page: int) -> Tuple[str, Optional[str]]:
+    """``(signature, program)`` for one page's top band.
+
+    The signature is the folded text of the first few short lines of the top
+    band -- the running header and the title block, which is what a printout
+    repeats on every page of itself and changes when the next printout
+    starts. ``program`` is the banner a known program-name pattern matches
+    ANYWHERE on the page, because a banner is sometimes set below a project
+    block.
+    """
+    try:
+        content = doc.page(page)
+    except Exception:                    # a page that will not read cannot
+        return "", None                  # be compared, and does not split
+    height = float(getattr(content, "height", 0.0) or 0.0)
+    cut = height * HEADER_BAND_FRAC if height else 0.0
+    lines = sorted(content.lines, key=lambda ln: (round(ln.bbox[1], 1),
+                                                  ln.bbox[0]))
+    band: List[str] = []
+    for line in lines:
+        if cut and float(line.bbox[1]) > cut:
+            break
+        text = " ".join(str(line.text or "").split())
+        if not text or len(text) > MAX_HEADER_CHARS:
+            continue
+        if "=" in text:
+            continue         # a labelled value is the body, not the header
+        if _program_in(text) is not None:
+            # The BANNER is not part of the running header. A program prints
+            # it at the head of its run and not on the run's later pages, so
+            # a signature that carried it would say every second page was a
+            # different printout. A banner opening a page is its own split
+            # rule (_banner_at_top), which is where that fact belongs.
+            continue
+        band.append(text)
+        if len(band) >= HEADER_LINES:
+            break
+    program: Optional[str] = None
+    for line in lines[:MAX_LINES_PER_PAGE]:
+        got = _program_in(line.text)
+        if got is not None:
+            program = got[0].lower()
+            break
+    # Digits are folded out of the signature: a printout that numbers its own
+    # pages ("Sheet 3 of 11", "Load Case 2") would otherwise change signature
+    # on every page and split into one item per page.
+    signature = fold(re.sub(r"\d+", "", " ".join(band)))
+    return signature, program
+
+
+def _banner_at_top(doc: Any, page: int) -> bool:
+    """Does this page OPEN with a program banner?
+
+    A program printed back to back writes its banner at the head of each
+    run, so a banner in the top band with nothing above it is the start of a
+    new printout even where the signature did not change.
+    """
+    try:
+        content = doc.page(page)
+    except Exception:
+        return False
+    height = float(getattr(content, "height", 0.0) or 0.0)
+    cut = height * HEADER_BAND_FRAC if height else 0.0
+    lines = sorted(content.lines, key=lambda ln: (round(ln.bbox[1], 1),
+                                                  ln.bbox[0]))
+    for line in lines:
+        if cut and float(line.bbox[1]) > cut:
+            return False
+        if _program_in(line.text) is not None:
+            return True
+    return False
+
+
+def split_calc_runs(doc: Any, pages: Sequence[int]) -> List[List[int]]:
+    """One calculation item's pages, split into the printouts they are.
+
+    A new run starts where the page's running header or title block says a
+    different program, title or subject than the page before it, or where a
+    page OPENS with a program banner. An item is capped at
+    :data:`MAX_CALC_PAGES` whatever the headers say, because a run longer
+    than one call can carry is one the reader cannot see whole anyway.
+
+    A page with no readable top band does not split: an empty signature is
+    an absence of evidence, and splitting on it would cut a scanned printout
+    into single pages.
+    """
+    pages = [int(p) for p in pages]
+    if len(pages) <= 1:
+        return [pages] if pages else []
+    runs: List[List[int]] = [[pages[0]]]
+    previous, program_before = _header_signature(doc, pages[0])
+    for page in pages[1:]:
+        signature, program = _header_signature(doc, page)
+        changed = bool(signature) and bool(previous) and signature != previous
+        if program is not None and program_before is not None \
+                and program != program_before:
+            changed = True
+        if _banner_at_top(doc, page) and len(runs[-1]) > 1:
+            changed = True
+        if len(runs[-1]) >= MAX_CALC_PAGES:
+            changed = True
+        if changed:
+            runs.append([page])
+        else:
+            runs[-1].append(page)
+        if signature:
+            previous = signature
+        if program is not None:
+            program_before = program
+    return runs
+
+
+def split_calc_items(doc: Any, items: Sequence[Any]) -> List[Any]:
+    """Every work item, with each ``calculation`` run split into printouts.
+
+    Items of every other kind pass through untouched and in order. A split
+    item's children keep its title and its evidence and take ids of the form
+    ``<id>a``, ``<id>b`` ..., so a run folder written by an earlier pass
+    still resolves and nothing downstream has to learn a new id shape.
+    """
+    out: List[Any] = []
+    for item in items:
+        if getattr(item, "kind", "") != "calculation":
+            out.append(item)
+            continue
+        runs = split_calc_runs(doc, list(getattr(item, "pages", ()) or ()))
+        if len(runs) <= 1:
+            out.append(item)
+            continue
+        evidence = dict(getattr(item, "evidence", {}) or {})
+        for n, run in enumerate(runs):
+            suffix = chr(ord("a") + n) if n < 26 else f"_{n + 1}"
+            out.append(item.__class__(
+                id=f"{item.id}{suffix}", kind=item.kind, pages=list(run),
+                title=getattr(item, "title", None),
+                evidence={**evidence, "first_page": run[0],
+                          "split_from": item.id,
+                          "split_reason": "the running header or title block "
+                                          "names a different calculation"}))
+    return out
 
 
 def serialise_page(doc: Any, page: int) -> str:

@@ -710,3 +710,117 @@ class TestTheFloor:
         assert blob["model_investigation"]["samples"][0]["sample_id"] == "1"
         assert isinstance(blob["disagreements"], list)
         assert blob["reconciled"] > 0
+
+
+# ---------------------------------------------------------------------------
+# a test pit is not a hole
+# ---------------------------------------------------------------------------
+
+class TestTheTestPit:
+    """A pit's plan size, which the record had nowhere to put until this
+    train and which no log in the corpus states as a labelled field."""
+
+    @pytest.fixture
+    def pit(self, tmp_path):
+        from planlens.document import open_document
+        from report_ingest.tests.sounding_fixtures import build_test_pit
+        gt = build_test_pit()
+        path = tmp_path / "pit.pdf"
+        path.write_bytes(gt.pdf)
+        doc = open_document(str(path))
+        yield doc, gt
+        doc.close()
+
+    def _floor(self, doc):
+        from planlens.document.loggrid import log_grid
+        from report_ingest.log_floor import seed_from_grid
+        grid = log_grid(doc, [0])
+        return seed_from_grid(grid, [0], "RXX",
+                              lines=list(doc.page(0).lines))
+
+    def test_the_grid_seeds_a_pit_as_a_pit(self, pit):
+        doc, gt = pit
+        floor = self._floor(doc)
+        assert floor.kind == "test_pit"
+        assert len(floor.layers) == len(gt.layers)
+        assert len(floor.samples) == len(gt.samples)
+
+    def test_the_bucket_is_the_pits_width(self, pit):
+        doc, gt = pit
+        floor = self._floor(doc)
+        assert floor.pit is not None
+        assert floor.pit.width.value == pytest.approx(gt.dimensions["width"])
+        assert floor.pit.width.unit == gt.dimensions["unit"]
+
+    def test_where_the_width_came_from_is_on_the_record(self, pit):
+        doc, _gt = pit
+        floor = self._floor(doc)
+        assert "BUCKET" in floor.pit.prov.note
+        # Lower than a labelled field, because it is a reading of the
+        # machine rather than of a stated dimension.
+        assert floor.pit.prov.confidence < 0.7
+
+    def test_a_borehole_gets_no_plan_size(self, tmp_path):
+        from report_ingest.log_floor import pit_dimensions
+        assert pit_dimensions(["Drilling method: Hollow stem auger",
+                               "Hole diameter: 200 mm"], "m", 0) is None
+
+    def test_a_bucket_in_a_remark_is_not_a_dimension(self):
+        from report_ingest.log_floor import pit_dimensions
+        assert pit_dimensions(
+            ["Remarks: Test pit backfilled with the bucket on completion"],
+            "m", 0) is None
+
+    @pytest.mark.parametrize("line,length,width,depth", [
+        ("Pit Dimensions: 2.5 m x 1.0 m x 3.5 m", 2.5, 1.0, 3.5),
+        ("Dimensions (L x W x D): 8' x 3' x 10'", 8.0, 3.0, 10.0),
+        ("Pit size: 250 cm x 100 cm", 250.0, 100.0, None),
+    ])
+    def test_a_run_of_dimensions_is_length_width_depth(self, line, length,
+                                                       width, depth):
+        from report_ingest.log_floor import pit_dimensions
+        got = pit_dimensions([line], "m", 0)
+        assert got.length.value == pytest.approx(length)
+        assert got.width.value == pytest.approx(width)
+        if depth is None:
+            assert got.depth is None
+        else:
+            assert got.depth.value == pytest.approx(depth)
+
+    def test_a_label_and_its_value_set_as_two_runs_still_pair(self, pit):
+        from report_ingest.log_floor import header_pairs
+        doc, _gt = pit
+        pairs = dict(header_pairs(list(doc.page(0).lines)))
+        assert pairs["Equipment"] == "Backhoe with 80 cm bucket"
+        assert pairs["Total Depth"] == "2.60 m"
+
+    def test_the_seed_shows_the_pit_to_the_model(self, pit):
+        from report_ingest.log_floor import serialise_seed
+        doc, _gt = pit
+        assert "pit dimensions" in serialise_seed(self._floor(doc))
+
+    def test_the_prompt_tells_the_reader_the_bucket_rule(self):
+        assert "THE BUCKET IS THE WIDTH" in LOG_READER_SYSTEM
+        assert "A PIT PHOTOGRAPHED WITH A SKETCH" in LOG_READER_SYSTEM
+
+    def test_the_model_may_add_a_pit_the_grid_missed(self, pit):
+        from report_ingest.log_reader import ReadPit
+        doc, _gt = pit
+        reading = LogReading(
+            investigation_id="TP-9", kind="test_pit", depth_unit="m",
+            pit=ReadPit(length=4.0, width=0.8, unit="m"))
+        engine = FakeEngine([{"final": reading}])
+        result = read_log(doc, [0], engine, report_id="RXX")
+        assert result.investigation.pit.length.value == pytest.approx(4.0)
+
+    def test_a_pit_dimension_of_zero_is_refused(self, pit):
+        from report_ingest.log_reader import ReadPit
+        doc, _gt = pit
+        reading = LogReading(
+            investigation_id="TP-9", kind="test_pit", depth_unit="m",
+            pit=ReadPit(length=0.0, width=0.8, unit="m"))
+        engine = FakeEngine([{"final": reading}])
+        result = read_log(doc, [0], engine, report_id="RXX")
+        assert result.model_investigation.pit.length is None
+        assert any("greater than zero" in u["why"]
+                   for u in result.unresolved)
