@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geotech-staff-engineer"
-version = "5.24.0"
+version = "5.25.0"
 description = "Python toolkit for LLM-based geotechnical engineering agents - 33 analysis modules covering foundations, piles, slopes, structural section/RC/frame analysis, reliability, seismic site response, excavation support, pavement design (AASHTO 1993 / UFC 3-250-01), subsurface characterization (DIGGS/GEF/AGS4), FEM, drawing & profile rendering, and a cited public-domain reference layer."
 readme = "README.md"
 license = "MIT"
@@ -258,10 +258,13 @@ webapp = ["ws_upload_component/*.html"]
 # installed wheel (the v5.0 A/B self-test). Tests themselves are not shipped.
 funhouse_agent = ["geotech_test_suite.json", "eval_samples/*",
                   "worked_examples.json"]
-# The log-template fingerprint EXAMPLE (5.24.0). The REAL fingerprints are a
-# private file that travels with the truth folder and is never committed; this
-# one carries invented firms and documents the shape.
-report_ingest = ["templates.json.EXAMPLE"]
+# Two EXAMPLE files that document the shape of a private file the cluster run
+# reads. The REAL ones travel with the truth folder and are never committed,
+# because this repo is public and a fingerprint names a firm and a question
+# names a corpus report. The log-template fingerprints arrived with 5.24.0;
+# the library questions with 5.25.0. Both carry invented firms and places.
+report_ingest = ["templates.json.EXAMPLE",
+                 "library_questions.EXAMPLE.json"]
 
 [tool.pytest.ini_options]
 markers = [

@@ -1,5 +1,5 @@
 {
-  "_what_this_is": "The shape of the private library_questions.json the cluster half of the WP7 measurement reads. The REAL file lives in the truth folder (gitignored) and names the corpus ids (R01-R38); the five questions here are synthetic, against the synthetic library that report_ingest/tests/library_fixtures.py builds, and are committed only so the shape is readable without the corpus.",
+  "_what_this_is": "The shape of the private library_questions.json the cluster half of the WP7 measurement reads. The REAL file lives in the truth folder (gitignored) and names the corpus ids; the five questions here are synthetic, against the synthetic library that report_ingest/tests/library_fixtures.py builds, and are committed only so the shape is readable without the corpus.",
   "_how_it_is_scored": "Each question goes to the report_library sub-agent. The answer's citations[] carry the report ids it actually cited and the pages behind them; the score is precision and recall of those report ids against 'reports' below, plus how often a question whose answer is not in the library was answered with a gap rather than with prose. 'pages' is optional and scored only where it is given.",
   "_conventions": {
     "reports": "every report id a correct answer must cite; an empty list means the library does not hold the answer and the right answer says so",

@@ -343,7 +343,7 @@ DocLayout-YOLO (AGPL), docling (torch unavoidable — optional only).
    firewalled: any package that downloads model weights at runtime is unusable
    as published — vendor the models or skip.
 
-## REPORT INGEST TRAIN (2026-09-17) — WP0–WP5 BUILT; 5.20.0 RELEASED; the calc reader landed 2026-09-21
+## REPORT INGEST TRAIN — WP0–WP7 BUILT; 5.20.0 RELEASED; 5.25.0 PREPARED 2026-09-21 (not tagged)
 
 Plan: `module_work/REPORT_INGEST_PLAN.md`. Goal, in the owner's words:
 well-organised data about each geotechnical report, usable either as a
@@ -377,15 +377,24 @@ exports of it.
   `report_ingest` sub-agent on the app's tool surface behind
   `enable_report_ingest=False`.
 
-**Next:** WP5 — calculation printouts and the long tail. It is the one work
-package of the plan not built.
+**Prepared as 5.25.0 on master, 2026-09-21 (not tagged):** the page-label
+VOTE in production with the review going only where the voters disagree
+(`label_vote.py`); a report bound inside a report as its OWN record
+(`bound.py`); **WP5's calculation reader** (`calc_reader.py`); **WP6's test
+pit, cone sounding and dynamic probe readers** (`sounding_reader.py`, with
+`StaticConePenetrationTest` and `DynamicProbeTest` in DIGGS 2.6); and **WP7's
+report library** (`library.py`, `library_agent.py`) with the `report_library`
+sub-agent OFF by default. What remains of WP5 is the long tail: the scanned
+reports DI did not cover, and boring locations off the plan figure.
 
-**What WP5 waits on, and so does turning the sub-agent on:** the owner's
-four-stage `score_on_cluster` run. Every reader's accuracy is still unmeasured
-against a model — the ledger holds the grid-alone and tables-alone baselines
-and nothing more, and the development-engine checkpoints were never run for
-the logs, the lab or the narrative. The gate that matters is measured through
-Prompter, on the tier the app actually runs on.
+**What every one of them waits on, and so does turning either sub-agent on:**
+the owner's `score_on_cluster` run. Each reader's accuracy is still unmeasured
+against a model — the ledger holds the deterministic floors and nothing more,
+the development-engine checkpoints were never run for the logs, the lab or the
+narrative, and the calculation and sounding readers have floors only. The gate
+that matters is measured through Prompter, on the tier the app actually runs
+on. The cells, in order, with a cost estimate against each, are in HANDOFF
+§0a-current.
 
 **Parked with it:** the four disputed hand labels stay disputed (the
 spreadsheet is never edited — a hand label records what a person decided);
@@ -458,8 +467,8 @@ What that means for this train, in order:
    the same scorer as the voters, the disagreement set as a fraction, and
    the accuracy a targeted review of it would need to carry the set over the
    0.98 gate. Every split is listed per report in `vote/<ID>.json`.
-   **AND IT IS NOW THE PRODUCTION LABEL PATH (unreleased, on master since
-   5.24.0).** `report_ingest/label_vote.py` holds ONE copy of the policies
+   **AND IT IS NOW THE PRODUCTION LABEL PATH, carried by 5.25.0
+   (prepared on master 2026-09-21, not tagged).** `report_ingest/label_vote.py` holds ONE copy of the policies
    and both callers use it: the `vote` stage scores them, and
    `graph.ingest_report` runs them. Inside the ingest the rules, one vision
    pass on the cheap tier (`sheet` mode, about $0.05 a report) and the
@@ -498,6 +507,23 @@ What that means for this train, in order:
    `logs`/`lab` stages, which now print the grid, the model alone and
    floor+model), and reading the disagreement list off `qa.json` to see
    which slots a reviewer is actually sent to.
+
+
+4. **The NARRATIVE answers still have one voter. DESIGNED, NOT BUILT
+   (2026-09-21).** The page labels have three voters, and every value the log,
+   lab and calculation readers extract carries a method and a confidence with
+   the loser kept in `prov.alternatives`. The 37 narrative fields have neither:
+   one reader answers them once and its confidence is its own. The design is
+   the same shape as the label vote — one CHEAP sheet-mode vision pass over
+   the pages the narrative reader CITED, answering the same fields from the
+   picture, with agreement raising the field's confidence and a split becoming
+   a `QAEntry` a reviewer is sent to. Two things make it cheap: it reads only
+   the cited pages, which is a handful per report, and it runs on the tier the
+   label vote's vision pass already uses. **It waits on the cluster numbers for
+   the 5.24.0 levers** (the front-matter union, the glossary conventions,
+   per-question retrieval, the deterministic exploration fields, the quote
+   gate), because tuning a second voter against a first one nobody has measured
+   is measuring noise. Recorded as owed in `REPORT_INGEST_PLAN.md` §7.
 
 
 ### A BLIND calculation truth set is OWED (2026-09-21) -- TODO, not built

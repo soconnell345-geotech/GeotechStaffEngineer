@@ -33,9 +33,9 @@ for its words, and the report says so rather than hiding it.
 
 THE MODEL HALF IS MEASURED ON THE CLUSTER, not here -- see the README section
 "The report library". It runs the sub-agent over a private
-``library_questions.json`` and scores the report ids it CITES; there is a
-synthetic ``library_questions.EXAMPLE.json`` beside this file showing the
-shape.
+``library_questions.json`` and scores the report ids it CITES; the synthetic
+``report_ingest/library_questions.EXAMPLE.json`` ships in the wheel and shows
+the shape.
 
 PRIVACY. Every record this builds is synthetic and lives in a temporary
 folder: the places, firms, posts and projects are invented in

@@ -71,452 +71,151 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-09-20) — 5.24.0 ON MASTER (the log-template recogniser + the narrative levers) with planlens 0.6.0
+## CURRENT WORKING STATE (2026-09-21) — 5.25.0 PREPARED ON MASTER (the report read whole, and a library of the reports read) with planlens 0.6.0
 
-- **UNRELEASED on master since 5.24.0** — the reports already read become a LIBRARY that can be asked questions
+- **app 5.25.0 (PREPARED, NOT TAGGED, 2026-09-21)** — **the pages nobody was
+  reading get read, a report bound inside a report becomes its own record, the
+  page labels become a vote, and the reports already read become a library that
+  can be asked questions.** Five builds landed on master on 2026-09-21 and this
+  is the one release that carries them. **No dependency change** (the pin stays
+  `planlens>=0.6`), no schema bump, seven new modules inside `report_ingest`
+  (`label_vote.py`, `bound.py`, `calc_reader.py` + `calc_scoring.py`,
+  `sounding_reader.py` + `sounding_scoring.py`, `library.py` +
+  `library_agent.py`), one new reader in `subsurface_characterization/diggs26.py`
+  and one more data file in the wheel
+  (`report_ingest/library_questions.EXAMPLE.json`).
 
-**No version bump, no tag.** Pure Python inside `report_ingest`, no dependency
-change, two new modules (`report_ingest/library.py`,
-`report_ingest/library_agent.py`), one new sub-agent and one new primary tool,
-both **OFF by default**, and no new model call anywhere in the ingest.
+  **1. The page labels are a VOTE, and the expensive review goes only where the
+  voters disagree** (`label_vote.py`). The corpus run of 2026-09-20 said the old
+  single-voter path was wrong twice over: planlens' rules and a cheap vision pass
+  are COMPLEMENTARY by label class rather than one being better — rules 0.908 in
+  sample / **0.767 honest blind**, vision in sheet mode 0.655 / **0.867** at about
+  **$0.05 a report**, the rules owning `appended_report` (494 in-sample pages
+  vision never emits), `other` (216) and `calculation` (1,009, 41 % missed) while
+  vision owns `plan`, `profile`, `photos`, `cover`, `toc` and `figure` recall —
+  and the label review, at about **$0.45 a report** over every page, broke nearly
+  as many labels as it fixed on the reports its prompt was tuned against. So three
+  cheap voters (the rules, one sheet-mode vision pass on the cheap tier, and the
+  printed FORM where a private fingerprint file is in force) label every page under
+  one combiner that both the `vote` scoring stage and `graph.ingest_report` call,
+  so a policy cannot mean one thing in the measurement and another in the run.
+  `label_policy` defaults to `structural`; `rules` reproduces the old behaviour and
+  calls no vision pass. `review_mode` defaults to `disagreements`: the review sees
+  ONLY the split pages plus two either side, on a budget of
+  `max(20, 0.5 × split pages)` instead of `max(60, 0.25 × pages)`.
+  `ReportRecord.page_labels` carries, per page, the chosen label, its confidence,
+  an `agreed` flag, the policy, what settled it and every voter's own label and
+  confidence; a split the review did not settle is a
+  `QAEntry(kind="label_disagreement")`. Two leftovers from the durable-mirror train
+  came with it: `out_dir` no longer refuses a `/Workspace` path (refusing it was
+  refusing the durable option; a note is printed instead), and a `durable_dir`
+  whose own name already IS the run's name is not nested inside itself.
 
-**Why.** The ingest reads ONE report; every question the owner actually asks
-spans many. "Which of these sites was called potentially liquefiable", "what
-did each firm recommend", "which report and page prints that bearing pressure",
-"where do two readings disagree" — all of it was answerable only by opening
-records by hand, one folder at a time, on whichever machine still had them.
-`run_folder` has written a `reports.db` since the first version and nothing
-read it back.
+  **2. A report bound inside a report is its OWN record** (`bound.py`). Triage
+  calls **19 of the 38 corpus reports `multi_document`**, one to four bound
+  documents each — an earlier firm's whole investigation reproduced as an
+  appendix, a bridging report bound into the design-build report that answers it.
+  Those pages were listed in a QA entry and never read, and reading them into the
+  SAME record would have put two firms' B-1 in one list of investigations. Each
+  bound range (the UNION of triage's claim and the record's own `appended_report`
+  runs, floor four pages) goes round the same loop into `out_dir/bound/<id>/` with
+  its own record, summary, library page, DIGGS file and library row. One extra
+  structured call reads the child's own title, firm and date. Nothing crosses the
+  boundary: the parent's counts stay the parent's, and the child's narrative reader
+  is windowed so the front-fifty-pages lever cannot hand it the parent's cover.
+  `ingest_bound=False` restores the old listed-and-skipped behaviour.
 
-**What is built.**
+  **3. The calculations are read** (`calc_reader.py`). A quarter of the corpus's
+  4,300 hand-labelled pages are calculation printouts — **1,009 of them over eight
+  of the fourteen labelled reports** — and every one was a QA entry saying the
+  pages existed and had been skipped. They are the pages a reviewer most wants: a
+  boring log says what the ground IS, a lab sheet what a specimen DID, a
+  calculation what the engineer ASSUMED, WORKED OUT and CONCLUDED. One run of
+  `calculation` pages in, one `Calculation` out: the kind from a controlled list of
+  thirteen, the program and version AS PRINTED, the method, the subject, the
+  labelled values it was given and the ones it worked out, a sixty-word summary,
+  its pages and what it could not settle. A deterministic floor of
+  (label, value, unit) pairs runs before a call is spent; the budget is two calls
+  and most printouts cost one; three Python gates catch a result printed on no
+  page (kept, dropped to confidence 0.3, listed), a kind outside the list and a
+  unit nothing converts. The DIGGS writer ignores calculations deliberately —
+  DIGGS 2.6 has no element for a method or a chosen thickness — and its docstring
+  says why. **The floor alone, measured 2026-09-21 with no model and no network:
+  program 80 % (8/10), inputs 73 % (64/88), results 48 % (36/75)**, over ten
+  hand-truthed runs across six reports and seven kinds, 44 pages.
 
-1. **`Library(root)` over the folder the ingest writes** —
-   `<root>/<ID>/report.record.json`, `report.page.md`, `report.summary.md`,
-   `bound/<child>/...`, plus `reports.db`. **The index is DERIVED and the
-   records are the truth**: a folder restored from SharePoint with no database
-   beside it, or one whose records were rewritten since, rebuilds on the next
-   question — both the `reports` rows the writers own and the full-text index
-   the library adds — checked by mtimes against a stamp in `meta`. A rebuild
-   reads each report's key off its own `report.page.md` front matter, so a
-   report keeps the identity the ingest gave it from its source file's bytes
-   rather than acquiring a second one. **Nothing is written back into a
-   record.**
-2. **Ten query functions, every row carrying the report id and the PDF
-   pages**: `list_reports` (post, property type, phase, firm, date range,
-   document type, has-kind), `find` (FTS5 + fuzzy, snippet and pages),
-   `where_is`, `facts` (any of the 37 narrative fields with its pages and the
-   quote; a field the report did not answer is NAMED, not returned empty),
-   `compare` (one field across reports, with the silent ones named),
-   `explorations`, `lab_summary`, `calculations`, `disagreements` (the six QA
-   kinds a person should look at — a `note` and a `skipped` are not among
-   them), `library_stats`.
-3. **Search is FTS5 the way the reference layer does it** — contentless
-   external-content table, `porter unicode61`, BM25 with the subject weighted
-   over the text. The chunks come from the RECORD, because the record is what
-   carries pages, AND from the written page and summary block by block. The
-   **rapidfuzz fallback runs on the field VALUES**, not on whole chunks: a
-   twenty-character query against four hundred characters scores as a mismatch
-   however close the firm's name inside it is. It fires only when the
-   full-text query comes back thin, and never under four characters.
-4. **A report bound inside another is a report of the library in its own
-   right** — its own row, its own id, `parent` naming the one it came out of.
-   Its borings are its borings and the parent's counts stay the parent's.
-5. **`report_library`, a `CompiledSubAgent` + one primary tool**, both OFF by
-   default (`build_deep_agent(enable_report_library=True, library_root=…)`)
-   and **feature-detected on the FOLDER** rather than on a version: a
-   deployment either has reports read into it or does not. The ten queries are
-   JSON-Schema tool specs bound to **the app's own chat model** (unlike the
-   ingest, which runs readers on its own engine). Its prompt states the one
-   rule — every fact comes from a tool result in that conversation — plus cite
-   `(report id, page)` after every fact, say plainly when the library holds no
-   answer, and end with a `Gap:` line per thing unsettled.
-6. **The ceilings are Python**, because deepagents reads no middleware on a
-   CompiledSubAgent: the graph counts its own queries (8 per answer, refused
-   with a message telling the model to answer from what it has) and caps every
-   result at 25 rows and 4,000 characters.
-7. **The citations are CHECKED, not copied.** The structured response is
-   `answer`, `citations[]`, `reports_consulted[]`, `gaps[]`, `queries`,
-   `error`; a `(report, page)` the answer claims and no query returned is left
-   OUT of `citations` and NAMED in `gaps`, so an invented page is visible
-   rather than silently dropped or silently kept. An empty query and a failed
-   query are gaps too.
-8. **The ingest's own result gains `library_root`** — the folder its database
-   sits in — so a report read this turn is queryable this turn.
+  **4. The test pits, the cone soundings and the dynamic probes are read**
+  (`sounding_reader.py`). `InvestigationKind` has said `test_pit`, `cpt` and `dcp`
+  since the first version of the record and every one of them was read as though
+  it were a boring; the corpus carries **251 test pit pages, 54 DCP pages and 23
+  CPT pages** in nine of the fourteen labelled reports. A pit is a LOG and the log
+  reader reads it, now including its dimensions — no pit in the corpus prints a
+  labelled plan size, but every one names its BUCKET, and a trench dug with a
+  90 cm bucket is 90 cm wide. A SOUNDING is not a log: a tabulated sheet is read
+  deterministically with the one call spent on the header, a plotted one is
+  digitised through `zoom_plot` against the axis ranges read off the plot's own
+  text, with the confidence falling where two traces cross. Four gates refuse a
+  depth outside the sheet's own depth axis, a channel outside its printed range, a
+  negative tip resistance and a series with no depth unit. DIGGS 2.6 gets
+  `StaticConePenetrationTest` for a cone and `DynamicProbeTest` for a dynamic probe
+  (2.6 declares no `DynamicConePenetrometerTest` at all), read back row by row with
+  the round-trip gate checking every reading. The calculation GROUPING defect found
+  by the calc truth was fixed here: a run splits on a changed running header or a
+  page that opens with a program banner. **The floor alone, measured 2026-09-21:
+  73 % overall (257/353) — 96 % on the four TABULATED sheets (217/226) and 31 % on
+  the nine PLOTTED ones (40/127)**, over thirteen hand-truthed sheets across six
+  reports.
 
-**Measured 2026-09-21, no model and no network**
-(`module_work/report_ingest_harness/measure_wp7_library.py`): twenty
-hand-written questions over a synthetic library of six records (seven rows,
-one bound), each with the report ids and pages a correct answer must carry.
-**The chosen query — what the sub-agent's tool call returns — scores reports
-0.949 precision / 1.000 recall and pages 0.939 / 1.000.** **Search alone —
-the question's own prose into `find()` and nothing else, the floor a model
-gets when it reaches for search instead of the right query — scores reports
-0.647 / 0.943 and pages 0.417 / 0.323.** The two remaining false positives
-are honest: a second report genuinely prints "spread footings", and a second
-one genuinely discusses seismic hazard. **THE MODEL HALF IS UNMEASURED** —
-the cell for it is in `report_ingest/README.md` ("The report library"), it
-needs no PDF and no page truth, only a private `library_questions.json`
-beside the library, and it is scored on the report ids the answer CITES.
+  **5. The reports already read become a LIBRARY that can be asked questions**
+  (`library.py`, `library_agent.py`). The ingest reads ONE report; every question
+  the owner actually asks spans many, and `run_folder` had written a `reports.db`
+  since the first version that nothing read back. `Library(root)` sits over the
+  folder the ingest writes: the index is DERIVED and the records are the truth, so
+  a folder restored from SharePoint with no database beside it rebuilds on the next
+  question, keyed off each report's own front matter so it cannot acquire a second
+  identity, and nothing is written back into a record. Ten query functions answer
+  across reports and every row carries the report id and the PDF pages. Search is
+  FTS5 the way the reference layer does it, with a rapidfuzz fallback on the field
+  VALUES rather than on whole chunks. `report_library` is a `CompiledSubAgent` plus
+  one primary tool, both **OFF by default** and feature-detected on the FOLDER
+  rather than on a package version, bound to the app's own chat model, with the
+  ceilings in Python (eight queries an answer, 25 rows and 4,000 characters a
+  result) and the citations CHECKED rather than copied — a `(report, page)` the
+  answer claims that no query returned is left out of `citations` and named in
+  `gaps`. **Measured 2026-09-21 with no model and no network**, twenty hand-written
+  questions over a synthetic library of six records: **the chosen query scores
+  reports 0.949 precision / 1.000 recall and pages 0.939 / 1.000**, against
+  **search alone — the question's own prose into `find()` — at reports 0.647 /
+  0.943 and pages 0.417 / 0.323**. The two remaining false positives are honest
+  ones.
 
-**Suites:** `report_ingest` **1,296**, harness **266**, deep-agent wiring
-**350**, docs-currency green.
-**Next:** run the library questions on the cluster against the real corpus
-library, and read whether the answers cite the right reports and whether an
-unanswerable question comes back as a gap.
+  **WHAT IS UNMEASURED UNTIL THE CLUSTER RUNS.** Every number above that involves
+  a model is missing, and this release ships without it:
+  (a) **the vote in production** — the policies have been scored on saved runs,
+  but `structural` as the default inside `ingest_report`, the split fraction per
+  report, what the disagreement-only review touches and what it costs have not;
+  (b) **the calculation reader itself** — only its floor is measured, and **there
+  is no blind set**: all ten hand-truthed runs were read while the prompt was
+  written, so every number the `calc` stage prints is in sample and the scorecard
+  says so in place of the open/blind line;
+  (c) **the sounding and pit readers themselves** — again only the floor, and
+  again **no blind set**;
+  (d) **the narrative levers that shipped in 5.24.0** — the front-matter union, the
+  glossary conventions, per-question retrieval, the deterministic exploration
+  fields and the quote gate have never been run against the tier that will do the
+  work, so the 64 % recall / 74 % precision of the eight-report run still stands as
+  the last real number;
+  (e) **the library's model half** — the deterministic retrieval is measured, the
+  sub-agent answering real questions over the real corpus is not.
+  The first live checks, in order, are in `HANDOFF.md` §0a-current.
 
-- **UNRELEASED on master since 5.24.0** — the test pits, the cone soundings and the dynamic probes are read
-
-**No version bump, no tag.** Pure Python inside `report_ingest`, no dependency
-change, two new modules (`report_ingest/sounding_reader.py`,
-`report_ingest/sounding_scoring.py`), one new model call per sounding sheet,
-and one new reader in `subsurface_characterization/diggs26.py`.
-
-**Why.** `InvestigationKind` has said `test_pit`, `cpt` and `dcp` since the
-first version of the record, and until this train every one of them was read
-as though it were a boring. A pit lost the hole it actually was; a sounding
-lost the whole of what it measured, because a depth SERIES of three channels
-has nowhere to go among layers, samples and driven records. The corpus carries
-**251 test pit pages, 54 DCP pages and 23 CPT pages** in nine of the fourteen
-labelled reports.
-
-**What is built.**
-
-1. **`PitDimensions`, `CPTData`/`CPTPoint` and `DCPData`/`DCPPoint` in
-   `model.py`**, on `Investigation.pit`, `.cpt` and `.dcp`. A cone sounding is
-   a depth series of `qc`, `fs` and `u2` in the units PRINTED, with the cone,
-   the standard, the reading interval and whether the points were digitised; a
-   dynamic probe is blows over the printed increment (or penetration per blow,
-   whichever way round the sheet prints it) with the hammer's mass and drop and
-   any printed index column. **Not a schema bump**: all three are optional and
-   nothing changed meaning.
-2. **A test pit is a LOG and the log reader reads it.** `seed_from_grid` seeds
-   its layers, samples and water as before and now its DIMENSIONS.
-   **No pit in the corpus prints a labelled plan size** — fourteen were
-   checked across four reports — but every one names its BUCKET in the
-   equipment field ("... with a 55 cm bucket"), and a trench dug with a 90 cm
-   bucket is 90 cm wide. That is read as the pit's WIDTH at a lower confidence
-   with the provenance saying where it came from; a bucket named in a remark is
-   not. `log_floor.header_pairs` reads a label and its value set as two
-   separate text runs on one baseline, which is how a printed form sets them
-   and is what made the bucket visible at all. A **pit photographed with a
-   sketch** (no ruler) goes to the model from the picture with a floor of
-   header fields only, and is the ONE log whose depths are accepted without a
-   fitted scale — at a reduced confidence, listed as a change; a borehole
-   with no scale still refuses.
-3. **`sounding_reader.read_sounding`** takes one `cpt_log` or `dcp_log` item.
-   **TABULATED**: the sheet's own table is the record, read deterministically,
-   and the one call goes on the header with the brief telling it **not to
-   re-type** two hundred rows. The band reader learned three things real sheets
-   do — a header staggered over five printed lines, an unnamed column that
-   must still be READ so its numbers cannot snap into a named neighbour, and a
-   long table's depth cell drifting onto its own line. **PLOTTED**: the floor
-   is the header and THE AXIS RANGES off the plot's own text, and the traces
-   are digitised through `zoom_plot` at a fixed step, a point per depth, with a
-   confidence that FALLS where one trace crosses another. Reading the axes took
-   three passes: a tick label belongs to ONE axis (a cone sheet prints qc and
-   Rf along the same line, one rising and one falling), a scale is evenly
-   spaced linearly or in decades (which is what tells a real axis from the
-   three rising numbers in the little cone symbol every Dutch sounding prints),
-   and a depth axis is always LINEAR.
-4. **Four Python gates.** A depth outside the sheet's own depth axis, a channel
-   outside its printed range by more than a tick, a negative tip resistance and
-   a series with no depth unit are all REFUSED with the range they fell
-   outside. **The vertical axis is not always a depth**: Continental sheets plot
-   against an elevation on a datum and `CPTData.vertical_axis` says which.
-5. **DIGGS 2.6.** `diggs_geo:StaticConePenetrationTest` for a cone sounding —
-   ONE Test with a ResultSet of many ROWS, the depth of each reading a COLUMN
-   of the set and the test positioned on the run it covers. **DIGGS 2.6 has no
-   `DynamicConePenetrometerTest`** (the name is nowhere in the published
-   schema), so a dynamic probe is the `diggs_geo:DynamicProbeTest` the schema
-   DOES declare, whose documentation is "all methods that involve driving a rod
-   by impact hammer". `diggs26.parse_diggs26_soundings` reads both back at each
-   row's own depth and the round-trip gate checks EVERY reading.
-6. **The calc grouping defect, fixed.** The calculation reader's own hand truth
-   found `graph`'s item grouping folding four different calculations into one
-   fifteen-page item where an appendix runs printouts back to back.
-   `calc_reader.split_calc_items` splits a `calculation` run where the page's
-   running header or title block names a different program, title or subject,
-   or where a page OPENS with a program banner, capped at `MAX_CALC_PAGES`. The
-   banner is kept OUT of the running-header signature — a program prints it
-   at the head of its run and not on the run's later pages — and digits are
-   folded out, so "Sheet 3 of 11" does not split an item per page.
-7. **Wired in.** `graph.ingest_report` (`ITEM_READERS["cpt_log"] = "cpt"`,
-   `["dcp_log"] = "dcp"`, `Budgets.sounding`, resumable per item), the stage
-   `"soundings"` with a `soundings/` truth subdir and `sounding_budget`, the
-   local twin `measure_wp6_soundings.py`, and the `ingest` stage's record
-   scoring.
-
-**Hand truth: thirteen sheets over six reports** — five test pits (five
-firms' forms, one a photograph, one under a DRAFT watermark the grid reads
-nothing off), four cone soundings (two tabulated, one the SAME sounding
-plotted, one a negative case that plots an interpreted strength and no
-measured channel) and four dynamic probes (three tabulated, one
-four-soundings-to-a-page). Private, with its own README and protocol.
-
-**The floor alone, measured 2026-09-21** (no model, no network): **73 %
-overall (257/353)**, splitting into **96 % on the four TABULATED sheets
-(217/226)** — 100 % of every series metric — and **31 % on the nine
-PLOTTED ones (40/127)**, where the floor holds no points at all by
-construction. **THE READERS THEMSELVES ARE UNMEASURED** until the cluster run,
-and **THERE IS NO BLIND SET**. A blind set is owed (`FUTURE_IDEAS.md`).
-
-**One finding worth carrying forward:** a plotted cone sounding on this corpus
-**cannot be hand-truthed as a digitised series** — the traces oscillate
-faster than the sheet's own printed grid (qc goes 0.24 to 9.85 MPa across a
-fifth of the 1 m grid), so at most whole-metre levels there is no single value
-of the trace to read. `default_step` therefore takes the FINER of the printed
-grid and `CPT_STEP_M`, never the coarser.
-
-**Suites:** `report_ingest` **1,181**, harness **243**, offline ingest wiring
-**18**, `subsurface_characterization` **231**, docs-currency green.
-**Next:** `stages=("soundings",)` on the cluster, then a blind truth set for
-the pits.
-
-- **UNRELEASED on master since 5.24.0** — the calculations are read
-
-**No version bump, no tag.** Pure Python inside `report_ingest`, no dependency
-change, two new modules (`report_ingest/calc_reader.py`,
-`report_ingest/calc_scoring.py`) and one new model call per calculation
-printout.
-
-**Why.** A quarter of the corpus's 4,300 hand-labelled pages are calculation
-printouts — **1,009 of them, over eight of the fourteen labelled reports** —
-and every one of them was a QA entry saying the pages existed and had been
-skipped. They are also the pages a reviewer most wants: a boring log says what
-the ground IS, a laboratory sheet says what a specimen DID, and a calculation
-says what the engineer ASSUMED, WORKED OUT and CONCLUDED. A record with the
-ground in it and none of the design is half a record.
-
-**What is built.**
-
-1. **`Calculation` and `NamedQuantity` in `model.py`**, and
-   `ReportRecord.calculations`. A calculation is its `kind` from a controlled
-   list of thirteen (`CALC_KINDS`: lateral_pile, axial_pile, pile_group,
-   shallow_foundation_bearing, settlement, slope_stability, retaining_wall,
-   liquefaction, site_response, seepage, pavement, ground_improvement, other),
-   the `program` and version AS PRINTED (`None` where none is named, which is
-   the right answer for a spreadsheet), the `method`, the `subject`, the
-   labelled values it was GIVEN and the labelled values it WORKED OUT, a
-   sixty-word `summary`, its pages, its provenance and what it could not
-   settle. A `NamedQuantity` is the printed LABEL beside a `Quantity` or beside
-   the WORDS the page printed — a seismic site class is `C` and turning it into
-   a number would be a lie. **Not a schema bump**: both fields are optional and
-   nothing changed meaning; the WP5 `calcs` stub stays so an older file loads.
-2. **`calc_reader.read_calculation`** takes one run of `calculation` pages (the
-   graph already groups them, splitting a calculation appendix on program
-   banners and printed titles) and returns ONE `Calculation`. A calculation
-   page is not a lab sheet: it is a **program printout**, a **spreadsheet
-   printed to PDF** or a **hand calculation on a form**, and they look nothing
-   alike, so there is no title vocabulary to classify from and no single table
-   to read. What all three have is labelled numbers.
-3. **The floor** reads every (label, value, unit) a pattern can find before a
-   call is spent: a `label | value` table row, a one-row table under its own
-   headings, the **last filled row** of a ruled data table (where a cumulative
-   settlement lives), a label span and a value span on the same printed LINE
-   (which is how a spreadsheet sets them, and why the floor groups spans into
-   bands first), a single span reading `Pile-head deflection = 0.025 meters`,
-   and planlens' own `quantities` pass labelled by the words in front of it.
-   The program name comes off a banner only where a small GENERIC list of
-   commercial program-name patterns matches. Merged back under the same rule as
-   the log and the lab: **add, correct only with evidence, never drop**; a
-   floor value the reader left out is kept as an INPUT with a note, because a
-   pattern cannot tell an input from a result and that is the smaller claim.
-4. **Three Python gates.** A RESULT whose number is on none of the pages to the
-   precision it was reported at keeps its place — it may be right and the text
-   layer wrong — but drops to **confidence 0.3** and is listed. A kind outside
-   the list becomes `other` with a note. A unit the record cannot convert keeps
-   the value as printed and says on the unsettled list that nothing converts it.
-5. **The budget is two calls and most printouts cost one.** A run longer than
-   `MAX_CALC_PAGES = 12` is shown a window with its **first and last pages
-   always in it** — the first carries the banner and the inputs, the last the
-   answer — and the second call is spent only on the rest of the run or on the
-   reader's own unsettled list. Its one tool is `zoom_plot`, for a factor of
-   safety printed in a box ON a slope section, which no text pattern will find.
-6. **Wired in.** `graph.ingest_report` (`ITEM_READERS["calculation"] = "calc"`,
-   resumable per item, `Budgets.calc`); the writers (a **Calculations** section
-   in `summary.md` and in the library page: kind, program, subject, three key
-   results with units, pages); the reconciler (a subject naming a boring links
-   to that investigation; a result that contradicts the narrative's bearing
-   pressure, stated settlement or site class is a `disagreement` QA entry, both
-   values kept). **The DIGGS writer IGNORES them, deliberately** — DIGGS 2.6 is
-   an interchange format for what was OBSERVED and has no element for a method
-   or a chosen thickness; its docstring says so.
-7. **Scoring.** `calc_scoring.py` (kind exact; program fuzzy 85; method and
-   subject fuzzy 80; each value matched by its printed LABEL at 80 and its
-   VALUE within 2 % or the last printed digit, unit-aware through `to_si`),
-   cluster stage **`"calc"`** with `calc_budget=2` and a `calc/` truth subdir,
-   the local twin `measure_wp5_calc.py`, and the `ingest` stage's record
-   scoring now includes calculations where truth exists.
-
-**Hand truth: ten runs, six reports, seven kinds, 44 pages** — a site class
-printed as a WORD with six pages of code text behind it, a four-case settlement
-spreadsheet whose answer is a table's last filled row, a Mononobe-Okabe sheet
-with a NEGATIVE result, a pavement program printout with two different ESAL
-counts, a three-sheet bearing spreadsheet, a slope program whose answer is
-printed ON the plot, a printout of nothing but plots, a one-page site
-classification, one page carrying three blocks of the same spreadsheet, and a
-Schmertmann case whose answer is printed twice in two units. Private, with its
-own README and protocol.
-
-**The floor alone, measured 2026-09-21** (no model, no network): program 80 %
-(8/10), inputs 73 % (64/88), results 48 % (36/75). **THE READER ITSELF IS
-UNMEASURED** until the cluster run, and **THERE IS NO BLIND SET** — all ten
-runs were read while the prompt was written, so every number the stage prints
-is in sample and the scorecard says so in place of the open/blind line. A blind
-set is owed (`FUTURE_IDEAS.md`).
-
-**Suites:** `report_ingest` **1,043**, harness **243**, offline ingest wiring
-**18**, docs-currency green.
-**Next:** `stages=("calc",)` on the cluster, then a blind truth set.
-
-- **UNRELEASED on master since 5.24.0** — a report bound inside a report is its OWN record
-
-**No version bump, no tag.** Pure Python inside `report_ingest`, no dependency
-change, one new module (`report_ingest/bound.py`), one new optional model call
-per bound document.
-
-**Why.** A geotechnical report is very often not one report: an earlier firm's
-whole investigation reproduced as an appendix, a bridging report bound into the
-design-build report that answers it. Ledger run 7 has triage calling **19 of the
-38 corpus reports `multi_document`, with one to four bound documents each**, and
-the hand narrative notes for two of them say it plainly — the borings and test
-pits behind that tab belong to the EARLIER investigation. Until now those pages
-were listed in a QA entry and never read; reading them into the SAME record
-would have put two firms' B-1 in one list of investigations and made the boring
-count the sum of two investigations and the truth about neither.
-
-**What is built.**
-
-1. **`report_ingest/bound.py`** decides where a bound document begins and ends:
-   the UNION of triage's `bound_together` and the record's own
-   `appended_report` label runs, claims that overlap or touch folded into one,
-   a floor of `MIN_BOUND_PAGES = 4` (a reproduced log sheet is appended pages,
-   not a document) and a `QAEntry(where="bound.extent")` naming both sources
-   wherever they drew different edges — the union, because a page wrongly left
-   in the parent is an earlier investigation's boring attributed to this report.
-2. **The child goes round the same loop** (`graph._read_bound`). ONE extra
-   structured call reads its own first four pages for a title, a firm, a date, a
-   document type and how it is bound in (`identify_bound`, cached in the child's
-   folder, a failure leaving the identity empty with a QA entry rather than
-   losing the child). The RULES are re-run over its pages rebased to zero —
-   which is what makes its cover a cover and its boring log a boring log again
-   rather than four pages of `appended_report` — while the vision voter and the
-   printed-form recogniser are REUSED verbatim, since a page's picture does not
-   change when you stop calling it an appendix; `appended_report` from any voter
-   is discarded inside a child, being this record's premise rather than a claim
-   about a page. Then its own items, its own readers, its own reconcile, its own
-   exports, resumable under its own `items/`. No label review, and no second
-   level of nesting.
-3. **The record shape.** `ReportRecord.bound_documents` (`BoundReport`:
-   `bound_id report_id title firm date kind document_type pages first_page
-   last_page n_pages said_by counts folder record_path read`) on the parent;
-   `ReportRecord.parent` (`ParentReport`: `report_id bound_id pages first_page
-   last_page n_pages record_path`) on the child. **Not a schema bump** — both
-   are optional and nothing changed meaning. Page numbers are the PARENT FILE'S
-   throughout: one PDF, and a reviewer opens it at the page the record names.
-4. **Nothing crosses the boundary, in either direction.** The parent's narrative
-   reader is TOLD the ranges with each document's title, firm and date and told
-   what to do with them (not this report's borings, not this report's
-   `boringDictionary`, each one IS a previous investigation and counts towards
-   `previousInvestigationCount`); the counts and dictionaries still come from
-   the parent's own logs. The child's narrative reader gets the mirror: a
-   `window` on `read_narrative` / `reading_pages` / `retrieval_passages` that
-   keeps every page it is shown and every passage it is searched inside the
-   bound document, so it never answers off the parent's cover, letter or
-   recommendations — the front-fifty-pages lever would otherwise have handed it
-   the whole parent.
-5. **Exports.** The child gets its own record, summary, library page and DIGGS
-   file under `out_dir/bound/<id>/` and a row of its own in the SAME
-   `reports.db`, keyed by the file's hash folded with its handle (so two records
-   off one file do not collide) and carrying a new `parent` column pointing at
-   the parent's row; an older library grows the column on open. The parent's
-   summary page gains a **"Reports bound inside this one"** section — title,
-   what it is, pages, what it holds by count, the child's folder — saying that
-   what they hold is in none of the counts above. The parent's DIGGS file does
-   NOT carry the child's data: DIGGS 2.6 has no cross-report link, and a file
-   that quietly merged the two would be wrong in exactly the way this exists to
-   prevent.
-6. **The `ingest` stage's RESULTS** gains a `bound` column and a `+-` line per
-   child under its parent (id, pages, kind, what it holds, which sources said
-   so), plus a totals line; `run.json` carries `bound`; `run_folder`'s
-   `INDEX.md` gains a `Bound in` column. **Numbers will move**: a report whose
-   investigation count falls on the next cluster run is one whose appendix was
-   somebody else's investigation all along.
-7. **`ingest_bound=True` everywhere, `False` restores the old behaviour** —
-   `ingest_report`, `run_folder`, `run_ingest`, `build_report_ingest_graph`,
-   `build_report_ingest_subagent` and `score_on_cluster`. The sub-agent's
-   compact answer names each bound document and where its record went.
-
-**Suites:** `report_ingest` **938**, harness **229**, offline ingest wiring **36**, docs-currency green.
-**Next:** the cluster run reads the `bound` column and the `+-` lines, and the ledger records how many of the 19 `multi_document` reports actually yielded a child and what came out of each.
-
-
-- **UNRELEASED on master since 5.24.0** — the page labels are a vote, and the expensive review goes only where the voters disagree
-
-**No version bump, no tag.** Pure Python inside `report_ingest`, no dependency
-change, and the app's own ingest tool picks it up with no wiring change beyond
-one cheap-tier engine.
-
-**Why.** The corpus run of 2026-09-20 (ledger runs 7 and 10) says the old
-label path was wrong twice over. The rules and a cheap vision pass are
-COMPLEMENTARY by label class rather than one being better — rules 0.908 in
-sample / 0.767 honest blind, vision in sheet mode 0.655 / 0.867 at about $0.05
-a report, the rules owning `appended_report` (494 in-sample pages vision never
-emits), `other` (216) and `calculation` (1,009, 41 % missed) while vision owns
-`plan`, `profile`, `photos`, `cover`, `toc` and `figure` recall — and the
-label review, at about $0.45 a report over every page, breaks nearly as many
-labels as it fixes on the reports its prompt was tuned against.
-
-**What is built.**
-
-1. **One combiner, two callers** (`report_ingest/label_vote.py`).
-   `combine(rules, vision, template, policy=…, trust_table=…)` returns a
-   `PageChoice`: the label, its confidence, the voters and an `agreed` flag.
-   `vote.py` (the scoring stage) and `graph.py` (production) both call it, so
-   a policy cannot mean one thing in the measurement and another in the run.
-   Policies: `structural` (default — vision except the four labels the rules
-   own), `confidence`, `trust` (a per-label table learned in sample), and
-   `rules`, which reproduces the old behaviour and calls no vision pass at all.
-2. **The vote inside `ingest_report`.** After the rules it runs one vision
-   pass (`vision_mode="sheet"` on the cheap tier, cached in `vision.json`) and
-   the log-template recogniser where a private fingerprint file is in force —
-   that third voter names a FORM, not a label, so it votes for the exploration
-   -log CLASS and is a no-op without the file. Threaded through `ingest_report`,
-   `run_folder`, the app's `report_ingest` tool and the `ingest` stage.
-3. **`review_mode` in {`disagreements`, `all`, `none`}, default
-   `disagreements`.** The review is given ONLY the split pages plus two either
-   side, with the voters' labels and confidences printed in its brief, on a
-   budget of `max(20, 0.5 × split pages)` instead of `max(60, 0.25 × pages)`.
-   Its tools are NOT narrowed — an agent that follows a hunch may — and a
-   change it makes on a page the voters agreed on is applied and flagged in QA.
-4. **Everything carries a confidence.** `ReportRecord.page_labels` is one
-   `PageLabel` per page: the label, its confidence, `agreed`, the policy,
-   whether the vote or the review settled it, and every voter's own label and
-   confidence. A split the review did not settle is a
-   `QAEntry(kind="label_disagreement")` with both voters. The graph writes
-   `labels.json` beside `vision.json` and `review.json` with the policy, the
-   mode, the splits, what the review touched and what each pass cost.
-5. **The `vote` stage saves its trust table** to `vote/trust_table.json` and
-   the graph takes it by path for `label_policy="trust"`; without one that
-   policy falls back to `structural` and prints a note.
-6. **The `ingest` stage's RESULTS gains `## The page labels`** — split pages
-   per report and as a fraction, the review mode, pages touched, splits left,
-   and where hand labels exist the final labels' accuracy beside the rules'
-   alone, by the same scorer the `labels` and `vision_labels` stages use.
-7. **Two leftovers from the durable-mirror train.** `out_dir` no longer
-   refuses a `/Workspace` path — the workspace folder is one of the two places
-   that keep things on this cluster, so refusing it was refusing the durable
-   option; `cluster_scoring.out_dir_note` prints a note instead. And a
-   `durable_dir` whose own name already IS the run's name is not nested inside
-   itself: `.../results` and `.../results/521_sheet` both land the run at
-   `.../results/521_sheet`.
-
-**Suites:** `report_ingest` **886**, harness **229**, docs-currency green.
-**Next:** run `stages=("vote",)` over the 38 saved sheet-mode vision runs to
-pick the policy, then `stages=("ingest",)` with `label_policy` set to it and
-read `## The page labels` for the split fraction and the accuracy. The ingest
-ledger is written up as a TODO in `FUTURE_IDEAS.md` and is not built.
-
+  **Gate (2026-09-21, three chunks in the foreground, each on pytest's own exit
+  code): GATE_COUNTS.** Wheel built and checked: no corpus name, no truth file,
+  no `raw/`, no tests and no `module_work` in it;
+  `report_ingest/templates.json.EXAMPLE` and
+  `report_ingest/library_questions.EXAMPLE.json` both present; metadata requires
+  `planlens>=0.6` and does not require `anthropic`.
+  **NOT TAGGED, NOT PUSHED, NOT PUBLISHED** — the owner's word cuts the release.
 
 - **app 5.24.0** (2026-09-20, on master, NOT yet tagged or released) —
   **a log knows what FORM it was printed on, and the narrative reader is

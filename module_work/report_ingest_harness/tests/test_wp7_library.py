@@ -176,8 +176,10 @@ class TestTheExampleQuestionsFile:
     def example(self):
         import pathlib
 
-        path = (pathlib.Path(__file__).parents[1]
-                / "library_questions.EXAMPLE.json")
+        # It ships IN THE WHEEL (5.25.0) beside templates.json.EXAMPLE, so
+        # the cluster cell can read the shape from an installed copy.
+        path = (pathlib.Path(__file__).parents[3]
+                / "report_ingest" / "library_questions.EXAMPLE.json")
         return json.loads(path.read_text(encoding="utf-8"))
 
     def test_it_has_five_questions(self, example):

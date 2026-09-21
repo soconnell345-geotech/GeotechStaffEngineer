@@ -1080,12 +1080,12 @@ genuinely discusses seismic hazard.
 
 **The model half is measured on the cluster**, because the model that will do
 the work is the app's. It needs no PDF and no truth folder of pages — just a
-`library_questions.json` beside the library (see
-`module_work/report_ingest_harness/library_questions.EXAMPLE.json` for the
-shape) and the library folder itself:
+`library_questions.json` beside the library (the shape is
+`report_ingest/library_questions.EXAMPLE.json`, which ships in the wheel) and
+the library folder itself:
 
 ```python
-# %pip install "geotech-staff-engineer==<the release with the library>"
+# %pip install "geotech-staff-engineer==5.25.0"
 import json
 from funhouse_agent.deep.databricks_bridge import PrompterChatModel
 from report_ingest.library_agent import answer_question
@@ -1366,28 +1366,32 @@ with what the rules really said, so a model that misremembers is visible.
 
 ## Running it on the cluster
 
-This is the run that produces the real numbers, and the owner makes it.
+This is the run that produces the real numbers, and the owner makes it. The
+cells below are the whole list, in the order they are run; `HANDOFF.md`
+§0a-current names the same list with a cost estimate against each one.
 
 **The reports stay where they already are.** They do not have to be renamed,
 copied or re-uploaded: point `reports_dir` at the folder that holds them under
 the names their authors gave them, and the manifest's source-file column is
-what turns each file name into an ID.
+what turns each file name into an ID. The Azure Document Intelligence results
+stay where they are too, and `di_dir` points at them.
 
-**One folder of small private files travels with the run**, and the whole of
-it is what gets uploaded. The hand truth is private and does not ship in the
-wheel, so it is put on a Volume before a run; three separate Volume paths that
-must each be right is three chances for one to be stale while the run starts
-anyway and scores against it. Upload this, and nothing else:
+**One folder of small private files travels with the run.** The hand truth does
+not ship in the wheel, so it is uploaded once into the WORKSPACE folder, which
+survives a cluster restart, and the gather cell copies it to local disk for the
+run. Upload this, and nothing else:
 
 ```
-<your volume>/report_ingest/
+HOME = /Workspace/Users/<you>/geotech_app/report_ingest
     MANIFEST.md                      the corpus manifest; its `file` column names each report
     trial_pages_working_r2.xlsx      the hand page labels
     oos_labels.json                  the lead's out-of-sample labels
+    templates.json                   the private log-form fingerprints (beside truth/, not inside it)
     truth/
         logs/       <ID>_p<page>.json …, OPEN.txt, BLIND2.txt
         lab/        <kind>__<ID>_p<page>.json …, OPEN.txt
         calc/       <kind>__<ID>_p<first page>.json …, OPEN.txt
+        soundings/  <kind>__<ID>_p<page>.json …, OPEN.txt
         narrative/  <ID>.json …
 ```
 
@@ -1396,26 +1400,32 @@ anyway and scores against it. Upload this, and nothing else:
 | `MANIFEST.md` | IDs cannot be resolved at all, unless the PDFs are already named `R01.pdf` … |
 | `trial_pages_working_r2.xlsx` | the in-sample set runs and produces profiles, but scores nothing |
 | `oos_labels.json` | the two out-of-sample sets run and score nothing |
-| `truth/logs/`, `truth/lab/`, `truth/calc/`, `truth/narrative/` | that stage refuses to start rather than running unscored |
+| `templates.json` | the log-form recogniser is a no-op: no third voter on a page's label, and no column map for the forms `log_grid` cannot name |
+| `truth/<stage>/` | that stage refuses to start rather than running unscored |
 
 `truth/` is what `truth_dir` points at: each stage takes its own subfolder out
-of it, and the subfolders are named after the stages. `OPEN.txt` beside a
-stage's truth files names the reports whose pages the prompts were allowed to
-be tuned against, so the blind figure stays blind; without one the built-in
-open set is used — except `calc/`, which has **no** built-in open set,
-because every hand-truthed calculation is in sample and the scorecard says so
-rather than reporting a blind figure that does not exist. (`lab_truth_dir`,
-`calc_truth_dir` and `narrative_truth_dir` still override the root, for truth
-that is not in one place.)
+of it, and the subfolders are named after the stages. **`templates.json` sits
+BESIDE `truth/`, not inside it** — `score_on_cluster` looks for it at
+`<truth_dir>/../templates.json` and `templates_path=` overrides that. `OPEN.txt`
+beside a stage's truth files names the reports whose pages the prompts were
+allowed to be tuned against, so the blind figure stays blind; without one the
+built-in open set is used — except `calc/` and `soundings/`, which have **no**
+built-in open set, because every hand-truthed calculation and every hand-truthed
+sounding is in sample and the scorecard says so rather than reporting a blind
+figure that does not exist. (`lab_truth_dir`, `calc_truth_dir` and
+`narrative_truth_dir` still override the root, for truth that is not in one
+place.)
 
 The Azure Document Intelligence results are read in **either** form —
-`<ID>.json.gz` or the uncompressed `DI_data_<original stem>.json` that
-Funhouse wrote — from whatever folder `di_dir` names. Without them the scanned
-pages are read from their own text layer alone.
+`<ID>.json.gz` or the uncompressed `DI_data_<original stem>.json` that Funhouse
+wrote — from whatever folder `di_dir` names. Without them the scanned pages are
+read from their own text layer alone.
+
+### The cells, in order
 
 ```python
 # 1. From PyPI through Nexus. planlens 0.6.0 arrives with it.
-%pip install "geotech-staff-engineer==5.24.0"
+%pip install "geotech-staff-engineer==5.25.0"
 dbutils.library.restartPython()
 ```
 
@@ -1426,45 +1436,175 @@ dbutils.library.restartPython()
 ```
 
 ```python
-# 3. One cell, all nine stages. fh_prompter is the object setup just made,
-#    and fh_sp_client is the SharePoint client the mirror writes through.
+# 3. Gather the private files from the workspace folder onto local disk. The
+#    workspace folder is what SURVIVES a restart; /tmp is what the run reads
+#    and writes fast. Everything below points at WORK, never at HOME.
+import os, shutil
+
+HOME = "/Workspace/Users/<you>/geotech_app/report_ingest"   # kept
+WORK = "/tmp/ri_files"                                      # working copy
+
+shutil.rmtree(WORK, ignore_errors=True)
+shutil.copytree(HOME, WORK)
+TRUTH   = WORK + "/truth"
+REPORTS = "/Volumes/<your volume>/reports"      # the PDFs, under their own names
+DI      = "/Volumes/<your volume>/report_di"    # the DI results, where they already are
+
+for root, dirs, files in os.walk(WORK):
+    print(root.replace(WORK, ""), len(files), "file(s)")
+```
+
+```python
+# 4. (a) The VOTE — NO model call. It reads the label runs and the sheet-mode
+#    vision runs already on disk and scores the policies against each other,
+#    writing vote/trust_table.json. Run this first: it says which label_policy
+#    the corpus actually supports before a dollar is spent on (b).
 from report_ingest.cluster_scoring import score_on_cluster
 
 results = score_on_cluster(
-    reports_dir  = "/Volumes/<your volume>/reports",          # the PDFs, under their own names
-    manifest     = "/Volumes/<your volume>/report_ingest/MANIFEST.md",
-    labels_xlsx  = "/Volumes/<your volume>/report_ingest/trial_pages_working_r2.xlsx",
-    oos_labels   = "/Volumes/<your volume>/report_ingest/oos_labels.json",
-    truth_dir    = "/Volumes/<your volume>/report_ingest/truth",   # holds logs/ lab/ calc/ soundings/ narrative/
-    di_dir       = "/Volumes/<your volume>/report_di",
-    out_dir      = "/tmp/report_ingest_522",                  # the working folder; the durable copy is below
-    sharepoint   = fh_sp_client,            # the durable copy; see "Where the output goes"
-    prompter     = fh_prompter,
-    model        = "funhouse-gpt-high",     # every reader, on the tier the app runs on
-    triage_model = "funhouse-gpt-medium",   # one call over a ledger; a cheaper tier does
-    sets         = ("insample", "oos_open", "oos_blind"),
-    stages       = ("labels", "logs", "lab", "calc", "soundings",
-                    "narrative", "vision_labels", "vote", "ingest"),
-    vision_model = "funhouse-gpt-low",      # the experiment: GPT-4.1, the cheap tier
-    vision_mode  = "sheet",                 # six pages a call; or "page" / "document"
-    vision_fallback = True,                 # one page-mode call for a page nothing answered for
-    max_reports  = 2,                       # drop this line after the first run
+    reports_dir = REPORTS,
+    manifest    = WORK + "/MANIFEST.md",
+    labels_xlsx = WORK + "/trial_pages_working_r2.xlsx",
+    oos_labels  = WORK + "/oos_labels.json",
+    truth_dir   = TRUTH,
+    di_dir      = DI,
+    out_dir     = "/tmp/ri_525_vote",
+    durable_dir = HOME + "/results/ri_525_vote",
+    sharepoint  = fh_sp_client,
+    prompter    = fh_prompter,
+    model       = "funhouse-gpt-high",
+    stages      = ("vote",),
+    vision_dirs = [HOME + "/results/521_sheet/vision"],   # the saved sheet-mode runs
+    review_dir  = HOME + "/results/520_labels/runs",      # the saved label runs
 )
 ```
 
-**If the tier's model refuses a parameter** — a reasoning-class deployment
-wants `max_completion_tokens` rather than `max_tokens` and takes no
-`temperature` — the engine resends the call with that parameter renamed or
-dropped, once per refused parameter, and keeps the lesson for the rest of the
-run (`engine.adaptations` says what it learned). The SDK's `chat()` helper
-swallows such a refusal and returns None; that case is retried on the raw
-client. This is what stopped the first run on 5.20.0 and is fixed in 5.20.1.
+```python
+# 5. (b) The INGEST, two reports, with the vote in production. This is the
+#    first run in which label_policy and review_mode mean anything live.
+results = score_on_cluster(
+    reports_dir  = REPORTS,
+    manifest     = WORK + "/MANIFEST.md",
+    labels_xlsx  = WORK + "/trial_pages_working_r2.xlsx",
+    oos_labels   = WORK + "/oos_labels.json",
+    truth_dir    = TRUTH,
+    di_dir       = DI,
+    out_dir      = "/tmp/ri_525_ingest",
+    durable_dir  = HOME + "/results/ri_525_ingest",
+    sharepoint   = fh_sp_client,
+    prompter     = fh_prompter,
+    model        = "funhouse-gpt-high",
+    triage_model = "funhouse-gpt-medium",
+    vision_model = "funhouse-gpt-low",             # the vote's cheap voter
+    vision_mode  = "sheet",                        # the corpus run's mode; "document" is priced in its own cell
+    stages       = ("ingest",),
+    sets         = ("insample", "oos_open", "oos_blind"),
+    label_policy = "structural",                   # or what (a) chose
+    review_mode  = "disagreements",
+    review_dir   = HOME + "/results/520_labels/runs",   # a saved label run to reuse
+    # label_policy="trust" also needs trust_table=HOME + "/results/525_vote/vote/trust_table.json"
+    log_budget   = 6, lab_budget = 4, narrative_budget = 8,
+    max_reports  = 2,                              # drop this line after the first run
+)
+```
 
-Bring back **`/tmp/report_ingest_522/RESULTS.md`**. Run it with
-`max_reports=2` first. It caps every stage at two — two reports reviewed, two
-logs, two laboratory sheets, two narratives — which proves the paths, the
-prompter and all three truth folders for a few minutes of calls, and it
-resumes, so the full run afterwards does not redo them.
+```python
+# 6. (c) The two NEW readers, against their hand truth. Neither has ever had a
+#    model number: only their floors are measured.
+results = score_on_cluster(
+    reports_dir     = REPORTS,
+    manifest        = WORK + "/MANIFEST.md",
+    labels_xlsx     = WORK + "/trial_pages_working_r2.xlsx",
+    oos_labels      = WORK + "/oos_labels.json",
+    truth_dir       = TRUTH,
+    di_dir          = DI,
+    out_dir         = "/tmp/ri_525_readers",
+    durable_dir     = HOME + "/results/ri_525_readers",
+    sharepoint      = fh_sp_client,
+    prompter        = fh_prompter,
+    model           = "funhouse-gpt-high",
+    stages          = ("calc", "soundings"),
+    calc_budget     = 2,
+    sounding_budget = 2,
+)
+```
+
+```python
+# 7. (d) The three READERS again, with the 5.24.0 floor, the log forms and the
+#    narrative levers all in force. templates_path defaults to
+#    <truth_dir>/../templates.json, which is WORK/templates.json.
+results = score_on_cluster(
+    reports_dir           = REPORTS,
+    manifest              = WORK + "/MANIFEST.md",
+    labels_xlsx           = WORK + "/trial_pages_working_r2.xlsx",
+    oos_labels            = WORK + "/oos_labels.json",
+    truth_dir             = TRUTH,
+    di_dir                = DI,
+    out_dir               = "/tmp/ri_525_logs_lab_narr",
+    durable_dir           = HOME + "/results/ri_525_logs_lab_narr",
+    sharepoint            = fh_sp_client,
+    prompter              = fh_prompter,
+    model                 = "funhouse-gpt-high",
+    stages                = ("logs", "lab", "narrative"),
+    log_budget            = 6, lab_budget = 4, narrative_budget = 8,
+    narrative_front_pages = 50,
+)
+```
+
+```python
+# 8. (e) The vision experiment in DOCUMENT mode over the corpus: whole-report
+#    context, which is the only thing that could win back appended_report,
+#    other and the calculation pages sheet mode cannot see.
+results = score_on_cluster(
+    reports_dir     = REPORTS,
+    manifest        = WORK + "/MANIFEST.md",
+    labels_xlsx     = WORK + "/trial_pages_working_r2.xlsx",
+    oos_labels      = WORK + "/oos_labels.json",
+    truth_dir       = TRUTH,
+    di_dir          = DI,
+    out_dir         = "/tmp/ri_525_vision_doc",
+    durable_dir     = HOME + "/results/ri_525_vision_doc",
+    sharepoint      = fh_sp_client,
+    prompter        = fh_prompter,
+    model           = "funhouse-gpt-high",
+    stages          = ("vision_labels",),
+    vision_model    = "funhouse-gpt-low",
+    vision_mode     = "document",
+    vision_fallback = True,        # one page-mode call for a page nothing answered for
+)
+```
+
+Every scoring cell takes `durable_dir` under `HOME` and `sharepoint =
+fh_sp_client`, so the run survives a restart twice over; `out_dir` stays under
+`/tmp`, which is where a run that writes one small file per report per stage
+belongs. **Give the `durable_dir` the same last name as the `out_dir`** — the
+run's own name is appended to `durable_dir`, and a `durable_dir` whose last
+segment already IS that name is not nested inside itself, so
+`/tmp/ri_525_vote` with `.../results/ri_525_vote` lands the run exactly there
+rather than one folder deeper. **Run each stage with `max_reports=2` first.** It caps every stage at
+two — two reports ingested, two logs, two laboratory sheets, two narratives —
+which proves the paths, the prompter and the truth folders for a few minutes of
+calls, and it resumes, so the full run afterwards does not redo them.
+
+**If the tier's model refuses a parameter** — a reasoning-class deployment wants
+`max_completion_tokens` rather than `max_tokens` and takes no `temperature` —
+the engine resends the call with that parameter renamed or dropped, once per
+refused parameter, and keeps the lesson for the rest of the run
+(`engine.adaptations` says what it learned). The SDK's `chat()` helper swallows
+such a refusal and returns None; that case is retried on the raw client. This is
+what stopped the first run on 5.20.0 and is fixed in 5.20.1.
+
+Bring home **`RESULTS.md` only**, from whichever `out_dir` the cell used. It
+carries IDs, labels, counts and rates. The per-report runs and the triage
+profiles stay on the cluster, because a change's reason or a triage rationale
+can name a firm, a project or a person.
+
+**The nine stages** are `labels`, `logs`, `lab`, `calc`, `soundings`,
+`narrative`, `vision_labels`, `vote` and `ingest`. Any combination can go in
+one `stages=(...)` call; they are split across the cells above because the
+order matters — the vote costs nothing and says which policy the ingest should
+run under, and the ingest is the expensive one. They are described one at a
+time below, each with what it measures and the parameters that are its own.
 
 ### Where the output goes, and why it is mirrored
 
@@ -2104,7 +2244,7 @@ results = score_on_cluster(
     model        = "funhouse-gpt-high",
     stages       = ("ingest",),
     sets         = ("insample", "oos_open", "oos_blind"),
-    review_dir   = HOME + "/results/520_labels",    # a saved label run to reuse; default is this run's own runs/
+    review_dir   = HOME + "/results/520_labels/runs",   # a saved label run's runs/ folder; default is this run's own
     label_policy = "structural",                    # how the page voters are combined
     review_mode  = "disagreements",                 # which pages the review is shown
     log_budget   = 6, lab_budget = 4, narrative_budget = 8,

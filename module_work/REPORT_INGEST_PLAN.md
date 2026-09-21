@@ -1,16 +1,16 @@
 # Report ingest — geotechnical report → organised record + summary + DIGGS 2.6
 
-**Status: WP0–WP5 BUILT; 5.20.0 RELEASED with planlens 0.6.0 (2026-09-17);
-cluster scoring pending the owner's run.** WP0 and WP1b shipped in app 5.19.0
-with planlens 0.5.0. WP2 through WP4 — the record, the log reader and DIGGS
-2.6, the lab reader, the narrative reader and the reconciler, the writers,
-the deterministic graph, the folder runner and the app sub-agent — plus the
-WP5 vision-first label experiment (`report_ingest/vision_labels.py`, cluster
-stage `vision_labels`) shipped as 5.20.0 with planlens 0.6.0 (tags `v5.20.0`
-and `v0.6.0`). **The calc reader is BUILT** (`report_ingest/calc_reader.py`,
-cluster stage `calc`, unreleased on master, 2026-09-21); what remains of WP5
-is the long tail — the scanned reports DI did not cover, and boring locations
-off the plan figure.
+**Status: WP0–WP7 BUILT; 5.25.0 PREPARED on master (2026-09-21), not
+tagged; cluster scoring pending the owner's run.** WP0 and WP1b shipped in app
+5.19.0 with planlens 0.5.0. WP2 through WP4 — the record, the log reader and
+DIGGS 2.6, the lab reader, the narrative reader and the reconciler, the
+writers, the deterministic graph, the folder runner and the app sub-agent —
+plus the WP5 vision-first label experiment shipped as 5.20.0 with planlens
+0.6.0. **WP5's calculation reader, WP6's pit and sounding readers and WP7's
+report library are all BUILT and all carried by 5.25.0**, together with the
+page-label VOTE (`label_vote.py`) and bound reports as their own records
+(`bound.py`). What remains of WP5 is the long tail — the scanned reports DI did
+not cover, and boring locations off the plan figure.
 
 **Every model number for WP2–WP4 is still missing, and that is the state.**
 What the ledger holds for the three readers is the baseline WITHOUT a model:
@@ -698,7 +698,7 @@ from rendered pages, kept in the private ledger for the owner to spot-check.
 
 ### WP5: calc printouts and the long tail
 
-- **`calc_reader` — BUILT, 2026-09-21** (unreleased on master). Calc
+- **`calc_reader` — BUILT, 2026-09-21; carried by 5.25.0.** Calc
   printouts (settlement, pile capacity, seismic, slope, pavement, retaining
   walls …) → one `Calculation` per run: kind from a controlled list, program
   and version as printed, method, subject, labelled inputs and results with
@@ -724,7 +724,7 @@ from rendered pages, kept in the private ledger for the owner to spot-check.
 - Boring locations from the plan figure (the old repo's coordinate work);
   planlens IR plus `find_quantities` make this feasible.
 
-### WP6: test pits, cone soundings and dynamic probes (2026-09-21)
+### WP6: test pits, cone soundings and dynamic probes (2026-09-21) — BUILT, carried by 5.25.0
 
 - **`sounding_reader.py`** reads a `cpt_log` or `dcp_log` item into an
   `Investigation` with a `CPTData` or a `DCPData`; the log reader gained the
@@ -748,6 +748,42 @@ from rendered pages, kept in the private ledger for the owner to spot-check.
   themselves are unmeasured** until the cluster run.
 - **OPEN ONLY -- there is no blind sounding truth set**, and every number the
   stage prints is in sample until there is one.
+
+### WP7: the report library (2026-09-21) — BUILT, carried by 5.25.0
+
+- **`library.py`.** `Library(root)` over the folder the ingest writes. The
+  index is DERIVED and the records are the truth: a folder restored from
+  SharePoint with no `reports.db`, or one whose records were rewritten since,
+  rebuilds on the next question — the writers' own `reports` rows AND the
+  full-text index — checked by mtimes against a stamp in `meta` and keyed off
+  each `report.page.md`'s front matter. Nothing is written back into a record.
+- **Ten queries**, every row carrying the report id and the PDF pages:
+  `list_reports`, `find`, `where_is`, `facts` (the 37 narrative fields, the
+  unanswered ones NAMED), `compare`, `explorations`, `lab_summary`,
+  `calculations`, `disagreements` (the six QA kinds a person should look at),
+  `library_stats`. A bound report is a report of the library in its own right.
+- **Search is FTS5 the way the reference layer does it** (contentless external
+  content, `porter unicode61`, BM25 with the subject weighted), over chunks
+  from the RECORD and from the written page and summary. The **rapidfuzz
+  fallback runs on the field VALUES**, not on whole chunks, and only when the
+  full-text query comes back thin.
+- **`library_agent.py`.** `report_library`, a `CompiledSubAgent` plus one
+  primary tool, **OFF by default** and feature-detected on the FOLDER rather
+  than on a package version, bound to the APP's own chat model. Its prompt's
+  one rule is that every fact comes from a tool result in that conversation,
+  cited `(report id, page)`, with a `Gap:` line per thing unsettled. The
+  ceilings are Python (eight queries an answer, 25 rows and 4,000 characters a
+  result) because deepagents reads no middleware on a compiled sub-agent, and
+  the **citations are CHECKED, not copied**.
+- **Measured 2026-09-21, no model and no network** (`measure_wp7_library.py`,
+  twenty questions over a synthetic library of six records): the chosen query
+  scores reports **0.949 / 1.000** and pages **0.939 / 1.000**; search alone
+  scores reports **0.647 / 0.943** and pages **0.417 / 0.323**.
+- **The model half is UNMEASURED.** The cluster cell is in
+  `report_ingest/README.md` under "The report library"; it reads a private
+  `library_questions.json` and is scored on the report ids the answer CITES.
+  `report_ingest/library_questions.EXAMPLE.json` ships in the wheel and shows
+  the shape.
 
 ### Parked
 
@@ -807,14 +843,59 @@ page count are recorded per run in the QA section.
    goes into the reader's prompt and the reader answers under it. Field names
    stay verbatim, and `unknown_fields()` plus its test forbid a rule keyed to
    a name the schemas do not carry.
-2. Not blocking: DI into `raw/di/` for R38, the scanned pages of R03 and
-   R33, and the unreliable-text pages of R02, R31 and R32 (58 pages in R32
-   alone read as confident nonsense without it); a fresh export of R17's
-   truncated DI result. The WP0 harness prints the exact page ranges.
-3. Not blocking: the PDF behind the one unmatched hand-label sheet (153
+
+2. Not blocking: the PDF behind the one unmatched hand-label sheet (153
    pages; its DI result is already in `raw/di/` as the unmatched file). Drop
    it into `raw/corpus/` as R39 and the scorecard returns to 15 reports.
-4. **Repo visibility.** CLAUDE.md calls this repo private; the GitHub API
+
+3. **The INGEST LEDGER is the owner's design and is NOT built** (2026-09-21).
+   One function the ingest calls at the END of every report, whether it ran in
+   the app, on the cluster or from `run_folder`, writing ONE append-only row
+   about that report to every sink it can reach: a JSON-lines file in the
+   workspace folder mirrored to SharePoint (that pair is the source of truth),
+   a Delta table REBUILT from that file rather than written alongside it, and a
+   SharePoint list as the human view where the client supports one — the
+   optional sink, whose absence must never fail an ingest. The row carries the
+   file hash and name, pages, ingested-at, package version, the deployments
+   that actually served the calls, document type and workflow, counts by kind,
+   narrative fields answered and null, QA counts by kind, DIGGS written and
+   validated, tokens and dollars, where the outputs live, and the run id. **A
+   re-ingest appends a new row and never updates one.** Written up in full in
+   `module_work/FUTURE_IDEAS.md` under "The ingest ledger"; nothing of it
+   exists in code.
+4. **BLIND truth sets are OWED for the calculations and for the soundings.**
+   Both readers shipped with hand truth that is entirely IN SAMPLE — ten calc
+   runs over six reports, thirteen pit and sounding sheets over six reports,
+   every one of them read while the prompt was being written. `OPEN.txt` in
+   each folder names all of them and the scorecard prints that there is no
+   blind set where the open/blind line would go, so no number either stage
+   reports is evidence about a report nobody has looked at. Two sets of roughly
+   the same size, truthed from reports neither prompt has seen, is what closes
+   it.
+5. **The narrative reader's cheap-vision SECOND VOTER is designed and not
+   built.** The page labels have three voters and every extracted value carries
+   a method and a confidence; the narrative answers have ONE voter and no
+   second opinion. The design is the same shape as the label vote: one cheap
+   sheet-mode pass over the pages the narrative reader cited, answering the
+   same fields, with agreement raising confidence and a split becoming a
+   `QAEntry` a reviewer is sent to. It waits on the cluster numbers for the
+   5.24.0 levers, because tuning a second voter against an unmeasured first one
+   is measuring noise.
+6. **DI is owed for the scanned reports, and only the owner can run it.** Not
+   blocking: DI into `raw/di/` for R38, the scanned pages of R03 and R33, and
+   the unreliable-text pages of R02, R31 and R32 (58 pages in R32 alone read as
+   confident nonsense without it); a fresh export of R17's truncated DI result.
+   The WP0 harness prints the exact page ranges. Without them those pages are
+   read from their own text layer alone, and where that layer is wrong the
+   reader is reading nonsense confidently.
+7. **`pydiggs` is NOT on the cluster**, deliberately: it is an optional extra
+   (`[pydiggs]`), demoted in 5.13.0 because it dragged Sphinx and a Pygments
+   upgrade into the deployment. So a DIGGS file a cluster run writes is checked
+   by the ROUND TRIP — read back through the app's own parser and compared
+   value by value — and the XSD line in `RESULTS.md` reads `not checked here`
+   rather than `valid`. The schema gate runs in the offline gate, where pydiggs
+   is installed. Read a cluster DIGGS row accordingly.
+8. **Repo visibility.** CLAUDE.md calls this repo private; the GitHub API
    reports it PUBLIC (checked 2026-09-16). Tracked field-feedback folders
    carry project names in their paths. Owner's call: make the repo private,
    or scrub. This train keeps everything private under gitignored `raw/`
