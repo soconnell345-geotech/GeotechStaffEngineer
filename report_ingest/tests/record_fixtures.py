@@ -171,7 +171,9 @@ def build_record(*, investigations: Optional[List[Investigation]] = None,
                  general: Optional[GeneralFacts] = None,
                  natural_hazards: Optional[NaturalHazardFacts] = None,
                  narrative: Optional[NarrativeFacts] = None,
-                 document: Optional[DocumentFacts] = None) -> ReportRecord:
+                 document: Optional[DocumentFacts] = None,
+                 calculations: Optional[List[Any]] = None
+                 ) -> ReportRecord:
     """A whole record: one boring, one test pit, four laboratory tests."""
     return ReportRecord(
         document=document or DocumentFacts(
@@ -191,7 +193,8 @@ def build_record(*, investigations: Optional[List[Investigation]] = None,
         investigations=(investigations if investigations is not None
                         else [boring(), pit()]),
         lab_tests=(lab_tests if lab_tests is not None
-                   else [atterberg(), gradation(), summary_table()]))
+                   else [atterberg(), gradation(), summary_table()]),
+        calculations=list(calculations or ()))
 
 
 def page_context() -> Dict[str, Any]:

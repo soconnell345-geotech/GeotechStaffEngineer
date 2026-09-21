@@ -15,8 +15,8 @@ import sqlite3
 import pytest
 
 from report_ingest.model import (
-    BoundReport, DocumentFacts, GeneralFacts, NaturalHazardFacts,
-    ParentReport, ReportRecord,
+    BoundReport, Calculation, DocumentFacts, GeneralFacts, NamedQuantity,
+    NaturalHazardFacts, ParentReport, Quantity, ReportRecord,
 )
 from report_ingest.reconciler import reconcile
 from report_ingest.tests.record_fixtures import (
@@ -413,3 +413,76 @@ class TestReportsBoundInsideThisOne:
             connection.close()
         assert "parent" in names
         assert kept == [("R01", None)]
+
+
+class TestTheCalculationsSection:
+    """The design, as the appendix printed it: what each calculation works
+    out, what printed it, what it is for and what came out."""
+
+    def _record(self):
+        return build_record(calculations=[
+            Calculation(
+                kind="shallow_foundation_bearing",
+                program="SLOPEWORKS 8.1",
+                method="Myerhof",
+                subject="strip footing on new fill",
+                results=[
+                    NamedQuantity(name="Ultimate bearing pressure",
+                                  value=Quantity(value=672.0, unit="kPa")),
+                    NamedQuantity(name="Allowable bearing pressure",
+                                  value=Quantity(value=224.0, unit="kPa")),
+                    NamedQuantity(name="Nq",
+                                  value=Quantity(value=23.177, unit="")),
+                    NamedQuantity(name="A fourth result",
+                                  value=Quantity(value=1.0, unit=""))],
+                pages=[371, 372, 373]),
+            Calculation(kind="site_response", program=None,
+                        subject="the site",
+                        results=[NamedQuantity(name="Seismic Site Class",
+                                               text="C")],
+                        pages=[555])])
+
+    def test_the_summary_prints_a_row_per_calculation(self):
+        text = summary_markdown(self._record())
+
+        assert "## Calculations" in text
+        assert "shallow foundation bearing" in text
+        assert "SLOPEWORKS 8.1" in text
+        assert "strip footing on new fill" in text
+        assert "p371-373" in text and "p555" in text
+
+    def test_only_the_first_three_results_are_printed(self):
+        """A printout states dozens; the summary is for somebody deciding
+        whether to open the pages."""
+        text = summary_markdown(self._record())
+
+        assert "Ultimate bearing pressure 672 kPa" in text
+        assert "Nq 23.177" in text
+        assert "A fourth result" not in text
+
+    def test_a_program_the_pages_do_not_name_says_so(self):
+        text = summary_markdown(self._record())
+
+        assert "not stated" in text
+        assert "Seismic Site Class C" in text
+
+    def test_a_record_with_no_calculations_has_no_section(self):
+        assert "## Calculations" not in summary_markdown(build_record())
+
+    def test_the_library_page_carries_them_too(self):
+        text = library_page(self._record(), key="k")
+
+        assert "## Calculations" in text
+        assert "Myerhof" in text
+        assert "site response" in text
+
+    def test_the_diggs_writer_ignores_them(self):
+        """DIGGS 2.6 has no calculation concept. A file that squeezed a
+        design calculation into an observation element would validate and
+        lie."""
+        from report_ingest.diggs_writer import write_diggs
+
+        xml = write_diggs(self._record())
+
+        assert "SLOPEWORKS" not in xml
+        assert "Myerhof" not in xml

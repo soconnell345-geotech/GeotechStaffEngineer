@@ -50,6 +50,7 @@ __all__ = [
     "Layer", "Sample",
     "SPT", "WaterLevel", "LabTest", "Investigation", "NarrativeFacts",
     "GeneralFacts", "NaturalHazardFacts", "CalcEntry", "QAEntry",
+    "CALC_KINDS", "CalcKind", "NamedQuantity", "Calculation",
     "DocumentFacts", "LabelVote", "PageLabel", "ParentReport", "BoundReport",
     "ReportRecord", "to_si", "si_numbers",
     "record_json_schema",
@@ -1738,7 +1739,13 @@ class NarrativeFacts(BaseModel):
 
 
 class CalcEntry(BaseModel):
-    """WP5 STUB: one calculation printout."""
+    """The WP5 STUB, superseded by :class:`Calculation` and kept for files.
+
+    Records written before the calculation reader carry ``calcs``; nothing
+    writes it now. :attr:`ReportRecord.calculations` is where a calculation
+    read off the pages goes, and this stays so a file written against the
+    stub still loads.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1749,6 +1756,148 @@ class CalcEntry(BaseModel):
     results: Dict[str, Any] = Field(default_factory=dict)
     pages: List[int] = Field(default_factory=list)
     prov: List[Provenance] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# calculations (WP5)
+# ---------------------------------------------------------------------------
+
+#: What a calculation printout WORKS OUT. The vocabulary is about the
+#: QUESTION, not about the program that answered it: a settlement worked on a
+#: spreadsheet and one worked by a commercial program are the same kind of
+#: calculation, and a reviewer asking "what did they assume for settlement"
+#: wants both. A printout that is none of these is ``other``, which is an
+#: answer rather than a failure.
+CALC_KINDS: Tuple[str, ...] = (
+    "lateral_pile", "axial_pile", "pile_group",
+    "shallow_foundation_bearing", "settlement", "slope_stability",
+    "retaining_wall", "liquefaction", "site_response", "seepage",
+    "pavement", "ground_improvement", "other",
+)
+
+CalcKind = Literal[
+    "lateral_pile", "axial_pile", "pile_group",
+    "shallow_foundation_bearing", "settlement", "slope_stability",
+    "retaining_wall", "liquefaction", "site_response", "seepage",
+    "pavement", "ground_improvement", "other"]
+
+
+class NamedQuantity(BaseModel):
+    """One labelled value a calculation printed: the label, and the value.
+
+    A calculation sheet is a list of labelled numbers -- ``Footing Width B
+    (ft)  25.8``, ``Total Settlement (inches)  0.74``, ``PCC Thickness
+    5.46 inches`` -- so the PRINTED LABEL paired with the value is the whole
+    of what this record holds. The label stays the sheet's own words: a
+    reviewer goes looking for what the page says, not for a name this
+    package invented for it.
+
+    A value is either a number with its unit (:attr:`value`) or a word
+    (:attr:`text`): a seismic site class is ``C``, a stability check prints
+    ``OK``, a bearing check prints ``Adequate``. One of the two is always
+    set, and turning ``C`` into a number would be a lie.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(
+        description="the label printed beside the value, as printed")
+    value: Optional[Quantity] = Field(
+        default=None,
+        description="the number and the unit as printed; None when the page "
+                    "prints a word instead")
+    text: str = Field(
+        default="",
+        description="the value as WORDS, when that is what the page prints: "
+                    "'C', 'OK', 'Adequate', 'Site Class D'")
+    note: str = Field(
+        default="", description="anything a reviewer needs about this value")
+    prov: Optional[Provenance] = Field(
+        default=None, description="the page and the box it came off")
+
+    @model_validator(mode="after")
+    def _has_a_value(self) -> "NamedQuantity":
+        if self.value is None and not self.text.strip():
+            raise ValueError(
+                "a NamedQuantity carries either a Quantity or the words the "
+                "page printed; one with neither is not a value")
+        return self
+
+    def __str__(self) -> str:                       # pragma: no cover - repr
+        shown = str(self.value) if self.value is not None else self.text
+        return f"{self.name}: {shown}".strip()
+
+
+class Calculation(BaseModel):
+    """One calculation printout, as its pages print it.
+
+    A quarter of the hand-labelled pages of this corpus are calculations: a
+    program's own output, a spreadsheet printed to PDF, a sheet worked by
+    hand and scanned. They are the design itself -- what was assumed, what
+    was worked out, what was concluded -- and until this train the whole
+    class was listed in a QA entry and skipped.
+
+    NOTHING IS COMPUTED HERE. A factor of safety the printout did not print
+    stays absent, a unit the page did not state is not supplied, and a kind
+    the page does not support is ``other``. The record says what the paper
+    says.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: CalcKind = Field(
+        description="what this calculation works out, from the controlled "
+                    "list; 'other' when it is none of them")
+    program: Optional[str] = Field(
+        default=None,
+        description="the program that printed it, with its version, AS "
+                    "PRINTED; None when the page names none -- a spreadsheet "
+                    "or a hand calculation usually does not")
+    method: str = Field(
+        default="",
+        description="the method or standard the page names: 'Schmertmann "
+                    "strain influence', 'AASHTO 1993', 'Meyerhof', "
+                    "'Bishop simplified'")
+    subject: str = Field(
+        default="",
+        description="what it is FOR, as printed: the structure, the boring, "
+                    "the section, the load case")
+    inputs: List[NamedQuantity] = Field(
+        default_factory=list,
+        description="the labelled values the calculation was GIVEN")
+    results: List[NamedQuantity] = Field(
+        default_factory=list,
+        description="the labelled values it WORKED OUT")
+    summary: str = Field(
+        default="",
+        description="what this calculation does and what it concluded, in "
+                    "the reader's own words, 60 words or fewer")
+    pages: List[int] = Field(
+        default_factory=list,
+        description="0-based PDF pages this calculation was read from")
+    source_report: str = Field(default="")
+    prov: List[Provenance] = Field(
+        default_factory=list, description="where it was read")
+    unsettled: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="what could not be read off these pages, and why, each "
+                    "as {what, why, page}")
+
+    #: What the RECONCILER matched this calculation to. ``subject`` above is
+    #: the page's own words and never changes; this says which exploration of
+    #: the record it turned out to name, and stays empty when nothing did.
+    linked_investigation_id: str = Field(
+        default="",
+        description="the investigation this calculation names, or empty")
+
+    def result(self, *names: str) -> Optional[NamedQuantity]:
+        """The first result whose printed label contains one of ``names``."""
+        for wanted in names:
+            key = wanted.strip().lower()
+            for row in self.results:
+                if key and key in row.name.lower():
+                    return row
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -1864,7 +2013,8 @@ class BoundReport(BaseModel):
     counts: Dict[str, int] = Field(
         default_factory=dict,
         description="what its own record holds: investigations, layers, "
-                    "samples, spt, water_levels, lab_tests, calcs, qa")
+                    "samples, spt, water_levels, lab_tests, calculations, "
+                    "qa")
     folder: str = Field(
         default="",
         description="its output folder, relative to this record's own")
@@ -1910,7 +2060,15 @@ class ReportRecord(BaseModel):
     narrative: NarrativeFacts = Field(default_factory=NarrativeFacts)
     investigations: List[Investigation] = Field(default_factory=list)
     lab_tests: List[LabTest] = Field(default_factory=list)
-    calcs: List[CalcEntry] = Field(default_factory=list)
+    calculations: List[Calculation] = Field(
+        default_factory=list,
+        description="the calculation printouts, read off their own pages; "
+                    "empty on a record written before the calculation "
+                    "reader and on one whose report carries none")
+    calcs: List[CalcEntry] = Field(
+        default_factory=list,
+        description="the WP5 stub, kept so an older file still loads; "
+                    "nothing writes it")
     qa: List[QAEntry] = Field(default_factory=list)
     bound_documents: List[BoundReport] = Field(
         default_factory=list,
@@ -1939,6 +2097,7 @@ class ReportRecord(BaseModel):
             "spt": sum(len(i.spt) for i in self.investigations),
             "water_levels": sum(len(i.water) for i in self.investigations),
             "lab_tests": len(self.lab_tests),
+            "calculations": len(self.calculations),
             "calcs": len(self.calcs),
             "qa": len(self.qa),
         }

@@ -63,9 +63,18 @@ dictionaries come from the parent's own logs. ``ingest_bound=False`` turns it
 off and the pages are listed and skipped, as they were before. See
 :mod:`report_ingest.bound` for how the boundary is decided.
 
-WHAT IS NOT READ YET. Calculation printouts are work package 5; every calc
-item is recorded as a QA entry saying it was not read, so a reviewer of the
-record knows the pages exist and were skipped on purpose.
+THE CALCULATIONS ARE READ. A quarter of the hand-labelled pages of this
+corpus are calculation printouts and until this train every one of them was
+a QA entry saying the pages existed and had been skipped. Each run of
+``calculation`` pages is now one work item for
+:func:`report_ingest.calc_reader.read_calculation`, which returns one
+:class:`~report_ingest.model.Calculation` -- what it works out, what printed
+it, what it was given and what it concluded -- onto
+``ReportRecord.calculations``.
+
+WHAT IS STILL NOT READ. ``figures``, ``photos``, ``plan``, ``profile`` and
+``front_matter`` items: the narrative reader is shown those pages, and
+nothing reads them as items of their own.
 """
 
 from __future__ import annotations
@@ -110,11 +119,12 @@ BOUND_DIR = "bound"
 REVIEW_MODES: Tuple[str, ...] = ("disagreements", "all", "none")
 
 #: Which reader takes which kind of work item. A kind that is not here is
-#: recorded and not read -- ``figures``, ``photos``, ``front_matter``,
-#: ``appended_report`` and (until work package 5) ``calculation``.
+#: recorded and not read -- ``figures``, ``photos``, ``front_matter`` and
+#: ``appended_report``, which becomes a record of its own instead.
 ITEM_READERS: Dict[str, str] = {
     "boring_log": "log", "test_pit_log": "log", "cpt_log": "log",
     "dcp_log": "log", "lab_test": "lab", "narrative": "narrative",
+    "calculation": "calc",
 }
 
 #: The files :func:`report_ingest.writers.write_outputs` leaves behind.
@@ -137,6 +147,10 @@ class Budgets:
     narrative: int = 8
     log: int = 3
     lab: int = 4
+    #: The calculation reader's ceiling. Most printouts cost ONE of its two;
+    #: the second is spent only on a run too long to show at once or on the
+    #: reader's own unsettled list.
+    calc: int = 2
     #: The label review's tool-call budget. None takes the one that fits the
     #: mode: ``max(60, 0.25 x pages)`` over a whole report, and
     #: ``max(20, 0.5 x split pages)`` over the pages the voters split on,
@@ -1241,7 +1255,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                 bound_read: bool = False,
                 window: Optional[Sequence[int]] = None) -> None:
     from report_ingest.model import (
-        GeneralFacts, Investigation, LabTest, NarrativeFacts,
+        Calculation, GeneralFacts, Investigation, LabTest, NarrativeFacts,
         NaturalHazardFacts,
     )
 
@@ -1253,14 +1267,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
         reader = ITEM_READERS.get(item.kind)
         pages = [int(p) for p in item.pages]
         if reader is None:
-            if item.kind == "calculation":
-                qa.append(QAEntry(
-                    kind="skipped", where="items.calculation",
-                    detail="calculation printouts are not read yet (work "
-                           "package 5); the pages are listed here so they "
-                           "are not forgotten",
-                    pages=pages))
-            elif item.kind == "appended_report":
+            if item.kind == "appended_report":
                 # Whether these pages became a record of their own is
                 # decided by the bound pass, not here: this item is one run
                 # of ``appended_report`` pages and a bound document may be
@@ -1317,6 +1324,17 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                 spend.add(blob.get("cost"))
                 record.investigations.append(
                     Investigation.model_validate(blob["investigation"]))
+                unresolved.extend(blob.get("unresolved") or [])
+                _vote_qa(qa, blob, pages)
+            elif reader == "calc":
+                blob = cached or _read_calc(doc, pages, engine, budgets,
+                                            item, report_id)
+                if cached is None:
+                    _save(path, blob)
+                spend.add(blob.get("cost"))
+                if blob.get("calculation"):
+                    record.calculations.append(
+                        Calculation.model_validate(blob["calculation"]))
                 unresolved.extend(blob.get("unresolved") or [])
                 _vote_qa(qa, blob, pages)
             else:
@@ -1402,4 +1420,13 @@ def _read_lab(doc, pages, engine, budgets, item, report_id) -> Dict[str, Any]:
     from report_ingest.lab_reader import read_lab_sheet
     result = read_lab_sheet(doc, pages, engine, budget=budgets.lab,
                             item_title=item.title or "", report_id=report_id)
+    return result.to_dict()
+
+
+def _read_calc(doc, pages, engine, budgets, item, report_id
+               ) -> Dict[str, Any]:
+    from report_ingest.calc_reader import read_calculation
+    result = read_calculation(doc, pages, engine, budget=budgets.calc,
+                              item_title=item.title or "",
+                              report_id=report_id)
     return result.to_dict()

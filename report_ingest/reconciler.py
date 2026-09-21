@@ -44,6 +44,7 @@ values and the verdict are untouched.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, Field
@@ -263,6 +264,8 @@ def reconcile(record: ReportRecord, *,
     qa: List[QAEntry] = []
 
     _link_lab_tests(record, qa)
+    _link_calculations(record, qa)
+    _check_calculations(record, qa)
     _check_counts(record, qa)
     _check_dictionaries(record, qa)
     _cross_check_summary_table(record, qa)
@@ -382,6 +385,162 @@ def _link_summary_rows(test: LabTest, by_id: Dict[str, Investigation],
 
 
 # -- the counts -------------------------------------------------------------
+
+# -- the calculations against the ground and against the narrative ----------
+
+#: What a calculation's printed label has to say for its value to be the
+#: thing the narrative recommends. Deliberately narrow: a printout states
+#: dozens of pressures and only the one it CALLS a bearing pressure is the
+#: recommendation, so a loose rule would raise a conflict on every trial
+#: value on the page.
+_BEARING_WORDS = ("bearing pressure", "bearing capacity", "allowable bearing",
+                  "net allowable", "design bearing", "qall", "q_all")
+_SETTLEMENT_WORDS = ("total settlement", "cumulative settlement",
+                     "maximum settlement", "estimated settlement")
+_SITE_CLASS_WORDS = ("site class", "seismic site class")
+#: A settlement the narrative states in prose: the word, then a number, then
+#: a unit of length. Nothing is inferred from a sentence without all three.
+_PROSE_SETTLEMENT = re.compile(
+    r"settlements?\b[^.]{0,80}?(\d+(?:\.\d+)?)\s*"
+    r"(inch(?:es)?|in\.?|mm|millimet(?:er|re)s?|cm|m\b|ft\b|feet)", re.I)
+#: The identifier a calculation's subject may name: a hole, a pit, a
+#: sounding. The shape every log in this corpus uses, and nothing else --
+#: a subject naming "the north wing" names no exploration and should not be
+#: forced to name one.
+_SUBJECT_ID = re.compile(r"\b([A-Za-z]{1,4}[- ]?\d{1,3}[A-Za-z]?)\b")
+
+
+def _labelled(calc: Any, words: Sequence[str]) -> List[Any]:
+    """The calculation's results whose printed label says one of ``words``."""
+    out = []
+    for row in calc.results:
+        text = str(row.name or "").lower()
+        if any(word in text for word in words):
+            out.append(row)
+    return out
+
+
+def _link_calculations(record: ReportRecord, qa: List[QAEntry]) -> None:
+    """A calculation whose subject names a boring is linked to that boring.
+
+    A settlement worked for B-4 and the log of B-4 belong together, and a
+    reviewer asking "what did they do with this hole" should get both. The
+    subject stays the page's own words; the link goes in a field of its own
+    and stays empty when the subject names no exploration, which is the
+    ordinary case -- most calculations are for a structure.
+    """
+    by_id: Dict[str, Investigation] = {}
+    for inv in record.investigations:
+        key = fold_id(inv.investigation_id)
+        if key:
+            by_id.setdefault(key, inv)
+    if not by_id:
+        return
+    for calc in record.calculations:
+        for token in _SUBJECT_ID.findall(calc.subject or ""):
+            inv = by_id.get(fold_id(token))
+            if inv is not None:
+                calc.linked_investigation_id = inv.investigation_id
+                break
+
+
+def _check_calculations(record: ReportRecord, qa: List[QAEntry]) -> None:
+    """The calculations against what the narrative says the report concluded.
+
+    The narrative recommends a bearing pressure, states a settlement and
+    names a site class; the appendix works them out. Where the two differ
+    the record says so and settles nothing -- a report whose text recommends
+    3 ksf over an appendix that computed 2 is telling a reviewer something,
+    and picking one would destroy the only evidence there is to look at.
+    """
+    for calc in record.calculations:
+        if calc.kind == "shallow_foundation_bearing":
+            _check_against_bearing(record, calc, qa)
+        elif calc.kind == "settlement":
+            _check_against_settlement(record, calc, qa)
+        elif calc.kind == "site_response":
+            _check_against_site_class(record, calc, qa)
+
+
+def _conflict(qa: List[QAEntry], calc: Any, row: Any, stated: str,
+              said: str, where: str) -> None:
+    qa.append(QAEntry(
+        kind="disagreement", where=where,
+        detail=f"the calculation on page(s) "
+               f"{', '.join(str(p) for p in calc.pages)} prints "
+               f"{row.name!r} as {said}, and the narrative says {stated}; "
+               f"both are in the record and neither was changed",
+        values=[f"calculation {said}", f"narrative {stated}"],
+        pages=list(calc.pages)))
+
+
+def _check_against_bearing(record: ReportRecord, calc: Any,
+                           qa: List[QAEntry]) -> None:
+    wanted = record.general.bearingCapacityValues
+    if not wanted:
+        return
+    for row in _labelled(calc, _BEARING_WORDS):
+        if row.value is None:
+            continue
+        verdicts = [_same(row.value, one.value) for one in wanted]
+        if any(v is True for v in verdicts) or not any(
+                v is False for v in verdicts):
+            continue
+        _conflict(qa, calc, row, "; ".join(_show(one.value) for one in wanted),
+                  _show(row.value), f"calculations.{calc.kind}")
+
+
+def _check_against_settlement(record: ReportRecord, calc: Any,
+                              qa: List[QAEntry]) -> None:
+    prose = " ".join(str(x) for x in
+                     (record.general.bearingCapacity or [])
+                     + (record.general.recommendedFoundations or []))
+    match = _PROSE_SETTLEMENT.search(prose)
+    if match is None:
+        return
+    stated = Quantity(value=float(match.group(1)),
+                      unit=_SETTLEMENT_UNITS.get(match.group(2).lower().strip(
+                          "."), match.group(2)))
+    rows = _labelled(calc, _SETTLEMENT_WORDS)
+    verdicts = [(row, _same(row.value, stated)) for row in rows
+                if row.value is not None]
+    if not verdicts or any(v is True for _row, v in verdicts):
+        return
+    for row, verdict in verdicts:
+        if verdict is False:
+            _conflict(qa, calc, row, _show(stated), _show(row.value),
+                      f"calculations.{calc.kind}")
+
+
+#: What the prose's own spelling of a length means to the record.
+_SETTLEMENT_UNITS: Dict[str, str] = {
+    "inch": "in", "inches": "in", "in": "in", "mm": "mm",
+    "millimeter": "mm", "millimeters": "mm", "millimetre": "mm",
+    "millimetres": "mm", "cm": "cm", "m": "m", "ft": "ft", "feet": "ft",
+}
+
+
+#: The letter a site class IS. A standalone A to F, because "Site Class D"
+#: is a D and the letters of the words "Site Class" are not site classes --
+#: a set of every A-to-F character in the string would call every answer a
+#: match for every other.
+_SITE_CLASS_LETTER = re.compile(r"\b([A-F])\b")
+
+
+def _check_against_site_class(record: ReportRecord, calc: Any,
+                              qa: List[QAEntry]) -> None:
+    stated = str(record.natural_hazards.siteClass or "").strip()
+    letters = set(_SITE_CLASS_LETTER.findall(stated.upper()))
+    if not letters:
+        return
+    for row in _labelled(calc, _SITE_CLASS_WORDS):
+        said = str(row.text or "").strip()
+        got = set(_SITE_CLASS_LETTER.findall(said.upper()))
+        if not got or got & letters:
+            continue
+        _conflict(qa, calc, row, stated, said,
+                  f"calculations.{calc.kind}")
+
 
 def _found_by_kind(record: ReportRecord) -> Dict[str, List[str]]:
     out: Dict[str, List[str]] = {}

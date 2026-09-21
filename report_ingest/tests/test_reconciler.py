@@ -11,7 +11,8 @@ from __future__ import annotations
 import pytest
 
 from report_ingest.model import (
-    AtterbergResult, GeneralFacts, LabTest, MoistureDensityResult, QAEntry,
+    AtterbergResult, BearingValue, Calculation, GeneralFacts, LabTest,
+    MoistureDensityResult, NamedQuantity, NaturalHazardFacts, QAEntry,
     Quantity,
 )
 from report_ingest.reconciler import (
@@ -94,6 +95,146 @@ class TestTheLabToGroundLink:
         (entry,) = [e for e in kinds_of(record, "partial")
                     if "summary table" in e.detail]
         assert entry.values == ["B-7"]
+
+
+def _calc(kind, subject="", results=(), pages=(20, 21)):
+    """One calculation, with its results as ``(label, value, unit)``.
+
+    A unit of ``None`` means the page printed a WORD -- a site class, an OK
+    -- and the value travels as text.
+    """
+    return Calculation(
+        kind=kind, subject=subject, pages=list(pages),
+        results=[NamedQuantity(
+            name=name,
+            value=(None if unit is None
+                   else Quantity(value=float(value), unit=unit)),
+            text=("" if unit is not None else str(value)))
+            for name, value, unit in results])
+
+
+class TestTheCalculationLink:
+    """A calculation whose subject names a boring belongs with that boring."""
+
+    def test_a_subject_naming_a_hole_is_linked_to_it(self):
+        record = reconcile(build_record(calculations=[
+            _calc("settlement", subject="Settlement beneath B-1")]))
+
+        assert record.calculations[0].linked_investigation_id == "B-1"
+        assert record.calculations[0].subject == "Settlement beneath B-1"
+
+    def test_a_subject_naming_no_hole_links_to_nothing(self):
+        record = reconcile(build_record(calculations=[
+            _calc("settlement", subject="the north wing mat")]))
+
+        assert record.calculations[0].linked_investigation_id == ""
+
+    def test_a_subject_naming_a_hole_this_report_does_not_carry(self):
+        record = reconcile(build_record(calculations=[
+            _calc("settlement", subject="Settlement beneath B-9")]))
+
+        assert record.calculations[0].linked_investigation_id == ""
+
+
+class TestTheCalculationsAgainstTheNarrative:
+    """A conflict between the prose and the appendix is RECORDED, never
+    settled: a report whose text recommends one pressure over an appendix
+    that computed another is telling a reviewer something."""
+
+    def _general(self, **over):
+        facts = general_facts()
+        for name, value in over.items():
+            setattr(facts, name, value)
+        return facts
+
+    def test_a_bearing_pressure_that_agrees_raises_nothing(self):
+        general = self._general(bearingCapacityValues=[BearingValue(
+            value=Quantity(value=150.0, unit="kPa"))])
+        record = reconcile(build_record(general=general, calculations=[
+            _calc("shallow_foundation_bearing",
+                  results=[("Allowable bearing pressure", 150.0, "kPa")])]))
+
+        assert not [e for e in record.qa
+                    if e.where.startswith("calculations.")]
+
+    def test_a_bearing_pressure_that_differs_is_a_disagreement(self):
+        general = self._general(bearingCapacityValues=[BearingValue(
+            value=Quantity(value=150.0, unit="kPa"))])
+        record = reconcile(build_record(general=general, calculations=[
+            _calc("shallow_foundation_bearing",
+                  results=[("Allowable bearing pressure", 224.0, "kPa")])]))
+
+        (entry,) = [e for e in record.qa
+                    if e.where == "calculations.shallow_foundation_bearing"]
+        assert entry.kind == "disagreement"
+        assert entry.values == ["calculation 224 kPa", "narrative 150 kPa"]
+        assert entry.pages == [20, 21]
+
+    def test_the_two_are_compared_in_si(self):
+        """A calculation in psf beside a recommendation in kPa is ONE number
+        and must not read as a conflict with itself."""
+        general = self._general(bearingCapacityValues=[BearingValue(
+            value=Quantity(value=150.0, unit="kPa"))])
+        record = reconcile(build_record(general=general, calculations=[
+            _calc("shallow_foundation_bearing",
+                  results=[("Allowable bearing pressure", 3132.6, "psf")])]))
+
+        assert not [e for e in record.qa
+                    if e.where.startswith("calculations.")]
+
+    def test_a_result_the_page_does_not_call_a_bearing_pressure_is_ignored(
+            self):
+        """A printout states dozens of pressures and only the one it CALLS a
+        bearing pressure is the recommendation."""
+        general = self._general(bearingCapacityValues=[BearingValue(
+            value=Quantity(value=150.0, unit="kPa"))])
+        record = reconcile(build_record(general=general, calculations=[
+            _calc("shallow_foundation_bearing",
+                  results=[("Overburden pressure at founding level",
+                            30.0, "kPa")])]))
+
+        assert not [e for e in record.qa
+                    if e.where.startswith("calculations.")]
+
+    def test_a_settlement_the_prose_states_is_compared(self):
+        general = self._general(bearingCapacity=[
+            "Total settlements are estimated at 25 mm."])
+        record = reconcile(build_record(general=general, calculations=[
+            _calc("settlement",
+                  results=[("Total settlement", 74.0, "mm")])]))
+
+        (entry,) = [e for e in record.qa
+                    if e.where == "calculations.settlement"]
+        assert entry.kind == "disagreement"
+        assert "74 mm" in entry.values[0] and "25 mm" in entry.values[1]
+
+    def test_a_settlement_the_prose_does_not_state_raises_nothing(self):
+        record = reconcile(build_record(calculations=[
+            _calc("settlement", results=[("Total settlement", 74.0, "mm")])]))
+
+        assert not [e for e in record.qa
+                    if e.where.startswith("calculations.")]
+
+    def test_a_site_class_that_differs_is_a_disagreement(self):
+        hazards = NaturalHazardFacts(siteClass="Site Class D")
+        record = reconcile(build_record(
+            natural_hazards=hazards,
+            calculations=[_calc("site_response", results=[
+                ("Seismic Site Class", "C", None)])]))
+
+        (entry,) = [e for e in record.qa
+                    if e.where == "calculations.site_response"]
+        assert entry.kind == "disagreement"
+
+    def test_a_site_class_that_agrees_raises_nothing(self):
+        hazards = NaturalHazardFacts(siteClass="Site Class C")
+        record = reconcile(build_record(
+            natural_hazards=hazards,
+            calculations=[_calc("site_response", results=[
+                ("Seismic Site Class", "C", None)])]))
+
+        assert not [e for e in record.qa
+                    if e.where.startswith("calculations.")]
 
 
 class TestTheCounts:

@@ -18,6 +18,8 @@ import pytest
 from report_ingest.bound import BoundIdentity
 from report_ingest.graph import Budgets, ingest_report, output_paths
 from report_ingest.label_review import LabelChange, ReviewFindings
+from report_ingest.calc_reader import CalcReading, ReadValue
+from report_ingest.calc_reader import ReadProv as CalcProv
 from report_ingest.lab_reader import LabSheetReading, ReadTest
 from report_ingest.lab_reader import ReadProv as LabProv
 from report_ingest.log_reader import LogReading, ReadLayer, ReadSample, ReadSPT
@@ -150,11 +152,28 @@ def lab_turn(kind: str = "atterberg", page: int = 12):
         pages_read=[page])}
 
 
+def calc_turn(page: int = 20):
+    prov = CalcProv(page=page, bbox=(72.0, 30.0, 400.0, 60.0))
+    return {"final": CalcReading(
+        kind="lateral_pile", program="LPILE", program_version="2022",
+        method="p-y analysis", subject="test pile",
+        inputs=[ReadValue(name="Pile-head load", value=120.0, unit="kN",
+                          prov=prov)],
+        results=[ReadValue(name="Maximum moment", value=202.95, unit="kN",
+                           prov=prov),
+                 ReadValue(name="Maximum deflection", value=1.155, unit="mm",
+                           prov=prov)],
+        summary="A lateral pile analysis printing moment, shear and "
+                "deflection against depth.",
+        pages_read=[page])}
+
+
 def reader_turns():
-    """The five readers a standard run of the synthetic report calls."""
+    """The six readers a standard run of the synthetic report calls."""
     return ([narrative_turn()]
             + [log_turn("B-1"), log_turn("TP-1", "test_pit")]
-            + [lab_turn("atterberg", 12), lab_turn("gradation", 13)])
+            + [lab_turn("atterberg", 12), lab_turn("gradation", 13)]
+            + [calc_turn()])
 
 
 def identity_turn(**over):
@@ -278,14 +297,29 @@ class TestAStandardRun:
         assert record.document.input_tokens > 0
         assert record.document.seconds >= 0
 
-    def test_the_calc_pages_are_recorded_as_not_read(self, pdf, tmp_path):
+    def test_the_calculation_item_reaches_the_calculation_reader(self, pdf,
+                                                                 tmp_path):
         record = ingest_report(pdf, FakeEngine(full_script()),
                                out_dir=tmp_path, report_id="SYN")
 
-        (entry,) = [e for e in record.qa
-                    if e.where == "items.calculation"]
-        assert "work package 5" in entry.detail
-        assert entry.pages == [20, 21]
+        (calc,) = record.calculations
+        assert calc.kind == "lateral_pile"
+        assert calc.program == "LPILE 2022"
+        assert calc.pages == [20, 21]
+        assert calc.result("Maximum moment").value.value == 202.95
+        assert not [e for e in record.qa if e.where == "items.calculation"]
+        assert record.counts()["calculations"] == 1
+
+    def test_the_calculations_reach_the_summary_and_the_library_page(
+            self, pdf, tmp_path):
+        ingest_report(pdf, FakeEngine(full_script()), out_dir=tmp_path,
+                      report_id="SYN")
+
+        summary = (tmp_path / "report.summary.md").read_text(encoding="utf-8")
+        page = (tmp_path / "report.page.md").read_text(encoding="utf-8")
+        assert "## Calculations" in summary and "## Calculations" in page
+        assert "lateral pile" in summary and "LPILE 2022" in summary
+        assert "Maximum moment 202.95 kN" in summary
 
     def test_the_appended_report_is_recorded_as_not_read(self, pdf, tmp_path):
         record = ingest_report(pdf, FakeEngine(full_script()),
@@ -341,7 +375,8 @@ class TestResuming:
                       report_id="SYN")
 
         files = sorted(p.name for p in (tmp_path / "items").iterdir())
-        assert len(files) == 5               # narrative, two logs, two sheets
+        # narrative, two logs, two sheets, one calculation
+        assert len(files) == 6
         assert (tmp_path / "triage.json").is_file()
         assert (tmp_path / "vision.json").is_file()
         assert (tmp_path / "labels.json").is_file()
@@ -366,7 +401,8 @@ class TestTheWorkflows:
         script = ([triage_turn("appendix_only")] + vision_turns()
                   + [identity_turn()]
                   + [log_turn("B-1"), log_turn("TP-1", "test_pit"),
-                     lab_turn("atterberg", 12), lab_turn("gradation", 13)]
+                     lab_turn("atterberg", 12), lab_turn("gradation", 13),
+                     calc_turn()]
                   + bound_reader_turns())
         engine = FakeEngine(script)
         record = ingest_report(pdf, engine, out_dir=tmp_path,
@@ -480,7 +516,8 @@ class TestTheLabelReviewChangesWhatIsRead:
                   + [narrative_turn(), log_turn("B-1"),
                      log_turn("TP-1", "test_pit"),
                      lab_turn("moisture_content", 10),
-                     lab_turn("atterberg", 12), lab_turn("gradation", 13)]
+                     lab_turn("atterberg", 12), lab_turn("gradation", 13),
+                     calc_turn()]
                   + bound_reader_turns())
         engine = FakeEngine(script)
         record = ingest_report(pdf, engine, out_dir=tmp_path,
@@ -678,7 +715,8 @@ class TestTheRunFile:
                   + [narrative_turn(), log_turn("B-1"),
                      log_turn("TP-1", "test_pit"),
                      lab_turn("moisture_content", 10),
-                     lab_turn("atterberg", 12), lab_turn("gradation", 13)]
+                     lab_turn("atterberg", 12), lab_turn("gradation", 13),
+                     calc_turn()]
                   + bound_reader_turns())
         ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
                       report_id="SYN")

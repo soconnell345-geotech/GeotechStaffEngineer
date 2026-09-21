@@ -32,6 +32,12 @@ record and its exports out -- and the pieces it drives are:
     One exploration log, and one laboratory sheet, read into the record.
     Geometry says where and the model says what; Python refuses what the
     page cannot support.
+``report_ingest.calc_reader``
+    One calculation printout -- a program's own output, a spreadsheet
+    printed to PDF, a sheet worked by hand -- read into one
+    :class:`~report_ingest.model.Calculation`: what it works out, what
+    printed it, what it was GIVEN and what it WORKED OUT. A quarter of the
+    corpus's pages are these and until this train none of them was read.
 ``report_ingest.floor``, ``log_floor`` and ``lab_floor``
     The readers vote (5.23.0): the grid's rows and the page's tables are the
     first voter and the floor, seeded into the record before any call; the
@@ -92,7 +98,7 @@ from __future__ import annotations
 from typing import Any
 
 __all__ = ["triage", "review_labels", "classify_pages_by_vision",
-           "read_log", "read_lab_sheet",
+           "read_log", "read_lab_sheet", "read_calculation",
            "read_narrative", "reconcile", "write_outputs", "ingest_report",
            "run_folder", "build_report_ingest_subagent",
            "write_diggs", "diggs_schema_gate", "diggs_roundtrip_gate",
@@ -119,6 +125,7 @@ def __getattr__(name: str) -> Any:
                 "StrengthResult", "CompactionPoint", "CompactionResult",
                 "CBRResult", "MoistureDensityResult", "ChemicalResult",
                 "SummaryRow", "SummaryTableResult", "OtherResult",
+                "CALC_KINDS", "CalcKind", "NamedQuantity", "Calculation",
                 "si_numbers"):
         from report_ingest import model
         return getattr(model, name)
@@ -142,6 +149,16 @@ def read_lab_sheet(*args: Any, **kwargs: Any):
     :class:`~report_ingest.model.LabTest` records.
     """
     from report_ingest.lab_reader import read_lab_sheet as _read
+    return _read(*args, **kwargs)
+
+
+def read_calculation(*args: Any, **kwargs: Any):
+    """:func:`report_ingest.calc_reader.read_calculation`, on first use.
+
+    One calculation printout -- a run of pages -- read into one
+    :class:`~report_ingest.model.Calculation`.
+    """
+    from report_ingest.calc_reader import read_calculation as _read
     return _read(*args, **kwargs)
 
 

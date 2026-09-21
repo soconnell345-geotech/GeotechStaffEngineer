@@ -343,7 +343,7 @@ DocLayout-YOLO (AGPL), docling (torch unavoidable — optional only).
    firewalled: any package that downloads model weights at runtime is unusable
    as published — vendor the models or skip.
 
-## REPORT INGEST TRAIN (2026-09-17) — WP0–WP5 BUILT; 5.20.0 RELEASED; calc reader next
+## REPORT INGEST TRAIN (2026-09-17) — WP0–WP5 BUILT; 5.20.0 RELEASED; the calc reader landed 2026-09-21
 
 Plan: `module_work/REPORT_INGEST_PLAN.md`. Goal, in the owner's words:
 well-organised data about each geotechnical report, usable either as a
@@ -498,6 +498,36 @@ What that means for this train, in order:
    `logs`/`lab` stages, which now print the grid, the model alone and
    floor+model), and reading the disagreement list off `qa.json` to see
    which slots a reviewer is actually sent to.
+
+
+### A BLIND calculation truth set is OWED (2026-09-21) -- TODO, not built
+
+The calculation reader shipped with ten hand-truthed runs
+(`raw/truth/calc/`, six reports, seven kinds, 44 pages) and **every one of
+them is in sample**: they were read while the reader's prompt was written.
+So the `calc` stage's `OPEN.txt` names all six reports, `RESULTS.md` prints
+"THERE IS NO BLIND SET" where the open/blind line would go, and none of the
+numbers it reports is evidence about a report nobody has looked at.
+
+The other three readers all have a blind half and it is the half that means
+anything: the lab reader scored 68 % open and 55 % blind on the tables
+alone, and the gap between those two is the whole reason the split exists.
+
+**What to build.** Hand truth for six to eight calculation runs in reports
+whose calculation pages nobody has opened. Three such reports are named as
+the obvious candidates in the private `raw/truth/calc/README.md`: between
+them they carry over four hundred hand-labelled calculation pages, in at
+least four kinds this set does not cover (liquefaction, axial pile, pile
+group, ground improvement) and in shapes it does not cover either — a 1990s
+fixed-width slope printout, a scanned sheet the floor reads nothing off at
+all, and the largest calculation appendix in the corpus. Written by somebody
+who has NOT read the reader's prompt, to the protocol in that README, into
+`raw/truth/calc/` with the open reports still named in `OPEN.txt`. The stage
+then splits open from blind on its own and the blind number is the one to
+quote.
+
+**Until it exists**, quote the calc stage as "in sample" everywhere, exactly
+as the scorecard does.
 
 
 ### The ingest ledger (owner, 2026-09-21) -- TODO, not built

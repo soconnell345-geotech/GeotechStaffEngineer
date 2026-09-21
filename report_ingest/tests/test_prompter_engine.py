@@ -441,10 +441,12 @@ def test_every_structured_output_the_passes_send_is_clean_for_strict_mode():
                 walk(value, hits)
 
     checked = 0
+    seen: set = set()
     for name in ("report_ingest.triage", "report_ingest.label_review",
                  "report_ingest.log_reader", "report_ingest.lab_reader",
+                 "report_ingest.calc_reader",
                  "report_ingest.narrative_reader",
-                 "report_ingest.vision_labels"):
+                 "report_ingest.vision_labels", "report_ingest.bound"):
         mod = importlib.import_module(name)
         for attr in dir(mod):
             obj = getattr(mod, attr)
@@ -453,8 +455,10 @@ def test_every_structured_output_the_passes_send_is_clean_for_strict_mode():
                 hits = set()
                 walk(strict_schema(obj), hits)
                 assert not hits, f"{name}.{attr} still carries {sorted(hits)}"
+                seen.add(attr)
                 checked += 1
-    assert checked >= 30, "the reader models were not found"
+    assert checked >= 34, "the reader models were not found"
+    assert "CalcReading" in seen, "the calculation reader was not walked"
 
 
 # -- metering ------------------------------------------------------------------

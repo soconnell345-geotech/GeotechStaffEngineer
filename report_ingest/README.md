@@ -285,6 +285,91 @@ split is a `disagreement` in QA. Six sheets of the first cluster run came back
 below the tables alone (a gradation 28/28 → 11/30, a chemical 18/18 → 14/22);
 none can now.
 
+## The calculation reader (`calc_reader.py`)
+
+`read_calculation(doc, item_pages, engine, budget=2)` turns one calculation
+printout into one typed `Calculation` — what it works out, what printed it,
+what it was given and what it concluded.
+
+**This was the largest unread class of page in the corpus.** A quarter of the
+4,300 hand-labelled pages are calculations — 1,009 of them, over eight of the
+fourteen labelled reports — and until this train every one was a QA entry
+saying the pages existed and had been skipped. They are also the pages a
+reviewer most wants: a boring log says what the ground *is*, a laboratory
+sheet says what a specimen *did*, and a calculation says what the engineer
+**assumed**, **worked out** and **concluded**.
+
+**A calculation page is not a lab sheet.** It is one of three things and they
+look nothing alike: a **program printout** (a banner, then fixed-width columns
+of echoed input and computed output, often for several load cases and often a
+dozen pages); a **spreadsheet printed to PDF** (a title block, a project
+block, a table of inputs with the unit in the column *heading* and the number
+in the cell beside it, and a total at the bottom); or a **hand calculation**
+on a printed form. So there is no title vocabulary to classify from and no
+single table to read. What all three have is **labelled numbers**, and that
+pair — the printed label and the value — is the whole of what this record
+holds.
+
+**The kind is what it WORKS OUT**, from `model.CALC_KINDS` (thirteen kinds,
+each with a one-line definition written in no program's words): a settlement
+worked on a spreadsheet and one worked by a commercial program are both
+`settlement`. A printout that is none of them is `other`, which is an answer.
+
+**An input is what it was given; a result is what it worked out.** Where the
+page does not make the line clear the value is an **input** — claiming
+something was concluded when it was assumed is the worse error. The label
+keeps the page's own words, parentheses and all, because a reviewer goes
+looking for what is on the page.
+
+**The floor.** Before any call, `floor_from_pages` reads every (label, value,
+unit) a pattern can find: a `label | value` table row, a one-row table under
+its own headings, the **last filled row** of a ruled data table (which is
+where a cumulative settlement and a governing case live), a label span and a
+value span on the same printed *line* (which is how a spreadsheet sets them,
+and why the floor groups spans into bands first), a single span reading
+`Pile-head deflection = 0.025 meters` or `Design ESALs ...... 137,774`, and
+planlens' own `quantities` pass for a value stated in prose, labelled by the
+words in front of it. The program name comes off a running banner only where
+a small **generic** list of commercial program-name patterns matches, and is
+`None` otherwise — which, on a spreadsheet, is the right answer. That is the
+STARTING RECORD the model is shown, and its answer is merged back under the
+same rule as the other two readers: **add, correct only with evidence, never
+drop.** A floor value the reader did not return is kept as an *input* with a
+note (a pattern cannot tell an input from a result, and the smaller claim is
+the honest one); every split is a `disagreement` in QA.
+
+**Three Python gates.** A **result whose number is on none of the pages** to
+the precision it was reported at keeps its place in the record — it may be
+right and the text layer wrong — but drops to **confidence 0.3** and is
+listed. A **kind outside the vocabulary** becomes `other` with a note (a
+handful of trade spellings are understood first: `bearing_capacity`,
+`drilled_shaft`, `p_y`, `earth_pressure`, `site_class`). A **unit the record
+cannot convert** keeps the value as printed — that is the record's own rule —
+and says on the unsettled list that nothing downstream can convert it.
+
+**The budget** is two model calls and most printouts cost **one**. A run
+longer than `MAX_CALC_PAGES` (12) is shown a window of that many pages with
+the **first and the last always in it** — the first carries the banner and
+the inputs, the last carries the answer — and the second call is spent only
+on the rest of the run or on the reader's own unsettled list. Its one tool is
+**`zoom_plot`**, for a result printed *on* a drawing: a slope section with its
+factor of safety written beside the critical surface, which is what a
+stability program prints and what no text pattern will ever find.
+
+**DIGGS ignores them, deliberately.** DIGGS 2.6 is an interchange format for
+what was *observed* in the ground and has no concept of a calculation: no
+element for a method, no home for a chosen thickness. So `calculations`
+reaches a reader through the record, the summary page's **Calculations**
+section and the library page, all three carrying the page each value was
+printed on. A writer that squeezed a design calculation into an observation
+element would produce a file that validates and lies.
+
+**The floor alone, measured 2026-09-21** over ten hand-truthed runs (44 pages,
+six reports, seven kinds, no model at all): program 80 % (8/10), inputs 73 %
+(64/88), results 48 % (36/75). **Every one of those runs is in sample** — they
+were read while this reader's prompt was written — so a blind calculation
+truth set is owed (`FUTURE_IDEAS.md`).
+
 ## The DIGGS writer (`diggs_writer.py`)
 
 `write_diggs(record_or_investigations, project) -> str` produces DIGGS 2.6 XML.
@@ -983,6 +1068,7 @@ anyway and scores against it. Upload this, and nothing else:
     truth/
         logs/       <ID>_p<page>.json …, OPEN.txt, BLIND2.txt
         lab/        <kind>__<ID>_p<page>.json …, OPEN.txt
+        calc/       <kind>__<ID>_p<first page>.json …, OPEN.txt
         narrative/  <ID>.json …
 ```
 
@@ -991,14 +1077,17 @@ anyway and scores against it. Upload this, and nothing else:
 | `MANIFEST.md` | IDs cannot be resolved at all, unless the PDFs are already named `R01.pdf` … |
 | `trial_pages_working_r2.xlsx` | the in-sample set runs and produces profiles, but scores nothing |
 | `oos_labels.json` | the two out-of-sample sets run and score nothing |
-| `truth/logs/`, `truth/lab/`, `truth/narrative/` | that stage refuses to start rather than running unscored |
+| `truth/logs/`, `truth/lab/`, `truth/calc/`, `truth/narrative/` | that stage refuses to start rather than running unscored |
 
 `truth/` is what `truth_dir` points at: each stage takes its own subfolder out
 of it, and the subfolders are named after the stages. `OPEN.txt` beside a
 stage's truth files names the reports whose pages the prompts were allowed to
 be tuned against, so the blind figure stays blind; without one the built-in
-open set is used. (`lab_truth_dir` and `narrative_truth_dir` still override
-the root, for truth that is not in one place.)
+open set is used — except `calc/`, which has **no** built-in open set,
+because every hand-truthed calculation is in sample and the scorecard says so
+rather than reporting a blind figure that does not exist. (`lab_truth_dir`,
+`calc_truth_dir` and `narrative_truth_dir` still override the root, for truth
+that is not in one place.)
 
 The Azure Document Intelligence results are read in **either** form —
 `<ID>.json.gz` or the uncompressed `DI_data_<original stem>.json` that
@@ -1018,7 +1107,7 @@ dbutils.library.restartPython()
 ```
 
 ```python
-# 3. One cell, all seven stages. fh_prompter is the object setup just made,
+# 3. One cell, all eight stages. fh_prompter is the object setup just made,
 #    and fh_sp_client is the SharePoint client the mirror writes through.
 from report_ingest.cluster_scoring import score_on_cluster
 
@@ -1035,7 +1124,8 @@ results = score_on_cluster(
     model        = "funhouse-gpt-high",     # every reader, on the tier the app runs on
     triage_model = "funhouse-gpt-medium",   # one call over a ledger; a cheaper tier does
     sets         = ("insample", "oos_open", "oos_blind"),
-    stages       = ("labels", "logs", "lab", "narrative", "vision_labels", "vote", "ingest"),
+    stages       = ("labels", "logs", "lab", "calc", "narrative",
+                    "vision_labels", "vote", "ingest"),
     vision_model = "funhouse-gpt-low",      # the experiment: GPT-4.1, the cheap tier
     vision_mode  = "sheet",                 # six pages a call; or "page" / "document"
     vision_fallback = True,                 # one page-mode call for a page nothing answered for
@@ -1197,6 +1287,73 @@ skipped.
 
 Locally, `module_work/report_ingest_harness/measure_wp2b_logs.py` does the same
 scoring against the development engine, and `--grid-only` prints the before
+column with no engine, no key and no network at all.
+
+### Scoring the calculation reader as well (`stages=("calc",)`)
+
+The `calc` stage scores each hand-truthed calculation twice: **before**, over
+the FLOOR alone — every (label, value) a pattern reads off the pages' tables
+and lines, with no model at all — and **after**, over the `Calculation`
+`read_calculation` built from the same open document.
+
+```python
+results = score_on_cluster(
+    reports_dir   = "/Volumes/<your volume>/reports",
+    manifest      = "/Volumes/<your volume>/wp1b/MANIFEST.md",
+    di_dir        = "/Volumes/<your volume>/report_di",
+    truth_dir     = "/Volumes/<your volume>/report_ingest/truth",  # its calc/ holds <kind>__<ID>_p<first page>.json
+    out_dir       = "/tmp/report_ingest_calc",
+    prompter      = fh_prompter,
+    model         = "funhouse-gpt-high",
+    stages        = ("calc",),
+    calc_budget   = 2,              # model calls per printout; the reader's ceiling is two
+    max_reports   = 2,              # drop this line after the first run
+)
+```
+
+Six metrics: **kind** (what it works out), **program** (the program and its
+version as printed, fuzzy at 85), **method**, **subject** (both fuzzy at 80),
+**inputs** and **results** (each value matched by its printed LABEL at 80 and
+its VALUE within 2 % or the last printed digit, whichever is looser, compared
+in SI wherever both units convert).
+
+**`kind`, `method` and `subject` have no before column.** A pattern over a
+page cannot say that a printout is a settlement calculation, that the method
+is Schmertmann's or that the sheet is for the north wing's mat. `program`
+*does* have one, because a banner is a pattern. And because the floor cannot
+tell an input from a result either, it files every value it finds under
+`inputs` and the scorer searches **both** lists for every truth value,
+counting separately (the `misp` column) how many landed in the wrong one — a
+cross-list find counts as found, since the number and its label were
+recovered.
+
+**A truth file whose `program` is `null` scores the reader for saying
+nothing.** A spreadsheet names no program and naming one is a wrong answer,
+not a blank.
+
+**The floor alone, measured here 2026-09-21** with no model, no credential and
+no network (`measure_wp5_calc.py --floor-only`, and in the ledger): over ten
+runs, 44 pages, six reports and seven kinds — program **80 %** (8/10), inputs
+**73 %** (64/88), results **48 %** (36/75). The floor does best on a
+spreadsheet whose inputs are a ruled table (a settlement run at 94 %) and
+worst where the answer is drawn rather than printed (a slope-stability run at
+12 %, its factors of safety in boxes on the sections). That gap, plus the
+three metrics a pattern cannot answer at all, is what the reader is for.
+
+**THERE IS NO BLIND SET.** All ten runs were read while the reader's prompt
+was written, so every number this stage prints is in sample and none of it is
+evidence about an unseen report; `RESULTS.md` says so in place of the open/
+blind line. A blind calculation truth set is owed (`FUTURE_IDEAS.md`).
+
+`RESULTS.md` carries `# WP5 on the cluster: the calculation reader`: before
+and after per metric, a per-kind table, and a per-run line with the floor's
+size, the model calls, the zooms, what was left unresolved, the misplaced
+count and the four merge counts (split / kept / added / reconciled).
+`calc/<calc id>.json` holds the per-run detail and makes the stage restartable
+— a calculation that already has one is skipped.
+
+Locally, `module_work/report_ingest_harness/measure_wp5_calc.py` does the same
+scoring against the development engine, and `--floor-only` prints the before
 column with no engine, no key and no network at all.
 
 ### Scoring the narrative reader as well (`stages=("labels", "logs", "lab", "narrative")`)

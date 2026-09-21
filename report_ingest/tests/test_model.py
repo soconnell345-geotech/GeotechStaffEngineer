@@ -8,9 +8,10 @@ import pytest
 from pydantic import ValidationError
 
 from report_ingest.model import (
-    SCHEMA_VERSION, UNIT_TO_SI, DocumentFacts, Investigation, LabTest, Layer,
-    Provenance, QAEntry, Quantity, ReportRecord, SPT, Sample, WaterLevel,
-    record_json_schema, to_si,
+    SCHEMA_VERSION, UNIT_TO_SI, Calculation, DocumentFacts, Investigation,
+    LabTest, Layer, NamedQuantity, Provenance, QAEntry, Quantity,
+    ReportRecord, SPT, Sample, WaterLevel, record_json_schema, si_numbers,
+    to_si,
 )
 
 
@@ -97,7 +98,7 @@ class TestRecord:
         assert set(again["properties"]) == {
             "schema_version", "document", "page_labels", "project", "general",
             "natural_hazards", "narrative", "investigations", "lab_tests",
-            "calcs", "qa", "bound_documents", "parent"}
+            "calculations", "calcs", "qa", "bound_documents", "parent"}
 
     def test_the_schema_carries_the_investigation_shape(self):
         schema = record_json_schema()
@@ -131,7 +132,8 @@ class TestRecord:
             qa=[QAEntry(kind="partial", detail="one sheet unreadable")])
         assert record.counts() == {
             "investigations": 1, "layers": 1, "samples": 1, "spt": 1,
-            "water_levels": 1, "lab_tests": 1, "calcs": 0, "qa": 1}
+            "water_levels": 1, "lab_tests": 1, "calculations": 0,
+            "calcs": 0, "qa": 1}
         assert record.investigation("B-2") is not None
         assert record.investigation("B-9") is None
 
@@ -145,6 +147,65 @@ class TestRecord:
         again = ReportRecord.model_validate_json(blob)
         assert again.investigations[0].samples[0].fines_percent == 42.0
         assert again.investigations[0].kind == "test_pit"
+
+
+class TestCalculations:
+    """What a calculation printout becomes, and what the record refuses."""
+
+    def test_a_calculation_validates_and_round_trips(self):
+        calc = Calculation(
+            kind="settlement", program="PILEWORKS 2024 Version 11.2.3",
+            method="Schmertmann strain influence",
+            subject="Column footing F-3",
+            inputs=[NamedQuantity(
+                name="Footing Width B (ft)",
+                value=Quantity(value=8.5, unit="ft"),
+                prov=Provenance(page=43, method="tables", confidence=0.85))],
+            results=[NamedQuantity(
+                name="Total Cumulative Settlement (inches)",
+                value=Quantity(value=0.52, unit="in"))],
+            summary="A spread-footing settlement.", pages=[41, 42, 43],
+            source_report="R18",
+            unsettled=[{"what": "the modulus column", "why": "cut off"}])
+
+        again = Calculation.model_validate_json(calc.model_dump_json())
+
+        assert again.results[0].value.unit == "in"
+        assert again.results[0].value.to_si().unit == "m"
+        assert again.inputs[0].prov.page == 43
+        assert again.result("cumulative settlement").value.value == 0.52
+        assert again.result("nothing of the kind") is None
+
+    def test_a_kind_outside_the_controlled_list_is_refused(self):
+        with pytest.raises(ValidationError):
+            Calculation(kind="pile_driveability")
+
+    def test_a_named_quantity_needs_a_number_or_words(self):
+        with pytest.raises(ValidationError, match="not a value"):
+            NamedQuantity(name="Seismic Site Class")
+        assert NamedQuantity(name="Seismic Site Class", text="C").text == "C"
+
+    def test_a_program_the_pages_do_not_name_is_null_not_empty(self):
+        """Null and "" would be the same to a reader of the JSON and they
+        are not the same claim, so the field is Optional and defaults to
+        None."""
+        assert Calculation(kind="other").program is None
+
+    def test_the_record_carries_the_calculations_and_counts_them(self):
+        record = ReportRecord(calculations=[
+            Calculation(kind="slope_stability", pages=[386])])
+        again = ReportRecord.model_validate_json(record.model_dump_json())
+
+        assert again.calculations[0].kind == "slope_stability"
+        assert again.counts()["calculations"] == 1
+
+    def test_the_si_walk_reaches_a_calculations_numbers(self):
+        calc = Calculation(kind="settlement", results=[NamedQuantity(
+            name="Total settlement", value=Quantity(value=1.0, unit="in"))])
+        numbers = dict((path, (round(value, 6), unit))
+                       for path, value, unit in si_numbers(calc))
+
+        assert numbers["results[0].value"] == (0.0254, "m")
 
 
 class TestSPT:

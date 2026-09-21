@@ -4000,3 +4000,53 @@ against the tier that will do the work**. The standing numbers are still run
 next cluster run with `stages=("narrative",)` is what says whether the levers
 move them; `measure_wp4_narrative.py --front-pages --lenient` is the
 development checkpoint and a checkpoint is never a result.
+
+### WP5 calc reader -- the floor alone, 2026-09-21
+
+The floor alone: what a pattern reads off a calculation printout before any model call. Ten hand-truthed runs, 44 pages, six reports, seven kinds. No blind set -- see raw/truth/calc/README.md.
+
+A value matches when its printed LABEL matches at partial ratio 80 and its VALUE within 2% or the last printed digit, compared in SI wherever both units convert; a program name matches at 85. `kind`, `method`, `subject` have no before column: a pattern over a page cannot answer them. THERE IS NO BLIND SET -- all 6 report(s) (R16, R18, R20, R23, R29, R30) were read while the reader's prompt was written, so every number here is in sample.
+
+```
+open -- 10 run(s)
+metric            before         after
+--------------------------------------
+program         80% 8/10
+inputs         73% 64/88
+results        48% 36/75
+OVERALL      62% 108/173
+(the before OVERALL leaves out the metrics the floor is not asked; read the metrics)
+
+all -- 10 run(s)
+metric            before         after
+--------------------------------------
+program         80% 8/10
+inputs         73% 64/88
+results        48% 36/75
+OVERALL      62% 108/173
+(the before OVERALL leaves out the metrics the floor is not asked; read the metrics)
+
+kind                          runs  pages        before         after
+---------------------------------------------------------------------
+lateral_pile                     1      7     68% 13/19
+pavement                         1      4     88% 21/24
+retaining_wall                   1      7      50% 7/14
+settlement                       2      9     78% 31/40
+shallow_foundation_bearing       2      4     57% 28/49
+site_response                    2      8      60% 6/10
+slope_stability                  1      4      12% 2/17
+
+calculation                             set      pp floor      before       after calls zoom unres misp     s
+-------------------------------------------------------------------------------------------------------------
+lateral_pile__R20_p344                  open      7    12   68% 13/19           -     -    -     -    -     -
+pavement__R29_p127                      open      4    45   88% 21/24           -     -    -     -    -     -
+retaining_wall__R18_p50                 open      7    54    50% 7/14           -     -    -     -    -     -
+settlement__R16_p162                    open      3    47   64% 14/22           -     -    -     -    -     -
+settlement__R18_p41                     open      6    48   94% 17/18           -     -    -     -    -     -
+shallow_foundation_bearing__R23_p371    open      3    29   54% 14/26           -     -    -     -    -     -
+shallow_foundation_bearing__R30_p542    open      1    29   61% 14/23           -     -    -     -    -     -
+site_response__R18_p32                  open      7    85     50% 1/2           -     -    -     -    -     -
+site_response__R30_p555                 open      1    11     62% 5/8           -     -    -     -    -     -
+slope_stability__R23_p386               open      4     9    12% 2/17           -     -    -     -    -     -
+
+```

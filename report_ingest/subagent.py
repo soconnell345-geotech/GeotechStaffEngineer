@@ -81,6 +81,10 @@ class IngestSummary(BaseModel):
     n_pages: int = Field(default=0)
     investigations: int = Field(default=0)
     lab_tests: int = Field(default=0)
+    calculations: int = Field(
+        default=0,
+        description="calculation printouts read into the record: what the "
+                    "report worked out, what it assumed and what came out")
     layers: int = Field(default=0)
     samples: int = Field(default=0)
     qa_entries: int = Field(
@@ -181,6 +185,7 @@ def run_ingest(source: str, questions: Sequence[str], *,
         n_pages=record.document.n_pages,
         investigations=counts["investigations"],
         lab_tests=counts["lab_tests"],
+        calculations=counts["calculations"],
         layers=counts["layers"],
         samples=counts["samples"],
         qa_entries=counts["qa"],

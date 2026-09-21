@@ -46,6 +46,18 @@ printed unit is not in the record's conversion table is NOT written with a
 guessed unit -- it is left out and named in the writer's own notes, which the
 round-trip gate then does not look for.
 
+THE CALCULATIONS ARE NOT WRITTEN, AND THAT IS DELIBERATE. DIGGS 2.6 has no
+concept of a calculation: it is an interchange format for what was OBSERVED
+in the ground -- holes, samples, tests and their results -- and there is no
+element for what an engineer worked out from them, no way to say which method
+was used and no home for a chosen footing thickness. So
+``ReportRecord.calculations`` is IGNORED here. It reaches a reader through
+the record itself, through the summary page's "Calculations" section and
+through the library page, all three of which carry the page each value was
+printed on. A writer that squeezed a design calculation into an observation
+element would produce a file that validates and lies, which is the exact
+failure the round-trip gate exists to catch.
+
 THE LABORATORY TESTS (WP3) follow the same shape and add four facts about the
 2.6 schema that are worth knowing before reading the code:
 

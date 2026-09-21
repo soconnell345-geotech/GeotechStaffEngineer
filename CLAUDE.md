@@ -73,6 +73,103 @@ Key conventions:
 
 ## CURRENT WORKING STATE (2026-09-20) — 5.24.0 ON MASTER (the log-template recogniser + the narrative levers) with planlens 0.6.0
 
+- **UNRELEASED on master since 5.24.0** — the calculations are read
+
+**No version bump, no tag.** Pure Python inside `report_ingest`, no dependency
+change, two new modules (`report_ingest/calc_reader.py`,
+`report_ingest/calc_scoring.py`) and one new model call per calculation
+printout.
+
+**Why.** A quarter of the corpus's 4,300 hand-labelled pages are calculation
+printouts — **1,009 of them, over eight of the fourteen labelled reports** —
+and every one of them was a QA entry saying the pages existed and had been
+skipped. They are also the pages a reviewer most wants: a boring log says what
+the ground IS, a laboratory sheet says what a specimen DID, and a calculation
+says what the engineer ASSUMED, WORKED OUT and CONCLUDED. A record with the
+ground in it and none of the design is half a record.
+
+**What is built.**
+
+1. **`Calculation` and `NamedQuantity` in `model.py`**, and
+   `ReportRecord.calculations`. A calculation is its `kind` from a controlled
+   list of thirteen (`CALC_KINDS`: lateral_pile, axial_pile, pile_group,
+   shallow_foundation_bearing, settlement, slope_stability, retaining_wall,
+   liquefaction, site_response, seepage, pavement, ground_improvement, other),
+   the `program` and version AS PRINTED (`None` where none is named, which is
+   the right answer for a spreadsheet), the `method`, the `subject`, the
+   labelled values it was GIVEN and the labelled values it WORKED OUT, a
+   sixty-word `summary`, its pages, its provenance and what it could not
+   settle. A `NamedQuantity` is the printed LABEL beside a `Quantity` or beside
+   the WORDS the page printed — a seismic site class is `C` and turning it into
+   a number would be a lie. **Not a schema bump**: both fields are optional and
+   nothing changed meaning; the WP5 `calcs` stub stays so an older file loads.
+2. **`calc_reader.read_calculation`** takes one run of `calculation` pages (the
+   graph already groups them, splitting a calculation appendix on program
+   banners and printed titles) and returns ONE `Calculation`. A calculation
+   page is not a lab sheet: it is a **program printout**, a **spreadsheet
+   printed to PDF** or a **hand calculation on a form**, and they look nothing
+   alike, so there is no title vocabulary to classify from and no single table
+   to read. What all three have is labelled numbers.
+3. **The floor** reads every (label, value, unit) a pattern can find before a
+   call is spent: a `label | value` table row, a one-row table under its own
+   headings, the **last filled row** of a ruled data table (where a cumulative
+   settlement lives), a label span and a value span on the same printed LINE
+   (which is how a spreadsheet sets them, and why the floor groups spans into
+   bands first), a single span reading `Pile-head deflection = 0.025 meters`,
+   and planlens' own `quantities` pass labelled by the words in front of it.
+   The program name comes off a banner only where a small GENERIC list of
+   commercial program-name patterns matches. Merged back under the same rule as
+   the log and the lab: **add, correct only with evidence, never drop**; a
+   floor value the reader left out is kept as an INPUT with a note, because a
+   pattern cannot tell an input from a result and that is the smaller claim.
+4. **Three Python gates.** A RESULT whose number is on none of the pages to the
+   precision it was reported at keeps its place — it may be right and the text
+   layer wrong — but drops to **confidence 0.3** and is listed. A kind outside
+   the list becomes `other` with a note. A unit the record cannot convert keeps
+   the value as printed and says on the unsettled list that nothing converts it.
+5. **The budget is two calls and most printouts cost one.** A run longer than
+   `MAX_CALC_PAGES = 12` is shown a window with its **first and last pages
+   always in it** — the first carries the banner and the inputs, the last the
+   answer — and the second call is spent only on the rest of the run or on the
+   reader's own unsettled list. Its one tool is `zoom_plot`, for a factor of
+   safety printed in a box ON a slope section, which no text pattern will find.
+6. **Wired in.** `graph.ingest_report` (`ITEM_READERS["calculation"] = "calc"`,
+   resumable per item, `Budgets.calc`); the writers (a **Calculations** section
+   in `summary.md` and in the library page: kind, program, subject, three key
+   results with units, pages); the reconciler (a subject naming a boring links
+   to that investigation; a result that contradicts the narrative's bearing
+   pressure, stated settlement or site class is a `disagreement` QA entry, both
+   values kept). **The DIGGS writer IGNORES them, deliberately** — DIGGS 2.6 is
+   an interchange format for what was OBSERVED and has no element for a method
+   or a chosen thickness; its docstring says so.
+7. **Scoring.** `calc_scoring.py` (kind exact; program fuzzy 85; method and
+   subject fuzzy 80; each value matched by its printed LABEL at 80 and its
+   VALUE within 2 % or the last printed digit, unit-aware through `to_si`),
+   cluster stage **`"calc"`** with `calc_budget=2` and a `calc/` truth subdir,
+   the local twin `measure_wp5_calc.py`, and the `ingest` stage's record
+   scoring now includes calculations where truth exists.
+
+**Hand truth: ten runs, six reports, seven kinds, 44 pages** — a site class
+printed as a WORD with six pages of code text behind it, a four-case settlement
+spreadsheet whose answer is a table's last filled row, a Mononobe-Okabe sheet
+with a NEGATIVE result, a pavement program printout with two different ESAL
+counts, a three-sheet bearing spreadsheet, a slope program whose answer is
+printed ON the plot, a printout of nothing but plots, a one-page site
+classification, one page carrying three blocks of the same spreadsheet, and a
+Schmertmann case whose answer is printed twice in two units. Private, with its
+own README and protocol.
+
+**The floor alone, measured 2026-09-21** (no model, no network): program 80 %
+(8/10), inputs 73 % (64/88), results 48 % (36/75). **THE READER ITSELF IS
+UNMEASURED** until the cluster run, and **THERE IS NO BLIND SET** — all ten
+runs were read while the prompt was written, so every number the stage prints
+is in sample and the scorecard says so in place of the open/blind line. A blind
+set is owed (`FUTURE_IDEAS.md`).
+
+**Suites:** `report_ingest` **1,043**, harness **243**, offline ingest wiring
+**18**, docs-currency green.
+**Next:** `stages=("calc",)` on the cluster, then a blind truth set.
+
 - **UNRELEASED on master since 5.24.0** — a report bound inside a report is its OWN record
 
 **No version bump, no tag.** Pure Python inside `report_ingest`, no dependency
@@ -1532,7 +1629,7 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | drawing_ir → `planlens.ir` + `planlens.document` + `planlens.tools` | (planlens, 1,307 tests at 0.6.0) | HISTORICAL PATH. The drawing IR (DXF / vector-PDF / raster ingest, slice queries, leader / dimension / title-block / bubble / cloud finders, `render_region`) is `planlens.ir`; since planlens 0.3.0 the WHOLE-DOCUMENT layer (`planlens.document`: page map + structure, located text, tables, review markups, hidden CAD text, Azure DI text source) and the LLM tool layer (`planlens.tools`) sit beside it. See "Document review & drawing geometry (planlens)" below. |
 | fem2d | 353 | 2D plane-strain FEM (T6 default + CST/Q4/beam, 3D-principal MC return, HS, GL99 SRM, seepage, consolidation, staged construction, PLAXIS-style calc-package plots); validated vs Griffiths-Lane/Prandtl (VALIDATION.md) |
 | geo_project | 89 | Canonical Project document for staged, human-gated LE/FEM model setup (schema+validators, builders, templates, DXF/PDF/vision ingest w/ provenance quarantine, echo-back renderer) |
-| report_ingest | 938 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop. Since the second unreleased train on master a REPORT BOUND INSIDE A REPORT is its OWN record (`bound.py`): the union of triage's `bound_together` and the record's own `appended_report` runs, floor four pages, goes round the same loop into `out_dir/bound/<id>/` with `ReportRecord.bound_documents` on the parent and `ReportRecord.parent` on the child, its own library row carrying a new `parent` column -- so an earlier firm's borings are that firm's and the parent's counts are the parent's (`ingest_bound=False` restores the old listed-and-skipped behaviour). And since the first unreleased train its PAGE LABELS ARE A VOTE (`label_vote.py`): planlens' rules, one vision pass over the pages as pictures on the cheap tier (~$0.05 a report) and the printed form where a private fingerprint file is in force are combined under `label_policy` (default `structural`; `rules` reproduces the old single-voter path), `review_mode="disagreements"` gives the ~$0.45 label review ONLY the pages they split on plus two either side on a budget of `max(20, 0.5 x split pages)`, every page's label in the record carries its confidence, its voters and an `agreed` flag, and a split the review did not settle is a `label_disagreement` QA entry. The same combiner is what the `vote` stage scores, so a policy cannot mean two things. `run_folder` drives the loop over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels","vote","ingest"), truth_dir=…, sharepoint=fh_sp_client)` is the owner's notebook cell; `truth_dir` is ONE root holding `logs/`, `lab/` and `narrative/` so one folder is uploaded rather than three paths kept in step, and `sharepoint=`/`durable_dir=` (5.22.0, `mirror.py`) copy every run file somewhere a cluster restart cannot reach and restore a wiped `out_dir` at the start. The seventh stage is `ingest` (5.23.0): the whole graph per report into `out_dir/ingest/<ID>/` with the DIGGS file gated, a saved label run reused, and the record scored against the hand truth — the whole-pipeline score; Since 5.24.0 a log is also matched against the printed FORM it came off
+| report_ingest | 1043 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop. Since the second unreleased train on master a REPORT BOUND INSIDE A REPORT is its OWN record (`bound.py`): the union of triage's `bound_together` and the record's own `appended_report` runs, floor four pages, goes round the same loop into `out_dir/bound/<id>/` with `ReportRecord.bound_documents` on the parent and `ReportRecord.parent` on the child, its own library row carrying a new `parent` column -- so an earlier firm's borings are that firm's and the parent's counts are the parent's (`ingest_bound=False` restores the old listed-and-skipped behaviour). And since the first unreleased train its PAGE LABELS ARE A VOTE (`label_vote.py`): planlens' rules, one vision pass over the pages as pictures on the cheap tier (~$0.05 a report) and the printed form where a private fingerprint file is in force are combined under `label_policy` (default `structural`; `rules` reproduces the old single-voter path), `review_mode="disagreements"` gives the ~$0.45 label review ONLY the pages they split on plus two either side on a budget of `max(20, 0.5 x split pages)`, every page's label in the record carries its confidence, its voters and an `agreed` flag, and a split the review did not settle is a `label_disagreement` QA entry. The same combiner is what the `vote` stage scores, so a policy cannot mean two things. `run_folder` drives the loop over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","calc","narrative","vision_labels","vote","ingest"), truth_dir=…, sharepoint=fh_sp_client)` is the owner's notebook cell; `truth_dir` is ONE root holding `logs/`, `lab/`, `calc/` and `narrative/` so one folder is uploaded rather than four paths kept in step, and `sharepoint=`/`durable_dir=` (5.22.0, `mirror.py`) copy every run file somewhere a cluster restart cannot reach and restore a wiped `out_dir` at the start. The seventh stage is `ingest` (5.23.0): the whole graph per report into `out_dir/ingest/<ID>/` with the DIGGS file gated, a saved label run reused, and the record scored against the hand truth — the whole-pipeline score; Since the calculation train a quarter of the corpus's pages stopped being skipped: `calc_reader.py` reads one run of `calculation` pages into one `Calculation` -- the kind it works out from a controlled list, the program and version as printed, the method, the subject, the labelled values it was given and the ones it worked out -- on a deterministic floor of (label, value) pairs, one model call, and three gates (a result printed on no page drops to confidence 0.3, a kind outside the list becomes `other`, a unit with no conversion is kept as printed and listed). DIGGS ignores calculations by design; the record, the summary's Calculations section and the library page carry them. Cluster stage `calc`. Since 5.24.0 a log is also matched against the printed FORM it came off
 (`log_templates.py`): a page's footer stamp, title-block labels and column
 headings are scored against fingerprints kept in a PRIVATE file that travels
 with the truth folder and is never committed (`templates.json.EXAMPLE` ships

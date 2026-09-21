@@ -62,7 +62,8 @@ from report_ingest.model import (
 
 __all__ = [
     "write_outputs", "WrittenOutputs", "record_key", "parent_key",
-    "summary_markdown", "bound_section", "library_page", "front_matter",
+    "summary_markdown", "bound_section", "calculations_section",
+    "library_page", "front_matter",
     "upsert_report", "open_library", "DB_SCHEMA_VERSION", "TIERS",
     "STATUSES", "CONFIDENCES",
 ]
@@ -457,7 +458,8 @@ _BOUND_KIND_WORDS = {
 
 #: What the counts cell names, in the order it names them.
 _BOUND_HOLDS = (("investigations", "exploration"), ("lab_tests", "lab test"),
-                ("samples", "sample"), ("spt", "driven record"))
+                ("calculations", "calculation"), ("samples", "sample"),
+                ("spt", "driven record"))
 
 
 def _bound_holds(counts: Dict[str, int]) -> str:
@@ -499,6 +501,57 @@ def bound_section(record: ReportRecord) -> List[str]:
                    f"{_md(_BOUND_KIND_WORDS.get(row.kind, row.kind))} | "
                    f"{row.pages} | {_md(_bound_holds(row.counts))} | "
                    f"`{where}` |")
+    return out
+
+
+#: How many of a calculation's results the summary prints. A printout states
+#: dozens; the three the reader listed FIRST are the ones it thought the
+#: printout was for, and a reader of the summary is deciding whether to open
+#: the pages rather than checking arithmetic.
+SUMMARY_RESULTS = 3
+
+
+def _named(value: Any) -> str:
+    """One :class:`~report_ingest.model.NamedQuantity` as one cell."""
+    if value is None:
+        return ""
+    shown = _show(value.value) if value.value is not None else value.text
+    return f"{value.name} {shown}".strip()
+
+
+def _calc_results(calc: Any, n: int = SUMMARY_RESULTS) -> str:
+    rows = [_named(row) for row in calc.results[:n]]
+    return "; ".join(r for r in rows if r) or "_nothing was read as a result_"
+
+
+def _calc_pages(calc: Any) -> str:
+    pages = [int(p) for p in calc.pages]
+    if not pages:
+        return ""
+    return f"p{pages[0]}" if len(pages) == 1 else f"p{pages[0]}-{pages[-1]}"
+
+
+def calculations_section(record: ReportRecord) -> List[str]:
+    """The calculation printouts: what each works out and what it concluded.
+
+    The design, as the appendix printed it. A reviewer reading a summary
+    wants to know that the settlement was worked, by what method, for which
+    footing, what came out -- and where to open the file and check.
+    """
+    if not record.calculations:
+        return []
+    out = ["", "## Calculations", "",
+           "What this report's own calculation pages work out. Every value "
+           "is as printed; nothing here was computed.", "",
+           "| Works out | Program | For | Key results | Pages |",
+           "|---|---|---|---|---|"]
+    for calc in record.calculations:
+        out.append(
+            f"| {calc.kind.replace('_', ' ')} "
+            f"| {_md(calc.program or 'not stated')} "
+            f"| {_md(calc.subject or calc.method or '-')} "
+            f"| {_md(_calc_results(calc))} "
+            f"| {_calc_pages(calc)} |")
     return out
 
 
@@ -547,6 +600,7 @@ def summary_markdown(record: ReportRecord) -> str:
                        f"{_show(stratum.top)} | {_show(stratum.bottom)} | "
                        f"{stratum.uscs} |")
 
+    out += calculations_section(record)
     out += bound_section(record)
 
     asked = record.narrative.extra_answers
@@ -716,6 +770,15 @@ def library_page(record: ReportRecord, key: str, source: str = "") -> str:
          for test in record.lab_tests])
     if rows:
         out += ["## Laboratory testing", ""] + rows + [""]
+
+    rows = _table(
+        ["Works out", "Program", "Method", "For", "Key results", "Pages"],
+        [[calc.kind.replace("_", " "), calc.program or "not stated",
+          calc.method or "-", calc.subject or "-", _calc_results(calc),
+          _calc_pages(calc)]
+         for calc in record.calculations])
+    if rows:
+        out += ["## Calculations", ""] + rows + [""]
 
     rows = _table(
         ["Kind", "Where", "What"],

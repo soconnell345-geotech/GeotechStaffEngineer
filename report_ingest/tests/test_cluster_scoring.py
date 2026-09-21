@@ -596,6 +596,148 @@ class TestTheLabStage:
 
 
 # ---------------------------------------------------------------------------
+# the calc stage (WP5)
+# ---------------------------------------------------------------------------
+
+def _calc_row(calc_id, report, kind, which, **over):
+    row = {
+        "calc_id": calc_id, "report": report, "kind": kind, "set": which,
+        "served_by": "gpt-x", "pages": [41, 42, 43], "n_pages": 3,
+        "before": {"scores": {"program": {"found": 1, "total": 1},
+                              "inputs": {"found": 9, "total": 13},
+                              "results": {"found": 1, "total": 4}},
+                   "overall": {"found": 11, "total": 18}},
+        "after": {"scores": {"kind": {"found": 1, "total": 1},
+                             "program": {"found": 1, "total": 1},
+                             "method": {"found": 1, "total": 1},
+                             "subject": {"found": 1, "total": 1},
+                             "inputs": {"found": 12, "total": 13},
+                             "results": {"found": 4, "total": 4}},
+                  "overall": {"found": 20, "total": 21},
+                  "kind_read": kind, "model_calls": 1, "tool_calls": 0,
+                  "unresolved": 0, "misplaced": 1, "floor_values": 48,
+                  "disagreements": 1, "kept": 34, "added": 6,
+                  "reconciled": 8, "error": None},
+        "cost": {"calls": 1, "input_tokens": 21000, "output_tokens": 1400,
+                 "cache_read_tokens": 0, "dollars": 0.0},
+        "seconds": 19.0,
+    }
+    row.update(over)
+    return row
+
+
+class TestTheCalcStage:
+    def test_the_stage_is_offered_and_needs_its_truth(self):
+        from report_ingest.cluster_scoring import STAGE_NAMES, score_on_cluster
+
+        assert "calc" in STAGE_NAMES
+        with pytest.raises(ValueError, match="calc_truth_dir"):
+            score_on_cluster(reports_dir="anywhere", prompter=object(),
+                             stages=("calc",))
+
+    def test_the_scorecard_renders_ids_kinds_and_rates_and_nothing_else(self):
+        """RESULTS.md is the file that comes home, so it carries no wording
+        from a page."""
+        from report_ingest.cluster_scoring import _render_calc, _score_calc
+
+        done = {
+            "settlement__R18_p41": _calc_row(
+                "settlement__R18_p41", "R18", "settlement", "open"),
+            "pavement__R29_p127": _calc_row(
+                "pavement__R29_p127", "R29", "pavement", "open", n_pages=4),
+        }
+        scored = _score_calc(
+            done, {"slope_stability__R23_p386": "not in the folder"},
+            "funhouse-gpt-high", ("R18", "R29"))
+
+        assert scored["n_calcs"] == 2 and scored["n_pages"] == 7
+        assert scored["sets"]["open"]["n_calcs"] == 2
+        assert "blind" not in scored["sets"]
+        assert scored["kinds"]["settlement"]["n_calcs"] == 1
+        text = "\n".join(_render_calc(scored))
+        assert "settlement__R18_p41" in text and "pavement__R29_p127" in text
+        assert "slope_stability__R23_p386: not in the folder" in text
+        assert "no before column" in text
+        assert "Per kind" in text and "Per run" in text
+
+    def test_an_empty_open_set_says_there_is_no_blind_set(self):
+        """Which is the state this train ships in, and a scorecard that did
+        not say so would read as if the numbers were blind."""
+        from report_ingest.cluster_scoring import _render_calc, _score_calc
+
+        scored = _score_calc(
+            {"settlement__R18_p41": _calc_row(
+                "settlement__R18_p41", "R18", "settlement", "open")},
+            {}, "m", ())
+        text = "\n".join(_render_calc(scored))
+
+        assert "THERE IS NO BLIND SET" in text.upper()
+        assert "IN-SAMPLE" in text.upper()
+
+    def test_a_run_moved_into_the_open_set_moves_in_the_scorecard(self):
+        """The split is decided at scoring time, never frozen into a run."""
+        from report_ingest.cluster_scoring import _score_calc
+
+        row = _calc_row("settlement__R18_p41", "R18", "settlement", "blind")
+        row["set"] = "open"         # what _run_calc does on a resumed run
+        scored = _score_calc({"settlement__R18_p41": row}, {}, "m", ("R18",))
+
+        assert scored["sets"]["open"]["n_calcs"] == 1
+        assert "blind" not in scored["sets"]
+
+    def test_a_saved_run_is_read_back_and_not_paid_for_again(self, tmp_path):
+        """The stage is restartable: a run file on disk is the answer."""
+        from report_ingest.cluster_scoring import _run_calc
+
+        truth_dir = tmp_path / "calc"
+        truth_dir.mkdir()
+        (truth_dir / "settlement__R18_p41.json").write_text(json.dumps({
+            "id": "settlement__R18_p41", "report": "R18",
+            "kind": "settlement", "pages": [41]}), encoding="utf-8")
+        (truth_dir / "OPEN.txt").write_text("R18\n", encoding="utf-8")
+        out = tmp_path / "out"
+        (out / "calc").mkdir(parents=True)
+        (out / "calc" / "settlement__R18_p41.json").write_text(
+            json.dumps(_calc_row("settlement__R18_p41", "R18", "settlement",
+                                 "blind")), encoding="utf-8")
+
+        class _Corpus:
+            def present_ids(self):
+                return ["R18"]
+
+            def open_report(self, *a, **k):      # pragma: no cover - guard
+                raise AssertionError("a saved run must not be re-read")
+
+        scored = _run_calc(_Corpus(), object(), "m", out, truth_dir,
+                           budget=2, redo=False, max_calcs=None,
+                           open_reports=None)
+
+        assert scored["n_calcs"] == 1
+        assert scored["per_calc"][0]["set"] == "open"   # rescored, not frozen
+
+    def test_a_truth_file_for_a_report_that_is_not_there_is_a_failure(
+            self, tmp_path):
+        from report_ingest.cluster_scoring import _run_calc
+
+        truth_dir = tmp_path / "calc"
+        truth_dir.mkdir()
+        (truth_dir / "settlement__R99_p41.json").write_text(json.dumps({
+            "id": "settlement__R99_p41", "report": "R99",
+            "kind": "settlement", "pages": [41]}), encoding="utf-8")
+
+        class _Corpus:
+            def present_ids(self):
+                return ["R18"]
+
+        scored = _run_calc(_Corpus(), object(), "m", tmp_path / "out",
+                           truth_dir, budget=2, redo=False, max_calcs=None,
+                           open_reports=None)
+
+        assert scored["n_calcs"] == 0
+        assert "R99 is not in the reports folder" in             scored["failures"]["settlement__R99_p41"]
+
+
+# ---------------------------------------------------------------------------
 # the narrative stage (WP4)
 # ---------------------------------------------------------------------------
 
@@ -956,24 +1098,26 @@ class TestTheThreeColumnTable:
 
 
 class TestOneTruthRoot:
-    """The three sets of hand truth travel to the cluster as ONE folder.
+    """The four sets of hand truth travel to the cluster as ONE folder.
 
-    They are private, so they are uploaded by hand before every run. Three
-    Volume paths that must each be right is three chances for one to be
+    They are private, so they are uploaded by hand before every run. Four
+    Volume paths that must each be right is four chances for one to be
     stale while the run still starts and scores against it; a root holding
-    ``logs/``, ``lab/`` and ``narrative/`` is one thing to get right.
+    ``logs/``, ``lab/``, ``calc/`` and ``narrative/`` is one thing to get
+    right.
     """
 
-    def test_a_root_with_the_three_subfolders_is_split_by_stage(self,
-                                                               tmp_path):
-        for name in ("logs", "lab", "narrative"):
+    def test_a_root_with_the_four_subfolders_is_split_by_stage(self,
+                                                              tmp_path):
+        for name in ("logs", "lab", "calc", "narrative"):
             (tmp_path / name).mkdir()
 
-        logs, lab, narrative = cs._truth_dirs(tmp_path, None, None)
+        logs, lab, narrative, calc = cs._truth_dirs(tmp_path, None, None)
 
         assert logs == tmp_path / "logs"
         assert lab == tmp_path / "lab"
         assert narrative == tmp_path / "narrative"
+        assert calc == tmp_path / "calc"
 
     def test_a_folder_of_log_truth_files_is_still_used_as_it_stands(self,
                                                                    tmp_path):
@@ -982,24 +1126,45 @@ class TestOneTruthRoot:
         that is right there."""
         (tmp_path / "R06_p51.json").write_text("{}", encoding="utf-8")
 
-        logs, lab, narrative = cs._truth_dirs(tmp_path, None, None)
+        logs, lab, narrative, calc = cs._truth_dirs(tmp_path, None, None)
 
         assert logs == tmp_path
-        assert lab is None and narrative is None
+        assert lab is None and narrative is None and calc is None
 
     def test_an_explicit_per_stage_folder_wins_over_the_root(self, tmp_path):
-        for name in ("logs", "lab", "narrative"):
+        for name in ("logs", "lab", "calc", "narrative"):
             (tmp_path / name).mkdir()
         elsewhere = tmp_path / "elsewhere"
         elsewhere.mkdir()
 
-        logs, lab, narrative = cs._truth_dirs(tmp_path, elsewhere, elsewhere)
+        logs, lab, narrative, calc = cs._truth_dirs(tmp_path, elsewhere,
+                                                    elsewhere)
 
         assert logs == tmp_path / "logs"
         assert lab == elsewhere and narrative == elsewhere
+        assert calc == tmp_path / "calc"
 
-    def test_no_truth_at_all_is_three_nones(self):
-        assert cs._truth_dirs(None, None, None) == (None, None, None)
+    def test_an_explicit_calc_folder_wins_over_the_root(self, tmp_path):
+        for name in ("logs", "calc"):
+            (tmp_path / name).mkdir()
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+
+        _logs, _lab, _narr, calc = cs._truth_dirs(tmp_path, None, None,
+                                                  elsewhere)
+
+        assert calc == elsewhere
+
+    def test_no_truth_at_all_is_four_nones(self):
+        assert cs._truth_dirs(None, None, None) == (None, None, None, None)
+
+    def test_a_root_missing_the_calc_folder_is_refused_by_that_stage(
+            self, tmp_path):
+        (tmp_path / "logs").mkdir()
+
+        with pytest.raises(ValueError, match="calc/"):
+            cs.score_on_cluster(reports_dir=tmp_path, prompter=object(),
+                                stages=("calc",), truth_dir=tmp_path)
 
     def test_a_root_missing_a_stages_folder_is_refused_by_that_stage(
             self, tmp_path):
@@ -2001,6 +2166,7 @@ class TestTheIngestStage:
                                tg.log_turn("TP-1", "test_pit")]
                             + [tg.lab_turn("atterberg", 12),
                                tg.lab_turn("gradation", 13)]
+                            + [tg.calc_turn()]
                             + tg.bound_reader_turns())
         results = _ingest_run(ingest_cluster)
         (row,) = results["ingest"]["per_report"]

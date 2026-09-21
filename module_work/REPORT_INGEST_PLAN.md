@@ -7,7 +7,10 @@ with planlens 0.5.0. WP2 through WP4 — the record, the log reader and DIGGS
 the deterministic graph, the folder runner and the app sub-agent — plus the
 WP5 vision-first label experiment (`report_ingest/vision_labels.py`, cluster
 stage `vision_labels`) shipped as 5.20.0 with planlens 0.6.0 (tags `v5.20.0`
-and `v0.6.0`). The calc reader is the one WP5 item still parked.
+and `v0.6.0`). **The calc reader is BUILT** (`report_ingest/calc_reader.py`,
+cluster stage `calc`, unreleased on master, 2026-09-21); what remains of WP5
+is the long tail — the scanned reports DI did not cover, and boring locations
+off the plan figure.
 
 **Every model number for WP2–WP4 is still missing, and that is the state.**
 What the ledger holds for the three readers is the baseline WITHOUT a model:
@@ -16,7 +19,8 @@ lab sheets, and nothing yet for the narrative. The development-engine
 checkpoints were never run for any of the three. The numbers arrive from the
 owner's four-stage `score_on_cluster` run, on the tier that will do the work
 — which is why the sub-agent ships with `enable_report_ingest=False` and why
-no reader's accuracy is quoted anywhere. WP5 is the one package not built.
+no reader's accuracy is quoted anywhere. The calc reader is in the same
+state: its FLOOR is measured (no model) and the reader itself is not.
 
 (Started 2026-09-16, owner: "run with what you have".) Drafted 2026-09-16 after reviewing the report corpus (38 reports,
 7,829 pages) with planlens 0.4.0; revised the same day with the owner's two
@@ -419,6 +423,35 @@ and `ReportRecord.parent` on the child, so that an earlier firm's borings are
 that firm's and the parent's counts are the parent's (`report_ingest/bound.py`;
 `ingest_bound=False` restores the old listed-and-skipped behaviour).
 
+### The calculations are read (added 2026-09-21)
+
+A quarter of the hand-labelled pages of this corpus are calculation
+printouts — 1,009 of them over eight of the fourteen labelled reports — and
+until now every one was a QA entry saying the pages existed and had been
+skipped. `calc_reader.read_calculation` is the FOURTH reader and takes one
+run of `calculation` pages (the graph already groups them, splitting a
+calculation appendix on program banners and printed titles), returning ONE
+`Calculation`: what it works out from a controlled list of thirteen kinds,
+the program and version as printed (`null` where none is named, which is the
+right answer for a spreadsheet), the method, what it is for, the labelled
+values it was GIVEN and the labelled values it WORKED OUT, and a summary of
+sixty words.
+
+It has a floor like the other two — every (label, value, unit) a pattern can
+read off the pages' tables, their ruled data tables' last filled row, their
+label-and-value spans on one printed line, and planlens' own `quantities`
+pass — and the same merge rule: add, correct only with evidence, never drop.
+Its gates are three: a RESULT whose number is on none of the pages to the
+precision it was reported at drops to confidence 0.3 and is listed; a kind
+outside the list becomes `other` with a note; a unit the record cannot
+convert keeps the value as printed and says so on the unsettled list.
+
+**DIGGS ignores calculations, deliberately.** DIGGS 2.6 is an interchange
+format for what was OBSERVED in the ground: it has no element for a method
+and no home for a chosen thickness. The record, the summary page's
+"Calculations" section and the library page carry them instead, each value
+with the page it was printed on.
+
 ### Where each piece lives
 
 | Piece | Home | Why |
@@ -606,9 +639,27 @@ from rendered pages, kept in the private ledger for the owner to spot-check.
 
 ### WP5: calc printouts and the long tail
 
-- **`calc_reader`**: calc printouts (settlement, pile capacity, seismic,
-  slope) → method, program, key inputs, key results, in prose with pages;
-  not DIGGS.
+- **`calc_reader` — BUILT, 2026-09-21** (unreleased on master). Calc
+  printouts (settlement, pile capacity, seismic, slope, pavement, retaining
+  walls …) → one `Calculation` per run: kind from a controlled list, program
+  and version as printed, method, subject, labelled inputs and results with
+  the page and box of each, a sixty-word summary, and what it could not
+  settle. A deterministic floor, one model call (two at most), three Python
+  gates, `zoom_plot` for a result printed on a drawing. Wired into the graph
+  (`ITEM_READERS["calculation"] = "calc"`), the writers (a "Calculations"
+  section in the summary and the library page) and the reconciler (a subject
+  naming a boring links to it; a result that contradicts the narrative's
+  bearing pressure, settlement or site class is a `disagreement`). **Not
+  DIGGS**, and the DIGGS writer's docstring says why.
+  - Scored by `report_ingest/calc_scoring.py`, cluster stage `"calc"`, local
+    twin `module_work/report_ingest_harness/measure_wp5_calc.py`.
+  - **Hand truth: ten runs, six reports, seven kinds, 44 pages**, in the
+    private `raw/truth/calc/` with its own README and protocol.
+  - **The floor alone, 2026-09-21**: program 80 % (8/10), inputs 73 %
+    (64/88), results 48 % (36/75). The reader itself is unmeasured until the
+    cluster run.
+  - **OPEN ONLY — there is no blind calculation truth set**, and every
+    number the stage prints is in sample until there is one.
 - Scanned reports that DI did not cover: RapidOCR path measured on R13 and
   R38 after the cluster install check.
 - Boring locations from the plan figure (the old repo's coordinate work);
