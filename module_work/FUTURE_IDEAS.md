@@ -442,14 +442,26 @@ values associated with the classifications and data extractions."
 
 What that means for this train, in order:
 
-1. **Page labels become a vote.** Three voters exist already -- planlens'
-   rules (with their own confidence and evidence), the label review (a
-   change with a reason and the tool that showed it), and the vision pass
-   (label + confidence per page, page/sheet/document mode). A page all three
-   agree on is settled at high confidence; a page they split on is the page
-   that gets the extra look -- a render, a second model, or a person. The
-   scorer already grades every review change as fixed/broke, so the value of
-   each voter on each label class is measurable from the runs on disk.
+1. **Page labels become a vote. BUILT, 5.22.0** --
+   `report_ingest/vote.py` and `stages=("vote",)` on `score_on_cluster`,
+   with `module_work/report_ingest_harness/measure_wp6_vote.py` as the
+   development twin. Three voters exist already -- planlens' rules (with
+   their own confidence and evidence, now saved in the run files as
+   `rules_confidence`), the label review (a change with a reason and the tool
+   that showed it), and the vision pass (label + confidence per page,
+   page/sheet/document mode). A page all three agree on is settled at high
+   confidence; a page they split on is the page that gets the extra look.
+   The stage calls NO model: it reads the run files already on disk and
+   reports the agreement rate, the accuracy of agreed against disagreed
+   pages, a per-label trust table learned on the in-sample reports ALONE,
+   three combining policies (`trust`, `structural`, `confidence`) scored by
+   the same scorer as the voters, the disagreement set as a fraction, and
+   the accuracy a targeted review of it would need to carry the set over the
+   0.98 gate. Every split is listed per report in `vote/<ID>.json`.
+   **What is left of this item:** running it over the 38 saved sheet-mode
+   vision runs beside the label runs, and deciding which policy the ingest
+   graph should actually adopt -- the measurement exists, the choice does
+   not.
 2. **Every extracted value carries a confidence and a method.** The record
    does this now (`Provenance`: page, bbox, method, confidence) for the
    readers; the page labels need the same field, and the reconciler's QA

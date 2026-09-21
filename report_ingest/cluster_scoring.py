@@ -34,6 +34,15 @@ WHERE THE OUTPUT GOES. ``out_dir`` must be ``/tmp`` or a Volume. Writes to
 leaves nothing behind is the worst outcome, so a ``/Workspace`` path is
 refused up front rather than discovered at the end.
 
+AND IT IS MIRRORED SOMEWHERE THAT SURVIVES. ``/tmp`` does not survive a
+cluster restart: the first full run's 38 label reviews, about $17 of model
+calls, were wiped by one. Pass ``sharepoint=fh_sp_client`` (or
+``durable_dir="/Volumes/..."``) and every run file is copied to
+``<sharepoint_folder>/<the out_dir's own name>`` as soon as it is written,
+and copied BACK into a wiped ``out_dir`` at the start of the next call. A
+mirror failure prints a warning and never stops the run; see
+:mod:`report_ingest.mirror`.
+
 IT IS RESTARTABLE. Every report writes ``runs/<ID>.json`` as it finishes and
 a later call skips any report that already has one. A detached notebook, an
 expired token or a 429 storm costs the reports that had not finished, not
@@ -45,6 +54,7 @@ WHAT IT WRITES into ``out_dir``::
     runs/<ID>.json        rules, profile, review, cost -- one per report
     triage/<ID>.json      the document profile alone, for the owner's audit
     vision/<ID>.json      the vision experiment's labels, reasons and cost
+    vote/<ID>.json        every page the voters split on, and who won it
     results.json          every summary table as data
     RESULTS.md            the same tables to read, and to bring back
 
@@ -65,10 +75,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from report_ingest.corpus import Corpus
+from report_ingest.mirror import DEFAULT_FOLDER, Mirror
 from report_ingest.scoring import (
     CHECKPOINT, GATE, KEY_CONTENT, OOS_BLIND, OOS_OPEN, Scores,
     columns_label_table, disputed_drop, gate_failures, label_table,
     verdict_for,
+)
+from report_ingest.vote import (
+    POLICIES, STRUCTURAL_RULES_WIN, PageVote, agreement, build_votes,
+    policy_labels, required_review_accuracy, trust_table,
+    vision_confidences,
 )
 
 __all__ = ["score_on_cluster", "SET_NAMES", "STAGE_NAMES"]
@@ -103,8 +119,12 @@ SET_NAMES: Tuple[str, ...] = ("insample", "oos_open", "oos_blind")
 #: is the WP5 experiment -- every page's PICTURE to the cheapest tier, scored
 #: against the same hand labels with the same scorer as the rules, so the
 #: three ways of labelling a page can be read side by side.
+#: ``vote`` is WP6 -- no model at all: the rules recomputed with planlens,
+#: the vision labels off a saved run, and the review's labels where a label
+#: run sits beside them, set against each other and against the hand labels
+#: to say what a disagreement is worth.
 STAGE_NAMES: Tuple[str, ...] = ("labels", "logs", "lab", "narrative",
-                                "vision_labels")
+                                "vision_labels", "vote")
 
 #: The reports the log rules were allowed to be tuned on, when no ``OPEN.txt``
 #: sits beside the truth files. Everything else is scored as blind.
@@ -126,6 +146,71 @@ def _check_out_dir(out_dir: Path) -> None:
                 f"out_dir {out_dir} is under {bad}, where writes are "
                 f"non-durable and permission-blocked on this cluster. Use "
                 f"/tmp/... or a Volume path (/Volumes/...).")
+
+
+class _MirrorSync:
+    """Copies ``out_dir`` to the durable mirror, and says so once.
+
+    A mirror is insurance, never the work. A failure prints ONE line the
+    first time that message appears -- not one per report, which on a broken
+    SharePoint would be 38 identical lines -- and the run carries on with its
+    output in ``out_dir`` alone. What was sent, and what failed, is counted
+    and printed at the end, which is where it gets read.
+    """
+
+    def __init__(self, mirror: Mirror, out: Path) -> None:
+        self._mirror = mirror
+        self._out = Path(out)
+        self.remote = mirror.remote_for(self._out.name)
+        self.uploaded = 0
+        self.failed = 0
+        self.restored = 0
+        self._said: set = set()
+
+    def __call__(self) -> None:
+        if not self._mirror.active:
+            return
+        summary = self._mirror.mirror_dir(self._out, self.remote)
+        self.uploaded += summary["uploaded"]
+        for message in summary["errors"]:
+            self.failed += 1
+            self._warn(message)
+
+    def restore(self) -> None:
+        """Bring back anything the mirror holds that ``out_dir`` does not."""
+        if not self._mirror.active:
+            print("  no durable mirror: pass sharepoint=fh_sp_client or "
+                  "durable_dir=... so a cluster restart cannot cost this run "
+                  "twice")
+            return
+        print(f"  durable mirror: {self._mirror.describe(self.remote)}")
+        summary = self._mirror.restore_dir(self.remote, self._out)
+        self.restored = summary["downloaded"]
+        for message in summary["errors"]:
+            self._warn(message)
+        print(f"  restored {self.restored} file(s) the mirror held and "
+              f"{self._out} did not")
+
+    def report(self) -> None:
+        if not self._mirror.active:
+            return
+        print(f"mirrored {self.uploaded} file(s) to {self.remote}"
+              + (f"; {self.failed} upload(s) FAILED and are in {self._out} "
+                 f"only" if self.failed else ""))
+
+    def _warn(self, message: str) -> None:
+        key = message.split(": ", 1)[-1]
+        if key in self._said:
+            return
+        self._said.add(key)
+        print(f"  WARNING: the durable mirror failed -- {message}. The run "
+              f"carries on; its output is in {self._out} only.")
+
+
+def _sync(sync: Optional[Any]) -> None:
+    """Call a mirror sync if there is one. A stage takes no view on it."""
+    if sync is not None:
+        sync()
 
 
 #: The subfolder each scoring stage keeps its hand truth in, under one truth
@@ -223,6 +308,10 @@ def _run_one(rid: str, corpus: Corpus, prompter: Any, model: str,
         review = review_labels(doc, roles, outline, profile,
                                engine=review_engine)
         rules = {r.page: r.role for r in roles}
+        # The rule's own confidence, saved beside the label so the vote
+        # stage can weigh a voter without reopening every PDF.
+        rules_confidence = {r.page: round(float(r.confidence), 3)
+                            for r in roles}
         n_pages = doc.n_pages
         served_by = sorted({x for x in (triage_engine.served_by,
                                         review_engine.served_by) if x})
@@ -238,6 +327,8 @@ def _run_one(rid: str, corpus: Corpus, prompter: Any, model: str,
         "review_model": model,
         "served_by": served_by,
         "rules_labels": {str(k): v for k, v in sorted(rules.items())},
+        "rules_confidence": {str(k): v
+                             for k, v in sorted(rules_confidence.items())},
         "profile": profile.to_dict(),
         "review": review.to_dict(),
         "cost": meter.to_dict(),
@@ -278,7 +369,12 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      vision_detail: Optional[str] = None,
                      vision_window: Optional[int] = None,
                      vision_images_per_call: Optional[int] = None,
-                     vision_fallback: bool = True
+                     vision_fallback: bool = True,
+                     sharepoint: Any = None,
+                     sharepoint_folder: str = DEFAULT_FOLDER,
+                     durable_dir: Any = None,
+                     vision_dirs: Optional[Sequence[Any]] = None,
+                     review_dir: Any = None
                      ) -> Dict[str, Any]:
     """Run the rules, triage and the label review over the corpus, and score.
 
@@ -334,9 +430,16 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         flattering agreement. ``"vision_labels"`` is the WP5 experiment --
         every page's PICTURE to a cheap model, scored against the SAME hand
         labels with the SAME scorer as the rules, so RESULTS.md can put the
-        rules, the rules plus the review and the picture side by side. Pass
-        any combination; all five is
-        ``stages=("labels", "logs", "lab", "narrative", "vision_labels")``.
+        rules, the rules plus the review and the picture side by side.
+        ``"vote"`` is WP6, and it calls NO model: it recomputes the rules
+        with planlens, reads the vision labels off the saved runs and the
+        review's labels off the label runs, and asks what their disagreement
+        is worth -- how often they agree, which of them to believe per label
+        class, what three combining policies score, and how good a targeted
+        review of the splits would have to be. Pass any combination; all six
+        is ``stages=("labels", "logs", "lab", "narrative", "vision_labels",
+        "vote")``, though the vote is usually run on its own over run files
+        that already exist.
     truth_dir
         ONE truth root for every scoring stage: a folder holding ``logs/``,
         ``lab/`` and ``narrative/``, named after the stages that read them.
@@ -400,6 +503,27 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         page-mode call. On by default: a page goes unresolved because the
         reply left it out, and asking about that page alone is the mode that
         cannot skip it. The vision budget still applies.
+    sharepoint, sharepoint_folder, durable_dir
+        WHERE THE OUTPUT ALSO GOES, so a cluster restart does not charge the
+        run twice. ``sharepoint`` is the live ``fh_sp_client`` (its
+        ``.file_manager`` is taken), a file manager, or the app's
+        ``SharePointStore``; ``durable_dir`` is any folder that survives the
+        driver. Either, or both. The run's folder is
+        ``<sharepoint_folder>/<the out_dir's own name>``, so an ``out_dir``
+        of ``/tmp/521_sheet`` mirrors to
+        ``GeotechStaffEngineer/report_ingest/521_sheet``. Every run file is
+        copied as soon as it is written, and anything the mirror holds that
+        ``out_dir`` does not is copied back at the START. ``out_dir`` still
+        refuses ``/Workspace``; ``durable_dir`` may point anywhere, because
+        whether a path is durable is the owner's finding, not this module's.
+    vision_dirs, review_dir
+        The ``vote`` stage's inputs. ``vision_dirs`` is one or more folders
+        of saved vision runs (``<ID>.json``), defaulting to this run's own
+        ``out_dir/vision``; pass the folder a previous mode's run left
+        behind to vote on that one. ``review_dir`` is the folder of label
+        runs (``<ID>.json`` holding ``review.final_labels``), defaulting to
+        ``out_dir/runs``; the review is a third voter only where it is
+        actually there.
     """
     if prompter is None:
         raise ValueError(
@@ -451,6 +575,15 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         (out / "narrative").mkdir(parents=True, exist_ok=True)
     if "vision_labels" in stages:
         (out / "vision").mkdir(parents=True, exist_ok=True)
+    if "vote" in stages:
+        (out / "vote").mkdir(parents=True, exist_ok=True)
+
+    # THE DURABLE COPY, before anything else: a wiped /tmp resumes from what
+    # the mirror holds rather than paying the model for it a second time.
+    mirror = Mirror(sharepoint=sharepoint, durable_dir=durable_dir,
+                    base_folder=sharepoint_folder)
+    sync = _MirrorSync(mirror, out)
+    sync.restore()
 
     corpus = Corpus(reports_dir, manifest=manifest, di_dir=di_dir,
                     labels_xlsx=labels_xlsx, cache_dir=out)
@@ -523,6 +656,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
             traceback.print_exc()
             continue
         done[rid] = blob
+        sync()                       # the run file is on disk; make it durable
         spent += blob["cost"].get("dollars", 0.0)
         review = blob["review"]
         print(f"  [{n}/{len(wanted)}] {rid}: {blob['n_pages']} pp, "
@@ -541,14 +675,15 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
     if "logs" in stages:
         logs = _run_logs(corpus, prompter, model, out, logs_truth,
                          budget=log_budget, redo=redo,
-                         max_logs=max_reports, open_reports=open_reports)
+                         max_logs=max_reports, open_reports=open_reports,
+                         sync=sync)
         results["logs"] = logs
         lines += _render_logs(logs)
 
     if "lab" in stages:
         lab = _run_lab(corpus, prompter, model, out, lab_truth,
                        budget=lab_budget, redo=redo, max_sheets=max_reports,
-                       open_reports=open_lab_reports)
+                       open_reports=open_lab_reports, sync=sync)
         results["lab"] = lab
         lines += _render_lab(lab)
 
@@ -556,7 +691,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         narrative = _run_narrative(
             corpus, prompter, model, out, narrative_truth,
             budget=narrative_budget, redo=redo, max_reports=max_reports,
-            open_reports=open_narrative_reports)
+            open_reports=open_narrative_reports, sync=sync)
         results["narrative"] = narrative
         lines += _render_narrative(narrative)
 
@@ -566,16 +701,25 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                              outline_context=vision_outline_context,
                              detail=vision_detail, window=vision_window,
                              images_per_call=vision_images_per_call,
-                             fallback=vision_fallback, redo=redo)
+                             fallback=vision_fallback, redo=redo,
+                             sync=sync)
         scored_vision = _score_vision(vision["runs"], corpus, oos, mapped,
                                       sets, out, vision_model,
                                       vision["failures"], vision["settings"])
         results["vision_labels"] = scored_vision
         lines += _render_vision(scored_vision)
 
+    if "vote" in stages:
+        vote = _run_vote(corpus, oos, mapped, sets, out,
+                         vision_dirs=vision_dirs, review_dir=review_dir,
+                         sync=sync)
+        results["vote"] = vote
+        lines += _render_vote(vote)
+
     (out / "results.json").write_text(json.dumps(_plain(results), indent=2),
                                       encoding="utf-8")
     (out / "RESULTS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    sync()                          # RESULTS.md and results.json, durable too
     print("\n".join(lines))
     print(f"\nwrote {out / 'RESULTS.md'} -- that is the file to bring back")
     print(f"per-report runs in {out / 'runs'}, profiles in {out / 'triage'}")
@@ -587,6 +731,9 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         print(f"per-report narrative runs in {out / 'narrative'}")
     if "vision_labels" in stages:
         print(f"per-report vision runs in {out / 'vision'}")
+    if "vote" in stages:
+        print(f"per-report disagreement lists in {out / 'vote'}")
+    sync.report()
     return results
 
 
@@ -737,7 +884,8 @@ def _open_set(truth_dir: Path,
 def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
               truth_dir: Path, *, budget: int, redo: bool,
               max_logs: Optional[int],
-              open_reports: Optional[Sequence[str]]) -> Dict[str, Any]:
+              open_reports: Optional[Sequence[str]],
+              sync: Optional[Any] = None) -> Dict[str, Any]:
     """Grid and reader over every hand-truthed log, before and after.
 
     Restartable the same way the labels stage is: each log writes
@@ -825,6 +973,7 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
             "seconds": round(time.time() - started, 1),
         }
         run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        _sync(sync)
         done[log_id] = blob
         gain = (after.total.found - before.total.found)
         print(f"  [{n}/{len(truths)}] {log_id}: "
@@ -845,7 +994,8 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
 def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
              truth_dir: Path, *, budget: int, redo: bool,
              max_sheets: Optional[int],
-             open_reports: Optional[Sequence[str]]) -> Dict[str, Any]:
+             open_reports: Optional[Sequence[str]],
+             sync: Optional[Any] = None) -> Dict[str, Any]:
     """Tables and reader over every hand-truthed laboratory sheet.
 
     Restartable the same way the other stages are: each sheet writes
@@ -936,6 +1086,7 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
             "seconds": round(time.time() - started, 1),
         }
         run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        _sync(sync)
         done[sheet_id] = blob
         gain = after.total.found - before.total.found
         print(f"  [{n}/{len(truths)}] {sheet_id}: "
@@ -1132,7 +1283,8 @@ DEFAULT_OPEN_NARRATIVE: Tuple[str, ...] = ("R36", "R05")
 def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
                    truth_dir: Path, *, budget: int, redo: bool,
                    max_reports: Optional[int],
-                   open_reports: Optional[Sequence[str]]) -> Dict[str, Any]:
+                   open_reports: Optional[Sequence[str]],
+                   sync: Optional[Any] = None) -> Dict[str, Any]:
     """The narrative reader over every report that has a hand answer.
 
     The stage reads the truth files that are PRESENT and skips every report
@@ -1218,6 +1370,7 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
             "seconds": round(time.time() - started, 1),
         }
         run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        _sync(sync)
         done[rid] = blob
         recall = score.recall
         print(f"  [{n}/{len(truths)}] {rid}: recall "
@@ -1604,7 +1757,8 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
                 redo: bool, detail: Optional[str] = None,
                 window: Optional[int] = None,
                 images_per_call: Optional[int] = None,
-                fallback: bool = True) -> Dict[str, Any]:
+                fallback: bool = True,
+                sync: Optional[Any] = None) -> Dict[str, Any]:
     """A cheap model's look at every page of every report in the set.
 
     The rules' labels are computed here too, deterministically and with no
@@ -1684,6 +1838,8 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
                             detail=detail, window=window,
                             images_per_call=cap, fallback=fallback)
             rules = {r.page: r.role for r in roles}
+            rules_confidence = {r.page: round(float(r.confidence), 3)
+                                for r in roles}
             n_pages = doc.n_pages
         except KeyboardInterrupt:
             print("  interrupted; what is finished is on disk and a later "
@@ -1710,11 +1866,14 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
             "detail": detail,
             "fallback": bool(fallback),
             "rules_labels": {str(k): v for k, v in sorted(rules.items())},
+            "rules_confidence": {str(k): v for k, v
+                                 in sorted(rules_confidence.items())},
             "vision": seen.to_dict(),
             "cost": meter.to_dict(),
             "seconds": round(time.time() - started, 1),
         }
         run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        _sync(sync)
         done[rid] = blob
         windows = seen.cost.get("windows") or 0
         splits = seen.cost.get("splits") or 0
@@ -1740,15 +1899,7 @@ def _review_labels_on_disk(out: Path, rid: str) -> Dict[int, str]:
     map means the report prints two columns rather than three, which is
     honest; inventing a third from the rules would print the rules twice.
     """
-    run_file = out / "runs" / f"{rid}.json"
-    if not run_file.is_file():
-        return {}
-    try:
-        blob = json.loads(run_file.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
-    final = ((blob.get("review") or {}).get("final_labels")) or {}
-    return {int(k): v for k, v in final.items()}
+    return _review_labels_in(out / "runs", rid)
 
 
 def _score_vision(done: Dict[str, dict], corpus: Corpus,
@@ -2061,6 +2212,521 @@ def _render_vision(vision: Dict[str, Any]) -> List[str]:
             "Page mode is one call per page, sheet mode one per six and document "
             "mode one per window of pages: that is the trade this stage exists "
             "to price."]
+    return out
+
+
+# ---------------------------------------------------------------------------
+# the vote stage (WP6): the voters set against each other, with no model
+# ---------------------------------------------------------------------------
+
+#: The sets the vote reports on. ``honest_blind`` is the blind set minus the
+#: reports a cost checkpoint has already read, and it is the figure that
+#: means anything; it appears only when ``oos_blind`` was asked for.
+VOTE_SETS: Tuple[str, ...] = ("insample", "oos_open", "oos_blind",
+                              "honest_blind")
+
+
+def _review_labels_in(runs_dir: Path, rid: str) -> Dict[int, str]:
+    """The reviewed labels a label run left behind, or an empty map."""
+    run_file = Path(runs_dir) / f"{rid}.json"
+    if not run_file.is_file():
+        return {}
+    try:
+        blob = json.loads(run_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    final = ((blob.get("review") or {}).get("final_labels")) or {}
+    return {int(k): v for k, v in final.items()}
+
+
+def _vote_vision_dirs(out: Path,
+                      vision_dirs: Optional[Sequence[Any]]) -> List[Path]:
+    """The folders of saved vision runs the vote reads, in order."""
+    if vision_dirs:
+        return [Path(d) for d in vision_dirs]
+    return [out / "vision"]
+
+
+def _vote_vision_runs(dirs: Sequence[Path]
+                      ) -> Tuple[Dict[str, dict], Dict[str, Path]]:
+    """``id -> blob`` and ``id -> the folder it came from``.
+
+    The FIRST folder that holds a report wins, so passing this run's own
+    ``vision`` folder ahead of an older one tops the old run up rather than
+    mixing two answers for the same report.
+    """
+    runs: Dict[str, dict] = {}
+    source: Dict[str, Path] = {}
+    for folder in dirs:
+        if not folder.is_dir():
+            continue
+        for path in sorted(folder.glob("*.json")):
+            rid = path.stem
+            if rid in runs:
+                continue
+            try:
+                blob = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            if not (blob.get("vision") or {}).get("labels"):
+                continue
+            runs[rid] = blob
+            source[rid] = folder
+    return runs, source
+
+
+def _vote_rules(rid: str, corpus: Corpus, blob: dict, present: set
+                ) -> Tuple[Dict[int, str], Dict[int, float], str]:
+    """The RULE labels for one report, with their confidences and where from.
+
+    THE SAVED RUN WINS WHERE IT IS COMPLETE. A run file written by 5.22.0 or
+    later carries ``rules_confidence`` -- planlens' own per-page confidence --
+    beside the labels, and re-deriving what is already on disk would cost
+    every report a PDF open for nothing.
+
+    A run file written BEFORE that has the labels and no confidence, and the
+    ``confidence`` policy needs it, so planlens is asked again: the rules are
+    deterministic and free, and the answer is the same one that produced the
+    saved labels. Where the report is not on this machine, or will not open,
+    the saved labels are used with no confidence at all -- the vote is meant
+    to run over run files that already exist, and refusing to vote because a
+    PDF moved would defeat it.
+    """
+    labels = {int(k): v for k, v in (blob.get("rules_labels") or {}).items()}
+    confidence = {int(k): float(v) for k, v
+                  in (blob.get("rules_confidence") or {}).items()}
+    if labels and confidence:
+        return labels, confidence, "saved run"
+    if rid in present:
+        doc = None
+        try:
+            from planlens.document.roles import page_roles
+
+            doc = corpus.open_report(rid, di="auto", warn=False)
+            roles = page_roles(doc)
+            return ({r.page: r.role for r in roles},
+                    {r.page: float(r.confidence) for r in roles},
+                    "planlens")
+        except Exception:
+            pass                       # fall through to what was saved
+        finally:
+            if doc is not None:
+                doc.close()
+    return labels, confidence, "saved run, no confidence"
+
+
+def _run_vote(corpus: Corpus, oos: Dict[str, Dict[int, dict]],
+              mapped: Sequence[str], sets: Sequence[str], out: Path, *,
+              vision_dirs: Optional[Sequence[Any]] = None,
+              review_dir: Any = None,
+              sync: Optional[Any] = None) -> Dict[str, Any]:
+    """The voters set against each other and against the hand labels.
+
+    NO model is called and nothing is rendered: every input is either a run
+    file already on disk or planlens run again over the PDF. That is what
+    makes this stage free to re-run after every change to the arithmetic.
+    """
+    dirs = _vote_vision_dirs(out, vision_dirs)
+    runs, source = _vote_vision_runs(dirs)
+    if not runs:
+        looked = ", ".join(str(d) for d in dirs)
+        raise FileNotFoundError(
+            f"the 'vote' stage needs saved vision runs (<ID>.json holding "
+            f"vision.labels) and found none. Looked in: {looked}. Run "
+            f"stages=('vision_labels',) first, or pass vision_dirs=[...] "
+            f"naming the folder an earlier run left behind.")
+    runs_dir = Path(review_dir) if review_dir is not None else out / "runs"
+    (out / "vote").mkdir(parents=True, exist_ok=True)
+    present = set(corpus.present_ids())
+
+    members: Dict[str, List[str]] = {}
+    for name in sets:
+        members[name] = [rid for rid in _set_ids(name, corpus)]
+    if "oos_blind" in members:
+        members["honest_blind"] = [rid for rid in members["oos_blind"]
+                                   if rid not in CHECKPOINT]
+    wanted: List[str] = []
+    for name in VOTE_SETS:
+        for rid in members.get(name, []):
+            if rid not in wanted:
+                wanted.append(rid)
+    absent = [rid for rid in wanted if rid not in runs]
+    wanted = [rid for rid in wanted if rid in runs]
+
+    print(f"  vote: {len(wanted)} report(s) with a saved vision run, from "
+          f"{len(dirs)} folder(s); no model is called")
+    if absent:
+        print(f"  no saved vision run and so not voted on: "
+              f"{', '.join(absent)}")
+
+    votes: Dict[str, List[PageVote]] = {}
+    per_report: List[dict] = []
+    dropped = 0
+    rules_source: Dict[str, str] = {}
+    truth_of: Dict[str, str] = {}
+    for n, rid in enumerate(wanted, 1):
+        blob = runs[rid]
+        rules, rules_confidence, where = _vote_rules(rid, corpus, blob,
+                                                     present)
+        rules_source[rid] = where
+        seen = blob.get("vision") or {}
+        vision = {int(k): v for k, v in (seen.get("labels") or {}).items()}
+        review = _review_labels_in(runs_dir, rid)
+        hand, alternates, truth = _truth_for(rid, corpus, oos, mapped)
+        rows = build_votes(rid, rules, vision,
+                           rules_confidence=rules_confidence,
+                           vision_confidence=vision_confidences(seen),
+                           review=review, hand=hand, alternates=alternates)
+        kept: List[PageVote] = []
+        for vote in rows:
+            # The same dispute rule the other stages use: a page the lead
+            # has confirmed the HAND label doubtful on is dropped from every
+            # column at once, or the columns stop being comparable.
+            if vote.review and disputed_drop(rid, vote.page, vote.review):
+                dropped += 1
+                continue
+            kept.append(vote)
+        votes[rid] = kept
+        truth_of[rid] = truth
+        print(f"  [{n}/{len(wanted)}] {rid}: {len(kept)} page(s), rules from "
+              f"{where}, "
+              f"{sum(1 for v in kept if not v.agree)} disagreement(s)")
+
+    # The trust table is learned on the IN-SAMPLE reports and nothing else.
+    learned_on = [rid for rid in _set_ids("insample", corpus) if rid in votes]
+    table = trust_table([v for rid in learned_on for v in votes[rid]])
+
+    for rid in wanted:
+        rows = votes[rid]
+        agree = agreement(rows)
+        qa = {
+            "id": rid,
+            "run_date": date.today().isoformat(),
+            "n_pages": runs[rid].get("n_pages", 0),
+            "vision_mode": runs[rid].get("mode"),
+            "vision_run": str(source[rid]),
+            "rules_from": rules_source[rid],
+            "review": bool(any(v.review is not None for v in rows)),
+            "pages_compared": len(rows),
+            "agreement": agree,
+            "trust_table_learned_on": list(learned_on),
+            "disagreements": [v.to_row(policy_labels(v, table))
+                              for v in rows if not v.agree],
+        }
+        (out / "vote" / f"{rid}.json").write_text(
+            json.dumps(qa, indent=2), encoding="utf-8")
+        _sync(sync)
+        hand_pages = [v for v in rows if v.scored]
+        per_report.append({
+            "id": rid,
+            "pages": len(rows),
+            "scored": len(hand_pages),
+            "truth": truth_of[rid],
+            "agreement": agree["agreement"],
+            "disagreed": agree["disagreed"]["pages"],
+            "rules": _accuracy(hand_pages, "rules"),
+            "vision": _accuracy(hand_pages, "vision"),
+            "review": _accuracy(hand_pages, "review"),
+        })
+
+    rows_by_set: Dict[str, Any] = {}
+    for name in VOTE_SETS:
+        ids = [rid for rid in members.get(name, []) if rid in votes]
+        if not ids:
+            continue
+        rows_by_set[name] = _score_vote(
+            [v for rid in ids for v in votes[rid]], ids, table)
+
+    return {
+        "date": date.today().isoformat(),
+        "n_reports": len(wanted),
+        "reports": list(wanted),
+        "absent": absent,
+        "vision_dirs": [str(d) for d in dirs],
+        "vision_folders": sorted({Path(d).name for d in source.values()}),
+        "review_dir": str(runs_dir),
+        "n_with_review": sum(1 for rid in wanted
+                             if any(v.review is not None for v in votes[rid])),
+        "disputed_dropped": dropped,
+        "trust": table,
+        "trust_learned_on": list(learned_on),
+        "policies": list(POLICIES),
+        "structural_rules_win": list(STRUCTURAL_RULES_WIN),
+        "sets": rows_by_set,
+        "per_report": per_report,
+    }
+
+
+def _accuracy(rows: Sequence[PageVote], voter: str) -> Optional[float]:
+    """One voter's strict accuracy over the hand-labelled pages, or None."""
+    if voter == "review":
+        rows = [v for v in rows if v.review is not None]
+    if not rows:
+        return None
+    hits = sum(1 for v in rows if v.right(getattr(v, voter)))
+    return round(hits / len(rows), 4)
+
+
+def _score_vote(rows: Sequence[PageVote], ids: Sequence[str],
+                table: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """One set: the agreement, every voter's score, and the three policies."""
+    agree = agreement(rows)
+    scorers: Dict[str, Scores] = {"rules": Scores(), "vision": Scores(),
+                                  "review": Scores()}
+    for policy in POLICIES:
+        scorers[policy] = Scores()
+    for vote in rows:
+        if vote.hand is None:
+            continue
+        alts = vote.alternates
+        scorers["rules"].add(vote.hand, vote.rules, alts)
+        scorers["vision"].add(vote.hand, vote.vision, alts)
+        if vote.review is not None:
+            scorers["review"].add(vote.hand, vote.review, alts)
+        for policy, label in policy_labels(vote, table).items():
+            scorers[policy].add(vote.hand, label, alts)
+    need = required_review_accuracy(agree["agreed"]["pages"],
+                                    agree["agreed"]["correct"],
+                                    agree["disagreed"]["pages"], GATE)
+    return {
+        "reports": list(ids),
+        "n_reports": len(ids),
+        "agreement": agree,
+        "scores": {name: s.to_dict() for name, s in scorers.items() if s.n},
+        "required_review_accuracy": need,
+        "_scores": scorers,
+    }
+
+
+#: What each policy is called in the per-label table, where a column name
+#: has ten characters to fit into beside its ``P ``/``R `` prefix.
+POLICY_COLUMN: Dict[str, str] = {"trust": "trust", "structural": "struct",
+                                 "confidence": "conf"}
+
+
+def _vote_columns(row: Dict[str, Any]) -> List[Tuple[str, Scores]]:
+    """The columns this set has: the voters it has, then the three policies."""
+    scorers = row["_scores"]
+    out = [("rules", scorers["rules"])]
+    if scorers["review"].n:
+        out.append(("+review", scorers["review"]))
+    out.append(("vision", scorers["vision"]))
+    out += [(POLICY_COLUMN[name], scorers[name]) for name in POLICIES]
+    return [(name, s) for name, s in out if s.n]
+
+
+def _pct(value: Optional[float]) -> str:
+    return "     -" if value is None else f"{value:6.3f}"
+
+
+def _render_vote(vote: Dict[str, Any]) -> List[str]:
+    """The vote, as tables of IDs, labels, counts and rates. Nothing else."""
+    folders = ", ".join(vote.get("vision_folders") or []) or "none"
+    out: List[str] = [
+        "", "# Vote: rules, vision and the review as voters", "",
+        f"Run {vote['date']}. **No model was called.** The rules are "
+        f"planlens' own, recomputed here where the report is to hand and "
+        f"read off the saved run where it is not; the vision labels come "
+        f"off saved vision runs (folder(s): {folders}); the review's labels "
+        f"come off the label runs, where a report has one -- "
+        f"{vote['n_with_review']} of {vote['n_reports']} do.",
+        "",
+        "The question is not which voter is better. It is what a page they "
+        "SPLIT on is worth looking at, and which of them to believe where "
+        "they split.",
+    ]
+    if vote.get("absent"):
+        out += ["", "**Reports in the sets asked for with no saved vision "
+                    "run, and so in no number below:** "
+                    + ", ".join(vote["absent"]) + "."]
+    if vote.get("disputed_dropped"):
+        out += ["", f"{vote['disputed_dropped']} page(s) dropped from every "
+                    f"column as confirmed disputed hand labels."]
+
+    out += _render_vote_agreement(vote)
+    out += _render_vote_trust(vote)
+    out += _render_vote_policies(vote)
+    out += _render_vote_disagreement(vote)
+    out += _render_vote_per_report(vote)
+    out += ["",
+            "Every page the two voters split on is listed per report in "
+            "`vote/<ID>.json` -- the page number, what each voter said, its "
+            "confidence, the hand label where there is one, and what each "
+            "policy chose. Page numbers and labels only, so those files "
+            "carry nothing a reason would.", ""]
+    return out
+
+
+def _render_vote_agreement(vote: Dict[str, Any]) -> List[str]:
+    out: List[str] = [
+        "", "## 1. Agreement, and what it is worth", "",
+        "`agreement` is over EVERY page both voters covered, hand-labelled "
+        "or not, because that is the number a production run can compute "
+        "for itself. A page the vision pass left unresolved counts as "
+        "`other` and therefore as a disagreement, which is the honest "
+        "reading: a page nothing could answer for is exactly the page that "
+        "wants a second look. Every accuracy beside it is over the "
+        "hand-labelled pages alone.",
+        "", "```",
+        f"{'set':<14}{'pages':>8}{'agree':>8}{'rate':>8}{'scored':>8}"
+        f"{'agreed':>8}{'right':>9}{'split':>7}{'rules':>8}{'vision':>8}"
+        f"{'either':>8}",
+    ]
+    for name, row in vote["sets"].items():
+        agree = row["agreement"]
+        agreed, split = agree["agreed"], agree["disagreed"]
+        out.append(
+            f"{name:<14}{agree['pages']:>8}{agree['agree']:>8}"
+            f"{_pct(agree['agreement']):>8}{agree['scored']:>8}"
+            f"{agreed['pages']:>8}{_pct(agreed['accuracy']):>9}"
+            f"{split['pages']:>7}{_pct(split['rules_accuracy']):>8}"
+            f"{_pct(split['vision_accuracy']):>8}"
+            f"{_pct(split['ceiling']):>8}")
+    out += ["```", "",
+            "`right` is how often the two, agreeing, were right -- the "
+            "confidence claim. `rules` and `vision` are how often each was "
+            "right on the pages they split on, and `either` is how often one "
+            "of them had it: that last is the ceiling a perfect tie-breaker "
+            "would reach without a third reading of the page."]
+    return out
+
+
+def _render_vote_trust(vote: Dict[str, Any]) -> List[str]:
+    learned = vote.get("trust_learned_on") or []
+    out: List[str] = [
+        "", "## 2. Per-label trust, learned on the IN-SAMPLE reports only",
+        "",
+        "For each class the RULES put a page in, which voter was right more "
+        "often on the pages they split on. Keyed by the rules' label because "
+        "that is what a production run has before it knows the answer. "
+        + (f"Learned on {len(learned)} in-sample report(s): "
+           f"{', '.join(learned)}. "
+           if learned else
+           "**Nothing was learned**: no in-sample report was voted on in "
+           "this run, so the `trust` policy sends every disagreement to "
+           "vision. ")
+        + "The out-of-sample sets are SCORED with this table and never "
+          "learned on, and the blind set never is under any circumstance.",
+    ]
+    table = vote.get("trust") or {}
+    if not table:
+        return out
+    out += ["", "```",
+            f"{'rules label':<18}{'splits':>8}{'rules right':>13}"
+            f"{'vision right':>14}{'believe':>10}"]
+    for label in sorted(table, key=lambda k: (-table[k]["pages"], k)):
+        cell = table[label]
+        out.append(f"{label:<18}{cell['pages']:>8}{cell['rules']:>13}"
+                   f"{cell['vision']:>14}{cell['winner']:>10}")
+    out += ["```", "",
+            "A tie goes to vision, and so does a class the in-sample pages "
+            "never split on, so `believe rules` always means the rules were "
+            "strictly better on pages somebody has checked."]
+    return out
+
+
+def _render_vote_policies(vote: Dict[str, Any]) -> List[str]:
+    out: List[str] = [
+        "", "## 3. The combined labels, scored beside the voters", "",
+        "Three ways of settling a disagreement, each scored by the SAME "
+        "scorer against the SAME hand labels as the voters themselves:",
+        "",
+        "- **trust** -- believe whoever the in-sample table above favours "
+        "for the rules' label class; vision where it says nothing.",
+        "- **structural** -- vision everywhere except "
+        + ", ".join(f"`{x}`" for x in vote["structural_rules_win"])
+        + ", which the rules own because they are decided by where a page "
+          "SITS in the document rather than by what it looks like. No "
+          "learning at all.",
+        "- **confidence** -- whoever said it more confidently (planlens' own "
+        "rule confidence against the vision pass's), ties to the rules.",
+        "",
+        "**Read the out-of-sample rows, not the in-sample one.** `trust` is "
+        "scored in sample with a table learned on those very pages, so its "
+        "in-sample figure is a ceiling rather than a result. `structural` "
+        "and `confidence` learn nothing and are honest everywhere.",
+    ]
+    for name, row in vote["sets"].items():
+        columns = _vote_columns(row)
+        if not columns:
+            continue
+        scored = row["_scores"]["rules"].n
+        out += ["", f"### {name} -- {row['n_reports']} report(s), "
+                    f"{scored} scored pages", "", "```",
+                f"{'':<24}" + "".join(f"{n:>12}" for n, _s in columns),
+                f"{'strict accuracy':<24}"
+                + "".join(f"{s.accuracy:>12.3f}" for _n, s in columns),
+                f"{'accepting alternates':<24}"
+                + "".join(f"{s.lenient_accuracy:>12.3f}"
+                          for _n, s in columns),
+                "",
+                f"key content (the gate is {GATE:.2f} on both rates)"]
+        out += columns_label_table(columns, KEY_CONTENT)
+        out.append("```")
+    return out
+
+
+def _render_vote_disagreement(vote: Dict[str, Any]) -> List[str]:
+    out: List[str] = [
+        "", "## 4. The disagreement set: what a targeted review would cost",
+        "",
+        "The pages the two voters split on are the ones a third reading -- a "
+        "better model, a document-mode pass, or a person -- would be spent "
+        "on. `must reach` is the accuracy that reading would need ON THOSE "
+        f"PAGES for the whole set to clear {GATE:.2f}, leaving every agreed "
+        "page as it is.",
+        "", "```",
+        f"{'set':<14}{'scored':>8}{'split':>8}{'fraction':>10}"
+        f"{'agreed right':>14}{'must reach':>12}",
+    ]
+    for name, row in vote["sets"].items():
+        agree = row["agreement"]
+        need = row["required_review_accuracy"]
+        if need is None:
+            text = "       -"
+        elif need > 1.0:
+            text = "  >1.000"
+        elif need <= 0.0:
+            text = "   0.000"
+        else:
+            text = f"{need:8.3f}"
+        out.append(
+            f"{name:<14}{agree['scored']:>8}"
+            f"{agree['disagreed']['pages']:>8}"
+            f"{_pct(agree['disagreed']['fraction']):>10}"
+            f"{agree['agreed']['correct']:>14}{text:>12}")
+    out += ["```", "",
+            "`>1.000` means the gate is out of reach on this set even with a "
+            "perfect review of every disagreement, because the pages the two "
+            "voters AGREE on already carry more error than the gate allows. "
+            "That is a result about the agreed pages, not about the review."]
+    return out
+
+
+def _render_vote_per_report(vote: Dict[str, Any]) -> List[str]:
+    """Per report, for the sets that are not blind.
+
+    The blind set gets no per-report line here for the same reason it gets
+    none anywhere else: a blind figure read report by report stops being
+    blind the moment somebody goes looking for which report dragged it down.
+    """
+    blind = set()
+    for name in ("oos_blind", "honest_blind"):
+        blind |= set((vote["sets"].get(name) or {}).get("reports") or [])
+    rows = [r for r in vote["per_report"] if r["id"] not in blind]
+    if not rows:
+        return ["", "Per-report lines are left out: every report voted on is "
+                    "in the blind set, and a blind figure read report by "
+                    "report stops being blind."]
+    out = ["", "## 5. Per report", "", "```",
+           f"{'report':<8}{'pages':>7}{'scored':>8}{'rate':>8}{'split':>7}"
+           f"{'rules':>8}{'vision':>8}{'review':>8}"]
+    for r in rows:
+        out.append(f"{r['id']:<8}{r['pages']:>7}{r['scored']:>8}"
+                   f"{_pct(r['agreement']):>8}{r['disagreed']:>7}"
+                   f"{_pct(r['rules']):>8}{_pct(r['vision']):>8}"
+                   f"{_pct(r['review']):>8}")
+    out.append("```")
     return out
 
 

@@ -71,7 +71,77 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-09-20) — 5.21.2 RELEASED (whole-report vision fixed: JPEG pages, self-splitting windows, page-mode fallback) with planlens 0.6.0
+## CURRENT WORKING STATE (2026-09-20) — 5.22.0 ON MASTER (durable mirror of every run + the `vote` stage) with planlens 0.6.0
+
+- **app 5.22.0** (2026-09-20, on master, NOT yet tagged or released) —
+  **the run's output stops living only in `/tmp`, and a disagreement between
+  the voters becomes a measurement.** No dependency change; pure Python
+  inside `report_ingest`, and no new model call anywhere. **(1) The durable
+  mirror** (`report_ingest/mirror.py`). The first full cluster run put 38
+  label reviews — about **$17 of model calls** — in `/tmp/report_ingest_520`
+  and a restart wiped them; the owner's words, 2026-09-20: *"We should really
+  be saving the files somewhere other than tmp. Big waste of money. You know
+  we've had this issue elsewhere."* The app has mirrored conversations to
+  SharePoint after every turn since 5.10.0, so this is that, for the scoring
+  runs, in the shipped package and with no dependency on the app.
+  `score_on_cluster(..., sharepoint=fh_sp_client,
+  sharepoint_folder="GeotechStaffEngineer/report_ingest", durable_dir=None)`.
+  The run's remote folder is `<sharepoint_folder>/<basename(out_dir)>` with
+  the same layout inside — which is where the owner has been copying runs by
+  hand. **At the START** whatever the mirror holds and `out_dir` does not is
+  restored, so a wiped `/tmp` resumes instead of paying twice; **after every
+  run file written by any stage** the out_dir is mirrored incrementally (a
+  local `mirror_manifest.json` of (size, mtime), so the 38th mirror sends one
+  file rather than 38); and again at the end for `RESULTS.md` and
+  `results.json`. **Two backends behind one duck type**: a SharePoint file
+  manager — the `fh_sp_client` itself is unwrapped, and so is the app's
+  `SharePointStore` whose `file_manager` is a METHOD — and a plain folder
+  (`durable_dir`: a Volume, a DBFS path, a workspace folder the owner's own
+  probe has shown durable). Both at once is allowed and each keeps its own
+  manifest. **A mirror failure never stops the run**: one warning line per
+  distinct error and a count at the end. `out_dir` still refuses
+  `/Workspace`; `durable_dir` does not, because whether a path is durable on
+  this cluster is the owner's finding rather than this package's.
+  **(2) The `vote` stage** (`report_ingest/vote.py`, the sixth stage). The
+  owner's standing direction of 2026-09-18 — *"even if something scores
+  worse, it could still be useful ... if multiple methods say different
+  things, it could trigger an extra review ... would be good to have
+  confidence values associated with the classifications"* — and what run 10
+  actually showed: the rules and the vision pass are **complementary by label
+  class**, the rules owning `appended_report` (494 in-sample pages vision
+  never emits), `other` (216, the same) and `calculation` (1,009, 41 % missed)
+  while vision owns `plan`, `profile`, `photos`, `cover`, `toc` and `figure`
+  recall. `stages=("vote",)` calls **no model at all**: it recomputes the
+  rules with planlens where the PDF is to hand and reads them off the saved
+  run where it is not, takes the vision labels from `vision_dirs` (default
+  this run's `vision/`) and the review from `review_dir` (default `runs/`),
+  and writes `# Vote: rules, vision and the review as voters` into
+  `RESULTS.md` in five parts — **(a)** the agreement rate over every page
+  (the number a production run can compute with no hand labels) and the
+  accuracy of agreed against disagreed pages, which is the confidence claim;
+  **(b)** a per-label trust table learned on the **in-sample reports only**,
+  keyed by the RULES' label because that is what a run has before it knows
+  the answer, ties to vision so "believe rules" always means strictly better,
+  applied to the OOS sets and never learned on the blind one; **(c)** the
+  combined labels under three policies — `trust` (the table), `structural`
+  (vision except the four the rules own; it learns nothing, so it is the one
+  to beat) and `confidence` (planlens' own rule confidence against the vision
+  pass's, ties to the rules) — each scored by the SAME scorer beside rules /
+  vision / +review; **(d)** the disagreement set: how many pages per set would
+  go to a targeted review and the accuracy that review would need **on those
+  pages alone** to carry the set over the 0.98 gate, printed `>1.000` when
+  even a perfect review cannot because the AGREED pages already carry more
+  error than the gate allows; **(e)** per report, blind sets excepted. Every
+  split is listed in `vote/<ID>.json` — page, both voters, both confidences,
+  the hand label, each policy's choice, labels and numbers only. The label and
+  vision run files now also save **`rules_confidence`**, planlens' own
+  per-page confidence, so the `confidence` policy does not need the PDF.
+  Harness twin: `module_work/report_ingest_harness/measure_wp6_vote.py`.
+  Suites: `report_ingest` **746** (56 new), harness **229** (16 new),
+  docs-currency green. **Install 5.22.0** once it is tagged; it supersedes
+  5.21.2 and everything back to 5.20.1. **Next:** run the vote over the 38
+  saved sheet-mode vision runs beside the label runs and read off which policy
+  to build on. 5.21.2 follows.
 
 - **app 5.21.2** (2026-09-20, on master) — **the `document` vision mode after
   its first cluster run.** No dependency change; pure Python inside
@@ -1161,7 +1231,7 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | drawing_ir → `planlens.ir` + `planlens.document` + `planlens.tools` | (planlens, 1,307 tests at 0.6.0) | HISTORICAL PATH. The drawing IR (DXF / vector-PDF / raster ingest, slice queries, leader / dimension / title-block / bubble / cloud finders, `render_region`) is `planlens.ir`; since planlens 0.3.0 the WHOLE-DOCUMENT layer (`planlens.document`: page map + structure, located text, tables, review markups, hidden CAD text, Azure DI text source) and the LLM tool layer (`planlens.tools`) sit beside it. See "Document review & drawing geometry (planlens)" below. |
 | fem2d | 353 | 2D plane-strain FEM (T6 default + CST/Q4/beam, 3D-principal MC return, HS, GL99 SRM, seepage, consolidation, staged construction, PLAXIS-style calc-package plots); validated vs Griffiths-Lane/Prandtl (VALIDATION.md) |
 | geo_project | 89 | Canonical Project document for staged, human-gated LE/FEM model setup (schema+validators, builders, templates, DXF/PDF/vision ingest w/ provenance quarantine, echo-back renderer) |
-| report_ingest | 690 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop; `run_folder` drives it over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels"), truth_dir=…)` is the owner's notebook cell, and `truth_dir` is ONE root holding `logs/`, `lab/` and `narrative/` so one folder is uploaded rather than three paths kept in step. The fifth stage is the 5.20.0 EXPERIMENT: `vision_labels.py` sends each page as a picture to GPT-4.1 on the cheap tier with structured output, scored against the same hand labels by the same scorer as the rules and the review — one call a page, one a six-page contact sheet, or (5.21.0) one per window of 36 stamped full-size pages with contact sheets of the WHOLE report beside them (`vision_mode="document"`), which is capped by the endpoint's measured 50-image-per-request limit rather than by its context window. `report_ingest/README.md`, plan in `module_work/REPORT_INGEST_PLAN.md` |
+| report_ingest | 746 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop; `run_folder` drives it over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels","vote"), truth_dir=…, sharepoint=fh_sp_client)` is the owner's notebook cell; `truth_dir` is ONE root holding `logs/`, `lab/` and `narrative/` so one folder is uploaded rather than three paths kept in step, and `sharepoint=`/`durable_dir=` (5.22.0, `mirror.py`) copy every run file somewhere a cluster restart cannot reach and restore a wiped `out_dir` at the start. The sixth stage is `vote` (5.22.0, `vote.py`): NO model — the rules, the vision labels and the review set against each other and against the hand labels, giving the agreement rate, a per-label trust table learned in sample only, three combining policies scored beside the voters, and the accuracy a targeted review of the disagreements would need. The fifth stage is the 5.20.0 EXPERIMENT: `vision_labels.py` sends each page as a picture to GPT-4.1 on the cheap tier with structured output, scored against the same hand labels by the same scorer as the rules and the review — one call a page, one a six-page contact sheet, or (5.21.0) one per window of 36 stamped full-size pages with contact sheets of the WHOLE report beside them (`vision_mode="document"`), which is capped by the endpoint's measured 50-image-per-request limit rather than by its context window. `report_ingest/README.md`, plan in `module_work/REPORT_INGEST_PLAN.md` |
 
 Other components: geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions + DM7 figure catalogs, 3529 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 + 25 + 31 + 5 = 479 tests)
 

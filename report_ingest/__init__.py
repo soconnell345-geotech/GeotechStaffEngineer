@@ -47,6 +47,15 @@ record and its exports out -- and the pieces it drives are:
     Funhouse's Prompter, on the cluster, scored against the hand labels.
     The app runs against OpenAI models there, so a score measured on any
     other model measures a model that will never do the work.
+``report_ingest.mirror``
+    The durable copy of a run's output, to SharePoint or to any folder that
+    survives the driver. ``/tmp`` does not, and a cluster restart once wiped
+    $17 of finished model calls.
+``report_ingest.vote``
+    The arithmetic of setting the voters against each other: how often the
+    rules and the vision pass agree, which of them to believe per label
+    class, and what a page they split on is worth looking at. No model, no
+    document: it runs on the run files already on disk.
 
 IMPORTS ARE LAZY ON PURPOSE. Importing this package pulls in nothing but the
 standard library: the passes are reached through :func:`triage` and

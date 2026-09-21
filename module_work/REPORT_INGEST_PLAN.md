@@ -341,6 +341,20 @@ wins on some label, it becomes a tie-breaker for that label. It is never a
 dependency of the ingest (xgboost + scikit-learn would need Nexus clearance
 and add nothing the rules cannot be taught).
 
+### Two things the scoring run itself has to do (added 5.22.0)
+
+- **The output is mirrored somewhere durable.** `/tmp` does not survive a
+  cluster restart, and one wiped 38 finished label reviews (~$17 of calls).
+  `report_ingest/mirror.py` copies every run file to SharePoint or to a
+  durable folder as it is written, and restores a wiped `out_dir` at the
+  start of the next call; a mirror failure warns and never stops the run.
+- **Disagreement is a measurement, not a loss.** `stages=("vote",)` sets the
+  rules, the vision pass and the review against each other with no model
+  call: the agreement rate, a per-label trust table learned in sample only,
+  three combining policies scored by the same scorer as the voters, and the
+  accuracy a targeted review of the disagreements would need to carry the
+  set over the gate (`report_ingest/vote.py`).
+
 ### Where each piece lives
 
 | Piece | Home | Why |

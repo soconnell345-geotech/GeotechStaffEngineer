@@ -8,6 +8,75 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### 5.22.0 (2026-09-20) — the output survives a restart, and the disagreement becomes the answer
+
+Two things, both in `report_ingest`, no dependency change and no model call
+added anywhere.
+
+**1. A durable mirror (`report_ingest/mirror.py`).** The first full cluster
+run wrote 38 label reviews — about $17 of calls — into `/tmp/report_ingest_520`
+and a restart wiped them. The owner, 2026-09-20: *"We should really be saving
+the files somewhere other than tmp. Big waste of money. You know we've had
+this issue elsewhere."* The app has mirrored conversations to SharePoint after
+every turn since 5.10.0; this is the same for the scoring runs, in the shipped
+package, with no dependency on the app. `score_on_cluster(...,
+sharepoint=fh_sp_client, sharepoint_folder="GeotechStaffEngineer/report_ingest",
+durable_dir=None)`:
+
+- the run's remote folder is `<sharepoint_folder>/<basename(out_dir)>` with
+  the SAME layout inside, so `/tmp/report_ingest_522` mirrors to
+  `GeotechStaffEngineer/report_ingest/report_ingest_522/{runs,triage,vision,
+  vote,RESULTS.md,results.json}` — where the owner has been copying runs by
+  hand;
+- **at the START** anything the mirror holds and `out_dir` does not is
+  restored, so a wiped `/tmp` resumes rather than paying twice. The first
+  printed line says where the mirror points and how many files came back;
+- **after every run file, by every stage**, the out_dir is mirrored
+  incrementally — a local `mirror_manifest.json` of (size, mtime), so the
+  38th mirror sends one file, not 38 — and again at the end for `RESULTS.md`
+  and `results.json`;
+- **two backends behind one duck type**: a SharePoint file manager (the
+  `fh_sp_client` itself is unwrapped, and so is the app's `SharePointStore`
+  whose `file_manager` is a method) and a plain folder (`durable_dir` — a
+  Volume, a DBFS path, a workspace folder the owner's own probe has shown
+  durable). Both may be given at once;
+- **a failure never stops the run**: one warning line per distinct error, and
+  a count at the end. `out_dir` still refuses `/Workspace`; `durable_dir` does
+  not, because whether a path is durable here is the owner's finding.
+
+**2. The `vote` stage (`report_ingest/vote.py`, WP6).** The owner's standing
+direction of 2026-09-18 — *"if multiple methods say different things, it could
+trigger an extra review ... would be good to have confidence values"* — and
+run 10's reading: rules and vision are COMPLEMENTARY by label class, not one
+better than the other. `stages=("vote",)` calls **no model**; it reads the
+rules (recomputed with planlens where the PDF is to hand, off the saved run
+where it is not), the vision labels from `vision_dirs` (default this run's
+`vision/`), and the review from `review_dir` (default `runs/`), and writes
+five things into `RESULTS.md` under `# Vote: rules, vision and the review as
+voters`: (1) the agreement rate over every page, and the accuracy of agreed
+against disagreed pages — the confidence claim; (2) a per-label trust table
+learned on the IN-SAMPLE reports only and applied to the OOS sets, keyed by
+the RULES' label, ties to vision so "believe rules" always means strictly
+better; (3) combined labels under `trust`, `structural` (vision except
+appended_report / other / calculation / lab_test) and `confidence`, each
+scored by the same scorer beside rules / vision / +review; (4) the
+disagreement set — how many pages would go to a targeted review and the
+accuracy that review would need to carry the set over 0.98, `>1.000` when it
+is out of reach; (5) per report, blind sets excepted. Every split is listed
+per report in `vote/<ID>.json` (page, both voters, both confidences, the hand
+label, each policy's choice — labels and numbers only). The run files now also
+save `rules_confidence`, planlens' own per-page confidence, so the
+`confidence` policy does not need the PDF. Harness twin:
+`module_work/report_ingest_harness/measure_wp6_vote.py`.
+
+Suites: `report_ingest` 746 (56 new), harness 229 (16 new), docs-currency
+green. **Install 5.22.0**; it supersedes 5.21.2 and everything back to 5.20.1.
+
+**Next on this stage**: run the vote over the 38 saved sheet-mode vision runs
+the owner copied to SharePoint (`vision_dirs=[...]`) beside the label runs, if
+those survived, and read off which policy to build on. Then the document-mode
+re-run on the scanned report, and `vision_detail="low"` for accuracy.
+
 ### 5.21.2 (2026-09-20) — the whole-report vision mode, after its first cluster run
 
 The 5.21.1 run answered the sheet-vs-page question and opened two new ones.

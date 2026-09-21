@@ -1206,14 +1206,18 @@ class TestTheReadmeCell:
         assert used, "no score_on_cluster cell found in the README"
         assert used <= taken, f"the README passes {sorted(used - taken)}"
 
-    def test_the_readme_shows_the_document_mode_cell(self):
+    def test_the_readme_shows_every_vision_mode_in_a_cell(self):
+        """Both cells, whatever the alignment: the one to run and the one to
+        try. The five-stage cell recommends `sheet`, which the 2026-09-20
+        corpus run made the mode to run; the vision section's own cell shows
+        `document`, which is the mode still being priced."""
+        import re
         from pathlib import Path
 
         readme = (Path(cs.__file__).parent / "README.md").read_text(
             encoding="utf-8")
-        assert 'vision_mode  = "document"' in readme \
-            or 'vision_mode           = "document"' in readme, (
-            "the whole-report mode is what a reader should run first")
+        shown = set(re.findall(r'vision_mode\s*=\s*"(\w+)"', readme))
+        assert {"sheet", "document"} <= shown, shown
         assert "vision_detail" in readme
         assert "50" in readme and "images" in readme
 
@@ -1295,3 +1299,547 @@ class TestTheSplitAndTheFallbackOnTheCluster:
         assert off["vision_labels"]["settings"]["fallback"] is False
         assert "no fallback" in (out / "RESULTS.md").read_text(
             encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# the durable mirror (5.22.0)
+# ---------------------------------------------------------------------------
+
+from report_ingest.tests.test_mirror import BrokenFM, FakeFM  # noqa: E402
+
+
+@pytest.fixture()
+def unrun(tmp_path):
+    """A corpus of two reports with NOTHING done yet, and no out_dir files."""
+    reports_dir = tmp_path / "corpus"
+    reports_dir.mkdir()
+    for rid in ("R36", "R31"):
+        (reports_dir / f"{rid}.pdf").write_bytes(b"%PDF-1.7\n")
+    out = tmp_path / "out_521"
+    labels = {
+        "R36": {"3": {"label": "plan", "alternates": []}},
+        "R31": {"5": {"label": "lab_test", "alternates": []}},
+    }
+    oos = tmp_path / "oos_labels.json"
+    oos.write_text(json.dumps(labels), encoding="utf-8")
+    return reports_dir, out, oos
+
+
+def _fake_run_one(recorder):
+    """A ``_run_one`` that writes its run file and calls no model."""
+
+    def run_one(rid, corpus, prompter, model, triage_model, out_dir):
+        recorder.append(rid)
+        blob = _run_blob(rid, 10, {3: "plan"}, {3: "plan"})
+        (out_dir / "runs" / f"{rid}.json").write_text(
+            json.dumps(blob), encoding="utf-8")
+        (out_dir / "triage" / f"{rid}.json").write_text(
+            json.dumps(blob["profile"]), encoding="utf-8")
+        return blob
+
+    return run_one
+
+
+class TestTheDurableMirror:
+    """The output goes somewhere a cluster restart cannot reach."""
+
+    def test_a_run_with_no_mirror_says_so_and_runs_anyway(self, cluster,
+                                                          capsys):
+        reports_dir, out, oos = cluster
+        cs.score_on_cluster(reports_dir=reports_dir, out_dir=out,
+                            prompter=object(), oos_labels=oos,
+                            sets=("oos_blind",))
+        printed = capsys.readouterr().out
+        assert "no durable mirror" in printed
+        assert "sharepoint=fh_sp_client" in printed
+
+    def test_what_the_mirror_holds_is_restored_before_anything_runs(
+            self, unrun, capsys):
+        reports_dir, out, oos = unrun
+        fm = FakeFM()
+        remote = f"{cs.DEFAULT_FOLDER}/{out.name}"
+        fm.put(f"{remote}/runs/R36.json",
+               json.dumps(_run_blob("R36", 10, {3: "figure"},
+                                    {3: "plan"})).encode("utf-8"))
+        # Only R36's PDF: R31 has neither a PDF nor a run and is skipped, so
+        # nothing but the restore decides what this run scores.
+        (reports_dir / "R31.pdf").unlink()
+
+        results = cs.score_on_cluster(reports_dir=reports_dir, out_dir=out,
+                                      prompter=object(), oos_labels=oos,
+                                      sets=("oos_blind",), sharepoint=fm)
+        printed = capsys.readouterr().out
+        assert "restored 1 file(s)" in printed
+        assert "R36: already done, skipping" in printed
+        assert (out / "runs" / "R36.json").is_file()
+        assert results["sets"]["oos_blind"]["n_reports"] == 1
+
+    def test_each_run_file_is_on_the_mirror_before_the_next_report_starts(
+            self, unrun, monkeypatch):
+        reports_dir, out, oos = unrun
+        fm = FakeFM()
+        started: list = []
+        seen_at_start: list = []
+
+        run_one = _fake_run_one(started)
+
+        def spy(rid, *args, **kwargs):
+            seen_at_start.append((rid, sorted(fm.tree)))
+            return run_one(rid, *args, **kwargs)
+
+        monkeypatch.setattr(cs, "_run_one", spy)
+        cs.score_on_cluster(reports_dir=reports_dir, out_dir=out,
+                            prompter=object(), oos_labels=oos,
+                            sets=("oos_blind",), sharepoint=fm)
+
+        assert len(started) == 2, "both reports ran"
+        first, second = started
+        # When the SECOND report began, the FIRST one's run file was already
+        # on the mirror. That is the whole point: a restart mid-run costs
+        # the report in flight and nothing else.
+        _rid, tree_at_second = seen_at_start[1]
+        remote = f"{cs.DEFAULT_FOLDER}/{out.name}"
+        assert f"{remote}/runs/{first}.json" in tree_at_second
+        assert f"{remote}/triage/{first}.json" in tree_at_second
+        assert f"{remote}/runs/{second}.json" in fm.tree, "and then the second"
+        assert f"{remote}/RESULTS.md" in fm.tree, "and the results at the end"
+
+    def test_a_failing_mirror_warns_once_and_the_run_finishes(
+            self, unrun, monkeypatch, capsys):
+        reports_dir, out, oos = unrun
+        monkeypatch.setattr(cs, "_run_one", _fake_run_one([]))
+        results = cs.score_on_cluster(reports_dir=reports_dir, out_dir=out,
+                                      prompter=object(), oos_labels=oos,
+                                      sets=("oos_blind",),
+                                      sharepoint=BrokenFM())
+        printed = capsys.readouterr().out
+        assert results["sets"]["oos_blind"]["n_reports"] == 2, "it finished"
+        assert (out / "RESULTS.md").is_file()
+        # One warning, not one per file per report.
+        assert printed.count("the durable mirror failed") == 1
+        assert "upload(s) FAILED" in printed
+
+    def test_a_plain_folder_takes_the_run_too(self, cluster, tmp_path):
+        reports_dir, out, oos = cluster
+        durable = tmp_path / "durable"
+        cs.score_on_cluster(reports_dir=reports_dir, out_dir=out,
+                            prompter=object(), oos_labels=oos,
+                            sets=("oos_blind",), durable_dir=durable)
+        assert (durable / out.name / "RESULTS.md").is_file()
+        assert (durable / out.name / "runs" / "R36.json").is_file()
+
+    def test_the_fh_sp_client_object_itself_is_accepted(self, cluster):
+        reports_dir, out, oos = cluster
+        fm = FakeFM()
+        client = type("FhSpClient", (), {"file_manager": fm})()
+        cs.score_on_cluster(reports_dir=reports_dir, out_dir=out,
+                            prompter=object(), oos_labels=oos,
+                            sets=("oos_blind",), sharepoint=client)
+        assert f"{cs.DEFAULT_FOLDER}/{out.name}/RESULTS.md" in fm.tree
+
+    def test_the_remote_folder_can_be_moved(self, cluster):
+        reports_dir, out, oos = cluster
+        fm = FakeFM()
+        cs.score_on_cluster(reports_dir=reports_dir, out_dir=out,
+                            prompter=object(), oos_labels=oos,
+                            sets=("oos_blind",), sharepoint=fm,
+                            sharepoint_folder="somewhere/else")
+        assert f"somewhere/else/{out.name}/RESULTS.md" in fm.tree
+
+    def test_only_out_dir_is_refused_for_workspace(self):
+        """A durable_dir is the owner's own finding and is not second-guessed."""
+        with pytest.raises(ValueError, match="non-durable"):
+            cs._check_out_dir(Path("/Workspace/Users/x/out"))
+        assert cs.Mirror(durable_dir="/Workspace/somewhere").active
+
+
+# ---------------------------------------------------------------------------
+# the vote stage (WP6)
+# ---------------------------------------------------------------------------
+
+def _vote_vision(rid, n_pages, rules, seen, rules_confidence,
+                 vision_confidence):
+    """A saved vision run carrying both voters and both confidences."""
+    return {
+        "id": rid, "run_date": "2026-09-20", "n_pages": n_pages,
+        "model": "funhouse-gpt-low", "served_by": "gpt-4.1-mini",
+        "mode": "sheet", "dpi": 100.0, "outline_context": False,
+        "detail": None, "fallback": True,
+        "rules_labels": {str(k): v for k, v in rules.items()},
+        "rules_confidence": {str(k): v
+                             for k, v in rules_confidence.items()},
+        "vision": {
+            "labels": {str(k): v for k, v in seen.items()},
+            "detail": [{"page": k, "label": v,
+                        "confidence": vision_confidence[k],
+                        "reason": "the sheet says so"}
+                       for k, v in seen.items()],
+            "unresolved": [], "qa": [], "mode": "sheet", "dpi": 100.0,
+            "outline_context": False, "pages_asked": n_pages,
+            "model_calls": 2, "budget": None, "stopped_on_budget": False,
+            "model": "gpt-4.1-mini", "cost": {"mode": "sheet"},
+        },
+        "cost": {"calls": 2, "input_tokens": 9000, "output_tokens": 400,
+                 "cache_read_tokens": 0, "dollars": 0.02, "seconds": 20.0},
+        "seconds": 21.0,
+    }
+
+
+#: R36 is the IN-SAMPLE report the trust table is learned on. Six pages,
+#: hand-labelled: two the rules win, one vision wins, three they agree on
+#: (two right, one wrong). Every number the tests assert falls out of this
+#: table by hand.
+R36_RULES = {0: "calculation", 1: "calculation", 2: "plan", 3: "figure",
+             4: "narrative", 5: "lab_test"}
+R36_VISION = {0: "narrative", 1: "narrative", 2: "plan", 3: "plan",
+              4: "narrative", 5: "lab_test"}
+R36_HAND = {0: "calculation", 1: "calculation", 2: "plan", 3: "plan",
+            4: "narrative", 5: "figure"}
+R36_RULES_CONF = {0: 0.9, 1: 0.9, 2: 0.9, 3: 0.4, 4: 0.9, 5: 0.9}
+R36_VISION_CONF = {0: 0.5, 1: 0.5, 2: 0.8, 3: 0.85, 4: 0.8, 5: 0.8}
+
+#: R31 is the OUT-OF-SAMPLE report the table is APPLIED to. Four pages, all
+#: four a disagreement, one per branch of every policy.
+R31_RULES = {0: "calculation", 1: "figure", 2: "other", 3: "lab_test"}
+R31_VISION = {0: "narrative", 1: "photos", 2: "boring_log", 3: "figure"}
+R31_HAND = {0: "calculation", 1: "photos", 2: "boring_log", 3: "lab_test"}
+R31_RULES_CONF = {0: 0.9, 1: 0.4, 2: 0.4, 3: 0.9}
+R31_VISION_CONF = {0: 0.5, 1: 0.8, 2: 0.9, 3: 0.6}
+
+
+@pytest.fixture()
+def vote_cluster(tmp_path, monkeypatch):
+    """One in-sample report and one out-of-sample one, both already seen.
+
+    ``_set_ids`` is pinned so the sets are these two reports and nothing
+    else, and both reports' hand labels come from the out-of-sample file, so
+    the whole fixture is four files and no spreadsheet.
+    """
+    reports_dir = tmp_path / "corpus"
+    reports_dir.mkdir()
+    for rid in ("R36", "R31"):
+        (reports_dir / f"{rid}.pdf").write_bytes(b"%PDF-1.7\n")
+    out = tmp_path / "out_vote"
+    (out / "runs").mkdir(parents=True)
+    (out / "triage").mkdir()
+    (out / "vision").mkdir()
+
+    (out / "vision" / "R36.json").write_text(json.dumps(_vote_vision(
+        "R36", 6, R36_RULES, R36_VISION, R36_RULES_CONF, R36_VISION_CONF)),
+        encoding="utf-8")
+    (out / "vision" / "R31.json").write_text(json.dumps(_vote_vision(
+        "R31", 4, R31_RULES, R31_VISION, R31_RULES_CONF, R31_VISION_CONF)),
+        encoding="utf-8")
+
+    oos = tmp_path / "oos_labels.json"
+    oos.write_text(json.dumps({
+        "R36": {str(p): {"label": v, "alternates": []}
+                for p, v in R36_HAND.items()},
+        "R31": {str(p): {"label": v, "alternates": []}
+                for p, v in R31_HAND.items()},
+    }), encoding="utf-8")
+
+    pinned = {"insample": ("R36",), "oos_open": ("R31",), "oos_blind": ()}
+
+    def set_ids(name, corpus):
+        return pinned[name]
+
+    monkeypatch.setattr(cs, "_set_ids", set_ids)
+    return reports_dir, out, oos
+
+
+def _vote_run(vote_cluster, **over):
+    reports_dir, out, oos = vote_cluster
+    kwargs = dict(reports_dir=reports_dir, out_dir=out, prompter=object(),
+                  oos_labels=oos, sets=("insample", "oos_open"),
+                  stages=("vote",))
+    kwargs.update(over)
+    return cs.score_on_cluster(**kwargs)
+
+
+class TestTheVoteStage:
+    """WP6: what a disagreement between the voters is worth, with no model."""
+
+    def test_it_is_a_stage_name_and_is_not_in_the_default(self, cluster):
+        reports_dir, out, oos = cluster
+        assert "vote" in cs.STAGE_NAMES
+        results = cs.score_on_cluster(reports_dir=reports_dir, out_dir=out,
+                                      prompter=object(), oos_labels=oos)
+        assert results["stages"] == ["labels"]
+        assert "vote" not in results
+
+    def test_it_refuses_to_run_without_a_vision_folder_and_says_where(
+            self, vote_cluster):
+        reports_dir, out, oos = vote_cluster
+        for path in (out / "vision").glob("*.json"):
+            path.unlink()
+        with pytest.raises(FileNotFoundError) as caught:
+            _vote_run(vote_cluster)
+        message = str(caught.value)
+        assert "vision" in message and str(out / "vision") in message
+        assert "vision_dirs" in message
+
+    def test_a_named_vision_folder_is_read_instead(self, vote_cluster,
+                                                   tmp_path):
+        reports_dir, out, oos = vote_cluster
+        elsewhere = tmp_path / "an_earlier_run" / "vision"
+        elsewhere.mkdir(parents=True)
+        (elsewhere / "R36.json").write_text(
+            (out / "vision" / "R36.json").read_text(encoding="utf-8"),
+            encoding="utf-8")
+        for path in (out / "vision").glob("*.json"):
+            path.unlink()
+        vote = _vote_run(vote_cluster, vision_dirs=[elsewhere])["vote"]
+        assert vote["reports"] == ["R36"]
+
+    def test_no_model_is_ever_asked_for(self, vote_cluster):
+        """The prompter is not even touched: a vote is arithmetic on disk."""
+
+        class Explodes:
+            def __getattr__(self, name):
+                raise AssertionError(f"the vote called the model: {name}")
+
+        _vote_run(vote_cluster, prompter=Explodes())
+
+    # -- 1. agreement ------------------------------------------------------
+
+    def test_the_agreement_rate_and_what_it_is_worth(self, vote_cluster):
+        vote = _vote_run(vote_cluster)["vote"]
+        agree = vote["sets"]["insample"]["agreement"]
+        # Six pages, three of them agreed (2, 4, 5).
+        assert agree["pages"] == 6
+        assert agree["agree"] == 3
+        assert agree["agreement"] == pytest.approx(0.5)
+        # Of the three they agreed on, two were right: page 5 is lab_test to
+        # both voters and figure to the hand.
+        assert agree["agreed"] == {"pages": 3, "correct": 2,
+                                   "accuracy": pytest.approx(0.6667)}
+        # Of the three they split on, the rules had two and vision one, and
+        # between them they had all three.
+        split = agree["disagreed"]
+        assert split["pages"] == 3
+        assert split["rules_correct"] == 2
+        assert split["vision_correct"] == 1
+        assert split["either_correct"] == 3
+        assert split["neither_correct"] == 0
+        assert split["ceiling"] == pytest.approx(1.0)
+
+    def test_an_unresolved_page_is_a_disagreement_rather_than_an_excuse(
+            self, vote_cluster):
+        reports_dir, out, oos = vote_cluster
+        blob = json.loads((out / "vision" / "R36.json").read_text(
+            encoding="utf-8"))
+        blob["vision"]["labels"].pop("4")        # the pass never answered
+        (out / "vision" / "R36.json").write_text(json.dumps(blob),
+                                                 encoding="utf-8")
+        vote = _vote_run(vote_cluster)["vote"]
+        rows = json.loads((out / "vote" / "R36.json").read_text(
+            encoding="utf-8"))["disagreements"]
+        page4 = [r for r in rows if r["page"] == 4]
+        assert page4 and page4[0]["vision"] == "other"
+        # Page 4 was one of the three the voters agreed on. It is now one of
+        # the four they do not, and the accuracy of the agreed pages falls
+        # with it -- the page nothing could answer for is exactly the page a
+        # second look is for.
+        agree = vote["sets"]["insample"]["agreement"]
+        assert agree["agree"] == 2
+        assert agree["disagreed"]["pages"] == 4
+
+    # -- 2. the trust table ------------------------------------------------
+
+    def test_the_trust_table_is_learned_on_the_in_sample_report_alone(
+            self, vote_cluster):
+        vote = _vote_run(vote_cluster)["vote"]
+        assert vote["trust_learned_on"] == ["R36"]
+        table = vote["trust"]
+        # R36's two calculation pages: the rules had both, vision neither.
+        assert table["calculation"] == {"pages": 2, "rules": 2, "vision": 0,
+                                        "winner": "rules"}
+        # R36's one figure page: vision had it.
+        assert table["figure"] == {"pages": 1, "rules": 0, "vision": 1,
+                                   "winner": "vision"}
+        # `other` and `lab_test` split only on R31, which is out of sample.
+        assert "other" not in table
+        assert "lab_test" not in table
+
+    def test_a_class_the_table_never_saw_goes_to_vision(self, vote_cluster):
+        _reports_dir, out, _oos = vote_cluster
+        _vote_run(vote_cluster)
+        rows = {r["page"]: r for r in json.loads(
+            (out / "vote" / "R31.json").read_text(encoding="utf-8")
+        )["disagreements"]}
+        # `other` is not in the table, so trust takes vision's boring_log.
+        assert rows[2]["chosen"]["trust"] == "boring_log"
+        # `calculation` is, and the table says believe the rules.
+        assert rows[0]["chosen"]["trust"] == "calculation"
+
+    # -- 3. the three policies --------------------------------------------
+
+    def test_the_three_policies_are_scored_beside_the_voters(self,
+                                                             vote_cluster):
+        scores = _vote_run(vote_cluster)["vote"]["sets"]["oos_open"]["scores"]
+        # R31: four pages, four disagreements, by hand.
+        assert scores["rules"]["accuracy"] == pytest.approx(0.5)
+        assert scores["vision"]["accuracy"] == pytest.approx(0.5)
+        # trust: calculation -> rules (right), figure -> vision (right),
+        # other -> vision (right), lab_test -> vision (wrong).
+        assert scores["trust"]["accuracy"] == pytest.approx(0.75)
+        # structural: the rules keep calculation, other and lab_test, vision
+        # keeps figure. That loses page 2 and keeps page 3.
+        assert scores["structural"]["accuracy"] == pytest.approx(0.75)
+        # confidence: the more confident voter wins every page, and here
+        # that voter is right every time.
+        assert scores["confidence"]["accuracy"] == pytest.approx(1.0)
+
+    def test_each_policy_s_chosen_label_is_written_down_per_page(
+            self, vote_cluster):
+        _reports_dir, out, _oos = vote_cluster
+        _vote_run(vote_cluster)
+        rows = {r["page"]: r for r in json.loads(
+            (out / "vote" / "R31.json").read_text(encoding="utf-8")
+        )["disagreements"]}
+        assert rows[3]["chosen"] == {"trust": "figure",
+                                     "structural": "lab_test",
+                                     "confidence": "lab_test"}
+        assert rows[3]["rules_confidence"] == pytest.approx(0.9)
+        assert rows[3]["vision_confidence"] == pytest.approx(0.6)
+
+    def test_confidence_ties_go_to_the_rules(self):
+        from report_ingest.vote import PageVote, combine
+
+        tied = PageVote("R01", 1, "calculation", "narrative",
+                        rules_confidence=0.7, vision_confidence=0.7)
+        assert combine(tied, "confidence") == "calculation"
+        louder = PageVote("R01", 1, "calculation", "narrative",
+                          rules_confidence=0.7, vision_confidence=0.71)
+        assert combine(louder, "confidence") == "narrative"
+
+    def test_the_review_is_a_third_column_where_a_label_run_sits_beside_it(
+            self, vote_cluster):
+        _reports_dir, out, _oos = vote_cluster
+        final = dict(R36_RULES)
+        final[3] = "plan"                       # the review fixed that one
+        (out / "runs" / "R36.json").write_text(json.dumps(_run_blob(
+            "R36", 6, R36_RULES, final)), encoding="utf-8")
+        vote = _vote_run(vote_cluster)["vote"]
+        assert vote["n_with_review"] == 1
+        scores = vote["sets"]["insample"]["scores"]
+        assert scores["review"]["accuracy"] == pytest.approx(0.8333)
+        assert "review" not in vote["sets"]["oos_open"]["scores"], (
+            "R31 has no label run, so it prints no review column")
+
+    # -- 4. the disagreement set -------------------------------------------
+
+    def test_what_a_targeted_review_of_the_splits_would_have_to_manage(
+            self, vote_cluster):
+        vote = _vote_run(vote_cluster)["vote"]
+        # R31: nothing agreed, four to review, so the review alone has to
+        # carry the gate: 0.98 * 4 / 4.
+        oos = vote["sets"]["oos_open"]
+        assert oos["agreement"]["disagreed"]["fraction"] == pytest.approx(1.0)
+        assert oos["required_review_accuracy"] == pytest.approx(0.98)
+        # R36: three agreed pages carry two hits, so a review of the other
+        # three would have to be better than perfect. It says so.
+        insample = vote["sets"]["insample"]
+        assert insample["required_review_accuracy"] == pytest.approx(1.2933,
+                                                                     abs=1e-4)
+
+    def test_the_results_file_says_a_gate_out_of_reach_is_out_of_reach(
+            self, vote_cluster):
+        _reports_dir, out, _oos = vote_cluster
+        _vote_run(vote_cluster)
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert ">1.000" in text
+
+    # -- 5. the file that comes home ---------------------------------------
+
+    def test_the_results_file_carries_the_section_and_its_five_parts(
+            self, vote_cluster):
+        _reports_dir, out, _oos = vote_cluster
+        _vote_run(vote_cluster)
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "# Vote: rules, vision and the review as voters" in text
+        for heading in ("## 1. Agreement",
+                        "## 2. Per-label trust",
+                        "## 3. The combined labels",
+                        "## 4. The disagreement set",
+                        "## 5. Per report"):
+            assert heading in text, heading
+        for column in ("trust", "struct", "conf"):
+            assert f"P {column}" in text, column
+        assert "No model was called" in text
+
+    def test_the_results_file_carries_no_reason_and_no_confidence(
+            self, vote_cluster):
+        _reports_dir, out, _oos = vote_cluster
+        _vote_run(vote_cluster)
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        # A vision reason names what the model saw on a page and can carry a
+        # firm; it stays in the run files on the cluster.
+        assert "the sheet says so" not in text
+
+    def test_the_qa_file_lists_every_split_and_nothing_else(self,
+                                                            vote_cluster):
+        _reports_dir, out, _oos = vote_cluster
+        _vote_run(vote_cluster)
+        blob = json.loads((out / "vote" / "R36.json").read_text(
+            encoding="utf-8"))
+        assert blob["pages_compared"] == 6
+        assert [r["page"] for r in blob["disagreements"]] == [0, 1, 3]
+        assert blob["trust_table_learned_on"] == ["R36"]
+        assert blob["rules_from"] == "saved run", (
+            "the saved run carries rules_confidence, so no PDF is reopened")
+        row = blob["disagreements"][2]
+        assert row["rules"] == "figure" and row["vision"] == "plan"
+        assert row["hand"] == "plan"
+        assert "reason" not in json.dumps(blob)
+
+    def test_the_vote_files_are_mirrored_like_everything_else(self,
+                                                              vote_cluster):
+        _reports_dir, out, _oos = vote_cluster
+        fm = FakeFM()
+        _vote_run(vote_cluster, sharepoint=fm)
+        remote = f"{cs.DEFAULT_FOLDER}/{out.name}"
+        assert f"{remote}/vote/R36.json" in fm.tree
+        assert f"{remote}/RESULTS.md" in fm.tree
+
+    def test_the_results_json_drops_the_live_scorers(self, vote_cluster):
+        _reports_dir, out, _oos = vote_cluster
+        _vote_run(vote_cluster)
+        blob = json.loads((out / "results.json").read_text(encoding="utf-8"))
+        assert blob["stages"] == ["vote"]
+        assert "_scores" not in blob["vote"]["sets"]["insample"]
+        assert blob["vote"]["sets"]["oos_open"]["scores"]["confidence"][
+            "accuracy"] == pytest.approx(1.0)
+
+    def test_the_blind_set_is_reported_without_a_per_report_line(
+            self, vision_cluster):
+        """The honest-blind row appears, and no report is named beside it."""
+        reports_dir, out, oos = vision_cluster
+        results = cs.score_on_cluster(
+            reports_dir=reports_dir, out_dir=out, prompter=object(),
+            oos_labels=oos, sets=("oos_blind",), stages=("vote",))
+        assert "honest_blind" in results["vote"]["sets"]
+        # R36 sat in the cost checkpoint; R31 never did.
+        assert results["vote"]["sets"]["honest_blind"]["reports"] == ["R31"]
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "## 5. Per report" not in text
+        assert "stops being blind" in text
+
+    def test_a_run_file_without_a_confidence_says_so_rather_than_inventing(
+            self, vote_cluster):
+        """A pre-5.22.0 vision run has labels and no confidence. planlens is
+        asked again for it; where the PDF will not open (these are stubs),
+        the saved labels stand and the confidence policy simply has nothing
+        to weigh."""
+        _reports_dir, out, _oos = vote_cluster
+        blob = json.loads((out / "vision" / "R31.json").read_text(
+            encoding="utf-8"))
+        blob.pop("rules_confidence")
+        (out / "vision" / "R31.json").write_text(json.dumps(blob),
+                                                 encoding="utf-8")
+        _vote_run(vote_cluster)
+        qa = json.loads((out / "vote" / "R31.json").read_text(
+            encoding="utf-8"))
+        assert qa["rules_from"] == "saved run, no confidence"
+        assert "rules_confidence" not in qa["disagreements"][0]

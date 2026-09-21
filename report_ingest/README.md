@@ -624,7 +624,7 @@ pages are read from their own text layer alone.
 
 ```python
 # 1. From PyPI through Nexus. planlens 0.6.0 arrives with it.
-%pip install "geotech-staff-engineer==5.21.2"
+%pip install "geotech-staff-engineer==5.22.0"
 dbutils.library.restartPython()
 ```
 
@@ -635,7 +635,8 @@ dbutils.library.restartPython()
 ```
 
 ```python
-# 3. One cell, all five stages. fh_prompter is the object setup just made.
+# 3. One cell, all six stages. fh_prompter is the object setup just made,
+#    and fh_sp_client is the SharePoint client the mirror writes through.
 from report_ingest.cluster_scoring import score_on_cluster
 
 results = score_on_cluster(
@@ -645,14 +646,15 @@ results = score_on_cluster(
     oos_labels   = "/Volumes/<your volume>/report_ingest/oos_labels.json",
     truth_dir    = "/Volumes/<your volume>/report_ingest/truth",   # holds logs/ lab/ narrative/
     di_dir       = "/Volumes/<your volume>/report_di",
-    out_dir      = "/tmp/report_ingest_520",                  # /tmp or a Volume, never /Workspace
+    out_dir      = "/tmp/report_ingest_522",                  # /tmp or a Volume, never /Workspace
+    sharepoint   = fh_sp_client,            # the durable copy; see "Where the output goes"
     prompter     = fh_prompter,
     model        = "funhouse-gpt-high",     # every reader, on the tier the app runs on
     triage_model = "funhouse-gpt-medium",   # one call over a ledger; a cheaper tier does
     sets         = ("insample", "oos_open", "oos_blind"),
-    stages       = ("labels", "logs", "lab", "narrative", "vision_labels"),
+    stages       = ("labels", "logs", "lab", "narrative", "vision_labels", "vote"),
     vision_model = "funhouse-gpt-low",      # the experiment: GPT-4.1, the cheap tier
-    vision_mode  = "document",              # the whole report in view; or "page" / "sheet"
+    vision_mode  = "sheet",                 # six pages a call; or "page" / "document"
     vision_fallback = True,                 # one page-mode call for a page nothing answered for
     max_reports  = 2,                       # drop this line after the first run
 )
@@ -666,20 +668,59 @@ run (`engine.adaptations` says what it learned). The SDK's `chat()` helper
 swallows such a refusal and returns None; that case is retried on the raw
 client. This is what stopped the first run on 5.20.0 and is fixed in 5.20.1.
 
-Bring back **`/tmp/report_ingest_520/RESULTS.md`**. Run it with
+Bring back **`/tmp/report_ingest_522/RESULTS.md`**. Run it with
 `max_reports=2` first. It caps every stage at two — two reports reviewed, two
 logs, two laboratory sheets, two narratives — which proves the paths, the
 prompter and all three truth folders for a few minutes of calls, and it
 resumes, so the full run afterwards does not redo them.
 
-The five stages are described one at a time below, each with the cell that
-runs it alone.
+### Where the output goes, and why it is mirrored
 
-<!-- A FIFTH STAGE IS COMING: `vision_labels`, page images read with
-     structured output as a first-pass page classifier. It gets one more line
-     in the `stages` tuple above, one more row in the upload table if it needs
-     a file of its own, and its own "### Scoring ..." section at the end of
-     this run of sections. Add it here rather than reworking the four. -->
+**`/tmp` does not survive a cluster restart.** The first full run put 38 label
+reviews — about $17 of model calls — into `/tmp/report_ingest_520`, and a
+restart wiped them. That is the failure this section exists to prevent, and it
+is the same one the app already solved for conversations: it has mirrored every
+conversation to SharePoint after every turn since 5.10.0.
+
+So pass **`sharepoint=fh_sp_client`**, or **`durable_dir="/Volumes/…"`**, or
+both. Then:
+
+- the run's folder is **`<sharepoint_folder>/<the out_dir's own name>`** —
+  `out_dir="/tmp/report_ingest_522"` mirrors to
+  `GeotechStaffEngineer/report_ingest/report_ingest_522`, with the same layout
+  inside (`runs/`, `triage/`, `vision/`, `vote/`, `RESULTS.md`, `results.json`);
+- **every run file is copied as soon as it is written**, by every stage, so a
+  restart mid-run costs the report in flight and nothing else;
+- **at the START, anything the mirror holds that `out_dir` does not is copied
+  back**, so a wiped `/tmp` resumes from what was already paid for rather than
+  paying again. The first line the run prints says where the mirror points and
+  how many files came back;
+- the copy is **incremental** (a local `mirror_manifest.json` of each file's
+  size and modification time), so the mirror after report 38 sends one file,
+  not 38;
+- **a mirror failure never stops the run.** It prints one warning line — once
+  per distinct error, not once per report — and the run carries on with its
+  output in `out_dir` alone.
+
+| parameter | what to pass |
+|---|---|
+| `sharepoint` | the live `fh_sp_client`, its `.file_manager`, or the app's `SharePointStore`. All three are accepted, because remembering which one this argument wants is how a run ends up mirroring nowhere. |
+| `sharepoint_folder` | the folder the run folders sit under. Default `GeotechStaffEngineer/report_ingest`, which is where the 2026-09-20 sheet-mode run was copied by hand. |
+| `durable_dir` | any folder that survives the driver — a Volume, a DBFS path, a workspace folder your own probe has shown durable. The run's name is appended and the SharePoint prefix is not, so a run lands at `<durable_dir>/report_ingest_522/`. |
+
+`out_dir` still refuses `/Workspace`. `durable_dir` does not: whether a path
+is durable on this cluster is your finding, not this package's, and the one
+place a guess would be expensive is the one it is guessing about.
+
+**The mirror sends the WHOLE `out_dir`**, which is the point — and that means
+`runs/` and `triage/`, whose reasons and rationales can name a firm, a project
+or a person, and the derived `labels_map.json`, which holds the label
+spreadsheet's own sheet names. The remote folder is exactly as private as
+`out_dir` is, so put it where the reports themselves already live. Only
+`RESULTS.md` is written to be carried anywhere.
+
+The six stages are described one at a time below, each with the cell that
+runs it alone.
 
 
 ### Scoring the log reader as well (`stages=("labels", "logs")`)
@@ -1067,6 +1108,105 @@ low`, `--window`, `--overlap`, `--images-per-call` and `--no-fallback` are all
 there — and `--reuse` re-scores the saved runs with no model, no key and no
 network at all.
 
+### Making the disagreement itself the answer (`stages=("vote",)`)
+
+The cheapest stage here, because it calls **no model at all**. Everything it
+reads is already on disk: the rules' labels and their confidences, the vision
+labels and theirs, and the review's labels from the label runs where a report
+has one. So it costs nothing, and it can be re-run after every change to the
+arithmetic.
+
+Run files written by 5.22.0 and later carry `rules_confidence` — planlens' own
+per-page confidence — beside the labels, and those are used as they stand. A
+run file written earlier has the labels and no confidence, so planlens is
+asked again for that report; the rules are deterministic, so the answer is the
+one that produced the saved labels. Where the PDF is not to hand the saved
+labels stand with no confidence, and the `confidence` policy simply has
+nothing to weigh on that report.
+
+```python
+results = score_on_cluster(
+    reports_dir  = "/Volumes/<your volume>/reports",
+    manifest     = "/Volumes/<your volume>/report_ingest/MANIFEST.md",
+    labels_xlsx  = "/Volumes/<your volume>/report_ingest/trial_pages_working_r2.xlsx",
+    oos_labels   = "/Volumes/<your volume>/report_ingest/oos_labels.json",
+    di_dir       = "/Volumes/<your volume>/report_di",
+    out_dir      = "/tmp/report_ingest_522",
+    sharepoint   = fh_sp_client,
+    prompter     = fh_prompter,             # required, and never called by this stage
+    stages       = ("vote",),
+    sets         = ("insample", "oos_open", "oos_blind"),
+    vision_dirs  = ["/tmp/report_ingest_521_sheet/vision"],   # default: this run's own vision/
+    review_dir   = "/tmp/report_ingest_520/runs",             # default: this run's own runs/
+)
+```
+
+**Why.** The corpus run of 2026-09-20 did not say one voter is better. It said
+they are **complementary by label class**: the rules own the structural labels
+— `appended_report` (494 in-sample pages, which vision never once emitted),
+`other` (216, the same), `calculation` (1,009, of which vision missed 41 %) —
+and vision owns the visual ones, beating the rules outright on `plan`,
+`profile`, `photos`, `cover`, `toc` and `figure` recall. Overall: rules 0.908
+in sample and 0.767 honest blind, rules plus the review 0.916 / 0.850, vision
+in sheet mode at $0.05 a report 0.655 / 0.867. So the question is not which to
+keep. It is what a page they split on is worth looking at.
+
+`RESULTS.md` gains a `# Vote` section in five parts:
+
+1. **Agreement, and what it is worth.** How often the two voters agree, over
+   every page they both covered — the number a production run can compute for
+   itself, with no hand labels — and then, over the hand-labelled pages, how
+   right they are when they agree against when they do not. That is the
+   confidence claim. A page the vision pass left unresolved counts as `other`
+   and therefore as a disagreement, which is the honest reading: a page nothing
+   could answer for is exactly the page that wants a second look.
+2. **Per-label trust**, learned on the **in-sample reports only**. For each
+   class the RULES put a page in, which voter was right more often on the pages
+   they split on. Keyed by the rules' label because that is what a production
+   run has before it knows the answer. A tie goes to vision, and so does a
+   class the in-sample pages never split on, so `believe rules` always means
+   the rules were strictly better on pages somebody has checked. The
+   out-of-sample sets are SCORED with this table and never learned on; the
+   blind set never is under any circumstance, and the file says so.
+3. **Combined labels under three policies**, each scored by the same scorer
+   against the same hand labels, beside `rules`, `vision` and `+review`:
+   - **`trust`** — on a disagreement, believe whoever the in-sample table
+     favours for the rules' label class; vision where it says nothing.
+   - **`structural`** — vision everywhere except `appended_report`, `other`,
+     `calculation` and `lab_test`, which the rules own because they are decided
+     by where a page SITS in the document rather than by what it looks like.
+     It learns nothing, which makes it the policy to beat.
+   - **`confidence`** — whoever said it more confidently (planlens' own rule
+     confidence against the vision pass's), ties to the rules.
+
+   Read the out-of-sample rows: `trust` is scored in sample with a table
+   learned on those very pages, so its in-sample figure is a ceiling rather
+   than a result. `structural` and `confidence` are honest everywhere.
+4. **The disagreement set.** How many pages per set would go to a targeted
+   review, what fraction that is, and the accuracy that review would need **on
+   those pages alone** for the whole set to clear the 0.98 gate. `>1.000` means
+   the gate is out of reach even with a perfect review, because the pages the
+   two voters agree on already carry more error than the gate allows — which is
+   a result about the agreed pages, not about the review.
+5. **Per report**, for the sets that are not blind.
+
+`vote/<ID>.json` holds every page the voters split on: the page number, what
+each voter said, its confidence, the hand label where there is one, and the
+label each policy chose. Page numbers and labels only, so unlike `runs/`,
+`triage/` and `vision/` these files carry nothing that could name anyone — but
+they stay on the cluster with the rest all the same.
+
+**Give it the vision runs you mean.** `vision_dirs` takes one or more folders
+and the first that holds a report wins, so the vote can be run over an older
+mode's output without re-running it; the default is this run's own
+`out_dir/vision`. The stage refuses to start if it finds no vision run at all,
+and says which folders it looked in. `review_dir` is the same idea for the
+label runs, and the review is simply absent as a voter where it is not there.
+
+Locally, `module_work/report_ingest_harness/measure_wp6_vote.py` is the twin:
+it reads the WP5 and WP1b runs the development engine left behind and prints
+the same tables, with `--vision-dir` and `--append`.
+
 Bring back **`RESULTS.md`** from whatever `out_dir` was. That is the whole report,
 and it carries IDs, labels, counts and rates only. The per-report runs and the
 triage profiles stay on the cluster in `runs/` and `triage/` unless you move
@@ -1082,6 +1222,10 @@ Notes that matter:
   call skips any report that already has one. A detached notebook costs the
   reports that had not finished, not the ones that had. Pass `redo=True` to
   start over, or delete one file to redo one report.
+- **It is mirrored somewhere durable**, if you pass `sharepoint=` or
+  `durable_dir=`. Every run file is copied as it is written and a wiped
+  `out_dir` is refilled from the mirror at the start. See "Where the output
+  goes" above; a mirror failure warns and never stops the run.
 - **Start small.** `max_reports=2` on the first run proves the path end to end
   for the price of two reports.
 - **A report the folder does not have is named and skipped**, once, before
@@ -1271,6 +1415,16 @@ wrong), and the WP4 table's own arithmetic — including the one that matters:
 a reader which answers nothing prints a recall of zero rather than an accuracy
 of ninety. Its corpus-dependent tests skip cleanly on a machine without the
 private data.
+
+The mirror is tested against a fake file manager holding its remote tree in a
+dict — uploads land in it, `ls` and `download_file` read it back — so the whole
+of both directions runs for real: what is skipped because its stamp has not
+changed, what is retried after a failure, what a restore brings back and what
+it leaves alone, and the manifest that keeps one backend from being credited
+with the other's uploads. The vote's arithmetic is tested on synthetic run
+files small enough to check on paper: the agreement fraction, the trust table
+learned in sample and applied out of it, the three policies' chosen labels page
+by page, and the accuracy a review of the disagreements would need.
 
 The app-side wiring has its own offline test,
 `funhouse_agent/deep/tests/test_report_ingest_offline.py`: that the tool and
