@@ -606,6 +606,23 @@ page count are recorded per run in the QA section.
    used exactly as given (owner's call, 2026-09-16: "run with what you
    have"). Any question added or changed is a field in `model.py` plus a line
    in the reader prompt.
+
+   **Where the rulings go (5.24.0): `report_ingest/narrative_glossary.py`.**
+   The eight-report cluster run showed most of the narrative reader's misses
+   were CONVENTION rather than comprehension — null where the hand writes 0,
+   the wrong sense of a "mention" question, a hazard list with seismic shaking
+   in it — so the house rules are now data in that one file, each with a
+   STATUS. Six rules are in force and marked **DRAFT** pending this review:
+   counts of explorations the report has none of are `0` not null; `null`
+   means the report does not say; the four "mention" fields answer on whether
+   the report DISCUSSES the topic anywhere; `postName` is the city of the
+   diplomatic post; `primeAe` is the architect-engineer of record; and
+   `earthHazardsExposed` uses the listed phrases only and never includes
+   seismic shaking. Confirming one is changing its `status` to `CONFIRMED`;
+   overruling one is editing the sentence. Nothing else changes — the block
+   goes into the reader's prompt and the reader answers under it. Field names
+   stay verbatim, and `unknown_fields()` plus its test forbid a rule keyed to
+   a name the schemas do not carry.
 2. Not blocking: DI into `raw/di/` for R38, the scanned pages of R03 and
    R33, and the unreliable-text pages of R02, R31 and R32 (58 pages in R32
    alone read as confident nonsense without it); a fresh export of R17's

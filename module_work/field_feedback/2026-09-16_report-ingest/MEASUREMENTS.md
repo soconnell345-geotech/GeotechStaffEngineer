@@ -3854,3 +3854,149 @@ cluster and may not have survived a restart.
 Document mode (5.21.2, JPEG + splitting) is the pass that can recover
 appended_report and calculation, because it sees the dividers and the
 report's structure; R09 alone gave dividers R 0.857 (sheet 0.727).
+
+## Log-template recogniser, 2026-09-20 -- 5.24.0, no model and no network
+
+The owner's observation, 2026-09-20: two firms' logs are so standard that
+simple rules would almost always catch them, and one of the two templates has
+shifted over the years. `report_ingest/log_templates.py` is the generic
+machinery; the FINGERPRINTS are data in `raw/truth/templates.json`, which is
+gitignored and names the firms. **Families are letters below and nothing here
+names a firm, a site or a form's own words** -- the evidence column prints
+which GROUP of phrases matched and how many, never the phrases.
+
+Five fingerprints over two families: family A has three forms (an imperial
+boring log, its metric twin, a test-pit log -- one gINT report name each) and
+family B has two (a 2008 data template still in use in 2023, and a 2021 gINT
+library). Family B is the one the owner said had drifted.
+
+The threshold is **0.65**. Every log a fingerprint describes scores 0.97 or
+better because the footer stamp is there and the footer is half the score; the
+one page off the logs that any fingerprint reached scored 0.59 (a laboratory
+sheet from the same gINT project, carrying the title block's words and none of
+the footer). The line is drawn between the two, nearer the false one: a page
+whose footer did not survive into text is not a page to claim on the title
+block alone.
+
+```
+5 fingerprint(s), 15 truthed log(s)
+30 non-log page(s) drawn with seed 20260920
+threshold 0.65; family names are letters here and the evidence names its GROUP and not the form's own words -- both live only in the private fingerprint file
+log         want       got          conf  margin  cols  evidence
+R02_p123    family A   family A     1.00    0.91     6  footer 1, title 5, columns 8
+R03_p135    family A   family A     1.00    0.91     6  footer 1, title 5, columns 8
+R04_p59     family A   family A     1.00    0.89     4  footer 1, title 5, columns 7
+R06_p51     -          -            0.00    0.00     0
+R07_p30     family B   family B     0.97    0.80     5  footer 1, title 6, columns 6
+R13_p45     -          -            0.00    0.00     0
+R15_p46     family B   family B     0.97    0.80     5  footer 1, title 6, columns 6
+R21_p96     family A   family A     1.00    0.89     7  footer 1, title 5, columns 9
+R25_p19     -          -            0.00    0.00     0
+R28_p57     family B   family B     0.97    0.80     5  footer 1, title 6, columns 6
+R30_p65     family A   family A     0.98    0.86     6  footer 1, title 5, columns 8
+R31_p278    family B   family B     0.97    0.83     5  footer 1, title 6, columns 6
+R34_p49     family A   family A     1.00    0.91     7  footer 1, title 5, columns 9
+R36_p38     -          -            0.00    0.00     0
+R37_p26     -          -            0.00    0.00     0
+
+Recognition on the hand-truthed logs
+family        logs        recall       precision
+family A         6      100% 6/6        100% 6/6
+family B         4      100% 4/4        100% 4/4
+no template      5             -        100% 5/5
+
+Pages the hand says are NOT logs: 30 drawn, 0 claimed by a template
+
+The grid's floor, scored against the hand truth, on the 10 log(s) a template claimed
+metric           no column map         with it
+n_value             100% 28/28      100% 28/28
+blows               100% 28/28      100% 28/28
+sample_depth         95% 42/44       95% 42/44
+layer_top            90% 35/39       90% 35/39
+uscs                   6% 1/17         6% 1/17
+water                  0% 0/11         0% 0/11
+recovery             45% 18/40       65% 26/40
+index                 26% 6/23       48% 11/23
+fields               77% 62/81       77% 62/81
+overall            71% 220/311     75% 233/311
+
+Per log, overall floor score
+log         family             no map      with map
+R02_p123    family A          50% 4/8       50% 4/8
+R03_p135    family A          56% 5/9       56% 5/9
+R04_p59     family A         57% 8/14      57% 8/14
+R07_p30     family B        78% 50/64     81% 52/64
+R15_p46     family B        73% 47/64     73% 47/64
+R21_p96     family A        59% 13/22     59% 13/22
+R28_p57     family B        71% 42/59     90% 53/59
+R30_p65     family A        68% 15/22     68% 15/22
+R31_p278    family B        93% 13/14     93% 13/14
+R34_p49     family A        66% 23/35     66% 23/35
+```
+
+**Recognition is solved on this corpus**: 10 of 10 logs claimed for the right
+family, 5 of 5 logs on undescribed forms left alone, 0 of 30 non-log pages
+claimed. The footer stamp is what does it -- it is printed by the template and
+by nothing else -- and every match scored 0.97 or better.
+
+**The column map is worth +13 values** on the ten logs it claimed (220/311 to
+233/311), all of it in `recovery` (18/40 to 26/40) and `index` (6/23 to
+11/23): the two columns a form that stacks its sampling data under one heading
+gives the general header vocabulary no way to name. R28_p57 alone goes 42/59
+to 53/59.
+
+### What the map was worth BEFORE the floor could read those columns
+
+Worth recording, because the first measurement of this build was **+1 value**
+and it would have read as a failure of the recogniser rather than of the cell
+readers. The fingerprint named the columns correctly from the first run; what
+the floor could not do was PARSE what they print. Four generic readers went
+into `log_floor` in the same train:
+
+1. a blow record printed with `+` separators (`2+1+2`), gINT's own spelling
+   and as common in this corpus as the hyphen;
+2. a blow record printed one increment to a line, each in its own cell, which
+   is what BOTH families' forms do (a lone number is still left alone: one
+   number in a blows column is as likely to be an N value);
+3. a cell that names its own result -- `MC = 10.1%`, `LL = 38`,
+   `% Passing #200 = 68.7`, `REC=29cm, 56%` -- read by its label, and only in
+   a column of the index / tests / recovery family;
+4. a sample named and typed in one cell (`S-1, SPT`, `GR-3, GRAB`).
+
+The grid's floor over all fifteen truthed logs, before any model:
+
+```
+                       5.23.0    + cell readers   + fingerprints
+n_value                  8/49          48/49            48/49
+blows                   13/58          56/58            56/58
+sample_depth            72/75          72/75            72/75
+layer_top               56/70          56/70            56/70
+uscs                     9/35           9/35             9/35
+water                    0/17           0/17             0/17
+recovery                16/47          18/47            26/47
+index                   13/48          18/48            23/48
+fields                  96/122         96/122           96/122
+overall                283/521        373/521          386/521
+```
+
+No log loses ground at either step. Per log, 5.23.0 to the end state:
+R02 4/8 → 4/8, R03 5/9 → 5/9, R04 8/14 → 8/14, R06 19/30 → 22/30, R07 34/64 →
+52/64, R13 28/76 → 52/76, R15 31/64 → 47/64, R21 7/22 → 13/22, R25 0/14 →
+0/14, R28 35/59 → 53/59, R30 7/22 → 15/22, R31 13/14 → 13/14, R34 13/35 →
+23/35, R36 42/44 → 42/44, R37 37/46 → 37/46.
+
+The reading: the recogniser is a cheap and apparently reliable voter, and its
+value to the RECORD is bounded by what the floor can do with a named column.
+`uscs` (9/35) and `water` (0/17) are the two metrics the floor still cannot
+reach at all and are where the model is still doing all the work.
+
+### The narrative levers of 5.24.0 are UNMEASURED
+
+The front-matter union, the DRAFT conventions glossary, per-question
+retrieval, the deterministic exploration answers, the quote gate and the
+lenient scoring view all ship in 5.24.0 and **none of them has been run
+against the tier that will do the work**. The standing numbers are still run
+7's: recall 64 % (151/235), precision 74 % (147/200) over eight reports. The
+next cluster run with `stages=("narrative",)` is what says whether the levers
+move them; `measure_wp4_narrative.py --front-pages --lenient` is the
+development checkpoint and a checkpoint is never a result.

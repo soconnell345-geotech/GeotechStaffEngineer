@@ -86,6 +86,18 @@ def full_reading(**overrides) -> NarrativeReading:
 
 
 def read(doc, engine, **kwargs):
+    """The reader over the NARRATIVE PAGES ALONE.
+
+    ``front_pages=0`` and ``roles=[]`` turn off the front-matter union that
+    5.24.0 added, so every test in this file that is about the brief, the
+    merge or a refusal is asking about one fixed set of pages. The union
+    itself has a class of its own (:class:`TestTheInputPageSet`), and
+    :class:`TestTheLevers` runs the reader with its real defaults.
+    """
+    kwargs.setdefault("front_pages", 0)
+    kwargs.setdefault("roles", [])
+    kwargs.setdefault("retrieve", False)
+    kwargs.setdefault("pictures", False)
     return read_narrative(doc, list(NARRATIVE_PAGES), engine,
                           body_pages=list(BODY_PAGES), report_id="SYN",
                           **kwargs)

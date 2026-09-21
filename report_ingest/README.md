@@ -150,6 +150,73 @@ has pages left, ONE more on the reader's own unsettled list when the budget
 allows — the rows in question again, magnified through the page's ruler to the
 depth the item names — and six at the most.
 
+## The log-template recogniser (`log_templates.py`)
+
+A firm prints its logs on one form, and the form says so: the gINT report name
+in the footer, the firm's own field labels in the title block, its own column
+headings. `recognise(doc, page, grid=None)` compares a page's located text
+against a list of FINGERPRINTS with rapidfuzz and returns the best one above a
+threshold — the family, a confidence 0 to 1, the margin over the best
+fingerprint of a *different* family, and the list of what matched. No model
+call, no render; the cost is milliseconds.
+
+It is worth having twice over.
+
+- **As a voter.** `ledger_note(match)` is the line
+  `template <family> (0.92)`, which goes beside the rules' label and the
+  vision label on the page's row — strong evidence that the page is a boring
+  log of that firm, and evidence no picture of the page and no page-role rule
+  carries. `annotate_ledger` puts it on planlens' page ledger for the label
+  review.
+- **As a key to the grid.** `log_grid` names a column by classifying its
+  printed header, and a form that prints `DATA` over a stacked sample id,
+  sampler code, blow record and recovery gives that vocabulary nothing to
+  classify. A fingerprint's `column_map` says what that column carries;
+  `seed_from_grid(grid, pages, template=match)` puts those names on it and the
+  floor reads the values. The method stays `grid` — the value was still placed
+  by geometry — and the note names the template.
+
+**The fingerprints are DATA and they are not in this repository.** This repo is
+public and a fingerprint names a firm. The file travels with the private truth
+folder as `<truth_dir>/../templates.json`, or is passed as `templates_path=`;
+`score_on_cluster(..., templates_path=…)` puts it in force for the whole log
+stage, and with no such file anywhere every entry point here is a no-op and
+nothing downstream changes. `templates.json.EXAMPLE` ships beside this module
+with three INVENTED firms and documents the shape:
+
+```json
+{
+  "name": "Northgate Soils gINT 2014",
+  "family": "Northgate Soils",
+  "years": "2012-2018",
+  "title_phrases": ["RECORD OF TEST BORING", "Northgate Representative:"],
+  "column_headers": ["DEPTH (ft)", "SAMPLING DATA", "LABORATORY"],
+  "footer_phrases": ["NORTHGATE STANDARD LOG 2014_03_11.GDT"],
+  "layout": {"columns": 8, "ruler_side": "left", "units": "ft"},
+  "column_map": {
+    "sample_id": "SAMPLING DATA", "sample_type": "SAMPLING DATA",
+    "blows": "SAMPLING DATA", "recovery": "SAMPLING DATA",
+    "index": "LABORATORY"
+  }
+}
+```
+
+Several fingerprints share one `family`, which is how a form that drifted over
+the years is described: one fingerprint per era, one family for all of them,
+and the family is what the voter is told. The footer group is worth half the
+score, the title block three tenths and the column headings two tenths, over
+the groups a fingerprint actually declares — so give every fingerprint a footer
+phrase or at least three title phrases, or it will claim pages it should not.
+
+Measured locally, 2026-09-20 (no model, no network): on the fifteen
+hand-truthed logs the recogniser is **100 % recall and 100 % precision on both
+families** and claims none of the five logs printed on forms no fingerprint
+describes; on thirty pages the hand says are not logs it claims **none**. The
+column map is worth **+13 values** on the ten logs it claimed (the floor
+scoring 220/311 without it and 233/311 with it), all of it in `recovery` and
+`index` — the two columns a stacked form gives the general vocabulary no way to
+name.
+
 ## The lab reader (`lab_reader.py`)
 
 `read_lab_sheet(doc, item_pages, engine, budget=4, hint_kind=None)` turns one
@@ -438,6 +505,81 @@ answered in the same call under the same rules, with an empty answer where the
 narrative does not say. They come back in `record.narrative.extra_answers` and
 in the summary page.
 
+### The accuracy levers (5.24.0)
+
+The first full cluster run put this reader at 64 % recall and 74 % precision
+over eight reports, and the per-question table said most of the loss was not
+comprehension. Five levers follow from it, all of them default-on and each of
+them switchable.
+
+**1. The front matter always goes in.** `reading_pages(doc, narrative_pages)`
+is the input set: every page labelled `cover`, `letter`, `toc` or `narrative`,
+plus the first `front_pages=50` pages of the report whatever they were
+labelled, deduplicated and in page order, capped by a token budget the FRONT
+wins. `primeContractor`, `primeAe`, `postName` and `projectNumber` are answered
+on the transmittal letter and the cover, and neither is a "narrative" page: on
+the eight-report run `postName` was missed on three of the four reports that
+have one. A page in the set with less than 120 characters of text — a scanned
+letter — is sent as a PICTURE instead, up to eight of them.
+
+**2. A glossary and conventions block in the prompt**, held as DATA in
+`narrative_glossary.py` so the owner edits a file rather than a prompt string.
+Six rules, every one of them marked **DRAFT and awaiting the owner's
+confirmation**:
+
+1. A count of explorations the report says it did NOT do is `0`, not null.
+2. `null` means THE REPORT DOES NOT SAY — never zero, never not-applicable.
+3. The four "mention" questions are about whether the report DISCUSSES the
+   topic anywhere, not whether the work was done or the finding was positive.
+4. `postName` is the CITY of the diplomatic post and nothing else.
+5. `primeAe` is the architect-engineer of record, not the geotechnical firm
+   and not the construction contractor.
+6. `earthHazardsExposed` uses the listed phrases and no others, and NEVER
+   includes seismic shaking.
+
+Each carries the evidence it came from, so the owner can argue with the
+reading rather than only with the rule. `REPORT_INGEST_PLAN` §7 — the owner's
+standing review of the two query schemas — now points here as the place every
+ruling goes.
+
+**3. Per-question retrieval over the whole report.** Seven questions are as
+often answered in an appendix table as in the prose (`siteClass`,
+`asceSevenVersion`, `seismicCodeUsed`, `soilCorrosion`, `bearingCapacity`,
+`liquefactionPotential`, `reportDate`). `retrieval_passages(doc)` searches
+EVERY page for each one's key phrases — exact first, planlens' fuzzy search
+where exact found nothing, because a fuzzy pass costs a full scan per phrase —
+and the passages travel with the brief carrying their page numbers, which are
+then citable.
+
+**4. Deterministic answers where the data exists.** Pass
+`investigations=record.investigations` and `boringCount`, `testPitCount`,
+`cptCount`, `boringDictionary` and `testPitDictionary` come from the logs the
+labeller found rather than from the prose; the narrative's own answer stays in
+`stated_counts` and any difference is an `unresolved` row the reconciler raises
+again. A ZERO does not overrule a stated number — no cone logs were read is not
+the same as no cones were pushed — but it is stored where the narrative said
+nothing at all, which is convention 1 above.
+
+**5. A quote gate.** Every citation names a page and repeats that page's own
+words, and both halves are checkable. An answer none of whose quotes can be
+found on the page it cites (fuzzy, ≥ 85) drops to confidence **0.3** and is
+listed in `unresolved`; it is not deleted, because a right answer with a bad
+quote is still a right answer. An answer with no citation at all keeps its
+confidence and is flagged separately. `result.confidence` is the map.
+
+**6. And the scorer reports both views.** `narrative_scoring` gains a LENIENT
+view of the four long free-text fields (`recommendedFoundations`,
+`structureList`, `bearingCapacity`, `strata`): an item matches at a partial
+ratio of 70, or on a number and its unit in common. Strict and lenient print
+side by side and neither is "the" score — the gap between them says whether the
+reader found the thing and worded it differently or did not find it. The
+per-question table gains a **why** column naming the dominant kind of miss, and
+`convention` there means a house rule rather than a reading failure.
+
+The levers are **unmeasured until the next cluster run**: the numbers above are
+the 5.23.0 baseline, and the development engine is a checkpoint rather than a
+result. `measure_wp4_narrative.py` gains `--front-pages` and `--lenient`.
+
 ## The reconciler (`reconciler.py`)
 
 `reconcile(record, labels=…, items=…, no_text_pages=…, di_pages=…,
@@ -678,7 +820,7 @@ pages are read from their own text layer alone.
 
 ```python
 # 1. From PyPI through Nexus. planlens 0.6.0 arrives with it.
-%pip install "geotech-staff-engineer==5.23.0"
+%pip install "geotech-staff-engineer==5.24.0"
 dbutils.library.restartPython()
 ```
 
@@ -1593,13 +1735,19 @@ changes until a release turns it on. It stays off until the owner's four-stage
 cluster run has measured the readers on the tier that will do the work.
 **5.23.0** puts the floor under the log and lab readers and adds the `ingest`
 stage, so the record the app would produce — and its DIGGS file — can be made
-and scored on the cluster before the flag is turned on.
+and scored on the cluster before the flag is turned on. **5.24.0** adds the
+log-template recogniser and the narrative reader's first round of accuracy
+levers, and changes no dependency: rapidfuzz, which both use, already arrives
+with planlens.
 
 - **`report_ingest*` is in `[tool.setuptools.packages.find]`.** Until that line
   landed, a wheel built from this repo did **not** contain this package, and
   the failure would have appeared on the cluster as an import error rather
   than at build time. Check it after any edit to that list:
   `python -m build --wheel` and look for `report_ingest/` in the wheel.
+- **`templates.json.EXAMPLE` is in `[tool.setuptools.package-data]`** under
+  `report_ingest`, so the example fingerprint file ships in the wheel. The
+  REAL fingerprints are never in this repository.
 - **`report_ingest` is in pytest's `testpaths`**, so this suite runs in the
   release gate. The WP0/WP1 harness under `module_work/` is dev-only and is
   deliberately not.

@@ -343,6 +343,11 @@ class LogReadResult:
     reconciled: int = 0
     #: Whether the follow-up call on the unsettled list was made.
     follow_up: bool = False
+    #: The printed FORM this log was recognised as, when a fingerprint file
+    #: was in force and one matched -- a
+    #: :class:`report_ingest.log_templates.TemplateMatch`. ``None`` is the
+    #: normal state and means nothing about the log.
+    template: Optional[Any] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -364,6 +369,8 @@ class LogReadResult:
             "added": [dict(a) for a in self.added],
             "reconciled": self.reconciled,
             "follow_up": self.follow_up,
+            "template": (self.template.to_dict()
+                         if self.template is not None else None),
         }
 
 
@@ -951,7 +958,8 @@ def _zooms_for(doc: Any, grid: Any, pages: Sequence[int], unsettled: Any,
 def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
              budget: int = MAX_MODEL_CALLS, grid: Any = None,
              ledger: Optional[Sequence[str]] = None, item_title: str = "",
-             report_id: str = "", dpi: float = PAGE_DPI) -> LogReadResult:
+             report_id: str = "", dpi: float = PAGE_DPI,
+             template: Any = None) -> LogReadResult:
     """Read ONE exploration log and return it as an :class:`Investigation`.
 
     ``item_pages`` are the pages of one log, continuation sheets included --
@@ -961,6 +969,12 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
 
     Pass ``grid`` when ``log_grid`` has already been run over these pages (a
     scorer runs it to measure the grid alone), otherwise it is run here.
+
+    ``template`` is a recognised printed FORM
+    (:func:`report_ingest.log_templates.recognise`). Left ``None`` it is
+    looked for against whatever fingerprints this process has in force,
+    which is normally none -- so by default nothing happens and nothing
+    changes.
     """
     pages = [int(p) for p in item_pages]
     if not pages:
@@ -970,6 +984,10 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
     if grid is None:
         from planlens.document.loggrid import log_grid
         grid = log_grid(doc, pages)
+    if template is None:
+        from report_ingest.log_templates import recognise
+
+        template = recognise(doc, pages[0], grid=grid)
     if ledger is None:
         try:
             from planlens.document.roles import page_ledger
@@ -1002,7 +1020,7 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
 
     # THE FLOOR: the grid's own record, built before any call is spent, and
     # shown to the model as the record it starts from.
-    floor = seed_from_grid(grid, pages, report_id)
+    floor = seed_from_grid(grid, pages, report_id, template=template)
     brief = _brief(grid, pages, ledger, item_title, report_id, seed=floor)
     messages: List[Dict[str, Any]] = [
         user(text_block(brief),
@@ -1091,4 +1109,5 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
         kept=merge_log.kept,
         added=merge_log.added,
         reconciled=merge_log.reconciled,
-        follow_up=follow_up)
+        follow_up=follow_up,
+        template=template)

@@ -71,8 +71,108 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-09-20) — 5.23.0 ON MASTER (the readers' floor + the `ingest` stage) with planlens 0.6.0
+## CURRENT WORKING STATE (2026-09-20) — 5.24.0 ON MASTER (the log-template recogniser + the narrative levers) with planlens 0.6.0
 
+- **app 5.24.0** (2026-09-20, on master, NOT yet tagged or released) —
+  **a log knows what FORM it was printed on, and the narrative reader is
+  shown the pages that answer the questions it was failing.** No dependency
+  change; pure Python inside `report_ingest`, no new model call anywhere,
+  and one new data file in the wheel
+  (`report_ingest/templates.json.EXAMPLE`).
+  **(1) The log-template recogniser** (`report_ingest/log_templates.py`).
+  The owner's observation, 2026-09-20: two firms' logs are so standard that
+  simple rules would almost always catch them, and one of the two templates
+  has shifted over the years. The SHIPPED code is generic machinery; the
+  FINGERPRINTS are DATA in a private JSON file that travels with the truth
+  folder (`<truth_dir>/../templates.json`, or `templates_path=` on
+  `score_on_cluster`) and is **never committed**, because this repo is
+  public and a fingerprint names a firm. `recognise(doc, page, grid=None)`
+  scores a page's located text against every fingerprint with rapidfuzz —
+  the footer stamp worth half the score, the title block three tenths, the
+  column headings two tenths, over the groups a fingerprint declares — and
+  returns the family, a confidence 0-1, the margin over the best fingerprint
+  of a DIFFERENT family (a sibling scoring as well is the form drifting, not
+  a doubt about whose form it is) and the list of what matched. **Two
+  uses:** a VOTER (`template <family> (0.92)` beside the rules' label and
+  the vision label, and on the label review's page ledger via
+  `annotate_ledger`) and a KEY TO THE GRID (a fingerprint's `column_map`
+  names the columns `log_grid` cannot — a form that stacks the sample id,
+  the sampler code, the blow record and the recovery under one heading of
+  `DATA` gives the general header vocabulary nothing to classify — and
+  `log_floor.seed_from_grid(..., template=match)` then reads them, keeping
+  `method="grid"` because the value was still placed by geometry, with the
+  template named in the note and on the investigation's own provenance).
+  With no fingerprint file anywhere every entry point is a **no-op**.
+  **Measured locally** (no model, no network;
+  `module_work/report_ingest_harness/measure_templates.py`): **100 % recall
+  and 100 % precision on both families** over the fifteen hand-truthed logs,
+  none of the five logs printed on undescribed forms claimed, and **no false
+  positive on thirty pages the hand says are not logs** — the threshold sits
+  at 0.65, between the lowest true match at 0.97 and the one near miss at
+  0.59 (a laboratory sheet from the same gINT project, carrying the title
+  block's words and none of the footer).
+  **And the floor now reads what those columns print.** Four generic cell
+  readers went into `log_floor` in the same train, because the column map was
+  worth +1 value without them: a blow record printed with `+` separators
+  (`2+1+2`, gINT's own spelling), a blow record printed one increment to a
+  line each in its own cell (which both of the corpus's commonest forms do),
+  a cell that names its own result (`MC = 12.0%`, `LL = 38`,
+  `REC=29cm, 64%`), and a sample named and typed in one cell (`S-1, SPT`).
+  The grid's floor over the fifteen truthed logs goes **283/521 → 373/521
+  with no template at all, and 386/521 with the fingerprints** (`n_value`
+  8/49 → 48/49, `blows` 13/58 → 56/58, `recovery` 16/47 → 26/47, `index`
+  13/48 → 23/48); **no log loses ground.**
+  **(2) The narrative reader's first round of accuracy levers**, from the
+  per-question table of the eight-report run (recall 64 %, precision 74 %),
+  all default-on and each switchable. **(a) The front matter always goes
+  in**: `reading_pages` is the union of every page labelled cover, letter,
+  contents or narrative with the first `front_pages=50` pages of the report
+  whatever they were labelled, deduplicated, in page order, capped by a
+  token budget the FRONT wins — `postName`, `primeAe`, `primeContractor` and
+  `projectNumber` are answered on the transmittal letter and the cover and
+  neither is a "narrative" page, which is why `postName` was missed on three
+  of the four reports that have one; a page in the set with under 120
+  characters of text is sent as a PICTURE instead, up to eight.
+  **(b) A glossary and conventions block** (`narrative_glossary.py`) held as
+  DATA the owner edits rather than prose inside a prompt, carrying six rules
+  **marked DRAFT and awaiting the owner's confirmation**: counts of
+  explorations the report says it did not do are `0` not null; `null` means
+  the report does not say; the four "mention" questions answer on whether the
+  report DISCUSSES the topic anywhere; `postName` is the city of the
+  diplomatic post; `primeAe` is the architect-engineer of record; and
+  `earthHazardsExposed` uses the listed phrases only and NEVER includes
+  seismic shaking. Each rule records the evidence it came from.
+  **(c) Per-question retrieval over the WHOLE report** for the seven
+  questions as often answered in an appendix table as in prose (siteClass,
+  asceSevenVersion, seismicCodeUsed, soilCorrosion, bearingCapacity,
+  liquefactionPotential, reportDate) — exact search first and planlens'
+  fuzzy search only where exact found nothing, because a fuzzy pass costs a
+  full scan per phrase; the passages travel with the brief carrying their
+  page numbers, and those pages become citable. **(d) Deterministic
+  answers**: pass `investigations=` and boringCount, testPitCount, cptCount,
+  boringDictionary and testPitDictionary come from the logs the labeller
+  found, every difference recorded as an `unresolved` row the reconciler
+  raises again — but a ZERO never overrules a stated number, because no cone
+  logs read is not the same as no cones pushed. **(e) A quote gate**: an
+  answer none of whose citation quotes can be found on the page it cites
+  (fuzzy ≥ 85) drops to confidence **0.3** and is listed, never deleted; one
+  with no citation at all keeps its confidence and is flagged separately;
+  `result.confidence` is the map. **(f) Scoring** gains a LENIENT view of the
+  four long free-text fields (recommendedFoundations, structureList,
+  bearingCapacity, strata — partial ratio 70, or a number and its unit in
+  common) printed BESIDE the strict one, neither being "the" score, and the
+  per-question table gains a **why** column whose `convention` value means a
+  house rule rather than a reading failure. `measure_wp4_narrative.py` gains
+  `--front-pages` and `--lenient`.
+  **THE NARRATIVE LEVERS ARE UNMEASURED** — nothing in (2) has been run
+  against the tier that will do the work, and the next cluster run is what
+  says whether they move 64/74. The template numbers ARE measured, because
+  that half calls no model.
+  Suites: `report_ingest` **833**, harness **229**, docs-currency green.
+  **Next:** the owner confirms or overrules the six DRAFT conventions
+  (`REPORT_INGEST_PLAN` §7 now points at `narrative_glossary.py` as where
+  the rulings go), then `stages=("narrative",)` on the cluster. 5.23.0
+  follows.
 - **app 5.23.0** (2026-09-20, on master, NOT yet tagged or released) —
   **the readers vote, and the whole pipeline runs on the cluster.** No
   dependency change; pure Python inside `report_ingest`, and no new model
@@ -1283,7 +1383,20 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | drawing_ir → `planlens.ir` + `planlens.document` + `planlens.tools` | (planlens, 1,307 tests at 0.6.0) | HISTORICAL PATH. The drawing IR (DXF / vector-PDF / raster ingest, slice queries, leader / dimension / title-block / bubble / cloud finders, `render_region`) is `planlens.ir`; since planlens 0.3.0 the WHOLE-DOCUMENT layer (`planlens.document`: page map + structure, located text, tables, review markups, hidden CAD text, Azure DI text source) and the LLM tool layer (`planlens.tools`) sit beside it. See "Document review & drawing geometry (planlens)" below. |
 | fem2d | 353 | 2D plane-strain FEM (T6 default + CST/Q4/beam, 3D-principal MC return, HS, GL99 SRM, seepage, consolidation, staged construction, PLAXIS-style calc-package plots); validated vs Griffiths-Lane/Prandtl (VALIDATION.md) |
 | geo_project | 89 | Canonical Project document for staged, human-gated LE/FEM model setup (schema+validators, builders, templates, DXF/PDF/vision ingest w/ provenance quarantine, echo-back renderer) |
-| report_ingest | 777 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop; `run_folder` drives it over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels","vote","ingest"), truth_dir=…, sharepoint=fh_sp_client)` is the owner's notebook cell; `truth_dir` is ONE root holding `logs/`, `lab/` and `narrative/` so one folder is uploaded rather than three paths kept in step, and `sharepoint=`/`durable_dir=` (5.22.0, `mirror.py`) copy every run file somewhere a cluster restart cannot reach and restore a wiped `out_dir` at the start. The seventh stage is `ingest` (5.23.0): the whole graph per report into `out_dir/ingest/<ID>/` with the DIGGS file gated, a saved label run reused, and the record scored against the hand truth — the whole-pipeline score; and since 5.23.0 the log and lab readers VOTE: the grid / the tables are the first voter and the floor (`floor.py`, `log_floor.py`, `lab_floor.py`), the model may add, correct with evidence, never drop, and every split is a `disagreement` QA entry with both values and confidences. The sixth stage is `vote` (5.22.0, `vote.py`): NO model — the rules, the vision labels and the review set against each other and against the hand labels, giving the agreement rate, a per-label trust table learned in sample only, three combining policies scored beside the voters, and the accuracy a targeted review of the disagreements would need. The fifth stage is the 5.20.0 EXPERIMENT: `vision_labels.py` sends each page as a picture to GPT-4.1 on the cheap tier with structured output, scored against the same hand labels by the same scorer as the rules and the review — one call a page, one a six-page contact sheet, or (5.21.0) one per window of 36 stamped full-size pages with contact sheets of the WHOLE report beside them (`vision_mode="document"`), which is capped by the endpoint's measured 50-image-per-request limit rather than by its context window. `report_ingest/README.md`, plan in `module_work/REPORT_INGEST_PLAN.md` |
+| report_ingest | 833 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop; `run_folder` drives it over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","narrative","vision_labels","vote","ingest"), truth_dir=…, sharepoint=fh_sp_client)` is the owner's notebook cell; `truth_dir` is ONE root holding `logs/`, `lab/` and `narrative/` so one folder is uploaded rather than three paths kept in step, and `sharepoint=`/`durable_dir=` (5.22.0, `mirror.py`) copy every run file somewhere a cluster restart cannot reach and restore a wiped `out_dir` at the start. The seventh stage is `ingest` (5.23.0): the whole graph per report into `out_dir/ingest/<ID>/` with the DIGGS file gated, a saved label run reused, and the record scored against the hand truth — the whole-pipeline score; Since 5.24.0 a log is also matched against the printed FORM it came off
+(`log_templates.py`): a page's footer stamp, title-block labels and column
+headings are scored against fingerprints kept in a PRIVATE file that travels
+with the truth folder and is never committed (`templates.json.EXAMPLE` ships
+with invented firms), giving a `template <family> (0.92)` line for the vote
+and a `column_map` that names the columns `log_grid` cannot — measured 100 %
+recall and precision on both corpus families with no false positive off the
+logs. The narrative reader gained its first accuracy levers in the same
+release: the front matter and the front fifty pages always in, a DRAFT
+conventions glossary the owner edits (`narrative_glossary.py`), per-question
+retrieval over the whole report, the five exploration answers taken from the
+logs, a quote gate that downgrades an answer whose quote is not on the page it
+cites, and a lenient scoring view of the four free-text fields printed beside
+the strict one. And since 5.23.0 the log and lab readers VOTE: the grid / the tables are the first voter and the floor (`floor.py`, `log_floor.py`, `lab_floor.py`), the model may add, correct with evidence, never drop, and every split is a `disagreement` QA entry with both values and confidences. The sixth stage is `vote` (5.22.0, `vote.py`): NO model — the rules, the vision labels and the review set against each other and against the hand labels, giving the agreement rate, a per-label trust table learned in sample only, three combining policies scored beside the voters, and the accuracy a targeted review of the disagreements would need. The fifth stage is the 5.20.0 EXPERIMENT: `vision_labels.py` sends each page as a picture to GPT-4.1 on the cheap tier with structured output, scored against the same hand labels by the same scorer as the rules and the review — one call a page, one a six-page contact sheet, or (5.21.0) one per window of 36 stamped full-size pages with contact sheets of the WHOLE report beside them (`vision_mode="document"`), which is capped by the endpoint's measured 50-image-per-request limit rather than by its context window. `report_ingest/README.md`, plan in `module_work/REPORT_INGEST_PLAN.md` |
 
 Other components: geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions + DM7 figure catalogs, 3529 tests), foundry_test_harness (142 tests), funhouse_agent (106 + 149 + 163 + 25 + 31 + 5 = 479 tests)
 

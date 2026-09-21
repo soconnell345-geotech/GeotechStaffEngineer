@@ -58,7 +58,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from report_ingest.engine import Engine, text_block, user
+from report_ingest.engine import Engine, image_block, text_block, user
 from report_ingest.model import (
     BearingValue, Citation, DOCUMENT_TYPE_VALUES, EARTH_HAZARD_VALUES,
     GENERAL_FIELDS, GeneralFacts, LIQUEFACTION_VALUES, Mention,
@@ -73,6 +73,10 @@ __all__ = [
     "MAX_CHUNK_CHARS", "MAX_QUOTE_WORDS", "count_captions",
     "counts_from_outline", "serialise_page", "normalise_site_class",
     "normalise_asce_version", "iso_date", "VOCABULARIES",
+    "FRONT_PAGES", "FRONT_LABELS", "INPUT_TOKEN_BUDGET", "QUOTE_RATIO",
+    "RETRIEVAL_PHRASES", "DEFAULT_CONFIDENCE", "UNVERIFIED_CONFIDENCE",
+    "reading_pages", "explorations_found", "retrieval_passages",
+    "picture_pages", "check_quotes", "DETERMINISTIC_FIELDS",
 ]
 
 #: The ceiling in the brief: eight model calls for one narrative. A narrative
@@ -94,6 +98,60 @@ MAX_TABLE_CHARS = 6000
 #: A citation quote is the page's own words, and twenty of them is enough to
 #: find the sentence again. Longer is cut here rather than argued about.
 MAX_QUOTE_WORDS = 20
+
+# -- lever 1: what the reader is actually given -----------------------------
+#: How much of the FRONT of a report goes in whatever the labels said about
+#: it. The identity questions -- primeContractor, primeAe, postName,
+#: projectNumber, reportDate -- are answered on the transmittal letter and the
+#: cover, and neither is a "narrative" page: on the eight-report run postName
+#: was missed on three of the four reports that have one and primeAe on three
+#: of five, because the pages that say so were never sent.
+FRONT_PAGES = 50
+#: The page roles that go in whole, wherever in the report they sit.
+FRONT_LABELS: Tuple[str, ...] = ("cover", "letter", "toc", "narrative")
+#: The ceiling on the whole input, in tokens, and the crude conversion used
+#: to apply it. The front pages win: when the set is over budget it is the
+#: LATER labelled pages that are dropped, never the letter and the cover.
+INPUT_TOKEN_BUDGET = 150_000
+CHARS_PER_TOKEN = 4
+#: A page with less text than this is sent as a PICTURE instead. A scanned
+#: letter with no text layer is exactly the page the identity fields are on.
+MIN_TEXT_CHARS = 120
+#: How many such pages may be rendered. A picture is the dearest thing in the
+#: call and the front matter is short.
+MAX_PICTURE_PAGES = 8
+PAGE_DPI = 130.0
+
+# -- lever 3: per-question retrieval over the WHOLE report ------------------
+#: The fields whose answer is as likely to sit in an appendix table as in the
+#: prose, and the phrases to look for. Searched over every page of the
+#: report, not just the pages the reader is given, and the passages that come
+#: back travel with the brief carrying their page numbers.
+RETRIEVAL_PHRASES: Dict[str, Tuple[str, ...]] = {
+    "siteClass": ("site class", "seismic site class"),
+    "asceSevenVersion": ("ASCE 7", "ASCE/SEI 7"),
+    "seismicCodeUsed": ("spectral response acceleration",
+                        "seismic design parameters", "design spectrum"),
+    "soilCorrosion": ("resistivity", "water-soluble sulfate", "corrosivity"),
+    "bearingCapacity": ("allowable bearing", "net allowable bearing "
+                                              "pressure", "bearing capacity"),
+    "liquefactionPotential": ("liquefaction",),
+    "reportDate": ("report date",),
+}
+#: How many passages one phrase may contribute, and how much room the whole
+#: retrieval block gets.
+MAX_HITS_PER_PHRASE = 4
+MAX_RETRIEVAL_CHARS = 12000
+
+# -- lever 5: the quote gate ------------------------------------------------
+#: A citation's quote must be findable on the page it cites at this partial
+#: ratio. Below it the answer is not thrown away -- it may still be right --
+#: but its confidence drops to :data:`UNVERIFIED_CONFIDENCE` and it is listed
+#: for review.
+QUOTE_RATIO = 85.0
+#: What an answer is worth when its quote was found, and when it was not.
+DEFAULT_CONFIDENCE = 0.9
+UNVERIFIED_CONFIDENCE = 0.3
 
 #: The words the reader is given, by the owner's field name. One table: the
 #: prompt prints it and the builder folds against it, so a change to a
@@ -535,6 +593,11 @@ class NarrativeReadResult:
     #: that is not in this narrative, a summary past its word limit, a
     #: disagreement between two chunks of a long narrative.
     unresolved: List[Dict[str, Any]] = field(default_factory=list)
+    #: How much each answered field is worth, 0 to 1. Every answer starts at
+    #: :data:`DEFAULT_CONFIDENCE`; one whose citation quote could not be
+    #: found on the page it cites drops to
+    #: :data:`UNVERIFIED_CONFIDENCE` and is listed in ``unresolved``.
+    confidence: Dict[str, float] = field(default_factory=dict)
     cost: Dict[str, Any] = field(default_factory=dict)
     model_calls: int = 0
     model: str = ""
@@ -560,6 +623,8 @@ class NarrativeReadResult:
             "facts": self.facts.model_dump(mode="json"),
             "answered": self.answered,
             "n_answered": len(self.answered),
+            "confidence": {k: round(float(v), 3)
+                           for k, v in self.confidence.items()},
             "unresolved": [dict(u) for u in self.unresolved],
             "cost": dict(self.cost),
             "model_calls": self.model_calls,
@@ -741,7 +806,194 @@ def serialise_page(doc: Any, page: int) -> str:
     return "\n".join(out)
 
 
-def _chunks(doc: Any, pages: Sequence[int],
+def reading_pages(doc: Any, narrative_pages: Sequence[int], *,
+                  roles: Any = None, front_pages: int = FRONT_PAGES,
+                  labels: Sequence[str] = FRONT_LABELS) -> List[int]:
+    """Which pages the narrative reader is given, in page order.
+
+    THE RULE, in one sentence: every page labelled cover, letter, contents or
+    narrative, plus the first ``front_pages`` pages of the report whatever
+    they were labelled, deduplicated and in page order.
+
+    WHY THE FRONT GOES IN WHOLE. Four of the general schema's questions --
+    who the prime contractor was, who the architect-engineer of record was,
+    which post it is, what the project number is -- are answered on the
+    transmittal letter and the cover sheet, and the page-role rules call
+    neither of those "narrative". On the eight-report run those four fields
+    were the reader's worst, and the reason was that it had never been shown
+    the pages that answer them. Fifty pages is longer than any front matter
+    in the corpus and short enough that it costs one call's worth of text.
+
+    ``roles`` is ``planlens.document.roles.page_roles`` when the caller has
+    it; otherwise it is asked for here, and a document whose roles will not
+    compute falls back to the narrative pages and the front.
+    """
+    wanted = {int(p) for p in narrative_pages}
+    if roles is None:
+        try:
+            from planlens.document.roles import page_roles
+            roles = page_roles(doc)
+        except Exception:                        # roles are an improvement,
+            roles = []                           # never a requirement
+    allowed = set(labels)
+    for role in roles or ():
+        if getattr(role, "role", "") in allowed:
+            wanted.add(int(role.page))
+    total = int(getattr(doc, "n_pages", 0) or 0)
+    wanted.update(range(min(int(front_pages), total) if total
+                        else int(front_pages)))
+    if total:
+        wanted = {p for p in wanted if 0 <= p < total}
+    return sorted(wanted)
+
+
+def _serialised(doc: Any, pages: Sequence[int]) -> Dict[int, str]:
+    """Every page's text, once, so the budget and the chunker share it."""
+    return {int(p): serialise_page(doc, int(p)) for p in pages}
+
+
+def _within_budget(pages: Sequence[int], texts: Dict[int, str],
+                   front_pages: int, max_chars: int
+                   ) -> Tuple[List[int], List[int]]:
+    """``(the pages that fit, the pages dropped)`` -- the front winning.
+
+    The front matter is taken first and in full; what is left of the budget
+    goes to the rest in page order. A budget too small even for the front is
+    not enforced against it: the letter and the cover are the reason the set
+    exists.
+    """
+    front = [p for p in pages if p < front_pages]
+    rest = [p for p in pages if p >= front_pages]
+    kept = list(front)
+    used = sum(len(texts.get(p, "")) for p in front)
+    dropped: List[int] = []
+    for page in rest:
+        size = len(texts.get(page, ""))
+        if used + size > max_chars and kept:
+            dropped.append(page)
+            continue
+        kept.append(page)
+        used += size
+    return sorted(kept), dropped
+
+
+def picture_pages(doc: Any, pages: Sequence[int],
+                  limit: int = MAX_PICTURE_PAGES) -> List[int]:
+    """The pages in the set that carry too little text to read as text.
+
+    A scanned transmittal letter is the case this exists for: it is in the
+    set because it is the front matter, and sending it as text sends nothing
+    at all.
+    """
+    out: List[int] = []
+    for page in pages:
+        if len(out) >= limit:
+            break
+        try:
+            content = doc.page(int(page))
+        except Exception:                        # a page that will not read
+            continue                             # will not render either
+        chars = sum(len(str(line.text or "")) for line in content.lines)
+        if chars < MIN_TEXT_CHARS:
+            out.append(int(page))
+    return out
+
+
+def retrieval_passages(doc: Any, fields: Sequence[str] = (),
+                       *, phrases: Optional[Dict[str, Sequence[str]]] = None,
+                       max_chars: int = MAX_RETRIEVAL_CHARS
+                       ) -> List[Dict[str, Any]]:
+    """Passages from ANYWHERE in the report for the questions that need them.
+
+    Seven of the two schemas' questions are as often answered in an appendix
+    table -- a seismic parameter sheet, a corrosivity result, a summary of
+    recommended bearing pressures -- as in the prose the reader is given.
+    Each one's key phrases are searched across every page of the document and
+    the passages come back with their page numbers, so the model can cite the
+    page it actually read.
+
+    EXACT FIRST, FUZZY WHERE EXACT FOUND NOTHING. planlens' fuzzy search
+    scores every candidate on every page, which on a seven-hundred-page
+    report is a full pass per phrase; the exact pass is a regex scan and
+    answers most phrases. The fuzzy pass is what catches a phrase that came
+    off a scan with a letter wrong, which is exactly where it is needed.
+    """
+    table = dict(phrases or RETRIEVAL_PHRASES)
+    wanted = list(fields) or list(table)
+    out: List[Dict[str, Any]] = []
+    seen: set = set()
+    used = 0
+    for name in wanted:
+        for phrase in table.get(name, ()):
+            try:
+                hits = doc.search(phrase, max_hits=MAX_HITS_PER_PHRASE)
+                if not hits.get("n_hits"):
+                    hits = doc.search(phrase, fuzzy=True, min_score=80,
+                                      max_hits=MAX_HITS_PER_PHRASE)
+            except Exception:                    # search is an improvement
+                continue
+            for hit in (hits.get("hits") or [])[:MAX_HITS_PER_PHRASE]:
+                page = hit.get("page")
+                snippet = " ".join(str(hit.get("snippet") or "").split())
+                if page is None or not snippet:
+                    continue
+                key = (int(page), snippet[:80])
+                if key in seen:
+                    continue
+                if used + len(snippet) > max_chars:
+                    return out
+                seen.add(key)
+                used += len(snippet)
+                out.append({"field": name, "page": int(page),
+                            "phrase": phrase, "passage": snippet})
+    return out
+
+
+#: ``field -> the investigation kinds that answer it``, the reconciler's own
+#: mapping, so the count the narrative is overruled with is the same count
+#: the reconciler will cross-check.
+_EXPLORATION_KINDS: Dict[str, Tuple[str, ...]] = {
+    "boringCount": ("boring",),
+    "testPitCount": ("test_pit",),
+    "cptCount": ("cpt",),
+}
+_EXPLORATION_IDS: Dict[str, Tuple[str, ...]] = {
+    "boringDictionary": ("boring",),
+    "testPitDictionary": ("test_pit",),
+}
+#: The five fields the appendix answers better than the prose does.
+DETERMINISTIC_FIELDS: Tuple[str, ...] = (
+    "boringCount", "testPitCount", "cptCount",
+    "boringDictionary", "testPitDictionary",
+)
+
+
+def explorations_found(investigations: Sequence[Any]) -> Dict[str, Any]:
+    """The five exploration answers, off the logs the labeller actually found.
+
+    Hand this :attr:`ReportRecord.investigations` -- what the log reader
+    produced for every log work item in the report -- and it comes back as
+    the owner's own field names. A report with no logs read yields nothing
+    and the narrative's own answers stand.
+    """
+    by_kind: Dict[str, List[str]] = {}
+    for inv in investigations or ():
+        kind = str(getattr(inv, "kind", "") or "")
+        name = str(getattr(inv, "investigation_id", "") or "").strip()
+        by_kind.setdefault(kind, []).append(name)
+    if not by_kind:
+        return {}
+    out: Dict[str, Any] = {}
+    for name, kinds in _EXPLORATION_KINDS.items():
+        out[name] = sum(len(by_kind.get(kind, ())) for kind in kinds)
+    for name, kinds in _EXPLORATION_IDS.items():
+        ids = [x for kind in kinds for x in by_kind.get(kind, ()) if x]
+        if ids:
+            out[name] = ids
+    return out
+
+
+def _chunks(texts: Dict[int, str], pages: Sequence[int],
             max_chars: int) -> List[Tuple[List[int], str]]:
     """The narrative as one block of text, or as several when it is long.
 
@@ -754,7 +1006,7 @@ def _chunks(doc: Any, pages: Sequence[int],
     body: List[str] = []
     used = 0
     for page in pages:
-        text = serialise_page(doc, page)
+        text = texts.get(int(page), "")
         if current and used + len(text) > max_chars:
             out.append((current, "\n".join(body)))
             current, body, used = [], [], 0
@@ -763,6 +1015,18 @@ def _chunks(doc: Any, pages: Sequence[int],
         used += len(text)
     if current:
         out.append((current, "\n".join(body)))
+    return out
+
+
+def _images(doc: Any, pages: Sequence[int]) -> List[Dict[str, Any]]:
+    """The pages with no text layer, drawn, for the call that reads them."""
+    out: List[Dict[str, Any]] = []
+    for page in pages:
+        try:
+            png, _info = doc.render(int(page), dpi=PAGE_DPI)
+        except Exception:                        # a page that will not draw
+            continue                             # is simply not shown
+        out.append(image_block(png))
     return out
 
 
@@ -775,10 +1039,33 @@ def _headings_text(outline: Any, pages: Sequence[int]) -> str:
     return "\n".join(f"  page {m.page}: {m.text}" for m in marks)
 
 
+def _retrieval_block(passages: Sequence[Dict[str, Any]]) -> str:
+    """The searched-out passages, grouped by the question they answer."""
+    if not passages:
+        return ""
+    by_field: Dict[str, List[Dict[str, Any]]] = {}
+    for row in passages:
+        by_field.setdefault(str(row.get("field") or ""), []).append(row)
+    lines = [
+        "PASSAGES FOUND ELSEWHERE IN THE REPORT. These are lines from pages "
+        "you were NOT given, searched out for the questions below because "
+        "their answers usually sit in a table or an appendix. Use them, and "
+        "CITE THE PAGE NUMBER SHOWN HERE -- it is the page the words are on."]
+    for name in sorted(by_field):
+        lines.append(f"  {name}:")
+        for row in by_field[name]:
+            lines.append(f"    page {row['page']}: {row['passage']}")
+    return "\n".join(lines)
+
+
 def _brief(pages: Sequence[int], all_pages: Sequence[int], text: str,
            counted: Dict[str, Any], outline_counts: Dict[str, int],
            headings: str, report_id: str, chunk: int, n_chunks: int,
-           questions: Optional[Sequence[str]] = None) -> str:
+           questions: Optional[Sequence[str]] = None,
+           passages: Sequence[Dict[str, Any]] = (),
+           pictures: Sequence[int] = ()) -> str:
+    from report_ingest.narrative_glossary import glossary_block
+
     parts: List[str] = [
         "THE NARRATIVE of one geotechnical report"
         + (f" ({report_id})" if report_id else "") + "."]
@@ -796,6 +1083,8 @@ def _brief(pages: Sequence[int], all_pages: Sequence[int], text: str,
     parts += [
         "",
         _vocabulary_block(),
+        "",
+        glossary_block(),
         "",
         "FACTS ALREADY COUNTED FROM THE PAGES",
         f"  tables captioned in the main body: {counted.get('tables', 0)}",
@@ -816,6 +1105,16 @@ def _brief(pages: Sequence[int], all_pages: Sequence[int], text: str,
                   "text, with a citation, and an EMPTY answer where the "
                   "narrative does not say."]
         parts += [f"  {n}. {q}" for n, q in enumerate(asked, start=1)]
+    retrieval = _retrieval_block(passages)
+    if retrieval:
+        parts += ["", retrieval]
+    if pictures:
+        parts += ["",
+                  "PAGES SENT AS PICTURES. These pages carry no usable text "
+                  "layer and are attached as images, in this order: "
+                  + ", ".join(str(p) for p in pictures)
+                  + ". Read them from the picture and cite them by these "
+                    "page numbers."]
     parts += ["", "THE PAGES", text]
     return "\n".join(parts)
 
@@ -827,6 +1126,80 @@ def _brief(pages: Sequence[int], all_pages: Sequence[int], text: str,
 def _fold(value: Any) -> str:
     """A word folded for comparison against a vocabulary."""
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+
+def _partial_ratio(needle: str, hay: str) -> float:
+    """rapidfuzz's partial ratio, or containment without it."""
+    if not needle or not hay:
+        return 0.0
+    try:
+        from rapidfuzz import fuzz
+    except ImportError:                          # pragma: no cover - fallback
+        return 100.0 if needle in hay else 0.0
+    return float(fuzz.partial_ratio(needle, hay))
+
+
+def check_quotes(doc: Any, citations: Dict[str, List[Citation]],
+                 answered: Sequence[str], builder: Any = None,
+                 ratio: float = QUOTE_RATIO) -> Dict[str, float]:
+    """THE QUOTE GATE: is each answer's evidence actually on the page?
+
+    Every citation says a page and repeats that page's own words. Both halves
+    are checkable and neither was being checked: a quote the cited page does
+    not contain is either a page number off by one or a sentence the model
+    composed, and both are exactly the failure the citations exist to catch.
+
+    An answer none of whose quotes can be found on the page it cites drops to
+    :data:`UNVERIFIED_CONFIDENCE` and is listed for review -- it is not
+    deleted, because a right answer with a bad quote is still a right answer
+    and the reviewer is the one who can go to the paper. An answer with NO
+    citation keeps its confidence and is flagged separately, which the
+    builder already does.
+
+    Returns ``field -> confidence`` for every answered field.
+    """
+    text_of: Dict[int, str] = {}
+
+    def page_text(page: int) -> str:
+        if page not in text_of:
+            try:
+                content = doc.page(int(page))
+                text_of[page] = _fold(" ".join(str(line.text or "")
+                                               for line in content.lines))
+            except Exception:                    # a page that will not read
+                text_of[page] = ""               # cannot confirm or deny
+        return text_of[page]
+
+    out: Dict[str, float] = {}
+    for name in answered:
+        cites = citations.get(name) or []
+        if not cites:
+            out[name] = DEFAULT_CONFIDENCE
+            continue
+        best = 0.0
+        checked = False
+        for cite in cites:
+            quote = _fold(cite.quote)
+            hay = page_text(cite.page)
+            if not quote or not hay:
+                continue                         # nothing to check against
+            checked = True
+            best = max(best, _partial_ratio(quote, hay))
+        if not checked:
+            out[name] = DEFAULT_CONFIDENCE
+            continue
+        if best >= ratio:
+            out[name] = DEFAULT_CONFIDENCE
+            continue
+        out[name] = UNVERIFIED_CONFIDENCE
+        if builder is not None:
+            builder.refuse(
+                name,
+                f"the quote it cites is not on the page it cites "
+                f"(best match {best:.0f}, needs {ratio:.0f}); the answer is "
+                f"kept at confidence {UNVERIFIED_CONFIDENCE}",
+                page=cites[0].page)
+    return out
 
 
 def _quote(text: str) -> str:
@@ -1080,9 +1453,44 @@ class _Builder:
             here.append(row)
 
     # -- the answer --------------------------------------------------------
-    def build(self, pages: Sequence[int], counted: Dict[str, Any]
+    def build(self, pages: Sequence[int], counted: Dict[str, Any],
+              found: Optional[Dict[str, Any]] = None
               ) -> Tuple[GeneralFacts, NaturalHazardFacts, NarrativeFacts]:
         values = dict(self.values)
+
+        # THE FIVE EXPLORATION ANSWERS THE APPENDIX SETTLES. The logs the
+        # labeller found and the log reader read are a count of holes; the
+        # narrative's sentence about how many were drilled is a claim about
+        # them. Where the two differ the COUNT is stored, the narrative's
+        # answer is kept in stated_counts and as a disagreement, and the
+        # reconciler will raise it again against the finished record.
+        # A ZERO DOES NOT OVERRULE A STATED NUMBER. No cone logs were read
+        # is not the same as no cones were pushed -- the labeller may have
+        # missed the item, or the soundings may be in a volume that is not
+        # this file. So a zero is stored only where the narrative said
+        # nothing (which is the house convention: none means 0), and where
+        # the narrative DID say a number the disagreement is recorded and
+        # the narrative's number stands.
+        for name in DETERMINISTIC_FIELDS:
+            if not found or name not in found:
+                continue
+            ours = found[name]
+            theirs = values.get(name)
+            empty = ours in (0, [], None)
+            if theirs is not None and theirs != ours:
+                self.refuse(
+                    name,
+                    f"the narrative says {theirs!r}; the logs this report "
+                    f"yielded give {ours!r}. "
+                    + ("The narrative's answer stands: nothing of that kind "
+                       "was read, which is not the same as none being done"
+                       if empty else
+                       "The logs are stored and the narrative's answer is "
+                       "kept here"),
+                    theirs)
+                if empty:
+                    continue
+            values[name] = ours
 
         # The two counts Python counted for itself. The counted number is
         # what is stored when there was anything to count; the model's answer
@@ -1174,8 +1582,13 @@ def read_narrative(doc: Any, narrative_pages: Sequence[int], engine: Engine,
                    counted: Optional[Dict[str, Any]] = None,
                    body_pages: Optional[Sequence[int]] = None,
                    questions: Optional[Sequence[str]] = None,
-                   max_chunk_chars: Optional[int] = None
-                   ) -> NarrativeReadResult:
+                   max_chunk_chars: Optional[int] = None,
+                   roles: Any = None,
+                   front_pages: int = FRONT_PAGES,
+                   token_budget: int = INPUT_TOKEN_BUDGET,
+                   investigations: Optional[Sequence[Any]] = None,
+                   retrieve: bool = True,
+                   pictures: bool = True) -> NarrativeReadResult:
     """Read the narrative and answer the owner's two schemas.
 
     ``narrative_pages`` are the pages of the narrative work item --
@@ -1188,17 +1601,45 @@ def read_narrative(doc: Any, narrative_pages: Sequence[int], engine: Engine,
     :func:`count_captions` when a caller has already run it; otherwise it is
     run here over ``body_pages`` -- the main body, which is the narrative and
     the figure pages before the appendices -- or over the narrative pages.
+
+    WHAT THE READER IS GIVEN is not just those pages. :func:`reading_pages`
+    unions them with every page labelled cover, letter or contents and with
+    the first ``front_pages`` pages of the report, because the identity
+    questions are answered on the letter and the cover and neither is a
+    narrative page. ``roles`` is ``page_roles`` when the caller has it.
+
+    ``investigations`` are the logs this report yielded. Given them, the five
+    exploration answers are taken from the logs rather than from the prose
+    (see :data:`DETERMINISTIC_FIELDS`), with the narrative's own answer kept
+    as a disagreement. ``retrieve`` searches the WHOLE report for the seven
+    questions usually answered in a table; ``pictures`` sends a page with no
+    text layer as an image. Both default on and both are free to turn off.
     """
     pages = [int(p) for p in narrative_pages]
     if not pages:
         raise ValueError("read_narrative needs at least one page")
     budget = max(1, min(int(budget), MAX_MODEL_CALLS))
 
+    # LEVER 1: the pages the reader is actually given -- the narrative, the
+    # cover, the letter, the contents and the front of the report -- inside
+    # a token budget the front wins.
+    wanted = reading_pages(doc, pages, roles=roles, front_pages=front_pages)
+    texts = _serialised(doc, wanted)
+    wanted, dropped = _within_budget(
+        wanted, texts, int(front_pages),
+        max(1, int(token_budget)) * CHARS_PER_TOKEN)
+
     if counted is None:
         counted = count_captions(
             doc, list(body_pages) if body_pages else pages)
     outline_counts = counts_from_outline(outline)
-    headings = _headings_text(outline, pages)
+    headings = _headings_text(outline, wanted)
+
+    # LEVER 3: passages for the questions whose answers sit in a table,
+    # searched over EVERY page rather than the ones the reader was given.
+    passages = retrieval_passages(doc) if retrieve else []
+    # And the pages in the set with no text layer, sent as pictures.
+    shown = picture_pages(doc, wanted) if pictures else []
 
     spent = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
              "cache_read_tokens": 0, "seconds": 0.0, "dollars": 0.0}
@@ -1212,15 +1653,20 @@ def read_narrative(doc: Any, narrative_pages: Sequence[int], engine: Engine,
         spent["dollars"] += reply.usage.dollars(reply.model)
 
     warnings: List[str] = []
-    for page in pages:
+    for page in wanted:
         try:
             content = doc.page(page)
         except Exception as exc:                 # a page that will not read
             warnings.append(f"page {page}: {type(exc).__name__}: {exc}")
         else:
             warnings.extend(f"page {page}: {w}" for w in content.warnings)
+    if dropped:
+        warnings.append(
+            f"{len(dropped)} labelled page(s) were over the "
+            f"{token_budget:,}-token input budget and were not sent: "
+            f"{dropped[0]}-{dropped[-1]}")
 
-    blocks = _chunks(doc, pages, int(max_chunk_chars or MAX_CHUNK_CHARS))
+    blocks = _chunks(texts, wanted, int(max_chunk_chars or MAX_CHUNK_CHARS))
     # One call is kept back for the summaries whenever the narrative had to
     # be read in parts: a summary written over part three of five is a
     # summary of a fifth of the report, and merging five of them in Python
@@ -1233,14 +1679,20 @@ def read_narrative(doc: Any, narrative_pages: Sequence[int], engine: Engine,
             f"{blocks[-1][0][-1]} were not read")
         blocks = blocks[:max_chunks]
 
-    builder = _Builder(pages)
+    # A citation must name a page the reader was given, and the reader was
+    # given the retrieval passages too -- so their pages are citable.
+    citable = set(wanted) | {int(row["page"]) for row in passages}
+    builder = _Builder(sorted(citable))
     model_calls = 0
     final: Any = None
     read_pages: List[int] = []
     for index, (chunk_pages, text) in enumerate(blocks, start=1):
-        brief = _brief(chunk_pages, pages, text, counted, outline_counts,
-                       headings, report_id, index, len(blocks), questions)
-        messages = [user(text_block(brief)),
+        here = [p for p in shown if p in chunk_pages]
+        brief = _brief(chunk_pages, wanted, text, counted, outline_counts,
+                       headings, report_id, index, len(blocks), questions,
+                       passages=passages if index == 1 else (),
+                       pictures=here)
+        messages = [user(text_block(brief), *_images(doc, here)),
                     user(text_block(_FINAL_INSTRUCTION))]
         reply = engine.complete(messages, system=NARRATIVE_SYSTEM,
                                 output_format=NarrativeReading)
@@ -1261,7 +1713,8 @@ def read_narrative(doc: Any, narrative_pages: Sequence[int], engine: Engine,
             f"{pages} in {model_calls} call(s) (stop_reason "
             f"{getattr(final, 'stop_reason', None)!r})")
 
-    general, hazards, facts = builder.build(pages, counted)
+    found = explorations_found(investigations or ())
+    general, hazards, facts = builder.build(wanted, counted, found)
 
     if len(blocks) > 1 and model_calls < budget:
         reply = _summarise(general, hazards, headings, engine)
@@ -1273,6 +1726,11 @@ def read_narrative(doc: Any, narrative_pages: Sequence[int], engine: Engine,
             warnings.append("the summary call returned no structured answer; "
                             "the per-part summaries stand")
 
+    # LEVER 5: the quote gate, last, so it sees the answers as stored.
+    confidence = check_quotes(doc, builder.citations,
+                              general.answered() + hazards.answered(),
+                              builder)
+
     facts.unresolved = [dict(u) for u in builder.unresolved]
     spent["seconds"] = round(spent["seconds"], 2)
     spent["dollars"] = round(spent["dollars"], 5)
@@ -1282,11 +1740,12 @@ def read_narrative(doc: Any, narrative_pages: Sequence[int], engine: Engine,
         facts=facts,
         citations=dict(builder.citations),
         unresolved=[dict(u) for u in builder.unresolved],
+        confidence=confidence,
         cost=spent,
         model_calls=model_calls,
         model=getattr(final, "model", "") or getattr(engine, "name", ""),
         warnings=warnings,
-        pages=pages)
+        pages=wanted)
 
 
 def _summarise(general: GeneralFacts, hazards: NaturalHazardFacts,

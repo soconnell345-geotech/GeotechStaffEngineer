@@ -333,6 +333,12 @@ output, and `score_on_cluster(stages=("vision_labels",))` scores it against the
 same hand labels, with the same scorer, as planlens' rules and the label
 review, so RESULTS.md prints the three answers side by side.
 
+5.24.0 adds a log-TEMPLATE recogniser (`report_ingest/log_templates.py`): a
+page is matched against fingerprints of the printed forms a firm uses, so the
+record can say "this looks like a <firm> log" with a confidence and the grid
+can be told what a column headed `DATA` carries — the fingerprints themselves
+are a private file the host supplies, and with none the recogniser is a no-op.
+
 Two things can make it decline rather than fail. It is **feature-detected on
 the installed planlens**, not trusted from the pin, so on a cluster that
 resolved an older planlens than the floor the tool is not advertised at all.

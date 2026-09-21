@@ -73,7 +73,42 @@ _TYPE_CODES: Dict[str, str] = {
     "c": "core", "core": "core", "nx": "core", "nq": "core", "hq": "core",
     "rc": "core", "cr": "core",
     "ct": "cuttings", "cuttings": "cuttings", "auger": "cuttings",
+    "undist": "shelby", "und": "shelby",
 }
+
+#: The index family, plus the two columns whose cells carry their own label
+#: on a form that stacks several results under one heading.
+_LABELLED_FAMILY = frozenset(_INDEX_NAMES) | {"tests", "recovery", "rqd"}
+
+#: ``LABEL = value`` as a form prints it inside one cell: ``MC = 10.1%``,
+#: ``LL = 38``, ``% Passing #200 = 68.7``, ``REC=29cm, 64%``. The label is
+#: folded to letters and digits and looked up in :data:`_LABEL_NAMES`.
+_LABELLED = re.compile(r"^\s*([^=]{1,30}?)\s*[=:]\s*(.+)$", re.DOTALL)
+_LABEL_NAMES: Dict[str, str] = {
+    "mc": "water_content", "w": "water_content", "wc": "water_content",
+    "moisturecontent": "water_content", "watercontent": "water_content",
+    "moisture": "water_content", "wn": "water_content",
+    "ll": "liquid_limit", "liquidlimit": "liquid_limit",
+    "pl": "plastic_limit", "plasticlimit": "plastic_limit",
+    "pi": "plasticity_index", "plasticityindex": "plasticity_index",
+    "passing200": "fines", "p200": "fines", "200": "fines",
+    "fines": "fines", "percentpassing200": "fines",
+    "qu": "qu", "pp": "pocket_pen", "pocketpen": "pocket_pen",
+    "dd": "dry_unit_weight", "drydensity": "dry_unit_weight",
+    "dryunitweight": "dry_unit_weight",
+    "rec": "recovery", "recovery": "recovery",
+    "rqd": "rqd",
+}
+#: A number with the unit the cell printed beside it, and a percentage
+#: anywhere after it: ``29cm, 64%`` -> ``(29.0, "cm", 64.0)``.
+_LABEL_VALUE = re.compile(
+    r"(-?\d+(?:\.\d+)?)\s*(cm|mm|in|ft|m|%|\"|pcf|kpa|psf|ksf|tsf)?", re.I)
+_LABEL_PERCENT = re.compile(r"(-?\d+(?:\.\d+)?)\s*%")
+
+#: A sample named and typed in ONE cell, the way a form that stacks its
+#: sampling data prints it: ``S-1, SPT``, ``GR-3, GRAB``, ``UD-1, UNDIST``.
+_ID_AND_TYPE = re.compile(
+    r"^\s*([A-Za-z]{1,4}-?\d+[A-Za-z]?)\s*[,/]\s*([A-Za-z]{1,8})\s*$")
 
 _USCS = re.compile(
     r"\b((?:GW|GP|GM|GC|SW|SP|SM|SC|ML|CL|OL|MH|CH|OH|PT)"
@@ -101,11 +136,18 @@ def _paren_unit(header: str) -> str:
 def _blow_tokens(text: str) -> List[Any]:
     """A blow record as the log printed it, or ``[]`` when the text is not
     one. ``5-9-12`` -> ``[5, 9, 12]``; ``12-30-50/5"`` -> ``[12, 30,
-    '50/5"']``; ``5/9/12`` -> ``[5, 9, 12]``."""
+    '50/5"']``; ``5/9/12`` -> ``[5, 9, 12]``; ``2+1+2`` -> ``[2, 1, 2]``.
+
+    The plus is gINT's own spelling of a driven record and is as common in
+    the corpus as the hyphen, so it is read here rather than left on the
+    page.
+    """
     raw = " ".join(str(text or "").split())
-    if not raw or not re.fullmatch(r'[\d\s\-–/",.\'inmc]+', raw):
+    if not raw or not re.fullmatch(r'[\d\s+\-–/",.\'inmc]+', raw):
         return []
-    if "-" in raw or "–" in raw:
+    if "+" in raw:
+        pieces = re.split(r"\s*\+\s*", raw)
+    elif "-" in raw or "–" in raw:
         pieces = re.split(r"\s*[-–]\s*", raw)
     elif raw.count("/") >= 2 and '"' not in raw and "in" not in raw:
         pieces = raw.split("/")
@@ -127,7 +169,21 @@ def _blow_tokens(text: str) -> List[Any]:
     return out
 
 
-def _names(grid: Any, cell: Any) -> Tuple[str, ...]:
+def _names(grid: Any, cell: Any,
+           by_column: Optional[Dict[str, Tuple[str, ...]]] = None
+           ) -> Tuple[str, ...]:
+    """What this cell's column carries.
+
+    ``by_column`` is a recognised TEMPLATE's own reading of the columns
+    (:func:`report_ingest.log_templates.column_names`). It wins where it has
+    something to say, because a form that prints ``DATA`` over three stacked
+    values gives the general header vocabulary nothing to classify, and the
+    fingerprint knows what that column holds.
+    """
+    if by_column:
+        named = by_column.get(cell.column_id)
+        if named:
+            return tuple(named)
     column = grid.column(cell.column_id)
     return tuple(column.names) if column is not None else ()
 
@@ -143,6 +199,40 @@ def _unit_of_column(grid: Any, cell: Any, fallback: str = "") -> str:
         return fallback
     return (str(column.unit or "") or _paren_unit(column.header)
             or fallback).strip()
+
+
+def _labelled_value(text: str) -> Optional[Tuple[str, float, str,
+                                                 Optional[float]]]:
+    """``(what it is, the number, its unit, a percentage)`` off one cell.
+
+    A form that stacks several results under one heading prints each one
+    with its own label -- ``MC = 10.1%``, ``LL = 38``, ``REC=29cm, 56%`` --
+    and the label is the only thing that says which result it is. Read here
+    and nowhere else, so the grid's floor asserts exactly what the cell
+    prints and nothing more. ``None`` when the cell carries no label this
+    recognises, which is the normal case and leaves every other reader
+    exactly as it was.
+    """
+    match = _LABELLED.match(" ".join(str(text or "").split()))
+    if match is None:
+        return None
+    key = "".join(ch for ch in match.group(1).lower() if ch.isalnum())
+    name = _LABEL_NAMES.get(key)
+    if name is None:
+        return None
+    rest = match.group(2)
+    value = _LABEL_VALUE.search(rest)
+    if value is None:
+        return None
+    unit = (value.group(2) or "").strip()
+    percent = None
+    for hit in _LABEL_PERCENT.finditer(rest):
+        if hit.start() > value.end(1):
+            percent = float(hit.group(1))
+            break
+    if unit == "%" and percent is None:
+        percent = float(value.group(1))
+    return name, float(value.group(1)), ("" if unit == "%" else unit), percent
 
 
 def _limits_order(header: str) -> List[str]:
@@ -227,7 +317,9 @@ class _Group:
             self.cells.append(cell)
 
 
-def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float
+def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
+                 by_column: Optional[Dict[str, Tuple[str, ...]]] = None,
+                 template_note: str = ""
                  ) -> Tuple[Optional[Sample], Optional[SPT]]:
     top = min(float(c.depth) for c in group.cells)
     bottom: Optional[float] = None
@@ -241,8 +333,9 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float
     texts: List[str] = []
     confidence = min(float(c.confidence) for c in group.cells)
     blow_cell = None
+    stacked: List[Tuple[Tuple[float, float, float], int]] = []
     for cell in group.cells:
-        names = _names(grid, cell)
+        names = _names(grid, cell, by_column)
         text = " ".join(str(cell.text or "").split())
         texts.append(text)
         code = text.lower()
@@ -256,6 +349,38 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float
             if kind == "other":
                 kind = _TYPE_CODES[code]
             continue
+        # A sample named and typed in one cell: "S-1, SPT". Only where the
+        # column carries sample identifiers, so a comma in a description
+        # cannot become a sampler code.
+        pair = _ID_AND_TYPE.match(text) if "sample_id" in names else None
+        if pair is not None and pair.group(2).lower() in _TYPE_CODES:
+            if not sample_id:
+                sample_id = pair.group(1)
+            if kind == "other":
+                kind = _TYPE_CODES[pair.group(2).lower()]
+            continue
+        # A result that names itself: "MC = 10.1%", "REC=29cm, 56%".
+        labelled = (_labelled_value(text)
+                    if set(names) & _LABELLED_FAMILY else None)
+        if labelled is not None:
+            what, number, cell_unit, percent = labelled
+            if what == "recovery":
+                if percent is not None:
+                    values.setdefault("recovery_percent", percent)
+                if cell_unit:
+                    values.setdefault("recovery", number)
+                    units.setdefault("recovery", cell_unit)
+            elif what == "rqd":
+                values.setdefault("rqd_percent",
+                                  percent if percent is not None else number)
+            elif what == "fines":
+                values.setdefault("fines_percent", number)
+            else:
+                values.setdefault(what, number)
+                if cell_unit and what in ("dry_unit_weight", "qu",
+                                          "pocket_pen"):
+                    units.setdefault(what, cell_unit)
+            continue
         match = _N_VALUE.search(text)
         if match and ("blows" in names or "n_value" in names
                       or "sample_id" in names):
@@ -267,6 +392,15 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float
             blows = tokens
             refusal = any(isinstance(t, str) for t in tokens)
             blow_cell = cell
+            continue
+        # A blow record printed one increment to a line, each in its own
+        # cell, which is what the two commonest gINT forms in the corpus do.
+        # Gathered here and assembled after the loop, in the order the form
+        # printed them; a LONE number is left where it is, because one
+        # number in a blows column is as likely to be an N value.
+        if "blows" in names and re.fullmatch(r"\d{1,3}", text):
+            stacked.append(((float(cell.depth), float(cell.bbox[1]),
+                             float(cell.bbox[0])), int(text)))
             continue
         interval = _INTERVAL.match(text)
         if interval and "sample_id" in names:
@@ -321,6 +455,9 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float
                         grid, cell, "pcf" if name == "dry_unit_weight"
                         and "pcf" in _header(grid, cell).lower() else "")
                 break
+    if not blows and len(stacked) >= 2:
+        stacked.sort(key=lambda row: row[0])
+        blows = [number for _key, number in stacked]
     if kind == "other" and blows:
         kind = "spt"
     anchor = blow_cell or group.cells[0]
@@ -328,7 +465,9 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float
     prov = Provenance(
         page=page, bbox=tuple(anchor.bbox), method="grid",
         confidence=max(confidence_floor, min(1.0, confidence)),
-        note="seeded from the grid rows: " + "; ".join(t for t in texts if t)[:160])
+        note=("seeded from the grid rows"
+              + (f" ({template_note})" if template_note else "") + ": "
+              + "; ".join(t for t in texts if t)[:160]))
     sample = Sample(
         sample_id=sample_id, top=_q(top, unit), bottom=_q(bottom, unit),
         kind=kind,  # type: ignore[arg-type]
@@ -360,7 +499,8 @@ def _pct(value: Optional[float]) -> Optional[float]:
 
 
 def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
-                   confidence_floor: float = 0.3) -> Investigation:
+                   confidence_floor: float = 0.3,
+                   template: Any = None) -> Investigation:
     """The grid's own reading of one log as an :class:`Investigation`.
 
     Every value carries a ``grid`` provenance at the grid's own confidence
@@ -369,11 +509,29 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
     prints ``N=``, a USCS symbol only where the description prints one in
     the standard letters, and a water level only where the header's
     groundwater field prints a depth.
+
+    ``template`` is a
+    :class:`~report_ingest.log_templates.TemplateMatch` when the page was
+    recognised as a known printed FORM. Its ``column_map`` names the columns
+    the general header vocabulary could not -- a heading of ``DATA`` over a
+    stacked sample id, blow record and recovery is the case -- and the
+    method stays ``grid``, with the template named in the note, because the
+    value was still placed by geometry and nothing was inferred from the
+    form beyond what its own columns carry.
     """
     pages = [int(p) for p in pages]
     unit = (grid.unit or "").strip()
     fields = dict(grid.fields or {})
     used: set = set()
+
+    by_column: Dict[str, Tuple[str, ...]] = {}
+    template_note = ""
+    if template is not None:
+        from report_ingest.log_templates import column_names, ledger_note
+
+        by_column = column_names(grid, template)
+        if by_column:
+            template_note = f"{ledger_note(template)}, columns named by it"
 
     def fprov(key: str, confidence: float = 0.8) -> Provenance:
         page, bbox = grid.field_boxes.get(key, (pages[0], None)) \
@@ -415,6 +573,18 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
     for key in ("boring_id", "test_pit_id"):
         if key in used:
             header_prov.append(fprov(key, 0.9))
+    if template is not None:
+        # The template claim travels ON the record, so a reviewer of the
+        # finished investigation sees which form it was read off and how
+        # sure the recogniser was.
+        from report_ingest.log_templates import ledger_note as _note
+
+        header_prov.append(Provenance(
+            page=pages[0], method="grid",
+            confidence=max(0.0, min(1.0, float(
+                getattr(template, "confidence", 0.0) or 0.0))),
+            note=_note(template) + (", columns named by it" if by_column
+                                    else ", no column map")))
 
     drilling = DrillingDetails(
         method=text("drilling_method"), equipment=text("drilling_equipment"),
@@ -474,7 +644,7 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
         span = _span_in_unit(unit, grid)
         anchors = [c for c in grid.rows
                    if c.depth is not None and c.page in pages
-                   and set(_names(grid, c)) & _SAMPLE_FAMILY
+                   and set(_names(grid, c, by_column)) & _SAMPLE_FAMILY
                    and (c.numbers or str(c.text or "").strip())]
         anchors.sort(key=lambda c: (c.page, float(c.depth), c.bbox[0]))
         groups: List[_Group] = []
@@ -488,7 +658,8 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
             else:
                 groups.append(_Group(cell))
         for group in groups:
-            sample, drive = _seed_sample(group, grid, unit, confidence_floor)
+            sample, drive = _seed_sample(group, grid, unit, confidence_floor,
+                                         by_column, template_note)
             if sample is not None:
                 samples.append(sample)
             if drive is not None:

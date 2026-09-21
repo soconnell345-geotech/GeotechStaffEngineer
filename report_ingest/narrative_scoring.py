@@ -60,6 +60,23 @@ HOW EACH KIND OF FIELD IS JUDGED.
              was written where the report supports one, and that it is inside
              its word limit.
 
+AND EVERY NUMBER IS REPORTED TWICE, STRICT AND LENIENT. Four of the questions
+are answered with long free text -- the recommended foundations, the
+structures, the bearing-pressure sentences, the profile -- and two people
+writing the same report's answer never word them alike. The strict view is
+what a machine consumer would get; the lenient view (:data:`LENIENT_FIELDS`,
+:data:`LENIENT_RATIO`, a number and its unit in common) is what a reviewer
+reading both answers would say. Neither is "the" score and a scorecard prints
+them side by side, because the gap between them is itself the finding: a wide
+gap means the reader found the thing and worded it differently, a narrow one
+means it did not find it.
+
+And every miss carries a KIND (:func:`miss_kind`): ``convention`` when the
+field is one a house rule in :mod:`report_ingest.narrative_glossary` governs,
+because that is the failure a better model does not fix, and otherwise the
+plain verdict. :func:`dominant_miss` reduces a column of them to the one word
+a per-question table prints in its "why" column.
+
 Everything here is shared by the development scorecard
 (``module_work/report_ingest_harness/measure_wp4_narrative.py``) and the
 cluster run (:mod:`report_ingest.cluster_scoring`), because two copies of this
@@ -80,13 +97,32 @@ from report_ingest.model import (
 
 __all__ = [
     "FIELD_KINDS", "KINDS", "LIST_HIT_JACCARD", "FUZZY_RATIO",
+    "LENIENT_FIELDS", "LENIENT_RATIO", "MISS_KINDS",
     "Score", "FieldResult", "NarrativeScore", "kind_of", "same_value",
     "score_narrative", "score_one_report", "narrative_pages_of",
-    "alternates_for", "skipped_fields",
+    "alternates_for", "skipped_fields", "miss_kind", "dominant_miss",
 ]
 
 #: A string answer matches when rapidfuzz's partial ratio reaches this.
 FUZZY_RATIO = 85
+
+#: THE LENIENT VIEW, and what it is for. Four of the questions are answered
+#: with long free text -- a list of recommended foundations, the structures,
+#: the bearing-pressure sentences, the soil profile in one string -- and two
+#: readers of the same report word them differently every time. At the strict
+#: ratio those four score around a third and the number says almost nothing
+#: about whether the reader FOUND the recommendation; it says the two hands
+#: do not write alike. So both views are computed and both are printed, and
+#: neither is "the" score: strict is what a machine consumer would get,
+#: lenient is what a reviewer reading both would say.
+LENIENT_FIELDS: frozenset = frozenset((
+    "recommendedFoundations", "structureList", "bearingCapacity", "strata",
+))
+#: The lenient bar: the same partial ratio, lower, OR a number and its unit
+#: in common. "3,000 psf for spread footings" and "spread footings, 3000 psf
+#: net allowable" are one recommendation by the second test whatever the
+#: first says.
+LENIENT_RATIO = 70
 #: A list answer counts as right when the overlap reaches this.
 LIST_HIT_JACCARD = 0.6
 #: The kinds a field is judged as, in the order a scorecard prints them.
@@ -134,6 +170,53 @@ def kind_of(field_name: str) -> str:
     return FIELD_KINDS.get(field_name, "string")
 
 
+#: The four ways an answer can be wrong, in the order a scorecard prefers to
+#: name them. ``convention`` is the one that matters for deciding what to do
+#: next: the reader found the thing and answered it under a different house
+#: rule from the hand's, which is fixed in
+#: :mod:`report_ingest.narrative_glossary` and never by a better model.
+MISS_KINDS: Tuple[str, ...] = ("convention", "wrong", "missed", "invented")
+
+
+def miss_kind(field_name: str, verdict: str) -> str:
+    """What KIND of miss this is -- the "why" column of the per-question table.
+
+    A miss on a field a house rule governs is a ``convention`` miss, because
+    that is what the evidence says it usually is: null where the rule says 0,
+    the wrong sense of a "mention" question, a hazard list with shaking in it.
+    Everything else keeps its own verdict. A right answer has no kind.
+    """
+    if verdict not in ("missed", "wrong", "invented"):
+        return ""
+    try:
+        from report_ingest.narrative_glossary import CONVENTIONS
+    except ImportError:                          # pragma: no cover
+        return verdict
+    for row in CONVENTIONS:
+        if field_name in row.fields:
+            return "convention"
+    return verdict
+
+
+def dominant_miss(kinds: Sequence[str]) -> str:
+    """The commonest miss kind in a column, ties broken by :data:`MISS_KINDS`.
+
+    ``""`` where nothing went wrong, which is the answer a field that is
+    always right should give.
+    """
+    counts: Dict[str, int] = {}
+    for kind in kinds:
+        if kind:
+            counts[kind] = counts.get(kind, 0) + 1
+    if not counts:
+        return ""
+    best = max(counts.values())
+    for name in MISS_KINDS:
+        if counts.get(name) == best:
+            return name
+    return sorted(counts)[0]
+
+
 # ---------------------------------------------------------------------------
 # comparing two answers
 # ---------------------------------------------------------------------------
@@ -172,7 +255,42 @@ def _partial_ratio(left: str, right: str) -> float:
     return float(fuzz.partial_ratio(left, right))
 
 
-def _strings_match(field_name: str, hand: Any, got: Any) -> bool:
+#: A number and the unit printed beside it. The unit list is the one the two
+#: schemas actually carry: pressures, depths, densities, angles, percentages.
+_RE_NUMBER_UNIT = re.compile(
+    r"(-?\d[\d,]*(?:\.\d+)?)\s*"
+    r"(psf|ksf|tsf|kpa|mpa|kn/m2|kg/cm2|pcf|kcf|ft|feet|m|in|inches|cm|mm|%|"
+    r"degrees|degree|deg)\b",
+    re.IGNORECASE)
+#: Spellings of one unit, folded together, so "feet" and "ft" are one unit.
+_UNIT_ALIASES: Dict[str, str] = {
+    "feet": "ft", "inches": "in", "degree": "deg", "degrees": "deg",
+    "kn/m2": "kpa",
+}
+
+
+def _numbers_with_units(value: Any) -> set:
+    """``{(number, unit)}`` a string prints, for the lenient comparison.
+
+    A number without a unit is not collected: two sentences that share the
+    bare number 3 share nothing, and two that share ``3000 psf`` are about
+    the same recommendation whatever else they say.
+    """
+    out: set = set()
+    for text in ([value] if not isinstance(value, (list, tuple))
+                 else list(value)):
+        for match in _RE_NUMBER_UNIT.finditer(str(text or "")):
+            try:
+                number = float(match.group(1).replace(",", ""))
+            except ValueError:                   # pragma: no cover - regex
+                continue
+            unit = match.group(2).lower()
+            out.add((number, _UNIT_ALIASES.get(unit, unit)))
+    return out
+
+
+def _strings_match(field_name: str, hand: Any, got: Any,
+                   lenient: bool = False) -> bool:
     left, right = _fold(hand), _fold(got)
     if not left or not right:
         return False
@@ -195,12 +313,18 @@ def _strings_match(field_name: str, hand: Any, got: Any) -> bool:
             return one == two
     if _partial_ratio(left, right) >= FUZZY_RATIO:
         return True
-    shared = _proper(hand) & _proper(got)
-    return bool(shared)
+    if _proper(hand) & _proper(got):
+        return True
+    if not lenient:
+        return False
+    # THE LENIENT BAR: a lower ratio, or a number and its unit in common.
+    if _partial_ratio(left, right) >= LENIENT_RATIO:
+        return True
+    return bool(_numbers_with_units(hand) & _numbers_with_units(got))
 
 
-def _list_overlap(field_name: str, hand: Any,
-                  got: Any) -> Tuple[float, int, int, int]:
+def _list_overlap(field_name: str, hand: Any, got: Any,
+                  lenient: bool = False) -> Tuple[float, int, int, int]:
     """``(jaccard, hits, in the answer, in the truth)``.
 
     TWO KINDS OF LIST, judged differently, because they are two kinds of
@@ -230,7 +354,7 @@ def _list_overlap(field_name: str, hand: Any,
         for index, candidate in enumerate(right):
             if index in taken:
                 continue
-            if _strings_match(field_name, item, candidate):
+            if _strings_match(field_name, item, candidate, lenient):
                 taken.append(index)
                 hits += 1
                 break
@@ -238,10 +362,18 @@ def _list_overlap(field_name: str, hand: Any,
     return (hits / union if union else 1.0), hits, len(right), len(left)
 
 
-def _matches(field_name: str, hand: Any, got: Any) -> bool:
-    """Does this ONE accepted answer agree with the prediction?"""
+def _matches(field_name: str, hand: Any, got: Any,
+             lenient: bool = False) -> bool:
+    """Does this ONE accepted answer agree with the prediction?
+
+    ``lenient`` only loosens the four free-text fields in
+    :data:`LENIENT_FIELDS`; an enumeration, a count and an identifier list
+    are exact under both views, because nothing about those is a matter of
+    wording.
+    """
     from report_ingest.narrative_reader import VERDICT_FIELDS, verdict_token
 
+    lenient = lenient and field_name in LENIENT_FIELDS
     kind = kind_of(field_name)
     if hand is None or got is None:
         return hand is None and got is None
@@ -261,15 +393,16 @@ def _matches(field_name: str, hand: Any, got: Any) -> bool:
         except (TypeError, ValueError):
             return False
     if kind == "list":
-        jaccard, *_ = _list_overlap(field_name, hand, got)
+        jaccard, *_ = _list_overlap(field_name, hand, got, lenient)
         return jaccard >= LIST_HIT_JACCARD
     if kind == "summary":
         return bool(str(got or "").strip())
-    return _strings_match(field_name, hand, got)
+    return _strings_match(field_name, hand, got, lenient)
 
 
 def same_value(field_name: str, hand: Any, got: Any,
-               alternates: Sequence[Any] = ()) -> bool:
+               alternates: Sequence[Any] = (),
+               lenient: bool = False) -> bool:
     """Do these two answers to one question agree?
 
     ``alternates`` are the truth file's own ``_alternates[field]``: other
@@ -279,9 +412,9 @@ def same_value(field_name: str, hand: Any, got: Any,
     LIST among them is a whole alternative list answer. Any one of them
     matching is a hit.
     """
-    if _matches(field_name, hand, got):
+    if _matches(field_name, hand, got, lenient):
         return True
-    return any(_matches(field_name, _normalise(alt), got)
+    return any(_matches(field_name, _normalise(alt), got, lenient)
                for alt in alternates)
 
 
@@ -332,10 +465,17 @@ class FieldResult:
     #: ``wrong`` (both answered, differently), ``right``, ``both_silent``.
     verdict: str = ""
     jaccard: Optional[float] = None
+    #: The same comparison under the LENIENT view. Equal to ``ok`` for every
+    #: field outside :data:`LENIENT_FIELDS`, which is most of them.
+    lenient_ok: bool = False
+    #: What kind of miss this is, for the per-question table's "why" column:
+    #: ``convention``, ``wrong``, ``missed``, ``invented`` or ``""``.
+    miss: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         out = {"field": self.field, "kind": self.kind,
                "verdict": self.verdict, "ok": self.ok,
+               "lenient_ok": self.lenient_ok, "miss": self.miss,
                "hand": _short(self.hand), "got": _short(self.got)}
         if self.jaccard is not None:
             out["jaccard"] = round(self.jaccard, 3)
@@ -361,6 +501,12 @@ class NarrativeScore:
     recall: Score = field(default_factory=Score)
     precision: Score = field(default_factory=Score)
     agreement: Score = field(default_factory=Score)
+    #: THE SAME THREE UNDER THE LENIENT VIEW, printed beside the strict ones
+    #: and never instead of them. They differ only on the four free-text
+    #: fields of :data:`LENIENT_FIELDS`.
+    lenient_recall: Score = field(default_factory=Score)
+    lenient_precision: Score = field(default_factory=Score)
+    lenient_agreement: Score = field(default_factory=Score)
     #: The items inside every list field, pooled.
     list_items: Score = field(default_factory=Score)
     list_item_recall: Score = field(default_factory=Score)
@@ -386,6 +532,9 @@ class NarrativeScore:
             "recall": self.recall.to_dict(),
             "precision": self.precision.to_dict(),
             "agreement": self.agreement.to_dict(),
+            "lenient": {"recall": self.lenient_recall.to_dict(),
+                        "precision": self.lenient_precision.to_dict(),
+                        "agreement": self.lenient_agreement.to_dict()},
             "by_kind": {name: self.kind(name).to_dict()
                         for name in KINDS if self.by_kind.get(name)},
             "list_items": {"precision": self.list_items.to_dict(),
@@ -481,6 +630,7 @@ def score_narrative(truth: Dict[str, Any], general: Any, hazards: Any,
                 continue
 
             ok = same_value(name, hand, got, alternates)
+            soft = ok or same_value(name, hand, got, alternates, lenient=True)
             jaccard = None
             if kind == "list" and hand is not None and got is not None:
                 # The ITEMS' own precision and recall, pooled across every
@@ -496,15 +646,19 @@ def score_narrative(truth: Dict[str, Any], general: Any, hazards: Any,
                 out.list_item_recall.total += wanted
 
             verdict = _verdict(hand, got, ok)
-            out.fields.append(FieldResult(field=name, kind=kind, hand=hand,
-                                          got=got, ok=ok, verdict=verdict,
-                                          jaccard=jaccard))
+            out.fields.append(FieldResult(
+                field=name, kind=kind, hand=hand, got=got, ok=ok,
+                verdict=verdict, jaccard=jaccard, lenient_ok=soft,
+                miss=miss_kind(name, verdict)))
             out.agreement.add(ok, f"{name}: {verdict}")
+            out.lenient_agreement.add(soft)
             if hand is not None:
                 out.recall.add(ok, f"{name}: {verdict}")
+                out.lenient_recall.add(soft)
                 out.kind(kind).add(ok, f"{name}: {verdict}")
             if got is not None:
                 out.precision.add(ok, f"{name}: {verdict}")
+                out.lenient_precision.add(soft)
     return out
 
 
@@ -579,7 +733,10 @@ def narrative_pages_of(doc: Any) -> Tuple[List[int], List[int]]:
 
 
 def score_one_report(truth: Dict[str, Any], doc: Any, engine: Any, *,
-                     budget: int = 8, report: str = "") -> NarrativeScore:
+                     budget: int = 8, report: str = "",
+                     front_pages: Optional[int] = None,
+                     investigations: Optional[Sequence[Any]] = None
+                     ) -> NarrativeScore:
     """Read one report's narrative and score it against the hand answer.
 
     A report whose narrative cannot be found comes back as a score with an
@@ -594,9 +751,14 @@ def score_one_report(truth: Dict[str, Any], doc: Any, engine: Any, *,
         out = NarrativeScore(report=report,
                              error="no narrative work item in this document")
         return out
+    extra: Dict[str, Any] = {}
+    if front_pages is not None:
+        extra["front_pages"] = int(front_pages)
+    if investigations is not None:
+        extra["investigations"] = list(investigations)
     try:
         result = read_narrative(doc, pages, engine, budget=budget,
-                                body_pages=body, report_id=report)
+                                body_pages=body, report_id=report, **extra)
     except Exception as exc:                     # score what can be scored
         return NarrativeScore(report=report, pages=pages,
                               error=f"{type(exc).__name__}: {exc}")

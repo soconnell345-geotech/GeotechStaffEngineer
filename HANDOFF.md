@@ -8,6 +8,95 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-08, supersedes everything below)
 
+### 5.24.0 (2026-09-20, on master, NOT tagged) — the log-template recogniser and the narrative levers
+
+**No dependency change.** Pure Python inside `report_ingest`, and no new model
+call anywhere: both halves are rapidfuzz over text planlens has already
+extracted.
+
+**1. The log-template recogniser (`report_ingest/log_templates.py`).** The
+owner's observation, 2026-09-20: two firms' logs are so standard that simple
+rules would almost always catch them, and one of the two templates has shifted
+over the years. The SHIPPED code is generic machinery; the FINGERPRINTS are
+data in a private JSON file that travels with the truth folder
+(`<truth_dir>/../templates.json`, or `templates_path=` on
+`score_on_cluster`) and is never committed, because this repo is public and a
+fingerprint names a firm. `recognise(doc, page, grid=None)` scores a page's
+located text against every fingerprint — the footer stamp worth half, the
+title block three tenths, the column headings two tenths — and returns the
+family, a confidence, the margin over the best fingerprint of a DIFFERENT
+family (a sibling scoring as well is the form drifting, not a doubt) and what
+matched. Two uses: a VOTER (`template <family> (0.92)` beside the rules' and
+the vision labels, and on the label review's ledger) and a KEY TO THE GRID (a
+fingerprint's `column_map` names the columns `log_grid` cannot — a form that
+stacks the sample id, the sampler code, the blow record and the recovery under
+one heading of `DATA` gives the general vocabulary nothing to classify — and
+`log_floor.seed_from_grid(..., template=match)` then reads them, keeping
+`method="grid"` with the template in the note). `templates.json.EXAMPLE` ships
+in the wheel with three INVENTED firms. With no fingerprint file anywhere,
+every entry point is a no-op.
+
+**Measured locally, no model and no network** (harness
+`module_work/report_ingest_harness/measure_templates.py`, ledger
+"Log-template recogniser"): 100 % recall and 100 % precision on both families
+over the fifteen hand-truthed logs, none of the five logs on undescribed forms
+claimed, and **no false positive on thirty pages the hand says are not logs**
+(the threshold sits at 0.65, between the lowest true match at 0.97 and the one
+near miss at 0.59, a laboratory sheet from the same gINT project).
+
+**And the floor now reads what those columns print.** Four generic cell
+readers were added to `log_floor` in the same train, because the column map
+was worth almost nothing without them: a blow record printed with `+`
+separators (`2+1+2`), a blow record printed one increment to a line in its own
+cell (which both of the corpus's commonest forms do), a cell that names its own
+result (`MC = 12.0%`, `LL = 38`, `REC=29cm, 64%`), and a sample named and typed
+in one cell (`S-1, SPT`). The grid's floor over the fifteen truthed logs goes
+**283/521 → 373/521 with no template at all, and 386/521 with the
+fingerprints** — `n_value` 8/49 → 48/49, `blows` 13/58 → 56/58, and no log
+loses ground.
+
+**2. The narrative reader's accuracy levers.** From the per-question table of
+the eight-report run (recall 64 %, precision 74 %), all default-on and each
+switchable. (a) **The front matter always goes in**: `reading_pages` is the
+union of every page labelled cover, letter, contents or narrative with the
+first `front_pages=50` pages of the report, deduplicated, in page order,
+capped by a token budget the front wins — `postName`, `primeAe`,
+`primeContractor` and `projectNumber` live on the letter and the cover and
+neither is a "narrative" page; a page in the set with under 120 characters of
+text is sent as a PICTURE. (b) **A glossary and conventions block**
+(`report_ingest/narrative_glossary.py`) as DATA the owner edits, carrying six
+rules **marked DRAFT and awaiting the owner's confirmation** — counts of
+explorations the report has none of are 0 not null; null means the report does
+not say; the four "mention" fields answer on whether the report DISCUSSES the
+topic; `postName` is the city of the post; `primeAe` is the architect-engineer
+of record; `earthHazardsExposed` uses the listed phrases only and never
+includes seismic shaking. (c) **Per-question retrieval over the whole report**
+for the seven questions usually answered in a table, exact search first and
+planlens' fuzzy search where exact found nothing, the passages carrying their
+page numbers and those pages becoming citable. (d) **Deterministic answers**:
+the five exploration fields come from the logs the labeller found when
+`investigations=` is passed, with every difference recorded — but a ZERO never
+overrules a stated number, because no cone logs read is not no cones pushed.
+(e) **A quote gate**: an answer whose citation quote is not findable on the
+page it cites (fuzzy ≥ 85) drops to confidence 0.3 and is listed, never
+deleted; one with no citation keeps its confidence and is flagged.
+(f) **Scoring** gains a LENIENT view of the four long free-text fields
+(partial ratio 70, or a number and its unit in common) printed beside the
+strict one, and the per-question table gains a **why** column whose
+`convention` value means a house rule rather than a reading failure.
+`measure_wp4_narrative.py` gains `--front-pages` and `--lenient`.
+
+**The narrative levers are UNMEASURED.** Nothing here has been run against the
+tier that will do the work; the next cluster run is what says whether they
+move the 64/74. The template numbers above ARE measured, because that half
+calls no model.
+
+Suites: `report_ingest` **833**, harness **229**, docs-currency green.
+`REPORT_INGEST_PLAN` §7 — the owner's standing review of the two query schemas
+— now points at `narrative_glossary.py` as the place every ruling goes.
+**Next:** the owner confirms or overrules the six DRAFT conventions, then
+`stages=("narrative",)` on the cluster with `--front-pages` at its default.
+
 ### 5.23.0 (2026-09-20, on master, NOT tagged) — the readers' floor and the `ingest` stage
 
 Built from what the first full cluster run showed (ledger runs 6–7): the log

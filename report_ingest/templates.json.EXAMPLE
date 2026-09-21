@@ -1,0 +1,141 @@
+{
+  "_README": [
+    "THE SHAPE OF A LOG-TEMPLATE FINGERPRINT FILE. Copy this file, replace",
+    "the two invented firms below with the forms you actually see, and put",
+    "it at <truth_dir>/../templates.json -- the private truth folder, beside",
+    "logs/ and narrative/ -- or pass templates_path= to the entry points in",
+    "report_ingest.log_templates. THIS FILE IS AN EXAMPLE AND IS NEVER",
+    "LOADED AUTOMATICALLY: the two firms in it do not exist.",
+    "",
+    "name          what you call this particular form. Unique in the file.",
+    "family        WHO printed it. Several fingerprints share one family,",
+    "              which is how a form that drifted over the years is",
+    "              described: one fingerprint per era, one family for all of",
+    "              them, and the family is what the voter is told.",
+    "years         free text, for a person reading the file.",
+    "title_phrases the form's own words in the title block and the field",
+    "              labels beside it. Its LABELS, never a project's name.",
+    "column_headers the headings over the columns, as printed.",
+    "footer_phrases the strongest evidence a form leaves: the gINT report",
+    "              name, the data-template file name, the plot stamp. These",
+    "              are printed by the template and by nothing else.",
+    "layout        free notes: the column count, which side the depth ruler",
+    "              is on. Recorded for a person; nothing scores it.",
+    "column_map    what each column CARRIES, by the record's own slot name,",
+    "              keyed to the header as printed. Several slots may share",
+    "              one header, which is the case this exists for: a form",
+    "              that stacks the sample id, the blow record and the",
+    "              recovery under one heading gives log_grid nothing to",
+    "              classify, and this is where it is told.",
+    "",
+    "The slot names are: blows, n, recovery, rqd, sample_id, sample_type,",
+    "index (all of the index tests at once), tests, water_content,",
+    "dry_unit_weight, liquid_limit, plastic_limit, plasticity_index, fines,",
+    "qu, pocket_pen, uscs, graphic, description, depth, elevation, remarks.",
+    "A name log_grid itself uses may be written directly.",
+    "",
+    "A page is claimed for a fingerprint when it prints enough of these:",
+    "the footer group is worth half the score, the title block three tenths",
+    "and the column headings two tenths, over the groups a fingerprint",
+    "actually declares. Give a fingerprint at least a footer phrase or three",
+    "title phrases, or it will claim pages it should not."
+  ],
+  "templates": [
+    {
+      "name": "Northgate Soils gINT 2014",
+      "family": "Northgate Soils",
+      "years": "2012-2018",
+      "title_phrases": [
+        "RECORD OF TEST BORING",
+        "Northgate Representative:",
+        "Rig and Method:",
+        "Groundwater Observations",
+        "Contract Number:"
+      ],
+      "column_headers": [
+        "DEPTH (ft)",
+        "ELEV (ft)",
+        "MATERIAL DESCRIPTION",
+        "SAMPLING DATA",
+        "LABORATORY",
+        "REMARKS"
+      ],
+      "footer_phrases": [
+        "NORTHGATE STANDARD LOG 2014_03_11.GDT"
+      ],
+      "layout": {"columns": 8, "ruler_side": "left", "units": "ft"},
+      "column_map": {
+        "sample_id": "SAMPLING DATA",
+        "sample_type": "SAMPLING DATA",
+        "blows": "SAMPLING DATA",
+        "recovery": "SAMPLING DATA",
+        "index": "LABORATORY",
+        "remarks": "REMARKS"
+      }
+    },
+    {
+      "name": "Northgate Soils gINT 2021 metric",
+      "family": "Northgate Soils",
+      "years": "2019-",
+      "title_phrases": [
+        "RECORD OF TEST BORING",
+        "Northgate Representative:",
+        "Coordinate System:",
+        "Groundwater Observations",
+        "Contract Number:"
+      ],
+      "column_headers": [
+        "DEPTH (m)",
+        "ELEV (m)",
+        "MATERIAL DESCRIPTION",
+        "SAMPLING DATA",
+        "LABORATORY",
+        "REMARKS"
+      ],
+      "footer_phrases": [
+        "NORTHGATE STANDARD LOG 2021_06_30.GDT"
+      ],
+      "layout": {"columns": 9, "ruler_side": "left", "units": "m"},
+      "column_map": {
+        "sample_id": "SAMPLING DATA",
+        "sample_type": "SAMPLING DATA",
+        "blows": "SAMPLING DATA",
+        "recovery": "SAMPLING DATA",
+        "index": "LABORATORY",
+        "remarks": "REMARKS"
+      }
+    },
+    {
+      "name": "Peartree Geosciences boring log",
+      "family": "Peartree Geosciences",
+      "years": "2016-",
+      "title_phrases": [
+        "Boring Log",
+        "Sample Description",
+        "Elevation and Datum",
+        "Project No."
+      ],
+      "column_headers": [
+        "Depth Scale",
+        "Sample Description",
+        "Number",
+        "Type",
+        "Recov. (in)",
+        "Penetr. resist BL/6in",
+        "N-Value (Blows/ft)"
+      ],
+      "footer_phrases": [
+        "Report: Log - PEARTREE"
+      ],
+      "layout": {"columns": 10, "ruler_side": "left", "units": "ft"},
+      "column_map": {
+        "sample_id": "Number",
+        "sample_type": "Type",
+        "recovery": "Recov. (in)",
+        "blows": "Penetr. resist BL/6in",
+        "n": "N-Value (Blows/ft)",
+        "description": "Sample Description"
+      }
+    }
+  ]
+}

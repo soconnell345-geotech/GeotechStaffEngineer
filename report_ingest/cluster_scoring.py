@@ -383,7 +383,9 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      sharepoint_folder: str = DEFAULT_FOLDER,
                      durable_dir: Any = None,
                      vision_dirs: Optional[Sequence[Any]] = None,
-                     review_dir: Any = None
+                     review_dir: Any = None,
+                     templates_path: Any = None,
+                     narrative_front_pages: int = 50
                      ) -> Dict[str, Any]:
     """Run the rules, triage and the label review over the corpus, and score.
 
@@ -697,7 +699,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         logs = _run_logs(corpus, prompter, model, out, logs_truth,
                          budget=log_budget, redo=redo,
                          max_logs=max_reports, open_reports=open_reports,
-                         sync=sync)
+                         sync=sync, templates_path=templates_path)
         results["logs"] = logs
         lines += _render_logs(logs)
 
@@ -712,7 +714,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         narrative = _run_narrative(
             corpus, prompter, model, out, narrative_truth,
             budget=narrative_budget, redo=redo, max_reports=max_reports,
-            open_reports=open_narrative_reports, sync=sync)
+            open_reports=open_narrative_reports, sync=sync,
+            front_pages=narrative_front_pages)
         results["narrative"] = narrative
         lines += _render_narrative(narrative)
 
@@ -918,14 +921,30 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
               truth_dir: Path, *, budget: int, redo: bool,
               max_logs: Optional[int],
               open_reports: Optional[Sequence[str]],
-              sync: Optional[Any] = None) -> Dict[str, Any]:
+              sync: Optional[Any] = None,
+              templates_path: Any = None) -> Dict[str, Any]:
     """Grid and reader over every hand-truthed log, before and after.
 
     Restartable the same way the labels stage is: each log writes
     ``logs/<log id>.json`` as it finishes and a later call skips it.
+
+    A private log-TEMPLATE fingerprint file travelling with the truth folder
+    (``<truth_dir>/../templates.json``, or ``templates_path``) is put in
+    force for the whole stage, so a log printed on a form the file describes
+    is recognised and its columns are named by the form. With no such file
+    nothing changes.
     """
     from report_ingest.engine import CostMeter, PrompterEngine
     from report_ingest.log_scoring import METRICS, score_one_log
+    from report_ingest.log_templates import (
+        load_templates, templates_beside, use_templates,
+    )
+
+    found = (load_templates(templates_path) if templates_path is not None
+             else templates_beside(truth_dir))
+    use_templates(found)
+    if found:
+        print(f"  log templates: {len(found)} fingerprint(s) in force")
 
     if not truth_dir.is_dir():
         raise FileNotFoundError(
@@ -1317,7 +1336,8 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
                    truth_dir: Path, *, budget: int, redo: bool,
                    max_reports: Optional[int],
                    open_reports: Optional[Sequence[str]],
-                   sync: Optional[Any] = None) -> Dict[str, Any]:
+                   sync: Optional[Any] = None,
+                   front_pages: int = 50) -> Dict[str, Any]:
     """The narrative reader over every report that has a hand answer.
 
     The stage reads the truth files that are PRESENT and skips every report
@@ -1379,7 +1399,7 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
         try:
             doc = corpus.open_report(rid, di="auto", warn=False)
             score = score_one_report(truth, doc, engine, budget=budget,
-                                     report=rid)
+                                     report=rid, front_pages=front_pages)
         except KeyboardInterrupt:
             print("  interrupted; what is finished is on disk and a later "
                   "call resumes")

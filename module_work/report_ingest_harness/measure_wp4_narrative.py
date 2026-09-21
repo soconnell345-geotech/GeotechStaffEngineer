@@ -5,6 +5,8 @@ Run from the repo root::
     .venv/Scripts/python -m module_work.report_ingest_harness.measure_wp4_narrative
     ... --only R36,R05       # a subset, by report
     ... --fields             # the per-question table as well
+    ... --lenient            # print the lenient view beside the strict one
+    ... --front-pages 50     # how much of the FRONT of the report goes in
     ... --detail             # every miss on the OPEN reports
     ... --append             # write the scorecard into MEASUREMENTS.md
 
@@ -49,8 +51,8 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from module_work.report_ingest_harness import corpus as C
 from report_ingest.narrative_scoring import (
-    FUZZY_RATIO, KINDS, LIST_HIT_JACCARD, NarrativeScore, Score,
-    score_one_report,
+    FUZZY_RATIO, KINDS, LENIENT_RATIO, LIST_HIT_JACCARD, NarrativeScore,
+    Score, dominant_miss, score_one_report,
 )
 
 LEDGER = C.RAW_DIR.parent / "MEASUREMENTS.md"
@@ -99,13 +101,14 @@ def load_truth(only: Optional[Sequence[str]] = None) -> List[Dict[str, Any]]:
     return out
 
 
-def run_one(truth: Dict[str, Any], engine: Any, budget: int,
-            di: str) -> NarrativeScore:
+def run_one(truth: Dict[str, Any], engine: Any, budget: int, di: str,
+            front_pages: int = 50) -> NarrativeScore:
     rid = str(truth.get("id") or "")
     doc = None
     try:
         doc = C.open_report(rid, di=di, warn=False)
-        return score_one_report(truth, doc, engine, budget=budget, report=rid)
+        return score_one_report(truth, doc, engine, budget=budget, report=rid,
+                                front_pages=front_pages)
     except Exception as exc:                     # score the rest of them
         return NarrativeScore(report=rid, error=f"{type(exc).__name__}: {exc}")
     finally:
@@ -135,13 +138,19 @@ def _sum_kind(scores: Sequence[NarrativeScore], kind: str) -> Score:
     return out
 
 
-def _block(name: str, group: Sequence[NarrativeScore]) -> List[str]:
+def _block(name: str, group: Sequence[NarrativeScore],
+           lenient: bool = False) -> List[str]:
     if not group:
         return []
-    out = ["", f"{name} -- {len(group)} report(s)",
-           f"{'metric':<26}{'rate':>16}"]
+    head = f"{'metric':<26}{'rate':>16}"
+    if lenient:
+        head += f"{'lenient':>16}"
+    out = ["", f"{name} -- {len(group)} report(s)", head]
     for metric in ("recall", "precision", "agreement"):
-        out.append(f"{metric:<26}{_rate(_sum(group, metric)):>16}")
+        line = f"{metric:<26}{_rate(_sum(group, metric)):>16}"
+        if lenient:
+            line += f"{_rate(_sum(group, 'lenient_' + metric)):>16}"
+        out.append(line)
     out.append("")
     for kind in KINDS:
         got = _sum_kind(group, kind)
@@ -159,33 +168,40 @@ def _block(name: str, group: Sequence[NarrativeScore]) -> List[str]:
 
 def _fields_table(scores: Sequence[NarrativeScore]) -> List[str]:
     cells: Dict[str, Dict[str, int]] = {}
+    kinds: Dict[str, List[str]] = {}
     for score in scores:
         for row in score.fields:
             cell = cells.setdefault(row.field, {"right": 0, "asked": 0,
                                                 "missed": 0, "invented": 0,
-                                                "wrong": 0})
+                                                "wrong": 0, "lenient": 0})
             if row.verdict in ("missed", "wrong", "right", "too_long"):
                 cell["asked"] += 1
+                cell["lenient"] += int(bool(row.lenient_ok))
             if row.verdict == "right":
                 cell["right"] += 1
             elif row.verdict in ("missed", "invented", "wrong"):
                 cell[row.verdict] += 1
+            if row.miss:
+                kinds.setdefault(row.field, []).append(row.miss)
     asked = {name: cell for name, cell in cells.items() if cell["asked"]}
     if not asked:
         return []
-    out = ["", "Per question",
-           f"{'field':<30}{'asked':>7}{'right':>7}{'missed':>8}{'wrong':>7}"
-           f"{'invented':>10}"]
+    out = ["", "Per question -- 'why' is the dominant kind of miss, and "
+               "'convention' is a house rule rather than a reading failure",
+           f"{'field':<30}{'asked':>7}{'right':>7}{'lenient':>9}"
+           f"{'missed':>8}{'wrong':>7}{'invented':>10}  why"]
     for name in sorted(asked, key=lambda k: (-asked[k]["asked"], k)):
         cell = asked[name]
         out.append(f"{name:<30}{cell['asked']:>7}{cell['right']:>7}"
-                   f"{cell['missed']:>8}{cell['wrong']:>7}"
-                   f"{cell['invented']:>10}")
+                   f"{cell['lenient']:>9}{cell['missed']:>8}"
+                   f"{cell['wrong']:>7}{cell['invented']:>10}  "
+                   f"{dominant_miss(kinds.get(name, ()))}")
     return out
 
 
 def report(scores: Sequence[NarrativeScore], openset: Sequence[str], *,
-           fields: bool = False, detail: bool = False) -> str:
+           fields: bool = False, detail: bool = False,
+           lenient: bool = False) -> str:
     good = [s for s in scores if s.error is None]
     out: List[str] = [
         f"{'report':<8}{'set':<7}{'recall':>14}{'precision':>14}"
@@ -202,9 +218,10 @@ def report(scores: Sequence[NarrativeScore], openset: Sequence[str], *,
             f"{score.model_calls:>7}{score.unresolved:>7}"
             f"{score.cost.get('dollars', 0.0):>8.3f}")
 
-    out += _block("OPEN", [s for s in good if s.report in openset])
-    out += _block("BLIND", [s for s in good if s.report not in openset])
-    out += _block("ALL", good)
+    out += _block("OPEN", [s for s in good if s.report in openset], lenient)
+    out += _block("BLIND", [s for s in good if s.report not in openset],
+                  lenient)
+    out += _block("ALL", good, lenient)
     if fields:
         out += _fields_table(good)
     if detail:
@@ -236,6 +253,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     help="model calls per report, the answer included")
     ap.add_argument("--fields", action="store_true",
                     help="print the per-question table")
+    ap.add_argument("--lenient", action="store_true",
+                    help="print the lenient view of the four free-text "
+                         "fields beside the strict one")
+    ap.add_argument("--front-pages", type=int, default=50,
+                    help="how many pages of the FRONT of the report go into "
+                         "the reader's input whatever their label; 0 turns "
+                         "the front-matter union off")
     ap.add_argument("--detail", action="store_true",
                     help="list every miss on the OPEN reports")
     ap.add_argument("--append", action="store_true",
@@ -256,9 +280,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     scores: List[NarrativeScore] = []
     for n, truth in enumerate(truths, 1):
         print(f"[{n}/{len(truths)}] {truth['id']} ...", flush=True)
-        scores.append(run_one(truth, engine, args.budget, args.di))
+        scores.append(run_one(truth, engine, args.budget, args.di,
+                              args.front_pages))
 
-    text = report(scores, openset, fields=args.fields, detail=args.detail)
+    text = report(scores, openset, fields=args.fields, detail=args.detail,
+                  lenient=args.lenient)
     print(text)
     failed = [s.report for s in scores if s.error]
     if failed and len(failed) == len(scores):
@@ -275,8 +301,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                    f"null, and flatters. Enumerations and counts exact; a "
                    f"string at a partial ratio of {FUZZY_RATIO} or on a "
                    f"shared proper noun; a list at a Jaccard overlap of "
-                   f"{LIST_HIT_JACCARD}; the four summaries on presence and "
-                   f"word limit only. Open set = "
+                   f"{LIST_HIT_JACCARD}; the four summaries on presence "
+                   f"and word limit only. The lenient view loosens the four "
+                   f"free-text fields to a partial ratio of {LENIENT_RATIO} "
+                   f"or a shared number-and-unit. Front pages "
+                   f"{args.front_pages}. Open set = "
                    f"{', '.join(openset)}.\n\n```\n{text}\n```\n")
         with LEDGER.open("a", encoding="utf-8") as fh:
             fh.write(block)
