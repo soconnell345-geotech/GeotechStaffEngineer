@@ -706,7 +706,7 @@ both. Then:
 |---|---|
 | `sharepoint` | the live `fh_sp_client`, its `.file_manager`, or the app's `SharePointStore`. All three are accepted, because remembering which one this argument wants is how a run ends up mirroring nowhere. |
 | `sharepoint_folder` | the folder the run folders sit under. Default `GeotechStaffEngineer/report_ingest`, which is where the 2026-09-20 sheet-mode run was copied by hand. |
-| `durable_dir` | any folder that survives the driver — a Volume, a DBFS path, a workspace folder your own probe has shown durable. The run's name is appended and the SharePoint prefix is not, so a run lands at `<durable_dir>/report_ingest_522/`. |
+| `durable_dir` | your workspace folder under `geotech_app/`, which persists; never `/tmp` and never DBFS (owner's rule, 2026-09-20). The run's name is appended and the SharePoint prefix is not, so a run lands at `<durable_dir>/report_ingest_522/`. |
 
 `out_dir` still refuses `/Workspace`. `durable_dir` does not: whether a path
 is durable on this cluster is your finding, not this package's, and the one

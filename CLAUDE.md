@@ -96,8 +96,9 @@ Key conventions:
   `results.json`. **Two backends behind one duck type**: a SharePoint file
   manager — the `fh_sp_client` itself is unwrapped, and so is the app's
   `SharePointStore` whose `file_manager` is a METHOD — and a plain folder
-  (`durable_dir`: a Volume, a DBFS path, a workspace folder the owner's own
-  probe has shown durable). Both at once is allowed and each keeps its own
+  (`durable_dir`: the owner's workspace folder under `geotech_app/`, which
+  persists; never `/tmp` or DBFS — the owner's rule, 2026-09-20). Both at
+  once is allowed and each keeps its own
   manifest. **A mirror failure never stops the run**: one warning line per
   distinct error and a count at the end. `out_dir` still refuses
   `/Workspace`; `durable_dir` does not, because whether a path is durable on
