@@ -3800,3 +3800,57 @@ every page left unresolved gets one page-mode call, counted as
 **What run 10 must answer:** does JPEG alone get R11's windows through, or
 does the split have to fire? And `vision_detail="low"` on accuracy, which is
 still unmeasured and is the only lever that moves a document run's token bill.
+
+### Run 10 -- 5.21.1, SHEET mode over the corpus with number-only sheets (VALID)
+
+38 reports, 1,321 calls, 3.41 M in (+1.64 M cached), 243 k out, 4,364 s,
+**$1.82** ($0.05 a report), gpt-4.1-mini, one sheet of six pages a call.
+
+```
+set                      pages   rules  +review   vision(sheet)
+in-sample (14)           4,147   0.908   0.916    0.655
+OOS open (10)               50   0.760   0.780    0.780
+OOS blind (14)              70   0.786   0.870    0.843
+honest blind (12)           60   0.767   0.850    0.867
+```
+(+review from run 7; vision from this run.) Per in-sample report: R09 .947,
+R11 .917, R15 .926, R30 .829, R16 .798, R12 .767, R23 .741, R20 .716,
+R28 .703, R18 .656, R13 .589, R29 .580, R24 .409, **R21 .196**.
+
+Why in-sample is low while blind is high -- the label classes, in-sample:
+```
+label            n   P rules R rules  P vision R vision
+appended_report 494   0.990   1.000    0.000   0.000   <- never emitted; needs document context
+other           216   0.507   0.481    0.083   0.005   <- never emitted
+calculation    1009   0.992   0.971    0.808   0.587   <- printouts read as tables/narrative
+narrative       433   0.973   0.915    0.472   0.910   <- the false-positive sink for the two above
+lab_test        992   0.929   0.988    0.803   0.917
+boring_log      273   0.959   0.941    0.784   0.919
+test_pit_log    251   0.957   0.888    0.771   0.697
+plan             18   0.303   0.556    0.567   0.944   <- vision better
+profile          28   0.571   0.571    0.525   0.750   <- vision better
+figure           61   0.267   0.328    0.156   0.721
+photos          132   0.904   0.856    0.697   0.977   <- vision better
+cover            30   1.000   0.367    0.595   0.833   <- vision better
+toc              25   0.947   0.720    0.535   0.920   <- vision better
+divider          83   0.657   0.855    0.458   0.783
+```
+R21 (729 pp) carries the bound-in bridging report -- hundreds of
+`appended_report` pages a thumbnail cannot know are appended -- and the
+494 appended + 216 other + 417 missed calculations are ~27% of the in-sample
+pages, which is the whole gap between 0.655 and the rules. The blind sets
+have few such pages, and there a $0.05 vision pass beats the rules by 10
+points and equals the $0.45 review (0.867 vs 0.850).
+
+Reading: rules and vision are COMPLEMENTARY by label class -- the rules own
+the structural labels (appended_report, other, calculation, lab_test) and
+vision owns the visual ones (plan, profile, photos, cover, toc, figure
+recall). That is the vote the owner asked for, and it can be scored with NO
+model calls from the run files already on disk (labels runs + vision runs):
+per-label trust, agreement rate, and the disagreement set that would go to
+review. The labels runs of 2026-09-18 live in /tmp/report_ingest_520 on the
+cluster and may not have survived a restart.
+
+Document mode (5.21.2, JPEG + splitting) is the pass that can recover
+appended_report and calculation, because it sees the dividers and the
+report's structure; R09 alone gave dividers R 0.857 (sheet 0.727).
