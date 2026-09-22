@@ -85,6 +85,11 @@ ENV_ROOT = "GEOTECH_SHAREPOINT_ROOT"
 
 DEFAULT_ROOT = "Shared Documents/GeotechStaffEngineer"
 
+#: The page whose conversations keep the flat layout: the geotech page,
+#: ``webapp.profiles.DEFAULT.name`` (spelled out here so this module stays
+#: free of the app's page machinery).
+DEFAULT_PAGE = "geotech"
+
 #: Local per-conversation mirror manifest (never itself uploaded).
 MANIFEST_NAME = "sp_manifest.json"
 
@@ -370,9 +375,11 @@ class SharePointStore:
 
         ``<root>/conversations/<name>`` — the layout every deployment has had.
         A conversation whose meta names an ``owner`` (the signed-in person on
-        a multi-user host, set by the app) and a ``page`` gets them as
-        segments in between, so one shared site folder does not mix people:
-        ``<root>/conversations/<owner>/<page>/<name>``.
+        a multi-user host, set by the app) gets it as a segment in between,
+        so one shared site folder does not mix people; one whose meta names
+        a ``page`` other than the geotech page gets that too, so the review
+        page's conversations do not mix into the geotech list:
+        ``<root>/conversations/[<owner>/][<page>/]<name>``.
         """
         root = root or core.thread_root(thread_id)
         meta = core.load_meta(thread_id, root) or {}
@@ -380,9 +387,9 @@ class SharePointStore:
         owner = sanitize_folder_name(str(meta.get("owner") or ""))
         if owner:
             segments.append(owner)
-            page = sanitize_folder_name(str(meta.get("page") or ""))
-            if page:
-                segments.append(page)
+        page = sanitize_folder_name(str(meta.get("page") or ""))
+        if page and page != DEFAULT_PAGE:
+            segments.append(page)
         segments.append(self.folder_name(thread_id, root))
         return "/".join(segments)
 

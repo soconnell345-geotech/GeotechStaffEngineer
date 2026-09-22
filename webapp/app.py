@@ -1193,13 +1193,14 @@ if prompt:
                      else None)
 
         # The conversation's owner and page, recorded once so the SharePoint
-        # mirror files it under the person and the page it belongs to (the
-        # single-user app records nothing and keeps its layout).
-        if _IDENT.authenticated or _PROFILE is not profiles.DEFAULT:
+        # mirror files it under the person (multi-user hosts only) and the
+        # page it belongs to (the geotech page on a single-user host records
+        # nothing and keeps its layout).
+        if _IDENT.multi_user or _PROFILE is not profiles.DEFAULT:
             try:
                 core.tag_conversation(
                     ss.thread_id, owner=(_IDENT.display_name
-                                         if _IDENT.authenticated else None),
+                                         if _IDENT.multi_user else None),
                     page=_PROFILE.name)
             except Exception:                      # never blocks a turn
                 pass

@@ -64,6 +64,15 @@ class Identity:
         return self.source != "none"
 
     @property
+    def multi_user(self) -> bool:
+        """True when a HOST identified the caller (the proxy header) — one
+        process serving many people, whose conversations must be kept apart.
+        ``DEV_IDENTITY`` and the Databricks launcher's email name ONE person
+        in a process that serves only them: they give a display name and a
+        markup author, and change no folder layout."""
+        return self.source == "header"
+
+    @property
     def qualified_name(self) -> str:
         """``DOMAIN\\user`` when a domain is known, else the bare user."""
         return f"{self.domain}\\{self.username}" if self.domain else self.username

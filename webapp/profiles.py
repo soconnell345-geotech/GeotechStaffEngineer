@@ -152,16 +152,21 @@ def session_root(profile: AppProfile, identity: Identity,
                  base: Optional[str] = None) -> str:
     """Where this person's conversations for this page live.
 
-    ``<data root>/users/<identity key>/<profile>`` — except that an
-    UNIDENTIFIED caller on the geotech page gets the data root itself, which
-    is the single-user layout every existing deployment has: the Databricks
-    app and a local ``streamlit run`` keep finding the conversations they
-    already have.
+    On a MULTI-USER host (the caller named by the proxy header):
+    ``<data root>/users/<identity key>/<profile>``. In a single-user process
+    — nobody identified, ``DEV_IDENTITY``, or the Databricks launcher's
+    email — the geotech page keeps the data root itself, the layout every
+    existing deployment has, so the Databricks app and a local ``streamlit
+    run`` keep finding the conversations they already have; the review page
+    gets its own folder beside it (``<data root>/pages/document_review``) so
+    the two pages' lists never mix.
     """
     root = base or core.data_root()
-    if not identity.authenticated and profile is DEFAULT:
+    if identity.multi_user:
+        return os.path.join(root, "users", identity.key, profile.name)
+    if profile is DEFAULT:
         return root
-    return os.path.join(root, "users", identity.key, profile.name)
+    return os.path.join(root, "pages", profile.name)
 
 
 __all__ = ["AppProfile", "GEOTECH", "DOCUMENT_REVIEW", "PROFILES", "DEFAULT",

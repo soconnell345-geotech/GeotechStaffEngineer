@@ -59,11 +59,17 @@ def harness(monkeypatch, tmp_path):
                         lambda kind, *_a, **_k: f"reviewer:{kind}")
     monkeypatch.setattr(core, "stream_turn", _stream_ok)
 
-    def make(profile=None, identity=None):
+    def make(profile=None, identity=None, header=None):
+        """``identity`` = DEV_IDENTITY (a single-user process); ``header`` =
+        the value the IIS proxy would send (a multi-user host)."""
         if profile:
             monkeypatch.setenv(profiles.PROFILE_ENV, profile)
         if identity:
             monkeypatch.setenv("DEV_IDENTITY", identity)
+        if header:
+            from webapp import identity as _identity
+            monkeypatch.setattr(_identity, "_streamlit_header_values",
+                                lambda: [header])
         return AppTest.from_file(_APP, default_timeout=30)
     make.built = built
     make.root = str(tmp_path)
@@ -84,7 +90,7 @@ def test_geotech_page_anonymous_is_the_old_app(harness):
 
 
 def test_review_page_builds_the_document_review_agent(harness):
-    at = harness(profile="document_review", identity="CORP\\jdoe").run()
+    at = harness(profile="document_review", header="CORP\\jdoe").run()
     assert not at.exception
     assert at.title[0].value.endswith("Document Review")
     assert not any(s.label == "Agent" for s in at.selectbox)   # no picker
@@ -103,7 +109,7 @@ def test_review_page_builds_the_document_review_agent(harness):
 
 
 def test_upload_on_the_review_page_triggers_orientation(harness, tmp_path):
-    at = harness(profile="document_review", identity="CORP\\jdoe").run()
+    at = harness(profile="document_review", header="CORP\\jdoe").run()
     assert not at.exception
     # Stage an attachment the way the sidebar handler does, then queue the
     # orientation exactly as the upload branch does, and rerun: the request
@@ -126,6 +132,24 @@ def test_upload_on_the_review_page_triggers_orientation(harness, tmp_path):
     assert meta["owner"] == "jdoe" and meta["page"] == "document_review"
     # nothing is queued twice
     assert "pending_orientation" not in at.session_state
+
+
+def test_single_user_identity_keeps_the_geotech_layout(harness):
+    """DEV_IDENTITY (and the Databricks launcher's email) name one person in
+    a process that serves only them: a display name and a markup author, no
+    new folder — the geotech page is the old app; the review page sits in
+    its own folder beside it."""
+    at = harness(identity="CORP\\jdoe").run()
+    assert not at.exception
+    assert any("Signed in as" in c.value for c in at.sidebar.caption)
+    tid = at.session_state["thread_id"]
+    assert core.thread_root(tid) is None
+    assert harness.built[-1]["markup_author"].startswith("jdoe via ")
+    at2 = harness(profile="document_review", identity="CORP\\jdoe").run()
+    assert not at2.exception
+    tid2 = at2.session_state["thread_id"]
+    assert core.thread_root(tid2) == os.path.abspath(
+        os.path.join(harness.root, "pages", "document_review"))
 
 
 def test_geotech_page_never_orients(harness):

@@ -107,12 +107,22 @@ def test_document_review_profile_builds_a_different_agent():
 
 def test_session_root_keeps_the_legacy_layout_for_the_single_user_app(tmp_path):
     base = str(tmp_path)
-    assert profiles.session_root(profiles.GEOTECH, ANONYMOUS, base) == base
+    # nobody identified, DEV_IDENTITY, the Databricks launcher's email: ONE
+    # person per process — the geotech page keeps the data root itself
+    dev = parse_principal("CORP\\jdoe", "dev")
+    email = parse_principal("jane.doe@state.gov", "email")
+    for who in (ANONYMOUS, dev, email):
+        assert not who.multi_user
+        assert profiles.session_root(profiles.GEOTECH, who, base) == base
+        assert profiles.session_root(profiles.DOCUMENT_REVIEW, who, base) == \
+            os.path.join(base, "pages", "document_review")
+    # the proxy header = a multi-user host: every page under the person
     jdoe = parse_principal("CORP\\jdoe", "header")
+    assert jdoe.multi_user
     assert profiles.session_root(profiles.GEOTECH, jdoe, base) == \
         os.path.join(base, "users", "corp__jdoe", "geotech")
-    assert profiles.session_root(profiles.DOCUMENT_REVIEW, ANONYMOUS, base) == \
-        os.path.join(base, "users", "anonymous", "document_review")
+    assert profiles.session_root(profiles.DOCUMENT_REVIEW, jdoe, base) == \
+        os.path.join(base, "users", "corp__jdoe", "document_review")
 
 
 def test_empty_scope_builds_an_agent_with_no_dispatch_tools():

@@ -463,3 +463,38 @@ class TestMeterConfigCrossesTheProcessBoundary:
         env = dl.build_launch_env({"X": "1"})
         assert env["X"] == "1"
         assert not any(k.startswith("FUNHOUSE_") for k in env)
+
+
+# ============================================================================
+# The two-page app on the classic host (5.26): the launcher boots
+# webapp/pages_entry.py by default, app.py on request
+# ============================================================================
+
+def test_launcher_boots_the_two_page_entry_by_default():
+    spark = _FakeSpark(_CLUSTER_CONF)
+    handle = dl.run_on_databricks(port=8501, spark=spark, quiet=True,
+                                  _popen=_fake_popen)
+    try:
+        with open(handle.script_path, encoding="utf-8") as fh:
+            src = fh.read()
+        assert "pages_entry.py" in src and "app.py'" not in src
+        assert os.path.isfile(dl._default_app_path())
+        assert os.path.basename(dl._default_app_path()) == "pages_entry.py"
+    finally:
+        handle.stop()
+
+
+def test_launcher_pages_false_boots_the_single_page_app():
+    spark = _FakeSpark(_CLUSTER_CONF)
+    handle = dl.run_on_databricks(port=8501, spark=spark, quiet=True,
+                                  pages=False, _popen=_fake_popen)
+    try:
+        with open(handle.script_path, encoding="utf-8") as fh:
+            src = fh.read()
+        assert "app.py" in src and "pages_entry.py" not in src
+        assert os.path.basename(dl._default_app_path(False)) == "app.py"
+        # the same repo root either way (both scripts live in webapp/)
+        assert os.path.dirname(dl._default_app_path(False)) == \
+            os.path.dirname(dl._default_app_path())
+    finally:
+        handle.stop()

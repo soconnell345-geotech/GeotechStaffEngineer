@@ -452,9 +452,13 @@ def build_launch_env(
     return env
 
 
-def _default_app_path() -> str:
-    """Absolute path to ``webapp/app.py`` shipped alongside this module."""
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py")
+def _default_app_path(pages: bool = True) -> str:
+    """Absolute path to the Streamlit script shipped alongside this module:
+    the two-page ``webapp/pages_entry.py`` (Document Review + the geotech
+    page, 5.26), or the single-page ``webapp/app.py`` when ``pages`` is
+    False."""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "pages_entry.py" if pages else "app.py")
 
 
 # ---------------------------------------------------------------------------
@@ -620,6 +624,7 @@ def run_on_databricks(
     cluster_id: Optional[str] = None,
     workspace_host: Optional[str] = None,
     app_path: Optional[str] = None,
+    pages: bool = True,
     anthropic_key: Optional[str] = None,
     python_executable: Optional[str] = None,
     quiet: bool = False,
@@ -664,7 +669,16 @@ def run_on_databricks(
         Override the workspace host for the printed URL (e.g.
         ``"https://dbc-….cloud.databricks.com"``).
     app_path : str, optional
-        Path to ``app.py`` (defaults to the one shipped in ``webapp/``).
+        Path to the Streamlit script to boot. Defaults to the shipped
+        two-page ``webapp/pages_entry.py`` (Document Review at the root,
+        GeotechStaffEngineer at ``/geotech`` — the same two pages as the Tiny
+        Apps deployment), or ``webapp/app.py`` when ``pages`` is False.
+    pages : bool
+        ``True`` (default, 5.26) boots the two-page app; ``False`` boots the
+        single geotech page exactly as before 5.26 — the fallback if page
+        switching misbehaves behind the driver proxy (the proxy strips the
+        ``/driver-proxy/...`` prefix and ``server_baseUrlPath`` cannot be
+        set, so the browser's page links are the thing to check live).
     anthropic_key : str, optional
         If given (e.g. ``dbutils.secrets.get(...)``), threaded into the subprocess
         env as the Prompter fallback.
@@ -684,7 +698,7 @@ def run_on_databricks(
         spark=spark, org_id=org_id, cluster_id=cluster_id)
     base = driver_proxy_base_path(org_id, cluster_id, port)
 
-    app_path = os.path.abspath(app_path or _default_app_path())
+    app_path = os.path.abspath(app_path or _default_app_path(pages))
     repo_root = os.path.dirname(os.path.dirname(app_path))
 
     script = render_bootstrap_script(
