@@ -71,7 +71,55 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-09-21) — 5.25.0 RELEASED (the report read whole, and a library of the reports read) with planlens 0.6.0; the report-ingest train PARKED, Tiny Apps next
+## CURRENT WORKING STATE (2026-09-22) — 5.25.0 RELEASED; on master UNRELEASED: the Tiny Apps build (two pages, one app) + document OUTPUT (Word, marked-up PDFs) — candidate 5.26.0 with planlens 0.7.0
+
+- **THE TINY APPS BUILD IS ON MASTER (2026-09-21/22), UNRELEASED — master
+  `40efccb`, three commits over `v5.25.0`; planlens master `47ceaa2` over
+  `v0.6.0` (its `annotate_document` needs a planlens 0.7.0 release FIRST,
+  refs pattern, then the app pin `planlens>=0.7`).** Plan of record
+  `tinyapps/TINYAPPS.md` (rewritten from CfA's own `exampleCode` repo and the
+  User Guide, both local-only under the gitignored `tinyapps/reference/`);
+  pickup list `HANDOFF.md` §0a-current. **Positioning (owner):** the
+  Department already has AIP Chatbot; this app exists for VISION (looking at
+  pages) and DOCUMENT CREATION (files back). **What exists:**
+  (1) **Two pages, one shell** — `webapp/profiles.py` (an `AppProfile` per
+  page) + `webapp/tinyapps_entry.py` (`st.navigation`; Document Review is the
+  root-served default, GeotechStaffEngineer is `/geotech`; both pages run
+  `webapp/app.py`). The review page builds
+  `build_deep_agent(allowed_agents=(), reference_mode="off",
+  system_prompt=DOCUMENT_REVIEW_PROMPT)` — a new `system_prompt` override, an
+  empty scope drops the dispatch tools — hides the specialist picker and the
+  geotech-only behaviour controls, and after an upload sends ONE automatic
+  orientation turn as the user's own message. With nobody signed in on the
+  geotech page the app is byte-for-byte the old one (AppTest-pinned).
+  (2) **Tiny Apps plumbing** — `webapp/tinyapps_settings.py` (CfA's
+  `get_setting`: env → Key Vault by `KV_NAME` via managed identity → local
+  `.env`), `webapp/tinyapps_engine.py` (Prompter as `ChatOpenAI` from
+  `PROMPTER_URL/MODEL/API_KEY/CA_BUNDLE`, key sent as `api-key` AND Bearer),
+  `webapp/identity.py` (IIS `X-Windows-Auth-Header` via `st.context.headers`,
+  `DEV_IDENTITY` locally, `GEOTECH_USER_EMAIL` on Databricks → folder key,
+  display name, markup author), `webapp/graph_sharepoint.py` (SDK-free Graph
+  file manager over an app registration; `sharepoint_store` prefers it when
+  `GRAPH_*` + `SHAREPOINT_SITE_URL` are set), `GEOTECH_DEPLOYMENT=tinyapps`
+  keyless like Foundry, per-user/per-page conversation roots
+  (`core.register_thread_root`, looked up by thread id) and SharePoint
+  folders (`conversations/<owner>/<page>/…` via `core.tag_conversation`).
+  Wrapper-repo templates in `tinyapps/wrapper_repo/` follow CfA's Streamlit
+  starter. (3) **Document OUTPUT** (Opus build, lead-reviewed): `write_docx`
+  (Markdown → Word, `calc_package/docx_renderer.py`; NEW deps `python-docx`,
+  `markdown-it-py`; hides itself where python-docx is missing) and
+  `annotate_document` (planlens `document/markup_writer.py` — notes,
+  highlights, boxes, callouts, replies onto a COPY, anchored by quote / box /
+  point / reply_to, read back by planlens' own `markups()`; toolkit tool +
+  app bridge, `<document>_marked.pdf` in the working folder, signed
+  "<user> via GeotechStaffEngineer (AI draft)" — `markup_author` threads
+  from `build_deep_agent`). **Gate 2026-09-22:** planlens 1,331 passed; app
+  2,283 passed / 8 skipped over webapp + deep + agent + calc_package, plus a
+  real `streamlit run` of the wrapper (both pages render, switch, tab titles
+  follow). **Blocked on the team:** the Prompter values (URL, model, key,
+  CA bundle — the deployment MUST accept image inputs), the published origin
+  for `corsAllowedOrigins`, the SharePoint app registration. **Owner's next
+  step:** the dosdev recipe in `TINYAPPS.md`.
 
 - **THE REPORT-INGEST TRAIN IS PARKED at 5.25.0 (2026-09-21).** The release is
   cut — master `46ae949` is tag `v5.25.0` and the version is on PyPI — and the
@@ -1039,19 +1087,27 @@ Process note: Fable for code builds, Sonnet for document digitization
 (owner); builder + independent-verifier pattern caught a 5-meter
 radius-floor unit bug pre-commit.
 
-## TinyApps pilot (AWARDED 2026-09-03 — the strategic hosting path)
+## TinyApps pilot (AWARDED 2026-09-03; BUILT 2026-09-21/22 — the strategic hosting path)
 
-CfA's Azure Web Apps pilot selected the team: shared Azure App Service
-slot behind Entra ID (NO driver proxy — the websocket saga does not apply
-there), free Prompter API key ($50/mo, 1 model), native Funhouse
-connectivity, 30 days to POC, 6-month pilot, successful apps stay hosted.
-**Plan of record: `tinyapps/TINYAPPS.md`** (environment facts, thin-wrapper
-repo architecture — app repo = app.py/packages.txt/run.sh, toolkit via
-Nexus as the released PyPI package — approval path, office-hours question
-list). Stubs: `webapp/tinyapps_entry.py` (GEOTECH_DEPLOYMENT=tinyapps) +
-`tinyapps/wrapper_repo/` templates. Engine wiring (key-auth Prompter)
-blocked on office-hours answer #1. Funhouse/Databricks app stays as the
-fast tester + backup per owner.
+CfA's Azure Web Apps pilot selected the team: a shared Azure App Service
+slot behind an IIS/ARR tier doing Windows auth (NO driver proxy — the
+websocket saga does not apply), a free Prompter API key ($50/mo, ONE model
+deployment — it must accept image inputs), packages from Nexus only, 30
+days to POC, 6-month pilot, successful apps stay hosted. **Plan of record:
+`tinyapps/TINYAPPS.md`** — environment facts from CfA's `exampleCode` repo
+(their `settings.py` / `prompter.py` / `sharepoint.py` / identity-header
+patterns, all reproduced in `webapp/tinyapps_*.py`, `webapp/identity.py`,
+`webapp/graph_sharepoint.py`), the thin-wrapper repo (`tinyapps/wrapper_repo/`
+= `app.py` / `packages.txt` / `run.sh` / `.env.example`; the toolkit arrives
+from Nexus as the released package), the two-page architecture
+(`webapp/profiles.py` + `webapp/tinyapps_entry.py`), the dosdev test recipe
+and the question list. Department documents (the guide, the guidelines, the
+example code) live ONLY under the gitignored `tinyapps/reference/`. The
+owner has GHE + dosdev (Python 3.11.9) and the package pip-installs there;
+the Prompter values, the published origin and the SharePoint app
+registration are the team's to provide. Funhouse/Databricks stays the fast
+tester + backup; a plain `streamlit run webapp/app.py` and the Databricks
+launcher are unchanged (geotech profile, default root).
 
 ## v5.11.2 status (RELEASED 2026-09-03 to PyPI; owner word "cut the release" — websocket FINAL root cause + detached turns)
 

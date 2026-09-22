@@ -1,12 +1,87 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-09-21.** This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-09-22.** This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-09-21, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-09-22, supersedes everything below)
+
+### THE TINY APPS BUILD (2026-09-21/22) — on master, UNRELEASED; candidate 5.26.0 + planlens 0.7.0
+
+**What happened.** The owner opened the Tiny Apps session with three
+uploads — CfA's `exampleCode` repo, the Tiny Apps User Guide v1.1 and the
+Pilot Guidelines (all local-only under the gitignored `tinyapps/reference/`;
+Department documents are NEVER committed, owner's rule) — and two decisions:
+the app on this host exists for what AIP Chatbot cannot do (**vision** and
+**document creation**), and it is **two pages over ONE app**, never a second
+copy. Everything below was built in one night: the plumbing by the lead, the
+document-output tools by an Opus builder the lead reviewed, then the shell.
+Commits on master: `8315581` (plumbing + pages), `15c291a` (document output +
+shell), `40efccb` (routing fix); planlens `47ceaa2` (markup writer).
+`tinyapps/TINYAPPS.md` is the plan of record and was rewritten from the
+sources — read it before touching any of this.
+
+**(a) What exists — app, on master.**
+
+| Piece | Where | Note |
+|---|---|---|
+| Two pages, one shell | `webapp/profiles.py`, `webapp/tinyapps_entry.py`, `webapp/app.py` | Document Review = root-served default (`st.Page(default=True)` takes NO `url_path` — Streamlit says "Page not found" otherwise); GeotechStaffEngineer = `/geotech`. Each page function calls `set_page_config` (tab title follows), flags `_page_config_set`, records the profile, `runpy`-runs `app.py`. A page switch parks and resumes each page's conversation (`_page_threads`). |
+| Review agent | `funhouse_agent/deep/prompt.DOCUMENT_REVIEW_PROMPT`; `build_deep_agent(system_prompt=…)`; empty `allowed_agents` → no dispatch tools | Profile kwargs: `allowed_agents=()`, `reference_mode="off"`, `enable_calc_subagent=False`, `extra_system_prompt=None`. Specialist picker and the three geotech behaviour controls hidden; placeholder text differs. |
+| Orientation turn | `app.py` upload handler → `ss.pending_orientation` → the chat-input block sends `profile.orientation_request` as the USER's message | Automatic (owner: "run it automatically"); only when an agent exists and no turn is running; ignored on a page whose profile does not orient (test-pinned). |
+| Settings | `webapp/tinyapps_settings.py` | CfA's `get_setting`: env var → Key Vault (`KV_NAME`, managed identity, `IDENTITY_ENDPOINT` ⇒ azure) → `.env` (`GEOTECH_DOTENV`). Hyphen/underscore names equivalent. |
+| Engine | `webapp/tinyapps_engine.py` | `ChatOpenAI(base_url=<PROMPTER_URL minus /chat/completions>, api_key, default_headers={"api-key"}, http_client=httpx(verify=CA ctx), max_completion_tokens)`; `register()` installs the model builder and publishes the model to the picker. `GEOTECH_PROMPTER_DISABLE_STREAMING=1`. |
+| Identity | `webapp/identity.py` | `X-Windows-Auth-Header` via `st.context.headers` (two values ⇒ trust neither), `DEV_IDENTITY`, `GEOTECH_USER_EMAIL`, else `ANONYMOUS`. `Identity.key` (folder), `display_name`, `markup_author` ("<user> via GeotechStaffEngineer (AI draft)", or `GEOTECH_MARKUP_AUTHOR`). |
+| Per-user roots | `core.register_thread_root` / `thread_root`; `profiles.session_root` | `<data root>/users/<key>/<profile>`; anonymous on the geotech page = the data root (legacy layout). The detached worker finds the root by thread id. Sidebar lists `list_conversations(_ROOT)`; delete/rename pass `_ROOT`. |
+| SharePoint | `webapp/graph_sharepoint.py`; `sharepoint_store` prefers it | SDK-free Graph over an app registration (`GRAPH_TENANT_ID/CLIENT_ID/CLIENT_SECRET`, `SHAREPOINT_SITE_URL`), same six methods. Mirror folder `conversations/<owner>/<page>/<name>` when the meta is tagged (`core.tag_conversation`, done at the first turn on an identified or non-default session); untagged = old layout. |
+| Keyless posture | `engine_config.is_tinyapps_deployment` / `is_keyless_deployment`; `diagnostics` | No personal key read or named; the banner names `PROMPTER_*`. |
+| Word output | `calc_package/docx_renderer.py`; `write_docx` in `vision_tools` + `deep/tools` | Markdown → .docx via python-docx (NEW dep) parsed with markdown-it-py (NEW explicit dep); saves through `save_file`'s writer. Hides itself without python-docx. `.docx/.xlsx/.pptx` MIME in `app.py`. |
+| Marked-up PDFs | planlens `document/markup_writer.py` + toolkit `annotate_document`; app bridge in `document_tools` + `deep/tools` | note / highlight / box / callout / reply onto a COPY; anchors quote (exact→fuzzy, narrowed to matched words) / bbox / point / reply_to (/IRT + /RT /R); read back by planlens' own `markups()` incl. rotated pages; `<document>_marked.pdf` in the working folder; `markup_author` threads `build_deep_agent → build_primary_tools → make_vision_tools`. Pages are 0-based. |
+| Wrapper repo | `tinyapps/wrapper_repo/` | `app.py` (sets `GEOTECH_DOTENV`, `GEOTECH_WEBAPP_DATA=/home/data/…` on App Service), `packages.txt` (pin ≥5.26 + CfA fleet pins + Key Vault libs), `run.sh` (CfA template: `$PORT`, `corsAllowedOrigins CHANGE-ME`), `.env.example`, `README.md`. |
+
+**(b) Gate, 2026-09-22 (foreground, pytest exit codes):** planlens **1,331
+passed**; app **2,283 passed / 8 skipped** over `webapp/tests`,
+`funhouse_agent/deep/tests`, `funhouse_agent/tests`, `calc_package`; plus a
+real `streamlit run tinyapps/wrapper_repo/app.py` with `DEV_IDENTITY` set,
+checked in Chrome: both pages render, switch, tab titles follow, "Signed in
+as jdoe", the specialist picker only on the geotech page. (Locally the
+wrapper needs `PYTHONPATH=<repo>` because the app is not pip-installed into
+the dev venv; on dosdev it is.)
+
+**(c) PICKUP LIST, in order.**
+
+1. **Release order when the owner says so:** planlens **0.7.0** first
+   (`annotate_document`, `Document.tobytes`, `frame.from_display_*`,
+   `ReviewToolkit(author=, output_root=)`), then the app **5.26.0** with the
+   pin raised to `planlens>=0.7` — `annotate_document` is feature-detected,
+   so a 5.26.0 on a 0.6.0 planlens simply lacks it. The docs-currency gate
+   (`webapp/tests/test_docs_currency.py`) will demand CLAUDE.md, this entry
+   and `docs/DATABRICKS_INSTALL.md` §11 name 5.26.0. Two NEW dependencies
+   (`python-docx`, `markdown-it-py`) — watch the Nexus install log.
+2. **The owner's dosdev run** (recipe in `TINYAPPS.md`): install from
+   Nexus (proves the tree incl. pandas 3.0.2 / streamlit 1.62.0 clears the
+   firewall — our suite has NOT run on pandas 3), fill `.env`, run, upload a
+   PDF → the orientation turn, ask for a marked-up copy and a Word summary.
+3. **Blocked on CfA:** Prompter URL / model / key / CA bundle — **the
+   deployment must accept IMAGE inputs** (make-or-break; ask first); the
+   published origin for `corsAllowedOrigins`; the SharePoint app
+   registration; confirmation the identity header is passed for pilot
+   Streamlit apps; whether the gateway streams.
+4. **Not built, noted:** an SDK-free budget/spend line for the sidebar
+   (`report_ingest.engine.CostMeter` + `PROMPTER_PRICES` are reusable; the
+   Funhouse budget panel needs the SDK); the email tool is SDK-only and off
+   on Tiny Apps; `report_ingest`'s `PrompterEngine` still expects an SDK
+   prompter object (the ingest/library sub-agents are OFF by default anyway);
+   restoring from SharePoint lists every owner's folders (permissions are
+   per team site — acceptable for the pilot, filter by owner later); the
+   Databricks launcher could adopt the two-page entry but does not yet.
+
+**(d) Standing rules added on this train.** Department documents (guides,
+example code, reports, the Funhouse SDK) are local-only under a gitignored
+path — add the `.gitignore` line BEFORE copying. The identity header is
+trusted on the network restriction alone and is never typed into the app.
+`st.Page(default=True)` takes no `url_path`.
 
 ### PARKED 2026-09-21 — report-ingest train at 5.25.0; NEXT: Tiny Apps (new session)
 
