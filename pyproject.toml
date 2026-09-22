@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geotech-staff-engineer"
-version = "5.25.0"
+version = "5.26.0"
 description = "Python toolkit for LLM-based geotechnical engineering agents - 33 analysis modules covering foundations, piles, slopes, structural section/RC/frame analysis, reliability, seismic site response, excavation support, pavement design (AASHTO 1993 / UFC 3-250-01), subsurface characterization (DIGGS/GEF/AGS4), FEM, drawing & profile rendering, and a cited public-domain reference layer."
 readme = "README.md"
 license = "MIT"
@@ -135,7 +135,7 @@ dependencies = [
     # came back with no depths at all. 0.6.0's dependency list is STILL
     # identical to 0.4.0's, so this again adds NO new third-party package to
     # the cluster.
-    "planlens>=0.6",
+    "planlens>=0.7",
     # -- structural round 1 (owner, 2026-09-03): section/RC/frame analysis --
     # sectionproperties and concreteproperties were REMOVED in 5.13.0: both
     # require `cytriangle`, whose only manylinux wheel is quarantined by the

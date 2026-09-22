@@ -71,12 +71,13 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-09-22) — 5.25.0 RELEASED; on master UNRELEASED: the Tiny Apps build (two pages, one app) + document OUTPUT (Word, marked-up PDFs) — candidate 5.26.0 with planlens 0.7.0
+## CURRENT WORKING STATE (2026-09-22) — 5.26.0 RELEASED with planlens 0.7.0: the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
 
-- **THE TINY APPS BUILD IS ON MASTER (2026-09-21/22), UNRELEASED — master
-  `40efccb`, three commits over `v5.25.0`; planlens master `47ceaa2` over
-  `v0.6.0` (its `annotate_document` needs a planlens 0.7.0 release FIRST,
-  refs pattern, then the app pin `planlens>=0.7`).** Plan of record
+- **5.26.0 RELEASED 2026-09-22 (tag `v5.26.0`) with planlens 0.7.0 (tag
+  `v0.7.0`, published first — the app pin is now `planlens>=0.7`). Two NEW
+  dependencies: `python-docx>=1.1`, `markdown-it-py>=3`.** The owner's word:
+  "you can release." Nothing in it has run on the cluster or on dosdev yet;
+  the owner's test list is `HANDOFF.md` §0a-current (b)–(c). Plan of record
   `tinyapps/TINYAPPS.md` (rewritten from CfA's own `exampleCode` repo and the
   User Guide, both local-only under the gitignored `tinyapps/reference/`);
   pickup list `HANDOFF.md` §0a-current. **Positioning (owner):** the
@@ -1640,7 +1641,10 @@ Run: `pytest foundry_test_harness/ -v`
 
 Everything that reads a PDF, an image or a DXF lives in the separate,
 published package **planlens** (`C:/Users/socon/OneDrive/dev/planlens`,
-PyPI `planlens`, editable-installed in dev; app pin `planlens>=0.6` since
+PyPI `planlens`, editable-installed in dev; app pin `planlens>=0.7` since
+5.26.0 — 0.7.0 adds `annotate_document` / `document.markup_writer`, the
+WRITE side of the review markups, with the same dependencies as 0.6.0 — and
+`planlens>=0.6` since
 5.20.0, raised from `planlens>=0.5` at 5.19.0 — plain, no extra, because 0.4.0
 moved `opencv-python-headless` and `rapidfuzz` into planlens' core and left
 `[raster]` / `[text]` as empty alias extras, and 0.5.0 and 0.6.0 each declare

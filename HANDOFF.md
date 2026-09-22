@@ -8,7 +8,12 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-09-22, supersedes everything below)
 
-### THE TINY APPS BUILD (2026-09-21/22) — on master, UNRELEASED; candidate 5.26.0 + planlens 0.7.0
+### 5.26.0 RELEASED 2026-09-22 (tag `v5.26.0`) with planlens 0.7.0 (tag `v0.7.0`) — THE TINY APPS BUILD
+
+**Released on the owner's word ("you can release"), planlens first.** Two
+new dependencies (`python-docx`, `markdown-it-py`); pin `planlens>=0.7`.
+Nothing has yet run on the cluster or on dosdev — the owner's test list and
+the questions for CfA are (b)–(c) below and `tinyapps/TINYAPPS.md`.
 
 **What happened.** The owner opened the Tiny Apps session with three
 uploads — CfA's `exampleCode` repo, the Tiny Apps User Guide v1.1 and the
@@ -52,14 +57,12 @@ the dev venv; on dosdev it is.)
 
 **(c) PICKUP LIST, in order.**
 
-1. **Release order when the owner says so:** planlens **0.7.0** first
-   (`annotate_document`, `Document.tobytes`, `frame.from_display_*`,
-   `ReviewToolkit(author=, output_root=)`), then the app **5.26.0** with the
-   pin raised to `planlens>=0.7` — `annotate_document` is feature-detected,
-   so a 5.26.0 on a 0.6.0 planlens simply lacks it. The docs-currency gate
-   (`webapp/tests/test_docs_currency.py`) will demand CLAUDE.md, this entry
-   and `docs/DATABRICKS_INSTALL.md` §11 name 5.26.0. Two NEW dependencies
-   (`python-docx`, `markdown-it-py`) — watch the Nexus install log.
+1. **RELEASED 2026-09-22:** planlens **0.7.0** first (`annotate_document`,
+   `Document.tobytes`, `frame.from_display_*`, `ReviewToolkit(author=,
+   output_root=)`), then the app **5.26.0** with the pin `planlens>=0.7` —
+   `annotate_document` is feature-detected, so a 5.26.0 on a 0.6.0 planlens
+   simply lacks it. Two NEW dependencies (`python-docx`, `markdown-it-py`) —
+   watch the Nexus install log; the mirror delivers a day or two after PyPI.
 2. **The owner's dosdev run** (recipe in `TINYAPPS.md`): install from
    Nexus (proves the tree incl. pandas 3.0.2 / streamlit 1.62.0 clears the
    firewall — our suite has NOT run on pandas 3), fill `.env`, run, upload a
