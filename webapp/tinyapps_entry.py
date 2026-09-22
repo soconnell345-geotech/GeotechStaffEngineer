@@ -9,7 +9,7 @@ repo's ``app.py``, which is a few lines ending in::
 ``main()`` marks the process as a Tiny Apps deployment, installs the Prompter
 engine from the deployment's settings, and runs a two-page navigation:
 
-* **Document Review** (``/review``, the default) — a general document-review
+* **Document Review** (the app root, the default) — a general document-review
   agent for architects, engineers and construction managers: looks at the
   pages, hands back Word memos and marked-up PDFs.
 * **GeotechStaffEngineer** (``/geotech``) — the geotechnical staff engineer
@@ -74,6 +74,13 @@ def page_runner(profile: profiles.AppProfile):
     the profile from session state and shapes itself accordingly.
     """
     def _run() -> None:
+        import streamlit as st
+        # The ONE set_page_config of the run, with THIS page's title and
+        # icon (so the browser tab follows the page); the shell skips its own
+        # when it sees the flag — a second call raises.
+        st.set_page_config(page_title=profile.title, page_icon=profile.icon,
+                           layout="wide")
+        st.session_state["_page_config_set"] = True
         profiles.set_current(profile.name)
         runpy.run_path(app_path(), run_name="__main__")
     _run.__name__ = profile.name
@@ -83,13 +90,13 @@ def page_runner(profile: profiles.AppProfile):
 
 def build_navigation():
     """The ``st.navigation`` object for the two pages (Document Review first,
-    and the default)."""
+    and the default — Streamlit serves the default page at the app root, so
+    it gets no ``url_path``; a path on it is "Page not found")."""
     import streamlit as st
     pages = [
         st.Page(page_runner(profiles.DOCUMENT_REVIEW),
                 title=profiles.DOCUMENT_REVIEW.title,
-                icon=profiles.DOCUMENT_REVIEW.icon,
-                url_path=profiles.DOCUMENT_REVIEW.url_path, default=True),
+                icon=profiles.DOCUMENT_REVIEW.icon, default=True),
         st.Page(page_runner(profiles.GEOTECH),
                 title=profiles.GEOTECH.title, icon=profiles.GEOTECH.icon,
                 url_path=profiles.GEOTECH.url_path),
@@ -101,12 +108,6 @@ def main() -> None:
     """Run the two-page app in the current Streamlit script context."""
     mark_deployment()
     register_engine()
-    import streamlit as st
-    # The ONE set_page_config of the run — the shell skips its own when it
-    # sees this flag (a second call raises).
-    st.set_page_config(page_title="Document Review", page_icon="📄",
-                       layout="wide")
-    st.session_state["_page_config_set"] = True
     build_navigation().run()
 
 

@@ -25,7 +25,7 @@ pages, one app, no duplicate:
 
 | Page | URL | What it is |
 |---|---|---|
-| **Document Review** (default) | `/review` | a general document-review agent for architects, construction managers and engineers of any discipline: drawings, specifications, submittals, RFIs, reports, calc packages. On upload it orients itself automatically (one cheap turn: what this is, how it is organised, what is text vs picture, existing markups, what it could do next), then it is a normal chat with the full document, vision and file tools and a default habit of handing back a `.docx` or a marked-up PDF |
+| **Document Review** (default) | `/` | a general document-review agent for architects, construction managers and engineers of any discipline: drawings, specifications, submittals, RFIs, reports, calc packages. On upload it orients itself automatically (one cheap turn: what this is, how it is organised, what is text vs picture, existing markups, what it could do next), then it is a normal chat with the full document, vision and file tools and a default habit of handing back a `.docx` or a marked-up PDF |
 | **GeotechStaffEngineer** | `/geotech` | the geotechnical staff engineer exactly as on Databricks — the deepest worked example of both habits |
 
 Implementation: `webapp/profiles.py` (an `AppProfile` per page; the review

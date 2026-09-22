@@ -61,19 +61,26 @@ def test_main_runs_two_pages_document_review_first(monkeypatch):
 
     tinyapps_entry.main()
 
-    assert calls["ran"] and session["_page_config_set"] is True
+    assert calls["ran"]
     pages = calls["pages"]
-    assert [p["url_path"] for p in pages] == ["review", "geotech"]
+    # the default page is served at "/" — Streamlit rejects a url_path on it
+    assert [p["url_path"] for p in pages] == [None, "geotech"]
     assert pages[0]["default"] is True and pages[1]["default"] is False
     assert pages[0]["title"] == "Document Review"
     assert pages[1]["title"] == "GeotechStaffEngineer"
     # each page function records its profile, then runs the shell
+    # each page function sets THE page config (its own title and icon),
+    # flags it for the shell, records its profile, then runs the shell
     ran = []
     monkeypatch.setattr("runpy.run_path", lambda *a, **k: ran.append(a[0]))
     pages[0]["fn"]()
     assert session[profiles.SESSION_KEY] == "document_review"
+    assert session["_page_config_set"] is True
+    assert calls["config"]["page_title"] == "Document Review"
+    calls.pop("config")
     pages[1]["fn"]()
     assert session[profiles.SESSION_KEY] == "geotech"
+    assert calls["config"]["page_title"] == "GeotechStaffEngineer"
     assert len(ran) == 2 and all(p.endswith("app.py") for p in ran)
 
 

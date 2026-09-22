@@ -59,7 +59,8 @@ class AppProfile:
     title: str
     icon: str
     caption: str
-    #: The path segment in the browser (``/review``, ``/geotech``).
+    #: The path segment in the browser (``/geotech``). Empty for the DEFAULT
+    #: page, which Streamlit serves at the app root and nowhere else.
     url_path: str
     #: Whether the sidebar "Agent" picker (reviewer specialists) applies.
     specialists: bool = True
@@ -97,7 +98,7 @@ DOCUMENT_REVIEW = AppProfile(
              "calculation packages — looking at the pages, not only the text "
              "— and hands back Word memos and marked-up PDFs. A review aid; "
              "the judgement stays with you."),
-    url_path="review",
+    url_path="",                 # the default page: served at "/"
     specialists=False,
     orientation=True,
     _build_kwargs={
