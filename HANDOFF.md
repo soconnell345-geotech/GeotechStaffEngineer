@@ -39,6 +39,7 @@ sources — read it before touching any of this.
 | Word output | `calc_package/docx_renderer.py`; `write_docx` in `vision_tools` + `deep/tools` | Markdown → .docx via python-docx (NEW dep) parsed with markdown-it-py (NEW explicit dep); saves through `save_file`'s writer. Hides itself without python-docx. `.docx/.xlsx/.pptx` MIME in `app.py`. |
 | Marked-up PDFs | planlens `document/markup_writer.py` + toolkit `annotate_document`; app bridge in `document_tools` + `deep/tools` | note / highlight / box / callout / reply onto a COPY; anchors quote (exact→fuzzy, narrowed to matched words) / bbox / point / reply_to (/IRT + /RT /R); read back by planlens' own `markups()` incl. rotated pages; `<document>_marked.pdf` in the working folder; `markup_author` threads `build_deep_agent → build_primary_tools → make_vision_tools`. Pages are 0-based. |
 | Wrapper repo | `tinyapps/wrapper_repo/` | `app.py` (sets `GEOTECH_DOTENV`, `GEOTECH_WEBAPP_DATA=/home/data/…` on App Service), `packages.txt` (pin ≥5.26 + CfA fleet pins + Key Vault libs), `run.sh` (CfA template: `$PORT`, `corsAllowedOrigins CHANGE-ME`), `.env.example`, `README.md`. |
+| Classic Funhouse host | `webapp/pages_entry.py`; `databricks_launcher.run_on_databricks(pages=True)` (commit `b289d83`) | The same two pages on Databricks: the launcher boots `pages_entry.py` by default; `pages=False` boots the single `app.py` as before 5.26. `Identity.multi_user` (the proxy header only) is what namespaces folders — the launcher's `GEOTECH_USER_EMAIL` shows "Signed in as" and signs markups but leaves the owner's geotech conversations where they are; the review page lives in `<data root>/pages/document_review` and mirrors to `conversations/document_review/…`. **UNVERIFIED LIVE: page links behind the driver proxy** (the proxy strips the prefix; `server_baseUrlPath` cannot be set) — the first cluster run of 5.26 should click between the pages and reload `/geotech`; if the links break, `pages=False`. |
 
 **(b) Gate, 2026-09-22 (foreground, pytest exit codes):** planlens **1,331
 passed**; app **2,283 passed / 8 skipped** over `webapp/tests`,
@@ -68,7 +69,12 @@ the dev venv; on dosdev it is.)
    published origin for `corsAllowedOrigins`; the SharePoint app
    registration; confirmation the identity header is passed for pilot
    Streamlit apps; whether the gateway streams.
-4. **Not built, noted:** an SDK-free budget/spend line for the sidebar
+4. **First cluster run of 5.26 (owner):** `run_on_databricks(prompter=fh_prompter)`
+   as always — it now opens on Document Review; click to GeotechStaffEngineer
+   and back, reload on `/geotech`, confirm the old conversations are still
+   listed on the geotech page and "Signed in as <you>" shows. If the page
+   links go wrong behind the proxy, relaunch with `pages=False` and report.
+5. **Not built, noted:** an SDK-free budget/spend line for the sidebar
    (`report_ingest.engine.CostMeter` + `PROMPTER_PRICES` are reusable; the
    Funhouse budget panel needs the SDK); the email tool is SDK-only and off
    on Tiny Apps; `report_ingest`'s `PrompterEngine` still expects an SDK

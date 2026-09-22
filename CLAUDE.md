@@ -105,7 +105,13 @@ Key conventions:
   (`core.register_thread_root`, looked up by thread id) and SharePoint
   folders (`conversations/<owner>/<page>/…` via `core.tag_conversation`).
   Wrapper-repo templates in `tinyapps/wrapper_repo/` follow CfA's Streamlit
-  starter. (3) **Document OUTPUT** (Opus build, lead-reviewed): `write_docx`
+  starter. **The same two pages run on the classic Funhouse host** (`b289d83`):
+  `webapp/pages_entry.py` is host-neutral and `run_on_databricks` boots it by
+  default (`pages=False` = the old single page); only the proxy HEADER
+  namespaces folders (`Identity.multi_user`), so the launcher's
+  `GEOTECH_USER_EMAIL` leaves the owner's geotech conversations in place —
+  page links behind the driver proxy are unverified until the first cluster
+  run. (3) **Document OUTPUT** (Opus build, lead-reviewed): `write_docx`
   (Markdown → Word, `calc_package/docx_renderer.py`; NEW deps `python-docx`,
   `markdown-it-py`; hides itself where python-docx is missing) and
   `annotate_document` (planlens `document/markup_writer.py` — notes,
