@@ -594,6 +594,7 @@ def build_primary_tools(
     save_fn: Optional[Callable] = None,
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
     reference_result_chars: Optional[int] = None,
+    markup_author: Optional[str] = None,
 ) -> list:
     """Build the primary agent's tool list.
 
@@ -629,6 +630,7 @@ def build_primary_tools(
         save_fn=save_fn,
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
+        markup_author=markup_author,
     )
 
 
@@ -701,6 +703,7 @@ def build_deep_agent(
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
     reference_result_chars: Optional[int] = None,
     references_max_model_calls: Optional[int] = DEFAULT_REFERENCES_MAX_MODEL_CALLS,
+    markup_author: Optional[str] = None,
     enable_calc_subagent: bool = False,
     calc_extra_tools=None,
     calc_extra_system_prompt: Optional[str] = None,
@@ -768,6 +771,10 @@ def build_deep_agent(
         with ``allowed_agents=()`` and ``reference_mode="off"`` — a different
         agent over the same document, vision and file tools. Default ``None``
         keeps the geotechnical prompt.
+    markup_author : str, optional
+        Who ``annotate_document`` signs review comments as when a call names
+        nobody — on a multi-user host the signed-in person's
+        ``Identity.markup_author``. ``None`` = the deployment-wide default.
     extra_tools : list, optional
         Additional LangChain tools appended to the PRIMARY agent's tool list
         (after the standard meta/vision/file tools). Lets a host wire
@@ -943,6 +950,7 @@ def build_deep_agent(
         save_fn=save_fn,
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
+        markup_author=markup_author,
     )
     if extra_tools:
         tools = list(tools) + list(extra_tools)

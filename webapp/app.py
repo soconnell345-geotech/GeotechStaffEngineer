@@ -26,10 +26,27 @@ if _PKG_ROOT not in sys.path:
 
 import streamlit as st
 
-from webapp import budget_panel, core, engine_config, sharepoint_store, turn_jobs
+from webapp import (budget_panel, core, engine_config, identity, profiles,
+                    sharepoint_store, turn_jobs)
 
-st.set_page_config(page_title="GeotechStaffEngineer", page_icon="⛰️",
-                   layout="wide")
+# Which PAGE this run serves (webapp.profiles): the geotech agent by default
+# — a plain `streamlit run webapp/app.py` and the Databricks launcher change
+# nothing — or the document-review page when the Tiny Apps entry's page
+# function said so. WHO is using it (webapp.identity): the IIS header on Tiny
+# Apps, DEV_IDENTITY locally, the launcher's email on Databricks, else nobody.
+# The two together decide where this session's conversations live.
+_PROFILE = profiles.current()
+_IDENT = identity.current_identity()
+_ROOT = profiles.session_root(_PROFILE, _IDENT)
+#: None when this session uses the process default root (the legacy layout).
+_THREAD_ROOT = _ROOT if os.path.abspath(_ROOT) != \
+    os.path.abspath(core.data_root()) else None
+
+# The multi-page entry (webapp.tinyapps_entry) calls set_page_config ONCE for
+# the run and flags it; a second call raises.
+if not st.session_state.get("_page_config_set"):
+    st.set_page_config(page_title=_PROFILE.title, page_icon=_PROFILE.icon,
+                       layout="wide")
 
 
 # Idle websocket keepalive: a timed fragment that re-renders an invisible
@@ -61,11 +78,18 @@ _install_idle_keepalive()
 # MIME by extension for download buttons — without an explicit mime the
 # browser guesses from application/octet-stream and can save e.g. a .md as
 # ".bin" (owner-reported, wall session 2026-07-14).
+_OOXML = "application/vnd.openxmlformats-officedocument"
 _MIME_BY_EXT = {".pdf": "application/pdf", ".html": "text/html",
                 ".md": "text/markdown", ".txt": "text/plain",
                 ".csv": "text/csv", ".json": "application/json",
                 ".png": "image/png", ".svg": "image/svg+xml",
-                ".dxf": "application/dxf"}
+                ".dxf": "application/dxf",
+                # Office files: a .docx served as octet-stream downloads as a
+                # zip on some browsers, which is what the agent's Word output
+                # would have looked like to the reader.
+                ".docx": f"{_OOXML}.wordprocessingml.document",
+                ".xlsx": f"{_OOXML}.spreadsheetml.sheet",
+                ".pptx": f"{_OOXML}.presentationml.presentation"}
 
 
 def _mime_for(name: str) -> str:
@@ -107,7 +131,7 @@ _APP_STATE_KEYS = (
     "initialized", "thread_id", "temp_dir", "attachments", "artifacts",
     "messages", "transcript", "pending_notes", "total_tokens",
     "last_turn_tokens", "agent", "agent_error", "engine", "model", "save_error",
-    "behavior", "upload_epoch",
+    "behavior", "upload_epoch", "pending_orientation",
 )
 
 
@@ -120,10 +144,18 @@ def _build_agent_for_session() -> None:
     if ss.engine.ok:
         try:
             _kind = (ss.get("behavior") or {}).get("agent_type", "full")
+            if not _PROFILE.specialists:
+                _kind = "full"          # the review page has no specialists
             if _kind == "full":
+                # The behavior pickers first, then the PAGE's own overrides
+                # (the document-review page: no modules, no reference
+                # sub-agent, its own prompt) — the page wins.
+                _kw = core.behavior_build_kwargs(ss.get("behavior"))      # A5
+                _kw.update(_PROFILE.build_kwargs())
+                _kw.setdefault("markup_author", _IDENT.markup_author)
                 ss.agent = core.build_agent(
                     ss.engine.model, ss.attachments, ss.temp_dir, ss.artifacts,
-                    **core.behavior_build_kwargs(ss.get("behavior")))     # A5
+                    **_kw)
             else:                                                         # A5e
                 ss.agent = core.build_reviewer_agent(
                     _kind, ss.engine.model, ss.attachments, ss.temp_dir,
@@ -156,6 +188,7 @@ def _new_conversation() -> None:
     'New conversation' does not clutter the saved list."""
     ss = st.session_state
     ss.thread_id = core.new_thread_id()
+    core.register_thread_root(ss.thread_id, _THREAD_ROOT)
     ss.temp_dir = core.conversation_files_dir(ss.thread_id)
     ss.attachments = {}                 # shared with the agent's vision tools
     ss.artifacts = []                   # agent-produced files (download list)
@@ -178,6 +211,7 @@ def _open_conversation(thread_id: str) -> None:
     thread + persistent files dir."""
     ss = st.session_state
     ss.thread_id = thread_id
+    core.register_thread_root(thread_id, _THREAD_ROOT)
     ss.temp_dir = core.conversation_files_dir(thread_id)
     ss.attachments = {}
     ss.recovered_notice = False
@@ -261,14 +295,25 @@ def _follow_turn_job(job) -> None:
 
 def _init_session() -> None:
     ss = st.session_state
-    if ss.get("initialized") and ss.get("_schema_version") == _SCHEMA_VERSION:
+    if ss.get("initialized") and ss.get("_schema_version") == _SCHEMA_VERSION \
+            and ss.get("_profile") == _PROFILE.name:
         return
+    # A PAGE SWITCH (the two-page Tiny Apps entry shares one session_state):
+    # park the page we are leaving so coming back resumes its conversation,
+    # then rebuild the app state for this page.
+    if ss.get("initialized") and ss.get("_profile") not in (None, _PROFILE.name):
+        ss.setdefault("_page_threads", {})[ss["_profile"]] = ss.get("thread_id")
     # first run OR a post-hot-reload schema mismatch: drop app state + re-init
     # cleanly (persisted conversations are unaffected and remain resumable).
     for k in _APP_STATE_KEYS:
         ss.pop(k, None)
     ss._schema_version = _SCHEMA_VERSION
-    _new_conversation()
+    ss._profile = _PROFILE.name
+    _parked = (ss.get("_page_threads") or {}).get(_PROFILE.name)
+    if _parked and core.load_meta(_parked, _ROOT) is not None:
+        _open_conversation(_parked)
+    else:
+        _new_conversation()
     ss.initialized = True
 
 
@@ -280,9 +325,8 @@ ss = st.session_state
 # Header + disclaimer (prominent, at the very top)
 # ---------------------------------------------------------------------------
 
-st.title("⛰️ GeotechStaffEngineer")
-st.caption("An LLM agent that drives industry-standard geotechnical analysis "
-           "methods. Research/analysis aid — not a design deliverable.")
+st.title(f"{_PROFILE.icon} {_PROFILE.title}")
+st.caption(_PROFILE.caption)
 
 # ONE disclaimer widget. There used to be an ``st.warning`` above the expander
 # that printed ``disclaimer_text().splitlines()[0]`` — the notice's TITLE line
@@ -371,6 +415,11 @@ def _relative_time(updated: float) -> str:
 
 
 with st.sidebar:
+    if _IDENT.authenticated:
+        # Who the host says is here — the IIS header on Tiny Apps (never typed
+        # into the app), the launcher's email on Databricks. Their
+        # conversations for THIS page are the only ones listed below.
+        st.caption(f"Signed in as **{_IDENT.display_name}**")
     st.header("Conversations")
     if st.button("➕ New conversation", use_container_width=True,
                  key="new_conv"):
@@ -380,7 +429,7 @@ with st.sidebar:
     # Filter box (owner feedback 2026-09-11): the list was capped at 50 with
     # no way to find an older one. With a filter typed, every conversation
     # on disk is searched by title; without one the newest 50 show as before.
-    _all_convs = core.list_conversations()
+    _all_convs = core.list_conversations(_ROOT)
     _filter = ""
     if len(_all_convs) > 8:
         _filter = (st.text_input(
@@ -419,7 +468,7 @@ with st.sidebar:
         with _row[2]:
             if _row_action(_ICON_DELETE, key=f"del_{_tid}",
                            help="Delete (to trash)"):
-                core.delete_conversation(_tid)
+                core.delete_conversation(_tid, _ROOT)
                 if _current:
                     _new_conversation()
                 st.rerun()
@@ -427,7 +476,7 @@ with st.sidebar:
             _new_title = st.text_input("New title", value=_title,
                                        key=f"rntext_{_tid}")
             if st.button("Save title", key=f"rnsave_{_tid}"):
-                core.rename_conversation(_tid, _new_title or _title)
+                core.rename_conversation(_tid, _new_title or _title, _ROOT)
                 ss[f"renaming_{_tid}"] = False
                 st.rerun()
 
@@ -542,6 +591,7 @@ with st.sidebar:
 
     # Agent picker (A5e) — the full geotech agent, or a narrow domain reviewer.
     # Per conversation, persisted in meta, shown on the conversation list line.
+    # The document-review page has no specialists: one agent, no picker.
     _atypes = list(core.AGENT_TYPES)
     _cur_at = (ss.behavior or {}).get("agent_type", "full")
     _cur_at = _cur_at if _cur_at in _atypes else "full"
@@ -551,7 +601,8 @@ with st.sidebar:
         help="The full geotech agent, or a narrow domain agent scoped to one "
              "discipline's methods + references (the reviewers check work in "
              "review mode; the pavement specialist designs). Applies to this "
-             "conversation going forward; kept when you resume it.")
+             "conversation going forward; kept when you resume it.") \
+        if _PROFILE.specialists else _cur_at
     if _picked_at != _cur_at:
         ss.behavior = {**ss.behavior, "agent_type": _picked_at}
         if core.load_meta(ss.thread_id) is not None:
@@ -581,12 +632,17 @@ with st.sidebar:
     # today's behavior exactly).
     _b = ss.behavior
     with st.expander("Behavior", expanded=False):
+        # The three geotech-only pickers (reference library, analysis depth,
+        # the calc sub-agent) are the geotech page's; the document-review
+        # page's agent has none of those and its profile fixes them.
+        _geo = _PROFILE.specialists
         _refs_on = st.checkbox(
             "Consult references", value=(_b["references"] != "off"),
             key=f"refs_{ss.thread_id}",
             help="When on, the agent can consult the reference library (DM7 / GEC "
                  "/ UFC …) through a scoped sub-agent. Turn off for pure-calc "
-                 "sessions to save tokens.")
+                 "sessions to save tokens.") \
+            if _geo else (_b["references"] != "off")
         _depth = st.select_slider(
             "Analysis depth", options=list(core.ANALYSIS_DEPTHS),
             value=_b["analysis_depth"], format_func=str.title,
@@ -596,7 +652,8 @@ with st.sidebar:
                  "Standard: default. Comprehensive: multiple methods compared + a "
                  "second-approach cross-check + a short sensitivity on governing "
                  "inputs + governing conditions & confidence + an offer to build a "
-                 "calc package.")
+                 "calc package.") \
+            if _geo else _b["analysis_depth"]
         _route_calc = st.checkbox(
             "Route calculations through a calc agent (recommended)",
             value=bool(_b.get("route_calc", True)),
@@ -605,7 +662,8 @@ with st.sidebar:
                  "calc output stays out of this conversation — cheaper long chats "
                  "(A2). The key results (values + units + method) and the saved "
                  "calc-package path come back; the full detail is saved to a file "
-                 "so nothing is lost.")
+                 "so nothing is lost.") \
+            if _geo else bool(_b.get("route_calc", True))
         _trace_cb = st.checkbox(
             "Show turn details (time, tokens, tool calls)",
             value=core.tracing_enabled(_b.get("trace")),
@@ -620,7 +678,8 @@ with st.sidebar:
                 max_value=40, value=int(_b["ref_max_calls"]), step=1,
                 key=f"refcalls_{ss.thread_id}",
                 help="Max model calls the reference consultant spends per consult "
-                     "before it must summarize and answer.")
+                     "before it must summarize and answer.") \
+                if _geo else int(_b["ref_max_calls"])
             _rlim = st.number_input(
                 "Primary step cap (recursion limit)", min_value=5, max_value=200,
                 value=int(_b["recursion_limit"]), step=5,
@@ -723,6 +782,14 @@ with st.sidebar:
                 ss.save_error = None
             except Exception as exc:
                 ss.save_error = f"{type(exc).__name__}: {exc}"
+            # The review page orients itself on a fresh upload — one cheap
+            # turn, sent on the user's behalf at the next run (owner, 2026-09-21:
+            # automatic, not a button). Only when there is an agent to answer
+            # and no turn already running; the request text is the user's
+            # message in the transcript, so it replays like any other.
+            if _PROFILE.orientation and ss.agent is not None \
+                    and turn_jobs.get_turn_job(ss.thread_id) is None:
+                ss.pending_orientation = [a.key for a in atts]
             st.rerun()
 
     if ss.attachments:
@@ -1067,9 +1134,20 @@ if _active_job is not None:
             "the work.")
     _follow_turn_job(_active_job)
 
-prompt = st.chat_input("Ask a geotechnical question…"
-                       if ss.agent is not None else
+_placeholder = ("Ask a geotechnical question…" if _PROFILE.specialists else
+                "Ask about the document — or ask for a marked-up copy or a "
+                "Word summary…")
+prompt = st.chat_input(_placeholder if ss.agent is not None else
                        "Configure an engine to start (see the sidebar)")
+
+# The automatic orientation turn (review page): the upload handler queued the
+# attachment names; this run sends the request as if the user had typed it.
+# A typed message in the same run wins — the user's question, not ours.
+_orient = ss.pop("pending_orientation", None)
+if not prompt and _orient and _PROFILE.orientation and ss.agent is not None \
+        and turn_jobs.get_turn_job(ss.thread_id) is None:
+    _names = ", ".join(f"`{n}`" for n in _orient)
+    prompt = _PROFILE.orientation_request.format(names=_names)
 
 if prompt:
     if ss.agent is None:
@@ -1114,6 +1192,17 @@ if prompt:
                      if os.path.abspath(working_dir) != os.path.abspath(ss.temp_dir)
                      else None)
 
+        # The conversation's owner and page, recorded once so the SharePoint
+        # mirror files it under the person and the page it belongs to (the
+        # single-user app records nothing and keeps its layout).
+        if _IDENT.authenticated or _PROFILE is not profiles.DEFAULT:
+            try:
+                core.tag_conversation(
+                    ss.thread_id, owner=(_IDENT.display_name
+                                         if _IDENT.authenticated else None),
+                    page=_PROFILE.name)
+            except Exception:                      # never blocks a turn
+                pass
         core.begin_partial(ss.thread_id, prompt)   # A3: mark in-progress turn
         # Detached execution: the ENTIRE turn pipeline (streaming, partial
         # checkpoints, artifact diffing, transcript/messages persistence,

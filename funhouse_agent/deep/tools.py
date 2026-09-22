@@ -48,6 +48,7 @@ from funhouse_agent.dispatch import (
 )
 from funhouse_agent.vision_tools import (
     dispatch_extended_tool as _dispatch_extended_tool,
+    docx_available as _docx_available,
     _default_save_fn,
 )
 
@@ -517,6 +518,20 @@ def make_core_tools(
 # Vision / file-output tools (wrap vision_tools.dispatch_extended_tool)
 # ---------------------------------------------------------------------------
 
+#: Appended to planlens' own description where THIS app changes the contract.
+#: planlens is framework-neutral and cannot know where a file belongs or who
+#: is signing the review; both are settled here, so the model is told.
+_DOCUMENT_TOOL_NOTES = {
+    "annotate_document": (
+        " In this app give output_path a bare file name: it is written into "
+        "this conversation's working folder, attached to the reply as a "
+        "download, and it defaults to <document>_marked.pdf. Leave author "
+        "alone unless the user tells you whose review this is — the default "
+        "names the comments as an AI draft, which is what the reviewer must "
+        "be able to see."),
+}
+
+
 def make_vision_tools(
     engine=None,
     attachments: Optional[Dict[str, bytes]] = None,
@@ -524,11 +539,16 @@ def make_vision_tools(
     include: Optional[set] = None,
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
     reference_result_chars: Optional[int] = None,
+    markup_author: Optional[str] = None,
 ) -> list:
     """Build the vision / file-output tools as LangChain tools.
 
     The engine, attachments, and save_fn are closured in at build time so the
     tools match the no-extra-args calling convention deepagents expects.
+    ``markup_author`` is who ``annotate_document`` signs comments as when the
+    call names nobody — the signed-in person on a multi-user host (the webapp
+    passes ``Identity.markup_author``); ``None`` falls back to the
+    deployment-wide :func:`funhouse_agent.document_tools.markup_author`.
 
     Parameters
     ----------
@@ -574,6 +594,9 @@ def make_vision_tools(
         # planlens has them — never advertised to the model otherwise.
         if _document_tools.available():
             include |= set(_document_tools.document_tool_names())
+        # Word output, on the same rule: offered only where it can be produced.
+        if _docx_available():
+            include |= {"write_docx"}
     reference_cap = _resolve_reference_cap(max_result_chars,
                                            reference_result_chars)
     # Resolved once per build: the newer tools depend on the installed planlens.
@@ -848,6 +871,23 @@ def make_vision_tools(
             args["author"] = author
         return _dispatch("document_markups", args)
 
+    def annotate_document(handle: str, markups: Optional[list] = None,
+                          output_path: str = "", author: str = "",
+                          append: bool = True) -> str:
+        """Write review comments onto a COPY of the PDF (planlens' own words
+        describe the markups; this app resolves the output file and signs
+        them)."""
+        args = {
+            "handle": handle,
+            "output_path": _document_tools.markup_output_path(output_path,
+                                                              handle),
+            "markups": markups or [],
+            "author": (author or markup_author
+                       or _document_tools.markup_author()),
+            "append": append,
+        }
+        return _dispatch("annotate_document", args)
+
     def save_file(path: str, content: str, encoding: str = "text") -> str:
         """Save raw text or data to a file. Returns the saved file path. For
         formatted calculation documents, use the ``calc_package`` module via
@@ -865,6 +905,31 @@ def make_vision_tools(
             save_fn,
         )
 
+    def write_docx(path: str, markdown: str, title: str = "") -> str:
+        """Write a Word (.docx) document from markdown — a memo, a findings
+        summary, a review response: anything the reader opens in Word, tracks
+        changes in, or pastes into a report template.
+
+        ``markdown`` is ordinary markdown: headings ``#`` to ``####``,
+        **bold**, *italic*, `code`, bullet and numbered lists (one level of
+        nesting), pipe tables (an italic line right after a table becomes its
+        caption), ``>`` quotes, fenced code, and ``![alt](figure.png)`` for a
+        figure already saved in the working folder. ``---`` becomes a PAGE
+        BREAK. ``title`` is optional and is rendered as the document title.
+        ``path`` is the output file (``.docx`` is added if missing); a bare
+        name lands in the working folder. A figure that cannot be found is
+        reported in ``warnings`` and the document is still written — read them
+        and tell the user. For a Mathcad-style CALCULATION package use the
+        ``calc_package`` module via ``call_agent`` instead.
+        """
+        return _with_saved_note(
+            _dispatch(
+                "write_docx",
+                {"path": path, "markdown": markdown, "title": title},
+            ),
+            save_fn,
+        )
+
     # Each document tool is described to the model in planlens' own words, and
     # the ones a newer planlens added appear only where they exist.
     document_review_builders = [
@@ -878,6 +943,8 @@ def make_vision_tools(
     ]
     if _document_tools.has_tool("find_quantities"):
         document_review_builders.append(("find_quantities", find_quantities))
+    if _document_tools.has_tool("annotate_document"):
+        document_review_builders.append(("annotate_document", annotate_document))
 
     _builders = {
         "list_files": (
@@ -933,7 +1000,8 @@ def make_vision_tools(
             "find_worked_examples when the entry lists source_pdf_pages; "
             "pdf_page is 1-based (0 = first catalogued page).",
         ),
-        **({name: (fn, _document_tools.tool_description(name))
+        **({name: (fn, _document_tools.tool_description(name)
+                   + _DOCUMENT_TOOL_NOTES.get(name, ""))
             for name, fn in document_review_builders}
            if _document_tools.available() else {}),
         "save_file": (
@@ -942,6 +1010,17 @@ def make_vision_tools(
             "For formatted calculation documents, use the calc_package module "
             "via call_agent instead.",
         ),
+        **({"write_docx": (
+            write_docx,
+            "Write a Word (.docx) document from markdown — a memo, a findings "
+            "summary, a review response. Headings, bold/italic/code, bullet "
+            "and numbered lists, pipe tables (an italic line after a table is "
+            "its caption), block quotes, fenced code, and "
+            "![alt](figure.png) for a figure already in the working folder; "
+            "--- is a page break. A figure that is not found is reported in "
+            "warnings and the document is still written. For a Mathcad-style "
+            "calculation package use the calc_package module instead.",
+        )} if _docx_available() else {}),
     }
 
     tools = []

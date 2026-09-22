@@ -1423,6 +1423,23 @@ def touch_conversation(thread_id: str, *, title: Optional[str] = None,
     return meta
 
 
+def tag_conversation(thread_id: str, root: Optional[str] = None,
+                     **fields) -> dict:
+    """Set descriptive fields on a conversation's meta that are not already
+    set — ``owner`` (the signed-in person) and ``page`` (the app profile) on
+    a multi-user host — creating the meta if needed. Existing values win, so
+    a conversation keeps the owner it was created under."""
+    meta = ensure_conversation(thread_id, root=root)
+    changed = False
+    for key, value in fields.items():
+        if value and not meta.get(key):
+            meta[key] = value
+            changed = True
+    if changed:
+        save_meta(thread_id, meta, root)
+    return meta
+
+
 def rename_conversation(thread_id: str, title: str,
                         root: Optional[str] = None) -> dict:
     """Set a conversation's title."""

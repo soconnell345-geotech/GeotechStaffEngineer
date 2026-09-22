@@ -7,6 +7,7 @@ cloud, an arrow and hidden CAD text, a ruled table, a blank page and a scan.
 
 import copy
 import json
+import os
 
 import pytest
 
@@ -255,3 +256,127 @@ def test_fuzzy_on_an_older_planlens_is_refused_without_a_call(gt, monkeypatch):
     # An exact search still goes through untouched.
     _invoke(search, handle=handle, pattern="EMBEDMENT")
     assert calls
+
+
+# -- writing the review back onto the PDF (annotate_document) -------------------
+
+def _annotate_ready():
+    return document_tools.has_tool("annotate_document")
+
+
+def test_annotate_document_is_offered_when_the_planlens_has_it():
+    if not _annotate_ready():
+        pytest.skip("installed planlens predates annotate_document")
+    names = {t.name for t in make_vision_tools(engine=None)}
+    assert "annotate_document" in names
+    assert "annotate_document" in document_tools.document_tool_names()
+    # The model is told what this app settles that planlens cannot know.
+    tool = _tool(make_vision_tools(engine=None), "annotate_document")
+    assert "working folder" in tool.description
+    assert "_marked.pdf" in tool.description
+
+
+def test_annotate_document_is_hidden_on_an_older_planlens(monkeypatch):
+    _older_planlens(monkeypatch, without=("annotate_document",))
+    names = {t.name for t in make_vision_tools(engine=None)}
+    assert "annotate_document" not in names
+    assert NAMES <= names                      # the seven are unaffected
+    assert "annotate_document" not in document_tools.document_tool_names()
+
+
+def test_the_marked_up_copy_lands_in_the_working_folder(gt, tmp_path,
+                                                        monkeypatch):
+    if not _annotate_ready():
+        pytest.skip("installed planlens predates annotate_document")
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+    bare = document_tools.markup_output_path("review_marked.pdf")
+    assert bare == os.path.join(str(tmp_path), "review_marked.pdf")
+    # An extension nobody gave, and an absolute path honoured as given.
+    assert document_tools.markup_output_path("notes").endswith("notes.pdf")
+    elsewhere = str(tmp_path / "sub" / "given.pdf")
+    assert document_tools.markup_output_path(elsewhere) == elsewhere
+
+
+def test_no_output_path_is_named_after_the_document(gt, tmp_path, monkeypatch):
+    if not _annotate_ready():
+        pytest.skip("installed planlens predates annotate_document")
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+    tools = make_vision_tools(engine=None,
+                              attachments={"submittal.pdf": gt.pdf})
+    handle = _invoke(_tool(tools, "open_document"),
+                     source="submittal.pdf")["handle"]
+    assert document_tools.markup_output_path("", handle) == \
+        os.path.join(str(tmp_path), "submittal_marked.pdf")
+    # An unknown handle still gets a usable name rather than an exception.
+    assert document_tools.markup_output_path("", "doc_nope").endswith(
+        "document_marked.pdf")
+
+
+def test_a_review_is_written_and_reads_back_through_the_same_tools(
+        gt, tmp_path, monkeypatch):
+    if not _annotate_ready():
+        pytest.skip("installed planlens predates annotate_document")
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.delenv("GEOTECH_MARKUP_AUTHOR", raising=False)
+    tools = make_vision_tools(engine=None,
+                              attachments={"submittal.pdf": gt.pdf})
+    handle = _invoke(_tool(tools, "open_document"),
+                     source="submittal.pdf")["handle"]
+    out = _invoke(_tool(tools, "annotate_document"), handle=handle, markups=[
+        {"kind": "highlight", "page": gt.narrative_page,
+         "comment": "State the datum for these depths.",
+         "quote": "20 to 35 feet"},
+        {"kind": "callout", "page": gt.sheet_page,
+         "comment": "Confirm the pile embedment.",
+         "points_at": list(gt.reviewer_target)},
+        {"kind": "highlight", "page": gt.narrative_page,
+         "comment": "not on this page", "quote": "CURTAIN WALL GROUT TAKE"},
+    ])
+    assert out["n_written"] == 2 and out["n_skipped"] == 1
+    assert out["author"] == document_tools.DEFAULT_MARKUP_AUTHOR
+    assert out["output_path"] == os.path.join(str(tmp_path),
+                                              "submittal_marked.pdf")
+    assert os.path.isfile(out["output_path"])
+    # The document the agent opened is untouched — it still carries its own
+    # five markups and none of ours — and the copy is a new file the same
+    # tools read back.
+    assert _invoke(_tool(tools, "document_markups"), handle=handle)[
+        "n_markups"] == 5
+    marked = _invoke(_tool(tools, "open_document"), source=out["output_path"])
+    assert marked["markups"]["by_author"][
+        document_tools.DEFAULT_MARKUP_AUTHOR] == 2
+    written = _invoke(_tool(tools, "document_markups"), handle=marked["handle"],
+                      author="AI draft")
+    assert written["n_markups"] == 2
+    assert "State the datum" in " ".join(written["markups"])
+
+
+def test_the_author_comes_from_the_deployment_or_the_call(gt, tmp_path,
+                                                          monkeypatch):
+    if not _annotate_ready():
+        pytest.skip("installed planlens predates annotate_document")
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setenv("GEOTECH_MARKUP_AUTHOR", "Acme Review Bot")
+    assert document_tools.markup_author() == "Acme Review Bot"
+    tools = make_vision_tools(engine=None, attachments={"s.pdf": gt.pdf})
+    handle = _invoke(_tool(tools, "open_document"), source="s.pdf")["handle"]
+    mark = [{"kind": "note", "page": 0, "comment": "x", "point": [90, 90]}]
+    out = _invoke(_tool(tools, "annotate_document"), handle=handle,
+                  output_path="env.pdf", markups=mark)
+    assert out["author"] == "Acme Review Bot"
+    named = _invoke(_tool(tools, "annotate_document"), handle=handle,
+                    output_path="named.pdf", markups=mark,
+                    author="J. Reviewer, PE")
+    assert named["author"] == "J. Reviewer, PE"
+
+
+def test_an_empty_markup_list_is_refused_as_json(gt, tmp_path, monkeypatch):
+    if not _annotate_ready():
+        pytest.skip("installed planlens predates annotate_document")
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+    tools = make_vision_tools(engine=None, attachments={"s.pdf": gt.pdf})
+    handle = _invoke(_tool(tools, "open_document"), source="s.pdf")["handle"]
+    out = _invoke(_tool(tools, "annotate_document"), handle=handle,
+                  output_path="none.pdf")
+    assert "nothing would be written" in out["error"]
+    assert not os.path.exists(os.path.join(str(tmp_path), "none.pdf"))

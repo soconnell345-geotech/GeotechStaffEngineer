@@ -20,7 +20,13 @@ connects it to the app:
   names THIS app's vision tools (``analyze_pdf_page``, ``render_region``),
   which take the same ``source`` and the same displayed-frame boxes. The
   toolkit's own ``render_page`` / ``render_region`` are not exposed here —
-  the app already routes images to the model through its vision engine.
+  the app already routes images to the model through its vision engine;
+- ``annotate_document`` is the one tool that WRITES. Its ``output_path`` is
+  resolved into the conversation's working folder
+  (:func:`markup_output_path`), so the marked-up PDF gets a download card and
+  rides the SharePoint mirror like anything else the agent saves, and every
+  comment is signed :data:`DEFAULT_MARKUP_AUTHOR` unless the deployment or the
+  call says otherwise.
 
 Tools and parameters planlens gained after the version this app pins are
 FEATURE-DETECTED from the installed package's own specs
@@ -54,7 +60,15 @@ DOCUMENT_TOOL_NAMES = (
 #: when the installed package publishes a spec for it.
 OPTIONAL_DOCUMENT_TOOL_NAMES = (
     "find_quantities",
+    "annotate_document",
 )
+
+#: Who a comment this app writes onto a PDF is signed by. A reviewer opening
+#: the marked-up file has to be able to tell a drafted comment from a person's
+#: without asking, so the default says so in the name; a deployment that signs
+#: its reviews differently sets the env var.
+MARKUP_AUTHOR_ENV = "GEOTECH_MARKUP_AUTHOR"
+DEFAULT_MARKUP_AUTHOR = "GeotechStaffEngineer (AI draft)"
 
 #: How the model views a PNG planlens wrote (the thumbnail contact sheets):
 #: the app's analyze_image accepts a real path as its attachment_key.
@@ -144,6 +158,45 @@ def search_supports_fuzzy() -> bool:
         return False
     schema = spec.get("parameters") or spec.get("input_schema") or {}
     return "fuzzy" in (schema.get("properties") or {})
+
+
+def markup_author() -> str:
+    """The author ``annotate_document`` signs this app's comments with."""
+    return (os.environ.get(MARKUP_AUTHOR_ENV) or "").strip() \
+        or DEFAULT_MARKUP_AUTHOR
+
+
+def _document_name(handle: str) -> Optional[str]:
+    """What the open document behind ``handle`` was called, if anything is."""
+    if not handle:
+        return None
+    getter = getattr(_toolkit(), "document_name", None)
+    if getter is None:           # a planlens older than the accessor
+        return None
+    try:
+        return getter(handle)
+    except Exception:            # pragma: no cover - a stale handle
+        return None
+
+
+def markup_output_path(output_path: str = "", handle: str = "") -> str:
+    """Where a marked-up copy goes: this conversation's working folder.
+
+    planlens is framework-neutral and writes ``output_path`` as given, so the
+    app resolves it the way every other tool output is resolved — a bare name
+    lands in the working folder this conversation writes to (where it gets a
+    download card and rides the SharePoint mirror), an absolute path is
+    honoured. With no name at all the copy is named after the document it
+    marks up, which is what a reviewer expects to find beside the original.
+    """
+    from funhouse_agent._fileio import resolve_output_path
+    name = str(output_path or "").strip()
+    if not name:
+        stem = os.path.splitext(_document_name(handle) or "document")[0]
+        name = f"{stem}_marked.pdf"
+    if not os.path.splitext(name)[1]:
+        name += ".pdf"
+    return resolve_output_path(name)
 
 
 def _resolve(source: str):

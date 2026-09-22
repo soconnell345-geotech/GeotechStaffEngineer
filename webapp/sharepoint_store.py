@@ -357,6 +357,7 @@ class SharePointStore:
     def folder_name(self, thread_id: str, root: Optional[str] = None) -> str:
         """This conversation's folder NAME (see :func:`conversation_folder`).
         Falls back to the thread id if the local metadata can't be read."""
+        root = root or core.thread_root(thread_id)
         try:
             meta = core.load_meta(thread_id, root)
             siblings = core.list_conversations(root)
@@ -365,9 +366,25 @@ class SharePointStore:
         return conversation_folder(thread_id, meta, siblings)
 
     def session_folder(self, thread_id: str, root: Optional[str] = None) -> str:
-        """The remote folder path for one conversation."""
-        return (f"{self.root()}/conversations/"
-                f"{self.folder_name(thread_id, root)}")
+        """The remote folder path for one conversation.
+
+        ``<root>/conversations/<name>`` — the layout every deployment has had.
+        A conversation whose meta names an ``owner`` (the signed-in person on
+        a multi-user host, set by the app) and a ``page`` gets them as
+        segments in between, so one shared site folder does not mix people:
+        ``<root>/conversations/<owner>/<page>/<name>``.
+        """
+        root = root or core.thread_root(thread_id)
+        meta = core.load_meta(thread_id, root) or {}
+        segments = [self.root(), "conversations"]
+        owner = sanitize_folder_name(str(meta.get("owner") or ""))
+        if owner:
+            segments.append(owner)
+            page = sanitize_folder_name(str(meta.get("page") or ""))
+            if page:
+                segments.append(page)
+        segments.append(self.folder_name(thread_id, root))
+        return "/".join(segments)
 
     # -- the mirror --------------------------------------------------------
 

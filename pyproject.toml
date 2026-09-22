@@ -66,6 +66,17 @@ dependencies = [
     "matplotlib>=3.8",
     "jinja2>=3.1",
     "plotly>=5",
+    # Word output (calc_package/docx_renderer.py -> the write_docx agent tool).
+    # Reviewers ask for .docx and the agent writes markdown; python-docx is
+    # pure Python over lxml, which streamlit already pulls in, so this adds no
+    # compiled wheel to the cluster install. Imported LAZILY inside the
+    # renderer, and the tool hides itself when it is missing.
+    "python-docx>=1.1",
+    # The markdown parser that renderer reads with. It has arrived
+    # transitively through rich (and so streamlit) since long before this, but
+    # a transitive dependency is not a promise: a tool of ours that imports it
+    # names it.
+    "markdown-it-py>=3",
     # groundhog REMOVED 2026-09 (DT Nexus security removal: its only release,
     # 0.15.0, is flagged HIGH with no clean version to resolve to; GPL-3
     # anyway). Unique capabilities were re-implemented natively from the

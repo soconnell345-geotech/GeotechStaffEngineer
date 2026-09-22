@@ -207,6 +207,7 @@ def test_analysis_scope_hides_reference_in_catalog():
 
 def test_vision_tools_build_and_error_without_engine():
     from funhouse_agent import document_tools
+    from funhouse_agent.vision_tools import docx_available
 
     tools = make_vision_tools(engine=None)
     names = {t.name for t in tools}
@@ -216,11 +217,14 @@ def test_vision_tools_build_and_error_without_engine():
                       if document_tools.available() else set())
     if document_names:
         assert set(document_tools.DOCUMENT_TOOL_NAMES) <= document_names
+    # Word output is offered on the same rule: only where it can be produced.
+    docx_names = {"write_docx"} if docx_available() else set()
     assert names == {"list_files", "read_pdf_text", "read_text_file",
                      "analyze_image",
                      "analyze_pdf_page", "render_region",
                      "read_reference_figure",
-                     "view_worked_example_source", "save_file"} | document_names
+                     "view_worked_example_source", "save_file"} \
+        | document_names | docx_names
 
     # read_reference_figure without args → clear error (no raise).
     out = _invoke(
@@ -284,6 +288,90 @@ def test_save_file_works_offline(tmp_path):
     assert "saved" in out, out
     assert target.read_text() == "x,y\n1,2\n"
     assert "note" not in out           # no host hook -> result unchanged
+
+
+def test_write_docx_writes_a_word_file_a_reader_can_open(tmp_path,
+                                                         monkeypatch):
+    """The agent writes markdown; the reviewer gets a .docx in the working
+    folder, with the figure the agent saved there already in it."""
+    pytest.importorskip("docx")
+    fitz = pytest.importorskip("fitz")
+    import docx as docx_pkg
+
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 16, 16), False)
+    pix.set_rect(pix.irect, (10, 90, 160))
+    (tmp_path / "profile.png").write_bytes(pix.tobytes("png"))
+
+    tools = make_vision_tools(engine=None)
+    out = _invoke(
+        _tool_by_name(tools, "write_docx"),
+        path=str(tmp_path / "memo"),          # no extension: .docx is added
+        title="Foundation Review",
+        markdown=("# Findings\n\n"
+                  "The bearing elevation is **unconfirmed**.\n\n"
+                  "![Interpreted profile](profile.png)\n"),
+    )
+    assert "error" not in out, out
+    assert out["saved"].endswith("memo.docx")
+    assert "warnings" not in out              # the figure was found
+    doc = docx_pkg.Document(out["saved"])
+    texts = [p.text for p in doc.paragraphs]
+    assert "Foundation Review" in texts and "Findings" in texts
+    assert len(doc.inline_shapes) == 1
+
+
+def test_write_docx_reports_a_figure_it_could_not_find(tmp_path, monkeypatch):
+    pytest.importorskip("docx")
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+    tools = make_vision_tools(engine=None)
+    out = _invoke(_tool_by_name(tools, "write_docx"),
+                  path=str(tmp_path / "gap.docx"),
+                  markdown="![Section](nowhere.png)\n")
+    assert "error" not in out                 # the document was still written
+    assert any("nowhere.png" in w for w in out["warnings"])
+    assert os.path.isfile(out["saved"])
+
+
+def test_write_docx_is_hidden_when_python_docx_is_missing(monkeypatch):
+    """Absence is handled the way the document tools handle it: the tool is
+    never advertised, rather than offered and then failing on the user."""
+    from funhouse_agent.deep import tools as deep_tools
+
+    monkeypatch.setattr(deep_tools, "_docx_available", lambda: False)
+    assert "write_docx" not in {t.name for t in
+                                deep_tools.make_vision_tools(engine=None)}
+    # Even when a caller asks for it by name.
+    assert deep_tools.make_vision_tools(engine=None,
+                                        include={"write_docx"}) == []
+
+
+def test_write_docx_without_a_renderer_returns_an_instruction(monkeypatch,
+                                                              tmp_path):
+    import builtins
+    from funhouse_agent import vision_tools
+
+    real_import = builtins.__import__
+
+    def no_renderer(name, *args, **kwargs):
+        if name == "calc_package.docx_renderer":
+            raise ImportError("No module named 'docx'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_renderer)
+    out = json.loads(vision_tools.dispatch_extended_tool(
+        "write_docx", {"path": str(tmp_path / "x.docx"), "markdown": "# x"},
+        engine=None, attachments={}))
+    assert "not available" in out["error"] and "save_file" in out["hint"]
+
+
+def test_write_docx_needs_a_path_and_something_to_write(tmp_path):
+    pytest.importorskip("docx")
+    tools = make_vision_tools(engine=None)
+    tool = _tool_by_name(tools, "write_docx")
+    assert "path" in _invoke(tool, path="", markdown="# x")["error"]
+    assert "markdown" in _invoke(tool, path=str(tmp_path / "x.docx"),
+                                 markdown="")["error"]
 
 
 def test_save_file_carries_the_host_saved_note(tmp_path):

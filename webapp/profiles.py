@@ -107,6 +107,11 @@ DOCUMENT_REVIEW = AppProfile(
         # flag can be honoured).
         "allowed_agents": (),
         "reference_mode": "off",
+        # The behavior pickers' geotech presets do not apply here: no calc
+        # sub-agent (there are no calculation modules to delegate to) and no
+        # analysis-depth prompt preset.
+        "enable_calc_subagent": False,
+        "extra_system_prompt": None,
         "_document_review_prompt": True,
     },
 )

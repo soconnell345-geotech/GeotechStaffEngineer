@@ -54,7 +54,24 @@ EXTENDED_TOOLS = STANDARD_TOOLS | {
     "render_region",
     "read_reference_figure",
     "save_file",
+    "write_docx",
 }
+
+
+def docx_available() -> bool:
+    """Whether Word output can be produced in this install.
+
+    ``write_docx`` needs python-docx, which is a core dependency but can be
+    absent from an install trimmed by hand or from an older wheel. A tool that
+    would fail is worse than one that was never offered, so the agent layers
+    ask this before advertising it.
+    """
+    try:
+        import docx  # noqa: F401
+        import markdown_it  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
 VISION_TOOL_DESCRIPTIONS = """
 ### 5. list_files
@@ -154,6 +171,24 @@ For binary content, set encoding to "base64":
 {"tool_name": "save_file", "path": "output/image.png", "content": "iVBORw0KGgo...", "encoding": "base64"}
 </tool_call>
 ```
+
+### 12. write_docx
+Write a Word (.docx) document from markdown — a memo, a findings summary, a
+review response, anything the reader will open in Word, track changes in, or
+paste into a report template. Write the markdown as you normally would:
+headings (`#` to `####`), `**bold**`, `*italic*`, `` `code` ``, bullet and
+numbered lists (one level of nesting), pipe tables (an italic line right after
+a table becomes its caption), `> quotes`, fenced code, and `![alt](file.png)`
+for a figure you already saved — a bare image name is looked up in the working
+folder, and a figure that is not there is reported in `warnings` rather than
+losing you the document. `---` becomes a PAGE BREAK. `title` (optional) is
+rendered as the document title. For a Mathcad-style CALCULATION package use
+the `calc_package` module instead; this is for prose.
+```
+<tool_call>
+{"tool_name": "write_docx", "path": "review_memo.docx", "title": "Foundation Review", "markdown": "# Findings\n\n- Bearing elevation is unconfirmed\n\n![Profile](profile.png)\n"}
+</tool_call>
+```
 """
 
 
@@ -222,6 +257,8 @@ def dispatch_extended_tool(
         return _dispatch_view_worked_example(arguments, engine)
     elif tool_name == "save_file":
         return _dispatch_save_file(arguments, save_fn or _default_save_fn)
+    elif tool_name == "write_docx":
+        return _dispatch_write_docx(arguments, save_fn or _default_save_fn)
     else:
         return json.dumps({"error": f"Unknown extended tool: {tool_name}"})
 
@@ -957,6 +994,69 @@ def _dispatch_read_reference_figure(arguments, engine):
         "analysis": result,
         "note": _READ_OFF_NOTE,
     })
+
+
+def _dispatch_write_docx(arguments, save_fn):
+    """Handle write_docx tool call: markdown in, a Word file on disk out.
+
+    The rendering is ``calc_package.docx_renderer``; the SAVING is
+    ``save_file``'s, byte for byte — the document is rendered to a scratch file,
+    read back and handed to the same writer, so it gets the same path
+    resolution into the conversation's working folder, the same /Workspace
+    handling, the same verification and the same rescue copy when the target
+    filesystem does not store it.
+    """
+    path = str(arguments.get("path", "") or "")
+    markdown = arguments.get("markdown", "")
+    title = arguments.get("title") or None
+
+    if not path:
+        return json.dumps({"error": "Missing required parameter: path"})
+    if not markdown:
+        return json.dumps({"error": "Missing required parameter: markdown"})
+    try:
+        from calc_package.docx_renderer import markdown_to_docx
+    except ImportError as exc:
+        return json.dumps({
+            "error": f"Word output is not available here: {exc}",
+            "hint": "write the text with save_file (.md or .html) instead",
+        })
+    if os.path.splitext(path)[1].lower() != ".docx":
+        path += ".docx"
+
+    # Relative image paths resolve against the working folder, which is where
+    # plot_data, render_figures and save_file have already put the agent's own
+    # figures — so `![](profile.png)` finds the PNG written minutes earlier.
+    from funhouse_agent._fileio import default_output_dir
+    base_dir = default_output_dir() or os.path.dirname(os.path.abspath(path))
+
+    import base64
+    import shutil
+    import tempfile
+    warnings = []
+    scratch = tempfile.mkdtemp(prefix="geotech_docx_")
+    try:
+        built = markdown_to_docx(markdown, os.path.join(scratch, "out.docx"),
+                                 base_dir=base_dir, title=title,
+                                 warnings=warnings)
+        with open(built, "rb") as fh:
+            blob = fh.read()
+    except Exception as exc:
+        return json.dumps({
+            "error": f"could not render the Word document: "
+                     f"{type(exc).__name__}: {exc}"})
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+    result = json.loads(_dispatch_save_file(
+        {"path": path, "encoding": "base64",
+         "content": base64.b64encode(blob).decode("ascii")}, save_fn))
+    if warnings:
+        # Not an error: the document was written. These are the things the
+        # reader will NOT see, and the agent must say so rather than claim a
+        # figure is in a file that carries a line of text where it should be.
+        result["warnings"] = warnings
+    return json.dumps(result)
 
 
 def _dispatch_save_file(arguments, save_fn):
