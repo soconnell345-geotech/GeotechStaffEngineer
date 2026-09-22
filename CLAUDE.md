@@ -1593,8 +1593,8 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | seismic_signals | 74 | Earthquake signal processing (eqsig/pyrotd) |
 | liquepy_agent | 59 | Boulanger & Idriss (2014) liquefaction triggering — CPT (LPI/LSN/LDI) + SPT |
 | gstools_agent | 69 | Geostatistical kriging, variogram fitting, random fields |
-| salib_agent | 35 | Sobol & Morris sensitivity analysis |
-| pystra_agent | 43 | FORM/SORM/Monte Carlo structural reliability analysis |
+| salib_agent | 35 | Sobol & Morris sensitivity analysis (KEPT by owner ruling 2026-09-22 — it was never retired) |
+| pystra_agent | 43 | FORM/SORM/Monte Carlo structural reliability analysis (KEPT by owner ruling 2026-09-22; `reliability/` has its own native FORM/MC, pystra adds SORM) |
 | section_props_agent | 70 | Cross-section properties, native (A, I, Z, S, J, warping; steel shapes + polygons, mm units; exact Green's-theorem integration + closed-form torsion) |
 | concrete_props_agent | 47 | RC rectangular sections, native ACI strain compatibility (cracked/gross Ixx, M_cr, nominal Mn, N-M interaction) |
 | pynite_agent | 15 | Elastic 2D/3D frames + continuous beams via PyNiteFEA (reactions, M/V/deflection envelopes) |
@@ -1980,6 +1980,9 @@ gec_6/7/12/13 chapter-text edits are a separate uncommitted workstream.
 ## Environment
 
 - Windows 11, Python 3.14.3, venv at `.venv/`
-- Git repo: github.com/soconnell345-geotech/GeotechStaffEngineer (private)
+- Git repo: github.com/soconnell345-geotech/GeotechStaffEngineer — **PUBLIC**
+  (checked 2026-09-22; so are `geotech-references` and `planlens`). Department
+  documents are never committed: they live only under gitignored paths
+  (`tinyapps/reference/`, `module_work/field_feedback/**/raw/`).
 - Git submodule: `geotech-references/` → github.com/soconnell345-geotech/geotech-references (DM7 + future GEC refs)
 - numpy >=2.0: use `np.trapezoid` (was `np.trapz`)

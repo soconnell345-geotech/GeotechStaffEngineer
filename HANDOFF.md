@@ -77,7 +77,15 @@ the dev venv; on dosdev it is.)
    and back, reload on `/geotech`, confirm the old conversations are still
    listed on the geotech page and "Signed in as <you>" shows. If the page
    links go wrong behind the proxy, relaunch with `pages=False` and report.
-5. **Not built, noted:** an SDK-free budget/spend line for the sidebar
+5. **Repo slimming + example-product inventory: PARKED behind Tiny Apps**
+   (`module_work/FUTURE_IDEAS.md`, section "REPO SLIMMING"). The DOS
+   reviewer's "millions of tokens" is the REPO (14.6M by bytes, 60 % of it
+   generated artefacts and dev corpora); the code is ~2M and the wheel
+   ~1.8M, and none of the example / ground-truth folders ship in the wheel.
+   Owner rulings 2026-09-22: `salib_agent` and `pystra_agent` stay; the
+   worked-example extracts stay on GitHub; the example-product inventory
+   gets a proper review first, then the generated files find a home.
+6. **Not built, noted:** an SDK-free budget/spend line for the sidebar
    (`report_ingest.engine.CostMeter` + `PROMPTER_PRICES` are reusable; the
    Funhouse budget panel needs the SDK); the email tool is SDK-only and off
    on Tiny Apps; `report_ingest`'s `PrompterEngine` still expects an SDK
