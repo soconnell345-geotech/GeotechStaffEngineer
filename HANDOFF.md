@@ -75,7 +75,11 @@ the dev venv; on dosdev it is.)
    prompter object (the ingest/library sub-agents are OFF by default anyway);
    restoring from SharePoint lists every owner's folders (permissions are
    per team site — acceptable for the pilot, filter by owner later); the
-   Databricks launcher could adopt the two-page entry but does not yet.
+   Databricks launcher could adopt the two-page entry but does not yet;
+   `write_docx` is on the deep agent and the v1 text-ReAct surface but NOT
+   in `native_tools.OPENAI_TOOLS` (the legacy v1 native path the app does
+   not use); a highlight's read-back box is ~0.84 IoU by design (the quads
+   are the ink — see `markup_writer`'s module docstring), note/box exact.
 
 **(d) Standing rules added on this train.** Department documents (guides,
 example code, reports, the Funhouse SDK) are local-only under a gitignored
