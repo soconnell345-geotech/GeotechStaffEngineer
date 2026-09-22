@@ -45,6 +45,15 @@ Configuration (env vars; the launcher subprocess inherits the notebook env):
     GEOTECH_SHAREPOINT_ROOT           base folder, default
                                       "Shared Documents/GeotechStaffEngineer"
 
+    GRAPH_TENANT_ID / GRAPH_CLIENT_ID / GRAPH_CLIENT_SECRET / SHAREPOINT_SITE_URL
+        the Tiny Apps path (5.26): an Entra app registration granted
+        Sites.Selected on the team's site, served by the SDK-free
+        :mod:`webapp.graph_sharepoint` client. These are CfA's own setting
+        names, read through :mod:`webapp.tinyapps_settings` (env var, else
+        Key Vault on a deployment, else a local ``.env``), and they take
+        precedence over every path below — a deployment that has them needs
+        neither the Funhouse SDK nor GEOTECH_SHAREPOINT_SITE_URL.
+
 Auth notes (from the Funhouse SDK source, researched 2026-07-30): the
 ``office365`` backend authenticates with plain ``client_id``/``client_secret``
 strings (ACS app-only) — the SharePoint analog of the Prompter NTLM strings,
@@ -171,8 +180,19 @@ def conversation_folder(thread_id: str, meta: Optional[dict] = None,
     return f"{base}_{str(thread_id)[:6]}"
 
 
+def _graph_configured() -> bool:
+    """The Tiny Apps app-registration path — SDK-free, checked first."""
+    try:
+        from webapp import graph_sharepoint
+        return graph_sharepoint.configured()
+    except Exception:
+        return False
+
+
 def configured() -> bool:
     """True when the env carries enough to build a SharePoint client."""
+    if _graph_configured():
+        return True
     if not os.environ.get(ENV_SITE, "").strip():
         return False
     if (os.environ.get(ENV_CLIENT_ID, "").strip()
@@ -188,7 +208,14 @@ def _build_file_manager():
 
     Prefers the non-interactive ``office365`` client-credential backend; falls
     back to a pre-minted Graph token. Raises on missing config/SDK.
+
+    The Tiny Apps app-registration settings (``GRAPH_*`` +
+    ``SHAREPOINT_SITE_URL``) win over all of these: they build the SDK-free
+    :class:`webapp.graph_sharepoint.GraphFileManager`.
     """
+    if _graph_configured():
+        from webapp.graph_sharepoint import GraphFileManager
+        return GraphFileManager()
     site = os.environ.get(ENV_SITE, "").strip()
     if not site:
         raise RuntimeError(f"{ENV_SITE} is not set")

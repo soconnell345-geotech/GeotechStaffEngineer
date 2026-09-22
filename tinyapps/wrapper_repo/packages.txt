@@ -1,8 +1,23 @@
-# TinyApps package manifest (pip via Data.State Nexus).
-# The whole toolkit arrives as one released package; an app update is a
-# one-line pin bump + an App Services sync request.
-geotech-staff-engineer==5.11.2
+# Tiny Apps package manifest — installed by run.sh from the Data.State Nexus
+# mirror (--index-url $PIP_INDEX_URL). The whole toolkit is ONE released
+# package; an app update is a one-line pin bump plus an App Services sync.
+#
+# Pin the exact release that was tested on dosdev before asking for a sync.
+# 5.26 is the first release that carries the Tiny Apps entry point
+# (webapp.tinyapps_entry with the document-review and geotech pages).
+geotech-staff-engineer>=5.26
 
-# Key Vault secret loading (Tiny Apps User Guide §3.4 pattern)
-azure-identity>=1.17
-azure-keyvault-secrets>=4.8
+# CfA fleet pins (exampleCode packages.txt, 2026-09-17): the versions cleared
+# through the Nexus firewall. streamlit and pandas sit inside the toolkit's own
+# ranges; PyJWT and msal arrive transitively through azure-identity and are
+# pinned because an unpinned resolve picks whatever the firewall has or has
+# not cleared that week.
+streamlit==1.62.0
+pandas==3.0.2
+PyJWT[crypto]==2.13.0
+msal==1.37.0
+
+# Key Vault reads on the App Service (webapp.tinyapps_settings imports these
+# lazily; a local .env run never needs them).
+azure-identity==1.21.0
+azure-keyvault-secrets==4.9.0

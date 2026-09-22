@@ -1,38 +1,34 @@
-"""GeotechStaffEngineer — TinyApps wrapper entry point.
+"""GeotechStaffEngineer — Tiny Apps wrapper entry point.
 
-This is the ONLY substantive file in the Data.State GitHub repo: it loads
-secrets from Azure Key Vault into environment variables (the Tiny Apps User
-Guide §3.4 required pattern), then hands off to the pip-installed app.
-Everything else ships as the ``geotech-staff-engineer`` package from the
-Data.State Nexus mirror (see packages.txt).
+This is the ONLY code file in the Data.State GitHub Enterprise repo. The app
+itself arrives from the Data.State Nexus mirror as the released
+``geotech-staff-engineer`` package (see packages.txt); ``run.sh`` starts
+Streamlit on this file.
+
+Configuration follows CfA's ``settings.py`` pattern, built into the package
+(``webapp.tinyapps_settings``): a real environment variable wins; on the App
+Service the Key Vault named by the ``KV_NAME`` app setting is read with the
+managed identity; locally (dosdev, a laptop) the ``.env`` file beside this
+script is read instead. So there is nothing to load here — the packaged app
+reads ``PROMPTER_URL`` / ``PROMPTER_MODEL`` / ``PROMPTER_API_KEY`` /
+``PROMPTER_CA_BUNDLE`` and ``GRAPH_TENANT_ID`` / ``GRAPH_CLIENT_ID`` /
+``GRAPH_CLIENT_SECRET`` / ``SHAREPOINT_SITE_URL`` itself, lazily, on first use.
+Copy ``.env.example`` to ``.env`` for a local run; never commit ``.env``.
 """
 
 import os
 
-# ── Key Vault secrets → environment (per Tiny Apps User Guide Fig 3-1) ──────
-# Secret names are provisioned per-application by the App Services team.
-# Fill KEY_VAULT_URL and the SECRET_MAP once the vault is assigned.
-KEY_VAULT_URL = os.environ.get("KEY_VAULT_URL", "")
-SECRET_MAP = {
-    # "<key-vault-secret-name>": "<env var the app reads>",
-    "geotech-prompter-api-key": "GEOTECH_PROMPTER_API_KEY",
-    # "geotech-sharepoint-token": "GEOTECH_SHAREPOINT_TOKEN",
-}
+# Local runs: the .env next to this file is the configuration source.
+os.environ.setdefault(
+    "GEOTECH_DOTENV",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
-if KEY_VAULT_URL:
-    from azure.identity import DefaultAzureCredential
-    from azure.keyvault.secrets import SecretClient
+# Where conversations and working files live on this host. App Service keeps
+# /home across restarts; anywhere else the package's default (~/.geotech_webapp)
+# is used. Set the app setting GEOTECH_WEBAPP_DATA to override.
+if os.path.isdir("/home") and "GEOTECH_WEBAPP_DATA" not in os.environ:
+    os.environ["GEOTECH_WEBAPP_DATA"] = "/home/data/geotech_webapp"
 
-    _client = SecretClient(vault_url=KEY_VAULT_URL,
-                           credential=DefaultAzureCredential())
-    for secret_name, env_var in SECRET_MAP.items():
-        try:
-            os.environ.setdefault(env_var,
-                                  _client.get_secret(secret_name).value)
-        except Exception as exc:                     # surface, don't crash
-            print(f"[keyvault] could not load {secret_name}: {exc}")
-
-# ── Hand off to the packaged app ────────────────────────────────────────────
-from webapp.tinyapps_entry import main
+from webapp.tinyapps_entry import main  # noqa: E402  (after the env is set)
 
 main()

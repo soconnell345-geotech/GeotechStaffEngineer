@@ -24,3 +24,9 @@ build/
 Duncan book excerpts/
 module_work/drawing_ground_truth/**/dxf/
 module_work/field_feedback/**/raw/
+
+# Department-internal documents (Tiny Apps guides, CfA example code) — local only
+tinyapps/reference/
+
+# Local Tiny Apps configuration (secrets) — never committed
+tinyapps/wrapper_repo/.env

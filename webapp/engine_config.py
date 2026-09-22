@@ -75,6 +75,21 @@ def is_foundry_deployment() -> bool:
     return os.environ.get(DEPLOYMENT_ENV, "").strip().lower() == "foundry"
 
 
+def is_tinyapps_deployment() -> bool:
+    """True when running on Tiny Apps (set by ``webapp.tinyapps_entry``).
+
+    Same posture as Foundry: the only engine is the deployment's Prompter key
+    (:mod:`webapp.tinyapps_engine`, which registers a model builder); the
+    Anthropic-key path is never read and never named in a message.
+    """
+    return os.environ.get(DEPLOYMENT_ENV, "").strip().lower() == "tinyapps"
+
+
+def is_keyless_deployment() -> bool:
+    """A deployment where no personal API key may be read or mentioned."""
+    return is_foundry_deployment() or is_tinyapps_deployment()
+
+
 def foundry_token() -> Optional[str]:
     """The Foundry bearer token from the first set env var, else None."""
     for env in FOUNDRY_TOKEN_ENVS:
@@ -357,6 +372,19 @@ def resolve_engine(model_id: Optional[str] = None) -> EngineResolution:
             "GEOTECH_FOUNDRY_MODELS (Label=id, comma-separated) on the "
             "deployment and republish. The app is running, but cannot answer "
             "questions until a model is selected.")
+
+    # 2c) Tiny Apps deployment with no Prompter builder registered: the four
+    #     PROMPTER_* settings are missing or incomplete. Name THEM — the
+    #     personal-key path does not exist on this deployment either.
+    if is_tinyapps_deployment():
+        return EngineResolution(
+            None, "none", "",
+            "No model configured. This Tiny Apps deployment reads "
+            "PROMPTER_URL, PROMPTER_MODEL and PROMPTER_API_KEY (and the "
+            "optional PROMPTER_CA_BUNDLE) from Key Vault or the App Service "
+            "app settings — locally, from the .env file. The app is running, "
+            "but cannot answer questions until those are set and the app is "
+            "restarted.")
 
     # 3) ANTHROPIC_API_KEY -> ChatAnthropic (local / dev path).
     if os.environ.get(KEY_ENV):

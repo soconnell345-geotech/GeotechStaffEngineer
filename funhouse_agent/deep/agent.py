@@ -614,11 +614,16 @@ def build_primary_tools(
     """
     if allowed_agents is None:
         allowed_agents = ANALYSIS_MODULES
-    return make_core_tools(
+    # An EMPTY scope (the document-review page) means no analysis modules at
+    # all, so the four dispatch tools are left out rather than offered over
+    # an empty catalog — an agent told it can `list_agents` and finding none
+    # spends turns discovering that.
+    core_tools = make_core_tools(
         allowed_agents=allowed_agents,
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
-    ) + make_vision_tools(
+    ) if allowed_agents else []
+    return core_tools + make_vision_tools(
         engine=engine,
         attachments=attachments,
         save_fn=save_fn,
@@ -688,6 +693,7 @@ def build_deep_agent(
     allowed_agents=None,
     reference_mode: str = "anytime",
     extra_system_prompt: Optional[str] = None,
+    system_prompt: Optional[str] = None,
     extra_tools=None,
     save_fn: Optional[Callable] = None,
     engine=None,
@@ -755,6 +761,13 @@ def build_deep_agent(
         seismic reviewer (``funhouse_agent.reviewers.make_seismic_reviewer_deep``)
         injects its review-mode checklist here. Default ``None`` leaves the
         prompt unchanged.
+    system_prompt : str, optional
+        REPLACES the geotechnical domain prompt outright (``extra_system_prompt``
+        still appends to it). The document-review page passes
+        :func:`~funhouse_agent.deep.prompt.build_document_review_prompt` here
+        with ``allowed_agents=()`` and ``reference_mode="off"`` — a different
+        agent over the same document, vision and file tools. Default ``None``
+        keeps the geotechnical prompt.
     extra_tools : list, optional
         Additional LangChain tools appended to the PRIMARY agent's tool list
         (after the standard meta/vision/file tools). Lets a host wire
@@ -934,7 +947,12 @@ def build_deep_agent(
     if extra_tools:
         tools = list(tools) + list(extra_tools)
 
-    system_prompt = build_domain_prompt(allowed_agents, memory_enabled=enable_memory)
+    # ``system_prompt`` REPLACES the geotechnical domain prompt — the
+    # document-review page is a different agent over the same tools, not the
+    # geotech agent with a suffix. ``extra_system_prompt`` still appends.
+    if system_prompt is None:
+        system_prompt = build_domain_prompt(allowed_agents,
+                                            memory_enabled=enable_memory)
     if extra_system_prompt:
         # Appended AFTER the domain prompt (mirrors GeotechAgent.system_prompt_extra)
         # so a caller can re-cast the agent — e.g. the seismic reviewer's review-mode

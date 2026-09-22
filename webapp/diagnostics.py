@@ -99,7 +99,13 @@ def _env_check() -> dict:
             "GEOTECH_FOUNDRY_HOST", "FOUNDRY_HOSTNAME", "FOUNDRY_URL",
             "GEOTECH_FOUNDRY_MODELS", "GEOTECH_WEBAPP_MAX_TOKENS",
             "GEOTECH_FOUNDRY_DISABLE_STREAMING", "GEOTECH_TRACE")
-    if not engine_config.is_foundry_deployment():
+    if engine_config.is_tinyapps_deployment():
+        # The Tiny Apps engine settings, named as CfA names them; the key
+        # itself only ever as a length.
+        envs = ("PROMPTER_URL", "PROMPTER_MODEL", "PROMPTER_API_KEY",
+                "PROMPTER_CA_BUNDLE", "GEOTECH_PROMPTER_DISABLE_STREAMING",
+                "GEOTECH_WEBAPP_MAX_TOKENS", "GEOTECH_TRACE")
+    elif not engine_config.is_foundry_deployment():
         envs = ("ANTHROPIC_API_KEY",) + envs
     parts = []
     for e in envs:
@@ -107,7 +113,9 @@ def _env_check() -> dict:
         if v is None or not str(v).strip():
             parts.append(f"{e}=unset")
         elif e in ("GEOTECH_FOUNDRY_MODELS", "GEOTECH_WEBAPP_MAX_TOKENS",
-                   "GEOTECH_FOUNDRY_DISABLE_STREAMING", "GEOTECH_TRACE"):
+                   "GEOTECH_FOUNDRY_DISABLE_STREAMING", "GEOTECH_TRACE",
+                   "PROMPTER_URL", "PROMPTER_MODEL",
+                   "GEOTECH_PROMPTER_DISABLE_STREAMING"):
             parts.append(f"{e}={v}")          # not secrets — show them
         else:
             parts.append(f"{e}=set({len(str(v))} chars)")

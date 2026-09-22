@@ -29,8 +29,9 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+import threading
 from dataclasses import dataclass
-from typing import Callable, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 from uuid import uuid4
 
 #: Accepted upload types (mirrors the notebook FileUpload accept list).
@@ -830,7 +831,9 @@ def model_choices(env_model: Optional[str] = None) -> List[dict]:
     # Foundry deployment: RIDs are the ONLY model surface — the curated
     # Anthropic list is not offered (and the key path is disabled in
     # engine_config), so an unconfigured deployment shows just the RID input.
-    if engine_config.is_foundry_deployment():
+    # A Tiny Apps deployment likewise never offers the curated list: its one
+    # model arrives through the Prompter builder above, or not at all.
+    if engine_config.is_keyless_deployment():
         choices = foundry_model_choices()
     else:
         choices = foundry_model_choices() + [dict(c) for c in MODEL_CHOICES]
@@ -858,8 +861,9 @@ def default_model_id(env_model: Optional[str] = None) -> str:
     if fm:
         return fm[0]["id"]
     # Foundry deployment with nothing configured: no default model exists —
-    # the app boots engineless and offers the RID input only.
-    if engine_config.is_foundry_deployment():
+    # the app boots engineless and offers the RID input only. Same on Tiny
+    # Apps: no Prompter settings, no model.
+    if engine_config.is_keyless_deployment():
         return ""
     return MODEL_CHOICES[0]["id"]
 
@@ -912,8 +916,35 @@ def conversations_root(root: Optional[str] = None) -> str:
     return os.path.join(root or data_root(), "conversations")
 
 
+# A conversation's ROOT can differ from the process default. On Tiny Apps one
+# process serves many people and two pages, so each person's conversations
+# for each page live under their own root (``webapp.profiles.session_root``).
+# Everything downstream — the detached turn worker included — addresses a
+# conversation by ``thread_id`` alone, so the root is REGISTERED against the
+# thread when the conversation is opened and looked up here. A thread nobody
+# registered uses the default root, byte-identical to the single-user app.
+_THREAD_ROOTS: Dict[str, str] = {}
+_THREAD_ROOTS_LOCK = threading.Lock()
+
+
+def register_thread_root(thread_id: str, root: Optional[str]) -> None:
+    """Remember that ``thread_id`` lives under ``root`` (``None`` forgets)."""
+    with _THREAD_ROOTS_LOCK:
+        if root:
+            _THREAD_ROOTS[thread_id] = os.path.abspath(root)
+        else:
+            _THREAD_ROOTS.pop(thread_id, None)
+
+
+def thread_root(thread_id: str) -> Optional[str]:
+    """The registered root for ``thread_id``, or ``None`` (the default)."""
+    with _THREAD_ROOTS_LOCK:
+        return _THREAD_ROOTS.get(thread_id)
+
+
 def conversation_dir(thread_id: str, root: Optional[str] = None) -> str:
-    return os.path.join(conversations_root(root), thread_id)
+    return os.path.join(conversations_root(root or thread_root(thread_id)),
+                        thread_id)
 
 
 def conversation_files_dir(thread_id: str, root: Optional[str] = None) -> str:
@@ -1668,7 +1699,7 @@ def delete_conversation(thread_id: str, root: Optional[str] = None) -> Optional[
     src = conversation_dir(thread_id, root)
     if not os.path.isdir(src):
         return None
-    trash = os.path.join(root or data_root(), ".trash")
+    trash = os.path.join(root or thread_root(thread_id) or data_root(), ".trash")
     os.makedirs(trash, exist_ok=True)
     dst = os.path.join(trash, f"{thread_id}_{int(_time.time())}")
     _shutil.move(src, dst)
