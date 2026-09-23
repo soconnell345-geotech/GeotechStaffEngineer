@@ -1,11 +1,20 @@
 # Tiny Apps — plan of record and working notes
 
-**Status (2026-09-21): building.** The pilot was awarded 2026-09-03; on
-2026-09-21 the owner has GitHub Enterprise access and the **dosdev**
-development environment (VS Code there, push to GHE), and
-`pip install geotech-staff-engineer` WORKED on dosdev (Python 3.11.9). The
-Prompter key is being requested. The Funhouse/Databricks app stays the fast
-tester and backup; both deployments share one PyPI package and one `webapp`.
+**Status (2026-09-23): 5.26.0 RELEASED and BOOTED ON DOSDEV; waiting on
+CfA for the Prompter and SharePoint values.** The pilot was awarded
+2026-09-03; the owner has GitHub Enterprise access and the **dosdev**
+development environment (a virtual desktop, Python 3.11.9, VS Code, push to
+GHE). On 2026-09-23 `pip install geotech-staff-engineer==5.26.0` resolved on
+dosdev and `python -m streamlit run <site-packages>/webapp/tinyapps_entry.py`
+started the app with no Prompter or SharePoint values: the "No model
+configured" banner, the chat box disabled — Streamlit itself, the package
+import on 3.11 and the two-page entry are proven on the target machine;
+nothing model-side is. (The first attempt showed the single geotech page
+because the older version was still installed — a symptom to remember.)
+The owner is creating a VS Code venv on dosdev and installing from
+`packages.txt`, which is also the first test of the CfA fleet pins beside
+our tree. The Funhouse/Databricks app stays the fast tester and backup; both
+deployments share one PyPI package and one `webapp`.
 
 Sources, all local-only under `tinyapps/reference/` (gitignored — Department
 documents are never committed): `Data.State Tiny Apps User Guide v1.1`

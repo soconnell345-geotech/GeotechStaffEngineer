@@ -63,10 +63,15 @@ the dev venv; on dosdev it is.)
    `annotate_document` is feature-detected, so a 5.26.0 on a 0.6.0 planlens
    simply lacks it. Two NEW dependencies (`python-docx`, `markdown-it-py`) —
    watch the Nexus install log; the mirror delivers a day or two after PyPI.
-2. **The owner's dosdev run** (recipe in `TINYAPPS.md`): install from
-   Nexus (proves the tree incl. pandas 3.0.2 / streamlit 1.62.0 clears the
-   firewall — our suite has NOT run on pandas 3), fill `.env`, run, upload a
-   PDF → the orientation turn, ask for a marked-up copy and a Word summary.
+2. **The owner's dosdev run** (recipe in `TINYAPPS.md`). **DONE 2026-09-23
+   as far as it can go without values:** `geotech-staff-engineer==5.26.0`
+   installed from the mirror on dosdev and `streamlit run …/webapp/
+   tinyapps_entry.py` booted the two-page app with the "No model
+   configured" banner. Still to do there, once the values arrive: install
+   from `packages.txt` in a venv (the CfA fleet pins — pandas 3.0.2,
+   streamlit 1.62.0 — beside our tree; our suite has NOT run on pandas 3),
+   fill `.env`, Connection diagnostics, upload a PDF → the orientation
+   turn, ask for a marked-up copy and a Word summary, Sync now.
 3. **Blocked on CfA:** Prompter URL / model / key / CA bundle — **the
    deployment must accept IMAGE inputs** (make-or-break; ask first); the
    published origin for `corsAllowedOrigins`; the SharePoint app
