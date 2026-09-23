@@ -27,10 +27,17 @@ echo "Starting Streamlit..."
 # Health check path for the App Service: /_stcore/health (Streamlit serves no
 # /healthz). If IIS publishes the app under a sub-path, set the app setting
 # STREAMLIT_SERVER_BASE_URL_PATH to match.
+#
+# --client.toolbarMode viewer hides Streamlit's own "Deploy" button and
+# developer menu (they link to Streamlit's public hosting, meaningless here);
+# the Databricks launcher sets the same. --server.fileWatcherType none stops
+# Streamlit watching the installed package for edits.
 exec python -m streamlit run "$APP_DIR/app.py" \
     --server.port "${PORT:-8000}" \
     --server.address 0.0.0.0 \
     --server.headless true \
     --browser.gatherUsageStats false \
+    --client.toolbarMode viewer \
+    --server.fileWatcherType none \
     --server.corsAllowedOrigins "https://CHANGE-ME.cfaapp.cfa.state.sbu"
     # --server.corsAllowedOrigins "https://CHANGE-ME.app.data.state.sbu"  # repeat per additional published origin
