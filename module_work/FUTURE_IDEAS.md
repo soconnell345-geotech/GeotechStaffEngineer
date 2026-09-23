@@ -434,6 +434,28 @@ DocLayout-YOLO (AGPL), docling (torch unavoidable — optional only).
    firewalled: any package that downloads model weights at runtime is unusable
    as published — vendor the models or skip.
 
+## VISION HARNESS BENCHMARK — planlens vs Chartography + BenchCAD (2026-09-23; LONG-TERM TODO)
+
+Owner asked 2026-09-23 after reading the Opus 5.5 system card (§8.13). Anthropic's
+"with tools" setup is only: container + image file + standard libraries (any code)
++ an image cropping tool, max effort. Opus 5.5: Chartography 64.4% → 89.0% with
+tools; BenchCAD Vision2Code voxel IoU 0.730 → 0.962. Public reference build:
+Claude Cookbook "multimodal-crop-tool" (pixel coords of the image the model saw,
+crop from full-res original, upscale to the model's image budget, JPEG q92).
+
+- **Chartography** (Surge AI, github.com/surge-ai/chartography): 100 specialised-chart
+  questions, graded against expert per-chart acceptable ranges. Score the planlens
+  vision loop (render_page / render_region / marks / grid) with and without zoom,
+  on the Prompter's GPT-4.1, against published numbers.
+- **BenchCAD** (huggingface BenchCAD/BenchCAD): Vision2Code = write CadQuery code
+  from 4 multi-view renders (use 256 px views, not the 128 px pre-renders);
+  voxel-IoU scored. Tests a render → compare → fix loop more than document review.
+- Pre-work that would move scores (see 2026-09-23 session): pixel-coordinate zoom
+  input, crop upscaled to the model's budget, renders sized to GPT-4.1's real
+  resize, JPEG to the model, optional code-on-image sandbox for raster charts.
+- Also build a small geotech chart truth set in the Chartography shape (answer
+  ranges, numeric grading, no LLM judge). Offline with fake engines first, then cluster.
+
 ## REPORT INGEST TRAIN — WP0–WP7 BUILT; **PARKED 2026-09-21 at 5.25.0 (RELEASED)**
 
 **The train is parked at 5.25.0** (tag `v5.25.0`, master `46ae949`, on PyPI
