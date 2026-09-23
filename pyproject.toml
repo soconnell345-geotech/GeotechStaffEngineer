@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geotech-staff-engineer"
-version = "5.26.0"
+version = "5.27.0"
 description = "Python toolkit for LLM-based geotechnical engineering agents - 33 analysis modules covering foundations, piles, slopes, structural section/RC/frame analysis, reliability, seismic site response, excavation support, pavement design (AASHTO 1993 / UFC 3-250-01), subsurface characterization (DIGGS/GEF/AGS4), FEM, drawing & profile rendering, and a cited public-domain reference layer."
 readme = "README.md"
 license = "MIT"
@@ -135,7 +135,14 @@ dependencies = [
     # came back with no depths at all. 0.6.0's dependency list is STILL
     # identical to 0.4.0's, so this again adds NO new third-party package to
     # the cluster.
-    "planlens>=0.7",
+    # RAISED TO `planlens>=0.8` (5.27.0, 2026-09-23): the vision tools render
+    # through `Document.render(budget=...)`, which 0.8.0 adds -- every page
+    # or zoom is the largest image the vision model reads without shrinking
+    # it (funhouse_agent/vision_view.py). The app still falls back to the old
+    # fixed sizes on an older planlens, but only 0.8.0 gives the chart
+    # read-offs their larger image. 0.8.0's dependency list is IDENTICAL to
+    # 0.7.0's, so this adds NO new third-party package to the cluster.
+    "planlens>=0.8",
     # -- structural round 1 (owner, 2026-09-03): section/RC/frame analysis --
     # sectionproperties and concreteproperties were REMOVED in 5.13.0: both
     # require `cytriangle`, whose only manylinux wheel is quarantined by the

@@ -450,9 +450,16 @@ crop from full-res original, upscale to the model's image budget, JPEG q92).
 - **BenchCAD** (huggingface BenchCAD/BenchCAD): Vision2Code = write CadQuery code
   from 4 multi-view renders (use 256 px views, not the 128 px pre-renders);
   voxel-IoU scored. Tests a render → compare → fix loop more than document review.
-- Pre-work that would move scores (see 2026-09-23 session): pixel-coordinate zoom
-  input, crop upscaled to the model's budget, renders sized to GPT-4.1's real
-  resize, JPEG to the model, optional code-on-image sandbox for raster charts.
+- Pre-work DONE in 5.27.0 / planlens 0.8.0 (2026-09-23): renders sized to the
+  model's budget, zooms re-drawn to fill it, zoom from a box read off an
+  earlier image (px / 0-999), PNG-or-JPEG by size, `detail` sent, chart
+  read-offs at GPT-5.4 `original`.
+- STILL OPEN: (a) per-figure BOXES in the geotech-references figure catalogs
+  (found once at build time from image blocks / dense paths near the caption),
+  so `read_reference_figure` renders just the chart, not the whole page;
+  (b) a code-on-image path for RASTER charts (calibrate axes, trace a curve by
+  colour) — vector PDFs can use the drawing paths instead; (c) an optional
+  zoom follow-up inside `read_reference_figure` itself.
 - Also build a small geotech chart truth set in the Chartography shape (answer
   ranges, numeric grading, no LLM judge). Offline with fake engines first, then cluster.
 

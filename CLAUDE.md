@@ -71,7 +71,32 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-09-22) — 5.26.0 RELEASED with planlens 0.7.0: the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
+## CURRENT WORKING STATE (2026-09-23) — 5.27.0 RELEASED with planlens 0.8.0: vision sized to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
+
+- **5.27.0 RELEASED 2026-09-23 (tag `v5.27.0`) with planlens 0.8.0 (tag
+  `v0.8.0`, published first — the app pin is now `planlens>=0.8`). No new
+  third-party package.** The owner's word: "go". Prompted by the Opus 5.5
+  system card's Chartography result (64 % → 89 % with only a container and
+  an image-cropping tool) and Anthropic's zoom-tool cookbook. **planlens
+  0.8.0:** `planlens.document.budget` — named image budgets with the
+  published limits (`openai-high` 2048 px / 2,500 patches, `openai-original`
+  6000 px / 10,000, `gpt-4.1-high`, `claude`, `claude-hires`);
+  `Document.render(budget=, fmt=)` renders to exactly the largest image the
+  model reads without shrinking it and re-draws a zoom from the PDF to fill
+  it; `render_region(image=, image_box=)` zooms on a box read off an earlier
+  image (pixels or a 0-999 grid); `fmt="auto"` keeps PNG for drawings and
+  JPEG for scans (PNG measured at half a JPEG's size on vector sheets); MCP
+  `--image-budget`/`--image-format`. **App:** `funhouse_agent/vision_view.py`
+  sizes every vision render (`GEOTECH_VISION_BUDGET`, default
+  `openai-high`), gives chart read-offs GPT-5.4's `original` level
+  (`GEOTECH_CHART_BUDGET`, default `openai-original`; `funhouse-gpt-high`
+  IS GPT-5.4), sends the matching `detail` (retried once without it if a
+  model refuses), labels image bytes by their real type, asks every vision
+  call for 0-999 location boxes and returns the `view` so
+  `render_region(view=, image_box=)` can zoom on what it found. Pickup and
+  first live checks: `HANDOFF.md` §0a-current. Parked follow-ups (figure
+  boxes in the catalog, code-on-image, benchmarking on Chartography /
+  BenchCAD): `module_work/FUTURE_IDEAS.md` "VISION HARNESS BENCHMARK".
 
 - **5.26.0 RELEASED 2026-09-22 (tag `v5.26.0`) with planlens 0.7.0 (tag
   `v0.7.0`, published first — the app pin is now `planlens>=0.7`). Two NEW

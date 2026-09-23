@@ -1,14 +1,80 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-09-22.** This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-09-23.** This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-09-22, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-09-23, supersedes everything below)
 
-### 5.26.0 RELEASED 2026-09-22 (tag `v5.26.0`) with planlens 0.7.0 (tag `v0.7.0`) — THE TINY APPS BUILD
+### 5.27.0 RELEASED 2026-09-23 (tag `v5.27.0`) with planlens 0.8.0 (tag `v0.8.0`) — VISION SIZED TO THE MODEL
+
+**Released on the owner's word ("go"), planlens first.** No new third-party
+package: planlens 0.8.0 declares exactly what 0.7.0 did; the pin moves to
+`planlens>=0.8`. Everything else from the 5.26.0 entry below still stands
+(the Tiny Apps items are unchanged).
+
+**Release gate on this tree: 13,309 passed / 36 skipped / 0 failed**, run in
+the foreground in chunks each judged on pytest's own exit code (the machine
+was short of memory for one long run): 2,165/17 analysis modules + 142/3
+`calc_package` (NOT in pyproject `testpaths` — run it by hand) + 1,034/11
+wrapped agents and I/O + 399/0 `fem2d` (three pieces; it outlasts a
+10-minute call) + 1,799/5 `funhouse_agent` + 1,296/0 `report_ingest` +
+681/0 webapp, foundry harness and validation examples + 5,793/0
+geotech-references. planlens 0.8.0: 1,393 passed. Wheel checked:
+`funhouse_agent/vision_view.py` present, no tests / module_work / tinyapps /
+raw content, metadata requires `planlens>=0.8`; dependencies otherwise
+identical to 5.26.0.
+
+**Why.** The Opus 5.5 system card (§8.13: Chartography 64 % → 89 % with a
+container + an image-cropping tool) and Anthropic's zoom-tool cookbook,
+checked against OpenAI's "Images and vision" guide. A vision model SHRINKS
+every image to its own limits before it looks, and the app never set the
+`detail` level, so on GPT-5.4 (`funhouse-gpt-high` — owner, 2026-09-23)
+every image was capped at ~1.6 MP, and a chart read-off rendered the whole
+page and then lost resolution to the server's resize.
+
+**What shipped.**
+- **planlens 0.8.0** — `planlens.document.budget` (named budgets:
+  `openai-high`, `openai-original`, `gpt-4.1-high`, `claude`,
+  `claude-hires`; `fit_size`; `image_box_to_page`);
+  `Document.render(budget=, fmt=)` renders to exactly the largest image the
+  model reads unshrunk and re-draws a zoom from the PDF to fill it;
+  `render_region(image=, image_box=, box_units=px|norm1000)`; `fmt="auto"`
+  (PNG for drawings, JPEG for scans — measured: on a vector sheet PNG is
+  about HALF a q92 JPEG); MCP `--image-budget` / `--image-format`; a render
+  is now the size it reports (the "2000 px" page was 2016 px).
+- **app** — `funhouse_agent/vision_view.py` is the one place for size,
+  detail and location convention. `analyze_pdf_page`, `render_region`,
+  `read_reference_figure` and `view_worked_example_source` render through
+  it; every vision prompt asks for locations as 0-999 boxes and every result
+  returns a `view`; `render_region(view=, image_box=)` zooms on what the
+  vision call found (the agent never sees images itself, so this is its
+  zoom loop). `LangChainVisionEngine` labels bytes by their real type (it
+  always said PNG), sends `detail`, and retries ONCE without it if a model
+  refuses the value. Settings: `GEOTECH_VISION_BUDGET` (default
+  `openai-high`), `GEOTECH_CHART_BUDGET` (default `openai-original` — chart
+  read-offs, owner-approved: "only a few readoffs every conversation"),
+  `GEOTECH_VISION_DETAIL` (override; `none` omits the field).
+
+**First live checks (owner, cluster).** (1) A chart read-off
+(`read_reference_figure`, e.g. DM7.2 Fig 4-12 Kp) — the result's `view_px`
+should be about 2800 x 3600 on a letter page, and the value should be at
+least as good as before. (2) `analyze_pdf_page` on a drawing sheet, then ask
+the agent to zoom on something the analysis located — it should call
+`render_region` with `view` + `image_box`. (3) On Tiny Apps the Prompter
+deployment is unknown: if it rejects `detail="original"` the engine retries
+without it and nothing fails.
+
+**Parked from this train** (`module_work/FUTURE_IDEAS.md`, "VISION HARNESS
+BENCHMARK"): per-figure BOXES in the geotech-references figure catalog, so a
+chart read-off renders just the chart instead of the page; a code-on-image
+path for raster charts; scoring the harness on Chartography and BenchCAD
+and on a small geotech chart truth set.
+
+
+### 5.26.0 RELEASED 2026-09-22 (tag `v5.26.0`) with planlens 0.7.0 (tag `v0.7.0`) — THE TINY APPS BUILD (superseded by 5.27.0 above)
 
 **Released on the owner's word ("you can release"), planlens first.** Two
 new dependencies (`python-docx`, `markdown-it-py`); pin `planlens>=0.7`.
