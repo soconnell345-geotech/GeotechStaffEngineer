@@ -83,7 +83,9 @@ VISION_HINT = (
     "page=N, prompt=<what to find>) views the whole page; "
     "render_region(attachment_key=<source>, page=N, bbox=[x0,y0,x1,y1], "
     "prompt=...) zooms on a box from read_document or a markup (same frame, "
-    "no conversion); marks=[[x,y,label],...] numbers spots to ask about"
+    "no conversion); marks=[[x,y,label],...] numbers spots to ask about; "
+    "a vision result's view + a 0-999 image_box from its analysis zooms on "
+    "what it found"
 )
 
 #: Budget used when the host has disabled truncation: generous, still a bound.

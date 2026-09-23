@@ -23,6 +23,7 @@ Dependency-light: only ``langchain_core`` (for ``HumanMessage``) and stdlib
 from __future__ import annotations
 
 import base64
+from typing import Optional
 
 
 class LangChainVisionEngine:
@@ -45,9 +46,15 @@ class LangChainVisionEngine:
         The LangChain chat model that performs the vision call. It must be
         vision-capable for real images; for offline tests a fake model whose
         ``.invoke`` returns an ``AIMessage`` works.
-    media_type : str
-        MIME type embedded in the data URI. Defaults to ``"image/png"`` (the
-        PDF renderer in :mod:`planlens.pdf.vision` emits PNG, matching v1).
+    media_type : str, optional
+        MIME type embedded in the data URI. ``None`` (default) reads it from
+        the bytes — a render can be PNG or JPEG (see
+        :mod:`funhouse_agent.vision_view`).
+    detail : str, optional
+        OpenAI's image ``detail`` level (``"high"``, ``"original"``...). The
+        default follows the app's image budget
+        (:func:`funhouse_agent.vision_view.detail`); ``""`` omits the field.
+        A model that rejects the value is asked once more without it.
     """
 
     # Marks this as a vision-capable engine (parity with the v1 engines, which
@@ -55,9 +62,15 @@ class LangChainVisionEngine:
     # native-tool-calling engine — deepagents handles tool calling itself.
     native_tool_calling = False
 
-    def __init__(self, model, media_type: str = "image/png"):
+    #: The data URI is labelled with the bytes' real type, so a JPEG render
+    #: may be sent (see ``vision_view.render_view(allow_jpeg=...)``).
+    accepts_jpeg = True
+
+    def __init__(self, model, media_type: Optional[str] = None,
+                 detail: Optional[str] = None):
         self._model = model
         self._media_type = media_type
+        self._detail = detail
 
     @property
     def model(self):
@@ -88,25 +101,40 @@ class LangChainVisionEngine:
         """
         from langchain_core.messages import HumanMessage
 
+        from funhouse_agent import vision_view
+
         if isinstance(image_input, (bytes, bytearray)):
-            b64 = base64.b64encode(bytes(image_input)).decode()
+            data = bytes(image_input)
         elif isinstance(image_input, str):
             with open(image_input, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode()
+                data = f.read()
         else:
             raise TypeError(
                 f"image_input must be bytes or file path, got {type(image_input)}"
             )
 
-        data_uri = f"data:{self._media_type};base64,{b64}"
-        message = HumanMessage(
-            content=[
-                {"type": "image_url", "image_url": {"url": data_uri}},
-                {"type": "text", "text": user_prompt},
-            ]
-        )
+        media_type = self._media_type or vision_view.image_media_type(data)
+        data_uri = f"data:{media_type};base64,{base64.b64encode(data).decode()}"
+        detail = (self._detail if self._detail is not None
+                  else vision_view.detail()) or None
 
-        response = self._model.invoke([message])
+        def message(with_detail: bool) -> "HumanMessage":
+            image_url = {"url": data_uri}
+            if with_detail and detail:
+                image_url["detail"] = detail
+            return HumanMessage(content=[
+                {"type": "image_url", "image_url": image_url},
+                {"type": "text", "text": user_prompt},
+            ])
+
+        try:
+            response = self._model.invoke([message(True)])
+        except Exception as exc:
+            # An older model (GPT-4.1, GPT-5.2) has no "original" detail; ask
+            # once more at its default rather than fail the read.
+            if not detail or "detail" not in str(exc).lower():
+                raise
+            response = self._model.invoke([message(False)])
         return _content_to_text(getattr(response, "content", response))
 
 

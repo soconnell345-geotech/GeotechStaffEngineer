@@ -1,0 +1,202 @@
+"""How a page reaches the vision model: its size, its detail level, and the
+grid the model answers locations on.
+
+Every vision tool in the app (``analyze_pdf_page``, ``render_region``,
+``read_reference_figure``, ``view_worked_example_source``) renders a PDF page or
+a region of it and hands the image to a one-shot vision call. This module is
+the one place that decides how:
+
+* **Size — the image budget.** A vision model shrinks every image to its own
+  limits before it looks (GPT-5.4 at ``detail="high"``: 2048 px and 2,500
+  patches of 32 px, about 1.6 MP; at ``"original"``: 6000 px and 10,000
+  patches). planlens renders the page or region to EXACTLY the largest image
+  that budget holds, re-drawing a zoomed region from the PDF so it fills it.
+  ``GEOTECH_VISION_BUDGET`` names the budget (default
+  :data:`DEFAULT_BUDGET`; ``none`` restores the old fixed sizes). Chart
+  read-offs run inside :func:`chart_reading` at a larger budget
+  (``GEOTECH_CHART_BUDGET``, default :data:`DEFAULT_CHART_BUDGET`).
+* **Detail.** OpenAI's ``detail`` field decides which of those limits
+  applies, so it must match the budget. :func:`detail` gives the budget's own
+  value; ``GEOTECH_VISION_DETAIL`` overrides it (``none`` omits the field).
+* **Where things are — a 0-999 grid.** The main agent never sees an image; it
+  reads what the vision call wrote. So each vision call is asked to give
+  locations as a box on a 0-999 grid over the image (OpenAI's recommended
+  convention, and immune to any resize), and each result returns the
+  ``view`` — the page rect the image showed. ``render_region(view=...,
+  image_box=...)`` turns the two back into a box on the page
+  (:func:`image_box_to_page`), so the agent can zoom on what the vision call
+  found.
+
+planlens gained budgets after the version this app pins; on an older planlens
+the renders fall back to the fixed sizes and everything else still works.
+"""
+
+from __future__ import annotations
+
+import inspect
+import logging
+import os
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Dict, Iterator, Optional, Sequence, Tuple
+
+log = logging.getLogger(__name__)
+
+BUDGET_ENV = "GEOTECH_VISION_BUDGET"
+DETAIL_ENV = "GEOTECH_VISION_DETAIL"
+CHART_BUDGET_ENV = "GEOTECH_CHART_BUDGET"
+
+#: GPT-5.4's ``high`` detail (its ``auto`` too): what the side call already
+#: got, now rendered to the size it actually looks at. ``openai-original`` is
+#: four times the pixels and four times the image tokens — the owner's call.
+DEFAULT_BUDGET = "openai-high"
+
+#: Chart read-offs (``read_reference_figure``, ``view_worked_example_source``)
+#: are detail-bound and few — a handful a conversation — so they get GPT-5.4's
+#: ``original`` level: up to 10,000 patches instead of 2,500 (owner,
+#: 2026-09-23; ``funhouse-gpt-high`` is GPT-5.4, which supports it).
+DEFAULT_CHART_BUDGET = "openai-original"
+
+#: The budget in force for the vision call in progress, when a tool asks for
+#: one other than the default (see :func:`chart_reading`).
+_BUDGET_OVERRIDE: ContextVar[Optional[str]] = ContextVar(
+    "gse_vision_budget", default=None)
+
+#: The sentence every vision prompt ends with, so a location comes back in a
+#: form the agent can zoom on.
+GRID_INSTRUCTION = (
+    "If you give the location of anything in this image, give it as a box "
+    "[x0, y0, x1, y1] on a 0-999 grid over the whole image (origin at the "
+    "top-left corner, x to the right, y down).")
+
+#: What the agent is told about the ``view`` a vision result carries.
+ZOOM_HINT = ("to zoom on something the analysis located, call "
+             "render_region(attachment_key=<same source>, view=<this view>, "
+             "image_box=<its 0-999 box>, prompt=...)")
+
+_OFF = ("", "none", "off", "0", "false")
+
+JPEG_MAGIC = bytes([0xFF, 0xD8, 0xFF])
+
+
+@contextmanager
+def chart_reading() -> Iterator[None]:
+    """Render and send images at the chart read-off budget for this block.
+
+    Both the render (:func:`render_view`) and the engine's ``detail`` field
+    (:func:`detail`) read the budget at call time, so one ``with`` covers
+    both. ``GEOTECH_CHART_BUDGET`` overrides :data:`DEFAULT_CHART_BUDGET`.
+    """
+    name = os.environ.get(CHART_BUDGET_ENV, DEFAULT_CHART_BUDGET)
+    token = _BUDGET_OVERRIDE.set(name)
+    try:
+        yield
+    finally:
+        _BUDGET_OVERRIDE.reset(token)
+
+
+def budget():
+    """The planlens ``ImageBudget`` renders are sized to, or ``None``."""
+    name = (_BUDGET_OVERRIDE.get()
+            or os.environ.get(BUDGET_ENV, DEFAULT_BUDGET)).strip()
+    if name.lower() in _OFF:
+        return None
+    try:
+        from planlens.document.budget import resolve_budget
+    except ImportError:           # planlens older than image budgets
+        return None
+    try:
+        return resolve_budget(name)
+    except ValueError as exc:
+        log.warning("%s=%r ignored: %s", BUDGET_ENV, name, exc)
+        return None
+
+
+def detail() -> Optional[str]:
+    """The ``detail`` value image blocks carry, or ``None`` to omit it."""
+    raw = os.environ.get(DETAIL_ENV)
+    if raw is not None:
+        return None if raw.strip().lower() in _OFF else raw.strip()
+    bud = budget()
+    return bud.detail if bud is not None else None
+
+
+def image_media_type(data: bytes) -> str:
+    """``image/jpeg`` or ``image/png`` from the bytes themselves."""
+    if data[:3] == JPEG_MAGIC:
+        return "image/jpeg"
+    if data[:4] == b"GIF8":
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/png"
+
+
+def _render_accepts_budget() -> bool:
+    from planlens.document import Document
+    return "budget" in inspect.signature(Document.render).parameters
+
+
+def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
+                marks: Optional[Sequence[Sequence[Any]]] = None,
+                dpi: Optional[float] = None, pad_frac: float = 0.1,
+                allow_jpeg: bool = False) -> Tuple[bytes, Dict[str, Any]]:
+    """Render ``page`` (or ``bbox`` on it) of a PDF for the vision model.
+
+    ``source`` is PDF bytes or a file path. Returns ``(image_bytes, info)``
+    where ``info`` is planlens' render info (``page``, ``clip``, ``dpi``,
+    ``width_px``, ``height_px`` and, with a budget, ``format``/``budget``).
+    ``allow_jpeg`` lets a scan go as JPEG when that is smaller (the engine
+    must label the bytes by their real type); line art stays PNG either way.
+    """
+    from planlens.document import Document
+    doc = (Document(content=source) if isinstance(source, (bytes, bytearray))
+           else Document(filepath=str(source)))
+    try:
+        kwargs: Dict[str, Any] = {"bbox": tuple(bbox) if bbox is not None else None,
+                                  "pad_frac": pad_frac,
+                                  "marks": [tuple(m) for m in marks] if marks else None}
+        bud = budget()
+        if bud is not None and _render_accepts_budget():
+            kwargs.update(budget=bud, fmt="auto" if allow_jpeg else "png",
+                          dpi=dpi)
+        else:
+            # The fixed sizes this app always used: 300 dpi for a zoom.
+            kwargs["dpi"] = dpi if dpi is not None else (300 if bbox is not None else None)
+        return doc.render(int(page), **kwargs)
+    finally:
+        doc.close()
+
+
+def view_payload(info: Dict[str, Any]) -> Dict[str, Any]:
+    """The fields a vision result carries so the agent can zoom on it."""
+    return {"view": [round(float(v), 1) for v in info["clip"]],
+            "view_px": [info["width_px"], info["height_px"]],
+            "zoom_hint": ZOOM_HINT}
+
+
+def with_grid(prompt: str) -> str:
+    """``prompt`` with the 0-999 location instruction appended."""
+    return f"{prompt.rstrip()}\n\n{GRID_INSTRUCTION}"
+
+
+def image_box_to_page(view: Sequence[float], image_box: Sequence[float]
+                      ) -> Tuple[float, float, float, float]:
+    """A 0-999 box on the image of ``view`` as PDF points on the page."""
+    if len(view) != 4 or len(image_box) != 4:
+        raise ValueError("view and image_box must each be [x0, y0, x1, y1]")
+    vx0, vy0, vx1, vy1 = (float(v) for v in view)
+    if vx1 <= vx0 or vy1 <= vy0:
+        raise ValueError("view must be a non-empty [x0, y0, x1, y1] rect")
+    x0, y0, x1, y1 = (min(999.0, max(0.0, float(v))) for v in image_box)
+    x0, x1 = min(x0, x1), max(x0, x1)
+    y0, y1 = min(y0, y1), max(y0, y1)
+    w, h = vx1 - vx0, vy1 - vy0
+    return (vx0 + x0 / 999.0 * w, vy0 + y0 / 999.0 * h,
+            vx0 + x1 / 999.0 * w, vy0 + y1 / 999.0 * h)
+
+
+__all__ = ["BUDGET_ENV", "DETAIL_ENV", "CHART_BUDGET_ENV", "DEFAULT_BUDGET",
+           "DEFAULT_CHART_BUDGET", "chart_reading", "GRID_INSTRUCTION",
+           "ZOOM_HINT", "budget", "detail", "image_media_type", "render_view",
+           "view_payload", "with_grid", "image_box_to_page"]

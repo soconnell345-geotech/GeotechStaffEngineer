@@ -12,6 +12,14 @@ instead of text-based ReAct parsing.
 from typing import Optional, Protocol, runtime_checkable
 
 
+def _media_type_of(b64: str) -> str:
+    """The image's real MIME type from its base64 text (an upload or a
+    render may be JPEG as well as PNG; the label must match the bytes)."""
+    import base64
+    from funhouse_agent.vision_view import image_media_type
+    return image_media_type(base64.b64decode(b64[:16]))
+
+
 @runtime_checkable
 class GenAIEngine(Protocol):
     """Interface that any AI backend must satisfy.
@@ -155,7 +163,7 @@ class ClaudeEngine:
                         "type": "image",
                         "source": {
                             "type": "base64",
-                            "media_type": "image/png",
+                            "media_type": _media_type_of(b64),
                             "data": b64,
                         },
                     },
@@ -281,7 +289,7 @@ class NativeToolEngine:
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:image/png;base64,{b64}",
+                            "url": f"data:{_media_type_of(b64)};base64,{b64}",
                         },
                     },
                     {"type": "text", "text": user_prompt},

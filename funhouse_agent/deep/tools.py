@@ -708,8 +708,10 @@ def make_vision_tools(
         page: int = 0,
         bbox: Optional[list] = None,
         marks: Optional[list] = None,
-        dpi: int = 300,
+        dpi: Optional[int] = None,
         prompt: str = "Describe what this zoomed-in region shows.",
+        view: Optional[list] = None,
+        image_box: Optional[list] = None,
     ) -> str:
         """Render a ZOOMED-IN crop of a PDF page and analyze it with vision —
         the "geometry says WHERE, vision says WHAT" primitive for drawings.
@@ -724,13 +726,25 @@ def make_vision_tools(
         ``marks`` = [[x, y, label], ...] draws numbered circles at points of
         interest so the question becomes "what is mark 1 pointing at?".
         ``attachment_key`` is an attachment key or a real PDF path.
+
+        To zoom on something an earlier vision result LOCATED, pass that
+        result's ``view`` plus the 0-999 ``image_box`` its analysis gave
+        (instead of ``bbox``); same ``attachment_key`` and ``page``. Every
+        vision result carries a ``view``. ``dpi`` is chosen automatically
+        (the largest image the vision model reads); set it only to override.
         """
         args = {"attachment_key": attachment_key, "page": page,
-                "prompt": prompt, "dpi": dpi}
+                "prompt": prompt}
+        if dpi is not None:
+            args["dpi"] = dpi
         if bbox is not None:
             args["bbox"] = bbox
         if marks is not None:
             args["marks"] = marks
+        if view is not None:
+            args["view"] = view
+        if image_box is not None:
+            args["image_box"] = image_box
         return _dispatch("render_region", args)
 
     def read_reference_figure(
@@ -984,7 +998,9 @@ def make_vision_tools(
             "drawing_ir module first (geometry says WHERE), then zoom here "
             "to see WHAT is there. bbox is [x0,y0,x1,y1] in PDF points "
             "(top-left origin, y down); optional marks = [[x,y,label],...] "
-            "draws numbered circles at points of interest.",
+            "draws numbered circles at points of interest. To zoom on "
+            "something an earlier vision result located, pass its view + "
+            "the 0-999 image_box its analysis gave instead of bbox.",
         ),
         "read_reference_figure": (
             read_reference_figure,

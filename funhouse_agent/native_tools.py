@@ -296,13 +296,27 @@ OPENAI_TOOLS = [
                     },
                     "dpi": {
                         "type": "integer",
-                        "description": "Render resolution.",
-                        "default": 300,
+                        "description": ("Render resolution. Omit: the "
+                                        "largest image the vision model "
+                                        "reads."),
                     },
                     "prompt": {
                         "type": "string",
                         "description": "What to extract from the region.",
                         "default": "Describe what this zoomed-in region shows.",
+                    },
+                    "view": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": ("The 'view' of an earlier vision "
+                                        "result, with image_box instead of "
+                                        "bbox."),
+                    },
+                    "image_box": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": ("A 0-999 box the earlier analysis "
+                                        "gave on that view's image."),
                     },
                 },
                 "required": ["attachment_key"],

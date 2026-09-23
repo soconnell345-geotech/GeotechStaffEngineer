@@ -132,8 +132,11 @@ see WHAT is at that location. `bbox` is [x0,y0,x1,y1] in PDF points, TOP-LEFT
 origin with y DOWN (drawing_ir query coordinates are bottom-left/y-up: convert
 with y_pdf = page_height − y_ir, or use the drawing_ir `snip_region` method
 which converts for you). Optional `marks` = [[x,y,label], ...] draws numbered
-circles so the question becomes "what is mark 1 pointing at?". `dpi` defaults
-to 300.
+circles so the question becomes "what is mark 1 pointing at?". `dpi` is chosen
+automatically (the largest image the vision model reads). Every vision result
+carries a `view` (the page rect its image showed) and asks the model to give
+locations as 0-999 boxes on that image: to zoom on one, pass `view` +
+`image_box` instead of `bbox`.
 ```
 <tool_call>
 {"tool_name": "render_region", "attachment_key": "sheet.pdf", "page": 0, "bbox": [400, 180, 480, 240], "marks": [[440, 210, "1"]], "prompt": "What is mark 1 pointing at?"}
@@ -719,18 +722,37 @@ def _dispatch_render_region(arguments, engine, attachments):
     attachment-or-path resolution, same "render then vision-analyze" flow).
 
     Arguments: ``attachment_key`` (or a real path), ``page`` (0-indexed,
-    default 0), ``bbox`` ([x0,y0,x1,y1] in PDF points, PyMuPDF page space —
-    see ``planlens.ir.render`` for the coordinate contract), ``dpi`` (default
-    300), ``pad_frac`` (default 0.15), ``marks`` (optional list of [x,y,label]
-    for set-of-marks prompting), ``prompt``.
+    default 0), and WHERE, one of two ways: ``bbox`` ([x0,y0,x1,y1] in PDF
+    points, PyMuPDF page space — see ``planlens.ir.render`` for the coordinate
+    contract), or ``view`` + ``image_box`` (the ``view`` an earlier vision
+    result returned and a 0-999 box the analysis gave on that image —
+    :mod:`funhouse_agent.vision_view`). Also ``dpi`` (default: fill the image
+    budget; 300 without one), ``pad_frac`` (default 0.15), ``marks``
+    (optional list of [x,y,label] for set-of-marks prompting), ``prompt``.
     """
+    from funhouse_agent import vision_view
+
     key = arguments.get("attachment_key", "")
     page = arguments.get("page", 0)
     bbox = arguments.get("bbox")
-    dpi = arguments.get("dpi", 300)
+    view = arguments.get("view")
+    image_box = arguments.get("image_box")
+    dpi = arguments.get("dpi")
     pad_frac = arguments.get("pad_frac", 0.15)
     marks = arguments.get("marks")
     prompt = arguments.get("prompt", "Describe what this zoomed-in region shows.")
+
+    if view is not None or image_box is not None:
+        if bbox is not None:
+            return json.dumps({"error": "pass bbox OR view + image_box, not both"})
+        try:
+            bbox = [round(v, 2) for v in vision_view.image_box_to_page(
+                view or [], image_box or [])]
+        except (TypeError, ValueError) as e:
+            return json.dumps({
+                "error": f"view + image_box: {e}",
+                "hint": "view = the 'view' of an earlier vision result; "
+                        "image_box = a 0-999 box the analysis gave on it"})
 
     try:
         pdf_bytes, _src = _resolve_attachment_or_path(key, attachments)
@@ -738,13 +760,9 @@ def _dispatch_render_region(arguments, engine, attachments):
         return json.dumps({"error": str(e)})
 
     try:
-        from planlens.ir.render import render_region
-        image_bytes = render_region(
-            content=pdf_bytes, page=page,
-            bbox=tuple(bbox) if bbox is not None else None,
-            dpi=dpi, pad_frac=pad_frac,
-            marks=[tuple(m) for m in marks] if marks else None,
-        )
+        image_bytes, info = vision_view.render_view(
+            pdf_bytes, page=page, bbox=bbox, marks=marks, dpi=dpi,
+            pad_frac=pad_frac, allow_jpeg=getattr(engine, "accepts_jpeg", False))
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
@@ -753,8 +771,9 @@ def _dispatch_render_region(arguments, engine, attachments):
         return json.dumps({"error": str(e)})
 
     try:
-        result = engine.analyze_image(image_bytes, prompt)
-        return json.dumps({"page": page, "bbox": bbox, "analysis": result})
+        result = engine.analyze_image(image_bytes, vision_view.with_grid(prompt))
+        return json.dumps({"page": page, "bbox": bbox, "analysis": result,
+                           **vision_view.view_payload(info)})
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({
             "error": f"Vision not available on this engine: {e}"
@@ -792,10 +811,12 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
     except FileNotFoundError as e:
         return json.dumps({"error": str(e)})
 
-    # Render PDF page to PNG
+    # Render the page at the vision model's image budget.
+    from funhouse_agent import vision_view
     try:
-        from planlens.pdf.vision import _render_pdf_page
-        image_bytes = _render_pdf_page(content=pdf_bytes, page=page)
+        image_bytes, info = vision_view.render_view(
+            pdf_bytes, page=page,
+            allow_jpeg=getattr(engine, "accepts_jpeg", False))
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
@@ -804,8 +825,9 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
         return json.dumps({"error": str(e)})
 
     try:
-        result = engine.analyze_image(image_bytes, prompt)
-        return json.dumps({"page": page, "analysis": result})
+        result = engine.analyze_image(image_bytes, vision_view.with_grid(prompt))
+        return json.dumps({"page": page, "analysis": result,
+                           **vision_view.view_payload(info)})
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({
             "error": f"Vision not available on this engine: {e}"
@@ -822,6 +844,14 @@ _READ_OFF_NOTE = (
 
 
 def _dispatch_view_worked_example(arguments, engine):
+    """Chart read-off: rendered and sent at the chart budget
+    (``vision_view.chart_reading``) — see ``_dispatch_view_worked_example_at_budget``."""
+    from funhouse_agent import vision_view
+    with vision_view.chart_reading():
+        return _dispatch_view_worked_example_at_budget(arguments, engine)
+
+
+def _dispatch_view_worked_example_at_budget(arguments, engine):
     """Render a worked example's printed source page and analyze it via vision.
 
     The corpus (funhouse_agent/worked_examples.json) catalogues, per entry with
@@ -869,10 +899,11 @@ def _dispatch_view_worked_example(arguments, engine):
     except Exception as e:
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
+    from funhouse_agent import vision_view
     try:
-        from planlens.pdf.vision import _render_pdf_page
-        image_bytes = _render_pdf_page(filepath=str(pdf_abs),
-                                       page=page_1b - 1, dpi=220)
+        image_bytes, info = vision_view.render_view(
+            str(pdf_abs), page=page_1b - 1,
+            allow_jpeg=getattr(engine, "accepts_jpeg", False))
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"})
@@ -888,7 +919,8 @@ def _dispatch_view_worked_example(arguments, engine):
         f"Task: {question}"
     )
     try:
-        analysis = engine.analyze_image(image_bytes, framing)
+        analysis = engine.analyze_image(image_bytes,
+                                        vision_view.with_grid(framing))
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({"error": f"Vision not available on this engine: {e}"})
     except Exception as e:
@@ -901,10 +933,21 @@ def _dispatch_view_worked_example(arguments, engine):
         "catalogued_pages": pages,
         "analysis": analysis,
         "note": _READ_OFF_NOTE,
+        "source": str(pdf_abs),
+        "page": page_1b - 1,
+        **vision_view.view_payload(info),
     })
 
 
 def _dispatch_read_reference_figure(arguments, engine):
+    """Chart read-off: rendered and sent at the chart budget
+    (``vision_view.chart_reading``) — see ``_dispatch_read_reference_figure_at_budget``."""
+    from funhouse_agent import vision_view
+    with vision_view.chart_reading():
+        return _dispatch_read_reference_figure_at_budget(arguments, engine)
+
+
+def _dispatch_read_reference_figure_at_budget(arguments, engine):
     """Render a catalogued reference figure and read value(s) off it via vision."""
     reference = arguments.get("reference", "")
     figure_number = arguments.get("figure_number", "")
@@ -935,10 +978,13 @@ def _dispatch_read_reference_figure(arguments, engine):
     except Exception as e:
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
-    # Render the page at high DPI for legible curves/labels.
+    # Render the page at the vision model's image budget: the largest image
+    # it reads without shrinking, so curves and axis labels stay legible.
+    from funhouse_agent import vision_view
     try:
-        from planlens.pdf.vision import _render_pdf_page
-        image_bytes = _render_pdf_page(filepath=str(pdf_abs), page=page_idx, dpi=220)
+        image_bytes, info = vision_view.render_view(
+            str(pdf_abs), page=page_idx,
+            allow_jpeg=getattr(engine, "accepts_jpeg", False))
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
@@ -979,7 +1025,8 @@ def _dispatch_read_reference_figure(arguments, engine):
     )
 
     try:
-        result = engine.analyze_image(image_bytes, full_prompt)
+        result = engine.analyze_image(image_bytes,
+                                      vision_view.with_grid(full_prompt))
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({"error": f"Vision not available on this engine: {e}"})
     except Exception as e:
@@ -993,6 +1040,11 @@ def _dispatch_read_reference_figure(arguments, engine):
         "page_estimated": rec.get("page_estimated", False),
         "analysis": result,
         "note": _READ_OFF_NOTE,
+        # Zooming on the chart (an axis, a curve label) goes through
+        # render_region on the same PDF page.
+        "source": str(pdf_abs),
+        "page": page_idx,
+        **vision_view.view_payload(info),
     })
 
 
