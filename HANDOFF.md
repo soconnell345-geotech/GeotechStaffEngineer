@@ -1,14 +1,61 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-09-23.** This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-09-24.** This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-09-23, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-09-24, supersedes everything below)
 
-### 5.27.0 RELEASED 2026-09-23 (tag `v5.27.0`) with planlens 0.8.0 (tag `v0.8.0`) — VISION SIZED TO THE MODEL
+### 5.28.0 RELEASED 2026-09-24 (tag `v5.28.0`) with planlens 0.9.0 (tag `v0.9.0`) — THE VISION MODEL IS MEASURED
+
+**Released on the owner's word, planlens first; no new package** (pin
+`planlens>=0.9`). **Release gate on this tree: 13,321 passed / 36 skipped /
+0 failed** in foreground chunks on pytest's exit code (1,944/14 fast
+analysis modules + `calc_package` + wrapped agents and I/O; 1,397/17 the
+slower analysis modules; 399/0 `fem2d` in five pieces; 1,811/5
+`funhouse_agent`; 1,296/0 `report_ingest`; 486/0 webapp + foundry harness;
+195/0 `validation_examples` in four pieces — it outlasts a 10-minute call on
+a loaded machine; 5,793/0 geotech-references). planlens 0.9.0: 1,417 passed.
+Wheel: `vision_probe.py` + `vision_view.py` present, no tests or dev
+folders, requires `planlens>=0.9`.
+
+**What happened (the owner's first Tiny Apps run, dosdev, 5.26.0).** Uploaded
+`BD-AB_01-26_0.pdf` (9 half-size 17x11 bridge standard sheets, 5 pt CAD
+lettering, a full text layer). The automatic orientation turn was good (the
+owner: "which I love"); asked for "a page-by-page summary of the rebar
+requirements" the agent said the sheets were too blurry and asked for a
+higher-resolution file. Diagnosis: (1) all 75 rebar callouts ("#5 BARS @
+1'-0" MAX. SPACING", "#8 BARS (TOP)", "#4(E) BARS @ 8" MAX.") are EXACT
+TEXT — the agent never needed to look; (2) `tinyapp-gpt-medium` answers as
+**`gpt-5.1-2025-11-13`** (API `model` field; the model's self-report said
+"GPT-4.1 family"), a TILE model: a whole sheet arrives 1187x768, the 5 pt
+lettering ~4.8 px — genuinely unreadable; it ACCEPTS `detail="original"` and
+ignores it (630 image tokens either way), so 5.27.0's retry-without-detail
+never fires; (3) the agent gave up instead of zooming.
+
+**What shipped.** planlens 0.9.0: `budget_for_model`, `budget_from_probe`
+(tile / 2,500-patch / 6,144-patch and whether `original` is honoured, from
+token RATIOS), budget `gpt-5.2-high`, `Document.text_size`, render
+`text_px`, `legible_window`, toolkit legibility note. App:
+`funhouse_agent/vision_probe.py` (the probe; cached per model per process;
+`GEOTECH_VISION_PROBE=0` off), `vision_view` choosing env override >
+measured profile > defaults for views AND charts, results carrying
+`vision_model` / `text_px` / `legibility`, the text-layer-first and
+zoom-before-giving-up rules in both prompts, and a "vision model" line in
+Connection diagnostics.
+
+**Owner's next checks (Tiny Apps, once the mirror has 5.28.0).** Remove any
+`GEOTECH_VISION_BUDGET` / `GEOTECH_CHART_BUDGET` lines from `.env` (the probe
+now decides; keep them only to override). Connection diagnostics should show
+`vision model: gpt-5.1-2025-11-13: images at gpt-4.1-high (from probe)`.
+Re-ask the rebar question on BD-AB_01-26: the answer should come from the
+text layer, with zooms to see where the bars go, and no "too blurry".
+`which_model.py` (the owner's one-off script) is superseded by that line.
+
+
+### 5.27.0 RELEASED 2026-09-23 (tag `v5.27.0`) with planlens 0.8.0 (tag `v0.8.0`) — VISION SIZED TO THE MODEL (superseded by 5.28.0 above)
 
 **Released on the owner's word ("go"), planlens first.** No new third-party
 package: planlens 0.8.0 declares exactly what 0.7.0 did; the pin moves to

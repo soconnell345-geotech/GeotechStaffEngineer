@@ -71,8 +71,24 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-09-23) — 5.27.0 RELEASED with planlens 0.8.0: vision sized to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
+## CURRENT WORKING STATE (2026-09-24) — 5.28.0 RELEASED with planlens 0.9.0: the vision model is MEASURED, not assumed; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
 
+- **5.28.0 RELEASED 2026-09-24 (tag `v5.28.0`) with planlens 0.9.0 (tag
+  `v0.9.0`, published first — pin `planlens>=0.9`). No new third-party
+  package.** Out of the owner's first Tiny Apps run: a half-size bridge sheet
+  (5 pt lettering) came back "too blurry", and it was — the CfA alias
+  `tinyapp-gpt-medium` is **GPT-5.1**, a TILE model (768 px short side) that
+  accepts `detail="original"` and ignores it, while the sheet's 75 rebar
+  callouts were exact text in the text layer. **Deployment names are aliases;
+  the app now MEASURES the model** (`funhouse_agent/vision_probe.py`: once per
+  model per process, a text call names the model that answered and three blank
+  squares' image tokens give its real budget via planlens
+  `budget_from_probe`; `GEOTECH_VISION_PROBE=0` turns it off; the env budgets
+  still override). Every vision result carries `vision_model`, `text_px` and,
+  below 12 px, a `legibility` line (read the text layer; zoom on a window N pt
+  across; never call it unreadable first); both prompts say the words on a
+  drawing are in the text layer; Connection diagnostics shows the measured
+  model. Pickup: `HANDOFF.md` §0a-current.
 - **5.27.0 RELEASED 2026-09-23 (tag `v5.27.0`) with planlens 0.8.0 (tag
   `v0.8.0`, published first — the app pin is now `planlens>=0.8`). No new
   third-party package.** The owner's word: "go". Prompted by the Opus 5.5
