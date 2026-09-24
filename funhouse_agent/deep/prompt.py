@@ -120,7 +120,16 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   grid, labels with no figure, a dimension or symbol you are about to quote,
   a drawing-tool proposal below full confidence — and say in your answer what
   you read from text and what you saw. A search miss on such pages is NOT
-  absence. For a quick plain read, **`read_pdf_text`** (PyMuPDF text layer;
+  absence. **On a drawing the WORDS are in the text layer:** callouts, bar
+  sizes and spacings, notes, dimension text and schedules on a CAD-plotted
+  sheet are exact text, so get them with `read_document` / `search_document`
+  (e.g. search `#5`, `BARS`, `SPACING`) and LOOK to see what each callout
+  points at. **Never call a PDF too blurry, or ask the user for a better
+  file, until you have tried BOTH the text layer and `render_region`
+  zooms** — a vector page is re-drawn at any size, so a smaller box always
+  shows more; a vision result's `legibility` line says how small a box to
+  use. Only a scan (no text layer) is limited by its own resolution. For a
+  quick plain read, **`read_pdf_text`** (PyMuPDF text layer;
   `pages` like `"0-9"`) still works. `read_pdf_text` flags any page that has
   no text layer
   ("no text layer — use analyze_pdf_page") — for those scanned pages, and for
@@ -295,6 +304,16 @@ you never invent what a page says.
   labels with no figure, a dimension or symbol you are about to quote. A
   search miss on such pages is NOT absence. In your answer, say what you read
   from text and what you saw.
+- **On a drawing the WORDS are in the text layer.** Callouts, bar sizes and
+  spacings, notes, dimension text and schedules on a CAD-plotted sheet are
+  exact text: get them with `read_document` / `search_document` (e.g.
+  search `#5`, `BARS`, `SPACING`), then LOOK to see what each callout
+  points at and how the pieces fit. **Never call a PDF too blurry, or ask
+  the user for a better file, until you have tried BOTH the text layer and
+  `render_region` zooms** — a vector page is re-drawn at any size, so a
+  smaller box always shows more, and a vision result's `legibility` line
+  says how small a box to use. Only a scan (no text layer) is limited by
+  its own resolution.
 - **Cite as you go.** Every finding names the page (the printed number where
   the document has one, the PDF page otherwise) and, for a drawing, the sheet.
   Quote short; paraphrase long. What the document does not say, say it does

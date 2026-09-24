@@ -762,7 +762,8 @@ def _dispatch_render_region(arguments, engine, attachments):
     try:
         image_bytes, info = vision_view.render_view(
             pdf_bytes, page=page, bbox=bbox, marks=marks, dpi=dpi,
-            pad_frac=pad_frac, allow_jpeg=getattr(engine, "accepts_jpeg", False))
+            pad_frac=pad_frac,
+            allow_jpeg=getattr(engine, "accepts_jpeg", False), engine=engine)
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
@@ -773,7 +774,7 @@ def _dispatch_render_region(arguments, engine, attachments):
     try:
         result = engine.analyze_image(image_bytes, vision_view.with_grid(prompt))
         return json.dumps({"page": page, "bbox": bbox, "analysis": result,
-                           **vision_view.view_payload(info)})
+                           **vision_view.view_payload(info, engine)})
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({
             "error": f"Vision not available on this engine: {e}"
@@ -816,7 +817,8 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
     try:
         image_bytes, info = vision_view.render_view(
             pdf_bytes, page=page,
-            allow_jpeg=getattr(engine, "accepts_jpeg", False))
+            allow_jpeg=getattr(engine, "accepts_jpeg", False),
+            engine=engine)
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
@@ -827,7 +829,7 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
     try:
         result = engine.analyze_image(image_bytes, vision_view.with_grid(prompt))
         return json.dumps({"page": page, "analysis": result,
-                           **vision_view.view_payload(info)})
+                           **vision_view.view_payload(info, engine)})
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({
             "error": f"Vision not available on this engine: {e}"
@@ -903,7 +905,8 @@ def _dispatch_view_worked_example_at_budget(arguments, engine):
     try:
         image_bytes, info = vision_view.render_view(
             str(pdf_abs), page=page_1b - 1,
-            allow_jpeg=getattr(engine, "accepts_jpeg", False))
+            allow_jpeg=getattr(engine, "accepts_jpeg", False),
+            engine=engine)
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"})
@@ -935,7 +938,7 @@ def _dispatch_view_worked_example_at_budget(arguments, engine):
         "note": _READ_OFF_NOTE,
         "source": str(pdf_abs),
         "page": page_1b - 1,
-        **vision_view.view_payload(info),
+        **vision_view.view_payload(info, engine),
     })
 
 
@@ -984,7 +987,8 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
     try:
         image_bytes, info = vision_view.render_view(
             str(pdf_abs), page=page_idx,
-            allow_jpeg=getattr(engine, "accepts_jpeg", False))
+            allow_jpeg=getattr(engine, "accepts_jpeg", False),
+            engine=engine)
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
@@ -1044,7 +1048,7 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
         # render_region on the same PDF page.
         "source": str(pdf_abs),
         "page": page_idx,
-        **vision_view.view_payload(info),
+        **vision_view.view_payload(info, engine),
     })
 
 

@@ -405,10 +405,32 @@ def _reference_docs_check() -> dict:
                   "\n".join(lines + extra))
 
 
+def _vision_check(model: Any) -> dict:
+    """What model really answers, and what size of image it really takes.
+
+    A deployment name is an alias (``tinyapp-gpt-medium`` was GPT-5.1, a
+    tile model that ignores ``detail="original"``), so this reports the
+    measured profile the vision tools will use — the same cached probe, so
+    it costs its four small calls once per process at most.
+    """
+    name = "vision model"
+    try:
+        from funhouse_agent import vision_probe
+    except ImportError as exc:                   # pragma: no cover
+        return _check(name, SKIP, f"not available: {exc}")
+    if not vision_probe.enabled():
+        return _check(name, SKIP, f"probe switched off ({vision_probe.PROBE_ENV}=0)")
+    prof = vision_probe.profile_for(model)
+    if prof is None or not prof.general:
+        return _check(name, WARN, prof.summary() if prof else "not measured")
+    return _check(name, PASS, prof.summary())
+
+
 def run_diagnostics(model_id: Optional[str] = None) -> List[dict]:
     """Run every stage against the CURRENTLY CONFIGURED engine and return the
     check list. Never raises. Live checks each make one tiny model call (a few
-    tokens) — three calls total when everything passes."""
+    tokens) — three calls when everything passes, plus the vision probe's four
+    the first time it runs in this process."""
     checks = [_versions_check(), _drift_check(), _env_check(),
               _upload_probe_check(), _reference_docs_check(),
               _resolution_check(model_id)]
@@ -426,4 +448,5 @@ def run_diagnostics(model_id: Optional[str] = None) -> List[dict]:
     checks.append(_invoke_check(model))
     checks.append(_stream_check(model))
     checks.append(_tool_check(model))
+    checks.append(_vision_check(model))
     return checks

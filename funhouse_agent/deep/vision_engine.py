@@ -77,6 +77,13 @@ class LangChainVisionEngine:
         """The wrapped LangChain chat model."""
         return self._model
 
+    def vision_profile(self):
+        """What this model really is and what images it really takes —
+        measured once per process by :mod:`funhouse_agent.vision_probe`
+        (``None`` when probing is switched off)."""
+        from funhouse_agent import vision_probe
+        return vision_probe.profile_for(self._model)
+
     def analyze_image(
         self,
         image_input,
@@ -116,7 +123,7 @@ class LangChainVisionEngine:
         media_type = self._media_type or vision_view.image_media_type(data)
         data_uri = f"data:{media_type};base64,{base64.b64encode(data).decode()}"
         detail = (self._detail if self._detail is not None
-                  else vision_view.detail()) or None
+                  else vision_view.detail(self)) or None
 
         def message(with_detail: bool) -> "HumanMessage":
             image_url = {"url": data_uri}

@@ -39,8 +39,15 @@ def pdf_bytes():
 
 @pytest.fixture(autouse=True)
 def default_env(monkeypatch):
+    from funhouse_agent import vision_probe
     monkeypatch.delenv(vision_view.BUDGET_ENV, raising=False)
     monkeypatch.delenv(vision_view.DETAIL_ENV, raising=False)
+    monkeypatch.delenv(vision_view.CHART_BUDGET_ENV, raising=False)
+    # The engine tests here are about the engine; the probe has its own tests.
+    monkeypatch.setenv(vision_probe.PROBE_ENV, "0")
+    vision_probe.clear_cache()
+    yield
+    vision_probe.clear_cache()
 
 
 class Engine:

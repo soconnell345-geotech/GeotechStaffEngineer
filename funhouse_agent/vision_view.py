@@ -27,6 +27,17 @@ the one place that decides how:
   (:func:`image_box_to_page`), so the agent can zoom on what the vision call
   found.
 
+* **Which budget — measured, not assumed.** A deployment name is an alias
+  that can be re-pointed at another model. The first time a vision engine is
+  used, :mod:`funhouse_agent.vision_probe` asks the model what it is and
+  measures what size of image it really looks at; that profile picks the
+  budget for ordinary views and for chart read-offs. The env settings, when
+  present, still win (an owner's override); without a profile the defaults
+  below stand.
+* **Legibility.** planlens reports how tall the page's small lettering is in
+  each image (``text_px``). Below :data:`LEGIBLE_TEXT_PX` the result says so
+  and points at the text layer and at a zoom window small enough to read in.
+
 planlens gained budgets after the version this app pins; on an older planlens
 the renders fall back to the fixed sizes and everything else still works.
 """
@@ -57,10 +68,16 @@ DEFAULT_BUDGET = "openai-high"
 #: 2026-09-23; ``funhouse-gpt-high`` is GPT-5.4, which supports it).
 DEFAULT_CHART_BUDGET = "openai-original"
 
-#: The budget in force for the vision call in progress, when a tool asks for
-#: one other than the default (see :func:`chart_reading`).
-_BUDGET_OVERRIDE: ContextVar[Optional[str]] = ContextVar(
-    "gse_vision_budget", default=None)
+#: True while a chart read-off is rendering and sending (see
+#: :func:`chart_reading`): the detail-bound budget applies.
+_CHART: ContextVar[bool] = ContextVar("gse_chart_reading", default=False)
+
+#: Lettering shorter than this in an image is not read reliably (5 pt CAD
+#: lettering at ~5 px smeared bar sizes and spacings for GPT-5.1, 2026-09-24).
+LEGIBLE_TEXT_PX = 12.0
+
+#: The lettering height a suggested zoom window aims for.
+TARGET_TEXT_PX = 16.0
 
 #: The sentence every vision prompt ends with, so a location comes back in a
 #: form the agent can zoom on.
@@ -87,18 +104,47 @@ def chart_reading() -> Iterator[None]:
     (:func:`detail`) read the budget at call time, so one ``with`` covers
     both. ``GEOTECH_CHART_BUDGET`` overrides :data:`DEFAULT_CHART_BUDGET`.
     """
-    name = os.environ.get(CHART_BUDGET_ENV, DEFAULT_CHART_BUDGET)
-    token = _BUDGET_OVERRIDE.set(name)
+    token = _CHART.set(True)
     try:
         yield
     finally:
-        _BUDGET_OVERRIDE.reset(token)
+        _CHART.reset(token)
 
 
-def budget():
+def engine_profile(engine):
+    """The vision profile an engine measured (``vision_probe``), or ``None``."""
+    fn = getattr(engine, "vision_profile", None)
+    if not callable(fn):
+        return None
+    try:
+        return fn()
+    except Exception:             # a probe must never break a vision call
+        return None
+
+
+def budget_name(engine=None) -> str:
+    """Which budget applies now, by name (``none`` = the old fixed sizes).
+
+    An env setting wins; then what the engine's model was measured to take;
+    then the defaults.
+    """
+    chart = _CHART.get()
+    chart_env = os.environ.get(CHART_BUDGET_ENV)
+    general_env = os.environ.get(BUDGET_ENV)
+    if chart and chart_env:
+        return chart_env.strip()
+    if general_env is not None and (
+            not chart or general_env.strip().lower() in _OFF):
+        return general_env.strip()
+    prof = engine_profile(engine)
+    if prof is not None and prof.general:
+        return prof.detailed if chart else prof.general
+    return DEFAULT_CHART_BUDGET if chart else DEFAULT_BUDGET
+
+
+def budget(engine=None):
     """The planlens ``ImageBudget`` renders are sized to, or ``None``."""
-    name = (_BUDGET_OVERRIDE.get()
-            or os.environ.get(BUDGET_ENV, DEFAULT_BUDGET)).strip()
+    name = budget_name(engine)
     if name.lower() in _OFF:
         return None
     try:
@@ -112,12 +158,12 @@ def budget():
         return None
 
 
-def detail() -> Optional[str]:
+def detail(engine=None) -> Optional[str]:
     """The ``detail`` value image blocks carry, or ``None`` to omit it."""
     raw = os.environ.get(DETAIL_ENV)
     if raw is not None:
         return None if raw.strip().lower() in _OFF else raw.strip()
-    bud = budget()
+    bud = budget(engine)
     return bud.detail if bud is not None else None
 
 
@@ -140,7 +186,8 @@ def _render_accepts_budget() -> bool:
 def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
                 marks: Optional[Sequence[Sequence[Any]]] = None,
                 dpi: Optional[float] = None, pad_frac: float = 0.1,
-                allow_jpeg: bool = False) -> Tuple[bytes, Dict[str, Any]]:
+                allow_jpeg: bool = False,
+                engine=None) -> Tuple[bytes, Dict[str, Any]]:
     """Render ``page`` (or ``bbox`` on it) of a PDF for the vision model.
 
     ``source`` is PDF bytes or a file path. Returns ``(image_bytes, info)``
@@ -148,6 +195,8 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
     ``width_px``, ``height_px`` and, with a budget, ``format``/``budget``).
     ``allow_jpeg`` lets a scan go as JPEG when that is smaller (the engine
     must label the bytes by their real type); line art stays PNG either way.
+    ``engine`` is the vision engine the image goes to: its measured model
+    profile picks the budget (see :func:`budget_name`).
     """
     from planlens.document import Document
     doc = (Document(content=source) if isinstance(source, (bytes, bytearray))
@@ -156,7 +205,7 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
         kwargs: Dict[str, Any] = {"bbox": tuple(bbox) if bbox is not None else None,
                                   "pad_frac": pad_frac,
                                   "marks": [tuple(m) for m in marks] if marks else None}
-        bud = budget()
+        bud = budget(engine)
         if bud is not None and _render_accepts_budget():
             kwargs.update(budget=bud, fmt="auto" if allow_jpeg else "png",
                           dpi=dpi)
@@ -168,11 +217,33 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
         doc.close()
 
 
-def view_payload(info: Dict[str, Any]) -> Dict[str, Any]:
-    """The fields a vision result carries so the agent can zoom on it."""
-    return {"view": [round(float(v), 1) for v in info["clip"]],
-            "view_px": [info["width_px"], info["height_px"]],
-            "zoom_hint": ZOOM_HINT}
+def view_payload(info: Dict[str, Any], engine=None) -> Dict[str, Any]:
+    """The fields a vision result carries so the agent can zoom on it — and,
+    when the page's lettering is too small in this image, what to do instead
+    of calling it unreadable."""
+    out: Dict[str, Any] = {
+        "view": [round(float(v), 1) for v in info["clip"]],
+        "view_px": [info["width_px"], info["height_px"]],
+        "zoom_hint": ZOOM_HINT}
+    prof = engine_profile(engine)
+    if prof is not None and prof.answered_by:
+        out["vision_model"] = prof.answered_by
+    text_px = info.get("text_px")
+    if text_px:
+        out["text_px"] = text_px
+        if text_px < LEGIBLE_TEXT_PX:
+            x0, y0, x1, y1 = info["clip"]
+            window = max(20, round(min(x1 - x0, y1 - y0) * float(text_px)
+                                   / TARGET_TEXT_PX))
+            out["legibility"] = (
+                f"! the page's small lettering is only ~{text_px:g} px tall in "
+                f"this image, too small to read reliably. Read the words from "
+                f"the text layer (read_document / search_document on this "
+                f"file: exact, no guessing), and to SEE a detail zoom with "
+                f"render_region on a box about {window} pt across (a bbox, or "
+                f"this view + an image_box). Do not report the page as "
+                f"unreadable or ask for a better file before doing both.")
+    return out
 
 
 def with_grid(prompt: str) -> str:
@@ -197,6 +268,7 @@ def image_box_to_page(view: Sequence[float], image_box: Sequence[float]
 
 
 __all__ = ["BUDGET_ENV", "DETAIL_ENV", "CHART_BUDGET_ENV", "DEFAULT_BUDGET",
-           "DEFAULT_CHART_BUDGET", "chart_reading", "GRID_INSTRUCTION",
-           "ZOOM_HINT", "budget", "detail", "image_media_type", "render_view",
-           "view_payload", "with_grid", "image_box_to_page"]
+           "DEFAULT_CHART_BUDGET", "LEGIBLE_TEXT_PX", "TARGET_TEXT_PX",
+           "chart_reading", "GRID_INSTRUCTION", "ZOOM_HINT", "engine_profile",
+           "budget_name", "budget", "detail", "image_media_type",
+           "render_view", "view_payload", "with_grid", "image_box_to_page"]
