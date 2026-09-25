@@ -822,8 +822,9 @@ def render_region_to_file(path, filepath=None, content=None, page=0,
 #: Parallel vision calls for the tiles of one page.
 TILE_WORKERS = 4
 
-#: The whole tiled result stays under this (the reference cap is 16,000).
-TILED_RESULT_CHARS = 14000
+#: The whole tiled result stays under this (the vision cap is 32,000 —
+#: ``deep.tools.DEFAULT_VISION_RESULT_CHARS``).
+TILED_RESULT_CHARS = 30000
 
 
 def _dispatch_analyze_pdf_page(arguments, engine, attachments):

@@ -147,6 +147,14 @@ def test_the_dispatcher_explains_a_missing_example(gt):
     assert "no ink" in out["error"]
 
 
+def test_the_vision_tools_get_the_larger_cap_and_budget_under_it():
+    from funhouse_agent.deep import tools as dt
+    from funhouse_agent.vision_tools import TILED_RESULT_CHARS
+    assert dt.DEFAULT_VISION_RESULT_CHARS > dt.DEFAULT_REFERENCE_RESULT_CHARS
+    assert TILED_RESULT_CHARS < dt.DEFAULT_VISION_RESULT_CHARS
+    assert fl.RESULT_BUDGET_CHARS < dt.DEFAULT_VISION_RESULT_CHARS
+
+
 def test_parse_readings_and_verdicts():
     got = fl.parse_readings("noise\n#1 | GCE | callout\n#2|GCG|other\n"
                             "3: [G/Q]CE | callout\n`#4 | - | other`")
@@ -185,7 +193,8 @@ def test_small_lettering_is_read_in_tiles(gt, monkeypatch):
     assert out["tiles"][0]["tile"] == "r1c1" and "view" in out["tiles"][0]
     assert "tile row 1 of 4" in "".join(eyes.images)
     assert "4x4" in out["tiling"]
-    assert len(json.dumps(out)) <= 14000
+    from funhouse_agent.vision_tools import TILED_RESULT_CHARS
+    assert len(json.dumps(out)) <= TILED_RESULT_CHARS
 
 
 def test_no_tiles_when_the_page_already_reads_or_when_asked(gt, monkeypatch):

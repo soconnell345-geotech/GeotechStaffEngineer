@@ -70,6 +70,14 @@ DEFAULT_MAX_RESULT_CHARS = 8000
 #: tiny) — see :func:`_result_cap_for_module`.
 DEFAULT_REFERENCE_RESULT_CHARS = 16000
 
+#: Cap for the two vision tools whose result IS a report over many images:
+#: ``analyze_pdf_page`` with tiles (an overview + up to 16 tile readings) and
+#: ``find_like`` (instances by page across a whole set). Owner, 2026-09-25:
+#: fine to raise the caps for robustness. Each tool budgets itself just under
+#: this (``vision_tools.TILED_RESULT_CHARS``, ``find_like.RESULT_BUDGET_CHARS``)
+#: so a result is shortened as valid JSON, never cut mid-string here.
+DEFAULT_VISION_RESULT_CHARS = 32000
+
 #: Appended after the truncation marker so the agent does a NARROWER follow-up
 #: search instead of re-requesting (and re-truncating) the same large item.
 SEARCH_NARROWER_NUDGE = (
@@ -628,12 +636,15 @@ def make_vision_tools(
         # read_reference_figure / read_pdf_text are text-payload reads and
         # list_files can be a long directory dump: the content IS the answer,
         # so they get the larger reference budget.
-        cap = (reference_cap
-               if tool_name in ("read_reference_figure", "read_pdf_text",
-                                "read_text_file", "list_files",
-                                "view_worked_example_source",
-                                "analyze_pdf_page", "find_like")
-               else max_result_chars)
+        if tool_name in ("analyze_pdf_page", "find_like"):
+            cap = (0 if max_result_chars <= 0
+                   else max(DEFAULT_VISION_RESULT_CHARS, reference_cap))
+        elif tool_name in ("read_reference_figure", "read_pdf_text",
+                           "read_text_file", "list_files",
+                           "view_worked_example_source"):
+            cap = reference_cap
+        else:
+            cap = max_result_chars
         return _truncate(
             _dispatch_extended_tool(
                 tool_name=tool_name,

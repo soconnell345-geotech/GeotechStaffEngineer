@@ -38,8 +38,9 @@ PER_SHEET = 20
 #: Parallel vision calls reading contact sheets.
 VERIFY_WORKERS = 4
 
-#: Result size the tool keeps itself under (the reference cap is 16,000).
-RESULT_BUDGET_CHARS = 14000
+#: Result size the tool keeps itself under (the vision cap is 32,000 —
+#: ``deep.tools.DEFAULT_VISION_RESULT_CHARS``).
+RESULT_BUDGET_CHARS = 30000
 
 VERIFY_PROMPT = (
     "Each numbered cell (#N) shows ONE candidate mark cut from an engineering "
