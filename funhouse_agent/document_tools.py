@@ -85,8 +85,7 @@ VISION_HINT = (
     "prompt=...) zooms on a box from read_document or a markup (same frame, "
     "no conversion); marks=[[x,y,label],...] numbers spots to ask about; "
     "a vision result's view + a 0-999 image_box from its analysis zooms on "
-    "what it found; to find every copy of a tag or symbol across sheets, "
-    "find_like(attachment_key=<source>, page=N, bbox=<one copy>, text=...)"
+    "what it found"
 )
 
 #: Budget used when the host has disabled truncation: generous, still a bound.

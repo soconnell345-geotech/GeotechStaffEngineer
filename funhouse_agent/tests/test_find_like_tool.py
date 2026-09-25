@@ -223,7 +223,8 @@ def test_a_stroke_lettered_sheet_says_so(gt, monkeypatch):
     out = json.loads(_dispatch_analyze_pdf_page(
         {"attachment_key": "set", "page": 0}, Eyes(), {"set": gt.pdf}))
     assert "not in its text layer" in out["legibility"]
-    assert "find_like" in out["legibility"]
+    # An optional tool is not pushed from every result (owner, 2026-09-25).
+    assert "find_like" not in out["legibility"]
     assert out["budget"] == "openai-original"
 
 

@@ -758,8 +758,9 @@ def make_vision_tools(
         tag; ``points_to`` is where it points) apart from legend entries
         (``include_legend`` to list them), uncertain reads to zoom on, and
         contact sheets saved to the working folder for the user to check.
-        Use this to locate or count a tag across sheets — never page through
-        whole-sheet views for it.
+        Use it when the user wants EVERY occurrence of one repeated mark
+        across many sheets; for anything else the reading and zoom tools are
+        the way.
         """
         args = {"attachment_key": attachment_key, "page": page,
                 "include_legend": include_legend}

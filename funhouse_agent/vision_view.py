@@ -258,11 +258,9 @@ def view_payload(info: Dict[str, Any], engine=None) -> Dict[str, Any]:
     if text_px is None and info.get("text_chars", 1 << 30) < 40:
         out["legibility"] = (
             "! this sheet's lettering is not in its text layer (drawn as "
-            "lines by CAD, or scanned): text search cannot see it. To find or "
-            "count a tag, code or symbol across sheets, zoom until ONE copy "
-            "is legible, then call find_like with its box. To read a detail, "
-            "zoom with render_region. Never conclude something is absent "
-            "from a whole-sheet view.")
+            "lines by CAD, or scanned): text search cannot see it. To read "
+            "small lettering, zoom with render_region. Never conclude "
+            "something is absent from a whole-sheet view.")
     if text_px:
         out["text_px"] = text_px
         if text_px < LEGIBLE_TEXT_PX:
