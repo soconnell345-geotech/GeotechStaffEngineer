@@ -71,8 +71,27 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-09-24) — 5.28.0 RELEASED with planlens 0.9.0: the vision model is MEASURED, not assumed; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
+## CURRENT WORKING STATE (2026-09-25) — 5.29.0 RELEASED with planlens 0.10.0: find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
 
+- **5.29.0 RELEASED 2026-09-25 (tag `v5.29.0`) with planlens 0.10.0 (tag
+  `v0.10.0`, published first — pin `planlens>=0.10`). No new package.**
+  Out of the IZD test run (Funhouse, 5.28.0): 85 sheets of 0.06 in lettering
+  DRAWN AS LINES (no text layer), a legend on every sheet; asked where the
+  "GCE" penetrations are, the agent read GCE as QCE from whole-sheet images and
+  found none of 34 callouts. Causes: the probe mapped Funhouse GPT-5.4 (`high`
+  capped like tiles, `original` honoured: 714/714/4,234) to 768 px images;
+  the agent never zoomed. **Owner direction: ROBUST FIRST, cost is fine,
+  dial back later** (memory `feedback-robust-first-vision`; knobs in
+  FUTURE_IDEAS "VISION EFFICIENCY"). Shipped: planlens `find_like` (one
+  example box -> every copy on every page, any scale/rotation; callout with
+  leader target / legend / unanchored from geometry; numbered contact sheets)
+  and the probe fix; app `find_like` tool (`funhouse_agent/find_like.py`:
+  search, vision READS every candidate at ~34 px, bracketed confusables ->
+  uncertain, callouts counted apart from legend, sheets saved),
+  `GEOTECH_VISION_POLICY=robust` (every image at the largest honoured detail),
+  `analyze_pdf_page(tiles="auto")`, confusable-aware prompts, and the rule
+  "instances = callouts; zoom one copy, then find_like; never conclude absence
+  from whole-sheet views". Pickup: `HANDOFF.md` §0a-current.
 - **5.28.0 RELEASED 2026-09-24 (tag `v5.28.0`) with planlens 0.9.0 (tag
   `v0.9.0`, published first — pin `planlens>=0.9`). No new third-party
   package.** Out of the owner's first Tiny Apps run: a half-size bridge sheet

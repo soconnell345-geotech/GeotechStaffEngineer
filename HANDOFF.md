@@ -1,14 +1,70 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-09-24.** This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-09-25.** This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-09-24, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-09-25, supersedes everything below)
 
-### 5.28.0 RELEASED 2026-09-24 (tag `v5.28.0`) with planlens 0.9.0 (tag `v0.9.0`) — THE VISION MODEL IS MEASURED
+### 5.29.0 RELEASED 2026-09-25 (tag `v5.29.0`) with planlens 0.10.0 (tag `v0.10.0`) — FIND_LIKE AND ROBUST-FIRST VISION
+
+**Released on the owner's word ("Let it rip"), planlens first; no new
+package** (pin `planlens>=0.10`). **Release gate on this tree: 13,332 passed /
+36 skipped / 0 failed** in foreground chunks on pytest's exit code (1,944/14
+fast analysis modules + `calc_package` + wrapped agents and I/O; 944/0 the
+other analysis modules; 453/17 `slope_stability` alone; 399/0 `fem2d` in four
+pieces; 1,822/5 `funhouse_agent`; 1,296/0 `report_ingest`; 486/0 webapp +
+foundry harness; 195/0 `validation_examples` in two pieces; 5,793/0
+geotech-references). planlens 0.10.0: 1,430 passed. Wheel: `find_like.py`,
+`vision_probe.py`, `vision_view.py` present, no tests or dev folders,
+requires `planlens>=0.10`. Also in this release: the two vision tools
+(`analyze_pdf_page`, `find_like`) get a 32,000-character result cap
+(owner OK'd raising caps; everything else unchanged).
+
+**What happened.** A tester ran the Document Review page on Funhouse (5.28.0)
+against an 85-sheet 90 % submission (SBU; the owner shared only the
+transcript + a screenshot — the sheets stay private): lettering 0.06 in,
+DRAWN AS LINES (no text layer), a penetration legend on every sheet. Asked
+for every "GCE" penetration, the agent read the legend as "QCE" from a
+whole-sheet image, then ran 52 whole-sheet vision calls for QCE and found
+none of 34 callouts; it never zoomed. The images were 1187 x 768: the probe
+had read Funhouse GPT-5.4 (`high` capped like tiles, `original` honoured —
+owner's probe: 714 / 714 / 4,234 image tokens) as a tile model and never
+used `original`. The owner then clarified "instances" meant the CALLOUTS
+(tag + leader), not the legend rows — and set the direction: **robust first,
+cost is fine, dial back for efficiency later** (knobs recorded in
+`module_work/FUTURE_IDEAS.md` "VISION EFFICIENCY").
+
+**What shipped.** planlens 0.10.0: `find_like` / `like_sheets`
+(`planlens/document/findlike.py`; image-matching from one example box, 13
+scales x 4 rotations, legend / callout (+ `points_to`) / unanchored from the
+geometry), the `find_like` toolkit/MCP tool, the stroke-lettered fixture
+`planlens.testing.tag_fixtures`, `budget_from_probe` using `original`
+whenever honoured, `text_size` ignoring sub-2 pt text, renders reporting
+`text_chars`. App: `funhouse_agent/find_like.py` + the `find_like` tool
+(every candidate READ by vision on contact sheets; bracketed confusables ->
+uncertain; look-alikes rejected; instances by page, callouts with leader
+targets, legend counted apart; contact sheets saved to the conversation
+folder), `GEOTECH_VISION_POLICY` (`robust` default: every image at the
+largest honoured detail; `efficient` = the old split), `analyze_pdf_page`
+`tiles="auto"` (overview + N x N tiles when lettering < 12 px), the
+confusable instruction on every vision prompt, the stroke-lettered-sheet note,
+and prompt rules (instances = callouts; zoom one copy then `find_like`; never
+conclude absence from whole-sheet views).
+
+**Owner's next checks (Funhouse, once the mirror has 5.29.0).** Connection
+diagnostics: `vision model: gpt-5.4-...: images at gpt-4.1-high, charts at
+openai-original (from probe)` — and under the robust policy every image goes
+at `original`. Re-run the IZD question ("find every GCE penetration callout,
+not the legend"): the agent should zoom to the legend, confirm GCE, call
+`find_like`, and report ~34 callouts by sheet with contact sheets in the
+folder. If it reports far more candidates than expected, the dense plan
+lettering is producing look-alikes — the contact sheets show what was read.
+
+
+### 5.28.0 RELEASED 2026-09-24 (tag `v5.28.0`) with planlens 0.9.0 (tag `v0.9.0`) — THE VISION MODEL IS MEASURED (superseded by 5.29.0 above)
 
 **Released on the owner's word, planlens first; no new package** (pin
 `planlens>=0.9`). **Release gate on this tree: 13,321 passed / 36 skipped /
