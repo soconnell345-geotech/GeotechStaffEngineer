@@ -249,8 +249,46 @@ OPENAI_TOOLS = [
                         "description": "What to extract from the page.",
                         "default": "Describe the content of this page.",
                     },
+                    "tiles": {
+                        "type": "string",
+                        "description": ("auto (default): also read in "
+                                        "overlapping tiles when the lettering "
+                                        "is too small whole-page; off; or "
+                                        "2/3/4 for a fixed split."),
+                    },
                 },
                 "required": ["attachment_key"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_like",
+            "description": (
+                "Find EVERY copy of one mark (tag, code, symbol) across a "
+                "drawing set, even lettering drawn as lines: zoom until one "
+                "copy is legible, then pass its bbox (PDF points) and the "
+                "text it reads. Every candidate is verified by vision; "
+                "returns instances by page, callouts apart from legend "
+                "entries, and uncertain reads."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "attachment_key": {"type": "string",
+                                       "description": "Attached PDF key or path."},
+                    "page": {"type": "integer",
+                             "description": "Page of the example (0-indexed)."},
+                    "bbox": {"type": "array", "items": {"type": "number"},
+                             "description": "[x0,y0,x1,y1] PDF points round ONE copy."},
+                    "text": {"type": "string",
+                             "description": "What the mark reads, e.g. GCE."},
+                    "pages": {"type": "string",
+                              "description": "Pages to search, e.g. 0-84 (default all)."},
+                    "include_legend": {"type": "boolean"},
+                },
+                "required": ["attachment_key", "page", "bbox"],
             },
         },
     },
@@ -359,7 +397,8 @@ OPENAI_TOOLS = [
 
 # Tool names that are dispatched via vision_tools (not dispatch.py)
 EXTENDED_TOOL_NAMES = {"list_files", "read_pdf_text", "analyze_image",
-                       "analyze_pdf_page", "render_region", "save_file"}
+                       "analyze_pdf_page", "render_region", "find_like",
+                       "save_file"}
 
 # Consult-references tool — added to the primary's tool list conditionally
 # (per the agent's ``reference_mode``), NOT part of OPENAI_TOOLS. It routes a

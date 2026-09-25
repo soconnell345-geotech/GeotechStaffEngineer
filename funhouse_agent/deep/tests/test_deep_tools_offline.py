@@ -219,12 +219,15 @@ def test_vision_tools_build_and_error_without_engine():
         assert set(document_tools.DOCUMENT_TOOL_NAMES) <= document_names
     # Word output is offered on the same rule: only where it can be produced.
     docx_names = {"write_docx"} if docx_available() else set()
+    # find_like on the same rule: only where planlens can search (0.10+).
+    from funhouse_agent.deep.tools import _find_like_available
+    like_names = {"find_like"} if _find_like_available() else set()
     assert names == {"list_files", "read_pdf_text", "read_text_file",
                      "analyze_image",
                      "analyze_pdf_page", "render_region",
                      "read_reference_figure",
                      "view_worked_example_source", "save_file"} \
-        | document_names | docx_names
+        | document_names | docx_names | like_names
 
     # read_reference_figure without args → clear error (no raise).
     out = _invoke(

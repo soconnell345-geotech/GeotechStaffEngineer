@@ -145,6 +145,15 @@ def _truncate(text: str, max_chars: int) -> str:
     )
 
 
+def _find_like_available() -> bool:
+    """Whether the installed planlens can search a drawing set for a mark."""
+    import importlib.util
+    try:
+        return importlib.util.find_spec("planlens.document.findlike") is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def _resolve_reference_cap(max_result_chars: int,
                            reference_result_chars: Optional[int]) -> int:
     """Resolve the cap used for REFERENCE reads.
@@ -597,6 +606,9 @@ def make_vision_tools(
         # Word output, on the same rule: offered only where it can be produced.
         if _docx_available():
             include |= {"write_docx"}
+        # find_like needs planlens 0.10 (planlens.document.findlike).
+        if _find_like_available():
+            include |= {"find_like"}
     reference_cap = _resolve_reference_cap(max_result_chars,
                                            reference_result_chars)
     # Resolved once per build: the newer tools depend on the installed planlens.
@@ -619,7 +631,8 @@ def make_vision_tools(
         cap = (reference_cap
                if tool_name in ("read_reference_figure", "read_pdf_text",
                                 "read_text_file", "list_files",
-                                "view_worked_example_source")
+                                "view_worked_example_source",
+                                "analyze_pdf_page", "find_like")
                else max_result_chars)
         return _truncate(
             _dispatch_extended_tool(
@@ -692,16 +705,58 @@ def make_vision_tools(
         attachment_key: str,
         page: int = 0,
         prompt: str = "Describe the content of this page.",
+        tiles: str = "auto",
     ) -> str:
         """Render a PDF page and analyze it using vision.
 
         ``attachment_key`` is the key of the attached PDF file; ``page`` is the
         0-indexed page number; ``prompt`` is what to extract from the page.
+        ``tiles``: ``"auto"`` (default) ALSO reads the page in overlapping
+        tiles when its small lettering is too small in the whole-page image
+        (the result then carries every tile's reading and view); ``"off"``,
+        or ``"2"``/``"3"``/``"4"`` for a fixed split.
         """
         return _dispatch(
             "analyze_pdf_page",
-            {"attachment_key": attachment_key, "page": page, "prompt": prompt},
+            {"attachment_key": attachment_key, "page": page, "prompt": prompt,
+             "tiles": tiles},
         )
+
+    def find_like(
+        attachment_key: str,
+        page: int = 0,
+        bbox: Optional[list] = None,
+        text: str = "",
+        pages: Optional[str] = None,
+        include_legend: bool = False,
+        view: Optional[list] = None,
+        image_box: Optional[list] = None,
+    ) -> str:
+        """Find EVERY copy of one mark — a tag, a code, a symbol — across the
+        document, including drawing sheets whose lettering is drawn as lines
+        and cannot be searched as text; every candidate is then READ by vision
+        at a large size, so look-alikes (GCG vs GCE) are rejected.
+
+        First zoom (``render_region``) until ONE copy is legible — a legend
+        row is a fine example — and confirm what it reads. Then pass that
+        copy's ``bbox`` [x0, y0, x1, y1] in PDF points (tight round its
+        lettering, no leader or table rule inside) — or the zoom result's
+        ``view`` + the copy's 0-999 ``image_box`` — and ``text``, what it
+        reads (e.g. ``"GCE"``). ``pages`` like ``"0-84"`` (default all).
+        Returns the instances by page, callouts (a leader is drawn from the
+        tag; ``points_to`` is where it points) apart from legend entries
+        (``include_legend`` to list them), uncertain reads to zoom on, and
+        contact sheets saved to the working folder for the user to check.
+        Use this to locate or count a tag across sheets — never page through
+        whole-sheet views for it.
+        """
+        args = {"attachment_key": attachment_key, "page": page,
+                "include_legend": include_legend}
+        for k, v in (("bbox", bbox), ("text", text or None), ("pages", pages),
+                     ("view", view), ("image_box", image_box)):
+            if v is not None:
+                args[k] = v
+        return _dispatch("find_like", args)
 
     def render_region(
         attachment_key: str,
@@ -990,6 +1045,14 @@ def make_vision_tools(
         "analyze_pdf_page": (
             analyze_pdf_page,
             "Render a PDF page and analyze it using vision.",
+        ),
+        "find_like": (
+            find_like,
+            "Find EVERY copy of one mark (tag, code, symbol) across a drawing "
+            "set — even lettering drawn as lines — from one zoomed, confirmed "
+            "example box + the text it reads; every candidate is verified by "
+            "vision. Returns instances by page, callouts (with where each "
+            "leader points) apart from legend entries, and uncertain reads.",
         ),
         "render_region": (
             render_region,

@@ -434,6 +434,35 @@ DocLayout-YOLO (AGPL), docling (torch unavoidable — optional only).
    firewalled: any package that downloads model weights at runtime is unusable
    as published — vendor the models or skip.
 
+## VISION EFFICIENCY — dial back later (owner, 2026-09-25: "robust first, then maybe we can dial back for efficiency later; make a note of that")
+
+5.29.0 defaults every vision choice to the most reliable option. Each spot
+that costs more than strictly needed, and the knob that dials it back — do
+NOT act on these until the owner asks, and measure per-conversation cost
+first (activity.jsonl carries `budget` / `detail` / `vision_model` on every
+vision result):
+
+- **Every image at the largest honoured detail.** `GEOTECH_VISION_POLICY=robust`
+  (default) sends ordinary page views at `original` wherever the probe says it
+  is honoured (Funhouse GPT-5.4: ~10k image tokens vs ~0.7k at `high`).
+  `efficient` = ordinary views at `high`, `original` only for chart read-offs.
+  A middle road: `original` only when the page's lettering would be under
+  12 px at `high` (the legibility number is already computed per render).
+- **Automatic tiling** (`analyze_pdf_page(tiles="auto")`): up to 16 extra
+  vision calls on a page whose lettering is small (Tiny Apps GPT-5.1: every
+  stroke-lettered 11x17 sheet goes 4x4). Off under `efficient`. Cheaper
+  options: 2x2 first and escalate only where a tile brackets a character;
+  crop to the drawing area (skip title block / legend) before tiling.
+- **find_like verification** reads EVERY non-legend candidate on contact
+  sheets of 20. Dial-backs: raise the match threshold for candidates far
+  above look-alike scores (true copies score 0.64-1.0, look-alikes <= 0.85 on
+  the fixture); bigger sheets (30-40 cells) on patch models that keep the
+  resolution; skip verification for candidates scoring > 0.95.
+- **The vision probe**: four small calls per model per process (~6k tokens
+  at GPT-5.4). Could persist the profile per (endpoint, alias) for a day.
+- find_like's contact sheets are saved to the conversation folder (and
+  mirrored to SharePoint) — storage, not tokens; fine unless it grows.
+
 ## VISION HARNESS BENCHMARK — planlens vs Chartography + BenchCAD (2026-09-23; LONG-TERM TODO)
 
 Owner asked 2026-09-23 after reading the Opus 5.5 system card (§8.13). Anthropic's

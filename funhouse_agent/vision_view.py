@@ -56,6 +56,15 @@ log = logging.getLogger(__name__)
 BUDGET_ENV = "GEOTECH_VISION_BUDGET"
 DETAIL_ENV = "GEOTECH_VISION_DETAIL"
 CHART_BUDGET_ENV = "GEOTECH_CHART_BUDGET"
+POLICY_ENV = "GEOTECH_VISION_POLICY"
+
+#: ``robust`` (default, owner 2026-09-25: "robust first, then maybe we can
+#: dial back for efficiency later"): every image goes at the largest detail
+#: the model was measured to honour, and small lettering is tiled.
+#: ``efficient``: ordinary views at the model's ``high`` budget, only chart
+#: read-offs at the larger one, no automatic tiling — the dial-back, noted in
+#: module_work/FUTURE_IDEAS.md "VISION EFFICIENCY".
+POLICIES = ("robust", "efficient")
 
 #: GPT-5.4's ``high`` detail (its ``auto`` too): what the side call already
 #: got, now rendered to the size it actually looks at. ``openai-original`` is
@@ -84,7 +93,11 @@ TARGET_TEXT_PX = 16.0
 GRID_INSTRUCTION = (
     "If you give the location of anything in this image, give it as a box "
     "[x0, y0, x1, y1] on a 0-999 grid over the whole image (origin at the "
-    "top-left corner, x to the right, y down).")
+    "top-left corner, x to the right, y down). Read codes, tags and numbers "
+    "character by character: where a character could be another (G/Q/O/C/D, "
+    "E/F, B/8, S/5, I/1/L, Z/2), write the alternatives in brackets, e.g. "
+    "[G/Q]CE, and say the lettering is too small to be sure, rather than "
+    "picking one.")
 
 #: What the agent is told about the ``view`` a vision result carries.
 ZOOM_HINT = ("to zoom on something the analysis located, call "
@@ -109,6 +122,12 @@ def chart_reading() -> Iterator[None]:
         yield
     finally:
         _CHART.reset(token)
+
+
+def policy() -> str:
+    """``robust`` (default) or ``efficient`` — see :data:`POLICIES`."""
+    p = os.environ.get(POLICY_ENV, "robust").strip().lower()
+    return p if p in POLICIES else "robust"
 
 
 def engine_profile(engine):
@@ -138,7 +157,9 @@ def budget_name(engine=None) -> str:
         return general_env.strip()
     prof = engine_profile(engine)
     if prof is not None and prof.general:
-        return prof.detailed if chart else prof.general
+        if chart or policy() == "robust":
+            return prof.detailed
+        return prof.general
     return DEFAULT_CHART_BUDGET if chart else DEFAULT_BUDGET
 
 
@@ -228,7 +249,20 @@ def view_payload(info: Dict[str, Any], engine=None) -> Dict[str, Any]:
     prof = engine_profile(engine)
     if prof is not None and prof.answered_by:
         out["vision_model"] = prof.answered_by
+    if info.get("budget"):
+        out["budget"] = info["budget"]
+    d = detail(engine)
+    if d:
+        out["detail"] = d
     text_px = info.get("text_px")
+    if text_px is None and info.get("text_chars", 1 << 30) < 40:
+        out["legibility"] = (
+            "! this sheet's lettering is not in its text layer (drawn as "
+            "lines by CAD, or scanned): text search cannot see it. To find or "
+            "count a tag, code or symbol across sheets, zoom until ONE copy "
+            "is legible, then call find_like with its box. To read a detail, "
+            "zoom with render_region. Never conclude something is absent "
+            "from a whole-sheet view.")
     if text_px:
         out["text_px"] = text_px
         if text_px < LEGIBLE_TEXT_PX:
@@ -243,6 +277,52 @@ def view_payload(info: Dict[str, Any], engine=None) -> Dict[str, Any]:
                 f"render_region on a box about {window} pt across (a bbox, or "
                 f"this view + an image_box). Do not report the page as "
                 f"unreadable or ask for a better file before doing both.")
+    return out
+
+
+#: Lettering assumed on a CAD sheet whose lettering cannot be measured (drawn
+#: as lines): 0.06 in, the small end of plotted half-size sheets — the IZD set
+#: of 2026-09-25.
+ASSUMED_CAD_LETTERING_PT = 4.3
+
+#: Most tiles one sheet is split into for a read (4 x 4).
+MAX_TILES_PER_SIDE = 4
+
+
+def tile_grid(info: Dict[str, Any]) -> int:
+    """Tiles per side needed for the page's small lettering to arrive at
+    :data:`TARGET_TEXT_PX` — 1 when the whole page already reads.
+
+    Uses the measured ``text_px`` where the text layer gives one; on a sheet
+    whose lettering is drawn as lines (no measurable text), assumes
+    :data:`ASSUMED_CAD_LETTERING_PT`."""
+    import math
+    x0, y0, x1, y1 = info["clip"]
+    px_per_pt = info["width_px"] / max(x1 - x0, 1e-6)
+    text_px = info.get("text_px")
+    if text_px is None:
+        if info.get("text_chars", 1 << 30) >= 40:
+            return 1                         # prose page with no size: fine
+        text_px = ASSUMED_CAD_LETTERING_PT * px_per_pt
+    if text_px >= LEGIBLE_TEXT_PX:
+        return 1
+    n = math.ceil(TARGET_TEXT_PX / max(text_px, 0.1))
+    return max(1, min(MAX_TILES_PER_SIDE, n))
+
+
+def tile_boxes(clip: Sequence[float], n: int, overlap: float = 0.08):
+    """``n`` x ``n`` boxes over ``clip`` (points), each widened by
+    ``overlap`` of its size so nothing on a seam is cut in two. Row-major,
+    top-left first."""
+    x0, y0, x1, y1 = (float(v) for v in clip)
+    w, h = (x1 - x0) / n, (y1 - y0) / n
+    ox, oy = overlap * w, overlap * h
+    out = []
+    for r in range(n):
+        for c in range(n):
+            out.append((max(x0, x0 + c * w - ox), max(y0, y0 + r * h - oy),
+                        min(x1, x0 + (c + 1) * w + ox),
+                        min(y1, y0 + (r + 1) * h + oy)))
     return out
 
 
@@ -267,7 +347,9 @@ def image_box_to_page(view: Sequence[float], image_box: Sequence[float]
             vx0 + x1 / 999.0 * w, vy0 + y1 / 999.0 * h)
 
 
-__all__ = ["BUDGET_ENV", "DETAIL_ENV", "CHART_BUDGET_ENV", "DEFAULT_BUDGET",
+__all__ = ["BUDGET_ENV", "DETAIL_ENV", "CHART_BUDGET_ENV", "POLICY_ENV",
+           "POLICIES", "policy", "ASSUMED_CAD_LETTERING_PT", "tile_grid",
+           "tile_boxes", "DEFAULT_BUDGET",
            "DEFAULT_CHART_BUDGET", "LEGIBLE_TEXT_PX", "TARGET_TEXT_PX",
            "chart_reading", "GRID_INSTRUCTION", "ZOOM_HINT", "engine_profile",
            "budget_name", "budget", "detail", "image_media_type",

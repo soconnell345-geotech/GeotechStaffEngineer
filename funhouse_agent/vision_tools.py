@@ -52,6 +52,7 @@ EXTENDED_TOOLS = STANDARD_TOOLS | {
     "analyze_image",
     "analyze_pdf_page",
     "render_region",
+    "find_like",
     "read_reference_figure",
     "save_file",
     "write_docx",
@@ -140,6 +141,21 @@ locations as 0-999 boxes on that image: to zoom on one, pass `view` +
 ```
 <tool_call>
 {"tool_name": "render_region", "attachment_key": "sheet.pdf", "page": 0, "bbox": [400, 180, 480, 240], "marks": [[440, 210, "1"]], "prompt": "What is mark 1 pointing at?"}
+</tool_call>
+```
+
+### 9b. find_like
+Find EVERY copy of one mark — a tag, a code, a symbol — across a drawing set,
+including sheets whose lettering is drawn as lines (no text layer). Zoom until
+ONE copy is legible (a legend row is fine), then pass its `bbox` (PDF points) —
+or a vision result's `view` + the copy's 0-999 `image_box` — and `text` (what it
+reads). Every page is image-matched; every candidate is then READ by vision on
+enlarged contact sheets; the result counts instances by page, callouts (with
+where each leader points) apart from legend entries, and lists uncertain reads
+to zoom on. Use it instead of paging through whole-sheet views.
+```
+<tool_call>
+{"tool_name": "find_like", "attachment_key": "sheets.pdf", "page": 5, "bbox": [929, 97, 940, 102], "text": "GCE"}
 </tool_call>
 ```
 
@@ -254,6 +270,8 @@ def dispatch_extended_tool(
         return _dispatch_analyze_pdf_page(arguments, engine, attachments)
     elif tool_name == "render_region":
         return _dispatch_render_region(arguments, engine, attachments)
+    elif tool_name == "find_like":
+        return _dispatch_find_like(arguments, engine, attachments)
     elif tool_name == "read_reference_figure":
         return _dispatch_read_reference_figure(arguments, engine)
     elif tool_name == "view_worked_example_source":
@@ -801,11 +819,29 @@ def render_region_to_file(path, filepath=None, content=None, page=0,
     return writer(path, png_bytes)
 
 
+#: Parallel vision calls for the tiles of one page.
+TILE_WORKERS = 4
+
+#: The whole tiled result stays under this (the reference cap is 16,000).
+TILED_RESULT_CHARS = 14000
+
+
 def _dispatch_analyze_pdf_page(arguments, engine, attachments):
-    """Handle analyze_pdf_page tool call."""
+    """Handle analyze_pdf_page tool call.
+
+    ``tiles`` — ``"auto"`` (default), ``"off"``, or a number N for an N x N
+    split. On ``auto`` the page is also read in overlapping tiles when its
+    small lettering would arrive under ``vision_view.LEGIBLE_TEXT_PX`` in the
+    whole-page image (measured from the text layer, or assumed 0.06 in on a
+    sheet whose lettering is drawn as lines): each tile goes at the same
+    budget, so the lettering is N times larger, and the result carries the
+    whole-page overview AND every tile's reading, each with its ``view`` for
+    zooming. Policy ``efficient`` turns ``auto`` off.
+    """
     key = arguments.get("attachment_key", "")
     page = arguments.get("page", 0)
     prompt = arguments.get("prompt", "Describe the content of this page.")
+    tiles = arguments.get("tiles", "auto")
 
     try:
         pdf_bytes, _src = _resolve_attachment_or_path(key, attachments)
@@ -828,14 +864,149 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
 
     try:
         result = engine.analyze_image(image_bytes, vision_view.with_grid(prompt))
-        return json.dumps({"page": page, "analysis": result,
-                           **vision_view.view_payload(info, engine)})
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({
             "error": f"Vision not available on this engine: {e}"
         })
     except Exception as e:
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
+    out = {"page": page, "analysis": result,
+           **vision_view.view_payload(info, engine)}
+
+    n = _tile_count(tiles, info)
+    if n > 1:
+        out["tiles"] = _read_tiles(pdf_bytes, page, info, n, prompt, engine)
+        out["tiling"] = (
+            f"the page's small lettering was too small in the whole-page "
+            f"image, so it was ALSO read in {n}x{n} overlapping tiles (each "
+            f"at the same image size, lettering {n}x larger). Trust a tile "
+            f"over the overview for small lettering; each tile's view zooms "
+            f"further with render_region.")
+        out.pop("legibility", None)
+        _fit_tiles(out)
+    return json.dumps(out)
+
+
+def _tile_count(tiles, info) -> int:
+    from funhouse_agent import vision_view
+    if isinstance(tiles, str):
+        t = tiles.strip().lower()
+        if t in ("off", "none", "0", "1", "false"):
+            return 1
+        if t == "auto":
+            if vision_view.policy() != "robust":
+                return 1
+            return vision_view.tile_grid(info)
+        try:
+            tiles = int(t)
+        except ValueError:
+            return 1
+    try:
+        return max(1, min(vision_view.MAX_TILES_PER_SIDE, int(tiles)))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _read_tiles(pdf_bytes, page, info, n, prompt, engine):
+    """Read the page in ``n`` x ``n`` overlapping tiles, in parallel."""
+    from concurrent.futures import ThreadPoolExecutor
+    from funhouse_agent import vision_view
+    boxes = vision_view.tile_boxes(info["clip"], n)
+
+    def one(k):
+        r, c = divmod(k, n)
+        try:
+            img, tinfo = vision_view.render_view(
+                pdf_bytes, page=page, bbox=boxes[k], pad_frac=0.0,
+                allow_jpeg=getattr(engine, "accepts_jpeg", False),
+                engine=engine)
+            where = (f"This image is tile row {r + 1} of {n}, column {c + 1} "
+                     f"of {n} of the sheet (tiles overlap slightly). Report "
+                     f"only what is IN this tile, briefly.")
+            text = engine.analyze_image(
+                img, vision_view.with_grid(f"{prompt}\n\n{where}"))
+            return {"tile": f"r{r + 1}c{c + 1}",
+                    "view": [round(v, 1) for v in tinfo["clip"]],
+                    "view_px": [tinfo["width_px"], tinfo["height_px"]],
+                    **({"text_px": tinfo["text_px"]}
+                       if tinfo.get("text_px") else {}),
+                    "analysis": text}
+        except Exception as exc:                  # one tile, not the page
+            return {"tile": f"r{r + 1}c{c + 1}",
+                    "view": [round(v, 1) for v in boxes[k]],
+                    "error": f"{type(exc).__name__}: {exc}"}
+
+    with ThreadPoolExecutor(max_workers=TILE_WORKERS) as ex:
+        return list(ex.map(one, range(n * n)))
+
+
+def _fit_tiles(out) -> None:
+    """Shorten each tile's text evenly until the result fits."""
+    while len(json.dumps(out)) > TILED_RESULT_CHARS:
+        longest = max((t for t in out["tiles"] if t.get("analysis")),
+                      key=lambda t: len(t["analysis"]), default=None)
+        if longest is None or len(longest["analysis"]) < 200:
+            out["analysis"] = (out.get("analysis") or "")[:1500]
+            break
+        a = longest["analysis"]
+        longest["analysis"] = a[: int(len(a) * 0.8)] + " …[shortened]"
+
+
+def _dispatch_find_like(arguments, engine, attachments):
+    """Every copy of one mark across a drawing set, verified — see
+    :mod:`funhouse_agent.find_like`.
+
+    Arguments: ``attachment_key`` (or a real path), ``page`` and ``bbox``
+    (PDF points round ONE copy of the mark) — or ``view`` + ``image_box`` from
+    an earlier vision result — ``text`` (what the mark reads, e.g. "GCE"),
+    ``pages`` (default all), ``include_legend``, ``threshold``.
+    """
+    from funhouse_agent import find_like as _fl
+    from funhouse_agent import vision_view
+    key = arguments.get("attachment_key", "")
+    page = arguments.get("page", 0)
+    bbox = arguments.get("bbox")
+    view, image_box = arguments.get("view"), arguments.get("image_box")
+    if view is not None or image_box is not None:
+        if bbox is not None:
+            return json.dumps({"error": "pass bbox OR view + image_box, not both"})
+        try:
+            bbox = list(vision_view.image_box_to_page(view or [], image_box or []))
+        except (TypeError, ValueError) as e:
+            return json.dumps({"error": f"view + image_box: {e}"})
+    if not bbox or len(bbox) != 4:
+        return json.dumps({
+            "error": "find_like needs the box round ONE copy of the mark",
+            "hint": "zoom (render_region) until one copy is legible, then pass "
+                    "its bbox in PDF points — or that result's view + the 0-999 "
+                    "image_box of the copy; a legend row is a fine example"})
+    try:
+        pdf_bytes, _src = _resolve_attachment_or_path(key, attachments)
+    except FileNotFoundError as e:
+        return json.dumps({"error": str(e)})
+    save_dir = None
+    try:
+        from funhouse_agent._fileio import default_output_dir
+        # The conversation's working folder (the host sets it); with none,
+        # the contact sheets are not written anywhere.
+        save_dir = default_output_dir() or None
+    except Exception:
+        save_dir = None
+    try:
+        out = _fl.find_like(
+            pdf_bytes, int(page), [float(v) for v in bbox], engine,
+            text=(arguments.get("text") or None),
+            pages=arguments.get("pages"),
+            include_legend=bool(arguments.get("include_legend", False)),
+            threshold=arguments.get("threshold"),
+            save_dir=save_dir)
+    except ImportError as e:
+        return json.dumps({"error": f"find_like needs planlens 0.10 or later: {e}"})
+    except (ValueError, IndexError) as e:
+        return json.dumps({"error": str(e),
+                           "hint": "box the mark's lettering tightly, with no "
+                                   "leader or table rule inside the box"})
+    return json.dumps(out)
 
 
 _READ_OFF_NOTE = (

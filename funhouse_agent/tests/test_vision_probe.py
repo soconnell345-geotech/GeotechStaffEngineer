@@ -160,7 +160,8 @@ def test_the_measured_budget_sizes_renders_and_detail(sheet_pdf):
     model = FakeVisionModel("tile")
     engine = LangChainVisionEngine(model)
     out = json.loads(_dispatch_analyze_pdf_page(
-        {"attachment_key": "sheet", "page": 0, "prompt": "list the bars"},
+        {"attachment_key": "sheet", "page": 0, "prompt": "list the bars",
+         "tiles": "off"},
         engine, {"sheet": sheet_pdf}))
     assert "error" not in out, out
     # Rendered at exactly what a tile model looks at: 768 on the short side.
@@ -172,6 +173,13 @@ def test_the_measured_budget_sizes_renders_and_detail(sheet_pdf):
     assert out["text_px"] < 6
     assert "read_document / search_document" in out["legibility"]
     assert "Do not report the page as unreadable" in out["legibility"]
+    # And on the default (robust, tiles "auto") the page is ALSO read in
+    # tiles large enough to carry that lettering.
+    out = json.loads(_dispatch_analyze_pdf_page(
+        {"attachment_key": "sheet", "page": 0, "prompt": "list the bars"},
+        engine, {"sheet": sheet_pdf}))
+    assert len(out["tiles"]) == 16
+    assert all(t.get("text_px", 0) >= 14 for t in out["tiles"])
 
 
 def test_charts_follow_the_measurement_too(monkeypatch, tmp_path, sheet_pdf):

@@ -128,7 +128,18 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   file, until you have tried BOTH the text layer and `render_region`
   zooms** — a vector page is re-drawn at any size, so a smaller box always
   shows more; a vision result's `legibility` line says how small a box to
-  use. Only a scan (no text layer) is limited by its own resolution. For a
+  use. Only a scan (no text layer) is limited by its own resolution. On a
+  sheet whose lettering is DRAWN AS LINES (a result says it is "not in its
+  text layer"), text search cannot see it: zoom to read, and use `find_like`
+  to find. **To locate or count a tag, code or symbol across sheets**, zoom
+  until ONE copy is legible and confirm what it reads (a legend row is fine;
+  if a vision read brackets a character, e.g. [G/Q]CE, zoom closer first),
+  then call `find_like` with that copy's box and `text` — it searches every
+  sheet, has every candidate read at a large size, and separates CALLOUTS
+  (tags placed on the drawing, usually with a leader) from LEGEND entries.
+  "Instances" on a drawing means the callouts unless the user says
+  otherwise — say how you read the request. Never conclude something is
+  absent from whole-sheet views of small lettering. For a
   quick plain read, **`read_pdf_text`** (PyMuPDF text layer;
   `pages` like `"0-9"`) still works. `read_pdf_text` flags any page that has
   no text layer
@@ -313,7 +324,23 @@ you never invent what a page says.
   `render_region` zooms** — a vector page is re-drawn at any size, so a
   smaller box always shows more, and a vision result's `legibility` line
   says how small a box to use. Only a scan (no text layer) is limited by
-  its own resolution.
+  its own resolution. A sheet whose lettering is DRAWN AS LINES (a result
+  says it is "not in its text layer") cannot be searched as text at all:
+  zoom to read it, `find_like` to find things on it.
+- **Finding or counting a tag, code or symbol across sheets** ("where are
+  the GCE penetrations?"): zoom with `render_region` until ONE copy is
+  legible and confirm what it reads — a legend row is a fine example; if a
+  vision read brackets a character ([G/Q]CE) or looks like a near-miss,
+  zoom closer before trusting it. Then call `find_like` with that copy's box
+  and `text`. It searches every sheet in seconds, has every candidate read
+  at a large size (look-alikes are rejected), and separates CALLOUTS — tags
+  placed on the drawing, usually with a leader, with the point each leader
+  reaches — from LEGEND entries. "Instances" of a tag on a drawing means the
+  callouts, not the legend rows that define it, unless the user says
+  otherwise: say how you read the request, and ask when it is genuinely
+  ambiguous. Report counts by sheet, name uncertain reads, and point the
+  user to the contact sheets it saved. Never conclude something is absent
+  from whole-sheet views of small lettering.
 - **Cite as you go.** Every finding names the page (the printed number where
   the document has one, the PDF page otherwise) and, for a drawing, the sheet.
   Quote short; paraphrase long. What the document does not say, say it does
