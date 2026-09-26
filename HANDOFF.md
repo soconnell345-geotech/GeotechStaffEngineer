@@ -1,14 +1,50 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-09-25.** This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-09-26.** This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-09-25, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-09-26, supersedes everything below)
 
-### 5.29.0 RELEASED 2026-09-25 (tag `v5.29.0`) with planlens 0.10.0 (tag `v0.10.0`) — FIND_LIKE AND ROBUST-FIRST VISION
+### 5.29.1 RELEASED 2026-09-26 (tag `v5.29.1`) with planlens 0.10.1 (tag `v0.10.1`) — FIND_LIKE KEPT OPTIONAL
+
+**Released on the owner's word ("Yeah go ahead"); no dependency change.**
+**Release gate: 13,332 passed / 36 skipped / 0 failed** in foreground chunks
+(same count as 5.29.0 — wording only). **A second session
+("document-review-architecture") was editing uncommitted files in the same
+working tree during the gate**, so the packages that import `funhouse_agent`
+were re-run in a CLEAN worktree of exactly the tagged content (`git worktree
+add` at d92122f + the four release files, `PYTHONPATH` pointed at it):
+`funhouse_agent` 1,820 passed / 7 skipped, webapp + `geo_project` 453,
+`report_ingest` 1,296 — all green. The rest of the gate does not import
+`funhouse_agent`. planlens 0.10.1: 1,430 passed. Wheel: no `find_like` in the
+prompts, requires `planlens>=0.10`. **Lesson:** two sessions sharing one
+checkout must branch; release commits stage by exact path.
+
+**Why.** 5.29.0 wired `find_like` into both system prompts, the `! look:`
+hint on every drawing/scan result and the note on every stroke-lettered
+sheet, and turned the IZD case's specifics into rules. The owner: "This seems
+kinda niche. The example I gave was one of hundreds that could be run. I
+think you may have overfit a solution to this one example. Not that we need
+to get rid of the tool, but can you confirm that the setup is such that this
+is an optional tool amongst many, and not viewed as a standard part of the
+workflow?" Memory: `feedback-no-overfitting-to-one-example`.
+
+**What changed.** `find_like` is known to the agent only through its own tool
+description ("use it when EVERY occurrence of one repeated mark across many
+sheets is wanted"). Out of the prompts, the look hint
+(`document_tools.VISION_HINT`), the stroke-lettered note
+(`vision_view.view_payload`) and planlens' render note. The rebar search
+terms and "instances means callouts" became general rules (the text layer
+is often where CAD words are; zoom before calling anything unreadable; zoom
+closer on a bracketed character; never conclude absence from whole-sheet
+views; say how an ambiguous request was read). Everything else in 5.29.0
+stands. **Testers should install 5.29.1, not 5.29.0.**
+
+
+### 5.29.0 RELEASED 2026-09-25 (tag `v5.29.0`) with planlens 0.10.0 (tag `v0.10.0`) — FIND_LIKE AND ROBUST-FIRST VISION (superseded by 5.29.1 above)
 
 **Released on the owner's word ("Let it rip"), planlens first; no new
 package** (pin `planlens>=0.10`). **Release gate on this tree: 13,332 passed /

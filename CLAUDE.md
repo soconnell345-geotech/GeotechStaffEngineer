@@ -71,8 +71,20 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-09-25) — 5.29.0 RELEASED with planlens 0.10.0: find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
+## CURRENT WORKING STATE (2026-09-26) — 5.29.1 RELEASED with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
 
+- **5.29.1 RELEASED 2026-09-26 (tag `v5.29.1`) with planlens 0.10.1 (tag
+  `v0.10.1`). No dependency change** (pin stays `planlens>=0.10`). The
+  owner's correction the day after 5.29.0: "This seems kinda niche. The
+  example I gave was one of hundreds that could be run. I think you may have
+  overfit a solution to this one example" (memory
+  `feedback-no-overfitting-to-one-example`). `find_like` is now known to the
+  agent ONLY through its own tool description; it is gone from both system
+  prompts, the `! look:` hint and the stroke-lettered-sheet note (app and
+  planlens), and the example-specific rules went with it (the rebar search
+  terms, "instances means callouts" -> "say how you read an ambiguous
+  request"). The general robustness from 5.28/5.29 stays. Released before the
+  mirror carried 5.29.0 to the testers.
 - **5.29.0 RELEASED 2026-09-25 (tag `v5.29.0`) with planlens 0.10.0 (tag
   `v0.10.0`, published first — pin `planlens>=0.10`). No new package.**
   Out of the IZD test run (Funhouse, 5.28.0): 85 sheets of 0.06 in lettering
