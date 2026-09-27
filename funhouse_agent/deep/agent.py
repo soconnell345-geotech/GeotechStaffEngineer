@@ -730,9 +730,16 @@ def build_deep_agent(
     summarization_model=None,
     summarization_trigger=_AUTO_SUMMARIZATION_TRIGGER,
     summarization_keep=_DEFAULT_SUMMARIZATION_KEEP,
+    review_page: bool = False,
     **kwargs,
 ):
     """Construct the deepagents port of the geotech agent.
+
+    ``review_page=True`` marks the Document Review page's build: with
+    ``GEOTECH_REVIEW_AGENT=lean`` it is handed to
+    :func:`funhouse_agent.deep.review_agent.build_review_agent`, the page's
+    own agent; with the switch off (the default) it is built here exactly as
+    before.
 
     By default this agent already has — courtesy of deepagents — *planning*
     (the ``write_todos`` tool, via ``TodoListMiddleware``) and an in-thread
@@ -921,6 +928,19 @@ def build_deep_agent(
     filesystem tools are present regardless because deepagents attaches them by
     default.
     """
+    if review_page:
+        from funhouse_agent import review_flags
+        if review_flags.lean_agent():
+            from funhouse_agent.deep.review_agent import build_review_agent
+            return build_review_agent(
+                model, engine=engine, attachments=attachments,
+                save_fn=save_fn, extra_tools=extra_tools,
+                extra_system_prompt=extra_system_prompt,
+                markup_author=markup_author,
+                max_result_chars=max_result_chars,
+                reference_result_chars=reference_result_chars,
+                checkpointer=checkpointer, store=store)
+
     if allowed_agents is None:
         allowed_agents = ANALYSIS_MODULES
 

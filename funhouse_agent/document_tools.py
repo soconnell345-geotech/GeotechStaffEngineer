@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 from contextvars import ContextVar
 from typing import Any, Dict, Optional
@@ -93,7 +94,9 @@ UNCAPPED_BUDGET = 60000
 
 #: Room left under the host's cap, so planlens' own limit is what binds and the
 #: host's string truncation (which breaks JSON) never fires.
-_CAP_MARGIN = 200
+#: It also holds the viewer page numbers :func:`with_viewer_pages` adds (about
+#: 14 characters a page reference; a 100-hit search needs ~1,400).
+_CAP_MARGIN = 1500
 
 _ATTACHMENTS: ContextVar[Optional[Dict[str, bytes]]] = ContextVar(
     "gse_document_attachments", default=None)
@@ -231,8 +234,11 @@ def _toolkit():
 
 def dispatch_document_tool(name: str, arguments: Dict[str, Any],
                            attachments: Optional[Dict[str, bytes]] = None,
-                           max_chars: Optional[int] = None) -> str:
-    """Run one document tool; returns a JSON string within ``max_chars``."""
+                           max_chars: Optional[int] = None,
+                           cap: Optional[int] = None) -> str:
+    """Run one document tool; returns a JSON string within ``max_chars``
+    (``cap``, when given, is the host's own limit: the viewer page numbers
+    are added only while the result stays under it)."""
     if not available():
         return json.dumps({
             "error": "document tools need planlens with planlens.tools "
@@ -241,9 +247,64 @@ def dispatch_document_tool(name: str, arguments: Dict[str, Any],
     # A shallow snapshot: the host mutates its attachments dict between turns.
     token = _ATTACHMENTS.set(dict(attachments or {}))
     try:
-        return _toolkit().call_json(name, arguments, max_chars=max_chars)
+        out = _toolkit().call_json(name, arguments, max_chars=max_chars)
     finally:
         _ATTACHMENTS.reset(token)
+    # The margin planlens was given below the host's cap is where the viewer
+    # page numbers fit; a result they would push past it goes out as it came.
+    if cap and cap > 0:
+        limit: Optional[int] = int(cap) - 20
+    elif max_chars:
+        limit = max_chars + _CAP_MARGIN - 20
+    else:
+        limit = None
+    return with_viewer_pages(out, limit)
+
+
+_PAGE_HEADER = re.compile(r"=== page (\d+)( continued)?")
+
+
+def _viewer_pages(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        out: Dict[str, Any] = {}
+        for k, v in obj.items():
+            out[k] = _viewer_pages(v)
+            if (k == "page" and isinstance(v, int) and not isinstance(v, bool)
+                    and "pdf_page" not in obj):
+                out["pdf_page"] = v + 1
+        return out
+    if isinstance(obj, list):
+        return [_viewer_pages(v) for v in obj]
+    if isinstance(obj, str) and "=== page " in obj:
+        return _PAGE_HEADER.sub(
+            lambda m: f"=== page {m.group(1)} [pdf_page "
+                      f"{int(m.group(1)) + 1}]{m.group(2) or ''}", obj)
+    return obj
+
+
+def with_viewer_pages(result: str, limit: Optional[int] = None) -> str:
+    """``result`` with the page a PDF VIEWER shows beside every page index.
+
+    planlens (like every tool here) numbers pages from 0, and its results
+    cite "page 28"; a reader opening the file in Bluebeam or Acrobat finds
+    that content on page 29. Every citation drawn from a result with no
+    printed page number was one page early (review of 2026-09-26). So each
+    ``"page": n`` gains ``"pdf_page": n + 1`` and each ``=== page n`` header
+    in read text gains ``[pdf_page n+1]`` — the number the prompt says to cite.
+    Unparseable results, and results the additions would push past
+    ``limit``, are returned unchanged.
+    """
+    try:
+        data = json.loads(result)
+    except (TypeError, ValueError):
+        return result
+    # Serialized the way planlens serializes, so the length compares like for
+    # like with the budget it was given.
+    out = json.dumps(_viewer_pages(data), ensure_ascii=False,
+                     separators=(",", ":"))
+    if limit is not None and len(out) > limit:
+        return result
+    return out
 
 
 #: The planlens tools the report ingest is built on: the page roles and work

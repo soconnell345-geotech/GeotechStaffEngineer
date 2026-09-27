@@ -557,8 +557,18 @@ def make_vision_tools(
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
     reference_result_chars: Optional[int] = None,
     markup_author: Optional[str] = None,
+    description_overrides: Optional[Dict[str, str]] = None,
+    inline_images: bool = False,
 ) -> list:
     """Build the vision / file-output tools as LangChain tools.
+
+    ``description_overrides`` replaces a tool's model-facing description by
+    name — the lean Document Review agent describes its tools for the page it
+    is on (:mod:`funhouse_agent.deep.review_agent`). ``inline_images`` makes
+    ``analyze_pdf_page`` / ``render_region`` return the rendered image for the
+    main model to look at instead of a one-shot vision call's description
+    (only meaningful with the image middleware that shows it; see
+    :mod:`funhouse_agent.deep.inline_images`).
 
     The engine, attachments, and save_fn are closured in at build time so the
     tools match the no-extra-args calling convention deepagents expects.
@@ -630,7 +640,8 @@ def make_vision_tools(
             return _truncate(
                 _document_tools.dispatch_document_tool(
                     tool_name, arguments, attachments=attachments,
-                    max_chars=_document_tools.budget_for_cap(reference_cap)),
+                    max_chars=_document_tools.budget_for_cap(reference_cap),
+                    cap=reference_cap or None),
                 reference_cap,
             )
         # read_reference_figure / read_pdf_text are text-payload reads and
@@ -727,11 +738,11 @@ def make_vision_tools(
         (the result then carries every tile's reading and view); ``"off"``,
         or ``"2"``/``"3"``/``"4"`` for a fixed split.
         """
-        return _dispatch(
-            "analyze_pdf_page",
-            {"attachment_key": attachment_key, "page": page, "prompt": prompt,
-             "tiles": tiles},
-        )
+        args = {"attachment_key": attachment_key, "page": page,
+                "prompt": prompt, "tiles": tiles}
+        if inline_images:
+            args["_inline"] = True
+        return _dispatch("analyze_pdf_page", args)
 
     def find_like(
         attachment_key: str,
@@ -812,6 +823,8 @@ def make_vision_tools(
             args["view"] = view
         if image_box is not None:
             args["image_box"] = image_box
+        if inline_images:
+            args["_inline"] = True
         return _dispatch("render_region", args)
 
     def read_reference_figure(
@@ -1114,11 +1127,13 @@ def make_vision_tools(
         )} if _docx_available() else {}),
     }
 
+    overrides = dict(description_overrides or {})
     tools = []
     for name, (fn, desc) in _builders.items():
         if name in include:
             tools.append(
-                StructuredTool.from_function(fn, name=name, description=desc)
+                StructuredTool.from_function(
+                    fn, name=name, description=overrides.get(name, desc))
             )
     return tools
 

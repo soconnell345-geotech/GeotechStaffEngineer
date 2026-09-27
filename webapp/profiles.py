@@ -114,6 +114,10 @@ DOCUMENT_REVIEW = AppProfile(
         "enable_calc_subagent": False,
         "extra_system_prompt": None,
         "_document_review_prompt": True,
+        # With GEOTECH_REVIEW_AGENT=lean, build_deep_agent hands this build
+        # to the page's own agent (funhouse_agent.deep.review_agent); off,
+        # it is ignored and the page is built as it has been since 5.26.
+        "review_page": True,
     },
 )
 

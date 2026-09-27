@@ -771,7 +771,8 @@ with st.sidebar:
             st.rerun()      # nothing new to stage, but retire the widget now
         if fresh:
             atts = core.stage_uploads(ss.attachments, ss.temp_dir, fresh)
-            ss.pending_notes.append(core.attachment_note(atts))
+            ss.pending_notes.append(core.attachment_note(
+                atts, review=not _PROFILE.specialists))
             entries = [{"role": "attach", "text": f"{a.key} ({a.size:,} bytes)"}
                        for a in atts]
             ss.transcript.extend(entries)                # in-memory (always)

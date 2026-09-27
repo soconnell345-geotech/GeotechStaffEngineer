@@ -49,7 +49,7 @@ import logging
 import os
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Dict, Iterator, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ GRID_INSTRUCTION = (
     "top-left corner, x to the right, y down). Read codes, tags and numbers "
     "character by character: where a character could be another (G/Q/O/C/D, "
     "E/F, B/8, S/5, I/1/L, Z/2), write the alternatives in brackets, e.g. "
-    "[G/Q]CE, and say the lettering is too small to be sure, rather than "
+    "A[B/8]C, and say the lettering is too small to be sure, rather than "
     "picking one.")
 
 #: What the agent is told about the ``view`` a vision result carries.
@@ -329,6 +329,164 @@ def with_grid(prompt: str) -> str:
     return f"{prompt.rstrip()}\n\n{GRID_INSTRUCTION}"
 
 
+# ---------------------------------------------------------------------------
+# Grounding a vision call (GEOTECH_VISION_TEXT_CONTEXT / _STRUCTURED)
+# ---------------------------------------------------------------------------
+#
+# A vision call is a fresh, one-shot call: it sees the image and the agent's
+# prompt and nothing else. On most CAD sheets the exact words are in the PDF's
+# text layer, and a vision model reading 5-point lettering off pixels misreads
+# characters the text layer already has right (the review of 2026-09-26). So,
+# behind a switch, the call is told which strings the text layer holds inside
+# its view and where — or that there are none — and, behind another, it is
+# asked for what it located in a form the tools can turn into page boxes.
+
+#: Most characters of text-layer lines put in front of one vision call.
+TEXT_CONTEXT_CHARS = 3500
+
+#: A line more than this fraction U+FFFD is not text worth quoting.
+_UNMAPPED_LINE = 0.3
+
+
+def page_lines(source, page: int
+               ) -> Optional[Tuple[List[Tuple[str, Tuple[float, ...]]], bool]]:
+    """The page's text-layer lines as ``(text, bbox)`` in displayed points,
+    and whether the page's text layer is reliable. ``([], True)`` when the
+    page has no text layer; ``None`` when the page could not be read at all
+    (so nobody tells a vision call "no text layer" on a guess). Never
+    raises."""
+    try:
+        from planlens.document import Document
+        doc = (Document(content=source) if isinstance(source, (bytes, bytearray))
+               else Document(filepath=str(source)))
+    except Exception:
+        return None
+    try:
+        try:
+            reliable = bool(getattr(doc.summary(int(page)), "text_reliable", True))
+        except Exception:
+            reliable = True
+        pc = doc.page(int(page), tables=False)
+        out = []
+        for ln in pc.lines:
+            text = " ".join(str(ln.text or "").split())
+            if not text:
+                continue
+            if text.count("�") > _UNMAPPED_LINE * len(text):
+                continue
+            out.append((text, tuple(float(v) for v in ln.bbox)))
+        return out, reliable
+    except Exception:
+        return None
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
+
+
+def text_context(lines, clip, reliable: bool = True,
+                 limit: int = TEXT_CONTEXT_CHARS) -> str:
+    """The block put in front of a vision prompt: the text-layer lines whose
+    centre falls inside ``clip`` (points), each with its box on the 0-999
+    grid of the image of that view — or a plain statement that the view has
+    no text layer, so every word must be read off the image."""
+    x0, y0, x1, y1 = (float(v) for v in clip)
+    w, h = max(x1 - x0, 1e-6), max(y1 - y0, 1e-6)
+    rows = []
+    for text, (bx0, by0, bx1, by1) in lines:
+        cx, cy = (bx0 + bx1) / 2.0, (by0 + by1) / 2.0
+        if not (x0 <= cx <= x1 and y0 <= cy <= y1):
+            continue
+        box = [max(0, min(999, round((bx0 - x0) / w * 999))),
+               max(0, min(999, round((by0 - y0) / h * 999))),
+               max(0, min(999, round((bx1 - x0) / w * 999))),
+               max(0, min(999, round((by1 - y0) / h * 999)))]
+        rows.append(f"{box} {text}")
+    if not rows:
+        return ("This view has NO text layer: every word in it has to be read "
+                "from the image itself.")
+    head = ("The PDF's own text layer inside this view (exact strings, each "
+            "with its box on the same 0-999 grid as the image). Where a string "
+            "below covers what you are reading, use it exactly; read from the "
+            "image only what it does not cover (lettering drawn as lines, "
+            "symbols, how things connect), and say which is which.")
+    if not reliable:
+        head += (" WARNING: this page's text layer is partly undecodable, so "
+                 "check each string against the image.")
+    body, used, dropped = [], 0, 0
+    for r in rows:
+        if used + len(r) + 1 > limit:
+            dropped += 1
+            continue
+        body.append(r)
+        used += len(r) + 1
+    tail = f"\n... and {dropped} more line(s) not listed." if dropped else ""
+    return head + "\n" + "\n".join(body) + tail
+
+
+#: Appended to a vision prompt when structured locations are switched on.
+LOCATED_INSTRUCTION = (
+    "After your answer, end with ONE line that starts with LOCATED: followed by "
+    "a JSON list of the things you located, each "
+    '{"what": short label, "text": the exact characters you read or null, '
+    '"box": [x0, y0, x1, y1] on the 0-999 grid, "sure": true or false}. '
+    "Write LOCATED: [] if you located nothing.")
+
+
+def with_locations(prompt: str) -> str:
+    """``prompt`` with the structured LOCATED instruction appended."""
+    return f"{prompt.rstrip()}\n\n{LOCATED_INSTRUCTION}"
+
+
+def split_located(text: str, view) -> Tuple[str, List[Dict[str, Any]]]:
+    """``(answer without the LOCATED line, located items)`` — each item's
+    0-999 box also given as ``page_bbox`` in PDF points on the page, which
+    ``render_region(bbox=...)`` takes directly. Never raises: an answer with
+    no parseable LOCATED line comes back whole with no items."""
+    import json as _json
+    if not text or "LOCATED:" not in text:
+        return text, []
+    at = text.rfind("LOCATED:")
+    head, tail = text[:at].rstrip(), text[at + len("LOCATED:"):]
+    start = tail.find("[")
+    if start < 0:
+        return text, []
+    depth, end = 0, None
+    for i, ch in enumerate(tail[start:], start):
+        if ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                break
+    if end is None:
+        return text, []
+    try:
+        items = _json.loads(tail[start:end])
+    except ValueError:
+        return text, []
+    after = tail[end:].strip()
+    if after:                       # anything written after the list stays
+        head = f"{head}\n{after}" if head else after
+    out = []
+    for it in items if isinstance(items, list) else []:
+        if not isinstance(it, dict):
+            continue
+        row = {k: it.get(k) for k in ("what", "text", "sure") if k in it}
+        box = it.get("box")
+        if isinstance(box, (list, tuple)) and len(box) == 4:
+            try:
+                row["image_box"] = [float(v) for v in box]
+                row["page_bbox"] = [round(v, 1) for v in
+                                    image_box_to_page(view, box)]
+            except (TypeError, ValueError):
+                pass
+        out.append(row)
+    return head, out
+
+
 def image_box_to_page(view: Sequence[float], image_box: Sequence[float]
                       ) -> Tuple[float, float, float, float]:
     """A 0-999 box on the image of ``view`` as PDF points on the page."""
@@ -351,4 +509,6 @@ __all__ = ["BUDGET_ENV", "DETAIL_ENV", "CHART_BUDGET_ENV", "POLICY_ENV",
            "DEFAULT_CHART_BUDGET", "LEGIBLE_TEXT_PX", "TARGET_TEXT_PX",
            "chart_reading", "GRID_INSTRUCTION", "ZOOM_HINT", "engine_profile",
            "budget_name", "budget", "detail", "image_media_type",
-           "render_view", "view_payload", "with_grid", "image_box_to_page"]
+           "render_view", "view_payload", "with_grid", "image_box_to_page",
+           "TEXT_CONTEXT_CHARS", "page_lines", "text_context",
+           "LOCATED_INSTRUCTION", "with_locations", "split_located"]

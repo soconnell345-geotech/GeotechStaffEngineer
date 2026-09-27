@@ -292,6 +292,16 @@ dispatch_vision_tool = dispatch_extended_tool
 # Source resolution: attachment key OR real filesystem path
 # ---------------------------------------------------------------------------
 
+def _pdf_page(page) -> Dict[str, int]:
+    """``{"pdf_page": page + 1}`` — the number a PDF viewer shows for a
+    0-based page index, so an answer can cite it (see
+    :func:`funhouse_agent.document_tools.with_viewer_pages`)."""
+    try:
+        return {"pdf_page": int(page) + 1}
+    except (TypeError, ValueError):
+        return {}
+
+
 def _resolve_attachment_or_path(key, attachments):
     """Return ``(bytes, source_type)`` for an attachment key OR a real file path.
 
@@ -789,16 +799,126 @@ def _dispatch_render_region(arguments, engine, attachments):
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
+    lines = _lines_for_context(pdf_bytes, page)
+    if arguments.get("_inline"):
+        return json.dumps(_inline_result(image_bytes, info, page, engine,
+                                         lines, bbox=bbox))
     try:
-        result = engine.analyze_image(image_bytes, vision_view.with_grid(prompt))
-        return json.dumps({"page": page, "bbox": bbox, "analysis": result,
-                           **vision_view.view_payload(info, engine)})
+        result = engine.analyze_image(
+            image_bytes, _vision_prompt(prompt, info["clip"], lines))
+        out = {"page": page, **_pdf_page(page), "bbox": bbox,
+               "analysis": result, **vision_view.view_payload(info, engine)}
+        _split_located(out, info["clip"])
+        if "located" in out:
+            _fit_region(out)
+        return json.dumps(out)
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({
             "error": f"Vision not available on this engine: {e}"
         })
     except Exception as e:
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
+
+
+def _lines_for_context(pdf_bytes, page):
+    """The page's text-layer lines, when vision calls are to be told them
+    (``GEOTECH_VISION_TEXT_CONTEXT``); ``None`` otherwise."""
+    from funhouse_agent import review_flags, vision_view
+    if not review_flags.vision_text_context():
+        return None
+    return vision_view.page_lines(pdf_bytes, page)
+
+
+def _vision_prompt(prompt, clip, lines) -> str:
+    """The prompt one page/region vision call gets: the text layer inside its
+    view (when switched on), the agent's own prompt, the location grid, and
+    the LOCATED instruction (when switched on)."""
+    from funhouse_agent import review_flags, vision_view
+    parts = []
+    if lines is not None:
+        parts.append(vision_view.text_context(lines[0], clip, lines[1]))
+    parts.append(prompt)
+    text = vision_view.with_grid("\n\n".join(parts))
+    if review_flags.vision_structured():
+        text = vision_view.with_locations(text)
+    return text
+
+
+def _split_located(out, clip) -> None:
+    """Move a structured LOCATED list out of ``out['analysis']`` into
+    ``out['located']`` with page boxes (``GEOTECH_VISION_STRUCTURED``)."""
+    from funhouse_agent import review_flags, vision_view
+    if not review_flags.vision_structured() or not out.get("analysis"):
+        return
+    try:
+        text, located = vision_view.split_located(str(out["analysis"]), clip)
+    except Exception:  # noqa: BLE001 - an unparsed answer is still an answer
+        return
+    out["analysis"] = text
+    if located:
+        out["located"] = located
+        out["located_note"] = ("each located item's page_bbox is PDF points "
+                               "on this page: pass it as render_region's bbox "
+                               "to zoom, or as an annotate_document box")
+
+
+#: A render_region result stays under this (the general tool cap is 8,000 —
+#: ``deep.tools.DEFAULT_MAX_RESULT_CHARS``), so it is never cut mid-JSON.
+REGION_RESULT_CHARS = 7800
+
+
+def _fit_located(out, limit: int) -> None:
+    """Halve the longest ``located`` list (top level or a tile's) until the
+    result fits ``limit``; the analysis text is shortened after, by the
+    caller. Each list that was cut says so."""
+    while len(json.dumps(out)) > limit:
+        holders = [d for d in [out, *(out.get("tiles") or [])]
+                   if isinstance(d, dict) and d.get("located")]
+        if not holders:
+            return
+        h = max(holders, key=lambda d: len(json.dumps(d["located"])))
+        n = len(h["located"])
+        if n <= 1:
+            h.pop("located", None)
+            h.pop("located_note", None)
+        else:
+            h["located"] = h["located"][: n // 2]
+        h["located_cut"] = "some located items left out to fit; zoom closer"
+
+
+def _fit_region(out) -> None:
+    """Keep a render_region result under :data:`REGION_RESULT_CHARS`."""
+    _fit_located(out, REGION_RESULT_CHARS)
+    while len(json.dumps(out)) > REGION_RESULT_CHARS and \
+            len(out.get("analysis") or "") > 200:
+        a = out["analysis"]
+        out["analysis"] = a[: int(len(a) * 0.8)] + " …[shortened]"
+
+
+#: What the model is told when the image itself is shown to it (inline mode).
+INLINE_NOTE = (
+    "The image of this view is shown to you with your next step: look at it "
+    "yourself. To zoom, call render_region with a bbox in PDF points inside "
+    "this view, or with this view + a 0-999 image_box on the image.")
+
+
+def _inline_result(image_bytes, info, page, engine, lines, bbox=None):
+    """The result a page/region tool returns when the main model looks itself
+    (``GEOTECH_VISION_INLINE``): no one-shot vision call — the image is
+    stored and shown to the model at its next call
+    (:mod:`funhouse_agent.deep.inline_images`)."""
+    from funhouse_agent import inline_store, vision_view
+    image_id = inline_store.put(image_bytes, {
+        "page": page, "pdf_page": _pdf_page(page).get("pdf_page"),
+        "view": [round(float(v), 1) for v in info["clip"]]})
+    out = {"page": page, **_pdf_page(page), "image_id": image_id,
+           **({"bbox": bbox} if bbox is not None else {}),
+           **vision_view.view_payload(info, engine), "note": INLINE_NOTE}
+    out.pop("zoom_hint", None)
+    if lines is not None:
+        out["text_layer"] = vision_view.text_context(lines[0], info["clip"],
+                                                     lines[1])
+    return out
 
 
 def render_region_to_file(path, filepath=None, content=None, page=0,
@@ -863,20 +983,29 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
+    lines = _lines_for_context(pdf_bytes, page)
+    if arguments.get("_inline"):
+        # The main model looks at the whole page itself and zooms with
+        # render_region where the lettering is small: no tiles.
+        return json.dumps(_inline_result(image_bytes, info, page, engine,
+                                         lines))
     try:
-        result = engine.analyze_image(image_bytes, vision_view.with_grid(prompt))
+        result = engine.analyze_image(
+            image_bytes, _vision_prompt(prompt, info["clip"], lines))
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({
             "error": f"Vision not available on this engine: {e}"
         })
     except Exception as e:
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
-    out = {"page": page, "analysis": result,
+    out = {"page": page, **_pdf_page(page), "analysis": result,
            **vision_view.view_payload(info, engine)}
+    _split_located(out, info["clip"])
 
     n = _tile_count(tiles, info)
     if n > 1:
-        out["tiles"] = _read_tiles(pdf_bytes, page, info, n, prompt, engine)
+        out["tiles"] = _read_tiles(pdf_bytes, page, info, n, prompt, engine,
+                                   lines)
         out["tiling"] = (
             f"the page's small lettering was too small in the whole-page "
             f"image, so it was ALSO read in {n}x{n} overlapping tiles (each "
@@ -884,6 +1013,9 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
             f"over the overview for small lettering; each tile's view zooms "
             f"further with render_region.")
         out.pop("legibility", None)
+    # Located lists first (they can outgrow the text), then the text.
+    _fit_located(out, TILED_RESULT_CHARS)
+    if n > 1:
         _fit_tiles(out)
     return json.dumps(out)
 
@@ -908,7 +1040,7 @@ def _tile_count(tiles, info) -> int:
         return 1
 
 
-def _read_tiles(pdf_bytes, page, info, n, prompt, engine):
+def _read_tiles(pdf_bytes, page, info, n, prompt, engine, lines=None):
     """Read the page in ``n`` x ``n`` overlapping tiles, in parallel."""
     from concurrent.futures import ThreadPoolExecutor
     from funhouse_agent import vision_view
@@ -925,20 +1057,30 @@ def _read_tiles(pdf_bytes, page, info, n, prompt, engine):
                      f"of {n} of the sheet (tiles overlap slightly). Report "
                      f"only what is IN this tile, briefly.")
             text = engine.analyze_image(
-                img, vision_view.with_grid(f"{prompt}\n\n{where}"))
-            return {"tile": f"r{r + 1}c{c + 1}",
-                    "view": [round(v, 1) for v in tinfo["clip"]],
-                    "view_px": [tinfo["width_px"], tinfo["height_px"]],
-                    **({"text_px": tinfo["text_px"]}
-                       if tinfo.get("text_px") else {}),
-                    "analysis": text}
+                img, _vision_prompt(f"{prompt}\n\n{where}", tinfo["clip"],
+                                    lines))
+            row = {"tile": f"r{r + 1}c{c + 1}",
+                   "view": [round(v, 1) for v in tinfo["clip"]],
+                   "view_px": [tinfo["width_px"], tinfo["height_px"]],
+                   **({"text_px": tinfo["text_px"]}
+                      if tinfo.get("text_px") else {}),
+                   "analysis": text}
+            _split_located(row, tinfo["clip"])
+            row.pop("located_note", None)
+            return row
         except Exception as exc:                  # one tile, not the page
             return {"tile": f"r{r + 1}c{c + 1}",
                     "view": [round(v, 1) for v in boxes[k]],
                     "error": f"{type(exc).__name__}: {exc}"}
 
+    # Each tile's call runs in a copy of the caller's context, so the run's
+    # callbacks (the activity log, the turn's token count) see it; a plain
+    # thread pool starts every worker with an empty context.
+    import contextvars
     with ThreadPoolExecutor(max_workers=TILE_WORKERS) as ex:
-        return list(ex.map(one, range(n * n)))
+        futs = [ex.submit(contextvars.copy_context().run, one, k)
+                for k in range(n * n)]
+        return [f.result() for f in futs]
 
 
 def _fit_tiles(out) -> None:

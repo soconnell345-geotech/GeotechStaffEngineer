@@ -134,14 +134,31 @@ def stage_uploads(attachments: dict, temp_dir: str,
     return out
 
 
-def attachment_note(atts: List[Attachment]) -> str:
+def attachment_note(atts: List[Attachment], review: bool = False) -> str:
     """Build the system-style note telling the agent about staged attachments —
     the attachment key (for analyze_image / analyze_pdf_page / read_pdf_text)
     AND the on-disk path (for pdf_import / dxf_import / drawing_ir tools that
-    need a real file path). Returns ``""`` for an empty list."""
+    need a real file path). Returns ``""`` for an empty list.
+
+    ``review=True`` is the Document Review page's wording when that page runs
+    its own lean agent (``GEOTECH_REVIEW_AGENT=lean``): it names only tools
+    that agent has. With the switch off the note is the one it always was, so
+    the legacy page is unchanged."""
     atts = list(atts or [])
     if not atts:
         return ""
+    try:
+        from funhouse_agent import review_flags
+        lean = review and review_flags.lean_agent()
+    except Exception:
+        lean = False
+    if lean:
+        lines = ["[System note] The user attached files, available to you as:"]
+        for a in atts:
+            lines.append(f"- '{a.key}': open it with open_document(source="
+                         f"'{a.key}'); the page and region tools take the same "
+                         f"name (also on disk at '{a.path}').")
+        return "\n".join(lines)
     lines = ["[System note] The user attached files, available to you as:"]
     for a in atts:
         lines.append(
@@ -685,6 +702,12 @@ def stream_turn(agent, messages: list, thread_id: str,
     work_messages = list(messages)
     continuations = 0
     config = {"configurable": {"thread_id": thread_id}}
+    # An agent that ends long requests itself (the lean review agent's
+    # model-call budget) says how many graph steps that needs; the host's cap
+    # is raised to it so the budget, not a GraphRecursionError, ends the turn.
+    floor = getattr(agent, "geotech_min_recursion_limit", None)
+    if floor:
+        recursion_limit = max(int(recursion_limit or 0), int(floor))
     if recursion_limit:                     # A5(b): primary-agent step cap
         config["recursion_limit"] = int(recursion_limit)
     try:
