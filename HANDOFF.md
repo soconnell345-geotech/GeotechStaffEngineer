@@ -1,12 +1,57 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-09-26.** This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-09-27.** This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-09-26, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-09-27, supersedes everything below)
+
+### 5.30.0 RELEASED 2026-09-27 (tag `v5.30.0`) — THE DOCUMENT REVIEW EVAL SUITE + SWITCHED HARNESS CHANGES
+
+**Released on the owner's word ("push and release as 5.30"); no dependency
+change** (pin stays `planlens>=0.10`). RELEASE_GATE_530
+
+**Why.** The owner asked for a big-picture review of the Document Review
+harness because sessions kept overfitting it to single examples. The review
+(plan `C:/Users/socon/.claude/plans/we-ve-been-working-on-synchronous-lemon.md`)
+found no evaluation set, vision by one-shot side calls the reasoning model
+never sees, a page agent that was the geotech builder minus modules (29
+tools, a coding-agent prompt), ~17 model calls per turn before a
+GraphRecursionError, and citations one page early.
+
+**What shipped.** `funhouse_agent/review_eval/` — 29 tasks over 16 public
+documents (ten Mecklenburg stroke-lettered standard details + the ten bound as
+a set, three UFCs incl. a scanned one, two calc packages, two small planlens
+fixtures), deterministic checks, and the notebook cell `score_review_suite`.
+Behaviour changes are SWITCHES, all OFF by default
+(`funhouse_agent/review_flags.py`, arms `baseline` / `lean` / `grounded` /
+`inline` / `sweep`): the lean review agent, text-layer context and structured
+locations for vision calls, the main model looking at images itself, and
+`sweep_pages`. Unswitched: `pdf_page` in results, the citation rule, the
+`[G/Q]CE` example removed, tile reads in the run's context. An independent
+review of the build found 9 bugs; all fixed and regression-tested.
+
+**Owner's next steps (Funhouse, once the mirror has 5.30.0).** Full cells in
+`module_work/REVIEW_HARNESS.md`:
+1. Upload the public PDFs (`collect_public_docs()` on a checkout) to a
+   cluster folder.
+2. `probe(PrompterChatModel(prompter=fh_prompter, model="funhouse-gpt-high"))`
+   from `funhouse_agent.deep.inline_images` — `ok: True` before trusting the
+   `inline` arm.
+3. A small `score_review_suite(... arms=("baseline", "lean"), ids=[...])`
+   run, then the full arms. Record RESULTS.md in `REVIEW_HARNESS.md`'s ledger.
+4. Tester feedback becomes a private TASK (JSON on SharePoint), not a prompt
+   rule. A switch goes on by default only when the suite says so.
+
+**Follow-ups noted by a peer session (not in this release):** the deep
+reviewer prompt still says "You have 4 tools"/"<tool_call> tags"
+(`reviewer.py`); structural references called "still being onboarded"
+(`review_checklists.py:662`, `.claude/agents/structural-calc-specialist.md`);
+dev-team lines in three specialist preambles; the geotech prompt tells the
+agent to delegate to `calc` even when that sub-agent is off;
+`.claude/agents/seismic-reviewer.md` lists deleted hvsrpy/swprocess.
 
 ### 5.29.1 RELEASED 2026-09-26 (tag `v5.29.1`) with planlens 0.10.1 (tag `v0.10.1`) — FIND_LIKE KEPT OPTIONAL
 

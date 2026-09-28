@@ -71,8 +71,34 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-09-26) — 5.29.1 RELEASED with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
+## CURRENT WORKING STATE (2026-09-27) — 5.30.0 RELEASED (planlens pin unchanged, >=0.10): the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
 
+- **5.30.0 RELEASED 2026-09-27 (tag `v5.30.0`). No dependency change** (pin
+  stays `planlens>=0.10`; planlens 0.10.1 from PyPI is what it was gated
+  on). Out of the owner's ask for a big-picture review of the Document
+  Review harness ("the Claude Code sessions have been overfitting for more
+  narrow use cases"). The review found: no evaluation set (every release
+  since 5.27 answered one tester transcript); the reasoning model never
+  sees a page (one-shot vision side calls); the page's agent was the geotech
+  builder minus modules (29 tools, ~58 % of the tool text generic deepagents
+  tools, a coding-agent prompt, a general-purpose helper without the review
+  rules); ~17 model calls per turn before a GraphRecursionError; citations
+  one page early (0-based pages). **Shipped:** `funhouse_agent/review_eval/`
+  — 29 review tasks over 16 public documents with deterministic checks and
+  the `score_review_suite` notebook cell (arms, resume, durable mirror,
+  RESULTS.md); **switches, all OFF by default**
+  (`funhouse_agent/review_flags.py`): `GEOTECH_REVIEW_AGENT=lean`
+  (`deep/review_agent.py`), `GEOTECH_VISION_TEXT_CONTEXT`,
+  `GEOTECH_VISION_STRUCTURED`, `GEOTECH_VISION_INLINE`
+  (`deep/inline_images.py`, with a live `probe`), `GEOTECH_REVIEW_SWEEP`
+  (`deep/sweep.py`); unswitched fixes: `pdf_page` (1-based) in results, the
+  citation rule, the `[G/Q]CE` example gone, tile reads in the run's
+  context. **Rule going forward:** tester feedback becomes a suite TASK, not
+  a prompt rule; a switch goes on by default only when the suite says so.
+  Plan of record and cells: `module_work/REVIEW_HARNESS.md`. Pickup:
+  `HANDOFF.md` §0a-current. planlens branch
+  `fix/advice-names-no-missing-tools` (one wording fix) is committed, not
+  released.
 - **5.29.1 RELEASED 2026-09-26 (tag `v5.29.1`) with planlens 0.10.1 (tag
   `v0.10.1`). No dependency change** (pin stays `planlens>=0.10`). The
   owner's correction the day after 5.29.0: "This seems kinda niche. The
