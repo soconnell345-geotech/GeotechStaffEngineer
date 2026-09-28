@@ -11,7 +11,17 @@ detailed Phase-E history; this file supersedes it.
 ### 5.30.0 RELEASED 2026-09-27 (tag `v5.30.0`) — THE DOCUMENT REVIEW EVAL SUITE + SWITCHED HARNESS CHANGES
 
 **Released on the owner's word ("push and release as 5.30"); no dependency
-change** (pin stays `planlens>=0.10`). RELEASE_GATE_530
+change** (pin stays `planlens>=0.10`). **Release gate, in a CLEAN
+worktree of exactly the release content** (`git worktree add` at 8cf0af0,
+`PYTHONPATH` pointed at it, planlens at 0.10.1 = PyPI), foreground chunks on
+pytest's exit code: `funhouse_agent/deep` + `review_eval` + webapp +
+`geo_project` 892 passed / 1 skipped; the rest of `funhouse_agent` 1,458 / 6;
+`report_ingest` 1,296 / 0. Only `funhouse_agent` and `webapp` changed since
+5.29.1, and the rest of the gate does not import them (5.29.1's 13,332 / 36
+stands for it). The new tests also pass on the drift stack (deepagents
+0.7.13 / langchain 1.3.18). Wheel: `review_eval`, `review_flags`,
+`review_agent`, `sweep`, `inline_images` present; no tests; requires
+`planlens>=0.10`.
 
 **Why.** The owner asked for a big-picture review of the Document Review
 harness because sessions kept overfitting it to single examples. The review
