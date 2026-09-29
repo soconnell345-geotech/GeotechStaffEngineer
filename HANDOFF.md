@@ -11,7 +11,16 @@ detailed Phase-E history; this file supersedes it.
 ### 5.31.0 RELEASED 2026-09-29 (tag `v5.31.0`) — DOCUMENT REVIEW M1, SWITCHED
 
 **Released on the owner's word ("Yeah you can release"); no dependency
-change** (pin stays `planlens>=0.10`). RELEASE_GATE_531
+change** (pin stays `planlens>=0.10`). **Release gate, in a CLEAN
+worktree of the release commit (cc4bb67; planlens at 0.10.1 = PyPI),
+exit codes:** deep + suite + digest + webapp + `geo_project` 1,100 passed /
+4 skipped; the rest of `funhouse_agent` 1,458 / 6; `report_ingest` 1,297
+(two halves). Wheel: `review_findings`, `review_digest`, `findings_tools`,
+`geometry_tools`, `digest_tools` present, no tests, requires
+`planlens>=0.10`. **Lesson:** never hand pytest a file list built from
+`ls tests/*.py`: it collects `live_reviewer_test.py`, which pytest's own
+pattern skips, and that script makes a live Anthropic call at import (it was
+refused for zero credit; nothing charged). Split by directory or `-k` instead.
 
 **Plan of record: `module_work/REVIEW_ARCHITECTURE.md`** (three job shapes;
 milestones M0-M4; decisions and open questions). 5.31.0 is its M1: what does
