@@ -20,6 +20,12 @@ own ``core.stream_turn``. So what is scored is what a tester would have got.
 An arm is only a set of switches (:mod:`funhouse_agent.review_flags`), set for
 the task and unset afterwards.
 
+``orientation=True`` sends the page's automatic orientation turn first, with
+the text the app sends (``webapp.profiles.orientation_request_for``, under the
+arm's switches). Run the ``overview`` arm (``GEOTECH_REVIEW_OVERVIEW``), and
+any arm that changes only the orientation, with ``orientation=True``: without
+it the arm is the same as its base arm.
+
 Every run writes ``runs/<arm>/<task>/run.json`` (the answer, the checks, tool
 calls, model calls, tokens, seconds) beside the conversation's own
 ``activity.jsonl`` and any file the agent produced, then rewrites
@@ -133,7 +139,7 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
     failure is recorded on the result (and retried on the next run)."""
     from webapp import core
     from webapp.activity_log import ActivityLogger
-    from webapp.profiles import DOCUMENT_REVIEW
+    from webapp.profiles import DOCUMENT_REVIEW, orientation_request_for
 
     run_dir = os.path.abspath(run_dir)
     files_dir = os.path.join(run_dir, "files")
@@ -168,8 +174,9 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
             staged = [a.path for a in atts]
             agent = build_page_agent(model, attachments, files_dir, artifacts)
             note = core.attachment_note(atts, review=True)
-            turns = ([DOCUMENT_REVIEW.orientation_request.format(
-                names=", ".join(a.key for a in atts))] if orientation else [])
+            # The page's own orientation text (the arm's switches are set).
+            turns = ([orientation_request_for(DOCUMENT_REVIEW, atts)]
+                     if orientation else [])
             turns += [task.question] + list(task.followups)
             history: List[Dict[str, str]] = []
             thread = uuid4().hex
@@ -413,6 +420,8 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
     ``ids`` / ``categories`` / ``split`` / ``max_tasks`` narrow the run;
     ``extra_tasks`` adds private task files (a blind set). ``dry_run`` checks
     that every document resolves and lists the runs without calling a model.
+    ``orientation=True`` sends the page's orientation turn before each
+    question — the ``overview`` arm only differs there, so run it with this.
     """
     arm_list: List[tuple] = []
     for a in arms:

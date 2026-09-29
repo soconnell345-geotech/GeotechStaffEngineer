@@ -387,10 +387,21 @@ def collect_turn_artifacts(save_new: Iterable[str],
     return [p for p in out if not _superseded_by_plotly(p, stems)]
 
 
+#: Cache folders tools keep in the working folder: their files are working
+#: data, not deliverables, so they never become download cards. They still
+#: ride the SharePoint mirror with the rest of the conversation folder.
+#: ``digest`` = the Document Review digest (funhouse_agent.review_digest).
+CACHE_DIRS = ("digest",)
+
+
 def snapshot_dir(temp_dir: str) -> set:
-    """Return the set of file paths currently under ``temp_dir`` (recursive)."""
+    """Return the set of file paths currently under ``temp_dir`` (recursive),
+    leaving out the top-level :data:`CACHE_DIRS`."""
     found = set()
-    for root, _dirs, names in os.walk(temp_dir):
+    top = os.path.abspath(temp_dir)
+    for root, dirs, names in os.walk(temp_dir):
+        if os.path.abspath(root) == top:
+            dirs[:] = [d for d in dirs if d not in CACHE_DIRS]
         for n in names:
             found.add(os.path.join(root, n))
     return found
@@ -505,6 +516,12 @@ def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
             p for p in (kw.get("extra_system_prompt"), _em_prompt) if p)
     _add_feedback_tool(kw, temp_dir)
     _register_reference_fetcher()
+    if kw.get("review_page"):
+        # The Document Review page's lean agent binds its findings and
+        # digests to THIS conversation's folder when it is built; the
+        # process-wide working folder can be re-pointed by another tab.
+        # (The legacy build accepts and ignores it.)
+        kw.setdefault("working_dir", temp_dir)
     return build_deep_agent(
         model,
         attachments=attachments,

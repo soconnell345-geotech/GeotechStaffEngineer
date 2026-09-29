@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import re
 from typing import Any, List, Optional
 
@@ -26,9 +25,10 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import HumanMessage, ToolMessage
 
 from funhouse_agent import inline_store
-
-#: Newest images shown at each call.
-DEFAULT_KEEP = 2
+# Newest images shown at each call, and its setting: defined beside the
+# store so the tools' notes can say how long an image stays in view.
+from funhouse_agent.inline_store import (  # noqa: F401 - re-exported
+    DEFAULT_KEEP, KEEP_ENV, keep_from_env)
 
 _ID = re.compile(r'"image_id"\s*:\s*"(img_[0-9a-f]+)"')
 
@@ -75,9 +75,14 @@ def image_message(ids: List[str], detail: Optional[str] = None) -> HumanMessage:
         if got is None:
             continue
         data, meta = got
-        blocks.append({"type": "text", "text": (
-            f"Image {image_id}: PDF page {meta.get('pdf_page')} (tool page "
-            f"{meta.get('page')}), view {json.dumps(meta.get('view'))}")})
+        if meta.get("label"):
+            # an image file (a contact sheet), not a view of a page
+            text = f"Image {image_id}: {meta['label']}"
+        else:
+            text = (f"Image {image_id}: PDF page {meta.get('pdf_page')} (tool "
+                    f"page {meta.get('page')}), view "
+                    f"{json.dumps(meta.get('view'))}")
+        blocks.append({"type": "text", "text": text})
         url = (f"data:{vision_view.image_media_type(data)};base64,"
                f"{base64.b64encode(data).decode()}")
         image_url = {"url": url}
@@ -85,19 +90,6 @@ def image_message(ids: List[str], detail: Optional[str] = None) -> HumanMessage:
             image_url["detail"] = detail
         blocks.append({"type": "image_url", "image_url": image_url})
     return HumanMessage(content=blocks)
-
-
-#: How many of the newest images each call carries. Each is a full-budget
-#: render, and a request body has a size limit on some gateways, so this is
-#: the knob to turn down (to 1) if a call is refused as too large.
-KEEP_ENV = "GEOTECH_VISION_INLINE_KEEP"
-
-
-def keep_from_env() -> int:
-    try:
-        return max(1, int(os.environ.get(KEEP_ENV, DEFAULT_KEEP)))
-    except (TypeError, ValueError):
-        return DEFAULT_KEEP
 
 
 class InlineImageMiddleware(AgentMiddleware):

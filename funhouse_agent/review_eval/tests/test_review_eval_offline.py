@@ -354,6 +354,200 @@ def test_checks_reject_the_false_passes_the_review_found():
                    for c in bio.checks)
 
 
+# ---------------------------------------------------------------------------
+# Review of the suite's checks, 2026-09-28: wrong answers that passed and
+# right answers that failed
+# ---------------------------------------------------------------------------
+
+def _passes(task_id, answer):
+    task = next(t for t in OPEN_TASKS if t.id == task_id)
+    return all(C.run_check(c, answer)["passed"] for c in task.all_checks())
+
+
+_APPENDICES_RIGHT = [
+    "The manual has 14 appendices:\n- **Appendix A** - References\n"
+    "- **Appendix B** - Airfield/Heliport Design Analysis Outline\n"
+    "- **Appendix C** - Recommended Contract Drawing Outline\n"
+    "- **Appendix D** - Waiver Processing Procedures\n"
+    "- **Appendix E** - Flexural Strength and Modulus of Bituminous Concrete\n"
+    "- **Appendix F** - Curves for Effective Strain Repetitions\n"
+    "- **Appendix G** - Preparation of Bituminous Cylindrical Specimens\n"
+    "- **Appendix H** - Dynamic Modulus of Bituminous Mixtures\n"
+    "- **Appendix I** - Estimating the Modulus of Elasticity\n"
+    "- **Appendix J** - Modulus of Unbound Granular Base\n"
+    "- **Appendix K** - Fatigue of Stabilized Soils\n"
+    "- **Appendix L** - Resilient Modulus of Subgrade Material\n"
+    "- **Appendix M** - Fatigue Life of Bituminous Concrete\n"
+    "- **Appendix N** - Resilient Modulus of Granular Base Material",
+    "| Appendix | Covers | PDF page |\n|---|---|---|\n| A | References | 431 |"
+    "\n| B | Design analysis outline | 439 |\n| C | Contract drawing outline "
+    "| 446 |\n| D | Waivers | 452 |\n| E | Flexural strength | 457 |\n| F | "
+    "Effective strain repetitions | 460 |\n| G | Bituminous cylindrical "
+    "specimens | 482 |\n| H | Dynamic modulus | 484 |\n| I | Estimating the "
+    "modulus of elasticity | 487 |\n| J | Unbound granular base | 491 |\n| K "
+    "| Stabilized soils | 495 |\n| L | Resilient modulus of subgrade "
+    "material | 500 |\n| M | Fatigue life | 522 |\n| N | Resilient modulus of "
+    "granular base material | 528 |",
+    "Appendices: A. References; B. Design analysis outline; C. Contract "
+    "drawings; D. Waivers; E. Flexural strength; F. Strain repetitions; G. "
+    "Cylindrical specimens; H. Dynamic modulus; I. Estimating the modulus; J. "
+    "Unbound base; K. Stabilized soils; L. Subgrade material; M. Fatigue "
+    "life; N. Resilient modulus of granular base.",
+    "References (Appendix A), design analysis outline (Appendix B), contract "
+    "drawings (Appendix C), waivers (Appendix D), flexural strength (Appendix "
+    "E), strain repetitions (Appendix F), cylindrical specimens (Appendix G), "
+    "dynamic modulus (Appendix H), estimating the modulus (Appendix I), "
+    "unbound materials (Appendix J), stabilized soils (Appendix K), subgrade "
+    "material (Appendix L), fatigue life (Appendix M), resilient modulus of "
+    "granular base (Appendix N).",
+]
+_APPENDICES_WRONG = [
+    # the letters matched to the wrong topics (shifted by one)
+    "Appendix A - Design analysis outline\nAppendix B - Contract drawing "
+    "outline\nAppendix C - Waivers\nAppendix D - Flexural strength\nAppendix "
+    "E - Strain repetitions\nAppendix F - Cylindrical specimens\nAppendix G - "
+    "Dynamic modulus\nAppendix H - Estimating the modulus\nAppendix I - "
+    "Unbound granular base\nAppendix J - Stabilized soils\nAppendix K - "
+    "Subgrade material\nAppendix L - Fatigue life\nAppendix M - Resilient "
+    "modulus of granular base\nAppendix N - References",
+    # "I could not find the appendices", then the topics without letters
+    "I could not find the list of appendices in the text I read. From the "
+    "chapter references they appear to cover references, a design analysis "
+    "outline, contract drawings, waivers, flexural strength, strain "
+    "repetitions, cylindrical specimens, dynamic modulus, estimating the "
+    "modulus, unbound materials, stabilized soils, subgrade material, fatigue "
+    "life and the resilient modulus of granular base.",
+    # half of them, the rest as bare topics
+    "Appendix A - References; Appendix B - Design analysis outline; Appendix "
+    "C - Contract drawings; Appendix D - Waivers; Appendix E - Flexural "
+    "strength; Appendix F - Strain repetitions; Appendix G - Cylindrical "
+    "specimens. I did not get to H to N, which cover dynamic modulus, "
+    "estimating the modulus, unbound bases, stabilized soils, subgrade, "
+    "fatigue life and granular base.",
+]
+_CH12_RIGHT = [
+    "Chapter 12 has eight tables:\n- Table 12-1: Example of Mixed Traffic "
+    "Design\n- Table 12-2: Stress-Strength Ratios and Allowable Coverages\n- "
+    "Table 12-3: Fatigue Damage Summary Sheet for Mixed Traffic\n- Table "
+    "12-4: Pass-to-Coverage Ratios\n- Table 12-5: Design Example for Primary "
+    "(Channelized) Traffic Areas\n- Table 12-6: Design Example for Secondary "
+    "(Unchannelized) Traffic Areas\n- Table 12-7: Recommended Spacing of "
+    "Transverse Contraction Joints\n- Table 12-8: Dowel Size and Spacing",
+    "| Table | Title | Page |\n|---|---|---|\n| 12-1 | Example of Mixed "
+    "Traffic Design | PDF p. 196 (printed 12-6) |\n| 12-2 | Stress-Strength "
+    "Ratios | 198 |\n| 12-3 | Fatigue Damage Summary Sheet | 200 |\n| 12-4 | "
+    "Pass-to-Coverage Ratios | 201 |\n| 12-5 | Primary (Channelized) Traffic "
+    "| 205 |\n| 12-6 | Secondary (Unchannelized) Traffic | 207 |\n| 12-7 | "
+    "Spacing of Transverse Contraction Joints | 211 |\n| 12-8 | Dowel Size "
+    "and Spacing | 212 |",
+]
+_CH12_WRONG = [
+    # 4 of the 8, the other four as bare topics
+    "Chapter 12 tables: Table 12-1 Example of Mixed Traffic Design; Table "
+    "12-2 Stress-Strength Ratios; Table 12-3 Fatigue Damage Summary Sheet; "
+    "Table 12-4 Pass-to-Coverage Ratios. The chapter also discusses "
+    "channelized and unchannelized traffic areas, transverse contraction "
+    "joint spacing and dowels.",
+    # every number with the wrong title
+    "Table 12-1 Stress-Strength Ratios; Table 12-2 Fatigue Damage Summary; "
+    "Table 12-3 Pass-to-Coverage; Table 12-4 Channelized traffic example; "
+    "Table 12-5 Unchannelized traffic example; Table 12-6 Joint spacing; "
+    "Table 12-7 Dowels; Table 12-8 Mixed traffic design.",
+    "I could not find the table captions for Chapter 12. It covers mixed "
+    "traffic design, stress-strength ratios, a fatigue damage summary, "
+    "pass-to-coverage ratios, channelized and unchannelized traffic, joint "
+    "spacing and dowels.",
+]
+_ASCE7_RIGHT = [
+    "ASCE 7 Chapters 1, 2, 6, 7, 11, 12, 13, 15 and 26",
+    "Chapter 3 modifies ASCE 7-22 Chapter 1 (general, UFC 3-1), Chapter 2 "
+    "(load combinations, 3-2), Chapter 6 (tsunami loads, 3-3), Chapter 7 "
+    "(snow loads, 3-4), Chapter 11 (seismic design criteria, 3-5), Chapter "
+    "12 (seismic design requirements for building structures, 3-6), Chapter "
+    "13 (nonstructural components, 3-7), Chapter 15 (nonbuilding structures, "
+    "3-8) and Chapter 26 (wind loads, 3-9).",
+    "| ASCE 7 chapter | Subject | UFC section |\n|---|---|---|\n| 1 | General "
+    "| 3-1 |\n| 2 | Combinations of loads | 3-2 |\n| 6 | Tsunami loads | 3-3 "
+    "|\n| 7 | Snow loads | 3-4 |\n| 11 | Seismic design criteria | 3-5 |\n| "
+    "12 | Building structures | 3-6 |\n| 13 | Nonstructural components | 3-7 "
+    "|\n| 15 | Nonbuilding structures | 3-8 |\n| 26 | Wind loads | 3-9 |",
+]
+_ASCE7_WRONG = [
+    "I could not find which ASCE 7 chapters Chapter 3 modifies; it covers "
+    "general requirements, load combinations, tsunami, snow, seismic and "
+    "wind loads.",
+    # two chapters swapped with each other's subject
+    "Chapter 1 - General; Chapter 2 - Load combinations; Chapter 6 - Snow "
+    "loads; Chapter 7 - Tsunami loads; Chapter 11 - Seismic design criteria; "
+    "Chapter 12 - Building structures; Chapter 13 - Nonstructural "
+    "components; Chapter 15 - Nonbuilding structures; Chapter 26 - Wind "
+    "loads.",
+    "It modifies ASCE 7 Chapters 1, 2, 7 and 26.",
+]
+_TRAP_RIGHT = [
+    "L=10'-0\" MIN., W=5'-0\" MIN., X=7'-0\" MIN.; also 1.5' MIN. and 21\" "
+    "MIN.",
+    "L = 10' minimum, W = 5' minimum, X = 7' minimum, 1.5' minimum, 21 in. "
+    "minimum",
+]
+_TRAP_WRONG = [
+    "L=10' MIN., W=5' MAX., X=7' MIN., 1.5' MIN., 21\" MIN.",
+    "L=10' MIN., W=5' (as drawn), X=7' MIN., 1.5' MIN., 21\" MIN.",
+    "W=5' (as drawn), X=7' MIN., L=10' MIN.; 1.5' MIN., 21\" MIN.",
+    "L=10'-6\" MIN., W=5' MIN., X=7' MIN., 1.5' MIN., 21\" MIN.",
+]
+
+
+@pytest.mark.parametrize("task_id,right,wrong", [
+    ("ufc260-appendices", _APPENDICES_RIGHT, _APPENDICES_WRONG),
+    ("ufc260-ch12-tables", _CH12_RIGHT, _CH12_WRONG),
+    ("ufc301-asce7-chapters", _ASCE7_RIGHT, _ASCE7_WRONG),
+    ("meck-trap-dimensions", _TRAP_RIGHT, _TRAP_WRONG),
+    ("meck-bioretention-section-dims",
+     ["Section A-A: 10'-0\" MIN. across the top and 4'-0\" MIN. of depth.",
+      "10'-0\" MIN.; 4' MIN."],
+     ["Section A-A: 10'-6\" MIN. and 4'-0\" MAX."]),
+])
+def test_the_checks_take_right_answers_and_refuse_wrong_ones(task_id, right,
+                                                             wrong):
+    task = next(t for t in OPEN_TASKS if t.id == task_id)
+    assert _passes(task_id, task.truth)
+    for answer in right:
+        assert _passes(task_id, answer), answer
+    for answer in wrong:
+        assert not _passes(task_id, answer), answer
+
+
+def test_drawing_notation_is_a_minimum():
+    """Item 8: `10'-0" MIN.` is 10 feet minimum; `10'-6" MIN.` is not."""
+    from funhouse_agent.review_eval.tasks import _min
+    yes = ["10'-0\" MIN.", "10' - 0\" min", "10'-0\" minimum", "10' MIN.",
+           "at least 10'-0\"", "10 ft 0 in minimum"]
+    no = ["10'-6\" MIN.", "110' MIN.", "10'-0\" MAX.", "min 10'-6\""]
+    for text in yes:
+        assert C.term_found(_min("10"), C.normalize(text)), text
+    for text in no:
+        assert not C.term_found(_min("10"), C.normalize(text)), text
+
+
+def test_labelled_set_reads_ids_with_their_titles():
+    items = {"table 1": {"ids": [r"\btable\s*1\b"], "titles": ["soils"]},
+             "table 2": {"ids": [r"\btable\s*2\b"], "titles": ["rock"]}}
+    ok, _ = C.check_labelled_set("Table 1: soils. Table 2: rock.", items)
+    assert ok
+    ok, detail = C.check_labelled_set("Table 1: rock. Table 2: soils.", items)
+    assert not ok and "another item's title" in detail
+    assert C.check_labelled_set("Soils (Table 1); rock (Table 2).", items)[0]
+    # titles optional: an id alone counts, one with the other's title not
+    assert C.check_labelled_set("Tables 1 and 2", items,
+                                require_title=False,
+                                enum_lead=r"\btables?\s*",
+                                enum_tokens={"table 1": "1",
+                                             "table 2": "2"})[0]
+    assert not C.check_labelled_set("Table 1 - rock; table 2 - rock", items,
+                                    require_title=False)[0]
+
+
 def test_dry_run_checks_documents_without_a_model(tmp_path):
     from funhouse_agent.review_eval import score_review_suite
     res = score_review_suite(None, ids=["fixture-"], out_dir=tmp_path,

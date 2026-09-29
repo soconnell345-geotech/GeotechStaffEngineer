@@ -29,10 +29,42 @@ suite) can flip one between two runs without rebuilding anything but the agent.
 ``GEOTECH_VISION_INLINE``
     ``1`` lets the reasoning model look: the page/region tools stop making the
     separate one-shot vision call and the newest images are shown to the main
-    model itself at its next call (lean agent only).
+    model itself at its next call (lean agent only). ``analyze_image`` keeps
+    its one-shot vision call, exactly as released in 5.30, unless
+    ``GEOTECH_REVIEW_OVERVIEW`` is on too (see there).
 ``GEOTECH_REVIEW_SWEEP``
     ``1`` offers the ``sweep_pages`` tool (lean agent only): one question asked
     of every page in a range, in parallel, answered per page with citations.
+``GEOTECH_REVIEW_FINDINGS``
+    ``1`` offers the findings tools (lean agent only): ``record_finding``,
+    ``list_findings`` and ``findings_report``. Each finding is kept in
+    ``findings.json`` in the conversation's working folder in the shared
+    format of :mod:`funhouse_agent.review_findings`, its quotes checked
+    against the pages it cites, and the Word comment log and marked-up PDFs
+    are rendered from it (plan S1.5, ``module_work/REVIEW_ARCHITECTURE.md``).
+``GEOTECH_REVIEW_OVERVIEW``
+    ``1`` makes the orientation turn after an upload ask for the contact
+    sheets explicitly when the new uploads run past
+    ``GEOTECH_REVIEW_OVERVIEW_PAGES`` pages in all (default 20), and to skip
+    them at or below it (plan S1.2). Only with BOTH this and
+    ``GEOTECH_VISION_INLINE`` on is the lean agent's ``analyze_image`` of an
+    image FILE (a contact sheet) shown to the model itself, like the inline
+    page tools; either one alone leaves ``analyze_image`` as released.
+``GEOTECH_REVIEW_GEOMETRY``
+    ``1`` offers the drawing-geometry tools (lean agent only):
+    ``drawing_callouts``, ``drawing_dimensions``, ``title_block`` and
+    ``revision_clouds`` (:mod:`funhouse_agent.deep.geometry_tools`). They
+    find leaders, dimension lines, the title block and revision clouds from
+    a sheet's line-work and return boxes to zoom on - "geometry says where,
+    vision says what" (plan S1.1).
+``GEOTECH_REVIEW_DIGEST``
+    ``1`` offers the digest tools (lean agent only; its reading helper gets
+    them too): ``document_inventory``, ``digest_search``, ``digest_pages``
+    and ``digest_references`` (:mod:`funhouse_agent.deep.digest_tools`) over
+    the FREE layer of each upload's digest (:mod:`funhouse_agent.
+    review_digest`: page map, text index, references, built by code in
+    seconds and kept in the working folder) - plan shape 2, Stage A. Its
+    small/large hint uses ``GEOTECH_REVIEW_SHAPE1_PAGES`` (default 20).
 """
 
 from __future__ import annotations
@@ -46,9 +78,29 @@ VISION_TEXT_ENV = "GEOTECH_VISION_TEXT_CONTEXT"
 VISION_STRUCTURED_ENV = "GEOTECH_VISION_STRUCTURED"
 VISION_INLINE_ENV = "GEOTECH_VISION_INLINE"
 SWEEP_ENV = "GEOTECH_REVIEW_SWEEP"
+FINDINGS_ENV = "GEOTECH_REVIEW_FINDINGS"
+OVERVIEW_ENV = "GEOTECH_REVIEW_OVERVIEW"
+GEOMETRY_ENV = "GEOTECH_REVIEW_GEOMETRY"
+DIGEST_ENV = "GEOTECH_REVIEW_DIGEST"
 
 ALL_ENVS = (AGENT_ENV, VISION_TEXT_ENV, VISION_STRUCTURED_ENV,
-            VISION_INLINE_ENV, SWEEP_ENV)
+            VISION_INLINE_ENV, SWEEP_ENV, FINDINGS_ENV, OVERVIEW_ENV,
+            GEOMETRY_ENV, DIGEST_ENV)
+
+#: Not a switch but the overview's setting: above this many pages in the
+#: new uploads (all of them together) the orientation asks for contact sheets.
+OVERVIEW_PAGES_ENV = "GEOTECH_REVIEW_OVERVIEW_PAGES"
+DEFAULT_OVERVIEW_PAGES = 20
+
+#: The switches' SETTINGS (numbers the switched behaviour reads, not
+#: switches): the overview's page threshold, the digest's small/large hint,
+#: how many inline images each call carries and the lean agent's model-call
+#: budget. :func:`switches` clears them too unless the arm names them, so an
+#: arm is exactly what it says. Named here as strings so this module imports
+#: nothing.
+SETTINGS_ENVS = (OVERVIEW_PAGES_ENV, "GEOTECH_REVIEW_SHAPE1_PAGES",
+                 "GEOTECH_VISION_INLINE_KEEP",
+                 "GEOTECH_REVIEW_MAX_MODEL_CALLS")
 
 _ON = ("1", "true", "yes", "on")
 
@@ -82,6 +134,36 @@ def sweep() -> bool:
     return _on(SWEEP_ENV)
 
 
+def findings() -> bool:
+    """Whether the findings tools are offered (lean agent only)."""
+    return _on(FINDINGS_ENV)
+
+
+def overview() -> bool:
+    """Whether the orientation turn decides on contact sheets by page count."""
+    return _on(OVERVIEW_ENV)
+
+
+def geometry() -> bool:
+    """Whether the drawing-geometry tools are offered (lean agent only)."""
+    return _on(GEOMETRY_ENV)
+
+
+def digest() -> bool:
+    """Whether the digest tools are offered (lean agent only)."""
+    return _on(DIGEST_ENV)
+
+
+def overview_pages() -> int:
+    """The page count above which the orientation asks for contact sheets
+    (``GEOTECH_REVIEW_OVERVIEW_PAGES``, default 20)."""
+    try:
+        return max(1, int(os.environ.get(OVERVIEW_PAGES_ENV,
+                                         DEFAULT_OVERVIEW_PAGES)))
+    except (TypeError, ValueError):
+        return DEFAULT_OVERVIEW_PAGES
+
+
 #: Named configurations the review suite compares. ``baseline`` is exactly
 #: what the page does with no switch set. Each later arm adds one change, so
 #: a gain or a loss is attributable to the change that was added.
@@ -94,17 +176,25 @@ ARMS: Dict[str, Dict[str, str]] = {
                VISION_STRUCTURED_ENV: "1", VISION_INLINE_ENV: "1"},
     "sweep": {AGENT_ENV: "lean", VISION_TEXT_ENV: "1",
               VISION_STRUCTURED_ENV: "1", SWEEP_ENV: "1"},
+    # Only the orientation turn differs: run it with orientation=True.
+    "overview": {AGENT_ENV: "lean", VISION_TEXT_ENV: "1",
+                 VISION_STRUCTURED_ENV: "1", OVERVIEW_ENV: "1"},
+    "geometry": {AGENT_ENV: "lean", VISION_TEXT_ENV: "1",
+                 VISION_STRUCTURED_ENV: "1", GEOMETRY_ENV: "1"},
+    "digest": {AGENT_ENV: "lean", VISION_TEXT_ENV: "1",
+               VISION_STRUCTURED_ENV: "1", DIGEST_ENV: "1"},
 }
 
 
 @contextmanager
 def switches(values: Optional[Mapping[str, str]]) -> Iterator[None]:
-    """Set exactly ``values`` for the block: every switch NOT named is unset,
-    so an arm is what it says and nothing leaks in from the notebook's own
+    """Set exactly ``values`` for the block: every switch (:data:`ALL_ENVS`)
+    and every switch setting (:data:`SETTINGS_ENVS`) NOT named is unset, so
+    an arm is what it says and nothing leaks in from the notebook's own
     environment. Any other variable the arm names (a budget, a vision
     policy) is set too. The previous environment is restored afterwards."""
     values = dict(values or {})
-    keys = set(ALL_ENVS) | set(values)
+    keys = set(ALL_ENVS) | set(SETTINGS_ENVS) | set(values)
     saved = {k: os.environ.get(k) for k in keys}
     try:
         for k in keys:
@@ -129,6 +219,10 @@ def describe() -> str:
 
 
 __all__ = ["AGENT_ENV", "VISION_TEXT_ENV", "VISION_STRUCTURED_ENV",
-           "VISION_INLINE_ENV", "SWEEP_ENV", "ALL_ENVS", "ARMS",
-           "lean_agent", "vision_text_context", "vision_structured",
-           "vision_inline", "sweep", "switches", "describe"]
+           "VISION_INLINE_ENV", "SWEEP_ENV", "FINDINGS_ENV", "OVERVIEW_ENV",
+           "GEOMETRY_ENV", "DIGEST_ENV", "OVERVIEW_PAGES_ENV",
+           "DEFAULT_OVERVIEW_PAGES", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
+           "lean_agent",
+           "vision_text_context", "vision_structured", "vision_inline",
+           "sweep", "findings", "overview", "geometry", "digest",
+           "overview_pages", "switches", "describe"]

@@ -1147,8 +1147,11 @@ prompt = st.chat_input(_placeholder if ss.agent is not None else
 _orient = ss.pop("pending_orientation", None)
 if not prompt and _orient and _PROFILE.orientation and ss.agent is not None \
         and turn_jobs.get_turn_job(ss.thread_id) is None:
-    _names = ", ".join(f"`{n}`" for n in _orient)
-    prompt = _PROFILE.orientation_request.format(names=_names)
+    # The same text the review suite sends (webapp.profiles); with
+    # GEOTECH_REVIEW_OVERVIEW off it is the profile's request, unchanged.
+    prompt = profiles.orientation_request_for(_PROFILE, [
+        core.Attachment(key=n, path=os.path.join(ss.temp_dir, n), size=0)
+        for n in _orient])
 
 if prompt:
     if ss.agent is None:

@@ -26,8 +26,19 @@ WHAT. This builds the page's agent by CHOOSING instead:
   error. The step cap the host passes is raised to fit it.
 
 With ``GEOTECH_VISION_INLINE`` the main model is shown page images itself
-(:mod:`funhouse_agent.deep.inline_images`); with ``GEOTECH_REVIEW_SWEEP`` it
-gets ``sweep_pages`` (:mod:`funhouse_agent.deep.sweep`).
+(:mod:`funhouse_agent.deep.inline_images`), and - only with
+``GEOTECH_REVIEW_OVERVIEW`` on too - image files such as the contact sheets
+(so the released ``inline`` arm is exactly what it was); with
+``GEOTECH_REVIEW_SWEEP`` it gets ``sweep_pages``
+(:mod:`funhouse_agent.deep.sweep`); with ``GEOTECH_REVIEW_FINDINGS`` it gets
+``record_finding`` / ``list_findings`` / ``findings_report``
+(:mod:`funhouse_agent.deep.findings_tools`); with ``GEOTECH_REVIEW_GEOMETRY``
+it and its reading helper get ``drawing_callouts`` / ``drawing_dimensions`` /
+``title_block`` / ``revision_clouds``
+(:mod:`funhouse_agent.deep.geometry_tools`); with ``GEOTECH_REVIEW_DIGEST``
+it and its reading helper get ``document_inventory`` / ``digest_search`` /
+``digest_pages`` / ``digest_references``
+(:mod:`funhouse_agent.deep.digest_tools`).
 """
 
 from __future__ import annotations
@@ -113,6 +124,8 @@ REVIEW_DESCRIPTIONS: Dict[str, str] = {
 
 #: With GEOTECH_VISION_INLINE the page and region tools show YOU the image
 #: (no separate vision call answers a prompt), so they are described that way.
+#: ``analyze_image``'s entry applies only when image FILES are shown too
+#: (GEOTECH_VISION_INLINE and GEOTECH_REVIEW_OVERVIEW both on).
 INLINE_DESCRIPTIONS: Dict[str, str] = {
     "analyze_pdf_page": (
         "Look at one whole page yourself: it is rendered at the largest size "
@@ -131,6 +144,12 @@ INLINE_DESCRIPTIONS: Dict[str, str] = {
         "document_markups give), or with an earlier view + a 0-999 image_box "
         "on its image. marks = [[x, y, label], ...] numbers spots on the "
         "image. page is 0-based."),
+    "analyze_image": (
+        "Look at an image. An image FILE - a contact sheet that "
+        "render_page_thumbnails wrote (pass its path) - is shown to you "
+        "yourself with your next step, and prompt is only a note of what "
+        "you are after; an uploaded picture (pass its name) is described by "
+        "a vision call that answers your prompt."),
 }
 
 #: Default model calls in one request before the last one must answer.
@@ -278,12 +297,18 @@ def build_review_agent(model, *, engine=None,
                        reference_result_chars: Optional[int] = None,
                        checkpointer=None, store=None,
                        model_calls: Optional[int] = None,
+                       working_dir: Optional[str] = None,
                        **_ignored):
     """Build the lean Document Review agent (see the module docstring).
 
     Takes the keyword arguments :func:`build_deep_agent` does, so a host can
     call either; the geotechnical ones (module scope, reference and calc
     sub-agents, analysis depth) have nothing to act on here and are ignored.
+
+    ``working_dir`` is the conversation's working folder, bound NOW: the
+    findings ledger and the digests are kept there even if another
+    conversation in the same process re-points the process-wide working
+    folder meanwhile. ``None`` looks the working folder up at each call.
     """
     from langchain.agents import create_agent
     from langchain.agents.middleware import TodoListMiddleware
@@ -293,30 +318,56 @@ def build_review_agent(model, *, engine=None,
         engine = LangChainVisionEngine(model)
     attachments = {} if attachments is None else attachments
     inline = review_flags.vision_inline()
+    # Image FILES (contact sheets) are shown to the model only when the
+    # overview switch is on as well: the released ``inline`` arm keeps its
+    # one-shot analyze_image.
+    inline_files = inline and review_flags.overview()
     budget = int(model_calls or max_model_calls())
 
-    def tools_for(names, inline_images: bool):
+    def tools_for(names, inline_images: bool, inline_image_files: bool):
         wanted = set(names)
         if not _find_like_available():
             wanted.discard("find_like")
         descriptions = dict(REVIEW_DESCRIPTIONS)
         if inline_images:
             descriptions.update(INLINE_DESCRIPTIONS)
+            if not inline_image_files:
+                descriptions["analyze_image"] = \
+                    REVIEW_DESCRIPTIONS["analyze_image"]
         return make_vision_tools(
             engine=engine, attachments=attachments, save_fn=save_fn,
             include=wanted, max_result_chars=max_result_chars,
             reference_result_chars=reference_result_chars,
             markup_author=markup_author,
             description_overrides=descriptions,
-            inline_images=inline_images)
+            inline_images=inline_images,
+            inline_image_files=inline_image_files)
 
-    tools = tools_for(REVIEW_TOOLS, inline)
-    tools.append(make_reader_tool(model, tools_for(READER_TOOLS, False)))
+    tools = tools_for(REVIEW_TOOLS, inline, inline_files)
+    reader_tools = tools_for(READER_TOOLS, False, False)
+    if review_flags.geometry():
+        # Read-only, so the reading helper gets them too.
+        from funhouse_agent.deep.geometry_tools import make_geometry_tools
+        tools += make_geometry_tools(attachments)
+        reader_tools += make_geometry_tools(attachments)
+    if review_flags.digest():
+        # They only read (the digest cache is all they write, never a
+        # deliverable or a markup), so the reading helper gets them too.
+        from funhouse_agent.deep.digest_tools import make_digest_tools
+        tools += make_digest_tools(attachments, working_dir=working_dir)
+        reader_tools += make_digest_tools(attachments,
+                                          working_dir=working_dir)
+    tools.append(make_reader_tool(model, reader_tools))
     if review_flags.sweep():
         from funhouse_agent.deep.sweep import make_sweep_tool
         tools.append(make_sweep_tool(
             engine, attachments, model=model,
             max_result_chars=DEFAULT_VISION_RESULT_CHARS))
+    if review_flags.findings():
+        from funhouse_agent.deep.findings_tools import make_findings_tools
+        tools += make_findings_tools(attachments, save_fn=save_fn,
+                                     markup_author=markup_author,
+                                     working_dir=working_dir)
     if extra_tools:
         seen = {t.name for t in tools}
         tools += [t for t in extra_tools if getattr(t, "name", None) not in seen]
@@ -357,6 +408,7 @@ def build_review_agent(model, *, engine=None,
         # must be what ends a long request.
         agent.geotech_min_recursion_limit = 8 * budget + 30
         agent.geotech_review_agent = "lean"
+        agent.geotech_working_dir = working_dir
     except Exception:  # noqa: BLE001 - attributes are conveniences
         pass
     return agent

@@ -217,6 +217,29 @@ live on SharePoint (`extra_tasks=`).
   discipline reviewers, consolidation and deliverables, one seeded mega-set.
 - **M4:** the cross-document coordination pass.
 
+## Built on branch `feature/review-m1` (2026-09-28/29, UNRELEASED)
+
+Everything that does not wait on the M0 numbers, each behind a switch in
+`funhouse_agent/review_flags.py`, OFF by default (with every switch off the
+page is unchanged; tests pin it):
+
+| Switch | What | Code |
+|---|---|---|
+| `GEOTECH_REVIEW_FINDINGS` | S1.5 finding format: `record_finding`, `update_finding`, `list_findings`, `findings_report` (Word comment log, `<doc>_findings.pdf`); quotes checked against the page (markup text counts; unreliable OCR and "seen" lettering are not held against a finding) | `review_findings.py`, `deep/findings_tools.py` |
+| `GEOTECH_REVIEW_OVERVIEW` | S1.2 contact sheets requested above `GEOTECH_REVIEW_OVERVIEW_PAGES` (20); with inline too, the sheet is shown to the agent | `webapp/profiles.py orientation_request_for` |
+| `GEOTECH_REVIEW_GEOMETRY` | S1.1 `drawing_callouts`, `drawing_dimensions`, `title_block`, `revision_clouds` over planlens.ir, displayed-frame coordinates, proposals with confidence | `deep/geometry_tools.py` |
+| `GEOTECH_REVIEW_DIGEST` | Shape 2 free layer: per-document inventory, page rows, FTS5 index, cross-references with missing-sheet detection; `document_inventory`, `digest_search`, `digest_pages`, `digest_references`; 538 pages in ~3.5 s | `review_digest/`, `deep/digest_tools.py` |
+
+Arms `overview`, `geometry`, `digest` added (existing arms unchanged; the
+5.30 `inline` arm behaves as released). Also: S1.6 `find_like` context fix;
+the working folder is bound at agent build (`build_deep_agent(working_dir=)`)
+so findings and digests cannot cross conversations; `switches()` also resets
+`SETTINGS_ENVS`; the `digest/` cache is not a download card. Suite: 35 tasks
+(3 geometry, 3 long-document coverage with a `labelled_set` check).
+Independent review: 8 bugs + 6 concerns, all fixed with tests. Gate:
+1,103 / 1 and 1,460 / 4 (webapp, deep, suite, digest, geo_project, rest of
+funhouse_agent).
+
 ## Decisions recorded (owner, 2026-09-28)
 
 - Three job shapes as above; the shapes stack.

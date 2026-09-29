@@ -559,6 +559,7 @@ def make_vision_tools(
     markup_author: Optional[str] = None,
     description_overrides: Optional[Dict[str, str]] = None,
     inline_images: bool = False,
+    inline_image_files: bool = False,
 ) -> list:
     """Build the vision / file-output tools as LangChain tools.
 
@@ -568,7 +569,10 @@ def make_vision_tools(
     ``analyze_pdf_page`` / ``render_region`` return the rendered image for the
     main model to look at instead of a one-shot vision call's description
     (only meaningful with the image middleware that shows it; see
-    :mod:`funhouse_agent.deep.inline_images`).
+    :mod:`funhouse_agent.deep.inline_images`). ``inline_image_files`` makes
+    ``analyze_image`` do the same for an image FILE given by its path (a
+    contact sheet); the lean agent sets it only with both
+    ``GEOTECH_VISION_INLINE`` and ``GEOTECH_REVIEW_OVERVIEW`` on.
 
     The engine, attachments, and save_fn are closured in at build time so the
     tools match the no-extra-args calling convention deepagents expects.
@@ -718,10 +722,12 @@ def make_vision_tools(
         ``attachment_key`` is the key of the attached image file; ``prompt``
         is what to extract or analyze from the image.
         """
-        return _dispatch(
-            "analyze_image",
-            {"attachment_key": attachment_key, "prompt": prompt},
-        )
+        args = {"attachment_key": attachment_key, "prompt": prompt}
+        if inline_image_files:
+            # An image FILE (a contact sheet) is shown to the main model like
+            # the inline page tools' images; an upload keeps the vision call.
+            args["_inline"] = True
+        return _dispatch("analyze_image", args)
 
     def analyze_pdf_page(
         attachment_key: str,

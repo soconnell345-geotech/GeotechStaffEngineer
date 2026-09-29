@@ -723,9 +723,14 @@ def _dispatch_analyze_image(arguments, engine, attachments):
     prompt = arguments.get("prompt", "Describe this image.")
 
     try:
-        image_data, _src = _resolve_attachment_or_path(key, attachments)
+        image_data, src = _resolve_attachment_or_path(key, attachments)
     except FileNotFoundError as e:
         return json.dumps({"error": str(e)})
+
+    if arguments.get("_inline") and src == "path":
+        inline = _inline_image_file_result(image_data, key)
+        if inline is not None:
+            return json.dumps(inline)
 
     try:
         result = engine.analyze_image(image_data, prompt)
@@ -896,10 +901,25 @@ def _fit_region(out) -> None:
 
 
 #: What the model is told when the image itself is shown to it (inline mode).
+#: ``{in_view}`` says how long: only the newest N views are shown at each
+#: call (``GEOTECH_VISION_INLINE_KEEP``, default 2); an older one is not.
 INLINE_NOTE = (
-    "The image of this view is shown to you with your next step: look at it "
-    "yourself. To zoom, call render_region with a bbox in PDF points inside "
-    "this view, or with this view + a 0-999 image_box on the image.")
+    "The image of this view is shown to you with your next step {in_view}: "
+    "look at it yourself now. To zoom, call render_region with a bbox in PDF "
+    "points inside this view, or with this view + a 0-999 image_box on the "
+    "image.")
+
+
+def _in_view() -> str:
+    from funhouse_agent import inline_store
+    keep = inline_store.keep_from_env()
+    return ("while it is the newest view" if keep == 1 else
+            f"while it is among the newest {keep} views")
+
+
+def inline_note() -> str:
+    """:data:`INLINE_NOTE` saying how many of the newest views stay shown."""
+    return INLINE_NOTE.format(in_view=_in_view())
 
 
 def _inline_result(image_bytes, info, page, engine, lines, bbox=None):
@@ -913,12 +933,52 @@ def _inline_result(image_bytes, info, page, engine, lines, bbox=None):
         "view": [round(float(v), 1) for v in info["clip"]]})
     out = {"page": page, **_pdf_page(page), "image_id": image_id,
            **({"bbox": bbox} if bbox is not None else {}),
-           **vision_view.view_payload(info, engine), "note": INLINE_NOTE}
+           **vision_view.view_payload(info, engine), "note": inline_note()}
     out.pop("zoom_hint", None)
     if lines is not None:
         out["text_layer"] = vision_view.text_context(lines[0], info["clip"],
                                                      lines[1])
     return out
+
+
+#: What the model is told when an image FILE is shown to it (inline mode);
+#: ``{in_view}`` as in :data:`INLINE_NOTE`.
+INLINE_IMAGE_NOTE = (
+    "The image is shown to you with your next step {in_view}: look at it "
+    "yourself now. On a contact sheet each thumbnail is captioned with its "
+    "0-based page index; to read a page, use the page tools on the document "
+    "itself.")
+
+
+def inline_image_note() -> str:
+    """:data:`INLINE_IMAGE_NOTE` saying how many of the newest views stay
+    shown."""
+    return INLINE_IMAGE_NOTE.format(in_view=_in_view())
+
+#: An image file larger than this keeps the one-shot vision call: a request
+#: body has a size limit on some gateways.
+INLINE_IMAGE_MAX_BYTES = 4 * 1024 * 1024
+
+
+def _inline_image_file_result(data, path):
+    """``analyze_image`` of an image FILE when the main model looks itself
+    (``GEOTECH_VISION_INLINE``, lean agent): the image is stored and shown at
+    the model's next call, as :func:`_inline_result` does for a page. ``None``
+    (keep the vision call) for bytes that are not a PNG, JPEG, GIF or WebP
+    image, or that are too large to send."""
+    from funhouse_agent import inline_store, vision_view
+    data = bytes(data or b"")
+    if not data or len(data) > INLINE_IMAGE_MAX_BYTES:
+        return None
+    is_image = (data[:8] == b"\x89PNG\r\n\x1a\n"
+                or vision_view.image_media_type(data) != "image/png")
+    if not is_image:
+        return None
+    name = os.path.basename(str(path))
+    image_id = inline_store.put(data, {"label": f"image file {name}",
+                                       "source": str(path)})
+    return {"image_id": image_id, "source": str(path),
+            "note": inline_image_note()}
 
 
 def render_region_to_file(path, filepath=None, content=None, page=0,

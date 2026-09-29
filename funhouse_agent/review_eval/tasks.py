@@ -149,6 +149,42 @@ def _pct(n: str) -> Dict[str, str]:
     return {"re": rf"{_LEAD}{re.escape(n)}\s*(?:%|percent)"}
 
 
+def _min(n: str, unit: str = "ft") -> Dict[str, str]:
+    """``n`` feet (``unit="in"``: inches) stated as a MINIMUM, in the ways an
+    answer writes it: "10' MIN.", "10'-0\\" MIN." (drawing notation), "10 ft
+    (minimum)", "min. 10 ft", "at least 10 feet" ("5' MAX" is not a minimum
+    of 5 ft; "110' min" is not 10'; "10'-6\\" MIN." is not 10'; in "L=10'
+    MIN., 5' MAX" the MIN. belongs to the 10)."""
+    if unit == "ft":
+        # feet, then zero inches as a drawing writes it ("10'-0\"") or none;
+        # any other inches make it a different length.
+        u = (r"(?:'|ft\b|-ft\b|feet|-foot|foot)"
+             r"(?:\s*-?\s*0\s*(?:\"|inch(?:es)?\b|in\.|in\b))?"
+             r"(?!\s*-?\s*\d)")
+    else:
+        u = r"(?:\"|inch(?:es)?\b|-inch\b|in\.|-in\b|in\b)"
+    num = rf"{_LEAD}{re.escape(n)}\s*{u}"
+    return {"re": rf"{num}[^\w\n]{{0,4}}(?:min\b|min\.|minimum)|"
+                  rf"(?:\bmin\b\.?|\bminimum|\bat least|\bno less than|"
+                  rf"\bnot less than)[^.,;)\]\n\d]{{0,25}}{num}"
+                  rf"(?![^\w\n]{{0,4}}max)"}
+
+
+_FT_UNIT = r"(?:'|ft\b|-ft\b|feet|-foot|foot)"
+
+
+def _lettered_min(letter: str, n: str) -> Dict[str, str]:
+    """A lettered value ("W = 5 ft") in a run of lettered values that the
+    answer then calls minimums all together ("L = 10 ft, W = 5 ft, X = 7 ft
+    (all minimums)"). "W=5' MAX" or "W=5' (as drawn)" is not."""
+    one = rf"\b{letter}\s*=\s*{re.escape(n)}\s*{_FT_UNIT}"
+    other = rf"(?:\w+\s+)?[a-z]\s*=\s*\d+(?:\.\d+)?\s*{_FT_UNIT}"
+    run = rf"(?:\s*(?:,|;|\band\b|&)?\s*{other})*"
+    together = (r"\s*[,;:-]?\s*\(?\s*(?:(?:all|each|both)\s+(?:are\s+)?"
+                r"(?:a\s+)?(?:minimums?\b|min\b)|(?:are\s+)?minimums\b)")
+    return {"re": one + run + together}
+
+
 #: 3600 psi, written either way.
 _3600 = [_num("3600"), _num("3,600")]
 
@@ -161,6 +197,108 @@ _MECK_IDS = ["10.17A", "10.25A", "10.31A", "11.01", "20.00A", "20.00B",
 _MECK_ALIASES = {"20.00A": ["20.00A", "20.00 A", "20.00-A"],
                  "20.00B": ["20.00B", "20.00 B", "20.00-B", "20.00A/B",
                             "20.00A & B", "20.00A and B", "20.00A-B"]}
+
+# Coverage tasks on the long manuals (check type ``labelled_set``). Each item
+# counts only when the answer names it by its ID TOGETHER WITH ITS TITLE
+# (the title in the text the id owns, before the next id): a topic list with
+# no ids, letters matched to the wrong topics and an answer that ids half
+# the items all fall short. A bare number is an id only where it cannot be
+# something else: in a manual "12-3" is also a printed page and a paragraph,
+# and "A" is a word.
+
+def _bare(token: str) -> str:
+    """A bare letter or number used as an id in a list or table ("- A:",
+    "A. ", "| A |", "A - ", "A ("), never inside a word or "(a)"."""
+    return (rf"(?:^|(?<=[\s|*•]))(?<!\(){token}"
+            rf"(?=\s*(?:[.:)|](?:\s|$)|[-–]\s|\())")
+
+
+#: Words before a "12-3" that make it a page, figure or paragraph number.
+_NOT_A_TABLE = "".join(
+    rf"(?<!{re.escape(w)} )" for w in (
+        "p.", "pp.", "pg.", "page", "pages", "printed", "sheet", "figure",
+        "fig.", "figures", "paragraph", "para.", "section", "sec.",
+        "equation", "eq.", "chapter"))
+
+#: UFC 3-260-02's fourteen appendices: id forms and title words.
+_UFC260_APPENDIX_TITLES = {
+    "A": ["references"],
+    "B": ["design analysis"],
+    "C": ["contract drawing", "contract drawings"],
+    "D": ["waiver", "waivers"],
+    "E": ["flexural strength"],
+    "F": ["strain repetitions", "strain repetition"],
+    "G": ["cylindrical specimens", "cylindrical specimen",
+          "specimen preparation", "preparation of bituminous"],
+    "H": ["dynamic modulus"],
+    "I": ["estimating the modulus", "estimating modulus",
+          "estimate the modulus", "estimation of the modulus",
+          "estimation of modulus", "estimated modulus"],
+    "J": ["unbound"],
+    "K": ["stabilized soils", "stabilized soil", "stabilised soils",
+          "stabilised soil", "fatigue characteristics"],
+    "L": ["modulus of subgrade", "subgrade resilient modulus",
+          "resilient modulus of subgrade", "subgrade material",
+          "subgrade materials"],
+    "M": ["fatigue life"],
+    "N": ["resilient modulus of granular",
+          "resilient modulus of the granular", "granular base resilient",
+          "granular base material"],
+}
+_UFC260_APPENDICES = {
+    f"appendix {c}": {
+        "ids": [rf"\b(?:appendix|app\.|appx\.?)\s*{c.lower()}\b(?!-\d)",
+                _bare(c.lower())],
+        "titles": titles}
+    for c, titles in _UFC260_APPENDIX_TITLES.items()}
+
+#: The eight tables of UFC 3-260-02 Chapter 12: id forms and title words.
+_UFC260_CH12_TABLE_TITLES = {
+    1: ["mixed traffic design", "example of mixed traffic"],
+    2: ["stress-strength ratios", "stress-strength ratio",
+        "stress strength ratios", "stress strength ratio",
+        "allowable coverages"],
+    3: ["fatigue damage summary", "summary sheet"],
+    4: ["pass-to-coverage", "pass to coverage", "pass-coverage"],
+    5: ["channelized", "primary traffic"],
+    6: ["unchannelized", "un-channelized", "secondary traffic"],
+    7: ["transverse contraction joints", "transverse contraction joint",
+        "joint spacing", "spacing of transverse"],
+    8: ["dowel", "dowels"],
+}
+_UFC260_CH12_TABLES = {
+    f"table 12-{n}": {
+        "ids": [rf"\b(?:tables?|tbl\.?)\s*12-{n}(?![\d]|\.\d)",
+                rf"(?<![\w.-]){_NOT_A_TABLE}12-{n}(?![\d]|\.\d|-\d)"],
+        "titles": titles}
+    for n, titles in _UFC260_CH12_TABLE_TITLES.items()}
+
+#: The nine ASCE 7 chapters UFC 3-301-01 Chapter 3 modifies (its section
+#: headings 3-1 to 3-9, checked against the PDF's text): id forms and title
+#: words. "chapter 1" is not "chapter 11".
+_ASCE7_CHAPTER_TITLES = {
+    1: ["basic requirements", "classification of buildings",
+        "risk categor"],
+    2: ["combinations of loads", "load combinations"],
+    6: ["tsunami"],
+    7: ["snow"],
+    11: ["seismic design criteria"],
+    12: ["building structures"],
+    13: ["nonstructural", "non-structural"],
+    15: ["nonbuilding", "non-building"],
+    26: ["wind", "enclosure classification"],
+}
+_ASCE7_CHAPTERS = {
+    f"ASCE 7 chapter {n}": {
+        "ids": [rf"\b(?:chapter|ch\.?)\s*{n}(?![\d]|\.\d|-\d)",
+                rf"(?<=\|)\s*{n}(?=\s*\|)"],
+        "titles": titles}
+    for n, titles in _ASCE7_CHAPTER_TITLES.items()}
+#: A bare list of chapter numbers ("ASCE 7 chapters 1, 2, 6, 7, 11, 12, 13,
+#: 15 and 26") names them too.
+_ASCE7_ENUM_LEAD = r"\b(?:chapters?|chs?\.)\s*"
+_ASCE7_ENUM_TOKENS = {f"ASCE 7 chapter {n}": str(n)
+                      for n in _ASCE7_CHAPTER_TITLES}
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +437,61 @@ OPEN_TASKS: List[Task] = [
                            [_num("2'-0"), _num("2-0"), _inch("24")]]}],
         truth="10.17A titles: 1'-6\" STANDARD CURB AND GUTTER; STANDARD 2'-6\" "
               "CURB AND GUTTER; 2'-0\" STANDARD CURB & GUTTER."),
+
+    # --- dimensions and leaders: found by geometry, read by looking ---------
+    Task(
+        id="meck-trap-dimensions",
+        question=("What minimum dimensions does this sediment trap detail "
+                  "show? List each one with how it is labelled."),
+        documents=["meck_30.01"], category="locate",
+        doc_type="drawing_stroke",
+        # Each lettered value must be given AS A MINIMUM, as it is labelled:
+        # "W=5' MAX." or "W=5' (as drawn)" is not what the sheet says.
+        checks=[{"type": "contains_all",
+                 "terms": [[_min("10"), _lettered_min("l", "10")],
+                           [_min("5"), _lettered_min("w", "5")],
+                           [_min("7"), _lettered_min("x", "7")]],
+                 "label": "the lettered minimums L, W and X"},
+                {"type": "contains_all",
+                 "terms": [_min("1.5"), _min("21", "in")],
+                 "label": "the two unlettered minimums"}],
+        truth="30.01 DIMENSION entities (DWG): 'L=10' MIN.', 'W=5' MIN.', "
+              "'X=7' MIN.', '1.5' MIN.', '21\" MIN.'; the others are '5' "
+              "MAX', '5' MAX FILL', '2' TO 3.5'', 'H' and 'T='. No text "
+              "layer: every value is read by looking."),
+    Task(
+        id="meck-bioretention-section-dims",
+        question=("What minimum dimensions are shown on Section A-A of this "
+                  "bioretention detail?"),
+        documents=["meck_21.01"], category="locate",
+        doc_type="drawing_stroke",
+        checks=[{"type": "contains_all", "terms": [_min("10"), _min("4")]}],
+        truth="21.01 SECTION A-A DIMENSION entities (DWG): '10' MIN.' and "
+              "'4' MIN.' across the section; its three other dimensions "
+              "carry no text of their own (the notes beside them give 1'-0\" "
+              "ponding, 2'-0\" to 4'-0\" filter media and a 1'-0\" gravel "
+              "layer). No text layer: every value is read by looking."),
+    Task(
+        id="meck-ramp-detail-callouts",
+        question=("In the 2'-6\" curb and gutter ramp detail on this sheet, "
+                  "what do the leader callouts point out? Give the flowline "
+                  "depth it calls for."),
+        documents=["meck_10.31a"], category="locate",
+        doc_type="drawing_stroke",
+        checks=[{"type": "contains_all",
+                 "terms": [[_inch("3/4"), {"re": "¾"}, _inch("0.75")],
+                           "flowline", "edge of pavement",
+                           {"re": r"match(?:es|ing)?\s+(?:the\s+)?ramp\s+"
+                                  r"slope"}]},
+                {"type": "not_contains",
+                 "terms": [{"re": r"(?<![\d/.-])34\s*(?:\"|in\b|inch)"}],
+                 "label": "does not read the stacked 3/4 as 34"}],
+        truth="10.31A 2'-6\" CURB AND GUTTER RAMP DETAIL MULTILEADER entities "
+              "(DWG): '3/4\" FLOWLINE DEPTH AT RAMP LOCATION', 'EDGE OF "
+              "PAVEMENT ELEVATION', 'TYP. MATCH RAMP SLOPE' (the flowline "
+              "callout repeats on the ramp section). The sheet's hidden CAD "
+              "text drops the stacked fraction's slash, so only looking gives "
+              "the depth right."),
 
     # --- the ten sheets as one set --------------------------------------------
     Task(
@@ -457,6 +650,96 @@ OPEN_TASKS: List[Task] = [
         truth="PDF page 3 Record of Changes lists four changes: Change 1 Oct 2, "
               "2023; Change 2 Sept 4, 2024; Change 3 Feb 3, 2025; Change 4 "
               "June 3, 2025. Supersedes UFC 3-301-01 dated 1 October 2019."),
+
+    # --- coverage: the honest answer needs most of a long manual ----------
+    # (shape 2 of module_work/REVIEW_ARCHITECTURE.md). Each truth was read
+    # off the PDF's own text layer and checked page by page; an answer that
+    # lists only the first few items fails the recall floor.
+    Task(
+        id="ufc260-appendices",
+        question=("Which appendices does this manual have, and what does each "
+                  "one cover?"),
+        documents=["ufc_3_260_02"], category="orient", doc_type="long_text",
+        checks=[{"type": "labelled_set", "items": _UFC260_APPENDICES,
+                 "min_recall": 0.85, "require_title": True,
+                 "label": "names at least 12 of the 14 appendices by letter "
+                          "with what each covers"}],
+        truth="ufc_3_260_02_2001.pdf (538 pp), the APPENDIX heading on each "
+              "appendix's first page (text layer): Appendix A References "
+              "(PDF p. 431, printed A-1); Appendix B Airfield/heliport design "
+              "analysis outline (439, B-1); Appendix C Recommended contract "
+              "drawing outline for airfield/heliport pavements (446, C-1); "
+              "Appendix D Waiver processing procedures (452, D-1); Appendix E "
+              "Determination of flexural strength and modulus of elasticity "
+              "of bituminous concrete (457, E-1); Appendix F Curves for "
+              "determining effective strain repetitions (460, F-1); Appendix "
+              "G Procedure for preparation of bituminous cylindrical "
+              "specimens (482, G-1); Appendix H Procedure for determining the "
+              "dynamic modulus of bituminous concrete mixtures (484, H-1); "
+              "Appendix I Procedure for estimating the modulus of elasticity "
+              "of bituminous concrete (487, I-1); Appendix J Procedure for "
+              "determining the modulus of elasticity of unbound granular "
+              "base and subbase course materials (491, J-1); Appendix K "
+              "Procedure for determining the flexural modulus and fatigue "
+              "characteristics of stabilized soils (495, K-1); Appendix L "
+              "Procedure for determining resilient modulus of subgrade "
+              "material (500, L-1); Appendix M Procedures for determining "
+              "the fatigue life of bituminous concrete (522, M-1); Appendix "
+              "N Procedure for determining the resilient modulus of granular "
+              "base material (528, N-1). No other appendix letter appears "
+              "anywhere in the text."),
+    Task(
+        id="ufc260-ch12-tables",
+        question=("List every table in Chapter 12 (plain concrete pavements) "
+                  "of this manual, with its number and title."),
+        documents=["ufc_3_260_02"], category="summarize",
+        doc_type="long_text",
+        checks=[{"type": "labelled_set", "items": _UFC260_CH12_TABLES,
+                 "min_recall": 0.85, "require_title": True,
+                 "label": "numbers and titles at least 7 of the chapter's 8 "
+                          "tables"}],
+        truth="ufc_3_260_02_2001.pdf, Chapter 12 runs PDF pp. 191-267 "
+              "(printed 12-1 to 12-77), mostly design-curve figures; its "
+              "table captions (text layer, 'Table 12-N' with the title on "
+              "the next line): 12-1 Example of Mixed Traffic Design (PDF p. "
+              "196, printed 12-6); 12-2 Stress-Strength Ratios and Allowable "
+              "Coverages (198, 12-8); 12-3 Fatigue Damage Summary Sheet for "
+              "Mixed Traffic (200, 12-10); 12-4 Pass-to-Coverage Ratios (201, "
+              "12-11); 12-5 Design Example for Primary (Channelized) Traffic "
+              "Areas (205, 12-15); 12-6 Design Example for Secondary "
+              "(Unchannelized) Traffic Areas (207, 12-17); 12-7 Recommended "
+              "Spacing of Transverse Contraction Joints (211, 12-21); 12-8 "
+              "Dowel Size and Spacing for Construction, Contraction, and "
+              "Expansion Joints (212, 12-22). No 'Table 12-9' or higher is "
+              "mentioned anywhere in the text."),
+    Task(
+        id="ufc301-asce7-chapters",
+        question=("Chapter 3 of this UFC modifies ASCE 7. Which ASCE 7 "
+                  "chapters does it modify, what is each one about, and "
+                  "which section of the UFC covers it?"),
+        documents=["ufc_3_301_01"], category="summarize",
+        doc_type="long_text",
+        # A chapter number alone counts (the list is what is asked for
+        # first), but not one said with another chapter's subject.
+        checks=[{"type": "labelled_set", "items": _ASCE7_CHAPTERS,
+                 "min_recall": 0.85, "require_title": False,
+                 "enum_lead": _ASCE7_ENUM_LEAD,
+                 "enum_tokens": _ASCE7_ENUM_TOKENS,
+                 "label": "names at least 8 of the 9 ASCE 7 chapters, none "
+                          "with another chapter's subject"}],
+        truth="UFC_3-301-01_2023_c4.pdf, Chapter 3 runs PDF pp. 65-89 "
+              "(printed 43-67); its section headings (text layer, 'ASCE 7-22 "
+              "CHAPTER N'): 3-1 ASCE 7-22 Chapter 1 General (basic "
+              "requirements, classification of buildings; PDF p. 65); 3-2 "
+              "Chapter 2 Combinations of Loads (p. 65); 3-3 Chapter 6 "
+              "Tsunami Loads (p. 68); 3-4 Chapter 7 Snow Loads (p. 69); 3-5 "
+              "Chapter 11 Seismic Design Criteria (p. 69); 3-6 Chapter 12 "
+              "Seismic Design Requirements for Building Structures (p. 70); "
+              "3-7 Chapter 13 Seismic Design Requirements for Nonstructural "
+              "Components (p. 81); 3-8 Chapter 15 Seismic Design "
+              "Requirements for Nonbuilding Structures (p. 87); 3-9 Chapter "
+              "26 Wind Loads: General Requirements (enclosure "
+              "classification; p. 89)."),
 
     # --- calculation packages ------------------------------------------------
     Task(

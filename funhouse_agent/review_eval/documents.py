@@ -48,6 +48,7 @@ DOCUMENTS: Dict[str, Dict[str, Any]] = {
     "ufc_3_220_04fa": {"file": "ufc_3_220_04fa_2004.pdf"},
     "ufc_3_220_07": {"file": "ufc_3_220_07.pdf"},
     "ufc_3_301_01": {"file": "UFC_3-301-01_2023_c4.pdf"},
+    "ufc_3_260_02": {"file": "ufc_3_260_02_2001.pdf"},
     "calc_bearing": {"file": "sample_calc_package.pdf"},
     "calc_retaining_wall": {"file": "retaining_walls.pdf"},
     "fixture_review_document": {"fixture": "review_document",

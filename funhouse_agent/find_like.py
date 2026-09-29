@@ -158,8 +158,14 @@ def find_like(pdf, page: int, bbox: Sequence[float], engine, *,
             except Exception as exc:              # a sheet, not the search
                 return ids, "", f"{type(exc).__name__}: {exc}"
 
+        # Each read runs in a copy of the caller's context, so the run's
+        # callbacks (activity log, token count) see these vision calls; a
+        # plain thread pool starts every worker with an empty context.
+        import contextvars
         with ThreadPoolExecutor(max_workers=VERIFY_WORKERS) as ex:
-            for ids, reply, err in ex.map(read, sheets):
+            futs = [ex.submit(contextvars.copy_context().run, read, s)
+                    for s in sheets]
+            for ids, reply, err in (f.result() for f in futs):
                 if err:
                     errors.append(f"sheet #{ids[0]}-{ids[-1]}: {err}")
                 got = parse_readings(reply)

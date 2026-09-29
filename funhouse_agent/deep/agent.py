@@ -731,6 +731,7 @@ def build_deep_agent(
     summarization_trigger=_AUTO_SUMMARIZATION_TRIGGER,
     summarization_keep=_DEFAULT_SUMMARIZATION_KEEP,
     review_page: bool = False,
+    working_dir: Optional[str] = None,
     **kwargs,
 ):
     """Construct the deepagents port of the geotech agent.
@@ -739,7 +740,9 @@ def build_deep_agent(
     ``GEOTECH_REVIEW_AGENT=lean`` it is handed to
     :func:`funhouse_agent.deep.review_agent.build_review_agent`, the page's
     own agent; with the switch off (the default) it is built here exactly as
-    before.
+    before. ``working_dir`` (the conversation's working folder) is used only
+    on that lean route - its findings ledger and digests are bound to it at
+    build time - and is ignored by this build.
 
     By default this agent already has — courtesy of deepagents — *planning*
     (the ``write_todos`` tool, via ``TodoListMiddleware``) and an in-thread
@@ -939,7 +942,8 @@ def build_deep_agent(
                 markup_author=markup_author,
                 max_result_chars=max_result_chars,
                 reference_result_chars=reference_result_chars,
-                checkpointer=checkpointer, store=store)
+                checkpointer=checkpointer, store=store,
+                working_dir=working_dir)
 
     if allowed_agents is None:
         allowed_agents = ANALYSIS_MODULES

@@ -118,6 +118,122 @@ def check_set_match(answer: str, vocabulary: Sequence[str],
                 f"{sorted(exp - said)}; extra {sorted(said - exp)}")
 
 
+#: Where a later id cuts the text that belongs to an earlier one, at most.
+LABEL_WINDOW = 160
+#: Where the clause that belongs to an id ends (for "is another item's
+#: title said of this id?").
+_CLAUSE_END = re.compile(r"[.;](?:\s|$)")
+#: The separators of an enumeration ("chapters 1, 2, 6 and 26").
+_ENUM_SEP = r"\s*(?:,\s*and\b|,\s*&|,|\band\b|&|/|\bor\b)\s*"
+_ENUM_RANGE = re.compile(r"^(\d+)\s*(?:-|to|through|thru)\s*(\d+)$")
+#: A numeric range in an enumeration is read as its members up to this span
+#: ("chapters 11-13"); a wider one ("chapters 1-26") names only its ends.
+ENUM_MAX_SPAN = 4
+
+
+def _title_in(text: str, forms: Sequence[str]) -> bool:
+    for f in forms:
+        pat = re.escape(normalize(f))
+        if re.search(rf"(?<![\w-]){pat}", text):
+            return True
+    return False
+
+
+def _enumerated(text: str, lead: str, tokens: Dict[str, str]
+                ) -> List[Tuple[int, int, str]]:
+    """``(start, end, item)`` for each item named in an enumeration after
+    ``lead`` ("chapters 1, 2, 6, 7 and 26"), ``tokens`` mapping each item to
+    the token that names it there ("7")."""
+    by_token = {normalize(str(t)): item for item, t in tokens.items()}
+    token = r"\d+(?:\s*(?:-|to|through|thru)\s*\d+)?|[a-z]\b"
+    out: List[Tuple[int, int, str]] = []
+    for m in re.finditer(rf"{lead}((?:{token})(?:{_ENUM_SEP}(?:{token}))*)",
+                         text):
+        start = m.start(1)
+        for t in re.finditer(token, m.group(1)):
+            got = t.group(0)
+            names = [got]
+            rng = _ENUM_RANGE.match(got)
+            if rng:
+                a, b = int(rng.group(1)), int(rng.group(2))
+                names = ([str(n) for n in range(a, b + 1)]
+                         if 0 <= b - a <= ENUM_MAX_SPAN else [str(a), str(b)])
+            for name in names:
+                item = by_token.get(name)
+                if item is not None:
+                    out.append((start + t.start(), start + t.end(), item))
+    return out
+
+
+def check_labelled_set(answer: str, items: Dict[str, Dict[str, Any]],
+                       expected: Optional[Sequence[str]] = None,
+                       min_recall: float = 1.0, require_title: bool = True,
+                       window: int = LABEL_WINDOW,
+                       enum_lead: Optional[str] = None,
+                       enum_tokens: Optional[Dict[str, str]] = None,
+                       **_) -> Tuple[bool, str]:
+    """Items named BY THEIR ID TOGETHER WITH WHAT THEY ARE: an appendix
+    letter with its title, a table number with its title.
+
+    ``items`` maps each item to ``{"ids": [regex, ...], "titles": [phrase,
+    ...]}``. Every id occurrence in the (normalized) answer owns the text
+    after it, up to the next id of any item or ``window`` characters; an item
+    counts when one of its occurrences owns one of its own titles, or is
+    written "<title> (<id>)". So a list whose letters are matched to the
+    wrong topics, a summary of topics with no ids, and an answer that ids
+    only some items all fall short. With ``require_title=False`` an id
+    alone counts too - unless the clause it owns names ANOTHER item's title
+    and not its own - and ``enum_lead`` / ``enum_tokens`` read a bare
+    enumeration ("ASCE 7 chapters 1, 2, 6 and 26") as ids.
+    """
+    text = normalize(answer)
+    names = list(items)
+    occ: List[Tuple[int, int, str]] = []
+    for item, spec in items.items():
+        for pat in spec.get("ids") or []:
+            for m in re.finditer(pat, text):
+                occ.append((m.start(), m.end(), item))
+    if enum_lead and enum_tokens:
+        occ += _enumerated(text, enum_lead, enum_tokens)
+    # Overlapping matches (one id read two ways) keep the first, longest.
+    occ.sort(key=lambda o: (o[0], -(o[1] - o[0])))
+    kept: List[Tuple[int, int, str]] = []
+    for o in occ:
+        if kept and o[0] < kept[-1][1]:
+            continue
+        kept.append(o)
+    said, mismatched = set(), set()
+    for i, (start, end, item) in enumerate(kept):
+        nxt = kept[i + 1][0] if i + 1 < len(kept) else len(text)
+        after = text[end:min(nxt, end + int(window))]
+        prev = kept[i - 1][1] if i else 0
+        before = text[max(prev, start - int(window)):start]
+        own = items[item].get("titles") or []
+        if _title_in(after, own) or any(
+                re.search(rf"(?<![\w-]){re.escape(normalize(f))}"
+                          rf"[^.;|()\[\]]{{0,40}}[(\[][^.;|()\[\]]{{0,15}}$",
+                          before) for f in own):
+            said.add(item)
+            continue
+        clause = _CLAUSE_END.split(after, maxsplit=1)[0]
+        other = [n for n in names if n != item and _title_in(
+            clause, items[n].get("titles") or [])]
+        if other:
+            mismatched.add(item)
+        elif not require_title:
+            said.add(item)
+    exp = set(expected if expected is not None else names)
+    tp = len(said & exp)
+    recall = tp / len(exp) if exp else 1.0
+    ok = recall >= min_recall - 1e-9
+    return ok, (f"recall {recall:.2f} (>= {min_recall}); named with what "
+                f"they are: {sorted(said & exp)}; missing "
+                f"{sorted(exp - said)}"
+                + (f"; named with another item's title: "
+                   f"{sorted(mismatched - said)}" if mismatched - said
+                   else ""))
+
+
 #: "page"/"p."/"pp." as a word of its own ("step. 12" and "mpg 30" are not
 #: page citations).
 _PAGE_WORD = r"(?<![a-z])(?:pdf\s+)?(?:pages?|pgs?\.?|pp\.|p\.)"
@@ -251,6 +367,7 @@ CHECKS = {
     "contains_any": check_contains_any,
     "not_contains": check_not_contains,
     "set_match": check_set_match,
+    "labelled_set": check_labelled_set,
     "cites": check_cites,
     "file_produced": check_file_produced,
     "pdf_markups": check_pdf_markups,
