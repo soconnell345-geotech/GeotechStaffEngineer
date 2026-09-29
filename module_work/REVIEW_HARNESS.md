@@ -130,6 +130,12 @@ stack (deepagents 0.7.13, langchain 1.3.18) 105 / 2; planlens 1,430.
 
 ## Next
 
+**The forward plan is `module_work/REVIEW_ARCHITECTURE.md`** (2026-09-28): three
+job shapes (small review / large single-scope review with a digest /
+mega-reviews by discipline), shape-1 refinements (geometry tools on the review
+page, contact sheets standard above ~20 pages, look policy, the finding
+format), and milestones M0-M4. The items below are its M0.
+
 1. Owner: run the probe and a first small suite run on the cluster (baseline vs lean).
 2. Full run of all arms; decide which switches become defaults.
 3. Phase 5 (after numbers): rewrite the review prompt around the review method
