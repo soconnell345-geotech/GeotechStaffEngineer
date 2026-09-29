@@ -37,6 +37,16 @@ is what it was, except the unswitched fixes at the end.
 | `GEOTECH_VISION_STRUCTURED=1` | Vision calls end with `LOCATED: [...]`; results carry `located` items with `page_bbox` in PDF points (pass straight to `render_region`) | `vision_view.split_located` |
 | `GEOTECH_VISION_INLINE=1` | (lean only) the main model looks: page/region tools store the image and `InlineImageMiddleware` shows the newest 2 to the model at its next call (request only, never saved) | `funhouse_agent/inline_store.py`, `funhouse_agent/deep/inline_images.py` |
 | `GEOTECH_REVIEW_SWEEP=1` | (lean only) `sweep_pages`: one question asked of every page in a range, in parallel, per-page answers with citations — the GENERAL path for every/all/count questions | `funhouse_agent/deep/sweep.py` |
+| `GEOTECH_REVIEW_FINDINGS=1` (5.31) | (lean only) the shared finding format: `record_finding`, `update_finding`, `list_findings`, `findings_report` | `funhouse_agent/review_findings.py`, `deep/findings_tools.py` |
+| `GEOTECH_REVIEW_OVERVIEW=1` (5.31) | contact sheets requested in the orientation above `GEOTECH_REVIEW_OVERVIEW_PAGES` (20); with inline too, shown to the agent | `webapp/profiles.py` |
+| `GEOTECH_REVIEW_GEOMETRY=1` (5.31) | (lean only) `drawing_callouts`, `drawing_dimensions`, `title_block`, `revision_clouds` from planlens.ir | `deep/geometry_tools.py` |
+| `GEOTECH_REVIEW_DIGEST=1` (5.31) | (lean only) the digest's free layer: `document_inventory`, `digest_search`, `digest_pages`, `digest_references` | `funhouse_agent/review_digest/`, `deep/digest_tools.py` |
+
+Grounded's text-layer half is belt-and-suspenders next to the resolution
+fixes (image budget, tiling, zoom, "read the text layer first") and adds
+nothing on sheets drawn as lines; its located-items half (page boxes) is new.
+Arms added in 5.31: `overview`, `geometry`, `digest` (all include lean +
+grounded). The forward plan is `module_work/REVIEW_ARCHITECTURE.md`.
 
 **Unswitched fixes** (legacy page too): results carry `pdf_page` (= page + 1)
 beside every `page` and `[pdf_page N]` in `=== page N` headers

@@ -71,8 +71,30 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-09-27) — 5.30.0 RELEASED (planlens pin unchanged, >=0.10): the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
+## CURRENT WORKING STATE (2026-09-29) — 5.31.0 RELEASED (planlens pin unchanged, >=0.10): Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
 
+- **5.31.0 RELEASED 2026-09-29 (tag `v5.31.0`). No dependency change** (pin
+  stays `planlens>=0.10`). The owner and a session agreed a three-shape
+  architecture for Document Review (**plan of record
+  `module_work/REVIEW_ARCHITECTURE.md`**): (1) small reviews (~20 pages or
+  fewer) on today's loop; (2) large single-scope reviews on a
+  discipline-neutral DIGEST (a free code layer at upload, page notes on
+  demand after a cost estimate); (3) mega-reviews split by discipline under a
+  plan the user and orchestrator edit together, run as a background job.
+  Code at the spine, agents at the leaves. 5.31.0 ships M1, everything that
+  does not wait on the owner's first suite run, **each behind a switch, OFF
+  by default**: `GEOTECH_REVIEW_FINDINGS` (the shared finding format and
+  record/update/list/report tools), `GEOTECH_REVIEW_OVERVIEW` (contact sheets
+  above 20 pages), `GEOTECH_REVIEW_GEOMETRY` (planlens.ir callouts,
+  dimensions, title block, revision clouds on the review page, which never
+  had geometry), `GEOTECH_REVIEW_DIGEST` (`funhouse_agent/review_digest/`: the
+  digest's free layer, 538 pages in ~3.5 s, plus four tools); arms
+  `overview` / `geometry` / `digest`; suite 35 tasks. Also the `find_like`
+  context fix, the working folder bound at agent build
+  (`build_deep_agent(working_dir=)`), the digest cache kept off download
+  cards. An independent review's 14 items fixed and tested. Next: the owner's
+  M0 suite run when the Funhouse budget renews Oct 1; pickup `HANDOFF.md`
+  §0a-current.
 - **5.30.0 RELEASED 2026-09-27 (tag `v5.30.0`). No dependency change** (pin
   stays `planlens>=0.10`; planlens 0.10.1 from PyPI is what it was gated
   on). Out of the owner's ask for a big-picture review of the Document

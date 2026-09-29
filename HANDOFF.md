@@ -1,12 +1,36 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-09-27.** This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-09-29.** This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-09-27, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-09-29, supersedes everything below)
+
+### 5.31.0 RELEASED 2026-09-29 (tag `v5.31.0`) — DOCUMENT REVIEW M1, SWITCHED
+
+**Released on the owner's word ("Yeah you can release"); no dependency
+change** (pin stays `planlens>=0.10`). RELEASE_GATE_531
+
+**Plan of record: `module_work/REVIEW_ARCHITECTURE.md`** (three job shapes;
+milestones M0-M4; decisions and open questions). 5.31.0 is its M1: what does
+not wait on the owner's suite numbers, each behind a switch, OFF by default:
+findings (`GEOTECH_REVIEW_FINDINGS`), contact-sheet overview
+(`GEOTECH_REVIEW_OVERVIEW`), geometry on the review page
+(`GEOTECH_REVIEW_GEOMETRY`), the digest's free layer
+(`GEOTECH_REVIEW_DIGEST`); arms `overview`, `geometry`, `digest`; suite 35
+tasks. Switch table: `module_work/REVIEW_HARNESS.md`.
+
+**Owner's next steps (Oct 1, when the Funhouse budget renews; the mirror
+needs a day or two for 5.31.0):** install 5.31.0; `probe(...)`; a small
+`score_review_suite(... arms=("baseline", "lean"), ids=[...])` run to see cost
+per task; then the arms that matter. The results decide the look primitive
+(REVIEW_ARCHITECTURE S1.0), which the digest's page notes (M2) reuse.
+
+**Not released:** planlens branch `fix/advice-names-no-missing-tools`
+(e1caadc, drawing-sheet advice no longer names geometry tools); the app
+does not need it.
 
 ### 5.30.0 RELEASED 2026-09-27 (tag `v5.30.0`) — THE DOCUMENT REVIEW EVAL SUITE + SWITCHED HARNESS CHANGES
 

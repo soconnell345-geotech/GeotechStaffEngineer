@@ -217,7 +217,7 @@ live on SharePoint (`extra_tasks=`).
   discipline reviewers, consolidation and deliverables, one seeded mega-set.
 - **M4:** the cross-document coordination pass.
 
-## Built on branch `feature/review-m1` (2026-09-28/29, UNRELEASED)
+## Built in M1, RELEASED as 5.31.0 (2026-09-29)
 
 Everything that does not wait on the M0 numbers, each behind a switch in
 `funhouse_agent/review_flags.py`, OFF by default (with every switch off the
