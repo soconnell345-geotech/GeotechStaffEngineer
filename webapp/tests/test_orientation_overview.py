@@ -304,3 +304,14 @@ def test_a_screenshot_mid_conversation_is_not_oriented():
     assert orient_on_upload(["addendum.pdf"], started)
     assert orient_on_upload(["shot.png", "addendum.pdf"], started)
     assert not orient_on_upload([], started)
+
+
+def test_a_pasted_screenshot_gets_a_name_of_its_own():
+    from webapp.core import pasted_upload_name
+    when = 1790885085.0
+    a = pasted_upload_name("image.png", 0, when)
+    b = pasted_upload_name("image.png", 1, when)
+    assert a.startswith("pasted_") and a.endswith(".png") and a != b
+    assert pasted_upload_name("IMAGE.JPG", 0, when).endswith(".jpg")
+    assert pasted_upload_name("sheet_31.png") == "sheet_31.png"   # kept
+    assert pasted_upload_name("set.pdf") == "set.pdf"

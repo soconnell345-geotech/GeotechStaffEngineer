@@ -27,7 +27,7 @@ if _PKG_ROOT not in sys.path:
 import streamlit as st
 
 from webapp import (budget_panel, core, engine_config, identity, profiles,
-                    sharepoint_store, turn_jobs)
+                    sharepoint_store, turn_jobs, ws_upload)
 
 # Which PAGE this run serves (webapp.profiles): the geotech agent by default
 # — a plain `streamlit run webapp/app.py` and the Databricks launcher change
@@ -202,6 +202,53 @@ def _new_conversation() -> None:
     ss.recovered_notice = False
     ss.behavior = core.default_behavior()       # A5: per-conversation pickers
     _resolve_and_build(core.default_model_id())
+
+
+def _stage_files(pairs) -> list:
+    """Stage ``(name, bytes)`` uploads into this conversation — the sidebar
+    uploader and the chat box both come through here: the files land in the
+    working folder, the agent's next message carries the attachment note, and
+    the transcript shows an ``attach`` line for each."""
+    ss = st.session_state
+    atts = core.stage_uploads(ss.attachments, ss.temp_dir, pairs)
+    ss.pending_notes.append(core.attachment_note(
+        atts, review=not _PROFILE.specialists))
+    entries = [{"role": "attach", "text": f"{a.key} ({a.size:,} bytes)"}
+               for a in atts]
+    ss.transcript.extend(entries)                # in-memory (always)
+    try:                                          # persist — never crash
+        for entry in entries:
+            core.append_transcript(ss.thread_id, entry)
+        core.save_attachments_index(ss.thread_id, list(ss.attachments))
+        ss.save_error = None
+    except Exception as exc:
+        ss.save_error = f"{type(exc).__name__}: {exc}"
+    return atts
+
+
+def _queue_orientation(atts) -> None:
+    """The review page orients itself on a fresh upload — one cheap turn,
+    sent on the user's behalf at the next run (owner, 2026-09-21: automatic,
+    not a button). Only when there is an agent to answer and no turn already
+    running; the request text is the user's message in the transcript, so it
+    replays like any other. Not for a screenshot dropped in mid-conversation:
+    that is evidence for the next message (profiles.orient_on_upload)."""
+    ss = st.session_state
+    if _PROFILE.orientation and ss.agent is not None \
+            and turn_jobs.get_turn_job(ss.thread_id) is None \
+            and profiles.orient_on_upload([a.key for a in atts],
+                                          ss.transcript):
+        ss.pending_orientation = [a.key for a in atts]
+
+
+def _chat_input_takes_files() -> bool:
+    """Whether this Streamlit's chat box can take files (``accept_file``,
+    Streamlit 1.43+) — pasted screenshots included."""
+    import inspect
+    try:
+        return "accept_file" in inspect.signature(st.chat_input).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def _open_conversation(thread_id: str) -> None:
@@ -770,31 +817,8 @@ with st.sidebar:
         if not fresh and _retired:
             st.rerun()      # nothing new to stage, but retire the widget now
         if fresh:
-            atts = core.stage_uploads(ss.attachments, ss.temp_dir, fresh)
-            ss.pending_notes.append(core.attachment_note(
-                atts, review=not _PROFILE.specialists))
-            entries = [{"role": "attach", "text": f"{a.key} ({a.size:,} bytes)"}
-                       for a in atts]
-            ss.transcript.extend(entries)                # in-memory (always)
-            try:                                          # persist — never crash
-                for entry in entries:
-                    core.append_transcript(ss.thread_id, entry)
-                core.save_attachments_index(ss.thread_id, list(ss.attachments))
-                ss.save_error = None
-            except Exception as exc:
-                ss.save_error = f"{type(exc).__name__}: {exc}"
-            # The review page orients itself on a fresh upload — one cheap
-            # turn, sent on the user's behalf at the next run (owner, 2026-09-21:
-            # automatic, not a button). Only when there is an agent to answer
-            # and no turn already running; the request text is the user's
-            # message in the transcript, so it replays like any other.
-            # Not for a screenshot dropped in mid-conversation: that is
-            # evidence for the next message (profiles.orient_on_upload).
-            if _PROFILE.orientation and ss.agent is not None \
-                    and turn_jobs.get_turn_job(ss.thread_id) is None \
-                    and profiles.orient_on_upload([a.key for a in atts],
-                                                  ss.transcript):
-                ss.pending_orientation = [a.key for a in atts]
+            atts = _stage_files(fresh)
+            _queue_orientation(atts)
             st.rerun()
 
     if ss.attachments:
@@ -1150,8 +1174,30 @@ if _active_job is not None:
 _placeholder = ("Ask a geotechnical question…" if _PROFILE.specialists else
                 "Ask about the document — or ask for a marked-up copy or a "
                 "Word summary…")
-prompt = st.chat_input(_placeholder if ss.agent is not None else
-                       "Configure an engine to start (see the sidebar)")
+# Where the browser's own upload request reaches the server (not behind the
+# Databricks driver proxy, which refuses it — that host has the websocket
+# uploader and its paste target), the chat box takes files too: a dropped
+# file or a PASTED SCREENSHOT goes with the message (owner, 2026-10-01).
+_chat_files = (ws_upload.upload_mode() == "http" and _chat_input_takes_files())
+_chat_value = st.chat_input(
+    _placeholder if ss.agent is not None else
+    "Configure an engine to start (see the sidebar)",
+    **({"accept_file": "multiple", "file_type": core.ACCEPTED_UPLOAD_TYPES}
+       if _chat_files else {}))
+prompt = _chat_value
+if _chat_value is not None and not isinstance(_chat_value, str):
+    _chat_text = str(getattr(_chat_value, "text", "") or "")
+    _chat_up = list(getattr(_chat_value, "files", None) or [])
+    if _chat_up:
+        _pairs = [(core.pasted_upload_name(f.name, i), f.getvalue())
+                  for i, f in enumerate(_chat_up)]
+        _fresh = [(n, d) for (n, d) in _pairs
+                  if core.sanitize_key(n) not in ss.attachments]
+        if _fresh:
+            _atts = _stage_files(_fresh)
+            if not _chat_text.strip():
+                _queue_orientation(_atts)     # files alone: as an upload
+    prompt = _chat_text.strip() or None
 
 # The automatic orientation turn (review page): the upload handler queued the
 # attachment names; this run sends the request as if the user had typed it.

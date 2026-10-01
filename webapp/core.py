@@ -30,6 +30,7 @@ import os
 import re
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 from uuid import uuid4
@@ -91,6 +92,26 @@ class Attachment:
     key: str
     path: str
     size: int
+
+
+#: Names a browser gives a picture pasted from the clipboard.
+_CLIPBOARD_NAMES = {"image.png", "image.jpg", "image.jpeg", "image.gif",
+                    "image.webp", "image.bmp", "blob"}
+
+
+def pasted_upload_name(name, index: int = 0, when: Optional[float] = None
+                       ) -> str:
+    """A screenshot pasted into the chat box arrives called ``image.png``
+    every time; a second paste would be taken for the first (attachments are
+    deduplicated by name). So a clipboard name becomes
+    ``pasted_<YYYYmmdd_HHMMSS>[_<n>].<ext>``; any other name is kept."""
+    base = os.path.basename(str(name or "").replace("\\", "/")).lower()
+    if base not in _CLIPBOARD_NAMES:
+        return str(name)
+    ext = os.path.splitext(base)[1] or ".png"
+    stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime(
+        time.time() if when is None else when))
+    return f"pasted_{stamp}{'_' + str(index) if index else ''}{ext}"
 
 
 def sanitize_key(name) -> str:

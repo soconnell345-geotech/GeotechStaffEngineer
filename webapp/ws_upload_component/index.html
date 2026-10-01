@@ -13,12 +13,20 @@
   .err  { font-size: 12px; color: #d33; margin-top: 6px; white-space: pre-wrap; }
   .ok   { font-size: 12px; color: #2a2; margin-top: 6px; white-space: pre-wrap; }
   input[type=file] { font-size: 13px; max-width: 100%; }
+  .paste {
+    margin-top: 8px; padding: 6px 8px; border-radius: 6px; font-size: 12px;
+    border: 1px dotted rgba(128,128,128,.55); cursor: text; outline: none;
+  }
+  .paste:focus { border-style: solid; border-color: #4a7bd0; }
 </style>
 </head>
 <body>
 <div class="box">
   <div class="row">
     <input type="file" id="picker" multiple />
+  </div>
+  <div class="paste" id="paste" tabindex="0">
+    Click here, then press Ctrl+V to paste a screenshot.
   </div>
   <div class="hint" id="hint"></div>
   <div class="ok" id="ok"></div>
@@ -71,11 +79,45 @@ function readOne(file) {
   });
 }
 
-document.getElementById("picker").addEventListener("change", async function (ev) {
+// A pasted screenshot arrives as a File called "image.png" every time, so it
+// is renamed by the clock: two pastes must not share one attachment name.
+function stamp() {
+  const d = new Date(), p = n => String(n).padStart(2, "0");
+  return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "_" +
+         p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+
+function pastedFiles(clip) {
+  const out = [];
+  const items = Array.from((clip && clip.items) || []);
+  items.forEach(function (it, i) {
+    if (it.kind !== "file") return;
+    const f = it.getAsFile();
+    if (!f) return;
+    const ext = (f.type.split("/")[1] || "png").replace("jpeg", "jpg");
+    const name = (f.name && f.name !== "image.png" && f.name !== "image.jpg")
+      ? f.name : ("pasted_" + stamp() + (items.length > 1 ? "_" + i : "") +
+                  "." + ext);
+    out.push(new File([f], name, { type: f.type }));
+  });
+  return out;
+}
+
+document.addEventListener("paste", function (ev) {
+  const files = pastedFiles(ev.clipboardData);
+  if (!files.length) return;
+  ev.preventDefault();
+  sendFiles(files);
+});
+
+document.getElementById("picker").addEventListener("change", function (ev) {
+  sendFiles(Array.from(ev.target.files || []));
+});
+
+async function sendFiles(files) {
   const okEl = document.getElementById("ok");
   const errEl = document.getElementById("err");
   okEl.textContent = ""; errEl.textContent = "";
-  const files = Array.from(ev.target.files || []);
   if (!files.length) return;
   const good = [], bad = [];
   for (const f of files) {
@@ -94,7 +136,7 @@ document.getElementById("picker").addEventListener("change", async function (ev)
       " — it will appear under Attachments.";
   }
   setHeight();
-});
+}
 
 send("streamlit:componentReady", { apiVersion: 1 });
 setHeight();
