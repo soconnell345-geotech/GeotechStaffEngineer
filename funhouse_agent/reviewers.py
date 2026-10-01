@@ -301,7 +301,9 @@ def make_structural_specialist(genai_engine, *, extra_modules=None, **kwargs):
 
     Scoped to ``section_props``, ``concrete_props``, ``pynite``, ``opensees``,
     ``fem2d``, ``reliability``, and ``calc_package``, plus the structural
-    reference modules (``ufc_concrete_practice``, ``reference_db``/
+    reference modules (``dispatch.STRUCTURAL_REFERENCES``: ``ufc_structural``,
+    ``em_2104``, ``em_2107``, ``ufc_collapse``, ``gsa_collapse``,
+    ``wood_handbook``, ``ufc_concrete_practice``, ``reference_db``/
     ``figure_db``), prompted in DESIGN mode as a senior structural engineer
     (workflow: section properties → member/frame analysis → RC section
     capacity → optional probabilistic variation → calc package). See

@@ -33,12 +33,13 @@ the two in sync if you edit either.** The scope sets live in
 - **`reliability`** — FOSM/PEM/Monte Carlo/FORM probabilistic wrap around
   any of the above, when load or capacity variability is worth quantifying.
 - **`calc_package`** — `html_to_pdf` report rendering.
-- **References**: `ufc_concrete_practice` (UFC 3-250-04 concrete materials/
-  construction practice), plus reference_db / figure_db. The structural
-  reference layer is still being onboarded (candidates: UFC 3-301-01
-  structural loads/design criteria, EM 1110-2-2104 strength design for RC
-  hydraulic structures, EM 1110-2-2107 steel structures) — more reference
-  modules will land in this scope over time.
+- **References**: `ufc_structural` (UFC 3-301-01 DoD structural criteria —
+  risk categories, live loads, the Table 3-1 seismic systems), `em_2104`
+  (EM 1110-2-2104 RC hydraulic structures), `em_2107` (EM 1110-2-2107
+  hydraulic steel structures), `ufc_collapse` / `gsa_collapse` (progressive
+  collapse, DoD and GSA), `wood_handbook` (USDA Wood Handbook),
+  `ufc_concrete_practice` (UFC 3-250-04 concrete materials/construction
+  practice), plus reference_db / figure_db to search them.
 
 ## Workflow
 

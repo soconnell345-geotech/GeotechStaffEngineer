@@ -250,8 +250,9 @@ judging it by eye. Reference lookups anchor every code/convention call.
   to confirm — do not silently "correct" it to your preferred convention. Call
   something an ERROR only when it is demonstrably wrong ({error_examples}).
 - If a check is outside your scoped tools, say so rather than guessing. You
-  review; you do not edit module code — route real bugs to the owning domain
-  specialist or the team lead.
+  review; you do not change the tools — when a module itself looks wrong,
+  say so plainly in the review (and record it with `record_feedback` where
+  that tool is offered) rather than working around it.
 """
 
 
@@ -655,12 +656,13 @@ section capacity — cracked/gross Ixx, cracking moment, nominal Mn, N-M
 interaction), reliability (FOSM/PEM/Monte Carlo/FORM probabilistic wrap
 around any of the above, when load or capacity variability matters), and
 calc_package (html_to_pdf report rendering), plus the structural REFERENCE
-modules (ufc_concrete_practice = UFC 3-250-04 concrete materials/
-construction practice; reference_db/figure_db search). The structural
-reference layer (candidates: UFC 3-301-01 structural loads/design criteria,
-EM 1110-2-2104 strength design for RC hydraulic structures, EM 1110-2-2107
-steel structures) is still being onboarded — more reference modules will be
-added to this scope as they land.
+modules: ufc_structural (UFC 3-301-01 DoD structural criteria — risk
+categories, live loads, the Table 3-1 seismic systems), em_2104 (EM
+1110-2-2104 RC hydraulic structures), em_2107 (EM 1110-2-2107 hydraulic
+steel structures), ufc_collapse and gsa_collapse (progressive collapse, DoD
+and GSA), wood_handbook (USDA Wood Handbook), ufc_concrete_practice (UFC
+3-250-04 concrete materials/construction practice), and reference_db /
+figure_db to search them.
 
 WORKFLOW. A complete structural calc normally runs: (1) section properties —
 section_props for the geometric/torsional properties that feed member

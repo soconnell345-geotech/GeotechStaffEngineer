@@ -458,13 +458,19 @@ def test_subagents_configured():
     assert rev["name"] == "reviewer"
 
     # references prompt is the consultant framing (plus an appended concision
-    # instruction); reviewer is the reviewer system prompt unchanged.
+    # instruction); reviewer is the reviewer prompt for NATIVE tool calling —
+    # the v1 text-tag protocol ("<tool_call> tags", "You have 4 tools", an
+    # 11-module list) is not given to a model that calls tools natively.
     from funhouse_agent.reviewer import (
-        CONSULTANT_FRAMING, REVIEWER_SYSTEM_PROMPT,
+        CONSULTANT_FRAMING, REVIEWER_DEEP_PROMPT, REVIEWER_SYSTEM_PROMPT,
     )
+    from funhouse_agent.dispatch import REFERENCE_MODULES
     assert refs["system_prompt"].startswith(CONSULTANT_FRAMING)
     assert "concise" in refs["system_prompt"].lower()
-    assert rev["system_prompt"] == REVIEWER_SYSTEM_PROMPT
+    assert rev["system_prompt"] == REVIEWER_DEEP_PROMPT
+    assert "<tool_call>" not in rev["system_prompt"]
+    assert "<tool_call>" in REVIEWER_SYSTEM_PROMPT        # v1 still parses it
+    assert all(m in rev["system_prompt"] for m in REFERENCE_MODULES)
 
     # references has the figure read-off vision tool + core tools.
     ref_tool_names = {t.name for t in refs["tools"]}

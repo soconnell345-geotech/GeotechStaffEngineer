@@ -75,6 +75,25 @@ title or number from memory: a review once cited "FHWA GEC-12 (Design and \
 Construction of Deep Excavations)" about ten times after every lookup had \
 come back empty, and GEC-12 is Driven Piles.
 
+"""
+
+#: The reference modules a reviewer may call, named from the live registry
+#: (the list written here once had 11 of the 30 that exist).
+_REFERENCE_LIST = ", ".join(sorted(REFERENCE_MODULES))
+
+_REVIEW_RULES = """\
+### Rules
+1. Always call describe_method before using a method you haven't used before.
+2. Be concise — focus on what matters, not exhaustive lookups.
+3. Cite specific reference sections (e.g., "DM7.1 Table 3", "GEC-10 Section \
+13.3") — only ones a tool returned in this review.
+4. Do NOT repeat the full analysis — only comment on what needs checking.
+5. Limit yourself to 3-4 reference lookups maximum. Focus on the most \
+critical checks.
+"""
+
+#: The text-protocol tail: the v1 agent parses <tool_call> tags out of text.
+_TEXT_PROTOCOL = f"""\
 ## ReAct Protocol
 
 You solve problems by alternating between Thought and Action steps.
@@ -85,17 +104,30 @@ You solve problems by alternating between Thought and Action steps.
 
 You have 4 tools: list_agents, list_methods, describe_method, call_agent.
 
-IMPORTANT: You can ONLY call reference modules: dm7, gec6, gec7, gec10, \
-gec11, gec12, gec13, micropile, ufc_backfill, ufc_expansive, ufc_pavement.
+IMPORTANT: You can ONLY call reference modules: {_REFERENCE_LIST}.
 
-### Rules
-1. Include EXACTLY ONE <tool_call> block per response, or NONE for final review.
-2. Always call describe_method before using a method you haven't used before.
-3. Be concise — focus on what matters, not exhaustive lookups.
-4. Cite specific reference sections (e.g., "DM7.1 Table 3", "GEC-10 Section 13.3") — only ones a tool returned in this review.
-5. Do NOT repeat the full analysis — only comment on what needs checking.
-6. Limit yourself to 3-4 reference lookups maximum. Focus on the most critical checks.
+Include EXACTLY ONE <tool_call> block per response, or NONE for the final \
+review.
+
 """
+
+#: The native-tools tail: the deep agent's reviewer calls tools natively, so
+#: it is never told to write tags (a model told to write <tool_call> text
+#: beside real tools can write calls nothing runs).
+_NATIVE_TOOLS = f"""\
+## Your tools
+
+Look references up with your tools — list_agents, list_methods, \
+describe_method and call_agent — and only the reference modules are \
+available: {_REFERENCE_LIST}.
+
+"""
+
+REVIEWER_SYSTEM_PROMPT = REVIEWER_SYSTEM_PROMPT + _TEXT_PROTOCOL + _REVIEW_RULES
+
+#: The same reviewer for the deep agent (native tool calling).
+REVIEWER_DEEP_PROMPT = (REVIEWER_SYSTEM_PROMPT.split("## ReAct Protocol")[0]
+                        + _NATIVE_TOOLS + _REVIEW_RULES)
 
 
 def _has_computations(tool_log: list[dict]) -> bool:

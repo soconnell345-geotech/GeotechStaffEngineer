@@ -51,9 +51,9 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   returned `html_img_tag` straight into the report HTML — `html_to_pdf` embeds
   a real local PNG path for you. Never ship "[image]", an inline `<svg>`, or a
   coloured table standing in for a figure; `html_to_pdf` rejects those and
-  names what to fix. When you DELEGATE the package to `calc`, hand it the
-  layer stack, water table, foundation geometry and any depth-wise data — it
-  draws only what it is given.
+  names what to fix. If a `calc` sub-agent is available and you DELEGATE the
+  package to it, hand it the layer stack, water table, foundation geometry
+  and any depth-wise data — it draws only what it is given.
 - **Use the scratch filesystem to stay organized.** You have `write_file` /
   `read_file` / `edit_file` / `ls`. Stash intermediate results, large tool
   outputs (e.g. a full method dump or a long reference excerpt), and tables you

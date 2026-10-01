@@ -13,7 +13,7 @@ Wires the v1 tool surface and sub-agent design onto
   design charts (DM7/GEC/UFC/micropile/FEMA).
 * **reviewer sub-agent** — checks the primary's work against the references.
   Scoped to ``REFERENCE_MODULES``, prompted with
-  ``reviewer.REVIEWER_SYSTEM_PROMPT``.
+  ``reviewer.REVIEWER_DEEP_PROMPT`` (the v1 prompt minus its text-tag protocol).
 
 The real ``create_deep_agent`` signature (deepagents 0.6.8) targeted here::
 
@@ -46,7 +46,7 @@ except ImportError:                                       # deepagents >= 0.7.2
         _TodoMiddleware = None
 
 from funhouse_agent.dispatch import ANALYSIS_MODULES, REFERENCE_MODULES
-from funhouse_agent.reviewer import CONSULTANT_FRAMING, REVIEWER_SYSTEM_PROMPT
+from funhouse_agent.reviewer import CONSULTANT_FRAMING, REVIEWER_DEEP_PROMPT
 
 from funhouse_agent.deep.limits import (
     DEFAULT_REFERENCES_MAX_MODEL_CALLS,
@@ -576,7 +576,7 @@ def build_reviewer_subagent(
     )
     if extra_tools:
         tools = list(tools) + list(extra_tools)
-    system_prompt = REVIEWER_SYSTEM_PROMPT
+    system_prompt = REVIEWER_DEEP_PROMPT
     if extra_system_prompt:
         system_prompt = system_prompt + "\n\n" + extra_system_prompt
     return {
