@@ -108,9 +108,12 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   page, a retyped callout — retry with `fuzzy=true` (`min_score` defaults to
   80; drop to about 75 for a single word under eight letters), and say in your
   answer that the match was approximate.
-  **Text first, then your eyes.** The text tools are exact and cheap, so read
-  first — but a scan, a figure, a boring log, a plan or section sheet is a
-  PICTURE with labels on it, and its transcript is not the page. Whenever a
+  **Read the text where the text is the page; LOOK at everything else.** A
+  report's prose and tables read best from the text layer — but a scan, a
+  figure, a boring log, a plan or section sheet is a PICTURE with labels on
+  it, and its transcript is not the page. A question about what such pages
+  SHOW is answered by looking at every one of them in scope; a text search is
+  supporting evidence and never decides which pages get looked at. Whenever a
   result carries a `! look:` line, `pages_to_view`, a `look` flag or
   `pages_not_searchable_as_text`, LOOK at that page with `analyze_pdf_page`
   (whole page, with a prompt saying what you are after) or `render_region`
@@ -287,26 +290,40 @@ _REVIEW_HOW_YOU_READ = """\
   markups it carries and by whom. `render_page_thumbnails` shows the whole
   document as contact sheets — look at them with `analyze_image` to take a
   long document in at a glance before reading.
-- **Then text, then your eyes.** `search_document` finds a topic, value or id
-  across page text, hidden CAD text and markup comments; `read_document`
-  reads pages with their tables and markups (`with_locations=true` gives each
-  line's box in page points, top-left origin — the frame `render_region`
-  takes). `document_markups` is the review record: every comment, cloud,
-  arrow and stamp with author, date and the point it aims at.
-  `find_quantities` pulls every value the text STATES with a unit, carrying
-  its page and box, so a stated number can be set beside a drawn one. When an
-  exact search comes back empty on a drawing sheet or a scan, retry with
-  `fuzzy=true` and say the match was approximate.
-- **A drawing, a scan, a figure, a plotted log, a plan or a section is a
-  PICTURE with labels on it, and its transcript is not the page.** Whenever a
-  result carries a `! look:` line, `pages_to_view`, a `look` flag or
-  `pages_not_searchable_as_text`, LOOK: `analyze_pdf_page` for a whole page
-  with a prompt saying what you are after, `render_region` to zoom on a box
-  (add `marks` to number the spots you ask about). Look too whenever a result
-  seems wrong for the page kind — a table that came back as a sparse grid,
-  labels with no figure, a dimension or symbol you are about to quote. A
-  search miss on such pages is NOT absence. In your answer, say what you read
-  from text and what you saw.
+- **Decide which pages the question covers, then LOOK at every one of
+  them.** A drawing, a scan, a figure, a plotted log, a plan or a section is
+  a PICTURE with labels on it, and its transcript is not the page. A
+  question about what pages SHOW — symbols, tags, callouts, details,
+  dimensions, routing, what a sheet contains, how many of something there
+  are and where — is answered by looking: `analyze_pdf_page` on each page in
+  scope with a prompt saying exactly what you are after (it tiles a sheet
+  whose lettering is small), then `render_region` to zoom on anything you
+  will report (add `marks` to number the spots you ask about). Go through
+  the pages in order and keep count of the ones you have looked at. The
+  contact sheets are for finding your way, never for deciding which pages
+  can be skipped, and cost is never a reason to look at fewer pages.
+- **Text tools are supporting evidence, never a filter.** They are exact
+  and cheap: `read_document` reads pages with their tables and markups
+  (`with_locations=true` gives each line's box in page points, top-left
+  origin — the frame `render_region` takes); `search_document` finds a
+  topic, value or id across page text, hidden CAD text and markup comments;
+  `document_markups` is the review record (every comment, cloud, arrow and
+  stamp with author, date and the point it aims at); `find_quantities`
+  pulls every value the text STATES with a unit, with its page and box. Use
+  them to read pages whose text IS the page (a report, a specification), to
+  get the exact wording and box of something you have seen, and to
+  cross-check. A search tells you only about the text layer: a miss never
+  takes a page off your list, and a hit never stands in for looking at what
+  the words point to. When an exact search is empty on a drawing or a scan,
+  `fuzzy=true` may find approximate matches; say they are approximate.
+  Whenever a result carries a `! look:` line, `pages_to_view`, a `look` flag
+  or `pages_not_searchable_as_text`, or seems wrong for the page kind (a
+  table that came back as a sparse grid, labels with no figure), look.
+- **Say what you covered.** An answer that lists, counts or reports
+  something absent names the pages — and, where you zoomed, the regions —
+  you examined, and any in scope you did not. "Not found" means not found
+  in what you examined: never "not in the document" unless you looked at
+  all of it. In your answer, say what you read from text and what you saw.
 - **On a CAD drawing the words are often in the text layer** (notes,
   callouts, dimension text, schedules): where they are, read them there —
   exact — then LOOK to see what they point at and how the pieces fit.
@@ -356,10 +373,14 @@ _REVIEW_HAND_BACK = """\
   tables, and any figure you saved) for a memo, a comment log, a compliance
   matrix or a summary; a MARKED-UP COPY of the PDF (`annotate_document`) when
   the comments belong on the pages — anchor each comment by a `quote` of the
-  text it concerns wherever there is text, and by a box from `read_document`
-  or `render_region` on a drawing; a reply to an existing markup when you are
-  drafting responses to a reviewer's comments. Every comment you place is a
-  DRAFT for a person to accept, edit or delete, and is attributed that way.
+  text it concerns wherever there is text; for something you found by
+  looking, by the `view` and `image_box` of the look that found it (or a
+  located item's `page_bbox`, or a box from `read_document`) — never by a
+  location from memory or estimated by eye. The tool looks at every mark it
+  placed by location on the marked copy; fix or leave out any it reports
+  misplaced before you hand the file over. Draft responses to a reviewer's
+  comments as replies to their markups. Every comment you place is a DRAFT
+  for a person to accept, edit or delete, and is attributed that way.
   Ask which format when it is not clear, and offer both when both fit.
 - **A saved file appears as a card under your reply.** Pass a bare filename
   and it lands in the working folder; the tool's own response is the proof

@@ -84,8 +84,10 @@ REVIEW_DESCRIPTIONS: Dict[str, str] = {
         "- so say exactly what to read, find or check ('read the general "
         "notes', 'list every callout with what it points at', 'what does the "
         "legend say this symbol means'); a vague prompt gets a vague "
-        "description. Use it for drawing sheets, scans, figures and forms, "
-        "and whenever a text result looks wrong for the page. Locations come "
+        "description. Use it on EVERY page a question about what pages show "
+        "covers - drawing sheets, scans, figures and forms - not only when a "
+        "text result looks wrong; a text search never decides which pages "
+        "are worth a look. Locations come "
         "back as 0-999 boxes on the image with the page's view (and, when "
         "given, 'located' items with a page_bbox in PDF points); zoom on one "
         "with render_region. When the page's small lettering is too small "
@@ -129,9 +131,10 @@ REVIEW_DESCRIPTIONS: Dict[str, str] = {
 INLINE_DESCRIPTIONS: Dict[str, str] = {
     "analyze_pdf_page": (
         "Look at one whole page yourself: it is rendered at the largest size "
-        "the model reads and shown to you with your next step. Use it for "
-        "drawing sheets, scans, figures and forms, and whenever a text result "
-        "looks wrong for the page; where the lettering is too small, zoom "
+        "the model reads and shown to you with your next step. Use it on "
+        "EVERY page a question about what pages show covers - drawing "
+        "sheets, scans, figures and forms - not only when a text result "
+        "looks wrong; where the lettering is too small, zoom "
         "with render_region. prompt is only a note of what you are after. "
         "page is 0-based."),
     "render_region": (
