@@ -1196,7 +1196,10 @@ if _chat_value is not None and not isinstance(_chat_value, str):
         if _fresh:
             _atts = _stage_files(_fresh)
             if not _chat_text.strip():
-                _queue_orientation(_atts)     # files alone: as an upload
+                # Files alone: as an upload — show the attach line(s) now and
+                # let the next run send any orientation the upload queued.
+                _queue_orientation(_atts)
+                st.rerun()
     prompt = _chat_text.strip() or None
 
 # The automatic orientation turn (review page): the upload handler queued the
