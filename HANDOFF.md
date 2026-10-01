@@ -1,12 +1,48 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-09-29.** This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-10-01.** This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-09-29, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-10-01, supersedes everything below)
+
+### 5.32 IN PROGRESS (UNRELEASED) — branch `release/5.32.0` (app) + `release/0.11.0` (planlens)
+
+**Owner: one big build for 5.32, and NOTHING is published until the Foundry
+results are in — for 5.31's switches AND for 5.32 itself.** The suite moved to
+Palantir Foundry (the owner's Funhouse budget is small): the AI FDE runs it as
+a lightweight transform (briefs `../foundry_handoff/AI_FDE_BRIEF.md` = Document
+Review suite on GPT-5.6 Sol / GPT-5.4; `AI_FDE_BRIEF_2.md` = report-ingest
+first live checks + the 106-question geotech eval). Foundry facts: memory
+`reference-foundry-model-route` (no ORIGINAL image detail; GPT-5.4 only via
+Responses; 55 rpm). First Foundry numbers: `module_work/REVIEW_HARNESS.md`
+ledger, run 2.
+
+On the branches (each committed with tests; planlens 1st):
+- planlens: `circle` markups + visible `label`s; `view` + `image_box`
+  anchors converted in the writer; `box`/`page_bbox` accepted for `bbox`;
+  the drawing-sheet advice wording (from `fix/advice-names-no-missing-tools`).
+- app: Foundry vision door in `webapp/palantir_sdk_engine.py`
+  (`from_handles`); "Find a past conversation" per page; RESULTS.md "failed
+  calls" column; `annotate_document` CHECKS every mark placed by location
+  (`funhouse_agent/markup_check.py`); review prompts LOOK first (text tools
+  are evidence, never a filter; say what you covered) — owner direction;
+  SharePoint browser addresses; no auto-orientation for a mid-conversation
+  screenshot; paste a screenshot (chat box / ws uploader, verified live);
+  suite task `produce-circle-tags` + check `markups_on_targets`; the peer
+  session's stale-prompt list (deep reviewer prompt, structural refs,
+  seismic md, calc delegation). Field record:
+  `module_work/field_feedback/2026-10-01_doc-review-penetrations_v5.31.0/`.
+
+**Before release:** the Foundry M0 results decide which review switches
+become defaults; then Foundry runs 5.32 from locally built wheels (no
+publishing); then planlens 0.11.0 → app 5.32.0 (pin `planlens>=0.11`), docs
+(CLAUDE.md state block, this section, DATABRICKS_INSTALL §11), gate in a
+clean worktree, tag — on the owner's word.
+
+### 5.31.0 RELEASED 2026-09-29 (tag `v5.31.0`) — DOCUMENT REVIEW M1, SWITCHED
 
 ### 5.31.0 RELEASED 2026-09-29 (tag `v5.31.0`) — DOCUMENT REVIEW M1, SWITCHED
 
