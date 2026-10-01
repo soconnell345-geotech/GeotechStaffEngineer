@@ -95,6 +95,32 @@ def pdf_page_count(path: Optional[str]) -> int:
         return 0
 
 
+#: Uploads that are pictures, not documents to review.
+IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tif",
+                  ".tiff")
+
+
+def orient_on_upload(keys, transcript) -> bool:
+    """Whether an upload gets the page's automatic orientation turn.
+
+    Not when everything uploaded is an image and the conversation has already
+    started: a screenshot dropped in mid-conversation is evidence for the
+    next message, not a document to be introduced to. Field session
+    2026-10-01: the owner attached a screenshot of a missed tag, the app sent
+    "Before I ask anything, give me a short orientation…" on their behalf, and
+    the agent described the screenshot instead of answering their point. The
+    upload note still tells the agent the file is there.
+    """
+    keys = [str(k) for k in (keys or [])]
+    if not keys:
+        return False
+    images_only = all(k.lower().endswith(IMAGE_SUFFIXES) for k in keys)
+    started = any(isinstance(e, dict) and e.get("role") in ("user",
+                                                          "assistant")
+                  for e in (transcript or []))
+    return not (images_only and started)
+
+
 def orientation_request_for(profile: "AppProfile", attachments) -> str:
     """The orientation request for ``attachments`` (staged
     :class:`webapp.core.Attachment` objects) — the text the app and the
@@ -253,4 +279,5 @@ __all__ = ["AppProfile", "GEOTECH", "DOCUMENT_REVIEW", "PROFILES", "DEFAULT",
            "ORIENTATION_REQUEST", "ORIENTATION_REQUEST_LONG",
            "ORIENTATION_REQUEST_SHORT", "PROFILE_ENV", "SESSION_KEY",
            "get", "current", "set_current", "session_root",
-           "orientation_request_for", "pdf_page_count"]
+           "orientation_request_for", "pdf_page_count", "orient_on_upload",
+           "IMAGE_SUFFIXES"]

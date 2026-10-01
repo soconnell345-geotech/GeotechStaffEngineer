@@ -282,3 +282,25 @@ def test_the_page_agent_s_ledger_follows_its_own_conversation(monkeypatch,
         saved = FindingsLedger(os.path.join(files, "findings.json")).load()
         assert [f.statement for f in saved] == [f"Found in {tid}."]
     assert not (tmp_path / "other").exists()
+
+
+# -- a screenshot mid-conversation is evidence, not a document (2026-10-01) --
+
+def test_a_first_upload_is_oriented_whatever_it_is():
+    from webapp.profiles import orient_on_upload
+    attach = [{"role": "attach", "text": "x"}]
+    assert orient_on_upload(["set.pdf"], [])
+    assert orient_on_upload(["photo.png"], attach)     # nothing asked yet
+
+
+def test_a_screenshot_mid_conversation_is_not_oriented():
+    from webapp.profiles import orient_on_upload
+    started = [{"role": "user", "text": "find every tag"},
+               {"role": "assistant", "text": "found 3"},
+               {"role": "attach", "text": "missed.png"}]
+    assert not orient_on_upload(["missed.png"], started)
+    assert not orient_on_upload(["a.PNG", "b.jpeg"], started)
+    # a document dropped in later is still introduced
+    assert orient_on_upload(["addendum.pdf"], started)
+    assert orient_on_upload(["shot.png", "addendum.pdf"], started)
+    assert not orient_on_upload([], started)

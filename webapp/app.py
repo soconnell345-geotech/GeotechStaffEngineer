@@ -788,8 +788,12 @@ with st.sidebar:
             # automatic, not a button). Only when there is an agent to answer
             # and no turn already running; the request text is the user's
             # message in the transcript, so it replays like any other.
+            # Not for a screenshot dropped in mid-conversation: that is
+            # evidence for the next message (profiles.orient_on_upload).
             if _PROFILE.orientation and ss.agent is not None \
-                    and turn_jobs.get_turn_job(ss.thread_id) is None:
+                    and turn_jobs.get_turn_job(ss.thread_id) is None \
+                    and profiles.orient_on_upload([a.key for a in atts],
+                                                  ss.transcript):
                 ss.pending_orientation = [a.key for a in atts]
             st.rerun()
 
