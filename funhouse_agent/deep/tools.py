@@ -545,7 +545,14 @@ _DOCUMENT_TOOL_NOTES = {
         "download, and it defaults to <document>_marked.pdf. Leave author "
         "alone unless the user tells you whose review this is — the default "
         "names the comments as an AI draft, which is what the reviewer must "
-        "be able to see."),
+        "be able to see. For a thing you found by looking, pass the view and "
+        "image_box from the look that found it (or a located item's "
+        "page_bbox) — never a box from memory or an estimate. Every box, "
+        "circle or callout placed by location is then CHECKED: a crop of the "
+        "marked copy is looked at and the result's `check` says which marks "
+        "enclose what their label or comment names and which are misplaced. "
+        "Never hand over a file with misplaced marks: find those things "
+        "again and rewrite the copy with append=false."),
 }
 
 
@@ -973,10 +980,12 @@ def make_vision_tools(
 
     def annotate_document(handle: str, markups: Optional[list] = None,
                           output_path: str = "", author: str = "",
-                          append: bool = True) -> str:
+                          append: bool = True, check: bool = True) -> str:
         """Write review comments onto a COPY of the PDF (planlens' own words
         describe the markups; this app resolves the output file and signs
-        them)."""
+        them). ``check`` (default on) looks at every box, circle or callout
+        placed by location on the marked copy and reports which are
+        misplaced."""
         args = {
             "handle": handle,
             "output_path": _document_tools.markup_output_path(output_path,
@@ -986,7 +995,27 @@ def make_vision_tools(
                        or _document_tools.markup_author()),
             "append": append,
         }
-        return _dispatch("annotate_document", args)
+        raw = _dispatch("annotate_document", args)
+        if not check:
+            return raw
+        try:
+            result = json.loads(raw)
+        except ValueError:
+            return raw                  # an error string, or a cut result
+        out_pdf = result.get("output_path") if isinstance(result, dict) else None
+        if not out_pdf or not os.path.isfile(out_pdf) or "error" in result:
+            return raw
+        try:
+            from funhouse_agent import markup_check
+            block = markup_check.check_marks(out_pdf, result,
+                                             list(markups or []), engine)
+        except Exception as exc:  # noqa: BLE001 - the file is written either way
+            block = {"error": f"the placement check failed: "
+                              f"{type(exc).__name__}: {exc}"}
+        if block is None:
+            return raw
+        result["check"] = block
+        return json.dumps(result)
 
     def save_file(path: str, content: str, encoding: str = "text") -> str:
         """Save raw text or data to a file. Returns the saved file path. For
