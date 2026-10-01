@@ -576,3 +576,26 @@ def test_summary_reports_what_an_arm_fixed_and_broke():
                    {"model": "m", "versions": {}, "updated": "now"})
     assert "`lean` FIXES b" in md and "`lean` BREAKS a" in md
     assert "missing: y" in md
+
+
+def test_summary_counts_failed_calls_inside_finished_runs():
+    """A run the agent finished can still hide failed model calls (Foundry,
+    2026-10-01: dropped connections, rate limits on vision calls); they get
+    their own column beside the whole-run errors."""
+    from funhouse_agent.review_eval.runner import summarize
+    tasks = [Task(id="a", question="q", documents=[], category="locate",
+                  doc_type="drawing_set", checks=[]),
+             Task(id="b", question="q", documents=[], category="check",
+                  doc_type="calc_package", checks=[])]
+    ok = {"score": {"passed": True, "checks_passed": 1, "checks_total": 1}}
+    runs = {"sweep": {"a": dict(ok, model_errors=3),
+                      "b": dict(ok, model_errors=2, error="ReadTimeout")}}
+    md = summarize(runs, ["sweep"], tasks,
+                   {"model": "m", "versions": {}, "updated": "now"})
+    header = next(l for l in md.splitlines() if l.startswith("| arm |"))
+    row = next(l for l in md.splitlines() if l.startswith("| sweep |"))
+    cols = [c.strip() for c in header.strip("|").split("|")]
+    vals = [c.strip() for c in row.strip("|").split("|")]
+    got = dict(zip(cols, vals))
+    assert got["failed calls"] == "5" and got["errors"] == "1"
+    assert got["step caps"] == "0"

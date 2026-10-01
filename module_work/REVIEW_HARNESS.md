@@ -156,4 +156,48 @@ format), and milestones M0-M4. The items below are its M0.
 
 ## Results ledger
 
-_(empty — fill in from RESULTS.md after each cluster run; do not tune to the blind set)_
+_(fill in from RESULTS.md after each cluster run; do not tune to the blind set)_
+
+**Run 1 — 2026-09-30, cluster, 5.31.0** (planlens 0.10.1, deepagents 0.7.13,
+langchain 1.3.18; `funhouse-gpt-high`). Dry run: all 35 tasks resolve. Probe:
+`ok: True` ("Red.") — the endpoint takes an image mid-conversation, so the
+`inline` arm is live. Eight-task cost check, baseline vs lean:
+
+| arm | tasks | checks | model calls | tokens in/out | ~$ (2.50/15.00 per M) | min | errors | step caps |
+|---|---|---|---|---|---|---|---|---|
+| baseline | 8/8 | 28/28 | 60 | 510,863 / 9,205 | 1.42 | 3.4 | 0 | 0 |
+| lean | 7/8 | 27/28 | 52 | 357,696 / 10,903 | 1.06 | 3.3 | 0 | 0 |
+
+About $0.15 and 25 s a run on these documents. The Funhouse budget moved
+$2.47 against $2.48 from the token counts, so the suite's tokens capture the
+whole cost, vision side calls included. Lean read 30 % fewer input
+tokens. Its one miss: `set-3600-psi` (count over the 10-sheet stroke-lettered
+set) found 2 of 3 sheets, missing 10.25A — a coverage question, which is what
+the `sweep` arm is for; one run, not yet a pattern. Baseline's `set-3600-psi`
+used 17 model calls, right at its measured ceiling of about 17 — the bigger
+tasks will hit step caps there.
+
+**Run 2 — 2026-10-01, Palantir Foundry, run by the AI FDE** (lightweight
+Python transform; same package versions; `webapp/palantir_sdk_engine.py`
+with the image leg as a glue file, `from_handles`). Image check `ok: True` on
+both models. Foundry's `ImageDetail` has AUTO/HIGH/LOW/UNKNOWN and NO
+ORIGINAL, so `original` goes as HIGH. GPT-5.4 there is served by a Bedrock
+backend that refuses chat-completion requests (404 LanguageModelNotAvailable);
+the FDE wrote a Responses-route wrapper. GPT-5.4 is limited to 55
+requests/min per project.
+
+| model / arm | tasks | checks | model calls | tool calls | tokens in/out | min | errors | in-run model errors |
+|---|---|---|---|---|---|---|---|---|
+| GPT-5.4 baseline | 8/8 | 28/28 | 99 | 44 | 543,651 / 16,264 | 5.0 | 0 | 7 (rate limit, one task) |
+| GPT-5.4 lean | 8/8 | 28/28 | 115 | 46 | 515,508 / 17,451 | 4.9 | 0 | 0 |
+| GPT-5.6 Sol baseline | 8/8 | 28/28 | 235 | 82 | 882,824 / 138,351 | 14.1 | 0 | 6 (dropped connections) |
+| GPT-5.6 Sol lean | 8/8 | 28/28 | 267 | 71 | 734,056 / 138,362 | 12.2 | 0 | 3 (dropped connections) |
+
+Model calls run 1.7-2.2x the Funhouse run on the same tool calls. Likely
+cause (to confirm from the `tiling` fields): with no ORIGINAL the vision probe
+measures a smaller image budget, so `tiles="auto"` splits drawing sheets into
+more tiles, and each tile is a model call. Arm-vs-arm comparisons on Foundry
+stay fair; absolute call counts and time do not transfer to a host that honours
+`original`. In-run model errors are in `run.json` (`model_errors`); since the
+release after 5.31.0 RESULTS.md shows them as a "failed calls" column beside
+"errors".

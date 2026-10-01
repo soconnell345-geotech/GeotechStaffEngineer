@@ -313,9 +313,14 @@ def summarize(runs: Dict[str, Dict[str, Dict[str, Any]]], arms: Sequence[str],
     lines.append("Versions: " + ", ".join(
         f"{k} {v}" for k, v in (meta.get("versions") or {}).items()))
     lines.append("")
+    # "failed calls" are model calls that raised INSIDE a run the agent went
+    # on to finish (a dropped connection, a rate limit on a vision call); a
+    # run that failed outright is an "error". Both can change what the agent
+    # did, so both are shown.
     lines.append("| arm | tasks passed | checks passed | model calls | tool "
-                 "calls | tokens (in/out) | minutes | errors | step caps |")
-    lines.append("|---|---|---|---|---|---|---|---|---|")
+                 "calls | tokens (in/out) | minutes | errors | failed calls "
+                 "| step caps |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|")
     for arm in arms:
         rs = [r for r in runs.get(arm, {}).values() if not r.get("skipped")]
         tp = sum(1 for r in rs if (r.get("score") or {}).get("passed"))
@@ -327,9 +332,11 @@ def summarize(runs: Dict[str, Dict[str, Dict[str, Any]]], arms: Sequence[str],
         to = sum(r.get("tokens_out", 0) for r in rs)
         mins = sum(r.get("seconds", 0) for r in rs) / 60.0
         errs = sum(1 for r in rs if r.get("error"))
+        failed = sum(r.get("model_errors", 0) for r in rs)
         caps = sum(1 for r in rs if r.get("outcome_error"))
         lines.append(f"| {arm} | {tp}/{len(rs)} | {cp}/{ct} | {mc} | {tc} | "
-                     f"{ti:,}/{to:,} | {mins:.1f} | {errs} | {caps} |")
+                     f"{ti:,}/{to:,} | {mins:.1f} | {errs} | {failed} | "
+                     f"{caps} |")
     for title, key in (("By category", "category"),
                        ("By document type", "doc_type")):
         groups = sorted({getattr(t, key) for t in tasks})
