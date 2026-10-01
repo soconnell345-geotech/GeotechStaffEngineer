@@ -63,9 +63,12 @@ Setup: add `palantir-models` and `language-model-service-api` in the workspace
 `GEOTECH_FOUNDRY_MODELS=GPT 5.1=GPT_5_1` — or type `GPT_5_1` into the sidebar
 "Model RID or API name" box. Full tool calling is supported (the v3 request
 carries OpenAI-style `tools`); wrapper: `webapp/palantir_sdk_engine.py`.
-Current limit: image inputs are flattened to text on this route (the vision
-tools' image legs need the proxy route or a future `MultiContentChatMessage`
-leg).
+Images (since the release after 5.31.0): a call that carries an image goes
+through `OpenAiGptChatWithVisionLanguageModel` with
+`GptChatWithVisionCompletionRequest` / `MultiContentChatMessage` /
+`Base64ImageContent(image_url=..., detail=ImageDetail.X)` — the shape in the
+Model Catalog's own "Vision" example. Before that, image inputs were
+flattened to text on this route and the vision tools were blind.
 
 Notebook smoke test for the SDK route (also how to find the right name — 404 =
 wrong name, 403 = needs a model-access grant, answer text = working):

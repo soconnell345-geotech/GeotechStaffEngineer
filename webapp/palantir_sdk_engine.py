@@ -27,9 +27,23 @@ The response mirrors the OpenAI shape (``choices[0].message`` with optional
 ``tool_calls`` of ``GptToolCall(id, tool_call=GptToolCallInfo(
 function=FunctionToolCallInfo(arguments=<json str>, name)))``, plus ``usage``).
 
-Known limitation: user-message content is flattened to TEXT — image blocks from
-the vision tools are dropped on this route (the SDK has ``MultiContentChatMessage``
-/ ``Base64ImageContent`` for a future vision leg).
+**Images (the vision leg).** A call whose messages carry an image block goes
+to the SDK's vision door instead — the class names come from the public
+``langchain-palantir`` adapter (dragonejt, 2026-02), not yet from a live
+introspection here::
+
+    from palantir_models.models import OpenAiGptChatWithVisionLanguageModel
+    m.create_chat_completion(completion_request=GptChatWithVisionCompletionRequest(
+        messages=[MultiContentChatMessage(role, contents=[
+            ChatMessageContent(text=...) |
+            ChatMessageContent(image=Base64ImageContent(image_url="data:...")),
+        ], tool_calls=..., tool_call_id=...)], tools=..., max_tokens=...),
+        max_rate_limit_retries=N)
+
+OpenAI's image ``detail`` has no field on this route and is dropped; the
+vision probe measures what the route actually delivers. Calls with no image
+keep the text door verified live on 2026-07-21. Before this leg every image
+was flattened away and the vision tools were blind on Foundry.
 
 The SDK is only installed on Foundry, so all SDK imports are lazy (call-time);
 this module itself imports cleanly anywhere, and the offline tests fake the SDK
@@ -68,6 +82,12 @@ def _sdk():
     import language_model_service_api.languagemodelservice_api_completion_v3 \
         as lms_v3
     return OpenAiGptChatLanguageModel, lms_base, lms_v3
+
+
+def _vision_sdk():
+    """The vision door's model class. Raises ImportError where it is absent."""
+    from palantir_models.models import OpenAiGptChatWithVisionLanguageModel
+    return OpenAiGptChatWithVisionLanguageModel
 
 
 def sdk_available() -> bool:
@@ -114,6 +134,107 @@ def _lc_messages_to_sdk(messages: Sequence[BaseMessage], lms_base, lms_v3):
         else:  # HumanMessage and anything else — send as USER text.
             out.append(lms_base.ChatMessage(Role.USER,
                                             _text_content(message.content)))
+    return out
+
+
+def _image_url(block: dict) -> Optional[str]:
+    """The data URI (or URL) of an image content block, else None.
+
+    Takes OpenAI's ``{"type": "image_url", "image_url": {"url": ...}}`` (what
+    the app's vision engine, inline images and probes send) and LangChain's
+    own ``{"type": "image", "base64"/"data": ..., "mime_type": ...}``.
+    """
+    kind = block.get("type")
+    if kind == "image_url":
+        inner = block.get("image_url")
+        return inner.get("url") if isinstance(inner, dict) else inner
+    if kind == "image":
+        if block.get("url"):
+            return block["url"]
+        data = block.get("base64") or block.get("data")
+        if data:
+            mime = block.get("mime_type") or "image/png"
+            return f"data:{mime};base64,{data}"
+    return None
+
+
+def _has_image(messages: Sequence[BaseMessage]) -> bool:
+    for message in messages:
+        if isinstance(message.content, list) and any(
+                isinstance(b, dict) and _image_url(b) for b in message.content):
+            return True
+    return False
+
+
+def _image_detail(block: dict, lms_base) -> Any:
+    """OpenAI's ``detail`` string as the SDK's ``ImageDetail``, else None.
+
+    A level the SDK does not name falls back to HIGH for ``original`` (the
+    vision probe then measures that original was not honoured) and is left
+    out otherwise.
+    """
+    inner = block.get("image_url")
+    wanted = (inner.get("detail") if isinstance(inner, dict) else None) \
+        or block.get("detail")
+    Detail = getattr(lms_base, "ImageDetail", None)
+    if not wanted or Detail is None:
+        return None
+    level = getattr(Detail, str(wanted).upper(), None)
+    if level is None and str(wanted).lower() == "original":
+        level = getattr(Detail, "HIGH", None)
+    return level
+
+
+def _sdk_contents(content: Any, lms_base) -> list:
+    """LangChain content -> ``[ChatMessageContent]``, images kept."""
+    Content = lms_base.ChatMessageContent
+    if isinstance(content, str):
+        return [Content(text=content)]
+    out = []
+    for block in content or []:
+        if isinstance(block, str):
+            out.append(Content(text=block))
+        elif isinstance(block, dict):
+            if block.get("type") == "text":
+                out.append(Content(text=block.get("text") or ""))
+            else:
+                url = _image_url(block)
+                if url:
+                    detail = _image_detail(block, lms_base)
+                    image = (lms_base.Base64ImageContent(image_url=url,
+                                                         detail=detail)
+                             if detail is not None else
+                             lms_base.Base64ImageContent(image_url=url))
+                    out.append(Content(image=image))
+    return out or [Content(text="")]
+
+
+def _lc_messages_to_sdk_vision(messages: Sequence[BaseMessage], lms_base,
+                               lms_v3):
+    """Translate LangChain messages into ``MultiContentChatMessage`` objects."""
+    Role = lms_base.ChatMessageRole
+    Multi = lms_base.MultiContentChatMessage
+    out = []
+    for message in messages:
+        contents = _sdk_contents(message.content, lms_base)
+        if isinstance(message, SystemMessage):
+            out.append(Multi(role=Role.SYSTEM, contents=contents))
+        elif isinstance(message, ToolMessage):
+            out.append(Multi(role=Role.TOOL, contents=contents,
+                             tool_call_id=message.tool_call_id))
+        elif isinstance(message, AIMessage):
+            tool_calls = [
+                lms_v3.GptToolCall(
+                    id=tc.get("id") or "",
+                    tool_call=lms_v3.GptToolCallInfo(
+                        function=lms_v3.FunctionToolCallInfo(
+                            arguments=json.dumps(tc.get("args", {}) or {}),
+                            name=tc.get("name", ""))))
+                for tc in message.tool_calls] or None
+            out.append(Multi(role=Role.ASSISTANT, contents=contents,
+                             tool_calls=tool_calls))
+        else:
+            out.append(Multi(role=Role.USER, contents=contents))
     return out
 
 
@@ -175,6 +296,18 @@ class PalantirSdkChatModel(BaseChatModel):
     temperature : float, optional
         ``None`` (default) OMITS the parameter — GPT-5/reasoning tiers reject
         non-default temperatures.
+    rate_limit_retries : int, optional
+        Passed as the SDK's ``max_rate_limit_retries`` (dropped if the SDK's
+        ``create_chat_completion`` does not take it).
+
+    vision_for_all : bool, optional
+        Send EVERY call through the vision door, images or not (one model
+        handle serves the whole agent).
+
+    A call carrying an image goes through ``OpenAiGptChatWithVisionLanguageModel``
+    (same API name); every other call through ``OpenAiGptChatLanguageModel``.
+    Where models arrive as handles rather than names (a Python transform's
+    ``OpenAiGptChatWithVisionLanguageModelInput``), use :meth:`from_handles`.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -182,15 +315,37 @@ class PalantirSdkChatModel(BaseChatModel):
     model_api_name: str
     max_tokens: Optional[int] = None
     temperature: Optional[float] = None
+    rate_limit_retries: Optional[int] = 5
+    vision_for_all: bool = False
     # OpenAI-schema tool dicts captured by bind_tools; replayed each call.
     openai_tools: Optional[list] = Field(default=None, exclude=True)
 
-    # The SDK model handle, fetched once on first use (network-free construct).
+    # The SDK model handles, fetched once on first use (network-free construct).
     _sdk_model: Any = PrivateAttr(default=None)
+    _vision_model: Any = PrivateAttr(default=None)
 
     @property
     def _llm_type(self) -> str:
         return "palantir-models-chat"
+
+    @property
+    def model(self) -> str:
+        """The API name, for run records that label a model by ``.model``."""
+        return self.model_api_name
+
+    @classmethod
+    def from_handles(cls, model_api_name: str, vision_model: Any = None,
+                     text_model: Any = None, **kwargs: Any):
+        """Wrap model objects already in hand (e.g. a transform's model
+        inputs). With only ``vision_model``, every call uses it."""
+        if vision_model is None and text_model is None:
+            raise ValueError("pass vision_model and/or text_model")
+        if text_model is None:
+            kwargs.setdefault("vision_for_all", True)
+        made = cls(model_api_name=model_api_name, **kwargs)
+        made._vision_model = vision_model
+        made._sdk_model = text_model
+        return made
 
     def _model(self):
         if self._sdk_model is None:
@@ -198,6 +353,22 @@ class PalantirSdkChatModel(BaseChatModel):
             self._sdk_model = OpenAiGptChatLanguageModel.get(
                 self.model_api_name)
         return self._sdk_model
+
+    def _vision(self):
+        if self._vision_model is None:
+            self._vision_model = _vision_sdk().get(self.model_api_name)
+        return self._vision_model
+
+    def _complete(self, sdk_model, request):
+        if self.rate_limit_retries is None:
+            return sdk_model.create_chat_completion(request)
+        try:
+            return sdk_model.create_chat_completion(
+                request, max_rate_limit_retries=self.rate_limit_retries)
+        except TypeError as exc:
+            if "max_rate_limit_retries" not in str(exc):
+                raise
+            return sdk_model.create_chat_completion(request)
 
     def bind_tools(self, tools: Sequence[Any], **kwargs: Any):
         """Bind tools (standard LangChain pattern) — returns a copy carrying
@@ -229,9 +400,16 @@ class PalantirSdkChatModel(BaseChatModel):
             # OpenAI behaviour the deep agent expects.
             request_kwargs["tools"] = _openai_tools_to_sdk(tools, lms_v3)
 
-        request = lms_v3.GptChatCompletionRequest(
-            _lc_messages_to_sdk(messages, lms_base, lms_v3), **request_kwargs)
-        response = self._model().create_chat_completion(request)
+        if self.vision_for_all or _has_image(messages):
+            request = lms_v3.GptChatWithVisionCompletionRequest(
+                _lc_messages_to_sdk_vision(messages, lms_base, lms_v3),
+                **request_kwargs)
+            response = self._complete(self._vision(), request)
+        else:
+            request = lms_v3.GptChatCompletionRequest(
+                _lc_messages_to_sdk(messages, lms_base, lms_v3),
+                **request_kwargs)
+            response = self._complete(self._model(), request)
 
         choice = response.choices[0]
         ai_message = _sdk_message_to_ai_message(choice.message)
@@ -256,5 +434,9 @@ class PalantirSdkChatModel(BaseChatModel):
             ChatGeneration(message=ai_message,
                            generation_info=generation_info)])
 
+
+# Resolve the postponed annotations here, so the class also works when this
+# file is loaded by path or exec'd (Foundry glue) rather than imported.
+PalantirSdkChatModel.model_rebuild()
 
 __all__ = ["PalantirSdkChatModel", "sdk_available"]

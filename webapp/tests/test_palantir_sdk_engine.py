@@ -110,10 +110,63 @@ class _OpenAiGptChatLanguageModel:
         return _FakeSdkModel()
 
 
+# The vision door, as the owner's Foundry example (2026-09-30) and the
+# public langchain-palantir adapter use it.
+
+class _ImageDetail:
+    AUTO = "AUTO"
+    LOW = "LOW"
+    HIGH = "HIGH"
+
+
+class _Base64ImageContent:
+    def __init__(self, image_url, detail=None):
+        self.image_url, self.detail = image_url, detail
+
+
+class _ChatMessageContent:
+    def __init__(self, text=None, image=None):
+        self.text, self.image = text, image
+
+
+class _MultiContentChatMessage:
+    def __init__(self, contents, role, tool_call_id=None, tool_calls=None):
+        self.contents, self.role = contents, role
+        self.tool_call_id, self.tool_calls = tool_call_id, tool_calls
+
+
+class _GptChatWithVisionCompletionRequest(_GptChatCompletionRequest):
+    pass
+
+
+class _FakeVisionModel:
+    """Takes the rate-limit keyword the vision examples pass."""
+
+    last_request = None
+    last_retries = None
+
+    def create_chat_completion(self, completion_request,
+                               max_rate_limit_retries=None):
+        _FakeVisionModel.last_request = completion_request
+        _FakeVisionModel.last_retries = max_rate_limit_retries
+        return _FakeSdkModel.next_response
+
+
+class _OpenAiGptChatWithVisionLanguageModel:
+    got_names = []
+
+    @classmethod
+    def get(cls, model_api_name):
+        cls.got_names.append(model_api_name)
+        return _FakeVisionModel()
+
+
 def _install_fake_sdk(monkeypatch):
     pm = types.ModuleType("palantir_models")
     pm_models = types.ModuleType("palantir_models.models")
     pm_models.OpenAiGptChatLanguageModel = _OpenAiGptChatLanguageModel
+    pm_models.OpenAiGptChatWithVisionLanguageModel = \
+        _OpenAiGptChatWithVisionLanguageModel
     pm.models = pm_models
 
     lms = types.ModuleType("language_model_service_api")
@@ -121,6 +174,10 @@ def _install_fake_sdk(monkeypatch):
         "language_model_service_api.languagemodelservice_api")
     base.ChatMessage = _ChatMessage
     base.ChatMessageRole = _ChatMessageRole
+    base.ImageDetail = _ImageDetail
+    base.Base64ImageContent = _Base64ImageContent
+    base.ChatMessageContent = _ChatMessageContent
+    base.MultiContentChatMessage = _MultiContentChatMessage
     v3 = types.ModuleType(
         "language_model_service_api.languagemodelservice_api_completion_v3")
     v3.GptTool = _GptTool
@@ -129,6 +186,7 @@ def _install_fake_sdk(monkeypatch):
     v3.GptToolCallInfo = _GptToolCallInfo
     v3.FunctionToolCallInfo = _FunctionToolCallInfo
     v3.GptChatCompletionRequest = _GptChatCompletionRequest
+    v3.GptChatWithVisionCompletionRequest = _GptChatWithVisionCompletionRequest
     lms.languagemodelservice_api = base
     lms.languagemodelservice_api_completion_v3 = v3
 
@@ -145,6 +203,9 @@ def _install_fake_sdk(monkeypatch):
     _FakeSdkModel.next_response = None
     _FakeSdkModel.last_request = None
     _OpenAiGptChatLanguageModel.got_names = []
+    _FakeVisionModel.last_request = None
+    _FakeVisionModel.last_retries = None
+    _OpenAiGptChatWithVisionLanguageModel.got_names = []
 
 
 def _text_response(text="OK", finish="stop"):
@@ -235,16 +296,127 @@ def test_full_tool_loop_message_round_trip(monkeypatch):
     assert tool_msg.content == '{"q_ult": 500}'
 
 
-def test_multimodal_content_flattened_to_text(monkeypatch):
+def test_image_call_goes_through_the_vision_door(monkeypatch):
+    """An image block reaches the model as Base64ImageContent (it used to be
+    flattened away, leaving every vision tool blind on Foundry)."""
+    _install_fake_sdk(monkeypatch)
+    from webapp.palantir_sdk_engine import PalantirSdkChatModel
+    _FakeSdkModel.next_response = _text_response("Red.")
+    m = PalantirSdkChatModel(model_api_name="GPT_5_6_SOL")
+    out = m.invoke([HumanMessage(content=[
+        {"type": "text", "text": "read this"},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,x",
+                                            "detail": "high"}},
+    ])])
+    assert out.content == "Red."
+    assert _OpenAiGptChatWithVisionLanguageModel.got_names == ["GPT_5_6_SOL"]
+    assert _FakeSdkModel.last_request is None  # the text door was not used
+    req = _FakeVisionModel.last_request
+    assert isinstance(req, _GptChatWithVisionCompletionRequest)
+    msg = req.messages[0]
+    assert msg.role == "USER"
+    assert msg.contents[0].text == "read this"
+    image = msg.contents[1].image
+    assert image.image_url == "data:image/png;base64,x"
+    assert image.detail == "HIGH"
+    assert _FakeVisionModel.last_retries == 5
+
+
+def test_image_detail_mapping(monkeypatch):
     _install_fake_sdk(monkeypatch)
     from webapp.palantir_sdk_engine import PalantirSdkChatModel
     _FakeSdkModel.next_response = _text_response()
+    m = PalantirSdkChatModel(model_api_name="GPT_5_4")
+
+    def detail_for(level):
+        image_url = {"url": "data:image/jpeg;base64,y"}
+        if level:
+            image_url["detail"] = level
+        m.invoke([HumanMessage(content=[{"type": "image_url",
+                                         "image_url": image_url}])])
+        return _FakeVisionModel.last_request.messages[0].contents[0].image.detail
+
+    assert detail_for("low") == "LOW"
+    assert detail_for("original") == "HIGH"  # not named by this SDK
+    assert detail_for(None) is None
+    # LangChain's own image block shape is read too.
+    m.invoke([HumanMessage(content=[{"type": "image", "base64": "zz",
+                                     "mime_type": "image/jpeg"}])])
+    img = _FakeVisionModel.last_request.messages[0].contents[0].image
+    assert img.image_url == "data:image/jpeg;base64,zz"
+
+
+def test_vision_call_keeps_tools_and_tool_history(monkeypatch):
+    """The inline-image shape: an image AFTER an assistant tool call and its
+    result, with tools bound."""
+    _install_fake_sdk(monkeypatch)
+    from webapp.palantir_sdk_engine import PalantirSdkChatModel
+    _FakeSdkModel.next_response = _tool_call_response()
+    tool = {"type": "function",
+            "function": {"name": "render_region", "description": "zoom",
+                         "parameters": {"type": "object", "properties": {}}}}
+    m = PalantirSdkChatModel(model_api_name="GPT_5_6_SOL").bind_tools([tool])
+    out = m.invoke([
+        SystemMessage(content="review"),
+        HumanMessage(content="what does the note say?"),
+        AIMessage(content="", tool_calls=[
+            {"name": "render_region", "args": {"page": 0}, "id": "c1"}]),
+        ToolMessage(content='{"view": [0, 0, 10, 10]}', tool_call_id="c1"),
+        HumanMessage(content=[
+            {"type": "text", "text": "the image you rendered"},
+            {"type": "image_url",
+             "image_url": {"url": "data:image/png;base64,q"}}]),
+    ])
+    assert out.tool_calls[0]["name"] == "bearing"
+    req = _FakeVisionModel.last_request
+    assert req.tools[0].function.name == "render_region"
+    sent = req.messages
+    assert [s.role for s in sent] == ["SYSTEM", "USER", "ASSISTANT", "TOOL",
+                                      "USER"]
+    ai = sent[2]
+    assert ai.tool_calls[0].id == "c1"
+    assert json.loads(ai.tool_calls[0].tool_call.function.arguments) == {
+        "page": 0}
+    assert sent[3].tool_call_id == "c1"
+    assert sent[3].contents[0].text == '{"view": [0, 0, 10, 10]}'
+    assert sent[4].contents[1].image.image_url == "data:image/png;base64,q"
+
+
+def test_from_handles_vision_only_serves_every_call(monkeypatch):
+    """A transform hands in model objects, not names: with only the vision
+    handle, text and tool calls use it too, and bind_tools keeps it."""
+    _install_fake_sdk(monkeypatch)
+    from webapp.palantir_sdk_engine import PalantirSdkChatModel
+    _FakeSdkModel.next_response = _text_response("via handle")
+    handle = _FakeVisionModel()
+    m = PalantirSdkChatModel.from_handles("GPT_5_6_SOL", vision_model=handle)
+    tool = {"type": "function",
+            "function": {"name": "t", "description": "d",
+                         "parameters": {"type": "object", "properties": {}}}}
+    bound = m.bind_tools([tool])
+    out = bound.invoke([HumanMessage(content="plain text")])
+    assert out.content == "via handle"
+    assert _OpenAiGptChatWithVisionLanguageModel.got_names == []  # no .get()
+    assert _OpenAiGptChatLanguageModel.got_names == []
+    req = _FakeVisionModel.last_request
+    assert isinstance(req, _GptChatWithVisionCompletionRequest)
+    assert req.messages[0].contents[0].text == "plain text"
+    assert req.tools[0].function.name == "t"
+    assert bound.model == "GPT_5_6_SOL"
+    with pytest.raises(ValueError):
+        PalantirSdkChatModel.from_handles("x")
+
+
+def test_text_door_without_rate_limit_keyword(monkeypatch):
+    """The text door's fake takes no max_rate_limit_retries; the call still
+    goes through once without it."""
+    _install_fake_sdk(monkeypatch)
+    from webapp.palantir_sdk_engine import PalantirSdkChatModel
+    _FakeSdkModel.next_response = _text_response("fine")
     m = PalantirSdkChatModel(model_api_name="GPT_5_1")
-    m.invoke([HumanMessage(content=[
-        {"type": "text", "text": "read this"},
-        {"type": "image_url", "image_url": {"url": "data:image/png;base64,x"}},
-    ])])
-    assert _FakeSdkModel.last_request.messages[0].content == "read this"
+    assert m.invoke([HumanMessage(content="hi")]).content == "fine"
+    assert m.model == "GPT_5_1"
+    assert _FakeVisionModel.last_request is None
 
 
 # ---------------------------------------------------------------------------
