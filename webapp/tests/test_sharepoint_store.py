@@ -485,6 +485,65 @@ class TestListAndRestore:
                          "abc123hex"]
         assert "stray_file.txt" not in names
 
+    def test_each_page_lists_and_restores_its_own_folder(self, tmp_path,
+                                                         monkeypatch):
+        """Owner report 2026-10-01: the geotech page's "Find a past
+        conversation" listed the review page's folder ``document_review`` as
+        a conversation. Each page now lists its own folder, and restores from
+        it into its own root."""
+        fm = RemoteFM()
+        store = _configured_store(monkeypatch, fm)
+        root_geo = str(tmp_path / "geo")
+        root_rev = str(tmp_path / "geo" / "pages" / "document_review")
+        created = time.mktime((2026, 9, 30, 9, 0, 0, 0, 0, -1))
+        _rich_conversation(root_geo, "T-GEO", "Bearing check", created)
+        _rich_conversation(root_rev, "T-REV", "Sheet index", created)
+        core.tag_conversation("T-REV", root=root_rev, page="document_review")
+        assert not store.mirror_conversation("T-GEO", root=root_geo)["errors"]
+        assert not store.mirror_conversation("T-REV", root=root_rev)["errors"]
+        base = store.root() + "/conversations"
+        assert f"{base}/document_review/Sheet_index_2026-09-30/meta.json" in fm.tree
+
+        geo = [r["name"] for r in store.list_remote_conversations()]
+        assert geo == ["Bearing_check_2026-09-30"]          # no document_review
+        assert [r["name"] for r in store.list_remote_conversations(
+            page="geotech")] == geo
+        rev = store.list_remote_conversations(page="document_review")
+        assert [r["name"] for r in rev] == ["Sheet_index_2026-09-30"]
+
+        # the review page restores from its folder into its own root
+        after = str(tmp_path / "after" / "pages" / "document_review")
+        res = store.restore_conversation(rev[0]["name"], root=after,
+                                         page="document_review")
+        assert res["status"] == "restored" and res["thread_id"] == "T-REV", res
+        assert [m["thread_id"] for m in core.list_conversations(after)] == ["T-REV"]
+        # and re-mirroring it goes back to the same folder, uploading nothing
+        again = store.mirror_conversation("T-REV", root=after)
+        assert again["uploaded"] == 0 and not again["errors"], again
+
+        # restoring the page folder itself from the geotech page is refused
+        bad = store.restore_conversation("document_review",
+                                         root=str(tmp_path / "x"))
+        assert bad["status"] == "error" and "page" in bad["errors"][0]
+
+    def test_multi_user_lists_under_the_owner(self, tmp_path, monkeypatch):
+        fm = RemoteFM()
+        store = _configured_store(monkeypatch, fm)
+        root = str(tmp_path / "users" / "jdoe" / "document_review")
+        _rich_conversation(root, "T-MU", "Rebar summary", created=time.time())
+        core.tag_conversation("T-MU", root=root, owner="Jane Doe",
+                              page="document_review")
+        assert not store.mirror_conversation("T-MU", root=root)["errors"]
+        mine = store.list_remote_conversations(owner="Jane Doe",
+                                               page="document_review")
+        assert len(mine) == 1 and mine[0]["name"].startswith("Rebar_summary_")
+        assert store.list_remote_conversations(owner="Jane Doe") == []
+        assert store.list_remote_conversations(
+            owner="Someone Else", page="document_review") == []
+        res = store.restore_conversation(mine[0]["name"], root=str(tmp_path / "b"),
+                                         owner="Jane Doe", page="document_review")
+        assert res["status"] == "restored", res
+
     def test_list_never_raises_when_unconfigured_or_broken(self, monkeypatch):
         assert sp.SharePointStore(file_manager=None).list_remote_conversations() == []
 

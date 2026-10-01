@@ -920,8 +920,15 @@ with st.sidebar:
                 if st.button("Refresh", key="sp_restore_refresh",
                              use_container_width=True):
                     ss.pop("sp_remote_list", None)
+            # This page's own folder of mirrors — the same owner/page segments
+            # the turn records with core.tag_conversation (below), so the
+            # geotech page never lists the review page's folder as a
+            # conversation, and the review page lists its own.
+            _sp_where = {"owner": (_IDENT.display_name if _IDENT.multi_user
+                                   else None),
+                         "page": _PROFILE.name}
             if "sp_remote_list" not in ss:
-                ss.sp_remote_list = _sp.list_remote_conversations()
+                ss.sp_remote_list = _sp.list_remote_conversations(**_sp_where)
             _remote = ss.sp_remote_list or []
             _local_folders = set()
             try:
@@ -956,7 +963,8 @@ with st.sidebar:
                                  help=("Already on this machine" if _here
                                        else "Download the record and its "
                                             "files back into the app")):
-                        _res = _sp.restore_conversation(_r["name"])
+                        _res = _sp.restore_conversation(
+                            _r["name"], root=_ROOT, **_sp_where)
                         ss.sp_restore_result = _res
                         if _res.get("thread_id") and _res.get("status") in (
                                 "restored", "exists"):

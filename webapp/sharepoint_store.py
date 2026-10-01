@@ -383,14 +383,21 @@ class SharePointStore:
         """
         root = root or core.thread_root(thread_id)
         meta = core.load_meta(thread_id, root) or {}
+        return (self.conversations_base(meta.get("owner"), meta.get("page"))
+                + "/" + self.folder_name(thread_id, root))
+
+    def conversations_base(self, owner: Optional[str] = None,
+                           page: Optional[str] = None) -> str:
+        """The remote folder holding one person's conversations for one page:
+        ``<root>/conversations/[<owner>/][<page>/]`` — the page segment only
+        for a page other than the geotech page (see :meth:`session_folder`)."""
         segments = [self.root(), "conversations"]
-        owner = sanitize_folder_name(str(meta.get("owner") or ""))
+        owner = sanitize_folder_name(str(owner or ""))
         if owner:
             segments.append(owner)
-        page = sanitize_folder_name(str(meta.get("page") or ""))
+        page = sanitize_folder_name(str(page or ""))
         if page and page != DEFAULT_PAGE:
             segments.append(page)
-        segments.append(self.folder_name(thread_id, root))
         return "/".join(segments)
 
     # -- the mirror --------------------------------------------------------
@@ -481,8 +488,17 @@ class SharePointStore:
 
     # -- the mirror, backwards: list + restore ------------------------------
 
-    def list_remote_conversations(self) -> List[dict]:
-        """Mirrored conversation folders, newest date first. Never raises.
+    def list_remote_conversations(self, owner: Optional[str] = None,
+                                  page: Optional[str] = None) -> List[dict]:
+        """Mirrored conversation folders of one person's page, newest date
+        first. Never raises.
+
+        ``owner`` / ``page`` pick the folder the mirror files that page's
+        conversations under (:meth:`conversations_base`); the defaults are the
+        geotech page on a single-user host, ``<root>/conversations``. At the
+        geotech page's level the other pages' own folders (``document_review``)
+        sit beside the conversations and are left out — they are not
+        conversations.
 
         Each entry: ``{"name": "<title>_<YYYY-MM-DD>", "path": <remote>}``.
         The folder name carries the title and the creation date, so it is
@@ -492,16 +508,17 @@ class SharePointStore:
             return []
         try:
             fm = self.file_manager()
-            base = f"{self.root()}/conversations"
+            base = self.conversations_base(owner, page)
             entries = fm.ls(base) or []
         except Exception:
             return []
+        skip = (page_folder_names() if _is_default_page(page) else set())
         out = []
         for e in entries:
             if not _is_folder(e):
                 continue
             name = str(e.get("name") or "").strip()
-            if not name:
+            if not name or name in skip:
                 continue
             out.append({"name": name,
                         "path": str(e.get("path") or f"{base}/{name}"),
@@ -511,9 +528,13 @@ class SharePointStore:
 
     def restore_conversation(self, folder_name: str,
                              root: Optional[str] = None,
-                             overwrite: bool = False) -> dict:
+                             overwrite: bool = False,
+                             owner: Optional[str] = None,
+                             page: Optional[str] = None) -> dict:
         """Download one mirrored conversation back into the local store.
 
+        ``folder_name`` is a name from :meth:`list_remote_conversations` with
+        the SAME ``owner`` / ``page``; ``root`` is that page's local root.
         Downloads ``meta.json`` first to learn the thread id, then every other
         file (record files and ``files/`` — uploads and artifacts) into
         ``conversations/<thread_id>/``, and writes ``sp_manifest.json`` from
@@ -527,14 +548,15 @@ class SharePointStore:
                          "downloaded": 0, "errors": [], "folder": None,
                          "duration_s": 0.0}
         try:
-            self._restore(folder_name, root, overwrite, summary)
+            self._restore(folder_name, root, overwrite, summary, owner, page)
         except Exception as exc:
             summary["errors"].append(f"{type(exc).__name__}: {exc}")
         summary["duration_s"] = round(time.time() - t0, 2)
         return summary
 
     def _restore(self, folder_name: str, root, overwrite: bool,
-                 summary: dict) -> None:
+                 summary: dict, owner: Optional[str] = None,
+                 page: Optional[str] = None) -> None:
         from webapp import core
 
         if not self.configured:
@@ -545,7 +567,12 @@ class SharePointStore:
         if not name or "/" in name or name in (".", ".."):
             summary["errors"].append(f"not a conversation folder: {name!r}")
             return
-        remote_base = f"{self.root()}/conversations/{name}"
+        if _is_default_page(page) and name in page_folder_names():
+            summary["errors"].append(
+                f"{name!r} is another page's folder of conversations, not a "
+                "conversation — open that page to restore from it")
+            return
+        remote_base = f"{self.conversations_base(owner, page)}/{name}"
         summary["folder"] = remote_base
 
         files = _walk_remote(fm, remote_base)
@@ -649,6 +676,21 @@ def _is_folder(entry: dict) -> bool:
     if kind:
         return kind.startswith("folder") or kind.startswith("dir")
     return bool(entry.get("is_folder") or entry.get("folder"))
+
+
+def _is_default_page(page: Optional[str]) -> bool:
+    return not page or sanitize_folder_name(str(page)) == DEFAULT_PAGE
+
+
+def page_folder_names() -> set:
+    """Folder names the mirror gives pages other than the geotech page; they
+    sit beside the geotech page's conversations under ``conversations/``."""
+    try:
+        from webapp.profiles import PROFILES
+        names = {sanitize_folder_name(n) for n in PROFILES}
+    except Exception:                                  # noqa: BLE001
+        names = {"document_review"}
+    return {n for n in names if n and n != DEFAULT_PAGE}
 
 
 def _trailing_date(name: str) -> str:
