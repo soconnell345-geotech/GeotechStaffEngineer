@@ -820,6 +820,26 @@ OPEN_TASKS: List[Task] = [
         truth="A marked-up copy with at least one comment on page 1 that "
               "mentions 8.33."),
     Task(
+        id="produce-circle-tags",
+        question=("On the first sheet of this set, circle in red every GCE "
+                  "penetration tag that has a leader drawn from it (the "
+                  "callouts, not the legend row), each labelled GCE, in a "
+                  "marked-up copy for the designer."),
+        documents=["fixture_tags"], category="produce",
+        doc_type="drawing_stroke",
+        checks=[{"type": "file_produced", "ext": ".pdf"},
+                {"type": "markups_on_targets", "fixture": "tags",
+                 "text": "GCE", "kind": "callout", "page": 0,
+                 "min_recall": 0.8, "min_precision": 0.8,
+                 "label": "the rings sit on the GCE callouts"}],
+        truth=("Sheet 1 (PDF page 1) carries 7 GCE callouts with leaders, "
+               "plus a bare GCE, the legend's GCE row and look-alikes (GCG, "
+               "QCE) that must not be circled; lettering 0.06 in, drawn as "
+               "lines, so the tags are found by looking and each ring placed "
+               "from the look that found it (planlens.testing.tag_fixtures, "
+               "seed 11). Field session 2026-10-01: rings drawn at invented "
+               "coordinates.")),
+    Task(
         id="produce-memo",
         question=("Write a one-page Word memo summarizing the concrete "
                   "strength, curb ramp slope and street pavement requirements "

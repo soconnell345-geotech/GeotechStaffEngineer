@@ -16,6 +16,7 @@ Terms. Wherever a check takes ``terms``, each term is one of:
 
 from __future__ import annotations
 
+import functools
 import os
 import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -327,6 +328,87 @@ def check_pdf_markups(answer: str, files: Sequence[str] = (), min: int = 1,
     return best >= min, f"{best} matching markup(s) (need {min})"
 
 
+@functools.lru_cache(maxsize=4)
+def _fixture_tags(name: str) -> tuple:
+    """The ground-truth tags of a synthetic sheet set (built, not stored, so
+    the truth cannot drift from the PDF the task is asked of)."""
+    if name == "tags":
+        from planlens.testing.tag_fixtures import build_synthetic_tag_set
+        return tuple(build_synthetic_tag_set().tags)
+    raise KeyError(f"no tag fixture {name!r}")
+
+
+def _centre_inside(box: Sequence[float], mark: Sequence[float],
+                   pad: float) -> bool:
+    cx, cy = (box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0
+    return (mark[0] - pad <= cx <= mark[2] + pad
+            and mark[1] - pad <= cy <= mark[3] + pad)
+
+
+def _area(box: Sequence[float]) -> float:
+    return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
+
+
+def check_markups_on_targets(answer: str, files: Sequence[str] = (),
+                             fixture: str = "tags", text: str = "",
+                             kind: str = "", page: Optional[int] = None,
+                             mark_kinds: Sequence[str] = ("Circle", "Square"),
+                             min_recall: float = 0.8,
+                             min_precision: float = 0.8, pad: float = 4.0,
+                             max_area_factor: float = 60.0,
+                             **_) -> Tuple[bool, str]:
+    """A produced PDF's rings and boxes sit ON the true targets.
+
+    The targets are a fixture's ground-truth tags (``text`` / ``kind`` /
+    ``page`` pick them). A mark hits a target when the target's centre is
+    inside the mark (``pad`` points of slack) and the mark is not a blanket —
+    at most ``max_area_factor`` times the target's area (25 pt² floor).
+    Recall is the targets hit; precision the marks that hit any target. Field
+    session 2026-10-01: circles drawn at invented coordinates passed every
+    "is there a markup" check and were nowhere near the tags.
+    """
+    targets = [t for t in _fixture_tags(fixture)
+               if (not text or t.text == text) and (not kind or t.kind == kind)
+               and (page is None or t.page == page)]
+    if not targets:
+        return False, "the fixture has no such targets (a broken check)"
+    pdfs = _files(files, ".pdf")
+    if not pdfs:
+        return False, "no PDF produced"
+    from planlens.document import Document
+    best = None
+    for path in pdfs:
+        try:
+            doc = Document(filepath=path)
+            try:
+                marks = [m for m in doc.markups()
+                         if m.kind in tuple(mark_kinds)
+                         and (page is None or m.page == page)]
+            finally:
+                doc.close()
+        except Exception as exc:
+            return False, f"{os.path.basename(path)} unreadable: {exc}"
+
+        def hit(m, t):
+            return (m.page == t.page and _centre_inside(t.bbox, m.bbox, pad)
+                    and _area(m.bbox) <= max_area_factor
+                    * max(_area(t.bbox), 25.0))
+
+        found = sum(1 for t in targets if any(hit(m, t) for m in marks))
+        good = sum(1 for m in marks if any(hit(m, t) for t in targets))
+        recall = found / len(targets)
+        precision = good / len(marks) if marks else 0.0
+        row = (recall, precision, found, good, len(marks),
+               os.path.basename(path))
+        if best is None or row[:2] > best[:2]:
+            best = row
+    recall, precision, found, good, n_marks, name = best
+    ok = recall >= min_recall and precision >= min_precision
+    return ok, (f"{name}: {found}/{len(targets)} targets marked (recall "
+                f"{recall:.2f} >= {min_recall}), {good}/{n_marks} marks on a "
+                f"target (precision {precision:.2f} >= {min_precision})")
+
+
 def check_docx_contains(answer: str, files: Sequence[str] = (),
                         terms: Sequence[Any] = (), **_) -> Tuple[bool, str]:
     docs = _files(files, ".docx")
@@ -371,6 +453,7 @@ CHECKS = {
     "cites": check_cites,
     "file_produced": check_file_produced,
     "pdf_markups": check_pdf_markups,
+    "markups_on_targets": check_markups_on_targets,
     "docx_contains": check_docx_contains,
     "tool_used": check_tool_used,
 }

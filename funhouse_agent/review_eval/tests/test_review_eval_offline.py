@@ -19,7 +19,8 @@ from funhouse_agent.review_eval import documents as D  # noqa: E402
 from funhouse_agent.review_eval.tasks import (  # noqa: E402
     CATEGORIES, DOC_TYPES, OPEN_TASKS, Task, load_tasks, select)
 
-FILE_CHECKS = {"file_produced", "pdf_markups", "docx_contains", "tool_used"}
+FILE_CHECKS = {"file_produced", "pdf_markups", "markups_on_targets",
+               "docx_contains", "tool_used"}
 
 
 @pytest.fixture(autouse=True)
@@ -599,3 +600,56 @@ def test_summary_counts_failed_calls_inside_finished_runs():
     got = dict(zip(cols, vals))
     assert got["failed calls"] == "5" and got["errors"] == "1"
     assert got["step caps"] == "0"
+
+
+# -- marks on targets (field session 2026-10-01) -----------------------------
+
+def _tag_marks(tmp_path, boxes, name="marked.pdf", kind="circle"):
+    from planlens.document.markup_writer import write_markups
+    from planlens.testing.tag_fixtures import build_synthetic_tag_set
+    out = str(tmp_path / name)
+    write_markups(build_synthetic_tag_set().pdf, out, [
+        {"kind": kind, "page": 0, "comment": "GCE", "label": "GCE",
+         "bbox": list(b)} for b in boxes], author="AI")
+    return out
+
+
+def _gce_callouts(page=0, text="GCE"):
+    from planlens.testing.tag_fixtures import build_synthetic_tag_set
+    return [t.bbox for t in build_synthetic_tag_set().tags
+            if t.page == page and t.text == text and t.kind == "callout"]
+
+
+ON_TARGET = {"fixture": "tags", "text": "GCE", "kind": "callout", "page": 0}
+
+
+def test_rings_on_every_callout_pass(tmp_path):
+    pdf = _tag_marks(tmp_path, _gce_callouts())
+    ok, detail = C.check_markups_on_targets("", [pdf], **ON_TARGET)
+    assert ok, detail
+    assert "7/7 targets" in detail
+
+
+def test_rings_at_invented_coordinates_fail(tmp_path):
+    pdf = _tag_marks(tmp_path, [(430, 250, 500, 320), (520, 300, 590, 370)])
+    ok, detail = C.check_markups_on_targets("", [pdf], **ON_TARGET)
+    assert not ok and "0/7 targets" in detail
+
+
+def test_look_alikes_circled_too_cost_precision(tmp_path):
+    boxes = _gce_callouts() + _gce_callouts(text="GCG") + \
+        _gce_callouts(text="QCE")
+    pdf = _tag_marks(tmp_path, boxes)
+    ok, detail = C.check_markups_on_targets("", [pdf], **ON_TARGET)
+    assert not ok and "7/7 targets" in detail and "precision 0.54" in detail
+
+
+def test_one_blanket_box_over_the_sheet_is_not_a_hit(tmp_path):
+    pdf = _tag_marks(tmp_path, [(50, 50, 1150, 750)], kind="box")
+    ok, detail = C.check_markups_on_targets("", [pdf], **ON_TARGET)
+    assert not ok and "0/7 targets" in detail
+
+
+def test_the_tag_fixture_resolves_as_a_document():
+    name, data = D.resolve("fixture_tags")
+    assert name == "tag_set.pdf" and data[:4] == b"%PDF"

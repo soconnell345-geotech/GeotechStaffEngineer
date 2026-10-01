@@ -54,6 +54,9 @@ DOCUMENTS: Dict[str, Dict[str, Any]] = {
     "fixture_review_document": {"fixture": "review_document",
                                 "name": "review_set.pdf"},
     "fixture_submittal": {"fixture": "submittal", "name": "submittal.pdf"},
+    # Three 11x17 sheets whose 0.06 in lettering is DRAWN (no text layer):
+    # penetration-style tags with leaders, look-alikes, a legend on each.
+    "fixture_tags": {"fixture": "tags", "name": "tag_set.pdf"},
 }
 
 
@@ -112,6 +115,9 @@ def _fixture(name: str) -> bytes:
         from planlens.testing.submittal_fixtures import (
             build_synthetic_submittal)
         return build_synthetic_submittal().pdf
+    if name == "tags":
+        from planlens.testing.tag_fixtures import build_synthetic_tag_set
+        return build_synthetic_tag_set().pdf
     raise KeyError(f"unknown fixture {name!r}")
 
 
