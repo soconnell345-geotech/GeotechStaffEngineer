@@ -28,8 +28,10 @@ readable text so the agent can report/retry rather than crash the turn.
 from __future__ import annotations
 
 import os
+import re
 import time
 from typing import List, Optional
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from langchain_core.tools import tool
 
@@ -50,14 +52,78 @@ def _root() -> str:
     return sharepoint_store.get_store().root()
 
 
+def _site_name(url: str) -> str:
+    m = re.search(r"/sites/([^/?#]+)", url or "", re.IGNORECASE)
+    return unquote(m.group(1)).lower() if m else ""
+
+
+def _configured_site() -> str:
+    return _site_name(os.environ.get(sharepoint_store.ENV_SITE, "")
+                      or os.environ.get("SHAREPOINT_SITE_URL", ""))
+
+
+#: A sharing link that carries a token instead of a path (``/:f:/s/...``,
+#: ``/:b:/g/...``) — nothing in it says which folder it is.
+TOKEN_LINK_HINT = (
+    "That is a SharePoint sharing link with a token in it, not a path, so "
+    "the folder cannot be read from it. Ask for the address in the browser "
+    "bar while the folder is open (…/Forms/AllItems.aspx?id=…), or the "
+    "folder's path (Shared Documents/…).")
+
+
+def browser_url_to_path(url: str) -> Optional[str]:
+    """The library path inside a SharePoint address copied from a browser,
+    or ``None`` when ``url`` is not one or carries no path.
+
+    Two forms carry the path and are converted (field session 2026-10-01: a
+    pasted link came back "empty or missing folder" and the agent decoded the
+    second form by hand): the address bar while a folder is open,
+    ``…/Forms/AllItems.aspx?id=/sites/<site>/Shared Documents/…`` (or
+    ``RootFolder=``), and the "copy link" form ``/:f:/r/sites/<site>/…`` — the
+    ``r`` link carries the path, query and all. A link on the configured site
+    becomes the library-relative ``Shared Documents/…`` form; another site's
+    keeps ``/sites/<site>/…``. A token link (``/:f:/s/…``) returns ``None``.
+    """
+    parts = urlsplit((url or "").strip())
+    if not parts.scheme.lower().startswith("http"):
+        return None
+    path = unquote(parts.path)
+    query = parse_qs(parts.query)
+    for key in ("id", "RootFolder"):
+        value = (query.get(key) or [""])[0]
+        if value.startswith("/"):
+            path = value                      # parse_qs has decoded it
+            break
+    else:
+        m = re.match(r"^/:[a-z]+:/r(/.*)$", path, re.IGNORECASE)
+        if not m:
+            # A plain file or folder URL is not converted — the SDK takes
+            # those as they are — and a token link has no path to convert.
+            return None
+        path = m.group(1)
+    m = re.match(r"^/sites/([^/]+)/(.+)$", path, re.IGNORECASE)
+    if not m:
+        return None
+    site, rest = m.group(1), m.group(2).strip("/")
+    if rest.lower().endswith("/forms/allitems.aspx"):
+        rest = rest[: -len("/forms/allitems.aspx")]
+    if site.lower() == _configured_site():
+        return rest
+    return f"/sites/{site}/{rest}"
+
+
 def _resolve(path: Optional[str]) -> str:
     """Resolve a tool-supplied path against the configured base folder.
 
-    Absolute forms (full URL, "/sites/...", "Shared Documents/...") pass
-    through UNCHANGED (a leading slash is meaningful to the SDK); anything
-    else is joined under the configured root.
+    A SharePoint address copied from a browser is first turned into the path
+    it names (:func:`browser_url_to_path`). Absolute forms (full URL,
+    "/sites/...", "Shared Documents/...") pass through UNCHANGED (a leading
+    slash is meaningful to the SDK); anything else is joined under the
+    configured root.
     """
     p = (path or "").strip().rstrip("/")
+    if p.lower().startswith("http"):
+        p = (browser_url_to_path(p) or p).rstrip("/")
     if not p or p == "/":
         return _root()
     low = p.lstrip("/").lower()
@@ -120,6 +186,9 @@ def sharepoint_list_files(path: str = "") -> str:
         remote = _resolve(path)
         entries = _fm().ls(remote) or []
         if not entries:
+            if remote.lower().startswith("http") and \
+                    browser_url_to_path(remote) is None:
+                return f"(empty or missing folder: {remote})\n{TOKEN_LINK_HINT}"
             return f"(empty or missing folder: {remote})"
         lines = [f"Contents of {remote} ({len(entries)} items"
                  + (f", first {MAX_ENTRIES} shown" if len(entries) > MAX_ENTRIES

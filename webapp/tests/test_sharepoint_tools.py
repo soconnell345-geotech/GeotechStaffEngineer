@@ -299,3 +299,62 @@ def test_build_agent_binds_the_upload_tool_to_the_conversation(
     os.makedirs(files)
     core.build_agent(object(), {}, files, [])
     assert seen["thread_id"] == "conv42"
+
+
+# -- addresses copied from a browser (field session 2026-10-01) --------------
+
+SITE = "https://contoso.sharepoint.com/sites/TeamSite"
+
+
+class TestBrowserUrls:
+    def _site(self, monkeypatch):
+        from webapp import sharepoint_store
+        monkeypatch.setenv(sharepoint_store.ENV_SITE, SITE)
+
+    def test_the_address_bar_of_an_open_folder(self, monkeypatch):
+        self._site(monkeypatch)
+        url = ("https://contoso.sharepoint.com/sites/TeamSite/Shared%20Documents"
+               "/Forms/AllItems.aspx?id=%2Fsites%2FTeamSite%2FShared%20Documents"
+               "%2FGeneral%2FGSE%5Fapp%2Fconversations%2Fdocument%5Freview%2F"
+               "I%5Fuploaded%5Fa%5Fdoc%E2%80%A6%5F2026%2D10%2D01"
+               "&sortField=Modified&isAscending=true&viewid=db0f8117")
+        assert spt.browser_url_to_path(url) == (
+            "Shared Documents/General/GSE_app/conversations/document_review/"
+            "I_uploaded_a_doc\u2026_2026-10-01")
+
+    def test_a_copied_r_link_carries_its_path(self, monkeypatch):
+        self._site(monkeypatch)
+        url = ("https://contoso.sharepoint.com/:f:/r/sites/TeamSite/"
+               "Shared%20Documents/General/GSE_app/conversations?d=w446e25"
+               "&csf=1&web=1&e=kV9eOC")
+        assert spt.browser_url_to_path(url) == \
+            "Shared Documents/General/GSE_app/conversations"
+        # and _resolve hands that path on rather than the URL
+        assert spt._resolve(url) == \
+            "Shared Documents/General/GSE_app/conversations"
+
+    def test_another_site_keeps_its_site(self, monkeypatch):
+        self._site(monkeypatch)
+        url = ("https://contoso.sharepoint.com/sites/Other/Shared%20Documents/"
+               "Forms/AllItems.aspx?id=%2Fsites%2FOther%2FShared%20Documents"
+               "%2FReports")
+        assert spt.browser_url_to_path(url) == \
+            "/sites/Other/Shared Documents/Reports"
+
+    def test_a_plain_file_address_is_left_for_the_sdk(self, monkeypatch):
+        self._site(monkeypatch)
+        url = ("https://contoso.sharepoint.com/sites/TeamSite/Shared%20Documents"
+               "/General/borings.pdf?web=1")
+        assert spt.browser_url_to_path(url) is None
+        assert spt._resolve(url) == url
+
+    def test_a_token_link_has_no_path_and_says_what_to_paste(self, monkeypatch):
+        self._site(monkeypatch)
+        url = "https://contoso.sharepoint.com/:f:/s/TeamSite/EaBcD123xyz?e=abc"
+        assert spt.browser_url_to_path(url) is None
+        assert spt._resolve(url) == url          # left for the SDK to try
+        assert "AllItems.aspx?id=" in spt.TOKEN_LINK_HINT
+
+    def test_not_a_url_is_left_alone(self):
+        assert spt.browser_url_to_path("Shared Documents/x") is None
+        assert spt.browser_url_to_path("") is None
