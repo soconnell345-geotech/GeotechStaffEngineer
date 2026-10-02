@@ -114,6 +114,13 @@ def lean_agent() -> bool:
     return str(os.environ.get(AGENT_ENV, "")).strip().lower() == "lean"
 
 
+def minimal_agent() -> bool:
+    """Whether the review page builds the looking-only agent
+    (:mod:`funhouse_agent.deep.minimal_agent`) — a measuring stick, not a
+    product: page and zoom tools, helpers, and the two output tools."""
+    return str(os.environ.get(AGENT_ENV, "")).strip().lower() == "minimal"
+
+
 def vision_text_context() -> bool:
     """Whether vision calls are given the text layer inside their view."""
     return _on(VISION_TEXT_ENV)
@@ -183,6 +190,8 @@ ARMS: Dict[str, Dict[str, str]] = {
                  VISION_STRUCTURED_ENV: "1", GEOMETRY_ENV: "1"},
     "digest": {AGENT_ENV: "lean", VISION_TEXT_ENV: "1",
                VISION_STRUCTURED_ENV: "1", DIGEST_ENV: "1"},
+    # The looking-only agent (owner, 2026-10-02): which tools carry weight?
+    "minimal": {AGENT_ENV: "minimal"},
 }
 
 

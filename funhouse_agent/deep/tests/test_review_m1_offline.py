@@ -657,6 +657,8 @@ def test_arms_are_the_old_ones_plus_overview():
         # shape 2 digest, pinned in test_review_digest_tools_offline.py
         "digest": {A.AGENT_ENV: "lean", A.VISION_TEXT_ENV: "1",
                    A.VISION_STRUCTURED_ENV: "1", A.DIGEST_ENV: "1"},
+        # 5.32: the looking-only measuring stick, test_review_minimal_offline
+        "minimal": {A.AGENT_ENV: "minimal"},
     }
 
 

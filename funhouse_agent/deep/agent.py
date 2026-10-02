@@ -933,6 +933,14 @@ def build_deep_agent(
     """
     if review_page:
         from funhouse_agent import review_flags
+        if review_flags.minimal_agent():
+            from funhouse_agent.deep.minimal_agent import build_minimal_agent
+            return build_minimal_agent(
+                model, engine=engine, attachments=attachments,
+                save_fn=save_fn, markup_author=markup_author,
+                max_result_chars=max_result_chars,
+                checkpointer=checkpointer, store=store,
+                working_dir=working_dir)
         if review_flags.lean_agent():
             from funhouse_agent.deep.review_agent import build_review_agent
             return build_review_agent(
