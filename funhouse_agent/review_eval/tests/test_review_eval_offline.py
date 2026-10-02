@@ -51,10 +51,12 @@ def test_tasks_are_well_formed():
     assert {t.category for t in OPEN_TASKS} >= {"locate", "summarize",
                                                 "count", "check", "compare",
                                                 "markups", "produce"}
-    # the synthetic fixtures stay the smallest part of the suite
+    # the synthetic fixtures stay the smallest part of the suite (four since
+    # 5.32: the two drawn-lettering tag sets measure markup placement and
+    # whole-set coverage, which no public document in the suite can)
     synthetic = [t for t in OPEN_TASKS
                  if any(d.startswith("fixture_") for d in t.documents)]
-    assert len(synthetic) <= 3
+    assert len(synthetic) <= 4
 
 
 @pytest.mark.parametrize("task", OPEN_TASKS, ids=lambda t: t.id)
@@ -653,3 +655,51 @@ def test_one_blanket_box_over_the_sheet_is_not_a_hit(tmp_path):
 def test_the_tag_fixture_resolves_as_a_document():
     name, data = D.resolve("fixture_tags")
     assert name == "tag_set.pdf" and data[:4] == b"%PDF"
+
+
+def test_a_hyphenated_compound_matches_the_spaced_term():
+    """Foundry run 2026-10-02: four arms answered 'Edge-of-pavement
+    elevation' and failed a check for 'edge of pavement'."""
+    text = C.normalize("- **Edge-of-pavement elevation** at the right end")
+    assert C.term_found("edge of pavement", text)
+    assert C.term_found("edge-of-pavement", C.normalize("edge of pavement"))
+    # digits keep their hyphens: M-278 is not "m 278" by this rule
+    assert not C.term_found("m 278", C.normalize("AASHTO M-278"))
+
+
+# -- whole-set coverage (pages_listed) ---------------------------------------
+
+def test_pages_named_reads_lists_ranges_and_pdf_pages():
+    assert C.pages_named("FPG callouts are on pages 4, 12 and 20.", 24) == \
+        {4, 12, 20}
+    assert C.pages_named("PDF page 12; also page 20 and p. 4", 24) == \
+        {4, 12, 20}
+    assert C.pages_named("sheets 3 & 9, pp. 10-12", 24) == {3, 9, 10, 11, 12}
+    # a wide range talks about the whole set, it lists nothing found
+    assert C.pages_named("pages 1-24 have legend rows", 24) == set()
+    assert C.pages_named("page 31", 24) == set()
+
+
+def test_the_long_set_check_wants_all_three_and_little_else():
+    chk = {"expected": [4, 12, 20], "n_pages": 24, "min_recall": 1.0,
+           "min_precision": 0.75}
+    assert C.check_pages_listed("pages 4, 12 and 20", **chk)[0]
+    assert not C.check_pages_listed("pages 4 and 12", **chk)[0]      # missed
+    assert not C.check_pages_listed("pages 2, 4, 9, 12, 20", **chk)[0]
+    assert not C.check_pages_listed("I could not tell.", **chk)[0]
+
+
+def test_the_long_tag_set_puts_fpg_where_the_task_says():
+    from funhouse_agent.review_eval.documents import (LONG_SET_PAGES,
+                                                      LONG_SET_RARE, resolve)
+    from planlens.testing.tag_fixtures import build_synthetic_tag_set
+    gt = build_synthetic_tag_set(n_pages=LONG_SET_PAGES, gce_growth=0,
+                                 extra_callouts=LONG_SET_RARE)
+    pages = sorted({t.page + 1 for t in gt.tags
+                    if t.text == "FPG" and t.kind == "callout"})
+    task = next(t for t in OPEN_TASKS if t.id == "set-long-rare-tag")
+    assert pages == task.checks[0]["expected"] == [4, 12, 20]
+    name, data = resolve("fixture_tags_long")
+    import fitz                      # bytes differ by PyMuPDF's file id
+    with fitz.open(stream=data, filetype="pdf") as doc:
+        assert name == "long_tag_set.pdf" and doc.page_count == 24

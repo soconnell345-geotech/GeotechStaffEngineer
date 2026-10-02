@@ -57,7 +57,14 @@ DOCUMENTS: Dict[str, Dict[str, Any]] = {
     # Three 11x17 sheets whose 0.06 in lettering is DRAWN (no text layer):
     # penetration-style tags with leaders, look-alikes, a legend on each.
     "fixture_tags": {"fixture": "tags", "name": "tag_set.pdf"},
+    # The same sheets, 24 of them at an even density, with ONE FPG callout on
+    # pages 4, 12 and 20 only (FBG, its look-alike, is on every sheet).
+    "fixture_tags_long": {"fixture": "tags_long", "name": "long_tag_set.pdf"},
 }
+
+#: The long tag set's rare tag and the 0-based pages that carry it.
+LONG_SET_PAGES = 24
+LONG_SET_RARE = {"FPG": [3, 11, 19]}
 
 
 def _repo_root() -> Path:
@@ -118,6 +125,14 @@ def _fixture(name: str) -> bytes:
     if name == "tags":
         from planlens.testing.tag_fixtures import build_synthetic_tag_set
         return build_synthetic_tag_set().pdf
+    if name == "tags_long":
+        from planlens.testing.tag_fixtures import build_synthetic_tag_set
+        try:
+            return build_synthetic_tag_set(
+                n_pages=LONG_SET_PAGES, gce_growth=0,
+                extra_callouts=LONG_SET_RARE).pdf
+        except TypeError as exc:        # planlens older than 0.11
+            raise ImportError(f"needs planlens 0.11 ({exc})")
     raise KeyError(f"unknown fixture {name!r}")
 
 

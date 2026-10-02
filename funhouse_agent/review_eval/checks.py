@@ -37,10 +37,18 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", t)
 
 
+def _dehyphen(text: str) -> str:
+    """A hyphen between two letters read as a space: "edge-of-pavement"
+    is "edge of pavement" (the Foundry run, 2026-10-02, failed four arms on
+    a correct hyphenated answer). Digits are left alone (M-278, 2'-6")."""
+    return re.sub(r"(?<=[a-z])-(?=[a-z])", " ", text)
+
+
 def _one(term: Any, text: str) -> bool:
     if isinstance(term, dict) and "re" in term:
         return re.search(term["re"], text, flags=re.IGNORECASE) is not None
-    return normalize(str(term)) in text
+    want = normalize(str(term))
+    return want in text or _dehyphen(want) in _dehyphen(text)
 
 
 def term_found(term: Any, text: str) -> bool:
@@ -328,6 +336,47 @@ def check_pdf_markups(answer: str, files: Sequence[str] = (), min: int = 1,
     return best >= min, f"{best} matching markup(s) (need {min})"
 
 
+#: "page 4", "pages 4, 12 and 20", "pp. 4-6", "PDF page 12", "sheets 3 & 9".
+_PAGE_LIST = re.compile(
+    r"\b(?:pdf\s+)?(?:pages?|pp?\.|sheets?)\s*"
+    r"(\d+(?:\s*(?:-|–|to|through)\s*\d+)?"
+    r"(?:\s*(?:,\s*and|,|and|&)\s*\d+(?:\s*(?:-|–|to|through)\s*\d+)?)*)")
+
+
+def pages_named(answer: str, n_pages: int, max_span: int = 4) -> set:
+    """The viewer page numbers (1..``n_pages``) an answer names after
+    "page(s)", "p./pp." or "sheet(s)", enumerations and short ranges read."""
+    found = set()
+    for m in _PAGE_LIST.finditer(normalize(answer)):
+        for part in re.split(r"\s*(?:,\s*and|,|and|&)\s*", m.group(1)):
+            rng = re.match(r"(\d+)\s*(?:-|–|to|through)\s*(\d+)$", part.strip())
+            if rng:
+                a, b = int(rng.group(1)), int(rng.group(2))
+                if 0 <= b - a <= max_span:
+                    found.update(range(a, b + 1))
+                continue
+            if part.strip().isdigit():
+                found.add(int(part))
+    return {p for p in found if 1 <= p <= n_pages}
+
+
+def check_pages_listed(answer: str, expected: Sequence[int] = (),
+                       n_pages: int = 0, min_recall: float = 1.0,
+                       min_precision: float = 0.75, **_) -> Tuple[bool, str]:
+    """The pages the answer names (viewer numbering) against the pages that
+    really carry the thing: a "which sheets have X" question across a long
+    set, answerable only by looking at every sheet."""
+    said = pages_named(answer, n_pages)
+    exp = {int(p) for p in expected}
+    tp = len(said & exp)
+    recall = tp / len(exp) if exp else 1.0
+    precision = tp / len(said) if said else 0.0
+    ok = recall >= min_recall - 1e-9 and precision >= min_precision - 1e-9
+    return ok, (f"pages named {sorted(said)}; expected {sorted(exp)}: recall "
+                f"{recall:.2f} (>= {min_recall}), precision {precision:.2f} "
+                f"(>= {min_precision})")
+
+
 @functools.lru_cache(maxsize=4)
 def _fixture_tags(name: str) -> tuple:
     """The ground-truth tags of a synthetic sheet set (built, not stored, so
@@ -454,6 +503,7 @@ CHECKS = {
     "file_produced": check_file_produced,
     "pdf_markups": check_pdf_markups,
     "markups_on_targets": check_markups_on_targets,
+    "pages_listed": check_pages_listed,
     "docx_contains": check_docx_contains,
     "tool_used": check_tool_used,
 }

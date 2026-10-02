@@ -201,3 +201,44 @@ stay fair; absolute call counts and time do not transfer to a host that honours
 `original`. In-run model errors are in `run.json` (`model_errors`); since the
 release after 5.31.0 RESULTS.md shows them as a "failed calls" column beside
 "errors".
+
+**Run 3 — 2026-10-01/02, Foundry, GPT-5.6 Sol, the full suite** (7 arms × 35
+tasks, plus grounded vs overview on the 10 UFC tasks with `orientation=True`).
+Files: `module_work/review_eval_results/2026-10-02_foundry_5.31.0/` (RESULTS
+as run and RESCORED, the run/vision/retry tables; internal URLs stripped).
+The FDE's retry layer absorbed 106 dropped connections / rate limits /
+timeouts with none given up; 2 failed calls remained inside finished runs.
+The vision probe measured Sol on this route as `gpt-4.1-high` (a TILE budget,
+~768 px short side): 469 of 705 page looks were split 3×3 or 4×4.
+
+TWO CHECK FAULTS, found reading the failures and fixed in 5.32 (then every
+run rescored from its saved answer and files, no model calls):
+`produce-markup` required "marked" in the file name the question never asked
+for (3 arms named it otherwise and passed everything else); plain-text terms
+did not match a hyphenated compound ("Edge-of-pavement elevation", 4 arms).
+
+| arm (Sol, rescored) | tasks | in / out tokens | minutes | vs baseline |
+|---|---|---|---|---|
+| baseline | **35/35** | 3.62M / 0.63M | 49 | — |
+| lean | 34/35 | 3.61M / 0.91M | 86 | breaks bioretention-section-dims |
+| grounded | 34/35 | 4.31M / 1.33M | 75 | breaks calc-bearing-consistency |
+| inline | 32/35 | 5.08M / 1.13M | 54 | breaks 3 locate tasks |
+| sweep | **35/35** | 4.85M / 1.20M | 86 | — |
+| geometry | **35/35** | 5.17M / 1.44M | 70 | — |
+| digest | 34/35 | 5.85M / 1.70M | 89 | breaks ramp-detail-callouts (read 3/4 as 34) |
+| UFC: grounded / overview | 10/10 vs 9/10 | 1.38M vs 1.49M | 12 vs 9 | overview breaks ufc04-table-5-1 |
+| GPT-5.4 parity, 8 tasks: baseline / lean | 8/8, 8/8 | — | — | — |
+
+**Reading.** On GPT-5.6 Sol the suite is SATURATED: the page as released
+(baseline, every switch off) passes all 35 and is the cheapest and fastest.
+No switch can show a gain here; single-task differences are within one run's
+noise. The signals that do stand: `inline` (the main model looking at images
+itself) is worse on locating small things (3 of 15 locate tasks lost) — keep
+it off; `overview` buys nothing — keep it off. The suite does NOT contain the
+failure the field session showed (a long drawn-lettering set where unlooked-at
+sheets were missed; markups at invented places), so it cannot decide the
+coverage settings. 5.32 adds two tasks that do — `set-long-rare-tag` (which
+of 24 drawn-lettering sheets carry a rare FPG callout; its look-alike FBG is
+on every sheet) and `produce-circle-tags` (rings scored on their targets) —
+for the 5.32 Foundry run: baseline vs `sweep`, from local wheels, before any
+publishing.

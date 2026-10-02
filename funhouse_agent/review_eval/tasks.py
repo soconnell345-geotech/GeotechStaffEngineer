@@ -813,12 +813,32 @@ OPEN_TASKS: List[Task] = [
                   "a draft."),
         documents=["meck_10.31a"], category="produce",
         doc_type="drawing_stroke",
-        checks=[{"type": "file_produced", "ext": ".pdf",
-                 "name_contains": "marked"},
+        # No file-name check: the question names no file, and the Foundry run
+        # (2026-10-02) failed three arms on '10.31A_designer_draft_markup.pdf'
+        # for not containing "marked" — a check fault, not the agent's.
+        checks=[{"type": "file_produced", "ext": ".pdf"},
                 {"type": "pdf_markups", "min": 1, "pages": [0],
                  "text_contains": "8.33"}],
         truth="A marked-up copy with at least one comment on page 1 that "
               "mentions 8.33."),
+    Task(
+        id="set-long-rare-tag",
+        question=("This is a 24-sheet set whose lettering is drawn as lines. "
+                  "On which sheets is there an FPG penetration callout - an "
+                  "FPG tag with a leader drawn from it, not the legend row? "
+                  "Give the page numbers."),
+        documents=["fixture_tags_long"], category="count",
+        doc_type="drawing_set",
+        checks=[{"type": "pages_listed", "expected": [4, 12, 20],
+                 "n_pages": 24, "min_recall": 1.0, "min_precision": 0.75,
+                 "label": "names pages 4, 12 and 20 and little else"}],
+        truth=("Pages 4, 12 and 20 each carry one FPG callout. Every sheet "
+               "repeats the legend (with an FPG row) and carries FBG callouts, "
+               "the look-alike; the lettering is 0.06 in drawn as lines, so "
+               "the only way to answer is to look at every sheet "
+               "(planlens.testing.tag_fixtures, 24 pages, gce_growth 0). Field "
+               "session 2026-10-01: an 85-sheet set where sheets nobody "
+               "looked at were missed.")),
     Task(
         id="produce-circle-tags",
         question=("On the first sheet of this set, circle in red every GCE "
