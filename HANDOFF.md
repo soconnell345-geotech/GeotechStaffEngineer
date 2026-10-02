@@ -36,11 +36,26 @@ On the branches (each committed with tests; planlens 1st):
   seismic md, calc delegation). Field record:
   `module_work/field_feedback/2026-10-01_doc-review-penetrations_v5.31.0/`.
 
-**Before release:** the Foundry M0 results decide which review switches
-become defaults; then Foundry runs 5.32 from locally built wheels (no
-publishing); then planlens 0.11.0 → app 5.32.0 (pin `planlens>=0.11`), docs
-(CLAUDE.md state block, this section, DATABRICKS_INSTALL §11), gate in a
-clean worktree, tag — on the owner's word.
+**Since then (2026-10-02):** Foundry run 3 (5.31, GPT-5.6 Sol, full suite) —
+after two check faults were fixed and every run rescored — gave baseline
+35/35: the suite is saturated on Sol except for coverage, so 5.32 added
+`set-long-rare-tag` (24-sheet coverage) and `produce-circle-tags`, plus the
+`minimal` arm (`funhouse_agent/deep/minimal_agent.py`: looking-only, a
+measuring stick). The FDE found that on Foundry HIGH image detail CAPS Sol at
+~768 px and AUTO is full resolution (Responses route ≥ 4096 px); the package
+wrapper now sends `original` as AUTO. Also fixed: the ingest stage's
+`triage_model` (it was silently the main model). **Wheels on test:**
+planlens `0.11.0rc1` + app `5.32.0rc2` (built from the branches, NOT
+published; `../foundry_handoff/`), brief `AI_FDE_BRIEF_3.md`: baseline vs
+sweep vs minimal, 37 tasks, Sol at full resolution via the FDE's Responses
+glue (fold `foundry_full_res.py` / `foundry_responses_model.py` into the
+package when they come back). The full gate has NOT run on this branch since
+the low-memory stop (funhouse_agent 29 % clean, planlens full suite not run).
+
+**Before release:** the rc2 Foundry results decide which review switches
+become defaults; then planlens 0.11.0 → app 5.32.0 (pin `planlens>=0.11`),
+docs (CLAUDE.md state block, this section, DATABRICKS_INSTALL §11), the FULL
+gate in a clean worktree, tag — on the owner's word.
 
 ### 5.31.0 RELEASED 2026-09-29 (tag `v5.31.0`) — DOCUMENT REVIEW M1, SWITCHED
 
