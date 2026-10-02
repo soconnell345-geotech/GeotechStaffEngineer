@@ -92,6 +92,17 @@ rc2 was at ~768 px with heavy tiling. GPT-5.4's project limit bites on
 TOKENS per minute. Report-ingest full pipeline ≈ 2.7M input tokens and 47 min
 per report on GPT-5.4.
 
+**Foundry's environment has numpy 1.26.4** (one environment per FDE repo;
+both wheels declare `numpy>=2.0`, but the FDE loads them by unzipping onto
+`sys.path`, so pip never enforces it). Document review is unaffected (5.31.0
+declared the same requirement; rc2 adds no numpy code; nothing on that path
+calls a numpy-2-only function). The GEOTECH harness is affected:
+`np.trapezoid` (numpy 2 only) in `soe/beam_analysis.py`, `soe/free_earth.py`
+and `liquepy_agent/cpt_liquefaction.py` (LDI), so SOE-1 / SOE-2 (and any LDI)
+fail there with `AttributeError ... 'trapezoid'` — part of brief 2's 38.7 %
+tool-error rate; the FDE was asked to separate them. A future geotech-harness
+run on Foundry needs a numpy-2 repo.
+
 **Results so far.**
 - Run 2 (5.31, 8 tasks): GPT-5.4 baseline 8/8, lean 8/8; Sol 8/8, 8/8.
 - Run 3 (5.31, Sol, 7 arms × 35 tasks, ~768 px), RESCORED after two check
@@ -115,6 +126,15 @@ per report on GPT-5.4.
   question; 10.35M tokens; optional packages missing on Foundry: eqsig,
   gstools, liquepy, pydiggs, pystra, pystrata — separate those from real tool
   errors when the per-question results arrive.
+- Brief 3 (rc2) setup PASSED (2026-10-02): versions, ARMS incl. minimal, 37
+  tasks, probe on `FullResResponsesChatModel` small_high 692 / large_high 692
+  / large_original 4,916 → `openai-original`; inline probe ok; dry run 37/37.
+  Told to run on numpy 1.26.4 (option 1) and given a run queue so it does not
+  wait for a reply between steps: baseline → 2 repeats of the two new tasks
+  (`baseline_r2/_r3` custom arms, `ids=`) → sweep (+ repeats) → minimal (+
+  repeats) → `baseline_high` (`GEOTECH_VISION_BUDGET=openai-high`) on the 16
+  `drawing_stroke` tasks + `set-long-rare-tag` → three summary calls, each
+  RESULTS.md saved under its own name. Pause per arm past ~25M input tokens.
 - Brief 3 (rc2) STARTED on the owner's word; the FDE runs baseline first.
   Claude's suggested trim (if the owner wants it after round 1): baseline on
   all 37 once at full res; the two new tasks × baseline/sweep/minimal × 3
