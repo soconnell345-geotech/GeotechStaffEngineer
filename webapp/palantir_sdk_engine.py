@@ -40,10 +40,13 @@ introspection here::
         ], tool_calls=..., tool_call_id=...)], tools=..., max_tokens=...),
         max_rate_limit_retries=N)
 
-OpenAI's image ``detail`` has no field on this route and is dropped; the
-vision probe measures what the route actually delivers. Calls with no image
-keep the text door verified live on 2026-07-21. Before this leg every image
-was flattened away and the vision tools were blind on Foundry.
+The image's ``detail`` goes as the SDK's ``ImageDetail`` — with
+``original`` sent as AUTO, which is what reaches full resolution here (HIGH
+caps the image; see :func:`_image_detail`). This chat route stops at about
+the 2048 px level even at AUTO; Foundry's Responses route takes GPT-5.6 Sol
+to at least 4096 px. Calls with no image keep the text door verified live on
+2026-07-21. Before this leg every image was flattened away and the vision
+tools were blind on Foundry.
 
 The SDK is only installed on Foundry, so all SDK imports are lazy (call-time);
 this module itself imports cleanly anywhere, and the offline tests fake the SDK
@@ -169,9 +172,15 @@ def _has_image(messages: Sequence[BaseMessage]) -> bool:
 def _image_detail(block: dict, lms_base) -> Any:
     """OpenAI's ``detail`` string as the SDK's ``ImageDetail``, else None.
 
-    A level the SDK does not name falls back to HIGH for ``original`` (the
-    vision probe then measures that original was not honoured) and is left
-    out otherwise.
+    ``original`` — full resolution — has no ``ImageDetail`` member, and the
+    backend refuses a raw "ORIGINAL" (400 INVALID_ARGUMENT). On this service
+    it is AUTO (or no detail at all) that sends the image at full size, and
+    HIGH that CAPS it: measured on Foundry 2026-10-02, GPT-5.6 Sol took 692
+    image tokens for a 1024 px and a 2048 px square alike at HIGH (about
+    768 px, a tile-style cap) and 1,229 / 4,401 at AUTO; an 11 px printed
+    code was misread at HIGH and read exactly at AUTO. So ``original`` goes
+    as AUTO, and the vision probe then measures full resolution honoured.
+    Any other level the SDK does not name is left out.
     """
     inner = block.get("image_url")
     wanted = (inner.get("detail") if isinstance(inner, dict) else None) \
@@ -181,7 +190,7 @@ def _image_detail(block: dict, lms_base) -> Any:
         return None
     level = getattr(Detail, str(wanted).upper(), None)
     if level is None and str(wanted).lower() == "original":
-        level = getattr(Detail, "HIGH", None)
+        level = getattr(Detail, "AUTO", None)
     return level
 
 

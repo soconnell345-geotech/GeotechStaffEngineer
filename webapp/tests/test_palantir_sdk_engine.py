@@ -337,7 +337,10 @@ def test_image_detail_mapping(monkeypatch):
         return _FakeVisionModel.last_request.messages[0].contents[0].image.detail
 
     assert detail_for("low") == "LOW"
-    assert detail_for("original") == "HIGH"  # not named by this SDK
+    # Not named by this SDK, and HIGH CAPS the image on Foundry (measured
+    # 2026-10-02): full resolution is AUTO.
+    assert detail_for("original") == "AUTO"
+    assert detail_for("high") == "HIGH"       # asked for, so sent as asked
     assert detail_for(None) is None
     # LangChain's own image block shape is read too.
     m.invoke([HumanMessage(content=[{"type": "image", "base64": "zz",
