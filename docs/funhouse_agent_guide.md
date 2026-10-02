@@ -298,10 +298,13 @@ is on this app's tool surface directly. They are what the `report_ingest`
 sub-agent reads.
 
 
-The policy the deep-agent prompt states: text first, then LOOK — with
-`analyze_pdf_page` (a page), `render_region` (a spot) or `analyze_image` (a
-thumbnail sheet) — whenever a result carries a look cue or seems wrong for
-the page kind, and say what was read vs seen.
+The policy the prompts state (since 5.32, the owner's direction): a question
+about what pages SHOW is answered by LOOKING at every page in scope —
+`analyze_pdf_page` (a page), `render_region` (a spot), `analyze_image` (a
+thumbnail sheet or an uploaded picture). The text tools are exact and cheap
+supporting evidence and the way to read pages whose text IS the page, never a
+filter on which pages get looked at; every answer says which pages were
+examined, and what was read vs seen.
 
 `list_files`, `read_pdf_text`, `analyze_image`, and `analyze_pdf_page` each
 accept an attachment key **or** a real filesystem path (`/tmp/...`,
