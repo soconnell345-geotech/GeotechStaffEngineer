@@ -278,6 +278,8 @@ class _Labelling:
     vision_detail: Optional[str] = None
     trust_table: Any = None
     templates: Any = None
+    #: The document triage's engine (``None`` = the main engine).
+    triage_engine: Any = None
     note: str = ""                    # printed once, and kept for the run file
     #: What each pass cost, whether this run paid it or read it off disk.
     #: A resumed run's ``paid`` is False and the numbers are still the
@@ -316,7 +318,8 @@ def ingest_report(source: Any, engine: Any, *,
                   vision_detail: Optional[str] = None,
                   trust_table: Any = None,
                   templates: Any = None,
-                  ingest_bound: bool = True) -> ReportRecord:
+                  ingest_bound: bool = True,
+                  triage_engine: Any = None) -> ReportRecord:
     """Read one report end to end and write its record and its exports.
 
     ``source`` is a PDF path, its bytes, or an OPEN planlens document (the
@@ -349,6 +352,9 @@ def ingest_report(source: Any, engine: Any, *,
         a CHEAP tier, which is where the $0.05-a-report figure comes from.
         ``vision_mode`` is ``sheet`` by default -- one call per contact
         sheet, which is the mode the corpus was measured in.
+    triage_engine
+        The document triage's engine; defaults to ``engine``. The label
+        review and the readers stay on ``engine``.
     trust_table
         A path or a dict for the ``trust`` policy, as the ``vote`` stage
         writes to ``vote/trust_table.json``. Without one, ``trust`` falls
@@ -382,7 +388,7 @@ def ingest_report(source: Any, engine: Any, *,
         review_mode="none" if not budgets.review else review_mode,
         vision_engine=vision_engine, vision_mode=vision_mode,
         vision_detail=vision_detail, trust_table=trust_table,
-        templates=templates)
+        templates=templates, triage_engine=triage_engine)
     out = str(out_dir)
     os.makedirs(os.path.join(out, "items"), exist_ok=True)
     started = time.time()
@@ -487,7 +493,12 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
             record.document.workflow = cached.get("workflow", "standard")
             profile = _Profile(cached)
         else:
-            profile = run_triage(doc, roles, outline, engine=engine,
+            # Triage is one call over a ledger: a cheaper tier is usually
+            # enough, and the scoring stage names one. Until 5.32 the graph
+            # had no way to take it, so ``triage_model`` on the ingest stage
+            # was silently the main model (Foundry run, 2026-10-01).
+            profile = run_triage(doc, roles, outline,
+                                 engine=labelling.triage_engine or engine,
                                  facts=counted)
             spend.add(profile.cost)
             _save(os.path.join(out, "triage.json"), profile.to_dict())

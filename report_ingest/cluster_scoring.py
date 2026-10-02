@@ -871,6 +871,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
 
     if "ingest" in stages:
         ingest = _run_ingest(corpus, prompter, model, out, wanted,
+                             triage_model=triage_model,
                              truth=(logs_truth, lab_truth,
                                     narrative_truth, calc_truth,
                                     sounding_truth),
@@ -3894,6 +3895,7 @@ def _diggs_verdicts(record: Any, outputs: Dict[str, str]) -> Dict[str, str]:
 def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                 report_ids: Sequence[str], *,
                 truth: Sequence[Optional[Path]],
+                triage_model: Optional[str] = None,
                 log_budget: int, lab_budget: int, narrative_budget: int,
                 redo: bool, review_dir: Any = None,
                 max_total_dollars: Optional[float] = None,
@@ -3974,6 +3976,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
         meter = CostMeter()
         engine = PrompterEngine(prompter, model, meter=meter)
         vision_engine = PrompterEngine(prompter, vision_model, meter=meter)
+        triage_engine = (PrompterEngine(prompter, triage_model, meter=meter)
+                         if triage_model and triage_model != model else None)
         budgets = Budgets(narrative=narrative_budget, log=log_budget,
                           lab=lab_budget)
         started = time.time()
@@ -3991,7 +3995,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                                    vision_detail=vision_detail,
                                    trust_table=trust_table,
                                    templates=templates,
-                                   ingest_bound=ingest_bound)
+                                   ingest_bound=ingest_bound,
+                                   triage_engine=triage_engine)
             n_pages = doc.n_pages
         except KeyboardInterrupt:
             print("  interrupted; what is finished is on disk and a later "

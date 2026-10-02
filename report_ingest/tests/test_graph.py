@@ -1002,3 +1002,24 @@ class TestTheSoundingReaders:
             assert record.cpt.n_points == len(gt.series)
         finally:
             doc.close()
+
+
+class TestTriageEngine:
+    """The triage can run on its own engine (a cheaper tier). Until 5.32 the
+    graph took one engine, so the ingest stage's ``triage_model`` was silently
+    the main model (Foundry run, 2026-10-01)."""
+
+    def test_triage_goes_to_its_own_engine_and_nothing_else_does(
+            self, pdf, tmp_path):
+        script = full_script()
+        triage = FakeEngine(script[:1])
+        main = FakeEngine(script[1:])
+        ingest_report(pdf, main, triage_engine=triage, out_dir=tmp_path,
+                      report_id="SYN")
+        assert triage.n_calls == 1
+        assert main.n_calls == len(script) - 1
+
+    def test_without_one_the_main_engine_triages(self, pdf, tmp_path):
+        main = FakeEngine(full_script())
+        ingest_report(pdf, main, out_dir=tmp_path, report_id="SYN")
+        assert main.n_calls == len(full_script())
