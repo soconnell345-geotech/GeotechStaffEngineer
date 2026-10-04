@@ -667,6 +667,16 @@ def test_a_hyphenated_compound_matches_the_spaced_term():
     assert not C.term_found("m 278", C.normalize("AASHTO M-278"))
 
 
+def test_latex_number_separators_read_as_plain_numbers():
+    """Foundry rc2 run 2026-10-03: a correct answer wrote q_ult as
+    ``1{,}195.3`` and failed both 1195 patterns."""
+    terms = [[{"re": r"(?<![\w.,/-])1195(?!\d)"},
+              {"re": r"(?<![\w.,/-])1,195(?!\d)"}]]
+    assert C.check_contains_all(r"\(q_{ult} = 1{,}195.3\) kPa", terms)[0]
+    assert C.check_contains_all(r"$q_{ult} = 1\,195.3$ kPa", terms)[0]
+    assert not C.check_contains_all("q_ult = 1,159.3 kPa", terms)[0]
+
+
 # -- whole-set coverage (pages_listed) ---------------------------------------
 
 def test_pages_named_reads_lists_ranges_and_pdf_pages():
@@ -675,6 +685,9 @@ def test_pages_named_reads_lists_ranges_and_pdf_pages():
     assert C.pages_named("PDF page 12; also page 20 and p. 4", 24) == \
         {4, 12, 20}
     assert C.pages_named("sheets 3 & 9, pp. 10-12", 24) == {3, 9, 10, 11, 12}
+    # Foundry rc2 run 2026-10-03: the colon form lost the list
+    assert C.pages_named("FPG penetration callouts occur on PDF pages: "
+                         "**4, 12, 19, and 20**", 24) == {4, 12, 19, 20}
     # a wide range talks about the whole set, it lists nothing found
     assert C.pages_named("pages 1-24 have legend rows", 24) == set()
     assert C.pages_named("page 31", 24) == set()

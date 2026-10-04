@@ -31,9 +31,14 @@ _TRANSLATE = str.maketrans({
 
 def normalize(text: str) -> str:
     """Lower-case ASCII-ish text for matching: quotes/primes/dashes made
-    ASCII, markdown emphasis and backticks dropped, whitespace collapsed."""
+    ASCII, markdown emphasis and backticks dropped, LaTeX number separators
+    made plain (``1{,}195`` -> ``1,195``, ``1\\,195`` -> ``1195``; the
+    Foundry rc2 run, 2026-10-03, failed a correct answer written in LaTeX),
+    whitespace collapsed."""
     t = str(text or "").translate(_TRANSLATE).lower()
     t = t.replace("**", "").replace("__", "").replace("`", "")
+    t = t.replace("{,}", ",")
+    t = re.sub(r"(?<=\d)\\[,;:! ](?=\d)", "", t)
     return re.sub(r"\s+", " ", t)
 
 
@@ -336,9 +341,11 @@ def check_pdf_markups(answer: str, files: Sequence[str] = (), min: int = 1,
     return best >= min, f"{best} matching markup(s) (need {min})"
 
 
-#: "page 4", "pages 4, 12 and 20", "pp. 4-6", "PDF page 12", "sheets 3 & 9".
+#: "page 4", "pages 4, 12 and 20", "pp. 4-6", "PDF page 12", "sheets 3 & 9",
+#: "PDF pages: 4, 12, 19, and 20" (the colon form cost a correct answer its
+#: list in the Foundry rc2 run, 2026-10-03).
 _PAGE_LIST = re.compile(
-    r"\b(?:pdf\s+)?(?:pages?|pp?\.|sheets?)\s*"
+    r"\b(?:pdf\s+)?(?:pages?|pp?\.|sheets?)\s*[:#]?\s*"
     r"(\d+(?:\s*(?:-|–|to|through)\s*\d+)?"
     r"(?:\s*(?:,\s*and|,|and|&)\s*\d+(?:\s*(?:-|–|to|through)\s*\d+)?)*)")
 
