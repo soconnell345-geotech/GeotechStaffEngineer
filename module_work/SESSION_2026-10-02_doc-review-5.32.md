@@ -135,6 +135,22 @@ run on Foundry needs a numpy-2 repo.
   repeats) → `baseline_high` (`GEOTECH_VISION_BUDGET=openai-high`) on the 16
   `drawing_stroke` tasks + `set-long-rare-tag` → three summary calls, each
   RESULTS.md saved under its own name. Pause per arm past ~25M input tokens.
+- Brief 3 round 1 (2026-10-03): baseline 34/35 on the original tasks
+  (calc-bearing-consistency 2/3 — answer not yet seen), 0 errors, 4.53M in /
+  0.36M out, 45.5 min. The two NEW tasks aborted their process 9 of 10 times
+  (OpenSSL FIPS self-test, exit -6) with >10 calls in flight ("connection
+  pool is full"); baseline_r3/set-long-rare-tag got through, 2/3, 0.45M in. A
+  first attempt lost ~35 finished runs (~5M tokens) before per-task
+  isolation. Fix approved: FDE glue pool 10 → 64 + ≤8 calls in flight; the
+  package now caps vision calls itself (be742b0, `GEOTECH_VISION_MAX_INFLIGHT`
+  default 8; not in rc2).
+- Brief 2 hand-back RECEIVED 2026-10-03 (scratchpad `brief2/`, never
+  committed): geotech eval — 17 questions hit numpy-2-only names on 1.26.4
+  (`np.trapezoid` SOE-1/2; `np.long` from a dependency in 15 more), 1 missing
+  pydiggs, 31 real tool errors → 29.2 % without the environment; keyed
+  failures CON-1 and MRS-1 were `np.long` (so 62/66 on the rest); P1 6 (4
+  recovered; unrecovered LP-2, RDD-4). Glue files received (Responses route
+  maps `original` → HIGH; `foundry_full_res.py` rewrites it to AUTO first).
 - Brief 3 (rc2) STARTED on the owner's word; the FDE runs baseline first.
   Claude's suggested trim (if the owner wants it after round 1): baseline on
   all 37 once at full res; the two new tasks × baseline/sweep/minimal × 3
