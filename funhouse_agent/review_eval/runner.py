@@ -245,6 +245,24 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
     return result
 
 
+def rescore_saved(result: Dict[str, Any], task: Task,
+                  run_dir: str) -> Dict[str, Any]:
+    """Re-run ``task``'s checks on a saved run's answer and files — no model
+    call. For a check fixed after the run (Foundry rc2, 2026-10-03: two
+    correct answers failed on parsing). The previous score is kept as
+    ``score_before_rescore`` the first time."""
+    run_dir = os.path.abspath(run_dir)
+    files = [os.path.join(run_dir, f) for f in result.get("files") or []]
+    checks = [_checks.run_check(c, result.get("answer") or "", files=files,
+                                tool_calls=result.get("tool_calls") or [])
+              for c in task.all_checks()]
+    out = dict(result)
+    out.setdefault("score_before_rescore", result.get("score"))
+    out["checks"] = checks
+    out["score"] = _checks.score(checks)
+    return out
+
+
 #: Errors that ARE the page's behaviour (scored, never retried): the legacy
 #: agent's step cap ends a long request this way.
 OUTCOME_ERRORS = ("GraphRecursionError",)
@@ -418,6 +436,7 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
                        sharepoint_folder: str = "GeotechStaffEngineer/review_eval",
                        durable_dir: Any = None,
                        dry_run: bool = False,
+                       rescore: bool = False,
                        verbose: bool = True) -> Dict[str, Any]:
     """Run the suite and return ``{"results_md", "results", "out_dir"}``.
 
@@ -429,6 +448,8 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
     that every document resolves and lists the runs without calling a model.
     ``orientation=True`` sends the page's orientation turn before each
     question — the ``overview`` arm only differs there, so run it with this.
+    ``rescore=True`` re-runs the checks on every saved run (no model call)
+    before reusing it — after a check is fixed; runs not yet done still run.
     """
     arm_list: List[tuple] = []
     for a in arms:
@@ -510,8 +531,15 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
                 except ValueError:
                     prev = None
                 if prev and not prev.get("error"):
+                    if rescore:
+                        prev = rescore_saved(prev, t, str(run_dir))
+                        saved.write_text(json.dumps(prev, indent=1,
+                                                    default=str),
+                                         encoding="utf-8")
                     runs[arm][t.id] = prev
-                    say(f"[{arm}] {t.id}: done already ({_mark(prev)})")
+                    say(f"[{arm}] {t.id}: "
+                        f"{'rescored' if rescore else 'done already'} "
+                        f"({_mark(prev)})")
                     continue
                 if prev:
                     say(f"[{arm}] {t.id}: previous attempt failed "
@@ -532,5 +560,5 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
     return {"results_md": md, "results": runs, "out_dir": str(out)}
 
 
-__all__ = ["score_review_suite", "run_task", "build_page_agent", "summarize",
-           "SUITE_AUTHOR"]
+__all__ = ["score_review_suite", "run_task", "rescore_saved",
+           "build_page_agent", "summarize", "SUITE_AUTHOR"]

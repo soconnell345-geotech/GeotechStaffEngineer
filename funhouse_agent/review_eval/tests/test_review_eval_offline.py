@@ -716,3 +716,36 @@ def test_the_long_tag_set_puts_fpg_where_the_task_says():
     import fitz                      # bytes differ by PyMuPDF's file id
     with fitz.open(stream=data, filetype="pdf") as doc:
         assert name == "long_tag_set.pdf" and doc.page_count == 24
+
+
+def test_rescore_rechecks_a_saved_run_without_a_model(tmp_path):
+    """A check fixed after the run (Foundry rc2, 2026-10-03) re-scores the
+    saved answer; no model is called, and the old score is kept."""
+    import json
+    from funhouse_agent.review_eval import score_review_suite
+    tid = "calc-bearing-consistency"
+    run_dir = tmp_path / "runs" / "baseline" / tid
+    run_dir.mkdir(parents=True)
+    answer = (r"Yes. \(q_{ult} = 1{,}195.3\) kPa (printed p. 3), FS = 3.0 "
+              r"(p. 1), so \(q_{all} = 398.4\) kPa, matching p. 4.")
+    stale = {"pass": False, "passed": 2, "total": 3}
+    (run_dir / "run.json").write_text(json.dumps(
+        {"task": tid, "arm": "baseline", "answer": answer, "files": [],
+         "tool_calls": [], "error": None, "score": stale}), encoding="utf-8")
+
+    class _NoModel:
+        model = "none"
+
+        def invoke(self, *a, **k):
+            raise AssertionError("a rescore must not call the model")
+
+        bind_tools = invoke
+
+    out = score_review_suite(model=_NoModel(), out_dir=tmp_path,
+                             arms=("baseline",), ids=[tid], rescore=True,
+                             verbose=False)
+    run = out["results"]["baseline"][tid]
+    assert run["score_before_rescore"] == stale
+    saved = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+    assert saved["score"] == run["score"] != stale
+    assert run["score"]["passed"], run["checks"]
