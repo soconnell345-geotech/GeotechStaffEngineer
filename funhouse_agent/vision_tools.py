@@ -1204,7 +1204,7 @@ def _dispatch_find_like(arguments, engine, attachments):
             threshold=arguments.get("threshold"),
             save_dir=save_dir)
     except ImportError as e:
-        return json.dumps({"error": f"find_like needs planlens 0.10 or later: {e}"})
+        return json.dumps({"error": f"find_like cannot run here: {e}"})
     except (ValueError, IndexError) as e:
         return json.dumps({"error": str(e),
                            "hint": "box the mark's lettering tightly, with no "

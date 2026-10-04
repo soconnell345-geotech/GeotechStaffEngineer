@@ -154,12 +154,25 @@ def _truncate(text: str, max_chars: int) -> str:
 
 
 def _find_like_available() -> bool:
-    """Whether the installed planlens can search a drawing set for a mark."""
+    """Whether the installed planlens can search a drawing set for a mark —
+    and OpenCV can load on this host without killing the process (planlens
+    test-loads it in a child process first; on a FIPS-mode host it aborts the
+    interpreter: Foundry, 2026-10-03)."""
     import importlib.util
     try:
-        return importlib.util.find_spec("planlens.document.findlike") is not None
+        if importlib.util.find_spec("planlens.document.findlike") is None:
+            return False
     except (ImportError, ValueError):
         return False
+    try:
+        from planlens.opencv import available
+    except ImportError:          # planlens before 0.11: no test-load to ask
+        return True
+    ok, why = available()
+    if not ok:
+        import logging
+        logging.getLogger(__name__).info("find_like left out: %s", why)
+    return ok
 
 
 def _resolve_reference_cap(max_result_chars: int,
