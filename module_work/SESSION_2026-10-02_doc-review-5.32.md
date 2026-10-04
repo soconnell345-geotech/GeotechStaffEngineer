@@ -144,6 +144,16 @@ run on Foundry needs a numpy-2 repo.
   isolation. Fix approved: FDE glue pool 10 → 64 + ≤8 calls in flight; the
   package now caps vision calls itself (be742b0, `GEOTECH_VISION_MAX_INFLIGHT`
   default 8; not in rc2).
+- Round 1 follow-up (2026-10-03): the two 2/3 results were CHECK FAULTS
+  (LaTeX `1{,}195.3`; "PDF pages: 4, 12, 19, and 20" read as [4]) — fixed
+  7f1ea1d. The crashes were NOT concurrency: loading OpenCV aborts the
+  process on Foundry (FIPS self-test, exit -6) and `find_like` loads it.
+  planlens 999f82c `planlens.opencv` test-loads cv2 in a child process
+  (`PLANLENS_CV2_PROBE=0` skips); app ad2f67d leaves `find_like` out when
+  it cannot load. Test wheels `planlens-0.11.0rc2` + `5.32.0rc3` (pin
+  `planlens>=0.11.0rc2`) in `foundry_handoff/` (rc1/rc2 removed). FDE told:
+  continue sweep + minimal on the 35 original tasks now; on rc3 rescore what
+  is saved, then run the two new tasks (no find_like on that host).
 - Brief 2 hand-back RECEIVED 2026-10-03 (scratchpad `brief2/`, never
   committed): geotech eval — 17 questions hit numpy-2-only names on 1.26.4
   (`np.trapezoid` SOE-1/2; `np.long` from a dependency in 15 more), 1 missing
