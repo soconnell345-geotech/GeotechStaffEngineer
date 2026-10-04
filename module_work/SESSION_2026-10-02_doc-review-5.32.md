@@ -154,6 +154,21 @@ run on Foundry needs a numpy-2 repo.
   `planlens>=0.11.0rc2`) in `foundry_handoff/` (rc1/rc2 removed). FDE told:
   continue sweep + minimal on the 35 original tasks now; on rc3 rescore what
   is saved, then run the two new tasks (no find_like on that host).
+- Brief 3 on rc2, everything runnable without rc3 DONE (2026-10-04; Sol,
+  full res, Responses route; glue: forked child per task, pool 64, ≤8 in
+  flight): baseline 35 originals + set-long-rare-tag 34/36 (4.97M/0.38M, 47
+  min); sweep 35 originals 34/35 (10.81M/1.12M, 125 min); minimal 35
+  originals 33/35 (18.45M/0.31M, 68 min); baseline_high 15 drawn-lettering
+  originals 15/15 (0.88M, 19 min) vs baseline on the same 15 15/15 (1.03M,
+  16 min; one look per page vs ~2 tiles per page at HIGH). All baseline/sweep
+  misses are the two fixed check faults → baseline 35/35 and sweep 35/35 on
+  the originals after rescore. minimal's two misses are real and structural:
+  set-3600-psi found 1 of 3 sheets (no text search), fixture-markups lacked
+  "Contractor B" (a reply's author lives in annotation data, not on the
+  page). Reading: tools carry ~2 tasks on Sol at a quarter of minimal's
+  tokens; sweep gains nothing on the originals at 2x tokens / 2.7x time;
+  resolution changed no score (full size +15 % tokens, ~15 % faster). Held
+  for rc3: produce-circle-tags, the remaining new-task runs, all repeats.
 - Brief 2 hand-back RECEIVED 2026-10-03 (scratchpad `brief2/`, never
   committed): geotech eval — 17 questions hit numpy-2-only names on 1.26.4
   (`np.trapezoid` SOE-1/2; `np.long` from a dependency in 15 more), 1 missing
