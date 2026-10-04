@@ -23,7 +23,52 @@ Dependency-light: only ``langchain_core`` (for ``HumanMessage``) and stdlib
 from __future__ import annotations
 
 import base64
-from typing import Optional
+import os
+import threading
+from contextlib import contextmanager
+from typing import Iterator, Optional
+
+#: At most this many vision side calls run at once in one process. A turn can
+#: fan out several ways at once — the model asks for many pages in one step,
+#: each look tiles a sheet four ways, the markup check reads four marks — and
+#: nothing else bounds the product. On Foundry (2026-10-02) a few dozen calls
+#: in flight overflowed the client's 10-connection pool and aborted the
+#: process; any host with a rate limit pays for it too. Eight leaves room in
+#: a 10-connection pool for the agent's own calls. ``0`` = no cap.
+INFLIGHT_ENV = "GEOTECH_VISION_MAX_INFLIGHT"
+DEFAULT_MAX_INFLIGHT = 8
+
+_slots_lock = threading.Lock()
+_slots: Optional[tuple] = None          # (limit, BoundedSemaphore)
+
+
+def _semaphore() -> Optional[threading.BoundedSemaphore]:
+    raw = (os.environ.get(INFLIGHT_ENV) or "").strip()
+    try:
+        limit = int(raw) if raw else DEFAULT_MAX_INFLIGHT
+    except ValueError:
+        limit = DEFAULT_MAX_INFLIGHT
+    if limit <= 0:
+        return None
+    global _slots
+    with _slots_lock:
+        if _slots is None or _slots[0] != limit:
+            _slots = (limit, threading.BoundedSemaphore(limit))
+        return _slots[1]
+
+
+@contextmanager
+def call_slot() -> Iterator[None]:
+    """Hold one of the process's vision-call slots for one model request.
+
+    Wrap only the request itself, never work that makes further calls, so a
+    holder never waits on a slot it needs to finish."""
+    sem = _semaphore()
+    if sem is None:
+        yield
+        return
+    with sem:
+        yield
 
 
 class LangChainVisionEngine:
@@ -135,13 +180,15 @@ class LangChainVisionEngine:
             ])
 
         try:
-            response = self._model.invoke([message(True)])
+            with call_slot():
+                response = self._model.invoke([message(True)])
         except Exception as exc:
             # An older model (GPT-4.1, GPT-5.2) has no "original" detail; ask
             # once more at its default rather than fail the read.
             if not detail or "detail" not in str(exc).lower():
                 raise
-            response = self._model.invoke([message(False)])
+            with call_slot():
+                response = self._model.invoke([message(False)])
         return _content_to_text(getattr(response, "content", response))
 
 
@@ -169,4 +216,5 @@ def _content_to_text(content) -> str:
     return str(content)
 
 
-__all__ = ["LangChainVisionEngine"]
+__all__ = ["LangChainVisionEngine", "call_slot", "INFLIGHT_ENV",
+           "DEFAULT_MAX_INFLIGHT"]

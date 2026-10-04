@@ -71,8 +71,9 @@ def _parse(text: str) -> Optional[Dict[str, Any]]:
 
 def _text_call(model, prompt: str) -> str:
     from langchain_core.messages import HumanMessage
-    from funhouse_agent.deep.vision_engine import _content_to_text
-    resp = model.invoke([HumanMessage(content=prompt)])
+    from funhouse_agent.deep.vision_engine import _content_to_text, call_slot
+    with call_slot():
+        resp = model.invoke([HumanMessage(content=prompt)])
     return _content_to_text(getattr(resp, "content", resp))
 
 
