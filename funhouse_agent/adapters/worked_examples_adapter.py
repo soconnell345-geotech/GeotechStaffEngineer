@@ -7,11 +7,21 @@ the dispatch calls, published answer, and report-writing notes. See
 """
 
 from funhouse_agent import worked_examples as _we
-from funhouse_agent.adapters import require_params
+from funhouse_agent.adapters import apply_aliases, require_params
+
+#: Search-box names for the free-text topic, and the module-filter names.
+_FIND_ALIASES = {
+    "query": "topic", "search": "topic", "keywords": "topic",
+    "keyword": "topic", "q": "topic", "text": "topic", "category": "topic",
+    "module": "domain", "agent_name": "domain",
+}
+_FIND_VALID = ("topic", "domain", "limit")
 
 
 def _find(params: dict) -> dict:
-    require_params(params, ["topic"], method="find_worked_examples")
+    params = apply_aliases(params, _FIND_ALIASES)
+    require_params(params, ["topic"], method="find_worked_examples",
+                   valid=_FIND_VALID)
     hits = _we.search_examples(params["topic"],
                                domain=params.get("domain"),
                                limit=int(params.get("limit", 3)))

@@ -43,6 +43,8 @@ from funhouse_agent.dispatch import (
     # describe_method redirect a guessed method name the same way call_agent
     # already does, instead of bouncing with a bare "Unknown method".
     _METHOD_ALIASES,
+    _closest_methods,
+    _cross_module_redirect,
     _load_adapter,
     _selector_value_candidates,
 )
@@ -276,7 +278,30 @@ def _resolve_describe_method(agent_name, method, allowed_agents):
                 )
             return out
 
-    # (b) Selector value: ``method`` is an allowed VALUE of a selector parameter
+    # (b) A method of ANOTHER module (e.g. an apparent-pressure envelope asked
+    # of retaining_walls): describing is read-only, so show that method's docs
+    # and say where it lives — call_agent still refuses to run it here.
+    try:
+        redirect = _cross_module_redirect(agent_name, method, allowed_agents)
+    except Exception:
+        redirect = None
+    if redirect is not None:
+        right_agent, right_method = redirect
+        docs = _describe_method(
+            agent_name=right_agent, method=right_method,
+            allowed_agents=allowed_agents,
+        )
+        if "error" not in docs:
+            out = dict(docs)
+            out["_note"] = (
+                f"'{method}' is not a '{agent_name}' method — it lives on "
+                f"module '{right_agent}' as '{right_method}'. Showing that "
+                f"method's docs; call it with call_agent('{right_agent}', "
+                f"'{right_method}', {{...}})."
+            )
+            return out
+
+    # (c) Selector value: ``method`` is an allowed VALUE of a selector parameter
     # (e.g. 'vesic' for the 'factor_method' parameter), not a method name.
     try:
         mod = _load_adapter(agent_name)
@@ -322,18 +347,23 @@ def _enriched_unknown_method_error(agent_name, method, allowed_agents):
             for m, info in mod.METHOD_INFO.items()
             if not info.get("alias_of")
         }
+        closest = _closest_methods(mod, method)
     except Exception:
         return None
     if not briefs:
         return None
+    # The closest names come FIRST: a large module's brief list can be cut by
+    # the result cap, and the nearest real methods must survive the cut.
     return {
-        "error": f"Unknown method '{method}' for module '{agent_name}'.",
-        "available_methods": briefs,
+        "error": (f"Unknown method '{method}' for module '{agent_name}'. "
+                  f"Closest: {closest}."),
+        "closest": closest,
         "directive": (
-            "These are the available methods and what they do; pick the "
-            "closest one. Theory/qualifier names (e.g. vesic, ultimate) are "
+            "Describe the closest method that fits, or pick from the full "
+            "list below. Theory/qualifier names (e.g. vesic, ultimate) are "
             "parameter values, not methods."
         ),
+        "available_methods": briefs,
     }
 
 
@@ -408,12 +438,13 @@ def make_core_tools(
             max_result_chars,
         )
 
-    def list_methods(agent_name: str, category: str = "") -> str:
+    def list_methods(agent_name: str = "", category: str = "") -> str:
         """List available methods for a specific analysis module.
 
         ``agent_name`` is the module name (e.g. 'bearing_capacity',
-        'settlement', 'subsurface'). ``category`` is an optional category
-        filter; empty string for all.
+        'settlement', 'subsurface'); left empty, the answer is the list of
+        modules to pick from. ``category`` is an optional category filter;
+        empty string for all.
         """
         return _truncate(
             json.dumps(

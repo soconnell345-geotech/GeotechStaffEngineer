@@ -64,7 +64,18 @@ def _run_pile_group_simple(params):
 
 def _run_pile_group_6dof(params):
     reject_unknown_params(params, _GROUP_VALID_PARAMS, method="pile_group_6dof")
-    return analyze_group_6dof(_build_piles(params), _build_load(params)).to_dict()
+    piles = _build_piles(params)
+    missing = [p.label or f"#{i}" for i, p in enumerate(piles)
+               if p.axial_stiffness is None]
+    if missing:
+        raise ValueError(
+            "pile_group_6dof needs every pile's axial_stiffness (kN/m) — "
+            f"missing on {missing[:6]}{' ...' if len(missing) > 6 else ''}. "
+            "Give 'axial_stiffness' at the top level with n_rows/n_cols, or on "
+            "each piles[] entry, and 'lateral_stiffness' (kN/m) as well when "
+            "vertical piles must carry Vx/Vy. For vertical load and moments "
+            "only, pile_group_simple needs no stiffness.")
+    return analyze_group_6dof(piles, _build_load(params)).to_dict()
 
 
 def _run_group_efficiency(params):
@@ -172,7 +183,9 @@ METHOD_INFO = {
             "spacing_x": {"type": "float", "required": False, "description": "X spacing (m). Or give a single 'spacing' for both directions."},
             "spacing_y": {"type": "float", "required": False, "description": "Y spacing (m). Or give a single 'spacing' for both directions."},
             "spacing": {"type": "float", "required": False, "description": "Uniform center-to-center spacing (m), used for both x and y."},
-            "piles": {"type": "array", "required": False, "description": "Explicit pile list [{x, y, batter_x, batter_y, ...}] instead of n_rows/n_cols."},
+            "piles": {"type": "array", "required": False, "description": "Explicit pile list [{x, y, batter_x, batter_y, axial_stiffness, lateral_stiffness, label}] instead of n_rows/n_cols."},
+            "axial_stiffness": {"type": "float", "required": True, "description": "Pile-head axial stiffness ka (kN/m), e.g. from a load test or E*A/L for an end-bearing pile. REQUIRED for every pile: give it here with n_rows/n_cols, or on each piles[] entry."},
+            "lateral_stiffness": {"type": "float", "required": False, "description": "Pile-head lateral stiffness kl (kN/m), here with n_rows/n_cols or on each piles[] entry. Needed for vertical piles to carry Vx/Vy (0 if omitted)."},
             "Vx": {"type": "float", "required": False, "description": "Lateral load x (kN)."},
             "Vy": {"type": "float", "required": False, "description": "Lateral load y (kN)."},
             "Vz": {"type": "float", "required": False, "description": "Vertical load (kN)."},

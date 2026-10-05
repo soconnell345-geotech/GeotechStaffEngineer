@@ -88,18 +88,75 @@ def require_keys(item: dict, required, *, method: str, item_label: str = "layers
         )
 
 
+#: Unit suffixes an agent appends to a parameter name ('b_mm', 'fc_mpa').
+_UNIT_SUFFIXES = frozenset({
+    "mm", "cm", "m", "km", "in", "ft", "kpa", "mpa", "gpa", "pa", "psi",
+    "psf", "ksf", "pci", "pcf", "kn", "knm", "kip", "kips", "deg", "degrees",
+    "rad", "s", "sec", "yr", "yrs", "years", "pct", "percent",
+})
+
+#: Domain words written more than one way; applied to a guessed name only to
+#: rank suggestions, never to rename a parameter.
+_WORD_SYNONYMS = (
+    ("water_table", "gwt"), ("watertable", "gwt"), ("groundwater", "gwt"),
+    ("ground_water", "gwt"), ("gwl", "gwt"),
+)
+
+
+def _param_key(name: str) -> str:
+    return "".join(ch for ch in str(name).lower() if ch.isalnum())
+
+
+def suggest_params(unknown: str, valid, n: int = 2) -> list:
+    """Valid parameter names closest to an unknown one ('x_label' -> 'xlabel',
+    'fc_mpa' -> 'fc', 'water_table_depth' -> 'gwt_depth'). Suggestions only:
+    nothing is renamed."""
+    import difflib
+    valid = list(valid)
+    raw = str(unknown).lower()
+    forms = {raw}
+    for word, canon in _WORD_SYNONYMS:
+        if word in raw:
+            forms.add(raw.replace(word, canon))
+    parts = [p for p in raw.replace("-", "_").split("_") if p]
+    if len(parts) > 1 and parts[-1] in _UNIT_SUFFIXES:
+        forms.add("_".join(parts[:-1]))
+    keys = {_param_key(f) for f in forms}
+    exact = [v for v in valid if _param_key(v) in keys]
+    if exact:
+        return exact[:n]
+    # Spelling slips only ('unit_wieght'): a looser cutoff starts offering
+    # a different quantity that shares a word ('base_inclination' would get
+    # 'load_inclination'), which is worse than no suggestion.
+    by_key = {_param_key(v): v for v in valid}
+    near = []
+    for k in keys:
+        for hit in difflib.get_close_matches(k, list(by_key), n=n, cutoff=0.85):
+            if by_key[hit] not in near:
+                near.append(by_key[hit])
+    return near[:n]
+
+
 def reject_unknown_params(params: dict, valid, *, method: str, aliases=()):
     """Raise a clear ValueError naming unknown keys and listing valid ones.
 
     Use for adapters that pass ``**params`` straight into a module function,
     where an invented parameter name would otherwise surface as a bare
-    ``TypeError: unexpected keyword argument``.
+    ``TypeError: unexpected keyword argument``. Each unknown name that is a
+    near miss of a valid one gets a did-you-mean.
     """
     unknown = [k for k in params if k not in valid and k not in aliases]
     if unknown:
+        hints = []
+        for k in sorted(unknown):
+            near = suggest_params(k, valid)
+            if near:
+                hints.append(f"{k} -> {' or '.join(near)}")
+        hint = f" Did you mean: {'; '.join(hints)}?" if hints else ""
         raise ValueError(
-            f"{method}: unknown parameter(s) {sorted(unknown)}. "
-            f"Valid parameters: {sorted(valid)}."
+            f"{method}: unknown parameter(s) {sorted(unknown)}.{hint} "
+            f"Valid parameters: {sorted(valid)}. describe_method gives each "
+            f"one's meaning and units."
         )
 
 
@@ -218,7 +275,7 @@ MODULE_REGISTRY = {
     },
     "slope_stability": {
         "adapter": "funhouse_agent.adapters.slope_stability",
-        "brief": "Slope stability (Fellenius/Bishop/Spencer, circular+noncircular, grid search)",
+        "brief": "Slope stability: LE methods + surface search, rapid drawdown, infinite slope, seismic ky/Newmark sliding block, nails/anchors/piles, FOSM/MC",
     },
     "seismic_geotech": {
         "adapter": "funhouse_agent.adapters.seismic_geotech",
@@ -246,7 +303,7 @@ MODULE_REGISTRY = {
     },
     "lateral_pile": {
         "adapter": "funhouse_agent.adapters.lateral_pile",
-        "brief": "Lateral pile analysis (COM624P, 8 p-y models, FD solver)",
+        "brief": "Lateral pile analysis (COM624P, 8 p-y models, FD solver); composite pile section EI",
     },
     "pile_group": {
         "adapter": "funhouse_agent.adapters.pile_group",
@@ -270,7 +327,7 @@ MODULE_REGISTRY = {
     },
     "pavement_design": {
         "adapter": "funhouse_agent.adapters.pavement_design_adapter",
-        "brief": "AASHTO 1993 pavement design (SN, slab D, ESALs)",
+        "brief": "Pavement design: AASHTO 1993 and UFC 3-250-01 (flexible SN/CBR, rigid slab D, ESALs)",
     },
     "dxf_export": {
         "adapter": "funhouse_agent.adapters.dxf_export",
@@ -310,7 +367,7 @@ MODULE_REGISTRY = {
     },
     "drawing_ir": {
         "adapter": "funhouse_agent.adapters.drawing_ir_adapter",
-        "brief": "Drawing/submittal intelligence: DXF/PDF/raster to a unified IR; slice queries (bbox/angle/text/layer); annotation-construct PROPOSALS (leaders, dimensions, title block, bubbles, rev clouds); text/construct search across whole drawing SETS; region snip to PNG for vision",
+        "brief": "Drawing intelligence: DXF/PDF/raster to an IR; slice queries; leader/dimension/title-block/bubble/cloud PROPOSALS; search across drawing SETS; region snip for vision",
     },
     "opensees": {
         "adapter": "funhouse_agent.adapters.opensees_adapter",

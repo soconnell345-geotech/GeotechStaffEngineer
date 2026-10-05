@@ -18,8 +18,8 @@ is there for the rare caller that does.
 import os
 from datetime import datetime
 
-from funhouse_agent.adapters import (reject_unknown_params, require_params,
-                                     write_plotly_sidecar)
+from funhouse_agent.adapters import (apply_aliases, reject_unknown_params,
+                                     require_params, write_plotly_sidecar)
 from funhouse_agent._fileio import (default_output_dir, resolve_output_path,
                                     save_verified)
 
@@ -116,9 +116,15 @@ def _default_plot_path() -> str:
     return os.path.join(default_output_dir(), f"data_plot_{ts}.png")
 
 
+#: The axis-label spellings with an underscore (matplotlib's own
+#: set_xlabel/xlabel have none; agents often write one).
+_PLOT_ALIASES = {"x_label": "xlabel", "y_label": "ylabel"}
+
+
 def _run_plot_data(params: dict) -> dict:
     from profile_figure import render_data_plot
 
+    params = apply_aliases(params, _PLOT_ALIASES)
     reject_unknown_params(params, _VALID_PLOT, method="plot_data")
     require_params(params, ["series"], method="plot_data", valid=_VALID_PLOT)
 

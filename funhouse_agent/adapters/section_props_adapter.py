@@ -41,7 +41,7 @@ METHOD_REGISTRY = {
 METHOD_INFO = {
     "section_properties": {
         "category": "Cross-Section Analysis",
-        "brief": "Properties of parametric shapes (rectangle/circle/CHS/RHS/I): A, I, Z, S, r, J, warping. Dimensions in mm.",
+        "brief": "Properties of parametric shapes (rectangle/circle/CHS/RHS/I): A, I, Z, S, r, J, warping. Dimensions in mm. One material; a multi-material PILE's composite EI (RC, concrete-filled pipe) is lateral_pile.composite_section_ei.",
         "parameters": {
             "shape": {"type": "str", "required": True, "allowed_values": _SHAPES, "description": "Section shape."},
             "d": {"type": "float", "required": False, "description": "Depth or diameter (mm). Required for all shapes."},

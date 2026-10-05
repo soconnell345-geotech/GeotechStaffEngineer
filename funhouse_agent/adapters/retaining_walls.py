@@ -54,8 +54,11 @@ def _build_reinforcement(params):
     if name in _REINFORCEMENT_DB:
         return _REINFORCEMENT_DB[name]
     if params.get("reinforcement_Tallowable") is None:
+        given = params.get("reinforcement_name")
+        not_built_in = (f"reinforcement_name '{given}' is not a built-in. "
+                        if given else "")
         raise ValueError(
-            "mse_wall: provide a built-in reinforcement_name "
+            f"mse_wall: {not_built_in}provide a built-in reinforcement_name "
             f"({sorted(_REINFORCEMENT_DB)}; see list_reinforcement) or a custom "
             "reinforcement_Tallowable (kN/m) with optional reinforcement_type/"
             "reinforcement_width/reinforcement_Fy/reinforcement_thickness "

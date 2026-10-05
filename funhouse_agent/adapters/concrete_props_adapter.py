@@ -1,11 +1,22 @@
 """Concrete properties adapter — flat dict -> concrete_props_agent -> dict."""
 
 from funhouse_agent.adapters import (
-    clean_result, reject_unknown_params, require_params,
+    apply_aliases, clean_result, reject_unknown_params, require_params,
 )
+
+#: The unit-suffixed names analyze_rc_rectangle itself uses (b_mm, fc_MPa,
+#: ...), in the same units as the short names, so they mean the same input.
+_RC_ALIASES = {
+    "b_mm": "b", "h_mm": "h", "fc_mpa": "fc", "fc_MPa": "fc",
+    "fy_mpa": "fy", "fy_MPa": "fy", "cover_mm": "cover",
+    "dia_bot_mm": "dia_bot", "dia_top_mm": "dia_top",
+    "ec_mpa": "ec", "ec_MPa": "ec", "es_mpa": "es", "es_MPa": "es",
+}
+
 
 def _run_rc_section(params: dict) -> dict:
     from concrete_props_agent import analyze_rc_rectangle
+    params = apply_aliases(params, _RC_ALIASES)
     reject_unknown_params(
         params,
         ("b", "h", "fc", "fy", "n_bot", "dia_bot", "cover", "n_top",
@@ -36,7 +47,7 @@ METHOD_REGISTRY = {
 METHOD_INFO = {
     "rc_rectangular_section": {
         "category": "RC Section Analysis",
-        "brief": "Rectangular RC section: gross/cracked Ixx, cracking moment, nominal Mn (sag/hog), optional N-M interaction. mm/MPa in, kN*m out.",
+        "brief": "Rectangular RC section: gross/cracked Ixx, cracking moment, nominal Mn (sag/hog), optional N-M interaction. mm/MPa in, kN*m out. For a circular RC or concrete-filled pipe PILE's composite EI use lateral_pile.composite_section_ei.",
         "parameters": {
             "b": {"type": "float", "required": True, "description": "Width (mm)."},
             "h": {"type": "float", "required": True, "description": "Overall depth (mm)."},

@@ -22,26 +22,41 @@ _VALID_PARAMS = (
 )
 
 
+#: What each kind of layer needs; appended to a layer's validation error.
+_LAYER_FIX = (
+    "Each layer needs thickness (m), soil_type, unit_weight (kN/m3) and phi "
+    "(deg, cohesionless) or cu (kPa, cohesive). A layer with settling=true "
+    "also needs what its settlement is computed from: cohesionless -> E_s "
+    "(elastic modulus, kPa, > 0; nu_s optional); cohesive -> Cc and e0 (Cr, "
+    "sigma_p optional) or C_ec. If the layer does not settle, set "
+    "settling=false.")
+
+
 def _run_downdrag_analysis(params):
     reject_unknown_params(params, _VALID_PARAMS, method="downdrag_analysis")
     require_params(params, ["layers", "pile_length", "pile_diameter"],
                    method="downdrag_analysis", valid=_VALID_PARAMS)
     layers = []
-    for l in params["layers"]:
+    for i, l in enumerate(params["layers"]):
         require_keys(l, ["thickness", "soil_type", "unit_weight"], method="downdrag_analysis")
         if l["soil_type"] not in _SOIL_TYPES:
             raise ValueError(
                 f"downdrag_analysis: layer soil_type must be one of {list(_SOIL_TYPES)} "
                 f"(got '{l['soil_type']}'). Mark settling layers with settling=True."
             )
-        layers.append(DowndragSoilLayer(
-            thickness=l["thickness"], soil_type=l["soil_type"], unit_weight=l["unit_weight"],
-            phi=l.get("phi", 0.0), cu=l.get("cu", 0.0), beta=l.get("beta"), alpha=l.get("alpha"),
-            Cc=l.get("Cc", 0.0), Cr=l.get("Cr", 0.0), e0=l.get("e0", 0.0),
-            C_ec=l.get("C_ec"), C_er=l.get("C_er"), sigma_p=l.get("sigma_p"),
-            E_s=l.get("E_s"), nu_s=l.get("nu_s", 0.3),
-            settling=l.get("settling", False), description=l.get("description", ""),
-        ))
+        try:
+            layers.append(DowndragSoilLayer(
+                thickness=l["thickness"], soil_type=l["soil_type"], unit_weight=l["unit_weight"],
+                phi=l.get("phi", 0.0), cu=l.get("cu", 0.0), beta=l.get("beta"), alpha=l.get("alpha"),
+                Cc=l.get("Cc", 0.0), Cr=l.get("Cr", 0.0), e0=l.get("e0", 0.0),
+                C_ec=l.get("C_ec"), C_er=l.get("C_er"), sigma_p=l.get("sigma_p"),
+                E_s=l.get("E_s"), nu_s=l.get("nu_s", 0.3),
+                settling=l.get("settling", False), description=l.get("description", ""),
+            ))
+        except ValueError as exc:
+            raise ValueError(
+                f"downdrag_analysis: layers[{i}] ({l.get('description') or l['soil_type']}): "
+                f"{exc}. {_LAYER_FIX}") from None
     soil = DowndragSoilProfile(layers=layers, gwt_depth=params.get("gwt_depth", 0.0))
     analysis = DowndragAnalysis(
         soil=soil, pile_length=params["pile_length"], pile_diameter=params["pile_diameter"],
@@ -308,7 +323,7 @@ METHOD_INFO = {
         "parameters": {
             "pile_length": {"type": "float", "required": True, "description": "Pile length (m)."},
             "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter (m)."},
-            "layers": {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, phi, cu, beta, Cc, e0, settling} dicts. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay'/'settling_fill'). Mark settling layers with settling=True."},
+            "layers": {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, phi, cu, beta, alpha, settling, description} dicts. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay'/'settling_fill'). Mark settling layers with settling=True; a settling layer also needs its compressibility: cohesionless -> E_s (elastic modulus, kPa, > 0) and optional nu_s; cohesive -> Cc and e0 (optional Cr, sigma_p kPa) or C_ec/C_er."},
             "Q_dead": {"type": "float", "required": False, "default": 0.0, "description": "Dead load at pile top (kN)."},
             "fill_thickness": {"type": "float", "required": False, "description": "Fill thickness causing downdrag (m)."},
             "fill_unit_weight": {"type": "float", "required": False, "default": 19.0, "description": "Fill unit weight (kN/m3)."},

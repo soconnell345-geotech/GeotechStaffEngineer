@@ -117,7 +117,12 @@ def _run_hough_settlement(params: dict) -> dict:
 
 
 def _run_combined_settlement(params: dict) -> dict:
-    params = apply_aliases(params, {"q_net": "q_applied", "q": "q_applied"})
+    params = apply_aliases(params, {
+        "q_net": "q_applied", "q": "q_applied",
+        # the footing's own descriptive names (2026-10 Foundry eval, SE-4)
+        "foundation_pressure": "q_applied", "foundation_width": "B",
+        "foundation_length": "L",
+    })
     reject_unknown_params(
         params, ("q_applied", "q_overburden", "B", "L", "shape",
                  "immediate_method", "Es", "nu", "schmertmann_layers",

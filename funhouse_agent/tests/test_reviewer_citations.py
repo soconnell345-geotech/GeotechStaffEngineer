@@ -22,8 +22,15 @@ def test_references_consult_may_not_cite_from_memory():
 
 
 def test_category_that_matches_nothing_lists_the_real_categories():
+    # Never the bare {} that read as "nothing on that": the note says the
+    # category matched nothing, the real categories are named, and methods
+    # are still listed (the 2026-10 change: the methods instead of an error).
     out = list_methods("gec7", category="earth retaining structures")
-    assert "error" in out and out["available_categories"]
+    assert out != {} and out["available_categories"]
+    assert "not one of its categories" in out["note"] \
+        or "is not a 'gec7' category" in out["note"]
+    assert out["methods"]
     good = out["available_categories"][0]
     assert "error" not in list_methods("gec7", category=good)
+    assert "note" not in list_methods("gec7", category=good)
     assert "error" not in list_methods("gec7")

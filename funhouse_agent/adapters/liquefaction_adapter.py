@@ -109,9 +109,16 @@ def _first(params: dict, *keys, default=None, required=False, label=""):
         if k in params and params[k] is not None:
             return params[k]
     if required:
+        what = ""
+        try:
+            doc = METHOD_INFO["liquefaction_analysis"]["parameters"].get(label)
+            what = f" ({doc['description'].rstrip('.')})" if doc else ""
+        except (KeyError, TypeError, NameError):
+            pass
         raise ValueError(
-            f"Missing required parameter{(' ' + label) if label else ''}: "
-            f"provide one of {list(keys)}."
+            f"Missing required parameter{(' ' + label) if label else ''}"
+            f"{what}: provide one of {list(keys)}. If the problem does not "
+            f"give it, ask for it, or say plainly what value you assume."
         )
     return default
 

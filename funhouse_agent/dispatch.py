@@ -260,8 +260,88 @@ def list_agents(allowed_agents=None) -> dict:
     }
 
 
-def list_methods(agent_name: str, category: str = "", allowed_agents=None) -> dict:
-    """List available methods for a specific module."""
+#: Words that say nothing about WHICH method is meant ("analyze_downdrag",
+#: "cantilever_wall_analysis"); dropped before guessed names are compared.
+_NAME_FILLER = frozenset({
+    "analysis", "analyze", "analyse", "method", "methods", "calc", "calculate",
+    "calculation", "compute", "run", "get", "do", "the", "of", "for", "a",
+})
+
+
+def _name_tokens(text: str) -> set:
+    """Lower-case word tokens of a method name or brief, filler removed."""
+    import re
+    return {t for t in re.split(r"[^a-z0-9]+", str(text).lower())
+            if t and t not in _NAME_FILLER}
+
+
+def _closest_methods(mod, method: str, n: int = 3) -> list:
+    """The real methods of ``mod`` closest to a guessed ``method`` name.
+
+    Scores each listed method by spelling (difflib on the name) and by the
+    guess's words found in the method's name and one-line brief, so
+    'driven_pile_capacity' finds 'axial_pile_capacity' and
+    'cantilever_wall_analysis' finds 'cantilever_wall'. Always returns the
+    best ``n`` (never an empty hint for a module that has methods).
+    """
+    guess = str(method or "").strip().lower()
+    g_tokens = _name_tokens(guess)
+    scored = []
+    for name, info in mod.METHOD_INFO.items():
+        if info.get("alias_of"):
+            continue
+        spelling = difflib.SequenceMatcher(None, guess, name.lower()).ratio()
+        in_name = in_brief = 0.0
+        if g_tokens:
+            n_tok = _name_tokens(name)
+            b_tok = _name_tokens(info.get("brief", ""))
+            in_name = len(g_tokens & n_tok) / len(g_tokens)
+            in_brief = len(g_tokens & b_tok) / len(g_tokens)
+        scored.append((0.45 * spelling + 0.4 * in_name + 0.15 * in_brief,
+                       name))
+    scored.sort(key=lambda s: (-s[0], s[1]))
+    return [name for _, name in scored[:n]]
+
+
+def _topic_matches(mod, topic: str) -> dict:
+    """Methods whose name, brief or parameter names/descriptions mention every
+    word of ``topic`` — what an agent means by a ``category`` that is not one
+    of the module's categories ('slope' on fem2d, 'DIGGS' on subsurface)."""
+    words = [w for w in _name_tokens(topic) if len(w) > 1]
+    if not words:
+        return {}
+    hits = {}
+    for name, info in mod.METHOD_INFO.items():
+        if info.get("alias_of"):
+            continue
+        params = info.get("parameters") or {}
+        text = " ".join([name, str(info.get("brief", ""))]
+                        + [f"{p} {(d or {}).get('description', '')} "
+                           f"{(d or {}).get('brief', '')}"
+                           for p, d in params.items()
+                           if isinstance(d, dict)]).lower()
+        if all(w in text for w in words):
+            hits.setdefault(info.get("category", "General"), {})[name] = \
+                info["brief"]
+    return hits
+
+
+def list_methods(agent_name: str = "", category: str = "",
+                 allowed_agents=None) -> dict:
+    """List available methods for a specific module.
+
+    With no ``agent_name`` the answer is the list of modules to choose from.
+    A ``category`` that is not one of the module's categories is read as a
+    topic: the methods that mention it, or else all of them — always with a
+    ``note`` saying the category matched nothing, never an empty ``{}``.
+    """
+    if not str(agent_name or "").strip():
+        return {
+            "error": "list_methods needs agent_name: the module whose methods "
+                     "you want. Pick one of the modules below (list_agents "
+                     "gives a one-line description of each).",
+            "modules": _scoped_names(allowed_agents),
+        }
     agent_name = _canonical_agent_name(agent_name)
     if not _is_visible(agent_name, allowed_agents):
         return {
@@ -273,25 +353,47 @@ def list_methods(agent_name: str, category: str = "", allowed_agents=None) -> di
     except Exception as e:
         return {"error": f"Failed to load module '{agent_name}': {e}"}
     # Each adapter exports METHOD_INFO with method_name -> {category, brief, ...}
-    result = {}
-    categories = set()
+    everything = {}
     for method_name, info in mod.METHOD_INFO.items():
         if info.get("alias_of"):
             continue  # semantic alias — callable/describable but not listed
         cat = info.get("category", "General")
-        categories.add(cat)
-        if category and cat.lower() != category.lower():
-            continue
-        if cat not in result:
-            result[cat] = {}
-        result[cat][method_name] = info["brief"]
-    if category and not result:
-        # An empty {} read as "this module has nothing on that" (field
-        # feedback 2026-09-15, N13: a reviewer filtered gec7 by "earth
-        # retaining structures", got {}, and went on to cite from memory).
-        return {"error": f"No '{agent_name}' methods in category '{category}'.",
-                "available_categories": sorted(categories)}
-    return result
+        everything.setdefault(cat, {})[method_name] = info["brief"]
+    if not category:
+        return everything
+    wanted = str(category).strip().lower()
+    exact = {c: m for c, m in everything.items() if c.lower() == wanted}
+    if exact:
+        return exact
+    # Field feedback 2026-09-15, N13: an empty {} read as "this module has
+    # nothing on that" (a reviewer filtered gec7 by "earth retaining
+    # structures", got {}, and cited from memory). The 2026-10 Foundry eval:
+    # agents use `category` as a topic ('pile', 'slope', 'DIGGS') and an
+    # error sent them guessing again. So a category that is not one of the
+    # module's own is answered with the methods that mention it, or with all
+    # of them, and the note says which.
+    categories = sorted(everything)
+    partial = {c: m for c, m in everything.items()
+               if wanted in c.lower() or c.lower() in wanted}
+    topical = partial or _topic_matches(mod, wanted)
+    if topical:
+        shown = "methods in the closest categories" if partial else \
+            "the methods whose name, description or parameters mention it"
+        return {
+            "note": f"'{category}' is not a '{agent_name}' category (its "
+                    f"categories are {categories}); showing {shown}. Call "
+                    f"list_methods('{agent_name}') with no category for all.",
+            "available_categories": categories,
+            "methods": topical,
+        }
+    return {
+        "note": f"No '{agent_name}' method mentions '{category}' and it is not "
+                f"one of its categories ({categories}); showing ALL of the "
+                f"module's methods. A category filters by those names only — "
+                f"a topic or search term goes in a method's parameters.",
+        "available_categories": categories,
+        "methods": everything,
+    }
 
 
 def describe_method(agent_name: str, method: str, allowed_agents=None) -> dict:
@@ -307,9 +409,34 @@ def describe_method(agent_name: str, method: str, allowed_agents=None) -> dict:
     except Exception as e:
         return {"error": f"Failed to load module '{agent_name}': {e}"}
     if method not in mod.METHOD_INFO:
-        available = sorted(mod.METHOD_INFO.keys())
-        return {"error": f"Unknown method '{method}'. Available: {available}"}
+        return _unknown_method_error(mod, agent_name, method, allowed_agents)
     return mod.METHOD_INFO[method]
+
+
+def _unknown_method_error(mod, agent_name: str, method: str,
+                          allowed_agents=None) -> dict:
+    """The answer to an unknown method name: the closest real methods first,
+    the module that has it when the guess belongs to another module, then the
+    full list. Shared by describe_method and call_agent so every unknown-name
+    path names where to go next."""
+    available = sorted(k for k, v in mod.METHOD_INFO.items()
+                       if not v.get("alias_of"))
+    closest = _closest_methods(mod, method)
+    msg = (f"Unknown method '{method}' for module '{agent_name}'. "
+           f"Closest: {closest}.")
+    out = {"error": msg, "closest": closest}
+    redirect = (_cross_module_redirect(agent_name, method, allowed_agents)
+                if isinstance(method, str) else None)
+    if redirect is not None:
+        right_agent, right_method = redirect
+        out["error"] = (
+            f"Unknown method '{method}' for module '{agent_name}' — it lives "
+            f"on module '{right_agent}' as '{right_method}' "
+            f"(describe_method('{right_agent}', '{right_method}')). "
+            f"Closest '{agent_name}' methods: {closest}.")
+        out["redirect"] = {"agent_name": right_agent, "method": right_method}
+    out["available"] = available
+    return out
 
 
 def _resolve_attachment(parameters: dict, attachments: dict) -> dict:
@@ -375,7 +502,14 @@ _METHOD_ALIASES = {
     ("drilled_shaft", "rock_socket_capacity"): "drilled_shaft_capacity",
     ("drilled_shaft", "single_shaft_capacity"): "drilled_shaft_capacity",
     ("axial_pile", "beta_method"): "axial_pile_capacity",
+    # Theory / verb-noun guesses for the one driven-pile capacity analysis
+    # (Tomlinson alpha is chosen per cohesive layer inside it) and the one
+    # drilled-shaft analysis (2026-10 Foundry eval, AP-2/AP-3/DS-2).
+    ("axial_pile", "alpha_method"): "axial_pile_capacity",
+    ("axial_pile", "driven_pile_capacity"): "axial_pile_capacity",
+    ("drilled_shaft", "beta_method_capacity"): "drilled_shaft_capacity",
     ("downdrag", "fellenius_neutral_plane"): "downdrag_analysis",
+    ("downdrag", "analyze_downdrag"): "downdrag_analysis",
     # analyze_lateral_pile — verb-prefixed guess (2026-07-05 eval run).
     ("lateral_pile", "analyze_lateral_pile"): "lateral_pile_analysis",
     # --- earth retention / ground improvement ---
@@ -383,6 +517,7 @@ _METHOD_ALIASES = {
     # earth-pressure coefficient tool is the Rankine/Coulomb K helper; the
     # aggregate-pier tool is the GEC-13 design method.
     ("retaining_walls", "earth_pressure_analysis"): "earth_pressure_coefficient",
+    ("retaining_walls", "cantilever_wall_analysis"): "cantilever_wall",
     # Rankine/Coulomb K guessed by name ON retaining_walls (the right module) —
     # route in-module to the real earth-pressure coefficient helper. The SAME
     # names guessed on the WRONG module are handled by _CROSS_MODULE_REDIRECTS.
@@ -421,6 +556,7 @@ _METHOD_ALIASES = {
     ("slope_stability", "newmark_sliding_block"): "newmark_displacement",
     ("slope_stability", "sliding_block"): "newmark_displacement",
     ("slope_stability", "seismic_displacement"): "newmark_displacement",
+    ("slope_stability", "infinite_slope_analysis"): "infinite_slope_fos",
     # --- unified liquefaction tool ---
     # The single liquefaction method auto-routes by input type + method; map the
     # names the agent commonly guesses onto it (CPT/SPT, B&I-2014, NCEER/Youd).
@@ -437,6 +573,7 @@ _METHOD_ALIASES = {
     # --- other analysis modules ---
     ("liquepy", "cpt_boulanger_idriss_2014"): "cpt_liquefaction",
     ("liquepy", "spt_boulanger_idriss_2014"): "spt_liquefaction",
+    ("liquepy", "spt_bi2014_triggering"): "spt_liquefaction",
     ("salib", "sobol_sensitivity"): "sobol_sample",
     ("pystrata", "equivalent_linear"): "eql_site_response",
     ("gstools", "fit_variogram"): "variogram",
@@ -520,6 +657,10 @@ _CROSS_MODULE_REDIRECTS = {
     "newmark_sliding_block": ("slope_stability", "newmark_displacement"),
     "sliding_block": ("slope_stability", "newmark_displacement"),
     "yield_acceleration": ("slope_stability", "yield_acceleration"),
+    # Apparent (Terzaghi-Peck) earth-pressure envelopes are an excavation-
+    # support method; guessed on retaining_walls in the 2026-10 Foundry eval.
+    "apparent_earth_pressure": ("soe", "apparent_pressure"),
+    "apparent_pressure": ("soe", "apparent_pressure"),
     # Subsurface profile SCHEMATIC guessed on an analysis module (the module
     # whose layers are being drawn) instead of the figure module. Note
     # subsurface.plot_* are real data plots and are unaffected.
@@ -649,10 +790,9 @@ def call_agent(
                 return {"error": f"'{method}' is a value for a selector "
                                  f"parameter, not a method name — call: {opts}. "
                                  f"Available methods: {available}"}
-            near = difflib.get_close_matches(method, available, n=3, cutoff=0.5)
-            hint = f" Did you mean: {near}?" if near else ""
-            return {"error": f"Unknown method '{method}'.{hint} "
-                             f"Available: {available}"}
+            near = _closest_methods(mod, method)
+            return {"error": f"Unknown method '{method}'. Did you mean: "
+                             f"{near}? Available: {available}"}
     try:
         if attachments and "attachment_key" in parameters:
             parameters = _resolve_attachment(parameters, attachments)

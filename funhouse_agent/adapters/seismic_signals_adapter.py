@@ -89,6 +89,12 @@ def _run_signal_processing(params: dict) -> dict:
     from seismic_signals_agent import analyze_signal_processing
 
     _require_motion(params, method="signal_processing")
+    if params.get("bandpass") is None and params.get("baseline_order") is None:
+        raise ValueError(
+            "signal_processing: say what to do to the record — "
+            "bandpass=[f_low, f_high] in Hz (e.g. [0.1, 25]) to filter, "
+            "baseline_order=<int> (e.g. 1 for a linear trend) to correct the "
+            "baseline, or both. Neither was given.")
     result = analyze_signal_processing(
         motion=params.get("motion"),
         accel_history=params.get("accel_history"),
@@ -172,8 +178,8 @@ METHOD_INFO = {
             "motion": {"type": "str", "brief": "Built-in motion name.", "default": None},
             "accel_history": {"type": "array", "brief": "Custom acceleration time history (g).", "default": None},
             "dt": {"type": "float", "brief": "Time step for custom motion (s).", "default": None},
-            "bandpass": {"type": "array", "brief": "Bandpass frequencies [f_low, f_high] in Hz.", "default": None},
-            "baseline_order": {"type": "int", "brief": "Polynomial order for baseline correction (0, 1, 2, ...).", "default": None},
+            "bandpass": {"type": "array", "brief": "Bandpass frequencies [f_low, f_high] in Hz. Give this and/or baseline_order (at least one).", "default": None},
+            "baseline_order": {"type": "int", "brief": "Polynomial order for baseline correction (0, 1, 2, ...). Give this and/or bandpass (at least one).", "default": None},
         },
         "returns": {
             "motion_name": "Name of input motion.",

@@ -1,6 +1,7 @@
 """Bearing capacity adapter — flat dict → BearingCapacityAnalysis → dict."""
 
-from funhouse_agent.adapters import reject_unknown_params, require_params
+from funhouse_agent.adapters import (apply_aliases, reject_unknown_params,
+                                     require_params)
 from bearing_capacity.footing import Footing
 from bearing_capacity.soil_profile import SoilLayer, BearingSoilProfile
 from bearing_capacity.capacity import BearingCapacityAnalysis
@@ -20,12 +21,34 @@ _ANALYSIS_VALID_PARAMS = (
 )
 
 
+#: Common names for two inputs: the groundwater depth, and Vesic's "base
+#: inclination" (the tilt of the footing base from horizontal).
+_ANALYSIS_ALIASES = {
+    "water_table_depth": "gwt_depth", "groundwater_depth": "gwt_depth",
+    "base_inclination": "base_tilt",
+}
+
+#: factor_method drives the shape/depth/inclination factors, which exist in
+#: the Vesic and Meyerhof forms only; Hansen is an N-gamma option.
+_FACTOR_METHODS = ("vesic", "meyerhof")
+
+
 def _run_bearing_capacity_analysis(params: dict) -> dict:
+    params = apply_aliases(params, _ANALYSIS_ALIASES)
     reject_unknown_params(params, _ANALYSIS_VALID_PARAMS,
                           method="bearing_capacity_analysis")
     require_params(params, ["width", "unit_weight"],
                    method="bearing_capacity_analysis",
                    valid=_ANALYSIS_VALID_PARAMS)
+    factor_method = str(params.get("factor_method", "vesic")).strip().lower()
+    if factor_method not in _FACTOR_METHODS:
+        raise ValueError(
+            f"bearing_capacity_analysis: factor_method must be one of "
+            f"{list(_FACTOR_METHODS)} (it sets the shape, depth and "
+            f"inclination factors), got '{params.get('factor_method')}'. "
+            f"Hansen's N-gamma is chosen separately with "
+            f"ngamma_method='hansen'.")
+    params = {**params, "factor_method": factor_method}
     footing = Footing(
         width=params["width"],
         length=params.get("length"),
@@ -103,7 +126,7 @@ METHOD_INFO = {
             "layer2_unit_weight": {"type": "float", "required": False, "description": "Second layer gamma (kN/m3). Triggers 2-layer analysis."},
             "layer1_thickness": {"type": "float", "required": False, "description": "First layer thickness (m) for 2-layer."},
             "factor_of_safety": {"type": "float", "required": False, "default": 3.0, "description": "Factor of safety."},
-            "factor_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "hansen"], "description": "Bearing-capacity-factor method."},
+            "factor_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof"], "description": "Shape/depth/inclination-factor method. Hansen applies to N-gamma only: use ngamma_method='hansen'."},
             "ngamma_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "hansen"], "description": "Ngamma factor method (may differ from factor_method)."},
             "base_tilt": {"type": "float", "required": False, "default": 0.0, "description": "Base tilt angle (degrees)."},
             "eccentricity_B": {"type": "float", "required": False, "default": 0.0, "description": "Load eccentricity along B (m)."},
