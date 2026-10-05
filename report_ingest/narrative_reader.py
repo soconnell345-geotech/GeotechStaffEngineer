@@ -667,9 +667,9 @@ THE FOUR RULES.
 4. A REPORT ABOUT SOMEBODY ELSE'S PROJECT NAMES NO POST. postName and
    propertyType are questions about one estate of government property. If
    this report was written for another client -- a private developer, a
-   municipality, another agency -- set outsideProject to "yes" and leave
-   postName and propertyType null. Never infer a post from a city, a country
-   or a project name.
+   municipality, another agency -- set outsideProject to "yes", leave
+   postName null and answer propertyType "other". Never infer a post from a
+   city, a country or a project name.
 
 CITATIONS. Every field you answer needs at least one citation: the field's
 exact name, the 0-based page index as shown in the "=== page N ===" headers,
