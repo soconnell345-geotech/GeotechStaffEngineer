@@ -770,6 +770,18 @@ def test_the_funhouse_deployments_are_priced_by_what_answered():
         assert price_for(tier) is None
 
 
+def test_on_foundry_the_funhouse_rates_price_nothing(monkeypatch):
+    """A Foundry run (2026-10-02) printed "$5.85" from Funhouse's rates: the
+    same deployment name answers there, but Foundry bills by enrollment."""
+    import report_ingest.engine as eng
+    monkeypatch.setattr(eng, "_on_foundry", lambda: True)
+    assert price_for("gpt-4.1-mini-2025-04-14") is None
+    usage = Usage(input_tokens=10**6, output_tokens=10**6)
+    assert usage.dollars("gpt-5.4-2026-03-05") == 0.0
+    monkeypatch.setattr(eng, "_on_foundry", lambda: False)
+    assert price_for("gpt-4.1-mini-2025-04-14") == (0.40, 1.60)
+
+
 def test_a_gpt_54_call_of_a_thousand_in_and_a_hundred_out_costs_four_mills():
     usage = Usage(input_tokens=1000, output_tokens=100)
     # 1000 * $2.50/M + 100 * $15.00/M = $0.0025 + $0.0015

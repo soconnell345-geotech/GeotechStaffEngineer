@@ -105,17 +105,31 @@ PROMPTER_PRICES: Dict[str, Tuple[float, float]] = {
 }
 
 
+def _on_foundry() -> bool:
+    """Palantir Foundry: its SDK is installed there and nowhere else this
+    package runs. Foundry bills under the organisation's enrollment, with no
+    per-token rate, so Funhouse's rates must not price a run there (a
+    Foundry run of 2026-10-02 printed "$5.85" from them)."""
+    import importlib.util
+    try:
+        return importlib.util.find_spec("palantir_models") is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def price_for(model: str) -> Optional[Tuple[float, float]]:
     """``(input, output)`` per million tokens for a model, or ``None``.
 
     Both tables are consulted -- the Claude list prices this package
     develops against and the owner's Funhouse deployment rates -- because a
-    run is metered by whatever name came back on the reply.
+    run is metered by whatever name came back on the reply. The Funhouse
+    rates apply only off Foundry (:func:`_on_foundry`): the same deployment
+    name answers there, at no per-token price.
     """
     if not model:
         return None
     price = MODEL_PRICES.get(model)
-    if price is None:
+    if price is None and not _on_foundry():
         price = PROMPTER_PRICES.get(model)
     return price
 
