@@ -4221,3 +4221,34 @@ over the model's. Unconfirmed until the per-sheet run files arrive (asked for
 Foundry run (Funhouse rates were applied, "$5.85"), 3818dd3. Ingest triage now
 honours `triage_model` (4b08784). Stage b (whole pipeline on keyed reports)
 and the DIGGS read-back details are still to come.
+
+### Stage b and the label policy (read 2026-10-04, no model calls)
+
+Stage b, 13 in-sample reports, 3,418 pages, the policies re-scored from the
+records' own per-page votes (sheet-mode vision, GPT-4.1-mini) with the
+package's `combine()` and label scorer: rules 0.896, structural 0.878,
+structural + the disagreement review (what the records hold) 0.863,
+confidence 0.780, vision alone 0.769. The review on split pages LOST 1.5
+points on top of structural (Sept on Funhouse it gained 0.8).
+
+The `vote` stage run locally over all 38 reports (rules recomputed from the
+PDFs, stage e's document-mode vision, no model):
+
+| set | pages | rules | vision | trust | structural | confidence |
+|---|---|---|---|---|---|---|
+| in-sample | 4,147 | 0.908 | 0.706 | 0.914 (ceiling) | 0.888 | 0.711 |
+| oos_open | 50 | 0.760 | 0.660 | 0.780 | 0.740 | 0.660 |
+| oos_blind | 70 | 0.786 | 0.786 | 0.814 | 0.814 | 0.786 |
+| honest_blind | 60 | 0.767 | 0.833 | 0.800 | 0.800 | 0.833 |
+
+Reading: the rules win where they were tuned; the vote wins by two pages in
+sixty where nobody has looked. Sixty pages cannot decide a default, so
+`label_policy` stays `structural` until more blind pages are hand-labelled;
+`trust` is at or above the others on every out-of-sample set. On every set
+the AGREED pages already carry more error than the 0.98 gate allows, so no
+review of the disagreements can reach it.
+
+Lab (stage d run files): `after` == `model_alone` on all 10 sheets — the
+merge did not cause the open-set collapse; the model's LINK did, and the
+scorer compared boring IDs as exact strings (fixed 5e70823; run files now
+keep the records so this is rescoreable next time).
