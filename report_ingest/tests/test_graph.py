@@ -582,6 +582,30 @@ class TestThePageVote:
         page = next(p for p in record.page_labels if p.page == 10)
         assert page.agreed is False and page.label == "figure"
 
+    def test_a_review_that_cannot_answer_does_not_fail_the_report(
+            self, pdf, tmp_path):
+        """Foundry, 2026-10-04: a long report's review ran out of output
+        room (stop_reason 'length') and R21 failed whole. Now the review is
+        asked again and, when nothing comes back, the vote's labels stand
+        and the QA says why the splits were not settled."""
+        out_of_room = {"text": "", "stop_reason": "length"}
+        script = ([triage_turn()] + vision_turns({10: "figure"})
+                  + [{"text": "looked"}, out_of_room, out_of_room]
+                  + reader_turns())
+        record = ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
+                               report_id="SYN")
+
+        (note,) = [e for e in record.qa if e.where == "labels.review"]
+        assert note.kind == "partial" and "'length'" in note.detail
+        assert 10 in note.pages
+        (entry,) = [e for e in record.qa if e.kind == "label_disagreement"]
+        assert entry.pages == [10]
+        page = next(p for p in record.page_labels if p.page == 10)
+        assert page.label == "figure" and page.agreed is False
+        # nothing is saved, so a resumed run asks again
+        assert not (tmp_path / "review.json").exists()
+        assert record.investigations          # the readers still ran
+
     def test_the_vote_can_change_a_label_with_no_review_at_all(self, pdf,
                                                               tmp_path):
         script = [triage_turn()] + vision_turns({10: "figure"}) \

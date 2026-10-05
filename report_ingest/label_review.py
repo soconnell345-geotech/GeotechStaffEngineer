@@ -45,6 +45,7 @@ from report_ingest.engine import (
 __all__ = [
     "LABEL_DEFINITIONS", "Review", "ReviewFindings", "review_labels",
     "budget_for", "budget_for_split", "REVIEW_SYSTEM", "REVIEW_TOOLS",
+    "ReviewIncomplete", "FINDINGS_RETRY_MAX_TOKENS", "FINDINGS_BATCH_PAGES",
 ]
 
 #: One line per label. The vocabulary is planlens' ``ROLES``; these are the
@@ -124,6 +125,16 @@ SPLIT_CONTEXT = 2
 #: Ceiling on one page's text, so a dense narrative page cannot eat the
 #: context a hundred spot-checks need.
 MAX_PAGE_CHARS = 14000
+#: The output budget the findings are asked for AGAIN with when the first
+#: answer came back with no structured findings -- on the Foundry run of
+#: 2026-10-04 a long report's review ran out of output room (stop_reason
+#: ``length``) and the whole report failed with it. Twice the engines'
+#: default, and inside every output ceiling the tiers in use publish.
+FINDINGS_RETRY_MAX_TOKENS = 32000
+#: When even that is not enough, the findings are asked for this many pages
+#: at a time, over the same conversation -- no tool is spent again, only the
+#: answer is cut into pieces that fit.
+FINDINGS_BATCH_PAGES = 40
 
 
 def budget_for(n_pages: int) -> int:
@@ -366,6 +377,28 @@ class Review:
         }
 
 
+class ReviewIncomplete(RuntimeError):
+    """The review looked, and no structured findings could be had from it.
+
+    Raised only after the findings were asked for again with a larger output
+    budget and then a batch of pages at a time. A ``RuntimeError`` as it
+    always was, so a caller that caught that still does; it carries what the
+    attempt COST, because the tool loop before it was paid for, and a caller
+    that keeps the vote's labels instead of failing the report has to be
+    able to count it.
+    """
+
+    def __init__(self, message: str, *, stop_reason: str = "",
+                 cost: Optional[Dict[str, Any]] = None, model_calls: int = 0,
+                 tool_calls: int = 0, attempts: int = 0) -> None:
+        super().__init__(message)
+        self.stop_reason = stop_reason
+        self.cost = dict(cost or {})
+        self.model_calls = model_calls
+        self.tool_calls = tool_calls
+        self.attempts = attempts
+
+
 REVIEW_SYSTEM = """\
 You are reviewing the page labels a rule engine put on one engineering
 report. The rules read each page on its own; you have the whole report. Your
@@ -438,6 +471,83 @@ _FINAL_INSTRUCTION = (
     "settle. If the rules were right everywhere you looked, return no "
     "changes."
 )
+
+#: Added to the findings request when it is asked for again, because the
+#: first answer ran out of room. Shorter, not different.
+_AGAIN_BRIEFLY = (
+    "Your previous answer ran out of room before it was complete. Give the "
+    "findings again, as briefly as the shape allows: each reason in ten "
+    "words or fewer, the structure only for sections you reconciled, and "
+    "notes empty unless something is essential."
+)
+
+#: The findings for one batch of pages, when the whole answer will not fit.
+_FINAL_FOR_PAGES = (
+    "Give your findings for pages {pages} ONLY -- nothing about any other "
+    "page; the others are asked for separately. Each reason in ten words or "
+    "fewer, the structure only for sections that begin on these pages, "
+    "notes empty unless something is essential."
+)
+
+
+def _page_list(pages: Sequence[int]) -> str:
+    """``3-9, 14, 20-22`` -- a batch of pages, written the way a person would."""
+    out: List[str] = []
+    run: List[int] = []
+    for page in sorted(int(p) for p in pages):
+        if run and page == run[-1] + 1:
+            run.append(page)
+            continue
+        if run:
+            out.append(f"{run[0]}-{run[-1]}" if len(run) > 1 else str(run[0]))
+        run = [page]
+    if run:
+        out.append(f"{run[0]}-{run[-1]}" if len(run) > 1 else str(run[0]))
+    return ", ".join(out)
+
+
+def _only_pages(found: ReviewFindings, mine: set, others: set
+                ) -> ReviewFindings:
+    """One batch's findings, without what it said about ANOTHER batch's
+    pages -- those are that batch's to say, and saying them twice would
+    count a change twice. A page outside every batch is kept: the agent may
+    have followed a hunch past the pages it was asked about."""
+    return ReviewFindings(
+        changes=[c for c in found.changes if int(c.page) not in others],
+        structure=list(found.structure),
+        unresolved=[u for u in found.unresolved
+                    if int(u.page) not in others],
+        notes=found.notes)
+
+
+def _merge_findings(pieces: Sequence[ReviewFindings]) -> ReviewFindings:
+    """The batches' findings as one answer: each page once, each section
+    once, the notes joined."""
+    changes: List[LabelChange] = []
+    unresolved: List[UnresolvedPage] = []
+    structure: List[StructureEntry] = []
+    seen_change: set = set()
+    seen_open: set = set()
+    seen_section: set = set()
+    notes: List[str] = []
+    for piece in pieces:
+        for change in piece.changes:
+            if int(change.page) not in seen_change:
+                seen_change.add(int(change.page))
+                changes.append(change)
+        for row in piece.unresolved:
+            if int(row.page) not in seen_open:
+                seen_open.add(int(row.page))
+                unresolved.append(row)
+        for entry in piece.structure:
+            key = (entry.title.strip().lower(), entry.pages.strip())
+            if key not in seen_section:
+                seen_section.add(key)
+                structure.append(entry)
+        if piece.notes.strip() and piece.notes.strip() not in notes:
+            notes.append(piece.notes.strip())
+    return ReviewFindings(changes=changes, structure=structure,
+                          unresolved=unresolved, notes=" ".join(notes))
 
 
 def _weak_spots(roles: Sequence[Any], summaries: Sequence[Any],
@@ -671,9 +781,60 @@ def review_labels(doc, roles=None, outline=None, profile=None, budget=None, *,
     _charge(final)
     found = final.parsed
     if found is None:
-        raise RuntimeError(
-            f"the label review returned no structured findings (stop_reason "
-            f"{final.stop_reason!r})")
+        # The answer did not come back whole -- on a long report it runs out
+        # of output room. Asked for again, shorter, with a larger budget;
+        # then, if need be, a batch of pages at a time. The loop's looking
+        # is not repeated: only the answer is.
+        first_stop = final.stop_reason
+        head = messages[:-1]
+        attempts = 1
+        again = engine.complete(
+            head + [user(text_block(_FINAL_INSTRUCTION + "\n\n"
+                                    + _AGAIN_BRIEFLY))],
+            output_format=ReviewFindings, system=REVIEW_SYSTEM,
+            max_tokens=FINDINGS_RETRY_MAX_TOKENS)
+        model_calls += 1
+        attempts += 1
+        _charge(again)
+        found = again.parsed
+        if again.model:
+            final = again
+        wanted = list(asked) if asked is not None else sorted(rules_labels)
+        batches = [wanted[i:i + FINDINGS_BATCH_PAGES]
+                   for i in range(0, len(wanted), FINDINGS_BATCH_PAGES)]
+        if found is None and len(batches) > 1:
+            pieces: List[ReviewFindings] = []
+            for batch in batches:
+                reply = engine.complete(
+                    head + [user(text_block(
+                        _FINAL_INSTRUCTION + "\n\n" + _FINAL_FOR_PAGES.format(
+                            pages=_page_list(batch))))],
+                    output_format=ReviewFindings, system=REVIEW_SYSTEM,
+                    max_tokens=FINDINGS_RETRY_MAX_TOKENS)
+                model_calls += 1
+                attempts += 1
+                _charge(reply)
+                if reply.parsed is None:
+                    pieces = []
+                    again = reply
+                    break
+                pieces.append(_only_pages(reply.parsed, set(batch),
+                                          set(wanted) - set(batch)))
+            if pieces:
+                found = _merge_findings(pieces)
+        if found is None:
+            spent["seconds"] = round(spent["seconds"], 1)
+            spent["dollars"] = round(spent["dollars"], 4)
+            raise ReviewIncomplete(
+                f"the label review returned no structured findings "
+                f"(stop_reason {first_stop!r}; asked again with "
+                f"{FINDINGS_RETRY_MAX_TOKENS} output tokens"
+                + (f" and in {len(batches)} batches of pages"
+                   if len(batches) > 1 else "")
+                + f", last stop_reason {again.stop_reason!r})",
+                stop_reason=str(first_stop or ""), cost=spent,
+                model_calls=model_calls, tool_calls=calls,
+                attempts=attempts)
 
     labels = dict(rules_labels)
     changes: List[Dict[str, Any]] = []

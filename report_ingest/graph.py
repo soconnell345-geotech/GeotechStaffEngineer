@@ -754,14 +754,36 @@ def _review(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
         budget = budgets.review_tool_calls
         if budget is None and mode == "disagreements":
             budget = budget_for_split(len(split))
-        review = review_labels(doc, roles, outline, profile,
-                               budget=budget, engine=engine,
-                               max_model_calls=budgets.review_model_calls,
-                               pages=asked, choices=choices)
-        spend.add(review.cost)
-        labelling.review_paid = True
-        blob = review.to_dict()
-        _save(os.path.join(out, "review.json"), blob)
+        try:
+            review = review_labels(doc, roles, outline, profile,
+                                   budget=budget, engine=engine,
+                                   max_model_calls=budgets.review_model_calls,
+                                   pages=asked, choices=choices)
+        except Exception as exc:              # the review, not the report
+            # A review that could not be had -- on the Foundry run of
+            # 2026-10-04 a long report's ran out of output room and took the
+            # whole report with it. The VOTE's labels stand, every split it
+            # did not settle is a label_disagreement below as always, and
+            # this says why none was settled. Nothing is saved, so a resumed
+            # run asks again.
+            cost = dict(getattr(exc, "cost", None) or {})
+            if cost:
+                spend.add(cost)
+                labelling.review_paid = True
+                labelling.review_cost = cost
+            qa.append(QAEntry(
+                kind="partial", where="labels.review",
+                detail=(f"the label review did not finish "
+                        f"({type(exc).__name__}: {exc}); the page labels are "
+                        f"the vote's, and every page the voters split on is "
+                        f"left as a disagreement"),
+                pages=list(asked or [])[:200]))
+            review = None
+        if review is not None:
+            spend.add(review.cost)
+            labelling.review_paid = True
+            blob = review.to_dict()
+            _save(os.path.join(out, "review.json"), blob)
     if blob is not None:
         targeted = bool(blob.get("asked_pages"))
         labelling.review_cost = dict(blob.get("cost") or {})

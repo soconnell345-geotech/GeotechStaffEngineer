@@ -83,6 +83,7 @@ class FakeEngine:
             "n_images": len(images or []) + len(in_content),
             "image_blocks": in_content,
             "output_format": output_format,
+            "max_tokens": max_tokens,
         })
         if self._next >= len(self.turns):
             raise ScriptExhausted(
@@ -118,7 +119,9 @@ class FakeEngine:
             text=text,
             tool_calls=[],
             parsed=parsed,
-            stop_reason="end_turn",
+            # ``{"text": "...", "stop_reason": "length"}`` is a reply that
+            # ran out of output room before its structured answer was whole.
+            stop_reason=turn.get("stop_reason", "end_turn"),
             usage=self.usage,
             model=self.model,
             seconds=0.0,

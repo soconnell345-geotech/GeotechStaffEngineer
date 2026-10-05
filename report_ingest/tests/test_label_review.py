@@ -319,10 +319,90 @@ def test_the_review_reports_what_it_cost_on_this_report_alone(synthetic,
 def test_no_structured_findings_is_an_error_not_silent_agreement(synthetic,
                                                                  roles):
     doc, _ = synthetic
+    # The loop's answer, the findings, and the findings asked for again.
     engine = FakeEngine([{"text": "the labels all look fine to me"},
-                         {"text": "still fine"}])
+                         {"text": "still fine"}, {"text": "fine"}])
     with pytest.raises(RuntimeError, match="no structured findings"):
         review_labels(doc, roles, profile={}, engine=engine)
+
+
+# ---------------------------------------------------------------------------
+# findings that run out of room (Foundry, 2026-10-04: R21 failed whole)
+# ---------------------------------------------------------------------------
+
+_OUT_OF_ROOM = {"text": "", "stop_reason": "length"}
+
+
+class TestFindingsThatRunOutOfRoom:
+
+    def test_they_are_asked_for_again_shorter_with_a_larger_budget(
+            self, synthetic, roles):
+        from report_ingest.label_review import FINDINGS_RETRY_MAX_TOKENS
+        doc, _ = synthetic
+        engine = FakeEngine([{"text": "done looking"}, _OUT_OF_ROOM,
+                             {"final": _findings(changes=[
+                                 _change(1, "narrative",
+                                         from_label="other")])}])
+        review = review_labels(doc, roles, profile={}, engine=engine)
+        assert review.final_labels[1] == "narrative"
+        retry = engine.calls[-1]
+        assert retry["max_tokens"] == FINDINGS_RETRY_MAX_TOKENS
+        assert retry["output_format"] is ReviewFindings
+        assert "ran out of room" in retry["messages"][-1]["content"][0]["text"]
+        # the truncated answer is not carried into the retry
+        assert len(retry["messages"]) == len(engine.calls[-2]["messages"])
+        assert review.model_calls == 3 and review.cost["calls"] == 3
+
+    def test_then_a_batch_of_pages_at_a_time(self, synthetic, roles,
+                                             monkeypatch):
+        from report_ingest import label_review
+        monkeypatch.setattr(label_review, "FINDINGS_BATCH_PAGES", 4)
+        doc, _ = synthetic
+        asked = [0, 1, 2, 3, 4, 5]
+        engine = FakeEngine([
+            {"text": "done looking"}, _OUT_OF_ROOM, _OUT_OF_ROOM,
+            # batch one says something about a page of batch two as well;
+            # that is batch two's to say and is not counted twice
+            {"final": _findings(changes=[_change(1, "narrative"),
+                                         _change(5, "figure")],
+                                structure=[{"title": "Report",
+                                            "pages": "0-5"}],
+                                notes="first")},
+            {"final": _findings(changes=[_change(5, "plan")],
+                                structure=[{"title": "Report",
+                                            "pages": "0-5"}],
+                                unresolved=[{"page": 4, "why": "faint"}],
+                                notes="second")}])
+        review = review_labels(doc, roles, profile={}, engine=engine,
+                               pages=asked)
+        texts = [c["messages"][-1]["content"][0]["text"]
+                 for c in engine.calls[-2:]]
+        assert "pages 0-3 ONLY" in texts[0] and "pages 4-5 ONLY" in texts[1]
+        assert review.final_labels[1] == "narrative"
+        assert review.final_labels[5] == "plan"
+        assert [c["page"] for c in review.changes] == [1, 5]
+        assert len(review.structure) == 1
+        assert review.unresolved == [{"page": 4, "why": "faint"}]
+        assert review.notes == "first second"
+
+    def test_when_nothing_comes_back_it_says_so_and_carries_its_cost(
+            self, synthetic, roles, monkeypatch):
+        from report_ingest import label_review
+        from report_ingest.label_review import ReviewIncomplete
+        monkeypatch.setattr(label_review, "FINDINGS_BATCH_PAGES", 4)
+        doc, _ = synthetic
+        engine = FakeEngine([{"tools": [("outline", {})]},
+                             {"text": "done looking"}, _OUT_OF_ROOM,
+                             _OUT_OF_ROOM, _OUT_OF_ROOM])
+        with pytest.raises(ReviewIncomplete) as caught:
+            review_labels(doc, roles, profile={}, engine=engine,
+                          pages=[0, 1, 2, 3, 4, 5])
+        exc = caught.value
+        assert isinstance(exc, RuntimeError)
+        assert "no structured findings (stop_reason 'length'" in str(exc)
+        assert exc.stop_reason == "length"
+        assert exc.cost["calls"] == 5 and exc.model_calls == 5
+        assert exc.tool_calls == 1
 
 
 def test_the_script_runs_out_rather_than_inventing_a_turn(synthetic, roles):
