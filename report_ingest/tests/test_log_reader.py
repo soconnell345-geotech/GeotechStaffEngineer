@@ -700,6 +700,30 @@ class TestTheFloor:
         result = read_log(doc, [0], engine, budget=1)
         assert result.follow_up is False and engine.n_calls == 1
 
+    def test_a_scored_run_keeps_the_three_records_and_rescores_the_same(
+            self, imperial):
+        """``score_one_log`` keeps the merged record, the model's and the
+        floor's in the run file, and re-scoring that file with no model
+        gives the numbers the run printed."""
+        import json
+        from report_ingest.log_scoring import rescore_saved, score_one_log
+        doc, gt = imperial
+        truth = _truth_for(gt)
+        empty = _good_imperial_reading(layers=[], samples=[], spt=[],
+                                       water=[], total_depth=None)
+        engine = FakeEngine([{"final": empty}])
+        _before, after = score_one_log(truth, doc, engine, report_id="RXX")
+        blob = json.loads(json.dumps(after.to_dict()))
+        assert blob["record"] and blob["model_record"] and blob["floor_record"]
+        assert blob["kept"] > 0
+        again = rescore_saved(truth, blob)
+        assert again["overall"]["found"] == blob["overall"]["found"]
+        assert again["model_alone"]["overall"]["found"] == \
+            blob["model_alone"]["overall"]["found"]
+        # the floor scored alone is what the merge kept: nothing was lost
+        assert again["floor_alone"]["overall"]["found"] <= \
+            again["overall"]["found"]
+
     def test_the_result_serialises_both_voters_and_the_merge(self, imperial):
         import json
         doc, _gt = imperial

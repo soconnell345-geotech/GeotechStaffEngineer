@@ -331,3 +331,47 @@ def _sheet(tmp_path):
 def test_the_metric_list_is_what_the_scorecards_print():
     assert METRICS == ("kind", "link", "index", "series", "curve")
     assert EXACT_TOL < PASSING_TOL
+
+
+# ---------------------------------------------------------------------------
+# what the merge KEPT reaches the score
+# ---------------------------------------------------------------------------
+
+def _empty_model(boring="B-7", depth=10.0, unit="ft", result=True):
+    """The model's answer on the same specimen with every value left out."""
+    from report_ingest.model import Provenance
+    prov = Provenance(page=12, method="model", confidence=0.9)
+    return [LabTest(kind="gradation", investigation_id=boring,
+                    depth_top=q(depth, unit),
+                    result=GradationResult() if result else None,
+                    prov=[prov.model_copy()]),
+            LabTest(kind="atterberg", investigation_id=boring,
+                    depth_top=q(depth, unit),
+                    result=AtterbergResult() if result else None,
+                    prov=[prov.model_copy()])]
+
+
+@pytest.mark.parametrize("model", [
+    _empty_model(), _empty_model(depth=3.048, unit="m"),
+    _empty_model(boring="B-07"), _empty_model(boring=""),
+    _empty_model(depth=10.3), _empty_model(result=False)],
+    ids=["same specimen", "depth in metres", "zero-padded boring",
+         "no boring", "depth 0.1 m off", "no result at all"])
+def test_every_value_the_lab_merge_kept_scores(model):
+    """The lab half of the Foundry check of 2026-10-04: a floor test whose
+    values the model left out is merged, and what the merge kept is what
+    the scorer reads -- however the model wrote the specimen's link."""
+    from report_ingest.lab_floor import merge_lab_tests
+    from report_ingest.model import Provenance
+    floor = _grading_record()
+    for test in floor:
+        test.prov = [Provenance(page=12, method="tables", confidence=0.85)]
+    merged, log = merge_lab_tests(floor, model)
+    assert log.kept
+    on_floor = score_record(GRADING_TRUTH, floor)
+    after = score_record(GRADING_TRUTH, merged)
+    assert on_floor.total.found == on_floor.total.total
+    for metric in ("index", "series"):
+        assert after.scores[metric].found == on_floor.scores[metric].found, \
+            (metric, after.scores[metric].misses)
+    assert score_record(GRADING_TRUTH, model).scores["index"].found == 0

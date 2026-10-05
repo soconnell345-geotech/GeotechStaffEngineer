@@ -262,7 +262,209 @@ class TestTheScoreObject:
         score = LogScore(log_id="R99_p10", report="R99", stage="record")
         score.score("n_value").add(True)
         blob = score.to_dict()
-        assert blob["overall"] == {"found": 1, "total": 1, "rate": 1.0}
+        assert {k: blob["overall"][k] for k in ("found", "total", "rate")} \
+            == {"found": 1, "total": 1, "rate": 1.0}
         assert blob["scores"]["n_value"]["found"] == 1
         import json
         json.dumps(blob)
+
+    def test_the_misses_travel_with_the_counts_up_to_25(self):
+        score = LogScore(log_id="R99_p10", report="R99", stage="record")
+        for i in range(30):
+            score.score("index").add(False, f"wc at {i}")
+        blob = score.to_dict()
+        assert blob["scores"]["index"]["misses"][0] == "wc at 0"
+        assert len(blob["scores"]["index"]["misses"]) == 25
+
+
+# ---------------------------------------------------------------------------
+# a recovery printed as a length
+# ---------------------------------------------------------------------------
+
+class TestARecoveryPrintedAsALength:
+    """A log prints recovery as a percentage OR a length, and the record
+    keeps a length in ``Sample.recovery``. Until 2026-10-04 the scorer read
+    only ``recovery_percent``, so a recovery under ``REC (cm)`` -- read by
+    the grid's floor and KEPT by the merge -- scored as missed on every log
+    that prints one (Foundry, blind logs R21_p96 and R30_p65)."""
+
+    def _truth(self, recovery):
+        return {"id": "R99_p1", "depth_unit": "m", "fields": {},
+                "layers": [], "water": [],
+                "samples": [{"top": 8.7, "bottom": 9.15,
+                             "recovery": recovery}]}
+
+    def _record(self, **sample):
+        return [Investigation(
+            investigation_id="LB-1", depth_unit="m",
+            samples=[Sample(top=Quantity(value=8.7, unit="m"),
+                            bottom=Quantity(value=9.15, unit="m"),
+                            **sample)])]
+
+    def test_a_length_is_found(self):
+        score = score_record(self._truth(45),
+                             self._record(recovery=Quantity(value=45.0,
+                                                            unit="cm")))
+        assert score.scores["recovery"].found == 1
+
+    def test_a_length_of_nothing_recovered_is_found(self):
+        score = score_record(self._truth(0),
+                             self._record(recovery=Quantity(value=0.0,
+                                                            unit="cm")))
+        assert score.scores["recovery"].found == 1
+
+    def test_a_truth_that_gives_both_finds_either(self):
+        truth = self._truth("29cm 64%")
+        assert score_record(truth, self._record(
+            recovery=Quantity(value=29.0, unit="cm"))
+        ).scores["recovery"].found == 1
+        assert score_record(truth, self._record(
+            recovery_percent=64.0)).scores["recovery"].found == 1
+
+    def test_a_wrong_length_is_still_a_miss(self):
+        score = score_record(self._truth(45),
+                             self._record(recovery=Quantity(value=30.0,
+                                                            unit="cm")))
+        assert score.scores["recovery"].found == 0
+
+    def test_a_pocket_penetrometer_in_another_unit_is_compared_in_kpa(self):
+        truth = self._truth(None)
+        truth["samples"][0]["pp_kpa"] = 143.6
+        score = score_record(truth, self._record(
+            pocket_pen=Quantity(value=1.5, unit="tsf")))
+        assert score.scores["index"].found == 1
+
+
+# ---------------------------------------------------------------------------
+# what the merge KEPT reaches the score
+# ---------------------------------------------------------------------------
+
+_SAMPLES = ((5.5, 5.95, [21, 40, 37], 77, 24.7),
+            (7.0, 7.45, [18, 30, 39], 69, 20.0))
+_FT = 3.280839895
+
+
+def _merge_truth():
+    return {"id": "R99_p65", "depth_unit": "m", "fields": {}, "layers": [],
+            "water": [],
+            "samples": [{"top": t, "bottom": b, "blows": blows, "n": n,
+                         "recovery": 45, "wc": wc}
+                        for t, b, blows, n, wc in _SAMPLES]}
+
+
+def _grid_prov():
+    from report_ingest.model import Provenance
+    return Provenance(page=65, bbox=(10.0, 10.0, 20.0, 20.0), method="grid",
+                      confidence=0.6, note="seeded from the grid rows")
+
+
+def _floor(recovery_unit="cm"):
+    """The floor as the grid seeds it: drives, a printed N, a recovery and
+    a water content at each sample."""
+    samples, drives = [], []
+    for top, bottom, blows, n, wc in _SAMPLES:
+        rec = ({"recovery_percent": 45.0} if recovery_unit == "%"
+               else {"recovery": Quantity(value=45.0, unit=recovery_unit)})
+        samples.append(Sample(top=Quantity(value=top, unit="m"),
+                              bottom=Quantity(value=bottom, unit="m"),
+                              kind="spt", water_content=wc, prov=_grid_prov(),
+                              **rec))
+        drives.append(SPT(depth_top=Quantity(value=top, unit="m"),
+                          blows=list(blows), n=n, prov=_grid_prov()))
+    return Investigation(investigation_id="LB-5", depth_unit="m",
+                         samples=samples, spt=drives)
+
+
+def _model(shift_m=0.0, unit="m", twins=False):
+    """The model's answer: the same samples and drives, the values the
+    floor had LEFT OUT. ``shift_m`` moves every depth; ``unit`` prints them
+    in feet; ``twins`` adds a second, empty sample at each depth."""
+    from report_ingest.model import Provenance
+    factor = _FT if unit == "ft" else 1.0
+    prov = Provenance(page=65, method="model", confidence=0.9)
+    samples, drives = [], []
+    for top, bottom, blows, _n, _wc in _SAMPLES:
+        at = Quantity(value=(top + shift_m) * factor, unit=unit)
+        samples.append(Sample(top=at, bottom=Quantity(
+            value=(bottom + shift_m) * factor, unit=unit), kind="spt",
+            prov=prov))
+        if twins:
+            samples.append(Sample(top=at, kind="other", prov=prov))
+        drives.append(SPT(depth_top=at, blows=list(blows), prov=prov))
+    return Investigation(investigation_id="LB-5", depth_unit=unit,
+                         samples=samples, spt=drives)
+
+
+class TestWhatTheMergeKeptIsScored:
+    """The Foundry run of 2026-10-02 reported ``kept`` floor values on blind
+    logs whose merged record scored exactly what the model's answer alone
+    did. The merge keeps them; these pin that what it keeps is what the
+    scorer reads, whatever the model did to the depths."""
+
+    @pytest.mark.parametrize("recovery_unit", ["cm", "in", "%"])
+    @pytest.mark.parametrize("model", [
+        _model(), _model(shift_m=0.1), _model(shift_m=-0.12),
+        _model(unit="ft"), _model(twins=True), _model(shift_m=0.4)],
+        ids=["same depths", "0.1 m deeper", "0.12 m shallower",
+             "in feet", "two samples at one depth", "too far to pair"])
+    def test_every_kept_value_scores(self, model, recovery_unit):
+        from report_ingest.log_floor import merge_investigations
+        truth = _merge_truth()
+        floor = _floor(recovery_unit)
+        if recovery_unit == "in":
+            for s in floor.samples:
+                s.recovery = Quantity(value=45.0, unit="in")
+        merged, log = merge_investigations(floor, model)
+        assert log.kept, "the model left the values out: the floor keeps them"
+        on_floor = score_record(truth, [floor])
+        after = score_record(truth, [merged])
+        for metric in ("recovery", "n_value", "index", "blows"):
+            assert on_floor.scores[metric].found == 2, metric
+            assert after.scores[metric].found == 2, \
+                (metric, after.scores[metric].misses)
+        alone = score_record(truth, [model])
+        assert alone.scores["recovery"].found == 0
+        assert alone.scores["index"].found == 0
+
+
+# ---------------------------------------------------------------------------
+# a saved run, re-scored with no model
+# ---------------------------------------------------------------------------
+
+class TestASavedRun:
+
+    def _after(self):
+        from report_ingest.log_floor import merge_investigations
+        from report_ingest.log_scoring import dump_investigations
+        floor, model = _floor(), _model()
+        merged, _log = merge_investigations(floor, model)
+        after = score_record(_merge_truth(), [merged])
+        after.record = dump_investigations([merged])
+        after.model_record = dump_investigations([model])
+        after.floor_record = dump_investigations([floor])
+        import json
+        return json.loads(json.dumps(after.to_dict()))
+
+    def test_the_run_file_keeps_all_three_records(self):
+        blob = self._after()
+        assert blob["record"][0]["investigation_id"] == "LB-5"
+        assert blob["model_record"][0]["samples"][0]["recovery"] is None
+        assert blob["floor_record"][0]["samples"][0]["recovery"]["unit"] \
+            == "cm"
+
+    def test_it_rescores_with_the_current_checks_and_no_model(self):
+        from report_ingest.log_scoring import rescore_saved
+        blob = self._after()
+        # pretend the run was scored by the old percent-only check
+        blob["scores"]["recovery"] = {"found": 0, "total": 2, "rate": 0.0}
+        new = rescore_saved(_merge_truth(), blob)
+        assert new["scores"]["recovery"]["found"] == 2
+        assert new["overall"]["found"] == blob["overall"]["found"]
+        assert new["model_alone"]["scores"]["recovery"]["found"] == 0
+        assert new["floor_alone"]["scores"]["recovery"]["found"] == 2
+        assert new["kept"] == blob["kept"]          # the rest is carried
+
+    def test_an_old_run_file_without_records_is_not_rescored(self):
+        from report_ingest.log_scoring import rescore_saved
+        assert rescore_saved(_merge_truth(), {"scores": {}}) is None
+        assert rescore_saved(_merge_truth(), {}) is None

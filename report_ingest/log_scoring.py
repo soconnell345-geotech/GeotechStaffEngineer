@@ -47,7 +47,7 @@ __all__ = [
     "SAMPLE_TOL_M", "LAYER_TOL_M", "WATER_TOL_M", "DRIVEN_LENGTH_M",
     "COLUMN_FAMILY", "FIELD_MAP", "INDEX_KEYS", "METRICS",
     "Score", "LogScore", "score_grid", "score_record", "score_one_log",
-    "truth_investigations",
+    "truth_investigations", "rescore_saved", "dump_investigations",
 ]
 
 #: From the plan. A sample or index value has to land within 0.15 m and a
@@ -217,8 +217,11 @@ class Score:
         return self
 
     def to_dict(self) -> Dict[str, Any]:
+        # The misses travel with the counts (the first 25): a run file that
+        # says only "recovery 0/4" cannot say WHICH values were missed, and
+        # the Foundry run of 2026-10-02 could not be diagnosed from its files.
         return {"found": self.found, "total": self.total,
-                "rate": self.rate}
+                "rate": self.rate, "misses": list(self.misses[:25])}
 
 
 @dataclass
@@ -245,6 +248,15 @@ class LogScore:
     kept: int = 0
     added: int = 0
     reconciled: int = 0
+    #: What the reader recorded for this log -- the merged investigation,
+    #: the model's own and the grid's floor -- so a check fixed after a run
+    #: can be re-applied to the run file with no model call
+    #: (:func:`rescore_saved`), and a run file can answer "did the FLOOR have
+    #: that value" rather than only "did the grid's cells". ``None`` on a
+    #: score that has no record (the grid stage, an error).
+    record: Optional[List[Dict[str, Any]]] = None
+    model_record: Optional[List[Dict[str, Any]]] = None
+    floor_record: Optional[List[Dict[str, Any]]] = None
 
     def score(self, name: str) -> Score:
         return self.scores.setdefault(name, Score())
@@ -269,6 +281,8 @@ class LogScore:
             "model_alone": self.model_alone,
             "disagreements": self.disagreements, "kept": self.kept,
             "added": self.added, "reconciled": self.reconciled,
+            "record": self.record, "model_record": self.model_record,
+            "floor_record": self.floor_record,
         }
 
 
@@ -504,6 +518,44 @@ def _record_fields(inv: Any) -> Dict[str, str]:
     return {k: v for k, v in out.items() if str(v or "").strip()}
 
 
+def _recovery_numbers(sample: Any, attribute: str) -> List[float]:
+    """What a sample says its recovery (or RQD) was, as printed.
+
+    A log prints recovery as a PERCENTAGE or as a LENGTH -- ``45`` under
+    ``REC (cm)``, ``14`` under ``RECOVERY (in)`` -- and the record keeps the
+    two apart, in ``recovery_percent`` and in ``recovery``. The truth writes
+    whichever the log printed (``45``, ``"29cm 64%"``), so both are offered.
+    Until 2026-10-04 only the percentage was looked at, so a recovery the
+    grid's floor read off a length column -- and the merge then KEPT, because
+    the model left it out -- scored as missed on every log that prints one.
+    """
+    out: List[float] = []
+    got = getattr(sample, attribute, None)
+    if got is not None:
+        out.append(float(got))
+    if attribute == "recovery_percent":
+        length = getattr(sample, "recovery", None)
+        if length is not None:
+            out.append(float(length.value))
+    return out
+
+
+def _as_numbers(got: Any) -> List[float]:
+    """An index value's numbers: as printed and, for a quantity, in SI.
+
+    A pocket penetrometer the log prints in tsf is the truth's ``pp_kpa``
+    once converted; comparing only the printed number would mark it missed
+    however exactly it was read.
+    """
+    if not hasattr(got, "value"):
+        return [float(got)]
+    out = [float(got.value)]
+    converted = got.si_value if hasattr(got, "si_value") else None
+    if converted is not None:
+        out.append(float(converted))
+    return out
+
+
 def score_record(truth: Dict[str, Any], investigations: Sequence[Any]
                  ) -> LogScore:
     """Score the reader's record against the truth, metric by metric."""
@@ -566,16 +618,16 @@ def score_record(truth: Dict[str, Any], investigations: Sequence[Any]
                          for r in near_spt)
             out.score("n_value").add(ok, f"N={sample['n']} at {depth_text}")
 
-        for key, attribute, ceiling in (("recovery", "recovery_percent", 100),
-                                        ("rqd", "rqd_percent", 100)):
+        for key, attribute in (("recovery", "recovery_percent"),
+                               ("rqd", "rqd_percent")):
             value = sample.get(key)
             if value is None:
                 continue
             want_values = _wanted_numbers(value)
-            ok = any(getattr(s, attribute) is not None
-                     and any(_close(getattr(s, attribute), w)
-                             for w in want_values)
-                     for s in near_samples)
+            ok = any(_close(got, w)
+                     for s in near_samples
+                     for got in _recovery_numbers(s, attribute)
+                     for w in want_values)
             out.score("recovery").add(ok, f"{key}={value} at {depth_text}")
 
         for key, attribute in (("wc", "water_content"),
@@ -596,8 +648,8 @@ def score_record(truth: Dict[str, Any], investigations: Sequence[Any]
                 got = getattr(s, attribute)
                 if got is None:
                     continue
-                number = got.value if hasattr(got, "value") else float(got)
-                if any(_close(number, w) for w in want_values):
+                if any(_close(number, w) for number in _as_numbers(got)
+                       for w in want_values):
                     ok = True
                     break
             out.score("index").add(ok, f"{key}={value} at {depth_text}")
@@ -685,6 +737,7 @@ def score_one_log(truth: Dict[str, Any], doc: Any, engine: Any, *,
         return before, after
 
     after = score_record(truth, [result.investigation])
+    after.record = dump_investigations([result.investigation])
     after.cost = dict(result.cost)
     after.model_calls = result.model_calls
     after.unresolved = len(result.unresolved)
@@ -694,12 +747,75 @@ def score_one_log(truth: Dict[str, Any], doc: Any, engine: Any, *,
     # third number, so the scorecard can print floor / model / floor+model.
     model_alone = getattr(result, "model_investigation", None)
     if model_alone is not None:
+        after.model_record = dump_investigations([model_alone])
         alone = score_record(truth, [model_alone])
         after.model_alone = {
             "scores": {k: v.to_dict() for k, v in alone.scores.items()},
             "overall": alone.total.to_dict()}
+    floor = getattr(result, "floor", None)
+    if floor is not None:
+        after.floor_record = dump_investigations([floor])
     after.disagreements = len(getattr(result, "disagreements", ()) or ())
     after.kept = len(getattr(result, "kept", ()) or ())
     after.added = len(getattr(result, "added", ()) or ())
     after.reconciled = int(getattr(result, "reconciled", 0) or 0)
     return before, after
+
+
+# ---------------------------------------------------------------------------
+# a saved run, re-scored
+# ---------------------------------------------------------------------------
+
+def dump_investigations(investigations: Optional[Sequence[Any]]
+                        ) -> Optional[List[Dict[str, Any]]]:
+    """Investigations as JSON-ready dicts, for a run file. ``None`` stays
+    ``None``; a record that will not dump is left out rather than failing
+    the run that produced it."""
+    if investigations is None:
+        return None
+    out: List[Dict[str, Any]] = []
+    for inv in investigations:
+        if inv is None:
+            continue
+        try:
+            out.append(inv.model_dump(mode="json"))
+        except Exception:                        # a record that will not dump
+            continue
+    return out
+
+
+def _load_investigations(blobs: Sequence[Dict[str, Any]]) -> List[Any]:
+    from report_ingest.model import Investigation
+
+    return [Investigation.model_validate(b) for b in blobs]
+
+
+def _scored(score: LogScore) -> Dict[str, Any]:
+    return {"scores": {k: v.to_dict() for k, v in score.scores.items()},
+            "overall": score.total.to_dict()}
+
+
+def rescore_saved(truth: Dict[str, Any], after: Dict[str, Any]
+                  ) -> Optional[Dict[str, Any]]:
+    """Re-score a saved run file's ``after`` blob against ``truth`` with the
+    CURRENT checks -- no model call, no PDF.
+
+    The merged record replaces ``scores`` and ``overall``; the model's own
+    record, where kept, replaces ``model_alone``; the grid's floor, where
+    kept, is scored into ``floor_alone`` -- which is what says whether a
+    value the grid's CELLS were credited for ever reached the floor's
+    RECORD. ``None`` for a run file written before the records were kept
+    (before 2026-10-04).
+    """
+    if not after or after.get("record") is None:
+        return None
+    out = dict(after)
+    out.update(_scored(score_record(
+        truth, _load_investigations(after["record"]))))
+    if after.get("model_record") is not None:
+        out["model_alone"] = _scored(score_record(
+            truth, _load_investigations(after["model_record"])))
+    if after.get("floor_record") is not None:
+        out["floor_alone"] = _scored(score_record(
+            truth, _load_investigations(after["floor_record"])))
+    return out

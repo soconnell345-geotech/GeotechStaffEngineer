@@ -295,3 +295,47 @@ class TestTheScore:
         assert blob["kind"] == "cpt"
         assert blob["stage"] == "record"
         assert "overall" in blob and "scores" in blob
+        assert blob["scores"]["depth"]["misses"]
+
+
+# ---------------------------------------------------------------------------
+# a saved run, re-scored with no model
+# ---------------------------------------------------------------------------
+
+class TestASavedRun:
+
+    @staticmethod
+    def _blob(truth, merged, model, floor):
+        import json
+        from report_ingest.sounding_scoring import _keep_records
+        after = score_record(truth, [merged])
+        _keep_records(after, merged, model, floor)
+        return json.loads(json.dumps(after.to_dict()))
+
+    def test_a_cone_rescores_with_the_current_checks_and_no_model(self):
+        from report_ingest.sounding_scoring import rescore_saved
+        merged = cpt([point(0.5, 10.0, 0.10, 40.0),
+                      point(1.0, 20.0, 0.20, 80.0)])
+        model = cpt([point(0.5, 10.0, 0.10, 40.0)])
+        blob = self._blob(TRUTH, merged, model, cpt([]))
+        assert blob["record"][0]["investigation_id"] == "CPT-1"
+        blob["scores"]["qc"] = {"found": 0, "total": 2, "rate": 0.0}
+        new = rescore_saved(TRUTH, blob)
+        assert new["scores"]["qc"]["found"] == 2
+        assert new["model_alone"]["scores"]["qc"]["found"] == 1
+        assert new["floor_alone"]["scores"]["depth"]["found"] == 0
+
+    def test_a_pit_rescores_through_the_log_scorer(self):
+        from report_ingest.sounding_scoring import rescore_saved
+        merged = _pit(pit=PitDimensions(width=q(90.0, "cm")))
+        blob = self._blob(PIT_TRUTH, merged, _pit(), None)
+        assert blob["floor_record"] is None
+        blob["scores"]["dimensions"] = {"found": 0, "total": 1, "rate": 0.0}
+        new = rescore_saved(PIT_TRUTH, blob)
+        assert new["scores"]["dimensions"]["found"] == 1
+        assert new["model_alone"]["scores"]["dimensions"]["found"] == 0
+        assert "floor_alone" not in new
+
+    def test_an_old_run_file_without_records_is_not_rescored(self):
+        from report_ingest.sounding_scoring import rescore_saved
+        assert rescore_saved(TRUTH, {"scores": {}}) is None

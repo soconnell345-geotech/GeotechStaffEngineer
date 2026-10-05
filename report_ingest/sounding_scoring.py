@@ -54,7 +54,7 @@ __all__ = [
     "SERIES_METRICS", "Score", "SoundingScore",
     "kind_of", "pages_of", "report_of", "truth_series",
     "score_pit", "score_sounding", "score_floor", "score_record",
-    "score_one_sounding",
+    "score_one_sounding", "rescore_saved",
 ]
 
 #: How close a reader's point has to be to a truth depth to be THAT point,
@@ -173,7 +173,10 @@ class Score:
         return self
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"found": self.found, "total": self.total, "rate": self.rate}
+        # The misses travel with the counts (the first 25), so a run file
+        # says WHICH readings were missed and not only how many.
+        return {"found": self.found, "total": self.total, "rate": self.rate,
+                "misses": list(self.misses[:25])}
 
 
 @dataclass
@@ -203,6 +206,13 @@ class SoundingScore:
     kept: int = 0
     added: int = 0
     reconciled: int = 0
+    #: What the reader recorded for this sheet -- the merged investigation,
+    #: the model's own and the floor's -- so a check fixed after a run can
+    #: be re-applied to the run file with no model call
+    #: (:func:`rescore_saved`). ``None`` on a score with no record.
+    record: Optional[List[Dict[str, Any]]] = None
+    model_record: Optional[List[Dict[str, Any]]] = None
+    floor_record: Optional[List[Dict[str, Any]]] = None
 
     def score(self, name: str) -> Score:
         return self.scores.setdefault(name, Score())
@@ -230,6 +240,8 @@ class SoundingScore:
             "error": self.error, "model_alone": self.model_alone,
             "disagreements": self.disagreements, "kept": self.kept,
             "added": self.added, "reconciled": self.reconciled,
+            "record": self.record, "model_record": self.model_record,
+            "floor_record": self.floor_record,
         }
 
 
@@ -545,6 +557,8 @@ def _score_one_pit(truth: Dict[str, Any], doc: Any, engine: Any,
     except Exception as exc:                      # a model call that failed
         return before, _blank(truth, "record", f"{type(exc).__name__}: {exc}")
     after = score_pit(truth, [result.investigation], "record")
+    _keep_records(after, result.investigation, result.model_investigation,
+                  getattr(result, "floor", None))
     after.n_pages = len(pages)
     after.cost = dict(result.cost)
     after.model_calls = result.model_calls
@@ -589,6 +603,8 @@ def _score_one_sounding(truth: Dict[str, Any], doc: Any, engine: Any,
     except Exception as exc:                      # a model call that failed
         return before, _blank(truth, "record", f"{type(exc).__name__}: {exc}")
     after = score_sounding(truth, [result.investigation], "record")
+    _keep_records(after, result.investigation, result.model_investigation,
+                  getattr(result, "floor", None))
     after.n_pages = len(pages)
     after.tabulated = result.tabulated
     after.floor_points = result.floor_points
@@ -608,3 +624,49 @@ def _score_one_sounding(truth: Dict[str, Any], doc: Any, engine: Any,
     after.added = len(result.added)
     after.reconciled = int(result.reconciled)
     return before, after
+
+
+# ---------------------------------------------------------------------------
+# a saved run, re-scored
+# ---------------------------------------------------------------------------
+
+def _keep_records(after: SoundingScore, merged: Any, model: Any,
+                  floor: Any) -> None:
+    from report_ingest.log_scoring import dump_investigations
+
+    after.record = dump_investigations([merged])
+    after.model_record = (dump_investigations([model])
+                          if model is not None else None)
+    after.floor_record = (dump_investigations([floor])
+                          if floor is not None else None)
+
+
+def rescore_saved(truth: Dict[str, Any], after: Dict[str, Any]
+                  ) -> Optional[Dict[str, Any]]:
+    """Re-score a saved run file's ``after`` blob against ``truth`` with the
+    CURRENT checks -- no model call, no PDF.
+
+    The merged record replaces ``scores`` and ``overall``; the model's own,
+    where kept, replaces ``model_alone``; the floor's, where kept, is scored
+    into ``floor_alone``. ``None`` for a run file written before the records
+    were kept (before 2026-10-04).
+    """
+    from report_ingest.model import Investigation
+
+    if not after or after.get("record") is None:
+        return None
+
+    def scored(blobs: Sequence[Dict[str, Any]], stage: str) -> Dict[str, Any]:
+        invs = [Investigation.model_validate(b) for b in blobs]
+        got = (score_floor(truth, invs) if stage == "floor"
+               else score_record(truth, invs))
+        return {"scores": {k: v.to_dict() for k, v in got.scores.items()},
+                "overall": got.total.to_dict()}
+
+    out = dict(after)
+    out.update(scored(after["record"], "record"))
+    if after.get("model_record") is not None:
+        out["model_alone"] = scored(after["model_record"], "record")
+    if after.get("floor_record") is not None:
+        out["floor_alone"] = scored(after["floor_record"], "floor")
+    return out

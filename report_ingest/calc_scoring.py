@@ -54,7 +54,7 @@ __all__ = [
     "METRICS", "MODEL_ONLY", "NAME_RATIO", "PROGRAM_RATIO", "VALUE_TOL",
     "Score", "CalcScore", "Expected", "expectations_for", "pages_of",
     "report_of", "score_floor", "score_record", "score_one_calc",
-    "same_value", "same_name", "same_text",
+    "same_value", "same_name", "same_text", "rescore_saved",
 ]
 
 #: Two printed labels are the same label at this partial ratio. The reader's
@@ -301,7 +301,10 @@ class Score:
         return self
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"found": self.found, "total": self.total, "rate": self.rate}
+        # The misses travel with the counts (the first 25), so a run file
+        # says WHICH values were missed and not only how many.
+        return {"found": self.found, "total": self.total, "rate": self.rate,
+                "misses": list(self.misses[:25])}
 
 
 @dataclass
@@ -335,6 +338,13 @@ class CalcScore:
     kept: int = 0
     added: int = 0
     reconciled: int = 0
+    #: What the reader recorded for this run -- the merged calculation, the
+    #: model's own and the floor's -- so a check fixed after a run can be
+    #: re-applied to the run file with no model call (:func:`rescore_saved`).
+    #: ``None`` on a score that has no record (the floor stage, an error).
+    record: Optional[Dict[str, Any]] = None
+    model_record: Optional[Dict[str, Any]] = None
+    floor_record: Optional[Dict[str, Any]] = None
 
     def score(self, name: str) -> Score:
         return self.scores.setdefault(name, Score())
@@ -363,6 +373,8 @@ class CalcScore:
             "floor_values": self.floor_values,
             "disagreements": self.disagreements, "kept": self.kept,
             "added": self.added, "reconciled": self.reconciled,
+            "record": self.record, "model_record": self.model_record,
+            "floor_record": self.floor_record,
         }
 
 
@@ -487,6 +499,9 @@ def score_one_calc(truth: Dict[str, Any], doc: Any, engine: Any, *,
         return before, _blank(calc_id, kind, "record",
                               f"{type(exc).__name__}: {exc}")
     after = score_record(truth, result.calculation)
+    after.record = _dump(result.calculation)
+    after.model_record = _dump(result.model_calculation)
+    after.floor_record = _dump(getattr(result, "floor_calculation", None))
     after.cost = dict(result.cost)
     after.model_calls = result.model_calls
     after.tool_calls = result.tool_calls
@@ -505,3 +520,51 @@ def score_one_calc(truth: Dict[str, Any], doc: Any, engine: Any, *,
     after.added = len(result.added)
     after.reconciled = int(result.reconciled)
     return before, after
+
+
+# ---------------------------------------------------------------------------
+# a saved run, re-scored
+# ---------------------------------------------------------------------------
+
+def _dump(calc: Any) -> Optional[Dict[str, Any]]:
+    """A calculation as a JSON-ready dict for a run file, or ``None``."""
+    if calc is None:
+        return None
+    try:
+        return calc.model_dump(mode="json")
+    except Exception:                            # a record that will not dump
+        return None
+
+
+def _scored(score: CalcScore) -> Dict[str, Any]:
+    return {"scores": {k: v.to_dict() for k, v in score.scores.items()},
+            "overall": score.total.to_dict(), "misplaced": score.misplaced}
+
+
+def rescore_saved(truth: Dict[str, Any], after: Dict[str, Any]
+                  ) -> Optional[Dict[str, Any]]:
+    """Re-score a saved run file's ``after`` blob against ``truth`` with the
+    CURRENT checks -- no model call, no PDF.
+
+    The merged calculation replaces ``scores``, ``overall`` and
+    ``misplaced``; the model's own, where kept, replaces ``model_alone``;
+    the floor's, where kept, is scored the floor's way into ``floor_alone``.
+    ``None`` for a run file written before the records were kept (before
+    2026-10-04).
+    """
+    from report_ingest.model import Calculation
+
+    if not after or after.get("record") is None:
+        return None
+    out = dict(after)
+    out.update(_scored(score_record(
+        truth, Calculation.model_validate(after["record"]))))
+    if after.get("model_record") is not None:
+        alone = _scored(score_record(
+            truth, Calculation.model_validate(after["model_record"])))
+        alone.pop("misplaced", None)
+        out["model_alone"] = alone
+    if after.get("floor_record") is not None:
+        out["floor_alone"] = _scored(score_floor(
+            truth, Calculation.model_validate(after["floor_record"])))
+    return out

@@ -246,3 +246,48 @@ class TestScoringTheFloor:
         floor = Calculation(kind="other", program="LPILE")
 
         assert score_floor(_truth(), floor).scores["program"].found == 0
+
+
+# ---------------------------------------------------------------------------
+# a saved run, re-scored with no model
+# ---------------------------------------------------------------------------
+
+class TestASavedRun:
+
+    def _after(self):
+        import json
+        merged = _calc(inputs=[_named("Footing Width B (ft)", 25.8, "ft")],
+                       results=[_named("Total Cumulative Settlement "
+                                       "(inches)", 0.74, "in")])
+        model = _calc(inputs=[_named("Footing Width B (ft)", 25.8, "ft")])
+        floor = Calculation(kind="other", inputs=[
+            _named("Total Cumulative Settlement (inches)", 0.74, "in")])
+        after = score_record(_truth(), merged)
+        after.record = merged.model_dump(mode="json")
+        after.model_record = model.model_dump(mode="json")
+        after.floor_record = floor.model_dump(mode="json")
+        return json.loads(json.dumps(after.to_dict()))
+
+    def test_the_misses_and_the_records_travel_in_the_run_file(self):
+        blob = self._after()
+        assert blob["record"]["kind"] == "settlement"
+        assert blob["model_record"]["results"] == []
+        assert blob["scores"]["results"]["misses"] == []
+
+    def test_it_rescores_with_the_current_checks_and_no_model(self):
+        from report_ingest.calc_scoring import rescore_saved
+        blob = self._after()
+        # pretend the run was scored by an older, stricter check
+        blob["scores"]["results"] = {"found": 0, "total": 1, "rate": 0.0,
+                                     "misses": ["Total ... = 0.74 in"]}
+        new = rescore_saved(_truth(), blob)
+        assert new["scores"]["results"]["found"] == 1
+        assert new["overall"]["found"] == new["overall"]["total"] == 6
+        assert new["model_alone"]["scores"]["results"]["found"] == 0
+        assert new["floor_alone"]["scores"]["results"]["found"] == 1
+        assert new["floor_alone"]["misplaced"] == 1
+        assert "kind" not in new["floor_alone"]["scores"]
+
+    def test_an_old_run_file_without_records_is_not_rescored(self):
+        from report_ingest.calc_scoring import rescore_saved
+        assert rescore_saved(_truth(), {"scores": {}}) is None

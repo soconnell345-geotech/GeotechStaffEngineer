@@ -1034,10 +1034,15 @@ def _plain(value: Any) -> Any:
     ``_scores`` is how the renderer gets at the rates without recomputing
     them; it cannot be serialized, and a key beginning with an underscore is
     the signal that it is working state rather than a result.
+
+    A score's ``misses`` are left out too. They travel in the RUN FILES,
+    which stay with the run, so a check can be diagnosed and re-scored; a
+    miss quotes the truth's own value -- a project, a driller, a client --
+    and ``results.json`` is a file that comes home.
     """
     if isinstance(value, dict):
         return {k: _plain(v) for k, v in value.items()
-                if not str(k).startswith("_")}
+                if not str(k).startswith("_") and k != "misses"}
     if isinstance(value, (list, tuple)):
         return [_plain(v) for v in value]
     return value
