@@ -5,8 +5,10 @@ reports) put the narrative reader at 64 % recall and 74 % precision, and the
 per-question table said the losses were not comprehension. They were
 CONVENTION: the reader wrote ``null`` where the hand writes ``0`` for a kind
 of exploration the report plainly did not do; it answered the four "mention"
-questions on whether the report *studied* a topic where the hand answers on
-whether it *discusses* it; it filled ``earthHazardsExposed`` with seismic
+questions on a different reading from the hand's (the first draft rule here
+guessed "discusses"; the owner's answer keys, read 2026-10-04, say "was it
+done", and for soil corrosion "what was found"); it filled
+``earthHazardsExposed`` with seismic
 shaking, which the hand never lists. Those are not things a better model gets
 right. They are house rules, and a house rule belongs somewhere a person can
 read it, disagree with it and change it in one place -- not inside a prompt
@@ -91,19 +93,43 @@ CONVENTIONS: Tuple[Convention, ...] = (
             "did not say has to be distinguishable from a reader that did "
             "not read"),
     Convention(
-        rule="The four \"mention\" questions are about whether the report "
-             "DISCUSSES the topic anywhere in it, not about whether the "
-             "work was done, not about whether the finding was positive. "
-             "A report that says in one sentence that corrosion testing "
-             "was not performed HAS discussed soil corrosion: the answer "
-             "is yes, and the reason says what it says. Answer no only "
-             "where the report is silent on the topic throughout.",
-        fields=("geophysicalTestingMention", "soilCorrosion",
-                "siteResponseMention", "hazardAnalysisMention"),
+        rule="The \"mention\" questions ask what was DONE for this project, "
+             "not whether the topic comes up. geophysicalTestingMention is "
+             "yes when geophysical testing (seismic refraction, MASW, ReMi, "
+             "GPR, EM, resistivity) was performed for the project or its "
+             "results are used in the report, an earlier firm's included. "
+             "siteResponseMention is yes only when a site-specific site "
+             "response (ground response) analysis was performed; a code "
+             "site class, site coefficients, or a shear-wave velocity "
+             "profile used to pick the site class is not one, and the "
+             "answer is then no. hazardAnalysisMention is yes only when a "
+             "site-specific seismic hazard analysis, probabilistic or "
+             "deterministic, was performed or presented; ground motions "
+             "read from code maps or a hazard tool are not one.",
+        fields=("geophysicalTestingMention", "siteResponseMention",
+                "hazardAnalysisMention"),
         status="DRAFT",
-        why="run 7: siteResponseMention WRONG on 7 of 8, soilCorrosion and "
-            "hazardAnalysisMention on 3 each -- the reader was answering a "
-            "different question from the one the hand answers"),
+        why="the owner's answer keys (checked 2026-10-04): "
+            "siteResponseMention is 'no' on all eight keyed reports, "
+            "including two with MASW / ReMi surveys; geophysicalTestingMention "
+            "is 'yes' where an earlier firm's MASW was used. The first draft "
+            "(answer yes wherever the topic is discussed) pushed the reader "
+            "the wrong way: the Foundry run of 2026-10-02 still had "
+            "siteResponseMention wrong on 7 of 8"),
+    Convention(
+        rule="soilCorrosion is the FINDING about corrosivity: yes when the "
+             "report finds the soils corrosive, no when it tested or "
+             "assessed them and found them not corrosive, mixed when "
+             "corrosive to some materials and not others; then ' - ' and "
+             "the basis (the test values or the sentence). null when the "
+             "report does not address corrosivity.",
+        fields=("soilCorrosion",),
+        status="DRAFT",
+        why="the owner's answer keys (checked 2026-10-04): 'no - low "
+            "corrosion impact (sulfate, chloride, pH ...)' on reports that "
+            "discuss corrosion at length; 'mixed - non-corrosive to "
+            "ductile-iron pipe, but high chloride'; null where silent. "
+            "Wrong on 4 of 6 in the Foundry run of 2026-10-02"),
     Convention(
         rule="postName is the CITY of the diplomatic post, in the city's "
              "own name and nothing else: not the country, not the compound, "
