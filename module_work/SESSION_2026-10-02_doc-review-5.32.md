@@ -178,6 +178,24 @@ run on Foundry needs a numpy-2 repo.
   asks whether a box/circle is drawn closely round the thing (4ea4bd0,
   unverified live). No crash on rc3. Recommendation: defaults unchanged
   (sweep ties at 2.4x tokens / 2.7x time), full size kept.
+- 2026-10-04 Foundry follow-ups (all committed on release/5.32.0): live
+  test queue `module_work/LIVE_TEST_QUEUE.md` (owner: small checks go there
+  for Funhouse, no new Foundry round); Foundry engine Responses route +
+  infra retries (3ef5e98); geotech tool-surface fixes for the eval's 31 real
+  tool errors (ee154c4, builder, lead-reviewed); report-ingest: no Funhouse
+  dollars on Foundry (3818dd3), narrative conventions corrected FROM THE
+  ANSWER KEYS (8e428ce, 571bcfa, d7d6652 — mention fields = "was it done",
+  soilCorrosion = the finding, outside project's propertyType = "other"),
+  lab scorer matched holes by exact string (5e70823: folded IDs; run files
+  keep records + misses; `rescore_saved`). Stage b hand-back (13 reports):
+  lab merge NOT the cause (after == model_alone on all 10 sheets); default
+  label policy `structural` + disagreement review 0.863 vs rules alone 0.896
+  over 3,418 in-sample pages — decide with a no-model policy comparison
+  from the stage b records (asked for); DIGGS read-back causes listed
+  (unnamed investigations, test-pit water, layers, d-values, pocket pen, one
+  bad-unit pit blocking R11's file); R21 failed on a label review cut off
+  at its output limit. Builder #2 is on DIGGS, R21, log merge/scoring and
+  run-file records. The report corpus PDFs ARE local (raw/corpus, 38).
 - Brief 2 hand-back RECEIVED 2026-10-03 (scratchpad `brief2/`, never
   committed): geotech eval — 17 questions hit numpy-2-only names on 1.26.4
   (`np.trapezoid` SOE-1/2; `np.long` from a dependency in 15 more), 1 missing
