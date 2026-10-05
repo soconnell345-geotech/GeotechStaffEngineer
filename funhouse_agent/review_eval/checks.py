@@ -343,9 +343,10 @@ def check_pdf_markups(answer: str, files: Sequence[str] = (), min: int = 1,
 
 #: "page 4", "pages 4, 12 and 20", "pp. 4-6", "PDF page 12", "sheets 3 & 9",
 #: "PDF pages: 4, 12, 19, and 20" (the colon form cost a correct answer its
-#: list in the Foundry rc2 run, 2026-10-03).
+#: list in the Foundry rc2 run, 2026-10-03), and the same as a bulleted list
+#: (read as no pages at all in the rc3 run, 2026-10-04).
 _PAGE_LIST = re.compile(
-    r"\b(?:pdf\s+)?(?:pages?|pp?\.|sheets?)\s*[:#]?\s*"
+    r"\b(?:pdf\s+)?(?:pages?|pp?\.|sheets?)\s*[:#]?[\s,]*"
     r"(\d+(?:\s*(?:-|–|to|through)\s*\d+)?"
     r"(?:\s*(?:,\s*and|,|and|&)\s*\d+(?:\s*(?:-|–|to|through)\s*\d+)?)*)")
 
@@ -354,7 +355,9 @@ def pages_named(answer: str, n_pages: int, max_span: int = 4) -> set:
     """The viewer page numbers (1..``n_pages``) an answer names after
     "page(s)", "p./pp." or "sheet(s)", enumerations and short ranges read."""
     found = set()
-    for m in _PAGE_LIST.finditer(normalize(answer)):
+    # A bulleted list is a comma list: "pages:\n- 4\n- 12" -> "pages: , 4, 12"
+    text = re.sub(r"\n[ \t]*[-*+•][ \t]+", ", ", str(answer or ""))
+    for m in _PAGE_LIST.finditer(normalize(text)):
         for part in re.split(r"\s*(?:,\s*and|,|and|&)\s*", m.group(1)):
             rng = re.match(r"(\d+)\s*(?:-|–|to|through)\s*(\d+)$", part.strip())
             if rng:

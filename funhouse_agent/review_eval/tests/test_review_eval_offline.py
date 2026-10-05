@@ -688,6 +688,13 @@ def test_pages_named_reads_lists_ranges_and_pdf_pages():
     # Foundry rc2 run 2026-10-03: the colon form lost the list
     assert C.pages_named("FPG penetration callouts occur on PDF pages: "
                          "**4, 12, 19, and 20**", 24) == {4, 12, 19, 20}
+    # rc3 run 2026-10-04: the same list bulleted, read as no pages at all
+    assert C.pages_named("FPG penetration callouts with leaders appear on "
+                         "PDF pages:\n\n- **4**\n- **12**\n- **19**\n- **20**"
+                         "\n\nI visually checked all 24 sheets.", 24) == \
+        {4, 12, 19, 20}
+    # a bullet is not a range: "- 4\n- 12" is two pages, not 4 to 12
+    assert C.pages_named("pages:\n- 4\n- 6", 24) == {4, 6}
     # a wide range talks about the whole set, it lists nothing found
     assert C.pages_named("pages 1-24 have legend rows", 24) == set()
     assert C.pages_named("page 31", 24) == set()
