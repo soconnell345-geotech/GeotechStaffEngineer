@@ -1,14 +1,58 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-10-01.** This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-10-04.** This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-10-01, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-10-04, supersedes everything below)
 
-### 5.32 IN PROGRESS (UNRELEASED) — branch `release/5.32.0` (app) + `release/0.11.0` (planlens)
+### 5.32.0 RELEASED 2026-10-04 (tag `v5.32.0`) with planlens 0.11.0 (tag `v0.11.0`)
+
+**Released on the owner's word** ("When you're done with code tonight, go
+ahead and publish. I'd like to give it a test run tomorrow"), after the
+Foundry measurements of 5.31 and of 5.32 itself (rc2/rc3). **Pin raised to
+`planlens>=0.11`; no new third-party package.** Long-form state:
+`module_work/SESSION_2026-10-02_doc-review-5.32.md`.
+
+**Decided from the Foundry runs** (`module_work/review_eval_results/
+2026-10-04_foundry_5.32.0rc3/NOTES.md`, GPT-5.6 Sol at full resolution):
+review switches stay OFF — baseline 35/35 on the original tasks and 5/6 on
+the two new ones; `sweep` ties at 2.4x the tokens and 2.7x the time; the
+`minimal` measuring stick loses 2 originals (no text search, no markup data)
+at ~4x the tokens; full-size images kept (HIGH added false pages on the
+24-sheet task).
+
+**In 5.32.0 beyond the list below (after rc2/rc3):** a cap of 8 vision calls
+in flight per process (`GEOTECH_VISION_MAX_INFLIGHT`); planlens test-loads
+OpenCV in a child process and the app hides `find_like` where it cannot load
+(a FIPS host aborted the interpreter); the markup check also asks whether a
+box/circle is drawn CLOSE round the thing (an agent had widened misplaced
+rings until confirmed); the Foundry engine's Responses route + infra retries
+(`GEOTECH_FOUNDRY_ROUTE`, folded in from the FDE's glue); fixes for the 31
+real tool errors of the 106-question geotech eval (category-as-topic
+`list_methods`, closest-method hints, parameter aliases, scratch-guard and
+large-result reads); report ingest: lab scorer folds hole IDs, run files keep
+records + misses (`rescore_saved`), recovery printed as a length scores,
+DIGGS writes past one bad-unit log and round-trips unnamed holes / pit water,
+the label review survives running out of output room, no Funhouse dollars on
+Foundry, narrative conventions re-read from the owner's answer keys (DRAFT).
+Suite checks: LaTeX numbers, "pages:" and bulleted page lists;
+`score_review_suite(rescore=True)`.
+
+**Not yet verified live → `module_work/LIVE_TEST_QUEUE.md`** (owner: small
+checks run on Funhouse, not a new Foundry round): the markup check's
+"close" question, find_like on a normal host, the narrative conventions, the
+lab reader's link. **Owner items:** confirm the narrative DRAFT conventions
+(`report_ingest/narrative_glossary.py`); define `structureCount` and whether
+`figureCount` includes appendix figures; the report-ingest `label_policy`
+default stays `structural` until more blind pages are hand-labelled (ledger
+`module_work/field_feedback/2026-09-16_report-ingest/MEASUREMENTS.md`,
+"FOUNDRY RUN 1"). **In progress:** a theory-of-operation write-up of the
+harnesses, `module_work/harness_theory/` (owner-requested, 2026-10-04).
+
+### Before release, 5.32 was: IN PROGRESS — branch `release/5.32.0` (app) + `release/0.11.0` (planlens)
 
 **Owner: one big build for 5.32, and NOTHING is published until the Foundry
 results are in — for 5.31's switches AND for 5.32 itself.** The suite moved to
@@ -56,8 +100,6 @@ the low-memory stop (funhouse_agent 29 % clean, planlens full suite not run).
 become defaults; then planlens 0.11.0 → app 5.32.0 (pin `planlens>=0.11`),
 docs (CLAUDE.md state block, this section, DATABRICKS_INSTALL §11), the FULL
 gate in a clean worktree, tag — on the owner's word.
-
-### 5.31.0 RELEASED 2026-09-29 (tag `v5.31.0`) — DOCUMENT REVIEW M1, SWITCHED
 
 ### 5.31.0 RELEASED 2026-09-29 (tag `v5.31.0`) — DOCUMENT REVIEW M1, SWITCHED
 

@@ -71,8 +71,30 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-09-29) — 5.31.0 RELEASED (planlens pin unchanged, >=0.10): Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
+## CURRENT WORKING STATE (2026-10-04) — 5.32.0 RELEASED with planlens 0.11.0 (pin >=0.11): look-first review prompts, checked markups (circles, labels, "drawn close"), Foundry full-resolution + Responses route, the measured Foundry fixes; switches still OFF by default; before it 5.31.0: Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
 
+- **5.32.0 RELEASED 2026-10-04 (tag `v5.32.0`) with planlens 0.11.0 (tag
+  `v0.11.0`, published first — pin `planlens>=0.11`; no new third-party
+  package).** The first release measured on Palantir Foundry before it
+  shipped (the owner's test bed; the AI FDE ran the suite on GPT-5.6 Sol at
+  full resolution and the report-ingest stages + the 106-question geotech
+  eval on GPT-5.4). Out of the 2026-10-01 field session (tags missed across
+  an 85-sheet set; circles drawn in empty paper): review prompts LOOK at
+  every page in scope (text tools are evidence, never a filter);
+  `annotate_document` checks every mark placed by location
+  (`funhouse_agent/markup_check.py`, now also "is it drawn close round the
+  thing?"); planlens circles, visible labels and `view` + `image_box`
+  anchors; screenshot paste; SharePoint browser addresses; per-page
+  past-conversation restore. From the Foundry runs: full-resolution images
+  on Foundry (AUTO, not HIGH) and the Responses route (`GEOTECH_FOUNDRY_ROUTE`)
+  with infra retries; 8 vision calls in flight per process; OpenCV
+  test-loaded in a child process (`planlens.opencv`) so a FIPS host hides
+  `find_like` instead of aborting; tool-surface fixes for the geotech eval's
+  31 real tool errors; report-ingest scoring/DIGGS/label-review fixes and
+  the narrative conventions re-read from the owner's answer keys (DRAFT).
+  Suite: 37 tasks, the `minimal` arm, `rescore=True`. Review switches stay
+  OFF (sweep ties baseline at 2.4x tokens). Unverified live items:
+  `module_work/LIVE_TEST_QUEUE.md`. Pickup: `HANDOFF.md` §0a-current.
 - **5.31.0 RELEASED 2026-09-29 (tag `v5.31.0`). No dependency change** (pin
   stays `planlens>=0.10`). The owner and a session agreed a three-shape
   architecture for Document Review (**plan of record
