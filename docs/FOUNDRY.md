@@ -68,7 +68,19 @@ through `OpenAiGptChatWithVisionLanguageModel` with
 `GptChatWithVisionCompletionRequest` / `MultiContentChatMessage` /
 `Base64ImageContent(image_url=..., detail=ImageDetail.X)` — the shape in the
 Model Catalog's own "Vision" example. Before that, image inputs were
-flattened to text on this route and the vision tools were blind.
+flattened to text on this route and the vision tools were blind. Image
+`detail`: HIGH caps an image at about 768 px on Foundry; full size is AUTO, so
+the app's "original" goes as AUTO.
+
+**Route** (5.32): by default (`GEOTECH_FOUNDRY_ROUTE=auto`) every call goes as
+a **Responses** request (`CompletionRequestV3.open_ai_responses`) where the
+SDK can send one. On Foundry, GPT-5.4 is served by Bedrock and answers only
+that route (the chat doors return 404 LanguageModelNotAvailable), and it takes
+GPT-5.6 Sol's images to at least 4096 px where the chat door stops near
+2048 px. `GEOTECH_FOUNDRY_ROUTE=chat` forces the chat doors above. Connection
+drops, timeouts, rate limits and 503s are retried (up to 5 minutes of waiting
+a call); anything else is raised at once. Folded in from the AI FDE's glue
+that ran the 5.32 test runs.
 
 Notebook smoke test for the SDK route (also how to find the right name — 404 =
 wrong name, 403 = needs a model-access grant, answer text = working):

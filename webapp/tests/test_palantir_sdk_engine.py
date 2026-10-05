@@ -479,3 +479,209 @@ def test_resolve_local_mode_unaffected(monkeypatch):
     res = engine_config.resolve_engine()
     assert res.source == "none"
     assert "ANTHROPIC_API_KEY" in res.message
+
+
+# ---------------------------------------------------------------------------
+# The Responses route (folded in from the AI FDE's glue, 2026-10-04) and the
+# infrastructure retries
+# ---------------------------------------------------------------------------
+
+def _rec(name):
+    """A stand-in SDK type that keeps whatever it was built with."""
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.__dict__.update(kwargs)
+    return type(name, (), {"__init__": __init__})
+
+
+class _Role:
+    SYSTEM, USER, ASSISTANT = "SYSTEM", "USER", "ASSISTANT"
+
+
+class _RespDetail:
+    AUTO, HIGH, LOW = "AUTO", "HIGH", "LOW"
+
+
+class _Handle:
+    _attribution = "attr"
+    _auth_header = "Bearer x"
+    _model_api_name = "GPT_5_4"
+    _is_registered_model = False
+
+    def __init__(self):
+        self._llm_service = SimpleNamespace(_read_timeout=60)
+
+
+_RESPONSE_TYPES = ("InputMessageContent", "Base64ImageContent",
+                   "ResponsesInput", "ResponsesItem", "InputMessage",
+                   "FunctionToolCallOutput", "EasyInputMessage",
+                   "EasyInputMessageContent", "FunctionToolCall", "Tool",
+                   "FunctionTool", "OpenAiResponsesRequest")
+
+
+def _install_fake_responses(monkeypatch, responses):
+    """Add the Responses types and the SDK's private send helpers to the
+    fake SDK. ``responses`` lists results (or exceptions) in order."""
+    _install_fake_sdk(monkeypatch)
+    name = ("language_model_service_api."
+            "languagemodelservice_api_completion_v3_responses")
+    r = types.ModuleType(name)
+    for n in _RESPONSE_TYPES:
+        setattr(r, n, _rec(n))
+    r.InputMessageRole = _Role
+    r.ImageDetail = _RespDetail
+    v3 = sys.modules[
+        "language_model_service_api.languagemodelservice_api_completion_v3"]
+    monkeypatch.setattr(v3, "CompletionRequestV3", _rec("CompletionRequestV3"),
+                        raising=False)
+    monkeypatch.setattr(v3, "CreateCompletionRequest",
+                        _rec("CreateCompletionRequest"), raising=False)
+    sent = []
+
+    def _create_completion(service, auth, api_name, req, is_registered_model):
+        sent.append(req)
+        got = responses.pop(0)
+        if isinstance(got, BaseException):
+            raise got
+        return got
+
+    lms_mod = types.ModuleType("palantir_models.models._lms")
+    lms_mod._create_completion = _create_completion
+    lms_mod._run_lms_request_with_retries = lambda call, n: call()
+    monkeypatch.setitem(sys.modules, name, r)
+    monkeypatch.setitem(sys.modules, "palantir_models.models._lms", lms_mod)
+    monkeypatch.setattr(sys.modules["language_model_service_api"],
+                        "languagemodelservice_api_completion_v3_responses", r,
+                        raising=False)
+    monkeypatch.setattr(sys.modules["palantir_models.models"], "_lms",
+                        lms_mod, raising=False)
+    return sent
+
+
+def _responses_reply(text="OK", call=None, status="completed"):
+    items = [SimpleNamespace(
+        output_message=SimpleNamespace(content=[SimpleNamespace(
+            text=SimpleNamespace(text=text))]),
+        function_tool_call=None)]
+    if call:
+        items.append(SimpleNamespace(
+            output_message=None, function_tool_call=SimpleNamespace(**call)))
+    return SimpleNamespace(
+        type="openAiResponses",
+        open_ai_responses=SimpleNamespace(
+            output=items, status=status, model="GPT_5_4",
+            usage=SimpleNamespace(input_tokens=30, output_tokens=7,
+                                  total_tokens=37)))
+
+
+def test_auto_route_uses_responses_where_the_sdk_has_it(monkeypatch):
+    sent = _install_fake_responses(monkeypatch, [_responses_reply(
+        "", call={"name": "bearing", "arguments": '{"width_m": 2}',
+                  "call_id": "c1"})])
+    from webapp.palantir_sdk_engine import PalantirSdkChatModel
+    tool = {"type": "function", "function": {
+        "name": "bearing", "description": "compute",
+        "parameters": {"type": "object", "properties": {}}}}
+    handle = _Handle()
+    m = PalantirSdkChatModel.from_handles("GPT_5_4", vision_model=handle,
+                                          max_tokens=99).bind_tools([tool])
+    out = m.invoke([
+        SystemMessage(content="be brief"),
+        HumanMessage(content=[
+            {"type": "text", "text": "look"},
+            {"type": "image_url", "image_url": {
+                "url": "data:image/png;base64,AAAA", "detail": "original"}}]),
+        AIMessage(content="", tool_calls=[
+            {"name": "bearing", "args": {"width_m": 1}, "id": "c0"}]),
+        ToolMessage(content='{"q": 1}', tool_call_id="c0"),
+    ])
+    assert out.tool_calls == [{"name": "bearing", "args": {"width_m": 2},
+                               "id": "c1", "type": "tool_call"}]
+    assert out.usage_metadata["input_tokens"] == 30
+    assert _FakeSdkModel.last_request is None          # no chat door used
+    request = sent[0].args[1].open_ai_responses
+    assert request.max_output_tokens == 99
+    assert request.tools[0].function.name == "bearing"
+    items = request.input
+    image = items[1].item.input_message.content[1].image
+    assert image.detail == "AUTO"                      # original -> full size
+    assert items[2].item.function_tool_call.call_id == "c0"
+    assert items[3].item.function_tool_call_output.output == '{"q": 1}'
+    assert handle._llm_service._read_timeout == 900    # long calls allowed
+
+
+def test_chat_route_can_be_forced(monkeypatch):
+    sent = _install_fake_responses(monkeypatch, [])
+    from webapp.palantir_sdk_engine import PalantirSdkChatModel
+    _FakeSdkModel.next_response = _text_response("chat door")
+    m = PalantirSdkChatModel(model_api_name="GPT_5_1", route="chat")
+    assert m.invoke([HumanMessage(content="hi")]).content == "chat door"
+    assert sent == []
+
+
+def test_auto_route_without_the_responses_helpers_uses_chat(monkeypatch):
+    _install_fake_sdk(monkeypatch)        # no Responses types, no _lms
+    from webapp.palantir_sdk_engine import (PalantirSdkChatModel,
+                                            responses_available)
+    assert not responses_available()
+    _FakeSdkModel.next_response = _text_response("chat door")
+    m = PalantirSdkChatModel(model_api_name="GPT_5_1")
+    assert m.invoke([HumanMessage(content="hi")]).content == "chat door"
+
+
+def test_dropped_connections_are_retried_and_bad_requests_are_not(
+        monkeypatch):
+    import webapp.palantir_sdk_engine as eng
+    monkeypatch.setattr(eng.time, "sleep", lambda s: None)
+    RemoteDisconnected = type("RemoteDisconnected", (Exception,), {})
+    sent = _install_fake_responses(monkeypatch, [
+        RemoteDisconnected("Remote end closed connection"),
+        RemoteDisconnected("Remote end closed connection"),
+        _responses_reply("after two drops")])
+    m = eng.PalantirSdkChatModel.from_handles("GPT_5_6_SOL",
+                                              vision_model=_Handle())
+    assert m.invoke([HumanMessage(content="hi")]).content == "after two drops"
+    assert len(sent) == 3
+
+    BadRequest = type("ConjureHTTPError", (Exception,), {})
+    bad = BadRequest("400 INVALID_ARGUMENT")
+    bad.error_name = "Default:InvalidArgument"
+    sent = _install_fake_responses(monkeypatch, [bad, _responses_reply()])
+    with pytest.raises(BadRequest):
+        m.invoke([HumanMessage(content="hi")])
+    assert len(sent) == 1
+
+
+def test_transient_kinds():
+    from webapp.palantir_sdk_engine import transient_kind
+    limited = Exception("slow down")
+    limited.error_name = "LanguageModelService:RateLimitsExceeded"
+    assert transient_kind(limited) == "rate_limit"
+    busy = Exception("busy")
+    busy.response = SimpleNamespace(status_code=503)
+    assert transient_kind(busy) == "http_503"
+    assert transient_kind(TimeoutError()) == "timeout"
+    assert transient_kind(ConnectionResetError()) == "connection"
+    assert transient_kind(ValueError("context too long")) is None
+
+
+def test_retries_stop_after_the_wait_budget():
+    import webapp.palantir_sdk_engine as eng
+    waits, calls = [], []
+
+    def always_drops():
+        calls.append(1)
+        raise ConnectionResetError("reset")
+
+    with pytest.raises(ConnectionResetError):
+        eng.call_with_retries(always_drops, total_s=5.0, sleep=waits.append)
+    assert sum(waits) <= 5.0 and len(calls) == len(waits) + 1
+
+
+def test_resolve_passes_the_route_setting(monkeypatch):
+    _foundry_env(monkeypatch)
+    _install_fake_sdk(monkeypatch)
+    monkeypatch.setenv("GEOTECH_FOUNDRY_ROUTE", "chat")
+    import webapp.engine_config as engine_config
+    res = engine_config.resolve_engine("GPT_5_1")
+    assert res.source == "foundry_sdk" and res.model.route == "chat"

@@ -48,6 +48,24 @@ to at least 4096 px. Calls with no image keep the text door verified live on
 2026-07-21. Before this leg every image was flattened away and the vision
 tools were blind on Foundry.
 
+**The Responses route** (``route="responses"``, the default where the SDK
+offers it). On Foundry GPT-5.4 is served by a Bedrock backend that refuses
+both chat doors (404 LanguageModelNotAvailable) and answers only the
+language-model service's Responses request type
+(``CompletionRequestV3.open_ai_responses``); that route also takes GPT-5.6
+Sol's images to at least 4096 px where the chat door stops near 2048. Folded
+in from the AI FDE's glue (``foundry_responses_model.py``, 2026-10-02), which
+ran every Foundry suite run of 5.32. It reaches the service through the SDK's
+own private helpers (``palantir_models.models._lms``), so where those are
+missing the chat doors are used instead (``route="auto"``).
+
+**Retries.** A Foundry call can drop its connection (Sol's keep-alive drops
+came in pairs), time out on a long reasoning call or hit the project's
+token-per-minute limit. Those — and only those (connection, timeout, rate
+limit, HTTP 503) — are retried with jittered exponential backoff, at most
+``retry_total_s`` of waiting per call; anything else (a bad request, a
+content filter, a context too long) is raised at once.
+
 The SDK is only installed on Foundry, so all SDK imports are lazy (call-time);
 this module itself imports cleanly anywhere, and the offline tests fake the SDK
 modules in ``sys.modules`` (``webapp/tests/test_palantir_sdk_engine.py``).
@@ -56,7 +74,10 @@ modules in ``sys.modules`` (``webapp/tests/test_palantir_sdk_engine.py``).
 from __future__ import annotations
 
 import json
-from typing import Any, Optional, Sequence
+import logging
+import random
+import time
+from typing import Any, Callable, Optional, Sequence
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -100,6 +121,97 @@ def sdk_available() -> bool:
         return True
     except Exception:
         return False
+
+
+log = logging.getLogger(__name__)
+
+ROUTES = ("auto", "chat", "responses")
+
+
+def _responses_sdk():
+    """The Responses request types and the SDK helpers that send them.
+    Raises ImportError (or AttributeError) where this SDK lacks them."""
+    import language_model_service_api.languagemodelservice_api_completion_v3_responses as r  # noqa: E501
+    from language_model_service_api.languagemodelservice_api_completion_v3 \
+        import CompletionRequestV3, CreateCompletionRequest
+    from palantir_models.models._lms import (_create_completion,
+                                             _run_lms_request_with_retries)
+    return (r, CompletionRequestV3, CreateCompletionRequest,
+            _create_completion, _run_lms_request_with_retries)
+
+
+def responses_available() -> bool:
+    """True when the SDK can send Responses requests."""
+    try:
+        _responses_sdk()
+        return True
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Retries: infrastructure failures only
+# ---------------------------------------------------------------------------
+
+_RATE_LIMIT_ERRORS = ("RateLimitsExceeded", "AzurePortalQosException",
+                      "HubQosException")
+_CONNECTION_TYPES = ("ConnectionError", "RemoteDisconnected", "ProtocolError",
+                     "ConnectionResetError", "ConnectionAbortedError",
+                     "ChunkedEncodingError", "IncompleteRead")
+_TIMEOUT_TYPES = ("Timeout", "ReadTimeout", "ReadTimeoutError",
+                  "ConnectTimeout", "TimeoutError", "socket.timeout")
+
+
+def transient_kind(exc: BaseException) -> Optional[str]:
+    """``rate_limit`` / ``timeout`` / ``connection`` / ``http_503`` for a
+    failure worth retrying, else ``None`` (raise it)."""
+    for e in (exc, getattr(exc, "__cause__", None)):
+        if e is None:
+            continue
+        error_name = str(getattr(e, "error_name", None)
+                         or getattr(e, "_error_name", None) or "")
+        if any(n in error_name for n in _RATE_LIMIT_ERRORS):
+            return "rate_limit"
+        if "LlmSocketTimeout" in error_name:
+            return "timeout"
+        response = (getattr(e, "response", None)
+                    or getattr(getattr(e, "_cause", None), "response", None))
+        status = getattr(response, "status_code", None)
+        if status == 429:
+            return "rate_limit"
+        if status == 503:
+            return "http_503"
+        name = type(e).__name__
+        if name in _TIMEOUT_TYPES or "ReadTimeout" in str(e)[:500]:
+            return "timeout"
+        if name in _CONNECTION_TYPES or isinstance(e, ConnectionError):
+            return "connection"
+    return None
+
+
+def call_with_retries(fn: Callable[[], Any], *, total_s: float = 300.0,
+                      max_sleep_s: float = 60.0,
+                      sleep: Callable[[float], None] = time.sleep) -> Any:
+    """``fn()``, retried on :func:`transient_kind` failures with full-jitter
+    exponential backoff until ``total_s`` of waiting is spent."""
+    attempt, waited = 0, 0.0
+    while True:
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 - classified below
+            kind = transient_kind(exc)
+            if kind is None:
+                raise
+            attempt += 1
+            wait = random.uniform(0.0, min(max_sleep_s, 2.0 ** attempt))
+            if kind == "rate_limit":
+                wait = max(wait, random.uniform(2.0, 6.0))
+            if waited + wait > total_s:
+                raise
+            log.info("Foundry call failed (%s, attempt %d): %s; retrying in "
+                     "%.1f s", kind, attempt, str(exc)[:200], wait)
+            sleep(wait)
+            waited += wait
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +372,105 @@ def _openai_tools_to_sdk(openai_tools: list, lms_v3):
 
 
 # ---------------------------------------------------------------------------
+# LangChain messages  ->  Responses input items (the AI FDE's glue, folded in)
+# ---------------------------------------------------------------------------
+
+def _responses_contents(content: Any, r) -> list:
+    """LangChain content -> ``[InputMessageContent]``, images kept (with
+    ``original`` sent as AUTO, as on the chat door)."""
+    if isinstance(content, str):
+        return [r.InputMessageContent(text=content)]
+    out = []
+    for block in content or []:
+        if isinstance(block, str):
+            out.append(r.InputMessageContent(text=block))
+        elif isinstance(block, dict):
+            if block.get("type") == "text":
+                out.append(r.InputMessageContent(text=block.get("text") or ""))
+            else:
+                url = _image_url(block)
+                if url:
+                    detail = _image_detail(block, r)
+                    image = (r.Base64ImageContent(image_url=url, detail=detail)
+                             if detail is not None else
+                             r.Base64ImageContent(image_url=url))
+                    out.append(r.InputMessageContent(image=image))
+    return out or [r.InputMessageContent(text="")]
+
+
+def _responses_message(role, contents, r):
+    return r.ResponsesInput(item=r.ResponsesItem(
+        input_message=r.InputMessage(content=contents, role=role)))
+
+
+def _lc_messages_to_responses(messages: Sequence[BaseMessage], r) -> list:
+    """System / user messages as input messages, an assistant turn as its
+    text plus one function-call item per tool call, a tool result as a
+    function-call-output item."""
+    Role = r.InputMessageRole
+    out = []
+    for message in messages:
+        if isinstance(message, SystemMessage):
+            out.append(_responses_message(
+                Role.SYSTEM,
+                [r.InputMessageContent(text=_text_content(message.content))],
+                r))
+        elif isinstance(message, ToolMessage):
+            out.append(r.ResponsesInput(item=r.ResponsesItem(
+                function_tool_call_output=r.FunctionToolCallOutput(
+                    call_id=message.tool_call_id or "",
+                    output=_text_content(message.content)))))
+        elif isinstance(message, AIMessage):
+            text = _text_content(message.content)
+            if text:
+                out.append(r.ResponsesInput(input_message=r.EasyInputMessage(
+                    content=r.EasyInputMessageContent(text=text),
+                    role=Role.ASSISTANT)))
+            for tc in message.tool_calls or []:
+                out.append(r.ResponsesInput(item=r.ResponsesItem(
+                    function_tool_call=r.FunctionToolCall(
+                        arguments=json.dumps(tc.get("args", {}) or {}),
+                        call_id=tc.get("id") or "",
+                        name=tc.get("name", "")))))
+        else:
+            out.append(_responses_message(
+                Role.USER, _responses_contents(message.content, r), r))
+    return out
+
+
+def _openai_tools_to_responses(openai_tools: list, r) -> list:
+    out = []
+    for tool in openai_tools:
+        fn = tool.get("function", tool)
+        out.append(r.Tool(function=r.FunctionTool(
+            name=fn.get("name", ""),
+            parameters=fn.get("parameters") or {"type": "object",
+                                                "properties": {}},
+            strict=False, description=fn.get("description"))))
+    return out
+
+
+def _responses_to_ai_message(resp) -> AIMessage:
+    texts, tool_calls = [], []
+    for item in getattr(resp, "output", None) or []:
+        message = getattr(item, "output_message", None)
+        if message is not None:
+            for c in getattr(message, "content", None) or []:
+                text = getattr(c, "text", None)
+                if text is not None:
+                    texts.append(getattr(text, "text", text) or "")
+        fc = getattr(item, "function_tool_call", None)
+        if fc is not None:
+            try:
+                args = json.loads(fc.arguments) if fc.arguments else {}
+            except (json.JSONDecodeError, TypeError):
+                args = {}
+            tool_calls.append({"name": fc.name, "args": args,
+                               "id": fc.call_id, "type": "tool_call"})
+    return AIMessage(content="".join(texts), tool_calls=tool_calls)
+
+
+# ---------------------------------------------------------------------------
 # SDK response  ->  LangChain AIMessage
 # ---------------------------------------------------------------------------
 
@@ -312,10 +523,22 @@ class PalantirSdkChatModel(BaseChatModel):
     vision_for_all : bool, optional
         Send EVERY call through the vision door, images or not (one model
         handle serves the whole agent).
+    route : str, optional
+        ``"responses"`` (the Responses request type: the only route GPT-5.4
+        answers on Foundry, and full-size images for GPT-5.6 Sol),
+        ``"chat"`` (the chat / chat-with-vision doors), or ``"auto"``
+        (default: Responses where the SDK can send it, else chat).
+    retry_total_s : float, optional
+        Most seconds spent waiting between retries of one call (connection
+        drops, timeouts, rate limits, 503 only).
+    read_timeout_s : float, optional
+        Raise the SDK client's HTTP read timeout to this (long reasoning
+        calls); ``None`` leaves it.
 
-    A call carrying an image goes through ``OpenAiGptChatWithVisionLanguageModel``
-    (same API name); every other call through ``OpenAiGptChatLanguageModel``.
-    Where models arrive as handles rather than names (a Python transform's
+    On the chat route a call carrying an image goes through
+    ``OpenAiGptChatWithVisionLanguageModel`` (same API name); every other call
+    through ``OpenAiGptChatLanguageModel``. Where models arrive as handles
+    rather than names (a Python transform's
     ``OpenAiGptChatWithVisionLanguageModelInput``), use :meth:`from_handles`.
     """
 
@@ -326,6 +549,9 @@ class PalantirSdkChatModel(BaseChatModel):
     temperature: Optional[float] = None
     rate_limit_retries: Optional[int] = 5
     vision_for_all: bool = False
+    route: str = "auto"
+    retry_total_s: float = 300.0
+    read_timeout_s: Optional[float] = 900.0
     # OpenAI-schema tool dicts captured by bind_tools; replayed each call.
     openai_tools: Optional[list] = Field(default=None, exclude=True)
 
@@ -368,16 +594,102 @@ class PalantirSdkChatModel(BaseChatModel):
             self._vision_model = _vision_sdk().get(self.model_api_name)
         return self._vision_model
 
+    def _raise_read_timeout(self, handle) -> None:
+        """Long reasoning calls outlast the SDK client's default read
+        timeout; raise it where the handle exposes its client."""
+        if not self.read_timeout_s:
+            return
+        service = getattr(handle, "_llm_service", None)
+        old = getattr(service, "_read_timeout", None)
+        if isinstance(old, (int, float)) and old < self.read_timeout_s:
+            try:
+                service._read_timeout = self.read_timeout_s
+            except Exception:  # noqa: BLE001 - a nicety, never a failure
+                pass
+
     def _complete(self, sdk_model, request):
-        if self.rate_limit_retries is None:
-            return sdk_model.create_chat_completion(request)
-        try:
-            return sdk_model.create_chat_completion(
-                request, max_rate_limit_retries=self.rate_limit_retries)
-        except TypeError as exc:
-            if "max_rate_limit_retries" not in str(exc):
-                raise
-            return sdk_model.create_chat_completion(request)
+        self._raise_read_timeout(sdk_model)
+
+        def once():
+            if self.rate_limit_retries is None:
+                return sdk_model.create_chat_completion(request)
+            try:
+                return sdk_model.create_chat_completion(
+                    request, max_rate_limit_retries=self.rate_limit_retries)
+            except TypeError as exc:
+                if "max_rate_limit_retries" not in str(exc):
+                    raise
+                return sdk_model.create_chat_completion(request)
+
+        return call_with_retries(once, total_s=self.retry_total_s)
+
+    def _use_responses(self) -> bool:
+        route = str(self.route or "auto").strip().lower()
+        if route == "responses":
+            return True
+        if route == "chat":
+            return False
+        return responses_available()
+
+    def _call_responses(self, request):
+        (_, CompletionRequestV3, CreateCompletionRequest, create,
+         run_with_rate_limit_retries) = _responses_sdk()
+        # Any language-model handle for this model carries the service, the
+        # auth header and the attribution the request needs.
+        handle = self._vision_model or self._sdk_model or self._vision()
+        self._raise_read_timeout(handle)
+        wrapped = CreateCompletionRequest(
+            handle._attribution, CompletionRequestV3(open_ai_responses=request))
+
+        def call():
+            return create(handle._llm_service, handle._auth_header,
+                          handle._model_api_name, wrapped,
+                          is_registered_model=handle._is_registered_model)
+
+        def once():
+            if self.rate_limit_retries is None:
+                return call()
+            return run_with_rate_limit_retries(call, self.rate_limit_retries)
+
+        response = call_with_retries(once, total_s=self.retry_total_s)
+        got = getattr(response, "open_ai_responses", None)
+        if got is None:
+            raise RuntimeError("Expected an openAiResponses response, got "
+                               f"{getattr(response, 'type', type(response))}")
+        return got
+
+    def _generate_responses(self, messages, max_tokens, temperature,
+                            tools) -> ChatResult:
+        r = _responses_sdk()[0]
+        request_kwargs: dict = {}
+        if max_tokens is not None:
+            request_kwargs["max_output_tokens"] = max_tokens
+        if temperature is not None:
+            request_kwargs["temperature"] = temperature
+        if tools:
+            request_kwargs["tools"] = _openai_tools_to_responses(tools, r)
+        response = self._call_responses(r.OpenAiResponsesRequest(
+            input=_lc_messages_to_responses(messages, r), **request_kwargs))
+
+        ai_message = _responses_to_ai_message(response)
+        status = str(getattr(response, "status", "")).rsplit(".", 1)[-1]
+        finish = ("tool_calls" if ai_message.tool_calls else
+                  "length" if status.lower() == "incomplete" else "stop")
+        generation_info = {
+            "finish_reason": finish,
+            "model_name": getattr(response, "model", None)
+            or self.model_api_name}
+        u = getattr(response, "usage", None)
+        if u is not None:
+            usage = {"prompt_tokens": getattr(u, "input_tokens", None),
+                     "completion_tokens": getattr(u, "output_tokens", None),
+                     "total_tokens": getattr(u, "total_tokens", None)}
+            usage = {k: v for k, v in usage.items() if v is not None}
+            generation_info["usage"] = _usage_to_dict(usage)
+            ai_message.usage_metadata = _to_usage_metadata(usage)
+        return ChatResult(generations=[
+            ChatGeneration(message=ai_message,
+                           generation_info=generation_info)])
 
     def bind_tools(self, tools: Sequence[Any], **kwargs: Any):
         """Bind tools (standard LangChain pattern) — returns a copy carrying
@@ -392,18 +704,21 @@ class PalantirSdkChatModel(BaseChatModel):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        _, lms_base, lms_v3 = _sdk()
-
-        request_kwargs: dict = {}
         max_tokens = kwargs.get("max_tokens", self.max_tokens)
+        temperature = kwargs.get("temperature", self.temperature)
+        tools = kwargs.get("tools") or self.openai_tools
+        if self._use_responses():
+            return self._generate_responses(messages, max_tokens, temperature,
+                                            tools)
+
+        _, lms_base, lms_v3 = _sdk()
+        request_kwargs: dict = {}
         if max_tokens is not None:
             request_kwargs["max_tokens"] = max_tokens
-        temperature = kwargs.get("temperature", self.temperature)
         if temperature is not None:
             request_kwargs["temperature"] = temperature
         if stop:
             request_kwargs["stop"] = list(stop)
-        tools = kwargs.get("tools") or self.openai_tools
         if tools:
             # tool_choice is omitted -> service default ("auto"), matching the
             # OpenAI behaviour the deep agent expects.
@@ -448,4 +763,5 @@ class PalantirSdkChatModel(BaseChatModel):
 # file is loaded by path or exec'd (Foundry glue) rather than imported.
 PalantirSdkChatModel.model_rebuild()
 
-__all__ = ["PalantirSdkChatModel", "sdk_available"]
+__all__ = ["PalantirSdkChatModel", "sdk_available", "responses_available",
+           "call_with_retries", "transient_kind", "ROUTES"]

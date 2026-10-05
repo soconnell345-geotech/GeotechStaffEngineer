@@ -142,8 +142,11 @@ def _resolve_palantir_sdk(model_id: str) -> "EngineResolution":
             "'language-model-service-api' in the workspace Libraries panel, "
             "or use an 'ri....' RID for the LLM-proxy route.")
     try:
-        model = PalantirSdkChatModel(model_api_name=model_id,
-                                     max_tokens=_default_max_tokens())
+        # GEOTECH_FOUNDRY_ROUTE: auto (Responses where the SDK can send it),
+        # responses, or chat — see webapp/palantir_sdk_engine.py.
+        model = PalantirSdkChatModel(
+            model_api_name=model_id, max_tokens=_default_max_tokens(),
+            route=(os.environ.get("GEOTECH_FOUNDRY_ROUTE") or "auto"))
     except Exception as exc:
         return EngineResolution(
             None, "error", model_id,
