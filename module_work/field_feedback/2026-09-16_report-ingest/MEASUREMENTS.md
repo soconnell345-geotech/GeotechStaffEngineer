@@ -4188,3 +4188,36 @@ session's work is Tiny Apps.
    the sub-agent answering real questions over the real corpus is not.
 6. **Document-mode vision over the corpus.** Run 9 measured one 151-page report
    (5 windows, 255 k input tokens); the corpus has never been run in that mode.
+
+## FOUNDRY RUN 1 -- 2026-10-02 -- app 5.31.0, GPT-5.4 (Responses route), Foundry AI FDE
+
+Stages c (calc, soundings), d (logs, lab, narrative) and e (vision labels,
+GPT-4.1-mini, document mode) on Palantir Foundry, run by the AI FDE (brief 2).
+numpy 1.26.4 there. Items 2-4 and 6 of the list above now have real numbers.
+RESULTS.md files: `raw/` only (scratchpad copy 2026-10-04), never committed.
+
+| reader | set | before (floor) | after (reader) | note |
+|---|---|---|---|---|
+| calculation | 10 runs (no blind set) | 62 % 108/173 | 72 % 146/203 | results 48 -> 59 %; lateral_pile R20 and shallow R30 lose ground (dis 10 / 17: the model's evidence-backed reading replaced the floor's) |
+| sounding/pit | 13 sheets (no blind set) | 73 % 258/353 | **95 % 336/353** | tabulated 96 -> 99 %, plotted 32 -> 89 % |
+| log | open 6 | 91 % | 98 % | |
+| log | blind 9 | 73 % 156/214 | 73 % 156/214 | n_value 96 -> 84 %, recovery 100 -> 53 %, index 44 -> 0 %: floor values LOST (R30 86 -> 59 %, R21 73 -> 64 %) |
+| lab | open 16 | 83 % 251/301 | **46 % 167/367** | link 55 % (blind 100 %); gradation R17_p114 9 %, R28_p176/177 3 %; consolidation R36 7-10 % |
+| lab | blind 15 | 55 % | 82 % | link 100 % |
+| narrative | 8 reports | -- | recall 75 %, precision 77 % | July: 64 / 74. siteResponseMention 0/8, soilCorrosion 2/6, propertyType 3/8, recommendedFoundations 3/8 |
+| vision labels | in-sample 14 | rules 0.908 | vision 0.706 | R21 0.218 (vision never emits appended_report); honest blind 70 pp: rules 0.767, vision 0.833 |
+
+Lab "before" asks only whether each true number is in the page's tables;
+"after" needs it in the right slot of a test LINKED to the right boring and
+depth, so a wrong link loses every value on the test. Working hypothesis for
+the open-set collapse: the floor's link read from the page text
+(`lab_floor._link_from_lines`) is wrong on those report formats and settles
+over the model's. Unconfirmed until the per-sheet run files arrive (asked for
+2026-10-04).
+
+**Fixed from this run (2026-10-04):** the narrative "mention" conventions
+(the first draft contradicted the owner's answer keys: siteResponseMention is
+'no' on all eight; soilCorrosion is the finding), 8e428ce; dollar figures on a
+Foundry run (Funhouse rates were applied, "$5.85"), 3818dd3. Ingest triage now
+honours `triage_model` (4b08784). Stage b (whole pipeline on keyed reports)
+and the DIGGS read-back details are still to come.

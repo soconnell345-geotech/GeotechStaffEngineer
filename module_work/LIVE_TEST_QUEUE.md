@@ -32,6 +32,19 @@ to do if it fails.
      `planlens.opencv.available()` there and report its reason.
 3. **Vision call cap of 8** (app be742b0). No separate run: watch the minutes
    column of item 1 against the same tasks on 5.31 (cap changes timing only).
+4. **Narrative "mention" conventions read from the answer keys** (app
+   8e428ce; still DRAFT for the owner).
+   - Run: `score_on_cluster(stages=("narrative",), truth_dir=..., ...)` on the
+     eight keyed reports (~0.4M input tokens on GPT-5.4).
+   - Pass: siteResponseMention right on most of 8 (was 0/8 on 2026-10-02),
+     soilCorrosion better than 2/6, geophysicalTestingMention still 8/8,
+     overall recall/precision not below 75 % / 77 %.
+   - Fail: the owner's reading of the fields differs — rule in
+     `report_ingest/narrative_glossary.py`, one place.
+5. **Lab reader link** — PENDING the cause (the Foundry run files asked for
+   2026-10-04): once fixed, `stages=("lab",)` on the 31 keyed sheets; pass =
+   open-set link back near the blind set's 100 % and gradation sheets
+   R17_p114 / R28_p176 / R28_p177 back above 80 %.
 
 ## Done
 
