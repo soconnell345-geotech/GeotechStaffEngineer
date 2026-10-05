@@ -88,6 +88,38 @@ A lab test that names a boring this record has no log for gets a minimal
 recorded in :attr:`DiggsWriteNotes.synthesised`: the hole is an identifier
 the lab sheet printed and nothing more, and a reader of the file should know
 which holes those are.
+
+WHAT THE FOUNDRY RUN OF 2026-10-04 TAUGHT, one rule each, and what the
+round-trip gate does about it:
+
+* A log whose depths are in an UNKNOWN unit (``units_known`` False) is LEFT
+  OUT of the file -- every measure states a uom, so writing it would mean
+  inventing one -- and the rest of the report is written. It is named in
+  :attr:`DiggsWriteNotes.left_out` and gets a QA entry of its own; the gate
+  does not look for it. (It used to cost the whole report its file.) Only a
+  file that would hold nothing at all is refused.
+* A log that printed NO identifier is named in the file by its ``gml:id``,
+  and two logs printing the SAME identifier are two features with one name.
+  The gate finds each exploration by the id the writer planned for it
+  (:func:`_hole_ids`, one function for both) and reads each back on its own,
+  so neither case can make it compare a log with the wrong hole. The record
+  keeps the identifier the log printed, empty or not: an invented name in
+  the RECORD would be a fact nobody printed. A shared name is
+  :attr:`DiggsWriteNotes.shared_names`, a QA note, because a reader that
+  keys holes by name -- the app's own -- reads it as one hole.
+* A ``TrialPit`` has no ``waterStrike`` in 2.6 (it is the Borehole's alone),
+  so a pit's water level is a ``Test`` whose one result is the dictionary's
+  ``water_depth``, positioned at that depth. The app's reader takes it as the
+  pit's water level. A pit that found no water has no 2.6 element to say so.
+* A grading's D-value printed with NO unit is written in millimetres, the
+  unit every laboratory prints them in and never writes into the column
+  head (the lab scorer's and the tables floor's own rule); the assumption is
+  in :attr:`DiggsWriteNotes.assumed`.
+* A value that converts to the WRONG kind of unit for its property -- a
+  pocket penetrometer or a cohesion printed with no unit, which cannot be
+  written as the kPa the property needs -- is left out, and named with its
+  hole, depth and value in :attr:`DiggsWriteNotes.unwritten`; the gate does
+  not look for exactly those.
 """
 
 from __future__ import annotations
@@ -312,6 +344,25 @@ class DiggsWriteNotes:
     #: They carry an identifier and nothing else -- no depth, no layers, no
     #: position -- and a reader of the file should know which they are.
     synthesised: List[str] = field(default_factory=list)
+    #: Whole explorations NOT in the file, one dict each: ``investigation_id``,
+    #: ``pages`` and ``why``. A log whose depths are in a unit nobody could
+    #: read is the case: one such log used to cost the whole report its file.
+    left_out: List[Dict[str, Any]] = field(default_factory=list)
+    #: ``(hole, depth in m, value in SI)`` for every VALUE the writer left out
+    #: because it converts to the wrong kind of unit for its property -- a
+    #: cohesion or a pocket penetrometer printed with no unit at all is the
+    #: common case. The round-trip gate does not look for these, and the
+    #: reason for each is in :attr:`skipped`.
+    unwritten: List[Tuple[str, Optional[float], float]] = field(
+        default_factory=list)
+    #: A unit the writer took from a convention of the trade rather than
+    #: from the record, each named: a grading's D-value printed with no unit
+    #: is millimetres.
+    assumed: List[str] = field(default_factory=list)
+    #: Names two or more explorations in this file share. DIGGS keeps them
+    #: apart by ``gml:id``; a reader that keys holes by NAME -- the app's own
+    #: ``parse_diggs`` among them -- reads each such name as one hole.
+    shared_names: List[str] = field(default_factory=list)
     investigations: int = 0
     layers: int = 0
     samples: int = 0
@@ -327,10 +378,56 @@ class DiggsWriteNotes:
     def to_dict(self) -> Dict[str, Any]:
         return {"skipped": list(self.skipped),
                 "synthesised": list(self.synthesised),
+                "left_out": [dict(row) for row in self.left_out],
+                "unwritten": [list(row) for row in self.unwritten],
+                "assumed": list(self.assumed),
+                "shared_names": list(self.shared_names),
                 "investigations": self.investigations, "layers": self.layers,
                 "samples": self.samples, "spt": self.spt, "water": self.water,
                 "tests": self.tests, "lab_tests": self.lab_tests,
                 "cpt": self.cpt, "dcp": self.dcp}
+
+
+def _unwritable(inv: Investigation) -> bool:
+    """Is this a log whose depths are in a unit nobody could read?
+
+    A DIGGS file states a ``uom`` on every measure, so writing one would mean
+    inventing a unit. Such a log is LEFT OUT of the file -- named in the
+    notes and in the record's QA -- and every other log in the report is
+    written; the round-trip gate leaves it out by this same test.
+    """
+    return not inv.units_known and any(
+        (inv.layers, inv.samples, inv.spt, inv.water))
+
+
+def _unique(stem: str, issued: set, counts: Dict[str, int]) -> str:
+    """``stem``, or ``stem_2``, ``stem_3`` ... -- the first not yet issued."""
+    n = counts.get(stem, 0)
+    while True:
+        candidate = stem if n == 0 else f"{stem}_{n + 1}"
+        n += 1
+        if candidate not in issued:
+            break
+    counts[stem] = n
+    issued.add(candidate)
+    return candidate
+
+
+def _hole_ids(investigations: Sequence[Investigation]) -> List[str]:
+    """The ``gml:id`` each exploration gets, in order.
+
+    ONE plan, used by the writer to write the file and by the round-trip
+    gate to find each exploration in it again. The gate cannot find a hole
+    by its NAME when the log printed none (the file then names it by this
+    id) or when two logs print the same one (two features, one name), so it
+    finds it by the id this function gave it.
+    """
+    issued: set = set()
+    counts: Dict[str, int] = {}
+    return [_unique(_ncname("bh_" + _ncname(inv.investigation_id
+                                            or "exploration", "exploration")),
+                    issued, counts)
+            for inv in investigations]
 
 
 # ---------------------------------------------------------------------------
@@ -342,7 +439,8 @@ class _Writer:
 
     def __init__(self, investigations: Sequence[Investigation],
                  project: Optional[Project], document_id: str,
-                 lab_tests: Sequence[LabTest] = ()) -> None:
+                 lab_tests: Sequence[LabTest] = (),
+                 left_out: Sequence[Investigation] = ()) -> None:
         self.investigations = list(investigations)
         self.lab = list(lab_tests)
         self.project = project or Project()
@@ -352,6 +450,21 @@ class _Writer:
         self.notes = DiggsWriteNotes()
         self.lines: List[str] = []
         self._seen_ids: Dict[str, int] = {}
+        self._issued: set = set()
+        self._left_out_ids = {inv.investigation_id.strip()
+                              for inv in left_out if inv.investigation_id}
+        for inv in left_out:
+            self.notes.left_out.append({
+                "investigation_id": inv.investigation_id,
+                "pages": list(inv.pages),
+                "why": "its depths are in a unit nobody could read "
+                       "(units_known is False), and a DIGGS file states a "
+                       "unit on every measure; the rest of the report is "
+                       "in the file"})
+            self.notes.skipped.append(
+                f"{inv.investigation_id or 'an unnamed exploration'}: left "
+                f"out of the file -- its depths are in an unknown unit "
+                f"(units_known is False)")
         self._synthesise_holes()
 
     def _synthesise_holes(self) -> None:
@@ -378,6 +491,10 @@ class _Writer:
                 investigation_id=name, depth_unit=unit,
                 units_known=bool(unit)))
             self.notes.synthesised.append(
+                f"{name}: named by a laboratory sheet; its log is left out "
+                f"of this file (depths in an unknown unit), so it is written "
+                f"as a Borehole carrying its identifier only"
+                if name in self._left_out_ids else
                 f"{name}: named by a laboratory sheet and described by no "
                 f"log in this record; written as a Borehole carrying its "
                 f"identifier only")
@@ -401,10 +518,10 @@ class _Writer:
         together) would otherwise collide, and a collision makes every xlink
         into one of them ambiguous.
         """
-        stem = _ncname(stem)
-        n = self._seen_ids.get(stem, 0)
-        self._seen_ids[stem] = n + 1
-        return stem if n == 0 else f"{stem}_{n + 1}"
+        # Unique against every id ISSUED, not only against this stem's own
+        # count: a third log literally named "B-1_2" must not collide with
+        # the second "B-1".
+        return _unique(_ncname(stem), self._issued, self._seen_ids)
 
     # -- emitting ----------------------------------------------------------
     def out(self, text: str, indent: int = 0) -> None:
@@ -426,13 +543,20 @@ class _Writer:
             for prefix, uri in NS.items() if prefix != "diggs")
         self.out(f'<Diggs xmlns={quoteattr(NS["diggs"])} {attrs} '
                  f'gml:id={quoteattr(self.doc_id)}>')
+        # The holes' ids are planned FIRST, by the one function the
+        # round-trip gate also calls, and only then is anything else issued.
+        ids = _hole_ids(self.investigations)
+        self._issued.update(ids)
+        plans: List[Tuple[Investigation, str]] = list(
+            zip(self.investigations, ids))
+        names: Dict[str, int] = {}
+        for inv in self.investigations:
+            if inv.investigation_id.strip():
+                key = inv.investigation_id.strip()
+                names[key] = names.get(key, 0) + 1
+        self.notes.shared_names = sorted(k for k, n in names.items() if n > 1)
         self.document_information()
         self.project_element()
-        plans: List[Tuple[Investigation, str]] = []
-        for inv in self.investigations:
-            stem = _ncname(inv.investigation_id or "exploration",
-                           "exploration")
-            plans.append((inv, self.uid(f"bh_{stem}")))
         for inv, gml_id in plans:
             self.sampling_feature(inv, gml_id)
         for inv, gml_id in plans:
@@ -835,6 +959,8 @@ class _Writer:
 
     # -- measurements ------------------------------------------------------
     def measurements(self, inv: Investigation, gml_id: str) -> None:
+        if inv.kind == "test_pit":
+            self.pit_water(inv, gml_id)
         for n, record in enumerate(inv.spt):
             self.spt_test(inv, record, gml_id, n)
         for n, sample in enumerate(inv.samples):
@@ -843,6 +969,61 @@ class _Writer:
             self.cone_test(inv, gml_id)
         if inv.dcp is not None and inv.dcp.points:
             self.probe_test(inv, gml_id)
+
+    def pit_water(self, inv: Investigation, gml_id: str) -> None:
+        """Water in a PIT, as a positioned result.
+
+        2.6 gives a ``TrialPit`` no ``waterStrike`` -- that element is the
+        Borehole's alone -- so a pit's water levels used to be written
+        nowhere and came back as nothing. Each reading is a ``Test`` against
+        the pit whose one result is the dictionary's ``water_depth``,
+        positioned at that depth along the pit's own reference system, with
+        the timing the log printed as a named property beside it. The app's
+        reader takes the first such result as the pit's water level, which
+        is the reading the round-trip gate compares.
+
+        A pit that found NO water has no element to say so in 2.6 (the
+        Borehole's ``notEncountered`` lives in ``waterStrike`` too); it stays
+        in the record and the notes say so.
+        """
+        for n, water in enumerate(inv.water):
+            if water.depth is None:
+                if water.when == "not_encountered":
+                    self.notes.skipped.append(
+                        f"{inv.investigation_id}: 'no water encountered' -- "
+                        f"2.6 has no element for it on a TrialPit; kept in "
+                        f"the record")
+                continue
+            depth = _si(water.depth)
+            if depth is None or depth[1] != "m":
+                self.notes.skipped.append(
+                    f"{inv.investigation_id}: water level "
+                    f"{water.depth.value:g} {water.depth.unit!r} -- not a "
+                    f"depth this file can state")
+                continue
+            test_id = self.uid(f"gwl_{_ncname(gml_id)}_{n}")
+            self._test_open("Water level", test_id, gml_id)
+            for key, value in (("when", water.when
+                                if water.when != "unknown" else ""),
+                               ("hours", "" if water.hours is None
+                                else _num(water.hours)),
+                               ("date", water.date), ("note", water.note)):
+                if not str(value or "").strip():
+                    continue
+                self.out("<otherMeasurementProperty>", 3)
+                self.out(f'<Parameter gml:id='
+                         f'{quoteattr(self.uid(test_id + "_" + key))}>', 4)
+                self.text_element("parameterName", key, 5)
+                self.text_element("parameterValue", value, 5)
+                self.out("</Parameter>", 4)
+                self.out("</otherMeasurementProperty>", 3)
+            self._result_table(test_id, gml_id, depth[0], None,
+                               [_Column("Water depth", "water_depth", "m")],
+                               [[depth[0]]])
+            self.out("</Test>", 2)
+            self.out("</measurement>", 1)
+            self.notes.water += 1
+            self.notes.tests += 1
 
     # -- the two soundings -------------------------------------------------
     def _sounding_extent(self, inv: Investigation, data: Any
@@ -1238,6 +1419,8 @@ class _Writer:
                     f"{inv.investigation_id}/{sample.sample_id}: {label} "
                     f"{q.value:g} {q.unit!r} converts to {got[1]}, not the "
                     f"{uom} this property is written in")
+                self.notes.unwritten.append(
+                    (inv.investigation_id.strip(), top[0], got[0]))
                 return
             groups.append((label, proc, [(label, klass, got[0])]))
 
@@ -1326,7 +1509,7 @@ class _Writer:
         if placed is None:
             return
         gml_id, top, bottom = placed
-        values = _Values(self, where)
+        values = _Values(self, where, test.investigation_id.strip(), top)
         values.quantity("Elevation", "elevation", test.elevation,
                         dictionary=False)
         tables = self._lab_values(test, values)
@@ -1918,7 +2101,7 @@ class _Writer:
             if placed is None:
                 continue
             gml_id, top, bottom = placed
-            values = _Values(self, where)
+            values = _Values(self, where, row.investigation_id.strip(), top)
             self._summary_values(row, values)
             stem = f"labsummary_{_ncname(gml_id)}_{n}_{i}"
             if values:
@@ -2003,11 +2186,20 @@ class _Values:
     writes only what this one did.
     """
 
-    def __init__(self, writer: "_Writer", where: str) -> None:
+    def __init__(self, writer: "_Writer", where: str, hole: str = "",
+                 depth: Optional[float] = None) -> None:
         self.writer = writer
         self.where = where
+        #: Where the result is positioned, so a value left out can be named
+        #: to the round-trip gate as THIS hole at THIS depth.
+        self.hole = hole
+        self.depth = depth
         self.columns: List[_Column] = []
         self.row: List[Any] = []
+
+    def _unwritten(self, value: float) -> None:
+        self.writer.notes.unwritten.append((self.hole, self.depth,
+                                            float(value)))
 
     def __bool__(self) -> bool:
         return bool(self.columns)
@@ -2061,6 +2253,7 @@ class _Values:
                 f"{self.where}: {name} {quantity.value:g} {quantity.unit!r} "
                 f"converts to {got[1]}, not the {uom} this property is "
                 f"written in")
+            self._unwritten(got[0])
             return
         self.number(name, klass, got[0], got[1], dictionary)
 
@@ -2082,10 +2275,23 @@ class _Values:
                 f"{self.where}: {name} {quantity.value:g} "
                 f"{quantity.unit!r} -- unit not in the conversion table")
             return
+        if got[1] == "1" and not str(quantity.unit or "").strip():
+            # A D-value printed with NO unit. A particle size is not a
+            # dimensionless number, and the trade prints every D-value in
+            # millimetres without ever writing the unit into the column head
+            # (the lab scorer's and the tables floor's own rule), so it is
+            # written in millimetres and the notes say the unit was assumed.
+            self.writer.notes.assumed.append(
+                f"{self.where}: {name} {quantity.value:g} was printed with no "
+                f"unit; written in mm, the unit every grading prints its "
+                f"D-values in")
+            self.number(name, klass, float(quantity.value), "mm", dictionary)
+            return
         if got[1] != "m":
             self.writer.notes.skipped.append(
                 f"{self.where}: {name} {quantity.value:g} {quantity.unit!r} "
                 f"is not a length")
+            self._unwritten(got[0])
             return
         self.number(name, klass, got[0] * 1000.0, "mm", dictionary)
 
@@ -2209,15 +2415,22 @@ def write_diggs(record_or_investigations: Any,
             raise TypeError(
                 f"every lab test must be a model.LabTest, not "
                 f"{type(test).__name__}")
-    for inv in investigations:
-        if not inv.units_known and any(
-                (inv.layers, inv.samples, inv.spt, inv.water)):
-            raise ValueError(
-                f"investigation {inv.investigation_id!r} carries depths in an "
-                f"unknown unit (units_known is False). A DIGGS file states a "
-                f"uom on every measure, so writing one would mean inventing "
-                f"a unit. Fix the unit or write no DIGGS for this log.")
-    writer = _Writer(investigations, project, document_id, lab)
+    # A log whose depths are in a unit nobody could read cannot go in: a
+    # DIGGS file states a uom on every measure. It is LEFT OUT and named in
+    # the notes, and the rest of the report is written -- until 2026-10-04
+    # one such log cost a whole report its file. Only when it would leave
+    # the file with nothing in it at all is that refused outright.
+    left_out = [inv for inv in investigations if _unwritable(inv)]
+    if left_out and len(left_out) == len(investigations) and not lab:
+        inv = left_out[0]
+        raise ValueError(
+            f"investigation {inv.investigation_id!r} carries depths in an "
+            f"unknown unit (units_known is False). A DIGGS file states a "
+            f"uom on every measure, so writing one would mean inventing "
+            f"a unit. Fix the unit or write no DIGGS for this log.")
+    investigations = [inv for inv in investigations if not _unwritable(inv)]
+    writer = _Writer(investigations, project, document_id, lab,
+                     left_out=left_out)
     xml = writer.build()
     if notes is not None:
         notes.append(writer.notes)
@@ -2268,7 +2481,8 @@ def _nearest(values: Sequence[Tuple[float, float]], depth: float,
 
 def diggs_roundtrip_gate(xml: str, investigations: Any, *,
                          project: Optional[Project] = None,
-                         lab_tests: Optional[Sequence[LabTest]] = None
+                         lab_tests: Optional[Sequence[LabTest]] = None,
+                         notes: Optional[DiggsWriteNotes] = None
                          ) -> Tuple[bool, List[str]]:
     """``(ok, diffs)`` -- read the file back and compare it, value by value.
 
@@ -2288,7 +2502,25 @@ def diggs_roundtrip_gate(xml: str, investigations: Any, *,
     survived, not whether they were filed under the names the writer chose.
 
     A value the writer said it could not write (its notes) is not looked for.
-    Everything else that does not come back is a diff.
+    Everything else that does not come back is a diff. ``notes`` are the
+    writer's own (:class:`DiggsWriteNotes`); left out, they are worked out
+    by running the writer over the same inputs, which is deterministic.
+
+    EACH EXPLORATION IS FOUND BY THE ``gml:id`` THE WRITER GAVE IT
+    (:func:`_hole_ids`), not by its name, and each is read back ON ITS OWN.
+    Two reasons, both from the Foundry run of 2026-10-04: a log that printed
+    no identifier is named in the file by that id, so looking it up by its
+    empty name found nothing; and two logs printing the SAME identifier (a
+    continuation sheet read as its own log, two series that both start at
+    "2") are two features with one name, which the app's reader keys by name
+    and so merges into one hole -- every layer count and the header then
+    disagreed with each log in turn. The file is right in both cases; the
+    comparison was not. The gate therefore reads a private copy of the file
+    in which every exploration is named by its id, and checks the NAME the
+    file gives it separately. That a name is shared is the writer's
+    :attr:`DiggsWriteNotes.shared_names`, for the QA, not a diff here.
+
+    A log the writer LEFT OUT (depths in an unknown unit) is not looked for.
     """
     from subsurface_characterization import parse_diggs
 
@@ -2307,32 +2539,102 @@ def diggs_roundtrip_gate(xml: str, investigations: Any, *,
         investigations = [i for i in items if isinstance(i, Investigation)]
     if lab_tests is not None:
         lab = list(lab_tests)
+    investigations = [inv for inv in investigations if not _unwritable(inv)]
+    if notes is None:
+        notes = _notes_for(investigations, lab, project)
 
     try:
-        parsed = parse_diggs(content=xml)
+        parsed, names = _read_back_by_feature(xml, parse_diggs)
     except Exception as exc:                        # a file that will not open
         return False, [f"parse_diggs could not read the file: "
                        f"{type(exc).__name__}: {exc}"]
 
     diffs: List[str] = []
-    by_id = {inv.investigation_id: inv for inv in parsed.site.investigations}
+    by_gid = {inv.investigation_id: inv
+              for inv in parsed.site.investigations}
+    unwritten = list(notes.unwritten)
     dt = TOLERANCE["depth_m"]
 
-    for want in investigations:
+    for want, gid in zip(investigations, _hole_ids(investigations)):
         name = want.investigation_id
-        got = by_id.get(name)
+        expected = name.strip() or gid
+        if names.get(gid) != expected:
+            # Not where the plan put it: a gate handed a different list
+            # from the one written. Found by its name, when the name is
+            # unique in the file.
+            matches = [g for g, n in names.items() if n == expected]
+            gid = matches[0] if len(matches) == 1 else ""
+        got = by_gid.get(gid) if gid else None
         if got is None:
-            diffs.append(f"{name}: not in the file at all (the file has "
-                         f"{sorted(by_id) or 'nothing'})")
+            diffs.append(f"{name or '(no identifier)'}: not in the file at "
+                         f"all (the file has "
+                         f"{sorted(set(names.values())) or 'nothing'})")
             continue
-        _compare_header(name, want, got, diffs)
-        _compare_layers(name, want, got, diffs, dt)
-        _compare_water(name, want, got, diffs, dt)
-        _compare_measurements(name, want, got, diffs, dt)
-        _compare_soundings(name, want, got, diffs, dt)
+        label = name or gid
+        _compare_header(label, want, got, diffs)
+        _compare_layers(label, want, got, diffs, dt)
+        _compare_water(label, want, got, diffs, dt)
+        _compare_measurements(label, want, got, diffs, dt,
+                              unwritten=unwritten)
+        _compare_soundings(label, want, got, diffs, dt)
     if lab:
-        _compare_lab(xml, lab, diffs)
+        _compare_lab(xml, lab, diffs, unwritten=unwritten)
     return (not diffs), diffs
+
+
+def _notes_for(investigations: Sequence[Investigation],
+               lab: Sequence[LabTest],
+               project: Optional[Project]) -> DiggsWriteNotes:
+    """The writer's notes for these inputs, by running the writer."""
+    got: List[DiggsWriteNotes] = []
+    try:
+        write_diggs(list(investigations) + list(lab), project, notes=got)
+    except Exception:                       # nothing the writer could write
+        return DiggsWriteNotes()
+    return got[0] if got else DiggsWriteNotes()
+
+
+def _read_back_by_feature(xml: str, parse_diggs: Any
+                          ) -> Tuple[Any, Dict[str, str]]:
+    """``parse_diggs`` over a copy of the file whose every exploration is
+    NAMED BY ITS ``gml:id``, and ``{gml:id: the name the file gives it}``.
+
+    The copy keeps every element and every link of the file -- only the
+    explorations' ``gml:name`` changes -- so each feature reads back as a
+    hole of its own however many share a name, and one with no name is
+    still found.
+    """
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(xml)
+    gml = f"{{{NS['gml']}}}"
+    names: Dict[str, str] = {}
+    for feature in ("Borehole", "TrialPit"):
+        for element in root.iter(f"{{{NS['diggs']}}}{feature}"):
+            gid = element.get(f"{gml}id", "")
+            label = element.find(f"{gml}name")
+            names[gid] = ((label.text or "").strip() if label is not None
+                          else "") or gid
+            if label is not None:
+                label.text = gid
+    parsed = parse_diggs(content=ET.tostring(root, encoding="unicode"))
+    return parsed, names
+
+
+def _excused(unwritten: Sequence[Tuple[str, Optional[float], float]],
+             hole: str, depth: Optional[float], value: float) -> bool:
+    """Did the writer say it left THIS value out, at this hole and depth?"""
+    dt = TOLERANCE["depth_m"]
+    for name, at, written in unwritten:
+        if name != (hole or "").strip():
+            continue
+        if (at is None) != (depth is None) or (
+                at is not None and depth is not None
+                and abs(at - depth) > dt):
+            continue
+        if _close(written, value, max(_VALUE_TOL, abs(written) * 1e-6)):
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -2441,8 +2743,15 @@ def _found(pool: Sequence[float], value: float, unit: str) -> bool:
 
 
 def _compare_lab(xml: str, lab: Sequence[LabTest],
-                 diffs: List[str]) -> None:
-    """Every laboratory value, against what the file gives back."""
+                 diffs: List[str],
+                 unwritten: Sequence[Tuple[str, Optional[float], float]] = ()
+                 ) -> None:
+    """Every laboratory value, against what the file gives back.
+
+    A value the writer named in :attr:`DiggsWriteNotes.unwritten` -- a
+    cohesion printed with no unit, which no property can be written in -- is
+    not looked for; the writer's notes say why.
+    """
     in_file = _file_tests(xml)
     dt = TOLERANCE["depth_m"]
     for test in lab:
@@ -2469,7 +2778,8 @@ def _compare_lab(xml: str, lab: Sequence[LabTest],
                     f"that hole and depth came back")
                 continue
             for path, value, unit in wanted:
-                if not _found(pool, value, unit):
+                if not _found(pool, value, unit) and not _excused(
+                        unwritten, hole, want_depth, value):
                     diffs.append(
                         f"{label} ({hole} at {want_depth:.3f} m): "
                         f"{path} = {value:.6g} did not come back")
@@ -2602,8 +2912,15 @@ def _compare_soundings(name: str, want: Investigation, got: Any,
 
 
 def _compare_measurements(name: str, want: Investigation, got: Any,
-                          diffs: List[str], dt: float) -> None:
-    """Every N value, drive and index value, against what came back."""
+                          diffs: List[str], dt: float,
+                          unwritten: Sequence[Tuple[str, Optional[float],
+                                                    float]] = ()) -> None:
+    """Every N value, drive and index value, against what came back.
+
+    A value the writer named in :attr:`DiggsWriteNotes.unwritten` -- a
+    pocket penetrometer printed with no unit, which cannot be written as the
+    kPa its property needs -- is not looked for.
+    """
     by_parameter: Dict[str, List[Tuple[float, float]]] = {}
     for m in got.measurements:
         by_parameter.setdefault(m.parameter, []).append((m.depth_m, m.value))
@@ -2650,6 +2967,9 @@ def _compare_measurements(name: str, want: Investigation, got: Any,
             value = _si_value(raw) if unit else float(raw)
             if value is None:
                 continue                       # the writer said it skipped it
+            if unit and _excused(unwritten, want.investigation_id, top,
+                                 value):
+                continue                       # ... and so it did here
             if not _nearest(by_parameter.get(parameter, []), top, value, dt,
                             tol):
                 diffs.append(

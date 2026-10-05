@@ -530,3 +530,268 @@ class TestTheSoundings:
         assert "blow_count" in xml
         ok, _errors = diggs_schema_gate(xml)
         assert ok
+
+
+# ---------------------------------------------------------------------------
+# what the Foundry run of 2026-10-04 found
+# ---------------------------------------------------------------------------
+
+def _m(value: float) -> Quantity:
+    return Quantity(value=value, unit="m")
+
+
+def _log(name: str, top: float, bottom: float, **over) -> Investigation:
+    """A metric log with two layers and one sample between top and bottom."""
+    middle = round((top + bottom) / 2.0, 2)
+    data = dict(
+        investigation_id=name, depth_unit="m", total_depth=_m(bottom),
+        layers=[Layer(top=_m(top), bottom=_m(middle), description="CLAY",
+                      uscs="CL"),
+                Layer(top=_m(middle), bottom=_m(bottom), description="SAND",
+                      uscs="SP")],
+        samples=[Sample(sample_id="S-1", top=_m(top + 0.5),
+                        bottom=_m(top + 0.95), kind="spt",
+                        water_content=21.0)],
+        spt=[SPT(depth_top=_m(top + 0.5), blows=[4, 6, 7], n=13)])
+    data.update(over)
+    return Investigation(**data)
+
+
+class TestALogInAnUnknownUnit:
+    """One log whose depths are in a unit nobody could read used to cost
+    the whole report its DIGGS file (R11, test pit TP-2)."""
+
+    def _record(self):
+        lost = Investigation(
+            investigation_id="TP-2", kind="test_pit", depth_unit="",
+            units_known=False, pages=[44],
+            layers=[Layer(top=Quantity(value=0.0, unit=""),
+                          bottom=Quantity(value=1.2, unit=""),
+                          description="FILL")])
+        return ReportRecord(investigations=[_log("B-1", 0.0, 6.0), lost],
+                            project=Project(name="A project"))
+
+    def test_the_rest_of_the_report_is_written_and_the_log_is_named(self):
+        record = self._record()
+        notes = []
+        xml = write_diggs(record, notes=notes)
+        assert "B-1" in xml and "TP-2" not in xml
+        (row,) = notes[0].left_out
+        assert row["investigation_id"] == "TP-2" and row["pages"] == [44]
+        assert diggs_schema_gate(xml)[0] is True
+        ok, diffs = diggs_roundtrip_gate(xml, record)
+        assert ok, diffs
+
+    def test_the_record_gets_a_qa_entry_naming_it(self, tmp_path):
+        from report_ingest.writers import write_outputs
+        record = self._record()
+        written = write_outputs(record, tmp_path)
+        assert written.diggs and written.roundtrip_ok is True
+        (entry,) = [e for e in record.qa
+                    if e.where == "diggs.investigations[TP-2]"]
+        assert entry.kind == "skipped" and "TP-2" in entry.detail
+        assert entry.pages == [44]
+        # A plain "diggs" entry is the "no file at all" verdict; this
+        # report HAS a file.
+        assert not [e for e in record.qa if e.where == "diggs"]
+
+    def test_a_lab_test_on_that_log_still_has_a_hole_to_hang_off(self):
+        from report_ingest.model import AtterbergResult, LabTest
+        record = self._record()
+        record.lab_tests = [LabTest(kind="atterberg", investigation_id="TP-2",
+                                    depth_top=_m(0.6),
+                                    result=AtterbergResult(ll=40, pl=20,
+                                                           pi=20))]
+        notes = []
+        xml = write_diggs(record, notes=notes)
+        assert any("left out" in s for s in notes[0].synthesised)
+        assert diggs_schema_gate(xml)[0] is True
+        ok, diffs = diggs_roundtrip_gate(xml, record)
+        assert ok, diffs
+
+
+class TestAnUnnamedLog:
+    """A log that printed no identifier is named in the file by its id, and
+    the gate used to look it up by its empty name (R09, R24, R29)."""
+
+    def test_two_unnamed_logs_round_trip_and_keep_their_empty_ids(self):
+        record = ReportRecord(investigations=[_log("", 0.0, 6.0),
+                                              _log("", 0.0, 9.0)],
+                              project=Project(name="A project"))
+        xml = write_diggs(record)
+        assert diggs_schema_gate(xml)[0] is True
+        ok, diffs = diggs_roundtrip_gate(xml, record)
+        assert ok, diffs
+        assert [inv.investigation_id for inv in record.investigations] \
+            == ["", ""]
+
+    def test_the_gate_still_catches_a_wrong_value_on_one(self):
+        record = ReportRecord(investigations=[_log("", 0.0, 6.0),
+                                              _log("", 0.0, 9.0)])
+        xml = write_diggs(record)
+        record.investigations[1].spt[0].n = 99
+        ok, diffs = diggs_roundtrip_gate(xml, record)
+        assert not ok and any("N=99" in d for d in diffs)
+
+
+class TestTwoLogsWithOneName:
+    """Two logs printing the same identifier -- a continuation sheet read as
+    a log of its own -- are two features with one name; the app's reader
+    merges them by name, and the gate compared each log with the merge
+    (R09 '2', R16 '3': "8 layer(s) came back, 7 went in")."""
+
+    def _record(self):
+        return ReportRecord(investigations=[
+            _log("3", 0.0, 11.0), _log("3", 10.5, 15.1)],
+            project=Project(name="A project"))
+
+    def test_each_is_compared_with_its_own_feature(self):
+        record = self._record()
+        notes = []
+        xml = write_diggs(record, notes=notes)
+        assert diggs_schema_gate(xml)[0] is True
+        ok, diffs = diggs_roundtrip_gate(xml, record)
+        assert ok, diffs
+        assert notes[0].shared_names == ["3"]
+
+    def test_a_wrong_value_on_the_second_is_still_caught(self):
+        record = self._record()
+        xml = write_diggs(record)
+        record.investigations[1].layers[0].top = _m(11.0)
+        ok, diffs = diggs_roundtrip_gate(xml, record)
+        assert not ok and any("layer top" in d for d in diffs)
+
+    def test_a_shared_name_is_a_note_in_the_qa(self, tmp_path):
+        from report_ingest.writers import write_outputs
+        record = self._record()
+        written = write_outputs(record, tmp_path)
+        assert written.roundtrip_ok is True
+        (entry,) = [e for e in record.qa if e.where == "diggs.shared_names"]
+        assert entry.kind == "note" and entry.values == ["3"]
+
+    def test_a_literal_suffix_cannot_collide_with_a_planned_one(self):
+        record = ReportRecord(investigations=[
+            _log("B-1", 0.0, 5.0), _log("B-1", 0.0, 6.0),
+            _log("B-1_2", 0.0, 7.0)])
+        xml = write_diggs(record)
+        ids = [e.get(f'{{{NS["gml"]}}}id')
+               for e in _all(_root(xml), ".//diggs:Borehole")]
+        assert len(ids) == len(set(ids)) == 3
+        assert diggs_schema_gate(xml)[0] is True
+        ok, diffs = diggs_roundtrip_gate(xml, record)
+        assert ok, diffs
+
+    def test_a_gate_handed_one_log_of_several_finds_it_by_name(self):
+        record = ReportRecord(investigations=[_log("B-1", 0.0, 5.0),
+                                              _log("B-2", 0.0, 6.0)])
+        xml = write_diggs(record)
+        ok, diffs = diggs_roundtrip_gate(xml, [record.investigations[1]])
+        assert ok, diffs
+
+
+class TestWaterInAPit:
+    """A TrialPit has no waterStrike in 2.6, so a pit's water level was
+    written nowhere and "came back as nothing" (R13, R28, R30)."""
+
+    def _pit(self, **over):
+        data = dict(investigation_id="TP-1", kind="test_pit",
+                    depth_unit="m", total_depth=_m(3.0),
+                    layers=[Layer(top=_m(0.0), bottom=_m(3.0),
+                                  description="SILTY SAND", uscs="SM")],
+                    water=[WaterLevel(depth=_m(2.1), when="while_drilling"),
+                           WaterLevel(depth=_m(1.8), when="after_hours",
+                                      hours=24.0)])
+        data.update(over)
+        return Investigation(**data)
+
+    def test_it_is_written_validates_and_comes_back(self):
+        from subsurface_characterization import parse_diggs
+        pit = self._pit()
+        notes = []
+        xml = write_diggs([pit], notes=notes)
+        ok, errors = diggs_schema_gate(xml)
+        assert ok, errors[:3]
+        assert "water_depth" in xml and "<waterStrike>" not in xml
+        assert notes[0].water == 2
+        ok, diffs = diggs_roundtrip_gate(xml, [pit])
+        assert ok, diffs
+        (back,) = parse_diggs(content=xml).site.investigations
+        assert back.gwl_depth_m == pytest.approx(2.1)
+
+    def test_a_wrong_water_level_is_caught(self):
+        pit = self._pit()
+        xml = write_diggs([pit])
+        pit.water[0].depth = _m(2.6)
+        ok, diffs = diggs_roundtrip_gate(xml, [pit])
+        assert not ok and any("water level" in d for d in diffs)
+
+    def test_a_pit_that_found_no_water_is_named_not_invented(self):
+        pit = self._pit(water=[WaterLevel(depth=None,
+                                          when="not_encountered")])
+        notes = []
+        xml = write_diggs([pit], notes=notes)
+        assert "water_depth" not in xml
+        assert any("no water encountered" in s for s in notes[0].skipped)
+        assert diggs_schema_gate(xml)[0] is True
+
+
+class TestAValuePrintedWithNoUnit:
+    """A value with no printed unit where its property needs one (R15
+    D-values, R23 pocket penetrometers and a summary row's cohesion)."""
+
+    def test_a_d_value_with_no_unit_is_millimetres_and_comes_back(self):
+        from subsurface_characterization import parse_diggs
+        from report_ingest.model import GradationResult, LabTest
+        test = LabTest(kind="gradation", investigation_id="SB-02",
+                       depth_top=_m(7.0),
+                       result=GradationResult(
+                           d30=Quantity(value=0.091, unit=""),
+                           d60=Quantity(value=0.148, unit=""),
+                           d100=Quantity(value=12.5, unit="")))
+        notes = []
+        xml = write_diggs([test], Project(name="R"), notes=notes)
+        assert diggs_schema_gate(xml)[0] is True
+        assert len(notes[0].assumed) == 3
+        ok, diffs = diggs_roundtrip_gate(xml, [test])
+        assert ok, diffs
+        (hole,) = parse_diggs(content=xml).site.investigations
+        d60 = [m.value for m in hole.measurements if m.parameter == "D60_mm"]
+        assert d60 == [pytest.approx(0.148)]
+
+    def test_a_pocket_penetrometer_with_no_unit_is_left_out_not_guessed(
+            self):
+        pit = Investigation(
+            investigation_id="STP-02", kind="test_pit", depth_unit="m",
+            samples=[Sample(sample_id="1", top=_m(0.65), kind="bulk",
+                            pocket_pen=Quantity(value=8.0, unit="")),
+                     Sample(sample_id="2", top=_m(0.9), kind="bulk",
+                            pocket_pen=Quantity(value=1.5, unit="tsf"))])
+        notes = []
+        xml = write_diggs([pit], notes=notes)
+        assert diggs_schema_gate(xml)[0] is True
+        assert notes[0].unwritten == [("STP-02", pytest.approx(0.65), 8.0)]
+        ok, diffs = diggs_roundtrip_gate(xml, [pit])
+        assert ok, diffs
+        # what WAS written is still checked
+        pit.samples[1].pocket_pen = Quantity(value=2.5, unit="tsf")
+        ok, diffs = diggs_roundtrip_gate(xml, [pit])
+        assert not ok and any("pocket_pen" in d for d in diffs)
+
+    def test_a_summary_rows_cohesion_with_no_unit_is_left_out(self):
+        from report_ingest.diggs_writer import DiggsWriteNotes
+        from report_ingest.model import (
+            LabTest, SummaryRow, SummaryTableResult,
+        )
+        table = LabTest(kind="summary_table", result=SummaryTableResult(rows=[
+            SummaryRow(investigation_id="LB-12", depth_top=_m(0.0),
+                       wc=12.0, c=Quantity(value=21.5, unit=""))]))
+        notes = []
+        xml = write_diggs([table], Project(name="R"), notes=notes)
+        assert diggs_schema_gate(xml)[0] is True
+        assert notes[0].unwritten
+        ok, diffs = diggs_roundtrip_gate(xml, [table])
+        assert ok, diffs
+        # notes that do NOT excuse it: the gate says so
+        ok, diffs = diggs_roundtrip_gate(xml, [table],
+                                         notes=DiggsWriteNotes())
+        assert not ok and any("21.5" in d for d in diffs)

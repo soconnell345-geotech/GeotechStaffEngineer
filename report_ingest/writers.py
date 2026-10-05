@@ -1053,14 +1053,16 @@ def _write_diggs(record: ReportRecord, out: str,
             detail="no explorations and no laboratory tests were read, so no "
                    "DIGGS file was written"))
         return
+    notes: list = []
     try:
-        xml = write_diggs(record)
+        xml = write_diggs(record, notes=notes)
     except Exception as exc:                     # a record DIGGS cannot hold
         record.qa.append(QAEntry(
             kind="skipped", where="diggs",
             detail=f"the DIGGS file could not be written: "
                    f"{type(exc).__name__}: {exc}"))
         return
+    _diggs_notes_to_qa(record, notes[0] if notes else None)
 
     path = os.path.join(out, DIGGS_NAME)
     with open(path, "w", encoding="utf-8") as handle:
@@ -1077,7 +1079,8 @@ def _write_diggs(record: ReportRecord, out: str,
 
     ok, diffs = diggs_roundtrip_gate(xml, record.investigations,
                                      project=record.project,
-                                     lab_tests=record.lab_tests)
+                                     lab_tests=record.lab_tests,
+                                     notes=notes[0] if notes else None)
     written.roundtrip_ok, written.roundtrip_diffs = ok, list(diffs)
     record.qa.append(QAEntry(
         kind="note" if ok else "conflict", where="diggs.roundtrip",
@@ -1086,3 +1089,43 @@ def _write_diggs(record: ReportRecord, out: str,
                 "reading the DIGGS file back does not give the record's own "
                 "values"),
         values=list(diffs)[:5]))
+
+
+def _diggs_notes_to_qa(record: ReportRecord, notes: Any) -> None:
+    """What the DIGGS writer left out or had to assume, into the QA.
+
+    The round-trip gate does not look for a value the writer said it could
+    not write, so the saying has to reach a reviewer somewhere: here. A log
+    LEFT OUT of the file gets an entry of its own naming it; two logs that
+    share a name get one; everything else the writer noted is one entry
+    with a count and the first five reasons. ``where`` never equals plain
+    ``diggs``, which is the "no file at all" verdict.
+    """
+    if notes is None:
+        return
+    for row in notes.left_out:
+        name = row.get("investigation_id") or "an unnamed exploration"
+        record.qa.append(QAEntry(
+            kind="skipped", where=f"diggs.investigations[{name}]",
+            detail=f"{name} is not in the DIGGS file: {row.get('why', '')}",
+            pages=[int(p) for p in row.get("pages") or []]))
+    if notes.shared_names:
+        record.qa.append(QAEntry(
+            kind="note", where="diggs.shared_names",
+            detail="two or more explorations in the DIGGS file share a name; "
+                   "the file keeps them apart by id, but a reader that keys "
+                   "holes by name (the app's own parse_diggs among them) "
+                   "reads each such name as ONE hole",
+            values=list(notes.shared_names)[:5]))
+    # A layer written as a contact (no printed base) is the commonest note
+    # and the least interesting, so it goes last and the five shown are the
+    # ones a reviewer would act on.
+    said = sorted(list(notes.skipped) + list(notes.assumed),
+                  key=lambda line: "no printed base" in line)
+    if said:
+        record.qa.append(QAEntry(
+            kind="note", where="diggs.notes",
+            detail=f"the DIGGS writer left out or qualified {len(said)} "
+                   f"item(s), each for the stated reason (the first five "
+                   f"here); the round-trip gate does not look for them",
+            values=said[:5]))
