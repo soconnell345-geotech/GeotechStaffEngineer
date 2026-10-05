@@ -58,8 +58,12 @@ lab reader's link. **Owner items:** confirm the narrative DRAFT conventions
 `figureCount` includes appendix figures; the report-ingest `label_policy`
 default stays `structural` until more blind pages are hand-labelled (ledger
 `module_work/field_feedback/2026-09-16_report-ingest/MEASUREMENTS.md`,
-"FOUNDRY RUN 1"). **In progress:** a theory-of-operation write-up of the
-harnesses, `module_work/harness_theory/` (owner-requested, 2026-10-04).
+"FOUNDRY RUN 1"). **Read before changing a harness:**
+`module_work/harness_theory/` — a theory of operation of the three harnesses
+(shared machinery, Document Review, the geotech agent, report ingest),
+written from the code and the recorded Foundry runs by an independent agent
+(owner-requested, 2026-10-04); its evidence is kept locally under
+`module_work/field_feedback/2026-10-04_foundry_evidence/raw/`.
 
 ### Before release, 5.32 was: IN PROGRESS — branch `release/5.32.0` (app) + `release/0.11.0` (planlens)
 
