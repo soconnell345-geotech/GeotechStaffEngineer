@@ -1,8 +1,10 @@
-# Session state — Document Review 5.32 and the Foundry test bed (2026-10-02)
+# Session state — Document Review 5.32 and the Foundry test bed (2026-10-02 → 10-05)
 
-Written before a context compaction so the next context loses nothing. The
-short pickup is `HANDOFF.md` §0a-current (top entry); this file is the long
-form. Session "document-review-architecture" (Claude Code, Opus 5.5).
+**CLOSED RECORD.** 5.32.0 and planlens 0.11.0 were released 2026-10-04. This
+file is the day-by-day history of how they were built and measured; nothing
+in it is a live to-do. **The open to-do list is `HANDOFF.md` §0a-current,
+"Open to-dos after 5.32.0".** Section 1 (the owner's standing directions)
+still holds. Session "document-review-architecture" (Claude Code, Opus 5.5).
 
 ## 1. The owner's standing directions (this session and before)
 
@@ -33,7 +35,7 @@ form. Session "document-review-architecture" (Claude Code, Opus 5.5).
   on CRLF files.
 - The owner is not a developer: minimal git/dev explanation.
 
-## 2. Branches (nothing pushed, nothing published)
+## 2. Branches — as they stood on 2026-10-02 (since released: app `v5.32.0`, planlens `v0.11.0`)
 
 **App `release/5.32.0`** (from master 38435c9 = v5.31.0), 18 commits:
 f75b04c Foundry vision door · 0f80ab4 per-page past-conversation restore ·
@@ -211,22 +213,17 @@ run on Foundry needs a numpy-2 repo.
   minimal on the 21 drawing tasks + ~5 text-heavy ones; skip sweep/minimal on
   the long manuals at full res.
 
-## 4. Open items, in order
+## 4. The 2026-10-02 open items — ALL CLOSED
 
-1. Read brief 3's first round (baseline at full res): tokens per task, any
-   regression from the look-first prompt or the markup check; then the other
-   arms or the trimmed plan.
-2. Receive brief 2's hand-back: c/d/e RESULTS.md, stage b on keyed reports,
-   the geotech eval per-question results; investigate the DIGGS read-backs.
-3. Fold the FDE's Responses-route glue into the package.
-4. Decide 5.32 defaults from rc2 (does `sweep`/lean become default?).
-5. Release: planlens 0.11.0 → app 5.32.0 (pin `planlens>=0.11`), docs
-   (CLAUDE.md state block, HANDOFF §0a, DATABRICKS_INSTALL §11 — the
-   docs-currency test), FULL gate in a clean worktree, tags — owner's word.
-6. 5.33 candidates: an image crop/zoom tool (raster images and pasted
-   screenshots have no zoom today) + a Chartography run (license to check on
-   the Hugging Face card; BenchCAD judged not relevant) + a small geotech chart
-   truth set (`module_work/FUTURE_IDEAS.md` "VISION HARNESS BENCHMARK").
+1. Brief 3 read (round 1, then rc3) → `module_work/review_eval_results/
+   2026-10-04_foundry_5.32.0rc3/NOTES.md`, REVIEW_HARNESS run 4.
+2. Brief 2 hand-back received and read → MEASUREMENTS "FOUNDRY RUN 1";
+   DIGGS read-backs fixed (f61505d).
+3. Responses route folded into the package (3ef5e98).
+4. Defaults decided: every review switch stays OFF.
+5. Released 2026-10-04: planlens 0.11.0, app 5.32.0 (gate in HANDOFF).
+6. The 5.33 candidates moved to `HANDOFF.md` §0a-current, "Open to-dos after
+   5.32.0".
 
 ## 5. Field feedback of 2026-10-01
 

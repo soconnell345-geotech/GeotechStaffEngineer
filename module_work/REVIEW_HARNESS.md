@@ -24,7 +24,7 @@ approved plan: `C:/Users/socon/.claude/plans/we-ve-been-working-on-synchronous-l
    prompt about tool mechanics rather than how a reviewer works.
 6. **Citations one page early**: tools number pages from 0, nothing said +1.
 
-## What was built (UNRELEASED — on top of master after 5.29.1)
+## What was built (RELEASED in 5.30.0, 2026-09-27; extended in 5.31.0 and 5.32.0)
 
 Everything that changes behaviour is behind a switch in
 `funhouse_agent/review_flags.py`, OFF by default. With every switch off the page
@@ -144,15 +144,19 @@ stack (deepagents 0.7.13, langchain 1.3.18) 105 / 2; planlens 1,430.
 job shapes (small review / large single-scope review with a digest /
 mega-reviews by discipline), shape-1 refinements (geometry tools on the review
 page, contact sheets standard above ~20 pages, look policy, the finding
-format), and milestones M0-M4. The items below are its M0.
+format), and milestones M0-M4.
 
-1. Owner: run the probe and a first small suite run on the cluster (baseline vs lean).
-2. Full run of all arms; decide which switches become defaults.
-3. Phase 5 (after numbers): rewrite the review prompt around the review method
-   (scope, governing documents, completeness, coordination, cross-references,
-   severity, a findings format); drop every incident rule the suite does not need.
-4. Candidates to earn their place on the suite: a cross-reference resolver
-   (detail bubbles, sheet index vs sheets present); revision compare.
+**M0 is DONE** (runs 1–4 below): every arm measured on Sol and GPT-5.4; the
+5.32.0 decision was to keep every switch off. **The open to-do list is
+`HANDOFF.md` §0a-current ("Open to-dos after 5.32.0")** — one list for the
+whole project. The review-harness items on it: measure the vision call's box
+precision against the synthetic fixtures (no model); the look-alike /
+self-verification and box-carrying boundary found by
+`module_work/harness_theory/`; an image crop/zoom tool for raster uploads;
+then, as before, Phase 5 (rewrite the review prompt around the review method
+and drop every incident rule the suite does not need) and the candidates that
+must earn their place on the suite (a cross-reference resolver; revision
+compare).
 
 ## Results ledger
 
@@ -242,3 +246,30 @@ of 24 drawn-lettering sheets carry a rare FPG callout; its look-alike FBG is
 on every sheet) and `produce-circle-tags` (rings scored on their targets) —
 for the 5.32 Foundry run: baseline vs `sweep`, from local wheels, before any
 publishing.
+
+**Run 4 — 2026-10-02/04, Foundry, GPT-5.6 Sol at FULL resolution (Responses
+route), 5.32.0rc2/rc3, 37 tasks.** Files and the full reading:
+`module_work/review_eval_results/2026-10-04_foundry_5.32.0rc3/` (NOTES.md,
+RESULTS_main / _repeats / _resolution). Original 35 ran on rc2 and were
+rescored on rc3; the two new tasks ran 3 times per arm on rc3 with
+`find_like` hidden (OpenCV aborts the process on that host). Three more check
+faults found and fixed (LaTeX numbers, "pages:" and bulleted page lists).
+
+| arm | 35 originals | 2 new tasks × 3 | input tokens (orig / new) | minutes (orig / new) |
+|---|---|---|---|---|
+| baseline | **35/35** | 5/6 | 4.53M / 2.38M | 45.5 / 30.5 |
+| sweep | 35/35 | 6/6 | 10.81M / 2.50M | 124.6 / 11.1 |
+| minimal | 33/35 | 4/6 | 18.45M / 9.46M | 67.6 / 34.2 |
+| baseline at HIGH (~768 px) | 15/15 drawn-lettering | 1/2 | 0.88M / 0.70M | 18.6 / 20.8 |
+
+**Reading — and the 5.32.0 decisions.** Switches stay OFF: sweep ties
+baseline at 2.4x the tokens and 2.7x the time, and its extra new-task pass is
+the markup case, not coverage. `minimal` (looking only) loses what the text
+and markup tools carry (a whole-set spec search; who wrote a reply) at ~4x
+the tokens. Full size kept: HIGH added false pages on the 24-sheet task. The
+one baseline miss: told six times its rings were misplaced, the agent WIDENED
+them until the vision check confirmed (70–125 pt rings round 10 pt tags) —
+the check now also asks whether a mark is drawn close (unverified live:
+`module_work/LIVE_TEST_QUEUE.md` item 1). Page 19 (FBG read as FPG) is named
+in most runs: a look-alike the reader "verifies" with the same kind of call
+that misread it (`module_work/harness_theory/document_review.md`).

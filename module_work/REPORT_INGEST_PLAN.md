@@ -422,8 +422,13 @@ policy cannot mean one thing in the measurement and another in production.
 `ReportRecord.page_labels` carries the chosen label, its confidence, every
 voter and the `agreed` flag per page; a split the review does not settle is a
 `QAEntry(kind="label_disagreement")`. This is item 1 of "Disagreement as a
-signal" in `FUTURE_IDEAS.md`, and what is left of it is the cluster run that
-says which policy to keep.
+signal" in `FUTURE_IDEAS.md`. **Measured 2026-10-04** (ledger
+`module_work/field_feedback/2026-09-16_report-ingest/MEASUREMENTS.md`,
+"FOUNDRY RUN 1"): on the in-sample reports the rules alone beat every policy
+(0.896 vs structural 0.878, structural + review 0.863); on 60 never-opened
+pages the vote beats the rules by two pages. Not enough to decide: the
+default stays `structural` until more blind pages are hand-labelled (owner
+item in `HANDOFF.md` §0a-current).
 
 ### A report bound inside a report is its own record (added after 5.24.0)
 

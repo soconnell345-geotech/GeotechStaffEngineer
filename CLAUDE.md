@@ -1,6 +1,6 @@
 # GeotechStaffEngineer
 
-## READ-FIRST TRIGGERS (this file is 73 KB — these four lines are the ones that matter)
+## READ-FIRST TRIGGERS (this file is 73 KB — these five lines are the ones that matter)
 
 This file and `MEMORY.md` are the only docs auto-loaded into your context.
 Everything else below is reached ONLY if you go and read it. When one of these
@@ -10,7 +10,8 @@ answer was re-derived from scratch at least twice:
 | When the owner... | Read this FIRST |
 |---|---|
 | pastes a `%pip install` / cluster install log, or asks "any concerns?" about one | `docs/DATABRICKS_INSTALL.md` — do NOT re-derive the numpy cascade, the seven conflict warnings, or whether a new major version is safe. They are settled and written down. |
-| asks what state things are in, or you are picking up work | `HANDOFF.md` §0a-current — authoritative pickup list |
+| asks what state things are in, or you are picking up work | `HANDOFF.md` §0a-current — authoritative pickup list, with THE open to-do list at its top |
+| asks you to change an agent or pipeline (prompts, tools, vision, report-ingest stages, scorers) | `module_work/harness_theory/` — how the three harnesses actually work, from the code and the recorded Foundry runs, with their known failure modes and open questions |
 | asks about a number published in planlens docs/README | `module_work/drawing_ground_truth/doc_claims_check.py` — if a number disagrees with that script, the DOCUMENT is wrong |
 | bumps the version / cuts a release | `webapp/tests/test_docs_currency.py` will fail until CLAUDE.md's state block, HANDOFF §0a-current and the install guide's history table each name the new version. Refresh the prose, don't just paste the version in. |
 

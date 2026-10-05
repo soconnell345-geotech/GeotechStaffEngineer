@@ -32,19 +32,28 @@ to do if it fails.
      `planlens.opencv.available()` there and report its reason.
 3. **Vision call cap of 8** (app be742b0). No separate run: watch the minutes
    column of item 1 against the same tasks on 5.31 (cap changes timing only).
-4. **Narrative "mention" conventions read from the answer keys** (app
-   8e428ce; still DRAFT for the owner).
-   - Run: `score_on_cluster(stages=("narrative",), truth_dir=..., ...)` on the
-     eight keyed reports (~0.4M input tokens on GPT-5.4).
-   - Pass: siteResponseMention right on most of 8 (was 0/8 on 2026-10-02),
-     soilCorrosion better than 2/6, geophysicalTestingMention still 8/8,
-     overall recall/precision not below 75 % / 77 %.
-   - Fail: the owner's reading of the fields differs — rule in
-     `report_ingest/narrative_glossary.py`, one place.
-5. **Lab reader link** — PENDING the cause (the Foundry run files asked for
-   2026-10-04): once fixed, `stages=("lab",)` on the 31 keyed sheets; pass =
-   open-set link back near the blind set's 100 % and gradation sheets
-   R17_p114 / R28_p176 / R28_p177 back above 80 %.
+4. **Report-ingest stage d on 5.32: narrative conventions, lab link, log
+   floor** — one run answers three questions (~1.1M input tokens on GPT-5.4;
+   the Foundry stage d of 2026-10-02 is the comparison).
+   - Run: `score_on_cluster(stages=("logs", "lab", "narrative"),
+     truth_dir=..., ...)` on the keyed items, into a NEW out_dir (5.32 run
+     files keep each item's records and misses; old ones do not).
+   - Narrative (conventions re-read from the answer keys: 8e428ce, 571bcfa,
+     d7d6652 — still DRAFT for the owner). Pass: siteResponseMention right on
+     most of 8 (was 0/8), soilCorrosion better than 2/6, propertyType no
+     longer empty on outside projects, geophysicalTestingMention still 8/8,
+     overall recall/precision not below 75 % / 77 %. Fail → the owner's
+     reading differs; the rule is in `report_ingest/narrative_glossary.py`.
+   - Lab link (open set 55 % vs blind 100 % on Foundry; the merge was NOT the
+     cause; the scorer's exact-string hole match was fixed in 5e70823). Pass:
+     open-set link near the blind set's, gradation R17_p114 / R28_p176 /
+     R28_p177 above 80 %. Fail → the run files now show the boring and depth
+     the model wrote (`after.record`, the `link` misses): read them before
+     changing anything.
+   - Logs: recovery printed as a length now scores (46be026). Pass: blind
+     recovery no longer 0/15-ish; each run file's `floor_alone` (via
+     `report_ingest.log_scoring.rescore_saved`) shows whether the floor held
+     what the grid's cells did (R30 N values, R13 water contents).
 
 ## Done
 

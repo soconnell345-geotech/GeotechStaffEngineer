@@ -6,15 +6,89 @@ detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-10-04, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-10-05, supersedes everything below)
+
+### Open to-dos after 5.32.0 — THE list (2026-10-05)
+
+One list for the whole project; other notes point here. Nothing is in
+progress: no branch is open, no Foundry brief is running, both repos are
+clean on `master` / `main` at the release.
+
+**A. Owner — the test run**
+1. Install 5.32.0: `%pip install "geotech-staff-engineer==5.32.0"` (brings
+   planlens 0.11.0). If the Nexus mirror lags, the release wheels are in
+   `../foundry_handoff/` (install planlens first).
+2. Run the small live checks in `module_work/LIVE_TEST_QUEUE.md` on Funhouse
+   (the markup check's "drawn close" question; `find_like` on a normal host;
+   the narrative conventions; the lab reader's link). Tick them off there.
+3. Ask CfA whether the Tiny Apps App Service enforces FIPS mode. If it does,
+   OpenCV cannot load there and `find_like` hides itself (by design since
+   5.32.0); the rest of the app is unaffected.
+
+**B. Owner — decisions only the owner can make**
+4. Confirm or correct the seven DRAFT narrative conventions in
+   `report_ingest/narrative_glossary.py` — especially the mention fields
+   ("was it done") and `soilCorrosion` ("what was found"), which were re-read
+   from the owner's own answer keys on 2026-10-04.
+5. Define `structureCount` (what counts as a structure — the reader
+   over-counts) and whether `figureCount` includes appendix figures.
+6. Report-ingest page labels: `label_policy` stays `structural` and
+   `review_mode` stays `disagreements`, but neither is settled — the rules win
+   on the reports they were tuned on, the vote wins by 2 pages of 60 blind,
+   and the disagreement review LOST 1.5 points on Foundry. Deciding needs a
+   few hundred more hand-labelled pages from the blind reports (ledger
+   `module_work/field_feedback/2026-09-16_report-ingest/MEASUREMENTS.md`,
+   "FOUNDRY RUN 1").
+7. The calculation and sounding readers have no blind test set: hand truth
+   for a few unseen items, if those readers matter.
+8. `slope_stability`: expose the Ito–Matsui stabilizing-pile force as its own
+   method? It exists but only inside the full slope analyses (eval SPL-3).
+
+**C. Next build — candidates, none started** (judge each on the suite; no
+rules from single examples)
+9. An image crop/zoom tool for raster uploads and pasted screenshots (they
+   have no zoom today) — `module_work/FUTURE_IDEAS.md` "VISION HARNESS
+   BENCHMARK", which also holds the Chartography run (check its licence) and
+   a small geotech chart truth set.
+10. The vision side-call boundary (`module_work/harness_theory/`, finding 1):
+    first MEASURE the vision call's box precision against the synthetic tag
+    fixtures (a script, no model calls); then consider page-coordinate
+    locations, or the reasoning model looking itself, as switched arms.
+11. Geotech catalog: five `slope_stability` method descriptions are longer
+    than the 8,000-character result cap and reach the model cut off
+    (`module_work/harness_theory/geotech_agent.md`).
+12. The geotech eval runs a configuration users never get (no calc
+    sub-agent, no step cap, no conversation history) — decide whether to
+    align it (same document).
+13. Report-ingest small items: ~1,080 QA entries per report with nothing
+    ranking them; the lab merge's specimen pairing does not fold leading
+    zeros ("B-07" vs "B-7"); continuation sheets that repeat a hole id are not
+    merged by the reconciler (R16); `score_on_cluster` demands a prompter
+    even for the no-model `vote` stage; `figureCount` could come from the page
+    labels instead of the reader.
+14. Review harness, as before: Phase 5 (the review prompt rewritten around the
+    review method, every incident rule the suite does not need dropped); a
+    cross-reference resolver and revision compare only if they earn a suite
+    task (`module_work/REVIEW_HARNESS.md` "Next").
+
+**D. Foundry (the measurement bed)** — no brief running; briefs 1–3 are done
+(`../foundry_handoff/`). When a big measurement is next needed: the geotech
+eval rerun needs a numpy-2 repository (numpy 1.26 there broke 17 questions);
+a stage-d report-ingest rerun on 5.32 (run files now keep the records)
+answers the lab-link and log-floor questions. The package now speaks
+Foundry's Responses route itself (`GEOTECH_FOUNDRY_ROUTE`); the FDE's glue is
+still useful for its retry/throttle and per-task process isolation.
+
+**Open questions** about how the harnesses behave are listed at the end of
+each document in `module_work/harness_theory/` — read that folder before
+changing a harness.
 
 ### 5.32.0 RELEASED 2026-10-04 (tag `v5.32.0`) with planlens 0.11.0 (tag `v0.11.0`)
 
 **Released on the owner's word** ("When you're done with code tonight, go
 ahead and publish. I'd like to give it a test run tomorrow"), after the
 Foundry measurements of 5.31 and of 5.32 itself (rc2/rc3). **Pin raised to
-`planlens>=0.11`; no new third-party package.** Long-form state:
-`module_work/SESSION_2026-10-02_doc-review-5.32.md`.
+`planlens>=0.11`; no new third-party package.**
 
 **Release gate, in CLEAN worktrees of the release commits (app d903d54,
 planlens 059bc79 = PyPI 0.11.0), exit codes 0:** deep + suite + digest +
@@ -33,7 +107,19 @@ the two new ones; `sweep` ties at 2.4x the tokens and 2.7x the time; the
 at ~4x the tokens; full-size images kept (HIGH added false pages on the
 24-sheet task).
 
-**In 5.32.0 beyond the list below (after rc2/rc3):** a cap of 8 vision calls
+**What 5.32.0 carries.** From the 2026-10-01 field session (tags missed
+across an 85-sheet set; circles drawn in empty paper — record
+`module_work/field_feedback/2026-10-01_doc-review-penetrations_v5.31.0/`):
+review prompts LOOK at every page in scope (text tools are evidence, never a
+filter; say what was covered); `annotate_document` checks every mark placed by
+location (`funhouse_agent/markup_check.py`); planlens `circle` markups,
+visible `label`s, `view` + `image_box` anchors converted in the writer,
+`box`/`page_bbox` accepted for `bbox`; screenshot paste; SharePoint browser
+addresses; no auto-orientation for a mid-conversation screenshot; "Find a
+past conversation" per page; the Foundry vision door; suite tasks
+`set-long-rare-tag` and `produce-circle-tags`, the `minimal` arm, a "failed
+calls" column; stale prompt notes fixed; the ingest stage honours
+`triage_model`. **After rc2/rc3, from the Foundry runs:** a cap of 8 vision calls
 in flight per process (`GEOTECH_VISION_MAX_INFLIGHT`); planlens test-loads
 OpenCV in a child process and the app hides `find_like` where it cannot load
 (a FIPS host aborted the interpreter); the markup check also asks whether a
@@ -50,69 +136,25 @@ Foundry, narrative conventions re-read from the owner's answer keys (DRAFT).
 Suite checks: LaTeX numbers, "pages:" and bulleted page lists;
 `score_review_suite(rescore=True)`.
 
-**Not yet verified live → `module_work/LIVE_TEST_QUEUE.md`** (owner: small
-checks run on Funhouse, not a new Foundry round): the markup check's
-"close" question, find_like on a normal host, the narrative conventions, the
-lab reader's link. **Owner items:** confirm the narrative DRAFT conventions
-(`report_ingest/narrative_glossary.py`); define `structureCount` and whether
-`figureCount` includes appendix figures; the report-ingest `label_policy`
-default stays `structural` until more blind pages are hand-labelled (ledger
-`module_work/field_feedback/2026-09-16_report-ingest/MEASUREMENTS.md`,
-"FOUNDRY RUN 1"). **Read before changing a harness:**
-`module_work/harness_theory/` — a theory of operation of the three harnesses
-(shared machinery, Document Review, the geotech agent, report ingest),
-written from the code and the recorded Foundry runs by an independent agent
-(owner-requested, 2026-10-04); its evidence is kept locally under
-`module_work/field_feedback/2026-10-04_foundry_evidence/raw/`.
+What is not yet verified live, and every owner item, is in the to-do list
+above. **Also written 2026-10-04:** `module_work/harness_theory/` — a theory
+of operation of the three harnesses (shared machinery, Document Review, the
+geotech agent, report ingest), from the code and the recorded Foundry runs,
+by an independent agent at the owner's request; its evidence is kept locally
+under `module_work/field_feedback/2026-10-04_foundry_evidence/raw/`
+(gitignored).
 
-### Before release, 5.32 was: IN PROGRESS — branch `release/5.32.0` (app) + `release/0.11.0` (planlens)
-
-**Owner: one big build for 5.32, and NOTHING is published until the Foundry
-results are in — for 5.31's switches AND for 5.32 itself.** The suite moved to
-Palantir Foundry (the owner's Funhouse budget is small): the AI FDE runs it as
-a lightweight transform (briefs `../foundry_handoff/AI_FDE_BRIEF.md` = Document
-Review suite on GPT-5.6 Sol / GPT-5.4; `AI_FDE_BRIEF_2.md` = report-ingest
-first live checks + the 106-question geotech eval). Foundry facts: memory
-`reference-foundry-model-route` (no ORIGINAL image detail; GPT-5.4 only via
-Responses; 55 rpm). First Foundry numbers: `module_work/REVIEW_HARNESS.md`
-ledger, run 2.
-
-On the branches (each committed with tests; planlens 1st):
-- planlens: `circle` markups + visible `label`s; `view` + `image_box`
-  anchors converted in the writer; `box`/`page_bbox` accepted for `bbox`;
-  the drawing-sheet advice wording (from `fix/advice-names-no-missing-tools`).
-- app: Foundry vision door in `webapp/palantir_sdk_engine.py`
-  (`from_handles`); "Find a past conversation" per page; RESULTS.md "failed
-  calls" column; `annotate_document` CHECKS every mark placed by location
-  (`funhouse_agent/markup_check.py`); review prompts LOOK first (text tools
-  are evidence, never a filter; say what you covered) — owner direction;
-  SharePoint browser addresses; no auto-orientation for a mid-conversation
-  screenshot; paste a screenshot (chat box / ws uploader, verified live);
-  suite task `produce-circle-tags` + check `markups_on_targets`; the peer
-  session's stale-prompt list (deep reviewer prompt, structural refs,
-  seismic md, calc delegation). Field record:
-  `module_work/field_feedback/2026-10-01_doc-review-penetrations_v5.31.0/`.
-
-**Since then (2026-10-02):** Foundry run 3 (5.31, GPT-5.6 Sol, full suite) —
-after two check faults were fixed and every run rescored — gave baseline
-35/35: the suite is saturated on Sol except for coverage, so 5.32 added
-`set-long-rare-tag` (24-sheet coverage) and `produce-circle-tags`, plus the
-`minimal` arm (`funhouse_agent/deep/minimal_agent.py`: looking-only, a
-measuring stick). The FDE found that on Foundry HIGH image detail CAPS Sol at
-~768 px and AUTO is full resolution (Responses route ≥ 4096 px); the package
-wrapper now sends `original` as AUTO. Also fixed: the ingest stage's
-`triage_model` (it was silently the main model). **Wheels on test:**
-planlens `0.11.0rc1` + app `5.32.0rc2` (built from the branches, NOT
-published; `../foundry_handoff/`), brief `AI_FDE_BRIEF_3.md`: baseline vs
-sweep vs minimal, 37 tasks, Sol at full resolution via the FDE's Responses
-glue (fold `foundry_full_res.py` / `foundry_responses_model.py` into the
-package when they come back). The full gate has NOT run on this branch since
-the low-memory stop (funhouse_agent 29 % clean, planlens full suite not run).
-
-**Before release:** the rc2 Foundry results decide which review switches
-become defaults; then planlens 0.11.0 → app 5.32.0 (pin `planlens>=0.11`),
-docs (CLAUDE.md state block, this section, DATABRICKS_INSTALL §11), the FULL
-gate in a clean worktree, tag — on the owner's word.
+**How 5.32 was built and measured** (the record, not to-dos): branches
+`release/5.32.0` / `release/0.11.0` from 2026-10-01; nothing published until
+Foundry had measured it — the AI FDE (Claude inside the owner's Foundry) ran
+three briefs (`../foundry_handoff/AI_FDE_BRIEF*.md`): the review suite on
+5.31 (runs 2–3) and on 5.32.0rc2/rc3 (run 4) — `module_work/REVIEW_HARNESS.md`
+results ledger; report-ingest stages b–e and the 106-question geotech eval on
+5.31 — `module_work/field_feedback/2026-09-16_report-ingest/MEASUREMENTS.md`
+"FOUNDRY RUN 1". Foundry facts: memory `reference-foundry-model-route` (HIGH
+caps images at ~768 px, AUTO is full size; GPT-5.4 only on the Responses
+route; numpy 1.26 there; OpenCV aborts under FIPS). Day-by-day state:
+`module_work/SESSION_2026-10-02_doc-review-5.32.md`.
 
 ### 5.31.0 RELEASED 2026-09-29 (tag `v5.31.0`) — DOCUMENT REVIEW M1, SWITCHED
 
