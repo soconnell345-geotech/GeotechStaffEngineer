@@ -102,17 +102,25 @@ CONVENTIONS: Tuple[Convention, ...] = (
              "response (ground response) analysis was performed; a code "
              "site class, site coefficients, or a shear-wave velocity "
              "profile used to pick the site class is not one, and the "
-             "answer is then no. hazardAnalysisMention is yes only when a "
-             "site-specific seismic hazard analysis, probabilistic or "
-             "deterministic, was performed or presented; ground motions "
-             "read from code maps or a hazard tool are not one.",
+             "answer is then no. hazardAnalysisMention is yes when the "
+             "report presents a seismic HAZARD analysis or its results: a "
+             "site-specific probabilistic or deterministic analysis, hazard "
+             "curves or a deaggregation (for example from the USGS unified "
+             "hazard tool), or a table of nearby faults with their "
+             "distances. It is no when the seismic values are only code "
+             "design values (a design-map web application, the site class "
+             "and its coefficients) or when the report's 'geologic hazards' "
+             "are liquefaction, landslide or ground rupture alone.",
         fields=("geophysicalTestingMention", "siteResponseMention",
                 "hazardAnalysisMention"),
         status="DRAFT",
         why="the owner's answer keys (checked 2026-10-04): "
             "siteResponseMention is 'no' on all eight keyed reports, "
             "including two with MASW / ReMi surveys; geophysicalTestingMention "
-            "is 'yes' where an earlier firm's MASW was used. The first draft "
+            "is 'yes' where an earlier firm's MASW was used; "
+            "hazardAnalysisMention is 'yes' for USGS hazard maps (R06) and a "
+            "deaggregation with a fault table (R36), 'no' for the design-map "
+            "web application alone (R37). The first draft "
             "(answer yes wherever the topic is discussed) pushed the reader "
             "the wrong way: the Foundry run of 2026-10-02 still had "
             "siteResponseMention wrong on 7 of 8"),
