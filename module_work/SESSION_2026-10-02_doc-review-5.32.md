@@ -169,6 +169,15 @@ run on Foundry needs a numpy-2 repo.
   tokens; sweep gains nothing on the originals at 2x tokens / 2.7x time;
   resolution changed no score (full size +15 % tokens, ~15 % faster). Held
   for rc3: produce-circle-tags, the remaining new-task runs, all repeats.
+- Brief 3 COMPLETE on rc3 (2026-10-04): `module_work/review_eval_results/
+  2026-10-04_foundry_5.32.0rc3/NOTES.md`. After every check fault (one more:
+  a bulleted page list, 7e605ba): originals baseline 35, sweep 35, minimal
+  33; new tasks ×3 baseline 5/6, sweep 6/6, minimal 4/6, baseline_high 1/2.
+  baseline_r2/produce-circle-tags: the agent WIDENED misplaced rings until the
+  check confirmed them (70-125 pt rings round 10 pt tags) — the check now
+  asks whether a box/circle is drawn closely round the thing (4ea4bd0,
+  unverified live). No crash on rc3. Recommendation: defaults unchanged
+  (sweep ties at 2.4x tokens / 2.7x time), full size kept.
 - Brief 2 hand-back RECEIVED 2026-10-03 (scratchpad `brief2/`, never
   committed): geotech eval — 17 questions hit numpy-2-only names on 1.26.4
   (`np.trapezoid` SOE-1/2; `np.long` from a dependency in 15 more), 1 missing
