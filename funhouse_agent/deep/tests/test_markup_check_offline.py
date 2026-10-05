@@ -118,6 +118,34 @@ def test_a_misplaced_mark_is_caught_and_a_right_one_confirmed(tmp_path,
     assert all("GCE" in p and "label" in p for p in engine.prompts)
 
 
+def test_a_ring_round_the_right_thing_but_far_too_wide_is_not_confirmed(
+        tmp_path, monkeypatch):
+    """Foundry rc3 (2026-10-04): an agent widened misplaced rings until each
+    took its tag in somewhere, and the check confirmed rings ten times the
+    tag's size. Encloses-but-not-close is reported, not confirmed."""
+
+    class WideEngine:
+        def __init__(self):
+            self.prompts = []
+
+        def analyze_image(self, image_bytes, prompt):
+            self.prompts.append(prompt)
+            return json.dumps({"encloses": True, "inside": "GCE",
+                               "close": False, "sure": True})
+
+    engine = WideEngine()
+    tools, handle = _tools(engine, tmp_path, monkeypatch)
+    big = [TAG[0] - 60, TAG[1] - 40, TAG[2] + 60, TAG[3] + 40]
+    out = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "wide.pdf", "markups": [
+            {"kind": "circle", "page": 0, "label": "GCE", "bbox": big}]}))
+    check = out["check"]
+    assert check["confirmed"] == 0 and len(check["misplaced"]) == 1
+    assert "wider" in check["misplaced"][0]["seen"]
+    assert "zoom until you can box the thing itself" in check["note"]
+    assert "closely round" in engine.prompts[0]
+
+
 def test_all_marks_right_says_so(tmp_path, monkeypatch):
     tools, handle = _tools(PixelEngine(), tmp_path, monkeypatch)
     out = json.loads(tools["annotate_document"].invoke({

@@ -51,10 +51,21 @@ _PROMPT = (
     "{word} has been drawn on it{label_note}. The question is whether the "
     "mark is in the right place.\n\nThe mark is meant to {verb}: {expected}\n\n"
     "Look at what is actually {where} the red {word} — not at the mark's own "
-    "red label text beside it. Reply with ONLY a JSON object: "
+    "red label text beside it.{close_q} Reply with ONLY a JSON object: "
     '{{"encloses": true or false, "inside": "the exact text or symbol {where} '
     "the red {word}, or 'nothing' if it is blank paper or linework only\", "
-    '"sure": true or false}}')
+    '{close_key}"sure": true or false}}')
+
+#: Enclosing marks are also asked whether they are drawn CLOSE round the
+#: thing. Foundry rc3 run (2026-10-04): told six times that its rings were
+#: misplaced, an agent widened them until each took in its tag somewhere —
+#: rings 70-125 pt across round 10 pt tags — and the check confirmed them.
+#: A ring that wide on a dense sheet does not say which thing it means.
+_CLOSE_Q = (" Also say whether the {word} is drawn closely round that one "
+            "thing (the thing fills a fair part of it), or takes in a much "
+            "wider area — several times the thing's size, or other things "
+            "too.")
+_CLOSE_KEY = '"close": true or false, '
 
 
 def _rows_with_specs(result: Dict[str, Any], specs: Sequence[Any]
@@ -119,6 +130,7 @@ def _check_one(pdf_bytes: bytes, item: Dict[str, Any], engine) -> Dict[str, Any]
     out = {"index": item["index"], "page": row.get("page"),
            "pdf_page": (row.get("page") or 0) + 1, "kind": kind,
            "names": _expected(spec), "bbox": row.get("bbox")}
+    encloses_kind = kind in ("box", "circle")
     try:
         image, _info = vision_view.render_view(
             pdf_bytes, page=int(row.get("page") or 0), bbox=_crop_box(row),
@@ -129,6 +141,8 @@ def _check_one(pdf_bytes: bytes, item: Dict[str, Any], engine) -> Dict[str, Any]
                         if spec.get("label") else ""),
             verb=("point at" if kind == "callout" else "enclose"),
             where=("at the tip of" if kind == "callout" else "inside"),
+            close_q=(_CLOSE_Q.format(word=word) if encloses_kind else ""),
+            close_key=(_CLOSE_KEY if encloses_kind else ""),
             expected=_expected(spec)))
     except Exception as exc:  # noqa: BLE001 - a failed check is reported
         out.update(verdict="not_checked",
@@ -140,7 +154,12 @@ def _check_one(pdf_bytes: bytes, item: Dict[str, Any], engine) -> Dict[str, Any]
         return out
     encloses, sure = got.get("encloses"), got.get("sure")
     out["seen"] = str(got.get("inside") or "")[:120]
-    if encloses is True:
+    if encloses is True and encloses_kind and got.get("close") is False:
+        # Round the right thing, but drawn so wide it does not single it out.
+        out["verdict"] = "misplaced" if sure is not False else "unsure"
+        out["seen"] = (out["seen"] + " — but the mark is drawn far wider "
+                       "than it")[:160]
+    elif encloses is True:
         out["verdict"] = "confirmed" if sure is not False else "unsure"
     elif encloses is False:
         out["verdict"] = "misplaced" if sure is not False else "unsure"
@@ -193,7 +212,9 @@ def check_marks(output_pdf: str, result: Dict[str, Any], specs: Sequence[Any],
         "the file over as it is: find each one again (look at the page, take "
         "the view + image_box of what you find) and write the copy again with "
         "append=false, leaving out any mark you cannot place. A mark "
-        "written from memory or by estimate lands in the wrong place.")
+        "written from memory or by estimate lands in the wrong place, and "
+        "widening a mark until it takes the thing in does not place it: zoom "
+        "until you can box the thing itself.")
     return block
 
 
