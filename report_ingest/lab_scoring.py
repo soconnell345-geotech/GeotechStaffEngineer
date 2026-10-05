@@ -54,7 +54,7 @@ __all__ = [
     "find", "number", "quantity", "reported", "depth_unit_of", "report_of",
     "pages_of", "sieve_points", "grading_in", "curve_in", "split_unit",
     "expectations_for", "score_tables", "score_record", "score_one_sheet",
-    "table_numbers",
+    "table_numbers", "rescore_saved",
 ]
 
 #: A specimen is linked when its depth lands within this, in metres. The log
@@ -561,7 +561,11 @@ class Score:
         return self
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"found": self.found, "total": self.total, "rate": self.rate}
+        # The misses travel with the counts (the first 25): a run file that
+        # says only "link 0/1" cannot say WHICH boring the reader wrote, and
+        # the Foundry run of 2026-10-02 could not be diagnosed from its files.
+        return {"found": self.found, "total": self.total, "rate": self.rate,
+                "misses": list(self.misses[:25])}
 
 
 @dataclass
@@ -591,6 +595,11 @@ class LabScore:
     kept: int = 0
     added: int = 0
     reconciled: int = 0
+    #: What the reader recorded for this sheet — the merged tests and the
+    #: model's own — so a check fixed after a run can be re-applied to the
+    #: run file with no model call (:func:`rescore_saved`).
+    record: Optional[List[Dict[str, Any]]] = None
+    model_record: Optional[List[Dict[str, Any]]] = None
 
     def score(self, name: str) -> Score:
         return self.scores.setdefault(name, Score())
@@ -617,6 +626,7 @@ class LabScore:
             "model_alone": self.model_alone,
             "disagreements": self.disagreements, "kept": self.kept,
             "added": self.added, "reconciled": self.reconciled,
+            "record": self.record, "model_record": self.model_record,
         }
 
 
@@ -691,12 +701,21 @@ def score_tables(truth: Dict[str, Any], doc: Any,
 # AFTER: what the reader's records hold
 # ---------------------------------------------------------------------------
 
+def _hole(text: Any) -> str:
+    """A boring / pit identifier folded for MATCHING: "TP-24", "TP 24" and
+    "tp24" are one hole, and so are "SB-02" and "SB-2". The lab scorer
+    compared them as exact strings, so a test linked to "LB-2" was not the
+    key's "LB2" and every value on it counted as missed."""
+    from report_ingest.reconciler import fold_id
+    return re.sub(r"(?<!\d)0+(?=\d)", "", fold_id(text))
+
+
 def _tests_near(tests: Sequence[Any], expect: Expectation) -> List[Any]:
     """The records that belong to this specimen: same boring, same depth."""
     out = []
     for test in tests:
         if expect.investigation_id and \
-                test.investigation_id.strip() != expect.investigation_id:
+                _hole(test.investigation_id) != _hole(expect.investigation_id):
             continue
         if expect.depth_m is not None:
             got = test.depth_top.si_value if test.depth_top else None
@@ -716,7 +735,8 @@ def _rows_near(tests: Sequence[Any], expect: Expectation) -> List[Any]:
             continue
         for row in test.result.rows:
             if expect.investigation_id and \
-                    row.investigation_id.strip() != expect.investigation_id:
+                    _hole(row.investigation_id) != \
+                    _hole(expect.investigation_id):
                 continue
             if expect.depth_m is not None:
                 got = row.depth_top.si_value if row.depth_top else None
@@ -852,6 +872,8 @@ def score_one_sheet(truth: Dict[str, Any], doc: Any, engine: Any, *,
         return before, _blank(sheet_id, kind, "record",
                               f"{type(exc).__name__}: {exc}")
     after = score_record(truth, result.tests)
+    after.record = _dump_tests(result.tests)
+    after.model_record = _dump_tests(getattr(result, "model_tests", None))
     after.cost = dict(result.cost)
     after.model_calls = result.model_calls
     after.tool_calls = result.tool_calls
@@ -870,3 +892,39 @@ def score_one_sheet(truth: Dict[str, Any], doc: Any, engine: Any, *,
     after.added = len(getattr(result, "added", ()) or ())
     after.reconciled = int(getattr(result, "reconciled", 0) or 0)
     return before, after
+
+
+def _dump_tests(tests: Optional[Sequence[Any]]
+                ) -> Optional[List[Dict[str, Any]]]:
+    if tests is None:
+        return None
+    out = []
+    for test in tests:
+        try:
+            out.append(test.model_dump(mode="json"))
+        except Exception:                        # a record that will not dump
+            continue
+    return out
+
+
+def rescore_saved(truth: Dict[str, Any], after: Dict[str, Any]
+                  ) -> Optional[Dict[str, Any]]:
+    """Re-score a saved run file's ``after`` blob against ``truth`` with the
+    CURRENT checks — no model call. ``None`` for a run file written before
+    the records were kept (before 2026-10-04)."""
+    from report_ingest.model import LabTest
+
+    if not after or after.get("record") is None:
+        return None
+    tests = [LabTest.model_validate(t) for t in after["record"]]
+    new = score_record(truth, tests)
+    out = dict(after)
+    out["scores"] = {k: v.to_dict() for k, v in new.scores.items()}
+    out["overall"] = new.total.to_dict()
+    if after.get("model_record") is not None:
+        alone = score_record(truth, [LabTest.model_validate(t)
+                                     for t in after["model_record"]])
+        out["model_alone"] = {
+            "scores": {k: v.to_dict() for k, v in alone.scores.items()},
+            "overall": alone.total.to_dict()}
+    return out

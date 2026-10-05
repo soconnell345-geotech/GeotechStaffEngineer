@@ -104,6 +104,38 @@ class TestWhatItAsksFor:
         assert score.scores["link"].found == 0
         assert score.scores["index"].found == 0
 
+    def test_the_same_hole_written_another_way_still_links(self):
+        """The key says "B-7"; "B7", "b 7" and "B-07" are the same hole. The
+        scorer compared exact strings until 2026-10-04, so a test linked to
+        "LB-2" missed the key's "LB2" and every value on it."""
+        for written in ("B7", "b 7", "B-07", " B-7 "):
+            score = score_record(GRADING_TRUTH,
+                                 _grading_record(boring=written))
+            assert score.scores["link"].found == 1, written
+            assert score.scores["index"].found > 0, written
+        # a different hole is still a different hole
+        for other in ("B-17", "B-70", "BH-7"):
+            score = score_record(GRADING_TRUTH, _grading_record(boring=other))
+            assert score.scores["link"].found == 0, other
+
+    def test_a_saved_run_keeps_its_records_and_rescores_without_a_model(self):
+        """The run file keeps what the reader recorded and what each miss
+        was, so a check fixed later re-scores it with no model call."""
+        import json
+        from report_ingest.lab_scoring import LabScore, rescore_saved
+        tests = _grading_record(boring="B7")
+        after = score_record(GRADING_TRUTH, tests)
+        after.record = [t.model_dump(mode="json") for t in tests]
+        blob = json.loads(json.dumps(after.to_dict()))
+        assert "misses" in blob["scores"]["link"]
+        # pretend the run was scored by the old exact-string check
+        blob["scores"]["link"] = {"found": 0, "total": 1, "rate": 0.0,
+                                  "misses": ["B-7 at 10 ft"]}
+        new = rescore_saved(GRADING_TRUTH, blob)
+        assert new["scores"]["link"]["found"] == 1
+        assert rescore_saved(GRADING_TRUTH, {"scores": {}}) is None
+        assert isinstance(after, LabScore)
+
     def test_a_depth_inside_the_tolerance_still_links(self):
         inside = 10.0 + (DEPTH_TOL_M * 0.9) / 0.3048
         score = score_record(GRADING_TRUTH, _grading_record(depth=inside))
