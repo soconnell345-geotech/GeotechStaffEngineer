@@ -16,6 +16,15 @@ Foundry measurements of 5.31 and of 5.32 itself (rc2/rc3). **Pin raised to
 `planlens>=0.11`; no new third-party package.** Long-form state:
 `module_work/SESSION_2026-10-02_doc-review-5.32.md`.
 
+**Release gate, in CLEAN worktrees of the release commits (app d903d54,
+planlens 059bc79 = PyPI 0.11.0), exit codes 0:** deep + suite + digest +
+webapp + `geo_project` 1,180 passed / 4 skipped; the rest of
+`funhouse_agent` 1,508 / 6; `report_ingest` 1,361; planlens 1,450. Wheels:
+app requires `planlens>=0.11`, carries `markup_check`, `minimal_agent`,
+`palantir_sdk_engine`, no tests / `module_work` / `raw`; planlens 0.11.0
+declares the same five dependencies as 0.10.1 and carries
+`planlens/opencv.py`. planlens 0.11.0 was on PyPI before the app's tag.
+
 **Decided from the Foundry runs** (`module_work/review_eval_results/
 2026-10-04_foundry_5.32.0rc3/NOTES.md`, GPT-5.6 Sol at full resolution):
 review switches stay OFF — baseline 35/35 on the original tasks and 5/6 on
