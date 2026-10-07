@@ -500,6 +500,23 @@ vision result):
    - Once the coverage ledger and hand truth grow, small learned combiners can be trained on them, for example the label vote's trust table, or calibrating `measure`'s ± against the corpus.
    - These are data-driven, with no new runtime dependency.
 
+**PyTorch: LONG-TERM ONLY (owner, 2026-10-08: "keep PyTorch on the long-term ideas list").** It is a toolkit for TRAINING neural networks.
+- **Not needed now.** The failures so far needed process (coverage), code (positions, cross-checks) or tools (DIGGS), not a trained model. The hosted model already reads printed numbers essentially perfectly.
+- **Lead's estimate:**
+
+  | Option | Odds it helps |
+  |---|---|
+  | Our own digit reader | about even; small payoff |
+  | Pretrained ONNX OCR (no training needed) | decent; gated on the host checks |
+  | Training our own large models | low, near term |
+
+- **If ever picked up:**
+  - Train anywhere (laptop CPU for a tiny model; Funhouse or Foundry compute for larger ones).
+  - Deploy WITHOUT torch: tiny models as numpy weights (a few hundred KB, numpy inference); larger ones exported to ONNX and run with onnxruntime.
+  - Train only on synthetic or public images: weights can leak their training data, the repos are public, and Department reports must not enter that pipeline.
+  - Get Funhouse's OK for bundled weights.
+- **Trigger to revisit:** a MEASURED perception gap that geometry plus the hosted model cannot close. The likeliest place is scanned pages on Tiny Apps' weaker GPT-5.1.
+
 ## VISION HARNESS BENCHMARK — planlens vs Chartography + BenchCAD (2026-09-23; LONG-TERM TODO)
 
 Owner asked 2026-09-23 after reading the Opus 5.5 system card (§8.13). Anthropic's
