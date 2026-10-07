@@ -52,7 +52,10 @@ Everything since 5.32.0 is committed and pushed but unreleased (item 2a).
    - C: the whole suite on `baseline`;
    - D: report-ingest stage d.
 
-   Release on the owner's word once those results are read in full. Check 5
+   **Cut 5.32.1 from a4ef417** (what brief 4 measures), on a `release/5.32.1`
+   branch, adding only fixes the Foundry results call for. Master has moved
+   on to the next train (`module_work/SCALES_COVERAGE_CROSSCHECKS.md`, for
+   5.33). Release on the owner's word once those results are read in full. Check 5
    (SharePoint, remembered files, past conversations) needs the Funhouse
    app, so it stays in `module_work/LIVE_TEST_QUEUE.md` for after the
    release.
