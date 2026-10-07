@@ -197,6 +197,38 @@ can see exactly what is still wrong.
 
 ---
 
+## Re-run of check 1 on the 5.32.1rc1 test wheel (after the 2026-10-07 fix)
+
+Upload `geotech_staff_engineer-5.32.1rc1-py3-none-any.whl` (sent in chat;
+not published) to the cluster, then:
+
+```python
+%pip install /path/to/geotech_staff_engineer-5.32.1rc1-py3-none-any.whl
+dbutils.library.restartPython()
+```
+
+Run the Option B cell again with a NEW `out_dir`,
+`"/tmp/check_532_markups_rc1"`. `sharepoint=fh_sp_client` now works directly
+(the copy fix is in the wheel), and the notebook cell for viewing the PDFs
+works as before with the new folder name. **Pass:** most of the 3
+`produce-circle-tags` runs pass, and none withholds a file whose circles you
+can see sit on the tags.
+
 ## Done
 
-(none yet — add the date and what you saw)
+- **2026-10-07, check 1 Option B on 5.32.0 (Funhouse, GPT-5.4): FAILED, cause
+  found and fixed.** `produce-markup` passed 3/3. `produce-circle-tags` failed
+  3/3 (0, 1 and 2 of 7 tags marked). Two causes:
+  1. The new "drawn closely round it?" question was too strict on GPT-5.4. A
+     19 × 14 pt ring centred on a 10 × 4 pt tag was called "drawn far wider",
+     so the agent (correctly, by its rules) withheld good work. Fixed in
+     cc697e6: size is now measured (the look returns the thing's box; a mark
+     is too wide only above 30× its area).
+  2. Circles placed from a whole-page look were 40–80 pt off. The check
+     rightly rejected those. The run that zoomed first placed its circles
+     within 1–13 pt.
+
+  Also found: the SharePoint copy silently copied nothing (fixed in 4334fce;
+  the workaround `Mirror(sharepoint=fh_sp_client.file_manager, ...)` uploaded
+  all 24 files). Two answers wrote "tool page 0" beside "PDF page 1", which
+  the suite flags.

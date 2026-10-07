@@ -22,6 +22,11 @@ clean on `master` / `main` at the release.
    Funhouse (written for the owner, with paste-ready cells): do the red
    circles land on the tags; is `find_like` still available; one report-ingest
    rerun (narrative rules, lab links, boring logs). Tick them off there.
+2a. **5.32.1 is ready to release on the owner's word** (master, after
+   5.32.0): live check 1 on 2026-10-07 found 5.32.0's "drawn close" question
+   rejecting correct circles on GPT-5.4 — now a measured size test (cc697e6);
+   plus the SharePoint copy fix (4334fce). Test wheel `5.32.1rc1` was sent for
+   a re-run of check 1 first (queue file, "Re-run of check 1").
 3. Ask CfA whether the Tiny Apps App Service enforces FIPS mode. If it does,
    OpenCV cannot load there and `find_like` hides itself (by design since
    5.32.0); the rest of the app is unaffected.
