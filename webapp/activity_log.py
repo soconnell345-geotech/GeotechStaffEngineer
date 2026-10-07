@@ -43,7 +43,12 @@ Tool arguments are logged in full (JSON), tool results and errors in full up
 to :data:`DEFAULT_MAX_CHARS` (then cut, with ``truncated: true`` and the full
 length recorded). Model prompts are NOT logged — every call carries the
 ~17 KB system prompt and ``messages.json`` already holds the conversation —
-only per-call usage and the number of tool calls the model requested.
+only per-call usage and the number of tool calls the model requested, and
+(since 2026-10-07) what the model SAID: ``model_end`` carries ``text`` (its
+own words that call, up to :data:`MODEL_TEXT_CHARS`) and ``reasoning`` (any
+reasoning summary the provider returned). Without them a review of a run
+could see every tool call and never the model's account of why (the owner,
+reviewing the first live checks of 5.32.0).
 
 A logging failure must never fail a turn: every handler swallows its own
 exceptions and ``raise_error`` is left False.
@@ -143,6 +148,58 @@ def _usage_from_response(response: Any) -> Optional[dict]:
     except Exception:                                  # noqa: BLE001
         pass
     return None
+
+
+#: Most characters of a model's own words kept per call (its text, and its
+#: reasoning summary, each). A tool result's cap is larger: this is the
+#: model's narration, not a document.
+MODEL_TEXT_CHARS = 8_000
+
+
+def _model_output(response: Any) -> tuple:
+    """``(text, reasoning)`` of a chat model's reply, as far as the provider
+    returns them: plain content, text blocks, and reasoning / thinking blocks
+    or ``reasoning_content`` / ``reasoning`` in ``additional_kwargs``."""
+    texts, thoughts = [], []
+    try:
+        for row in getattr(response, "generations", None) or []:
+            for g in row or []:
+                msg = getattr(g, "message", None)
+                content = (getattr(msg, "content", None) if msg is not None
+                           else getattr(g, "text", None))
+                if isinstance(content, str):
+                    texts.append(content)
+                elif isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, str):
+                            texts.append(block)
+                        elif isinstance(block, dict):
+                            kind = str(block.get("type") or "")
+                            if kind in ("reasoning", "thinking"):
+                                summ = block.get("summary")
+                                if isinstance(summ, list):
+                                    thoughts.extend(
+                                        str(s.get("text") if isinstance(s, dict)
+                                            else s) for s in summ)
+                                thoughts.append(str(block.get("thinking")
+                                                    or block.get("reasoning")
+                                                    or ""))
+                            elif "text" in block:
+                                texts.append(str(block.get("text") or ""))
+                extra = getattr(msg, "additional_kwargs", None) or {}
+                for key in ("reasoning_content", "reasoning"):
+                    value = extra.get(key)
+                    if isinstance(value, dict):
+                        value = value.get("summary") or value.get("text")
+                    if isinstance(value, list):
+                        value = " ".join(str(v.get("text") if isinstance(v, dict)
+                                             else v) for v in value)
+                    if value:
+                        thoughts.append(str(value))
+    except Exception:                                  # noqa: BLE001
+        pass
+    return ("\n".join(t for t in texts if t).strip(),
+            "\n".join(t for t in thoughts if t).strip())
 
 
 def _n_tool_calls(response: Any) -> int:
@@ -342,14 +399,22 @@ class ActivityLogger(BaseCallbackHandler):
             rid = str(run_id)
             t_start = self._starts.pop(rid, None)
             parent = parent_run_id or self._parent.get(rid)
-            self._write({"agent": self._agent_of(parent), "event": "model_end",
-                         "run_id": rid,
-                         "parent_run_id": (str(parent_run_id)
-                                           if parent_run_id else None),
-                         "usage": _usage_from_response(response),
-                         "n_tool_calls": _n_tool_calls(response),
-                         "duration_s": (round(self._clock() - t_start, 3)
-                                        if t_start is not None else None)})
+            record = {"agent": self._agent_of(parent), "event": "model_end",
+                      "run_id": rid,
+                      "parent_run_id": (str(parent_run_id)
+                                        if parent_run_id else None),
+                      "usage": _usage_from_response(response),
+                      "n_tool_calls": _n_tool_calls(response),
+                      "duration_s": (round(self._clock() - t_start, 3)
+                                     if t_start is not None else None)}
+            text, reasoning = _model_output(response)
+            if text:
+                record["text"], record["text_truncated"], _n = _cap(
+                    text, MODEL_TEXT_CHARS)
+            if reasoning:
+                record["reasoning"], _t, _n = _cap(reasoning,
+                                                   MODEL_TEXT_CHARS)
+            self._write(record)
         except Exception as exc:                       # noqa: BLE001
             self.last_error = f"{type(exc).__name__}: {exc}"
 

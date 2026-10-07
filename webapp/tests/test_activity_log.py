@@ -109,6 +109,37 @@ def test_model_end_usage_and_tool_call_count(tmp_path):
                                 "total_tokens": 150}
     assert recs[1]["n_tool_calls"] == 1
     assert recs[1]["duration_s"] is not None
+    assert "text" not in recs[1]                # nothing said: no field
+
+
+def test_model_end_keeps_what_the_model_said_and_its_reasoning(tmp_path):
+    """2026-10-07: a review of the first live checks could see every tool
+    call and never the model's own account of why."""
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, LLMResult
+    log = al.ActivityLogger(str(tmp_path))
+    rid = _u()
+    log.on_chat_model_start({}, [[]], run_id=rid)
+    msg = AIMessage(content=[
+        {"type": "reasoning", "summary": [{"type": "summary_text",
+                                           "text": "The tags are small."}]},
+        {"type": "text", "text": "I will zoom on each GCE tag first."}],
+        tool_calls=[{"name": "render_region", "args": {}, "id": "c1"}])
+    log.on_llm_end(LLMResult(generations=[[ChatGeneration(message=msg)]]),
+                   run_id=rid)
+    end = al.load(str(tmp_path))[-1]
+    assert end["text"] == "I will zoom on each GCE tag first."
+    assert end["text_truncated"] is False
+    assert "The tags are small." in end["reasoning"]
+
+    rid = _u()
+    log.on_chat_model_start({}, [[]], run_id=rid)
+    long = AIMessage(content="x" * (al.MODEL_TEXT_CHARS + 50),
+                     additional_kwargs={"reasoning_content": "because"})
+    log.on_llm_end(LLMResult(generations=[[ChatGeneration(message=long)]]),
+                   run_id=rid)
+    end = al.load(str(tmp_path))[-1]
+    assert end["text_truncated"] is True and end["reasoning"] == "because"
 
 
 def test_never_raises_when_unwritable(tmp_path):
