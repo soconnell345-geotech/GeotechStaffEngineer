@@ -12,11 +12,21 @@ what you saw.
 name). Every run's full record is read, not just the scores (CLAUDE.md,
 "REVIEW EVERY MODEL RUN IN FULL").
 
-**Still to run, in this order (all on 5.32.1):**
-- check 6, the most important: positions and circles after the location
-  fix;
-- check 5: SharePoint links, remembered files, past conversations;
-- check 3: the report-ingest rerun, when you have half an hour.
+**Moved to Foundry (2026-10-07).** Your Funhouse tokens ran out for the
+month, so checks 6 and 3 now run on Foundry as brief 4, against test wheels,
+before 5.32.1 is released (`../foundry_handoff/AI_FDE_BRIEF_4.md`). Their
+instructions below stay as the Funhouse version, in case either needs
+repeating there.
+
+**Still to run on Funhouse: check 5 only, after 5.32.1 is released.** It
+tests the Funhouse app's own SharePoint and sign-in connections, which
+Foundry does not have. It tests connections rather than the model, so run it
+on the cheaper model (`funhouse-gpt-medium` in the sidebar) with a short PDF
+of 2–5 pages: about 50–150 thousand tokens in all.
+
+**Token estimates from now on.** Every check states its tokens, not just its
+minutes; "small" was wrong before. One run of the circle task reads 160–360
+thousand input tokens, and check 6 runs it six times.
 
 Checks 1, 2 and 4 are done (see "Done").
 

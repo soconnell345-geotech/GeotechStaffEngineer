@@ -43,8 +43,19 @@ Everything since 5.32.0 is committed and pushed but unreleased (item 2a).
      and the past-conversations list cached per page.
    - **The location build** (cf43c90, item 9b).
 
-   The test wheel `5.32.1rc2` only covered the first two of these. After
-   install, run checks 5 and 6 in `module_work/LIVE_TEST_QUEUE.md`.
+   **Measured before release on Foundry (2026-10-07).** The owner's Funhouse
+   tokens are spent for the month, so brief 4 runs the test wheels
+   `5.32.1rc3` and planlens `0.12.0rc1`, built from app a4ef417 and planlens
+   08a1d53 (`../foundry_handoff/AI_FDE_BRIEF_4.md`). It has four parts:
+   - A: the location measurement;
+   - B: the markup tasks ×3 on GPT-5.4 and Sol;
+   - C: the whole suite on `baseline`;
+   - D: report-ingest stage d.
+
+   Release on the owner's word once those results are read in full. Check 5
+   (SharePoint, remembered files, past conversations) needs the Funhouse
+   app, so it stays in `module_work/LIVE_TEST_QUEUE.md` for after the
+   release.
 3. Ask CfA whether the Tiny Apps App Service enforces FIPS mode. Funhouse
    DOES (live check 2, 2026-10-07: OpenCV fails its FIPS self-test there, as
    on Foundry), so assume Tiny Apps does too: OpenCV cannot load and
@@ -165,11 +176,19 @@ rules from single examples)
     cross-reference resolver and revision compare only if they earn a suite
     task (`module_work/REVIEW_HARNESS.md` "Next").
 
-**D. Foundry (the measurement bed)** — no brief running; briefs 1–3 are done
-(`../foundry_handoff/`). When a big measurement is next needed: the geotech
-eval rerun needs a numpy-2 repository (numpy 1.26 there broke 17 questions);
-a stage-d report-ingest rerun on 5.32 (run files now keep the records)
-answers the lab-link and log-floor questions. The package now speaks
+**D. Foundry (the measurement bed).** **Brief 4 is running** (sent
+2026-10-07; see item 2a). Briefs 1–3 are done (`../foundry_handoff/`).
+- When brief 4 comes back, read every B and C run in full, as the CLAUDE.md
+  rule requires. Write `TRACE_REVIEW.md` under
+  `module_work/review_eval_results/2026-10-??_foundry_5.32.1rc3/`, add run 6
+  to `module_work/REVIEW_HARNESS.md`, and add "FOUNDRY RUN 2" to the
+  report-ingest ledger.
+- Heavy measurement goes here, not to Funhouse, whose monthly token budget
+  the owner ran out of on 2026-10-07.
+- The geotech eval rerun still needs a numpy-2 repository (numpy 1.26 there
+  broke 17 questions).
+
+The package now speaks
 Foundry's Responses route itself (`GEOTECH_FOUNDRY_ROUTE`); the FDE's glue is
 still useful for its retry/throttle and per-task process isolation.
 
