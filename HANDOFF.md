@@ -95,6 +95,20 @@ Everything since 5.32.0 is committed and pushed but unreleased (item 2a).
        scanned old ones;
      - planlens: start and title a segment at a markup-only divider page;
      - give the `general-purpose` helper the reading rules, measured first.
+   - **(iv) From the value check of the session's extracted data** (FINDINGS
+     §8, 2026-10-07):
+     - **What was right:** printed numbers were read correctly (SPT 48/48;
+       lab sheets exact).
+     - **What went wrong:** layer depths read off scanned logs were off by up
+       to 0.7 m, and most of the lab appendix and the second 2026 boring's
+       lab results were never extracted.
+     - **Candidates (general capabilities):**
+       - depth from a raster log's drawn scale, measured in code (planlens,
+         beside `log_grid`);
+       - an Atterberg consistency gate (PL ≤ LL, PI = LL − PL) in
+         `report_ingest` and `write_diggs`; the report's own table has PL
+         and LL swapped;
+       - coverage stated as counts in the answer.
 
 **C. Next build — candidates, none started** (judge each on the suite; no
 rules from single examples)

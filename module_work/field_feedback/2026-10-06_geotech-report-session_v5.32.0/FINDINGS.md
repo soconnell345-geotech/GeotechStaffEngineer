@@ -97,3 +97,70 @@ Code: `webapp/sharepoint_tools.py`, `webapp/core.py`, `webapp/app.py`, `webapp/t
 2. Add ASCE 7 and Youd et al. (2001) to the library (P6).
 3. The P3 measurement task and the planlens divider-title improvement.
 4. Live check after release: paste a link, go past an hour (refresher), and confirm a fetched file appears in the next turn's details (`context_note`).
+
+## 8. Value check of the extracted data (lead, 2026-10-07)
+
+§§1–7 judge the agent's claims and its process. This section checks the NUMBERS in the turn-5 and turn-9 files against the report's own pages:
+- two 2011 borings (four scanned log sheets, BH-1 and BH-3);
+- two 2011 lab sheets (one grain-size, one Atterberg);
+- the 2026 lab summary table and the 2026 log pages.
+
+Layer boundaries on the scans were measured from the drawn lines against each sheet's depth frame. That check was done in code; it was not eyeballed. Counts only below; the values and the report stay under `raw/`.
+
+### What the agent read right
+
+| Item | Result |
+|---|---|
+| **SPT records** (blows per 15 cm, N, "50 for x cm" refusals) | **48 of 48 rows exactly right** across the four sheets |
+| **Log headers** (water level, total depth, drilling method, dates) | All right on both borings |
+| **2011 lab sheets** | Both checked sheets exactly right: grain-size fractions, Atterberg limits, and sample depths |
+| **2026 lab values** for the boring it did extract | All 18 on the summary table right. Two "clay 0" entries are not on the summary. |
+
+On one row the sample type was written as uncertain ("D[C/G]") where the sheet clearly prints "DC", which is the cautious failure.
+
+**Reading printed numbers off these scans was not the problem.**
+
+### Depths read off the drawing were rounded
+
+- **Sample depths are not printed on these logs.** The agent snapped each sample to the nearest depth label. The rows are drawn 0.15–0.35 m from those depths. The agent did mark the column "approx".
+- **Layer boundaries were rounded to whole or half metres,** and are 0.1–0.7 m from the drawn lines:
+  - one boring's gravel top is about 0.6–0.7 m too deep;
+  - the other boring's organic layer is placed about 0.5 m deeper than drawn.
+- **Adjacent, differently described layers were merged:** once across a page break, and once three layers into one.
+
+This is the same failure as the circle task (`module_work/harness_theory/locating_things_on_a_page.md`): a position read off an image by eye rather than measured. The general capability is depth measured in code, from the drawn line and the sheet's own depth scale. That is the raster counterpart of `log_grid` and a planlens candidate. It is not a prompt rule.
+
+### Coverage was the bigger loss
+
+**2011 lab appendix:**
+
+| Sheets | Extracted |
+|---|---|
+| Grain size | 4 of 12 |
+| Atterberg limits | 6 of 11 |
+| In-place density, compaction, specific gravity, soil chemistry, water chemistry | None |
+| The older campaign's lab and chemistry sheets | None |
+
+**2026 data:**
+- The second 2026 boring's lab results (about 25 values) are absent entirely. They include the only fine-grained sample and the groundwater chemistry.
+- The 2026 logs are clean vector pages with dates, elevation, SPT records and USCS classes. The files carry only total depth (rounded) and first water level (right).
+
+### A source error nobody flagged
+
+On the 2026 summary table, the fine-grained sample's plastic limit is larger than its liquid limit, and the PI equals their difference. The two rows look swapped in the report itself. The agent never reached that column, and nothing in the app would have flagged it.
+
+The general capability is a consistency gate on Atterberg results: PL ≤ LL, and PI = LL − PL. It belongs in `report_ingest`'s lab gates and in `subsurface.write_diggs`.
+
+### The package's own labels
+
+The README rated the SPT values "moderate" and the stratigraphy "high". The check found the reverse.
+
+It also points the reader to "boring logs on pages 91–102". Those pages are grain-size sheets.
+
+It did say plainly that only selected lab sheets were read, and that the 1981 and 2026 borings were inventory only.
+
+### For the to-do list
+- Depth from a raster log's drawn scale, measured in code (planlens, beside `log_grid`).
+- Atterberg consistency gate.
+- Count coverage in the answer: "10 of 23 classification sheets read", not just "selected".
+- Both strengthen §4's case for measuring the whole-report ingest, which labels every page and has a lab reader and a log floor.
