@@ -463,6 +463,43 @@ vision result):
 - find_like's contact sheets are saved to the conversation folder (and
   mirrored to SharePoint) — storage, not tokens; fine unless it grows.
 
+## MACHINE LEARNING FOR SCALES AND SCANS (owner asked 2026-10-08; candidates, none started)
+
+**Context:**
+- The visual-scales build measures positions with code (numpy and PyMuPDF), and the model reads only the label values on scans (`module_work/VISUAL_SCALES_DESIGN.md`).
+- **Host facts:**
+  - OpenCV aborts on the FIPS hosts, so every engine below that leans on OpenCV needs its pre- and post-processing redone in numpy.
+  - Whether onnxruntime loads under FIPS is untested.
+  - Torch is too heavy for Tiny Apps.
+  - Bundled model weights need Funhouse/CfA approval (the Tier 2 note above).
+  - Licences matter (the 2026-09-14 survey rejected Polyform-NC, restricted-weight and AGPL engines).
+
+**In order of value for effort:**
+1. **Set-of-marks choice; no new dependency.**
+   - Code finds the candidates: lines, labels, curve crossings.
+   - Code draws them numbered on the image.
+   - The vision model picks a NUMBER, never a coordinate.
+   - This resolves `measure`'s listed alternatives exactly. planlens' `render_region` already draws marks.
+2. **A tiny digit reader for tick labels.**
+   - A small CNN trained offline on synthetic renders of numbers in common drawing fonts, with scan noise.
+   - Inference in plain numpy.
+   - Our own weights, so no licence question.
+   - It removes the one vision call on scanned scales.
+   - Measure it against the vision read before anything changes.
+3. **General OCR without OpenCV.**
+   - Run RapidOCR's or OnnxTR's ONNX models with numpy pre- and post-processing.
+   - That gives free OCR on the government hosts: scanned report text, and an alternative to paid Document Intelligence.
+   - Needs the onnxruntime-under-FIPS check first: one child-process import, like `planlens.opencv`.
+   - Needs approval for the vendored weights.
+4. **Learned layout and table engines** (rapid-layout, TableStructureRec). Same conditions as 3; only if the suite shows a need.
+5. **Chart-to-table models** (DePlot, MatCha, UniChart).
+   - Torch-based and heavy.
+   - Accuracy on engineering charts is unknown.
+   - Benchmark only, beside the Chartography item below. Classical geometry plus the hosted model is the expected winner.
+6. **Learning from our own truth.**
+   - Once the coverage ledger and hand truth grow, small learned combiners can be trained on them, for example the label vote's trust table, or calibrating `measure`'s ± against the corpus.
+   - These are data-driven, with no new runtime dependency.
+
 ## VISION HARNESS BENCHMARK — planlens vs Chartography + BenchCAD (2026-09-23; LONG-TERM TODO)
 
 Owner asked 2026-09-23 after reading the Opus 5.5 system card (§8.13). Anthropic's
