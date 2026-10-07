@@ -76,6 +76,13 @@ flowchart LR
 4. **`report_ingest.md`** — the pipeline: stage sequence, every kind of model
    call and what it is shown, the floor-and-model merge, the writers, the
    scoring harness, and what the recorded stages show.
+5. **`locating_things_on_a_page.md`** (added 2026-10-07) — how the Document
+   Review agent finds WHERE something is on a page, route by route; the
+   conversion math checked; the measured error of every route against the
+   synthetic fixtures (whole-page boxes come back as a shrunken copy of the
+   truth — a property of the vision models, not of the conversion — while
+   zooms land within a few points); and a notebook cell that measures it on
+   Funhouse.
 
 Each harness document has the same sections: boundaries; what the model is
 shown; control loop; deterministic versus model; data path; failure modes
