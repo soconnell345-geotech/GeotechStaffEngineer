@@ -132,3 +132,49 @@ def test_unknown_parameter_is_refused():
     res = _call({"investigations": [BORING], "output_path": "/tmp/x.xml",
                  "format": "diggs"})
     assert "error" in res and "format" in res["error"]
+
+
+# -- the reconciler's cross-checks (owner, 2026-10-08) ----------------------
+# write_diggs joins the data up the way report ingest does before writing:
+# lab tests linked to their boring and sample, a summary table compared with
+# the sheets. It never changes a value; every disagreement is reported.
+
+SUMMARY = {
+    "kind": "summary_table", "pages": [61],
+    "result": {"kind": "summary_table", "rows": [
+        {"investigation_id": "B-1", "sample_id": "S-2", "depth_top": _m(3.0),
+         "ll": 18.0, "pl": 32.0, "pi": 14.0}]},
+}
+
+
+def test_clean_data_raises_no_cross_check(tmp_path):
+    res = _call({"investigations": [BORING], "lab_tests": LAB,
+                 "output_path": str(tmp_path / "a.xml")})
+    assert res["cross_checks"]["n"] == 0, res["cross_checks"]
+    assert "cross-checks raised" not in res["verdict"]
+
+
+def test_a_summary_table_that_disagrees_with_its_sheet_is_reported(tmp_path):
+    res = _call({"investigations": [BORING], "lab_tests": LAB + [SUMMARY],
+                 "output_path": str(tmp_path / "b.xml")})
+    cc = res["cross_checks"]
+    conflicts = [e for e in cc["entries"] if e["kind"] == "conflict"]
+    fields = {e["where"].split(" ")[0] for e in conflicts}
+    assert {"lab_tests.ll", "lab_tests.pl"} <= fields, cc
+    # both values and both pages are kept; nothing was resolved
+    ll = next(e for e in conflicts if e["where"].startswith("lab_tests.ll"))
+    assert any("18" in v for v in ll["values"])
+    assert any("32" in v for v in ll["values"])
+    assert 61 in ll["pages"]
+    assert "cross-checks raised" in res["verdict"]
+    # the file itself is still written from the data as given
+    assert res["file_exists"] is True
+
+
+def test_a_lab_test_naming_an_unknown_boring_is_reported(tmp_path):
+    orphan = dict(LAB[0], investigation_id="B-9")
+    res = _call({"investigations": [BORING], "lab_tests": [orphan],
+                 "output_path": str(tmp_path / "c.xml")})
+    text = json.dumps(res["cross_checks"])
+    assert res["cross_checks"]["n"] >= 1
+    assert "B-9" in text

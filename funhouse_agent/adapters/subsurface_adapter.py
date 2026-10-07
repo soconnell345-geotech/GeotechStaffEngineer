@@ -436,8 +436,28 @@ def _run_write_diggs(params: dict) -> dict:
         return {"error": "nothing to write: no investigations and no lab "
                          "tests were given"}
 
+    # Join the data up the way report ingest does before writing it: lab tests
+    # linked to their boring and sample, a summary table compared with the
+    # individual sheets, unit problems named (report_ingest.reconciler). It
+    # never changes a value; every disagreement is reported with both values
+    # and both pages. Owner, 2026-10-08: "tie the reconciler's cross checks to
+    # write_diggs" -- in the 2026-10-06 field session a report's own summary
+    # table disagreed with its lab sheet and nothing said so.
+    from report_ingest.model import ReportRecord
+    from report_ingest.reconciler import reconcile
+    record = ReportRecord(
+        project=project or Project(),
+        investigations=[i.model_copy(deep=True) for i in investigations],
+        lab_tests=[t.model_copy(deep=True) for t in lab])
+    try:
+        reconcile(record)
+        cross = [q.model_dump(exclude_defaults=True) for q in record.qa]
+        cross_error = None
+    except Exception as exc:                           # noqa: BLE001
+        cross, cross_error = [], f"{type(exc).__name__}: {exc}"
+
     notes: list = []
-    xml = write_diggs(investigations + lab, project,
+    xml = write_diggs(record, project,
                       document_id=str(params.get("document_id") or ""),
                       notes=notes)
     out = str(params["output_path"])
@@ -456,7 +476,7 @@ def _run_write_diggs(params: dict) -> dict:
                    "equal to the data given")
     elif not checked:
         verdict = ("written, but the schema could NOT be checked here "
-                   "(pydiggs is not installed); "
+                   "(no schema check is installed); "
                    + ("it reads back equal to the data given" if back_ok
                       else "and it does NOT read back equal to the data "
                            "given -- see read_back.diffs"))
@@ -467,11 +487,25 @@ def _run_write_diggs(params: dict) -> dict:
                    + ("" if back_ok else "reading it back does not give the "
                                          "data given")
                    + " -- say so; do not call it valid")
+    by_kind: dict = {}
+    for q in cross:
+        by_kind[q.get("kind", "note")] = by_kind.get(q.get("kind", "note"), 0) + 1
+    if cross:
+        verdict += (f". The cross-checks raised {len(cross)} point(s) "
+                    f"({', '.join(f'{n} {k}' for k, n in sorted(by_kind.items()))})"
+                    " -- list each for the user with its values and pages; "
+                    "nothing was changed")
     return clean_result({
         "output_path": out,
         "file_exists": os.path.isfile(out),
         "file_size_bytes": os.path.getsize(out) if os.path.isfile(out) else 0,
         "verdict": verdict,
+        "cross_checks": ({"n": len(cross), "by_kind": by_kind,
+                          "entries": cross[:20]}
+                         if cross_error is None
+                         else {"error": f"the cross-checks could not run "
+                                        f"({cross_error}); the file is "
+                                        f"unaffected"}),
         "schema_check": {"checked": checked, "valid": bool(schema_ok),
                          "errors": list(schema_errors)[:10]},
         "read_back": {"equal": bool(back_ok), "diffs": list(diffs)[:15],
@@ -847,7 +881,10 @@ METHOD_INFO = {
                 "atterberg: ll, pl, pi, non_plastic; gradation: gravel_percent, sand_percent, silt_percent, clay_percent, fines_percent, "
                 "percent_passing [{percent_passing, size {value, unit}, sieve}]; compaction: max_dry_density {value, unit}, optimum_wc; "
                 "cbr: cbr_percent, swell_percent, soaked; moisture_content: wc; chemical: pH, sulfate, chloride, resistivity (numbers, "
-                "{value, unit}, or the printed text e.g. '<10')}.")},
+                "{value, unit}, or the printed text e.g. '<10')}. A report's lab SUMMARY TABLE goes in too, as one object of kind "
+                "summary_table with result {kind: summary_table, rows [{investigation_id, sample_id, depth_top, wc, ll, pl, pi, "
+                "gravel_percent, sand_percent, fines_percent, max_dry_density, optimum_wc, pH, sulfate, chloride}]}: it is "
+                "cross-checked against the individual sheets.")},
             "project": {"type": "dict", "required": False, "description": "{name, number, client, location, coordinate_system, elevation_datum} as printed."},
             "output_path": {"type": "str", "required": True, "description": "Where to write the .xml (e.g. '/tmp/site.diggs.xml'); it is attached to the conversation."},
             "document_id": {"type": "str", "required": False, "description": "An identifier for the source document."},
@@ -855,8 +892,12 @@ METHOD_INFO = {
         "returns": {
             "output_path": "The file written (nothing is written when the data does not fit: 'problems' names each field).",
             "verdict": "Plain words: valid DIGGS, or what is wrong with it. Report THIS, not your own judgement.",
-            "schema_check": "{checked, valid, errors} against the DIGGS 2.6 XSD (pydiggs).",
+            "schema_check": "{checked, valid, errors} against the DIGGS 2.6 XSD (bundled; runs on every host).",
             "read_back": "{equal, diffs}: the file parsed back and compared value by value with the data given.",
+            "cross_checks": "{n, by_kind, entries}: the data joined up as report ingest does -- each lab test linked to its "
+                            "boring and sample, a summary table compared with the sheets, units without a conversion. Each "
+                            "entry gives what disagrees, both values and the pages; nothing is changed or resolved. Tell the "
+                            "user about every entry.",
             "written": "Counts written, and anything the writer had to leave out or assume.",
         },
     },

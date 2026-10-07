@@ -134,9 +134,17 @@ In each item, [code] means a check code can run; [judge] means the agent works t
 
 | Item | State |
 |---|---|
-| W1 | in progress (lead) |
-| W2 | next (lead) |
-| W3 | design by an Opus subagent, in parallel with W1–W2; it touches different files |
-| W4 | (a) after the W3 design; (b) waits on the owner's markup of the checklist |
+| W1 | DONE (499e1cf): bundled DIGGS 2.6 schema, checked with lxml on every host |
+| W2 | DONE: `write_diggs` reconciles before writing and returns `cross_checks` |
+| W3 | DESIGN DONE (`module_work/VISUAL_SCALES_DESIGN.md`). Build waits on the owner's answers to its §10 |
+| W4 | building (Opus subagent, the owner's ask): coverage ledger and checklist, behind a switch; (b)'s content waits on the owner's markup |
+
+**Corrections from the W3 design** (its §11). Read those, not the W3 section above, for what exists:
+- `log_grid` finds no stratum lines on scans, even with OCR.
+- Its ruler assumes each label is centred on its depth; on the scanned form labels sit about 0.1 m above it.
+- Neither harness can reach it.
+- The sounding reader's axes are ranges with no positions.
+- Scale notes are never applied, and scale bars are not found at all.
+- The free RapidOCR path loads OpenCV, so it cannot run on the government hosts.
 
 Gate for every item: offline tests on fakes and pytest exit codes, then a live check (Foundry or Funhouse) with every run read in full.
