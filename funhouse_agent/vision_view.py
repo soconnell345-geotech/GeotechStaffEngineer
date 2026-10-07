@@ -18,14 +18,37 @@ the one place that decides how:
 * **Detail.** OpenAI's ``detail`` field decides which of those limits
   applies, so it must match the budget. :func:`detail` gives the budget's own
   value; ``GEOTECH_VISION_DETAIL`` overrides it (``none`` omits the field).
-* **Where things are — a 0-999 grid.** The main agent never sees an image; it
-  reads what the vision call wrote. So each vision call is asked to give
-  locations as a box on a 0-999 grid over the image (OpenAI's recommended
-  convention, and immune to any resize), and each result returns the
+* **Where things are — pixels in, a 0-999 grid out.** The main agent never
+  sees an image; it reads what the vision call wrote. Each vision call is
+  told the image's size and asked for locations as boxes in PIXELS of that
+  image (``px=[x0, y0, x1, y1]``); the tool converts them in code, with the
+  size it SENT, into boxes on a 0-999 grid over the image
+  (:func:`boxes_to_grid`) before the agent reads the answer, and returns the
   ``view`` — the page rect the image showed. ``render_region(view=...,
   image_box=...)`` turns the two back into a box on the page
-  (:func:`image_box_to_page`), so the agent can zoom on what the vision call
-  found.
+  (:func:`image_box_to_page`). Measured on Funhouse GPT-5.4 (2026-10-07,
+  module_work/harness_theory/locating_things_on_a_page.md §5.1): on one
+  whole-sheet image its own 0-999 boxes were 57-91 pt off, with a scale that
+  changed between identical calls, while its PIXEL boxes converted with the
+  image's true size were within 1-6 pt of every tag — and its own statement
+  of the image's size was wrong, so the size used is the one sent. A 0-999
+  answer (an older prompt, a model that ignores the instruction) still
+  parses.
+* **Never more than the host delivers.** Funhouse shrinks any image over
+  2,048 px on its long side before the model sees it (measured by token
+  counts, 2026-10-07), so an image rendered larger is described by a size
+  the model never saw: lettering the app thought was 14 px arrived at 7 px,
+  and the tiling rule never fired. Every render is capped at
+  :data:`DEFAULT_MAX_PX` (``GEOTECH_VISION_MAX_PX``; ``none`` lifts the cap)
+  and at whatever smaller edge the probe measured for the host, so the size
+  a box is converted with, the legibility estimate and auto-tiling all use
+  the image the model actually got.
+* **How far to trust a location.** A box is only as good as the view it was
+  read off: off by up to about a tenth of a whole sheet in the measurements,
+  a few points from a zoom. Every result says so (:func:`precision_note`),
+  ``render_region(view=, image_box=)`` pads its window by that error
+  (:func:`zoom_pad`), and ``annotate_document`` refuses a small mark read off
+  a wide view (planlens ``markup_writer.VIEW_ANCHOR_MAX_PT``).
 
 * **Which budget — measured, not assumed.** A deployment name is an alias
   that can be re-pointed at another model. The first time a vision engine is
@@ -44,9 +67,11 @@ the renders fall back to the fixed sizes and everything else still works.
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 import logging
 import os
+import re
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
@@ -57,6 +82,18 @@ BUDGET_ENV = "GEOTECH_VISION_BUDGET"
 DETAIL_ENV = "GEOTECH_VISION_DETAIL"
 CHART_BUDGET_ENV = "GEOTECH_CHART_BUDGET"
 POLICY_ENV = "GEOTECH_VISION_POLICY"
+MAX_PX_ENV = "GEOTECH_VISION_MAX_PX"
+
+#: The longest side any image is rendered at. Funhouse delivers at most
+#: 2,048 px (a 3957 x 2560 image cost exactly the tokens of 2048 x 1326,
+#: 2026-10-07); GPT-5.6 on Foundry, sent the full 10,000-patch image, drew
+#: its boxes shrunk toward the top-left, and was accurate at about 2,000 px.
+#: ``GEOTECH_VISION_MAX_PX`` overrides it (``none`` lifts it); a smaller edge
+#: the probe measured for the host always wins.
+DEFAULT_MAX_PX = 2048
+
+#: An image edge below this is not a sensible cap (a typo, not a choice).
+_MIN_MAX_PX = 256
 
 #: ``robust`` (default, owner 2026-09-25: "robust first, then maybe we can
 #: dial back for efficiency later"): every image goes at the largest detail
@@ -88,21 +125,51 @@ LEGIBLE_TEXT_PX = 12.0
 #: The lettering height a suggested zoom window aims for.
 TARGET_TEXT_PX = 16.0
 
-#: The sentence every vision prompt ends with, so a location comes back in a
-#: form the agent can zoom on.
+#: How every vision prompt asks for codes to be read.
+READING_INSTRUCTION = (
+    "Read codes, tags and numbers character by character: where a character "
+    "could be another (G/Q/O/C/D, E/F, B/8, S/5, I/1/L, Z/2), write the "
+    "alternatives in brackets, e.g. A[B/8]C, and say the lettering is too "
+    "small to be sure, rather than picking one.")
+
+#: The old location sentence: boxes on a 0-999 grid. Used only where the
+#: image's size is not known; a 0-999 answer is still understood everywhere.
 GRID_INSTRUCTION = (
     "If you give the location of anything in this image, give it as a box "
     "[x0, y0, x1, y1] on a 0-999 grid over the whole image (origin at the "
-    "top-left corner, x to the right, y down). Read codes, tags and numbers "
-    "character by character: where a character could be another (G/Q/O/C/D, "
-    "E/F, B/8, S/5, I/1/L, Z/2), write the alternatives in brackets, e.g. "
-    "A[B/8]C, and say the lettering is too small to be sure, rather than "
-    "picking one.")
+    "top-left corner, x to the right, y down). " + READING_INSTRUCTION)
+
+#: The location sentence every vision prompt ends with when the image's size
+#: is known: boxes in PIXELS of the image, tagged ``px=`` so they cannot be
+#: mistaken for anything else (:func:`boxes_to_grid` converts them).
+PIXEL_INSTRUCTION = (
+    "This image is {w} x {h} pixels. If you give the location of anything "
+    "in it, give it as a box in PIXELS of this image, written px=[x0, y0, "
+    "x1, y1]: origin at the top-left corner, x to the right (0 to {w}), y "
+    "down (0 to {h}). Box the thing itself, tightly, and write px= before "
+    "every box. " + READING_INSTRUCTION)
 
 #: What the agent is told about the ``view`` a vision result carries.
 ZOOM_HINT = ("to zoom on something the analysis located, call "
              "render_region(attachment_key=<same source>, view=<this view>, "
              "image_box=<its 0-999 box>, prompt=...)")
+
+#: A box read off a view can be off by up to about this fraction of the view
+#: (per axis). Measured 2026-10-07 on an 11 x 17 sheet: 0-999 boxes off
+#: whole-sheet images were 14-90 pt off (to 0.11 of the sheet's height), zooms
+#: of 80-350 pt 0.2-5 pt. Pixel boxes did far better on the whole sheet (1-6
+#: pt, one call), but a model can still answer on the grid, so locations are
+#: trusted as if it had.
+LOCATION_ERROR_FRAC = 0.10
+
+#: ... and never less than this, in points (a zoom's own boxes were up to
+#: 12 pt off in y twice in seven, GPT-5.4 on 40-pt crops).
+MIN_LOCATION_ERROR_PT = 12.0
+
+#: A view no wider than this (its longer side, pt) is one a mark may be
+#: placed from — the same limit planlens' writer enforces
+#: (``markup_writer.VIEW_ANCHOR_MAX_PT``).
+MARK_VIEW_PT = 300.0
 
 _OFF = ("", "none", "off", "0", "false")
 
@@ -163,8 +230,49 @@ def budget_name(engine=None) -> str:
     return DEFAULT_CHART_BUDGET if chart else DEFAULT_BUDGET
 
 
+def max_px(engine=None) -> Optional[int]:
+    """The longest side, in pixels, any image may be rendered at — or
+    ``None`` for no cap.
+
+    ``GEOTECH_VISION_MAX_PX`` (a number, or ``none``) or else
+    :data:`DEFAULT_MAX_PX`; then never more than the edge the engine's probe
+    measured the host to deliver (``VisionProfile.max_edge``), because an
+    image larger than that is shrunk before the model sees it and every size
+    the app reasons with would be wrong."""
+    raw = os.environ.get(MAX_PX_ENV)
+    cap: Optional[int] = DEFAULT_MAX_PX
+    if raw is not None:
+        text = raw.strip().lower()
+        if text in _OFF:
+            cap = None
+        else:
+            try:
+                cap = int(float(text))
+                if cap < _MIN_MAX_PX:
+                    raise ValueError(f"under {_MIN_MAX_PX} px")
+            except ValueError as exc:
+                log.warning("%s=%r ignored (%s); using %d", MAX_PX_ENV, raw,
+                            exc, DEFAULT_MAX_PX)
+                cap = DEFAULT_MAX_PX
+    prof = engine_profile(engine)
+    host = getattr(prof, "max_edge", None) if prof is not None else None
+    if host:
+        cap = int(host) if cap is None else min(cap, int(host))
+    return cap
+
+
+def _capped(bud, cap: Optional[int]):
+    """``bud`` with its longest side held to ``cap`` (name and detail kept:
+    on Funhouse the 2,048 px image still needs ``detail="original"``, since
+    its ``high`` is cut down like a tile model's)."""
+    if bud is None or not cap or bud.max_edge <= cap:
+        return bud
+    return dataclasses.replace(bud, max_edge=int(cap))
+
+
 def budget(engine=None):
-    """The planlens ``ImageBudget`` renders are sized to, or ``None``."""
+    """The planlens ``ImageBudget`` renders are sized to, or ``None`` —
+    held to :func:`max_px`."""
     name = budget_name(engine)
     if name.lower() in _OFF:
         return None
@@ -173,10 +281,11 @@ def budget(engine=None):
     except ImportError:           # planlens older than image budgets
         return None
     try:
-        return resolve_budget(name)
+        bud = resolve_budget(name)
     except ValueError as exc:
         log.warning("%s=%r ignored: %s", BUDGET_ENV, name, exc)
         return None
+    return _capped(bud, max_px(engine))
 
 
 def detail(engine=None) -> Optional[str]:
@@ -217,7 +326,9 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
     ``allow_jpeg`` lets a scan go as JPEG when that is smaller (the engine
     must label the bytes by their real type); line art stays PNG either way.
     ``engine`` is the vision engine the image goes to: its measured model
-    profile picks the budget (see :func:`budget_name`).
+    profile picks the budget (see :func:`budget_name`). The image is never
+    larger than :func:`max_px` on its long side, so ``info``'s size is the
+    size the model sees.
     """
     from planlens.document import Document
     doc = (Document(content=source) if isinstance(source, (bytes, bytearray))
@@ -233,7 +344,17 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
         else:
             # The fixed sizes this app always used: 300 dpi for a zoom.
             kwargs["dpi"] = dpi if dpi is not None else (300 if bbox is not None else None)
-        return doc.render(int(page), **kwargs)
+        data, info = doc.render(int(page), **kwargs)
+        cap = max_px(engine)
+        # A budget already held the size; the fixed sizes (or a dpi asked
+        # for by hand) may not have: render again just under the cap.
+        for _ in range(3):
+            side = max(info["width_px"], info["height_px"])
+            if not cap or side <= cap:
+                break
+            kwargs["dpi"] = float(info["dpi"]) * (cap - 1.0) / side
+            data, info = doc.render(int(page), **kwargs)
+        return data, info
     finally:
         doc.close()
 
@@ -245,7 +366,8 @@ def view_payload(info: Dict[str, Any], engine=None) -> Dict[str, Any]:
     out: Dict[str, Any] = {
         "view": [round(float(v), 1) for v in info["clip"]],
         "view_px": [info["width_px"], info["height_px"]],
-        "zoom_hint": ZOOM_HINT}
+        "zoom_hint": ZOOM_HINT,
+        "precision": precision_note(info["clip"])}
     prof = engine_profile(engine)
     if prof is not None and prof.answered_by:
         out["vision_model"] = prof.answered_by
@@ -325,8 +447,207 @@ def tile_boxes(clip: Sequence[float], n: int, overlap: float = 0.08):
 
 
 def with_grid(prompt: str) -> str:
-    """``prompt`` with the 0-999 location instruction appended."""
+    """``prompt`` with the old 0-999 location instruction appended (for an
+    image whose size is not known; see :func:`with_location`)."""
     return f"{prompt.rstrip()}\n\n{GRID_INSTRUCTION}"
+
+
+def pixel_instruction(size: Sequence[int]) -> str:
+    """:data:`PIXEL_INSTRUCTION` for an image of ``size`` = (w, h) px."""
+    w, h = (int(v) for v in size)
+    return PIXEL_INSTRUCTION.format(w=w, h=h)
+
+
+def with_location(prompt: str, size: Optional[Sequence[int]] = None) -> str:
+    """``prompt`` with the location instruction appended: boxes in pixels of
+    an image of ``size`` (w, h) — or, with no size, the old 0-999 grid."""
+    if not size:
+        return with_grid(prompt)
+    return f"{prompt.rstrip()}\n\n{pixel_instruction(size)}"
+
+
+# ---------------------------------------------------------------------------
+# Locations: pixel boxes from the vision call, 0-999 boxes for the agent
+# ---------------------------------------------------------------------------
+
+_NUM = r"-?\d+(?:\.\d+)?"
+#: A box as a vision answer writes one: ``px=[x0, y0, x1, y1]`` (also ``px:``,
+#: ``px [..]``, ``px=(..)``), ``[..] px`` / ``[..] pixels``, or a bare
+#: ``[a, b, c, d]``.
+_BOX = re.compile(
+    rf"(?P<pre>\bpx\s*[=:]?\s*)?(?P<open>[\[(])\s*(?P<a>{_NUM})\s*,\s*"
+    rf"(?P<b>{_NUM})\s*,\s*(?P<c>{_NUM})\s*,\s*(?P<d>{_NUM})\s*[\])]"
+    rf"(?P<post>\s*(?:px|pixels?)\b)?", re.IGNORECASE)
+
+#: A box value over this cannot be on the 0-999 grid.
+_GRID_MAX = 999.5
+
+
+def _box_values(m) -> List[float]:
+    return [float(m.group(k)) for k in "abcd"]
+
+
+def _is_box(m) -> bool:
+    """A tagged box, or a bare one in square brackets — ``(1, 2, 3, 4)``
+    with no tag is prose, not a box."""
+    return bool(m.group("pre") or m.group("post") or m.group("open") == "[")
+
+
+def px_to_grid(px_box: Sequence[float], size: Sequence[int]
+               ) -> List[int]:
+    """A pixel box on an image of ``size`` (w, h) as a whole-number box on
+    the 0-999 grid over the same image (corners ordered, clamped)."""
+    w, h = (max(float(v), 1.0) for v in size)
+    x0, y0, x1, y1 = (float(v) for v in px_box)
+    x0, x1 = min(x0, x1), max(x0, x1)
+    y0, y1 = min(y0, y1), max(y0, y1)
+
+    def g(v, s):
+        return int(max(0, min(999, round(v / s * 999.0))))
+    return [g(x0, w), g(y0, h), g(x1, w), g(y1, h)]
+
+
+def px_box_to_page(view: Sequence[float], px_box: Sequence[float],
+                   size: Sequence[int]) -> Tuple[float, float, float, float]:
+    """A pixel box on the image of ``view`` (``size`` = the image's w, h as
+    SENT) as PDF points on the page — the exact conversion, with no grid in
+    between."""
+    if len(view) != 4 or len(px_box) != 4:
+        raise ValueError("view and the box must each be [x0, y0, x1, y1]")
+    vx0, vy0, vx1, vy1 = (float(v) for v in view)
+    if vx1 <= vx0 or vy1 <= vy0:
+        raise ValueError("view must be a non-empty [x0, y0, x1, y1] rect")
+    w, h = (max(float(v), 1.0) for v in size)
+    x0, y0, x1, y1 = (float(v) for v in px_box)
+    fx0, fx1 = sorted((min(1.0, max(0.0, x0 / w)), min(1.0, max(0.0, x1 / w))))
+    fy0, fy1 = sorted((min(1.0, max(0.0, y0 / h)), min(1.0, max(0.0, y1 / h))))
+    vw, vh = vx1 - vx0, vy1 - vy0
+    return (vx0 + fx0 * vw, vy0 + fy0 * vh, vx0 + fx1 * vw, vy0 + fy1 * vh)
+
+
+def boxes_to_grid(text: str, size: Optional[Sequence[int]],
+                  tagged_only: bool = False) -> Tuple[str, Dict[str, int]]:
+    """A vision answer with every pixel box rewritten as a 0-999 box on the
+    same image, so the agent reads ONE convention — the one
+    ``render_region(view=, image_box=)`` and ``annotate_document`` take.
+
+    A box tagged ``px=`` (or followed by ``px``) is in pixels. An untagged
+    ``[a, b, c, d]`` is in pixels too when the answer shows it is answering
+    in pixels — a tagged box anywhere in it, or a value past 999, which no
+    grid box has (a model that forgot the tag on some boxes) — provided it
+    is shaped like a pixel box on this image (whole numbers, or one past
+    999; corners in order; inside the image), so a list of four readings off
+    a chart is never rewritten. Without that evidence every box in the
+    answer is taken as an old-style 0-999 box and left as written.
+    ``tagged_only`` converts tagged boxes alone — for a chart read-off, whose
+    answer is about values and may hold a bracketed list of four readings.
+    Returns the text and ``{"converted": n, "grid": m}`` — the pixel boxes
+    rewritten and the untagged boxes left as grid boxes."""
+    counts = {"converted": 0, "grid": 0}
+    if not text or not size:
+        return text, counts
+    w, h = (int(v) for v in size)
+    found = [m for m in _BOX.finditer(text) if _is_box(m)]
+    in_pixels = any(m.group("pre") or m.group("post") for m in found) or any(
+        v > _GRID_MAX for m in found for v in _box_values(m))
+
+    def pixel_shaped(vals: List[float]) -> bool:
+        x0, y0, x1, y1 = vals
+        if not (x1 > x0 and y1 > y0):
+            return False
+        if not (-0.02 * w <= x0 and x1 <= 1.02 * w
+                and -0.02 * h <= y0 and y1 <= 1.02 * h):
+            return False
+        return (any(v > _GRID_MAX for v in vals)
+                or all(float(v).is_integer() for v in vals))
+
+    def rewrite(m) -> str:
+        if not _is_box(m):
+            return m.group(0)
+        vals = _box_values(m)
+        tagged = bool(m.group("pre") or m.group("post"))
+        if tagged or (not tagged_only and in_pixels and pixel_shaped(vals)):
+            counts["converted"] += 1
+            return "[{}, {}, {}, {}]".format(*px_to_grid(vals, (w, h)))
+        counts["grid"] += 1
+        return m.group(0)
+
+    return _BOX.sub(rewrite, text), counts
+
+
+def boxes_note(counts: Dict[str, int], size: Sequence[int]) -> Optional[str]:
+    """What the agent is told about the boxes in an answer, or ``None`` when
+    it gave none."""
+    w, h = (int(v) for v in size)
+    if counts.get("converted"):
+        left = counts.get("grid") or 0
+        return (f"the boxes in this analysis are on the 0-999 grid over this "
+                f"view's image, converted in code from the vision call's "
+                f"pixel boxes on the {w} x {h} px image it was sent: pass one "
+                f"as image_box with this view"
+                + (f" ({left} bracketed list(s) that were not pixel boxes "
+                   f"were left as written)" if left else ""))
+    if counts.get("grid"):
+        return ("the vision call gave its boxes without units; they are "
+                "taken as 0-999 grid boxes over this view's image — zoom "
+                "before relying on one")
+    return None
+
+
+def location_error(view: Sequence[float]) -> Tuple[float, float]:
+    """How far (x, y, in points) a box read off ``view`` may be from the
+    thing: :data:`LOCATION_ERROR_FRAC` of the view on each axis, at least
+    :data:`MIN_LOCATION_ERROR_PT`."""
+    vx0, vy0, vx1, vy1 = (float(v) for v in view)
+    return (max(MIN_LOCATION_ERROR_PT, LOCATION_ERROR_FRAC * (vx1 - vx0)),
+            max(MIN_LOCATION_ERROR_PT, LOCATION_ERROR_FRAC * (vy1 - vy0)))
+
+
+def precision_note(view: Sequence[float]) -> str:
+    """The line every vision result carries on how far its boxes can be
+    trusted, and what that means for zooming and for placing a mark."""
+    vx0, vy0, vx1, vy1 = (float(v) for v in view)
+    vw, vh = vx1 - vx0, vy1 - vy0
+    ex, ey = location_error(view)
+    if max(vw, vh) <= MARK_VIEW_PT:
+        return (f"a box read off this {vw:.0f} x {vh:.0f} pt view is good to "
+                f"a few points: a mark may be anchored on this view + the "
+                f"thing's image_box")
+    return (f"a box read off this {vw:.0f} x {vh:.0f} pt view can be up to "
+            f"~{ex:.0f} x {ey:.0f} pt from the thing: good for finding where "
+            f"to zoom (render_region with this view + image_box pads its "
+            f"window by that much), NOT for placing a mark — zoom until the "
+            f"thing is legible in a view of {MARK_VIEW_PT:.0f} pt or less and "
+            f"anchor the mark on that zoom's view + image_box")
+
+
+def zoom_window(view: Sequence[float], box: Sequence[float]
+                ) -> Optional[List[float]]:
+    """``box`` (PDF points, read off ``view``) padded by the view's location
+    error — a ``render_region(bbox=...)`` that will hold the thing — or
+    ``None`` when the view is narrow enough that the box itself can be used
+    (:data:`MARK_VIEW_PT`)."""
+    vx0, vy0, vx1, vy1 = (float(v) for v in view)
+    if max(vx1 - vx0, vy1 - vy0) <= MARK_VIEW_PT:
+        return None
+    px, py = zoom_pad(view, box)
+    bx0, by0, bx1, by1 = (float(v) for v in box)
+    return [round(bx0 - px, 1), round(by0 - py, 1),
+            round(bx1 + px, 1), round(by1 + py, 1)]
+
+
+def zoom_pad(view: Sequence[float], box: Sequence[float],
+             pad_frac: float = 0.15) -> Tuple[float, float]:
+    """How much to pad, each side (x, y, points), a zoom on ``box`` read off
+    ``view``: the location error of the SOURCE view (:func:`location_error`),
+    or ``pad_frac`` of the box (at least 20 pt across, planlens' own rule)
+    when that is more. A 15 % pad of a tag-sized box is a 30 x 14 pt window
+    — far smaller than the error of a whole-sheet box, and the first zooms
+    of 2026-10-07 came back as blank paper 11 times in 11."""
+    ex, ey = location_error(view)
+    bx0, by0, bx1, by1 = (float(v) for v in box)
+    own = float(pad_frac) * max(bx1 - bx0, by1 - by0, 20.0)
+    return max(ex, own), max(ey, own)
 
 
 # ---------------------------------------------------------------------------
@@ -386,17 +707,28 @@ def page_lines(source, page: int
 
 
 def text_context(lines, clip, reliable: bool = True,
-                 limit: int = TEXT_CONTEXT_CHARS) -> str:
+                 limit: int = TEXT_CONTEXT_CHARS,
+                 size: Optional[Sequence[int]] = None) -> str:
     """The block put in front of a vision prompt: the text-layer lines whose
-    centre falls inside ``clip`` (points), each with its box on the 0-999
-    grid of the image of that view — or a plain statement that the view has
-    no text layer, so every word must be read off the image."""
+    centre falls inside ``clip`` (points), each with its box on the image of
+    that view — in pixels (``px=[..]``) when the image's ``size`` (w, h) is
+    given, the same convention the answer is asked for, otherwise on the
+    0-999 grid — or a plain statement that the view has no text layer, so
+    every word must be read off the image."""
     x0, y0, x1, y1 = (float(v) for v in clip)
     w, h = max(x1 - x0, 1e-6), max(y1 - y0, 1e-6)
     rows = []
     for text, (bx0, by0, bx1, by1) in lines:
         cx, cy = (bx0 + bx1) / 2.0, (by0 + by1) / 2.0
         if not (x0 <= cx <= x1 and y0 <= cy <= y1):
+            continue
+        if size:
+            sw, sh = (float(v) for v in size)
+            box = [max(0, min(round(sw), round((bx0 - x0) / w * sw))),
+                   max(0, min(round(sh), round((by0 - y0) / h * sh))),
+                   max(0, min(round(sw), round((bx1 - x0) / w * sw))),
+                   max(0, min(round(sh), round((by1 - y0) / h * sh)))]
+            rows.append(f"px={box} {text}")
             continue
         box = [max(0, min(999, round((bx0 - x0) / w * 999))),
                max(0, min(999, round((by0 - y0) / h * 999))),
@@ -406,8 +738,10 @@ def text_context(lines, clip, reliable: bool = True,
     if not rows:
         return ("This view has NO text layer: every word in it has to be read "
                 "from the image itself.")
-    head = ("The PDF's own text layer inside this view (exact strings, each "
-            "with its box on the same 0-999 grid as the image). Where a string "
+    grid = ("in pixels of the image (px=[x0, y0, x1, y1])" if size
+            else "on the same 0-999 grid as the image")
+    head = (f"The PDF's own text layer inside this view (exact strings, each "
+            f"with its box {grid}). Where a string "
             "below covers what you are reading, use it exactly; read from the "
             "image only what it does not cover (lettering drawn as lines, "
             "symbols, how things connect), and say which is which.")
@@ -434,16 +768,35 @@ LOCATED_INSTRUCTION = (
     "Write LOCATED: [] if you located nothing.")
 
 
-def with_locations(prompt: str) -> str:
-    """``prompt`` with the structured LOCATED instruction appended."""
+#: The same, asking for each box in pixels of the image (``{w}`` x ``{h}``).
+LOCATED_PX_INSTRUCTION = (
+    "After your answer, end with ONE line that starts with LOCATED: followed by "
+    "a JSON list of the things you located, each "
+    '{{"what": short label, "text": the exact characters you read or null, '
+    '"px": [x0, y0, x1, y1] in pixels of this {w} x {h} image, "sure": true '
+    "or false}}. Write LOCATED: [] if you located nothing.")
+
+
+def with_locations(prompt: str, size: Optional[Sequence[int]] = None) -> str:
+    """``prompt`` with the structured LOCATED instruction appended — boxes in
+    pixels of an image of ``size`` (w, h), or with no size on the 0-999
+    grid."""
+    if size:
+        w, h = (int(v) for v in size)
+        return (f"{prompt.rstrip()}\n\n"
+                f"{LOCATED_PX_INSTRUCTION.format(w=w, h=h)}")
     return f"{prompt.rstrip()}\n\n{LOCATED_INSTRUCTION}"
 
 
-def split_located(text: str, view) -> Tuple[str, List[Dict[str, Any]]]:
+def split_located(text: str, view, size: Optional[Sequence[int]] = None
+                  ) -> Tuple[str, List[Dict[str, Any]]]:
     """``(answer without the LOCATED line, located items)`` — each item's
-    0-999 box also given as ``page_bbox`` in PDF points on the page, which
-    ``render_region(bbox=...)`` takes directly. Never raises: an answer with
-    no parseable LOCATED line comes back whole with no items."""
+    box given as ``image_box`` (0-999) and as ``page_bbox`` in PDF points on
+    the page, which ``render_region(bbox=...)`` takes directly. An item's
+    ``px`` box (pixels of the image, ``size`` = its w, h as sent) is
+    converted exactly; an old-style ``box`` is read on the 0-999 grid (in
+    pixels if a value is past 999 and the size is known). Never raises: an
+    answer with no parseable LOCATED line comes back whole with no items."""
     import json as _json
     if not text or "LOCATED:" not in text:
         return text, []
@@ -475,14 +828,30 @@ def split_located(text: str, view) -> Tuple[str, List[Dict[str, Any]]]:
         if not isinstance(it, dict):
             continue
         row = {k: it.get(k) for k in ("what", "text", "sure") if k in it}
-        box = it.get("box")
-        if isinstance(box, (list, tuple)) and len(box) == 4:
-            try:
+        px, box = it.get("px"), it.get("box")
+        try:
+            if size and isinstance(px, (list, tuple)) and len(px) == 4:
+                pxb = [float(v) for v in px]
+            elif (size and isinstance(box, (list, tuple)) and len(box) == 4
+                  and any(float(v) > _GRID_MAX for v in box)):
+                pxb = [float(v) for v in box]        # a pixel box, untagged
+            else:
+                pxb = None
+            if pxb is not None:
+                row["image_box"] = px_to_grid(pxb, size)
+                row["page_bbox"] = [round(v, 1) for v in
+                                    px_box_to_page(view, pxb, size)]
+            elif isinstance(box, (list, tuple)) and len(box) == 4:
                 row["image_box"] = [float(v) for v in box]
                 row["page_bbox"] = [round(v, 1) for v in
                                     image_box_to_page(view, box)]
-            except (TypeError, ValueError):
-                pass
+            if "page_bbox" in row:
+                window = zoom_window(view, row["page_bbox"])
+                if window is not None:
+                    row["zoom_bbox"] = window
+        except (TypeError, ValueError):
+            for k in ("image_box", "page_bbox", "zoom_bbox"):
+                row.pop(k, None)
         out.append(row)
     return head, out
 
@@ -504,11 +873,18 @@ def image_box_to_page(view: Sequence[float], image_box: Sequence[float]
 
 
 __all__ = ["BUDGET_ENV", "DETAIL_ENV", "CHART_BUDGET_ENV", "POLICY_ENV",
+           "MAX_PX_ENV", "DEFAULT_MAX_PX", "max_px",
            "POLICIES", "policy", "ASSUMED_CAD_LETTERING_PT", "tile_grid",
            "tile_boxes", "DEFAULT_BUDGET",
            "DEFAULT_CHART_BUDGET", "LEGIBLE_TEXT_PX", "TARGET_TEXT_PX",
-           "chart_reading", "GRID_INSTRUCTION", "ZOOM_HINT", "engine_profile",
+           "chart_reading", "READING_INSTRUCTION", "GRID_INSTRUCTION",
+           "PIXEL_INSTRUCTION", "pixel_instruction", "with_location",
+           "ZOOM_HINT", "engine_profile",
            "budget_name", "budget", "detail", "image_media_type",
            "render_view", "view_payload", "with_grid", "image_box_to_page",
+           "px_to_grid", "px_box_to_page", "boxes_to_grid", "boxes_note",
+           "LOCATION_ERROR_FRAC", "MIN_LOCATION_ERROR_PT", "MARK_VIEW_PT",
+           "location_error", "precision_note", "zoom_pad", "zoom_window",
            "TEXT_CONTEXT_CHARS", "page_lines", "text_context",
-           "LOCATED_INSTRUCTION", "with_locations", "split_located"]
+           "LOCATED_INSTRUCTION", "LOCATED_PX_INSTRUCTION", "with_locations",
+           "split_located"]

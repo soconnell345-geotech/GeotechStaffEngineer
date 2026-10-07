@@ -492,6 +492,41 @@ def test_sweep_answers_every_page_and_reports_per_page(monkeypatch):
     assert looked and "page_bbox" in looked[0]["items"][0]
 
 
+def test_sweep_asks_for_pixels_and_converts_them_with_the_size_sent():
+    """2026-10-07: a sweep's whole-page items are asked for in pixels of the
+    image as sent and converted exactly; each also carries a padded
+    zoom_bbox, because a whole-page box says where to look, not where to put
+    a mark."""
+    import re as _re
+    from planlens.testing.submittal_fixtures import build_synthetic_submittal
+    from funhouse_agent.deep.sweep import sweep
+    pdf = build_synthetic_submittal().pdf
+    seen = {}
+
+    def page_answer(prompt):
+        m = _re.search(r"pixels of this (\d+) x (\d+) image", prompt)
+        if not m:
+            return json.dumps({"relevant": False, "answer": "", "items": [],
+                               "sure": True})
+        w, h = int(m.group(1)), int(m.group(2))
+        seen["size"] = (w, h)
+        return json.dumps({"relevant": True, "answer": "a tag", "sure": True,
+                           "items": [{"text": "T", "px": [w / 4, h / 4,
+                                                          w / 2, h / 2]}]})
+
+    out = sweep(pdf, "Where is the tag?", FakeEngine(page_answer),
+                pages="8", look="always")
+    (row,) = out["relevant"]
+    (item,) = row["items"]
+    with fitz.open(stream=pdf, filetype="pdf") as doc:
+        r = doc[8].rect
+    assert item["page_bbox"] == pytest.approx(
+        [r.width / 4, r.height / 4, r.width / 2, r.height / 2], abs=0.1)
+    zx0, zy0, zx1, zy1 = item["zoom_bbox"]
+    assert zx0 < r.width / 4 - 0.09 * r.width
+    assert "zoom_bbox" in out["note"] and "not where to put a mark" in out["note"]
+
+
 def test_sweep_tool_is_offered_only_with_its_switch(monkeypatch):
     monkeypatch.setenv(review_flags.AGENT_ENV, "lean")
     assert "sweep_pages" not in _tools_of(

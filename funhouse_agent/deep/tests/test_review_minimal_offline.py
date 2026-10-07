@@ -140,10 +140,21 @@ def test_mark_up_takes_a_zoom_location_and_writes_a_copy(gt, tmp_path,
     out = json.loads(_tools_of(agent)["mark_up"].invoke({
         "source": "review_set.pdf", "output_path": "marked.pdf",
         "markups": [{"kind": "box", "page": 0, "comment": "check this",
-                     "view": [0, 0, 612, 792],
+                     "view": [100, 100, 300, 300],
                      "image_box": [100, 100, 300, 200]}]}))
     assert out["n_written"] == 1, out
     assert os.path.isfile(out["output_path"])
+    # The same small box read off the WHOLE page is refused, with the way
+    # out: a box read off a view that wide can be tens of points off.
+    out = json.loads(_tools_of(agent)["mark_up"].invoke({
+        "source": "review_set.pdf", "output_path": "marked2.pdf",
+        "markups": [{"kind": "box", "page": 0, "comment": "check this",
+                     "view": [0, 0, 612, 792],
+                     "image_box": [100, 100, 300, 200]}]}))
+    if not out.get("skipped"):
+        pytest.skip("installed planlens predates the wide-view refusal")
+    assert out["n_written"] == 0
+    assert "ZOOM's view" in out["skipped"][0]["reason"]
 
 
 def test_the_suite_runs_the_arm(gt, tmp_path):

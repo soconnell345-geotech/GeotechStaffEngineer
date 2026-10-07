@@ -856,7 +856,8 @@ OPEN_TASKS: List[Task] = [
                "plus a bare GCE, the legend's GCE row and look-alikes (GCG, "
                "QCE) that must not be circled; lettering 0.06 in, drawn as "
                "lines, so the tags are found by looking and each ring placed "
-               "from the look that found it (planlens.testing.tag_fixtures, "
+               "from a zoom in which its tag is legible (whole-sheet boxes "
+               "were 20-90 pt off, 2026-10-07; planlens.testing.tag_fixtures, "
                "seed 11). Field session 2026-10-01: rings drawn at invented "
                "coordinates.")),
     Task(

@@ -71,6 +71,83 @@ here, not repeated.
 
 ---
 
+## What changed (2026-10-07, after the measurement in §5.1)
+
+Built on GeotechStaffEngineer `master` (on top of `ba12760`) and planlens
+`main` (on top of `d7d6657`), uncommitted for the lead's review. Each item
+has offline tests; none has run on a live model yet (§5.2 is the check).
+
+1. **Pixel boxes from the vision call, converted in code.** Every look
+   (`analyze_pdf_page` and its tiles, `render_region`, the chart read-offs,
+   `sweep_pages`, the markup check) tells the side call the image's size and
+   asks for `px=[x0, y0, x1, y1]` in pixels of it (`vision_view.PIXEL_INSTRUCTION`).
+   The tool rewrites every pixel box in the answer as a 0-999 box on the same
+   image, converted with the size it SENT, never the size the model states
+   (`vision_view.boxes_to_grid`), so the agent still reads one convention and
+   still passes `view` + `image_box`. A structured `LOCATED` item's `px` and
+   the markup check's `thing_px` are converted exactly
+   (`vision_view.px_box_to_page`). An old-style 0-999 answer still parses: an
+   untagged box is taken as pixels only when the answer is in pixels (a `px=`
+   tag, or a value past 999) and the box is shaped like one. Chart read-offs
+   convert tagged boxes only, so a list of four readings is never rewritten.
+   The result's `boxes` line says which happened. Text-layer context, when
+   switched on, is given in the same pixels.
+2. **Never more than the host delivers.** Every render is held to 2,048 px on
+   its long side (`vision_view.DEFAULT_MAX_PX`; `GEOTECH_VISION_MAX_PX`
+   overrides, `none` lifts it), keeping the budget's `detail`
+   (`original`, which Funhouse needs to deliver 2,048 px at all). So
+   `view_px`, `text_px`, the legibility line and auto-tiling all use the image
+   the model gets: the tag sheet now tiles 3 x 3 on its own. The probe sends
+   a fifth image where `original` is honoured, a blank 3072 x 1024 px: whole,
+   it costs 0.75 of the 2,048 px square; shrunk to 2,048 px, 0.34. Its
+   `max_edge` caps renders even if the owner lifts the default. An edge
+   below 2,048 px is not told apart (the square shrinks with it).
+3. **Tiles.** `tiles` accepts `auto`, `off`, N or `"NxN"` (N 2-4). A larger N
+   is held to 4 and the result says so (`tiles_note`). Anything else returns
+   an error naming what is accepted, before any call is spent. The default
+   agent's tool description now lists the values.
+4. **Zoom windows sized by the source view.** `render_region(view=,
+   image_box=)` pads the box by the location error of the view it came from:
+   a tenth of that view each way, at least 12 pt, or 15 % of the box when that
+   is more (`vision_view.zoom_pad`). From a whole sheet that is about 122 x
+   79 pt each side, against 3-7 pt before. Every result carries a
+   `precision` line (`vision_view.precision_note`). For a view wider than
+   300 pt it says the box is for finding where to zoom, not for placing a
+   mark. A structured or sweep item read off a wide view comes with a
+   `zoom_bbox`, the box already padded.
+5. **No mark from a wide view.** planlens `write_markups` skips, per mark and
+   with the reason, a `view` + `image_box` anchor whose view is wider than
+   300 pt when the mark is under a quarter of the view's longer side
+   (`VIEW_ANCHOR_MAX_PT`, `VIEW_ANCHOR_MIN_FRACTION`). It also skips one whose
+   box is the whole view (`WHOLE_VIEW_FRACTION`, 95 % both ways). The reason
+   tells the agent to zoom and anchor on the zoom. The thresholds come from
+   the measurements in §3 and §5.1: boxes off whole sheets were 14-90 pt
+   off, boxes off views of 80-350 pt were 0.2-5 pt off. A callout's text box
+   beside its `points_at` is not judged.
+6. **Quote anchors land on the quoted line.** For a matched text object with
+   no word boxes that prints over several rows (a CAD notes column stored as
+   one hidden string), planlens finds the printed rows from the ink inside
+   the object's box (`markup_writer._ink_rows`). It then picks the row(s)
+   the quote is on by its position in the string, weighted by how much
+   lettering each row holds; AutoCAD's doubled first line of a
+   hanging-indent paragraph is undone first (`_undoubled`). On sheet 10.31A,
+   eight test quotes all land on their own row. The 8.33 % callout now
+   points at (60, 227), on the line at y 224-230; before, it pointed at
+   (37, 147). Found on the way: a sticky note on a `/Rotate` 90/180/270
+   page hung one icon size (16 pt) off its spot (the r2 note of TRACE_REVIEW
+   §2.5). Now corrected.
+7. **Wording.** The review prompt, the `annotate_document` note, planlens'
+   own description, the markup check's advice and the sweep note now say to
+   anchor a mark by the view and `image_box` of the ZOOMED look in which the
+   thing is legible; a whole-page box says where to zoom.
+
+**Not changed:** the inline route (`GEOTECH_VISION_INLINE`), where the main
+model writes 0-999 boxes itself (planlens' refusal still covers its marks);
+`find_like`'s `view` + `image_box` example box (a box read off a wide view
+makes a poor template, a candidate for the same rule).
+
+---
+
 ## 1. The routes, end to end
 
 ```mermaid
@@ -932,6 +1009,261 @@ pixel boxes on the image sent (≤ 2,048 px on Funhouse), convert them in code
 with the true size, and hand the agent page or grid boxes computed from those.
 Sol has not been measured with pixel boxes; the tiles and the half-size
 whole page were already accurate for it (§3.2).
+
+### 5.2 Re-measure after the change (the cell for the next live check)
+
+Run on the release that carries "What changed" (above). It measures what
+the agent now gets, through the app's own code, with the probe ON:
+
+* **page-as-shipped (×3):** the whole sheet as `render_view` now sends it
+  (2,048 px), asked with the app's own look prompt (pixels), the answer
+  converted with `boxes_to_grid`. These are the boxes the agent reads.
+* **page-old-grid-prompt (×1):** the same image with the old 0-999 prompt,
+  the comparison.
+* **analyze_pdf_page as shipped (1 + 9):** the tool itself. Does it tile at
+  the size sent (3 x 3 expected), and how good are the tiles' converted boxes?
+* **zoom-on-page-box T6 / T4 (×2):** `render_region` on the page answer's own
+  box, exactly as the agent would call it. Does the padded window hold the tag,
+  and how good is the zoom's box?
+* **win80 T4 / T7 (×2):** 80 pt windows, as in §5.1.
+* The probe's own five calls come first and print the profile, which should
+  end "the host delivers at most 2048 px".
+
+About 23 model calls. Tested offline by running the cell's text unchanged
+with a fake engine that answers from the fixture truth: exactly in pixels,
+and on the grid with a planted 0.87 y scale when given the old prompt. It
+recovered 0.3 pt on the shipped page, the 0.87 scale on the old prompt, nine
+tiles, both zoom windows holding their tags, and the notebook's settings put
+back.
+
+```python
+# Location re-measure, after the 2026-10-07 change (pixel boxes converted in
+# code, images held to 2,048 px, tiles that fire at the size sent, zooms padded
+# by the source view's error). module_work/harness_theory/
+# locating_things_on_a_page.md §5.2. About 23 model calls, ~15 minutes.
+import json, math, os, re, time
+_ENV_KEYS = ("GEOTECH_VISION_PROBE", "GEOTECH_VISION_BUDGET", "GEOTECH_VISION_DETAIL",
+             "GEOTECH_VISION_MAX_PX", "GEOTECH_VISION_POLICY", "GEOTECH_CHART_BUDGET",
+             "GEOTECH_VISION_TEXT_CONTEXT", "GEOTECH_VISION_STRUCTURED",
+             "GEOTECH_VISION_INLINE")
+_SAVED_ENV = {k: os.environ.get(k) for k in _ENV_KEYS}   # put back at the end
+for _k in _ENV_KEYS:
+    os.environ.pop(_k, None)                     # the released defaults, probe ON
+from funhouse_agent import vision_view, vision_tools
+from planlens.testing.tag_fixtures import build_synthetic_tag_set
+
+GT = build_synthetic_tag_set()                   # sheet 0: 7 GCE callouts
+PAGE = 0
+TAGS = [t for t in GT.tags if t.page == PAGE]
+CALLOUTS = [t for t in TAGS if t.text == "GCE" and t.kind == "callout"]
+
+def _c(b): return ((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0)
+
+def _tag_near(x, y):                             # T1-T7 as named in TRACE_REVIEW
+    return min(CALLOUTS, key=lambda t: math.hypot(_c(t.bbox)[0] - x, _c(t.bbox)[1] - y))
+
+T4, T6, T7 = _tag_near(518.1, 314.6), _tag_near(275.7, 536.0), _tag_near(120.6, 610.5)
+
+class _Recorder:
+    """Passes calls through to the model and keeps the last response."""
+    def __init__(self, model): self.model, self.last = model, None
+    def invoke(self, messages, **kw):
+        self.last = self.model.invoke(messages, **kw)
+        return self.last
+
+ASK_PAGE = ("Find every GCE penetration tag that has a leader drawn from it "
+            "(not the legend row). List each one on its own line as: GCE <box>")
+ASK_ANY = ("Find every tag in this image (a three-letter code such as GCE, GCG, "
+           "GPE, FBG). List each one on its own line as: CODE <box>")
+_BOX = r"\[\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\]"
+
+def grid_boxes(text):
+    """[(code, 0-999 box)] from an answer as the AGENT reads it."""
+    out = []
+    for line in (text or "").splitlines():
+        for m in re.findall(_BOX, line):
+            code = re.search(r"\b([A-Z]{3})\b", line.replace("[", " ").replace("]", " "))
+            out.append((code.group(1) if code else "?", [float(v) for v in m]))
+    return out
+
+def score(view, found):
+    """Each 0-999 box on ``view`` to the nearest true tag in the view with
+    the code the answer gave it (any tag when it gave none); for a large view
+    the per-axis scale that best explains the answer is searched first, so a
+    systematic shrink cannot pair a box with the wrong tag."""
+    vx0, vy0, vx1, vy1 = view
+    inside = [t for t in TAGS if vx0 <= _c(t.bbox)[0] <= vx1 and vy0 <= _c(t.bbox)[1] <= vy1]
+    pts = []
+    for code, gb in found:
+        if not all(0 <= v <= 999 for v in gb) or gb[2] - gb[0] > 300 or gb[3] - gb[1] > 300:
+            continue
+        pb = vision_view.image_box_to_page(view, gb)
+        cands = [t for t in inside if code in ("?", t.text)] or inside
+        pts.append((gb, pb, cands))
+    sx = sy = 1.0
+    if (vx1 - vx0) > 300 and len(pts) >= 3:
+        best = None
+        for i in range(81):
+            for j in range(101):
+                ax, ay = 0.8 + 0.005 * i, 0.7 + 0.005 * j
+                cost = sum(min([math.hypot(_c(pb)[0] - vx0 - ax * (_c(t.bbox)[0] - vx0),
+                                           _c(pb)[1] - vy0 - ay * (_c(t.bbox)[1] - vy0))
+                                for t in c] + [60.0]) for _, pb, c in pts)
+                if best is None or cost < best[0]:
+                    best = (cost, ax, ay)
+        _, sx, sy = best
+    rows = []
+    for gb, pb, cands in pts:
+        if not cands:
+            continue
+        t = min(cands, key=lambda t: math.hypot(_c(pb)[0] - vx0 - sx * (_c(t.bbox)[0] - vx0),
+                                                _c(pb)[1] - vy0 - sy * (_c(t.bbox)[1] - vy0)))
+        (tx, ty), (rx, ry) = _c(t.bbox), _c(pb)
+        rows.append({"tag": t.text, "kind": t.kind, "true": [round(tx, 1), round(ty, 1)],
+                     "err_x": round(rx - tx, 1), "err_y": round(ry - ty, 1),
+                     "v_true": (ty - vy0) / (vy1 - vy0) * 999, "v_rep": (gb[1] + gb[3]) / 2})
+    return rows
+
+def _fit(t, r):
+    n = len(t)
+    if n < 3 or max(t) - min(t) < 50:
+        return None
+    mt, mr = sum(t) / n, sum(r) / n
+    a = sum((x - mt) * (y - mr) for x, y in zip(t, r)) / sum((x - mt) ** 2 for x in t)
+    return round(a, 3)
+
+RESULTS = []
+
+def record(name, view, size, rows, answer, rec=None, extra=None):
+    usage = (getattr(rec.last, "usage_metadata", None) or {}) if rec is not None and rec.last is not None else {}
+    e = sorted(math.hypot(r["err_x"], r["err_y"]) for r in rows)
+    res = {"name": name, "view": [round(v, 1) for v in view],
+           "view_pt": [round(view[2] - view[0]), round(view[3] - view[1])],
+           "sent_px": list(size) if size else None, "input_tokens": usage.get("input_tokens"),
+           "n_matched": len(rows), "median_err": round(e[len(e) // 2], 1) if e else None,
+           "max_err": round(e[-1], 1) if e else None,
+           "y_scale": _fit([r["v_true"] for r in rows], [r["v_rep"] for r in rows]),
+           "rows": rows, "answer": answer, **(extra or {})}
+    RESULTS.append(res)
+    print(f"{name:<24} view {res['view_pt'][0]:>4}x{res['view_pt'][1]:<4}pt sent {size}  "
+          f"in_tokens={res['input_tokens']}  matched {len(rows)}  "
+          f"median err {res['median_err'] if e else float('nan'):.1f} pt  "
+          f"max {res['max_err'] if e else float('nan'):.1f} pt  y scale {res['y_scale']}"
+          + (f"  {extra}" if extra else ""))
+    return res
+
+def run_remeasure(engine, rec=None, out_dir=None):
+    try:
+        return _run(engine, rec, out_dir)
+    finally:
+        for k, v in _SAVED_ENV.items():          # leave the notebook's settings as they were
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+def _run(engine, rec, out_dir):
+    pdf = GT.pdf
+    prof = engine.vision_profile() if hasattr(engine, "vision_profile") else None
+    print("vision profile:", prof.summary() if prof else None)
+    print("max image edge used:", vision_view.max_px(engine), " budget:", vision_view.budget_name(engine))
+    # A. the whole page as the app now sends it, asked as the app now asks (x3)
+    first = None
+    for rep in range(3):
+        png, info = vision_view.render_view(pdf, page=PAGE, engine=engine)
+        clip, size = info["clip"], (info["width_px"], info["height_px"])
+        answer = engine.analyze_image(png, vision_tools._vision_prompt(ASK_PAGE, clip, None, size))
+        text, counts = vision_view.boxes_to_grid(answer, size)
+        res = record(f"page-as-shipped {rep + 1}", clip, size, score(clip, grid_boxes(text)),
+                     answer, rec, {"converted": counts["converted"]})
+        first = first or (clip, text)
+    # B. the same image, the OLD 0-999 prompt, for comparison (x1)
+    answer = engine.analyze_image(png, vision_tools._vision_prompt(ASK_PAGE, clip, None))
+    record("page-old-grid-prompt", clip, size, score(clip, grid_boxes(answer)), answer, rec)
+    # C. the tool itself: does it tile at the size sent? (1 + tiles calls)
+    out = json.loads(vision_tools._dispatch_analyze_pdf_page(
+        {"attachment_key": "t", "page": PAGE, "prompt": ASK_PAGE}, engine, {"t": pdf}))
+    print("analyze_pdf_page as shipped: view_px", out.get("view_px"), "detail", out.get("detail"),
+          "| tiles:", len(out.get("tiles") or []), "|", (out.get("tiling") or out.get("legibility") or "")[:90])
+    for t in out.get("tiles") or []:
+        if t.get("analysis"):
+            record(f"tool-tile {t['tile']}", t["view"], t.get("view_px"),
+                   score(t["view"], grid_boxes(t["analysis"])), t["analysis"], None)
+    # D. render_region on the page answer's own box for T6 and T4, as the agent would (x2)
+    clip0, text0 = first
+    boxes0 = grid_boxes(text0)
+    for name, tag in (("T6", T6), ("T4", T4)):
+        if not boxes0:
+            print("zoom", name, "skipped: the page answer gave no boxes")
+            continue
+        tx, ty = _c(tag.bbox)
+        code, box = min(boxes0, key=lambda b: math.hypot(
+            _c(vision_view.image_box_to_page(clip0, b[1]))[0] - tx,
+            _c(vision_view.image_box_to_page(clip0, b[1]))[1] - ty))
+        z = json.loads(vision_tools._dispatch_render_region(
+            {"attachment_key": "t", "page": PAGE, "view": clip0, "image_box": box,
+             "prompt": ASK_ANY}, engine, {"t": pdf}))
+        if "error" in z:
+            print("zoom", name, "error:", z["error"])
+            continue
+        w = z["view"]
+        holds = w[0] <= tag.bbox[0] and w[1] <= tag.bbox[1] and w[2] >= tag.bbox[2] and w[3] >= tag.bbox[3]
+        record(f"zoom-on-page-box {name}", w, z.get("view_px"),
+               score(w, grid_boxes(z.get("analysis"))), z.get("analysis"), rec,
+               {"window_holds_tag": holds, "padding_pt": z.get("window_padding_pt")})
+    # E. 80 pt windows round T4 and T7, off-centre (x2)
+    for name, tag in (("T4", T4), ("T7", T7)):
+        cx, cy = _c(tag.bbox)
+        win = (cx - 20, cy - 50, cx + 60, cy + 30)
+        png, info = vision_view.render_view(pdf, page=PAGE, bbox=win, pad_frac=0.0, engine=engine)
+        clip, size = info["clip"], (info["width_px"], info["height_px"])
+        answer = engine.analyze_image(png, vision_tools._vision_prompt(ASK_ANY, clip, None, size))
+        text, _counts = vision_view.boxes_to_grid(answer, size)
+        record(f"win80 {name}", clip, size, score(clip, grid_boxes(text)), answer, rec)
+    # summary
+    print("\n| look | sent px | median err pt | max err pt | y scale | note |")
+    print("|---|---|---|---|---|---|")
+    for r in RESULTS:
+        note = ("window holds the tag" if r.get("window_holds_tag") else
+                "window MISSED the tag" if "window_holds_tag" in r else "")
+        print(f"| {r['name']} | {r['sent_px']} | {r['median_err']} | {r['max_err']} | {r['y_scale']} | {note} |")
+    out_dir = out_dir or os.getcwd()
+    path = os.path.join(out_dir, f"location_remeasure_{time.strftime('%Y%m%d_%H%M%S')}.json")
+    try:
+        with open(path, "w") as f:
+            json.dump({"profile": prof.to_dict() if prof else None, "results": RESULTS}, f, indent=1, default=str)
+        print("saved", path)
+    except Exception as exc:
+        print("could not save results:", exc)
+    return RESULTS
+
+try:
+    _LOC_ENGINE                                  # predefined by the offline test (a fake)
+except NameError:
+    from funhouse_agent.deep.databricks_bridge import PrompterChatModel
+    from funhouse_agent.deep.vision_engine import LangChainVisionEngine
+    _REC = _Recorder(PrompterChatModel(prompter=fh_prompter, model="funhouse-gpt-high"))
+    _LOC_ENGINE = LangChainVisionEngine(_REC)
+LOCATION_REMEASURE = run_remeasure(_LOC_ENGINE, globals().get("_REC"))
+```
+
+**How to read the output.**
+
+* **The profile line** should end "the host delivers at most 2048 px", and
+  "max image edge used: 2048". If it names no host edge on Funhouse, the
+  fifth probe call did not see the shrink: send the printed `image_tokens`
+  from the JSON.
+* **page-as-shipped**: the fix works if the median error is a few points
+  (the §5.1 pixel boxes were 0.1-5.9) and the y scale stays near 1.0 on
+  all three repeats. If it is tens of points with a scale well off 1.0, the
+  model is still answering on its own grid: look at `answer` in the JSON
+  for `px=` tags.
+* **page-old-grid-prompt** should look like §5.1: tens of points, scale off.
+* **The tool line** should show `view_px [2048, 1325]`, `detail original` and
+  `tiles: 9`. The tool-tile rows should be within a few points.
+* **zoom-on-page-box**: "window holds the tag" for both, and the zoom's own
+  error within a few points.
+* **win80**: within about 1 pt, as before.
 
 ---
 

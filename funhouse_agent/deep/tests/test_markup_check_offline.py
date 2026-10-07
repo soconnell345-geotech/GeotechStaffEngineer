@@ -146,7 +146,40 @@ def test_a_ring_round_the_right_thing_but_far_too_wide_is_not_confirmed(
     assert check["confirmed"] == 0 and len(check["misplaced"]) == 1
     assert "times the area" in check["misplaced"][0]["seen"]
     assert "zoom until you can box the thing itself" in check["note"]
-    assert "0-999" in engine.prompts[0]
+    # The look is asked where the thing is in PIXELS of the crop it was
+    # sent (this old-style 0-999 answer is still understood).
+    assert "thing_px" in engine.prompts[0] and "pixel image" in engine.prompts[0]
+
+
+def test_no_mark_from_a_wide_view_or_the_whole_view(tmp_path, monkeypatch):
+    """Live check 2026-10-07: every ring placed from a whole-sheet look
+    missed (20-90 pt off 10 pt tags), and a ring given the whole zoom window
+    ([0, 0, 999, 999]) blanketed it. planlens refuses both, per mark, and
+    says to anchor on a zoom; the check only looks at what went on."""
+    from planlens.document import markup_writer
+    if not hasattr(markup_writer, "VIEW_ANCHOR_MAX_PT"):
+        pytest.skip("installed planlens predates the wide-view refusal")
+    engine = PixelEngine()
+    tools, handle = _tools(engine, tmp_path, monkeypatch)
+    sheet = [0.0, 0.0, 1224.0, 792.0]
+    on_sheet = [round(TAG[0] / 1224 * 999), round(TAG[1] / 792 * 999),
+                round(TAG[2] / 1224 * 999), round(TAG[3] / 792 * 999)]
+    zoom = [600.0, 480.0, 700.0, 560.0]
+    on_zoom = [round((TAG[0] - 600) / 100 * 999), round((TAG[1] - 480) / 80 * 999),
+               round((TAG[2] - 600) / 100 * 999), round((TAG[3] - 480) / 80 * 999)]
+    out = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "anchors.pdf", "markups": [
+            {"kind": "circle", "page": 0, "label": "GCE",
+             "view": sheet, "image_box": on_sheet},
+            {"kind": "circle", "page": 0, "label": "GCE",
+             "view": zoom, "image_box": [0, 0, 999, 999]},
+            {"kind": "circle", "page": 0, "label": "GCE",
+             "view": zoom, "image_box": on_zoom}]}))
+    assert out["n_written"] == 1 and out["n_skipped"] == 2
+    reasons = {s["index"]: s["reason"] for s in out["skipped"]}
+    assert "1224 x 792 pt view" in reasons[0] and "ZOOM's view" in reasons[0]
+    assert "whole 100 x 80 pt view" in reasons[1]
+    assert out["check"]["checked"] == 1 and out["check"]["confirmed"] == 1
 
 
 def test_ring_size_is_measured_not_judged():
@@ -165,6 +198,54 @@ def test_ring_size_is_measured_not_judged():
     # no usable box from the look -> size is not judged
     assert _too_wide([13, 28, 86, 71], None, view) is None
     assert _too_wide([13, 28, 86, 71], [1, 2, 3], view) is None
+
+
+def test_the_thing_is_measured_in_pixels_of_the_crop(tmp_path, monkeypatch):
+    """thing_px is converted with the crop's own size: the same blanket ring
+    is caught from a pixel answer as from a grid one, and a snug ring
+    passes."""
+    import re as _re
+
+    class PxEngine:
+        def __init__(self, frac):
+            self.frac, self.prompts = frac, []
+
+        def analyze_image(self, image_bytes, prompt):
+            self.prompts.append(prompt)
+            w, h = (int(v) for v in _re.search(
+                r"this (\d+) x (\d+) pixel image", prompt).groups())
+            f = self.frac
+            return json.dumps({"encloses": True, "inside": "GCE",
+                               "thing_px": [w * (0.5 - f), h * (0.5 - f),
+                                            w * (0.5 + f), h * (0.5 + f)],
+                               "sure": True})
+
+    big = [TAG[0] - 60, TAG[1] - 40, TAG[2] + 60, TAG[3] + 40]
+    tools, handle = _tools(PxEngine(0.01), tmp_path, monkeypatch)
+    wide = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "px_wide.pdf", "markups": [
+            {"kind": "circle", "page": 0, "label": "GCE", "bbox": big}]}))
+    assert wide["check"]["confirmed"] == 0
+    assert "times the area" in wide["check"]["misplaced"][0]["seen"]
+    tools, handle = _tools(PxEngine(0.16), tmp_path, monkeypatch)
+    snug = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "px_snug.pdf", "markups": [
+            {"kind": "circle", "page": 0, "label": "GCE", "bbox": list(TAG)}]}))
+    assert snug["check"]["confirmed"] == 1
+
+
+def test_too_wide_reads_pixels_with_the_crop_size():
+    from funhouse_agent.markup_check import _too_wide
+    view = [0.0, 0.0, 100.0, 100.0]
+    # a 10 x 4 pt tag, as pixels of a 1000 x 1000 crop and as a 0-999 box
+    px = [450, 480, 550, 520]
+    assert _too_wide([13, 28, 86, 71], px, view, (1000, 1000)) > 30
+    assert _too_wide([40.5, 43, 59.5, 57], px, view, (1000, 1000)) is None
+    # the same numbers on a 2000 x 2000 crop are a thing half as wide each
+    # way: a 40 x 25 pt ring is 25 x its area on the first, too wide on the
+    # second — the size SENT decides
+    assert _too_wide([30, 35, 70, 60], px, view, (1000, 1000)) is None
+    assert _too_wide([30, 35, 70, 60], px, view, (2000, 2000)) > 30
 
 
 def test_a_snug_ring_is_confirmed(tmp_path, monkeypatch):

@@ -762,6 +762,12 @@ def _dispatch_render_region(arguments, engine, attachments):
     :mod:`funhouse_agent.vision_view`). Also ``dpi`` (default: fill the image
     budget; 300 without one), ``pad_frac`` (default 0.15), ``marks``
     (optional list of [x,y,label] for set-of-marks prompting), ``prompt``.
+
+    A zoom on ``view`` + ``image_box`` is padded by the location error of
+    the view the box came from (:func:`vision_view.zoom_pad`: a tenth of that
+    view each way, at least 12 pt), not by 15 % of the box: a box read off a
+    whole sheet can be tens of points off, and a window the size of the box
+    showed blank paper (11 first zooms in 11, 2026-10-07).
     """
     from funhouse_agent import vision_view
 
@@ -775,17 +781,21 @@ def _dispatch_render_region(arguments, engine, attachments):
     marks = arguments.get("marks")
     prompt = arguments.get("prompt", "Describe what this zoomed-in region shows.")
 
+    window, render_pad, padded = bbox, pad_frac, None
     if view is not None or image_box is not None:
         if bbox is not None:
             return json.dumps({"error": "pass bbox OR view + image_box, not both"})
         try:
-            bbox = [round(v, 2) for v in vision_view.image_box_to_page(
-                view or [], image_box or [])]
+            thing = vision_view.image_box_to_page(view or [], image_box or [])
+            px, py = vision_view.zoom_pad(view, thing, float(pad_frac))
         except (TypeError, ValueError) as e:
             return json.dumps({
                 "error": f"view + image_box: {e}",
                 "hint": "view = the 'view' of an earlier vision result; "
                         "image_box = a 0-999 box the analysis gave on it"})
+        bbox = [round(v, 2) for v in thing]
+        window = [thing[0] - px, thing[1] - py, thing[2] + px, thing[3] + py]
+        render_pad, padded = 0.0, [round(px, 1), round(py, 1)]
 
     try:
         pdf_bytes, _src = _resolve_attachment_or_path(key, attachments)
@@ -794,8 +804,8 @@ def _dispatch_render_region(arguments, engine, attachments):
 
     try:
         image_bytes, info = vision_view.render_view(
-            pdf_bytes, page=page, bbox=bbox, marks=marks, dpi=dpi,
-            pad_frac=pad_frac,
+            pdf_bytes, page=page, bbox=window, marks=marks, dpi=dpi,
+            pad_frac=render_pad,
             allow_jpeg=getattr(engine, "accepts_jpeg", False), engine=engine)
     except ImportError:
         return json.dumps({
@@ -810,10 +820,18 @@ def _dispatch_render_region(arguments, engine, attachments):
                                          lines, bbox=bbox))
     try:
         result = engine.analyze_image(
-            image_bytes, _vision_prompt(prompt, info["clip"], lines))
+            image_bytes, _vision_prompt(prompt, info["clip"], lines,
+                                        _sent_size(info)))
         out = {"page": page, **_pdf_page(page), "bbox": bbox,
                "analysis": result, **vision_view.view_payload(info, engine)}
-        _split_located(out, info["clip"])
+        if padded is not None:
+            out["window_padding_pt"] = padded
+            out["window_note"] = (
+                f"the window is the box padded by {padded[0]:g} x "
+                f"{padded[1]:g} pt each side, the location error of the view "
+                f"the box was read off; if the thing is not in it, look "
+                f"again rather than concluding it is absent")
+        _finish_answer(out, info)
         if "located" in out:
             _fit_region(out)
         return json.dumps(out)
@@ -834,37 +852,83 @@ def _lines_for_context(pdf_bytes, page):
     return vision_view.page_lines(pdf_bytes, page)
 
 
-def _vision_prompt(prompt, clip, lines) -> str:
+def _sent_size(info):
+    """``(width_px, height_px)`` of the image as rendered and sent — the size
+    a pixel box is converted with (never the size a model says it saw)."""
+    try:
+        return int(info["width_px"]), int(info["height_px"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _vision_prompt(prompt, clip, lines, size=None) -> str:
     """The prompt one page/region vision call gets: the text layer inside its
-    view (when switched on), the agent's own prompt, the location grid, and
-    the LOCATED instruction (when switched on)."""
+    view (when switched on), the agent's own prompt, the location
+    instruction — boxes in pixels of an image of ``size`` (w, h), or with no
+    size the old 0-999 grid — and the LOCATED instruction (when switched
+    on)."""
     from funhouse_agent import review_flags, vision_view
     parts = []
     if lines is not None:
-        parts.append(vision_view.text_context(lines[0], clip, lines[1]))
+        parts.append(vision_view.text_context(lines[0], clip, lines[1],
+                                              size=size))
     parts.append(prompt)
-    text = vision_view.with_grid("\n\n".join(parts))
+    text = vision_view.with_location("\n\n".join(parts), size)
     if review_flags.vision_structured():
-        text = vision_view.with_locations(text)
+        text = vision_view.with_locations(text, size)
     return text
 
 
-def _split_located(out, clip) -> None:
+def _split_located(out, clip, size=None) -> None:
     """Move a structured LOCATED list out of ``out['analysis']`` into
     ``out['located']`` with page boxes (``GEOTECH_VISION_STRUCTURED``)."""
     from funhouse_agent import review_flags, vision_view
     if not review_flags.vision_structured() or not out.get("analysis"):
         return
     try:
-        text, located = vision_view.split_located(str(out["analysis"]), clip)
+        text, located = vision_view.split_located(str(out["analysis"]), clip,
+                                                  size)
     except Exception:  # noqa: BLE001 - an unparsed answer is still an answer
         return
     out["analysis"] = text
     if located:
         out["located"] = located
-        out["located_note"] = ("each located item's page_bbox is PDF points "
-                               "on this page: pass it as render_region's bbox "
-                               "to zoom, or as an annotate_document box")
+        if any("zoom_bbox" in it for it in located):
+            out["located_note"] = (
+                "each located item's page_bbox is PDF points on this page, "
+                "read off a view too wide to place a mark from: zoom with "
+                "render_region(bbox=<its zoom_bbox>) — the box padded by "
+                "this view's location error — and place a mark from the "
+                "zoom")
+        else:
+            out["located_note"] = (
+                "each located item's page_bbox is PDF points on this page: "
+                "pass it as render_region's bbox to zoom, or as an "
+                "annotate_document box")
+
+
+def _finish_answer(out, info, note: bool = True,
+                   tagged_only: bool = False) -> None:
+    """Turn a vision answer's locations into what the agent works with: the
+    structured LOCATED list split off (when switched on), then every pixel
+    box in the prose rewritten on the 0-999 grid of this view
+    (:func:`vision_view.boxes_to_grid`), converted with the size SENT.
+    ``note`` adds the line saying so (a tile's rows leave it to the page);
+    ``tagged_only`` (chart read-offs) converts only boxes tagged ``px=``."""
+    from funhouse_agent import vision_view
+    size = _sent_size(info)
+    _split_located(out, info["clip"], size)
+    if not size or not isinstance(out.get("analysis"), str):
+        return
+    try:
+        text, counts = vision_view.boxes_to_grid(out["analysis"], size,
+                                                 tagged_only=tagged_only)
+    except Exception:  # noqa: BLE001 - an unconverted answer is still one
+        return
+    out["analysis"] = text
+    msg = vision_view.boxes_note(counts, size) if note else None
+    if msg:
+        out["boxes"] = msg
 
 
 #: A render_region result stays under this (the general tool cap is 8,000 —
@@ -1010,19 +1074,24 @@ TILED_RESULT_CHARS = 30000
 def _dispatch_analyze_pdf_page(arguments, engine, attachments):
     """Handle analyze_pdf_page tool call.
 
-    ``tiles`` — ``"auto"`` (default), ``"off"``, or a number N for an N x N
-    split. On ``auto`` the page is also read in overlapping tiles when its
-    small lettering would arrive under ``vision_view.LEGIBLE_TEXT_PX`` in the
-    whole-page image (measured from the text layer, or assumed 0.06 in on a
-    sheet whose lettering is drawn as lines): each tile goes at the same
-    budget, so the lettering is N times larger, and the result carries the
-    whole-page overview AND every tile's reading, each with its ``view`` for
-    zooming. Policy ``efficient`` turns ``auto`` off.
+    ``tiles`` — ``"auto"`` (default), ``"off"``, or N / ``"NxN"`` for an
+    N x N split (N 2-4; a larger N is held to 4 and the result says so; any
+    other value is an error naming what is accepted — ``"6x6"`` used to be
+    read silently as no tiles). On ``auto`` the page is also read in
+    overlapping tiles when its small lettering would arrive under
+    ``vision_view.LEGIBLE_TEXT_PX`` in the whole-page image AS SENT (measured
+    from the text layer, or assumed 0.06 in on a sheet whose lettering is
+    drawn as lines): each tile goes at the same budget, so the lettering is N
+    times larger, and the result carries the whole-page overview AND every
+    tile's reading, each with its ``view`` for zooming. Policy ``efficient``
+    turns ``auto`` off.
     """
     key = arguments.get("attachment_key", "")
     page = arguments.get("page", 0)
     prompt = arguments.get("prompt", "Describe the content of this page.")
-    tiles = arguments.get("tiles", "auto")
+    tiles, tiles_note, tiles_error = _parse_tiles(arguments.get("tiles", "auto"))
+    if tiles_error:
+        return json.dumps({"error": tiles_error, "accepted": TILES_ACCEPTED})
 
     try:
         pdf_bytes, _src = _resolve_attachment_or_path(key, attachments)
@@ -1051,7 +1120,8 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
                                          lines))
     try:
         result = engine.analyze_image(
-            image_bytes, _vision_prompt(prompt, info["clip"], lines))
+            image_bytes, _vision_prompt(prompt, info["clip"], lines,
+                                        _sent_size(info)))
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({
             "error": f"Vision not available on this engine: {e}"
@@ -1060,18 +1130,23 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
     out = {"page": page, **_pdf_page(page), "analysis": result,
            **vision_view.view_payload(info, engine)}
-    _split_located(out, info["clip"])
+    _finish_answer(out, info)
+    if tiles_note:
+        out["tiles_note"] = tiles_note
 
     n = _tile_count(tiles, info)
     if n > 1:
         out["tiles"] = _read_tiles(pdf_bytes, page, info, n, prompt, engine,
                                    lines)
+        why = ("the page's small lettering was too small in the whole-page "
+               "image, so it was ALSO" if tiles == "auto" else "it was ALSO")
         out["tiling"] = (
-            f"the page's small lettering was too small in the whole-page "
-            f"image, so it was ALSO read in {n}x{n} overlapping tiles (each "
-            f"at the same image size, lettering {n}x larger). Trust a tile "
-            f"over the overview for small lettering; each tile's view zooms "
-            f"further with render_region.")
+            f"{why} read in {n}x{n} overlapping tiles (each at the same "
+            f"image size, lettering {n}x larger). Trust a tile over the "
+            f"overview for small lettering. Each tile's boxes are on that "
+            f"tile's own 0-999 grid: pass them with the TILE's view, to zoom "
+            f"with render_region or, once the thing is legible in a view of "
+            f"{vision_view.MARK_VIEW_PT:.0f} pt or less, to place a mark.")
         out.pop("legibility", None)
     # Located lists first (they can outgrow the text), then the text.
     _fit_located(out, TILED_RESULT_CHARS)
@@ -1080,24 +1155,66 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
     return json.dumps(out)
 
 
-def _tile_count(tiles, info) -> int:
+#: What ``analyze_pdf_page(tiles=...)`` accepts, in the words the agent sees.
+TILES_ACCEPTED = ("'auto' (the default: tiles only when the lettering is too "
+                  "small in the whole-page image), 'off', or N or 'NxN' for "
+                  "an N x N split with N from 2 to 4, e.g. '3' or '3x3'")
+
+_TILES_OFF = ("off", "none", "no", "false", "0", "1", "1x1")
+_TILES_N = re.compile(r"^\s*(\d+)\s*(?:[x×*]\s*(\d+))?\s*$", re.IGNORECASE)
+
+
+def _parse_tiles(tiles):
+    """``(value, note, error)`` for an ``analyze_pdf_page(tiles=...)``
+    argument: value is ``"auto"``, ``"off"`` or N (2-4); ``note`` says when
+    N was held to the maximum; ``error`` names what is accepted when the
+    value means nothing (it used to be read silently as no tiles)."""
     from funhouse_agent import vision_view
-    if isinstance(tiles, str):
-        t = tiles.strip().lower()
-        if t in ("off", "none", "0", "1", "false"):
+    top = vision_view.MAX_TILES_PER_SIDE
+    if tiles is None or tiles is True:
+        return "auto", None, None
+    if tiles is False:
+        return "off", None, None
+    if isinstance(tiles, (int, float)):
+        text = str(int(tiles))
+    else:
+        text = str(tiles).strip().lower()
+    if text in ("", "auto"):
+        return "auto", None, None
+    if text in _TILES_OFF:
+        return "off", None, None
+    m = _TILES_N.match(text)
+    if not m:
+        return None, None, f"tiles={tiles!r} is not a tiling."
+    rows, cols = int(m.group(1)), int(m.group(2) or m.group(1))
+    if rows != cols:
+        return None, None, (f"tiles={tiles!r}: a page is split N x N, the "
+                            f"same both ways.")
+    if rows <= 1:
+        return "off", None, None
+    if rows > top:
+        return top, (f"tiles={tiles!r} asked for; {top}x{top} is the most "
+                     f"made (each tile already 1/{top} of the page each way): "
+                     f"read with {top}x{top} — zoom further with "
+                     f"render_region"), None
+    return rows, None, None
+
+
+def _tile_count(tiles, info) -> int:
+    """Tiles per side for a parsed ``tiles`` value (``_parse_tiles``); a raw
+    argument is parsed here too, and one that means nothing is 1."""
+    from funhouse_agent import vision_view
+    if tiles not in ("auto", "off") and not isinstance(tiles, int):
+        tiles, _note, error = _parse_tiles(tiles)
+        if error:
             return 1
-        if t == "auto":
-            if vision_view.policy() != "robust":
-                return 1
-            return vision_view.tile_grid(info)
-        try:
-            tiles = int(t)
-        except ValueError:
-            return 1
-    try:
-        return max(1, min(vision_view.MAX_TILES_PER_SIDE, int(tiles)))
-    except (TypeError, ValueError):
+    if tiles == "off":
         return 1
+    if tiles == "auto":
+        if vision_view.policy() != "robust":
+            return 1
+        return vision_view.tile_grid(info)
+    return max(1, min(vision_view.MAX_TILES_PER_SIDE, int(tiles)))
 
 
 def _read_tiles(pdf_bytes, page, info, n, prompt, engine, lines=None):
@@ -1118,14 +1235,14 @@ def _read_tiles(pdf_bytes, page, info, n, prompt, engine, lines=None):
                      f"only what is IN this tile, briefly.")
             text = engine.analyze_image(
                 img, _vision_prompt(f"{prompt}\n\n{where}", tinfo["clip"],
-                                    lines))
+                                    lines, _sent_size(tinfo)))
             row = {"tile": f"r{r + 1}c{c + 1}",
                    "view": [round(v, 1) for v in tinfo["clip"]],
                    "view_px": [tinfo["width_px"], tinfo["height_px"]],
                    **({"text_px": tinfo["text_px"]}
                       if tinfo.get("text_px") else {}),
                    "analysis": text}
-            _split_located(row, tinfo["clip"])
+            _finish_answer(row, tinfo, note=False)
             row.pop("located_note", None)
             return row
         except Exception as exc:                  # one tile, not the page
@@ -1296,14 +1413,14 @@ def _dispatch_view_worked_example_at_budget(arguments, engine):
         f"Task: {question}"
     )
     try:
-        analysis = engine.analyze_image(image_bytes,
-                                        vision_view.with_grid(framing))
+        analysis = engine.analyze_image(
+            image_bytes, vision_view.with_location(framing, _sent_size(info)))
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({"error": f"Vision not available on this engine: {e}"})
     except Exception as e:
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
-    return json.dumps({
+    out = {
         "example_id": entry["id"],
         "source_doc": entry.get("source_doc"),
         "pdf_page": page_1b,
@@ -1313,7 +1430,9 @@ def _dispatch_view_worked_example_at_budget(arguments, engine):
         "source": str(pdf_abs),
         "page": page_1b - 1,
         **vision_view.view_payload(info, engine),
-    })
+    }
+    _finish_answer(out, info, tagged_only=True)
+    return json.dumps(out)
 
 
 def _dispatch_read_reference_figure(arguments, engine):
@@ -1403,14 +1522,15 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
     )
 
     try:
-        result = engine.analyze_image(image_bytes,
-                                      vision_view.with_grid(full_prompt))
+        result = engine.analyze_image(
+            image_bytes, vision_view.with_location(full_prompt,
+                                                   _sent_size(info)))
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({"error": f"Vision not available on this engine: {e}"})
     except Exception as e:
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
-    return json.dumps({
+    out = {
         "reference": reference,
         "figure_number": rec["figure_number"],
         "caption": rec["caption"],
@@ -1423,7 +1543,9 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
         "source": str(pdf_abs),
         "page": page_idx,
         **vision_view.view_payload(info, engine),
-    })
+    }
+    _finish_answer(out, info, tagged_only=True)
+    return json.dumps(out)
 
 
 def _dispatch_write_docx(arguments, save_fn):

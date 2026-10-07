@@ -90,9 +90,11 @@ REVIEW_DESCRIPTIONS: Dict[str, str] = {
         "are worth a look. Locations come "
         "back as 0-999 boxes on the image with the page's view (and, when "
         "given, 'located' items with a page_bbox in PDF points); zoom on one "
-        "with render_region. When the page's small lettering is too small "
+        "with render_region - a whole-page box says where to zoom, not where "
+        "to put a mark. When the page's small lettering is too small "
         "for one image, the page is also read in tiles (tiles='off' skips "
-        "that, '2'-'4' forces it). page is 0-based."),
+        "that; N or 'NxN' with N from 2 to 4, e.g. '3x3', forces it). page "
+        "is 0-based."),
     "render_region": (
         "Zoom on part of a page and look at it. The region is re-drawn from "
         "the PDF to fill the image, so a smaller box shows finer lettering - "
@@ -101,7 +103,8 @@ REVIEW_DESCRIPTIONS: Dict[str, str] = {
         "read_document(with_locations=true), search_document, "
         "document_markups and a vision result's located items give), or with "
         "an earlier vision result's view + a 0-999 image_box from its "
-        "answer. marks = [[x, y, label], ...] numbers spots so you can ask "
+        "answer (the window is padded by that view's location error, so the "
+        "thing is in it). marks = [[x, y, label], ...] numbers spots so you can ask "
         "what is at each. Use it to read small lettering, confirm a "
         "character, see what a note, markup or leader points at, or check a "
         "dimension before you quote it. page is 0-based."),

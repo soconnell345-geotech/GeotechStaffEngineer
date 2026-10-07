@@ -50,10 +50,20 @@ _PAGE_PROMPT = (
     "Reply with ONLY a JSON object: {{\"relevant\": true or false (does this "
     "page contain anything that answers the question), \"answer\": what this "
     "page says or shows about it, in one or two sentences, \"items\": [each "
-    "thing found: {{\"text\": the exact characters as printed, \"box\": [x0, "
-    "y0, x1, y1] on the 0-999 grid over the image, or null}}], \"sure\": "
-    "true or false}}. If a character could be another, bracket the "
+    "thing found: {{\"text\": the exact characters as printed{where}}}], "
+    "\"sure\": true or false}}. If a character could be another, bracket the "
     "alternatives, e.g. A[B/8]C, and set sure to false.")
+
+#: Where each item is, when the page is looked at: a box in PIXELS of the
+#: image as sent, converted in code (vision_view: pixel boxes were within a
+#: few points where 0-999 boxes were tens of points off, 2026-10-07).
+_WHERE_PX = (", \"px\": [x0, y0, x1, y1] in pixels of this {w} x {h} image "
+             "(0,0 top-left), or null")
+
+
+def _page_prompt(question: str, size=None) -> str:
+    where = _WHERE_PX.format(w=int(size[0]), h=int(size[1])) if size else ""
+    return _PAGE_PROMPT.format(question=question, where=where)
 
 
 def _parse(text: str) -> Optional[Dict[str, Any]]:
@@ -107,8 +117,9 @@ def sweep(pdf, question: str, engine, *, pages=None, look: str = "auto",
     def one(p: int) -> Dict[str, Any]:
         by_eye = (look == "always" or (look == "auto" and (
             kinds.get(p) in LOOK_KINDS or len(texts.get(p, "").strip()) < 40)))
+        size = None
         if look == "never" or (not by_eye and text_model is not None):
-            prompt = (_PAGE_PROMPT.format(question=question)
+            prompt = (_page_prompt(question)
                       + "\n\nThe page's text (drafting order):\n"
                       + (texts.get(p) or "[no text]"))
             if text_model is None:
@@ -119,8 +130,10 @@ def sweep(pdf, question: str, engine, *, pages=None, look: str = "auto",
                 source, page=p, allow_jpeg=getattr(engine, "accepts_jpeg",
                                                    False), engine=engine)
             view = info["clip"]
-            prompt = (vision_view.text_context(lines.get(p, []), view) + "\n\n"
-                      + _PAGE_PROMPT.format(question=question))
+            size = (int(info["width_px"]), int(info["height_px"]))
+            prompt = (vision_view.text_context(lines.get(p, []), view,
+                                               size=size) + "\n\n"
+                      + _page_prompt(question, size))
             raw, how = engine.analyze_image(img, prompt), "looked"
         data = _parse(raw) or {"relevant": None, "answer": raw[:400],
                                "sure": False}
@@ -133,13 +146,23 @@ def sweep(pdf, question: str, engine, *, pages=None, look: str = "auto",
             if not isinstance(it, dict):
                 continue
             item = {"text": it.get("text")}
-            box = it.get("box")
-            if view is not None and isinstance(box, (list, tuple)) and len(box) == 4:
-                try:
+            px, box = it.get("px"), it.get("box")
+            try:
+                if (view is not None and size and isinstance(px, (list, tuple))
+                        and len(px) == 4):
+                    item["page_bbox"] = [round(v, 1) for v in
+                                         vision_view.px_box_to_page(view, px,
+                                                                    size)]
+                elif (view is not None and isinstance(box, (list, tuple))
+                      and len(box) == 4):            # an old-style 0-999 box
                     item["page_bbox"] = [round(v, 1) for v in
                                          vision_view.image_box_to_page(view, box)]
-                except (TypeError, ValueError):
-                    pass
+                if view is not None and "page_bbox" in item:
+                    window = vision_view.zoom_window(view, item["page_bbox"])
+                    if window is not None:
+                        item["zoom_bbox"] = window
+            except (TypeError, ValueError):
+                pass
             items.append(item)
         if items:
             row["items"] = items[:25]
@@ -173,7 +196,11 @@ def sweep(pdf, question: str, engine, *, pages=None, look: str = "auto",
                         "why": r.get("error") or "no JSON answer"}
                        for r in rows if r.get("relevant") is None],
         "note": ("pages are 0-based (pdf_page = viewer page); a first pass — "
-                 "zoom on anything you will report, especially unsure pages"),
+                 "zoom on anything you will report, especially unsure pages. "
+                 "An item's page_bbox was read off the WHOLE page: it says "
+                 "where to look, not where to put a mark — zoom with "
+                 "render_region(bbox=<its zoom_bbox>), the box padded by the "
+                 "page's location error, and place marks from the zoom"),
     }
     if rest:
         out["next_pages"] = compact_ranges(rest)

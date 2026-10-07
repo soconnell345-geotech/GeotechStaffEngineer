@@ -45,6 +45,15 @@ class FakeVisionModel:
         self.calls = []
 
     def _image_tokens(self, w, h, detail):
+        if self.family == "funhouse":
+            # Funhouse GPT-5.4 (measured 2026-09-25 and 2026-10-07): "high"
+            # cut down like a tile model (714 for both squares); "original"
+            # honoured — but the HOST shrinks anything over 2,048 px first.
+            if detail != "original":
+                return 714
+            s = min(1.0, 2048 / max(w, h))
+            w, h = round(w * s), round(h * s)
+            return int(math.ceil(w / 32) * math.ceil(h / 32) * 1.03) + 10
         if self.family == "tile":
             s = min(1.0, 2048 / max(w, h))
             w, h = w * s, h * s
@@ -83,7 +92,7 @@ class FakeVisionModel:
 @pytest.fixture(autouse=True)
 def probing_on(monkeypatch):
     for env in (vision_view.BUDGET_ENV, vision_view.DETAIL_ENV,
-                vision_view.CHART_BUDGET_ENV):
+                vision_view.CHART_BUDGET_ENV, vision_view.MAX_PX_ENV):
         monkeypatch.delenv(env, raising=False)
     monkeypatch.setenv(vision_probe.PROBE_ENV, "1")
     vision_probe.clear_cache()
@@ -191,12 +200,17 @@ def test_charts_follow_the_measurement_too(monkeypatch, tmp_path, sheet_pdf):
     monkeypatch.setattr(_figures_db, "figure_get", lambda r, f: {
         "figure_number": f, "caption": "a chart", "page_estimated": False})
     monkeypatch.setattr(_figures_db, "resolve_pdf", lambda r, f: (pdf, 0))
+    import dataclasses
     from planlens.document.budget import BUDGETS, fit_size
+    # A patch model honouring "original" gets that budget, held to the
+    # 2,048 px a host delivers (vision_view.DEFAULT_MAX_PX).
+    original_held = dataclasses.replace(BUDGETS["openai-original"],
+                                        max_edge=vision_view.DEFAULT_MAX_PX)
     for family, answered, px in (
             ("tile", "gpt-5.1-2025-11-13",
              fit_size(1224, 792, BUDGETS["gpt-4.1-high"])[0]),
             ("patch", "gpt-5.4-2026-03-05",
-             fit_size(1224, 792, BUDGETS["openai-original"])[0])):
+             fit_size(1224, 792, original_held)[0])):
         vision_probe.clear_cache()
         model = FakeVisionModel(family, answered)
         out = json.loads(_dispatch_read_reference_figure(
@@ -237,3 +251,61 @@ def test_connection_diagnostics_report_the_measured_model(monkeypatch):
     assert check["detail"].startswith("gpt-5.1-2025-11-13: images at gpt-4.1-high")
     monkeypatch.setenv(vision_probe.PROBE_ENV, "0")
     assert _vision_check(FakeVisionModel("tile"))["status"] == "skip"
+
+
+# -- the host's own cap (2026-10-07) ----------------------------------------------
+
+def test_a_host_that_shrinks_large_images_is_measured():
+    """Funhouse: "original" honoured up to 2,048 px, anything larger shrunk
+    by the host. The four calls up to 2,048 px cannot see that; the fifth,
+    a 3072 x 1024 image, can."""
+    model = FakeVisionModel("funhouse", "gpt-5.4-2026-03-05")
+    prof = vision_probe.probe(model)
+    assert (prof.general, prof.detailed) == ("gpt-4.1-high", "openai-original")
+    assert len(model.calls) == 5
+    assert _png_size(model.calls[-1][0]["image_url"]["url"]) == \
+        vision_probe.WIDE_PX
+    assert prof.max_edge == 2048
+    assert prof.ratios["wide"] < 0.4
+    assert "the host delivers at most 2048 px" in prof.summary()
+    assert prof.to_dict()["max_edge"] == 2048
+
+
+def test_a_host_that_passes_large_images_whole_sets_no_cap():
+    model = FakeVisionModel("patch", "gpt-5.6-2026-09-01")
+    prof = vision_probe.probe(model)
+    assert len(model.calls) == 5 and prof.max_edge is None
+    assert "host delivers" not in prof.summary()
+
+
+def test_no_fifth_call_where_nothing_past_2048_is_sent():
+    model = FakeVisionModel("tile")
+    prof = vision_probe.probe(model)
+    assert len(model.calls) == 4 and prof.max_edge is None
+
+
+def test_the_measured_host_edge_caps_renders_even_when_the_owner_lifts_the_cap(
+        monkeypatch, sheet_pdf):
+    engine = LangChainVisionEngine(FakeVisionModel("funhouse",
+                                                   "gpt-5.4-2026-03-05"))
+    monkeypatch.setenv(vision_view.MAX_PX_ENV, "none")
+    assert vision_view.max_px(engine) == 2048
+    monkeypatch.setenv(vision_view.MAX_PX_ENV, "4096")
+    assert vision_view.max_px(engine) == 2048
+    monkeypatch.setenv(vision_view.MAX_PX_ENV, "1600")
+    assert vision_view.max_px(engine) == 1600         # a smaller cap stands
+    monkeypatch.delenv(vision_view.MAX_PX_ENV)
+    out = json.loads(_dispatch_analyze_pdf_page(
+        {"attachment_key": "sheet", "page": 0, "prompt": "list the bars",
+         "tiles": "off"}, engine, {"sheet": sheet_pdf}))
+    assert max(out["view_px"]) == 2048 and out["detail"] == "original"
+
+
+@pytest.mark.parametrize("square,wide,edge", [
+    (4234, 1460, 2048),           # Funhouse: shrunk to 2048 x 683
+    (4915, 3686, None),           # whole (3,072 patches), any multiplier
+    (4096, 2160, 2544),           # a host that keeps ~2,560 px
+    (None, 1000, None), (4096, None, None),
+])
+def test_host_edge_from_probe(square, wide, edge):
+    assert vision_probe.host_edge_from_probe(square, wide) == edge

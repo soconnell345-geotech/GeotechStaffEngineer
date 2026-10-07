@@ -3,9 +3,11 @@
 Pinned: renders land inside the configured image budget (and fall back to the
 old fixed sizes on a planlens without budgets); the engine labels the bytes
 by their real type, sends the budget's ``detail`` and retries once without it
-when a model rejects it; every vision prompt asks for 0-999 locations and
-every vision result returns the ``view`` that turns one back into page points;
-``render_region(view=, image_box=)`` zooms on exactly that box.
+when a model rejects it; every vision prompt asks for locations in pixels of
+the image as sent (converted to 0-999 boxes for the agent) and every vision
+result returns the ``view`` that turns one back into page points;
+``render_region(view=, image_box=)`` zooms on that box, padded by the source
+view's location error.
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ def default_env(monkeypatch):
     monkeypatch.delenv(vision_view.BUDGET_ENV, raising=False)
     monkeypatch.delenv(vision_view.DETAIL_ENV, raising=False)
     monkeypatch.delenv(vision_view.CHART_BUDGET_ENV, raising=False)
+    monkeypatch.delenv(vision_view.MAX_PX_ENV, raising=False)
     # The engine tests here are about the engine; the probe has its own tests.
     monkeypatch.setenv(vision_probe.PROBE_ENV, "0")
     vision_probe.clear_cache()
@@ -193,14 +196,21 @@ def test_engine_without_detail(monkeypatch):
 
 # -- the tools: grid in, view out, zoom back in ------------------------------------
 
-def test_analyze_pdf_page_asks_for_the_grid_and_returns_the_view(pdf_bytes):
+def test_analyze_pdf_page_asks_for_pixels_and_returns_the_view(pdf_bytes):
     engine = Engine()
     out = json.loads(_dispatch_analyze_pdf_page(
         {"attachment_key": "sheet", "page": 0, "prompt": "find the rectangle"},
         engine, {"sheet": pdf_bytes}))
-    assert vision_view.GRID_INSTRUCTION in engine.calls[0]["prompt"]
+    # Pixels of the image as SENT, its size named (2026-10-07: the 0-999
+    # grid was the problem, not the model's sight).
+    assert vision_view.pixel_instruction(out["view_px"]) in \
+        engine.calls[0]["prompt"]
+    assert vision_view.GRID_INSTRUCTION not in engine.calls[0]["prompt"]
     assert out["view"] == [0.0, 0.0, 1224.0, 792.0]
     assert len(out["view_px"]) == 2 and "render_region" in out["zoom_hint"]
+    # An old-style 0-999 answer still reads as one, and says so.
+    assert "[490, 505, 572, 568]" in out["analysis"]
+    assert "without units" in out["boxes"]
 
 
 def test_render_region_zooms_on_a_grid_box_from_a_view(pdf_bytes):
@@ -213,10 +223,12 @@ def test_render_region_zooms_on_a_grid_box_from_a_view(pdf_bytes):
          "prompt": "what is this?"}, engine, {"sheet": pdf_bytes}))
     assert "error" not in out
     assert out["bbox"] == pytest.approx([600, 400, 700, 450], abs=0.01)
-    assert vision_view.GRID_INSTRUCTION in engine.calls[0]["prompt"]
-    # The zoom's own view is the padded crop, ready for the next zoom.
-    x0, y0, x1, y1 = out["view"]
-    assert x0 < 600 and y0 < 400 and x1 > 700 and y1 > 450
+    assert vision_view.pixel_instruction(out["view_px"]) in \
+        engine.calls[0]["prompt"]
+    # The window is the box padded by the SOURCE view's location error (a
+    # tenth of the whole sheet each way), not by 15 % of the box.
+    assert out["window_padding_pt"] == pytest.approx([122.4, 79.2], abs=0.1)
+    assert out["view"] == pytest.approx([477.6, 320.8, 822.4, 529.2], abs=0.2)
 
 
 def test_render_region_view_mistakes(pdf_bytes):
@@ -271,6 +283,14 @@ def test_read_reference_figure_runs_at_the_chart_budget(monkeypatch, tmp_path,
     assert "error" not in out, out
     assert seen["detail"] == "original"
     w, h = out["view_px"]
-    assert max(w, h) > 2100              # past the 2048 px of "high"
+    # Held to the 2,048 px a host delivers (Funhouse shrinks anything
+    # larger), still at detail "original" ...
+    assert max(w, h) == vision_view.DEFAULT_MAX_PX
     assert out["source"] == str(pdf) and out["page"] == 0
     assert vision_view.detail() == "high"  # restored after the call
+    # ... and past it where the owner lifts the cap.
+    monkeypatch.setenv(vision_view.MAX_PX_ENV, "none")
+    out = json.loads(vision_tools._dispatch_read_reference_figure(
+        {"reference": "dm7_1", "figure_number": "5-6", "prompt": "read mu0"},
+        ChartEngine()))
+    assert max(out["view_px"]) > 2100

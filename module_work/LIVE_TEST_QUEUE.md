@@ -267,6 +267,68 @@ All three are fixed in 5.32.1. This check confirms the fixes live.
 **Send:** the conversation's SharePoint folder name. `activity.jsonl` now
 records the note and any SharePoint error code.
 
+## Check 6 — Do positions now come back right, and do the circles land? (after the location fix; about 45 minutes)
+
+**Why.** Check 4 showed GPT-5.4's positions on the 0-999 grid were 57-91 pt
+off a whole sheet, while its positions in PIXELS were within a few points,
+and that Funhouse shrinks every image to 2,048 px. The location fix
+(`module_work/harness_theory/locating_things_on_a_page.md`, "What changed")
+makes five changes:
+- the app asks for pixel positions and converts them itself, with the size
+  it sent;
+- no image is sent larger than 2,048 px, so small lettering is tiled
+  automatically again;
+- `tiles="6x6"` is no longer silently ignored;
+- a zoom on a reported position is wide enough to hold the thing;
+- planlens refuses a mark placed from a whole-page look (zoom first), and a
+  comment by quote on a CAD notes column lands on the quoted line.
+
+**Setup.** Install the release that carries the fix (the lead names the
+version, with the planlens version it needs) as in "Setup" above.
+
+**Step 1: the measurement, without the agent (about 23 model calls, ~15
+minutes).** Copy the cell in §5.2 of the location document into one notebook
+cell with `fh_prompter` set up, and run it. **Pass:**
+- the profile line ends "the host delivers at most 2048 px";
+- `page-as-shipped` is within a few points on all three repeats, with
+  y scale near 1.0;
+- the tool line shows `tiles: 9`;
+- both zoom rows say "window holds the tag".
+
+**Send me the printed output** (it also saves a JSON file in the notebook's
+folder).
+
+**Step 2: the circle task again (about 20-30 minutes, roughly $5-10).** Run
+check 1's Option B cell with a NEW folder:
+
+```python
+from funhouse_agent.review_eval import score_review_suite
+DOCS = "/Volumes/.../review_eval_docs"   # <- the same folder as check 1
+
+res = score_review_suite(
+    prompter=fh_prompter, model_name="funhouse-gpt-high",
+    docs_dir=DOCS, out_dir="/tmp/check_locations_fix",
+    ids=["produce-circle-tags", "produce-markup"],
+    arms=("baseline", ("baseline_r2", {}), ("baseline_r3", {})),
+    sharepoint=fh_sp_client)
+print(res["results_md"])
+```
+
+**Pass:**
+- `produce-circle-tags` passes on at least 2 of the 3 runs;
+- in each marked PDF the circles sit on the tags;
+- the agent zoomed before it circled. If it tried to circle from a
+  whole-page look, the tool refused with "Zoom on the thing first", which
+  is fine, as long as it then zoomed.
+
+Also open the three `produce-markup` PDFs: the comment's arrow should point
+at the line "RAMP SLOPE CANNOT EXCEED 8.33% MAX." (the bottom line of
+note 4), not beside note 3.
+
+**Send:** the printed table and the SharePoint folder name
+(`GeotechStaffEngineer/review_eval/check_locations_fix`). Every run is read
+in full.
+
 ## Done
 
 - **2026-10-07, check 4 (location measurement), Funhouse GPT-5.4.** Funhouse

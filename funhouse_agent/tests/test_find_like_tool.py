@@ -37,7 +37,8 @@ def gt():
 @pytest.fixture(autouse=True)
 def env(monkeypatch, tmp_path):
     for e in (vision_view.BUDGET_ENV, vision_view.DETAIL_ENV,
-              vision_view.CHART_BUDGET_ENV, vision_view.POLICY_ENV):
+              vision_view.CHART_BUDGET_ENV, vision_view.POLICY_ENV,
+              vision_view.MAX_PX_ENV):
         monkeypatch.delenv(e, raising=False)
     monkeypatch.setenv(vision_probe.PROBE_ENV, "0")
     monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path / "work"))
@@ -199,10 +200,15 @@ def test_small_lettering_is_read_in_tiles(gt, monkeypatch):
 
 def test_no_tiles_when_the_page_already_reads_or_when_asked(gt, monkeypatch):
     monkeypatch.setenv(vision_view.BUDGET_ENV, "openai-original")
+    # At the full 3957 px a host like Foundry delivers, 0.06 in lettering is
+    # ~14 px and reads. (Capped at the 2,048 px Funhouse delivers it is 7 px
+    # and IS tiled — test_vision_locations, the 2026-10-07 failure.)
+    monkeypatch.setenv(vision_view.MAX_PX_ENV, "none")
     eyes = Eyes()
     out = json.loads(_dispatch_analyze_pdf_page(
         {"attachment_key": "set", "page": 0}, eyes, {"set": gt.pdf}))
     assert "tiles" not in out and len(eyes.images) == 1
+    monkeypatch.delenv(vision_view.MAX_PX_ENV)
     monkeypatch.setenv(vision_view.BUDGET_ENV, "gpt-4.1-high")
     out = json.loads(_dispatch_analyze_pdf_page(
         {"attachment_key": "set", "page": 0, "tiles": "off"}, Eyes(),
@@ -220,8 +226,10 @@ def test_no_tiles_when_the_page_already_reads_or_when_asked(gt, monkeypatch):
 
 def test_a_stroke_lettered_sheet_says_so(gt, monkeypatch):
     monkeypatch.setenv(vision_view.BUDGET_ENV, "openai-original")
+    # tiles off: when the sheet is tiled the tiling note stands in its place
     out = json.loads(_dispatch_analyze_pdf_page(
-        {"attachment_key": "set", "page": 0}, Eyes(), {"set": gt.pdf}))
+        {"attachment_key": "set", "page": 0, "tiles": "off"}, Eyes(),
+        {"set": gt.pdf}))
     assert "not in its text layer" in out["legibility"]
     # An optional tool is not pushed from every result (owner, 2026-09-25).
     assert "find_like" not in out["legibility"]

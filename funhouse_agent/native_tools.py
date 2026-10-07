@@ -253,8 +253,9 @@ OPENAI_TOOLS = [
                         "type": "string",
                         "description": ("auto (default): also read in "
                                         "overlapping tiles when the lettering "
-                                        "is too small whole-page; off; or "
-                                        "2/3/4 for a fixed split."),
+                                        "is too small whole-page; off; or N "
+                                        "or NxN with N from 2 to 4 (e.g. "
+                                        "3x3) for a fixed split."),
                     },
                 },
                 "required": ["attachment_key"],

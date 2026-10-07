@@ -42,7 +42,12 @@ def test_review_prompts_make_coverage_part_of_every_answer():
 def test_markups_come_from_tool_results_not_memory():
     for name in ("legacy", "lean"):
         text = REVIEW_PROMPTS[name]
-        assert "`view` and `image_box` of the look that found it" in text
+        # 2026-10-07: "the look that found it" was the whole-page look, and
+        # every ring placed from one missed; anchor on the zoom instead.
+        assert ("`view` and `image_box` of the zoomed look in which the "
+                "thing is legible") in text
+        assert "only says where to zoom" in text
+        assert "of the look that found it" not in text
         assert "never by a location from memory" in text
         assert "misplaced" in text
 

@@ -66,14 +66,19 @@ _PROMPT = (
 #: thing. On GPT-5.4 (Funhouse, 2026-10-07) that rejected CORRECT rings — a
 #: 19 x 14 pt ring centred on a 10 x 4 pt tag was "drawn far wider than it" —
 #: because any ring that fits a small tag is a few times its size. So size is
-#: now MEASURED, not judged: the look returns where the thing is in the crop
-#: (a 0-999 box), and the mark is too wide only when its area is more than
+#: now MEASURED, not judged: the look returns where the thing is in the crop,
+#: and the mark is too wide only when its area is more than
 #: :data:`MAX_AREA_FACTOR` times the thing's. Good rings measured 3-10x, the
 #: blanket rings 70-180x.
-_WHERE_Q = (" Also give where that thing is in this image, as a box on a "
-            "0-999 grid (0,0 top-left, 999,999 bottom-right), or null if it "
-            "is not there.")
-_WHERE_KEY = '"thing_box": [x0, y0, x1, y1] or null, '
+#:
+#: Where the thing is comes back in PIXELS of the crop as sent (``thing_px``)
+#: and is converted with the crop's own size — the convention every look uses
+#: since GPT-5.4's 0-999 boxes were measured scaled by 0.87-1.10 between
+#: identical calls while its pixel boxes were within a few points
+#: (2026-10-07). An old-style ``thing_box`` on the 0-999 grid still counts.
+_WHERE_Q = (" Also give where that thing is in this {w} x {h} pixel image, "
+            "as a box in pixels (0,0 top-left), or null if it is not there.")
+_WHERE_KEY = '"thing_px": [x0, y0, x1, y1] or null, '
 
 #: A mark this many times the area of the thing it names is a blanket, not a
 #: mark (the suite's own placement check uses 60).
@@ -84,17 +89,23 @@ MAX_AREA_FACTOR = 30.0
 MIN_THING_AREA = 25.0
 
 
-def _too_wide(mark_bbox: Any, thing_box: Any, view: Any) -> Optional[float]:
+def _too_wide(mark_bbox: Any, thing_box: Any, view: Any,
+              size: Any = None) -> Optional[float]:
     """The mark's area over the thing's, when that is more than
     :data:`MAX_AREA_FACTOR`; else ``None`` (including when the look gave no
-    usable box — size is then not judged at all)."""
+    usable box — size is then not judged at all). ``thing_box`` is in pixels
+    of the crop when its ``size`` (w, h as sent) is given, otherwise on the
+    0-999 grid."""
     from funhouse_agent import vision_view
     try:
         tb = [float(v) for v in thing_box]
         mb = [float(v) for v in mark_bbox]
         if len(tb) != 4 or len(mb) != 4:
             return None
-        x0, y0, x1, y1 = vision_view.image_box_to_page(list(view), tb)
+        if size:
+            x0, y0, x1, y1 = vision_view.px_box_to_page(list(view), tb, size)
+        else:
+            x0, y0, x1, y1 = vision_view.image_box_to_page(list(view), tb)
     except (TypeError, ValueError):
         return None
     thing = max((x1 - x0) * (y1 - y0), MIN_THING_AREA)
@@ -171,13 +182,15 @@ def _check_one(pdf_bytes: bytes, item: Dict[str, Any], engine) -> Dict[str, Any]
         image, info = vision_view.render_view(
             pdf_bytes, page=int(row.get("page") or 0), bbox=crop,
             pad_frac=0.0, engine=engine)
+        size = (int(info["width_px"]), int(info["height_px"]))
         answer = engine.analyze_image(image, _PROMPT.format(
             word=word,
             label_note=(" with a short red label beside it"
                         if spec.get("label") else ""),
             verb=("point at" if kind == "callout" else "enclose"),
             where=("at the tip of" if kind == "callout" else "inside"),
-            close_q=(_WHERE_Q if encloses_kind else ""),
+            close_q=(_WHERE_Q.format(w=size[0], h=size[1])
+                     if encloses_kind else ""),
             close_key=(_WHERE_KEY if encloses_kind else ""),
             expected=_expected(spec)))
     except Exception as exc:  # noqa: BLE001 - a failed check is reported
@@ -190,8 +203,12 @@ def _check_one(pdf_bytes: bytes, item: Dict[str, Any], engine) -> Dict[str, Any]
         return out
     encloses, sure = got.get("encloses"), got.get("sure")
     out["seen"] = str(got.get("inside") or "")[:120]
-    ratio = (_too_wide(row.get("bbox"), got.get("thing_box"),
-                       (info or {}).get("clip") or crop)
+    clip = (info or {}).get("clip") or crop
+    if got.get("thing_px") is not None:
+        thing, thing_size = got.get("thing_px"), size
+    else:                       # an old-style answer on the 0-999 grid
+        thing, thing_size = got.get("thing_box"), None
+    ratio = (_too_wide(row.get("bbox"), thing, clip, thing_size)
              if encloses is True and encloses_kind else None)
     if ratio is not None:
         # Round the right thing, but drawn so wide it does not single it out.
@@ -248,12 +265,14 @@ def check_marks(output_pdf: str, result: Dict[str, Any], specs: Sequence[Any],
         "Every mark placed by a box or point was looked at on the marked copy."
         if not bad else
         f"{bad} mark(s) are misplaced or could not be confirmed. Do not hand "
-        "the file over as it is: find each one again (look at the page, take "
-        "the view + image_box of what you find) and write the copy again with "
-        "append=false, leaving out any mark you cannot place. A mark "
-        "written from memory or by estimate lands in the wrong place, and "
-        "widening a mark until it takes the thing in does not place it: zoom "
-        "until you can box the thing itself.")
+        "the file over as it is: find each one again — zoom with "
+        "render_region until the thing is legible, in a view of 300 pt or "
+        "less, and take THAT zoom's view + the thing's image_box — and write "
+        "the copy again with append=false, leaving out any mark you cannot "
+        "place. A mark written from memory, by estimate or from a whole-page "
+        "look lands in the wrong place, and widening a mark until it takes "
+        "the thing in does not place it: zoom until you can box the thing "
+        "itself.")
     return block
 
 

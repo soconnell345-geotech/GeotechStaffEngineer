@@ -597,8 +597,10 @@ _DOCUMENT_TOOL_NOTES = {
         "alone unless the user tells you whose review this is — the default "
         "names the comments as an AI draft, which is what the reviewer must "
         "be able to see. For a thing you found by looking, pass the view and "
-        "image_box from the look that found it (or a located item's "
-        "page_bbox) — never a box from memory or an estimate. Every box, "
+        "image_box of the ZOOMED look in which the thing is legible (a view "
+        "of 300 pt or less; a whole-page look only says where to zoom, and "
+        "a small mark from it is refused) — never a box from memory or an "
+        "estimate. Every box, "
         "circle or callout placed by location is then CHECKED: a crop of the "
         "marked copy is looked at and the result's `check` says which marks "
         "enclose what their label or comment names and which are misplaced. "
@@ -799,8 +801,8 @@ def make_vision_tools(
         0-indexed page number; ``prompt`` is what to extract from the page.
         ``tiles``: ``"auto"`` (default) ALSO reads the page in overlapping
         tiles when its small lettering is too small in the whole-page image
-        (the result then carries every tile's reading and view); ``"off"``,
-        or ``"2"``/``"3"``/``"4"`` for a fixed split.
+        (the result then carries every tile's reading and view); ``"off"``;
+        or N / ``"NxN"`` with N 2-4 (``"3"`` or ``"3x3"``) for a fixed split.
         """
         args = {"attachment_key": attachment_key, "page": page,
                 "prompt": prompt, "tiles": tiles}
@@ -871,7 +873,9 @@ def make_vision_tools(
 
         To zoom on something an earlier vision result LOCATED, pass that
         result's ``view`` plus the 0-999 ``image_box`` its analysis gave
-        (instead of ``bbox``); same ``attachment_key`` and ``page``. Every
+        (instead of ``bbox``); same ``attachment_key`` and ``page``. The
+        window is the box padded by how far a box from that view can be off
+        (a tenth of the view each way), so the thing is in it. Every
         vision result carries a ``view``. ``dpi`` is chosen automatically
         (the largest image the vision model reads); set it only to override.
         """
@@ -1155,7 +1159,12 @@ def make_vision_tools(
         ),
         "analyze_pdf_page": (
             analyze_pdf_page,
-            "Render a PDF page and analyze it using vision.",
+            "Render a PDF page and analyze it using vision. tiles: 'auto' "
+            "(default: the page is ALSO read in overlapping tiles when its "
+            "lettering is too small in the whole-page image), 'off', or N or "
+            "'NxN' with N from 2 to 4 (e.g. '3x3') for a fixed split. Boxes "
+            "come back on a 0-999 grid with the result's view; a whole-page "
+            "box says where to zoom, not where to put a mark.",
         ),
         "find_like": (
             find_like,
@@ -1174,7 +1183,9 @@ def make_vision_tools(
             "(top-left origin, y down); optional marks = [[x,y,label],...] "
             "draws numbered circles at points of interest. To zoom on "
             "something an earlier vision result located, pass its view + "
-            "the 0-999 image_box its analysis gave instead of bbox.",
+            "the 0-999 image_box its analysis gave instead of bbox: the "
+            "window is padded by that view's location error, so the thing "
+            "is in it.",
         ),
         "read_reference_figure": (
             read_reference_figure,

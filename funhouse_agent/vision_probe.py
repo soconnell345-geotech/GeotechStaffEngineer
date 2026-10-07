@@ -5,7 +5,8 @@ A deployment name is an alias. ``tinyapp-gpt-medium`` turned out to be GPT-5.1
 ``funhouse-gpt-high`` is GPT-5.4 (2,500 patches at ``high``, 10,000 at
 ``original``) — and either can be re-pointed at another model tomorrow without
 the key or the name changing. So the app does not trust a name. The first time
-a vision engine is used, :func:`probe` asks the model itself, four small calls:
+a vision engine is used, :func:`probe` asks the model itself, four small calls
+(a fifth where the model takes images past 2,048 px, below):
 
 1. a text-only call — the reply's ``model`` field names the model that
    answered, and its input tokens are the baseline;
@@ -21,8 +22,23 @@ it and ignores it) all come out of the numbers, for a model no table has heard
 of. Where the numbers are missing the model's name is looked up instead
 (``budget_for_model``); where that fails too, the app's defaults stand.
 
+5. When ``original`` is honoured (a budget past 2,048 px), one more image:
+   a blank :data:`WIDE_PX` (3072 x 1024) at ``original``. A HOST can shrink
+   an image before the model sees it — Funhouse delivers at most 2,048 px on
+   the long side (2026-10-07: a 3957 x 2560 page cost exactly the tokens of
+   2048 x 1326) — and the four calls above, none over 2,048 px, cannot see
+   that. Taken whole the wide image costs 3,072 patches, 0.75 of the 2048
+   square; shrunk to 2,048 px it costs 1,408, 0.34 of it; the ratio in
+   between gives the edge (:func:`host_edge_from_probe`). The profile's
+   ``max_edge`` then caps every render (``vision_view.max_px``). An edge
+   BELOW 2,048 px is not seen (the square itself would be shrunk too, and
+   both ratios read the same); the app's 2,048 px default covers the hosts
+   measured so far.
+
 One probe per model per process (a few thousand input tokens, about a cent on
-GPT-5.4), cached by the model object's identity and configured name. Turn it
+GPT-5.4; with call 5, about 8,000 more where ``original`` is honoured, so
+about three cents), cached by the model object's identity and configured
+name. Turn it
 off with ``GEOTECH_VISION_PROBE=0``; ``GEOTECH_VISION_BUDGET`` /
 ``GEOTECH_CHART_BUDGET`` still override whatever it finds.
 """
@@ -31,16 +47,60 @@ from __future__ import annotations
 
 import base64
 import logging
+import math
 import os
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
 PROBE_ENV = "GEOTECH_VISION_PROBE"
 
 _OFF = ("0", "false", "no", "off", "none")
+
+#: The wide test image that shows whether the HOST shrinks large images.
+WIDE_PX: Tuple[int, int] = (3072, 1024)
+
+#: The 2048 square of the probe (planlens ``PROBE_LARGE_PX``).
+_SQUARE_PX = 2048
+
+#: Patch size of the patch models this test is for.
+_PATCH = 32
+
+
+def _patches(w: float, h: float) -> int:
+    return math.ceil(w / _PATCH) * math.ceil(h / _PATCH)
+
+
+def _ratio_at_edge(edge: int) -> float:
+    """The wide image's patches over the square's, on a host that shrinks
+    anything longer than ``edge`` px to ``edge``."""
+    ww, wh = WIDE_PX
+    s = min(1.0, edge / max(ww, wh))
+    wide = _patches(round(ww * s), round(wh * s))
+    q = min(_SQUARE_PX, edge)
+    return wide / _patches(q, q)
+
+
+def host_edge_from_probe(square_tokens: Optional[float],
+                         wide_tokens: Optional[float]) -> Optional[int]:
+    """The longest side, in px, the host delivers — from what the 2048 square
+    and the :data:`WIDE_PX` image cost at ``original``. ``None`` when the
+    wide image went through whole (no cap up to its 3,072 px) or the numbers
+    are missing; 2,048 when it was shrunk to 2,048 px or less (an edge under
+    2,048 is not told apart: the square is shrunk with it)."""
+    if not square_tokens or not wide_tokens or square_tokens <= 0:
+        return None
+    r = float(wide_tokens) / float(square_tokens)
+    whole = _ratio_at_edge(max(WIDE_PX))
+    if r >= 0.9 * whole:
+        return None
+    if r <= 1.1 * _ratio_at_edge(_SQUARE_PX):
+        return _SQUARE_PX
+    best = min(range(_SQUARE_PX, max(WIDE_PX) + 1, 16),
+               key=lambda e: abs(_ratio_at_edge(e) - r))
+    return int(best)
 
 
 @dataclass
@@ -57,6 +117,9 @@ class VisionProfile:
     ratios: Dict[str, float] = field(default_factory=dict)
     image_tokens: Dict[str, int] = field(default_factory=dict)
     error: Optional[str] = None
+    #: The longest side the HOST delivers (px), when the probe saw it shrink
+    #: a larger image; ``None`` when none was seen (or not measured).
+    max_edge: Optional[int] = None
 
     def summary(self) -> str:
         who = self.answered_by or "an unknown model"
@@ -64,13 +127,17 @@ class VisionProfile:
             return f"{who}: image budget not determined ({self.error or self.source})"
         charts = ("" if self.detailed == self.general
                   else f", charts at {self.detailed}")
-        return f"{who}: images at {self.general}{charts} (from {self.source})"
+        host = (f"; the host delivers at most {self.max_edge} px"
+                if self.max_edge else "")
+        return (f"{who}: images at {self.general}{charts}{host} "
+                f"(from {self.source})")
 
     def to_dict(self) -> Dict[str, Any]:
         return {"answered_by": self.answered_by, "general": self.general,
                 "detailed": self.detailed, "source": self.source,
                 "ratios": dict(self.ratios),
-                "image_tokens": dict(self.image_tokens), "error": self.error}
+                "image_tokens": dict(self.image_tokens), "error": self.error,
+                "max_edge": self.max_edge}
 
 
 _CACHE: Dict[Any, VisionProfile] = {}
@@ -90,9 +157,9 @@ def _cache_key(model) -> Any:
             if name is None else None)
 
 
-def _blank_png(side: int) -> str:
+def _blank_png(side: int, height: Optional[int] = None) -> str:
     import fitz  # PyMuPDF, a planlens dependency
-    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, side, side), 0)
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, side, height or side), 0)
     pix.clear_with(255)
     return base64.b64encode(pix.tobytes("png")).decode()
 
@@ -148,6 +215,8 @@ def probe(model) -> VisionProfile:
             prof.general, prof.detailed = general.name, detailed.name
             prof.ratios.update(ratios)
             prof.source = "probe"
+            if detailed.max_edge > PROBE_LARGE_PX and "large_original" in toks:
+                _probe_host_edge(model, prof, base, toks["large_original"])
             return prof
         prof.error = "the responses carried no token counts"
     except Exception as exc:
@@ -157,6 +226,24 @@ def probe(model) -> VisionProfile:
         prof.general, prof.detailed = found[0].name, found[1].name
         prof.source = "model name"
     return prof
+
+
+def _probe_host_edge(model, prof: VisionProfile, base: int,
+                     square_original: int) -> None:
+    """Call 5: does the host shrink an image past 2,048 px? Fills
+    ``prof.max_edge``; a failure leaves it unset and never fails the probe."""
+    try:
+        w, h = WIDE_PX
+        wide, _ = _call(model, _image_content(_blank_png(w, h), "original"))
+        if wide is None:
+            return
+        wide_tokens = wide - base
+        prof.image_tokens["wide_original"] = wide_tokens
+        if square_original and square_original > 0:
+            prof.ratios["wide"] = round(wide_tokens / square_original, 3)
+        prof.max_edge = host_edge_from_probe(square_original, wide_tokens)
+    except Exception as exc:     # the budget stands without it
+        log.info("vision probe: host edge not measured: %s", exc)
 
 
 def profile_for(model) -> Optional[VisionProfile]:
@@ -183,5 +270,5 @@ def clear_cache() -> None:
         _CACHE.clear()
 
 
-__all__ = ["PROBE_ENV", "VisionProfile", "enabled", "probe", "profile_for",
-           "clear_cache"]
+__all__ = ["PROBE_ENV", "WIDE_PX", "VisionProfile", "enabled", "probe",
+           "profile_for", "clear_cache", "host_edge_from_probe"]

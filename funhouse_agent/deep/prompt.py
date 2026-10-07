@@ -374,9 +374,12 @@ _REVIEW_HAND_BACK = """\
   matrix or a summary; a MARKED-UP COPY of the PDF (`annotate_document`) when
   the comments belong on the pages — anchor each comment by a `quote` of the
   text it concerns wherever there is text; for something you found by
-  looking, by the `view` and `image_box` of the look that found it (or a
-  located item's `page_bbox`, or a box from `read_document`) — never by a
-  location from memory or estimated by eye. The tool looks at every mark it
+  looking, by the `view` and `image_box` of the zoomed look in which the
+  thing is legible (or a box from `read_document`) — never by a location
+  from memory or estimated by eye. A box read off a whole page or another
+  wide view (over about 300 pt) only says where to zoom: zoom with
+  `render_region` on that view and box, and anchor on the zoom. The tool
+  looks at every mark it
   placed by location on the marked copy; fix or leave out any it reports
   misplaced before you hand the file over. Draft responses to a reviewer's
   comments as replies to their markups. Every comment you place is a DRAFT
