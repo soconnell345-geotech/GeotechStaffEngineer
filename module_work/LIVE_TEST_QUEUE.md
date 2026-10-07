@@ -197,6 +197,22 @@ can see exactly what is still wrong.
 
 ---
 
+## Check 4 — How far off are the vision model's positions? (about 15 minutes)
+
+**Why.** The circles missed because the vision model reports positions on a
+whole page as a shrunken copy of the truth (the location review,
+`module_work/harness_theory/locating_things_on_a_page.md`), and because
+Funhouse appears to shrink any image wider than 2,048 px before the model
+sees it. This cell measures both directly, without the agent: it sends the
+synthetic tag sheet to GPT-5.4 at several sizes and zooms and compares the
+positions it reports with the true ones.
+
+**How.** Paste `location_measurement_cell_ready.py` (sent in chat; the same
+code is in §5 of the location document) into one notebook cell with
+`fh_prompter` set up. About 17 model calls. **Send me the printed output**
+(it also saves a JSON file in the notebook's folder). The results decide how
+the next release sizes its whole-page looks and its zooms.
+
 ## Re-run of check 1 on the 5.32.1rc2 test wheel (after the 2026-10-07 fix)
 
 Upload `geotech_staff_engineer-5.32.1rc2-py3-none-any.whl` (sent in chat;

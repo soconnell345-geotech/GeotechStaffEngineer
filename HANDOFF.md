@@ -69,6 +69,19 @@ rules from single examples)
     (an 85-sheet set at ~15 scales × 4 rotations): measure against OpenCV
     first; use OpenCV where it loads. The raster IR leg and OCR have the same
     dependency. Still an OPTIONAL tool (owner's rule).
+9b. **Locations (2026-10-07, the cause of the circle failures):** read
+    `module_work/review_eval_results/2026-10-07_funhouse_5.32.0_check1/TRACE_REVIEW.md`
+    and `module_work/harness_theory/locating_things_on_a_page.md`. Whole-page
+    vision boxes are a shrunken copy of the truth (a model property; the
+    conversion is exact); zooms land within a few points. Planned fixes, after
+    the owner's measurement (queue check 4): a two-step locate inside the tools
+    (no mark or `page_bbox` from a view wider than ~300 pt — zoom with an
+    error-sized window and re-locate); zoom windows sized by the source view's
+    error (~10 % of it each side), not 15 % of the box; whole-page looks sent
+    at a modest size and tiled from the size actually RECEIVED (Funhouse caps
+    images at 2,048 px — teach the probe/budget); `tiles` accepting "NxN" or
+    failing loudly; the "look that found it" wording; a check that a
+    quote-anchored comment sits on its quote (CAD notes are one text block).
 10. The vision side-call boundary (`module_work/harness_theory/`, finding 1):
     first MEASURE the vision call's box precision against the synthetic tag
     fixtures (a script, no model calls); then consider page-coordinate
