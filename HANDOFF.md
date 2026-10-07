@@ -112,6 +112,16 @@ Everything since 5.32.0 is committed and pushed but unreleased (item 2a).
          `report_ingest` and `write_diggs`; the report's own table has PL
          and LL swapped;
        - coverage stated as counts in the answer.
+   - **(vi) THE OWNER'S CHECKLIST SESSION, the week of 2026-10-12.** The
+     owner wants slow-thinking time on the report-review checklist. It is
+     data in `funhouse_agent/report_review_checklist.json`, marked DRAFT;
+     the background is in `module_work/COVERAGE_AND_CHECKLIST.md`. Send it to
+     the owner as a plain list, take the markup in chat or Word, then
+     transfer it to the file (keep each item's `id`).
+   - **(vii) The next Foundry brief, after 5.32.1's results:** the review
+     suite with `arms=("baseline", "coverage", "checklist")`, including the
+     three `report-` tasks. The coverage switches go on by default only if
+     the suite says so.
    - **(v) GEC-12 Figure 7-15 may be mis-digitised.** The W3 design found this
      in its §10, item 8. `geotech_references/gec_12/figures.py` (used by
      `axial_pile`) differs from a code reading of the chart by −19 % at 32°

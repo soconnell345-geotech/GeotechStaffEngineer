@@ -50,10 +50,36 @@ from funhouse_agent import review_flags
 #: GraphRecursionError would cost the turn its answer.
 MIN_STEPS_FOR_GATE = 12
 
-#: The host step cap a build with the gate asks for at least (the webapp
-#: raises its per-turn cap to an agent's ``geotech_min_recursion_limit``):
-#: the app's default of 50 plus room for the reads the gate may ask for.
-COVERAGE_STEP_FLOOR = 80
+#: The step cap of a turn that takes data out of a document (owner,
+#: 2026-10-08: "if there's a report extraction, we can expect a very large
+#: amount of turns relative to most of the other stuff we do. So maybe the
+#: default is only applied on basic review, but if report ingest is
+#: triggered we go to like a 150 turn limit"). A build with the gate tells
+#: the web app so (``agent.geotech_extraction_recursion_limit``); the app
+#: then runs the turn under this cap and passes its ORDINARY cap as the
+#: turn's step allowance (:data:`ALLOWANCE_KEY`). An ordinary turn is ended
+#: at that allowance by :class:`CoverageGate` - with an answer, not an error
+#: - and a turn that turns out to be an extraction runs on to this cap.
+EXTRACTION_STEP_LIMIT = 150
+
+#: Kept for callers of the first W4 build (it was 80 then).
+COVERAGE_STEP_FLOOR = EXTRACTION_STEP_LIMIT
+
+#: Where the web app puts an ordinary turn's step cap in the run's config
+#: (``configurable``) when it has raised the run to EXTRACTION_STEP_LIMIT.
+ALLOWANCE_KEY = "geotech_step_allowance"
+
+#: The last call of an ordinary turn that reached its allowance gets no tools
+#: and this instruction, so the turn ends with what was gathered.
+ALLOWANCE_NUDGE = (
+    "[Step limit reached] This is your last step for this request and no "
+    "tools are available. Answer now from what you have gathered, say "
+    "plainly what you did not get to, and that the user can ask you to "
+    "continue.")
+
+#: Tools whose call makes a turn an extraction even before any page is read
+#: in it (the report-ingest pipeline reads the pages itself).
+EXTRACTION_TOOLS = ("report_ingest",)
 
 #: What the web app's auto-continue sends (``webapp.core.CONTINUE_NUDGE``;
 #: a test keeps the two equal): a continuation of the SAME user turn, not a
@@ -133,6 +159,29 @@ def _steps_left() -> Optional[int]:
     return None
 
 
+def _run_config() -> Dict[str, Any]:
+    try:
+        from langgraph.config import get_config
+        return get_config() or {}
+    except Exception:  # noqa: BLE001 - outside a graph run
+        return {}
+
+
+def _step_allowance() -> Optional[int]:
+    """This run's ordinary step cap, when the web app raised the run to the
+    extraction cap (:data:`ALLOWANCE_KEY`); ``None`` otherwise."""
+    value = (_run_config().get("configurable") or {}).get(ALLOWANCE_KEY)
+    try:
+        return int(value) if value else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _steps_used() -> Optional[int]:
+    step = (_run_config().get("metadata") or {}).get("langgraph_step")
+    return step if isinstance(step, int) else None
+
+
 def _emit(note: str) -> None:
     """Put the gate's note in the activity log (``coverage_gate`` event), so
     a review of the run can see what the model was told."""
@@ -183,6 +232,64 @@ class CoverageGate(CoverageRecorder):
         self.budget = budget
         self.checklist = checklist
         self.min_steps = int(min_steps)
+        #: User turns that called an extraction tool (EXTRACTION_TOOLS).
+        self._extraction_turns: set = set()
+
+    # -- the step allowance: an ordinary turn ends at its own cap ----------
+
+    def is_extraction(self, messages) -> bool:
+        """Whether this user turn takes data out of a document: the ledger
+        holds it to pages (a coverage task, a data file written, data pages
+        read), or it called an extraction tool."""
+        key = turn_key(messages)
+        if key in self._extraction_turns:
+            return True
+        try:
+            return bool(self.ledger.armed(key))
+        except Exception:  # noqa: BLE001 - when unsure, do not cut the turn
+            return True
+
+    def _at_allowance(self, request) -> bool:
+        allowance = _step_allowance()
+        used = _steps_used()
+        if not allowance or used is None:
+            return False
+        if used < allowance - 2:
+            return False
+        state = getattr(request, "state", None) or {}
+        return not self.is_extraction(state.get("messages"))
+
+    def _final_request(self, request):
+        return request.override(
+            tools=[], tool_choice=None,
+            messages=[*request.messages, HumanMessage(content=ALLOWANCE_NUDGE)])
+
+    def wrap_model_call(self, request, handler):
+        if self._at_allowance(request):
+            request = self._final_request(request)
+        return handler(request)
+
+    async def awrap_model_call(self, request, handler):
+        if self._at_allowance(request):
+            request = self._final_request(request)
+        return await handler(request)
+
+    def _note_extraction_tool(self, request) -> None:
+        try:
+            call = getattr(request, "tool_call", None) or {}
+            if str(call.get("name") or "") in EXTRACTION_TOOLS:
+                state = getattr(request, "state", None) or {}
+                self._extraction_turns.add(turn_key(state.get("messages")))
+        except Exception:  # noqa: BLE001
+            pass
+
+    def wrap_tool_call(self, request, handler):
+        self._note_extraction_tool(request)
+        return super().wrap_tool_call(request, handler)
+
+    async def awrap_tool_call(self, request, handler):
+        self._note_extraction_tool(request)
+        return await super().awrap_tool_call(request, handler)
 
     def before_agent(self, state, runtime):
         try:
@@ -415,4 +522,6 @@ def coverage_kit(attachments: Optional[Dict[str, bytes]] = None,
 __all__ = ["CoverageRecorder", "CoverageGate", "CoverageKit", "coverage_kit",
            "make_coverage_tool", "make_checklist_tool", "turn_key",
            "DOCUMENT_COVERAGE_DESCRIPTION", "REPORT_CHECKLIST_DESCRIPTION",
-           "MIN_STEPS_FOR_GATE", "COVERAGE_STEP_FLOOR"]
+           "MIN_STEPS_FOR_GATE", "COVERAGE_STEP_FLOOR",
+           "EXTRACTION_STEP_LIMIT", "ALLOWANCE_KEY", "ALLOWANCE_NUDGE",
+           "EXTRACTION_TOOLS"]

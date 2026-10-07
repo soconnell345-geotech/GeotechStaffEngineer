@@ -63,8 +63,12 @@ belongs to the same turn. It stands down rather than risk the turn's answer
 when fewer than 12 graph steps are left, or on a lean agent's last budgeted
 model call.
 
-With the switch on, the page's step cap is raised to at least 80 (the
-default is 50), to leave room for the reads the gate asks for. The note the
+**Step limits (owner, 2026-10-08).**
+- **An ordinary turn** keeps the app's own cap (50 by default). When it reaches the cap it is ended by `CoverageGate` with a tool-less last call that answers from what was gathered; it never hits a GraphRecursionError.
+- **A turn that takes data out** may run to **150** (`EXTRACTION_STEP_LIMIT`). That means the ledger holds it to pages (a coverage task, `write_diggs`, data pages read), or it called `report_ingest`.
+- **How it works:** the web app runs a switched build's turn under 150 and passes the ordinary cap as the turn's allowance. This replaces the first build's flat floor of 80.
+
+The note the
 model was given is written into `activity.jsonl` as a `coverage_gate` event,
 so a review of the run can see it.
 
@@ -160,20 +164,13 @@ the broken lines.
 
 ## What is left for you
 
-1. **Mark up the checklist:** `funhouse_agent/report_review_checklist.json`.
-   Add, cut or reword items, and say which `judge` items code should learn
-   next. Each item's `text` is free to edit; keep its `id`. The file says
-   how.
-2. **Run the suite** with the three arms above. A switch goes on by default
-   only when the suite says it helps.
-3. **Decide:**
-   - **Narrow questions.** Should reading a few data pages hold a turn to
-     every data page, as now? The note on a narrow question ("B-3's water
-     level?") then asks the agent to read the other logs or say why not. That
-     costs one model call. The suite's narrow tasks will show it.
-   - **Text and plans.** Should a declared or written-out extraction also
-     owe the text pages and the plans, as now? Or only the data pages?
-   - **Step cap.** Is the raised step cap of 80 right, with the switch on?
+**Owner decisions, 2026-10-08:**
+
+1. **The checklist:** the owner wants slow-thinking time on it. It is a to-do for the week of 2026-10-12 (HANDOFF 8a(vi)). Until then the file stays DRAFT.
+2. **Narrow questions:** KEEP as built. Reading a few data pages holds the turn to every data page; a narrow question costs at most one extra model call, in which the agent says why the rest are not needed.
+3. **Text and plans:** KEEP. A declared or written-out extraction also owes the text pages and the plans.
+4. **Step cap:** an ordinary turn keeps the app's cap; an extraction turn may run to 150 (see "Step limits" above). Built 2026-10-08 by the lead.
+5. **Measurement:** run the suite on Foundry with `arms=("baseline", "coverage", "checklist")` in the next brief, after 5.32.1's results. Read every run in full.
 
 ## What the lead wires
 

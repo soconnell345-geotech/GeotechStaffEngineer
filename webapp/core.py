@@ -757,6 +757,18 @@ def stream_turn(agent, messages: list, thread_id: str,
     floor = getattr(agent, "geotech_min_recursion_limit", None)
     if floor:
         recursion_limit = max(int(recursion_limit or 0), int(floor))
+    # A build with the coverage gate (GEOTECH_COVERAGE) lets a turn that takes
+    # data out of a document run to a higher cap (150, owner 2026-10-08). The
+    # run is given that cap, and the ordinary cap travels with it as the
+    # turn's step allowance: an ordinary turn is ended there with an answer
+    # by the gate, and an extraction turn runs on.
+    extraction = getattr(agent, "geotech_extraction_recursion_limit", None)
+    if extraction:
+        allowance = int(recursion_limit or DEFAULT_BEHAVIOR["recursion_limit"])
+        if int(extraction) > allowance:
+            from funhouse_agent.deep.coverage_tools import ALLOWANCE_KEY
+            config["configurable"][ALLOWANCE_KEY] = allowance
+            recursion_limit = int(extraction)
     if recursion_limit:                     # A5(b): primary-agent step cap
         config["recursion_limit"] = int(recursion_limit)
     try:

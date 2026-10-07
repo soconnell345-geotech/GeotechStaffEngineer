@@ -1229,11 +1229,14 @@ def build_deep_agent(
         try:
             agent.geotech_coverage_ledger = coverage.ledger
             if coverage.gate_on:
-                # Room for the reads the gate may ask for: the web app raises
-                # its per-turn step cap to this (core.stream_turn).
+                # An extraction turn may run to EXTRACTION_STEP_LIMIT (150,
+                # owner 2026-10-08); an ordinary turn still ends at the app's
+                # own cap, with an answer (CoverageGate's step allowance).
+                # The web app reads this in core.stream_turn.
                 from funhouse_agent.deep.coverage_tools import (
-                    COVERAGE_STEP_FLOOR)
-                agent.geotech_min_recursion_limit = COVERAGE_STEP_FLOOR
+                    EXTRACTION_STEP_LIMIT)
+                agent.geotech_extraction_recursion_limit = \
+                    EXTRACTION_STEP_LIMIT
         except Exception:
             pass
     return agent

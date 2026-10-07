@@ -466,7 +466,7 @@ def test_the_gate_tells_once_and_the_agent_reads_the_rest(att, tmp_path,
     monkeypatch.setenv(review_flags.COVERAGE_ENV, "1")
     model = _Scripted()
     agent = _build(model, att, tmp_path, page)
-    assert agent.geotech_min_recursion_limit == CT.COVERAGE_STEP_FLOOR
+    assert agent.geotech_extraction_recursion_limit == CT.EXTRACTION_STEP_LIMIT
     answer = _run(agent, tmp_path)
     assert model.log.count(False) >= 1 and model.log[-1] is True
     assert "14 of 14" in answer
@@ -757,3 +757,104 @@ def test_the_checklist_tool_and_the_gate_carry_failed_code_checks(att,
     out = gate.after_model({"messages": msgs}, None)
     note = out["messages"][0].content
     assert "Every extracted value cites its page" in note
+
+
+# -- the step limits (owner, 2026-10-08) ------------------------------------
+# An ordinary turn keeps the app's own cap; a turn that takes data out of a
+# document may run to EXTRACTION_STEP_LIMIT (150).
+
+class _Req:
+    def __init__(self, messages, tool_call=None):
+        self.state = {"messages": messages}
+        self.messages = list(messages)
+        self.tool_call = tool_call or {}
+
+    def override(self, **kw):
+        out = _Req(kw.get("messages", self.messages), self.tool_call)
+        out.tools = kw.get("tools")
+        return out
+
+
+def _gate(att):
+    ledger = C.CoverageLedger(attachments=att)
+    return ledger, CT.CoverageGate(ledger)
+
+
+def _at(monkeypatch, allowance, used):
+    monkeypatch.setattr(CT, "_step_allowance", lambda: allowance)
+    monkeypatch.setattr(CT, "_steps_used", lambda: used)
+
+
+def test_an_ordinary_turn_gets_its_last_call_at_its_own_cap(att, monkeypatch):
+    _ledger, gate = _gate(att)
+    msgs = [HumanMessage(content="What is this report about?")]
+    seen = []
+    _at(monkeypatch, 50, 30)
+    gate.wrap_model_call(_Req(msgs), lambda r: seen.append(r))
+    assert getattr(seen[-1], "tools", "untouched") == "untouched"
+    _at(monkeypatch, 50, 48)
+    gate.wrap_model_call(_Req(msgs), lambda r: seen.append(r))
+    assert seen[-1].tools == []
+    assert CT.ALLOWANCE_NUDGE in seen[-1].messages[-1].content
+
+
+def test_an_extraction_turn_runs_past_the_ordinary_cap(att, monkeypatch):
+    ledger, gate = _gate(att)
+    msgs = [HumanMessage(content="Put every boring log in a table.")]
+    ledger.begin_turn(CT.turn_key(msgs))
+    _read(ledger, att, [RF.TARGET_PAGES[0]])          # a data page read
+    assert ledger.armed(CT.turn_key(msgs))
+    seen = []
+    _at(monkeypatch, 50, 120)
+    gate.wrap_model_call(_Req(msgs), lambda r: seen.append(r))
+    assert getattr(seen[-1], "tools", "untouched") == "untouched"
+
+
+def test_calling_report_ingest_makes_it_an_extraction_turn(att, monkeypatch):
+    _ledger, gate = _gate(att)
+    msgs = [HumanMessage(content="Ingest this report.")]
+    from langchain_core.messages import ToolMessage
+    gate.wrap_tool_call(_Req(msgs, {"name": "report_ingest", "args": {}}),
+                        lambda r: ToolMessage(content="{}", tool_call_id="x"))
+    assert gate.is_extraction(msgs)
+    seen = []
+    _at(monkeypatch, 50, 100)
+    gate.wrap_model_call(_Req(msgs), lambda r: seen.append(r))
+    assert getattr(seen[-1], "tools", "untouched") == "untouched"
+
+
+def test_no_allowance_means_no_change(att, monkeypatch):
+    _ledger, gate = _gate(att)
+    msgs = [HumanMessage(content="Hello")]
+    seen = []
+    _at(monkeypatch, None, 500)
+    gate.wrap_model_call(_Req(msgs), lambda r: seen.append(r))
+    assert getattr(seen[-1], "tools", "untouched") == "untouched"
+
+
+def test_the_web_app_runs_the_turn_under_the_extraction_cap():
+    from webapp import core
+
+    class _Agent:
+        geotech_extraction_recursion_limit = CT.EXTRACTION_STEP_LIMIT
+
+        def __init__(self):
+            self.configs = []
+
+        def stream(self, payload, config=None, stream_mode=None):
+            self.configs.append(config)
+            return iter(())
+
+    agent = _Agent()
+    list(core.stream_turn(agent, [{"role": "user", "content": "hi"}], "t1",
+                          recursion_limit=50))
+    cfg = agent.configs[0]
+    assert cfg["recursion_limit"] == CT.EXTRACTION_STEP_LIMIT
+    assert cfg["configurable"][CT.ALLOWANCE_KEY] == 50
+
+    plain = _Agent()
+    plain.geotech_extraction_recursion_limit = None
+    list(core.stream_turn(plain, [{"role": "user", "content": "hi"}], "t1",
+                          recursion_limit=50))
+    assert plain.configs[0]["recursion_limit"] == 50
+    assert CT.ALLOWANCE_KEY not in plain.configs[0]["configurable"]
