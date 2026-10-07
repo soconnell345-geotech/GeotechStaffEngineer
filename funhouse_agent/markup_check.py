@@ -56,16 +56,51 @@ _PROMPT = (
     "the red {word}, or 'nothing' if it is blank paper or linework only\", "
     '{close_key}"sure": true or false}}')
 
-#: Enclosing marks are also asked whether they are drawn CLOSE round the
-#: thing. Foundry rc3 run (2026-10-04): told six times that its rings were
-#: misplaced, an agent widened them until each took in its tag somewhere —
-#: rings 70-125 pt across round 10 pt tags — and the check confirmed them.
-#: A ring that wide on a dense sheet does not say which thing it means.
-_CLOSE_Q = (" Also say whether the {word} is drawn closely round that one "
-            "thing (the thing fills a fair part of it), or takes in a much "
-            "wider area — several times the thing's size, or other things "
-            "too.")
-_CLOSE_KEY = '"close": true or false, '
+#: Enclosing marks are also checked for SIZE. Foundry rc3 run (2026-10-04):
+#: told six times that its rings were misplaced, an agent widened them until
+#: each took in its tag somewhere — rings 70-125 pt across round 10 pt tags —
+#: and the check confirmed them. A ring that wide on a dense sheet does not
+#: say which thing it means.
+#:
+#: 5.32.0 asked the model whether the mark was "drawn closely round" the
+#: thing. On GPT-5.4 (Funhouse, 2026-10-07) that rejected CORRECT rings — a
+#: 19 x 14 pt ring centred on a 10 x 4 pt tag was "drawn far wider than it" —
+#: because any ring that fits a small tag is a few times its size. So size is
+#: now MEASURED, not judged: the look returns where the thing is in the crop
+#: (a 0-999 box), and the mark is too wide only when its area is more than
+#: :data:`MAX_AREA_FACTOR` times the thing's. Good rings measured 3-10x, the
+#: blanket rings 70-180x.
+_WHERE_Q = (" Also give where that thing is in this image, as a box on a "
+            "0-999 grid (0,0 top-left, 999,999 bottom-right), or null if it "
+            "is not there.")
+_WHERE_KEY = '"thing_box": [x0, y0, x1, y1] or null, '
+
+#: A mark this many times the area of the thing it names is a blanket, not a
+#: mark (the suite's own placement check uses 60).
+MAX_AREA_FACTOR = 30.0
+
+#: The smallest area a thing is taken to have, in pt² — a tag's lettering
+#: box can be read very thin.
+MIN_THING_AREA = 25.0
+
+
+def _too_wide(mark_bbox: Any, thing_box: Any, view: Any) -> Optional[float]:
+    """The mark's area over the thing's, when that is more than
+    :data:`MAX_AREA_FACTOR`; else ``None`` (including when the look gave no
+    usable box — size is then not judged at all)."""
+    from funhouse_agent import vision_view
+    try:
+        tb = [float(v) for v in thing_box]
+        mb = [float(v) for v in mark_bbox]
+        if len(tb) != 4 or len(mb) != 4:
+            return None
+        x0, y0, x1, y1 = vision_view.image_box_to_page(list(view), tb)
+    except (TypeError, ValueError):
+        return None
+    thing = max((x1 - x0) * (y1 - y0), MIN_THING_AREA)
+    mark = max(0.0, mb[2] - mb[0]) * max(0.0, mb[3] - mb[1])
+    ratio = mark / thing
+    return ratio if ratio > MAX_AREA_FACTOR else None
 
 
 def _rows_with_specs(result: Dict[str, Any], specs: Sequence[Any]
@@ -131,9 +166,10 @@ def _check_one(pdf_bytes: bytes, item: Dict[str, Any], engine) -> Dict[str, Any]
            "pdf_page": (row.get("page") or 0) + 1, "kind": kind,
            "names": _expected(spec), "bbox": row.get("bbox")}
     encloses_kind = kind in ("box", "circle")
+    crop = _crop_box(row)
     try:
-        image, _info = vision_view.render_view(
-            pdf_bytes, page=int(row.get("page") or 0), bbox=_crop_box(row),
+        image, info = vision_view.render_view(
+            pdf_bytes, page=int(row.get("page") or 0), bbox=crop,
             pad_frac=0.0, engine=engine)
         answer = engine.analyze_image(image, _PROMPT.format(
             word=word,
@@ -141,8 +177,8 @@ def _check_one(pdf_bytes: bytes, item: Dict[str, Any], engine) -> Dict[str, Any]
                         if spec.get("label") else ""),
             verb=("point at" if kind == "callout" else "enclose"),
             where=("at the tip of" if kind == "callout" else "inside"),
-            close_q=(_CLOSE_Q.format(word=word) if encloses_kind else ""),
-            close_key=(_CLOSE_KEY if encloses_kind else ""),
+            close_q=(_WHERE_Q if encloses_kind else ""),
+            close_key=(_WHERE_KEY if encloses_kind else ""),
             expected=_expected(spec)))
     except Exception as exc:  # noqa: BLE001 - a failed check is reported
         out.update(verdict="not_checked",
@@ -154,11 +190,14 @@ def _check_one(pdf_bytes: bytes, item: Dict[str, Any], engine) -> Dict[str, Any]
         return out
     encloses, sure = got.get("encloses"), got.get("sure")
     out["seen"] = str(got.get("inside") or "")[:120]
-    if encloses is True and encloses_kind and got.get("close") is False:
+    ratio = (_too_wide(row.get("bbox"), got.get("thing_box"),
+                       (info or {}).get("clip") or crop)
+             if encloses is True and encloses_kind else None)
+    if ratio is not None:
         # Round the right thing, but drawn so wide it does not single it out.
         out["verdict"] = "misplaced" if sure is not False else "unsure"
-        out["seen"] = (out["seen"] + " — but the mark is drawn far wider "
-                       "than it")[:160]
+        out["seen"] = (out["seen"] + f" — but the mark is {ratio:.0f} times "
+                       "the area of the thing")[:160]
     elif encloses is True:
         out["verdict"] = "confirmed" if sure is not False else "unsure"
     elif encloses is False:

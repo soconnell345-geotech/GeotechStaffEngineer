@@ -125,13 +125,16 @@ def test_a_ring_round_the_right_thing_but_far_too_wide_is_not_confirmed(
     tag's size. Encloses-but-not-close is reported, not confirmed."""
 
     class WideEngine:
+        """Sees the tag as a small box in the middle of the crop."""
+
         def __init__(self):
             self.prompts = []
 
         def analyze_image(self, image_bytes, prompt):
             self.prompts.append(prompt)
             return json.dumps({"encloses": True, "inside": "GCE",
-                               "close": False, "sure": True})
+                               "thing_box": [490, 495, 510, 505],
+                               "sure": True})
 
     engine = WideEngine()
     tools, handle = _tools(engine, tmp_path, monkeypatch)
@@ -141,9 +144,42 @@ def test_a_ring_round_the_right_thing_but_far_too_wide_is_not_confirmed(
             {"kind": "circle", "page": 0, "label": "GCE", "bbox": big}]}))
     check = out["check"]
     assert check["confirmed"] == 0 and len(check["misplaced"]) == 1
-    assert "wider" in check["misplaced"][0]["seen"]
+    assert "times the area" in check["misplaced"][0]["seen"]
     assert "zoom until you can box the thing itself" in check["note"]
-    assert "closely round" in engine.prompts[0]
+    assert "0-999" in engine.prompts[0]
+
+
+def test_ring_size_is_measured_not_judged():
+    """Funhouse GPT-5.4, 2026-10-07: asked whether rings were "drawn
+    closely", the model rejected a 19 x 14 pt ring centred on a 10 x 4 pt tag.
+    Size is now the mark's area over the thing's, from the look's box."""
+    from funhouse_agent.markup_check import MAX_AREA_FACTOR, _too_wide
+    view = [0.0, 0.0, 100.0, 100.0]                 # 1 grid unit ~ 0.1 pt
+    tag = [450, 480, 550, 520]                      # a 10 x 4 pt tag
+    # the snug rings of the good runs: 19 x 14 and 32 x 18 pt -> fine
+    assert _too_wide([40.5, 43, 59.5, 57], tag, view) is None
+    assert _too_wide([34, 41, 66, 59], tag, view) is None
+    # the blanket rings of 2026-10-04: 73 x 43 and 125 x 66 pt -> too wide
+    assert _too_wide([13, 28, 86, 71], tag, view) > MAX_AREA_FACTOR
+    assert _too_wide([-12, 17, 113, 83], tag, view) > MAX_AREA_FACTOR
+    # no usable box from the look -> size is not judged
+    assert _too_wide([13, 28, 86, 71], None, view) is None
+    assert _too_wide([13, 28, 86, 71], [1, 2, 3], view) is None
+
+
+def test_a_snug_ring_is_confirmed(tmp_path, monkeypatch):
+    class SnugEngine:
+        def analyze_image(self, image_bytes, prompt):
+            # the tag fills about a third of the crop each way
+            return json.dumps({"encloses": True, "inside": "GCE",
+                               "thing_box": [340, 380, 660, 620],
+                               "sure": True})
+
+    tools, handle = _tools(SnugEngine(), tmp_path, monkeypatch)
+    out = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "snug.pdf", "markups": [
+            {"kind": "circle", "page": 0, "label": "GCE", "bbox": list(TAG)}]}))
+    assert out["check"]["confirmed"] == 1 and not out["check"]["misplaced"]
 
 
 def test_all_marks_right_says_so(tmp_path, monkeypatch):
