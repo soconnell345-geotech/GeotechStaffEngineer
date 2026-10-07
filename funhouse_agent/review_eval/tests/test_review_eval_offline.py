@@ -17,10 +17,10 @@ from funhouse_agent import review_flags  # noqa: E402
 from funhouse_agent.review_eval import checks as C  # noqa: E402
 from funhouse_agent.review_eval import documents as D  # noqa: E402
 from funhouse_agent.review_eval.tasks import (  # noqa: E402
-    CATEGORIES, DOC_TYPES, OPEN_TASKS, Task, load_tasks, select)
+    CATEGORIES, DOC_TYPES, OPEN_TASKS, PAGES, Task, load_tasks, select)
 
 FILE_CHECKS = {"file_produced", "pdf_markups", "markups_on_targets",
-               "docx_contains", "tool_used"}
+               "docx_contains", "tool_used", "pages_covered"}
 
 
 @pytest.fixture(autouse=True)
@@ -53,10 +53,16 @@ def test_tasks_are_well_formed():
                                                 "markups", "produce"}
     # the synthetic fixtures stay the smallest part of the suite (four since
     # 5.32: the two drawn-lettering tag sets measure markup placement and
-    # whole-set coverage, which no public document in the suite can)
+    # whole-set coverage, which no public document in the suite can; three
+    # more since plan W4 on one synthetic report, because whether EVERY data
+    # page of a report was read can only be scored on a report whose every
+    # page is known by construction)
     synthetic = [t for t in OPEN_TASKS
                  if any(d.startswith("fixture_") for d in t.documents)]
-    assert len(synthetic) <= 4
+    assert len(synthetic) <= 7
+    assert len(synthetic) < len(OPEN_TASKS) / 4
+    for t in OPEN_TASKS:
+        assert t.page in PAGES, t.id
 
 
 @pytest.mark.parametrize("task", OPEN_TASKS, ids=lambda t: t.id)

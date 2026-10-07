@@ -659,6 +659,9 @@ def test_arms_are_the_old_ones_plus_overview():
                    A.VISION_STRUCTURED_ENV: "1", A.DIGEST_ENV: "1"},
         # 5.32: the looking-only measuring stick, test_review_minimal_offline
         "minimal": {A.AGENT_ENV: "minimal"},
+        # plan W4 (coverage in code), pinned in test_coverage_offline.py
+        "coverage": {A.COVERAGE_ENV: "1"},
+        "checklist": {A.COVERAGE_ENV: "1", A.CHECKLIST_ENV: "1"},
     }
 
 

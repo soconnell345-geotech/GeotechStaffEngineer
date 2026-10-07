@@ -60,6 +60,12 @@ DOCUMENTS: Dict[str, Dict[str, Any]] = {
     # The same sheets, 24 of them at an even density, with ONE FPG callout on
     # pages 4, 12 and 20 only (FBG, its look-alike, is on every sheet).
     "fixture_tags_long": {"fixture": "tags_long", "name": "long_tag_set.pdf"},
+    # A 30-page geotechnical report (review_eval/report_fixture.py): new
+    # boring logs as vector pages, older ones as scans, a laboratory appendix
+    # of a summary table and 13 sheets - the shape of the 2026-10-06 field
+    # session's report, every name and number invented.
+    "fixture_report": {"fixture": "report",
+                       "name": "harbour_road_geotechnical_report.pdf"},
 }
 
 #: The long tag set's rare tag and the 0-based pages that carry it.
@@ -133,6 +139,10 @@ def _fixture(name: str) -> bytes:
                 extra_callouts=LONG_SET_RARE).pdf
         except TypeError as exc:        # planlens older than 0.11
             raise ImportError(f"needs planlens 0.11 ({exc})")
+    if name == "report":
+        from funhouse_agent.review_eval.report_fixture import (
+            build_synthetic_extraction_report)
+        return build_synthetic_extraction_report().pdf
     raise KeyError(f"unknown fixture {name!r}")
 
 

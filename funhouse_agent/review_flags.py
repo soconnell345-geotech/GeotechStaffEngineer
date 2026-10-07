@@ -65,6 +65,22 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     review_digest`: page map, text index, references, built by code in
     seconds and kept in the working folder) - plan shape 2, Stage A. Its
     small/large hint uses ``GEOTECH_REVIEW_SHAPE1_PAGES`` (default 20).
+``GEOTECH_COVERAGE``
+    ``1`` keeps a ledger of every page any tool or helper reads or looks at
+    (:mod:`funhouse_agent.coverage`, derived from the tool calls, kept in
+    the conversation's ``coverage.json``), offers ``document_coverage`` (the
+    document's pages by what they are, what was read, coverage as counts,
+    pages marked extracted or skipped) and adds the gate: a turn that takes
+    data out of a document and tries to finish with data pages unread is
+    told once, with the list. BOTH pages and every agent build that reads
+    documents (the geotech page, the legacy and lean review agents); not the
+    minimal agent (plan W4, ``module_work/COVERAGE_AND_CHECKLIST.md``).
+``GEOTECH_REVIEW_CHECKLIST``
+    ``1`` offers ``report_checklist``: the report-review checklist (DRAFT,
+    :mod:`funhouse_agent.report_checklist`) with the checks code can make
+    run from the ledger and the data's cross-checks, and the judgement items
+    returned for the agent to report against. With ``GEOTECH_COVERAGE`` on
+    too, a failed code check joins the gate's note.
 """
 
 from __future__ import annotations
@@ -82,10 +98,12 @@ FINDINGS_ENV = "GEOTECH_REVIEW_FINDINGS"
 OVERVIEW_ENV = "GEOTECH_REVIEW_OVERVIEW"
 GEOMETRY_ENV = "GEOTECH_REVIEW_GEOMETRY"
 DIGEST_ENV = "GEOTECH_REVIEW_DIGEST"
+COVERAGE_ENV = "GEOTECH_COVERAGE"
+CHECKLIST_ENV = "GEOTECH_REVIEW_CHECKLIST"
 
 ALL_ENVS = (AGENT_ENV, VISION_TEXT_ENV, VISION_STRUCTURED_ENV,
             VISION_INLINE_ENV, SWEEP_ENV, FINDINGS_ENV, OVERVIEW_ENV,
-            GEOMETRY_ENV, DIGEST_ENV)
+            GEOMETRY_ENV, DIGEST_ENV, COVERAGE_ENV, CHECKLIST_ENV)
 
 #: Not a switch but the overview's setting: above this many pages in the
 #: new uploads (all of them together) the orientation asks for contact sheets.
@@ -161,6 +179,17 @@ def digest() -> bool:
     return _on(DIGEST_ENV)
 
 
+def coverage() -> bool:
+    """Whether the coverage ledger, ``document_coverage`` and the gate are
+    on (both pages)."""
+    return _on(COVERAGE_ENV)
+
+
+def checklist() -> bool:
+    """Whether ``report_checklist`` is offered (both pages)."""
+    return _on(CHECKLIST_ENV)
+
+
 def overview_pages() -> int:
     """The page count above which the orientation asks for contact sheets
     (``GEOTECH_REVIEW_OVERVIEW_PAGES``, default 20)."""
@@ -192,6 +221,11 @@ ARMS: Dict[str, Dict[str, str]] = {
                VISION_STRUCTURED_ENV: "1", DIGEST_ENV: "1"},
     # The looking-only agent (owner, 2026-10-02): which tools carry weight?
     "minimal": {AGENT_ENV: "minimal"},
+    # Coverage in code (plan W4, 2026-10-08). On the DEFAULT agent of each
+    # page, so it compares straight against `baseline`: the ledger, the
+    # coverage tool and the gate; then the same plus the report checklist.
+    "coverage": {COVERAGE_ENV: "1"},
+    "checklist": {COVERAGE_ENV: "1", CHECKLIST_ENV: "1"},
 }
 
 
@@ -229,9 +263,11 @@ def describe() -> str:
 
 __all__ = ["AGENT_ENV", "VISION_TEXT_ENV", "VISION_STRUCTURED_ENV",
            "VISION_INLINE_ENV", "SWEEP_ENV", "FINDINGS_ENV", "OVERVIEW_ENV",
-           "GEOMETRY_ENV", "DIGEST_ENV", "OVERVIEW_PAGES_ENV",
+           "GEOMETRY_ENV", "DIGEST_ENV", "COVERAGE_ENV", "CHECKLIST_ENV",
+           "OVERVIEW_PAGES_ENV",
            "DEFAULT_OVERVIEW_PAGES", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "lean_agent",
            "vision_text_context", "vision_structured", "vision_inline",
            "sweep", "findings", "overview", "geometry", "digest",
-           "overview_pages", "switches", "describe"]
+           "coverage", "checklist", "overview_pages", "switches",
+           "describe"]

@@ -18,7 +18,9 @@ the document staged as an upload with the page's own attachment note, the
 question sent as the user's message, and the turn streamed through the page's
 own ``core.stream_turn``. So what is scored is what a tester would have got.
 An arm is only a set of switches (:mod:`funhouse_agent.review_flags`), set for
-the task and unset afterwards.
+the task and unset afterwards. A task with ``page="geotech"`` (the coverage
+tasks of plan W4) is asked on the GeotechStaffEngineer page instead, built
+the same way from that page's profile.
 
 ``orientation=True`` sends the page's automatic orientation turn first, with
 the text the app sends (``webapp.profiles.orientation_request_for``, under the
@@ -76,16 +78,36 @@ def _model_from(prompter: Any, model_name: str):
     return PrompterChatModel(prompter=prompter, model=model_name)
 
 
+def _profile(page: str = "review"):
+    from webapp.profiles import DOCUMENT_REVIEW, GEOTECH
+    return GEOTECH if page == "geotech" else DOCUMENT_REVIEW
+
+
 def build_page_agent(model, attachments: Dict[str, bytes], files_dir: str,
-                     artifacts: List[str]):
-    """The Document Review page's agent, built the way ``webapp/app.py``
-    builds it (behaviour defaults, then the page profile's overrides)."""
+                     artifacts: List[str], page: str = "review"):
+    """A page's agent, built the way ``webapp/app.py`` builds it (behaviour
+    defaults, then the page profile's overrides): the Document Review page,
+    or with ``page="geotech"`` the GeotechStaffEngineer page."""
     from webapp import core
-    from webapp.profiles import DOCUMENT_REVIEW
     kw = core.behavior_build_kwargs(None)
-    kw.update(DOCUMENT_REVIEW.build_kwargs())
+    kw.update(_profile(page).build_kwargs())
     kw.setdefault("markup_author", SUITE_AUTHOR)
     return core.build_agent(model, attachments, files_dir, artifacts, **kw)
+
+
+def _activity_records(run_dir: str) -> List[Dict[str, Any]]:
+    """The run's ``activity.jsonl`` records (for the process checks)."""
+    out: List[Dict[str, Any]] = []
+    path = os.path.join(run_dir, "activity.jsonl")
+    if not os.path.isfile(path):
+        return out
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                continue
+    return out
 
 
 def _activity(conv_dir: str) -> Dict[str, Any]:
@@ -147,8 +169,10 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
     # PDF, a memo) must not satisfy a check of this one.
     _clear_run_dir(run_dir)
     os.makedirs(files_dir, exist_ok=True)
+    page = getattr(task, "page", "review") or "review"
     result: Dict[str, Any] = {
         "task": task.id, "arm": arm, "arm_env": dict(arm_env),
+        "page": page,
         "category": task.category, "doc_type": task.doc_type,
         "split": task.split, "question": task.question,
         "started": datetime.now().isoformat(timespec="seconds"),
@@ -172,11 +196,13 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
             atts = [core.stage_upload(attachments, files_dir, name, data)
                     for name, data in docs]
             staged = [a.path for a in atts]
-            agent = build_page_agent(model, attachments, files_dir, artifacts)
-            note = core.attachment_note(atts, review=True)
-            # The page's own orientation text (the arm's switches are set).
+            agent = build_page_agent(model, attachments, files_dir, artifacts,
+                                     page=page)
+            note = core.attachment_note(atts, review=(page == "review"))
+            # The page's own orientation text (the arm's switches are set);
+            # the geotech page sends none.
             turns = ([orientation_request_for(DOCUMENT_REVIEW, atts)]
-                     if orientation else [])
+                     if orientation and page == "review" else [])
             turns += [task.question] + list(task.followups)
             history: List[Dict[str, str]] = []
             thread = uuid4().hex
@@ -230,9 +256,10 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
                   tokens=sum(t.get("tokens", 0) for t in result["turns"]),
                   tool_calls=act["tool_calls"],
                   tool_counts=_counts(c["name"] for c in act["tool_calls"]))
+    records = _activity_records(run_dir)
     result["checks"] = [
         _checks.run_check(c, result["answer"], files=produced,
-                          tool_calls=act["tool_calls"])
+                          tool_calls=act["tool_calls"], activity=records)
         for c in task.all_checks()]
     result["score"] = _checks.score(result["checks"])
     # The uploads are copies of the suite's documents: once scored they are
@@ -253,8 +280,10 @@ def rescore_saved(result: Dict[str, Any], task: Task,
     ``score_before_rescore`` the first time."""
     run_dir = os.path.abspath(run_dir)
     files = [os.path.join(run_dir, f) for f in result.get("files") or []]
+    records = _activity_records(run_dir)
     checks = [_checks.run_check(c, result.get("answer") or "", files=files,
-                                tool_calls=result.get("tool_calls") or [])
+                                tool_calls=result.get("tool_calls") or [],
+                                activity=records)
               for c in task.all_checks()]
     out = dict(result)
     out.setdefault("score_before_rescore", result.get("score"))
@@ -356,7 +385,8 @@ def summarize(runs: Dict[str, Dict[str, Dict[str, Any]]], arms: Sequence[str],
                      f"{ti:,}/{to:,} | {mins:.1f} | {errs} | {failed} | "
                      f"{caps} |")
     for title, key in (("By category", "category"),
-                       ("By document type", "doc_type")):
+                       ("By document type", "doc_type"),
+                       ("By app page", "page")):
         groups = sorted({getattr(t, key) for t in tasks})
         lines += ["", f"## {title} (tasks passed)", "",
                   "| " + key + " | " + " | ".join(arms) + " |",

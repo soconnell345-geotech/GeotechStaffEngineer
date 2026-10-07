@@ -319,6 +319,31 @@ def report_ingest_supported() -> bool:
     return available() and all(has_tool(name) for name in REPORT_INGEST_TOOLS)
 
 
+def open_document_entry(source: str,
+                        attachments: Optional[Dict[str, bytes]] = None):
+    """The toolkit's open entry for ``source`` (an attachment key or a path),
+    opening it if it is not open yet. Raises planlens' ``ToolError`` when the
+    source resolves to nothing. The coverage ledger
+    (:mod:`funhouse_agent.coverage`) uses it to know which document a vision
+    tool's ``attachment_key`` points at; the entry carries ``handle``,
+    ``name``, ``doc`` (the planlens Document) and ``lock``."""
+    token = _ATTACHMENTS.set(dict(attachments or {}))
+    try:
+        return _toolkit().open(source)
+    finally:
+        _ATTACHMENTS.reset(token)
+
+
+def document_entry(handle: str):
+    """The open entry behind a document ``handle``, or ``None``."""
+    if not handle or not available():
+        return None
+    try:
+        return _toolkit()._entry(handle)
+    except Exception:            # an unknown or closed handle
+        return None
+
+
 def resolve_document_source(source: str,
                             attachments: Optional[Dict[str, bytes]] = None):
     """An attachment key or a path, resolved the way the document tools do.

@@ -336,3 +336,47 @@ def test_parallel_subagents_are_attributed_by_run(tmp_path):
         ("tool_end", "task", "primary", "general-purpose"),
     ]
     assert al.load(str(tmp_path))[6]["result"] == "PDF rebuilt"
+
+
+# ---------------------------------------------------------------------------
+# Parallel tools write one whole line each (2026-10-08)
+# ---------------------------------------------------------------------------
+
+def test_parallel_writes_keep_every_record_whole(tmp_path):
+    """Ten tools at once, each logging a long result: unlocked, the lines
+    interleaved and records were lost (a suite run had a page look with no
+    tool_end). Every record must load, and every one must be there."""
+    import threading
+    log = al.ActivityLogger(str(tmp_path), turn=1)
+    big = "x" * 20_000
+    ids = [_u() for _ in range(40)]
+
+    def one(rid):
+        log.on_tool_start({"name": "analyze_pdf_page"}, "", run_id=rid,
+                          inputs={"attachment_key": "r.pdf", "page": 1})
+        log.on_tool_end(big, run_id=rid)
+
+    threads = [threading.Thread(target=one, args=(rid,)) for rid in ids]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    lines = open(al.activity_path(str(tmp_path)), encoding="utf-8").read(
+    ).splitlines()
+    assert len(lines) == 80
+    recs = [json.loads(line) for line in lines]          # none is broken
+    ends = {r["run_id"] for r in recs if r["event"] == "tool_end"}
+    assert ends == {str(i) for i in ids}
+    assert log.records_written == 80
+
+
+def test_the_coverage_gate_note_is_in_the_record(tmp_path):
+    log = al.ActivityLogger(str(tmp_path), turn=3)
+    log.on_custom_event("coverage_gate", {"note": "[Coverage check] read "
+                                                   "pages 19-29"},
+                        run_id=_u())
+    log.on_custom_event("something_else", {"x": 1}, run_id=_u())
+    recs = al.load(str(tmp_path))
+    assert [r["event"] for r in recs] == ["coverage_gate"]
+    assert recs[0]["text"].startswith("[Coverage check]")
+    assert recs[0]["turn"] == 3

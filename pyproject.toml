@@ -288,7 +288,10 @@ webapp = ["ws_upload_component/*.html"]
 # Ship the eval question set so funhouse_agent.deep.eval_harness works from an
 # installed wheel (the v5.0 A/B self-test). Tests themselves are not shipped.
 funhouse_agent = ["geotech_test_suite.json", "eval_samples/*",
-                  "worked_examples.json"]
+                  "worked_examples.json",
+                  # The report-review checklist (DRAFT, plan W4): DATA the
+                  # report_checklist tool reads; without it the tool fails.
+                  "report_review_checklist.json"]
 # Two EXAMPLE files that document the shape of a private file the cluster run
 # reads. The REAL ones travel with the truth folder and are never committed,
 # because this repo is public and a fingerprint names a firm and a question

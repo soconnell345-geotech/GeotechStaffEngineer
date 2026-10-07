@@ -249,11 +249,14 @@ def _final_text(result) -> str:
 
 
 def make_reader_tool(model, reader_tools: list,
-                     budget: int = READER_MAX_MODEL_CALLS):
+                     budget: int = READER_MAX_MODEL_CALLS,
+                     extra_middleware: Optional[list] = None):
     """The ``task`` tool: one ``page_reader`` helper, built on first use.
 
     Named ``task`` with a ``subagent_type`` like deepagents' own delegation,
     so the app's activity log files the helper's calls under it.
+    ``extra_middleware`` is added to the helper's (the coverage recorder,
+    so the pages a helper reads count).
     """
     from langchain.agents import create_agent
     from langchain_core.tools import StructuredTool
@@ -269,7 +272,8 @@ def make_reader_tool(model, reader_tools: list,
                     ModelCallBudgetMiddleware(budget,
                                               final_turn_nudge=READER_NUDGE,
                                               exhausted_message=READER_EXHAUSTED),
-                ) if m is not None]
+                ) if m is not None] + [m for m in (extra_middleware or [])
+                                       if m is not None]
                 state["agent"] = create_agent(
                     model, tools=reader_tools,
                     system_prompt=DOCUMENT_REVIEW_READER_PROMPT,
@@ -304,6 +308,7 @@ def build_review_agent(model, *, engine=None,
                        checkpointer=None, store=None,
                        model_calls: Optional[int] = None,
                        working_dir: Optional[str] = None,
+                       coverage_dir: Optional[str] = None,
                        **_ignored):
     """Build the lean Document Review agent (see the module docstring).
 
@@ -363,7 +368,15 @@ def build_review_agent(model, *, engine=None,
         tools += make_digest_tools(attachments, working_dir=working_dir)
         reader_tools += make_digest_tools(attachments,
                                           working_dir=working_dir)
-    tools.append(make_reader_tool(model, reader_tools))
+    # Coverage (GEOTECH_COVERAGE / GEOTECH_REVIEW_CHECKLIST, OFF by default):
+    # the gate on this agent, a recorder on its reading helper.
+    from funhouse_agent.deep.coverage_tools import coverage_kit
+    coverage = coverage_kit(attachments=attachments, folder=coverage_dir,
+                            max_result_chars=max_result_chars)
+    tools += list(coverage.tools)
+    tools.append(make_reader_tool(
+        model, reader_tools,
+        extra_middleware=[coverage.recorder("page_reader")]))
     if review_flags.sweep():
         from funhouse_agent.deep.sweep import make_sweep_tool
         tools.append(make_sweep_tool(
@@ -397,6 +410,7 @@ def build_review_agent(model, *, engine=None,
         images,
         ModelCallBudgetMiddleware(budget, final_turn_nudge=FINAL_NUDGE,
                                   exhausted_message=EXHAUSTED),
+        coverage.primary(budget=budget),
     ) if m is not None]
 
     kwargs: Dict[str, Any] = {}
@@ -415,6 +429,8 @@ def build_review_agent(model, *, engine=None,
         agent.geotech_min_recursion_limit = 8 * budget + 30
         agent.geotech_review_agent = "lean"
         agent.geotech_working_dir = working_dir
+        if coverage.on:
+            agent.geotech_coverage_ledger = coverage.ledger
     except Exception:  # noqa: BLE001 - attributes are conveniences
         pass
     return agent

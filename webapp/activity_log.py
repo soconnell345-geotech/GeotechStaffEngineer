@@ -30,7 +30,8 @@ Record shape (one JSON object per line)::
 
 ``event`` is one of ``turn_start``, ``tool_start``, ``tool_end``,
 ``tool_error``, ``model_start``, ``model_end``, ``model_error``,
-``turn_end``. ``agent`` is ``primary`` or the sub-agent's name, attributed
+``turn_end``, and ``coverage_gate`` (the note the coverage gate gave the
+model, with ``GEOTECH_COVERAGE`` on). ``agent`` is ``primary`` or the sub-agent's name, attributed
 by run ancestry: each event's parent-run chain is followed up to the ``task``
 call it ran inside (whose ``subagent_type`` names the sub-agent), or to the
 top of the turn (primary). Until 2026-09-15 this was a stack of open ``task``
@@ -58,8 +59,27 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from typing import Any, Optional
+
+#: One lock per activity file. Tool calls run in parallel threads (a model
+#: step that asks for ten page looks runs ten tools at once, each with its
+#: vision call), and every event is an append to the same file. Unlocked,
+#: two long lines written at once interleave and both records are lost:
+#: found 2026-10-08 when a suite run's file held the tail of one record
+#: glued to another, and a parallel page look had no tool_end at all.
+_FILE_LOCKS: dict = {}
+_FILE_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_for(path: str) -> threading.Lock:
+    key = os.path.abspath(path)
+    with _FILE_LOCKS_GUARD:
+        lock = _FILE_LOCKS.get(key)
+        if lock is None:
+            lock = _FILE_LOCKS[key] = threading.Lock()
+        return lock
 
 try:
     from langchain_core.callbacks import BaseCallbackHandler
@@ -282,11 +302,13 @@ class ActivityLogger(BaseCallbackHandler):
             rec = {"turn": self.turn, "ts": round(now, 3),
                    "t": round(now - self._t0, 3), **rec}
             os.makedirs(self.conv_dir, exist_ok=True)
-            with open(activity_path(self.conv_dir), "a",
-                      encoding="utf-8") as fh:
-                fh.write(json.dumps(rec, ensure_ascii=False, default=str)
-                         + "\n")
-            self.records_written += 1
+            line = json.dumps(rec, ensure_ascii=False, default=str) + "\n"
+            path = activity_path(self.conv_dir)
+            # One whole line at a time: parallel tools write here at once.
+            with _lock_for(path):
+                with open(path, "a", encoding="utf-8") as fh:
+                    fh.write(line)
+                self.records_written += 1
         except Exception as exc:                       # noqa: BLE001
             self.last_error = f"{type(exc).__name__}: {exc}"
 
@@ -422,6 +444,23 @@ class ActivityLogger(BaseCallbackHandler):
                 record["reasoning"], _t, _n = _cap(reasoning,
                                                    MODEL_TEXT_CHARS)
             self._write(record)
+        except Exception as exc:                       # noqa: BLE001
+            self.last_error = f"{type(exc).__name__}: {exc}"
+
+    def on_custom_event(self, name, data, *, run_id, tags=None, metadata=None,
+                        **kwargs):
+        """App events inside a run. ``coverage_gate``: the note the coverage
+        gate put in front of the model (``funhouse_agent.deep.
+        coverage_tools``) -- part of what the model was shown, so it belongs
+        in the record."""
+        try:
+            if name != "coverage_gate":
+                return
+            note = (data or {}).get("note") if isinstance(data, dict) else data
+            text, truncated, _n = _cap(note, self.max_chars)
+            self._write({"agent": PRIMARY, "event": "coverage_gate",
+                         "run_id": str(run_id), "text": text,
+                         "truncated": truncated})
         except Exception as exc:                       # noqa: BLE001
             self.last_error = f"{type(exc).__name__}: {exc}"
 

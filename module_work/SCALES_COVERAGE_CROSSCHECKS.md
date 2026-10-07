@@ -137,7 +137,14 @@ In each item, [code] means a check code can run; [judge] means the agent works t
 | W1 | DONE (499e1cf): bundled DIGGS 2.6 schema, checked with lxml on every host |
 | W2 | DONE: `write_diggs` reconciles before writing and returns `cross_checks` |
 | W3 | DESIGN DONE (`module_work/VISUAL_SCALES_DESIGN.md`). Build waits on the owner's answers to its §10 |
-| W4 | building (Opus subagent, the owner's ask): coverage ledger and checklist, behind a switch; (b)'s content waits on the owner's markup |
+| W4 | BUILT behind two switches, both OFF (`module_work/COVERAGE_AND_CHECKLIST.md`). The checklist content waits on the owner's markup. Measurement waits on a suite run. |
+
+**W4 in brief.**
+- **Switches:** `GEOTECH_COVERAGE` turns on the ledger, `document_coverage` and the gate; `GEOTECH_REVIEW_CHECKLIST` turns on `report_checklist`.
+- **Suite arms:** `coverage` and `checklist`.
+- **Three new suite tasks** run on a 30-page synthetic report: vector new logs, scanned old ones, and a lab appendix with one LL/PL swap planted.
+- **Not yet measured:** run `arms=("baseline", "coverage", "checklist")` on Foundry or Funhouse and read every run in full before either switch goes on.
+- **Found on the way and fixed:** the activity log lost records when tools ran in parallel. Each line is now written under a lock. Earlier traces with parallel page looks may be missing records.
 
 **Corrections from the W3 design** (its §11). Read those, not the W3 section above, for what exists:
 - `log_grid` finds no stratum lines on scans, even with OCR.

@@ -26,7 +26,13 @@ document and the source is recorded in the task's ``truth`` note:
 * two SYNTHETIC documents come from ``planlens.testing`` because no public
   document carries review markups or a duplicated page. They are the smallest
   part of the suite on purpose: planlens' tools were built against them, so a
-  suite made of them would repeat the overfitting it exists to catch.
+  suite made of them would repeat the overfitting it exists to catch;
+* one synthetic geotechnical REPORT (``review_eval/report_fixture.py``,
+  2026-10-08) for the coverage tasks: whether every data page of a report
+  was read can only be scored on a report whose every page is known by
+  construction, and no public report the suite may carry has the shape that
+  was lost (new logs as vector pages, old ones as scans, a long laboratory
+  appendix). Its three tasks run on both pages (``Task.page``).
 
 SPLITS. Everything here is ``open``: builders may read it. A BLIND set — tasks
 the people changing the harness never see — belongs in a private task file on
@@ -47,14 +53,21 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
+from funhouse_agent.review_eval import report_fixture as _RF
+
 #: Categories a task can be in (what the reviewer is doing).
 CATEGORIES = ("orient", "summarize", "locate", "count", "check", "compare",
-              "markups", "produce")
+              "markups", "produce", "extract")
 
 #: What kind of document the task is asked of.
 DOC_TYPES = ("drawing_stroke", "drawing_set", "criteria_text",
              "criteria_scanned", "long_text", "calc_package", "markup_set",
-             "submittal")
+             "submittal", "report")
+
+#: Which page of the app a task is asked on: the Document Review page (the
+#: suite's home) or the GeotechStaffEngineer page (the geotech agent, its
+#: analysis modules and its DIGGS writer) - plan W4 asks for both harnesses.
+PAGES = ("review", "geotech")
 
 #: Giving up on legibility: calling the file too blurry, or asking for a
 #: better one. ("I zoomed in at higher resolution" is not giving up.)
@@ -88,6 +101,8 @@ class Task:
     split: str = "open"
     followups: List[str] = field(default_factory=list)
     auto_checks: bool = True
+    #: The app page the task is asked on (:data:`PAGES`).
+    page: str = "review"
 
     def all_checks(self) -> List[Dict[str, Any]]:
         return list(self.checks) + (list(AUTO_CHECKS) if self.auto_checks
@@ -99,7 +114,7 @@ class Task:
                 "doc_type": self.doc_type, "checks": list(self.checks),
                 "truth": self.truth, "split": self.split,
                 "followups": list(self.followups),
-                "auto_checks": self.auto_checks}
+                "auto_checks": self.auto_checks, "page": self.page}
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "Task":
@@ -111,7 +126,8 @@ class Task:
                    truth=str(d.get("truth", "")),
                    split=str(d.get("split", "open")),
                    followups=list(d.get("followups") or []),
-                   auto_checks=bool(d.get("auto_checks", True)))
+                   auto_checks=bool(d.get("auto_checks", True)),
+                   page=str(d.get("page", "review")))
 
 
 # ---------------------------------------------------------------------------
@@ -871,6 +887,102 @@ OPEN_TASKS: List[Task] = [
                  "terms": [_3600, _num("8.33"), "S9.5B"]}],
         truth="10.25A/20.00A/20.00B 3600 psi; 10.31A 8.33% ramp slope; 11.01 "
               "S9.5B surface course."),
+
+    # --- coverage: taking the data out of a whole report (plan W4) -----------
+    # One synthetic report (review_eval/report_fixture.py) in the shape of
+    # the 2026-10-06 field session's: new logs as vector pages, older logs
+    # as scans, a laboratory appendix of a summary and 13 sheets. What is
+    # scored is whether EVERY data page was read (from the run's activity,
+    # not from anything the app's own coverage ledger says), whether the
+    # answer states its coverage as counts, and values from pages a partial
+    # reading misses: the scans, the newest boring, the last sheets.
+    Task(
+        id="report-extract-all",
+        question=("Put the subsurface data in this geotechnical report into "
+                  "tables: one row per boring (date, total depth, "
+                  "groundwater, SPT N values with depth) and one row per "
+                  "laboratory test result (boring, sample, depth, test, "
+                  "values)."),
+        documents=["fixture_report"], category="extract", doc_type="report",
+        checks=[
+            {"type": "pages_covered", "pages": list(_RF.TARGET_PAGES),
+             "look_pages": list(_RF.SCANNED_LOG_PAGES), "min_fraction": 1.0,
+             "label": "every log page and laboratory page was read"},
+            {"type": "states_coverage",
+             "label": "the answer states its coverage as counts"},
+            {"type": "set_match", "vocabulary": list(_RF.NEW_BORINGS
+                                                     + _RF.OLD_BORINGS),
+             "expected": list(_RF.NEW_BORINGS + _RF.OLD_BORINGS),
+             "min_recall": 1.0,
+             "label": "names all six borings, 2026 and 2011"},
+            {"type": "contains_all",
+             "terms": [_num("43"), "shell", _num("41.7"), _num("1.94"),
+                       ["1,850", _num("1850")]],
+             "label": "values from the newest log, a scan and the last "
+                      "sheets"},
+        ],
+        truth=("Borings of 2026 (vector logs, PDF pages 8-11): B-1 (two "
+               "sheets, 14.9 m, water 3.1 m, N 9 to 52), B-2 (7.4 m, water "
+               "2.8 m), B-3 (7.4 m, water 3.6 m, N 43 at 7.0 m). Borings of "
+               "2011 (scanned logs, PDF pages 13-15): BH-1, BH-2 (grey silty "
+               "SAND with shell fragments; water 3.4 m), BH-3. Laboratory "
+               "(PDF pages 17-30): Atterberg B-1 S-2, B-2 S-3 (LL 32, PL 20), "
+               "B-3 S-2; particle size incl. B-2 S-5 fines 41.7 %; compaction "
+               "B-1 BULK-1 1.94 Mg/m3 at 11.6 %; in-place density B-2 S-2; "
+               "soil chemistry B-1 S-3 and B-3 S-3; groundwater B-2 W-1 "
+               "sulfate 1,850 mg/L. Coverage: 7 of 7 log pages and 14 of 14 "
+               "laboratory pages read. (review_eval/report_fixture.py)")),
+    Task(
+        id="report-extract-diggs",
+        question=("Extract the subsurface data in this geotechnical report - "
+                  "its borings and its laboratory results - as a DIGGS "
+                  "file."),
+        documents=["fixture_report"], category="extract", doc_type="report",
+        page="geotech",
+        checks=[
+            {"type": "pages_covered", "pages": list(_RF.TARGET_PAGES),
+             "look_pages": list(_RF.SCANNED_LOG_PAGES), "min_fraction": 1.0,
+             "label": "every log page and laboratory page was read"},
+            {"type": "states_coverage",
+             "label": "the answer states its coverage as counts"},
+            {"type": "file_produced", "ext": ".xml"},
+            {"type": "set_match", "vocabulary": list(_RF.NEW_BORINGS
+                                                     + _RF.OLD_BORINGS),
+             "expected": list(_RF.NEW_BORINGS + _RF.OLD_BORINGS),
+             "min_recall": 1.0,
+             "label": "names all six borings, 2026 and 2011"},
+        ],
+        truth=("A DIGGS 2.6 file of the six borings (B-1, B-2, B-3 of 2026 "
+               "on vector logs; BH-1, BH-2, BH-3 of 2011 on scans) and the "
+               "laboratory results of the 13 sheets; coverage 7 of 7 log "
+               "pages and 14 of 14 laboratory pages read. Asked on the "
+               "GEOTECH page, where subsurface.write_diggs writes and checks "
+               "the file. (review_eval/report_fixture.py)")),
+    Task(
+        id="report-summary-vs-sheets",
+        question=("Check this report's summary table of laboratory results "
+                  "against the individual laboratory test sheets. Does every "
+                  "value on the summary agree with its sheet? Name any "
+                  "sample where they differ, with both values and the "
+                  "pages."),
+        documents=["fixture_report"], category="check", doc_type="report",
+        checks=[
+            {"type": "contains_all",
+             "terms": ["B-2", "S-3", _num("32"), _num("20")],
+             "label": "names B-2 S-3 and the limits 32 and 20"},
+            {"type": "cites", "pages": [19],
+             "label": "cites the Atterberg sheet, PDF page 19"},
+            {"type": "pages_covered", "pages": list(_RF.LAB_PAGES),
+             "min_fraction": 1.0,
+             "label": "every laboratory page was read"},
+        ],
+        truth=("B-2 S-3 differs: Table B-1 (PDF page 17) gives LL 20 and PL "
+               "32, the Atterberg sheet (PDF page 19) gives LL 32 and PL 20 "
+               "(PI 12) - the summary's liquid and plastic limits are "
+               "swapped. Every other value agrees; 14 of 14 laboratory pages "
+               "read. (review_eval/report_fixture.py: the planted error has "
+               "the shape of the field session's, where the summary table's "
+               "PL exceeded its LL.)")),
 ]
 
 
@@ -930,4 +1042,4 @@ def select(tasks: Sequence[Task], ids: Optional[Iterable[str]] = None,
 
 
 __all__ = ["Task", "OPEN_TASKS", "AUTO_CHECKS", "CATEGORIES", "DOC_TYPES",
-           "GIVE_UP_PHRASES", "load_tasks", "select"]
+           "PAGES", "GIVE_UP_PHRASES", "load_tasks", "select"]

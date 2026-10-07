@@ -539,6 +539,10 @@ def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
             p for p in (kw.get("extra_system_prompt"), _em_prompt) if p)
     _add_feedback_tool(kw, temp_dir)
     _register_reference_fetcher()
+    # The coverage ledger (GEOTECH_COVERAGE, off by default) lives in the
+    # conversation's folder beside activity.jsonl, so it outlives a rebuild
+    # of the agent and is mirrored with the conversation. Unused when off.
+    kw.setdefault("coverage_dir", os.path.dirname(os.path.abspath(temp_dir)))
     if kw.get("review_page"):
         # The Document Review page's lean agent binds its findings and
         # digests to THIS conversation's folder when it is built; the

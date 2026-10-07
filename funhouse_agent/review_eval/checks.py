@@ -503,6 +503,91 @@ def check_tool_used(answer: str, tool_calls: Sequence[Dict[str, Any]] = (),
     return n >= min_calls, f"{n} call(s) of {list(any)}"
 
 
+def _calls_from_activity(activity: Sequence[Dict[str, Any]]):
+    """``(name, args, result)`` of every finished tool call in a run's
+    ``activity.jsonl`` records, the primary's and every helper's."""
+    starts: Dict[str, Dict[str, Any]] = {}
+    out = []
+    for rec in activity or ():
+        ev = rec.get("event")
+        rid = str(rec.get("run_id") or "")
+        if ev == "tool_start":
+            starts[rid] = rec
+        elif ev == "tool_end" and rid in starts:
+            st = starts.pop(rid)
+            args = st.get("args")
+            if isinstance(args, str):
+                try:
+                    import json as _json
+                    args = _json.loads(args)
+                except ValueError:
+                    args = {}
+            out.append((st.get("name") or rec.get("name"),
+                        args if isinstance(args, dict) else {},
+                        rec.get("result")))
+    return out
+
+
+def check_pages_covered(answer: str, activity: Sequence[Dict[str, Any]] = (),
+                        pages: Sequence[int] = (),
+                        look_pages: Sequence[int] = (),
+                        min_fraction: float = 1.0, **_) -> Tuple[bool, str]:
+    """Every target page (0-based tool pages) was READ: looked at by a
+    vision tool, or read as text by a text tool - except ``look_pages`` (no
+    text layer), which only a look covers. Derived from the run's own
+    ``activity.jsonl`` (every tool call of the primary and its helpers, with
+    its arguments and result), independently of anything the app's coverage
+    ledger says, so the arm that adds the ledger is not graded by it."""
+    from funhouse_agent.coverage import pages_from_call
+    if not activity:
+        return False, "no activity record for this run"
+    looked, text, empty = set(), set(), set()
+    for name, args, result in _calls_from_activity(activity):
+        _ref, got = pages_from_call(str(name or ""), args, result)
+        for page, how in got:
+            if how in ("look", "sweep"):
+                looked.add(page)
+            elif how == "text":
+                text.add(page)
+            elif how == "text_empty":
+                empty.add(page)
+    need_look = set(int(p) for p in look_pages)
+    want = [int(p) for p in pages]
+    done = [p for p in want if p in looked
+            or (p in text and p not in need_look)]
+    missing = sorted(set(want) - set(done))
+    frac = len(done) / len(want) if want else 1.0
+    ok = frac >= min_fraction - 1e-9
+    detail = f"{len(done)} of {len(want)} target pages read"
+    if missing:
+        detail += (f"; not read: PDF pages "
+                   + ", ".join(str(p + 1) for p in missing))
+        text_only = sorted(set(missing) & ((text & need_look) | empty))
+        if text_only:
+            detail += (" (PDF pages " + ", ".join(str(p + 1) for p in text_only)
+                       + " were read as text but have no text layer)")
+    return ok, detail
+
+
+#: A count ("10 of 23", "all 14") within reach of what was counted.
+_KIND_WORDS = (r"(?:sheet|log|page|test|boring|borehole|exploration|sample|"
+               r"result|record)")
+
+
+def check_states_coverage(answer: str, **_) -> Tuple[bool, str]:
+    """The answer states its coverage as counts: a number "of" a number (or
+    "all N") with what was counted next to it - "10 of 23 lab sheets read",
+    "all 14 laboratory sheets"."""
+    text = normalize(answer)
+    count = (r"(?:\b\d{1,4}\s*(?:of|out of|/)\s*\d{1,4}\b|\ball\s+\d{1,4}\b"
+             r"|\bevery one of the\s+\d{1,4}\b)")
+    for m in re.finditer(count, text):
+        window = text[max(0, m.start() - 60):m.end() + 60]
+        if re.search(_KIND_WORDS, window):
+            return True, f"states coverage: '{text[m.start():m.end() + 30]}'"
+    return False, "no count of what was read (e.g. '10 of 23 sheets read')"
+
+
 CHECKS = {
     "contains_all": check_contains_all,
     "contains_any": check_contains_any,
@@ -516,13 +601,21 @@ CHECKS = {
     "pages_listed": check_pages_listed,
     "docx_contains": check_docx_contains,
     "tool_used": check_tool_used,
+    "pages_covered": check_pages_covered,
+    "states_coverage": check_states_coverage,
 }
+
+#: Checks on what the run DID (its activity), not on its answer text.
+PROCESS_CHECKS = ("tool_used", "pages_covered")
 
 
 def run_check(check: Dict[str, Any], answer: str,
               files: Sequence[str] = (),
-              tool_calls: Sequence[Dict[str, Any]] = ()) -> Dict[str, Any]:
-    """Run one check; never raises (a broken check is a failed check)."""
+              tool_calls: Sequence[Dict[str, Any]] = (),
+              activity: Sequence[Dict[str, Any]] = ()) -> Dict[str, Any]:
+    """Run one check; never raises (a broken check is a failed check).
+    ``activity`` is the run's ``activity.jsonl`` records (for
+    ``pages_covered``)."""
     kind = check.get("type")
     fn = CHECKS.get(kind)
     params = {k: v for k, v in check.items()
@@ -534,7 +627,7 @@ def run_check(check: Dict[str, Any], answer: str,
                 "detail": f"unknown check type {kind!r}"}
     try:
         ok, detail = fn(answer or "", files=files, tool_calls=tool_calls,
-                        **params)
+                        activity=activity, **params)
     except Exception as exc:
         ok, detail = False, f"check error: {type(exc).__name__}: {exc}"
     return {"type": kind, "label": label, "passed": bool(ok),
@@ -549,4 +642,5 @@ def score(results: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
             "passed": bool(scored) and passed == len(scored)}
 
 
-__all__ = ["normalize", "term_found", "run_check", "score", "CHECKS"]
+__all__ = ["normalize", "term_found", "run_check", "score", "CHECKS",
+           "PROCESS_CHECKS"]

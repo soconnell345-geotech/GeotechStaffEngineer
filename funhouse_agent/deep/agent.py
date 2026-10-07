@@ -732,9 +732,16 @@ def build_deep_agent(
     summarization_keep=_DEFAULT_SUMMARIZATION_KEEP,
     review_page: bool = False,
     working_dir: Optional[str] = None,
+    coverage_dir: Optional[str] = None,
     **kwargs,
 ):
     """Construct the deepagents port of the geotech agent.
+
+    ``coverage_dir`` is the conversation's folder, where the coverage ledger
+    (``coverage.json``) is kept when ``GEOTECH_COVERAGE`` or
+    ``GEOTECH_REVIEW_CHECKLIST`` is on (:mod:`funhouse_agent.deep.
+    coverage_tools`); ``None`` keeps it in memory. With both switches off
+    (the default) it is unused and the build is unchanged.
 
     ``review_page=True`` marks the Document Review page's build: with
     ``GEOTECH_REVIEW_AGENT=lean`` it is handed to
@@ -951,7 +958,7 @@ def build_deep_agent(
                 max_result_chars=max_result_chars,
                 reference_result_chars=reference_result_chars,
                 checkpointer=checkpointer, store=store,
-                working_dir=working_dir)
+                working_dir=working_dir, coverage_dir=coverage_dir)
 
     if allowed_agents is None:
         allowed_agents = ANALYSIS_MODULES
@@ -1032,6 +1039,15 @@ def build_deep_agent(
         if library_tools:
             tools = list(tools) + list(library_tools)
             system_prompt = system_prompt + "\n\n" + REPORT_LIBRARY_NUDGE
+    # Coverage in code (GEOTECH_COVERAGE / GEOTECH_REVIEW_CHECKLIST, both OFF
+    # by default): the ledger every agent of this build reports its tool
+    # calls to, the gate on the primary, the tools. No prompt text: the tools
+    # describe themselves.
+    from funhouse_agent.deep.coverage_tools import coverage_kit
+    coverage = coverage_kit(attachments=attachments, folder=coverage_dir,
+                            max_result_chars=max_result_chars)
+    if coverage.tools:
+        tools = list(tools) + list(coverage.tools)
 
     subagents = []
     if reference_mode != "off":
@@ -1131,6 +1147,13 @@ def build_deep_agent(
             and not any(s.get("name") == "general-purpose" for s in subagents)):
         subagents.append({**_GENERAL_PURPOSE_SPEC,
                           "middleware": [ScratchFilesystemGuard()]})
+    if coverage.on:
+        # Every helper's reads count: the field session's helper read page
+        # ranges the primary never saw (FINDINGS P3).
+        for spec in subagents:
+            rec = coverage.recorder(str(spec.get("name") or "subagent"))
+            if rec is not None and "runnable" not in spec:
+                spec["middleware"] = list(spec.get("middleware") or []) + [rec]
 
     # ----- Phase-3: persistent /memories/ backend + memory= source -----
     create_kwargs = dict(kwargs)
@@ -1155,6 +1178,8 @@ def build_deep_agent(
             )
         )
     middleware.append(ScratchFilesystemGuard())
+    if coverage.on:
+        middleware.append(coverage.primary())
     create_kwargs["middleware"] = middleware
 
     if store is not None:
@@ -1200,6 +1225,17 @@ def build_deep_agent(
         agent.geotech_attachments = attachments
     except Exception:
         pass
+    if coverage.on:
+        try:
+            agent.geotech_coverage_ledger = coverage.ledger
+            if coverage.gate_on:
+                # Room for the reads the gate may ask for: the web app raises
+                # its per-turn step cap to this (core.stream_turn).
+                from funhouse_agent.deep.coverage_tools import (
+                    COVERAGE_STEP_FLOOR)
+                agent.geotech_min_recursion_limit = COVERAGE_STEP_FLOOR
+        except Exception:
+            pass
     return agent
 
 
