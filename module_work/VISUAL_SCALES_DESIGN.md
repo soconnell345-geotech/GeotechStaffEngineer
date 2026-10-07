@@ -568,6 +568,19 @@ This is the split `find_like` already uses.
 
 ## 10. For the owner to decide
 
+**DECIDED 2026-10-08: the owner accepted the lead's recommendations on all nine.**
+1. No `measure` on the minimal build.
+2. `log_grid` becomes an agent tool on both pages, measured on the suite.
+3. `measure` makes its own small vision call to read label values on a scan.
+4. On a disagreement, code's value is given with the vision value beside it. A gap over about 3× code's uncertainty is flagged.
+5. Values are given with their ±, never finer than the source's printed resolution.
+6. In report ingest, geometry layer tops enter as a voter first; they become the default only after a cluster run shows they help.
+7. The precision line may say, in general words, that a box read off an image is not a measurement.
+8. Re-verify GEC-12 Fig 7-15 (HANDOFF 8a(v)).
+9. Live checks use the synthetic fixtures plus public sets already in use, unless the owner names others.
+
+The original questions follow.
+
 1. **The tool's name and reach.** `measure` on the geotech page and the Document Review legacy and lean builds. Should it also go on the **minimal** build, which keeps its tool list deliberately short?
 2. **Whether `log_grid` itself becomes an agent tool on both pages.** `measure` with `kind="lines"` covers layer depths without it. `log_grid` adds the columns, rows and header fields; in the session it would have given the vector 2026 logs' rows exactly.
 3. **The label-reading side call.** Should `measure` make one small vision call on its own when a scan has no text (recommended)? Or should the agent always be asked to supply the values?
