@@ -10,9 +10,10 @@ detailed Phase-E history; this file supersedes it.
 
 ### Open to-dos after 5.32.0 — THE list (2026-10-05)
 
-One list for the whole project; other notes point here. Nothing is in
-progress: no branch is open, no Foundry brief is running, both repos are
-clean on `master` / `main` at the release.
+One list for the whole project; other notes point here. In progress
+(2026-10-07): the location build (item 9b), on master / main. No branch is
+open and no Foundry brief is running. Everything since 5.32.0 is committed
+and unreleased (item 2a).
 
 **A. Owner — the test run**
 1. Install 5.32.0: `%pip install "geotech-staff-engineer==5.32.0"` (brings
@@ -22,11 +23,22 @@ clean on `master` / `main` at the release.
    Funhouse (written for the owner, with paste-ready cells): do the red
    circles land on the tags; is `find_like` still available; one report-ingest
    rerun (narrative rules, lab links, boring logs). Tick them off there.
-2a. **5.32.1 is ready to release on the owner's word** (master, after
-   5.32.0): live check 1 on 2026-10-07 found 5.32.0's "drawn close" question
-   rejecting correct circles on GPT-5.4 — now a measured size test (cc697e6);
-   plus the SharePoint copy fix (4334fce). Test wheel `5.32.1rc2` was sent for
-   a re-run of check 1 first (queue file, "Re-run of check 1").
+2a. **5.32.1 is released only on the owner's word.** It needs planlens
+   0.11.1 first, from unreleased planlens `main` (d7d6657: `find_like` without
+   OpenCV). What master holds after 5.32.0:
+   - **The markup check measures size** (cc697e6). Live check 1 on
+     2026-10-07 found 5.32.0's "drawn close" question rejecting correct
+     circles on GPT-5.4.
+   - **The SharePoint copy fix** (4334fce).
+   - **The model's own words in `activity.jsonl`** (f405765).
+   - **`find_like` on FIPS hosts** (ba12760).
+   - **The 2026-10-06 geotech-session fixes** (3d1cd44, item 8a): SharePoint
+     failures said for what they are, a per-turn note of the files the
+     conversation holds, `subsurface.write_diggs`, turn details on by default,
+     and the past-conversations list cached per page.
+   - **The location build** (9b, in progress).
+
+   The test wheel `5.32.1rc2` only covered the first two of these.
 3. Ask CfA whether the Tiny Apps App Service enforces FIPS mode. Funhouse
    DOES (live check 2, 2026-10-07: OpenCV fails its FIPS self-test there, as
    on Foundry), so assume Tiny Apps does too: OpenCV cannot load and
@@ -51,6 +63,21 @@ clean on `master` / `main` at the release.
    for a few unseen items, if those readers matter.
 8. `slope_stability`: expose the Ito–Matsui stabilizing-pile force as its own
    method? It exists but only inside the full slope analyses (eval SPL-3).
+8a. **The geotech-page session of 2026-10-06.** Ledger:
+   `module_work/field_feedback/2026-10-06_geotech-report-session_v5.32.0/FINDINGS.md`.
+   The fixes are in 3d1cd44. What remains is the owner's call:
+   - **(i) Report ingest on the geotech page.** Measure it on one Funhouse
+     run of a report like this one first. Then offer it as an opt-in sidebar
+     switch, off by default. That needs the engine and the output folder
+     plumbed, which they are not today.
+   - **(ii) ASCE 7 and Youd et al. (2001).** Neither is in the reference
+     library. Adding them is a licensing question.
+   - **(iii) The missed 2026 borings** (vector logs taken for "not scanned").
+     Three options:
+     - a measurement task: a synthetic report with vector new logs and
+       scanned old ones;
+     - planlens: start and title a segment at a markup-only divider page;
+     - give the `general-purpose` helper the reading rules, measured first.
 
 **C. Next build — candidates, none started** (judge each on the suite; no
 rules from single examples)
@@ -58,7 +85,11 @@ rules from single examples)
    have no zoom today) — `module_work/FUTURE_IDEAS.md` "VISION HARNESS
    BENCHMARK", which also holds the Chartography run (check its licence) and
    a small geotech chart truth set.
-9a. **`find_like` without OpenCV** (planlens). OpenCV's pip wheels abort on
+9a. **DONE 2026-10-07, unreleased** (planlens d7d6657, app ba12760): a numpy
+    matcher with the same hits as OpenCV, chosen automatically where OpenCV
+    cannot load (`PLANLENS_FINDLIKE_BACKEND`). The raster IR leg and OCR still
+    need OpenCV. The original note follows.
+    **`find_like` without OpenCV** (planlens). OpenCV's pip wheels abort on
     every government host we use (Foundry, Funhouse; likely Tiny Apps), so
     `find_like` — exact page boxes for every copy of a tag, the thing GPT-5.4
     lacked when it placed circles from a whole-page look in live check 1 —

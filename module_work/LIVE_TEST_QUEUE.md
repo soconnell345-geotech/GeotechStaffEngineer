@@ -236,6 +236,37 @@ works as before with the new folder name. **Pass:** most of the 3
 `produce-circle-tags` runs pass, and none withholds a file whose circles you
 can see sit on the tags.
 
+## Check 5 — SharePoint links, remembered files, past conversations (after 5.32.1; in the app, about 20 minutes)
+
+**Why.** These come from your geotech-page session of 2026-10-06.
+- **The pasted link was fine.** In one turn every SharePoint call failed for
+  a few seconds, almost certainly an expired sign-in, and the tool reported
+  that as "not found".
+- **The agent "forgot" the file.** It cannot see earlier turns' tool results,
+  only its own answers.
+- **The geotech page listed the review page's past conversations.**
+
+All three are fixed in 5.32.1. This check confirms the fixes live.
+
+**How.** Start the app with SharePoint set up as usual. Then, on the
+**geotech page**:
+
+1. Paste a SharePoint "copy link" to a PDF and ask for a short summary.
+   **Pass:** it downloads and summarises.
+2. Leave the app open for more than an hour (the sign-in renewal now checks
+   every minute), then ask a follow-up about the same PDF. **Pass:**
+   - it answers from the file it already has, without "I no longer have
+     it";
+   - "Turn details" (now on by default) shows the turn started with a note
+     listing that file.
+3. If a SharePoint call does fail, the message should now say SharePoint
+   refused or is not answering, not "file not found".
+4. Open "Find a past conversation" on the geotech page, then on the
+   Document Review page. **Pass:** each lists its own conversations.
+
+**Send:** the conversation's SharePoint folder name. `activity.jsonl` now
+records the note and any SharePoint error code.
+
 ## Done
 
 - **2026-10-07, check 4 (location measurement), Funhouse GPT-5.4.** Funhouse
